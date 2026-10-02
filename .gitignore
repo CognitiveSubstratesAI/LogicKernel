@@ -1,0 +1,34 @@
+# Library package: the Manifest is not committed — consumers resolve their own.
+/Manifest.toml
+/Manifest.toml.bak
+docs/Manifest.toml
+test/Manifest.toml
+
+# Claude Code local settings
+.claude/
+
+# Julia build / coverage artifacts
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+*.ji
+/lcov.info
+coverage/
+docs/build/
+
+# Benchmark outputs
+bench/results/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Secrets (never commit)
+.env
+.env.*
+*.key
+*.pem

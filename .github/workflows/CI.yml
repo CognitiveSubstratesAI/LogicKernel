@@ -1,0 +1,72 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    # Multi-threaded like the local runner (`JULIA_TEST_THREADS:-4`), so CI and local contend alike.
+    # An env var and not `julia_args`: Pkg passes JULIA_NUM_THREADS through to the test worker, and
+    # it must be NON-EMPTY. (Learned in PathMap CI, 2026-09-28: single-threaded, its concurrency
+    # tests skipped and the inert-testset guard failed the run — correctly.)
+    env:
+      JULIA_NUM_THREADS: '4'
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1.13'
+        os:
+          - ubuntu-latest
+        arch:
+          - x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+      # Coverage → Codecov. A Codecov outage or missing token must not fail a green build.
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  format:
+    name: Format (Blue)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13'
+      # No julia-actions/cache here — a cached Manifest can pin an older JuliaFormatter than the one
+      # pinned below, and local/CI formatting then drift apart.
+      - name: Check formatting
+        run: |
+          julia -e 'using Pkg; Pkg.add(PackageSpec(name="JuliaFormatter", version="2.14.0"))'
+          julia -e 'using JuliaFormatter; println("JuliaFormatter ", pkgversion(JuliaFormatter))'
+          julia -e 'using JuliaFormatter; format(".")'
+          if ! git diff --quiet; then
+            echo "::error::Formatting check failed — files below are not Blue-formatted:"
+            git --no-pager diff --stat
+            git --no-pager diff
+            exit 1
+          fi
+          echo "All files Blue-formatted."
