@@ -12,14 +12,17 @@ authors = ["CognitiveSubstratesAI"]
 # honestly.
 
 [compat]
+Random = "1"
 Test = "1"
 julia = "1.12"
 
 # Test-only deps must be declared here: `Pkg.test` (and CI's julia-runtest) builds an ISOLATED env
 # from [extras] + [targets] alone, stdlibs included — PathMap CI run #87 failed on an undeclared
-# `Random` that resolved fine locally.
+# `Random` that resolved fine locally, and so did this package's `8f0bead`. Now GATED:
+# test/test_package.jl fails on any package a test file loads that is not declared here.
 [extras]
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["Random", "Test"]
