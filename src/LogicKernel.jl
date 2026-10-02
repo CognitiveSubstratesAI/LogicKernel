@@ -24,10 +24,14 @@ include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard ord
 include("default_term.jl")     # ORIGINAL — Term{G}, the reference implementation
 include("pl-hash.jl")          # swipl-devel src/pl-hash.c — MurmurHash2
 include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause list, index structs
+include("pl-global.jl")        # swipl-devel src/pl-global.h — the database state (GD, LD)
+include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys
 include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to
-include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; reading code
+include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing
-include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, adding clauses
+include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
+include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC
+include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 
 # ── exports ─────────────────────────────────────────────────────────────────────────────────────
 # the term interface (src/term_interface.jl)

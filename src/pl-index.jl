@@ -1,5 +1,4 @@
 # UPSTREAM: swipl-devel src/pl-index.c @ bae881a24a3f
-# UPSTREAM: swipl-devel src/pl-inline.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -22,12 +21,13 @@
 # index array (`insertIndex!`, `replaceIndex!`, …) and the `indexed` predicate property
 # (`unify_index_pattern`).
 #
-# NOT YET PORTED — they serve retract, clause garbage collection and reload, and arrive with the
-# clause database (pl-proc.c): deleteClauseList, deleteClauseBucket, gcClauseList, gcClauseBucket,
-# cleanClauseIndex, cleanClauseIndexes, deleteActiveClauseFromBucket, deleteActiveClauseFromIndex,
-# deleteActiveClauseFromIndexes, deleteIndexes, deleteIndexesDefinition, delClauseFromIndex,
-# shrunkpow2; the memory reports sizeofClauseIndex/sizeofClauseIndexes; the debug checks
-# checkClauseIndexSizes/checkClauseIndexes/listIndexGenerations; the `$candidate_indexes` and
+# Also ported: what retract and clause garbage collection need — deleteActiveClauseFromIndexes and
+# what it calls, cleanClauseIndexes and what it calls, shrunkpow2.
+#
+# NOT PORTED: deleteClauseList, deleteClauseBucket and delClauseFromIndex (nothing calls
+# delClauseFromIndex upstream), deleteIndexes and deleteIndexesDefinition (abolish, halt — not
+# ported), the memory reports sizeofClauseIndex/sizeofClauseIndexes, the debug checks
+# checkClauseIndexSizes/checkClauseIndexes/listIndexGenerations, and the `$candidate_indexes` and
 # `$set_candidate_indexes` predicates. Threads (index locks, waiting for another thread's index) do
 # not exist in the kernel.
 #
@@ -103,38 +103,6 @@ cref_matches(cref::clause_ref, k::word)::Bool = (cref.key == 0) | (cref.key == k
 "True if we do not need to check the generation (pl-index.c)."
 is_clean_predicate(def::definition)::Bool =
     (def.flags & (P_DYNAMIC | P_DIRTYREG | P_RELOADING)) == 0
-
-# PORT: pl-inline.h MSB
-"Index of the most significant set bit: `MSB(1) == 0`, `MSB(2) == 1` (pl-inline.h)."
-MSB(i::Integer)::Int = 63 - leading_zeros(UInt64(i))
-
-# PORT: pl-inline.h clean_index_key
-"A hashed key that is never 0 and never reads as a functor (pl-inline.h)."
-function clean_index_key(key::word)::word
-    key &= ~STG_GLOBAL
-    if key == 0
-        key = word(1)
-    end
-    return key
-end
-
-# PORT: pl-inline.h visibleClause
-# DIVERGES: the reload and transaction cases are not ported (neither exists yet); this is
-# upstream's core test, `c <= gen && e > gen`.
-"True when clause `cl` is visible in generation `gen` (pl-inline.h)."
-function visibleClause(cl::clause, gen::gen_t)::Bool
-    c = cl.generation_created
-    e = cl.generation_erased
-    if c <= gen && e > gen
-        return true
-    end
-    return false
-end
-
-# PORT: pl-inline.h visibleClauseCNT
-# DIVERGES: the erased-skipped statistic is not kept.
-"`visibleClause`, counting the misses upstream (pl-inline.h)."
-visibleClauseCNT(cl::clause, gen::gen_t)::Bool = visibleClause(cl, gen)
 
 # PORT: pl-index.c hashIndex
 "Map a key to a bucket of `buckets` (a power of two) by Fibonacci hashing (pl-index.c)."
@@ -925,6 +893,271 @@ function reconsider_index!(def::Definition{T})::Nothing where {T}
                 def.flags &= ~P_SHRUNKPOW2
             else
                 clearTriedIndexes!(def)
+            end
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-index.c shrunkpow2
+"A dynamic predicate at a power-of-two clause count while shrinking: mark it (pl-index.c)."
+function shrunkpow2!(def::Definition{T})::Nothing where {T}
+    if (def.flags & P_DYNAMIC) != 0
+        if (def.flags & P_SHRUNKPOW2) == 0 && has_pow2_clauses(def)
+            def.flags |= P_SHRUNKPOW2
+        end
+    end
+    return nothing
+end
+
+# ── removing clauses from indexes (pl-index.c) ──────────────────────────────────────────────────
+# A retracted clause cannot leave an index at once: an enumeration of an older generation may
+# still need it. Retract only counts it as DIRTY (`deleteActiveClauseFromIndexes!`); clause GC
+# unlinks it once no generation in use can see it (`cleanClauseIndexes!`).
+# NOT PORTED: deleteClauseList and deleteClauseBucket (reached only from delClauseFromIndex, which
+# nothing calls upstream), deleteIndexes and deleteIndexesDefinition (abolish, halt), and the
+# memory release of unlinked references (freeClauseListRef, lingerClauseRef) — the garbage
+# collector's job here; an unlinked reference keeps its `next`, as upstream's lingering one does,
+# so an enumeration standing on it continues.
+
+# PORT: pl-index.c gcClauseList
+# DIVERGES: no transactions, so no `tr_starts`.
+"Unlink the clauses of a list index's clause list that are garbage (pl-index.c)."
+function gcClauseList!(
+    clist::ClauseList{T}, ddi::dirty_def_info{T}, start::gen_t
+)::Nothing where {T}
+    cref = clist.first_clause
+    prev::Union{Nothing, ClauseRef{T}} = nothing
+    left = 0
+    while cref !== nothing && clist.erased_clauses != 0
+        cl = cref.clause::Clause{T}
+        if (cl.flags & CL_ERASED) != 0
+            if ddi_is_garbage(ddi, start, cl)
+                c = cref
+                clist.erased_clauses -= 1
+                cref = cref.next
+                if prev === nothing
+                    clist.first_clause = c.next
+                    if c.next === nothing
+                        clist.last_clause = nothing
+                    end
+                else
+                    prev.next = c.next
+                    if c.next === nothing
+                        clist.last_clause = prev
+                    end
+                end
+                continue                            # lingerClauseRef(c)
+            else
+                left += 1
+            end
+        end
+        prev = cref
+        cref = cref.next
+    end
+    clist.erased_clauses = left                     # see (*)
+    return nothing
+end
+
+# PORT: pl-index.c gcClauseBucket
+# DIVERGES: no transactions, so no `tr_starts`.
+"""
+Unlink the garbage clauses (or emptied clause lists) of a bucket; the number of indexable entries
+removed (pl-index.c).
+"""
+function gcClauseBucket!(
+    def::Definition{T}, ch::ClauseBucket{T}, dirty::UInt32, is_list::Bool,
+    ddi::dirty_def_info{T}, start::gen_t
+)::Int where {T}
+    cref = ch.head
+    prev::Union{Nothing, ClauseRef{T}} = nothing
+    deleted = 0
+    while cref !== nothing && dirty != 0
+        delete = false
+        if is_list
+            cl = cref.clauses::ClauseList{T}
+            if cl.erased_clauses != 0
+                gcClauseList!(cl, ddi, start)
+                if cl.erased_clauses == 0
+                    dirty -= 0x00000001
+                end
+                if cl.first_clause === nothing
+                    delete = true                   # goto delete
+                end
+            end
+        else
+            cl = cref.clause::Clause{T}
+            if (cl.flags & CL_ERASED) != 0 && ddi_is_garbage(ddi, start, cl)
+                dirty -= 0x00000001
+                delete = true
+            end
+        end
+        if delete
+            c = cref
+            if cref.key != 0
+                deleted += 1                        # only reduce size by indexed
+            end
+            cref = cref.next
+            if prev === nothing
+                ch.head = c.next
+                if c.next === nothing
+                    ch.tail = nothing
+                end
+            else
+                prev.next = c.next
+                if c.next === nothing
+                    ch.tail = prev
+                end
+            end
+            continue                                # lingerClauseListRef / lingerClauseRef
+        end
+        prev = cref
+        cref = cref.next
+    end
+    ch.dirty = dirty
+    return deleted
+end
+
+# PORT: pl-index.c cleanClauseIndex
+# DIVERGES: no transactions, so no `tr_starts`.
+"Drop an index the predicate has shrunk below, or clean its dirty buckets (pl-index.c)."
+function cleanClauseIndex!(
+    def::Definition{T}, cl::ClauseList{T}, ci::ClauseIndex{T}, ddi::dirty_def_info{T},
+    start::gen_t
+)::Nothing where {T}
+    if cl.number_of_clauses < ci.resize_below
+        deleteIndex!(def, cl, ci)
+    else
+        if ci.dirty != 0
+            entries = ci.entries::Vector{ClauseBucket{T}}
+            for ch in entries
+                if ch.dirty != 0
+                    ci.size -= gcClauseBucket!(def, ch, ch.dirty, ci.is_list, ddi, start)
+                    if ch.dirty == 0 && (ci.dirty -= 0x00000001) == 0
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-index.c cleanClauseIndexes
+# DIVERGES: no transactions, so no `tr_starts`.
+"Clean every index of `cl` after clause GC removed clauses from it (pl-index.c)."
+function cleanClauseIndexes!(
+    def::Definition{T}, cl::ClauseList{T}, ddi::dirty_def_info{T}, start::gen_t
+)::Nothing where {T}
+    cip = cl.clause_indexes
+    if cip !== nothing
+        for ci in cip
+            if ISDEADCI(ci)
+                continue
+            end
+            cleanClauseIndex!(def, cl, ci, ddi, start)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-index.c deleteActiveClauseFromBucket
+"""
+Count a retracted clause in the clause lists of a list-index bucket — every list for a clause
+without a key, the list of its key otherwise (pl-index.c).
+"""
+function deleteActiveClauseFromBucket!(cb::ClauseBucket{T}, key::word)::Nothing where {T}
+    if key == 0
+        cref = cb.head
+        while cref !== nothing
+            cl = cref.clauses::ClauseList{T}
+            if (cl.erased_clauses += 1) - 1 == 0       # cl->erased_clauses++ == 0
+                cb.dirty += 0x00000001
+            end
+            cl.number_of_clauses -= 0x00000001
+            cref = cref.next
+        end
+    else
+        cref = cb.head
+        while cref !== nothing
+            if cref.key == key
+                cl = cref.clauses::ClauseList{T}
+                if (cl.erased_clauses += 1) - 1 == 0
+                    cb.dirty += 0x00000001
+                end
+                cl.number_of_clauses -= 0x00000001
+                return nothing
+            end
+            cref = cref.next
+        end
+        @assert false "deleteActiveClauseFromBucket!: key not in bucket"
+    end
+    return nothing
+end
+
+# PORT: pl-index.c deleteActiveClauseFromIndex
+"Mark the buckets that hold a retracted clause dirty, for clause GC (pl-index.c)."
+function deleteActiveClauseFromIndex!(ci::ClauseIndex{T}, cl::Clause{T})::Nothing where {T}
+    key, _ = indexKeyFromClause(ci, cl)
+    entries = ci.entries::Vector{ClauseBucket{T}}
+    if key == 0                                     # not indexed
+        for cb in entries
+            if cb.dirty == 0
+                ci.dirty += 0x00000001
+            end
+            if ci.is_list
+                deleteActiveClauseFromBucket!(cb, key)
+            else
+                cb.dirty += 0x00000001
+            end
+        end
+        @assert ci.dirty == ci.buckets
+    else
+        hi = hashIndex(key, ci.buckets)
+        cb = entries[hi + 1]
+        if cb.dirty == 0
+            ci.dirty += 0x00000001
+        end
+        if ci.is_list
+            deleteActiveClauseFromBucket!(cb, key)
+        else
+            cb.dirty += 0x00000001
+        end
+        @assert cb.dirty > 0
+    end
+    return nothing
+end
+
+# PORT: pl-index.c deleteActiveClauseFromIndexes
+"""
+A clause of `def` was retracted: drop an index the predicate has shrunk below (any index of a
+static predicate), or mark the clause dirty in it (pl-index.c).
+"""
+function deleteActiveClauseFromIndexes!(
+    def::Definition{T}, cl::Clause{T}
+)::Nothing where {T}
+    shrunkpow2!(def)
+    cip = def.impl_clauses.clause_indexes
+    if cip !== nothing
+        for i in eachindex(cip)
+            ci = cip[i]
+            if ISDEADCI(ci) || ci.entries === nothing
+                continue
+            end
+            while ci.incomplete
+                wait_for_index!(ci, def.impl_clauses, nothing)
+            end
+            if ci.invalid
+                continue
+            end
+            if (def.flags & P_DYNAMIC) != 0
+                if def.impl_clauses.number_of_clauses < ci.resize_below
+                    deleteIndexP!(def, def.impl_clauses, cip, i)
+                else
+                    deleteActiveClauseFromIndex!(ci, cl)
+                end
+            else
+                deleteIndexP!(def, def.impl_clauses, cip, i)
             end
         end
     end

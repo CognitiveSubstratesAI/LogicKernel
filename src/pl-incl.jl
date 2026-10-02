@@ -279,3 +279,39 @@ const Definition{T} = definition{T}
 # PORT: pl-incl.h ClauseChoice
 "A clause choice of terms `T` (pl-incl.h `ClauseChoice`)."
 const ClauseChoice{T} = clause_choice{ClauseRef{T}}
+
+# ── clause garbage collection: dirty predicates and predicate access (pl-incl.h) ────────────────
+# PORT: pl-incl.h GLOBALLY_VISIBLE_CLAUSE
+"True when clause `cl` is visible in generation `gen`, ignoring transactions (pl-incl.h)."
+GLOBALLY_VISIBLE_CLAUSE(cl::clause, gen::gen_t)::Bool =
+    cl.generation_created <= gen && cl.generation_erased > gen
+
+# PORT: pl-incl.h PROC_DIRTY_GENS
+"How many access generations a dirty predicate records before it keeps an interval (pl-incl.h)."
+const PROC_DIRTY_GENS = 10
+# PORT: pl-incl.h DDI_MARKING
+"Dirty-definition flag: clause GC is actively using the record (pl-incl.h)."
+const DDI_MARKING = UInt16(0x0001)
+# PORT: pl-incl.h DDI_INTERVALS
+"Dirty-definition flag: the record collects an interval, not single generations (pl-incl.h)."
+const DDI_INTERVALS = UInt16(0x0002)
+
+# PORT: pl-incl.h dirty_def_info
+# DIVERGES: `access` is a vector of PROC_DIRTY_GENS generations rather than an inline array.
+"""
+A predicate with erased clauses, and the generations it is accessed in while clause GC runs
+(pl-incl.h `struct dirty_def_info`).
+"""
+mutable struct dirty_def_info{T}
+    count::UInt16                       # # captured generations
+    flags::UInt16                       # DDI_*
+    predicate::Definition{T}            # The dirty predicate
+    access::Vector{gen_t}               # Accessed generations
+end
+
+# PORT: pl-incl.h definition_ref
+"A predicate referenced at a generation by an ongoing enumeration (pl-incl.h `definition_ref`)."
+struct definition_ref{T}
+    predicate::Definition{T}            # Referenced definition
+    generation::gen_t                   # at generation
+end

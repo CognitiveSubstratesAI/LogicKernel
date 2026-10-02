@@ -574,3 +574,42 @@ function argKey(PC::Code, skip::Int)::word
         end
     end
 end
+
+# ── clause/2 (pl-comp.c) ────────────────────────────────────────────────────────────────────────
+# PORT: pl-comp.c clause as pl_clause
+# DIVERGES: clause/2 with an unbound clause reference only (no clause/3-4 by reference, no
+# variable bindings, no module context or protected predicates); the predicate is given; unifying
+# a clause's head and body with the arguments is the caller's `decompile(clause)::Bool` until
+# unification is ported; each answer goes to `sink(clause)::Bool`, false to cut.
+"""
+    pl_clause!(gd, ld, def, head, decompile, sink)
+
+`clause/2` on predicate `def` with head `head` (pl-comp.c): in the generation it starts in,
+enumerate the clauses `decompile` accepts and pass each to `sink`.
+"""
+function pl_clause!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, decompile::F,
+    sink::S
+)::Nothing where {T, F, S}
+    dref = pushPredicateAccessObj!(ld, gd, def)
+    gen = dref.generation                               # setGenerationFrameVal()
+    chp = ClauseChoice{T}(nothing, word(0))
+    cref = firstClause!(head, gen, def, chp)
+    while cref !== nothing
+        clause = cref.clause::Clause{T}
+        if decompile(clause)
+            if chp.cref === nothing                     # the last one: out
+                popPredicateAccess!(ld, def)
+                sink(clause)
+                return nothing
+            end
+            if !sink(clause)                            # FRG_CUTTED
+                popPredicateAccess!(ld, def)
+                return nothing
+            end
+        end
+        cref = nextClause!(chp, head, gen, def)        # FRG_REDO
+    end
+    popPredicateAccess!(ld, def)
+    return nothing
+end

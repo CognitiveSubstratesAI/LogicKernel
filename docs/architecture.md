@@ -52,9 +52,14 @@ write time. The generated table in [`port_inventory.md`](port_inventory.md) list
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-comp.jl` | the head side of the clause compiler — variable analysis, `compileArgument`, the `H_VOID_N` merging — and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
 | `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-codetable.c` |
-| `src/pl-proc.jl` | predicates and adding clauses (`lookupProcedure`, `assertDefinition`) — the slice the index needs | `src/pl-proc.c`, `src/pl-proc.h` |
+| `src/pl-proc.jl` | the clause database: predicates, assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes | `src/pl-global.h` |
+| `src/pl-inline.jl` | clause visibility, the database generation, key cleaning | `src/pl-inline.h` |
+| `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys | `src/pl-hash.c` |
-| `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`) | `tests/db/test_jit.pl` |
+| `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`), every unit but the static-determinism checks of supervisors — on one shared `d/2`, as upstream | `tests/db/test_jit.pl` |
+| `test/db/test_db.jl` | SWI's own `retract` and `retractall` tests that need no clause bodies, modules or threads | `tests/db/test_db.pl` |
+| `test/db/test_update_view_gc.jl` | the logical update view under clause GC: an enumeration still sees a clause retracted and collected after it started — pinned and live against swipl | — |
 | `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1's fix pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
 | `test/compile/test_head_code_swipl.jl` | live differential: compiled heads are instruction-for-instruction swipl's `vm_list` | — |
 
@@ -89,7 +94,7 @@ graph TD
 | `constraints` | code | `src/pl-attvar.c` | attributed-variable hooks |
 | `trie` | code | `src/pl-trie.c` | answer and variant tables, variables keyed by first occurrence |
 | `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
-| `db` | design | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC |
+| `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2; the unification they need is the caller's until `unify` is ported. Not yet: abolish, reload, transactions |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
 | `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported (for the index); bodies and the instructions' execution are not |
 
@@ -118,8 +123,8 @@ graph TD
   the way: a client could not read a symbol's NAME or a grounded VALUE through the public API, so
   `Term{G}` gained `sym_name` and `gnd_value` (the interface rightly has neither — the kernel never
   needs them). Each new subsystem extends the consumer with what it makes possible.
-* **The rest of `db`** — retract, clause/2, generations (the logical update view), clause GC — and
-  with it test_jit.pl's units `remove` (the second), `retract`, `retract2`, `clause`, and the
-  pl-index.c functions that serve them (`deleteActiveClauseFromIndex`, `cleanClauseIndex`, …).
+* ✅ **The clause database** — generations, retract, clause GC, `retract/1`, `retractall/1`,
+  `clause/2` — done, with test_jit.pl's `remove`/`retract`/`retract2`/`clause` and test_db.pl's
+  `retract`/`retractall` units.
 * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.

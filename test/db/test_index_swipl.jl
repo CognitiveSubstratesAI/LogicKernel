@@ -7,8 +7,11 @@
 #   2. LogicKernel#1, PINNED (always runs): SWI's H_VOID_N defect is FIXED in the kernel (user,
 #      2026-10-02) — its reproducers get the indexes swipl 10.1.16 fails to build.
 #   3. LIVE swipl: random fact programs (static and dynamic, unique / few / variable-heavy /
-#      compound / deep arguments) and a random call sequence, run by swipl and by the kernel. Equal
-#      for EVERY call: the answers, in order. Equal for every predicate the fix cannot touch — no
+#      compound / deep arguments) and a random sequence of calls — on dynamic predicates
+#      interleaved with retract/1 (first answer), retractall/1 and garbage_collect_clauses, swipl's
+#      automatic clause GC switched off so both collect at the same points — run by swipl and by
+#      the kernel, in one database. Equal for EVERY operation: the answers, in order, and the clause
+#      each retract removed. Equal for every predicate the fix cannot touch — no
 #      clause whose head code holds an H_VOID_N — also: each answer's determinism
 #      (`call_cleanup(G, Det=true)` — exactly where the index left no clause choice); every index
 #      `predicate_property(P, indexed(L))` reports (arguments, position, speedup to the float, list,
@@ -29,13 +32,17 @@ let n = UInt64(0)
 end
 
 # ── the program ─────────────────────────────────────────────────────────────────────────────────
-"A predicate of the generated program: its clauses and the calls made to it, in order."
+"""
+A predicate of the generated program: its clauses and the operations on it, in order — `:call`,
+and on a dynamic predicate also `:retract` (the first answer), `:retractall` and `:gc`
+(`garbage_collect_clauses`).
+"""
 struct _XPred
     name::Symbol
     arity::Int
     dynamic::Bool
     heads::Vector{_X}
-    goals::Vector{_X}
+    ops::Vector{Tuple{Symbol, _X}}
 end
 
 "Argument `i` (1-based) of clause `c` under `profile` — the shapes that drive SWI's decisions."
@@ -118,12 +125,41 @@ function _xprogram(seed::Int, n::Int)::Vector{_XPred}
             _xe(name, (_xarg(rng, profiles[i], c, ks[i]) for i in 1:arity)...) for
             c in 1:ncl
         ]
-        goals = _X[]
+        dynamic = rand(rng, Bool)
+        ops = Tuple{Symbol, _X}[]
         for _ in 1:rand(rng, 4:10)
             h = rand(rng, heads)
-            push!(goals, _xe(name, (_xgoal_arg(rng, child(h, i + 1)) for i in 1:arity)...))
+            push!(
+                ops,
+                (:call, _xe(name, (_xgoal_arg(rng, child(h, i + 1)) for i in 1:arity)...))
+            )
+            dynamic || continue
+            r = rand(rng)                               # retract, retractall and GC in between
+            if r < 0.30
+                h = rand(rng, heads)
+                pat = _xe(
+                    name,
+                    (
+                        rand(rng) < 0.5 ? _xv() : _xgeneralise(rng, child(h, i + 1))
+                        for i in 1:arity
+                    )...
+                )
+                push!(ops, (:retract, pat))
+            elseif r < 0.38
+                h = rand(rng, heads)
+                pat = _xe(
+                    name,
+                    (
+                        rand(rng) < 0.7 ? _xv() : _xgeneralise(rng, child(h, i + 1))
+                        for i in 1:arity
+                    )...
+                )
+                push!(ops, (:retractall, pat))
+            elseif r < 0.50
+                push!(ops, (:gc, _xs(:gc)))
+            end
         end
-        push!(preds, _XPred(name, arity, rand(rng, Bool), heads, goals))
+        push!(preds, _XPred(name, arity, dynamic, heads, ops))
     end
     return preds
 end
@@ -135,14 +171,16 @@ function _xhvoid()::Vector{_XPred}
     hp4 = [_xe(:hv_p4, _xv(), _xv(), _xs("a$i"), _xs("b$i")) for i in 1:100]
     hq4 = [_xe(:hv_q4, _xv(), _xv(), _xs("a$i"), _xs("b$i")) for i in 1:100]
     return [
-        _XPred(:hv_p, 3, true, hp, [_xe(:hv_p, _xv(), _xv(), _xs(:a50))]),
-        _XPred(:hv_q, 3, true, hq, [_xe(:hv_q, _xv(), _xv(), _xs(:a50))]),
-        _XPred(:hv_p4, 4, true, hp4, [_xe(:hv_p4, _xv(), _xv(), _xv(), _xs(:b50))]),
+        _XPred(:hv_p, 3, true, hp, [(:call, _xe(:hv_p, _xv(), _xv(), _xs(:a50)))]),
+        _XPred(:hv_q, 3, true, hq, [(:call, _xe(:hv_q, _xv(), _xv(), _xs(:a50)))]),
+        _XPred(
+            :hv_p4, 4, true, hp4, [(:call, _xe(:hv_p4, _xv(), _xv(), _xv(), _xs(:b50)))]
+        ),
         _XPred(
             :hv_q4, 4, true, hq4,
             [
-                _xe(:hv_q4, _xv(), _xv(), _xs(:a50), _xs(:b50)),
-                _xe(:hv_q4, _xv(), _xv(), _xv(), _xs(:b50))
+                (:call, _xe(:hv_q4, _xv(), _xv(), _xs(:a50), _xs(:b50))),
+                (:call, _xe(:hv_q4, _xv(), _xv(), _xv(), _xs(:b50)))
             ]
         )
     ]
@@ -176,20 +214,32 @@ function _xrun(preds::Vector{_XPred}; unindexed::Bool=false)
     idx = _XIdx[]
     pidx = String[]
     goalpred = String[]
-    built = [ix_pred(_X, p.name, p.arity; dynamic=p.dynamic) for p in preds]
+    db = IxDB{_X}()                                     # one database, as in swipl
+    built = [ix_pred(_X, p.name, p.arity; dynamic=p.dynamic, db=db) for p in preds]
     for (p, b) in zip(preds, built), h in p.heads
         ix_assertz!(b, h)
     end
     affected = Set("$(p.name)/$(p.arity)" for (p, b) in zip(preds, built) if _xvoid_run(b))
     k = 0
-    for (p, b) in zip(preds, built), g in p.goals
+    for (p, b) in zip(preds, built), (op, g) in p.ops
         k += 1
         push!(goalpred, "$(p.name)/$(p.arity)")
-        ans = unindexed ? ix_call_unindexed(b, g) : ix_call(b, g)
-        for (a, det) in ans
-            push!(lines, "$k $(ix_text(a)) $(det ? "det" : "nondet")")
+        if op === :call
+            ans = unindexed ? ix_call_unindexed(b, g) : ix_call(b, g)
+            for (a, det) in ans
+                push!(lines, "$k $(ix_text(a)) $(det ? "det" : "nondet")")
+            end
+            push!(lines, "$k end")
+        elseif op === :retract                          # (retract(G) -> … ; …): first answer
+            r = ix_retract!(b, g; after=_ -> false)
+            push!(lines, "$k retract $(isempty(r) ? "none" : ix_text(r[1]))")
+        elseif op === :retractall
+            ix_retractall!(b, g)
+            push!(lines, "$k retractall")
+        else
+            ix_gc!(db)
+            push!(lines, "$k gc")
         end
-        push!(lines, "$k end")
     end
     for (p, b) in zip(preds, built)
         r = LK.unify_index_pattern(b.def)
@@ -226,6 +276,15 @@ ans(K, G) :-
              write_term(C, [quoted(true), ignore_ops(true), numbervars(true)]),
              format(" ~w~n", [D]) )),
     format("~w end~n", [K]).
+ret(K, G) :-
+    (   retract(G)
+    ->  copy_term(G, C), numbervars(C, 0, _, [singletons(true)]),
+        format("~w retract ", [K]),
+        write_term(C, [quoted(true), ignore_ops(true), numbervars(true)]), nl
+    ;   format("~w retract none~n", [K])
+    ).
+rall(K, G) :- retractall(G), format("~w retractall~n", [K]).
+gcx(K) :- garbage_collect_clauses, format("~w gc~n", [K]).
 report(P/N) :-
     functor(H, P, N),
     (   predicate_property(H, indexed(L))
@@ -252,13 +311,23 @@ function _xswipl(preds::Vector{_XPred})
         end
         print(io, _XDRIVER)
         println(io, "main :-")
+        # clause GC only where the program says, as in the kernel: no automatic collection
+        println(io, "    '\$cgc_params'(_, _, _, 0, 1.0e30, 1.0e30),")
         for p in preds, h in p.heads
             p.dynamic && println(io, "    assertz(", ix_text(h), "),")
         end
         k = 0
-        for p in preds, g in p.goals
+        for p in preds, (op, g) in p.ops
             k += 1
-            println(io, "    ans($k, ", ix_text(g), "),")
+            if op === :call
+                println(io, "    ans($k, ", ix_text(g), "),")
+            elseif op === :retract
+                println(io, "    ret($k, ", ix_text(g), "),")
+            elseif op === :retractall
+                println(io, "    rall($k, ", ix_text(g), "),")
+            else
+                println(io, "    gcx($k),")
+            end
         end
         println(
             io,
@@ -348,6 +417,12 @@ const _XSEED = 20261002
         @test any(i -> length(i[2]) > 1, ours.idx)
         @test any(i -> !isempty(i[3]), ours.idx)
         @test any(i -> i[5], ours.idx) && any(i -> !i[6], ours.idx)
+        # and retract, retractall and clause GC run between the calls (measured: 57 retracts, 49
+        # of them removing a clause; 16 retractalls; 23 collections)
+        ret = filter(l -> occursin(" retract ", l), ours.lines)
+        @test count(l -> !endswith(l, " none"), ret) >= 30
+        @test count(l -> endswith(l, " retractall"), ours.lines) >= 8
+        @test count(l -> endswith(l, " gc"), ours.lines) >= 10
     end
 
     @testset "LogicKernel#1 pinned: the H_VOID_N defect is fixed" begin

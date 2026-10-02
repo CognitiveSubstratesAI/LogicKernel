@@ -43,13 +43,21 @@ _manifest_per_type(T) = (
     (Base.show, Tuple{IOBuffer, T}, false)
 )
 
-# The clause index and its head compiler (src/pl-incl.jl, pl-vmi.jl, pl-comp.jl, pl-index.jl,
-# pl-proc.jl), every method once, over term type T. The entry points are also checked for the
-# other two payload types (`_index_entry_points`); JET follows their callees.
+# Concrete stand-ins for the callbacks `pl_retract!`, `pl_retractall!` and `pl_clause!` take (the
+# caller's unification and sink): each is a singleton function type, as a real caller's is.
+_manifest_accept(cl) = true
+_manifest_sink(cl) = true
+
+# The clause index, its head compiler and the clause database (src/pl-incl.jl, pl-global.jl,
+# pl-inline.jl, pl-vmi.jl, pl-comp.jl, pl-index.jl, pl-thread.jl, pl-gc.jl, pl-proc.jl), every
+# method once, over term type T. The entry points are also checked for the other two payload
+# types (`_index_entry_points`); JET follows their callees.
 function _manifest_index(T)
     D, C, CL = LK.Definition{T}, LK.Clause{T}, LK.ClauseList{T}
     CR, CB, CI = LK.ClauseRef{T}, LK.ClauseBucket{T}, LK.ClauseIndex{T}
     CH, CTX = LK.ClauseChoice{T}, LK.index_context{T}
+    GD, LD, DDI = LK.PL_global_data{T}, LK.PL_local_data{T}, LK.dirty_def_info{T}
+    ACC, SNK = typeof(_manifest_accept), typeof(_manifest_sink)
     CIP = Vector{Union{Nothing, CI}}
     NT4, NT8, NTW = NTuple{4, UInt8}, NTuple{8, UInt8}, NTuple{4, UInt64}
     CInfo, HA, HH = LK.compileInfo, LK.hash_assessment, LK.hash_hints
@@ -147,11 +155,51 @@ function _manifest_index(T)
         (LK.unify_clause_index, Tuple{CI}, false),
         (LK.add_deep_indexes!, Tuple{Vector{LK.index_property}, CI}, false),
         (LK.unify_index_pattern, Tuple{D}, false),
+        # removing clauses from indexes, clause GC of index buckets (src/pl-index.jl)
+        (LK.shrunkpow2!, Tuple{D}, true), (LK.gcClauseList!, Tuple{CL, DDI, UInt64}, true),
+        (LK.gcClauseBucket!, Tuple{D, CB, UInt32, Bool, DDI, UInt64}, true),
+        (LK.cleanClauseIndex!, Tuple{D, CL, CI, DDI, UInt64}, false),
+        (LK.cleanClauseIndexes!, Tuple{D, CL, DDI, UInt64}, false),
+        (LK.deleteActiveClauseFromBucket!, Tuple{CB, UInt64}, true),
+        (LK.deleteActiveClauseFromIndex!, Tuple{CI, C}, true),
+        (LK.deleteActiveClauseFromIndexes!, Tuple{D, C}, false),
+        # src/pl-incl.jl, src/pl-inline.jl
+        (LK.GLOBALLY_VISIBLE_CLAUSE, Tuple{C, UInt64}, true),
+        (LK.global_generation, Tuple{GD}, true),
+        (LK.current_generation, Tuple{GD, D}, true),
+        (LK.next_generation!, Tuple{GD, D}, true), (LK.max_generation, Tuple{D}, true),
+        (LK.setGenerationFrame, Tuple{GD, D}, true),
+        # src/pl-thread.jl, src/pl-gc.jl
+        (LK.cgcActivatePredicate!, Tuple{GD, D, UInt64}, false),
+        (LK.pushPredicateAccessObj!, Tuple{LD, GD, D}, false),
+        (LK.popPredicateAccess!, Tuple{LD, D}, false),
+        (LK.markAccessedPredicates!, Tuple{LD, GD}, false),
+        (LK.markPredicatesInEnvironments!, Tuple{LD, GD}, false),
+        # clause/2 (src/pl-comp.jl)
+        (LK.pl_clause!, Tuple{GD, LD, D, T, ACC, SNK}, false),
         # src/pl-proc.jl
         (LK.lookupProcedure, Tuple{Type{T}, UInt64, Int, UInt64}, false),
         (LK.newClauseRef, Tuple{C, UInt64}, false),
-        (LK.assertDefinition!, Tuple{D, C, Int}, false),
-        (LK.assertDefinition!, Tuple{D, C, CR}, false),
+        (LK.assertDefinition!, Tuple{GD, D, C, Int}, false),
+        (LK.assertDefinition!, Tuple{GD, D, C, CR}, false),
+        (LK.retract_clause!, Tuple{GD, C, UInt64}, false),
+        (LK.retractClauseDefinition!, Tuple{GD, D, C, Bool}, false),
+        (LK.find_prev, Tuple{D, CR, CR}, true), (LK.find_prev, Tuple{D, Nothing, CR}, true),
+        (LK.cleanDefinition!, Tuple{D, DDI, UInt64}, false),
+        (LK.mustCleanDefinition, Tuple{D}, true), (LK.ddi_new, Tuple{D}, false),
+        (LK.ddi_reset!, Tuple{DDI}, true), (LK.ddi_contains_gen, Tuple{DDI, UInt64}, true),
+        (LK.ddi_to_intervals!, Tuple{DDI, UInt64}, true),
+        (LK.ddi_interval_add_access_gen!, Tuple{DDI, UInt64}, true),
+        (LK.ddi_add_access_gen!, Tuple{DDI, UInt64}, true),
+        (LK.ddi_is_garbage, Tuple{DDI, UInt64, C}, true),
+        (LK.ddi_oldest_generation, Tuple{DDI}, true),
+        (LK.registerDirtyDefinition!, Tuple{GD, D}, false),
+        (LK.unregisterDirtyDefinition!, Tuple{GD, D}, false),
+        (LK.maybeUnregisterDirtyDefinition!, Tuple{GD, D}, false),
+        (LK.pl_garbage_collect_clauses!, Tuple{GD, LD}, false),
+        (LK.pl_retract!, Tuple{GD, LD, D, T, ACC, SNK}, false),
+        (LK.allVars, Tuple{T}, false),
+        (LK.pl_retractall!, Tuple{GD, LD, D, T, ACC}, false),
         (LK.mode_arg_is_unbound, Tuple{D, Int}, true)
     )
 end
@@ -159,7 +207,24 @@ end
 "The index's entry points, checked for every payload type."
 _index_entry_points(T) = (
     (LK.compileClause, Tuple{LK.Definition{T}, T}, false),
-    (LK.assertDefinition!, Tuple{LK.Definition{T}, LK.Clause{T}, Int}, false),
+    (
+        LK.assertDefinition!,
+        Tuple{LK.PL_global_data{T}, LK.Definition{T}, LK.Clause{T}, Int},
+        false
+    ),
+    (
+        LK.pl_retract!,
+        Tuple{
+            LK.PL_global_data{T}, LK.PL_local_data{T}, LK.Definition{T}, T,
+            typeof(_manifest_accept), typeof(_manifest_sink)
+        },
+        false
+    ),
+    (
+        LK.pl_garbage_collect_clauses!,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}},
+        false
+    ),
     (LK.firstClause!, Tuple{T, UInt64, LK.Definition{T}, LK.ClauseChoice{T}}, false),
     (LK.nextClause!, Tuple{LK.ClauseChoice{T}, T, UInt64, LK.Definition{T}}, false),
     (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),

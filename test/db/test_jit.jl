@@ -7,13 +7,11 @@
 # SWI-Prolog's own tests of just-in-time indexing, unit by unit (plunit `jit` and `jit_static`),
 # run on the kernel's port of pl-index.c through test/db/index_testlib.jl.
 #
-# NOT PORTED YET — they need retract/1, retractall/1, clause/2 and clause garbage collection (the
-# `db` subsystem): the second `remove` unit, `retract`, `retract2`, `clause`.
-#
-# `cleanup(retractall(d(_,_)))` and the `retractall(d(_,_))` that opens test_index_1/2 are not
-# needed: each unit builds its own `d/2` (retract is not ported), which is the state those
-# retractalls leave behind as far as the units observe it — `has_hashes` passes in SWI only once
-# the previous unit's index is gone.
+# The `jit` units share ONE `d/2`, as upstream's do, each followed by its
+# `cleanup(retractall(d(_,_)))` — so an index a unit leaves behind must go the way it goes in SWI
+# (the `bigint` units hold unbounded integers, a different term type, so they share a second
+# `d/2`). Unification is the harness's (`ix_match`) until it is ported; clause GC runs where the
+# units call `garbage_collect_clauses`.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
 const _J = DefaultTerm
@@ -57,14 +55,50 @@ mkbigint(shift::Int, i::Int)::Integer =
 "`mkfloat(I, Float) :- Float is float(I).`"
 mkfloat(i::Int)::Float64 = Float64(i)
 
+"`d(A, B)` over term type `T`."
+_jd(::Type{T}, a::T, b::T) where {T} = mk_expr(T, T[sym_term(T, :d), a, b])
+
+"`cleanup(retractall(d(_,_)))`: run the unit, then empty `d/2` whatever happened."
+function _jcleanup(f, d::IxPred{T}) where {T}
+    try
+        f()
+    finally
+        ix_retractall!(d, _jd(T, mk_var(T, UInt64(1)), mk_var(T, UInt64(2))))
+    end
+end
+
+# PORT: test_jit.pl rmd
+"""
+`rmd(X,Y) :- retract(d(X,Y)), (Y == 89 -> garbage_collect_clauses ; true).` — the instances of
+every answer, in order (`findall`).
+"""
+function rmd(d::IxPred{T}, x::T, y::T)::Vector{T} where {T}
+    return ix_retract!(
+        d, _jd(T, x, y);
+        after=inst -> (child(inst, 3) == gnd_term(T, 89) && ix_gc!(d.db); true)
+    )
+end
+
+# PORT: test_jit.pl claused
+"""
+`claused(X,Y) :- clause(d(X, Y), true), (Y == 89 -> garbage_collect_clauses ; true).` — the
+instances of every answer, in order (`findall`).
+"""
+function claused(d::IxPred{T}, x::T, y::T)::Vector{T} where {T}
+    return ix_clause(
+        d, _jd(T, x, y);
+        after=inst -> (child(inst, 3) == gnd_term(T, 89) && ix_gc!(d.db); true)
+    )
+end
+
 # PORT: test_jit.pl test_index_1
 """
 `test_index_1(Convert)`: 1000 clauses `d(D, I)`; looking each `D` up finds its `I`, and the
 predicate has exactly a hash on argument 1. `T` is the term type holding `D` and `I`.
 """
-function test_index_1(::Type{T}, convert, int)::Nothing where {T}
+function test_index_1(d::IxPred{T}, convert, int)::Nothing where {T}
     g(v) = gnd_term(T, v)
-    d = ix_pred(T, :d, 2; dynamic=true)
+    ix_retractall!(d, _jd(T, mk_var(T, UInt64(1)), mk_var(T, UInt64(2))))  # retractall(d(_,_))
     for i in 1:1000
         ix_assertz!(d, mk_expr(T, T[sym_term(T, :d), g(convert(i)), g(int(i))]))
     end
@@ -80,9 +114,9 @@ end
 
 # PORT: test_jit.pl test_index_2
 "`test_index_2(Convert)`: as `test_index_1` with the arguments swapped — a hash on argument 2."
-function test_index_2(::Type{T}, convert, int)::Nothing where {T}
+function test_index_2(d::IxPred{T}, convert, int)::Nothing where {T}
     g(v) = gnd_term(T, v)
-    d = ix_pred(T, :d, 2; dynamic=true)
+    ix_retractall!(d, _jd(T, mk_var(T, UInt64(1)), mk_var(T, UInt64(2))))  # retractall(d(_,_))
     for i in 1:1000
         ix_assertz!(d, mk_expr(T, T[sym_term(T, :d), g(int(i)), g(convert(i))]))
     end
@@ -100,52 +134,102 @@ end
 const _JBig = Term{BigInt}
 
 @testset "jit" begin
+    d = ix_pred(_J, :d, 2; dynamic=true)            # :- dynamic d/2.
+    dbig = ix_pred(_JBig, :d, 2; dynamic=true)
     # PORT: test_jit.pl remove
     @testset "remove" begin
-        d = ix_pred(_J, :d, 2; dynamic=true)
-        for x in 1:50
-            ix_assertz!(d, _je(:d, _jg(x), _jg(x)))
+        _jcleanup(d) do
+            for x in 1:50
+                ix_assertz!(d, _je(:d, _jg(x), _jg(x)))
+            end
+            @test !isempty(ix_call(d, _je(:d, _jv(), _jg(30))))    # d(_,30)
+            @test has_hashes(d, [2])
+            for x in 51:125
+                ix_assertz!(d, _je(:d, _jg(x), _jg(x)))
+            end
+            @test not_hashed(ix_pred(_J, :p, 2))                   # not_hashed(p(_,_))
+            @test !isempty(ix_call(d, _je(:d, _jg(30), _jv())))    # d(30,_)
+            @test has_hashes(d, [1])
         end
-        @test !isempty(ix_call(d, _je(:d, _jv(), _jg(30))))        # d(_,30)
-        @test has_hashes(d, [2])
-        for x in 51:125
-            ix_assertz!(d, _je(:d, _jg(x), _jg(x)))
+    end
+    # PORT: test_jit.pl remove
+    @testset "remove" begin
+        _jcleanup(d) do
+            for x in 1:40
+                ix_assertz!(d, _je(:d, _jg(x), _js(:a)))
+            end
+            for x in 41:50
+                ix_assertz!(d, _je(:d, _jg(x), _jg(x)))
+            end
+            @test !isempty(ix_call(d, _je(:d, _jg(30), _js(:a))))  # d(30,a)
+            @test has_hashes(d, [1])
+            ix_retractall!(d, _je(:d, _jv(), _js(:a)))             # retractall(d(_,a))
+            @test not_hashed(ix_pred(_J, :p, 2))                   # not_hashed(p(_,_))
+            @test !isempty(ix_call(d, _je(:d, _jv(), _jg(45))))    # d(_,45)
+            @test has_hashes(d, [2])
         end
-        @test not_hashed(ix_pred(_J, :p, 2))                       # not_hashed(p(_,_))
-        @test !isempty(ix_call(d, _je(:d, _jg(30), _jv())))        # d(30,_)
-        @test has_hashes(d, [1])
+    end
+    xsok = [_jg(x) for x in 11:100]                                # numlist(11, 100, Xsok)
+    fill!(d) = (for x in 1:10
+            ix_assertz!(d, _je(:d, _jg(x), _jg(x)))
+        end; for x in 11:100
+            ix_assertz!(d, _je(:d, _js(:a), _jg(x)))
+        end)
+    # PORT: test_jit.pl retract
+    @testset "retract" begin
+        _jcleanup(d) do
+            fill!(d)
+            xs = [child(i, 3) for i in ix_retract!(d, _je(:d, _js(:a), _jv()))]
+            @test xs == xsok                                       # findall(X, retract(d(a,X)), Xs)
+        end
+    end
+    # PORT: test_jit.pl retract2
+    @testset "retract2" begin
+        _jcleanup(d) do
+            fill!(d)
+            xs = [child(i, 3) for i in rmd(d, _js(:a), _jv())]
+            @test xs == xsok                                       # findall(X, rmd(a,X), Xs)
+        end
+    end
+    # PORT: test_jit.pl clause
+    @testset "clause" begin
+        _jcleanup(d) do
+            fill!(d)
+            xs = [child(i, 3) for i in claused(d, _js(:a), _jv())]
+            @test xs == xsok                                       # findall(X, claused(a,X), Xs)
+        end
     end
     # PORT: test_jit.pl string
     @testset "string" begin
-        test_index_1(_J, i -> "a" * string(i), identity)           # string_concat("a")
+        _jcleanup(() -> test_index_1(d, i -> "a" * string(i), identity), d)
     end
     # PORT: test_jit.pl bigint
     @testset "bigint" begin
-        test_index_1(_JBig, i -> BigInt(mkbigint(100, i)), BigInt)
+        _jcleanup(() -> test_index_1(dbig, i -> BigInt(mkbigint(100, i)), BigInt), dbig)
     end
     # PORT: test_jit.pl midint
     @testset "midint" begin
-        test_index_1(_J, i -> Int(mkbigint(60, i)), identity)
+        _jcleanup(() -> test_index_1(d, i -> Int(mkbigint(60, i)), identity), d)
     end
     # PORT: test_jit.pl float
     @testset "float" begin
-        test_index_1(_J, mkfloat, identity)
+        _jcleanup(() -> test_index_1(d, mkfloat, identity), d)
     end
     # PORT: test_jit.pl string
     @testset "string" begin
-        test_index_2(_J, i -> "a" * string(i), identity)
+        _jcleanup(() -> test_index_2(d, i -> "a" * string(i), identity), d)
     end
     # PORT: test_jit.pl bigint
     @testset "bigint" begin
-        test_index_2(_JBig, i -> BigInt(mkbigint(100, i)), BigInt)
+        _jcleanup(() -> test_index_2(dbig, i -> BigInt(mkbigint(100, i)), BigInt), dbig)
     end
     # PORT: test_jit.pl midint
     @testset "midint" begin
-        test_index_2(_J, i -> Int(mkbigint(60, i)), identity)
+        _jcleanup(() -> test_index_2(d, i -> Int(mkbigint(60, i)), identity), d)
     end
     # PORT: test_jit.pl float
     @testset "float" begin
-        test_index_2(_J, mkfloat, identity)
+        _jcleanup(() -> test_index_2(d, mkfloat, identity), d)
     end
     # p1/1 and p2/1: compounds nested 7 and 8 deep, two clauses each (static)
     nest(fs, leaf) = foldr((f, t) -> _je(f, t), fs; init=leaf)
