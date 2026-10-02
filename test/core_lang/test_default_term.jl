@@ -18,6 +18,21 @@ _e(xs::_TT...) = mk_expr(_TT, _TT[xs...])
         @test sym_key(_s(:foo)) == sym_key(_s(Symbol("foo")))       # the same interned symbol
     end
 
+    @testset "sym_hash is the same in another process — the index's keys are reproducible" begin
+        names = ["a", "foo", "a b", "α", "p1", "[|]", ""]
+        here = [sym_hash(_s(Symbol(n))) for n in names]
+        @test allunique(here)                       # on this sample (collisions are allowed)
+        code =
+            "using LogicKernel; for n in $(repr(names)) " *
+            "println(sym_hash(sym_term(DefaultTerm, Symbol(n)))) end"
+        cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(pkgdir(LogicKernel)) -e $code`
+        there = parse.(
+            UInt64, split(strip(read(pipeline(cmd; stdin=devnull), String)), '\n')
+        )
+        @test length(there) == length(names)        # the other process answered for every name
+        @test there == here
+    end
+
     @testset "gnd_value_key keys only where == and hash agree" begin
         @test gnd_value_key(true) == gnd_value_key(1)               # true == 1
         @test gnd_value_key(0.0) == gnd_value_key(-0.0) == gnd_value_key(0) ==

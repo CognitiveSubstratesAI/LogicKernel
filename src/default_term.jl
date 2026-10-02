@@ -110,6 +110,9 @@ kind(t::Term)::Kind = t.kind
 nchildren(t::Term)::Int = length(t.children)
 child(t::Term{G}, i::Int) where {G} = t.children[i]
 sym_key(t::Term)::UInt64 = t.key
+# An interned Symbol's `objectid` is computed from its NAME (measured equal across processes, while
+# its address differs) — so it is stable for a given Julia version, and allocates nothing.
+sym_hash(t::Term)::UInt64 = UInt64(objectid(t.name))
 var_key(t::Term)::UInt64 = t.key
 gnd_key(t::Term)::Union{UInt64, Nothing} = t.keyed ? t.key : nothing
 is_ground(t::Term)::Bool = t.ground

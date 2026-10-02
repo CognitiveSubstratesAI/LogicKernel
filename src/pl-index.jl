@@ -162,13 +162,14 @@ argv_at(argv, i::Int) = child(argv, i + 2)
 "True when `t` can select clauses through an index (pl-index.c)."
 canIndex(t)::Bool = indexOfWord(t) != 0
 
-"The functor word of a compound named by `name` (a `sym_key`) with `arity` arguments."
+"The functor word of a compound named by `name` (a `sym_hash`) with `arity` arguments."
 _functor_word(name::UInt64, arity::Int)::word =
     MK_FUNCTOR(UInt64(hash(UInt64(arity), name)), UInt64(arity) & F_ARITY_MASK)
 
 # PORT: pl-index.c indexOfWord
 # DIVERGES: reads the term interface rather than a tagged cell, and there are no reference cells to
-# follow. VAR → 0, as upstream. SYM → its atom word (`MK_ATOM` of its `sym_key`). GND → its
+# follow. VAR → 0, as upstream. SYM → its atom word (`MK_ATOM` of its `sym_hash`, the same in every
+# process — SWI's atom numbers are fixed for a given program too). GND → its
 # `gnd_key` through `clean_index_key` — the role murmur_key plays upstream for strings and floats,
 # but keyed by `==` (src/term_interface.jl), and 0 — a wildcard — when there is no key. EXPR with a
 # symbol head → a functor word (`MK_FUNCTOR`) of the name and arity. EXPR with any other head → 0:
@@ -184,7 +185,7 @@ function indexOfWord(t)::word
     if k === VAR
         return word(0)
     elseif k === SYM
-        return MK_ATOM(sym_key(t))
+        return MK_ATOM(sym_hash(t))
     elseif k === GND
         g = gnd_key(t)
         g === nothing && return word(0)
@@ -193,7 +194,7 @@ function indexOfWord(t)::word
     nchildren(t) >= 1 || return word(0)                 # `()`: no head, no functor
     h = child(t, 1)
     kind(h) === SYM || return word(0)
-    return _functor_word(sym_key(h), nchildren(t) - 1)
+    return _functor_word(sym_hash(h), nchildren(t) - 1)
 end
 
 # PORT: pl-index.c next_clause_unindexed

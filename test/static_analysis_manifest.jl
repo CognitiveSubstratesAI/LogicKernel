@@ -22,7 +22,8 @@ const LK = LogicKernel
 _manifest_per_type(T) = (
     # the term interface — field reads, must not allocate
     (kind, Tuple{T}, true), (nchildren, Tuple{T}, true), (child, Tuple{T, Int}, true),
-    (sym_key, Tuple{T}, true), (var_key, Tuple{T}, true), (gnd_key, Tuple{T}, true),
+    (sym_key, Tuple{T}, true), (sym_hash, Tuple{T}, true), (var_key, Tuple{T}, true),
+    (gnd_key, Tuple{T}, true),
     (is_ground, Tuple{T}, true),
     (is_ground_walk, Tuple{T}, false),
     (gnd_equal, Tuple{T, T}, false), (atomic_compare, Tuple{T, T}, false),

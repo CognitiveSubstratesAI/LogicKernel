@@ -55,6 +55,17 @@ Process-local — never persist it.
 function sym_key end
 
 """
+    sym_hash(t) -> UInt64
+
+A hash of a [`SYM`](@ref) term that is the SAME IN EVERY PROCESS — derived from the symbol's name,
+not from where it lives — for keys whose LAYOUT must be reproducible: the clause index keys atoms
+and functors with it. Equal for the same symbol; distinct symbols MAY collide, so it is a key,
+never an identity — identity is [`sym_key`](@ref). Added 2026-10-02 (user): with `sym_key` an
+address, the index's bucket order and last-ulp speedups differed from run to run.
+"""
+function sym_hash end
+
+"""
     var_key(t) -> UInt64
 
 The identity of a [`VAR`](@ref) term: equal exactly when the two terms are the same variable.

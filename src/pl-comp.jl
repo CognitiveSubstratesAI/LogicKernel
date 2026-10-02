@@ -369,7 +369,7 @@ function compileArgument!(ci::compileInfo, arg::T, where_::Int)::Bool where {T}
         Output_a!(ci, VAROFFSET(index))
         @goto resume
     elseif k === SYM
-        Output_1!(ci, H_ATOM, MK_ATOM(sym_key(arg)))
+        Output_1!(ci, H_ATOM, MK_ATOM(sym_hash(arg)))
         @goto resume
     elseif k === GND
         g = gnd_key(arg)
@@ -379,7 +379,7 @@ function compileArgument!(ci::compileInfo, arg::T, where_::Int)::Bool where {T}
     # a compound
     isright = (where_ & A_RIGHT) != 0
     off, ar = _comp_shape(arg)
-    fdef = off == 2 ? _functor_word(sym_key(child(arg, 1)), ar) : word(0)
+    fdef = off == 2 ? _functor_word(sym_hash(child(arg, 1)), ar) : word(0)
     Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
     where_ &= ~(A_RIGHT | A_NOARGVAR)
     where_ |= A_ARG

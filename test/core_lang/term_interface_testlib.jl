@@ -100,6 +100,13 @@ function run_term_conformance(::Type{T}; mksym, mkgnd, label::String) where {T}
             end
         end
 
+        @testset "sym_hash is equal for the same symbol" begin
+            names = (:a, :b, :ab, :f, :foo, Symbol("a b"), :α, Symbol(""))
+            @test all(n -> sym_hash(sy(n)) == sym_hash(sy(n)), names)   # separately built twins
+            @test all(n -> sym_hash(sy(n)) isa UInt64, names)
+            # distinct symbols MAY collide: no distinctness law (identity is sym_key)
+        end
+
         @testset "gnd_key and gnd_equal: the cases that drop answers" begin
             z, nz, iz = gn(0.0), gn(-0.0), gn(0)
             @test gnd_key(z) !== nothing && gnd_key(z) == gnd_key(nz) == gnd_key(iz)
