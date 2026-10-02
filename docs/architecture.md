@@ -55,7 +55,7 @@ write time. The generated table in [`port_inventory.md`](port_inventory.md) list
 | `src/pl-proc.jl` | predicates and adding clauses (`lookupProcedure`, `assertDefinition`) — the slice the index needs | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys | `src/pl-hash.c` |
 | `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`) | `tests/db/test_jit.pl` |
-| `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1 pinned, and a live differential: random programs give identical answers, determinism, indexes and primary indexes to swipl | — |
+| `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1's fix pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
 | `test/compile/test_head_code_swipl.jl` | live differential: compiled heads are instruction-for-instruction swipl's `vm_list` | — |
 
 ## Subsystems — a grouping of upstream files, not directories
@@ -88,7 +88,7 @@ graph TD
 | `unify` | code | `src/pl-variant.c`, `src/pl-termhash.c`, unification in `src/pl-prims.c` | variant checking, term hashing, renaming |
 | `constraints` | code | `src/pl-attvar.c` | attributed-variable hooks |
 | `trie` | code | `src/pl-trie.c` | answer and variant tables, variables keyed by first occurrence |
-| `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them, `skipArgs`'s H_VOID_N defect included ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)); see the contract below |
+| `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
 | `db` | design | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
 | `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported (for the index); bodies and the instructions' execution are not |

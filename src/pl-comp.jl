@@ -15,9 +15,10 @@
 # code readers the clause index uses: `stepPC`, `skipArgs`, `argKey`.
 #
 # WHY THE INDEX READS CODE, NOT TERMS (user, 2026-10-02): SWI computes a clause's index keys from
-# this code, and the code's shape changes the result — SWI loses the key of an argument that
-# directly follows two or more void arguments (`skipArgs`, LogicKernel#1). Reading the code, as
-# upstream does, keeps the kernel's index identical to SWI's, that defect included.
+# this code, and the code's shape changes the result. Reading the code as upstream does keeps the
+# kernel's index SWI's — with one deliberate exception: SWI loses the key of an argument that
+# directly follows two or more void arguments (`skipArgs`, LogicKernel#1), and that defect is
+# FIXED here (user, 2026-10-02), so the kernel indexes those arguments where swipl 10.1.16 does not.
 #
 # NOT PORTED: bodies (`compileBody` and everything it reaches), `islocal` compilation, SSU (`=>`)
 # clauses, the moved head unifications (`argMoveUnify`/`argUnifiedTo` — they come from a body),
@@ -468,7 +469,8 @@ decode(PC::Code)::code = PC.codes[PC.pc]
 stepPC(PC::Code)::Code = Code(PC.codes, PC.pc + 1 + codeTable(decode(PC)).arguments)
 
 # PORT: pl-comp.c skipArgs
-# DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer.
+# DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer;
+# and an exact landing at the end of an H_VOID_N run is FIXED (LogicKernel#1, see below).
 """
     skipArgs(PC, skip, in_hvoid) -> (Code, in_hvoid)
 
@@ -519,12 +521,16 @@ function skipArgs(PC::Code, skip::Int, in_hvoid::Int)::Tuple{Code, Int}
         elseif c == H_VOID_N
             if nested == 0
                 skip -= Int(PC.codes[PC.pc + 1])
-                # verbatim — upstream defect (LogicKernel#1): `skip <= 0` also catches an EXACT
-                # landing (skip == 0), returning the H_VOID_N itself with in_hvoid 0 rather than
-                # the instruction after the run, so the argument after the voids reads as a void.
-                if skip <= 0
+                # DIVERGES (LogicKernel#1, fixed 2026-10-02): upstream's single `skip <= 0` also
+                # catches an EXACT landing (skip == 0) and returns the H_VOID_N itself with
+                # in_hvoid 0, so the argument after the voids reads as a void and a later
+                # skipArgs counts the run twice. Inside the run the H_VOID_N is right; at its end
+                # the target is the next instruction.
+                if skip < 0
                     in_hvoid = -skip
                     return (PC, in_hvoid)
+                elseif skip == 0
+                    return (nextPC, in_hvoid)
                 end
             end
         elseif c == I_EXITFACT || c == I_ENTER                  # I_EXIT, T_TRIE_GEN*, I_SSU_*

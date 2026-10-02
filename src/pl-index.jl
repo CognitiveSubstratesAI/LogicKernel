@@ -36,7 +36,7 @@
 #     itself, its children 2.. being the arguments (`argv_at`). A deep index descends into an
 #     argument compound the same way.
 #   * A clause's keys are read from its head CODE (src/pl-comp.jl), exactly as upstream reads
-#     them — `skipArgs`'s H_VOID_N defect included (LogicKernel#1).
+#     them, except that `skipArgs`'s H_VOID_N defect is fixed (LogicKernel#1).
 #   * Keys are words in SWI's layout (`indexOfWord`).
 
 # ── PARAMETERS ──────────────────────────────────────────────────────────────────────────────────
