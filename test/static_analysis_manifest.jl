@@ -28,7 +28,8 @@ _manifest_per_type(T) = (
     (gnd_equal, Tuple{T, T}, false), (atomic_compare, Tuple{T, T}, false),
     (mk_var, Tuple{Type{T}, UInt64}, false),
     (mk_expr, Tuple{Type{T}, Vector{T}}, false),
-    (sym_term, Tuple{Type{T}, Symbol}, false),
+    (sym_term, Tuple{Type{T}, Symbol}, false), (sym_name, Tuple{T}, true),
+    (gnd_value, Tuple{T}, false),
     # the standard order — the ported chain, every link
     (compareStandard, Tuple{T, T}, false), (compareStandard, Tuple{T, T, Bool}, false),
     (LK.compare_std, Tuple{T, T, Int}, false),

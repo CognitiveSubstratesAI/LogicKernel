@@ -28,6 +28,6 @@ export mk_var, mk_expr, is_ground, is_ground_walk
 # the standard order of terms — SWI-Prolog's name (src/pl-prims.jl)
 export compareStandard
 # the default term type (src/default_term.jl)
-export Term, DefaultTerm, sym_term, gnd_term, gnd_value_key
+export Term, DefaultTerm, sym_term, gnd_term, gnd_value_key, sym_name, gnd_value
 
 end # module LogicKernel

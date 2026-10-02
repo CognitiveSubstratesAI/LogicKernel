@@ -246,6 +246,11 @@ _pc_codes(vs) = sort!([
             _pc_write(root, "boot/orig.jl", "# ORIGINAL: boot/ holds ports only\n")
             _pc_write(
                 root,
+                "bench/mine/x.jl",
+                "# ORIGINAL: in a bench directory swipl-bench does not have\n"
+            )
+            _pc_write(
+                root,
                 "test/core_lang/test_shadow.jl",
                 "# ORIGINAL: shadows an upstream test file\n"
             )
@@ -266,6 +271,7 @@ _pc_codes(vs) = sort!([
                 ("UNKNOWN-REPO", "unknownrepo.jl"), ("PATH-MISMATCH", "unknownrepo.jl"),
                 ("CLASS-MISSING", "pl-noclass.jl"), ("HEADER-BOTH", "both.jl"),
                 ("DIR-NOT-UPSTREAM", "terms"), ("DIR-NOT-UPSTREAM", "conformance"),
+                ("DIR-NOT-UPSTREAM", "mine"),
                 ("ORIGINAL-PORT-NAME", "orig.jl"),
                 ("ORIGINAL-SHADOWS-UPSTREAM", "test_shadow.jl"),
                 ("INVENTORY-DRIFT", "port_inventory.md")
@@ -333,5 +339,8 @@ _pc_codes(vs) = sort!([
             "test/core_lang/test_bips.jl"
         @test expected_path("scryer-prolog", "src/lib/tabling.pl") ==
             "scryer-prolog/src/lib/tabling.jl"
+        # swipl-devel's bench/ SUBMODULE is its own repo, mounted where swipl-devel mounts it
+        @test expected_path("swipl-bench", "programs/derive.pl") ==
+            "bench/programs/derive.jl"
     end
 end

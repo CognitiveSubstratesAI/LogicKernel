@@ -40,13 +40,17 @@
 #   julia --project=. tools/port_check.jl --write-inventory  # regenerate the inventory table
 # The suite runs it (test/test_port_check.jl), with a fixture proving every check can fail.
 
-const PORT_REPOS = ("swipl-devel", "scryer-prolog")          # priority order: swipl-devel first
-const SCAN_ROOTS = ("src", "boot", "test", "scryer-prolog")
-# swipl-devel's directory structure at bae881a24a3f — what `src/` and `test/` may contain. Verified
-# against a live checkout on every local run (SNAPSHOT-STALE), so it cannot drift silently.
+# Priority order: swipl-devel first. `swipl-bench` is swipl-devel's `bench/` SUBMODULE
+# (github.com/SWI-Prolog/bench) — its own repository and commits, mounted at bench/ as upstream does.
+const PORT_REPOS = ("swipl-devel", "swipl-bench", "scryer-prolog")
+const _DEFAULT_CHECKOUT = Dict("swipl-bench" => joinpath("swipl-devel", "bench"))
+const SCAN_ROOTS = ("src", "boot", "test", "bench", "scryer-prolog")
+# swipl-devel's directory structure at bae881a24a3f — what `src/`, `test/` and `bench/` may contain.
+# Verified against a live checkout on every local run (SNAPSHOT-STALE), so it cannot drift silently.
 const SWI_SRC_DIRS = ("Unicode", "compat", "config", "libbf", "libtai", "minizip", "os",
     "test",
     "tools", "wasm")
+const SWI_BENCH_DIRS = ("port", "programs")
 const SWI_TEST_AREAS = ("GC", "attvar", "charset", "clp", "compile", "core_lang",
     "core_text", "db",
     "debug", "eclipse", "engines", "files", "foreign", "library", "rational", "save",
@@ -92,7 +96,7 @@ function default_upstream_dirs()::Dict{String, String}
     d = Dict{String, String}()
     for r in PORT_REPOS
         env = "LOGICKERNEL_UPSTREAM_" * uppercase(replace(r, "-" => "_"))
-        d[r] = get(ENV, env, joinpath(homedir(), "dev-zone", r))
+        d[r] = get(ENV, env, joinpath(homedir(), "dev-zone", get(_DEFAULT_CHECKOUT, r, r)))
     end
     return d
 end
@@ -103,6 +107,7 @@ function expected_path(repo::AbstractString, path::AbstractString)::String
     if repo == first(PORT_REPOS)
         return startswith(p, "tests/") ? "test/" * p[7:end] : p
     end
+    repo == "swipl-bench" && return "bench/" * p           # mounted where swipl-devel mounts it
     return string(repo, "/", p)
 end
 
@@ -251,15 +256,17 @@ end
 _git_ok(dir, args...) =
     success(pipeline(`git -C $dir $args`; stdout=devnull, stderr=devnull))
 _git_show(dir, spec) = read(pipeline(`git -C $dir show $spec`; stderr=devnull), String)
-_git_dirs(dir, path) = sort!([
-    basename(l) for l in eachline(
-        IOBuffer(
-            read(
-                pipeline(
-                    `git -C $dir ls-tree -d --name-only HEAD $path/`; stderr=devnull), String)
-        )
-    )
-])
+"Directories of `path` at HEAD in the checkout `dir` (`path == \".\"` — its root)."
+function _git_dirs(dir, path)::Vector{String}
+    cmd = if path == "."
+        `git -C $dir ls-tree -d --name-only HEAD`
+    else
+        `git -C $dir ls-tree -d --name-only HEAD $path/`
+    end
+    return sort!([
+        basename(l) for l in eachline(IOBuffer(read(pipeline(cmd; stderr=devnull), String)))
+    ])
+end
 _squash(s) = replace(strip(s), r"\s+" => " ")
 _rx_escape(s) = replace(s, r"[\\^$.|?*+()\[\]{}]" => s"\\\0")
 "`name` as a whole identifier (Prolog `\$name`s included) somewhere in `text`."
@@ -299,7 +306,8 @@ function _scan_files(root::String)::Vector{String}
 end
 
 function _check_dirs!(v::Vector{String}, root::String)
-    for (top, allowed) in (("src", SWI_SRC_DIRS), ("test", SWI_TEST_AREAS))
+    for (top, allowed) in
+        (("src", SWI_SRC_DIRS), ("test", SWI_TEST_AREAS), ("bench", SWI_BENCH_DIRS))
         isdir(joinpath(root, top)) || continue
         for (d, ds, _) in walkdir(joinpath(root, top)), sub in ds
             rel = relpath(joinpath(d, sub), root)
@@ -307,7 +315,7 @@ function _check_dirs!(v::Vector{String}, root::String)
             length(parts) == 2 && !(parts[2] in allowed) &&
                 push!(
                     v,
-                    "DIR-NOT-UPSTREAM $rel: swipl-devel has no $(top == "test" ? "tests" : "src")/$(parts[2])"
+                    "DIR-NOT-UPSTREAM $rel: swipl-devel has no $(top == "test" ? "tests" : top)/$(parts[2])"
                 )
         end
     end
@@ -336,7 +344,8 @@ function port_check(pkgroot::AbstractString;
     root = abspath(pkgroot)
     v = String[]
     files = [read_source(root, rel, v) for rel in _scan_files(root)]
-    available = Set(r for (r, d) in upstream_dirs if isdir(joinpath(d, ".git")))
+    # `.git` is a FILE in a submodule checkout (swipl-devel/bench), a directory otherwise.
+    available = Set(r for (r, d) in upstream_dirs if ispath(joinpath(d, ".git")))
     _check_dirs!(v, root)
     swi = first(PORT_REPOS)
     if swi in available
@@ -351,6 +360,16 @@ function port_check(pkgroot::AbstractString;
                 "SNAPSHOT-STALE tools/port_check.jl: SWI_SRC_DIRS/SWI_TEST_AREAS differ from $swi HEAD — update them"
             )
         end
+    end
+    # bench/ is a submodule: in swipl-devel it is a gitlink, so its directories come from the
+    # submodule's own tree, not swipl-devel's.
+    if "swipl-bench" in available
+        live_bench = _git_dirs(upstream_dirs["swipl-bench"], ".")
+        !isempty(live_bench) && live_bench != sort!(collect(SWI_BENCH_DIRS)) &&
+            push!(
+                v,
+                "SNAPSHOT-STALE tools/port_check.jl: SWI_BENCH_DIRS differs from swipl-bench HEAD — update it"
+            )
     end
     for f in files
         if f.original && !isempty(f.upstreams)

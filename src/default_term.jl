@@ -87,6 +87,25 @@ function mk_expr(::Type{Term{G}}, children::Vector{Term{G}}) where {G}
     return Term{G}(EXPR, ground, false, UInt64(0), Symbol(""), nothing, children)
 end
 
+"""
+    sym_name(t::Term) -> Symbol
+
+The name of a [`SYM`](@ref) term. Not part of the term interface — the kernel never needs names —
+but a CLIENT of the default type does: printing, and recognising a functor without building one.
+Found by the standalone consumer (test/test_standalone_consumer.jl), which could not otherwise read a
+symbol through the public API.
+"""
+sym_name(t::Term)::Symbol = t.name
+
+"""
+    gnd_value(t::Term{G}) -> G
+
+The host value of a [`GND`](@ref) term. Not part of the term interface — the kernel compares
+grounded values only through [`gnd_equal`](@ref) — but a CLIENT computing with them (arithmetic in
+the benchmark programs) must read them. Throws a `TypeError` on a non-`GND` term.
+"""
+gnd_value(t::Term{G}) where {G} = t.gval::G
+
 kind(t::Term)::Kind = t.kind
 nchildren(t::Term)::Int = length(t.children)
 child(t::Term{G}, i::Int) where {G} = t.children[i]

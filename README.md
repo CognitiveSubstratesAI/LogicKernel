@@ -50,6 +50,7 @@ subsystem grouping are in [`docs/architecture.md`](docs/architecture.md); every 
 |---|---|
 | `src/` | ports at swipl-devel's paths, plus ORIGINAL code (the term interface, `Term{G}`) |
 | `boot/` | ports of swipl-devel `boot/*.pl` (none yet) |
+| `bench/programs/` | the standalone consumer: swipl-devel's benchmark programs (its `bench` submodule) written on the public API, beside the verbatim `.pl` |
 | `test/<area>/` | tests in swipl-devel's `tests/` areas — ported upstream tests keep their names |
 | `test/` root | package infrastructure: lint, port check, type discipline, static analysis |
 | `tools/` | `run_tests.sh`, `port_check.jl`, `upstream_drift.jl`, `lint_globals.jl`, `repl.jl`, `jet_report.jl` |

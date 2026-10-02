@@ -11,6 +11,7 @@ so comparing with upstream — and tracking it commit by commit — stays a mech
 | swipl-devel `src/pl-prims.c` | `src/pl-prims.jl` |
 | swipl-devel `boot/tabling.pl` | `boot/tabling.jl` |
 | swipl-devel `tests/core_lang/test_bips.pl` | `test/core_lang/test_bips.jl` |
+| swipl-devel `bench/programs/derive.pl` (the `bench` submodule, repo `swipl-bench`) | `bench/programs/derive.jl` |
 | scryer-prolog `src/lib/tabling.pl` | `scryer-prolog/src/lib/tabling.jl` |
 
 * A ported **file** lives at upstream's path; a ported **function** or **test unit** keeps upstream's
@@ -45,6 +46,8 @@ write time. The generated table in [`port_inventory.md`](port_inventory.md) list
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
 | `test/core_lang/test_term_interface.jl` | the conformance suite on the reference type | — |
+| `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
+| `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 
 ## Subsystems — a grouping of upstream files, not directories
 
@@ -99,8 +102,9 @@ graph TD
 
 ## Still to come
 
-* **The standalone consumer** — a small client program (benchmark programs or a Datalog example)
-  using only `DefaultTerm` and the public API. It must exist before the index lands: until something
-  other than one client exercises the interface, "standalone" is a claim about `Project.toml`.
+* ✅ **The standalone consumer** — done (four swipl-bench programs, above). It found a real gap on
+  the way: a client could not read a symbol's NAME or a grounded VALUE through the public API, so
+  `Term{G}` gained `sym_name` and `gnd_value` (the interface rightly has neither — the kernel never
+  needs them). Each new subsystem extends the consumer with what it makes possible.
 * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.
