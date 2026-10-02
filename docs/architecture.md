@@ -48,6 +48,15 @@ write time. The generated table in [`port_inventory.md`](port_inventory.md) list
 | `test/core_lang/test_term_interface.jl` | the conformance suite on the reference type | — |
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
+| `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — variable analysis, `compileArgument`, the `H_VOID_N` merging — and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
+| `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-codetable.c` |
+| `src/pl-proc.jl` | predicates and adding clauses (`lookupProcedure`, `assertDefinition`) — the slice the index needs | `src/pl-proc.c`, `src/pl-proc.h` |
+| `src/pl-hash.jl` | MurmurHash2, for multi-argument keys | `src/pl-hash.c` |
+| `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`) | `tests/db/test_jit.pl` |
+| `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1 pinned, and a live differential: random programs give identical answers, determinism, indexes and primary indexes to swipl | — |
+| `test/compile/test_head_code_swipl.jl` | live differential: compiled heads are instruction-for-instruction swipl's `vm_list` | — |
 
 ## Subsystems — a grouping of upstream files, not directories
 
@@ -79,17 +88,20 @@ graph TD
 | `unify` | code | `src/pl-variant.c`, `src/pl-termhash.c`, unification in `src/pl-prims.c` | variant checking, term hashing, renaming |
 | `constraints` | code | `src/pl-attvar.c` | attributed-variable hooks |
 | `trie` | code | `src/pl-trie.c` | answer and variant tables, variables keyed by first occurrence |
-| `index` | code (assessment) + design | `src/pl-index.c` | see the contract below |
+| `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them, `skipArgs`'s H_VOID_N defect included ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)); see the contract below |
 | `db` | design | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
-| `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms |
+| `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported (for the index); bodies and the instructions' execution are not |
 
 ## Invariants every subsystem keeps
 
 1. **Indexing never changes answers.** Any narrowing yields a superset; enumeration yields exactly
    the true multiset, in source order. A flag that disables narrowing must disable EVERY narrowing.
-   SWI's deep (nested-argument) indexing returns from the functor sublist without visiting the
-   variable-clause sublist; where every clause fires, the two must be UNIONED.
+   SWI's deep (list) indexes keep this by construction, so the port needs no extra step:
+   `addClauseBucket` puts a variable clause into EVERY functor's clause list and starts each new
+   list with the variable clauses already there, and `addClauseToIndex` refuses a variable clause
+   into a list index (the index is dropped instead). An earlier note here, written before
+   pl-index.c was read in full, claimed the opposite (corrected 2026-10-02).
 2. **A grounded key follows `==`.** Where `==`, `isequal` and `hash` cannot be guaranteed to agree,
    the key is `nothing` — a wildcard, never a shared bucket. `gnd_equal` is the only grounded
    comparison in the kernel.
@@ -106,5 +118,8 @@ graph TD
   the way: a client could not read a symbol's NAME or a grounded VALUE through the public API, so
   `Term{G}` gained `sym_name` and `gnd_value` (the interface rightly has neither — the kernel never
   needs them). Each new subsystem extends the consumer with what it makes possible.
+* **The rest of `db`** — retract, clause/2, generations (the logical update view), clause GC — and
+  with it test_jit.pl's units `remove` (the second), `retract`, `retract2`, `clause`, and the
+  pl-index.c functions that serve them (`deleteActiveClauseFromIndex`, `cleanClauseIndex`, …).
 * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.

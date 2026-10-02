@@ -41,6 +41,9 @@ compareFoo(int a, int b)
 void
 fooBar(int *v)
 { *v = 1; }
+struct foo_rec
+{ int a; };
+#define FOO_MAX 4
 """
     )
     for f in ("pl-nocopy.c", "pl-badcopy.c", "pl-noclass.c")
@@ -90,6 +93,15 @@ end
 
 # PORT: pl-fake.c fooBar
 fooBar!(v::Vector{Int}) = push!(v, 1)
+
+# PORT: pl-fake.c foo_rec
+mutable struct foo_rec{T} <: Number
+    a::T
+end
+
+# PORT: pl-fake.c FOO_MAX
+"a ported constant, docstring between marker and definition"
+const FOO_MAX = 4
 """
     )
     _pc_write(
@@ -292,7 +304,7 @@ _pc_codes(vs) = sort!([
             @test isempty(r.violations)
             @test length(r.files) == 4
             inv = read(joinpath(root, "docs/port_inventory.md"), String)
-            @test occursin("`src/pl-fake.jl` | 2 |", inv)
+            @test occursin("`src/pl-fake.jl` | 4 |", inv)      # a struct and a const port count
             @test occursin("`boot/tabling.jl` | 1 |", inv)
             @test occursin("`test/core_lang/test_fake.jl` | 1 |", inv)   # a ported TEST unit
             p = joinpath(root, "src/pl-fake.jl")

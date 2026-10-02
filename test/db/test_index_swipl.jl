@@ -1,0 +1,359 @@
+# ORIGINAL: live differential of the clause index against swipl, and the indexing contract; upstream has no counterpart (it tests SWI against itself).
+# test/db/test_index_swipl.jl — the kernel's port of pl-index.c must behave as SWI-Prolog does.
+#
+# THREE JUDGES:
+#   1. THE CONTRACT (always runs): for every call, the answers through the index equal the answers
+#      of a scan of every clause — in order, duplicates kept. Indexing never changes answers.
+#   2. LogicKernel#1, PINNED (always runs): the H_VOID_N defect ported verbatim, at the outcomes
+#      swipl 10.1.16 was measured to give.
+#   3. LIVE swipl: random fact programs (static and dynamic, unique / few / variable-heavy /
+#      compound / deep arguments) and a random call sequence, run by swipl and by the kernel. Equal:
+#      every answer, in order, with its determinism (`call_cleanup(G, Det=true)` — exactly where
+#      the index left no clause choice); every index `predicate_property(P, indexed(L))` reports
+#      (arguments, position, speedup to the float, list, realised; the bucket count where it does
+#      not depend on hash values); the primary index. A control proves the determinism channel can
+#      fail: a run without any index answers the same but is judged different.
+using Random
+include(joinpath(@__DIR__, "index_testlib.jl"))
+
+const _X = DefaultTerm
+_xs(n) = sym_term(_X, Symbol(n))
+_xg(v::Int) = gnd_term(_X, v)
+_xe(f, xs...) = mk_expr(_X, _X[_xs(f), xs...])
+let n = UInt64(0)
+    global _xv() = mk_var(_X, n += 1)
+end
+
+# ── the program ─────────────────────────────────────────────────────────────────────────────────
+"A predicate of the generated program: its clauses and the calls made to it, in order."
+struct _XPred
+    name::Symbol
+    arity::Int
+    dynamic::Bool
+    heads::Vector{_X}
+    goals::Vector{_X}
+end
+
+"Argument `i` (1-based) of clause `c` under `profile` — the shapes that drive SWI's decisions."
+function _xarg(rng::AbstractRNG, profile::Symbol, c::Int, k::Int)::_X
+    few() = _xs("a$(rand(rng, 0:k))")
+    if profile === :unique_atom
+        return _xs("u$c")
+    elseif profile === :unique_int
+        return _xg(1000 + c)
+    elseif profile === :few_atom
+        return few()
+    elseif profile === :few_int
+        return _xg(rand(rng, 0:k))
+    elseif profile === :const
+        return _xs(:a0)
+    elseif profile === :void
+        return _xv()
+    elseif profile === :mixed_var
+        return rand(rng) < 0.75 ? few() : _xv()
+    elseif profile === :sparse_var
+        return rand(rng) < 0.95 ? _xs("u$c") : _xv()
+    elseif profile === :compound_few
+        return _xe(:f, few())
+    elseif profile === :compound_unique
+        return _xe(:f, _xs("u$c"))
+    elseif profile === :compound_mixed
+        r = rand(rng)
+        return if r < 0.4
+            _xe(:f, few())
+        elseif r < 0.8
+            _xe(:g, _xs("u$c"), _xv())
+        else
+            few()
+        end
+    elseif profile === :deep                    # one functor, nested keys: list (deep) indexes
+        return _xe(:f, _xe(:g, few(), _xs("u$c")), rand(rng) < 0.5 ? few() : _xv())
+    end
+    error("unknown profile $profile")
+end
+
+const _XPROFILES = (
+    :unique_atom, :unique_int, :few_atom, :few_int, :const, :void, :mixed_var, :sparse_var,
+    :compound_few, :compound_unique, :compound_mixed, :deep
+)
+
+"A call pattern from clause argument `t`: a variable, a generalisation of `t`, or a fresh value."
+function _xgoal_arg(rng::AbstractRNG, t::_X)::_X
+    r = rand(rng)
+    r < 0.4 && return _xv()
+    r < 0.5 && return rand(rng, (_xs(:zz), _xg(99999), _xe(:f, _xs(:zz))))
+    return _xgeneralise(rng, t)
+end
+function _xgeneralise(rng::AbstractRNG, t::_X)::_X
+    kind(t) === VAR && return _xv()
+    kind(t) === EXPR || return t
+    return mk_expr(
+        _X,
+        _X[
+            if i == 1
+                child(t, 1)
+            else
+                (rand(rng) < 0.25 ? _xv() : _xgeneralise(rng, child(t, i)))
+            end
+            for i in 1:nchildren(t)
+        ]
+    )
+end
+
+"The generated program: `n` predicates, deterministic for a given seed."
+function _xprogram(seed::Int, n::Int)::Vector{_XPred}
+    rng = Xoshiro(seed)
+    preds = _XPred[]
+    for p in 1:n
+        arity = rand(rng, 1:5)
+        ncl = rand(rng, (1, 2, 3, 5, 8, 10, 11, 12, 16, 33, 64, 65, 120, 300))
+        profiles = [rand(rng, _XPROFILES) for _ in 1:arity]
+        ks = [rand(rng, 1:5) for _ in 1:arity]
+        name = Symbol("p$p")
+        heads = [
+            _xe(name, (_xarg(rng, profiles[i], c, ks[i]) for i in 1:arity)...) for
+            c in 1:ncl
+        ]
+        goals = _X[]
+        for _ in 1:rand(rng, 4:10)
+            h = rand(rng, heads)
+            push!(goals, _xe(name, (_xgoal_arg(rng, child(h, i + 1)) for i in 1:arity)...))
+        end
+        push!(preds, _XPred(name, arity, rand(rng, Bool), heads, goals))
+    end
+    return preds
+end
+
+"The LogicKernel#1 reproducers, with the call orders of the issue."
+function _xhvoid()::Vector{_XPred}
+    hp = [_xe(:hv_p, _xv(), _xv(), _xs("a$i")) for i in 1:100]
+    hq = [_xe(:hv_q, _xv(), _xs(:x), _xs("a$i")) for i in 1:100]
+    hp4 = [_xe(:hv_p4, _xv(), _xv(), _xs("a$i"), _xs("b$i")) for i in 1:100]
+    hq4 = [_xe(:hv_q4, _xv(), _xv(), _xs("a$i"), _xs("b$i")) for i in 1:100]
+    return [
+        _XPred(:hv_p, 3, true, hp, [_xe(:hv_p, _xv(), _xv(), _xs(:a50))]),
+        _XPred(:hv_q, 3, true, hq, [_xe(:hv_q, _xv(), _xv(), _xs(:a50))]),
+        _XPred(:hv_p4, 4, true, hp4, [_xe(:hv_p4, _xv(), _xv(), _xv(), _xs(:b50))]),
+        _XPred(
+            :hv_q4, 4, true, hq4,
+            [
+                _xe(:hv_q4, _xv(), _xv(), _xs(:a50), _xs(:b50)),
+                _xe(:hv_q4, _xv(), _xv(), _xv(), _xs(:b50))
+            ]
+        )
+    ]
+end
+
+# ── running it in the kernel ────────────────────────────────────────────────────────────────────
+"One `idx` report line's fields."
+const _XIdx = Tuple{String, Vector{Int}, Vector{Int}, Float32, Bool, Bool, Int}
+
+"Run the program; answers as text lines, index reports, primary indexes. `unindexed`: the oracle."
+function _xrun(preds::Vector{_XPred}; unindexed::Bool=false)
+    lines = String[]
+    idx = _XIdx[]
+    pidx = String[]
+    built = [ix_pred(_X, p.name, p.arity; dynamic=p.dynamic) for p in preds]
+    for (p, b) in zip(preds, built), h in p.heads
+        ix_assertz!(b, h)
+    end
+    k = 0
+    for (p, b) in zip(preds, built), g in p.goals
+        k += 1
+        ans = unindexed ? ix_call_unindexed(b, g) : ix_call(b, g)
+        for (a, det) in ans
+            push!(lines, "$k $(ix_text(a)) $(det ? "det" : "nondet")")
+        end
+        push!(lines, "$k end")
+    end
+    for (p, b) in zip(preds, built)
+        r = LK.unify_index_pattern(b.def)
+        pa = "$(p.name)/$(p.arity)"
+        if r !== nothing
+            for d in r
+                push!(
+                    idx,
+                    (pa, d.arguments, d.position, d.speedup, d.list, d.realised, d.buckets)
+                )
+            end
+        end
+        pi = ix_primary_index(b)
+        push!(pidx, "$pa $(pi === nothing ? "none" : pi)")
+    end
+    return (; lines, idx, pidx)
+end
+
+# ── running it in swipl ─────────────────────────────────────────────────────────────────────────
+const _XDRIVER = raw"""
+:- initialization(main, main).
+ans(K, G) :-
+    forall(( call_cleanup(G, Det=true), ( Det == true -> D = det ; D = nondet ) ),
+           ( copy_term(G, C), numbervars(C, 0, _, [singletons(true)]),
+             format("~w ", [K]),
+             write_term(C, [quoted(true), ignore_ops(true), numbervars(true)]),
+             format(" ~w~n", [D]) )),
+    format("~w end~n", [K]).
+report(P/N) :-
+    functor(H, P, N),
+    (   predicate_property(H, indexed(L))
+    ->  forall(member(Dict, L),
+               ( get_dict(arguments, Dict, A), get_dict(position, Dict, Pos),
+                 get_dict(speedup, Dict, S), get_dict(list, Dict, Li),
+                 get_dict(realised, Dict, R), get_dict(buckets, Dict, B),
+                 format("idx ~w/~w ~w ~w ~w ~w ~w ~w~n", [P, N, A, Pos, S, Li, R, B]) ))
+    ;   true
+    ),
+    (   '$get_predicate_attribute'(H, primary_index, I) -> true ; I = none ),
+    format("pindex ~w/~w ~w~n", [P, N, I]).
+"""
+
+"Run the program in swipl: the same three outputs, parsed."
+function _xswipl(preds::Vector{_XPred})
+    mktempdir() do d
+        io = IOBuffer()
+        for p in preds
+            p.dynamic && println(io, ":- dynamic $(p.name)/$(p.arity).")
+        end
+        for p in preds, h in p.heads
+            p.dynamic || println(io, ix_text(h), ".")
+        end
+        print(io, _XDRIVER)
+        println(io, "main :-")
+        for p in preds, h in p.heads
+            p.dynamic && println(io, "    assertz(", ix_text(h), "),")
+        end
+        k = 0
+        for p in preds, g in p.goals
+            k += 1
+            println(io, "    ans($k, ", ix_text(g), "),")
+        end
+        println(
+            io,
+            "    forall(member(PI, [",
+            join(("$(p.name)/$(p.arity)" for p in preds), ","),
+            "]), report(PI))."
+        )
+        f = joinpath(d, "prog.pl")
+        write(f, take!(io))
+        out = split(read(`swipl -q $f`, String), '\n'; keepempty=false)
+        lines = String[
+            l for l in out if !startswith(l, "idx ") && !startswith(l, "pindex ")
+        ]
+        pidx = String[l[8:end] for l in out if startswith(l, "pindex ")]
+        idx = _XIdx[]
+        for l in out
+            startswith(l, "idx ") || continue
+            m = match(
+                r"^idx (\S+) \[([\d,]*)\] \[([\d,]*)\] (\S+) (true|false) (true|false) (\d+)$",
+                l
+            )
+            m === nothing && error("unparsed swipl line: $l")
+            ints(s) = isempty(s) ? Int[] : parse.(Int, split(s, ','))
+            push!(
+                idx,
+                (m[1], ints(m[2]), ints(m[3]), Float32(parse(Float64, m[4])),
+                    m[5] == "true", m[6] == "true", parse(Int, m[7]))
+            )
+        end
+        return (; lines, idx, pidx)
+    end
+end
+
+"Index reports in a canonical order: by predicate, position, arguments, speedup."
+_xorder(v::Vector{_XIdx})::Vector{_XIdx} = sort(v; by=i -> (i[1], i[3], i[2], i[4]))
+
+"""
+Differences between two index reports. Three allowances, each a consequence of the kernel's KEY
+VALUES differing from SWI's atom and functor numbers (`indexOfWord`, DIVERGES) — never of logic:
+  * BUCKETS: `perfect_size` searches for a collision-free table of at most 32 buckets using the
+    keys' hash values, and returns 64 when there is none; below 64 the count is hash-dependent.
+  * SPEEDUP to a few ulps: `assess_remove_duplicates` runs Welford's mean/variance over the
+    per-key counts in SORTED-KEY order; other key values sum the same counts in another order.
+    Uniform counts (standard deviation 0) still compare exactly — most indexes here.
+  * ORDER of the deep indexes of one predicate: `add_deep_indexes` walks a list index's buckets.
+Everything else — arguments, position, list, realised — must be equal.
+"""
+function _xidx_diff(ours::Vector{_XIdx}, theirs::Vector{_XIdx})::Vector{String}
+    out = String[]
+    length(ours) == length(theirs) ||
+        push!(out, "index count: ours $(length(ours)), swipl $(length(theirs))")
+    for (o, t) in zip(_xorder(ours), _xorder(theirs))
+        same =
+            o[1:3] == t[1:3] && o[5:6] == t[5:6] &&
+            (o[4] == t[4] || isapprox(o[4], t[4]; rtol=4 * eps(Float32))) &&
+            (t[7] > 64 ? o[7] == t[7] : o[7] <= 64)
+        same || push!(out, "ours $o  swipl $t")
+    end
+    return out
+end
+
+"The first lines where two outputs differ."
+function _xline_diff(a::Vector{String}, b::Vector{String})::Vector{String}
+    out = String[]
+    for i in 1:max(length(a), length(b))
+        x = i <= length(a) ? a[i] : "<none>"
+        y = i <= length(b) ? b[i] : "<none>"
+        x == y || push!(out, "line $i: ours `$x`  swipl `$y`")
+        length(out) >= 8 && break
+    end
+    return out
+end
+
+const _XSWIPL = Sys.which("swipl")
+const _XSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
+const _XSEED = 20261002
+
+@testset "clause index vs swipl" begin
+    program = vcat(_xprogram(_XSEED, 60), _xhvoid())
+    ours = _xrun(program)
+    oracle = _xrun(program; unindexed=true)
+
+    @testset "the contract: indexing never changes answers" begin
+        strip_det(ls) = [replace(l, r" (det|nondet)$" => "") for l in ls]
+        @test strip_det(ours.lines) == strip_det(oracle.lines)
+        @test count(l -> !endswith(l, " end"), ours.lines) > 500       # the data exercises it
+        # the program builds hash, multi-argument and deep indexes, realised and virtual
+        @test any(i -> length(i[2]) > 1, ours.idx)
+        @test any(i -> !isempty(i[3]), ours.idx)
+        @test any(i -> i[5], ours.idx) && any(i -> !i[6], ours.idx)
+    end
+
+    @testset "LogicKernel#1 pinned: the H_VOID_N defect, verbatim (swipl 10.1.16 outcomes)" begin
+        hv = Dict(i[1] => i for i in ours.idx if startswith(i[1], "hv_"))
+        @test !haskey(hv, "hv_p/3")                     # p(_,_,a50): no index
+        @test hv["hv_q/3"][2:4] == ([3], Int[], 100.0f0)
+        @test hv["hv_p4/4"][2:4] == ([4], Int[], 100.0f0)
+        @test !haskey(hv, "hv_q4/4")                    # q4(_,_,a50,b50) first: none, and stays so
+    end
+
+    if _XSWIPL !== nothing
+        @testset "identical to swipl" begin
+            theirs = _xswipl(program)
+            d = _xline_diff(ours.lines, theirs.lines)
+            isempty(d) || foreach(x -> println(stderr, "  answers: ", x), d)
+            @test isempty(d)
+            di = _xidx_diff(ours.idx, theirs.idx)
+            isempty(di) ||
+                foreach(x -> println(stderr, "  indexed: ", x), di[1:min(end, 8)])
+            @test isempty(di)
+            @test ours.pidx == theirs.pidx
+            # the allowances stay narrow: most speedups are bit-identical, every index is compared
+            pairs = collect(zip(_xorder(ours.idx), _xorder(theirs.idx)))
+            exact = count(((o, t),) -> o[4] == t[4], pairs)
+            @test length(pairs) == length(theirs.idx) > 100
+            @test exact >= 0.9 * length(pairs)
+            # control: with no index at all the answers are the same, the determinism is not
+            @test !isempty(_xline_diff(oracle.lines, theirs.lines))
+            @info "clause index: $(length(theirs.lines)) answer lines, $(length(theirs.idx)) indexes ($exact with bit-identical speedups), $(length(program)) predicates identical to $(strip(read(`swipl --version`, String)))"
+        end
+    elseif _XSWIPL_REQUIRED
+        error(
+            "LOGICKERNEL_REQUIRE_SWIPL=1 but `swipl` is not on PATH — the index differential would be skipped"
+        )
+    else
+        @info "INDEX vs swipl NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI's analysis job."
+        @testset "swipl comparison skipped only where it is not required" begin
+            @test !_XSWIPL_REQUIRED
+        end
+    end
+end
