@@ -1,10 +1,10 @@
 # tools/lint_globals.jl — FAIL ON MODULE-LEVEL MUTABLE STATE.
 #
 # WHY. A kernel meant to serve more than one client cannot keep state at module scope: it is shared
-# by every caller in the process, and it outlives each of them. MEASURED in MeTTaCore (2026-08-10):
-# its tabling registry was a bare `Set{Symbol}` at module scope, so once anything tabled a head,
-# EVERY later space in the process inherited it — a benchmark's "plain" rows were silently tabled,
-# and the only tell was suspiciously flat timings. State that belongs to one evaluation lives in a
+# by every caller in the process, and it outlives each of them. The failure it prevents is concrete:
+# a tabling registry kept as a bare `Set` at module scope means that once anything tables a
+# predicate, EVERY later database in the process inherits it — a benchmark's "untabled" rows are
+# silently tabled, and the only tell is suspiciously flat timings. State that belongs to one evaluation lives in a
 # value the caller owns and passes in.
 #
 # HOW. It enumerates the module's BINDINGS at runtime (`names(m; all = true)`), recursing into

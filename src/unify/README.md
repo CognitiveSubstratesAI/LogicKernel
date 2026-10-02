@@ -4,7 +4,7 @@ Unification over the term interface, binding environments, substitution, renamin
 **variant** checking/canonicalisation (equal up to consistent variable renaming) plus term hashing.
 
 Port class: **as code** for variant checking and term hashing (the algorithms carry over).
-Extracted from MeTTaCore's `StandardMeTTa` (`match_atoms`, `Bindings`, `TermCanon.jl`).
+Upstream: SWI-Prolog `src/pl-variant.c`, `src/pl-termhash.c`.
 
 ⚠️ No choice points and no trail: nondeterminism in this kernel is the sink/continuation model.
 

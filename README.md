@@ -4,18 +4,17 @@ A standalone logic-programming kernel for Julia: terms, unification, a clause da
 indexing, term tries, SLG tabling and a clause VM — for languages in which **every matching clause
 fires** and answers are multisets.
 
-> **Lineage.** Algorithms from SWI-Prolog (`swipl-devel`, Simplified BSD), first ported into
-> MeTTaCore — the CognitiveSubstratesAI MeTTa engine, where they are tested against a live `swipl` —
-> and extracted here so they stand on their own. Algorithms are ported as code; machinery (clause
-> compilation, frames, generations) is re-expressed for multiset semantics, never transliterated.
+> **Lineage.** Algorithms ported from SWI-Prolog (`swipl-devel`, Simplified BSD) and checked against
+> a live `swipl`. Algorithms are ported as code; machinery (clause compilation, frames, generations)
+> is re-expressed for multiset semantics, never transliterated.
 > Every ported file records its upstream file and commit: see [`NOTICE`](NOTICE) and
 > [`docs/port_inventory.md`](docs/port_inventory.md).
 
 ## Status
 
 **0.1.0 — skeleton.** The layout, the suite, CI and the lint are in place; nothing is ported yet.
-The version stays **0.x until the term interface has met its second consumer** (MeTTaCore's `Atom`,
-through the index and tabling extractions). First real work: `src/terms/`.
+The version stays **0.x until the term interface has a second implementation** in real use — until
+then the interface is only as general as one implementation makes it. First real work: `src/terms/`.
 
 ## The contract
 
@@ -36,7 +35,7 @@ A compound term is a **sequence of children with the head as child 1** — not P
 `functor`/`arity`, because a head may itself be a variable or a compound. The interface (`kind`,
 `nchildren`/`child`, `sym_key`, `var_key`, `gnd_key`, `gnd_equal`, `mk_var`/`mk_expr`, `is_ground`)
 is specified in [`src/terms/README.md`](src/terms/README.md). One conformance suite runs against
-every implementation: the default term type here, and MeTTaCore's `Atom`.
+every implementation, starting with the default term type here.
 
 ## Layout
 

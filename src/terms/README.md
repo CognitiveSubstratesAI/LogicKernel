@@ -19,7 +19,7 @@ variable or a compound (`($h a b)`, `((curry f) x)`). Prolog's `f(a, b)` is `[f,
 
 Rules: every function returns a **concrete** type and is defined on the **concrete** term types;
 the standard order of terms gets no entry (derive it from `kind` + the keys). Two implementations,
-one conformance suite (`test/conformance/`): the default term type here is the reference, MeTTaCore's
-`Atom` is the second.
+one conformance suite (`test/conformance/`): the default term type here is the reference, and every
+later implementation must pass the same suite.
 
 Entry file when it lands: `terms.jl`.

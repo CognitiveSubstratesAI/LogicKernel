@@ -5,7 +5,6 @@ tabled negation under the well-founded semantics (delays and completion), and an
 modes. Tabling modes and answer deduplication are CALLER options.
 
 Port class: **as code** for WFS delays and completion (SWI-Prolog `src/pl-tabling.c`,
-`boot/tabling.pl`), with SWI run as a LIVE differential (`test/oracle/`). Extracted from MeTTaCore's
-`src/standard/tabling/`.
+`boot/tabling.pl`), with SWI run as a LIVE differential (`test/oracle/`).
 
 Depends on: `unify`, `trie`, `db`. Entry file when it lands: `tabling.jl`.

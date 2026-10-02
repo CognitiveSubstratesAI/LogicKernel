@@ -6,8 +6,8 @@
 #
 # ONE FRESH MODULE PER FILE. A suite that `include`s every file into one module lets two files'
 # helpers collide by name — the later definition silently replaces the earlier, and a file passes
-# alone and fails in the suite. MEASURED in MeTTaCore 2026-10-02: five theorised mechanisms, five
-# gate runs, and the cause was exactly that. Each file therefore starts with its own
+# alone and fails in the suite — a failure that is expensive to diagnose because every theory about
+# the code is wrong; the cause is the suite's shape. Each file therefore starts with its own
 # `using Test, LogicKernel` and owns its names.
 #
 # THE INERT GUARD runs last: a leaf testset that passed zero assertions fails the suite, so a test

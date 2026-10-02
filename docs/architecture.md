@@ -27,16 +27,16 @@ graph TD
 
 **Include order:** `terms` → `unify` → `constraints` → `trie` → `index` → `db` → `tabling` → `vm`.
 
-| subsystem | what | port class | upstream (SWI-Prolog) | extracted from (MeTTaCore) |
-|---|---|---|---|---|
-| `terms` | the term interface, the default term type, standard order (derived) | design (settled 2026-10-02) | — | `Atoms.jl` (the second implementation) |
-| `unify` | unification, bindings, substitution, renaming, variant check, term hashing | code | `pl-variant.c`, `pl-termhash.c` | `StandardMeTTa`, `TermCanon.jl` |
-| `constraints` | attributed-variable hooks | code | `pl-attvar.c` | — |
-| `trie` | term tries: answer and variant tables | code | `pl-trie.c` | `tabling/AnswerTrie.jl` |
-| `index` | JIT argument index, discrimination trie, grounded key, deep key | code (assessment) + design | `pl-index.c` | `standard/Index.jl` |
-| `db` | definitions, clauses in source order, generations, clause GC | design | `pl-proc.c` | the definition records |
-| `tabling` | SLG: suspension, SCC completion, WFS delays, answer modes | code (WFS) | `pl-tabling.c`, `boot/tabling.pl` | `standard/tabling/` |
-| `vm` | clause compilation, instructions, frames, the execution loop | design | `pl-comp.c`, `pl-wam.c` | the plan lane |
+| subsystem | what | port class | upstream (SWI-Prolog) |
+|---|---|---|---|
+| `terms` | the term interface, the default term type, standard order (derived) | design (settled 2026-10-02) | — |
+| `unify` | unification, bindings, substitution, renaming, variant check, term hashing | code | `pl-variant.c`, `pl-termhash.c` |
+| `constraints` | attributed-variable hooks | code | `pl-attvar.c` |
+| `trie` | term tries: answer and variant tables | code | `pl-trie.c` |
+| `index` | JIT argument index, discrimination trie, grounded key, deep key | code (assessment) + design | `pl-index.c` |
+| `db` | definitions, clauses in source order, generations, clause GC | design | `pl-proc.c` |
+| `tabling` | SLG: suspension, SCC completion, WFS delays, answer modes | code (WFS) | `pl-tabling.c`, `boot/tabling.pl` |
+| `vm` | clause compilation, instructions, frames, the execution loop | design | `pl-comp.c`, `pl-wam.c` |
 
 ## Invariants every subsystem keeps
 
@@ -60,9 +60,8 @@ graph TD
 1. Skeleton — this layout, the suite, CI, the module-state lint. **(0.1.0)**
 2. `src/terms/` — the interface, the default term type, the conformance suite, the standalone
    consumer's first form.
-3. Extract the index from MeTTaCore — no behaviour change; MeTTaCore then depends on this package
-   (by path, `../LogicKernel`). The index differential's core cases move here; the end-to-end
-   `match` differential stays in MeTTaCore because it is about MeTTa's answers.
+3. `src/index/` — argument indexing, with its differential (indexed vs unindexed enumeration must
+   give the same multiset in the same order).
 4. The deep key, inside this package — two levels, lazy level 2, built as already designed.
 5. The remaining extractions, in port-inventory order, each with upstream's tests and a live `swipl`
    differential.

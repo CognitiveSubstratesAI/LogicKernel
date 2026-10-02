@@ -3,13 +3,13 @@ uuid = "3a0d8e50-b9f2-4a53-9210-6c7d690b17b0"
 version = "0.1.0"
 authors = ["CognitiveSubstratesAI"]
 
-# NO [deps]. Deliberately: this package depends on NOTHING in the CognitiveSubstratesAI tree —
-# not MeTTaCore, MORK, PathMap or MorkSupercompiler. Core depends on IT. `test/runtests.jl`
-# checks both halves — the [deps] table names none of them, and none is loaded after
-# `using LogicKernel` — so "standalone" is a tested property, not a claim about this file.
+# NO [deps]. Deliberately: this package depends on NOTHING in the CognitiveSubstratesAI tree; other
+# packages may depend on IT. `test/test_package.jl` checks both halves — the [deps] table names
+# none of them, and none is loaded after `using LogicKernel` — so "standalone" is a tested
+# property, not a claim about this file.
 #
-# 0.x until the term interface has met its SECOND consumer (Core's `Atom`, through the index and
-# tabling extractions). The version is saying that, honestly.
+# 0.x until the term interface has a SECOND implementation in real use. The version is saying that,
+# honestly.
 
 [compat]
 Test = "1"
