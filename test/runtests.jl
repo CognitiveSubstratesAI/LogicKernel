@@ -1,3 +1,4 @@
+# ORIGINAL: the suite driver Julia's Pkg.test requires (swipl-devel's counterpart is tests/test.pl, a Prolog driver).
 # test/runtests.jl — LogicKernel's suite.
 #
 # DISCOVERY, NOT A LIST. Every `test_*.jl` anywhere under `test/` runs; nothing has to be registered
@@ -11,7 +12,7 @@
 # `using Test, LogicKernel` and owns its names.
 #
 # THE INERT GUARD runs last: a leaf testset that passed zero assertions fails the suite, so a test
-# that degraded to skips — an absent `swipl` under test/oracle/, say — cannot read as green.
+# that degraded to skips — an absent `swipl` for the compare/3 differential, say — cannot read as green.
 using Test
 using LogicKernel
 
@@ -29,7 +30,14 @@ for d in sort!(filter(isdir, readdir(LK_TEST_DIR; join=true)))
     println("  test/", basename(d), ": ", n, " file(s)")
 end
 
-const LK_TS = @testset "LogicKernel" begin
+# THE ROOT TEST SET IS OPENED BY HAND, not with `@testset`, so its results can be written as JUnit
+# XML (Codecov Test Analytics) EVEN WHEN SOMETHING FAILED — a top-level `@testset` throws before
+# anyone can read its tree. `Test.finish` below then prints the summary and throws exactly as before.
+include("junit_report.jl")
+const LK_JUNIT = get(ENV, "LOGICKERNEL_JUNIT", "")
+const LK_TS = Test.DefaultTestSet("LogicKernel")
+# Julia 1.13's test-set stack is a ScopedValue: `Test.@with_testset` (there is no push_testset).
+Test.@with_testset LK_TS begin
     # Positive control on discovery itself: an empty file list would make every check below vacuous.
     @testset "discovery found the package-level files" begin
         rel = [relpath(f, LK_TEST_DIR) for f in LK_TEST_FILES]
@@ -48,4 +56,6 @@ const LK_TS = @testset "LogicKernel" begin
     end
 end
 
+isempty(LK_JUNIT) || println("  JUnit report: ", write_junit(LK_TS, LK_JUNIT))
+Test.finish(LK_TS)                    # prints the summary; throws if anything failed or errored
 assert_no_inert_testsets(LK_TS)

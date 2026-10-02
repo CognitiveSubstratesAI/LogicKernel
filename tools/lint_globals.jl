@@ -49,8 +49,16 @@ function _lint_frozen(v, depth::Int=0)::Bool
     return true
 end
 
+# Julia's own `#…` bindings: closures/types the compiler names, and the `#N#val` temporary that a
+# DOCSTRING on a constant leaves behind (`"doc" const X = 1` stores a copy of the value there —
+# measured 2026-10-02, nine of them in src/pl-prims.jl). The temporary is exempt ONLY while its value is
+# frozen: a documented mutable constant is still flagged, here and at the constant itself.
 _lint_generated(n::Symbol, v)::Bool =
-    startswith(String(n), "#") && (v isa Function || v isa Type)
+    startswith(String(n), "#") &&
+    (
+        v isa Function || v isa Type ||
+        (occursin(r"^#\d+#val$", String(n)) && _lint_frozen(v))
+    )
 
 """
     lint_globals(m::Module; allow = LINT_ALLOWLIST) -> (; violations::Vector{String}, inspected::Int)

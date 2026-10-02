@@ -22,9 +22,14 @@ jobs:
     # tests skipped and the inert-testset guard failed the run — correctly.)
     env:
       JULIA_NUM_THREADS: '4'
-    # `id-token: write` lets codecov-action authenticate with GitHub OIDC — see the upload step.
+      # test/runtests.jl writes JUnit XML here for Codecov Test Analytics (test/junit_report.jl)
+      LOGICKERNEL_JUNIT: ${{ github.workspace }}/junit.xml
+    # A job-level `permissions:` block REPLACES the default token scopes, so every scope a step
+    # needs is listed: `id-token: write` lets codecov-action authenticate with GitHub OIDC (see the
+    # upload step); `actions: write` lets julia-actions/cache delete old caches (its README).
     permissions:
       contents: read
+      actions: write
       id-token: write
     strategy:
       fail-fast: false
@@ -62,6 +67,59 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
           fail_ci_if_error: true
+      # Test results → Codecov Test Analytics. `!cancelled()`, not the default success(): a run whose
+      # tests FAILED is exactly the one whose results matter. Same authentication as coverage.
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          report_type: test_results
+          files: junit.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
+          fail_ci_if_error: true
+
+  # ── THE PROACTIVE GATES, WITH NOTHING ALLOWED TO SKIP ────────────────────────────────────────────
+  # `test` above runs Pkg.test, whose isolated environment has no JET/Aqua/AllocCheck and no swipl,
+  # so there test/test_static_analysis.jl and test/core_lang/test_compare_swipl.jl say "not run" and
+  # assert they were not required. HERE both are required (the LOGICKERNEL_REQUIRE_* variables turn a
+  # missing tool into an error): zero runtime dispatch on every manifest entry, every method covered,
+  # Aqua, JET error analysis, AllocCheck, and the live differential against swipl's compare/3.
+  # The tools are installed exactly as in the local global environment (JET, Aqua and
+  # LoweredCodeUtils from master), so local and CI analyse with the same versions.
+  analysis:
+    name: Static analysis + live swipl differential
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: write
+    env:
+      JULIA_NUM_THREADS: '4'
+      LOGICKERNEL_REQUIRE_TOOLS: '1'
+      LOGICKERNEL_REQUIRE_SWIPL: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@v2
+      - name: Install SWI-Prolog (the devel PPA — the series the local differential runs against)
+        run: |
+          sudo add-apt-repository -y ppa:swi-prolog/devel
+          sudo apt-get update -q
+          sudo apt-get install -y -q swi-prolog-nox
+          swipl --version
+      - name: Install the analysis tools into the default environment
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(name="AllocCheck")])'
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run the suite with every gate required
+        run: julia --project=. test/runtests.jl
 
   format:
     name: Format (Blue)

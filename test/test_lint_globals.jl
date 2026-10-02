@@ -1,3 +1,4 @@
+# ORIGINAL: the module-state lint and its fixture; no swipl-devel counterpart.
 # test/test_lint_globals.jl — the module-state lint, run on LogicKernel AND proven able to fail.
 #
 # A lint that cannot fail reports exactly what a passing one does. So before trusting its verdict on
@@ -41,6 +42,10 @@ const ORIGIN = Point(0)
 abstract type Shape end
 "a documented function — the docstring creates Julia's own `#…`/META bindings"
 f(y) = y + 1
+"a documented CONSTANT — leaves a `#N#val` temporary holding a frozen copy: exempt"
+const DOCUMENTED = 3
+"a documented MUTABLE constant — flagged itself, AND its `#N#val` temporary is flagged"
+const DOC_MUT = Int[]
 end
 
 const EXPECTED = Set([
@@ -53,7 +58,8 @@ const EXPECTED = Set([
     "LintFixture.x",
     "LintFixture.g",
     "LintFixture.LATE",
-    "Sub.INNER"
+    "Sub.INNER",
+    "LintFixture.DOC_MUT"
 ])
 _lint_names(vs) = Set(first(split(v, ": ")) for v in vs)
 
@@ -70,7 +76,10 @@ _lint_names(vs) = Set(first(split(v, ": ")) for v in vs)
             LintFixture; allow=("LintFixture.ALLOWED" => "fixture: allowlist works",)
         )
         @test r.inspected > length(EXPECTED)
-        @test _lint_names(r.violations) == EXPECTED   # every bad one caught, no clean one flagged
+        got = _lint_names(r.violations)
+        gen = Set(n for n in got if startswith(n, "LintFixture.#"))   # generated names: N varies
+        @test setdiff(got, gen) == EXPECTED     # every bad one caught, no clean one flagged
+        @test length(gen) == 1                  # DOC_MUT's temporary; DOCUMENTED's frozen one is not
     end
 
     @testset "fixture: without the allowlist the allowed binding IS reported" begin

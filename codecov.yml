@@ -1,0 +1,18 @@
+# Codecov — coverage of the kernel itself, and test analytics from junit.xml (see CI.yml).
+# Tests, tools and benchmarks are not the product, so they are not counted.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+ignore:
+  - "test/**"
+  - "tools/**"
+  - "bench/**"
+comment:
+  layout: "condensed_header, diff, condensed_files, condensed_footer"
+  require_changes: false

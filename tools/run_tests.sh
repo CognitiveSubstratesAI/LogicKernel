@@ -55,6 +55,13 @@ end
 exit(ok ? 0 : 1)
 JL
 
+# 🔴 THE STATIC-ANALYSIS GATE IS MANDATORY HERE. test/test_static_analysis.jl ERRORS when this is set
+# and JET/Aqua/AllocCheck cannot load — a local run may not silently skip it. Only Pkg.test's
+# isolated env (CI's plain `test` job) runs without it; CI's `analysis` job sets it too.
+export LOGICKERNEL_REQUIRE_TOOLS=1
+# …and so is the live SWI-Prolog differential (test/oracle/): a code port is judged by upstream itself.
+export LOGICKERNEL_REQUIRE_SWIPL=1
+
 MEM_MAX="${LOGICKERNEL_TEST_MEM_MAX:-8G}"
 HEAP_HINT="${LOGICKERNEL_TEST_HEAP_HINT:-6G}"
 JL=(julia --project=. --threads="${JULIA_TEST_THREADS:-4}" --heap-size-hint="$HEAP_HINT" -i "$DRIVER")

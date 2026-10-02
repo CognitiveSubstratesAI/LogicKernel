@@ -32,3 +32,6 @@ bench/results/
 .env.*
 *.key
 *.pem
+
+# Codecov Test Analytics input, written by test/runtests.jl when LOGICKERNEL_JUNIT is set
+junit.xml

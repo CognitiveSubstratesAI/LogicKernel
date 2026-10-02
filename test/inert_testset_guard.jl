@@ -1,3 +1,4 @@
+# ORIGINAL: copied from this workspace's PathMap package; no swipl-devel counterpart.
 # Copied unchanged from PathMap's test/inert_testset_guard.jl on 2026-10-02. The incidents it cites
 # are PathMap's and MORK's; the rule applies here unchanged.
 #

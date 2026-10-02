@@ -1,3 +1,4 @@
+# ORIGINAL: package-level promises (standalone, 0.x); no swipl-devel counterpart.
 # test/test_package.jl — what LogicKernel promises about ITSELF, before any subsystem lands.
 #
 # "Standalone" must be a tested property, not a claim about Project.toml. Two halves:

@@ -12,7 +12,8 @@ fires** and answers are multisets.
 
 ## Status
 
-**0.1.0 — skeleton.** The layout, the suite, CI and the lint are in place; nothing is ported yet.
+**0.1.0.** Ported so far: SWI-Prolog's standard order of terms (`compareStandard`, from
+`pl-prims.c`) with upstream's own tests, behind the settled term interface and its reference type.
 The version stays **0.x until the term interface has a second implementation** in real use — until
 then the interface is only as general as one implementation makes it. First real work: `src/terms/`.
 
@@ -37,18 +38,21 @@ A compound term is a **sequence of children with the head as child 1** — not P
 is specified in [`src/terms/README.md`](src/terms/README.md). One conformance suite runs against
 every implementation, starting with the default term type here.
 
-## Layout
+## Layout — a mirror of swipl-devel
+
+A port lives at upstream's own path and keeps upstream's names: swipl-devel `src/pl-prims.c` →
+`src/pl-prims.jl`, `tests/core_lang/test_bips.pl` → `test/core_lang/test_bips.jl`. Code with no
+upstream counterpart says `# ORIGINAL: <why>`. The rule, the few Julia-forced deviations and the
+subsystem grouping are in [`docs/architecture.md`](docs/architecture.md); every port is listed in
+[`docs/port_inventory.md`](docs/port_inventory.md).
 
 | path | what |
 |---|---|
-| `src/` | one directory per subsystem; order and dependencies in [`docs/architecture.md`](docs/architecture.md) |
-| `test/<subsystem>/` | that subsystem's tests — every `test_*.jl` runs, each in its own module |
-| `test/conformance/` | the term-interface conformance suite, run against every implementation |
-| `test/oracle/` | live differentials against `swipl` |
-| `test/standalone/` | a client program using only the default term type |
-| `bench/` | benchmark programs |
-| `ext/` | package extensions (optional integrations) |
-| `tools/` | `run_tests.sh`, `lint_globals.jl`, `repl.jl`, `jet_report.jl` |
+| `src/` | ports at swipl-devel's paths, plus ORIGINAL code (the term interface, `Term{G}`) |
+| `boot/` | ports of swipl-devel `boot/*.pl` (none yet) |
+| `test/<area>/` | tests in swipl-devel's `tests/` areas — ported upstream tests keep their names |
+| `test/` root | package infrastructure: lint, port check, type discipline, static analysis |
+| `tools/` | `run_tests.sh`, `port_check.jl`, `upstream_drift.jl`, `lint_globals.jl`, `repl.jl`, `jet_report.jl` |
 
 ## Testing
 
