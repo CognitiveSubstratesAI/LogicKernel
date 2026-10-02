@@ -52,15 +52,16 @@ jobs:
       # The `token: ${{ secrets.CODECOV_TOKEN }}` input was EMPTY (no such secret reached this repo),
       # and `fail_ci_if_error: false` turned the rejection into a green check. Read it with
       # `workflows/gh_ci_log.sh LogicKernel 'Upload queued'` in the CognitiveSubstratesAI workspace.
-      # ⚠️ `fail_ci_if_error` stays false until ONE upload has verifiably landed (Codecov shows the
-      # repo activated with a commit) — flipping it first would only fail CI on the missing setup.
+      # ✅ `fail_ci_if_error: true` since 2026-10-02: the OIDC upload from a668c1c LANDED (Codecov:
+      # activated, last upload 19:15:07Z, log "Upload queued for processing complete"). A failed
+      # upload now turns CI red instead of hiding behind a green check.
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   format:
     name: Format (Blue)
