@@ -3,8 +3,9 @@
 #
 # swipl decides `A =@= B` for every pair; `is_variant_ptr` must agree on each, and the digests must
 # follow the answer: variants ⇒ the same `variant_sha1` and `variant_hash`; non-variants ⇒ a
-# different `variant_sha1`. The converse half holds here because the grounded values are chosen so
-# that no two are `==` without being identical (src/pl-termhash.jl, DIVERGES 1).
+# different `variant_sha1` (up to key collisions, src/pl-termhash.jl DIVERGES 1). The grounded values
+# include pairs that are `==` without being identical — `1`/`1.0`, `0.0`/`-0.0` — which SWI keeps
+# apart and so must the kernel.
 #
 # The pairs are built to be HARD: a renaming of the first term (a variant), the same with one
 # variable merged into another or split from it, or with one functor or atom changed (the same
@@ -30,7 +31,7 @@ function _vrand(rng, d::Int, vars::Vector{Int})::_VT
         k <= 3 && return mk_var(_VT, UInt64(rand(rng, vars)))
         k == 4 && return sym_term(_VT, rand(rng, (:a, :b, :f)))
         k == 5 && return gnd_term(_VT, rand(rng, (0, 1, 2)))
-        return gnd_term(_VT, rand(rng, (1.5, 2.5, "s")))
+        return gnd_term(_VT, rand(rng, (0.0, -0.0, 1.0, 2.5, "s")))
     end
     f, n = rand(rng, ((:f, 1), (:f, 2), (:g, 2), (:h, 3)))
     return mk_expr(_VT, _VT[sym_term(_VT, f); [_vrand(rng, d - 1, vars) for _ in 1:n]])
@@ -70,6 +71,28 @@ function _vrelabel(t::_VT, done::Base.RefValue{Bool}, heads::Bool)::_VT
     return mk_expr(_VT, _VT[_vrelabel(child(t, i), done, heads) for i in 1:nchildren(t)])
 end
 
+"The `==` twin SWI keeps apart from `v`: `0`↔`0.0`, `1`↔`1.0`, `0.0`↔`-0.0`; `nothing` if none."
+function _vtwin(v)::Union{Nothing, Int64, Float64}
+    v isa Int64 && v in (0, 1) && return Float64(v)
+    v isa Float64 && v === 1.0 && return 1
+    v isa Float64 && v === 0.0 && return -0.0
+    v isa Float64 && v === -0.0 && return 0.0
+    return nothing
+end
+
+"`t` with its first grounded value that has an `==` twin replaced by the twin; `done` says if it did."
+function _vreground(t::_VT, done::Base.RefValue{Bool})::_VT
+    done[] && return t
+    if kind(t) === GND
+        w = _vtwin(gnd_value(t))
+        w === nothing && return t
+        done[] = true
+        return gnd_term(_VT, w)
+    end
+    kind(t) === EXPR || return t
+    return mk_expr(_VT, _VT[_vreground(child(t, i), done) for i in 1:nchildren(t)])
+end
+
 "How often variable `a` occurs in `t`."
 _voccurs(t::_VT, a::UInt64)::Int =
     if kind(t) === VAR
@@ -101,7 +124,17 @@ function _vpairs(rng, n::Int)
     for _ in 1:n
         t1 = _vrand(rng, 3, pool)
         how = rand(
-            rng, (:renamed, :renamed, :merged, :split, :relabelled, :sharing, :independent)
+            rng,
+            (
+                :renamed,
+                :renamed,
+                :merged,
+                :split,
+                :relabelled,
+                :regrounded,
+                :sharing,
+                :independent
+            )
         )
         if how === :renamed                     # a permutation of the pool: a variant
             m = Dict(UInt64(a) => UInt64(b) for (a, b) in zip(pool, shuffle(rng, pool)))
@@ -117,6 +150,9 @@ function _vpairs(rng, n::Int)
                 a = rand(rng, rep)
                 _vsplit(t1, a, UInt64(_VNVARS + 1), Ref(_voccurs(t1, a)))
             end
+        elseif how === :regrounded              # a variant but for one `==` twin: not one in SWI
+            m = Dict(UInt64(a) => UInt64(b) for (a, b) in zip(pool, shuffle(rng, pool)))
+            t2 = _vreground(_vrename(t1, m), Ref(false))
         elseif how === :relabelled              # a variant but for one symbol: not a variant
             m = Dict(UInt64(a) => UInt64(b) for (a, b) in zip(pool, shuffle(rng, pool)))
             done = Ref(false)
@@ -189,6 +225,7 @@ if _VSWIPL !== nothing
         hard(k) = count(i -> !theirs[i] && kinds[i] === k, eachindex(pairs))
         @test hard(:merged) + hard(:split) >= 100   # same shape, not a variant
         @test hard(:relabelled) >= 100              # a variant but for one functor or atom
+        @test hard(:regrounded) >= 100              # a variant but for 1/1.0 or 0.0/-0.0
         renamed = [
             theirs[i] && kinds[i] === :renamed && compareStandard(pairs[i]...) != 0 for
             i in eachindex(pairs)

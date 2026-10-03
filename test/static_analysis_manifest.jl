@@ -319,12 +319,11 @@ const DISPATCH_MANIFEST = (
     (gnd_term, Tuple{Type{_M1}, Float64}, false),
     (gnd_term, Tuple{Type{_M2}, Int64}, false), (gnd_term, Tuple{Type{_M2}, String}, false),
     (gnd_term, Tuple{Type{_M3}, Vector{Float64}}, false),
-    (LK._gnd_eq, Tuple{Float64, _M1}, false), (LK._gnd_eq, Tuple{Int64, _M2}, false),
-    (LK._gnd_eq, Tuple{Vector{Float64}, _M3}, false),
     (LK._compare_other, Tuple{Vector{Float64}, _M3}, false),
     (LK._compare_other, Tuple{Int64, _M2}, false),
     (gnd_value_key, Tuple{Float64}, false), (gnd_value_key, Tuple{Int64}, false),
     (gnd_value_key, Tuple{String}, false), (gnd_value_key, Tuple{Vector{Float64}}, false),
+    (gnd_value_key, Tuple{BigInt}, false), (gnd_value_key, Tuple{Bool}, false),
     # leaf comparisons and helpers
     (LK._sign, Tuple{Int}, true), (LK._tag_rank, Tuple{Kind}, true),
     (LK._sym_key, Tuple{Symbol}, true),

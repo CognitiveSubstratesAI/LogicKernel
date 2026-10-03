@@ -9,7 +9,7 @@ using Test, LogicKernel
 include(joinpath(@__DIR__, "term_interface_testlib.jl"))
 using .TermConformance: run_term_conformance, CustomEq
 
-const _CG = Union{Int64, Float64, Float32, Rational{Int64}, String, Bool, Char,
+const _CG = Union{Int64, BigInt, Float64, Float32, Rational{Int64}, String, Bool, Char,
     Vector{Float64},
     Tuple{Float64, Int64}, ComplexF64, Missing, CustomEq}
 const _CT = Term{_CG}

@@ -176,11 +176,15 @@ end
     @test variants > n                              # some distinct terms are variants
 end
 
-# DIVERGES 1 of src/pl-termhash.jl, pinned so that changing it is a decision: a grounded value
-# contributes its `gnd_key`, which follows `==`, so values that are `==` but not identical share a
-# digest though they are not variants. Upstream: `1 =@= 1.0` fails and their digests differ.
-@testset "DIVERGES: == but not identical grounded values share a digest" begin
+# A grounded value contributes its `gnd_key`, which follows the reference type's `gnd_equal` — SWI's
+# identity — so values that are `==` but not identical hash apart, as upstream's do: `1 =@= 1.0`
+# fails and their digests differ. (Until 2026-10-03 the reference type matched by `==` and these
+# shared a digest; this testset pinned that divergence the other way.)
+@testset "== but not identical grounded values: not variants, different digests (as SWI)" begin
     @test !is_variant_ptr(_kg(1), _kg(1.0))
-    @test pl_variant_sha1(_kg(1)) == pl_variant_sha1(_kg(1.0))
-    @test pl_variant_sha1(_kc(:f, _kg(0.0))) == pl_variant_sha1(_kc(:f, _kg(-0.0)))
+    @test pl_variant_sha1(_kg(1)) != pl_variant_sha1(_kg(1.0))
+    @test pl_variant_hash(_kg(1)) != pl_variant_hash(_kg(1.0))
+    @test !is_variant_ptr(_kc(:f, _kg(0.0)), _kc(:f, _kg(-0.0)))
+    @test pl_variant_sha1(_kc(:f, _kg(0.0))) != pl_variant_sha1(_kc(:f, _kg(-0.0)))
+    @test pl_term_hash(_kg(1)) != pl_term_hash(_kg(1.0))
 end

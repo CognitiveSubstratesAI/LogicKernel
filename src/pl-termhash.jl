@@ -21,10 +21,11 @@
 #      `gnd_key` where upstream contributes the number's or string's bytes; a value with no key
 #      contributes a constant. So the VALUES are not SWI's (tests/core_lang/test_hash.jl asserts
 #      the properties upstream's pinned values stand for), and upstream's "same digest IFF variant"
-#      holds in one direction: variants ⇒ the same digest. The converse fails where keys collide —
-#      by chance for `sym_hash`, and by design for grounded values that are `==` but not identical
-#      (`1` and `1.0`), since a `gnd_key` follows `==`. Assumes, as every key function does, that
-#      identical grounded values have the same `gnd_key`.
+#      holds in one direction: variants ⇒ the same digest. The converse fails only where keys
+#      collide — by chance, for `sym_hash` and for `gnd_key`, which follows the term type's
+#      `gnd_equal` (SWI's identity in the reference type, so `1` and `1.0` hash apart as in SWI; a
+#      type matching by `==` would make them share a digest). Assumes, as every key function does,
+#      that identical grounded values have the same `gnd_key`.
 #   2. HEADS. A compound whose first child is not a symbol has no functor: term_hash hashes the
 #      name hash 0 and every child as an argument; variant_sha1 writes `C` and the child count where
 #      upstream writes `T`, name and arity (see `_comp_shape`).

@@ -33,13 +33,24 @@ _e(xs::_TT...) = mk_expr(_TT, _TT[xs...])
         @test there == here
     end
 
-    @testset "gnd_value_key keys only where == and hash agree" begin
-        @test gnd_value_key(true) == gnd_value_key(1)               # true == 1
-        @test gnd_value_key(0.0) == gnd_value_key(-0.0) == gnd_value_key(0) ==
-            gnd_value_key(0 // 1)
+    # SWI-Prolog 10.1.16, measured 2026-10-03: `1 = 1.0` fails, `0.0 = -0.0` fails, two NaNs from
+    # `is nan` unify, and big integers unify by value.
+    @testset "gnd_equal and gnd_value_key follow SWI's identity" begin
+        @test !gnd_equal(_g(1), _g(1.0))                            # 1 = 1.0 fails
+        @test !gnd_equal(_g(0.0), _g(-0.0))                         # floats by bit pattern
+        @test gnd_equal(_g(NaN), _g(NaN))                           # an identical NaN unifies
+        @test gnd_equal(_g(2), _g(2)) && gnd_equal(_g("a"), _g("a"))
+        @test !gnd_equal(_g("a"), _g("b")) && !gnd_equal(_g(1), _g("1"))
+        BT = Term{Union{Int64, BigInt}}
+        @test gnd_equal(gnd_term(BT, 5), gnd_term(BT, big(5)))     # one integer type
+        @test compareStandard(gnd_term(BT, 5), gnd_term(BT, big(5))) == 0
+        @test gnd_value_key(5) == gnd_value_key(big(5))
+        @test gnd_value_key(1) != gnd_value_key(1.0)                # unify apart, key apart
+        @test gnd_value_key(0.0) != gnd_value_key(-0.0)
+        @test gnd_value_key(true) != gnd_value_key(1)
         @test gnd_value_key('a') !== nothing && gnd_value_key(:s) !== nothing
         @test gnd_value_key([1]) === nothing && gnd_value_key((1, 2)) === nothing
-        @test gnd_value_key(1 + 0im) === nothing                    # Complex: signed zeros differ
+        @test gnd_value_key(1 + 0im) === nothing
     end
 
     @testset "== and hash follow identity in the standard order" begin

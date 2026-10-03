@@ -79,17 +79,25 @@ An index key for a [`GND`](@ref) term, or `nothing` when the value cannot be key
 with [`gnd_equal`](@ref) — and `nothing` means WILDCARD, never a shared bucket.
 
 The law: `gnd_equal(a, b)` and both keys non-`nothing` ⇒ the keys are equal. Keys may collide for
-unequal values (an index only narrows), but equal values must never key apart, or an index drops
-answers. `==`, `isequal` and `hash` disagree on `0.0`/`-0.0` and on every container, which is why
-the key is not simply `hash`; see [`gnd_value_key`](@ref).
+unequal values (an index only narrows), but matching values must never key apart, or an index drops
+answers. The key follows the implementation's [`gnd_equal`](@ref): the reference type's follows SWI's
+identity ([`gnd_value_key`](@ref)); an implementation matching by `==` (Core's MeTTa terms) must key
+by `==`, where `==`, `isequal` and `hash` disagree on `0.0`/`-0.0` and on every container.
 """
 function gnd_key end
 
 """
     gnd_equal(a, b) -> Bool
 
-Whether two [`GND`](@ref) terms match — `==` on their values by default, always a strict `Bool`
-(never `missing`). The ONLY place the kernel compares grounded values.
+Whether two [`GND`](@ref) terms match — that is, unify. Always a strict `Bool` (never `missing`),
+and the ONLY place the kernel compares grounded values for matching.
+
+The matching is the IMPLEMENTATION's to define. The reference type ([`Term`](@ref)) follows SWI-Prolog:
+two grounded values match exactly when they are IDENTICAL ([`atomic_compare`](@ref) `== 0`) — `1` and
+`1.0` do not unify, `0.0` and `-0.0` do not (floats compare by bit pattern), a NaN unifies with an
+identical NaN. Core's MeTTa terms match by `==` instead and supply their own `gnd_equal` and
+[`gnd_key`](@ref) (user, 2026-10-03: the kernel stays SWI-faithful; MeTTa's semantics live in Core's
+implementation of this interface).
 """
 function gnd_equal end
 
@@ -98,9 +106,9 @@ function gnd_equal end
 
 The standard order of two ATOMIC terms ([`SYM`](@ref) or [`GND`](@ref), in any combination):
 `-1`, `0` or `1`. Total, and `0` exactly when `a` and `b` are IDENTICAL — the same symbol, or the
-same host value (same type and `isequal`; for IEEE floats, the same bits). Identity is stricter
-than [`gnd_equal`](@ref): `1` and `1.0` match, but they are not identical, and their order is
-`1.0` before `1` as in SWI-Prolog.
+same host value (integers by value, as in SWI's single integer type; otherwise the same type and
+`isequal`, and for IEEE floats the same bits). `1` and `1.0` are not identical, and their order is
+`1.0` before `1` as in SWI-Prolog. The reference type's [`gnd_equal`](@ref) is this identity.
 
 The implementation supplies this because only it can see names and values; the kernel derives
 the rest of the standard order ([`compareStandard`](@ref)).

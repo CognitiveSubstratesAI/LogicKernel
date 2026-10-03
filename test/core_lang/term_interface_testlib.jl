@@ -30,15 +30,23 @@ Base.:(==)(a::CustomEq, b::CustomEq) = a.v % 10 == b.v % 10
 
 "Host values every implementation's `mkgnd` must accept."
 const HOST_VALUES = (
-    0, 1, 2, -5, 0.0, -0.0, 1.0, 1.5, NaN, Inf, -Inf, 1.0f0, 1 // 2, "", "a", "ab", "b",
+    0, 1, 2, big(2), -5, 0.0, -0.0, 1.0, 1.5, NaN, Inf, -Inf, 1.0f0, 1 // 2, "", "a", "ab",
+    "b",
     true, 'c',
     [0.0], [-0.0], (0.0, 1), (-0.0, 1), 0.0 + 0.0im, 0.0 - 0.0im, missing, CustomEq(3),
     CustomEq(13)
 )
 
-"Identity of two host values: same type and `isequal` — for IEEE floats, the same bits."
+"""
+Identity of two host values, SWI-Prolog's: integers by value (SWI has one integer type, so `2` and
+`big(2)` are identical); otherwise the same type and `isequal` — for IEEE floats, the same bits.
+"""
 host_identical(x, y)::Bool =
-    typeof(x) === typeof(y) && (x isa Base.IEEEFloat ? x === y : isequal(x, y))
+    if x isa Integer && !(x isa Bool) && y isa Integer && !(y isa Bool)
+        x == y
+    else
+        typeof(x) === typeof(y) && (x isa Base.IEEEFloat ? x === y : isequal(x, y))
+    end
 
 "Groundness recomputed by the suite itself — the judge for `is_ground`, independent of the type."
 _ground(t)::Bool =
@@ -51,12 +59,17 @@ _ground(t)::Bool =
     end
 
 """
-    run_term_conformance(T; mksym, mkgnd, label)
+    run_term_conformance(T; mksym, mkgnd, label, gnd_judge = host_identical)
 
 Run the whole conformance suite against the term type `T`. `mksym(name::Symbol)` must build a
 [`SYM`](@ref) term and `mkgnd(v)` a [`GND`](@ref) term for every value in `HOST_VALUES`.
+`gnd_judge(x, y)` states, on the HOST values, when the implementation's [`gnd_equal`](@ref) must
+match: SWI's identity by default (the reference type); an implementation that matches by `==`
+(Core's MeTTa terms) passes `(x, y) -> (x == y) === true`.
 """
-function run_term_conformance(::Type{T}; mksym, mkgnd, label::String) where {T}
+function run_term_conformance(
+    ::Type{T}; mksym, mkgnd, label::String, gnd_judge=host_identical
+) where {T}
     sy(n) = mksym(n)::T
     gn(v) = mkgnd(v)::T
     ex(xs::T...) = mk_expr(T, T[xs...])
@@ -107,27 +120,23 @@ function run_term_conformance(::Type{T}; mksym, mkgnd, label::String) where {T}
             # distinct symbols MAY collide: no distinctness law (identity is sym_key)
         end
 
-        @testset "gnd_key and gnd_equal: the cases that drop answers" begin
-            z, nz, iz = gn(0.0), gn(-0.0), gn(0)
-            @test gnd_key(z) !== nothing && gnd_key(z) == gnd_key(nz) == gnd_key(iz)
-            @test gnd_equal(z, nz) && gnd_equal(z, iz)
-            @test gnd_key(gn(1)) == gnd_key(gn(1.0)) && gnd_equal(gn(1), gn(1.0))
-            for v in
-                ([0.0], [-0.0], (0.0, 1), (-0.0, 1), 0.0 + 0.0im, 0.0 - 0.0im, CustomEq(3))
-                @test gnd_key(gn(v)) === nothing                  # unkeyable ⇒ WILDCARD
-            end
-            @test gnd_equal(gn([0.0]), gn([-0.0]))                # `==` sees through the container
-            @test gnd_equal(gn(CustomEq(3)), gn(CustomEq(13)))    # a custom `==` is honoured
-            @test gnd_equal(gn(NaN), gn(NaN)) === false
-            @test gnd_equal(gn(missing), gn(missing)) === false   # strict Bool, no `missing`
-            ok = true
+        @testset "gnd_equal follows the implementation's judge; gnd_key follows gnd_equal" begin
+            # Every pair of host values: `gnd_equal` is a strict Bool, agrees with the judge, and
+            # two matching values never key apart (THE LAW — a key that splits them drops answers).
+            ok_bool = ok_judge = ok_law = true
+            matches = 0
             for x in HOST_VALUES, y in HOST_VALUES
                 r = gnd_equal(gn(x), gn(y))
-                ok &= r isa Bool
+                ok_bool &= r isa Bool
+                ok_judge &= r === gnd_judge(x, y)
+                matches += r === true
                 kx, ky = gnd_key(gn(x)), gnd_key(gn(y))
-                r && kx !== nothing && ky !== nothing && (ok &= kx == ky)   # THE LAW
+                r === true && kx !== nothing && ky !== nothing && (ok_law &= kx == ky)
             end
-            @test ok
+            @test ok_bool
+            @test ok_judge
+            @test ok_law
+            @test matches > length(HOST_VALUES)       # the judge matched distinct values too
         end
 
         @testset "is_ground matches a full recomputation" begin

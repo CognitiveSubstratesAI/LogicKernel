@@ -139,9 +139,10 @@ _functor_word(name::UInt64, arity::Int)::word =
 # follow. VAR → 0, as upstream. SYM → its atom word (`MK_ATOM` of its `sym_hash`, the same in every
 # process — SWI's atom numbers are fixed for a given program too). GND → its
 # `gnd_key` through `clean_index_key` — the role murmur_key plays upstream for strings and floats,
-# but keyed by `==` (src/term_interface.jl), and 0 — a wildcard — when there is no key. EXPR with a
-# symbol head → a functor word (`MK_FUNCTOR`) of the name and arity. EXPR with any other head → 0:
-# such a compound (a variable or compound head) has no functor to index on.
+# a key that follows the term type's `gnd_equal` (src/term_interface.jl) — and 0, a wildcard, when
+# there is no key. EXPR with a symbol head → a functor word (`MK_FUNCTOR`) of the name and arity.
+# EXPR with any other head → 0: such a compound (a variable or compound head) has no functor to
+# index on.
 """
     indexOfWord(t) -> word
 

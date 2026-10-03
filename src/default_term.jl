@@ -14,8 +14,8 @@ The default term type: one concrete struct with a [`Kind`](@ref) tag, whose grou
 type `G` (a concrete type or a small `Union`). Build terms with [`sym_term`](@ref),
 [`gnd_term`](@ref), [`mk_var`](@ref) and [`mk_expr`](@ref); read them through the term interface.
 
-`==` and `hash` follow IDENTITY in the standard order ([`compareStandard`](@ref) `== 0`): `1` and
-`1.0` are different terms, although [`gnd_equal`](@ref) matches them.
+`==` and `hash` follow IDENTITY in the standard order ([`compareStandard`](@ref) `== 0`), and so does
+[`gnd_equal`](@ref), as in SWI-Prolog: `1` and `1.0` are different terms and do not unify.
 """
 struct Term{G}
     kind::Kind
@@ -35,21 +35,26 @@ Prolog has. A small enough union that the compiler keeps every field access bran
 """
 const DefaultTerm = Term{Union{Int64, Float64, String}}
 
+"The seed integers key with, so an integer and the float of the same value key apart."
+const _INTEGER_KEY_SEED = UInt(0x5d1e9f6b3c2a8471)
+
 """
     gnd_value_key(v) -> Union{UInt64, Nothing}
 
-A grounded key for a host value that agrees with `==`: equal values never key apart. Keys only the
-types where `==`, `isequal` and `hash` are known to agree once `-0.0` is folded into `0.0` —
-integers, rationals, floats, strings, characters and symbols — and returns `nothing` (WILDCARD) for
-everything else: containers compare elements with `==` but hash through `isequal`, so `[0.0]` and
-`[-0.0]` are `==` with different hashes. Usable by any implementation of the interface.
+A grounded key for a host value that agrees with SWI's IDENTITY — the reference type's
+[`gnd_equal`](@ref) — so identical values never key apart. Integers key by value, as SWI has one
+integer type (`5` and `big(5)` key alike); floats, rationals, strings, characters, symbols and
+booleans key by their type and `hash`, which agrees with `isequal` — so `1` and `1.0`, and `0.0` and
+`-0.0`, key apart, as they unify apart. Everything else is `nothing` (WILDCARD): a container or a
+custom type need not keep `hash` consistent with how it compares. An implementation matching by `==`
+(Core's MeTTa terms) needs a key that follows `==` instead.
 """
 function gnd_value_key(v)::Union{UInt64, Nothing}
-    if v isa AbstractFloat
-        return UInt64(v == 0 ? hash(0.0) : hash(v))       # 0.0 == -0.0; and hash(0.0) == hash(0)
-    elseif v isa Integer || v isa Rational || v isa AbstractString || v isa AbstractChar ||
-        v isa Symbol
-        return UInt64(hash(v))
+    if v isa Integer && !(v isa Bool)
+        return UInt64(hash(v, _INTEGER_KEY_SEED))
+    elseif v isa AbstractFloat || v isa Rational || v isa AbstractString ||
+        v isa AbstractChar || v isa Symbol || v isa Bool
+        return UInt64(hash(v, hash(typeof(v))))
     end
     return nothing
 end
@@ -116,12 +121,9 @@ sym_hash(t::Term)::UInt64 = UInt64(objectid(t.name))
 var_key(t::Term)::UInt64 = t.key
 gnd_key(t::Term)::Union{UInt64, Nothing} = t.keyed ? t.key : nothing
 is_ground(t::Term)::Bool = t.ground
-gnd_equal(a::Term{G}, b::Term{G}) where {G} = _gnd_eq(a.gval, b)
-# FUNCTION BARRIER: `a.gval == b.gval` on two `Union{Nothing, G…}` values is a 4×4 = 16-way call —
-# past the compiler's union-splitting limit (4), so for DefaultTerm it would dispatch at runtime.
-# Passing the second TERM (a concrete type) and reading its value inside, where `x` is already
-# concrete, keeps every call at most 4-way. JET enforces this (test/test_static_analysis.jl).
-_gnd_eq(x, b::Term)::Bool = (x == b.gval) === true
+# SWI's unification of atomic data: identical or nothing (pl-prims.c `unify_simple_ptrs`: `w1 == w2`,
+# or `equalIndirect` on the bits of an indirect).
+gnd_equal(a::Term{G}, b::Term{G}) where {G} = atomic_compare(a, b) == CMP_EQUAL
 
 # ── atomic order: SWI's tag ladder, extended for Julia values Prolog does not have ───────────────
 # Number (integer and float tags, compared jointly by value) < String < Atom < other host value.
@@ -167,6 +169,7 @@ function _compare_numbers(x::Real, y::Real)::Int
     end
     x < y && return CMP_LESS
     x > y && return CMP_GREATER
+    x isa Integer && y isa Integer && return CMP_EQUAL      # one integer type, as in SWI
     return typeof(x) === typeof(y) ? CMP_EQUAL : _cmp_types(typeof(x), typeof(y))
 end
 
@@ -176,8 +179,9 @@ function _compare_strings(x::AbstractString, y::AbstractString)::Int
     return typeof(x) === typeof(y) ? CMP_EQUAL : _cmp_types(typeof(x), typeof(y))
 end
 
-# FUNCTION BARRIER (see `_gnd_eq`): one union value plus the other TERM, so `y isa X` narrows `y`
-# to the now-concrete type of `x` and every call below is static.
+# FUNCTION BARRIER: `x == y` on two `Union{Nothing, G…}` values is a 4×4 = 16-way call — past the
+# compiler's union-splitting limit (4). One union value plus the other TERM, so `y isa X` narrows `y`
+# to the now-concrete type of `x` and every call below is static (JET enforces it).
 function _compare_other(x::X, b::Term)::Int where {X}
     y = b.gval
     y isa X || return _cmp_types(X, typeof(y))

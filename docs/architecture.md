@@ -130,9 +130,10 @@ graph TD
    list with the variable clauses already there, and `addClauseToIndex` refuses a variable clause
    into a list index (the index is dropped instead). An earlier note here, written before
    pl-index.c was read in full, claimed the opposite (corrected 2026-10-02).
-2. **A grounded key follows `==`.** Where `==`, `isequal` and `hash` cannot be guaranteed to agree,
-   the key is `nothing` — a wildcard, never a shared bucket. `gnd_equal` is the only grounded
-   comparison in the kernel.
+2. **A grounded key follows the term type's `gnd_equal`** — SWI's identity in the reference type
+   (`1` and `1.0`, `0.0` and `-0.0` unify apart and key apart); a type matching by `==` (Core's)
+   keys by `==`. Where agreement cannot be guaranteed, the key is `nothing` — a wildcard, never a
+   shared bucket. `gnd_equal` is the only grounded matching in the kernel.
 3. **Answers in order, duplicates kept.** Deduplication and tabling modes are caller options.
 4. **No module-level mutable state** (`tools/lint_globals.jl`, run by the suite).
 5. **No runtime dispatch, no abstract fields, no `Any`** — enforced by the suite with JET, Aqua,
