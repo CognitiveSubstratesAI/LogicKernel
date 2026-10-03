@@ -15,6 +15,20 @@ its semantics.** Where SWI uses a mechanism, the kernel uses that mechanism; a d
   MeTTa's `==` matching belongs to Core's implementation of the term interface, which supplies its own
   `gnd_equal`/`gnd_key` — the separation the interface exists for.
 
+## Commit messages follow SWI's categories
+
+Decided 2026-10-03 (user), from that date on (history is not rewritten). Every commit message starts
+with a category, as SWI-Prolog's history does, so the history can generate a changelog and match
+ports against upstream:
+
+* `ADDED:`, `FIXED:`, `ENHANCED:`, `MODIFIED:`, `DOC:`, `TEST:`, `CLEANUP:`.
+* `UPSTREAM:` for a commit that ports or syncs code from swipl-devel (or scryer-prolog, swipl-bench).
+  It names the upstream file(s), the functions and the upstream commit, e.g.
+  `UPSTREAM: pl-wam.c PL_open_query/PL_next_solution (swipl-devel bae881a2)`. It is never `PORT:`,
+  which in SWI means a platform port.
+
+The workspace hook `require-commit-category.py` refuses a LogicKernel commit without a known prefix.
+
 ## The layout mirrors swipl-devel
 
 Decided 2026-10-02: LogicKernel is a **full mirror** of [swipl-devel](https://github.com/SWI-Prolog/swipl-devel)
