@@ -170,11 +170,13 @@ graph TD
    points, no trail) govern Core, not the kernel's internals.
 7. **Standalone.** No dependency on any CognitiveSubstratesAI package.
 
-## The VM — five design decisions (PROPOSED 2026-10-03, awaiting the user's audit)
+## The VM — five design decisions (DECIDED 2026-10-03 — audited by the user)
 
 Invariant 6 decided the model: SWI's frames, choice points and trail inside the kernel, upstream's
-query API at the boundary. These five decisions say HOW, and they are settled before any instruction is
-ported (COMPILER_PLAN 3h). The inventory, the measurement and the step plan (V1–V9) are in
+query API at the boundary. These five decisions say HOW (COMPILER_PLAN 3h). The user audited them
+against `pl-vmi.c`, `pl-wam.c`, `pl-inline.h` and `pl-comp.c` at `bae881a2` and approved them, with
+the answers and conditions in § "Decided answers and conditions" at the end of this section — those
+take precedence over the text above them where they differ. The inventory, the measurement and the step plan (V1–V9) are in
 [`port_inventory.md`](port_inventory.md) § "The VM". Each decision cites upstream at `bae881a2`:
 `wam:` = `src/pl-wam.c`, `vmi:` = `src/pl-vmi.c`, `c:` = `src/pl-comp.c`, `incl:` = `src/pl-incl.h`.
 
@@ -365,7 +367,7 @@ unbound argument (vmi:3605-3608): `concatenate(A,B,[1])` is non-deterministic, a
   * then `clause/2` and `retract/1`, which upstream implements as non-deterministic foreign predicates
     (V9).
 
-### Open questions — the user's to decide before V1
+### The questions put to the user (answered below)
 
 The read surfaced three things the settled term interface cannot express. Each changes what the
 compiler can emit.
@@ -400,6 +402,57 @@ compiler can emit.
    the argument, then unify each `H_VAR` child — because only that order gives swipl's failures and error
    terms there (verified by probe, decision 2). The alternative is upstream's order always: one store
    entry and one trail entry per cell, and longer `deRef` chains, on every write-mode compound.
+
+### Decided answers and conditions (user, 2026-10-03)
+
+**Q1 — a small Prolog layer in the interface: APPROVED**, on two conditions:
+* **SWI-7's `[]`, exactly.** `[]` is a reserved constant distinct from the atom `'[]'` (`[] == '[]'` is
+  false), and lists are `'[|]'/2`. Pinned with SWI's own tests for `[]` and `'[|]'`, not with
+  assumptions.
+* **The numeric accessor preserves the KIND** — small integer, big integer, float (and rational if
+  ported) — because SWI's instruction choice (`H_SMALLINT` / `H_MPZ` / `H_FLOAT`) and the standard order
+  depend on it.
+
+**Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
+defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders
+them. It stays OUT of the swipl differentials (SWI cannot express it) and has its own tests.
+
+**Q3 — the builder under `false`, upstream's order under `true`/`error`: APPROVED.** Upstream confirms the
+split: under `false`, `H_VAR` in write mode copies (or trails a local-stack variable to the new cell) and
+continues; otherwise it falls through to `do_unify`/`unify_ptrs` against the already-bound structure.
+Two additions:
+* the builder is a **stack** (write mode nests — an `H_FUNCTOR` inside a structure being built) and is
+  reset on every `CLAUSE_FAILED`;
+* the three-mode differential extends to **head unification** in V4a: random clause heads called with
+  random goals under all three `occurs_check` modes, comparing bindings, failures and error terms with
+  swipl.
+
+**Condition 1 — memory outside the local stack.** Upstream keeps deterministic programs small two ways:
+trail elision (`Trail()` skips global cells newer than `mark_bar`) and garbage collection of the global
+stack. The kernel trails every binding and shrinks the binding store only by backtracking to a mark, so
+a long deterministic run (`concatenate/3` on 10⁵ elements, an agent loop) grows the trail and the store
+linearly even with a flat local stack — and a local-stack gate cannot see it.
+* Trail length and store size join the flatness measurements, so the growth is VISIBLE and measured.
+* **Design item, recorded now: a binding-store collector** — the analogue of `pl-gc.c`'s marking from
+  frames and choice points — designed before any long-running workload uses the VM.
+* Correction to decision 2's reasoning: a key DOES have an age. Kernel-issued keys come from a monotonic
+  counter, so a key's value is its age, and a choice point can record the counter at creation. That
+  makes `mark_bar`-style elision possible — but an untrailed binding then needs the collector to reclaim
+  its entry. Both routes lead to the same collector; which one is decided when it is designed.
+
+**Condition 2 — decision 5's dispatch: typed function pointers are a candidate.** Every built-in has the
+same signature, so a `FunctionWrappers.jl`-style typed wrapper (one concrete type per term type `T`)
+stores a callable pointer in a table without dynamic dispatch — what upstream does with C function
+pointers. It would make `PL_register_foreign` the same mechanism instead of a deferred separate design,
+and avoid one very large generated function. V5 measures both (call overhead, JET, compile latency) and
+takes the faster one that passes the zero-dispatch gate.
+
+**Condition 3 — registers mirror upstream's `SAVE_REGISTERS`/`LOAD_REGISTERS` exactly.** Of decision 3's
+two options, the second: run-loop locals for speed, written back to `LD` and reloaded at exactly the
+places upstream calls `SAVE_REGISTERS(QID)`/`LOAD_REGISTERS(QID)`, under those names — so the port stays
+line-for-line comparable and a missing sync shows as a missing macro.
+
+**Condition 4 — V9 is split** into separate steps, each with its own gate, when it is reached.
 
 ## Still to come
 
