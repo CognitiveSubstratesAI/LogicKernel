@@ -289,24 +289,43 @@ function analyseVariables2!(ci::compileInfo, head::T, nvars::Int, argn::Int)::In
 end
 
 # PORT: pl-comp.c analyse_variables
-# DIVERGES: the head only (no body); returns the number of variable slots, where upstream records
-# them in the clause and the compile state.
+# DIVERGES: the head only (no body yet), and `argvars` is 0 (it counts only for `islocal` clauses,
+# which are not compiled yet). Returns the frame size `nv`, which `compileClause` records as the
+# clause's `variables` and `prolog_vars` (upstream sets them here, through `ci->clause`).
 """
 Analyse the variables of `head`: a variable that occurs once becomes a void (no slot); the others
-get their frame offset (pl-comp.c).
+get their frame offset, walking the slots in order and COMPACTING past every void above the arity —
+an argument keeps its slot whatever it holds (pl-comp.c). Returns the frame size.
 """
 function analyse_variables!(ci::compileInfo, head)::Int
     nvars = analyseVariables2!(ci, head, 0, -1)
-    for key in collect(keys(ci.vardefs))
+    arity = ci.arity
+    argvars = 0
+    body_voids = 0
+    # upstream walks LD->comp.vardefs[n] for n in slot order; here the records are keyed by
+    # `var_key`, so index them by slot first (a slot without a variable is `!vd->address`)
+    slot_key = zeros(UInt64, arity + nvars)
+    slot_used = falses(arity + nvars)
+    for (key, vd) in ci.vardefs
+        slot_key[vd.index + 1] = key
+        slot_used[vd.index + 1] = true
+    end
+    for n in 0:(arity + nvars - 1)
+        slot_used[n + 1] || continue
+        key = slot_key[n + 1]
         vd = ci.vardefs[key]
         if vd.times == 1                                       # ISVOID
             delete!(ci.vardefs, key)
+            if n >= arity                                      # an argument keeps its slot
+                body_voids += 1
+            end
         else
-            vd.offset = vd.index
+            vd.offset = n + argvars - body_voids
         end
     end
-    ci.used_var = falses(ci.arity + nvars)                     # vartablesize
-    return ci.arity + nvars
+    nv = nvars + arity + argvars - body_voids
+    ci.used_var = falses(nv)                                   # vartablesize
+    return nv
 end
 
 # ── compiling an argument (pl-comp.c) ───────────────────────────────────────────────────────────
@@ -446,7 +465,7 @@ argument left to right, end with `I_EXITFACT` (pl-comp.c).
 """
 function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
     ci = compileInfo(def.arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0)
-    analyse_variables!(ci, head)
+    nv = analyse_variables!(ci, head)                          # prolog_vars = variables = nv
     initMerge!(ci)
     if ci.arity > 0
         for n in 0:(ci.arity - 1)
@@ -455,7 +474,8 @@ function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
     end
     Output_0!(ci, I_EXITFACT)                                  # fact (for decompiler)
     return Clause{T}(
-        def, gen_t(0), gen_t(0), UNIT_CLAUSE, ci.codes, head, _head_vars(head)
+        def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), UNIT_CLAUSE, ci.codes, head,
+        _head_vars(head)
     )
 end
 

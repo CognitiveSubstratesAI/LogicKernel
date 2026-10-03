@@ -33,6 +33,9 @@ const gen_t = UInt64
 # PORT: pl-incl.h code
 "A VM code word: an instruction or one of its operands (pl-incl.h `code`)."
 const code = UInt64
+# PORT: pl-incl.h clsize_t
+"A count of variables (frame slots) in a clause (pl-incl.h `clsize_t`)."
+const clsize_t = UInt32
 
 # PORT: pl-incl.h Code
 # DIVERGES: a pointer into a code array is the array and a 1-based index into it.
@@ -205,11 +208,16 @@ arg_info() = arg_info(0.0f0, false, 0x00, false, 0x00)
 # addresses them by frame offset), which `decompileHead!` renames and unifies until the VM itself is
 # ported (upstream decompiles the code instead). D is the predicate's type — `definition{T}` — a
 # parameter only to break the struct cycle.
-"A clause (pl-incl.h `struct clause`): its predicate, generations, flags, VM code and head term."
+"""
+A clause (pl-incl.h `struct clause`): its predicate, generations, frame size, flags, VM code and
+head term.
+"""
 mutable struct clause{T, D}
     predicate::D                    # Predicate I belong to
     generation_created::gen_t       # generation.created
     generation_erased::gen_t        # generation.erased
+    variables::clsize_t             # # of variables for frame
+    prolog_vars::clsize_t           # # real Prolog variables
     flags::UInt32                   # Flag field holding CL_* flags
     codes::Vector{code}             # VM codes of clause
     head::T                         # the head term the codes were compiled from

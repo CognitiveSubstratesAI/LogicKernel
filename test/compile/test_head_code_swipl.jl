@@ -6,10 +6,12 @@
 #
 # Random heads — shared and singleton variables, atoms, small integers, compounds nested three
 # deep — are compiled by the kernel and asserted in swipl, whose `vm_list/1` prints its code. The
-# instruction sequences must be equal, `H_VOID_N` counts included. Only the instruction NAMES are
-# compared: operands are atom, functor and frame-slot numbers private to each system. Two names
-# map, because the term interface has no integer type (src/pl-comp.jl, `compileArgument!`):
-# swipl's `h_smallint` is the kernel's `h_atom`.
+# instruction sequences must be equal, OPERANDS included where both systems mean the same thing: the
+# `H_VOID_N` count and the FRAME SLOT of `H_VAR`/`H_FIRSTVAR` — slots are compacted past voids
+# (pl-comp.c `analyse_variables`), so a wrong layout shows here before any frame executes. Atom and
+# functor operands are private to each system and not compared. Two names map, because the term
+# interface has no integer type (src/pl-comp.jl, `compileArgument!`): swipl's `h_smallint` is the
+# kernel's `h_atom`.
 using Random
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 
@@ -54,7 +56,10 @@ function _hcount!(c::Dict{UInt64, Int}, t)::Dict{UInt64, Int}
     return c
 end
 
-"The kernel's head code of `head`: instruction names, `h_void_n(N)` with its count."
+"""
+The kernel's head code of `head`: instruction names, with the operand where both systems mean the
+same thing — `h_void_n(N)` its count, `h_var(N)`/`h_firstvar(N)` the frame slot.
+"""
 function _hcode(head::_H)::Vector{String}
     def = LK.lookupProcedure(_H, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
     codes = LK.compileClause(def, head).codes
@@ -63,10 +68,23 @@ function _hcode(head::_H)::Vector{String}
     while pc.pc <= length(codes)
         op = LK.decode(pc)
         name = lowercase(String(LK.codeTable(op).name))
-        push!(out, op == LK.H_VOID_N ? "$name($(codes[pc.pc + 1]))" : name)
+        if op == LK.H_VOID_N
+            push!(out, "$name($(codes[pc.pc + 1]))")
+        elseif op == LK.H_VAR || op == LK.H_FIRSTVAR
+            push!(out, "$name($(Int(codes[pc.pc + 1] - LK.VAROFFSET(0))))")
+        else
+            push!(out, name)
+        end
         pc = LK.stepPC(pc)
     end
     return out
+end
+
+"The frame size the kernel compiles `head` to: the clause's `variables` (and `prolog_vars`)."
+function _hframe(head::_H)::Tuple{Int, Int}
+    def = LK.lookupProcedure(_H, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
+    cl = LK.compileClause(def, head)
+    return (Int(cl.variables), Int(cl.prolog_vars))
 end
 
 "swipl's code for each of `heads`, from `vm_list/1`."
@@ -94,7 +112,10 @@ function _hswipl(heads::Vector{String}, names::Vector{String})::Vector{Vector{St
             elseif inclause &&
                 (m = match(r"^\s+\d+ ([a-z_]+)(\((.*)\))?\s*$", l)) !== nothing
                 name = m[1] == "h_smallint" ? "h_atom" : m[1]
-                push!(cur, name == "h_void_n" ? "h_void_n($(m[3]))" : name)
+                push!(
+                    cur,
+                    name in ("h_void_n", "h_var", "h_firstvar") ? "$name($(m[3]))" : name
+                )
             end
         end
         return res
@@ -117,11 +138,44 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     @test any(
         c -> any(i -> c[i] == "h_pop" && i > 1 && c[i - 1] != "h_pop", eachindex(c)), ours
     )
-    @test any(c -> "h_rfunctor" in c, ours) && any(c -> "h_firstvar" in c, ours)
-    @test any(c -> "h_var" in c, ours)
+    # (`h_var`/`h_firstvar` carry their slot, so they are matched by prefix)
+    @test any(c -> "h_rfunctor" in c, ours) && any(c -> any(startswith("h_firstvar("), c), ours)
+    @test any(c -> any(startswith("h_var("), c), ours)
     # a hand-checked case: p(_,_,a) is h_void_n(2), h_atom, i_exitfact (swipl vm_list, LogicKernel#1)
     @test _hcode(_he(:p, [mk_var(_H, UInt64(1)), mk_var(_H, UInt64(2)), _hs(:a)])) ==
         ["h_void_n(2)", "h_atom", "i_exitfact"]
+    # slots are COMPACTED past voids (pl-comp.c analyse_variables, `n + argvars - body_voids`),
+    # pinned with swipl 10.1.16's vm_list: p(f(_A,B,B)) puts B in slot 1, not 2 ...
+    vA, vB = mk_var(_H, UInt64(1)), mk_var(_H, UInt64(2))
+    @test _hcode(_he(:p, [_he(:f, [vA, vB, vB])])) ==
+        ["h_functor", "h_void", "h_firstvar(1)", "h_var(1)", "h_pop", "i_exitfact"]
+    # ... and q(X,g(_,Y,_,Y),X) puts Y in slot 3: of the variables numbered above the arity
+    # (_ 3, Y 4, _ 5), the void before Y is not a slot
+    vX, vY = mk_var(_H, UInt64(3)), mk_var(_H, UInt64(4))
+    @test _hcode(
+        _he(:q, [vX, _he(:g, [mk_var(_H, UInt64(5)), vY, mk_var(_H, UInt64(6)), vY]), vX])
+    ) == [
+        "h_void", "h_functor", "h_void", "h_firstvar(3)", "h_void", "h_var(3)", "h_pop",
+        "h_var(0)", "i_exitfact"
+    ]
+    # ... and ONLY voids above the arity are compacted — an argument keeps its slot whatever it
+    # holds: p(_, f(_,Y,Y)) puts Y in slot 2 (argument 0's void is not counted, f's `_` is). A fix
+    # that also counted argument voids would say 1, and the two cases above would not notice.
+    vY2 = mk_var(_H, UInt64(7))
+    @test _hcode(_he(:p, [mk_var(_H, UInt64(8)), _he(:f, [mk_var(_H, UInt64(9)), vY2, vY2])])) ==
+        ["h_void", "h_functor", "h_void", "h_firstvar(2)", "h_var(2)", "h_pop", "i_exitfact"]
+    # the frame is sized by the SAME count (pl-comp.c: prolog_vars = variables =
+    # nvars + arity + argvars - body_voids): the arguments, then the compacted variables. The
+    # expected values come from that formula, not from swipl: no predicate exposes a clause's
+    # variable count — only the QLF writer serialises it (pl-qlf.c:2915-2916) and a captured
+    # continuation's arity reflects it (pl-cont.c:475), which needs a body, not a fact.
+    @test _hframe(_he(:p, [_he(:f, [vA, vB, vB])])) == (2, 2)
+    @test _hframe(
+        _he(:q, [vX, _he(:g, [mk_var(_H, UInt64(5)), vY, mk_var(_H, UInt64(6)), vY]), vX])
+    ) == (4, 4)
+    @test _hframe(
+        _he(:p, [mk_var(_H, UInt64(8)), _he(:f, [mk_var(_H, UInt64(9)), vY2, vY2])])
+    ) == (3, 3)
     if _HSWIPL !== nothing
         @testset "identical to swipl" begin
             texts = [_htext(h, _hcount!(Dict{UInt64, Int}(), h)) for h in heads]
