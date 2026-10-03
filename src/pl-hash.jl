@@ -19,18 +19,19 @@ const MURMUR_SEED = 0x1a3be34a
 "Byte `j` (0-based) of the little-endian bytes of `key`'s words."
 _le_byte(key::NTuple{N, UInt64}, j::Int) where {N} =
     UInt32((key[(j >> 3) + 1] >> (8 * (j & 7))) & 0xff)
+"Byte `j` (0-based) of a byte buffer."
+_le_byte(key::AbstractVector{UInt8}, j::Int) = UInt32(key[j + 1])
 
 # PORT: pl-hash.c MurmurHashAligned2
-# DIVERGES: hashes the first `len` bytes of a tuple of words (the only data the kernel hashes)
-# rather than a `void*` buffer, so no pointer or alignment is involved.
+# DIVERGES: hashes the first `len` bytes of a tuple of words or of a byte buffer (the data the
+# kernel hashes) rather than a `void*`, so no pointer or alignment is involved.
 """
     MurmurHashAligned2(key, len, seed) -> UInt32
 
-MurmurHash2 of the first `len` bytes of `key` (little-endian words), as pl-hash.c computes it.
+MurmurHash2 of the first `len` bytes of `key` — a tuple of words (little-endian) or a byte
+buffer — as pl-hash.c computes it.
 """
-function MurmurHashAligned2(
-    key::NTuple{N, UInt64}, len::Int, seed::UInt32
-)::UInt32 where {N}
+function MurmurHashAligned2(key, len::Int, seed::UInt32)::UInt32
     m = 0x5bd1e995
     r = 24
     h = seed ⊻ (len % UInt32)

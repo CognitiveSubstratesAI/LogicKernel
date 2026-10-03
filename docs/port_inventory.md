@@ -53,13 +53,13 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-codetable.c` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 1 |
 | swipl-devel `src/pl-comp.c` | code | `bae881a24a3f` | `src/pl-comp.jl` | 28 |
 | swipl-devel `src/pl-comp.h` | code | `bae881a24a3f` | `src/pl-comp.jl` | 1 |
-| swipl-devel `src/pl-data.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 11 |
+| swipl-devel `src/pl-data.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 13 |
 | swipl-devel `src/pl-gc.c` | code | `bae881a24a3f` | `src/pl-gc.jl` | 1 |
 | swipl-devel `src/pl-global.h` | code | `bae881a24a3f` | `src/pl-global.jl` | 2 |
 | swipl-devel `src/pl-hash.c` | code | `bae881a24a3f` | `src/pl-hash.jl` | 1 |
 | swipl-devel `src/pl-hash.h` | code | `bae881a24a3f` | `src/pl-hash.jl` | 1 |
 | swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-comp.jl` | 5 |
-| swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 47 |
+| swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 49 |
 | swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-prims.jl` | 0 |
 | swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 1 |
 | swipl-devel `src/pl-index.c` | code | `bae881a24a3f` | `src/pl-index.jl` | 110 |
@@ -67,9 +67,15 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-prims.c` | code | `bae881a24a3f` | `src/pl-prims.jl` | 10 |
 | swipl-devel `src/pl-proc.c` | code | `bae881a24a3f` | `src/pl-proc.jl` | 23 |
 | swipl-devel `src/pl-proc.h` | code | `bae881a24a3f` | `src/pl-proc.jl` | 1 |
+| swipl-devel `src/pl-termhash.c` | code | `bae881a24a3f` | `src/pl-termhash.jl` | 35 |
+| swipl-devel `src/pl-termhash.h` | code | `bae881a24a3f` | `src/pl-termhash.jl` | 3 |
+| swipl-devel `src/pl-termwalk.c` | code | `bae881a24a3f` | `src/pl-termwalk.jl` | 5 |
 | swipl-devel `src/pl-thread.c` | code | `bae881a24a3f` | `src/pl-thread.jl` | 4 |
+| swipl-devel `src/pl-variant.c` | code | `bae881a24a3f` | `src/pl-variant.jl` | 7 |
 | swipl-devel `src/pl-vmi.c` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 12 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `bae881a24a3f` | `test/core_lang/test_bips.jl` | 8 |
+| swipl-devel `tests/core_lang/test_hash.pl` | code | `bae881a24a3f` | `test/core_lang/test_hash.jl` | 16 |
+| swipl-devel `tests/core_lang/test_term.pl` | code | `bae881a24a3f` | `test/core_lang/test_term.jl` | 17 |
 | swipl-devel `tests/db/test_db.pl` | code | `bae881a24a3f` | `test/db/test_db.jl` | 9 |
 | swipl-devel `tests/db/test_jit.pl` | code | `bae881a24a3f` | `test/db/test_jit.jl` | 30 |
 <!-- END GENERATED -->

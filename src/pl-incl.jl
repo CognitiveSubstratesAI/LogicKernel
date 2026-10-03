@@ -115,9 +115,15 @@ const LMASK_BITS = 7
 # PORT: pl-data.h TAG_MASK
 "Mask of the tag bits (pl-data.h)."
 const TAG_MASK = UInt64(0x00000007)
+# PORT: pl-data.h TAG_VAR
+"Tag of a variable (pl-data.h)."
+const TAG_VAR = UInt64(0x00000000)
 # PORT: pl-data.h TAG_ATOM
 "Tag of an atom — and, with `STG_GLOBAL`, of a functor (pl-data.h)."
 const TAG_ATOM = UInt64(0x00000005)
+# PORT: pl-data.h MARK_MASK
+"The GC mark bit (pl-data.h); variant_sha1 sets it in the words it numbers variables with."
+const MARK_MASK = UInt64(0x1) << 5
 # PORT: pl-data.h STG_MASK
 "Mask of the storage bits (pl-data.h)."
 const STG_MASK = UInt64(0x3) << 3
@@ -146,6 +152,12 @@ MK_ATOM(n::UInt64)::word = (n << 7) | TAG_ATOM | STG_STATIC
 "The functor word of functor number `n` with arity `a` (pl-data.h)."
 MK_FUNCTOR(n::UInt64, a::UInt64)::word =
     (((n << F_ARITY_BITS) | a) << LMASK_BITS) | TAG_ATOM | STG_GLOBAL
+# PORT: pl-incl.h PLMINTAGGEDINT32
+"The smallest integer a 32-bit word holds tagged (pl-incl.h)."
+const PLMINTAGGEDINT32 = -(Int64(1) << (32 - LMASK_BITS - 1))
+# PORT: pl-incl.h PLMAXTAGGEDINT32
+"The largest integer a 32-bit word holds tagged (pl-incl.h); `variant_hash/2` masks with it."
+const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
 
 # ── the structs ─────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-incl.h arg_info

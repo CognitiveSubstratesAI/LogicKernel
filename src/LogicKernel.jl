@@ -28,6 +28,9 @@ include("pl-global.jl")        # swipl-devel src/pl-global.h — the database st
 include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys
 include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to
 include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
+include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
+include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — the pre-order term walk
+include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC

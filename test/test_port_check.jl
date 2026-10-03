@@ -44,6 +44,8 @@ fooBar(int *v)
 struct foo_rec
 { int a; };
 #define FOO_MAX 4
+typedef enum { FOO_A, FOO_B } foo_kind;
+#define foo_twice(x) ((x)*2)
 """
     )
     for f in ("pl-nocopy.c", "pl-badcopy.c", "pl-noclass.c")
@@ -102,6 +104,16 @@ end
 # PORT: pl-fake.c FOO_MAX
 "a ported constant, docstring between marker and definition"
 const FOO_MAX = 4
+
+# PORT: pl-fake.c foo_kind
+"a ported enum, with a base type"
+@enum foo_kind::UInt8 FOO_A FOO_B
+
+# PORT: pl-fake.c foo_twice
+"a ported C macro, as a Julia macro"
+macro foo_twice(x)
+    return :(2 * \$(esc(x)))
+end
 """
     )
     _pc_write(
@@ -304,7 +316,7 @@ _pc_codes(vs) = sort!([
             @test isempty(r.violations)
             @test length(r.files) == 4
             inv = read(joinpath(root, "docs/port_inventory.md"), String)
-            @test occursin("`src/pl-fake.jl` | 4 |", inv)      # a struct and a const port count
+            @test occursin("`src/pl-fake.jl` | 6 |", inv)      # struct, const, enum, macro count
             @test occursin("`boot/tabling.jl` | 1 |", inv)
             @test occursin("`test/core_lang/test_fake.jl` | 1 |", inv)   # a ported TEST unit
             p = joinpath(root, "src/pl-fake.jl")

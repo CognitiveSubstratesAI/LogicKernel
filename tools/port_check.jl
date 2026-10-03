@@ -140,21 +140,29 @@ _is_def_lhs(x) =
     (x.head === :call || (x.head in (:where, :(::)) && _is_def_lhs(x.args[1])))
 _is_testset(ex) = ex isa Expr && ex.head === :macrocall && ex.args[1] === Symbol("@testset")
 
-"The name a `struct` / `const` defines: `S`, `S{T}`, `S{T} <: A`, `const X = …`, `const X{T} = …`."
+"""
+The name a `struct` / `const` / `@enum` defines: `S`, `S{T}`, `S{T} <: A`, `const X = …`,
+`const X{T} = …`, `@enum E::UInt8 …`.
+"""
 function _typename(x)::Union{String, Nothing}
     x isa Symbol && return String(x)
     x isa Expr || return nothing
-    x.head in (:curly, :<:, :(=)) && return _typename(x.args[1])
+    x.head in (:curly, :<:, :(=), :(::)) && return _typename(x.args[1])
     return nothing
 end
 
 function _defname(ex)::Union{String, Nothing}
     ex isa Expr || return nothing
     ex.head === :function && return _callname(ex.args[1])
+    ex.head === :macro && return _callname(ex.args[1])   # a ported C macro (`one_cycle`)
     ex.head === :(=) && _is_def_lhs(ex.args[1]) && return _callname(ex.args[1])
     # a ported struct or constant (`clause_index`, `MIN_SPEEDUP`) is a definition too
     ex.head === :struct && return _typename(ex.args[2])
     ex.head === :const && return _typename(ex.args[1])
+    if ex.head === :macrocall && ex.args[1] === Symbol("@enum")    # a ported C enum (`hash_algo`)
+        i = findfirst(a -> !(a isa LineNumberNode), ex.args[2:end])
+        return i === nothing ? nothing : _typename(ex.args[i + 1])
+    end
     if _is_testset(ex)                                  # a test unit: its name is its first string
         i = findfirst(a -> a isa String, ex.args)
         return i === nothing ? nothing : ex.args[i]

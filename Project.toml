@@ -13,6 +13,7 @@ authors = ["CognitiveSubstratesAI"]
 
 [compat]
 Random = "1"
+SHA = "0.7, 1"
 Test = "1"
 julia = "1.12"
 
@@ -22,7 +23,8 @@ julia = "1.12"
 # test/test_package.jl fails on any package a test file loads that is not declared here.
 [extras]
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Random", "Test"]
+test = ["Random", "SHA", "Test"]
