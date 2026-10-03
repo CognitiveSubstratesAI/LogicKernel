@@ -1,6 +1,8 @@
 # ORIGINAL: the test harness for the clause index — builds predicates and calls them as SWI's VM does; upstream's tests run inside swipl and need none.
 # test/db/index_testlib.jl — included by the clause-index tests (test_jit.jl, test_index_swipl.jl,
 # test/compile/test_head_code_swipl.jl). Not a test file itself: runtests.jl runs `test_*.jl` only.
+# TERM-GENERIC: it builds and reads terms with test/term_under_test.jl's `lk_*` functions, which
+# the including file must have included.
 #
 # HOW A CALL IS MADE, AND WHY (pl-supervisor.c, read 2026-10-02): before a predicate's first call
 # after its clause list changed, SWI replaces its S_VIRGIN supervisor (`setDefaultSupervisor`),
@@ -36,7 +38,7 @@ ix_pred(
     IxPred{T}(
         db,
         LK.lookupProcedure(
-            T, sym_key(sym_term(T, name)), arity, dynamic ? LK.P_DYNAMIC : UInt64(0)
+            T, sym_key(lk_sym(T, name)), arity, dynamic ? LK.P_DYNAMIC : UInt64(0)
         ),
         true
     )
@@ -163,14 +165,14 @@ function ix_text(t)::String
     k = kind(t)
     k === VAR && return "_"
     if k === SYM
-        n = String(sym_name(t))
+        n = String(lk_name(t))
         return if occursin(r"^[a-z][A-Za-z0-9_]*$", n)
             n
         else
             "'" * replace(n, "'" => "\\'") * "'"
         end
     elseif k === GND
-        v = gnd_value(t)
+        v = lk_value(t)
         return v isa AbstractFloat ? repr(Float64(v)) : string(v)
     end
     return ix_text(child(t, 1)) * "(" *

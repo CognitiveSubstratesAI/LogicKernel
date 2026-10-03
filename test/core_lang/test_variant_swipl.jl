@@ -20,7 +20,8 @@
 using Test, LogicKernel, Random
 using LogicKernel: is_variant_ptr, pl_variant_sha1, pl_variant_hash
 
-const _VT = DefaultTerm
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _VT = lk_term_type(Union{Int64, Float64, String})
 const _VNVARS = 4
 
 "A random term of depth ≤ `d`, its variables from `vars`."
@@ -29,12 +30,12 @@ function _vrand(rng, d::Int, vars::Vector{Int})::_VT
     if d == 0 || r <= 4
         k = rand(rng, 1:6)
         k <= 3 && return mk_var(_VT, UInt64(rand(rng, vars)))
-        k == 4 && return sym_term(_VT, rand(rng, (:a, :b, :f)))
-        k == 5 && return gnd_term(_VT, rand(rng, (0, 1, 2)))
-        return gnd_term(_VT, rand(rng, (0.0, -0.0, 1.0, 2.5, "s")))
+        k == 4 && return lk_sym(_VT, rand(rng, (:a, :b, :f)))
+        k == 5 && return lk_gnd(_VT, rand(rng, (0, 1, 2)))
+        return lk_gnd(_VT, rand(rng, (0.0, -0.0, 1.0, 2.5, "s")))
     end
     f, n = rand(rng, ((:f, 1), (:f, 2), (:g, 2), (:h, 3)))
-    return mk_expr(_VT, _VT[sym_term(_VT, f); [_vrand(rng, d - 1, vars) for _ in 1:n]])
+    return mk_expr(_VT, _VT[lk_sym(_VT, f); [_vrand(rng, d - 1, vars) for _ in 1:n]])
 end
 
 "`t` with every variable renamed by `m` (a variable not in `m` is kept)."
@@ -59,14 +60,14 @@ end
 function _vrelabel(t::_VT, done::Base.RefValue{Bool}, heads::Bool)::_VT
     done[] && return t
     k = kind(t)
-    if k === SYM && !heads && sym_name(t) === :a
+    if k === SYM && !heads && lk_name(t) === :a
         done[] = true
-        return sym_term(_VT, :b)
+        return lk_sym(_VT, :b)
     end
     k === EXPR || return t
-    if heads && nchildren(t) == 3 && sym_name(child(t, 1)) === :f
+    if heads && nchildren(t) == 3 && lk_name(child(t, 1)) === :f
         done[] = true
-        return mk_expr(_VT, _VT[sym_term(_VT, :g); [child(t, i) for i in 2:3]])
+        return mk_expr(_VT, _VT[lk_sym(_VT, :g); [child(t, i) for i in 2:3]])
     end
     return mk_expr(_VT, _VT[_vrelabel(child(t, i), done, heads) for i in 1:nchildren(t)])
 end
@@ -84,10 +85,10 @@ end
 function _vreground(t::_VT, done::Base.RefValue{Bool})::_VT
     done[] && return t
     if kind(t) === GND
-        w = _vtwin(gnd_value(t))
+        w = _vtwin(lk_value(t))
         w === nothing && return t
         done[] = true
-        return gnd_term(_VT, w)
+        return lk_gnd(_VT, w)
     end
     kind(t) === EXPR || return t
     return mk_expr(_VT, _VT[_vreground(child(t, i), done) for i in 1:nchildren(t)])
@@ -107,9 +108,9 @@ _voccurs(t::_VT, a::UInt64)::Int =
 function _vsrc(t::_VT)::String
     k = kind(t)
     k === VAR && return "V$(var_key(t))"
-    k === SYM && return string(sym_name(t))
+    k === SYM && return string(lk_name(t))
     if k === GND
-        v = gnd_value(t)
+        v = lk_value(t)
         return v isa String ? "\"$v\"" : string(v)
     end
     return _vsrc(child(t, 1)) * "(" *

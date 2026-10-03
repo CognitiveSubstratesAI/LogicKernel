@@ -21,9 +21,10 @@
 #       L == [1,2,3]  — retract/1 on redo yields q(3) though the inner retract erased it first
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
-const _U = DefaultTerm
-_us(n) = sym_term(_U, Symbol(n))
-_ug(v) = gnd_term(_U, v)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _U = lk_term_type(Union{Int64, Float64, String})
+_us(n) = lk_sym(_U, Symbol(n))
+_ug(v) = lk_gnd(_U, v)
 _ue(f, xs...) = mk_expr(_U, _U[_us(f), xs...])
 let n = UInt64(0)
     global _uv() = mk_var(_U, n += 1)
@@ -39,7 +40,7 @@ function _uv_kernel()
         ix_assertz!(p, _ue(:p, _ug(i)))
         ix_assertz!(q, _ue(:q, _ug(i)))
     end
-    xval(i) = gnd_value(child(i, 2))::Int
+    xval(i) = lk_value(child(i, 2))::Int
     l1 = xval.(
         ix_clause(p, _ue(:p, _uv());
             after=i -> (

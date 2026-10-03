@@ -4,16 +4,17 @@
 # re-entered mid-call; the guard makes a violation loud.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
-const _IC = DefaultTerm
-_ics(n) = sym_term(_IC, Symbol(n))
-_icg(v) = gnd_term(_IC, v)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _IC = lk_term_type(Union{Int64, Float64, String})
+_ics(n) = lk_sym(_IC, Symbol(n))
+_icg(v) = lk_gnd(_IC, v)
 _ice(f, xs...) = mk_expr(_IC, _IC[_ics(f), xs...])
 
 @testset "the shared index_context: re-entrance fails loudly" begin
     db = IxDB{_IC}()
     p = ix_pred(_IC, :p, 1; dynamic=true, db=db)
     foreach(i -> ix_assertz!(p, _ice(:p, _icg(i))), 1:20)
-    goal = _ice(:p, var_term(_IC, UInt64(1)))
+    goal = _ice(:p, lk_var(_IC, UInt64(1)))
     @test length(ix_call(p, goal)) == 20                    # a whole enumeration…
     @test !db.ld.index_ctx.active                           # …leaves the context free
     # provoke it: a search "in progress" when another one starts

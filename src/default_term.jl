@@ -127,6 +127,7 @@ the benchmark programs) must read them. Throws a `TypeError` on a non-`GND` term
 gnd_value(t::Term{G}) where {G} = t.gval::G
 
 kind(t::Term)::Kind = t.kind
+term_type(::Term{G}) where {G} = Term{G}
 nchildren(t::Term)::Int = length(t.children)
 child(t::Term{G}, i::Int) where {G} = t.children[i]
 sym_key(t::Term)::UInt64 = t.key

@@ -16,8 +16,9 @@
 # float flags and arithmetic are not part of the kernel.
 using Test, LogicKernel
 
-const _IT = DefaultTerm
-_ig(x) = gnd_term(_IT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _IT = lk_term_type(Union{Int64, Float64, String})
+_ig(x) = lk_gnd(_IT, x)
 _ilt(a, b) = compareStandard(_ig(a), _ig(b)) == -1         # a @< b
 _igt(a, b) = compareStandard(_ig(a), _ig(b)) == 1          # a @> b
 

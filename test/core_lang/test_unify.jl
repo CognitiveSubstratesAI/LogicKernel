@@ -19,9 +19,10 @@ using Test, LogicKernel
 using LogicKernel:
     PL_local_data, pl_unify!, pl_can_compare, unifiable, resolve_term, Mark, Undo!
 
-const _UT = DefaultTerm
-_us(x::Symbol) = sym_term(_UT, x)
-_ug(x) = gnd_term(_UT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _UT = lk_term_type(Union{Int64, Float64, String})
+_us(x::Symbol) = lk_sym(_UT, x)
+_ug(x) = lk_gnd(_UT, x)
 _uc(f::Symbol, xs::_UT...) = mk_expr(_UT, _UT[_us(f), xs...])
 _uv(k::Int) = mk_var(_UT, UInt64(k))
 _unil() = _us(Symbol("[]"))

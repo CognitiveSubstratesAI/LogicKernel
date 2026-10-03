@@ -11,9 +11,10 @@
 # required — never a silent pass.
 using Test, LogicKernel
 
-const _OT = Term{Union{Int64, Float64, String}}
-_os(x) = sym_term(_OT, x)
-_og(x) = gnd_term(_OT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _OT = lk_term_type(Union{Int64, Float64, String})
+_os(x) = lk_sym(_OT, x)
+_og(x) = lk_gnd(_OT, x)
 _oe(xs::_OT...) = mk_expr(_OT, _OT[xs...])
 
 # (our term, its Prolog source). Prolog compounds need an ATOM head and ≥ 1 argument; NaN and the

@@ -16,8 +16,9 @@
 using Test, LogicKernel
 using LogicKernel: is_variant_ptr
 
-const _TT = DefaultTerm
-_ta(x::Symbol) = sym_term(_TT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _TT = lk_term_type(Union{Int64, Float64, String})
+_ta(x::Symbol) = lk_sym(_TT, x)
 _tc(f::Symbol, xs::_TT...) = mk_expr(_TT, _TT[_ta(f), xs...])
 let n = UInt64(0)
     global _tv() = mk_var(_TT, n += 1)

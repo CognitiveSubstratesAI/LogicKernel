@@ -23,9 +23,10 @@
 using Test, LogicKernel
 using LogicKernel: pl_variant_sha1, pl_variant_hash, pl_term_hash
 
-const _HT = DefaultTerm
-_ha(x::Symbol) = sym_term(_HT, x)
-_hg(x) = gnd_term(_HT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _HT = lk_term_type(Union{Int64, Float64, String})
+_ha(x::Symbol) = lk_sym(_HT, x)
+_hg(x) = lk_gnd(_HT, x)
 _hc(f::Symbol, xs::_HT...) = mk_expr(_HT, _HT[_ha(f), xs...])
 let n = UInt64(0)
     global _hv() = mk_var(_HT, n += 1)
@@ -94,11 +95,11 @@ end
     end
     # PORT: test_hash.pl simple_3
     @testset "simple_3" begin                           # Big int
-        BT = Term{Union{Int64, BigInt}}
+        BT = lk_term_type(Union{Int64, BigInt})
         num = BigInt(366454713) << 64                   # Num is 366454713<<64
-        x = pl_term_hash(gnd_term(BT, num))
+        x = pl_term_hash(lk_gnd(BT, num))
         @test _is_hash(x)
-        @test x == pl_term_hash(gnd_term(BT, BigInt(366454713) << 64))     # an equal copy
+        @test x == pl_term_hash(lk_gnd(BT, BigInt(366454713) << 64))     # an equal copy
     end
     # PORT: test_hash.pl simple_4
     @testset "simple_4" begin

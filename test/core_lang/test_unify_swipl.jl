@@ -32,11 +32,12 @@ using LogicKernel:
     OCCURS_CHECK_TRUE,
     OCCURS_CHECK_ERROR
 
-const _ZT = Term{Union{Int64, BigInt, Float64, String}}
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _ZT = lk_term_type(Union{Int64, BigInt, Float64, String})
 const _ZPOOL = 4                                            # variables V1…V4 shared by both sides
 const _ZALL = 6                                             # V5, V6: fresh in some pairs
 const _ZBIG = big(2)^70                                     # an integer past Int64
-_zs(x::Symbol) = sym_term(_ZT, x)
+_zs(x::Symbol) = lk_sym(_ZT, x)
 _zc(f::Symbol, xs::_ZT...) = mk_expr(_ZT, _ZT[_zs(f), xs...])
 _zv(k::Int) = mk_var(_ZT, UInt64(k))
 
@@ -44,11 +45,11 @@ _zv(k::Int) = mk_var(_ZT, UInt64(k))
 function _zatom(rng)::_ZT
     k = rand(rng, 1:6)
     k == 1 && return _zs(rand(rng, (:a, :b, :s)))
-    k == 2 && return gnd_term(_ZT, rand(rng, (0, 1)))
-    k == 3 && return gnd_term(_ZT, rand(rng, (big(1), _ZBIG)))
-    k == 4 && return gnd_term(_ZT, rand(rng, (0.0, -0.0, 1.0)))
-    k == 5 && return gnd_term(_ZT, NaN)
-    return gnd_term(_ZT, "s")
+    k == 2 && return lk_gnd(_ZT, rand(rng, (0, 1)))
+    k == 3 && return lk_gnd(_ZT, rand(rng, (big(1), _ZBIG)))
+    k == 4 && return lk_gnd(_ZT, rand(rng, (0.0, -0.0, 1.0)))
+    k == 5 && return lk_gnd(_ZT, NaN)
+    return lk_gnd(_ZT, "s")
 end
 
 "A random term of depth ≤ `d` over variables `vars`."
@@ -81,12 +82,12 @@ end
 "The near twin of atomic `t` — another kind or representation of a like value — or `nothing`."
 function _ztwin(t::_ZT)::Union{Nothing, _ZT}
     if kind(t) === SYM
-        n = sym_name(t)
-        n === :s && return gnd_term(_ZT, "s")               # atom s vs string "s"
+        n = lk_name(t)
+        n === :s && return lk_gnd(_ZT, "s")               # atom s vs string "s"
         n in (:a, :b) && return _zs(n === :a ? :b : :a)
         return nothing
     end
-    v = gnd_value(t)
+    v = lk_value(t)
     w = if v isa String
         return _zs(:s)
     elseif v isa Int64
@@ -102,7 +103,7 @@ function _ztwin(t::_ZT)::Union{Nothing, _ZT}
     else
         nothing
     end
-    return w === nothing ? nothing : gnd_term(_ZT, w)
+    return w === nothing ? nothing : lk_gnd(_ZT, w)
 end
 
 "`t` with its first atomic value that has a near twin replaced by the twin; `done` if it did."
@@ -159,7 +160,9 @@ function _zpairs(rng, n::Int)
             continue
         end
         b = if how === :instance || how === :perturbed
-            m = Dict(UInt64(k) => _zrand(rng, 1, pool) for k in pool if rand(rng) < 0.6)
+            m = Dict{UInt64, _ZT}(
+                UInt64(k) => _zrand(rng, 1, pool) for k in pool if rand(rng) < 0.6
+            )
             inst = _zsubst(a, m)
             how === :perturbed ? _zperturb(inst, Ref(false)) : inst
         elseif how === :generalise
@@ -182,9 +185,9 @@ end
 function _zsrc(t::_ZT)::String
     k = kind(t)
     k === VAR && return "V$(var_key(t))"
-    k === SYM && return string(sym_name(t))
+    k === SYM && return string(lk_name(t))
     if k === GND
-        v = gnd_value(t)
+        v = lk_value(t)
         v isa String && return "\"$v\""
         v isa Float64 && isnan(v) && return "1.5NaN"        # SWI's quiet NaN (Julia's `NaN`)
         return string(v)

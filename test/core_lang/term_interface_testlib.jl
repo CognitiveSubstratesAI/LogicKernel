@@ -105,6 +105,29 @@ function run_term_conformance(
             @test kind(ex(sy(:f))) === EXPR
         end
 
+        # The kernel builds its containers and terms with `term_type(t)`, never `typeof(t)` — for an
+        # abstract hierarchy those differ, and a leaf there breaks the kernel's walks (2026-10-03).
+        @testset "term_type is the term type of every term, children included" begin
+            v = mk_var(T, UInt64(1))
+            e = ex(sy(:f), v, gn(1), ex(sy(:g), gn("s")))
+            ts = T[v, sy(:s), e, mk_expr(T, T[]), (gn(x) for x in HOST_VALUES)...]
+            append!(ts, (child(e, i) for i in 1:nchildren(e)))
+            @test all(t -> term_type(t) === T, ts)
+            @test length(ts) == length(HOST_VALUES) + 8
+        end
+
+        # The kernel's "same term" test is `===` (upstream: a cell address) and its identity maps
+        # key by it, so `===` on compounds must be an address compare. A compound that is a plain
+        # immutable value makes it structural — exponential on shared subterms (2026-10-03).
+        @testset "a compound has object identity: separately built twins are not ===" begin
+            mk() = ex(sy(:f), gn(1), ex(sy(:g), mk_var(T, UInt64(1))))
+            a, b = mk(), mk()
+            @test compareStandard(a, b) == 0              # identical terms…
+            @test a !== b                                 # …but two compounds
+            @test mk_expr(T, T[]) !== mk_expr(T, T[])
+            @test a === a && child(a, 3) === child(a, 3)  # a compound is itself
+        end
+
         @testset "sym_key is equal exactly when the symbols are equal" begin
             names = (:a, :b, :ab, :f, :foo, Symbol("a b"), :α, Symbol(""))
             @test all(n -> sym_key(sy(n)) == sym_key(sy(n)), names)     # separately built twins
@@ -176,6 +199,8 @@ function run_term_conformance(
                 () -> ex(mk_var(T, UInt64(1)), sy(:a)),
                 () -> ex(ex(sy(:curry), sy(:f)), sy(:x)),
                 () -> ex(), () -> ex(sy(:h), ex(sy(:g), ex(sy(:f), gn(0.0)))),
+                # arities NESTED: a walk whose agenda is typed by the outer compound breaks here
+                () -> ex(sy(:f), ex(sy(:g), sy(:a)), ex(sy(:h), sy(:a), sy(:b))),
                 () -> ex(sy(:h), ex(sy(:g), ex(sy(:f), gn(-0.0)))))
             n2 = n1 + 10
             for (k, mk) in enumerate(mkx)

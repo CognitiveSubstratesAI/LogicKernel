@@ -111,7 +111,10 @@ end
 
 # PORT: pl-termwalk.c ac_initTermAgenda
 "An agenda that walks `t` and all its subterms (pl-termwalk.c)."
-ac_initTermAgenda(t::T) where {T} = ac_term_agenda{T}(acNode{T}(t, 0, 1), acNode{T}[])
+function ac_initTermAgenda(t)
+    T = term_type(t)
+    return ac_term_agenda{T}(acNode{T}(t, 0, 1), acNode{T}[])
+end
 
 # PORT: pl-termwalk.c ac_nextTermAgenda
 "The next subterm in pre-order, or `nothing` when the walk is done (pl-termwalk.c)."

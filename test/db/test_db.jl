@@ -13,9 +13,10 @@
 # the `dynamic`, `protect` and `res_compiler` units.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
-const _D = DefaultTerm
-_ds(n) = sym_term(_D, Symbol(n))
-_dg(v) = gnd_term(_D, v)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _D = lk_term_type(Union{Int64, Float64, String})
+_ds(n) = lk_sym(_D, Symbol(n))
+_dg(v) = lk_gnd(_D, v)
 _de(f, xs...) = mk_expr(_D, _D[_ds(f), xs...])
 let n = UInt64(0)
     global _dv() = mk_var(_D, n += 1)
@@ -33,7 +34,7 @@ _dall(p::IxPred{_D}, name::Symbol) = _de(name, (_dv() for _ in 1:(p.def.arity)).
         try
             ix_assertz!(foo, _de(:foo, _dg(1)))                    # assert(foo(1))
             r = ix_retract!(foo, _de(:foo, _dv()); after=_ -> false)   # retract(foo(X))
-            @test length(r) == 1 && child(r[1], 2) == _dg(1)       # X == 1
+            @test length(r) == 1 && lk_eq(child(r[1], 2), _dg(1))       # X == 1
         finally
             ix_retractall!(foo, _dall(foo, :foo))
         end
@@ -44,7 +45,7 @@ _dall(p::IxPred{_D}, name::Symbol) = _de(name, (_dv() for _ in 1:(p.def.arity)).
         try
             ix_assertz!(foo, _de(:foo, _dg(1)))
             r = ix_retract!(foo, _de(:foo, _dv()); after=_ -> false)
-            @test length(r) == 1 && child(r[1], 2) == _dg(1)
+            @test length(r) == 1 && lk_eq(child(r[1], 2), _dg(1))
         finally
             ix_retractall!(foo, _dall(foo, :foo))
         end
@@ -66,7 +67,7 @@ _dall(p::IxPred{_D}, name::Symbol) = _de(name, (_dv() for _ in 1:(p.def.arity)).
         )
         # findall(I, retract(icopy(I)), L)
         l = [child(i, 2) for i in ix_retract!(icopy, _de(:icopy, _dv()))]
-        @test l == [_ds(:ant), _ds(:bee)]                          # L == [ant,bee]
+        @test lk_eq(l, [_ds(:ant), _ds(:bee)])                          # L == [ant,bee]
     end
 end
 
@@ -90,7 +91,7 @@ end
         init_db()
         try
             ix_retractall!(dbp, _de(:db, _dv(), _dv()))           # retractall(db(_,_))
-            @test all_db() == _D[]                                 # All=[]
+            @test lk_eq(all_db(), _D[])                                 # All=[]
         finally
             clear_db()
         end
@@ -100,7 +101,7 @@ end
         init_db()
         try
             ix_retractall!(dbp, _de(:db, _dg(1), _dv()))          # retractall(db(1,_))
-            @test all_db() == [_de(:db, _dg(2), _dg(1)), _de(:db, _dg(2), _dg(2))]
+            @test lk_eq(all_db(), [_de(:db, _dg(2), _dg(1)), _de(:db, _dg(2), _dg(2))])
         finally
             clear_db()
         end
@@ -111,7 +112,7 @@ end
         try
             x = _dv()
             ix_retractall!(dbp, _de(:db, x, x))                    # retractall(db(X,X))
-            @test all_db() == [_de(:db, _dg(1), _dg(2)), _de(:db, _dg(2), _dg(1))]
+            @test lk_eq(all_db(), [_de(:db, _dg(1), _dg(2)), _de(:db, _dg(2), _dg(1))])
         finally
             clear_db()
         end

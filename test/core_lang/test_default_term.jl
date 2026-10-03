@@ -84,4 +84,16 @@ _e(xs::_TT...) = mk_expr(_TT, _TT[xs...])
         @test compareStandard(a, b) == -1                # decided 200 000 levels down, no stack overflow
         @test compareStandard(a, deep(_g(1))) == 0
     end
+
+    # The kernel's two-term entry points used to refuse two term types by their diagonal signature
+    # `(t1::T, t2::T)`; that signature also refused every abstract hierarchy, so it is gone, and the
+    # refusal is now explicit (`term_type`).
+    @testset "two term types cannot be compared" begin
+        other = Term{Float64}
+        @test term_type(_s(:a)) === _TT && term_type(sym_term(other, :a)) === other
+        @test_throws ArgumentError compareStandard(_s(:a), sym_term(other, :a))
+        @test_throws ArgumentError compareStandard(_s(:a), sym_term(other, :a), true)
+        @test_throws ArgumentError LogicKernel.is_variant_ptr(_s(:a), sym_term(other, :a))
+        @test compareStandard(_s(:a), _s(:a)) == 0      # one term type: compared as before
+    end
 end

@@ -12,11 +12,12 @@ include(joinpath(@__DIR__, "index_testlib.jl"))
 using LogicKernel:
     PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, fresh_var_keys!
 
-const _CV = DefaultTerm
-_cvs(n) = sym_term(_CV, Symbol(n))
-_cvg(v) = gnd_term(_CV, v)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _CV = lk_term_type(Union{Int64, Float64, String})
+_cvs(n) = lk_sym(_CV, Symbol(n))
+_cvg(v) = lk_gnd(_CV, v)
 _cve(f, xs...) = mk_expr(_CV, _CV[_cvs(f), xs...])
-_cvv(k) = var_term(_CV, UInt64(k))
+_cvv(k) = lk_var(_CV, UInt64(k))
 
 "The kernel variables in `t` (keys at or above KERNEL_VAR_BASE)."
 function _cvkernel(t)::Vector{UInt64}
@@ -26,9 +27,9 @@ function _cvkernel(t)::Vector{UInt64}
 end
 
 @testset "a caller's variables: var_term enforces the caller half" begin
-    @test var_key(var_term(_CV, KERNEL_VAR_BASE - 1)) == KERNEL_VAR_BASE - 1
-    @test_throws ArgumentError var_term(_CV, KERNEL_VAR_BASE)
-    @test_throws ArgumentError var_term(_CV, typemax(UInt64))
+    @test var_key(lk_var(_CV, KERNEL_VAR_BASE - 1)) == KERNEL_VAR_BASE - 1
+    @test_throws ArgumentError lk_var(_CV, KERNEL_VAR_BASE)
+    @test_throws ArgumentError lk_var(_CV, typemax(UInt64))
     @test var_key(mk_var(_CV, KERNEL_VAR_BASE)) == KERNEL_VAR_BASE     # the raw constructor: no check
 end
 
@@ -98,7 +99,7 @@ end
         db.ld,
         p.def,
         _cve(:p, X),
-        cl -> (push!(seen, gnd_value(deRef(db.ld, X))); true)
+        cl -> (push!(seen, lk_value(deRef(db.ld, X))); true)
     )
     @test seen == [1, 2, 3]                                 # bound while the sink ran
     @test kind(deRef(db.ld, X)) === VAR                     # and unbound after

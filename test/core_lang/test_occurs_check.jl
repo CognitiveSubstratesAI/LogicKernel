@@ -25,8 +25,9 @@ using LogicKernel:
     OCCURS_CHECK_TRUE,
     OCCURS_CHECK_ERROR
 
-const _OT = DefaultTerm
-_os(x::Symbol) = sym_term(_OT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _OT = lk_term_type(Union{Int64, Float64, String})
+_os(x::Symbol) = lk_sym(_OT, x)
 _oc(f::Symbol, xs::_OT...) = mk_expr(_OT, _OT[_os(f), xs...])
 _ov(k::Int) = mk_var(_OT, UInt64(k))
 _oid(a, b) = compareStandard(a, b) == 0                     # ==/2

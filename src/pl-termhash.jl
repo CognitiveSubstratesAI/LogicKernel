@@ -73,7 +73,8 @@ end
 A node for compound `t` below node `parent`: its hash starts from `MURMUR_SEED` and its name's
 hash — `sym_hash` of a symbol head, 0 for any other head (pl-termhash.c `start_term`).
 """
-function th_start_term(t::T, parent::Int)::th_data{T} where {T}
+function th_start_term(t, parent::Int)
+    T = term_type(t)
     off, arity = _comp_shape(t)
     hash = MURMUR_SEED
     name = off == 2 ? sym_hash(child(t, 1)) : UInt64(0)
@@ -108,11 +109,11 @@ end
 
 # PORT: pl-termhash.c termHashValue
 "The hash of `p`, or `nothing` when it is not ground (pl-termhash.c)."
-function termHashValue(p::T)::Union{Nothing, UInt32} where {T}
+function termHashValue(p)::Union{Nothing, UInt32}
     if kind(p) !== EXPR
         return primitiveHashValue(p, MURMUR_SEED)
     end
-    b = th_data{T}[]
+    b = th_data{term_type(p)}[]
     push!(b, th_start_term(p, 0))
     workp = Ref(1)
     while true
@@ -539,7 +540,7 @@ end
 
 # PORT: pl-termhash.c variant_hash_walk
 "The digest of `term`'s variant class under `algorithm` (pl-termhash.c)."
-function variant_hash_walk(term::T, algorithm::hash_algo)::termhash_t where {T}
+function variant_hash_walk(term, algorithm::hash_algo)::termhash_t
     state = sha1_state(algorithm)
     if algorithm == HASH_SHA1
         sha1_begin!(state.sha1)
@@ -564,7 +565,7 @@ end
 
 The digest of `term`'s variant class: equal for `=@=` terms (pl-termhash.c).
 """
-variant_hash(term::T, algorithm::hash_algo) where {T} = variant_hash_walk(term, algorithm)
+variant_hash(term, algorithm::hash_algo) = variant_hash_walk(term, algorithm)
 
 # PORT: pl-termhash.c variant_sha1 as pl_variant_sha1
 """

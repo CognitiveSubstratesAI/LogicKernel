@@ -35,8 +35,10 @@ end
 
 # PORT: pl-variant.c push_start_args
 "Start the agenda on one pair (pl-variant.c)."
-push_start_args(left::T, right::T) where {T} =
-    argPairs{T}(aWork{T}(left, right, 0, 0, 1), aWork{T}[])
+function push_start_args(left, right)
+    T = term_type(left)
+    return argPairs{T}(aWork{T}(left, right, 0, 0, 1), aWork{T}[])
+end
 
 # PORT: pl-variant.c push_args
 "Push the current work and compare the arguments of `left` and `right` next (pl-variant.c)."
@@ -127,7 +129,12 @@ end
 
 `t1 =@= t2`: the terms are equal up to a one-to-one renaming of their variables (pl-variant.c).
 """
-function is_variant_ptr(t1::T, t2::T)::Bool where {T}
+function is_variant_ptr(t1, t2)::Bool
+    term_type(t1) === term_type(t2) || throw(
+        ArgumentError(
+            "is_variant_ptr: terms of two term types, $(term_type(t1)) and $(term_type(t2))"
+        )
+    )
     if t1 === t2                        # same term
         return true
     end

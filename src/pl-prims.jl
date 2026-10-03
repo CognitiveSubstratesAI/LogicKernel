@@ -154,7 +154,7 @@ One step of the walk (pl-prims.c `compare_primitives`): variables before atomic 
 compounds; two variables by [`var_key`](@ref); two atomic terms by [`atomic_compare`](@ref); two
 compounds → `CMP_COMPOUND`, meaning "descend".
 """
-function compare_primitives(t1::T, t2::T, mode::Int)::Int where {T}
+function compare_primitives(t1, t2, mode::Int)::Int
     k1, k2 = kind(t1), kind(t2)
     r1, r2 = _tag_rank(k1), _tag_rank(k2)
     if r1 != r2
@@ -181,7 +181,7 @@ end
 Two compounds by arity (pl-prims.c `compare_functors`). `CMP_EQUAL` means "same shape — compare
 the children", head first.
 """
-function compare_functors(t1::T, t2::T, mode::Int)::Int where {T}
+function compare_functors(t1, t2, mode::Int)::Int
     n1, n2 = nchildren(t1), nchildren(t2)
     n1 == n2 && return CMP_EQUAL
     mode == CMP_MODE_EQUAL && return CMP_NOTEQ
@@ -196,7 +196,8 @@ Compare two compounds of the same shape child by child, left to right, depth fir
 explicit agenda instead of recursion (pl-prims.c `do_compare` over a `term_agendaLR`) — so a deep
 term cannot overflow the stack. The first difference decides.
 """
-function do_compare(t1::T, t2::T, mode::Int)::Int where {T}
+function do_compare(t1, t2, mode::Int)::Int
+    T = term_type(t1)
     agenda = Tuple{T, T, Int}[(t1, t2, 1)]           # (left, right, next child index)
     while !isempty(agenda)
         a, b, i = agenda[end]
@@ -225,7 +226,7 @@ end
 One walk over both terms (pl-prims.c `compare_fast`): decide at the top if the terms are not both
 compound, otherwise compare shapes and then the children with [`do_compare`](@ref).
 """
-function compare_fast(t1::T, t2::T, mode::Int)::Int where {T}
+function compare_fast(t1, t2, mode::Int)::Int
     rc = compare_primitives(t1, t2, mode)
     rc == CMP_COMPOUND || return rc
     rc = compare_functors(t1, t2, mode)
@@ -235,14 +236,12 @@ end
 
 # PORT: pl-prims.c compare_std
 # DIVERGES: no cyclic-term fallback (`compare_descend`) — interface terms are finite trees, so the single fast walk is always the answer.
-# Long form on purpose: in the SHORT form `f(x::T)::Int where {T} = …` the `where` binds to the
-# return type, not the method, and `T` is undefined — precompilation failed on exactly that.
 """
     compare_std(t1, t2, mode::Int) -> Int
 
 The standard-order comparison in `mode` (pl-prims.c `compare_std`).
 """
-function compare_std(t1::T, t2::T, mode::Int)::Int where {T}
+function compare_std(t1, t2, mode::Int)::Int
     return compare_fast(t1, t2, mode)
 end
 
@@ -254,8 +253,15 @@ The standard order of terms (pl-prims.c `compareStandard`, Prolog `compare/3`): 
 `0` exactly when the terms are identical — the same variables, identical atomic terms (see
 [`atomic_compare`](@ref)) and the same structure. With `eq = true` it only decides equality and
 returns `0` or `CMP_NOTEQ` (`2`), skipping the ordering work (`==/2`).
+
+Both terms must be of ONE term type ([`term_type`](@ref)), or it throws an `ArgumentError`.
 """
-function compareStandard(t1::T, t2::T, eq::Bool=false)::Int where {T}
+function compareStandard(t1, t2, eq::Bool=false)::Int
+    term_type(t1) === term_type(t2) || throw(
+        ArgumentError(
+            "compareStandard: terms of two term types, $(term_type(t1)) and $(term_type(t2))"
+        )
+    )
     return compare_std(t1, t2, eq ? CMP_MODE_EQUAL : CMP_MODE_ORDER)
 end
 

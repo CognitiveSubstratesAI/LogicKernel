@@ -14,9 +14,10 @@
 # the units call `garbage_collect_clauses`.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
-const _J = DefaultTerm
-_js(n) = sym_term(_J, Symbol(n))
-_jg(v) = gnd_term(_J, v)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _J = lk_term_type(Union{Int64, Float64, String})
+_js(n) = lk_sym(_J, Symbol(n))
+_jg(v) = lk_gnd(_J, v)
 _je(f, xs...) = mk_expr(_J, _J[_js(f), xs...])
 let n = UInt64(0)
     global _jv() = mk_var(_J, n += 1)
@@ -56,7 +57,7 @@ mkbigint(shift::Int, i::Int)::Integer =
 mkfloat(i::Int)::Float64 = Float64(i)
 
 "`d(A, B)` over term type `T`."
-_jd(::Type{T}, a::T, b::T) where {T} = mk_expr(T, T[sym_term(T, :d), a, b])
+_jd(::Type{T}, a::T, b::T) where {T} = mk_expr(T, T[lk_sym(T, :d), a, b])
 
 "`cleanup(retractall(d(_,_)))`: run the unit, then empty `d/2` whatever happened."
 function _jcleanup(f, d::IxPred{T}) where {T}
@@ -75,7 +76,7 @@ every answer, in order (`findall`).
 function rmd(d::IxPred{T}, x::T, y::T)::Vector{T} where {T}
     return ix_retract!(
         d, _jd(T, x, y);
-        after=inst -> (child(inst, 3) == gnd_term(T, 89) && ix_gc!(d.db); true)
+        after=inst -> (lk_eq(child(inst, 3), lk_gnd(T, 89)) && ix_gc!(d.db); true)
     )
 end
 
@@ -87,7 +88,7 @@ instances of every answer, in order (`findall`).
 function claused(d::IxPred{T}, x::T, y::T)::Vector{T} where {T}
     return ix_clause(
         d, _jd(T, x, y);
-        after=inst -> (child(inst, 3) == gnd_term(T, 89) && ix_gc!(d.db); true)
+        after=inst -> (lk_eq(child(inst, 3), lk_gnd(T, 89)) && ix_gc!(d.db); true)
     )
 end
 
@@ -97,16 +98,16 @@ end
 predicate has exactly a hash on argument 1. `T` is the term type holding `D` and `I`.
 """
 function test_index_1(d::IxPred{T}, convert, int)::Nothing where {T}
-    g(v) = gnd_term(T, v)
+    g(v) = lk_gnd(T, v)
     ix_retractall!(d, _jd(T, mk_var(T, UInt64(1)), mk_var(T, UInt64(2))))  # retractall(d(_,_))
     for i in 1:1000
-        ix_assertz!(d, mk_expr(T, T[sym_term(T, :d), g(convert(i)), g(int(i))]))
+        ix_assertz!(d, mk_expr(T, T[lk_sym(T, :d), g(convert(i)), g(int(i))]))
     end
     for i in 1:1000
         ans = ix_call(
-            d, mk_expr(T, T[sym_term(T, :d), g(convert(i)), mk_var(T, UInt64(1))])
+            d, mk_expr(T, T[lk_sym(T, :d), g(convert(i)), mk_var(T, UInt64(1))])
         )
-        @test any(a -> child(a[1], 3) == g(int(i)), ans)    # assertion((d(D, I2), I2 == I))
+        @test any(a -> lk_eq(child(a[1], 3), g(int(i))), ans)  # assertion((d(D, I2), I2 == I))
     end
     @test has_hashes(d, [1])
     return nothing
@@ -115,23 +116,23 @@ end
 # PORT: test_jit.pl test_index_2
 "`test_index_2(Convert)`: as `test_index_1` with the arguments swapped — a hash on argument 2."
 function test_index_2(d::IxPred{T}, convert, int)::Nothing where {T}
-    g(v) = gnd_term(T, v)
+    g(v) = lk_gnd(T, v)
     ix_retractall!(d, _jd(T, mk_var(T, UInt64(1)), mk_var(T, UInt64(2))))  # retractall(d(_,_))
     for i in 1:1000
-        ix_assertz!(d, mk_expr(T, T[sym_term(T, :d), g(int(i)), g(convert(i))]))
+        ix_assertz!(d, mk_expr(T, T[lk_sym(T, :d), g(int(i)), g(convert(i))]))
     end
     for i in 1:1000
         ans = ix_call(
-            d, mk_expr(T, T[sym_term(T, :d), mk_var(T, UInt64(1)), g(convert(i))])
+            d, mk_expr(T, T[lk_sym(T, :d), mk_var(T, UInt64(1)), g(convert(i))])
         )
-        @test any(a -> child(a[1], 2) == g(int(i)), ans)    # assertion((d(I2, D), I2 == I))
+        @test any(a -> lk_eq(child(a[1], 2), g(int(i))), ans)  # assertion((d(I2, D), I2 == I))
     end
     @test has_hashes(d, [2])
     return nothing
 end
 
 "The term type for the `bigint` units: `1<<100+I` needs an unbounded integer."
-const _JBig = Term{BigInt}
+const _JBig = lk_term_type(BigInt)
 
 @testset "jit" begin
     d = ix_pred(_J, :d, 2; dynamic=true)            # :- dynamic d/2.
@@ -180,7 +181,7 @@ const _JBig = Term{BigInt}
         _jcleanup(d) do
             fill!(d)
             xs = [child(i, 3) for i in ix_retract!(d, _je(:d, _js(:a), _jv()))]
-            @test xs == xsok                                       # findall(X, retract(d(a,X)), Xs)
+            @test lk_eq(xs, xsok)                                       # findall(X, retract(d(a,X)), Xs)
         end
     end
     # PORT: test_jit.pl retract2
@@ -188,7 +189,7 @@ const _JBig = Term{BigInt}
         _jcleanup(d) do
             fill!(d)
             xs = [child(i, 3) for i in rmd(d, _js(:a), _jv())]
-            @test xs == xsok                                       # findall(X, rmd(a,X), Xs)
+            @test lk_eq(xs, xsok)                                       # findall(X, rmd(a,X), Xs)
         end
     end
     # PORT: test_jit.pl clause
@@ -196,7 +197,7 @@ const _JBig = Term{BigInt}
         _jcleanup(d) do
             fill!(d)
             xs = [child(i, 3) for i in claused(d, _js(:a), _jv())]
-            @test xs == xsok                                       # findall(X, claused(a,X), Xs)
+            @test lk_eq(xs, xsok)                                       # findall(X, claused(a,X), Xs)
         end
     end
     # PORT: test_jit.pl string

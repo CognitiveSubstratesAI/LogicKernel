@@ -39,11 +39,13 @@ include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, asser
 # ── exports ─────────────────────────────────────────────────────────────────────────────────────
 # the term interface (src/term_interface.jl)
 export Kind, VAR, SYM, GND, EXPR
-export kind,
+export kind, term_type,
     nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal, atomic_compare
 export mk_var, mk_expr, is_ground, is_ground_walk, KERNEL_VAR_BASE
-# the standard order of terms — SWI-Prolog's name (src/pl-prims.jl)
+# the standard order of terms — SWI-Prolog's name (src/pl-prims.jl) — and the leaf comparisons an
+# implementation's `atomic_compare` is built from (it alone can see names and values)
 export compareStandard
+export compareAtoms, compareStrings, compare_neq_floats, compare_mixed_float_rational
 # the default term type (src/default_term.jl)
 export Term, DefaultTerm, sym_term, gnd_term, var_term, gnd_value_key, sym_name, gnd_value
 

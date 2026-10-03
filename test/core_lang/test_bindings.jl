@@ -6,9 +6,10 @@ using Test, LogicKernel
 using LogicKernel:
     PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, OCCURS_CHECK_FALSE
 
-const _BT = DefaultTerm
-_bs(x::Symbol) = sym_term(_BT, x)
-_bg(x) = gnd_term(_BT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _BT = lk_term_type(Union{Int64, Float64, String})
+_bs(x::Symbol) = lk_sym(_BT, x)
+_bg(x) = lk_gnd(_BT, x)
 _bc(f::Symbol, xs::_BT...) = mk_expr(_BT, _BT[_bs(f), xs...])
 _be(xs::_BT...) = mk_expr(_BT, _BT[xs...])
 _bv(k::Int) = mk_var(_BT, UInt64(k))
@@ -100,16 +101,19 @@ end
 # identity maps (cyclic links) rehash after enough deletions, so an occasional attempt does
 # (measured: ~1 in 6 attempts on a 2047-compound tree, 82 KB). A per-binding allocation would make
 # EVERY attempt allocate — that is what this guards.
-@testset "a warm attempt allocates nothing, but for periodic rehashes" begin
-    ld = PL_local_data{_BT}()
-    g1, g2 = _btree(10, () -> _bs(:a)), _btree(10, () -> _bs(:a))
-    v1, v2 = _btree(10, _bfresh), _btree(10, _bfresh)
-    for (a, b) in ((g1, g2), (v1, g1), (v1, v2))
-        _battempt!(ld, a, b)
-        _battempt!(ld, a, b)
-        allocs = [@allocated(_battempt!(ld, a, b)) for _ in 1:60]
-        @test count(==(0), allocs) >= 40
-        @test _battempt!(ld, a, b)
+# A PERFORMANCE property, so the REFERENCE type's only: the second implementation (AltTerm) boxes
+# every value by design and is a correctness vehicle (test/core_lang/alt_term.jl).
+LK_TERM_IMPL == "reference" &&
+    @testset "a warm attempt allocates nothing, but for periodic rehashes" begin
+        ld = PL_local_data{_BT}()
+        g1, g2 = _btree(10, () -> _bs(:a)), _btree(10, () -> _bs(:a))
+        v1, v2 = _btree(10, _bfresh), _btree(10, _bfresh)
+        for (a, b) in ((g1, g2), (v1, g1), (v1, v2))
+            _battempt!(ld, a, b)
+            _battempt!(ld, a, b)
+            allocs = [@allocated(_battempt!(ld, a, b)) for _ in 1:60]
+            @test count(==(0), allocs) >= 40
+            @test _battempt!(ld, a, b)
+        end
+        @test isempty(ld.trail) && isempty(ld.bindings)
     end
-    @test isempty(ld.trail) && isempty(ld.bindings)
-end

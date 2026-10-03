@@ -14,9 +14,10 @@
 #   bips_occurs_check_error, arg, length, is_most_general_term — builtins not ported yet.
 using Test, LogicKernel
 
-const _BT = DefaultTerm
-_ba(x::Symbol) = sym_term(_BT, x)
-_bg(x) = gnd_term(_BT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _BT = lk_term_type(Union{Int64, Float64, String})
+_ba(x::Symbol) = lk_sym(_BT, x)
+_bg(x) = lk_gnd(_BT, x)
 _bc(xs::_BT...) = mk_expr(_BT, _BT[xs...])
 _bv(k) = mk_var(_BT, UInt64(k))
 # Prolog's order atom from our -1/0/1, so each case reads like upstream's `Order == (<)`.

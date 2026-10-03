@@ -15,12 +15,14 @@
 using Random
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 
-const _H = DefaultTerm
-_hs(n) = sym_term(_H, Symbol(n))
-_he(f, xs::Vector{_H}) = mk_expr(_H, _H[_hs(f); xs])
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _H = lk_term_type(Union{Int64, Float64, String})
+_hs(n) = lk_sym(_H, Symbol(n))
+# Any vector of terms: a comprehension's element type is a LEAF type when the term type is abstract.
+_he(f, xs::AbstractVector) = mk_expr(_H, _H[_hs(f); xs])
 
 "A random head argument: a variable from `shared` (or a fresh one), an atom, an int, a compound."
-function _harg(rng::AbstractRNG, shared::Vector{_H}, depth::Int)::_H
+function _harg(rng::AbstractRNG, shared::AbstractVector, depth::Int)::_H
     r = rand(rng)
     if r < 0.3
         return mk_var(_H, rand(rng, UInt64(1):UInt64(1 << 40)))     # almost surely a singleton
@@ -29,7 +31,7 @@ function _harg(rng::AbstractRNG, shared::Vector{_H}, depth::Int)::_H
     elseif r < 0.6
         return _hs(rand(rng, (:a, :b, :c)))
     elseif r < 0.7
-        return gnd_term(_H, rand(rng, 0:9))
+        return lk_gnd(_H, rand(rng, 0:9))
     elseif depth < 3
         return _he(
             rand(rng, (:f, :g, :h)),

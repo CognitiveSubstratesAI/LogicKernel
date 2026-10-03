@@ -88,12 +88,14 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 
 | file | what | upstream |
 |---|---|---|
-| `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02) | — |
+| `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation) | — |
 | `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain; UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
-| `test/core_lang/test_term_interface.jl` | the conformance suite on the reference type | — |
+| `test/core_lang/test_term_interface.jl` | the conformance suite, run on BOTH implementations | — |
+| `test/core_lang/alt_term.jl` | `AltTerm`, the SECOND implementation of the term interface (ORIGINAL), deliberately unlike `Term{G}` — an abstract type with a leaf per kind (Core's `Atom` has that shape) and per compound ARITY, interned symbol ids from 0, children in an `NTuple` inside a mutable struct, boxed values, fewer grounded keys, `==`/`hash` that throw. A correctness vehicle, not a performance one | — |
+| `test/term_under_test.jl` | the implementation a TERM-GENERIC test runs on (`lk_term_type`, `lk_sym`, …); `test/runtests.jl` runs every file that includes it once per implementation, the second as `<file> [alt]` | — |
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
@@ -110,7 +112,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
 | `test/core_lang/test_occurs_check.jl` | SWI's own occurs-check units in all three modes but the attributed-variable ones | `tests/core_lang/test_occurs_check.pl` |
 | `test/rational/test_ieee754.jl` | SWI's identity and standard-order assertions on IEEE floats (`0.0 \== -0.0`, `nan == nan`, the order of NaN, ±Inf, ±0.0) | `tests/rational/test_ieee754.pl` |
-| `test/core_lang/test_bindings.jl` | the trail (`Mark`/`Undo!`, marks nest), the unifier's divergences, `resolve_term`, and that a warm attempt allocates nothing | — |
+| `test/core_lang/test_bindings.jl` | the trail (`Mark`/`Undo!`, marks nest), the unifier's divergences, `resolve_term`, and that a warm attempt allocates nothing (on the reference type) | — |
 | `test/core_lang/test_unify_swipl.jl` | live differential: `=/2` on 1500 hard random pairs in each `occurs_check` mode, outcomes and bindings identical to swipl's | — |
 | `src/pl-termhash.jl` | `term_hash/2`, `variant_sha1/2`, `variant_hash/2`; Gladman's SHA-1 and the incremental MurmurHash — atoms hash by `sym_hash` and grounded values by `gnd_key`, so the digests are reproducible across processes but are not SWI's values | `src/pl-termhash.c`, `src/pl-termhash.h` |
 | `test/core_lang/test_term.jl` | SWI's own `variant` (`=@=`) tests but the rational-tree and attvar ones | `tests/core_lang/test_term.pl` |
@@ -178,7 +180,9 @@ graph TD
 3. **Answers in order, duplicates kept.** Deduplication and tabling modes are caller options.
 4. **No module-level mutable state** (`tools/lint_globals.jl`, run by the suite).
 5. **No runtime dispatch, no abstract fields, no `Any`** — enforced by the suite with JET, Aqua,
-   AllocCheck and the type-discipline gates; every method must be in the dispatch manifest.
+   AllocCheck and the type-discipline gates; every method must be in the dispatch manifest. These
+   are checked on the REFERENCE term type: they make the kernel fast on a concrete term type, and
+   say nothing about correctness — that is invariant 8.
 6. **SWI's execution model inside the kernel; the caller's sink at the boundary** (user, 2026-10-03).
    The VM is ported as is — frames, choice points and the trail included — and bindings follow SWI:
    a binding store and a trail with marks. Answers leave the kernel through upstream's own query API
@@ -187,6 +191,33 @@ graph TD
    call a sink per answer and undo its bindings when it returns. Core's execution rules (no choice
    points, no trail) govern Core, not the kernel's internals.
 7. **Standalone.** No dependency on any CognitiveSubstratesAI package.
+8. **Correct on ANY implementation of the term interface** (2026-10-03). A term type may be an
+   abstract hierarchy — Core's `Atom` is — so the kernel never takes the term type from `typeof(t)`
+   (a leaf there) but asks `term_type(t)`, and never compares or hashes terms outside the interface
+   (Base `==`/`hash`). Every TERM-GENERIC test runs on the reference `Term{G}` and on the
+   deliberately different `AltTerm` (test/core_lang/alt_term.jl); `test/runtests.jl` holds a floor
+   on how many files that is. What the second implementation found (its first run: 6516 passed,
+   2002 failed, 43 errored on it; the reference unaffected):
+   * 18 kernel methods bound the term type from a term argument (`f(t::T) where {T}`) — the
+     standard-order chain by a DIAGONAL signature `(t1::T, t2::T)`, which never matches two leaves,
+     the rest building agendas, renamed heads and hash nodes with a leaf type. Fixed with
+     `term_type`; `compareStandard` and `is_variant_ptr` now refuse two term types explicitly,
+     which the diagonal signature used to do implicitly;
+   * `atomic_compare` is the implementation's, but SWI's leaf orders it is built from
+     (`compareAtoms`, `compareStrings`, `compare_neq_floats`, `compare_mixed_float_rational`)
+     were internal. Exported;
+   * the kernel's "same term" test (`===`, upstream's cell-address compare) and its identity
+     maps (`IdDict`) assume a compound has OBJECT IDENTITY. `AltTerm`'s first compounds were
+     immutable tuple values, so `===` walked them — exponentially on shared subterms — and the
+     live unification differential never finished. Now an interface requirement, with a
+     conformance property (separately built twins are not `===`);
+   * in the tests: ported `==/2` checks written as Base `==` on terms — 13 sites in test_jit.jl and
+     test_db.jl; `bigint` exposed the first (a boxed `BigInt` is not `===`), and making `AltTerm`'s
+     `==` THROW found the rest; they use `lk_eq` now — containers whose element type was inferred
+     from a leaf, and an allocation property in a term-generic file (now the reference's only);
+   * and in itself: with ONE compound leaf, a mutation reverting `do_compare` to `typeof` SURVIVED
+     (its agenda holds only compounds). `AltExpr{N}` puts the arity in the type, and the standard-
+     order samples nest two arities, so the conformance suite catches it.
 
 ## The VM — five design decisions (DECIDED 2026-10-03 — audited by the user)
 

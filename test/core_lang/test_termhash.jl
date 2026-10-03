@@ -20,9 +20,10 @@ using LogicKernel:
     MurmurHashAligned2,
     MURMUR_SEED
 
-const _KT = DefaultTerm
-_ka(x::Symbol) = sym_term(_KT, x)
-_kg(x) = gnd_term(_KT, x)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _KT = lk_term_type(Union{Int64, Float64, String})
+_ka(x::Symbol) = lk_sym(_KT, x)
+_kg(x) = lk_gnd(_KT, x)
 _kc(f::Symbol, xs::_KT...) = mk_expr(_KT, _KT[_ka(f), xs...])
 _ke(xs::_KT...) = mk_expr(_KT, _KT[xs...])
 _kv(k::Int) = mk_var(_KT, UInt64(k))
@@ -136,8 +137,9 @@ end
     code = """
     using LogicKernel
     using LogicKernel: pl_variant_sha1, pl_variant_hash, pl_term_hash
-    T = DefaultTerm
-    a(x) = sym_term(T, x); g(x) = gnd_term(T, x); v(k) = mk_var(T, UInt64(k))
+    include($(repr(joinpath(@__DIR__, "..", "term_under_test.jl"))))
+    T = lk_term_type(Union{Int64, Float64, String})
+    a(x) = lk_sym(T, x); g(x) = lk_gnd(T, x); v(k) = mk_var(T, UInt64(k))
     c(f, xs...) = mk_expr(T, T[a(f), xs...]); e(xs...) = mk_expr(T, T[xs...])
     x, y, z = v(1), v(2), v(3)
     for t in [c(:f, a(:a), x, y, x), c(:g, g(1), g(2.5), g("s"), c(:h, z)), a(:aap), e(c(:c, x), y)]

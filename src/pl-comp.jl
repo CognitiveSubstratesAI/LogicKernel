@@ -246,7 +246,8 @@ Walk `head` giving each variable a slot — a variable standing as head argument
 any other the next slot above the arity — and counting its occurrences. Returns the number of
 slots above the arity (pl-comp.c).
 """
-function analyseVariables2!(ci::compileInfo, head::T, nvars::Int, argn::Int)::Int where {T}
+function analyseVariables2!(ci::compileInfo, head, nvars::Int, argn::Int)::Int
+    T = term_type(head)
     stack = av_frame{T}[]
     @label next_head
     if kind(head) === VAR
@@ -360,7 +361,8 @@ end
 Emit the head code for argument `arg` (pl-comp.c): left to right, a compound's last argument
 `A_RIGHT` (`H_RFUNCTOR`, no `H_POP` of its own), resume points on an explicit stack.
 """
-function compileArgument!(ci::compileInfo, arg::T, where_::Int)::Bool where {T}
+function compileArgument!(ci::compileInfo, arg, where_::Int)::Bool
+    T = term_type(arg)
     stack = ca_frame{T}[]
     isright = false
     @label next_arg
@@ -480,7 +482,8 @@ function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
 end
 
 "The distinct variables of `head`, as keys, by first occurrence (pre-order, left to right)."
-function _head_vars(head::T)::Vector{UInt64} where {T}
+function _head_vars(head)::Vector{UInt64}
+    T = term_type(head)
     out = UInt64[]
     is_ground(head) && return out
     stack = T[head]
@@ -501,7 +504,8 @@ end
 `head` with variable `vars[i]` replaced by a variable of key `base + i - 1`: a copy with fresh
 variables. Ground subterms are shared, not copied; a ground head is returned as it is.
 """
-function _rename_head(head::T, vars::Vector{UInt64}, base::UInt64)::T where {T}
+function _rename_head(head, vars::Vector{UInt64}, base::UInt64)
+    T = term_type(head)
     isempty(vars) && return head
     kind(head) === EXPR || return _renamed(head, vars, base)
     stack = Tuple{T, Vector{T}}[(head, T[])]            # (compound, its children copied so far)
@@ -525,12 +529,12 @@ function _rename_head(head::T, vars::Vector{UInt64}, base::UInt64)::T where {T}
 end
 
 "Variable `t` as its renamed copy (key `base + i - 1` for `vars[i]`); any other term unchanged."
-function _renamed(t::T, vars::Vector{UInt64}, base::UInt64)::T where {T}
+function _renamed(t, vars::Vector{UInt64}, base::UInt64)
     kind(t) === VAR || return t
     i = findfirst(==(var_key(t)), vars)
     i === nothing &&
         error("_rename_head: variable $(var_key(t)) is not one of the clause's")
-    return mk_var(T, base + UInt64(i - 1))
+    return mk_var(term_type(t), base + UInt64(i - 1))
 end
 
 # PORT: pl-comp.c decompileHead

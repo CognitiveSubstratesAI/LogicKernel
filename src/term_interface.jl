@@ -9,6 +9,22 @@
 #   2. an implementation defines them on its CONCRETE term types,
 # so the kernel's loops compile without dynamic dispatch. test/test_static_analysis.jl enforces it
 # for the default term type with JET; test/core_lang/test_term_interface.jl checks the semantics.
+#
+# THE RULES MAKE THE KERNEL FAST, NOT CORRECT. A term type may also be ABSTRACT with concrete leaves
+# — Core's `Atom` (`Sym`, `Var`, `Expression`, `Grounded{T}`) is, and so is the conformance suite's
+# second implementation (test/core_lang/alt_term.jl) — and the kernel must then still be correct,
+# only slower. So the kernel NEVER takes the term type from `typeof(t)`, which is a leaf there: it
+# asks [`term_type`](@ref). Found 2026-10-03 by the second implementation: 18 kernel methods bound
+# the term type from a term argument (`f(t::T) where {T}`), and every one failed on a hierarchy.
+#
+# A COMPOUND HAS OBJECT IDENTITY. The kernel asks whether two terms are the SAME term with `===` —
+# upstream compares cell addresses (`if ( t1 == t2 )` in pl-prims.c `unify_simple_ptrs`, pl-variant.c)
+# — and keys its identity maps by them (`IdDict`: the cyclic links and the occurs-check marks, where
+# upstream overwrites a cell). So `===` on two compounds must be an address compare: a compound is
+# a mutable object, or holds one (`Term{G}` and Core's `Expression` hold their children in a
+# `Vector`). A compound that is a plain immutable VALUE — children in a `Tuple` — makes `===` and
+# `objectid` structural: linear in the term, exponential on shared subterms. Found the same day by
+# the same implementation: with such compounds the live unification differential did not finish.
 
 """
     Kind
@@ -29,6 +45,17 @@ grounded host value) and [`EXPR`](@ref) (a compound: a sequence of children, hea
 Which of [`VAR`](@ref), [`SYM`](@ref), [`GND`](@ref), [`EXPR`](@ref) the term `t` is.
 """
 function kind end
+
+"""
+    term_type(t) -> Type
+
+The TERM TYPE `t` belongs to: the `T` that [`mk_var`](@ref) and [`mk_expr`](@ref) take, that
+[`child`](@ref) returns, and that the kernel's containers hold (`Vector{T}`, `PL_local_data{T}`).
+For one concrete struct (the reference [`Term`](@ref)) it is `typeof(t)`; for an abstract hierarchy
+(Core's `Atom`) it is the abstract type, never the leaf `typeof(t)` names. Every implementation
+defines it — there is no default, because `typeof(t)` is exactly the wrong answer for a hierarchy.
+"""
+function term_type end
 
 """
     nchildren(t) -> Int
@@ -143,7 +170,8 @@ function mk_var end
     mk_expr(T::Type, children::Vector{T}) -> T
 
 A compound term of type `T` with the given children, head first. Takes ownership of `children`:
-the caller must not mutate the vector afterwards.
+the caller must not mutate the vector afterwards. Each call makes a NEW compound with its own
+object identity: two calls are never `===` (see the header).
 """
 function mk_expr end
 

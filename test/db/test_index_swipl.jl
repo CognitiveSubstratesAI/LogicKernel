@@ -23,9 +23,10 @@
 using Random
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
-const _X = DefaultTerm
-_xs(n) = sym_term(_X, Symbol(n))
-_xg(v::Int) = gnd_term(_X, v)
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+const _X = lk_term_type(Union{Int64, Float64, String})
+_xs(n) = lk_sym(_X, Symbol(n))
+_xg(v::Int) = lk_gnd(_X, v)
 _xe(f, xs...) = mk_expr(_X, _X[_xs(f), xs...])
 let n = UInt64(0)
     global _xv() = mk_var(_X, n += 1)
