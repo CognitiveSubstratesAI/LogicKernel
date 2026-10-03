@@ -28,7 +28,13 @@
 #   standalone     — `julia --project=. tools/lint_globals.jl`  (exit 0 clean, 1 violations)
 
 """Qualified binding name => why it is allowed to be module-level state. Empty: nothing is."""
-const LINT_ALLOWLIST = ()   # e.g. ("LogicKernel.SOME_CACHE" => "why this cannot be per-caller",)
+const LINT_ALLOWLIST = (
+    "LogicKernel._KERNEL_VAR_COUNTER" =>
+        "a monotonic, process-wide source of fresh kernel variable keys (src/pl-global.jl): " *
+        "keys must be unique ACROSS PL_local_data instances, since a retained answer carries " *
+        "them from one to another; an id counter cannot carry behaviour between callers " *
+        "(precedent: Core's space_id counter). User, 2026-10-03.",
+)
 
 """
     _lint_frozen(v, depth = 0) -> Bool

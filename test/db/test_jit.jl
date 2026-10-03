@@ -10,8 +10,8 @@
 # The `jit` units share ONE `d/2`, as upstream's do, each followed by its
 # `cleanup(retractall(d(_,_)))` — so an index a unit leaves behind must go the way it goes in SWI
 # (the `bigint` units hold unbounded integers, a different term type, so they share a second
-# `d/2`). Unification is the harness's (`ix_match`) until it is ported; clause GC runs where the
-# units call `garbage_collect_clauses`.
+# `d/2`). Unification is the kernel's (`decompileHead!`, through the harness); clause GC runs where
+# the units call `garbage_collect_clauses`.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
 const _J = DefaultTerm

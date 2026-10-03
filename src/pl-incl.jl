@@ -200,9 +200,11 @@ end
 arg_info() = arg_info(0.0f0, false, 0x00, false, 0x00)
 
 # PORT: pl-incl.h clause
-# DIVERGES: besides its VM code the clause keeps its head TERM, which the caller unifies against
-# until the VM itself is ported (upstream decompiles the code instead). D is the predicate's type —
-# `definition{T}` — a parameter only to break the struct cycle.
+# DIVERGES: besides its VM code the clause keeps its head TERM and that head's variables
+# (`head_vars`, their keys by first occurrence — upstream keeps only their count, `prolog_vars`, and
+# addresses them by frame offset), which `decompileHead!` renames and unifies until the VM itself is
+# ported (upstream decompiles the code instead). D is the predicate's type — `definition{T}` — a
+# parameter only to break the struct cycle.
 "A clause (pl-incl.h `struct clause`): its predicate, generations, flags, VM code and head term."
 mutable struct clause{T, D}
     predicate::D                    # Predicate I belong to
@@ -211,6 +213,7 @@ mutable struct clause{T, D}
     flags::UInt32                   # Flag field holding CL_* flags
     codes::Vector{code}             # VM codes of clause
     head::T                         # the head term the codes were compiled from
+    head_vars::Vector{UInt64}       # its variables' keys, by first occurrence
 end
 
 # PORT: pl-incl.h clause_ref

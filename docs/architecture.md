@@ -90,6 +90,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `tools/bench.jl` | the per-chunk performance report: each primitive against swipl on the same terms (three runs, one process), then a profile of the worst | — |
 | `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`), every unit but the static-determinism checks of supervisors — on one shared `d/2`, as upstream | `tests/db/test_jit.pl` |
 | `test/db/test_db.jl` | SWI's own `retract` and `retractall` tests that need no clause bodies, modules or threads | `tests/db/test_db.pl` |
+| `test/db/test_clause_variables.jl` | clause variables: renamed apart from the goal's, kernel keys unique across attempts and databases (a retained answer moves between databases), `var_term` rejecting the kernel's half, a sink's bindings gone after it — also when it throws | — |
 | `test/db/test_update_view_gc.jl` | the logical update view under clause GC: an enumeration still sees a clause retracted and collected after it started — pinned and live against swipl | — |
 | `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1's fix pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
 | `test/compile/test_head_code_swipl.jl` | live differential: compiled heads are instruction-for-instruction swipl's `vm_list` | — |
@@ -125,7 +126,7 @@ graph TD
 | `constraints` | code | `src/pl-attvar.c` | attributed-variable hooks |
 | `trie` | code | `src/pl-trie.c` | answer and variant tables, variables keyed by first occurrence |
 | `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
-| `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2; the unification they need is the caller's until `unify` is ported. Not yet: abolish, reload, transactions |
+| `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2, which unify with the kernel's unification since 2026-10-03 (`decompileHead!`: the stored head copied with fresh kernel variable keys per attempt — an INTERIM divergence until the VM runs compiled heads against frame slots). Not yet: abolish, reload, transactions |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
 | `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported (for the index); bodies and the instructions' execution are not |
 
@@ -174,6 +175,10 @@ graph TD
   reached through a binding are linked (DIVERGES in `do_unify`). The rest is the store itself: a
   `Dict` entry per binding where SWI writes a cell. The differential found a swipl abort in the
   occurs-check error path (`docs/tracking/repros/swipl_occurs_check_error_abort/` in the workspace).
-  Next: retract/1, retractall/1 and clause/2 take the kernel's unification.
+  ✅ retract/1, retractall/1 and clause/2 use it (2026-10-03): a mark per candidate clause, the
+  answer's bindings live while the caller's sink runs, undone after it (in a `finally`: ≲ 0.1 µs).
+  Variable keys: a caller owns those below 2^63 (`var_term` checks), the kernel takes its own from
+  one process-wide counter. `clause/2` over 1000 facts: 0.55× swipl's time. Found on the way, for
+  later: `nextClause!` allocates an `index_context` per call (upstream keeps it on the C stack).
 * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.

@@ -25,7 +25,14 @@ using LogicKernel:
     pl_unify!,
     pl_unify_with_occurs_check!,
     Mark,
-    Undo!
+    Undo!,
+    PL_global_data,
+    lookupProcedure,
+    compileClause,
+    assertDefinition!,
+    pl_clause!,
+    P_DYNAMIC,
+    CL_END
 
 # ── fixtures: the same terms in Julia and in Prolog ─────────────────────────────────────────────
 const BT = DefaultTerm
@@ -51,11 +58,37 @@ function _attempt(unify, a::BT, b::BT)::Bool
     return r
 end
 
+"The same attempt with the undo in a `finally`, as the clause enumerations make it."
+function _attempt_finally(unify, a::BT, b::BT)::Bool
+    m = Mark(LD)
+    try
+        return unify(LD, a, b)
+    finally
+        Undo!(LD, m)
+    end
+end
+
+const SMALL_A, SMALL_B = mk_expr(BT, BT[_a(:f), _v()]), mk_expr(BT, BT[_a(:f), _a(:a)])
+
+# a dynamic predicate cp/2 of 1000 facts cp(I, a), for clause/2 — Prolog `cp/2` below
+const CP_GD = PL_global_data{BT}()
+const CP_DEF = lookupProcedure(BT, sym_key(_a(:cp)), 2, P_DYNAMIC)
+for i in 1:1000
+    assertDefinition!(
+        CP_GD, CP_DEF,
+        compileClause(CP_DEF, mk_expr(BT, BT[_a(:cp), gnd_term(BT, i), _a(:a)])),
+        CL_END
+    )
+end
+const CP_GOAL = mk_expr(BT, BT[_a(:cp), _v(), _v()])
+
 const PROLOG_FIXTURES = """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
 tree(N, Leaf, f(A, B)) :- N1 is N-1, tree(N1, Leaf, A), tree(N1, Leaf, B).
 fixtures(G1, G2, V1, V2) :-
-    tree($DEPTH, a, G1), tree($DEPTH, a, G2), tree($DEPTH, _, V1), tree($DEPTH, _, V2).
+    tree($DEPTH, a, G1), tree($DEPTH, a, G2), tree($DEPTH, _, V1), tree($DEPTH, _, V2),
+    forall(between(1, 1000, I), assertz(cp(I, a))).
+:- dynamic cp/2.
 """
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
@@ -75,7 +108,15 @@ const CASES = [
         "occurs-check bind vars",
         () -> _attempt(pl_unify_with_occurs_check!, V1, G1),
         "unify_with_occurs_check(V1, G1)"
-    )
+    ),
+    (
+        "clause/2 1000 facts",
+        () -> pl_clause!(CP_GD, LD, CP_DEF, CP_GOAL, _ -> true),
+        "forall(clause(cp(_, _), true), true)"
+    ),
+    # Julia only (no swipl goal): what the `finally` around each enumeration step costs
+    ("attempt f(X)=f(a)", () -> _attempt(pl_unify!, SMALL_A, SMALL_B), ""),
+    ("attempt + finally", () -> _attempt_finally(pl_unify!, SMALL_A, SMALL_B), "")
 ]
 
 # ── swipl: three timed runs of each goal, after calibrating the loop to ≥ 0.1 s ─────────────────
@@ -101,8 +142,10 @@ function swipl_times(cases)::Dict{String, NTuple{3, Float64}}
             fixtures(G1, G2, V1, V2),
         """
     )
-    for (i, (name, _, goal)) in enumerate(cases)
-        sep = i == length(cases) ? ".\n" : ",\n"
+    timed = [(name, goal) for (name, _, goal) in cases if !isempty(goal)]
+    isempty(timed) && return out
+    for (i, (name, goal)) in enumerate(timed)
+        sep = i == length(timed) ? ".\n" : ",\n"
         print(prog, "    bench('", name, "', (", goal, "))", sep)
     end
     print(prog, ":- initialization((main, halt)).\n")
@@ -149,8 +192,8 @@ function main(args)
     for (name, f, _) in cases
         jt, allocs, bytes = julia_times(f)
         st = get(sw, name, nothing)
-        js = join((@sprintf("%.1f", t) for t in jt), " ")
-        ss = st === nothing ? "—" : join((@sprintf("%.1f", t) for t in st), " ")
+        js = join((@sprintf("%.2f", t) for t in jt), " ")
+        ss = st === nothing ? "—" : join((@sprintf("%.2f", t) for t in st), " ")
         r = st === nothing ? NaN : minimum(jt) / minimum(st)
         ratios[name] = r
         @printf("%-22s %-26s %-26s %8.2f %8d %9d", name, js, ss, r, allocs, bytes)

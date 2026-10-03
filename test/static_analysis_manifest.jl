@@ -27,7 +27,7 @@ _manifest_per_type(T) = (
     (is_ground, Tuple{T}, true),
     (is_ground_walk, Tuple{T}, false),
     (gnd_equal, Tuple{T, T}, false), (atomic_compare, Tuple{T, T}, false),
-    (mk_var, Tuple{Type{T}, UInt64}, false),
+    (mk_var, Tuple{Type{T}, UInt64}, false), (var_term, Tuple{Type{T}, UInt64}, false),
     (mk_expr, Tuple{Type{T}, Vector{T}}, false),
     (sym_term, Tuple{Type{T}, Symbol}, false), (sym_name, Tuple{T}, true),
     (gnd_value, Tuple{T}, false),
@@ -109,9 +109,8 @@ _manifest_per_type(T) = (
     (Base.show, Tuple{IOBuffer, T}, false)
 )
 
-# Concrete stand-ins for the callbacks `pl_retract!`, `pl_retractall!` and `pl_clause!` take (the
-# caller's unification and sink): each is a singleton function type, as a real caller's is.
-_manifest_accept(cl) = true
+# A concrete stand-in for the sink `pl_retract!` and `pl_clause!` take: a singleton function type,
+# as a real caller's is.
 _manifest_sink(cl) = true
 
 # The clause index, its head compiler and the clause database (src/pl-incl.jl, pl-global.jl,
@@ -123,7 +122,7 @@ function _manifest_index(T)
     CR, CB, CI = LK.ClauseRef{T}, LK.ClauseBucket{T}, LK.ClauseIndex{T}
     CH, CTX = LK.ClauseChoice{T}, LK.index_context{T}
     GD, LD, DDI = LK.PL_global_data{T}, LK.PL_local_data{T}, LK.dirty_def_info{T}
-    ACC, SNK = typeof(_manifest_accept), typeof(_manifest_sink)
+    SNK = typeof(_manifest_sink)
     CIP = Vector{Union{Nothing, CI}}
     NT4, NT8, NTW = NTuple{4, UInt8}, NTuple{8, UInt8}, NTuple{4, UInt64}
     CInfo, HA, HH = LK.compileInfo, LK.hash_assessment, LK.hash_hints
@@ -242,7 +241,11 @@ function _manifest_index(T)
         (LK.markAccessedPredicates!, Tuple{LD, GD}, false),
         (LK.markPredicatesInEnvironments!, Tuple{LD, GD}, false),
         # clause/2 (src/pl-comp.jl)
-        (LK.pl_clause!, Tuple{GD, LD, D, T, ACC, SNK}, false),
+        (LK.pl_clause!, Tuple{GD, LD, D, T, SNK}, false),
+        (LK._head_vars, Tuple{T}, false),
+        (LK._rename_head, Tuple{T, Vector{UInt64}, UInt64}, false),
+        (LK._renamed, Tuple{T, Vector{UInt64}, UInt64}, false),
+        (LK.decompileHead!, Tuple{LD, C, T}, false),
         # src/pl-proc.jl
         (LK.lookupProcedure, Tuple{Type{T}, UInt64, Int, UInt64}, false),
         (LK.newClauseRef, Tuple{C, UInt64}, false),
@@ -263,9 +266,9 @@ function _manifest_index(T)
         (LK.unregisterDirtyDefinition!, Tuple{GD, D}, false),
         (LK.maybeUnregisterDirtyDefinition!, Tuple{GD, D}, false),
         (LK.pl_garbage_collect_clauses!, Tuple{GD, LD}, false),
-        (LK.pl_retract!, Tuple{GD, LD, D, T, ACC, SNK}, false),
+        (LK.pl_retract!, Tuple{GD, LD, D, T, SNK}, false),
         (LK.allVars, Tuple{T}, false),
-        (LK.pl_retractall!, Tuple{GD, LD, D, T, ACC}, false),
+        (LK.pl_retractall!, Tuple{GD, LD, D, T}, false),
         (LK.mode_arg_is_unbound, Tuple{D, Int}, true)
     )
 end
@@ -282,7 +285,7 @@ _index_entry_points(T) = (
         LK.pl_retract!,
         Tuple{
             LK.PL_global_data{T}, LK.PL_local_data{T}, LK.Definition{T}, T,
-            typeof(_manifest_accept), typeof(_manifest_sink)
+            typeof(_manifest_sink)
         },
         false
     ),
@@ -387,6 +390,7 @@ const DISPATCH_MANIFEST = (
     # rather than exempted because checking it costs nothing
     (Base.Enums._enum_hash, Tuple{Kind, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.hash_algo, UInt64}, false),
+    (LK.fresh_var_keys!, Tuple{Int}, false),
     (Base.Enums._enum_hash, Tuple{LK.boolex_t, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.occurs_check_t, UInt64}, false)
 )

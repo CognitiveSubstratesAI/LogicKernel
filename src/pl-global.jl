@@ -29,6 +29,29 @@ end
 PL_global_data{T}() where {T} =
     PL_global_data{T}(gen_t(0), Dict{Definition{T}, dirty_def_info{T}}(), false)
 
+# ── the kernel's variable keys ───────────────────────────────────────────────────────────────────
+# DIVERGES: SWI's fresh variables are new cells on the global stack, unique by address. Interface
+# variables are keys, so the kernel takes its own from the top half of the key space (callers own
+# the bottom half — see `var_key`), from ONE PROCESS-WIDE counter: an answer retained from one
+# `PL_local_data` and passed into another can carry a kernel key, which a per-instance counter
+# would issue again (user, 2026-10-03). Module-level state, allowlisted in tools/lint_globals.jl:
+# a monotonic source of fresh ids cannot carry behaviour from one caller to another.
+# the next free kernel variable key (see `fresh_var_keys!`) — a comment, not a docstring: a docstring
+# on a constant keeps a second binding to the value, which the global-state lint rightly flags
+const _KERNEL_VAR_COUNTER = Threads.Atomic{UInt64}(KERNEL_VAR_BASE)
+
+"""
+    fresh_var_keys!(n) -> UInt64
+
+Reserve `n` kernel variable keys, never issued before in this process: they are
+`first, first + 1, …, first + n - 1`. Thread-safe.
+"""
+function fresh_var_keys!(n::Int)::UInt64
+    first = Threads.atomic_add!(_KERNEL_VAR_COUNTER, UInt64(n))
+    @assert first >= KERNEL_VAR_BASE && first + UInt64(n) >= first "kernel variable keys exhausted"
+    return first
+end
+
 # PORT: pl-global.h PL_local_data
 # DIVERGES: `bindings` has no field upstream — SWI binds a variable by overwriting its cell on the
 # global stack; interface variables are immutable values, so a binding is an entry keyed by

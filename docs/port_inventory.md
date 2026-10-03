@@ -51,7 +51,7 @@ how many of the upstream file's functions are ported.
 | swipl-bench `programs/poly_10.pl` | design | `d74163e6d756` | `bench/programs/poly_10.jl` | 12 |
 | swipl-bench `programs/qsort.pl` | design | `d74163e6d756` | `bench/programs/qsort.jl` | 4 |
 | swipl-devel `src/pl-codetable.c` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 1 |
-| swipl-devel `src/pl-comp.c` | code | `bae881a24a3f` | `src/pl-comp.jl` | 28 |
+| swipl-devel `src/pl-comp.c` | code | `bae881a24a3f` | `src/pl-comp.jl` | 29 |
 | swipl-devel `src/pl-comp.h` | code | `bae881a24a3f` | `src/pl-comp.jl` | 1 |
 | swipl-devel `src/pl-data.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 13 |
 | swipl-devel `src/pl-data.h` | code | `bae881a24a3f` | `src/pl-inline.jl` | 1 |

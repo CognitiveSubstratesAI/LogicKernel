@@ -8,8 +8,10 @@
 # resets the supervisor to S_VIRGIN (`freeCodesDefinition`); a DYNAMIC predicate's supervisor is
 # set once, at its first call. The harness tracks exactly that in `IxPred.virgin`.
 #
-# The kernel has no unification yet, so the CALLER unifies: `ix_match`/`ix_instance` below — a
-# plain unifier (no occurs check) over the term interface, enough for these tests' facts.
+# Unification is the KERNEL's (src/pl-prims.jl, since 2026-10-03): a candidate clause is unified with
+# the goal by `decompileHead!` (a fresh copy of its head) under the database's local data, the answer
+# is copied out with `resolve_term`, and the bindings are undone — what retract/1, clause/2 and a
+# call do. (Until then the harness carried its own unifier.)
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -48,60 +50,20 @@ function ix_assertz!(p::IxPred{T}, head::T)::Nothing where {T}
     return nothing
 end
 
-# ── unification, the harness's own until the kernel ports it ───────────────────────────────────
-# The goal's and the clause's variables live in SEPARATE spaces (a variable is `(side, var_key)`),
-# as `decompile` gives each clause fresh variables; variables may repeat on either side.
-"Bindings: `(is_clause_side, var_key) => (term, is_clause_side)`."
-const IxBind{T} = Dict{Tuple{Bool, UInt64}, Tuple{T, Bool}}
-
-function _ix_deref(t::T, side::Bool, b::IxBind{T})::Tuple{T, Bool} where {T}
-    while kind(t) === VAR
-        k = (side, var_key(t))
-        haskey(b, k) || return (t, side)
-        t, side = b[k]
+"""
+The answer of unifying `goal` with clause `cl`'s head — the goal with the bindings applied — or
+`nothing` when they do not unify. Leaves no binding behind.
+"""
+function ix_answer(
+    ld::LK.PL_local_data{T}, goal::T, cl::LK.Clause{T}
+)::Union{Nothing, T} where {T}
+    m = LK.Mark(ld)
+    try
+        return LK.decompileHead!(ld, cl, goal) ? LK.resolve_term(ld, goal) : nothing
+    finally
+        LK.Undo!(ld, m)
     end
-    return (t, side)
 end
-
-function _ix_unify!(x::T, sx::Bool, y::T, sy::Bool, b::IxBind{T})::Bool where {T}
-    x, sx = _ix_deref(x, sx, b)
-    y, sy = _ix_deref(y, sy, b)
-    if kind(x) === VAR
-        (kind(y) === VAR && sx == sy && var_key(x) == var_key(y)) && return true
-        b[(sx, var_key(x))] = (y, sy)
-        return true
-    elseif kind(y) === VAR
-        b[(sy, var_key(y))] = (x, sx)
-        return true
-    end
-    kind(x) === kind(y) || return false
-    if kind(x) === EXPR
-        nchildren(x) == nchildren(y) || return false
-        for i in 1:nchildren(x)
-            _ix_unify!(child(x, i), sx, child(y, i), sy, b) || return false
-        end
-        return true
-    end
-    return compareStandard(x, y, true) == 0
-end
-
-"The bindings unifying goal `g` with clause head `h`, or `nothing`."
-function ix_unify(g::T, h::T)::Union{Nothing, IxBind{T}} where {T}
-    b = IxBind{T}()
-    return _ix_unify!(g, false, h, true, b) ? b : nothing
-end
-
-"True when goal `g` unifies with clause head `h`."
-ix_match(g::T, h::T) where {T} = ix_unify(g, h) !== nothing
-
-function _ix_resolve(t::T, side::Bool, b::IxBind{T})::T where {T}
-    t, side = _ix_deref(t, side, b)
-    kind(t) === EXPR || return t
-    return mk_expr(T, T[_ix_resolve(child(t, i), side, b) for i in 1:nchildren(t)])
-end
-
-"The goal `g` after unifying it with clause head `h` (which must unify)."
-ix_instance(g::T, h::T) where {T} = _ix_resolve(g, false, ix_unify(g, h)::IxBind{T})
 
 """
     ix_call(p, goal) -> [(answer, det)]
@@ -124,9 +86,9 @@ function ix_call(p::IxPred{T}, goal::T)::Vector{Tuple{T, Bool}} where {T}
     out = Tuple{T, Bool}[]
     c = LK.firstClause!(goal, gen, p.def, chp)
     while c !== nothing
-        h = (c.clause::LK.Clause{T}).head
-        if ix_match(goal, h)
-            push!(out, (ix_instance(goal, h), chp.cref === nothing))
+        a = ix_answer(p.db.ld, goal, c.clause::LK.Clause{T})
+        if a !== nothing
+            push!(out, (a, chp.cref === nothing))
         end
         chp.cref === nothing && break
         c = LK.nextClause!(chp, goal, gen, p.def)
@@ -142,8 +104,9 @@ function ix_call_unindexed(p::IxPred{T}, goal::T)::Vector{Tuple{T, Bool}} where 
     c = p.def.impl_clauses.first_clause
     while c !== nothing
         cl = c.clause::LK.Clause{T}
-        if LK.visibleClause(cl, gen) && ix_match(goal, cl.head)
-            push!(out, (ix_instance(goal, cl.head), c.next === nothing))
+        if LK.visibleClause(cl, gen)
+            a = ix_answer(p.db.ld, goal, cl)
+            a === nothing || push!(out, (a, c.next === nothing))
         end
         c = c.next
     end
@@ -159,15 +122,15 @@ the instances of the retracted clauses, in order.
 function ix_retract!(p::IxPred{T}, goal::T; after=(_ -> true))::Vector{T} where {T}
     out = T[]
     LK.pl_retract!(
-        p.db.gd, p.db.ld, p.def, goal, cl -> ix_match(goal, cl.head),
-        cl -> (push!(out, ix_instance(goal, cl.head)); after(out[end]))
+        p.db.gd, p.db.ld, p.def, goal,
+        cl -> (push!(out, LK.resolve_term(p.db.ld, goal)); after(out[end]))
     )
     return out
 end
 
 "`retractall(Goal)`."
 ix_retractall!(p::IxPred{T}, goal::T) where {T} =
-    LK.pl_retractall!(p.db.gd, p.db.ld, p.def, goal, cl -> ix_match(goal, cl.head))
+    LK.pl_retractall!(p.db.gd, p.db.ld, p.def, goal)
 
 """
     ix_clause(p, goal; after = (instance -> true)) -> [instance]
@@ -177,8 +140,8 @@ ix_retractall!(p::IxPred{T}, goal::T) where {T} =
 function ix_clause(p::IxPred{T}, goal::T; after=(_ -> true))::Vector{T} where {T}
     out = T[]
     LK.pl_clause!(
-        p.db.gd, p.db.ld, p.def, goal, cl -> ix_match(goal, cl.head),
-        cl -> (push!(out, ix_instance(goal, cl.head)); after(out[end]))
+        p.db.gd, p.db.ld, p.def, goal,
+        cl -> (push!(out, LK.resolve_term(p.db.ld, goal)); after(out[end]))
     )
     return out
 end

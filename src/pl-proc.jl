@@ -436,21 +436,22 @@ function pl_garbage_collect_clauses!(
 end
 
 # PORT: pl-proc.c retract as pl_retract
-# DIVERGES: the predicate is given (no module lookup); unifying a clause with the argument is the
-# caller's `decompile(clause)::Bool` until unification is ported; each answer — the retracted
-# clause — goes to `sink(clause)::Bool`, false to cut; no SSU clauses.
+# DIVERGES: the predicate is given (no module lookup); facts only (no SSU clauses), so the clause is
+# unified by its head (`decompileHead!`; upstream `decompile`, whose body side is `true` here). Each
+# answer — the retracted clause — is a call of `sink(clause)::Bool` (false to cut) with the bindings
+# in place in `ld`, undone when it returns: SWI's foreign frame is rewound after a failed attempt and
+# its bindings are undone by backtracking after an answer.
 """
-    pl_retract!(gd, ld, def, head, decompile, sink)
+    pl_retract!(gd, ld, def, head, sink)
 
 `retract/1` on dynamic predicate `def` with argument head `head` (pl-proc.c). In the generation
-it starts in, enumerate the clauses `decompile` accepts; retract each and pass it to `sink`. A
-clause someone else retracted first is skipped, and the enumeration moves to the current
-generation.
+it starts in, unify `head` with each clause in turn; retract each that unifies and call
+`sink(clause)` while the bindings hold. A clause someone else retracted first is skipped, and the
+enumeration moves to the current generation.
 """
 function pl_retract!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, decompile::F,
-    sink::S
-)::Nothing where {T, F, S}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, sink::S
+)::Nothing where {T, S}
     if (def.flags & P_FOREIGN) != 0
         error("retract/1: permission_error(modify, static_procedure)")
     end
@@ -462,37 +463,38 @@ function pl_retract!(
         return nothing                                  # no clauses
     end
     dref = pushPredicateAccessObj!(ld, gd, def)
-    gen = dref.generation                               # setGenerationFrameVal()
-    chp = ClauseChoice{T}(nothing, word(0))
-    cref = firstClause!(head, gen, def, chp)
-    if cref === nothing
-        popPredicateAccess!(ld, def)
-        return nothing
-    end
-    first_call = true                                   # CTX_CNTRL == FRG_FIRST_CALL
-    while cref !== nothing
-        clause = cref.clause::Clause{T}
-        if decompile(clause)
-            if retractClauseDefinition!(gd, def, clause, true) || !first_call
-                if chp.cref === nothing                 # deterministic last one
-                    popPredicateAccess!(ld, def)
-                    sink(clause)
-                    return nothing
+    popped = false
+    try
+        gen = dref.generation                           # setGenerationFrameVal()
+        chp = ClauseChoice{T}(nothing, word(0))
+        cref = firstClause!(head, gen, def, chp)
+        first_call = true                               # CTX_CNTRL == FRG_FIRST_CALL
+        while cref !== nothing
+            clause = cref.clause::Clause{T}
+            m = Mark(ld)                                # PL_open_foreign_frame()
+            try
+                if decompileHead!(ld, clause, head)
+                    if retractClauseDefinition!(gd, def, clause, true) || !first_call
+                        if chp.cref === nothing         # deterministic last one
+                            popPredicateAccess!(ld, def)
+                            popped = true
+                            sink(clause)
+                            return nothing
+                        end
+                        sink(clause) || return nothing  # FRG_CUTTED
+                        first_call = false              # FRG_REDO
+                    else
+                        gen = setGenerationFrame(gd, def)
+                    end
                 end
-                if !sink(clause)                        # FRG_CUTTED
-                    popPredicateAccess!(ld, def)
-                    return nothing
-                end
-                first_call = false                      # FRG_REDO
-                cref = nextClause!(chp, head, gen, def)
-                continue
-            else
-                gen = setGenerationFrame(gd, def)
+            finally
+                Undo!(ld, m)                            # PL_rewind_foreign_frame(fid)
             end
+            cref = nextClause!(chp, head, gen, def)
         end
-        cref = nextClause!(chp, head, gen, def)
+    finally
+        popped || popPredicateAccess!(ld, def)
     end
-    popPredicateAccess!(ld, def)
     return nothing
 end
 
@@ -511,19 +513,18 @@ function allVars(head)::Bool
 end
 
 # PORT: pl-proc.c retractall as pl_retractall
-# DIVERGES: the predicate is given (no module lookup); unifying a clause head with the argument
-# is the caller's `decompileHead(clause)::Bool` until unification is ported; no update events.
+# DIVERGES: the predicate is given (no module lookup); no update events. A clause is unified by its
+# head (`decompileHead!`) and the bindings are undone before the next (`PL_rewind_foreign_frame`).
 """
-    pl_retractall!(gd, ld, def, head, decompileHead) -> Bool
+    pl_retractall!(gd, ld, def, head) -> Bool
 
 `retractall/1` on predicate `def` (pl-proc.c): retract every clause visible in the generation it
-starts in whose head `decompileHead` accepts — all of them, without enumerating an index, when
-every argument of `head` is a distinct variable.
+starts in whose head unifies with `head` — all of them, without unifying, when every argument of
+`head` is a distinct variable. Leaves no binding behind.
 """
 function pl_retractall!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T,
-    decompileHead::F
-)::Bool where {T, F}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T
+)::Bool where {T}
     if (def.flags & P_FOREIGN) != 0
         error("retractall/1: permission_error(modify, static_procedure)")
     end
@@ -536,36 +537,37 @@ function pl_retractall!(
     end
     allvars = kind(head) === EXPR ? allVars(head) : true
     dref = pushPredicateAccessObj!(ld, gd, def)
-    gen = dref.generation
-    if allvars
-        cref = def.impl_clauses.first_clause
-        while cref !== nothing
-            cl = cref.clause::Clause{T}
-            if visibleClauseCNT(cl, gen)
-                retractClauseDefinition!(gd, def, cl, true)
+    try
+        gen = dref.generation
+        if allvars
+            cref = def.impl_clauses.first_clause
+            while cref !== nothing
+                cl = cref.clause::Clause{T}
+                if visibleClauseCNT(cl, gen)
+                    retractClauseDefinition!(gd, def, cl, true)
+                end
+                cref = cref.next
             end
-            cref = cref.next
-        end
-    else
-        chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(head, gen, def, chp)
-        if cref === nothing
-            popPredicateAccess!(ld, def)
-            return true
-        end
-        while cref !== nothing
-            cl = cref.clause::Clause{T}
-            if decompileHead(cl)
-                retractClauseDefinition!(gd, def, cl, true)
+        else
+            chp = ClauseChoice{T}(nothing, word(0))
+            cref = firstClause!(head, gen, def, chp)
+            while cref !== nothing
+                cl = cref.clause::Clause{T}
+                m = Mark(ld)
+                try
+                    if decompileHead!(ld, cl, head)
+                        retractClauseDefinition!(gd, def, cl, true)
+                    end
+                finally
+                    Undo!(ld, m)                        # PL_rewind_foreign_frame(fid)
+                end
+                chp.cref === nothing && break
+                cref = nextClause!(chp, head, gen, def)
             end
-            if chp.cref === nothing
-                popPredicateAccess!(ld, def)
-                return true
-            end
-            cref = nextClause!(chp, head, gen, def)
         end
+    finally
+        popPredicateAccess!(ld, def)
     end
-    popPredicateAccess!(ld, def)
     return true
 end
 

@@ -84,6 +84,21 @@ end
 mk_var(::Type{Term{G}}, key::UInt64) where {G} =
     Term{G}(VAR, false, false, key, Symbol(""), nothing, Term{G}[])
 
+"""
+    var_term(::Type{Term{G}}, key::UInt64) -> Term{G}
+
+A CALLER's variable: [`mk_var`](@ref) for a key below [`KERNEL_VAR_BASE`](@ref), which it checks —
+the top half of the key space is the kernel's (see [`var_key`](@ref)).
+"""
+function var_term(::Type{Term{G}}, key::UInt64) where {G}
+    key < KERNEL_VAR_BASE || throw(
+        ArgumentError(
+            "var_term: key $(repr(key)) is in the kernel's half of the key space (≥ 2^63)"
+        )
+    )
+    return mk_var(Term{G}, key)
+end
+
 function mk_expr(::Type{Term{G}}, children::Vector{Term{G}}) where {G}
     ground = true
     for c in children

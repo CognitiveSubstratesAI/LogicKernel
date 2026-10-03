@@ -454,7 +454,86 @@ function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
         end
     end
     Output_0!(ci, I_EXITFACT)                                  # fact (for decompiler)
-    return Clause{T}(def, gen_t(0), gen_t(0), UNIT_CLAUSE, ci.codes, head)
+    return Clause{T}(
+        def, gen_t(0), gen_t(0), UNIT_CLAUSE, ci.codes, head, _head_vars(head)
+    )
+end
+
+"The distinct variables of `head`, as keys, by first occurrence (pre-order, left to right)."
+function _head_vars(head::T)::Vector{UInt64} where {T}
+    out = UInt64[]
+    is_ground(head) && return out
+    stack = T[head]
+    while !isempty(stack)
+        t = pop!(stack)
+        if kind(t) === VAR
+            var_key(t) in out || push!(out, var_key(t))
+        elseif kind(t) === EXPR && !is_ground(t)
+            for i in nchildren(t):-1:1                  # pushed right to left: popped in order
+                push!(stack, child(t, i))
+            end
+        end
+    end
+    return out
+end
+
+"""
+`head` with variable `vars[i]` replaced by a variable of key `base + i - 1`: a copy with fresh
+variables. Ground subterms are shared, not copied; a ground head is returned as it is.
+"""
+function _rename_head(head::T, vars::Vector{UInt64}, base::UInt64)::T where {T}
+    isempty(vars) && return head
+    kind(head) === EXPR || return _renamed(head, vars, base)
+    stack = Tuple{T, Vector{T}}[(head, T[])]            # (compound, its children copied so far)
+    while true
+        node, kids = stack[end]
+        i = length(kids) + 1
+        if i > nchildren(node)
+            pop!(stack)
+            r = mk_expr(T, kids)
+            isempty(stack) && return r
+            push!(stack[end][2], r)
+            continue
+        end
+        c = child(node, i)
+        if kind(c) === EXPR && !is_ground(c)
+            push!(stack, (c, T[]))
+        else
+            push!(kids, _renamed(c, vars, base))
+        end
+    end
+end
+
+"Variable `t` as its renamed copy (key `base + i - 1` for `vars[i]`); any other term unchanged."
+function _renamed(t::T, vars::Vector{UInt64}, base::UInt64)::T where {T}
+    kind(t) === VAR || return t
+    i = findfirst(==(var_key(t)), vars)
+    i === nothing &&
+        error("_rename_head: variable $(var_key(t)) is not one of the clause's")
+    return mk_var(T, base + UInt64(i - 1))
+end
+
+# PORT: pl-comp.c decompileHead
+# DIVERGES: INTERIM, until pl-comp.c's body side and pl-vmi.c are ported. Upstream rebuilds the head
+# from the clause's CODE, with fresh variables on the global stack, and unifies it with `head`;
+# here the clause's stored head is copied with fresh kernel variable keys (`fresh_var_keys!`) and
+# unified — one copy per attempt where a call in SWI copies nothing (its compiled head code runs
+# against fresh frame slots). A ground head is not copied.
+"""
+    decompileHead!(ld, clause, head) -> Bool
+
+Unify `head` with a fresh copy of `clause`'s head under the bindings in `ld` (pl-comp.c): the
+bindings stay on the trail for the caller to undo.
+"""
+function decompileHead!(ld::PL_local_data{T}, clause::Clause{T}, head::T)::Bool where {T}
+    vars = clause.head_vars
+    renamed =
+        if isempty(vars)
+            clause.head
+        else
+            _rename_head(clause.head, vars, fresh_var_keys!(length(vars)))
+        end
+    return pl_unify!(ld, head, renamed)
 end
 
 # ── reading code (pl-incl.h, pl-comp.h, pl-comp.c) ──────────────────────────────────────────────
@@ -577,39 +656,47 @@ end
 
 # ── clause/2 (pl-comp.c) ────────────────────────────────────────────────────────────────────────
 # PORT: pl-comp.c clause as pl_clause
-# DIVERGES: clause/2 with an unbound clause reference only (no clause/3-4 by reference, no
-# variable bindings, no module context or protected predicates); the predicate is given; unifying
-# a clause's head and body with the arguments is the caller's `decompile(clause)::Bool` until
-# unification is ported; each answer goes to `sink(clause)::Bool`, false to cut.
+# DIVERGES: clause/2 with an unbound clause reference only (no clause/3-4 by reference, no module
+# context or protected predicates), on facts (the body is `true`); the predicate is given. Each
+# answer is a call of `sink(clause)::Bool` (false to cut) with the head's bindings in place in
+# `ld`: a sink keeps what it needs with `resolve_term`, because the bindings are undone when it
+# returns — where SWI's backtracking would undo them.
 """
-    pl_clause!(gd, ld, def, head, decompile, sink)
+    pl_clause!(gd, ld, def, head, sink)
 
-`clause/2` on predicate `def` with head `head` (pl-comp.c): in the generation it starts in,
-enumerate the clauses `decompile` accepts and pass each to `sink`.
+`clause/2` on predicate `def` with head `head` (pl-comp.c): in the generation it starts in, unify
+`head` with each clause in turn (`decompileHead!`) and call `sink(clause)` while the bindings hold;
+undo them after each.
 """
 function pl_clause!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, decompile::F,
-    sink::S
-)::Nothing where {T, F, S}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, sink::S
+)::Nothing where {T, S}
     dref = pushPredicateAccessObj!(ld, gd, def)
-    gen = dref.generation                               # setGenerationFrameVal()
-    chp = ClauseChoice{T}(nothing, word(0))
-    cref = firstClause!(head, gen, def, chp)
-    while cref !== nothing
-        clause = cref.clause::Clause{T}
-        if decompile(clause)
-            if chp.cref === nothing                     # the last one: out
-                popPredicateAccess!(ld, def)
-                sink(clause)
-                return nothing
+    popped = false
+    try
+        gen = dref.generation                           # setGenerationFrameVal()
+        chp = ClauseChoice{T}(nothing, word(0))
+        cref = firstClause!(head, gen, def, chp)
+        while cref !== nothing
+            clause = cref.clause::Clause{T}
+            m = Mark(ld)
+            try
+                if decompileHead!(ld, clause, head)
+                    if chp.cref === nothing             # the last one: out
+                        popPredicateAccess!(ld, def)
+                        popped = true
+                        sink(clause)
+                        return nothing
+                    end
+                    sink(clause) || return nothing      # FRG_CUTTED
+                end
+            finally
+                Undo!(ld, m)                            # backtracking undoes the answer
             end
-            if !sink(clause)                            # FRG_CUTTED
-                popPredicateAccess!(ld, def)
-                return nothing
-            end
+            cref = nextClause!(chp, head, gen, def)    # FRG_REDO
         end
-        cref = nextClause!(chp, head, gen, def)        # FRG_REDO
+    finally
+        popped || popPredicateAccess!(ld, def)
     end
-    popPredicateAccess!(ld, def)
     return nothing
 end

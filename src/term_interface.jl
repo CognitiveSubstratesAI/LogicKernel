@@ -69,8 +69,22 @@ function sym_hash end
     var_key(t) -> UInt64
 
 The identity of a [`VAR`](@ref) term: equal exactly when the two terms are the same variable.
+
+WHO OWNS WHICH KEYS (user, 2026-10-03): a CALLER's variables have keys below
+[`KERNEL_VAR_BASE`](@ref) (2^63); the top half belongs to the kernel, which takes the variables it
+creates — the renamed variables of a clause, which can survive in an answer — from one process-wide
+counter and never reuses a key in a process. An implementation's caller-facing variable constructor
+must enforce the caller half (the reference type's [`var_term`](@ref) does); [`mk_var`](@ref) is the
+raw constructor the kernel builds its own variables with, and checks nothing.
 """
 function var_key end
+
+"""
+    KERNEL_VAR_BASE
+
+`2^63`: variable keys at or above it are the kernel's, below it the caller's (see [`var_key`](@ref)).
+"""
+const KERNEL_VAR_BASE = UInt64(1) << 63
 
 """
     gnd_key(t) -> Union{UInt64, Nothing}
@@ -118,7 +132,10 @@ function atomic_compare end
 """
     mk_var(T::Type, key::UInt64) -> T
 
-A [`VAR`](@ref) term of type `T` with `var_key(mk_var(T, key)) == key`.
+A [`VAR`](@ref) term of type `T` with `var_key(mk_var(T, key)) == key` — the RAW constructor, which
+the kernel builds its own variables (keys at or above [`KERNEL_VAR_BASE`](@ref)) with; it checks
+nothing. A caller creating its own variables uses its type's checked constructor ([`var_term`](@ref)
+for the reference type).
 """
 function mk_var end
 
