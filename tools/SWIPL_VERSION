@@ -1,0 +1,6 @@
+# ORIGINAL: the SWI-Prolog version every live differential is judged against, locally AND in CI.
+# tools/run_tests.sh and CI's `analysis` job both refuse any other `swipl --version` (user,
+# 2026-10-03): a differential against a different swipl is a different oracle, and the devel PPA CI
+# installs from moves on by itself. Bump it deliberately, together with the local install — never
+# to turn a red run green.
+10.1.16

@@ -61,6 +61,19 @@ JL
 export LOGICKERNEL_REQUIRE_TOOLS=1
 # …and so is the live SWI-Prolog differential (test/oracle/): a code port is judged by upstream itself.
 export LOGICKERNEL_REQUIRE_SWIPL=1
+# …at the PINNED version (tools/SWIPL_VERSION), the one CI's analysis job also asserts: a
+# differential against a different swipl is a different oracle. Both sides must be non-empty.
+SWIPL_PIN=$(grep -v '^#' tools/SWIPL_VERSION 2>/dev/null | tr -d '[:space:]')
+SWIPL_HAVE=$(swipl --version 2>/dev/null)
+if [ -z "$SWIPL_PIN" ]; then
+    echo "run_tests.sh: tools/SWIPL_VERSION is missing or empty — no pinned swipl to judge against" >&2
+    exit 1
+fi
+case "$SWIPL_HAVE" in
+    *"version $SWIPL_PIN "*) ;;
+    *) echo "run_tests.sh: swipl must be $SWIPL_PIN (tools/SWIPL_VERSION); found: ${SWIPL_HAVE:-no swipl on PATH}" >&2
+       exit 1 ;;
+esac
 
 MEM_MAX="${LOGICKERNEL_TEST_MEM_MAX:-8G}"
 HEAP_HINT="${LOGICKERNEL_TEST_HEAP_HINT:-6G}"

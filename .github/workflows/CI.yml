@@ -106,12 +106,25 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@v2
-      - name: Install SWI-Prolog (the devel PPA — the series the local differential runs against)
+      # The devel PPA serves whatever is current; the differentials must run against the PINNED
+      # version the local suite uses (tools/SWIPL_VERSION). A PPA that moved on fails HERE, loudly.
+      - name: Install SWI-Prolog (the devel PPA) and refuse any version but the pinned one
         run: |
           sudo add-apt-repository -y ppa:swi-prolog/devel
           sudo apt-get update -q
           sudo apt-get install -y -q swi-prolog-nox
-          swipl --version
+          pin=$(grep -v '^#' tools/SWIPL_VERSION | tr -d '[:space:]')
+          have=$(swipl --version)
+          echo "$have (pinned: $pin)"
+          if [ -z "$pin" ]; then
+            echo "::error::tools/SWIPL_VERSION is empty: no pinned swipl to judge against"
+            exit 1
+          fi
+          case "$have" in
+            *"version $pin "*) ;;
+            *) echo "::error::CI swipl is '$have' but tools/SWIPL_VERSION pins $pin. The PPA moved on: upgrade the local swipl and bump the pin together, or install $pin here. Never bump the pin alone."
+               exit 1 ;;
+          esac
       - name: Install the analysis tools into the default environment
         run: |
           julia -e 'using Pkg; Pkg.add([
