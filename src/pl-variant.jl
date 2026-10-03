@@ -79,8 +79,10 @@ function _variant_functor(l, r)::Union{Nothing, Tuple{Int, Int}}
 end
 
 # PORT: pl-variant.c variant
-# DIVERGES: atomic data are compared as `==` compares them (`compareStandard(…, true)`): SYM by
-# `sym_key`, GND as the standard order's identity — upstream compares words and indirect data.
+# DIVERGES: atomic data are compared as `==` compares them (the standard order's chain in equality
+# mode, `compare_std(…, CMP_MODE_EQUAL)` — the public `compareStandard` checks the term types once,
+# at its entry, never per pair in a walk): SYM by `sym_key`, GND as the standard order's identity —
+# upstream compares words and indirect data.
 """
 Run the agenda: true when every pair matches under one consistent variable correspondence
 (pl-variant.c).
@@ -114,7 +116,7 @@ function variant(agenda::argPairs{T})::Bool where {T}
         elseif kind(l) === SYM
             sym_key(l) == sym_key(r) || return false
         elseif kind(l) === GND
-            compareStandard(l, r, true) == 0 || return false
+            compare_std(l, r, CMP_MODE_EQUAL) == CMP_EQUAL || return false
         else
             f = _variant_functor(l, r)
             f === nothing && return false
@@ -147,7 +149,7 @@ function is_variant_ptr(t1, t2)::Bool
     elseif k === SYM
         return sym_key(t1) == sym_key(t2)
     elseif k === GND
-        return compareStandard(t1, t2, true) == 0
+        return compare_std(t1, t2, CMP_MODE_EQUAL) == CMP_EQUAL     # the types checked above
     end
     if _variant_functor(t1, t2) === nothing
         return false

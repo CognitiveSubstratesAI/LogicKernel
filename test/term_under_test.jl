@@ -16,12 +16,13 @@
 #     LOGICKERNEL_TERM=alt tools/run_tests.sh test/core_lang/test_unify.jl
 #
 # The implementations: `reference` — `Term{G}` (src/default_term.jl), for the payload `G` the file
-# asks for; `alt` — `AltTerm` (test/core_lang/alt_term.jl), deliberately unlike it, which takes any
-# payload. A file that is NOT term-generic (it tests one type's own behaviour, like
+# asks for; `alt` — `AltTerm{false}` (test/core_lang/alt_term.jl), deliberately unlike it, which
+# takes any payload; `alt_interned` — `AltTerm{true}`, which also SHARES ground compounds, as SWI's
+# `copy_term/2` shares ground subterms (pl-copyterm.c). A file that is NOT term-generic (it tests one type's own behaviour, like
 # test/core_lang/test_default_term.jl) does not include this.
 using LogicKernel
 
-const LK_TERM_IMPLS = ("reference", "alt")
+const LK_TERM_IMPLS = ("reference", "alt", "alt_interned")
 const LK_TERM_IMPL = get(ENV, "LOGICKERNEL_TERM", "reference")
 LK_TERM_IMPL in LK_TERM_IMPLS || error(
     "LOGICKERNEL_TERM=$(repr(LK_TERM_IMPL)): expected one of $(join(LK_TERM_IMPLS, ", "))"
@@ -32,19 +33,24 @@ isdefined(Main, :LKAltTerm) ||
 using Main.LKAltTerm: AltTerm, alt_sym, alt_gnd, alt_var, alt_name, alt_value
 
 "The term type under test, for a file whose grounded payload is `G`."
-lk_term_type(::Type{G}) where {G} = LK_TERM_IMPL == "reference" ? Term{G} : AltTerm
+lk_term_type(::Type{G}) where {G} =
+    if LK_TERM_IMPL == "reference"
+        Term{G}
+    else
+        AltTerm{LK_TERM_IMPL == "alt_interned"}
+    end
 
 "The symbol `name`."
 lk_sym(::Type{Term{G}}, name::Symbol) where {G} = sym_term(Term{G}, name)
-lk_sym(::Type{AltTerm}, name::Symbol) = alt_sym(name)
+lk_sym(::Type{AltTerm{H}}, name::Symbol) where {H} = alt_sym(AltTerm{H}, name)
 
 "The grounded value `v`."
 lk_gnd(::Type{Term{G}}, v) where {G} = gnd_term(Term{G}, v)
-lk_gnd(::Type{AltTerm}, v) = alt_gnd(v)
+lk_gnd(::Type{AltTerm{H}}, v) where {H} = alt_gnd(AltTerm{H}, v)
 
 "A CALLER's variable — checked: keys at or above `KERNEL_VAR_BASE` are the kernel's."
 lk_var(::Type{Term{G}}, key::UInt64) where {G} = var_term(Term{G}, key)
-lk_var(::Type{AltTerm}, key::UInt64) = alt_var(key)
+lk_var(::Type{AltTerm{H}}, key::UInt64) where {H} = alt_var(AltTerm{H}, key)
 
 "The name of a symbol."
 lk_name(t::Term) = sym_name(t)

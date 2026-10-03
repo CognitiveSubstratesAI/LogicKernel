@@ -48,6 +48,17 @@ host_identical(x, y)::Bool =
         typeof(x) === typeof(y) && (x isa Base.IEEEFloat ? x === y : isequal(x, y))
     end
 
+"""
+Seconds `f(x...)` takes, the result kept alive. A bare `@elapsed(a === b)` measures NOTHING: `===`
+has no side effects, so the compiler deletes the unused comparison — a timing guard written that
+way passed with structural `===` (mutation-proved, 2026-10-03).
+"""
+@noinline function _timed(f, x...)::Float64
+    t0 = time_ns()
+    Base.donotdelete(f(x...))
+    return (time_ns() - t0) / 1e9
+end
+
 "Groundness recomputed by the suite itself — the judge for `is_ground`, independent of the type."
 _ground(t)::Bool =
     if kind(t) === VAR
@@ -117,15 +128,29 @@ function run_term_conformance(
         end
 
         # The kernel's "same term" test is `===` (upstream: a cell address) and its identity maps
-        # key by it, so `===` on compounds must be an address compare. A compound that is a plain
-        # immutable value makes it structural — exponential on shared subterms (2026-10-03).
-        @testset "a compound has object identity: separately built twins are not ===" begin
-            mk() = ex(sy(:f), gn(1), ex(sy(:g), mk_var(T, UInt64(1))))
-            a, b = mk(), mk()
-            @test compareStandard(a, b) == 0              # identical terms…
-            @test a !== b                                 # …but two compounds
-            @test mk_expr(T, T[]) !== mk_expr(T, T[])
-            @test a === a && child(a, 3) === child(a, 3)  # a compound is itself
+        # key by it. THE RULE (user, 2026-10-03): `===` on compounds is CONSTANT-TIME, and
+        # `a === b` implies the terms are identical; SHARED subterms are permitted — SWI's own
+        # copy_term/2 shares ground subterms (pl-copyterm.c), so separately built twins MAY be one
+        # object. A first statement, "twins are never ===", was too strong: it failed on the
+        # sharing implementation (`AltTerm{true}`), at `()`. The implication over every pair of
+        # samples is checked with the standard order below.
+        @testset "=== on compounds is constant-time and implies identity; sharing permitted" begin
+            # twins of a DAG, each level `g(x, x)`: a structural `===` or `objectid` walks every
+            # path. The depths are MEASURED (2026-10-03) on immutable tuple-valued compounds: a
+            # structural `===` grows ~4x a level (20 ms at depth 10, 6.5 s at 14 — at 24 it never
+            # finished), a structural `objectid` ~2x (8.8 ms at 16); a mutable compound takes
+            # microseconds at any depth. So each gets a depth that fails in well under a second.
+            dag(d) =
+                d == 0 ? ex(sy(:f), mk_var(T, UInt64(1))) : (x=dag(d - 1); ex(sy(:g), x, x))
+            a, b = dag(11), dag(11)
+            @test minimum(_timed(===, a, b) for _ in 1:5) < 1e-3
+            @test minimum(_timed(objectid, dag(20)) for _ in 1:5) < 1e-3
+            @test a === a && child(a, 2) === child(a, 3)  # a compound is itself; shared is shared
+            # near misses a sharing key could merge: not identical, so never one object
+            for (x, y) in ((1, 1.0), (0.0, -0.0), (1, 2), (NaN, -NaN), ("a", "b"))
+                @test ex(sy(:f), gn(x)) !== ex(sy(:f), gn(y))
+            end
+            @test ex(sy(:f), sy(:a)) !== ex(sy(:f), gn("a"))
         end
 
         @testset "sym_key is equal exactly when the symbols are equal" begin
@@ -206,16 +231,18 @@ function run_term_conformance(
             for (k, mk) in enumerate(mkx)
                 push!(samples, (mk(), n2 + k), (mk(), n2 + k))
             end
-            antisym = identity_ok = eqmode_ok = true
+            antisym = identity_ok = eqmode_ok = egal_ok = true
             for (a, ia) in samples, (b, ib) in samples
                 r = c(a, b)
                 antisym &= r in (-1, 0, 1) && r == -c(b, a)
                 identity_ok &= (r == 0) == (ia == ib)
+                egal_ok &= a !== b || r == 0                      # `===` implies identical
                 e = compareStandard(a, b, true)
                 eqmode_ok &= (r == 0) ? e == 0 : e == LogicKernel.CMP_NOTEQ
             end
             @test antisym
             @test identity_ok
+            @test egal_ok
             @test eqmode_ok
             trans = 0
             for (a, _) in samples, (b, _) in samples

@@ -16,8 +16,8 @@
 #
 # TERM-GENERIC FILES RUN ONCE PER TERM IMPLEMENTATION. A file that includes test/term_under_test.jl
 # reaches the kernel only through the term interface, so it runs on the reference type AND on the
-# deliberately different second implementation (`LK_TERM_IMPLS`); the second run's test set is
-# named `<file> [alt]`.
+# deliberately different second implementation, plain and sharing ground compounds
+# (`LK_TERM_IMPLS`); those runs' test sets are named `<file> [alt]` and `<file> [alt_interned]`.
 using Test
 using LogicKernel
 
@@ -59,7 +59,7 @@ Test.@with_testset LK_TS begin
         @test "core_lang/test_term_interface.jl" in generic
         @test "core_lang/test_unify.jl" in generic
         @test length(generic) >= 19
-        @test length(LK_TERM_IMPLS) >= 2
+        @test length(LK_TERM_IMPLS) >= 3
     end
     for f in LK_TEST_FILES
         rel = relpath(f, LK_TEST_DIR)
@@ -78,11 +78,16 @@ Test.@with_testset LK_TS begin
             end
         end
     end
-    # …and the `[alt]` runs really ran the second implementation: its intern table fills only when
-    # an `AltTerm` symbol is built, so a selector that fell back to `Term{G}` — running the
-    # reference twice, green — leaves it empty.
-    @testset "the second implementation was exercised" begin
-        @test length(Main.LKAltTerm._NAMES) > 0
+    # …and the `[alt]` and `[alt_interned]` runs really ran their own types: each counts the
+    # compounds it builds, so a selector that fell back to another type — running it twice, green —
+    # leaves a count at zero. And the interned type really SHARED: separately built ground twins
+    # came back as one object, or the third run proves nothing about sharing.
+    @testset "the second implementation was exercised, plain and sharing" begin
+        s = Main.LKAltTerm.alt_stats()
+        @test s.compounds_plain > 0
+        @test s.compounds_interned > 0
+        @test s.shared > 0
+        println("  AltTerm: ", s)        # how much sharing the [alt_interned] runs exercised
     end
 end
 

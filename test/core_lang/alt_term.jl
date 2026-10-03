@@ -8,12 +8,15 @@
 #   | `Term{G}` (src/default_term.jl)           | `AltTerm` (here)                                   |
 #   |-------------------------------------------|----------------------------------------------------|
 #   | ONE concrete struct with a kind tag       | an ABSTRACT type with a concrete leaf per kind —   |
-#   |                                           |   and per ARITY for compounds (`AltExpr{N}`)       |
+#   |                                           |   and per ARITY for compounds (`AltExpr{H, N}`)    |
 #   | `sym_key`: the `Symbol`'s address         | `sym_key`: an interned integer id, counting from 0 |
 #   | `sym_hash`: `objectid` of the `Symbol`    | `sym_hash`: FNV-1a of the name's UTF-8 bytes       |
-#   | children in a `Vector{Term{G}}`           | children in an `NTuple{N}`, in a `mutable struct`: |
-#   |                                           |   the interface requires a compound to have object |
-#   |                                           |   identity, and a plain tuple VALUE has none       |
+#   | children in a `Vector{Term{G}}`           | children in an `NTuple{N}`, in a `mutable struct`  |
+#   |                                           |   (`===` on compounds must be constant-time; on a  |
+#   |                                           |   plain tuple VALUE it walks the children)         |
+#   | every `mk_expr` a new compound            | `AltTerm{true}` SHARES ground compounds: a struc-  |
+#   |                                           |   turally identical ground compound is returned as |
+#   |                                           |   the SAME object (hash-consing)                   |
 #   | the value in `Union{Nothing, G}`          | the value BOXED (an `Any` field); any host value   |
 #   | `gnd_key` for integers, floats, rationals,| `gnd_key` for integers (by decimal text), IEEE     |
 #   |   strings, chars, symbols and booleans    |   floats (by bits), rationals and strings — every- |
@@ -36,6 +39,12 @@
 # The intern table is module state. That is allowed here because this is test code: the kernel's
 # no-module-state contract, and the lint enforcing it, cover the `LogicKernel` module.
 #
+# TWO TERM TYPES, `AltTerm{H}`: `AltTerm{false}` (selector `alt`) builds a new compound on every
+# `mk_expr`; `AltTerm{true}` (selector `alt_interned`) interns GROUND compounds, so equal ground
+# subterms are one object — the sharing SWI's own terms have (`copy_term/2` shares ground subterms
+# with the original, pl-copyterm.c), proven safe for the kernel before pl-copyterm.c is ported (user,
+# 2026-10-03). Two types, not a switch: a run of one can never leak into the other.
+#
 # Loaded ONCE per process, into `Main`, by test/term_under_test.jl.
 module LKAltTerm
 
@@ -44,20 +53,23 @@ import LogicKernel:
     kind, term_type, nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal,
     atomic_compare, mk_var, mk_expr
 
-export AltTerm, alt_sym, alt_gnd, alt_var, alt_name, alt_value
+export AltTerm, alt_sym, alt_gnd, alt_var, alt_name, alt_value, alt_stats
 
-"The second implementation's term type: ABSTRACT, so every term's `typeof` is one of four leaves."
-abstract type AltTerm end
+"""
+The second implementation's term types: ABSTRACT, so every term's `typeof` is a leaf. `H`: whether
+ground compounds are shared (interned).
+"""
+abstract type AltTerm{H} end
 
-struct AltVar <: AltTerm
+struct AltVar{H} <: AltTerm{H}
     key::UInt64
 end
 
-struct AltSym <: AltTerm
+struct AltSym{H} <: AltTerm{H}
     id::UInt32                       # an index into _NAMES, from 0
 end
 
-struct AltGnd <: AltTerm
+struct AltGnd{H} <: AltTerm{H}
     val::Any                         # boxed, on purpose
 end
 
@@ -65,46 +77,46 @@ end
 # compounds still worked when built from `typeof(t)` — a mutation reverting `do_compare` to
 # `typeof` SURVIVED (2026-10-03). With the arity in the type, two compounds of different arities
 # are two leaves, so every `typeof` site breaks.
-# MUTABLE, though never mutated: a compound must have object identity (src/term_interface.jl). As a
-# plain immutable struct, `===` and `objectid` walked the children — exponential on shared subterms,
-# and the live unification differential never finished (2026-10-03).
-mutable struct AltExpr{N} <: AltTerm
-    const kids::NTuple{N, AltTerm}
+# MUTABLE, though never mutated: `===` on compounds must be constant-time (src/term_interface.jl).
+# As a plain immutable struct, `===` and `objectid` walked the children — exponential on shared
+# subterms, and the live unification differential never finished (2026-10-03).
+mutable struct AltExpr{H, N} <: AltTerm{H}
+    const kids::NTuple{N, AltTerm{H}}
 end
 
-# ── the intern table ─────────────────────────────────────────────────────────────────────────────
+# ── the intern tables ────────────────────────────────────────────────────────────────────────────
 const _NAMES = Symbol[]
 const _IDS = Dict{Symbol, UInt32}()
 const _LOCK = ReentrantLock()
 
 "The symbol `name`, interned: separately built twins share an id."
-function alt_sym(name::Symbol)::AltSym
+function alt_sym(::Type{AltTerm{H}}, name::Symbol)::AltSym{H} where {H}
     id = lock(_LOCK) do
         get!(_IDS, name) do
             push!(_NAMES, name)
             UInt32(length(_NAMES) - 1)
         end
     end
-    return AltSym(id)
+    return AltSym{H}(id)
 end
 
 "The name of a symbol (the reference type's `sym_name`)."
 alt_name(t::AltSym)::Symbol = lock(() -> _NAMES[t.id + 1], _LOCK)
 
 "The grounded value `v`, boxed."
-alt_gnd(v)::AltGnd = AltGnd(v)
+alt_gnd(::Type{AltTerm{H}}, v) where {H} = AltGnd{H}(v)
 
 "The host value of a grounded term (the reference type's `gnd_value`)."
 alt_value(t::AltGnd) = t.val
 
 "A CALLER's variable — checked, as the reference type's `var_term`: the top half is the kernel's."
-function alt_var(key::UInt64)::AltVar
+function alt_var(::Type{AltTerm{H}}, key::UInt64)::AltVar{H} where {H}
     key < KERNEL_VAR_BASE || throw(
         ArgumentError(
             "alt_var: key $(repr(key)) is in the kernel's half of the key space (≥ 2^63)"
         )
     )
-    return AltVar(key)
+    return AltVar{H}(key)
 end
 
 # ── the term interface ───────────────────────────────────────────────────────────────────────────
@@ -112,7 +124,7 @@ kind(::AltVar) = VAR
 kind(::AltSym) = SYM
 kind(::AltGnd) = GND
 kind(::AltExpr) = EXPR
-term_type(::AltTerm) = AltTerm                  # the abstract type, never the leaf
+term_type(::AltTerm{H}) where {H} = AltTerm{H}  # the abstract type, never the leaf
 
 nchildren(::AltTerm) = 0
 nchildren(t::AltExpr) = length(t.kids)
@@ -125,9 +137,73 @@ gnd_key(t::AltGnd) = _gnd_key(t.val)
 gnd_equal(a::AltGnd, b::AltGnd) = atomic_compare(a, b) == 0
 
 # Only the term type itself: a kernel that passes a LEAF type (`typeof(t)`) finds no method.
-mk_var(::Type{AltTerm}, key::UInt64) = AltVar(key)
-mk_expr(::Type{AltTerm}, children::Vector{AltTerm}) =
-    AltExpr{length(children)}(NTuple{length(children), AltTerm}(children))
+mk_var(::Type{AltTerm{H}}, key::UInt64) where {H} = AltVar{H}(key)
+mk_expr(::Type{AltTerm{false}}, children::Vector{AltTerm{false}}) = _new_expr(children)
+function mk_expr(::Type{AltTerm{true}}, children::Vector{AltTerm{true}})
+    all(_shareable, children) || return _new_expr(children)
+    h = _share_hash(children)
+    return lock(_LOCK) do
+        bucket = get!(() -> AltExpr{true}[], _SHARED, h)
+        for e in bucket
+            if _same_children(e, children)
+                _STATS[:shared] += 1
+                return e
+            end
+        end
+        e = _new_expr(children)
+        push!(bucket, e)
+        _INTERNED[e] = nothing
+        return e
+    end
+end
+
+function _new_expr(children::Vector{AltTerm{H}}) where {H}
+    N = length(children)
+    lock(() -> _STATS[H ? :compounds_interned : :compounds_plain] += 1, _LOCK)
+    return AltExpr{H, N}(NTuple{N, AltTerm{H}}(children))
+end
+
+# ── sharing (AltTerm{true}): a ground compound is built once ─────────────────────────────────────
+const _SHARED = Dict{UInt64, Vector{AltExpr{true}}}()    # structural hash → the ground compounds
+const _INTERNED = IdDict{AltExpr{true}, Nothing}()       # every shared compound — all are ground
+const _STATS = Dict(:compounds_plain => 0, :compounds_interned => 0, :shared => 0)
+
+"How many compounds each type built, and how often `AltTerm{true}` returned an existing one."
+alt_stats() = lock(_LOCK) do
+    (compounds_plain=_STATS[:compounds_plain],
+        compounds_interned=_STATS[:compounds_interned],
+        shared=_STATS[:shared])
+end
+
+"Ground, decided in O(1): atomic, or a compound in the intern table (only ground ones get in)."
+_shareable(c::AltTerm{true}) =
+    if kind(c) === VAR
+        false
+    else
+        (kind(c) === EXPR ? lock(() -> haskey(_INTERNED, c), _LOCK) : true)
+    end
+
+_share_key(c::AltSym) = (0x1, UInt64(c.id))
+_share_key(c::AltGnd) = (0x2, something(_gnd_key(c.val), UInt64(0)))   # a WILDCARD buckets at 0
+_share_key(c::AltExpr) = (0x3, UInt64(objectid(c)))                     # children are shared too
+_share_hash(children) =
+    foldl((h, c) -> hash(_share_key(c), h), children; init=hash(length(children)))
+
+"Identical children: shared compounds by `===`, symbols by id, grounded values by SWI's identity."
+function _same_children(e::AltExpr, children)::Bool
+    length(e.kids) == length(children) || return false
+    for (a, b) in zip(e.kids, children)
+        kind(a) === kind(b) || return false
+        if kind(a) === EXPR
+            a === b || return false
+        elseif kind(a) === SYM
+            a.id == b.id || return false
+        else
+            atomic_compare(a, b) == 0 || return false
+        end
+    end
+    return true
+end
 
 "FNV-1a, 64-bit — a process-independent hash of a name, unlike the reference's `objectid`."
 function _fnv1a(s::String)::UInt64

@@ -17,14 +17,19 @@
 # asks [`term_type`](@ref). Found 2026-10-03 by the second implementation: 18 kernel methods bound
 # the term type from a term argument (`f(t::T) where {T}`), and every one failed on a hierarchy.
 #
-# A COMPOUND HAS OBJECT IDENTITY. The kernel asks whether two terms are the SAME term with `===` —
+# `===` ON COMPOUNDS IS CONSTANT-TIME, AND `a === b` IMPLIES THE TERMS ARE IDENTICAL; SHARED SUBTERMS
+# ARE PERMITTED (user, 2026-10-03). The kernel asks whether two terms are the SAME term with `===` —
 # upstream compares cell addresses (`if ( t1 == t2 )` in pl-prims.c `unify_simple_ptrs`, pl-variant.c)
 # — and keys its identity maps by them (`IdDict`: the cyclic links and the occurs-check marks, where
-# upstream overwrites a cell). So `===` on two compounds must be an address compare: a compound is
-# a mutable object, or holds one (`Term{G}` and Core's `Expression` hold their children in a
-# `Vector`). A compound that is a plain immutable VALUE — children in a `Tuple` — makes `===` and
-# `objectid` structural: linear in the term, exponential on shared subterms. Found the same day by
-# the same implementation: with such compounds the live unification differential did not finish.
+# upstream overwrites a cell). So `===` on two compounds must be an address compare, not a walk: a
+# compound is a mutable object or holds one (`Term{G}` holds its children in a `Vector`). A compound
+# that is a plain immutable VALUE — children in a `Tuple` — makes `===` and `objectid` structural:
+# linear in the term, exponential on shared subterms; with such compounds the live unification
+# differential did not finish (2026-10-03). Sharing itself is SWI's own behaviour: `copy_term/2`
+# shares ground subterms with the original, and a subterm met twice is shared in the copy
+# (pl-copyterm.c, its marking table and `COPY_SHARE`) — so an implementation may return the SAME
+# object for identical subterms (hash-consing), and the kernel must be correct when it does. The
+# conformance suite runs a sharing implementation (`AltTerm{true}`, test/core_lang/alt_term.jl).
 
 """
     Kind
@@ -170,8 +175,8 @@ function mk_var end
     mk_expr(T::Type, children::Vector{T}) -> T
 
 A compound term of type `T` with the given children, head first. Takes ownership of `children`:
-the caller must not mutate the vector afterwards. Each call makes a NEW compound with its own
-object identity: two calls are never `===` (see the header).
+the caller must not mutate the vector afterwards. It MAY return an existing compound identical
+to the one asked for — shared subterms are permitted (see the header).
 """
 function mk_expr end
 

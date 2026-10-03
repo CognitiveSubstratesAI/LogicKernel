@@ -94,8 +94,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
 | `test/core_lang/test_term_interface.jl` | the conformance suite, run on BOTH implementations | — |
-| `test/core_lang/alt_term.jl` | `AltTerm`, the SECOND implementation of the term interface (ORIGINAL), deliberately unlike `Term{G}` — an abstract type with a leaf per kind (Core's `Atom` has that shape) and per compound ARITY, interned symbol ids from 0, children in an `NTuple` inside a mutable struct, boxed values, fewer grounded keys, `==`/`hash` that throw. A correctness vehicle, not a performance one | — |
-| `test/term_under_test.jl` | the implementation a TERM-GENERIC test runs on (`lk_term_type`, `lk_sym`, …); `test/runtests.jl` runs every file that includes it once per implementation, the second as `<file> [alt]` | — |
+| `test/core_lang/alt_term.jl` | `AltTerm`, the SECOND implementation of the term interface (ORIGINAL), deliberately unlike `Term{G}` — an abstract type with a leaf per kind and per compound ARITY, interned symbol ids from 0, children in an `NTuple` inside a mutable struct, boxed values, fewer grounded keys, `==`/`hash` that throw; `AltTerm{true}` also shares (hash-conses) ground compounds. A correctness vehicle, not a performance one | — |
+| `test/term_under_test.jl` | the implementation a TERM-GENERIC test runs on (`lk_term_type`, `lk_sym`, …); `test/runtests.jl` runs every file that includes it once per implementation, the others as `<file> [alt]` and `<file> [alt_interned]` | — |
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
@@ -194,9 +194,12 @@ graph TD
 8. **Correct on ANY implementation of the term interface** (2026-10-03). A term type may be an
    abstract hierarchy — Core's `Atom` is — so the kernel never takes the term type from `typeof(t)`
    (a leaf there) but asks `term_type(t)`, and never compares or hashes terms outside the interface
-   (Base `==`/`hash`). Every TERM-GENERIC test runs on the reference `Term{G}` and on the
-   deliberately different `AltTerm` (test/core_lang/alt_term.jl); `test/runtests.jl` holds a floor
-   on how many files that is. What the second implementation found (its first run: 6516 passed,
+   (Base `==`/`hash`). `===` on compounds is constant-time and `a === b` implies the terms are
+   identical; SHARED subterms are permitted, as SWI's own `copy_term/2` shares ground subterms
+   (pl-copyterm.c). Every TERM-GENERIC test runs on the reference `Term{G}` and on the
+   deliberately different `AltTerm` (test/core_lang/alt_term.jl), both plain (`AltTerm{false}`) and
+   SHARING ground compounds (`AltTerm{true}`, hash-consed); `test/runtests.jl` holds a floor on how
+   many files that is, and checks each variant built its own compounds and the sharing one shared. What the second implementation found (its first run: 6516 passed,
    2002 failed, 43 errored on it; the reference unaffected):
    * 18 kernel methods bound the term type from a term argument (`f(t::T) where {T}`) — the
      standard-order chain by a DIAGONAL signature `(t1::T, t2::T)`, which never matches two leaves,
@@ -207,17 +210,28 @@ graph TD
      (`compareAtoms`, `compareStrings`, `compare_neq_floats`, `compare_mixed_float_rational`)
      were internal. Exported;
    * the kernel's "same term" test (`===`, upstream's cell-address compare) and its identity
-     maps (`IdDict`) assume a compound has OBJECT IDENTITY. `AltTerm`'s first compounds were
+     maps (`IdDict`) need `===` on compounds to be CHEAP. `AltTerm`'s first compounds were
      immutable tuple values, so `===` walked them — exponentially on shared subterms — and the
-     live unification differential never finished. Now an interface requirement, with a
-     conformance property (separately built twins are not `===`);
+     live unification differential never finished. First stated as "a compound has object
+     identity, twins are never `===`" — too strong: it forbade the sharing SWI's terms have, and
+     failed on `AltTerm{true}` at `()`. Restated (user): constant-time, `a === b` ⇒ identical,
+     sharing permitted — with conformance properties for both halves (a 2^24-path DAG's twins;
+     `===` against the standard order over every sample pair, and near misses like `f(1)`/`f(1.0)`);
    * in the tests: ported `==/2` checks written as Base `==` on terms — 13 sites in test_jit.jl and
      test_db.jl; `bigint` exposed the first (a boxed `BigInt` is not `===`), and making `AltTerm`'s
      `==` THROW found the rest; they use `lk_eq` now — containers whose element type was inferred
      from a leaf, and an allocation property in a term-generic file (now the reference's only);
    * and in itself: with ONE compound leaf, a mutation reverting `do_compare` to `typeof` SURVIVED
      (its agenda holds only compounds). `AltExpr{N}` puts the arity in the type, and the standard-
-     order samples nest two arities, so the conformance suite catches it.
+     order samples nest two arities, so the conformance suite catches it;
+   * SHARING, proven before pl-copyterm.c arrives: `AltTerm{true}` interns ground compounds, and all
+     19 term-generic files pass on it (31375 assertions), so nothing reached by the suite assumes a
+     different occurrence is a different object. The runner prints how much was shared;
+   * a timing guard written `@elapsed(a === b)` measured NOTHING — the compiler deletes an unused
+     `===` — and passed with structural compounds (mutation-proved). Now `_timed` keeps the result
+     (`Base.donotdelete`), at depths measured to fail in under a second;
+   * the two-term-type check runs once, at the public entries (`compareStandard`,
+     `is_variant_ptr`); the variant walk calls the unchecked chain (`compare_std`).
 
 ## The VM — five design decisions (DECIDED 2026-10-03 — audited by the user)
 
@@ -505,6 +519,12 @@ line-for-line comparable and a missing sync shows as a missing macro.
 
 ## Still to come
 
+* **A test-time cost, not a defect (found 2026-10-03).** The reference type orders two Julia-only
+  host types by `string(T)` (`_cmp_types` in src/default_term.jl), and printing a type searches
+  every loaded module for an alias (`make_typealias`), so its cost grows with the modules loaded —
+  one per test file per implementation. Production payloads (`Int64`, `Float64`, `String`) never
+  reach it; the conformance suite's exotic values do, in its O(n³) transitivity loop (profiled).
+  A cheaper reproducible order on types would remove it.
 * ✅ **The standalone consumer** — done (four swipl-bench programs, above). It found a real gap on
   the way: a client could not read a symbol's NAME or a grounded VALUE through the public API, so
   `Term{G}` gained `sym_name` and `gnd_value` (the interface rightly has neither — the kernel never
