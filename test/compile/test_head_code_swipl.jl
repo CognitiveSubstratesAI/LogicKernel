@@ -139,7 +139,8 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         c -> any(i -> c[i] == "h_pop" && i > 1 && c[i - 1] != "h_pop", eachindex(c)), ours
     )
     # (`h_var`/`h_firstvar` carry their slot, so they are matched by prefix)
-    @test any(c -> "h_rfunctor" in c, ours) && any(c -> any(startswith("h_firstvar("), c), ours)
+    @test any(c -> "h_rfunctor" in c, ours) &&
+        any(c -> any(startswith("h_firstvar("), c), ours)
     @test any(c -> any(startswith("h_var("), c), ours)
     # a hand-checked case: p(_,_,a) is h_void_n(2), h_atom, i_exitfact (swipl vm_list, LogicKernel#1)
     @test _hcode(_he(:p, [mk_var(_H, UInt64(1)), mk_var(_H, UInt64(2)), _hs(:a)])) ==
@@ -162,8 +163,12 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     # holds: p(_, f(_,Y,Y)) puts Y in slot 2 (argument 0's void is not counted, f's `_` is). A fix
     # that also counted argument voids would say 1, and the two cases above would not notice.
     vY2 = mk_var(_H, UInt64(7))
-    @test _hcode(_he(:p, [mk_var(_H, UInt64(8)), _he(:f, [mk_var(_H, UInt64(9)), vY2, vY2])])) ==
-        ["h_void", "h_functor", "h_void", "h_firstvar(2)", "h_var(2)", "h_pop", "i_exitfact"]
+    @test _hcode(
+        _he(:p, [mk_var(_H, UInt64(8)), _he(:f, [mk_var(_H, UInt64(9)), vY2, vY2])])
+    ) ==
+        [
+        "h_void", "h_functor", "h_void", "h_firstvar(2)", "h_var(2)", "h_pop", "i_exitfact"
+    ]
     # the frame is sized by the SAME count (pl-comp.c: prolog_vars = variables =
     # nvars + arity + argvars - body_voids): the arguments, then the compacted variables. The
     # expected values come from that formula, not from swipl: no predicate exposes a clause's
