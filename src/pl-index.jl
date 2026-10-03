@@ -543,33 +543,54 @@ function first_clause_guarded!(
     end
 end
 
-# PORT: pl-index.c firstClause
-# DIVERGES: takes the search's generation where upstream takes a frame (`generationFrame(fr)`);
-# there is no definition reference counting (acquire_def/release_def) — that serves clause GC.
 """
-    firstClause!(argv, generation, def, chp) -> Union{Nothing, ClauseRef}
+The search context for one call of `firstClause!`/`nextClause!`: the local data's scratch
+`index_ctx`, reset — upstream declares a fresh `index_context` on the C stack. One per local data
+is enough: neither function is entered again before it returns (a caller's nested enumeration runs
+BETWEEN calls, and resets it in turn), and nothing keeps the context past the call. A context per
+call was a heap allocation on every `nextClause!` — every step of every enumeration.
+"""
+function _index_context!(
+    ctx::index_context{T}, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
+)::index_context{T} where {T}
+    ctx.generation = generation
+    ctx.predicate = def
+    ctx.chp = chp
+    ctx.depth = 0
+    ctx.position = _TOP_POSITION
+    return ctx
+end
+
+# PORT: pl-index.c firstClause
+# DIVERGES: takes the search's generation where upstream takes a frame (`generationFrame(fr)`), and
+# the local data `ld` explicitly (its scratch context, see `_index_context!`; untyped only because
+# `PL_local_data` is defined after this file, which defines the context it holds); there is no
+# definition reference counting (acquire_def/release_def) — that serves clause GC.
+"""
+    firstClause!(ld, argv, generation, def, chp) -> Union{Nothing, ClauseRef}
 
 The first clause of `def` that may match the call `argv` (the call term: its children 2.. are the
 arguments), visible in `generation`; `chp` records where `nextClause!` resumes (pl-index.c).
 """
 function firstClause!(
-    argv::T, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
+    ld, argv::T, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
 )::Union{Nothing, ClauseRef{T}} where {T}
-    ctx = index_context{T}(generation, def, chp, 0, _TOP_POSITION)
+    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
     return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
 end
 
 # PORT: pl-index.c nextClause
-# DIVERGES: as `firstClause!` — a generation instead of a frame, no definition reference counting.
+# DIVERGES: as `firstClause!` — a generation instead of a frame, `ld` explicit, no definition
+# reference counting. Allocation-free (AllocCheck gate): every step of an enumeration takes it.
 """
-    nextClause!(chp, argv, generation, def) -> Union{Nothing, ClauseRef}
+    nextClause!(ld, chp, argv, generation, def) -> Union{Nothing, ClauseRef}
 
 The next candidate clause after the ones `chp` has produced (pl-index.c).
 """
 function nextClause!(
-    chp::ClauseChoice{T}, argv::T, generation::gen_t, def::Definition{T}
+    ld, chp::ClauseChoice{T}, argv::T, generation::gen_t, def::Definition{T}
 )::Union{Nothing, ClauseRef{T}} where {T}
-    ctx = index_context{T}(generation, def, chp, 0, _TOP_POSITION)
+    ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
     if chp.key == 0                     # not indexed
         return next_clause_unindexed!(ctx)
     else

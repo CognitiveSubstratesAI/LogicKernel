@@ -676,7 +676,7 @@ function pl_clause!(
     try
         gen = dref.generation                           # setGenerationFrameVal()
         chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(head, gen, def, chp)
+        cref = firstClause!(ld, head, gen, def, chp)
         while cref !== nothing
             clause = cref.clause::Clause{T}
             m = Mark(ld)
@@ -693,7 +693,7 @@ function pl_clause!(
             finally
                 Undo!(ld, m)                            # backtracking undoes the answer
             end
-            cref = nextClause!(chp, head, gen, def)    # FRG_REDO
+            cref = nextClause!(ld, chp, head, gen, def)    # FRG_REDO
         end
     finally
         popped || popPredicateAccess!(ld, def)

@@ -24,6 +24,7 @@ include("default_term.jl")     # ORIGINAL — Term{G}, the reference implementat
 include("pl-hash.jl")          # swipl-devel src/pl-hash.c — MurmurHash2
 include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause list, index structs
 include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — term agendas (the local data holds two)
+include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing (LD holds its scratch)
 include("pl-global.jl")        # swipl-devel src/pl-global.h — the database state (GD, LD)
 include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys, bindings
 include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard order; unification
@@ -31,7 +32,6 @@ include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instruction
 include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
-include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC

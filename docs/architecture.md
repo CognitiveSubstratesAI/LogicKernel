@@ -147,9 +147,13 @@ graph TD
 4. **No module-level mutable state** (`tools/lint_globals.jl`, run by the suite).
 5. **No runtime dispatch, no abstract fields, no `Any`** — enforced by the suite with JET, Aqua,
    AllocCheck and the type-discipline gates; every method must be in the dispatch manifest.
-6. **Nondeterminism is sink/continuation with an explicit stack** (so far); **bindings follow SWI** — a
-   binding store and a trail with marks, undone when an attempt's sink returns (see the rulebook
-   above). Core's "no trail" rule does not govern the kernel's internals.
+6. **SWI's execution model inside the kernel; the caller's sink at the boundary** (user, 2026-10-03).
+   The VM is ported as is — frames, choice points and the trail included — and bindings follow SWI:
+   a binding store and a trail with marks. Answers leave the kernel through upstream's own query API
+   (`PL_open_query`/`PL_next_solution`/`PL_cut_query`/`PL_close_query`, pl-wam.c), with a sink (and an
+   iterator) as thin conveniences on top; until the VM lands, retract/1, retractall/1 and clause/2
+   call a sink per answer and undo its bindings when it returns. Core's execution rules (no choice
+   points, no trail) govern Core, not the kernel's internals.
 7. **Standalone.** No dependency on any CognitiveSubstratesAI package.
 
 ## Still to come
@@ -178,7 +182,8 @@ graph TD
   ✅ retract/1, retractall/1 and clause/2 use it (2026-10-03): a mark per candidate clause, the
   answer's bindings live while the caller's sink runs, undone after it (in a `finally`: ≲ 0.1 µs).
   Variable keys: a caller owns those below 2^63 (`var_term` checks), the kernel takes its own from
-  one process-wide counter. `clause/2` over 1000 facts: 0.55× swipl's time. Found on the way, for
-  later: `nextClause!` allocates an `index_context` per call (upstream keeps it on the C stack).
+  one process-wide counter. `clause/2` over 1000 facts: 0.55× swipl's time. Found on the way and
+  fixed next: `nextClause!` allocated an `index_context` per call (upstream: the C stack); it now
+  resets one scratch context in the local data and is gated allocation-free.
 * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.

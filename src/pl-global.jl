@@ -53,7 +53,8 @@ function fresh_var_keys!(n::Int)::UInt64
 end
 
 # PORT: pl-global.h PL_local_data
-# DIVERGES: `bindings` has no field upstream — SWI binds a variable by overwriting its cell on the
+# DIVERGES: `index_ctx` is scratch upstream declares on the C stack in each firstClause/nextClause.
+# `bindings` has no field upstream — SWI binds a variable by overwriting its cell on the
 # global stack; interface variables are immutable values, so a binding is an entry keyed by
 # `var_key`. `trail` is `stacks.trail` (its length is `tTop`) and holds those keys. A cyclic link or
 # a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
@@ -79,6 +80,7 @@ mutable struct PL_local_data{T}
     occurs_marked::IdDict{T, Nothing}                           # its FIRST_MASK marks
     unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
     occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
+    index_ctx::index_context{T}                                 # firstClause/nextClause scratch
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -86,6 +88,14 @@ function PL_local_data{T}() where {T}
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
-        term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[])
+        term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
+        # idle until a search resets it (`_index_context!`): any predicate will do
+        index_context{T}(
+            gen_t(0),
+            Definition{T}(UInt64(0), 0, ClauseList{T}(), UInt64(0)),
+            nothing,
+            0,
+            _TOP_POSITION
+        )
     )
 end

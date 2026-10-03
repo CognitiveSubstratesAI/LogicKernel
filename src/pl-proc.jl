@@ -467,7 +467,7 @@ function pl_retract!(
     try
         gen = dref.generation                           # setGenerationFrameVal()
         chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(head, gen, def, chp)
+        cref = firstClause!(ld, head, gen, def, chp)
         first_call = true                               # CTX_CNTRL == FRG_FIRST_CALL
         while cref !== nothing
             clause = cref.clause::Clause{T}
@@ -490,7 +490,7 @@ function pl_retract!(
             finally
                 Undo!(ld, m)                            # PL_rewind_foreign_frame(fid)
             end
-            cref = nextClause!(chp, head, gen, def)
+            cref = nextClause!(ld, chp, head, gen, def)
         end
     finally
         popped || popPredicateAccess!(ld, def)
@@ -550,7 +550,7 @@ function pl_retractall!(
             end
         else
             chp = ClauseChoice{T}(nothing, word(0))
-            cref = firstClause!(head, gen, def, chp)
+            cref = firstClause!(ld, head, gen, def, chp)
             while cref !== nothing
                 cl = cref.clause::Clause{T}
                 m = Mark(ld)
@@ -562,7 +562,7 @@ function pl_retractall!(
                     Undo!(ld, m)                        # PL_rewind_foreign_frame(fid)
                 end
                 chp.cref === nothing && break
-                cref = nextClause!(chp, head, gen, def)
+                cref = nextClause!(ld, chp, head, gen, def)
             end
         end
     finally

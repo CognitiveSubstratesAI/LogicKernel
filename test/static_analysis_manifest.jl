@@ -154,8 +154,9 @@ function _manifest_index(T)
         (LK.createIndex!, Tuple{T, Int, CL, CI, CTX}, false),
         (LK.createIndex!, Tuple{T, Int, CL, Nothing, CTX}, false),
         (LK.first_clause_guarded!, Tuple{T, Int, CL, CTX}, false),
-        (LK.firstClause!, Tuple{T, UInt64, D, CH}, false),
-        (LK.nextClause!, Tuple{CH, T, UInt64, D}, false),
+        (LK.firstClause!, Tuple{LD, T, UInt64, D, CH}, false),
+        (LK.nextClause!, Tuple{LD, CH, T, UInt64, D}, true),
+        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH}, true),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
         (LK.newClauseListRef, Tuple{Type{T}, UInt64}, false),
@@ -294,8 +295,16 @@ _index_entry_points(T) = (
         Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}},
         false
     ),
-    (LK.firstClause!, Tuple{T, UInt64, LK.Definition{T}, LK.ClauseChoice{T}}, false),
-    (LK.nextClause!, Tuple{LK.ClauseChoice{T}, T, UInt64, LK.Definition{T}}, false),
+    (
+        LK.firstClause!,
+        Tuple{LK.PL_local_data{T}, T, UInt64, LK.Definition{T}, LK.ClauseChoice{T}},
+        false
+    ),
+    (
+        LK.nextClause!,
+        Tuple{LK.PL_local_data{T}, LK.ClauseChoice{T}, T, UInt64, LK.Definition{T}},
+        true
+    ),
     (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
     (LK.indexOfWord, Tuple{T}, true)
 )

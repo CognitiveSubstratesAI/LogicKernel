@@ -84,14 +84,14 @@ function ix_call(p::IxPred{T}, goal::T)::Vector{Tuple{T, Bool}} where {T}
     gen = dref.generation
     chp = LK.ClauseChoice{T}(nothing, LK.word(0))
     out = Tuple{T, Bool}[]
-    c = LK.firstClause!(goal, gen, p.def, chp)
+    c = LK.firstClause!(p.db.ld, goal, gen, p.def, chp)
     while c !== nothing
         a = ix_answer(p.db.ld, goal, c.clause::LK.Clause{T})
         if a !== nothing
             push!(out, (a, chp.cref === nothing))
         end
         chp.cref === nothing && break
-        c = LK.nextClause!(chp, goal, gen, p.def)
+        c = LK.nextClause!(p.db.ld, chp, goal, gen, p.def)
     end
     LK.popPredicateAccess!(p.db.ld, p.def)
     return out
