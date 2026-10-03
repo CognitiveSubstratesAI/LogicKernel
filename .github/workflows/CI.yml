@@ -35,7 +35,8 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - 'min-patch'   # the LOWER BOUND of [compat] julia, exactly (1.13.0) — declared compat is tested
+          - 'min'   # the LOWER BOUND of [compat] julia: setup-julia@v2 installs the earliest compatible
+                    # version (1.13.0); v3 renamed this 'min-patch' ('min-patch' fails on v2)
           - '1'           # the latest release
         os:
           - ubuntu-latest
