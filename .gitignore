@@ -33,5 +33,10 @@ bench/results/
 *.key
 *.pem
 
+# The warm lane (tools/warm.sh) and the local precompile switch (tools/warm.sh workload)
+.warm/
+.evidence/
+LocalPreferences.toml
+
 # Codecov Test Analytics input, written by test/runtests.jl when LOGICKERNEL_JUNIT is set
 junit.xml

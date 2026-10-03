@@ -3,6 +3,9 @@
 #
 #   tools/run_tests.sh                       # full suite
 #   tools/run_tests.sh test/some/test_x.jl   # one file (not evidence for a commit)
+#   LOGICKERNEL_SHARDS=1 tools/run_tests.sh   # the full suite in ONE process (default: shards)
+#   LOGICKERNEL_REPLAY=.evidence/<run>/seq_2.tsv tools/run_tests.sh   # one shard's units, in its
+#                                            # order, in one process — never evidence
 #
 # An instance of the workspace's `workflows/run_tests_template.sh` (2026-10-02). What it guards:
 #
@@ -35,7 +38,7 @@ _finish() {
     local rc="$1"
     rm -f "$DRIVER"
     if command -v write_marker >/dev/null 2>&1; then
-        if [ "$TARGET" = "test/runtests.jl" ]; then
+        if [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
             write_marker "$ROOT" "$rc" "run_tests.sh full suite" "$_LAUNCH_FP"
         else
             echo "  test_marker: NOT evidence — filtered run (TARGET=$TARGET)"
@@ -137,6 +140,82 @@ exit(1)
 JL
 )
     julia --startup-file=no -e "$FMT_JL" "$FMT_PIN" < /dev/null || exit 1
+fi
+
+# ── THE SHARDED EVIDENCE RUN (user, 2026-10-03) ─────────────────────────────────────────────────
+# The suite is single-threaded, and here it took 10-16 min where CI's newer CPUs take 2m44s: a full
+# run is therefore split across several FRESH processes (tools/worker.jl), each started clean —
+# evidence never comes from a process that ran anything before. Workers pre-warmed by
+# `tools/warm.sh pool` are used when they were started for THIS tree; otherwise fresh ones start.
+# * The run gets its OWN directory, `.evidence/<run id>/`: claims left by a killed run can never
+#   make a later one skip units.
+# * Units are claimed costliest-first by atomic `mkdir` (test/runtests.jl); each shard logs the exact
+#   sequence it ran, and LOGICKERNEL_REPLAY replays one deterministically.
+# * ONE precompile here, before any worker; the workers run with automatic precompilation OFF.
+# * Only this coordinator decides the verdict — every shard green, every unit run EXACTLY once, the
+#   second implementation exercised across all shards — and only it writes evidence (`_finish`),
+#   against the tree fingerprint taken at launch.
+# shellcheck source=/dev/null
+. "$ROOT/tools/lib_evidence.sh"
+_sharded_run() {
+    local n="$1" run_id run fp i k rc=0 r
+    local dirs=() units_=()
+    run_id="$(date +%Y%m%d-%H%M%S)-$$"
+    run="$ROOT/.evidence/$run_id"
+    mkdir -p "$run/claims"
+    echo "run_tests.sh: SHARDED evidence run $run_id: $n fresh workers (LOGICKERNEL_SHARDS overrides)"
+    _stop_units() { for u in "${units_[@]}"; do systemctl --user stop "$u" 2>/dev/null; done; }
+    trap '_stop_units' EXIT
+    if ! julia --project=. --startup-file=no -e 'using LogicKernel' < /dev/null; then
+        echo "run_tests.sh: LogicKernel does not load — no worker started" >&2
+        _finish 1
+    fi
+    fp="$(_tree_fp "$ROOT")"
+    for w in "$ROOT"/.warm/pool/w*; do
+        [ "${#dirs[@]}" -ge "$n" ] && break
+        [ -f "$w/ready" ] && [ "$(cat "$w/fp" 2>/dev/null)" = "$fp" ] || continue
+        mkdir "$w/claimed" 2>/dev/null || continue           # another run took it
+        dirs+=("$w"); units_+=("$(cat "$w/unit")")
+    done
+    echo "  pre-warmed workers from the pool: ${#dirs[@]} of $n"
+    k=0
+    while [ "${#dirs[@]}" -lt "$n" ]; do
+        k=$((k + 1))
+        _spawn_worker "$ROOT" "$run/w$k" "$fp" "lk-evidence-$run_id-$k" || {
+            echo "run_tests.sh: could not start a worker" >&2; _finish 1; }
+        dirs+=("$run/w$k"); units_+=("lk-evidence-$run_id-$k")
+    done
+    for i in "${!dirs[@]}"; do
+        _wait_ready "${dirs[$i]}" "${units_[$i]}" 900 || {
+            echo "run_tests.sh: worker ${dirs[$i]} never became ready:" >&2
+            tail -20 "${dirs[$i]}/log" >&2; _finish 1; }
+    done
+    for i in "${!dirs[@]}"; do
+        printf '%s\n%s\n%s\n' "$fp" "$run" "$((i + 1))" > "${dirs[$i]}/go.tmp"
+        mv "${dirs[$i]}/go.tmp" "${dirs[$i]}/go"
+    done
+    for i in "${!dirs[@]}"; do
+        while [ ! -f "${dirs[$i]}/rc" ] && systemctl --user is-active --quiet "${units_[$i]}"; do
+            sleep 1
+        done
+        r=$(cat "${dirs[$i]}/rc" 2>/dev/null || echo 1)       # no verdict is a FAILURE
+        echo "  shard $((i + 1)): exit $r   ${dirs[$i]}/log"
+        grep -A1 '^Test Summary' "${dirs[$i]}/log" | tail -1
+        if [ "$r" != "0" ]; then
+            rc=1
+            echo "    replay:  LOGICKERNEL_REPLAY=$run/seq_$((i + 1)).tsv tools/run_tests.sh"
+        fi
+    done
+    _check_run "$run" || rc=1                              # tools/lib_evidence.sh
+    echo "  slowest units:"
+    cat "$run"/seq_*.tsv 2>/dev/null | sort -t "$(printf '\t')" -k3 -nr | head -10 |
+        awk -F '\t' '{printf "    %7.1f s  %s\n", $3, $2}'
+    ls -1dt "$ROOT"/.evidence/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf   # keep the last 5 runs
+    _finish "$rc"
+}
+if [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
+    NSHARDS=$(_shard_count)
+    [ "$NSHARDS" -gt 1 ] && _sharded_run "$NSHARDS"
 fi
 
 MEM_MAX="${LOGICKERNEL_TEST_MEM_MAX:-8G}"

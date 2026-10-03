@@ -51,6 +51,12 @@
 # Loaded ONCE per process, into `Main`, by test/term_under_test.jl.
 module LKAltTerm
 
+# Revise mode for the warm lane, which loads this file with `includet`: its default there,
+# `:evalmeth`, revises METHOD definitions only, so an edited struct or constant here would stay
+# stale; `:eval` re-evaluates every changed expression (unchanged ones, the intern tables below
+# included, are left alone).
+__revise_mode__ = :eval
+
 using LogicKernel
 import LogicKernel:
     kind, term_type, nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal,

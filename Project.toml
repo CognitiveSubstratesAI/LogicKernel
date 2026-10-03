@@ -3,15 +3,21 @@ uuid = "3a0d8e50-b9f2-4a53-9210-6c7d690b17b0"
 version = "0.1.0"
 authors = ["CognitiveSubstratesAI"]
 
-# NO [deps]. Deliberately: this package depends on NOTHING in the CognitiveSubstratesAI tree; other
-# packages may depend on IT. `test/test_package.jl` checks both halves — the [deps] table names
-# none of them, and none is loaded after `using LogicKernel` — so "standalone" is a tested
-# property, not a claim about this file.
+# STANDALONE: this package depends on NOTHING in the CognitiveSubstratesAI tree; other packages may
+# depend on IT. `test/test_package.jl` checks both halves — the [deps] table names only its
+# ALLOWLIST, and no sibling is loaded after `using LogicKernel` — so "standalone" is a tested
+# property, not a claim about this file. The allowlist is one package (user, 2026-10-03):
+# PrecompileTools, for the precompile workload (src/precompile_workload.jl) — a fresh process
+# otherwise spent ~10 s compiling the hot paths before its first answer.
 #
 # 0.x until the term interface has a SECOND implementation in real use. The version is saying that,
 # honestly.
 
+[deps]
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+
 [compat]
+PrecompileTools = "1"
 Random = "1"
 SHA = "0.7, 1"
 Test = "1"

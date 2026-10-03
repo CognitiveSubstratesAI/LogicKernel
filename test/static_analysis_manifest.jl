@@ -353,6 +353,7 @@ const DISPATCH_MANIFEST = (
     (LK._HASH_char!, Tuple{LK.sha1_state, Char}, false),
     (LK._HASH_word!, Tuple{LK.sha1_state, UInt64}, false),
     (LK._HASH_str!, Tuple{LK.sha1_state, String}, false),
+    (LK._precompile_workload, Tuple{}, false),
     (LK.FLAG64, Tuple{Int}, true), (LK.tagex, Tuple{UInt64}, true),
     (LK.isFunctor, Tuple{UInt64}, true), (LK.MK_ATOM, Tuple{UInt64}, true),
     (LK.MK_FUNCTOR, Tuple{UInt64, UInt64}, true), (LK.codeTable, Tuple{UInt64}, true),

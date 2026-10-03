@@ -774,7 +774,12 @@ function insertIntoSparseList!(
     if head === nothing
         return (cref, cref)
     end
-    tail = tail::ClauseRef{T}
+    # Upstream's invariant, made explicit: a list with a head has a tail. A bare `tail::ClauseRef{T}`
+    # left JET, which splits the two unions independently, a head-without-tail case it could not rule
+    # out — reported as an invalid `typeassert` once the precompile workload gave JET a concrete call
+    # path here (2026-10-03).
+    tail === nothing &&
+        error("insertIntoSparseList!: a sparse clause list has a head but no tail")
     if where_ === CL_END
         tail.next = cref
         return (head, cref)

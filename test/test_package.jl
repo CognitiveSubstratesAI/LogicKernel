@@ -12,7 +12,10 @@
 # measured twice: PathMap CI #87 (`Random`), and LogicKernel `8f0bead` (`Random` again).
 using Test, LogicKernel
 
-const ALLOWED_DEPS = ()    # none: the kernel depends on nothing
+# ONE allowed dependency (user, 2026-10-03), and nothing else unless added deliberately, with a reason:
+# PrecompileTools runs src/precompile_workload.jl at precompile time — a fresh process otherwise
+# spent ~10 s compiling the hot paths before its first answer (measured).
+const ALLOWED_DEPS = ("PrecompileTools",)
 const SIBLINGS = ("MeTTaCore", "MORK", "PathMaps", "MorkSupercompiler")
 
 """Package names in the `[deps]` and `[extras]` tables of `file`, plus the `name`/`uuid` lines."""

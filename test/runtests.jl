@@ -18,6 +18,16 @@
 # reaches the kernel only through the term interface, so it runs on the reference type AND on the
 # deliberately different second implementation, plain and sharing ground compounds
 # (`LK_TERM_IMPLS`); those runs' test sets are named `<file> [alt]` and `<file> [alt_interned]`.
+#
+# UNITS, AND THREE WAYS TO RUN THEM. A unit is one file on one term implementation. With no
+# environment (CI, `Pkg.test`) every unit runs here, in order. tools/run_tests.sh runs the suite as
+# SHARDS (user, 2026-10-03): several fresh processes that CLAIM units from a queue they share — an
+# atomic `mkdir` per unit in LOGICKERNEL_SHARD_DIR, a directory made fresh for each run — costliest
+# first, so a shard that finishes early takes the next unit and the shards balance themselves. Each
+# shard LOGS the exact sequence it ran (`seq_<id>.tsv`), and LOGICKERNEL_REPLAY=<that file> runs the
+# same sequence again, in order, in one process: a failure that depends on what ran before it is
+# reproducible. The checks that span every unit — each claimed exactly once, the second
+# implementation exercised — are the coordinator's (tools/run_tests.sh), from the files written here.
 using Test
 using LogicKernel
 
@@ -31,6 +41,53 @@ const LK_TEST_FILES = sort!([
 ])
 const LK_TERM_GENERIC_RX = r"^include\(joinpath\(@__DIR__, \"\.\.\", \"term_under_test\.jl\"\)\)"m
 lk_term_generic(f::String)::Bool = occursin(LK_TERM_GENERIC_RX, read(f, String))
+
+# ── the units ────────────────────────────────────────────────────────────────────────────────────
+"Every unit, `(file, implementation, label)`, in the order of discovery."
+const LK_UNITS = [
+    (
+        f,
+        impl,
+        if impl in ("", "reference")
+            relpath(f, LK_TEST_DIR)
+        else
+            "$(relpath(f, LK_TEST_DIR)) [$impl]"
+        end
+    )
+    for f in LK_TEST_FILES for impl in (lk_term_generic(f) ? LK_TERM_IMPLS : ("",))
+]
+const LK_SHARD_DIR = get(ENV, "LOGICKERNEL_SHARD_DIR", "")
+const LK_SHARD_ID = get(ENV, "LOGICKERNEL_SHARD_ID", "")
+const LK_SHARD = !isempty(LK_SHARD_DIR)
+const LK_REPLAY = get(ENV, "LOGICKERNEL_REPLAY", "")
+# Costliest first, for the shards' queue: the static-analysis gate (JET, AllocCheck), then the live
+# swipl differentials, then the rest — measured costs replace this order once the [unit] timings exist.
+_lk_cost_rank(label) =
+    occursin("static_analysis", label) ? 0 : (occursin("_swipl", label) ? 1 : 2)
+"The units this process runs, in its order."
+const LK_RUN = if LK_SHARD
+    sort(LK_UNITS; by=u -> _lk_cost_rank(u[3]))
+elseif !isempty(LK_REPLAY)
+    let byname = Dict(u[3] => u for u in LK_UNITS)
+        [byname[split(l, '\t')[2]] for l in eachline(LK_REPLAY) if !isempty(strip(l))]
+    end
+else
+    LK_UNITS
+end
+"Claim unit `i` of the shards' queue: an atomic `mkdir`, so exactly one shard gets each unit."
+lk_claim(i::Int)::Bool =
+    try
+        mkdir(joinpath(LK_SHARD_DIR, "claims", string(i)))
+        true
+    catch
+        false
+    end
+if LK_SHARD
+    write(joinpath(LK_SHARD_DIR, "units_total"), string(length(LK_RUN)))
+    println("  shard ", LK_SHARD_ID, " of a run with ", length(LK_RUN), " units")
+elseif !isempty(LK_REPLAY)
+    println("  REPLAY of ", LK_REPLAY, ": ", length(LK_RUN), " units, in order")
+end
 
 # Visibility: what each subsystem folder contributes, zeros included.
 for d in sort!(filter(isdir, readdir(LK_TEST_DIR; join=true)))
@@ -61,33 +118,41 @@ Test.@with_testset LK_TS begin
         @test length(generic) >= 20
         @test length(LK_TERM_IMPLS) >= 3
     end
-    for f in LK_TEST_FILES
-        rel = relpath(f, LK_TEST_DIR)
-        for impl in (lk_term_generic(f) ? LK_TERM_IMPLS : ("",))
-            label = impl in ("", "reference") ? rel : "$rel [$impl]"
-            @testset "$label" begin
-                # A `module … end` expression, not `Module(name)`: only the former defines the
-                # module's own `include`/`eval`, which a test file calling `include(...)` needs.
-                name = Symbol("LKTest_", replace(label, r"[^A-Za-z0-9]" => "_"))
-                m = Core.eval(Main, Expr(:module, true, name, Expr(:block)))
-                if isempty(impl)
-                    Base.include(m, f)
-                else
-                    withenv(() -> Base.include(m, f), "LOGICKERNEL_TERM" => impl)
-                end
+    for (i, (f, impl, label)) in enumerate(LK_RUN)
+        LK_SHARD && !lk_claim(i) && continue                   # another shard took it
+        t0 = time_ns()
+        @testset "$label" begin
+            # A `module … end` expression, not `Module(name)`: only the former defines the
+            # module's own `include`/`eval`, which a test file calling `include(...)` needs.
+            name = Symbol("LKTest_", replace(label, r"[^A-Za-z0-9]" => "_"))
+            m = Core.eval(Main, Expr(:module, true, name, Expr(:block)))
+            if isempty(impl)
+                Base.include(m, f)
+            else
+                withenv(() -> Base.include(m, f), "LOGICKERNEL_TERM" => impl)
             end
         end
+        secs = (time_ns() - t0) / 1e9
+        println("  [unit] ", label, "  ", round(secs; digits=1), " s")
+        LK_SHARD && open(io -> println(io, i, '\t', label, '\t', round(secs; digits=2)),
+            joinpath(LK_SHARD_DIR, "seq_$LK_SHARD_ID.tsv"), "a")
     end
     # …and the `[alt]` and `[alt_interned]` runs really ran their own types: each counts the
     # compounds it builds, so a selector that fell back to another type — running it twice, green —
     # leaves a count at zero. And the interned type really SHARED: separately built ground twins
-    # came back as one object, or the third run proves nothing about sharing.
-    @testset "the second implementation was exercised, plain and sharing" begin
-        s = Main.LKAltTerm.alt_stats()
-        @test s.compounds_plain > 0
-        @test s.compounds_interned > 0
-        @test s.shared > 0
-        println("  AltTerm: ", s)        # how much sharing the [alt_interned] runs exercised
+    # came back as one object, or the third run proves nothing about sharing. A shard ran only some
+    # units, so it writes its counts and the coordinator checks their SUM.
+    s = Main.LKAltTerm.alt_stats()
+    println("  AltTerm: ", s)            # how much sharing the [alt_interned] runs exercised
+    if LK_SHARD
+        write(joinpath(LK_SHARD_DIR, "stats_$LK_SHARD_ID"),
+            "$(s.compounds_plain) $(s.compounds_interned) $(s.shared)\n")
+    elseif isempty(LK_REPLAY)
+        @testset "the second implementation was exercised, plain and sharing" begin
+            @test s.compounds_plain > 0
+            @test s.compounds_interned > 0
+            @test s.shared > 0
+        end
     end
 end
 

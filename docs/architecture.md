@@ -45,6 +45,54 @@ Besides the suite, a FULL run first refuses to start unless:
 So a formatting slip stops the commit locally instead of turning CI red afterwards. A single-file
 run (`tools/run_tests.sh test/x.jl`) is for iteration and skips both checks; it is never evidence.
 
+**The warm lane is for iteration, never evidence (user, 2026-10-03).** `tools/warm.sh` keeps one
+daemon with LogicKernel loaded under Revise (`tools/warm_session.jl`) for single files on every term
+implementation, mutation proofs, the bench and probes. A long-lived process is where state leaks
+hide — values of a type's old layout, test residue, an update that failed partway (in Core a
+setting left off in a daemon faked a green result, and a polluted daemon made a bisect name the wrong
+file) — so evidence is a process that started clean. The daemon follows Revise's own documentation:
+* it starts from the last precompile cache and revises it to the source (`Revise.stale_load`),
+  instead of re-precompiling; revision is manual (`JULIA_REVISE=manual`), before every snippet;
+* a struct edit needs no restart (Julia ≥ 1.12 redefines types); the second implementation is
+  tracked in `:eval` mode, so its structs and constants revise too;
+* an edit to a file defining a macro, a `@generated` function or a type alias (`const Clause{T} =
+  clause{…}`) re-evaluates the whole module, which Revise would not propagate otherwise;
+* a failed update, a queued Revise error or a cache rewritten by another process REFUSES the
+  snippet; snippets run through `invokelatest`; Revise's audit trail (`debug_logger`) is reported
+  with every snippet, and a `src/` Revise is not watching refuses the daemon's start;
+* the include list of src/LogicKernel.jl stays LITERAL `include("…")` lines: Revise notices a removed
+  include only for a literal path (any generated list, M1's included, must write literal lines).
+`tools/test_warm.sh` tests all of it (17 cases); the verdict, Revise's refusal and Revise itself are
+mutation-proved.
+
+**Evidence: a SHARDED run in fresh processes (user, 2026-10-03).** The suite is single-threaded and
+this machine's CPU is old (a 2012 i7-3630QM, 4 cores): a full run took 10–16 min on one core, 2m44s
+in CI. A full `tools/run_tests.sh` now splits it across fresh worker processes (`tools/worker.jl`,
+count from cores and memory — 3 here; `LOGICKERNEL_SHARDS` overrides, `=1` the old single process):
+* a unit is one test file on one term implementation; workers CLAIM units, costliest first, by an
+  atomic `mkdir` in a directory made fresh for the run (`.evidence/<run id>/`), so they balance
+  themselves and a killed run's claims can never make a later one skip units;
+* each worker logs the exact sequence it ran; `LOGICKERNEL_REPLAY=.evidence/<run>/seq_<k>.tsv
+  tools/run_tests.sh` replays one in order, in one process — never evidence;
+* one precompile before any worker; workers run with `JULIA_PKG_PRECOMPILE_AUTO=0`;
+* workers never load Revise, run once, and REFUSE a run whose tree fingerprint differs from the one
+  they started with; `tools/warm.sh pool` pre-warms them for the current tree;
+* only the coordinator gives the verdict — every shard green, every unit run EXACTLY once, the
+  second implementation exercised across all shards (`_check_run`, tools/lib_evidence.sh) — and only
+  it writes evidence, against the tree fingerprint taken at launch.
+MEASURED: 6m05s wall for the whole run (3 workers, 321/313/314 s of units each), against 16m07s in
+one process just before. The longest unit is the static-analysis gate (217 s); the rest are at most
+~54 s. `tools/test_evidence.sh` tests the coordinator's verdict on fixture runs (a unit skipped, run
+twice, twice-and-another-never, an empty run, no sharing) and a real worker refusing a changed tree
+(15 cases); the duplicate check, the AltTerm check and the worker's refusal are mutation-proved.
+
+**The precompile workload** (`src/precompile_workload.jl`, PrecompileTools — the one allowlisted
+dependency): the hot paths on `DefaultTerm`, compiled at precompile time. MEASURED (three fresh
+processes each, a quiet machine): the first call of the workload in a fresh process fell from
+10.0–13.3 s to 0.52–0.73 s; `using` rose from 0.02 s to 0.05 s; one precompile after a `src` edit costs
+16.2 s with it against 6.0 s without — so `tools/warm.sh workload off` turns it off for one checkout
+(the gitignored `LocalPreferences.toml`); CI and fresh clones keep it.
+
 ## The layout mirrors swipl-devel
 
 Decided 2026-10-02: LogicKernel is a **full mirror** of [swipl-devel](https://github.com/SWI-Prolog/swipl-devel)
@@ -123,6 +171,9 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_lang/test_termhash.jl` | SHA-1 against FIPS 180 and Julia's SHA stdlib, the kept `hash_compile` defect, digests identical in another process, digest equality ⇔ `=@=` on interface-only shapes | — |
 | `test/core_lang/test_variant_swipl.jl` | live differential: `=@=` and the digests on 2000 random hard pairs vs swipl | — |
 | `tools/bench.jl` | the per-chunk performance report: each primitive against swipl on the same terms (three runs, one process), then a profile of the worst | — |
+| `tools/warm.sh`, `tools/warm_session.jl`, `tools/test_warm.sh` | the warm lane — a Revise daemon for iteration (never evidence), and its own tests | — |
+| `tools/worker.jl`, `tools/lib_evidence.sh`, `tools/test_evidence.sh` | the sharded evidence run — fresh workers, the coordinator's verdict, and their own tests | — |
+| `src/precompile_workload.jl` | the precompile workload: the hot paths on `DefaultTerm` (ORIGINAL; PrecompileTools) | — |
 | `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`), every unit but the static-determinism checks of supervisors — on one shared `d/2`, as upstream | `tests/db/test_jit.pl` |
 | `test/db/test_db.jl` | SWI's own `retract` and `retractall` tests that need no clause bodies, modules or threads | `tests/db/test_db.pl` |
 | `test/db/test_clause_variables.jl` | clause variables: renamed apart from the goal's, kernel keys unique across attempts and databases (a retained answer moves between databases), `var_term` rejecting the kernel's half, a sink's bindings gone after it — also when it throws | — |
@@ -193,7 +244,8 @@ graph TD
    iterator) as thin conveniences on top; until the VM lands, retract/1, retractall/1 and clause/2
    call a sink per answer and undo its bindings when it returns. Core's execution rules (no choice
    points, no trail) govern Core, not the kernel's internals.
-7. **Standalone.** No dependency on any CognitiveSubstratesAI package.
+7. **Standalone.** No dependency on any CognitiveSubstratesAI package. One allowlisted ecosystem
+   dependency, PrecompileTools (user, 2026-10-03); any other is a deliberate act with a reason.
 8. **Correct on ANY implementation of the term interface** (2026-10-03). A term type may be an
    abstract hierarchy — Core's `Atom` is — so the kernel never takes the term type from `typeof(t)`
    (a leaf there) but asks `term_type(t)`, and never compares or hashes terms outside the interface

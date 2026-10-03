@@ -27,7 +27,8 @@ then the interface is only as general as one implementation makes it. First real
 * **No module-level mutable state.** Anything belonging to one evaluation lives in a value the caller
   owns. Enforced by [`tools/lint_globals.jl`](tools/lint_globals.jl), which the suite runs.
 * **Standalone.** No dependency on any CognitiveSubstratesAI package; they depend on this one. The
-  suite checks the `[deps]` table and that no sibling package is loaded.
+  suite checks the `[deps]` table against an allowlist of one — PrecompileTools, for the precompile
+  workload — and that no sibling package is loaded.
 * **No choice points, no trail.** Nondeterminism is the sink/continuation model.
 
 ## The term interface
@@ -56,17 +57,27 @@ subsystem grouping are in [`docs/architecture.md`](docs/architecture.md); every 
 | `bench/programs/` | the standalone consumer: swipl-devel's benchmark programs (its `bench` submodule) written on the public API, beside the verbatim `.pl` |
 | `test/<area>/` | tests in swipl-devel's `tests/` areas — ported upstream tests keep their names |
 | `test/` root | package infrastructure: lint, port check, type discipline, static analysis |
-| `tools/` | `run_tests.sh`, `port_check.jl`, `upstream_drift.jl`, `lint_globals.jl`, `repl.jl`, `jet_report.jl` |
+| `tools/` | `run_tests.sh`, `warm.sh` (the warm lane), `port_check.jl`, `upstream_drift.jl`, `lint_globals.jl`, `repl.jl`, `jet_report.jl`, `bench.jl` |
 
 ## Testing
 
 ```bash
-tools/run_tests.sh                         # full suite, real exit code, memory-capped
+tools/run_tests.sh                         # full suite, real exit code, memory-capped — EVIDENCE
+tools/warm.sh start                        # the warm lane: LogicKernel loaded once, under Revise
+tools/warm.sh file test/core_lang/test_unify.jl   # one file, every term implementation, real exit code
+tools/warm.sh bench                        # the bench in the warm daemon (no JIT in the timings)
+tools/warm.sh workload off                 # skip the precompile workload in THIS checkout
+tools/warm.sh pool                         # pre-warm the evidence workers for the current tree
+LOGICKERNEL_SHARDS=1 tools/run_tests.sh    # the full suite in ONE process (default: sharded)
 julia --project -e 'using Pkg; Pkg.test()' # what CI runs
 julia --project tools/lint_globals.jl      # the module-state lint alone
 julia --project -i tools/repl.jl           # dev REPL with Revise
 julia --project tools/jet_report.jl        # JET sweep (minutes on first load)
 ```
+
+The warm lane is for ITERATION only; commit evidence is a fresh `tools/run_tests.sh` run, never the
+daemon (`tools/warm.sh evidence` starts one). A full run is SHARDED across fresh worker processes;
+`tools/test_warm.sh` and `tools/test_evidence.sh` test the lane and the sharded run.
 
 Dev tools (Revise, JET, JuliaFormatter, BenchmarkTools) are not dependencies; they come from the
 global environment, which Julia stacks under `--project`. Formatting is Blue

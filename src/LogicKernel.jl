@@ -36,6 +36,7 @@ include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, va
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
+include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 
 # ── exports ─────────────────────────────────────────────────────────────────────────────────────
 # the term interface (src/term_interface.jl)

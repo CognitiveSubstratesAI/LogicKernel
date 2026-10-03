@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# tools/test_warm.sh — the warm lane's own tests (tools/warm.sh, tools/warm_session.jl), each judged
+# by the EXIT CODE the lane returns, never by its printed text (user, 2026-10-03: "the lane's own
+# mutation-proved tests"). Starts its own daemon and stops it.
+#
+#   tools/test_warm.sh          # exit 0 only if every case passes
+#
+# What a lane must never do, case by case: report a failure as success; run code Revise failed to
+# load and present the result as fresh; run a file on fewer implementations than the suite does.
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+W="$ROOT/tools/warm.sh"
+mkdir -p "$ROOT/.warm"
+T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
+trap '"$W" stop >/dev/null 2>&1; rm -rf "$T"' EXIT
+pass=0 fail=0
+check() {   # check NAME WANT_EXIT GOT_EXIT
+    if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
+    else fail=$((fail + 1)); echo "  FAIL $1: exit $3, want $2"; fi
+}
+has() {     # has NAME FILE PATTERN WANT(1 present / 0 absent)
+    if grep -q "$3" "$2"; then got=1; else got=0; fi
+    check "$1" "$4" "$got"
+}
+
+"$W" stop >/dev/null 2>&1
+echo 'println("x")' > "$T/s.jl"
+"$W" send "$T/s.jl" > /dev/null 2>&1; check "no daemon: send exits 3" 3 $?
+
+"$W" start || { echo "test_warm: the lane did not start"; exit 1; }
+
+cat > "$T/ok.jl" <<'JL'
+using Test
+@testset "passes" begin @test 1 + 1 == 2 end
+JL
+"$W" send "$T/ok.jl" > "$T/out" 2>&1; check "a passing snippet exits 0" 0 $?
+
+cat > "$T/bad.jl" <<'JL'
+using Test
+@testset "fails" begin @test 1 + 1 == 3 end
+JL
+"$W" send "$T/bad.jl" > "$T/out" 2>&1; check "a FAILING snippet exits 1" 1 $?
+"$W" send "$T/ok.jl" > /dev/null 2>&1; check "…and the next one is judged afresh" 0 $?
+
+# Revise: an edit to a tracked file is live in the NEXT snippet, with no restart
+printf 'module LKWarmProbe\nf() = 1\nend\n' > "$T/probe.jl"
+printf 'Revise.includet(raw"%s")\nLKWarmProbe.f() == 1 || error("stale")\n' "$T/probe.jl" > "$T/use1.jl"
+"$W" send "$T/use1.jl" > "$T/out" 2>&1; check "a tracked file loads" 0 $?
+sleep 1                                          # a new mtime for the file watcher
+printf 'module LKWarmProbe\nf() = 2\nend\n' > "$T/probe.jl"
+echo 'LKWarmProbe.f() == 2 || error("STALE: the edit was not revised")' > "$T/use2.jl"
+"$W" send "$T/use2.jl" > "$T/out" 2>&1; check "an edit is revised before the next snippet" 0 $?
+# (a same-signature redefinition is logged as a method DELETION plus its replacement, so any
+# non-zero action count is the evidence — measured through the lane itself)
+has "…and Revise's audit trail reports it" "$T/out" "revised: \([1-9][0-9]* eval\|0 eval(s), [1-9]\)" 1
+
+# what Revise cannot propagate — a macro, a @generated function, a type alias — is detected, so the
+# daemon re-evaluates the whole module; plain methods and value constants are not
+printf 'macro m(x)\n    x\nend\n' > "$T/c_macro.jl"
+printf '@generated g(x) = :(x)\n' > "$T/c_gen.jl"
+printf 'const Clause{T} = clause{T, definition{T}}\n' > "$T/c_alias.jl"
+printf 'f(x) = x + 1\nconst N = 3\nconst S = "a{b}"\n' > "$T/c_plain.jl"
+cat > "$T/cls.jl" <<JL
+Main._needs_module_revise(raw"$T/c_macro.jl") || error("a macro was not detected")
+Main._needs_module_revise(raw"$T/c_gen.jl") || error("@generated was not detected")
+Main._needs_module_revise(raw"$T/c_alias.jl") || error("a type alias was not detected")
+Main._needs_module_revise(raw"$T/c_plain.jl") && error("plain methods and constants were flagged")
+JL
+"$W" send "$T/cls.jl" > "$T/out" 2>&1; check "macros, @generated and aliases force a module revise" 0 $?
+
+# a FAILED revision refuses the snippet: it must not run at all
+sleep 1
+printf 'module LKWarmProbe\nf() = (\nend\n' > "$T/probe.jl"
+echo 'println("SNIPPET RAN")' > "$T/ran.jl"
+"$W" send "$T/ran.jl" > "$T/out" 2>&1; check "a failed revision exits 1" 1 $?
+has "…says REVISE FAILED" "$T/out" "REVISE FAILED" 1
+has "…and the snippet did NOT run" "$T/out" "SNIPPET RAN" 0
+sleep 1
+printf 'module LKWarmProbe\nf() = 3\nend\n' > "$T/probe.jl"
+echo 'LKWarmProbe.f() == 3 || error("stale after the fix")' > "$T/use3.jl"
+"$W" send "$T/use3.jl" > "$T/out" 2>&1; check "once fixed, the next snippet runs fresh" 0 $?
+
+# `file`: a real term-generic test file runs on EVERY implementation, as the suite runs it
+"$W" file test/core_lang/test_sort.jl > "$T/out" 2>&1; check "file: a passing test file exits 0" 0 $?
+for impl in reference alt alt_interned; do
+    has "file: …ran on [$impl]" "$T/out" "test_sort.jl \[$impl\]" 1
+done
+mkdir -p "$T/core_lang"
+cat > "$T/core_lang/test_wfail.jl" <<'JL'
+using Test, LogicKernel
+include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+@testset "wfail" begin @test kind(lk_sym(lk_term_type(Int64), :a)) === VAR end
+JL
+cp "$ROOT/test/term_under_test.jl" "$T/term_under_test.jl"
+mkdir -p "$T/core_lang" && cp "$ROOT/test/core_lang/alt_term.jl" "$T/core_lang/alt_term.jl"
+"$W" file "$T/core_lang/test_wfail.jl" > "$T/out" 2>&1; check "file: a FAILING test file exits 1" 1 $?
+
+echo "test_warm: $pass passed, $fail failed"
+[ "$fail" -eq 0 ]

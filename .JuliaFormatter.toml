@@ -22,4 +22,6 @@ join_lines_based_on_source = true
 trailing_comma = false
 ignore = [
     "docs/build",
+    ".warm",       # the warm lane's scratch snippets (tools/warm.sh), gitignored
+    ".evidence",   # the sharded runs' logs (tools/run_tests.sh), gitignored
 ]
