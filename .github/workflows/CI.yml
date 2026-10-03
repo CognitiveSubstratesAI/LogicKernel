@@ -35,7 +35,8 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.13'
+          - 'min-patch'   # the LOWER BOUND of [compat] julia, exactly (1.13.0) — declared compat is tested
+          - '1'           # the latest release
         os:
           - ubuntu-latest
         arch:

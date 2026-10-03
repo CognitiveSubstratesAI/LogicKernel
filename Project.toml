@@ -15,7 +15,7 @@ authors = ["CognitiveSubstratesAI"]
 Random = "1"
 SHA = "0.7, 1"
 Test = "1"
-julia = "1.12"
+julia = "1.13"
 
 # Test-only deps must be declared here: `Pkg.test` (and CI's julia-runtest) builds an ISOLATED env
 # from [extras] + [targets] alone, stdlibs included — PathMap CI run #87 failed on an undeclared

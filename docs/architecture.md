@@ -1,5 +1,20 @@
 # LogicKernel architecture
 
+## The rulebook: swipl-devel, as is
+
+Decided 2026-10-03 (user): **LogicKernel follows swipl-devel as is — its logic, its data structures,
+its semantics.** Where SWI uses a mechanism, the kernel uses that mechanism; a departure is a
+`# DIVERGES:` with its reason, never a design preference. Two consequences that differ from Core:
+
+* **Bindings use SWI's trail with marks.** Unification binds in a mutable binding store and records
+  each binding on a trail; `Mark` before an attempt, `Undo` back to it afterwards — `pl-prims.c`'s
+  `do_unify` and `pl-wam.c`'s `do_undo`, under upstream's names. The workspace's execution rules
+  (sink/continuations, no choice points, no trail) govern **Core**, not the kernel's internals.
+* **Grounded values unify by SWI's identity, not by `==`.** In the reference term type, `1 = 1.0`
+  fails, `0.0 = -0.0` fails (floats compare by bit pattern), and a NaN unifies with an identical NaN.
+  MeTTa's `==` matching belongs to Core's implementation of the term interface, which supplies its own
+  `gnd_equal`/`gnd_key` — the separation the interface exists for.
+
 ## The layout mirrors swipl-devel
 
 Decided 2026-10-02: LogicKernel is a **full mirror** of [swipl-devel](https://github.com/SWI-Prolog/swipl-devel)
@@ -122,7 +137,9 @@ graph TD
 4. **No module-level mutable state** (`tools/lint_globals.jl`, run by the suite).
 5. **No runtime dispatch, no abstract fields, no `Any`** — enforced by the suite with JET, Aqua,
    AllocCheck and the type-discipline gates; every method must be in the dispatch manifest.
-6. **No choice points, no trail.** Nondeterminism is sink/continuation with an explicit stack.
+6. **Nondeterminism is sink/continuation with an explicit stack** (so far); **bindings follow SWI** — a
+   binding store and a trail with marks, undone when an attempt's sink returns (see the rulebook
+   above). Core's "no trail" rule does not govern the kernel's internals.
 7. **Standalone.** No dependency on any CognitiveSubstratesAI package.
 
 ## Still to come
