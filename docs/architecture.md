@@ -27,7 +27,23 @@ ports against upstream:
   `UPSTREAM: pl-wam.c PL_open_query/PL_next_solution (swipl-devel bae881a2)`. It is never `PORT:`,
   which in SWI means a platform port.
 
-The workspace hook `require-commit-category.py` refuses a LogicKernel commit without a known prefix.
+**Enforced by git itself** (since 2026-10-03): `tools/githooks/commit-msg` refuses a message without a
+known prefix. Git hands it the final message file however the message was supplied, and it applies to
+every committer. Install it once per clone with `git config core.hooksPath tools/githooks`;
+`tools/run_tests.sh` refuses a full run without it. Its contract, both sides, is
+`test/test_commit_msg_hook.jl`. It replaces a workspace-side check of the command text, which is now
+retired.
+
+## A full run of `tools/run_tests.sh` is the commit gate
+
+Besides the suite, a FULL run first refuses to start unless:
+* the commit-msg hook above is installed;
+* the tree is Blue-formatted, checked as CI's Format job checks it (`format(".")` without writing),
+  with the JuliaFormatter version CI pins — read from `.github/workflows/CI.yml`, so the two cannot
+  drift.
+
+So a formatting slip stops the commit locally instead of turning CI red afterwards. A single-file
+run (`tools/run_tests.sh test/x.jl`) is for iteration and skips both checks; it is never evidence.
 
 ## The layout mirrors swipl-devel
 

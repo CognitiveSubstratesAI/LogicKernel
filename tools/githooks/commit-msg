@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+# tools/githooks/commit-msg — git's commit-msg hook for LogicKernel: the message must start with a
+# CATEGORY, as SWI-Prolog's history does (user, 2026-10-03), so the history can generate a changelog
+# and match ports against upstream:
+#
+#     ADDED:  FIXED:  ENHANCED:  MODIFIED:  DOC:  TEST:  CLEANUP:
+#     UPSTREAM: <file> <functions> (swipl-devel <sha>)   — a port or sync of upstream code, naming the
+#               upstream file(s) and commit, e.g.
+#               UPSTREAM: pl-wam.c PL_open_query/PL_next_solution (swipl-devel bae881a2)
+#
+# Never `PORT:` — in SWI that means a platform port. Applies from 2026-10-03 on; history is not
+# rewritten.
+#
+# INSTALL (once per clone):   git config core.hooksPath tools/githooks
+# tools/run_tests.sh refuses a full run when it is not installed, so an uninstalled hook cannot pass
+# silently. Git hands this hook the FINAL message file, however the message was supplied (-m, -F, a
+# heredoc, the editor) and whoever commits — what the agent-side command-text check it replaces
+# (the workspace's .claude/hooks/require-commit-category.py, retired 2026-10-03) could not guarantee.
+# Its contract, both sides: test/test_commit_msg_hook.jl.
+import re
+import sys
+
+CATEGORIES = ("ADDED", "FIXED", "ENHANCED", "MODIFIED", "DOC", "TEST", "CLEANUP")
+RX_CATEGORY = re.compile(r"^(?:%s): \S" % "|".join(CATEGORIES))
+RX_UPSTREAM = re.compile(
+    r"^UPSTREAM: (?=.*\S\.(?:c|h|pl)\b).+\((?:swipl-devel|scryer-prolog|swipl-bench) [0-9a-f]{7,40}\)\s*$"
+)
+
+
+def first_line(text):
+    """The subject line: the first non-blank line that is not a `#` comment (git strips those)."""
+    for line in text.splitlines():
+        if line.strip() and not line.startswith("#"):
+            return line.strip()
+    return ""
+
+
+def main(argv):
+    if len(argv) != 2:
+        sys.stderr.write("commit-msg: expected the message file as the only argument\n")
+        return 2
+    with open(argv[1], encoding="utf-8", errors="replace") as f:
+        subject = first_line(f.read())
+    if RX_CATEGORY.match(subject) or RX_UPSTREAM.match(subject):
+        return 0
+    sys.stderr.write(
+        "commit-msg: a LogicKernel commit message must start with a category (user, 2026-10-03):\n"
+        "    ADDED: FIXED: ENHANCED: MODIFIED: DOC: TEST: CLEANUP:\n"
+        "    UPSTREAM: <file> <functions> (swipl-devel <sha>)  - a port or sync of upstream code\n"
+        "  e.g. UPSTREAM: pl-wam.c PL_open_query/PL_next_solution (swipl-devel bae881a2)\n"
+        "  Not PORT: (in SWI that is a platform port).\n"
+        "  subject seen: %r\n" % (subject or "(empty)")
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

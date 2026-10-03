@@ -75,6 +75,70 @@ case "$SWIPL_HAVE" in
        exit 1 ;;
 esac
 
+# 🔴 FULL RUNS ONLY — two checks that stop a COMMIT (a full run is the commit's evidence), not an
+# iteration. Both run BEFORE the suite, so a failure exits with no evidence written.
+if [ "$TARGET" = "test/runtests.jl" ]; then
+    # (1) The commit-message rule is git's own commit-msg hook (tools/githooks/commit-msg). A clone
+    # without it would commit unchecked messages SILENTLY, so its absence fails the run.
+    if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        HOOKS_PATH=$(git -C "$ROOT" config --get core.hooksPath)
+        if [ "$HOOKS_PATH" != "tools/githooks" ]; then
+            echo "run_tests.sh: the commit-msg hook is not installed (core.hooksPath is '${HOOKS_PATH:-unset}')." >&2
+            echo "  Install it once per clone:  git -C \"$ROOT\" config core.hooksPath tools/githooks" >&2
+            exit 1
+        fi
+    fi
+    # (2) Blue formatting, checked as CI's Format job checks it — `format(".")` from the repository
+    # root, without writing — with the SAME JuliaFormatter version CI pins, read from CI.yml so the two
+    # cannot drift. MEASURED 2026-10-03: 6a818f4 passed this runner and turned CI red on two long
+    # lines, because only CI checked formatting.
+    FMT_PIN=$(grep -oE 'name="JuliaFormatter", version="[0-9]+\.[0-9]+\.[0-9]+"' .github/workflows/CI.yml \
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    if [ -z "$FMT_PIN" ]; then
+        echo "run_tests.sh: no JuliaFormatter version pinned in .github/workflows/CI.yml — cannot check formatting as CI does" >&2
+        exit 1
+    fi
+    FMT_JL=$(cat <<'JL'
+using JuliaFormatter
+pin = VersionNumber(ARGS[1])
+have = pkgversion(JuliaFormatter)
+if have != pin
+    println(stderr, "run_tests.sh: JuliaFormatter $have here, CI pins $pin. Install the pinned one, ",
+        "Pkg.add(name=\"JuliaFormatter\", version=\"$pin\"), so local and CI format alike.")
+    exit(1)
+end
+if format("."; overwrite=false)
+    println("format: Blue-clean (JuliaFormatter $have, as CI)")
+    exit(0)
+end
+# Say WHERE, as CI's job does with `git diff`: each offending file, formatted in a scratch copy that
+# carries the same .JuliaFormatter.toml, diffed against the original. The tree is never written.
+cfg = abspath(".JuliaFormatter.toml")
+for (dir, dirs, files) in walkdir(".")
+    filter!(d -> !(d in (".git", "build")), dirs)
+    for f in files
+        endswith(f, ".jl") || continue
+        p = joinpath(dir, f)
+        format(p; overwrite=false) && continue
+        mktempdir() do t
+            cp(cfg, joinpath(t, ".JuliaFormatter.toml"))
+            q = joinpath(t, f)
+            cp(p, q)
+            format(q)
+            println(stderr, "── not Blue-formatted: ", p)
+            flush(stderr)                               # the header before diff's own output
+            run(pipeline(ignorestatus(`diff -u $p $q`); stdout=stderr))
+        end
+    end
+end
+println(stderr, "run_tests.sh: files are NOT Blue-formatted (JuliaFormatter $have) — CI's Format job ",
+    "would fail. Apply the diffs above, or run `julia -e 'using JuliaFormatter; format(\".\")'`.")
+exit(1)
+JL
+)
+    julia --startup-file=no -e "$FMT_JL" "$FMT_PIN" < /dev/null || exit 1
+fi
+
 MEM_MAX="${LOGICKERNEL_TEST_MEM_MAX:-8G}"
 HEAP_HINT="${LOGICKERNEL_TEST_HEAP_HINT:-6G}"
 JL=(julia --project=. --threads="${JULIA_TEST_THREADS:-4}" --heap-size-hint="$HEAP_HINT" -i "$DRIVER")
