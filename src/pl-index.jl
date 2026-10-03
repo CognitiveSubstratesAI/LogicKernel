@@ -60,6 +60,10 @@ const MIN_CLAUSES_FOR_INDEX = 10
 
 # ── TYPES ───────────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-index.c index_context
+# DIVERGES: `active` has no upstream field. One context is SHARED per local data (see
+# `_index_context!`), which is safe only while firstClause/nextClause are never re-entered mid-call;
+# `active` is set on entry, cleared on exit and asserted clear on entry, so a violation — the VM,
+# nested queries, deeper indexing may one day cause one — fails loudly, never corrupting a search.
 "The state of one clause search (pl-index.c `index_context`)."
 mutable struct index_context{T}
     generation::gen_t                               # Current generation
@@ -67,6 +71,7 @@ mutable struct index_context{T}
     chp::Union{Nothing, ClauseChoice{T}}            # Clause choice point
     depth::Int                                      # current depth (0..)
     position::NTuple{MAXINDEXDEPTH + 1, iarg_t}     # Keep track of argument position
+    active::Bool                                    # a search is using it (re-entrance guard)
 end
 
 "A position path holding only `END_INDEX_POS` — upstream's `.position[0] = END_INDEX_POS`."
@@ -553,6 +558,8 @@ call was a heap allocation on every `nextClause!` — every step of every enumer
 function _index_context!(
     ctx::index_context{T}, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
 )::index_context{T} where {T}
+    @assert !ctx.active "firstClause!/nextClause! re-entered: the shared index_context is in use"
+    ctx.active = true
     ctx.generation = generation
     ctx.predicate = def
     ctx.chp = chp
@@ -576,7 +583,11 @@ function firstClause!(
     ld, argv::T, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
 )::Union{Nothing, ClauseRef{T}} where {T}
     ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
-    return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
+    try
+        return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
+    finally
+        ctx.active = false
+    end
 end
 
 # PORT: pl-index.c nextClause
@@ -591,10 +602,14 @@ function nextClause!(
     ld, chp::ClauseChoice{T}, argv::T, generation::gen_t, def::Definition{T}
 )::Union{Nothing, ClauseRef{T}} where {T}
     ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
-    if chp.key == 0                     # not indexed
-        return next_clause_unindexed!(ctx)
-    else
-        return next_clause_primary_index!(ctx)
+    try
+        if chp.key == 0                 # not indexed
+            return next_clause_unindexed!(ctx)
+        else
+            return next_clause_primary_index!(ctx)
+        end
+    finally
+        ctx.active = false
     end
 end
 
@@ -2302,7 +2317,7 @@ function set_candidate_indexes!(
     def::Definition{T}, clist::ClauseList{T}, max::Int, lock::Bool
 )::Bool where {T}
     hints = [hash_hints() for _ in 1:max]
-    ctx = index_context{T}(gen_t(0), def, nothing, 0, _TOP_POSITION)
+    ctx = index_context{T}(gen_t(0), def, nothing, 0, _TOP_POSITION, false)
     ac = def.arity > MAXINDEXARG ? MAXINDEXARG : def.arity
     _, max = candidate_indexes!(ac, clist, hints, max, ctx)
     if max > 0

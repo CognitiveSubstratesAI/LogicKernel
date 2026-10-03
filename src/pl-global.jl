@@ -95,7 +95,8 @@ function PL_local_data{T}() where {T}
             Definition{T}(UInt64(0), 0, ClauseList{T}(), UInt64(0)),
             nothing,
             0,
-            _TOP_POSITION
+            _TOP_POSITION,
+            false
         )
     )
 end
