@@ -155,6 +155,12 @@ MK_ATOM(n::UInt64)::word = (n << 7) | TAG_ATOM | STG_STATIC
 "The functor word of functor number `n` with arity `a` (pl-data.h)."
 MK_FUNCTOR(n::UInt64, a::UInt64)::word =
     (((n << F_ARITY_BITS) | a) << LMASK_BITS) | TAG_ATOM | STG_GLOBAL
+# PORT: pl-incl.h PLMINTAGGEDINT
+"The smallest integer a word holds tagged — inline, `STG_INLINE` (pl-incl.h; 64-bit words)."
+const PLMINTAGGEDINT = -(Int64(1) << (64 - LMASK_BITS - 1))
+# PORT: pl-incl.h PLMAXTAGGEDINT
+"The largest integer a word holds tagged (pl-incl.h)."
+const PLMAXTAGGEDINT = -PLMINTAGGEDINT - 1
 # PORT: pl-incl.h PLMINTAGGEDINT32
 "The smallest integer a 32-bit word holds tagged (pl-incl.h)."
 const PLMINTAGGEDINT32 = -(Int64(1) << (32 - LMASK_BITS - 1))

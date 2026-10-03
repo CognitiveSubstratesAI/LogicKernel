@@ -187,6 +187,29 @@ function _xhvoid()::Vector{_XPred}
     ]
 end
 
+"""
+SWI-7's `[]` and the text atom `'[]'` as clause keys of one predicate, dynamic and static: they key
+APART — `[]` compiles to `H_NIL`, keyed `ATOM_nil`, `'[]'` to an `H_ATOM` — as upstream's two atom
+handles do; were they one key, the first argument's assessment would differ from swipl's. Built by
+hand rather than drawn: a new profile in the random program moved every later draw, and its
+measured coverage (49 of 57 retracts removing a clause) fell to 29 of 35.
+"""
+function _xnil()::Vector{_XPred}
+    keys = (mk_nil(_X), _xs("[]"), _xs(:a0))
+    heads(name) = [_xe(name, keys[1 + (i % 3)], _xg(i)) for i in 1:60]
+    calls(name) = [
+        (:call, _xe(name, mk_nil(_X), _xv())), (:call, _xe(name, _xs("[]"), _xv())),
+        (:call, _xe(name, _xv(), _xg(7)))
+    ]
+    return [
+        _XPred(
+            :nq_d, 2, true, heads(:nq_d),
+            [calls(:nq_d); (:retract, _xe(:nq_d, mk_nil(_X), _xv())); calls(:nq_d)]
+        ),
+        _XPred(:nq_s, 2, false, heads(:nq_s), calls(:nq_s))
+    ]
+end
+
 # ── running it in the kernel ────────────────────────────────────────────────────────────────────
 "One `idx` report line's fields."
 const _XIdx = Tuple{String, Vector{Int}, Vector{Int}, Float32, Bool, Bool, Int}
@@ -407,7 +430,7 @@ const _XSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _XSEED = 20261002
 
 @testset "clause index vs swipl" begin
-    program = vcat(_xprogram(_XSEED, 60), _xhvoid())
+    program = vcat(_xprogram(_XSEED, 60), _xhvoid(), _xnil())
     ours = _xrun(program)
     oracle = _xrun(program; unindexed=true)
 
@@ -424,6 +447,7 @@ const _XSEED = 20261002
         @test count(l -> !endswith(l, " none"), ret) >= 30
         @test count(l -> endswith(l, " retractall"), ours.lines) >= 8
         @test count(l -> endswith(l, " gc"), ours.lines) >= 10
+        @info "index differential mutations: $(count(l -> !endswith(l, " none"), ret)) of $(length(ret)) retracts removed a clause; $(count(l -> endswith(l, " retractall"), ours.lines)) retractalls; $(count(l -> endswith(l, " gc"), ours.lines)) collections"
     end
 
     @testset "LogicKernel#1 pinned: the H_VOID_N defect is fixed" begin

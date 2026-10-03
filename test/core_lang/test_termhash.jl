@@ -191,3 +191,17 @@ end
     @test pl_variant_sha1(_kc(:f, _kg(0.0))) != pl_variant_sha1(_kc(:f, _kg(-0.0)))
     @test pl_term_hash(_kg(1)) != pl_term_hash(_kg(1.0))
 end
+
+# SWI-7's `[]` against the text atom `'[]'`, probed in swipl 10.1.16: term_hash hashes an atom by
+# its TEXT (pl-termhash.c `primitiveHashValue`: `atomValue(w)->hash_value`), so the two share a
+# term_hash; the variant hashes also feed in the blob TYPE's name (`variant_sha1`:
+# `HASH(av->type->name, …)` — "text" against "reserved_symbol"), so they hash apart.
+@testset "[] and '[]': one term_hash, two variant digests (as swipl)" begin
+    nil, qnil = mk_nil(_KT), _ka(Symbol("[]"))
+    @test pl_term_hash(nil) == pl_term_hash(qnil)
+    @test pl_term_hash(_kc(:f, nil)) == pl_term_hash(_kc(:f, qnil))
+    @test pl_variant_sha1(nil) != pl_variant_sha1(qnil)
+    @test pl_variant_hash(nil) != pl_variant_hash(qnil)
+    @test pl_variant_sha1(_kc(:f, nil)) != pl_variant_sha1(_kc(:f, qnil))
+    @test !is_variant_ptr(nil, qnil)
+end

@@ -21,6 +21,7 @@ struct Term{G}
     kind::Kind
     ground::Bool                     # no variable anywhere below — cached at construction
     keyed::Bool                      # GND: `key` holds a grounded key (else WILDCARD)
+    reserved::Bool                   # SYM: a RESERVED symbol (SWI-7's `[]`, pl-ressymbol.c)
     key::UInt64                      # VAR: var key · SYM: sym key · GND: grounded key · EXPR: 0
     name::Symbol                     # SYM: the symbol · otherwise Symbol("")
     gval::Union{Nothing, G}          # GND: the value · otherwise nothing
@@ -60,6 +61,9 @@ function gnd_value_key(v)::Union{UInt64, Nothing}
 end
 
 _sym_key(s::Symbol)::UInt64 = UInt64(UInt(pointer_from_objref(s)))
+# A reserved symbol is another symbol than the text atom of its name: the same address with the low
+# bit set — an interned `Symbol` is word-aligned, so no text atom's key has that bit.
+_reserved_sym_key(s::Symbol)::UInt64 = _sym_key(s) | UInt64(1)
 
 """
     sym_term(::Type{Term{G}}, name::Symbol) -> Term{G}
@@ -67,7 +71,7 @@ _sym_key(s::Symbol)::UInt64 = UInt64(UInt(pointer_from_objref(s)))
 The symbol `name`.
 """
 sym_term(::Type{Term{G}}, name::Symbol) where {G} =
-    Term{G}(SYM, true, false, _sym_key(name), name, nothing, Term{G}[])
+    Term{G}(SYM, true, false, false, _sym_key(name), name, nothing, Term{G}[])
 
 """
     gnd_term(::Type{Term{G}}, v::G) -> Term{G}
@@ -77,12 +81,13 @@ The grounded value `v`; its [`gnd_key`](@ref) is computed here, once.
 function gnd_term(::Type{Term{G}}, v::G) where {G}
     k = gnd_value_key(v)
     return Term{G}(
-        GND, true, k !== nothing, k === nothing ? UInt64(0) : k, Symbol(""), v, Term{G}[]
+        GND, true, k !== nothing, false, k === nothing ? UInt64(0) : k, Symbol(""), v,
+        Term{G}[]
     )
 end
 
 mk_var(::Type{Term{G}}, key::UInt64) where {G} =
-    Term{G}(VAR, false, false, key, Symbol(""), nothing, Term{G}[])
+    Term{G}(VAR, false, false, false, key, Symbol(""), nothing, Term{G}[])
 
 """
     var_term(::Type{Term{G}}, key::UInt64) -> Term{G}
@@ -104,7 +109,55 @@ function mk_expr(::Type{Term{G}}, children::Vector{Term{G}}) where {G}
     for c in children
         c.ground || (ground=false; break)
     end
-    return Term{G}(EXPR, ground, false, UInt64(0), Symbol(""), nothing, children)
+    return Term{G}(EXPR, ground, false, false, UInt64(0), Symbol(""), nothing, children)
+end
+
+# ── the Prolog layer (src/term_interface.jl, Q1) ─────────────────────────────────────────────────
+mk_sym(::Type{Term{G}}, name::Symbol) where {G} = sym_term(Term{G}, name)
+mk_gnd(::Type{Term{G}}, v::G) where {G} = gnd_term(Term{G}, v)
+mk_reserved_symbol(::Type{Term{G}}, name::Symbol) where {G} =
+    Term{G}(SYM, true, false, true, _reserved_sym_key(name), name, nothing, Term{G}[])
+is_reserved_symbol(t::Term)::Bool = t.kind === SYM && t.reserved
+is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME
+
+# A number's kind follows its host type: `Integer` (not `Bool`), `Rational`, an IEEE float. Other
+# payloads — a `Bool`, a `BigFloat`, a container — are not numbers to Prolog.
+function number_kind(t::Term)::NumKind
+    t.kind === GND || return NUM_NONE
+    v = t.gval
+    v isa Integer && !(v isa Bool) && return NUM_INTEGER
+    v isa Rational && return NUM_RATIONAL
+    v isa Base.IEEEFloat && return NUM_FLOAT
+    return NUM_NONE
+end
+function integer_is_int64(t::Term)::Bool
+    t.kind === GND || return false
+    v = t.gval
+    return v isa Integer && !(v isa Bool) && typemin(Int64) <= v <= typemax(Int64)
+end
+function int64_value(t::Term)::Int64
+    v = t.gval
+    (t.kind === GND && v isa Integer && !(v isa Bool)) ||
+        throw(ArgumentError("int64_value: not an integer"))
+    return Int64(v)
+end
+function bigint_value(t::Term)::BigInt
+    v = t.gval
+    (t.kind === GND && v isa Integer && !(v isa Bool)) ||
+        throw(ArgumentError("bigint_value: not an integer"))
+    return BigInt(v)
+end
+function rational_value(t::Term)::Rational{BigInt}
+    v = t.gval
+    (t.kind === GND && v isa Rational) ||
+        throw(ArgumentError("rational_value: not a rational"))
+    return Rational{BigInt}(v)
+end
+function float_value(t::Term)::Float64
+    v = t.gval
+    (t.kind === GND && v isa Base.IEEEFloat) ||
+        throw(ArgumentError("float_value: not a float"))
+    return Float64(v)
 end
 
 """
@@ -216,7 +269,7 @@ strings, then atoms, by character codes — and after atoms, values Prolog has n
 function atomic_compare(a::Term{G}, b::Term{G})::Int where {G}
     ra, rb = _atomic_rank(a), _atomic_rank(b)
     ra != rb && return ra < rb ? CMP_LESS : CMP_GREATER
-    ra == _RANK_ATOM && return compareAtoms(a.name, b.name)
+    ra == _RANK_ATOM && return compareAtoms(a.name, a.reserved, b.name, b.reserved)
     x, y = a.gval, b.gval
     if ra == _RANK_NUMBER && x isa Real && y isa Real
         return _compare_numbers(x, y)
@@ -247,7 +300,8 @@ function Base.show(io::IO, t::Term)
     if t.kind === VAR
         print(io, "_G", t.key)
     elseif t.kind === SYM
-        print(io, t.name)
+        # the reserved `[]` bare; a TEXT atom named `[]` quoted, so the two print apart
+        !t.reserved && t.name === NIL_NAME ? print(io, "'[]'") : print(io, t.name)
     elseif t.kind === GND
         show(io, t.gval)
     else

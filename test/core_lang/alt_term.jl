@@ -11,6 +11,9 @@
 #   |                                           |   and per ARITY for compounds (`AltExpr{H, N}`)    |
 #   | `sym_key`: the `Symbol`'s address         | `sym_key`: an interned integer id, counting from 0 |
 #   | `sym_hash`: `objectid` of the `Symbol`    | `sym_hash`: FNV-1a of the name's UTF-8 bytes       |
+#   | a reserved symbol: a flag on the struct   | a reserved symbol: a LEAF TYPE of its own          |
+#   |                                           |   (`AltRSym`), so no kernel site may assume every  |
+#   |                                           |   symbol has one leaf type                         |
 #   | children in a `Vector{Term{G}}`           | children in an `NTuple{N}`, in a `mutable struct`  |
 #   |                                           |   (`===` on compounds must be constant-time; on a  |
 #   |                                           |   plain tuple VALUE it walks the children)         |
@@ -51,7 +54,9 @@ module LKAltTerm
 using LogicKernel
 import LogicKernel:
     kind, term_type, nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal,
-    atomic_compare, mk_var, mk_expr
+    atomic_compare, mk_var, mk_expr, mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol,
+    is_nil, number_kind, integer_is_int64, int64_value, bigint_value, rational_value,
+    float_value
 
 export AltTerm, alt_sym, alt_gnd, alt_var, alt_name, alt_value, alt_stats
 
@@ -67,6 +72,11 @@ end
 
 struct AltSym{H} <: AltTerm{H}
     id::UInt32                       # an index into _NAMES, from 0
+end
+
+"A reserved symbol (SWI-7's `[]`, pl-ressymbol.c): a SYM, as `AltSym` is, of another leaf type."
+struct AltRSym{H} <: AltTerm{H}
+    id::UInt32                       # an index into _NAMES — shared with the text atoms
 end
 
 struct AltGnd{H} <: AltTerm{H}
@@ -101,7 +111,11 @@ function alt_sym(::Type{AltTerm{H}}, name::Symbol)::AltSym{H} where {H}
 end
 
 "The name of a symbol (the reference type's `sym_name`)."
-alt_name(t::AltSym)::Symbol = lock(() -> _NAMES[t.id + 1], _LOCK)
+alt_name(t::Union{AltSym, AltRSym})::Symbol = lock(() -> _NAMES[t.id + 1], _LOCK)
+
+"The reserved symbol `name`: the text atom's id, in its own leaf type."
+alt_rsym(::Type{AltTerm{H}}, name::Symbol) where {H} =
+    AltRSym{H}(alt_sym(AltTerm{H}, name).id)
 
 "The grounded value `v`, boxed."
 alt_gnd(::Type{AltTerm{H}}, v) where {H} = AltGnd{H}(v)
@@ -122,6 +136,7 @@ end
 # ── the term interface ───────────────────────────────────────────────────────────────────────────
 kind(::AltVar) = VAR
 kind(::AltSym) = SYM
+kind(::AltRSym) = SYM
 kind(::AltGnd) = GND
 kind(::AltExpr) = EXPR
 term_type(::AltTerm{H}) where {H} = AltTerm{H}  # the abstract type, never the leaf
@@ -131,10 +146,39 @@ nchildren(t::AltExpr) = length(t.kids)
 child(t::AltExpr, i::Int) = t.kids[i]
 
 sym_key(t::AltSym) = UInt64(t.id)
-sym_hash(t::AltSym) = _fnv1a(String(alt_name(t)))
+sym_key(t::AltRSym) = UInt64(t.id) | (UInt64(1) << 40)  # another symbol than the text atom
+sym_hash(t::Union{AltSym, AltRSym}) = _fnv1a(String(alt_name(t)))   # the TEXT hash, both
 var_key(t::AltVar) = t.key
 gnd_key(t::AltGnd) = _gnd_key(t.val)
 gnd_equal(a::AltGnd, b::AltGnd) = atomic_compare(a, b) == 0
+
+# ── the Prolog layer (Q1) ────────────────────────────────────────────────────────────────────────
+mk_sym(::Type{AltTerm{H}}, name::Symbol) where {H} = alt_sym(AltTerm{H}, name)
+mk_gnd(::Type{AltTerm{H}}, v) where {H} = alt_gnd(AltTerm{H}, v)
+mk_reserved_symbol(::Type{AltTerm{H}}, name::Symbol) where {H} = alt_rsym(AltTerm{H}, name)
+is_reserved_symbol(::AltTerm) = false
+is_reserved_symbol(::AltRSym) = true
+is_nil(::AltTerm) = false
+is_nil(t::AltRSym) = alt_name(t) === Symbol("[]")
+
+number_kind(::AltTerm) = NUM_NONE
+function number_kind(t::AltGnd)
+    v = t.val
+    v isa Integer && !(v isa Bool) && return NUM_INTEGER
+    v isa Rational && return NUM_RATIONAL
+    v isa Base.IEEEFloat && return NUM_FLOAT
+    return NUM_NONE
+end
+integer_is_int64(t::AltTerm) =
+    number_kind(t) === NUM_INTEGER && typemin(Int64) <= t.val <= typemax(Int64)
+_need(t::AltTerm, k::NumKind, what) =
+    number_kind(t) === k ||
+    throw(ArgumentError("$what: not a $(lowercase(string(k)[5:end]))"))
+int64_value(t::AltTerm) = (_need(t, NUM_INTEGER, "int64_value"); Int64(t.val))
+bigint_value(t::AltTerm) = (_need(t, NUM_INTEGER, "bigint_value"); BigInt(t.val))
+rational_value(t::AltTerm) =
+    (_need(t, NUM_RATIONAL, "rational_value"); Rational{BigInt}(t.val))
+float_value(t::AltTerm) = (_need(t, NUM_FLOAT, "float_value"); Float64(t.val))
 
 # Only the term type itself: a kernel that passes a LEAF type (`typeof(t)`) finds no method.
 mk_var(::Type{AltTerm{H}}, key::UInt64) where {H} = AltVar{H}(key)
@@ -183,7 +227,7 @@ _shareable(c::AltTerm{true}) =
         (kind(c) === EXPR ? lock(() -> haskey(_INTERNED, c), _LOCK) : true)
     end
 
-_share_key(c::AltSym) = (0x1, UInt64(c.id))
+_share_key(c::Union{AltSym, AltRSym}) = (0x1, sym_key(c))
 _share_key(c::AltGnd) = (0x2, something(_gnd_key(c.val), UInt64(0)))   # a WILDCARD buckets at 0
 _share_key(c::AltExpr) = (0x3, UInt64(objectid(c)))                     # children are shared too
 _share_hash(children) =
@@ -197,7 +241,7 @@ function _same_children(e::AltExpr, children)::Bool
         if kind(a) === EXPR
             a === b || return false
         elseif kind(a) === SYM
-            a.id == b.id || return false
+            sym_key(a) == sym_key(b) || return false    # NOT the id: `[]` and '[]' share one
         else
             atomic_compare(a, b) == 0 || return false
         end
@@ -235,7 +279,7 @@ end
 # ── SWI's atomic order: Number < String < Atom, then values Prolog has no counterpart for ─────────
 const _NUMBER, _STRING, _ATOM, _OTHER = 1, 2, 3, 4
 
-_rank(::AltSym) = _ATOM
+_rank(::Union{AltSym, AltRSym}) = _ATOM
 function _rank(t::AltGnd)::Int
     v = t.val
     v isa Real && !(v isa Bool) && return _NUMBER
@@ -249,7 +293,8 @@ _by_type(x, y)::Int = _sgn(cmp(string(typeof(x)), string(typeof(y))))
 function atomic_compare(a::AltTerm, b::AltTerm)::Int
     ra, rb = _rank(a), _rank(b)
     ra != rb && return ra < rb ? -1 : 1
-    ra == _ATOM && return compareAtoms(alt_name(a), alt_name(b))
+    ra == _ATOM &&
+        return compareAtoms(alt_name(a), a isa AltRSym, alt_name(b), b isa AltRSym)
     x, y = (a::AltGnd).val, (b::AltGnd).val
     ra == _NUMBER && return _compare_numbers(x, y)
     if ra == _STRING
@@ -288,7 +333,9 @@ Base.hash(::AltTerm, ::UInt) =
 
 # ── printing, for failure messages only ──────────────────────────────────────────────────────────
 Base.show(io::IO, t::AltVar) = print(io, "_A", t.key)
-Base.show(io::IO, t::AltSym) = print(io, alt_name(t))
+Base.show(io::IO, t::AltSym) =
+    alt_name(t) === Symbol("[]") ? print(io, "'[]'") : print(io, alt_name(t))
+Base.show(io::IO, t::AltRSym) = print(io, alt_name(t))
 Base.show(io::IO, t::AltGnd) = show(io, t.val)
 function Base.show(io::IO, t::AltExpr)
     print(io, "(")

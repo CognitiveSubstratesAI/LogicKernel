@@ -13,10 +13,10 @@
 # unification) arrive with the VM. Upstream numbers instructions by their order in pl-vmi.c;
 # these numbers keep that order but are the kernel's own.
 #
-# NOT EMITTED, so not declared: H_NIL, H_LIST, H_RLIST, H_LIST_FF (the term interface has no
-# reserved `[]` or list functor — see `compileArgument!`), H_SMALLINT, H_SMALLINTW, H_FLOAT,
-# H_STRING, H_MPZ, H_MPQ (the interface does not expose a grounded value's type — see
-# `compileArgument!`), and the SSU instructions (`=>` clauses are not compiled yet).
+# NOT EMITTED, so not declared: H_LIST, H_RLIST, H_LIST_FF (they come with the compound operands,
+# the next V1 step — the interface can now name `'[|]'`, since Q1), H_SMALLINT, H_SMALLINTW,
+# H_FLOAT, H_STRING, H_MPZ, H_MPQ (the literal operands, the same step — the interface gives a
+# number's kind since Q1), and the SSU instructions (`=>` clauses are not compiled yet).
 
 # PORT: pl-vmi.c I_NOP
 "No operation (pl-vmi.c)."
@@ -24,36 +24,39 @@ const I_NOP = code(0)
 # PORT: pl-vmi.c H_ATOM
 "Head: unify the argument with an atom; operand: the atom word (pl-vmi.c)."
 const H_ATOM = code(1)
+# PORT: pl-vmi.c H_NIL
+"Head: unify the argument with SWI-7's `[]`, the reserved symbol; no operand (pl-vmi.c)."
+const H_NIL = code(2)
 # PORT: pl-vmi.c H_VOID
 "Head: skip an argument that is a singleton variable (pl-vmi.c)."
-const H_VOID = code(2)
+const H_VOID = code(3)
 # PORT: pl-vmi.c H_VOID_N
 "Head: skip that many void arguments; operand: the count (pl-vmi.c)."
-const H_VOID_N = code(3)
+const H_VOID_N = code(4)
 # PORT: pl-vmi.c H_VAR
 "Head: unify the argument with a variable seen before; operand: its frame slot (pl-vmi.c)."
-const H_VAR = code(4)
+const H_VAR = code(5)
 # PORT: pl-vmi.c H_FIRSTVAR
 "Head: the first occurrence of a variable inside a compound; operand: its slot (pl-vmi.c)."
-const H_FIRSTVAR = code(5)
+const H_FIRSTVAR = code(6)
 # PORT: pl-vmi.c H_FUNCTOR
 "Head: unify with a compound and enter its arguments; operand: the functor word (pl-vmi.c)."
-const H_FUNCTOR = code(6)
+const H_FUNCTOR = code(7)
 # PORT: pl-vmi.c H_RFUNCTOR
 "Head: as `H_FUNCTOR`, for the LAST argument of a compound — no `H_POP` of its own (pl-vmi.c)."
-const H_RFUNCTOR = code(7)
+const H_RFUNCTOR = code(8)
 # PORT: pl-vmi.c H_POP
 "Head: leave the arguments of a compound (pl-vmi.c)."
-const H_POP = code(8)
+const H_POP = code(9)
 # PORT: pl-vmi.c I_CHP
 "Create a choice point for an SSU clause (pl-vmi.c)."
-const I_CHP = code(9)
+const I_CHP = code(10)
 # PORT: pl-vmi.c I_ENTER
 "End of the head of a rule: enter the body (pl-vmi.c)."
-const I_ENTER = code(10)
+const I_ENTER = code(11)
 # PORT: pl-vmi.c I_EXITFACT
 "End of a fact (pl-vmi.c)."
-const I_EXITFACT = code(11)
+const I_EXITFACT = code(12)
 
 # PORT: pl-incl.h code_info
 "What `codeTable` records of an instruction: its name and number of operand words (pl-incl.h)."
@@ -69,6 +72,7 @@ end
 function codeTable(op::code)::code_info
     op == I_NOP && return code_info(:I_NOP, 0)
     op == H_ATOM && return code_info(:H_ATOM, 1)
+    op == H_NIL && return code_info(:H_NIL, 0)
     op == H_VOID && return code_info(:H_VOID, 0)
     op == H_VOID_N && return code_info(:H_VOID_N, 1)
     op == H_VAR && return code_info(:H_VAR, 1)

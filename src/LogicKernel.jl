@@ -28,6 +28,7 @@ include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time cla
 include("pl-global.jl")        # swipl-devel src/pl-global.h — the database state (GD, LD)
 include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys, bindings
 include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard order; unification
+include("pl-ressymbol.jl")     # swipl-devel src/pl-ressymbol.c — reserved symbols (SWI-7's `[]`)
 include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to
 include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
@@ -42,10 +43,15 @@ export Kind, VAR, SYM, GND, EXPR
 export kind, term_type,
     nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal, atomic_compare
 export mk_var, mk_expr, is_ground, is_ground_walk, KERNEL_VAR_BASE
+# …and its Prolog layer (Q1): symbols, grounded values, reserved symbols, numbers by kind
+export mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol, mk_nil, is_nil
+export NumKind, NUM_NONE, NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT
+export number_kind, integer_is_int64, int64_value, bigint_value, rational_value, float_value
 # the standard order of terms — SWI-Prolog's name (src/pl-prims.jl) — and the leaf comparisons an
 # implementation's `atomic_compare` is built from (it alone can see names and values)
 export compareStandard
 export compareAtoms, compareStrings, compare_neq_floats, compare_mixed_float_rational
+export compareReservedSymbol
 # the default term type (src/default_term.jl)
 export Term, DefaultTerm, sym_term, gnd_term, var_term, gnd_value_key, sym_name, gnd_value
 

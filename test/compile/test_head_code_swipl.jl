@@ -29,6 +29,7 @@ function _harg(rng::AbstractRNG, shared::AbstractVector, depth::Int)::_H
     elseif r < 0.45
         return rand(rng, shared)
     elseif r < 0.6
+        rand(rng) < 0.25 && return mk_nil(_H)            # SWI-7's []: H_NIL, not H_ATOM
         return _hs(rand(rng, (:a, :b, :c)))
     elseif r < 0.7
         return lk_gnd(_H, rand(rng, 0:9))

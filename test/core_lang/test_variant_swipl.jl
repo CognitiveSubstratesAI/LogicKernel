@@ -30,7 +30,11 @@ function _vrand(rng, d::Int, vars::Vector{Int})::_VT
     if d == 0 || r <= 4
         k = rand(rng, 1:6)
         k <= 3 && return mk_var(_VT, UInt64(rand(rng, vars)))
-        k == 4 && return lk_sym(_VT, rand(rng, (:a, :b, :f)))
+        k == 4 && return rand(
+            rng,
+            (lk_sym(_VT, :a), lk_sym(_VT, :b), lk_sym(_VT, :f), mk_nil(_VT),
+                lk_sym(_VT, Symbol("[]")))                # SWI-7's [] vs the atom '[]'
+        )
         k == 5 && return lk_gnd(_VT, rand(rng, (0, 1, 2)))
         return lk_gnd(_VT, rand(rng, (0.0, -0.0, 1.0, 2.5, "s")))
     end
@@ -108,7 +112,7 @@ _voccurs(t::_VT, a::UInt64)::Int =
 function _vsrc(t::_VT)::String
     k = kind(t)
     k === VAR && return "V$(var_key(t))"
-    k === SYM && return string(lk_name(t))
+    k === SYM && return lk_atom_text(t)                 # `[]` bare, the text atom '[]' quoted
     if k === GND
         v = lk_value(t)
         return v isa String ? "\"$v\"" : string(v)

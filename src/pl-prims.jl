@@ -69,6 +69,27 @@ branch). `Base.cmp` on two `Symbol`s is `strcmp`, which is exactly that order fo
 """
 compareAtoms(a::Symbol, b::Symbol)::Int = a === b ? CMP_EQUAL : _sign(cmp(a, b))
 
+# The whole of pl-prims.c `compareAtoms`, for an implementation's `atomic_compare` (Q1, 2026-10-03):
+# an atom is its name and whether it is a reserved symbol — the two blob types a kernel term can
+# have. DIVERGES: upstream reads the blob type from the atom handle; released blobs and the other
+# blob types (streams, clause references, wide text) do not exist here.
+"""
+    compareAtoms(a::Symbol, a_reserved::Bool, b::Symbol, b_reserved::Bool) -> Int
+
+Two atoms in the standard order (pl-prims.c `compareAtoms`): of ONE blob type, by that type's
+order — reserved symbols by `compareReservedSymbol` (`strcmp`), text atoms by their text (the
+two-argument method); of two types, by the types' RANK — a reserved symbol (rank 0) before every
+text atom, so `[]` sorts before `''`.
+"""
+function compareAtoms(a::Symbol, ra::Bool, b::Symbol, rb::Bool)::Int
+    if ra == rb                                         # a1->type == a2->type
+        return ra ? compareReservedSymbol(a, b) : compareAtoms(a, b)
+    end
+    r1 = ra ? RESERVED_SYMBOL_RANK : TEXT_ATOM_RANK     # SCALAR_TO_CMP(a1->type->rank, …)
+    r2 = rb ? RESERVED_SYMBOL_RANK : TEXT_ATOM_RANK
+    return _sign(r1 - r2)
+end
+
 # PORT: pl-prims.c compareStrings
 """
     compareStrings(a::AbstractString, b::AbstractString) -> Int

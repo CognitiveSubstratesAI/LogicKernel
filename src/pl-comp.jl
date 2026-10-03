@@ -112,6 +112,26 @@ mutable struct compileInfo
     mstate_merge_pos::Int                                   # The merge candidate location
 end
 
+# PORT: pl-comp.c is_portable_smallint
+# DIVERGES: takes the integer, not a cell — `isTaggedInt(w)` is then "within the tagged range" — and
+# the local data explicitly, where upstream reaches `LD` for the flag.
+"""
+    is_portable_smallint(ld, i::Int64) -> Bool
+
+Whether integer `i` may be an inline operand (pl-comp.c): it fits a tagged word, and — under the
+`portable_vmi` flag, swipl's default — the int32 range too, so the code runs on 32-bit VMs. The
+compiler's instruction choice; the term interface gives only the number's kind and value (Q1).
+"""
+function is_portable_smallint(ld::PL_local_data, i::Int64)::Bool
+    if PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT                # isTaggedInt(w)
+        if ld.prolog_flag_portable_vmi
+            return typemin(Int32) <= i <= typemax(Int32)    # INT32_MIN <= i <= INT32_MAX
+        end
+        return true
+    end
+    return false
+end
+
 # PORT: pl-comp.c PC
 "The position of the next instruction: the number of codes emitted (pl-comp.c `PC(ci)`)."
 PC(ci::compileInfo)::Int = length(ci.codes)
@@ -390,7 +410,11 @@ function compileArgument!(ci::compileInfo, arg, where_::Int)::Bool
         Output_a!(ci, VAROFFSET(index))
         @goto resume
     elseif k === SYM
-        Output_1!(ci, H_ATOM, MK_ATOM(sym_hash(arg)))
+        if is_nil(arg)                                         # isNil(*arg): SWI-7's reserved []
+            Output_0!(ci, H_NIL)
+        else
+            Output_1!(ci, H_ATOM, MK_ATOM(sym_hash(arg)))
+        end
         @goto resume
     elseif k === GND
         g = gnd_key(arg)
@@ -614,7 +638,7 @@ function skipArgs(PC::Code, skip::Int, in_hvoid::Int)::Tuple{Code, Int}
             if nested < 0
                 return (PC, in_hvoid)
             end
-        elseif c == H_ATOM || c == H_FIRSTVAR || c == H_VAR || c == H_VOID
+        elseif c == H_ATOM || c == H_NIL || c == H_FIRSTVAR || c == H_VAR || c == H_VOID
             if nested == 0
                 skip -= 1
                 if skip == 0
@@ -667,6 +691,8 @@ function argKey(PC::Code, skip::Int)::word
             return PC.codes[PC.pc]                              # code2functor(*PC)
         elseif c == H_ATOM
             return PC.codes[PC.pc]                              # code2atom(*PC)
+        elseif c == H_NIL
+            return ATOM_nil                                     # *key = ATOM_nil
         elseif c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_VOID_N ||
             c == H_POP || c == I_EXITFACT || c == I_ENTER
             return word(0)

@@ -25,7 +25,7 @@ _us(x::Symbol) = lk_sym(_UT, x)
 _ug(x) = lk_gnd(_UT, x)
 _uc(f::Symbol, xs::_UT...) = mk_expr(_UT, _UT[_us(f), xs...])
 _uv(k::Int) = mk_var(_UT, UInt64(k))
-_unil() = _us(Symbol("[]"))
+_unil() = mk_nil(_UT)                                       # SWI-7's [], reserved
 _ucons(h, t) = _uc(Symbol("[|]"), h, t)                     # [H|T]
 _uid(a, b) = compareStandard(a, b) == 0                     # ==/2
 

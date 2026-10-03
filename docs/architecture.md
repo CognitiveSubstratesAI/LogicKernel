@@ -108,6 +108,9 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
+| `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported | `src/pl-ressymbol.c` |
+| `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
+| `test/compile/test_portable_smallint_swipl.jl` | `is_portable_smallint` under `portable_vmi`, and the tagged-integer range against a live swipl's flags | — |
 | `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses | `src/pl-termwalk.c` |
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
 | `test/core_lang/test_occurs_check.jl` | SWI's own occurs-check units in all three modes but the attributed-variable ones | `tests/core_lang/test_occurs_check.pl` |
@@ -474,7 +477,43 @@ compiler can emit.
   assumptions.
 * **The numeric accessor preserves the KIND** — small integer, big integer, float (and rational if
   ported) — because SWI's instruction choice (`H_SMALLINT` / `H_MPZ` / `H_FLOAT`) and the standard order
-  depend on it.
+  depend on it. **REFINED (user, 2026-10-03):** the kinds are SWI's SEMANTIC ones — integer (any size),
+  rational, float; "small vs big integer" is storage and instruction selection, decided by upstream's own
+  `is_portable_smallint` (pl-comp.c), a separate helper. And the accessor is a kind query plus one
+  TYPED getter per representation (`Int64`, `BigInt`, `Rational{BigInt}`, `Float64`), so a caller
+  branches once and stays type-stable.
+
+**Q1 — BUILT (2026-10-03), on all three term implementations.** The decisions taken while building it
+(user):
+* **A reserved symbol is a `SYM` with a flag** (`is_reserved_symbol`), not a kind of its own: upstream
+  gives `[]` the atom tag and makes the blob type a property of the atom, and every `kind === SYM` site
+  (indexing, functor heads, unification) stays right for `[]`. Proven by `AltTerm`, whose reserved
+  symbols are a LEAF TYPE of their own.
+* **The surface**: `mk_sym`, `mk_gnd`, `mk_reserved_symbol` / `is_reserved_symbol` (pl-ressymbol.c),
+  `mk_nil` / `is_nil` (the foreign interface's `PL_put_nil` / `PL_get_nil`), `NumKind` with
+  `number_kind`, `integer_is_int64`, `int64_value`, `bigint_value`, `rational_value`, `float_value`.
+* **The reserved set** is upstream's: `[]`, and four atoms the same init retypes (`dict`, `trienode`,
+  `no_value`, `term_t_free`) — those four NOT PORTED, with their subsystems (src/pl-ressymbol.jl).
+* **What swipl 10.1.16 says, probed, and where each fact is pinned** (`[]` against the text atom `'[]'`):
+
+  | fact | pinned by |
+  |---|---|
+  | `[] == '[]'` and `[] = '[]'` fail | conformance (distinct `sym_key`); the `=/2` differential (each the other's near twin) |
+  | `[]` sorts before every text atom, `''` included, after strings; `'[\|]'` is a text atom | conformance; `test_sort.jl` (`reserved`, SWI's own unit); the `compare/3` differential (`[]`, `'[]'`, `'[\|]'`, `[a]`, `[a\|b]`, `f([])`, `f('[]')`) |
+  | `'[\|]'(a, []) == [a]`; `[a\|b] =.. ['[\|]', a, b]`; `'.'(a, [])` is not `[a]` | the `compare/3` differential (lists are `'[\|]'/2` of a text atom) |
+  | `term_hash([]) == term_hash('[]')` (atoms hash by TEXT); `variant_sha1`/`variant_hash` differ (they add the blob type's name) | test_termhash.jl; conformance (`sym_hash` equal) |
+  | `[]` compiles to `H_NIL`, keyed `ATOM_nil` — apart from `'[]'` | the head-code differential (`[]` in its random heads); the index differential (profile `nil_vs_quoted`) |
+  | `atom([])` fails, `atomic([])` succeeds | `is_reserved_symbol` — awaits the type-test built-ins (V5) |
+  | `atom_length([], 0)` (a code list, CVT_LIST); `atom_codes([], C)` raises `type_error(atom, [])`; `term_to_atom([], '[]')`; `write_canonical` writes `[]` and `'[]'` | NOT YET TESTABLE: recorded here for when the text built-ins and the writer arrive |
+* **The audit of every `SYM` site** (user): identity sites (`sym_key`: unification, `\=`, `=@=`, functor
+  matching) were already right, as `[]` and `'[]'` have different keys; `compileArgument!` now takes
+  upstream's `isNil` branch (`H_NIL`), and `skipArgs`/`argKey`/`indexOfWord` key `[]` as `ATOM_nil`;
+  `variant_sha1`/`variant_hash` hash the blob type's name, as upstream; `term_hash` keeps the text hash,
+  as upstream. Every test-side writer goes through one `lk_atom_text` (`[]` bare, `'[]'` quoted), and
+  the standalone consumer's writer and benchmark programs recognise `[]` by `is_nil`, not by its name.
+* **Not in Q1**: `H_LIST`/`H_RLIST`/`H_LIST_FF` (the `'[|]'/2` case of `H_FUNCTOR`) and the numeric
+  head instructions come with the literal and compound operands, the next V1 step; `is_portable_smallint`
+  is ported for them now.
 
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders

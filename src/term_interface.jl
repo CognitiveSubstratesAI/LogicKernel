@@ -180,6 +180,130 @@ to the one asked for — shared subterms are permitted (see the header).
 """
 function mk_expr end
 
+# ── THE PROLOG LAYER (Q1, user 2026-10-03) ───────────────────────────────────────────────────────
+# What the compiler and the built-ins need that MeTTa-shaped terms did not: constructors for symbols
+# and grounded values, SWI-7's RESERVED SYMBOLS (pl-ressymbol.c) — `[]` above all — and numbers by
+# their SEMANTIC kind. A reserved symbol is a [`SYM`](@ref) with a flag, not a kind of its own (user):
+# upstream gives `[]` the atom tag and makes the blob type a property of the atom, so every site that
+# asks `kind(t) === SYM` (indexing, functor heads, unification) stays right for `[]`; a site that
+# needs TEXT asks [`is_reserved_symbol`](@ref).
+
+"""
+    mk_sym(T::Type, name::Symbol) -> T
+
+The TEXT atom `name`. `mk_sym(T, Symbol("[]"))` is the atom `'[]'`, NOT the empty list — that is
+[`mk_nil`](@ref).
+"""
+function mk_sym end
+
+"""
+    mk_gnd(T::Type, v) -> T
+
+The grounded value `v`.
+"""
+function mk_gnd end
+
+"""
+    mk_reserved_symbol(T::Type, name::Symbol) -> T
+
+The RESERVED SYMBOL `name` (pl-ressymbol.c `textToReservedSymbol`): a [`SYM`](@ref) of the blob type
+`reserved_symbol` — atomic but NOT an atom (`atom/1` is `isTextAtom`, pl-fli.h). Against the text
+atom of the same name it has
+* a different [`sym_key`](@ref) — they are two symbols, so `[] == '[]'` fails;
+* the SAME [`sym_hash`](@ref) — upstream's atom hash is a hash of the TEXT, so `term_hash([])` and
+  `term_hash('[]')` agree;
+* in the standard order: after numbers and strings, BEFORE EVERY TEXT ATOM (`reserved_symbol.rank = 0`,
+  "between normal blob and text", pl-ressymbol.c:97), two reserved symbols by `strcmp` of their names.
+"""
+function mk_reserved_symbol end
+
+"""
+    is_reserved_symbol(t) -> Bool
+
+Whether `t` is a reserved symbol (pl-ressymbol.c `isReservedSymbol`); `false` for every term that
+is not a [`SYM`](@ref).
+"""
+function is_reserved_symbol end
+
+"""
+    is_nil(t) -> Bool
+
+Whether `t` is SWI-7's `[]` — the reserved symbol `[]` (pl-fli.c `PL_get_nil`, pl-inline `isNil`).
+`false` for the text atom `'[]'` and for every term that is not a [`SYM`](@ref).
+"""
+function is_nil end
+
+"""
+    mk_nil(T::Type) -> T
+
+SWI-7's `[]`: the reserved symbol `[]` (pl-fli.c `PL_put_nil`).
+"""
+mk_nil(::Type{T}) where {T} = mk_reserved_symbol(T, NIL_NAME)
+
+"The name of SWI-7's `[]` (pl-atom.ih `ATOM_nil`)."
+const NIL_NAME = Symbol("[]")
+
+"""
+    NumKind
+
+A number's SEMANTIC kind, as SWI-Prolog's: [`NUM_INTEGER`](@ref) (any size), [`NUM_RATIONAL`](@ref),
+[`NUM_FLOAT`](@ref) — and [`NUM_NONE`](@ref) for every term that is not a number. Small vs big
+integer is STORAGE, not a kind: [`integer_is_int64`](@ref) says which getter to use, and whether an
+integer becomes an inline operand is pl-comp.c's own `is_portable_smallint` (user, 2026-10-03).
+"""
+@enum NumKind::UInt8 NUM_NONE NUM_INTEGER NUM_RATIONAL NUM_FLOAT
+
+@doc "Not a number: a variable, a symbol, a compound, or a grounded value of another kind." NUM_NONE
+@doc "An integer, of any size." NUM_INTEGER
+@doc "A rational number that is not an integer." NUM_RATIONAL
+@doc "A float (an IEEE double; narrower IEEE floats widen exactly)." NUM_FLOAT
+
+"""
+    number_kind(t) -> NumKind
+
+The [`NumKind`](@ref) of `t`. Callers branch ONCE on it and then call the one typed getter that
+kind has — [`int64_value`](@ref)/[`bigint_value`](@ref), [`rational_value`](@ref),
+[`float_value`](@ref) — so everything after the branch is type-stable.
+"""
+function number_kind end
+
+"""
+    integer_is_int64(t) -> Bool
+
+Whether `t` is an integer that fits an `Int64` — the small-integer path ([`int64_value`](@ref)).
+"""
+function integer_is_int64 end
+
+"""
+    int64_value(t) -> Int64
+
+The value of an integer that fits an `Int64`; an `InexactError` for a larger one, an
+`ArgumentError` for any other term.
+"""
+function int64_value end
+
+"""
+    bigint_value(t) -> BigInt
+
+The value of an integer of any size; an `ArgumentError` for any other term.
+"""
+function bigint_value end
+
+"""
+    rational_value(t) -> Rational{BigInt}
+
+The value of a [`NUM_RATIONAL`](@ref); an `ArgumentError` for any other term.
+"""
+function rational_value end
+
+"""
+    float_value(t) -> Float64
+
+The value of a [`NUM_FLOAT`](@ref), bit for bit (`-0.0` and NaN payloads kept); an `ArgumentError`
+for any other term.
+"""
+function float_value end
+
 """
     is_ground(t) -> Bool
 

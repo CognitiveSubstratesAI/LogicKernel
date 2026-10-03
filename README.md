@@ -35,7 +35,8 @@ then the interface is only as general as one implementation makes it. First real
 A compound term is a **sequence of children with the head as child 1** — not Prolog's
 `functor`/`arity`, because a head may itself be a variable or a compound. The interface (`kind`,
 `term_type`, `nchildren`/`child`, `sym_key`, `sym_hash`, `var_key`, `gnd_key`, `gnd_equal`,
-`atomic_compare`, `mk_var`/`mk_expr`, `is_ground`)
+`atomic_compare`, `mk_var`/`mk_expr`, `is_ground`, and the Prolog layer: `mk_sym`, `mk_gnd`, the
+reserved symbols `mk_reserved_symbol`/`is_reserved_symbol`/`mk_nil`/`is_nil`, numbers by `number_kind`)
 is specified in [`src/term_interface.jl`](src/term_interface.jl). One conformance suite runs against
 every implementation: the default term type here, and a deliberately different second one in the
 tests ([`test/core_lang/alt_term.jl`](test/core_lang/alt_term.jl)) — a test vehicle, not real use.

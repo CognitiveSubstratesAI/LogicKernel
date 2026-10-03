@@ -487,6 +487,20 @@ function _HASH_char!(state::sha1_state, c::Char)::Nothing
     return HASH!(state, state.word, 1)
 end
 
+"`HASH(s, strlen(s))`: the bytes of `s`, through the 8-byte scratch word — one `HASH` per 8 bytes."
+function _HASH_str!(state::sha1_state, s::String)::Nothing
+    n, i = ncodeunits(s), 0
+    while i < n
+        m = min(8, n - i)
+        for j in 1:m
+            state.word[j] = codeunit(s, i + j)
+        end
+        HASH!(state, state.word, m)
+        i += m
+    end
+    return nothing
+end
+
 "`HASH(&w, sizeof(w))`: the 8 bytes of a word, little-endian."
 function _HASH_word!(state::sha1_state, w::UInt64)::Nothing
     for j in 1:8
@@ -497,10 +511,11 @@ end
 
 # PORT: pl-termhash.c variant_sha1 as variant_sha1_walk
 # DIVERGES: what each kind of subterm writes (see the file header): a variable `V` and its numbered
-# word, as upstream; an atom `A` and its `sym_hash`; a grounded value `G` and its `gnd_key`, or
-# `g` alone when it has none; a compound `T`, its head's `sym_hash` and its arity, or `C` and its
-# child count when its head is not a symbol. Every kind writes a fixed number of bytes after its
-# letter, so different terms never write the same bytes by running into each other.
+# word, as upstream; an atom `A`, its `sym_hash` and — as upstream — its blob type's name, `text`
+# or `reserved_symbol`; a grounded value `G` and its `gnd_key`, or `g` alone when it has none; a
+# compound `T`, its head's `sym_hash` and its arity, or `C` and its child count when its head is
+# not a symbol. What follows each letter is self-delimiting (fixed widths; the type names begin
+# `t`/`r`, no tag letter), so different terms never write the same bytes by running into each other.
 "Write the serialisation of every subterm the agenda walks into the digest (pl-termhash.c)."
 function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothing where {T}
     while true
@@ -517,6 +532,9 @@ function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothi
         elseif k === SYM
             _HASH_char!(state, 'A')
             _HASH_word!(state, sym_hash(p))
+            # HASH(av->type->name, strlen(…)): the blob type's name, so `[]` (reserved_symbol)
+            # and `'[]'` (text) — one text hash — still hash apart, as in swipl
+            _HASH_str!(state, is_reserved_symbol(p) ? "reserved_symbol" : "text")
         elseif k === GND
             g = gnd_key(p)
             if g === nothing

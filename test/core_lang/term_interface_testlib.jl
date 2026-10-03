@@ -30,7 +30,9 @@ Base.:(==)(a::CustomEq, b::CustomEq) = a.v % 10 == b.v % 10
 
 "Host values every implementation's `mkgnd` must accept."
 const HOST_VALUES = (
-    0, 1, 2, big(2), -5, 0.0, -0.0, 1.0, 1.5, NaN, Inf, -Inf, 1.0f0, 1 // 2, "", "a", "ab",
+    0, 1, 2, big(2), big(2)^70, -big(2)^70, -5, 0.0, -0.0, 1.0, 1.5, NaN, Inf, -Inf, 1.0f0,
+    1 // 2,
+    "", "a", "ab",
     "b",
     true, 'c',
     [0.0], [-0.0], (0.0, 1), (-0.0, 1), 0.0 + 0.0im, 0.0 - 0.0im, missing, CustomEq(3),
@@ -151,6 +153,88 @@ function run_term_conformance(
                 @test ex(sy(:f), gn(x)) !== ex(sy(:f), gn(y))
             end
             @test ex(sy(:f), sy(:a)) !== ex(sy(:f), gn("a"))
+            # SWI-7's [] and the atom '[]': one name, two symbols — a key by name merges them
+            @test ex(sy(:f), mk_nil(T)) !== ex(sy(:f), mk_sym(T, Symbol("[]")))
+        end
+
+        # ── the Prolog layer (Q1, user 2026-10-03) ─────────────────────────────────────────────
+        @testset "mk_sym and mk_gnd build what the caller's constructors build" begin
+            for n in (:a, :f, Symbol(""), Symbol("[]"), Symbol("[|]"), :α, :dict)
+                s = mk_sym(T, n)::T
+                @test kind(s) === SYM && !is_reserved_symbol(s) && !is_nil(s)
+                @test compareStandard(s, sy(n)) == 0 && sym_key(s) == sym_key(sy(n))
+            end
+            @test all(
+                v -> (g=mk_gnd(T, v)::T; kind(g) === GND && compareStandard(g, gn(v)) == 0),
+                HOST_VALUES
+            )
+        end
+
+        # SWI-7's `[]` (pl-ressymbol.c): a RESERVED SYMBOL — the atom tag with the blob type
+        # `reserved_symbol`, distinct from the text atom `'[]'`; atomic, not an atom; ranked 0,
+        # "between normal blob and text", so it sorts before EVERY text atom ('' included) —
+        # probed in swipl 10.1.16. Two reserved symbols compare by strcmp of their names.
+        @testset "reserved symbols: [] is not the atom '[]', and sorts before every atom" begin
+            c(a, b) = compareStandard(a, b)
+            nil, qnil = mk_nil(T)::T, mk_sym(T, Symbol("[]"))
+            @test kind(nil) === SYM && is_reserved_symbol(nil) && is_nil(nil)
+            @test !is_reserved_symbol(qnil) && !is_nil(qnil)
+            @test sym_key(nil) != sym_key(qnil) && c(nil, qnil) != 0       # [] == '[]' fails
+            @test sym_key(nil) == sym_key(mk_nil(T)) && c(nil, mk_nil(T)) == 0
+            r = mk_reserved_symbol(T, Symbol("[]"))::T
+            @test is_nil(r) && sym_key(r) == sym_key(nil)
+            # the TEXT hash, as upstream's atom hash_value — term_hash([]) == term_hash('[]')
+            @test sym_hash(nil) == sym_hash(qnil)
+            d = mk_reserved_symbol(T, :dict)::T                 # pl-ressymbol.c retypes ATOM_dict
+            @test is_reserved_symbol(d) && !is_nil(d) &&
+                sym_key(d) != sym_key(mk_sym(T, :dict))
+            for n in
+                (Symbol(""), :a, Symbol("[]"), Symbol("[|]"), :dict, Symbol("\U0001D11E"))
+                @test c(nil, mk_sym(T, n)) == -1 && c(mk_sym(T, n), nil) == 1
+                @test c(d, mk_sym(T, n)) == -1
+            end
+            @test c(nil, d) == -1 && c(d, nil) == 1             # strcmp("[]", "dict") < 0
+            @test c(gn("zz"), nil) == -1 && c(gn(1), nil) == -1 && c(gn(1.5), nil) == -1
+            @test c(nil, ex(sy(:f), sy(:a))) == -1 && c(nil, mk_var(T, UInt64(1))) == 1
+            @test !is_reserved_symbol(gn(1)) && !is_nil(gn(1)) && !is_nil(ex(sy(:f)))
+            @test !is_nil(mk_var(T, UInt64(1)))
+        end
+
+        # SWI's numbers by SEMANTIC kind — integer of any size, rational, float — with one typed
+        # getter per representation (user, 2026-10-03): branch once on the kind, then stay
+        # type-stable. Small vs big integer is storage; `is_portable_smallint` (pl-comp.c) decides
+        # instructions separately.
+        @testset "numbers: the kind, and a typed getter per kind" begin
+            seen = Set{NumKind}()
+            for v in HOST_VALUES
+                g = gn(v)
+                k = number_kind(g)
+                push!(seen, k)
+                if v isa Integer && !(v isa Bool)
+                    @test k === NUM_INTEGER
+                    b = bigint_value(g)
+                    @test b isa BigInt && b == v
+                    fits = typemin(Int64) <= v <= typemax(Int64)
+                    @test integer_is_int64(g) == fits
+                    if fits
+                        @test int64_value(g) === Int64(v)
+                    else
+                        @test_throws InexactError int64_value(g)
+                    end
+                elseif v isa Rational
+                    q = rational_value(g)
+                    @test k === NUM_RATIONAL && q isa Rational{BigInt} && q == v
+                elseif v isa Base.IEEEFloat
+                    @test k === NUM_FLOAT && float_value(g) === Float64(v)  # bits: -0.0, NaN
+                else
+                    @test k === NUM_NONE
+                end
+            end
+            @test seen == Set((NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT, NUM_NONE))  # all four met
+            @test all(
+                t -> number_kind(t) === NUM_NONE,
+                (sy(:a), mk_nil(T), mk_var(T, UInt64(1)), ex(sy(:f), gn(1)), ex())
+            )
         end
 
         @testset "sym_key is equal exactly when the symbols are equal" begin

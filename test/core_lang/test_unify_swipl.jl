@@ -43,8 +43,9 @@ _zv(k::Int) = mk_var(_ZT, UInt64(k))
 
 "A random atomic term: atoms, small and big integers, floats with NaN and the signed zeros, a string."
 function _zatom(rng)::_ZT
-    k = rand(rng, 1:6)
+    k = rand(rng, 1:7)
     k == 1 && return _zs(rand(rng, (:a, :b, :s)))
+    k == 6 && return rand(rng, (mk_nil(_ZT), _zs(Symbol("[]"))))   # SWI-7's [] vs the atom '[]'
     k == 2 && return lk_gnd(_ZT, rand(rng, (0, 1)))
     k == 3 && return lk_gnd(_ZT, rand(rng, (big(1), _ZBIG)))
     k == 4 && return lk_gnd(_ZT, rand(rng, (0.0, -0.0, 1.0)))
@@ -82,7 +83,9 @@ end
 "The near twin of atomic `t` — another kind or representation of a like value — or `nothing`."
 function _ztwin(t::_ZT)::Union{Nothing, _ZT}
     if kind(t) === SYM
+        is_nil(t) && return _zs(Symbol("[]"))             # [] vs the atom '[]': they never unify
         n = lk_name(t)
+        n === Symbol("[]") && return mk_nil(_ZT)
         n === :s && return lk_gnd(_ZT, "s")               # atom s vs string "s"
         n in (:a, :b) && return _zs(n === :a ? :b : :a)
         return nothing
@@ -185,7 +188,7 @@ end
 function _zsrc(t::_ZT)::String
     k = kind(t)
     k === VAR && return "V$(var_key(t))"
-    k === SYM && return string(lk_name(t))
+    k === SYM && return lk_atom_text(t)                 # `[]` bare, the text atom '[]' quoted
     if k === GND
         v = lk_value(t)
         v isa String && return "\"$v\""

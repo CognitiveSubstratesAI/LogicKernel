@@ -61,6 +61,21 @@ lk_value(t::Term) = gnd_value(t)
 lk_value(t::AltTerm) = alt_value(t)
 
 """
+A symbol's Prolog text as `writeq` writes it: the reserved `[]` bare; a text atom bare when it is a
+plain lowercase identifier, otherwise quoted — so the TEXT atom `'[]'` is written quoted, and swipl
+reads the two apart. Every swipl differential writes symbols through this.
+"""
+function lk_atom_text(t)::String
+    n = String(lk_name(t))
+    if is_reserved_symbol(t)
+        is_nil(t) || error("lk_atom_text: no Prolog text for the reserved symbol $n")
+        return "[]"
+    end
+    occursin(r"^[a-z][A-Za-z0-9_]*$", n) && return n
+    return "'" * replace(n, "\\" => "\\\\", "'" => "\\'") * "'"
+end
+
+"""
 `==/2`: two terms are identical in the standard order (`compareStandard(a, b, true) == 0`), and two
 vectors of terms elementwise. A term-generic test compares terms with this, never with Base `==`,
 which is the reference type's own convenience — `AltTerm`'s throws.

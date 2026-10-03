@@ -257,7 +257,7 @@ const _JBig = lk_term_type(BigInt)
 end
 
 @testset "jit_static" begin
-    nil, cons = _js(Symbol("[]")), (h, t) -> _je(Symbol("[|]"), h, t)
+    nil, cons = mk_nil(_J), (h, t) -> _je(Symbol("[|]"), h, t)    # SWI-7's [], reserved
     x = ix_pred(_J, :x, 5)
     ix_assertz!(x, _je(:x, _js(:x), _js(:x), _js(:x), _js(:x), nil))
     ix_assertz!(x, _je(:x, _js(:x), _js(:x), _js(:x), _js(:x), cons(_jv(), _jv())))

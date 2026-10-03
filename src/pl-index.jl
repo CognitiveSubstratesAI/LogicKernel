@@ -142,7 +142,9 @@ _functor_word(name::UInt64, arity::Int)::word =
 # PORT: pl-index.c indexOfWord
 # DIVERGES: reads the term interface rather than a tagged cell, and there are no reference cells to
 # follow. VAR → 0, as upstream. SYM → its atom word (`MK_ATOM` of its `sym_hash`, the same in every
-# process — SWI's atom numbers are fixed for a given program too). GND → its
+# process — SWI's atom numbers are fixed for a given program too), and SWI-7's `[]` → `ATOM_nil`, as
+# `argKey` keys `H_NIL`: `sym_hash` is a TEXT hash, so without it `[]` and the atom `'[]'` would
+# share a key that upstream's two atom handles never share. GND → its
 # `gnd_key` through `clean_index_key` — the role murmur_key plays upstream for strings and floats,
 # a key that follows the term type's `gnd_equal` (src/term_interface.jl) — and 0, a wildcard, when
 # there is no key. EXPR with a symbol head → a functor word (`MK_FUNCTOR`) of the name and arity.
@@ -159,6 +161,7 @@ function indexOfWord(t)::word
     if k === VAR
         return word(0)
     elseif k === SYM
+        is_nil(t) && return ATOM_nil                    # `[]`: as `argKey` keys `H_NIL`
         return MK_ATOM(sym_hash(t))
     elseif k === GND
         g = gnd_key(t)

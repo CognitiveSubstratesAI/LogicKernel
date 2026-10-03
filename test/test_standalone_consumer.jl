@@ -21,7 +21,6 @@ include("../bench/programs/poly_10.jl")
 # ── a client-side write_canonical (SWI-Prolog 7 output: operators as functors, `[]` reserved) ────
 const _SOLO_SYMCHARS = Set("#\$&*+-./:<=>?@^~\\")
 function _atom_text(n::String)::String
-    n == "[]" && return "[]"
     occursin(r"^[a-z][A-Za-z0-9_]*$", n) && return n
     !isempty(n) && all(in(_SOLO_SYMCHARS), n) && return n
     n in ("!", ";") && return n
@@ -37,6 +36,7 @@ function canonical(t)::String
         v isa Int && return string(v)
         error("canonical: only integers occur in these programs, got $(typeof(v))")
     elseif k === SYM
+        is_nil(t) && return "[]"                    # SWI-7's reserved []; the atom '[]' is quoted
         return _atom_text(String(sym_name(t)))
     elseif k === VAR
         return "_"
@@ -46,7 +46,7 @@ function canonical(t)::String
             push!(elems, canonical(child(t, 2)))
             t = child(t, 3)
         end
-        tail = kind(t) === SYM && sym_name(t) === Symbol("[]") ? "" : "|" * canonical(t)
+        tail = is_nil(t) ? "" : "|" * canonical(t)
         return "[" * join(elems, ",") * tail * "]"
     end
     return canonical(child(t, 1)) * "(" *

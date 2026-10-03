@@ -41,7 +41,14 @@ const _ORACLE_TERMS = (
     (_oe(_os(:h), _os(:a), _os(:b), _os(:c)), "h(a,b,c)"),
     (_oe(_os(:f), _oe(_os(:f), _oe(_os(:f), _og(-0.0)))), "f(f(f(-0.0)))"),
     (_oe(_os(:f), _oe(_os(:f), _oe(_os(:f), _og(0.0)))), "f(f(f(0.0)))"),
-    (_oe(_os(:f), _og("a")), "f(\"a\")"), (_oe(_os(:f), _os(:a), _og(2.5)), "f(a,2.5)")
+    (_oe(_os(:f), _og("a")), "f(\"a\")"), (_oe(_os(:f), _os(:a), _og(2.5)), "f(a,2.5)"),
+    # SWI-7's `[]` is a RESERVED SYMBOL, not the atom '[]' (pl-ressymbol.c): it sorts before every
+    # atom, '' included, and after strings; a list cell is '[|]'/2, whose name is a text atom
+    (mk_nil(_OT), "[]"), (_os(Symbol("[]")), "'[]'"), (_os(Symbol("[|]")), "'[|]'"),
+    (_oe(_os(Symbol("[|]")), _os(:a), mk_nil(_OT)), "[a]"),
+    (_oe(_os(Symbol("[|]")), _os(:a), _os(:b)), "[a|b]"),
+    (_oe(_os(Symbol("[|]")), _os(:a), _os(Symbol("[]"))), "'[|]'(a,'[]')"),
+    (_oe(_os(:f), mk_nil(_OT)), "f([])"), (_oe(_os(:f), _os(Symbol("[]"))), "f('[]')")
 )
 
 function _swipl_compare_matrix(srcs)::Matrix{Int}

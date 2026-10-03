@@ -58,7 +58,7 @@ Test.@with_testset LK_TS begin
         generic = [relpath(f, LK_TEST_DIR) for f in LK_TEST_FILES if lk_term_generic(f)]
         @test "core_lang/test_term_interface.jl" in generic
         @test "core_lang/test_unify.jl" in generic
-        @test length(generic) >= 19
+        @test length(generic) >= 20
         @test length(LK_TERM_IMPLS) >= 3
     end
     for f in LK_TEST_FILES

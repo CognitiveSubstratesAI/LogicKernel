@@ -164,14 +164,8 @@ after `numbervars(T, 0, _, [singletons(true)])` — every variable of a linear t
 function ix_text(t)::String
     k = kind(t)
     k === VAR && return "_"
-    if k === SYM
-        n = String(lk_name(t))
-        return if occursin(r"^[a-z][A-Za-z0-9_]*$", n)
-            n
-        else
-            "'" * replace(n, "'" => "\\'") * "'"
-        end
-    elseif k === GND
+    k === SYM && return lk_atom_text(t)                 # `[]` bare, the text atom '[]' quoted
+    if k === GND
         v = lk_value(t)
         return v isa AbstractFloat ? repr(Float64(v)) : string(v)
     end

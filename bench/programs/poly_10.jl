@@ -14,9 +14,9 @@ const T = DefaultTerm
 _s(n::Symbol) = sym_term(T, n)
 _g(v::Int) = gnd_term(T, v)
 _e(xs::T...) = mk_expr(T, T[xs...])
-_nil() = _s(Symbol("[]"))
+_nil() = mk_nil(T)                                  # SWI-7's [], a reserved symbol
 _cons(h::T, t::T) = _e(_s(Symbol("[|]")), h, t)
-_isnil(t::T) = kind(t) === SYM && sym_name(t) === Symbol("[]")
+_isnil(t::T) = is_nil(t)
 _list(xs::Vector{T}) = foldr(_cons, xs; init=_nil())
 _is(t::T, f::Symbol, n::Int) =
     kind(t) === EXPR && nchildren(t) == n + 1 && kind(child(t, 1)) === SYM &&
