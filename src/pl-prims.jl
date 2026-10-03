@@ -382,9 +382,18 @@ end
 # dereferenced to a compound) is checked against and entered into the cyclic links; upstream links
 # every pair. Upstream's link is one pointer write; here it is an identity-map entry, and linking
 # every pair made `=` 27–38× slower than swipl on 8191-cell trees (measured 2026-10-03, tools/bench.jl:
-# 80% of the samples in the map). Termination is kept: interface terms are finite trees, so a pair
-# can only be met again through a binding, and the second time it is, its link is found. Answers
-# are kept: a pair unified twice instead of once unifies the second time without binding anything.
+# 80% of the samples in the map).
+#   WHY IT IS SAFE: in SWI any compound cell can lie on a cycle — terms live on a mutable heap and a
+#   cell can point back at an ancestor. An interface term cannot: it is an immutable finite tree, so
+#   following children from any compound never returns to it. A cycle can therefore only pass
+#   through a VARIABLE BINDING, and every walk around one reaches its compounds through a binding;
+#   the first time a pair is reached that way it is linked, the second time the link is found — so
+#   unification terminates. Answers are kept: a pair unified twice instead of once unifies the
+#   second time without binding anything.
+#   🔴 THIS DEPENDS ON THE REPRESENTATION. A term type whose compounds can share MUTABLE structure,
+#   or point back at an ancestor, breaks the argument — it must restore linking EVERY pair. Guards:
+#   test_unify.jl's cycle_1/cycle_2, the 398 rational trees of test_unify_swipl.jl, and the mutation
+#   "links not followed", under which cycle_2 does not terminate.
 """
     do_unify(ld, t1, t2) -> boolex_t
 
