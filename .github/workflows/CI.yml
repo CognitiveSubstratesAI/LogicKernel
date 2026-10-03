@@ -125,17 +125,13 @@ jobs:
             *) echo "::error::CI swipl is '$have' but tools/SWIPL_VERSION pins $pin. The PPA moved on: upgrade the local swipl and bump the pin together, or install $pin here. Never bump the pin alone."
                exit 1 ;;
           esac
-      # TEMPORARY PIN (2026-10-03) — LoweredCodeUtils at v3.9.1 (a758cdd), not master.
-      # CONFLICT: JET's compat is LoweredCodeUtils = "3.9" and JuliaInterpreter = "0.11.5"; LoweredCodeUtils
-      # 3.10.0 (master since 2026-10-03 13:22) requires JuliaInterpreter 0.12, so installing both from
-      # master is unsatisfiable (runs 37126154778, 37126345168).
-      # REMOVE IT — back to rev="master" — once JET supports LoweredCodeUtils 3.10, i.e. when
-      #   curl -s https://raw.githubusercontent.com/aviatesk/JET.jl/master/Project.toml | grep LoweredCodeUtils
-      # admits 3.10. Tracked in the workspace's docs/tracking/STATUS.md §2b (H7).
+      # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as
+      # a set. A pin on one of them (2026-10-03, LoweredCodeUtils v3.9.1 while JET lagged) breaks as
+      # soon as the others move on — JET 0.12.3 then REQUIRED LoweredCodeUtils 3.10 (run 37139741792).
       - name: Install the analysis tools into the default environment
         run: |
           julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="a758cddd52ae1e0e1e0aa7909a247b5e1dabcf32"),
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
             PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
             PackageSpec(name="AllocCheck")])'
