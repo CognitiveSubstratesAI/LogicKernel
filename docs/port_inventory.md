@@ -84,3 +84,413 @@ how many of the upstream file's functions are ported.
 | swipl-devel `tests/db/test_jit.pl` | code | `bae881a24a3f` | `test/db/test_jit.jl` | 30 |
 | swipl-devel `tests/rational/test_ieee754.pl` | code | `bae881a24a3f` | `test/rational/test_ieee754.jl` | 2 |
 <!-- END GENERATED -->
+
+## The VM — inventory and port plan (COMPILER_PLAN 3h)
+
+**Status: PROPOSED 2026-10-03, for the user's audit against `pl-vmi.c`, `pl-comp.c` and `pl-wam.c`.
+No instruction is ported before the audit.** The five design decisions this plan depends on are in
+[`architecture.md`](architecture.md) § "The VM — five design decisions". Upstream references are
+swipl-devel `bae881a2` (10.1.16); `c:` is `src/pl-comp.c`, `vmi:` `src/pl-vmi.c`, `wam:` `src/pl-wam.c`.
+
+### What the four bench programs need — measured, not inferred
+
+swipl 10.1.16, default flags (`optimise=false`), each program loaded from `bench/programs/`:
+`vm_list/1` of every predicate the file defines (the instructions the compiler emits), `vm_list/1` of
+each built-in called (its supervisor code), and `vm_list/1` again after running `top/0` (the
+supervisor `S_VIRGIN` installed on the first call).
+
+| program | instructions beyond head/body/call/exit/LCO | supervisors installed | built-ins called |
+|---|---|---|---|
+| `nreverse` | none | `S_TRUSTME`, `S_LIST` — for the bench's calls (first argument always a bound list) **no `S_STATIC`, so no clause choice point**; `S_LIST` falls into `S_STATIC` on an unbound argument (vmi:3605-3608), so `concatenate(A,B,[1])` does create one | **none** |
+| `derive` | `I_CUT`, `I_INTEGER` | `S_TRUSTME`, `S_STATIC` (`d/3` — creates `CHP_CLAUSE` choice points: its clauses with a variable first argument sit in every bucket) | `is/2` (`N1 is N-1`: `N1` occurs in the head, so no `A_ADD_FC`) |
+| `qsort` | `I_CUT` | `S_TRUSTME`, `S_LIST`, `S_STATIC` (`partition/4`) | `(=<)/2` — a call: arithmetic is compiled inline only under `optimise` (c:3474-3482) |
+| `poly_10` | `I_CUT`, `A_ADD_FC` (`M is N-1`, c:3642-3690, not flag-gated) | `S_TRUSTME`, `S_LIST`, `S_STATIC` | `is/2`, `(<)/2` |
+
+Every built-in the programs call is a `PRED_DEF` built-in, and `PRED_DEF` ORs in `PL_FA_VARARGS`
+(`pl-builtin.h:634-635`), so each is the single instruction `I_FCALLDETVA` (`pl-supervisor.c:143-182`).
+Not every system predicate is: the FRG table (`pl-ext.c:96-190`: `true/0`, `fail/0`, `write/1`, …) is not
+VARARGS and gets `I_FCALLDET<N>, I_FEXITDET`, and non-deterministic built-ins get four instructions.
+Built-ins get their foreign supervisor at registration and never pass through `S_VIRGIN` (`pl-ext.c:342`).
+
+### Instruction inventory
+
+All 232 `VMI()` declarations of `pl-vmi.c`, grouped by family. **needed by**: `N` nreverse · `D` derive ·
+`Q` qsort · `P` poly_10, from the measurement above (instructions in the programs' own code, plus the
+supervisors installed and the built-ins' supervisor code). **kernel**: `declared` = a `# PORT: pl-vmi.c`
+marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes yet).
+<!-- BEGIN GENERATED VM inventory — sources: pl-vmi.c VMI() lines, src/pl-vmi.jl PORT markers, swipl vm_list of bench/programs (see above). Produced for the audit by a script; it moves into tools/port_check.jl --write-inventory with the generator. -->
+| family | count | first-needed (N nreverse · D derive · Q qsort · P poly_10) |
+|---|---|---|
+| head | 18 | `H_ATOM` P, `H_SMALLINT` DP, `H_NIL` NQP, `H_VOID` NDQP, `H_VOID_N` DQP, `H_VAR` NDQP, `H_FIRSTVAR` NDQP, `H_FUNCTOR` DP, `H_RFUNCTOR` D, `H_LIST` NQP, `H_POP` NDQP, `H_LIST_FF` NQP |
+| body | 36 | `B_ATOM` DP, `B_SMALLINT` NDQP, `B_NIL` NQP, `B_ARGVAR` NDQP, `B_VAR0` P, `B_VAR1` NDQP, `B_VAR2` QP, `B_VAR` NDQP, `B_FIRSTVAR` NQP, `B_VOID` NDQP, `B_FUNCTOR` DP, `B_RFUNCTOR` D, `B_LIST` NQP, `B_RLIST` NQP, `B_POP` NDQP |
+| call/exit/control | 28 | `I_ENTER` NDQP, `I_CALL` NDQP, `I_DEPART` NDQP, `I_EXIT` NDQP, `I_EXITFACT` NDQP, `L_NOLCO` NDQP, `L_VAR` NDQP, `I_LCALL` NDQP, `I_TCALL` NDQP |
+| choice point | 28 | `I_CUT` DQP |
+| arithmetic | 27 | `A_ADD_FC` P |
+| exception | 5 | — |
+| foreign (built-ins) | 28 | `I_FCALLDETVA` DQP |
+| supervisor | 15 | `S_VIRGIN` NDQP, `S_STATIC` DQP, `S_TRUSTME` NDQP, `S_LIST` NQP |
+| type test | 11 | `I_INTEGER` D |
+| continuation | 5 | — |
+| tabling | 30 | — |
+| debugger | 1 | — |
+| **total** | **232** | **44 used by the four programs** |
+
+<details><summary><b>head</b> (18)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `H_ATOM` | 460 | CA1_DATA | P | declared |
+| `H_SMALLINT` | 479 | CA1_INTEGER | DP |  |
+| `H_SMALLINTW` | 487 | CA1_WORD |  |  |
+| `H_NIL` | 528 | — | NQP |  |
+| `H_FLOAT` | 556 | CA1_FLOAT |  |  |
+| `H_MPZ` | 603 | CA1_MPZ |  |  |
+| `H_MPQ` | 609 | CA1_MPQ |  |  |
+| `H_STRING` | 615 | CA1_STRING |  |  |
+| `H_VOID` | 652 | — | NDQP | declared |
+| `H_VOID_N` | 659 | CA1_INTEGER | DQP | declared |
+| `H_VAR` | 675 | CA1_VAR | NDQP | declared |
+| `H_FIRSTVAR` | 750 | CA1_FVAR | NDQP | declared |
+| `H_FUNCTOR` | 776 | CA1_FUNC | DP | declared |
+| `H_RFUNCTOR` | 782 | CA1_FUNC | D | declared |
+| `H_LIST` | 820 | — | NQP |  |
+| `H_RLIST` | 828 | — |  |  |
+| `H_POP` | 872 | — | NDQP | declared |
+| `H_LIST_FF` | 890 | CA1_FVAR,CA1_FVAR | NQP |  |
+
+</details>
+
+<details><summary><b>body</b> (36)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `B_ATOM` | 947 | CA1_DATA | DP |  |
+| `B_SMALLINT` | 955 | CA1_INTEGER | NDQP |  |
+| `B_SMALLINTW` | 962 | CA1_WORD |  |  |
+| `B_NIL` | 975 | — | NQP |  |
+| `B_FLOAT` | 987 | CA1_FLOAT |  |  |
+| `B_MPZ` | 1011 | CA1_MPZ |  |  |
+| `B_MPQ` | 1017 | CA1_MPQ |  |  |
+| `B_STRING` | 1023 | CA1_STRING |  |  |
+| `B_ARGVAR` | 1045 | CA1_VAR | NDQP |  |
+| `B_VAR0` | 1089 | — | P |  |
+| `B_VAR1` | 1094 | — | NDQP |  |
+| `B_VAR2` | 1099 | — | QP |  |
+| `B_VAR` | 1104 | CA1_VAR | NDQP |  |
+| `B_UNIFY_FIRSTVAR` | 1146 | CA1_FVAR |  |  |
+| `B_UNIFY_VAR` | 1154 | CA1_VAR |  |  |
+| `B_UNIFY_EXIT` | 1182 | — |  |  |
+| `B_UNIFY_FF` | 1202 | CA1_FVAR,CA1_FVAR |  |  |
+| `B_UNIFY_VF` | 1236 | CA1_FVAR,CA1_VAR |  |  |
+| `B_UNIFY_FV` | 1243 | CA1_FVAR,CA1_VAR |  |  |
+| `B_UNIFY_VV` | 1266 | CA1_VAR,CA1_VAR |  |  |
+| `B_UNIFY_FC` | 1315 | CA1_FVAR, CA1_DATA |  |  |
+| `B_UNIFY_VC` | 1338 | CA1_VAR, CA1_DATA |  |  |
+| `B_EQ_VV` | 1374 | CA1_VAR,CA1_VAR |  |  |
+| `B_EQ_VC` | 1416 | CA1_VAR,CA1_DATA |  |  |
+| `B_NEQ_VV` | 1447 | CA1_VAR,CA1_VAR |  |  |
+| `B_NEQ_VC` | 1492 | CA1_VAR,CA1_DATA |  |  |
+| `B_ARG_CF` | 1524 | CA1_INTEGER,CA1_VAR,CA1_FVAR |  |  |
+| `B_ARG_VF` | 1567 | CA1_VAR,CA1_VAR,CA1_FVAR |  |  |
+| `B_ARGFIRSTVAR` | 1599 | CA1_FVAR |  |  |
+| `B_FIRSTVAR` | 1614 | CA1_FVAR | NQP |  |
+| `B_VOID` | 1635 | — | NDQP |  |
+| `B_FUNCTOR` | 1651 | CA1_FUNC | DP |  |
+| `B_RFUNCTOR` | 1658 | CA1_FUNC | D |  |
+| `B_LIST` | 1681 | — | NQP |  |
+| `B_RLIST` | 1688 | — | NQP |  |
+| `B_POP` | 1706 | — | NDQP |  |
+
+</details>
+
+<details><summary><b>call/exit/control</b> (28)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `I_NOP` | 443 | — |  | declared |
+| `I_ENTER` | 1782 | — | NDQP | declared |
+| `I_CONTEXT` | 1817 | CA1_MODULE |  |  |
+| `I_CALL` | 1841 | CA1_LPROC | NDQP |  |
+| `I_DEPART` | 2036 | CA1_LPROC | NDQP |  |
+| `I_DEPARTATM` | 2087 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
+| `I_DEPARTM` | 2095 | CA1_MODULE, CA1_PROC |  |  |
+| `I_EXIT` | 2146 | — | NDQP |  |
+| `I_EXITFACT` | 2222 | — | NDQP | declared |
+| `I_EXITQUERY` | 2288 | — |  |  |
+| `I_YIELD` | 2338 | — |  |  |
+| `L_NOLCO` | 2395 | CA1_JUMP | NDQP |  |
+| `L_VAR` | 2415 | CA1_FVAR,CA1_VAR | NDQP |  |
+| `L_VOID` | 2432 | CA1_FVAR |  |  |
+| `L_ATOM` | 2440 | CA1_FVAR,CA1_DATA |  |  |
+| `L_NIL` | 2449 | CA1_FVAR |  |  |
+| `L_SMALLINT` | 2457 | CA1_FVAR,CA1_INTEGER |  |  |
+| `L_SMALLINTW` | 2465 | CA1_FVAR,CA1_WORD |  |  |
+| `I_LCALL` | 2492 | CA1_LPROC | NDQP |  |
+| `I_TCALL` | 2532 | — | NDQP |  |
+| `I_FAIL` | 3071 | — |  |  |
+| `I_TRUE` | 3091 | — |  |  |
+| `I_CALLATM` | 5248 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
+| `I_DEPARTATMV` | 5254 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
+| `I_CALLATMV` | 5287 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
+| `I_CALLM` | 5321 | CA1_MODULE, CA1_PROC |  |  |
+| `I_CALL1` | 5343 | — |  |  |
+| `I_CALLN` | 5590 | CA1_INTEGER |  |  |
+
+</details>
+
+<details><summary><b>choice point</b> (28)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `I_CHP` | 1732 | — |  | declared |
+| `I_SSU_CHOICE` | 1739 | — |  |  |
+| `I_SSU_COMMIT` | 1747 | — |  |  |
+| `I_DET` | 2559 | — |  |  |
+| `I_CUT` | 2572 | — | DQP |  |
+| `C_JMP` | 2607 | CA1_JUMP |  |  |
+| `C_OR` | 2621 | CA1_JUMP |  |  |
+| `C_SOFTIFTHEN` | 2654 | CA1_CHP |  |  |
+| `C_IFTHEN` | 2660 | CA1_CHP |  |  |
+| `C_DET` | 2672 | CA1_CHP,CA1_JUMP |  |  |
+| `C_DETTRUE` | 2678 | CA1_CHP |  |  |
+| `C_DETFALSE` | 2701 | — |  |  |
+| `C_NOT` | 2720 | CA1_CHP,CA1_JUMP |  |  |
+| `C_IFTHENELSE` | 2727 | CA1_CHP,CA1_JUMP |  |  |
+| `C_FASTCOND` | 2734 | CA1_CHP,CA1_JUMP |  |  |
+| `C_FASTCUT` | 2755 | CA1_CHP |  |  |
+| `C_VAR` | 2773 | CA1_FVAR |  |  |
+| `C_VAR_N` | 2781 | CA1_FVAR,CA1_INTEGER |  |  |
+| `C_LSCUT` | 2816 | CA1_CHP |  |  |
+| `C_LCUT` | 2828 | CA1_CHP |  |  |
+| `I_CUTCHP` | 2852 | — |  |  |
+| `C_SCUT` | 2879 | — |  |  |
+| `C_LCUTIFTHEN` | 2884 | CA1_CHP |  |  |
+| `C_CUT` | 2909 | CA1_CHP |  |  |
+| `C_SOFTIF` | 2990 | CA1_CHP,CA1_JUMP |  |  |
+| `C_SOFTCUT` | 3011 | CA1_CHP |  |  |
+| `C_END` | 3050 | — |  |  |
+| `C_FAIL` | 3060 | — |  |  |
+
+</details>
+
+<details><summary><b>arithmetic</b> (27)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `A_ENTER` | 3711 | — |  |  |
+| `A_INTEGER` | 3723 | CA1_INTEGER |  |  |
+| `A_INTEGERW` | 3732 | CA1_WORD |  |  |
+| `A_MPZ` | 3752 | CA1_MPZ |  |  |
+| `A_MPQ` | 3768 | CA1_MPQ |  |  |
+| `A_DOUBLE` | 3785 | CA1_FLOAT |  |  |
+| `A_VAR` | 3801 | CA1_VAR |  |  |
+| `A_VAR0` | 3859 | — |  |  |
+| `A_VAR1` | 3864 | — |  |  |
+| `A_VAR2` | 3869 | — |  |  |
+| `A_FUNC0` | 3886 | CA1_AFUNC |  |  |
+| `A_FUNC1` | 3891 | CA1_AFUNC |  |  |
+| `A_FUNC2` | 3896 | CA1_AFUNC |  |  |
+| `A_FUNC` | 3901 | CA1_AFUNC, CA1_INTEGER |  |  |
+| `A_ROUNDTOWARDS_A` | 3919 | CA1_INTEGER |  |  |
+| `A_ROUNDTOWARDS_V` | 3932 | CA1_VAR |  |  |
+| `A_ADD` | 3956 | — |  |  |
+| `A_MUL` | 3979 | — |  |  |
+| `A_ADD_FC` | 4004 | CA1_FVAR, CA1_VAR, CA1_INTEGER | P |  |
+| `A_LT` | 4121 | — |  |  |
+| `A_LE` | 4135 | — |  |  |
+| `A_GT` | 4140 | — |  |  |
+| `A_GE` | 4145 | — |  |  |
+| `A_EQ` | 4150 | — |  |  |
+| `A_NE` | 4155 | — |  |  |
+| `A_IS` | 4175 | — |  |  |
+| `A_FIRSTVAR_IS` | 4266 | CA1_FVAR |  |  |
+
+</details>
+
+<details><summary><b>exception</b> (5)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `I_CALLCLEANUP` | 4735 | — |  |  |
+| `I_EXITCLEANUP` | 4760 | — |  |  |
+| `I_CATCH` | 4805 | — |  |  |
+| `I_EXITCATCH` | 4825 | — |  |  |
+| `B_THROW` | 4867 | — |  |  |
+
+</details>
+
+<details><summary><b>foreign (built-ins)</b> (28)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `I_FCALLDETVA` | 4316 | CA1_FOREIGN | DQP |  |
+| `I_FCALLDET0` | 4338 | CA1_FOREIGN |  |  |
+| `I_FCALLDET1` | 4356 | CA1_FOREIGN |  |  |
+| `I_FCALLDET2` | 4362 | CA1_FOREIGN |  |  |
+| `I_FCALLDET3` | 4368 | CA1_FOREIGN |  |  |
+| `I_FCALLDET4` | 4374 | CA1_FOREIGN |  |  |
+| `I_FCALLDET5` | 4380 | CA1_FOREIGN |  |  |
+| `I_FCALLDET6` | 4386 | CA1_FOREIGN |  |  |
+| `I_FCALLDET7` | 4392 | CA1_FOREIGN |  |  |
+| `I_FCALLDET8` | 4398 | CA1_FOREIGN |  |  |
+| `I_FCALLDET9` | 4404 | CA1_FOREIGN |  |  |
+| `I_FCALLDET10` | 4410 | CA1_FOREIGN |  |  |
+| `I_FEXITDET` | 4416 | — |  |  |
+| `I_FOPENNDET` | 4459 | — |  |  |
+| `I_FCALLNDETVA` | 4518 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET0` | 4528 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET1` | 4541 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET2` | 4547 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET3` | 4553 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET4` | 4559 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET5` | 4565 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET6` | 4571 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET7` | 4577 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET8` | 4583 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET9` | 4589 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET10` | 4595 | CA1_FOREIGN |  |  |
+| `I_FEXITNDET` | 4601 | — |  |  |
+| `I_FREDO` | 4676 | — |  |  |
+
+</details>
+
+<details><summary><b>supervisor</b> (15)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `S_VIRGIN` | 3244 | — | NDQP |  |
+| `S_UNDEF` | 3286 | — |  |  |
+| `S_STATIC` | 3353 | — | DQP |  |
+| `S_DYNAMIC` | 3403 | — |  |  |
+| `S_THREAD_LOCAL` | 3416 | — |  |  |
+| `S_INCR_DYNAMIC` | 3439 | — |  |  |
+| `S_WRAP` | 3514 | — |  |  |
+| `S_MULTIFILE` | 3540 | — |  |  |
+| `S_TRUSTME` | 3554 | CA1_CLAUSEREF | NDQP |  |
+| `S_CALLWRAPPER` | 3578 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  |  |
+| `S_LIST` | 3594 | CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF | NQP |  |
+| `S_MQUAL` | 3626 | CA1_VAR |  |  |
+| `S_LMQUAL` | 3641 | CA1_VAR |  |  |
+| `S_SSU_DET` | 3657 | — |  |  |
+| `S_DET` | 3663 | — |  |  |
+
+</details>
+
+<details><summary><b>type test</b> (11)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `I_VAR` | 3111 | CA1_VAR |  |  |
+| `I_NONVAR` | 3146 | CA1_VAR |  |  |
+| `I_INTEGER` | 3184 | CA1_VAR | D |  |
+| `I_RATIONAL` | 3189 | CA1_VAR |  |  |
+| `I_FLOAT` | 3194 | CA1_VAR |  |  |
+| `I_NUMBER` | 3199 | CA1_VAR |  |  |
+| `I_ATOMIC` | 3204 | CA1_VAR |  |  |
+| `I_ATOM` | 3209 | CA1_VAR |  |  |
+| `I_STRING` | 3214 | CA1_VAR |  |  |
+| `I_COMPOUND` | 3219 | CA1_VAR |  |  |
+| `I_CALLABLE` | 3224 | CA1_VAR |  |  |
+
+</details>
+
+<details><summary><b>continuation</b> (5)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `I_RESET` | 5655 | — |  |  |
+| `I_EXITRESET` | 5670 | — |  |  |
+| `I_CALLCONT` | 5693 | CA1_VAR |  |  |
+| `I_SHIFT` | 5728 | CA1_VAR |  |  |
+| `I_SHIFTCP` | 5762 | CA1_VAR |  |  |
+
+</details>
+
+<details><summary><b>tabling</b> (30)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `S_TRIE_GEN` | 5785 | — |  |  |
+| `T_TRIE_GEN2` | 5919 | — |  |  |
+| `T_TRIE_GEN3` | 5951 | — |  |  |
+| `T_VALUE` | 5985 | — |  |  |
+| `T_DELAY` | 6010 | CA1_TRIE_NODE |  |  |
+| `T_TRY_FUNCTOR` | 6034 | CA1_JUMP,CA1_FUNC |  |  |
+| `T_FUNCTOR` | 6039 | CA1_FUNC |  |  |
+| `T_POP` | 6096 | — |  |  |
+| `T_POPN` | 6108 | CA1_INTEGER |  |  |
+| `T_TRY_VAR` | 6130 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_VAR` | 6135 | CA1_INTEGER |  |  |
+| `T_TRY_ATTVARA` | 6182 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_ATTVARA` | 6187 | CA1_INTEGER |  |  |
+| `T_TRY_ATTVARZ` | 6277 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_ATTVARZ` | 6282 | CA1_INTEGER |  |  |
+| `T_TRY_ATTVARZT` | 6288 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_ATTVARZT` | 6293 | CA1_INTEGER |  |  |
+| `T_TRY_FLOAT` | 6299 | CA1_JUMP,CA1_FLOAT |  |  |
+| `T_FLOAT` | 6304 | CA1_FLOAT |  |  |
+| `T_TRY_MPZ` | 6347 | CA1_JUMP,CA1_MPZ |  |  |
+| `T_MPZ` | 6352 | CA1_MPZ |  |  |
+| `T_TRY_STRING` | 6358 | CA1_JUMP,CA1_STRING |  |  |
+| `T_STRING` | 6363 | CA1_STRING |  |  |
+| `T_TRY_ATOM` | 6390 | CA1_JUMP,CA1_DATA |  |  |
+| `T_ATOM` | 6396 | CA1_DATA |  |  |
+| `T_TRY_SMALLINT` | 6404 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_SMALLINT` | 6410 | CA1_INTEGER |  |  |
+| `T_TRY_SMALLINTW` | 6417 | CA1_JUMP,CA1_WORD |  |  |
+| `T_SMALLINTW` | 6423 | CA1_WORD |  |  |
+| `T_CHECKWAKEUP` | 6452 | — |  |  |
+
+</details>
+
+<details><summary><b>debugger</b> (1)</summary>
+
+| instruction | pl-vmi.c | operands | needed by | kernel |
+|---|---|---|---|---|
+| `D_BREAK` | 280 | — |  |  |
+
+</details>
+
+<!-- END GENERATED VM inventory -->
+
+### A defect found by this read — already in the kernel
+
+`analyse_variables!` (`src/pl-comp.jl:300-305`) gives every kept variable `offset = index`. Upstream
+(c:1354-1361) **compacts the frame past voids**: `offset = n + argvars - body_voids`, counting in variable
+order. swipl compiles `p(f(_A,B,B))` to `h_functor(f/3) h_void h_firstvar(1) h_var(1) h_pop`; the kernel
+puts `B` in slot 2 (`analyseVariables2!` numbers `_A` 1 and `B` 2). It is silent today:
+`decompileHead!` uses the stored head term, and `test/compile/test_head_code_swipl.jl` compares instruction
+names and `H_VOID_N` counts only (its lines 9-10). The fix must also iterate in variable order (the port
+walks a `Dict`). It is the first item of V1, pinned failing first.
+
+### Dependency-ordered port plan
+
+The order follows the dependencies the read found, so it **changes COMPILER_PLAN's 3i–3m**:
+- head and body instructions run INSIDE frames (`ARGP` is a frame slot, vmi:1783), so the machine
+  state and the run loop come BEFORE head/body execution, not after;
+- `PL_open_query` and `I_EXITQUERY` need foreign frames and term references, so those come with the
+  machine state;
+- the built-in interface (decision 5) comes before arithmetic, which is built on it;
+- control constructs (3l) appear in no bench program, so they move after the milestones.
+
+Every step also runs the standing gates: the full suite, `tools/port_check.jl`, JET zero dispatch, Aqua,
+AllocCheck on the entries named, no `Any`, and `tools/bench.jl`.
+
+| step | what (upstream functions) | gate |
+|---|---|---|
+| **V1** compiler groundwork | **fix the slot defect above**; `analyse_variables`/`analyseVariables2` in full — body, `control`, `;`/`\+` branch counts (`times = max`), `argvars`, `body_voids`, `prolog_vars`/`variables` (c:889-1375); literal operands (decision 2) — and the `H_FUNCTOR`/`B_FUNCTOR` operands, which are hashes today (`src/pl-comp.jl:382`) where `B_FUNCTOR` must construct the head symbol; procedure operands for `I_CALL`/`I_DEPART`/`I_LCALL` (`lookupBodyProcedure`, c:3376); `Output_2`/`Output_3`/`Output_n` (c:1407-1414); the `compileInfo` and `clause` fields upstream has (`variables`, `prolog_vars`, `code_size`, `procedure`, `islocal`, …); Q1–Q2 as decided | `test_head_code_swipl.jl` compares OPERANDS too (slots, `H_VOID_N` counts) — it must FAIL on `p(f(_A,B,B))` before the fix (pinned), pass after; mutation-proved |
+| **V2** body compiler for nreverse | `compileClause` rule path (`I_ENTER`, `I_EXIT`; c:2108-2175), `compileBody` for `,` (c:2466-2477), `compileSubClause` for plain goals (c:3422-3632 without the inline cases), `compileArgument` body side (c:3010-3150, 3189-3301), `compileListFF`/`isFirstVarP` (c:3315-3328, 1694), `lco` + `reverse_code` (c:3703-3812) | NEW `test/compile/test_body_code_swipl.jl`: whole-clause code — names, operands, labels — identical to swipl's `vm_list` for `nreverse` and `qsort` and a random corpus of rule clauses without control constructs or inline built-ins; `derive` joins in V6 (it needs `compileBodyTypeTest`, c:4663, for `I_INTEGER`) and `poly_10` in V8 (`A_ADD_FC`); mutation-proved (drop the LCO block; swap `B_ARGVAR`/`B_ARGFIRSTVAR`) |
+| **V3** machine state (decisions 2, 3) | the local stack — slots, frames, choice points, FliFrames and query frames in ONE position space; `localFrame`/`choice` (pl-incl.h:1770-1836), `queryFrame` (pl-incl.h:1882-1917); `newChoice` (wam:2850); `Mark`/`DiscardMark`/`Undo` over it; `copyFrameArguments` (wam:2410); the argument stack; FliFrames (`PL_open_foreign_frame`, `PL_close_foreign_frame`, `PL_rewind_foreign_frame`, wam:323-440), `PL_new_term_ref(s)`, `PL_put_term` — `PL_open_query` takes `term_t` arguments and asserts an open foreign frame (wam:2883, 2904), and `I_EXITQUERY` opens one per answer (vmi:2319); `growLocalSpace` as the only allocating path; `initVM`'s top clause (`I_EXITQUERY`, wam:3790) | unit tests of the stack discipline: an exit pops to `FR`, LCO reuses the frame, the `CHP_CLAUSE` choice point moves, EVERY lowering of `lTop` drops the records above it (`I_CUT`, backtracking, `restore_after_query`); AllocCheck on `newChoice` and frame push/pop |
+| **V4a** run loop + query API, facts | `PL_open_query`/`PL_next_solution`/`PL_cut_query`/`PL_close_query`/`PL_exception` (wam:2882-3258); `PL_next_solution`'s labels `CLAUSE_FAILED`/`BODY_FAILED`/`FRAME_FAILED` (wam:2465-2467) and backtracking for `CHP_CLAUSE`/`CHP_TOP` (vmi:6467-6824); `S_VIRGIN` → `createSupervisor`/`setDefaultSupervisor` (pl-supervisor.c:447-510) → `S_TRUSTME`, `S_LIST`, `S_STATIC`, and `S_DYNAMIC` (vmi:3403: `enterDefinition`, then `S_STATIC`; `leaveDefinition` at exit — mapped onto the predicate references the clause database already keeps); every `H_*` the programs use, read AND write mode; `I_EXITFACT`, `I_EXITQUERY` | queries over random fact databases (the index differential's generator — it produces no undefined predicate; `S_UNDEF` waits for V5's exceptions): answers in order AND determinism (`PL_S_LAST` under `PL_Q_EXT_STATUS`) identical to swipl; advancing, cutting or closing a query that is not the innermost returns `PL_S_NOT_INNER` (opening one is allowed); cut keeps bindings, close undoes them; AllocCheck on the supervisor and exit paths |
+| **V4b** rules → **MILESTONE `nreverse`** | `I_ENTER`, `I_CALL`, `I_DEPART` (with LCO), `I_EXIT`, every `B_*` the programs use, `L_NOLCO`, `L_VAR` (and `L_VOID`/`L_ATOM`/`L_NIL`/`L_SMALLINT`), `I_TCALL`, `I_LCALL` (vmi:1782-2557) | `nreverse` answer identical to swipl; **memory flatness**: (a) `concatenate/3` on lists of 10³, 10⁴, 10⁵ elements reaches the SAME local-stack high-water mark (LCO), (b) 10⁴ open/next/close cycles of `nreverse`, driven from Julia (`fail` and a generator are not ported yet), return trail, binding store and stacks to their baseline every cycle; AllocCheck on `I_CALL`/`I_DEPART`/`I_EXIT`; `bench.jl` `nreverse` vs swipl (3 runs, then a profile) |
+| **V5** built-in interface (decision 5) | `term_t` and the FLI subset built-ins use (`PL_get_*`, `PL_put_*`, `PL_unify_*`; pl-fli.c), `PRED_IMPL`/`PRED_DEF` tables and `registerBuiltins` (pl-ext.c:302-563), `createForeignSupervisor`, `I_FCALLDETVA`/`I_FCALLDET0..10`/`I_FEXITDET`, `vmi_fopen` (wam:548-593); the minimal exception path to the query boundary (`PL_raise_exception`, `B_THROW` → `b_throw` → no catcher → `b_throw_resume` → `PL_S_EXCEPTION`); `S_UNDEF` + `existence_error`; the stack limit as upstream's `resource_error` (vmi:1886-1890) | the ALREADY-PORTED predicates registered as upstream registers them — pl-prims.c's table (pl-prims.c:6570-6623: `=`, `\=`, `unify_with_occurs_check/2`, `==`, `compare/3`, `?=`, `unifiable/3`) and `=@=` from pl-variant.c:544; their SWI test assertions called one goal at a time through `PL_open_query` (the `.pl` test clauses need `->`, `;`, `!` and the inline `=`/`==`, which arrive in V9); error terms identical to swipl's (`is/2`-style `error(type_error(…), context(…))`, unknown procedure) |
+| **V6** arithmetic (3i) + cut → **MILESTONE `derive`** | pl-arith.c `is/2`, `</2`, `=</2`, `>/2`, `>=/2`, `=:=/2`, `=\=/2`, `valueExpression`/`evalExpression`/`ar_compare`/`cmpNumbers`, `ar_add`/`ar_minus`/`ar_mul` and what the programs reach — integer overflow to `BigInt` BY DESIGN; `I_INTEGER` and the type-test family (vmi:3111-3227) with `compileBodyTypeTest` (c:4663); `I_CUT` + `discardChoicesAfter` (vmi:2572; wam:2604-2685) | SWI's own `tests/core_lang/test_arith.pl` assertions for the ported functions; a live `is/2` differential on random expressions; body-code differential now includes `derive`; `derive` identical to swipl — its `d/3` is the first `S_STATIC` with a live `CHP_CLAUSE` choice point and shallow backtracking (clauses with a variable first argument sit in every bucket); `bench.jl` |
+| **V7** **MILESTONE `qsort`** | nothing new expected — `(=<)/2` arrives in V6 | `qsort` identical to swipl; flatness and `bench.jl` as V4b |
+| **V8** **MILESTONE `poly_10`** | `compileSimpleAddition` + `is_portable_smallint` (c:3642-3690, 255-266), `A_ADD_FC` (vmi:4004-4083) | body-code differential now includes `poly_10`; `poly_10` identical to swipl; `bench.jl` |
+| **V9** after the milestones | `I_TRUE`/`I_FAIL`, control constructs `C_*` (3l), `catch/3` and the meta-call `I_CALL1`/`I_CALLN`, the inline `B_UNIFY_*`/`B_EQ_*`/`B_ARG_*` (`O_COMPILE_IS` is on by default, pl-incl.h:235, so upstream compiles `=` and `==` inline and merges a leading `X = …` into the head), NON-deterministic built-ins (`I_FOPENNDET`/`I_FCALLNDET*`/`I_FEXITNDET`/`I_FREDO`) — `clause/2` (pl-comp.c:7450) and `retract/1` (pl-proc.c:3109) move onto the VM as the non-deterministic `PRED_IMPL`s they are upstream, with `decompile` (c:5876-7104) replacing the interim `decompileHead!` copy; then 3n (tries) and 3o (continuations, tabling) | each with its SWI test units and a live differential, as above |
+
+**Not ported** (no consumer, or not part of the kernel): the debugger (`D_BREAK`, `CHP_DEBUG`, trace ports),
+modules (`I_CONTEXT`, `I_CALLM`/`I_DEPARTM`/`I_CALLATM*`, `S_MQUAL`/`S_LMQUAL`), threads (`S_THREAD_LOCAL`),
+engines (`I_YIELD`), wrappers (`S_WRAP`, `S_CALLWRAPPER`), SSU `=>` (`I_SSU_*`, `S_SSU_DET`; `I_CHP` is
+declared, for reading code only), compiled arithmetic under `optimise` (`A_*` but `A_ADD_FC`), GC, stack
+shifting, signals, profiling. Tabling's `T_*`/`S_TRIE_GEN` wait for 3o.

@@ -170,6 +170,237 @@ graph TD
    points, no trail) govern Core, not the kernel's internals.
 7. **Standalone.** No dependency on any CognitiveSubstratesAI package.
 
+## The VM — five design decisions (PROPOSED 2026-10-03, awaiting the user's audit)
+
+Invariant 6 decided the model: SWI's frames, choice points and trail inside the kernel, upstream's
+query API at the boundary. These five decisions say HOW, and they are settled before any instruction is
+ported (COMPILER_PLAN 3h). The inventory, the measurement and the step plan (V1–V9) are in
+[`port_inventory.md`](port_inventory.md) § "The VM". Each decision cites upstream at `bae881a2`:
+`wam:` = `src/pl-wam.c`, `vmi:` = `src/pl-vmi.c`, `c:` = `src/pl-comp.c`, `incl:` = `src/pl-incl.h`.
+
+### Decision 1 — the boundary is upstream's query API, nested queries included
+
+* **Ported as is, under upstream's names:** `PL_open_query`, `PL_next_solution`, `PL_cut_query`,
+  `PL_close_query`, `PL_exception` (wam:2882-3258).
+* **Query setup, as upstream:**
+  * a `queryFrame` with a dummy `top_frame`;
+  * the real frame, whose return address is the one-instruction clause `I_EXITQUERY` built at start-up
+    (`initVM`, wam:3790);
+  * an embedded `CHP_TOP` choice point holding the query's `Mark`.
+* **Flags kept:** `PL_Q_NORMAL`, `PL_Q_NODEBUG`, `PL_Q_CATCH_EXCEPTION`, `PL_Q_PASS_EXCEPTION`,
+  `PL_Q_EXT_STATUS`. **Not ported:** the yield, halt and thread-exit flags.
+* **Return protocol, upstream's integers:** `TRUE`, `FALSE`, `PL_S_LAST` (a deterministic last answer
+  under `EXT_STATUS`), `PL_S_EXCEPTION`, `PL_S_NOT_INNER`.
+* **`qid_t`:** the position of the query frame on the local stack, checked by a magic field as upstream
+  checks it. Upstream mallocs a `{engine, offset}`; this kernel has one engine.
+* **Answers:** an answer is read from the bindings while it is current. Two rules carry over:
+  * calling `PL_next_solution` again after a deterministic last answer undoes it (wam:3653-3659);
+  * `PL_cut_query` keeps the bindings and `PL_close_query` undoes them — unless the query ended in an
+    exception it passes on (`qf->exception && PL_Q_PASS_EXCEPTION`, wam:3159). That is the only
+    difference between the two.
+* **Nested queries, upstream's rules:**
+  * queries form a stack (`LD->query`, `qf->parent`);
+  * only the innermost query may be advanced, cut or closed — anything else returns `PL_S_NOT_INNER`
+    (wam:3110, 3144, 3650);
+  * a query opens only inside an open foreign frame (asserted, wam:2904-2905), which the CALLER provides —
+    a built-in runs inside its own (`vmi_fopen`), and `callCleanupHandler` opens one (wam:834, 879). A
+    built-in that calls back into Prolog does what `call1`/`call_term` do (wam:737-806): open a query with
+    `PL_Q_PASS_EXCEPTION` or `PL_Q_CATCH_EXCEPTION`, take one solution, cut it.
+* **Exceptions crossing Julia (DIVERGES — the only one in this decision):** upstream's `PL_throw` longjmps
+  to a `setjmp` in `PL_next_solution` (wam:3551-3580).
+  * Here, built-ins raise the way most upstream built-ins already do: `PL_raise_exception` plus a `FALSE`
+    return.
+  * `PL_next_solution` holds the one `try`/`catch` — the `setjmp`'s place. It turns the kernel's own
+    `PL_throw` exception type into the `b_throw` path.
+  * Any other Julia exception (a bug, an interrupt) restores the query to closed and is rethrown, never
+    swallowed.
+  * The ball must survive `Undo`. Upstream freezes the global stack under it (`freezeGlobal`,
+    pl-fli.c:4757; `frozen_bar`, wam:1569). Here the ball is resolved through the bindings when it is
+    raised (`resolve_term`), so it no longer depends on the binding store.
+* **`# ORIGINAL` conveniences on top, nothing more:**
+  * a sink — `f(ld)` is called for each answer while its bindings are live; returning `false` cuts the
+    query;
+  * a do-block iterator that yields RESOLVED answers (`resolve_term`) and closes the query however the
+    block exits. A plain Julia iterator cannot know when it is abandoned.
+* **The existing sink-based `retract/1`, `retractall/1` and `clause/2`** stay as they are until V9. There
+  they become what they are upstream: non-deterministic foreign predicates.
+
+### Decision 2 — the data model: immutable terms, a binding store, and mutable frame slots
+
+SWI builds terms cell by cell on a mutable global stack. A variable is a cell, and a binding is a write
+to that cell (trailed when the cell is older than the newest choice point). The kernel has:
+
+* **immutable terms** (the interface; `mk_expr` takes a finished children vector);
+* **variables as keys**, bound in `LD.bindings` and recorded on the trail — every binding trailed, as
+  today;
+* **mutable frame slots:** the local stack's cells, each holding a term.
+
+Writing a slot is not a binding, and upstream does not trail it either (vmi:741-747, 1607-1628).
+
+| instruction family | upstream (cells) | kernel |
+|---|---|---|
+| frame slots (arguments = slots `0..arity-1`, then clause variables) | words after the frame header, `argFrameP`/`varFrameP` (incl:1192-1202) | positions on the local stack: `slots::Vector{T}`, each a term (an unbound variable is a `VAR` term) |
+| head, READ mode (`H_ATOM`, `H_SMALLINT`, `H_NIL`, `H_FUNCTOR`, `H_LIST`, …) | `deRef(ARGP)`, compare the cell; descend with `ARGP = argTermP` | `deRef` through the store; compare by IDENTITY (`sym_key`, `gnd_equal`, head + arity); descend with a cursor `(term, child index)` |
+| head, WRITE mode (the caller's argument is unbound) | allocate `f(_,…,_)` on the global stack, bind the argument to it (trailed), then later `H_*` fill the cells in place, untrailed (vmi:782-812). `H_VAR` in write mode COPIES only under `occurs_check=false`; otherwise it unifies the slot with the cell, against the argument ALREADY bound to the partial term (vmi:680-736) | **under `occurs_check=false`, a builder:** later `H_*`/`B_*` write children into a scratch frame, and the closing `H_POP` (or the end of an `R`-chain) builds `mk_expr` and binds the argument (trailed). That is observably the same as binding first: `p(X, f(X))` called as `p(A, A)` gives `A = f(A)` both ways. **Under `true`/`error` it is NOT** — swipl fails `p(A,A)` (`true`), and for `p3(X,Y,f(Y,X))` called as `p3(A,A,A)` raises `occurs_check(_A,f(_A,_B))` (`error`), which a late bind would report as `occurs_check(A,f(A,A))`. So at write-mode entry the builder reads `LD.prolog_flag_occurs_check` as vmi:680 does: under `true`/`error` it takes upstream's order for that compound — `mk_expr` with fresh-variable children, bind the argument (trailed), then `pl_unify!` each `H_VAR` child. The builder state is reset on `CLAUSE_FAILED`, as `unify_backtrack` resets `aTop` (vmi:6467-6469); trailing voids the compiler omits (`f(a,g(_))` ends in `h_rfunctor(g/1) h_pop`) become fresh variables. **For your audit.** |
+| body arguments (`B_ATOM`, `B_SMALLINT`, `B_NIL`, `B_VAR*`, `B_ARGVAR`, `B_FUNCTOR`, `B_LIST`, `B_POP`, …) | `*ARGP++ = cell`, straight into the next frame's argument cells above `lTop` (vmi:1783), or into a compound being built | slot writes above `lTop`; compounds through the same builder |
+| first occurrences (`H_FIRSTVAR`, `B_FIRSTVAR`, `B_ARGFIRSTVAR`, `B_VOID`) | `H_FIRSTVAR` in READ mode stores the caller's child in the slot (vmi:755); otherwise a fresh global cell, or `setVar` of a cell, with the slot pointing at it | read mode: the caller's child, stored in the slot; otherwise a fresh variable key (`fresh_var_keys!`) stored in the slot (and in the child being built) |
+| variable reads (`B_VAR`, `B_ARGVAR`, `H_VAR` in write mode) | `linkValI`, `globaliseVar`, and **binding direction chosen by address** (`k > ARGP`, `ARGP < k`; vmi:683, 1050) | `deRef(slot)` copied. **The address rules disappear:** they exist because a global cell may not point into the local stack, and keyed variables live in neither stack |
+| `H_VAR` in read mode, `B_UNIFY_*` | `do_unify`/`unify_ptrs` (pl-prims.c) | `pl_unify!` — already ported |
+| constants (`H_ATOM`, `B_ATOM`, …) | the operand IS the atom or the small integer | the operand indexes a per-clause **literal table** (`Vector{T}`): `B_ATOM` PUTs the term and `H_ATOM` compares by identity. `argKey` derives the index key from the literal (`sym_hash`/`gnd_key`, as today), so the indexes do not change. This replaces today's hash operand, which cannot be decompiled and is not identity — for `H_FUNCTOR`/`B_FUNCTOR` too (`B_FUNCTOR` must construct the head symbol). Only symbols and small integers become `B_ATOM`/`B_SMALLINT` literals: floats, big integers and strings keep `B_FLOAT`/`B_MPZ`/`B_STRING`, which are not `VIF_LCO`, so `lco()` (c:3744) refuses them as upstream does (needs Q1) |
+| LCO (`L_VAR`, `L_*`, `copyFrameArguments`) | raw copies between a frame's own cells (vmi:2415; wam:2410) | slot copies — safe for the same reason as upstream: nothing refers INTO a slot |
+| choice point `Mark` | `{trailtop, globaltop, saved_bar}`; `Undo` resets the trail and `gTop` (wam:1538-1578) | `{trailtop}`; `Undo!` deletes the trailed keys from the store. Julia's GC reclaims what `gTop` would |
+| trail elision (`LD->mark_bar`) | a GLOBAL cell newer than the newest choice point is not trailed; a local-stack cell always is (pl-inline.h:536-543) | **not ported — every binding is trailed** (the existing `Trail!` DIVERGES). A key has no age that `Undo` could truncate, so an untrailed binding would leave a stale store entry after backtracking: a leak, not a wrong answer |
+| `term_t` (decision 5) | a word offset into the local stack (incl:2213) | a slot position |
+
+**Where a flat term store would change this:**
+* write mode would fill cells in place, so no builder;
+* a `Mark` would regain `globaltop`, and `Undo` would truncate the store — which brings back `mark_bar`
+  trail elision;
+* constants would be cells;
+* building a compound would be a bump allocation instead of a `Vector` per `mk_expr`.
+
+The instruction semantics, frames, choice points and query API above are independent of that choice.
+
+### Decision 3 — frames and choice points: vector-backed stacks, integer positions
+
+* **One position space, as upstream's one local stack.**
+  * `lTop::Int`.
+  * A frame and a choice point each record their `base` position.
+  * `FR`, `BFR` and `parent` are integer indices into `LD.frames` / `LD.choices` (vectors of concrete
+    immutable records: `localFrame{T}` with `programPointer` as clause + index, `parent`, `clause`,
+    `predicate`, `generation`, `level`, `flags`; `choice` with `type`, `parent`, `mark`, `frame` and the
+    `ClauseChoice` or the jump target).
+* **Every age test upstream makes by address compares `base` positions** (`BFR <= FR`, `fr <= ch`,
+  `FR > catcher`; wam:2040, 2624; vmi:2039, 2174, 2398, 2575, 5127). Frames are reused by LCO and popped
+  by an exit, so this is a stack HEIGHT, not a timestamp — the same as upstream.
+* **Upstream's stack moves, carried over:**
+  * a deterministic exit sets `lTop` to the frame's base and drops the records above it (vmi:2174-2179);
+  * LCO reuses the frame record in place (vmi:2036-2077);
+  * the `memmove` of a `CHP_CLAUSE` choice point to just above the next clause's variables (vmi:6503-6507)
+    becomes an update of its `base`.
+* **Registers and state, as upstream splits them.** `FR`, `NFR`, `ARGP`, `DEF`, `PC` are run-loop
+  locals (wam:3323-3350). `BFR` is NOT a register: it is `LD->choicepoints` (wam:76). `CL` is
+  `FR->clause` (wam:3334). `environment_frame` is written on every call and exit (vmi:1879, 2194),
+  because built-ins and nested queries read it (wam:2953, 2980-2982). The kernel keeps `BFR`,
+  `environment_frame` and `lTop` in `LD` — or syncs them before every foreign call.
+* **FliFrames and query frames are records in the same position space.** FliFrames (`fli_context`,
+  `{size, mark, parent}`) are compared with frames by address (wam:2904, 2968, 3247; pl-fli.c:537-568;
+  vmi:4425, 4503, 5139), and a query's `choice` sits below its `top_frame` and `frame`
+  (pl-incl.h:1911-1916). **Every** assignment that lowers `lTop` drops the records above it, not only a
+  deterministic exit: `I_CUT` (vmi:2591), shallow and deep backtracking (vmi:6490, 6520, 6618),
+  `restore_after_query` (wam:3086).
+* **Allocation:**
+  * the stacks are pre-sized at `PL_local_data` creation;
+  * `growLocalSpace` (upstream's name) is the ONLY allocating path;
+  * the AllocCheck gate checks the call, exit and supervisor paths and admits allocation sites only
+    inside it;
+  * a warmed run at capacity must allocate nothing on those paths, apart from the compounds the program
+    builds;
+  * upstream raises `resource_error` at the stack limit (vmi:1886-1890). That needs V5's exception path;
+    until then, a limit on `growLocalSpace` raises a Julia error rather than letting runaway recursion
+    exhaust memory.
+
+### Decision 4 — determinism detection, ported with the run loop
+
+Upstream's own mechanisms, as is:
+
+* **No choice point when there is no alternative:**
+  * `S_TRUSTME` for a single clause, and `S_LIST` for a `[]`/`[_|_]` pair, which dispatches without the
+    index;
+  * `S_STATIC` creates `CHP_CLAUSE` only when `firstClause` leaves a candidate (vmi:3362-3381);
+  * shallow backtracking pops the choice point BEFORE the last alternative runs (vmi:6520-6525).
+* **Deterministic exit:** `I_EXIT` with `BFR <= FR` pops the frame (`lTop = FR`, vmi:2174-2179).
+* **Last-call frame reuse:**
+  * `I_DEPART`'s LCO (`BFR <= FR`, the `last_call` flag and a defined target, vmi:2039-2042;
+    `copyFrameArguments`);
+  * the compiler's in-place block `L_NOLCO …; I_TCALL | I_LCALL` (vmi:2380-2557; c:3715-3812).
+* **`I_CUT`:** a no-op when `BFR <= FR`, otherwise `discardChoicesAfter` (vmi:2572-2598).
+
+Measured above: for the bench's calls (first argument always a bound list), `nreverse` runs on
+`S_TRUSTME` and `S_LIST` alone, so it creates no clause choice point. `S_LIST` falls into `S_STATIC` on an
+unbound argument (vmi:3605-3608): `concatenate(A,B,[1])` is non-deterministic, as in swipl.
+
+**The gate:**
+* (a) `concatenate/3` on lists of 10³, 10⁴ and 10⁵ elements reaches the same local-stack high-water mark;
+* (b) a failure-driven loop of `nreverse` returns the trail, the binding store and both stacks to their
+  baseline on every iteration;
+* (c) determinism per answer (`PL_S_LAST`) equals swipl's on every differential query.
+
+### Decision 5 — the built-in interface: upstream's foreign-predicate protocol, Julia functions
+
+* **Calling convention:** a built-in is a Julia function with upstream's signature —
+  `pl_<fname><arity>_va(ld, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t)::foreign_t`, where `fname` is
+  upstream's C name (`unify`, `variant`, …; `PRED_SHARE` gives `pl_<fname>va_va`, as for `clause/2`) —
+  with a `# PORT:` marker. `A1`…`An` are `PL__t0 + i`, and **`term_t` is a slot position, so a
+  built-in's handles ARE its frame's argument slots** (vmi:4319, 4350).
+* **The FLI it needs is ported from pl-fli.c under upstream's names** and works on `(ld, term_t)`:
+  `PL_new_term_ref(s)`, `PL_get_*`, `PL_put_*`, `PL_unify_*`. Upstream's built-in bodies (`is/2` at
+  pl-arith.c:4772: `valueExpression(A2)`, then `PL_unify_number(A1)`) then port nearly line for line.
+* **Registration as upstream:** `PRED_DEF` tables (`PL_predicates_from_<file>`), `registerBuiltins` at
+  `PL_global_data` creation (pl-ext.c:302-563), and `createForeignSupervisor` giving
+  `I_FCALLDETVA <f>` for a `PRED_DEF` built-in (pl-supervisor.c:143-182). The FRG table
+  (pl-ext.c:96-190) is not VARARGS and gets `I_FCALLDET<N>, I_FEXITDET`.
+* **Dispatch (DIVERGES — the reason is invariant 5):** upstream stores a C function pointer in the
+  operand.
+  * A Julia function stored in a container is called by DYNAMIC dispatch, which the zero-dispatch gate
+    rejects.
+  * So the system tables are compiled into ONE generated dispatcher: an `if`/`elseif` over the table index
+    whose every branch is a static call.
+  * The operand is the table index.
+  * User registration (`PL_register_foreign`) is deferred until a consumer needs it, and will need its
+    own typed design.
+* **Return protocol, upstream's `I_FEXITDET`:** `TRUE` exits, `FALSE` fails — or throws if an exception
+  is pending — and any other value is a domain error (vmi:4422-4442).
+* **Non-deterministic built-ins** (V9) use upstream's sequence `I_FOPENNDET, I_FCALLNDET*, I_FEXITNDET,
+  I_FREDO`:
+  * a `CHP_JUMP` choice point and `control_t` with `FRG_FIRST_CALL`/`FRG_REDO`/`FRG_CUTTED`;
+  * the redo context kept in the frame's own field rather than overloading `clause` (upstream tags it into
+    `FR->clause`, vmi:4647);
+  * `REDO_INT` contexts first. `REDO_PTR` needs a typed context store, designed when the first such
+    built-in is ported.
+* **First users:**
+  * the ALREADY-PORTED predicates, registered as upstream registers them (V5): pl-prims.c's table
+    (pl-prims.c:6570-6623) and `=@=` (pl-variant.c:544);
+  * then pl-arith.c (V6);
+  * then `clause/2` and `retract/1`, which upstream implements as non-deterministic foreign predicates
+    (V9).
+
+### Open questions — the user's to decide before V1
+
+The read surfaced three things the settled term interface cannot express. Each changes what the
+compiler can emit.
+
+1. **Q1 — reserved symbols and numbers.**
+   * **What upstream needs:**
+     * the compiler dispatches on reserved symbols — `,` `;` `->` `*->` `\+` `!` `true` `fail` `call` `is`
+       `=` `==`, `[]` and `'[|]'` (c:2465-2652, 3474-3560);
+     * the choice of instructions depends on them: `H_NIL`/`B_NIL`, `H_LIST`/`H_LIST_FF`/`B_LIST`,
+       `H_SMALLINT`/`B_SMALLINT`, `S_LIST`, `A_ADD_FC`;
+     * built-ins need number values and constructors (`is/2` builds its result; type tests like
+       `I_INTEGER`; errors build `error(type_error(…), …)`).
+   * **What the interface has:** no symbol constructor, no grounded constructor and no number access —
+     only `mk_var` and `mk_expr`.
+   * **Proposal:** a small Prolog layer in the interface, `# ORIGINAL`:
+     * `mk_sym(T, name)` and `mk_gnd(T, v)`;
+     * one numeric accessor for integers and floats;
+     * the reserved symbols built once per `PL_global_data`.
+
+     Without it, the compiler emits `B_ATOM`/`B_FUNCTOR` for `[]` and lists. That changes no answer and
+     no LCO decision (both are LCO-able, or both are not). But it loses `H_LIST_FF` and `S_LIST` — so
+     `nreverse` would run on `S_STATIC` with indexing — and poly_10 cannot get `A_ADD_FC`. And `is/2`,
+     type tests and error terms cannot be written at all.
+2. **Q2 — compounds whose head is not a symbol** (MeTTa's variable and compound heads; SWI has none).
+   * **Today:** they compile as `H_FUNCTOR 0` with every child as an argument (`src/pl-comp.jl:382`). That
+     is enough for the index, but **unsound to execute** (no arity check) and cannot be decompiled.
+   * **Proposal:** a reserved functor `$expr/n`, where `n = nchildren`, whose arguments are all the
+     children, the head included — `# DIVERGES`, since SWI has no such terms.
+3. **Q3 — the builder in write mode** (decision 2). The proposal is BOTH, chosen by the `occurs_check`
+   flag, as upstream itself branches on it (vmi:680): the builder under `false` (the default, and the hot
+   path), and upstream's order under `true`/`error` — `mk_expr` with fresh-variable children first, bind
+   the argument, then unify each `H_VAR` child — because only that order gives swipl's failures and error
+   terms there (verified by probe, decision 2). The alternative is upstream's order always: one store
+   entry and one trail entry per cell, and longer `deRef` chains, on every write-mode compound.
+
 ## Still to come
 
 * ✅ **The standalone consumer** — done (four swipl-bench programs, above). It found a real gap on
