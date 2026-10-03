@@ -92,7 +92,8 @@ end
     end
     # The defect src/pl-termhash.jl keeps (see `hash_compile!`): a piece that straddles a block is
     # copied from its START twice, so its tail is never hashed. Measured on swipl 10.1.16 through
-    # variant_hash/2 on two long atoms; here it is pinned at the function, both ways.
+    # variant_hash/2 on two long atoms; here it is pinned at the function, both ways. LogicKernel#2,
+    # docs/upstream_reports.md — when upstream fixes it, port the fix and flip this pin.
     @testset "UPSTREAM DEFECT kept: a straddling piece's tail is not hashed" begin
         a = vcat(fill(UInt8('a'), 300), Vector{UInt8}("xxxxxxxxxx"))
         b = vcat(fill(UInt8('a'), 300), Vector{UInt8}("yyyyyyyyyy"))

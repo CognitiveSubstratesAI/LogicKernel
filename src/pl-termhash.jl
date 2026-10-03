@@ -412,7 +412,7 @@ end
 # differ only after byte 247 get the same `variant_hash/2` (14123625) while `variant_sha1/2` and
 # `term_hash/2` tell them apart. Variants still hash alike (equal input, equal bytes); only more
 # non-variants collide. Here the inputs are at most 8 bytes, so only a word straddling a block loses
-# its high bytes.
+# its high bytes. Tracked as LogicKernel#2 (docs/upstream_reports.md); upstream report pending.
 "Add the first `len` bytes of `data` (pl-termhash.c)."
 function hash_compile!(state::hash_state, data::AbstractVector{UInt8}, len::Int)::Nothing
     if len + state.len <= HASH_BLOCK_SIZE

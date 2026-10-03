@@ -51,6 +51,9 @@ write time. The generated table in [`port_inventory.md`](port_inventory.md) list
 | — | `ext/` | Julia package extensions |
 | `doc/`, `man/` | `docs/` | Julia documentation convention |
 
+Porting this way finds defects in swipl-devel itself; they are recorded in
+[`upstream_reports.md`](upstream_reports.md) — LogicKernel issues first, reported upstream later.
+
 ## What is here now
 
 | file | what | upstream |

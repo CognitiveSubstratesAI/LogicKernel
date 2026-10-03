@@ -252,7 +252,8 @@ swipl's outcome of `A = B` for each pair, in each mode: `(outcomes, aborts)`, th
 swipl 10.1.16 ABORTS (SIGABRT, "Cannot report error: no memory" in `PL_error` under
 `unify_with_occurs_check`) on this workload in `error` mode, deterministically but depending on what
 else the process has loaded and run — measured 2026-10-03; reproducers in the workspace at
-docs/tracking/repros/swipl_occurs_check_error_abort/ (upstream report: pending). So swipl runs in
+docs/tracking/repros/swipl_occurs_check_error_abort/; tracked as LogicKernel#3, docs/upstream_reports.md
+(upstream report: pending — when it is fixed, return to one process per mode). So swipl runs in
 CHUNKS of pairs, one process each; a chunk that aborts is re-run ONE PAIR PER PROCESS, and every
 abort recovered that way is counted and reported (`aborts`), never silently absorbed.
 """
