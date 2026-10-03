@@ -30,13 +30,39 @@ PL_global_data{T}() where {T} =
     PL_global_data{T}(gen_t(0), Dict{Definition{T}, dirty_def_info{T}}(), false)
 
 # PORT: pl-global.h PL_local_data
+# DIVERGES: `bindings` has no field upstream — SWI binds a variable by overwriting its cell on the
+# global stack; interface variables are immutable values, so a binding is an entry keyed by
+# `var_key`. `trail` is `stacks.trail` (its length is `tTop`) and holds those keys. A cyclic link or
+# a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
+# overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
+# `var_occurs_in`'s `visited`). The agendas and the `visited` stack are scratch upstream keeps on
+# the C stack; kept here, and emptied entry by entry, a warm unification allocates nothing.
 """
     PL_local_data{T}()
 
 The thread-local state (pl-global.h `struct PL_local_data`): the predicates ongoing enumerations
-reference, at the generation each started in — so clause GC keeps what they can still see.
+reference, at the generation each started in — so clause GC keeps what they can still see — and
+the state of unification: the bindings, the trail that undoes them back to a [`mark`](@ref), the
+`occurs_check` flag, and the records the unifier keeps while it walks.
 """
 mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
+    bindings::Dict{UInt64, T}                                   # var_key → value (see above)
+    trail::Vector{UInt64}                                       # stacks.trail: bound var_keys
+    prolog_flag_occurs_check::occurs_check_t                    # prolog_flag.occurs_check
+    cycle_lstack::Vector{T}                                     # cycle.lstack: linked compounds
+    cycle_links::IdDict{T, T}                                   # the links themselves
+    occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
+    occurs_marked::IdDict{T, Nothing}                           # its FIRST_MASK marks
+    unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
+    occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
 end
-PL_local_data{T}() where {T} = PL_local_data{T}(definition_ref{T}[])
+function PL_local_data{T}() where {T}
+    e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
+    return PL_local_data{T}(
+        definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, T[],
+        IdDict{T, T}(), T[], IdDict{T, Nothing}(),
+        term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
+        term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[])
+    )
+end

@@ -159,6 +159,34 @@ const PLMINTAGGEDINT32 = -(Int64(1) << (32 - LMASK_BITS - 1))
 "The largest integer a 32-bit word holds tagged (pl-incl.h); `variant_hash/2` masks with it."
 const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
 
+# ── unification: return codes, the occurs-check flag, backtrack marks ──────────────────────────
+# PORT: pl-incl.h boolex_t
+# DIVERGES: only the codes the ported unifier returns; the stack-overflow codes cannot happen (no
+# fixed-size stacks) and are not ported.
+"Success, failure, or \"needs the compound algorithm\" (pl-incl.h `boolex_t`)."
+@enum boolex_t::Int8 begin
+    BOOLEX_TRUE = 1             # logical success (= `true`)
+    BOOLEX_FALSE = 0            # logical failure (= `false`)
+    DO_COMPOUND = -8            # need more general algorithm
+end
+
+# PORT: pl-incl.h occurs_check_t
+"The `occurs_check` Prolog flag (pl-incl.h `occurs_check_t`); SWI's default is `OCCURS_CHECK_FALSE`."
+@enum occurs_check_t::UInt8 begin
+    OCCURS_CHECK_FALSE = 0      # allow rational trees
+    OCCURS_CHECK_TRUE           # fail if rational tree would result
+    OCCURS_CHECK_ERROR          # exception if rational tree would result
+end
+
+# PORT: pl-incl.h mark
+# DIVERGES: only `trailtop`. Bindings live in a store, not on a global stack, so there is no
+# `globaltop` to reset, and no `saved_bar` (`LD->mark_bar` decides which assignments need trailing;
+# every binding is trailed here).
+"A backtrack mark (pl-incl.h `struct mark`): the height of the trail when it was taken."
+struct mark
+    trailtop::Int               # top of the trail stack
+end
+
 # ── the structs ─────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-incl.h arg_info
 "Per-argument indexing information of a clause list (pl-incl.h `arg_info`)."

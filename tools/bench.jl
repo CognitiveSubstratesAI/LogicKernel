@@ -16,7 +16,16 @@
 # tools/repl.jl). swipl comes from PATH; without it the report has no upstream column.
 using LogicKernel, BenchmarkTools, Profile, Printf
 using LogicKernel:
-    is_variant_ptr, pl_variant_sha1, pl_variant_hash, pl_term_hash, compareStandard
+    is_variant_ptr,
+    pl_variant_sha1,
+    pl_variant_hash,
+    pl_term_hash,
+    compareStandard,
+    PL_local_data,
+    pl_unify!,
+    pl_unify_with_occurs_check!,
+    Mark,
+    Undo!
 
 # ── fixtures: the same terms in Julia and in Prolog ─────────────────────────────────────────────
 const BT = DefaultTerm
@@ -32,6 +41,15 @@ const DEPTH = 12
 const CELLS = 2^(DEPTH + 1) - 1                     # cells per tree: compounds + leaves
 const G1, G2 = _tree(DEPTH, () -> _a(:a)), _tree(DEPTH, () -> _a(:a))   # ground
 const V1, V2 = _tree(DEPTH, _v), _tree(DEPTH, _v)                       # 2^DEPTH variables each
+const LD = PL_local_data{BT}()                                          # the unify cases' bindings
+
+"One attempt, as a search makes it: mark, unify, undo — swipl's `forall/2` undoes the same way."
+function _attempt(unify, a::BT, b::BT)::Bool
+    m = Mark(LD)
+    r = unify(LD, a, b)
+    Undo!(LD, m)
+    return r
+end
 
 const PROLOG_FIXTURES = """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
@@ -49,7 +67,15 @@ const CASES = [
     ("variant_sha1 ground", () -> pl_variant_sha1(G1), "variant_sha1(G1, _)"),
     ("variant_sha1 vars", () -> pl_variant_sha1(V1), "variant_sha1(V1, _)"),
     ("variant_hash ground", () -> pl_variant_hash(G1), "variant_hash(G1, _)"),
-    ("variant_hash vars", () -> pl_variant_hash(V1), "variant_hash(V1, _)")
+    ("variant_hash vars", () -> pl_variant_hash(V1), "variant_hash(V1, _)"),
+    ("= ground", () -> _attempt(pl_unify!, G1, G2), "G1 = G2"),
+    ("= bind vars", () -> _attempt(pl_unify!, V1, G1), "V1 = G1"),
+    ("= var-var", () -> _attempt(pl_unify!, V1, V2), "V1 = V2"),
+    (
+        "occurs-check bind vars",
+        () -> _attempt(pl_unify_with_occurs_check!, V1, G1),
+        "unify_with_occurs_check(V1, G1)"
+    )
 ]
 
 # ── swipl: three timed runs of each goal, after calibrating the loop to ≥ 0.1 s ─────────────────

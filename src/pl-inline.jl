@@ -1,11 +1,16 @@
 # UPSTREAM: swipl-devel src/pl-inline.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-data.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2024, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
 # SWI-Prolog's inline helpers the clause store uses: the bit scan behind bucket counts, the
-# cleaning of hashed index keys, clause visibility in a generation, and the database generation.
+# cleaning of hashed index keys, clause visibility in a generation, and the database generation —
+# and the binding primitives the unifier (src/pl-prims.jl) is built on: `Trail` (pl-inline.h),
+# `Mark` and `Undo` (pl-incl.h macros) and `deRef` (a pl-data.h macro). They take the local data
+# explicitly, so they are defined here, after it (src/pl-global.jl), rather than in pl-incl.jl.
 # Transactions are not ported: where upstream asks "inside a transaction on a P_TRANSACT
 # predicate?", the answer here is always no.
 
@@ -74,4 +79,44 @@ function setGenerationFrame(gd::PL_global_data{T}, def::Definition{T})::gen_t wh
         gen = global_generation(gd)
     end
     return gen
+end
+
+# ── bindings: deRef, Trail, Mark, Undo ───────────────────────────────────────────────────────────
+# PORT: pl-data.h deRef
+# DIVERGES: follows bindings in the store where upstream follows reference cells.
+"`t` with its variable bindings followed: an unbound variable, or a non-variable (pl-data.h)."
+function deRef(ld::PL_local_data{T}, t::T)::T where {T}
+    while kind(t) === VAR
+        b = get(ld.bindings, var_key(t), nothing)
+        b === nothing && return t
+        t = b
+    end
+    return t
+end
+
+# PORT: pl-inline.h Trail
+# DIVERGES: every binding is trailed. Upstream skips an assignment to a cell created after the last
+# mark (`p >= LD->mark_bar`: backtracking discards the cell itself); bindings here have no age.
+"Bind variable `key` to `v`, recording it on the trail (pl-inline.h)."
+function Trail!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
+    push!(ld.trail, key)                        # (tTop++)->address = p
+    ld.bindings[key] = v                        # *p = v
+    return nothing
+end
+
+# PORT: pl-incl.h Mark
+"A mark at the current height of the trail (pl-incl.h `Mark`)."
+Mark(ld::PL_local_data)::mark = mark(length(ld.trail))
+
+# PORT: pl-incl.h Undo
+# DIVERGES: the body of upstream's `Undo` without O_DESTRUCTIVE_ASSIGNMENT (with it, `do_undo` also
+# restores destructive assignments — setarg/3, b_setval/2 — which the kernel does not have), and no
+# global stack to reset. Marks nest: undoing to a mark above the trail's top is a misuse, asserted.
+"Undo every binding made since mark `m` (pl-incl.h `Undo`)."
+function Undo!(ld::PL_local_data, m::mark)::Nothing
+    @assert m.trailtop <= length(ld.trail) "Undo! to a mark above the trail: marks undone out of order"
+    while length(ld.trail) > m.trailtop
+        delete!(ld.bindings, pop!(ld.trail))    # setVar(*tt->address)
+    end
+    return nothing
 end

@@ -20,16 +20,16 @@ module LogicKernel
 # an `# ORIGINAL:` header. Subsystems are a grouping in docs/architecture.md, not directories.
 # tools/port_check.jl enforces all of it.
 include("term_interface.jl")   # ORIGINAL — the term interface (settled 2026-10-02)
-include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard order of terms
 include("default_term.jl")     # ORIGINAL — Term{G}, the reference implementation
 include("pl-hash.jl")          # swipl-devel src/pl-hash.c — MurmurHash2
 include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause list, index structs
+include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — term agendas (the local data holds two)
 include("pl-global.jl")        # swipl-devel src/pl-global.h — the database state (GD, LD)
-include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys
+include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys, bindings
+include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard order; unification
 include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to
 include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
-include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — the pre-order term walk
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
