@@ -281,9 +281,9 @@ graph TD
 | `constraints` | code | `src/pl-attvar.c` | attributed-variable hooks |
 | `trie` | code | `src/pl-trie.c` | answer and variant tables, variables keyed by first occurrence |
 | `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
-| `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2, which unify with the kernel's unification since 2026-10-03 (`decompileHead!`: the stored head copied with fresh kernel variable keys per attempt — an INTERIM divergence until the VM runs compiled heads against frame slots). Not yet: abolish, reload, transactions |
+| `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2, which unify with the kernel's unification since 2026-10-03; since V1 L2 (2026-10-04) each attempt DECOMPILES the head from the clause's code and literal table (`decompile_head`, as upstream) — a clause stores no head term. Not yet: abolish, reload, transactions |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
-| `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported (for the index); bodies and the instructions' execution are not |
+| `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported — the head instructions as swipl selects them (V1 L1), the clause's literal table and the head decompiler (V1 L2); bodies and the instructions' execution are not |
 
 ## Invariants every subsystem keeps
 
