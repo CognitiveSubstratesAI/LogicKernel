@@ -1,19 +1,27 @@
 # UPSTREAM: swipl-devel src/pl-comp.c @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-comp.h @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-funct.c @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# THE CLAUSE COMPILER, HEAD SIDE — SWI-Prolog's pl-comp.c as far as compiling the head of a fact:
-# the variable analysis (`analyse_variables!`, `analyseVariables2!`), argument compilation
-# (`compileArgument!`, upstream's iterative version), the instruction merging that turns runs of
-# `H_VOID` into `H_VOID_N` and drops the voids before `H_POP`/`I_EXITFACT` (`Output_0!`,
-# `mergeInstructions!`, the table of `initVMIMerge`), and `compileClause` for a fact; the clause's
-# LITERAL TABLE its operands index (V1 L2, below); the head decompiler (`decompile_head!`). Then the
-# code readers the clause index uses: `stepPC`, `skipArgs`, `argKey`.
+# THE CLAUSE COMPILER, HEAD SIDE — SWI-Prolog's pl-comp.c as far as compiling the head of a clause:
+# the variable analysis of HEAD AND BODY (`analyse_variables!`, `analyseVariables2!` — the body's
+# control structures, the branches of `;` and the goal of `\+`, with the control functors of
+# pl-funct.c's `registerControlFunctors`), argument compilation (`compileArgument!`, upstream's
+# iterative version), the instruction merging that turns runs of `H_VOID` into `H_VOID_N` and drops
+# the voids before `H_POP`/`I_ENTER`/`I_EXITFACT` (`Output_0!`, `mergeInstructions!`, the table of
+# `initVMIMerge`), and `compileClause` for a fact; the clause's LITERAL TABLE its operands index
+# (V1 L2, below); the head decompiler (`decompile_head!`). Then the code readers the clause index
+# uses: `stepPC`, `skipArgs`, `argKey`.
+#
+# A CLAUSE WITH A BODY is analysed and its head compiled, up to `I_ENTER`
+# (`_compile_clause_head!`), but not yet compiled into a clause: its body code (`compileBody`) is
+# V2. Until then the body analysis has one caller, test/compile/test_analyse_variables_swipl.jl,
+# which compares the head code, every body variable's frame slot and the frame size with swipl's.
 #
 # WHY THE INDEX READS CODE, NOT TERMS (user, 2026-10-02): SWI computes a clause's index keys from
 # this code, and the code's shape changes the result. Reading the code as upstream does keeps the
@@ -21,10 +29,12 @@
 # directly follows two or more void arguments (`skipArgs`, LogicKernel#1), and that defect is
 # FIXED here (user, 2026-10-02), so the kernel indexes those arguments where swipl 10.1.16 does not.
 #
-# NOT PORTED: bodies (`compileBody` and everything it reaches), `islocal` compilation, SSU (`=>`)
-# clauses, the moved head unifications (`argMoveUnify`/`argUnifiedTo` — they come from a body),
-# singleton and branch warnings, and the instruction bodies (head unification), which arrive with
-# the VM.
+# NOT PORTED: body code (`compileBody` and everything it reaches; V2), `islocal` compilation (goal
+# clauses for the meta-call: `subclausearg`, `argvars`, `link_local_var`; V9), SSU (`=>`) clauses,
+# the moved head unifications (`head_unify`, `annotate_unification`, `argMoveUnify`/`argUnifiedTo`,
+# `isUnifiedArg`: they come with O_COMPILE_IS's inline unification, V9 — until then the kernel
+# compiles what swipl compiles with `optimise_unify` false), singleton, multiton and branch warnings
+# (the `VD_*` flags), and the instruction bodies (head unification), which arrive with the VM.
 
 # ── argument positions (pl-comp.c) ──────────────────────────────────────────────────────────────
 # PORT: pl-comp.c A_HEAD
@@ -100,10 +110,19 @@ mutable struct VarDef
     times::Int          # occurrences
 end
 
+# PORT: pl-comp.c branch_var
+# DIVERGES: no `saved_flags` — the flags a branch saves are the warnings' (`VD_*`, not ported).
+"A variable met inside a branch of `;` or the goal of `\\+` (pl-comp.c `branch_var`)."
+mutable struct branch_var
+    vdef::VarDef        # Definition record
+    saved_times::Int    # Times saved from left branch
+end
+
 # PORT: pl-comp.c compileInfo
-# DIVERGES: the fields the head compiler uses; `vardefs` is upstream's LD->comp.vardefs keyed by
-# `var_key`, `mstate_candidates`/`mstate_merge_pos` are `mstate`, `used_var` is the VarTable, and
-# `literals` the clause's literal table as it is built (V1 L2).
+# DIVERGES: the fields the head compiler and the variable analysis use; `vardefs` is upstream's
+# LD->comp.vardefs keyed by `var_key`, `mstate_candidates`/`mstate_merge_pos` are `mstate`,
+# `used_var` is the VarTable, `branch_vars` is `nothing` or the vector upstream keeps in
+# `branch_varbuf`, and `literals` the clause's literal table as it is built (V1 L2).
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
 mutable struct compileInfo{T}
     arity::Int                                              # arity of top-goal
@@ -113,6 +132,22 @@ mutable struct compileInfo{T}
     mstate_candidates::Union{Nothing, NTuple{4, vmi_merge}} # Merge candidates
     mstate_merge_pos::Int                                   # The merge candidate location
     literals::Vector{T}                                     # the literal table being built
+    branch_vars::Union{Nothing, Vector{branch_var}}         # We are in a branch
+end
+
+"A fresh compilation of a clause of a predicate with `arity` arguments (pl-comp.c `compileClause`)."
+compileInfo{T}(arity::Int) where {T} =
+    compileInfo{T}(
+        arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[], nothing
+    )
+
+# PORT: pl-comp.c pushBranchVar
+"Record that variable `v` was met in the current branch (pl-comp.c)."
+function pushBranchVar!(ci::compileInfo, v::VarDef)::Nothing
+    bvs = ci.branch_vars
+    bvs === nothing && error("pushBranchVar: not in a branch")
+    push!(bvs, branch_var(v, 0))
+    return nothing
 end
 
 # PORT: pl-comp.c is_portable_smallint
@@ -266,6 +301,57 @@ function isFirstVarP(ci::compileInfo, t)::Int
     return -1
 end
 
+# ── the control functors (pl-funct.c) ──────────────────────────────────────────────────────────
+# From pl-funct.c registerControlFunctors: the set it flags `CONTROL_F`, as the kernel holds it.
+"""
+The functors `compileBody` compiles (pl-funct.c `registerControlFunctors`, the `CONTROL_F` flag):
+`,/2`, `;/2`, `|/2`, `->/2`, `*->/2`, `\\+/1`, `:/2` (Module:Goal), `\$/1` and `@/2` (Goal@Module,
+O_CALL_AT_MODULE) — each the `sym_key` of its name.
+"""
+struct ControlFunctors
+    comma::UInt64           # FUNCTOR_comma2
+    semicolon::UInt64       # FUNCTOR_semicolon2
+    bar::UInt64             # FUNCTOR_bar2
+    ifthen::UInt64          # FUNCTOR_ifthen2
+    softcut::UInt64         # FUNCTOR_softcut2
+    not_provable::UInt64    # FUNCTOR_not_provable1
+    colon::UInt64           # FUNCTOR_colon2: Module:Goal
+    dollar::UInt64          # FUNCTOR_dollar1: $(Goal)
+    at_sign::UInt64         # FUNCTOR_at_sign2: Goal@Module
+end
+
+# PORT: pl-funct.c registerControlFunctors
+# DIVERGES: upstream sets `CONTROL_F` on the functor definitions of its functor table at start-up;
+# the kernel has no functor table, so the set is the `sym_key`s of the names' TEXT atoms, resolved
+# for the term type when a clause with a body is analysed — a fact's analysis never consults it, as
+# the head is not analysed as control. `name/arity` is matched by `_has_functor`.
+"The control functors of term type `T` (pl-funct.c `registerControlFunctors`)."
+function registerControlFunctors(::Type{T})::ControlFunctors where {T}
+    return ControlFunctors(
+        sym_key(mk_sym(T, Symbol(","))), sym_key(mk_sym(T, Symbol(";"))),
+        sym_key(mk_sym(T, Symbol("|"))), sym_key(mk_sym(T, Symbol("->"))),
+        sym_key(mk_sym(T, Symbol("*->"))), sym_key(mk_sym(T, Symbol("\\+"))),
+        sym_key(mk_sym(T, Symbol(":"))), sym_key(mk_sym(T, Symbol("\$"))),
+        sym_key(mk_sym(T, Symbol("@")))
+    )
+end
+
+"""
+Whether compound `t` has the functor `name/arity` of the symbol whose `sym_key` is `key` — upstream's
+`f->definition == FUNCTOR_…`. A compound whose head is not a symbol (`\$expr/n`) has none.
+"""
+_has_functor(t, key::UInt64, arity::Int)::Bool =
+    nchildren(t) == arity + 1 && kind(child(t, 1)) === SYM && sym_key(child(t, 1)) == key
+
+"Whether compound `t`'s functor is a control functor (`ison(fd, CONTROL_F)`, pl-funct.c)."
+function _is_control(t, cf::ControlFunctors)::Bool
+    return _has_functor(t, cf.comma, 2) || _has_functor(t, cf.semicolon, 2) ||
+           _has_functor(t, cf.bar, 2) || _has_functor(t, cf.ifthen, 2) ||
+           _has_functor(t, cf.softcut, 2) || _has_functor(t, cf.not_provable, 1) ||
+           _has_functor(t, cf.colon, 2) || _has_functor(t, cf.dollar, 1) ||
+           _has_functor(t, cf.at_sign, 2)
+end
+
 # ── analysing variables (pl-comp.c) ─────────────────────────────────────────────────────────────
 "An argument of a compound: its children from `off` on (2 below a symbol head, 1 otherwise)."
 _comp_arg(t, off::Int, i::Int) = child(t, off + i)
@@ -282,25 +368,69 @@ _comp_shape(t)::Tuple{Int, Int} =
         (1, nchildren(t))
     end
 
+# PORT: pl-comp.c MAX_VARIABLES
+"Most variables a clause may have: stay safely under signed int (pl-comp.c)."
+const MAX_VARIABLES = 1_000_000_000
+
+# PORT: pl-comp.c AV_ARG_LOOP
+"`av_frame` kind: general N-arg descent (pl-comp.c `av_kind`)."
+const AV_ARG_LOOP = 0
+# PORT: pl-comp.c AV_SEMI_AFTER_LEFT
+"`av_frame` kind: `(A;B)` after A — save and reset A's variables, then B (pl-comp.c `av_kind`)."
+const AV_SEMI_AFTER_LEFT = 2
+# PORT: pl-comp.c AV_SEMI_AFTER_RIGHT
+"`av_frame` kind: `(A;B)` after B — each variable of the branches counts as in ONE (pl-comp.c)."
+const AV_SEMI_AFTER_RIGHT = 3
+# PORT: pl-comp.c AV_NOT_AFTER
+"`av_frame` kind: `(\\+ A)` after A (pl-comp.c `av_kind`)."
+const AV_NOT_AFTER = 4
+
 # PORT: pl-comp.c av_frame
-"A compound whose arguments the analysis is walking (pl-comp.c `av_frame`, `AV_ARG_LOOP`)."
+# DIVERGES: `base`/`off`/`next` stand for `head_next`, a pointer into the arguments; `obv` is
+# whether a branch buffer existed when the frame was pushed (upstream keeps the pointer); no
+# `depth_before_entry` (there is no cycle check, see `analyseVariables2!`). AV_SUBCLAUSE_LOOP is
+# `islocal`'s, not ported.
+"A compound whose arguments the analysis is walking (pl-comp.c `av_frame`)."
 struct av_frame{T}
-    base::T             # the compound
-    off::Int            # child index of its argument 0 (see `_comp_shape`)
-    next::Int           # next argument (0-based)
-    argn_next::Int      # argn to pass for the next iteration
-    remaining::Int      # args still to process (incl. current)
+    kind::Int               # AV_ARG_LOOP, AV_SEMI_AFTER_LEFT, AV_SEMI_AFTER_RIGHT, AV_NOT_AFTER
+    base::T                 # the compound (the enclosing term `f` for SEMI/NOT)
+    off::Int                # child index of its argument 0 (see `_comp_shape`)
+    next::Int               # next argument (0-based)
+    argn_next::Int          # argn to pass for the next iteration
+    remaining::Int          # args still to process (incl. current)
+    control::Bool           # control flag to pass down
+    obv::Bool               # a previous ci->branch_vars existed (SEMI/NOT)
+    start_vars::Int         # entries when frame was pushed (SEMI/NOT)
+    at_branch_vars::Int     # entries after left branch (SEMI only)
 end
 
+"The representation error past MAX_VARIABLES (pl-comp.c `AVARS_MAX` → `compileClause`'s error)."
+_max_frame_size()::Union{} = error("compileClause: representation_error(max_frame_size)")
+
 # PORT: pl-comp.c analyseVariables2
-# DIVERGES: the head side only — no control constructs, branches, `islocal` or cycle check. A
-# compound whose head is not a symbol has every child as an argument (see `compileArgument!`).
+# DIVERGES: no `islocal` (goal clauses: `subclausearg`, `argvars` and AV_SUBCLAUSE_LOOP come with
+# the meta-call, V9); no leading-unification annotation (`head_unify`, `annotate_unification`:
+# the moved head unifications, V9); no warnings (`VD_*` flags, `singletons`, `name`); no cycle,
+# depth or interrupt check — a kernel term is a tree. A compound whose head is not a symbol has every
+# child as an argument (see `compileArgument!`). Past MAX_VARIABLES it throws, where upstream returns
+# `AVARS_MAX` and unwinds its stack and branch buffer: nothing outside `ci` has changed, and
+# `ci` is dropped with the error.
 """
 Walk `head` giving each variable a slot — a variable standing as head argument `i` gets slot `i`,
-any other the next slot above the arity — and counting its occurrences. Returns the number of
-slots above the arity (pl-comp.c).
+any other the next slot above the arity — and counting its occurrences (pl-comp.c). With `control`
+(a clause body), the arguments of a control functor (`cf`) are control too, and a variable met in
+the branches of a `;` counts as often as in the branch that has it more often — a variable
+introduced in a branch and used once there is a void — while one introduced in the goal of a `\\+`
+is not a branch variable of an enclosing `;`. Returns the number of slots above the arity.
 """
-function analyseVariables2!(ci::compileInfo, head, nvars::Int, argn::Int)::Int
+function analyseVariables2!(
+    ci::compileInfo, head, nvars::Int, argn::Int, control::Bool,
+    cf::Union{Nothing, ControlFunctors}
+)::Int
+    # a walk is control only below a control walk's start (`new_control`, frames), so this one
+    # check covers every `control` below; `cf !== nothing` then narrows where it is read
+    control && cf === nothing &&
+        error("analyseVariables2: a control walk needs the control functors")
     T = term_type(head)
     stack = av_frame{T}[]
     @label next_head
@@ -310,20 +440,78 @@ function analyseVariables2!(ci::compileInfo, head, nvars::Int, argn::Int)::Int
             if argn >= 0 && argn < ci.arity
                 index = argn
             else
+                nvars >= MAX_VARIABLES && _max_frame_size()
                 index = ci.arity + nvars
                 nvars += 1
             end
-            ci.vardefs[var_key(head)] = VarDef(index, -1, 1)
+            vd = VarDef(index, -1, 1)
+            ci.vardefs[var_key(head)] = vd
+            if ci.branch_vars !== nothing
+                pushBranchVar!(ci, vd)
+            end
         else
             vd.times += 1
+            if vd.times == 1 && ci.branch_vars !== nothing      # vd->times++ == 0
+                pushBranchVar!(ci, vd)
+            end
         end
         @goto resume
     end
     if kind(head) === EXPR
+        if control && cf !== nothing
+            # Check for singletons in branches (A;B). These are variables introduced in a
+            # branch, used only once in the branch and not used in code after the branches
+            # re-unite.
+            if _has_functor(head, cf.semicolon, 2)
+                obv = ci.branch_vars !== nothing
+                bvs = ci.branch_vars
+                if bvs === nothing
+                    ci.branch_vars = branch_var[]               # initBuffer(&ci->branch_varbuf)
+                    start_vars = 0
+                else
+                    start_vars = length(bvs)
+                end
+                push!(
+                    stack,
+                    av_frame{T}(
+                        AV_SEMI_AFTER_LEFT, head, 2, 0, argn, 0, control, obv, start_vars, 0
+                    )
+                )
+                head = child(head, 2)                           # &f->arguments[0]
+                @goto next_head
+            end
+            # check \+ Goal for singletons on Goal. These are variables introduced inside the
+            # goal and only used once.
+            if _has_functor(head, cf.not_provable, 1)
+                obv = ci.branch_vars !== nothing
+                bvs = ci.branch_vars
+                if bvs === nothing
+                    ci.branch_vars = branch_var[]
+                    start_vars = 0
+                else
+                    start_vars = length(bvs)
+                end
+                push!(
+                    stack,
+                    av_frame{T}(
+                        AV_NOT_AFTER, head, 2, 0, argn, 0, control, obv, start_vars, 0
+                    )
+                )
+                head = child(head, 2)                           # &f->arguments[0]
+                @goto next_head
+            end
+        end
+        # The default term processing case
         off, ar = _comp_shape(head)
         if ar > 0
+            new_control = control && cf !== nothing && _is_control(head, cf)
             next_argn = argn < 0 ? 0 : ci.arity
-            push!(stack, av_frame{T}(head, off, 0, next_argn, ar))
+            push!(
+                stack,
+                av_frame{T}(
+                    AV_ARG_LOOP, head, off, 0, next_argn, ar, new_control, false, 0, 0
+                )
+            )
         end
     end
     @label resume
@@ -331,32 +519,84 @@ function analyseVariables2!(ci::compileInfo, head, nvars::Int, argn::Int)::Int
         return nvars
     end
     top = stack[end]
-    if top.remaining > 0
-        head = _comp_arg(top.base, top.off, top.next)
-        argn = top.argn_next
+    if top.kind == AV_ARG_LOOP
+        if top.remaining > 0
+            head = _comp_arg(top.base, top.off, top.next)
+            argn = top.argn_next
+            control = top.control
+            stack[end] = av_frame{T}(
+                AV_ARG_LOOP, top.base, top.off, top.next + 1, top.argn_next + 1,
+                top.remaining - 1, top.control, false, 0, 0
+            )
+            @goto next_head
+        end
+        pop!(stack)
+        @goto resume
+    elseif top.kind == AV_SEMI_AFTER_LEFT
+        bvs = ci.branch_vars::Vector{branch_var}
+        at_branch_vars = length(bvs)
+        for i in (top.start_vars + 1):at_branch_vars            # reset the left branch's vars
+            bv = bvs[i]
+            bv.saved_times = bv.vdef.times
+            bv.vdef.times = 0
+        end
         stack[end] = av_frame{T}(
-            top.base, top.off, top.next + 1, top.argn_next + 1, top.remaining - 1
+            AV_SEMI_AFTER_RIGHT, top.base, top.off, 0, top.argn_next, 0, top.control,
+            top.obv, top.start_vars, at_branch_vars
         )
+        head = child(top.base, 3)                               # &f->arguments[1]
+        argn = top.argn_next
+        control = top.control
         @goto next_head
+    elseif top.kind == AV_SEMI_AFTER_RIGHT
+        bvs = ci.branch_vars::Vector{branch_var}
+        at_end_vars = length(bvs)
+        for i in (top.start_vars + 1):at_end_vars
+            bv = bvs[i]
+            vd = bv.vdef
+            if vd.times < bv.saved_times
+                vd.times = bv.saved_times
+            end
+            bv.saved_times = 0
+        end
+        if !top.obv
+            ci.branch_vars = nothing                            # discardBuffer(ci->branch_vars)
+        end
+        pop!(stack)
+        @goto resume
+    end
+    # AV_NOT_AFTER (its VD_SINGLETON marking is a warning's)
+    if !top.obv
+        ci.branch_vars = nothing
+    else
+        resize!(ci.branch_vars::Vector{branch_var}, top.start_vars)   # seekBuffer(start_vars)
     end
     pop!(stack)
     @goto resume
 end
 
 # PORT: pl-comp.c analyse_variables
-# DIVERGES: the head only (no body yet), and `argvars` is 0 (it counts only for `islocal` clauses,
-# which are not compiled yet). Returns the frame size `nv`, which `compileClause` records as the
-# clause's `variables` and `prolog_vars` (upstream sets them here, through `ci->clause`).
+# DIVERGES: `argvars` is 0 (it counts only for `islocal` goal clauses, V9), and there are no
+# `$variable_names` or warnings. Returns the frame size `nv`, which `compileClause` records as the
+# clause's `variables` and `prolog_vars` (upstream sets them here, through `ci->clause`); past
+# MAX_VARIABLES it throws `representation_error(max_frame_size)`.
 """
-Analyse the variables of `head`: a variable that occurs once becomes a void (no slot); the others
-get their frame offset, walking the slots in order and COMPACTING past every void above the arity —
-an argument keeps its slot whatever it holds (pl-comp.c). Returns the frame size.
+Analyse the variables of `head` and `body` (`nothing` for a fact): a variable that occurs once —
+counting the branches of a `;` as one — becomes a void (no slot); the others get their frame offset,
+walking the slots in order and COMPACTING past every void above the arity — an argument keeps its
+slot whatever it holds (pl-comp.c). Returns the frame size.
 """
-function analyse_variables!(ci::compileInfo, head)::Int
-    nvars = analyseVariables2!(ci, head, 0, -1)
+function analyse_variables!(
+    ci::compileInfo{T}, head::T, body::Union{Nothing, T}
+)::Int where {T}
     arity = ci.arity
     argvars = 0
     body_voids = 0
+    ci.branch_vars = nothing
+    nvars = analyseVariables2!(ci, head, 0, -1, false, nothing)
+    if body !== nothing
+        nvars = analyseVariables2!(ci, body, nvars, arity, true, registerControlFunctors(T))
+    end
     # upstream walks LD->comp.vardefs[n] for n in slot order; here the records are keyed by
     # `var_key`, so index them by slot first (a slot without a variable is `!vd->address`)
     slot_key = zeros(UInt64, arity + nvars)
@@ -379,6 +619,7 @@ function analyse_variables!(ci::compileInfo, head)::Int
         end
     end
     nv = nvars + arity + argvars - body_voids
+    nv > MAX_VARIABLES && _max_frame_size()
     ci.used_var = falses(nv)                                   # vartablesize
     return nv
 end
@@ -606,6 +847,34 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
     @goto resume
 end
 
+# From pl-comp.c compileClause (c:2049-2116): what runs before the body is compiled — the variable
+# analysis of head AND body, the head arguments left to right, and for a clause with a body
+# `I_ENTER` (a void before it merges away, as before `I_EXITFACT`). No SSU (`I_CHP`, `I_SSU_*`) or
+# module context (`I_CONTEXT`). The body code and `I_EXIT` (`compileBody`) are V2, and so is the
+# body `true`, which makes a fact: a caller passes `nothing` for a fact.
+"""
+    _compile_clause_head!(ci, head, body) -> nv
+
+Analyse the variables of `head` and `body` (`nothing` for a fact) and emit the head code of the
+clause into `ci`, ending with `I_ENTER` when there is a body (pl-comp.c `compileClause`). Returns
+the frame size: the clause's `prolog_vars` and `variables`.
+"""
+function _compile_clause_head!(
+    ci::compileInfo{T}, head::T, body::Union{Nothing, T}
+)::Int where {T}
+    nv = analyse_variables!(ci, head, body)                    # prolog_vars = variables = nv
+    initMerge!(ci)
+    if ci.arity > 0
+        for n in 0:(ci.arity - 1)
+            compileArgument!(ci, child(head, n + 2), A_HEAD)
+        end
+    end
+    if body !== nothing
+        Output_0!(ci, I_ENTER)
+    end
+    return nv
+end
+
 # PORT: pl-comp.c compileClause
 # DIVERGES: a fact only (no body: `I_EXITFACT`, `UNIT_CLAUSE`), and no module, warnings or
 # resource limits. The clause is created at generation 0; `assertDefinition!` sets the rest.
@@ -617,16 +886,8 @@ argument left to right, end with `I_EXITFACT` (pl-comp.c). The clause keeps the 
 literal table its operands index (V1 L2).
 """
 function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
-    ci = compileInfo{T}(
-        def.arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[]
-    )
-    nv = analyse_variables!(ci, head)                          # prolog_vars = variables = nv
-    initMerge!(ci)
-    if ci.arity > 0
-        for n in 0:(ci.arity - 1)
-            compileArgument!(ci, child(head, n + 2), A_HEAD)
-        end
-    end
+    ci = compileInfo{T}(def.arity)
+    nv = _compile_clause_head!(ci, head, nothing)
     Output_0!(ci, I_EXITFACT)                                  # fact (for decompiler)
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), UNIT_CLAUSE, ci.codes,

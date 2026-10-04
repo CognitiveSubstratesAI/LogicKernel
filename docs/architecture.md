@@ -212,7 +212,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — variable analysis, `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-funct.c` (`registerControlFunctors`) |
 | `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates, assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; LD holds the bindings, the trail and the `occurs_check` flag | `src/pl-global.h` |
@@ -247,6 +247,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/db/test_update_view_gc.jl` | the logical update view under clause GC: an enumeration still sees a clause retracted and collected after it started — pinned and live against swipl | — |
 | `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1's fix pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
 | `test/compile/test_head_code_swipl.jl` | live differential: compiled heads are instruction-for-instruction swipl's `vm_list`, frame-slot operands included (slots compacted past voids above the arity, 2026-10-03), with three hand-pinned heads and their frame sizes | — |
+| `test/compile/test_analyse_variables_swipl.jl` | live differential of the variable analysis of clauses WITH A BODY (V1): head code to `i_enter`, the slot of every body variable occurrence (swipl's `clause_vm/2`), and the frame size (the `$cont$` frame a `shift/1` captures), on 600 random and 18 pinned clauses | — |
+| `test/compile/code_testlib.jl` | how both code differentials write an instruction, the kernel's and swipl's alike: operands by meaning, literals by value | — |
 | `tools/githooks/commit-msg` | git's commit-msg hook: a commit message must start with a category (`ADDED:` … `UPSTREAM:`); installed with `git config core.hooksPath tools/githooks` | — |
 | `test/test_commit_msg_hook.jl` | the commit-msg hook's contract, both sides (26 cases) | — |
 
@@ -283,7 +285,7 @@ graph TD
 | `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
 | `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2, which unify with the kernel's unification since 2026-10-03; since V1 L2 (2026-10-04) each attempt DECOMPILES the head from the clause's code and literal table (`decompile_head`, as upstream) — a clause stores no head term. Not yet: abolish, reload, transactions |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
-| `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported — the head instructions as swipl selects them (V1 L1), the clause's literal table and the head decompiler (V1 L2); bodies and the instructions' execution are not |
+| `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported — the head instructions as swipl selects them (V1 L1), the clause's literal table and the head decompiler (V1 L2), the variable analysis of head and body (V1, pl-funct.c's control functors with it); body code and the instructions' execution are not |
 
 ## Invariants every subsystem keeps
 
@@ -779,6 +781,72 @@ approved by the user and marked `# DIVERGES` (src/pl-comp.jl § the literal tabl
   earlier, so a head written with the `Int64` `2^56` may hold the `BigInt` `2^56` that another test
   interned. They are the same SWI integer. The decompiler returns exactly the term the head holds;
   exactness is pinned against the head's own term, identity against the value written.
+
+**V1 — the variable analysis of a clause WITH A BODY: BUILT (2026-10-04), on all three term
+implementations** (src/pl-comp.jl `analyseVariables2!`, `analyse_variables!`; pl-comp.c c:839-1375).
+* **What it is.** `analyse_variables!(ci, head, body)` walks the head (`argn = -1`, not control) and
+  then the body (`argn = arity`, control), as upstream:
+  * a body variable gets the next slot ABOVE the arity, even as a goal's direct argument;
+  * the arguments of a CONTROL functor are control too, and those of any other compound are not.
+    The set is pl-funct.c's `registerControlFunctors`: `,/2`, `;/2`, `|/2`, `->/2`, `*->/2`, `\+/1`,
+    `:/2`, `$/1`, `@/2`. It is `# DIVERGES`: there is no functor table, so the set holds the
+    `sym_key`s of the names, resolved per term type for a clause with a body. A fact never builds it;
+  * **`;` (control only):** a variable INTRODUCED in a branch counts as often as in the branch that
+    uses it more — `times = max`, through `branch_var`'s saved counts. So `(q(Y) ; r(Y))` makes `Y`
+    a void, while a variable met before the branches keeps its sum;
+  * **`\+` (control only):** the variables introduced in its goal are taken back out of the
+    enclosing branch's list (upstream's `seekBuffer`), so `(\+ q(Y) ; r(Y))` keeps `Y`;
+  * then, unchanged, the slot walk: a variable met once is a void, the rest compacted past the voids
+    above the arity. The frame size `nv` is the clause's `prolog_vars` and `variables`. Past
+    `MAX_VARIABLES` it throws `representation_error(max_frame_size)` instead of unwinding — nothing
+    outside `ci` has changed.
+* **The head of a clause with a body** compiles through `_compile_clause_head!`, shared with the fact
+  path (`compileClause`). It ends with `I_ENTER`, which a trailing void merges into, as upstream's
+  table does. The body code (`compileBody`, `I_EXIT`) is V2. Until then this path has ONE caller,
+  the differential below, and `compileClause` stays fact-only.
+* **Not ported, and where each comes:**
+  * `islocal` goal clauses (`subclausearg`, `argvars`, AV_SUBCLAUSE_LOOP, `link_local_var`) arrive
+    with the meta-call (V9). They have no clean oracle before then: a goal clause's `variables` also
+    counts the clause's own words in the frame (c:2257);
+  * the moved head unifications (`head_unify`, `annotate_unification`, `argMoveUnify`,
+    `argUnifiedTo`, `isUnifiedArg`) arrive with O_COMPILE_IS's inline unification (V9). Until then
+    the kernel compiles what swipl compiles with `optimise_unify` false. **Probed for V9:** an
+    `assertz` to a FRESH predicate moves the unification too (`assertz((d1(X) :- X = f(Y), q(Y)))`
+    compiles `h_functor(f/1)`), so the predicate's state at compile time decides it, not "dynamic";
+  * warnings: singletons, multitons and unbalanced branch variables (`VD_*` flags, `singletons`).
+* **Pinned — test/compile/test_analyse_variables_swipl.jl (new, ORIGINAL, term-generic), live
+  against swipl 10.1.16:**
+  * the head code to `i_enter`, written by test/compile/code_testlib.jl, which the head-code
+    differential now shares;
+  * the slot of EVERY body variable occurrence, left to right, from swipl's `clause_vm/2`. Every
+    `L_*` instruction is skipped: when a last call's arguments can move, swipl compiles them twice,
+    the `L_*` moves first and then plain `B_*` code that has each occurrence once (probed). An
+    instruction it does not classify fails the comparison;
+  * the frame size, for a FRAMED clause `H :- shift(k), B, zz`: the arity of the `$cont$` frame
+    `shift/1` captures, minus 3 (pl-cont.c `put_environment`), minus the choice variables that
+    `allocChoiceVar` adds for each `->`, `*->` and `\+`. Those are read off the c_* operands and
+    checked to be numbered from the Prolog variables up;
+  * BARE clauses `H :- B` cover the shape a framed one cannot: a top-level goal whose direct
+    arguments are numbered above the arity;
+  * 400 framed and 200 bare random clauses, over `,`, `;`, `->`, `*->` (with and without an else),
+    `\+`, variable goals, and control functors used as DATA in arguments; 18 pinned clauses, each
+    probed;
+  * a coverage check that branch voids, bare top goals and slots past 2 all occur in the sample.
+* **Mutation-proved, M1–M6, at verdict level:**
+  * M1, a branch counted as a sum;
+  * M2, no `\+` seek-back;
+  * M3, control passed into a goal's arguments;
+  * M4, `->` not a control functor;
+  * M5, branches keeping the lower count;
+  * M6, body variables numbered as arguments. It SURVIVED the framed clauses alone, because their
+    top term is always `,`. The bare clauses were added for it.
+* **Found on the way, for V2:**
+  * swipl refuses a clause whose variable goal is a void: `p :- q, _` is a `type_error(callable, …)`
+    (`NOT_CALLABLE`, c:3472). The generator draws a variable goal as `(V, gv(V))` until V2 compiles
+    bodies and pins this itself;
+  * `report_package` proved that a `cf::ControlFunctors` assert throws in the head walk's
+    `cf::Nothing` specialisation. One check at entry now covers every control walk, and
+    `cf !== nothing` narrows where `cf` is read.
 
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders

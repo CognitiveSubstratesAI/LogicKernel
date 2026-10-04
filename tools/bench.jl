@@ -82,6 +82,14 @@ for i in 1:1000
 end
 const CP_GOAL = mk_expr(BT, BT[_a(:cp), _v(), _v()])
 
+# compiling: a fact `cp(7, a)`, and the head and variable analysis of nreverse's rule clause
+# `app([H|T], L, [H|R]) :- app(T, L, R)` (V1 — its body code is V2, so Julia only, no swipl goal)
+const CC_FACT = mk_expr(BT, BT[_a(:cp), gnd_term(BT, 7), _a(:a)])
+_cons(h::BT, t::BT)::BT = mk_expr(BT, BT[_a(Symbol("[|]")), h, t])
+const APP_H, APP_T, APP_L, APP_R = _v(), _v(), _v(), _v()
+const APP_HEAD = mk_expr(BT, BT[_a(:app), _cons(APP_H, APP_T), APP_L, _cons(APP_H, APP_R)])
+const APP_BODY = mk_expr(BT, BT[_a(:app), APP_T, APP_L, APP_R])
+
 const PROLOG_FIXTURES = """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
 tree(N, Leaf, f(A, B)) :- N1 is N-1, tree(N1, Leaf, A), tree(N1, Leaf, B).
@@ -113,6 +121,15 @@ const CASES = [
         "clause/2 1000 facts",
         () -> pl_clause!(CP_GD, LD, CP_DEF, CP_GOAL, _ -> true),
         "forall(clause(cp(_, _), true), true)"
+    ),
+    # Julia only (no swipl goal): compiling a fact, and a rule clause's head with its analysis
+    ("compileClause fact", () -> compileClause(CP_DEF, CC_FACT), ""),
+    (
+        "rule head + analysis",
+        () -> LogicKernel._compile_clause_head!(
+            LogicKernel.compileInfo{BT}(3), APP_HEAD, APP_BODY
+        ),
+        ""
     ),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs
     ("attempt f(X)=f(a)", () -> _attempt(pl_unify!, SMALL_A, SMALL_B), ""),
