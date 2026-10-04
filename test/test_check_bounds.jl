@@ -11,6 +11,12 @@ const _CB_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_CHECK_BOUNDS", "") == "1"
 "An out-of-range read inside `@inbounds`: a `BoundsError` only when bounds checking is forced."
 _cb_read(v::Vector{Int}, i::Int) = @inbounds v[i]
 
+# Said in the log either way, so a CI job shows WHICH branch ran: a requirement that never reached
+# the test process would leave the guard green and checking nothing.
+println(
+    "test_check_bounds: ", _CB_REQUIRED ? "REQUIRED" : "not required",
+    "; JLOptions().check_bounds = ", Base.JLOptions().check_bounds
+)
 if _CB_REQUIRED
     @testset "bounds checking is ON where it is required" begin
         @test Base.JLOptions().check_bounds == 1                  # --check-bounds=yes
