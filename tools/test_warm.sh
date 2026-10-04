@@ -27,6 +27,14 @@ has() {     # has NAME FILE PATTERN WANT(1 present / 0 absent)
 echo 'println("x")' > "$T/s.jl"
 "$W" send "$T/s.jl" > /dev/null 2>&1; check "no daemon: send exits 3" 3 $?
 
+# the daemon's differentials judge against the swipl on its PATH: a swipl that is not the pin
+# (a fake one first on PATH) refuses the start, and no daemon is left behind
+mkdir -p "$T/fakebin"
+printf '#!/bin/sh\necho "SWI-Prolog version 0.0.1 for x86_64-linux"\n' > "$T/fakebin/swipl"
+chmod +x "$T/fakebin/swipl"
+PATH="$T/fakebin:$PATH" "$W" start > /dev/null 2>&1; check "start REFUSES a swipl that is not the pin" 1 $?
+"$W" send "$T/s.jl" > /dev/null 2>&1; check "…and starts no daemon" 3 $?
+
 "$W" start || { echo "test_warm: the lane did not start"; exit 1; }
 
 cat > "$T/ok.jl" <<'JL'

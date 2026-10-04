@@ -9,13 +9,26 @@
 # * never loads Revise: nothing in it may change while it waits;
 # * runs exactly once and is discarded;
 # * REFUSES its run (exit 3) when the tree's fingerprint differs from the one it started with —
-#   code loaded before an edit must not be certified after it.
+#   code loaded before an edit must not be certified after it;
+# * REFUSES to start (exit 4) when the swipl on ITS PATH is not the pinned one: the live
+#   differentials' oracle is checked where they run (2026-10-04: a pin checked in the coordinator's
+#   shell, a worker started by systemd from another PATH, every differential against 10.1.12).
 # It never writes evidence: only the coordinator (tools/run_tests.sh) does, after every shard.
 #
 # The protocol: the worker writes `ready`; the coordinator writes `go` (three lines: the fingerprint,
 # the run's shard directory, the shard id); the worker writes `rc` and exits with it.
 const WDIR, FP = ARGS[1], ARGS[2]
 const ROOT = abspath(joinpath(@__DIR__, ".."))
+include(joinpath(@__DIR__, "swipl_pin.jl"))
+if get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
+    let why = swipl_pin_refusal(ROOT)
+        if why !== nothing
+            write(joinpath(WDIR, "rc"), "4")
+            println(stderr, "worker: REFUSED — ", why)
+            exit(4)
+        end
+    end
+end
 using Test, LogicKernel
 # Pre-warm what the static-analysis gate loads (from the global environment); absent ones are the
 # gate's to report — LOGICKERNEL_REQUIRE_TOOLS makes it fail, not skip.

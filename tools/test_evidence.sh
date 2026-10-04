@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/.evidence"
 T="$(mktemp -d "$ROOT/.evidence/test.XXXXXX")"
 U="lk-evidence-test-$$"
-trap 'systemctl --user stop "$U" 2>/dev/null; rm -rf "$T"' EXIT
+trap 'systemctl --user stop "$U" "$U-pin" 2>/dev/null; rm -rf "$T"' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -60,6 +60,19 @@ for _ in $(seq 1 120); do [ -f "$W/rc" ] && break; sleep 0.5; done
 check "a worker REFUSES a run for a changed tree (exit 3)" 3 "$(cat "$W/rc" 2>/dev/null || echo none)"
 ! grep -q '\[unit\]' "$W/log"
 check "…and ran no unit" 0 $?
+
+# a REAL worker whose PATH finds another swipl than the pin refuses before it is ready (exit 4): the
+# oracle is checked where the differentials run — a fake swipl first on PATH, as systemd's own PATH
+# once put /usr/local/bin/swipl 10.1.12 before the pinned one
+FAKE="$T/fakebin"; mkdir -p "$FAKE"
+printf '#!/bin/sh\necho "SWI-Prolog version 0.0.1 for x86_64-linux"\n' > "$FAKE/swipl"
+chmod +x "$FAKE/swipl"
+W2="$T/worker_pin"
+PATH="$FAKE:$PATH" _spawn_worker "$ROOT" "$W2" "fingerprint-A" "$U-pin" ||
+    { echo "test_evidence: could not start the second worker"; exit 1; }
+_wait_ready "$W2" "$U-pin" 900; check "a worker under another swipl never becomes ready" 1 $?
+for _ in $(seq 1 60); do [ -f "$W2/rc" ] && break; sleep 0.5; done
+check "…it REFUSES (exit 4)" 4 "$(cat "$W2/rc" 2>/dev/null || echo none)"
 
 echo "test_evidence: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

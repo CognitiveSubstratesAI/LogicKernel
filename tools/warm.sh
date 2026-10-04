@@ -24,6 +24,8 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$ROOT/.warm"
+# shellcheck source=/dev/null
+. "$ROOT/tools/lib_evidence.sh"
 UNIT="logickernel-warm-$(printf '%s' "$ROOT" | md5sum | cut -c1-8)"   # one daemon per checkout
 
 _running() { systemctl --user is-active --quiet "$UNIT" && [ -f "$DIR/ready" ]; }
@@ -34,9 +36,10 @@ _start() {
     rm -f "$DIR/ready" "$DIR/done" "$DIR/status" "$DIR/in.jl"
     local julia
     julia="$(command -v julia)" || { echo "warm lane: no julia on PATH" >&2; return 1; }
-    # the same ceiling and flags as tools/run_tests.sh
+    # the same ceiling and flags as tools/run_tests.sh. A service starts from systemd's own PATH, not
+    # ours, so it gets ours — the swipl its differentials judge against; the daemon checks the pin.
     systemd-run --user --unit="$UNIT" --collect --quiet -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
-        -p MemorySwapMax=0 --working-directory="$ROOT" \
+        -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" \
         -E JULIA_REVISE=manual \
         /bin/bash -c "exec '$julia' --project=. --threads=\"\${JULIA_TEST_THREADS:-4}\" --heap-size-hint=6G tools/warm_session.jl >> '$DIR/session.log' 2>&1" ||
         { echo "warm lane: systemd-run failed" >&2; return 1; }
@@ -125,8 +128,6 @@ JL
 # have loaded LogicKernel and the analysis tools and run nothing. tools/run_tests.sh uses them only
 # if the tree is still the one they started with; workers for another tree are discarded here.
 _pool() {
-    # shellcheck source=/dev/null
-    . "$ROOT/tools/lib_evidence.sh"
     local n fp k w u
     n=$(_shard_count)
     fp="$(_tree_fp "$ROOT")"

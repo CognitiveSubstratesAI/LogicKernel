@@ -65,18 +65,11 @@ export LOGICKERNEL_REQUIRE_TOOLS=1
 # …and so is the live SWI-Prolog differential (test/oracle/): a code port is judged by upstream itself.
 export LOGICKERNEL_REQUIRE_SWIPL=1
 # …at the PINNED version (tools/SWIPL_VERSION), the one CI's analysis job also asserts: a
-# differential against a different swipl is a different oracle. Both sides must be non-empty.
-SWIPL_PIN=$(grep -v '^#' tools/SWIPL_VERSION 2>/dev/null | tr -d '[:space:]')
-SWIPL_HAVE=$(swipl --version 2>/dev/null)
-if [ -z "$SWIPL_PIN" ]; then
-    echo "run_tests.sh: tools/SWIPL_VERSION is missing or empty — no pinned swipl to judge against" >&2
-    exit 1
-fi
-case "$SWIPL_HAVE" in
-    *"version $SWIPL_PIN "*) ;;
-    *) echo "run_tests.sh: swipl must be $SWIPL_PIN (tools/SWIPL_VERSION); found: ${SWIPL_HAVE:-no swipl on PATH}" >&2
-       exit 1 ;;
-esac
+# differential against a different swipl is a different oracle. Both sides must be non-empty. A
+# sharded run's workers check it again where they run (tools/worker.jl).
+# shellcheck source=/dev/null
+. "$ROOT/tools/lib_evidence.sh"
+_check_swipl_pin "$ROOT" run_tests.sh || exit 1
 
 # 🔴 FULL RUNS ONLY — two checks that stop a COMMIT (a full run is the commit's evidence), not an
 # iteration. Both run BEFORE the suite, so a failure exits with no evidence written.
@@ -155,9 +148,7 @@ fi
 # * Only this coordinator decides the verdict — every shard green, every unit run EXACTLY once, the
 #   second implementation exercised across all shards — and only it writes evidence (`_finish`),
 #   against the tree fingerprint taken at launch.
-# shellcheck source=/dev/null
-. "$ROOT/tools/lib_evidence.sh"
-_sharded_run() {
+_sharded_run() {   # (tools/lib_evidence.sh is sourced above)
     local n="$1" run_id run fp i k rc=0 r
     local dirs=() units_=()
     run_id="$(date +%Y%m%d-%H%M%S)-$$"

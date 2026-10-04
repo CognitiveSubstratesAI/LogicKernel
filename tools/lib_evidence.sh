@@ -8,6 +8,23 @@ _tree_fp() {
         (cd "$1" && xargs -0 -r sha1sum 2>/dev/null) | sha1sum | cut -c1-40
 }
 
+# _check_swipl_pin ROOT WHO — 0 when the `swipl` on THIS PATH is the pinned version
+# (tools/SWIPL_VERSION); otherwise says which swipl it found, and where. Both sides non-empty.
+_check_swipl_pin() {
+    local pin have
+    pin=$(grep -v '^#' "$1/tools/SWIPL_VERSION" 2>/dev/null | tr -d '[:space:]')
+    have=$(swipl --version 2>/dev/null)
+    if [ -z "$pin" ]; then
+        echo "$2: tools/SWIPL_VERSION is missing or empty — no pinned swipl to judge against" >&2
+        return 1
+    fi
+    case "$have" in
+        *"version $pin "*) return 0 ;;
+        *) echo "$2: swipl must be $pin (tools/SWIPL_VERSION); found: ${have:-no swipl} at $(command -v swipl || echo '(none on PATH)')" >&2
+           return 1 ;;
+    esac
+}
+
 # _shard_count — from the machine: one core left free, and ~2.5 GB per worker (Julia with the
 # analysis tools loaded, plus swipl children) with 3 GB kept back. LOGICKERNEL_SHARDS overrides.
 _shard_count() {
@@ -25,6 +42,10 @@ _shard_count() {
 # _spawn_worker ROOT DIR FP UNIT — one evidence worker, in its own memory-capped unit, with
 # automatic precompilation OFF: a worker that meets a stale cache fails loudly instead of compiling
 # alongside its siblings (the coordinator precompiles once, before any worker starts).
+# 🔴 The unit gets the caller's PATH. A `systemd-run --user` SERVICE starts from the user manager's
+# environment, not the caller's: MEASURED 2026-10-04, its PATH found /usr/local/bin/swipl 10.1.12
+# while the caller's found the pinned 10.1.16 — the coordinator checked the pin in one environment
+# and every differential ran in the other. The worker also checks the pin itself (tools/worker.jl).
 _spawn_worker() {
     local root="$1" dir="$2" fp="$3" unit="$4" julia
     julia="$(command -v julia)" || return 1
@@ -33,7 +54,7 @@ _spawn_worker() {
     echo "$fp" > "$dir/fp"
     systemd-run --user --unit="$unit" --collect --quiet \
         -p MemoryMax="${LOGICKERNEL_WORKER_MEM_MAX:-5G}" -p MemorySwapMax=0 \
-        --working-directory="$root" \
+        --working-directory="$root" -E "PATH=$PATH" \
         -E JULIA_PKG_PRECOMPILE_AUTO=0 -E LOGICKERNEL_REQUIRE_TOOLS=1 -E LOGICKERNEL_REQUIRE_SWIPL=1 \
         ${LOGICKERNEL_WORKER_IDLE_S:+-E LOGICKERNEL_WORKER_IDLE_S=$LOGICKERNEL_WORKER_IDLE_S} \
         /bin/bash -c "exec '$julia' --project=. --threads=1 --heap-size-hint=${LOGICKERNEL_WORKER_HEAP_HINT:-2G} tools/worker.jl '$dir' '$fp' >> '$dir/log' 2>&1"

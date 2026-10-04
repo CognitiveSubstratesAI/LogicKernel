@@ -59,6 +59,13 @@ end
 using LogicKernel, Test
 
 const ROOT = abspath(joinpath(@__DIR__, ".."))
+# The `file` runs judge their live differentials against the swipl on THIS process's PATH: it must
+# be the pinned one, checked here, where they run (tools/swipl_pin.jl). tools/warm.sh hands the
+# daemon its caller's PATH and checks it there too.
+include(joinpath(@__DIR__, "swipl_pin.jl"))
+let why = swipl_pin_refusal(ROOT)
+    why === nothing || error("warm lane: REFUSED to start — ", why)
+end
 cd(ROOT)
 # The second term implementation is loaded once per process into `Main` (test/term_under_test.jl);
 # tracked here, so an edit to it reloads like an edit to src/. A STRUCT change in it needs a restart.

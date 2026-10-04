@@ -60,10 +60,13 @@ file) — so evidence is a process that started clean. The daemon follows Revise
 * a failed update, a queued Revise error or a cache rewritten by another process REFUSES the
   snippet; snippets run through `invokelatest`; Revise's audit trail (`debug_logger`) is reported
   with every snippet, and a `src/` Revise is not watching refuses the daemon's start;
+* the daemon starts only under the PINNED swipl (tools/SWIPL_VERSION), checked in the daemon itself
+  (`tools/swipl_pin.jl`); it runs with its caller's PATH, as a systemd service would otherwise start
+  from systemd's own (see the evidence run below);
 * the include list of src/LogicKernel.jl stays LITERAL `include("…")` lines: Revise notices a removed
   include only for a literal path (any generated list, M1's included, must write literal lines).
-`tools/test_warm.sh` tests all of it (17 cases); the verdict, Revise's refusal and Revise itself are
-mutation-proved.
+`tools/test_warm.sh` tests all of it (19 cases); the verdict, Revise's refusal, Revise itself, the
+daemon's pin check and the PATH it is given are mutation-proved.
 
 **Evidence: a SHARDED run in fresh processes (user, 2026-10-03).** The suite is single-threaded and
 this machine's CPU is old (a 2012 i7-3630QM, 4 cores): a full run took 10–16 min on one core, 2m44s
@@ -77,14 +80,23 @@ count from cores and memory — 3 here; `LOGICKERNEL_SHARDS` overrides, `=1` the
 * one precompile before any worker; workers run with `JULIA_PKG_PRECOMPILE_AUTO=0`;
 * workers never load Revise, run once, and REFUSE a run whose tree fingerprint differs from the one
   they started with; `tools/warm.sh pool` pre-warms them for the current tree;
+* 🔴 each worker checks the PINNED swipl where it runs (`tools/swipl_pin.jl`), refusing to start
+  (exit 4) under any other, and runs with the coordinator's PATH. A `systemd-run --user` SERVICE
+  starts from systemd's own environment, not its caller's: MEASURED 2026-10-04, that PATH found
+  `/usr/local/bin/swipl` 10.1.12 while the coordinator's shell found the pinned 10.1.16, so the
+  coordinator checked the pin in one environment and every differential of `18b0829`'s evidence run
+  ran in the other — against 10.1.12. (CI, which installs 10.1.16, was green on that commit. Single-
+  process runs use `--scope`, which inherits the caller's environment, so earlier evidence was
+  against the pin.)
 * only the coordinator gives the verdict — every shard green, every unit run EXACTLY once, the
   second implementation exercised across all shards (`_check_run`, tools/lib_evidence.sh) — and only
   it writes evidence, against the tree fingerprint taken at launch.
 MEASURED: 6m05s wall for the whole run (3 workers, 321/313/314 s of units each), against 16m07s in
 one process just before. The longest unit is the static-analysis gate (217 s); the rest are at most
 ~54 s. `tools/test_evidence.sh` tests the coordinator's verdict on fixture runs (a unit skipped, run
-twice, twice-and-another-never, an empty run, no sharing) and a real worker refusing a changed tree
-(15 cases); the duplicate check, the AltTerm check and the worker's refusal are mutation-proved.
+twice, twice-and-another-never, an empty run, no sharing), a real worker refusing a changed tree
+and a real worker refusing a swipl that is not the pin (17 cases); the duplicate check, the AltTerm
+check, the worker's two refusals and the PATH it is given are mutation-proved.
 
 **The precompile workload** (`src/precompile_workload.jl`, PrecompileTools — the one allowlisted
 dependency): the hot paths on `DefaultTerm`, compiled at precompile time. MEASURED (three fresh
@@ -173,6 +185,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `tools/bench.jl` | the per-chunk performance report: each primitive against swipl on the same terms (three runs, one process), then a profile of the worst | — |
 | `tools/warm.sh`, `tools/warm_session.jl`, `tools/test_warm.sh` | the warm lane — a Revise daemon for iteration (never evidence), and its own tests | — |
 | `tools/worker.jl`, `tools/lib_evidence.sh`, `tools/test_evidence.sh` | the sharded evidence run — fresh workers, the coordinator's verdict, and their own tests | — |
+| `tools/swipl_pin.jl` | the pinned-swipl check a worker and the warm daemon make WHERE THEY RUN | — |
 | `src/precompile_workload.jl` | the precompile workload: the hot paths on `DefaultTerm` (ORIGINAL; PrecompileTools) | — |
 | `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`), every unit but the static-determinism checks of supervisors — on one shared `d/2`, as upstream | `tests/db/test_jit.pl` |
 | `test/db/test_db.jl` | SWI's own `retract` and `retractall` tests that need no clause bodies, modules or threads | `tests/db/test_db.pl` |
