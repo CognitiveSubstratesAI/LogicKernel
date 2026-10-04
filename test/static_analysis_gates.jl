@@ -36,6 +36,66 @@ function _scan_any!(out::Vector{String}, ex, file::String, line::Int)::Int
     return line
 end
 
+# THE UNCHECKED-ACCESS RULE (user, 2026-10-04, on Julia 1.13: `Pkg.test` no longer forces
+# `--check-bounds=yes`, so an out-of-range index inside `@inbounds` corrupts memory silently instead
+# of failing a test). Every construct that turns bounds checking off or reads/writes raw memory is
+# listed, so each one stands on an allowlist with its reason — until a measured performance step
+# justifies another.
+const UNCHECKED_MACROS = (
+    Symbol("@inbounds"), Symbol("@boundscheck"), Symbol("@propagate_inbounds")
+)
+
+"""
+Every construct in the parsed code of the `.jl` files under `dir` that turns bounds checking off
+or touches raw memory: the macros `@inbounds`, `@boundscheck`, `@propagate_inbounds` (bare or
+`Base.`-qualified), every call of an `unsafe_*` function, and `ccall`/`@ccall`. As
+`"file:line construct"`; comments and strings are not code.
+"""
+function unchecked_uses(dir::AbstractString)::Vector{String}
+    out = String[]
+    for (d, _, fs) in walkdir(dir), f in sort(fs)
+        endswith(f, ".jl") || continue
+        p = joinpath(d, f)
+        _scan_unchecked!(
+            out, Meta.parseall(read(p, String); filename=p), relpath(p, dir), 0
+        )
+    end
+    return out
+end
+
+function _unchecked_name(ex)::Union{Nothing, Symbol}
+    ex isa Symbol && return ex
+    if ex isa Expr && ex.head === :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
+        v = ex.args[2].value
+        return v isa Symbol ? v : nothing
+    end
+    return nothing
+end
+
+function _scan_unchecked!(out::Vector{String}, ex, file::String, line::Int)::Nothing
+    ex isa Expr || return nothing
+    if ex.head === :macrocall
+        m = _unchecked_name(ex.args[1])
+        if m !== nothing && (m in UNCHECKED_MACROS || m === Symbol("@ccall"))
+            push!(out, "$file:$line $m")
+        end
+    elseif ex.head === :call || ex.head === :foreigncall
+        fn = _unchecked_name(ex.args[1])
+        if fn !== nothing && (startswith(String(fn), "unsafe_") || fn === :ccall)
+            push!(out, "$file:$line $fn")
+        end
+    end
+    cur = line
+    for a in ex.args
+        if a isa LineNumberNode
+            cur = a.line
+        else
+            _scan_unchecked!(out, a, file, cur)
+        end
+    end
+    return nothing
+end
+
 "A field type the compiler can store unboxed: concrete, or a Union of at most 4 concrete types."
 function field_type_ok(T)::Bool
     isconcretetype(T) && return true
@@ -92,6 +152,10 @@ function owned_methods(mod::Module)::Vector{Method}
     _istype(t) = (u=Base.unwrap_unionall(t); u isa DataType && u.name === Type.body.name)
     Base.visit(Core.methodtable) do m
         m isa Method && m.module === mod || return nothing
+        # only methods CURRENT in this world: since Julia 1.12 a redefined method stays in the table
+        # with its world range closed (Revise redefines hundreds in a warm daemon — measured
+        # 2026-10-04: 445 replaced beside 482 current, each "NOT CHECKED" by mistake)
+        _current_method(m) || return nothing
         startswith(String(m.name), "#") && return nothing
         m.name === :kwcall && return nothing
         sig = Base.unwrap_unionall(m.sig)
@@ -105,6 +169,14 @@ function owned_methods(mod::Module)::Vector{Method}
     end
     return sort!(ms; by=m -> (String(m.name), string(m.sig)))
 end
+
+"True when `m` is the method its own signature dispatches to now — not one a redefinition replaced."
+_current_method(m::Method)::Bool =
+    try
+        which(m.sig) === m
+    catch
+        true                                    # an ambiguous signature: keep it, to be checked
+    end
 
 """
     manifest_uncovered(mod, manifest, exempt) -> (; uncovered, stale_exempt)

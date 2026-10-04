@@ -73,5 +73,10 @@ end
             fx, ((fx.f, Tuple{Int}, false),), (((fx.g, Tuple{Int}) => "fixture"),)
         )
         @test isempty(r3.uncovered) && isempty(r3.stale_exempt)
+        # a REDEFINED method stays in the method table (Julia >= 1.12) with its world range closed;
+        # only the current one is the module's — or a warm daemon's revisions read as "NOT CHECKED"
+        fr = Base.include_string(Module(:SARedefHost), "module SARedef\nf(x::Int) = 1\nend")
+        Core.eval(fr, :(f(x::Int) = 2))
+        @test length(owned_methods(fr)) == 1 && fr.f(1) == 2
     end
 end

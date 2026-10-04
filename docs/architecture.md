@@ -60,6 +60,12 @@ file) — so evidence is a process that started clean. The daemon follows Revise
 * a failed update, a queued Revise error or a cache rewritten by another process REFUSES the
   snippet; snippets run through `invokelatest`; Revise's audit trail (`debug_logger`) is reported
   with every snippet, and a `src/` Revise is not watching refuses the daemon's start;
+* `start` PRECOMPILES the current source into the daemon's depot first (no daemon is running then,
+  so no cache can be refused), and `stale_load` starts from a cache that IS the source. Evidence
+  compiles elsewhere, so that cache had only aged: measured, a start revised 445 methods;
+* the static-analysis gate's method walk counts only methods CURRENT in this world
+  (`_current_method`): since Julia 1.12 a redefined method stays in the table with its world range
+  closed, and a revised daemon showed every one of them as "NOT CHECKED" (a control pins it);
 * a checkout COPY (parallel mutation proofs) runs its own daemon with `LOGICKERNEL_WARM_DEPOT`: a
   depot of its own and a normal load, since `stale_load` would take the original's cache and watch
   ITS `src/` (the "not watching" guard refused exactly that, measured);
@@ -276,6 +282,22 @@ graph TD
    AllocCheck and the type-discipline gates; every method must be in the dispatch manifest. These
    are checked on the REFERENCE term type: they make the kernel fast on a concrete term type, and
    say nothing about correctness — that is invariant 8.
+   **No unchecked memory access beyond an allowlist, and a bounds-checked run** (user, 2026-10-04,
+   on Julia 1.13: `Pkg.test` no longer forces `--check-bounds=yes`, so an out-of-range index
+   inside `@inbounds` would corrupt memory silently instead of failing a test — and the VM's stacks
+   are where it would hurt most):
+   * `test/test_type_discipline.jl` (run everywhere) lists every `@inbounds`, `@boundscheck`,
+     `@propagate_inbounds`, `unsafe_*` call and `ccall` in `src/` from the PARSED code. They must
+     equal an allowlist, each entry with its reason; a new one fails until a measured performance
+     step justifies it, and a listed one that is gone fails too. Today there are two, both in
+     src/pl-termhash.jl: SHA-1's message schedule (`@inbounds`, every index masked `& 15`) and
+     `_sha1_memcpy!`'s `unsafe_copyto!` — which is unchecked in EVERY bounds mode, so it now
+     checks its byte range first, tested;
+   * CI's `test` jobs run bounds-checked: julia-runtest passes `--check-bounds=yes` (its
+     `check_bounds` input, now stated in CI.yml — measured in the logs, its own precompile cache),
+     and `test/test_check_bounds.jl` FAILS those jobs if it is not really on
+     (`LOGICKERNEL_REQUIRE_CHECK_BOUNDS=1`): `JLOptions().check_bounds`, and an out-of-range read
+     inside `@inbounds` throwing.
 6. **SWI's execution model inside the kernel; the caller's sink at the boundary** (user, 2026-10-03).
    The VM is ported as is — frames, choice points and the trail included — and bindings follow SWI:
    a binding store and a trail with marks. Answers leave the kernel through upstream's own query API

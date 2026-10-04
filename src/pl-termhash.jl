@@ -332,10 +332,19 @@ function sha1_hash!(data::Vector{UInt8}, len::Int, ctx::sha1_ctx)::Nothing
     return nothing
 end
 
-"`memcpy(((unsigned char*)ctx->wbuf) + pos, data + sp, n)` — the caller keeps `pos + n ≤ 64`."
+"""
+`memcpy(((unsigned char*)ctx->wbuf) + pos, data + sp, n)`. The callers keep `pos + n ≤ 64`; the
+range is CHECKED here anyway, because `unsafe_copyto!` is unchecked in every bounds mode (user,
+2026-10-04: Julia 1.13's `Pkg.test` no longer forces `--check-bounds=yes`).
+"""
 function _sha1_memcpy!(
     ctx::sha1_ctx, pos::Int, data::Vector{UInt8}, sp::Int, n::Int
 )::Nothing
+    (
+        0 <= pos && 0 <= n && pos + n <= 4 * length(ctx.wbuf) && 0 <= sp &&
+        sp + n <= length(data)
+    ) ||
+        throw(BoundsError(data, (sp + 1):(sp + n)))
     GC.@preserve ctx data begin
         unsafe_copyto!(Ptr{UInt8}(pointer(ctx.wbuf)) + pos, pointer(data, sp + 1), n)
     end

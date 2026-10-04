@@ -37,6 +37,17 @@ _start() {
     rm -f "$DIR/ready" "$DIR/done" "$DIR/status" "$DIR/in.jl"
     local julia
     julia="$(command -v julia)" || { echo "warm lane: no julia on PATH" >&2; return 1; }
+    # PRECOMPILE the current source into the daemon's depot first — no daemon is running, so nothing
+    # can refuse a rewritten cache — so `stale_load` starts from a cache that IS the source. Evidence
+    # compiles elsewhere (the evidence depot), so this cache only aged: measured 2026-10-04, a start
+    # revised 445 methods, and the static-analysis gate then saw each replaced one as unchecked.
+    # (JULIA_DEPOT_PATH only when a copy has its own depot: an EMPTY value leaves Julia with no depot)
+    local depot_env=()
+    [ -n "${LOGICKERNEL_WARM_DEPOT:-}" ] &&
+        depot_env=("JULIA_DEPOT_PATH=$LOGICKERNEL_WARM_DEPOT:$HOME/.julia:")
+    (cd "$ROOT" && env "${depot_env[@]}" \
+        "$julia" --project=. --startup-file=no -e 'using LogicKernel' < /dev/null) ||
+        { echo "warm lane: LogicKernel does not precompile" >&2; return 1; }
     # the same ceiling and flags as tools/run_tests.sh. A service starts from systemd's own PATH, not
     # ours, so it gets ours — the swipl its differentials judge against; the daemon checks the pin.
     # A checkout COPY (parallel mutation proofs, user 2026-10-04) gives its daemon a depot of its own,
@@ -176,8 +187,17 @@ _preflight() {
     local snippet="$DIR/preflight_snippet.jl"
     cat > "$snippet" <<JL
 using JuliaFormatter
-format("."; overwrite=false) ||
-    error("preflight: NOT Blue-formatted — tools/run_tests.sh shows each diff")
+if !format("."; overwrite=false)
+    bad = String[]
+    for (dir, dirs, files) in walkdir(".")
+        filter!(d -> !(d in (".git", ".warm", ".evidence", "build")), dirs)
+        for f in files
+            endswith(f, ".jl") && !format(joinpath(dir, f); overwrite=false) &&
+                push!(bad, joinpath(dir, f))
+        end
+    end
+    error("preflight: NOT Blue-formatted: ", join(bad, ", "), " — tools/run_tests.sh shows each diff")
+end
 println("preflight: Blue-clean (JuliaFormatter ", pkgversion(JuliaFormatter), ")")
 isdefined(Main, :port_check) || Base.include(Main, raw"$ROOT/tools/port_check.jl")
 let r = Main.port_check(raw"$ROOT")
@@ -192,15 +212,17 @@ JL
         pooled=$!
     fi
     echo "preflight: the static-analysis gate"
-    _file test/test_static_analysis.jl > "$DIR/preflight_file.log" 2>&1 || rc=1
-    grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$DIR/preflight_file.log"
+    local log="$DIR/preflight_test_static_analysis.log"
+    _file test/test_static_analysis.jl > "$log" 2>&1 || { rc=1; echo "preflight: FAILED — $log"; }
+    grep -E "\.jl \[|\.jl  *\||Test Failed|Error During|NOT CHECKED|allocates:" "$log"
     files=$(cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
         grep -E '^test/(.*/)?test_[^/]*\.jl$' | sort -u)
     for f in $files; do
         [ -f "$ROOT/$f" ] && [ "$f" != test/test_static_analysis.jl ] || continue
         echo "preflight: $f"
-        _file "$f" > "$DIR/preflight_file.log" 2>&1 || rc=1
-        grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$DIR/preflight_file.log"
+        log="$DIR/preflight_$(basename "$f" .jl).log"
+        _file "$f" > "$log" 2>&1 || { rc=1; echo "preflight: FAILED — $log"; }
+        grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$log"
     done
     if [ -n "$pooled" ]; then
         wait "$pooled" || echo "preflight: the pool did not start — $DIR/preflight_pool.log"

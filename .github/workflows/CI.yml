@@ -22,6 +22,10 @@ jobs:
     # tests skipped and the inert-testset guard failed the run — correctly.)
     env:
       JULIA_NUM_THREADS: '4'
+      # THE BOUNDS-CHECKED RUN (user, 2026-10-04): Julia 1.13's Pkg.test no longer forces
+      # --check-bounds=yes; julia-runtest passes it (its `check_bounds` input, stated below), and
+      # test/test_check_bounds.jl FAILS this job if bounds checking is not really on.
+      LOGICKERNEL_REQUIRE_CHECK_BOUNDS: '1'
       # test/runtests.jl writes JUnit XML here for Codecov Test Analytics (test/junit_report.jl)
       LOGICKERNEL_JUNIT: ${{ github.workspace }}/junit.xml
     # A job-level `permissions:` block REPLACES the default token scopes, so every scope a step
@@ -51,6 +55,8 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+        with:
+          check_bounds: 'yes'
       # Coverage → Codecov. The repo's CODECOV_TOKEN secret when it exists; GitHub OIDC when it does
       # not (that is what `id-token: write` above is for) — so a missing secret no longer means a
       # silently skipped upload.
