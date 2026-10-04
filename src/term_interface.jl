@@ -199,7 +199,11 @@ function mk_sym end
 """
     mk_gnd(T::Type, v) -> T
 
-The grounded value `v`.
+The grounded value `v`, in CANONICAL form: a `Rational` whose denominator is 1 is stored as the
+INTEGER (user, 2026-10-04). SWI keeps rationals canonical — swipl 10.1.16 reads `2r1` as `2`:
+`2r1 == 2`, `integer(2r1)`, `compare(=, 2r1, 2)`, equal `term_hash` and `variant_sha1` (probed) — so
+normalising once, here, makes identity, the standard order and every hash agree by construction.
+(Julia's `Rational` is already reduced: `2//6` is `1//3`.)
 """
 function mk_gnd end
 
@@ -271,7 +275,7 @@ probed in swipl 10.1.16); pl-comp.c's `is_portable_smallint` decides only body a
 
 @doc "Not a number: a variable, a symbol, a compound, or a grounded value of another kind." NUM_NONE
 @doc "An integer, of any size." NUM_INTEGER
-@doc "A rational number that is not an integer." NUM_RATIONAL
+@doc "A rational number that is not an integer (guaranteed by `mk_gnd`'s canonical form)." NUM_RATIONAL
 @doc "A float (an IEEE double; narrower IEEE floats widen exactly)." NUM_FLOAT
 
 """

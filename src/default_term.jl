@@ -60,6 +60,25 @@ function gnd_value_key(v)::Union{UInt64, Nothing}
     return nothing
 end
 
+# SWI's canonical rationals (user, 2026-10-04; swipl 10.1.16 reads `2r1` as `2`): a `Rational` with
+# denominator 1 IS the integer. Stored as an integer type the payload `G` holds — the numerator's own
+# type, else Int64 when it fits, else BigInt — and refused when `G` holds none: a payload that can
+# hold such a rational must be able to hold the integer it is.
+_canonical_gnd(::Type{G}, v) where {G} = v
+function _canonical_gnd(::Type{G}, v::Rational) where {G}
+    denominator(v) == 1 || return v
+    n = numerator(v)
+    typeof(n) <: G && return n
+    Int64 <: G && typemin(Int64) <= n <= typemax(Int64) && return Int64(n)
+    BigInt <: G && return BigInt(n)
+    throw(
+        ArgumentError(
+            "gnd_term: $v is the integer $n (SWI's canonical form), and the payload $G holds " *
+            "no integer type to store it in"
+        )
+    )
+end
+
 _sym_key(s::Symbol)::UInt64 = UInt64(UInt(pointer_from_objref(s)))
 # A reserved symbol is another symbol than the text atom of its name: the same address with the low
 # bit set — an interned `Symbol` is word-aligned, so no text atom's key has that bit.
@@ -76,9 +95,11 @@ sym_term(::Type{Term{G}}, name::Symbol) where {G} =
 """
     gnd_term(::Type{Term{G}}, v::G) -> Term{G}
 
-The grounded value `v`; its [`gnd_key`](@ref) is computed here, once.
+The grounded value `v`, CANONICAL — a `Rational` with denominator 1 is stored as the integer, in an
+integer type `G` holds (see [`mk_gnd`](@ref)); its [`gnd_key`](@ref) is computed here, once.
 """
 function gnd_term(::Type{Term{G}}, v::G) where {G}
+    v = _canonical_gnd(G, v)
     k = gnd_value_key(v)
     return Term{G}(
         GND, true, k !== nothing, false, k === nothing ? UInt64(0) : k, Symbol(""), v,

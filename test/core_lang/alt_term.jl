@@ -125,7 +125,11 @@ alt_rsym(::Type{AltTerm{H}}, name::Symbol) where {H} =
     AltRSym{H}(alt_sym(AltTerm{H}, name).id)
 
 "The grounded value `v`, boxed."
-alt_gnd(::Type{AltTerm{H}}, v) where {H} = AltGnd{H}(v)
+alt_gnd(::Type{AltTerm{H}}, v) where {H} = AltGnd{H}(_alt_canonical(v))
+
+"SWI's canonical rationals (src/term_interface.jl `mk_gnd`): a denominator of 1 is the integer."
+_alt_canonical(v) = v
+_alt_canonical(v::Rational) = denominator(v) == 1 ? numerator(v) : v
 
 "The host value of a grounded term (the reference type's `gnd_value`)."
 alt_value(t::AltGnd) = t.val

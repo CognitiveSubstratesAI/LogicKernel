@@ -67,6 +67,26 @@ _e(xs::_TT...) = mk_expr(_TT, _TT[xs...])
         @test length(Set(ts)) == 9          # :a 1 1.0 0.0 -0.0 "a" _G1 (f 1) (f 1.0) — twins collapse
     end
 
+    # the reference type's canonical rationals (src/default_term.jl `_canonical_gnd`): the integer is
+    # stored in a type the payload G holds — the numerator's own, else Int64 when it fits, else
+    # BigInt — and a payload with no integer type REFUSES a denominator-1 rational
+    @testset "a denominator-1 rational is stored in an integer type the payload holds" begin
+        G1 = Union{Int64, Rational{BigInt}}                     # no BigInt: the Int64 branch
+        t = gnd_term(Term{G1}, Rational{BigInt}(5, 1))
+        @test gnd_value(t) === Int64(5) && number_kind(t) === NUM_INTEGER
+        @test_throws ArgumentError gnd_term(Term{G1}, Rational{BigInt}(big(2)^70, 1))  # no room
+        @test_throws ArgumentError gnd_term(Term{Rational{Int64}}, 2 // 1)  # no integer type at all
+        @test gnd_value(gnd_term(Term{Rational{Int64}}, 1 // 2)) === 1 // 2     # a true rational
+        G2 = Union{BigInt, Rational{BigInt}}                    # the numerator's own type
+        @test gnd_value(gnd_term(Term{G2}, Rational{BigInt}(big(2)^70, 1))) == big(2)^70
+        @test gnd_value(gnd_term(Term{G2}, Rational{BigInt}(big(2)^70, 1))) isa BigInt
+        # the BigInt BRANCH: a numerator type G lacks (Int128), beyond Int64, BigInt in G
+        G3 = Union{BigInt, Rational{Int128}}
+        t3 = gnd_term(Term{G3}, Rational{Int128}(Int128(2)^70, 1))
+        @test gnd_value(t3) isa BigInt && gnd_value(t3) == big(2)^70
+        @test compareStandard(t3, gnd_term(Term{G3}, big(2)^70)) == 0
+    end
+
     @testset "printing" begin
         @test repr(_e(_s(:f), _g(1), _g("s"), mk_var(_TT, UInt64(7)), _e())) ==
             "(f 1 \"s\" _G7 ())"

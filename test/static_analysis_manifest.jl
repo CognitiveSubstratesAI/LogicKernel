@@ -395,6 +395,8 @@ const DISPATCH_MANIFEST = (
     (gnd_term, Tuple{Type{_M1}, Float64}, false),
     (gnd_term, Tuple{Type{_M2}, Int64}, false), (gnd_term, Tuple{Type{_M2}, String}, false),
     (gnd_term, Tuple{Type{_M3}, Vector{Float64}}, false),
+    (LK._canonical_gnd, Tuple{Type{Float64}, Float64}, true),
+    (LK._canonical_gnd, Tuple{Type{Union{Int64, Rational{Int64}}}, Rational{Int64}}, false),
     (mk_gnd, Tuple{Type{_M1}, Float64}, false),
     (mk_gnd, Tuple{Type{_M2}, Int64}, false), (mk_gnd, Tuple{Type{_M2}, String}, false),
     (mk_gnd, Tuple{Type{_M3}, Vector{Float64}}, false),

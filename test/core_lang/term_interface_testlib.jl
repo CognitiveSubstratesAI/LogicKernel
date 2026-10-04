@@ -228,6 +228,40 @@ function run_term_conformance(
         # getter per representation (user, 2026-10-03): branch once on the kind, then stay
         # type-stable. Small vs big integer is storage: a HEAD integer is `H_SMALLINT` when tagged,
         # else `H_MPZ` (pl-comp.c, probed); `is_portable_smallint` is body arithmetic's.
+        # SWI keeps rationals CANONICAL: `2r1` IS the integer 2 (user, 2026-10-04). swipl 10.1.16,
+        # probed with prefer_rationals=false (its default): `2r1 == 2`, `integer(2r1)`,
+        # `compare(=, 2r1, 2)`, term_hash and variant_sha1 equal; `-3r1` is `-3`. So `mk_gnd`
+        # normalises once, and identity, order and hashing agree by construction.
+        @testset "a rational with denominator 1 IS the integer (SWI's canonical form)" begin
+            for (r, i) in (
+                (2 // 1, 2),
+                (-3 // 1, -3),
+                (0 // 1, 0),
+                (typemax(Int64) // 1, typemax(Int64))
+            )
+                q, n = gn(r), gn(i)
+                @test number_kind(q) === NUM_INTEGER && integer_is_int64(q)
+                @test int64_value(q) === Int64(i)
+                @test compareStandard(q, n) == 0 && compareStandard(q, n, true) == 0  # 2r1 == 2
+                @test gnd_key(q) == gnd_key(n)
+                @test LogicKernel.pl_term_hash(q) == LogicKernel.pl_term_hash(n)    # term_hash
+                @test LogicKernel.pl_variant_sha1(q) == LogicKernel.pl_variant_sha1(n)
+                @test LogicKernel.is_variant_ptr(q, n)
+            end
+            # beyond Int64: `big(2)^70 // 1` is the BigInt integer; and a BigInt-typed `5 // 1` is 5
+            for (r, i) in
+                ((Rational{BigInt}(big(2)^70, 1), big(2)^70), (Rational{BigInt}(5, 1), 5))
+                q, n = gn(r), gn(i)
+                @test number_kind(q) === NUM_INTEGER && bigint_value(q) == i
+                @test integer_is_int64(q) == (typemin(Int64) <= i <= typemax(Int64))
+                @test compareStandard(q, n) == 0 && gnd_key(q) == gnd_key(n)
+                @test LogicKernel.pl_variant_sha1(q) == LogicKernel.pl_variant_sha1(n)
+                @test LogicKernel.is_variant_ptr(q, n)
+            end
+            @test number_kind(gn(1 // 2)) === NUM_RATIONAL        # a true rational stays one
+            @test compareStandard(gn(1 // 2), gn(2 // 4)) == 0     # and reduced: 1r2 == 2r4
+        end
+
         @testset "numbers: the kind, and a typed getter per kind" begin
             seen = Set{NumKind}()
             for v in HOST_VALUES

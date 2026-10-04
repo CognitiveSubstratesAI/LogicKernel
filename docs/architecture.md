@@ -667,10 +667,16 @@ L2 gives the operands decision 2's per-clause literal table.
   * the index differential's `_xlit` keys a predicate by every new instruction, dynamic and static.
 * **Open, for the user:**
   * `H_STRING` needs a string kind in the interface; until then a string is `H_ATOM`, as before;
-  * a `Rational` with denominator 1 is `NUM_RATIONAL` in both implementations, against
-    `NumKind`'s contract ("a rational that is not an integer"). swipl has no such term (`4r2` reads
-    as 2). The compiler follows `number_kind`, so it would be `H_MPQ`; the differentials draw only
-    canonical rationals.
+  * ~~a `Rational` with denominator 1 is `NUM_RATIONAL`~~ — RESOLVED (user, 2026-10-04):
+    CANONICALISED at construction. `mk_gnd` stores a denominator-1 `Rational` as the integer, in
+    both implementations, so identity, order and hashing agree by construction. swipl 10.1.16
+    (`prefer_rationals=false`, its default) probed: `2r1 == 2`, `integer(2r1)`,
+    `compare(=, 2r1, 2)`, equal `term_hash` and `variant_sha1`; `-3r1`, `4 rdiv 2` and `6r3` are
+    integers too.
+    * The reference type stores it in an integer type its payload holds (the numerator's own, else
+      `Int64` when it fits, else `BigInt`), and refuses when there is none.
+    * Pinned by conformance (Int64 and BigInt cases) and by test_default_term.jl (each branch).
+    * Arithmetic (3i/V6) must canonicalise its results the same way.
 
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders
