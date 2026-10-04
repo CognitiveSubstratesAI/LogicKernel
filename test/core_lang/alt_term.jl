@@ -63,7 +63,7 @@ import LogicKernel:
     atomic_compare, mk_var, mk_expr, mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol,
     is_nil, is_pair, number_kind, integer_is_int64, int64_value, bigint_value,
     rational_value,
-    float_value
+    float_value, string_value
 
 export AltTerm, alt_sym, alt_gnd, alt_var, alt_name, alt_value, alt_stats
 
@@ -181,7 +181,8 @@ function number_kind(t::AltGnd)
     v isa Integer && !(v isa Bool) && return NUM_INTEGER
     v isa Rational && return NUM_RATIONAL
     v isa Base.IEEEFloat && return NUM_FLOAT
-    return NUM_NONE
+    v isa AbstractString && return NUM_STRING
+    return NUM_OTHER
 end
 integer_is_int64(t::AltTerm) =
     number_kind(t) === NUM_INTEGER && typemin(Int64) <= t.val <= typemax(Int64)
@@ -193,6 +194,7 @@ bigint_value(t::AltTerm) = (_need(t, NUM_INTEGER, "bigint_value"); BigInt(t.val)
 rational_value(t::AltTerm) =
     (_need(t, NUM_RATIONAL, "rational_value"); Rational{BigInt}(t.val))
 float_value(t::AltTerm) = (_need(t, NUM_FLOAT, "float_value"); Float64(t.val))
+string_value(t::AltTerm) = (_need(t, NUM_STRING, "string_value"); String(t.val))
 
 # Only the term type itself: a kernel that passes a LEAF type (`typeof(t)`) finds no method.
 mk_var(::Type{AltTerm{H}}, key::UInt64) where {H} = AltVar{H}(key)
@@ -294,10 +296,10 @@ end
 const _NUMBER, _STRING, _ATOM, _OTHER = 1, 2, 3, 4
 
 _rank(::Union{AltSym, AltRSym}) = _ATOM
-function _rank(t::AltGnd)::Int
-    v = t.val
-    v isa Real && !(v isa Bool) && return _NUMBER
-    v isa AbstractString && return _STRING
+function _rank(t::AltGnd)::Int                 # from the ONE kind query, as the reference type
+    k = number_kind(t)
+    (k === NUM_INTEGER || k === NUM_RATIONAL || k === NUM_FLOAT) && return _NUMBER
+    k === NUM_STRING && return _STRING
     return _OTHER
 end
 

@@ -176,6 +176,8 @@ function ix_text(t, counts::Union{Nothing, Dict{UInt64, Int}}=nothing)::String
         v = lk_value(t)
         v isa AbstractFloat && return repr(Float64(v))
         v isa Rational && return "$(numerator(v))r$(denominator(v))"
+        v isa AbstractString &&
+            return "\"" * replace(v, "\\" => "\\\\", "\"" => "\\\"") * "\""
         return string(v)
     end
     if is_pair(t)

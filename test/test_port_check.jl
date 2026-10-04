@@ -356,6 +356,47 @@ _pc_codes(vs) = sort!([
         end
     end
 
+    @testset "the VM inventory's `declared` column follows the pl-vmi.c PORT markers" begin
+        row(n, k) = "| `$n` | 1 | — | N | $k |"
+        doc(rows...) =
+            "x\n$VM_INVENTORY_BEGIN -->\n| instruction | pl-vmi.c | operands | needed by | kernel |\n|---|---|---|---|---|\n" *
+            join(rows, "\n") * "\n$VM_INVENTORY_END\n"
+        two = doc(row("H_ATOM", "declared"), row("H_NIL", ""))
+        @test vm_inventory_violations(two, Set(["H_ATOM"]), "inv") == String[]
+        @test _pc_codes(vm_inventory_violations(two, Set(["H_ATOM", "H_NIL"]), "inv")) ==
+            [("VM-INVENTORY-DRIFT", "inv")]                     # ported, row left blank
+        @test _pc_codes(vm_inventory_violations(two, Set{String}(), "inv")) ==
+            [("VM-INVENTORY-DRIFT", "inv")]                     # declared, never ported
+        @test _pc_codes(vm_inventory_violations("x\n", Set(["H_ATOM"]), "inv")) ==
+            [("VM-INVENTORY-MISSING", "inv")]
+        @test vm_inventory_violations("x\n", Set{String}(), "inv") == String[]
+        @test _pc_codes(vm_inventory_violations(doc(), Set{String}(), "inv")) ==
+            [("VM-INVENTORY-MISSING", "inv")]                   # a section that parses to nothing
+
+        # On LogicKernel itself: both sides NON-EMPTY, and one blanked row is caught BY `port_check`
+        # (so the check is wired in, not only correct).
+        root = joinpath(@__DIR__, "..")
+        text = read(joinpath(root, "docs/port_inventory.md"), String)
+        ported = Set(
+            m.name for f in port_check(root).files for
+            m in f.markers if m.upstream_base == "pl-vmi.c"
+        )
+        vm = _vm_inventory(text)
+        @test vm !== nothing && vm.rows == 232                  # every VMI() of pl-vmi.c
+        @test !isempty(ported) && vm.declared == ported
+        blanked = replace(
+            text,
+            "| `H_NIL` | 528 | — | NQP | declared |" => "| `H_NIL` | 528 | — | NQP |  |"
+        )
+        @test blanked != text
+        mktempdir() do d
+            inv = joinpath(d, "port_inventory.md")
+            write(inv, blanked)
+            @test _pc_codes(port_check(root; inventory=inv).violations) ==
+                [("VM-INVENTORY-DRIFT", "port_inventory.md")]
+        end
+    end
+
     @testset "expected_path mirrors the upstream path" begin
         @test expected_path("swipl-devel", "src/pl-prims.c") == "src/pl-prims.jl"
         @test expected_path("swipl-devel", "boot/tabling.pl") == "boot/tabling.jl"

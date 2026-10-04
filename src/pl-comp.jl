@@ -428,8 +428,8 @@ end
 # a grounded value. A number by its SEMANTIC kind (Q1); an integer by its STORAGE, as upstream —
 # tagged (`PLMINTAGGEDINT`..`PLMAXTAGGEDINT`, `STG_INLINE`) is `H_SMALLINT`, any other `H_MPZ` (swipl
 # 10.1.16: 2^56-1 and -2^56 are h_smallint, 2^56, -2^56-1 and 2^63-1 h_mpz, probed). Anything else is
-# an `H_ATOM`: a non-number is a blob — and a string too, as the interface has no string kind yet
-# (H_STRING waits for one).
+# `H_STRING` for a string (the kind query's NUM_STRING, user 2026-10-04); any other grounded value
+# (NUM_OTHER, no SWI type) an `H_ATOM` for now — L2 makes it an opaque literal compared by `gnd_equal`.
 "The head instruction of grounded value `t` (pl-comp.c `compileArgument`)."
 function _gnd_head_code(t)::code
     nk = number_kind(t)
@@ -442,8 +442,10 @@ function _gnd_head_code(t)::code
         return H_MPQ                                           # isMPQNum(*arg)
     elseif nk === NUM_FLOAT
         return H_FLOAT
+    elseif nk === NUM_STRING
+        return H_STRING                                        # TAG_STRING
     end
-    return H_ATOM
+    return H_ATOM               # NUM_OTHER: until L2 makes it an opaque literal (# DIVERGES there)
 end
 
 # PORT: pl-comp.c compileArgument
@@ -724,7 +726,8 @@ function skipArgs(PC::Code, skip::Int, in_hvoid::Int)::Tuple{Code, Int}
                 return (PC, in_hvoid)
             end
         elseif c == H_ATOM || c == H_SMALLINT || c == H_NIL || c == H_FLOAT || c == H_MPZ ||
-            c == H_MPQ || c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_LIST_FF
+            c == H_MPQ || c == H_STRING || c == H_FIRSTVAR || c == H_VAR || c == H_VOID ||
+            c == H_LIST_FF
             if nested == 0
                 skip -= 1
                 if skip == 0
@@ -781,7 +784,7 @@ function argKey(PC::Code, skip::Int)::word
             return isExprFunctor(w) ? word(0) : w
         elseif c == H_ATOM
             return PC.codes[PC.pc]                              # code2atom(*PC)
-        elseif c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ
+        elseif c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ || c == H_STRING
             return PC.codes[PC.pc]                              # consInt/murmur_key/bignum_index
         elseif c == H_NIL
             return ATOM_nil                                     # *key = ATOM_nil

@@ -244,7 +244,8 @@ singleton variables only, so it prints as swipl prints it.
 function _xlit()::Vector{_XPred}
     L(h, t) = _xe("[|]", h, t)
     function lhead(name, i)::_X
-        j = i % 8
+        j = i % 9
+        j == 8 && return _xe(name, lk_gnd(_X, "s$(i % 4)"), _xg(i))                  # H_STRING
         j == 0 && return _xe(name, _xg(i), _xg(i))
         j == 1 && return _xe(name, lk_gnd(_X, 2^56 + i), _xg(i))
         j == 2 && return _xe(name, lk_gnd(_X, big(2)^70 + i), _xg(i))
@@ -264,7 +265,8 @@ function _xlit()::Vector{_XPred}
         (:call, _xe(name, L(_xs(:a1), _xs(:b)), _xv())),
         (:call, _xe(name, L(_xs(:a2), mk_nil(_X)), _xv())),
         (:call, _xe(name, _xe("[|]", _xs(:a)), _xv())),
-        (:call, _xe(name, _xv(), _xg(13)))
+        (:call, _xe(name, _xv(), _xg(13))),
+        (:call, _xe(name, lk_gnd(_X, "s1"), _xv()))
     ]
     # every first argument a list cell, two `H_LIST_FF` clauses among 80: the index goes DEEP into
     # the cell (its head, `1:1` — swipl 10.1.16 builds it here, probed; with 4 of 40 it does not),

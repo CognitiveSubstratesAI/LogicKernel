@@ -611,7 +611,8 @@ compiler can emit.
   symbols are a LEAF TYPE of their own.
 * **The surface**: `mk_sym`, `mk_gnd`, `mk_reserved_symbol` / `is_reserved_symbol` (pl-ressymbol.c),
   `mk_nil` / `is_nil` (the foreign interface's `PL_put_nil` / `PL_get_nil`), `NumKind` with
-  `number_kind`, `integer_is_int64`, `int64_value`, `bigint_value`, `rational_value`, `float_value`.
+  `number_kind`, `integer_is_int64`, `int64_value`, `bigint_value`, `rational_value`, `float_value`
+  (and, since V1 L1, `NUM_STRING`/`NUM_OTHER` with `string_value` — below).
 * **The reserved set** is upstream's: `[]`, and four atoms the same init retypes (`dict`, `trienode`,
   `no_value`, `term_t_free`) — those four NOT PORTED, with their subsystems (src/pl-ressymbol.jl).
 * **What swipl 10.1.16 says, probed, and where each fact is pinned** (`[]` against the text atom `'[]'`):
@@ -653,8 +654,8 @@ L2 gives the operands decision 2's per-clause literal table.
     where upstream tests `fdef == FUNCTOR_dot2`.
   * `argKey` reads `FUNCTOR_dot2` from all three, `indexOfWord` gives it to every list cell, and
     nothing is carried through the index readers — as upstream.
-* **Numbers:** `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT` by `number_kind` and tagged storage
-  (`_gnd_head_code`). Each holds ONE operand, the index key, until L2.
+* **Numbers and strings:** `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT`/`H_STRING` by `number_kind` and
+  tagged storage (`_gnd_head_code`). Each holds ONE operand, the index key, until L2.
 * **Every code reader** handles the new instructions as upstream does: `skipArgs`, `argKey`,
   `skipToTerm` (an `H_LIST_FF` reads upstream's two-void dummy, `H_LIST_FF_VOIDS`, allowlisted as
   the read-only mirror of its `static code var[2]`), `indexableCompound` and `addClauseToIndex`.
@@ -666,7 +667,22 @@ L2 gives the operands decision 2's per-clause literal table.
     and the ±2^56 edges, by value and live against swipl;
   * the index differential's `_xlit` keys a predicate by every new instruction, dynamic and static.
 * **Open, for the user:**
-  * `H_STRING` needs a string kind in the interface; until then a string is `H_ATOM`, as before;
+  * ~~`H_STRING` needs a string kind in the interface~~ — RESOLVED (user, 2026-10-04): the kind
+    query is the ONE place for a grounded value's Prolog type. `NumKind` gains `NUM_STRING` (SWI's
+    `TAG_STRING`, any `AbstractString`; its typed getter `string_value` returns a `String`) and
+    `NUM_OTHER` (a grounded value SWI has no type for: a `Bool`, a `BigFloat`, a container);
+    `NUM_NONE` now means "not grounded".
+    * A string compiles to `H_STRING`, as swipl does (`"abc"` → `h_string`), keyed by its
+      `gnd_key` until L2. A `NUM_OTHER` value stays `H_ATOM` until L2 makes it an opaque literal
+      compared by `gnd_equal` (`# DIVERGES` there).
+    * The standard order's class (number < string < atom < other) is DERIVED from the kind query
+      in both implementations (`_atomic_rank`, `_rank`). Before, it used `v isa Real`, so a
+      `BigFloat` sorted as a number while `number_kind` called it no number; it now sorts as other.
+    * Pinned by conformance (each kind and `string_value` on all three implementations; "the
+      standard order's class follows the kind query", pairwise over every host value plus atoms), by
+      the head-code differential (strings in its random heads, `h_string` live against swipl) and by
+      the index differential (`_xlit` keys a predicate by strings). Mutation-proved: strings left
+      as other, both ranks back on `v isa Real` (caught through `big"1.5"`), and no `H_STRING`;
   * ~~a `Rational` with denominator 1 is `NUM_RATIONAL`~~ — RESOLVED (user, 2026-10-04):
     CANONICALISED at construction. `mk_gnd` stores a denominator-1 `Rational` as the integer, in
     both implementations, so identity, order and hashing agree by construction. swipl 10.1.16

@@ -31,6 +31,7 @@ Base.:(==)(a::CustomEq, b::CustomEq) = a.v % 10 == b.v % 10
 "Host values every implementation's `mkgnd` must accept."
 const HOST_VALUES = (
     0, 1, 2, big(2), big(2)^70, -big(2)^70, -5, 0.0, -0.0, 1.0, 1.5, NaN, Inf, -Inf, 1.0f0,
+    big"1.5",          # a Real with no SWI type: OTHER, and ordered as other (the kind query rules)
     1 // 2,
     "", "a", "ab",
     "b",
@@ -262,6 +263,29 @@ function run_term_conformance(
             @test compareStandard(gn(1 // 2), gn(2 // 4)) == 0     # and reduced: 1r2 == 2r4
         end
 
+        # the kind query is the ONE place for a grounded value's Prolog type: the standard order's
+        # classes follow it — numbers < strings < atoms < other grounded values < compounds
+        @testset "the standard order's class follows the kind query" begin
+            class(t) =
+                if kind(t) === SYM
+                    3
+                else
+                    k = number_kind(t)
+                    if k in (NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT)
+                        1
+                    elseif k === NUM_STRING
+                        2
+                    else
+                        4
+                    end
+                end
+            ts = T[(gn(v) for v in HOST_VALUES)...; sy(:a); sy(:zz)]
+            for x in ts, y in ts
+                class(x) < class(y) && @test compareStandard(x, y) == -1
+            end
+            @test any(t -> class(t) == 4, ts) && any(t -> class(t) == 2, ts)
+        end
+
         @testset "numbers: the kind, and a typed getter per kind" begin
             seen = Set{NumKind}()
             for v in HOST_VALUES
@@ -284,11 +308,16 @@ function run_term_conformance(
                     @test k === NUM_RATIONAL && q isa Rational{BigInt} && q == v
                 elseif v isa Base.IEEEFloat
                     @test k === NUM_FLOAT && float_value(g) === Float64(v)  # bits: -0.0, NaN
+                elseif v isa AbstractString                 # SWI's TAG_STRING (user, 2026-10-04)
+                    @test k === NUM_STRING && string_value(g) == v &&
+                        string_value(g) isa String
                 else
-                    @test k === NUM_NONE
+                    @test k === NUM_OTHER                   # grounded, no SWI type
                 end
             end
-            @test seen == Set((NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT, NUM_NONE))  # all four met
+            @test seen == Set((NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT, NUM_STRING, NUM_OTHER))
+            @test_throws ArgumentError string_value(gn(1))
+            @test_throws ArgumentError string_value(sy(:a))
             @test all(
                 t -> number_kind(t) === NUM_NONE,
                 (sy(:a), mk_nil(T), mk_var(T, UInt64(1)), ex(sy(:f), gn(1)), ex())

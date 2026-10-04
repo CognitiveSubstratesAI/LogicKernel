@@ -146,15 +146,23 @@ function is_pair(t::Term)::Bool
     return h.kind === SYM && !h.reserved && h.name === LIST_CONS_NAME
 end
 
-# A number's kind follows its host type: `Integer` (not `Bool`), `Rational`, an IEEE float. Other
-# payloads — a `Bool`, a `BigFloat`, a container — are not numbers to Prolog.
+# A grounded value's kind follows its host type: `Integer` (not `Bool`), `Rational`, an IEEE float,
+# `AbstractString`. Every other payload — a `Bool`, a `BigFloat`, a container — is NUM_OTHER.
 function number_kind(t::Term)::NumKind
     t.kind === GND || return NUM_NONE
     v = t.gval
     v isa Integer && !(v isa Bool) && return NUM_INTEGER
     v isa Rational && return NUM_RATIONAL
     v isa Base.IEEEFloat && return NUM_FLOAT
-    return NUM_NONE
+    v isa AbstractString && return NUM_STRING
+    return NUM_OTHER
+end
+function string_value(t::Term)::String
+    v = t.gval
+    if t.kind === GND && v isa AbstractString                 # an `if`, so `v` narrows
+        return String(v)
+    end
+    throw(ArgumentError("string_value: not a string"))
 end
 function integer_is_int64(t::Term)::Bool
     t.kind === GND || return false
@@ -234,13 +242,14 @@ const _RANK_STRING = 2
 const _RANK_ATOM = 3
 const _RANK_OTHER = 4
 
-_is_number(v)::Bool = v isa Real && !(v isa Bool)
-
+# The standard order's class of an atomic term, from the ONE kind query (user, 2026-10-04: one place
+# for a grounded value's Prolog type) — before, a `Real` such as a `BigFloat` ranked as a number here
+# while `number_kind` called it no number.
 function _atomic_rank(t::Term)::Int
     t.kind === SYM && return _RANK_ATOM
-    v = t.gval
-    _is_number(v) && return _RANK_NUMBER
-    v isa AbstractString && return _RANK_STRING
+    k = number_kind(t)
+    (k === NUM_INTEGER || k === NUM_RATIONAL || k === NUM_FLOAT) && return _RANK_NUMBER
+    k === NUM_STRING && return _RANK_STRING
     return _RANK_OTHER
 end
 

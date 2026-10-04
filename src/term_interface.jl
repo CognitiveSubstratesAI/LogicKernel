@@ -265,27 +265,43 @@ const LIST_CONS_NAME = Symbol("[|]")
 """
     NumKind
 
-A number's SEMANTIC kind, as SWI-Prolog's: [`NUM_INTEGER`](@ref) (any size), [`NUM_RATIONAL`](@ref),
-[`NUM_FLOAT`](@ref) — and [`NUM_NONE`](@ref) for every term that is not a number. Small vs big
-integer is STORAGE, not a kind: [`integer_is_int64`](@ref) says which getter to use. A HEAD integer
+A grounded value's PROLOG TYPE — the ONE place to look it up (user, 2026-10-04): a number by its
+SEMANTIC kind, as SWI-Prolog's — [`NUM_INTEGER`](@ref) (any size), [`NUM_RATIONAL`](@ref),
+[`NUM_FLOAT`](@ref) — a [`NUM_STRING`](@ref) (SWI's `TAG_STRING`), or [`NUM_OTHER`](@ref) for a
+grounded value SWI has no type for; and [`NUM_NONE`](@ref) for every term that is not grounded (a
+variable, a symbol, a compound). The standard order's classes follow it. Small vs big integer is
+STORAGE, not a kind: [`integer_is_int64`](@ref) says which getter to use. A HEAD integer
 is `H_SMALLINT` when it fits a tagged word and `H_MPZ` otherwise (pl-comp.c `compileArgument`,
 probed in swipl 10.1.16); pl-comp.c's `is_portable_smallint` decides only body arithmetic.
 """
-@enum NumKind::UInt8 NUM_NONE NUM_INTEGER NUM_RATIONAL NUM_FLOAT
+@enum NumKind::UInt8 NUM_NONE NUM_INTEGER NUM_RATIONAL NUM_FLOAT NUM_STRING NUM_OTHER
 
-@doc "Not a number: a variable, a symbol, a compound, or a grounded value of another kind." NUM_NONE
+@doc "Not a grounded value: a variable, a symbol or a compound." NUM_NONE
 @doc "An integer, of any size." NUM_INTEGER
 @doc "A rational number that is not an integer (guaranteed by `mk_gnd`'s canonical form)." NUM_RATIONAL
 @doc "A float (an IEEE double; narrower IEEE floats widen exactly)." NUM_FLOAT
+@doc "A string — SWI's `TAG_STRING` (any `AbstractString` payload); its text: `string_value`." NUM_STRING
+@doc """
+A grounded value SWI has no type for (any other host value, a `BigFloat` included). The standard
+order puts it last; in a head it is an `H_ATOM` until L2 compiles it as an opaque literal compared
+by `gnd_equal` — `# DIVERGES` there, since SWI has no such case.
+""" NUM_OTHER
 
 """
     number_kind(t) -> NumKind
 
 The [`NumKind`](@ref) of `t`. Callers branch ONCE on it and then call the one typed getter that
 kind has — [`int64_value`](@ref)/[`bigint_value`](@ref), [`rational_value`](@ref),
-[`float_value`](@ref) — so everything after the branch is type-stable.
+[`float_value`](@ref), [`string_value`](@ref) — so everything after the branch is type-stable.
 """
 function number_kind end
+
+"""
+    string_value(t) -> String
+
+The text of a [`NUM_STRING`](@ref); an `ArgumentError` for any other term.
+"""
+function string_value end
 
 """
     integer_is_int64(t) -> Bool

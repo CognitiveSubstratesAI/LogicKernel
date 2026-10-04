@@ -61,6 +61,7 @@ function _hnum(rng::AbstractRNG)::_H
     r < 0.65 &&
         return lk_gnd(_H, Rational{BigInt}(rand(rng, (1 // 3, -5 // 7, 7 // 2, 2 // 9))))
     r < 0.85 && return lk_gnd(_H, rand(rng, (2.5, -0.0, 1.0e20, 3.0)))
+    r < 0.92 && return lk_gnd(_H, rand(rng, ("", "abc", "it's", "q\"x")))   # strings: h_string
     return lk_gnd(_H, rand(rng, -100:100))
 end
 
@@ -193,7 +194,9 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     end
     ours = [_hcode(h) for h in heads]
     # …and it reaches every new instruction
-    for i in ("h_smallint", "h_mpz", "h_mpq", "h_float", "h_nil", "h_list", "h_rlist")
+    for i in (
+        "h_smallint", "h_mpz", "h_mpq", "h_float", "h_string", "h_nil", "h_list", "h_rlist"
+    )
         @test any(c -> i in c, ours)
     end
     @test any(c -> any(startswith("h_list_ff("), c), ours)

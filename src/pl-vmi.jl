@@ -15,10 +15,9 @@
 #
 # NOT EMITTED, so not declared: H_SMALLINTW (only where a code word is narrower than a word,
 # `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is an `H_SMALLINT`, probed in 10.1.16),
-# H_STRING (the term interface has no string kind yet, so a string compiles to `H_ATOM`), and the SSU
-# instructions (`=>` clauses are not compiled yet).
+# and the SSU instructions (`=>` clauses are not compiled yet).
 #
-# OPERANDS (V1, L1): the literal instructions `H_SMALLINT`, `H_FLOAT`, `H_MPZ` and `H_MPQ` carry ONE
+# OPERANDS (V1, L1): the literal instructions `H_SMALLINT`, `H_FLOAT`, `H_MPZ`, `H_MPQ` and `H_STRING` carry ONE
 # operand — the value's index key, as `H_ATOM` does — where upstream carries the value itself (an
 # integer, `CODES_PER_DOUBLE` words, a `VM_DYNARGC` block). L2's per-clause literal table (decision 2)
 # replaces every such operand; the index keys stay what they are.
@@ -44,45 +43,48 @@ const H_MPZ = code(5)
 # PORT: pl-vmi.c H_MPQ
 "Head: unify with a rational that is not an integer (pl-vmi.c); operand: its index key (until L2)."
 const H_MPQ = code(6)
+# PORT: pl-vmi.c H_STRING
+"Head: unify with a string (pl-vmi.c); operand: its index key (until L2's literal table)."
+const H_STRING = code(7)
 # PORT: pl-vmi.c H_VOID
 "Head: skip an argument that is a singleton variable (pl-vmi.c)."
-const H_VOID = code(7)
+const H_VOID = code(8)
 # PORT: pl-vmi.c H_VOID_N
 "Head: skip that many void arguments; operand: the count (pl-vmi.c)."
-const H_VOID_N = code(8)
+const H_VOID_N = code(9)
 # PORT: pl-vmi.c H_VAR
 "Head: unify the argument with a variable seen before; operand: its frame slot (pl-vmi.c)."
-const H_VAR = code(9)
+const H_VAR = code(10)
 # PORT: pl-vmi.c H_FIRSTVAR
 "Head: the first occurrence of a variable inside a compound; operand: its slot (pl-vmi.c)."
-const H_FIRSTVAR = code(10)
+const H_FIRSTVAR = code(11)
 # PORT: pl-vmi.c H_FUNCTOR
 "Head: unify with a compound and enter its arguments; operand: the functor word (pl-vmi.c)."
-const H_FUNCTOR = code(11)
+const H_FUNCTOR = code(12)
 # PORT: pl-vmi.c H_RFUNCTOR
 "Head: as `H_FUNCTOR`, for the LAST argument of a compound — no `H_POP` of its own (pl-vmi.c)."
-const H_RFUNCTOR = code(12)
+const H_RFUNCTOR = code(13)
 # PORT: pl-vmi.c H_LIST
 "Head: as `H_FUNCTOR` for a list cell `'[|]'/2` (`FUNCTOR_dot2`); no operand (pl-vmi.c)."
-const H_LIST = code(13)
+const H_LIST = code(14)
 # PORT: pl-vmi.c H_RLIST
 "Head: as `H_RFUNCTOR` for a list cell `'[|]'/2`; no operand (pl-vmi.c)."
-const H_RLIST = code(14)
+const H_RLIST = code(15)
 # PORT: pl-vmi.c H_POP
 "Head: leave the arguments of a compound (pl-vmi.c)."
-const H_POP = code(15)
+const H_POP = code(16)
 # PORT: pl-vmi.c H_LIST_FF
 "Head: a list cell `[X|Y]` of two first-occurrence variables; operands: their two slots (pl-vmi.c)."
-const H_LIST_FF = code(16)
+const H_LIST_FF = code(17)
 # PORT: pl-vmi.c I_CHP
 "Create a choice point for an SSU clause (pl-vmi.c)."
-const I_CHP = code(17)
+const I_CHP = code(18)
 # PORT: pl-vmi.c I_ENTER
 "End of the head of a rule: enter the body (pl-vmi.c)."
-const I_ENTER = code(18)
+const I_ENTER = code(19)
 # PORT: pl-vmi.c I_EXITFACT
 "End of a fact (pl-vmi.c)."
-const I_EXITFACT = code(19)
+const I_EXITFACT = code(20)
 
 # PORT: pl-incl.h code_info
 "What `codeTable` records of an instruction: its name and number of operand words (pl-incl.h)."
@@ -103,6 +105,7 @@ function codeTable(op::code)::code_info
     op == H_FLOAT && return code_info(:H_FLOAT, 1)
     op == H_MPZ && return code_info(:H_MPZ, 1)
     op == H_MPQ && return code_info(:H_MPQ, 1)
+    op == H_STRING && return code_info(:H_STRING, 1)
     op == H_VOID && return code_info(:H_VOID, 0)
     op == H_VOID_N && return code_info(:H_VOID_N, 1)
     op == H_VAR && return code_info(:H_VAR, 1)
