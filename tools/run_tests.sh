@@ -155,6 +155,8 @@ _sharded_run() {   # (tools/lib_evidence.sh is sourced above)
     run="$ROOT/.evidence/$run_id"
     mkdir -p "$run/claims"
     echo "run_tests.sh: SHARDED evidence run $run_id: $n fresh workers (LOGICKERNEL_SHARDS overrides)"
+    local m_cpu0 m_mhz0 m_probe0                            # the machine, for the summary
+    m_cpu0=$(_cpu_sample); m_mhz0=$(_cpu_mhz); m_probe0=$(_host_probe_s)
     _stop_units() { for u in "${units_[@]}"; do systemctl --user stop "$u" 2>/dev/null; done; }
     trap '_stop_units' EXIT
     if ! julia --project=. --startup-file=no -e 'using LogicKernel' < /dev/null; then
@@ -197,6 +199,9 @@ _sharded_run() {   # (tools/lib_evidence.sh is sourced above)
             echo "    replay:  LOGICKERNEL_REPLAY=$run/seq_$((i + 1)).tsv tools/run_tests.sh"
         fi
     done
+    echo "  machine: host probe ${m_probe0} s → $(_host_probe_s) s (a fixed 1-core loop, before and after:" \
+        "slower = the host); steal $(_steal_pct "$m_cpu0" "$(_cpu_sample)")% of CPU time;" \
+        "clock ${m_mhz0} → $(_cpu_mhz) MHz"
     _check_run "$run" || rc=1                              # tools/lib_evidence.sh
     echo "  slowest units:"
     cat "$run"/seq_*.tsv 2>/dev/null | sort -t "$(printf '\t')" -k3 -nr | head -10 |

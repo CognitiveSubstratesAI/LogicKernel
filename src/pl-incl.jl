@@ -127,6 +127,16 @@ const TAG_ATOM = UInt64(0x00000005)
 # PORT: pl-data.h MARK_MASK
 "The GC mark bit (pl-data.h); variant_sha1 sets it in the words it numbers variables with."
 const MARK_MASK = UInt64(0x1) << 5
+# PORT: pl-data.h FIRST_MASK
+"The GC first-mark bit (pl-data.h)."
+const FIRST_MASK = UInt64(0x2) << 5
+# DIVERGES (Q2, src/pl-ressymbol.jl § `$expr/n`): the bit that MARKS a `$expr/n` functor word.
+# Upstream sets FIRST_MASK only on cells, during GC and the occurs check — never in an index key or
+# an instruction operand — and `MK_FUNCTOR`/`MK_ATOM` below shift their payload past LMASK_BITS, so
+# bits 5–6 of every `name/arity` and atom word are zero, whatever the name and arity. So
+# `isExprFunctor` is exact. Pinned by test/core_lang/test_expr_functor.jl ("the `$expr` bit").
+"The bit marking a `\$expr/n` functor word (Q2): `FIRST_MASK`'s, which no upstream key carries."
+const EXPR_FUNCTOR_MASK = FIRST_MASK
 # PORT: pl-data.h STG_MASK
 "Mask of the storage bits (pl-data.h)."
 const STG_MASK = UInt64(0x3) << 3

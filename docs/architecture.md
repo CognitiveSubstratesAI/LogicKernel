@@ -90,7 +90,11 @@ count from cores and memory — 3 here; `LOGICKERNEL_SHARDS` overrides, `=1` the
   against the pin.)
 * only the coordinator gives the verdict — every shard green, every unit run EXACTLY once, the
   second implementation exercised across all shards (`_check_run`, tools/lib_evidence.sh) — and only
-  it writes evidence, against the tree fingerprint taken at launch.
+  it writes evidence, against the tree fingerprint taken at launch;
+* the summary records what the MACHINE did (user, 2026-10-04: a slow run must say whether it was
+  the host): a fixed single-core probe timed before and after (about 2.0 s quiet), the steal share,
+  and the clock. This VM reported 0 steal over 16 h and a fixed 2394.569 MHz, so here the probe is
+  the signal.
 MEASURED: 6m05s wall for the whole run (3 workers, 321/313/314 s of units each), against 16m07s in
 one process just before. The longest unit is the static-analysis gate (217 s); the rest are at most
 ~54 s. `tools/test_evidence.sh` tests the coordinator's verdict on fixture runs (a unit skipped, run
@@ -604,6 +608,15 @@ them. It stays OUT of the swipl differentials (SWI cannot express it) and has it
   index from going deep, as `q(_)` does in swipl (10.1.16, probed) — where a deep key would read
   its arguments misaligned with theirs. The VM must match the same way (V2–V4): `H_FUNCTOR $expr/n`
   against any compound of `n` children, `H_FUNCTOR f/k` against a `$expr/(k+1)`.
+* **Reviewed (user, 2026-10-04): all three choices approved** — the reserved name; child-by-child
+  unification with the index wildcard; the marking bit. Two requirements came with them, both done:
+  * the VM's obligation is pinned NOW, in both directions, as expected failures (`@test_broken`)
+    until V4a: `H_FUNCTOR $expr/n` against any compound of n children, and `H_FUNCTOR f/k` against
+    a `$expr/(k+1)` argument. `ok1 == ok2` fails a VM that does one side only, and a
+    `PL_next_solution` in the kernel without the test wired to it fails too (V4a's gate);
+  * the bit (`EXPR_FUNCTOR_MASK` = upstream's `FIRST_MASK`) is documented beside the word layout
+    (src/pl-incl.jl) and tested: no `name/arity` word over 20000 random names and arities, no
+    symbol-headed head's operand, and no all-ones `MK_FUNCTOR`/`MK_ATOM` input carries it.
 * **`=@=` and the hashes** already treated it as one functor (same number of children; name hash 0;
   `C` and the child count) — now named so.
 * **Pinned failing first** (test/core_lang/test_expr_functor.jl, 48 assertions on each

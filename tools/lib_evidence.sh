@@ -25,6 +25,34 @@ _check_swipl_pin() {
     esac
 }
 
+# ── what the MACHINE did during a run (user, 2026-10-04: a slow run must say whether it was the
+# host). A VM's host contention shows as STEAL time where the hypervisor reports it; this VM (VMware)
+# reported 0 steal over 16 h of uptime and a fixed 2394.569 MHz on every core, so neither can show
+# a slow host here. A fixed single-core probe is timed too, before the workers start and after they
+# finish (measured 2.00-2.10 s on a quiet machine): the same work, slower, is the host.
+# _cpu_sample — "total steal" CPU jiffies, from /proc/stat's aggregate line
+_cpu_sample() {
+    awk '/^cpu /{t = 0; for (i = 2; i <= 9; i++) t += $i; print t, $9; exit}' /proc/stat 2>/dev/null
+}
+# _steal_pct "T0 S0" "T1 S1" — the share of CPU time the host stole between two samples, in %
+_steal_pct() {
+    awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, " "); split(b, y, " "); dt = y[1] - x[1]
+        if (dt > 0) printf "%.1f", 100 * (y[2] - x[2]) / dt; else printf "n/a" }'
+}
+# _cpu_mhz — the mean clock over the CPUs, as /proc/cpuinfo reports it
+_cpu_mhz() {
+    awk -F: '/^cpu MHz/ {s += $2; n++} END { if (n) printf "%.0f", s / n; else printf "n/a" }' \
+        /proc/cpuinfo 2>/dev/null
+}
+# _host_probe_s — seconds for a fixed single-core loop
+_host_probe_s() {
+    local t0 t1
+    t0=$(date +%s.%N)
+    awk 'BEGIN { for (i = 0; i < 2e7; i++) s += i }'
+    t1=$(date +%s.%N)
+    awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.2f", b - a }'
+}
+
 # _shard_count — from the machine: one core left free, and ~2.5 GB per worker (Julia with the
 # analysis tools loaded, plus swipl children) with 3 GB kept back. LOGICKERNEL_SHARDS overrides.
 _shard_count() {

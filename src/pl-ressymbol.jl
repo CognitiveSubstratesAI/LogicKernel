@@ -74,13 +74,9 @@ const ATOM_nil = MK_ATOM(UInt64(0x0052_4553_5652_4544))      # "RESERVED", withi
 const ATOM_expr = MK_ATOM(UInt64(0x0024_4558_5052))          # "$EXPR", within the atom-number bits
 
 """
-The bit that marks a `\$expr/n` functor word: the position of upstream's `FIRST_MASK` (pl-data.h),
-a GC mark that no key and no instruction operand carries — so no `name/arity` word has it, and
-`isExprFunctor` is exact where comparing hashes would hold by chance.
+The functor word of `\$expr/n` (Q2): an `isFunctor` word, marked with `EXPR_FUNCTOR_MASK` — the
+bit of upstream's `FIRST_MASK`, which no `name/arity` word has (src/pl-incl.jl, the word layout).
 """
-const EXPR_FUNCTOR_MASK = UInt64(0x2) << 5
-
-"The functor word of `\$expr/n` (Q2): an `isFunctor` word, marked with `EXPR_FUNCTOR_MASK`."
 expr_functor(n::Int)::word = _functor_word(UInt64(ATOM_expr), n) | EXPR_FUNCTOR_MASK
 
 "True when `w` is the functor word of a `\$expr/n` (Q2)."

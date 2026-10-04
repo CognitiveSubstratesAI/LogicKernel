@@ -10,7 +10,10 @@
 #     symbol head included), so it is a WILDCARD, keyed as a variable is — and, as a variable clause
 #     does in swipl, it keeps the index from going deep where it stands among same-functor clauses
 #     (where its arguments would not line up with theirs);
-#   * UNIFICATION is unchanged: child by child, `(X a) = f(a)` binds `X = f`.
+#   * UNIFICATION is unchanged: child by child, `(X a) = f(a)` binds `X = f` — and the VM must match
+#     the same way in BOTH directions, pinned below as expected failures until it exists (user,
+#     2026-10-04);
+#   * the BIT marking a `$expr/n` word is never set in an ordinary key (src/pl-incl.jl).
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 using Random
@@ -22,6 +25,12 @@ _qv(k::Int) = lk_var(_Q, UInt64(k))
 _qe(xs::_Q...) = mk_expr(_Q, _Q[xs...])
 _qf(f, xs::_Q...) = _qe(_qs(f), xs...)
 _qcmp(a, b) = compareStandard(a, b)
+
+# The VM's answers for `goal` on predicate `pr` — `nothing` while there is no VM. V4a wires this to
+# the query API (`PL_open_query`/`PL_next_solution`, decided) and sets `_QVM_WIRED`; until then a
+# `PL_next_solution` in the kernel fails "the VM matches $expr/n both ways".
+const _QVM_WIRED = false
+_qvm_call(pr, goal)::Union{Nothing, Vector{_Q}} = nothing
 
 "The head code of `head` (a clause of a fresh predicate): `(instruction name, operands...)`."
 function _qcode(head::_Q)::Vector{Tuple{Symbol, Vararg{UInt64}}}
@@ -174,5 +183,62 @@ end
     @testset "variant: \$expr/n against \$expr/n only" begin
         @test LK.is_variant_ptr(_qe(X, a), _qe(Y, a))
         @test !LK.is_variant_ptr(_qe(X, a), _qf(:f, a))
+    end
+
+    @testset "the \$expr bit is never set in an ordinary key" begin
+        # structurally: MK_FUNCTOR and MK_ATOM shift their payload past bits 5–6, so all-ones input
+        # leaves them clear
+        @test LK.MK_FUNCTOR(typemax(UInt64), typemax(UInt64)) & LK.EXPR_FUNCTOR_MASK == 0
+        @test LK.MK_ATOM(typemax(UInt64)) & LK.EXPR_FUNCTOR_MASK == 0
+        # every name/arity word over random names and arities (inline and beyond F_ARITY_MASK)…
+        rng = Xoshiro(20261004)
+        ws = [LK._functor_word(rand(rng, UInt64), rand(rng, 0:300)) for _ in 1:20_000]
+        @test all(w -> LK.isFunctor(w) && !LK.isExprFunctor(w), ws)
+        # …and the H_FUNCTOR operand and key of real heads: symbol-headed ones are never `$expr`
+        sym_heads = (_qf(:f, a), _qf(:g, X, b), mk_nil(_Q), _qe(mk_nil(_Q), a), _qf(:z))
+        for t in sym_heads
+            kind(t) === EXPR || continue
+            code = _qcode(_qf(:p, t))
+            @test !LK.isExprFunctor(code[1][2])
+        end
+        # the other side, non-empty: every `$expr/n` word carries it, and no key is read from it
+        @test all(n -> LK.isExprFunctor(LK.expr_functor(n)), 0:300)
+        for t in (_qe(X, a), _qe(), _qe(_qg(1), a, b))
+            def = LK.lookupProcedure(_Q, sym_key(_qs(:p)), 1, UInt64(0))
+            codes = LK.compileClause(def, _qf(:p, t)).codes
+            @test LK.isExprFunctor(codes[2])
+            @test LK.argKey(LK.Code(codes, 1), 0) == 0
+        end
+    end
+
+    # ── what the VM must do: BOTH directions (user, 2026-10-04) ──────────────────────────────────
+    # DIVERGES from SWI (written so, not as a `# DIVERGES:` port marker: this file is ORIGINAL and has
+    # no `# PORT:` line for one to sit under). In SWI, compounds of different functors never unify,
+    # and indexing and H_FUNCTOR rely on it. Here `(X a)` (`$expr/2`) unifies with `f(a)` (`f/1`) child by child, so the VM must
+    # match in BOTH directions:
+    #   1. a head holding `$expr/n` (`H_FUNCTOR $expr/n`) against ANY compound of n children —
+    #      not a functor-equality check;
+    #   2. a head `f(…)` (`H_FUNCTOR f/k`) against a `$expr/(k+1)` argument — child by child,
+    #      not a failure on the functor.
+    # Pinned as EXPECTED FAILURES until the VM exists (V4a's gate turns both into `@test`). One side
+    # alone fails `ok1 == ok2`, and a VM that arrives without `_qvm_call` wired to it fails the
+    # last test.
+    @testset "the VM matches \$expr/n both ways (expected failures until V4)" begin
+        p1 = ix_pred(_Q, :vm1, 1)                         # 1: the head holds `$expr/2`
+        ix_assertz!(p1, _qf(:vm1, _qe(X, a)))
+        g1, want1 = _qf(:vm1, _qf(:f, a)), _Q[_qf(:vm1, _qf(:f, a))]
+        p2 = ix_pred(_Q, :vm2, 1)                         # 2: the argument is `$expr/2`
+        ix_assertz!(p2, _qf(:vm2, _qf(:f, a)))
+        g2, want2 = _qf(:vm2, _qe(Y, a)), _Q[_qf(:vm2, _qf(:f, a))]
+        # the oracle: the term-level path (decompileHead!, the kernel's unifier) does both today
+        @test lk_eq(first.(ix_call(p1, g1)), want1)
+        @test lk_eq(first.(ix_call(p2, g2)), want2)
+        vm1, vm2 = _qvm_call(p1, g1), _qvm_call(p2, g2)
+        ok1 = vm1 !== nothing && lk_eq(vm1, want1)
+        ok2 = vm2 !== nothing && lk_eq(vm2, want2)
+        @test_broken ok1                                  # direction 1 — DIVERGES from SWI
+        @test_broken ok2                                  # direction 2 — DIVERGES from SWI
+        @test ok1 == ok2                                  # never ONE direction only
+        @test _QVM_WIRED || !isdefined(LK, :PL_next_solution)
     end
 end

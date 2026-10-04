@@ -42,6 +42,13 @@ _check_run "$F" > /dev/null 2>&1; check "a run with no unit count fails" 1 $?
 fixture "$F" 4 "1 2 3 4" "1 2 3 4" "5 6 0";  _check_run "$F" > /dev/null 2>&1; check "no sharing exercised fails" 1 $?
 fixture "$F" 4 "1 2 3 4" "1 2 3 4" "0 6 7";  _check_run "$F" > /dev/null 2>&1; check "no plain AltTerm run fails" 1 $?
 
+# the machine's numbers in a run's summary: steal between two samples, and the host probe
+[ "$(_steal_pct "1000 10" "2000 60")" = "5.0" ]; check "steal: 50 of 1000 jiffies is 5.0%" 0 $?
+[ "$(_steal_pct "1000 10" "1000 10")" = "n/a" ]; check "steal: no time elapsed is n/a, not 0" 0 $?
+read -r t s <<< "$(_cpu_sample)"
+[ "${t:-0}" -gt 0 ] && [ -n "$s" ]; check "a /proc/stat sample has a total and a steal" 0 $?
+awk -v p="$(_host_probe_s)" 'BEGIN { exit !(p > 0) }'; check "the host probe takes measurable time" 0 $?
+
 # the tree fingerprint: a change of content changes it (a new file, here); restoring restores it
 fp1="$(_tree_fp "$ROOT")"; fp2="$(_tree_fp "$ROOT")"
 [ -n "$fp1" ] && [ "$fp1" = "$fp2" ]; check "the fingerprint is stable and non-empty" 0 $?
