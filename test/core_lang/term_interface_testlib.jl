@@ -264,11 +264,11 @@ function run_term_conformance(
         end
 
         # the kind query is the ONE place for a grounded value's Prolog type: the standard order's
-        # classes follow it — numbers < strings < atoms < other grounded values < compounds
+        # classes follow it — numbers < strings < other grounded values < atoms < compounds
         @testset "the standard order's class follows the kind query" begin
             class(t) =
                 if kind(t) === SYM
-                    3
+                    4
                 else
                     k = number_kind(t)
                     if k in (NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT)
@@ -276,14 +276,36 @@ function run_term_conformance(
                     elseif k === NUM_STRING
                         2
                     else
-                        4
+                        3
                     end
                 end
             ts = T[(gn(v) for v in HOST_VALUES)...; sy(:a); sy(:zz)]
             for x in ts, y in ts
                 class(x) < class(y) && @test compareStandard(x, y) == -1
             end
-            @test any(t -> class(t) == 4, ts) && any(t -> class(t) == 2, ts)
+            @test any(t -> class(t) == 3, ts) && any(t -> class(t) == 2, ts)
+        end
+
+        # DIVERGES from SWI, which has no such value: a grounded value of no SWI type (NUM_OTHER)
+        # sorts as SWI's NON-TEXT BLOBS do (`OTHER_BLOB_RANK`; user, 2026-10-04) — after every
+        # number and string, before `[]`, `''` and every text atom, before every compound. Pinned
+        # here on every implementation, and against swipl's own blobs in test_compare_swipl.jl.
+        @testset "a value of no SWI type sorts as a non-text blob" begin
+            others = T[gn(v) for v in HOST_VALUES if number_kind(gn(v)) === NUM_OTHER]
+            before = T[gn(-1), gn(0.5), gn(big(2)^70), gn(1 // 3), gn(""), gn("zzz")]
+            after = T[mk_nil(T), sy(Symbol("")), sy(Symbol("[]")), sy(:a), sy(:zz),
+                mk_expr(T, T[sy(:f), gn(1)])]
+            @test length(others) >= 3                           # Bool, BigFloat, containers, …
+            for o in others
+                @test all(
+                    b -> compareStandard(b, o) == -1 && compareStandard(o, b) == 1, before
+                )
+                @test all(
+                    a -> compareStandard(o, a) == -1 && compareStandard(a, o) == 1, after
+                )
+            end
+            @test LogicKernel.OTHER_BLOB_RANK < LogicKernel.RESERVED_SYMBOL_RANK <
+                LogicKernel.TEXT_ATOM_RANK                       # pl-atom.c: non-text < 0 < text
         end
 
         @testset "numbers: the kind, and a typed getter per kind" begin

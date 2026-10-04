@@ -12,7 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '"$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
+trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -56,6 +56,48 @@ LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight FAI
 rm -f "$probe_test"
 has "…past format and port_check" "$T/pf" "port_check clean" 1
 has "…by that file's own failure" "$T/pf" "planted: Test Failed" 1
+
+# preflight RECOVERS from a stale daemon (user, 2026-10-04: "make the gate recover, not just
+# detect") — and never suppresses a NOT CHECKED. Both ways:
+#   (a) a method the daemon holds but no src/ file defines (as Revise leaves a deleted one): STALE,
+#       the daemon restarts, the preflight reruns once — and PASSES;
+#   (b) a method loaded FROM SOURCE under a name no syntax tree shows (`@eval` of a built name): the
+#       classifier calls it STALE, the daemon restarts — and it is still NOT CHECKED: a REAL failure;
+#   (c) a method defined in source by name: REAL at once, the preflight FAILS, and no restart.
+stale="_preflight_probe_stale_$$"
+printf 'Core.eval(LogicKernel, :(%s(x::Int) = x))\nisdefined(LogicKernel, :%s) || error("not planted")\n' \
+    "$stale" "$stale" > "$T/stale.jl"
+"$W" send "$T/stale.jl" > "$T/out" 2>&1; check "stale: a daemon-only method is planted" 0 $?
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+check "stale: its NOT CHECKED restarts the daemon, and the rerun PASSES" 0 $?
+has "…classified STALE" "$T/pf" "STALE (defined in no src/ file.*$stale" 1
+has "…restarting the daemon once" "$T/pf" "STALE DAEMON — restarting" 1
+has "…and the rerun passed" "$T/pf" "preflight: PASS" 1
+printf 'isdefined(LogicKernel, :%s) && error("still there")\n' "$stale" > "$T/gone.jl"
+"$W" send "$T/gone.jl" > "$T/out" 2>&1; check "…the restart cleared it" 0 $?
+
+ti="$ROOT/src/term_interface.jl"
+cp "$ti" "$T/term_interface.jl.bak"
+gen="_preflight_probe_gen_$$"
+printf '\n@eval $(Symbol("_preflight_probe_gen_", %s))(x::Int) = x + 1\n' "$$" >> "$ti"
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+check "real: a source method no syntax tree shows still FAILS after the restart" 1 $?
+has "…the daemon was restarted once" "$T/pf" "STALE DAEMON — restarting" 1
+has "…and the failure reported REAL after it" "$T/pf" "still FAILS after a daemon restart" 1
+has "…naming the method" "$T/pf" "NOT CHECKED for dispatch: $gen" 1
+cp "$T/term_interface.jl.bak" "$ti"
+
+real="_preflight_probe_real_$$"
+printf '\n%s(x::Int) = x + 1\n' "$real" >> "$ti"
+"$W" restart > /dev/null 2>&1          # the daemon may hold the previous case's method
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+check "real: a method defined in source by name FAILS at once" 1 $?
+has "…classified REAL" "$T/pf" "REAL (still defined in src/.*$real" 1
+has "…with NO restart" "$T/pf" "STALE DAEMON" 0
+cp "$T/term_interface.jl.bak" "$ti"
+cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored" 0 $?
+rm -f "$T/term_interface.jl.bak"
+"$W" restart > /dev/null 2>&1
 
 cat > "$T/ok.jl" <<'JL'
 using Test

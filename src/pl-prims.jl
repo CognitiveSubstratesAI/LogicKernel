@@ -167,7 +167,12 @@ _tag_rank(k::Kind)::Int =
     end
 
 # PORT: pl-prims.c compare_primitives
-# DIVERGES: upstream orders atomic cells by their tags itself; the interface hides payloads, so two atomic terms are ordered by the implementation's `atomic_compare`, which must follow the same ladder.
+# DIVERGES: upstream orders atomic cells by their tags itself; the interface hides payloads, so two
+# atomic terms are ordered by the implementation's `atomic_compare`, which must follow the same
+# ladder — numbers < strings < atoms, an atom by its blob type's rank (`compareAtoms`) — with ONE
+# addition SWI has no counterpart for: a grounded value of no SWI type (NUM_OTHER) sorts as a
+# non-text blob, after strings and before `[]` and every text atom (`OTHER_BLOB_RANK`,
+# src/pl-ressymbol.jl).
 """
     compare_primitives(t1, t2, mode::Int) -> Int
 

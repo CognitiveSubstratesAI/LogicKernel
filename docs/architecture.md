@@ -77,6 +77,18 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     implementation.
   MEASURED the day it was built: two of three cold runs (~11 min each) had failed on exactly those
   checks, port_check and JET;
+  * **it RECOVERS from a stale daemon** (user, 2026-10-04: "make the gate recover, not just
+    detect"). Revise can leave a deleted method alive in the daemon: Julia's method table keeps it,
+    and the manifest gate's live-method filter (`which(m.sig) === m`) cannot tell it from a live one,
+    so the gate reports it NOT CHECKED. That is a daemon condition, not a code failure: evidence
+    runs are fresh processes and never see it (measured in V1 L2: `_decompiled!`).
+    * Each NOT CHECKED name is classified from the SYNTAX TREE of every file under `src/`
+      (port_check's `definitions`): STALE when no file defines it, REAL otherwise.
+    * When that gate's coverage test is the preflight's ONLY failure and every name is STALE, the
+      daemon restarts and the preflight reruns ONCE. The rerun's verdict is the verdict; a failure
+      after the restart is reported REAL.
+    * It never suppresses a NOT CHECKED: the only way to pass is a clean rerun in a fresh daemon.
+      Any other failure, or a REAL name, fails at once, with the names classified;
 * evidence processes compile into their own depot, `.warm/evidence-depot`, ahead of the user's
   (`_evidence_depot_path`; a bare trailing `:` would DROP `~/.julia`, measured). So a precompile for
   evidence never rewrites the cache the daemon loaded — which the daemon rightly refuses to revise
@@ -86,10 +98,16 @@ file) — so evidence is a process that started clean. The daemon follows Revise
   from systemd's own (see the evidence run below);
 * the include list of src/LogicKernel.jl stays LITERAL `include("…")` lines: Revise notices a removed
   include only for a literal path (any generated list, M1's included, must write literal lines).
-`tools/test_warm.sh` tests all of it (26 cases: the preflight fails fast on a planted port_check
-violation, fails BY THE TEST'S OWN VERDICT on a planted failing changed test file, and passes on the
-tree as it is); the verdict, Revise's refusal, Revise itself, the
-daemon's pin check and the PATH it is given are mutation-proved.
+`tools/test_warm.sh` tests all of it (the preflight fails fast on a planted port_check violation,
+fails BY THE TEST'S OWN VERDICT on a planted failing changed test file, and passes on the tree as it
+is). Its stale-daemon cases go both ways:
+* a daemon-only method is STALE, and the restarted rerun PASSES;
+* a method loaded from source under a name no syntax tree shows (`@eval` of a built name) is
+  classified STALE, but still fails after the restart, so it is REAL;
+* a method defined in source by name is REAL at once, with no restart.
+
+The verdict, Revise's refusal, Revise itself, the daemon's pin check and the PATH it is given are
+mutation-proved.
 
 **Evidence: a SHARDED run in fresh processes (user, 2026-10-03).** The suite is single-threaded and
 this machine's CPU is old (a 2012 i7-3630QM, 4 cores): a full run took 10–16 min on one core, 2m44s
@@ -677,9 +695,24 @@ L2 gives the operands decision 2's per-clause literal table.
     * A string compiles to `H_STRING`, as swipl does (`"abc"` → `h_string`), keyed by its
       `gnd_key` until L2. A `NUM_OTHER` value stays `H_ATOM` until L2 makes it an opaque literal
       compared by `gnd_equal` (`# DIVERGES` there).
-    * The standard order's class (number < string < atom < other) is DERIVED from the kind query
-      in both implementations (`_atomic_rank`, `_rank`). Before, it used `v isa Real`, so a
-      `BigFloat` sorted as a number while `number_kind` called it no number; it now sorts as other.
+    * The standard order's class is DERIVED from the kind query in both implementations
+      (`_atomic_rank`, `_rank`). Before, it used `v isa Real`, so a `BigFloat` sorted as a number
+      while `number_kind` called it no number; it now sorts as other.
+    * **Where "other" sorts is LogicKernel's decision, `# DIVERGES`** (user, 2026-10-04): SWI has no
+      such value, so it follows SWI's nearest analogue, the NON-TEXT BLOBS. The order is
+      number < string < other < `[]` < text atom < compound. pl-atom.c gives each non-text blob
+      type a rank below 0 (`--nontext_rank`), the reserved symbols 0 and the text types above 0.
+      `OTHER_BLOB_RANK` = -1 is written beside those ranks (src/pl-ressymbol.jl), and
+      `compare_primitives` and `atomic_compare`'s contract state it. Until then "other" sorted
+      after every atom, a choice made with the first terms commit (`1a0bb75`) and never decided.
+      * swipl 10.1.16, probed: a stream, a clause reference and a mutex sort after `"str"` and
+        before `[]` and `''`.
+      * Pinned on all three implementations by conformance ("a value of no SWI type sorts as a
+        non-text blob": after numbers and strings, before `[]`, `''`, text atoms and compounds),
+        and LIVE by the compare differential: a kernel value of no SWI type compares with every
+        oracle term exactly as swipl's stream, clause and mutex blobs do.
+      * Mutation-proved (O1–O3): "other" last again, on the reference and on `AltTerm`, and
+        "other" first.
     * Pinned by conformance (each kind and `string_value` on all three implementations; "the
       standard order's class follows the kind query", pairwise over every host value plus atoms), by
       the head-code differential (strings in its random heads, `h_string` live against swipl) and by

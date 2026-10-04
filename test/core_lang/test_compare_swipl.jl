@@ -12,7 +12,7 @@
 using Test, LogicKernel
 
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
-const _OT = lk_term_type(Union{Int64, Float64, String})
+const _OT = lk_term_type(Union{Int64, Float64, String, Bool})   # Bool: a value of no SWI type
 _os(x) = lk_sym(_OT, x)
 _og(x) = lk_gnd(_OT, x)
 _oe(xs::_OT...) = mk_expr(_OT, _OT[xs...])
@@ -99,6 +99,43 @@ if _SWIPL !== nothing
         @test n * n > 1000                                  # the differential saw real data
         @test count(==(-1), m) > 0 && count(==(1), m) > 0   # …and swipl really ordered it
         @info "standard order agrees with $(strip(read(`swipl --version`, String))) on $(n * n) pairs"
+    end
+
+    # DIVERGES (pinned against SWI's nearest analogue; user, 2026-10-04): a grounded value of no SWI
+    # type (NUM_OTHER) sorts as SWI's NON-TEXT BLOBS do. swipl compares a stream, a clause reference
+    # and a mutex with every term of the set; a kernel value of no SWI type must stand where they do.
+    @testset "a value of no SWI type stands where swipl's non-text blobs stand" begin
+        srcs = last.(_ORACLE_TERMS)
+        prog = """
+        :- set_prolog_flag(double_quotes, string).
+        :- dynamic q/1.
+        q(1).
+        main :- NaN is nan, PInf is inf, NInf is -inf,
+                current_output(S), clause(q(_), true, R), mutex_create(M),
+                L = [$(join(srcs, ", "))],
+                forall(member(B, [S, R, M]),
+                       ( forall(member(X, L),
+                                ( compare(O, B, X),
+                                  ( O == (<) -> V = -1 ; O == (=) -> V = 0 ; V = 1 ),
+                                  format("~d ", [V]) )),
+                         nl )).
+        :- initialization((main, halt)).
+        """
+        out = mktempdir() do d
+            f = joinpath(d, "blobs.pl")
+            write(f, prog)
+            read(`swipl -q $f`, String)
+        end
+        rows = [
+            parse.(Int, split(l)) for l in eachline(IOBuffer(out)) if !isempty(strip(l))
+        ]
+        @test length(rows) == 3 && all(r -> length(r) == length(srcs), rows)
+        @test rows[1] == rows[2] == rows[3]          # each blob type stands in the same place
+        @test count(==(-1), rows[1]) > 0 && count(==(1), rows[1]) > 0   # terms on both sides
+        for o in (_og(true), _og(false))
+            @test number_kind(o) === NUM_OTHER
+            @test [compareStandard(o, t) for t in first.(_ORACLE_TERMS)] == rows[1]
+        end
     end
 elseif _SWIPL_REQUIRED
     error(

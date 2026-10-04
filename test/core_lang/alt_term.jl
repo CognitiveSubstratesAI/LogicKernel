@@ -292,8 +292,9 @@ function _gnd_key(v)::Union{UInt64, Nothing}
     return nothing
 end
 
-# ── SWI's atomic order: Number < String < Atom, then values Prolog has no counterpart for ─────────
-const _NUMBER, _STRING, _ATOM, _OTHER = 1, 2, 3, 4
+# ── SWI's atomic order: Number < String < Atom; a value of no SWI type sorts as a non-text blob ───
+# (`OTHER_BLOB_RANK`: after strings, before `[]` and every text atom — DIVERGES, as the reference)
+const _NUMBER, _STRING, _OTHER, _ATOM = 1, 2, 3, 4
 
 _rank(::Union{AltSym, AltRSym}) = _ATOM
 function _rank(t::AltGnd)::Int                 # from the ONE kind query, as the reference type

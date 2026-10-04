@@ -233,14 +233,15 @@ is_ground(t::Term)::Bool = t.ground
 gnd_equal(a::Term{G}, b::Term{G}) where {G} = atomic_compare(a, b) == CMP_EQUAL
 
 # ── atomic order: SWI's tag ladder, extended for Julia values Prolog does not have ───────────────
-# Number (integer and float tags, compared jointly by value) < String < Atom < other host value.
-# "Other" — Bool, Char, Symbol payloads, containers, custom types — has no Prolog counterpart, so it
-# sorts AFTER every Prolog atomic kind and before compounds: the order of anything SWI can represent
-# is untouched.
+# Number (integer and float tags, compared jointly by value) < String < other < Atom. DIVERGES from
+# SWI, which has no "other" (user, 2026-10-04): a grounded value of no SWI type — Bool, Char,
+# BigFloat, containers, custom types — sorts as SWI's NON-TEXT BLOBS do (`OTHER_BLOB_RANK`, below
+# the reserved symbols' and the text atoms' ranks): after every string, before `[]` and every text
+# atom. The order of anything SWI can represent is untouched.
 const _RANK_NUMBER = 1
 const _RANK_STRING = 2
-const _RANK_ATOM = 3
-const _RANK_OTHER = 4
+const _RANK_OTHER = 3
+const _RANK_ATOM = 4
 
 # The standard order's class of an atomic term, from the ONE kind query (user, 2026-10-04: one place
 # for a grounded value's Prolog type) — before, a `Real` such as a `BigFloat` ranked as a number here

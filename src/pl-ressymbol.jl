@@ -51,6 +51,16 @@ const RESERVED_SYMBOL_RANK = 0
 "The rank of a text atom: above 0, the rank of every text blob type (pl-atom.c)."
 const TEXT_ATOM_RANK = 1
 
+# DIVERGES: SWI has no grounded value outside its own types, so where one sorts is LogicKernel's
+# decision (user, 2026-10-04: pinned, following SWI's nearest analogue). A grounded value of the
+# kind query's NUM_OTHER sorts as a NON-TEXT BLOB does: pl-atom.c gives each non-text blob type
+# `--GD->atoms.nontext_rank`, below 0, so it sorts after every number and string and before the
+# reserved symbols (rank 0) and every text atom (above 0). swipl 10.1.16, probed: a stream, a clause
+# reference and a mutex sort after "str" and before [] and ''. Every implementation's
+# `atomic_compare` follows it; conformance and the compare differential pin it.
+"The rank of an opaque grounded value (NUM_OTHER) among the atoms: a non-text blob type's, below 0."
+const OTHER_BLOB_RANK = -1
+
 # PORT: pl-ressymbol.c ATOM_nil
 # DIVERGES: upstream's `ATOM_nil` is the handle of `[]` in the atom table, and `argKey` keys `H_NIL`
 # with it; the kernel has no atom table, so `[]`'s index key is a fixed atom word of its own —

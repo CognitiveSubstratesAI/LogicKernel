@@ -156,6 +156,11 @@ same host value (integers by value, as in SWI's single integer type; otherwise t
 `isequal`, and for IEEE floats the same bits). `1` and `1.0` are not identical, and their order is
 `1.0` before `1` as in SWI-Prolog. The reference type's [`gnd_equal`](@ref) is this identity.
 
+The classes follow SWI-Prolog's ladder: numbers, then strings, then atoms — the reserved symbols
+before every text atom (`compareAtoms`). A grounded value of no SWI type ([`NUM_OTHER`](@ref)) sorts
+as SWI's non-text blobs do: after every string, before `[]` and every text atom (`OTHER_BLOB_RANK`,
+DIVERGES — SWI has no such value).
+
 The implementation supplies this because only it can see names and values; the kernel derives
 the rest of the standard order ([`compareStandard`](@ref)).
 """

@@ -8,7 +8,9 @@
 #                                                            # (or just `impl`), swipl REQUIRED
 #   tools/warm.sh send snippet.jl          # any snippet (or stdin); exit 0 ok · 1 threw · 2 timeout · 3 no daemon
 #   tools/warm.sh bench [bench.jl args]    # tools/bench.jl in the daemon: no JIT in the timings
-#   tools/warm.sh preflight                # WARM: what a full run would fail on, BEFORE one (exit 0/1)
+#   tools/warm.sh preflight                # WARM: what a full run would fail on, BEFORE one (exit 0/1);
+#                                          # a stale daemon (a deleted method it kept) is restarted
+#                                          # and the preflight rerun once
 #   tools/warm.sh evidence                 # a FRESH tools/run_tests.sh — the commit gate's run
 #   tools/warm.sh pool                     # pre-warm the evidence workers for THIS tree
 #   tools/warm.sh workload on|off          # the precompile workload, for THIS checkout only
@@ -180,9 +182,10 @@ _pool() {
 # (JET/Aqua/AllocCheck — ~26 s warm, against ~200 s in a cold worker) and every test file changed
 # since HEAD, on every implementation. Exit 0 only if all of it passed; the cold run that follows is
 # then the evidence, and starts from loaded workers. LOGICKERNEL_PREFLIGHT_POOL=0 skips the pool.
-_preflight() {
+_preflight_once() {
     _running || _start > /dev/null || return 1
     local t0 rc=0 f files pooled=""
+    PF_SA_FAIL=0 PF_OTHER_FAIL=0                       # which steps failed, for _preflight
     t0=$(date +%s)
     local snippet="$DIR/preflight_snippet.jl"
     cat > "$snippet" <<JL
@@ -206,14 +209,18 @@ let r = Main.port_check(raw"$ROOT")
     println("preflight: port_check clean (", length(r.files), " files)")
 end
 JL
-    _send "$snippet" || { echo "preflight: FAIL (format/port_check) in $(( $(date +%s) - t0 ))s"; return 1; }
+    _send "$snippet" || {
+        PF_OTHER_FAIL=1
+        echo "preflight: FAIL (format/port_check) in $(( $(date +%s) - t0 ))s"
+        return 1
+    }
     if [ "${LOGICKERNEL_PREFLIGHT_POOL:-1}" != "0" ]; then
         _pool > "$DIR/preflight_pool.log" 2>&1 &
         pooled=$!
     fi
     echo "preflight: the static-analysis gate"
     local log="$DIR/preflight_test_static_analysis.log"
-    _file test/test_static_analysis.jl > "$log" 2>&1 || { rc=1; echo "preflight: FAILED — $log"; }
+    _file test/test_static_analysis.jl > "$log" 2>&1 || { rc=1; PF_SA_FAIL=1; echo "preflight: FAILED — $log"; }
     grep -E "\.jl \[|\.jl  *\||Test Failed|Error During|NOT CHECKED|allocates:" "$log"
     files=$(cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
         grep -E '^test/(.*/)?test_[^/]*\.jl$' | sort -u)
@@ -221,7 +228,7 @@ JL
         [ -f "$ROOT/$f" ] && [ "$f" != test/test_static_analysis.jl ] || continue
         echo "preflight: $f"
         log="$DIR/preflight_$(basename "$f" .jl).log"
-        _file "$f" > "$log" 2>&1 || { rc=1; echo "preflight: FAILED — $log"; }
+        _file "$f" > "$log" 2>&1 || { rc=1; PF_OTHER_FAIL=1; echo "preflight: FAILED — $log"; }
         grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$log"
     done
     if [ -n "$pooled" ]; then
@@ -229,6 +236,64 @@ JL
         tail -1 "$DIR/preflight_pool.log"
     fi
     echo "preflight: $([ "$rc" -eq 0 ] && echo PASS || echo FAIL) in $(( $(date +%s) - t0 ))s"
+    return "$rc"
+}
+
+# _preflight_stale LOG — classify each method the static-analysis gate reported NOT CHECKED in LOG:
+# `STALE name` when no file under src/ defines that name any more (port_check's `definitions`, read
+# from the SYNTAX TREE, not by grep), `REAL name` otherwise. Errors when src/ yields no definitions at
+# all: an empty set would call every method stale.
+_preflight_stale() {
+    local snippet="$DIR/preflight_stale.jl"
+    cat > "$snippet" <<JL
+isdefined(Main, :definitions) || Base.include(Main, raw"$ROOT/tools/port_check.jl")
+let log = read(raw"$1", String)
+    names = unique([String(m[1]) for m in eachmatch(r"NOT CHECKED for dispatch: (\S+)", log)])
+    defined = Set{String}()
+    for (dir, _, fs) in walkdir(raw"$ROOT/src"), f in fs
+        endswith(f, ".jl") || continue
+        p = joinpath(dir, f)
+        foreach(d -> push!(defined, d[2]), Main.definitions(read(p, String), p))
+    end
+    isempty(defined) && error("preflight: no definitions found under src/ — cannot classify")
+    foreach(n -> println(n in defined ? "REAL " : "STALE ", n), names)
+end
+JL
+    _send "$snippet" | grep -E '^(REAL|STALE) '
+}
+
+# _preflight — _preflight_once, RECOVERING from a stale daemon (user, 2026-10-04: "make the gate
+# recover, not just detect"). A method Revise failed to delete outlives its source in the daemon, and
+# the manifest gate reports it NOT CHECKED: a daemon condition, not a code failure — evidence runs
+# are fresh processes and never see it. So when the ONLY failure of a preflight is that gate's
+# coverage test, and every method it names is STALE (defined in no file under src/), the daemon is
+# restarted and the preflight rerun ONCE; the rerun's verdict is the verdict, and a failure after the
+# restart is reported as REAL. It never suppresses a NOT CHECKED: the only way to PASS is a clean
+# rerun in a fresh daemon. Any other failure beside it — or a REAL name — fails at once, with the
+# names classified so a stale one is not mistaken for a code failure.
+_preflight() {
+    local rc log="$DIR/preflight_test_static_analysis.log" cls nfail ncov
+    _preflight_once; rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    if [ "${LOGICKERNEL_PREFLIGHT_RETRY:-0}" = 1 ]; then
+        echo "preflight: still FAILS after a daemon restart — a REAL failure"
+        return "$rc"
+    fi
+    [ "$PF_SA_FAIL" = 1 ] && grep -q "NOT CHECKED for dispatch:" "$log" || return "$rc"
+    cls=$(_preflight_stale "$log")
+    [ -n "$cls" ] || { echo "preflight: could not classify the NOT CHECKED methods"; return "$rc"; }
+    printf '%s\n' "$cls" | sed 's/^STALE /preflight:   STALE (defined in no src\/ file — a daemon leftover) /;
+        s/^REAL /preflight:   REAL (still defined in src\/ — add it to the manifest) /'
+    nfail=$(grep -c -E "Test Failed at|Error During Test|JET-test failed" "$log")
+    ncov=$(grep -c "the manifest covers every method LogicKernel defines: Test Failed" "$log")
+    if [ "$PF_OTHER_FAIL" = 0 ] && [ "$nfail" -eq 1 ] && [ "$ncov" -eq 1 ] &&
+        ! grep -q "stale exemption:" "$log" && ! printf '%s\n' "$cls" | grep -q '^REAL '; then
+        echo "preflight: STALE DAEMON — restarting the daemon and rerunning the preflight once"
+        _stop > /dev/null
+        _start > /dev/null || { echo "preflight: the daemon did not restart"; return 1; }
+        LOGICKERNEL_PREFLIGHT_RETRY=1 LOGICKERNEL_PREFLIGHT_POOL=0 _preflight
+        return $?
+    fi
     return "$rc"
 }
 
