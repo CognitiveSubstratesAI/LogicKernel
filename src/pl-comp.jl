@@ -118,9 +118,12 @@ end
 """
     is_portable_smallint(ld, i::Int64) -> Bool
 
-Whether integer `i` may be an inline operand (pl-comp.c): it fits a tagged word, and — under the
-`portable_vmi` flag, swipl's default — the int32 range too, so the code runs on 32-bit VMs. The
-compiler's instruction choice; the term interface gives only the number's kind and value (Q1).
+Whether integer `i` may be an inline operand of a BODY instruction (pl-comp.c): it fits a tagged
+word, and — under the `portable_vmi` flag, swipl's default — the int32 range too, so the code runs
+on 32-bit VMs. Upstream uses it for `A_ADD_FC` (body arithmetic, c:3666) only. A HEAD integer is
+chosen by STORAGE instead — tagged → `H_SMALLINT`, else `H_MPZ` (`_gnd_head_code`) — whatever the
+flag: swipl 10.1.16's `vm_list` is identical under `portable_vmi` true and false, and puts
+`2147483648` in an `h_smallint` (probed 2026-10-04).
 """
 function is_portable_smallint(ld::PL_local_data, i::Int64)::Bool
     if PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT                # isTaggedInt(w)
@@ -197,6 +200,14 @@ function Output_1!(ci::compileInfo, c::code, a::code)::Nothing
     return nothing
 end
 
+# PORT: pl-comp.c Output_2
+"Emit instruction `c` with two operands (pl-comp.c)."
+function Output_2!(ci::compileInfo, c::code, a0::code, a1::code)::Nothing
+    Output_1!(ci, c, a0)
+    Output_a!(ci, a1)
+    return nothing
+end
+
 # PORT: pl-comp.c Output_n
 # DIVERGES: at most one operand — the only merge with an operand is `H_VOID_N 2`.
 "Emit instruction `c` with `n` (0 or 1) operands (pl-comp.c)."
@@ -223,6 +234,10 @@ function isFirstVarSet!(vt::BitVector, n::Int)::Bool
     return true
 end
 
+# PORT: pl-comp.c isFirstVar
+"True when variable slot `n` is not used yet (pl-comp.c)."
+isFirstVar(vt::BitVector, n::Int)::Bool = !vt[n + 1]
+
 # PORT: pl-comp.c isIndexedVarTerm
 "The frame offset of the analysed variable `t`, or -1 for a void (pl-comp.c)."
 function isIndexedVarTerm(ci::compileInfo, t)::Int
@@ -231,6 +246,21 @@ function isIndexedVarTerm(ci::compileInfo, t)::Int
         return -1
     end
     return vd.offset
+end
+
+# PORT: pl-comp.c isFirstVarP
+# DIVERGES: returns the slot, or -1 where upstream fails, instead of a flag and an out-parameter.
+"""
+The slot of `t` when it is a clause variable (not an argument) at its FIRST occurrence, else -1
+(pl-comp.c).
+"""
+function isFirstVarP(ci::compileInfo, t)::Int
+    kind(t) === VAR || return -1
+    idx = isIndexedVarTerm(ci, t)
+    if idx >= 0 && idx >= ci.arity && isFirstVar(ci.used_var, idx)
+        return idx
+    end
+    return -1
 end
 
 # ── analysing variables (pl-comp.c) ─────────────────────────────────────────────────────────────
@@ -370,14 +400,61 @@ struct ca_frame{T}
     last_idx::Int       # for CA_MIDDLE: arity-1
 end
 
+# PORT: pl-comp.c FUNCTOR_dot2
+# DIVERGES: upstream's `FUNCTOR_dot2` is the handle of SWI-7's list constructor `'[|]'/2` in the
+# functor table; the kernel has none, so it is a fixed functor word of its own — what `argKey` reads
+# from `H_LIST`/`H_RLIST`/`H_LIST_FF` and `indexOfWord` gives every list cell (`is_pair`), distinct
+# from the key of any other `name/2` but by chance, as any two keys (user, 2026-10-04).
+"The key of a list cell `'[|]'/2`: what `argKey` reads from `H_LIST*` and `indexOfWord` gives `[H|T]`."
+const FUNCTOR_dot2 = MK_FUNCTOR(UInt64(0x0004_c495_354e_4f43), UInt64(2))   # "LISTCONS"-ish, arity 2
+
+# PORT: pl-comp.c compileListFF
+"""
+A list cell `[X|Y]` of two distinct first-occurrence clause variables compiles to ONE instruction,
+`H_LIST_FF X Y` (pl-comp.c): true when it did.
+"""
+function compileListFF!(ci::compileInfo, arg)::Bool
+    i1 = isFirstVarP(ci, child(arg, 2))
+    i1 < 0 && return false
+    i2 = isFirstVarP(ci, child(arg, 3))
+    (i2 < 0 || i1 == i2) && return false
+    isFirstVarSet!(ci.used_var, i1)
+    isFirstVarSet!(ci.used_var, i2)
+    Output_2!(ci, H_LIST_FF, VAROFFSET(i1), VAROFFSET(i2))
+    return true
+end
+
+# From pl-comp.c compileArgument (`TAG_INTEGER`, `TAG_FLOAT`, `TAG_STRING`): the head instruction of
+# a grounded value. A number by its SEMANTIC kind (Q1); an integer by its STORAGE, as upstream —
+# tagged (`PLMINTAGGEDINT`..`PLMAXTAGGEDINT`, `STG_INLINE`) is `H_SMALLINT`, any other `H_MPZ` (swipl
+# 10.1.16: 2^56-1 and -2^56 are h_smallint, 2^56, -2^56-1 and 2^63-1 h_mpz, probed). Anything else is
+# an `H_ATOM`: a non-number is a blob — and a string too, as the interface has no string kind yet
+# (H_STRING waits for one).
+"The head instruction of grounded value `t` (pl-comp.c `compileArgument`)."
+function _gnd_head_code(t)::code
+    nk = number_kind(t)
+    if nk === NUM_INTEGER
+        if integer_is_int64(t) && PLMINTAGGEDINT <= int64_value(t) <= PLMAXTAGGEDINT
+            return H_SMALLINT                                  # storage(*arg) == STG_INLINE
+        end
+        return H_MPZ
+    elseif nk === NUM_RATIONAL
+        return H_MPQ                                           # isMPQNum(*arg)
+    elseif nk === NUM_FLOAT
+        return H_FLOAT
+    end
+    return H_ATOM
+end
+
 # PORT: pl-comp.c compileArgument
 # DIVERGES: the head side (`where` without A_BODY, no `islocal`). SWI-7's `[]` compiles to `H_NIL`
-# (Q1), any other symbol to `H_ATOM`; a grounded value compiles to `H_ATOM` whose operand is its
-# index key — `clean_index_key(gnd_key)`, 0 when it has none (no H_SMALLINT/H_FLOAT/H_STRING/H_MPZ
-# yet: V1's literal operands); a list cell is the compound it is (no H_LIST/H_RLIST/H_LIST_FF yet —
-# the index reads those the same way); a functor operand is a hashed word (`_functor_word`), not a
-# functor-table handle; and a compound whose head is not a symbol compiles as `H_FUNCTOR $expr/n`
-# (Q2, `expr_functor`, src/pl-ressymbol.jl) with every child as an argument.
+# (Q1), any other symbol to `H_ATOM`; a grounded value to `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT` by
+# its number kind and storage (`_gnd_head_code`), anything else to `H_ATOM`, each with ONE operand —
+# its index key, `clean_index_key(gnd_key)`, 0 when it has none — until L2's literal table; a list
+# cell (`is_pair`, upstream's `fdef == FUNCTOR_dot2`) to `H_LIST`/`H_RLIST`, or `H_LIST_FF` when
+# both its children are fresh clause variables; a functor operand is a hashed word
+# (`_functor_word`), not a functor-table handle; and a compound whose head is not a symbol compiles
+# as `H_FUNCTOR $expr/n` (Q2, `expr_functor`, src/pl-ressymbol.jl) with every child as an argument.
 """
 Emit the head code for argument `arg` (pl-comp.c): left to right, a compound's last argument
 `A_RIGHT` (`H_RFUNCTOR`, no `H_POP` of its own), resume points on an explicit stack.
@@ -419,14 +496,21 @@ function compileArgument!(ci::compileInfo, arg, where_::Int)::Bool
         @goto resume
     elseif k === GND
         g = gnd_key(arg)
-        Output_1!(ci, H_ATOM, g === nothing ? word(0) : clean_index_key(g))
+        Output_1!(ci, _gnd_head_code(arg), g === nothing ? word(0) : clean_index_key(g))
         @goto resume
     end
     # a compound
     isright = (where_ & A_RIGHT) != 0
     off, ar = _comp_shape(arg)
-    fdef = off == 2 ? _functor_word(_functor_name(child(arg, 1)), ar) : expr_functor(ar)
-    Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
+    if is_pair(arg)                                            # fdef == FUNCTOR_dot2
+        if compileListFF!(ci, arg)                             # (where & A_HEAD): always, here
+            @goto resume
+        end
+        Output_0!(ci, isright ? H_RLIST : H_LIST)
+    else
+        fdef = off == 2 ? _functor_word(_functor_name(child(arg, 1)), ar) : expr_functor(ar)
+        Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
+    end
     where_ &= ~(A_RIGHT | A_NOARGVAR)
     where_ |= A_ARG
     if ar >= 2
@@ -624,9 +708,9 @@ function skipArgs(PC::Code, skip::Int, in_hvoid::Int)::Tuple{Code, Int}
     while true
         c = decode(PC)
         nextPC = stepPC(PC)
-        if c == H_FUNCTOR                                       # H_LIST, B_FUNCTOR, B_LIST
+        if c == H_FUNCTOR || c == H_LIST                        # B_FUNCTOR, B_LIST
             nested += 1
-        elseif c == H_RFUNCTOR                                  # H_RLIST, B_RFUNCTOR, B_RLIST
+        elseif c == H_RFUNCTOR || c == H_RLIST                  # B_RFUNCTOR, B_RLIST
         # continue
         elseif c == H_POP                                       # B_POP
             nested -= 1
@@ -639,7 +723,8 @@ function skipArgs(PC::Code, skip::Int, in_hvoid::Int)::Tuple{Code, Int}
             if nested < 0
                 return (PC, in_hvoid)
             end
-        elseif c == H_ATOM || c == H_NIL || c == H_FIRSTVAR || c == H_VAR || c == H_VOID
+        elseif c == H_ATOM || c == H_SMALLINT || c == H_NIL || c == H_FLOAT || c == H_MPZ ||
+            c == H_MPQ || c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_LIST_FF
             if nested == 0
                 skip -= 1
                 if skip == 0
@@ -675,7 +760,9 @@ end
 # PORT: pl-comp.c argKey
 # DIVERGES: returns the key — 0 where upstream returns false — instead of a flag and an
 # out-parameter; an `H_ATOM` holding 0 (a grounded value without a key) is not indexable, and an
-# `H_FUNCTOR` of `$expr/n` (Q2, src/pl-ressymbol.jl) is a wildcard, as `indexOfWord` keys it.
+# `H_FUNCTOR` of `$expr/n` (Q2, src/pl-ressymbol.jl) is a wildcard, as `indexOfWord` keys it. The
+# literal instructions hold the value's index key (`clean_index_key(gnd_key)`, as `indexOfWord`)
+# where upstream computes one (`consInt`, `murmur_key`, `bignum_index`) — until L2's literal table.
 """
     argKey(PC, skip) -> word
 
@@ -694,8 +781,12 @@ function argKey(PC::Code, skip::Int)::word
             return isExprFunctor(w) ? word(0) : w
         elseif c == H_ATOM
             return PC.codes[PC.pc]                              # code2atom(*PC)
+        elseif c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ
+            return PC.codes[PC.pc]                              # consInt/murmur_key/bignum_index
         elseif c == H_NIL
             return ATOM_nil                                     # *key = ATOM_nil
+        elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST
+            return FUNCTOR_dot2                                 # *key = FUNCTOR_dot2
         elseif c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_VOID_N ||
             c == H_POP || c == I_EXITFACT || c == I_ENTER
             return word(0)

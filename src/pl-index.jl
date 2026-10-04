@@ -153,9 +153,10 @@ _functor_name(h)::UInt64 = is_nil(h) ? UInt64(ATOM_nil) : sym_hash(h)
 # share a key that upstream's two atom handles never share. GND → its
 # `gnd_key` through `clean_index_key` — the role murmur_key plays upstream for strings and floats,
 # a key that follows the term type's `gnd_equal` (src/term_interface.jl) — and 0, a wildcard, when
-# there is no key. EXPR with a symbol head → a functor word (`MK_FUNCTOR`) of the name
-# (`_functor_name`) and arity. EXPR with any other head — the functor `$expr/n` (Q2,
-# src/pl-ressymbol.jl) → 0, a wildcard: it unifies child by child with compounds of other functors.
+# there is no key. A list cell (`is_pair`) → `FUNCTOR_dot2`, as `argKey` keys `H_LIST*`. EXPR with
+# a symbol head → a functor word (`MK_FUNCTOR`) of the name (`_functor_name`) and arity. EXPR with
+# any other head — the functor `$expr/n` (Q2, src/pl-ressymbol.jl) → 0, a wildcard: it unifies child
+# by child with compounds of other functors.
 """
     indexOfWord(t) -> word
 
@@ -175,6 +176,7 @@ function indexOfWord(t)::word
         return clean_index_key(g)
     end
     nchildren(t) >= 1 || return word(0)                 # `()`: `$expr/0`, a wildcard
+    is_pair(t) && return FUNCTOR_dot2                   # `[H|T]`: as `argKey` keys `H_LIST*`
     h = child(t, 1)
     kind(h) === SYM || return word(0)                   # `$expr/n`, a wildcard
     return _functor_word(_functor_name(h), nchildren(t) - 1)
@@ -1268,7 +1270,7 @@ function addClauseToIndex!(
             return false
         end
         c = decode(pc)
-        if c == H_FUNCTOR || c == H_RFUNCTOR                # H_LIST, H_RLIST
+        if c == H_FUNCTOR || c == H_LIST || c == H_RFUNCTOR || c == H_RLIST
             pc = stepPC(pc)
             arg1key = argKey(pc, 0)
         end
@@ -1766,9 +1768,12 @@ function _put_key!(a::hash_assessment, key::word, nvcomp::Bool)::Nothing
     return nothing
 end
 
+# From pl-index.c `skipToTerm` (its `static code var[2]`): the code a deep position inside an
+# `H_LIST_FF` reads — both arguments of the list cell are fresh variables, so two voids. Read-only.
+const H_LIST_FF_VOIDS = code[H_VOID, H_VOID]
+
 # PORT: pl-index.c skipToTerm
 # DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer.
-# H_LIST/H_RLIST/H_LIST_FF are never emitted (src/pl-comp.jl), so their cases are absent.
 """
 The code of the arguments of the compound at deep-index `position` in the head of `clause`; where
 the path meets something other than a compound, the code found there (pl-index.c).
@@ -1788,7 +1793,10 @@ function skipToTerm(
             pc = stepPC(pc)
             c = decode(pc)
         end
-        if !(c == H_FUNCTOR || c == H_RFUNCTOR)             # H_LIST, H_RLIST
+        if c == H_LIST_FF                                   # FF1, FF2
+            return (Code(H_LIST_FF_VOIDS, 1), in_hvoid)     # the dummy code: two voids
+        end
+        if !(c == H_FUNCTOR || c == H_LIST || c == H_RFUNCTOR || c == H_RLIST)
             return (pc, in_hvoid)                           # default: return pc
         end
         pc = stepPC(pc)
@@ -1804,9 +1812,11 @@ consider a compound indexable, we never go into nested compounds (pl-index.c).
 function indexableCompound(pc::Code)::Bool
     while true
         c = decode(pc)
-        if c == I_CHP
+        if c == H_LIST_FF
+            return false
+        elseif c == I_CHP
             pc = stepPC(pc)
-        elseif c == H_FUNCTOR || c == H_RFUNCTOR            # H_LIST, H_RLIST
+        elseif c == H_FUNCTOR || c == H_RFUNCTOR || c == H_LIST || c == H_RLIST
             pc = stepPC(pc)                                 # skip functor
             while true
                 c2 = decode(pc)

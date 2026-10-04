@@ -158,18 +158,45 @@ function ix_primary_index(p::IxPred)::Union{Nothing, Int}
     return cl.unindexed ? nothing : Int(cl.primary_index) + 1
 end
 
-# ── Prolog text for the default term type (atoms, integers, floats, compounds, `_`) ─────────────
-"`t` written as `write_term(T, [quoted(true), ignore_ops(true), numbervars(true)])` writes it
-after `numbervars(T, 0, _, [singletons(true)])` — every variable of a linear term prints `_`."
-function ix_text(t)::String
+# ── Prolog text (atoms, numbers, lists, compounds, variables) ───────────────────────────────────
+"""
+`t` written as `write_term(T, [quoted(true), ignore_ops(true), numbervars(true)])` writes it after
+`numbervars(T, 0, _, [singletons(true)])` — every variable of a linear term prints `_`; a list cell
+(`is_pair`) in list syntax, `[a,b|T]`, as swipl writes lists even under `ignore_ops`; a rational as
+`NrD`. With `counts` (from `ix_var_counts`), a variable occurring more than once is written `V<key>`,
+so program text keeps a head's shared variables shared.
+"""
+function ix_text(t, counts::Union{Nothing, Dict{UInt64, Int}}=nothing)::String
     k = kind(t)
-    k === VAR && return "_"
+    if k === VAR
+        return counts !== nothing && get(counts, var_key(t), 0) > 1 ? "V$(var_key(t))" : "_"
+    end
     k === SYM && return lk_atom_text(t)                 # `[]` bare, the text atom '[]' quoted
     if k === GND
         v = lk_value(t)
-        return v isa AbstractFloat ? repr(Float64(v)) : string(v)
+        v isa AbstractFloat && return repr(Float64(v))
+        v isa Rational && return "$(numerator(v))r$(denominator(v))"
+        return string(v)
     end
-    return ix_text(child(t, 1)) * "(" *
-           join([ix_text(child(t, i)) for i in 2:nchildren(t)], ",") *
+    if is_pair(t)
+        elems = String[]
+        while is_pair(t)
+            push!(elems, ix_text(child(t, 2), counts))
+            t = child(t, 3)
+        end
+        return "[" * join(elems, ",") * (is_nil(t) ? "" : "|" * ix_text(t, counts)) * "]"
+    end
+    return ix_text(child(t, 1), counts) * "(" *
+           join([ix_text(child(t, i), counts) for i in 2:nchildren(t)], ",") *
            ")"
+end
+
+"How often each variable of `t` occurs — for `ix_text`'s variable names."
+function ix_var_counts(t, c::Dict{UInt64, Int}=Dict{UInt64, Int}())::Dict{UInt64, Int}
+    if kind(t) === VAR
+        c[var_key(t)] = get(c, var_key(t), 0) + 1
+    elseif kind(t) === EXPR
+        foreach(i -> ix_var_counts(child(t, i), c), 1:nchildren(t))
+    end
+    return c
 end

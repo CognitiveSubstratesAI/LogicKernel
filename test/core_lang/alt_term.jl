@@ -61,7 +61,8 @@ using LogicKernel
 import LogicKernel:
     kind, term_type, nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal,
     atomic_compare, mk_var, mk_expr, mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol,
-    is_nil, number_kind, integer_is_int64, int64_value, bigint_value, rational_value,
+    is_nil, is_pair, number_kind, integer_is_int64, int64_value, bigint_value,
+    rational_value,
     float_value
 
 export AltTerm, alt_sym, alt_gnd, alt_var, alt_name, alt_value, alt_stats
@@ -166,6 +167,9 @@ is_reserved_symbol(::AltTerm) = false
 is_reserved_symbol(::AltRSym) = true
 is_nil(::AltTerm) = false
 is_nil(t::AltRSym) = alt_name(t) === Symbol("[]")
+is_pair(::AltTerm) = false
+is_pair(t::AltExpr{H, 3}) where {H} =
+    (h=t.kids[1]; h isa AltSym && alt_name(h) === Symbol("[|]"))
 
 number_kind(::AltTerm) = NUM_NONE
 function number_kind(t::AltGnd)

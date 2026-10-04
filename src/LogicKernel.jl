@@ -24,12 +24,12 @@ include("default_term.jl")     # ORIGINAL — Term{G}, the reference implementat
 include("pl-hash.jl")          # swipl-devel src/pl-hash.c — MurmurHash2
 include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause list, index structs
 include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — term agendas (the local data holds two)
+include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to (pl-index reads them)
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing (LD holds its scratch)
 include("pl-global.jl")        # swipl-devel src/pl-global.h — the database state (GD, LD)
 include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys, bindings
 include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard order; unification
 include("pl-ressymbol.jl")     # swipl-devel src/pl-ressymbol.c — reserved symbols (SWI-7's `[]`)
-include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to
 include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
@@ -45,7 +45,7 @@ export kind, term_type,
     nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal, atomic_compare
 export mk_var, mk_expr, is_ground, is_ground_walk, KERNEL_VAR_BASE
 # …and its Prolog layer (Q1): symbols, grounded values, reserved symbols, numbers by kind
-export mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol, mk_nil, is_nil
+export mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol, mk_nil, is_nil, is_pair
 export NumKind, NUM_NONE, NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT
 export number_kind, integer_is_int64, int64_value, bigint_value, rational_value, float_value
 # the standard order of terms — SWI-Prolog's name (src/pl-prims.jl) — and the leaf comparisons an

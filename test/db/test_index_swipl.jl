@@ -24,7 +24,7 @@ using Random
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
-const _X = lk_term_type(Union{Int64, Float64, String})
+const _X = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _xs(n) = lk_sym(_X, Symbol(n))
 _xg(v::Int) = lk_gnd(_X, v)
 _xe(f, xs...) = mk_expr(_X, _X[_xs(f), xs...])
@@ -231,6 +231,66 @@ function _xnil()::Vector{_XPred}
     ]
 end
 
+"""
+Literal and list keys (V1, L1) in the first argument of one predicate, dynamic and static:
+* numbers by kind and storage — a tagged integer (`H_SMALLINT`), an Int64 above the tagged range
+  and a big integer (`H_MPZ`), a float (`H_FLOAT`), a rational (`H_MPQ`);
+* list cells — `[aN|_]` (`H_LIST`) and `[X|Y]` whose variables recur in the second argument
+  (`H_LIST_FF`) — and `'[|]'(a)`, which is no list cell (`H_FUNCTOR`).
+`argKey` reads each clause's key from the new instructions, and `indexOfWord` keys each call: both
+must come to swipl's determinism and first-argument assessment. Every answer is ground or has
+singleton variables only, so it prints as swipl prints it.
+"""
+function _xlit()::Vector{_XPred}
+    L(h, t) = _xe("[|]", h, t)
+    function lhead(name, i)::_X
+        j = i % 8
+        j == 0 && return _xe(name, _xg(i), _xg(i))
+        j == 1 && return _xe(name, lk_gnd(_X, 2^56 + i), _xg(i))
+        j == 2 && return _xe(name, lk_gnd(_X, big(2)^70 + i), _xg(i))
+        j == 3 && return _xe(name, lk_gnd(_X, i + 0.5), _xg(i))
+        j == 4 && return _xe(name, lk_gnd(_X, Rational{BigInt}(2i + 1, 2)), _xg(i))
+        j == 5 && return _xe(name, L(_xs("a$(i % 3)"), _xv()), _xg(i))
+        j == 6 && return (X=_xv(); Y=_xv(); _xe(name, L(X, Y), _xe(:g, X, Y)))
+        return _xe(name, _xe("[|]", _xs(:a)), _xg(i))
+    end
+    heads(name) = [lhead(name, i) for i in 1:64]
+    calls(name) = [
+        (:call, _xe(name, _xg(16), _xv())),
+        (:call, _xe(name, lk_gnd(_X, 2^56 + 9), _xv())),
+        (:call, _xe(name, lk_gnd(_X, big(2)^70 + 10), _xv())),
+        (:call, _xe(name, lk_gnd(_X, 11.5), _xv())),
+        (:call, _xe(name, lk_gnd(_X, Rational{BigInt}(25, 2)), _xv())),
+        (:call, _xe(name, L(_xs(:a1), _xs(:b)), _xv())),
+        (:call, _xe(name, L(_xs(:a2), mk_nil(_X)), _xv())),
+        (:call, _xe(name, _xe("[|]", _xs(:a)), _xv())),
+        (:call, _xe(name, _xv(), _xg(13)))
+    ]
+    # every first argument a list cell, two `H_LIST_FF` clauses among 80: the index goes DEEP into
+    # the cell (its head, `1:1` — swipl 10.1.16 builds it here, probed; with 4 of 40 it does not),
+    # where an `H_LIST_FF` clause reads upstream's two-void dummy (pl-index.c `skipToTerm`) — a
+    # wildcard, so `[a7|t]` still finds it
+    function dhead(name, i)::_X
+        i in (25, 65) && return (X=_xv(); Y=_xv(); _xe(name, L(X, Y), _xe(:g, X, Y)))
+        return _xe(name, L(_xs("a$i"), _xs(:t)), _xg(i))
+    end
+    dheads(name) = [dhead(name, i) for i in 1:80]
+    dcalls(name) = [(:call, _xe(name, L(_xs("a$i"), _xs(:t)), _xv())) for i in (7, 15, 33)]
+    return [
+        _XPred(
+            :lt_d, 2, true, heads(:lt_d),
+            [
+                calls(:lt_d);
+                (:retract, _xe(:lt_d, L(_xs(:a0), _xs(:b)), _xv()));
+                calls(:lt_d)
+            ]
+        ),
+        _XPred(:lt_s, 2, false, heads(:lt_s), calls(:lt_s)),
+        _XPred(:dl_d, 2, true, dheads(:dl_d), dcalls(:dl_d)),
+        _XPred(:dl_s, 2, false, dheads(:dl_s), dcalls(:dl_s))
+    ]
+end
+
 # ── running it in the kernel ────────────────────────────────────────────────────────────────────
 "One `idx` report line's fields."
 const _XIdx = Tuple{String, Vector{Int}, Vector{Int}, Float32, Bool, Bool, Int}
@@ -352,14 +412,14 @@ function _xswipl(preds::Vector{_XPred})
             p.dynamic && println(io, ":- dynamic $(p.name)/$(p.arity).")
         end
         for p in preds, h in p.heads
-            p.dynamic || println(io, ix_text(h), ".")
+            p.dynamic || println(io, ix_text(h, ix_var_counts(h)), ".")
         end
         print(io, _XDRIVER)
         println(io, "main :-")
         # clause GC only where the program says, as in the kernel: no automatic collection
         println(io, "    '\$cgc_params'(_, _, _, 0, 1.0e30, 1.0e30),")
         for p in preds, h in p.heads
-            p.dynamic && println(io, "    assertz(", ix_text(h), "),")
+            p.dynamic && println(io, "    assertz(", ix_text(h, ix_var_counts(h)), "),")
         end
         k = 0
         for p in preds, (op, g) in p.ops
@@ -451,7 +511,7 @@ const _XSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _XSEED = 20261002
 
 @testset "clause index vs swipl" begin
-    program = vcat(_xprogram(_XSEED, 60), _xhvoid(), _xnil())
+    program = vcat(_xprogram(_XSEED, 60), _xhvoid(), _xnil(), _xlit())
     ours = _xrun(program)
     oracle = _xrun(program; unindexed=true)
 

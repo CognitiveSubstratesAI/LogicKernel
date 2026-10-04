@@ -244,12 +244,28 @@ mk_nil(::Type{T}) where {T} = mk_reserved_symbol(T, NIL_NAME)
 const NIL_NAME = Symbol("[]")
 
 """
+    is_pair(t) -> Bool
+
+Whether `t` is a LIST CELL (pl-fli.c `PL_is_pair`): a compound whose head is the TEXT atom `'[|]'`
+— SWI-7's list constructor, `FUNCTOR_dot2` — with exactly two arguments, `[H|T]` and `'[|]'(H, T)`
+alike. `false` for `'[|]'` with any other number of arguments, for a compound headed by `[]` or
+`'[]'`, for a reserved symbol named `'[|]'`, for every compound whose head is not a symbol (a
+`\$expr/n`, two arguments after its head or not), and for every term that is not a compound
+(user, 2026-10-04).
+"""
+function is_pair end
+
+"The name of SWI-7's list constructor `'[|]'` (pl-atom.ih `ATOM_dot`, retyped to `'[|]'` in SWI-7)."
+const LIST_CONS_NAME = Symbol("[|]")
+
+"""
     NumKind
 
 A number's SEMANTIC kind, as SWI-Prolog's: [`NUM_INTEGER`](@ref) (any size), [`NUM_RATIONAL`](@ref),
 [`NUM_FLOAT`](@ref) — and [`NUM_NONE`](@ref) for every term that is not a number. Small vs big
-integer is STORAGE, not a kind: [`integer_is_int64`](@ref) says which getter to use, and whether an
-integer becomes an inline operand is pl-comp.c's own `is_portable_smallint` (user, 2026-10-03).
+integer is STORAGE, not a kind: [`integer_is_int64`](@ref) says which getter to use. A HEAD integer
+is `H_SMALLINT` when it fits a tagged word and `H_MPZ` otherwise (pl-comp.c `compileArgument`,
+probed in swipl 10.1.16); pl-comp.c's `is_portable_smallint` decides only body arithmetic.
 """
 @enum NumKind::UInt8 NUM_NONE NUM_INTEGER NUM_RATIONAL NUM_FLOAT
 

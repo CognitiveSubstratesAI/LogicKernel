@@ -119,6 +119,11 @@ mk_reserved_symbol(::Type{Term{G}}, name::Symbol) where {G} =
     Term{G}(SYM, true, false, true, _reserved_sym_key(name), name, nothing, Term{G}[])
 is_reserved_symbol(t::Term)::Bool = t.kind === SYM && t.reserved
 is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME
+function is_pair(t::Term)::Bool
+    (t.kind === EXPR && length(t.children) == 3) || return false
+    h = t.children[1]
+    return h.kind === SYM && !h.reserved && h.name === LIST_CONS_NAME
+end
 
 # A number's kind follows its host type: `Integer` (not `Bool`), `Rational`, an IEEE float. Other
 # payloads — a `Bool`, a `BigFloat`, a container — are not numbers to Prolog.
@@ -137,27 +142,31 @@ function integer_is_int64(t::Term)::Bool
 end
 function int64_value(t::Term)::Int64
     v = t.gval
-    (t.kind === GND && v isa Integer && !(v isa Bool)) ||
-        throw(ArgumentError("int64_value: not an integer"))
-    return Int64(v)
+    if t.kind === GND && v isa Integer && !(v isa Bool)                    # an `if`, so `v` narrows (JET, 2026-10-04)
+        return Int64(v)
+    end
+    throw(ArgumentError("int64_value: not an integer"))
 end
 function bigint_value(t::Term)::BigInt
     v = t.gval
-    (t.kind === GND && v isa Integer && !(v isa Bool)) ||
-        throw(ArgumentError("bigint_value: not an integer"))
-    return BigInt(v)
+    if t.kind === GND && v isa Integer && !(v isa Bool)                    # an `if`, so `v` narrows (JET, 2026-10-04)
+        return BigInt(v)
+    end
+    throw(ArgumentError("bigint_value: not an integer"))
 end
 function rational_value(t::Term)::Rational{BigInt}
     v = t.gval
-    (t.kind === GND && v isa Rational) ||
-        throw(ArgumentError("rational_value: not a rational"))
-    return Rational{BigInt}(v)
+    if t.kind === GND && v isa Rational                    # an `if`, so `v` narrows (JET, 2026-10-04)
+        return Rational{BigInt}(v)
+    end
+    throw(ArgumentError("rational_value: not a rational"))
 end
 function float_value(t::Term)::Float64
     v = t.gval
-    (t.kind === GND && v isa Base.IEEEFloat) ||
-        throw(ArgumentError("float_value: not a float"))
-    return Float64(v)
+    if t.kind === GND && v isa Base.IEEEFloat                    # an `if`, so `v` narrows (JET, 2026-10-04)
+        return Float64(v)
+    end
+    throw(ArgumentError("float_value: not a float"))
 end
 
 """

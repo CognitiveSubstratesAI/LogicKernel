@@ -200,10 +200,34 @@ function run_term_conformance(
             @test !is_nil(mk_var(T, UInt64(1)))
         end
 
+        # SWI's list cell (pl-fli.c `PL_is_pair`; user, 2026-10-04): a compound whose head is the
+        # TEXT atom '[|]' with exactly two arguments — `[H|T]` and '[|]'(H, T) are one term. Not:
+        # another arity, a `[]` or `'[]'` head, a reserved '[|]', a non-symbol head (`$expr/n`).
+        @testset "is_pair: a text '[|]' head with exactly two arguments" begin
+            L = mk_sym(T, Symbol("[|]"))
+            a, b = sy(:a), sy(:b)
+            pair = ex(L, a, b)                                  # '[|]'(a, b): [a|b]
+            @test is_pair(pair) && is_pair(ex(sy(Symbol("[|]")), a, b))
+            @test is_pair(ex(L, gn(1), mk_nil(T)))              # [1]
+            lst = ex(L, a, ex(L, b, mk_nil(T)))                 # [a, b]
+            @test is_pair(lst) && is_pair(child(lst, 3)) &&
+                !is_pair(child(child(lst, 3), 3))
+            @test is_pair(ex(L, mk_var(T, UInt64(1)), mk_var(T, UInt64(2))))      # [X|Y]
+            @test !is_pair(ex(L)) && !is_pair(ex(L, a)) && !is_pair(ex(L, a, b, a))
+            @test !is_pair(ex(mk_nil(T), a, b)) && !is_pair(ex(sy(Symbol("[]")), a, b))
+            @test !is_pair(ex(mk_reserved_symbol(T, Symbol("[|]")), a, b))       # not TEXT
+            @test !is_pair(ex(sy(:f), a, b)) && !is_pair(ex(sy(Symbol(".")), a, b))
+            for h in (mk_var(T, UInt64(1)), gn(1), pair, ex())  # `$expr/3`: two after the head
+                @test !is_pair(ex(h, a, b))
+            end
+            @test !is_pair(L) && !is_pair(mk_nil(T)) && !is_pair(gn(1)) &&
+                !is_pair(mk_var(T, UInt64(1))) && !is_pair(ex())
+        end
+
         # SWI's numbers by SEMANTIC kind — integer of any size, rational, float — with one typed
         # getter per representation (user, 2026-10-03): branch once on the kind, then stay
-        # type-stable. Small vs big integer is storage; `is_portable_smallint` (pl-comp.c) decides
-        # instructions separately.
+        # type-stable. Small vs big integer is storage: a HEAD integer is `H_SMALLINT` when tagged,
+        # else `H_MPZ` (pl-comp.c, probed); `is_portable_smallint` is body arithmetic's.
         @testset "numbers: the kind, and a typed getter per kind" begin
             seen = Set{NumKind}()
             for v in HOST_VALUES

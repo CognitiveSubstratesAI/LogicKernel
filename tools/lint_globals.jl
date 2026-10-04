@@ -34,6 +34,10 @@ const LINT_ALLOWLIST = (
         "keys must be unique ACROSS PL_local_data instances, since a retained answer carries " *
         "them from one to another; an id counter cannot carry behaviour between callers " *
         "(precedent: Core's space_id counter). User, 2026-10-03.",
+    "LogicKernel.H_LIST_FF_VOIDS" =>
+        "upstream's own `static code var[2]` in pl-index.c `skipToTerm`: the two-void dummy code a " *
+        "deep index position inside an H_LIST_FF reads (src/pl-index.jl). Read-only — no function " *
+        "writes it — so it carries no state between callers. 2026-10-04."
 )
 
 """

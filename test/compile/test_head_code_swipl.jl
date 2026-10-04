@@ -9,14 +9,16 @@
 # instruction sequences must be equal, OPERANDS included where both systems mean the same thing: the
 # `H_VOID_N` count and the FRAME SLOT of `H_VAR`/`H_FIRSTVAR` — slots are compacted past voids
 # (pl-comp.c `analyse_variables`), so a wrong layout shows here before any frame executes. Atom and
-# functor operands are private to each system and not compared. Two names map, because the term
-# interface has no integer type (src/pl-comp.jl, `compileArgument!`): swipl's `h_smallint` is the
-# kernel's `h_atom`.
+# functor operands are private to each system and not compared, nor are literal operands (the
+# kernel's hold index keys until L2's literal table). No name maps since V1's L1 (2026-10-04):
+# integers are `h_smallint`/`h_mpz` by tagged storage, rationals `h_mpq`, floats `h_float`, list
+# cells `h_list`/`h_rlist`/`h_list_ff` — a second random sample draws those (`_hlarg`) — and
+# `h_list_ff`'s two slots are compared like `h_var`'s.
 using Random
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
-const _H = lk_term_type(Union{Int64, Float64, String})
+const _H = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _hs(n) = lk_sym(_H, Symbol(n))
 # Any vector of terms: a comprehension's element type is a LEAF type when the term type is abstract.
 _he(f, xs::AbstractVector) = mk_expr(_H, _H[_hs(f); xs])
@@ -38,6 +40,48 @@ function _harg(rng::AbstractRNG, shared::AbstractVector, depth::Int)::_H
             rand(rng, (:f, :g, :h)),
             [_harg(rng, shared, depth + 1) for _ in 1:rand(rng, 1:3)]
         )
+    end
+    return _hs(:z)
+end
+
+"A list cell `[h|t]` — written `'[|]'(h,t)` by `_htext`, which swipl reads as the same cell."
+_hcons(h::_H, t::_H) = mk_expr(_H, _H[_hs("[|]"), h, t])
+
+"Integers at the edges of the tagged range (±2^56) and of Int64, and in between."
+const _HINTS = (
+    0, 1, -1, 7, 2^31, -2^31 - 1, 2^56 - 1, 2^56, -2^56, -2^56 - 1, typemax(Int64),
+    typemin(Int64)
+)
+
+"A random number of every kind: Int64 and BigInt integers, canonical rationals, floats."
+function _hnum(rng::AbstractRNG)::_H
+    r = rand(rng)
+    r < 0.35 && return lk_gnd(_H, rand(rng, _HINTS))
+    r < 0.45 && return lk_gnd(_H, rand(rng, (big(5), big(2)^56, -big(2)^70, big(2)^63)))
+    r < 0.65 &&
+        return lk_gnd(_H, Rational{BigInt}(rand(rng, (1 // 3, -5 // 7, 7 // 2, 2 // 9))))
+    r < 0.85 && return lk_gnd(_H, rand(rng, (2.5, -0.0, 1.0e20, 3.0)))
+    return lk_gnd(_H, rand(rng, -100:100))
+end
+
+"A random literal or list head argument (V1, L1): numbers of every kind, lists, `'[|]'/1`."
+function _hlarg(rng::AbstractRNG, shared::AbstractVector, depth::Int)::_H
+    r = rand(rng)
+    if r < 0.15
+        return mk_var(_H, rand(rng, UInt64(1):UInt64(1 << 40)))
+    elseif r < 0.35
+        return rand(rng, shared)
+    elseif r < 0.55
+        return _hnum(rng)
+    elseif r < 0.62
+        return rand(rng) < 0.5 ? mk_nil(_H) : _hs(rand(rng, ("[]", "a", "[|]")))
+    elseif depth < 3
+        rand(rng) < 0.1 && return _he("[|]", [_hlarg(rng, shared, depth + 1)])   # no list cell
+        t = rand(rng) < 0.5 ? mk_nil(_H) : _hlarg(rng, shared, depth + 1)
+        for _ in 1:rand(rng, 1:3)
+            t = _hcons(_hlarg(rng, shared, depth + 1), t)
+        end
+        return t
     end
     return _hs(:z)
 end
@@ -75,6 +119,9 @@ function _hcode(head::_H)::Vector{String}
             push!(out, "$name($(codes[pc.pc + 1]))")
         elseif op == LK.H_VAR || op == LK.H_FIRSTVAR
             push!(out, "$name($(Int(codes[pc.pc + 1] - LK.VAROFFSET(0))))")
+        elseif op == LK.H_LIST_FF
+            s1, s2 = (Int(codes[pc.pc + i] - LK.VAROFFSET(0)) for i in 1:2)
+            push!(out, "$name($s1,$s2)")
         else
             push!(out, name)
         end
@@ -114,10 +161,14 @@ function _hswipl(heads::Vector{String}, names::Vector{String})::Vector{Vector{St
                 inclause = false
             elseif inclause &&
                 (m = match(r"^\s+\d+ ([a-z_]+)(\((.*)\))?\s*$", l)) !== nothing
-                name = m[1] == "h_smallint" ? "h_atom" : m[1]
+                name = m[1]
                 push!(
                     cur,
-                    name in ("h_void_n", "h_var", "h_firstvar") ? "$name($(m[3]))" : name
+                    if name in ("h_void_n", "h_var", "h_firstvar", "h_list_ff")
+                        "$name($(m[3]))"
+                    else
+                        name
+                    end
                 )
             end
         end
@@ -135,7 +186,17 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         shared = [mk_var(_H, UInt64(10_000 * k + j)) for j in 1:3]
         push!(heads, _he("hc$k", [_harg(rng, shared, 1) for _ in 1:rand(rng, 1:6)]))
     end
+    # V1, L1: literal and list heads, a second sample (the first keeps its draws)
+    for k in 1:300
+        shared = [mk_var(_H, UInt64(20_000_000 + 10_000 * k + j)) for j in 1:3]
+        push!(heads, _he("hl$k", [_hlarg(rng, shared, 1) for _ in 1:rand(rng, 1:5)]))
+    end
     ours = [_hcode(h) for h in heads]
+    # …and it reaches every new instruction
+    for i in ("h_smallint", "h_mpz", "h_mpq", "h_float", "h_nil", "h_list", "h_rlist")
+        @test any(c -> i in c, ours)
+    end
+    @test any(c -> any(startswith("h_list_ff("), c), ours)
     # the sample exercises every merge: void runs, voids dropped before H_POP and I_EXITFACT
     @test any(c -> any(startswith("h_void_n"), c), ours)
     @test any(
@@ -177,6 +238,35 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     # expected values come from that formula, not from swipl: no predicate exposes a clause's
     # variable count — only the QLF writer serialises it (pl-qlf.c:2915-2916) and a captured
     # continuation's arity reflects it (pl-cont.c:475), which needs a body, not a fact.
+    # lists (user, 2026-10-04): `[a|T]`, `'[|]'(a,T)` and `[a,b]` — the first two are ONE term to
+    # both systems — and the integer split by tagged storage, pinned with swipl 10.1.16's vm_list
+    vT, vX2, vY3 = mk_var(_H, UInt64(11)), mk_var(_H, UInt64(12)), mk_var(_H, UInt64(13))
+    lists = [
+        ("lp1([a|T])", _he(:lp1, [_hcons(_hs(:a), vT)])),
+        ("lp2('[|]'(a,T))", _he(:lp2, [_hcons(_hs(:a), vT)])),
+        ("lp3([a,b])", _he(:lp3, [_hcons(_hs(:a), _hcons(_hs(:b), mk_nil(_H)))])),
+        ("lp4([X|Y],f(X,Y))", _he(:lp4, [_hcons(vX2, vY3), _he(:f, [vX2, vY3])])),
+        ("lp5(f(a,[b]))", _he(:lp5, [_he(:f, [_hs(:a), _hcons(_hs(:b), mk_nil(_H))])])),
+        (
+            "lp6(72057594037927935,72057594037927936)",
+            _he(:lp6, [lk_gnd(_H, 2^56 - 1), lk_gnd(_H, 2^56)])
+        ),
+        (
+            "lp7(-72057594037927936,-72057594037927937)",
+            _he(:lp7, [lk_gnd(_H, -2^56), lk_gnd(_H, -2^56 - 1)])
+        )
+    ]
+    want = [
+        ["h_list", "h_atom", "h_pop", "i_exitfact"],
+        ["h_list", "h_atom", "h_pop", "i_exitfact"],
+        ["h_list", "h_atom", "h_rlist", "h_atom", "h_nil", "h_pop", "i_exitfact"],
+        ["h_list_ff(2,3)", "h_functor", "h_var(2)", "h_var(3)", "h_pop", "i_exitfact"],
+        ["h_functor", "h_atom", "h_rlist", "h_atom", "h_nil", "h_pop", "i_exitfact"],
+        ["h_smallint", "h_mpz", "i_exitfact"],
+        ["h_smallint", "h_mpz", "i_exitfact"]
+    ]
+    @test [_hcode(h) for (_, h) in lists] == want
+    @test _hcode(lists[1][2]) == _hcode(lists[2][2])
     @test _hframe(_he(:p, [_he(:f, [vA, vB, vB])])) == (2, 2)
     @test _hframe(
         _he(:q, [vX, _he(:g, [mk_var(_H, UInt64(5)), vY, mk_var(_H, UInt64(6)), vY]), vX])
@@ -187,7 +277,7 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     if _HSWIPL !== nothing
         @testset "identical to swipl" begin
             texts = [_htext(h, _hcount!(Dict{UInt64, Int}(), h)) for h in heads]
-            names = ["hc$k/$(nchildren(h) - 1)" for (k, h) in enumerate(heads)]
+            names = ["$(lk_name(child(h, 1)))/$(nchildren(h) - 1)" for h in heads]
             theirs = _hswipl(texts, names)
             @test length(theirs) == length(heads)
             bad = [
@@ -198,6 +288,12 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
                     k <= length(theirs) ? theirs[k] : "<missing>")
             end
             @test isempty(bad)
+            # the pinned heads, live: swipl compiles the very same sequences
+            theirs_l = _hswipl(
+                first.(lists),
+                ["$(lk_name(child(h, 1)))/$(nchildren(h) - 1)" for (_, h) in lists]
+            )
+            @test theirs_l == want
         end
     elseif _HSWIPL_REQUIRED
         error(

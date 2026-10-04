@@ -549,7 +549,11 @@ compiler can emit.
   ported) — because SWI's instruction choice (`H_SMALLINT` / `H_MPZ` / `H_FLOAT`) and the standard order
   depend on it. **REFINED (user, 2026-10-03):** the kinds are SWI's SEMANTIC ones — integer (any size),
   rational, float; "small vs big integer" is storage and instruction selection, decided by upstream's own
-  `is_portable_smallint` (pl-comp.c), a separate helper. And the accessor is a kind query plus one
+  `is_portable_smallint` (pl-comp.c), a separate helper. *(Corrected in V1's L1, 2026-10-04, by
+  upstream's source and a probe: a HEAD integer is chosen by tagged STORAGE in `compileArgument` —
+  `H_SMALLINT` up to ±2^56, `H_MPZ` beyond, identically under `portable_vmi` true and false;
+  `is_portable_smallint` serves body arithmetic, `A_ADD_FC`, alone. There is no `H_INTEGER` or
+  `H_INT64` in 10.1.16.)* And the accessor is a kind query plus one
   TYPED getter per representation (`Int64`, `BigInt`, `Rational{BigInt}`, `Float64`), so a caller
   branches once and stays type-stable.
 
@@ -582,8 +586,45 @@ compiler can emit.
   as upstream. Every test-side writer goes through one `lk_atom_text` (`[]` bare, `'[]'` quoted), and
   the standalone consumer's writer and benchmark programs recognise `[]` by `is_nil`, not by its name.
 * **Not in Q1**: `H_LIST`/`H_RLIST`/`H_LIST_FF` (the `'[|]'/2` case of `H_FUNCTOR`) and the numeric
-  head instructions come with the literal and compound operands, the next V1 step; `is_portable_smallint`
-  is ported for them now.
+  head instructions come with the literal and compound operands, the next V1 step (done: L1 below).
+
+**V1, L1 — the head instructions, as swipl selects them: BUILT (2026-10-04), on all three term
+implementations.** V1's "literal operands" step is split in two: L1 selects the instructions (this);
+L2 gives the operands decision 2's per-clause literal table.
+* **Probed first** (swipl 10.1.16, `vm_list`, 2026-10-04):
+  * integers go by tagged storage, not `is_portable_smallint`: `2^56-1` and `-2^56` are
+    `h_smallint`; `2^56`, `-2^56-1` and `2^63-1` are `h_mpz`. The listing is identical under
+    `portable_vmi` true and false, and `4r2` is `h_smallint(2)`;
+  * `1r3` → `h_mpq`, `2.5` → `h_float`, `"abc"` → `h_string`, `[]` → `h_nil`, `'[]'` → `h_atom`;
+  * lists: `[a,b,c]` → `h_list h_atom h_rlist h_atom h_rlist h_atom h_nil h_pop`;
+    `p([X|Y], f(X,Y))` → `h_list_ff(2,3)`; `[X|X]` → `h_list h_firstvar h_var`; `f([X|Y])` with
+    singletons → `h_functor h_rlist h_pop`.
+* **The interface gains `is_pair`** (user, 2026-10-04: SWI's `PL_is_pair`, chosen over a per-type
+  cached key or an operand on `H_LIST`). It is true exactly for a compound whose head is the TEXT atom
+  `'[|]'` with two arguments, pinned by conformance on all three implementations.
+  * `FUNCTOR_dot2` is a kernel constant, like `ATOM_nil`.
+  * `compileArgument!` emits `H_LIST`/`H_RLIST`, or `H_LIST_FF` (`compileListFF`, `isFirstVarP`),
+    where upstream tests `fdef == FUNCTOR_dot2`.
+  * `argKey` reads `FUNCTOR_dot2` from all three, `indexOfWord` gives it to every list cell, and
+    nothing is carried through the index readers — as upstream.
+* **Numbers:** `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT` by `number_kind` and tagged storage
+  (`_gnd_head_code`). Each holds ONE operand, the index key, until L2.
+* **Every code reader** handles the new instructions as upstream does: `skipArgs`, `argKey`,
+  `skipToTerm` (an `H_LIST_FF` reads upstream's two-void dummy, `H_LIST_FF_VOIDS`, allowlisted as
+  the read-only mirror of its `static code var[2]`), `indexableCompound` and `addClauseToIndex`.
+  `pl-vmi.jl` now loads before `pl-index.jl`.
+* **Pinned:**
+  * the head-code differential compares instruction names EXACTLY (the `h_smallint`→`h_atom` mapping
+    is gone) on a second random sample of literal and list heads, with `h_list_ff`'s slots;
+  * the user's three list spellings `[a|T]`, `'[|]'(a,T)` and `[a,b]`, plus `H_LIST_FF`, `f(a,[b])`
+    and the ±2^56 edges, by value and live against swipl;
+  * the index differential's `_xlit` keys a predicate by every new instruction, dynamic and static.
+* **Open, for the user:**
+  * `H_STRING` needs a string kind in the interface; until then a string is `H_ATOM`, as before;
+  * a `Rational` with denominator 1 is `NUM_RATIONAL` in both implementations, against
+    `NumKind`'s contract ("a rational that is not an integer"). swipl has no such term (`4r2` reads
+    as 2). The compiler follows `number_kind`, so it would be `H_MPQ`; the differentials draw only
+    canonical rationals.
 
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders
