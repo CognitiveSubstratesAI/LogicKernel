@@ -65,8 +65,8 @@ end
 
 """
 The functor test: two compounds match when they have the same functor — a symbol head with the
-same name and the same arity — or, both headless of a symbol, the same number of children (their
-heads are then compared as arguments). `(off, arity)` of the left one, or `nothing`.
+same name and the same arity — or, both `\$expr/n` (no symbol head, Q2), the same number of children
+(their heads are then compared as arguments). `(off, arity)` of the left one, or `nothing`.
 """
 function _variant_functor(l, r)::Union{Nothing, Tuple{Int, Int}}
     offl, arl = _comp_shape(l)

@@ -57,3 +57,31 @@ const TEXT_ATOM_RANK = 1
 # distinct from the key of the text atom `'[]'` (`MK_ATOM(sym_hash)`) but by chance, as any two keys.
 "The index key of `[]`: what `argKey` reads from `H_NIL` and `indexOfWord` gives `[]`."
 const ATOM_nil = MK_ATOM(UInt64(0x0052_4553_5652_4544))      # "RESERVED", within the atom-number bits
+
+# ── `$expr/n` (Q2) ──────────────────────────────────────────────────────────────────────────────
+# DIVERGES: SWI has no compound whose head is not an atom; the term interface has them — MeTTa's
+# variable and compound heads, a grounded head, and `()` with no children. Q2 (user, 2026-10-03)
+# gives each the functor `$expr/n`, `n` its number of children, whose arguments are ALL its
+# children, head included. Its name is reserved, as upstream's reserved symbol `dict` names the
+# functor of dicts (pl-dict.c `FUNCTOR_dict`): never the text atom `'$expr'`, so `'$expr'(X, a)`
+# has another functor. It names a functor and nothing else — no term is the symbol `$expr`.
+#   * standard order (src/pl-prims.jl `compare_functors`): by arity, then name — `$expr` before
+#     every symbol, as a reserved symbol sorts before the text atoms and, by `strcmp`, before `[]`;
+#   * head code (src/pl-comp.jl `compileArgument!`): `H_FUNCTOR` with the word `expr_functor(n)`;
+#   * index: a WILDCARD — `argKey` and `indexOfWord` give 0 — because unification goes child by
+#     child (src/pl-prims.jl `_unify_functor`): `(X a)` unifies with `f(a)`, whose functor is `f/1`.
+"The NAME of the `\$expr/n` functor (Q2), as `_functor_word` takes a name."
+const ATOM_expr = MK_ATOM(UInt64(0x0024_4558_5052))          # "$EXPR", within the atom-number bits
+
+"""
+The bit that marks a `\$expr/n` functor word: the position of upstream's `FIRST_MASK` (pl-data.h),
+a GC mark that no key and no instruction operand carries — so no `name/arity` word has it, and
+`isExprFunctor` is exact where comparing hashes would hold by chance.
+"""
+const EXPR_FUNCTOR_MASK = UInt64(0x2) << 5
+
+"The functor word of `\$expr/n` (Q2): an `isFunctor` word, marked with `EXPR_FUNCTOR_MASK`."
+expr_functor(n::Int)::word = _functor_word(UInt64(ATOM_expr), n) | EXPR_FUNCTOR_MASK
+
+"True when `w` is the functor word of a `\$expr/n` (Q2)."
+isExprFunctor(w::word)::Bool = isFunctor(w) && (w & EXPR_FUNCTOR_MASK) != 0

@@ -193,6 +193,9 @@ APART — `[]` compiles to `H_NIL`, keyed `ATOM_nil`, `'[]'` to an `H_ATOM` — 
 handles do; were they one key, the first argument's assessment would differ from swipl's. Built by
 hand rather than drawn: a new profile in the random program moved every later draw, and its
 measured coverage (49 of 57 retracts removing a clause) fell to 29 of 35.
+
+The same for FUNCTOR names: `[](K)` and `'[]'(K)` are compounds of two functors in swipl
+(`[](a) \\== '[]'(a)`, probed), so their functor keys differ too.
 """
 function _xnil()::Vector{_XPred}
     keys = (mk_nil(_X), _xs("[]"), _xs(:a0))
@@ -201,12 +204,30 @@ function _xnil()::Vector{_XPred}
         (:call, _xe(name, mk_nil(_X), _xv())), (:call, _xe(name, _xs("[]"), _xv())),
         (:call, _xe(name, _xv(), _xg(7)))
     ]
+    # [](K), '[]'(K), a0(K): the reserved symbol and the text atom as functor NAMES
+    fkey(j, i) = mk_expr(_X, _X[keys[j], _xg(i % 5)])
+    fheads(name) = [_xe(name, fkey(1 + (i % 3), i), _xg(i)) for i in 1:60]
+    fcalls(name) = [
+        (:call, _xe(name, mk_expr(_X, _X[mk_nil(_X), _xv()]), _xv())),
+        (:call, _xe(name, mk_expr(_X, _X[_xs("[]"), _xv()]), _xv())),
+        (:call, _xe(name, mk_expr(_X, _X[mk_nil(_X), _xg(2)]), _xg(59))),
+        (:call, _xe(name, _xv(), _xg(7)))
+    ]
     return [
         _XPred(
             :nq_d, 2, true, heads(:nq_d),
             [calls(:nq_d); (:retract, _xe(:nq_d, mk_nil(_X), _xv())); calls(:nq_d)]
         ),
-        _XPred(:nq_s, 2, false, heads(:nq_s), calls(:nq_s))
+        _XPred(:nq_s, 2, false, heads(:nq_s), calls(:nq_s)),
+        _XPred(
+            :nqf_d, 2, true, fheads(:nqf_d),
+            [
+                fcalls(:nqf_d);
+                (:retract, _xe(:nqf_d, mk_expr(_X, _X[mk_nil(_X), _xv()]), _xv()));
+                fcalls(:nqf_d)
+            ]
+        ),
+        _XPred(:nqf_s, 2, false, fheads(:nqf_s), fcalls(:nqf_s))
     ]
 end
 

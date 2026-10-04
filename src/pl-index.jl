@@ -135,9 +135,15 @@ argv_at(argv, i::Int) = child(argv, i + 2)
 "True when `t` can select clauses through an index (pl-index.c)."
 canIndex(t)::Bool = indexOfWord(t) != 0
 
-"The functor word of a compound named by `name` (a `sym_hash`) with `arity` arguments."
+"The functor word of a compound named by `name` (see `_functor_name`) with `arity` arguments."
 _functor_word(name::UInt64, arity::Int)::word =
     MK_FUNCTOR(UInt64(hash(UInt64(arity), name)), UInt64(arity) & F_ARITY_MASK)
+
+# DIVERGES: upstream names a functor by its atom HANDLE, so `[](a)` and `'[]'(a)` are two functors
+# (`[]` is a reserved symbol, `'[]'` a text atom — swipl 10.1.16: `[](a) \== '[]'(a)`). `sym_hash`
+# is a TEXT hash, so `[]` takes its own name, `ATOM_nil`, as it does as an atom key.
+"The name a functor word takes for the symbol head `h`: `ATOM_nil` for `[]`, else its `sym_hash`."
+_functor_name(h)::UInt64 = is_nil(h) ? UInt64(ATOM_nil) : sym_hash(h)
 
 # PORT: pl-index.c indexOfWord
 # DIVERGES: reads the term interface rather than a tagged cell, and there are no reference cells to
@@ -147,9 +153,9 @@ _functor_word(name::UInt64, arity::Int)::word =
 # share a key that upstream's two atom handles never share. GND → its
 # `gnd_key` through `clean_index_key` — the role murmur_key plays upstream for strings and floats,
 # a key that follows the term type's `gnd_equal` (src/term_interface.jl) — and 0, a wildcard, when
-# there is no key. EXPR with a symbol head → a functor word (`MK_FUNCTOR`) of the name and arity.
-# EXPR with any other head → 0: such a compound (a variable or compound head) has no functor to
-# index on.
+# there is no key. EXPR with a symbol head → a functor word (`MK_FUNCTOR`) of the name
+# (`_functor_name`) and arity. EXPR with any other head — the functor `$expr/n` (Q2,
+# src/pl-ressymbol.jl) → 0, a wildcard: it unifies child by child with compounds of other functors.
 """
     indexOfWord(t) -> word
 
@@ -168,10 +174,10 @@ function indexOfWord(t)::word
         g === nothing && return word(0)
         return clean_index_key(g)
     end
-    nchildren(t) >= 1 || return word(0)                 # `()`: no head, no functor
+    nchildren(t) >= 1 || return word(0)                 # `()`: `$expr/0`, a wildcard
     h = child(t, 1)
-    kind(h) === SYM || return word(0)
-    return _functor_word(sym_hash(h), nchildren(t) - 1)
+    kind(h) === SYM || return word(0)                   # `$expr/n`, a wildcard
+    return _functor_word(_functor_name(h), nchildren(t) - 1)
 end
 
 # PORT: pl-index.c next_clause_unindexed

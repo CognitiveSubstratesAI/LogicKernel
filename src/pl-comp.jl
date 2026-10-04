@@ -239,7 +239,8 @@ _comp_arg(t, off::Int, i::Int) = child(t, off + i)
 
 """
 `(offset of argument 0, arity)` of a compound as the compiler sees it: below a symbol head, the
-children after it; below any other head (a variable or a compound), every child.
+children after it; below any other head (a variable, a grounded value or a compound) or none, every
+child — the functor `\$expr/n` (Q2, src/pl-ressymbol.jl).
 """
 _comp_shape(t)::Tuple{Int, Int} =
     if nchildren(t) >= 1 && kind(child(t, 1)) === SYM
@@ -370,13 +371,13 @@ struct ca_frame{T}
 end
 
 # PORT: pl-comp.c compileArgument
-# DIVERGES: the head side (`where` without A_BODY, no `islocal`). The term interface has no
-# reserved `[]`, no list functor and no grounded value type, so: a symbol compiles to `H_ATOM`
-# (never H_NIL); a grounded value compiles to `H_ATOM` whose operand is its index key —
-# `clean_index_key(gnd_key)`, 0 when it has none (SWI's blob is an atom too; no H_SMALLINT/
-# H_FLOAT/H_STRING/H_MPZ); a list cell is the compound it is (never H_LIST/H_RLIST/H_LIST_FF —
-# the index reads those the same way); a compound whose head is not a symbol compiles as
-# `H_FUNCTOR` 0 with every child as an argument.
+# DIVERGES: the head side (`where` without A_BODY, no `islocal`). SWI-7's `[]` compiles to `H_NIL`
+# (Q1), any other symbol to `H_ATOM`; a grounded value compiles to `H_ATOM` whose operand is its
+# index key — `clean_index_key(gnd_key)`, 0 when it has none (no H_SMALLINT/H_FLOAT/H_STRING/H_MPZ
+# yet: V1's literal operands); a list cell is the compound it is (no H_LIST/H_RLIST/H_LIST_FF yet —
+# the index reads those the same way); a functor operand is a hashed word (`_functor_word`), not a
+# functor-table handle; and a compound whose head is not a symbol compiles as `H_FUNCTOR $expr/n`
+# (Q2, `expr_functor`, src/pl-ressymbol.jl) with every child as an argument.
 """
 Emit the head code for argument `arg` (pl-comp.c): left to right, a compound's last argument
 `A_RIGHT` (`H_RFUNCTOR`, no `H_POP` of its own), resume points on an explicit stack.
@@ -424,7 +425,7 @@ function compileArgument!(ci::compileInfo, arg, where_::Int)::Bool
     # a compound
     isright = (where_ & A_RIGHT) != 0
     off, ar = _comp_shape(arg)
-    fdef = off == 2 ? _functor_word(sym_hash(child(arg, 1)), ar) : word(0)
+    fdef = off == 2 ? _functor_word(_functor_name(child(arg, 1)), ar) : expr_functor(ar)
     Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
     where_ &= ~(A_RIGHT | A_NOARGVAR)
     where_ |= A_ARG
@@ -673,7 +674,8 @@ end
 
 # PORT: pl-comp.c argKey
 # DIVERGES: returns the key — 0 where upstream returns false — instead of a flag and an
-# out-parameter; an `H_ATOM` holding 0 (a grounded value without a key) is not indexable.
+# out-parameter; an `H_ATOM` holding 0 (a grounded value without a key) is not indexable, and an
+# `H_FUNCTOR` of `$expr/n` (Q2, src/pl-ressymbol.jl) is a wildcard, as `indexOfWord` keys it.
 """
     argKey(PC, skip) -> word
 
@@ -688,7 +690,8 @@ function argKey(PC::Code, skip::Int)::word
         c = decode(PC)
         PC = Code(PC.codes, PC.pc + 1)                          # PC++
         if c == H_FUNCTOR || c == H_RFUNCTOR
-            return PC.codes[PC.pc]                              # code2functor(*PC)
+            w = PC.codes[PC.pc]                                 # code2functor(*PC)
+            return isExprFunctor(w) ? word(0) : w
         elseif c == H_ATOM
             return PC.codes[PC.pc]                              # code2atom(*PC)
         elseif c == H_NIL

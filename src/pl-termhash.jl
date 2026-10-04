@@ -26,9 +26,10 @@
 #      `gnd_equal` (SWI's identity in the reference type, so `1` and `1.0` hash apart as in SWI; a
 #      type matching by `==` would make them share a digest). Assumes, as every key function does,
 #      that identical grounded values have the same `gnd_key`.
-#   2. HEADS. A compound whose first child is not a symbol has no functor: term_hash hashes the
-#      name hash 0 and every child as an argument; variant_sha1 writes `C` and the child count where
-#      upstream writes `T`, name and arity (see `_comp_shape`).
+#   2. HEADS. A compound whose first child is not a symbol has the functor `$expr/n` (Q2,
+#      src/pl-ressymbol.jl), every child an argument: term_hash hashes its name as 0, and
+#      variant_sha1 writes `C` and the child count where upstream writes `T`, name and arity (see
+#      `_comp_shape`).
 #   3. FINITE TREES. Interface terms have no cycles and no attributed variables, and no cells to
 #      mark: no `CYCLE_CONST`/`in_cycle`, no reuse of a shared subterm's hash (a finite shared
 #      subterm rehashes to the same value), no canonical-form rehash of a cyclic term

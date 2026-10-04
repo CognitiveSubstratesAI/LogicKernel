@@ -168,7 +168,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
-| `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported | `src/pl-ressymbol.c` |
+| `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (`expr_functor`, `isExprFunctor`, DIVERGES) | `src/pl-ressymbol.c` |
+| `test/core_lang/test_expr_functor.jl` | Q2's own tests: `$expr/n`'s standard order, its head code, the index keeping it a wildcard (top level and among same-functor clauses), unification and `=@=` child by child | — |
 | `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
 | `test/compile/test_portable_smallint_swipl.jl` | `is_portable_smallint` under `portable_vmi`, and the tagged-integer range against a live swipl's flags | — |
 | `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses | `src/pl-termwalk.c` |
@@ -583,6 +584,37 @@ compiler can emit.
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders
 them. It stays OUT of the swipl differentials (SWI cannot express it) and has its own tests.
+
+**Q2 — BUILT (2026-10-03), on all three term implementations** (src/pl-ressymbol.jl § `$expr/n`).
+* **The functor.** A compound whose head is not a symbol — a variable, a grounded value, a compound,
+  or none (`()`) — has the functor `$expr/n`, `n` its number of children, every child an argument.
+  Its name is RESERVED, as upstream's reserved symbol `dict` names the dict functor (pl-dict.c
+  `FUNCTOR_dict`): `'$expr'(X, a)` is another functor. No term is the symbol `$expr`.
+* **Standard order** (`compare_functors`): arity first — `f(a) @< (X a)`, `(X a b) @> f(a, b)` —
+  then `$expr` before every symbol name of the same arity (a reserved name before text atoms, and
+  `$` before `[` by `strcmp`), then the children left to right. Before Q2 the kernel ordered by
+  the number of CHILDREN, so `(X a) @< f(a)`.
+* **Head code**: `H_FUNCTOR $expr/n` (`expr_functor(n)`, one operand per `n`) where it was
+  `H_FUNCTOR 0` — the arity is in the code. The word is a hashed functor word like every other
+  until V1's functor table; it carries `FIRST_MASK`'s bit, which no upstream key or operand
+  carries, so `isExprFunctor` is exact.
+* **Unification is unchanged and decides the index**: `$expr/n` unifies with ANY compound of `n`
+  children, child by child (`(X a) = f(a)` binds `X = f`; `_unify_functor`). So `argKey` and
+  `indexOfWord` key it as a WILDCARD, as a variable. Among same-functor clauses it then keeps the
+  index from going deep, as `q(_)` does in swipl (10.1.16, probed) — where a deep key would read
+  its arguments misaligned with theirs. The VM must match the same way (V2–V4): `H_FUNCTOR $expr/n`
+  against any compound of `n` children, `H_FUNCTOR f/k` against a `$expr/(k+1)`.
+* **`=@=` and the hashes** already treated it as one functor (same number of children; name hash 0;
+  `C` and the child count) — now named so.
+* **Pinned failing first** (test/core_lang/test_expr_functor.jl, 48 assertions on each
+  implementation): 4 standard-order and 3 head-code assertions failed before. The index assertions
+  passed before (key 0) and are mutation-proved: keying `$expr/n` by its word drops the answer of
+  `p(f(a))` from `p((X a))`.
+* **Found while building it — Q1's `[]` as a FUNCTOR name:** functor words named a symbol by its
+  `sym_hash`, a text hash, so `[](K)` and `'[]'(K)` shared a key that swipl's two atom handles never
+  share (`[](a) \== '[]'(a)`, probed). The index differential pins it (`nqf_d`, `nqf_s`: before the
+  fix, `nqf_d('[]'(3), 58)` was nondet where swipl is det, and the assessment differed). Now a functor
+  named `[]` is named by `ATOM_nil`, as the atom `[]` is keyed (`_functor_name`).
 
 **Q3 — the builder under `false`, upstream's order under `true`/`error`: APPROVED.** Upstream confirms the
 split: under `false`, `H_VAR` in write mode copies (or trails a local-stack variable to the new cell) and

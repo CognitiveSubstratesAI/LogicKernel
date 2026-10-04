@@ -195,18 +195,27 @@ function compare_primitives(t1, t2, mode::Int)::Int
 end
 
 # PORT: pl-prims.c compare_functors
-# DIVERGES: a SWI functor is a name plus an arity; here the "name" is child 1 and may be a variable or a compound, so this compares the ARITY only and the head is compared by the walk as an ordinary child.
+# DIVERGES: a SWI functor is a name plus an arity. Below a symbol head the functor is that name and
+# arity (children - 1); any other compound has the functor `$expr/n` (Q2, src/pl-ressymbol.jl), n
+# its children. By arity, as upstream; at one arity `$expr` sorts before every symbol name. Two
+# symbol names — and two `$expr` — are left to the walk, which compares the head as child 1 first:
+# the order upstream gets by comparing the names here.
 """
     compare_functors(t1, t2, mode::Int) -> Int
 
-Two compounds by arity (pl-prims.c `compare_functors`). `CMP_EQUAL` means "same shape — compare
-the children", head first.
+Two compounds by functor (pl-prims.c `compare_functors`): arity first, then `\$expr/n` before a
+symbol head. `CMP_EQUAL` means "compare the children", head first.
 """
 function compare_functors(t1, t2, mode::Int)::Int
-    n1, n2 = nchildren(t1), nchildren(t2)
-    n1 == n2 && return CMP_EQUAL
+    off1, a1 = _comp_shape(t1)
+    off2, a2 = _comp_shape(t2)
+    if a1 == a2
+        off1 == off2 && return CMP_EQUAL
+        mode == CMP_MODE_EQUAL && return CMP_NOTEQ
+        return off1 < off2 ? CMP_LESS : CMP_GREATER     # `$expr/n` (offset 1) first
+    end
     mode == CMP_MODE_EQUAL && return CMP_NOTEQ
-    return n1 < n2 ? CMP_LESS : CMP_GREATER
+    return a1 < a2 ? CMP_LESS : CMP_GREATER
 end
 
 # PORT: pl-prims.c do_compare
@@ -338,8 +347,10 @@ function _cyclic_deref(ld::PL_local_data{T}, f::T)::T where {T}
 end
 
 # DIVERGES: two compounds with SYMBOL heads unify as SWI's do — the same name and arity, then the
-# arguments. A compound with any other head (a variable or a compound — MeTTa's) has no functor;
-# two compounds with the same number of children then unify child by child, heads included.
+# arguments. A compound with any other head has the functor `$expr/n` (Q2, src/pl-ressymbol.jl),
+# and it unifies with ANY compound of n children, child by child, heads included — `(X a) = f(a)`
+# binds `X = f` — so the index keys `$expr/n` as a wildcard. A VM must match the same way:
+# `H_FUNCTOR $expr/n` against any compound of n children, `H_FUNCTOR f/k` against a `$expr/(k+1)`.
 """
 The functor test of `do_unify` (`f1->definition != f2->definition`): `(child index of argument 0,
 arity)` when compounds `f1` and `f2` unify argument by argument, `nothing` when they cannot unify.
