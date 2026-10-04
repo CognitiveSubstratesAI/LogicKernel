@@ -57,10 +57,16 @@ fp3="$(_tree_fp "$ROOT")"; rm -f "$probe"
 [ "$fp3" != "$fp1" ]; check "a new file changes the fingerprint" 0 $?
 [ "$(_tree_fp "$ROOT")" = "$fp1" ]; check "…and removing it restores it" 0 $?
 
-# a REAL worker refuses a run for another tree: started for fingerprint A, told to go for B
+# a REAL worker refuses a run for another tree: started for fingerprint A, told to go for B. It
+# compiles in the EVIDENCE depot (as tools/run_tests.sh precompiles before spawning workers)
+(cd "$ROOT" && JULIA_DEPOT_PATH="$(_evidence_depot_path "$ROOT")" \
+    julia --project=. --startup-file=no -e 'using LogicKernel' < /dev/null) ||
+    { echo "test_evidence: precompile into the evidence depot failed"; exit 1; }
 W="$T/worker"
 _spawn_worker "$ROOT" "$W" "fingerprint-A" "$U" || { echo "test_evidence: could not start a worker"; exit 1; }
 _wait_ready "$W" "$U" 900; check "a worker starts and reports ready" 0 $?
+grep -qF "worker: depot $(_evidence_depot "$ROOT")" "$W/log"
+check "…loading from the evidence depot, not the warm daemon's" 0 $?
 # the shard directory does not exist: a worker that skipped the check fails fast, not after a shard
 printf '%s\n%s\n%s\n' "fingerprint-B" "$T/nowhere" "1" > "$W/go.tmp" && mv "$W/go.tmp" "$W/go"
 for _ in $(seq 1 120); do [ -f "$W/rc" ] && break; sleep 0.5; done

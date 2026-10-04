@@ -8,6 +8,30 @@ _tree_fp() {
         (cd "$1" && xargs -0 -r sha1sum 2>/dev/null) | sha1sum | cut -c1-40
 }
 
+# _evidence_depot ROOT — where EVIDENCE processes keep their compiled caches: the coordinator's
+# precompile, the workers, `pool`, every tools/run_tests.sh process. It sits ahead of the default
+# depot (JULIA_DEPOT_PATH="<it>:"), so their precompiles never rewrite the cache the warm daemon
+# loaded — which the daemon would rightly refuse to revise past (tools/warm_session.jl) — and the
+# pool can warm while the daemon works (user, 2026-10-04: no cold starts that a warm lane avoids).
+_evidence_depot() { echo "$1/.warm/evidence-depot"; }
+
+# _evidence_depot_path ROOT — the JULIA_DEPOT_PATH value for an evidence process: the evidence
+# depot, then the depots it would have had. NAMED explicitly: a trailing ":" alone drops the user
+# depot (~/.julia) — MEASURED 2026-10-04, DEPOT_PATH became [evidence, juliaup's two] and no
+# installed package was found.
+_evidence_depot_path() {
+    local d
+    d="$(_evidence_depot "$1")"
+    if [ -n "${JULIA_DEPOT_PATH:-}" ]; then
+        case ":$JULIA_DEPOT_PATH:" in
+            *":$d:"*) echo "$JULIA_DEPOT_PATH" ;;
+            *) echo "$d:$JULIA_DEPOT_PATH" ;;
+        esac
+    else
+        echo "$d:$HOME/.julia:"
+    fi
+}
+
 # _check_swipl_pin ROOT WHO — 0 when the `swipl` on THIS PATH is the pinned version
 # (tools/SWIPL_VERSION); otherwise says which swipl it found, and where. Both sides non-empty.
 _check_swipl_pin() {
@@ -82,7 +106,7 @@ _spawn_worker() {
     echo "$fp" > "$dir/fp"
     systemd-run --user --unit="$unit" --collect --quiet \
         -p MemoryMax="${LOGICKERNEL_WORKER_MEM_MAX:-5G}" -p MemorySwapMax=0 \
-        --working-directory="$root" -E "PATH=$PATH" \
+        --working-directory="$root" -E "PATH=$PATH" -E "JULIA_DEPOT_PATH=$(_evidence_depot_path "$root")" \
         -E JULIA_PKG_PRECOMPILE_AUTO=0 -E LOGICKERNEL_REQUIRE_TOOLS=1 -E LOGICKERNEL_REQUIRE_SWIPL=1 \
         ${LOGICKERNEL_WORKER_IDLE_S:+-E LOGICKERNEL_WORKER_IDLE_S=$LOGICKERNEL_WORKER_IDLE_S} \
         /bin/bash -c "exec '$julia' --project=. --threads=1 --heap-size-hint=${LOGICKERNEL_WORKER_HEAP_HINT:-2G} tools/worker.jl '$dir' '$fp' >> '$dir/log' 2>&1"

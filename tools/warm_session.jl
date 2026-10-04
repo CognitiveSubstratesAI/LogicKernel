@@ -46,7 +46,10 @@ end
 # re-precompiles first (16 s with the precompile workload, 6 s without); `stale_load` loads the most
 # recent cache and revises it up to the current source instead. It throws where that cache cannot
 # be loaded (another Julia, a changed preference such as the workload switch) — then load normally.
-if isdefined(Main, :Revise)
+# A checkout COPY (tools/warm.sh with LOGICKERNEL_WARM_DEPOT) loads normally instead: `stale_load`
+# takes the most recent cache of ANY checkout of the package, and Revise would then watch that
+# checkout's src/ — which the guard below refuses (measured 2026-10-04, parallel mutation copies).
+if isdefined(Main, :Revise) && get(ENV, "LOGICKERNEL_WARM_NO_STALE_LOAD", "") != "1"
     try
         Revise.stale_load("LogicKernel"; throw=true)
         println("LogicKernel: loaded from its last cache and revised to the current source")

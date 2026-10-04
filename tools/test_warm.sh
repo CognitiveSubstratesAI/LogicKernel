@@ -12,7 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '"$W" stop >/dev/null 2>&1; rm -rf "$T"' EXIT
+trap '"$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -36,6 +36,26 @@ PATH="$T/fakebin:$PATH" "$W" start > /dev/null 2>&1; check "start REFUSES a swip
 "$W" send "$T/s.jl" > /dev/null 2>&1; check "…and starts no daemon" 3 $?
 
 "$W" start || { echo "test_warm: the lane did not start"; exit 1; }
+
+# preflight: a port_check violation (a src file with no header) fails it FAST, before the slow gate;
+# the tree as it is passes (the pool is skipped here: LOGICKERNEL_PREFLIGHT_POOL=0)
+probe_src="$ROOT/src/_preflight_probe_$$.jl"
+printf 'x = 1\n' > "$probe_src"
+s=$(date +%s)
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight FAILS on a port_check violation" 1 $?
+rm -f "$probe_src"
+[ $(( $(date +%s) - s )) -lt 120 ]; check "…before the slow gate (fail fast)" 0 $?
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight passes on the tree as it is" 0 $?
+has "…having run the static-analysis gate" "$T/pf" "test_static_analysis.jl" 1
+# a CHANGED test file that fails (an untracked one) is run, and fails the preflight — BY ITS OWN
+# VERDICT: the file carries a valid header, so port_check passes and the failure is the test's
+# (a first version had none, and passed through port_check alone: mutation MP3 survived)
+probe_test="$ROOT/test/core_lang/test_preflight_probe_$$.jl"
+printf '# ORIGINAL: a planted failing test (tools/test_warm.sh); never committed.\nusing Test\n@testset "planted" begin\n    @test 1 + 1 == 3\nend\n' > "$probe_test"
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight FAILS on a failing changed test file" 1 $?
+rm -f "$probe_test"
+has "…past format and port_check" "$T/pf" "port_check clean" 1
+has "…by that file's own failure" "$T/pf" "planted: Test Failed" 1
 
 cat > "$T/ok.jl" <<'JL'
 using Test

@@ -60,12 +60,29 @@ file) — so evidence is a process that started clean. The daemon follows Revise
 * a failed update, a queued Revise error or a cache rewritten by another process REFUSES the
   snippet; snippets run through `invokelatest`; Revise's audit trail (`debug_logger`) is reported
   with every snippet, and a `src/` Revise is not watching refuses the daemon's start;
+* a checkout COPY (parallel mutation proofs) runs its own daemon with `LOGICKERNEL_WARM_DEPOT`: a
+  depot of its own and a normal load, since `stale_load` would take the original's cache and watch
+  ITS `src/` (the "not watching" guard refused exactly that, measured);
+* **`tools/warm.sh preflight`, before every full run (user, 2026-10-04: "do not waste time on cold
+  starts"):**
+  * the fast checks fail fast: Blue formatting, as CI checks it, and `port_check`;
+  * then, while the evidence workers pre-warm for the tree (`pool`): the static-analysis gate (26 s
+    warm, against ~200 s in a cold worker) and every test file changed since HEAD, on every
+    implementation.
+  MEASURED the day it was built: two of three cold runs (~11 min each) had failed on exactly those
+  checks, port_check and JET;
+* evidence processes compile into their own depot, `.warm/evidence-depot`, ahead of the user's
+  (`_evidence_depot_path`; a bare trailing `:` would DROP `~/.julia`, measured). So a precompile for
+  evidence never rewrites the cache the daemon loaded — which the daemon rightly refuses to revise
+  past — and the pool warms while the daemon works;
 * the daemon starts only under the PINNED swipl (tools/SWIPL_VERSION), checked in the daemon itself
   (`tools/swipl_pin.jl`); it runs with its caller's PATH, as a systemd service would otherwise start
   from systemd's own (see the evidence run below);
 * the include list of src/LogicKernel.jl stays LITERAL `include("…")` lines: Revise notices a removed
   include only for a literal path (any generated list, M1's included, must write literal lines).
-`tools/test_warm.sh` tests all of it (19 cases); the verdict, Revise's refusal, Revise itself, the
+`tools/test_warm.sh` tests all of it (26 cases: the preflight fails fast on a planted port_check
+violation, fails BY THE TEST'S OWN VERDICT on a planted failing changed test file, and passes on the
+tree as it is); the verdict, Revise's refusal, Revise itself, the
 daemon's pin check and the PATH it is given are mutation-proved.
 
 **Evidence: a SHARDED run in fresh processes (user, 2026-10-03).** The suite is single-threaded and
@@ -80,6 +97,9 @@ count from cores and memory — 3 here; `LOGICKERNEL_SHARDS` overrides, `=1` the
 * one precompile before any worker; workers run with `JULIA_PKG_PRECOMPILE_AUTO=0`;
 * workers never load Revise, run once, and REFUSE a run whose tree fingerprint differs from the one
   they started with; `tools/warm.sh pool` pre-warms them for the current tree;
+* each worker USES JET and AllocCheck once on a function of no package before it reports `ready`:
+  their own compilation (18.7 s in a fresh process, measured) is then paid while the worker waits in
+  the pool, not inside the timed run; nothing of LogicKernel is analysed early;
 * 🔴 each worker checks the PINNED swipl where it runs (`tools/swipl_pin.jl`), refusing to start
   (exit 4) under any other, and runs with the coordinator's PATH. A `systemd-run --user` SERVICE
   starts from systemd's own environment, not its caller's: MEASURED 2026-10-04, that PATH found
@@ -99,7 +119,8 @@ MEASURED: 6m05s wall for the whole run (3 workers, 321/313/314 s of units each),
 one process just before. The longest unit is the static-analysis gate (217 s); the rest are at most
 ~54 s. `tools/test_evidence.sh` tests the coordinator's verdict on fixture runs (a unit skipped, run
 twice, twice-and-another-never, an empty run, no sharing), a real worker refusing a changed tree
-and a real worker refusing a swipl that is not the pin (17 cases); the duplicate check, the AltTerm
+a real worker refusing a swipl that is not the pin, the machine numbers' helpers, and a worker
+loading from the evidence depot (22 cases); the duplicate check, the AltTerm
 check, the worker's two refusals and the PATH it is given are mutation-proved.
 
 **The precompile workload** (`src/precompile_workload.jl`, PrecompileTools — the one allowlisted

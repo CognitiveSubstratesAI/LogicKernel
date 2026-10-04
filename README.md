@@ -67,6 +67,9 @@ tools/warm.sh start                        # the warm lane: LogicKernel loaded o
 tools/warm.sh file test/core_lang/test_unify.jl   # one file, every term implementation, real exit code
 tools/warm.sh bench                        # the bench in the warm daemon (no JIT in the timings)
 tools/warm.sh workload off                 # skip the precompile workload in THIS checkout
+tools/warm.sh preflight                    # WARM, before any full run: format, port_check, the
+                                           # static-analysis gate, changed test files — and it
+                                           # pre-warms the evidence workers meanwhile
 tools/warm.sh pool                         # pre-warm the evidence workers for the current tree
 LOGICKERNEL_SHARDS=1 tools/run_tests.sh    # the full suite in ONE process (default: sharded)
 julia --project -e 'using Pkg; Pkg.test()' # what CI runs

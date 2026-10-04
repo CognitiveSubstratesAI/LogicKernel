@@ -70,6 +70,10 @@ export LOGICKERNEL_REQUIRE_SWIPL=1
 # shellcheck source=/dev/null
 . "$ROOT/tools/lib_evidence.sh"
 _check_swipl_pin "$ROOT" run_tests.sh || exit 1
+# Every Julia process of this runner compiles into the EVIDENCE depot, ahead of the default ones, so
+# it never rewrites the cache the warm daemon loaded (tools/lib_evidence.sh `_evidence_depot`).
+JULIA_DEPOT_PATH="$(_evidence_depot_path "$ROOT")"
+export JULIA_DEPOT_PATH
 
 # 🔴 FULL RUNS ONLY — two checks that stop a COMMIT (a full run is the commit's evidence), not an
 # iteration. Both run BEFORE the suite, so a failure exits with no evidence written.

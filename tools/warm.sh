@@ -8,6 +8,7 @@
 #                                                            # (or just `impl`), swipl REQUIRED
 #   tools/warm.sh send snippet.jl          # any snippet (or stdin); exit 0 ok · 1 threw · 2 timeout · 3 no daemon
 #   tools/warm.sh bench [bench.jl args]    # tools/bench.jl in the daemon: no JIT in the timings
+#   tools/warm.sh preflight                # WARM: what a full run would fail on, BEFORE one (exit 0/1)
 #   tools/warm.sh evidence                 # a FRESH tools/run_tests.sh — the commit gate's run
 #   tools/warm.sh pool                     # pre-warm the evidence workers for THIS tree
 #   tools/warm.sh workload on|off          # the precompile workload, for THIS checkout only
@@ -38,8 +39,15 @@ _start() {
     julia="$(command -v julia)" || { echo "warm lane: no julia on PATH" >&2; return 1; }
     # the same ceiling and flags as tools/run_tests.sh. A service starts from systemd's own PATH, not
     # ours, so it gets ours — the swipl its differentials judge against; the daemon checks the pin.
+    # A checkout COPY (parallel mutation proofs, user 2026-10-04) gives its daemon a depot of its own,
+    # LOGICKERNEL_WARM_DEPOT, and a normal load: the original checkout's cache is not this copy's.
+    local copy_env=()
+    if [ -n "${LOGICKERNEL_WARM_DEPOT:-}" ]; then
+        copy_env=(-E "JULIA_DEPOT_PATH=$LOGICKERNEL_WARM_DEPOT:$HOME/.julia:"
+            -E LOGICKERNEL_WARM_NO_STALE_LOAD=1)
+    fi
     systemd-run --user --unit="$UNIT" --collect --quiet -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
-        -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" \
+        -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" "${copy_env[@]}" \
         -E JULIA_REVISE=manual \
         /bin/bash -c "exec '$julia' --project=. --threads=\"\${JULIA_TEST_THREADS:-4}\" --heap-size-hint=6G tools/warm_session.jl >> '$DIR/session.log' 2>&1" ||
         { echo "warm lane: systemd-run failed" >&2; return 1; }
@@ -139,7 +147,8 @@ _pool() {
             rm -rf "$w"
         fi
     done
-    (cd "$ROOT" && julia --project=. --startup-file=no -e 'using LogicKernel' < /dev/null) || return 1
+    (cd "$ROOT" && JULIA_DEPOT_PATH="$(_evidence_depot_path "$ROOT")" \
+        julia --project=. --startup-file=no -e 'using LogicKernel' < /dev/null) || return 1
     for k in $(seq 1 "$n"); do
         w="$DIR/pool/w$k"
         [ -f "$w/fp" ] && continue                       # already warming for this tree
@@ -149,6 +158,56 @@ _pool() {
         echo "$u" > "$w/unit"
     done
     echo "pool: $n workers warming for tree ${fp:0:12} — tools/run_tests.sh uses them while the tree is unchanged"
+}
+
+# _preflight — what a full run would fail on, checked WARM before the cold evidence run (user,
+# 2026-10-04: "do not waste time on cold starts .. make use of possible solutions to run warm").
+# MEASURED that day: two of three cold runs (~11 min each) failed on port_check and on JET — each
+# answer this gives in about a minute. Fast checks first, failing fast: Blue formatting (as
+# run_tests.sh and CI check it) and port_check. Then, while the evidence workers pre-warm for this
+# tree (`pool`, in the evidence depot, so the daemon's cache is untouched): the static-analysis gate
+# (JET/Aqua/AllocCheck — ~26 s warm, against ~200 s in a cold worker) and every test file changed
+# since HEAD, on every implementation. Exit 0 only if all of it passed; the cold run that follows is
+# then the evidence, and starts from loaded workers. LOGICKERNEL_PREFLIGHT_POOL=0 skips the pool.
+_preflight() {
+    _running || _start > /dev/null || return 1
+    local t0 rc=0 f files pooled=""
+    t0=$(date +%s)
+    local snippet="$DIR/preflight_snippet.jl"
+    cat > "$snippet" <<JL
+using JuliaFormatter
+format("."; overwrite=false) ||
+    error("preflight: NOT Blue-formatted — tools/run_tests.sh shows each diff")
+println("preflight: Blue-clean (JuliaFormatter ", pkgversion(JuliaFormatter), ")")
+isdefined(Main, :port_check) || Base.include(Main, raw"$ROOT/tools/port_check.jl")
+let r = Main.port_check(raw"$ROOT")
+    foreach(x -> println("  ", x), r.violations)
+    isempty(r.violations) || error("preflight: port_check found violations")
+    println("preflight: port_check clean (", length(r.files), " files)")
+end
+JL
+    _send "$snippet" || { echo "preflight: FAIL (format/port_check) in $(( $(date +%s) - t0 ))s"; return 1; }
+    if [ "${LOGICKERNEL_PREFLIGHT_POOL:-1}" != "0" ]; then
+        _pool > "$DIR/preflight_pool.log" 2>&1 &
+        pooled=$!
+    fi
+    echo "preflight: the static-analysis gate"
+    _file test/test_static_analysis.jl > "$DIR/preflight_file.log" 2>&1 || rc=1
+    grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$DIR/preflight_file.log"
+    files=$(cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
+        grep -E '^test/(.*/)?test_[^/]*\.jl$' | sort -u)
+    for f in $files; do
+        [ -f "$ROOT/$f" ] && [ "$f" != test/test_static_analysis.jl ] || continue
+        echo "preflight: $f"
+        _file "$f" > "$DIR/preflight_file.log" 2>&1 || rc=1
+        grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$DIR/preflight_file.log"
+    done
+    if [ -n "$pooled" ]; then
+        wait "$pooled" || echo "preflight: the pool did not start — $DIR/preflight_pool.log"
+        tail -1 "$DIR/preflight_pool.log"
+    fi
+    echo "preflight: $([ "$rc" -eq 0 ] && echo PASS || echo FAIL) in $(( $(date +%s) - t0 ))s"
+    return "$rc"
 }
 
 _workload() {
@@ -170,6 +229,7 @@ case "$cmd" in
     send) _send "${1:-}" ;;
     file) [ $# -ge 1 ] || { echo "usage: tools/warm.sh file PATH [impl]" >&2; exit 2; }; _file "$@" ;;
     bench) _bench "$@" ;;
+    preflight) _preflight ;;
     evidence) exec "$ROOT/tools/run_tests.sh" ;;
     pool) _pool ;;
     workload) _workload "${1:-}" ;;

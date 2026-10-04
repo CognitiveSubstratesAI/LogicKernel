@@ -30,6 +30,7 @@ if get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     end
 end
 using Test, LogicKernel
+println("worker: depot ", first(DEPOT_PATH))            # the evidence depot (tools/lib_evidence.sh)
 # Pre-warm what the static-analysis gate loads (from the global environment); absent ones are the
 # gate's to report — LOGICKERNEL_REQUIRE_TOOLS makes it fail, not skip.
 for pkg in (:JET, :Aqua, :AllocCheck)
@@ -37,6 +38,17 @@ for pkg in (:JET, :Aqua, :AllocCheck)
         Core.eval(Main, :(import $pkg))
     catch
     end
+end
+# …and USE them once, on functions of no package, before `ready`: their own compilation is ~19 s in
+# a fresh process (MEASURED 2026-10-04: load 2.3 s, first JET/AllocCheck use 18.7 s), paid here —
+# off the critical path when the worker is pre-warmed — instead of inside the timed run. Nothing of
+# LogicKernel is analysed, so no verdict is formed early.
+try
+    Base.invokelatest(Main.JET.report_opt, sum, (Vector{Int},))
+    Base.invokelatest(Main.JET.report_opt, sum, (Vector{Float64},))
+    Base.invokelatest(Main.AllocCheck.check_allocs, sum, (Vector{Int},))
+catch e
+    println("worker: tool warm-up skipped (", sprint(showerror, e), ")")
 end
 write(joinpath(WDIR, "ready"), string(getpid()))
 flush(stdout)
