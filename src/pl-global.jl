@@ -18,16 +18,25 @@
     PL_global_data{T}()
 
 The database-wide state (pl-global.h `struct PL_global_data`): the generation of the database,
-the predicates with erased clauses, and whether clause GC is running. Field names are upstream's,
-nesting flattened (`procedures.dirty` is `procedures_dirty`).
+the predicates with erased clauses, whether clause GC is running, and the control functors the
+clause compiler reads (pl-funct.c `registerControlFunctors`, the `CONTROL_F` flags of upstream's
+functor table), registered once, when the database is created, as upstream registers them at
+start-up. Field names are upstream's, nesting flattened (`procedures.dirty` is
+`procedures_dirty`).
 """
 mutable struct PL_global_data{T}
     _generation::gen_t                                          # generation of the database
     procedures_dirty::Dict{Definition{T}, dirty_def_info{T}}    # procedures.dirty
     clauses_cgc_active::Bool                                    # clauses.cgc_active: CGC running
+    const functors_control::ControlFunctors                     # functors.array's CONTROL_F
 end
 PL_global_data{T}() where {T} =
-    PL_global_data{T}(gen_t(0), Dict{Definition{T}, dirty_def_info{T}}(), false)
+    PL_global_data{T}(
+        gen_t(0),
+        Dict{Definition{T}, dirty_def_info{T}}(),
+        false,
+        registerControlFunctors(T)
+    )
 
 # ── the kernel's variable keys ───────────────────────────────────────────────────────────────────
 # DIVERGES: SWI's fresh variables are new cells on the global stack, unique by address. Interface

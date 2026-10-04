@@ -20,6 +20,8 @@ using Random
 const _D = lk_term_type(
     Union{Int64, Float64, String, BigInt, Rational{BigInt}, Bool, Vector{Float64}}
 )
+"The database the fresh predicates of this file are compiled in (its global data)."
+const _DGD = LK.PL_global_data{_D}()
 _ds(n) = lk_sym(_D, Symbol(n))
 _dg(v) = lk_gnd(_D, v)
 _de(f, xs::_D...) = mk_expr(_D, _D[_ds(f), xs...])
@@ -29,7 +31,7 @@ _dcons(h::_D, t::_D) = mk_expr(_D, _D[_ds("[|]"), h, t])
 "`head` compiled as a clause of a fresh predicate."
 function _dclause(head::_D)::LK.Clause{_D}
     def = LK.lookupProcedure(_D, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    return LK.compileClause(def, head)
+    return LK.compileClause(_DGD, def, head)
 end
 
 "Compile `head`, then decompile it into `name(_, …, _)`: the head the code describes."

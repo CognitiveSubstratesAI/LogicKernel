@@ -1,7 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-comp.c @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-comp.h @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
-# UPSTREAM: swipl-devel src/pl-funct.c @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -10,8 +9,8 @@
 #
 # THE CLAUSE COMPILER, HEAD SIDE — SWI-Prolog's pl-comp.c as far as compiling the head of a clause:
 # the variable analysis of HEAD AND BODY (`analyse_variables!`, `analyseVariables2!` — the body's
-# control structures, the branches of `;` and the goal of `\+`, with the control functors of
-# pl-funct.c's `registerControlFunctors`), argument compilation (`compileArgument!`, upstream's
+# control structures, the branches of `;` and the goal of `\+`, with the control functors of the
+# database's global data, src/pl-funct.jl), argument compilation (`compileArgument!`, upstream's
 # iterative version), the instruction merging that turns runs of `H_VOID` into `H_VOID_N` and drops
 # the voids before `H_POP`/`I_ENTER`/`I_EXITFACT` (`Output_0!`, `mergeInstructions!`, the table of
 # `initVMIMerge`), and `compileClause` for a fact; the clause's LITERAL TABLE its operands index
@@ -301,57 +300,6 @@ function isFirstVarP(ci::compileInfo, t)::Int
     return -1
 end
 
-# ── the control functors (pl-funct.c) ──────────────────────────────────────────────────────────
-# From pl-funct.c registerControlFunctors: the set it flags `CONTROL_F`, as the kernel holds it.
-"""
-The functors `compileBody` compiles (pl-funct.c `registerControlFunctors`, the `CONTROL_F` flag):
-`,/2`, `;/2`, `|/2`, `->/2`, `*->/2`, `\\+/1`, `:/2` (Module:Goal), `\$/1` and `@/2` (Goal@Module,
-O_CALL_AT_MODULE) — each the `sym_key` of its name.
-"""
-struct ControlFunctors
-    comma::UInt64           # FUNCTOR_comma2
-    semicolon::UInt64       # FUNCTOR_semicolon2
-    bar::UInt64             # FUNCTOR_bar2
-    ifthen::UInt64          # FUNCTOR_ifthen2
-    softcut::UInt64         # FUNCTOR_softcut2
-    not_provable::UInt64    # FUNCTOR_not_provable1
-    colon::UInt64           # FUNCTOR_colon2: Module:Goal
-    dollar::UInt64          # FUNCTOR_dollar1: $(Goal)
-    at_sign::UInt64         # FUNCTOR_at_sign2: Goal@Module
-end
-
-# PORT: pl-funct.c registerControlFunctors
-# DIVERGES: upstream sets `CONTROL_F` on the functor definitions of its functor table at start-up;
-# the kernel has no functor table, so the set is the `sym_key`s of the names' TEXT atoms, resolved
-# for the term type when a clause with a body is analysed — a fact's analysis never consults it, as
-# the head is not analysed as control. `name/arity` is matched by `_has_functor`.
-"The control functors of term type `T` (pl-funct.c `registerControlFunctors`)."
-function registerControlFunctors(::Type{T})::ControlFunctors where {T}
-    return ControlFunctors(
-        sym_key(mk_sym(T, Symbol(","))), sym_key(mk_sym(T, Symbol(";"))),
-        sym_key(mk_sym(T, Symbol("|"))), sym_key(mk_sym(T, Symbol("->"))),
-        sym_key(mk_sym(T, Symbol("*->"))), sym_key(mk_sym(T, Symbol("\\+"))),
-        sym_key(mk_sym(T, Symbol(":"))), sym_key(mk_sym(T, Symbol("\$"))),
-        sym_key(mk_sym(T, Symbol("@")))
-    )
-end
-
-"""
-Whether compound `t` has the functor `name/arity` of the symbol whose `sym_key` is `key` — upstream's
-`f->definition == FUNCTOR_…`. A compound whose head is not a symbol (`\$expr/n`) has none.
-"""
-_has_functor(t, key::UInt64, arity::Int)::Bool =
-    nchildren(t) == arity + 1 && kind(child(t, 1)) === SYM && sym_key(child(t, 1)) == key
-
-"Whether compound `t`'s functor is a control functor (`ison(fd, CONTROL_F)`, pl-funct.c)."
-function _is_control(t, cf::ControlFunctors)::Bool
-    return _has_functor(t, cf.comma, 2) || _has_functor(t, cf.semicolon, 2) ||
-           _has_functor(t, cf.bar, 2) || _has_functor(t, cf.ifthen, 2) ||
-           _has_functor(t, cf.softcut, 2) || _has_functor(t, cf.not_provable, 1) ||
-           _has_functor(t, cf.colon, 2) || _has_functor(t, cf.dollar, 1) ||
-           _has_functor(t, cf.at_sign, 2)
-end
-
 # ── analysing variables (pl-comp.c) ─────────────────────────────────────────────────────────────
 "An argument of a compound: its children from `off` on (2 below a symbol head, 1 otherwise)."
 _comp_arg(t, off::Int, i::Int) = child(t, off + i)
@@ -414,23 +362,21 @@ _max_frame_size()::Union{} = error("compileClause: representation_error(max_fram
 # depth or interrupt check — a kernel term is a tree. A compound whose head is not a symbol has every
 # child as an argument (see `compileArgument!`). Past MAX_VARIABLES it throws, where upstream returns
 # `AVARS_MAX` and unwinds its stack and branch buffer: nothing outside `ci` has changed, and
-# `ci` is dropped with the error.
+# `ci` is dropped with the error. The control functors are the global data's (`gd`), where
+# upstream reads `CONTROL_F` from GD's functor table (`valueFunctor`).
 """
 Walk `head` giving each variable a slot — a variable standing as head argument `i` gets slot `i`,
 any other the next slot above the arity — and counting its occurrences (pl-comp.c). With `control`
-(a clause body), the arguments of a control functor (`cf`) are control too, and a variable met in
-the branches of a `;` counts as often as in the branch that has it more often — a variable
-introduced in a branch and used once there is a void — while one introduced in the goal of a `\\+`
-is not a branch variable of an enclosing `;`. Returns the number of slots above the arity.
+(a clause body), the arguments of a control functor (`gd.functors_control`) are control too, and a
+variable met in the branches of a `;` counts as often as in the branch that has it more often — a
+variable introduced in a branch and used once there is a void — while one introduced in the goal
+of a `\\+` is not a branch variable of an enclosing `;`. Returns the number of slots above the
+arity.
 """
 function analyseVariables2!(
-    ci::compileInfo, head, nvars::Int, argn::Int, control::Bool,
-    cf::Union{Nothing, ControlFunctors}
+    gd::PL_global_data, ci::compileInfo, head, nvars::Int, argn::Int, control::Bool
 )::Int
-    # a walk is control only below a control walk's start (`new_control`, frames), so this one
-    # check covers every `control` below; `cf !== nothing` then narrows where it is read
-    control && cf === nothing &&
-        error("analyseVariables2: a control walk needs the control functors")
+    cf = gd.functors_control                                   # valueFunctor(f)'s CONTROL_F
     T = term_type(head)
     stack = av_frame{T}[]
     @label next_head
@@ -458,7 +404,7 @@ function analyseVariables2!(
         @goto resume
     end
     if kind(head) === EXPR
-        if control && cf !== nothing
+        if control
             # Check for singletons in branches (A;B). These are variables introduced in a
             # branch, used only once in the branch and not used in code after the branches
             # re-unite.
@@ -504,7 +450,7 @@ function analyseVariables2!(
         # The default term processing case
         off, ar = _comp_shape(head)
         if ar > 0
-            new_control = control && cf !== nothing && _is_control(head, cf)
+            new_control = control && _is_control(head, cf)
             next_argn = argn < 0 ? 0 : ci.arity
             push!(
                 stack,
@@ -579,23 +525,25 @@ end
 # DIVERGES: `argvars` is 0 (it counts only for `islocal` goal clauses, V9), and there are no
 # `$variable_names` or warnings. Returns the frame size `nv`, which `compileClause` records as the
 # clause's `variables` and `prolog_vars` (upstream sets them here, through `ci->clause`); past
-# MAX_VARIABLES it throws `representation_error(max_frame_size)`.
+# MAX_VARIABLES it throws `representation_error(max_frame_size)`. The global data `gd` is passed in
+# for the body's control functors (see `analyseVariables2!`).
 """
-Analyse the variables of `head` and `body` (`nothing` for a fact): a variable that occurs once —
+Analyse the variables of `head` and `body` (`nothing` for a fact) of a clause of the database
+whose global data is `gd`: a variable that occurs once —
 counting the branches of a `;` as one — becomes a void (no slot); the others get their frame offset,
 walking the slots in order and COMPACTING past every void above the arity — an argument keeps its
 slot whatever it holds (pl-comp.c). Returns the frame size.
 """
 function analyse_variables!(
-    ci::compileInfo{T}, head::T, body::Union{Nothing, T}
+    gd::PL_global_data{T}, ci::compileInfo{T}, head::T, body::Union{Nothing, T}
 )::Int where {T}
     arity = ci.arity
     argvars = 0
     body_voids = 0
     ci.branch_vars = nothing
-    nvars = analyseVariables2!(ci, head, 0, -1, false, nothing)
+    nvars = analyseVariables2!(gd, ci, head, 0, -1, false)
     if body !== nothing
-        nvars = analyseVariables2!(ci, body, nvars, arity, true, registerControlFunctors(T))
+        nvars = analyseVariables2!(gd, ci, body, nvars, arity, true)
     end
     # upstream walks LD->comp.vardefs[n] for n in slot order; here the records are keyed by
     # `var_key`, so index them by slot first (a slot without a variable is `!vd->address`)
@@ -853,16 +801,17 @@ end
 # module context (`I_CONTEXT`). The body code and `I_EXIT` (`compileBody`) are V2, and so is the
 # body `true`, which makes a fact: a caller passes `nothing` for a fact.
 """
-    _compile_clause_head!(ci, head, body) -> nv
+    _compile_clause_head!(gd, ci, head, body) -> nv
 
 Analyse the variables of `head` and `body` (`nothing` for a fact) and emit the head code of the
-clause into `ci`, ending with `I_ENTER` when there is a body (pl-comp.c `compileClause`). Returns
-the frame size: the clause's `prolog_vars` and `variables`.
+clause into `ci`, ending with `I_ENTER` when there is a body (pl-comp.c `compileClause`), for the
+database whose global data is `gd`. Returns the frame size: the clause's `prolog_vars` and
+`variables`.
 """
 function _compile_clause_head!(
-    ci::compileInfo{T}, head::T, body::Union{Nothing, T}
+    gd::PL_global_data{T}, ci::compileInfo{T}, head::T, body::Union{Nothing, T}
 )::Int where {T}
-    nv = analyse_variables!(ci, head, body)                    # prolog_vars = variables = nv
+    nv = analyse_variables!(gd, ci, head, body)               # prolog_vars = variables = nv
     initMerge!(ci)
     if ci.arity > 0
         for n in 0:(ci.arity - 1)
@@ -877,17 +826,21 @@ end
 
 # PORT: pl-comp.c compileClause
 # DIVERGES: a fact only (no body: `I_EXITFACT`, `UNIT_CLAUSE`), and no module, warnings or
-# resource limits. The clause is created at generation 0; `assertDefinition!` sets the rest.
+# resource limits. The clause is created at generation 0; `assertDefinition!` sets the rest. The
+# database's global data `gd` is an argument, where upstream reaches GD — its functor table, the
+# `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl).
 """
-    compileClause(def, head) -> Clause
+    compileClause(gd, def, head) -> Clause
 
-Compile the fact `head` of predicate `def`: analyse its variables, emit the code for each
-argument left to right, end with `I_EXITFACT` (pl-comp.c). The clause keeps the code and the
-literal table its operands index (V1 L2).
+Compile the fact `head` of predicate `def` in the database whose global data is `gd`: analyse its
+variables, emit the code for each argument left to right, end with `I_EXITFACT` (pl-comp.c). The
+clause keeps the code and the literal table its operands index (V1 L2).
 """
-function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
+function compileClause(
+    gd::PL_global_data{T}, def::Definition{T}, head::T
+)::Clause{T} where {T}
     ci = compileInfo{T}(def.arity)
-    nv = _compile_clause_head!(ci, head, nothing)
+    nv = _compile_clause_head!(gd, ci, head, nothing)
     Output_0!(ci, I_EXITFACT)                                  # fact (for decompiler)
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), UNIT_CLAUSE, ci.codes,

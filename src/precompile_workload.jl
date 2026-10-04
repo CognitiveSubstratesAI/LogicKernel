@@ -44,7 +44,7 @@ function _precompile_workload()::Nothing
     def = lookupProcedure(T, sym_key(mk_sym(T, :p)), 2, P_DYNAMIC)
     for i in 1:20
         h = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, i), i % 2 == 0 ? a : nil])
-        assertDefinition!(gd, def, compileClause(def, h), CL_END)
+        assertDefinition!(gd, def, compileClause(gd, def, h), CL_END)
     end
     goal = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, 7), x])
     pl_clause!(gd, ld, def, goal, _ -> true)

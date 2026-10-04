@@ -45,7 +45,7 @@ ix_pred(
 
 "`assertz(Head)`: compile the fact and add it at the end."
 function ix_assertz!(p::IxPred{T}, head::T)::Nothing where {T}
-    LK.assertDefinition!(p.db.gd, p.def, LK.compileClause(p.def, head), LK.CL_END)
+    LK.assertDefinition!(p.db.gd, p.def, LK.compileClause(p.db.gd, p.def, head), LK.CL_END)
     if (p.def.flags & LK.P_DYNAMIC) == 0
         p.virgin = true                       # freeCodesDefinition(): back to S_VIRGIN
     end

@@ -26,6 +26,7 @@ include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause li
 include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — term agendas (the local data holds two)
 include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to (pl-index reads them)
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing (LD holds its scratch)
+include("pl-funct.jl")         # swipl-devel src/pl-funct.c — the control functors (GD holds them)
 include("pl-global.jl")        # swipl-devel src/pl-global.h — the database state (GD, LD)
 include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys, bindings
 include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard order; unification

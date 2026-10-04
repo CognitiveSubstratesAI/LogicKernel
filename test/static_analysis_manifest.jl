@@ -126,9 +126,9 @@ _manifest_per_type(T) = (
 # as a real caller's is.
 _manifest_sink(cl) = true
 
-# The clause index, its head compiler and the clause database (src/pl-incl.jl, pl-global.jl,
-# pl-inline.jl, pl-vmi.jl, pl-comp.jl, pl-index.jl, pl-thread.jl, pl-gc.jl, pl-proc.jl), every
-# method once, over term type T. The entry points are also checked for the other two payload
+# The clause index, its head compiler and the clause database (src/pl-incl.jl, pl-funct.jl,
+# pl-global.jl, pl-inline.jl, pl-vmi.jl, pl-comp.jl, pl-index.jl, pl-thread.jl, pl-gc.jl,
+# pl-proc.jl), every method once, over term type T. The entry points are also checked for the other two payload
 # types (`_index_entry_points`); JET follows their callees.
 function _manifest_index(T)
     D, C, CL = LK.Definition{T}, LK.Clause{T}, LK.ClauseList{T}
@@ -162,18 +162,18 @@ function _manifest_index(T)
         (LK.compileListFF!, Tuple{CInfo, T}, false),
         (LK.compileInfo{T}, Tuple{Int}, false),
         (LK.pushBranchVar!, Tuple{CInfo, LK.VarDef}, false),
+        (LK._max_frame_size, Tuple{}, false),
+        (LK.analyseVariables2!, Tuple{GD, CInfo, T, Int, Int, Bool}, false),
+        (LK.analyse_variables!, Tuple{GD, CInfo, T, Nothing}, false),
+        (LK.analyse_variables!, Tuple{GD, CInfo, T, T}, false),
+        (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing}, false),
+        (LK._compile_clause_head!, Tuple{GD, CInfo, T, T}, false),
+        (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
+        (LK.compileClause, Tuple{GD, D, T}, false),
+        # src/pl-funct.jl — the control functors the global data holds
         (LK.registerControlFunctors, Tuple{Type{T}}, false),
         (LK._has_functor, Tuple{T, UInt64, Int}, true),
         (LK._is_control, Tuple{T, LK.ControlFunctors}, true),
-        (LK._max_frame_size, Tuple{}, false),
-        (LK.analyseVariables2!, Tuple{CInfo, T, Int, Int, Bool, Nothing}, false),
-        (LK.analyseVariables2!, Tuple{CInfo, T, Int, Int, Bool, LK.ControlFunctors}, false),
-        (LK.analyse_variables!, Tuple{CInfo, T, Nothing}, false),
-        (LK.analyse_variables!, Tuple{CInfo, T, T}, false),
-        (LK._compile_clause_head!, Tuple{CInfo, T, Nothing}, false),
-        (LK._compile_clause_head!, Tuple{CInfo, T, T}, false),
-        (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
-        (LK.compileClause, Tuple{D, T}, false),
         # src/pl-index.jl
         (LK.STATIC_RELOADING, Tuple{D}, true), (LK.cref_matches, Tuple{CR, UInt64}, true),
         (LK.is_clean_predicate, Tuple{D}, true), (LK.visibleClause, Tuple{C, UInt64}, true),
@@ -318,7 +318,7 @@ end
 
 "The index's entry points, checked for every payload type."
 _index_entry_points(T) = (
-    (LK.compileClause, Tuple{LK.Definition{T}, T}, false),
+    (LK.compileClause, Tuple{LK.PL_global_data{T}, LK.Definition{T}, T}, false),
     (
         LK.assertDefinition!,
         Tuple{LK.PL_global_data{T}, LK.Definition{T}, LK.Clause{T}, Int},

@@ -76,7 +76,7 @@ const CP_DEF = lookupProcedure(BT, sym_key(_a(:cp)), 2, P_DYNAMIC)
 for i in 1:1000
     assertDefinition!(
         CP_GD, CP_DEF,
-        compileClause(CP_DEF, mk_expr(BT, BT[_a(:cp), gnd_term(BT, i), _a(:a)])),
+        compileClause(CP_GD, CP_DEF, mk_expr(BT, BT[_a(:cp), gnd_term(BT, i), _a(:a)])),
         CL_END
     )
 end
@@ -123,11 +123,11 @@ const CASES = [
         "forall(clause(cp(_, _), true), true)"
     ),
     # Julia only (no swipl goal): compiling a fact, and a rule clause's head with its analysis
-    ("compileClause fact", () -> compileClause(CP_DEF, CC_FACT), ""),
+    ("compileClause fact", () -> compileClause(CP_GD, CP_DEF, CC_FACT), ""),
     (
         "rule head + analysis",
         () -> LogicKernel._compile_clause_head!(
-            LogicKernel.compileInfo{BT}(3), APP_HEAD, APP_BODY
+            CP_GD, LogicKernel.compileInfo{BT}(3), APP_HEAD, APP_BODY
         ),
         ""
     ),

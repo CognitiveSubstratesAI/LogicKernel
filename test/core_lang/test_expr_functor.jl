@@ -21,6 +21,8 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 using Random
 
 const _Q = lk_term_type(Union{Int64, Float64, String})
+"The database the fresh predicates of this file are compiled in (its global data)."
+const _QGD = LK.PL_global_data{_Q}()
 _qs(n) = lk_sym(_Q, Symbol(n))
 _qg(v) = lk_gnd(_Q, v)
 _qv(k::Int) = lk_var(_Q, UInt64(k))
@@ -37,7 +39,7 @@ _qvm_call(pr, goal)::Union{Nothing, Vector{_Q}} = nothing
 "`head` compiled as a clause of a fresh predicate."
 function _qclause(head::_Q)::LK.Clause{_Q}
     def = LK.lookupProcedure(_Q, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    return LK.compileClause(def, head)
+    return LK.compileClause(_QGD, def, head)
 end
 
 "The head code of `head` (a clause of a fresh predicate): `(instruction name, operands...)`."

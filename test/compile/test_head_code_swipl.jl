@@ -22,6 +22,8 @@ include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "code_testlib.jl"))
 const _H = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
+"The database the fresh predicates of this file are compiled in (its global data)."
+const _HGD = LK.PL_global_data{_H}()
 _hs(n) = lk_sym(_H, Symbol(n))
 # Any vector of terms: a comprehension's element type is a LEAF type when the term type is abstract.
 _he(f, xs::AbstractVector) = mk_expr(_H, _H[_hs(f); xs])
@@ -115,14 +117,14 @@ head symbol's literal and its arity: the table's INDICES are the kernel's own an
 """
 function _hcode(head::_H)::Vector{String}
     def = LK.lookupProcedure(_H, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    cl = LK.compileClause(def, head)
+    cl = LK.compileClause(_HGD, def, head)
     return _hcode_of(cl.codes, cl.literals)
 end
 
 "The frame size the kernel compiles `head` to: the clause's `variables` (and `prolog_vars`)."
 function _hframe(head::_H)::Tuple{Int, Int}
     def = LK.lookupProcedure(_H, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    cl = LK.compileClause(def, head)
+    cl = LK.compileClause(_HGD, def, head)
     return (Int(cl.variables), Int(cl.prolog_vars))
 end
 

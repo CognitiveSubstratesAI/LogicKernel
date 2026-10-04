@@ -36,6 +36,8 @@ include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "code_testlib.jl"))
 const _V = lk_term_type(Union{Int64, Float64})
+"The database the clauses of this file are analysed in (its global data)."
+const _VGD = LK.PL_global_data{_V}()
 _vs(n) = lk_sym(_V, Symbol(n))
 _ve(f, xs::AbstractVector) = mk_expr(_V, _V[_vs(f); xs])
 _vv(k::Integer) = mk_var(_V, UInt64(k))
@@ -55,7 +57,7 @@ end
 "The kernel's head code, body slots and frame size for the clause `head :- body`."
 function _va_kernel(head::_V, body::_V)::Tuple{Vector{String}, Vector{String}, Int}
     ci = LK.compileInfo{_V}(kind(head) === SYM ? 0 : nchildren(head) - 1)
-    nv = LK._compile_clause_head!(ci, head, body)
+    nv = LK._compile_clause_head!(_VGD, ci, head, body)
     return (_hcode_of(ci.codes, ci.literals), _va_occ!(String[], ci, body), nv)
 end
 
@@ -336,7 +338,7 @@ const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         h, b, _ = clauses[k]
         cnt = ix_var_counts(_ve(":-", [h, b]))
         ci = LK.compileInfo{_V}(kind(h) === SYM ? 0 : nchildren(h) - 1)
-        LK._compile_clause_head!(ci, h, b)
+        LK._compile_clause_head!(_VGD, ci, h, b)
         any(((key, n),) -> n > 1 && !haskey(ci.vardefs, key), cnt)
     end
     @test branch_voids > 0
@@ -346,7 +348,7 @@ const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         h, b, fr = clauses[k]
         ar = kind(h) === SYM ? 0 : nchildren(h) - 1
         hv = keys(ix_var_counts(h))                       # every head variable
-        !fr && kind(b) === EXPR && !LK._is_control(b, LK.registerControlFunctors(_V)) &&
+        !fr && kind(b) === EXPR && !LK._is_control(b, _VGD.functors_control) &&
             any(
                 i ->
                     kind(child(b, i)) === VAR && i - 2 < ar &&

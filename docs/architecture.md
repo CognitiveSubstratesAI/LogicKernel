@@ -212,10 +212,11 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-funct.c` (`registerControlFunctors`) |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
+| `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates, assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; LD holds the bindings, the trail and the `occurs_check` flag | `src/pl-global.h` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads, LD the bindings, the trail and the `occurs_check` flag | `src/pl-global.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `Trail!`, `Mark`, `Undo!` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c` |
@@ -790,7 +791,9 @@ implementations** (src/pl-comp.jl `analyseVariables2!`, `analyse_variables!`; pl
   * the arguments of a CONTROL functor are control too, and those of any other compound are not.
     The set is pl-funct.c's `registerControlFunctors`: `,/2`, `;/2`, `|/2`, `->/2`, `*->/2`, `\+/1`,
     `:/2`, `$/1`, `@/2`. It is `# DIVERGES`: there is no functor table, so the set holds the
-    `sym_key`s of the names, resolved per term type for a clause with a body. A fact never builds it;
+    `sym_key`s of the names, resolved per term type for a clause with a body. A fact never builds it.
+    **Superseded the same day:** the set is registered once per database, in the global data (see
+    "the control functors in the global data" below);
   * **`;` (control only):** a variable INTRODUCED in a branch counts as often as in the branch that
     uses it more — `times = max`, through `branch_var`'s saved counts. So `(q(Y) ; r(Y))` makes `Y`
     a void, while a variable met before the branches keeps its sum;
@@ -846,7 +849,29 @@ implementations** (src/pl-comp.jl `analyseVariables2!`, `analyse_variables!`; pl
     bodies and pins this itself;
   * `report_package` proved that a `cf::ControlFunctors` assert throws in the head walk's
     `cf::Nothing` specialisation. One check at entry now covers every control walk, and
-    `cf !== nothing` narrows where `cf` is read.
+    `cf !== nothing` narrows where `cf` is read. **Superseded the same day:** the walk reads the set
+    from the global data, so there is no `Nothing` case, no check and no narrowing.
+
+**V1 — the control functors in the global data: BUILT (2026-10-04)** (user's review of `5276b3a`;
+src/pl-funct.jl, src/pl-global.jl).
+* **Once per database.** `registerControlFunctors` moved to its upstream file, src/pl-funct.jl, with
+  the same PORT marker; its DIVERGES note now says when it runs. `PL_global_data{T}()` registers the
+  set into the `const` field `functors_control`, as upstream's `initFunctors` flags `CONTROL_F` on
+  its functor table at start-up. The file is included before src/pl-global.jl, which needs the type.
+* **Passed in, as upstream reaches its functor table through GD:** `compileClause(gd, def, head)`,
+  `_compile_clause_head!(gd, ci, head, body)`, `analyse_variables!(gd, ci, head, body)` and
+  `analyseVariables2!(gd, ci, head, nvars, argn, control)`. The head walk now reads the same set and
+  never consults it (`control` is false), so the `Union{Nothing, ControlFunctors}` argument is gone.
+* **Every caller in the same commit, none building a set of its own:** tools/bench.jl, the
+  precompile workload, the test helpers (each test file compiles in one database of its own; the
+  analysis differential's coverage check reads `functors_control`), and the static-analysis
+  manifest.
+* **Bench: no allocation drop, because there was none to drop.** `rule head + analysis` is 32
+  allocations / 2528 bytes before and after, and `compileClause fact` is 22 / 1312. Probed in the
+  warm daemon on the reference type: building the set allocates nothing, because the nine `mk_sym`s
+  are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
+  That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
+  there being one set per database, not on speed.
 
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders
