@@ -117,6 +117,9 @@ count from cores and memory — 3 here; `LOGICKERNEL_SHARDS` overrides, `=1` the
 * only the coordinator gives the verdict — every shard green, every unit run EXACTLY once, the
   second implementation exercised across all shards (`_check_run`, tools/lib_evidence.sh) — and only
   it writes evidence, against the tree fingerprint taken at launch;
+* each unit's COMPILE time is recorded beside its wall time (Julia's own counter, as `@time`), and
+  the summary prints the run's compile share — what threads in one process would compile once, where
+  three cold workers compile it three times (user, 2026-10-04: "are we using Julia multi threading");
 * the summary records what the MACHINE did (user, 2026-10-04: a slow run must say whether it was
   the host): a fixed single-core probe timed before and after (about 2.0 s quiet), the steal share,
   and the clock. This VM reported 0 steal over 16 h and a fixed 2394.569 MHz, so here the probe is

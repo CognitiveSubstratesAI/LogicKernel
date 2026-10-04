@@ -207,9 +207,13 @@ _sharded_run() {   # (tools/lib_evidence.sh is sourced above)
         "slower = the host); steal $(_steal_pct "$m_cpu0" "$(_cpu_sample)")% of CPU time;" \
         "clock ${m_mhz0} → $(_cpu_mhz) MHz"
     _check_run "$run" || rc=1                              # tools/lib_evidence.sh
+    # the run's compile share (test/runtests.jl, column 4): what threads in ONE process would compile
+    # once — three cold workers compile it three times
+    awk -F '\t' 'NF >= 4 { u += $3; c += $4 } END { if (u > 0) printf "  compiling: %.0f s of %.0f s of unit time (%.0f%%)\n", c, u, 100 * c / u }' \
+        "$run"/seq_*.tsv 2>/dev/null
     echo "  slowest units:"
     cat "$run"/seq_*.tsv 2>/dev/null | sort -t "$(printf '\t')" -k3 -nr | head -10 |
-        awk -F '\t' '{printf "    %7.1f s  %s\n", $3, $2}'
+        awk -F '\t' '{printf "    %7.1f s  %s%s\n", $3, $2, (NF >= 4 ? sprintf("  (compiling %.1f s)", $4) : "")}'
     ls -1dt "$ROOT"/.evidence/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf   # keep the last 5 runs
     _finish "$rc"
 }

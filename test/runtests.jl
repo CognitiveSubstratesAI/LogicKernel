@@ -118,9 +118,14 @@ Test.@with_testset LK_TS begin
         @test length(generic) >= 20
         @test length(LK_TERM_IMPLS) >= 3
     end
+    # How much of each unit is COMPILATION (user, 2026-10-04: "are we using Julia multi
+    # threading"): what one process running the units as threads would pay ONCE, and three cold
+    # processes pay three times. Julia's own counter, as `@time` reports it.
+    Base.cumulative_compile_timing(true)
     for (i, (f, impl, label)) in enumerate(LK_RUN)
         LK_SHARD && !lk_claim(i) && continue                   # another shard took it
         t0 = time_ns()
+        c0 = Base.cumulative_compile_time_ns()[1]
         @testset "$label" begin
             # A `module … end` expression, not `Module(name)`: only the former defines the
             # module's own `include`/`eval`, which a test file calling `include(...)` needs.
@@ -133,9 +138,24 @@ Test.@with_testset LK_TS begin
             end
         end
         secs = (time_ns() - t0) / 1e9
-        println("  [unit] ", label, "  ", round(secs; digits=1), " s")
-        LK_SHARD && open(io -> println(io, i, '\t', label, '\t', round(secs; digits=2)),
-            joinpath(LK_SHARD_DIR, "seq_$LK_SHARD_ID.tsv"), "a")
+        csecs = (Base.cumulative_compile_time_ns()[1] - c0) / 1e9
+        println(
+            "  [unit] ", label, "  ", round(secs; digits=1), " s  (compiling ",
+            round(csecs; digits=1), " s)"
+        )
+        LK_SHARD && open(
+            io -> println(
+                io,
+                i,
+                '\t',
+                label,
+                '\t',
+                round(secs; digits=2),
+                '\t',
+                round(csecs; digits=2)
+            ),
+            joinpath(LK_SHARD_DIR, "seq_$LK_SHARD_ID.tsv"), "a"
+        )
     end
     # …and the `[alt]` and `[alt_interned]` runs really ran their own types: each counts the
     # compounds it builds, so a selector that fell back to another type — running it twice, green —
