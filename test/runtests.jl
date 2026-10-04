@@ -126,7 +126,7 @@ Test.@with_testset LK_TS begin
         LK_SHARD && !lk_claim(i) && continue                   # another shard took it
         t0 = time_ns()
         c0 = Base.cumulative_compile_time_ns()[1]
-        @testset "$label" begin
+        uts = @testset "$label" begin
             # A `module … end` expression, not `Module(name)`: only the former defines the
             # module's own `include`/`eval`, which a test file calling `include(...)` needs.
             name = Symbol("LKTest_", replace(label, r"[^A-Za-z0-9]" => "_"))
@@ -139,9 +139,13 @@ Test.@with_testset LK_TS begin
         end
         secs = (time_ns() - t0) / 1e9
         csecs = (Base.cumulative_compile_time_ns()[1] - c0) / 1e9
+        # …and what the unit ASSERTED, so two runs compare unit by unit, not by a total that two
+        # compensating changes could keep equal (user, 2026-10-04: "pass identically before and after")
+        tc = Test.get_test_counts(uts)
+        npass, nbroken = tc.passes + tc.cumulative_passes, tc.broken + tc.cumulative_broken
         println(
             "  [unit] ", label, "  ", round(secs; digits=1), " s  (compiling ",
-            round(csecs; digits=1), " s)"
+            round(csecs; digits=1), " s)  ", npass, " passed, ", nbroken, " broken"
         )
         LK_SHARD && open(
             io -> println(
@@ -152,7 +156,11 @@ Test.@with_testset LK_TS begin
                 '\t',
                 round(secs; digits=2),
                 '\t',
-                round(csecs; digits=2)
+                round(csecs; digits=2),
+                '\t',
+                npass,
+                '\t',
+                nbroken
             ),
             joinpath(LK_SHARD_DIR, "seq_$LK_SHARD_ID.tsv"), "a"
         )
