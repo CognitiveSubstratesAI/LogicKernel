@@ -138,10 +138,23 @@ function _manifest_index(T)
     SNK = typeof(_manifest_sink)
     CIP = Vector{Union{Nothing, CI}}
     NT4, NT8, NTW = NTuple{4, UInt8}, NTuple{8, UInt8}, NTuple{4, UInt64}
-    CInfo, HA, HH = LK.compileInfo, LK.hash_assessment, LK.hash_hints
+    CInfo, HA, HH = LK.compileInfo{T}, LK.hash_assessment, LK.hash_hints
+    PCd = LK.Code{T}
     VIEW = typeof(view(UInt8[], 1:0))
     return (
-        # src/pl-comp.jl — the head compiler and the code readers
+        # src/pl-comp.jl — the head compiler, its literal table and the code readers
+        (LK.PC, Tuple{CInfo}, true), (LK.initMerge!, Tuple{CInfo}, true),
+        (LK.mergeInstructions!, Tuple{CInfo, NTuple{4, LK.vmi_merge}, UInt64}, false),
+        (LK.Output_0!, Tuple{CInfo, UInt64}, false),
+        (LK.Output_a!, Tuple{CInfo, UInt64}, false),
+        (LK.Output_1!, Tuple{CInfo, UInt64, UInt64}, false),
+        (LK.Output_2!, Tuple{CInfo, UInt64, UInt64, UInt64}, false),
+        (LK.Output_n!, Tuple{CInfo, UInt64, UInt64, Int}, false),
+        (LK.addLiteral!, Tuple{CInfo, T}, false),
+        (LK.Code, Tuple{C, Int}, true),
+        (LK.decode, Tuple{PCd}, true), (LK.stepPC, Tuple{PCd}, true),
+        (LK.skipArgs, Tuple{PCd, Int, Int}, true), (LK.argKey, Tuple{PCd, Int}, true),
+        (LK.indexableCompound, Tuple{PCd}, true),
         (LK.isIndexedVarTerm, Tuple{CInfo, T}, false),
         (LK._comp_arg, Tuple{T, Int, Int}, true),
         (LK._comp_shape, Tuple{T}, true), (LK._gnd_head_code, Tuple{T}, true),
@@ -258,10 +271,14 @@ function _manifest_index(T)
         (LK.markPredicatesInEnvironments!, Tuple{LD, GD}, false),
         # clause/2 (src/pl-comp.jl)
         (LK.pl_clause!, Tuple{GD, LD, D, T, SNK}, false),
-        (LK._head_vars, Tuple{T}, false),
-        (LK._rename_head, Tuple{T, Vector{UInt64}, UInt64}, false),
-        (LK._renamed, Tuple{T, Vector{UInt64}, UInt64}, false),
         (LK.decompileHead!, Tuple{LD, C, T}, false),
+        (LK.decompile_head!, Tuple{LD, C, T, UInt64}, false),
+        (
+            LK._decompile_void,
+            Tuple{Type{T}, Vector{LK.DecompileFrame{T}}, UInt64, Int},
+            false
+        ),
+        (LK._decompile_void, Tuple{Type{T}, Nothing, UInt64, Int}, false),
         # src/pl-proc.jl
         (LK.lookupProcedure, Tuple{Type{T}, UInt64, Int, UInt64}, false),
         (LK.newClauseRef, Tuple{C, UInt64}, false),
@@ -361,18 +378,11 @@ const DISPATCH_MANIFEST = (
     (LK.FLAG64, Tuple{Int}, true), (LK.tagex, Tuple{UInt64}, true),
     (LK.isFunctor, Tuple{UInt64}, true), (LK.MK_ATOM, Tuple{UInt64}, true),
     (LK.MK_FUNCTOR, Tuple{UInt64, UInt64}, true), (LK.codeTable, Tuple{UInt64}, true),
-    (LK.initVMIMerge, Tuple{UInt64}, true), (LK.PC, Tuple{LK.compileInfo}, true),
-    (LK.initMerge!, Tuple{LK.compileInfo}, true),
-    (LK.mergeInstructions!, Tuple{LK.compileInfo, NTuple{4, LK.vmi_merge}, UInt64}, false),
-    (LK.Output_0!, Tuple{LK.compileInfo, UInt64}, false),
-    (LK.Output_a!, Tuple{LK.compileInfo, UInt64}, false),
-    (LK.Output_1!, Tuple{LK.compileInfo, UInt64, UInt64}, false),
-    (LK.Output_2!, Tuple{LK.compileInfo, UInt64, UInt64, UInt64}, false),
-    (LK.Output_n!, Tuple{LK.compileInfo, UInt64, UInt64, Int}, false),
+    (LK.initVMIMerge, Tuple{UInt64}, true),
+    (LK.functor_operand, Tuple{UInt64, Int}, false),
+    (LK.functor_literal, Tuple{UInt64}, true), (LK.functor_arity, Tuple{UInt64}, true),
     (LK.VAROFFSET, Tuple{Int}, true), (LK.isFirstVarSet!, Tuple{BitVector, Int}, true),
     (LK.isFirstVar, Tuple{BitVector, Int}, true),
-    (LK.decode, Tuple{LK.Code}, true), (LK.stepPC, Tuple{LK.Code}, true),
-    (LK.skipArgs, Tuple{LK.Code, Int, Int}, true), (LK.argKey, Tuple{LK.Code, Int}, true),
     (LK.MSB, Tuple{Int}, true), (LK.MSB, Tuple{UInt32}, true),
     (LK.clean_index_key, Tuple{UInt64}, true), (LK.hashIndex, Tuple{UInt64, UInt32}, true),
     (LK._functor_word, Tuple{UInt64, Int}, true),
@@ -387,7 +397,6 @@ const DISPATCH_MANIFEST = (
     (LK.assess_remove_duplicates!, Tuple{LK.hash_assessment, Int}, false),
     (LK.assessAddKey!, Tuple{LK.hash_assessment, UInt64, Bool}, false),
     (LK._put_key!, Tuple{LK.hash_assessment, UInt64, Bool}, true),
-    (LK.indexableCompound, Tuple{LK.Code}, true),
     (LK.best_assessment!, Tuple{Vector{LK.hash_assessment}, Int, Int}, false),
     (LK.cp_hints_from_arg_info!, Tuple{LK.hash_hints, Int, LK.arg_info}, true),
     (LK.cp_hints_from_assessment!, Tuple{LK.hash_hints, LK.hash_assessment}, true),
@@ -412,7 +421,6 @@ const DISPATCH_MANIFEST = (
     (LK.compareAtoms, Tuple{Symbol, Symbol}, true),
     (LK.compareAtoms, Tuple{Symbol, Bool, Symbol, Bool}, true),
     (LK.compareReservedSymbol, Tuple{Symbol, Symbol}, true),
-    (LK.expr_functor, Tuple{Int}, true), (LK.isExprFunctor, Tuple{UInt64}, true),
     (LK._reserved_sym_key, Tuple{Symbol}, true),
     (LK.compareStrings, Tuple{String, String}, false),
     (LK._nan_value, Tuple{Float64}, true), (LK._nan_value, Tuple{BigFloat}, false),

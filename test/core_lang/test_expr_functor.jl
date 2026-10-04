@@ -5,7 +5,8 @@
 # docs/architecture.md § Q2). What it decides, each pinned here:
 #   * the STANDARD ORDER: compounds by arity, then name, then arguments — `$expr/n` has arity n, and
 #     it sorts before every symbol-headed compound of the same arity (its name is reserved);
-#   * the HEAD CODE: `H_FUNCTOR $expr/n`, an operand of its own for each n — not `H_FUNCTOR 0`;
+#   * the HEAD CODE: `H_FUNCTOR $expr/n`, an operand of its own for each n — the packed operand
+#     names NO literal (index 0), where a symbol-headed compound's names its head symbol (V1 L2);
 #   * the INDEX: a `$expr/n` argument unifies with any compound of n children, child by child (a
 #     symbol head included), so it is a WILDCARD, keyed as a variable is — and, as a variable clause
 #     does in swipl, it keeps the index from going deep where it stands among same-functor clauses
@@ -13,7 +14,8 @@
 #   * UNIFICATION is unchanged: child by child, `(X a) = f(a)` binds `X = f` — and the VM must match
 #     the same way in BOTH directions, pinned below as expected failures until it exists (user,
 #     2026-10-04);
-#   * the BIT marking a `$expr/n` word is never set in an ordinary key (src/pl-incl.jl).
+#   * `$expr/n` names no literal and every symbol head names its own (V1 L2 — Q2's marking bit is
+#     retired, user 2026-10-04), so `argKey` and `indexOfWord` agree on every argument.
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 using Random
@@ -32,12 +34,18 @@ _qcmp(a, b) = compareStandard(a, b)
 const _QVM_WIRED = false
 _qvm_call(pr, goal)::Union{Nothing, Vector{_Q}} = nothing
 
+"`head` compiled as a clause of a fresh predicate."
+function _qclause(head::_Q)::LK.Clause{_Q}
+    def = LK.lookupProcedure(_Q, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
+    return LK.compileClause(def, head)
+end
+
 "The head code of `head` (a clause of a fresh predicate): `(instruction name, operands...)`."
 function _qcode(head::_Q)::Vector{Tuple{Symbol, Vararg{UInt64}}}
-    def = LK.lookupProcedure(_Q, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    codes = LK.compileClause(def, head).codes
+    cl = _qclause(head)
+    codes = cl.codes
     out = Tuple{Symbol, Vararg{UInt64}}[]
-    pc = LK.Code(codes, 1)
+    pc = LK.Code(cl, 1)
     while pc.pc <= length(codes)
         op = LK.decode(pc)
         info = LK.codeTable(op)
@@ -113,10 +121,18 @@ end
         e0 = fop(_qcode(p(_qe())))                       # p(())
         f1 = fop(_qcode(p(_qf(:f, a))))                  # p(f(a)): f/1
         q2 = fop(_qcode(p(_qf(Symbol("\$expr"), X, a)))) # p('$expr'(X, a)): the TEXT atom's
-        @test e2 != 0 && e3 != 0 && e0 != 0
-        @test LK.isFunctor(e2) && LK.isFunctor(e3) && LK.isFunctor(e0)
+        # `$expr/n` names no literal; its arity is its number of children
+        @test LK.functor_literal.((e0, e2, e3)) == (0, 0, 0)
+        @test LK.functor_arity.((e0, e2, e3)) == (0, 2, 3)
         @test e2 == e2b
         @test length(Set([e0, e2, e3, f1, q2])) == 5
+        # a symbol head names its literal — the TEXT atom '$expr' included, which is not `$expr`
+        for (h, op, name, n) in ((p(_qf(:f, a)), f1, :f, 1),
+            (p(_qf(Symbol("\$expr"), X, a)), q2, Symbol("\$expr"), 2))
+            i = LK.functor_literal(op)
+            @test i != 0 && LK.functor_arity(op) == n
+            @test lk_eq(_qclause(h).literals[i], _qs(name))
+        end
         # the arguments are ALL the children, head included: `(X a)` has two
         @test [i[1] for i in _qcode(p(_qe(X, a)))] ==
             [:H_FUNCTOR, :H_VOID, :H_ATOM, :H_POP, :I_EXITFACT]
@@ -185,29 +201,24 @@ end
         @test !LK.is_variant_ptr(_qe(X, a), _qf(:f, a))
     end
 
-    @testset "the \$expr bit is never set in an ordinary key" begin
-        # structurally: MK_FUNCTOR and MK_ATOM shift their payload past bits 5–6, so all-ones input
-        # leaves them clear
-        @test LK.MK_FUNCTOR(typemax(UInt64), typemax(UInt64)) & LK.EXPR_FUNCTOR_MASK == 0
-        @test LK.MK_ATOM(typemax(UInt64)) & LK.EXPR_FUNCTOR_MASK == 0
-        # every name/arity word over random names and arities (inline and beyond F_ARITY_MASK)…
-        rng = Xoshiro(20261004)
-        ws = [LK._functor_word(rand(rng, UInt64), rand(rng, 0:300)) for _ in 1:20_000]
-        @test all(w -> LK.isFunctor(w) && !LK.isExprFunctor(w), ws)
-        # …and the H_FUNCTOR operand and key of real heads: symbol-headed ones are never `$expr`
-        sym_heads = (_qf(:f, a), _qf(:g, X, b), mk_nil(_Q), _qe(mk_nil(_Q), a), _qf(:z))
+    @testset "\$expr/n names no literal; argKey agrees with indexOfWord" begin
+        # V1 L2 retired Q2's marking bit (user, 2026-10-04): what marks `$expr/n` now is literal 0
+        # in its packed `H_FUNCTOR` operand, which no symbol-headed compound has. Both sides
+        # non-empty: symbol heads, `[]` as a head, and `$expr/n` of several arities.
+        sym_heads = (_qf(:f, a), _qf(:g, X, b), _qe(mk_nil(_Q), a), _qf(:z))
+        expr_heads = (_qe(X, a), _qe(), _qe(_qg(1), a, b), _qe(_qf(:g, b), a))
         for t in sym_heads
-            kind(t) === EXPR || continue
-            code = _qcode(_qf(:p, t))
-            @test !LK.isExprFunctor(code[1][2])
+            cl = _qclause(_qf(:p, t))
+            op = cl.codes[2]
+            @test LK.functor_literal(op) != 0
+            @test lk_eq(cl.literals[LK.functor_literal(op)], child(t, 1))
+            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(t) != 0
         end
-        # the other side, non-empty: every `$expr/n` word carries it, and no key is read from it
-        @test all(n -> LK.isExprFunctor(LK.expr_functor(n)), 0:300)
-        for t in (_qe(X, a), _qe(), _qe(_qg(1), a, b))
-            def = LK.lookupProcedure(_Q, sym_key(_qs(:p)), 1, UInt64(0))
-            codes = LK.compileClause(def, _qf(:p, t)).codes
-            @test LK.isExprFunctor(codes[2])
-            @test LK.argKey(LK.Code(codes, 1), 0) == 0
+        for t in expr_heads
+            cl = _qclause(_qf(:p, t))
+            @test LK.decode(LK.Code(cl, 1)) == LK.H_FUNCTOR
+            @test LK.functor_literal(cl.codes[2]) == 0
+            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(t) == 0   # a wildcard
         end
     end
 

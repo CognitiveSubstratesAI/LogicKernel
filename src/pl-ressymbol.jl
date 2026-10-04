@@ -67,17 +67,8 @@ const ATOM_nil = MK_ATOM(UInt64(0x0052_4553_5652_4544))      # "RESERVED", withi
 # has another functor. It names a functor and nothing else — no term is the symbol `$expr`.
 #   * standard order (src/pl-prims.jl `compare_functors`): by arity, then name — `$expr` before
 #     every symbol, as a reserved symbol sorts before the text atoms and, by `strcmp`, before `[]`;
-#   * head code (src/pl-comp.jl `compileArgument!`): `H_FUNCTOR` with the word `expr_functor(n)`;
+#   * head code (src/pl-comp.jl `compileArgument!`): `H_FUNCTOR` whose operand names NO literal —
+#     literal index 0, `functor_operand(0, n)` — where a symbol head's names its literal (V1 L2,
+#     user 2026-10-04; Q2's marking bit is retired with it);
 #   * index: a WILDCARD — `argKey` and `indexOfWord` give 0 — because unification goes child by
 #     child (src/pl-prims.jl `_unify_functor`): `(X a)` unifies with `f(a)`, whose functor is `f/1`.
-"The NAME of the `\$expr/n` functor (Q2), as `_functor_word` takes a name."
-const ATOM_expr = MK_ATOM(UInt64(0x0024_4558_5052))          # "$EXPR", within the atom-number bits
-
-"""
-The functor word of `\$expr/n` (Q2): an `isFunctor` word, marked with `EXPR_FUNCTOR_MASK` — the
-bit of upstream's `FIRST_MASK`, which no `name/arity` word has (src/pl-incl.jl, the word layout).
-"""
-expr_functor(n::Int)::word = _functor_word(UInt64(ATOM_expr), n) | EXPR_FUNCTOR_MASK
-
-"True when `w` is the functor word of a `\$expr/n` (Q2)."
-isExprFunctor(w::word)::Bool = isFunctor(w) && (w & EXPR_FUNCTOR_MASK) != 0

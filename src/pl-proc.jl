@@ -70,7 +70,7 @@ function assertDefinition!(
     gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T},
     where_::Union{Int, ClauseRef{T}}
 )::ClauseRef{T} where {T}
-    key = argKey(Code(clause.codes, 1), Int(def.impl_clauses.primary_index))
+    key = argKey(Code(clause, 1), Int(def.impl_clauses.primary_index))
     cref = newClauseRef(clause, key)
     clause.generation_created = max_generation(def)    # invisible while it is linked in
     clause.generation_erased = gen_t(1)

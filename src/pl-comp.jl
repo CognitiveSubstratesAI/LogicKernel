@@ -11,7 +11,8 @@
 # the variable analysis (`analyse_variables!`, `analyseVariables2!`), argument compilation
 # (`compileArgument!`, upstream's iterative version), the instruction merging that turns runs of
 # `H_VOID` into `H_VOID_N` and drops the voids before `H_POP`/`I_EXITFACT` (`Output_0!`,
-# `mergeInstructions!`, the table of `initVMIMerge`), and `compileClause` for a fact. Then the
+# `mergeInstructions!`, the table of `initVMIMerge`), and `compileClause` for a fact; the clause's
+# LITERAL TABLE its operands index (V1 L2, below); the head decompiler (`decompile_head!`). Then the
 # code readers the clause index uses: `stepPC`, `skipArgs`, `argKey`.
 #
 # WHY THE INDEX READS CODE, NOT TERMS (user, 2026-10-02): SWI computes a clause's index keys from
@@ -101,15 +102,17 @@ end
 
 # PORT: pl-comp.c compileInfo
 # DIVERGES: the fields the head compiler uses; `vardefs` is upstream's LD->comp.vardefs keyed by
-# `var_key`, `mstate_candidates`/`mstate_merge_pos` are `mstate`, `used_var` is the VarTable.
+# `var_key`, `mstate_candidates`/`mstate_merge_pos` are `mstate`, `used_var` is the VarTable, and
+# `literals` the clause's literal table as it is built (V1 L2).
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
-mutable struct compileInfo
+mutable struct compileInfo{T}
     arity::Int                                              # arity of top-goal
     codes::Vector{code}                                     # scratch code table
     vardefs::Dict{UInt64, VarDef}                           # variables with a slot
     used_var::BitVector                                     # boolean array of used variables
     mstate_candidates::Union{Nothing, NTuple{4, vmi_merge}} # Merge candidates
     mstate_merge_pos::Int                                   # The merge candidate location
+    literals::Vector{T}                                     # the literal table being built
 end
 
 # PORT: pl-comp.c is_portable_smallint
@@ -424,12 +427,48 @@ function compileListFF!(ci::compileInfo, arg)::Bool
     return true
 end
 
+# ── the literal table (V1 L2) ───────────────────────────────────────────────────────────────────
+# DIVERGES from upstream's operands (decision 2; user, 2026-10-04: approved). Upstream's head operand
+# IS the constant: an atom handle (`H_ATOM`), a functor handle (`H_FUNCTOR`), a tagged integer
+# (`H_SMALLINT`), or the number or text itself, inline in the code (`H_MPZ`, `H_MPQ`, `H_FLOAT`,
+# `H_STRING`). The kernel has no atom or functor table and its terms are not cells, so a clause keeps
+# the terms themselves in a per-clause LITERAL TABLE and the operand is the (1-based) index of one:
+#   * `H_ATOM`, `H_SMALLINT`, `H_MPZ`, `H_MPQ`, `H_FLOAT`, `H_STRING` — `literals[op]` is the very
+#     term the clause held there, so decompiling restores its exact kind (`1` and `1.0`, `[]` and
+#     `'[]'` never collapse) and the VM compares by identity (`sym_key`, `gnd_equal`);
+#   * `H_FUNCTOR`, `H_RFUNCTOR` — ONE packed operand, `functor_operand(i, arity)`: the literal that
+#     holds the head symbol, and the arity; literal 0 for `$expr/n` (Q2), which has no head symbol;
+#   * a grounded value SWI has no type for (NUM_OTHER) is an `H_ATOM` whose literal is that value —
+#     an OPAQUE literal, compared by `gnd_equal`. SWI's nearest case is a blob, an atom compared by
+#     handle; this one has no SWI counterpart.
+# The index keys are DERIVED from the literal (`argKey` → `indexOfWord`), so they are the keys the
+# kernel had before the table. An instruction merge never drops an instruction with a literal (only
+# `H_VOID`, `H_VOID_N`, `H_POP` and `I_EXITFACT` merge), so the table needs no rollback.
+"Append `t` to the literal table being built; its index, as an operand (V1 L2)."
+function addLiteral!(ci::compileInfo{T}, t::T)::code where {T}
+    push!(ci.literals, t)
+    return code(length(ci.literals))
+end
+
+const _OPERAND_HALF = code(typemax(UInt32))
+
+"The `H_FUNCTOR`/`H_RFUNCTOR` operand naming literal `i` (0: `\$expr/n`) and `arity` (V1 L2)."
+function functor_operand(i::code, arity::Int)::code
+    (i <= _OPERAND_HALF && 0 <= arity && code(arity) <= _OPERAND_HALF) ||
+        throw(ArgumentError("functor_operand: literal $i or arity $arity beyond 32 bits"))
+    return (i << 32) | code(arity)
+end
+"The literal index an `H_FUNCTOR` operand names: 0 for `\$expr/n` (V1 L2)."
+functor_literal(op::code)::Int = Int(op >> 32)
+"The arity an `H_FUNCTOR` operand holds (V1 L2)."
+functor_arity(op::code)::Int = Int(op & _OPERAND_HALF)
+
 # From pl-comp.c compileArgument (`TAG_INTEGER`, `TAG_FLOAT`, `TAG_STRING`): the head instruction of
 # a grounded value. A number by its SEMANTIC kind (Q1); an integer by its STORAGE, as upstream —
 # tagged (`PLMINTAGGEDINT`..`PLMAXTAGGEDINT`, `STG_INLINE`) is `H_SMALLINT`, any other `H_MPZ` (swipl
 # 10.1.16: 2^56-1 and -2^56 are h_smallint, 2^56, -2^56-1 and 2^63-1 h_mpz, probed). Anything else is
 # `H_STRING` for a string (the kind query's NUM_STRING, user 2026-10-04); any other grounded value
-# (NUM_OTHER, no SWI type) an `H_ATOM` for now — L2 makes it an opaque literal compared by `gnd_equal`.
+# (NUM_OTHER, no SWI type) an `H_ATOM`: an opaque literal compared by `gnd_equal` (the table above).
 "The head instruction of grounded value `t` (pl-comp.c `compileArgument`)."
 function _gnd_head_code(t)::code
     nk = number_kind(t)
@@ -445,24 +484,24 @@ function _gnd_head_code(t)::code
     elseif nk === NUM_STRING
         return H_STRING                                        # TAG_STRING
     end
-    return H_ATOM               # NUM_OTHER: until L2 makes it an opaque literal (# DIVERGES there)
+    return H_ATOM                                              # NUM_OTHER: an opaque literal
 end
 
 # PORT: pl-comp.c compileArgument
 # DIVERGES: the head side (`where` without A_BODY, no `islocal`). SWI-7's `[]` compiles to `H_NIL`
-# (Q1), any other symbol to `H_ATOM`; a grounded value to `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT` by
-# its number kind and storage (`_gnd_head_code`), anything else to `H_ATOM`, each with ONE operand —
-# its index key, `clean_index_key(gnd_key)`, 0 when it has none — until L2's literal table; a list
-# cell (`is_pair`, upstream's `fdef == FUNCTOR_dot2`) to `H_LIST`/`H_RLIST`, or `H_LIST_FF` when
-# both its children are fresh clause variables; a functor operand is a hashed word
-# (`_functor_word`), not a functor-table handle; and a compound whose head is not a symbol compiles
-# as `H_FUNCTOR $expr/n` (Q2, `expr_functor`, src/pl-ressymbol.jl) with every child as an argument.
+# (Q1), any other symbol to `H_ATOM`; a grounded value to `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT`/
+# `H_STRING` by its kind and storage (`_gnd_head_code`), anything else to `H_ATOM`; each operand is
+# the index of the constant in the clause's LITERAL TABLE (V1 L2, above). A list cell (`is_pair`,
+# upstream's `fdef == FUNCTOR_dot2`) compiles to `H_LIST`/`H_RLIST`, or `H_LIST_FF` when both its
+# children are fresh clause variables; any other compound to `H_FUNCTOR`/`H_RFUNCTOR` with the
+# packed operand of its head symbol's literal and its arity; and a compound whose head is not a
+# symbol as `H_FUNCTOR $expr/n` (Q2, src/pl-ressymbol.jl) — literal 0 — with every child as an
+# argument.
 """
 Emit the head code for argument `arg` (pl-comp.c): left to right, a compound's last argument
 `A_RIGHT` (`H_RFUNCTOR`, no `H_POP` of its own), resume points on an explicit stack.
 """
-function compileArgument!(ci::compileInfo, arg, where_::Int)::Bool
-    T = term_type(arg)
+function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {T}
     stack = ca_frame{T}[]
     isright = false
     @label next_arg
@@ -493,12 +532,11 @@ function compileArgument!(ci::compileInfo, arg, where_::Int)::Bool
         if is_nil(arg)                                         # isNil(*arg): SWI-7's reserved []
             Output_0!(ci, H_NIL)
         else
-            Output_1!(ci, H_ATOM, MK_ATOM(sym_hash(arg)))
+            Output_1!(ci, H_ATOM, addLiteral!(ci, arg))           # code2atom: the literal
         end
         @goto resume
     elseif k === GND
-        g = gnd_key(arg)
-        Output_1!(ci, _gnd_head_code(arg), g === nothing ? word(0) : clean_index_key(g))
+        Output_1!(ci, _gnd_head_code(arg), addLiteral!(ci, arg))
         @goto resume
     end
     # a compound
@@ -510,7 +548,8 @@ function compileArgument!(ci::compileInfo, arg, where_::Int)::Bool
         end
         Output_0!(ci, isright ? H_RLIST : H_LIST)
     else
-        fdef = off == 2 ? _functor_word(_functor_name(child(arg, 1)), ar) : expr_functor(ar)
+        lit = off == 2 ? addLiteral!(ci, child(arg, 1)) : code(0)    # `$expr/n`: no literal
+        fdef = functor_operand(lit, ar)
         Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
     end
     where_ &= ~(A_RIGHT | A_NOARGVAR)
@@ -574,10 +613,13 @@ end
     compileClause(def, head) -> Clause
 
 Compile the fact `head` of predicate `def`: analyse its variables, emit the code for each
-argument left to right, end with `I_EXITFACT` (pl-comp.c).
+argument left to right, end with `I_EXITFACT` (pl-comp.c). The clause keeps the code and the
+literal table its operands index (V1 L2).
 """
 function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
-    ci = compileInfo(def.arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0)
+    ci = compileInfo{T}(
+        def.arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[]
+    )
     nv = analyse_variables!(ci, head)                          # prolog_vars = variables = nv
     initMerge!(ci)
     if ci.arity > 0
@@ -587,88 +629,150 @@ function compileClause(def::Definition{T}, head::T)::Clause{T} where {T}
     end
     Output_0!(ci, I_EXITFACT)                                  # fact (for decompiler)
     return Clause{T}(
-        def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), UNIT_CLAUSE, ci.codes, head,
-        _head_vars(head)
+        def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), UNIT_CLAUSE, ci.codes,
+        ci.literals
     )
 end
 
-"The distinct variables of `head`, as keys, by first occurrence (pre-order, left to right)."
-function _head_vars(head)::Vector{UInt64}
-    T = term_type(head)
-    out = UInt64[]
-    is_ground(head) && return out
-    stack = T[head]
-    while !isempty(stack)
-        t = pop!(stack)
-        if kind(t) === VAR
-            var_key(t) in out || push!(out, var_key(t))
-        elseif kind(t) === EXPR && !is_ground(t)
-            for i in nchildren(t):-1:1                  # pushed right to left: popped in order
-                push!(stack, child(t, i))
-            end
-        end
-    end
-    return out
-end
-
-"""
-`head` with variable `vars[i]` replaced by a variable of key `base + i - 1`: a copy with fresh
-variables. Ground subterms are shared, not copied; a ground head is returned as it is.
-"""
-function _rename_head(head, vars::Vector{UInt64}, base::UInt64)
-    T = term_type(head)
-    isempty(vars) && return head
-    kind(head) === EXPR || return _renamed(head, vars, base)
-    stack = Tuple{T, Vector{T}}[(head, T[])]            # (compound, its children copied so far)
-    while true
-        node, kids = stack[end]
-        i = length(kids) + 1
-        if i > nchildren(node)
-            pop!(stack)
-            r = mk_expr(T, kids)
-            isempty(stack) && return r
-            push!(stack[end][2], r)
-            continue
-        end
-        c = child(node, i)
-        if kind(c) === EXPR && !is_ground(c)
-            push!(stack, (c, T[]))
-        else
-            push!(kids, _renamed(c, vars, base))
-        end
-    end
-end
-
-"Variable `t` as its renamed copy (key `base + i - 1` for `vars[i]`); any other term unchanged."
-function _renamed(t, vars::Vector{UInt64}, base::UInt64)
-    kind(t) === VAR || return t
-    i = findfirst(==(var_key(t)), vars)
-    i === nothing &&
-        error("_rename_head: variable $(var_key(t)) is not one of the clause's")
-    return mk_var(term_type(t), base + UInt64(i - 1))
-end
-
+# ── decompiling the head (pl-comp.c) ────────────────────────────────────────────────────────────
 # PORT: pl-comp.c decompileHead
-# DIVERGES: INTERIM, until pl-comp.c's body side and pl-vmi.c are ported. Upstream rebuilds the head
-# from the clause's CODE, with fresh variables on the global stack, and unifies it with `head`;
-# here the clause's stored head is copied with fresh kernel variable keys (`fresh_var_keys!`) and
-# unified — one copy per attempt where a call in SWI copies nothing (its compiled head code runs
-# against fresh frame slots). A ground head is not copied.
+# DIVERGES: the clause's variables are one block of fresh kernel variable keys, slot `i` the key
+# `base + i`, where upstream allocates `prolog_vars` term references (`di.variables`).
 """
     decompileHead!(ld, clause, head) -> Bool
 
-Unify `head` with a fresh copy of `clause`'s head under the bindings in `ld` (pl-comp.c): the
-bindings stay on the trail for the caller to undo.
+Unify `head` with the head `clause`'s code describes, with fresh variables, under the bindings in
+`ld` (pl-comp.c): the bindings stay on the trail for the caller to undo.
 """
 function decompileHead!(ld::PL_local_data{T}, clause::Clause{T}, head::T)::Bool where {T}
-    vars = clause.head_vars
-    renamed =
-        if isempty(vars)
-            clause.head
+    nv = Int(clause.variables)
+    base = nv == 0 ? UInt64(0) : fresh_var_keys!(nv)
+    return decompile_head!(ld, clause, head, base)
+end
+
+"A compound the decompiler has opened: its children so far, head symbol first (none for `\$expr/n`)."
+struct DecompileFrame{T}
+    kids::Vector{T}
+    need::Int           # the children it has in all
+    pushed::Bool        # opened by H_FUNCTOR/H_LIST — closed by its own H_POP — not by an R one
+end
+
+# PORT: pl-comp.c decompile_head
+# DIVERGES: builds each head argument BOTTOM-UP from the code and unifies it with `head`'s as soon as
+# it is complete (upstream's `NEXTARG`) — upstream unifies cell by cell while it decodes. A compound
+# opened by `H_FUNCTOR`/`H_LIST` closes at its `H_POP`, which also closes the `H_RFUNCTOR`/`H_RLIST`
+# chain of its last argument; a compound closed short of its arity gets fresh variables for the
+# voids the compiler dropped before the `H_POP` (upstream's argument cells are fresh already). The
+# open compounds are a stack allocated at the first one, so a head of atomic arguments allocates
+# nothing here. The functor is not unified: every caller (`pl_clause!`, `retract/1`, `retractall/1`)
+# passes a head of this predicate, and `definition` keeps the name's key only. No `bindings`
+# (clause/3), `bvar_access` (moved unifications come from a body) or goal clauses. A literal is the
+# very term of the clause's table (V1 L2), so its kind comes back exactly; a nested void is a fresh
+# variable of its own.
+"""
+    decompile_head!(ld, clause, head, base) -> Bool
+
+Rebuild the head arguments of `clause` from its code and literal table — slot `i`'s variable has
+key `base + i` — unifying `head`'s arguments with them in turn (pl-comp.c).
+"""
+function decompile_head!(
+    ld::PL_local_data{T}, clause::Clause{T}, head::T, base::UInt64
+)::Bool where {T}
+    arity = clause.predicate.arity                              # di->arity
+    arity == 0 && return true                                   # PL_unify_atom(head, name)
+    argn = 0                                                    # the head argument being built
+    frames::Union{Nothing, Vector{DecompileFrame{T}}} = nothing
+    PC = Code(clause, 1)
+    while true
+        c = decode(PC)
+        local v::T
+        if c == I_NOP || c == I_CHP
+            PC = stepPC(PC)
+            continue
+        elseif c == H_NIL
+            v = mk_nil(T)
+        elseif c == H_ATOM || c == H_SMALLINT || c == H_MPZ || c == H_MPQ || c == H_FLOAT ||
+            c == H_STRING
+            v = PC.literals[PC.codes[PC.pc + 1]]                # the literal, exactly
+        elseif c == H_FIRSTVAR || c == H_VAR
+            v = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
+        elseif c == H_VOID
+            v = _decompile_void(T, frames, base, argn)
+        elseif c == H_VOID_N
+            for _ in 1:Int(PC.codes[PC.pc + 1])
+                w = _decompile_void(T, frames, base, argn)
+                if frames === nothing || isempty(frames)
+                    pl_unify!(ld, child(head, argn + 2), w) || return false
+                    argn += 1                                   # NEXTARG
+                else
+                    push!(frames[end].kids, w)
+                end
+            end
+            PC = stepPC(PC)
+            continue
+        elseif c == H_FUNCTOR || c == H_RFUNCTOR || c == H_LIST || c == H_RLIST
+            pushed = c == H_FUNCTOR || c == H_LIST
+            if frames === nothing
+                frames = DecompileFrame{T}[]
+            end
+            if c == H_LIST || c == H_RLIST
+                push!(frames, DecompileFrame{T}(T[mk_sym(T, LIST_CONS_NAME)], 3, pushed))
+            else
+                op = PC.codes[PC.pc + 1]
+                i = functor_literal(op)
+                kids = i == 0 ? T[] : T[PC.literals[i]]         # `$expr/n`: no head symbol
+                push!(
+                    frames,
+                    DecompileFrame{T}(kids, length(kids) + functor_arity(op), pushed)
+                )
+            end
+            PC = stepPC(PC)
+            continue
+        elseif c == H_POP
+            fs = frames
+            fs === nothing && error("decompile_head: H_POP outside a compound")
+            while true                                          # the R chain, then the pushed one
+                f = pop!(fs)
+                while length(f.kids) < f.need
+                    push!(f.kids, mk_var(T, fresh_var_keys!(1)))
+                end
+                v = mk_expr(T, f.kids)
+                f.pushed && break
+                push!(fs[end].kids, v)
+            end
+        elseif c == H_LIST_FF
+            x = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
+            y = mk_var(T, base + (PC.codes[PC.pc + 2] - VAROFFSET(0)))
+            v = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), x, y])
+        elseif c == I_EXITFACT || c == I_ENTER
+            @assert frames === nothing || isempty(frames)
+            while argn < arity                                  # trailing voids: their slots
+                pl_unify!(ld, child(head, argn + 2), mk_var(T, base + UInt64(argn))) ||
+                    return false
+                argn += 1
+            end
+            return true
         else
-            _rename_head(clause.head, vars, fresh_var_keys!(length(vars)))
+            error(
+                "decompile_head: illegal instruction in clause head: $(codeTable(c).name)"
+            )
         end
-    return pl_unify!(ld, head, renamed)
+        if frames === nothing || isempty(frames)
+            pl_unify!(ld, child(head, argn + 2), v) || return false
+            argn += 1                                           # NEXTARG
+        else
+            push!(frames[end].kids, v)
+        end
+        PC = stepPC(PC)
+    end
+end
+
+"A void the decompiler meets: in an argument, its slot's variable; in a compound, a fresh one."
+function _decompile_void(
+    ::Type{T}, frames::Union{Nothing, Vector{DecompileFrame{T}}}, base::UInt64, argn::Int
+)::T where {T}
+    (frames === nothing || isempty(frames)) && return mk_var(T, base + UInt64(argn))   # FIRSTVAR
+    return mk_var(T, fresh_var_keys!(1))
 end
 
 # ── reading code (pl-incl.h, pl-comp.h, pl-comp.c) ──────────────────────────────────────────────
@@ -680,7 +784,8 @@ decode(PC::Code)::code = PC.codes[PC.pc]
 
 # PORT: pl-comp.h stepPC
 "The position of the instruction after the one at `PC` (pl-comp.h)."
-stepPC(PC::Code)::Code = Code(PC.codes, PC.pc + 1 + codeTable(decode(PC)).arguments)
+stepPC(PC::Code{T}) where {T} =
+    Code{T}(PC.codes, PC.literals, PC.pc + 1 + codeTable(decode(PC)).arguments)::Code{T}
 
 # PORT: pl-comp.c skipArgs
 # DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer;
@@ -692,7 +797,7 @@ Skip `skip` arguments of head code from `PC` (pl-comp.c). Skipping into the midd
 `H_VOID_N` returns the `H_VOID_N` with `in_hvoid` the voids still to skip, so the next call can
 continue in small steps.
 """
-function skipArgs(PC::Code, skip::Int, in_hvoid::Int)::Tuple{Code, Int}
+function skipArgs(PC::Code{T}, skip::Int, in_hvoid::Int)::Tuple{Code{T}, Int} where {T}
     nested = 0
     if in_hvoid != 0
         @assert decode(PC) == H_VOID_N
@@ -762,30 +867,32 @@ end
 
 # PORT: pl-comp.c argKey
 # DIVERGES: returns the key — 0 where upstream returns false — instead of a flag and an
-# out-parameter; an `H_ATOM` holding 0 (a grounded value without a key) is not indexable, and an
-# `H_FUNCTOR` of `$expr/n` (Q2, src/pl-ressymbol.jl) is a wildcard, as `indexOfWord` keys it. The
-# literal instructions hold the value's index key (`clean_index_key(gnd_key)`, as `indexOfWord`)
-# where upstream computes one (`consInt`, `murmur_key`, `bignum_index`) — until L2's literal table.
+# out-parameter. The key of a literal instruction is `indexOfWord` of its literal (V1 L2), where
+# upstream reads the atom (`code2atom`) or computes one (`consInt`, `murmur_key`, `bignum_index`):
+# so a grounded value without a key is not indexable, as `indexOfWord` makes it. An `H_FUNCTOR` is
+# keyed by its head symbol's literal and its arity, as `indexOfWord` keys the compound — and `$expr/n`
+# (literal 0, Q2, src/pl-ressymbol.jl) is a wildcard.
 """
     argKey(PC, skip) -> word
 
 The index key of the head argument at `PC` after skipping `skip` arguments; 0 when it cannot be
 indexed (pl-comp.c). Upstream keeps it consistent with `indexOfWord`.
 """
-function argKey(PC::Code, skip::Int)::word
+function argKey(PC::Code{T}, skip::Int)::word where {T}
     if skip > 0
         PC, _ = skipArgs(PC, skip, 0)
     end
     while true
         c = decode(PC)
-        PC = Code(PC.codes, PC.pc + 1)                          # PC++
+        PC = Code{T}(PC.codes, PC.literals, PC.pc + 1)          # PC++
         if c == H_FUNCTOR || c == H_RFUNCTOR
-            w = PC.codes[PC.pc]                                 # code2functor(*PC)
-            return isExprFunctor(w) ? word(0) : w
-        elseif c == H_ATOM
-            return PC.codes[PC.pc]                              # code2atom(*PC)
-        elseif c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ || c == H_STRING
-            return PC.codes[PC.pc]                              # consInt/murmur_key/bignum_index
+            op = PC.codes[PC.pc]                                # code2functor(*PC)
+            i = functor_literal(op)
+            i == 0 && return word(0)                            # `$expr/n`: a wildcard
+            return _functor_word(_functor_name(PC.literals[i]), functor_arity(op))
+        elseif c == H_ATOM || c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ ||
+            c == H_STRING
+            return indexOfWord(PC.literals[PC.codes[PC.pc]])   # code2atom/consInt/murmur_key/…
         elseif c == H_NIL
             return ATOM_nil                                     # *key = ATOM_nil
         elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST

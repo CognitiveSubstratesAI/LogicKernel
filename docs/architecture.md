@@ -194,7 +194,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — variable analysis, `compileArgument`, the `H_VOID_N` merging — and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — variable analysis, `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
 | `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates, assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; LD holds the bindings, the trail and the `occurs_check` flag | `src/pl-global.h` |
@@ -202,7 +202,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
-| `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (`expr_functor`, `isExprFunctor`, DIVERGES) | `src/pl-ressymbol.c` |
+| `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
+| `test/compile/test_decompile.jl` | V1 L2's own tests: each literal decompiled exactly, kind included; random heads back as variants; the table referenced once per literal and `argKey == indexOfWord`; `NUM_OTHER` as an opaque literal | — |
 | `test/core_lang/test_expr_functor.jl` | Q2's own tests: `$expr/n`'s standard order, its head code, the index keeping it a wildcard (top level and among same-functor clauses), unification and `=@=` child by child | — |
 | `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
 | `test/compile/test_portable_smallint_swipl.jl` | `is_portable_smallint` under `portable_vmi`, and the tagged-integer range against a live swipl's flags | — |
@@ -655,7 +656,8 @@ L2 gives the operands decision 2's per-clause literal table.
   * `argKey` reads `FUNCTOR_dot2` from all three, `indexOfWord` gives it to every list cell, and
     nothing is carried through the index readers — as upstream.
 * **Numbers and strings:** `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT`/`H_STRING` by `number_kind` and
-  tagged storage (`_gnd_head_code`). Each holds ONE operand, the index key, until L2.
+  tagged storage (`_gnd_head_code`). Each holds ONE operand: the index key, and since L2 the index
+  of its literal in the clause's table.
 * **Every code reader** handles the new instructions as upstream does: `skipArgs`, `argKey`,
   `skipToTerm` (an `H_LIST_FF` reads upstream's two-void dummy, `H_LIST_FF_VOIDS`, allowlisted as
   the read-only mirror of its `static code var[2]`), `indexableCompound` and `addClauseToIndex`.
@@ -694,6 +696,57 @@ L2 gives the operands decision 2's per-clause literal table.
     * Pinned by conformance (Int64 and BigInt cases) and by test_default_term.jl (each branch).
     * Arithmetic (3i/V6) must canonicalise its results the same way.
 
+**V1, L2 — the literal table: BUILT (2026-10-04), on all three term implementations.** Decision 2,
+approved by the user and marked `# DIVERGES` (src/pl-comp.jl § the literal table).
+* **The table.** A clause keeps the terms its literal operands stand for, `clause.literals`, each the
+  very term the clause held; `compileInfo` builds it and `Code` carries it, so `argKey(PC, skip)`
+  keeps upstream's signature.
+  * `H_ATOM`, `H_SMALLINT`, `H_MPZ`, `H_MPQ`, `H_FLOAT` and `H_STRING` hold a (1-based) index into
+    it, where upstream's operand IS the atom, the tagged integer or the inline number or text.
+  * `H_FUNCTOR`/`H_RFUNCTOR` hold ONE packed operand, `functor_operand(i, arity)`: the literal of
+    the head symbol and the arity. `$expr/n` is literal 0, which no symbol-headed compound has.
+  * A grounded value SWI has no type for (`NUM_OTHER`) is an `H_ATOM` whose literal is the value: an
+    OPAQUE literal, matched by `gnd_equal` (`# DIVERGES`; SWI's nearest case, a blob, is an atom).
+* **Index keys are derived from the literal** (`argKey` → `indexOfWord`), so the indexes are the
+  ones the kernel had: `argKey` and `indexOfWord` agree on every argument, pinned over random heads.
+* **Q2's marking bit is retired** (user, 2026-10-04): `expr_functor`, `isExprFunctor`,
+  `EXPR_FUNCTOR_MASK` and `FIRST_MASK` (added only for it) are gone. `$expr/n` is still a WILDCARD
+  in the index on all three implementations: the index mutation proof, re-pointed, keys literal 0
+  in `argKey` and is caught on each of them.
+* **The decompiler is ported** (pl-comp.c `decompileHead`/`decompile_head`). The clause rebuilds
+  its head from the CODE and the table, as upstream, so the clause no longer stores its head term
+  or its variables (`head`, `head_vars` and the renaming helpers are gone).
+  * `# DIVERGES`: it builds each argument bottom-up and unifies `head`'s arguments with them, where
+    upstream unifies cell by cell. A compound closes at its `H_POP`, which also closes the `R` chain
+    of its last argument, and gets fresh variables for the voids dropped before it. The functor is
+    not unified, since every caller passes a head of the predicate and `definition` keeps the name's
+    key only.
+  * Variables: one block of fresh kernel keys, one per slot, and one key per nested void.
+* **Pinned:**
+  * the head-code differential compares every literal BY VALUE. swipl's `vm_list` operands are read
+    back as terms by swipl itself and written by kind: atoms and strings as code lists, integers
+    and rationals by value, floats by their BITS through `~h`, functors as name and arity. Indices
+    are never compared. The float sample gains `0.1` and `5.0e-324`;
+  * test/compile/test_decompile.jl, on all three implementations:
+    * the user's pairs come back exact, kind included, at the top, in a compound and in a list:
+      `1`/`1.0`, `[]`/`'[]'`, `"abc"`/`abc`, `-0.0`/`0.0`, `2^56-1`/`2^56`, `2^70`/`2.0^70`,
+      `1r3`/`1/3`, `true`/`1`, `[1.0]`/`1.0`, `""`/`''`;
+    * 500 random heads come back as variants (`=@=`), with voids, shared variables, lists,
+      `$expr/n` and every kind of literal;
+    * every literal is referenced exactly once, and `argKey == indexOfWord` at every argument;
+    * `NUM_OTHER` gets its own tests: the opaque literal, its key, and `true`/`1` and `[1.0]`/`1.0`
+      kept apart by the index;
+  * test_expr_functor.jl: the bit's testset is replaced by literal 0 against every symbol head's own
+    literal.
+* **Mutation-proved (M1–M8):** a wrong literal index; a wrong functor arity; `argKey` keying
+  `$expr/n`, caught three times, once per implementation; `indexOfWord` keying it; the decompiler
+  collapsing `[]` into `'[]'`; nested voids sharing a slot; `argKey` returning the raw index;
+  `NUM_OTHER` not on `H_ATOM`.
+* **Found while building it:** `AltTerm{true}` shares a ground compound with an IDENTICAL one built
+  earlier, so a head written with the `Int64` `2^56` may hold the `BigInt` `2^56` that another test
+  interned. They are the same SWI integer. The decompiler returns exactly the term the head holds;
+  exactness is pinned against the head's own term, identity against the value written.
+
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders
 them. It stays OUT of the swipl differentials (SWI cannot express it) and has its own tests.
@@ -710,7 +763,9 @@ them. It stays OUT of the swipl differentials (SWI cannot express it) and has it
 * **Head code**: `H_FUNCTOR $expr/n` (`expr_functor(n)`, one operand per `n`) where it was
   `H_FUNCTOR 0` — the arity is in the code. The word is a hashed functor word like every other
   until V1's functor table; it carries `FIRST_MASK`'s bit, which no upstream key or operand
-  carries, so `isExprFunctor` is exact.
+  carries, so `isExprFunctor` is exact. **Superseded by V1 L2:** the operand is
+  `functor_operand(0, n)`, literal 0, which no symbol-headed compound has, and the bit and its
+  helpers are gone.
 * **Unification is unchanged and decides the index**: `$expr/n` unifies with ANY compound of `n`
   children, child by child (`(X a) = f(a)` binds `X = f`; `_unify_functor`). So `argKey` and
   `indexOfWord` key it as a WILDCARD, as a variable. Among same-functor clauses it then keeps the
@@ -726,6 +781,7 @@ them. It stays OUT of the swipl differentials (SWI cannot express it) and has it
   * the bit (`EXPR_FUNCTOR_MASK` = upstream's `FIRST_MASK`) is documented beside the word layout
     (src/pl-incl.jl) and tested: no `name/arity` word over 20000 random names and arities, no
     symbol-headed head's operand, and no all-ones `MK_FUNCTOR`/`MK_ATOM` input carries it.
+    (Retired in V1 L2, with the test re-pointed to literal 0.)
 * **`=@=` and the hashes** already treated it as one functor (same number of children; name hash 0;
   `C` and the child count) — now named so.
 * **Pinned failing first** (test/core_lang/test_expr_functor.jl, 48 assertions on each

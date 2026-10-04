@@ -301,8 +301,9 @@ const _XIdx = Tuple{String, Vector{Int}, Vector{Int}, Float32, Bool, Bool, Int}
 function _xvoid_run(p::IxPred)::Bool
     cref = p.def.impl_clauses.first_clause
     while cref !== nothing
-        codes = (cref.clause::LK.Clause{_X}).codes
-        pc = LK.Code(codes, 1)
+        cl = cref.clause::LK.Clause{_X}
+        codes = cl.codes
+        pc = LK.Code(cl, 1)
         while pc.pc <= length(codes)
             LK.decode(pc) == LK.H_VOID_N && return true
             pc = LK.stepPC(pc)

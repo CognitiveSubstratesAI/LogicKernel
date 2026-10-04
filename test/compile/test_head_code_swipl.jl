@@ -8,9 +8,11 @@
 # deep — are compiled by the kernel and asserted in swipl, whose `vm_list/1` prints its code. The
 # instruction sequences must be equal, OPERANDS included where both systems mean the same thing: the
 # `H_VOID_N` count and the FRAME SLOT of `H_VAR`/`H_FIRSTVAR` — slots are compacted past voids
-# (pl-comp.c `analyse_variables`), so a wrong layout shows here before any frame executes. Atom and
-# functor operands are private to each system and not compared, nor are literal operands (the
-# kernel's hold index keys until L2's literal table). No name maps since V1's L1 (2026-10-04):
+# (pl-comp.c `analyse_variables`), so a wrong layout shows here before any frame executes. And
+# since V1 L2, every LITERAL operand BY VALUE — the kernel's from the clause's literal table, swipl's
+# read back from `vm_list` as terms (atoms and strings by their codes, integers and rationals by
+# value, floats by their bits) — and every functor by name and arity; the table's indices, like
+# swipl's atom handles, are each system's own and never compared. No name maps since V1's L1:
 # integers are `h_smallint`/`h_mpz` by tagged storage, rationals `h_mpq`, floats `h_float`, list
 # cells `h_list`/`h_rlist`/`h_list_ff` — a second random sample draws those (`_hlarg`) — and
 # `h_list_ff`'s two slots are compared like `h_var`'s.
@@ -60,7 +62,7 @@ function _hnum(rng::AbstractRNG)::_H
     r < 0.45 && return lk_gnd(_H, rand(rng, (big(5), big(2)^56, -big(2)^70, big(2)^63)))
     r < 0.65 &&
         return lk_gnd(_H, Rational{BigInt}(rand(rng, (1 // 3, -5 // 7, 7 // 2, 2 // 9))))
-    r < 0.85 && return lk_gnd(_H, rand(rng, (2.5, -0.0, 1.0e20, 3.0)))
+    r < 0.85 && return lk_gnd(_H, rand(rng, (2.5, -0.0, 1.0e20, 3.0, 0.1, 5.0e-324)))
     r < 0.92 && return lk_gnd(_H, rand(rng, ("", "abc", "it's", "q\"x")))   # strings: h_string
     return lk_gnd(_H, rand(rng, -100:100))
 end
@@ -104,15 +106,45 @@ function _hcount!(c::Dict{UInt64, Int}, t)::Dict{UInt64, Int}
     return c
 end
 
+"A text as a code list, as swipl's `atom_codes`/`string_codes` print it: `[97,98]`."
+_hcps(s::AbstractString)::String = "[" * join((Int(c) for c in s), ",") * "]"
+"An atom operand, by value."
+_ha(s::AbstractString)::String = "a:" * _hcps(s)
+"A functor operand, by value: name and arity."
+_hF(s::AbstractString, n::Int)::String = "F:" * _hcps(s) * "/$n"
+"A float operand, by value: its BITS (so -0.0 and 0.0 differ, and the text form cannot matter)."
+_hf(x::Float64)::String = "f:" * string(reinterpret(UInt64, x); base=16)
+
 """
-The kernel's head code of `head`: instruction names, with the operand where both systems mean the
-same thing — `h_void_n(N)` its count, `h_var(N)`/`h_firstvar(N)` the frame slot.
+A literal by VALUE, as both sides write it: its kind, then its value — an atom's or string's
+codes, an integer's digits, a rational's numerator and denominator, a float's bits.
+"""
+function _hlit(t::_H)::String
+    kind(t) === SYM && return _ha(String(lk_name(t)))
+    k = number_kind(t)
+    k === NUM_INTEGER &&
+        return "i:" * string(integer_is_int64(t) ? int64_value(t) : bigint_value(t))
+    if k === NUM_RATIONAL
+        r = rational_value(t)
+        return "q:$(numerator(r))/$(denominator(r))"
+    end
+    k === NUM_FLOAT && return _hf(float_value(t))
+    k === NUM_STRING && return "s:" * _hcps(string_value(t))
+    error("_hlit: no SWI literal for $(ix_text(t))")
+end
+
+"""
+The kernel's head code of `head`: instruction names, with the operands where both systems mean
+the same thing — `h_void_n(N)` its count, `h_var(N)`/`h_firstvar(N)` the frame slot — and, since
+V1 L2, every LITERAL by value from the clause's literal table (`_hlit`) and every functor by its
+head symbol's literal and its arity: the table's INDICES are the kernel's own and never compared.
 """
 function _hcode(head::_H)::Vector{String}
     def = LK.lookupProcedure(_H, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    codes = LK.compileClause(def, head).codes
+    cl = LK.compileClause(def, head)
+    codes = cl.codes
     out = String[]
-    pc = LK.Code(codes, 1)
+    pc = LK.Code(cl, 1)
     while pc.pc <= length(codes)
         op = LK.decode(pc)
         name = lowercase(String(LK.codeTable(op).name))
@@ -123,6 +155,13 @@ function _hcode(head::_H)::Vector{String}
         elseif op == LK.H_LIST_FF
             s1, s2 = (Int(codes[pc.pc + i] - LK.VAROFFSET(0)) for i in 1:2)
             push!(out, "$name($s1,$s2)")
+        elseif op == LK.H_FUNCTOR || op == LK.H_RFUNCTOR
+            w = codes[pc.pc + 1]
+            i = LK.functor_literal(w)
+            f = i == 0 ? "\$expr" : String(lk_name(cl.literals[i]))
+            push!(out, "$name($(_hF(f, LK.functor_arity(w))))")
+        elseif op in (LK.H_ATOM, LK.H_SMALLINT, LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
+            push!(out, "$name($(_hlit(cl.literals[codes[pc.pc + 1]])))")
         else
             push!(out, name)
         end
@@ -138,39 +177,69 @@ function _hframe(head::_H)::Tuple{Int, Int}
     return (Int(cl.variables), Int(cl.prolog_vars))
 end
 
-"swipl's code for each of `heads`, from `vm_list/1`."
+# The swipl side: `vm_list/1`'s text is read back AS TERMS by swipl itself, and each operand written
+# by value — atoms and strings as code lists, numbers by kind, floats in their shortest round-trip
+# form (`~h`, whose bits Julia compares), functors as name and arity.
+const _HSWIPL_RENDER = raw"""
+hc_show(PI) :-
+    with_output_to(string(S), vm_list(PI)),
+    split_string(S, "\n", "", Ls),
+    append(_, [L0|Rest], Ls), sub_string(L0, 0, _, _, "clause 1 ("), !,
+    forall(( member(L, Rest), hc_line(L, I) ), ( hc_render(I, Out), writeln(Out) )).
+hc_line(L, I) :-
+    split_string(L, "", " ", [T]), sub_string(T, B, 1, _, " "), !,
+    sub_string(T, 0, B, _, Num), number_string(_, Num),
+    B1 is B + 1, sub_string(T, B1, _, 0, Rest), term_string(I, Rest).
+hc_render(I, Out) :-
+    I =.. [N|As],
+    (   As == [] -> Out = N
+    ;   maplist(hc_op(N), As, Ts), atomic_list_concat(Ts, ',', J),
+        format(atom(Out), "~w(~w)", [N, J])
+    ).
+hc_op(N, X, S) :- memberchk(N, [h_void_n, h_var, h_firstvar, h_list_ff]), !, format(string(S), "~w", [X]).
+hc_op(_, X, S) :- atom(X), !, atom_codes(X, C), format(string(S), "a:~w", [C]).
+hc_op(_, X, S) :- integer(X), !, format(string(S), "i:~d", [X]).
+hc_op(_, X, S) :- rational(X, P, Q), !, format(string(S), "q:~d/~d", [P, Q]).
+hc_op(_, X, S) :- float(X), !, format(string(S), "f:~h", [X]).
+hc_op(_, X, S) :- string(X), !, string_codes(X, C), format(string(S), "s:~w", [C]).
+hc_op(_, F/A, S) :- atom(F), integer(A), !, atom_codes(F, C), format(string(S), "F:~w/~d", [C, A]).
+hc_op(_, X, S) :- format(string(S), "?:~q", [X]).
+"""
+
+"swipl's `~h` text of a float, as `_hf` writes the kernel's: by its bits."
+function _hswipl_float(s::AbstractString)::String
+    x = if s == "1.0Inf"
+        Inf
+    elseif s == "-1.0Inf"
+        -Inf
+    elseif endswith(s, "NaN")
+        NaN
+    else
+        parse(Float64, s)
+    end
+    return _hf(x)
+end
+
+"swipl's code for each of `heads`, from `vm_list/1`, operands by value."
 function _hswipl(heads::Vector{String}, names::Vector{String})::Vector{Vector{String}}
     mktempdir() do d
         f = joinpath(d, "hc.pl")
         write(
             f,
-            ":- initialization(main, main).\nmain :-\n" *
+            ":- initialization(main, main).\n" * _HSWIPL_RENDER * "main :-\n" *
             join(["    assertz($h)" for h in heads], ",\n") * ",\n" *
             "    forall(member(PI, [" * join(names, ",") *
-            "]), (vm_list(PI), writeln('@@end'))).\n"
+            "]), (hc_show(PI), writeln('@@end'))).\n"
         )
         out = split(read(pipeline(`swipl -q $f`; stderr=devnull), String), '\n')
         res = Vector{String}[]
         cur = String[]
-        inclause = false
         for l in out
-            if startswith(l, "clause 1 (")
-                inclause = true
-                cur = String[]
-            elseif l == "@@end"
+            if l == "@@end"
                 push!(res, cur)
-                inclause = false
-            elseif inclause &&
-                (m = match(r"^\s+\d+ ([a-z_]+)(\((.*)\))?\s*$", l)) !== nothing
-                name = m[1]
-                push!(
-                    cur,
-                    if name in ("h_void_n", "h_var", "h_firstvar", "h_list_ff")
-                        "$name($(m[3]))"
-                    else
-                        name
-                    end
-                )
+                cur = String[]
+            elseif !isempty(l)
+                push!(cur, replace(l, r"f:([^,)]+)" => m -> _hswipl_float(m[3:end])))
             end
         end
         return res
@@ -197,7 +266,7 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     for i in (
         "h_smallint", "h_mpz", "h_mpq", "h_float", "h_string", "h_nil", "h_list", "h_rlist"
     )
-        @test any(c -> i in c, ours)
+        @test any(c -> any(x -> x == i || startswith(x, i * "("), c), ours)
     end
     @test any(c -> any(startswith("h_list_ff("), c), ours)
     # the sample exercises every merge: void runs, voids dropped before H_POP and I_EXITFACT
@@ -206,25 +275,27 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         c -> any(i -> c[i] == "h_pop" && i > 1 && c[i - 1] != "h_pop", eachindex(c)), ours
     )
     # (`h_var`/`h_firstvar` carry their slot, so they are matched by prefix)
-    @test any(c -> "h_rfunctor" in c, ours) &&
+    @test any(c -> any(startswith("h_rfunctor("), c), ours) &&
         any(c -> any(startswith("h_firstvar("), c), ours)
     @test any(c -> any(startswith("h_var("), c), ours)
     # a hand-checked case: p(_,_,a) is h_void_n(2), h_atom, i_exitfact (swipl vm_list, LogicKernel#1)
     @test _hcode(_he(:p, [mk_var(_H, UInt64(1)), mk_var(_H, UInt64(2)), _hs(:a)])) ==
-        ["h_void_n(2)", "h_atom", "i_exitfact"]
+        ["h_void_n(2)", "h_atom($(_ha("a")))", "i_exitfact"]
     # slots are COMPACTED past voids (pl-comp.c analyse_variables, `n + argvars - body_voids`),
     # pinned with swipl 10.1.16's vm_list: p(f(_A,B,B)) puts B in slot 1, not 2 ...
     vA, vB = mk_var(_H, UInt64(1)), mk_var(_H, UInt64(2))
-    @test _hcode(_he(:p, [_he(:f, [vA, vB, vB])])) ==
-        ["h_functor", "h_void", "h_firstvar(1)", "h_var(1)", "h_pop", "i_exitfact"]
+    @test _hcode(_he(:p, [_he(:f, [vA, vB, vB])])) == [
+        "h_functor($(_hF("f", 3)))", "h_void", "h_firstvar(1)", "h_var(1)", "h_pop",
+        "i_exitfact"
+    ]
     # ... and q(X,g(_,Y,_,Y),X) puts Y in slot 3: of the variables numbered above the arity
     # (_ 3, Y 4, _ 5), the void before Y is not a slot
     vX, vY = mk_var(_H, UInt64(3)), mk_var(_H, UInt64(4))
     @test _hcode(
         _he(:q, [vX, _he(:g, [mk_var(_H, UInt64(5)), vY, mk_var(_H, UInt64(6)), vY]), vX])
     ) == [
-        "h_void", "h_functor", "h_void", "h_firstvar(3)", "h_void", "h_var(3)", "h_pop",
-        "h_var(0)", "i_exitfact"
+        "h_void", "h_functor($(_hF("g", 4)))", "h_void", "h_firstvar(3)", "h_void",
+        "h_var(3)", "h_pop", "h_var(0)", "i_exitfact"
     ]
     # ... and ONLY voids above the arity are compacted — an argument keeps its slot whatever it
     # holds: p(_, f(_,Y,Y)) puts Y in slot 2 (argument 0's void is not counted, f's `_` is). A fix
@@ -234,7 +305,8 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         _he(:p, [mk_var(_H, UInt64(8)), _he(:f, [mk_var(_H, UInt64(9)), vY2, vY2])])
     ) ==
         [
-        "h_void", "h_functor", "h_void", "h_firstvar(2)", "h_var(2)", "h_pop", "i_exitfact"
+        "h_void", "h_functor($(_hF("f", 3)))", "h_void", "h_firstvar(2)", "h_var(2)",
+        "h_pop", "i_exitfact"
     ]
     # the frame is sized by the SAME count (pl-comp.c: prolog_vars = variables =
     # nvars + arity + argvars - body_voids): the arguments, then the compacted variables. The
@@ -259,14 +331,15 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
             _he(:lp7, [lk_gnd(_H, -2^56), lk_gnd(_H, -2^56 - 1)])
         )
     ]
+    a, b, f2 = "h_atom($(_ha("a")))", "h_atom($(_ha("b")))", "h_functor($(_hF("f", 2)))"
     want = [
-        ["h_list", "h_atom", "h_pop", "i_exitfact"],
-        ["h_list", "h_atom", "h_pop", "i_exitfact"],
-        ["h_list", "h_atom", "h_rlist", "h_atom", "h_nil", "h_pop", "i_exitfact"],
-        ["h_list_ff(2,3)", "h_functor", "h_var(2)", "h_var(3)", "h_pop", "i_exitfact"],
-        ["h_functor", "h_atom", "h_rlist", "h_atom", "h_nil", "h_pop", "i_exitfact"],
-        ["h_smallint", "h_mpz", "i_exitfact"],
-        ["h_smallint", "h_mpz", "i_exitfact"]
+        ["h_list", a, "h_pop", "i_exitfact"],
+        ["h_list", a, "h_pop", "i_exitfact"],
+        ["h_list", a, "h_rlist", b, "h_nil", "h_pop", "i_exitfact"],
+        ["h_list_ff(2,3)", f2, "h_var(2)", "h_var(3)", "h_pop", "i_exitfact"],
+        [f2, a, "h_rlist", b, "h_nil", "h_pop", "i_exitfact"],
+        ["h_smallint(i:72057594037927935)", "h_mpz(i:72057594037927936)", "i_exitfact"],
+        ["h_smallint(i:-72057594037927936)", "h_mpz(i:-72057594037927937)", "i_exitfact"]
     ]
     @test [_hcode(h) for (_, h) in lists] == want
     @test _hcode(lists[1][2]) == _hcode(lists[2][2])

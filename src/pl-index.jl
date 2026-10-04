@@ -1780,8 +1780,8 @@ the path meets something other than a compound, the code found there (pl-index.c
 """
 function skipToTerm(
     clause::Clause{T}, position::NTuple{MAXINDEXDEPTH + 1, iarg_t}, in_hvoid::Int
-)::Tuple{Code, Int} where {T}
-    pc = Code(clause.codes, 1)
+)::Tuple{Code{T}, Int} where {T}
+    pc = Code(clause, 1)
     for k in 1:(MAXINDEXDEPTH + 1)
         an = Int(position[k])
         an == END_INDEX_POS && break
@@ -1794,7 +1794,7 @@ function skipToTerm(
             c = decode(pc)
         end
         if c == H_LIST_FF                                   # FF1, FF2
-            return (Code(H_LIST_FF_VOIDS, 1), in_hvoid)     # the dummy code: two voids
+            return (Code{T}(H_LIST_FF_VOIDS, pc.literals, 1), in_hvoid)   # the dummy: two voids
         end
         if !(c == H_FUNCTOR || c == H_LIST || c == H_RFUNCTOR || c == H_RLIST)
             return (pc, in_hvoid)                           # default: return pc
@@ -1809,7 +1809,7 @@ end
 True if the compound at `pc` can be indexed: one of its arguments is not a variable. As we
 consider a compound indexable, we never go into nested compounds (pl-index.c).
 """
-function indexableCompound(pc::Code)::Bool
+function indexableCompound(pc::Code{T})::Bool where {T}
     while true
         c = decode(pc)
         if c == H_LIST_FF
@@ -2384,7 +2384,7 @@ function can_be_primary_index(clist::ClauseList{T}, arg0::Int)::Int where {T}
     while cref !== nothing
         cl = cref.clause::Clause{T}
         if (cl.flags & CL_ERASED) == 0
-            clkey = argKey(Code(cl.codes, 1), arg0)
+            clkey = argKey(Code(cl, 1), arg0)
             if first
                 first = false
                 key = clkey
@@ -2450,7 +2450,7 @@ function modify_primary_index_arg!(def::Definition{T}, an::Int)::Nothing where {
         cref = clist.first_clause
         while cref !== nothing
             cl = cref.clause::Clause{T}
-            cref.key = argKey(Code(cl.codes, 1), an)
+            cref.key = argKey(Code(cl, 1), an)
             cref = cref.next
         end
         clist.primary_index = an % iarg_t
