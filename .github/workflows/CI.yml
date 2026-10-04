@@ -98,6 +98,15 @@ jobs:
   analysis:
     name: Static analysis + live swipl differential
     runs-on: ubuntu-latest
+    # THE ORACLE IS FIXED (user, 2026-10-04): the whole job runs INSIDE the official SWI-Prolog image
+    # of the pinned release, so `swipl` is native and never moves under a port. Before, it came from
+    # the devel PPA, which serves only its latest build: 10.1.17, published 2026-10-04 14:25 UTC,
+    # turned this job red mid-port (run 37218978326). The image tag and tools/SWIPL_VERSION move
+    # TOGETHER, as a deliberate step with its own differential reruns — never because a release
+    # appeared. (A wrapper running `docker run` per `swipl` call would add a container start to every
+    # call the differentials make; inside the container each call is native.)
+    container:
+      image: swipl:10.1.16
     timeout-minutes: 60
     permissions:
       contents: read
@@ -107,28 +116,32 @@ jobs:
       LOGICKERNEL_REQUIRE_TOOLS: '1'
       LOGICKERNEL_REQUIRE_SWIPL: '1'
     steps:
+      # The image is Debian slim and the job runs as root: git, so actions/checkout makes a real
+      # repository (port_check's own tests build git repositories), and the CA certificates.
+      - name: Install git into the SWI-Prolog image
+        run: |
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.13'
       - uses: julia-actions/cache@v2
-      # The devel PPA serves whatever is current; the differentials must run against the PINNED
-      # version the local suite uses (tools/SWIPL_VERSION). A PPA that moved on fails HERE, loudly.
-      - name: Install SWI-Prolog (the devel PPA) and refuse any version but the pinned one
+      # The image must BE the pin: a misconfigured container (a tag that is not tools/SWIPL_VERSION)
+      # fails HERE, loudly — the differentials must run against the version the local suite uses.
+      - name: Refuse any swipl but the pinned one
         run: |
-          sudo add-apt-repository -y ppa:swi-prolog/devel
-          sudo apt-get update -q
-          sudo apt-get install -y -q swi-prolog-nox
           pin=$(grep -v '^#' tools/SWIPL_VERSION | tr -d '[:space:]')
           have=$(swipl --version)
           echo "$have (pinned: $pin)"
+          swipl -g "(current_prolog_flag(version_git, G) -> format('version_git: ~w~n', [G]) ; writeln('version_git: none (a release build)'))" -t halt
           if [ -z "$pin" ]; then
             echo "::error::tools/SWIPL_VERSION is empty: no pinned swipl to judge against"
             exit 1
           fi
           case "$have" in
             *"version $pin "*) ;;
-            *) echo "::error::CI swipl is '$have' but tools/SWIPL_VERSION pins $pin. The PPA moved on: upgrade the local swipl and bump the pin together, or install $pin here. Never bump the pin alone."
+            *) echo "::error::CI swipl is '$have' but tools/SWIPL_VERSION pins $pin. The job's container image must be the pin: change the image tag and the pin together, never the pin alone."
                exit 1 ;;
           esac
       # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as

@@ -7,15 +7,21 @@
 # WHICH UPSTREAM COMMIT THE ORACLE IS (checked 2026-10-03). The ports cite swipl-devel `bae881a2`.
 #   local binary: `current_prolog_flag(version_git, G)` = 10.1.16-20-gbae881a2 — built FROM bae881a2,
 #                 so the local oracle and the ported source are the same commit;
-#   CI binary:    the devel PPA's 10.1.16 RELEASE (tag V10.1.16 = ee20d44f). V10.1.16..bae881a2 is 20
-#                 commits, ONE in src/: b453a6ad (pl-prof.c, profile/1 interrupt handling) — outside
-#                 every ported file, so CI and local agree on everything the differentials exercise.
+#   CI binary:    the official Docker image `swipl:10.1.16`, the 10.1.16 RELEASE (tag V10.1.16 =
+#                 ee20d44f): CI's analysis job runs INSIDE it (.github/workflows/CI.yml, since
+#                 2026-10-04; before, the devel PPA's build of the same release). V10.1.16..bae881a2
+#                 is 20 commits, ONE in src/: b453a6ad (pl-prof.c, profile/1 interrupt handling) —
+#                 outside every ported file, so CI and local agree on everything the differentials
+#                 exercise. The image tag and this pin move together.
 # Bump RULE: the cited upstream commit, the local build and this pin move TOGETHER, then every
 # differential reruns; a mismatch seen across a version gap is not yet a port defect.
 #
-# KNOWN COST (user, 2026-10-03; decide at the FIRST such break): the devel PPA serves only its
-# latest build, so each SWI devel release turns CI red until the pin is bumped — honest, but noise
-# on a schedule. If it recurs, install a FIXED version instead of failing on a mismatch: a
-# version-tagged SWI-Prolog Docker image if one exists for the pin, or build the pinned release tag
-# once and cache it in CI.
+# KNOWN COST — DECIDED at the first break (user, 2026-10-04): the devel PPA serves only its latest
+# build, and 10.1.17 (published 2026-10-04 14:25 UTC) turned CI red mid-port. CI now runs a FIXED
+# version, the official image of the pin, so a release never moves the oracle. Bumping is a
+# SCHEDULED step at a natural boundary (user: e.g. after the `nreverse` milestone), with the drift
+# report showing which ported files changed upstream, and every differential rerun.
+# 10.1.17 (V10.1.17 = ce288eef), checked 2026-10-04 for information: of the 26 commits from
+# bae881a2, none touches any of the 35 upstream files LogicKernel ports from (they touch
+# boot/init.pl, boot/tabling.pl, src/pl-qlf.c, the version header, tests and packages).
 10.1.16
