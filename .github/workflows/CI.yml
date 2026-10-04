@@ -117,11 +117,13 @@ jobs:
       LOGICKERNEL_REQUIRE_SWIPL: '1'
     steps:
       # The image is Debian slim and the job runs as root: git, so actions/checkout makes a real
-      # repository (port_check's own tests build git repositories), and the CA certificates.
-      - name: Install git into the SWI-Prolog image
+      # repository (port_check's own tests build git repositories), and the CA certificates; jq and
+      # curl for julia-actions/cache, whose jq installer downloads with curl and is skipped when jq
+      # is present (measured: run 37220151694 failed at the cache step without them).
+      - name: Install git, jq and curl into the SWI-Prolog image
         run: |
           apt-get update -q
-          apt-get install -y -q --no-install-recommends git ca-certificates
+          apt-get install -y -q --no-install-recommends git ca-certificates jq curl
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
