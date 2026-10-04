@@ -41,11 +41,15 @@ function _precompile_workload()::Nothing
     number_kind(one) === NUM_INTEGER && int64_value(one)
     number_kind(half) === NUM_FLOAT && float_value(half)
     gd = PL_global_data{T}()
-    def = lookupProcedure(T, sym_key(mk_sym(T, :p)), 2, P_DYNAMIC)
+    user = MODULE_user(gd)
+    proc = lookupProcedure(sym_key(mk_sym(T, :p)), 2, user)
+    def = proc.definition
+    setDynamicDefinition!(def, true)
     for i in 1:20
         h = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, i), i % 2 == 0 ? a : nil])
-        assertDefinition!(gd, def, compileClause(gd, def, h), CL_END)
+        assertDefinition!(gd, def, compileClause(gd, h, nothing, proc, user), CL_END)
     end
+    lookupBodyProcedure(gd, mk_expr(T, T[mk_sym(T, :p), x, a]), user)
     goal = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, 7), x])
     pl_clause!(gd, ld, def, goal, _ -> true)
     pl_retract!(gd, ld, def, mk_expr(T, T[mk_sym(T, :p), x, nil]), _ -> false)

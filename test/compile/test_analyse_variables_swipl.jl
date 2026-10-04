@@ -54,9 +54,16 @@ function _va_occ!(out::Vector{String}, ci, t)::Vector{String}
     return out
 end
 
+"A compilation of a clause with head `head`, of its predicate in this file's database."
+function _va_ci(head::_V)
+    user = LK.MODULE_user(_VGD)
+    name, ar = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
+    return LK.compileInfo{_V}(ar, user, LK.lookupProcedure(sym_key(name), ar, user))
+end
+
 "The kernel's head code, body slots and frame size for the clause `head :- body`."
 function _va_kernel(head::_V, body::_V)::Tuple{Vector{String}, Vector{String}, Int}
-    ci = LK.compileInfo{_V}(kind(head) === SYM ? 0 : nchildren(head) - 1)
+    ci = _va_ci(head)
     nv = LK._compile_clause_head!(_VGD, ci, head, body)
     return (_hcode_of(ci.codes, ci.literals), _va_occ!(String[], ci, body), nv)
 end
@@ -337,7 +344,7 @@ const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     branch_voids = count(rnd) do k
         h, b, _ = clauses[k]
         cnt = ix_var_counts(_ve(":-", [h, b]))
-        ci = LK.compileInfo{_V}(kind(h) === SYM ? 0 : nchildren(h) - 1)
+        ci = _va_ci(h)
         LK._compile_clause_head!(_VGD, ci, h, b)
         any(((key, n),) -> n > 1 && !haskey(ci.vardefs, key), cnt)
     end

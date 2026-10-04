@@ -29,25 +29,104 @@
 # collector's), statistics and the debug checks.
 
 # PORT: pl-proc.c lookupProcedure
-# DIVERGES: allocates the definition only — upstream also looks the functor up in the module's
-# procedure table and creates a procedure. `name` is the predicate name's `sym_key`, `flags` its
-# initial P_* flags (e.g. `P_DYNAMIC` for `:- dynamic`).
+# DIVERGES: the functor is its two parts, the name's `sym_key` and the arity (there is no functor
+# table). No `resetProcedure`: for a NEW procedure it only sets the debugger's `TRACE_ME`, which is
+# not ported (abolish, its other caller, is not ported either). No program-space limit, statistics
+# or lock: there are no threads, so the table cannot gain the functor between the lookup and the add.
 """
-    lookupProcedure(T, name, arity, flags) -> Definition{T}
+    lookupProcedure(name, arity, m) -> Procedure{T}
 
-A new predicate `name/arity` over terms `T`, with no clauses: its per-argument information
-allocated (zeroed) when it has arguments, as upstream allocates `impl.any.args`.
+The procedure `name/arity` (`name` the `sym_key` of its name) of module `m`: the one in its
+procedure table, or a new one with a new predicate — no clauses, flags 0, its per-argument
+information allocated (zeroed) when it has arguments — added to the table (pl-proc.c).
 """
-function lookupProcedure(
-    ::Type{T}, name::UInt64, arity::Int, flags::UInt64
-)::Definition{T} where {T}
+function lookupProcedure(name::UInt64, arity::Int, m::module_t{T})::Procedure{T} where {T}
+    proc = get(m.procedures, (name, arity), nothing)
+    proc === nothing || return proc
     clauses = ClauseList{T}()
     if arity > 0
         clauses.args = [arg_info() for _ in 1:arity]
     else
         clauses.args = nothing
     end
-    return Definition{T}(name, arity, clauses, flags)
+    def = Definition{T}(name, arity, clauses, UInt64(0))
+    proc = Procedure{T}(def, UInt32(0))
+    m.procedures[(name, arity)] = proc
+    return proc
+end
+
+# PORT: pl-proc.c isCurrentProcedure
+# DIVERGES: the functor is its name's `sym_key` and its arity.
+"The procedure `name/arity` of module `m`, or `nothing` if `m` has none (pl-proc.c)."
+function isCurrentProcedure(
+    name::UInt64, arity::Int, m::module_t{T}
+)::Union{Nothing, Procedure{T}} where {T}
+    return get(m.procedures, (name, arity), nothing)
+end
+
+# PORT: pl-proc.c hasClausesDefinition
+# DIVERGES: no `acquire_def`/`release_def` around the walk — with no threads, clause GC cannot run
+# during it — and no reload generation (`LD->reload.generation` is always `GEN_INVALID`: reloading
+# is not ported). Foreign and thread-local predicates do not exist, so the `P_FOREIGN|P_THREAD_LOCAL`
+# test is upstream's and always passes.
+"""
+The first clause reference of `def` whose clause is visible in the current generation of the
+database `gd` — the first clause at all for a static predicate not registered as dirty — or
+`nothing` (pl-proc.c).
+"""
+function hasClausesDefinition(
+    gd::PL_global_data{T}, def::Definition{T}
+)::Union{Nothing, ClauseRef{T}} where {T}
+    if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0 &&
+        def.impl_clauses.first_clause !== nothing
+        if (def.flags & P_DIRTYREG) == 0 && (def.flags & P_DYNAMIC) == 0
+            return def.impl_clauses.first_clause
+        else
+            generation = global_generation(gd)
+            c = def.impl_clauses.first_clause
+            while c !== nothing
+                cl = c.clause::Clause{T}
+                visibleClauseCNT(cl, generation) && break
+                c = c.next
+            end
+            return c
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-proc.c isDefinedProcedure
+"""
+Whether `proc` is defined in the database `gd`: a flag in `PROC_DEFINED` (dynamic, multifile, …)
+or a visible clause (pl-proc.c).
+"""
+function isDefinedProcedure(gd::PL_global_data{T}, proc::Procedure{T})::Bool where {T}
+    def = proc.definition
+    (def.flags & PROC_DEFINED) != 0 && return true
+    return hasClausesDefinition(gd, def) !== nothing
+end
+
+# PORT: pl-proc.c setDynamicDefinition
+# DIVERGES: no lock (no threads), and upstream's `setDynamicDefinition_unlocked` is inlined. The
+# `protect_static_code` flag is not ported — it is false by default, so making a static predicate
+# with clauses dynamic is allowed, as in a default swipl. `freeCodesDefinition` (back to
+# `S_VIRGIN`) is not ported: supervisors arrive with the VM (V4a).
+"""
+    setDynamicDefinition!(def, isdyn) -> Bool
+
+Make `def` dynamic (`:- dynamic`) or static: set or clear `P_DYNAMIC` and `P_TRANSACT`
+(pl-proc.c). Returns true.
+"""
+function setDynamicDefinition!(def::Definition, isdyn::Bool)::Bool
+    if (isdyn && (def.flags & P_DYNAMIC) != 0) || (!isdyn && (def.flags & P_DYNAMIC) == 0)
+        return true
+    end
+    if isdyn                                            # static --> dynamic
+        def.flags |= P_DYNAMIC | P_TRANSACT
+    else                                                # dynamic --> static
+        def.flags &= ~(P_DYNAMIC | P_TRANSACT)
+    end
+    return true
 end
 
 # PORT: pl-proc.c newClauseRef

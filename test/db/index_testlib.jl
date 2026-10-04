@@ -24,28 +24,34 @@ struct IxDB{T}
 end
 IxDB{T}() where {T} = IxDB{T}(LK.PL_global_data{T}(), LK.PL_local_data{T}())
 
-"A predicate under test, in database `db`; `virgin` is true while its supervisor is S_VIRGIN."
+"""
+A predicate under test, in database `db`: its procedure and that procedure's definition; `virgin`
+is true while its supervisor is S_VIRGIN.
+"""
 mutable struct IxPred{T}
     db::IxDB{T}
+    proc::LK.Procedure{T}
     def::LK.Definition{T}
     virgin::Bool
 end
 
-"A new predicate `name/arity` (`dynamic` as by `:- dynamic`) with no clauses, in `db`."
-ix_pred(
+"""
+The predicate `name/arity` of database `db` (`dynamic` as by `:- dynamic`): its procedure in the
+database's user module, created with no clauses when the database has none (`lookupProcedure`).
+A test that needs a FRESH predicate passes a fresh database — the default.
+"""
+function ix_pred(
     ::Type{T}, name::Symbol, arity::Int; dynamic::Bool=false, db::IxDB{T}=IxDB{T}()
-) where {T} =
-    IxPred{T}(
-        db,
-        LK.lookupProcedure(
-            T, sym_key(lk_sym(T, name)), arity, dynamic ? LK.P_DYNAMIC : UInt64(0)
-        ),
-        true
-    )
+)::IxPred{T} where {T}
+    proc = LK.lookupProcedure(sym_key(lk_sym(T, name)), arity, LK.MODULE_user(db.gd))
+    dynamic && LK.setDynamicDefinition!(proc.definition, true)
+    return IxPred{T}(db, proc, proc.definition, true)
+end
 
 "`assertz(Head)`: compile the fact and add it at the end."
 function ix_assertz!(p::IxPred{T}, head::T)::Nothing where {T}
-    LK.assertDefinition!(p.db.gd, p.def, LK.compileClause(p.db.gd, p.def, head), LK.CL_END)
+    cl = LK.compileClause(p.db.gd, head, nothing, p.proc, LK.MODULE_user(p.db.gd))
+    LK.assertDefinition!(p.db.gd, p.def, cl, LK.CL_END)
     if (p.def.flags & LK.P_DYNAMIC) == 0
         p.virgin = true                       # freeCodesDefinition(): back to S_VIRGIN
     end

@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -18,25 +19,34 @@
     PL_global_data{T}()
 
 The database-wide state (pl-global.h `struct PL_global_data`): the generation of the database,
-the predicates with erased clauses, whether clause GC is running, and the control functors the
-clause compiler reads (pl-funct.c `registerControlFunctors`, the `CONTROL_F` flags of upstream's
-functor table), registered once, when the database is created, as upstream registers them at
-start-up. Field names are upstream's, nesting flattened (`procedures.dirty` is
-`procedures_dirty`).
+the predicates with erased clauses, whether clause GC is running, the control functors the clause
+compiler reads (pl-funct.c `registerControlFunctors`, the `CONTROL_F` flags of upstream's functor
+table), registered once, when the database is created, as upstream registers them at start-up,
+and the `user` module, whose procedure table holds the database's predicates. Field names are
+upstream's, nesting flattened (`procedures.dirty` is `procedures_dirty`).
 """
 mutable struct PL_global_data{T}
     _generation::gen_t                                          # generation of the database
     procedures_dirty::Dict{Definition{T}, dirty_def_info{T}}    # procedures.dirty
     clauses_cgc_active::Bool                                    # clauses.cgc_active: CGC running
     const functors_control::ControlFunctors                     # functors.array's CONTROL_F
+    const modules_user::module_t{T}                             # modules.user: user module
 end
+# DIVERGES: the user module is created with the database — upstream's initModules creates it, with
+# the `system` module, at start-up (pl-modul.c). There is no `system` module until built-ins are
+# registered in it (V5), and no module table (`modules.table`): one module per database.
 PL_global_data{T}() where {T} =
     PL_global_data{T}(
         gen_t(0),
         Dict{Definition{T}, dirty_def_info{T}}(),
         false,
-        registerControlFunctors(T)
+        registerControlFunctors(T),
+        module_t{T}(sym_key(mk_sym(T, :user)), Dict{Tuple{UInt64, Int}, Procedure{T}}())
     )
+
+# PORT: pl-incl.h MODULE_user
+"The user module of the database whose global data is `gd` (pl-incl.h `MODULE_user`)."
+MODULE_user(gd::PL_global_data{T}) where {T} = gd.modules_user
 
 # ── the kernel's variable keys ───────────────────────────────────────────────────────────────────
 # DIVERGES: SWI's fresh variables are new cells on the global stack, unique by address. Interface

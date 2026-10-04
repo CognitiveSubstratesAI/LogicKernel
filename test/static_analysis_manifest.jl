@@ -139,6 +139,7 @@ function _manifest_index(T)
     CIP = Vector{Union{Nothing, CI}}
     NT4, NT8, NTW = NTuple{4, UInt8}, NTuple{8, UInt8}, NTuple{4, UInt64}
     CInfo, HA, HH = LK.compileInfo{T}, LK.hash_assessment, LK.hash_hints
+    PR, MOD = LK.Procedure{T}, LK.module_t{T}
     PCd = LK.Code{T}
     VIEW = typeof(view(UInt8[], 1:0))
     return (
@@ -149,8 +150,13 @@ function _manifest_index(T)
         (LK.Output_a!, Tuple{CInfo, UInt64}, false),
         (LK.Output_1!, Tuple{CInfo, UInt64, UInt64}, false),
         (LK.Output_2!, Tuple{CInfo, UInt64, UInt64, UInt64}, false),
-        (LK.Output_n!, Tuple{CInfo, UInt64, UInt64, Int}, false),
+        (LK.Output_3!, Tuple{CInfo, UInt64, UInt64, UInt64, UInt64}, false),
+        (LK.Output_an!, Tuple{CInfo, NTuple{1, UInt64}, Int}, false),
+        (LK.Output_n!, Tuple{CInfo, UInt64, NTuple{1, UInt64}, Int}, false),
         (LK.addLiteral!, Tuple{CInfo, T}, false),
+        (LK.addProcedure!, Tuple{CInfo, PR}, false),
+        (LK._body_functor, Tuple{T}, true),
+        (LK.lookupBodyProcedure, Tuple{GD, T, MOD}, false),
         (LK.Code, Tuple{C, Int}, true),
         (LK.decode, Tuple{PCd}, true), (LK.stepPC, Tuple{PCd}, true),
         (LK.skipArgs, Tuple{PCd, Int, Int}, true), (LK.argKey, Tuple{PCd, Int}, true),
@@ -160,7 +166,7 @@ function _manifest_index(T)
         (LK._comp_shape, Tuple{T}, true), (LK._gnd_head_code, Tuple{T}, true),
         (LK.isFirstVarP, Tuple{CInfo, T}, true),
         (LK.compileListFF!, Tuple{CInfo, T}, false),
-        (LK.compileInfo{T}, Tuple{Int}, false),
+        (LK.compileInfo{T}, Tuple{Int, MOD, PR}, false),
         (LK.pushBranchVar!, Tuple{CInfo, LK.VarDef}, false),
         (LK._max_frame_size, Tuple{}, false),
         (LK.analyseVariables2!, Tuple{GD, CInfo, T, Int, Int, Bool}, false),
@@ -169,7 +175,7 @@ function _manifest_index(T)
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing}, false),
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, T}, false),
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
-        (LK.compileClause, Tuple{GD, D, T}, false),
+        (LK.compileClause, Tuple{GD, T, Nothing, PR, MOD}, false),
         # src/pl-funct.jl — the control functors the global data holds
         (LK.registerControlFunctors, Tuple{Type{T}}, false),
         (LK._has_functor, Tuple{T, UInt64, Int}, true),
@@ -290,7 +296,12 @@ function _manifest_index(T)
         ),
         (LK._decompile_void, Tuple{Type{T}, Nothing, UInt64, Int}, false),
         # src/pl-proc.jl
-        (LK.lookupProcedure, Tuple{Type{T}, UInt64, Int, UInt64}, false),
+        (LK.MODULE_user, Tuple{GD}, true),
+        (LK.lookupProcedure, Tuple{UInt64, Int, MOD}, false),
+        (LK.isCurrentProcedure, Tuple{UInt64, Int, MOD}, false),
+        (LK.hasClausesDefinition, Tuple{GD, D}, true),
+        (LK.isDefinedProcedure, Tuple{GD, PR}, true),
+        (LK.setDynamicDefinition!, Tuple{D, Bool}, true),
         (LK.newClauseRef, Tuple{C, UInt64}, false),
         (LK.assertDefinition!, Tuple{GD, D, C, Int}, false),
         (LK.assertDefinition!, Tuple{GD, D, C, CR}, false),
@@ -318,7 +329,12 @@ end
 
 "The index's entry points, checked for every payload type."
 _index_entry_points(T) = (
-    (LK.compileClause, Tuple{LK.PL_global_data{T}, LK.Definition{T}, T}, false),
+    (
+        LK.compileClause,
+        Tuple{LK.PL_global_data{T}, T, Nothing, LK.Procedure{T}, LK.module_t{T}},
+        false
+    ),
+    (LK.lookupBodyProcedure, Tuple{LK.PL_global_data{T}, T, LK.module_t{T}}, false),
     (
         LK.assertDefinition!,
         Tuple{LK.PL_global_data{T}, LK.Definition{T}, LK.Clause{T}, Int},

@@ -211,17 +211,19 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-codetable.c` |
-| `src/pl-proc.jl` | the clause database: predicates, assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads, LD the bindings, the trail and the `occurs_check` flag | `src/pl-global.h` |
+| `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail and the `occurs_check` flag | `src/pl-global.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `Trail!`, `Mark`, `Undo!` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
 | `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
+| `test/db/test_procedures.jl` | V1's predicate table: one procedure per functor and database, `[]` apart from `'[]'`, `:- dynamic`, defined = a `PROC_DEFINED` flag or a clause visible now | — |
+| `test/compile/test_call_operands.jl` | V1's call operands: `lookupBodyProcedure` (the database's procedure; non-callable goals refused as swipl refuses them, `$expr/n` too), the clause's procedure table, `Output_3`/`Output_n` | — |
 | `test/compile/test_decompile.jl` | V1 L2's own tests: each literal decompiled exactly, kind included; random heads back as variants; the table referenced once per literal and `argKey == indexOfWord`; `NUM_OTHER` as an opaque literal | — |
 | `test/core_lang/test_expr_functor.jl` | Q2's own tests: `$expr/n`'s standard order, its head code, the index keeping it a wildcard (top level and among same-functor clauses), unification and `=@=` child by child | — |
 | `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
@@ -872,6 +874,45 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V1 — procedures and call operands: BUILT (2026-10-04)** (user's decisions, same day; src/pl-incl.jl,
+src/pl-global.jl, src/pl-proc.jl, src/pl-comp.jl).
+* **One way to get a predicate, as upstream.** `lookupProcedure(name, arity, m)` is pl-proc.c's
+  lookup-or-create in the module's procedure table, keyed by the FUNCTOR (the name's `sym_key` and
+  the arity). It returns a `Procedure{T}` (pl-incl.h `struct procedure`, wrapping the definition).
+  `:- dynamic` is `setDynamicDefinition!` on the found definition. The old flags argument is gone, and
+  a test that needs a FRESH predicate uses a fresh database (no escape hatch in the API).
+* **Modelled as a module, with one.** `module_t{T}` (pl-incl.h `struct module`; `module` is a Julia
+  keyword, `module_t` is SWI-Prolog.h's own name) holds the name `user` and the procedure table; GD
+  holds it as `modules_user`, reached through `MODULE_user(gd)`. `# DIVERGES`: one module per
+  database, no `system` module until built-ins are registered there (V5).
+* **`isCurrentProcedure`, `hasClausesDefinition`, `isDefinedProcedure`** are ported. "Defined" is a
+  `PROC_DEFINED` flag or a clause visible in the current generation.
+* **`lookupBodyProcedure(gd, goal, tm)`** takes the GOAL, not its functor (`# DIVERGES`). A goal whose
+  head is not a symbol (`$expr/n`) has no functor: it is a call through the meta-call (V9), and it is
+  refused with `CallableTypeError` (`type_error(callable, Goal)`). So are the other goals
+  compileSubClause finds `NOT_CALLABLE` (c:3464-3559), probed in swipl 10.1.16: a number, a string,
+  `[]`; `'[]'` and a compound named `[]` are callable. The branch preferring an ISO `system`
+  predicate is deferred to V5.
+* **Call operands index the clause's PROCEDURE TABLE** (`clause.procedures`, built by
+  `addProcedure!`, 1-based), as literal operands index the literal table (`# DIVERGES`: upstream's
+  operand is the `Procedure` pointer). Decoding stays local to the clause. A differential compares
+  procedures by name and arity, never by index. Nothing emits `I_CALL` until V2.
+* **`compileClause(gd, head, body, proc, m)`** now has upstream's parameters: the procedure and the
+  module, and `body` (`nothing`: the rule path is V2). `compileInfo` gains upstream's `module`
+  (`module_`) and `procedure`.
+* **`Output_3!`, `Output_an!`, `Output_n!` in full:** the operands are a tuple where upstream passes
+  a pointer.
+* **`B_FUNCTOR`'s literal needs nothing new.** Upstream gives `B_FUNCTOR`/`B_RFUNCTOR` the SAME
+  functor operand as `H_FUNCTOR`; only the opcode follows `where & A_HEAD` (c:3208-3213). L2's
+  operand already names the literal that holds the head SYMBOL TERM, which is what construction
+  needs. `$expr/n` (literal 0) constructs from its n children, the head being argument 0. EMITTING
+  `B_FUNCTOR` is the body side of `compileArgument`, which is V2: alone it would leave the children
+  compiled as `H_*`.
+* **The remaining `compileInfo`/`clause` fields** belong to subsystems not yet ported. `compileInfo`
+  lacks `islocal`, `subclausearg`, `head_unify`, `argvars`, `argvar` (V9), `cut` (V6), the warnings,
+  `progress` and the module contexts. `clause` lacks the source-file fields, `references` and
+  `tr_erased_no`; `code_size` is `length(codes)`.
 
 **Q2 — a reserved `$expr/n` functor: APPROVED**, marked `# DIVERGES`. Its standard-order position is
 defined explicitly: with the other compounds, by arity then name, as `compareStandard` already orders

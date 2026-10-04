@@ -109,6 +109,13 @@ function _hcount!(c::Dict{UInt64, Int}, t)::Dict{UInt64, Int}
     return c
 end
 
+"`head` compiled as a clause of its predicate in this file's database (never asserted)."
+function _hclause(head::_H)::LK.Clause{_H}
+    user = LK.MODULE_user(_HGD)
+    proc = LK.lookupProcedure(sym_key(child(head, 1)), nchildren(head) - 1, user)
+    return LK.compileClause(_HGD, head, nothing, proc, user)
+end
+
 """
 The kernel's head code of `head`: instruction names, with the operands where both systems mean
 the same thing — `h_void_n(N)` its count, `h_var(N)`/`h_firstvar(N)` the frame slot — and, since
@@ -116,15 +123,13 @@ V1 L2, every LITERAL by value from the clause's literal table (`_hlit`) and ever
 head symbol's literal and its arity: the table's INDICES are the kernel's own and never compared.
 """
 function _hcode(head::_H)::Vector{String}
-    def = LK.lookupProcedure(_H, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    cl = LK.compileClause(_HGD, def, head)
+    cl = _hclause(head)
     return _hcode_of(cl.codes, cl.literals)
 end
 
 "The frame size the kernel compiles `head` to: the clause's `variables` (and `prolog_vars`)."
 function _hframe(head::_H)::Tuple{Int, Int}
-    def = LK.lookupProcedure(_H, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    cl = LK.compileClause(_HGD, def, head)
+    cl = _hclause(head)
     return (Int(cl.variables), Int(cl.prolog_vars))
 end
 

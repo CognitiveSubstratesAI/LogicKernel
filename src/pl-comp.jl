@@ -118,12 +118,19 @@ mutable struct branch_var
 end
 
 # PORT: pl-comp.c compileInfo
-# DIVERGES: the fields the head compiler and the variable analysis use; `vardefs` is upstream's
-# LD->comp.vardefs keyed by `var_key`, `mstate_candidates`/`mstate_merge_pos` are `mstate`,
-# `used_var` is the VarTable, `branch_vars` is `nothing` or the vector upstream keeps in
-# `branch_varbuf`, and `literals` the clause's literal table as it is built (V1 L2).
+# DIVERGES: the fields the head compiler, the variable analysis and the call operands use;
+# `vardefs` is upstream's LD->comp.vardefs keyed by `var_key`, `mstate_candidates`/
+# `mstate_merge_pos` are `mstate`, `used_var` is the VarTable (`vartablesize` its length),
+# `branch_vars` is `nothing` or the vector upstream keeps in `branch_varbuf`, `literals` the
+# clause's literal table as it is built (V1 L2), and `procedures` its procedure table (V1). No
+# `clause` (the clause is created after the code), and the fields of subsystems not yet ported:
+# `islocal`, `subclausearg`, `head_unify`, `argvars`, `argvar` (V9), `singletons` and the warnings,
+# `progress` (interrupts), `cut` (V6), `colon_context` and `at_context` (modules). `module_` is
+# upstream's `module`, a Julia keyword.
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
 mutable struct compileInfo{T}
+    const module_::module_t{T}                              # module: module to compile into
+    const procedure::Procedure{T}                           # Procedure it belongs to
     arity::Int                                              # arity of top-goal
     codes::Vector{code}                                     # scratch code table
     vardefs::Dict{UInt64, VarDef}                           # variables with a slot
@@ -131,13 +138,18 @@ mutable struct compileInfo{T}
     mstate_candidates::Union{Nothing, NTuple{4, vmi_merge}} # Merge candidates
     mstate_merge_pos::Int                                   # The merge candidate location
     literals::Vector{T}                                     # the literal table being built
+    procedures::Vector{Procedure{T}}                        # the procedure table being built
     branch_vars::Union{Nothing, Vector{branch_var}}         # We are in a branch
 end
 
-"A fresh compilation of a clause of a predicate with `arity` arguments (pl-comp.c `compileClause`)."
-compileInfo{T}(arity::Int) where {T} =
+"""
+A fresh compilation, into module `m`, of a clause of procedure `proc`, whose predicate has `arity`
+arguments (pl-comp.c `compileClause`).
+"""
+compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
     compileInfo{T}(
-        arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[], nothing
+        m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
+        Procedure{T}[], nothing
     )
 
 # PORT: pl-comp.c pushBranchVar
@@ -191,7 +203,7 @@ function mergeInstructions!(ci::compileInfo, m::NTuple{4, vmi_merge}, c::code)::
             if mm.how == VMI_REPLACE
                 resize!(ci.codes, ci.mstate_merge_pos)          # seekBuffer(&ci->codes, merge_pos)
                 ci.mstate_candidates = nothing
-                Output_n!(ci, mm.merge_op, mm.merge_av, mm.merge_ac)
+                Output_n!(ci, mm.merge_op, (mm.merge_av,), mm.merge_ac)
                 return true
             elseif mm.how == VMI_STEP_ARGUMENT
                 ci.codes[ci.mstate_merge_pos + 2] += 1         # OpCode(ci, merge_pos+1)++
@@ -245,14 +257,31 @@ function Output_2!(ci::compileInfo, c::code, a0::code, a1::code)::Nothing
     return nothing
 end
 
-# PORT: pl-comp.c Output_n
-# DIVERGES: at most one operand — the only merge with an operand is `H_VOID_N 2`.
-"Emit instruction `c` with `n` (0 or 1) operands (pl-comp.c)."
-function Output_n!(ci::compileInfo, c::code, p::code, n::Int)::Nothing
-    Output_0!(ci, c)
-    if n == 1
-        Output_a!(ci, p)
+# PORT: pl-comp.c Output_3
+"Emit instruction `c` with three operands (pl-comp.c)."
+function Output_3!(ci::compileInfo, c::code, a0::code, a1::code, a2::code)::Nothing
+    Output_2!(ci, c, a0, a1)
+    Output_a!(ci, a2)
+    return nothing
+end
+
+# PORT: pl-comp.c Output_an
+# DIVERGES: `p` is a tuple of operand words where upstream passes a pointer to them.
+"Emit the first `n` operand words of `p` (pl-comp.c)."
+function Output_an!(ci::compileInfo, p::NTuple{N, code}, n::Int)::Nothing where {N}
+    0 <= n <= N || throw(ArgumentError("Output_an: $n operands of $N"))
+    for i in 1:n
+        push!(ci.codes, p[i])
     end
+    return nothing
+end
+
+# PORT: pl-comp.c Output_n
+# DIVERGES: `p` is a tuple of operand words where upstream passes a pointer to them.
+"Emit instruction `c` with the first `n` operand words of `p` (pl-comp.c)."
+function Output_n!(ci::compileInfo, c::code, p::NTuple{N, code}, n::Int)::Nothing where {N}
+    Output_0!(ci, c)
+    Output_an!(ci, p, n)
     return nothing
 end
 
@@ -639,6 +668,78 @@ function addLiteral!(ci::compileInfo{T}, t::T)::code where {T}
     return code(length(ci.literals))
 end
 
+# ── procedure operands (V1) ─────────────────────────────────────────────────────────────────────
+# DIVERGES (user, 2026-10-04): upstream's call operand (`CA1_PROC`: `I_CALL`, `I_DEPART`, `I_LCALL`,
+# …) is the `Procedure` pointer itself (`ptr2code(proc)`, c:3604-3630). Here it is an index into
+# the clause's PROCEDURE TABLE (`clause.procedures`, 1-based), as a literal operand indexes the
+# literal table: decoding a clause's code needs nothing outside the clause. Every entry is the
+# database's own procedure — the one `lookupBodyProcedure` returns — so two clauses calling `p/1`
+# hold the same `Procedure`; a differential compares procedures by name and arity, never by index.
+"Append `proc` to the procedure table being built; its index, as an operand (V1)."
+function addProcedure!(ci::compileInfo{T}, proc::Procedure{T})::code where {T}
+    push!(ci.procedures, proc)
+    return code(length(ci.procedures))
+end
+
+"""
+    CallableTypeError{T}(culprit)
+
+Raised where SWI-Prolog raises `error(type_error(callable, Culprit), _)`: a body goal that is not
+callable (pl-comp.c `NOT_CALLABLE`).
+"""
+struct CallableTypeError{T} <: Exception
+    culprit::T
+end
+
+"""
+The functor `(name sym_key, arity)` of a callable body goal — a text atom, or a compound whose name
+is a text atom or `[]` — or `nothing` (pl-comp.c `compileSubClause`, c:3464-3559).
+"""
+function _body_functor(goal)::Union{Nothing, Tuple{UInt64, Int}}
+    if kind(goal) === EXPR
+        nchildren(goal) >= 1 || return nothing                 # `$expr/0`: no head
+        h = child(goal, 1)
+        kind(h) === SYM || return nothing                      # `$expr/n`: the meta-call (V9)
+        # !isTextAtom(fdef->name) && fdef->name != ATOM_nil
+        is_reserved_symbol(h) && !is_nil(h) && return nothing
+        return (sym_key(h), nchildren(goal) - 1)
+    elseif kind(goal) === SYM
+        is_reserved_symbol(goal) && return nothing             # isTextAtom(*arg): not `[]`
+        return (sym_key(goal), 0)
+    end
+    return nothing                                             # a number, a string, a variable
+end
+
+# PORT: pl-comp.c lookupBodyProcedure
+# DIVERGES: takes the GOAL, not its functor — a goal whose head is not a symbol (`$expr/n`, Q2)
+# has no functor; it is a call through the meta-call (V9), so it is refused here with
+# `type_error(callable, Goal)`, as are the other goals compileSubClause finds NOT_CALLABLE (a
+# number, a string, `[]`, a compound named by a reserved symbol other than `[]`; probed in swipl
+# 10.1.16: `assertz((p :- 1))`, `(p :- "s")`, `(p :- [])` raise it, `(p :- '[]')` does not) (user,
+# 2026-10-04). No `system` module until built-ins are registered there (V5), so the branch that
+# prefers an ISO system predicate is not ported; with one module, every other path ends in the
+# module's procedure table.
+"""
+    lookupBodyProcedure(gd, goal, tm) -> Procedure{T}
+
+The procedure body goal `goal` calls in module `tm` of the database whose global data is `gd`: the
+current one if it is defined or redefined, else the one `lookupProcedure` finds or creates
+(pl-comp.c). Throws [`CallableTypeError`](@ref) for a goal that is not callable.
+"""
+function lookupBodyProcedure(
+    gd::PL_global_data{T}, goal::T, tm::module_t{T}
+)::Procedure{T} where {T}
+    f = _body_functor(goal)
+    f === nothing && throw(CallableTypeError{T}(goal))
+    name, arity = f
+    proc = isCurrentProcedure(name, arity, tm)
+    if proc !== nothing &&
+        (isDefinedProcedure(gd, proc) || (proc.definition.flags & P_REDEFINED) != 0)
+        return proc
+    end
+    return lookupProcedure(name, arity, tm)
+end
+
 const _OPERAND_HALF = code(typemax(UInt32))
 
 "The `H_FUNCTOR`/`H_RFUNCTOR` operand naming literal `i` (0: `\$expr/n`) and `arity` (V1 L2)."
@@ -825,26 +926,30 @@ function _compile_clause_head!(
 end
 
 # PORT: pl-comp.c compileClause
-# DIVERGES: a fact only (no body: `I_EXITFACT`, `UNIT_CLAUSE`), and no module, warnings or
-# resource limits. The clause is created at generation 0; `assertDefinition!` sets the rest. The
-# database's global data `gd` is an argument, where upstream reaches GD — its functor table, the
-# `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl).
+# DIVERGES: a fact only — `body` is `nothing` (upstream: the body `true`), and the rule path
+# (`I_ENTER` … `I_EXIT`) is V2 — and no warnings, flags or resource limits; the clause is returned
+# where upstream stores it through `cp`. The clause is created at generation 0;
+# `assertDefinition!` sets the rest. The database's global data `gd` is an argument, where
+# upstream reaches GD — its functor table, the `CONTROL_F` flags the analysis reads — as a global
+# (src/pl-global.jl). `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
 """
-    compileClause(gd, def, head) -> Clause
+    compileClause(gd, head, body, proc, m) -> Clause
 
-Compile the fact `head` of predicate `def` in the database whose global data is `gd`: analyse its
-variables, emit the code for each argument left to right, end with `I_EXITFACT` (pl-comp.c). The
-clause keeps the code and the literal table its operands index (V1 L2).
+Compile the fact `head` (`body` is `nothing`) of procedure `proc` into module `m`, in the database
+whose global data is `gd`: analyse its variables, emit the code for each argument left to right,
+end with `I_EXITFACT` (pl-comp.c). The clause keeps the code, the literal table its operands index
+(V1 L2) and the procedure table its call operands index (V1; empty for a fact).
 """
 function compileClause(
-    gd::PL_global_data{T}, def::Definition{T}, head::T
+    gd::PL_global_data{T}, head::T, body::Nothing, proc::Procedure{T}, m::module_t{T}
 )::Clause{T} where {T}
-    ci = compileInfo{T}(def.arity)
-    nv = _compile_clause_head!(gd, ci, head, nothing)
+    def = proc.definition                                      # getProcDefinition(proc)
+    ci = compileInfo{T}(def.arity, m, proc)
+    nv = _compile_clause_head!(gd, ci, head, body)
     Output_0!(ci, I_EXITFACT)                                  # fact (for decompiler)
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), UNIT_CLAUSE, ci.codes,
-        ci.literals
+        ci.literals, ci.procedures
     )
 end
 

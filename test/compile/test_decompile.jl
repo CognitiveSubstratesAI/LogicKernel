@@ -28,10 +28,11 @@ _de(f, xs::_D...) = mk_expr(_D, _D[_ds(f), xs...])
 _dv(k::Int) = lk_var(_D, UInt64(k))
 _dcons(h::_D, t::_D) = mk_expr(_D, _D[_ds("[|]"), h, t])
 
-"`head` compiled as a clause of a fresh predicate."
+"`head` compiled as a clause of its predicate in this file's database (never asserted)."
 function _dclause(head::_D)::LK.Clause{_D}
-    def = LK.lookupProcedure(_D, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    return LK.compileClause(_DGD, def, head)
+    user = LK.MODULE_user(_DGD)
+    proc = LK.lookupProcedure(sym_key(child(head, 1)), nchildren(head) - 1, user)
+    return LK.compileClause(_DGD, head, nothing, proc, user)
 end
 
 "Compile `head`, then decompile it into `name(_, …, _)`: the head the code describes."

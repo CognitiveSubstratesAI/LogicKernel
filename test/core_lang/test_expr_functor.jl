@@ -36,10 +36,11 @@ _qcmp(a, b) = compareStandard(a, b)
 const _QVM_WIRED = false
 _qvm_call(pr, goal)::Union{Nothing, Vector{_Q}} = nothing
 
-"`head` compiled as a clause of a fresh predicate."
+"`head` compiled as a clause of its predicate in this file's database (never asserted)."
 function _qclause(head::_Q)::LK.Clause{_Q}
-    def = LK.lookupProcedure(_Q, sym_key(child(head, 1)), nchildren(head) - 1, UInt64(0))
-    return LK.compileClause(_QGD, def, head)
+    user = LK.MODULE_user(_QGD)
+    proc = LK.lookupProcedure(sym_key(child(head, 1)), nchildren(head) - 1, user)
+    return LK.compileClause(_QGD, head, nothing, proc, user)
 end
 
 "The head code of `head` (a clause of a fresh predicate): `(instruction name, operands...)`."

@@ -86,12 +86,28 @@ const P_DYNAMIC = FLAG64(10)
 # PORT: pl-incl.h P_THREAD_LOCAL
 "Predicate flag: thread-local predicate (pl-incl.h)."
 const P_THREAD_LOCAL = FLAG64(11)
+# PORT: pl-incl.h P_DISCONTIGUOUS
+"Predicate flag: clauses are not together (pl-incl.h)."
+const P_DISCONTIGUOUS = FLAG64(14)
 # PORT: pl-incl.h P_MULTIFILE
 "Predicate flag: clauses are in multiple files (pl-incl.h)."
 const P_MULTIFILE = FLAG64(15)
 # PORT: pl-incl.h P_DIRTYREG
 "Predicate flag: registered as dirty (pl-incl.h)."
 const P_DIRTYREG = FLAG64(23)
+# PORT: pl-incl.h P_LOCKED_SUPERVISOR
+"Predicate flag: fixed supervisor (pl-incl.h)."
+const P_LOCKED_SUPERVISOR = FLAG64(31)
+# PORT: pl-incl.h P_REDEFINED
+"Predicate flag: overrules a definition (pl-incl.h)."
+const P_REDEFINED = FLAG64(33)
+# PORT: pl-incl.h P_TRANSACT
+"Predicate flag: subject to transactions (pl-incl.h)."
+const P_TRANSACT = FLAG64(35)
+# PORT: pl-incl.h PROC_DEFINED
+"The predicate flags that make a predicate defined without clauses (pl-incl.h)."
+const PROC_DEFINED =
+    P_DYNAMIC | P_FOREIGN | P_MULTIFILE | P_DISCONTIGUOUS | P_LOCKED_SUPERVISOR
 # PORT: pl-incl.h P_MODIFIED
 "Predicate flag: the clause list is modified (pl-incl.h)."
 const P_MODIFIED = FLAG64(36)
@@ -215,14 +231,28 @@ mutable struct arg_info
 end
 arg_info() = arg_info(0.0f0, false, 0x00, false, 0x00)
 
+# PORT: pl-incl.h procedure
+# DIVERGES: no `source_no` (source files are not ported). D is the predicate's type —
+# `definition{T}` — a parameter only to break the struct cycle with `clause`.
+"A procedure (pl-incl.h `struct procedure`): the predicate a functor names in a module."
+mutable struct procedure{D}
+    definition::D           # definition of procedure
+    flags::UInt32           # PROC_WEAK
+end
+
 # PORT: pl-incl.h clause
 # DIVERGES: besides its VM code the clause keeps its LITERAL TABLE (`literals`, decision 2, V1 L2):
 # the terms its literal operands index, each exactly as it stood in the clause — upstream's operands
-# hold the atom, functor or number itself. D is the predicate's type — `definition{T}` — a
-# parameter only to break the struct cycle.
+# hold the atom, functor or number itself — and its PROCEDURE TABLE (`procedures`, V1): the
+# procedures its call operands (`I_CALL`, `I_DEPART`, …) index, where upstream's operand is the
+# `Procedure` pointer itself (user, 2026-10-04: decoding stays local to the clause, as with the
+# literals). No source-file fields (`line_no`, `source_no`, `owner_no`), no `references` (no
+# reference-counted clause references) and no `tr_erased_no` (transactions); `code_size` is the
+# length of `codes`. D is the predicate's type — `definition{T}` — a parameter only to break the
+# struct cycle.
 """
-A clause (pl-incl.h `struct clause`): its predicate, generations, frame size, flags, VM code and
-the literals that code refers to.
+A clause (pl-incl.h `struct clause`): its predicate, generations, frame size, flags, VM code, and
+the literals and procedures that code refers to.
 """
 mutable struct clause{T, D}
     predicate::D                    # Predicate I belong to
@@ -233,6 +263,7 @@ mutable struct clause{T, D}
     flags::UInt32                   # Flag field holding CL_* flags
     codes::Vector{code}             # VM codes of clause
     literals::Vector{T}             # the terms the codes' literal operands index
+    procedures::Vector{procedure{D}}    # the procedures the codes' call operands index
 end
 
 "The start of `cl`'s code (upstream's `PC = cl->codes`), with its literal table."
@@ -315,6 +346,18 @@ mutable struct definition{T}
     flags::UInt64                                           # booleans (P_*)
 end
 
+# PORT: pl-incl.h module as module_t
+# DIVERGES: a module's name and its procedure table only — no source file, public list,
+# operators, super modules, lingering definitions, code size or flags. The kernel has ONE module
+# per database, `user` (see `MODULE_user`, src/pl-global.jl): modules are not ported. The table is
+# keyed by the FUNCTOR — upstream's `functor_t`, here the name's `sym_key` and the arity. Named
+# `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword and `Module` Core's.
+"A module (pl-incl.h `struct module`): its name and the procedures defined in it."
+struct module_t{T}
+    name::UInt64                                                # name of module, as a sym_key
+    procedures::Dict{Tuple{UInt64, Int}, procedure{definition{T}}}  # predicates of the module
+end
+
 # PORT: pl-incl.h clause_choice
 "Where a clause search resumes (pl-incl.h `struct clause_choice`)."
 mutable struct clause_choice{R}
@@ -344,6 +387,9 @@ const Definition{T} = definition{T}
 # PORT: pl-incl.h ClauseChoice
 "A clause choice of terms `T` (pl-incl.h `ClauseChoice`)."
 const ClauseChoice{T} = clause_choice{ClauseRef{T}}
+# PORT: pl-incl.h Procedure
+"A procedure of terms `T` (pl-incl.h `Procedure`)."
+const Procedure{T} = procedure{definition{T}}
 
 # ── clause garbage collection: dirty predicates and predicate access (pl-incl.h) ────────────────
 # PORT: pl-incl.h GLOBALLY_VISIBLE_CLAUSE

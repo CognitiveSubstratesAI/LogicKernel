@@ -28,10 +28,11 @@ using LogicKernel:
     Undo!,
     PL_global_data,
     lookupProcedure,
+    setDynamicDefinition!,
+    MODULE_user,
     compileClause,
     assertDefinition!,
     pl_clause!,
-    P_DYNAMIC,
     CL_END
 
 # ── fixtures: the same terms in Julia and in Prolog ─────────────────────────────────────────────
@@ -72,11 +73,14 @@ const SMALL_A, SMALL_B = mk_expr(BT, BT[_a(:f), _v()]), mk_expr(BT, BT[_a(:f), _
 
 # a dynamic predicate cp/2 of 1000 facts cp(I, a), for clause/2 — Prolog `cp/2` below
 const CP_GD = PL_global_data{BT}()
-const CP_DEF = lookupProcedure(BT, sym_key(_a(:cp)), 2, P_DYNAMIC)
+const CP_USER = MODULE_user(CP_GD)
+const CP_PROC = lookupProcedure(sym_key(_a(:cp)), 2, CP_USER)
+const CP_DEF = CP_PROC.definition
+setDynamicDefinition!(CP_DEF, true)                            # :- dynamic cp/2.
+_cp_compile(h::BT) = compileClause(CP_GD, h, nothing, CP_PROC, CP_USER)
 for i in 1:1000
     assertDefinition!(
-        CP_GD, CP_DEF,
-        compileClause(CP_GD, CP_DEF, mk_expr(BT, BT[_a(:cp), gnd_term(BT, i), _a(:a)])),
+        CP_GD, CP_DEF, _cp_compile(mk_expr(BT, BT[_a(:cp), gnd_term(BT, i), _a(:a)])),
         CL_END
     )
 end
@@ -89,6 +93,7 @@ _cons(h::BT, t::BT)::BT = mk_expr(BT, BT[_a(Symbol("[|]")), h, t])
 const APP_H, APP_T, APP_L, APP_R = _v(), _v(), _v(), _v()
 const APP_HEAD = mk_expr(BT, BT[_a(:app), _cons(APP_H, APP_T), APP_L, _cons(APP_H, APP_R)])
 const APP_BODY = mk_expr(BT, BT[_a(:app), APP_T, APP_L, APP_R])
+const APP_PROC = lookupProcedure(sym_key(_a(:app)), 3, CP_USER)
 
 const PROLOG_FIXTURES = """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
@@ -123,11 +128,11 @@ const CASES = [
         "forall(clause(cp(_, _), true), true)"
     ),
     # Julia only (no swipl goal): compiling a fact, and a rule clause's head with its analysis
-    ("compileClause fact", () -> compileClause(CP_GD, CP_DEF, CC_FACT), ""),
+    ("compileClause fact", () -> _cp_compile(CC_FACT), ""),
     (
         "rule head + analysis",
         () -> LogicKernel._compile_clause_head!(
-            CP_GD, LogicKernel.compileInfo{BT}(3), APP_HEAD, APP_BODY
+            CP_GD, LogicKernel.compileInfo{BT}(3, CP_USER, APP_PROC), APP_HEAD, APP_BODY
         ),
         ""
     ),
