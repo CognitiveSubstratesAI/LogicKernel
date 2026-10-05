@@ -299,13 +299,15 @@ _word_in(name, text) =
 function inventory_table(files::Vector{SourceFile})::String
     rows = String[]
     for f in files, u in f.upstreams
-        n = count(m -> m.upstream_base == basename(u.path), f.markers)     # markers naming THIS file
+        mine = filter(m -> m.upstream_base == basename(u.path), f.markers)  # markers naming THIS file
+        n, k = length(mine), count(m -> m.diverges, mine)
         push!(
-            rows, "| $(u.repo) `$(u.path)` | $(f.class) | `$(u.commit)` | `$(f.rel)` | $n |"
+            rows,
+            "| $(u.repo) `$(u.path)` | $(f.class) | `$(u.commit)` | `$(f.rel)` | $n | $k |"
         )
     end
     sort!(rows)
-    head = "| upstream file | class | upstream commit | kernel file | ported units |\n|---|---|---|---|---|"
+    head = "| upstream file | class | upstream commit | kernel file | ported units | diverging |\n|---|---|---|---|---|---|"
     return join([head; rows], "\n")
 end
 
@@ -393,6 +395,240 @@ function _check_dirs!(v::Vector{String}, root::String)
     end
 end
 
+# ── M1: LogicKernel's own code map, GENERATED (port_inventory.md row M1) ─────────────────────────
+# `--write-inventory` writes three generated blocks and `port_check` holds each to its generator:
+#   * the inventory table (above), now with a `diverging` column — from the headers and markers,
+#     checked everywhere, CI included;
+#   * COVERAGE (docs/port_inventory.md): per upstream file AT ITS RECORDED COMMIT, how many of its
+#     functions carry a `# PORT:` marker, of how many, and how many of those diverge. Counting
+#     upstream's functions needs the checkout, so this block is recomputed and compared only where
+#     every checkout it names is found (as upstream existence is); without one it must still be
+#     present and non-empty. Upstream drift (commits since) is NOT a block — it moves whenever the
+#     checkout is pulled — and stays tools/upstream_drift.jl's report;
+#   * the CODE GRAPH (docs/architecture.md): src/ in include order, an edge where a file uses a name
+#     another file defines — checked everywhere.
+# And the hand-kept "What is here now" table (docs/architecture.md, it drifted on 2026-10-03) is
+# CHECKED: every src/ and bench/ file listed, every listed file present, each row's upstream column
+# naming exactly its files' UPSTREAM headers. Every block goes through ONE extractor (`_section`)
+# on both sides, and both sides must be non-empty.
+const COVERAGE_BEGIN = "<!-- BEGIN GENERATED coverage by tools/port_check.jl --write-inventory — do not hand-edit -->"
+const COVERAGE_END = "<!-- END GENERATED coverage -->"
+const GRAPH_BEGIN = "<!-- BEGIN GENERATED code graph by tools/port_check.jl --write-inventory — do not hand-edit -->"
+const GRAPH_END = "<!-- END GENERATED code graph -->"
+const WHATS_HERE_HEADING = "## What is here now"
+
+# ⚠️ The upstream function list is a HEURISTIC, by language: C — an identifier at column 0
+# followed by `(` on a line not ending in `;` (SWI's style puts the return type on the line above),
+# plus `PRED_IMPL("name", …)` and pl-vmi.c's `VMI(NAME, …)` instructions; Prolog — clause heads at column 0; Rust — `fn name`. Good enough to
+# rank what is left; never a reason to claim something "is not upstream" — the exact word search
+# above is the authority for that.
+"Function/predicate names defined in an upstream source text (heuristic, see the header)."
+function upstream_names(path::AbstractString, text::AbstractString)::Vector{String}
+    names = String[]
+    if occursin(r"\.(c|h)$", path)
+        for l in eachline(IOBuffer(text))
+            m = match(r"^([A-Za-z_]\w*)\s*\(", l)
+            m !== nothing && !endswith(rstrip(l), ";") && !startswith(l, "PRED_IMPL") &&
+                !startswith(l, "VMI(") && push!(names, m[1])
+            m = match(r"^VMI\((\w+)\s*,", l)                   # pl-vmi.c: an instruction
+            m === nothing || push!(names, m[1])
+            m = match(r"^PRED_IMPL\(\"([^\"]+)\"", l)
+            m === nothing || push!(names, m[1])
+        end
+    elseif endswith(path, ".pl")
+        for l in eachline(IOBuffer(text))
+            m = match(r"^'?(\$?[a-z][A-Za-z0-9_]*)'?\s*(\(|:-|-->|\.)", l)
+            m === nothing || push!(names, m[1])
+        end
+    elseif endswith(path, ".rs")
+        for m in eachmatch(r"\bfn\s+([A-Za-z_]\w*)", text)
+            push!(names, m[1])
+        end
+    end
+    return sort!(unique!(names))
+end
+
+"The content between `b` and `e` in `text`, stripped; `nothing` when either is missing or misordered."
+function _section(text::AbstractString, b::AbstractString, e::AbstractString)
+    i = findfirst(b, text)
+    j = findfirst(e, text)
+    (i === nothing || j === nothing || last(i) > first(j)) && return nothing
+    return String(strip(text[(last(i) + 1):(first(j) - 1)]))
+end
+
+"`gen` as `write_inventory` writes it between `b` and `e` — read back through `_section`."
+_wrapped(gen::AbstractString, b, e) = _section(string(b, "\n", gen, "\n", e), b, e)
+
+"""
+The coverage table: one row per upstream file (repo, path, recorded commit) — its functions with a
+`# PORT:` marker in any kernel file, of how many (`upstream_names` at that commit), how many of
+those diverge — and a total. `nothing` when a checkout it needs is missing.
+"""
+function coverage_table(
+    files::Vector{SourceFile}, upstream_dirs::Dict{String, String}
+)::Union{Nothing, String}
+    groups = Dict{Tuple{String, String, String}, Vector{SourceFile}}()
+    for f in files, u in f.upstreams
+        push!(get!(groups, (u.repo, u.path, u.commit), SourceFile[]), f)
+    end
+    rows = String[]
+    tn, tm, tk = 0, 0, 0
+    for key in sort!(collect(keys(groups)))
+        repo, path, commit = key
+        dir = get(upstream_dirs, repo, "")
+        ispath(joinpath(dir, ".git")) || return nothing
+        _git_ok(dir, "cat-file", "-e", commit * ":" * path) || return nothing
+        un = Set(upstream_names(path, _git_show(dir, commit * ":" * path)))
+        ported = Dict{String, Bool}()                     # function => some marker diverges
+        for f in groups[key], m in f.markers
+            (m.upstream_base == basename(path) && m.name in un) || continue
+            ported[m.name] = get(ported, m.name, false) || m.diverges
+        end
+        n, m, k = length(ported), length(un), count(values(ported))
+        kfiles = join(sort!(unique!([f.rel for f in groups[key]])), ", ")
+        push!(rows, "| $repo `$path` | `$commit` | $n | $m | $k | $kfiles |")
+        tn, tm, tk = tn + n, tm + m, tk + k
+    end
+    isempty(rows) && return ""
+    head = "| upstream file | upstream commit | functions ported | of | diverging | kernel file(s) |\n|---|---|---|---|---|---|"
+    return join([head; rows; "| **total** | | **$tn** | **$tm** | **$tk** | |"], "\n")
+end
+
+"The files `src/LogicKernel.jl` includes, in order."
+_include_order(root::AbstractString)::Vector{String} =
+    if isfile(joinpath(root, "src", "LogicKernel.jl"))
+        [
+            String(m[1]) for m in eachmatch(
+                r"^include\(\"([^\"]+)\"\)"m,
+                read(joinpath(root, "src", "LogicKernel.jl"), String)
+            )
+        ]
+    else
+        String[]
+    end
+
+"Every identifier token of `text` (code only: comments and strings are other tokens)."
+function _identifiers(text::AbstractString)::Set{String}
+    out = Set{String}()
+    for t in Base.JuliaSyntax.tokenize(text)
+        Base.JuliaSyntax.kind(t) == Base.JuliaSyntax.K"Identifier" || continue
+        push!(out, String(codeunits(text)[t.range]))
+    end
+    return out
+end
+
+"""
+The code graph of src/ as mermaid: the included files in include order, and an edge `a --> b`
+wherever `a` uses (as an identifier) a name `b` defines at top level. `""` when nothing is included.
+"""
+function code_graph(root::AbstractString)::String
+    order = _include_order(root)
+    isempty(order) && return ""
+    texts = Dict(f => read(joinpath(root, "src", f), String) for f in order)
+    definers = Dict{String, Set{Int}}()
+    for (i, f) in enumerate(order), (_, name) in definitions(texts[f], f)
+        push!(get!(definers, name, Set{Int}()), i)
+    end
+    id(f) = replace(replace(f, r"\.jl$" => ""), r"[^A-Za-z0-9]" => "_")
+    lines = ["```mermaid", "graph LR"]
+    foreach(f -> push!(lines, "    $(id(f))[\"$f\"]"), order)
+    edges = Set{Tuple{Int, Int}}()
+    for (i, f) in enumerate(order), name in _identifiers(texts[f]),
+        j in get(definers, name, Set{Int}())
+
+        j == i || push!(edges, (i, j))
+    end
+    for (i, j) in sort!(collect(edges))
+        push!(lines, "    $(id(order[i])) --> $(id(order[j]))")
+    end
+    push!(lines, "```")
+    return join(lines, "\n")
+end
+
+"Backticked spans of `cell`, with one `{a,b,…}` group expanded."
+function _cell_paths(cell::AbstractString)::Vector{String}
+    out = String[]
+    for m in eachmatch(r"`([^`]+)`", cell)
+        p = String(m[1])
+        b = match(r"^(.*)\{([^}]*)\}(.*)$", p)
+        if b === nothing
+            push!(out, p)
+        else
+            append!(out, [string(b[1], x, b[3]) for x in split(b[2], ",")])
+        end
+    end
+    return out
+end
+
+_glob_match(pat::AbstractString, s::AbstractString) =
+    occursin(Regex("^" * replace(_rx_escape(pat), "\\*" => "[^/]*") * "\$"), s)
+
+"""
+The hand-kept "What is here now" table of `arch` held to the headers: WHATS-HERE-EMPTY,
+-MISSING (a src/ or bench/ file not listed), -UNKNOWN (a listed file that does not exist),
+-UPSTREAM (a row's upstream column ≠ its files' UPSTREAM headers).
+"""
+function whats_here_violations(
+    root::String, files::Vector{SourceFile}, arch::AbstractString
+)::Vector{String}
+    v = String[]
+    text = read(joinpath(root, arch), String)
+    i = findfirst("\n" * WHATS_HERE_HEADING * "\n", text)
+    i === nothing && return ["WHATS-HERE-EMPTY $arch: no `$WHATS_HERE_HEADING` section"]
+    rest = text[(last(i) + 1):end]
+    j = findfirst(r"\n## ", rest)
+    sec = j === nothing ? rest : rest[1:first(j)]
+    byrel = Dict(f.rel => f for f in files)
+    listed = Set{String}()
+    nrows = 0
+    for l in eachline(IOBuffer(sec))
+        startswith(l, "| `") || continue
+        nrows += 1
+        a = findfirst(" | ", l)
+        z = findlast(" | ", l)
+        (a === nothing || z === nothing) && continue
+        paths = _cell_paths(l[3:(first(a) - 1)])
+        ups = String[]
+        for p in paths
+            push!(listed, p)
+            f = get(byrel, p, nothing)
+            f === nothing && !isfile(joinpath(root, p)) &&
+                push!(v, "WHATS-HERE-UNKNOWN $arch: `$p` is listed but does not exist")
+            f === nothing || append!(ups, [u.path for u in f.upstreams])
+        end
+        toks = filter(t -> occursin('/', t), _cell_paths(l[(last(z) + 1):end]))
+        ok =
+            all(u -> any(t -> _glob_match(t, u), toks), ups) &&
+            all(t -> any(u -> _glob_match(t, u), ups), toks)
+        ok || push!(
+            v,
+            "WHATS-HERE-UPSTREAM $arch: the row of $(join(paths, ", ")) names [$(join(toks, ", "))], the headers [$(join(unique(ups), ", "))]"
+        )
+    end
+    nrows == 0 && push!(v, "WHATS-HERE-EMPTY $arch: no rows in `$WHATS_HERE_HEADING`")
+    for f in files
+        (startswith(f.rel, "src/") || startswith(f.rel, "bench/")) && !(f.rel in listed) &&
+            push!(v, "WHATS-HERE-MISSING $arch: `$(f.rel)` is not listed")
+    end
+    return v
+end
+
+"A generated block of `doc` against its generator's output — DRIFT, or EMPTY on either side."
+function _block_violations(
+    code::String, doc::AbstractString, text::AbstractString, gen::AbstractString, b, e
+)::Vector{String}
+    have = _section(text, b, e)
+    want = _wrapped(gen, b, e)
+    have === nothing && return ["$code-MISSING $doc: no generated section ($b … $e)"]
+    isempty(want) &&
+        return ["$code-EMPTY generator: it produced nothing to check $doc against"]
+    isempty(have) && return ["$code-EMPTY $doc: the generated section is empty"]
+    have == want && return String[]
+    return [
+        "$code-DRIFT $doc: differs from its generator — run tools/port_check.jl --write-inventory"
+    ]
+end
+
 """
     port_check(pkgroot; upstream_dirs = default_upstream_dirs(), inventory = "docs/port_inventory.md")
         -> (; violations, files, existence_checked)
@@ -403,7 +639,8 @@ found; ports into any other repo were checked for structure only.
 """
 function port_check(pkgroot::AbstractString;
     upstream_dirs::Dict{String, String}=default_upstream_dirs(),
-    inventory::AbstractString="docs/port_inventory.md")
+    inventory::AbstractString="docs/port_inventory.md",
+    architecture::AbstractString="docs/architecture.md")
     root = abspath(pkgroot)
     v = String[]
     files = [read_source(root, rel, v) for rel in _scan_files(root)]
@@ -561,21 +798,82 @@ function port_check(pkgroot::AbstractString;
         )
         append!(v, vm_inventory_violations(read(inv, String), ported, inventory))
     end
-    return (; violations=v, files=files, existence_checked=sort!(collect(available)))
+    # M1: the coverage block (needs every checkout it names), the code graph, the "What is here
+    # now" table
+    coverage_checked = false
+    if isfile(inv)
+        invtext = read(inv, String)
+        cov = coverage_table(files, upstream_dirs)
+        if cov === nothing                  # no checkout: present and non-empty, not recomputed
+            sec = _section(invtext, COVERAGE_BEGIN, COVERAGE_END)
+            sec === nothing &&
+                push!(
+                    v,
+                    "COVERAGE-MISSING $inventory: no generated section ($COVERAGE_BEGIN … $COVERAGE_END)"
+                )
+            sec !== nothing && isempty(sec) &&
+                push!(v, "COVERAGE-EMPTY $inventory: the generated section is empty")
+        else
+            coverage_checked = true
+            append!(
+                v,
+                _block_violations(
+                    "COVERAGE", inventory, invtext, cov, COVERAGE_BEGIN, COVERAGE_END
+                )
+            )
+        end
+    end
+    arch = joinpath(root, architecture)
+    if !isfile(arch)
+        push!(v, "ARCHITECTURE-MISSING $architecture")
+    else
+        append!(
+            v,
+            _block_violations(
+                "CODE-GRAPH", architecture, read(arch, String), code_graph(root),
+                GRAPH_BEGIN,
+                GRAPH_END
+            )
+        )
+        append!(v, whats_here_violations(root, files, architecture))
+    end
+    return (;
+        violations=v, files=files, existence_checked=sort!(collect(available)),
+        coverage_checked=coverage_checked
+    )
 end
 
-"Rewrite the generated section of the inventory from the headers."
+"Replace the content between `b` and `e` in the file `path` with `gen`."
+function _write_section(path::AbstractString, b::AbstractString, e::AbstractString, gen)
+    text = read(path, String)
+    i = findfirst(b, text)
+    j = findfirst(e, text)
+    (i === nothing || j === nothing || last(i) > first(j)) &&
+        error("no generated section ($b … $e) in $path")
+    write(path, text[1:last(i)] * "\n" * gen * "\n" * text[first(j):end])
+    return nothing
+end
+
+"""
+Rewrite the generated sections from the sources: the inventory table and the coverage block
+(docs/port_inventory.md — coverage needs every upstream checkout) and the code graph
+(docs/architecture.md).
+"""
 function write_inventory(
-    pkgroot::AbstractString; inventory::AbstractString="docs/port_inventory.md"
+    pkgroot::AbstractString;
+    inventory::AbstractString="docs/port_inventory.md",
+    architecture::AbstractString="docs/architecture.md",
+    upstream_dirs::Dict{String, String}=default_upstream_dirs()
 )
     root = abspath(pkgroot)
-    files = port_check(root).files
+    files = port_check(root; upstream_dirs=upstream_dirs).files
     inv = joinpath(root, inventory)
-    text = read(inv, String)
-    i = findfirst(INVENTORY_BEGIN, text)
-    j = findfirst(INVENTORY_END, text)
-    (i === nothing || j === nothing) && error("no generated section in $inventory")
-    write(inv, text[1:last(i)] * "\n" * inventory_table(files) * "\n" * text[first(j):end])
+    _write_section(inv, INVENTORY_BEGIN, INVENTORY_END, inventory_table(files))
+    cov = coverage_table(files, upstream_dirs)
+    cov === nothing &&
+        error("the coverage block needs every upstream checkout the headers name")
+    _write_section(inv, COVERAGE_BEGIN, COVERAGE_END, cov)
+    _write_section(joinpath(root, architecture), GRAPH_BEGIN, GRAPH_END, code_graph(root))
     return inv
 end
 

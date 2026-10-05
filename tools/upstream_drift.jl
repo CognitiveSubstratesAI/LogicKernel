@@ -25,29 +25,7 @@ struct DriftRow
     ported::Vector{String}
 end
 
-"Function/predicate names defined in an upstream source text (heuristic, see the header)."
-function upstream_names(path::AbstractString, text::AbstractString)::Vector{String}
-    names = String[]
-    if occursin(r"\.(c|h)$", path)
-        for l in eachline(IOBuffer(text))
-            m = match(r"^([A-Za-z_]\w*)\s*\(", l)
-            m !== nothing && !endswith(rstrip(l), ";") && !startswith(l, "PRED_IMPL") &&
-                push!(names, m[1])
-            m = match(r"^PRED_IMPL\(\"([^\"]+)\"", l)
-            m === nothing || push!(names, m[1])
-        end
-    elseif endswith(path, ".pl")
-        for l in eachline(IOBuffer(text))
-            m = match(r"^'?(\$?[a-z][A-Za-z0-9_]*)'?\s*(\(|:-|-->|\.)", l)
-            m === nothing || push!(names, m[1])
-        end
-    elseif endswith(path, ".rs")
-        for m in eachmatch(r"\bfn\s+([A-Za-z_]\w*)", text)
-            push!(names, m[1])
-        end
-    end
-    return sort!(unique!(names))
-end
+# `upstream_names` (the heuristic above) lives in tools/port_check.jl, whose code map counts with it.
 
 function upstream_drift(
     pkgroot::AbstractString; upstream_dirs::Dict{String, String}=default_upstream_dirs()

@@ -200,6 +200,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 
 | file | what | upstream |
 |---|---|---|
+| `src/LogicKernel.jl` | the module entry file: the include order (the code graph below follows it) and the exports (ORIGINAL) | — |
 | `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation) | — |
 | `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain; UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
@@ -210,16 +211,16 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/term_under_test.jl` | the implementation a TERM-GENERIC test runs on (`lk_term_type`, `lk_sym`, …); `test/runtests.jl` runs every file that includes it once per implementation, the others as `<file> [alt]` and `<file> [alt_interned]` | — |
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
-| `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c`, `src/pl-inline.h` |
+| `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
-| `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-codetable.c` |
+| `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail and the `occurs_check` flag | `src/pl-global.h` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail and the `occurs_check` flag | `src/pl-global.h`, `src/pl-incl.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `Trail!`, `Mark`, `Undo!` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
-| `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c` |
+| `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c`, `src/pl-hash.h` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
 | `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
 | `test/db/test_procedures.jl` | V1's predicate table: one procedure per functor and database, `[]` apart from `'[]'`, `:- dynamic`, defined = a `PROC_DEFINED` flag or a clause visible now | — |
@@ -254,6 +255,130 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/compile/code_testlib.jl` | how both code differentials write an instruction, the kernel's and swipl's alike: operands by meaning, literals by value | — |
 | `tools/githooks/commit-msg` | git's commit-msg hook: a commit message must start with a category (`ADDED:` … `UPSTREAM:`); installed with `git config core.hooksPath tools/githooks` | — |
 | `test/test_commit_msg_hook.jl` | the commit-msg hook's contract, both sides (26 cases) | — |
+
+## Code graph — src/, generated (M1)
+
+The source files in include order (src/LogicKernel.jl) and an edge `a --> b` wherever `a` uses a
+name `b` defines at top level — the whole package is one module, so a use may point at a file
+included later (late binding). Regenerated by `tools/port_check.jl --write-inventory`; `port_check`
+holds this block to its generator, here and in CI. The subsystem graph below groups upstream files;
+this one is the code.
+
+<!-- BEGIN GENERATED code graph by tools/port_check.jl --write-inventory — do not hand-edit -->
+```mermaid
+graph LR
+    term_interface["term_interface.jl"]
+    default_term["default_term.jl"]
+    pl_hash["pl-hash.jl"]
+    pl_incl["pl-incl.jl"]
+    pl_termwalk["pl-termwalk.jl"]
+    pl_vmi["pl-vmi.jl"]
+    pl_index["pl-index.jl"]
+    pl_funct["pl-funct.jl"]
+    pl_global["pl-global.jl"]
+    pl_inline["pl-inline.jl"]
+    pl_prims["pl-prims.jl"]
+    pl_ressymbol["pl-ressymbol.jl"]
+    pl_comp["pl-comp.jl"]
+    pl_variant["pl-variant.jl"]
+    pl_termhash["pl-termhash.jl"]
+    pl_thread["pl-thread.jl"]
+    pl_gc["pl-gc.jl"]
+    pl_proc["pl-proc.jl"]
+    precompile_workload["precompile_workload.jl"]
+    term_interface --> default_term
+    default_term --> term_interface
+    default_term --> pl_prims
+    pl_hash --> default_term
+    pl_incl --> default_term
+    pl_termwalk --> term_interface
+    pl_termwalk --> default_term
+    pl_termwalk --> pl_inline
+    pl_termwalk --> pl_comp
+    pl_vmi --> default_term
+    pl_vmi --> pl_incl
+    pl_index --> term_interface
+    pl_index --> default_term
+    pl_index --> pl_hash
+    pl_index --> pl_incl
+    pl_index --> pl_vmi
+    pl_index --> pl_inline
+    pl_index --> pl_ressymbol
+    pl_index --> pl_comp
+    pl_index --> pl_proc
+    pl_funct --> term_interface
+    pl_funct --> default_term
+    pl_global --> term_interface
+    pl_global --> default_term
+    pl_global --> pl_incl
+    pl_global --> pl_termwalk
+    pl_global --> pl_index
+    pl_global --> pl_funct
+    pl_inline --> term_interface
+    pl_inline --> default_term
+    pl_inline --> pl_incl
+    pl_inline --> pl_global
+    pl_prims --> term_interface
+    pl_prims --> default_term
+    pl_prims --> pl_incl
+    pl_prims --> pl_termwalk
+    pl_prims --> pl_global
+    pl_prims --> pl_inline
+    pl_prims --> pl_ressymbol
+    pl_prims --> pl_comp
+    pl_ressymbol --> term_interface
+    pl_ressymbol --> default_term
+    pl_ressymbol --> pl_incl
+    pl_ressymbol --> pl_prims
+    pl_comp --> term_interface
+    pl_comp --> default_term
+    pl_comp --> pl_incl
+    pl_comp --> pl_vmi
+    pl_comp --> pl_index
+    pl_comp --> pl_funct
+    pl_comp --> pl_global
+    pl_comp --> pl_inline
+    pl_comp --> pl_prims
+    pl_comp --> pl_ressymbol
+    pl_comp --> pl_thread
+    pl_comp --> pl_proc
+    pl_variant --> term_interface
+    pl_variant --> default_term
+    pl_variant --> pl_prims
+    pl_variant --> pl_comp
+    pl_termhash --> term_interface
+    pl_termhash --> default_term
+    pl_termhash --> pl_hash
+    pl_termhash --> pl_incl
+    pl_termhash --> pl_termwalk
+    pl_termhash --> pl_comp
+    pl_thread --> pl_incl
+    pl_thread --> pl_global
+    pl_thread --> pl_inline
+    pl_thread --> pl_proc
+    pl_gc --> pl_global
+    pl_gc --> pl_thread
+    pl_proc --> term_interface
+    pl_proc --> default_term
+    pl_proc --> pl_incl
+    pl_proc --> pl_index
+    pl_proc --> pl_global
+    pl_proc --> pl_inline
+    pl_proc --> pl_comp
+    pl_proc --> pl_thread
+    pl_proc --> pl_gc
+    precompile_workload --> term_interface
+    precompile_workload --> default_term
+    precompile_workload --> pl_incl
+    precompile_workload --> pl_global
+    precompile_workload --> pl_inline
+    precompile_workload --> pl_prims
+    precompile_workload --> pl_comp
+    precompile_workload --> pl_variant
+    precompile_workload --> pl_termhash
+    precompile_workload --> pl_proc
+```
+<!-- END GENERATED code graph -->
 
 ## Subsystems — a grouping of upstream files, not directories
 
@@ -874,6 +999,48 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**M1 — the code map, generated: BUILT (2026-10-04)** (port_inventory row M1; tools/port_check.jl).
+* **One tool.** `tools/port_check.jl --write-inventory` writes three generated blocks:
+  * the inventory table, now with a `diverging` column;
+  * a COVERAGE block in port_inventory.md;
+  * the CODE GRAPH (§ "Code graph" above).
+  `port_check` holds each block to its generator, running both sides through ONE extractor
+  (`_section`). Both sides must be non-empty: an empty generator is a violation, even against an
+  empty block.
+* **Coverage** is per upstream file AT ITS RECORDED COMMIT: functions ported, of how many, how many
+  diverge. Upstream's functions come from `upstream_names`' heuristic (moved here from
+  tools/upstream_drift.jl; it now also counts pl-vmi.c's `VMI(NAME, …)` instructions). Counting
+  needs the checkouts, so the block is compared where every checkout it names is found — the local
+  suite asserts that it WAS compared — and otherwise must be present and non-empty, as in CI. That
+  follows port_check's existing split for upstream existence.
+  `# choice made for the user's review:` upstream DRIFT (commits since) is not a block, because it
+  moves whenever the checkout is pulled; it stays `tools/upstream_drift.jl`'s report.
+* **The code graph** covers src/ in include order, with an edge wherever a file uses a name another
+  file defines. It is checked everywhere.
+* **The hand-kept "What is here now" table is CHECKED, not replaced:**
+  * every src/ and bench/ file must be listed;
+  * every listed file must exist;
+  * each row's upstream column must name exactly its files' UPSTREAM headers.
+  Its first run found five rows whose upstream column had drifted from the headers (pl-index,
+  pl-comp, pl-vmi, pl-global, pl-hash) and the missing `src/LogicKernel.jl` row; all are fixed.
+* **First numbers:** 276 of 1541 upstream functions ported, 91 diverging.
+* **Gate:** test/test_port_check.jl's M1 fixture covers each block stale, empty, missing, an empty
+  generator against an empty block, and every "What is here now" failure. MM1-MM7 are caught: a
+  stale block never reported, no empty-generator guard, an unlisted file passing, extra upstream
+  names passing, coverage counting every marker, a graph without edges, coverage computed but not
+  compared.
+* **Found while building it — the preflight used a STALE CHECKER.** `tools/warm.sh preflight`
+  loaded tools/port_check.jl into the daemon once (`isdefined(Main, :port_check) || include`), so
+  every later preflight in that daemon held the tree to the FIRST checker it had loaded. M1's own
+  docs failed against the pre-M1 inventory format. It now loads the current checker into a fresh
+  module each run, at both sites (the port_check step and the stale-method classifier).
+  tools/test_warm.sh gained a case: after an earlier preflight, the checker's inventory end marker
+  is renamed in place (a Blue-neutral edit), and the next preflight must fail BY THAT VERDICT. A
+  first version planted an unformatted line and failed on the format check instead, which the
+  verdict assertion caught. Mutation-proved: with the old load restored, the verdict assertion
+  fails (43/44). The bare exit-code assertion does NOT discriminate here: a changed
+  test_port_check.jl makes the preflight fail through the changed-test path anyway.
 
 **V1 — procedures and call operands: BUILT (2026-10-04)** (user's decisions, same day; src/pl-incl.jl,
 src/pl-global.jl, src/pl-proc.jl, src/pl-comp.jl).

@@ -68,11 +68,36 @@ end
 
 _pc_write(root, rel, text) = (p=joinpath(root, rel); mkpath(dirname(p)); write(p, text))
 
+"""
+The fixture's docs: the inventory (`table` in its generated section, an empty coverage section) and
+an architecture document whose "What is here now" table lists the clean src/ files and whose code
+graph section is empty — `write_inventory` fills the generated sections.
+"""
 function _pc_inventory(root, table)
     _pc_write(
         root,
         "docs/port_inventory.md",
-        "# inv\n\n$INVENTORY_BEGIN\n$table\n$INVENTORY_END\n"
+        "# inv\n\n$INVENTORY_BEGIN\n$table\n$INVENTORY_END\n\n$COVERAGE_BEGIN\n$COVERAGE_END\n"
+    )
+    _pc_write(
+        root,
+        "docs/architecture.md",
+        """
+# arch
+
+$WHATS_HERE_HEADING
+
+| file | what | upstream |
+|---|---|---|
+| `src/LogicKernel.jl` | the entry file | — |
+| `src/orig.jl` | a helper | — |
+| `src/pl-fake.jl` | the fake port | `src/pl-fake.c` |
+
+## Code graph
+
+$GRAPH_BEGIN
+$GRAPH_END
+"""
     )
 end
 
@@ -145,10 +170,19 @@ end
     )
     _pc_write(
         root,
+        "src/LogicKernel.jl",
+        """
+# ORIGINAL: fixture — the module entry file.
+include("orig.jl")
+include("pl-fake.jl")
+"""
+    )
+    _pc_write(
+        root,
         "src/orig.jl",
         """
 # ORIGINAL: fixture — no upstream counterpart.
-helper(x) = x
+helper(x) = compareFoo(x, 0)
 const NOT_A_MARKER = \"\"\"
 # PORT: pl-fake.c compareFoo
 \"\"\"
@@ -171,6 +205,12 @@ _pc_codes(vs) = sort!([
         @test isempty(r.violations)
         isempty(r.existence_checked) &&
             @info "port_check: no upstream checkout here — structure and inventory checked, upstream existence NOT (checked on local runs with ~/dev-zone/swipl-devel)"
+        # M1: with every checkout the headers name, the coverage block WAS compared — not skipped
+        if issubset(["swipl-bench", "swipl-devel"], r.existence_checked)
+            @test r.coverage_checked
+        else
+            @info "port_check: the coverage block is present and non-empty, NOT recomputed (it needs every upstream checkout)"
+        end
     end
 
     mktempdir() do base
@@ -300,7 +340,9 @@ _pc_codes(vs) = sort!([
                 ("ORIGINAL-SHADOWS-UPSTREAM", "test_shadow.jl"),
                 ("INVENTORY-DRIFT", "port_inventory.md")
             ])
-            got = _pc_codes(r.violations)
+            # M1's code-map checks have their own fixture below; here the planted set is the rest
+            m1 = r"^(COVERAGE|CODE-GRAPH|WHATS-HERE|ARCHITECTURE)-"
+            got = filter(c -> !occursin(m1, c[1]), _pc_codes(r.violations))
             got == expected || foreach(v -> println(stderr, "  got: ", v), r.violations)
             @test got == expected
         end
@@ -309,12 +351,12 @@ _pc_codes(vs) = sort!([
             root = joinpath(base, "clean")
             _pc_good_files(root, sha)
             _pc_inventory(root, "")
-            write_inventory(root)
+            write_inventory(root; upstream_dirs=dirs)
             r = port_check(root; upstream_dirs=dirs)
             r.violations == String[] ||
                 foreach(v -> println(stderr, "  clean: ", v), r.violations)
             @test isempty(r.violations)
-            @test length(r.files) == 4
+            @test length(r.files) == 5
             inv = read(joinpath(root, "docs/port_inventory.md"), String)
             @test occursin("`src/pl-fake.jl` | 6 |", inv)      # struct, const, enum, macro count
             @test occursin("`boot/tabling.jl` | 1 |", inv)
@@ -324,15 +366,96 @@ _pc_codes(vs) = sort!([
                 p,
                 replace(read(p, String), "function compareFoo(" => "function compare_foo(")
             )
+            # the rename also drops the code graph's edge (orig.jl uses `compareFoo`)
             @test _pc_codes(port_check(root; upstream_dirs=dirs).violations) ==
-                [("DEF-MISMATCH", "pl-fake.jl")]
+                [("CODE-GRAPH-DRIFT", "architecture.md"), ("DEF-MISMATCH", "pl-fake.jl")]
+        end
+
+        @testset "M1: the generated code map is held to its generators" begin
+            root = joinpath(base, "m1")
+            _pc_good_files(root, sha)
+            _pc_inventory(root, "")
+            write_inventory(root; upstream_dirs=dirs)
+            inv = joinpath(root, "docs/port_inventory.md")
+            arch = joinpath(root, "docs/architecture.md")
+            codes(; kw...) =
+                _pc_codes(port_check(root; upstream_dirs=dirs, kw...).violations)
+            # run `f` with `from` replaced by `to` (once, asserted) in `path`; restore the file
+            function with_edit(f, path, from, to)
+                t = read(path, String)
+                @assert count(from, t) == 1 "fixture edit: $(repr(from)) is not in $path once"
+                write(path, replace(t, from => to))
+                try
+                    return f()
+                finally
+                    write(path, t)
+                end
+            end
+            r = port_check(root; upstream_dirs=dirs)
+            @test isempty(r.violations) && r.coverage_checked
+            # what the generators wrote — both sides non-empty
+            @test occursin(
+                "| swipl-devel `src/pl-fake.c` | `$sha` | 2 | 2 | 0 | src/pl-fake.jl |",
+                read(inv, String)
+            )                                                   # compareFoo, fooBar of 2
+            @test occursin("`src/pl-fake.jl` | 6 | 0 |", read(inv, String))
+            @test occursin("    orig --> pl_fake", read(arch, String))
+            row = "| 2 | 2 | 0 | src/pl-fake.jl |"
+            # a stale coverage block; without a checkout it is not recomputed, but must be there
+            with_edit(inv, row, "| 1 | 2 | 0 | src/pl-fake.jl |") do
+                @test codes() == [("COVERAGE-DRIFT", "port_inventory.md")]
+                @test isempty(
+                    port_check(root; upstream_dirs=Dict{String, String}()).violations
+                )
+            end
+            cov = _section(read(inv, String), COVERAGE_BEGIN, COVERAGE_END)
+            with_edit(inv, cov, "") do
+                @test codes() == [("COVERAGE-EMPTY", "port_inventory.md")]
+                @test _pc_codes(
+                    port_check(root; upstream_dirs=Dict{String, String}()).violations
+                ) == [("COVERAGE-EMPTY", "port_inventory.md")]
+            end
+            with_edit(inv, COVERAGE_BEGIN, "") do
+                @test codes() == [("COVERAGE-MISSING", "port_inventory.md")]
+            end
+            # a stale code graph; an EMPTY generator, also against an empty block
+            with_edit(arch, "    orig --> pl_fake\n", "") do
+                @test codes() == [("CODE-GRAPH-DRIFT", "architecture.md")]
+            end
+            lk = joinpath(root, "src/LogicKernel.jl")
+            with_edit(lk, "include(\"orig.jl\")\ninclude(\"pl-fake.jl\")\n", "") do
+                @test codes() == [("CODE-GRAPH-EMPTY", "generator")]
+                g = _section(read(arch, String), GRAPH_BEGIN, GRAPH_END)
+                with_edit(arch, g, "") do               # empty == empty must not pass
+                    @test codes() == [("CODE-GRAPH-EMPTY", "generator")]
+                end
+            end
+            # the hand-kept table: a file missing, a file that does not exist, a wrong upstream
+            orow = "| `src/orig.jl` | a helper | — |\n"
+            with_edit(arch, orow, "") do
+                @test codes() == [("WHATS-HERE-MISSING", "architecture.md")]
+            end
+            with_edit(arch, orow, orow * "| `src/nope.jl` | gone | — |\n") do
+                @test codes() == [("WHATS-HERE-UNKNOWN", "architecture.md")]
+            end
+            with_edit(arch, "`src/pl-fake.c` |", "`src/pl-other.c` |") do       # a wrong file
+                @test codes() == [("WHATS-HERE-UPSTREAM", "architecture.md")]
+            end
+            with_edit(arch, "`src/pl-fake.c` |", "`src/pl-fake.c`, `src/pl-extra.c` |") do
+                @test codes() == [("WHATS-HERE-UPSTREAM", "architecture.md")]   # one too many
+            end
+            with_edit(arch, "| `src/pl-fake.c` |\n", "| — |\n") do     # a header left unnamed
+                @test codes() == [("WHATS-HERE-UPSTREAM", "architecture.md")]
+            end
+            @test codes(; architecture="docs/nope.md") ==
+                [("ARCHITECTURE-MISSING", "nope.md")]
         end
 
         @testset "upstream_drift: commits since the recorded one, and coverage" begin
             root = joinpath(base, "drift")
             _pc_good_files(root, sha)
             _pc_inventory(root, "")
-            write_inventory(root)
+            write_inventory(root; upstream_dirs=dirs)
             rows0 = upstream_drift(root; upstream_dirs=dirs)
             r0 = only(filter(r -> r.path == "src/pl-fake.c", rows0))
             @test isempty(r0.commits_since)

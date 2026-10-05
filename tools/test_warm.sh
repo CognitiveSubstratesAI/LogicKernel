@@ -12,7 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
+trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -47,6 +47,20 @@ rm -f "$probe_src"
 [ $(( $(date +%s) - s )) -lt 120 ]; check "…before the slow gate (fail fast)" 0 $?
 LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight passes on the tree as it is" 0 $?
 has "…having run the static-analysis gate" "$T/pf" "test_static_analysis.jl" 1
+# the preflight runs the CURRENT tools/port_check.jl: an edit to the checker made after an earlier
+# preflight (above) loaded it is seen — the checker's inventory end marker, renamed in place, makes
+# it report the inventory section missing — and FAILS the next preflight BY THAT VERDICT (a daemon
+# that kept the first checker passed M1's docs against the pre-M1 inventory format, 2026-10-04).
+# The edit keeps the file Blue-formatted: a planted line that is not would fail the format check
+# first, which proves nothing about this one (measured: the first version of this case did).
+cp "$ROOT/tools/port_check.jl" "$T/port_check.jl.bak"
+n=$(grep -c '^const INVENTORY_END = "<!-- END GENERATED -->"$' "$ROOT/tools/port_check.jl")
+[ "$n" = 1 ]; check "…the checker edit's anchor is there once" 0 $?
+sed -i 's/^const INVENTORY_END = "<!-- END GENERATED -->"$/const INVENTORY_END = "<!-- END GENERATED PROBE -->"/' "$ROOT/tools/port_check.jl"
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight FAILS on an edited checker (no stale port_check)" 1 $?
+has "…by the edited checker's own verdict" "$T/pf" "INVENTORY-MISSING.*END GENERATED PROBE" 1
+has "…past the format check" "$T/pf" "preflight: Blue-clean" 1
+cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl" && rm -f "$T/port_check.jl.bak"
 # a CHANGED test file that fails (an untracked one) is run, and fails the preflight — BY ITS OWN
 # VERDICT: the file carries a valid header, so port_check passes and the failure is the test's
 # (a first version had none, and passed through port_check alone: mutation MP3 survived)

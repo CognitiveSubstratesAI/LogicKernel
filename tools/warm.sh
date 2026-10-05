@@ -202,8 +202,12 @@ if !format("."; overwrite=false)
     error("preflight: NOT Blue-formatted: ", join(bad, ", "), " — tools/run_tests.sh shows each diff")
 end
 println("preflight: Blue-clean (JuliaFormatter ", pkgversion(JuliaFormatter), ")")
-isdefined(Main, :port_check) || Base.include(Main, raw"$ROOT/tools/port_check.jl")
-let r = Main.port_check(raw"$ROOT")
+# the CURRENT tools/port_check.jl, in a fresh module every time: a daemon that kept the first one
+# it loaded would check an edited tree with an old checker (measured 2026-10-04: M1's own docs were
+# held to the pre-M1 inventory format)
+let pc = Module(:PreflightPortCheck)
+    Base.include(pc, raw"$ROOT/tools/port_check.jl")
+    r = Base.invokelatest(() -> pc.port_check(raw"$ROOT"))   # the binding too: latest world
     foreach(x -> println("  ", x), r.violations)
     isempty(r.violations) || error("preflight: port_check found violations")
     println("preflight: port_check clean (", length(r.files), " files)")
@@ -246,14 +250,14 @@ JL
 _preflight_stale() {
     local snippet="$DIR/preflight_stale.jl"
     cat > "$snippet" <<JL
-isdefined(Main, :definitions) || Base.include(Main, raw"$ROOT/tools/port_check.jl")
-let log = read(raw"$1", String)
+let pc = Module(:PreflightStale), log = read(raw"$1", String)
+    Base.include(pc, raw"$ROOT/tools/port_check.jl")         # the current one (see above)
     names = unique([String(m[1]) for m in eachmatch(r"NOT CHECKED for dispatch: (\S+)", log)])
     defined = Set{String}()
     for (dir, _, fs) in walkdir(raw"$ROOT/src"), f in fs
         endswith(f, ".jl") || continue
         p = joinpath(dir, f)
-        foreach(d -> push!(defined, d[2]), Main.definitions(read(p, String), p))
+        foreach(d -> push!(defined, d[2]), Base.invokelatest(() -> pc.definitions(read(p, String), p)))
     end
     isempty(defined) && error("preflight: no definitions found under src/ — cannot classify")
     foreach(n -> println(n in defined ? "REAL " : "STALE ", n), names)
