@@ -31,8 +31,11 @@ mutable struct PL_global_data{T}
     clauses_cgc_active::Bool                                    # clauses.cgc_active: CGC running
     const functors_control::ControlFunctors                     # functors.array's CONTROL_F
     const modules_user::module_t{T}                             # modules.user: user module
+    const subclause_names::SubClauseNames                       # (the ATOM_/FUNCTOR_ tables)
 end
-# DIVERGES: the user module is created with the database — upstream's initModules creates it, with
+# DIVERGES: `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
+# `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
+# per database. The user module is created with the database — upstream's initModules creates it, with
 # the `system` module, at start-up (pl-modul.c). There is no `system` module until built-ins are
 # registered in it (V5), and no module table (`modules.table`): one module per database.
 PL_global_data{T}() where {T} =
@@ -41,7 +44,8 @@ PL_global_data{T}() where {T} =
         Dict{Definition{T}, dirty_def_info{T}}(),
         false,
         registerControlFunctors(T),
-        module_t{T}(sym_key(mk_sym(T, :user)), Dict{Tuple{UInt64, Int}, Procedure{T}}())
+        module_t{T}(sym_key(mk_sym(T, :user)), Dict{Tuple{UInt64, Int}, Procedure{T}}()),
+        _subclause_names(T)
     )
 
 # PORT: pl-incl.h MODULE_user

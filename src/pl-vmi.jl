@@ -7,44 +7,115 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# THE VIRTUAL MACHINE INSTRUCTIONS the kernel compiles clause heads to — the subset of SWI-Prolog's
-# pl-vmi.c that src/pl-comp.jl emits, with the operand counts of upstream's `VMI(name, flags,
-# argc, argtypes)` declarations. Only the declarations are ported; the instructions' bodies (head
-# unification) arrive with the VM. Upstream numbers instructions by their order in pl-vmi.c;
-# these numbers keep that order but are the kernel's own.
+# THE VIRTUAL MACHINE INSTRUCTIONS the kernel compiles clauses to — the subset of SWI-Prolog's
+# pl-vmi.c that src/pl-comp.jl emits: the head instructions, and since V2 the body instructions of
+# plain goals, the calls and the last-call (LCO) block. Each carries upstream's `VMI(name, flags,
+# argc, argtypes)`: its flags (`VIF_LCO`, `VIF_BREAK`) and its operand kinds (`CA1_*`). Only the
+# declarations are ported; the instructions' bodies arrive with the VM. Upstream numbers
+# instructions by their order in pl-vmi.c; these numbers keep that order but are the kernel's own.
 #
-# NOT EMITTED, so not declared: H_SMALLINTW (only where a code word is narrower than a word,
-# `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is an `H_SMALLINT`, probed in 10.1.16),
-# and the SSU instructions (`=>` clauses are not compiled yet).
+# NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
+# narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
+# probed in 10.1.16); the SSU instructions; the inline built-ins (`B_UNIFY_*`, `B_EQ_*`, `B_ARG_*`),
+# the meta-call (`I_CALL1`, `I_USERCALL0`, `I_CALLN`), the module calls (`I_CONTEXT`, `I_CALLM`,
+# `I_DEPARTM`) and the control constructs (`C_*`, `I_CUT`, `I_TRUE`, `I_FAIL`): V6 and V9.
 #
-# OPERANDS (V1, L1): the literal instructions `H_SMALLINT`, `H_FLOAT`, `H_MPZ`, `H_MPQ` and `H_STRING` carry ONE
-# operand — the value's index key, as `H_ATOM` does — where upstream carries the value itself (an
-# integer, `CODES_PER_DOUBLE` words, a `VM_DYNARGC` block). L2's per-clause literal table (decision 2)
-# replaces every such operand; the index keys stay what they are.
+# OPERANDS: every literal operand (`*_ATOM`, `*_SMALLINT`, `*_FLOAT`, `*_MPZ`, `*_MPQ`, `*_STRING`)
+# is ONE word, the index of the literal in the clause's literal table (V1 L2), where upstream
+# carries the value itself (an atom, an integer, CODES_PER_DOUBLE words, a VM_DYNARGC block); a
+# functor operand is `functor_operand` (L2); a procedure operand (`CA1_LPROC`) the index of the
+# procedure in the clause's procedure table (V1). The `argtype` column keeps upstream's kinds, so a
+# reader decodes each operand by its kind as upstream does — a literal kind through the table.
 
+# ── operand kinds and flags (pl-incl.h) ─────────────────────────────────────────────────────────
+# PORT: pl-incl.h CA1_PROC
+"Operand kind: Procedure (pl-incl.h `vm_arg_type`)."
+const CA1_PROC = UInt8(1)
+# PORT: pl-incl.h CA1_LPROC
+"Operand kind: Procedure, stored in qlf as functor (pl-incl.h `vm_arg_type`)."
+const CA1_LPROC = UInt8(2)
+# PORT: pl-incl.h CA1_FUNC
+"Operand kind: functor_t (pl-incl.h `vm_arg_type`)."
+const CA1_FUNC = UInt8(3)
+# PORT: pl-incl.h CA1_DATA
+"Operand kind: word: atom or small int (pl-incl.h `vm_arg_type`)."
+const CA1_DATA = UInt8(4)
+# PORT: pl-incl.h CA1_INTEGER
+"Operand kind: integer (casted to/from `code`) (pl-incl.h `vm_arg_type`)."
+const CA1_INTEGER = UInt8(5)
+# PORT: pl-incl.h CA1_WORD
+"Operand kind: word value as integer (CODES_PER_WORD) (pl-incl.h `vm_arg_type`)."
+const CA1_WORD = UInt8(6)
+# PORT: pl-incl.h CA1_FLOAT
+"Operand kind: next CODES_PER_DOUBLE are double (pl-incl.h `vm_arg_type`)."
+const CA1_FLOAT = UInt8(7)
+# PORT: pl-incl.h CA1_STRING
+"Operand kind: inlined string (pl-incl.h `vm_arg_type`)."
+const CA1_STRING = UInt8(8)
+# PORT: pl-incl.h CA1_MPZ
+"Operand kind: GNU mpz number (pl-incl.h `vm_arg_type`)."
+const CA1_MPZ = UInt8(9)
+# PORT: pl-incl.h CA1_MPQ
+"Operand kind: GNU mpq number (pl-incl.h `vm_arg_type`)."
+const CA1_MPQ = UInt8(10)
+# PORT: pl-incl.h CA1_MODULE
+"Operand kind: a module (pl-incl.h `vm_arg_type`)."
+const CA1_MODULE = UInt8(11)
+# PORT: pl-incl.h CA1_VAR
+"Operand kind: a variable(-offset) (pl-incl.h `vm_arg_type`)."
+const CA1_VAR = UInt8(12)
+# PORT: pl-incl.h CA1_FVAR
+"Operand kind: a variable(-offset), used as `firstvar' (pl-incl.h `vm_arg_type`)."
+const CA1_FVAR = UInt8(13)
+# PORT: pl-incl.h CA1_CHP
+"Operand kind: ChoicePoint (also variable(-offset)) (pl-incl.h `vm_arg_type`)."
+const CA1_CHP = UInt8(14)
+# PORT: pl-incl.h CA1_FOREIGN
+"Operand kind: Foreign function pointer (pl-incl.h `vm_arg_type`)."
+const CA1_FOREIGN = UInt8(15)
+# PORT: pl-incl.h CA1_CLAUSEREF
+"Operand kind: Clause reference (pl-incl.h `vm_arg_type`)."
+const CA1_CLAUSEREF = UInt8(16)
+# PORT: pl-incl.h CA1_JUMP
+"Operand kind: Instructions to skip (pl-incl.h `vm_arg_type`)."
+const CA1_JUMP = UInt8(17)
+# PORT: pl-incl.h CA1_AFUNC
+"Operand kind: Number of arithmetic function (pl-incl.h `vm_arg_type`)."
+const CA1_AFUNC = UInt8(18)
+# PORT: pl-incl.h CA1_TRIE_NODE
+"Operand kind: Tabling: answer trie node with delays (pl-incl.h `vm_arg_type`)."
+const CA1_TRIE_NODE = UInt8(19)
+# PORT: pl-incl.h VIF_BREAK
+"Instruction flag: can be a breakpoint (pl-incl.h)."
+const VIF_BREAK = UInt8(0x01)
+# PORT: pl-incl.h VIF_LCO
+"Instruction flag: `lco` can move this argument instruction into the frame (pl-incl.h)."
+const VIF_LCO = UInt8(0x02)
+
+# ── the instructions, in pl-vmi.c's order ───────────────────────────────────────────────────────
 # PORT: pl-vmi.c I_NOP
 "No operation (pl-vmi.c)."
 const I_NOP = code(0)
 # PORT: pl-vmi.c H_ATOM
-"Head: unify the argument with an atom; operand: the atom word (pl-vmi.c)."
+"Head: unify the argument with an atom; operand: the atom's literal (pl-vmi.c)."
 const H_ATOM = code(1)
 # PORT: pl-vmi.c H_SMALLINT
-"Head: unify with a TAGGED integer (pl-vmi.c); operand: its index key (until L2's literal table)."
+"Head: unify with a TAGGED integer; operand: its literal (pl-vmi.c)."
 const H_SMALLINT = code(2)
 # PORT: pl-vmi.c H_NIL
 "Head: unify the argument with SWI-7's `[]`, the reserved symbol; no operand (pl-vmi.c)."
 const H_NIL = code(3)
 # PORT: pl-vmi.c H_FLOAT
-"Head: unify with a float (pl-vmi.c); operand: its index key (until L2's literal table)."
+"Head: unify with a float; operand: its literal (pl-vmi.c)."
 const H_FLOAT = code(4)
 # PORT: pl-vmi.c H_MPZ
-"Head: unify with an integer that is not tagged (pl-vmi.c); operand: its index key (until L2)."
+"Head: unify with an integer that is not tagged; operand: its literal (pl-vmi.c)."
 const H_MPZ = code(5)
 # PORT: pl-vmi.c H_MPQ
-"Head: unify with a rational that is not an integer (pl-vmi.c); operand: its index key (until L2)."
+"Head: unify with a rational that is not an integer; operand: its literal (pl-vmi.c)."
 const H_MPQ = code(6)
 # PORT: pl-vmi.c H_STRING
-"Head: unify with a string (pl-vmi.c); operand: its index key (until L2's literal table)."
+"Head: unify with a string; operand: its literal (pl-vmi.c)."
 const H_STRING = code(7)
 # PORT: pl-vmi.c H_VOID
 "Head: skip an argument that is a singleton variable (pl-vmi.c)."
@@ -59,7 +130,7 @@ const H_VAR = code(10)
 "Head: the first occurrence of a variable inside a compound; operand: its slot (pl-vmi.c)."
 const H_FIRSTVAR = code(11)
 # PORT: pl-vmi.c H_FUNCTOR
-"Head: unify with a compound and enter its arguments; operand: the functor word (pl-vmi.c)."
+"Head: unify with a compound and enter its arguments; operand: the functor (pl-vmi.c)."
 const H_FUNCTOR = code(12)
 # PORT: pl-vmi.c H_RFUNCTOR
 "Head: as `H_FUNCTOR`, for the LAST argument of a compound — no `H_POP` of its own (pl-vmi.c)."
@@ -76,48 +147,182 @@ const H_POP = code(16)
 # PORT: pl-vmi.c H_LIST_FF
 "Head: a list cell `[X|Y]` of two first-occurrence variables; operands: their two slots (pl-vmi.c)."
 const H_LIST_FF = code(17)
+# PORT: pl-vmi.c B_ATOM
+"Body: put an atom in the next argument; operand: its literal (pl-vmi.c)."
+const B_ATOM = code(18)
+# PORT: pl-vmi.c B_SMALLINT
+"Body: put a TAGGED integer; operand: its literal (pl-vmi.c)."
+const B_SMALLINT = code(19)
+# PORT: pl-vmi.c B_NIL
+"Body: put SWI-7's `[]`; no operand (pl-vmi.c)."
+const B_NIL = code(20)
+# PORT: pl-vmi.c B_FLOAT
+"Body: put a float; operand: its literal (pl-vmi.c)."
+const B_FLOAT = code(21)
+# PORT: pl-vmi.c B_MPZ
+"Body: put an integer that is not tagged; operand: its literal (pl-vmi.c)."
+const B_MPZ = code(22)
+# PORT: pl-vmi.c B_MPQ
+"Body: put a rational that is not an integer; operand: its literal (pl-vmi.c)."
+const B_MPQ = code(23)
+# PORT: pl-vmi.c B_STRING
+"Body: put a string; operand: its literal (pl-vmi.c)."
+const B_STRING = code(24)
+# PORT: pl-vmi.c B_ARGVAR
+"Body: a variable seen before, as an argument of a compound; operand: its slot (pl-vmi.c)."
+const B_ARGVAR = code(25)
+# PORT: pl-vmi.c B_VAR0
+"Body: put the variable in slot 0 (pl-vmi.c)."
+const B_VAR0 = code(26)
+# PORT: pl-vmi.c B_VAR1
+"Body: put the variable in slot 1 (pl-vmi.c)."
+const B_VAR1 = code(27)
+# PORT: pl-vmi.c B_VAR2
+"Body: put the variable in slot 2 (pl-vmi.c)."
+const B_VAR2 = code(28)
+# PORT: pl-vmi.c B_VAR
+"Body: put a variable seen before; operand: its slot (pl-vmi.c)."
+const B_VAR = code(29)
+# PORT: pl-vmi.c B_ARGFIRSTVAR
+"Body: the first occurrence of a variable inside a compound; operand: its slot (pl-vmi.c)."
+const B_ARGFIRSTVAR = code(30)
+# PORT: pl-vmi.c B_FIRSTVAR
+"Body: the first occurrence of a variable as an argument; operand: its slot (pl-vmi.c)."
+const B_FIRSTVAR = code(31)
+# PORT: pl-vmi.c B_VOID
+"Body: put a fresh variable used nowhere else (pl-vmi.c)."
+const B_VOID = code(32)
+# PORT: pl-vmi.c B_FUNCTOR
+"Body: build a compound and enter its arguments; operand: the functor (pl-vmi.c)."
+const B_FUNCTOR = code(33)
+# PORT: pl-vmi.c B_RFUNCTOR
+"Body: as `B_FUNCTOR`, for the LAST argument of a compound — no `B_POP` of its own (pl-vmi.c)."
+const B_RFUNCTOR = code(34)
+# PORT: pl-vmi.c B_LIST
+"Body: as `B_FUNCTOR` for a list cell `'[|]'/2`; no operand (pl-vmi.c)."
+const B_LIST = code(35)
+# PORT: pl-vmi.c B_RLIST
+"Body: as `B_RFUNCTOR` for a list cell `'[|]'/2`; no operand (pl-vmi.c)."
+const B_RLIST = code(36)
+# PORT: pl-vmi.c B_POP
+"Body: leave the arguments of a compound (pl-vmi.c)."
+const B_POP = code(37)
 # PORT: pl-vmi.c I_CHP
 "Create a choice point for an SSU clause (pl-vmi.c)."
-const I_CHP = code(18)
+const I_CHP = code(38)
 # PORT: pl-vmi.c I_ENTER
 "End of the head of a rule: enter the body (pl-vmi.c)."
-const I_ENTER = code(19)
+const I_ENTER = code(39)
+# PORT: pl-vmi.c I_CALL
+"Call a procedure; operand: its procedure (pl-vmi.c)."
+const I_CALL = code(40)
+# PORT: pl-vmi.c I_DEPART
+"Call a procedure as the LAST goal (pl-vmi.c); operand: its procedure."
+const I_DEPART = code(41)
+# PORT: pl-vmi.c I_EXIT
+"End of a rule (pl-vmi.c)."
+const I_EXIT = code(42)
 # PORT: pl-vmi.c I_EXITFACT
 "End of a fact (pl-vmi.c)."
-const I_EXITFACT = code(20)
+const I_EXITFACT = code(43)
+# PORT: pl-vmi.c L_NOLCO
+"Last call: unless the frame can be reused, skip the `L_*` block; operand: its size in code words (pl-vmi.c)."
+const L_NOLCO = code(44)
+# PORT: pl-vmi.c L_VAR
+"Last call: copy a variable into an argument slot of the frame; operands: the slot, the variable's slot (pl-vmi.c)."
+const L_VAR = code(45)
+# PORT: pl-vmi.c L_VOID
+"Last call: a fresh variable into an argument slot; operand: the slot (pl-vmi.c)."
+const L_VOID = code(46)
+# PORT: pl-vmi.c L_ATOM
+"Last call: an atom into an argument slot; operands: the slot, its literal (pl-vmi.c)."
+const L_ATOM = code(47)
+# PORT: pl-vmi.c L_NIL
+"Last call: `[]` into an argument slot; operand: the slot (pl-vmi.c)."
+const L_NIL = code(48)
+# PORT: pl-vmi.c L_SMALLINT
+"Last call: a tagged integer into an argument slot; operands: the slot, its literal (pl-vmi.c)."
+const L_SMALLINT = code(49)
+# PORT: pl-vmi.c I_LCALL
+"Last call reusing the frame; operand: the procedure (pl-vmi.c)."
+const I_LCALL = code(50)
+# PORT: pl-vmi.c I_TCALL
+"Last call of the clause's own predicate, reusing the frame (pl-vmi.c)."
+const I_TCALL = code(51)
 
 # PORT: pl-incl.h code_info
-"What `codeTable` records of an instruction: its name and number of operand words (pl-incl.h)."
+# DIVERGES: `arguments` counts the kernel's operand WORDS (a literal is one, see above); `argtype`
+# is padded with 0 to four kinds (upstream's VM_ARGC).
+"What `codeTable` records of an instruction: its name, flags (`VIF_*`), operand words and operand kinds (pl-incl.h)."
 struct code_info
-    name::Symbol
-    arguments::Int
+    name::Symbol                    # name of the code
+    flags::UInt8                    # Addional flags (VIF_*)
+    arguments::Int                  # #args code takes
+    argtype::NTuple{4, UInt8}       # Argument type(s) code takes
 end
 
+# the table `codeTable` reads, indexed by opcode + 1 (pl-codetable.c's array) — a comment, not a
+# docstring, as for every module-level constant the global-state lint reads
+const _CODE_TABLE = (
+    code_info(:I_NOP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:H_ATOM, 0x00, 1, (CA1_DATA, 0x00, 0x00, 0x00)),
+    code_info(:H_SMALLINT, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:H_NIL, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:H_FLOAT, 0x00, 1, (CA1_FLOAT, 0x00, 0x00, 0x00)),
+    code_info(:H_MPZ, 0x00, 1, (CA1_MPZ, 0x00, 0x00, 0x00)),
+    code_info(:H_MPQ, 0x00, 1, (CA1_MPQ, 0x00, 0x00, 0x00)),
+    code_info(:H_STRING, 0x00, 1, (CA1_STRING, 0x00, 0x00, 0x00)),
+    code_info(:H_VOID, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:H_VOID_N, 0x00, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:H_VAR, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:H_FIRSTVAR, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
+    code_info(:H_FUNCTOR, 0x00, 1, (CA1_FUNC, 0x00, 0x00, 0x00)),
+    code_info(:H_RFUNCTOR, 0x00, 1, (CA1_FUNC, 0x00, 0x00, 0x00)),
+    code_info(:H_LIST, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:H_RLIST, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:H_POP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:H_LIST_FF, 0x00, 2, (CA1_FVAR, CA1_FVAR, 0x00, 0x00)),
+    code_info(:B_ATOM, VIF_LCO, 1, (CA1_DATA, 0x00, 0x00, 0x00)),
+    code_info(:B_SMALLINT, VIF_LCO, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:B_NIL, VIF_LCO, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_FLOAT, 0x00, 1, (CA1_FLOAT, 0x00, 0x00, 0x00)),
+    code_info(:B_MPZ, 0x00, 1, (CA1_MPZ, 0x00, 0x00, 0x00)),
+    code_info(:B_MPQ, 0x00, 1, (CA1_MPQ, 0x00, 0x00, 0x00)),
+    code_info(:B_STRING, 0x00, 1, (CA1_STRING, 0x00, 0x00, 0x00)),
+    code_info(:B_ARGVAR, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:B_VAR0, VIF_LCO, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_VAR1, VIF_LCO, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_VAR2, VIF_LCO, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_VAR, VIF_LCO, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:B_ARGFIRSTVAR, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
+    code_info(:B_FIRSTVAR, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
+    code_info(:B_VOID, VIF_LCO, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_FUNCTOR, 0x00, 1, (CA1_FUNC, 0x00, 0x00, 0x00)),
+    code_info(:B_RFUNCTOR, 0x00, 1, (CA1_FUNC, 0x00, 0x00, 0x00)),
+    code_info(:B_LIST, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_RLIST, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_POP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_CHP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_ENTER, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_CALL, VIF_BREAK, 1, (CA1_LPROC, 0x00, 0x00, 0x00)),
+    code_info(:I_DEPART, VIF_BREAK, 1, (CA1_LPROC, 0x00, 0x00, 0x00)),
+    code_info(:I_EXIT, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_EXITFACT, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:L_NOLCO, 0x00, 1, (CA1_JUMP, 0x00, 0x00, 0x00)),
+    code_info(:L_VAR, 0x00, 2, (CA1_FVAR, CA1_VAR, 0x00, 0x00)),
+    code_info(:L_VOID, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
+    code_info(:L_ATOM, 0x00, 2, (CA1_FVAR, CA1_DATA, 0x00, 0x00)),
+    code_info(:L_NIL, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
+    code_info(:L_SMALLINT, 0x00, 2, (CA1_FVAR, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:I_LCALL, 0x00, 1, (CA1_LPROC, 0x00, 0x00, 0x00)),
+    code_info(:I_TCALL, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+)
+
 # PORT: pl-codetable.c codeTable
-# DIVERGES: a function over the declared subset instead of the array upstream generates from the
-# `VMI()` declarations.
+# DIVERGES: a function over the declared subset (a constant tuple) instead of the array upstream
+# generates from the `VMI()` declarations.
 "The `code_info` of instruction `op` (pl-codetable.c `codeTable[op]`)."
 function codeTable(op::code)::code_info
-    op == I_NOP && return code_info(:I_NOP, 0)
-    op == H_ATOM && return code_info(:H_ATOM, 1)
-    op == H_SMALLINT && return code_info(:H_SMALLINT, 1)
-    op == H_NIL && return code_info(:H_NIL, 0)
-    op == H_FLOAT && return code_info(:H_FLOAT, 1)
-    op == H_MPZ && return code_info(:H_MPZ, 1)
-    op == H_MPQ && return code_info(:H_MPQ, 1)
-    op == H_STRING && return code_info(:H_STRING, 1)
-    op == H_VOID && return code_info(:H_VOID, 0)
-    op == H_VOID_N && return code_info(:H_VOID_N, 1)
-    op == H_VAR && return code_info(:H_VAR, 1)
-    op == H_FIRSTVAR && return code_info(:H_FIRSTVAR, 1)
-    op == H_FUNCTOR && return code_info(:H_FUNCTOR, 1)
-    op == H_RFUNCTOR && return code_info(:H_RFUNCTOR, 1)
-    op == H_LIST && return code_info(:H_LIST, 0)
-    op == H_RLIST && return code_info(:H_RLIST, 0)
-    op == H_POP && return code_info(:H_POP, 0)
-    op == H_LIST_FF && return code_info(:H_LIST_FF, 2)
-    op == I_CHP && return code_info(:I_CHP, 0)
-    op == I_ENTER && return code_info(:I_ENTER, 0)
-    op == I_EXITFACT && return code_info(:I_EXITFACT, 0)
-    error("codeTable: $op is not a declared instruction")
+    op < length(_CODE_TABLE) || error("codeTable: $op is not a declared instruction")
+    return _CODE_TABLE[op + 1]
 end

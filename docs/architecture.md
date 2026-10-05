@@ -214,8 +214,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
-| `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
-| `src/pl-vmi.jl` | the VM instructions heads compile to (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
+| `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
+| `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail and the `occurs_check` flag | `src/pl-global.h`, `src/pl-incl.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `Trail!`, `Mark`, `Undo!` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
@@ -224,6 +224,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
 | `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
 | `test/db/test_procedures.jl` | V1's predicate table: one procedure per functor and database, `[]` apart from `'[]'`, `:- dynamic`, defined = a `PROC_DEFINED` flag or a clause visible now | — |
+| `test/compile/test_body_code_swipl.jl` | V2's differential: whole-clause code (operands by kind, the LCO label) identical to swipl's on pinned clauses, 400 random rule clauses, and nreverse and qsort as swipl consults them; V2's refusals and swipl's `type_error(callable, Body)`; clause/2 and retract/1 on rules | — |
 | `test/compile/test_call_operands.jl` | V1's call operands: `lookupBodyProcedure` (the database's procedure; non-callable goals refused as swipl refuses them, `$expr/n` too), the clause's procedure table, `Output_3`/`Output_n` | — |
 | `test/compile/test_decompile.jl` | V1 L2's own tests: each literal decompiled exactly, kind included; random heads back as variants; the table referenced once per literal and `argKey == indexOfWord`; `NUM_OTHER` as an opaque literal | — |
 | `test/core_lang/test_expr_functor.jl` | Q2's own tests: `$expr/n`'s standard order, its head code, the index keeping it a wildcard (top level and among same-functor clauses), unification and `=@=` child by child | — |
@@ -295,7 +296,6 @@ graph LR
     pl_termwalk --> default_term
     pl_termwalk --> pl_inline
     pl_termwalk --> pl_comp
-    pl_vmi --> default_term
     pl_vmi --> pl_incl
     pl_index --> term_interface
     pl_index --> default_term
@@ -999,6 +999,51 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V2 — the body compiler: BUILT (2026-10-05)** (port_inventory row V2; src/pl-comp.jl, src/pl-vmi.jl,
+src/pl-funct.jl). Plan: a research memo on upstream's code paths (subagent), with its open questions
+Q0–Q14. The user was asleep and had said to continue without asking, taking SWI as is and listing
+every choice for review — the choices are in the list below.
+* **Ported:**
+  * the body side of `compileArgument` — every head/body choice keyed as upstream keys it, `H_LIST_FF`
+    only in a head, `B_POP` in a body;
+  * `compileSubClause` for plain goals, `compileBody` for `,`, `reverse_code`, `lco`;
+  * the rule path of `compileClause`: `I_ENTER`, the body, `I_EXIT`; a body `true` makes a fact.
+  * 31 instructions declared with upstream's flags and operand kinds (`code_info` gains `flags` and
+    `argtype`; `codeTable` is a tuple lookup); `VARNUM`, `MAXARITY`, `NOT_CALLABLE`,
+    `MAX_ARITY_OVERFLOW`.
+* **Gate — test/compile/test_body_code_swipl.jl, live against swipl 10.1.16, all three term types:**
+  * whole-clause code, operands by kind and the `L_NOLCO` label, IDENTICAL to swipl's on 423 clauses:
+    6 pinned with swipl's code written in the file, 17 pinned live, 400 random rule clauses;
+  * nreverse and qsort as swipl CONSULTS bench/programs, each clause tied to the kernel's by `=@=`;
+  * coverage: every declared body instruction occurs, LCO with `I_TCALL` and with `I_LCALL`, an empty
+    L-block, LCO abandoned;
+  * MB1–MB18 caught at verdict level (the plan's 16, plus clause/2 and retract/1 answering rules).
+* **Choices made, for the user's review (V2 plan Q0–Q14):**
+  * Q0: M1 first, as planned (done, `2c04b1e`).
+  * **Q1, `!`: NOT compiled in V2** — the inventory puts `I_CUT` in V6, and moving it is a plan
+    change. So qsort's partition/4 clause 1 (`X =< Y, !, …`) is refused (`NotPortedError`), pinned as
+    such, and left out of the qsort comparison; the other five qsort clauses match swipl. The
+    alternative (compile `!` → `I_CUT` now, execution in V6: two branches) is small; your call.
+  * Q3: compileSubClause's names in the global data, once per database (`subclause_names`), like the
+    control functors.
+  * Q4: a construct not yet ported throws `NotPortedError(culprit, what, step)` before any code.
+  * Q5: an inline-compiled functor (`=`, `==`, `\==`, `var`, `nonvar`, the nine type tests, `arg/3`,
+    `$call_continuation/1`, `$shift/1`, `$shift_for_copy/1`) and `is/2` are refused whole —
+    upstream's inline compilers sometimes fall back to a call, but refusing never emits wrong code.
+  * Q6: `type_error(callable, Body)` — the WHOLE body, probed in swipl (`p :- q, 1` reports
+    `(q,1)`). `lookupBodyProcedure` keeps its own refusal; compileSubClause returns NOT_CALLABLE
+    before reaching it, as upstream.
+  * Q7: `L_ATOM`/`L_SMALLINT` and `I_LCALL` copy the `B_*`/`I_DEPART` operand word, as upstream.
+  * Q8: opcodes renumbered in pl-vmi.c's order (`B_VAR0 + index` needs them consecutive).
+  * Q9: `code_info` carries `flags` and `argtype` verbatim.
+  * Q10: clause/2 and retract/1 answer for the body `true`, so they skip rules; retractall/1 takes
+    them (it decompiles only the head).
+  * Q11: `MAXARITY` now. Q12: `compileClause`'s body is `Union{Nothing, T}`. Q13: the program tie
+    via swipl's consult and `=@=`. Q14: a rule of a multifile predicate is refused (`I_CONTEXT`).
+* **Kernel-only, pinned:** `$expr/n` as data in a body is `B_FUNCTOR $expr/n` (literal 0, its
+  children every argument); a value SWI has no type for is an opaque `B_ATOM` literal, moved by
+  `L_ATOM` with the same index; `$expr/n` as a goal is `type_error(callable, Body)`.
 
 **M1 — the code map, generated: BUILT (2026-10-04)** (port_inventory row M1; tools/port_check.jl).
 * **One tool.** `tools/port_check.jl --write-inventory` writes three generated blocks:

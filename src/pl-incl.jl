@@ -193,13 +193,15 @@ const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
 
 # ── unification: return codes, the occurs-check flag, backtrack marks ──────────────────────────
 # PORT: pl-incl.h boolex_t
-# DIVERGES: only the codes the ported unifier returns; the stack-overflow codes cannot happen (no
-# fixed-size stacks) and are not ported.
+# DIVERGES: only the codes the ported unifier and clause compiler return; the stack-overflow codes
+# cannot happen (no fixed-size stacks) and are not ported.
 "Success, failure, or \"needs the compound algorithm\" (pl-incl.h `boolex_t`)."
 @enum boolex_t::Int8 begin
     BOOLEX_TRUE = 1             # logical success (= `true`)
     BOOLEX_FALSE = 0            # logical failure (= `false`)
     DO_COMPOUND = -8            # need more general algorithm
+    NOT_CALLABLE = -9           # pl-comp.c
+    MAX_ARITY_OVERFLOW = -10    # pl-comp.c
 end
 
 # PORT: pl-incl.h occurs_check_t

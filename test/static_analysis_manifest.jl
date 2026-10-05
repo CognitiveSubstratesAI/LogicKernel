@@ -163,7 +163,7 @@ function _manifest_index(T)
         (LK.indexableCompound, Tuple{PCd}, true),
         (LK.isIndexedVarTerm, Tuple{CInfo, T}, false),
         (LK._comp_arg, Tuple{T, Int, Int}, true),
-        (LK._comp_shape, Tuple{T}, true), (LK._gnd_head_code, Tuple{T}, true),
+        (LK._comp_shape, Tuple{T}, true), (LK._gnd_code, Tuple{T, Int}, true),
         (LK.isFirstVarP, Tuple{CInfo, T}, true),
         (LK.compileListFF!, Tuple{CInfo, T}, false),
         (LK.compileInfo{T}, Tuple{Int, MOD, PR}, false),
@@ -175,9 +175,17 @@ function _manifest_index(T)
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing}, false),
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, T}, false),
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
+        (LK.reverse_code!, Tuple{Vector{UInt64}, Int, Int}, true),
+        (LK.lco!, Tuple{CInfo, Int}, false),
+        (LK.compileSubClause!, Tuple{GD, CInfo, T, UInt64}, false),
+        (LK.compileBody!, Tuple{GD, CInfo, T, UInt64}, false),
+        (LK._is_rule_body, Tuple{GD, Nothing}, true),
+        (LK._is_rule_body, Tuple{GD, T}, true),
         (LK.compileClause, Tuple{GD, T, Nothing, PR, MOD}, false),
+        (LK.compileClause, Tuple{GD, T, T, PR, MOD}, false),
         # src/pl-funct.jl — the control functors the global data holds
         (LK.registerControlFunctors, Tuple{Type{T}}, false),
+        (LK._subclause_names, Tuple{Type{T}}, false),
         (LK._has_functor, Tuple{T, UInt64, Int}, true),
         (LK._is_control, Tuple{T, LK.ControlFunctors}, true),
         # src/pl-index.jl
@@ -334,6 +342,11 @@ _index_entry_points(T) = (
         Tuple{LK.PL_global_data{T}, T, Nothing, LK.Procedure{T}, LK.module_t{T}},
         false
     ),
+    (
+        LK.compileClause,
+        Tuple{LK.PL_global_data{T}, T, T, LK.Procedure{T}, LK.module_t{T}},
+        false
+    ),
     (LK.lookupBodyProcedure, Tuple{LK.PL_global_data{T}, T, LK.module_t{T}}, false),
     (
         LK.assertDefinition!,
@@ -407,7 +420,8 @@ const DISPATCH_MANIFEST = (
     (LK.initVMIMerge, Tuple{UInt64}, true),
     (LK.functor_operand, Tuple{UInt64, Int}, false),
     (LK.functor_literal, Tuple{UInt64}, true), (LK.functor_arity, Tuple{UInt64}, true),
-    (LK.VAROFFSET, Tuple{Int}, true), (LK.isFirstVarSet!, Tuple{BitVector, Int}, true),
+    (LK.VAROFFSET, Tuple{Int}, true), (LK.VARNUM, Tuple{UInt64}, true),
+    (LK.isFirstVarSet!, Tuple{BitVector, Int}, true),
     (LK.isFirstVar, Tuple{BitVector, Int}, true),
     (LK.MSB, Tuple{Int}, true), (LK.MSB, Tuple{UInt32}, true),
     (LK.clean_index_key, Tuple{UInt64}, true), (LK.hashIndex, Tuple{UInt64, UInt32}, true),

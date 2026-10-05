@@ -94,6 +94,7 @@ const APP_H, APP_T, APP_L, APP_R = _v(), _v(), _v(), _v()
 const APP_HEAD = mk_expr(BT, BT[_a(:app), _cons(APP_H, APP_T), APP_L, _cons(APP_H, APP_R)])
 const APP_BODY = mk_expr(BT, BT[_a(:app), APP_T, APP_L, APP_R])
 const APP_PROC = lookupProcedure(sym_key(_a(:app)), 3, CP_USER)
+# the whole rule (V2): head, I_ENTER, the body's last call with its LCO block, I_EXIT
 
 const PROLOG_FIXTURES = """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
@@ -134,6 +135,11 @@ const CASES = [
         () -> LogicKernel._compile_clause_head!(
             CP_GD, LogicKernel.compileInfo{BT}(3, CP_USER, APP_PROC), APP_HEAD, APP_BODY
         ),
+        ""
+    ),
+    (
+        "compileClause rule",
+        () -> compileClause(CP_GD, APP_HEAD, APP_BODY, APP_PROC, CP_USER),
         ""
     ),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs

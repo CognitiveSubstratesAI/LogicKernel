@@ -515,7 +515,8 @@ function pl_garbage_collect_clauses!(
 end
 
 # PORT: pl-proc.c retract as pl_retract
-# DIVERGES: the predicate is given (no module lookup); facts only (no SSU clauses), so the clause is
+# DIVERGES: the predicate is given (no module lookup); `retract(Head)` only — its body is `true`, so
+# only facts answer (a rule's body is V9's `decompile`) — and no SSU clauses, so the clause is
 # unified by its head (`decompileHead!`; upstream `decompile`, whose body side is `true` here). Each
 # answer — the retracted clause — is a call of `sink(clause)::Bool` (false to cut) with the bindings
 # in place in `ld`, undone when it returns: SWI's foreign frame is rewound after a failed attempt and
@@ -552,7 +553,8 @@ function pl_retract!(
             clause = cref.clause::Clause{T}
             m = Mark(ld)                                # PL_open_foreign_frame()
             try
-                if decompileHead!(ld, clause, head)
+                # retract(Head) is retract((Head :- true)): a rule's body is not `true`
+                if (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
                     if retractClauseDefinition!(gd, def, clause, true) || !first_call
                         if chp.cref === nothing         # deterministic last one
                             popPredicateAccess!(ld, def)

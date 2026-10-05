@@ -290,6 +290,28 @@ end
 "The frame offset of variable slot `var` (pl-incl.h)."
 VAROFFSET(var::Int)::code = code(var)
 
+# PORT: pl-incl.h VARNUM
+# DIVERGES: the inverse of `VAROFFSET`, so the identity too until the frame layout (V3).
+"The variable slot of frame offset `i` (pl-incl.h)."
+VARNUM(i::code)::Int = Int(i)
+
+# PORT: pl-incl.h MAXARITY
+"The largest arity of a predicate (pl-incl.h)."
+const MAXARITY = 1024
+
+"""
+    NotPortedError{T}(culprit, what, step)
+
+Raised where the clause compiler meets a construct whose compilation is not ported yet — `what`,
+due in plan step `step` (docs/port_inventory.md) — instead of compiling it as something else:
+upstream compiles each of them differently, so falling through would be wrong code.
+"""
+struct NotPortedError{T} <: Exception
+    culprit::T
+    what::String
+    step::String
+end
+
 # PORT: pl-comp.c isFirstVarSet
 "Mark variable slot `n` used; true when this is its first use (pl-comp.c)."
 function isFirstVarSet!(vt::BitVector, n::Int)::Bool
@@ -753,43 +775,50 @@ functor_literal(op::code)::Int = Int(op >> 32)
 "The arity an `H_FUNCTOR` operand holds (V1 L2)."
 functor_arity(op::code)::Int = Int(op & _OPERAND_HALF)
 
-# From pl-comp.c compileArgument (`TAG_INTEGER`, `TAG_FLOAT`, `TAG_STRING`): the head instruction of
-# a grounded value. A number by its SEMANTIC kind (Q1); an integer by its STORAGE, as upstream —
-# tagged (`PLMINTAGGEDINT`..`PLMAXTAGGEDINT`, `STG_INLINE`) is `H_SMALLINT`, any other `H_MPZ` (swipl
-# 10.1.16: 2^56-1 and -2^56 are h_smallint, 2^56, -2^56-1 and 2^63-1 h_mpz, probed). Anything else is
-# `H_STRING` for a string (the kind query's NUM_STRING, user 2026-10-04); any other grounded value
-# (NUM_OTHER, no SWI type) an `H_ATOM`: an opaque literal compared by `gnd_equal` (the table above).
-"The head instruction of grounded value `t` (pl-comp.c `compileArgument`)."
-function _gnd_head_code(t)::code
+# From pl-comp.c compileArgument (`TAG_INTEGER`, `TAG_FLOAT`, `TAG_STRING`): the instruction of a
+# grounded value, in a head or a body, each choice keyed as upstream keys it (`A_BODY` for SMALLINT
+# and FLOAT, `A_HEAD` for MPZ, MPQ and STRING). A number by its SEMANTIC kind (Q1); an integer by its
+# STORAGE, as upstream — tagged (`PLMINTAGGEDINT`..`PLMAXTAGGEDINT`, `STG_INLINE`) is SMALLINT, any
+# other MPZ (swipl 10.1.16: 2^56-1 and -2^56 are h_smallint, 2^56, -2^56-1 and 2^63-1 h_mpz,
+# probed). Anything else is STRING for a string (the kind query's NUM_STRING, user 2026-10-04); any
+# other grounded value (NUM_OTHER, no SWI type) an ATOM: an opaque literal compared by `gnd_equal`.
+"The instruction of grounded value `t` in a head or (`where_ & A_BODY`) a body (pl-comp.c `compileArgument`)."
+function _gnd_code(t, where_::Int)::code
     nk = number_kind(t)
+    body = (where_ & A_BODY) != 0
+    head = (where_ & A_HEAD) != 0
     if nk === NUM_INTEGER
         if integer_is_int64(t) && PLMINTAGGEDINT <= int64_value(t) <= PLMAXTAGGEDINT
-            return H_SMALLINT                                  # storage(*arg) == STG_INLINE
+            return body ? B_SMALLINT : H_SMALLINT              # storage(*arg) == STG_INLINE
         end
-        return H_MPZ
+        return head ? H_MPZ : B_MPZ
     elseif nk === NUM_RATIONAL
-        return H_MPQ                                           # isMPQNum(*arg)
+        return head ? H_MPQ : B_MPQ                            # isMPQNum(*arg)
     elseif nk === NUM_FLOAT
-        return H_FLOAT
+        return body ? B_FLOAT : H_FLOAT
     elseif nk === NUM_STRING
-        return H_STRING                                        # TAG_STRING
+        return head ? H_STRING : B_STRING                      # TAG_STRING
     end
-    return H_ATOM                                              # NUM_OTHER: an opaque literal
+    return body ? B_ATOM : H_ATOM                              # NUM_OTHER: an opaque literal
 end
 
 # PORT: pl-comp.c compileArgument
-# DIVERGES: the head side (`where` without A_BODY, no `islocal`). SWI-7's `[]` compiles to `H_NIL`
-# (Q1), any other symbol to `H_ATOM`; a grounded value to `H_SMALLINT`/`H_MPZ`/`H_MPQ`/`H_FLOAT`/
-# `H_STRING` by its kind and storage (`_gnd_head_code`), anything else to `H_ATOM`; each operand is
-# the index of the constant in the clause's LITERAL TABLE (V1 L2, above). A list cell (`is_pair`,
-# upstream's `fdef == FUNCTOR_dot2`) compiles to `H_LIST`/`H_RLIST`, or `H_LIST_FF` when both its
-# children are fresh clause variables; any other compound to `H_FUNCTOR`/`H_RFUNCTOR` with the
-# packed operand of its head symbol's literal and its arity; and a compound whose head is not a
-# symbol as `H_FUNCTOR $expr/n` (Q2, src/pl-ressymbol.jl) — literal 0 — with every child as an
-# argument.
+# DIVERGES: no `islocal` (goal clauses: `link_local_var`, `argvar`, `subclausearg`; V9), no
+# attributed variables, no `CL_HEAD_TERMS`/`argMoveUnify` (the moved head unifications, V9), and no
+# stack-overflow returns. SWI-7's `[]` compiles to `H_NIL`/`B_NIL` (Q1), any other symbol to
+# `H_ATOM`/`B_ATOM`; a grounded value to the SMALLINT/MPZ/MPQ/FLOAT/STRING instruction of its kind
+# and storage (`_gnd_code`), anything else to `*_ATOM`; each operand is the index of the constant
+# in the clause's LITERAL TABLE (V1 L2). A list cell (`is_pair`, upstream's `fdef == FUNCTOR_dot2`)
+# compiles to `*_LIST`/`*_RLIST`, or in a head `H_LIST_FF` when both its children are fresh clause
+# variables; any other compound to `*_FUNCTOR`/`*_RFUNCTOR` with the packed operand of its head
+# symbol's literal and its arity, and a compound whose head is not a symbol as `*_FUNCTOR $expr/n`
+# (Q2, src/pl-ressymbol.jl) — literal 0 — with every child as an argument. Each head/body choice is
+# keyed as upstream keys it (some on `A_BODY`, some on `A_HEAD`).
 """
-Emit the head code for argument `arg` (pl-comp.c): left to right, a compound's last argument
-`A_RIGHT` (`H_RFUNCTOR`, no `H_POP` of its own), resume points on an explicit stack.
+Emit the code for argument `arg` (pl-comp.c): in a head (`A_HEAD`) the instructions that unify it,
+in a body (`A_BODY`) those that build it as the next argument of a call; left to right, a
+compound's last argument `A_RIGHT` (`*_RFUNCTOR`, no pop of its own), resume points on an explicit
+stack.
 """
 function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {T}
     stack = ca_frame{T}[]
@@ -799,48 +828,80 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
     if k === VAR
         index = isIndexedVarTerm(ci, arg)
         if index < 0                                           # a void
-            Output_0!(ci, H_VOID)
+            Output_0!(ci, (where_ & A_BODY) != 0 ? B_VOID : H_VOID)
             @goto resume
         end
         first = isFirstVarSet!(ci.used_var, index)
         if index < ci.arity                                    # variable on its own in the head
-            if (where_ & A_ARG) == 0
-                if first
-                    Output_0!(ci, H_VOID)
-                    @goto resume
+            if (where_ & A_BODY) != 0
+                if (where_ & A_ARG) != 0
+                    Output_0!(ci, B_ARGVAR)
+                else
+                    if index < 3
+                        Output_0!(ci, B_VAR0 + code(index))
+                        @goto resume
+                    end
+                    Output_0!(ci, B_VAR)
                 end
+            else                                               # head
+                if (where_ & A_ARG) == 0
+                    if first
+                        Output_0!(ci, H_VOID)
+                        @goto resume
+                    end
+                end
+                Output_0!(ci, H_VAR)
             end
-            Output_0!(ci, H_VAR)
             Output_a!(ci, VAROFFSET(index))
             @goto resume
         end
         # normal variable (i.e. not shared in the head and non-void)
-        Output_0!(ci, first ? H_FIRSTVAR : H_VAR)
+        if (where_ & A_BODY) != 0
+            if (where_ & A_ARG) != 0
+                Output_0!(ci, first ? B_ARGFIRSTVAR : B_ARGVAR)
+            else
+                if index < 3 && !first
+                    Output_0!(ci, B_VAR0 + code(index))
+                    @goto resume
+                end
+                Output_0!(ci, first ? B_FIRSTVAR : B_VAR)
+            end
+        else
+            Output_0!(ci, first ? H_FIRSTVAR : H_VAR)
+        end
         Output_a!(ci, VAROFFSET(index))
         @goto resume
     elseif k === SYM
         if is_nil(arg)                                         # isNil(*arg): SWI-7's reserved []
-            Output_0!(ci, H_NIL)
+            Output_0!(ci, (where_ & A_BODY) != 0 ? B_NIL : H_NIL)
         else
-            Output_1!(ci, H_ATOM, addLiteral!(ci, arg))           # code2atom: the literal
+            Output_1!(ci, (where_ & A_BODY) != 0 ? B_ATOM : H_ATOM, addLiteral!(ci, arg))
         end
         @goto resume
     elseif k === GND
-        Output_1!(ci, _gnd_head_code(arg), addLiteral!(ci, arg))
+        Output_1!(ci, _gnd_code(arg, where_), addLiteral!(ci, arg))
         @goto resume
     end
     # a compound
     isright = (where_ & A_RIGHT) != 0
     off, ar = _comp_shape(arg)
     if is_pair(arg)                                            # fdef == FUNCTOR_dot2
-        if compileListFF!(ci, arg)                             # (where & A_HEAD): always, here
-            @goto resume
+        if (where_ & A_HEAD) != 0                              # index in array!
+            if compileListFF!(ci, arg)
+                @goto resume
+            end
+            Output_0!(ci, isright ? H_RLIST : H_LIST)
+        else
+            Output_0!(ci, isright ? B_RLIST : B_LIST)
         end
-        Output_0!(ci, isright ? H_RLIST : H_LIST)
     else
         lit = off == 2 ? addLiteral!(ci, child(arg, 1)) : code(0)    # `$expr/n`: no literal
         fdef = functor_operand(lit, ar)
-        Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
+        if (where_ & A_HEAD) != 0                              # index in array!
+            Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
+        else
+            Output_1!(ci, isright ? B_RFUNCTOR : B_FUNCTOR, fdef)
+        end
     end
     where_ &= ~(A_RIGHT | A_NOARGVAR)
     where_ |= A_ARG
@@ -854,7 +915,7 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
         @goto last_arg
     end
     if !isright
-        Output_0!(ci, H_POP)
+        Output_0!(ci, (where_ & A_HEAD) != 0 ? H_POP : B_POP)
     end
     @goto resume
     @label last_arg
@@ -892,22 +953,208 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
         end
         @goto last_arg                                         # idx == last_idx
     end
-    Output_0!(ci, H_POP)                                       # CA_LAST_POP
+    Output_0!(ci, (frame.where_ & A_HEAD) != 0 ? H_POP : B_POP)    # CA_LAST_POP
     @goto resume
 end
 
+# ── the body: plain goals, conjunctions, the last call (pl-comp.c) ──────────────────────────────
+# PORT: pl-comp.c reverse_code
+# DIVERGES: positions in the code vector (1-based, `z` exclusive) instead of pointers.
+"Reverse the code words `codes[a:z-1]` in place (pl-comp.c)."
+function reverse_code!(codes::Vector{code}, a::Int, z::Int)::Nothing
+    z -= 1
+    while a < z
+        t = codes[a]
+        codes[a] = codes[z]
+        a += 1
+        codes[z] = t
+        z -= 1
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c lco
+# DIVERGES: positions in the code vector (1-based) instead of pointers, so no FIX_BUFFER_SHIFT; the
+# departing call's operand is an index into the clause's procedure table, and `I_LCALL` carries the
+# same index, as `L_ATOM`/`L_SMALLINT` carry the `B_*` instruction's literal index (V1: upstream
+# copies the operand word too); no `B_SMALLINTW` (64-bit words) and no `PL_register_atom`.
+"""
+Last-call optimisation (pl-comp.c) of the goal whose argument code starts at code position `pc0`
+and ends with `I_DEPART`: unless an argument cannot move into place — an instruction without
+`VIF_LCO`, or a variable whose slot an earlier argument overwrites — put in front of that code an
+`L_NOLCO` block that writes each argument straight into the current frame's argument slot and calls
+with `I_TCALL` (the clause's own predicate) or `I_LCALL`.
+"""
+function lco!(ci::compileInfo, pc0::Int)::Nothing
+    pcz = PC(ci)
+    s0 = pc0 + 1
+    s = s0
+    e = pcz + 1
+    oarg = 0
+    ci.codes[e - 2] == I_DEPART || error("lco: the last goal does not end in I_DEPART")   # assert
+    Output_1!(ci, L_NOLCO, code(0))
+    while s < e - 2
+        c = ci.codes[s]
+        s += 1
+        if (codeTable(c).flags & VIF_LCO) == 0
+            resize!(ci.codes, pcz)                             # no_lco: seekBuffer(pcz)
+            return nothing
+        end
+        if c == B_VAR0 || c == B_VAR1 || c == B_VAR2 || c == B_VAR
+            if c == B_VAR
+                bv = VARNUM(ci.codes[s])
+                s += 1
+            else
+                bv = Int(c - B_VAR0)
+            end
+            if bv < oarg                                       # would overwrite
+                resize!(ci.codes, pcz)
+                return nothing
+            end
+            if bv != oarg
+                Output_2!(ci, L_VAR, VAROFFSET(oarg), VAROFFSET(bv))
+            end
+        elseif c == B_VOID
+            Output_1!(ci, L_VOID, VAROFFSET(oarg))
+        elseif c == B_SMALLINT
+            a = ci.codes[s]
+            s += 1
+            Output_2!(ci, L_SMALLINT, VAROFFSET(oarg), a)
+        elseif c == B_ATOM
+            a = ci.codes[s]
+            s += 1
+            Output_2!(ci, L_ATOM, VAROFFSET(oarg), a)
+        elseif c == B_NIL
+            Output_1!(ci, L_NIL, VAROFFSET(oarg))
+        else
+            error("lco: no case for $(codeTable(c).name)")     # assert(0)
+        end
+        oarg += 1
+    end
+    depart = ci.codes[e - 1]                                   # depart_proc, as its table index
+    if ci.procedure === ci.procedures[depart]
+        Output_0!(ci, I_TCALL)
+    else
+        Output_1!(ci, I_LCALL, depart)
+    end
+    z = length(ci.codes) + 1                                   # topBuffer
+    ci.codes[e + 1] = code(z - e - 2)                          # fill L_NOLCO argument
+    reverse_code!(ci.codes, s0, e)
+    reverse_code!(ci.codes, e, z)
+    reverse_code!(ci.codes, s0, z)
+    return nothing
+end
+
+# PORT: pl-comp.c compileSubClause
+# DIVERGES: plain goals only. The meta-call (a variable goal, `call/N`), the goals compiled inline —
+# the reserved atoms (`!`, `true`, `fail`, …) and O_COMPILE_IS's functors (`=`, `==`, the type tests,
+# `arg/3`, …) — and `is/2` (compileSimpleAddition) throw `NotPortedError` BEFORE any code is
+# emitted (V6, V8, V9): upstream compiles each of them otherwise, so a call would be wrong code; and
+# refusing the whole functor, where upstream's inline compilers sometimes fall back to a call, never
+# emits wrong code (user's review: `# choice made`). The names are the global data's
+# (`subclause_names`). One module: no `I_CALLM`/`I_DEPARTM`/`I_CALLATM*`, and no colon or at
+# context. The call operand indexes the clause's procedure table (V1).
+"""
+Compile body goal `arg` as a call with `call` — `I_CALL`, or `I_DEPART` for the clause's last goal,
+then last-call-optimised (`lco!`) — after its arguments (pl-comp.c). Returns `BOOLEX_TRUE`, or
+`NOT_CALLABLE`/`MAX_ARITY_OVERFLOW` as upstream does.
+"""
+function compileSubClause!(
+    gd::PL_global_data{T}, ci::compileInfo{T}, arg::T, call::code
+)::boolex_t where {T}
+    names = gd.subclause_names
+    k = kind(arg)
+    off, ar = 2, 0
+    if k === VAR
+        isIndexedVarTerm(ci, arg) >= 0 &&
+            throw(NotPortedError{T}(arg, "a variable goal (the meta-call, I_CALL1)", "V9"))
+        return NOT_CALLABLE                                    # a void goal
+    elseif k === EXPR
+        off, ar = _comp_shape(arg)
+        ar > MAXARITY && return MAX_ARITY_OVERFLOW
+        off == 2 || return NOT_CALLABLE                        # `$expr/n`: no text name
+        h = child(arg, 1)
+        # !isTextAtom(fdef->name) && fdef->name != ATOM_nil
+        is_reserved_symbol(h) && !is_nil(h) && return NOT_CALLABLE
+        name = sym_key(h)
+        (name, ar) in names.inline_functors &&
+            throw(
+                NotPortedError{T}(
+                    arg, "a goal compiled inline (O_COMPILE_IS, is/2)", "V8/V9"
+                )
+            )
+        name == names.atom_call &&
+            throw(NotPortedError{T}(arg, "call/N (the meta-call)", "V9"))
+    elseif k === SYM && !is_reserved_symbol(arg)               # isTextAtom(*arg)
+        sym_key(arg) in names.reserved_atoms &&
+            throw(
+                NotPortedError{T}(
+                    arg, "a goal atom compiled inline (!, true, fail, …)", "V6/V9"
+                )
+            )
+    else
+        return NOT_CALLABLE
+    end
+    pc0 = PC(ci)
+    for i in 0:(ar - 1)                                        # term: there are arguments
+        compileArgument!(ci, _comp_arg(arg, off, i), A_BODY)
+    end
+    proc = lookupBodyProcedure(gd, arg, ci.module_)
+    Output_1!(ci, call, addProcedure!(ci, proc))
+    if call == I_DEPART                                        # && ci->procedure: always set here
+        lco!(ci, pc0)
+    end
+    return BOOLEX_TRUE
+end
+
+# PORT: pl-comp.c compileBody
+# DIVERGES: `,` only — every other control construct (`;`, `|`, `->`, `*->`, `\+`, `$/1`, `:/2`,
+# `@/2`) throws `NotPortedError` (V9), and with them the variable tables they save; the pending
+# right-hand sides (upstream's CB_COMMA_RHS frames) are a Vector where upstream uses a segstack.
+"""
+Compile clause body `body`, its last goal called with `call` (pl-comp.c): a conjunction left to
+right, every goal but the last with `I_CALL`. Returns `BOOLEX_TRUE` or the first goal's error code.
+"""
+function compileBody!(
+    gd::PL_global_data{T}, ci::compileInfo{T}, body::T, call::code
+)::boolex_t where {T}
+    cf = gd.functors_control
+    stack = Tuple{T, code}[]                                   # CB_COMMA_RHS: (B, call)
+    @label next_body
+    if kind(body) === EXPR && _is_control(body, cf)
+        if _has_functor(body, cf.comma, 2)                     # A , B
+            push!(stack, (child(body, 3), call))
+            body = child(body, 2)
+            call = I_CALL
+            @goto next_body
+        end
+        throw(NotPortedError{T}(body, "a control construct other than ,/2", "V9"))
+    end
+    rc = compileSubClause!(gd, ci, body, call)
+    rc == BOOLEX_TRUE || return rc
+    isempty(stack) && return BOOLEX_TRUE
+    body, call = pop!(stack)
+    @goto next_body
+end
+
+"Whether `body` makes a rule: present and not the atom `true` (pl-comp.c `body && *body != ATOM_true`)."
+_is_rule_body(gd::PL_global_data{T}, body::Union{Nothing, T}) where {T} =
+    body !== nothing &&
+    !(
+        kind(body) === SYM && !is_reserved_symbol(body) &&
+        sym_key(body) == gd.subclause_names.atom_true
+    )
+
 # From pl-comp.c compileClause (c:2049-2116): what runs before the body is compiled — the variable
-# analysis of head AND body, the head arguments left to right, and for a clause with a body
-# `I_ENTER` (a void before it merges away, as before `I_EXITFACT`). No SSU (`I_CHP`, `I_SSU_*`) or
-# module context (`I_CONTEXT`). The body code and `I_EXIT` (`compileBody`) are V2, and so is the
-# body `true`, which makes a fact: a caller passes `nothing` for a fact.
+# analysis of head AND body, the head arguments left to right, and for a rule `I_ENTER` (a void
+# before it merges away, as before `I_EXITFACT`). No SSU (`I_CHP`, `I_SSU_*`) or module context
+# (`I_CONTEXT`). A body that is `nothing` or the atom `true` makes a fact.
 """
     _compile_clause_head!(gd, ci, head, body) -> nv
 
 Analyse the variables of `head` and `body` (`nothing` for a fact) and emit the head code of the
-clause into `ci`, ending with `I_ENTER` when there is a body (pl-comp.c `compileClause`), for the
-database whose global data is `gd`. Returns the frame size: the clause's `prolog_vars` and
-`variables`.
+clause into `ci`, ending with `I_ENTER` for a rule (pl-comp.c `compileClause`), for the database
+whose global data is `gd`. Returns the frame size: the clause's `prolog_vars` and `variables`.
 """
 function _compile_clause_head!(
     gd::PL_global_data{T}, ci::compileInfo{T}, head::T, body::Union{Nothing, T}
@@ -919,37 +1166,61 @@ function _compile_clause_head!(
             compileArgument!(ci, child(head, n + 2), A_HEAD)
         end
     end
-    if body !== nothing
+    if _is_rule_body(gd, body)
         Output_0!(ci, I_ENTER)
     end
     return nv
 end
 
 # PORT: pl-comp.c compileClause
-# DIVERGES: a fact only — `body` is `nothing` (upstream: the body `true`), and the rule path
-# (`I_ENTER` … `I_EXIT`) is V2 — and no warnings, flags or resource limits; the clause is returned
-# where upstream stores it through `cp`. The clause is created at generation 0;
-# `assertDefinition!` sets the rest. The database's global data `gd` is an argument, where
-# upstream reaches GD — its functor table, the `CONTROL_F` flags the analysis reads — as a global
-# (src/pl-global.jl). `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
+# DIVERGES: the body is `nothing` for a fact (upstream: the body `true`, which also makes one); the
+# body's goals are plain goals and conjunctions (see `compileBody!`); no SSU, warnings, flags or
+# resource limits, and a clause of a multifile predicate is refused (it would need `I_CONTEXT`:
+# modules are not ported); the clause is returned where upstream stores it through `cp`, created at
+# generation 0 (`assertDefinition!` sets the rest). `COMMIT_CLAUSE` waits for `!` (V6). The
+# database's global data `gd` is an argument, where upstream reaches GD — its functor table, the
+# `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl).
+# `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
 """
     compileClause(gd, head, body, proc, m) -> Clause
 
-Compile the fact `head` (`body` is `nothing`) of procedure `proc` into module `m`, in the database
-whose global data is `gd`: analyse its variables, emit the code for each argument left to right,
-end with `I_EXITFACT` (pl-comp.c). The clause keeps the code, the literal table its operands index
-(V1 L2) and the procedure table its call operands index (V1; empty for a fact).
+Compile the clause `head :- body` (`body` `nothing` or `true` for a fact) of procedure `proc` into
+module `m`, in the database whose global data is `gd` (pl-comp.c): analyse its variables, emit the
+head code argument by argument, then a fact's `I_EXITFACT`, or a rule's `I_ENTER`, its body and
+`I_EXIT`. The clause keeps the code, the literal table its operands index (V1 L2) and the procedure
+table its call operands index (V1). A body goal that is not callable raises
+`CallableTypeError(body)` — the WHOLE body, as swipl reports it (probed in 10.1.16).
 """
 function compileClause(
-    gd::PL_global_data{T}, head::T, body::Nothing, proc::Procedure{T}, m::module_t{T}
+    gd::PL_global_data{T}, head::T, body::Union{Nothing, T}, proc::Procedure{T},
+    m::module_t{T}
 )::Clause{T} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
     ci = compileInfo{T}(def.arity, m, proc)
+    rule = _is_rule_body(gd, body)
+    rule && (def.flags & P_MULTIFILE) != 0 &&
+        throw(
+            NotPortedError{T}(
+                head, "a rule of a multifile predicate (I_CONTEXT)", "modules"
+            )
+        )
     nv = _compile_clause_head!(gd, ci, head, body)
-    Output_0!(ci, I_EXITFACT)                                  # fact (for decompiler)
+    flags = UInt32(0)
+    if rule
+        rc = compileBody!(gd, ci, body::T, I_DEPART)
+        if rc == NOT_CALLABLE
+            throw(CallableTypeError{T}(body::T))
+        elseif rc == MAX_ARITY_OVERFLOW
+            error("compileClause: representation_error(max_procedure_arity)")
+        end
+        Output_0!(ci, I_EXIT)
+    else
+        flags = UNIT_CLAUSE
+        Output_0!(ci, I_EXITFACT)                              # fact (for decompiler)
+    end
     return Clause{T}(
-        def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), UNIT_CLAUSE, ci.codes,
-        ci.literals, ci.procedures
+        def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), flags, ci.codes, ci.literals,
+        ci.procedures
     )
 end
 
@@ -1230,7 +1501,8 @@ end
 # ── clause/2 (pl-comp.c) ────────────────────────────────────────────────────────────────────────
 # PORT: pl-comp.c clause as pl_clause
 # DIVERGES: clause/2 with an unbound clause reference only (no clause/3-4 by reference, no module
-# context or protected predicates), on facts (the body is `true`); the predicate is given. Each
+# context or protected predicates), answering for the body `true` — so only facts, as a rule's body is
+# not `true` (rule bodies are V9's `decompile`); the predicate is given. Each
 # answer is a call of `sink(clause)::Bool` (false to cut) with the head's bindings in place in
 # `ld`: a sink keeps what it needs with `resolve_term`, because the bindings are undone when it
 # returns — where SWI's backtracking would undo them.
@@ -1254,7 +1526,8 @@ function pl_clause!(
             clause = cref.clause::Clause{T}
             m = Mark(ld)
             try
-                if decompileHead!(ld, clause, head)
+                # a rule's body is not `true`: only a fact answers clause(Head, true)
+                if (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
                     if chp.cref === nothing             # the last one: out
                         popPredicateAccess!(ld, def)
                         popped = true

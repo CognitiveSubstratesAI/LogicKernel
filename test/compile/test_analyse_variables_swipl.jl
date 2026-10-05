@@ -21,8 +21,8 @@
 #     PC, then `clause->variables` slots). Its PROLOG variables are those minus the choice variables
 #     `allocChoiceVar` (c:1710) added for each `->`, `*->` and `\+` — each a distinct variable operand
 #     of the c_* instructions, numbered from the Prolog variables up, which is checked. The kernel's
-#     is `analyse_variables!`'s `nv` (`prolog_vars`; `variables` gains the choice variables when V2
-#     compiles bodies). `shift(k)` comes first, so the frame is captured before any body goal runs
+#     is `analyse_variables!`'s `nv` (`prolog_vars`; `variables` gains the choice variables when V9
+#     compiles control constructs — V2's plain goals allocate none). `shift(k)` comes first, so the frame is captured before any body goal runs
 #     (none is defined).
 # A BARE clause, `Head :- Body`, has no frame to capture, but its body's top term is the random one
 # — a plain goal too, whose direct arguments are numbered above the arity (`analyse_variables`
