@@ -29,19 +29,22 @@
 # collector's), statistics and the debug checks.
 
 # PORT: pl-proc.c lookupProcedure
-# DIVERGES: the functor is its two parts, the name's `sym_key` and the arity (there is no functor
-# table). No `resetProcedure`: for a NEW procedure it only sets the debugger's `TRACE_ME`, which is
-# not ported (abolish, its other caller, is not ported either). No program-space limit, statistics
-# or lock: there are no threads, so the table cannot gain the functor between the lookup and the add.
+# DIVERGES: the functor is its parts: the name symbol `name` and the arity (there is no functor
+# table); the procedure table is keyed by the name's `sym_key`. No `resetProcedure`: for a NEW
+# procedure it sets the debugger's `TRACE_ME`, which is not ported (abolish, its other caller, is
+# not ported either), and `SUPERVISOR(virgin)`, which the new definition starts with. No
+# program-space limit, statistics or lock: there are no threads, so the table cannot gain the
+# functor between the lookup and the add.
 """
     lookupProcedure(name, arity, m) -> Procedure{T}
 
-The procedure `name/arity` (`name` the `sym_key` of its name) of module `m`: the one in its
-procedure table, or a new one with a new predicate — no clauses, flags 0, its per-argument
-information allocated (zeroed) when it has arguments — added to the table (pl-proc.c).
+The procedure `name/arity` (`name` a symbol) of module `m`: the one in its procedure table, or a new
+one with a new predicate — no clauses, flags 0, its per-argument information allocated (zeroed) when
+it has arguments, its supervisor `S_VIRGIN` — added to the table (pl-proc.c).
 """
-function lookupProcedure(name::UInt64, arity::Int, m::module_t{T})::Procedure{T} where {T}
-    proc = get(m.procedures, (name, arity), nothing)
+function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} where {T}
+    key = sym_key(name)
+    proc = get(m.procedures, (key, arity), nothing)
     proc === nothing || return proc
     clauses = ClauseList{T}()
     if arity > 0
@@ -49,9 +52,10 @@ function lookupProcedure(name::UInt64, arity::Int, m::module_t{T})::Procedure{T}
     else
         clauses.args = nothing
     end
-    def = Definition{T}(name, arity, clauses, UInt64(0))
+    cd = m.code_data
+    def = Definition{T}(key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd)
     proc = Procedure{T}(def, UInt32(0))
-    m.procedures[(name, arity)] = proc
+    m.procedures[(key, arity)] = proc
     return proc
 end
 
@@ -109,8 +113,7 @@ end
 # PORT: pl-proc.c setDynamicDefinition
 # DIVERGES: no lock (no threads), and upstream's `setDynamicDefinition_unlocked` is inlined. The
 # `protect_static_code` flag is not ported — it is false by default, so making a static predicate
-# with clauses dynamic is allowed, as in a default swipl. `freeCodesDefinition` (back to
-# `S_VIRGIN`) is not ported: supervisors arrive with the VM (V4a).
+# with clauses dynamic is allowed, as in a default swipl.
 """
     setDynamicDefinition!(def, isdyn) -> Bool
 
@@ -123,8 +126,10 @@ function setDynamicDefinition!(def::Definition, isdyn::Bool)::Bool
     end
     if isdyn                                            # static --> dynamic
         def.flags |= P_DYNAMIC | P_TRANSACT
+        freeCodesDefinition!(def, true)                 # reset to S_VIRGIN
     else                                                # dynamic --> static
         def.flags &= ~(P_DYNAMIC | P_TRANSACT)
+        freeCodesDefinition!(def, true)                 # reset to S_VIRGIN
     end
     return true
 end
@@ -135,9 +140,10 @@ newClauseRef(clause::Clause{T}, key::word) where {T} =
     ClauseRef{T}(nothing, key, clause, nothing)
 
 # PORT: pl-proc.c assertDefinition
-# DIVERGES: no events, transactions or SSU clauses; no supervisor to reset (`freeCodesDefinition`)
-# — the caller runs `reconsiderIndexes!` and `update_primary_index!` before the next call of a
-# static predicate, as upstream's `setDefaultSupervisor` does.
+# DIVERGES: no events, transactions or SSU clauses. A caller that selects clauses outside the VM
+# (clause/2, retract/1, the index tests) runs `reconsiderIndexes!` and `update_primary_index!` itself
+# before the next call of a static predicate, as the VM's `S_VIRGIN` does through
+# `setDefaultSupervisor`.
 """
     assertDefinition!(gd, def, clause, where_) -> ClauseRef
 
@@ -178,6 +184,9 @@ function assertDefinition!(
     cl.number_of_clauses += 1
     if (clause.flags & UNIT_CLAUSE) == 0
         cl.number_of_rules += 1
+    end
+    if (def.flags & (P_DYNAMIC | P_LOCKED_SUPERVISOR)) == 0     # see (*) above
+        freeCodesDefinition!(def, true)
     end
     addClauseToIndexes!(def, clause, where_)
     gd._generation += 1                                 # PL_LOCK(L_GENERATION)
@@ -547,7 +556,7 @@ function pl_retract!(
     try
         gen = dref.generation                           # setGenerationFrameVal()
         chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(ld, head, gen, def, chp)
+        cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
         first_call = true                               # CTX_CNTRL == FRG_FIRST_CALL
         while cref !== nothing
             clause = cref.clause::Clause{T}
@@ -571,7 +580,7 @@ function pl_retract!(
             finally
                 Undo!(ld, m)                            # PL_rewind_foreign_frame(fid)
             end
-            cref = nextClause!(ld, chp, head, gen, def)
+            cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)
         end
     finally
         popped || popPredicateAccess!(ld, def)
@@ -631,7 +640,7 @@ function pl_retractall!(
             end
         else
             chp = ClauseChoice{T}(nothing, word(0))
-            cref = firstClause!(ld, head, gen, def, chp)
+            cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
             while cref !== nothing
                 cl = cref.clause::Clause{T}
                 m = Mark(ld)
@@ -643,7 +652,7 @@ function pl_retractall!(
                     Undo!(ld, m)                        # PL_rewind_foreign_frame(fid)
                 end
                 chp.cref === nothing && break
-                cref = nextClause!(ld, chp, head, gen, def)
+                cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)
             end
         end
     finally

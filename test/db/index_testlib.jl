@@ -43,7 +43,7 @@ A test that needs a FRESH predicate passes a fresh database — the default.
 function ix_pred(
     ::Type{T}, name::Symbol, arity::Int; dynamic::Bool=false, db::IxDB{T}=IxDB{T}()
 )::IxPred{T} where {T}
-    proc = LK.lookupProcedure(sym_key(lk_sym(T, name)), arity, LK.MODULE_user(db.gd))
+    proc = LK.lookupProcedure(lk_sym(T, name), arity, LK.MODULE_user(db.gd))
     dynamic && LK.setDynamicDefinition!(proc.definition, true)
     return IxPred{T}(db, proc, proc.definition, true)
 end
@@ -92,16 +92,46 @@ function ix_call(p::IxPred{T}, goal::T)::Vector{Tuple{T, Bool}} where {T}
     gen = dref.generation
     chp = LK.ClauseChoice{T}(nothing, LK.word(0))
     out = Tuple{T, Bool}[]
-    c = LK.firstClause!(p.db.ld, goal, gen, p.def, chp)
+    c = LK.firstClause!(p.db.ld, LK.argv_term(p.db.ld, goal), gen, p.def, chp)
     while c !== nothing
         a = ix_answer(p.db.ld, goal, c.clause::LK.Clause{T})
         if a !== nothing
             push!(out, (a, chp.cref === nothing))
         end
         chp.cref === nothing && break
-        c = LK.nextClause!(p.db.ld, chp, goal, gen, p.def)
+        c = LK.nextClause!(p.db.ld, chp, LK.argv_term(p.db.ld, goal), gen, p.def)
     end
     LK.popPredicateAccess!(p.db.ld, p.def)
+    return out
+end
+
+"""
+    vm_call(p, goal; flags) -> [(answer, det)]
+
+Call `goal` through the VIRTUAL MACHINE (V4a): `PL_open_query` on the goal's arguments, then
+`PL_next_solution` until it stops answering. Each answer is `goal` with the bindings applied, `det`
+true for `PL_S_LAST` (a deterministic last answer, under `PL_Q_EXT_STATUS`). The query is closed
+after, so no binding is left. The supervisor, not the harness, decides the indexes (`S_VIRGIN`).
+"""
+function vm_call(
+    p::IxPred{T}, goal::T; flags::UInt32=LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS
+)::Vector{Tuple{T, Bool}} where {T}
+    gd, ld = p.db.gd, p.db.ld
+    fid = LK.PL_open_foreign_frame(ld)
+    ar = kind(goal) === EXPR ? nchildren(goal) - 1 : 0
+    args = LK.PL_new_term_refs(ld, ar)
+    for i in 1:ar
+        ld.slots[args + i] = child(goal, i + 1)        # term reference args + (i - 1)
+    end
+    qid = LK.PL_open_query(gd, ld, nothing, flags, p.proc, args)
+    out = Tuple{T, Bool}[]
+    while true
+        rc = LK.PL_next_solution(gd, ld, qid)
+        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
+        push!(out, (LK.resolve_term(ld, goal), rc == LK.PL_S_LAST))
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
     return out
 end
 

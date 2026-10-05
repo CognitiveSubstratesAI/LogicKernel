@@ -112,7 +112,7 @@ end
 "`head` compiled as a clause of its predicate in this file's database (never asserted)."
 function _hclause(head::_H)::LK.Clause{_H}
     user = LK.MODULE_user(_HGD)
-    proc = LK.lookupProcedure(sym_key(child(head, 1)), nchildren(head) - 1, user)
+    proc = LK.lookupProcedure(child(head, 1), nchildren(head) - 1, user)
     return LK.compileClause(_HGD, head, nothing, proc, user)
 end
 

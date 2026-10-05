@@ -14,8 +14,10 @@ using PrecompileTools: @compile_workload
 
 """
 The hot paths on `DefaultTerm`, once each: terms, the standard order, unification, `=@=`, the term
-hashes, numbers by kind, and the clause database (assert, call through the index, retract). Nothing
-test-only, no other term implementation (user, 2026-10-03).
+hashes, numbers by kind, the clause database (assert, call through the index, retract), the local
+stack, and a query through the VM's run loop — one very large function, so the workload is where a
+fresh process stops paying for it (V4a). Nothing test-only, no other term implementation (user,
+2026-10-03).
 """
 function _precompile_workload()::Nothing
     T = DefaultTerm
@@ -42,7 +44,7 @@ function _precompile_workload()::Nothing
     number_kind(half) === NUM_FLOAT && float_value(half)
     gd = PL_global_data{T}()
     user = MODULE_user(gd)
-    proc = lookupProcedure(sym_key(mk_sym(T, :p)), 2, user)
+    proc = lookupProcedure(mk_sym(T, :p), 2, user)
     def = proc.definition
     setDynamicDefinition!(def, true)
     for i in 1:20
@@ -51,7 +53,7 @@ function _precompile_workload()::Nothing
     end
     lookupBodyProcedure(gd, mk_expr(T, T[mk_sym(T, :p), x, a]), user)
     # a rule (V2): q(X, Y) :- p(X, a), p(Y, X) — a call, and a last call with its LCO block
-    q = lookupProcedure(sym_key(mk_sym(T, :q)), 2, user)
+    q = lookupProcedure(mk_sym(T, :q), 2, user)
     body = mk_expr(
         T,
         T[
@@ -73,6 +75,17 @@ function _precompile_workload()::Nothing
     PL_close_foreign_frame(ld, fid)
     ld.BFR = 0
     lowerLTop!(ld, ld.frames[fr].base)
+    # a query (V4a): p(7, X) through the run loop, every answer
+    fid = PL_open_foreign_frame(ld)
+    args = PL_new_term_refs(ld, 2)
+    ld.slots[args + 1] = mk_gnd(T, 7)                   # term reference args + 0
+    qid = PL_open_query(gd, ld, nothing, PL_Q_NORMAL | PL_Q_EXT_STATUS, proc, args)
+    rc = PL_next_solution(gd, ld, qid)
+    while rc == PL_S_TRUE
+        rc = PL_next_solution(gd, ld, qid)
+    end
+    PL_close_query(ld, qid)
+    PL_close_foreign_frame(ld, fid)
     return nothing
 end
 

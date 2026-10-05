@@ -58,7 +58,7 @@ end
 function _va_ci(head::_V)
     user = LK.MODULE_user(_VGD)
     name, ar = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
-    return LK.compileInfo{_V}(ar, user, LK.lookupProcedure(sym_key(name), ar, user))
+    return LK.compileInfo{_V}(ar, user, LK.lookupProcedure(name, ar, user))
 end
 
 "The kernel's head code, body slots and frame size for the clause `head :- body`."

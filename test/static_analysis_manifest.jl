@@ -180,6 +180,8 @@ function _manifest_index(T)
     CInfo, HA, HH = LK.compileInfo{T}, LK.hash_assessment, LK.hash_hints
     PR, MOD = LK.Procedure{T}, LK.module_t{T}
     PCd = LK.Code{T}
+    AT, AF = LK.argv_term{LK.PL_local_data{T}, T}, LK.argv_frame{LK.PL_local_data{T}}
+    ARGP, ASE = LK.argp_t{T}, LK.argstack_entry{T}
     VIEW = typeof(view(UInt8[], 1:0))
     return (
         # src/pl-comp.jl — the head compiler, its literal table and the code readers
@@ -194,7 +196,7 @@ function _manifest_index(T)
         (LK.Output_n!, Tuple{CInfo, UInt64, NTuple{1, UInt64}, Int}, false),
         (LK.addLiteral!, Tuple{CInfo, T}, false),
         (LK.addProcedure!, Tuple{CInfo, PR}, false),
-        (LK._body_functor, Tuple{T}, true),
+        (LK._body_functor, Tuple{Type{T}, T}, true),
         (LK.lookupBodyProcedure, Tuple{GD, T, MOD}, false),
         (LK.Code, Tuple{C, Int}, true),
         (LK.decode, Tuple{PCd}, true), (LK.stepPC, Tuple{PCd}, true),
@@ -230,23 +232,35 @@ function _manifest_index(T)
         # src/pl-index.jl
         (LK.STATIC_RELOADING, Tuple{D}, true), (LK.cref_matches, Tuple{CR, UInt64}, true),
         (LK.is_clean_predicate, Tuple{D}, true), (LK.visibleClause, Tuple{C, UInt64}, true),
-        (LK.visibleClauseCNT, Tuple{C, UInt64}, true), (LK.argv_at, Tuple{T, Int}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64}, true),
         (LK.canIndex, Tuple{T}, true), (LK.indexOfWord, Tuple{T}, true),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
-        (LK.nextClauseFromList!, Tuple{CI, T, CTX}, false),
-        (LK.nextClauseFromBucket!, Tuple{CI, T, CTX}, false),
+        (LK.nextClauseFromList!, Tuple{CI, AT, CTX}, false),
+        (LK.nextClauseFromList!, Tuple{CI, AF, CTX}, false),
+        (LK.nextClauseFromBucket!, Tuple{CI, AT, CTX}, false),
+        (LK.nextClauseFromBucket!, Tuple{CI, AF, CTX}, false),
         (LK.setClauseChoice!, Tuple{CR, CTX}, true),
         (LK.setClauseChoice!, Tuple{Nothing, CTX}, true),
-        (LK.indexKeyFromArgv, Tuple{CI, T}, true), (LK.is_var, Tuple{T}, true),
-        (LK.is_satifies_index, Tuple{CI, T}, true),
-        (LK.existing_hash, Tuple{CIP, T}, false),
-        (LK.createIndex!, Tuple{T, Int, CL, CI, CTX}, false),
-        (LK.createIndex!, Tuple{T, Int, CL, Nothing, CTX}, false),
-        (LK.first_clause_guarded!, Tuple{T, Int, CL, CTX}, false),
-        (LK.firstClause!, Tuple{LD, T, UInt64, D, CH}, false),
-        (LK.nextClause!, Tuple{LD, CH, T, UInt64, D}, true),
+        (LK.indexKeyFromArgv, Tuple{CI, AT}, true),
+        (LK.indexKeyFromArgv, Tuple{CI, AF}, true),
+        (LK.is_var, Tuple{T}, true),
+        (LK.is_satifies_index, Tuple{CI, AT}, true),
+        (LK.is_satifies_index, Tuple{CI, AF}, true),
+        (LK.existing_hash, Tuple{CIP, AT}, false),
+        (LK.existing_hash, Tuple{CIP, AF}, false),
+        (LK.createIndex!, Tuple{AT, Int, CL, CI, CTX}, false),
+        (LK.createIndex!, Tuple{AT, Int, CL, Nothing, CTX}, false),
+        (LK.createIndex!, Tuple{AF, Int, CL, CI, CTX}, false),
+        (LK.createIndex!, Tuple{AF, Int, CL, Nothing, CTX}, false),
+        (LK.first_clause_guarded!, Tuple{AT, Int, CL, CTX}, false),
+        (LK.first_clause_guarded!, Tuple{AF, Int, CL, CTX}, false),
+        (LK.firstClause!, Tuple{LD, AT, UInt64, D, CH}, false),
+        (LK.firstClause!, Tuple{LD, AF, UInt64, D, CH}, false),
+        (LK.nextClause!, Tuple{LD, CH, AT, UInt64, D}, true),
+        (LK.nextClause!, Tuple{LD, CH, AF, UInt64, D}, true),
+        (LK.argv_at, Tuple{AT, Int}, true), (LK.argv_at, Tuple{AF, Int}, true),
         (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH}, true),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
@@ -287,8 +301,10 @@ function _manifest_index(T)
         (LK.ensure_arg_info!, Tuple{CL, Int}, false),
         (LK.better_index, Tuple{CI, Float32, Float32}, true),
         (LK.better_index, Tuple{Nothing, Float32, Float32}, true),
-        (LK.bestHash!, Tuple{T, Int, CL, Nothing, HH, CTX}, false),
-        (LK.bestHash!, Tuple{T, Int, CL, CI, HH, CTX}, false),
+        (LK.bestHash!, Tuple{AT, Int, CL, Nothing, HH, CTX}, false),
+        (LK.bestHash!, Tuple{AT, Int, CL, CI, HH, CTX}, false),
+        (LK.bestHash!, Tuple{AF, Int, CL, Nothing, HH, CTX}, false),
+        (LK.bestHash!, Tuple{AF, Int, CL, CI, HH, CTX}, false),
         (
             LK.find_multi_argument_hash!,
             Tuple{Int, CL, Vector{UInt8}, Int, Nothing, HH, CTX},
@@ -344,7 +360,7 @@ function _manifest_index(T)
         (LK._decompile_void, Tuple{Type{T}, Nothing, UInt64, Int}, false),
         # src/pl-proc.jl
         (LK.MODULE_user, Tuple{GD}, true),
-        (LK.lookupProcedure, Tuple{UInt64, Int, MOD}, false),
+        (LK.lookupProcedure, Tuple{T, Int, MOD}, false),
         (LK.isCurrentProcedure, Tuple{UInt64, Int, MOD}, false),
         (LK.hasClausesDefinition, Tuple{GD, D}, true),
         (LK.isDefinedProcedure, Tuple{GD, PR}, true),
@@ -370,7 +386,77 @@ function _manifest_index(T)
         (LK.pl_retract!, Tuple{GD, LD, D, T, SNK}, false),
         (LK.allVars, Tuple{T}, false),
         (LK.pl_retractall!, Tuple{GD, LD, D, T}, false),
-        (LK.mode_arg_is_unbound, Tuple{D, Int}, true)
+        (LK.mode_arg_is_unbound, Tuple{D, Int}, true),
+        # the supervisors (src/pl-supervisor.jl): selecting one builds its code, so allocates
+        (LK.arg1Key, Tuple{PCd}, true),
+        (LK._shared_supervisor, Tuple{LK.PL_code_data, Vector{LK.code}}, true),
+        (LK.freeSupervisor, Tuple{D, Vector{LK.code}, Bool}, true),
+        (LK.freeCodesDefinition!, Tuple{D, Bool}, true),
+        (
+            LK.equalSupervisors,
+            Tuple{
+                LK.PL_code_data, Vector{LK.code}, Vector{CR}, Vector{LK.code}, Vector{CR}
+            },
+            true
+        ),
+        (LK.getClauses, Tuple{GD, D, Vector{CR}, Int}, false),
+        (LK.undefSupervisor, Tuple{D}, false),
+        (LK.singleClauseSupervisor, Tuple{GD, D}, false),
+        (LK.listSupervisor, Tuple{GD, D}, false), (LK.dynamicSupervisor, Tuple{D}, false),
+        (LK.multifileSupervisor, Tuple{D}, false), (LK.staticSupervisor, Tuple{D}, false),
+        (LK.chainPredicateSupervisor, Tuple{D, Tuple{Vector{LK.code}, Vector{CR}}}, true),
+        (LK.createSupervisor, Tuple{GD, D}, false),
+        (LK.setDefaultSupervisor, Tuple{GD, D}, false),
+        # V4a — the run loop and the query API (src/pl-wam.jl, pl-inline.jl, pl-alloc.jl, pl-fli.jl,
+        # pl-error.jl, pl-gc.jl), over DefaultTerm only: `PL_error` builds `Name/Arity` with
+        # `mk_gnd(T, ::Int)`, which a payload without integers (`Term{Float64}`) cannot hold; the
+        # other implementations run it in the suites. The ARGP value, the register save and load and
+        # the record discipline allocate nothing (decision 2); the argument stack's push allocates
+        # only where it grows — checked by its own AllocCheck test (static_analysis_body.jl).
+        (LK.generationFrame, Tuple{LK.localFrame{T}}, true),
+        (LK.isFrame, Tuple{LK.localFrame{T}}, true),
+        (LK.setGenerationFrame, Tuple{GD, LD, Int}, true),
+        (LK.QueryFromQid, Tuple{LD, Int}, true), (LK.QidFromQuery, Tuple{LD, Int}, true),
+        (LK.pushArgumentStack, Tuple{LD, ASE}, false),
+        (LK.f_pushArgumentStack, Tuple{LD, ASE}, false),
+        (LK.pushQuery!, Tuple{LD, Int}, true),
+        (LK._grow_pool!, Tuple{LD, Vector{LK.queryFrame{T}}, Int}, false),
+        (LK.is_exception_finish, Tuple{LK.finished}, true),
+        (LK.leaveFrame, Tuple{LD, Int}, true), (LK.discardFrame, Tuple{LD, Int}, true),
+        (LK.discardChoicesAfter, Tuple{LD, Int, LK.finished}, true),
+        (LK.dbg_discardChoicesAfter, Tuple{LD, Int, LK.finished}, true),
+        (LK.queryOfFrame, Tuple{LD, Int}, true), (LK.parentFrame, Tuple{LD, Int}, true),
+        (LK.setLTop!, Tuple{LD, Int}, true),
+        (LK._argp_raw, Tuple{LD, ARGP}, true), (LK._argp_deref, Tuple{LD, ARGP}, true),
+        (LK._argp_store!, Tuple{LD, ARGP, T}, true), (LK._argp_add, Tuple{ARGP, Int}, true),
+        (LK._reset_argument_stack!, Tuple{LD, LK.queryFrame{T}}, true),
+        (LK._bopen!, Tuple{LD, Int, T, Bool, Int, T}, false),
+        (LK._bclose!, Tuple{LD}, false),
+        (LK._fresh_compound, Tuple{Type{T}, T, Bool, Int}, false),
+        (LK._is_expr3, Tuple{T}, true),
+        (
+            LK._save_registers!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            true
+        ),
+        (LK._load_registers!, Tuple{LD, Int}, true),
+        (LK.resumeAfterException, Tuple{LD, Bool}, false),
+        (LK.initVM, Tuple{PR}, false),
+        (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
+        (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),
+        (LK.discard_query, Tuple{LD, Int}, false),
+        (LK.restore_after_query, Tuple{LD, Int}, false),
+        (LK._end_query, Tuple{LD, Int, Bool}, false),
+        (LK.PL_cut_query, Tuple{LD, Int}, false),
+        (LK.PL_close_query, Tuple{LD, Int}, false),
+        (LK.PL_exception, Tuple{LD, Int}, false), (LK.PL_current_query, Tuple{LD}, true),
+        (LK.PL_next_solution, Tuple{GD, LD, Int}, false),
+        (LK.PL_next_solution_guarded, Tuple{GD, LD, Int, Bool}, false),
+        (LK._abandon_query, Tuple{LD, Int}, false),
+        (LK._unify_ptrs_raising, Tuple{GD, LD, T, T}, false),
+        (LK._check_foreign_environment, Tuple{LD, String}, true),
+        (LK.PL_raise_exception, Tuple{LD, Int}, false),
+        (LK.PL_error, Tuple{GD, LD, LK.PL_error_code, T, T}, false)
     )
 end
 
@@ -407,12 +493,20 @@ _index_entry_points(T) = (
     ),
     (
         LK.firstClause!,
-        Tuple{LK.PL_local_data{T}, T, UInt64, LK.Definition{T}, LK.ClauseChoice{T}},
+        Tuple{
+            LK.PL_local_data{T}, LK.argv_term{LK.PL_local_data{T}, T}, UInt64,
+            LK.Definition{T},
+            LK.ClauseChoice{T}
+        },
         false
     ),
     (
         LK.nextClause!,
-        Tuple{LK.PL_local_data{T}, LK.ClauseChoice{T}, T, UInt64, LK.Definition{T}},
+        Tuple{
+            LK.PL_local_data{T}, LK.ClauseChoice{T},
+            LK.argv_term{LK.PL_local_data{T}, T}, UInt64,
+            LK.Definition{T}
+        },
         true
     ),
     (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
@@ -521,7 +615,13 @@ const DISPATCH_MANIFEST = (
     (LK.fresh_var_keys!, Tuple{Int}, false),
     (Base.Enums._enum_hash, Tuple{LK.boolex_t, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.occurs_check_t, UInt64}, false),
-    (Base.Enums._enum_hash, Tuple{LK.choice_type, UInt64}, false)
+    (Base.Enums._enum_hash, Tuple{LK.choice_type, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.unify_mode, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.finished, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.PL_error_code, UInt64}, false),
+    # term-type-independent parts of the VM (V4a)
+    (LK.StackMagic, Tuple{Int}, true), (LK.initSupervisors, Tuple{}, false),
+    (LK._vmi_dispatch_tree, Tuple{Symbol, Vector{Tuple{UInt64, Symbol}}}, false)
 )
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
@@ -540,5 +640,17 @@ const DISPATCH_EXEMPT = (
     ),
     (
         (LK.var"@five_cycle", Tuple{LineNumberNode, Module, Any, Any, Int}) => "a macro (pl-termhash.c five_cycle): it builds Exprs at load time; its expansion runs in sha1_compile!, which is checked"
+    ),
+    (
+        (LK.var"@SAVE_REGISTERS", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-wam.c SAVE_REGISTERS): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its work is _save_registers!, which is checked"
+    ),
+    (
+        (LK.var"@LOAD_REGISTERS", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-wam.c LOAD_REGISTERS): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its work is _load_registers!, which is checked"
+    ),
+    (
+        (LK.var"@ENSURE_LOCAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_LOCAL_SPACE): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
+    ),
+    (
+        (LK.var"@vmi_dispatch", Tuple{LineNumberNode, Module, Any, Vararg{Any}}) => "a macro (the run loop's dispatch tree): it builds Exprs at load time, with _vmi_dispatch_tree, which is checked; its expansion runs in PL_next_solution_guarded, which is checked"
     )
 )

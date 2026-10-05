@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-data.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-global.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -344,16 +345,40 @@ clause_list{C}() where {C} = clause_list{C}(
     0x00, 0x00
 )
 
+# PORT: pl-global.h PL_code_data
+# DIVERGES: the shared supervisors only (`supervisors`, built by `initSupervisors`), and ONE PER
+# DATABASE where upstream has one per process: the kernel has no module-level mutable state. A
+# definition and its module reach their database's copy (`code_data`). A shared block is known by its
+# identity, where upstream reads a length word of 0 before it; each is upstream's `[I, I_EXIT]`.
+"The shared supervisor code blocks of a database (pl-global.h `PL_code_data.supervisors`)."
+struct PL_code_data
+    exit::Vector{code}          # I_EXIT
+    virgin::Vector{code}        # S_VIRGIN
+    undef::Vector{code}         # S_UNDEF
+    dynamic::Vector{code}       # S_DYNAMIC
+    multifile::Vector{code}     # S_MULTIFILE
+    staticp::Vector{code}       # S_STATIC
+end
+
 # PORT: pl-incl.h definition
-# DIVERGES: `functor` (a pointer into SWI's functor table) is its two parts here — the name's
-# `sym_key` and the arity — as there is no functor table; `impl` holds only the `clauses` member
-# of upstream's union (the other members are foreign, wrapped and thread-local predicates).
+# DIVERGES: `functor` (a pointer into SWI's functor table) is its parts here — the name's `sym_key`,
+# the arity, and the name itself (`name`, the symbol: an error term names the predicate) — as there
+# is no functor table; `impl` holds only the `clauses` member of upstream's union (the other members
+# are foreign, wrapped and thread-local predicates). `codes`, the supervisor, keeps its
+# clause-reference operands in a side table, `codes_crefs`, as a clause's code keeps its literals:
+# the operand is an index into it. `code_data` reaches the database's shared supervisors.
 "A predicate (pl-incl.h `struct definition`)."
 mutable struct definition{T}
     functor_name::UInt64                                    # functor->name, as a sym_key
     arity::Int                                              # functor->arity
     impl_clauses::clause_list{clause{T, definition{T}}}     # impl.clauses
     flags::UInt64                                           # booleans (P_*)
+    const name::T                                           # functor->name, the symbol
+    codes::Vector{code}                                     # Executable code
+    codes_crefs::Vector{
+        clause_ref{clause{T, definition{T}}, clause_list{clause{T, definition{T}}}}
+    }
+    const code_data::PL_code_data                           # PL_code_data (the database's)
 end
 
 # PORT: pl-incl.h module as module_t
@@ -362,10 +387,13 @@ end
 # per database, `user` (see `MODULE_user`, src/pl-global.jl): modules are not ported. The table is
 # keyed by the FUNCTOR — upstream's `functor_t`, here the name's `sym_key` and the arity. Named
 # `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword and `Module` Core's.
+# `code_data` (no upstream field) is the database's shared supervisors, which a new procedure starts
+# with (`SUPERVISOR(virgin)`).
 "A module (pl-incl.h `struct module`): its name and the procedures defined in it."
 struct module_t{T}
     name::UInt64                                                # name of module, as a sym_key
     procedures::Dict{Tuple{UInt64, Int}, procedure{definition{T}}}  # predicates of the module
+    code_data::PL_code_data                                     # the database's shared supervisors
 end
 
 # PORT: pl-incl.h clause_choice
@@ -584,6 +612,112 @@ mutable struct fliFrame
     mark::mark                              # data-stack mark
 end
 
+# The VM's argument pointer — upstream's `Word ARGP` register (pl-wam.c), which points at "the
+# next cell" — as ONE concrete immutable value in its three forms (user, 2026-10-05), so the register,
+# the argument stack and a query's saved registers have one type:
+#   * ARGP_SLOT — a position on the local stack (`pos`): a frame's argument slot, or above `lTop`;
+#   * ARGP_CURSOR — child `pos` of the compound `term` (read mode inside a caller's compound, where
+#     upstream points into its arguments);
+#   * ARGP_BUILD — cell `pos` of the write-mode builder (LD's `bcells`), where upstream points into a
+#     compound it is filling on the global stack.
+# `term` is meaningful for a cursor only; the other forms carry any term there.
+"The VM's argument pointer (upstream's `Word ARGP`): a slot, a cursor into a compound, or a builder cell."
+struct argp_t{T}
+    form::UInt8
+    pos::Int
+    term::T
+end
+"`argp_t` form: a position on the local stack."
+const ARGP_SLOT = 0x00
+"`argp_t` form: child `pos` of the compound `term`."
+const ARGP_CURSOR = 0x01
+"`argp_t` form: cell `pos` of the write-mode builder."
+const ARGP_BUILD = 0x02
+
+# An argument-stack entry. Upstream pushes `(ARGP+1)|UMODE` — the mode in the pointer's low bit
+# (vmi:777, 873-875); the kernel also records how many builders were open, because the `H_POP`
+# that pops the entry closes the builders opened since (decision 2 and Q3: the builder is a stack).
+"An argument-stack entry: the `ARGP` to resume at, whether that is in write mode, the builders open."
+struct argstack_entry{T}
+    argp::argp_t{T}
+    uwrite::Bool
+    builders::Int
+end
+
+# A compound being built in write mode (decision 2, Q3): its cells are `bcells[start:start+n-1]` —
+# the children vector of the term to build: the head symbol first for `f/k` and lists, none for
+# `$expr/n` — and the finished compound goes into the parent's builder cell `cell`, or, when it was
+# opened in read mode on the caller's unbound variable `var`, is bound to `var` (trailed).
+"A write-mode builder: its cells, and where the compound goes when it is closed."
+struct bframe{T}
+    start::Int
+    n::Int
+    cell::Int
+    var::T
+end
+
+# PORT: pl-incl.h StackMagic
+"A magic number in upstream's stack-magic family (pl-incl.h)."
+StackMagic(n::Int)::UInt = UInt(n) | UInt(0x98765000)
+# PORT: pl-incl.h QID_MAGIC
+"The magic of an open query frame (pl-incl.h)."
+const QID_MAGIC = StackMagic(1)
+# PORT: pl-incl.h QID_CMAGIC
+"The magic of a closed query frame (pl-incl.h)."
+const QID_CMAGIC = StackMagic(2)
+
+# `sizeof(struct queryFrame)` in words (the default build), and where its members lie, from its base:
+# confirmed against upstream's headers and live in libswipl 10.1.16 (V4a research): the CHP_TOP
+# choice point at 21, `saved_environment` 30, the top frame 31, the query's frame 39, its
+# arguments from 47.
+"`sizeof(struct queryFrame)` in words: the positions a query frame spans before its arguments."
+const SIZEOF_QUERYFRAME = 47
+"Where a query frame's CHP_TOP choice point lies, from its base (`offsetof(…, choice)` in words)."
+const QF_CHOICE = 21
+"Where a query frame's `saved_environment` lies, from its base."
+const QF_SAVED_ENVIRONMENT = 30
+"Where a query frame's top frame lies, from its base."
+const QF_TOP_FRAME = 31
+"Where a query frame's own frame lies, from its base."
+const QF_FRAME = 39
+
+# PORT: pl-incl.h QF_PARENT_ENV_OFFSET
+"The words from `saved_environment` to the top frame: `parentFrame` of a top frame reads there (pl-incl.h)."
+const QF_PARENT_ENV_OFFSET = QF_TOP_FRAME - QF_SAVED_ENVIRONMENT
+
+# PORT: pl-incl.h queryFrame
+# DIVERGES: a pool record (see above). Its embedded `choice`, `top_frame` and `frame` are records in
+# their own pools at `base + QF_CHOICE`, `+ QF_TOP_FRAME` and `+ QF_FRAME`, held here by index, as
+# are `parent`, `saved_bfr`, `saved_environment` and `next_environment`; `saved_ltop` is a position,
+# `exception` a term reference, `foreign_frame` a foreign-frame handle. `aSave` is the argument
+# stack's height, and `bSave`/`bcSave` the builder's (frames and cells), saved with it. `registers.pc`
+# is a `Code`. Not kept, but counted in `SIZEOF_QUERYFRAME`: the depth limit (`O_LIMIT_DEPTH`; no
+# depth limit), `yield` (not ported, decision 1), `debugSave` and `flags_saved` (the debugger and
+# the run-mode flags, not ported), `qid` (the query is identified by its position, decision 1).
+"A query on the local stack (pl-incl.h `struct queryFrame`)."
+mutable struct queryFrame{T}
+    base::Int                       # its position (upstream: its address)
+    magic::UInt                     # Magic code for security
+    registers_fr::Int               # registers.fr (an index; 0 = NULL)
+    registers_argp::argp_t{T}       # registers.argp
+    registers_pc::Code{T}           # registers.pc
+    next_environment::Int           # See D_BREAK and get_vmi_state()
+    exception::Int                  # Exception term (a term reference; 0 = none)
+    foreign_frame::Int              # Frame after PL_next_solution() (a handle; 0 = none)
+    flags::UInt32
+    solutions::Int                  # # of solutions produced
+    aSave::Int                      # saved argument-stack
+    bSave::Int                      # (the builder's frames)
+    bcSave::Int                     # (the builder's cells)
+    saved_bfr::Int                  # Saved choice-point (an index)
+    saved_ltop::Int                 # Saved lTop
+    parent::Int                     # Parent queryFrame (an index)
+    choice::Int                     # First (dummy) choice-point (an index)
+    saved_environment::Int          # Parent local-frame (an index)
+    top_frame::Int                  # The (dummy) top local frame (an index)
+    frame::Int                      # The initial frame (an index)
+end
+
 # PORT: pl-incl.h argFrameP
 # DIVERGES: on the frame's base position, where upstream's takes the frame's address — the same
 # arithmetic. A position upstream casts to a frame (`argFrameP(lTop, 0)`) is passed as is.
@@ -597,6 +731,14 @@ varFrameP(f::Int, n::Int)::Int = f + n
 # PORT: pl-incl.h refFliP
 "The position of term reference `n` of the foreign frame at position `f` (pl-incl.h)."
 refFliP(f::Int, n::Int)::Int = f + SIZEOF_FLIFRAME + n
+
+# PORT: pl-incl.h isFrame
+"Whether `fr`'s flags carry the frame magic (pl-incl.h)."
+isFrame(fr::localFrame)::Bool = (fr.flags & FR_MAGIC_MASK) == FR_MAGIC
+
+# PORT: pl-incl.h generationFrame
+"The database generation frame `fr` runs in (pl-incl.h)."
+generationFrame(fr::localFrame)::gen_t = fr.generation
 
 # PORT: pl-incl.h levelFrame
 "The recursion level of frame `fr` (pl-incl.h)."

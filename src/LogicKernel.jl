@@ -23,6 +23,7 @@ include("term_interface.jl")   # ORIGINAL — the term interface (settled 2026-1
 include("default_term.jl")     # ORIGINAL — Term{G}, the reference implementation
 include("pl-hash.jl")          # swipl-devel src/pl-hash.c — MurmurHash2
 include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause list, index structs
+include("SWI-Prolog.jl")       # swipl-devel src/SWI-Prolog.h — query flags and return codes
 include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — term agendas (the local data holds two)
 include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to (pl-index reads them)
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing (LD holds its scratch)
@@ -36,11 +37,13 @@ include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant c
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
-include("pl-alloc.jl")         # swipl-devel src/pl-alloc.c — raising a stack overflow
-include("pl-wam.jl")           # swipl-devel src/pl-wam.c — choice points, foreign frames, the record discipline
-include("pl-fli.jl")           # swipl-devel src/pl-fli.c — term references
+include("pl-alloc.jl")         # swipl-devel src/pl-alloc.c — raising a stack overflow; the argument stack
+include("pl-wam.jl")           # swipl-devel src/pl-wam.c — the local stack's operations; the query API and the run loop
+include("pl-fli.jl")           # swipl-devel src/pl-fli.c — term references; raising an exception
+include("pl-error.jl")         # swipl-devel src/pl-error.c — error terms (the occurs-check error)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
+include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 
 # ── exports ─────────────────────────────────────────────────────────────────────────────────────

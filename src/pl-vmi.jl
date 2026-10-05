@@ -9,10 +9,12 @@
 #
 # THE VIRTUAL MACHINE INSTRUCTIONS the kernel compiles clauses to — the subset of SWI-Prolog's
 # pl-vmi.c that src/pl-comp.jl emits: the head instructions, and since V2 the body instructions of
-# plain goals, the calls and the last-call (LCO) block. Each carries upstream's `VMI(name, flags,
-# argc, argtypes)`: its flags (`VIF_LCO`, `VIF_BREAK`) and its operand kinds (`CA1_*`). Only the
-# declarations are ported; the instructions' bodies arrive with the VM. Upstream numbers
-# instructions by their order in pl-vmi.c; these numbers keep that order but are the kernel's own.
+# plain goals, the calls and the last-call (LCO) block, and since V4a the supervisors and the top
+# query's `I_EXITQUERY`. Each carries upstream's `VMI(name, flags, argc, argtypes)`: its flags
+# (`VIF_LCO`, `VIF_BREAK`) and its operand kinds (`CA1_*`). The BODIES are in `PL_next_solution`'s run
+# loop (src/pl-wam.jl), as upstream `#include`s pl-vmi.c inside it. Upstream numbers instructions by
+# their order in pl-vmi.c; these numbers keep that order up to `I_TCALL` (`B_VAR0 + index` needs the
+# three consecutive) and then append, in the order the steps declared them: `I_CUT` (V2), then V4a's.
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -25,7 +27,9 @@
 # is ONE word, the index of the literal in the clause's literal table (V1 L2), where upstream
 # carries the value itself (an atom, an integer, CODES_PER_DOUBLE words, a VM_DYNARGC block); a
 # functor operand is `functor_operand` (L2); a procedure operand (`CA1_LPROC`) the index of the
-# procedure in the clause's procedure table (V1). The `argtype` column keeps upstream's kinds, so a
+# procedure in the clause's procedure table (V1); a clause-reference operand (`CA1_CLAUSEREF`, the
+# supervisors') the index of the clause reference in the definition's `codes_crefs` (V4a). The
+# `argtype` column keeps upstream's kinds, so a
 # reader decodes each operand by its kind as upstream does — a literal kind through the table.
 
 # ── operand kinds and flags (pl-incl.h) ─────────────────────────────────────────────────────────
@@ -253,6 +257,30 @@ const I_TCALL = code(51)
 # PORT: pl-vmi.c I_CUT
 "Cut: discard the choice points created since the clause was entered (pl-vmi.c; its execution is V6)."
 const I_CUT = code(52)
+# PORT: pl-vmi.c I_EXITQUERY
+"The one instruction of the top clause: return an answer from `PL_next_solution` (pl-vmi.c)."
+const I_EXITQUERY = code(53)
+# PORT: pl-vmi.c S_VIRGIN
+"Supervisor: install the predicate's real supervisor and run it (pl-vmi.c)."
+const S_VIRGIN = code(54)
+# PORT: pl-vmi.c S_UNDEF
+"Supervisor of a predicate with no clauses: the unknown-procedure path (pl-vmi.c; executed in V5)."
+const S_UNDEF = code(55)
+# PORT: pl-vmi.c S_STATIC
+"Supervisor: select the first matching clause through the index, leaving a choice point (pl-vmi.c)."
+const S_STATIC = code(56)
+# PORT: pl-vmi.c S_DYNAMIC
+"Supervisor of a dynamic predicate: `S_STATIC` (pl-vmi.c)."
+const S_DYNAMIC = code(57)
+# PORT: pl-vmi.c S_MULTIFILE
+"Supervisor of a multifile predicate: `S_STATIC` (pl-vmi.c)."
+const S_MULTIFILE = code(58)
+# PORT: pl-vmi.c S_TRUSTME
+"Supervisor of a predicate with one clause: run it; operand: the clause reference (pl-vmi.c)."
+const S_TRUSTME = code(59)
+# PORT: pl-vmi.c S_LIST
+"Supervisor of a `[]`/`[_|_]` pair: run the clause the argument selects; operands: the argument, the two clause references (pl-vmi.c)."
+const S_LIST = code(60)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS (a literal is one, see above); `argtype`
@@ -320,7 +348,15 @@ const _CODE_TABLE = (
     code_info(:L_SMALLINT, 0x00, 2, (CA1_FVAR, CA1_INTEGER, 0x00, 0x00)),
     code_info(:I_LCALL, 0x00, 1, (CA1_LPROC, 0x00, 0x00, 0x00)),
     code_info(:I_TCALL, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:I_CUT, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:I_CUT, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_EXITQUERY, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_VIRGIN, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_UNDEF, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_STATIC, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_DYNAMIC, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_MULTIFILE, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_TRUSTME, 0x00, 1, (CA1_CLAUSEREF, 0x00, 0x00, 0x00)),
+    code_info(:S_LIST, 0x00, 3, (CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

@@ -26,34 +26,35 @@ _pg(v) = lk_gnd(_P, v)
     @test user.name == sym_key(_ps(:user))
     p = sym_key(_ps(:p))
     @test LK.isCurrentProcedure(p, 1, user) === nothing
-    p1 = LK.lookupProcedure(p, 1, user)
+    p1 = LK.lookupProcedure(_ps(:p), 1, user)
     @test LK.isCurrentProcedure(p, 1, user) === p1
-    @test LK.lookupProcedure(p, 1, user) === p1                 # found, not created again
-    p2 = LK.lookupProcedure(p, 2, user)
+    @test LK.lookupProcedure(_ps(:p), 1, user) === p1           # found, not created again
+    p2 = LK.lookupProcedure(_ps(:p), 2, user)
     @test p2 !== p1 && p2.definition !== p1.definition          # the arity is part of the functor
     @test length(user.procedures) == 2
     d = p2.definition                                           # a new predicate
     @test d.functor_name == p && d.arity == 2 && d.flags == 0 && p2.flags == 0
+    @test lk_eq(d.name, _ps(:p))                                # the name itself, for error terms
     @test d.impl_clauses.first_clause === nothing && d.impl_clauses.number_of_clauses == 0
     @test length(d.impl_clauses.args::Vector{LK.arg_info}) == 2
-    @test LK.lookupProcedure(sym_key(_ps(:q)), 0, user).definition.impl_clauses.args ===
+    @test LK.lookupProcedure(_ps(:q), 0, user).definition.impl_clauses.args ===
         nothing
     other = LK.MODULE_user(LK.PL_global_data{_P}())             # another database, another table
-    @test LK.lookupProcedure(p, 1, other) !== p1
+    @test LK.lookupProcedure(_ps(:p), 1, other) !== p1
     @test LK.isCurrentProcedure(p, 2, other) === nothing
 end
 
 @testset "the functor's name is the symbol's identity: [] is not '[]'" begin
     user = LK.MODULE_user(LK.PL_global_data{_P}())
-    nil = LK.lookupProcedure(sym_key(mk_nil(_P)), 0, user)
-    text = LK.lookupProcedure(sym_key(_ps("[]")), 0, user)
+    nil = LK.lookupProcedure(mk_nil(_P), 0, user)
+    text = LK.lookupProcedure(_ps("[]"), 0, user)
     @test nil !== text
-    @test LK.lookupProcedure(sym_key(mk_nil(_P)), 0, user) === nil
+    @test LK.lookupProcedure(mk_nil(_P), 0, user) === nil
 end
 
 @testset ":- dynamic is setDynamicDefinition!" begin
     d =
-        LK.lookupProcedure(sym_key(_ps(:d)), 1, LK.MODULE_user(LK.PL_global_data{_P}())).definition
+        LK.lookupProcedure(_ps(:d), 1, LK.MODULE_user(LK.PL_global_data{_P}())).definition
     @test LK.setDynamicDefinition!(d, true)
     @test d.flags & (LK.P_DYNAMIC | LK.P_TRANSACT) == LK.P_DYNAMIC | LK.P_TRANSACT
     @test LK.setDynamicDefinition!(d, true)                     # already dynamic: unchanged

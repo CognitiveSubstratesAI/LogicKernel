@@ -50,39 +50,47 @@ how many of the upstream file's functions are ported.
 | swipl-bench `programs/nreverse.pl` | design | `d74163e6d756` | `bench/programs/nreverse.jl` | 4 | 0 |
 | swipl-bench `programs/poly_10.pl` | design | `d74163e6d756` | `bench/programs/poly_10.jl` | 12 | 0 |
 | swipl-bench `programs/qsort.pl` | design | `d74163e6d756` | `bench/programs/qsort.jl` | 4 | 0 |
-| swipl-devel `src/pl-alloc.c` | code | `bae881a24a3f` | `src/pl-alloc.jl` | 1 | 1 |
+| swipl-devel `src/SWI-Prolog.h` | code | `bae881a24a3f` | `src/SWI-Prolog.jl` | 12 | 0 |
+| swipl-devel `src/pl-alloc.c` | code | `bae881a24a3f` | `src/pl-alloc.jl` | 2 | 2 |
 | swipl-devel `src/pl-codetable.c` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 1 | 1 |
-| swipl-devel `src/pl-comp.c` | code | `bae881a24a3f` | `src/pl-comp.jl` | 51 | 24 |
+| swipl-devel `src/pl-comp.c` | code | `bae881a24a3f` | `src/pl-comp.jl` | 52 | 25 |
 | swipl-devel `src/pl-comp.h` | code | `bae881a24a3f` | `src/pl-comp.jl` | 1 | 0 |
 | swipl-devel `src/pl-data.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 13 | 0 |
 | swipl-devel `src/pl-data.h` | code | `bae881a24a3f` | `src/pl-inline.jl` | 1 | 1 |
-| swipl-devel `src/pl-fli.c` | code | `bae881a24a3f` | `src/pl-fli.jl` | 6 | 5 |
+| swipl-devel `src/pl-error.c` | code | `bae881a24a3f` | `src/pl-error.jl` | 1 | 1 |
+| swipl-devel `src/pl-error.h` | code | `bae881a24a3f` | `src/pl-error.jl` | 1 | 1 |
+| swipl-devel `src/pl-fli.c` | code | `bae881a24a3f` | `src/pl-fli.jl` | 7 | 7 |
 | swipl-devel `src/pl-funct.c` | code | `bae881a24a3f` | `src/pl-funct.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.c` | code | `bae881a24a3f` | `src/pl-gc.jl` | 3 | 3 |
+| swipl-devel `src/pl-gc.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.h` | code | `bae881a24a3f` | `src/pl-gc.jl` | 1 | 1 |
 | swipl-devel `src/pl-global.h` | code | `bae881a24a3f` | `src/pl-global.jl` | 2 | 2 |
+| swipl-devel `src/pl-global.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-hash.c` | code | `bae881a24a3f` | `src/pl-hash.jl` | 1 | 1 |
 | swipl-devel `src/pl-hash.h` | code | `bae881a24a3f` | `src/pl-hash.jl` | 1 | 0 |
 | swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-comp.jl` | 4 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-global.jl` | 1 | 1 |
-| swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 108 | 14 |
-| swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-inline.jl` | 7 | 3 |
+| swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 115 | 15 |
+| swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-inline.jl` | 9 | 4 |
 | swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-prims.jl` | 0 | 0 |
 | swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 22 | 1 |
+| swipl-devel `src/pl-incl.h` | code | `bae881a24a3f` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-index.c` | code | `bae881a24a3f` | `src/pl-index.jl` | 110 | 33 |
-| swipl-devel `src/pl-inline.h` | code | `bae881a24a3f` | `src/pl-inline.jl` | 11 | 8 |
+| swipl-devel `src/pl-inline.h` | code | `bae881a24a3f` | `src/pl-inline.jl` | 12 | 9 |
 | swipl-devel `src/pl-prims.c` | code | `bae881a24a3f` | `src/pl-prims.jl` | 28 | 16 |
 | swipl-devel `src/pl-proc.c` | code | `bae881a24a3f` | `src/pl-proc.jl` | 27 | 14 |
 | swipl-devel `src/pl-proc.h` | code | `bae881a24a3f` | `src/pl-proc.jl` | 1 | 0 |
 | swipl-devel `src/pl-ressymbol.c` | code | `bae881a24a3f` | `src/pl-ressymbol.jl` | 3 | 2 |
 | swipl-devel `src/pl-setup.c` | code | `bae881a24a3f` | `src/pl-setup.jl` | 1 | 1 |
+| swipl-devel `src/pl-supervisor.c` | code | `bae881a24a3f` | `src/pl-supervisor.jl` | 14 | 8 |
 | swipl-devel `src/pl-termhash.c` | code | `bae881a24a3f` | `src/pl-termhash.jl` | 35 | 7 |
 | swipl-devel `src/pl-termhash.h` | code | `bae881a24a3f` | `src/pl-termhash.jl` | 3 | 1 |
 | swipl-devel `src/pl-termwalk.c` | code | `bae881a24a3f` | `src/pl-termwalk.jl` | 18 | 5 |
 | swipl-devel `src/pl-thread.c` | code | `bae881a24a3f` | `src/pl-thread.jl` | 4 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `bae881a24a3f` | `src/pl-variant.jl` | 7 | 1 |
-| swipl-devel `src/pl-vmi.c` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 53 | 0 |
-| swipl-devel `src/pl-wam.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 7 | 7 |
+| swipl-devel `src/pl-vmi.c` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 61 | 0 |
+| swipl-devel `src/pl-vmi.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 49 | 32 |
+| swipl-devel `src/pl-wam.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 27 | 19 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `bae881a24a3f` | `test/core_lang/test_bips.jl` | 8 | 1 |
 | swipl-devel `tests/core_lang/test_hash.pl` | code | `bae881a24a3f` | `test/core_lang/test_hash.jl` | 16 | 1 |
 | swipl-devel `tests/core_lang/test_occurs_check.pl` | code | `bae881a24a3f` | `test/core_lang/test_occurs_check.jl` | 10 | 1 |
@@ -112,33 +120,37 @@ checkout is pulled.
 | swipl-bench `programs/nreverse.pl` | `d74163e6d756` | 3 | 3 | 0 | bench/programs/nreverse.jl |
 | swipl-bench `programs/poly_10.pl` | `d74163e6d756` | 11 | 11 | 0 | bench/programs/poly_10.jl |
 | swipl-bench `programs/qsort.pl` | `d74163e6d756` | 3 | 3 | 0 | bench/programs/qsort.jl |
-| swipl-devel `src/pl-alloc.c` | `bae881a24a3f` | 1 | 73 | 1 | src/pl-alloc.jl |
+| swipl-devel `src/SWI-Prolog.h` | `bae881a24a3f` | 0 | 1 | 0 | src/SWI-Prolog.jl |
+| swipl-devel `src/pl-alloc.c` | `bae881a24a3f` | 2 | 73 | 2 | src/pl-alloc.jl |
 | swipl-devel `src/pl-codetable.c` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-vmi.jl |
-| swipl-devel `src/pl-comp.c` | `bae881a24a3f` | 25 | 166 | 17 | src/pl-comp.jl |
+| swipl-devel `src/pl-comp.c` | `bae881a24a3f` | 26 | 166 | 18 | src/pl-comp.jl |
 | swipl-devel `src/pl-comp.h` | `bae881a24a3f` | 1 | 6 | 0 | src/pl-comp.jl |
 | swipl-devel `src/pl-data.h` | `bae881a24a3f` | 0 | 2 | 0 | src/pl-incl.jl, src/pl-inline.jl |
-| swipl-devel `src/pl-fli.c` | `bae881a24a3f` | 6 | 286 | 5 | src/pl-fli.jl |
+| swipl-devel `src/pl-error.c` | `bae881a24a3f` | 1 | 41 | 1 | src/pl-error.jl |
+| swipl-devel `src/pl-error.h` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-error.jl |
+| swipl-devel `src/pl-fli.c` | `bae881a24a3f` | 7 | 286 | 7 | src/pl-fli.jl |
 | swipl-devel `src/pl-funct.c` | `bae881a24a3f` | 1 | 17 | 1 | src/pl-funct.jl |
-| swipl-devel `src/pl-gc.c` | `bae881a24a3f` | 3 | 166 | 3 | src/pl-gc.jl |
+| swipl-devel `src/pl-gc.c` | `bae881a24a3f` | 4 | 166 | 4 | src/pl-gc.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `bae881a24a3f` | 1 | 2 | 1 | src/pl-gc.jl |
-| swipl-devel `src/pl-global.h` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-global.jl |
+| swipl-devel `src/pl-global.h` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-global.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-hash.c` | `bae881a24a3f` | 1 | 3 | 1 | src/pl-hash.jl |
 | swipl-devel `src/pl-hash.h` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-hash.jl |
-| swipl-devel `src/pl-incl.h` | `bae881a24a3f` | 1 | 9 | 0 | src/pl-comp.jl, src/pl-global.jl, src/pl-incl.jl, src/pl-inline.jl, src/pl-prims.jl, src/pl-vmi.jl |
+| swipl-devel `src/pl-incl.h` | `bae881a24a3f` | 1 | 9 | 0 | src/pl-comp.jl, src/pl-global.jl, src/pl-incl.jl, src/pl-inline.jl, src/pl-prims.jl, src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-index.c` | `bae881a24a3f` | 91 | 125 | 29 | src/pl-index.jl |
-| swipl-devel `src/pl-inline.h` | `bae881a24a3f` | 11 | 52 | 8 | src/pl-inline.jl |
+| swipl-devel `src/pl-inline.h` | `bae881a24a3f` | 12 | 52 | 9 | src/pl-inline.jl |
 | swipl-devel `src/pl-prims.c` | `bae881a24a3f` | 24 | 188 | 14 | src/pl-prims.jl |
 | swipl-devel `src/pl-proc.c` | `bae881a24a3f` | 27 | 126 | 14 | src/pl-proc.jl |
 | swipl-devel `src/pl-proc.h` | `bae881a24a3f` | 1 | 2 | 0 | src/pl-proc.jl |
 | swipl-devel `src/pl-ressymbol.c` | `bae881a24a3f` | 2 | 7 | 1 | src/pl-ressymbol.jl |
 | swipl-devel `src/pl-setup.c` | `bae881a24a3f` | 1 | 62 | 1 | src/pl-setup.jl |
+| swipl-devel `src/pl-supervisor.c` | `bae881a24a3f` | 14 | 28 | 8 | src/pl-supervisor.jl |
 | swipl-devel `src/pl-termhash.c` | `bae881a24a3f` | 11 | 16 | 2 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termwalk.c` | `bae881a24a3f` | 12 | 28 | 5 | src/pl-termwalk.jl |
 | swipl-devel `src/pl-thread.c` | `bae881a24a3f` | 4 | 267 | 2 | src/pl-thread.jl |
 | swipl-devel `src/pl-variant.c` | `bae881a24a3f` | 5 | 17 | 1 | src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `bae881a24a3f` | 53 | 240 | 0 | src/pl-vmi.jl |
-| swipl-devel `src/pl-wam.c` | `bae881a24a3f` | 7 | 96 | 7 | src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `bae881a24a3f` | 61 | 240 | 19 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-wam.c` | `bae881a24a3f` | 23 | 96 | 18 | src/pl-wam.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `bae881a24a3f` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_hash.pl` | `bae881a24a3f` | 0 | 3 | 0 | test/core_lang/test_hash.jl |
 | swipl-devel `tests/core_lang/test_occurs_check.pl` | `bae881a24a3f` | 1 | 6 | 0 | test/core_lang/test_occurs_check.jl |
@@ -148,7 +160,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `bae881a24a3f` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `bae881a24a3f` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `bae881a24a3f` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **332** | **2060** | **113** | |
+| **total** | | **376** | **2130** | **158** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
@@ -297,7 +309,7 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `I_DEPARTM` | 2095 | CA1_MODULE, CA1_PROC |  |  |
 | `I_EXIT` | 2146 | — | NDQP | declared |
 | `I_EXITFACT` | 2222 | — | NDQP | declared |
-| `I_EXITQUERY` | 2288 | — |  |  |
+| `I_EXITQUERY` | 2288 | — |  | declared |
 | `I_YIELD` | 2338 | — |  |  |
 | `L_NOLCO` | 2395 | CA1_JUMP | NDQP | declared |
 | `L_VAR` | 2415 | CA1_FVAR,CA1_VAR | NDQP | declared |
@@ -439,17 +451,17 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `S_VIRGIN` | 3244 | — | NDQP |  |
-| `S_UNDEF` | 3286 | — |  |  |
-| `S_STATIC` | 3353 | — | DQP |  |
-| `S_DYNAMIC` | 3403 | — |  |  |
+| `S_VIRGIN` | 3244 | — | NDQP | declared |
+| `S_UNDEF` | 3286 | — |  | declared |
+| `S_STATIC` | 3353 | — | DQP | declared |
+| `S_DYNAMIC` | 3403 | — |  | declared |
 | `S_THREAD_LOCAL` | 3416 | — |  |  |
 | `S_INCR_DYNAMIC` | 3439 | — |  |  |
 | `S_WRAP` | 3514 | — |  |  |
-| `S_MULTIFILE` | 3540 | — |  |  |
-| `S_TRUSTME` | 3554 | CA1_CLAUSEREF | NDQP |  |
+| `S_MULTIFILE` | 3540 | — |  | declared |
+| `S_TRUSTME` | 3554 | CA1_CLAUSEREF | NDQP | declared |
 | `S_CALLWRAPPER` | 3578 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  |  |
-| `S_LIST` | 3594 | CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF | NQP |  |
+| `S_LIST` | 3594 | CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF | NQP | declared |
 | `S_MQUAL` | 3626 | CA1_VAR |  |  |
 | `S_LMQUAL` | 3641 | CA1_VAR |  |  |
 | `S_SSU_DET` | 3657 | — |  |  |
@@ -563,8 +575,8 @@ AllocCheck on the entries named, no `Any`, and `tools/bench.jl`.
 | **M1** the code-map generator — after V1, before V2 (user, 2026-10-03) — ✅ **DONE 2026-10-04** (architecture.md § "M1 — the code map, generated") | ONE LogicKernel tool (extending `tools/port_check.jl --write-inventory`) generates LogicKernel's own code map: FUNCTION-LEVEL coverage per upstream file from the `# PORT:` markers ("`pl-index.c`: n of m functions ported, k diverging"); the code graph — a mermaid dependency graph of the mirrored files in `architecture.md`, from the include order and cross-file references; the `tools/upstream_drift.jl` report. Generated, never hand-edited; the hand-maintained "What is here now" table is replaced by, or checked against, the generated one (it drifted on 2026-10-03) | the freshness check runs in LogicKernel's OWN suite and CI, one symmetric extractor, both sides non-empty; mutation-proved (a stale block, an empty generator) |
 | **V2** body compiler for nreverse — ✅ **DONE 2026-10-05** (architecture.md § "V2 — the body compiler"); ✅ **`!`'s compile side** (DONE 2026-10-05, the user's answer to Q1 — architecture.md § "V2 — `!` compiled"): `I_CUT` (c:3521-3526), `COMMIT_CLAUSE` when the body starts with a cut (c:2165-2167), `cutInfo` (c:372-375; its local cut for `\+` is set by V9's control constructs); EXECUTING it stays in V6 | `compileClause` rule path (`I_ENTER`, `I_EXIT`; c:2108-2175), `compileBody` for `,` (c:2466-2477), `compileSubClause` for plain goals (c:3422-3632 without the inline cases), `compileArgument` body side (c:3010-3150, 3189-3301), `compileListFF`/`isFirstVarP` (c:3315-3328, 1694), `lco` + `reverse_code` (c:3703-3812) | NEW `test/compile/test_body_code_swipl.jl`: whole-clause code — names, operands, labels — identical to swipl's `vm_list` for `nreverse` and `qsort` and a random corpus of rule clauses of plain goals and `!`, without control constructs or inline built-ins; all six qsort clauses (partition/4 clause 1's `!` included); `COMMIT_CLAUSE` set exactly when the body starts with `!`; `derive` joins in V6 (it needs `compileBodyTypeTest`, c:4663, for `I_INTEGER`) and `poly_10` in V8 (`A_ADD_FC`); mutation-proved (drop the LCO block; swap `B_ARGVAR`/`B_ARGFIRSTVAR`; MC1–MC3 for the cut: `!` compiled as a call, `COMMIT_CLAUSE` never set, set for a cut anywhere) |
 | **V3** machine state (decisions 2, 3) — ✅ **DONE 2026-10-05** (architecture.md § "V3 — machine state") | the local stack: slots, frames, choice points and FliFrames in ONE position space whose positions are swipl's own (upstream's struct widths, user 2026-10-05: frame 8, choice point 9, FliFrame 6 words); `localFrame`/`choice`/`fliFrame` (pl-incl.h:1770-1836, 1938-1946) as POOL RECORDS (indices; mutable, preallocated, reused per index); `choice_type`, the `FR_*` flags and their macros (pl-incl.h:1167-1292); `newChoice` (wam:2851); `Mark`/`DiscardMark` (a no-op)/`NoMark`/`isRealMark`/`Undo`; `copyFrameArguments` (wam:2413); FliFrames (`open_foreign_frame`, `PL_open_foreign_frame`, `PL_close_foreign_frame`, `PL_rewind_foreign_frame`, `PL_discard_foreign_frame`, wam:322-433); `PL_new_term_refs`, `new_term_ref`, `PL_new_term_ref`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`, `linkValI` (pl-fli.c, pl-inline.h); `growLocalSpace`/`growStacks`/`ensureLocalSpace`/`hasLocalSpace`/`f_hasSpace` (pl-gc.c, pl-gc.h, pl-incl.h; growth the ONLY allocating path) and `raiseStackOverflow` (pl-alloc.c; a Julia error until V5); `emptyStacks` (pl-setup.c: the base FliFrame, so no `term_t` is 0); **`VAROFFSET` = slot + 8, defined together with the frame header**; the RECORD DISCIPLINE — the four refinements of decision 3 (user, 2026-10-05) | NEW `test/core_lang/test_local_stack.jl` (term-generic): frame-to-frame and frame-to-choice-point DIFFERENCES identical to swipl's `prolog_current_frame/1` and `prolog_current_choice/1` on 9 caller/callee pairs, computed from the kernel's compiled `clause.variables` (pinned and live); every lowering of `lTop` drops the records at or above it, and a dropped record stays readable until a push reuses it; a frame being filled above `lTop` is never dropped (ASSERTED); a missed drop is caught at the next push; a reused choice point carries nothing over; AllocCheck (static) and a warm `@allocated` of 0 on `newChoice`, frame push/pop and foreign frames, growth allocating. The instruction-level tests this row named — an exit popping to `FR`, LCO reuse, the `CHP_CLAUSE` move, `I_CUT`, backtracking, `restore_after_query` — belong to the instructions: V4a, V4b and V6 (user, 2026-10-05) |
-| **V4a** run loop + query API, facts | **From V3 (user, 2026-10-05):** `queryFrame` (pl-incl.h:1882-1917) as a record in the position space, its members in upstream's order (`choice` < `saved_environment` < `top_frame` < `frame`), `QueryFromQid`/`QidFromQuery`, `parentFrame` through `QF_PARENT_ENV_OFFSET`; `initVM`'s top clause (`I_EXITQUERY`, wam:3791-3802) and `$c_call_prolog/0`; `discard_query` and `restore_after_query` (wam:3052-3100); `SAVE_REGISTERS`/`LOAD_REGISTERS` (condition 3) with `ARGP`'s two forms (a slot position in body mode, a cursor in head mode) and the argument stack (`aTop`/`aSave`: the builder and cursor stacks); the backtracking drop rule — the records above the resumed choice point are dropped BEFORE it moves (vmi:6503-6528, 6712); `CHP_CLAUSE`'s `clause_choice` copied into the choice point's own pooled one (`ch->value.clause = chp`); `firstClause!`/`nextClause!` reading the frame's argument slots (today a call term); `setGenerationFrame` back to upstream's frame-writing form. Then: `PL_open_query`/`PL_next_solution`/`PL_cut_query`/`PL_close_query`/`PL_exception` (wam:2882-3258); `PL_next_solution`'s labels `CLAUSE_FAILED`/`BODY_FAILED`/`FRAME_FAILED` (wam:2465-2467) and backtracking for `CHP_CLAUSE`/`CHP_TOP` (vmi:6467-6824); `S_VIRGIN` → `createSupervisor`/`setDefaultSupervisor` (pl-supervisor.c:447-510) → `S_TRUSTME`, `S_LIST`, `S_STATIC`, and `S_DYNAMIC` (vmi:3403: `enterDefinition`, then `S_STATIC`; `leaveDefinition` at exit — mapped onto the predicate references the clause database already keeps); every `H_*` the programs use, read AND write mode; `I_EXITFACT`, `I_EXITQUERY` | queries over random fact databases (the index differential's generator — it produces no undefined predicate; `S_UNDEF` waits for V5's exceptions): answers in order AND determinism (`PL_S_LAST` under `PL_Q_EXT_STATUS`) identical to swipl; advancing, cutting or closing a query that is not the innermost returns `PL_S_NOT_INNER` (opening one is allowed); cut keeps bindings, close undoes them; the write-mode builder is a STACK reset on every `CLAUSE_FAILED`; a **three-mode head-unification differential** — random clause heads called with random goals under `occurs_check` `false`/`true`/`error`, bindings, failures and error terms identical to swipl's; **`$expr/n` matched BOTH ways** (Q2, DIVERGES; user 2026-10-04): `H_FUNCTOR $expr/n` against any compound of n children, `H_FUNCTOR f/k` against a `$expr/(k+1)` — test_expr_functor.jl's pinned pair wired to the VM (`_qvm_call`, `_QVM_WIRED`) and turned from `@test_broken` into `@test`; AllocCheck on the supervisor and exit paths |
-| **V4b** rules → **MILESTONE `nreverse`** | `I_ENTER`, `I_CALL`, `I_DEPART` (with LCO), `I_EXIT`, every `B_*` the programs use, `L_NOLCO`, `L_VAR` (and `L_VOID`/`L_ATOM`/`L_NIL`/`L_SMALLINT`), `I_TCALL`, `I_LCALL` (vmi:1782-2557) | `nreverse` answer identical to swipl; **memory flatness**: (a) `concatenate/3` on lists of 10³, 10⁴, 10⁵ elements reaches the SAME local-stack high-water mark (LCO), (b) 10⁴ open/next/close cycles of `nreverse`, driven from Julia (`fail` and a generator are not ported yet), return trail, binding store and stacks to their baseline every cycle, (c) **trail length and binding-store size are measured and reported** next to the local-stack high-water mark in (a) — they grow linearly on a long deterministic run until the binding-store collector (G1) exists, and the measurement makes that visible; AllocCheck on `I_CALL`/`I_DEPART`/`I_EXIT`; `bench.jl` `nreverse` vs swipl (3 runs, then a profile) |
+| **V4a** run loop + query API, facts — ✅ **DONE 2026-10-05** (architecture.md § "V4a — the run loop and the query API, over facts"; built as the user decided the same day: one function with labels and a SORTED BRANCH TREE dispatch — LLVM measured to make no single jump table of the chain —, `ARGP` one concrete value, write mode under `true`/`error` as read mode over a fresh compound, upstream's no-catcher exception path with `PL_error`, the frame scan of clause GC, lists and `$expr/3` matched alike; `I_EXIT`/`exit_continue` and the write-mode `B_*` moved here; `argv_at` dereferences — a real defect, fixed with its test) | **From V3 (user, 2026-10-05):** `queryFrame` (pl-incl.h:1882-1917) as a record in the position space, its members in upstream's order (`choice` < `saved_environment` < `top_frame` < `frame`), `QueryFromQid`/`QidFromQuery`, `parentFrame` through `QF_PARENT_ENV_OFFSET`; `initVM`'s top clause (`I_EXITQUERY`, wam:3791-3802) and `$c_call_prolog/0`; `discard_query` and `restore_after_query` (wam:3052-3100); `SAVE_REGISTERS`/`LOAD_REGISTERS` (condition 3) with `ARGP`'s two forms (a slot position in body mode, a cursor in head mode) and the argument stack (`aTop`/`aSave`: the builder and cursor stacks); the backtracking drop rule — the records above the resumed choice point are dropped BEFORE it moves (vmi:6503-6528, 6712); `CHP_CLAUSE`'s `clause_choice` copied into the choice point's own pooled one (`ch->value.clause = chp`); `firstClause!`/`nextClause!` reading the frame's argument slots (today a call term); `setGenerationFrame` back to upstream's frame-writing form. Then: `PL_open_query`/`PL_next_solution`/`PL_cut_query`/`PL_close_query`/`PL_exception` (wam:2882-3258); `PL_next_solution`'s labels `CLAUSE_FAILED`/`BODY_FAILED`/`FRAME_FAILED` (wam:2465-2467) and backtracking for `CHP_CLAUSE`/`CHP_TOP` (vmi:6467-6824); `S_VIRGIN` → `createSupervisor`/`setDefaultSupervisor` (pl-supervisor.c:447-510) → `S_TRUSTME`, `S_LIST`, `S_STATIC`, and `S_DYNAMIC` (vmi:3403: `enterDefinition`, then `S_STATIC`; `leaveDefinition` at exit — mapped onto the predicate references the clause database already keeps); every `H_*` the programs use, read AND write mode; `I_EXITFACT`, `I_EXITQUERY` | queries over random fact databases (the index differential's generator — it produces no undefined predicate; `S_UNDEF` waits for V5's exceptions): answers in order AND determinism (`PL_S_LAST` under `PL_Q_EXT_STATUS`) identical to swipl; advancing, cutting or closing a query that is not the innermost returns `PL_S_NOT_INNER` (opening one is allowed); cut keeps bindings, close undoes them; the write-mode builder is a STACK reset on every `CLAUSE_FAILED`; a **three-mode head-unification differential** — random clause heads called with random goals under `occurs_check` `false`/`true`/`error`, bindings, failures and error terms identical to swipl's; **`$expr/n` matched BOTH ways** (Q2, DIVERGES; user 2026-10-04): `H_FUNCTOR $expr/n` against any compound of n children, `H_FUNCTOR f/k` against a `$expr/(k+1)` — test_expr_functor.jl's pinned pair wired to the VM (`_qvm_call`, `_QVM_WIRED`) and turned from `@test_broken` into `@test`; AllocCheck on the supervisor and exit paths |
+| **V4b** rules → **MILESTONE `nreverse`** | `I_ENTER`, `I_CALL`, `I_DEPART` (with LCO), every `B_*` the programs use beyond V4a's write-mode targets (`I_EXIT`/`exit_continue` are V4a's), each new instruction a label of the run loop and a leaf of its dispatch tree (`@vmi_dispatch`), `L_NOLCO`, `L_VAR` (and `L_VOID`/`L_ATOM`/`L_NIL`/`L_SMALLINT`), `I_TCALL`, `I_LCALL` (vmi:1782-2557) | `nreverse` answer identical to swipl; **two V4a mutants V4b's gate must catch** — they survive V4a's because facts cannot reach them: MQ6 (`exit_continue` not lowering `lTop` to the frame — every V4a exit returns to `I_EXITQUERY`, which sets `lTop` itself; caught by frame placement after a deterministic exit identical to swipl's) and MQ18 (`shallow_backtrack` not dropping the failed attempt's records above the moved choice point — a fact's attempt leaves none; caught by a clause whose body pushed frames before failing back); **memory flatness**: (a) `concatenate/3` on lists of 10³, 10⁴, 10⁵ elements reaches the SAME local-stack high-water mark (LCO), (b) 10⁴ open/next/close cycles of `nreverse`, driven from Julia (`fail` and a generator are not ported yet), return trail, binding store and stacks to their baseline every cycle, (c) **trail length and binding-store size are measured and reported** next to the local-stack high-water mark in (a) — they grow linearly on a long deterministic run until the binding-store collector (G1) exists, and the measurement makes that visible; AllocCheck on `I_CALL`/`I_DEPART`/`I_EXIT`; `bench.jl` `nreverse` vs swipl (3 runs, then a profile) |
 | **V5** built-in interface (decision 5) | `term_t` and the FLI subset built-ins use (`PL_get_*`, `PL_put_*`, `PL_unify_*`; pl-fli.c), `PRED_IMPL`/`PRED_DEF` tables and `registerBuiltins` (pl-ext.c:302-563), `createForeignSupervisor`, `I_FCALLDETVA`/`I_FCALLDET0..10`/`I_FEXITDET`, `vmi_fopen` (wam:548-593); the dispatch MEASURED both ways — a typed function-pointer table (`FunctionWrappers.jl`-style, one concrete wrapper type per `T`, which would also serve `PL_register_foreign`) and a generated `if`/`elseif` — by call overhead, JET and compile latency, taking the faster one that passes the zero-dispatch gate; `SAVE_REGISTERS`/`LOAD_REGISTERS` at exactly upstream's points; the minimal exception path to the query boundary (`PL_raise_exception`, `B_THROW` → `b_throw` → no catcher → `b_throw_resume` → `PL_S_EXCEPTION`); `S_UNDEF` + `existence_error`; the stack limit as upstream's `resource_error` (vmi:1886-1890) | the ALREADY-PORTED predicates registered as upstream registers them — pl-prims.c's table (pl-prims.c:6570-6623: `=`, `\=`, `unify_with_occurs_check/2`, `==`, `compare/3`, `?=`, `unifiable/3`) and `=@=` from pl-variant.c:544; their SWI test assertions called one goal at a time through `PL_open_query` (the `.pl` test clauses need `->`, `;`, `!` and the inline `=`/`==`, which arrive in V9); error terms identical to swipl's (`is/2`-style `error(type_error(…), context(…))`, unknown procedure) |
 | **V6** arithmetic (3i) + cut → **MILESTONE `derive`** | pl-arith.c `is/2`, `</2`, `=</2`, `>/2`, `>=/2`, `=:=/2`, `=\=/2`, `valueExpression`/`evalExpression`/`ar_compare`/`cmpNumbers`, `ar_add`/`ar_minus`/`ar_mul` and what the programs reach — integer overflow to `BigInt` BY DESIGN; every RESULT in SWI's canonical form — a rational whose denominator is 1 IS the integer, as `mk_gnd` stores it (user, 2026-10-04; upstream canonicalises `rdiv`, `/` under `prefer_rationals` and the rest) — with swipl probes as tests then (`X is 4 rdiv 2` gives the integer 2 in 10.1.16, probed); `I_INTEGER` and the type-test family (vmi:3111-3227) with `compileBodyTypeTest` (c:4663); `I_CUT`'s EXECUTION + `discardChoicesAfter` (vmi:2572; wam:2604-2685; its compile side is V2's); 🔴 **OBLIGATION (user, 2026-10-05): the inline-vs-call decision, ported AS IS.** V2 refuses every inline-compiled functor and `is/2` whole (choice Q5, an interim). V6 must replace that refusal with upstream's own decision logic, case by case — compileSubClause's arithmetic branch and its fall-back to a call (c:3474-3482, 3642-3690) with `compileArith`/`compileArithArgument` (c:3848, 3949), `compileBodyTypeTest` (c:4663), and the other inline compilers (`compileBodyUnify`, `compileBodyEQ`, `compileBodyNEQ`, `compileBodyArg3`, `compileBodyVar1`, `compileBodyNonVar1`, c:4218-4565, which V9 owns) — never a rule of ours. Upstream decides per GOAL: `derive`'s `N1 is N-1` compiles as a call to `is/2` because `N1` occurs in the head; `poly_10`'s `M is N-1` becomes `A_ADD_FC`; the type tests compile to `I_INTEGER` and its family. The body-code differential must exercise EACH branch of that logic, inline and fall-back, with the coverage check asserting it | SWI's own `tests/core_lang/test_arith.pl` assertions for the ported functions; a live `is/2` differential on random expressions; body-code differential now includes `derive`; `derive` identical to swipl — its `d/3` is the first `S_STATIC` with a live `CHP_CLAUSE` choice point and shallow backtracking (clauses with a variable first argument sit in every bucket); `bench.jl` |
 | **V7** **MILESTONE `qsort`** | nothing new expected — `(=<)/2` arrives in V6 | `qsort` identical to swipl; flatness and `bench.jl` as V4b |

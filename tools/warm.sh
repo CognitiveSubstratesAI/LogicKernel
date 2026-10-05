@@ -226,8 +226,14 @@ JL
     local log="$DIR/preflight_test_static_analysis.log"
     _file test/test_static_analysis.jl > "$log" 2>&1 || { rc=1; PF_SA_FAIL=1; echo "preflight: FAILED — $log"; }
     grep -E "\.jl \[|\.jl  *\||Test Failed|Error During|NOT CHECKED|allocates:" "$log"
-    files=$(cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
-        grep -E '^test/(.*/)?test_[^/]*\.jl$' | sort -u)
+    # The TREE-WIDE gates run on every preflight, changed or not: they check src/, so a src edit can
+    # fail them while their own file is unchanged (V4a, MEASURED: an `@inbounds` in pl-inline.jl
+    # passed the preflight and failed test_type_discipline.jl in the cold evidence run).
+    files=$( {
+        printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
+        cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
+            grep -E '^test/(.*/)?test_[^/]*\.jl$'
+    } | sort -u)
     for f in $files; do
         [ -f "$ROOT/$f" ] && [ "$f" != test/test_static_analysis.jl ] || continue
         echo "preflight: $f"

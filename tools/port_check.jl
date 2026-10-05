@@ -179,6 +179,22 @@ function _defname(ex)::Union{String, Nothing}
     return nothing
 end
 
+# A `@label NAME` inside a function is a definition too: the VM's run loop holds the bodies of
+# pl-vmi.c's instructions and helpers as labels, as upstream compiles pl-vmi.c into PL_next_solution.
+function _collect_labels!(out::Vector{Tuple{Int, String}}, ex, line::Int)
+    ex isa Expr || return out
+    if ex.head === :macrocall && ex.args[1] === Symbol("@label")
+        i = findfirst(a -> a isa Symbol, ex.args[2:end])
+        i === nothing || push!(out, (line, String(ex.args[i + 1])))
+        return out
+    end
+    cur = line
+    for a in ex.args
+        a isa LineNumberNode ? (cur = a.line) : _collect_labels!(out, a, cur)
+    end
+    return out
+end
+
 function _collect_defs!(out::Vector{Tuple{Int, String}}, ex, line::Int)
     ex isa Expr || return out
     if ex.head in (:toplevel, :block)
@@ -192,6 +208,9 @@ function _collect_defs!(out::Vector{Tuple{Int, String}}, ex, line::Int)
     end
     n = _defname(ex)
     n === nothing || push!(out, (line, n))
+    # the labels of a function's body (through a docstring or `@inline`; a test unit's nested
+    # functions are reached through its own recursion below)
+    n === nothing || _is_testset(ex) || _collect_labels!(out, ex, line)
     if _is_testset(ex) || (ex.head in (:for, :let, :if) || ex.head === :do)   # units nest
         for a in ex.args
             _collect_defs!(out, a, line)
@@ -322,22 +341,25 @@ end
 # `kernel` column says `declared`; `nothing` when the section is absent.
 function _vm_inventory(
     text::String
-)::Union{Nothing, @NamedTuple{rows::Int, declared::Set{String}}}
+)::Union{Nothing, @NamedTuple{rows::Int, declared::Set{String}, names::Set{String}}}
     i = findfirst(VM_INVENTORY_BEGIN, text)
     j = findfirst(VM_INVENTORY_END, text)
     (i === nothing || j === nothing || last(i) > first(j)) && return nothing
-    rows, declared = 0, Set{String}()
+    rows, declared, names = 0, Set{String}(), Set{String}()
     for m in eachmatch(
         r"^\| `(\w+)` \| \d+ \|[^|]*\|[^|]*\|\s*(\S*)\s*\|$"m, text[last(i):first(j)]
     )
         rows += 1
+        push!(names, m[1])
         m[2] == "declared" && push!(declared, m[1])
     end
-    return (; rows, declared)
+    return (; rows, declared, names)
 end
 
 # The `kernel` column of the VM inventory is hand-kept; it went stale once (V1 L1 declared eight
-# instructions and left their rows blank). It must name exactly the `# PORT: pl-vmi.c` markers.
+# instructions and left their rows blank). It must name exactly the `# PORT: pl-vmi.c` markers of
+# its rows — the `VMI()` instructions; pl-vmi.c's helpers and macros (`h_const`, `exit_continue`,
+# `TRUST_CLAUSE`, …: labels in the run loop since V4a) are no rows of it.
 function vm_inventory_violations(
     text::String, ported::Set{String}, inventory::String
 )::Vector{String}
@@ -351,6 +373,7 @@ function vm_inventory_violations(
     vm.rows == 0 && return [
         "VM-INVENTORY-MISSING $inventory: a VM inventory section with no instruction rows"
     ]
+    ported = intersect(ported, vm.names)
     vm.declared == ported && return String[]
     unmarked = join(sort!(collect(setdiff(ported, vm.declared))), ", ")
     stale = join(sort!(collect(setdiff(vm.declared, ported))), ", ")

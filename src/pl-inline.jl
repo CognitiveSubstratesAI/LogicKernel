@@ -70,8 +70,10 @@ end
 max_generation(def::definition)::gen_t = GEN_MAX
 
 # PORT: pl-inline.h setGenerationFrame
-# DIVERGES: there are no frames — returns the generation upstream stores in the frame, for the
-# caller to run in.
+# DIVERGES: two forms. On a frame (`fr`, an index), upstream's: the frame's `generation` becomes the
+# current global generation. Without one — `retract/1`, which has no frame until V9 makes it a
+# foreign predicate — the generation is returned for the caller to run in. No transactions, so never
+# the transaction's generation (`P_TRANSACT`, inl:733-736).
 "The generation a frame of `def` is (re)set to: the current global generation (pl-inline.h)."
 function setGenerationFrame(gd::PL_global_data{T}, def::Definition{T})::gen_t where {T}
     gen = global_generation(gd)
@@ -79,6 +81,50 @@ function setGenerationFrame(gd::PL_global_data{T}, def::Definition{T})::gen_t wh
         gen = global_generation(gd)
     end
     return gen
+end
+function setGenerationFrame(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int
+)::Nothing where {T}
+    f = ld.frames[fr]
+    gen = global_generation(gd)
+    while gen != global_generation(gd)              # do … while()
+        gen = global_generation(gd)
+    end
+    f.generation = gen                              # setGenerationFrameVal(fr, gen)
+    return nothing
+end
+
+# PORT: pl-inline.h QueryFromQid
+# DIVERGES: a query handle is the query frame's POSITION (decision 1); the record is found on the
+# chain of open queries from `LD->query` (V3 refinement), where upstream computes its address from
+# the handle's offset. A handle that names no open query gives 0 — upstream's would point at a
+# closed (`QID_CMAGIC`) or reused frame.
+"The open query frame (an index) whose handle is `qid`, or 0 (pl-inline.h)."
+function QueryFromQid(ld::PL_local_data{T}, qid::Int)::Int where {T}
+    qf = ld.query
+    while qf != 0
+        q = ld.queries[qf]
+        q.base == qid && return qf
+        qf = q.parent
+    end
+    return 0
+end
+
+# PORT: pl-incl.h QidFromQuery
+"The handle of query frame `qf` (pl-incl.h): its position."
+QidFromQuery(ld::PL_local_data{T}, qf::Int) where {T} = ld.queries[qf].base
+
+# PORT: pl-incl.h pushArgumentStack
+# DIVERGES: an entry is an `argstack_entry` (src/pl-incl.jl). Growth is `f_pushArgumentStack`'s.
+"Push `e` on the argument stack (pl-incl.h)."
+function pushArgumentStack(ld::PL_local_data{T}, e::argstack_entry{T})::Nothing where {T}
+    if ld.aTop < length(ld.astack)                  # aTop+1 < aMax
+        ld.aTop += 1
+        ld.astack[ld.aTop] = e                      # *aTop++ = (p)
+    else
+        f_pushArgumentStack(ld, e)
+    end
+    return nothing
 end
 
 # ── bindings: deRef, Trail, Mark, Undo ───────────────────────────────────────────────────────────

@@ -32,21 +32,51 @@ mutable struct PL_global_data{T}
     const functors_control::ControlFunctors                     # functors.array's CONTROL_F
     const modules_user::module_t{T}                             # modules.user: user module
     const subclause_names::SubClauseNames                       # (the ATOM_/FUNCTOR_ tables)
+    const code_data::PL_code_data                               # PL_code_data (its supervisors)
+    const procedures_dc_call_prolog0::Procedure{T}              # procedures.dc_call_prolog0
+    const clauses_top_clause::Clause{T}                         # clauses.top_clause
+    const clauses_top_cref::ClauseRef{T}                        # clauses.top_cref
+    const atom_nil::T                                           # ATOM_nil, the `[]` term
+    const atom_dot::T                                           # ATOM_dot, the `'[|]'` symbol
+    const no_literals::Vector{T}                                # (a supervisor's literal table)
 end
 # DIVERGES: `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
 # `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
 # per database. The user module is created with the database — upstream's initModules creates it, with
 # the `system` module, at start-up (pl-modul.c). There is no `system` module until built-ins are
-# registered in it (V5), and no module table (`modules.table`): one module per database.
-PL_global_data{T}() where {T} =
-    PL_global_data{T}(
+# registered in it (V5), and no module table (`modules.table`): one module per database. The shared
+# supervisors are the database's (`PL_code_data`, src/pl-incl.jl). `$c_call_prolog/0`, the top
+# frame's predicate, is created as `setBuiltinPredicateProperties` creates it (no clauses, flags 0,
+# `SUPERVISOR(virgin)`), but in NO module table: there is no `system` module, and the `user` table
+# must not show it. Then `initVM` builds the top clause (setup:158, then 160). `atom_nil` and
+# `atom_dot` are the terms the VM writes for `[]` and a list cell's head, built once — upstream's are
+# constants; `no_literals` is the literal table a supervisor's code has (none).
+function PL_global_data{T}() where {T}
+    cd = initSupervisors()
+    dc = mk_sym(T, Symbol("\$c_call_prolog"))
+    dc_def = Definition{T}(
+        sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd
+    )
+    dc_proc = Procedure{T}(dc_def, UInt32(0))
+    top_clause, top_cref = initVM(dc_proc)
+    return PL_global_data{T}(
         gen_t(0),
         Dict{Definition{T}, dirty_def_info{T}}(),
         false,
         registerControlFunctors(T),
-        module_t{T}(sym_key(mk_sym(T, :user)), Dict{Tuple{UInt64, Int}, Procedure{T}}()),
-        _subclause_names(T)
+        module_t{T}(
+            sym_key(mk_sym(T, :user)), Dict{Tuple{UInt64, Int}, Procedure{T}}(), cd
+        ),
+        _subclause_names(T),
+        cd,
+        dc_proc,
+        top_clause,
+        top_cref,
+        mk_nil(T),
+        mk_sym(T, Symbol("[|]")),
+        T[]
     )
+end
 
 # PORT: pl-incl.h MODULE_user
 "The user module of the database whose global data is `gd` (pl-incl.h `MODULE_user`)."
@@ -89,7 +119,10 @@ end
 # `foreign_environment` are named by the macros upstream's code reads them through — `lTop`, `lMax`,
 # `environment_frame`, `BFR` and `fli_context` — and the last three are pool indices (0 = NULL).
 # `stacks.limit` is the local stack's alone, in positions: there is no global or trail stack to
-# share it with.
+# share it with. `query` is a query-frame index (0 = NULL). The argument stack `astack` holds
+# `argstack_entry`s (upstream: `Word*`); the write-mode builder (`bcells`, `bframes`; decision 2, Q3)
+# has no upstream field — it builds where upstream fills cells on the global stack. The `exception.*`
+# fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
 """
     PL_local_data{T}()
 
@@ -128,6 +161,22 @@ mutable struct PL_local_data{T}
     BFR::Int                                                    # choicepoints: choice-point chain
     fli_context::Int                                            # foreign_environment
     null_code::Code{T}                                          # a NULL `Code` (no clause)
+    queries::Vector{queryFrame{T}}                              # the query-frame records
+    nqueries::Int                                               # … live: queries[1:nqueries]
+    query::Int                                                  # query: the innermost open one
+    astack::Vector{argstack_entry{T}}                           # stacks.argument
+    aTop::Int                                                   # … its top (entries in use)
+    bcells::Vector{T}                                           # the write-mode builder's cells
+    bTop::Int                                                   # … in use: bcells[1:bTop]
+    bframes::Vector{bframe{T}}                                  # … the compounds it is building
+    nbframes::Int                                               # … open: bframes[1:nbframes]
+    exception_term::Int                                         # exception.term (0: none)
+    exception_bin::Int                                          # exception.bin
+    exception_printed::Int                                      # exception.printed
+    exception_tmp::Int                                          # exception.tmp
+    exception_pending::Int                                      # exception.pending
+    chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
+    placeholder::T                                              # (argp_t's term but in a cursor)
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -139,7 +188,10 @@ function PL_local_data{T}() where {T}
         # idle until a search resets it (`_index_context!`): any predicate will do
         index_context{T}(
             gen_t(0),
-            Definition{T}(UInt64(0), 0, ClauseList{T}(), UInt64(0)),
+            Definition{T}(
+                UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
+                PL_code_data(code[], code[], code[], code[], code[], code[])
+            ),
             nothing,
             0,
             _TOP_POSITION,
@@ -147,7 +199,12 @@ function PL_local_data{T}() where {T}
         ),
         T[], 0, 0, STACK_LIMIT_DEFAULT, localFrame{T}[], 0, choice{T}[], 0, fliFrame[], 0,
         0, 0,
-        0, Code{T}(code[], T[], 0)
+        0, Code{T}(code[], T[], 0),
+        queryFrame{T}[], 0, 0,
+        Vector{argstack_entry{T}}(undef, 64), 0,
+        Vector{T}(undef, 256), 0, Vector{bframe{T}}(undef, 64), 0,
+        0, 0, 0, 0, 0,
+        ClauseChoice{T}(nothing, word(0)), e
     )
     growStacks!(ld, LOCAL_INITIAL)              # allocStacks: the initial local stack
     emptyStacks!(ld)

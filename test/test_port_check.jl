@@ -522,6 +522,8 @@ _pc_codes(vs) = sort!([
             join(rows, "\n") * "\n$VM_INVENTORY_END\n"
         two = doc(row("H_ATOM", "declared"), row("H_NIL", ""))
         @test vm_inventory_violations(two, Set(["H_ATOM"]), "inv") == String[]
+        # a pl-vmi.c helper or macro (a run-loop label, `h_const`) is no row: it does not count
+        @test vm_inventory_violations(two, Set(["H_ATOM", "h_const"]), "inv") == String[]
         @test _pc_codes(vm_inventory_violations(two, Set(["H_ATOM", "H_NIL"]), "inv")) ==
             [("VM-INVENTORY-DRIFT", "inv")]                     # ported, row left blank
         @test _pc_codes(vm_inventory_violations(two, Set{String}(), "inv")) ==
@@ -542,7 +544,8 @@ _pc_codes(vs) = sort!([
         )
         vm = _vm_inventory(text)
         @test vm !== nothing && vm.rows == 232                  # every VMI() of pl-vmi.c
-        @test !isempty(ported) && vm.declared == ported
+        @test !isempty(ported) && vm.declared == intersect(ported, vm.names)
+        @test "h_const" in ported && !("h_const" in vm.names)  # the run loop's helpers are marked
         blanked = replace(
             text,
             "| `H_NIL` | 528 | — | NQP | declared |" => "| `H_NIL` | 528 | — | NQP |  |"
@@ -554,6 +557,28 @@ _pc_codes(vs) = sort!([
             @test _pc_codes(port_check(root; inventory=inv).violations) ==
                 [("VM-INVENTORY-DRIFT", "port_inventory.md")]
         end
+    end
+
+    @testset "a `@label` inside a function is a definition; outside one it is not" begin
+        src = """
+        function run(x)
+            @goto H_ATOM
+            # PORT: pl-vmi.c H_ATOM
+            @label H_ATOM
+            y = x
+            # PORT: pl-vmi.c h_const
+            @label h_const
+            return y
+        end
+        """
+        @test definitions(src, "f.jl") == [(1, "run"), (4, "H_ATOM"), (7, "h_const")]
+        # …and through a docstring, as the run loop is written (the definition at the docstring's
+        # line, as for every documented definition)
+        @test definitions("\"doc\"\n" * src, "f.jl") ==
+            [(1, "run"), (5, "H_ATOM"), (8, "h_const")]
+        @test definitions("x = 1\n", "f.jl") == Tuple{Int, String}[]
+        # a label in a `begin` block at top level is no definition (it is in no function)
+        @test definitions("begin\n    @label L\nend\n", "f.jl") == Tuple{Int, String}[]
     end
 
     @testset "expected_path mirrors the upstream path" begin

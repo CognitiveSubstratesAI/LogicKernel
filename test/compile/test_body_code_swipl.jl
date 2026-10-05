@@ -57,7 +57,7 @@ function _bclause(head::_B, body::Union{Nothing, _B}; gd=_BGD)::LK.Clause{_B}
     body === nothing || _bnames!(body)
     user = LK.MODULE_user(gd)
     name, ar = _bfunctor(head)
-    proc = LK.lookupProcedure(sym_key(name), ar, user)
+    proc = LK.lookupProcedure(name, ar, user)
     return LK.compileClause(gd, head, body, proc, user)
 end
 
@@ -423,7 +423,7 @@ _bc_names(code::Vector{String}) =
         user = LK.MODULE_user(_BGD)
         @test all(r.procedures) do p
             d = p.definition
-            p === LK.lookupProcedure(d.functor_name, d.arity, user)
+            p === LK.lookupProcedure(d.name, d.arity, user)
         end
     end
 
@@ -555,7 +555,7 @@ end
     # a rule of a multifile predicate needs I_CONTEXT (modules): refused; its facts are not
     gd = LK.PL_global_data{_B}()
     user = LK.MODULE_user(gd)
-    mf = LK.lookupProcedure(sym_key(_bs("mf")), 0, user)
+    mf = LK.lookupProcedure(_bs("mf"), 0, user)
     mf.definition.flags |= LK.P_MULTIFILE
     @test_throws LK.NotPortedError LK.compileClause(gd, _bs("mf"), _bs("q"), mf, user)
     @test LK.compileClause(gd, _bs("mf"), nothing, mf, user).flags & LK.UNIT_CLAUSE != 0
@@ -570,7 +570,7 @@ end
     O = lk_term_type(Union{Int64, Bool})
     gd = LK.PL_global_data{O}()
     user = LK.MODULE_user(gd)
-    po = LK.lookupProcedure(sym_key(lk_sym(O, :po)), 0, user)
+    po = LK.lookupProcedure(lk_sym(O, :po), 0, user)
     v = lk_gnd(O, true)
     cl = LK.compileClause(gd, lk_sym(O, :po), mk_expr(O, O[lk_sym(O, :q), v]), po, user)
     i = findfirst(==(LK.L_ATOM), cl.codes)

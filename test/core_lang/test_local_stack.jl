@@ -31,7 +31,7 @@ _lconj(a::_L, bs::_L...) = isempty(bs) ? a : _lf(",", a, _lconj(bs...))
 function _lclause(head::_L, body::Union{Nothing, _L})::LK.Clause{_L}
     user = LK.MODULE_user(_LGD)
     name, ar = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
-    proc = LK.lookupProcedure(sym_key(name), ar, user)
+    proc = LK.lookupProcedure(name, ar, user)
     return LK.compileClause(_LGD, head, body, proc, user)
 end
 
@@ -203,20 +203,25 @@ end
     ld = LK.PL_local_data{_L}()
     @test ld.lMax == LK.LOCAL_INITIAL
     @test ld.nfliframes == 1 && ld.fli_context == 1 && ld.fliframes[1].base == 0
-    @test ld.lTop == LK.SIZEOF_FLIFRAME                     # so no term_t and no fid_t is 0
+    # the engine's permanent references, in upstream's order, so no term_t and no fid_t is 0
+    perm = LK.SIZEOF_FLIFRAME
+    @test (
+        ld.exception_bin, ld.exception_printed, ld.exception_tmp, ld.exception_pending
+    ) ==
+        (perm, perm + 1, perm + 2, perm + 3)
+    @test ld.fliframes[1].size == 4 && ld.lTop == perm + 4 && ld.exception_term == 0
     @test ld.nframes == 0 && ld.nchoices == 0 && ld.BFR == 0 && ld.environment_frame == 0
     @test length(ld.frames) == cld(ld.lMax, LK.SIZEOF_LOCALFRAME)
     @test length(ld.choices) == cld(ld.lMax, LK.SIZEOF_CHOICE)
     @test length(ld.fliframes) == cld(ld.lMax, LK.SIZEOF_FLIFRAME)
     r = LK.PL_new_term_ref(ld)
-    @test r == LK.SIZEOF_FLIFRAME
+    @test r == perm + 4
     LK.Trail!(ld, var_key(ld.slots[r + 1]), _ls("a"))
     LK.pushFrame!(ld, ld.lTop)
     ld.lTop += 20
     LK.newChoice(ld, LK.CHP_JUMP, 1)
     LK.emptyStacks!(ld)
-    @test ld.lTop == LK.SIZEOF_FLIFRAME && ld.nfliframes == 1 && ld.nframes == 0 &&
-        ld.nchoices == 0
+    @test ld.lTop == perm + 4 && ld.nfliframes == 1 && ld.nframes == 0 && ld.nchoices == 0
     @test ld.BFR == 0 && isempty(ld.trail) && isempty(ld.bindings)
 end
 
@@ -307,36 +312,37 @@ end
 @testset "term references" begin
     ld = LK.PL_local_data{_L}()
     base = ld.fliframes[ld.fli_context].base
+    nrefs(ld) = ld.fliframes[ld.fli_context].size
+    n0 = nrefs(ld)                                          # the engine's permanent ones
     r = LK.PL_new_term_refs(ld, 3)
-    @test r == LK.SIZEOF_FLIFRAME && ld.lTop == r + 3
+    @test r == LK.SIZEOF_FLIFRAME + n0 && ld.lTop == r + 3
     vs = [ld.slots[r + 1 + i] for i in 0:2]
     @test all(v -> kind(v) === VAR, vs) && length(unique(var_key.(vs))) == 3
     @test all(v -> var_key(v) >= KERNEL_VAR_BASE, vs)       # the kernel's own variables
-    nrefs(ld) = ld.fliframes[ld.fli_context].size
-    @test nrefs(ld) == 3 && ld.lTop == LK.refFliP(base, nrefs(ld))   # O_CHECK_TERM_REFS
+    @test nrefs(ld) == n0 + 3 && ld.lTop == LK.refFliP(base, nrefs(ld))   # O_CHECK_TERM_REFS
     t = LK.new_term_ref(ld)
-    @test t == r + 3 && nrefs(ld) == 4
+    @test t == r + 3 && nrefs(ld) == n0 + 4
     u = LK.PL_new_term_ref(ld)
-    @test u == r + 4 && nrefs(ld) == 5 && ld.lTop == LK.refFliP(base, nrefs(ld))
-    @test LK.PL_new_term_refs(ld, 0) == ld.lTop && nrefs(ld) == 5
+    @test u == r + 4 && nrefs(ld) == n0 + 5 && ld.lTop == LK.refFliP(base, nrefs(ld))
+    @test LK.PL_new_term_refs(ld, 0) == ld.lTop && nrefs(ld) == n0 + 5
 
     # copy and put: the new reference holds the term the other one references, dereferenced
     LK.Trail!(ld, var_key(ld.slots[r + 1]), _lf("f", _ls("a")))
     c = LK.PL_copy_term_ref(ld, r)
-    @test c == r + 5 && nrefs(ld) == 6 && lk_eq(ld.slots[c + 1], _lf("f", _ls("a")))
+    @test c == r + 5 && nrefs(ld) == n0 + 6 && lk_eq(ld.slots[c + 1], _lf("f", _ls("a")))
     @test LK.PL_put_term(ld, t, r + 1)
     @test ld.slots[t + 1] === ld.slots[r + 2]                 # an unbound variable: itself
 
     # reset: lTop back to `r`, the count recomputed
     LK.PL_reset_term_refs(ld, r + 1)
-    @test ld.lTop == r + 1 && nrefs(ld) == 1
+    @test ld.lTop == r + 1 && nrefs(ld) == n0 + 1
     LK.PL_reset_term_refs(ld, r)
-    @test ld.lTop == r && nrefs(ld) == 0
+    @test ld.lTop == r && nrefs(ld) == n0
 end
 
 @testset "every lowering of lTop drops the records above it; a dropped record stays readable" begin
     ld = LK.PL_local_data{_L}()
-    def = LK.lookupProcedure(sym_key(_ls("p")), 0, LK.MODULE_user(_LGD)).definition
+    def = LK.lookupProcedure(_ls("p"), 0, LK.MODULE_user(_LGD)).definition
     a = LK.pushFrame!(ld, ld.lTop)                          # frame A, then its clause's slots
     fa = ld.frames[a]
     fa.parent, fa.level, fa.flags = 0, UInt32(4), LK.FR_MAGIC

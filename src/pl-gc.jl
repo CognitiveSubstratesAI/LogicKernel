@@ -11,14 +11,30 @@
 # Stack garbage collection and stack shifting are not the kernel's.
 
 # PORT: pl-gc.c markPredicatesInEnvironments
-# DIVERGES: there is no local stack and there are no transactions, so no frames and no
-# transaction start to walk: what remains is upstream's last step, the predicates referenced
-# explicitly (`markAccessedPredicates`). Every enumeration over a dynamic predicate references it
-# with `pushPredicateAccessObj!` — calls included, where upstream would find their frames.
-"Record the generations every predicate is accessed in, for clause GC (pl-gc.c)."
+# DIVERGES: walks the live FRAME RECORDS where upstream scans every word of the local stack below
+# `lTop` for a frame (`isFrame`) — the records are the frames. No transactions, so no transaction
+# start to record; the `erased_skipped` statistic is not kept. Then, as upstream, the predicates
+# referenced explicitly (`markAccessedPredicates`): the enumerations outside the VM (clause/2,
+# retract/1) reference theirs with `pushPredicateAccessObj!`.
+"Record the generations every predicate is being run or accessed in, for clause GC (pl-gc.c)."
 function markPredicatesInEnvironments!(
     ld::PL_local_data{T}, gd::PL_global_data{T}
 )::Nothing where {T}
+    lend = ld.lTop                                  # see (*): frames are never written above lTop
+    for i in 1:ld.nframes
+        fr = ld.frames[i]
+        if fr.base < lend && isFrame(fr)
+            def = fr.predicate
+            if def !== nothing
+                ddi = get(gd.procedures_dirty, def, nothing)
+                if ddi !== nothing
+                    gen = generationFrame(fr)
+                    ddi_add_access_gen!(ddi, gen)
+                end
+            end
+        end
+    end
+
     markAccessedPredicates!(ld, gd)
     return nothing
 end
@@ -43,6 +59,7 @@ function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     _grow_pool!(ld, ld.frames, cld(size, SIZEOF_LOCALFRAME))
     _grow_pool!(ld, ld.choices, cld(size, SIZEOF_CHOICE))
     _grow_pool!(ld, ld.fliframes, cld(size, SIZEOF_FLIFRAME))
+    _grow_pool!(ld, ld.queries, cld(size, SIZEOF_QUERYFRAME))
     ld.lMax = size
     return nothing
 end
@@ -70,6 +87,21 @@ end
 function _grow_pool!(::PL_local_data, pool::Vector{fliFrame}, n::Int)::Nothing
     while length(pool) < n
         push!(pool, fliFrame(0, 0, 0, 0, mark(0)))
+    end
+    return nothing
+end
+function _grow_pool!(
+    ld::PL_local_data{T}, pool::Vector{queryFrame{T}}, n::Int
+)::Nothing where {T}
+    while length(pool) < n
+        push!(
+            pool,
+            queryFrame{T}(
+                0, UInt(0), 0, argp_t{T}(ARGP_SLOT, 0, ld.placeholder), ld.null_code, 0, 0,
+                0,
+                UInt32(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+        )
     end
     return nothing
 end

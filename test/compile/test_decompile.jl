@@ -31,7 +31,7 @@ _dcons(h::_D, t::_D) = mk_expr(_D, _D[_ds("[|]"), h, t])
 "`head` compiled as a clause of its predicate in this file's database (never asserted)."
 function _dclause(head::_D)::LK.Clause{_D}
     user = LK.MODULE_user(_DGD)
-    proc = LK.lookupProcedure(sym_key(child(head, 1)), nchildren(head) - 1, user)
+    proc = LK.lookupProcedure(child(head, 1), nchildren(head) - 1, user)
     return LK.compileClause(_DGD, head, nothing, proc, user)
 end
 

@@ -5,7 +5,8 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# What the kernel takes from SWI-Prolog's memory management (pl-alloc.c): raising a stack overflow.
+# What the kernel takes from SWI-Prolog's memory management (pl-alloc.c): raising a stack overflow,
+# and growing the argument stack.
 
 """
     LocalStackOverflow(lTop, lMax, limit)
@@ -38,4 +39,15 @@ function raiseStackOverflow(ld::PL_local_data{T}, overflow::boolex_t)::Bool wher
     end
     @assert overflow == BOOLEX_FALSE "raiseStackOverflow: not an overflow: $overflow"
     return false
+end
+
+# PORT: pl-alloc.c f_pushArgumentStack
+# DIVERGES: the stack doubles; nothing is re-based (`aSave` is a height, not a pointer), and there is
+# no limit of its own (upstream's `outOfStack` on the argument stack).
+"Grow the argument stack and push `e` (pl-alloc.c)."
+function f_pushArgumentStack(ld::PL_local_data{T}, e::argstack_entry{T})::Nothing where {T}
+    resize!(ld.astack, 2 * length(ld.astack))
+    ld.aTop += 1
+    ld.astack[ld.aTop] = e
+    return nothing
 end

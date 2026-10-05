@@ -212,7 +212,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros | `src/pl-incl.h`, `src/pl-data.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
@@ -221,9 +221,15 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
-| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop` | `src/pl-wam.c` |
-| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`) | `src/pl-fli.c` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
+| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception` | `src/pl-fli.c` |
+| `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`) | `src/SWI-Prolog.h` |
+| `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
+| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`; the occurs-check error so far) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base | `src/pl-setup.c` |
+| `test/foreign/test_query.jl` | V4a's query API: answers, return codes and determinism; the supervisors; positions identical to swipl's; nested queries; cut against close; a closed `qid`; exceptions caught and passed; a Julia exception closing the query; clause GC under a running query; warm allocation | — |
+| `test/core_lang/test_head_unify_swipl.jl` | V4a's differential: head unification of random and pinned fact queries identical to swipl under `occurs_check` false, true and error (the error term included), every head instruction exercised in each mode | — |
+| `test/db/test_index_argv.jl` | a bound argument narrows the index through both argument views (frame and term), dereferenced | — |
 | `test/core_lang/test_local_stack.jl` | V3's tests: positions identical to swipl's (frame and choice-point placement, pinned and live), the record discipline, foreign frames and term references, growth, and that the primitives allocate nothing warm | — |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c`, `src/pl-hash.h` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
@@ -277,6 +283,7 @@ graph LR
     default_term["default_term.jl"]
     pl_hash["pl-hash.jl"]
     pl_incl["pl-incl.jl"]
+    SWI_Prolog["SWI-Prolog.jl"]
     pl_termwalk["pl-termwalk.jl"]
     pl_vmi["pl-vmi.jl"]
     pl_index["pl-index.jl"]
@@ -293,8 +300,10 @@ graph LR
     pl_alloc["pl-alloc.jl"]
     pl_wam["pl-wam.jl"]
     pl_fli["pl-fli.jl"]
+    pl_error["pl-error.jl"]
     pl_setup["pl-setup.jl"]
     pl_proc["pl-proc.jl"]
+    pl_supervisor["pl-supervisor.jl"]
     precompile_workload["precompile_workload.jl"]
     term_interface --> default_term
     default_term --> term_interface
@@ -306,6 +315,7 @@ graph LR
     pl_termwalk --> pl_inline
     pl_termwalk --> pl_comp
     pl_vmi --> pl_incl
+    pl_vmi --> pl_wam
     pl_index --> term_interface
     pl_index --> default_term
     pl_index --> pl_hash
@@ -314,6 +324,7 @@ graph LR
     pl_index --> pl_inline
     pl_index --> pl_ressymbol
     pl_index --> pl_comp
+    pl_index --> pl_wam
     pl_index --> pl_proc
     pl_funct --> term_interface
     pl_funct --> default_term
@@ -324,11 +335,14 @@ graph LR
     pl_global --> pl_index
     pl_global --> pl_funct
     pl_global --> pl_gc
+    pl_global --> pl_wam
     pl_global --> pl_setup
+    pl_global --> pl_supervisor
     pl_inline --> term_interface
     pl_inline --> default_term
     pl_inline --> pl_incl
     pl_inline --> pl_global
+    pl_inline --> pl_alloc
     pl_prims --> term_interface
     pl_prims --> default_term
     pl_prims --> pl_incl
@@ -352,6 +366,7 @@ graph LR
     pl_comp --> pl_prims
     pl_comp --> pl_ressymbol
     pl_comp --> pl_thread
+    pl_comp --> pl_wam
     pl_comp --> pl_proc
     pl_variant --> term_interface
     pl_variant --> default_term
@@ -373,23 +388,42 @@ graph LR
     pl_gc --> pl_inline
     pl_gc --> pl_thread
     pl_gc --> pl_alloc
+    pl_gc --> pl_proc
     pl_alloc --> default_term
     pl_alloc --> pl_incl
     pl_alloc --> pl_global
+    pl_wam --> term_interface
     pl_wam --> default_term
     pl_wam --> pl_incl
+    pl_wam --> SWI_Prolog
+    pl_wam --> pl_vmi
+    pl_wam --> pl_index
     pl_wam --> pl_global
     pl_wam --> pl_inline
+    pl_wam --> pl_prims
+    pl_wam --> pl_comp
     pl_wam --> pl_gc
+    pl_wam --> pl_alloc
+    pl_wam --> pl_fli
+    pl_wam --> pl_error
+    pl_wam --> pl_supervisor
     pl_fli --> term_interface
     pl_fli --> default_term
     pl_fli --> pl_incl
     pl_fli --> pl_global
     pl_fli --> pl_inline
+    pl_fli --> pl_prims
     pl_fli --> pl_gc
     pl_fli --> pl_wam
+    pl_error --> term_interface
+    pl_error --> default_term
+    pl_error --> pl_incl
+    pl_error --> pl_global
+    pl_error --> pl_wam
+    pl_error --> pl_fli
     pl_setup --> pl_global
     pl_setup --> pl_wam
+    pl_setup --> pl_fli
     pl_proc --> term_interface
     pl_proc --> default_term
     pl_proc --> pl_incl
@@ -399,9 +433,21 @@ graph LR
     pl_proc --> pl_comp
     pl_proc --> pl_thread
     pl_proc --> pl_gc
+    pl_proc --> pl_supervisor
+    pl_supervisor --> default_term
+    pl_supervisor --> pl_incl
+    pl_supervisor --> pl_vmi
+    pl_supervisor --> pl_index
+    pl_supervisor --> pl_global
+    pl_supervisor --> pl_inline
+    pl_supervisor --> pl_ressymbol
+    pl_supervisor --> pl_comp
+    pl_supervisor --> pl_wam
+    pl_supervisor --> pl_proc
     precompile_workload --> term_interface
     precompile_workload --> default_term
     precompile_workload --> pl_incl
+    precompile_workload --> SWI_Prolog
     precompile_workload --> pl_global
     precompile_workload --> pl_inline
     precompile_workload --> pl_prims
@@ -1033,6 +1079,147 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V4a — the run loop and the query API, over facts: BUILT (2026-10-05)** (port_inventory row V4a;
+src/pl-wam.jl, src/pl-supervisor.jl, src/pl-error.jl, src/SWI-Prolog.jl, src/pl-incl.jl,
+src/pl-global.jl, src/pl-inline.jl, src/pl-alloc.jl, src/pl-fli.jl, src/pl-gc.jl, src/pl-proc.jl,
+src/pl-index.jl, src/pl-vmi.jl). Plan: two research memos (the head instructions; the query API and
+the supervisors), every claim cited by line; libswipl probed live through its C query API for the
+return codes, the positions and the closed handle; the open questions went to the user.
+* **Corrections accepted (user, 2026-10-05):** `enterDefinition`/`leaveDefinition` are `(void)0`
+  upstream (pl-incl.h:1302-1303), so entering and leaving a predicate does nothing; `I_EXIT` and
+  `exit_continue` are V4a's, and so are the write-mode body instructions `H_*` jump to (`B_ATOM`,
+  `B_SMALLINT`, `B_NIL`, `B_FLOAT`, `B_MPZ`, `B_MPQ`, `B_STRING`, `B_RFUNCTOR`, `B_RLIST`);
+  **`argv_at` not dereferencing was a real defect** — a bound argument reached the index as the
+  variable it was bound through, so it narrowed nothing. Fixed: one argument view per source (the
+  frame's slots, a call term), both dereferencing (pl-index.jl `argv_frame`, `argv_term`), with a
+  test where a bound argument must narrow (test_index_argv.jl) and the determinism differential
+  confirming it.
+* **Decided by the user (2026-10-05):**
+  1. **The run loop: one function with labels — upstream's switch build.** `PL_next_solution_guarded`
+     holds pl-vmi.c's instructions and helpers as `@label`s, each under its `# PORT: pl-vmi.c NAME`
+     marker, over typed register locals (`FR`, `ARGP`, `PC`, `DEF`, `UMODE`, …). `@goto` cannot
+     leave a `try`, so the split is upstream's (wam:3552-3580): the whole loop inside one `try` in
+     `PL_next_solution`, the handler outside, re-entering through ONE entry — `except = true` for a
+     `PrologThrow` (the kernel's `longjmp`), and any other Julia exception closes the query
+     (`_abandon_query`) and is rethrown. **The dispatch, MEASURED:** LLVM makes no single jump table
+     of an `if`/`elseif` chain over the 36 opcodes — it makes four partial ones (opcodes 1-4, 8-21,
+     …), broken wherever neighbouring arms share a target, so `S_LIST` was reached after nine
+     decisions. Hence the agreed fallback, a SORTED BRANCH TREE (`@vmi_dispatch`, generated from
+     the instruction list): ⌈log2 n⌉ compares and one equality test to any instruction, a code not
+     listed falling through to `NotPortedError` by name. On the fact queries the two measured the
+     same within noise (four alternating runs in one process: tree 339-349 µs, chain 345-357 µs for
+     1000 answers); the tree was kept because its depth grows as log n where V4b adds ~100
+     instructions, and the chain's late arms grow linearly. Compile time and first-call latency are
+     in the bench (fresh process); the precompile workload runs a query, so a fresh process does
+     not compile the loop for `DefaultTerm`.
+  2. **`ARGP` is one concrete immutable value** `argp_t{T}(form, position, term)`: a slot (body
+     mode), a cursor into a caller's compound (head read mode) or a builder cell (head write mode).
+     The register, the argument-stack entry and the saved registers hold the same type. JET finds
+     no dispatch in the loop; AllocCheck confirms the register save and load, the argument pointer's
+     operations and the record discipline allocate nothing, and that the argument stack's push
+     allocates only where it grows (static_analysis_body.jl).
+  3. **Write mode under `occurs_check` `true`/`error`: read mode over a freshly built compound**
+     (`_fresh_compound`, `# DIVERGES`): the variable is bound to a compound of fresh variables at
+     once and the rest of the head reads it, so the occurs check runs where unification runs. Under
+     `false` the builder writes as upstream does (`_bopen!`/`_bclose!`: every argument cell starts as
+     a fresh variable — upstream `setVar`s each cell it allocates — so `H_VOID` in write mode leaves
+     one). The condition is met: the three-mode differential exercises EVERY head instruction under
+     `true` and `error`, the list forms and `H_FIRSTVAR` included (coverage asserted per mode).
+  4. **Exceptions: upstream's no-catcher path, now.** `H_VAR` under `occurs_check=error` raises
+     `error(occurs_check(V, T), context(Name/Arity, _))` (`PL_error`, pl-error.c, for the running
+     predicate) through `PL_raise_exception`; `b_throw` finds no catcher (catch/3 is V9) and the query
+     returns `PL_S_EXCEPTION` under `PL_Q_CATCH_EXCEPTION`, the ball in `exception_bin`, read with
+     `PL_exception`; `PL_Q_PASS_EXCEPTION` leaves it pending. The gate compares the complete term.
+  5. **Clause GC: `markPredicatesInEnvironments`' frame scan, ported** (pl-gc.c): every live frame
+     below `lTop` records its generation, so a clause retracted while a query runs through it is not
+     reclaimed until the query is done.
+  6. **`[H|T]` and `'[|]'(H,T)` match the same way whichever instruction** (Q2): `H_LIST`,
+     `H_RLIST` and `H_LIST_FF` accept a `$expr/3` whose head unifies with `'[|]'`, and `S_LIST`
+     given a `$expr/3` first argument falls through to `S_STATIC` as for an unbound one. The pinned
+     pair now covers a list head and an `S_LIST` predicate, both directions.
+  * Defaults agreed: a query handle is the query frame's bare position (a closed one answers 0 —
+    only what upstream guarantees is pinned); `$c_call_prolog/0` lives in the global data, outside
+    the user table; query records in a pool; a supervisor's clause references in a side table
+    (`codes_crefs`); the builder flat and reset with the argument stack (`aSave`, at every site
+    upstream resets `aTop`); one dereferencing argument view per source; quirks kept (`S_STATIC`'s
+    `ARGP + arity` adds whole frames — `8·arity` positions, probed); `NOT PORTED` markers for the
+    debugger, the alerted blocks and the profiler; `PL_new_term_ref`'s foreign-environment check;
+    bindings compared up to renaming; `CHP_TOP` leaves its dead frames for `restore_after_query`.
+* **Ported:**
+  * the run loop (`PL_next_solution`, `PL_next_solution_guarded`): `depart_or_retry_continue`; the
+    supervisors `S_VIRGIN`, `S_UNDEF`, `S_STATIC`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`,
+    `TRUST_CLAUSE`, `S_LIST`; every `H_*` read and write (`h_const` included), the `B_*` they jump
+    to; `I_EXIT`, `exit_continue`, `I_EXITFACT`, `exit_checking_wakeup`, `I_EXITQUERY`; backtracking
+    — `unify_backtrack`, `shallow_backtrack` (the choice point moves, the failed attempt's records
+    dropped first), `deep_backtrack` (`CHP_CLAUSE`, `CHP_TOP`); `b_throw` to `b_throw_resume`
+    without a catcher; `SAVE_REGISTERS`, `LOAD_REGISTERS`, `ENSURE_LOCAL_SPACE`;
+  * the query API (pl-wam.c): `initVM` (the top clause, `I_EXITQUERY`), `PL_open_query`,
+    `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `discard_query`, `restore_after_query`,
+    `PL_exception`, `PL_current_query`; `leaveFrame`, `discardFrame`, `discardChoicesAfter`,
+    `dbg_discardChoicesAfter`, `resumeAfterException`; `queryOfFrame`, `parentFrame`;
+    `QueryFromQid`, `QidFromQuery`, `pushArgumentStack`/`f_pushArgumentStack`; the `queryFrame`
+    record (upstream's 47 words: choice at +21, saved environment +30, top frame +31, frame +39);
+    the flags and return codes (SWI-Prolog.h);
+  * the supervisors (pl-supervisor.c): `initSupervisors`, `createSupervisor` and its selectors,
+    `setDefaultSupervisor`, `freeCodesDefinition` (a changed predicate returns to `S_VIRGIN`),
+    `equalSupervisors`, `getClauses`; `chainPredicateSupervisor` is the identity (no det, SSU or
+    meta-predicate declarations exist); `arg1Key` (pl-comp.c);
+  * `PL_error` for `ERR_OCCURS_CHECK` and `PL_raise_exception`; `markPredicatesInEnvironments`'
+    frame scan; `setGenerationFrame`'s frame-writing form.
+* **AN UPSTREAM DEFECT, FIXED here:** pl-comp.c `arg1Key` lists `H_MPZ` but not `H_MPQ`, which falls
+  to `assert(0)`: swipl 10.1.16 ABORTS on the first call of `p(1r3, a). p(2r3, b).` (two clauses —
+  the list supervisor's test runs; probed: `arg1Key: Assertion failed`). The kernel treats `H_MPQ`
+  as `H_MPZ` (not found), `# DIVERGES`. Not yet reported upstream.
+* **Gate:**
+  * test/foreign/test_query.jl (term-generic: the three types): answers, return codes and
+    determinism as libswipl's (1, 1, `PL_S_LAST` under `PL_Q_EXT_STATUS`, then 0); the supervisors
+    each call installs; POSITIONS identical to libswipl's — the query frame, its choice point, top
+    frame and frame at upstream's offsets, the first term reference after an answer at +63
+    (non-deterministic) or +45 (deterministic), after a failing call of f/1 at +61 and of h/2 at +69
+    (the `S_STATIC` quirk), a nested query at +63; nested queries (`PL_S_NOT_INNER`); cut keeps the
+    bindings and close undoes them; after a deterministic last answer the next call fails and no
+    term reference can be made; a closed handle answers 0; an uncaught exception, caught and passed;
+    the `except` arm; a Julia exception closing the query; an instruction the loop does not hold yet
+    refused by name; clause GC while a query runs through a retracted clause (erased, not reclaimed,
+    until the query is closed); the argument stack and the builder back at the query's height at an
+    answer after a head failed inside a nested compound;
+    warm, the push and the register save allocate nothing;
+  * test/core_lang/test_head_unify_swipl.jl (term-generic): 400 random clause heads and goals plus pinned
+    cases under `occurs_check` `false`, `true` and `error` — bindings up to renaming, failures and
+    the complete error term identical to swipl's, every head instruction exercised in each mode;
+  * test/db/test_index_swipl.jl: the VM answers every call as the index path does, and its
+    determinism is swipl's; test/db/test_index_argv.jl: a bound argument narrows the index through
+    both views; test/core_lang/test_expr_functor.jl: the pinned `$expr` pair, wired to the VM and
+    turned from `@test_broken` into `@test`, extended to a list head and an `S_LIST` predicate,
+    both directions;
+  * the static gate: every new method in the manifest (JET, no dispatch), AllocCheck on the
+    allocation-free ones and on the argument stack's push.
+* **Mutation-proved — 16 of 18 caught at verdict level (MQ1-MQ18; the driver asserts every replacement
+  matches once and the tree is byte-identical after each revert):** `argv_at` not dereferencing, no
+  frame scan, `_bopen!` leaving the cells as they were, `S_LIST` failing on a `$expr/3`, `H_RFUNCTOR`
+  ignoring the `$expr` rule, `I_EXITQUERY` never deterministic, `PL_S_LAST` without
+  `PL_Q_EXT_STATUS`, `S_STATIC`'s quirk as `+ arity`, `PL_error` without its context, no reset at
+  `unify_backtrack`, `PL_new_term_ref`'s check removed, `deep_backtrack` past the top frame, the
+  dispatch tree's leaves without their equality test, and port_check's two changes (a `@label` is a
+  definition; the VM inventory compares its rows only).
+  * **Two tests were BLIND until the mutants said so, and were fixed:** (1) the clause-GC test passed
+    without the frame scan — a reclaimed clause is only unlinked here, the choice point still holds
+    it, so the answers cannot show it; and a clause erased in the CURRENT generation is never garbage
+    (`ddi_is_garbage`), so the generation, not the scan, had kept it. The test now moves the
+    generation past the erasure and reads `erased_clauses` (1 while the query runs, 0 after it is
+    closed). (2) the reset test read the heights after the close, which resets them anyway; it now
+    reads them at an answer after a head failed INSIDE a nested compound — a repeated variable
+    (`f(A, A)` against `f(a, b)`), since a deep index skips a clause that differs at a constant.
+  * **Survive, with the reason:** MQ6 (`exit_continue` not lowering `lTop`) and MQ18
+    (`shallow_backtrack` not dropping the failed attempt's records) — facts cannot reach them: every
+    exit returns to `I_EXITQUERY`, which sets `lTop` itself, and a fact's attempt leaves no records.
+    Both are written into V4b's gate. MQ15 (the builder's heights not reset) — no instruction can fail
+    while a builder frame is open: write mode never fails under `false`, and `true`/`error` build no
+    frame. The reset stays (the user's default: the builder is reset with the argument stack).
+* **Not here:** rules (`I_ENTER`, `I_CALL`, `I_DEPART`, the remaining `B_*`, `L_*`): V4b; `I_CUT`'s
+  execution: V6; catch/3 and the catcher search: V9; foreign predicates and `S_UNDEF`'s
+  `existence_error`: V5 (`S_UNDEF` raises `NotPortedError` by name until then).
 
 **V3 — machine state: BUILT (2026-10-05)** (port_inventory row V3; src/pl-incl.jl § the local stack,
 src/pl-global.jl, src/pl-inline.jl, src/pl-gc.jl, src/pl-alloc.jl, src/pl-wam.jl, src/pl-fli.jl,

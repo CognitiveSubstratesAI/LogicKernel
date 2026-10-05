@@ -30,16 +30,14 @@ _qe(xs::_Q...) = mk_expr(_Q, _Q[xs...])
 _qf(f, xs::_Q...) = _qe(_qs(f), xs...)
 _qcmp(a, b) = compareStandard(a, b)
 
-# The VM's answers for `goal` on predicate `pr` — `nothing` while there is no VM. V4a wires this to
-# the query API (`PL_open_query`/`PL_next_solution`, decided) and sets `_QVM_WIRED`; until then a
-# `PL_next_solution` in the kernel fails "the VM matches $expr/n both ways".
-const _QVM_WIRED = false
-_qvm_call(pr, goal)::Union{Nothing, Vector{_Q}} = nothing
+# The VM's answers for `goal` on predicate `pr`, through the query API (`vm_call`, V4a).
+const _QVM_WIRED = true
+_qvm_call(pr, goal)::Union{Nothing, Vector{_Q}} = first.(vm_call(pr, goal))
 
 "`head` compiled as a clause of its predicate in this file's database (never asserted)."
 function _qclause(head::_Q)::LK.Clause{_Q}
     user = LK.MODULE_user(_QGD)
-    proc = LK.lookupProcedure(sym_key(child(head, 1)), nchildren(head) - 1, user)
+    proc = LK.lookupProcedure(child(head, 1), nchildren(head) - 1, user)
     return LK.compileClause(_QGD, head, nothing, proc, user)
 end
 
@@ -234,10 +232,12 @@ end
     #      not a functor-equality check;
     #   2. a head `f(…)` (`H_FUNCTOR f/k`) against a `$expr/(k+1)` argument — child by child,
     #      not a failure on the functor.
-    # Pinned as EXPECTED FAILURES until the VM exists (V4a's gate turns both into `@test`). One side
-    # alone fails `ok1 == ok2`, and a VM that arrives without `_qvm_call` wired to it fails the
-    # last test.
-    @testset "the VM matches \$expr/n both ways (expected failures until V4)" begin
+    # Expected failures until the VM existed; V4a's gate turned both into `@test`. One side alone
+    # fails `ok1 == ok2`. The same rule holds for a LIST cell, which is `'[|]'/2` (user, 2026-10-05):
+    # `[H|T]` and `'[|]'(H,T)` match a `$expr/3` the same way whichever instruction the compiler chose
+    # — `H_LIST`, `H_LIST_FF`, and `S_LIST`, which sends a `$expr/3` argument to `S_STATIC` as it does
+    # an unbound one.
+    @testset "the VM matches \$expr/n both ways" begin
         p1 = ix_pred(_Q, :vm1, 1)                         # 1: the head holds `$expr/2`
         ix_assertz!(p1, _qf(:vm1, _qe(X, a)))
         g1, want1 = _qf(:vm1, _qf(:f, a)), _Q[_qf(:vm1, _qf(:f, a))]
@@ -250,9 +250,39 @@ end
         vm1, vm2 = _qvm_call(p1, g1), _qvm_call(p2, g2)
         ok1 = vm1 !== nothing && lk_eq(vm1, want1)
         ok2 = vm2 !== nothing && lk_eq(vm2, want2)
-        @test_broken ok1                                  # direction 1 — DIVERGES from SWI
-        @test_broken ok2                                  # direction 2 — DIVERGES from SWI
+        @test ok1                                         # direction 1 — DIVERGES from SWI
+        @test ok2                                         # direction 2 — DIVERGES from SWI
         @test ok1 == ok2                                  # never ONE direction only
         @test _QVM_WIRED || !isdefined(LK, :PL_next_solution)
+
+        Z = _qv(31)
+        # a list head: `vl1([a|T])` (H_LIST) called with `(Z a b)`, and `vlf([H|T])` (H_LIST_FF)
+        pl = ix_pred(_Q, :vl1, 1)
+        ix_assertz!(pl, _qf(:vl1, _qf("[|]", a, _qv(32))))
+        gl = _qf(:vl1, _qe(Z, a, _qs(:b)))
+        @test lk_eq(_qvm_call(pl, gl), first.(ix_call(pl, gl)))
+        @test lk_eq(_qvm_call(pl, gl), _Q[_qf(:vl1, _qf("[|]", a, _qs(:b)))])
+        pf = ix_pred(_Q, :vlf, 2)                       # vlf([H|T], f(H, T)): H_LIST_FF
+        ix_assertz!(pf, _qf(:vlf, _qf("[|]", _qv(33), _qv(34)), _qf(:f, _qv(33), _qv(34))))
+        gf = _qf(:vlf, _qe(Z, a, _qs(:b)), _qv(35))
+        @test lk_eq(_qvm_call(pf, gf), first.(ix_call(pf, gf)))
+        @test LK.decode(LK.Code(pf.def.impl_clauses.first_clause.clause, 1)) == LK.H_LIST_FF
+        # … and the other way: a `$expr/3` head `vl2((X a b))` called with a list cell
+        pr = ix_pred(_Q, :vl2, 1)
+        ix_assertz!(pr, _qf(:vl2, _qe(X, a, _qs(:b))))
+        gr = _qf(:vl2, _qf("[|]", a, _qs(:b)))
+        @test lk_eq(_qvm_call(pr, gr), first.(ix_call(pr, gr)))
+        @test lk_eq(_qvm_call(pr, gr), _Q[gr])
+        # an S_LIST predicate called with a `$expr/3`: to S_STATIC, not a failure — and with a
+        # `$expr/3` whose head is bound to `[|]` (a list), and to another symbol (not a list)
+        ps = ix_pred(_Q, :sl, 2)
+        ix_assertz!(ps, _qf(:sl, LK.mk_nil(_Q), _qg(0)))
+        ix_assertz!(ps, _qf(:sl, _qf("[|]", _qv(36), _qv(37)), _qg(1)))
+        gs = _qf(:sl, _qe(Z, _qs(:h), _qs(:t)), _qv(38))
+        @test lk_eq(_qvm_call(ps, gs), first.(ix_call(ps, gs)))
+        @test lk_eq(_qvm_call(ps, gs), _Q[_qf(:sl, _qf("[|]", _qs(:h), _qs(:t)), _qg(1))])
+        @test ps.def.codes[1] == LK.S_LIST                # the supervisor the call installed
+        gs2 = _qf(:sl, _qf(:g, _qs(:h), _qs(:t)), _qv(39))
+        @test isempty(_qvm_call(ps, gs2)) && isempty(ix_call(ps, gs2))
     end
 end

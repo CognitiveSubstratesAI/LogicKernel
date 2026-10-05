@@ -32,9 +32,10 @@
 # not exist in the kernel.
 #
 # REPRESENTATION (each a DIVERGES at the function it touches):
-#   * `argv` — SWI passes a call's arguments as a `Word` vector; here `argv` is the compound term
-#     itself, its children 2.. being the arguments (`argv_at`). A deep index descends into an
-#     argument compound the same way.
+#   * `argv` — SWI passes a call's arguments as a `Word` vector; here it is a VIEW of them
+#     (`argv_frame`: the frame's argument slots; `argv_term`: a compound's arguments, its children
+#     2..), read DEREFERENCED as upstream's readers follow references (`argv_at`). A deep index
+#     descends into an argument compound by switching to its `argv_term`.
 #   * A clause's keys are read from its head CODE (src/pl-comp.jl), exactly as upstream reads
 #     them, except that `skipArgs`'s H_VOID_N defect is fixed (LogicKernel#1).
 #   * Keys are words in SWI's layout (`indexOfWord`).
@@ -120,12 +121,33 @@ function hashIndex(key::word, buckets::UInt32)::UInt32
 end
 
 """
+    argv_frame(ld, base)
+    argv_term(ld, t)
+
+The arguments a clause search keys on — upstream's `Word argv` (pl-index.c) — in its two forms: the
+frame's argument slots from position `base` (the VM's `ARGP = argFrameP(FR, 0)`), or the arguments
+of the compound `t`, its children 2.. (a deep index's descent, and the callers that hold a goal
+term). Built per call; neither allocates.
+"""
+struct argv_frame{L}
+    ld::L
+    base::Int
+end
+struct argv_term{L, T}
+    ld::L
+    t::T
+end
+
+"""
     argv_at(argv, i) -> term
 
-Argument `i` (0-based, as upstream's `argv[i]`) of a call: the kernel passes a call's arguments as
-the compound term itself, whose children 2.. are the arguments.
+Argument `i` (0-based, as upstream's `argv[i]`) of a call, DEREFERENCED: upstream's readers of
+`argv` — `indexOfWord`, `canIndex`, `is_var`, the deep descent's `deRef` — follow references, so a
+bound argument keys by its value. (A frame slot almost always holds a variable bound to the
+argument, so without this no argument would narrow the search.)
 """
-argv_at(argv, i::Int) = child(argv, i + 2)
+argv_at(v::argv_frame, i::Int) = deRef(v.ld, v.ld.slots[v.base + i + 1])
+argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
 
 # PORT: pl-index.c canIndex
 # DIVERGES: upstream: any non-variable. Upstream also guarantees that `indexOfWord` is non-zero for
@@ -269,16 +291,16 @@ function next_clause_primary_index!(
 end
 
 # PORT: pl-index.c nextClauseFromList
-# DIVERGES: descends into the call's argument compound as a term (its children 2.. are the
-# arguments) rather than into a `Functor` cell.
+# DIVERGES: descends into the call's argument compound through its `argv_term` (its children 2..
+# are the arguments) rather than into a `Functor` cell.
 """
 The next clause from a list index: the clause list of the matching key — descending into a deeper
 index when the key is a functor — or, when no list has the key, the list of variable clauses
 (pl-index.c).
 """
 function nextClauseFromList!(
-    ci::ClauseIndex{T}, argv::T, ctx::index_context{T}
-)::Union{Nothing, ClauseRef{T}} where {T}
+    ci::ClauseIndex{T}, argv::A, ctx::index_context{T}
+)::Union{Nothing, ClauseRef{T}} where {T, A}
     chp = ctx.chp::ClauseChoice{T}
     key = chp.key
     cref = chp.cref
@@ -292,7 +314,7 @@ function nextClauseFromList!(
                 ctx.position = Base.setindex(ctx.position, an % iarg_t, ctx.depth + 1)
                 ctx.depth += 1
                 ctx.position = Base.setindex(ctx.position, END_INDEX_POS, ctx.depth + 1)
-                return first_clause_guarded!(at, argc, cl, ctx)
+                return first_clause_guarded!(argv_term(argv.ld, at), argc, cl, ctx)
             end
             chp.key = 0                         # See (*)
             chp.cref = cl.first_clause
@@ -318,8 +340,8 @@ end
 # PORT: pl-index.c nextClauseFromBucket
 "The next clause from a bucket: a list index's lists, or a clause chain (pl-index.c)."
 function nextClauseFromBucket!(
-    ci::ClauseIndex{T}, argv::T, ctx::index_context{T}
-)::Union{Nothing, ClauseRef{T}} where {T}
+    ci::ClauseIndex{T}, argv::A, ctx::index_context{T}
+)::Union{Nothing, ClauseRef{T}} where {T, A}
     if ci.is_list
         return nextClauseFromList!(ci, argv, ctx)
     end
@@ -349,7 +371,7 @@ end
 
 # PORT: pl-index.c indexKeyFromArgv
 "The key of the call `argv` for index `ci`; 0 when an indexed argument is unbound (pl-index.c)."
-function indexKeyFromArgv(ci::ClauseIndex{T}, argv::T)::word where {T}
+function indexKeyFromArgv(ci::ClauseIndex{T}, argv::A)::word where {T, A}
     if ci.args[2] == 0
         return indexOfWord(argv_at(argv, Int(ci.args[1]) - 1))
     else
@@ -374,7 +396,7 @@ is_var(t)::Bool = kind(t) === VAR
 
 # PORT: pl-index.c is_satifies_index
 "Quick test whether a not-yet-realised index can be used for the call `argv` (pl-index.c)."
-function is_satifies_index(ci::ClauseIndex{T}, argv::T)::Bool where {T}
+function is_satifies_index(ci::ClauseIndex{T}, argv::A)::Bool where {T, A}
     a0 = ci.args[1]
     if a0 == 0 || is_var(argv_at(argv, Int(a0) - 1))
         return false                    # DEAD_INDEX and var first arg
@@ -398,8 +420,8 @@ consider_better_index(speedup::Float32, nclauses::Integer)::Bool =
 # DIVERGES: returns the key with the index instead of writing it through `keyp`.
 "The first index the call `argv` has a key for, and that key (pl-index.c)."
 function existing_hash(
-    cip::Vector{Union{Nothing, ClauseIndex{T}}}, argv::T
-)::Tuple{Union{Nothing, ClauseIndex{T}}, word} where {T}
+    cip::Vector{C}, argv::A
+)::Tuple{C, word} where {C <: Union{Nothing, ClauseIndex}, A}
     for ci in cip
         ISDEADCI(ci) && continue        # upstream reads the zeroed DEAD_INDEX and skips it
         if ci.entries !== nothing || is_satifies_index(ci, argv)
@@ -425,9 +447,9 @@ than `better_than` when given. Returns the index, `nothing` when no better index
 `CI_RETRY` (pl-index.c).
 """
 function createIndex!(
-    argv::T, argc::Int, clist::ClauseList{T}, better_than::Union{Nothing, ClauseIndex{T}},
+    argv::A, argc::Int, clist::ClauseList{T}, better_than::Union{Nothing, ClauseIndex{T}},
     ctx::index_context{T}
-)::Union{Nothing, ClauseIndex{T}, ci_retry_t} where {T}
+)::Union{Nothing, ClauseIndex{T}, ci_retry_t} where {T, A}
     hints = hash_hints()
     if bestHash!(argv, argc, clist, better_than, hints, ctx)
         ci = hashDefinition!(clist, hints, ctx)
@@ -451,8 +473,8 @@ Find the first clause of `clist` that may match the call `argv` (with `argc` arg
 in `ctx.chp` where the search resumes (pl-index.c).
 """
 function first_clause_guarded!(
-    argv::T, argc::Int, clist::ClauseList{T}, ctx::index_context{T}
-)::Union{Nothing, ClauseRef{T}} where {T}
+    argv::A, argc::Int, clist::ClauseList{T}, ctx::index_context{T}
+)::Union{Nothing, ClauseRef{T}} where {T, A}
     chp = ctx.chp::ClauseChoice{T}
     cref::Union{Nothing, ClauseRef{T}} = nothing
     # If `clist->unindexed`, no primary index is possible.
@@ -587,12 +609,12 @@ end
 """
     firstClause!(ld, argv, generation, def, chp) -> Union{Nothing, ClauseRef}
 
-The first clause of `def` that may match the call `argv` (the call term: its children 2.. are the
-arguments), visible in `generation`; `chp` records where `nextClause!` resumes (pl-index.c).
+The first clause of `def` that may match the call whose arguments `argv` views (`argv_frame` or
+`argv_term`), visible in `generation`; `chp` records where `nextClause!` resumes (pl-index.c).
 """
 function firstClause!(
-    ld, argv::T, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
-)::Union{Nothing, ClauseRef{T}} where {T}
+    ld, argv::A, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
+)::Union{Nothing, ClauseRef{T}} where {T, A}
     ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
     try
         return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
@@ -610,8 +632,8 @@ end
 The next candidate clause after the ones `chp` has produced (pl-index.c).
 """
 function nextClause!(
-    ld, chp::ClauseChoice{T}, argv::T, generation::gen_t, def::Definition{T}
-)::Union{Nothing, ClauseRef{T}} where {T}
+    ld, chp::ClauseChoice{T}, argv::A, generation::gen_t, def::Definition{T}
+)::Union{Nothing, ClauseRef{T}} where {T, A}
     ctx = _index_context!(ld.index_ctx::index_context{T}, generation, def, chp)
     try
         if chp.key == 0                 # not indexed
@@ -2005,9 +2027,9 @@ instantiated arguments not assessed before, pick the best single one, and try tw
 when it is poor. True with the result in `hints` (pl-index.c).
 """
 function bestHash!(
-    av::T, argc::Int, clist::ClauseList{T}, better_than::Union{Nothing, ClauseIndex{T}},
+    av::A, argc::Int, clist::ClauseList{T}, better_than::Union{Nothing, ClauseIndex{T}},
     hints::hash_hints, ctx::index_context{T}
-)::Bool where {T}
+)::Bool where {T, A}
     best = -1
     best_speedup = 0.0f0
     ia = (0x00, 0x00, 0x00, 0x00)

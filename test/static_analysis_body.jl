@@ -57,6 +57,18 @@ end
         @test n == count(e -> e[3], DISPATCH_MANIFEST)
     end
 
+    # The one push that grows in place (pl-incl.h `pushArgumentStack`, its `else` is
+    # `f_pushArgumentStack`): AllocCheck sees the growth — so this cannot pass by seeing nothing — and
+    # every allocation it reports lies inside it (V4a decision 2).
+    @testset "AllocCheck: the argument stack's push allocates only where it grows" begin
+        allocs = check_allocs(
+            LogicKernel.pushArgumentStack,
+            (LogicKernel.PL_local_data{_M2}, LogicKernel.argstack_entry{_M2})
+        )
+        @test !isempty(allocs)
+        @test all(a -> any(f -> f.func === :f_pushArgumentStack, a.backtrace), allocs)
+    end
+
     @testset "controls: each gate fails on a planted defect" begin
         @test !isempty(JET.get_reports(JET.report_opt(_sa_dispatches, (Vector{Real},))))
         @test isempty(JET.get_reports(JET.report_opt(_sa_stable, (Vector{Int},))))

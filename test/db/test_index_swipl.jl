@@ -315,9 +315,10 @@ end
 
 """
 Run the program; answers as text lines, index reports, primary indexes, the predicates the
-LogicKernel#1 fix can touch, and the predicate of each call. `unindexed`: the oracle.
+LogicKernel#1 fix can touch, and the predicate of each call. `unindexed`: the oracle. `vm`: every
+call through the virtual machine (`vm_call`, V4a) — determinism is `PL_S_LAST`.
 """
-function _xrun(preds::Vector{_XPred}; unindexed::Bool=false)
+function _xrun(preds::Vector{_XPred}; unindexed::Bool=false, vm::Bool=false)
     lines = String[]
     idx = _XIdx[]
     pidx = String[]
@@ -333,7 +334,13 @@ function _xrun(preds::Vector{_XPred}; unindexed::Bool=false)
         k += 1
         push!(goalpred, "$(p.name)/$(p.arity)")
         if op === :call
-            ans = unindexed ? ix_call_unindexed(b, g) : ix_call(b, g)
+            ans = if vm
+                vm_call(b, g)
+            elseif unindexed
+                ix_call_unindexed(b, g)
+            else
+                ix_call(b, g)
+            end
             for (a, det) in ans
                 push!(lines, "$k $(ix_text(a)) $(det ? "det" : "nondet")")
             end
@@ -517,6 +524,16 @@ const _XSEED = 20261002
     program = vcat(_xprogram(_XSEED, 60), _xhvoid(), _xnil(), _xlit())
     ours = _xrun(program)
     oracle = _xrun(program; unindexed=true)
+    vmrun = _xrun(program; vm=true)
+
+    @testset "the VM answers every call as the index path does, determinism included (V4a)" begin
+        d = _xline_diff(vmrun.lines, ours.lines)
+        isempty(d) || foreach(x -> println(stderr, "  vm: ", x), d[1:min(end, 8)])
+        @test isempty(d)
+        @test vmrun.idx == ours.idx && vmrun.pidx == ours.pidx  # the same indexes, decided by S_VIRGIN
+        @test count(l -> endswith(l, " det"), vmrun.lines) > 300      # PL_S_LAST is exercised
+        @test count(l -> endswith(l, " nondet"), vmrun.lines) > 300
+    end
 
     @testset "the contract: indexing never changes answers" begin
         @test _xstrip_det(ours.lines) == _xstrip_det(oracle.lines)
@@ -561,6 +578,11 @@ const _XSEED = 20261002
             d = _xline_diff(our_u, their_u)
             isempty(d) || foreach(x -> println(stderr, "  determinism: ", x), d)
             @test isempty(d)
+            # and through the VM: PL_S_LAST where swipl's call is deterministic (V4a)
+            dv = _xline_diff(_xuntouched(vmrun.lines, ours), their_u)
+            isempty(dv) ||
+                foreach(x -> println(stderr, "  vm determinism: ", x), dv[1:min(end, 8)])
+            @test isempty(dv)
             untouched(v) = [i for i in v if !(i[1] in ours.affected)]
             oi, ti = untouched(ours.idx), untouched(theirs.idx)
             di = _xidx_diff(oi, ti)

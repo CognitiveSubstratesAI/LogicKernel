@@ -710,22 +710,24 @@ struct CallableTypeError{T} <: Exception
 end
 
 """
-The functor `(name sym_key, arity)` of a callable body goal — a text atom, or a compound whose name
-is a text atom or `[]` — or `nothing` (pl-comp.c `compileSubClause`, c:3464-3559).
+The functor `(name, arity)` — the name symbol — of a callable body goal: a text atom, or a compound
+whose name is a text atom or `[]`; arity -1 when the goal is not callable (pl-comp.c
+`compileSubClause`, c:3464-3559). `T` is the database's term type, given — not the goal's own
+type, which an implementation may make a leaf of it (`term_type`).
 """
-function _body_functor(goal)::Union{Nothing, Tuple{UInt64, Int}}
+function _body_functor(::Type{T}, goal::T)::Tuple{T, Int} where {T}
     if kind(goal) === EXPR
-        nchildren(goal) >= 1 || return nothing                 # `$expr/0`: no head
+        nchildren(goal) >= 1 || return (goal, -1)               # `$expr/0`: no head
         h = child(goal, 1)
-        kind(h) === SYM || return nothing                      # `$expr/n`: the meta-call (V9)
+        kind(h) === SYM || return (goal, -1)                    # `$expr/n`: the meta-call (V9)
         # !isTextAtom(fdef->name) && fdef->name != ATOM_nil
-        is_reserved_symbol(h) && !is_nil(h) && return nothing
-        return (sym_key(h), nchildren(goal) - 1)
+        is_reserved_symbol(h) && !is_nil(h) && return (goal, -1)
+        return (h, nchildren(goal) - 1)
     elseif kind(goal) === SYM
-        is_reserved_symbol(goal) && return nothing             # isTextAtom(*arg): not `[]`
-        return (sym_key(goal), 0)
+        is_reserved_symbol(goal) && return (goal, -1)           # isTextAtom(*arg): not `[]`
+        return (goal, 0)
     end
-    return nothing                                             # a number, a string, a variable
+    return (goal, -1)                                          # a number, a string, a variable
 end
 
 # PORT: pl-comp.c lookupBodyProcedure
@@ -747,10 +749,9 @@ current one if it is defined or redefined, else the one `lookupProcedure` finds 
 function lookupBodyProcedure(
     gd::PL_global_data{T}, goal::T, tm::module_t{T}
 )::Procedure{T} where {T}
-    f = _body_functor(goal)
-    f === nothing && throw(CallableTypeError{T}(goal))
-    name, arity = f
-    proc = isCurrentProcedure(name, arity, tm)
+    name, arity = _body_functor(T, goal)
+    arity < 0 && throw(CallableTypeError{T}(goal))
+    proc = isCurrentProcedure(sym_key(name), arity, tm)
     if proc !== nothing &&
         (isDefinedProcedure(gd, proc) || (proc.definition.flags & P_REDEFINED) != 0)
         return proc
@@ -1508,6 +1509,46 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
     end
 end
 
+# PORT: pl-comp.c arg1Key
+# DIVERGES: returns `(found, key)` where upstream returns a flag and sets an out-parameter, and keys
+# a literal as `argKey` does (`indexOfWord` of the literal, V1 L2). `$expr/n` (literal 0, Q2) has no
+# functor: not found. AN UPSTREAM DEFECT FIXED: upstream's switch lists `H_MPZ` but not `H_MPQ`, which
+# falls to `assert(0)` — swipl 10.1.16 aborts calling `p(1r3, a). p(2r3, b).` (probed, V4a:
+# `arg1Key: Assertion failed`); here `H_MPQ` is not found, as `H_MPZ` is.
+"""
+    arg1Key(PC) -> (found, key)
+
+The key of the head argument at `PC`, precisely, or not found (pl-comp.c): `argKey` for the first
+argument only and without imprecise keys, for `listSupervisor`.
+"""
+function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
+    while true
+        c = decode(PC)
+        PC = Code{T}(PC.codes, PC.literals, PC.pc + 1)          # *PC++
+        if c == H_FUNCTOR || c == H_RFUNCTOR
+            op = PC.codes[PC.pc]                                # code2functor(*PC)
+            i = functor_literal(op)
+            i == 0 && return (false, word(0))                   # `$expr/n`: no functor
+            return (true, _functor_word(_functor_name(PC.literals[i]), functor_arity(op)))
+        elseif c == H_ATOM || c == H_SMALLINT
+            return (true, indexOfWord(PC.literals[PC.codes[PC.pc]]))
+        elseif c == H_NIL
+            return (true, ATOM_nil)
+        elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST
+            return (true, FUNCTOR_dot2)
+        elseif c == H_FLOAT || c == H_STRING || c == H_MPZ || c == H_MPQ ||
+            c == H_FIRSTVAR ||
+            c == H_VAR || c == H_VOID || c == H_VOID_N || c == I_EXITFACT || c == I_EXIT ||
+            c == I_ENTER
+            return (false, word(0))
+        elseif c == I_NOP || c == I_CHP
+            # continue
+        else
+            error("arg1Key: unexpected instruction $(codeTable(c).name)")    # assert(0)
+        end
+    end
+end
+
 # ── clause/2 (pl-comp.c) ────────────────────────────────────────────────────────────────────────
 # PORT: pl-comp.c clause as pl_clause
 # DIVERGES: clause/2 with an unbound clause reference only (no clause/3-4 by reference, no module
@@ -1531,7 +1572,7 @@ function pl_clause!(
     try
         gen = dref.generation                           # setGenerationFrameVal()
         chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(ld, head, gen, def, chp)
+        cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
         while cref !== nothing
             clause = cref.clause::Clause{T}
             m = Mark(ld)
@@ -1549,7 +1590,7 @@ function pl_clause!(
             finally
                 Undo!(ld, m)                            # backtracking undoes the answer
             end
-            cref = nextClause!(ld, chp, head, gen, def)    # FRG_REDO
+            cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)    # FRG_REDO
         end
     finally
         popped || popPredicateAccess!(ld, def)

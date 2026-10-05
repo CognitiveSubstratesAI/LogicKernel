@@ -6,6 +6,7 @@
 #   julia --project=. tools/bench.jl variant             # the cases whose name contains "variant"
 #   julia --project=. tools/bench.jl --profile=NAME      # profile case NAME (default: worst ratio)
 #   julia --project=. tools/bench.jl --no-profile
+#   julia --project=. tools/bench.jl --no-compile        # without the run loop's fresh-process report
 #
 # A STANDING STEP for every chunk, beside the JET/Aqua/AllocCheck gates (user, 2026-10-03) — a
 # report, not a pass/fail gate: a new primitive gets a case here, with its swipl goal. It follows
@@ -74,7 +75,7 @@ const SMALL_A, SMALL_B = mk_expr(BT, BT[_a(:f), _v()]), mk_expr(BT, BT[_a(:f), _
 # a dynamic predicate cp/2 of 1000 facts cp(I, a), for clause/2 — Prolog `cp/2` below
 const CP_GD = PL_global_data{BT}()
 const CP_USER = MODULE_user(CP_GD)
-const CP_PROC = lookupProcedure(sym_key(_a(:cp)), 2, CP_USER)
+const CP_PROC = lookupProcedure(_a(:cp), 2, CP_USER)
 const CP_DEF = CP_PROC.definition
 setDynamicDefinition!(CP_DEF, true)                            # :- dynamic cp/2.
 _cp_compile(h::BT) = compileClause(CP_GD, h, nothing, CP_PROC, CP_USER)
@@ -93,7 +94,7 @@ _cons(h::BT, t::BT)::BT = mk_expr(BT, BT[_a(Symbol("[|]")), h, t])
 const APP_H, APP_T, APP_L, APP_R = _v(), _v(), _v(), _v()
 const APP_HEAD = mk_expr(BT, BT[_a(:app), _cons(APP_H, APP_T), APP_L, _cons(APP_H, APP_R)])
 const APP_BODY = mk_expr(BT, BT[_a(:app), APP_T, APP_L, APP_R])
-const APP_PROC = lookupProcedure(sym_key(_a(:app)), 3, CP_USER)
+const APP_PROC = lookupProcedure(_a(:app), 3, CP_USER)
 # the whole rule (V2): head, I_ENTER, the body's last call with its LCO block, I_EXIT
 
 # the local stack (V3): `n` frames, each with a choice point, pushed and then popped by one lowering
@@ -109,6 +110,26 @@ function _stack_frames(ld::PL_local_data{BT}, n::Int)::Nothing
     ld.BFR = 0
     LogicKernel.lowerLTop!(ld, base)
     return nothing
+end
+
+# a query through the VM (V4a), as a foreign caller makes it — open, every answer, close: all of
+# cp(X, Y) over the 1000 facts, and cp(500, Y), narrowed by the first-argument index
+const Q_LD = PL_local_data{BT}()
+const Q_ALL, Q_ONE = _v(), gnd_term(BT, 500)
+function _vm_query(ld::PL_local_data{BT}, a1::BT)::Int
+    fid = LogicKernel.PL_open_foreign_frame(ld)
+    args = LogicKernel.PL_new_term_refs(ld, 2)
+    ld.slots[args + 1] = a1                                         # term reference args + 0
+    qid = LogicKernel.PL_open_query(
+        CP_GD, ld, nothing, LogicKernel.PL_Q_NORMAL, CP_PROC, args
+    )
+    n = 0
+    while LogicKernel.PL_next_solution(CP_GD, ld, qid) == LogicKernel.PL_S_TRUE
+        n += 1
+    end
+    LogicKernel.PL_close_query(ld, qid)
+    LogicKernel.PL_close_foreign_frame(ld, fid)
+    return n
 end
 
 const PROLOG_FIXTURES = """
@@ -157,6 +178,9 @@ const CASES = [
         () -> compileClause(CP_GD, APP_HEAD, APP_BODY, APP_PROC, CP_USER),
         ""
     ),
+    # the VM's run loop (V4a): every answer, and one answer through the index
+    ("query cp(X,Y) 1000", () -> _vm_query(Q_LD, Q_ALL), "forall(cp(_, _), true)"),
+    ("query cp(500,Y)", () -> _vm_query(Q_LD, Q_ONE), "forall(cp(500, _), true)"),
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs
@@ -207,6 +231,58 @@ function swipl_times(cases)::Dict{String, NTuple{3, Float64}}
     return out
 end
 
+# ── the run loop in a FRESH process: first-call latency, compile time, dispatch (V4a) ───────────
+# One very large function (decision 1): what a fresh process pays at its first query — after the
+# precompile workload compiled it for DefaultTerm — and what compiling it costs for a term type the
+# workload did not cover. Its dispatch is reported as the native code's jump tables.
+const RUN_LOOP_PROBE = raw"""
+using LogicKernel, InteractiveUtils
+const LK = LogicKernel
+const T = DefaultTerm
+t_load = @elapsed begin
+    gd = LK.PL_global_data{T}(); ld = LK.PL_local_data{T}()
+    user = LK.MODULE_user(gd)
+    proc = LK.lookupProcedure(sym_term(T, :p), 1, user)
+    LK.setDynamicDefinition!(proc.definition, true)
+    LK.assertDefinition!(gd, proc.definition,
+        LK.compileClause(gd, mk_expr(T, T[sym_term(T, :p), sym_term(T, :a)]), nothing, proc, user), LK.CL_END)
+end
+t_first = @elapsed begin
+    fid = LK.PL_open_foreign_frame(ld)
+    args = LK.PL_new_term_refs(ld, 1)
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, proc, args)
+    LK.PL_next_solution(gd, ld, qid)
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+end
+const U = Term{Vector{Float64}}                 # a term type the workload did not compile
+t_compile = @elapsed precompile(
+    LK.PL_next_solution_guarded, (LK.PL_global_data{U}, LK.PL_local_data{U}, Int, Bool)
+)
+io = IOBuffer()
+code_native(io, LK.PL_next_solution_guarded, (LK.PL_global_data{T}, LK.PL_local_data{T}, Int, Bool);
+    debuginfo=:none, syntax=:intel)
+jt = length(collect(eachmatch(r"^\s*jmp\s+qword ptr \[[^\]]+\]\s*$"m, String(take!(io)))))
+println(t_load, " ", t_first, " ", t_compile, " ", jt)
+"""
+
+function run_loop_report()::Nothing
+    root = dirname(@__DIR__)
+    out = try
+        read(`$(Base.julia_cmd()) --project=$root --startup-file=no -e $RUN_LOOP_PROBE`, String)
+    catch e
+        println("\nrun loop (fresh process): probe failed — ", sprint(showerror, e))
+        return nothing
+    end
+    t_load, t_first, t_compile, jt = split(strip(out))
+    @printf(
+        "\nrun loop (fresh process): first query %.1f ms (after a first assert %.1f ms); compiling it for a new term type %.1f s; dispatch: %s jump tables in its native code\n",
+        1e3 * parse(Float64, t_first), 1e3 * parse(Float64, t_load),
+        parse(Float64, t_compile), jt
+    )
+    return nothing
+end
+
 # ── Julia: three BenchmarkTools runs of each thunk, median of each ──────────────────────────────
 function julia_times(f)
     f()
@@ -246,6 +322,7 @@ function main(args)
         spread > 1.15 && @printf("   ⚠ LK runs spread %.0f%%", (spread - 1) * 100)
         println()
     end
+    "--no-compile" in args || run_loop_report()
     "--no-profile" in args && return nothing
     target = prof
     if isempty(target)
