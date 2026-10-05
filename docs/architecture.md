@@ -212,14 +212,19 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys | `src/pl-incl.h`, `src/pl-data.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros | `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail and the `occurs_check` flag | `src/pl-global.h`, `src/pl-incl.h` |
-| `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `Trail!`, `Mark`, `Undo!` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
-| `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see | `src/pl-thread.c`, `src/pl-gc.c` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers) | `src/pl-global.h`, `src/pl-incl.h` |
+| `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
+| `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
+| `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop` | `src/pl-wam.c` |
+| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`) | `src/pl-fli.c` |
+| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base | `src/pl-setup.c` |
+| `test/core_lang/test_local_stack.jl` | V3's tests: positions identical to swipl's (frame and choice-point placement, pinned and live), the record discipline, foreign frames and term references, growth, and that the primitives allocate nothing warm | — |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c`, `src/pl-hash.h` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
 | `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
@@ -285,6 +290,10 @@ graph LR
     pl_termhash["pl-termhash.jl"]
     pl_thread["pl-thread.jl"]
     pl_gc["pl-gc.jl"]
+    pl_alloc["pl-alloc.jl"]
+    pl_wam["pl-wam.jl"]
+    pl_fli["pl-fli.jl"]
+    pl_setup["pl-setup.jl"]
     pl_proc["pl-proc.jl"]
     precompile_workload["precompile_workload.jl"]
     term_interface --> default_term
@@ -314,6 +323,8 @@ graph LR
     pl_global --> pl_termwalk
     pl_global --> pl_index
     pl_global --> pl_funct
+    pl_global --> pl_gc
+    pl_global --> pl_setup
     pl_inline --> term_interface
     pl_inline --> default_term
     pl_inline --> pl_incl
@@ -356,8 +367,29 @@ graph LR
     pl_thread --> pl_global
     pl_thread --> pl_inline
     pl_thread --> pl_proc
+    pl_gc --> default_term
+    pl_gc --> pl_incl
     pl_gc --> pl_global
+    pl_gc --> pl_inline
     pl_gc --> pl_thread
+    pl_gc --> pl_alloc
+    pl_alloc --> default_term
+    pl_alloc --> pl_incl
+    pl_alloc --> pl_global
+    pl_wam --> default_term
+    pl_wam --> pl_incl
+    pl_wam --> pl_global
+    pl_wam --> pl_inline
+    pl_wam --> pl_gc
+    pl_fli --> term_interface
+    pl_fli --> default_term
+    pl_fli --> pl_incl
+    pl_fli --> pl_global
+    pl_fli --> pl_inline
+    pl_fli --> pl_gc
+    pl_fli --> pl_wam
+    pl_setup --> pl_global
+    pl_setup --> pl_wam
     pl_proc --> term_interface
     pl_proc --> default_term
     pl_proc --> pl_incl
@@ -376,6 +408,8 @@ graph LR
     precompile_workload --> pl_comp
     precompile_workload --> pl_variant
     precompile_workload --> pl_termhash
+    precompile_workload --> pl_wam
+    precompile_workload --> pl_fli
     precompile_workload --> pl_proc
 ```
 <!-- END GENERATED code graph -->
@@ -1000,6 +1034,94 @@ src/pl-funct.jl, src/pl-global.jl).
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
 
+**V3 — machine state: BUILT (2026-10-05)** (port_inventory row V3; src/pl-incl.jl § the local stack,
+src/pl-global.jl, src/pl-inline.jl, src/pl-gc.jl, src/pl-alloc.jl, src/pl-wam.jl, src/pl-fli.jl,
+src/pl-setup.jl). Plan: two research memos (subagents), one on upstream's structs and one on its
+operations, every claim cited by line and the decisive ones re-read; their open questions went to
+the user.
+* **Decided by the user (2026-10-05):**
+  1. **Header widths: upstream's word sizes** — frame 8, choice point 9, foreign frame 6 (the default
+     x86_64 Linux build: `O_PROFILE` on, `O_DEBUG` off). So a position is swipl's own, and
+     `prolog_current_frame/1` and `prolog_current_choice/1` are the oracle for frame placement, reuse
+     and popping — compared as DIFFERENCES, since swipl's base holds its own toplevel frames.
+  2. **Decision 3's drop rule, refined four ways** (upstream's actual behaviour):
+     * dropping lowers a count; a dropped record stays readable until a push reuses it —
+       `exit_continue` reads `FR->programPointer` and `FR->parent` after `lTop = FR` (vmi:2178-2194);
+     * backtracking drops the records above the resumed choice point BEFORE moving it, because
+       `lTop` can rise over dead records there (vmi:6503-6528, 6712) — V4a's;
+     * nothing drops a frame being filled above `lTop` (`normal_call`, vmi:1869) — ASSERTED;
+     * query and foreign-frame handles stay positions, found by walking their chains.
+  3. **Clause choice points: a pool per slot.** Each choice-point record owns its `clause_choice`, as
+     upstream embeds the struct and passes a pointer to it; `newChoice` resets it; allocation is
+     measured after the pool has grown, and growth is the only allocating path.
+  4. **The V3/V4a boundary:** V3 tests its own primitives; `restore_after_query`, `PL_open_query` and
+     instruction-level behaviour (an exit, last-call reuse) come with V4a.
+  * Defaults agreed: a function unreachable upstream is NOT ported (`TRY_CLAUSE`: port_inventory §
+    "Not ported: unreachable upstream", re-checked by tools/upstream_drift.jl); upstream's no-ops and
+    quirks inside ported functions are kept as written, each with a comment (`f_hasSpace`'s unsigned
+    division, `DiscardMark`); omitted fields still count in the widths; the flag and magic values
+    verbatim; dropped records not cleared; bounds checks on until V4's flatness gate.
+* **Choice made while building (told to the user the same day):** the records are MUTABLE,
+  preallocated and reused per index, where decision 3 said immutable. Upstream writes their fields
+  one at a time (`normal_call`, the last-call branch, `ch->value.clause = chp`); the kernel already
+  ports such structs as mutable (`clause_ref`, `definition`, `clause_choice`); and the pool keeps
+  growth the only allocating path. Positions, indices and the rest of decision 3 are as decided.
+* **Ported:**
+  * the layout — `SIZEOF_*`, `ARGOFFSET`, `VAROFFSET`/`VARNUM` (moved from pl-comp.jl), `MAXARITY`,
+    `MINFOREIGNSIZE`, `LOCAL_MARGIN`, `argFrameP`/`varFrameP`/`refFliP`;
+  * the records `localFrame`, `choice`, `fliFrame` and `choice_type`; the `FR_*` flags and
+    `setNextFrameFlags`, `lcoSetNextFrameFlags2`, `lcoSetNextFrameFlags`, `tcallSetNextFrameFlags`,
+    `setFramePredicate`, `levelFrame`, `setLevelFrame`;
+  * `newChoice`; `copyFrameArguments`; `open_foreign_frame` and `PL_open_foreign_frame`,
+    `PL_close_foreign_frame`, `PL_rewind_foreign_frame`, `PL_discard_foreign_frame`;
+  * `PL_new_term_refs`, `new_term_ref`, `PL_new_term_ref`, `PL_reset_term_refs`, `PL_copy_term_ref`,
+    `PL_put_term`, `linkValI`;
+  * `f_hasSpace`, `hasLocalSpace`, `growLocalSpace`, `growStacks` (the local stack only: nothing moves,
+    so upstream's shifting has no counterpart), `ensureLocalSpace`, `raiseStackOverflow` (a Julia
+    `LocalStackOverflow` until V5's exception path);
+  * `emptyStacks` — the base foreign frame, so no `term_t` or `fid_t` is 0; the engine's permanent
+    term references are not allocated (their subsystems are not ported);
+  * `DiscardMark` (a no-op: no `mark_bar`), `NoMark`, `isRealMark`, and `Undo!` refusing a `NoMark`;
+  * LD's local stack: the cells, the three record pools, and the registers under upstream's macro
+    names (`lTop`, `lMax`, `BFR`, `environment_frame`, `fli_context`); its initial size upstream's
+    `minlocal` (4096 positions) and its limit `stack_limit`'s default (1 GiB, in words).
+* **The record discipline** (src/pl-wam.jl): `pushFrame!`, `pushChoice!` and `pushFliFrame!` are
+  upstream's casts of a position to a record, each asserting that no live record of its kind lies at
+  or above the position (a missed drop is caught there); `dropRecords!` and `lowerLTop!` drop on every
+  lowering, asserting that nothing dropped lies at or above `lTop`; `fliFrameOfFid` is the cast of a
+  handle.
+* **`VAROFFSET` is slot + 8 now.** swipl's `vm_list` prints `VARNUM`, so the V2 differential could not
+  see the change, and it passes unchanged. One test printed `VAROFFSET(slot)` as if it were the slot
+  (test_analyse_variables_swipl.jl); it agreed with swipl only because the identity hid the
+  difference, and now prints the slot.
+* **Gate — test/core_lang/test_local_stack.jl** (term-generic: 281 assertions on the three types):
+  * POSITIONS ARE SWIPL'S — a callee's frame `8 + variables` above its caller's and a
+    non-deterministic callee's choice point `8 + variables` above the callee's frame, from the
+    KERNEL's compiled `clause.variables`, on 9 caller/callee pairs (voids, arguments only, many body
+    variables, a head compound; facts and rules as first clauses): identical to swipl 10.1.16's
+    differences, pinned and live;
+  * every lowering drops the records at or above it and a dropped record stays readable (an exit's
+    frame read after it); a frame being filled above `lTop` is never dropped; a missed drop is caught
+    at the next push, for each kind; a reused choice point carries nothing over; foreign frames
+    (close keeps bindings, rewind and discard undo them, a bad handle is refused); term references;
+    `copyFrameArguments`; the frame flags; growth, the limit, `f_hasSpace`'s quirk;
+  * warm, a frame + choice point + foreign frame cycle and 1000 nested frames with choice points
+    allocate nothing; growth does. The static gate (test_static_analysis.jl) checks the same claims
+    — `must_not_allocate` on `newChoice`, the pushes, the drops and the foreign frames — and every new
+    method for runtime dispatch.
+* **Mutation-proved:** MV1–MV16, each caught at its own test — `lowerLTop!` not dropping, the pooled
+  `clause_choice` not reset, the in-construction assertion removed, a 7-word frame and an 8-word
+  choice point (the swipl positions), `f_hasSpace` without its quirk, `newChoice`'s `BFR` assertion
+  and `pushFrame!`'s guard removed, the choice pool not growing, a close leaving `lTop`, a rewind not
+  undoing, `copyFrameArguments` reversed, a drop clearing its frame, `newChoice` allocating,
+  `emptyStacks` without its base frame, and the unreachable check counting a definition as a use.
+  The first allocation mutant (`length(copy(trail))` on an empty trail) SURVIVED because the compiler
+  elides it — no allocation happened; the mutant that allocates into LD was caught.
+* **Moved to V4a** (port_inventory row V4a): `queryFrame`, `initVM` and `$c_call_prolog/0`,
+  `discard_query`/`restore_after_query`, `SAVE_REGISTERS`/`LOAD_REGISTERS` with `ARGP`'s two forms,
+  the backtracking drop, `chp` copied into the pooled `clause_choice`, `firstClause!`/`nextClause!`
+  on the frame's slots, and `setGenerationFrame`'s frame-writing form.
+
 **V2 — `!` compiled: BUILT (2026-10-05)** (the user's answer to V2's choice Q1: the COMPILE side
 belongs with the body compiler, execution stays in V6; src/pl-comp.jl, src/pl-vmi.jl, src/pl-incl.jl,
 src/pl-funct.jl).
@@ -1239,6 +1361,10 @@ places upstream calls `SAVE_REGISTERS(QID)`/`LOAD_REGISTERS(QID)`, under those n
 line-for-line comparable and a missing sync shows as a missing macro.
 
 **Condition 4 — V9 is split** into separate steps, each with its own gate, when it is reached.
+
+**Decision 3, refined when V3 was built (user, 2026-10-05):** upstream's struct widths, so positions
+are swipl's; four refinements of the drop rule; a per-slot `clause_choice` pool; mutable pooled
+records — § "V3 — machine state" below. They take precedence over decision 3's text where they differ.
 
 ## Still to come
 

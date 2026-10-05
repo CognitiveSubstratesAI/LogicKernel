@@ -196,12 +196,13 @@ const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
 
 # ── unification: return codes, the occurs-check flag, backtrack marks ──────────────────────────
 # PORT: pl-incl.h boolex_t
-# DIVERGES: only the codes the ported unifier and clause compiler return; the stack-overflow codes
-# cannot happen (no fixed-size stacks) and are not ported.
-"Success, failure, or \"needs the compound algorithm\" (pl-incl.h `boolex_t`)."
+# DIVERGES: only the codes the ported unifier, clause compiler and local stack return. The other
+# stack-overflow codes are not ported: there is no global, trail or argument stack of fixed size.
+"Success, failure, a stack overflow, or \"needs the compound algorithm\" (pl-incl.h `boolex_t`)."
 @enum boolex_t::Int8 begin
     BOOLEX_TRUE = 1             # logical success (= `true`)
     BOOLEX_FALSE = 0            # logical failure (= `false`)
+    LOCAL_OVERFLOW = -1         # Local stack overflow
     DO_COMPOUND = -8            # need more general algorithm
     NOT_CALLABLE = -9           # pl-comp.c
     MAX_ARITY_OVERFLOW = -10    # pl-comp.c
@@ -223,6 +224,10 @@ end
 struct mark
     trailtop::Int               # top of the trail stack
 end
+
+# PORT: pl-incl.h NOT_A_MARK
+"The `trailtop` of a mark that must never be undone to (pl-incl.h; `~(word)0` as a trail height)."
+const NOT_A_MARK = -1
 
 # ── the structs ─────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-incl.h arg_info
@@ -395,6 +400,249 @@ const ClauseChoice{T} = clause_choice{ClauseRef{T}}
 # PORT: pl-incl.h Procedure
 "A procedure of terms `T` (pl-incl.h `Procedure`)."
 const Procedure{T} = procedure{definition{T}}
+
+# ── the local stack: positions, frames, choice points, foreign frames (pl-incl.h; decision 3) ───
+#
+# ONE POSITION SPACE, as upstream has one local stack. A position is a word offset from `lBase`
+# (`consTermRef`), from 0, so a position is also a `term_t` and a `fid_t`. The local stack's CELLS
+# are `LD.slots` (position `p` is `slots[p + 1]`). A frame, a choice point or a foreign frame is a
+# RECORD in LD's pool for its kind. The record holds its `base`, the position where upstream's struct
+# starts, and it spans as many positions as upstream's struct has words. So every position is
+# swipl's own (user, 2026-10-05): the differences between them that `prolog_current_frame/1` and
+# `prolog_current_choice/1` report are the oracle for frame placement, reuse and popping. A record's
+# fields live in the record; the slots of its header positions are never read.
+#
+# DIVERGES from this file's rule above: a `LocalFrame`, `Choice` or `FliFrame` pointer is an INDEX
+# into its pool (0 = NULL), not a reference. A record is then known, as upstream knows it, by its
+# place on the stack: every age test upstream makes by address compares `base` positions. The
+# records are mutable and preallocated, reused per index (user, 2026-10-05). Upstream writes their
+# fields one at a time, and growing the stack stays the only allocating path.
+
+# The sizes of upstream's structs in words, in the default x86_64 Linux build: `O_PROFILE` is on
+# there, so `prof_node` counts although the kernel keeps no profiler, and `O_DEBUG` is off. They are
+# derived from the structs (pl-incl.h:1770-1784, 1824-1836, 1938-1946). swipl 10.1.16 agrees on the
+# frame: `p(A) :- …, q(A, _, _)` puts `q`'s frame 8 + 2 positions above `p`'s (`A` and the frame
+# variable; the voids take no slot).
+"`sizeof(struct localFrame)` in words: the positions a frame's header spans."
+const SIZEOF_LOCALFRAME = 8
+"`sizeof(struct choice)` in words: the positions a choice point spans."
+const SIZEOF_CHOICE = 9
+"`sizeof(struct fliFrame)` in words: the positions a foreign frame's header spans."
+const SIZEOF_FLIFRAME = 6
+
+# PORT: pl-incl.h ARGOFFSET
+# DIVERGES: in positions (words), where upstream's is in bytes.
+"Where a frame's arguments start, from its base (pl-incl.h): the size of its header."
+const ARGOFFSET = SIZEOF_LOCALFRAME
+
+# PORT: pl-incl.h VAROFFSET
+"The frame offset of variable slot `var` (pl-incl.h): the header, then the slots."
+VAROFFSET(var::Int)::code = code(var + ARGOFFSET)
+
+# PORT: pl-incl.h VARNUM
+"The variable slot of frame offset `i` (pl-incl.h); the inverse of `VAROFFSET`."
+VARNUM(i::code)::Int = Int(i) - ARGOFFSET
+
+# PORT: pl-incl.h MAXARITY
+"The largest arity of a predicate (pl-incl.h)."
+const MAXARITY = 1024
+
+# PORT: pl-incl.h MINFOREIGNSIZE
+"The term references a new foreign frame has room for at least (pl-incl.h)."
+const MINFOREIGNSIZE = 32
+
+# PORT: pl-incl.h LOCAL_MARGIN
+# DIVERGES: in positions, where upstream's is in bytes.
+"The space a call keeps free above `lTop`: a frame, its arguments and one choice point (pl-incl.h)."
+const LOCAL_MARGIN = SIZEOF_LOCALFRAME + MAXARITY + SIZEOF_CHOICE
+
+# PORT: pl-incl.h ALLOW_SHIFT
+"`growLocalSpace` may grow the stacks (pl-incl.h)."
+const ALLOW_SHIFT = 2
+
+# PORT: pl-incl.h FR_HIDE_CHILDS
+"Frame flag: the predicate's children are hidden, after `I_DEPART` (pl-incl.h)."
+const FR_HIDE_CHILDS = UInt32(0x0001)
+# PORT: pl-incl.h FR_SKIPPED
+"Frame flag: the debugger skipped this frame (pl-incl.h)."
+const FR_SKIPPED = UInt32(0x0002)
+# PORT: pl-incl.h FR_MARKED
+"Frame flag: marked by GC (pl-incl.h)."
+const FR_MARKED = UInt32(0x0004)
+# PORT: pl-incl.h FR_MARKED_PRED
+"Frame flag: GC marked its predicate and clause (pl-incl.h)."
+const FR_MARKED_PRED = UInt32(0x0008)
+# PORT: pl-incl.h FR_NOTIFY
+"Frame flag: notify its destruction, for the GUI debugger (pl-incl.h)."
+const FR_NOTIFY = UInt32(0x0010)
+# PORT: pl-incl.h FR_CAUGHT
+"Frame flag: the frame caught an exception (pl-incl.h)."
+const FR_CAUGHT = UInt32(0x0020)
+# PORT: pl-incl.h FR_INBOX
+"Frame flag: inside the box, for REDO in a built-in (pl-incl.h)."
+const FR_INBOX = UInt32(0x0040)
+# PORT: pl-incl.h FR_CONTEXT
+"Frame flag: the frame's context module is set (pl-incl.h)."
+const FR_CONTEXT = UInt32(0x0080)
+# PORT: pl-incl.h FR_CLEANUP
+"Frame flag: `setup_call_cleanup/4` (pl-incl.h)."
+const FR_CLEANUP = UInt32(0x0100)
+# PORT: pl-incl.h FR_INRESET
+"Frame flag: continuations, inside `reset/3` (pl-incl.h)."
+const FR_INRESET = UInt32(0x0200)
+# PORT: pl-incl.h FR_SSU_DET
+"Frame flag: demands determinism on `=>` rules (pl-incl.h)."
+const FR_SSU_DET = UInt32(0x0400)
+# PORT: pl-incl.h FR_DET
+"Frame flag: declared det (pl-incl.h)."
+const FR_DET = UInt32(0x0800)
+# PORT: pl-incl.h FR_DETGUARD
+"Frame flag: guarded for determinism (pl-incl.h)."
+const FR_DETGUARD = UInt32(0x1000)
+# PORT: pl-incl.h FR_DETGUARD_SET
+"Frame flag: `FR_DETGUARD` was set on this frame (pl-incl.h)."
+const FR_DETGUARD_SET = UInt32(0x2000)
+# PORT: pl-incl.h FR_WATCHED
+"Frame flags whose frame must be finished explicitly (pl-incl.h)."
+const FR_WATCHED = FR_CLEANUP | FR_NOTIFY
+# PORT: pl-incl.h FR_MAGIC_MASK
+"The bits of a frame's flags that hold its magic (pl-incl.h)."
+const FR_MAGIC_MASK = UInt32(0xffff0000)
+# PORT: pl-incl.h FR_MAGIC_MASK2
+"The bits of the magic that survive `killFrame` (pl-incl.h)."
+const FR_MAGIC_MASK2 = UInt32(0xfff00000)
+# PORT: pl-incl.h FR_MAGIC
+"The magic in the flags of a live frame (pl-incl.h)."
+const FR_MAGIC = UInt32(0xc9d50000)
+# PORT: pl-incl.h FR_LCO_CLEAR
+"Frame flags cleared when a frame is reused for the last call (pl-incl.h)."
+const FR_LCO_CLEAR =
+    FR_SKIPPED | FR_WATCHED | FR_CAUGHT | FR_HIDE_CHILDS | FR_CLEANUP | FR_SSU_DET
+# PORT: pl-incl.h FR_CLEAR_NEXT
+"Frame flags a child does not inherit (pl-incl.h)."
+const FR_CLEAR_NEXT = FR_LCO_CLEAR | FR_DET | FR_DETGUARD
+# PORT: pl-incl.h FR_CLEAR_ALWAYS
+"Frame flags cleared on every new frame (pl-incl.h)."
+const FR_CLEAR_ALWAYS = FR_CONTEXT | FR_DETGUARD_SET
+# PORT: pl-incl.h FR_CLEAR_FLAGS
+"Frame flags a new frame does not take from its parent (pl-incl.h)."
+const FR_CLEAR_FLAGS = FR_CLEAR_NEXT | FR_CLEAR_ALWAYS
+
+# PORT: pl-incl.h localFrame
+# DIVERGES: a pool record (see above). `parent` is a frame index; `programPointer` is a `Code` —
+# the clause's code and an index into it, as everywhere here. Not kept: `context`, the context
+# module, read only for transparent predicates (`contextModule`; one module, no transparency yet)
+# and `prof_node` (no profiler); both still count in `SIZEOF_LOCALFRAME`.
+"A frame on the local stack (pl-incl.h `struct localFrame`)."
+mutable struct localFrame{T}
+    base::Int                               # its position (upstream: its address)
+    programPointer::Code{T}                 # pointer into program
+    parent::Int                             # parent local frame (an index; 0 = NULL)
+    clause::Union{Nothing, ClauseRef{T}}    # Current clause of frame
+    predicate::Union{Nothing, Definition{T}} # Predicate we are running
+    generation::gen_t                       # generation of the database
+    level::UInt32                           # recursion level
+    flags::UInt32                           # packed long holding:
+end
+
+# PORT: pl-incl.h choice_type
+"What a choice point resumes (pl-incl.h `choice_type`)."
+@enum choice_type::UInt8 begin
+    CHP_JUMP = 0                # A jump due to ;
+    CHP_CLAUSE                  # Next clause of predicate
+    CHP_TOP                     # First (toplevel) choice
+    CHP_CATCH                   # $catch initiated choice
+    CHP_DEBUG                   # Enable redo
+end
+
+# PORT: pl-incl.h choice
+# DIVERGES: a pool record (see above); `parent` is a choice index and `frame` a frame index.
+# `value.clause` is the choice's OWN `clause_choice`, created with the record and reused with it —
+# where upstream embeds the struct and hands out a pointer to it (user, 2026-10-05). `newChoice`
+# resets it. The union's other members arrive with their creators: `pc` with `C_OR` and `foreign`
+# with non-deterministic built-ins (V9). `prof_node` is not kept (no profiler) but counts in
+# `SIZEOF_CHOICE`.
+"A choice point on the local stack (pl-incl.h `struct choice`)."
+mutable struct choice{T}
+    base::Int                               # its position (upstream: its address)
+    type::choice_type                       # CHP_*
+    parent::Int                             # Alternative if I fail (an index; 0 = NULL)
+    mark::mark                              # data mark for undo
+    frame::Int                              # Frame I am related to (an index)
+    const value_clause::ClauseChoice{T}     # value.clause — Next candidate clause
+end
+
+# PORT: pl-incl.h fliFrame
+# DIVERGES: a pool record (see above); `parent` is a foreign-frame index. `magic` is not kept: it
+# exists under `O_DEBUG` only, and neither counts in `SIZEOF_FLIFRAME`.
+"A foreign frame on the local stack (pl-incl.h `struct fliFrame`): the term references above it."
+mutable struct fliFrame
+    base::Int                               # its position (upstream: its address)
+    size::Int                               # # slots on it
+    no_free_before::Int                     # No free before this
+    parent::Int                             # parent FLI frame (an index; 0 = NULL)
+    mark::mark                              # data-stack mark
+end
+
+# PORT: pl-incl.h argFrameP
+# DIVERGES: on the frame's base position, where upstream's takes the frame's address — the same
+# arithmetic. A position upstream casts to a frame (`argFrameP(lTop, 0)`) is passed as is.
+"The position of argument `n` of the frame at position `f` (pl-incl.h)."
+argFrameP(f::Int, n::Int)::Int = f + ARGOFFSET + n
+
+# PORT: pl-incl.h varFrameP
+"The position at frame offset `n` of the frame at position `f` (pl-incl.h)."
+varFrameP(f::Int, n::Int)::Int = f + n
+
+# PORT: pl-incl.h refFliP
+"The position of term reference `n` of the foreign frame at position `f` (pl-incl.h)."
+refFliP(f::Int, n::Int)::Int = f + SIZEOF_FLIFRAME + n
+
+# PORT: pl-incl.h levelFrame
+"The recursion level of frame `fr` (pl-incl.h)."
+levelFrame(fr::localFrame)::UInt32 = fr.level
+
+# PORT: pl-incl.h setLevelFrame
+"Set the recursion level of frame `fr` (pl-incl.h)."
+function setLevelFrame(fr::localFrame, l::UInt32)::Nothing
+    fr.level = l
+    return nothing
+end
+
+# PORT: pl-incl.h setNextFrameFlags
+"Frame `next` is a child of `fr`: one level deeper, `fr`'s flags but `FR_CLEAR_FLAGS` (pl-incl.h)."
+function setNextFrameFlags(next::localFrame, fr::localFrame)::Nothing
+    next.level = fr.level + UInt32(1)
+    next.flags = fr.flags & ~FR_CLEAR_FLAGS
+    return nothing
+end
+
+# PORT: pl-incl.h lcoSetNextFrameFlags2
+"As `setNextFrameFlags`, keeping the flags a last call keeps (pl-incl.h)."
+function lcoSetNextFrameFlags2(next::localFrame, fr::localFrame)::Nothing
+    next.level = fr.level + UInt32(1)
+    next.flags = fr.flags & ~(FR_LCO_CLEAR | FR_CLEAR_ALWAYS)
+    return nothing
+end
+
+# PORT: pl-incl.h lcoSetNextFrameFlags
+"Frame `fr` is reused for its last call (pl-incl.h)."
+lcoSetNextFrameFlags(fr::localFrame)::Nothing = lcoSetNextFrameFlags2(fr, fr)
+
+# PORT: pl-incl.h tcallSetNextFrameFlags
+"Frame `fr` is reused in place by `I_TCALL` (pl-incl.h)."
+function tcallSetNextFrameFlags(fr::localFrame)::Nothing
+    fr.level = fr.level + UInt32(1)
+    fr.flags = fr.flags & ~(FR_LCO_CLEAR | FR_DETGUARD_SET)
+    return nothing
+end
+
+# PORT: pl-incl.h setFramePredicate
+"Frame `fr` runs predicate `def` (pl-incl.h)."
+function setFramePredicate(fr::localFrame{T}, def::Definition{T})::Nothing where {T}
+    fr.predicate = def
+    return nothing
+end
 
 # ── clause garbage collection: dirty predicates and predicate access (pl-incl.h) ────────────────
 # PORT: pl-incl.h GLOBALLY_VISIBLE_CLAUSE

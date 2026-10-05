@@ -84,13 +84,22 @@ end
 # overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
 # `var_occurs_in`'s `visited`). The agendas and the `visited` stack are scratch upstream keeps on
 # the C stack; kept here, and emptied entry by entry, a warm unification allocates nothing.
+# `stacks.local` is the cells `slots` and the pools of frame, choice-point and foreign-frame records
+# (src/pl-incl.jl § the local stack); its `top` and `max` and LD's `environment`, `choicepoints` and
+# `foreign_environment` are named by the macros upstream's code reads them through — `lTop`, `lMax`,
+# `environment_frame`, `BFR` and `fli_context` — and the last three are pool indices (0 = NULL).
+# `stacks.limit` is the local stack's alone, in positions: there is no global or trail stack to
+# share it with.
 """
     PL_local_data{T}()
 
 The thread-local state (pl-global.h `struct PL_local_data`): the predicates ongoing enumerations
 reference, at the generation each started in — so clause GC keeps what they can still see — and
 the state of unification: the bindings, the trail that undoes them back to a [`mark`](@ref), the
-`occurs_check` flag, and the records the unifier keeps while it walks.
+`occurs_check` flag, and the records the unifier keeps while it walks; and the local stack — its
+cells, its frames, choice points and foreign frames, and the registers that point into it. A new
+one has upstream's initial local stack, emptied as `emptyStacks` leaves it: one foreign frame at
+its base.
 """
 mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
@@ -105,10 +114,24 @@ mutable struct PL_local_data{T}
     unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
     occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
+    slots::Vector{T}                                            # stacks.local: the cells
+    lTop::Int                                                   # stacks.local.top
+    lMax::Int                                                   # stacks.local.max
+    stacks_limit::Int                                           # stacks.limit
+    frames::Vector{localFrame{T}}                               # the frame records
+    nframes::Int                                                # … live: frames[1:nframes]
+    choices::Vector{choice{T}}                                  # the choice-point records
+    nchoices::Int                                               # … live: choices[1:nchoices]
+    fliframes::Vector{fliFrame}                                 # the foreign-frame records
+    nfliframes::Int                                             # … live: fliframes[1:nfliframes]
+    environment_frame::Int                                      # environment: current frame
+    BFR::Int                                                    # choicepoints: choice-point chain
+    fli_context::Int                                            # foreign_environment
+    null_code::Code{T}                                          # a NULL `Code` (no clause)
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
-    return PL_local_data{T}(
+    ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, true, T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
@@ -121,6 +144,20 @@ function PL_local_data{T}() where {T}
             0,
             _TOP_POSITION,
             false
-        )
+        ),
+        T[], 0, 0, STACK_LIMIT_DEFAULT, localFrame{T}[], 0, choice{T}[], 0, fliFrame[], 0,
+        0, 0,
+        0, Code{T}(code[], T[], 0)
     )
+    growStacks!(ld, LOCAL_INITIAL)              # allocStacks: the initial local stack
+    emptyStacks!(ld)
+    return ld
 end
+
+# setup:1600 `minlocal = 4*SIZEOF_WORD K`: the local stack a thread starts with, here in positions.
+"The positions of a new local stack (pl-setup.c `allocStacks`'s `minlocal`, in words)."
+const LOCAL_INITIAL = 4096
+
+# The `stack_limit` flag's default, 1 GiB (swipl 10.1.16: `1073741824`), here in positions.
+"The default `stacks_limit`, in positions: `stack_limit`'s default of 1 GiB, in words."
+const STACK_LIMIT_DEFAULT = (1 << 30) ÷ 8

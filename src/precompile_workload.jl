@@ -63,6 +63,16 @@ function _precompile_workload()::Nothing
     goal = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, 7), x])
     pl_clause!(gd, ld, def, goal, _ -> true)
     pl_retract!(gd, ld, def, mk_expr(T, T[mk_sym(T, :p), x, nil]), _ -> false)
+    # the local stack (V3): a frame, a choice point, a foreign frame with term references
+    fr = pushFrame!(ld, ld.lTop)
+    ld.lTop = argFrameP(ld.frames[fr].base, 2)
+    newChoice(ld, CHP_CLAUSE, fr)
+    fid = PL_open_foreign_frame(ld)
+    r = PL_new_term_refs(ld, 2)
+    PL_put_term(ld, r, r + 1)
+    PL_close_foreign_frame(ld, fid)
+    ld.BFR = 0
+    lowerLTop!(ld, ld.frames[fr].base)
     return nothing
 end
 

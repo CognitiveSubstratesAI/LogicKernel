@@ -47,7 +47,7 @@ _vv(k::Integer) = mk_var(_V, UInt64(k))
 function _va_occ!(out::Vector{String}, ci, t)::Vector{String}
     if kind(t) === VAR
         vd = get(ci.vardefs, var_key(t), nothing)
-        push!(out, vd === nothing ? "v" : string(Int(LK.VAROFFSET(vd.offset))))
+        push!(out, vd === nothing ? "v" : string(vd.offset))
     elseif kind(t) === EXPR
         foreach(i -> _va_occ!(out, ci, child(t, i)), 1:nchildren(t))
     end

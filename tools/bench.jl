@@ -96,6 +96,21 @@ const APP_BODY = mk_expr(BT, BT[_a(:app), APP_T, APP_L, APP_R])
 const APP_PROC = lookupProcedure(sym_key(_a(:app)), 3, CP_USER)
 # the whole rule (V2): head, I_ENTER, the body's last call with its LCO block, I_EXIT
 
+# the local stack (V3): `n` frames, each with a choice point, pushed and then popped by one lowering
+const ST_LD = PL_local_data{BT}()
+LogicKernel.ensureLocalSpace(ST_LD, 1 << 16)                               # grown once, up front
+function _stack_frames(ld::PL_local_data{BT}, n::Int)::Nothing
+    base = ld.lTop
+    for _ in 1:n
+        fr = LogicKernel.pushFrame!(ld, ld.lTop)
+        ld.lTop = LogicKernel.argFrameP(ld.frames[fr].base, 3)
+        LogicKernel.newChoice(ld, LogicKernel.CHP_CLAUSE, fr)
+    end
+    ld.BFR = 0
+    LogicKernel.lowerLTop!(ld, base)
+    return nothing
+end
+
 const PROLOG_FIXTURES = """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
 tree(N, Leaf, f(A, B)) :- N1 is N-1, tree(N1, Leaf, A), tree(N1, Leaf, B).
@@ -142,6 +157,8 @@ const CASES = [
         () -> compileClause(CP_GD, APP_HEAD, APP_BODY, APP_PROC, CP_USER),
         ""
     ),
+    # Julia only (no swipl goal): the local stack's primitives
+    ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs
     ("attempt f(X)=f(a)", () -> _attempt(pl_unify!, SMALL_A, SMALL_B), ""),
     ("attempt + finally", () -> _attempt_finally(pl_unify!, SMALL_A, SMALL_B), "")

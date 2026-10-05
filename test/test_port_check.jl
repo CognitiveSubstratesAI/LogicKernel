@@ -476,6 +476,42 @@ _pc_codes(vs) = sort!([
             @test r1.ported == ["compareFoo", "fooBar"]            # 2 of 3: newFn is the work list
             rt = only(filter(r -> r.path == "boot/tabling.pl", rows0))
             @test rt.upstream_names == ["\$tbl_add"] && rt.ported == ["\$tbl_add"]
+
+            # not ported: unreachable upstream — listed at the commit where nothing uses it, and
+            # reported the moment upstream does
+            open(joinpath(up, "src", "pl-fake.c"), "a") do io
+                write(io, "#define FAKE_TRY(x) (x)\n")
+            end
+            _pc_git(up, "commit", "-qam", "upstream adds FAKE_TRY")
+            sha2 = strip(read(`git -C $up rev-parse HEAD`, String))[1:12]
+            open(joinpath(root, "docs", "port_inventory.md"), "a") do io
+                write(
+                    io,
+                    "\n$UNREACHABLE_BEGIN -->\n| file | name | commit | why |\n|---|---|---|---|\n" *
+                    "| swipl-devel `src/pl-fake.c` | `FAKE_TRY` | `$sha2` | never used |\n$UNREACHABLE_END\n"
+                )
+            end
+            rows = unreachable_rows(
+                read(joinpath(root, "docs", "port_inventory.md"), String)
+            )
+            @test length(rows) == 1 && rows[1].name == "FAKE_TRY" && rows[1].commit == sha2
+            @test [u for (_, u) in unreachable_drift(root; upstream_dirs=dirs)] == [Int[]]
+            open(joinpath(up, "src", "pl-fake.c"), "a") do io
+                write(io, "int\nuseTry(void)\n{ return FAKE_TRY(1); }\n")
+            end
+            _pc_git(up, "commit", "-qam", "upstream uses FAKE_TRY")
+            d = only(unreachable_drift(root; upstream_dirs=dirs))
+            @test length(d[2]) == 1                                  # reported, at its one use
+            @test isempty(
+                only(unreachable_drift(root; upstream_dirs=dirs, at_head=false))[2]
+            )
+        end
+
+        @testset "unreachable_uses: a definition is not a use" begin
+            @test unreachable_uses("#define X(a) a\n  y = X(2);\nXY(3)\n", "X") == [2]
+            @test unreachable_uses("#define VMI(n) n\nVMI(I_CUT)\n", "VMI") == [2]  # a macro used at column 0
+            @test unreachable_uses("static int\nf(int a)\n{ return f(a-1); }\n", "f") == [3]
+            @test unreachable_uses("", "X") == Int[]
         end
     end
 
@@ -530,5 +566,19 @@ _pc_codes(vs) = sort!([
         # swipl-devel's bench/ SUBMODULE is its own repo, mounted where swipl-devel mounts it
         @test expected_path("swipl-bench", "programs/derive.pl") ==
             "bench/programs/derive.jl"
+    end
+end
+
+# LogicKernel's own list: non-empty, and every name on it unreachable at the commit it records.
+@testset "LogicKernel's not-ported-because-unreachable list" begin
+    root = joinpath(@__DIR__, "..")
+    rows = unreachable_rows(read(joinpath(root, "docs", "port_inventory.md"), String))
+    @test any(r -> r.name == "TRY_CLAUSE" && r.path == "src/pl-vmi.c", rows)
+    d = unreachable_drift(root; at_head=false)
+    if isempty(d)
+        @info "the unreachable list was not re-checked: no swipl-devel checkout here (CI)"
+        @test length(rows) >= 1
+    else
+        @test length(d) == length(rows) && all(isempty(u) for (_, u) in d)
     end
 end

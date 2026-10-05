@@ -35,7 +35,11 @@ include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause 
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
-include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC
+include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
+include("pl-alloc.jl")         # swipl-devel src/pl-alloc.c — raising a stack overflow
+include("pl-wam.jl")           # swipl-devel src/pl-wam.c — choice points, foreign frames, the record discipline
+include("pl-fli.jl")           # swipl-devel src/pl-fli.c — term references
+include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 

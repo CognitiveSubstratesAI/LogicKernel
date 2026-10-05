@@ -295,20 +295,6 @@ function Output_n!(ci::compileInfo, c::code, p::NTuple{N, code}, n::Int)::Nothin
     return nothing
 end
 
-# PORT: pl-incl.h VAROFFSET
-# DIVERGES: there is no frame layout yet, so a variable's offset is its slot.
-"The frame offset of variable slot `var` (pl-incl.h)."
-VAROFFSET(var::Int)::code = code(var)
-
-# PORT: pl-incl.h VARNUM
-# DIVERGES: the inverse of `VAROFFSET`, so the identity too until the frame layout (V3).
-"The variable slot of frame offset `i` (pl-incl.h)."
-VARNUM(i::code)::Int = Int(i)
-
-# PORT: pl-incl.h MAXARITY
-"The largest arity of a predicate (pl-incl.h)."
-const MAXARITY = 1024
-
 """
     NotPortedError{T}(culprit, what, step)
 
