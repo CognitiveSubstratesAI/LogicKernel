@@ -18,7 +18,8 @@
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
 # probed in 10.1.16); the SSU instructions; the inline built-ins (`B_UNIFY_*`, `B_EQ_*`, `B_ARG_*`),
 # the meta-call (`I_CALL1`, `I_USERCALL0`, `I_CALLN`), the module calls (`I_CONTEXT`, `I_CALLM`,
-# `I_DEPARTM`) and the control constructs (`C_*`, `I_CUT`, `I_TRUE`, `I_FAIL`): V6 and V9.
+# `I_DEPARTM`) and the control constructs (`C_*`, `I_TRUE`, `I_FAIL`): V9. `I_CUT` is declared and
+# compiled (a clause-level `!`, user 2026-10-05); its execution is V6.
 #
 # OPERANDS: every literal operand (`*_ATOM`, `*_SMALLINT`, `*_FLOAT`, `*_MPZ`, `*_MPQ`, `*_STRING`)
 # is ONE word, the index of the literal in the clause's literal table (V1 L2), where upstream
@@ -249,6 +250,9 @@ const I_LCALL = code(50)
 # PORT: pl-vmi.c I_TCALL
 "Last call of the clause's own predicate, reusing the frame (pl-vmi.c)."
 const I_TCALL = code(51)
+# PORT: pl-vmi.c I_CUT
+"Cut: discard the choice points created since the clause was entered (pl-vmi.c; its execution is V6)."
+const I_CUT = code(52)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS (a literal is one, see above); `argtype`
@@ -315,7 +319,8 @@ const _CODE_TABLE = (
     code_info(:L_NIL, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
     code_info(:L_SMALLINT, 0x00, 2, (CA1_FVAR, CA1_INTEGER, 0x00, 0x00)),
     code_info(:I_LCALL, 0x00, 1, (CA1_LPROC, 0x00, 0x00, 0x00)),
-    code_info(:I_TCALL, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:I_TCALL, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_CUT, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

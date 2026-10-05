@@ -117,6 +117,14 @@ mutable struct branch_var
     saved_times::Int    # Times saved from left branch
 end
 
+# PORT: pl-comp.c cutInfo
+"How `!` compiles in the current context (pl-comp.c `cutInfo`): `var` 0 is a clause-level cut, `I_CUT`."
+struct cutInfo
+    var::Int                # Variable for local cuts
+    nextvar::Int
+    instruction::code       # Instruction to use: C_CUT/C_LCUT
+end
+
 # PORT: pl-comp.c compileInfo
 # DIVERGES: the fields the head compiler, the variable analysis and the call operands use;
 # `vardefs` is upstream's LD->comp.vardefs keyed by `var_key`, `mstate_candidates`/
@@ -125,7 +133,8 @@ end
 # clause's literal table as it is built (V1 L2), and `procedures` its procedure table (V1). No
 # `clause` (the clause is created after the code), and the fields of subsystems not yet ported:
 # `islocal`, `subclausearg`, `head_unify`, `argvars`, `argvar` (V9), `singletons` and the warnings,
-# `progress` (interrupts), `cut` (V6), `colon_context` and `at_context` (modules). `module_` is
+# `progress` (interrupts), `colon_context` and `at_context` (modules). `cut` is a clause-level cut
+# (`var` 0) until the control constructs set a local one (V9). `module_` is
 # upstream's `module`, a Julia keyword.
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
 mutable struct compileInfo{T}
@@ -140,6 +149,7 @@ mutable struct compileInfo{T}
     literals::Vector{T}                                     # the literal table being built
     procedures::Vector{Procedure{T}}                        # the procedure table being built
     branch_vars::Union{Nothing, Vector{branch_var}}         # We are in a branch
+    cut::cutInfo                                            # how to compile !
 end
 
 """
@@ -149,7 +159,7 @@ arguments (pl-comp.c `compileClause`).
 compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
     compileInfo{T}(
         m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
-        Procedure{T}[], nothing
+        Procedure{T}[], nothing, cutInfo(0, 0, code(0))          # ci->cut.var = 0 (c:2068)
     )
 
 # PORT: pl-comp.c pushBranchVar
@@ -1046,8 +1056,10 @@ function lco!(ci::compileInfo, pc0::Int)::Nothing
 end
 
 # PORT: pl-comp.c compileSubClause
-# DIVERGES: plain goals only. The meta-call (a variable goal, `call/N`), the goals compiled inline —
-# the reserved atoms (`!`, `true`, `fail`, …) and O_COMPILE_IS's functors (`=`, `==`, the type tests,
+# DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
+# 2026-10-05: the cut's COMPILE side with the body compiler, its execution V6). The meta-call (a
+# variable goal, `call/N`), the other goals compiled inline — the reserved atoms (`true`, `fail`, …)
+# and O_COMPILE_IS's functors (`=`, `==`, the type tests,
 # `arg/3`, …) — and `is/2` (compileSimpleAddition) throw `NotPortedError` BEFORE any code is
 # emitted (V6, V8, V9): upstream compiles each of them otherwise, so a call would be wrong code; and
 # refusing the whole functor, where upstream's inline compilers sometimes fall back to a call, never
@@ -1086,10 +1098,18 @@ function compileSubClause!(
         name == names.atom_call &&
             throw(NotPortedError{T}(arg, "call/N (the meta-call)", "V9"))
     elseif k === SYM && !is_reserved_symbol(arg)               # isTextAtom(*arg)
+        if sym_key(arg) == names.atom_cut                      # ATOM_cut
+            if ci.cut.var != 0                                 # local cut for \+
+                Output_1!(ci, ci.cut.instruction, code(ci.cut.var))
+            else
+                Output_0!(ci, I_CUT)
+            end
+            return BOOLEX_TRUE
+        end
         sym_key(arg) in names.reserved_atoms &&
             throw(
                 NotPortedError{T}(
-                    arg, "a goal atom compiled inline (!, true, fail, …)", "V6/V9"
+                    arg, "a goal atom compiled inline (true, fail, …)", "V9"
                 )
             )
     else
@@ -1177,7 +1197,7 @@ end
 # body's goals are plain goals and conjunctions (see `compileBody!`); no SSU, warnings, flags or
 # resource limits, and a clause of a multifile predicate is refused (it would need `I_CONTEXT`:
 # modules are not ported); the clause is returned where upstream stores it through `cp`, created at
-# generation 0 (`assertDefinition!` sets the rest). `COMMIT_CLAUSE` waits for `!` (V6). The
+# generation 0 (`assertDefinition!` sets the rest); a body starting with `!` sets `COMMIT_CLAUSE`. The
 # database's global data `gd` is an argument, where upstream reaches GD — its functor table, the
 # `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl).
 # `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
@@ -1207,6 +1227,7 @@ function compileClause(
     nv = _compile_clause_head!(gd, ci, head, body)
     flags = UInt32(0)
     if rule
+        bi = PC(ci)
         rc = compileBody!(gd, ci, body::T, I_DEPART)
         if rc == NOT_CALLABLE
             throw(CallableTypeError{T}(body::T))
@@ -1214,6 +1235,9 @@ function compileClause(
             error("compileClause: representation_error(max_procedure_arity)")
         end
         Output_0!(ci, I_EXIT)
+        if ci.codes[bi + 1] == I_CUT                           # OpCode(ci, bi) == encode(I_CUT)
+            flags |= COMMIT_CLAUSE
+        end
     else
         flags = UNIT_CLAUSE
         Output_0!(ci, I_EXITFACT)                              # fact (for decompiler)

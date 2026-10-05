@@ -69,7 +69,16 @@ jobs:
       # activated, last upload 19:15:07Z, log "Upload queued for processing complete"). A failed
       # upload now turns CI red instead of hiding behind a green check.
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
+      # 🔴 THE UPLOADS DO NOT GATE THE JOB (user, 2026-10-05). Coverage is not a correctness gate, and
+      # a job that goes red on every push because of an outside outage trains everyone to ignore
+      # red — measured: from 2026-10-05 00:07 UTC Codecov's uploader could not download its own
+      # `codecov.SHA256SUM.sig`, and every run went red with all tests passing. Each upload keeps
+      # `fail_ci_if_error: true` (so a failure is a FAILED STEP, not a silent success) under
+      # `continue-on-error`, and the step after them prints a warning annotation when one failed.
+      # The test step above is unchanged and still gates.
+      - id: upload_coverage
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -78,14 +87,20 @@ jobs:
       # Test results → Codecov Test Analytics. `!cancelled()`, not the default success(): a run whose
       # tests FAILED is exactly the one whose results matter. Same authentication as coverage.
       - name: Upload test results to Codecov
+        id: upload_results
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
+        continue-on-error: true
         with:
           report_type: test_results
           files: junit.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
           fail_ci_if_error: true
+      - name: Warn if a Codecov upload failed (it does not gate the job)
+        if: ${{ !cancelled() && (steps.upload_coverage.outcome == 'failure' || steps.upload_results.outcome == 'failure') }}
+        run: |
+          echo "::warning title=Codecov upload failed::coverage ${{ steps.upload_coverage.outcome }}, test results ${{ steps.upload_results.outcome }} — the tests gate this job; see the upload step's log for Codecov's error"
 
   # ── THE PROACTIVE GATES, WITH NOTHING ALLOWED TO SKIP ────────────────────────────────────────────
   # `test` above runs Pkg.test, whose isolated environment has no JET/Aqua/AllocCheck and no swipl,

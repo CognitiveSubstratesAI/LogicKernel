@@ -1,6 +1,6 @@
 # ORIGINAL: live differential of the body compiler (V2) against swipl; upstream has no counterpart (it tests SWI against itself).
 # test/compile/test_body_code_swipl.jl — pl-comp.c's body compiler (V2: `compileClause`'s rule
-# path, `compileBody` for `,`, `compileSubClause` for plain goals, the body side of
+# path, `compileBody` for `,`, `compileSubClause` for plain goals and `!`, the body side of
 # `compileArgument`, `lco` and `reverse_code`), compared with swipl 10.1.16 WHOLE CLAUSE BY WHOLE
 # CLAUSE: every instruction, every operand by its KIND (`'$vmi_property'(Name, argv(Types))` on
 # swipl's side, `codeTable(op).argtype` on the kernel's), and the label an `L_NOLCO` jumps to.
@@ -13,10 +13,11 @@
 #   * the corpus: pinned clauses — six with swipl's code written here (probed in 10.1.16), so the CI
 #     jobs without swipl pin them too, the rest compared live; nreverse and qsort as swipl CONSULTS
 #     them from bench/programs, each clause tied to the kernel's by `=@=`; random rule clauses of
-#     plain goals; coverage checks that the sample exercises every case;
+#     plain goals and `!`; coverage checks that the sample exercises every case;
 #   * what V2 refuses (`NotPortedError`), what swipl refuses (`type_error(callable, Body)`, the WHOLE
 #     body, probed), and the kernel-only cases (`$expr/n`, a value SWI has no type for);
-#   * clause/2 and retract/1 answer for the body `true` — facts only; retractall/1 takes rules too.
+#   * clause/2 and retract/1 answer for the body `true` — facts only; retractall/1 takes rules too;
+#   * `COMMIT_CLAUSE`: set exactly when the body starts with `!` (c:2165).
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "code_testlib.jl"))
@@ -266,7 +267,11 @@ const _BC_PINNED_LIVE = [
     (_bf("pa", _bv(1), _bs("k")), _bf("q", _bs("k"), _bv(1))),              # head atom, l_atom
     (_bs("pnil"), _bf("q", _bs("[]"), mk_nil(_B))),                         # '[]' vs []
     (_bs("prf"), _bf("q", _bf("f", _bs("a"), _bf("g", _bs("b"))))),         # b_rfunctor
-    (_bs("prl"), _bf("q", _blist(_bs("a"), _bs("b"))))                      # b_rlist
+    (_bs("prl"), _bf("q", _blist(_bs("a"), _bs("b")))),                     # b_rlist
+    (_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1)))),                       # !, first: COMMIT_CLAUSE
+    (_bs("pc2"), _bconj(_bf("q", _bv(1)), _bs("!"))),                       # ! last: no I_DEPART
+    (_bs("pc3"), _bconj(_bs("q"), _bs("!"), _bs("r"))),                     # ! mid-body
+    (_bs("pc4"), _bs("!"))                                                  # p :- !
 ]
 
 # ── nreverse and qsort, as bench/programs has them ───────────────────────────────────────────────
@@ -295,7 +300,7 @@ const _BC_QSORT_NUMS = [27, 74, 17, 33, 94, 18, 46, 83, 65, 2, 32, 53, 28, 85, 9
     11, 55, 29, 39, 81, 90, 37, 10, 0, 66, 51, 7, 21, 85, 27, 31, 63, 75, 4, 95, 99, 11, 28,
     61,
     74, 18, 92, 40, 53, 59, 8]
-"qsort.pl's clauses as terms, in file order — partition/4 clause 1 is `!`'s (V6), apart."
+"qsort.pl's clauses as terms, in file order — all six, partition/4 clause 1's `!` included."
 function _bc_qsort()
     X, L, R, R0, L1, L2, R1, Y = (_bv(k) for k in 1:8)
     return [
@@ -305,12 +310,13 @@ function _bc_qsort()
             _bconj(_bf("partition", L, X, L1, L2), _bf("qsort", L2, R1, R0),
                 _bf("qsort", L1, R, _bcons(X, R1))), 1),
         (_bf("qsort", mk_nil(_B), R, R), nothing, 2),
+        (_bc_qsort_cut()..., 1),
         (_bf("partition", _bcons(X, L), Y, L1, _bcons(X, L2)),
             _bf("partition", L, Y, L1, L2), 2),
         (_bf("partition", mk_nil(_B), _bv(10), mk_nil(_B), mk_nil(_B)), nothing, 3)
     ]
 end
-"qsort's partition/4 clause 1, `X =< Y, !, partition(L, Y, L1, L2)`: `!` is V6's."
+"qsort's partition/4 clause 1, `X =< Y, !, partition(L, Y, L1, L2)` — its `!` compiles to I_CUT."
 function _bc_qsort_cut()
     X, L, Y, L1, L2 = (_bv(k) for k in 1:5)
     return (_bf("partition", _bcons(X, L), Y, _bcons(X, L1), L2),
@@ -379,6 +385,8 @@ function _bcclause(g::_BcGen, k::Int)::Tuple{_B, _B}
             push!(goals, har == 0 ? head : _be(hname, [_bcarg(g, pool, 1) for _ in 1:har]))
         elseif j == ngoals && r < 0.4 && length(hvars) >= 2
             push!(goals, _be("bg9", shuffle(g.rng, hvars)))
+        elseif r < 0.5                                     # a cut (I_CUT), anywhere in the body
+            push!(goals, _bs("!"))
         else
             ar = rand(g.rng, 0:4)
             name = "bg$(rand(g.rng, 0:5))"
@@ -433,7 +441,7 @@ _bc_names(code::Vector{String}) =
             "b_firstvar",
             "b_void", "b_functor", "b_rfunctor", "b_list", "b_rlist", "b_pop", "i_enter",
             "i_call", "i_depart", "i_exit", "l_nolco", "l_var", "l_void", "l_atom", "l_nil",
-            "l_smallint", "i_lcall", "i_tcall"
+            "l_smallint", "i_lcall", "i_tcall", "i_cut"
         ]
         missing_ = setdiff(want, used)
         isempty(missing_) || println(stderr, "  not exercised: ", missing_)
@@ -490,8 +498,6 @@ _bc_names(code::Vector{String}) =
                     @test got == want
                 end
             end
-            # qsort's partition/4 clause 1 has `!`: compiling it is V6's
-            @test_throws LK.NotPortedError _bclause(_bc_qsort_cut()...)
         end
     elseif _BC_SWIPL_REQUIRED
         error(
@@ -505,6 +511,16 @@ _bc_names(code::Vector{String}) =
     end
 end
 
+@testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
+    commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
+    @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
+    @test commit(_bs("pc4"), _bs("!"))
+    @test !commit(_bs("pc2"), _bconj(_bf("q", _bv(1)), _bs("!")))
+    @test !commit(_bs("pc3"), _bconj(_bs("q"), _bs("!"), _bs("r")))
+    @test !commit(_bc_qsort_cut()...)                       # X =< Y comes first
+    @test !commit(_bs("pc5"), _bf("q", _bs("!")))           # `!` as DATA is no cut
+end
+
 @testset "what V2 refuses, and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
@@ -513,7 +529,7 @@ end
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
         _bf("=", _bv(1), _bs("a")), _bf("==", _bv(1), _bs("a")), _bf("integer", _bv(1)),
         _bf("arg", _bg(1), _bv(1), _bv(2)), _bf("is", _bv(1), _bf("+", _bv(2), _bg(1))),
-        _bconj(_bs("q"), _bs("true")), _bs("fail"), _bs("!"),
+        _bconj(_bs("q"), _bs("true")), _bs("fail"),
         _bf("call", _bv(1)), _bf("call", _bv(1), _bs("a"))
     )
         @test_throws LK.NotPortedError _bclause(p, body)

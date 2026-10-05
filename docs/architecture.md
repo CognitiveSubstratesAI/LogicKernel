@@ -1000,6 +1000,31 @@ src/pl-funct.jl, src/pl-global.jl).
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
 
+**V2 — `!` compiled: BUILT (2026-10-05)** (the user's answer to V2's choice Q1: the COMPILE side
+belongs with the body compiler, execution stays in V6; src/pl-comp.jl, src/pl-vmi.jl, src/pl-incl.jl,
+src/pl-funct.jl).
+* **Ported as is:**
+  * compileSubClause's `ATOM_cut` branch (c:3521-3526): `I_CUT`, or `cut.instruction` on `cut.var`
+    when a local cut is set;
+  * `cutInfo` (c:372-375) and `compileInfo`'s `cut`, zeroed per clause (c:2068-2069). Only V9's
+    control constructs set a local cut (`\+`, `->`, `*->`; c:2522, 2570, 2606), so today it is
+    always zero;
+  * `COMMIT_CLAUSE` (pl-incl.h) on the clause when its body's first instruction is `I_CUT`
+    (c:2165-2167, `OpCode(ci, bi)`);
+  * `I_CUT` declared (pl-vmi.c:2572, `VIF_BREAK`, no operands), numbered after the instructions
+    already declared. Its execution, `discardChoicesAfter`, is V6.
+* **Gate — test/compile/test_body_code_swipl.jl:**
+  * all six qsort clauses identical to swipl, partition/4 clause 1 (`X =< Y, !, …`) included;
+  * four more pinned live clauses: a cut first, last, mid-body, and `p :- !` — 427 clauses in all;
+  * the random generator draws `!` goals, and the coverage check requires `i_cut`;
+  * `COMMIT_CLAUSE` set exactly when the body starts with `!`: pinned both ways, qsort's clause
+    included (its `X =< Y` comes first);
+  * MC1–MC3 caught at verdict level: `!` compiled as a call to `!/0`, `COMMIT_CLAUSE` never set,
+    `COMMIT_CLAUSE` set for a cut anywhere in the body.
+* **Recorded for V6, the user's obligation:** V2 refuses an inline-compiled goal whole (Q5). V6 ports
+  upstream's inline-vs-call decision AS IS, case by case, with the differential covering each branch
+  (port_inventory row V6).
+
 **V2 — the body compiler: BUILT (2026-10-05)** (port_inventory row V2; src/pl-comp.jl, src/pl-vmi.jl,
 src/pl-funct.jl). Plan: a research memo on upstream's code paths (subagent), with its open questions
 Q0–Q14. The user was asleep and had said to continue without asking, taking SWI as is and listing
@@ -1021,16 +1046,17 @@ every choice for review — the choices are in the list below.
   * MB1–MB18 caught at verdict level (the plan's 16, plus clause/2 and retract/1 answering rules).
 * **Choices made, for the user's review (V2 plan Q0–Q14):**
   * Q0: M1 first, as planned (done, `2c04b1e`).
-  * **Q1, `!`: NOT compiled in V2** — the inventory puts `I_CUT` in V6, and moving it is a plan
-    change. So qsort's partition/4 clause 1 (`X =< Y, !, …`) is refused (`NotPortedError`), pinned as
-    such, and left out of the qsort comparison; the other five qsort clauses match swipl. The
-    alternative (compile `!` → `I_CUT` now, execution in V6: two branches) is small; your call.
+  * **Q1, `!`: NOT compiled in V2** — the inventory put `I_CUT` in V6, and moving it was a plan
+    change. **Answered (user, 2026-10-05): compile it now, execute it in V6** — done, § "V2 — `!`
+    compiled" above.
   * Q3: compileSubClause's names in the global data, once per database (`subclause_names`), like the
     control functors.
   * Q4: a construct not yet ported throws `NotPortedError(culprit, what, step)` before any code.
   * Q5: an inline-compiled functor (`=`, `==`, `\==`, `var`, `nonvar`, the nine type tests, `arg/3`,
     `$call_continuation/1`, `$shift/1`, `$shift_for_copy/1`) and `is/2` are refused whole —
     upstream's inline compilers sometimes fall back to a call, but refusing never emits wrong code.
+    **Answered (user, 2026-10-05): fine as an interim**, with an obligation on V6 to port upstream's
+    decision as is (port_inventory row V6).
   * Q6: `type_error(callable, Body)` — the WHOLE body, probed in swipl (`p :- q, 1` reports
     `(q,1)`). `lookupBodyProcedure` keeps its own refusal; compileSubClause returns NOT_CALLABLE
     before reaching it, as upstream.
@@ -1069,7 +1095,11 @@ every choice for review — the choices are in the list below.
   * each row's upstream column must name exactly its files' UPSTREAM headers.
   Its first run found five rows whose upstream column had drifted from the headers (pl-index,
   pl-comp, pl-vmi, pl-global, pl-hash) and the missing `src/LogicKernel.jl` row; all are fixed.
-* **First numbers:** 276 of 1541 upstream functions ported, 91 diverging.
+* **First numbers:** 276 of 1541 upstream functions ported, 91 diverging. **Read the total as a
+  per-file measure** (user, 2026-10-05): 1541 counts the functions of the upstream files the kernel
+  already touches (the coverage block's rows), not of the engine. pl-wam.c, pl-arith.c, pl-fli.c and
+  the tabling files have no row yet, and a file like pl-thread.c counts all 267 of its functions for
+  the 4 ported. The ratio says how far each touched file is ported, not how far the port is.
 * **Gate:** test/test_port_check.jl's M1 fixture covers each block stale, empty, missing, an empty
   generator against an empty block, and every "What is here now" failure. MM1-MM7 are caught: a
   stale block never reported, no empty-generator guard, an unlisted file passing, extra upstream
@@ -1122,7 +1152,7 @@ src/pl-global.jl, src/pl-proc.jl, src/pl-comp.jl).
   `B_FUNCTOR` is the body side of `compileArgument`, which is V2: alone it would leave the children
   compiled as `H_*`.
 * **The remaining `compileInfo`/`clause` fields** belong to subsystems not yet ported. `compileInfo`
-  lacks `islocal`, `subclausearg`, `head_unify`, `argvars`, `argvar` (V9), `cut` (V6), the warnings,
+  lacks `islocal`, `subclausearg`, `head_unify`, `argvars`, `argvar` (V9), the warnings,
   `progress` and the module contexts. `clause` lacks the source-file fields, `references` and
   `tr_erased_no`; `code_size` is `length(codes)`.
 
