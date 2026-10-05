@@ -439,6 +439,41 @@ function setLTop!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
     return nothing
 end
 
+# A frame `normal_call` built above `lTop` whose own call FAILED before a supervisor raised `lTop`
+# over it: `S_LIST` takes `FRAME_FAILED` first (vmi:3607-3608), as `S_UNDEF`'s `unknown=fail` will
+# (V5). Upstream abandons it — `deep_backtrack` only resets `lTop` (vmi:6712). Here it is dropped
+# where `deep_backtrack` leaves it: the ONE drop of a frame being filled that is allowed, on the
+# failure path of its own call (user, 2026-10-05); `dropRecords!` still refuses every other. No
+# position moves.
+function _drop_unfilled_frame!(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
+    @assert fr == ld.nframes "_drop_unfilled_frame!: a frame being filled is the newest frame"
+    @assert ld.frames[fr].base >= ld.lTop "_drop_unfilled_frame!: the frame was filled"
+    ld.nframes = fr - 1
+    return nothing
+end
+
+# Whether no record of any kind lies above position `p`.
+function _no_record_above(ld::PL_local_data{T}, p::Int)::Bool where {T}
+    return (ld.nframes == 0 || ld.frames[ld.nframes].base <= p) &&
+           (ld.nchoices == 0 || ld.choices[ld.nchoices].base <= p) &&
+           (ld.nfliframes == 0 || ld.fliframes[ld.nfliframes].base <= p) &&
+           (ld.nqueries == 0 || ld.queries[ld.nqueries].base <= p)
+end
+
+# Whether frame `fr` is the newest live record — what last-call reuse relies on (user, 2026-10-05):
+# a frame is reused in place only when everything above it is dead, and dead records are dropped on
+# every lowering of `lTop`.
+function _is_newest_live_frame(ld::PL_local_data{T}, fr::Int)::Bool where {T}
+    return fr == ld.nframes && _no_record_above(ld, ld.frames[fr].base)
+end
+
+# The procedure a call operand names: an index into the RUNNING clause's procedure table (V1), read
+# through `CL` — upstream's `#define CL (FR->clause)` (wam:3334) — where upstream's operand is the
+# procedure pointer itself (user, 2026-10-05).
+function _call_procedure(ld::PL_local_data{T}, fr::Int, op::code)::Procedure{T} where {T}
+    return ((ld.frames[fr].clause::ClauseRef{T}).clause::Clause{T}).procedures[Int(op)]
+end
+
 # ── the argument pointer, the argument stack and the write-mode builder (decision 2, Q3) ─────────
 # What `ARGP` points at, as is (upstream's `*ARGP`).
 function _argp_raw(ld::PL_local_data{T}, a::argp_t{T})::T where {T}
@@ -478,12 +513,13 @@ function _reset_argument_stack!(ld::PL_local_data{T}, q::queryFrame{T})::Nothing
 end
 
 # Open a compound of `n` cells in the builder — the head symbol `head` in its first cell if `hashead`
-# — going into the parent's builder cell `cell`, or (`cell` 0) bound to the caller's unbound
-# variable `var` when it is closed. Every argument cell starts as a fresh variable, as upstream
+# — going into the parent's builder cell `cell`, into the frame slot at position `slot` (a body
+# argument, V4b), or (`cell` 0, `slot` -1) bound to the caller's unbound variable `var` when it is
+# closed. Every argument cell starts as a fresh variable, as upstream
 # `setVar`s every cell it allocates ("must clear if we want to do GC"): `H_VOID` and `H_VOID_N` skip
 # cells in write mode. Returns the `ARGP` of its first argument cell.
 function _bopen!(
-    ld::PL_local_data{T}, n::Int, head::T, hashead::Bool, cell::Int, var::T
+    ld::PL_local_data{T}, n::Int, head::T, hashead::Bool, cell::Int, slot::Int, var::T
 )::argp_t{T} where {T}
     start = ld.bTop + 1
     need = ld.bTop + n
@@ -503,7 +539,7 @@ function _bopen!(
     if nb > length(ld.bframes)
         resize!(ld.bframes, 2 * length(ld.bframes))
     end
-    ld.bframes[nb] = bframe{T}(start, n, cell, var)
+    ld.bframes[nb] = bframe{T}(start, n, cell, slot, var)
     ld.nbframes = nb
     return argp_t{T}(ARGP_BUILD, hashead ? start + 1 : start, ld.placeholder)
 end
@@ -517,7 +553,9 @@ function _bclose!(ld::PL_local_data{T})::Nothing where {T}
     t = mk_expr(T, ld.bcells[(fr.start):stop])
     ld.bTop = fr.start - 1
     ld.nbframes -= 1
-    if fr.cell != 0
+    if fr.slot >= 0
+        ld.slots[fr.slot + 1] = t               # a body argument: above lTop, untrailed
+    elseif fr.cell != 0
         ld.bcells[fr.cell] = t                  # into the parent's cell, untrailed
     else
         Trail!(ld, var_key(fr.var), t)          # bindConst(p, c): the caller's variable
@@ -631,8 +669,30 @@ function _vmi_dispatch_tree(x::Symbol, pairs::Vector{Tuple{UInt64, Symbol}})::Ex
     )
 end
 
-"Jump to the label named after instruction `x`, one of `names` (a balanced tree of compares)."
-macro vmi_dispatch(x, names...)
+"""
+The instructions the run loop EXECUTES — the leaves of its dispatch tree, each a label of
+`PL_next_solution_guarded`. Every other declared instruction (pl-vmi.jl) is refused by name with
+`NotPortedError`; test/foreign/test_query.jl picks one of those to test the refusal (user,
+2026-10-05), so this one list is what the dispatch and the test both read.
+"""
+const VMI_RUN = (
+    :H_ATOM, :H_SMALLINT, :H_NIL, :H_FLOAT, :H_MPZ, :H_MPQ, :H_STRING, :H_VOID, :H_VOID_N,
+    :H_VAR,
+    :H_FIRSTVAR, :H_FUNCTOR, :H_RFUNCTOR, :H_LIST, :H_RLIST, :H_POP, :H_LIST_FF, :B_ATOM,
+    :B_SMALLINT, :B_NIL, :B_FLOAT, :B_MPZ, :B_MPQ, :B_STRING, :B_ARGVAR, :B_VAR0, :B_VAR1,
+    :B_VAR2,
+    :B_VAR, :B_ARGFIRSTVAR, :B_FIRSTVAR, :B_VOID, :B_FUNCTOR, :B_RFUNCTOR, :B_LIST,
+    :B_RLIST,
+    :B_POP, :I_ENTER, :I_CALL, :I_DEPART, :I_EXIT, :I_EXITFACT, :I_EXITQUERY, :L_NOLCO,
+    :L_VAR,
+    :L_VOID, :L_ATOM, :L_NIL, :L_SMALLINT, :I_LCALL, :I_TCALL, :S_VIRGIN, :S_UNDEF,
+    :S_STATIC,
+    :S_DYNAMIC, :S_MULTIFILE, :S_TRUSTME, :S_LIST
+)
+
+"Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
+macro vmi_dispatch(x, table::Symbol)
+    names = getfield(__module__, table)::Tuple
     pairs = sort!([(UInt64(getfield(__module__, n)), n) for n in names]; by=first)
     return esc(_vmi_dispatch_tree(x, pairs))
 end
@@ -976,6 +1036,7 @@ function PL_next_solution_guarded(
     QID::Int = qid
     QF::Int = 0
     FR::Int = 0
+    NFR::Int = 0                                    # the frame a call builds (wam:3336)
     ARGP::argp_t{T} = argp_t{T}(ARGP_SLOT, 0, ph)
     DEF::Definition{T} = gd.procedures_dc_call_prolog0.definition
     PCc::Vector{code} = gd.code_data.exit           # Code PC = NULL
@@ -985,6 +1046,7 @@ function PL_next_solution_guarded(
     # the helpers' arguments (upstream's `helper_args`)
     hc_c::T = ph                                    # h_const's constant
     tc_cref::ClauseRef{T} = gd.clauses_top_cref     # TRUST_CLAUSE's clause
+    bv_voffset::Int = 0                             # bvar_cont's voffset
 
     if qid == 0                                     # PL_open_query() failed
         return 0
@@ -1038,15 +1100,7 @@ function PL_next_solution_guarded(
     @label next_instruction
     thiscode = PCc[PC]
     PC += 1
-    @vmi_dispatch(
-        thiscode, H_ATOM, H_SMALLINT, H_NIL, H_FLOAT, H_MPZ, H_MPQ, H_STRING, H_VOID,
-        H_VOID_N,
-        H_VAR, H_FIRSTVAR, H_FUNCTOR, H_RFUNCTOR, H_LIST, H_RLIST, H_POP, H_LIST_FF, B_ATOM,
-        B_SMALLINT, B_NIL, B_FLOAT, B_MPZ, B_MPQ, B_STRING, B_RFUNCTOR, B_RLIST, I_EXIT,
-        I_EXITFACT, I_EXITQUERY, S_VIRGIN, S_UNDEF, S_STATIC, S_DYNAMIC, S_MULTIFILE,
-        S_TRUSTME,
-        S_LIST
-    )
+    @vmi_dispatch(thiscode, VMI_RUN)
     throw(
         NotPortedError{T}(
             DEF.name, "the VM instruction $(codeTable(thiscode).name)", "V4b and later"
@@ -1227,7 +1281,7 @@ function PL_next_solution_guarded(
         hf_n = hf_lit == 0 ? hf_ar : hf_ar + 1
         hf_head = hf_lit == 0 ? ph : PCl[hf_lit]
         if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
-            ARGP = _bopen!(ld, hf_n, hf_head, hf_lit != 0, 0, hf_p)
+            ARGP = _bopen!(ld, hf_n, hf_head, hf_lit != 0, 0, -1, hf_p)
             UMODE = uwrite
         else
             hf_t = _fresh_compound(T, hf_head, hf_lit != 0, hf_n)
@@ -1284,7 +1338,7 @@ function PL_next_solution_guarded(
         @goto unify_backtrack
     elseif kind(hl_p) === VAR
         if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
-            ARGP = _bopen!(ld, 3, gd.atom_dot, true, 0, hl_p)
+            ARGP = _bopen!(ld, 3, gd.atom_dot, true, 0, -1, hl_p)
             UMODE = uwrite
         else
             hl_t = _fresh_compound(T, gd.atom_dot, true, 3)
@@ -1344,7 +1398,7 @@ function PL_next_solution_guarded(
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
-    # ── body instructions reached from the head's write mode (pl-vmi.c) ─────────────────────────
+    # ── body instructions: a body's arguments, and the head's write mode (pl-vmi.c) ─────────────
     # PORT: pl-vmi.c B_ATOM
     @label B_ATOM
     _argp_store!(ld, ARGP, PCl[PCc[PC]])            # *ARGP++ = code2atom(*PC++)
@@ -1387,42 +1441,210 @@ function PL_next_solution_guarded(
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
+    # PORT: pl-vmi.c B_ARGVAR
+    # DIVERGES: the variable's value, dereferenced, into the builder cell. A keyed variable is its own
+    # reference and no cell is bound to point at another (decision 2), so the test that chooses the
+    # direction of the link (`ARGP < k`) and the trail-space check disappear.
+    @label B_ARGVAR
+    _argp_store!(
+        ld, ARGP, deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    )
+    PC += 1
+    ARGP = _argp_add(ARGP, 1)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_VAR0
+    @label B_VAR0
+    bv_voffset = Int(VAROFFSET(0))
+    @goto bvar_cont
+
+    # PORT: pl-vmi.c B_VAR1
+    @label B_VAR1
+    bv_voffset = Int(VAROFFSET(1))
+    @goto bvar_cont
+
+    # PORT: pl-vmi.c B_VAR2
+    @label B_VAR2
+    bv_voffset = Int(VAROFFSET(2))
+    @goto bvar_cont
+
+    # PORT: pl-vmi.c B_VAR
+    @label B_VAR
+    bv_voffset = Int(PCc[PC])
+    PC += 1
+    @goto bvar_cont
+
+    # PORT: pl-vmi.c bvar_cont
+    # DIVERGES: a helper label, its argument `bv_voffset`. No `globaliseVar`: a keyed variable lives in
+    # no cell (decision 2), so the slot's term is stored as is (`linkValI`).
+    @label bvar_cont
+    _argp_store!(
+        ld, ARGP, linkValI(ld, ld.slots[varFrameP(ld.frames[FR].base, bv_voffset) + 1])
+    )
+    ARGP = _argp_add(ARGP, 1)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_ARGFIRSTVAR
+    # DIVERGES: a fresh variable into the builder cell and the slot (`setVar` + `makeRefG`).
+    @label B_ARGFIRSTVAR
+    baf_v = mk_var(T, fresh_var_keys!(1))
+    _argp_store!(ld, ARGP, baf_v)                   # setVar(*ARGP)
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = baf_v   # varFrame(FR, *PC++)
+    PC += 1
+    ARGP = _argp_add(ARGP, 1)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_FIRSTVAR
+    # DIVERGES: a fresh variable into the slot and the argument; no global stack, so no
+    # `ENSURE_GLOBAL_SPACE`.
+    @label B_FIRSTVAR
+    bfv_v = mk_var(T, fresh_var_keys!(1))
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = bfv_v   # *k = w
+    PC += 1
+    _argp_store!(ld, ARGP, bfv_v)                   # *ARGP++ = w
+    ARGP = _argp_add(ARGP, 1)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_VOID
+    @label B_VOID
+    _argp_store!(ld, ARGP, mk_var(T, fresh_var_keys!(1)))  # setVar(*ARGP++)
+    ARGP = _argp_add(ARGP, 1)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_FUNCTOR
+    # DIVERGES: the entry records the builders open (decision 2, Q3); no mode bit, as upstream.
+    @label B_FUNCTOR
+    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), false, ld.nbframes))
+    @goto B_RFUNCTOR
+
     # PORT: pl-vmi.c B_RFUNCTOR
-    # DIVERGES: a nested builder, going into the current builder cell (decision 2, Q3). Into a frame
-    # slot — a body's argument — arrives with the bodies (V4b).
+    # DIVERGES: the compound is built in a builder (decision 2, Q3), and goes into the current builder
+    # cell — inside a compound — or into the frame slot `ARGP` points at — a body argument (V4b) —
+    # when it is closed: upstream puts the pointer there at once and fills the cells in place.
     @label B_RFUNCTOR
     bf_f = PCc[PC]
     PC += 1
     bf_lit = functor_literal(bf_f)
     bf_ar = functor_arity(bf_f)
-    ARGP.form == ARGP_BUILD ||
-        throw(NotPortedError{T}(DEF.name, "B_RFUNCTOR into a frame slot", "V4b"))
+    @assert ARGP.form != ARGP_CURSOR "B_RFUNCTOR: a body argument is written, never read"
     ARGP = _bopen!(
         ld, bf_lit == 0 ? bf_ar : bf_ar + 1, bf_lit == 0 ? ph : PCl[bf_lit], bf_lit != 0,
-        ARGP.pos,
-        ph
+        ARGP.form == ARGP_BUILD ? ARGP.pos : 0, ARGP.form == ARGP_SLOT ? ARGP.pos : -1, ph
     )
     @goto next_instruction
+
+    # PORT: pl-vmi.c B_LIST
+    # DIVERGES: as `B_FUNCTOR`.
+    @label B_LIST
+    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), false, ld.nbframes))
+    @goto B_RLIST
 
     # PORT: pl-vmi.c B_RLIST
     # DIVERGES: as `B_RFUNCTOR`, for a list cell.
     @label B_RLIST
-    ARGP.form == ARGP_BUILD ||
-        throw(NotPortedError{T}(DEF.name, "B_RLIST into a frame slot", "V4b"))
-    ARGP = _bopen!(ld, 3, gd.atom_dot, true, ARGP.pos, ph)
+    @assert ARGP.form != ARGP_CURSOR "B_RLIST: a body argument is written, never read"
+    ARGP = _bopen!(
+        ld, 3, gd.atom_dot, true, ARGP.form == ARGP_BUILD ? ARGP.pos : 0,
+        ARGP.form == ARGP_SLOT ? ARGP.pos : -1, ph
+    )
     @goto next_instruction
 
-    # ── calls: entering the predicate (pl-vmi.c) ──────────────────────────────────────────────────
+    # PORT: pl-vmi.c B_POP
+    # DIVERGES: popping the entry also closes the compounds built since it was pushed (decision 2, Q3)
+    # — the outermost into its frame slot. `UMODE` is untouched, as upstream.
+    @label B_POP
+    bp_e = ld.astack[ld.aTop]                       # ARGP = *--aTop
+    ld.aTop -= 1
+    ARGP = bp_e.argp
+    while ld.nbframes > bp_e.builders
+        _bclose!(ld)
+    end
+    @goto next_instruction
+
+    # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
+    # PORT: pl-vmi.c I_ENTER
+    # DIVERGES: NOT PORTED: the `LD->alerted` block (coverage, the debugger's unify port, waking
+    # attributed variables).
+    @label I_ENTER
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c I_CALL
+    # DIVERGES: the operand indexes the running clause's procedure table, read through `CL`
+    # (`_call_procedure`; V1, user 2026-10-05). The new frame is the record pushed at `lTop`,
+    # upstream's cast `NFR = lTop`.
+    @label I_CALL
+    ic_proc = _call_procedure(ld, FR, PCc[PC])
+    PC += 1
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+    DEF = ic_proc.definition
+    @goto normal_call
+
+    # PORT: pl-vmi.c normal_call
+    # DIVERGES: the new frame stays ABOVE `lTop` (vmi:1869) until its supervisor raises `lTop`; one
+    # whose call fails first is dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`).
+    # The overflow raises a Julia `LocalStackOverflow` until V5 (`raiseStackOverflow`).
+    @label normal_call
+    nc_f = ld.frames[NFR]
+    nc_f.parent = FR
+    setFramePredicate(nc_f, DEF)                    # TBD
+    nc_f.programPointer = Code{T}(PCc, PCl, PC)     # save PC in child
+    nc_f.clause = nothing                           # for save atom-gc
+    FR = NFR
+    ld.environment_frame = FR                       # open the frame
+
+    if !hasLocalSpace(ld, LOCAL_MARGIN)
+        setLTop!(ld, argFrameP(nc_f.base, DEF.arity))
+        @SAVE_REGISTERS(QID)
+        nc_rc = growLocalSpace(ld, LOCAL_MARGIN, ALLOW_SHIFT)
+        @LOAD_REGISTERS(QID)
+        if nc_rc != BOOLEX_TRUE
+            raiseStackOverflow(ld, nc_rc)
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
+    @goto depart_or_retry_continue
+
     # PORT: pl-vmi.c depart_or_retry_continue
-    # DIVERGES: the query's way in only (rules call through it from V4b). NOT PORTED: the profiler's
-    # node, the inference count, and the `LD->alerted` block (signals, undo hooks, depth and inference
-    # limits, the debugger).
+    # DIVERGES: NOT PORTED: the profiler's node, the inference count, and the `LD->alerted` block
+    # (signals, undo hooks, depth and inference limits, the debugger).
     @label depart_or_retry_continue
     setGenerationFrame(gd, ld, FR)
     PCc = DEF.codes
     PCl = gd.no_literals
     PC = 1
     @goto next_instruction
+
+    # PORT: pl-vmi.c I_DEPART
+    # DIVERGES: the operand as `I_CALL`'s; `BFR <= FR` compares positions (decision 3). Last-call reuse
+    # ASSERTS that FR is the newest live record (user, 2026-10-05), which upstream's reuse relies on.
+    # NOT PORTED: `FR_WATCHED` (`frameFinished`, V9; asserted absent), `P_TRANSPARENT` (one module),
+    # `HIDE_CHILDS` (only the debugger reads it; port_inventory § "Not ported: nothing here can set or
+    # observe it").
+    @label I_DEPART
+    id_proc = _call_procedure(ld, FR, PCc[PC])
+    PC += 1
+    id_def = id_proc.definition
+    if (ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) &&
+        ld.prolog_flag_last_call &&
+        (id_def.impl_clauses.first_clause !== nothing || (id_def.flags & PROC_DEFINED) != 0)
+        id_f = ld.frames[FR]
+        @assert (id_f.flags & FR_WATCHED) == 0
+        @assert _is_newest_live_frame(ld, FR) "I_DEPART: last-call reuse of a frame that is not the newest live record"
+        id_f.clause = nothing                       # for save atom-gc
+        # leaveDefinition(DEF): (void)0 upstream
+        DEF = id_def
+        lcoSetNextFrameFlags(id_f)
+        setFramePredicate(id_f, DEF)
+        copyFrameArguments(ld, ld.lTop, id_f.base, DEF.arity)
+        @goto depart_or_retry_continue
+    end
+
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    lcoSetNextFrameFlags2(ld.frames[NFR], ld.frames[FR])
+    DEF = id_def
+    @goto normal_call
 
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT
@@ -1486,6 +1708,87 @@ function PL_next_solution_guarded(
     eq_q.foreign_frame = PL_open_foreign_frame(ld)
 
     return (eq_q.flags & DET_EXIT) == DET_EXIT ? PL_S_LAST : PL_S_TRUE    # SOLUTION_RETURN
+
+    # ── the last-call block (pl-vmi.c) ────────────────────────────────────────────────────────────
+    # PORT: pl-vmi.c L_NOLCO
+    # DIVERGES: the jump counts the kernel's code words from after the operand, as `lco!` fills it
+    # (c:3807). Falling through to reuse the frame asserts it is the newest live record, as `I_DEPART`
+    # does (user, 2026-10-05).
+    @label L_NOLCO
+    ln_jmp = Int(PCc[PC])
+    PC += 1
+    if (ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) &&
+        ld.prolog_flag_last_call
+        @assert _is_newest_live_frame(ld, FR) "L_NOLCO: last-call reuse of a frame that is not the newest live record"
+        @goto next_instruction
+    end
+    PC += ln_jmp
+    @goto next_instruction
+
+    # PORT: pl-vmi.c L_VAR
+    # DIVERGES: the value, dereferenced: a keyed variable is its own reference, so the chain is
+    # followed to its end and an unbound variable is copied as itself (decision 2).
+    @label L_VAR
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = deRef(
+        ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1]
+    )
+    PC += 2
+    @goto next_instruction
+
+    # PORT: pl-vmi.c L_VOID
+    @label L_VOID
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_var(
+        T, fresh_var_keys!(1)
+    )               # setVar(*varFrameP(FR, *PC++))
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c L_ATOM
+    # DIVERGES: the operand indexes the literal table (V1 L2); no atom GC, so no `pushVolatileAtom`.
+    @label L_ATOM
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = PCl[PCc[PC + 1]]
+    PC += 2
+    @goto next_instruction
+
+    # PORT: pl-vmi.c L_NIL
+    @label L_NIL
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = gd.atom_nil
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c L_SMALLINT
+    # DIVERGES: the operand indexes the literal table (V1 L2).
+    @label L_SMALLINT
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = PCl[PCc[PC + 1]]
+    PC += 2
+    @goto next_instruction
+
+    # PORT: pl-vmi.c I_LCALL
+    # DIVERGES: the operand as `I_CALL`'s. NOT PORTED: the context module (one module), `FR_WATCHED`
+    # (asserted absent), `getProcDefinedDefinition` (autoload, import: V5 — `S_VIRGIN` takes an
+    # undefined procedure as it is), `P_TRANSPARENT`, `HIDE_CHILDS`. QUIRK kept: `setFramePredicate`
+    # twice (vmi:2499, 2527).
+    @label I_LCALL
+    il_proc = _call_procedure(ld, FR, PCc[PC])
+    PC += 1
+    il_f = ld.frames[FR]
+    # leaveDefinition(DEF): (void)0 upstream
+    il_f.clause = nothing
+    DEF = il_proc.definition
+    setFramePredicate(il_f, DEF)
+    setLTop!(ld, argFrameP(il_f.base, DEF.arity))
+    @assert (il_f.flags & FR_WATCHED) == 0
+    lcoSetNextFrameFlags(il_f)
+    setFramePredicate(il_f, DEF)
+    @goto depart_or_retry_continue
+
+    # PORT: pl-vmi.c I_TCALL
+    # DIVERGES: NOT PORTED: `FR_WATCHED` (asserted absent), `HIDE_CHILDS` (see `I_DEPART`).
+    @label I_TCALL
+    @assert (ld.frames[FR].flags & FR_WATCHED) == 0
+    tcallSetNextFrameFlags(ld.frames[FR])
+    ld.frames[FR].clause = nothing
+    @goto depart_or_retry_continue
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN
@@ -1656,7 +1959,11 @@ function PL_next_solution_guarded(
             UMODE = uread
 
             if f_hasSpace(sb_ntop, ld.lMax, LOCAL_MARGIN, 1)
-                dropRecords!(ld, sb_c.base + 1)     # the failed attempt's records
+                # MQ18 (user, 2026-10-05): when the failing frame owns the youngest choice point, no
+                # record lives above that choice point — every path that removes a younger one also
+                # lowers `lTop` — so the drop below finds nothing. Asserted, so every run checks it.
+                @assert _no_record_above(ld, sb_c.base) "shallow_backtrack: a record above the resumed choice point"
+                dropRecords!(ld, sb_c.base + 1)     # the failed attempt's records (none: above)
                 if sb_c.value_clause.cref !== nothing
                     sb_c.base = sb_ntop             # Choice point needs to move
                     ld.lTop = sb_ntop + SIZEOF_CHOICE       # lTop = (LocalFrame)(ch+1)
@@ -1702,6 +2009,9 @@ function PL_next_solution_guarded(
         leaveFrame(ld, FR)                          # LEAVE_FAILED_FRAME(FR)
         @assert (ld.frames[FR].flags & (FR_WATCHED | FR_SSU_DET | FR_DET | FR_DETGUARD)) ==
             0
+        if ld.frames[FR].base >= ld.lTop            # its own call failed before it was filled
+            _drop_unfilled_frame!(ld, FR)
+        end
         FR = ld.frames[FR].parent
     end
 

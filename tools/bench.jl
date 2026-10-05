@@ -132,14 +132,64 @@ function _vm_query(ld::PL_local_data{BT}, a1::BT)::Int
     return n
 end
 
-const PROLOG_FIXTURES = """
+# nreverse (V4b): bench/programs/nreverse.pl's clauses in a database of their own, run through the
+# query API — open, the one deterministic answer, close; swipl runs the same file's `nreverse`
+const NR_GD = PL_global_data{BT}()
+const NR_LD = PL_local_data{BT}()
+const NR_USER = MODULE_user(NR_GD)
+_nrf(f::Symbol, xs::BT...) = mk_expr(BT, BT[_a(f), xs...])
+_nrcons(h::BT, t::BT) = mk_expr(BT, BT[_a(Symbol("[|]")), h, t])
+_nrnil() = mk_nil(BT)
+function _nr_add!(head::BT, body::Union{Nothing, BT})
+    name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
+    pr = lookupProcedure(name, n, NR_USER)
+    assertDefinition!(
+        NR_GD, pr.definition, compileClause(NR_GD, head, body, pr, NR_USER), CL_END
+    )
+    return pr
+end
+let (X, L0, L, L1, L2, L3) = (_v() for _ in 1:6)
+    _nr_add!(
+        _a(:nreverse),
+        _nrf(
+            :nreverse, foldr(_nrcons, [gnd_term(BT, i) for i in 1:30]; init=_nrnil()), _v()
+        )
+    )
+    _nr_add!(_nrf(:nreverse, _nrcons(X, L0), L),
+        _nrf(
+            Symbol(","),
+            _nrf(:nreverse, L0, L1),
+            _nrf(:concatenate, L1, _nrcons(X, _nrnil()), L)
+        ))
+    _nr_add!(_nrf(:nreverse, _nrnil(), _nrnil()), nothing)
+    _nr_add!(
+        _nrf(:concatenate, _nrcons(X, L1), L2, _nrcons(X, L3)),
+        _nrf(:concatenate, L1, L2, L3)
+    )
+    _nr_add!(_nrf(:concatenate, _nrnil(), L, L), nothing)
+end
+const NR_PROC = lookupProcedure(_a(:nreverse), 0, NR_USER)
+function _vm_nreverse()::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    qid = LogicKernel.PL_open_query(
+        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, NR_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    return rc
+end
+@assert _vm_nreverse() == LogicKernel.PL_S_TRUE
+
+const PROLOG_FIXTURES =
+    """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
 tree(N, Leaf, f(A, B)) :- N1 is N-1, tree(N1, Leaf, A), tree(N1, Leaf, B).
 fixtures(G1, G2, V1, V2) :-
     tree($DEPTH, a, G1), tree($DEPTH, a, G2), tree($DEPTH, _, V1), tree($DEPTH, _, V2),
     forall(between(1, 1000, I), assertz(cp(I, a))).
 :- dynamic cp/2.
-"""
+""" * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String)
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
 const CASES = [
@@ -181,6 +231,8 @@ const CASES = [
     # the VM's run loop (V4a): every answer, and one answer through the index
     ("query cp(X,Y) 1000", () -> _vm_query(Q_LD, Q_ALL), "forall(cp(_, _), true)"),
     ("query cp(500,Y)", () -> _vm_query(Q_LD, Q_ONE), "forall(cp(500, _), true)"),
+    # rules (V4b): nreverse of 30, 496 calls with last-call reuse, open to close
+    ("nreverse", _vm_nreverse, "nreverse"),
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs
@@ -283,6 +335,51 @@ function run_loop_report()::Nothing
     return nothing
 end
 
+# ── the quiet rule (user, 2026-10-05): ratios only on a machine MEASURED quiet ─────────────────────
+# The load average misleads on this machine — it counts short-lived processes (`top` showed 97% idle
+# at a load of 3) — so it is printed as context only. Quiet is measured: the CPUs' idle share over a
+# few seconds (/proc/stat) and no other julia or swipl process using CPU in that window
+# (/proc/<pid>/stat), the bench's own process excepted.
+"All CPUs' total and idle jiffies (/proc/stat)."
+function _cpu_jiffies()::Tuple{Int, Int}
+    f = split(readline("/proc/stat"))                   # cpu user nice system idle iowait …
+    v = parse.(Int, f[2:end])
+    return (sum(v), v[4] + v[5])
+end
+"The CPU ticks (user + system) of every other julia or swipl process."
+function _other_ticks()::Dict{Int, Int}
+    out = Dict{Int, Int}()
+    for d in readdir("/proc")
+        pid = tryparse(Int, d)
+        (pid === nothing || pid == getpid()) && continue
+        comm, st = try
+            (strip(read("/proc/$d/comm", String)), read("/proc/$d/stat", String))
+        catch
+            continue                                    # it exited meanwhile
+        end
+        (startswith(comm, "julia") || startswith(comm, "swipl")) || continue
+        f = split(st[(findlast(')', st) + 2):end])      # the fields after "(comm)": state is 1
+        out[pid] = parse(Int, f[12]) + parse(Int, f[13])        # utime, stime (fields 14, 15)
+    end
+    return out
+end
+"""
+    quiet_check(seconds) -> (; quiet, idle, busy, load)
+
+Quiet: at least 90% of the CPUs idle over `seconds`, and no other julia or swipl process used more
+than 5% of a CPU in that window.
+"""
+function quiet_check(seconds::Float64=3.0)
+    t0, i0 = _cpu_jiffies()
+    b0 = _other_ticks()
+    sleep(seconds)
+    t1, i1 = _cpu_jiffies()
+    b1 = _other_ticks()
+    idle = (i1 - i0) / max(1, t1 - t0)
+    busy = sort!([pid for (pid, t) in b1 if t - get(b0, pid, t) > 0.05 * seconds * 100])   # USER_HZ
+    return (; quiet=idle >= 0.90 && isempty(busy), idle, busy, load=Sys.loadavg()[1])
+end
+
 # ── Julia: three BenchmarkTools runs of each thunk, median of each ──────────────────────────────
 function julia_times(f)
     f()
@@ -304,7 +401,13 @@ function main(args)
     sw = swipl_times(cases)
     swv = isempty(sw) ? "no swipl on PATH" : strip(read(`swipl --version`, String))
     println("LogicKernel bench — julia $(VERSION), pid $(getpid()), $swv")
-    @printf("load average %.2f; fixtures: f/2 trees of %d cells\n", Sys.loadavg()[1], CELLS)
+    qc = quiet_check()
+    @printf(
+        "machine: %.0f%% idle over 3 s, other busy julia/swipl: %s, load average %.2f (context only) — %s\n",
+        100 * qc.idle, isempty(qc.busy) ? "none" : join(qc.busy, ","), qc.load,
+        qc.quiet ? "QUIET: ratios quoted" : "NOT QUIET: no ratio is quoted"
+    )
+    @printf("fixtures: f/2 trees of %d cells\n", CELLS)
     @printf(
         "%-22s %-26s %-26s %8s %8s %9s\n", "case", "LogicKernel µs (3 runs)",
         "swipl µs (3 runs)", "LK/swipl", "allocs", "bytes"
@@ -315,7 +418,7 @@ function main(args)
         st = get(sw, name, nothing)
         js = join((@sprintf("%.2f", t) for t in jt), " ")
         ss = st === nothing ? "—" : join((@sprintf("%.2f", t) for t in st), " ")
-        r = st === nothing ? NaN : minimum(jt) / minimum(st)
+        r = st === nothing || !qc.quiet ? NaN : minimum(jt) / minimum(st)
         ratios[name] = r
         @printf("%-22s %-26s %-26s %8.2f %8d %9d", name, js, ss, r, allocs, bytes)
         spread = maximum(jt) / minimum(jt)

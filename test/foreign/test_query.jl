@@ -16,8 +16,9 @@
 #   * an uncaught exception: `PL_S_EXCEPTION` under `PL_Q_EXT_STATUS`, the error term from
 #     `PL_exception`; `PL_Q_PASS_EXCEPTION` leaves it pending;
 #   * the `except` arm re-entering the loop (`PrologThrow`), and a Julia exception ending the query;
-#   * an instruction the run loop does not hold yet (a rule's `I_ENTER`, V4b) refused BY NAME — the
-#     dispatch's fall-through — and the query closed;
+#   * an instruction the run loop does not run refused BY NAME — the dispatch's fall-through — and
+#     the query closed; the instruction is CHOSEN from the declared ones outside `VMI_RUN`, so the
+#     test stays valid at every milestone and says when none is left;
 #   * clause GC while a query runs through a retracted clause: the frame scan keeps it (erased, not
 #     reclaimed, until the query is closed), and the query completes under the logical update view;
 #   * the builder: reset with the argument stack — at an answer after a head failed inside a nested
@@ -269,15 +270,26 @@ end
     LK.PL_close_foreign_frame(ld, fid)
 end
 
-@testset "an instruction the run loop does not hold is refused by name; the query is closed" begin
+@testset "an instruction the run loop does not run is refused by name; the query is closed" begin
+    # CHOSEN, not named (user, 2026-10-05): any declared instruction (pl-vmi.jl's table) outside the
+    # run loop's dispatch (`VMI_RUN`). It replaces the first instruction of a one-clause predicate's
+    # code — after the clause is asserted, so nothing but the run loop reads it.
+    notrun = [
+        op for op in LK.code(0):LK.code(length(LK._CODE_TABLE) - 1) if
+        !(LK.codeTable(op).name in LK.VMI_RUN)
+    ]
+    isempty(notrun) && error(
+        "every declared instruction runs: this test has served its purpose — retire it"
+    )
+    op = first(notrun)
     db, p = _ydb()
     ld = db.ld
     r = ix_pred(_Y, :r, 1; db=db)
     cl = LK.compileClause(
         db.gd, _yf(:r, _yv(1)), _yf(:f, _yv(1)), r.proc, LK.MODULE_user(db.gd)
     )
-    LK.assertDefinition!(db.gd, r.def, cl, LK.CL_END)       # r(X) :- f(X).   I_ENTER first
-    @test LK.decode(LK.Code(cl, 1)) == LK.I_ENTER
+    LK.assertDefinition!(db.gd, r.def, cl, LK.CL_END)       # r(X) :- f(X).
+    cl.codes[1] = op                                        # …its first instruction, not run
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_ref(ld)
     qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL, r.proc, a)
@@ -287,7 +299,7 @@ end
     catch e
         e
     end
-    @test err isa LK.NotPortedError && occursin("I_ENTER", err.what)
+    @test err isa LK.NotPortedError && occursin(String(LK.codeTable(op).name), err.what)
     @test ld.query == 0 && ld.lTop == qid && ld.nqueries == 0  # closed, its records dropped
     LK.PL_close_foreign_frame(ld, fid)
 end

@@ -221,12 +221,13 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
-| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception` | `src/pl-fli.c` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
 | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`; the occurs-check error so far) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base | `src/pl-setup.c` |
+| `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_query.jl` | V4a's query API: answers, return codes and determinism; the supervisors; positions identical to swipl's; nested queries; cut against close; a closed `qid`; exceptions caught and passed; a Julia exception closing the query; clause GC under a running query; warm allocation | — |
 | `test/core_lang/test_head_unify_swipl.jl` | V4a's differential: head unification of random and pinned fact queries identical to swipl under `occurs_check` false, true and error (the error term included), every head instruction exercised in each mode | — |
 | `test/db/test_index_argv.jl` | a bound argument narrows the index through both argument views (frame and term), dereferenced | — |
@@ -1079,6 +1080,124 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V4b — rules: calls, last calls and body arguments → MILESTONE `nreverse`: BUILT (2026-10-05)**
+(port_inventory row V4b; src/pl-wam.jl, src/pl-incl.jl, src/pl-global.jl). Plan: two research
+memos — the call path (every instruction with its vmi lines and the kernel mapping) and the gate
+(MQ6/MQ18, flatness, the nreverse oracle; swipl and libswipl probed live) — whose questions went to
+the user.
+* **Decided by the user (2026-10-05):**
+  1. **Body compounds use the SAME builder as the head's write mode**, with the frame slot as a
+     third destination (`bframe.slot`; decision 2: "compounds through the same builder"). `B_FUNCTOR`
+     / `B_LIST` push an entry, `B_RFUNCTOR` / `B_RLIST` open a builder into the slot or the parent
+     cell, `B_POP` closes the builders opened since its entry — the outermost into its slot,
+     untrailed (above `lTop`, upstream's "this is above the stack anyway").
+  2. **A frame whose call fails before it is filled** — `S_LIST` takes `FRAME_FAILED` before any
+     supervisor raises `lTop` over the frame `normal_call` built above it (vmi:3607-3608) — is
+     dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`): the ONE allowed drop of a
+     frame being filled, on the failure path of its own call; `dropRecords!` still refuses every other
+     (the user's narrowing of V3's assertion, which was too strict). No position moves. The research
+     memo found it by reading; the gate's `p42 :- q42(foo). p42.` with `q42([]). q42([_|_]).` runs it.
+  3. **A call operand reaches its procedure through the running clause** (`_call_procedure`,
+     upstream's `CL`, wam:3334).
+  4. **`last_call_optimisation`** is an LD field, on by default (pl-prologflag.c:2400), read at run
+     time by `I_DEPART` and `L_NOLCO` as upstream does (Q-14).
+  5. **Last-call reuse ASSERTS that the frame is the newest live record** (`_is_newest_live_frame`)
+     at `I_DEPART` and at `L_NOLCO`'s fall-through.
+  6. **The whole body family now**, driven by an execution differential over random rule clauses.
+  7. **MQ18 is recorded as an equivalent mutant**, with the argument (when the failing frame owns the
+     youngest choice point, every path that removed a younger one also lowered `lTop`, so nothing
+     lives above it), an `@assert` beside the drop so every run checks the claim, and two REACHABLE
+     mutants beside it (MR2 `deep_backtrack`'s drop, MR3 the choice point not moved).
+  8. **`HIDE_CHILDS` is not ported**: no test here could observe it. Its only effect is the frame bit
+     `FR_HIDE_CHILDS`, which only the debugger reads (pl-trace.c:227-274), and what sets it — system
+     mode, `debuginfo=false` at a predicate's first definition, foreign predicates — does not exist
+     here either. Listed (port_inventory § "Not ported: nothing here can set or observe it"), as
+     `TRY_CLAUSE` is.
+  9. **`B_ARGFIRSTVAR` and `B_VOID` make a fresh variable**, as upstream's `setVar`.
+  10. **MQ6's oracle**: stand-in FACTS named `prolog_current_frame/1` and `prolog_current_choice/1`
+      in the kernel, on the very clause text swipl runs with the real built-ins, plus libswipl's
+      query-API positions, pinned. V5 replaces the stand-ins (port_inventory row V5).
+  11. **The high-water mark is TEST instrumentation**: a sentinel fill of the slots and growth turned
+      into an error (`stacks_limit = lMax`), no production field.
+  12. **AllocCheck on the call path's labels both ways** — static attribution and a warm runtime check.
+  13. **The bench quotes ratios only on a machine MEASURED quiet**: CPU idle over a few seconds and no
+      other busy julia or swipl process; the load average is context only (it misleads here: 97% idle
+      at a load of 3).
+* **Ported** (src/pl-wam.jl, each a label of the run loop and a name in `VMI_RUN` — the one list
+  the dispatch tree is built from and the refusal test reads): `I_ENTER`,
+  `I_CALL`, `normal_call`, `I_DEPART` with last-call reuse, the last-call block `L_NOLCO`, `L_VAR`,
+  `L_VOID`, `L_ATOM`, `L_NIL`, `L_SMALLINT`, the tail calls `I_LCALL` and `I_TCALL`, and the body
+  family `B_ARGVAR`, `B_VAR0`, `B_VAR1`, `B_VAR2`, `B_VAR`, `bvar_cont`, `B_ARGFIRSTVAR`, `B_FIRSTVAR`,
+  `B_VOID`, `B_FUNCTOR`, `B_LIST`, `B_POP` (`B_RFUNCTOR`/`B_RLIST` gained the slot); the `NFR`
+  register. Quirks kept (memo Q-1..Q-14): the new frame built above `lTop`; `I_DEPART`'s non-LCO
+  branch uses `lcoSetNextFrameFlags2`; `I_LCALL` sets `lTop` itself and `setFramePredicate` twice;
+  every call and tail call re-stamps the frame's generation. NOT PORTED where they stand: the
+  alerted blocks (debugger, coverage, signals, limits), `FR_WATCHED` (asserted absent), the context
+  module and `P_TRANSPARENT` (one module), `getProcDefinedDefinition` (V5), `pushVolatileAtom`,
+  `globaliseVar` and the global-stack checks (decision 2 — a keyed variable lives in no cell).
+* **Gate — test/core_lang/test_rules_swipl.jl** (term-generic: the three types):
+  * nreverse's answer and its determinism identical to swipl's, the next term reference at +45 as
+    libswipl's;
+  * an execution differential over 12 random programs (layered facts and rules, fixed rules for the
+    last-call forms and for a variable first seen inside a body compound, 156 queries, 313 answers —
+    174 non-deterministic, one cyclic, written `cyclic` on both sides): every answer and its
+    determinism identical to swipl's; the corpus compiles every instruction of the family; a query is
+    stopped at 10,000 answers, so a regression that answers without end fails instead of hanging;
+  * the frame failing before it is filled, against swipl;
+  * a tail call's `lTop`: `I_LCALL` into a failing `S_LIST`, the next term reference pinned to
+    libswipl's 54 (probed, V4b); the logical update view PER CALL: a clause retracted between two
+    answers is not seen by the later call (swipl live, the retract inside the query);
+  * POSITIONS after deterministic exits (MQ6): the seven clauses of the memo, identical to swipl's
+    differences pinned and live (20, 20, 20, 23, 10, 24, 23), libswipl's query-API positions pinned
+    (p6 70→45, p6det 45, k 67→45, s 66→45), and at every answer the record pools hold exactly the
+    live records (the `BFR` chain; the frames on the parent chains);
+  * FLATNESS: concatenate/3 on 10^3, 10^4, 10^5 elements reaches the same high-water mark, qid+52
+    (swipl's bottom frame is equally flat, +24), with N+1 trail entries and N+1 binding-store entries
+    at the answer, reported — they grow until the store's collector exists (G1); with
+    `last_call_optimisation` off the mark grows with the list, so the check can fail;
+  * 10^4 open/next/close cycles of nreverse leave every stack, the trail and the store at their
+    baseline;
+  * warm, a query of calls and exits allocates nothing; statically, no allocation site lies in the
+    call path's labels and every function they call is an allocation-free manifest entry
+    (static_analysis_body.jl).
+* **The refusal test CHOOSES its instruction** (test/foreign/test_query.jl; user, 2026-10-05): V4a's
+  named a rule's `I_ENTER`, which V4b runs — the first evidence run found it, not the preflight, as
+  the file had not changed. It now takes any declared instruction outside `VMI_RUN` (today `I_NOP`,
+  `I_CHP`, `I_CUT`) and fails with "this test has served its purpose — retire it" when none is left.
+  Mutant MQ20 (the refusal no longer names the instruction): caught, by this testset.
+* **Mutation-proved — 18 of 19 caught at verdict level** (MR1-MR19; every test file passes unmutated
+  first, timed; every revert restores the tree byte for byte): V4a's MQ6 (`exit_continue` not
+  lowering `lTop`), `deep_backtrack`'s drop and the choice point not moved (MQ18's reachable
+  stand-ins), the unfilled frame not dropped and every frame dropped as unfilled, the last-call flag
+  ignored at `L_NOLCO` and at `I_DEPART`, last-call reuse without moving the arguments, `L_VAR`
+  reading its target, `L_NOLCO` never jumping, `B_POP` not closing, `B_ARGFIRSTVAR` and `B_FIRSTVAR`
+  not writing the slot, `normal_call` not saving the return point, `I_LCALL` not setting `lTop`, a
+  call not re-stamping its generation, and an allocation in `I_CALL` (the warm runtime check and the
+  static per-label check).
+  * **Four tests were BLIND until their mutants survived, and were fixed:** a frame failing before
+    it is filled happens only on a call AFTER the supervisor is installed (the first goes through
+    `S_VIRGIN`, which raises `lTop`); `I_LCALL`'s `lTop` is observable only when the callee's `S_LIST`
+    fails and `CHP_TOP` opens the answer's foreign frame there (pinned to libswipl's 54); a call's
+    generation only when the database changes between two calls (a retract between answers); a
+    variable first seen inside a body compound only when a later call routes it into the answer.
+  * **Timeouts, TRACED (user, 2026-10-05: println to the root cause, and a timeout counts only far
+    inside the limit).** Five mutants first timed out; a call trace, an instruction cap, a `deRef`
+    cap and an answer log found three different causes. MR9 is a genuine FLAT infinite tail
+    recursion — the same frame re-entered, its level climbing — and is the only one still caught by
+    the timeout (the baseline takes 24 s after a daemon restart, the limit 240 s). MR8 answered
+    without end (12,596 answers to one query in 400 s); the test now caps a query at 10,000 answers,
+    so it fails fast and says why. MR10-MR12 never hung: the driver had restarted the daemon BEFORE
+    restoring the file, so it loaded the previous mutant; fixed, they fail in seconds.
+  * **Survives, with the reason:** MR17 (`bvar_cont` storing the slot's term undereferenced) is
+    equivalent: every reader dereferences, and a binding undone by backtracking takes the callee's
+    frame with it. MQ18 is equivalent by its argument, asserted.
+* **Bench:** tools/bench.jl's `nreverse` — the query opened, its one answer, closed — beside swipl's
+  own `nreverse` from bench/programs/nreverse.pl; a ratio is quoted only when the machine is
+  MEASURED quiet (`quiet_check`: at least 90% of the CPUs idle over 3 s, no other julia or swipl
+  process using more than 5% of one). The numbers of each run are in its commit message.
+* **Not here:** `I_CUT`'s execution (V6) — so qsort runs at V7, with `=</2` (V5/V6); a call reaching a
+  built-in, `S_UNDEF`'s `existence_error` (V5); `C_*`, the meta-call, catch/3 (V9).
 
 **V4a — the run loop and the query API, over facts: BUILT (2026-10-05)** (port_inventory row V4a;
 src/pl-wam.jl, src/pl-supervisor.jl, src/pl-error.jl, src/SWI-Prolog.jl, src/pl-incl.jl,

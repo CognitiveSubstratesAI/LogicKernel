@@ -140,6 +140,7 @@ mutable struct PL_local_data{T}
     trail::Vector{UInt64}                                       # stacks.trail: bound var_keys
     prolog_flag_occurs_check::occurs_check_t                    # prolog_flag.occurs_check
     prolog_flag_portable_vmi::Bool                              # truePrologFlag(PLFLAG_PORTABLE_VMI)
+    prolog_flag_last_call::Bool                                 # truePrologFlag(PLFLAG_LASTCALL)
     cycle_lstack::Vector{T}                                     # cycle.lstack: linked compounds
     cycle_links::IdDict{T, T}                                   # the links themselves
     occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
@@ -181,7 +182,9 @@ end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
-        definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, true, T[],
+        definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, true,
+        true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
+        T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),

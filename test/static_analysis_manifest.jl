@@ -430,7 +430,7 @@ function _manifest_index(T)
         (LK._argp_raw, Tuple{LD, ARGP}, true), (LK._argp_deref, Tuple{LD, ARGP}, true),
         (LK._argp_store!, Tuple{LD, ARGP, T}, true), (LK._argp_add, Tuple{ARGP, Int}, true),
         (LK._reset_argument_stack!, Tuple{LD, LK.queryFrame{T}}, true),
-        (LK._bopen!, Tuple{LD, Int, T, Bool, Int, T}, false),
+        (LK._bopen!, Tuple{LD, Int, T, Bool, Int, Int, T}, false),
         (LK._bclose!, Tuple{LD}, false),
         (LK._fresh_compound, Tuple{Type{T}, T, Bool, Int}, false),
         (LK._is_expr3, Tuple{T}, true),
@@ -456,7 +456,13 @@ function _manifest_index(T)
         (LK._unify_ptrs_raising, Tuple{GD, LD, T, T}, false),
         (LK._check_foreign_environment, Tuple{LD, String}, true),
         (LK.PL_raise_exception, Tuple{LD, Int}, false),
-        (LK.PL_error, Tuple{GD, LD, LK.PL_error_code, T, T}, false)
+        (LK.PL_error, Tuple{GD, LD, LK.PL_error_code, T, T}, false),
+        # V4b — the call path's helpers: the record checks and the procedure a call names allocate
+        # nothing; the run loop's call-path labels are checked by their own test (static_analysis_body.jl)
+        (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
+        (LK._no_record_above, Tuple{LD, Int}, true),
+        (LK._is_newest_live_frame, Tuple{LD, Int}, true),
+        (LK._call_procedure, Tuple{LD, Int, LK.code}, true)
     )
 end
 
@@ -651,6 +657,6 @@ const DISPATCH_EXEMPT = (
         (LK.var"@ENSURE_LOCAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_LOCAL_SPACE): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
     ),
     (
-        (LK.var"@vmi_dispatch", Tuple{LineNumberNode, Module, Any, Vararg{Any}}) => "a macro (the run loop's dispatch tree): it builds Exprs at load time, with _vmi_dispatch_tree, which is checked; its expansion runs in PL_next_solution_guarded, which is checked"
+        (LK.var"@vmi_dispatch", Tuple{LineNumberNode, Module, Any, Symbol}) => "a macro (the run loop's dispatch tree): it builds Exprs at load time, with _vmi_dispatch_tree, which is checked; its expansion runs in PL_next_solution_guarded, which is checked"
     )
 )

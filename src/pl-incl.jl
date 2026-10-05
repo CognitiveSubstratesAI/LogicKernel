@@ -646,13 +646,17 @@ end
 
 # A compound being built in write mode (decision 2, Q3): its cells are `bcells[start:start+n-1]` —
 # the children vector of the term to build: the head symbol first for `f/k` and lists, none for
-# `$expr/n` — and the finished compound goes into the parent's builder cell `cell`, or, when it was
-# opened in read mode on the caller's unbound variable `var`, is bound to `var` (trailed).
+# `$expr/n` — and the finished compound goes to one of three places when it is closed: the parent's
+# builder cell `cell`; the frame slot at position `slot` — a body argument, written untrailed above
+# `lTop` as upstream's `*ARGP = consPtr(gTop)` (V4b, user 2026-10-05: the SAME builder for bodies);
+# or, when it was opened in read mode on the caller's unbound variable `var`, `var` (trailed).
+# `cell` is 0 and `slot` is -1 where unused.
 "A write-mode builder: its cells, and where the compound goes when it is closed."
 struct bframe{T}
     start::Int
     n::Int
     cell::Int
+    slot::Int
     var::T
 end
 

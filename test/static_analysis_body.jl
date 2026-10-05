@@ -69,6 +69,59 @@ end
         @test all(a -> any(f -> f.func === :f_pushArgumentStack, a.backtrace), allocs)
     end
 
+    # V4b (user, 2026-10-05: static attribution AND a warm runtime check; the runtime one is in
+    # test/core_lang/test_rules_swipl.jl). The call path's labels in the run loop: (1) no allocation
+    # site AllocCheck attributes to a line of `PL_next_solution_guarded` lies in their spans, read
+    # from the source's `@label`s; (2) every function they call is an allocation-free manifest entry,
+    # AllocChecked one by one above — sites in callees shared by several labels are reported as
+    # "multiple call sites" and cannot be attributed to a label. Fresh variables and building
+    # compounds allocate by nature, so `B_FIRSTVAR`, `B_VOID`, `L_VOID` and the builders are not
+    # in the path; growth (`growLocalSpace`) is reached through shared callees only.
+    @testset "AllocCheck: the call path's labels allocate nothing" begin
+        LK = LogicKernel
+        lines = readlines(joinpath(pkgdir(LogicKernel), "src", "pl-wam.jl"))
+        f0 = findfirst(l -> startswith(l, "function PL_next_solution_guarded("), lines)
+        fend = findnext(==("end"), lines, f0)
+        labels = Tuple{Int, String}[]
+        for i in (f0 + 1):(fend - 1)
+            m = match(r"^\s*@label (\w+)", lines[i])
+            m === nothing || push!(labels, (i, String(m[1])))
+        end
+        function span(n)
+            k = findfirst(x -> x[2] == n, labels)
+            return (labels[k][1], k < length(labels) ? labels[k + 1][1] - 1 : fend)
+        end
+        path = ("I_ENTER", "I_CALL", "normal_call", "depart_or_retry_continue", "I_DEPART",
+            "I_EXIT", "exit_continue", "L_NOLCO", "L_VAR", "L_ATOM", "L_NIL", "L_SMALLINT",
+            "I_LCALL", "I_TCALL", "B_VAR0", "B_VAR1", "B_VAR2", "B_VAR", "bvar_cont",
+            "B_ARGVAR")
+        @test all(n -> any(x -> x[2] == n, labels), path)
+        spans = [span(n) for n in path]
+        allocs = check_allocs(
+            LK.PL_next_solution_guarded,
+            (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)
+        )
+        attributed = Int[]
+        for a in allocs
+            k = findfirst(fr -> fr.func === :PL_next_solution_guarded, a.backtrace)
+            k === nothing || push!(attributed, a.backtrace[k].line)
+        end
+        @test !isempty(attributed)                  # the attribution sees the loop's own sites
+        inpath = [l for l in attributed if any(s -> s[1] <= l <= s[2], spans)]
+        isempty(inpath) ||
+            println(stderr, "  allocates in the call path, pl-wam.jl lines: ", inpath)
+        @test isempty(inpath)
+        for c in
+            (LK._call_procedure, LK.pushFrame!, LK.setNextFrameFlags, LK.setFramePredicate,
+            LK.hasLocalSpace, LK.setLTop!, LK.setGenerationFrame, LK._is_newest_live_frame,
+            LK.lcoSetNextFrameFlags, LK.lcoSetNextFrameFlags2, LK.copyFrameArguments,
+            LK.lowerLTop!, LK.deRef, LK.tcallSetNextFrameFlags, LK.linkValI,
+            LK._argp_store!,
+            LK._argp_add)
+            @test any(e -> e[1] === c && e[3], DISPATCH_MANIFEST)
+        end
+    end
+
     @testset "controls: each gate fails on a planted defect" begin
         @test !isempty(JET.get_reports(JET.report_opt(_sa_dispatches, (Vector{Real},))))
         @test isempty(JET.get_reports(JET.report_opt(_sa_stable, (Vector{Int},))))
