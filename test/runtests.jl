@@ -136,6 +136,9 @@ Test.@with_testset LK_TS begin
             else
                 withenv(() -> Base.include(m, f), "LOGICKERNEL_TERM" => impl)
             end
+            # The leaves' ONE shared empty child vector (src/default_term.jl `_no_children`; user,
+            # 2026-10-05) is still empty: every unit is a workload for "nothing pushes to it".
+            @test isempty(LogicKernel._no_children(LogicKernel.DefaultTerm))
         end
         secs = (time_ns() - t0) / 1e9
         csecs = (Base.cumulative_compile_time_ns()[1] - c0) / 1e9

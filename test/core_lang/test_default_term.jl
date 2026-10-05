@@ -10,6 +10,26 @@ _g(x) = gnd_term(_TT, x)
 _e(xs::_TT...) = mk_expr(_TT, _TT[xs...])
 
 @testset "default term type" begin
+    # User, 2026-10-05: a leaf's children are ONE empty vector per term type (`_no_children`), not an
+    # empty vector per leaf; nothing may push to it, or every leaf would grow children.
+    # test/runtests.jl also checks it is still empty after EVERY unit.
+    @testset "every leaf shares the one empty child vector, and it stays empty" begin
+        e = LogicKernel._no_children(_TT)
+        leaves = (
+            mk_var(_TT, UInt64(1)), var_term(_TT, UInt64(2)), _s(:a), _g(1), _g(1.5),
+            _g("s"),
+            LogicKernel.mk_reserved_symbol(_TT, Symbol("[]"))
+        )
+        @test all(l -> getfield(l, :children) === e, leaves)
+        @test LogicKernel._no_children(Term{Float64}) !== e          # its own per term type
+        # a workload over those leaves: built into compounds, compared, hashed, unified
+        t = _e(_s(:f), leaves...)
+        @test compareStandard(t, _e(_s(:f), leaves...)) == 0 && hash(t) == hash(t)
+        ld = LogicKernel.PL_local_data{_TT}()
+        @test LogicKernel.pl_unify!(ld, leaves[1], _e(_s(:g), leaves[2], _g(3)))
+        @test isempty(e) && all(l -> nchildren(l) == 0, leaves)
+    end
+
     @testset "constructors cache what the interface reads" begin
         v = mk_var(_TT, UInt64(3))
         @test !is_ground(_e(_s(:f), v)) && is_ground(_e(_s(:f), _g(1)))

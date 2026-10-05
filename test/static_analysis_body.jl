@@ -69,6 +69,23 @@ end
         @test all(a -> any(f -> f.func === :f_pushArgumentStack, a.backtrace), allocs)
     end
 
+    # A leaf's children are the shared empty vector (`_no_children`; user, 2026-10-05), so no leaf
+    # constructor allocates a child vector. Each still allocates the term itself — DefaultTerm is not
+    # stored inline, its `value` a Union holding a String — so this cannot pass by seeing nothing.
+    @testset "AllocCheck: a leaf allocates no child vector" begin
+        LK = LogicKernel
+        for (f, tt) in (
+            (LK.mk_var, (Type{_M2}, UInt64)), (LK.var_term, (Type{_M2}, UInt64)),
+            (LK.sym_term, (Type{_M2}, Symbol)),
+            (LK.mk_reserved_symbol, (Type{_M2}, Symbol)),
+            (LK.gnd_term, (Type{_M2}, Int64)), (LK.gnd_term, (Type{_M2}, String))
+        )
+            allocs = check_allocs(f, tt)
+            @test any(a -> a.type === _M2, allocs)                 # the term itself is seen
+            @test !any(a -> a.type === Vector{_M2}, allocs)        # …and no child vector
+        end
+    end
+
     # V4b (user, 2026-10-05: static attribution AND a warm runtime check; the runtime one is in
     # test/core_lang/test_rules_swipl.jl). The call path's labels in the run loop: (1) no allocation
     # site AllocCheck attributes to a line of `PL_next_solution_guarded` lies in their spans, read

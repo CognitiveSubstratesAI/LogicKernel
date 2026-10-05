@@ -41,6 +41,7 @@ _manifest_per_type(T) = (
     (is_ground_walk, Tuple{T}, false),
     (gnd_equal, Tuple{T, T}, false), (atomic_compare, Tuple{T, T}, false),
     (mk_var, Tuple{Type{T}, UInt64}, false), (var_term, Tuple{Type{T}, UInt64}, false),
+    (LK._no_children, Tuple{Type{T}}, true),
     (mk_expr, Tuple{Type{T}, Vector{T}}, false),
     (sym_term, Tuple{Type{T}, Symbol}, false), (sym_name, Tuple{T}, true),
     (gnd_value, Tuple{T}, false),

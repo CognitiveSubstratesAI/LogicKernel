@@ -12,10 +12,13 @@
 # report, not a pass/fail gate: a new primitive gets a case here, with its swipl goal. It follows
 # the workspace's measurement rules: THREE runs from ONE process, the minimum reported and the
 # spread shown; every number beside its upstream pair, in µs; profile before attributing a cost.
+# Both sides measure ONE statistic (user, 2026-10-05): N calls per run (N doubled until a run takes
+# RUN_S), a full collection before each run and every collection during it counted, WALL time per
+# call, the minimum of three runs; the machine's idle CPU is recorded before and after the runs.
 #
-# BenchmarkTools and Profile are not dependencies: they come from the global environment (see
+# Profile is not a dependency: it comes from the global environment (see
 # tools/repl.jl). swipl comes from PATH; without it the report has no upstream column.
-using LogicKernel, BenchmarkTools, Profile, Printf
+using LogicKernel, Profile, Printf
 using LogicKernel:
     is_variant_ptr,
     pl_variant_sha1,
@@ -181,6 +184,7 @@ function _vm_nreverse()::Int
 end
 @assert _vm_nreverse() == LogicKernel.PL_S_TRUE
 
+# allow-docstring-interp: not a docstring — this Prolog source interpolates DEPTH on purpose
 const PROLOG_FIXTURES =
     """
 tree(0, Leaf, L) :- !, copy_term(Leaf, L).
@@ -240,25 +244,30 @@ const CASES = [
     ("attempt + finally", () -> _attempt_finally(pl_unify!, SMALL_A, SMALL_B), "")
 ]
 
-# ── swipl: three timed runs of each goal, after calibrating the loop to ≥ 0.1 s ─────────────────
-function swipl_times(cases)::Dict{String, NTuple{3, Float64}}
-    out = Dict{String, NTuple{3, Float64}}()
+# A run's length: long enough that one collection inside it is a small share of it (0.1 s was too
+# short — measured 2026-10-05, a single collection doubled a run).
+const RUN_S = 0.5
+
+# ── swipl: three timed runs of each goal, after calibrating the loop to ≥ RUN_S ─────────────────
+function swipl_times(cases)::Dict{String, Tuple{NTuple{3, Float64}, Int}}
+    out = Dict{String, Tuple{NTuple{3, Float64}, Int}}()
     Sys.which("swipl") === nothing && return out
     prog = IOBuffer()
     print(prog, PROLOG_FIXTURES)
     print(
         prog,
         """
+        run_s(Goal, N, T) :-
+            get_time(T0), forall(between(1, N, _), Goal), get_time(T1), T is T1 - T0.
         time_s(Goal, N, T) :-
-            garbage_collect, statistics(cputime, T0),
-            forall(between(1, N, _), Goal), statistics(cputime, T1), T is T1 - T0.
+            garbage_collect, run_s(Goal, N, T).
         calib(Goal, N0, N) :-
-            time_s(Goal, N0, T), ( T >= 0.1 -> N = N0 ; N1 is N0 * 2, calib(Goal, N1, N) ).
+            run_s(Goal, N0, T), ( T >= $RUN_S -> N = N0 ; N1 is N0 * 2, calib(Goal, N1, N) ).
         bench(Name, Goal) :-
             calib(Goal, 1, N),
             time_s(Goal, N, T1), time_s(Goal, N, T2), time_s(Goal, N, T3),
             U1 is T1 / N * 1.0e6, U2 is T2 / N * 1.0e6, U3 is T3 / N * 1.0e6,
-            format("~w\\t~6f\\t~6f\\t~6f~n", [Name, U1, U2, U3]).
+            format("~w\\t~6f\\t~6f\\t~6f\\t~d~n", [Name, U1, U2, U3, N]).
         main :-
             fixtures(G1, G2, V1, V2),
         """
@@ -277,8 +286,11 @@ function swipl_times(cases)::Dict{String, NTuple{3, Float64}}
     end
     for l in eachline(IOBuffer(text))
         p = split(l, '\t')
-        length(p) == 4 || error("tools/bench.jl: unexpected swipl output: $l")
-        out[p[1]] = (parse(Float64, p[2]), parse(Float64, p[3]), parse(Float64, p[4]))
+        length(p) == 5 || error("tools/bench.jl: unexpected swipl output: $l")
+        out[p[1]] = (
+            (parse(Float64, p[2]), parse(Float64, p[3]), parse(Float64, p[4])),
+            parse(Int, p[5])
+        )
     end
     return out
 end
@@ -346,50 +358,88 @@ function _cpu_jiffies()::Tuple{Int, Int}
     v = parse.(Int, f[2:end])
     return (sum(v), v[4] + v[5])
 end
-"The CPU ticks (user + system) of every other julia or swipl process."
-function _other_ticks()::Dict{Int, Int}
-    out = Dict{Int, Int}()
+"A process's CPU ticks (user + system) from its /proc/<pid>/stat text."
+function _stat_ticks(st::String)::Int
+    f = split(st[(findlast(')', st) + 2):end])          # the fields after "(comm)": state is 1
+    return parse(Int, f[12]) + parse(Int, f[13])        # utime, stime (fields 14, 15)
+end
+"The CPU ticks of every OTHER process, with its command name."
+function _other_ticks()::Dict{Int, Tuple{String, Int}}
+    out = Dict{Int, Tuple{String, Int}}()
     for d in readdir("/proc")
         pid = tryparse(Int, d)
         (pid === nothing || pid == getpid()) && continue
         comm, st = try
-            (strip(read("/proc/$d/comm", String)), read("/proc/$d/stat", String))
+            (String(strip(read("/proc/$d/comm", String))), read("/proc/$d/stat", String))
         catch
             continue                                    # it exited meanwhile
         end
-        (startswith(comm, "julia") || startswith(comm, "swipl")) || continue
-        f = split(st[(findlast(')', st) + 2):end])      # the fields after "(comm)": state is 1
-        out[pid] = parse(Int, f[12]) + parse(Int, f[13])        # utime, stime (fields 14, 15)
+        out[pid] = (comm, _stat_ticks(st))
     end
     return out
 end
 """
-    quiet_check(seconds) -> (; quiet, idle, busy, load)
+    quiet_check(seconds) -> (; quiet, idle, self, busy, top, load)
 
-Quiet: at least 90% of the CPUs idle over `seconds`, and no other julia or swipl process used more
-than 5% of a CPU in that window.
+Quiet: at least 90% of the CPUs idle over `seconds` — the bench's OWN process not counted as load
+(`self`, its share, printed apart: its GC or compiler threads are not the machine's other load) —
+and no other julia or swipl process used more than 5% of a CPU in that window (`busy`). `top` names
+the busiest other process of any kind, for the record (2026-10-05: a run measured 73% idle with no
+busy julia or swipl, and nothing said what the load was).
 """
 function quiet_check(seconds::Float64=3.0)
     t0, i0 = _cpu_jiffies()
+    s0 = _stat_ticks(read("/proc/self/stat", String))
     b0 = _other_ticks()
     sleep(seconds)
     t1, i1 = _cpu_jiffies()
+    s1 = _stat_ticks(read("/proc/self/stat", String))
     b1 = _other_ticks()
-    idle = (i1 - i0) / max(1, t1 - t0)
-    busy = sort!([pid for (pid, t) in b1 if t - get(b0, pid, t) > 0.05 * seconds * 100])   # USER_HZ
-    return (; quiet=idle >= 0.90 && isempty(busy), idle, busy, load=Sys.loadavg()[1])
+    tot = max(1, t1 - t0)
+    idle = (i1 - i0 + (s1 - s0)) / tot
+    d = Dict(pid => (c, t - (haskey(b0, pid) ? b0[pid][2] : t)) for (pid, (c, t)) in b1)
+    lim = 0.05 * seconds * 100                          # 5% of one CPU, in USER_HZ ticks
+    busy = sort!([
+        pid for (pid, (c, dt)) in d if
+        dt > lim && (startswith(c, "julia") || startswith(c, "swipl"))
+    ])
+    k = isempty(d) ? 0 : argmax(p -> d[p][2], collect(keys(d)))
+    top = if k == 0
+        "none"
+    else
+        string(
+            d[k][1],
+            " (pid ",
+            k,
+            ", ",
+            round(Int, 100 * d[k][2] / (seconds * 100)),
+            "% of a CPU)"
+        )
+    end
+    return (; quiet=idle >= 0.90 && isempty(busy), idle, self=(s1 - s0) / tot, busy, top,
+        load=Sys.loadavg()[1])
 end
 
-# ── Julia: three BenchmarkTools runs of each thunk, median of each ──────────────────────────────
+# ── Julia: THE SAME STATISTIC AS swipl_times (user, 2026-10-05) ──────────────────────────────────
+# N calls per run, N doubled from 1 until a run takes at least RUN_S of wall time (calibration runs
+# collect nothing first); then three runs, each after a full collection, every collection DURING a
+# run counted; wall time per call; the minimum of the three is the number.
+function _wall_per_call(f, n::Int, collect::Bool)::Float64
+    collect && GC.gc()
+    t0 = time_ns()
+    for _ in 1:n
+        f()
+    end
+    return (time_ns() - t0) / n / 1e3                   # µs per call
+end
 function julia_times(f)
     f()
-    ts = Float64[]
-    local b
-    for _ in 1:3
-        b = @benchmark $f() seconds = 1 evals = 1
-        push!(ts, median(b).time / 1e3)
+    n = 1
+    while _wall_per_call(f, n, false) * n < RUN_S * 1e6   # µs
+        n *= 2
     end
-    return (ts[1], ts[2], ts[3]), b.allocs, b.memory
+    ts = ntuple(_ -> _wall_per_call(f, n, true), 3)
+    return ts, n, (@allocations f()), (@allocated f())
 end
 
 function main(args)
@@ -401,28 +451,46 @@ function main(args)
     sw = swipl_times(cases)
     swv = isempty(sw) ? "no swipl on PATH" : strip(read(`swipl --version`, String))
     println("LogicKernel bench — julia $(VERSION), pid $(getpid()), $swv")
+    # the machine's idle CPU BEFORE and AFTER the Julia runs; a ratio is quoted only if both are quiet
     qc = quiet_check()
-    @printf(
-        "machine: %.0f%% idle over 3 s, other busy julia/swipl: %s, load average %.2f (context only) — %s\n",
-        100 * qc.idle, isempty(qc.busy) ? "none" : join(qc.busy, ","), qc.load,
-        qc.quiet ? "QUIET: ratios quoted" : "NOT QUIET: no ratio is quoted"
+    rows = Tuple{String, NTuple{3, Float64}, Int, Int, Int}[]
+    for (name, f, _) in cases
+        jt, n, allocs, bytes = julia_times(f)
+        push!(rows, (name, jt, n, allocs, bytes))
+    end
+    qa = quiet_check()
+    quiet = qc.quiet && qa.quiet
+    for (when, q) in (("before", qc), ("after", qa))
+        @printf(
+            "machine %s the runs: %.0f%% idle over 3 s (this process %.0f%%), busy julia/swipl: %s, busiest other: %s, load average %.2f (context only)\n",
+            when, 100 * q.idle, 100 * q.self, isempty(q.busy) ? "none" : join(q.busy, ","),
+            q.top,
+            q.load
+        )
+    end
+    println(
+        quiet ? "QUIET before and after: ratios quoted" : "NOT QUIET: no ratio is quoted"
     )
     @printf("fixtures: f/2 trees of %d cells\n", CELLS)
     @printf(
-        "%-22s %-26s %-26s %8s %8s %9s\n", "case", "LogicKernel µs (3 runs)",
-        "swipl µs (3 runs)", "LK/swipl", "allocs", "bytes"
+        "%-22s %-26s %-26s %8s %16s %8s %9s\n", "case", "LogicKernel µs (3 runs)",
+        "swipl µs (3 runs)", "LK/swipl", "calls/run LK sw", "allocs", "bytes"
     )
     ratios = Dict{String, Float64}()
-    for (name, f, _) in cases
-        jt, allocs, bytes = julia_times(f)
-        st = get(sw, name, nothing)
+    for (name, jt, n, allocs, bytes) in rows
+        sn = get(sw, name, nothing)
         js = join((@sprintf("%.2f", t) for t in jt), " ")
-        ss = st === nothing ? "—" : join((@sprintf("%.2f", t) for t in st), " ")
-        r = st === nothing || !qc.quiet ? NaN : minimum(jt) / minimum(st)
+        ss = sn === nothing ? "—" : join((@sprintf("%.2f", t) for t in sn[1]), " ")
+        r = sn === nothing || !quiet ? NaN : minimum(jt) / minimum(sn[1])
         ratios[name] = r
-        @printf("%-22s %-26s %-26s %8.2f %8d %9d", name, js, ss, r, allocs, bytes)
+        ns = sn === nothing ? "$n —" : "$n $(sn[2])"
+        @printf("%-22s %-26s %-26s %8.2f %16s %8d %9d", name, js, ss, r, ns, allocs, bytes)
         spread = maximum(jt) / minimum(jt)
         spread > 1.15 && @printf("   ⚠ LK runs spread %.0f%%", (spread - 1) * 100)
+        if sn !== nothing
+            sspread = maximum(sn[1]) / minimum(sn[1])
+            sspread > 1.15 && @printf("   ⚠ swipl runs spread %.0f%%", (sspread - 1) * 100)
+        end
         println()
     end
     "--no-compile" in args || run_loop_report()

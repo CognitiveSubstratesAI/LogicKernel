@@ -85,12 +85,24 @@ _sym_key(s::Symbol)::UInt64 = UInt64(UInt(pointer_from_objref(s)))
 _reserved_sym_key(s::Symbol)::UInt64 = _sym_key(s) | UInt64(1)
 
 """
+    _no_children(::Type{Term{G}}) -> Vector{Term{G}}
+
+The ONE empty child vector of `Term{G}`, which every variable, symbol and grounded value shares — so
+a leaf allocates nothing (user, 2026-10-05: an empty vector per fresh variable was 20% of nreverse).
+NOTHING may mutate it: a leaf's children are read only through [`nchildren`](@ref) and
+[`child`](@ref). test/core_lang/test_default_term.jl asserts the sharing, and test/runtests.jl that
+it is still empty after every unit. Generated, so each term type has its own object, made when the
+method is compiled.
+"""
+@generated _no_children(::Type{Term{G}}) where {G} = QuoteNode(Term{G}[])
+
+"""
     sym_term(::Type{Term{G}}, name::Symbol) -> Term{G}
 
 The symbol `name`.
 """
 sym_term(::Type{Term{G}}, name::Symbol) where {G} =
-    Term{G}(SYM, true, false, false, _sym_key(name), name, nothing, Term{G}[])
+    Term{G}(SYM, true, false, false, _sym_key(name), name, nothing, _no_children(Term{G}))
 
 """
     gnd_term(::Type{Term{G}}, v::G) -> Term{G}
@@ -103,12 +115,12 @@ function gnd_term(::Type{Term{G}}, v::G) where {G}
     k = gnd_value_key(v)
     return Term{G}(
         GND, true, k !== nothing, false, k === nothing ? UInt64(0) : k, Symbol(""), v,
-        Term{G}[]
+        _no_children(Term{G})
     )
 end
 
 mk_var(::Type{Term{G}}, key::UInt64) where {G} =
-    Term{G}(VAR, false, false, false, key, Symbol(""), nothing, Term{G}[])
+    Term{G}(VAR, false, false, false, key, Symbol(""), nothing, _no_children(Term{G}))
 
 """
     var_term(::Type{Term{G}}, key::UInt64) -> Term{G}
@@ -137,7 +149,10 @@ end
 mk_sym(::Type{Term{G}}, name::Symbol) where {G} = sym_term(Term{G}, name)
 mk_gnd(::Type{Term{G}}, v::G) where {G} = gnd_term(Term{G}, v)
 mk_reserved_symbol(::Type{Term{G}}, name::Symbol) where {G} =
-    Term{G}(SYM, true, false, true, _reserved_sym_key(name), name, nothing, Term{G}[])
+    Term{G}(
+        SYM, true, false, true, _reserved_sym_key(name), name, nothing,
+        _no_children(Term{G})
+    )
 is_reserved_symbol(t::Term)::Bool = t.kind === SYM && t.reserved
 is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME
 function is_pair(t::Term)::Bool

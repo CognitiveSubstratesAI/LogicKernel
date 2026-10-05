@@ -1196,6 +1196,22 @@ the user.
   own `nreverse` from bench/programs/nreverse.pl; a ratio is quoted only when the machine is
   MEASURED quiet (`quiet_check`: at least 90% of the CPUs idle over 3 s, no other julia or swipl
   process using more than 5% of one). The numbers of each run are in its commit message.
+* **After V4b, before V5 (user, 2026-10-05):**
+  * **Leaves share ONE empty child vector per term type** (`_no_children`, src/default_term.jl) —
+    nreverse's profile charged 20% to `mk_var`, an empty vector per fresh variable. Nothing may push to
+    it: test_default_term.jl asserts the sharing, test/runtests.jl that it is still empty after EVERY
+    unit, and the static gate that no leaf constructor allocates a child vector. Mutation-proved:
+    a push is caught by the dedicated test and — on a unit whose own tests pass with it — by the
+    runner's check alone; the sharing undone is caught by the identity test and the static gate.
+    MEASURED: a leaf still allocates ITSELF — `DefaultTerm` is not stored inline (its `value` is a
+    Union holding a `String`), and an integer leaf also boxes the integer; that is the term
+    representation, for phase 2's flat store.
+  * **The bench measures both sides with ONE statistic** (tools/bench.jl `julia_times`,
+    `swipl_times`): N calls per run, N doubled until a run takes `RUN_S` (0.5 s; 0.1 s was short
+    enough that one collection doubled a run), a full collection before each run and every collection
+    during it counted, WALL time per call, the minimum of three. The machine is measured before and
+    after the runs, the bench's own process excluded from the load and the busiest other process
+    named; a ratio is quoted only if both checks are quiet.
 * **Not here:** `I_CUT`'s execution (V6) — so qsort runs at V7, with `=</2` (V5/V6); a call reaching a
   built-in, `S_UNDEF`'s `existence_error` (V5); `C_*`, the meta-call, catch/3 (V9).
 
