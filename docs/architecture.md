@@ -202,7 +202,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 |---|---|---|
 | `src/LogicKernel.jl` | the module entry file: the include order (the code graph below follows it) and the exports (ORIGINAL) | — |
 | `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation) | — |
-| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain; UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out | `src/pl-prims.c`, `src/pl-incl.h` |
+| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
@@ -233,7 +233,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/db/test_index_argv.jl` | a bound argument narrows the index through both argument views (frame and term), dereferenced | — |
 | `test/core_lang/test_local_stack.jl` | V3's tests: positions identical to swipl's (frame and choice-point placement, pinned and live), the record discipline, foreign frames and term references, growth, and that the primitives allocate nothing warm | — |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c`, `src/pl-hash.h` |
-| `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence | `src/pl-variant.c` |
+| `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence; under bindings (`ld`, V5a1) upstream's node numbering — `var_id`, `term_id`, `Root`, `isomorphic` | `src/pl-variant.c` |
 | `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
 | `test/db/test_procedures.jl` | V1's predicate table: one procedure per functor and database, `[]` apart from `'[]'`, `:- dynamic`, defined = a `PROC_DEFINED` flag or a clause visible now | — |
 | `test/compile/test_body_code_swipl.jl` | V2's differential: whole-clause code (operands by kind, the LCO label) identical to swipl's on pinned clauses, 400 random rule clauses, and nreverse and qsort as swipl consults them; V2's refusals and swipl's `type_error(callable, Body)`; clause/2 and retract/1 on rules | — |
@@ -352,6 +352,7 @@ graph LR
     pl_prims --> pl_inline
     pl_prims --> pl_ressymbol
     pl_prims --> pl_comp
+    pl_prims --> pl_variant
     pl_ressymbol --> term_interface
     pl_ressymbol --> default_term
     pl_ressymbol --> pl_incl
@@ -371,6 +372,8 @@ graph LR
     pl_comp --> pl_proc
     pl_variant --> term_interface
     pl_variant --> default_term
+    pl_variant --> pl_global
+    pl_variant --> pl_inline
     pl_variant --> pl_prims
     pl_variant --> pl_comp
     pl_termhash --> term_interface
@@ -1080,6 +1083,49 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V5a1 — the standard order and `=@=` under bindings: BUILT (2026-10-05)** (port_inventory row V5,
+its split; src/pl-prims.jl, src/pl-variant.jl, src/pl-global.jl). The first step of V5, from the two
+V5 research memos: a built-in reads its arguments from slots whose variables may be BOUND (decision
+2), and upstream's `compareStandard` and `is_variant_ptr` take `DECL_LD` and dereference at every
+step — the kernel's took terms alone. Settled by "SWI as is" (the memos' Q1): both now have an `ld`
+entry, and since through bindings a term can be a RATIONAL TREE, the port takes upstream's cyclic
+machinery with them. The entries without `ld` stay, for resolved (finite) terms, unchanged.
+* **Ported:** `do_compare` with `linkTermsCyclic` (only pairs reached through a binding, as
+  `do_unify` and for the same reason), `compare_fast`, `compare_descend` (Brent's cycle detection),
+  `ph_acyclic_mark`/`is_acyclic` (the temporary and permanent marks as two identity maps),
+  `compare_std`'s fallback to the descent, `compareStandard(ld, …)`; pl-variant.c's `node`, `var_id`,
+  `term_id`, `Root`, `isomorphic`, `variant` and `is_variant_ptr(ld, …)` — a compound numbered by
+  IDENTITY where upstream numbers its cell (the same answer: argued at `variant_buffer`).
+  `compare_primitives` gained upstream's first test, `w1 == w2` (the same term is equal at once).
+* **NOT PORTED:** the `incomparable` flag's `error` value — it raises a ball holding the cyclic pair,
+  which `PL_raise_exception` cannot copy yet (it resolves the ball) — so an incomparable pair keeps
+  the fast order, as swipl's default `incomparable=arbitrary` does; `CMP_MODE_PARTIAL`.
+* **Found, not guessed — the missing `w1 == w2`:** the first differential run did not finish. A
+  backtrace taken from the running daemon (SIGUSR1) showed it in `_cyclic_deref`, from the new
+  `do_compare`: two sides reaching the SAME compound object, with no link followed, were linked to
+  each other — a self-link, followed forever. Upstream never links such a pair: `compare_primitives`
+  returns equal for identical words first.
+* **Gate — test/core_lang/test_unify_swipl.jl, live swipl, three term types:**
+  * the unify differential (2000 pairs × 3 modes) now also compares the pool's six variables pairwise
+    after every unification, under its bindings — `==`, `=@=`, and `compare/3` when both are ground —
+    identical to swipl's on every outcome (among the rational trees: 9 identical pairs, 3566 variant
+    but not identical, 10 ordered; the tests require about half of each);
+  * ground rational trees: 1500 families of three variables bound to compounds over themselves, the
+    three pairs `==`/`=@=`/`compare/3` identical to swipl's (39 identical, 2309 `<`, 2152 `>`);
+  * the descent: 25 pairs where the FAST order is wrong — searched for, about one family in 1300 —
+    and `compare/3`'s answer identical to swipl's on all 25.
+  * test/core_lang/test_term.jl: SWI's own rational-tree variant tests — `cyclic` ×4, `cycle`,
+    `ground`, `sharing_cycles`, `cycle_with_prefix` — ported, each `fail` case asserting that its
+    setup unifies, so that `=@=` is what fails.
+* **Mutation-proved — 8 of 9 caught:** by the differentials, the descent never taken, `is_acyclic`
+  always true, `isomorphic` always true; by NON-TERMINATION (the 240 s limit, the baseline 23 s
+  after a restart, or the daemon killed at its memory limit), the missing `w1 == w2`, no cyclic link
+  followed, the descent's cycle never detected, a compound's partner ignored, `isomorphic` never
+  uniting. **Two were BLIND until the targeted case was added** (the descent never taken; `is_acyclic`
+  always true): the fixed corpus met no pair whose fast order is wrong. **Equivalent, argued:** a
+  variable's right-to-left link not checked — `node[i].a` and `node[j].b` are written only together,
+  in the one branch that requires both zero, so `m == j` implies `n == i`.
 
 **V4b — rules: calls, last calls and body arguments → MILESTONE `nreverse`: BUILT (2026-10-05)**
 (port_inventory row V4b; src/pl-wam.jl, src/pl-incl.jl, src/pl-global.jl). Plan: two research

@@ -27,9 +27,14 @@
 # does NOT undo on failure: partial bindings stay until the caller undoes to its mark — in SWI,
 # backtracking does that.
 #
-# NOT PORTED, deliberately: CMP_MODE_PARTIAL (`partial_compare/3`), attributed-variable ordering,
-# the standard order's cyclic-term machinery (`compare_descend`, CMP_INCOMPARABLE), attributed
-# variables in unification (`assignAttVar`, wakeup), and the stack-overflow retry loops.
+# The standard order comes in two entries: without `ld`, for RESOLVED terms (finite trees: the fast
+# walk is always the answer), and with `ld` (V5a), under bindings, where a term can be a rational
+# tree — upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`,
+# `is_acyclic`) is ported there.
+#
+# NOT PORTED, deliberately: CMP_MODE_PARTIAL (`partial_compare/3`), the `incomparable` flag's
+# `error` value (`compare_std`), attributed-variable ordering, attributed variables in unification
+# (`assignAttVar`, wakeup), and the stack-overflow retry loops.
 
 # ── results and modes (pl-incl.h `cmp_t`/`cmpex_t`, pl-prims.c `cmp_mode`) ───────────────────────
 "Standard-order result: the first term sorts before the second (pl-incl.h `CMP_LESS`)."
@@ -181,6 +186,7 @@ compounds; two variables by [`var_key`](@ref); two atomic terms by [`atomic_comp
 compounds → `CMP_COMPOUND`, meaning "descend".
 """
 function compare_primitives(t1, t2, mode::Int)::Int
+    t1 === t2 && return CMP_EQUAL               # w1 == w2: the same term (a variable: itself)
     k1, k2 = kind(t1), kind(t2)
     r1, r2 = _tag_rank(k1), _tag_rank(k2)
     if r1 != r2
@@ -298,6 +304,270 @@ function compareStandard(t1, t2, eq::Bool=false)::Int
         )
     )
     return compare_std(t1, t2, eq ? CMP_MODE_EQUAL : CMP_MODE_ORDER)
+end
+
+# ── the standard order UNDER BINDINGS (V5a) ──────────────────────────────────────────────────────
+# Upstream's chain takes `DECL_LD` and dereferences every pair (prims:1997-2184). A built-in reads
+# its arguments from slots whose variables may be bound (decision 2), and through bindings a term
+# can be a RATIONAL TREE (`occurs_check=false`), so these methods port upstream's cyclic machinery
+# as well: `linkTermsCyclic` in `do_compare`, `compare_descend` (Brent's cycle detection) and
+# `is_acyclic`. The methods above, without `ld`, stay the entry for RESOLVED terms — finite trees,
+# where the fast walk is always the answer.
+
+"`compare_descend` result: no order exists between the two terms (pl-incl.h `CMP_INCOMPARABLE`)."
+const CMP_INCOMPARABLE = 4
+
+# PORT: pl-prims.c do_compare
+# DIVERGES: only a pair of compounds REACHED THROUGH A BINDING is looked up in and entered into the
+# cyclic links, as `do_unify` does — see there ("WHY IT IS SAFE"): an interface term is a finite
+# tree, so a cycle can only pass through a binding. `bound` says whether the top pair was reached
+# through one. Returns `(rc, linked)` where upstream writes `*linked`; no `CMP_UNDECIDED`
+# (`CMP_MODE_PARTIAL` is not ported) and no `CMP_ERROR` (no memory overflow to report).
+"""
+    do_compare(ld, f1, f2, bound, mode) -> (Int, Bool)
+
+Compare the children of two compounds of one shape under the bindings in `ld` (pl-prims.c
+`do_compare`), linking compound pairs so that rational trees terminate; `linked` is true when a
+link was followed — the order found may then be wrong for cyclic terms (`compare_std`).
+"""
+function do_compare(
+    ld::PL_local_data{T}, f1::T, f2::T, bound::Bool, mode::Int
+)::Tuple{Int, Bool} where {T}
+    linked = false
+    agenda = ld.compare_agenda
+    initTermAgendaLR!(agenda, nchildren(f1), f1, f2, 1)     # goto compound
+    bound && linkTermsCyclic!(ld, f1, f2)
+    rc = CMP_EQUAL
+    while true
+        found, l0, r0 = nextTermAgendaLR!(agenda)
+        found || break
+        l = deRef(ld, l0)
+        r = deRef(ld, r0)
+        rc = compare_primitives(l, r, mode)
+        if rc != CMP_COMPOUND
+            rc == CMP_EQUAL && continue
+            break
+        end
+        rc = CMP_EQUAL
+        b = kind(l0) === VAR || kind(r0) === VAR           # reached through a binding
+        if b                                                # O_CYCLIC
+            l1 = _cyclic_deref(ld, l)
+            r1 = _cyclic_deref(ld, r)
+            if l1 !== l || r1 !== r                         # isRef(f1->definition) || …
+                linked = true
+                l, r = l1, r1
+                l === r && continue
+            end
+        end
+        rc = compare_functors(l, r, mode)
+        rc == CMP_EQUAL || break
+        pushWorkAgendaLR!(agenda, nchildren(l), l, r, 1)
+        b && linkTermsCyclic!(ld, l, r)
+    end
+    clearTermAgendaLR!(agenda)
+    return (rc, linked)
+end
+
+# PORT: pl-prims.c compare_fast
+# DIVERGES: returns `(rc, linked)` where upstream writes `*linked`; no `c1`/`c2` (only
+# `CMP_MODE_PARTIAL` reads them, not ported).
+"""
+    compare_fast(ld, t1, t2, mode) -> (Int, Bool)
+
+One walk over both terms under the bindings in `ld` (pl-prims.c `compare_fast`). The result is
+right for `CMP_MODE_EQUAL`, and for the order when both terms are acyclic; `linked` as `do_compare`.
+"""
+function compare_fast(
+    ld::PL_local_data{T}, t1::T, t2::T, mode::Int
+)::Tuple{Int, Bool} where {T}
+    bound = kind(t1) === VAR || kind(t2) === VAR
+    t1 = deRef(ld, t1)
+    t2 = deRef(ld, t2)
+    rc = compare_primitives(t1, t2, mode)
+    rc == CMP_COMPOUND || return (rc, false)
+    rc = compare_functors(t1, t2, mode)                     # f1->definition != f2->definition
+    rc == CMP_EQUAL || return (rc, false)
+    rc, linked = do_compare(ld, t1, t2, bound, mode)        # initCyclic(): nothing to set
+    exitCyclic!(ld)
+    return (rc, linked)
+end
+
+# PORT: pl-prims.c compare_descend
+# DIVERGES: two compounds are the same pair when they are the same objects (`===`) — a cycle passes
+# through a binding, and a binding's value is one object (upstream: the same `Functor` cells). No
+# `CMP_ERROR` from the argument tests (no memory overflow).
+"""
+    compare_descend(ld, t1, t2, mode) -> (Int, T, T)
+
+The slow but sound order of two terms under the bindings in `ld` (pl-prims.c `compare_descend`):
+at each compound skip the leading children that are equal and descend into the first pair that is
+not, until a pair decides — or the descent cycles (Brent's algorithm on the compound pairs), which
+is `CMP_INCOMPARABLE`, with the pair where it cycles.
+"""
+function compare_descend(
+    ld::PL_local_data{T}, p1::T, p2::T, mode::Int
+)::Tuple{Int, T, T} where {T}
+    s1, s2, have_s = p1, p2, false                          # Functor s1 = NULL, s2 = NULL
+    power = 1
+    steps = 0
+    while true
+        p1 = deRef(ld, p1)
+        p2 = deRef(ld, p2)
+        rc = compare_primitives(p1, p2, mode)
+        rc == CMP_COMPOUND || return (rc, p1, p2)
+        rc = compare_functors(p1, p2, mode)
+        rc == CMP_EQUAL || return (rc, p1, p2)
+        if have_s && p1 === s1 && p2 === s2
+            return (CMP_INCOMPARABLE, p1, p2)
+        end
+        steps += 1
+        if steps == power
+            s1, s2, have_s = p1, p2, true
+            power *= 2
+            steps = 0
+        end
+        n = nchildren(p1)
+        i = 1                                   # the pair differs, so the last child need not
+        while i < n                             # be tested (the head, child 1, is equal)
+            rc, _ = compare_fast(ld, child(p1, i), child(p2, i), CMP_MODE_EQUAL)
+            rc == CMP_EQUAL || break
+            i += 1
+        end
+        p1 = child(p1, i)
+        p2 = child(p2, i)
+    end
+end
+
+# PORT: pl-prims.c termChain
+# DIVERGES: `p` (an argument cell, or NULL) is the compound and the child index of the argument —
+# 0 for NULL.
+"A chain of compounds linked by their last argument (pl-prims.c `termChain`)."
+struct termChain{T}
+    head::T
+    tail::T
+    p_term::T           # the compound whose argument `p` is
+    p_arg::Int          # its child index; 0: NULL
+end
+
+# PORT: pl-prims.c ph_acyclic_mark
+# DIVERGES: the marks (`ACYCLIC_TEMP_MASK`, `ACYCLIC_PERM_MASK` on a functor cell) are entries in two
+# identity maps that live for one call — so there is no `ph_acyclic_unmark`. A compound of no
+# arguments ends a chain (upstream reads its `arguments - 1`, the functor cell, which is no term).
+# No MEMORY_OVERFLOW.
+"""
+    ph_acyclic_mark(ld, top) -> Bool
+
+Whether compound `top` is acyclic under the bindings in `ld` (pl-prims.c `ph_acyclic_mark`): walk
+it as chains of last arguments, marking each compound while its chain is open (temporary) and when
+it is done (permanent); meeting a temporarily marked compound again is a cycle.
+"""
+function ph_acyclic_mark(ld::PL_local_data{T}, top::T)::Bool where {T}
+    temp = IdDict{T, Nothing}()
+    perm = IdDict{T, Nothing}()
+    stack = termChain{T}[]                                  # agenda.stack
+    work = termChain{T}(top, top, top, 0)                   # agenda.work (never read at the top)
+    head = top
+    tail = top
+    pv = top
+    while true
+        if haskey(temp, tail)                               # is_acyclic_temp(&tail->definition)
+            haskey(perm, tail) || return false
+            @goto end_of_chain
+        end
+        temp[tail] = nothing                                # set_acyclic_temp
+        off, arity = _comp_shape(tail)
+        if arity > 1
+            new_workspace = false
+            iter = tail
+            for i in arity:-1:2
+                q = deRef(ld, child(iter, off + i - 2))     # p = iter->arguments + i - 2
+                if kind(q) === EXPR
+                    push!(stack, work)
+                    if !new_workspace
+                        work = termChain{T}(head, tail, iter, off + arity - 1)
+                        head = q
+                        tail = q
+                        new_workspace = true
+                    else
+                        work = termChain{T}(q, q, q, 0)
+                    end
+                end
+            end
+            new_workspace && continue
+        end
+        if arity == 0
+            @goto end_of_chain
+        end
+        pv = deRef(ld, child(tail, off + arity - 1))        # p = tail->arguments + arity-1
+        @label process_p
+        if kind(pv) === EXPR
+            tail = pv
+            continue
+        end
+        @label end_of_chain
+        head === top && return true
+        iter = head
+        while iter !== tail                                 # mark the chain permanent
+            perm[iter] = nothing
+            o, a = _comp_shape(iter)
+            iter = deRef(ld, child(iter, o + a - 1))
+        end
+        perm[tail] = nothing
+        head = work.head
+        tail = work.tail
+        p_term, p_arg = work.p_term, work.p_arg
+        @assert !isempty(stack) "ph_acyclic_mark: the agenda ran out"
+        work = pop!(stack)
+        if p_arg != 0
+            pv = deRef(ld, child(p_term, p_arg))
+            @goto process_p
+        end
+    end
+end
+
+# PORT: pl-prims.c is_acyclic
+"Whether `p` is acyclic under the bindings in `ld` (pl-prims.c `is_acyclic`)."
+function is_acyclic(ld::PL_local_data{T}, p::T)::Bool where {T}
+    p = deRef(ld, p)
+    kind(p) === EXPR || return true
+    return ph_acyclic_mark(ld, p)                           # ph_acyclic_unmark: see above
+end
+
+# PORT: pl-prims.c compare_std
+# DIVERGES: NOT PORTED — the `incomparable` flag's `error` value: it raises a ball holding the
+# cyclic pair, which `PL_raise_exception` cannot copy (it resolves the ball, and `resolve_term`
+# refuses a cycle). So an incomparable pair keeps the fast result, as swipl's default
+# `incomparable=arbitrary` does; `CMP_MODE_PARTIAL` is not ported either.
+"""
+    compare_std(ld, t1, t2, mode) -> Int
+
+The standard-order comparison in `mode` under the bindings in `ld` (pl-prims.c `compare_std`): the
+fast walk, and — when it followed a cyclic link, in an ordering mode, found the terms different,
+and one of them is cyclic — the sound descent instead.
+"""
+function compare_std(ld::PL_local_data{T}, t1::T, t2::T, mode::Int)::Int where {T}
+    rc, linked = compare_fast(ld, t1, t2, mode)
+    if linked && mode != CMP_MODE_EQUAL && rc != CMP_EQUAL &&
+        !(is_acyclic(ld, t1) && is_acyclic(ld, t2))
+        rc2, _, _ = compare_descend(ld, t1, t2, mode)
+        if rc2 != CMP_INCOMPARABLE
+            rc = rc2
+        end                                                 # else keep the fast result
+    end
+    return rc
+end
+
+# PORT: pl-prims.c compareStandard
+# DIVERGES: `eq` is not optional here (no method of three arguments, so none overlaps the method for
+# resolved terms); no `raiseIncomparable` (see `compare_std`).
+"""
+    compareStandard(ld, t1, t2, eq::Bool) -> Int
+
+The standard order of `t1` and `t2` under the bindings in `ld` (pl-prims.c `compareStandard`), as
+[`compareStandard`](@ref) for resolved terms: `-1`, `0` or `1`; with `eq` `0` or `CMP_NOTEQ`.
+"""
+function compareStandard(ld::PL_local_data{T}, t1::T, t2::T, eq::Bool)::Int where {T}
+    return compare_std(ld, t1, t2, eq ? CMP_MODE_EQUAL : CMP_MODE_ORDER)
 end
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════

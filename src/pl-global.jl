@@ -146,6 +146,7 @@ mutable struct PL_local_data{T}
     occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
     occurs_marked::IdDict{T, Nothing}                           # its FIRST_MASK marks
     unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
+    compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
     occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
     slots::Vector{T}                                            # stacks.local: the cells
@@ -186,6 +187,7 @@ function PL_local_data{T}() where {T}
         true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
         T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
+        term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
         # idle until a search resets it (`_index_context!`): any predicate will do

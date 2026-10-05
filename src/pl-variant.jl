@@ -8,13 +8,15 @@
 # variable maps to exactly one right variable and back — upstream's node fields `a` and `b`), the
 # same quick tests in `is_variant_ptr`.
 #
-# DIVERGES (file-wide): upstream numbers COMPOUND cells too (`term_id`, `Root`, `isomorphic`,
-# `univ`, `reset_terms`), marking them in place, so that cyclic terms terminate and a compound met
-# twice is compared by identity of its partner. Interface terms are finite trees and have no cells
-# to mark, so those functions are not ported and every compound is walked: for a finite term with
-# shared subterms the answer is the same (a shared left subterm met again maps its variables
-# through the same correspondence, which fails exactly when upstream's `isomorphic` does).
-# Variables are found by `var_key` in two maps where upstream overwrites the variable's cell.
+# TWO ENTRIES. Without `ld`, for RESOLVED terms: DIVERGES — upstream numbers COMPOUND cells too
+# (`term_id`, `Root`, `isomorphic`), so that cyclic terms terminate and a compound met twice is
+# compared by identity of its partner; a resolved term is a finite tree, so this entry walks every
+# compound instead — for a finite term with shared subterms the answer is the same (a shared left
+# subterm met again maps its variables through the same correspondence, which fails exactly when
+# upstream's `isomorphic` does); variables are found by `var_key` in two maps where upstream
+# overwrites the variable's cell. With `ld` (V5a, at the end of the file), under bindings, where a
+# term can be a rational tree: upstream's numbering is ported (`node`, `var_id`, `term_id`, `Root`,
+# `isomorphic`), over identity maps instead of overwritten cells.
 
 # PORT: pl-variant.c aWork
 "A pair of compounds whose arguments are being compared (pl-variant.c `aWork`)."
@@ -155,4 +157,198 @@ function is_variant_ptr(t1, t2)::Bool
         return false
     end
     return variant(push_start_args(t1, t2))
+end
+
+# ── =@= UNDER BINDINGS (V5a) ─────────────────────────────────────────────────────────────────────
+# Upstream's `is_variant_ptr` takes `DECL_LD` and dereferences every pair (var:461-462, 351-352): a
+# built-in reads its arguments from slots whose variables may be bound, and through bindings a term
+# can be a rational tree. So these methods port upstream's NUMBERING of compounds too — `term_id`,
+# `Root`, the union of isomorphic nodes in `isomorphic` — which is what makes a cyclic term
+# terminate (the same compound comes round again). The methods above, without `ld`, stay the entry
+# for RESOLVED terms, finite trees, where every compound may simply be walked.
+
+# PORT: pl-variant.c node
+# DIVERGES: `bp` and `orig` (the cell and the word saved to restore it) are the term itself — no
+# cell is overwritten (see `variant_buffer`); `0` is a link not set, as upstream's dummy node 0.
+"A variable or a compound the walk has numbered (pl-variant.c `struct node`)."
+struct node{T}
+    orig::T             # the term (upstream: the saved word of the cell `bp`)
+    a::Int              # variant at left (node_variant for a compound)
+    b::Int              # link to isomorphic node (node_isom)
+end
+
+# PORT: pl-variant.c VARIANT_BUFFER as variant_buffer
+# DIVERGES: upstream numbers a node by OVERWRITING its cell (`consVar(n)`, `consCompound_x(n)`) and
+# restores the cells afterwards (`reset_terms`). Here the numbers are entries in two maps — a
+# variable by `var_key`, a compound by IDENTITY (`IdDict`) — dropped with the buffer, and node `i`
+# is `nodes[i]`, from 1. Upstream numbers the CELL that holds a compound; here the compound object.
+# The answer is the same: a compound object reached twice is one shared subterm (upstream: two
+# cells of the same compound, whose nodes `isomorphic` then unites at once — the same functor and
+# the same arguments), and a cycle, which passes through a binding, returns to the same object.
+"The numbered variables and compounds of one `=@=` walk (pl-variant.c's node buffer)."
+struct variant_buffer{T}
+    nodes::Vector{node{T}}
+    vars::Dict{UInt64, Int}
+    terms::IdDict{T, Int}
+end
+variant_buffer{T}() where {T} =
+    variant_buffer{T}(node{T}[], Dict{UInt64, Int}(), IdDict{T, Int}())
+
+# PORT: pl-variant.c var_id
+"The node number of variable `v`, numbering it if new (pl-variant.c `var_id`)."
+function var_id(buf::variant_buffer{T}, v::T)::Int where {T}
+    return get!(buf.vars, var_key(v)) do
+        push!(buf.nodes, node{T}(v, 0, 0))
+        length(buf.nodes)
+    end
+end
+
+# PORT: pl-variant.c term_id
+"The node number of compound `t`, numbering it if new (pl-variant.c `term_id`)."
+function term_id(buf::variant_buffer{T}, t::T)::Int where {T}
+    return get!(buf.terms, t) do
+        push!(buf.nodes, node{T}(t, 0, 0))
+        length(buf.nodes)
+    end
+end
+
+# PORT: pl-variant.c Root
+"The root of node `i`'s class of isomorphic compounds (pl-variant.c `Root`)."
+function Root(buf::variant_buffer{T}, i::Int)::Int where {T}
+    while true
+        k = i
+        i = buf.nodes[i].b                      # node_isom(n)
+        i == 0 && return k
+    end
+end
+
+"Atomic `l` and `r` of one kind are the same: SYM by `sym_key`, GND in the standard order's identity."
+_variant_same_atomic(l, r)::Bool =
+    if kind(l) === SYM
+        sym_key(l) == sym_key(r)
+    else
+        compare_std(l, r, CMP_MODE_EQUAL) == CMP_EQUAL
+    end
+
+# PORT: pl-variant.c isomorphic
+# DIVERGES: walks its own agenda where upstream pushes a sentinel (NULL) onto the caller's and runs
+# until it pops it — the same pairs in the same order. No attributed variables.
+"""
+    isomorphic(ld, buf, i, j) -> Bool
+
+Whether compound nodes `i` and `j` are the SAME term up to structure — variables by identity, the
+compounds met on the way united as isomorphic (pl-variant.c `isomorphic`, `==` on rational trees).
+"""
+function isomorphic(
+    ld::PL_local_data{T}, buf::variant_buffer{T}, i::Int, j::Int
+)::Bool where {T}
+    i == j && return true
+    lm = buf.nodes[i].orig                      # univ(node_orig(Node(i, buf)), &dm, &lm)
+    ln = buf.nodes[j].orig
+    f = _variant_functor(lm, ln)
+    f === nothing && return false               # dm != dn
+    a = argPairs{T}(aWork{T}(lm, ln, f[1], 0, f[2]), aWork{T}[])
+    while true
+        pair = variant_next_arg!(a)
+        pair === nothing && return true
+        l = deRef(ld, pair[1])
+        r = deRef(ld, pair[2])
+        kind(l) === kind(r) || return false     # tag(wl) != tag(wr)
+        k = kind(l)
+        if k === VAR
+            var_key(l) == var_key(r) || return false    # identity test on variables
+            continue
+        elseif k !== EXPR
+            _variant_same_atomic(l, r) || return false
+            continue
+        end
+        ii = Root(buf, term_id(buf, l))         # number both before looking either up
+        jj = Root(buf, term_id(buf, r))
+        ii == jj && continue
+        m = buf.nodes[ii]
+        n = buf.nodes[jj]
+        g = _variant_functor(m.orig, n.orig)
+        g === nothing && return false
+        if ii <= jj                             # union
+            buf.nodes[ii] = node{T}(m.orig, m.a, jj)
+        else
+            buf.nodes[jj] = node{T}(n.orig, n.a, ii)
+        end
+        push_args!(a, m.orig, n.orig, g[1], g[2])
+    end
+end
+
+# PORT: pl-variant.c variant
+# DIVERGES: no attributed variables; no MEMORY_OVERFLOW.
+"""
+    variant(ld, agenda, buf) -> Bool
+
+Run the agenda under the bindings in `ld` (pl-variant.c `variant`): true when every pair matches
+under one consistent variable correspondence, numbering variables and compounds as it goes.
+"""
+function variant(
+    ld::PL_local_data{T}, agenda::argPairs{T}, buf::variant_buffer{T}
+)::Bool where {T}
+    while true
+        pair = variant_next_arg!(agenda)
+        pair === nothing && return true
+        l = deRef(ld, pair[1])
+        r = deRef(ld, pair[2])
+        kind(l) === kind(r) || return false     # tag(wl) != tag(wr)
+        k = kind(l)
+        if k === VAR                            # needsRef(wl)
+            i = var_id(buf, l)
+            j = var_id(buf, r)
+            vl = buf.nodes[i]
+            m = vl.a
+            n = buf.nodes[j].b
+            if m == 0 && n == 0
+                buf.nodes[i] = node{T}(vl.orig, j, vl.b)
+                vr = buf.nodes[j]               # (i == j: the node just written)
+                buf.nodes[j] = node{T}(vr.orig, vr.a, i)
+                continue
+            end
+            if m != 0 && n != 0 && m == j && n == i
+                continue
+            end
+            return false
+        elseif k !== EXPR
+            _variant_same_atomic(l, r) || return false
+            continue
+        end
+        i = term_id(buf, l)
+        j = term_id(buf, r)
+        mnode = buf.nodes[i]
+        kk = mnode.a                            # node_variant(m)
+        if kk != 0
+            isomorphic(ld, buf, kk, j) || return false
+            continue
+        end
+        f = _variant_functor(l, r)              # univ: dm != dn
+        f === nothing && return false
+        buf.nodes[i] = node{T}(mnode.orig, j, mnode.b)  # node_variant(m) = j
+        push_args!(agenda, l, r, f[1], f[2])
+    end
+end
+
+# PORT: pl-variant.c is_variant_ptr
+# DIVERGES: no attributed variables; no ERR_NOMEM (no MEMORY_OVERFLOW).
+"""
+    is_variant_ptr(ld, t1, t2) -> Bool
+
+`t1 =@= t2` under the bindings in `ld` (pl-variant.c `is_variant_ptr`) — rational trees included.
+"""
+function is_variant_ptr(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
+    p1 = deRef(ld, t1)
+    p2 = deRef(ld, t2)
+    p1 === p2 && return true                    # same term
+    kind(p1) === kind(p2) || return false       # different type
+    k = kind(p1)                                # quick tests
+    if k === VAR
+        return true
+    elseif k !== EXPR
+        return _variant_same_atomic(p1, p2)
+    end
+    _variant_functor(p1, p2) === nothing && return false
+    return variant(ld, push_start_args(p1, p2), variant_buffer{T}())
 end
