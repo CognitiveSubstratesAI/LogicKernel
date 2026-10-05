@@ -1170,7 +1170,8 @@ return codes, the positions and the closed handle; the open questions went to th
 * **AN UPSTREAM DEFECT, FIXED here:** pl-comp.c `arg1Key` lists `H_MPZ` but not `H_MPQ`, which falls
   to `assert(0)`: swipl 10.1.16 ABORTS on the first call of `p(1r3, a). p(2r3, b).` (two clauses —
   the list supervisor's test runs; probed: `arg1Key: Assertion failed`). The kernel treats `H_MPQ`
-  as `H_MPZ` (not found), `# DIVERGES`. Not yet reported upstream.
+  as `H_MPZ` (not found), `# DIVERGES`. Recorded as #4 in `docs/upstream_reports.md`, pinned in
+  test/foreign/test_query.jl; the upstream report is drafted, for the user to file.
 * **Gate:**
   * test/foreign/test_query.jl (term-generic: the three types): answers, return codes and
     determinism as libswipl's (1, 1, `PL_S_LAST` under `PL_Q_EXT_STATUS`, then 0); the supervisors

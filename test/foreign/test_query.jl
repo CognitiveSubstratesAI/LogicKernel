@@ -292,6 +292,25 @@ end
     LK.PL_close_foreign_frame(ld, fid)
 end
 
+@testset "two clauses with rational first arguments: no key, S_STATIC, both answers (upstream aborts)" begin
+    # docs/upstream_reports.md #4: swipl 10.1.16 ABORTS on the first call of `p(1r3, a). p(2r3, b).` —
+    # pl-comp.c `arg1Key` lists H_MPZ but not H_MPQ, so `listSupervisor` reaches its `assert(0)`.
+    # The kernel treats H_MPQ as H_MPZ (DIVERGES): no key, so the predicate gets S_STATIC.
+    Q = lk_term_type(Union{Int64, Rational{BigInt}})
+    db = IxDB{Q}()
+    p = ix_pred(Q, :p, 2; db=db)
+    pq(x, y) = mk_expr(Q, Q[lk_sym(Q, :p), x, y])
+    ix_assertz!(p, pq(lk_gnd(Q, Rational{BigInt}(1, 3)), lk_sym(Q, :a)))
+    ix_assertz!(p, pq(lk_gnd(Q, Rational{BigInt}(2, 3)), lk_sym(Q, :b)))
+    pc = LK.Code(p.def.impl_clauses.first_clause.clause, 1)
+    @test LK.decode(pc) == LK.H_MPQ
+    @test LK.arg1Key(pc) == (false, LK.word(0))
+    ans = vm_call(p, pq(mk_var(Q, UInt64(1)), mk_var(Q, UInt64(2))))
+    @test [lk_name(child(t, 3)) for (t, _) in ans] == [:a, :b]
+    @test last.(ans) == [false, true]                           # the last answer is deterministic
+    @test p.def.codes === p.def.code_data.staticp              # no list supervisor
+end
+
 @testset "clause GC while a query runs through a retracted clause" begin
     db, p = _ydb()
     ld, gd = db.ld, db.gd

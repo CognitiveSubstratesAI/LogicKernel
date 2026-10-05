@@ -1514,7 +1514,7 @@ end
 # a literal as `argKey` does (`indexOfWord` of the literal, V1 L2). `$expr/n` (literal 0, Q2) has no
 # functor: not found. AN UPSTREAM DEFECT FIXED: upstream's switch lists `H_MPZ` but not `H_MPQ`, which
 # falls to `assert(0)` — swipl 10.1.16 aborts calling `p(1r3, a). p(2r3, b).` (probed, V4a:
-# `arg1Key: Assertion failed`); here `H_MPQ` is not found, as `H_MPZ` is.
+# `arg1Key: Assertion failed`); here `H_MPQ` is not found, as `H_MPZ` is. docs/upstream_reports.md #4.
 """
     arg1Key(PC) -> (found, key)
 

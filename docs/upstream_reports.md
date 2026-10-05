@@ -14,15 +14,19 @@ An entry closes when its upstream report is filed and linked here.
 | 1 | `skipArgs`: an exact landing loses the key after `_,_`. `p(_,_,a1..a100)` with `p(_,_,a50)` builds no index, and a walk over several arguments loses the later ones for good. | `src/pl-comp.c`, `skipArgs`, `case H_VOID_N: … if ( skip <= 0 )` | **Fixed** (`6427b3a`, `# DIVERGES`). A check fails the day swipl stops showing the defect. | [LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1). Its fix comment is still to post by hand (the token gets 403 on comments). | not filed |
 | 2 | `hash_compile` never advances `data`. A piece that straddles a block hashes its own first bytes again, so its tail is never hashed. Two 310-byte atoms that differ after byte 247 get the same `variant_hash/2`. | `src/pl-termhash.c`, `hash_compile` | **Kept verbatim** (`# UPSTREAM DEFECT` in `hash_compile!`) and pinned in `test/core_lang/test_termhash.jl`. The fix is `data += copy;`. | [LogicKernel#2](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/2) | not filed |
 | 3 | An **abort** while raising an occurs-check error with `occurs_check=error`: `FATAL ERROR: Cannot report error: no memory`, then `Assertion failed: exception_term`, then SIGABRT. It is deterministic, but depends on what else the process has loaded and run. | runtime: `PL_error ← unify_with_occurs_check ← unify_ptrs` (`src/pl-prims.c`) | Nothing in the kernel depends on it. `test/core_lang/test_unify_swipl.jl` runs swipl in chunks and re-runs an aborted chunk pair by pair, reporting each abort as a `@warn`. | [LogicKernel#3](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/3). Reproducers and a draft report are in the workspace at `docs/tracking/repros/swipl_occurs_check_error_abort/`. | not filed (draft `REPORT.md`) |
+| 4 | An **abort** on the first call of a static predicate with exactly two clauses whose first arguments are rationals: `p(1r3, a). p(2r3, b).` gives `pl-comp.c:5577: arg1Key: Assertion failed: 0`. `listSupervisor` asks `arg1Key` for each clause's first-argument key; its switch lists `H_MPZ` but not `H_MPQ`, which falls to `assert(0)`. Assertions are live in Release builds by design (`cmake/BuildType.cmake`), so official binaries abort too. Seen on 10.1.16 (`10.1.16-20-gbae881a2`, Release, x86_64-linux). | `src/pl-comp.c`, `arg1Key`, `case H_MPZ:` without `case H_MPQ:` (`argKey` and `skipArgs` list both) | **Fixed** (`aa3b6bb`, `# DIVERGES` in `arg1Key`): `H_MPQ` gives no key, as `H_MPZ` does, so the predicate gets `S_STATIC`. Pinned in `test/foreign/test_query.jl` (both answers through the VM), mutation-proved: with upstream's omission restored, the kernel's `arg1Key` errors on exactly this predicate. | This file. Reproducer, captured output and a draft report in the workspace at `docs/tracking/repros/swipl_arg1key_mpq_abort/`. No LogicKernel issue opened (the user's call). | not filed (draft `REPORT.md`; the user reviews and files it) |
 
 How each was found:
 
 - **#1:** a live differential of index layouts against swipl (`test/db/test_index_swipl.jl`).
 - **#2:** reading `pl-termhash.c` while porting it, then measured on swipl.
 - **#3:** the live `=/2` differential (`test/core_lang/test_unify_swipl.jl`).
+- **#4:** porting `pl-supervisor.c` with `arg1Key` (V4a), then probed on swipl with the two facts.
 
 When one is fixed upstream, the LogicKernel side changes as follows:
 
 - **#1:** the divergence ends, so drop `# DIVERGES` and the check that pins swipl's behaviour.
 - **#2:** port the fix and flip the pin.
 - **#3:** go back to one swipl process per mode.
+- **#4:** drop the `# DIVERGES` in `arg1Key` (the code stays as it is), and add the two facts to a
+  live swipl differential.
