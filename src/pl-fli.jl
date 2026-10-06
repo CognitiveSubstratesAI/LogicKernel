@@ -118,19 +118,69 @@ function PL_put_term(ld::PL_local_data{T}, t1::Int, t2::Int)::Bool where {T}
     return true
 end
 
+# (untyped: an implementation's leaves may be of different concrete types under one term type)
+"`p` is a compound `name/arity` (`hasFunctor`): a symbol head named `name` and `arity` arguments."
+_hasFunctor(p, name, arity::Int) =
+    kind(p) === EXPR && nchildren(p) == arity + 1 && kind(child(p, 1)) === SYM &&
+    sym_key(child(p, 1)) == sym_key(name)
+
+# PORT: pl-fli.c classify_exception_p
+# KNOWN UPSTREAM DEFECT, ported AS IS (docs/upstream_reports.md #5): `error(F, _)` is
+# `EXCEPT_RESOURCE` only when `F` is the ATOM `resource_error`, where pl-incl.h documents the class as
+# `error(resource_error(_), _)` — so the stack overflow's `error(resource_error(stack), _)` ranks as an
+# ordinary error (probed: `'$urgent_exception'/3` keeps a type error over it).
+"The class of the ball `p` (pl-fli.c `classify_exception_p`)."
+function classify_exception_p(ld::PL_local_data{T}, p::T)::except_class where {T}
+    p = deRef(ld, p)
+    if kind(p) === VAR
+        return EXCEPT_NONE
+    elseif kind(p) === SYM
+        sym_key(p) == sym_key(mk_sym(T, :time_limit_exceeded)) && return EXCEPT_TIMEOUT
+    elseif _hasFunctor(p, mk_sym(T, :error), 2)
+        a = deRef(ld, child(p, 2))                          # p = argTermP(*p, 0)
+        if kind(a) === SYM && sym_key(a) == sym_key(mk_sym(T, :resource_error))
+            return EXCEPT_RESOURCE
+        end
+        return EXCEPT_ERROR
+    elseif _hasFunctor(p, mk_sym(T, :time_limit_exceeded), 1)
+        return EXCEPT_TIMEOUT
+    elseif _hasFunctor(p, mk_sym(T, :unwind), 1)
+        a = deRef(ld, child(p, 2))
+        if kind(a) === SYM
+            sym_key(a) == sym_key(mk_sym(T, :abort)) && return EXCEPT_ABORT
+        elseif _hasFunctor(a, mk_sym(T, :halt), 1)
+            return EXCEPT_HALT
+        elseif _hasFunctor(a, mk_sym(T, :thread_exit), 1)
+            return EXCEPT_THREAD_EXIT
+        end
+        return EXCEPT_UNWIND
+    end
+    return EXCEPT_OTHER
+end
+
+# PORT: pl-fli.h classify_exception
+"The class of the ball term reference `exception` holds, `EXCEPT_NONE` for none (pl-fli.h)."
+function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class where {T}
+    exception == 0 && return EXCEPT_NONE
+    return classify_exception_p(ld, ld.slots[exception + 1])
+end
+
 # PORT: pl-fli.c PL_raise_exception
 # DIVERGES: the ball is RESOLVED through the bindings into `exception_bin` (decision 1), so undoing
-# bindings cannot change it, where upstream copies it and freezes the global stack under it. There is
-# one class of exception (`classify_exception`: resource errors and unwinding are not raised yet), so
-# a re-raise replaces the pending ball, as an equal class does upstream.
-"Make the term `exception` references the pending exception; returns false (pl-fli.c)."
+# bindings cannot change it, where upstream copies it and freezes the global stack under it. No spare
+# stacks to enable for a resource error (the stack limit's error is V5b's, waiting for Q-B).
+"Make the term `exception` references the pending exception, unless a more urgent one is pending; false (pl-fli.c)."
 function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T}
     @assert exception < ld.lTop                             # valTermRef(exception) < lTop
     kind(deRef(ld, ld.slots[exception + 1])) === VAR &&
         error("Cannot throw variable exception")            # fatalError()
 
     if exception != ld.exception_bin                        # re-throwing
-        ld.slots[ld.exception_bin + 1] = resolve_term(ld, ld.slots[exception + 1])
+        co = classify_exception(ld, ld.exception_bin)
+        cn = classify_exception(ld, exception)
+        if cn >= co                                         # (EXCEPT_RESOURCE: enableSpareStacks)
+            ld.slots[ld.exception_bin + 1] = resolve_term(ld, ld.slots[exception + 1])
+        end
     end
     ld.exception_term = ld.exception_bin
 

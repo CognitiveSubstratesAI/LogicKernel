@@ -514,6 +514,13 @@ function _manifest_index(T)
                 LK.pl_variant2_va, LK.pl_prolog_current_choice1_va
             )
         ]...,
+        # V5b — the exception path's entries (src/pl-error.jl, pl-fli.jl, pl-modul.jl), over
+        # DefaultTerm only, as V4a's: the undefined procedure's error and the exception classes
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, D, Union{Nothing, D}}, false),
+        (LK._hasFunctor, Tuple{T, T, Int}, true),
+        (LK.classify_exception_p, Tuple{LD, T}, false),
+        (LK.classify_exception, Tuple{LD, Int}, false),
+        (LK.getUnknownModule, Tuple{MOD}, true),
         # V4b — the call path's helpers: the record checks and the procedure a call names allocate
         # nothing; the run loop's call-path labels are checked by their own test (static_analysis_body.jl)
         (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
@@ -682,6 +689,7 @@ const DISPATCH_MANIFEST = (
     (Base.Enums._enum_hash, Tuple{LK.unify_mode, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.finished, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.PL_error_code, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.except_class, UInt64}, false),
     # term-type-independent parts of the VM (V4a)
     (LK.StackMagic, Tuple{Int}, true), (LK.initSupervisors, Tuple{}, false),
     (LK._vmi_dispatch_tree, Tuple{Symbol, Vector{Tuple{UInt64, Symbol}}}, false),

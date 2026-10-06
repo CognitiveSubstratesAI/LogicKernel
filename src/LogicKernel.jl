@@ -29,6 +29,7 @@ include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instruction
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing (LD holds its scratch)
 include("pl-funct.jl")         # swipl-devel src/pl-funct.c — the control functors (GD holds them)
 include("pl-global.jl")        # swipl-devel src/pl-global.h — the database state (GD, LD)
+include("pl-modul.jl")         # swipl-devel src/pl-modul.c — a module's `unknown` flag
 include("pl-inline.jl")        # swipl-devel src/pl-inline.h — visibility, generations, keys, bindings
 include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard order; unification
 include("pl-ressymbol.jl")     # swipl-devel src/pl-ressymbol.c — reserved symbols (SWI-7's `[]`)

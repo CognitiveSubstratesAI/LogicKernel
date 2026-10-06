@@ -476,8 +476,9 @@ function setLTop!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
 end
 
 # A frame `normal_call` built above `lTop` whose own call FAILED before a supervisor raised `lTop`
-# over it: `S_LIST` takes `FRAME_FAILED` first (vmi:3607-3608), as `S_UNDEF`'s `unknown=fail` will
-# (V5). Upstream abandons it — `deep_backtrack` only resets `lTop` (vmi:6712). Here it is dropped
+# over it: `S_LIST` takes `FRAME_FAILED` first (vmi:3607-3608), as `S_UNDEF`'s `unknown=fail` does
+# upstream (not reachable here: no module flags, src/pl-modul.jl). Upstream abandons it —
+# `deep_backtrack` only resets `lTop` (vmi:6712). Here it is dropped
 # where `deep_backtrack` leaves it: the ONE drop of a frame being filled that is allowed, on the
 # failure path of its own call (user, 2026-10-05); `dropRecords!` still refuses every other. No
 # position moves.
@@ -661,7 +662,8 @@ macro LOAD_REGISTERS(qid)
 end
 
 # PORT: pl-vmi.c ENSURE_LOCAL_SPACE
-# DIVERGES: in positions. The overflow raises a Julia `LocalStackOverflow` until V5
+# DIVERGES: in positions. The overflow raises a Julia `LocalStackOverflow` until the stack limit's
+# `resource_error` is ported (V5b, waiting for the user's Q-B on its context)
 # (`raiseStackOverflow`), so its `ifnot` (`THROW_EXCEPTION`) is not reached.
 "Make room for `n` positions above `lTop`, saving the registers around the growth (pl-vmi.c)."
 macro ENSURE_LOCAL_SPACE(n)
@@ -755,7 +757,8 @@ end
 
 The kernel's `longjmp` for `PL_throw` (decision 1): thrown, with the exception pending, by a callback
 that raises a Prolog exception out of a call; `PL_next_solution` catches it and re-enters its run
-loop at the `except` arm. Nothing raises it before V5's foreign predicates.
+loop at the `except` arm. Nothing raises it yet: the foreign predicates ported (V5a2) raise with
+`PL_raise_exception` and return false, never `PL_throw`.
 """
 struct PrologThrow <: Exception end
 
@@ -1004,7 +1007,7 @@ end
 # `try`, so the whole run loop is `PL_next_solution_guarded`, inside one `try`; the handler is
 # outside, and re-enters the loop at its single entry with `except` set — upstream's re-entry after
 # `PL_throw`'s `longjmp` (`jc == 1`). The kernel's `PL_throw` is a `PrologThrow` (raised by nothing
-# before V5). Any other Julia exception — a bug, an interrupt, a stack-limit overflow — ends the query
+# yet). Any other Julia exception — a bug, an interrupt, a stack-limit overflow — ends the query
 # (closed, as `PL_close_query` would) and is rethrown, never swallowed (decision 1).
 """
     PL_next_solution(gd, ld, qid) -> Int
@@ -1624,7 +1627,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c normal_call
     # DIVERGES: the new frame stays ABOVE `lTop` (vmi:1869) until its supervisor raises `lTop`; one
     # whose call fails first is dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`).
-    # The overflow raises a Julia `LocalStackOverflow` until V5 (`raiseStackOverflow`).
+    # The overflow raises a Julia `LocalStackOverflow` until the stack limit's `resource_error` is
+    # ported (`raiseStackOverflow`; V5b, the user's Q-B).
     @label normal_call
     nc_f = ld.frames[NFR]
     nc_f.parent = FR
@@ -1805,7 +1809,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_LCALL
     # DIVERGES: the operand as `I_CALL`'s. NOT PORTED: the context module (one module), `FR_WATCHED`
-    # (asserted absent), `getProcDefinedDefinition` (autoload, import: V5 — `S_VIRGIN` takes an
+    # (asserted absent), `getProcDefinedDefinition` (autoload, import: V5c, Q-A — `S_VIRGIN` takes an
     # undefined procedure as it is), `P_TRANSPARENT`, `HIDE_CHILDS`. QUIRK kept: `setFramePredicate`
     # twice (vmi:2499, 2527).
     @label I_LCALL
@@ -1832,7 +1836,7 @@ function PL_next_solution_guarded(
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN
-    # DIVERGES: NOT PORTED: `getProcDefinedDefinition` (autoloading, import — V5) keeps `DEF`; the
+    # DIVERGES: NOT PORTED: `getProcDefinedDefinition` (autoloading, import — V5c, Q-A) keeps `DEF`; the
     # profiler; thread-local predicates (no threads).
     @label S_VIRGIN
     setLTop!(
@@ -1858,12 +1862,27 @@ function PL_next_solution_guarded(
     end
 
     # PORT: pl-vmi.c S_UNDEF
-    # DIVERGES: the unknown-procedure path (`existence_error`, the `unknown` flag) arrives with the
-    # exceptions it raises (V5).
+    # DIVERGES: the error context names the caller `Name/Arity`, never module-qualified (Q-A; see
+    # src/pl-error.jl). The `CHP_DEBUG` choice point is pushed as upstream pushes it; only the
+    # debugger's retry reads it upstream (not ported), and `b_throw` discards it.
     @label S_UNDEF
-    throw(
-        NotPortedError{T}(DEF.name, "calling a predicate with no clauses (S_UNDEF)", "V5")
-    )
+    # getUnknownModule(DEF->module): a definition has no module here (Q-A), and every user predicate
+    # lives in `user`; the flag is the default there, UNKNOWN_ERROR (src/pl-modul.jl), so the
+    # warning and fail branches are not reachable and not ported.
+    @assert getUnknownModule(MODULE_user(gd)) == UNKNOWN_ERROR
+    su_caller =
+        ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
+    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+    newChoice(ld, CHP_DEBUG, FR)
+    @SAVE_REGISTERS(QID)
+    su_fid = PL_open_foreign_frame(ld)
+    if su_fid != 0
+        PL_error(ld, ERR_UNDEFINED_PROC, DEF, su_caller)
+        PL_close_foreign_frame(ld, su_fid)
+    end
+    @LOAD_REGISTERS(QID)
+    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1302) — "will be left in exception code"
+    @goto b_throw                                   # THROW_EXCEPTION
 
     # PORT: pl-vmi.c S_STATIC
     # QUIRK, as upstream (vmi:3358): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds
@@ -2197,7 +2216,7 @@ function PL_next_solution_guarded(
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c b_throw
     # DIVERGES: the no-catcher path (user, 2026-10-05): `findCatcher` finds no catcher, as there is no
-    # catch/3 before V5 — so it is not called, and the catcher reference is 0. NOT PORTED: the
+    # catch/3 before V9 — so it is not called, and the catcher reference is 0. NOT PORTED: the
     # exception hook that rewrites an exception, `LD->outofstack`, the emergency-space check (the
     # foreign frame is opened with room made first), `fast_condition`.
     @label b_throw
@@ -2212,7 +2231,7 @@ function PL_next_solution_guarded(
 
     ensureLocalSpace(ld, SIZEOF_FLIFRAME)
     bt_fid = open_foreign_frame(ld)
-    # catchfr_ref = findCatcher(fid, FR, LD->choicepoints, exception_term): no catch/3 (V5)
+    # catchfr_ref = findCatcher(fid, FR, LD->choicepoints, exception_term): no catch/3 (V9)
     PL_close_foreign_frame(ld, bt_fid)
     @goto b_throw_debug
 
@@ -2252,7 +2271,7 @@ function PL_next_solution_guarded(
     @goto b_throw_resume
 
     # PORT: pl-vmi.c b_throw_resume
-    # DIVERGES: its no-catcher branch only (V5 adds the catcher); no GC request to honour.
+    # DIVERGES: its no-catcher branch only (V9 adds the catcher); no GC request to honour.
     @label b_throw_resume
     QF = QueryFromQid(ld, QID)                      # may be shifted
     br_q = ld.queries[QF]

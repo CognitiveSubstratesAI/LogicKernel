@@ -721,6 +721,20 @@ const QF_FRAME = 39
 "The words from `saved_environment` to the top frame: `parentFrame` of a top frame reads there (pl-incl.h)."
 const QF_PARENT_ENV_OFFSET = QF_TOP_FRAME - QF_SAVED_ENVIRONMENT
 
+# PORT: pl-incl.h except_class
+"How urgent an exception is (pl-incl.h `except_class`): a raise replaces a pending ball of a lower class only."
+@enum except_class::UInt8 begin
+    EXCEPT_NONE = 0                 # no exception
+    EXCEPT_OTHER                    # any other exception
+    EXCEPT_ERROR                    # ISO error(Formal,Context)
+    EXCEPT_RESOURCE                 # ISO error(resource_error(_), _)
+    EXCEPT_TIMEOUT                  # time_limit_exceeded
+    EXCEPT_UNWIND                   # unwind(Term)
+    EXCEPT_ABORT                    # unwind(abort)
+    EXCEPT_THREAD_EXIT              # unwind(thread_exit(Term))
+    EXCEPT_HALT                     # unwind(halt(Code)
+end
+
 # PORT: pl-builtin.h FRG_FIRST_CALL
 "Foreign control: the initial call (pl-builtin.h `frg_code`)."
 const FRG_FIRST_CALL = 0

@@ -8,8 +8,8 @@
 # What the kernel takes from SWI-Prolog's error reporting (pl-error.c): building an ISO error term
 # `error(Formal, context(Name/Arity, Msg))` for the running predicate and raising it — the
 # occurs-check error, which unification raises under `occurs_check=error` (V4a), and since V5a2 the
-# codes the first built-ins raise: instantiation, type and domain errors. The other codes arrive with
-# the code that raises them.
+# codes the first built-ins raise — instantiation, type and domain errors — and since V5b the
+# undefined procedure's existence error. The other codes arrive with the code that raises them.
 #
 # DIVERGES (file-wide): upstream's `PL_error` is ONE variadic function that reads its arguments by
 # the code (`va_arg`); here each code family is a METHOD with typed arguments — no `Vararg{Any}` —
@@ -30,6 +30,7 @@
     ERR_CHARS_TYPE                  # char *expected, term_t actual
     ERR_DOMAIN                      # atom_t domain, term_t value
     ERR_OCCURS_CHECK                # Word, Word
+    ERR_UNDEFINED_PROC              # Definition def, Definition clr
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -154,6 +155,32 @@ function PL_error(
             T, T[mk_sym(T, :type_error), mk_sym(T, Symbol(expected)), ld.slots[actual + 1]]
         )
     end
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
+    PL_error(ld, ERR_UNDEFINED_PROC, def, clr) -> false
+
+Raise `error(existence_error(procedure, Name/Arity), context(Caller, _))` for the undefined predicate
+`def`; `clr`, when given, replaces the running frame's predicate as the caller (pl-error.c).
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, def::Definition{T},
+    clr::Union{Nothing, Definition{T}}
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_UNDEFINED_PROC
+    pred = new_term_ref(ld)
+    if clr !== nothing
+        caller = clr
+    end
+    # unify_definition(MODULE_user, pred, def, 0, GP_NAMEARITY): `Name/Arity` (see the file header)
+    ld.slots[pred + 1] = mk_expr(T, T[mk_sym(T, :/), def.name, mk_gnd(T, def.arity)])
+    ld.slots[formal + 1] = mk_expr(
+        T, T[mk_sym(T, :existence_error), mk_sym(T, :procedure), ld.slots[pred + 1]]
+    )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
