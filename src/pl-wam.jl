@@ -747,7 +747,7 @@ const VMI_RUN = (
     :I_FCALLDET2, :I_FCALLDET3, :I_FCALLDET4, :I_FCALLDET5, :I_FCALLDET6, :I_FCALLDET7,
     :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET, :I_VAR, :I_NONVAR, :I_INTEGER,
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
-    :I_CALLABLE
+    :I_CALLABLE, :A_ADD_FC
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1927,6 +1927,44 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_CALLABLE
     @label I_CALLABLE
     @TYPE_TEST(isCallable)
+
+    # ── arithmetic compiled inline (pl-vmi.c), V8 ─────────────────────────────────────────────────
+    # PORT: pl-vmi.c A_ADD_FC
+    # DIVERGES: the integer operand is a literal (src/pl-vmi.jl). The fast path's test is an `Int64`
+    # in the TAGGED range, as upstream's `isTaggedInt`, so `v + add` cannot overflow; the sum is
+    # one `Int64` value (`put_int64`'s overflow branch cannot be taken). Writing the result's slot
+    # is not a binding (decision 2), as upstream's `*rp = w`. NOT PORTED: the `vmi_builtin=false`
+    # branch, which calls `is/2` (only the debugger and coverage clear the flag).
+    @label A_ADD_FC
+    af_rp = varFrameP(ld.frames[FR].base, Int(PCc[PC]))                 # A =
+    af_np = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1])  # B +
+    af_add = int64_value(PCl[PCc[PC + 2]])                              # <int>
+    PC += 3
+    if number_kind(af_np) === NUM_INTEGER && integer_is_int64(af_np) &&
+        PLMINTAGGEDINT <= int64_value(af_np) <= PLMAXTAGGEDINT          # isTaggedInt(*np)
+        ld.slots[af_rp + 1] = mk_gnd(T, int64_value(af_np) + af_add)    # *rp = consInt(r)
+        @goto next_instruction
+    end
+    @SAVE_REGISTERS(QID)
+    af_rc = false
+    af_w = ph
+    af_fid = PL_open_foreign_frame(ld)                  # Still needed?
+    if af_fid != 0
+        af_t = new_term_ref(ld)                         # pushWordAsTermRef(np)
+        ld.slots[af_t + 1] = af_np
+        af_n = _number_alloc!(ld)
+        af_rc = evalExpression(ld, af_t, af_n)
+        if af_rc                                        # ensureWritableNumber: numbers are values
+            af_rc = ar_add_si(ld, af_n, af_add)
+            af_rc && (af_w = put_number(T, af_n))
+        end
+        _number_free!(ld, 1)                            # clearNumber(&n)
+        PL_close_foreign_frame(ld, af_fid)
+    end
+    @LOAD_REGISTERS(QID)
+    af_rc || @goto b_throw                              # THROW_EXCEPTION
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC - 3])) + 1] = af_w  # rp: may have shifted
+    @goto next_instruction
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN

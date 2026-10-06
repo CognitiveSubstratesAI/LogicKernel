@@ -53,6 +53,33 @@ function _arun(name, args::Vector{_A}; gd=_AGD, ld=_ALD)
     return rc, out
 end
 
+"Run procedure `p` on `args`: (rc, the goal resolved — its arguments as answered — or the ball)."
+function _arun_proc(gd, ld, p, args::Vector{_A})
+    fid = LKA.PL_open_foreign_frame(ld)
+    a = LKA.PL_new_term_refs(ld, length(args))
+    for (k, t) in enumerate(args)
+        ld.slots[a + k] = t
+    end
+    qid = LKA.PL_open_query(
+        gd, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
+    )
+    rc = LKA.PL_next_solution(gd, ld, qid)
+    out = if rc == LKA.PL_S_EXCEPTION
+        LKA.resolve_term(ld, ld.slots[LKA.PL_exception(ld, qid) + 1])
+    else
+        mk_expr(
+            _A,
+            _A[
+                _as(:goal);
+                [LKA.resolve_term(ld, ld.slots[a + k]) for k in eachindex(args)]
+            ]
+        )
+    end
+    LKA.PL_close_query(ld, qid)
+    LKA.PL_close_foreign_frame(ld, fid)
+    return rc, out
+end
+
 "`X is E`: the value (an interface term) or `nothing` when it failed; an error throws `ArgumentError`."
 function _ais(e::_A)
     rc, out = _arun(:is, _A[_av(), e])
@@ -203,6 +230,60 @@ end
     @test occursin(_aenc(_af(:/, _as(:a), _ag(0))), r)
 end
 
+# ── integer size and shifts too far (V8) — pinned to swipl 10.1.16 (probed) ──────────────────────
+# `1 << 20000` passes int_bits_ok's second bound: over 10000 bits, under the stacks limit. A shift
+# amount beyond `long` is shift_to_far: 0 for a right shift, or for a left one by a negative amount,
+# even of a negative number. A left one is int_too_big; swipl raises resource_error, and the
+# interim is NotPortedError (the user's Q-B/Q-C). `1 << (1 << 40)` fails int_bits_ok. A right shift
+# of a big integer floors (mpz_fdiv_q_2exp).
+@testset "integer size, shifts too far, the floor of a right shift (V8)" begin
+    v(e) = lk_value(_ais(e))
+    @test v(_af(:<<, _ag(1), _ag(20000))) == big(2)^20000
+    @test v(_af(:>>, _ag(-1), _ag(big(2)^70))) == 0
+    @test v(_af(:>>, _ag(5), _ag(big(2)^70))) == 0
+    @test v(_af(:<<, _ag(-5), _ag(-big(2)^70))) == 0
+    @test v(_af(:<<, _ag(0), _ag(big(2)^70))) == 0
+    @test_throws LKA.NotPortedError _ais(_af(:<<, _ag(1), _ag(big(2)^70)))
+    @test_throws LKA.NotPortedError _ais(_af(:<<, _ag(1), _ag(1 << 40)))
+    @test _ALD.query == 0                                       # the query is closed
+    @test v(_af(:>>, _ag(-big(2)^70), _ag(100))) == -1
+    @test v(_af(:>>, _ag(1 - big(2)^70), _ag(7))) == typemin(Int64)
+end
+
+# ── A_ADD_FC (V8): `M is N-1` compiled inline, its fast and slow paths — pinned to swipl 10.1.16 ──
+# The research probe's (scratchpad v6a/p5_addfc.pl): `p(N, R) :- M is N-1, id(M, R).` The slow path
+# evaluates `N` (`evalExpression`) and adds (`ar_add_si`); its error names the CLAUSE's predicate,
+# `p/2`, where the call of is/2 names `is/2`.
+@testset "A_ADD_FC: the fast path, the slow path's values, and its error's context (V8)" begin
+    gd, ld = LKA.PL_global_data{_A}(), LKA.PL_local_data{_A}()
+    user = LKA.MODULE_user(gd)
+    N, M, R, X = _av(), _av(), _av(), _av()
+    for (h, b) in
+        ((_af(:p, N, R), _af(",", _af(:is, M, _af(:-, N, _ag(1))), _af(:id, M, R))),
+        (_af(:id, X, X), nothing))
+        pr = LKA.lookupProcedure(child(h, 1), nchildren(h) - 1, user)
+        cl = LKA.compileClause(gd, ld, h, b, pr, user)
+        b === nothing || @test LKA.A_ADD_FC in cl.codes
+        LKA.assertDefinition!(gd, pr.definition, cl, LKA.CL_END)
+    end
+    pp = LKA.lookupProcedure(_as(:p), 2, user)
+    run(n) = (r=_arun_proc(gd, ld, pp, _A[n, _av()]); r)
+    for (n, want) in (
+        (5, 4), (-big(2)^56, -big(2)^56 - 1), (big(2)^56, big(2)^56 - 1),       # fast; slow
+        (typemin(Int64), big(typemin(Int64)) - 1), (1 // big(3), -2 // big(3)), (1.5, 0.5),
+        ("a", 96)
+    )
+        rc, out = run(_ag(n))
+        @test rc != LKA.PL_S_FALSE && rc != LKA.PL_S_EXCEPTION
+        @test lk_value(child(out, 3)) == want
+    end
+    rc, out = run(_as(:a))
+    @test rc == LKA.PL_S_EXCEPTION
+    o = _aoutcome(rc, out)
+    @test occursin(_aenc(_af(:type_error, _as(:evaluable), _af(:/, _as(:a), _ag(0)))), o)
+    @test occursin("@" * _aenc(_af(:/, _as(:p), _ag(2))) * "@", o)               # context(p/2, _)
+end
+
 # ── what the kernel decides alone ────────────────────────────────────────────────────────────────
 @testset "the interims (Q-AR1, Q-AR7) and the kernel-only terms (Q-AR5), pinned" begin
     # Q-AR1: DefaultTerm holds no BigInt: a big result raises, loudly — never a wrong value
@@ -279,6 +360,12 @@ function _aexpr(rng, depth::Int)::Tuple{_A, String}
             string(v)
         end
         return (t, src)
+    end
+    if rand(rng) < 0.15                                     # a shift (V8): a small amount
+        a = _aexpr(rng, depth + 1)
+        k = rand(rng, (-70, -3, -1, 0, 1, 2, 7, 63, 64, 65, 100))
+        op = rand(rng, (:>>, :<<))
+        return (_af(op, a[1], _ag(k)), string(op, "(", a[2], ",", k, ")"))
     end
     op = rand(rng, ((:+, 2), (:-, 2), (:*, 2), (:-, 1), (:+, 1)))
     args = [_aexpr(rng, depth + 1) for _ in 1:op[2]]
@@ -357,15 +444,13 @@ if _A_SWIPL !== nothing
             read(`swipl -q $f`, String)
         end
         theirs = String[]
+        # a float, anywhere — a value or inside an error term: swipl prints the shortest text, `f…`;
+        # compare its bit pattern, as the kernel's side prints it
+        fbits(m) = "F" * string(reinterpret(UInt64, parse(Float64, m[2:end])); base=16)
         for l in split(strip(text), '\n')
-            # a float value: swipl prints the shortest text; compare its bit pattern
-            m = match(r"^ok:f(.*)$", l)
-            push!(theirs,
-                if m === nothing
-                    String(l)
-                else
-                    "ok:F" * string(reinterpret(UInt64, parse(Float64, m[1])); base=16)
-                end)
+            push!(
+                theirs, replace(String(l), r"f-?[0-9]+\.[0-9]+(?:e[+-]?[0-9]+)?" => fbits)
+            )
         end
         @test length(theirs) == length(ours)
         bad = [

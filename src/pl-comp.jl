@@ -1187,12 +1187,11 @@ function compileBodyTypeTest(
 end
 
 # PORT: pl-comp.c compileSimpleAddition
-# DIVERGES: its one emission, `A_ADD_FC`, is V8's: where upstream emits it, the kernel refuses
-# (`NotPortedError`), never compiling another instruction. The clause's terms are resolved (no
-# bindings at compile time), so `deRef` has nothing to do.
+# DIVERGES: the integer operand is a literal, as every literal operand is (src/pl-vmi.jl). The
+# clause's terms are resolved (no bindings at compile time), so `deRef` has nothing to do.
 """
-`NewVar is Var +/- SmallInt` (pl-comp.c): `A_ADD_FC` (refused until V8), the sum's arguments
-swapped for `+`; false for any other shape, which then compiles as a call.
+`NewVar is Var +/- SmallInt` (pl-comp.c): `A_ADD_FC`, the sum's arguments swapped for `+`; false for
+any other shape, which then compiles as a call.
 """
 function compileSimpleAddition(
     ld::PL_local_data{T}, names::SubClauseNames, sc::T, ci::compileInfo{T}
@@ -1212,9 +1211,14 @@ function compileSimpleAddition(
                 if vi >= 0 && !isFirstVar(ci.used_var, vi) &&
                     number_kind(a2) === NUM_INTEGER && integer_is_int64(a2) &&
                     is_portable_smallint(ld, int64_value(a2))
-                    # isFirstVarSet(ci->used_var, rvar);
-                    # Output_3(ci, A_ADD_FC, VAROFFSET(rvar), VAROFFSET(vi), (code)i)
-                    throw(NotPortedError{T}(sc, "A_ADD_FC (compileSimpleAddition)", "V8"))
+                    i = int64_value(a2)
+                    neg && (i = -i)                            # tagged int: cannot overflow
+                    isFirstVarSet!(ci.used_var, rvar)
+                    Output_3!(
+                        ci, A_ADD_FC, VAROFFSET(rvar), VAROFFSET(vi),
+                        addLiteral!(ci, mk_gnd(T, i))
+                    )
+                    return true
                 end
                 neg && break                                   # do not swap X is 10 - Y
                 a1, a2 = a2, a1

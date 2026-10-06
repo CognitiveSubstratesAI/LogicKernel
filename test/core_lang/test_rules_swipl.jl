@@ -275,6 +275,227 @@ end
     end
 end
 
+# ── poly_10 (bench/programs/poly_10.pl), V8 ─────────────────────────────────────────────────────
+"poly_10.pl's clauses as terms, in file order (bench/programs/poly_10.pl)."
+function _rpoly_clauses()
+    (Var, Terms1, Terms2, Terms, Var1, Var2, Poly, C, C1, C2, X, E, E1, E2, N, M, Part,
+        Result, P,
+        Q, Term, PartA, PartB, NewTerm, NewTerms) = (_rv(k) for k in 1:25)
+    term(a, b) = _rf("term", a, b)
+    poly(a, b) = _rf("poly", a, b)
+    one = _rg(1)
+    cut = _rs("!")
+    return [
+        (_rs("top"), _rs("poly_10")),
+        (_rs("poly_10"), _rconj(_rf("test_poly", P), _rf("poly_exp", _rg(10), P, _rv(99)))),
+        (
+            _rf("test_poly", P),
+            _rconj(
+                _rf(
+                    "poly_add",
+                    poly(_rs(:x), _rlist(term(_rg(0), one), term(one, one))),
+                    poly(_rs(:y), _rlist(term(one, one))),
+                    Q
+                ),
+                _rf("poly_add", poly(_rs(:z), _rlist(term(one, one))), Q, P)
+            )
+        ),
+        (_rf("less_than", _rs(:x), _rs(:y)), nothing),
+        (_rf("less_than", _rs(:y), _rs(:z)), nothing),
+        (_rf("less_than", _rs(:x), _rs(:z)), nothing),
+        (
+            _rf("poly_add", poly(Var, Terms1), poly(Var, Terms2), poly(Var, Terms)),
+            _rconj(cut, _rf("term_add", Terms1, Terms2, Terms))
+        ),
+        (
+            _rf("poly_add", poly(Var1, Terms1), poly(Var2, Terms2), poly(Var1, Terms)),
+            _rconj(
+                _rf("less_than", Var1, Var2),
+                cut,
+                _rf("add_to_order_zero_term", Terms1, poly(Var2, Terms2), Terms)
+            )
+        ),
+        (
+            _rf("poly_add", Poly, poly(Var, Terms2), poly(Var, Terms)),
+            _rconj(cut, _rf("add_to_order_zero_term", Terms2, Poly, Terms))
+        ),
+        (
+            _rf("poly_add", poly(Var, Terms1), C, poly(Var, Terms)),
+            _rconj(cut, _rf("add_to_order_zero_term", Terms1, C, Terms))
+        ),
+        (_rf("poly_add", C1, C2, C), _rf("is", C, _rf("+", C1, C2))),
+        (_rf("term_add", _rnil(), X, X), cut),
+        (_rf("term_add", X, _rnil(), X), cut),
+        (
+            _rf(
+                "term_add",
+                _rcons(term(E, C1), Terms1),
+                _rcons(term(E, C2), Terms2),
+                _rcons(term(E, C), Terms)
+            ),
+            _rconj(cut, _rf("poly_add", C1, C2, C), _rf("term_add", Terms1, Terms2, Terms))
+        ),
+        (
+            _rf(
+                "term_add",
+                _rcons(term(E1, C1), Terms1),
+                _rcons(term(E2, C2), Terms2),
+                _rcons(term(E1, C1), Terms)
+            ),
+            _rconj(
+                _rf("<", E1, E2),
+                cut,
+                _rf("term_add", Terms1, _rcons(term(E2, C2), Terms2), Terms)
+            )
+        ),
+        (
+            _rf(
+                "term_add",
+                Terms1,
+                _rcons(term(E2, C2), Terms2),
+                _rcons(term(E2, C2), Terms)
+            ),
+            _rf("term_add", Terms1, Terms2, Terms)
+        ),
+        (
+            _rf(
+                "add_to_order_zero_term",
+                _rcons(term(_rg(0), C1), Terms),
+                C2,
+                _rcons(term(_rg(0), C), Terms)
+            ),
+            _rconj(cut, _rf("poly_add", C1, C2, C))
+        ),
+        (_rf("add_to_order_zero_term", Terms, C, _rcons(term(_rg(0), C), Terms)), nothing),
+        (_rf("poly_exp", _rg(0), _rv(98), one), cut),
+        (
+            _rf("poly_exp", N, Poly, Result),
+            _rconj(
+                _rf("is", M, _rf(">>", N, one)),
+                _rf("is", N, _rf("<<", M, one)),
+                cut,
+                _rf("poly_exp", M, Poly, Part),
+                _rf("poly_mul", Part, Part, Result)
+            )
+        ),
+        (
+            _rf("poly_exp", N, Poly, Result),
+            _rconj(
+                _rf("is", M, _rf("-", N, one)),
+                _rf("poly_exp", M, Poly, Part),
+                _rf("poly_mul", Poly, Part, Result)
+            )
+        ),
+        (
+            _rf("poly_mul", poly(Var, Terms1), poly(Var, Terms2), poly(Var, Terms)),
+            _rconj(cut, _rf("term_mul", Terms1, Terms2, Terms))
+        ),
+        (
+            _rf("poly_mul", poly(Var1, Terms1), poly(Var2, Terms2), poly(Var1, Terms)),
+            _rconj(
+                _rf("less_than", Var1, Var2),
+                cut,
+                _rf("mul_through", Terms1, poly(Var2, Terms2), Terms)
+            )
+        ),
+        (
+            _rf("poly_mul", P, poly(Var, Terms2), poly(Var, Terms)),
+            _rconj(cut, _rf("mul_through", Terms2, P, Terms))
+        ),
+        (
+            _rf("poly_mul", poly(Var, Terms1), C, poly(Var, Terms)),
+            _rconj(cut, _rf("mul_through", Terms1, C, Terms))
+        ),
+        (_rf("poly_mul", C1, C2, C), _rf("is", C, _rf("*", C1, C2))),
+        (_rf("term_mul", _rnil(), _rv(97), _rnil()), cut),
+        (_rf("term_mul", _rv(96), _rnil(), _rnil()), cut),
+        (
+            _rf("term_mul", _rcons(Term, Terms1), Terms2, Terms),
+            _rconj(
+                _rf("single_term_mul", Terms2, Term, PartA),
+                _rf("term_mul", Terms1, Terms2, PartB),
+                _rf("term_add", PartA, PartB, Terms)
+            )
+        ),
+        (_rf("single_term_mul", _rnil(), _rv(95), _rnil()), cut),
+        (
+            _rf(
+                "single_term_mul",
+                _rcons(term(E1, C1), Terms1),
+                term(E2, C2),
+                _rcons(term(E, C), Terms)
+            ),
+            _rconj(
+                _rf("is", E, _rf("+", E1, E2)),
+                _rf("poly_mul", C1, C2, C),
+                _rf("single_term_mul", Terms1, term(E2, C2), Terms)
+            )
+        ),
+        (_rf("mul_through", _rnil(), _rv(94), _rnil()), cut),
+        (
+            _rf(
+                "mul_through",
+                _rcons(term(E, Term), Terms),
+                Poly,
+                _rcons(term(E, NewTerm), NewTerms)
+            ),
+            _rconj(
+                _rf("poly_mul", Term, Poly, NewTerm),
+                _rf("mul_through", Terms, Poly, NewTerms)
+            )
+        )
+    ]
+end
+
+# The milestone: poly_10 — A_ADD_FC (`M is N-1`), `>>`, `<<` with a BOUND left side, `<`, cuts —
+# against swipl CONSULTING bench/programs/poly_10.pl; `pt/2` (test_poly then poly_exp) is the
+# test's own, given to both sides.
+@testset "poly_10: every answer and its determinism are swipl's (the V8 milestone)" begin
+    N, P, R = _rv(31), _rv(32), _rv(33)
+    pt = (_rf("pt", N, R), _rconj(_rf("test_poly", P), _rf("poly_exp", N, P, R)))
+    db = _rdb([_rpoly_clauses(); pt])
+    goals = [_rf("test_poly", _rv(100)), _rf("pt", _rg(1), _rv(100)),
+        _rf("pt", _rg(2), _rv(100)),
+        _rf("pt", _rg(3), _rv(100)), _rf("pt", _rg(10), _rv(100)), _rs("poly_10"),
+        _rs("top")]
+    ours = _rlines(db, goals)
+    @test count(==("end"), ours) == length(goals)
+    @test all(l -> l == "end" || endswith(l, " det"), ours)              # every call is deterministic
+    @test occursin("term(0,1)", ours[1])
+    if _R_SWIPL
+        file = joinpath(@__DIR__, "..", "..", "bench", "programs", "poly_10.pl")
+        prog = IOBuffer()
+        println(prog, ":- style_check(-singleton).")
+        println(prog, ":- consult('", file, "').")
+        println(prog, "pt(N, R) :- test_poly(P), poly_exp(N, P, R).")
+        println(
+            prog,
+            "r(G) :- ( call_cleanup(G, Det = true), ( Det == true -> D = det ; D = nondet ),"
+        )
+        println(
+            prog,
+            "     write_term(G, [quoted(true), ignore_ops(true)]), write(' '), write(D), nl,"
+        )
+        println(prog, "     fail ; true ), write(end), nl.")
+        println(
+            prog,
+            ":- initialization((",
+            join(("r(" * _rsrc(g) * ")" for g in goals), ", "),
+            ", halt))."
+        )
+        theirs = mktempdir() do dir
+            f = joinpath(dir, "p.pl")
+            write(f, String(take!(prog)))
+            split(strip(read(pipeline(`swipl -q $f`; stdin=devnull), String)), '\n')
+        end
+        @test ours == theirs
+        ours == theirs || foreach(
+            ((o, t),) ->
+                o == t || println(stderr, "  ours  ", first(o, 300),
+                    "\n  swipl ", first(t, 300)), zip(ours, theirs))
+    end
+end
+
 # ── qsort (bench/programs/qsort.pl), V7 ─────────────────────────────────────────────────────────
 const _R_QSORT_NUMS = [27, 74, 17, 33, 94, 18, 46, 83, 65, 2, 32, 53, 28, 85, 99, 47, 28,
     82, 6,

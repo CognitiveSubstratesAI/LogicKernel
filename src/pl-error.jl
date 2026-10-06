@@ -40,6 +40,7 @@
     ERR_AR_OVERFLOW                 # void
     ERR_AR_UNDERFLOW                # void
     ERR_AR_RAT_OVERFLOW             # void
+    ERR_AR_TYPE                     # atom_t expected, Number value
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -136,6 +137,25 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code)::Bool where {T}
         ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :evaluation_error), mk_sym(T, what)])
     end
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
+    PL_error(ld, pred, arity, msg, ERR_AR_TYPE, expected, num::number) -> false
+
+Raise `error(type_error(Expected, Num), context(pred/arity, …))` for the number `num` an arithmetic
+function cannot take (pl-error.c `ERR_AR_TYPE`).
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
+    expected::T, num::number
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_AR_TYPE
+    actual = put_number(T, num)                                     # _PL_put_number(actual, num)
+    ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :type_error), expected, actual])
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
 """

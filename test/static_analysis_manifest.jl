@@ -576,7 +576,28 @@ function _manifest_index(T)
         (LK.cpNumber, Tuple{LK.number, LK.number}, true),
         (LK.check_float, Tuple{LD, LK.number}, false),
         (LK.check_mpq, Tuple{LK.number}, true),
-        (LK.check_int_bits, Tuple{UInt64}, true),
+        (LK.check_int_bits, Tuple{LD, UInt64}, true),
+        # V8 — the integer size checks (GMP aborts where upstream does not check), A_ADD_FC's slow
+        # path, the shifts and ERR_AR_TYPE
+        (LK.int_too_big, Tuple{LD}, false),
+        (LK.int_bits_ok, Tuple{LD, UInt64}, true),
+        (LK.maxBigIntSize, Tuple{LD}, true),
+        (LK.ar_add_si, Tuple{LD, LK.number, Int64}, false),
+        (LK.double_in_int64_range, Tuple{Float64}, true),
+        (LK.toIntegerNumber, Tuple{LD, LK.number, Int}, false),
+        (LK.ar_sign_i, Tuple{LK.number}, true),
+        (LK.shift_to_far, Tuple{LD, LK.number, LK.number, Int}, false),
+        (LK.MSB64, Tuple{Int64}, true),
+        (LK.ar_shift, Tuple{LD, LK.number, LK.number, LK.number, Int}, false),
+        [
+            (f, Tuple{LD, LK.number, LK.number, LK.number}, false) for
+            f in (LK.ar_shift_left, LK.ar_shift_right)
+        ]...,
+        (
+            LK.PL_error,
+            Tuple{LD, String, Int, String, LK.PL_error_code, T, LK.number},
+            false
+        ),
         (LK.promoteIntNumber, Tuple{LK.number}, false),
         [
             (f, Tuple{LD, LK.number, LK.number, LK.number}, false) for

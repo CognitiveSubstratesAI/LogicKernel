@@ -16,7 +16,7 @@
 # their order in pl-vmi.c; these numbers keep that order up to `I_TCALL` (`B_VAR0 + index` needs the
 # three consecutive) and then append, in the order the steps declared them: `I_CUT` (V2), then V4a's,
 # then V5a2's deterministic foreign calls (`I_FCALLDET0 + arity` needs the eleven consecutive), then
-# V6b's type tests (`I_VAR` … `I_CALLABLE`, in pl-vmi.c's order).
+# V6b's type tests (`I_VAR` … `I_CALLABLE`, in pl-vmi.c's order), then V8's `A_ADD_FC`.
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -355,6 +355,9 @@ const I_COMPOUND = code(83)
 # PORT: pl-vmi.c I_CALLABLE
 "`callable/1` inline: continue if the variable at the operand's offset is callable, else fail (pl-vmi.c)."
 const I_CALLABLE = code(84)
+# PORT: pl-vmi.c A_ADD_FC
+"`NewVar is Var + Int` inline: the first operand's slot gets the second's value plus the literal (pl-vmi.c)."
+const A_ADD_FC = code(85)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS (a literal is one, see above); `argtype`
@@ -454,7 +457,8 @@ const _CODE_TABLE = (
     code_info(:I_ATOM, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
     code_info(:I_STRING, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
     code_info(:I_COMPOUND, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
-    code_info(:I_CALLABLE, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00))
+    code_info(:I_CALLABLE, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:A_ADD_FC, VIF_BREAK, 3, (CA1_FVAR, CA1_VAR, CA1_INTEGER, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

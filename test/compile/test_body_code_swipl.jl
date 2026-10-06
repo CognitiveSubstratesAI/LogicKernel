@@ -317,6 +317,208 @@ function _bc_qsort()
         (_bf("partition", mk_nil(_B), _bv(10), mk_nil(_B), mk_nil(_B)), nothing, 3)
     ]
 end
+_blist_(xs::_B...) = foldr(_bcons, xs; init=mk_nil(_B))
+"poly_10.pl's clauses as terms, in file order (bench/programs/poly_10.pl), each with its clause index."
+function _bc_poly_clauses()
+    (Var, Terms1, Terms2, Terms, Var1, Var2, Poly, C, C1, C2, X, E, E1, E2, N, M, Part,
+        Result, P,
+        Q, Term, PartA, PartB, NewTerm, NewTerms) = (_bv(k) for k in 1:25)
+    term(a, b) = _bf("term", a, b)
+    poly(a, b) = _bf("poly", a, b)
+    one = _bg(1)
+    cut = _bs("!")
+    return [
+        (_bs("top"), _bs("poly_10"), 1),
+        (
+            _bs("poly_10"),
+            _bconj(_bf("test_poly", P), _bf("poly_exp", _bg(10), P, _bv(99))),
+            1
+        ),
+        (
+            _bf("test_poly", P),
+            _bconj(
+                _bf(
+                    "poly_add",
+                    poly(_bs(:x), _blist_(term(_bg(0), one), term(one, one))),
+                    poly(_bs(:y), _blist_(term(one, one))),
+                    Q
+                ),
+                _bf("poly_add", poly(_bs(:z), _blist_(term(one, one))), Q, P)
+            ),
+            1
+        ),
+        (_bf("less_than", _bs(:x), _bs(:y)), nothing, 1),
+        (_bf("less_than", _bs(:y), _bs(:z)), nothing, 2),
+        (_bf("less_than", _bs(:x), _bs(:z)), nothing, 3),
+        (
+            _bf("poly_add", poly(Var, Terms1), poly(Var, Terms2), poly(Var, Terms)),
+            _bconj(cut, _bf("term_add", Terms1, Terms2, Terms)),
+            1
+        ),
+        (
+            _bf("poly_add", poly(Var1, Terms1), poly(Var2, Terms2), poly(Var1, Terms)),
+            _bconj(
+                _bf("less_than", Var1, Var2),
+                cut,
+                _bf("add_to_order_zero_term", Terms1, poly(Var2, Terms2), Terms)
+            ),
+            2
+        ),
+        (
+            _bf("poly_add", Poly, poly(Var, Terms2), poly(Var, Terms)),
+            _bconj(cut, _bf("add_to_order_zero_term", Terms2, Poly, Terms)),
+            3
+        ),
+        (
+            _bf("poly_add", poly(Var, Terms1), C, poly(Var, Terms)),
+            _bconj(cut, _bf("add_to_order_zero_term", Terms1, C, Terms)),
+            4
+        ),
+        (_bf("poly_add", C1, C2, C), _bf("is", C, _bf("+", C1, C2)), 5),
+        (_bf("term_add", mk_nil(_B), X, X), cut, 1),
+        (_bf("term_add", X, mk_nil(_B), X), cut, 2),
+        (
+            _bf(
+                "term_add",
+                _bcons(term(E, C1), Terms1),
+                _bcons(term(E, C2), Terms2),
+                _bcons(term(E, C), Terms)
+            ),
+            _bconj(cut, _bf("poly_add", C1, C2, C), _bf("term_add", Terms1, Terms2, Terms)),
+            3
+        ),
+        (
+            _bf(
+                "term_add",
+                _bcons(term(E1, C1), Terms1),
+                _bcons(term(E2, C2), Terms2),
+                _bcons(term(E1, C1), Terms)
+            ),
+            _bconj(
+                _bf("<", E1, E2),
+                cut,
+                _bf("term_add", Terms1, _bcons(term(E2, C2), Terms2), Terms)
+            ),
+            4
+        ),
+        (
+            _bf(
+                "term_add",
+                Terms1,
+                _bcons(term(E2, C2), Terms2),
+                _bcons(term(E2, C2), Terms)
+            ),
+            _bf("term_add", Terms1, Terms2, Terms),
+            5
+        ),
+        (
+            _bf(
+                "add_to_order_zero_term",
+                _bcons(term(_bg(0), C1), Terms),
+                C2,
+                _bcons(term(_bg(0), C), Terms)
+            ),
+            _bconj(cut, _bf("poly_add", C1, C2, C)),
+            1
+        ),
+        (
+            _bf("add_to_order_zero_term", Terms, C, _bcons(term(_bg(0), C), Terms)),
+            nothing,
+            2
+        ),
+        (_bf("poly_exp", _bg(0), _bv(98), one), cut, 1),
+        (
+            _bf("poly_exp", N, Poly, Result),
+            _bconj(
+                _bf("is", M, _bf(">>", N, one)),
+                _bf("is", N, _bf("<<", M, one)),
+                cut,
+                _bf("poly_exp", M, Poly, Part),
+                _bf("poly_mul", Part, Part, Result)
+            ),
+            2
+        ),
+        # compiled as the file has it, `M is N-1`; tied as swipl's clause/2 DECOMPILES its A_ADD_FC,
+        # `M is N + -1` (probed)
+        (_bf("poly_exp", N, Poly, Result),
+            _bconj(
+                _bf("is", M, _bf("-", N, one)),
+                _bf("poly_exp", M, Poly, Part),
+                _bf("poly_mul", Poly, Part, Result)
+            ), 3,
+            _bconj(
+                _bf("is", M, _bf("+", N, _bg(-1))),
+                _bf("poly_exp", M, Poly, Part),
+                _bf("poly_mul", Poly, Part, Result)
+            )),
+        (
+            _bf("poly_mul", poly(Var, Terms1), poly(Var, Terms2), poly(Var, Terms)),
+            _bconj(cut, _bf("term_mul", Terms1, Terms2, Terms)),
+            1
+        ),
+        (
+            _bf("poly_mul", poly(Var1, Terms1), poly(Var2, Terms2), poly(Var1, Terms)),
+            _bconj(
+                _bf("less_than", Var1, Var2),
+                cut,
+                _bf("mul_through", Terms1, poly(Var2, Terms2), Terms)
+            ),
+            2
+        ),
+        (
+            _bf("poly_mul", P, poly(Var, Terms2), poly(Var, Terms)),
+            _bconj(cut, _bf("mul_through", Terms2, P, Terms)),
+            3
+        ),
+        (
+            _bf("poly_mul", poly(Var, Terms1), C, poly(Var, Terms)),
+            _bconj(cut, _bf("mul_through", Terms1, C, Terms)),
+            4
+        ),
+        (_bf("poly_mul", C1, C2, C), _bf("is", C, _bf("*", C1, C2)), 5),
+        (_bf("term_mul", mk_nil(_B), _bv(97), mk_nil(_B)), cut, 1),
+        (_bf("term_mul", _bv(96), mk_nil(_B), mk_nil(_B)), cut, 2),
+        (
+            _bf("term_mul", _bcons(Term, Terms1), Terms2, Terms),
+            _bconj(
+                _bf("single_term_mul", Terms2, Term, PartA),
+                _bf("term_mul", Terms1, Terms2, PartB),
+                _bf("term_add", PartA, PartB, Terms)
+            ),
+            3
+        ),
+        (_bf("single_term_mul", mk_nil(_B), _bv(95), mk_nil(_B)), cut, 1),
+        (
+            _bf(
+                "single_term_mul",
+                _bcons(term(E1, C1), Terms1),
+                term(E2, C2),
+                _bcons(term(E, C), Terms)
+            ),
+            _bconj(
+                _bf("is", E, _bf("+", E1, E2)),
+                _bf("poly_mul", C1, C2, C),
+                _bf("single_term_mul", Terms1, term(E2, C2), Terms)
+            ),
+            2
+        ),
+        (_bf("mul_through", mk_nil(_B), _bv(94), mk_nil(_B)), cut, 1),
+        (
+            _bf(
+                "mul_through",
+                _bcons(term(E, Term), Terms),
+                Poly,
+                _bcons(term(E, NewTerm), NewTerms)
+            ),
+            _bconj(
+                _bf("poly_mul", Term, Poly, NewTerm),
+                _bf("mul_through", Terms, Poly, NewTerms)
+            ),
+            2
+        )
+    ]
+end
+
 "derive.pl's clauses as terms, in file order (bench/programs/derive.pl), each with its clause index."
 function _bc_derive()
     U, V, X, DU, DV, N, N1 = (_bv(k) for k in 1:7)
@@ -525,13 +727,17 @@ _bc_names(code::Vector{String}) =
         @testset "nreverse and qsort, as swipl consults them" begin
             for (file, clauses) in
                 (("nreverse.pl", _bc_nreverse()), ("qsort.pl", _bc_qsort()),
-                ("derive.pl", _bc_derive()))
-                cases = ["bc_prog_show(($(_bc_text(h, b))), $i)" for (h, b, i) in clauses]
+                ("derive.pl", _bc_derive()), ("poly_10.pl", _bc_poly_clauses()))
+                # a clause's tie text: its decompiled form where it differs (a 4th element)
+                cases = [
+                    "bc_prog_show(($(_bc_text(c[1], length(c) == 4 ? c[4] : c[2]))), $(c[3]))"
+                    for c in clauses
+                ]
                 theirs = _bc_swipl(
                     cases; prelude="consult('$(joinpath(_BC_PROGRAMS, file))')"
                 )
                 @test length(theirs) == length(clauses)
-                for (k, (h, b, _)) in enumerate(clauses)
+                for (k, (h, b)) in enumerate(clauses)
                     k <= length(theirs) || break
                     t = theirs[k]
                     @test !isempty(t) && t[1] == "@@tie ok"     # the clause the file has
@@ -695,7 +901,8 @@ const _BC_ARITH_CELLS = [
             nothing
         end
         push!(ours, got)
-        @test (got === nothing) == refused
+        @test got !== nothing                                       # V8: A_ADD_FC compiles
+        @test (got !== nothing && any(startswith("a_add_fc"), got)) == refused
     end
     # under `optimise` upstream compiles arithmetic inline (compileArith, memo Q-AR3): refused
     ld = LK.PL_local_data{_B}()
@@ -710,14 +917,10 @@ const _BC_ARITH_CELLS = [
         @test length(theirs) == length(_BC_ARITH_CELLS)
         for (k, (shape, h, b, refused)) in enumerate(_BC_ARITH_CELLS)
             k <= length(theirs) || break
-            if refused
-                @test any(startswith("a_add_fc"), theirs[k])            # where V8's instruction is
-            else
-                ours[k] == theirs[k] ||
-                    println(stderr, "  ", shape, "\n    ours  ", ours[k],
-                        "\n    swipl ", theirs[k])
-                @test ours[k] == theirs[k]
-            end
+            @test any(startswith("a_add_fc"), theirs[k]) == refused   # the A_ADD_FC cells
+            ours[k] == theirs[k] || println(stderr, "  ", shape, "\n    ours  ", ours[k],
+                "\n    swipl ", theirs[k])
+            @test ours[k] == theirs[k]
         end
     end
 end

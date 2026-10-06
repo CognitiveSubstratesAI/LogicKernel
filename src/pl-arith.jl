@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-arith.c @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-arith.h @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-inline.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -104,17 +105,61 @@ end
 "Check a rational result against `max_rational_size` (pl-arith.c): unlimited."
 check_mpq(n::number)::Bool = true
 
+# PORT: pl-arith.c int_too_big
+# DIVERGES (interim, the user's open questions Q-B and Q-C): upstream raises the global stack's
+# resource error (`outOfStack`), whose context is a dict (Q-B) on a stack the kernel has not (Q-C);
+# here a `NotPortedError` — loud: the query closes (decision 1) — never GMP's `abort()`.
+"An integer too big to create (pl-arith.c `int_too_big`): see above."
+function int_too_big(ld::PL_local_data{T})::Bool where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :int_too_big),
+            "the resource error of an integer too big (int_too_big)",
+            "the user's Q-B/Q-C"
+        )
+    )
+end
+
+# PORT: pl-arith.c int_bits_ok
+"Whether an integer of `bits` bits (an upper bound) may be created (pl-arith.c): GMP aborts on one too big."
+int_bits_ok(ld::PL_local_data, bits::UInt64)::Bool =
+    bits <= 10000 || bits ÷ 8 <= maxBigIntSize(ld)
+
 # PORT: pl-arith.c check_int_bits
-# DIVERGES: the limit is the GLOBAL stack's (`maxBigIntSize`), which the kernel has not — the
-# user's parked Q-C — so every size is accepted, and a huge one ends in Julia's own
-# `OutOfMemoryError` (a Julia exception: the query closes, decision 1).
-"Whether an integer of `bits` bits may be created (pl-arith.c): always, see above."
-check_int_bits(bits::UInt64)::Bool = true
+"`int_bits_ok`, else `int_too_big` (pl-arith.c)."
+check_int_bits(ld::PL_local_data, bits::UInt64)::Bool =
+    int_bits_ok(ld, bits) ? true : int_too_big(ld)
 
 # ── the functions (pl-arith.c) ──────────────────────────────────────────────────────────────────
 # PORT: pl-arith.c promoteIntNumber
 "Promote a `V_INTEGER` to more capacity (pl-arith.c; O_BIGNUM: `V_MPZ`)."
 promoteIntNumber(n::number)::Bool = promoteToMPZNumber(n)
+
+# PORT: pl-arith.c ar_add_si
+"`n += add` in place (pl-arith.c `ar_add_si`): A_ADD_FC's slow path."
+function ar_add_si(ld::PL_local_data, n::number, add::Int64)::Bool
+    t = n.type
+    if t === V_INTEGER
+        r, overflow = Base.Checked.add_with_overflow(n.i, add)   # __builtin_saddll_overflow
+        if !overflow
+            n.i = r
+            return true
+        end
+        promoteIntNumber(n) || return false
+        t = V_MPZ                                           # FALLTHROUGH
+    end
+    if t === V_MPZ
+        n.mpz = n.mpz + add                                 # mpz_add_si
+        return true
+    elseif t === V_MPQ                                      # mpz_addmul_ui / mpz_submul_ui
+        n.mpq = Rational{BigInt}(
+            numerator(n.mpq) + denominator(n.mpq) * add, denominator(n.mpq)
+        )
+        return check_mpq(n)
+    end
+    n.f += Float64(add)                                     # V_FLOAT
+    return check_float(ld, n)
+end
 
 # PORT: pl-arith.c pl_ar_add
 "`+/2` (pl-arith.c `pl_ar_add`): `r = n1 + n2`."
@@ -196,7 +241,7 @@ function ar_mul(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
     end
     if t === V_MPZ
         bits = UInt64(ndigits(n1.mpz; base=2)) + UInt64(ndigits(n2.mpz; base=2))
-        check_int_bits(bits) || return false
+        check_int_bits(ld, bits) || return false
         r.type = V_MPZ
         r.mpz = n1.mpz * n2.mpz                             # mpz_mul
         return true
@@ -244,10 +289,157 @@ function ar_u_plus(n1::number, r::number)::Bool
     return true
 end
 
+# PORT: pl-incl.h TOINT_CONVERT_FLOAT
+"`toIntegerNumber`: convert a float with no fractional part (pl-incl.h)."
+const TOINT_CONVERT_FLOAT = 0x1
+# PORT: pl-incl.h TOINT_TRUNCATE
+"`toIntegerNumber`: truncate a float (pl-incl.h)."
+const TOINT_TRUNCATE = 0x2
+
+# PORT: pl-arith.c double_in_int64_range
+"Whether the double `x` converts to an `int64_t` (pl-arith.c)."
+function double_in_int64_range(x::Float64)::Bool
+    y, k = frexp(x)
+    k < 64 && return true
+    return k == 64 && y == -0.5                             # x == INT64_MIN
+end
+
+# PORT: pl-arith.c toIntegerNumber
+"Make `n` an integer in place where `flags` allow (pl-arith.c): a rational of denominator 1, a float."
+function toIntegerNumber(ld::PL_local_data, n::number, flags::Integer)::Bool
+    t = n.type
+    (t === V_INTEGER || t === V_MPZ) && return true
+    if t === V_MPQ                                          # never from stacks iff integer
+        if denominator(n.mpq) == 1
+            n.mpz = numerator(n.mpq)
+            n.type = V_MPZ
+            return true
+        end
+        return false
+    end
+    check_float(ld, n) || return false                      # V_FLOAT
+    if (flags & TOINT_CONVERT_FLOAT) != 0
+        if double_in_int64_range(n.f)
+            l = trunc(Int64, n.f)                           # (int64_t)n->value.f: in range
+            if (flags & TOINT_TRUNCATE) != 0 || Float64(l) == n.f
+                n.i = l
+                n.type = V_INTEGER
+                return true
+            end
+            return false
+        end
+        n.mpz = BigInt(n.f)                                 # mpz_init_set_d
+        n.type = V_MPZ
+        return true
+    end
+    return false
+end
+
+# PORT: pl-arith.c ar_sign_i
+"The sign of the rational `n1` (pl-arith.c): -1, 0 or 1."
+function ar_sign_i(n1::number)::Int
+    t = n1.type
+    t === V_INTEGER && return if n1.i < 0
+        -1
+    elseif n1.i > 0
+        1
+    else
+        0
+    end
+    # `sign` of a BigInt is a BigInt: GMP's mpz_cmp_si reads the sign without one
+    t === V_MPZ && return sign(cmp(n1.mpz, 0))              # mpz_sgn
+    return sign(cmp(numerator(n1.mpq), 0))                  # mpq_sgn: a denominator is > 0
+end
+
+# PORT: pl-arith.c shift_to_far
+"A shift by more than a `long` (pl-arith.c): a left one is too big, a right one gives 0."
+function shift_to_far(ld::PL_local_data, shift::number, r::number, dir::Int)::Bool
+    ar_sign_i(shift) * dir < 0 && return int_too_big(ld)    # <<
+    r.i = 0
+    r.type = V_INTEGER
+    return true
+end
+
+# PORT: pl-inline.h MSB64
+"The index of the most significant bit of `i` > 0 (pl-inline.h)."
+MSB64(i::Int64)::Int = 63 - leading_zeros(i)
+
+# PORT: pl-arith.c ar_shift
+# DIVERGES: `long` is `Int64`, so an `Int64` shift amount always fits. `O_BIGNUM_PRECHECK_ALLOCATIONS`
+# is on (pl-arith.c:84): a left shift's size is checked before GMP is asked.
+"`n1 << n2` (`dir` -1) or `n1 >> n2` (`dir` 1) (pl-arith.c `ar_shift`)."
+function ar_shift(
+    ld::PL_local_data{T}, n1::number, n2::number, r::number, dir::Int
+)::Bool where {T}
+    plop = dir < 0 ? "<<" : ">>"
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, plop, 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, plop, 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    if ar_sign_i(n1) == 0                                   # shift of 0 is always 0
+        r.i = 0
+        r.type = V_INTEGER
+        return true
+    end
+    if n2.type === V_INTEGER                                # amount to shift
+        shift = n2.i
+    else
+        (n2.mpz < typemin(Int64) || n2.mpz > typemax(Int64)) &&
+            return shift_to_far(ld, n2, r, dir)
+        shift = Int64(n2.mpz)
+    end
+    if shift < 0
+        shift = -shift
+        dir = -dir
+    end
+    if n1.type === V_INTEGER
+        if dir < 0                                          # shift left (<<)
+            bits = UInt64(shift) + UInt64(
+                if n1.i >= 0
+                    MSB64(n1.i)
+                elseif n1.i == typemin(Int64)
+                    64
+                else
+                    MSB64(-n1.i)
+                end
+            )
+            if bits >= 63                                   # sizeof(int64_t)*8-1
+                promoteToMPZNumber(n1)
+                @goto mpz
+            end
+            r.i = reinterpret(Int64, reinterpret(UInt64, n1.i) << shift)
+        else                                                # shift right (>>)
+            r.i = shift >= 64 ? (n1.i >= 0 ? 0 : -1) : n1.i >> shift
+        end
+        r.type = V_INTEGER
+        return true
+    end
+    @label mpz
+    r.type = V_MPZ
+    if dir < 0                                              # shift left (<<)
+        msb = UInt64(ndigits(n1.mpz; base=2)) + UInt64(shift)
+        check_int_bits(ld, msb) || return false
+        r.mpz = n1.mpz << shift                             # mpz_mul_2exp
+    else
+        r.mpz = n1.mpz >> shift                             # mpz_fdiv_q_2exp: floor
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_shift_left
+"`<</2` (pl-arith.c)."
+ar_shift_left(ld::PL_local_data, n1::number, n2::number, r::number)::Bool =
+    ar_shift(ld, n1, n2, r, -1)
+
+# PORT: pl-arith.c ar_shift_right
+"`>>/2` (pl-arith.c)."
+ar_shift_right(ld::PL_local_data, n1::number, n2::number, r::number)::Bool =
+    ar_shift(ld, n1, n2, r, 1)
+
 # PORT: pl-arith.c ar_funcdefs
 # DIVERGES: the entries ported so far, in upstream's order, `(name, arity)`; see the file header.
 "pl-arith.c's `ar_funcdefs[]`: the arithmetic functions, the ported entries."
-const ar_funcdefs = ((:+, 2), (:-, 2), (:*, 2), (:-, 1), (:+, 1))
+const ar_funcdefs = ((:+, 2), (:-, 2), (:*, 2), (:-, 1), (:+, 1), (:>>, 2), (:<<, 2))
 
 # PORT: pl-arith.c isCurrentArithFunction
 # DIVERGES: the function is `ar_funcdefs`' entry for the name's key and the arity, 0 for none —
@@ -265,6 +457,8 @@ end
 function _ar_call2(ld::PL_local_data, k::Int, a0::number, a1::number, r::number)::Bool
     k == 1 && return pl_ar_add(ld, a0, a1, r)
     k == 2 && return ar_minus(ld, a0, a1, r)
+    k == 6 && return ar_shift_right(ld, a0, a1, r)
+    k == 7 && return ar_shift_left(ld, a0, a1, r)
     return ar_mul(ld, a0, a1, r)                            # k == 3
 end
 function _ar_call1(k::Int, a0::number, r::number)::Bool

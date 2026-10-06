@@ -213,7 +213,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
@@ -221,15 +221,15 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
-| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC` | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`) | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
-| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, and since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
+| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, and since V8 `ERR_AR_TYPE`; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer) | `src/pl-ext.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
-| `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
-| `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h` |
+| `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
+| `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
 | `src/pl-modul.jl` | what a call of an undefined predicate reads from its module: the `unknown` flag's values and `getUnknownModule` (the default, `error`: a module has no flags yet, V5c) | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
@@ -327,6 +327,7 @@ graph LR
     pl_hash --> default_term
     pl_incl --> term_interface
     pl_incl --> default_term
+    pl_incl --> pl_arith
     pl_termwalk --> term_interface
     pl_termwalk --> default_term
     pl_termwalk --> pl_inline
@@ -440,6 +441,7 @@ graph LR
     pl_wam --> pl_alloc
     pl_wam --> pl_fli
     pl_wam --> pl_error
+    pl_wam --> pl_gmp
     pl_wam --> pl_arith
     pl_wam --> pl_supervisor
     pl_wam --> pl_ext
@@ -460,6 +462,7 @@ graph LR
     pl_error --> pl_global
     pl_error --> pl_wam
     pl_error --> pl_fli
+    pl_error --> pl_gmp
     pl_error --> pl_arith
     pl_gmp --> term_interface
     pl_gmp --> default_term
@@ -1159,6 +1162,53 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V8 — `A_ADD_FC`, the shifts, and the `poly_10` milestone: BUILT (2026-10-06)** (port_inventory
+row V8; src/pl-wam.jl, pl-vmi.jl, pl-comp.jl, pl-arith.jl, pl-gmp.jl, pl-error.jl). **MILESTONE:
+`poly_10` runs, and every answer and its determinism are identical to swipl's** (swipl consulting
+bench/programs/poly_10.pl). **All four bench programs now run identically to swipl.**
+* **Ported:**
+  * `A_ADD_FC` (vmi:4004-4083), `M is N-1` compiled inline:
+    * its fast path is an `Int64` in the tagged range (upstream's `isTaggedInt`), so the sum
+      cannot overflow;
+    * its slow path evaluates the operand (`evalExpression`) and adds (`ar_add_si`). Its error names
+      the CLAUSE's predicate, as upstream's does (`p/2`, where a call of `is/2` names `is/2`);
+    * NOT PORTED: the `vmi_builtin=false` branch, which only the debugger and coverage take.
+  * `compileSimpleAddition`'s emission (c:3666), refused since V6c2. Its integer operand is a
+    literal-table index, as every literal operand is (`# DIVERGES`).
+  * `>>` and `<<`: `ar_shift`, `ar_shift_left`/`right`, `shift_to_far`, `toIntegerNumber`,
+    `ar_sign_i`, `MSB64`. A left shift's size is checked before GMP is asked
+    (`O_BIGNUM_PRECHECK_ALLOCATIONS`, on upstream).
+  * The integer size checks: `int_bits_ok` and `check_int_bits` (pl-arith.c), and `maxBigIntSize`
+    and `MPZ_MAX_BYTES` (pl-gmp.h). V6c1's `check_int_bits` accepted every size. GMP aborts on a
+    number it cannot hold, so the check is upstream's now: the stack limit, in bytes.
+  * `PL_error`'s `ERR_AR_TYPE`: `type_error(integer, 1.5)`, in the shift's own context.
+* **Found while building it:** Julia's `sign` of a `BigInt` is a `BigInt`, an allocation the static
+  gate caught. `ar_sign_i` reads the sign with `cmp(x, 0)`, as GMP's `mpz_sgn` reads the size field.
+* **Interim (`# DIVERGES`, pinned by a test):** `int_too_big` raises `NotPortedError` where upstream
+  raises the global stack's resource error. That error's context is a dict (the user's Q-B), on a
+  stack the kernel does not have (Q-C). The query closes, as on every Julia exception (decision 1),
+  and GMP is never asked.
+* **Gates:**
+  * test/core_lang/test_rules_swipl.jl, **poly_10** (three term types): `test_poly`, `pt(1)`,
+    `pt(2)`, `pt(3)`, `pt(10)`, `poly_10` and `top`. Every answer is identical to swipl's, and every
+    call is deterministic, as in swipl.
+  * test/compile/test_body_code_swipl.jl: poly_10.pl's clauses compile to code identical to swipl's,
+    `A_ADD_FC` and its literal included. Every `is/2` cell compiles now. The column that said
+    "refused" now says "has `a_add_fc`", and is tied to swipl.
+  * test/core_lang/test_arith_swipl.jl:
+    * the live differential draws shifts (amounts -70 to 100), and compares a float by its bit
+      pattern inside an error term too;
+    * A_ADD_FC's fast and slow paths: the tagged boundary, `typemin(Int64)`, a rational, a float and
+      a one-character string; its error's context;
+    * an integer over 10000 bits, the shifts too far, and the floor of a big integer's right shift,
+      each pinned to swipl.
+  * tools/bench.jl: a `poly_10` case.
+* **Static:** every new method is in the manifest. A_ADD_FC's fast path builds the sum's term
+  (`mk_gnd`), which allocates by nature for DefaultTerm, as the builders do. So the fast path is
+  not in the call path's allocation-free set.
+* **Mutation-proved — 20 of 20 caught at verdict level** (baselines 48 s and 63 s after a restart, limit 360 s). The mutants: A_ADD_FC's fast path adding one more, or taking every `Int64` (the tagged test dropped); its slow path skipping the addition, or writing the source's slot; `ar_add_si` subtracting after an overflow, adding to a rational's numerator only, or subtracting from a float; `compileSimpleAddition` emitting nothing, or dropping a difference's sign; `>>` shifting left; a big integer's right shift truncating instead of flooring; an `Int64` right shift by 64 or more giving 0 for a negative; `toIntegerNumber` converting a float unasked; `ERR_AR_TYPE` naming the other shift, or expecting `evaluable`; `shift_to_far`'s direction reversed; `ar_shift` without its zero check; `int_bits_ok` without the stacks-limit bound; `ar_sign_i` of a big integer always 1; and `>>` missing from `ar_funcdefs`, restarted before its run (a load-time table). **Two NOT RUN, on purpose:** `int_bits_ok` always true, and `maxBigIntSize` without the stacks limit. Either makes `1 << (1 << 40)` ask GMP for 128 GiB, which would exhaust the machine; the testset's `@test_throws` pins both bounds.
+* **Not here:** the other inline compilers' decisions (V6b2), then the reader and writer (R1).
 
 **V7 — the `qsort` milestone: REACHED (2026-10-06)** (port_inventory row V7). As the row foresaw,
 nothing new was needed: `=</2` is V6c1's built-in, called from a body, and the cut after it is

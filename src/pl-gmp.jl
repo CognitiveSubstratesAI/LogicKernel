@@ -218,6 +218,17 @@ function same_type_numbers(ld::PL_local_data, n1::number, n2::number)::Bool
     return true
 end
 
+# ── the size of a big integer (pl-gmp.h) ─────────────────────────────────────────────────────────
+# PORT: pl-gmp.h MPZ_MAX_BYTES
+"The largest GMP integer, in bytes, with slack (pl-gmp.h): GMP aborts on a larger one."
+const MPZ_MAX_BYTES = typemax(UInt64) ÷ 8 - 1024
+
+# PORT: pl-gmp.h maxBigIntSize
+# DIVERGES: `globalStackLimit()` is upstream's `stacks.limit` in BYTES; the kernel's `stacks_limit`
+# counts positions (words), so it is multiplied by the word size.
+"The largest big integer, in bytes, the kernel creates (pl-gmp.h): the stack limit or GMP's."
+maxBigIntSize(ld::PL_local_data)::UInt64 = min(UInt64(ld.stacks_limit) * 8, MPZ_MAX_BYTES)
+
 # ── to double (pl-gmp.c) ─────────────────────────────────────────────────────────────────────────
 # GMP's `mpz_get_d` truncates; `mpz_tstbit` reads two's complement — Julia's `>>` on a BigInt is
 # arithmetic, so `isodd(a >> i)` is that bit. `mpz_sizeinbase(a, 2)` is `ndigits(a; base=2)`,

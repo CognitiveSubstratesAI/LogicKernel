@@ -303,6 +303,127 @@ const QSORT_PL = read(joinpath(@__DIR__, "..", "bench", "programs", "qsort.pl"),
 @assert count("top:-qsort.", QSORT_PL) == 1                 # the line left out, exactly once
 const QSORT_PROLOG = replace(QSORT_PL, "top:-qsort." => "")
 
+# poly_10 (V8): bench/programs/poly_10.pl's clauses in a database of their own (its `top/0` too),
+# run as `poly_10`; swipl runs the same file's `poly_10` — A_ADD_FC (`M is N-1`), `>>`, `<<`
+const PY_GD = PL_global_data{BT}()
+const PY_LD = PL_local_data{BT}()
+const PY_USER = MODULE_user(PY_GD)
+function _py_add!(head::BT, body::Union{Nothing, BT})
+    name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
+    pr = lookupProcedure(name, n, PY_USER)
+    assertDefinition!(
+        PY_GD, pr.definition, compileClause(PY_GD, PY_LD, head, body, pr, PY_USER), CL_END
+    )
+    return pr
+end
+let (Var, Terms1, Terms2, Terms, Var1, Var2, Poly, C, C1, C2, X, E, E1, E2, N, M, Part,
+        Result,
+        P, Q, Term, PartA, PartB, NewTerm, NewTerms) = (_v() for _ in 1:25)
+    conj(gs...) = foldr((g, r) -> _nrf(Symbol(","), g, r), gs)
+    list(xs...) = foldr(_nrcons, collect(BT, xs); init=_nrnil())
+    term(a, b) = _nrf(:term, a, b)
+    poly(a, b) = _nrf(:poly, a, b)
+    g(i) = gnd_term(BT, i)
+    cut = _a(Symbol("!"))
+    _py_add!(_a(:top), _a(:poly_10))
+    _py_add!(_a(:poly_10), conj(_nrf(:test_poly, P), _nrf(:poly_exp, g(10), P, _v())))
+    _py_add!(_nrf(:test_poly, P),
+        conj(
+            _nrf(:poly_add, poly(_a(:x), list(term(g(0), g(1)), term(g(1), g(1)))),
+                poly(_a(:y), list(term(g(1), g(1)))), Q),
+            _nrf(:poly_add, poly(_a(:z), list(term(g(1), g(1)))), Q, P)))
+    _py_add!(_nrf(:less_than, _a(:x), _a(:y)), nothing)
+    _py_add!(_nrf(:less_than, _a(:y), _a(:z)), nothing)
+    _py_add!(_nrf(:less_than, _a(:x), _a(:z)), nothing)
+    _py_add!(_nrf(:poly_add, poly(Var, Terms1), poly(Var, Terms2), poly(Var, Terms)),
+        conj(cut, _nrf(:term_add, Terms1, Terms2, Terms)))
+    _py_add!(_nrf(:poly_add, poly(Var1, Terms1), poly(Var2, Terms2), poly(Var1, Terms)),
+        conj(_nrf(:less_than, Var1, Var2), cut,
+            _nrf(:add_to_order_zero_term, Terms1, poly(Var2, Terms2), Terms)))
+    _py_add!(_nrf(:poly_add, Poly, poly(Var, Terms2), poly(Var, Terms)),
+        conj(cut, _nrf(:add_to_order_zero_term, Terms2, Poly, Terms)))
+    _py_add!(_nrf(:poly_add, poly(Var, Terms1), C, poly(Var, Terms)),
+        conj(cut, _nrf(:add_to_order_zero_term, Terms1, C, Terms)))
+    _py_add!(_nrf(:poly_add, C1, C2, C), _nrf(:is, C, _nrf(:+, C1, C2)))
+    _py_add!(_nrf(:term_add, _nrnil(), X, X), cut)
+    _py_add!(_nrf(:term_add, X, _nrnil(), X), cut)
+    _py_add!(
+        _nrf(:term_add, _nrcons(term(E, C1), Terms1), _nrcons(term(E, C2), Terms2),
+            _nrcons(term(E, C), Terms)),
+        conj(cut, _nrf(:poly_add, C1, C2, C), _nrf(:term_add, Terms1, Terms2, Terms)))
+    _py_add!(
+        _nrf(:term_add, _nrcons(term(E1, C1), Terms1), _nrcons(term(E2, C2), Terms2),
+            _nrcons(term(E1, C1), Terms)),
+        conj(_nrf(:<, E1, E2), cut,
+            _nrf(:term_add, Terms1, _nrcons(term(E2, C2), Terms2), Terms)))
+    _py_add!(
+        _nrf(
+            :term_add, Terms1, _nrcons(term(E2, C2), Terms2), _nrcons(term(E2, C2), Terms)
+        ),
+        _nrf(:term_add, Terms1, Terms2, Terms))
+    _py_add!(
+        _nrf(:add_to_order_zero_term, _nrcons(term(g(0), C1), Terms), C2,
+            _nrcons(term(g(0), C), Terms)),
+        conj(cut, _nrf(:poly_add, C1, C2, C)))
+    _py_add!(
+        _nrf(:add_to_order_zero_term, Terms, C, _nrcons(term(g(0), C), Terms)), nothing
+    )
+    _py_add!(_nrf(:poly_exp, g(0), _v(), g(1)), cut)
+    _py_add!(_nrf(:poly_exp, N, Poly, Result),
+        conj(_nrf(:is, M, _nrf(:>>, N, g(1))), _nrf(:is, N, _nrf(:<<, M, g(1))), cut,
+            _nrf(:poly_exp, M, Poly, Part), _nrf(:poly_mul, Part, Part, Result)))
+    _py_add!(_nrf(:poly_exp, N, Poly, Result),
+        conj(_nrf(:is, M, _nrf(:-, N, g(1))), _nrf(:poly_exp, M, Poly, Part),
+            _nrf(:poly_mul, Poly, Part, Result)))
+    _py_add!(_nrf(:poly_mul, poly(Var, Terms1), poly(Var, Terms2), poly(Var, Terms)),
+        conj(cut, _nrf(:term_mul, Terms1, Terms2, Terms)))
+    _py_add!(_nrf(:poly_mul, poly(Var1, Terms1), poly(Var2, Terms2), poly(Var1, Terms)),
+        conj(_nrf(:less_than, Var1, Var2), cut,
+            _nrf(:mul_through, Terms1, poly(Var2, Terms2), Terms)))
+    _py_add!(_nrf(:poly_mul, P, poly(Var, Terms2), poly(Var, Terms)),
+        conj(cut, _nrf(:mul_through, Terms2, P, Terms)))
+    _py_add!(_nrf(:poly_mul, poly(Var, Terms1), C, poly(Var, Terms)),
+        conj(cut, _nrf(:mul_through, Terms1, C, Terms)))
+    _py_add!(_nrf(:poly_mul, C1, C2, C), _nrf(:is, C, _nrf(:*, C1, C2)))
+    _py_add!(_nrf(:term_mul, _nrnil(), _v(), _nrnil()), cut)
+    _py_add!(_nrf(:term_mul, _v(), _nrnil(), _nrnil()), cut)
+    _py_add!(_nrf(:term_mul, _nrcons(Term, Terms1), Terms2, Terms),
+        conj(_nrf(:single_term_mul, Terms2, Term, PartA),
+            _nrf(:term_mul, Terms1, Terms2, PartB),
+            _nrf(:term_add, PartA, PartB, Terms)))
+    _py_add!(_nrf(:single_term_mul, _nrnil(), _v(), _nrnil()), cut)
+    _py_add!(
+        _nrf(:single_term_mul, _nrcons(term(E1, C1), Terms1), term(E2, C2),
+            _nrcons(term(E, C), Terms)),
+        conj(_nrf(:is, E, _nrf(:+, E1, E2)), _nrf(:poly_mul, C1, C2, C),
+            _nrf(:single_term_mul, Terms1, term(E2, C2), Terms)))
+    _py_add!(_nrf(:mul_through, _nrnil(), _v(), _nrnil()), cut)
+    _py_add!(
+        _nrf(:mul_through, _nrcons(term(E, Term), Terms), Poly,
+            _nrcons(term(E, NewTerm), NewTerms)),
+        conj(
+            _nrf(:poly_mul, Term, Poly, NewTerm), _nrf(:mul_through, Terms, Poly, NewTerms)
+        ))
+end
+const PY_PROC = lookupProcedure(_a(:poly_10), 0, PY_USER)
+function _vm_poly()::Int
+    fid = LogicKernel.PL_open_foreign_frame(PY_LD)
+    qid = LogicKernel.PL_open_query(
+        PY_GD, PY_LD, nothing, LogicKernel.PL_Q_NORMAL, PY_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(PY_GD, PY_LD, qid)
+    LogicKernel.PL_close_query(PY_LD, qid)
+    LogicKernel.PL_close_foreign_frame(PY_LD, fid)
+    return rc
+end
+@assert _vm_poly() == LogicKernel.PL_S_TRUE
+let c = lookupProcedure(_a(:poly_exp), 3, PY_USER).definition.impl_clauses.first_clause
+    @assert LogicKernel.A_ADD_FC in c.next.next.clause.codes     # `M is N-1`, inline (V8)
+end
+const POLY_PL = read(joinpath(@__DIR__, "..", "bench", "programs", "poly_10.pl"), String)
+@assert count("top:-poly_10.", POLY_PL) == 1                # the line left out, exactly once
+const POLY_PROLOG = replace(POLY_PL, "top:-poly_10." => "")
+
 # built-in calls (V5a2): a 1000-element list walk calling `compare/3` from a clause body — `I_CALL`
 # into a foreign predicate and back, per element; swipl runs the same clauses (`BW_PROLOG`), the list
 # a literal on both sides
@@ -344,7 +465,7 @@ fixtures(G1, G2, V1, V2) :-
 :- dynamic cp/2.
 """ * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) *
     BW_PROLOG *
-    DERIVE_PROLOG * QSORT_PROLOG
+    DERIVE_PROLOG * QSORT_PROLOG * POLY_PROLOG
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
 const CASES = [
@@ -393,6 +514,8 @@ const CASES = [
     ("derive", _vm_derive, "ops8, log10, divide10"),
     # qsort (V7): 50 numbers, `=</2` and a cut per partition step
     ("qsort", _vm_qsort, "qsort"),
+    # poly_10 (V8): (1+x+y+z)^10, A_ADD_FC and the shifts in poly_exp
+    ("poly_10", _vm_poly, "poly_10"),
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs
