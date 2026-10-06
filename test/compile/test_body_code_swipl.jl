@@ -834,17 +834,32 @@ end
         end
         @test bad == 0
     end
-    # under `optimise` upstream compiles the fall-back cells to I_TRUE/I_FAIL (+ C_VAR): V9's, refused
+    # under `optimise` the fall-back cells compile to I_TRUE/I_FAIL (`always`), a first
+    # occurrence's followed by its C_VAR (c:4691-4697; since V9a): every cell, compared whole with
+    # swipl's code under the flag
     ld = LK.PL_local_data{_B}()
     ld.prolog_flag_optimise = true
-    @test_throws LK.NotPortedError _bclause(_bs("po_int"), _bf("integer", _bg(3)); ld=ld)
-    @test_throws LK.NotPortedError _bclause(
-        _bs("po_first"), _bconj(_bf("atom", _bv(1)), _bf("q", _bv(1))); ld=ld
-    )
-    @test_throws LK.NotPortedError _bclause(_bs("po_var"), _bf("var", _bv(1)); ld=ld)
-    @test !isempty(
-        _bc_kernel(_bclause(_bf("po_inl", _bv(1)), _bf("integer", _bv(1)); ld=ld))
-    )
+    ours_o = [_bc_kernel(_bclause(h, b; ld=ld)) for (_, _, h, b) in cells]
+    @test any(c -> any(startswith("i_true"), c), ours_o)
+    @test any(c -> any(startswith("i_fail"), c), ours_o)
+    @test any(c -> any(startswith("c_var"), c), ours_o)
+    if _BC_SWIPL_BIN !== nothing
+        theirs_o = _bc_swipl(
+            ["bc_case_show(($(_bc_text(h, b))))" for (_, _, h, b) in cells];
+            prelude="set_prolog_flag(optimise, true)"
+        )
+        @test length(theirs_o) == length(cells)
+        bad = 0
+        for k in eachindex(cells)
+            k <= length(theirs_o) || break
+            if ours_o[k] != theirs_o[k]
+                bad += 1
+                bad <= 5 && println(stderr, "  -O ", _bc_text(cells[k][3], cells[k][4]),
+                    "\n    ours  ", ours_o[k], "\n    swipl ", theirs_o[k])
+            end
+        end
+        @test bad == 0
+    end
 end
 
 # ── is/2 and the comparisons (V6c2): upstream's decision, cell by cell ──────────────────────────
@@ -979,6 +994,13 @@ const _BC_IS_CELLS = [
         ""
     ),
     ("= atom = atom", _bs("ub15"), _bf("=", _bs("a"), _bs("b")), ""),
+    # skippedVar marks a first occurrence seen: the later Y is no first occurrence (V9a; probe sk1)
+    (
+        "= first = void",
+        _bs("ub16"),
+        _bconj(_bf("=", _bv(1), _bv(9)), _bcq(_bv(1))),
+        "i_true"
+    ),
     # ==/2 (compileBodyEQ)
     ("== a void side", _bs("eb1"), _bconj(_bf("==", _bv(1), _bs("a")), _bs("q")), ""),
     ("== two seen variables", _bs("eb2"),
@@ -1056,7 +1078,11 @@ const _BC_IS_CELLS = [
         _bconj(_bf("\$shift_for_copy", _bv(1)), _bcq(_bv(1))), "")
 ]
 
-@testset "=, ==, \\==, arg/3, \$call_continuation, \$shift compile as upstream decides (V6b2)" begin
+# the cells still refused: their instructions are V9's (`B_ARG_*`, `I_CALLCONT`, `I_SHIFT`,
+# `I_SHIFTCP`). Since V9a every =, == and \== cell compiles, and its code is swipl's.
+const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shiftcp")
+
+@testset "=, ==, \\==, arg/3, \$call_continuation, \$shift compile as upstream decides (V6b2, V9a)" begin
     ours = Union{Nothing, Vector{String}}[]
     refusals = String[]
     for (shape, h, b, instr) in _BC_IS_CELLS
@@ -1068,18 +1094,26 @@ const _BC_IS_CELLS = [
             nothing
         end
         push!(ours, got)
-        (got === nothing) == !isempty(instr) ||
+        refused = instr in _BC_IS_REFUSED
+        (got === nothing) == refused ||
             println(stderr, "  ", shape, ": ", got === nothing ? "refused" : "compiled")
-        @test (got === nothing) == !isempty(instr)             # refused exactly where inline
+        @test (got === nothing) == refused                    # refused exactly where V9's
+        if got !== nothing && !isempty(instr)                  # inline: the decision's instruction
+            @test any(startswith(instr), got)
+        end
     end
-    # every emission of every compiler is reached: each instruction names a refusal
-    for i in
-        ("I_TRUE for =/2", "I_TRUE for X = X", "B_UNIFY_FF", "B_UNIFY_FV", "B_UNIFY_VF",
-        "B_UNIFY_VV", "B_UNIFY_FC", "B_UNIFY_VC", "B_UNIFY_FIRSTVAR", "B_UNIFY_VAR ",
-        "B_EQ_VV",
-        "B_EQ_VC", "B_NEQ_VV", "B_NEQ_VC", "B_ARG_CF", "B_ARG_VF", "I_CALLCONT", "I_SHIFT ",
-        "I_SHIFTCP")
+    # every emission of the compilers still refusing is reached: each names a refusal
+    for i in ("B_ARG_CF", "B_ARG_VF", "I_CALLCONT", "I_SHIFT ", "I_SHIFTCP")
         @test any(r -> occursin(i, r), refusals)
+    end
+    # every instruction of the family is emitted by some cell (C_VAR: eb3; B_UNIFY_EXIT: ub9-ub11)
+    for i in (
+        "i_true", "b_unify_ff", "b_unify_fv", "b_unify_vf", "b_unify_vv", "b_unify_fc",
+        "b_unify_vc", "b_unify_firstvar", "b_unify_var(", "b_unify_exit", "b_eq_vv",
+        "b_eq_vc",
+        "b_neq_vv", "b_neq_vc", "c_var"
+    )
+        @test any(c -> c !== nothing && any(startswith(i), c), ours)
     end
     # a goal of the same NAME but another arity is a user predicate: a call, never compiled inline
     for (h, b, n, a) in (
@@ -1092,57 +1126,61 @@ const _BC_IS_CELLS = [
         got = _bc_kernel(_bclause(h, b))
         @test any(c -> occursin("P:[$(join(Int.(codeunits(n)), ","))]/$a", c), got)
     end
-    # under `optimise` upstream compiles ==/\\== on a void, or on a first occurrence, to
-    # I_TRUE/I_FAIL: V9's, refused
+    # under `optimise` ==/\== on a void, or on a first occurrence, compile to I_TRUE/I_FAIL after
+    # the skipped variables' C_VAR (since V9a), compared whole with swipl's under the flag
     ld = LK.PL_local_data{_B}()
     ld.prolog_flag_optimise = true
-    for (h, b) in (
+    opt = [
         (_bs("po_eq1"), _bf("==", _bv(1), _bs("a"))),
         (_bs("po_neq1"), _bf("\\==", _bv(1), _bs("a"))),
         (_bs("po_eq2"), _bconj(_bcq(_bv(1)), _bf("==", _bv(1), _bv(2)), _bcq(_bv(2)))),
-        (_bs("po_neq2"), _bconj(_bcq(_bv(1)), _bf("\\==", _bv(1), _bv(2)), _bcq(_bv(2))))
-    )
-        @test_throws LK.NotPortedError _bclause(h, b; ld=ld)
-    end
-    @test !isempty(
-        _bc_kernel(_bclause(_bs("po_eq3"), _bf("==", _bs("a"), _bs("b")); ld=ld))
-    )
+        (_bs("po_neq2"), _bconj(_bcq(_bv(1)), _bf("\\==", _bv(1), _bv(2)), _bcq(_bv(2)))),
+        (_bs("po_eq3"), _bf("==", _bs("a"), _bs("b")))
+    ]
+    ours_o = [_bc_kernel(_bclause(h, b; ld=ld)) for (h, b) in opt]
+    @test any(startswith("i_fail"), ours_o[1]) && any(startswith("i_true"), ours_o[2])
     # without `portable_vmi` every tagged integer is a portable constant
     ld2 = LK.PL_local_data{_B}()
     ld2.prolog_flag_portable_vmi = false
-    @test_throws LK.NotPortedError _bclause(
-        _bf("pv1", _bv(1)), _bf("==", _bv(1), _bg(16777216)); ld=ld2
+    @test any(
+        startswith("b_eq_vc"),
+        _bc_kernel(_bclause(_bf("pv1", _bv(1)), _bf("==", _bv(1), _bg(16777216)); ld=ld2))
     )
-    # a unification moved into the head (`optimise_unify`, swipl's default; NOT PORTED, V9): the
-    # kernel refuses it, and swipl compiles it as HEAD code — no b_unify_*, no call (probed)
+    # a unification moved into the head (`optimise_unify`, swipl's default): until V9b the kernel
+    # compiles what swipl compiles with the flag false; swipl's default code is HEAD code, with no
+    # b_unify_* and no call (probed)
     moved = [
         (_bf("um1", _bv(1)), _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1)))),
         (_bf("um2", _bv(1)), _bconj(_bf("=", _bv(1), _bs("a")), _bcq(_bv(1))))
     ]
-    for (h, b) in moved
-        @test_throws LK.NotPortedError _bclause(h, b)
-    end
+    ours_m = [_bc_kernel(_bclause(h, b)) for (h, b) in moved]
+    @test all(c -> any(startswith("b_unify"), c), ours_m)
     if _BC_SWIPL_BIN !== nothing
-        theirs_m = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in moved])
+        shows_m = ["bc_case_show(($(_bc_text(h, b))))" for (h, b) in moved]
+        theirs_m = _bc_swipl(shows_m)
         @test length(theirs_m) == length(moved)
         for t in theirs_m
             @test !any(startswith("b_unify"), t) && any(startswith("h_"), t)
             @test !any(c -> occursin("P:[61]/2", c), t)                  # no call of =/2
         end
-    end
-    if _BC_SWIPL_BIN !== nothing
+        @test _bc_swipl(shows_m; prelude="set_prolog_flag(optimise_unify, false)") == ours_m
+        theirs_o = _bc_swipl(
+            ["bc_case_show(($(_bc_text(h, b))))" for (h, b) in opt];
+            prelude="set_prolog_flag(optimise, true)"
+        )
+        @test theirs_o == ours_o
         theirs = _bc_swipl([
             "bc_case_show(($(_bc_text(h, b))))" for (_, h, b, _) in _BC_IS_CELLS
         ])
         @test length(theirs) == length(_BC_IS_CELLS)
         for (k, (shape, h, b, instr)) in enumerate(_BC_IS_CELLS)
             k <= length(theirs) || break
-            if isempty(instr)                                       # a call: swipl's own code
+            if ours[k] !== nothing                                  # compiled: swipl's own code
                 ours[k] == theirs[k] ||
                     println(stderr, "  ", shape, "\n    ours  ", ours[k],
                         "\n    swipl ", theirs[k])
                 @test ours[k] == theirs[k]
-            else                                                    # inline: swipl emits it
+            else                                                    # refused: swipl emits it
                 any(startswith(instr), theirs[k]) ||
                     println(stderr, "  ", shape, ": swipl ", theirs[k])
                 @test any(startswith(instr), theirs[k])
@@ -1161,17 +1199,23 @@ end
     @test !commit(_bs("pc5"), _bf("q", _bs("!")))           # `!` as DATA is no cut
 end
 
-@testset "what is still refused (V2's interim; V6b, V6b2: the inline compilers decide), and swipl's type_error(callable, Body)" begin
+@testset "what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
         _bf(";", _bs("a"), _bs("b")), _bf("->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
-        _bf("=", _bv(1), _bs("a")),                            # a void side: I_TRUE (V9)
-        _bconj(_bs("q"), _bs("true")), _bs("fail"),
+        _bconj(_bs("q"), _bs("\$catch")),                      # a reserved goal atom (V9)
         _bf("call", _bv(1)), _bf("call", _bv(1), _bs("a"))
     )
         @test_throws LK.NotPortedError _bclause(p, body)
+    end
+    # since V9a `true` and `fail` compile to I_TRUE and I_FAIL, as swipl's do
+    tf = [(_bs("pt1"), _bconj(_bs("q"), _bs("true"))), (_bs("pt2"), _bs("fail"))]
+    ours_tf = [_bc_kernel(_bclause(h, b)) for (h, b) in tf]
+    @test any(startswith("i_true"), ours_tf[1]) && any(startswith("i_fail"), ours_tf[2])
+    if _BC_SWIPL_BIN !== nothing
+        @test _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in tf]) == ours_tf
     end
     # type_error(callable, Body): the WHOLE body, as swipl 10.1.16 reports it (probed)
     for body in (

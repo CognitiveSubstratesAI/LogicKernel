@@ -91,10 +91,8 @@ end
 # PORT: pl-ext.c initBuildIns as initBuildIns!
 # DIVERGES: the tables ported (see `foreigns`, `_PRED_TABLES`), in upstream's order. `initProcedures`
 # creates `GD->procedures.dirty`, which the kernel creates with the global data (`procedures_dirty`,
-# src/pl-global.jl). NOT PORTED: `setBuiltinPredicateProperties` — it caches about sixteen system
-# procedures in GD, sets `call/1`'s flags and declares the meta-predicates; of these only
-# `$c_call_prolog/0` exists, created with the global data — and the extensions' binding loop
-# (`bindExtensions`, `extensions_loaded`: no `PL_register_extensions`).
+# src/pl-global.jl). NOT PORTED: the extensions' binding loop (`bindExtensions`,
+# `extensions_loaded`: no `PL_register_extensions`).
 "Register the built-ins in the database whose global data is `gd` (pl-ext.c `initBuildIns`)."
 function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     registerBuiltins!(gd, _extension_sigs(foreigns), 0)
@@ -104,6 +102,19 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
         first += length(sigs)
     end
     @assert first == length(_FOREIGN_VA)
+    setBuiltinPredicateProperties!(gd)
+    return nothing
+end
+
+# PORT: pl-ext.c setBuiltinPredicateProperties as setBuiltinPredicateProperties!
+# NOT PORTED: every `LOOKUPPROC` but `equals2` — the procedures nothing reads yet (`catch/3`,
+# `true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …), each when its first reader is ported;
+# `$c_call_prolog/0` is created with the global data (src/pl-global.jl); `heartbeat/0`; `call/1`'s
+# flags and the meta-predicate declarations (no meta-call, V9).
+"Cache the system procedures the VM calls directly in the global data (pl-ext.c)."
+function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T}
+    m = MODULE_system(gd)
+    gd.procedures_equals2 = lookupProcedure(mk_sym(T, :(=)), 2, m)   # LOOKUPPROC(equals2)
     return nothing
 end
 

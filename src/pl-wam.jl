@@ -618,6 +618,12 @@ function _fresh_compound(::Type{T}, head::T, hashead::Bool, n::Int)::T where {T}
     return mk_expr(T, kids)
 end
 
+# Upstream's `LD->slow_unify` (pl-wam.c `updateAlerted`: `!PLFLAG_VMI_BUILTIN || occurs_check !=
+# OCCURS_CHECK_FALSE`): whether a body unification calls `=/2`. Read where upstream reads the cached
+# value; the kernel sets the flag as a field, so there is no `updateAlerted` to refresh a cache, and
+# `vmi_builtin` is always true (no debugger).
+_slow_unify(ld::PL_local_data)::Bool = ld.prolog_flag_occurs_check != OCCURS_CHECK_FALSE
+
 # Whether `p` is a `$expr/3` — three children, a head that is not a symbol — which unifies with a list
 # cell child by child (Q2; user, 2026-10-05: `[H|T]` and `'[|]'(H,T)` match the same way).
 _is_expr3(p::T) where {T} =
@@ -750,7 +756,9 @@ const VMI_RUN = (
     :I_FCALLDET2, :I_FCALLDET3, :I_FCALLDET4, :I_FCALLDET5, :I_FCALLDET6, :I_FCALLDET7,
     :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET, :I_VAR, :I_NONVAR, :I_INTEGER,
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
-    :I_CALLABLE, :A_ADD_FC
+    :I_CALLABLE, :A_ADD_FC, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
+    :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
+    :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1113,6 +1121,10 @@ function PL_next_solution_guarded(
     tc_cref::ClauseRef{T} = gd.clauses_top_cref     # TRUST_CLAUSE's clause
     bv_voffset::Int = 0                             # bvar_cont's voffset
     fexitdet_rc::foreign_t = FTRUE                  # I_FEXITDET's rc
+    SLOW_UNIFY::Bool = false                        # unify_var_cont's copy of LD->slow_unify
+    bu_first::Bool = false                          # unify_var_cont came from B_UNIFY_FIRSTVAR
+    bu_hold::Int = 0                                # B_UNIFY_FIRSTVAR's holder cell (0: none)
+    bu_var::T = ph                                  # B_UNIFY_FIRSTVAR's fresh variable
 
     if qid == 0                                     # PL_open_query() failed
         return 0
@@ -1627,6 +1639,246 @@ function PL_next_solution_guarded(
     end
     @goto next_instruction
 
+    # ── unification and comparison in the body (pl-vmi.c, O_COMPILE_IS), V9a ─────────────────────
+    # PORT: pl-vmi.c B_UNIFY_FIRSTVAR
+    # DIVERGES: the slot gets a fresh variable (decision 2); see `unify_var_cont` for the term.
+    @label B_UNIFY_FIRSTVAR
+    bu_var = mk_var(T, fresh_var_keys!(1))
+    ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
+    PC += 1
+    ld.slots[ARGP.pos + 1] = bu_var                 # setVar(*ARGP): needed for GC
+    bu_first = true
+    @goto unify_var_cont
+
+    # PORT: pl-vmi.c B_UNIFY_VAR
+    @label B_UNIFY_VAR
+    ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
+    PC += 1
+    bu_first = false
+    @goto unify_var_cont
+
+    # PORT: pl-vmi.c unify_var_cont
+    # DIVERGES: a helper label; `bu_first` says which instruction came. No `globaliseVar`: a keyed
+    # variable lives in no cell (decision 2).
+    # * The slow path (`occurs_check` true or error) writes the two arguments of `=/2` above `lTop`,
+    #   the second a fresh variable. After `B_UNIFY_VAR` the head code then runs in READ mode over
+    #   that fresh variable, where upstream sets write mode: it builds the term as a head argument is
+    #   built under `true`/`error` (a fresh compound, bound and read; decision 3), so the VM never
+    #   writes a head in write mode under those flags (user, 2026-10-06: 2a).
+    # * The fast path after `B_UNIFY_FIRSTVAR` builds the term into one HOLDER cell of the builder
+    #   (`bu_hold`), and `B_UNIFY_EXIT` binds the slot's fresh variable to it. Upstream points the
+    #   slot at the compound at once; the kernel builds a term when it closes (decision 2). A use of
+    #   the variable inside the term reads the fresh variable, so `X = f(X)` is cyclic, as upstream's
+    #   (user, 2026-10-06: 3a); the binding is trailed where upstream writes the slot.
+    @label unify_var_cont
+    SLOW_UNIFY = _slow_unify(ld)
+    if SLOW_UNIFY
+        uvc_k = ld.slots[ARGP.pos + 1]              # Word k = ARGP
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        _argp_store!(ld, ARGP, uvc_k)               # *ARGP++ = *k
+        ARGP = _argp_add(ARGP, 1)
+        _argp_store!(ld, ARGP, mk_var(T, fresh_var_keys!(1)))   # setVar(*ARGP)
+        UMODE = bu_first ? uwrite : uread           # must write for GC to work (see above)
+        bu_hold = 0
+        @goto next_instruction
+    end
+    if bu_first
+        bu_hold = ld.bTop + 1
+        if bu_hold > length(ld.bcells)
+            resize!(ld.bcells, max(bu_hold, 2 * length(ld.bcells)))
+        end
+        ld.bcells[bu_hold] = bu_var
+        ld.bTop = bu_hold
+        ARGP = argp_t{T}(ARGP_BUILD, bu_hold, ph)
+    else
+        bu_hold = 0
+    end
+    UMODE = uread                                   # needed?
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_UNIFY_EXIT
+    # DIVERGES: after `B_UNIFY_FIRSTVAR` the fast path binds the slot's fresh variable to the term
+    # in the holder (see `unify_var_cont`); the new frame of the slow path is the record pushed at
+    # `lTop`, as `I_CALL`'s.
+    # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
+    @label B_UNIFY_EXIT
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+    if SLOW_UNIFY
+        NFR = pushFrame!(ld, ld.lTop)               # NFR = lTop
+        DEF = gd.procedures_equals2.definition
+        setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+        @goto normal_call
+    end
+    if bu_hold != 0
+        bue_t = ld.bcells[bu_hold]
+        ld.bTop = bu_hold - 1
+        bu_hold = 0
+        Trail!(ld, var_key(bu_var), bue_t)
+    end
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_UNIFY_FF
+    # DIVERGES: one fresh variable in both slots (decision 2: no global stack, `makeRefG`).
+    @label B_UNIFY_FF
+    buff_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    buff_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
+    PC += 2
+    buff_v = mk_var(T, fresh_var_keys!(1))
+    ld.slots[buff_1 + 1] = buff_v                   # *v1 = makeRefG(v)
+    if _slow_unify(ld)
+        buff_w = mk_var(T, fresh_var_keys!(1))
+        ld.slots[buff_2 + 1] = buff_w               # *v2 = makeRefG(v)
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        _argp_store!(ld, ARGP, buff_v)
+        ARGP = _argp_add(ARGP, 1)
+        _argp_store!(ld, ARGP, buff_w)
+        ARGP = _argp_add(ARGP, 1)
+        @goto debug_equals2
+    end
+    ld.slots[buff_2 + 1] = buff_v                   # *v2 = *v1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_UNIFY_VF
+    @label B_UNIFY_VF
+    @goto B_UNIFY_FV                                # the compiler swapped the operands
+
+    # PORT: pl-vmi.c B_UNIFY_FV
+    # DIVERGES: no `globaliseVar` (decision 2); the first-variable slot gets the value as `bvar_cont`
+    # stores one (`linkValI`).
+    @label B_UNIFY_FV
+    bufv_f = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    bufv_v = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
+    PC += 2
+    if _slow_unify(ld)
+        ld.slots[bufv_f + 1] = mk_var(T, fresh_var_keys!(1))   # globaliseFirstVar(f)
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        _argp_store!(ld, ARGP, ld.slots[bufv_f + 1])
+        ARGP = _argp_add(ARGP, 1)
+        _argp_store!(ld, ARGP, ld.slots[bufv_v + 1])
+        ARGP = _argp_add(ARGP, 1)
+        @goto debug_equals2
+    end
+    ld.slots[bufv_f + 1] = linkValI(ld, ld.slots[bufv_v + 1])   # *f = linkValI(v)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_UNIFY_VV
+    # DIVERGES: no `globaliseVar` (decision 2).
+    # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
+    @label B_UNIFY_VV
+    buvv_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    buvv_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
+    PC += 2
+    if _slow_unify(ld)
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        _argp_store!(ld, ARGP, ld.slots[buvv_1 + 1])
+        ARGP = _argp_add(ARGP, 1)
+        _argp_store!(ld, ARGP, ld.slots[buvv_2 + 1])
+        ARGP = _argp_add(ARGP, 1)
+        @goto debug_equals2
+    end
+    @SAVE_REGISTERS(QID)
+    buvv_rc = unify_ptrs(ld, ld.slots[buvv_1 + 1], ld.slots[buvv_2 + 1])
+    @LOAD_REGISTERS(QID)
+    buvv_rc && @goto next_instruction
+    ld.exception_term != 0 && @goto b_throw         # THROW_EXCEPTION
+    @goto shallow_backtrack                         # BODY_FAILED
+
+    # PORT: pl-vmi.c debug_equals2
+    # DIVERGES: a helper label; the new frame is the record pushed at `lTop`, as `I_CALL`'s.
+    @label debug_equals2
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    DEF = gd.procedures_equals2.definition
+    setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+    @goto normal_call
+
+    # PORT: pl-vmi.c B_UNIFY_FC
+    # DIVERGES: the constant operand is a literal (src/pl-vmi.jl).
+    @label B_UNIFY_FC
+    bufc_f = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    bufc_c = PCl[PCc[PC + 1]]
+    PC += 2
+    if _slow_unify(ld)
+        ld.slots[bufc_f + 1] = mk_var(T, fresh_var_keys!(1))   # globaliseFirstVar(f)
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        _argp_store!(ld, ARGP, ld.slots[bufc_f + 1])
+        ARGP = _argp_add(ARGP, 1)
+        _argp_store!(ld, ARGP, bufc_c)
+        ARGP = _argp_add(ARGP, 1)
+        @goto debug_equals2
+    end
+    ld.slots[bufc_f + 1] = bufc_c                   # *f = c
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_UNIFY_VC
+    # DIVERGES: the constant operand is a literal; `unify_simple_ptrs` decides, with the three outcomes
+    # of `*k == c`, `canBind(*k)` and the rest, as `h_const`'s (SWI's identity).
+    # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
+    @label B_UNIFY_VC
+    buvc_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    buvc_c = PCl[PCc[PC + 1]]
+    PC += 2
+    if _slow_unify(ld)
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        _argp_store!(ld, ARGP, ld.slots[buvc_k + 1])
+        ARGP = _argp_add(ARGP, 1)
+        _argp_store!(ld, ARGP, buvc_c)
+        ARGP = _argp_add(ARGP, 1)
+        @goto debug_equals2
+    end
+    if unify_simple_ptrs(ld, deRef(ld, ld.slots[buvc_k + 1]), buvc_c) == BOOLEX_TRUE
+        @goto next_instruction
+    end
+    @goto unify_backtrack                           # CLAUSE_FAILED
+
+    # PORT: pl-vmi.c B_EQ_VV
+    # DIVERGES: the kernel's standard order raises nothing, so there is no `CMP_ERROR`.
+    # `FASTCOND_FAILED` is `BODY_FAILED` (see `TYPE_TEST`).
+    # NOT PORTED: the `vmi_builtin=false` branch (`debug_eq_vv`; only the debugger clears the flag).
+    @label B_EQ_VV
+    beq_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    beq_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
+    PC += 2
+    if compareStandard(ld, ld.slots[beq_1 + 1], ld.slots[beq_2 + 1], true) == CMP_EQUAL
+        @goto next_instruction
+    end
+    @goto shallow_backtrack                         # FASTCOND_FAILED
+
+    # PORT: pl-vmi.c B_EQ_VC
+    # DIVERGES: the constant operand is a literal; `*v1 == c` is SWI's identity of atomic terms
+    # (`compare_primitives` in equality mode, as `PL_unify_atomic`). `FASTCOND_FAILED` is
+    # `BODY_FAILED`.
+    # NOT PORTED: the `vmi_builtin=false` branch.
+    @label B_EQ_VC
+    beqc_v = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    beqc_c = PCl[PCc[PC + 1]]
+    PC += 2
+    if compare_primitives(beqc_v, beqc_c, CMP_MODE_EQUAL) == CMP_EQUAL
+        @goto next_instruction
+    end
+    @goto shallow_backtrack                         # FASTCOND_FAILED
+
+    # PORT: pl-vmi.c B_NEQ_VV
+    # DIVERGES: as `B_EQ_VV`'s.
+    @label B_NEQ_VV
+    bneq_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    bneq_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
+    PC += 2
+    if compareStandard(ld, ld.slots[bneq_1 + 1], ld.slots[bneq_2 + 1], true) == CMP_EQUAL
+        @goto shallow_backtrack                     # FASTCOND_FAILED
+    end
+    @goto next_instruction
+
+    # PORT: pl-vmi.c B_NEQ_VC
+    # DIVERGES: as `B_EQ_VC`'s.
+    @label B_NEQ_VC
+    bneqc_v = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    bneqc_c = PCl[PCc[PC + 1]]
+    PC += 2
+    if compare_primitives(bneqc_v, bneqc_c, CMP_MODE_EQUAL) != CMP_EQUAL
+        @goto next_instruction
+    end
+    @goto shallow_backtrack                         # FASTCOND_FAILED
+
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
     # DIVERGES: NOT PORTED: the `LD->alerted` block (coverage, the debugger's unify port, waking
@@ -1876,6 +2128,27 @@ function PL_next_solution_guarded(
     setLTop!(ld, argFrameP(ld.frames[FR].base, Int(cu_clause.variables)))
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
     ld.exception_term != 0 && @goto b_throw         # THROW_EXCEPTION
+    @goto next_instruction
+
+    # ── C_VAR, fail/0 and true/0 (pl-vmi.c), V9a ──────────────────────────────────────────────────
+    # PORT: pl-vmi.c C_VAR
+    # DIVERGES: a fresh variable into the slot (decision 2).
+    @label C_VAR
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_var(
+        T, fresh_var_keys!(1)
+    )
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c I_FAIL
+    # NOT PORTED: the `vmi_builtin=false` branch, which calls `fail/0` (only the debugger clears the
+    # flag).
+    @label I_FAIL
+    @goto shallow_backtrack                         # BODY_FAILED
+
+    # PORT: pl-vmi.c I_TRUE
+    # NOT PORTED: the `vmi_builtin=false` branch, which calls `true/0`.
+    @label I_TRUE
     @goto next_instruction
 
     # ── the type tests (pl-vmi.c), V6b ────────────────────────────────────────────────────────────

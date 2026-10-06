@@ -86,6 +86,7 @@ it yet (V9) — and a call where upstream falls back to one.
 """
 struct SubClauseNames
     atom_true::UInt64                           # ATOM_true
+    atom_fail::UInt64                           # ATOM_fail
     atom_call::UInt64                           # ATOM_call
     atom_cut::UInt64                            # ATOM_cut: `!`
     reserved_atoms::Set{UInt64}                 # the goal atoms compiled inline
@@ -121,7 +122,8 @@ function _subclause_names(::Type{T})::SubClauseNames where {T}
         push!(atoms, sym_key(mk_sym(T, Symbol(n))))
     end
     return SubClauseNames(
-        _name_key(T, "true"), _name_key(T, "call"), _name_key(T, "!"), atoms,
+        _name_key(T, "true"), _name_key(T, "fail"), _name_key(T, "call"), _name_key(T, "!"),
+        atoms,
         _name_key(T, "var"), _name_key(T, "nonvar"),
         (
             _name_key(T, "integer"), _name_key(T, "rational"), _name_key(T, "float"),

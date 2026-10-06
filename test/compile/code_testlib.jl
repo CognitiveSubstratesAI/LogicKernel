@@ -24,6 +24,8 @@ A literal by VALUE, as both sides write it: its kind, then its value — an atom
 codes, an integer's digits, a rational's numerator and denominator, a float's bits.
 """
 function _hlit(t)::String
+    # SWI-7's `[]` is a reserved symbol, not an atom: swipl's `hc_op` writes it `?:[]` (V9a, eb6)
+    kind(t) === SYM && LogicKernel.is_nil(t) && return "?:[]"
     kind(t) === SYM && return _ha(String(lk_name(t)))
     k = number_kind(t)
     k === NUM_INTEGER &&

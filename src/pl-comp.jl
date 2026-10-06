@@ -31,8 +31,8 @@
 # NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
 # `link_local_var`; V9), SSU (`=>`) clauses,
 # the moved head unifications (`head_unify`, `annotate_unification`, `argMoveUnify`/`argUnifiedTo`,
-# `isUnifiedArg`: they come with O_COMPILE_IS's inline unification, V9 — until then the kernel
-# compiles what swipl compiles with `optimise_unify` false), and singleton, multiton and branch
+# `isUnifiedArg`: V9b; until then the kernel compiles what swipl compiles with `optimise_unify`
+# false, the inline unification it moves executing since V9a), and singleton, multiton and branch
 # warnings (the `VD_*` flags). The body compiler is ported since V2, and the instructions run in the
 # VM since V4a (src/pl-wam.jl).
 
@@ -133,7 +133,7 @@ end
 # `branch_vars` is `nothing` or the vector upstream keeps in `branch_varbuf`, `literals` the
 # clause's literal table as it is built (since V1 L2), and `procedures` its procedure table (since V1). No
 # `clause` (the clause is created after the code), and the fields of subsystems not yet ported:
-# `islocal`, `subclausearg`, `head_unify`, `argvars`, `argvar` (V9), `singletons` and the warnings,
+# `islocal`, `subclausearg`, `argvars`, `argvar` (V9), `head_unify` (V9b), `singletons` and the warnings,
 # `progress` (interrupts), `colon_context` and `at_context` (modules). `cut` is a clause-level cut
 # (`var` 0) until the control constructs set a local one (V9). `module_` is
 # upstream's `module`, a Julia keyword.
@@ -428,7 +428,7 @@ _max_frame_size()::Union{} = error("compileClause: representation_error(max_fram
 # PORT: pl-comp.c analyseVariables2
 # DIVERGES: no `islocal` (goal clauses: `subclausearg`, `argvars` and AV_SUBCLAUSE_LOOP come with
 # the meta-call, V9); no leading-unification annotation (`head_unify`, `annotate_unification`:
-# the moved head unifications, V9); no warnings (`VD_*` flags, `singletons`, `name`); no cycle,
+# the moved head unifications, V9b); no warnings (`VD_*` flags, `singletons`, `name`); no cycle,
 # depth or interrupt check — a kernel term is a tree. A compound whose head is not a symbol has every
 # child as an argument (see `compileArgument!`). Past MAX_VARIABLES it throws, where upstream returns
 # `AVARS_MAX` and unwinds its stack and branch buffer: nothing outside `ci` has changed, and
@@ -1078,19 +1078,18 @@ end
 # PORT: pl-comp.c always
 # DIVERGES: `val` is a Bool for `ATOM_true`/`ATOM_false`. NOT PORTED: the style check's
 # `compiler_warning` (`NOEFFECT_CHECK`) — the compiler has no warnings (see `compileClause`).
-# Under `optimise` upstream emits `I_TRUE`/`I_FAIL`, V9's instructions: refused.
 """
     always(ld, ci, val, pred, arg) -> boolex_t
 
-A goal whose outcome is known at compile time (pl-comp.c): `BOOLEX_FALSE` — compile it as a call —
-unless `optimise` is on, where upstream emits `I_TRUE`/`I_FAIL` (refused: V9).
+A goal whose outcome is known at compile time (pl-comp.c): under `optimise` `I_TRUE` or `I_FAIL`;
+otherwise `BOOLEX_FALSE`, compile it as a call.
 """
 function always(
     ld::PL_local_data{T}, ci::compileInfo{T}, val::Bool, pred::String, arg::T
 )::boolex_t where {T}
     if ld.prolog_flag_optimise                                 # truePrologFlag(PLFLAG_OPTIMISE)
-        what = string(val ? "I_TRUE" : "I_FAIL", " for ", pred, "/1 (always, optimise)")
-        throw(NotPortedError{T}(arg, what, "V9"))
+        Output_0!(ci, val ? I_TRUE : I_FAIL)
+        return BOOLEX_TRUE
     end
     return BOOLEX_FALSE
 end
@@ -1163,8 +1162,7 @@ function _type_test(k::Int, w)::Bool
 end
 
 # PORT: pl-comp.c compileTypeTest
-# DIVERGES: the test is `type_tests` entry `k` (see there). The first-variable branch's `C_VAR` is
-# V9's: refused — reached only under `optimise`, where `always` refuses first.
+# DIVERGES: the test is `type_tests` entry `k` (see there).
 """
 A type test in a body (pl-comp.c): its `I_<TEST>` on a variable already seen; a void, a first
 occurrence or a non-variable as `always` decides (a call unless `optimise`).
@@ -1183,8 +1181,8 @@ function compileTypeTest(
         if f1
             rc = always(ld, ci, false, name, a1)
             if rc == BOOLEX_TRUE
-                # isFirstVarSet(ci->used_var, i1); Output_1(ci, C_VAR, VAROFFSET(i1))
-                throw(NotPortedError{T}(a1, "C_VAR (compileTypeTest, optimise)", "V9"))
+                isFirstVarSet!(ci.used_var, i1)
+                Output_1!(ci, C_VAR, VAROFFSET(i1))
             end
             return rc
         end
@@ -1213,10 +1211,11 @@ function compileBodyTypeTest(
 end
 
 # ── the other goals compiled inline (pl-comp.c, O_COMPILE_IS), V6b2 ─────────────────────────────
-# Upstream's own decision, compiler by compiler (the memo's Q-1, (a)): every emission is of an
-# instruction V9 brings — `I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`, `B_ARG_*`,
-# `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP` — and throws `NotPortedError` where upstream emits it,
-# before anything is emitted; each `false` is upstream's, and compiles as a call. A void variable is
+# Upstream's own decision, compiler by compiler (the memo's Q-1, (a)). Since V9a the unification
+# family is emitted and executed — `I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`;
+# every other emission (`B_ARG_*`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`) throws `NotPortedError`
+# where upstream emits it, before anything is emitted (V9); each `false` is upstream's, and
+# compiles as a call. A void variable is
 # upstream's `isVar(*a)`: a variable the analysis gave no slot. NOT PORTED: the style check's
 # `compiler_warning` (`NOEFFECT_CHECK`) — the compiler has no warnings (see `compileClause`).
 
@@ -1226,62 +1225,97 @@ _comp_void(ci::compileInfo, a)::Bool = kind(a) === VAR && isIndexedVarTerm(ci, a
 "The slot of `a` if it is a variable that has one, else -1 (`isIndexedVarTerm`, pl-comp.c)."
 _comp_ivar(ci::compileInfo, a)::Int = kind(a) === VAR ? isIndexedVarTerm(ci, a) : -1
 
-# PORT: pl-comp.c compileBodyUnify
-# DIVERGES: see the section header. `skippedVar`'s `C_VAR`s precede an `I_TRUE`, so they are refused
-# with it. NOT PORTED: `isUnifiedArg`/`argUnifiedTo`, the unifications moved to the head
-# (`optimise_unify`, V9): the kernel compiles what swipl compiles with the flag false (the file
-# header), so a `Var = Term` is always compiled here — and refused.
+# PORT: pl-comp.c skippedVar as skippedVar!
+# DIVERGES: a compound's arguments are its children from `_comp_shape`'s offset (a `$expr/n`'s head
+# is one of them, Q2), visited by recursion where upstream loops on the last one. NOT PORTED: the
+# `islocal` test (no goal clauses, see the file header).
 """
-`=/2` in a body (pl-comp.c): inline — `I_TRUE` for a void side or `X = X`, `B_UNIFY_FF`/`FV`/`VF`/`VV`
-for two variables, `B_UNIFY_FC`/`VC` or `B_UNIFY_FIRSTVAR`/`VAR` … `B_UNIFY_EXIT` for a variable and
-a term — all refused (V9); `BOOLEX_FALSE`, a call, for `Term = Term`.
+`arg` was compiled to no code (a unification or a comparison that cannot change anything): a
+`C_VAR` for each of its variables met here for the first time, so the frame's variables are
+initialised as if it had run (pl-comp.c).
+"""
+function skippedVar!(ci::compileInfo{T}, arg::T)::Nothing where {T}
+    i = _comp_ivar(ci, arg)
+    if i >= 0 && isFirstVarSet!(ci.used_var, i)
+        Output_1!(ci, C_VAR, VAROFFSET(i))
+    end
+    if kind(arg) === EXPR
+        off, ar = _comp_shape(arg)
+        for k in 0:(ar - 1)
+            skippedVar!(ci, _comp_arg(arg, off, k))
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c compileBodyUnify
+# DIVERGES: a constant operand is its literal-table index (`addLiteral!`), as every literal operand
+# (src/pl-vmi.jl), and an atom constant is not registered (`PL_register_atom`: no atom garbage
+# collection). NOT PORTED: `isUnifiedArg` and `argUnifiedTo`'s `CL_HEAD_TERMS`, the unifications
+# moved to the head (`optimise_unify`), until V9b: the kernel compiles what swipl compiles with the
+# flag false.
+"""
+`=/2` in a body (pl-comp.c): `I_TRUE` for a void side or `X = X`, after `skippedVar!`;
+`B_UNIFY_FF`/`FV`/`VF`/`VV` for two variables; for a variable and a term `B_UNIFY_FC`/`VC` with a
+portable constant, else `B_UNIFY_FIRSTVAR` with the term's body code or `B_UNIFY_VAR` with its head
+code, then `B_UNIFY_EXIT`; `BOOLEX_FALSE`, a call, for `Term = Term`.
 """
 function compileBodyUnify(
     ld::PL_local_data{T}, ci::compileInfo{T}, arg::T
 )::boolex_t where {T}
     a1, a2 = child(arg, 2), child(arg, 3)                     # argTermP(*arg, 0), …(1); deRef
     if _comp_void(ci, a1) || _comp_void(ci, a2)                # Singleton = ? --> true
-        throw(
-            NotPortedError{T}(
-                arg, "I_TRUE for =/2 with a void side (compileBodyUnify)", "V9"
-            )
-        )
+        skippedVar!(ci, a1)
+        skippedVar!(ci, a2)
+        Output_0!(ci, I_TRUE)
+        return BOOLEX_TRUE
     end
     i1, i2 = _comp_ivar(ci, a1), _comp_ivar(ci, a2)
     if i1 >= 0 && i2 >= 0                                      # unify two variables
-        i1 == i2 &&                                            # unify a var with itself?
-            throw(NotPortedError{T}(arg, "I_TRUE for X = X (compileBodyUnify)", "V9"))
-        f1, f2 = isFirstVar(ci.used_var, i1), isFirstVar(ci.used_var, i2)
-        instr = if f1 && f2
-            "B_UNIFY_FF"
+        if i1 == i2                                            # unify a var with itself?
+            skippedVar!(ci, a1)
+            Output_0!(ci, I_TRUE)
+            return BOOLEX_TRUE
+        end
+        f1 = isFirstVarSet!(ci.used_var, i1)
+        f2 = isFirstVarSet!(ci.used_var, i2)
+        if f1 && f2
+            Output_2!(ci, B_UNIFY_FF, VAROFFSET(i1), VAROFFSET(i2))
         elseif f1
-            "B_UNIFY_FV"
-        elseif f2
-            "B_UNIFY_VF"
+            Output_2!(ci, B_UNIFY_FV, VAROFFSET(i1), VAROFFSET(i2))
+        elseif f2                                              # same, but args swapped
+            Output_2!(ci, B_UNIFY_VF, VAROFFSET(i2), VAROFFSET(i1))
         else
-            "B_UNIFY_VV"
+            Output_2!(ci, B_UNIFY_VV, VAROFFSET(i1), VAROFFSET(i2))
         end
-        throw(NotPortedError{T}(arg, instr * " (compileBodyUnify)", "V9"))
+        return BOOLEX_TRUE
     end
-    if i1 >= 0 || i2 >= 0                                      # Var = Term, (Term = Var)
-        i, t = i1 >= 0 ? (i1, a2) : (i2, a1)
-        first = isFirstVar(ci.used_var, i)
-        instr = if is_portable_constant(ld, t)
-            first ? "B_UNIFY_FC" : "B_UNIFY_VC"
+    if i1 < 0 && i2 >= 0                                       # (Term = Var): as (Var = Term)!
+        i1, a2 = i2, a1
+    end
+    if i1 >= 0                                                 # Var = Term
+        first = isFirstVarSet!(ci.used_var, i1)
+        if is_portable_constant(ld, a2)
+            Output_2!(
+                ci, first ? B_UNIFY_FC : B_UNIFY_VC, VAROFFSET(i1), addLiteral!(ci, a2)
+            )
         else
-            (first ? "B_UNIFY_FIRSTVAR" : "B_UNIFY_VAR") * " … B_UNIFY_EXIT"
+            Output_1!(ci, first ? B_UNIFY_FIRSTVAR : B_UNIFY_VAR, VAROFFSET(i1))
+            compileArgument!(ci, a2, first ? A_BODY : A_HEAD | A_ARG)
+            Output_0!(ci, B_UNIFY_EXIT)
         end
-        throw(NotPortedError{T}(arg, instr * " (compileBodyUnify)", "V9"))
+        return BOOLEX_TRUE
     end
     return BOOLEX_FALSE                                        # Term = Term
 end
 
 # PORT: pl-comp.c compileBodyEQ
-# DIVERGES: see the section header.
+# DIVERGES: a constant operand is a literal-table index, and an atom constant is not registered, as
+# `compileBodyUnify`'s.
 """
-`==/2` in a body (pl-comp.c): inline — `B_EQ_VV` on two variables, `B_EQ_VC` on a variable and a
-portable constant (either order), each after a `C_VAR` for a first occurrence; under `optimise`,
-`I_FAIL` for a void side, `I_TRUE`/`I_FAIL` for a first occurrence — all refused (V9);
+`==/2` in a body (pl-comp.c): `B_EQ_VV` on two variables, `B_EQ_VC` on a variable and a portable
+constant (either order), each after a `C_VAR` for a first occurrence, which stays a first occurrence
+(`isFirstVar`); under `optimise`, `I_FAIL` for a void side, `I_TRUE`/`I_FAIL` for a first occurrence;
 `BOOLEX_FALSE`, a call, otherwise.
 """
 function compileBodyEQ(
@@ -1289,63 +1323,84 @@ function compileBodyEQ(
 )::boolex_t where {T}
     a1, a2 = child(arg, 2), child(arg, 3)
     if _comp_void(ci, a1) || _comp_void(ci, a2)                # Singleton == ?: always fail
-        ld.prolog_flag_optimise && throw(
-            NotPortedError{T}(
-                arg, "I_FAIL for ==/2 with a void side (compileBodyEQ, optimise)", "V9"
-            )
-        )
+        if ld.prolog_flag_optimise
+            skippedVar!(ci, a1)
+            skippedVar!(ci, a2)
+            Output_0!(ci, I_FAIL)
+            return BOOLEX_TRUE
+        end
         return BOOLEX_FALSE                                    # debugging: compile as normal code
     end
     i1, i2 = _comp_ivar(ci, a1), _comp_ivar(ci, a2)
     if i1 >= 0 && i2 >= 0                                      # Var1 == Var2
         f1, f2 = isFirstVar(ci.used_var, i1), isFirstVar(ci.used_var, i2)
         if (f1 || f2) && ld.prolog_flag_optimise
-            what = (i1 == i2 ? "I_TRUE" : "I_FAIL") * " for ==/2 (compileBodyEQ, optimise)"
-            throw(NotPortedError{T}(arg, what, "V9"))
+            skippedVar!(ci, a1)
+            skippedVar!(ci, a2)
+            Output_0!(ci, i1 == i2 ? I_TRUE : I_FAIL)
+            return BOOLEX_TRUE
         end
-        throw(NotPortedError{T}(arg, "B_EQ_VV (compileBodyEQ)", "V9"))
+        f1 && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        f2 && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        Output_2!(ci, B_EQ_VV, VAROFFSET(i1), VAROFFSET(i2))
+        return BOOLEX_TRUE
     end
-    if (i1 >= 0 && is_portable_constant(ld, a2)) ||           # Var == const
-        (i2 >= 0 && is_portable_constant(ld, a1))               # const == Var
-        throw(NotPortedError{T}(arg, "B_EQ_VC (compileBodyEQ)", "V9"))
+    if i1 >= 0 && is_portable_constant(ld, a2)                # Var == const
+        isFirstVar(ci.used_var, i1) && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        Output_2!(ci, B_EQ_VC, VAROFFSET(i1), addLiteral!(ci, a2))
+        return BOOLEX_TRUE
+    end
+    if i2 >= 0 && is_portable_constant(ld, a1)                # const == Var
+        isFirstVar(ci.used_var, i2) && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        Output_2!(ci, B_EQ_VC, VAROFFSET(i2), addLiteral!(ci, a1))
+        return BOOLEX_TRUE
     end
     return BOOLEX_FALSE
 end
 
 # PORT: pl-comp.c compileBodyNEQ
-# DIVERGES: see the section header.
+# DIVERGES: as `compileBodyEQ`'s.
 """
-`\\==/2` in a body (pl-comp.c): inline — `B_NEQ_VV`, `B_NEQ_VC`, as `compileBodyEQ`; under
-`optimise`, `I_TRUE` for a void side, `I_FAIL`/`I_TRUE` for a first occurrence — all refused (V9);
-`BOOLEX_FALSE`, a call, otherwise.
+`\\==/2` in a body (pl-comp.c): `B_NEQ_VV`, `B_NEQ_VC`, as `compileBodyEQ`; under `optimise`,
+`I_TRUE` for a void side, `I_FAIL`/`I_TRUE` for a first occurrence; `BOOLEX_FALSE`, a call,
+otherwise.
 """
 function compileBodyNEQ(
     ld::PL_local_data{T}, ci::compileInfo{T}, arg::T
 )::boolex_t where {T}
     a1, a2 = child(arg, 2), child(arg, 3)
     if _comp_void(ci, a1) || _comp_void(ci, a2)                # Singleton \== ?: always true
-        ld.prolog_flag_optimise && throw(
-            NotPortedError{T}(
-                arg,
-                "I_TRUE for \\==/2 with a void side (compileBodyNEQ, optimise)",
-                "V9"
-            )
-        )
+        if ld.prolog_flag_optimise
+            skippedVar!(ci, a1)
+            skippedVar!(ci, a2)
+            Output_0!(ci, I_TRUE)
+            return BOOLEX_TRUE
+        end
         return BOOLEX_FALSE                                    # debugging: compile as normal code
     end
     i1, i2 = _comp_ivar(ci, a1), _comp_ivar(ci, a2)
     if i1 >= 0 && i2 >= 0                                      # Var1 \== Var2
         f1, f2 = isFirstVar(ci.used_var, i1), isFirstVar(ci.used_var, i2)
         if (f1 || f2) && ld.prolog_flag_optimise
-            what =
-                (i1 == i2 ? "I_FAIL" : "I_TRUE") * " for \\==/2 (compileBodyNEQ, optimise)"
-            throw(NotPortedError{T}(arg, what, "V9"))
+            skippedVar!(ci, a1)
+            skippedVar!(ci, a2)
+            Output_0!(ci, i1 == i2 ? I_FAIL : I_TRUE)
+            return BOOLEX_TRUE
         end
-        throw(NotPortedError{T}(arg, "B_NEQ_VV (compileBodyNEQ)", "V9"))
+        f1 && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        f2 && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        Output_2!(ci, B_NEQ_VV, VAROFFSET(i1), VAROFFSET(i2))
+        return BOOLEX_TRUE
     end
-    if (i1 >= 0 && is_portable_constant(ld, a2)) ||           # Var \== const
-        (i2 >= 0 && is_portable_constant(ld, a1))               # const \== Var
-        throw(NotPortedError{T}(arg, "B_NEQ_VC (compileBodyNEQ)", "V9"))
+    if i1 >= 0 && is_portable_constant(ld, a2)                # Var \== const
+        isFirstVar(ci.used_var, i1) && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        Output_2!(ci, B_NEQ_VC, VAROFFSET(i1), addLiteral!(ci, a2))
+        return BOOLEX_TRUE
+    end
+    if i2 >= 0 && is_portable_constant(ld, a1)                # const \== Var
+        isFirstVar(ci.used_var, i2) && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        Output_2!(ci, B_NEQ_VC, VAROFFSET(i2), addLiteral!(ci, a1))
+        return BOOLEX_TRUE
     end
     return BOOLEX_FALSE
 end
@@ -1445,8 +1500,9 @@ end
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
 # 2026-10-05: the cut's COMPILE side with the body compiler, its execution since V6a). The meta-call (a
-# variable goal, `call/N`) and the reserved atoms compiled inline (`true`, `fail`, …) throw
-# `NotPortedError` BEFORE any code is emitted (V9): upstream always compiles them inline. O_COMPILE_IS's
+# variable goal, `call/N`) and the reserved atoms compiled inline but `true` and `fail` (`$catch`,
+# `$reset`, …) throw `NotPortedError` BEFORE any code is emitted (V9): upstream always compiles them
+# inline. `true` and `fail` compile to `I_TRUE` and `I_FAIL` (since V9a). O_COMPILE_IS's
 # functors (since V6b2) and is/2 (since V8) are compiled as upstream decides, by upstream's own
 # compilers in upstream's order: inline where upstream emits an instruction — each emission of an
 # instruction the kernel does not execute yet throws `NotPortedError` (V9, the memo's Q-1) — and a
@@ -1522,10 +1578,17 @@ function compileSubClause!(
             end
             return BOOLEX_TRUE
         end
+        if sym_key(arg) == names.atom_true                     # ATOM_true
+            Output_0!(ci, I_TRUE)
+            return BOOLEX_TRUE
+        elseif sym_key(arg) == names.atom_fail                 # ATOM_fail
+            Output_0!(ci, I_FAIL)
+            return BOOLEX_TRUE
+        end
         sym_key(arg) in names.reserved_atoms &&
             throw(
                 NotPortedError{T}(
-                    arg, "a goal atom compiled inline (true, fail, …)", "V9"
+                    arg, "a goal atom compiled inline (\$catch, \$reset, …)", "V9"
                 )
             )
     else

@@ -38,6 +38,7 @@ mutable struct PL_global_data{T}
     const subclause_names::SubClauseNames                       # (the ATOM_/FUNCTOR_ tables)
     const code_data::PL_code_data                               # PL_code_data (its supervisors)
     const procedures_dc_call_prolog0::Procedure{T}              # procedures.dc_call_prolog0
+    procedures_equals2::Procedure{T}                            # procedures.equals2: =/2
     const clauses_top_clause::Clause{T}                         # clauses.top_clause
     const clauses_top_cref::ClauseRef{T}                        # clauses.top_cref
     const atom_nil::T                                           # ATOM_nil, the `[]` term
@@ -56,7 +57,9 @@ end
 # frame's predicate, is created as `setBuiltinPredicateProperties` creates it (no clauses, flags 0,
 # `SUPERVISOR(virgin)`), in the `system` module's table. `initVM` builds the top clause, and then
 # the built-ins are registered — upstream registers them first (setup:158, then 160); neither reads
-# the other. `atom_nil` and
+# the other. `procedures_equals2` is set where upstream sets it, by `setBuiltinPredicateProperties!`
+# at the end of `initBuildIns!`, once `=/2` is registered (until then it holds `$c_call_prolog/0`,
+# which nothing reads it as). `atom_nil` and
 # `atom_dot` are the terms the VM writes for `[]` and a list cell's head, built once — upstream's are
 # constants; `no_literals` is the literal table a supervisor's code has (none).
 function PL_global_data{T}() where {T}
@@ -83,6 +86,7 @@ function PL_global_data{T}() where {T}
         _subclause_names(T),
         cd,
         dc_proc,
+        dc_proc,                                # procedures_equals2: set by initBuildIns!
         top_clause,
         top_cref,
         mk_nil(T),

@@ -249,11 +249,16 @@ run(Mode) :-
              nl )).
 """
 
-"swipl's outcomes for the cases `idx` in `mode`, into `res`; `false` if swipl died by a signal."
+"""
+swipl's outcomes for the cases `idx` in `mode`, into `res`; `false` if swipl died by a signal.
+`prelude` is loaded before the cases (a flag the clauses are compiled under).
+"""
 function _hswipl_run!(
-    res::Dict{Tuple{Int, String}, String}, cases, idx::Vector{Int}, mode::String
+    res::Dict{Tuple{Int, String}, String}, cases, idx::Vector{Int}, mode::String;
+    prelude::String=""
 )::Bool
     prog = IOBuffer()
+    print(prog, prelude)
     println(prog, ":- style_check(-singleton).")
     println(prog, ":- set_prolog_flag(double_quotes, string).")
     println(prog, ":- discontiguous case/2.")
@@ -283,14 +288,14 @@ function _hswipl_run!(
 end
 
 "swipl's outcomes for every case in every mode, and how many chunks aborted (LogicKernel#3)."
-function _hswipl(cases)
+function _hswipl(cases; prelude::String="")
     res = Dict{Tuple{Int, String}, String}()
     aborts = 0
     for (_, mode) in _HMODES, chunk in Iterators.partition(eachindex(cases), 100)
-        if !_hswipl_run!(res, cases, collect(chunk), mode)
+        if !_hswipl_run!(res, cases, collect(chunk), mode; prelude=prelude)
             aborts += 1
             for i in chunk
-                _hswipl_run!(res, cases, [i], mode) ||
+                _hswipl_run!(res, cases, [i], mode; prelude=prelude) ||
                     error("swipl aborts on case $i alone in mode $mode")
             end
         end
@@ -400,5 +405,158 @@ const _HHEAD_INSTRUCTIONS = (
         @testset "swipl comparison skipped only where it is not required" begin
             @test !_HSWIPL_REQUIRED
         end
+    end
+end
+
+# ── body unification in every mode (V9a; user, 2026-10-06) ──────────────────────────────────────
+# The inline unification family (`B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`, `I_TRUE`, `I_FAIL`, `C_VAR`)
+# through the VM, against swipl consulting the same clauses, in every `occurs_check` mode. Under
+# `true`/`error` upstream turns every body unification into a call of `=/2` (`slow_unify`), so an
+# error's context is `=/2`: swipl writes `system:(=)/2`, the kernel `(=)/2` until V5c gives
+# definitions their module, so the comparison strips `system:`, as the other differentials do until
+# then. Until V9b swipl compiles them with `optimise_unify` false, as the kernel does. PINNED (user,
+# 2026-10-06, 3a): `X = f(X)` with `X` a first occurrence is cyclic under `false`, fails under
+# `true` and raises under `error`; and the cyclic term compared with itself (`==`, `compare/3`).
+_hbr(h::_HT, b::_HT) = _hc(Symbol(":-"), h, b)
+_hbc(gs::_HT...) = foldr((a, b) -> _hc(Symbol(","), a, b), gs)
+const _HB_CASES =
+    let X = _hv(101), Y = _hv(102), Z = _hv(103), O = _hv(104), W = _hv(105), A = _hv(1),
+        B = _hv(2)
+
+        [
+            # (clauses, goal): FIRSTVAR, cyclic; VAR + H_VAR, cyclic; VV; FV + VC; FC + EQ_VC; NEQ_VC
+            (
+                [_hbr(_hc(:hb1, X), _hbc(_hc(:(=), Y, _hc(:f, Y)), _hc(:(=), X, Y)))],
+                _hc(:hb1, A)
+            ),
+            ([_hbr(_hc(:hb2, X), _hc(:(=), X, _hc(:f, X)))], _hc(:hb2, A)),
+            ([_hbr(_hc(:hb3, X, Y), _hc(:(=), X, Y))], _hc(:hb3, A, _hc(:g, A))),
+            ([_hbr(_hc(:hb3b, X, Y), _hc(:(=), X, Y))], _hc(:hb3b, A, _hc(:g, B))),
+            (
+                [_hbr(_hc(:hb4, X), _hbc(_hc(:(=), Y, X), _hc(:(=), Y, _hs(:a))))],
+                _hc(:hb4, A)
+            ),
+            (
+                [_hbr(_hc(:hb4b, X), _hbc(_hc(:(=), Y, X), _hc(:(=), Y, _hs(:a))))],
+                _hc(:hb4b, _hs(:b))
+            ),
+            (
+                [_hbr(_hc(:hb5, W), _hbc(_hc(:(=), X, _hs(:a)), _hc(:(==), X, _hs(:a))))],
+                _hc(:hb5, A)
+            ),
+            ([_hbr(_hc(:hb6, X), _hc(Symbol("\\=="), X, _hs(:a)))], _hc(:hb6, A)),
+            ([_hbr(_hc(:hb6b, X), _hc(Symbol("\\=="), X, _hs(:a)))], _hc(:hb6b, _hs(:a))),
+            # I_TRUE, I_FAIL; a void side; ==/\\== on two variables
+            ([_hbr(_hc(:hb7, W), _hbc(_hs(Symbol("true")), _hs(:fail)))], _hc(:hb7, A)),
+            ([_hbr(_hc(:hb8, X), _hc(:(=), Z, X))], _hc(:hb8, A)),
+            ([_hbr(_hc(:hb10, X, Y), _hc(:(==), X, Y))], _hc(:hb10, A, A)),
+            ([_hbr(_hc(:hb10b, X, Y), _hc(:(==), X, Y))], _hc(:hb10b, A, B)),
+            ([_hbr(_hc(:hb10c, X, Y), _hc(Symbol("\\=="), X, Y))], _hc(:hb10c, A, B)),
+            # FF, then VF and VC through the shared variable; X = Y with Y first (VF); C_VAR (==, first)
+            (
+                [
+                    _hbr(
+                        _hc(:hb11, X),
+                        _hbc(_hc(:(=), Y, Z), _hc(:(=), Y, X), _hc(:(=), Z, _hs(:c)))
+                    )
+                ],
+                _hc(:hb11, A)),
+            ([_hbr(_hc(:hb12, X), _hbc(_hc(:(=), X, Y), _hc(:(==), Y, X)))], _hc(:hb12, A)),
+            ([_hbr(_hc(:hb13, X), _hbc(_hc(:(==), X, Y), _hc(:(=), Y, X)))], _hc(:hb13, A)),
+            # a cyclic list; two terms cyclic through each other; Term = Term (a call of =/2)
+            ([_hbr(_hc(:hb14, X), _hc(:(=), X, _hlist(_hs(:a), X)))], _hc(:hb14, A)),
+            (
+                [
+                    _hbr(
+                        _hc(:hb15, X, Y),
+                        _hbc(_hc(:(=), X, _hc(:g, Y)), _hc(:(=), Y, _hc(:h, X)))
+                    )
+                ],
+                _hc(:hb15, A, B)),
+            ([_hbr(_hc(:hb16, X), _hc(:(=), _hc(:f, X), _hc(:f, _hs(:a))))], _hc(:hb16, A)),
+            # the cyclic term compared with itself, and with another cyclic term equal to it (3a)
+            (
+                [
+                    _hbr(_hc(:hb9c, X), _hbc(_hc(:(=), Y, _hc(:f, Y)), _hc(:(=), X, Y))),
+                    _hbr(
+                        _hc(:hb9, O),
+                        _hbc(_hc(:hb9c, Y), _hc(:(==), Y, Y), _hc(:compare, O, Y, Y))
+                    )
+                ], _hc(:hb9, A)),
+            (
+                [
+                    _hbr(_hc(:hb9d, X), _hbc(_hc(:(=), Y, _hc(:f, Y)), _hc(:(=), X, Y))),
+                    _hbr(_hc(:hb9b, O),
+                        _hbc(
+                            _hc(:hb9d, Y),
+                            _hc(:hb9d, Z),
+                            _hc(:(==), Y, Z),
+                            _hc(:compare, O, Y, Z)
+                        ))
+                ], _hc(:hb9b, A))
+        ]
+    end
+const _HB_FAMILY = (
+    LK.B_UNIFY_FIRSTVAR, LK.B_UNIFY_VAR, LK.B_UNIFY_EXIT, LK.B_UNIFY_FF, LK.B_UNIFY_VF,
+    LK.B_UNIFY_FV, LK.B_UNIFY_VV, LK.B_UNIFY_FC, LK.B_UNIFY_VC, LK.B_EQ_VV, LK.B_EQ_VC,
+    LK.B_NEQ_VV, LK.B_NEQ_VC, LK.C_VAR, LK.I_FAIL, LK.I_TRUE
+)
+# swipl's context `system:(=)/2`, written as the kernel writes it until V5c qualifies contexts
+_hb_unqualify(s::AbstractString) = replace(s, r":\(system,(/\([^()]*,\d+\))\)" => s"\1")
+
+@testset "body unification through the VM vs swipl, in every occurs_check mode (V9a)" begin
+    db = IxDB{_HT}()
+    preds = IxPred{_HT}[]
+    ran = Set{UInt64}()
+    for (clauses, goal) in _HB_CASES
+        for c in clauses
+            h, b = child(c, 2), child(c, 3)
+            p = ix_pred(_HT, lk_name(child(h, 1)), nchildren(h) - 1; db=db)
+            cl = LK.compileClause(db.gd, db.ld, h, b, p.proc, LK.MODULE_user(db.gd))
+            LK.assertDefinition!(db.gd, p.def, cl, LK.CL_END)
+            union!(ran, _hinstructions(cl))
+        end
+        push!(preds, ix_pred(_HT, lk_name(child(goal, 1)), nchildren(goal) - 1; db=db))
+    end
+    missing = [LK.codeTable(c).name for c in _HB_FAMILY if !(c in ran)]
+    isempty(missing) || println(stderr, "  not compiled: ", missing)
+    @test isempty(missing)
+    ours = Dict{Tuple{Int, String}, String}()
+    for (mode, m) in _HMODES, i in eachindex(_HB_CASES)
+        ours[(i, m)] = _hvm(preds[i], _HB_CASES[i][2], mode)
+    end
+    named(n) = findfirst(c -> lk_name(child(c[2], 1)) === n, _HB_CASES)
+    @testset "pinned (3a): X = f(X), X first, in each mode; the cycle compared with itself" begin
+        @test ours[(named(:hb1), "false")] == "ok 1 cyclic"
+        @test ours[(named(:hb1), "true")] == "ok 0"
+        @test startswith(ours[(named(:hb1), "error")], "err error(occurs_check(")
+        @test endswith(ours[(named(:hb1), "error")], "context(/(=,2),_))")
+        @test ours[(named(:hb9), "false")] == "ok 1 hb9(=)"
+        @test ours[(named(:hb9b), "false")] == "ok 1 hb9b(=)"
+        @test ours[(named(:hb2), "false")] == "ok 1 cyclic"     # X seen: the head code's builder
+        @test ours[(named(:hb2), "true")] == "ok 0"
+    end
+    if _HSWIPL !== nothing
+        @testset "identical to swipl" begin
+            theirs, _ = _hswipl(
+                _HB_CASES; prelude=":- set_prolog_flag(optimise_unify, false).\n"
+            )
+            bad = [
+                (i, m) for i in eachindex(_HB_CASES) for (_, m) in _HMODES if
+                ours[(i, m)] != _hb_unqualify(theirs[(i, m)])
+            ]
+            for (i, m) in bad[1:min(end, 6)]
+                println(stderr, "  case $i ($m): ", join(_hsrc.(_HB_CASES[i][1]), ". "),
+                    " ?- ",
+                    _hsrc(_HB_CASES[i][2]), "\n    ours  ", ours[(i, m)], "\n    swipl ",
+                    theirs[(i, m)])
+            end
+            @test isempty(bad)
+            @test length(theirs) == 3 * length(_HB_CASES)
+        end
+    elseif _HSWIPL_REQUIRED
+        error(
+            "LOGICKERNEL_REQUIRE_SWIPL=1 but `swipl` is not on PATH — the body differential would be skipped"
+        )
     end
 end

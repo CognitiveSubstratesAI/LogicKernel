@@ -454,6 +454,46 @@ const BW_PROLOG =
     "bw([]).\nbw([X|T]) :- compare(_, X, X), bw(T).\nbwtop :- bw([" * join(1:1000, ",") *
     "]).\n"
 
+# unification in a body (V9a): a 1000-element list walk whose clause unifies and compares inline per
+# element — B_UNIFY_FIRSTVAR, B_UNIFY_VAR … B_UNIFY_EXIT, B_EQ_VV, B_UNIFY_FV, B_NEQ_VC; none is
+# against a head argument, so swipl moves none into the head and runs the same code (`BU_PROLOG`)
+let (X, T, Y, Z, W) = (_v(), _v(), _v(), _v(), _v())
+    _nr_add!(_nrf(:bu, _nrnil()), nothing)
+    _nr_add!(
+        _nrf(:bu, _nrcons(X, T)),
+        foldr(
+            (g, r) -> _nrf(Symbol(","), g, r),
+            [
+                _nrf(:(=), Y, _nrf(:f, X)), _nrf(:(=), Y, _nrf(:f, Z)), _nrf(:(==), Z, X),
+                _nrf(:(=), W, Z), _nrf(Symbol("\\=="), W, _a(:a)), _nrf(:bu, T)
+            ]
+        )
+    )
+    _nr_add!(
+        _a(:butop),
+        _nrf(:bu, foldr(_nrcons, [gnd_term(BT, i) for i in 1:1000]; init=_nrnil()))
+    )
+end
+const BU_PROC = lookupProcedure(_a(:butop), 0, NR_USER)
+function _vm_bu()::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    qid = LogicKernel.PL_open_query(
+        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, BU_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    return rc
+end
+@assert _vm_bu() == LogicKernel.PL_S_TRUE
+let c =
+        lookupProcedure(_a(:bu), 1, NR_USER).definition.impl_clauses.first_clause.next.clause
+    @assert LogicKernel.B_UNIFY_FIRSTVAR in c.codes && LogicKernel.B_NEQ_VC in c.codes
+end
+const BU_PROLOG =
+    "bu([]).\nbu([X|T]) :- Y = f(X), Y = f(Z), Z == X, W = Z, W \\== a, bu(T).\n" *
+    "butop :- bu([" * join(1:1000, ",") * "]).\n"
+
 # allow-docstring-interp: not a docstring — this Prolog source interpolates DEPTH on purpose
 const PROLOG_FIXTURES =
     """
@@ -464,7 +504,7 @@ fixtures(G1, G2, V1, V2) :-
     forall(between(1, 1000, I), assertz(cp(I, a))).
 :- dynamic cp/2.
 """ * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) *
-    BW_PROLOG *
+    BW_PROLOG * BU_PROLOG *
     DERIVE_PROLOG * QSORT_PROLOG * POLY_PROLOG
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
@@ -510,6 +550,8 @@ const CASES = [
     # rules (V4b): nreverse of 30, 496 calls with last-call reuse, open to close
     ("nreverse", _vm_nreverse, "nreverse"),
     ("compare/3 ×1000, body", _vm_bw, "bwtop"),
+    # unification and comparison inline in a body (V9a), per element of a 1000-element list
+    ("unify inline ×1000, body", _vm_bu, "butop"),
     # derive (V6c2): the first program with cuts, type tests and is/2 from a body
     ("derive", _vm_derive, "ops8, log10, divide10"),
     # qsort (V7): 50 numbers, `=</2` and a cut per partition step

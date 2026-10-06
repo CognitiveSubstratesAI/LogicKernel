@@ -16,14 +16,16 @@
 # their order in pl-vmi.c; these numbers keep that order up to `I_TCALL` (`B_VAR0 + index` needs the
 # three consecutive) and then append, in the order the steps declared them: `I_CUT` (V2), then V4a's,
 # then V5a2's deterministic foreign calls (`I_FCALLDET0 + arity` needs the eleven consecutive), then
-# V6b's type tests (`I_VAR` … `I_CALLABLE`, in pl-vmi.c's order), then V8's `A_ADD_FC`.
+# V6b's type tests (`I_VAR` … `I_CALLABLE`, in pl-vmi.c's order), then V8's `A_ADD_FC`, then V9a's
+# inline unification family (`B_UNIFY_FIRSTVAR` … `B_NEQ_VC`, `C_VAR`, `I_FAIL`, `I_TRUE`, in
+# pl-vmi.c's order).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
-# probed in 10.1.16); the SSU instructions; the inline built-ins (`B_UNIFY_*`, `B_EQ_*`, `B_ARG_*`),
-# the meta-call (`I_CALL1`, `I_USERCALL0`, `I_CALLN`), the module calls (`I_CONTEXT`, `I_CALLM`,
-# `I_DEPARTM`) and the control constructs (`C_*`, `I_TRUE`, `I_FAIL`): V9. `I_CUT` is declared and
-# compiled (a clause-level `!`, user 2026-10-05) and, since V6a, executed.
+# probed in 10.1.16); the SSU instructions; `B_ARG_*`, the meta-call (`I_CALL1`, `I_USERCALL0`,
+# `I_CALLN`), the module calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`) and the control constructs (`C_*`
+# but `C_VAR`): V9. `I_CUT` is declared and compiled (a clause-level `!`, user 2026-10-05) and, since
+# V6a, executed.
 #
 # OPERANDS: every literal operand (`*_ATOM`, `*_SMALLINT`, `*_FLOAT`, `*_MPZ`, `*_MPQ`, `*_STRING`)
 # is ONE word, the index of the literal in the clause's literal table (V1 L2), where upstream
@@ -358,6 +360,54 @@ const I_CALLABLE = code(84)
 # PORT: pl-vmi.c A_ADD_FC
 "`NewVar is Var + Int` inline: the first operand's slot gets the second's value plus the literal (pl-vmi.c)."
 const A_ADD_FC = code(85)
+# PORT: pl-vmi.c B_UNIFY_FIRSTVAR
+"`Var = Term` in a body, `Var` a first occurrence: the body code that follows builds `Term` into it (pl-vmi.c)."
+const B_UNIFY_FIRSTVAR = code(86)
+# PORT: pl-vmi.c B_UNIFY_VAR
+"`Var = Term` in a body: the head code that follows unifies `Term` with the variable (pl-vmi.c)."
+const B_UNIFY_VAR = code(87)
+# PORT: pl-vmi.c B_UNIFY_EXIT
+"The end of a body `Var = Term` (pl-vmi.c)."
+const B_UNIFY_EXIT = code(88)
+# PORT: pl-vmi.c B_UNIFY_FF
+"`Var1 = Var2` in a body, both first occurrences: one fresh variable in both (pl-vmi.c)."
+const B_UNIFY_FF = code(89)
+# PORT: pl-vmi.c B_UNIFY_VF
+"`Var1 = Var2`, the second a first occurrence: `B_UNIFY_FV` with the operands swapped (pl-vmi.c)."
+const B_UNIFY_VF = code(90)
+# PORT: pl-vmi.c B_UNIFY_FV
+"`Var1 = Var2`, the first a first occurrence: it gets the second's value (pl-vmi.c)."
+const B_UNIFY_FV = code(91)
+# PORT: pl-vmi.c B_UNIFY_VV
+"`Var1 = Var2` in a body, neither a first occurrence: unify them (pl-vmi.c)."
+const B_UNIFY_VV = code(92)
+# PORT: pl-vmi.c B_UNIFY_FC
+"`Var = Const`, `Var` a first occurrence: it gets the constant (pl-vmi.c)."
+const B_UNIFY_FC = code(93)
+# PORT: pl-vmi.c B_UNIFY_VC
+"`Var = Const` in a body: unify the variable with the constant (pl-vmi.c)."
+const B_UNIFY_VC = code(94)
+# PORT: pl-vmi.c B_EQ_VV
+"`Var1 == Var2` inline (pl-vmi.c)."
+const B_EQ_VV = code(95)
+# PORT: pl-vmi.c B_EQ_VC
+"`Var == Const` inline (pl-vmi.c)."
+const B_EQ_VC = code(96)
+# PORT: pl-vmi.c B_NEQ_VV
+"`Var1 \\== Var2` inline (pl-vmi.c)."
+const B_NEQ_VV = code(97)
+# PORT: pl-vmi.c B_NEQ_VC
+"`Var \\== Const` inline (pl-vmi.c)."
+const B_NEQ_VC = code(98)
+# PORT: pl-vmi.c C_VAR
+"Make the operand's slot a fresh variable (pl-vmi.c)."
+const C_VAR = code(99)
+# PORT: pl-vmi.c I_FAIL
+"`fail/0` inline (pl-vmi.c)."
+const I_FAIL = code(100)
+# PORT: pl-vmi.c I_TRUE
+"`true/0` inline (pl-vmi.c)."
+const I_TRUE = code(101)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -460,7 +510,23 @@ const _CODE_TABLE = (
     code_info(:I_STRING, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
     code_info(:I_COMPOUND, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
     code_info(:I_CALLABLE, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
-    code_info(:A_ADD_FC, VIF_BREAK, 3, (CA1_FVAR, CA1_VAR, CA1_INTEGER, 0x00))
+    code_info(:A_ADD_FC, VIF_BREAK, 3, (CA1_FVAR, CA1_VAR, CA1_INTEGER, 0x00)),
+    code_info(:B_UNIFY_FIRSTVAR, VIF_BREAK, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
+    code_info(:B_UNIFY_VAR, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:B_UNIFY_EXIT, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:B_UNIFY_FF, VIF_BREAK, 2, (CA1_FVAR, CA1_FVAR, 0x00, 0x00)),
+    code_info(:B_UNIFY_VF, VIF_BREAK, 2, (CA1_FVAR, CA1_VAR, 0x00, 0x00)),
+    code_info(:B_UNIFY_FV, VIF_BREAK, 2, (CA1_FVAR, CA1_VAR, 0x00, 0x00)),
+    code_info(:B_UNIFY_VV, VIF_BREAK, 2, (CA1_VAR, CA1_VAR, 0x00, 0x00)),
+    code_info(:B_UNIFY_FC, VIF_BREAK, 2, (CA1_FVAR, CA1_DATA, 0x00, 0x00)),
+    code_info(:B_UNIFY_VC, VIF_BREAK, 2, (CA1_VAR, CA1_DATA, 0x00, 0x00)),
+    code_info(:B_EQ_VV, VIF_BREAK, 2, (CA1_VAR, CA1_VAR, 0x00, 0x00)),
+    code_info(:B_EQ_VC, VIF_BREAK, 2, (CA1_VAR, CA1_DATA, 0x00, 0x00)),
+    code_info(:B_NEQ_VV, VIF_BREAK, 2, (CA1_VAR, CA1_VAR, 0x00, 0x00)),
+    code_info(:B_NEQ_VC, VIF_BREAK, 2, (CA1_VAR, CA1_DATA, 0x00, 0x00)),
+    code_info(:C_VAR, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
+    code_info(:I_FAIL, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_TRUE, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

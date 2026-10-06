@@ -244,8 +244,9 @@ function _manifest_index(T)
         (LK._type_test, Tuple{Int, T}, true),
         (LK.compileTypeTest, Tuple{LD, CInfo, T, Int}, false),
         (LK.compileBodyTypeTest, Tuple{LD, LK.SubClauseNames, UInt64, CInfo, T}, false),
-        # V6b2 — the other goals compiled inline (src/pl-comp.jl, pl-incl.jl): every emission
-        # refuses (V9), so each compiler reaches a throw; the tests allocate nothing
+        # V6b2 — the other goals compiled inline (src/pl-comp.jl, pl-incl.jl); since V9a the
+        # unification family emits (`skippedVar!` too), the others refuse (V9); the tests allocate
+        # nothing
         (LK._comp_void, Tuple{CInfo, T}, true), (LK._comp_ivar, Tuple{CInfo, T}, true),
         (LK.compileBodyUnify, Tuple{LD, CInfo, T}, false),
         (LK.compileBodyEQ, Tuple{LD, CInfo, T}, false),
@@ -253,6 +254,7 @@ function _manifest_index(T)
         (LK.compileBodyArg3, Tuple{CInfo, T}, false),
         (LK.compileBodyCallContinuation, Tuple{CInfo, T}, false),
         (LK.compileBodyShift, Tuple{CInfo, T, Bool}, false),
+        (LK.skippedVar!, Tuple{CInfo, T}, false),
         (LK.is_portable_constant, Tuple{LD, T}, true),
         (LK.isAtom, Tuple{T}, true), (LK.isTaggedInt, Tuple{T}, true),
         # V6c2 — arithmetic in a body (src/pl-comp.jl, pl-funct.jl)
@@ -477,6 +479,7 @@ function _manifest_index(T)
         (LK._bopen!, Tuple{LD, Int, T, Bool, Int, Int, T}, false),
         (LK._bclose!, Tuple{LD}, false),
         (LK._fresh_compound, Tuple{Type{T}, T, Bool, Int}, false),
+        (LK._slow_unify, Tuple{LD}, true),
         (LK._is_expr3, Tuple{T}, true),
         (
             LK._save_registers!,
@@ -524,6 +527,7 @@ function _manifest_index(T)
         (LK.builtin_pred_flags, Tuple{UInt8, UInt64}, true),
         (LK.registerBuiltins!, Tuple{GD, Vector{Tuple{String, Int, UInt8}}, Int}, false),
         (LK.initBuildIns!, Tuple{GD}, false),
+        (LK.setBuiltinPredicateProperties!, Tuple{GD}, false),
         (LK._fcall_va, Tuple{Int, LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._fcall_det, Tuple{Int, LD, Int}, false),
         (LK.MODULE_system, Tuple{GD}, true),
