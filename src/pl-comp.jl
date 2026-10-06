@@ -30,9 +30,7 @@
 #
 # NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
 # `link_local_var`; V9), SSU (`=>`) clauses,
-# the moved head unifications (`head_unify`, `annotate_unification`, `argMoveUnify`/`argUnifiedTo`,
-# `isUnifiedArg`: V9b; until then the kernel compiles what swipl compiles with `optimise_unify`
-# false, the inline unification it moves executing since V9a), and singleton, multiton and branch
+# SSU clauses' moves (`?=>` always moves, `=>` never: no SSU), and singleton, multiton and branch
 # warnings (the `VD_*` flags). The body compiler is ported since V2, and the instructions run in the
 # VM since V4a (src/pl-wam.jl).
 
@@ -100,15 +98,26 @@ end
 
 # ── compiler state (pl-comp.c) ──────────────────────────────────────────────────────────────────
 # PORT: pl-comp.c vardef as VarDef
-# DIVERGES: what the analysis needs of upstream's record — the slot and the occurrence count. A
-# variable is found by its `var_key` in `compileInfo.vardefs` where upstream overwrites the
-# variable's cell with a reference to the record.
+# DIVERGES: what the analysis needs of upstream's record — the slot, the occurrence count and the
+# flags of a unification moved into the head. A variable is found by its `var_key` in
+# `compileInfo.vardefs` where upstream overwrites the variable's cell with a reference to the record.
+# `arg_value`, the term moved, is kept in `compileInfo.arg_value` by the argument's slot (this record
+# has no term type); `arg_pos` identifies the `=/2` goal moved (see `annotate_unify!`).
 "The analysis of one variable of a clause (pl-comp.c `vardef`)."
 mutable struct VarDef
     index::Int          # slot assigned by the analysis
     offset::Int         # offset in environment frame
     times::Int          # occurrences
+    flags::UInt32       # VD_*: VD_ARGUMENT, VD_ARGUMENT_DONE
+    arg_pos::Int        # the ordinal of the =/2 goal moved into the head (VD_ARGUMENT)
 end
+
+# PORT: pl-comp.c VD_ARGUMENT
+"`VarDef` flag: unified against an argument — a unification moved into the head (pl-comp.c)."
+const VD_ARGUMENT = UInt32(0x10)
+# PORT: pl-comp.c VD_ARGUMENT_DONE
+"`VarDef` flag: the moved unification's head code was generated (pl-comp.c)."
+const VD_ARGUMENT_DONE = UInt32(0x20)
 
 # PORT: pl-comp.c branch_var
 # DIVERGES: no `saved_flags` — the flags a branch saves are the warnings' (`VD_*`, not ported).
@@ -133,7 +142,7 @@ end
 # `branch_vars` is `nothing` or the vector upstream keeps in `branch_varbuf`, `literals` the
 # clause's literal table as it is built (since V1 L2), and `procedures` its procedure table (since V1). No
 # `clause` (the clause is created after the code), and the fields of subsystems not yet ported:
-# `islocal`, `subclausearg`, `argvars`, `argvar` (V9), `head_unify` (V9b), `singletons` and the warnings,
+# `islocal`, `subclausearg`, `argvars`, `argvar` (V9), `singletons` and the warnings,
 # `progress` (interrupts), `colon_context` and `at_context` (modules). `cut` is a clause-level cut
 # (`var` 0) until the control constructs set a local one (V9). `module_` is
 # upstream's `module`, a Julia keyword.
@@ -151,6 +160,11 @@ mutable struct compileInfo{T}
     procedures::Vector{Procedure{T}}                        # the procedure table being built
     branch_vars::Union{Nothing, Vector{branch_var}}         # We are in a branch
     cut::cutInfo                                            # how to compile !
+    head_unify::Bool                                        # In unifications against arguments
+    flags::UInt32                                           # (ci->clause's flags: CL_HEAD_TERMS)
+    av_unify::Int                                           # (=/2 goals the analysis met)
+    cb_unify::Int                                           # (=/2 goals the compiler met)
+    arg_value::Dict{Int, T}                                 # (vardef arg_value, by argument slot)
 end
 
 """
@@ -160,7 +174,8 @@ arguments (pl-comp.c `compileClause`).
 compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
     compileInfo{T}(
         m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
-        Procedure{T}[], nothing, cutInfo(0, 0, code(0))          # ci->cut.var = 0 (c:2068)
+        Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
+        false, UInt32(0), 0, 0, Dict{Int, T}()                  # head_unify: compileClause's
     )
 
 # PORT: pl-comp.c pushBranchVar
@@ -427,8 +442,7 @@ _max_frame_size()::Union{} = error("compileClause: representation_error(max_fram
 
 # PORT: pl-comp.c analyseVariables2
 # DIVERGES: no `islocal` (goal clauses: `subclausearg`, `argvars` and AV_SUBCLAUSE_LOOP come with
-# the meta-call, V9); no leading-unification annotation (`head_unify`, `annotate_unification`:
-# the moved head unifications, V9b); no warnings (`VD_*` flags, `singletons`, `name`); no cycle,
+# the meta-call, V9); no warnings (`VD_*` flags, `singletons`, `name`); no cycle,
 # depth or interrupt check — a kernel term is a tree. A compound whose head is not a symbol has every
 # child as an argument (see `compileArgument!`). Past MAX_VARIABLES it throws, where upstream returns
 # `AVARS_MAX` and unwinds its stack and branch buffer: nothing outside `ci` has changed, and
@@ -460,7 +474,7 @@ function analyseVariables2!(
                 index = ci.arity + nvars
                 nvars += 1
             end
-            vd = VarDef(index, -1, 1)
+            vd = VarDef(index, -1, 1, UInt32(0), 0)
             ci.vardefs[var_key(head)] = vd
             if ci.branch_vars !== nothing
                 pushBranchVar!(ci, vd)
@@ -479,6 +493,7 @@ function analyseVariables2!(
             # branch, used only once in the branch and not used in code after the branches
             # re-unite.
             if _has_functor(head, cf.semicolon, 2)
+                ci.head_unify = false
                 obv = ci.branch_vars !== nothing
                 bvs = ci.branch_vars
                 if bvs === nothing
@@ -499,6 +514,7 @@ function analyseVariables2!(
             # check \+ Goal for singletons on Goal. These are variables introduced inside the
             # goal and only used once.
             if _has_functor(head, cf.not_provable, 1)
+                ci.head_unify = false
                 obv = ci.branch_vars !== nothing
                 bvs = ci.branch_vars
                 if bvs === nothing
@@ -517,6 +533,19 @@ function analyseVariables2!(
                 @goto next_head
             end
         end
+        # Find leading unifications against head arguments. DIVERGES: every =/2 at a control
+        # position is counted (`av_unify`), so that `annotate_unify!` can record which one it moved.
+        if control
+            is_eq = _has_functor(head, gd.subclause_names.atom_equals, 2)
+            is_eq && (ci.av_unify += 1)
+            if ci.head_unify
+                if is_eq
+                    annotate_unification!(ci, head)
+                elseif !_has_functor(head, cf.comma, 2)
+                    ci.head_unify = false
+                end
+            end
+        end
         # The default term processing case
         off, ar = _comp_shape(head)
         if ar > 0
@@ -528,7 +557,13 @@ function analyseVariables2!(
                     AV_ARG_LOOP, head, off, 0, next_argn, ar, new_control, false, 0, 0
                 )
             )
+            @goto resume
         end
+    end                                                         # arity 0: term done
+    # e.g. atomic goals; a VARIABLE goal never gets here (`@goto resume` above), so it does not end
+    # the run of moved unifications: upstream's defect #6 (E1), ported as is (user, 2026-10-06)
+    if control && !(kind(head) === SYM && sym_key(head) == gd.subclause_names.atom_true)
+        ci.head_unify = false
     end
     @label resume
     if isempty(stack)
@@ -589,6 +624,57 @@ function analyseVariables2!(
     end
     pop!(stack)
     @goto resume
+end
+
+# PORT: pl-comp.c is_argument_var
+"The `VarDef` of `p` if it is an argument variable — first met as a plain head argument — else `nothing` (pl-comp.c)."
+function is_argument_var(ci::compileInfo{T}, p::T)::Union{Nothing, VarDef} where {T}
+    kind(p) === VAR || return nothing                          # isVarInfo(*p)
+    vd = get(ci.vardefs, var_key(p), nothing)
+    (vd === nothing || vd.index >= ci.arity) && return nothing # index < ci->arity
+    return vd
+end
+
+# PORT: pl-comp.c annotate_unify as annotate_unify!
+# DIVERGES: the goal moved is recorded by its ORDINAL among the =/2 goals at control positions
+# (`arg_pos`, from `ci.av_unify`), where upstream records the address of the other side
+# (`arg_value`), which `isUnifiedArg` compares: the kernel's terms are values, and a term type may
+# share structure (alt_interned), so two goals `X = a` could be one term (user, 2026-10-06). The
+# term itself goes to `ci.arg_value`, by the argument's slot.
+"""
+`p1 = p2` (or the goal reversed, see `annotate_unification!`) leads the body: if `p1` is an argument
+variable with no moved unification yet and `p2` is not a variable, move it into the head (pl-comp.c).
+"""
+function annotate_unify!(ci::compileInfo{T}, p1::T, p2::T)::Bool where {T}
+    vd = is_argument_var(ci, p1)
+    vd === nothing && return false
+    if (vd.flags & VD_ARGUMENT) == 0 && kind(p2) !== VAR      # !isVarInfo(*p2) && !isVar(*p2)
+        vd.flags |= VD_ARGUMENT
+        vd.arg_pos = ci.av_unify
+        ci.arg_value[vd.index] = p2                            # vd->arg_value = p2
+        return true
+    end
+    return false
+end
+
+# PORT: pl-comp.c annotate_unification as annotate_unification!
+"The leading goal `f`, a `=/2`: move it into the head, its sides tried both ways (pl-comp.c)."
+annotate_unification!(ci::compileInfo{T}, f::T) where {T} =
+    annotate_unify!(ci, child(f, 2), child(f, 3)) ||
+    annotate_unify!(ci, child(f, 3), child(f, 2))
+
+# PORT: pl-comp.c argUnifiedTo
+"Whether argument variable `vd` had a unification moved into the head (pl-comp.c)."
+argUnifiedTo(vd::VarDef)::Bool = (vd.flags & VD_ARGUMENT) != 0  # !!v->arg_value: always set
+
+# PORT: pl-comp.c argMoveUnify as argMoveUnify!
+"The term moved into argument variable `vd`'s place, the first time it is asked; else `nothing` (pl-comp.c)."
+function argMoveUnify!(ci::compileInfo{T}, vd::VarDef)::Union{Nothing, T} where {T}
+    if (vd.flags & VD_ARGUMENT) != 0 && (vd.flags & VD_ARGUMENT_DONE) == 0
+        vd.flags |= VD_ARGUMENT_DONE
+        return ci.arg_value[vd.index]
+    end
+    return nothing
 end
 
 # PORT: pl-comp.c analyse_variables
@@ -862,7 +948,9 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
         end
         first = isFirstVarSet!(ci.used_var, index)
         if index < ci.arity                                    # variable on its own in the head
+            vd = ci.vardefs[var_key(arg)]
             if (where_ & A_BODY) != 0
+                argUnifiedTo(vd) && (ci.flags |= CL_HEAD_TERMS)
                 if (where_ & A_ARG) != 0
                     Output_0!(ci, B_ARGVAR)
                 else
@@ -874,11 +962,17 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
                 end
             else                                               # head
                 if (where_ & A_ARG) == 0
+                    p = argMoveUnify!(ci, vd)
+                    if p !== nothing
+                        arg = p
+                        @goto next_arg                         # tail-call
+                    end
                     if first
                         Output_0!(ci, H_VOID)
                         @goto resume
                     end
                 end
+                argUnifiedTo(vd) && (ci.flags |= CL_HEAD_TERMS)
                 Output_0!(ci, H_VAR)
             end
             Output_a!(ci, VAROFFSET(index))
@@ -1248,12 +1342,17 @@ function skippedVar!(ci::compileInfo{T}, arg::T)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-comp.c isUnifiedArg
+# DIVERGES: the goal is identified by its ordinal (`ci.cb_unify`, counted as `annotate_unify!`
+# counts), where upstream compares the address of the other side.
+"Whether the `=/2` goal being compiled was moved into the head of argument variable `vd` (pl-comp.c)."
+isUnifiedArg(ci::compileInfo, vd::VarDef)::Bool =
+    (vd.flags & VD_ARGUMENT) != 0 && vd.arg_pos == ci.cb_unify
+
 # PORT: pl-comp.c compileBodyUnify
 # DIVERGES: a constant operand is its literal-table index (`addLiteral!`), as every literal operand
 # (src/pl-vmi.jl), and an atom constant is not registered (`PL_register_atom`: no atom garbage
-# collection). NOT PORTED: `isUnifiedArg` and `argUnifiedTo`'s `CL_HEAD_TERMS`, the unifications
-# moved to the head (`optimise_unify`), until V9b: the kernel compiles what swipl compiles with the
-# flag false.
+# collection). The goal's ordinal is counted (`cb_unify`) for `isUnifiedArg`.
 """
 `=/2` in a body (pl-comp.c): `I_TRUE` for a void side or `X = X`, after `skippedVar!`;
 `B_UNIFY_FF`/`FV`/`VF`/`VV` for two variables; for a variable and a term `B_UNIFY_FC`/`VC` with a
@@ -1263,6 +1362,7 @@ code, then `B_UNIFY_EXIT`; `BOOLEX_FALSE`, a call, for `Term = Term`.
 function compileBodyUnify(
     ld::PL_local_data{T}, ci::compileInfo{T}, arg::T
 )::boolex_t where {T}
+    ci.cb_unify += 1
     a1, a2 = child(arg, 2), child(arg, 3)                     # argTermP(*arg, 0), …(1); deRef
     if _comp_void(ci, a1) || _comp_void(ci, a2)                # Singleton = ? --> true
         skippedVar!(ci, a1)
@@ -1279,6 +1379,9 @@ function compileBodyUnify(
         end
         f1 = isFirstVarSet!(ci.used_var, i1)
         f2 = isFirstVarSet!(ci.used_var, i2)
+        if argUnifiedTo(ci.vardefs[var_key(a1)]) || argUnifiedTo(ci.vardefs[var_key(a2)])
+            ci.flags |= CL_HEAD_TERMS
+        end
         if f1 && f2
             Output_2!(ci, B_UNIFY_FF, VAROFFSET(i1), VAROFFSET(i2))
         elseif f1
@@ -1290,6 +1393,9 @@ function compileBodyUnify(
         end
         return BOOLEX_TRUE
     end
+    # check for unifications moved to the head
+    i1 >= 0 && isUnifiedArg(ci, ci.vardefs[var_key(a1)]) && return BOOLEX_TRUE
+    i2 >= 0 && isUnifiedArg(ci, ci.vardefs[var_key(a2)]) && return BOOLEX_TRUE
     if i1 < 0 && i2 >= 0                                       # (Term = Var): as (Var = Term)!
         i1, a2 = i2, a1
     end
@@ -1701,6 +1807,8 @@ function compileClause(
 )::Clause{T} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
     ci = compileInfo{T}(def.arity, m, proc)
+    # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
+    ci.head_unify = (def.flags & P_DYNAMIC) == 0 && ld.prolog_flag_optimise_unify
     rule = _is_rule_body(gd, body)
     rule && (def.flags & P_MULTIFILE) != 0 &&
         throw(
@@ -1726,6 +1834,7 @@ function compileClause(
         flags = UNIT_CLAUSE
         Output_0!(ci, I_EXITFACT)                              # fact (for decompiler)
     end
+    flags |= ci.flags                                          # CL_HEAD_TERMS, set on ci->clause
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), flags, ci.codes, ci.literals,
         ci.procedures

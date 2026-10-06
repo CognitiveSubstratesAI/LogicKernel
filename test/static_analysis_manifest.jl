@@ -255,6 +255,13 @@ function _manifest_index(T)
         (LK.compileBodyCallContinuation, Tuple{CInfo, T}, false),
         (LK.compileBodyShift, Tuple{CInfo, T, Bool}, false),
         (LK.skippedVar!, Tuple{CInfo, T}, false),
+        # V9b — the unifications moved into the head (src/pl-comp.jl)
+        (LK.is_argument_var, Tuple{CInfo, T}, false),
+        (LK.annotate_unify!, Tuple{CInfo, T, T}, false),
+        (LK.annotate_unification!, Tuple{CInfo, T}, false),
+        (LK.argUnifiedTo, Tuple{LK.VarDef}, true),
+        (LK.argMoveUnify!, Tuple{CInfo, LK.VarDef}, false),
+        (LK.isUnifiedArg, Tuple{CInfo, LK.VarDef}, true),
         (LK.is_portable_constant, Tuple{LD, T}, true),
         (LK.isAtom, Tuple{T}, true), (LK.isTaggedInt, Tuple{T}, true),
         # V6c2 — arithmetic in a body (src/pl-comp.jl, pl-funct.jl)

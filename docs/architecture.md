@@ -281,7 +281,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt` | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9 | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
@@ -1230,6 +1230,56 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V9b — the unifications moved into the head: BUILT (2026-10-06)** (port_inventory row V9, its
+split; the head-unification chunk's third commit; src/pl-comp.jl, pl-incl.jl, pl-global.jl). Decided
+by the user, 2026-10-06 (4a, 5a; identity by position). Research and plan: the workspace's
+`docs/research/v9-inline-unification/` (memo § A, `plan_commit3_moved.md`).
+* **Ported:**
+  * `optimise_unify` (a local-data flag, default true, pl-prologflag.c:2395); `compileClause` sets
+    `head_unify` on static code under it (pl-comp.c:2017-2022, without SSU).
+  * The detection in `analyseVariables2`: a leading `=/2` at a control position is annotated
+    (`annotate_unification`, `annotate_unify`, `is_argument_var`, pl-comp.c:750-797); `,` and `true`
+    keep the run going; any other compound, an atomic goal, `;` and `\+` end it (1007-1011, 1047,
+    1073-1080, 1108-1109).
+  * The head code: `argMoveUnify` compiles the moved term as the head argument itself (3116-3119);
+    `isUnifiedArg` makes the goal compile to nothing (4266-4270); `argUnifiedTo` and `CL_HEAD_TERMS`
+    where upstream sets it (3100, 3127, 4252).
+* **E1, ported AS IS** (user, 2026-10-06; upstream report #6): a VARIABLE goal does not end the run,
+  so `c(X) :- G = var(X), G, X = a.` moves `X = a` past the meta-call. The kernel refuses a variable
+  goal until V9, so the move is pinned in the head code and against swipl's.
+* **E2:** `CL_HEAD_TERMS` is not set by a use through `B_UNIFY_VC`, `B_EQ_*`, `B_NEQ_*` or a type
+  test, as upstream; the decompiler's resulting gaps come with V9's decompiler (upstream report #7).
+* **DIVERGES:** the goal moved is identified by its ORDINAL among the body's `=/2` goals at control
+  positions, counted alike by the analysis and the compiler, where upstream compares the address of
+  its other side: the kernel's terms are values, and a term type may share structure
+  (alt_interned). The term moved is kept in `compileInfo.arg_value` by the argument's slot (`VarDef`
+  has no term type).
+* **NOT PORTED:** SSU's moves (`?=>` always, `=>` never: no SSU).
+* **Gates:**
+  * test/compile/test_body_code_swipl.jl, a new testset: 27 move cells from the research memo's
+    probes, each identical to swipl's code (swipl compiles them through `assertz` into a fresh
+    predicate, which compiles as static code). The same cells under `optimise_unify` false equal
+    swipl's under the flag. A dynamic predicate does not move. E1 and the ends of the run at `;`
+    and `\+` are pinned in the head code and against swipl. `CL_HEAD_TERMS` is pinned at upstream's
+    three sites, and NOT set through `B_EQ_VC` (E2).
+  * test/core_lang/test_head_unify_swipl.jl: the 22 body cases run with the flag on and off, each
+    against swipl under the same flag, in every mode. A moved `X = f(X)` raises its occurs-check
+    error from the head, naming the clause's predicate, as swipl's.
+  * test/core_lang/test_rules_swipl.jl is unchanged and passes: the bench programs compile as swipl
+    consults them.
+* **Mutation-proved — 15 of 15 caught at verdict level** (reference term type, one warm file per
+  mutant, the tree restored byte for byte after each):
+  * nothing moving; a dynamic predicate moving; a variable goal ending the run (E1 "fixed");
+  * an atomic goal not ending it; `true` ending it;
+  * the reversed side not tried; a second `=` moving again; `X = Var` moving;
+  * the moved goal compiled in the body too; `isUnifiedArg` ignoring which goal; the term moved
+    twice; `CL_HEAD_TERMS` not set by a head `H_VAR`;
+  * nothing moving, seen at run time (the three-mode differential).
+
+  `;` and `\+` not ending the run SURVIVED at first. The pins' branches held an atomic goal, which
+  ends the run anyway. The memo's own probes, `(X = a ; X = b)` and `\+ X = a`, discriminate:
+  re-run with them, both were caught.
 
 **V9a — unification and comparison inline in a body: BUILT (2026-10-06)** (port_inventory row V9,
 its split; the head-unification chunk's second commit; src/pl-vmi.jl, pl-wam.jl, pl-comp.jl,

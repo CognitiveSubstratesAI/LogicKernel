@@ -414,7 +414,8 @@ end
 # `true`/`error` upstream turns every body unification into a call of `=/2` (`slow_unify`), so an
 # error's context is `=/2`: swipl writes `system:(=)/2`, the kernel `(=)/2` until V5c gives
 # definitions their module, so the comparison strips `system:`, as the other differentials do until
-# then. Until V9b swipl compiles them with `optimise_unify` false, as the kernel does. PINNED (user,
+# then. Since V9b a leading `ArgVar = Term` moves into the head (`optimise_unify`): every case runs
+# with the flag on (swipl's default) and off, each against swipl under the same flag. PINNED (user,
 # 2026-10-06, 3a): `X = f(X)` with `X` a first occurrence is cyclic under `false`, fails under
 # `true` and raises under `error`; and the cyclic term compared with itself (`==`, `compare/3`).
 _hbr(h::_HT, b::_HT) = _hc(Symbol(":-"), h, b)
@@ -504,8 +505,10 @@ const _HB_FAMILY = (
 # swipl's context `system:(=)/2`, written as the kernel writes it until V5c qualifies contexts
 _hb_unqualify(s::AbstractString) = replace(s, r":\(system,(/\([^()]*,\d+\))\)" => s"\1")
 
-@testset "body unification through the VM vs swipl, in every occurs_check mode (V9a)" begin
+"The kernel's outcomes of `_HB_CASES` in every mode, compiled under `optimise_unify` `ou`, and the instructions compiled."
+function _hb_ours(ou::Bool)
     db = IxDB{_HT}()
+    db.ld.prolog_flag_optimise_unify = ou
     preds = IxPred{_HT}[]
     ran = Set{UInt64}()
     for (clauses, goal) in _HB_CASES
@@ -518,13 +521,20 @@ _hb_unqualify(s::AbstractString) = replace(s, r":\(system,(/\([^()]*,\d+\))\)" =
         end
         push!(preds, ix_pred(_HT, lk_name(child(goal, 1)), nchildren(goal) - 1; db=db))
     end
-    missing = [LK.codeTable(c).name for c in _HB_FAMILY if !(c in ran)]
-    isempty(missing) || println(stderr, "  not compiled: ", missing)
-    @test isempty(missing)
     ours = Dict{Tuple{Int, String}, String}()
     for (mode, m) in _HMODES, i in eachindex(_HB_CASES)
         ours[(i, m)] = _hvm(preds[i], _HB_CASES[i][2], mode)
     end
+    return ours, ran
+end
+
+@testset "body unification through the VM vs swipl, in every occurs_check mode (V9a, V9b)" begin
+    ours, ran = _hb_ours(true)
+    oursf, ranf = _hb_ours(false)
+    missing = [LK.codeTable(c).name for c in _HB_FAMILY if !(c in ranf)]
+    isempty(missing) || println(stderr, "  not compiled: ", missing)
+    @test isempty(missing)                                  # without moves, every instruction
+    @test LK.B_UNIFY_VAR in ranf && !(LK.B_UNIFY_VAR in ran)   # hb2's X = f(X) moves (V9b)
     named(n) = findfirst(c -> lk_name(child(c[2], 1)) === n, _HB_CASES)
     @testset "pinned (3a): X = f(X), X first, in each mode; the cycle compared with itself" begin
         @test ours[(named(:hb1), "false")] == "ok 1 cyclic"
@@ -533,26 +543,31 @@ _hb_unqualify(s::AbstractString) = replace(s, r":\(system,(/\([^()]*,\d+\))\)" =
         @test endswith(ours[(named(:hb1), "error")], "context(/(=,2),_))")
         @test ours[(named(:hb9), "false")] == "ok 1 hb9(=)"
         @test ours[(named(:hb9b), "false")] == "ok 1 hb9b(=)"
-        @test ours[(named(:hb2), "false")] == "ok 1 cyclic"     # X seen: the head code's builder
+        @test ours[(named(:hb2), "false")] == "ok 1 cyclic"
         @test ours[(named(:hb2), "true")] == "ok 0"
+        # hb2's X = f(X) is MOVED into the head (V9b): its error is the head's, naming the
+        # clause's predicate; under the flag false it is the body's, naming =/2 — as swipl's
+        @test endswith(ours[(named(:hb2), "error")], "context(/(hb2,1),_))")
+        @test endswith(oursf[(named(:hb2), "error")], "context(/(=,2),_))")
     end
     if _HSWIPL !== nothing
-        @testset "identical to swipl" begin
-            theirs, _ = _hswipl(
-                _HB_CASES; prelude=":- set_prolog_flag(optimise_unify, false).\n"
+        @testset "identical to swipl, the flag on and off" begin
+            for (o, prelude) in (
+                (ours, ""), (oursf, ":- set_prolog_flag(optimise_unify, false).\n")
             )
-            bad = [
-                (i, m) for i in eachindex(_HB_CASES) for (_, m) in _HMODES if
-                ours[(i, m)] != _hb_unqualify(theirs[(i, m)])
-            ]
-            for (i, m) in bad[1:min(end, 6)]
-                println(stderr, "  case $i ($m): ", join(_hsrc.(_HB_CASES[i][1]), ". "),
-                    " ?- ",
-                    _hsrc(_HB_CASES[i][2]), "\n    ours  ", ours[(i, m)], "\n    swipl ",
-                    theirs[(i, m)])
+                theirs, _ = _hswipl(_HB_CASES; prelude=prelude)
+                bad = [
+                    (i, m) for i in eachindex(_HB_CASES) for (_, m) in _HMODES if
+                    o[(i, m)] != _hb_unqualify(theirs[(i, m)])
+                ]
+                for (i, m) in bad[1:min(end, 6)]
+                    println(stderr, "  case $i ($m) ", repr(prelude), ": ",
+                        join(_hsrc.(_HB_CASES[i][1]), ". "), " ?- ", _hsrc(_HB_CASES[i][2]),
+                        "\n    ours  ", o[(i, m)], "\n    swipl ", theirs[(i, m)])
+                end
+                @test isempty(bad)
+                @test length(theirs) == 3 * length(_HB_CASES)
             end
-            @test isempty(bad)
-            @test length(theirs) == 3 * length(_HB_CASES)
         end
     elseif _HSWIPL_REQUIRED
         error(

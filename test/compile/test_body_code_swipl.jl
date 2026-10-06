@@ -1146,24 +1146,8 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
         startswith("b_eq_vc"),
         _bc_kernel(_bclause(_bf("pv1", _bv(1)), _bf("==", _bv(1), _bg(16777216)); ld=ld2))
     )
-    # a unification moved into the head (`optimise_unify`, swipl's default): until V9b the kernel
-    # compiles what swipl compiles with the flag false; swipl's default code is HEAD code, with no
-    # b_unify_* and no call (probed)
-    moved = [
-        (_bf("um1", _bv(1)), _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1)))),
-        (_bf("um2", _bv(1)), _bconj(_bf("=", _bv(1), _bs("a")), _bcq(_bv(1))))
-    ]
-    ours_m = [_bc_kernel(_bclause(h, b)) for (h, b) in moved]
-    @test all(c -> any(startswith("b_unify"), c), ours_m)
+    # the unifications moved into the head: the testset after this one (V9b)
     if _BC_SWIPL_BIN !== nothing
-        shows_m = ["bc_case_show(($(_bc_text(h, b))))" for (h, b) in moved]
-        theirs_m = _bc_swipl(shows_m)
-        @test length(theirs_m) == length(moved)
-        for t in theirs_m
-            @test !any(startswith("b_unify"), t) && any(startswith("h_"), t)
-            @test !any(c -> occursin("P:[61]/2", c), t)                  # no call of =/2
-        end
-        @test _bc_swipl(shows_m; prelude="set_prolog_flag(optimise_unify, false)") == ours_m
         theirs_o = _bc_swipl(
             ["bc_case_show(($(_bc_text(h, b))))" for (h, b) in opt];
             prelude="set_prolog_flag(optimise, true)"
@@ -1186,6 +1170,160 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
                 @test any(startswith(instr), theirs[k])
             end
         end
+    end
+end
+
+# ── the unifications moved into the head (V9b; user, 2026-10-06) ───────────────────────────────
+# `optimise_unify` (swipl's default) moves a leading `ArgVar = Term` into the head; the cells are the
+# research memo's probes (the workspace's docs/research/v9-inline-unification/, § D). swipl compiles
+# each through `assertz` into a FRESH predicate, which compiles as static code (assert_term compiles
+# before it marks the predicate dynamic, pl-comp.c:4923, 5019-5027), as the kernel's compileClause
+# does on a predicate that is not dynamic.
+const _BC_MOVE_CELLS = let X = _bv(1), Y = _bv(2), T = _bv(3), G = _bv(4)
+    [
+        ("compound", _bf("mv1", X), _bf("=", X, _bf("f", _bs("a")))),
+        ("then a use", _bf("um1", X), _bconj(_bf("=", X, _bf("f", _bs("a"))), _bcq(X))),
+        ("atom", _bf("um2", X), _bconj(_bf("=", X, _bs("a")), _bcq(X))),
+        ("var = var: no move", _bf("mv2", X), _bconj(_bf("=", X, Y), _bcq(Y))),
+        ("var = arg: no move", _bf("mv3", X), _bconj(_bf("=", Y, X), _bcq(Y))),
+        ("after a goal: no move", _bf("mv4", X), _bconj(_bs("q"), _bf("=", X, _bs("a")))),
+        ("a non-argument = does not stop it", _bf("mv6", X),
+            _bconj(_bf("=", X, _bs("a")), _bf("=", Y, _bs("b")), _bcq(Y))),
+        ("no head argument", _bs("mv7"), _bconj(_bf("=", X, _bf("f", Y)), _bcq(X, Y))),
+        ("cut first: no move", _bf("mv12", X), _bconj(_bs("!"), _bf("=", X, _bs("a")))),
+        ("then a cut", _bf("mv13", X), _bconj(_bf("=", X, _bs("a")), _bs("!"), _bcq(X))),
+        ("reversed", _bf("mv15", X), _bconj(_bf("=", _bs("a"), X), _bcq(X))),
+        ("a repeated head argument", _bf("mv16", X, X), _bf("=", X, _bs("a"))),
+        (
+            "the second = stays",
+            _bf("mv17", X),
+            _bconj(_bf("=", X, _bs("a")), _bf("=", X, _bs("b")))
+        ),
+        ("true is skipped", _bf("mv19", X), _bconj(_bs("true"), _bf("=", X, _bs("a")))),
+        ("the term holds the argument", _bf("mv20", X), _bf("=", X, _bf("f", X))),
+        (
+            "a nested head variable: no move",
+            _bf("mv22", _bf("f", X)),
+            _bf("=", X, _bs("a"))
+        ),
+        ("a float", _bf("mv23", X), _bconj(_bf("=", X, _bg(1.5)), _bcq(X))),
+        ("then ==", _bf("mv24", X), _bconj(_bf("=", X, _bs("a")), _bf("==", X, _bs("a")))),
+        (
+            "through another argument",
+            _bf("mv25", X, Y),
+            _bconj(_bf("=", Y, X), _bf("=", X, _bf("f", Y)))
+        ),
+        (
+            "two arguments",
+            _bf("mv29", X, Y),
+            _bconj(_bf("=", X, _bs("a")), _bf("=", Y, _bs("b")))
+        ),
+        ("two, out of order", _bf("mv30", X, Y),
+            _bconj(_bf("=", Y, _bs("b")), _bf("=", X, _bs("a")), _bcq(X, Y))),
+        ("past the tagged range", _bf("mv35", X), _bf("=", X, _bg(3000000000))),
+        ("a list", _bf("mv42", X), _bconj(_bf("=", X, _bf("[|]", _bs("a"), T)), _bcq(T))),
+        ("a string", _bf("mv43", X), _bconj(_bf("=", X, _bg("str")), _bcq(X))),
+        (
+            "a void first",
+            _bf("mv58", X),
+            _bconj(_bf("=", X, _bv(9)), _bf("=", X, _bs("a")))
+        ),
+        ("past var = var", _bf("mv59", X),
+            _bconj(_bf("=", X, Y), _bf("=", Y, _bs("b")), _bf("=", X, _bs("a")))),
+        (
+            "past another =",
+            _bf("mv67", X),
+            _bconj(_bf("=", G, _bs("true")), _bf("=", X, _bs("a")), _bcq(G))
+        )
+    ]
+end
+
+@testset "the unifications moved into the head compile as swipl's (V9b)" begin
+    ours = [_bc_kernel(_bclause(h, b)) for (_, h, b) in _BC_MOVE_CELLS]
+    named(n) = findfirst(c -> c[1] == n, _BC_MOVE_CELLS)
+    @test !any(startswith("b_unify"), ours[named("compound")])        # head code only
+    @test any(startswith("b_unify"), ours[named("var = var: no move")]) ||
+        any(startswith("i_true"), ours[named("var = var: no move")])
+    # optimise_unify false: what swipl compiles under the flag false (V9a's code)
+    ldf = LK.PL_local_data{_B}()
+    ldf.prolog_flag_optimise_unify = false
+    oursf = [_bc_kernel(_bclause(h, b; ld=ldf)) for (_, h, b) in _BC_MOVE_CELLS]
+    @test any(startswith("b_unify"), oursf[named("compound")])
+    # a dynamic predicate never moves (pl-comp.c:2019): its clause compiles as under the flag false
+    gd = LK.PL_global_data{_B}()
+    user = LK.MODULE_user(gd)
+    dp = LK.lookupProcedure(_bs("dm1"), 1, user)
+    LK.setDynamicDefinition!(dp.definition, true)
+    dyn = _bc_kernel(
+        LK.compileClause(gd, _BLD, _bf("dm1", _bv(1)),
+            _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1))), dp, user)
+    )
+    @test any(startswith("b_unify_var"), dyn)
+    # CL_HEAD_TERMS where upstream sets it (c:3100 a body use, 3127 a head H_VAR, 4252 var-var), and
+    # NOT where upstream does not (a use through B_EQ_VC: the decompiler's gap, E2, report #7)
+    hflag(n) =
+        (
+            _bclause(_BC_MOVE_CELLS[named(n)][2], _BC_MOVE_CELLS[named(n)][3]).flags &
+            LK.CL_HEAD_TERMS
+        ) != 0
+    @test hflag("then a use")                               # q(X): B_VAR0 of the moved argument
+    @test hflag("a repeated head argument")                 # the second X: H_VAR
+    @test hflag("the term holds the argument")              # f(X): H_VAR inside the moved term
+    @test !hflag("then ==")                                 # X == a: B_EQ_VC (E2)
+    @test !hflag("compound")                                # nothing uses X
+    # E1, upstream's defect #6, ported as is: a VARIABLE goal does not end the run. Such a clause is
+    # refused (the meta-call, V9), so the move is pinned in its head code, as swipl compiles it
+    e1g = LK.PL_global_data{_B}()
+    e1u = LK.MODULE_user(e1g)
+    e1p = LK.lookupProcedure(_bs("c18"), 2, e1u)
+    ci = LK.compileInfo{_B}(2, e1u, e1p)
+    ci.head_unify = true
+    LK._compile_clause_head!(
+        e1g, ci, _bf("c18", _bv(1), _bv(2)), _bconj(_bv(2), _bf("=", _bv(1), _bs("a")))
+    )
+    @test LK.codeTable(ci.codes[1]).name === :H_ATOM        # X = a moved past the goal G
+    # `;` and `\+` end the run (c:1007-1011, 1047): pinned in the head code too, as the compiler
+    # refuses those clauses until V9 — nothing moved, so the void head argument emits nothing and
+    # the code starts with I_ENTER (a move would start it with H_ATOM)
+    function headop(name, body)
+        hp = LK.lookupProcedure(_bs(name), 1, e1u)
+        hci = LK.compileInfo{_B}(1, e1u, hp)
+        hci.head_unify = true
+        LK._compile_clause_head!(e1g, hci, _bf(name, _bv(1)), body)
+        return LK.codeTable(hci.codes[1]).name
+    end
+    # the branches hold unifications that would move if the run went on into them (memo c26, c46)
+    @test headop(
+        "c26b", _bf(";", _bf("=", _bv(1), _bs("a")), _bf("=", _bv(1), _bs("b")))
+    ) ===
+        :I_ENTER
+    @test headop("c46b", _bf("\\+", _bf("=", _bv(1), _bs("a")))) === :I_ENTER
+    if _BC_SWIPL_BIN !== nothing
+        shows = ["bc_case_show(($(_bc_text(h, b))))" for (_, h, b) in _BC_MOVE_CELLS]
+        theirs = _bc_swipl(shows)
+        @test length(theirs) == length(_BC_MOVE_CELLS)
+        bad = 0
+        for k in eachindex(_BC_MOVE_CELLS)
+            k <= length(theirs) || break
+            if ours[k] != theirs[k]
+                bad += 1
+                println(stderr, "  move cell ", _BC_MOVE_CELLS[k][1], "\n    ours  ",
+                    ours[k],
+                    "\n    swipl ", theirs[k])
+            end
+        end
+        @test bad == 0
+        @test _bc_swipl(shows; prelude="set_prolog_flag(optimise_unify, false)") == oursf
+        @test _bc_swipl([
+            "(dynamic(dm1/1), bc_case_show((dm1(X) :- X = f(a), q(X))))"
+        ])[1] == dyn
+        e1 = _bc_swipl(["bc_case_show((c18(X, G) :- G, X = a))"])[1]
+        @test startswith(e1[1], "h_atom(")                  # swipl moves it too (E1)
+        ends = _bc_swipl([
+            "bc_case_show((c26b(X) :- (X = a ; X = b)))",
+            "bc_case_show((c46b(X) :- \\+ X = a))"
+        ])
+        @test all(c -> c[1] == "i_enter", ends)             # swipl moves neither
     end
 end
 

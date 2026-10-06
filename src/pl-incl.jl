@@ -77,6 +77,9 @@ const UNIT_CLAUSE = UInt32(0x0002)
 # PORT: pl-incl.h COMMIT_CLAUSE
 "Clause flag: the clause will commit — its body starts with `!` (pl-incl.h)."
 const COMMIT_CLAUSE = UInt32(0x0010)
+# PORT: pl-incl.h CL_HEAD_TERMS
+"Clause flag: the head contains terms used in the body — a unification moved into it (pl-incl.h)."
+const CL_HEAD_TERMS = UInt32(0x0400)
 # PORT: pl-incl.h FLAG64
 "Predicate flag bit `i`, 1-based (pl-incl.h `FLAG64`)."
 FLAG64(i::Int)::UInt64 = UInt64(1) << (i - 1)
