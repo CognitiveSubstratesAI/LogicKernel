@@ -12,9 +12,9 @@
     LocalStackOverflow(lTop, lMax, limit)
 
 The local stack cannot grow: `lTop` plus the room asked for is past `limit` positions. Raised by
-[`raiseStackOverflow`](@ref) until the VM can raise upstream's
-`error(resource_error(stack), stack_overflow{…})`, whose dict context is the user's question Q-B,
-so runaway recursion stops here rather than exhausting memory.
+[`raiseStackOverflow`](@ref) until V5d raises upstream's `error(resource_error(stack), Ctx)` —
+`Ctx` the stack's name atom, upstream's own fallback, as decided since Q-B — so runaway recursion
+stops here rather than exhausting memory.
 """
 struct LocalStackOverflow <: Exception
     lTop::Int
@@ -29,11 +29,13 @@ function Base.showerror(io::IO, e::LocalStackOverflow)
 end
 
 # PORT: pl-alloc.c raiseStackOverflow
-# DIVERGES (interim, the user's Q-B): throws `LocalStackOverflow`, a Julia exception (the query
-# closes, decision 1), where upstream's `outOfStack` raises `error(resource_error(stack), Ctx)`
-# with `PL_raise_exception`. That path is ported since V5b; what is missing is `Ctx`, a
-# `stack_overflow{…}` DICT (`push_overflow_context`) — Q-B. Only `LOCAL_OVERFLOW` exists here;
-# `false` ("some other error is pending") returns `false`, as upstream.
+# DIVERGES (interim, until V5d): throws `LocalStackOverflow`, a Julia exception (the query closes,
+# decision 1), where upstream's `outOfStack` builds `error(resource_error(stack), Ctx)` itself and
+# makes it the pending exception, not through `PL_raise_exception` (pl-alloc.c:641-656). V5d ports
+# it with `Ctx` the stack's name atom (`local`), as decided since Q-B: upstream's fallback when the
+# `stack_overflow{…}` dict (`push_overflow_context`) cannot be built, until dicts. Only
+# `LOCAL_OVERFLOW` exists here; `false` ("some other error is pending") returns `false`, as
+# upstream.
 "Raise the overflow `overflow` reports (pl-alloc.c)."
 function raiseStackOverflow(ld::PL_local_data{T}, overflow::boolex_t)::Bool where {T}
     if overflow == LOCAL_OVERFLOW

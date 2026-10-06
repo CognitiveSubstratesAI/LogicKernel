@@ -878,15 +878,18 @@ end
 # says `✅ DONE` or `✅ REACHED`: a row's first cell for a row step (`V8`), the text after a bold
 # sub-step for a sub-step (`**V6b2** — ✅ DONE`). The first occurrence wins, so a later row that
 # mentions a step cannot restate it. A row whose sub-steps are not all done (`V5`, with `V5c` open)
-# says no DONE of its own.
-const RX_PLAN_ROW = r"^\| \*\*([A-Z]\d+[a-z]?\d*)\*\*"
+# says no DONE of its own. A DECIDED QUESTION counts as done too (user, 2026-10-06): its row in
+# port_inventory's decided-questions table says `✅ DECIDED`, so a marker still "waiting for the
+# user's Q-B" is stale. It waits for the step that implements the decision, and cites the decision
+# as history, `since Q-B`.
+const RX_PLAN_ROW = r"^\| \*\*([A-Z]\d+[a-z]?\d*|Q-[A-Z]+\d*)\*\*"
 const RX_SUBSTEP_BOLD = r"\*\*([A-Z]\d+[a-z]\d*)\*\*"
 const RX_ANY_STEP_BOLD = r"\*\*[A-Z]\d+[a-z]?\d*\*\*"
-const RX_STEP_DONE = r"✅\s*\**(?:DONE|REACHED)"
+const RX_STEP_DONE = r"✅\s*\**(?:DONE|REACHED|DECIDED)"
 # a marker's start — not a backticked mention of one in prose
 const RX_MARKER_START = r"(?<!`)#\s*(?:DIVERGES|NOT PORTED)\b"
 # a step named in a marker, unless written as history (`since V5b`)
-const RX_STEP_WAIT = r"(?<![Ss]ince )\b([A-Z]\d+[a-z]?\d*)\b"
+const RX_STEP_WAIT = r"(?<![Ss]ince )\b([A-Z]\d+[a-z]?\d*|Q-[A-Z]+\d*)\b"
 
 "The plan's steps and whether each is DONE, from port_inventory's plan rows (see above)."
 function plan_steps(inventory_text::AbstractString)::Dict{String, Bool}
@@ -944,7 +947,7 @@ end
     stale_marker_violations(root, rels, steps) -> violations
 
 `MARKER-STALE` for each step a marker in the source files `rels` waits for — names, not as
-`since …` — that `steps` marks DONE.
+`since …` — that `steps` marks DONE (a plan step) or DECIDED (a question).
 """
 function stale_marker_violations(
     root::AbstractString, rels::Vector{String}, steps::Dict{String, Bool}
@@ -955,9 +958,14 @@ function stale_marker_violations(
         for (line, block) in marker_blocks(read(joinpath(root, rel), String))
             for tok in unique(m[1] for m in eachmatch(RX_STEP_WAIT, block))
                 tok in done || continue
+                fix = if startswith(tok, "Q-")
+                    "DECIDED — re-read the marker; it waits for the step that implements the decision and cites it as `since $tok`"
+                else
+                    "DONE — re-read the marker; a step it no longer waits for is written `since $tok`"
+                end
                 push!(
                     v,
-                    "MARKER-STALE $rel:$line: names $tok, which docs/port_inventory.md marks DONE — re-read the marker; a step it no longer waits for is written `since $tok`"
+                    "MARKER-STALE $rel:$line: names $tok, which docs/port_inventory.md marks $fix"
                 )
             end
         end

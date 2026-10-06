@@ -8,8 +8,8 @@
 #
 # What the kernel takes from SWI-Prolog's modules (pl-modul.c): so far, what a call of an undefined
 # predicate reads — the module's `unknown` flag (V5b). The module records themselves are
-# src/pl-incl.jl's `module_t`, `user` and `system`; how `user` reaches `system` (super modules,
-# `autoImport`) is the user's open question Q-A (V5c).
+# src/pl-incl.jl's `module_t`, `user` and `system`; `user` reaches `system` (super modules,
+# `autoImport`) from V5c on, as decided since Q-A.
 
 # PORT: pl-incl.h UNKNOWN_FAIL
 "The `unknown` flag's `fail`: an undefined predicate fails silently (pl-incl.h)."

@@ -19,8 +19,9 @@
 # `pred`, `arity`, `msg` are taken by the methods that need them (since V6c; the others pass none),
 # `pred` and `msg` as Strings, EMPTY for upstream's NULL (a `Union` would dispatch at run time):
 # the context is `pred/arity` when given, else the CALLER — the running frame's predicate — written
-# `Name/Arity`, never module-qualified: whether built-ins' contexts read `system:Name/Arity`, as
-# swipl's do (`unify_definition`), is the user's open question Q-A (V5c).
+# `Name/Arity`, never module-qualified, until V5c: as decided since Q-A, definitions then carry
+# their module, so a built-in's context reads `system:Name/Arity`, as swipl's does
+# (`unify_definition`).
 # The formal and the context are BUILT (`mk_expr`) where upstream unifies them into fresh term
 # references (`PL_unify_term`), which cannot fail here. Raised with `PL_raise_exception`, never
 # thrown (upstream's `do_throw` is set for one code only, `ERR_CLOSED_STREAM`, not ported). Not set:

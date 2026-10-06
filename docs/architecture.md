@@ -13,7 +13,9 @@ since the audit (user, 2026-10-06):
   chunks touch them. port_check counts the two apart, and the preflight prints the counts.
 * **A step named in a marker is a WAIT** (`(V9)`, `until R1`) **or HISTORY** (written
   `since V5b`). port_check fails on a wait for a step port_inventory marks DONE (`MARKER-STALE`), so
-  each chunk's preflight lists the markers its own completion made stale.
+  each chunk's preflight lists the markers its own completion made stale. A decided question counts
+  as done (port_inventory § "Decided questions", `✅ DECIDED`): a marker waits for the step that
+  implements the decision, and cites the decision as history, `since Q-B`.
 * **Each chunk re-reads the markers of the code it changes.** Rot without a named step — a fact that
   changed, as when built-ins became foreign — is caught only by reading.
 

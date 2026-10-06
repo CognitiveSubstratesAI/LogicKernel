@@ -682,9 +682,9 @@ macro TYPE_TEST(test)
 end
 
 # PORT: pl-vmi.c ENSURE_LOCAL_SPACE
-# DIVERGES: in positions. The overflow raises a Julia `LocalStackOverflow` until the stack limit's
-# `resource_error` is ported (waiting for the user's Q-B on its context)
-# (`raiseStackOverflow`), so its `ifnot` (`THROW_EXCEPTION`) is not reached.
+# DIVERGES: in positions. The overflow raises a Julia `LocalStackOverflow` until V5d ports the stack
+# limit's `resource_error` (`raiseStackOverflow`, its context as decided since Q-B), so its `ifnot`
+# (`THROW_EXCEPTION`) is not reached.
 "Make room for `n` positions above `lTop`, saving the registers around the growth (pl-vmi.c)."
 macro ENSURE_LOCAL_SPACE(n)
     return esc(
@@ -814,11 +814,12 @@ end
 const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 
 # PORT: pl-wam.c PL_open_query
-# DIVERGES: the query is a record at `lTop`, with its CHP_TOP choice point and its top frame and frame
-# as records at upstream's offsets (since V3; src/pl-incl.jl); its handle is its position (decision 1). Not
-# ported: `getProcDefinedDefinition` (autoloading and import), `globalizeTermRef` (a keyed variable
-# lives in no cell, decision 2), the profiler, the debugger state `PL_Q_NODEBUG` saves (all but
-# `FR_HIDE_CHILDS`), the context module of a transparent predicate, `updateAlerted`.
+# DIVERGES: the query is a record at `lTop`, with its CHP_TOP choice point and its top frame and
+# frame as records at upstream's offsets (since V3; src/pl-incl.jl); its handle is its position
+# (decision 1).
+# NOT PORTED: `getProcDefinedDefinition` (until V5c: `autoImport`, no autoload), `globalizeTermRef`
+# (a keyed variable lives in no cell, decision 2), the profiler, the debugger state `PL_Q_NODEBUG`
+# saves (all but `FR_HIDE_CHILDS`), the context module of a transparent predicate, `updateAlerted`.
 """
     PL_open_query(gd, ld, ctx, flags, proc, args) -> qid, or 0
 
@@ -1650,8 +1651,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c normal_call
     # DIVERGES: the new frame stays ABOVE `lTop` (vmi:1869) until its supervisor raises `lTop`; one
     # whose call fails first is dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`).
-    # The overflow raises a Julia `LocalStackOverflow` until the stack limit's `resource_error` is
-    # ported (`raiseStackOverflow`; the user's Q-B).
+    # The overflow raises a Julia `LocalStackOverflow` until V5d ports the stack limit's
+    # `resource_error` (`raiseStackOverflow`, its context as decided since Q-B).
     @label normal_call
     nc_f = ld.frames[NFR]
     nc_f.parent = FR
@@ -1831,10 +1832,10 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c I_LCALL
-    # DIVERGES: the operand as `I_CALL`'s. NOT PORTED: the context module (one module), `FR_WATCHED`
-    # (asserted absent), `getProcDefinedDefinition` (autoload, import: V5c, Q-A — `S_VIRGIN` takes an
-    # undefined procedure as it is), `P_TRANSPARENT`, `HIDE_CHILDS`. QUIRK kept: `setFramePredicate`
-    # twice (vmi:2499, 2527).
+    # DIVERGES: the operand as `I_CALL`'s. QUIRK kept: `setFramePredicate` twice (vmi:2499, 2527).
+    # NOT PORTED: the context module (one module), `FR_WATCHED` (asserted absent),
+    # `getProcDefinedDefinition` until V5c (`autoImport`, no autoload, as decided since Q-A —
+    # `S_VIRGIN` takes an undefined procedure as it is), `P_TRANSPARENT`, `HIDE_CHILDS`.
     @label I_LCALL
     il_proc = _call_procedure(ld, FR, PCc[PC])
     PC += 1
@@ -1972,8 +1973,8 @@ function PL_next_solution_guarded(
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN
-    # DIVERGES: NOT PORTED: `getProcDefinedDefinition` (autoloading, import — V5c, Q-A) keeps `DEF`; the
-    # profiler; thread-local predicates (no threads).
+    # NOT PORTED: `getProcDefinedDefinition`, until V5c (`autoImport`, no autoload, as decided
+    # since Q-A), so `DEF` is kept; the profiler; thread-local predicates (no threads).
     @label S_VIRGIN
     setLTop!(
         ld, argFrameP(ld.frames[FR].base, (ld.frames[FR].predicate::Definition{T}).arity)
@@ -1998,13 +1999,13 @@ function PL_next_solution_guarded(
     end
 
     # PORT: pl-vmi.c S_UNDEF
-    # DIVERGES: the error context names the caller `Name/Arity`, never module-qualified (Q-A; see
-    # src/pl-error.jl). The `CHP_DEBUG` choice point is pushed as upstream pushes it; only the
+    # DIVERGES: the error context names the caller `Name/Arity`, never module-qualified, until V5c
+    # (src/pl-error.jl). The `CHP_DEBUG` choice point is pushed as upstream pushes it; only the
     # debugger's retry reads it upstream (not ported), and `b_throw` discards it.
     @label S_UNDEF
-    # getUnknownModule(DEF->module): a definition has no module here (Q-A), and every user predicate
-    # lives in `user`; the flag is the default there, UNKNOWN_ERROR (src/pl-modul.jl), so the
-    # warning and fail branches are not reachable and not ported.
+    # getUnknownModule(DEF->module): a definition has no module here until V5c, and every user
+    # predicate lives in `user`; the flag is the default there, UNKNOWN_ERROR (src/pl-modul.jl), so
+    # the warning and fail branches are not reachable and not ported.
     @assert getUnknownModule(MODULE_user(gd)) == UNKNOWN_ERROR
     su_caller =
         ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing

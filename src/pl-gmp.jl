@@ -67,10 +67,10 @@ end
 # payload (AltTerm does); `Term{G}` answers for itself (src/default_term.jl).
 _holds_payload(::Type, ::Type) = true
 
-# DIVERGES (interim, the user's open question Q-AR1): a result the term type cannot hold. `T`'s
-# payload is asked at compile time (`_holds_payload`); one without `BigInt`/`Rational{BigInt}`
-# (`DefaultTerm` today) raises a Julia `ArgumentError` — loud, never a wrong value — where swipl,
-# unbounded, returns the big number. Decided by the answer to Q-AR1.
+# DIVERGES (interim, until T1): a result the term type cannot hold. `T`'s payload is asked at
+# compile time (`_holds_payload`); one without `BigInt`/`Rational{BigInt}` (`DefaultTerm` today)
+# raises a Julia `ArgumentError` — loud, never a wrong value — where swipl, unbounded, returns the
+# big number. T1 gives `DefaultTerm` the payload, as decided since Q-AR1.
 function _put_big(::Type{T}, v::Union{BigInt, Rational{BigInt}})::T where {T}
     if _holds_payload(T, typeof(v))
         return mk_gnd(T, v)
@@ -79,7 +79,7 @@ function _put_big(::Type{T}, v::Union{BigInt, Rational{BigInt}})::T where {T}
         ArgumentError(
             string(
                 "put_number: ", v, " does not fit the term type ", T,
-                " (no BigInt/Rational{BigInt} payload; the user's open question Q-AR1)"
+                " (no BigInt/Rational{BigInt} payload until plan step T1)"
             )
         )
     )

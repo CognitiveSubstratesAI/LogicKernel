@@ -616,17 +616,25 @@ end
 end
 
 # ── markers that name a finished plan step (the divergence audit; user, 2026-10-06) ──────────────
-@testset "a marker waiting for a DONE step is stale; `since …` is history" begin
+@testset "a marker waiting for a DONE step or a DECIDED question is stale; `since …` is history" begin
     inv = """
     | step | what |
     |---|---|
     | **V1** first — ✅ **DONE 2026-10-04** | x |
     | **V5** parent | **V5a** — ✅ DONE (a); **V5c** — open, and **V1** named again |
     | **V9** later | **V5a** again, with no DONE |
+
+    | question | decision | implemented by |
+    |---|---|---|
+    | **Q-B** a question — ✅ **DECIDED 2026-10-06** | (b) | V5c |
+    | **Q-AR1** another — ✅ **DECIDED 2026-10-06** | (b) | V9 |
+    | **Q-E** still open | — | — |
     """
     st = plan_steps(inv)
-    @test st ==
-        Dict("V1" => true, "V5" => false, "V5a" => true, "V5c" => false, "V9" => false)
+    @test st == Dict(
+        "V1" => true, "V5" => false, "V5a" => true, "V5c" => false, "V9" => false,
+        "Q-B" => true, "Q-AR1" => true, "Q-E" => false
+    )
     mktempdir() do root
         mkpath(joinpath(root, "src"))
         write(
@@ -641,17 +649,31 @@ end
             # PORT: x.c h
             # NOT PORTED: V9 brings it
             # DIVERGES: NOT PORTED: both on one line
+            # PORT: x.c k
+            # NOT PORTED: waits for the user's Q-AR1, and Q-E
+            k() = 3
+            # PORT: x.c m
+            # NOT PORTED: until V5c, as decided since Q-B
+            m() = 4
             """
         )
         blocks = marker_blocks(read(joinpath(root, "src", "x.jl"), String))
-        @test first.(blocks) == [2, 5, 8]          # the prose mention is no marker
+        @test first.(blocks) == [2, 5, 8, 11, 14]  # the prose mention is no marker
         v = stale_marker_violations(root, ["src/x.jl"], st)
-        @test length(v) == 2
-        @test occursin("src/x.jl:2: names V5a", v[1])      # a wait on a DONE step
+        @test length(v) == 3
+        @test occursin(
+            "src/x.jl:2: names V5a, which docs/port_inventory.md marks DONE", v[1]
+        )
         @test occursin("src/x.jl:5: names V1", v[2])       # inline, not written as history
-        @test !any(x -> occursin("V5c", x) || occursin("V9", x), v)   # open steps
+        # a wait on a DECIDED question, named whole (`Q-AR1`, not `Q-A`), with its own advice
+        @test occursin(
+            "src/x.jl:11: names Q-AR1, which docs/port_inventory.md marks DECIDED", v[3]
+        )
+        @test occursin("the step that implements the decision", v[3])
+        # open steps, an open question, and a decision cited as history
+        @test !any(x -> occursin(r"V5c|V9|Q-E|Q-B", x), v)
         # a `# DIVERGES: NOT PORTED:` line is a DIVERGES line still to split, not a NOT PORTED marker
-        @test marker_counts(root, ["src/x.jl"]) == (; diverges=3, not_ported=1, both=1)
+        @test marker_counts(root, ["src/x.jl"]) == (; diverges=3, not_ported=3, both=1)
     end
     # and LogicKernel itself: no stale marker, the counts reported (port_check's violations are
     # checked at the top of this file)

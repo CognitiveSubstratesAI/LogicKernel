@@ -10,10 +10,10 @@
 #     tagged boundaries, big integers, floats (`-0.0` among them), rationals, one-character strings
 #     and `[Code]`, and planted errors (a variable, an atom, `[]`, an unknown function, `"ab"`, a
 #     float overflow); every value and every error — its formal, its context's predicate (swipl's
-#     module stripped: Q-A) and its message — identical; and random comparisons with all six
+#     module stripped until V5c) and its message — identical; and random comparisons with all six
 #     operators;
 #   * what the kernel decides alone, pinned: the interim for a term type that cannot hold a big
-#     result (Q-AR1), `[Atom]` refused (Q-AR7), and the kernel-only terms (Q-AR5).
+#     result (until T1), `[Atom]` refused (until R1), and the kernel-only terms (Q-AR5).
 #
 # swipl present ⇒ the live comparisons run. Absent: an ERROR when LOGICKERNEL_REQUIRE_SWIPL=1,
 # otherwise a LOUD note plus an assertion that it was not required — never a silent pass.
@@ -192,7 +192,7 @@ end
 # kernel detects the cycle as upstream does, but the ball holds the rational tree, and a ball is
 # RESOLVED into an interface term (decision 1), which a rational tree does not have (V5a1): the
 # resolution raises a Julia `ArgumentError`, and the query closes (decision 1). Pinned as the interim
-# for the user's open question Q-AR8.
+# until V9's placeholder culprit, as decided since Q-AR8 (a catching program needs catch/3).
 @testset "cyclic: T = T+1, X is T — detected; its ball cannot be resolved (Q-AR8, pinned)" begin
     ld = LKA.PL_local_data{_A}()
     T1 = _av()
@@ -235,8 +235,8 @@ end
 # `1 << 20000` passes int_bits_ok's second bound: over 10000 bits, under the stacks limit. A shift
 # amount beyond `long` is shift_to_far: 0 for a right shift, or for a left one by a negative amount,
 # even of a negative number. A left one is int_too_big; swipl raises resource_error, and the
-# interim is NotPortedError (the user's Q-B/Q-C). `1 << (1 << 40)` fails int_bits_ok. A right shift
-# of a big integer floors (mpz_fdiv_q_2exp).
+# interim is NotPortedError (until G1, as decided since Q-C). `1 << (1 << 40)` fails int_bits_ok.
+# A right shift of a big integer floors (mpz_fdiv_q_2exp).
 @testset "integer size, shifts too far, the floor of a right shift (V8)" begin
     v(e) = lk_value(_ais(e))
     @test v(_af(:<<, _ag(1), _ag(20000))) == big(2)^20000

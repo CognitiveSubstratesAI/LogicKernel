@@ -10,8 +10,8 @@
 #     `==`, `compare/3`, `?=`, `unifiable/3`, `=@=`), each the query's own predicate, in every
 #     `occurs_check` mode: the outcome — `true` with the bindings, `false`, or the error's formal and
 #     the predicate in its context — identical to swipl's. swipl QUALIFIES a built-in's context
-#     (`system:compare/3`) and the kernel does not: the user's open question Q-A, so the context's
-#     predicate is compared without its module, and the qualification is counted;
+#     (`system:compare/3`) and the kernel does not until V5c (as decided since Q-A), so the
+#     context's predicate is compared without its module, and the qualification is counted;
 #   * the same goals from a CLAUSE BODY, for the ISO built-ins (a body reaches a non-ISO one only
 #     through module resolution, V5c): a non-last call (`I_CALL`) and a last call (`I_DEPART`);
 #   * POSITIONS: `prolog_current_frame/1` and `prolog_current_choice/1` as queries, pinned to

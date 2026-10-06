@@ -9,8 +9,9 @@
 #     query, compiled INLINE (`t(X) :- integer(X).` is `I_INTEGER`, asserted) and compiled as a CALL
 #     (`t :- integer(Value).`). Pinned to swipl 10.1.16 (the research probe, scratchpad
 #     v6c/p10_typetable.pl) and compared with a live swipl. The two non-ISO tests are not reached by
-#     a body CALL until module resolution (V5c, the user's Q-A): `lookupBodyProcedure` binds only
-#     ISO built-ins, so the call raises `existence_error` — pinned, so it is seen when it changes;
+#     a body CALL until module resolution (V5c, as decided since Q-A): `lookupBodyProcedure` binds
+#     only ISO built-ins, so the call raises `existence_error` — pinned, so it is seen when it
+#     changes;
 #   * the kernel-only rows (no SWI counterpart, `# DIVERGES`): a compound with a non-symbol head
 #     (`$expr/n`) is a compound and not callable; a grounded value of no SWI type (`NUM_OTHER`) is
 #     atomic and nothing else.

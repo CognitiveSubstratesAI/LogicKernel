@@ -7,8 +7,8 @@
 #     the error term — `existence_error(procedure, Name/Arity)` with the CALLER in its context, which
 #     the last-call optimisation decides — pinned to libswipl's (probed 2026-10-05 through the C query
 #     API, scratchpad v5err/qerr.c over qprog.pl); swipl qualifies the system predicate
-#     `$c_call_prolog/0` (`system:'$c_call_prolog'/0`) and the kernel does not — the user's open
-#     question Q-A — so a pinned context is the probe's without its module;
+#     `$c_call_prolog/0` (`system:'$c_call_prolog'/0`) and the kernel does not until V5c (as decided
+#     since Q-A), so a pinned context is the probe's without its module;
 #   * the `CHP_DEBUG` choice point `S_UNDEF` pushes, read back from its record;
 #   * the EXCEPTION CLASSES (`classify_exception`, which decides whether a raise replaces a pending
 #     ball): every ordered pair of a set of balls, the more urgent one as swipl's own

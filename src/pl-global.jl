@@ -49,9 +49,9 @@ end
 # per database. The user module is created with the database — upstream's initModules creates it, with
 # the `system` module, at start-up (pl-modul.c); since V5a2 there is a `system` module too, which the
 # built-ins are registered in (`initBuildIns!`, src/pl-ext.jl). There is no module table
-# (`modules.table`) and no module links (`supers`: how `user` reaches `system` is the user's open
-# question Q-A, V5c) — so a body goal reaches a built-in only through `lookupBodyProcedure`'s ISO
-# branch, and a query through its procedure. The shared
+# (`modules.table`) and no module links (`supers`: V5c makes `system` the super module of `user`,
+# as decided since Q-A), so a body goal reaches a built-in only through `lookupBodyProcedure`'s
+# ISO branch, and a query through its procedure. The shared
 # supervisors are the database's (`PL_code_data`, src/pl-incl.jl). `$c_call_prolog/0`, the top
 # frame's predicate, is created as `setBuiltinPredicateProperties` creates it (no clauses, flags 0,
 # `SUPERVISOR(virgin)`), in the `system` module's table. `initVM` builds the top clause, and then
