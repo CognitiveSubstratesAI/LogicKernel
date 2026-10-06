@@ -912,6 +912,20 @@ end
 "Whether `t` can be bound (pl-data.h `canBind`): an unbound variable."
 canBind(t)::Bool = kind(t) === VAR
 
+# PORT: pl-data.h isAtom
+# DIVERGES: an atom is a symbol — text or reserved (`[]`) — or a kernel-only value (`NUM_OTHER`), a
+# non-text blob, which SWI holds as an atom (`H_ATOM` compiles it so: see `addLiteral!`).
+"Whether `t` is an atom (pl-data.h `isAtom`): a symbol, or a non-text blob."
+isAtom(t)::Bool = kind(t) === SYM || number_kind(t) === NUM_OTHER
+
+# PORT: pl-data.h isTaggedInt
+# DIVERGES: no words: an `Int64` within the tagged range is what a tagged word holds; a larger one is
+# an indirect, a big integer.
+"Whether `t` is an integer held in a tagged word (pl-data.h `isTaggedInt`): the tagged range."
+isTaggedInt(t)::Bool =
+    number_kind(t) === NUM_INTEGER && integer_is_int64(t) &&
+    PLMINTAGGEDINT <= int64_value(t) <= PLMAXTAGGEDINT
+
 # PORT: pl-data.h isTextAtom
 "Whether `t` is a text atom (pl-data.h `isTextAtom`): a symbol, not a reserved one such as `[]`."
 isTextAtom(t)::Bool = kind(t) === SYM && !is_reserved_symbol(t)

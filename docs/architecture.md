@@ -212,9 +212,9 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
-| `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt` | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`), every emission refused until V9 | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
+| `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers) | `src/pl-global.h`, `src/pl-incl.h` |
@@ -1162,6 +1162,59 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V6b2 — the other goals compiled inline, as upstream decides: BUILT (2026-10-06)** (port_inventory
+row V6, its split; src/pl-comp.jl, pl-funct.jl, pl-incl.jl). From the cut memo (scratchpad
+`V6_memo_cut.md` § 5, Q-1 (a)). V2's interim refused these functors whole (choice Q5). It is gone:
+every O_COMPILE_IS functor now gets upstream's own decision.
+* **Ported:**
+  * compileSubClause's O_COMPILE_IS chain (c:3488-3517), in upstream's order. Its functors are
+    named in the global data (`SubClauseNames`: `atom_equals` … `atom_arg`, which replace the
+    `inline_functors` set).
+  * `compileBodyUnify`, `compileBodyEQ`, `compileBodyNEQ`, `compileBodyArg3`,
+    `compileBodyCallContinuation` and `compileBodyShift`. Every emission is of an instruction V9
+    brings (`I_TRUE`, `I_FAIL`, `C_VAR`, `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`, `B_ARG_*`, `I_CALLCONT`,
+    `I_SHIFT`, `I_SHIFTCP`), and throws `NotPortedError` naming it. Each `false` is upstream's, and
+    compiles as a call.
+  * `is_portable_constant` (c:269-290), over the tagged-word rule. Under `portable_vmi` an integer
+    is portable within ±2^24, because its WORD must survive int32.
+  * pl-data.h's `isAtom` (a symbol, or a kernel-only value, which is a non-text blob) and
+    `isTaggedInt` (the tagged range: an `Int64` past it is an indirect in SWI).
+* **The fall-backs, now calls:**
+  * `Term = Term`;
+  * `==` and `\==` on a void side, a non-portable constant (a compound, a float, a string, an
+    integer past ±2^24 or past the tagged range) or two non-variables;
+  * `arg/3` in any shape but `arg(Int, Seen, First)` and `arg(Seen, Seen, First)`;
+  * `$call_continuation/1`, `$shift/1` and `$shift_for_copy/1` on anything but a seen variable.
+
+  `=`, `==` and `\==` are registered, so their calls run as swipl's do.
+* **NOT PORTED: the unifications moved to the head** (`optimise_unify`, swipl's default). In swipl,
+  `p(X) :- X = f(a), …` compiles to head code. The kernel compiles what swipl compiles with the flag
+  false, which is a `B_UNIFY_*`, refused. So no clause compiles to code that differs from swipl's.
+* **Interim (pinned):** `arg/3` is nondeterministic (`PL_FA_NONDETERMINISTIC`), a foreign predicate
+  that V9 brings. Its fall-back calls compile as swipl's do, and raise
+  `existence_error(procedure, arg/3)` until then. The same holds for `$call_continuation/1` and
+  `$shift/1` (delimited continuations, V9).
+* **Gates:**
+  * test/compile/test_body_code_swipl.jl, three term types:
+    * 53 decision cells, one exit of a compiler each, tied to swipl. The kernel refuses exactly the
+      inline cells, and swipl's code has the instruction; every call cell's code is identical to
+      swipl's.
+    * The boundary cells: ±2^24, 2^60, 2^57 (past the tagged range), `[]` and `-1`.
+    * Under `optimise`, the void and first-occurrence cells are refused (`I_TRUE`/`I_FAIL`).
+      Without `portable_vmi`, every tagged integer is portable.
+    * The two moved-to-head cells are refused, and swipl compiles them as head code (probed).
+    * A goal of the same name and another arity (`=/1`, `=/3`, `==/1`, `arg/2`, `$shift/2`) is a
+      call of a user predicate.
+    * The refusal testset loses `X == a` and `arg(1, X, Y)` with voids: they are calls now, as in
+      swipl.
+  * test/core_lang/test_rules_swipl.jl, three term types: 15 goals through the fall-back calls of
+    `=`, `==` and `\==`, every answer and its determinism swipl's. `arg/3`'s interim is pinned.
+* **Mutation-proved — 20 of 20 caught at verdict level** (baseline 43 s after a restart, limit 360 s). The mutants: `Term = Term` refused; `=` with a void side falling back to a call; `X = X` taken for two variables (caught by the coverage check, which needs each emission named); `==` on a void side refused; `const == Var` not compiled inline; a void side under `optimise` not refused; `\==` dispatched to `compileBodyEQ`; `is_portable_constant` ignoring `portable_vmi`, and each bound off by one; `isAtom` without `[]`; `isTaggedInt` taking any `Int64`; `arg/3` without each of its three first-occurrence tests; `$call_continuation` on a first occurrence; `$shift_for_copy` taken as `$shift`, or not dispatched; and `=/2` and `arg/3` dispatched whatever the arity (caught by the other-arity calls).
+* **Also in this commit:** docs/upstream_reports.md: #4 reported to the maintainers by email, #5
+  filed as swipl-devel#1535 (both 2026-10-06).
+* **Not here:** the instructions themselves (V9); then the gate split, the divergence audit and R1,
+  in that order (user, 2026-10-06).
 
 **V8 — `A_ADD_FC`, the shifts, and the `poly_10` milestone: BUILT (2026-10-06)** (port_inventory
 row V8; src/pl-wam.jl, pl-vmi.jl, pl-comp.jl, pl-arith.jl, pl-gmp.jl, pl-error.jl). **MILESTONE:

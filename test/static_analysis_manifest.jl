@@ -244,6 +244,17 @@ function _manifest_index(T)
         (LK._type_test, Tuple{Int, T}, true),
         (LK.compileTypeTest, Tuple{LD, CInfo, T, Int}, false),
         (LK.compileBodyTypeTest, Tuple{LD, LK.SubClauseNames, UInt64, CInfo, T}, false),
+        # V6b2 — the other goals compiled inline (src/pl-comp.jl, pl-incl.jl): every emission
+        # refuses (V9), so each compiler reaches a throw; the tests allocate nothing
+        (LK._comp_void, Tuple{CInfo, T}, true), (LK._comp_ivar, Tuple{CInfo, T}, true),
+        (LK.compileBodyUnify, Tuple{LD, CInfo, T}, false),
+        (LK.compileBodyEQ, Tuple{LD, CInfo, T}, false),
+        (LK.compileBodyNEQ, Tuple{LD, CInfo, T}, false),
+        (LK.compileBodyArg3, Tuple{CInfo, T}, false),
+        (LK.compileBodyCallContinuation, Tuple{CInfo, T}, false),
+        (LK.compileBodyShift, Tuple{CInfo, T, Bool}, false),
+        (LK.is_portable_constant, Tuple{LD, T}, true),
+        (LK.isAtom, Tuple{T}, true), (LK.isTaggedInt, Tuple{T}, true),
         # V6c2 — arithmetic in a body (src/pl-comp.jl, pl-funct.jl)
         (LK.compileSimpleAddition, Tuple{LD, LK.SubClauseNames, T, CInfo}, false),
         (LK.canBind, Tuple{T}, true), (LK.isTextAtom, Tuple{T}, true),

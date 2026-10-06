@@ -925,6 +925,231 @@ const _BC_ARITH_CELLS = [
     end
 end
 
+# ── the other goals compiled inline (V6b2): upstream's decision, cell by cell ────────────────────
+# compileSubClause's O_COMPILE_IS chain (c:3488-3517) for `=/2`, `==/2`, `\\==/2`, `arg/3`,
+# `\$call_continuation/1`, `\$shift/1` and `\$shift_for_copy/1`: each cell is (shape, head, body, the
+# instruction upstream emits — or "" for a call). The kernel REFUSES exactly the inline cells (their
+# instructions are V9's) and compiles every other cell. The verdict is tied to swipl: an inline cell's
+# code has its instruction, and a call cell's code is identical to the kernel's.
+_bcq(xs...) = _bf("q", xs...)
+const _BC_IS_CELLS = [
+    # =/2 (compileBodyUnify)
+    ("= a void side", _bs("ub1"), _bconj(_bf("=", _bv(1), _bs("a")), _bs("q")), "i_true"),
+    ("= X = X", _bs("ub2"), _bconj(_bcq(_bv(1)), _bf("=", _bv(1), _bv(1))), "i_true"),
+    ("= two first variables", _bs("ub3"),
+        _bconj(_bf("=", _bv(1), _bv(2)), _bcq(_bv(1), _bv(2))), "b_unify_ff"),
+    ("= first = seen", _bs("ub4"),
+        _bconj(_bcq(_bv(2)), _bf("=", _bv(1), _bv(2)), _bcq(_bv(1))), "b_unify_fv"),
+    ("= seen = first", _bs("ub5"),
+        _bconj(_bcq(_bv(1)), _bf("=", _bv(1), _bv(2)), _bcq(_bv(2))), "b_unify_vf"),
+    ("= two seen variables", _bs("ub6"),
+        _bconj(_bcq(_bv(1), _bv(2)), _bf("=", _bv(1), _bv(2))), "b_unify_vv"),
+    (
+        "= first = atom",
+        _bs("ub7"),
+        _bconj(_bf("=", _bv(1), _bs("a")), _bcq(_bv(1))),
+        "b_unify_fc"
+    ),
+    (
+        "= seen = atom",
+        _bs("ub8"),
+        _bconj(_bcq(_bv(1)), _bf("=", _bv(1), _bs("a"))),
+        "b_unify_vc"
+    ),
+    ("= first = compound", _bs("ub9"),
+        _bconj(_bf("=", _bv(1), _bf("f", _bv(2))), _bcq(_bv(1), _bv(2))), "b_unify_firstvar"
+    ),
+    ("= seen = compound", _bs("ub10"),
+        _bconj(_bcq(_bv(1)), _bf("=", _bv(1), _bf("f", _bs("a")))), "b_unify_var"),
+    ("= compound = seen", _bs("ub11"),
+        _bconj(_bcq(_bv(1)), _bf("=", _bf("f", _bs("a")), _bv(1))), "b_unify_var"),
+    (
+        "= atom = seen",
+        _bs("ub12"),
+        _bconj(_bcq(_bv(1)), _bf("=", _bs("a"), _bv(1))),
+        "b_unify_vc"
+    ),
+    ("= seen = 16777216", _bs("ub13"),
+        _bconj(_bcq(_bv(1)), _bf("=", _bv(1), _bg(16777216))), "b_unify_var"),
+    (
+        "= term = term",
+        _bf("ub14", _bv(1)),
+        _bf("=", _bf("f", _bv(1)), _bf("f", _bs("a"))),
+        ""
+    ),
+    ("= atom = atom", _bs("ub15"), _bf("=", _bs("a"), _bs("b")), ""),
+    # ==/2 (compileBodyEQ)
+    ("== a void side", _bs("eb1"), _bconj(_bf("==", _bv(1), _bs("a")), _bs("q")), ""),
+    ("== two seen variables", _bs("eb2"),
+        _bconj(_bcq(_bv(1), _bv(2)), _bf("==", _bv(1), _bv(2))), "b_eq_vv"),
+    ("== seen == first", _bs("eb3"),
+        _bconj(_bcq(_bv(1)), _bf("==", _bv(1), _bv(2)), _bcq(_bv(2))), "b_eq_vv"),
+    ("== var == atom", _bf("eb4", _bv(1)), _bf("==", _bv(1), _bs("a")), "b_eq_vc"),
+    ("== atom == var", _bf("eb5", _bv(1)), _bf("==", _bs("a"), _bv(1)), "b_eq_vc"),
+    ("== var == []", _bf("eb6", _bv(1)), _bf("==", _bv(1), mk_nil(_B)), "b_eq_vc"),
+    ("== var == 2^24-1", _bf("eb7", _bv(1)), _bf("==", _bv(1), _bg(16777215)), "b_eq_vc"),
+    ("== var == 2^24", _bf("eb8", _bv(1)), _bf("==", _bv(1), _bg(16777216)), ""),
+    ("== var == -2^24", _bf("eb9", _bv(1)), _bf("==", _bv(1), _bg(-16777216)), "b_eq_vc"),
+    ("== var == -2^24-1", _bf("eb10", _bv(1)), _bf("==", _bv(1), _bg(-16777217)), ""),
+    ("== var == 1.5", _bf("eb11", _bv(1)), _bf("==", _bv(1), _bg(1.5)), ""),
+    ("== var == string", _bf("eb12", _bv(1)), _bf("==", _bv(1), _bg("s")), ""),
+    ("== var == compound", _bf("eb13", _bv(1)), _bf("==", _bv(1), _bf("f", _bs("a"))), ""),
+    ("== var == 2^60", _bf("eb14", _bv(1)), _bf("==", _bv(1), _bg(2^60)), ""),
+    ("== atom == atom", _bs("eb15"), _bf("==", _bs("a"), _bs("b")), ""),
+    # \==/2 (compileBodyNEQ)
+    ("\\== a void side", _bs("nb1"), _bconj(_bf("\\==", _bv(1), _bs("a")), _bs("q")), ""),
+    (
+        "\\== two variables",
+        _bf("nb2", _bv(1), _bv(2)),
+        _bf("\\==", _bv(1), _bv(2)),
+        "b_neq_vv"
+    ),
+    ("\\== var \\== atom", _bf("nb3", _bv(1)), _bf("\\==", _bv(1), _bs("a")), "b_neq_vc"),
+    (
+        "\\== var \\== compound",
+        _bf("nb4", _bv(1)),
+        _bf("\\==", _bv(1), _bf("f", _bs("a"))),
+        ""
+    ),
+    ("\\== int \\== var", _bf("nb5", _bv(1)), _bf("\\==", _bg(3), _bv(1)), "b_neq_vc"),
+    ("\\== var \\== 1.5", _bf("nb6", _bv(1)), _bf("\\==", _bv(1), _bg(1.5)), ""),
+    # arg/3 (compileBodyArg3)
+    ("arg Int, seen, first", _bf("ab1", _bv(1)),
+        _bconj(_bf("arg", _bg(1), _bv(1), _bv(2)), _bcq(_bv(2))), "b_arg_cf"),
+    ("arg seen, seen, first", _bf("ab2", _bv(3), _bv(1)),
+        _bconj(_bf("arg", _bv(3), _bv(1), _bv(2)), _bcq(_bv(2))), "b_arg_vf"),
+    (
+        "arg the result seen",
+        _bf("ab3", _bv(1), _bv(2)),
+        _bf("arg", _bg(1), _bv(1), _bv(2)),
+        ""
+    ),
+    ("arg the term first", _bs("ab4"),
+        _bconj(_bf("arg", _bg(1), _bv(1), _bv(2)), _bcq(_bv(1), _bv(2))), ""),
+    ("arg the index first", _bf("ab5", _bv(1)),
+        _bconj(_bf("arg", _bv(3), _bv(1), _bv(2)), _bcq(_bv(3), _bv(2))), ""),
+    ("arg the index an atom", _bf("ab6", _bv(1)),
+        _bconj(_bf("arg", _bs("a"), _bv(1), _bv(2)), _bcq(_bv(2))), ""),
+    ("arg the index past the tagged range", _bf("ab7", _bv(1)),
+        _bconj(_bf("arg", _bg(2^57), _bv(1), _bv(2)), _bcq(_bv(2))), ""),
+    ("arg the index -1", _bf("ab8", _bv(1)),
+        _bconj(_bf("arg", _bg(-1), _bv(1), _bv(2)), _bcq(_bv(2))), "b_arg_cf"),
+    ("arg the result void", _bf("ab9", _bv(1)), _bf("arg", _bg(1), _bv(1), _bv(2)), ""),
+    ("arg the term a compound", _bs("ab10"),
+        _bconj(_bf("arg", _bg(1), _bf("f", _bs("a")), _bv(2)), _bcq(_bv(2))), ""),
+    # \$call_continuation/1, \$shift/1, \$shift_for_copy/1
+    ("\$call_continuation seen", _bf("cc1", _bv(1)), _bf("\$call_continuation", _bv(1)),
+        "i_callcont"),
+    ("\$call_continuation an atom", _bs("cc2"), _bf("\$call_continuation", _bs("a")), ""),
+    ("\$call_continuation first", _bs("cc3"),
+        _bconj(_bf("\$call_continuation", _bv(1)), _bcq(_bv(1))), ""),
+    ("\$shift seen", _bf("sh1", _bv(1)), _bf("\$shift", _bv(1)), "i_shift"),
+    ("\$shift an atom", _bs("sh2"), _bf("\$shift", _bs("a")), ""),
+    (
+        "\$shift_for_copy seen",
+        _bf("sh3", _bv(1)),
+        _bf("\$shift_for_copy", _bv(1)),
+        "i_shiftcp"
+    ),
+    ("\$shift_for_copy first", _bs("sh4"),
+        _bconj(_bf("\$shift_for_copy", _bv(1)), _bcq(_bv(1))), "")
+]
+
+@testset "=, ==, \\==, arg/3, \$call_continuation, \$shift compile as upstream decides (V6b2)" begin
+    ours = Union{Nothing, Vector{String}}[]
+    refusals = String[]
+    for (shape, h, b, instr) in _BC_IS_CELLS
+        got = try
+            _bc_kernel(_bclause(h, b))
+        catch e
+            e isa LK.NotPortedError || rethrow()
+            push!(refusals, e.what)
+            nothing
+        end
+        push!(ours, got)
+        (got === nothing) == !isempty(instr) ||
+            println(stderr, "  ", shape, ": ", got === nothing ? "refused" : "compiled")
+        @test (got === nothing) == !isempty(instr)             # refused exactly where inline
+    end
+    # every emission of every compiler is reached: each instruction names a refusal
+    for i in
+        ("I_TRUE for =/2", "I_TRUE for X = X", "B_UNIFY_FF", "B_UNIFY_FV", "B_UNIFY_VF",
+        "B_UNIFY_VV", "B_UNIFY_FC", "B_UNIFY_VC", "B_UNIFY_FIRSTVAR", "B_UNIFY_VAR ",
+        "B_EQ_VV",
+        "B_EQ_VC", "B_NEQ_VV", "B_NEQ_VC", "B_ARG_CF", "B_ARG_VF", "I_CALLCONT", "I_SHIFT ",
+        "I_SHIFTCP")
+        @test any(r -> occursin(i, r), refusals)
+    end
+    # a goal of the same NAME but another arity is a user predicate: a call, never compiled inline
+    for (h, b, n, a) in (
+        (_bs("ar1"), _bf("=", _bs("a")), "=", 1),
+        (_bf("ar2", _bv(1)), _bf("=", _bv(1), _bs("a"), _bs("b")), "=", 3),
+        (_bf("ar3", _bv(1)), _bf("==", _bv(1)), "==", 1),
+        (_bf("ar4", _bv(1)), _bf("arg", _bg(1), _bv(1)), "arg", 2),
+        (_bf("ar5", _bv(1)), _bf("\$shift", _bv(1), _bs("a")), "\$shift", 2)
+    )
+        got = _bc_kernel(_bclause(h, b))
+        @test any(c -> occursin("P:[$(join(Int.(codeunits(n)), ","))]/$a", c), got)
+    end
+    # under `optimise` upstream compiles ==/\\== on a void, or on a first occurrence, to
+    # I_TRUE/I_FAIL: V9's, refused
+    ld = LK.PL_local_data{_B}()
+    ld.prolog_flag_optimise = true
+    for (h, b) in (
+        (_bs("po_eq1"), _bf("==", _bv(1), _bs("a"))),
+        (_bs("po_neq1"), _bf("\\==", _bv(1), _bs("a"))),
+        (_bs("po_eq2"), _bconj(_bcq(_bv(1)), _bf("==", _bv(1), _bv(2)), _bcq(_bv(2)))),
+        (_bs("po_neq2"), _bconj(_bcq(_bv(1)), _bf("\\==", _bv(1), _bv(2)), _bcq(_bv(2))))
+    )
+        @test_throws LK.NotPortedError _bclause(h, b; ld=ld)
+    end
+    @test !isempty(
+        _bc_kernel(_bclause(_bs("po_eq3"), _bf("==", _bs("a"), _bs("b")); ld=ld))
+    )
+    # without `portable_vmi` every tagged integer is a portable constant
+    ld2 = LK.PL_local_data{_B}()
+    ld2.prolog_flag_portable_vmi = false
+    @test_throws LK.NotPortedError _bclause(
+        _bf("pv1", _bv(1)), _bf("==", _bv(1), _bg(16777216)); ld=ld2
+    )
+    # a unification moved into the head (`optimise_unify`, swipl's default; NOT PORTED, V9): the
+    # kernel refuses it, and swipl compiles it as HEAD code — no b_unify_*, no call (probed)
+    moved = [
+        (_bf("um1", _bv(1)), _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1)))),
+        (_bf("um2", _bv(1)), _bconj(_bf("=", _bv(1), _bs("a")), _bcq(_bv(1))))
+    ]
+    for (h, b) in moved
+        @test_throws LK.NotPortedError _bclause(h, b)
+    end
+    if _BC_SWIPL_BIN !== nothing
+        theirs_m = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in moved])
+        @test length(theirs_m) == length(moved)
+        for t in theirs_m
+            @test !any(startswith("b_unify"), t) && any(startswith("h_"), t)
+            @test !any(c -> occursin("P:[61]/2", c), t)                  # no call of =/2
+        end
+    end
+    if _BC_SWIPL_BIN !== nothing
+        theirs = _bc_swipl([
+            "bc_case_show(($(_bc_text(h, b))))" for (_, h, b, _) in _BC_IS_CELLS
+        ])
+        @test length(theirs) == length(_BC_IS_CELLS)
+        for (k, (shape, h, b, instr)) in enumerate(_BC_IS_CELLS)
+            k <= length(theirs) || break
+            if isempty(instr)                                       # a call: swipl's own code
+                ours[k] == theirs[k] ||
+                    println(stderr, "  ", shape, "\n    ours  ", ours[k],
+                        "\n    swipl ", theirs[k])
+                @test ours[k] == theirs[k]
+            else                                                    # inline: swipl emits it
+                any(startswith(instr), theirs[k]) ||
+                    println(stderr, "  ", shape, ": swipl ", theirs[k])
+                @test any(startswith(instr), theirs[k])
+            end
+        end
+    end
+end
+
 @testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
     commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
     @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
@@ -935,14 +1160,13 @@ end
     @test !commit(_bs("pc5"), _bf("q", _bs("!")))           # `!` as DATA is no cut
 end
 
-@testset "what is still refused (V2's interim, V6b: the type tests compile), and swipl's type_error(callable, Body)" begin
+@testset "what is still refused (V2's interim; V6b, V6b2: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
         _bf(";", _bs("a"), _bs("b")), _bf("->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
-        _bf("=", _bv(1), _bs("a")), _bf("==", _bv(1), _bs("a")),
-        _bf("arg", _bg(1), _bv(1), _bv(2)),
+        _bf("=", _bv(1), _bs("a")),                            # a void side: I_TRUE (V9)
         _bconj(_bs("q"), _bs("true")), _bs("fail"),
         _bf("call", _bv(1)), _bf("call", _bv(1), _bs("a"))
     )

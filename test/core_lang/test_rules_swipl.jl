@@ -861,6 +861,61 @@ end
 end
 
 # ── a frame whose call fails before it is filled ────────────────────────────────────────────────
+# ── the inline compilers' fall-back calls (V6b2) ────────────────────────────────────────────────
+# Where upstream's compiler falls back to a call (pl-comp.c c:3488-3517), the kernel calls the
+# built-in: `Term = Term`, and `==`/`\\==` on a void, a non-portable constant or two non-variables.
+# Every answer and its determinism are swipl's.
+@testset "the inline compilers' fall-back calls answer as swipl does (V6b2)" begin
+    X, Y = _rv(1), _rv(2)
+    fa = _rf("f", _rs("a"))
+    clauses = [
+        (_rf("u1", X, Y), _rf("=", _rf("f", X, _rs("b")), _rf("f", _rs("a"), Y))),  # Term = Term
+        (_rs("u2"), _rf("=", _rs("a"), _rs("b"))),
+        (_rf("e1", X), _rf("==", X, fa)),                                          # a compound
+        (_rf("e2", X), _rf("==", X, _rg(16777216))),                               # not portable
+        (_rf("e3", X), _rf("==", X, _rg(1.5))),
+        (_rs("e4"), _rf("==", _rs("a"), _rs("a"))),                                # two atoms
+        (_rf("e5", X), _rf("==", _rv(9), X)),                                      # a void side
+        (_rf("n1", X), _rf("\\==", X, fa)),
+        (_rf("n2", X), _rf("\\==", _rv(9), X)),
+        (_rf("n3", X), _rf("\\==", X, _rg(-16777217)))
+    ]
+    db = _rdb(clauses)
+    goals = [
+        _rf("u1", _rv(100), _rv(101)), _rs("u2"),
+        _rf("e1", fa), _rf("e1", _rf("f", _rs("b"))), _rf("e1", _rv(100)),
+        _rf("e2", _rg(16777216)), _rf("e2", _rg(16777215)), _rf("e3", _rg(1.5)), _rs("e4"),
+        _rf("e5", _rs("a")), _rf("n1", fa), _rf("n1", _rs("g")), _rf("n2", _rs("a")),
+        _rf("n3", _rg(-16777217)), _rf("n3", _rg(3))
+    ]
+    ours = _rlines(db, goals)
+    @test ours[1:2] == ["u1(a,b) det", "end"]
+    @test count(==("end"), ours) == length(goals)
+    @test all(l -> l == "end" || endswith(l, " det"), ours)
+    if _R_SWIPL
+        @test _rswipl(clauses, goals) == ours
+    end
+    # arg/3's fall-back is a call, as upstream's; arg/3 itself is nondeterministic
+    # (PL_FA_NONDETERMINISTIC), a foreign predicate V9 brings: until then the call raises
+    # existence_error(procedure, arg/3), where swipl answers `Y = a` (the interim, pinned)
+    db2 = _rdb([(_rf("ag", Y), _rf("arg", _rg(1), fa, Y))])
+    gd, ld = db2.gd, db2.ld
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    ld.slots[a + 1] = _rv(100)
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS,
+        _rproc(db2, _rf("ag", _rv(100))), a)
+    @test LK.PL_next_solution(gd, ld, qid) == LK.PL_S_EXCEPTION
+    ball = LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1])
+    formal = child(ball, 2)
+    @test lk_name(child(formal, 1)) === :existence_error
+    @test lk_name(child(formal, 2)) === :procedure
+    @test lk_name(child(child(formal, 3), 2)) === :arg &&
+        lk_value(child(child(formal, 3), 3)) == 3
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+end
+
 @testset "a call failing before its frame is filled: dropped where it is left (S_LIST)" begin
     Z = _rv(1)
     clauses = [
