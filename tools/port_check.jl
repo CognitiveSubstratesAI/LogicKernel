@@ -860,10 +860,128 @@ function port_check(pkgroot::AbstractString;
         )
         append!(v, whats_here_violations(root, files, architecture))
     end
+    srcs = [f.rel for f in files if startswith(f.rel, "src/")]
+    inv = joinpath(root, inventory)
+    isfile(inv) &&
+        append!(v, stale_marker_violations(root, srcs, plan_steps(read(inv, String))))
     return (;
         violations=v, files=files, existence_checked=sort!(collect(available)),
-        coverage_checked=coverage_checked
+        coverage_checked=coverage_checked, markers=marker_counts(root, srcs)
     )
+end
+
+# ── markers that name a finished plan step (the divergence audit; user, 2026-10-06) ──────────────
+# A `# DIVERGES` or `# NOT PORTED` comment naming a step of the plan (port_inventory's rows: `V5b`,
+# `V9`, `R1`, …) WAITS for it — unless it writes the step as history, `since V5b`. A wait on a step
+# the inventory marks DONE is stale: what it waited for has come, so the marker needs re-reading.
+# The audit found four such in a sample of forty. A step is DONE when its own segment of the plan
+# says `✅ DONE` or `✅ REACHED`: a row's first cell for a row step (`V8`), the text after a bold
+# sub-step for a sub-step (`**V6b2** — ✅ DONE`). The first occurrence wins, so a later row that
+# mentions a step cannot restate it. A row whose sub-steps are not all done (`V5`, with `V5c` open)
+# says no DONE of its own.
+const RX_PLAN_ROW = r"^\| \*\*([A-Z]\d+[a-z]?\d*)\*\*"
+const RX_SUBSTEP_BOLD = r"\*\*([A-Z]\d+[a-z]\d*)\*\*"
+const RX_ANY_STEP_BOLD = r"\*\*[A-Z]\d+[a-z]?\d*\*\*"
+const RX_STEP_DONE = r"✅\s*\**(?:DONE|REACHED)"
+# a marker's start — not a backticked mention of one in prose
+const RX_MARKER_START = r"(?<!`)#\s*(?:DIVERGES|NOT PORTED)\b"
+# a step named in a marker, unless written as history (`since V5b`)
+const RX_STEP_WAIT = r"(?<![Ss]ince )\b([A-Z]\d+[a-z]?\d*)\b"
+
+"The plan's steps and whether each is DONE, from port_inventory's plan rows (see above)."
+function plan_steps(inventory_text::AbstractString)::Dict{String, Bool}
+    status = Dict{String, Bool}()
+    for row in eachline(IOBuffer(inventory_text))
+        m = match(RX_PLAN_ROW, row)
+        m === nothing && continue
+        cells = split(row, '|')
+        haskey(status, m[1]) || (status[m[1]] = occursin(RX_STEP_DONE, cells[2]))
+        for b in eachmatch(RX_SUBSTEP_BOLD, row)
+            haskey(status, b[1]) && continue
+            seg = SubString(row, b.offset + ncodeunits(b.match))
+            nxt = match(RX_ANY_STEP_BOLD, seg)
+            nxt === nothing || (seg = SubString(seg, 1, prevind(seg, nxt.offset)))
+            status[b[1]] = occursin(RX_STEP_DONE, first(seg, 200))
+        end
+    end
+    return status
+end
+
+"""
+    marker_blocks(text) -> [(line, block)]
+
+The `# DIVERGES` and `# NOT PORTED` markers of a source file: each with its comment block — the
+following comment lines, up to the next `# PORT:` — or, for a marker at the end of a code line, that
+comment alone.
+"""
+function marker_blocks(text::AbstractString)::Vector{Tuple{Int, String}}
+    lines = split(text, '\n')
+    out = Tuple{Int, String}[]
+    i = 1
+    while i <= length(lines)
+        m = match(RX_MARKER_START, lines[i])
+        if m === nothing
+            i += 1
+            continue
+        end
+        if startswith(lstrip(lines[i]), "#")
+            j = i
+            while j < length(lines) && startswith(lstrip(lines[j + 1]), "#") &&
+                  !occursin(RX_PORT_ANY, lstrip(lines[j + 1]))
+                j += 1
+            end
+            push!(out, (i, join(lines[i:j], "\n")))
+            i = j + 1
+        else
+            push!(out, (i, SubString(lines[i], m.offset)))
+            i += 1
+        end
+    end
+    return out
+end
+
+"""
+    stale_marker_violations(root, rels, steps) -> violations
+
+`MARKER-STALE` for each step a marker in the source files `rels` waits for — names, not as
+`since …` — that `steps` marks DONE.
+"""
+function stale_marker_violations(
+    root::AbstractString, rels::Vector{String}, steps::Dict{String, Bool}
+)::Vector{String}
+    done = Set(k for (k, d) in steps if d)
+    v = String[]
+    for rel in rels
+        for (line, block) in marker_blocks(read(joinpath(root, rel), String))
+            for tok in unique(m[1] for m in eachmatch(RX_STEP_WAIT, block))
+                tok in done || continue
+                push!(
+                    v,
+                    "MARKER-STALE $rel:$line: names $tok, which docs/port_inventory.md marks DONE — re-read the marker; a step it no longer waits for is written `since $tok`"
+                )
+            end
+        end
+    end
+    return v
+end
+
+"""
+    marker_counts(root, rels) -> (; diverges, not_ported, both)
+
+How the markers of the source files `rels` split (user, 2026-10-06): lines that are `# DIVERGES`
+markers (a difference from upstream), lines that are `# NOT PORTED` markers (an absence), and the
+`# DIVERGES` lines that also say `NOT PORTED`, which are still to be split as their files are
+touched.
+"""
+function marker_counts(root::AbstractString, rels::Vector{String})
+    d = n = both = 0
+    for rel in rels, l in eachline(joinpath(root, rel))
+        isd = occursin(r"(?<!`)#\s*DIVERGES\b", l)
+        d += isd
+        n += occursin(r"(?<!`)#\s*NOT PORTED\b", l)
+        both += isd && occursin("NOT PORTED", l)
+    end
+    return (; diverges=d, not_ported=n, both=both)
 end
 
 "Replace the content between `b` and `e` in the file `path` with `gen`."

@@ -31,7 +31,7 @@ end
 # PORT: pl-alloc.c raiseStackOverflow
 # DIVERGES (interim, the user's Q-B): throws `LocalStackOverflow`, a Julia exception (the query
 # closes, decision 1), where upstream's `outOfStack` raises `error(resource_error(stack), Ctx)`
-# with `PL_raise_exception`. That path is ported (V5b); what is missing is `Ctx`, a
+# with `PL_raise_exception`. That path is ported since V5b; what is missing is `Ctx`, a
 # `stack_overflow{…}` DICT (`push_overflow_context`) — Q-B. Only `LOCAL_OVERFLOW` exists here;
 # `false` ("some other error is pending") returns `false`, as upstream.
 "Raise the overflow `overflow` reports (pl-alloc.c)."

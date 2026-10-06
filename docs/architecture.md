@@ -6,8 +6,18 @@ Decided 2026-10-03 (user): **LogicKernel follows swipl-devel as is — its logic
 its semantics.** Where SWI uses a mechanism, the kernel uses that mechanism; a departure is a
 `# DIVERGES:` with its reason, never a design preference. The sampled audit of those markers
 (docs/divergence_audit.md, 2026-10-06) found none unjustified. About two in three are forced by the
-representation. Their comments rot, though: 19 of 40 needed rewording, four of them stale. Two
-consequences that differ from Core:
+representation. Their comments rot, though: 19 of 40 needed rewording, four of them stale. So,
+since the audit (user, 2026-10-06):
+* **Two markers.** `# DIVERGES` marks where the kernel behaves, or is structured, differently from
+  upstream; `# NOT PORTED: <what>, <why>` marks an absence. A file's old markers are split as
+  chunks touch them. port_check counts the two apart, and the preflight prints the counts.
+* **A step named in a marker is a WAIT** (`(V9)`, `until R1`) **or HISTORY** (written
+  `since V5b`). port_check fails on a wait for a step port_inventory marks DONE (`MARKER-STALE`), so
+  each chunk's preflight lists the markers its own completion made stale.
+* **Each chunk re-reads the markers of the code it changes.** Rot without a named step — a fact that
+  changed, as when built-ins became foreign — is caught only by reading.
+
+Two consequences that differ from Core:
 
 * **Bindings use SWI's trail with marks.** Unification binds in a mutable binding store and records
   each binding on a trail; `Mark` before an attempt, `Undo` back to it afterwards — `pl-prims.c`'s

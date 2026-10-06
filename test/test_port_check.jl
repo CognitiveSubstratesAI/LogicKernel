@@ -238,6 +238,10 @@ _pc_codes(vs) = sort!([
           # DIVERGES:
           compareFoo(x) = 2
 
+          # PORT: pl-fake.c compareFoo
+          # DIVERGES: waits for V1, which the inventory marks DONE
+          compareFoo(x::Float64) = 4
+
           # PORT: broken
 
           # PORT: pl-fake.c fooBar
@@ -319,6 +323,9 @@ _pc_codes(vs) = sort!([
                 "# ORIGINAL: shadows an upstream test file\n"
             )
             _pc_inventory(root, "| stale | row |")
+            open(joinpath(root, "docs", "port_inventory.md"), "a") do io
+                write(io, "\n| **V1** a plan step — ✅ **DONE 2026-01-01** | x |\n")
+            end
 
             r = port_check(root; upstream_dirs=dirs)
             @test r.existence_checked == ["swipl-devel"]
@@ -338,7 +345,7 @@ _pc_codes(vs) = sort!([
                 ("DIR-NOT-UPSTREAM", "mine"),
                 ("ORIGINAL-PORT-NAME", "orig.jl"),
                 ("ORIGINAL-SHADOWS-UPSTREAM", "test_shadow.jl"),
-                ("INVENTORY-DRIFT", "port_inventory.md")
+                ("INVENTORY-DRIFT", "port_inventory.md"), ("MARKER-STALE", "pl-fake.jl")
             ])
             # M1's code-map checks have their own fixture below; here the planted set is the rest
             m1 = r"^(COVERAGE|CODE-GRAPH|WHATS-HERE|ARCHITECTURE)-"
@@ -606,4 +613,50 @@ end
     else
         @test length(d) == length(rows) && all(isempty(u) for (_, u) in d)
     end
+end
+
+# ── markers that name a finished plan step (the divergence audit; user, 2026-10-06) ──────────────
+@testset "a marker waiting for a DONE step is stale; `since …` is history" begin
+    inv = """
+    | step | what |
+    |---|---|
+    | **V1** first — ✅ **DONE 2026-10-04** | x |
+    | **V5** parent | **V5a** — ✅ DONE (a); **V5c** — open, and **V1** named again |
+    | **V9** later | **V5a** again, with no DONE |
+    """
+    st = plan_steps(inv)
+    @test st ==
+        Dict("V1" => true, "V5" => false, "V5a" => true, "V5c" => false, "V9" => false)
+    mktempdir() do root
+        mkpath(joinpath(root, "src"))
+        write(
+            joinpath(root, "src", "x.jl"),
+            """
+            # PORT: x.c f
+            # DIVERGES: waits for V5a, then
+            # V5c; since V1 it is history.
+            f() = 1
+            g() = 2   # DIVERGES: inline, V1
+            # a prose mention of `# DIVERGES` naming V5a
+            # PORT: x.c h
+            # NOT PORTED: V9 brings it
+            # DIVERGES: NOT PORTED: both on one line
+            """
+        )
+        blocks = marker_blocks(read(joinpath(root, "src", "x.jl"), String))
+        @test first.(blocks) == [2, 5, 8]          # the prose mention is no marker
+        v = stale_marker_violations(root, ["src/x.jl"], st)
+        @test length(v) == 2
+        @test occursin("src/x.jl:2: names V5a", v[1])      # a wait on a DONE step
+        @test occursin("src/x.jl:5: names V1", v[2])       # inline, not written as history
+        @test !any(x -> occursin("V5c", x) || occursin("V9", x), v)   # open steps
+        # a `# DIVERGES: NOT PORTED:` line is a DIVERGES line still to split, not a NOT PORTED marker
+        @test marker_counts(root, ["src/x.jl"]) == (; diverges=3, not_ported=1, both=1)
+    end
+    # and LogicKernel itself: no stale marker, the counts reported (port_check's violations are
+    # checked at the top of this file)
+    root = joinpath(@__DIR__, "..")
+    r = port_check(root)
+    @test !any(x -> startswith(x, "MARKER-STALE"), r.violations)
+    @test r.markers.diverges > 0 && r.markers.not_ported > 0
 end

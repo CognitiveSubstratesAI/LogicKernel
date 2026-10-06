@@ -99,7 +99,7 @@ end
 
 # PORT: pl-inline.h QueryFromQid
 # DIVERGES: a query handle is the query frame's POSITION (decision 1); the record is found on the
-# chain of open queries from `LD->query` (V3 refinement), where upstream computes its address from
+# chain of open queries from `LD->query` (since V3), where upstream computes its address from
 # the handle's offset. A handle that names no open query gives 0 — upstream's would point at a
 # closed (`QID_CMAGIC`) or reused frame.
 "The open query frame (an index) whose handle is `qid`, or 0 (pl-inline.h)."

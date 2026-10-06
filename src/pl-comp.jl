@@ -28,12 +28,13 @@
 # directly follows two or more void arguments (`skipArgs`, LogicKernel#1), and that defect is
 # FIXED here (user, 2026-10-02), so the kernel indexes those arguments where swipl 10.1.16 does not.
 #
-# NOT PORTED: body code (`compileBody` and everything it reaches; V2), `islocal` compilation (goal
-# clauses for the meta-call: `subclausearg`, `argvars`, `link_local_var`; V9), SSU (`=>`) clauses,
+# NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
+# `link_local_var`; V9), SSU (`=>`) clauses,
 # the moved head unifications (`head_unify`, `annotate_unification`, `argMoveUnify`/`argUnifiedTo`,
 # `isUnifiedArg`: they come with O_COMPILE_IS's inline unification, V9 — until then the kernel
-# compiles what swipl compiles with `optimise_unify` false), singleton, multiton and branch warnings
-# (the `VD_*` flags), and the instruction bodies (head unification), which arrive with the VM.
+# compiles what swipl compiles with `optimise_unify` false), and singleton, multiton and branch
+# warnings (the `VD_*` flags). The body compiler is ported since V2, and the instructions run in the
+# VM since V4a (src/pl-wam.jl).
 
 # ── argument positions (pl-comp.c) ──────────────────────────────────────────────────────────────
 # PORT: pl-comp.c A_HEAD
@@ -130,7 +131,7 @@ end
 # `vardefs` is upstream's LD->comp.vardefs keyed by `var_key`, `mstate_candidates`/
 # `mstate_merge_pos` are `mstate`, `used_var` is the VarTable (`vartablesize` its length),
 # `branch_vars` is `nothing` or the vector upstream keeps in `branch_varbuf`, `literals` the
-# clause's literal table as it is built (V1 L2), and `procedures` its procedure table (V1). No
+# clause's literal table as it is built (since V1 L2), and `procedures` its procedure table (since V1). No
 # `clause` (the clause is created after the code), and the fields of subsystems not yet ported:
 # `islocal`, `subclausearg`, `head_unify`, `argvars`, `argvar` (V9), `singletons` and the warnings,
 # `progress` (interrupts), `colon_context` and `at_context` (modules). `cut` is a clause-level cut
@@ -666,9 +667,9 @@ end
 # functor table (generated from src/ATOMS; pl-comp.c uses it); the kernel has none, so it is a fixed
 # functor word of its own — what `argKey` reads from `H_LIST`/`H_RLIST`/`H_LIST_FF` and `indexOfWord`
 # gives every list cell (`is_pair`), distinct from the key of any other `name/2` but by chance, as
-# any two keys (user, 2026-10-04). An INDEX tolerates a chance collision (it narrows less), but
-# `listSupervisor` takes this key and `ATOM_nil` as identity: a `name/2` keyed equal to it would
-# get `S_LIST`, which fails a call on that name — about 2^-52 per name (the divergence audit, docs/divergence_audit.md).
+# any two keys (user, 2026-10-04). `listSupervisor` takes this key and `ATOM_nil` as IDENTITY, so a
+# hashed key equal to either is excluded by construction (`_unreserved`, src/pl-index.jl; the
+# divergence audit, S05).
 "The key of a list cell `'[|]'/2`: what `argKey` reads from `H_LIST*` and `indexOfWord` gives `[H|T]`."
 const FUNCTOR_dot2 = MK_FUNCTOR(UInt64(0x0004_c495_354e_4f43), UInt64(2))   # "LISTCONS"-ish, arity 2
 
@@ -836,7 +837,7 @@ end
 # stack-overflow returns. SWI-7's `[]` compiles to `H_NIL`/`B_NIL` (Q1), any other symbol to
 # `H_ATOM`/`B_ATOM`; a grounded value to the SMALLINT/MPZ/MPQ/FLOAT/STRING instruction of its kind
 # and storage (`_gnd_code`), anything else to `*_ATOM`; each operand is the index of the constant
-# in the clause's LITERAL TABLE (V1 L2). A list cell (`is_pair`, upstream's `fdef == FUNCTOR_dot2`)
+# in the clause's LITERAL TABLE (since V1 L2). A list cell (`is_pair`, upstream's `fdef == FUNCTOR_dot2`)
 # compiles to `*_LIST`/`*_RLIST`, or in a head `H_LIST_FF` when both its children are fresh clause
 # variables; any other compound to `*_FUNCTOR`/`*_RFUNCTOR` with the packed operand of its head
 # symbol's literal and its arity, and a compound whose head is not a symbol as `*_FUNCTOR $expr/n`
@@ -1004,7 +1005,7 @@ end
 # PORT: pl-comp.c lco
 # DIVERGES: positions in the code vector (1-based) instead of pointers, so no FIX_BUFFER_SHIFT; the
 # departing call's operand is an index into the clause's procedure table, and `I_LCALL` carries the
-# same index, as `L_ATOM`/`L_SMALLINT` carry the `B_*` instruction's literal index (V1: upstream
+# same index, as `L_ATOM`/`L_SMALLINT` carry the `B_*` instruction's literal index (since V1: upstream
 # copies the operand word too); no `B_SMALLINTW` (64-bit words) and no `PL_register_atom`.
 """
 Last-call optimisation (pl-comp.c) of the goal whose argument code starts at code position `pc0`
@@ -1443,15 +1444,15 @@ end
 
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
-# 2026-10-05: the cut's COMPILE side with the body compiler, its execution V6a). The meta-call (a
+# 2026-10-05: the cut's COMPILE side with the body compiler, its execution since V6a). The meta-call (a
 # variable goal, `call/N`) and the reserved atoms compiled inline (`true`, `fail`, …) throw
 # `NotPortedError` BEFORE any code is emitted (V9): upstream always compiles them inline. O_COMPILE_IS's
-# functors (V6b, V6b2) and is/2 (V6c2, V8) are compiled as upstream decides, by upstream's own
+# functors (since V6b2) and is/2 (since V8) are compiled as upstream decides, by upstream's own
 # compilers in upstream's order: inline where upstream emits an instruction — each emission of an
 # instruction the kernel does not execute yet throws `NotPortedError` (V9, the memo's Q-1) — and a
 # call wherever upstream falls back to one. The names are the global data's (`subclause_names`). One
 # module: no `I_CALLM`/`I_DEPARTM`/`I_CALLATM*`, and no colon or at context. The call operand
-# indexes the clause's procedure table (V1).
+# indexes the clause's procedure table (since V1).
 """
 Compile body goal `arg` as a call with `call` — `I_CALL`, or `I_DEPART` for the clause's last goal,
 then last-call-optimised (`lco!`) — after its arguments (pl-comp.c). Returns `BOOLEX_TRUE`, or
@@ -1701,7 +1702,7 @@ end
 # nothing here. The functor is not unified: every caller (`pl_clause!`, `retract/1`, `retractall/1`)
 # passes a head of this predicate, and `definition` keeps the name's key only. No `bindings`
 # (clause/3), `bvar_access` (moved unifications come from a body) or goal clauses. A literal is the
-# very term of the clause's table (V1 L2), so its kind comes back exactly; a nested void is a fresh
+# very term of the clause's table (since V1 L2), so its kind comes back exactly; a nested void is a fresh
 # variable of its own.
 """
     decompile_head!(ld, clause, head, base) -> Bool
@@ -1901,7 +1902,7 @@ end
 
 # PORT: pl-comp.c argKey
 # DIVERGES: returns the key — 0 where upstream returns false — instead of a flag and an
-# out-parameter. The key of a literal instruction is `indexOfWord` of its literal (V1 L2), where
+# out-parameter. The key of a literal instruction is `indexOfWord` of its literal (since V1 L2), where
 # upstream reads the atom (`code2atom`) or computes one (`consInt`, `murmur_key`, `bignum_index`):
 # so a grounded value without a key is not indexable, as `indexOfWord` makes it. An `H_FUNCTOR` is
 # keyed by its head symbol's literal and its arity, as `indexOfWord` keys the compound — and `$expr/n`
@@ -1944,9 +1945,9 @@ end
 
 # PORT: pl-comp.c arg1Key
 # DIVERGES: returns `(found, key)` where upstream returns a flag and sets an out-parameter, and keys
-# a literal as `argKey` does (`indexOfWord` of the literal, V1 L2). `$expr/n` (literal 0, Q2) has no
+# a literal as `argKey` does (`indexOfWord` of the literal, since V1 L2). `$expr/n` (literal 0, Q2) has no
 # functor: not found. AN UPSTREAM DEFECT FIXED: upstream's switch lists `H_MPZ` but not `H_MPQ`, which
-# falls to `assert(0)` — swipl 10.1.16 aborts calling `p(1r3, a). p(2r3, b).` (probed, V4a:
+# falls to `assert(0)` — swipl 10.1.16 aborts calling `p(1r3, a). p(2r3, b).` (probed 2026-10-05:
 # `arg1Key: Assertion failed`); here `H_MPQ` is not found, as `H_MPZ` is. docs/upstream_reports.md #4.
 """
     arg1Key(PC) -> (found, key)

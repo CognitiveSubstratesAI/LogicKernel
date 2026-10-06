@@ -763,6 +763,9 @@ const DISPATCH_MANIFEST = (
     (LK.MSB, Tuple{Int}, true), (LK.MSB, Tuple{UInt32}, true),
     (LK.clean_index_key, Tuple{UInt64}, true), (LK.hashIndex, Tuple{UInt64, UInt32}, true),
     (LK._functor_word, Tuple{UInt64, Int}, true),
+    # the reserved index keys, by construction (the divergence audit, S05)
+    (LK._unreserved, Tuple{UInt64}, true), (LK._atom_key, Tuple{UInt64}, true),
+    (LK._functor_key, Tuple{UInt64, Int}, true), (LK._gnd_index_key, Tuple{UInt64}, true),
     (LK.join_multi_arg_keys, Tuple{NTuple{4, UInt64}, Int}, true),
     (LK.consider_better_index, Tuple{Float32, UInt32}, true),
     (LK.cmp_iarg, Tuple{UInt8, UInt8}, true),

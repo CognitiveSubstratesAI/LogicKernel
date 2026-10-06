@@ -42,7 +42,7 @@ const clsize_t = UInt32
 
 # PORT: pl-incl.h Code
 # DIVERGES: a pointer into a code array is the array and a 1-based index into it — and the clause's
-# LITERAL TABLE travels with it (decision 2, V1 L2): where upstream's operand IS an atom, a functor
+# LITERAL TABLE travels with it (decision 2, since V1 L2): where upstream's operand IS an atom, a functor
 # or an inline number, the kernel's operand is an index into `literals` (src/pl-comp.jl § literals),
 # so whatever reads code — `argKey`, the decompiler — reads the literal through the position.
 """
@@ -281,9 +281,9 @@ mutable struct procedure{D}
 end
 
 # PORT: pl-incl.h clause
-# DIVERGES: besides its VM code the clause keeps its LITERAL TABLE (`literals`, decision 2, V1 L2):
+# DIVERGES: besides its VM code the clause keeps its LITERAL TABLE (`literals`, decision 2, since V1 L2):
 # the terms its literal operands index, each exactly as it stood in the clause — upstream's operands
-# hold the atom, functor or number itself — and its PROCEDURE TABLE (`procedures`, V1): the
+# hold the atom, functor or number itself — and its PROCEDURE TABLE (`procedures`, since V1): the
 # procedures its call operands (`I_CALL`, `I_DEPART`, …) index, where upstream's operand is the
 # `Procedure` pointer itself (user, 2026-10-04: decoding stays local to the clause, as with the
 # literals). No source-file fields (`line_no`, `source_no`, `owner_no`), no `references` (no

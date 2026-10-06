@@ -73,7 +73,7 @@ end
 # PORT: pl-proc.c hasClausesDefinition
 # DIVERGES: no `acquire_def`/`release_def` around the walk — with no threads, clause GC cannot run
 # during it — and no reload generation (`LD->reload.generation` is always `GEN_INVALID`: reloading
-# is not ported). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign (V5a2), so
+# is not ported). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign since V5a2, so
 # it has no clauses here, as upstream; no predicate is thread-local.
 """
 The first clause reference of `def` whose clause is visible in the current generation of the

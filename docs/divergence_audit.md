@@ -140,6 +140,34 @@ A marker's reason rots when the code around it moves on.
    kernel now can. **Recommend: do it** when the inline unification family comes next (it touches
    the same code).
 
+## The follow-ups (decided by the owner, 2026-10-06)
+
+1. **S05, by construction.** A hashed index key — an atom's, a grounded value's, a functor's — that
+   equals `ATOM_nil` or `FUNCTOR_dot2` is moved off it (`_unreserved`, src/pl-index.jl), so the two
+   words stand for `[]` and the list cell alone. **Every place that compares keys was checked**:
+   * only `listSupervisor` takes key equality as identity;
+   * the clause indexes (`cref_matches`, the list index walk, the buckets), the deep index's
+     descent and determinism detection only gain candidates from a collision, which head
+     unification rejects;
+   * the assessments test a key's TAG, not its identity;
+   * a supervisor's comparison compares codes, not keys.
+
+   Tests feed the colliding hashes to each constructor and, through test-only interface types, to
+   `indexOfWord`. A functor's own hash cannot be steered (Julia's `hash` mixes its seed), so that
+   path is checked by structure.
+2. **S33** stays NOT PORTED, with a line in V9's row.
+3. **port_check's MARKER-STALE.** A `# DIVERGES` or `# NOT PORTED` comment that names a plan step
+   the inventory marks DONE fails, unless it writes it as history, `since …`.
+   * On its first run it flagged 16 mentions in 13 blocks, 5 of them stale: the body compiler
+     "NOT PORTED (V2)", and four waits blamed on V5b that are the user's Q-B.
+   * Marking V1 and V6 DONE (both were complete but unmarked) flagged 16 more history mentions and
+     one stale note.
+   * All are fixed, and port_check's own fixture plants one.
+4. **The two markers.** `# NOT PORTED:` for absences, `# DIVERGES` for differences. port_check
+   counts them apart, and the preflight prints the counts: today 336 `# DIVERGES` lines, 10
+   `# NOT PORTED`, and 14 `# DIVERGES` lines still saying NOT PORTED.
+5. **S10** goes in the next chunk, with the moved head unifications.
+
 ## The sample
 
 Line numbers are as sampled, before this audit's rewrites.

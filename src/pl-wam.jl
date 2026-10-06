@@ -683,7 +683,7 @@ end
 
 # PORT: pl-vmi.c ENSURE_LOCAL_SPACE
 # DIVERGES: in positions. The overflow raises a Julia `LocalStackOverflow` until the stack limit's
-# `resource_error` is ported (V5b, waiting for the user's Q-B on its context)
+# `resource_error` is ported (waiting for the user's Q-B on its context)
 # (`raiseStackOverflow`), so its `ifnot` (`THROW_EXCEPTION`) is not reached.
 "Make room for `n` positions above `lTop`, saving the registers around the growth (pl-vmi.c)."
 macro ENSURE_LOCAL_SPACE(n)
@@ -815,7 +815,7 @@ const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 
 # PORT: pl-wam.c PL_open_query
 # DIVERGES: the query is a record at `lTop`, with its CHP_TOP choice point and its top frame and frame
-# as records at upstream's offsets (V3; src/pl-incl.jl); its handle is its position (decision 1). Not
+# as records at upstream's offsets (since V3; src/pl-incl.jl); its handle is its position (decision 1). Not
 # ported: `getProcDefinedDefinition` (autoloading and import), `globalizeTermRef` (a keyed variable
 # lives in no cell, decision 2), the profiler, the debugger state `PL_Q_NODEBUG` saves (all but
 # `FR_HIDE_CHILDS`), the context module of a transparent predicate, `updateAlerted`.
@@ -1147,7 +1147,8 @@ function PL_next_solution_guarded(
             ffr = ld.fliframes[ffr].parent
         end
         ld.fli_context = ffr
-        # NOT PORTED: AR_CLEANUP (arithmetic, V6); the signal being handled (no signals)
+        # NOT PORTED: AR_CLEANUP (it has nothing to do here, see src/pl-arith.jl); the signal being
+        # handled (no signals)
         @goto b_throw                               # THROW_EXCEPTION
     end
 
@@ -1174,7 +1175,7 @@ function PL_next_solution_guarded(
 
     # ── head instructions (pl-vmi.c) ──────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c H_ATOM
-    # DIVERGES: the operand indexes the clause's literal table (V1 L2); no atom GC, so no
+    # DIVERGES: the operand indexes the clause's literal table (since V1 L2); no atom GC, so no
     # `pushVolatileAtom`.
     @label H_ATOM
     if UMODE == uwrite
@@ -1217,7 +1218,7 @@ function PL_next_solution_guarded(
     @goto unify_backtrack
 
     # PORT: pl-vmi.c H_FLOAT
-    # DIVERGES: the operand is one word, the literal's index (V1 L2); identity and binding as `h_const`
+    # DIVERGES: the operand is one word, the literal's index (since V1 L2); identity and binding as `h_const`
     # (`gnd_equal` is the bitwise comparison upstream makes).
     @label H_FLOAT
     if UMODE == uwrite
@@ -1584,7 +1585,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c B_RFUNCTOR
     # DIVERGES: the compound is built in a builder (decision 2, Q3), and goes into the current builder
-    # cell — inside a compound — or into the frame slot `ARGP` points at — a body argument (V4b) —
+    # cell — inside a compound — or into the frame slot `ARGP` points at — a body argument (since V4b) —
     # when it is closed: upstream puts the pointer there at once and fills the cells in place.
     @label B_RFUNCTOR
     bf_f = PCc[PC]
@@ -1636,7 +1637,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_CALL
     # DIVERGES: the operand indexes the running clause's procedure table, read through `CL`
-    # (`_call_procedure`; V1, user 2026-10-05). The new frame is the record pushed at `lTop`,
+    # (`_call_procedure`; since V1, user 2026-10-05). The new frame is the record pushed at `lTop`,
     # upstream's cast `NFR = lTop`.
     @label I_CALL
     ic_proc = _call_procedure(ld, FR, PCc[PC])
@@ -1650,7 +1651,7 @@ function PL_next_solution_guarded(
     # DIVERGES: the new frame stays ABOVE `lTop` (vmi:1869) until its supervisor raises `lTop`; one
     # whose call fails first is dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`).
     # The overflow raises a Julia `LocalStackOverflow` until the stack limit's `resource_error` is
-    # ported (`raiseStackOverflow`; V5b, the user's Q-B).
+    # ported (`raiseStackOverflow`; the user's Q-B).
     @label normal_call
     nc_f = ld.frames[NFR]
     nc_f.parent = FR
@@ -1720,7 +1721,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c exit_continue
     # DIVERGES: lowering `lTop` to the frame drops its record and everything above it (decision 3),
-    # and the record is still read after, as here (V3). `FR_WATCHED` (`frameFinished`) and
+    # and the record is still read after, as here (since V3). `FR_WATCHED` (`frameFinished`) and
     # `FR_DET`/`FR_DETGUARD` (`determinism_error`) are NOT PORTED: nothing sets them yet; asserted.
     @label exit_continue
     ec_f = ld.frames[FR]
@@ -1810,7 +1811,7 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c L_ATOM
-    # DIVERGES: the operand indexes the literal table (V1 L2); no atom GC, so no `pushVolatileAtom`.
+    # DIVERGES: the operand indexes the literal table (since V1 L2); no atom GC, so no `pushVolatileAtom`.
     @label L_ATOM
     ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = PCl[PCc[PC + 1]]
     PC += 2
@@ -1823,7 +1824,7 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c L_SMALLINT
-    # DIVERGES: the operand indexes the literal table (V1 L2).
+    # DIVERGES: the operand indexes the literal table (since V1 L2).
     @label L_SMALLINT
     ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = PCl[PCc[PC + 1]]
     PC += 2

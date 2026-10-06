@@ -168,7 +168,7 @@ end
 # PORT: pl-fli.c PL_raise_exception
 # DIVERGES: the ball is RESOLVED through the bindings into `exception_bin` (decision 1), so undoing
 # bindings cannot change it, where upstream copies it and freezes the global stack under it. No spare
-# stacks to enable for a resource error (the stack limit's error is V5b's, waiting for Q-B).
+# stacks to enable for a resource error (the stack limit's error waits for the user's Q-B).
 "Make the term `exception` references the pending exception, unless a more urgent one is pending; false (pl-fli.c)."
 function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T}
     @assert exception < ld.lTop                             # valTermRef(exception) < lTop
@@ -298,7 +298,8 @@ PL_compare(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
     compareStandard(ld, ld.slots[t1 + 1], ld.slots[t2 + 1], false)
 
 # PORT: pl-fli.c PL_clear_exception
-# DIVERGES: no `LD->outofstack` (the spare stacks are V5b's).
+# DIVERGES: no `LD->outofstack` (the spare stacks are not ported; the stack limit's error waits for
+# the user's Q-B).
 "Drop the pending exception, if any (pl-fli.c `PL_clear_exception`)."
 function PL_clear_exception(ld::PL_local_data{T})::Nothing where {T}
     if ld.exception_term != 0

@@ -217,7 +217,9 @@ let pc = Module(:PreflightPortCheck)
     r = Base.invokelatest(() -> pc.port_check(raw"$ROOT"))   # the binding too: latest world
     foreach(x -> println("  ", x), r.violations)
     isempty(r.violations) || error("preflight: port_check found violations")
-    println("preflight: port_check clean (", length(r.files), " files)")
+    mk = r.markers                                     # the gate split of markers (user, 2026-10-06)
+    println("preflight: port_check clean (", length(r.files), " files; markers: ", mk.diverges,
+        " DIVERGES, ", mk.not_ported, " NOT PORTED, ", mk.both, " DIVERGES lines still saying NOT PORTED)")
 end
 JL
     _send "$snippet" || {

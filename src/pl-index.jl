@@ -157,9 +157,32 @@ argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
 "True when `t` can select clauses through an index (pl-index.c)."
 canIndex(t)::Bool = indexOfWord(t) != 0
 
+# DIVERGES (the divergence audit, S05; user, 2026-10-06): upstream's atom and functor handles are
+# unique, so `listSupervisor` can take the keys `ATOM_nil` and `FUNCTOR_dot2` as identity. Here a
+# key is a HASH — an atom's, a grounded value's, a functor's — so one that comes out equal to either
+# reserved word is moved off it, BY CONSTRUCTION. Flipping the lowest bit of a functor's number
+# field keeps every tag bit, and a functor's arity. The two words then stand for `[]` and the list
+# cell alone. Every other use of key equality only narrows an index: on a collision it gives more
+# candidates, which unification rejects.
+"A hashed key moved off the reserved words `ATOM_nil` and `FUNCTOR_dot2` (see above)."
+function _unreserved(w::word)::word
+    (w == ATOM_nil || w == FUNCTOR_dot2) || return w
+    return w ⊻ (word(1) << (LMASK_BITS + F_ARITY_BITS))
+end
+
+"The index key of an atom whose name hashes to `h`: never a reserved word."
+_atom_key(h::UInt64)::word = _unreserved(MK_ATOM(h))
+
+"The functor word of a functor whose name and arity hash to `h`: never a reserved word."
+_functor_key(h::UInt64, arity::Int)::word =
+    _unreserved(MK_FUNCTOR(h, UInt64(arity) & F_ARITY_MASK))
+
+"The index key of a grounded value whose `gnd_key` is `g`: never 0, a functor or a reserved word."
+_gnd_index_key(g::word)::word = _unreserved(clean_index_key(g))
+
 "The functor word of a compound named by `name` (see `_functor_name`) with `arity` arguments."
 _functor_word(name::UInt64, arity::Int)::word =
-    MK_FUNCTOR(UInt64(hash(UInt64(arity), name)), UInt64(arity) & F_ARITY_MASK)
+    _functor_key(UInt64(hash(UInt64(arity), name)), arity)
 
 # DIVERGES: upstream names a functor by its atom HANDLE, so `[](a)` and `'[]'(a)` are two functors
 # (`[]` is a reserved symbol, `'[]'` a text atom — swipl 10.1.16: `[](a) \== '[]'(a)`). `sym_hash`
@@ -170,7 +193,8 @@ _functor_name(h)::UInt64 = is_nil(h) ? UInt64(ATOM_nil) : sym_hash(h)
 # PORT: pl-index.c indexOfWord
 # DIVERGES: reads the term interface rather than a tagged cell, and there are no reference cells to
 # follow. VAR → 0, as upstream. SYM → its atom word (`MK_ATOM` of its `sym_hash`, the same in every
-# process — SWI's atom numbers are fixed for a given program too), and SWI-7's `[]` → `ATOM_nil`, as
+# process — SWI's atom numbers are fixed for a given program too; never a reserved word,
+# `_unreserved`), and SWI-7's `[]` → `ATOM_nil`, as
 # `argKey` keys `H_NIL`: `sym_hash` is a TEXT hash, so without it `[]` and the atom `'[]'` would
 # share a key that upstream's two atom handles never share. GND → its
 # `gnd_key` through `clean_index_key` — the role murmur_key plays upstream for strings and floats,
@@ -191,11 +215,11 @@ function indexOfWord(t)::word
         return word(0)
     elseif k === SYM
         is_nil(t) && return ATOM_nil                    # `[]`: as `argKey` keys `H_NIL`
-        return MK_ATOM(sym_hash(t))
+        return _atom_key(sym_hash(t))
     elseif k === GND
         g = gnd_key(t)
         g === nothing && return word(0)
-        return clean_index_key(g)
+        return _gnd_index_key(g)
     end
     nchildren(t) >= 1 || return word(0)                 # `()`: `$expr/0`, a wildcard
     is_pair(t) && return FUNCTOR_dot2                   # `[H|T]`: as `argKey` keys `H_LIST*`
