@@ -723,7 +723,7 @@ const VMI_RUN = (
     :B_RLIST,
     :B_POP, :I_ENTER, :I_CALL, :I_DEPART, :I_EXIT, :I_EXITFACT, :I_EXITQUERY, :L_NOLCO,
     :L_VAR,
-    :L_VOID, :L_ATOM, :L_NIL, :L_SMALLINT, :I_LCALL, :I_TCALL, :S_VIRGIN, :S_UNDEF,
+    :L_VOID, :L_ATOM, :L_NIL, :L_SMALLINT, :I_LCALL, :I_TCALL, :I_CUT, :S_VIRGIN, :S_UNDEF,
     :S_STATIC,
     :S_DYNAMIC, :S_MULTIFILE, :S_TRUSTME, :S_LIST, :I_FCALLDETVA, :I_FCALLDET0,
     :I_FCALLDET1,
@@ -1833,6 +1833,27 @@ function PL_next_solution_guarded(
     tcallSetNextFrameFlags(ld.frames[FR])
     ld.frames[FR].clause = nothing
     @goto depart_or_retry_continue
+
+    # PORT: pl-vmi.c I_CUT
+    # DIVERGES: the age test compares positions (`base`), as `discardChoicesAfter`'s. NOT PORTED: the
+    # debugger branch (`tracePort(…, CUT_CALL_PORT)`: no debugger). The `exception_term` test after
+    # the discard is kept, though nothing can set it yet: only `frameFinished` on an `FR_WATCHED`
+    # frame (V9), which `discardChoicesAfter` asserts absent.
+    @label I_CUT
+    ld.frames[FR].flags &= ~FR_SSU_DET              # clear(FR, FR_SSU_DET)
+    if ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base   # (LocalFrame)BFR <= FR
+        @goto next_instruction
+    end
+    @SAVE_REGISTERS(QID)
+    discardChoicesAfter(ld, FR, FINISH_CUT)
+    @LOAD_REGISTERS(QID)
+    # lTop = (LocalFrame) argFrameP(FR, CL->value.clause->variables): the records of the discarded
+    # choice points and frames lie above it, and go with the lowering (decision 3)
+    cu_clause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
+    setLTop!(ld, argFrameP(ld.frames[FR].base, Int(cu_clause.variables)))
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
+    ld.exception_term != 0 && @goto b_throw         # THROW_EXCEPTION
+    @goto next_instruction
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN

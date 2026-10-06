@@ -1050,7 +1050,7 @@ end
 
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
-# 2026-10-05: the cut's COMPILE side with the body compiler, its execution V6). The meta-call (a
+# 2026-10-05: the cut's COMPILE side with the body compiler, its execution V6a). The meta-call (a
 # variable goal, `call/N`), the other goals compiled inline — the reserved atoms (`true`, `fail`, …)
 # and O_COMPILE_IS's functors (`=`, `==`, the type tests,
 # `arg/3`, …) — and `is/2` (compileSimpleAddition) throw `NotPortedError` BEFORE any code is

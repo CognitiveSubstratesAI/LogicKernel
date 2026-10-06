@@ -281,7 +281,7 @@ const _R_FAMILY = (
     LK.B_ARGVAR, LK.B_VAR0, LK.B_VAR1, LK.B_VAR2, LK.B_VAR, LK.B_ARGFIRSTVAR, LK.B_FIRSTVAR,
     LK.B_VOID, LK.B_FUNCTOR, LK.B_RFUNCTOR, LK.B_LIST, LK.B_RLIST, LK.B_POP, LK.B_ATOM,
     LK.B_SMALLINT, LK.B_NIL, LK.I_ENTER, LK.I_CALL, LK.I_DEPART, LK.L_NOLCO, LK.L_VAR,
-    LK.L_VOID, LK.L_ATOM, LK.L_NIL, LK.L_SMALLINT, LK.I_LCALL, LK.I_TCALL
+    LK.L_VOID, LK.L_ATOM, LK.L_NIL, LK.L_SMALLINT, LK.I_LCALL, LK.I_TCALL, LK.I_CUT
 )
 
 "Every instruction in clause `cl`'s code."
@@ -335,9 +335,11 @@ end
 
 """
 A random program, layered so every query terminates, suffixed `_i`: facts, fixed rules that cover
-the last-call forms, and random rules over them; and a query for every predicate.
+the last-call forms and the cut's paths, and random rules over them; and a query for every
+predicate. Where a random body gets a `!` is drawn from `crng` (V6a), so the rest of each program
+is what V4b's corpus drew.
 """
-function _rprogram(rng, i::Int)
+function _rprogram(rng, i::Int, crng)
     p(n) = "$(n)_$i"
     clauses = Tuple{_R, Union{Nothing, _R}}[]
     goals = _R[]
@@ -366,7 +368,21 @@ function _rprogram(rng, i::Int)
         # a variable FIRST seen inside a body compound (B_ARGFIRSTVAR) and read back from its slot
         # by a later call (B_VAR*), routed into the answer — invisible otherwise (MR12)
         (_rf(p("ef"), _rf(:f, _rs(:a))), nothing), (_rf(p("eq"), X, X), nothing),
-        (_rf(p("afv"), Y), _rconj(_rf(p("ef"), _rf(:f, T)), _rf(p("eq"), T, Y)))
+        (_rf(p("afv"), Y), _rconj(_rf(p("ef"), _rf(:f, T)), _rf(p("eq"), T, Y))),
+        # the cut's paths (V6a): after a non-deterministic call, mid-body, first, with nothing to
+        # cut, the clause's own clause choice point, callee frames that hold choice points, and a
+        # cut in a clause shallow backtracking moved to
+        (_rf(p("cnd"), X, Y), _rconj(_rf(p("e1"), X, Y), _rs("!"))),
+        (_rf(p("cmid"), X), _rconj(_rf(p("e1"), X, Y), _rs("!"), _rf(p("e2"), Y))),
+        (_rf(p("cfirst"), X), _rconj(_rs("!"), _rf(p("e2"), X))),
+        (_rf(p("cfirst"), _rs(:z)), nothing),
+        (_rf(p("cdet"), X), _rconj(_rf(p("e3"), X, _rs(:a)), _rs("!"))),
+        (_rf(p("cown"), X), _rconj(_rf(p("e2"), X), _rs("!"))),
+        (_rf(p("cown"), _rs(:b)), nothing),
+        (_rf(p("cdeep"), X), _rconj(_rf(p("nd"), X), _rs("!"))),
+        (_rf(p("clast"), X), _rf(p("e2"), X)),
+        (_rf(p("clast"), X), _rconj(_rs("!"), _rf(p("e1"), X, _rv(24)))),
+        (_rf(p("clast"), _rs(:c)), nothing)
     ]
     append!(clauses, fixed)
     callable = [(p("e1"), 2), (p("e2"), 1), (p("e3"), 2)]
@@ -397,12 +413,16 @@ function _rprogram(rng, i::Int)
                 push!(body, _rf(f, (_rarg(rng, g, 0) for _ in 1:n)...))
             end
         end
+        if rand(crng) < 0.35                                       # a cut somewhere in the body
+            insert!(body, rand(crng, 1:(length(body) + 1)), _rs("!"))
+        end
         push!(clauses, (head, _rconj(body...)))
     end
     for (f, n) in
         (callable..., (p("lblk"), 2), (p("bld"), 2), (p("nd"), 1), (p("four"), 4),
         (p("afv"), 1),
-        (p("r1"), 3), (p("r2"), 3))
+        (p("r1"), 3), (p("r2"), 3), (p("cnd"), 2), (p("cmid"), 1), (p("cfirst"), 1),
+        (p("cdet"), 1), (p("cown"), 1), (p("cdeep"), 1), (p("clast"), 1))
         push!(goals, _rf(f, (_rv(40 + k) for k in 1:n)...))
     end
     push!(goals, _rs(p("top")))
@@ -413,10 +433,11 @@ end
 
 @testset "rules: every answer and its determinism are swipl's (random programs)" begin
     rng = Xoshiro(20261005)
+    crng = Xoshiro(20261006)                                        # where the cuts go (V6a)
     clauses = Tuple{_R, Union{Nothing, _R}}[]
     goals = _R[]
     for i in 1:12
-        c, g = _rprogram(rng, i)
+        c, g = _rprogram(rng, i, crng)
         append!(clauses, c)
         append!(goals, g)
     end
@@ -580,6 +601,73 @@ const _R_POS = [(:c1, 20, :choice), (:mq6a, 20, :choice), (:mq6b, 20, :choice),
         answers = _rcall(db2, goal; at=(qid, k) -> push!(got, tref(db2.ld, qid)))
         @test got == first.(want)
         @test last.(answers) == last.(want)
+    end
+end
+
+# ── where the next frame lands after a cut (V6a) ────────────────────────────────────────────────
+# `I_CUT` lowers `lTop` to the clause's variables (vmi:2591), so a frame pushed after the cut lands
+# there, whatever the cut discarded: a callee's choice point (`ccut`), the clause's own clause choice
+# point (`kcut`), a callee frame holding choice points (`cdeep`). `qn/1` keeps its frame (its second
+# clause is a choice point); the distance is its frame from the clause's, read as MQ6 reads it.
+# swipl's distances, probed (scratchpad v6a_cut/cutpos.pl, stable over runs): with the cut 10 = the
+# frame header (8) + the two variables; without it 27 and 19.
+function _rcut_pos_clauses()
+    F0, F1 = _rv(1), _rv(2)
+    pcf(v) = _rf("prolog_current_frame", v)
+    return [
+        (_rs("z"), nothing), (_rs("nd2"), nothing), (_rs("nd2"), nothing),
+        (_rs("ndf"), _rconj(_rs("nd2"), _rs("nd2"))),
+        (_rf("qn", F1), _rconj(pcf(F1), _rs("z"))), (_rf("qn", _rv(20)), nothing),
+        (
+            _rf("ccut", F0, F1),
+            _rconj(pcf(F0), _rs("nd2"), _rs("!"), _rf("qn", F1), _rs("z"))
+        ),
+        (_rf("cnocut", F0, F1), _rconj(pcf(F0), _rs("nd2"), _rf("qn", F1), _rs("z"))),
+        (_rf("kcut", F0, F1), _rconj(pcf(F0), _rs("!"), _rf("qn", F1), _rs("z"))),
+        (_rf("kcut", _rv(20), _rv(21)), nothing),
+        (_rf("knocut", F0, F1), _rconj(pcf(F0), _rf("qn", F1), _rs("z"))),
+        (_rf("knocut", _rv(20), _rv(21)), nothing),
+        (
+            _rf("cdeep", F0, F1),
+            _rconj(pcf(F0), _rs("ndf"), _rs("!"), _rf("qn", F1), _rs("z"))
+        )
+    ]
+end
+const _R_CUTPOS = [(:ccut, 10), (:cnocut, 27), (:kcut, 10), (:knocut, 19), (:cdeep, 10)]
+
+@testset "after a cut the next frame lands at the clause's variables (I_CUT), as in swipl" begin
+    clauses = _rcut_pos_clauses()
+    db = _rdb(clauses)
+    _radd!(db, _rf("prolog_current_frame", _rv(1)))                # the stand-in (V5c: the real one)
+    ld = db.ld
+    ours = Int[]
+    live = Bool[]
+    for (n, _) in _R_CUTPOS
+        answers = _rcall(
+            db,
+            _rf(n, _rv(90), _rv(91));
+            at=function (qid, k)
+                push!(live, _rpools_live(ld))
+                k == 1 || return nothing
+                q = ld.queries[LK.QueryFromQid(ld, qid)]
+                push!(
+                    ours, ld.frames[ld.choices[ld.BFR].frame].base - ld.frames[q.frame].base
+                )
+            end
+        )
+        @test !isempty(answers)
+    end
+    @test ours == last.(_R_CUTPOS)
+    @test !isempty(live) && all(live)
+    if _R_SWIPL
+        main =
+            "main :- " *
+            join(
+                ("$n(A$n, B$n), D$n is B$n - A$n, writeln(D$n)" for (n, _) in _R_CUTPOS),
+                ", "
+            ) *
+            "."
+        @test parse.(Int, _rswipl(clauses, (); main_text=main)) == last.(_R_CUTPOS)
     end
 end
 

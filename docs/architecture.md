@@ -221,7 +221,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
-| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`) | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
@@ -1120,6 +1120,44 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V6a — the cut: BUILT (2026-10-06)** (port_inventory row V6, its split; src/pl-wam.jl,
+src/pl-vmi.jl). The first step of V6, from the two V6 research memos (scratchpad
+`V6_memo_cut.md`, `V6_memo_arith.md`). Without `I_CUT`, `derive` gives WRONG answers, not merely
+extra choice points: clause 9's cut is what removes clause 10, so `d(x, x, D)` would answer
+`D = 1` and then `D = 0`.
+* **Ported:** `I_CUT` (pl-vmi.c), as is:
+  * clear `FR_SSU_DET`;
+  * nothing to do when the newest choice point is not newer than the frame;
+  * otherwise `discardChoicesAfter(FR, FINISH_CUT)` between `SAVE_REGISTERS` and `LOAD_REGISTERS`,
+    then `lTop` lowered to the clause's variables (`argFrameP(FR, CL->variables)`), `ARGP` at
+    `lTop`, and `THROW_EXCEPTION` if one is pending.
+
+  The lowering drops the records of the discarded choice points and frames (decision 3). NOT PORTED:
+  the debugger branch. `discardChoicesAfter` was already ported (for `PL_cut_query`/`PL_close_query`
+  and the throw path); the cut is the first caller that discards callee frames holding choice
+  points.
+* **Gate — test/core_lang/test_rules_swipl.jl** (three term types):
+  * where the next frame lands after a cut, pinned to swipl and live (scratchpad `v6a_cut/cutpos.pl`,
+    stable over runs). It lands 10 positions above the clause's frame (the header plus two
+    variables) when the cut discards a callee's choice point, the clause's own clause choice point,
+    or a callee frame that holds choice points. Without the cut it lands at 27 and 19. It is read as
+    MQ6 reads positions, with a stand-in `prolog_current_frame/1` until V5c.
+  * the random-rule differential with `!`: a cut placed in 35% of the random bodies, by a separate
+    generator so the rest of V4b's corpus is unchanged. Fixed clauses cover each path: a cut after
+    a non-deterministic call, mid-body, first, with nothing to cut, the clause's own clause choice
+    point, callee frames holding choice points, and a clause that shallow backtracking moved to.
+    240 queries, 444 answers, every answer and its determinism identical to swipl; `I_CUT` joins the
+    family the corpus must compile.
+* **Static:** `I_CUT` joins the call path whose labels must not allocate (static_analysis_body.jl),
+  with `discardChoicesAfter` and the register save/load among its checked callees.
+* **Mutation-proved — 6 of 10 caught at verdict level; the other 4 EQUIVALENT, each argued from the code and one measured** (baseline 21 s after a restart, limit 360 s). Caught: no `lTop` lowering, the age test inverted, `discardChoicesAfter` keeping the last choice point it reaches, `ARGP` not reset, cutting from the parent frame, the cut doing nothing. Equivalent:
+  * **the early return removed.** When no choice point is newer than the frame, `discardChoicesAfter` returns at once, and `lTop` and `ARGP` already sit where the cut puts them. MEASURED by a temporary probe over the gate: 17 early returns, all 17 with `lTop` and `ARGP` in place; 82 discarding cuts.
+  * **`discardFrame` skipped.** It only clears the frame record's `clause`. The lowering right after drops the record, and clause GC's frame scan reads live records only.
+  * **a pending exception ignored.** `exception_term` is set only by `PL_raise_exception`, and every raising path leaves for `b_throw` or clears it.
+  * **`FR_SSU_DET` not cleared.** Nothing sets it: SSU is not ported.
+* **Not here:** the type tests and the inline-vs-call decision (V6b); arithmetic and the `derive`
+  milestone (V6c); `I_CUTCHP` and the local cuts of the control constructs (V9).
 
 **V5b — errors: the undefined procedure and the exception classes: BUILT (2026-10-06)**
 (port_inventory row V5, its split; src/pl-modul.jl NEW; src/pl-wam.jl, src/pl-error.jl,
