@@ -244,6 +244,8 @@ function _manifest_index(T)
         (LK._type_test, Tuple{Int, T}, true),
         (LK.compileTypeTest, Tuple{LD, CInfo, T, Int}, false),
         (LK.compileBodyTypeTest, Tuple{LD, LK.SubClauseNames, UInt64, CInfo, T}, false),
+        # V6c2 — arithmetic in a body (src/pl-comp.jl, pl-funct.jl)
+        (LK.compileSimpleAddition, Tuple{LD, LK.SubClauseNames, T, CInfo}, false),
         (LK.canBind, Tuple{T}, true), (LK.isTextAtom, Tuple{T}, true),
         (LK.isRational, Tuple{T}, true), (LK.isFloat, Tuple{T}, true),
         (LK.isString, Tuple{T}, true), (LK.isTerm, Tuple{T}, true),
@@ -257,6 +259,7 @@ function _manifest_index(T)
         (LK.registerControlFunctors, Tuple{Type{T}}, false),
         (LK._subclause_names, Tuple{Type{T}}, false),
         (LK._name_key, Tuple{Type{T}, String}, false),
+        (LK._arith_functors, Tuple{Type{T}}, false),
         (LK._has_functor, Tuple{T, UInt64, Int}, true),
         (LK._is_control, Tuple{T, LK.ControlFunctors}, true),
         # src/pl-index.jl

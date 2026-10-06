@@ -1186,6 +1186,44 @@ function compileBodyTypeTest(
     return BOOLEX_FALSE
 end
 
+# PORT: pl-comp.c compileSimpleAddition
+# DIVERGES: its one emission, `A_ADD_FC`, is V8's: where upstream emits it, the kernel refuses
+# (`NotPortedError`), never compiling another instruction. The clause's terms are resolved (no
+# bindings at compile time), so `deRef` has nothing to do.
+"""
+`NewVar is Var +/- SmallInt` (pl-comp.c): `A_ADD_FC` (refused until V8), the sum's arguments
+swapped for `+`; false for any other shape, which then compiles as a call.
+"""
+function compileSimpleAddition(
+    ld::PL_local_data{T}, names::SubClauseNames, sc::T, ci::compileInfo{T}
+)::Bool where {T}
+    a = child(sc, 2)                                           # argTermP(*sc, 0)
+    rvar = isFirstVarP(ci, a)
+    if rvar >= 0                                               # NewVar is ?
+        e = child(sc, 3)                                       # a++; deRef(a)
+        neg = false
+        if _has_functor(e, names.atom_plus, 2) ||
+            (neg = _has_functor(e, names.atom_minus, 2))
+            a1, a2 = child(e, 2), child(e, 3)
+            swapped = 0
+            while swapped < 2
+                swapped += 1
+                vi = kind(a1) === VAR ? isIndexedVarTerm(ci, a1) : -1
+                if vi >= 0 && !isFirstVar(ci.used_var, vi) &&
+                    number_kind(a2) === NUM_INTEGER && integer_is_int64(a2) &&
+                    is_portable_smallint(ld, int64_value(a2))
+                    # isFirstVarSet(ci->used_var, rvar);
+                    # Output_3(ci, A_ADD_FC, VAROFFSET(rvar), VAROFFSET(vi), (code)i)
+                    throw(NotPortedError{T}(sc, "A_ADD_FC (compileSimpleAddition)", "V8"))
+                end
+                neg && break                                   # do not swap X is 10 - Y
+                a1, a2 = a2, a1
+            end
+        end
+    end
+    return false
+end
+
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
 # 2026-10-05: the cut's COMPILE side with the body compiler, its execution V6a). The meta-call (a
@@ -1221,6 +1259,15 @@ function compileSubClause!(
         # !isTextAtom(fdef->name) && fdef->name != ATOM_nil
         is_reserved_symbol(h) && !is_nil(h) && return NOT_CALLABLE
         name = sym_key(h)
+        # ison(fdef, ARITH_F) && !ci->islocal (c:3474-3482; no local compilation)
+        if (name, ar) in names.arith_functors
+            if name == names.atom_is && compileSimpleAddition(ld, names, arg, ci)
+                return BOOLEX_TRUE
+            end
+            # O_COMPILE_ARITH: under `optimise` upstream compiles it inline (`compileArith`): refused
+            ld.prolog_flag_optimise &&
+                throw(NotPortedError{T}(arg, "compileArith (optimise)", "the user's Q-AR3"))
+        end
         (name, ar) in names.inline_functors &&
             throw(
                 NotPortedError{T}(

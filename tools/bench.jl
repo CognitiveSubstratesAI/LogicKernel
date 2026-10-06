@@ -185,6 +185,124 @@ function _vm_nreverse()::Int
 end
 @assert _vm_nreverse() == LogicKernel.PL_S_TRUE
 
+# derive (V6c2): bench/programs/derive.pl's clauses in a database of their own (derive.pl and
+# nreverse.pl both define `top/0`), run through the query API as `top` — ops8, log10, divide10;
+# swipl runs the same file's three goals (its `top` line left out of the shared program text)
+const DR_GD = PL_global_data{BT}()
+const DR_LD = PL_local_data{BT}()
+const DR_USER = MODULE_user(DR_GD)
+function _dr_add!(head::BT, body::Union{Nothing, BT})
+    name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
+    pr = lookupProcedure(name, n, DR_USER)
+    assertDefinition!(
+        DR_GD, pr.definition, compileClause(DR_GD, DR_LD, head, body, pr, DR_USER), CL_END
+    )
+    return pr
+end
+let (U, V, X, DU, DV, N, N1) = (_v() for _ in 1:7)
+    x = _a(:x)
+    pw(a, b) = _nrf(:^, a, b)
+    d(a, b, c) = _nrf(:d, a, b, c)
+    conj(gs...) = foldr((g, r) -> _nrf(Symbol(","), g, r), gs)
+    nest(f, t, n) = n == 0 ? t : nest(f, f(t), n - 1)
+    cut = _a(Symbol("!"))
+    _dr_add!(_a(:top), conj(_a(:ops8), _a(:log10), _a(:divide10)))
+    _dr_add!(
+        _a(:ops8),
+        d(
+            _nrf(:*, _nrf(:+, x, gnd_term(BT, 1)),
+                _nrf(:*, _nrf(:+, pw(x, gnd_term(BT, 2)), gnd_term(BT, 2)),
+                    _nrf(:+, pw(x, gnd_term(BT, 3)), gnd_term(BT, 3)))), x, _v())
+    )
+    _dr_add!(_a(:log10), d(nest(t -> _nrf(:log, t), x, 10), x, _v()))
+    _dr_add!(_a(:divide10), d(nest(t -> _nrf(:/, t, x), x, 9), x, _v()))
+    _dr_add!(d(_nrf(:+, U, V), X, _nrf(:+, DU, DV)), conj(cut, d(U, X, DU), d(V, X, DV)))
+    _dr_add!(d(_nrf(:-, U, V), X, _nrf(:-, DU, DV)), conj(cut, d(U, X, DU), d(V, X, DV)))
+    _dr_add!(d(_nrf(:*, U, V), X, _nrf(:+, _nrf(:*, DU, V), _nrf(:*, U, DV))),
+        conj(cut, d(U, X, DU), d(V, X, DV)))
+    _dr_add!(
+        d(_nrf(:/, U, V), X,
+            _nrf(:/, _nrf(:-, _nrf(:*, DU, V), _nrf(:*, U, DV)), pw(V, gnd_term(BT, 2)))),
+        conj(cut, d(U, X, DU), d(V, X, DV)))
+    _dr_add!(d(pw(U, N), X, _nrf(:*, _nrf(:*, DU, N), pw(U, N1))),
+        conj(
+            cut, _nrf(:integer, N), _nrf(:is, N1, _nrf(:-, N, gnd_term(BT, 1))), d(U, X, DU)
+        ))
+    _dr_add!(d(_nrf(:-, U), X, _nrf(:-, DU)), conj(cut, d(U, X, DU)))
+    _dr_add!(d(_nrf(:exp, U), X, _nrf(:*, _nrf(:exp, U), DU)), conj(cut, d(U, X, DU)))
+    _dr_add!(d(_nrf(:log, U), X, _nrf(:/, DU, U)), conj(cut, d(U, X, DU)))
+    _dr_add!(d(X, X, gnd_term(BT, 1)), cut)
+    _dr_add!(d(_v(), _v(), gnd_term(BT, 0)), nothing)
+end
+const DR_PROC = lookupProcedure(_a(:top), 0, DR_USER)
+function _vm_derive()::Int
+    fid = LogicKernel.PL_open_foreign_frame(DR_LD)
+    qid = LogicKernel.PL_open_query(
+        DR_GD, DR_LD, nothing, LogicKernel.PL_Q_NORMAL, DR_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(DR_GD, DR_LD, qid)
+    LogicKernel.PL_close_query(DR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(DR_LD, fid)
+    return rc
+end
+@assert _vm_derive() == LogicKernel.PL_S_TRUE
+const DERIVE_PL = read(joinpath(@__DIR__, "..", "bench", "programs", "derive.pl"), String)
+@assert count("top:-ops8,log10,divide10.", DERIVE_PL) == 1      # the line left out, exactly once
+const DERIVE_PROLOG = replace(DERIVE_PL, "top:-ops8,log10,divide10." => "")
+
+# qsort (V7): bench/programs/qsort.pl's clauses in a database of their own (its `top/0` too), run
+# as `qsort`; swipl runs the same file's `qsort`
+const QS_GD = PL_global_data{BT}()
+const QS_LD = PL_local_data{BT}()
+const QS_USER = MODULE_user(QS_GD)
+function _qs_add!(head::BT, body::Union{Nothing, BT})
+    name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
+    pr = lookupProcedure(name, n, QS_USER)
+    assertDefinition!(
+        QS_GD, pr.definition, compileClause(QS_GD, QS_LD, head, body, pr, QS_USER), CL_END
+    )
+    return pr
+end
+let (X, L, R, R0, L1, L2, R1, Y) = (_v() for _ in 1:8)
+    conj(gs...) = foldr((g, r) -> _nrf(Symbol(","), g, r), gs)
+    nums = [27, 74, 17, 33, 94, 18, 46, 83, 65, 2, 32, 53, 28, 85, 99, 47, 28, 82, 6, 11,
+        55, 29,
+        39, 81, 90, 37, 10, 0, 66, 51, 7, 21, 85, 27, 31, 63, 75, 4, 95, 99, 11, 28, 61, 74,
+        18, 92,
+        40, 53, 59, 8]
+    _qs_add!(_a(:qsort),
+        _nrf(
+            :qsort,
+            foldr(_nrcons, [gnd_term(BT, i) for i in nums]; init=_nrnil()),
+            _v(),
+            _nrnil()
+        ))
+    _qs_add!(_nrf(:qsort, _nrcons(X, L), R, R0),
+        conj(_nrf(:partition, L, X, L1, L2), _nrf(:qsort, L2, R1, R0),
+            _nrf(:qsort, L1, R, _nrcons(X, R1))))
+    _qs_add!(_nrf(:qsort, _nrnil(), R, R), nothing)
+    _qs_add!(_nrf(:partition, _nrcons(X, L), Y, _nrcons(X, L1), L2),
+        conj(_nrf(Symbol("=<"), X, Y), _a(Symbol("!")), _nrf(:partition, L, Y, L1, L2)))
+    _qs_add!(_nrf(:partition, _nrcons(X, L), Y, L1, _nrcons(X, L2)),
+        _nrf(:partition, L, Y, L1, L2))
+    _qs_add!(_nrf(:partition, _nrnil(), _v(), _nrnil(), _nrnil()), nothing)
+end
+const QS_PROC = lookupProcedure(_a(:qsort), 0, QS_USER)
+function _vm_qsort()::Int
+    fid = LogicKernel.PL_open_foreign_frame(QS_LD)
+    qid = LogicKernel.PL_open_query(
+        QS_GD, QS_LD, nothing, LogicKernel.PL_Q_NORMAL, QS_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(QS_GD, QS_LD, qid)
+    LogicKernel.PL_close_query(QS_LD, qid)
+    LogicKernel.PL_close_foreign_frame(QS_LD, fid)
+    return rc
+end
+@assert _vm_qsort() == LogicKernel.PL_S_TRUE
+const QSORT_PL = read(joinpath(@__DIR__, "..", "bench", "programs", "qsort.pl"), String)
+@assert count("top:-qsort.", QSORT_PL) == 1                 # the line left out, exactly once
+const QSORT_PROLOG = replace(QSORT_PL, "top:-qsort." => "")
+
 # built-in calls (V5a2): a 1000-element list walk calling `compare/3` from a clause body — `I_CALL`
 # into a foreign predicate and back, per element; swipl runs the same clauses (`BW_PROLOG`), the list
 # a literal on both sides
@@ -224,7 +342,9 @@ fixtures(G1, G2, V1, V2) :-
     tree($DEPTH, a, G1), tree($DEPTH, a, G2), tree($DEPTH, _, V1), tree($DEPTH, _, V2),
     forall(between(1, 1000, I), assertz(cp(I, a))).
 :- dynamic cp/2.
-""" * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) * BW_PROLOG
+""" * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) *
+    BW_PROLOG *
+    DERIVE_PROLOG * QSORT_PROLOG
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
 const CASES = [
@@ -269,6 +389,10 @@ const CASES = [
     # rules (V4b): nreverse of 30, 496 calls with last-call reuse, open to close
     ("nreverse", _vm_nreverse, "nreverse"),
     ("compare/3 ×1000, body", _vm_bw, "bwtop"),
+    # derive (V6c2): the first program with cuts, type tests and is/2 from a body
+    ("derive", _vm_derive, "ops8, log10, divide10"),
+    # qsort (V7): 50 numbers, `=</2` and a cut per partition step
+    ("qsort", _vm_qsort, "qsort"),
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs

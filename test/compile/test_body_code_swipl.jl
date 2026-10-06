@@ -317,6 +317,49 @@ function _bc_qsort()
         (_bf("partition", mk_nil(_B), _bv(10), mk_nil(_B), mk_nil(_B)), nothing, 3)
     ]
 end
+"derive.pl's clauses as terms, in file order (bench/programs/derive.pl), each with its clause index."
+function _bc_derive()
+    U, V, X, DU, DV, N, N1 = (_bv(k) for k in 1:7)
+    x = _bs("x")
+    pw(a, b) = _bf("^", a, b)
+    d(a, b, c) = _bf("d", a, b, c)
+    nest(f, t, n) = n == 0 ? t : nest(f, f(t), n - 1)
+    cut = _bs("!")
+    return [
+        (_bs("top"), _bconj(_bs("ops8"), _bs("log10"), _bs("divide10")), 1),
+        (_bs("ops8"),
+            d(
+                _bf("*", _bf("+", x, _bg(1)),
+                    _bf(
+                        "*",
+                        _bf("+", pw(x, _bg(2)), _bg(2)),
+                        _bf("+", pw(x, _bg(3)), _bg(3))
+                    )),
+                x, _bv(20)), 1),
+        (_bs("log10"), d(nest(t -> _bf("log", t), x, 10), x, _bv(20)), 1),
+        (_bs("divide10"), d(nest(t -> _bf("/", t, x), x, 9), x, _bv(20)), 1),
+        (d(_bf("+", U, V), X, _bf("+", DU, DV)), _bconj(cut, d(U, X, DU), d(V, X, DV)), 1),
+        (d(_bf("-", U, V), X, _bf("-", DU, DV)), _bconj(cut, d(U, X, DU), d(V, X, DV)), 2),
+        (d(_bf("*", U, V), X, _bf("+", _bf("*", DU, V), _bf("*", U, DV))),
+            _bconj(cut, d(U, X, DU), d(V, X, DV)), 3),
+        (
+            d(
+                _bf("/", U, V),
+                X,
+                _bf("/", _bf("-", _bf("*", DU, V), _bf("*", U, DV)), pw(V, _bg(2)))
+            ),
+            _bconj(cut, d(U, X, DU), d(V, X, DV)), 4),
+        (d(pw(U, N), X, _bf("*", _bf("*", DU, N), pw(U, N1))),
+            _bconj(cut, _bf("integer", N), _bf("is", N1, _bf("-", N, _bg(1))), d(U, X, DU)),
+            5),
+        (d(_bf("-", U), X, _bf("-", DU)), _bconj(cut, d(U, X, DU)), 6),
+        (d(_bf("exp", U), X, _bf("*", _bf("exp", U), DU)), _bconj(cut, d(U, X, DU)), 7),
+        (d(_bf("log", U), X, _bf("/", DU, U)), _bconj(cut, d(U, X, DU)), 8),
+        (d(X, X, _bg(1)), cut, 9),
+        (d(_bv(21), _bv(22), _bg(0)), nothing, 10)
+    ]
+end
+
 "qsort's partition/4 clause 1, `X =< Y, !, partition(L, Y, L1, L2)` — its `!` compiles to I_CUT."
 function _bc_qsort_cut()
     X, L, Y, L1, L2 = (_bv(k) for k in 1:5)
@@ -481,7 +524,8 @@ _bc_names(code::Vector{String}) =
 
         @testset "nreverse and qsort, as swipl consults them" begin
             for (file, clauses) in
-                (("nreverse.pl", _bc_nreverse()), ("qsort.pl", _bc_qsort()))
+                (("nreverse.pl", _bc_nreverse()), ("qsort.pl", _bc_qsort()),
+                ("derive.pl", _bc_derive()))
                 cases = ["bc_prog_show(($(_bc_text(h, b))), $i)" for (h, b, i) in clauses]
                 theirs = _bc_swipl(
                     cases; prelude="consult('$(joinpath(_BC_PROGRAMS, file))')"
@@ -596,6 +640,88 @@ end
     )
 end
 
+# ── is/2 and the comparisons (V6c2): upstream's decision, cell by cell ──────────────────────────
+# compileSubClause's ARITH_F branch (c:3474-3482): `is/2` tries compileSimpleAddition (c:3641-3688),
+# whose one emission, `A_ADD_FC`, is V8's — refused there; every other shape, and every comparison,
+# compiles as a CALL. The verdict is tied to swipl: compiled ⇒ the code is swipl's; refused ⇒
+# swipl's code has `a_add_fc` (research probes v6a/p5, p11).
+const _BC_ARITH_CELLS = [
+    # (shape, head, body, refused?)
+    (
+        "result in the head",
+        _bf("ia1", _bv(1), _bv(2)),
+        _bf("is", _bv(2), _bf("-", _bv(1), _bg(1))),
+        false
+    ),
+    ("NewVar is Var - 1", _bf("ia2", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("-", _bv(1), _bg(1))), _bf("q", _bv(2))), true),
+    ("NewVar is Var + 1", _bf("ia3", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bv(1), _bg(1))), _bf("q", _bv(2))), true),
+    ("NewVar is 1 + Var (swapped)", _bf("ia4", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bg(1), _bv(1))), _bf("q", _bv(2))), true),
+    ("NewVar is 1 - Var (no swap for -)", _bf("ia5", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("-", _bg(1), _bv(1))), _bf("q", _bv(2))), false),
+    ("not a portable constant", _bf("ia6", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("-", _bv(1), _bg(2147483648))), _bf("q", _bv(2))),
+        false),
+    ("the variable a first occurrence", _bs("ia7"),
+        _bconj(_bf("is", _bv(2), _bf("+", _bv(1), _bg(1))), _bf("q", _bv(2), _bv(1))), false
+    ),
+    ("a float constant", _bf("ia8", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bv(1), _bg(1.0))), _bf("q", _bv(2))), false),
+    ("another function", _bf("ia9", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("*", _bv(1), _bg(2))), _bf("q", _bv(2))), false),
+    (
+        "NewVar a void",
+        _bf("ia10", _bv(1)),
+        _bf("is", _bv(2), _bf("+", _bv(1), _bg(1))),
+        false
+    ),
+    ("chained", _bf("ia11", _bv(1)),
+        _bconj(_bf("is", _bv(2), _bf("+", _bv(1), _bg(1))),
+            _bf("is", _bv(3), _bf("+", _bv(2), _bg(1))),
+            _bf("q", _bv(3))), true),
+    ("a comparison", _bf("ia12", _bv(1), _bv(2)), _bf("<", _bv(1), _bv(2)), false),
+    ("=:=", _bf("ia13", _bv(1)), _bf("=:=", _bv(1), _bg(3)), false)
+]
+
+@testset "is/2 and the comparisons compile as upstream decides (V6c2)" begin
+    ours = Union{Nothing, Vector{String}}[]
+    for (shape, h, b, refused) in _BC_ARITH_CELLS
+        got = try
+            _bc_kernel(_bclause(h, b))
+        catch e
+            e isa LK.NotPortedError || rethrow()
+            nothing
+        end
+        push!(ours, got)
+        @test (got === nothing) == refused
+    end
+    # under `optimise` upstream compiles arithmetic inline (compileArith, memo Q-AR3): refused
+    ld = LK.PL_local_data{_B}()
+    ld.prolog_flag_optimise = true
+    @test_throws LK.NotPortedError _bclause(
+        _bf("po_ar", _bv(1)), _bf("<", _bv(1), _bg(3)); ld=ld
+    )
+    if _BC_SWIPL_BIN !== nothing
+        theirs = _bc_swipl([
+            "bc_case_show(($(_bc_text(h, b))))" for (_, h, b, _) in _BC_ARITH_CELLS
+        ])
+        @test length(theirs) == length(_BC_ARITH_CELLS)
+        for (k, (shape, h, b, refused)) in enumerate(_BC_ARITH_CELLS)
+            k <= length(theirs) || break
+            if refused
+                @test any(startswith("a_add_fc"), theirs[k])            # where V8's instruction is
+            else
+                ours[k] == theirs[k] ||
+                    println(stderr, "  ", shape, "\n    ours  ", ours[k],
+                        "\n    swipl ", theirs[k])
+                @test ours[k] == theirs[k]
+            end
+        end
+    end
+end
+
 @testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
     commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
     @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
@@ -613,7 +739,7 @@ end
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
         _bf("=", _bv(1), _bs("a")), _bf("==", _bv(1), _bs("a")),
-        _bf("arg", _bg(1), _bv(1), _bv(2)), _bf("is", _bv(1), _bf("+", _bv(2), _bg(1))),
+        _bf("arg", _bg(1), _bv(1), _bv(2)),
         _bconj(_bs("q"), _bs("true")), _bs("fail"),
         _bf("call", _bv(1)), _bf("call", _bv(1), _bs("a"))
     )

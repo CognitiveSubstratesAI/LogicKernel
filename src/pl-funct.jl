@@ -15,8 +15,8 @@
 # registers it once per process — and the compiler reaches it through the global data passed in.
 #
 # NOT PORTED: the functor table itself (`lookupFunctorDef`, `allocFunctorTable`, its rehashing; the
-# kernel has none, see `registerControlFunctors`), `registerBuiltinFunctors`, and
-# `registerArithFunctors` (`ARITH_F`, which comes with compiled arithmetic).
+# kernel has none, see `registerControlFunctors`) and `registerBuiltinFunctors`. `registerArithFunctors`
+# is a set of keys since V6c2 (`_arith_functors`).
 
 # ── the control functors (pl-funct.c) ──────────────────────────────────────────────────────────
 # From pl-funct.c registerControlFunctors: the set it flags `CONTROL_F`, as the kernel holds it.
@@ -92,6 +92,10 @@ struct SubClauseNames
     atom_var::UInt64                            # FUNCTOR_var1's name
     atom_nonvar::UInt64                         # FUNCTOR_nonvar1's name
     type_tests::NTuple{9, UInt64}               # type_tests[]'s names (pl-comp.c), in its order
+    arith_functors::Set{Tuple{UInt64, Int}}     # the functors flagged ARITH_F (registerArithFunctors)
+    atom_is::UInt64                             # FUNCTOR_is2's name
+    atom_plus::UInt64                           # FUNCTOR_plus2's name
+    atom_minus::UInt64                          # FUNCTOR_minus2's name
 end
 
 "The names compileSubClause treats specially, for term type `T` (see `SubClauseNames`)."
@@ -111,7 +115,7 @@ function _subclause_names(::Type{T})::SubClauseNames where {T}
     end
     functors = Set{Tuple{UInt64, Int}}()
     for (n, a) in (
-        ("is", 2), ("=", 2), ("==", 2), ("\\==", 2), ("\$call_continuation", 1),
+        ("=", 2), ("==", 2), ("\\==", 2), ("\$call_continuation", 1),
         ("\$shift", 1), ("\$shift_for_copy", 1), ("arg", 3)
     )
         push!(functors, (sym_key(mk_sym(T, Symbol(n))), a))
@@ -123,8 +127,20 @@ function _subclause_names(::Type{T})::SubClauseNames where {T}
             _name_key(T, "integer"), _name_key(T, "rational"), _name_key(T, "float"),
             _name_key(T, "number"), _name_key(T, "atomic"), _name_key(T, "atom"),
             _name_key(T, "string"), _name_key(T, "compound"), _name_key(T, "callable")
-        )
+        ),
+        _arith_functors(T), _name_key(T, "is"), _name_key(T, "+"), _name_key(T, "-")
     )
+end
+
+# PORT: pl-funct.c registerArithFunctors as _arith_functors
+# DIVERGES: the set of the flagged functors' `(name key, arity)` (no functor table, see above).
+"The functors pl-funct.c flags `ARITH_F`: `=:=`, `=\\=`, `<`, `>`, `=<`, `>=` and `is`, as keys."
+function _arith_functors(::Type{T})::Set{Tuple{UInt64, Int}} where {T}
+    s = Set{Tuple{UInt64, Int}}()
+    for n in ("=:=", "=\\=", "<", ">", "=<", ">=", "is")
+        push!(s, (_name_key(T, n), 2))
+    end
+    return s
 end
 
 "The key of the symbol named `n` in term type `T`."

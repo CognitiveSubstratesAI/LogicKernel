@@ -1160,6 +1160,45 @@ src/pl-funct.jl, src/pl-global.jl).
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
 
+**V7 — the `qsort` milestone: REACHED (2026-10-06)** (port_inventory row V7). As the row foresaw,
+nothing new was needed: `=</2` is V6c1's built-in, called from a body, and the cut after it is
+V6a's. **qsort's answer and its determinism are identical to swipl's** (test_rules_swipl.jl, three
+term types), and so is `partition/4` on its own. qsort's `partition/4` stays flat, as V4b's
+concatenate does: on 10^3, 10^4 and 10^5 elements it reaches one high-water mark, through both its
+clauses. The check can fail — without the last-call optimisation the mark grows. tools/bench.jl
+gains a `qsort` case. No code changed, so there were no mutants. The building blocks were proved in
+V6a (the cut) and V6c1 (`=</2`); the flatness test carries its own negative control.
+
+**V6c2 — arithmetic in a body, and the `derive` milestone: BUILT (2026-10-06)** (port_inventory row
+V6, its split; src/pl-comp.jl, pl-funct.jl). **MILESTONE: `derive` runs, and every answer and its
+determinism are identical to swipl's** (swipl consulting bench/programs/derive.pl). It is the first
+bench program with cuts, a type test and `is/2` in its bodies.
+* **Ported:**
+  * compileSubClause's ARITH_F branch (c:3474-3482), upstream's decision. `is/2` tries
+    `compileSimpleAddition` (c:3641-3688): `NewVar is Var +/- SmallInt`, with the arguments swapped
+    for `+`. Its one emission, `A_ADD_FC`, is V8's and is REFUSED (`NotPortedError`) wherever
+    upstream would emit it. Every other shape, and every comparison, compiles as a call of the
+    built-in. Under `optimise`, upstream compiles arithmetic inline (`compileArith`), which is
+    refused (the memo's Q-AR3).
+  * `registerArithFunctors` as a set of keys (no functor table); `is/2` leaves the refused set.
+* **Gates:**
+  * test/compile/test_body_code_swipl.jl:
+    * derive.pl's clauses, as swipl consults them, compiled to identical code;
+    * thirteen `is/2` and comparison cells, each verdict tied to swipl: compiled ⇒ identical code;
+      refused ⇒ swipl's code has `a_add_fc`. The cells cover the result in the head; `Var - 1`,
+      `Var + 1` and `1 + Var` (swapped); `1 - Var` (not swapped); a non-portable constant; the
+      variable a first occurrence; a float; another function; a void result; a chain; a comparison;
+      `=:=`;
+    * the refusal testset no longer lists `X is Y+1` with voids, which swipl compiles as a call.
+  * test/core_lang/test_rules_swipl.jl: **derive** (three term types). The three bench inputs, a
+    failing `d(x^a, x, D)` (the cut precedes `integer/1`), `d(x, x, D)`, `d(3, x, D)`, `ops8`,
+    `log10`, `divide10` and `top`. Every answer is identical to swipl's, written in functional
+    notation on both sides, and every call is deterministic, as in swipl.
+  * tools/bench.jl: a `derive` case — the kernel's `top`, swipl's `ops8, log10, divide10` from the
+    same file.
+* **Mutation-proved — 7 of 7 caught at verdict level** (baseline 35 s after a restart, limit 360 s): `compileSimpleAddition` never matching; swapping a difference too; taking any small integer (the portable test dropped); taking a first occurrence; taking a result in the head (caught by derive.pl's own code: its `N1 is N-1` would be refused); no ARITH_F branch; `optimise` not refusing compiled arithmetic.
+* **Not here:** `A_ADD_FC` (V8, poly_10); the other inline compilers' decisions (V6b2); qsort (V7).
+
 **V6c1 — arithmetic at run time: BUILT (2026-10-06)** (port_inventory row V6, its split; src/pl-gmp.jl
 and src/pl-arith.jl NEW; src/pl-error.jl, pl-incl.jl, pl-prims.jl, pl-global.jl, pl-ext.jl,
 default_term.jl). From the arithmetic memo (scratchpad `V6_memo_arith.md`). `is/2` and the six

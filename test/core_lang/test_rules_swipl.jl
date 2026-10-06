@@ -275,6 +275,152 @@ end
     end
 end
 
+# ── qsort (bench/programs/qsort.pl), V7 ─────────────────────────────────────────────────────────
+const _R_QSORT_NUMS = [27, 74, 17, 33, 94, 18, 46, 83, 65, 2, 32, 53, 28, 85, 99, 47, 28,
+    82, 6,
+    11, 55, 29, 39, 81, 90, 37, 10, 0, 66, 51, 7, 21, 85, 27, 31, 63, 75, 4, 95, 99, 11, 28,
+    61, 74,
+    18, 92, 40, 53, 59, 8]
+"qsort.pl's clauses as terms, in file order."
+function _rqsort_clauses()
+    X, L, R, R0, L1, L2, R1, Y = (_rv(k) for k in 1:8)
+    return [
+        (_rs("top"), _rs("qsort")),
+        (
+            _rs("qsort"),
+            _rf("qsort", _rlist((_rg(i) for i in _R_QSORT_NUMS)...), _rv(9), _rnil())
+        ),
+        (_rf("qsort", _rcons(X, L), R, R0),
+            _rconj(_rf("partition", L, X, L1, L2), _rf("qsort", L2, R1, R0),
+                _rf("qsort", L1, R, _rcons(X, R1)))),
+        (_rf("qsort", _rnil(), R, R), nothing),
+        (_rf("partition", _rcons(X, L), Y, _rcons(X, L1), L2),
+            _rconj(_rf("=<", X, Y), _rs("!"), _rf("partition", L, Y, L1, L2))),
+        (
+            _rf("partition", _rcons(X, L), Y, L1, _rcons(X, L2)),
+            _rf("partition", L, Y, L1, L2)
+        ),
+        (_rf("partition", _rnil(), _rv(10), _rnil(), _rnil()), nothing)
+    ]
+end
+
+# The milestone: qsort — `=</2` called from a body (V6c1's built-in), a cut after it (V6a) — its
+# answer and determinism identical to swipl's on the same clauses.
+@testset "qsort: the answer and its determinism are swipl's (the V7 milestone)" begin
+    clauses = _rqsort_clauses()
+    db = _rdb(clauses)
+    lst = _rlist((_rg(i) for i in _R_QSORT_NUMS)...)
+    goals = [_rf("qsort", lst, _rv(100), _rnil()), _rs("qsort"), _rs("top"),
+        _rf("partition", lst, _rg(50), _rv(101), _rv(102))]
+    ours = _rlines(db, goals)
+    @test ours[1] ==
+        "qsort([" * join(_R_QSORT_NUMS, ",") * "],[" *
+          join(sort(_R_QSORT_NUMS), ",") * "],[]) det"
+    @test ours[2:end] == ["end", "qsort det", "end", "top det", "end",
+        "partition([" * join(_R_QSORT_NUMS, ",") * "],50,[" *
+        join(filter(<=(50), _R_QSORT_NUMS), ",") * "],[" *
+        join(filter(>(50), _R_QSORT_NUMS), ",") * "]) det", "end"]
+    if _R_SWIPL
+        @test _rswipl(clauses, goals) == ours
+    end
+end
+
+# ── derive (bench/programs/derive.pl), V6c2 ─────────────────────────────────────────────────────
+"derive.pl's clauses as terms, in file order."
+function _rderive_clauses()
+    U, V, X, DU, DV, N, N1 = (_rv(k) for k in 1:7)
+    x = _rs(:x)
+    pw(a, b) = _rf("^", a, b)
+    d(a, b, c) = _rf("d", a, b, c)
+    nest(f, t, n) = n == 0 ? t : nest(f, f(t), n - 1)
+    cut = _rs("!")
+    return [
+        (_rs("top"), _rconj(_rs("ops8"), _rs("log10"), _rs("divide10"))),
+        (_rs("ops8"), d(_rderive_input(:ops8), x, _rv(20))),
+        (_rs("log10"), d(_rderive_input(:log10), x, _rv(20))),
+        (_rs("divide10"), d(_rderive_input(:divide10), x, _rv(20))),
+        (d(_rf("+", U, V), X, _rf("+", DU, DV)), _rconj(cut, d(U, X, DU), d(V, X, DV))),
+        (d(_rf("-", U, V), X, _rf("-", DU, DV)), _rconj(cut, d(U, X, DU), d(V, X, DV))),
+        (d(_rf("*", U, V), X, _rf("+", _rf("*", DU, V), _rf("*", U, DV))),
+            _rconj(cut, d(U, X, DU), d(V, X, DV))),
+        (
+            d(
+                _rf("/", U, V),
+                X,
+                _rf("/", _rf("-", _rf("*", DU, V), _rf("*", U, DV)), pw(V, _rg(2)))
+            ),
+            _rconj(cut, d(U, X, DU), d(V, X, DV))),
+        (d(pw(U, N), X, _rf("*", _rf("*", DU, N), pw(U, N1))),
+            _rconj(cut, _rf("integer", N), _rf("is", N1, _rf("-", N, _rg(1))), d(U, X, DU))
+        ),
+        (d(_rf("-", U), X, _rf("-", DU)), _rconj(cut, d(U, X, DU))),
+        (d(_rf("exp", U), X, _rf("*", _rf("exp", U), DU)), _rconj(cut, d(U, X, DU))),
+        (d(_rf("log", U), X, _rf("/", DU, U)), _rconj(cut, d(U, X, DU))),
+        (d(X, X, _rg(1)), cut),
+        (d(_rv(21), _rv(22), _rg(0)), nothing)
+    ]
+end
+
+"The input expression of derive's `ops8`, `log10` or `divide10`."
+function _rderive_input(which::Symbol)::_R
+    x = _rs(:x)
+    pw(a, b) = _rf("^", a, b)
+    nest(f, t, n) = n == 0 ? t : nest(f, f(t), n - 1)
+    which === :ops8 && return _rf("*", _rf("+", x, _rg(1)),
+        _rf("*", _rf("+", pw(x, _rg(2)), _rg(2)), _rf("+", pw(x, _rg(3)), _rg(3))))
+    which === :log10 && return nest(t -> _rf("log", t), x, 10)
+    return nest(t -> _rf("/", t, x), x, 9)
+end
+
+# The milestone: derive, its clauses by hand (R1 will load the file), against swipl CONSULTING
+# bench/programs/derive.pl. Answers in functional notation on both sides (swipl's
+# `write_term(…, [quoted(true), ignore_ops(true)])`), determinism by `call_cleanup/2`.
+@testset "derive: every answer and its determinism are swipl's (the V6 milestone)" begin
+    db = _rdb(_rderive_clauses())
+    goals = [
+        _rf("d", _rderive_input(:ops8), _rs(:x), _rv(100)),
+        _rf("d", _rderive_input(:log10), _rs(:x), _rv(100)),
+        _rf("d", _rderive_input(:divide10), _rs(:x), _rv(100)),
+        _rf("d", _rf("^", _rs(:x), _rs(:a)), _rs(:x), _rv(100)),          # fails: the cut precedes integer/1
+        _rf("d", _rs(:x), _rs(:x), _rv(100)), _rf("d", _rg(3), _rs(:x), _rv(100)),
+        _rs("ops8"), _rs("log10"), _rs("divide10"), _rs("top")
+    ]
+    ours = _rlines(db, goals)
+    @test count(==("end"), ours) == length(goals)
+    @test all(l -> l == "end" || endswith(l, " det"), ours)              # every call is deterministic
+    @test count(l -> startswith(l, "d("), ours) == 5                     # five d/3 answers, one fails
+    if _R_SWIPL
+        file = joinpath(@__DIR__, "..", "..", "bench", "programs", "derive.pl")
+        prog = IOBuffer()
+        println(prog, ":- style_check(-singleton).")
+        println(prog, ":- consult('", file, "').")
+        println(
+            prog,
+            "r(G) :- ( call_cleanup(G, Det = true), ( Det == true -> D = det ; D = nondet ),"
+        )
+        println(
+            prog,
+            "     write_term(G, [quoted(true), ignore_ops(true)]), write(' '), write(D), nl,"
+        )
+        println(prog, "     fail ; true ), write(end), nl.")
+        println(
+            prog,
+            ":- initialization((",
+            join(("r(" * _rsrc(g) * ")" for g in goals), ", "),
+            ", halt))."
+        )
+        theirs = mktempdir() do dir
+            f = joinpath(dir, "d.pl")
+            write(f, String(take!(prog)))
+            split(strip(read(pipeline(`swipl -q $f`; stdin=devnull), String)), '\n')
+        end
+        @test ours == theirs
+        ours == theirs ||
+            foreach(((o, t),) -> o == t || println(stderr, "  ours  ", o, "\n  swipl ", t),
+                zip(ours, theirs))
+    end
+end
+
 # ── the execution differential over random rule clauses ─────────────────────────────────────────
 # The body family V4b executes; the corpus must compile each of them (static coverage — every
 # predicate of every program is called).
@@ -812,6 +958,20 @@ end
     @test off[1] < off[2] < off[3] && off[1] > marks[10 ^ 3][1]
     # and the same answer either way
     @test _rlines(db, [catg(3)]) == ["concatenate([1,2,3],[x],[1,2,3,x]) det", "end"]
+end
+
+# V7: qsort's partition/4 — a clause choice point, `=</2`, a cut, then the last call — stays flat
+# too, through both its clauses (the elements below the pivot take the cut, the others the second
+# clause); without the last-call optimisation the mark grows.
+@testset "flatness: qsort's partition on 10^3..10^5 elements reaches one high-water mark (V7)" begin
+    db = _rdb(_rqsort_clauses())
+    part(n) = _rf("partition", _rints(1:n), _rg(n ÷ 2), _rv(1), _rv(2))
+    marks = Dict(n => _rhighwater(db, part(n))[1] for n in (10^3, 10^4, 10^5))
+    @test marks[10 ^ 3] == marks[10 ^ 4] == marks[10 ^ 5]
+    db.ld.prolog_flag_last_call = false
+    off = [_rhighwater(db, part(n))[1] for n in (20, 40, 80)]      # larger frames: fewer elements
+    db.ld.prolog_flag_last_call = true
+    @test off[1] < off[2] < off[3] && off[1] > marks[10 ^ 3]
 end
 
 @testset "10^4 open/next/close cycles of nreverse leave everything at its baseline" begin
