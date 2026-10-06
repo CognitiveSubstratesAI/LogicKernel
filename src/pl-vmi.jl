@@ -360,8 +360,10 @@ const I_CALLABLE = code(84)
 const A_ADD_FC = code(85)
 
 # PORT: pl-incl.h code_info
-# DIVERGES: `arguments` counts the kernel's operand WORDS (a literal is one, see above); `argtype`
-# is padded with 0 to four kinds (upstream's VM_ARGC).
+# DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
+# upstream's `H_MPZ`/`H_MPQ`/`H_STRING` and their `B_` forms declare `VM_DYNARGC`. `argtype` is four
+# kinds padded with 0, as upstream's (`VM_ARGC` is 4). No `code` field: the table is indexed by
+# opcode + 1.
 "What `codeTable` records of an instruction: its name, flags (`VIF_*`), operand words and operand kinds (pl-incl.h)."
 struct code_info
     name::Symbol                    # name of the code

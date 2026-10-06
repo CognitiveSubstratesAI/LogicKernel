@@ -2204,7 +2204,8 @@ function create_deep_indexes!(
 end
 
 # PORT: pl-index.c candidate_indexes
-# DIVERGES: returns (true, number of hints) where upstream writes the count through `nphints`.
+# DIVERGES: upstream's `nphints` is in and out — the most hints on entry, their count on exit; here
+# the most is the `max_hints` argument and the count is returned, (true, number of hints).
 """
 Find all candidate indexes of `clist`: the good single-argument ones, the list (deep) ones, and
 two-argument ones better than `MIN_SPEEDUP` times the arguments they combine, merged by speedup

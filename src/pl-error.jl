@@ -23,7 +23,9 @@
 # swipl's do (`unify_definition`), is the user's open question Q-A (V5c).
 # The formal and the context are BUILT (`mk_expr`) where upstream unifies them into fresh term
 # references (`PL_unify_term`), which cannot fail here. Raised with `PL_raise_exception`, never
-# thrown (`do_throw` is only for errors raised outside the VM).
+# thrown (upstream's `do_throw` is set for one code only, `ERR_CLOSED_STREAM`, not ported). Not set:
+# `LD->exception.processing` (it guards the spare stacks, not ported). Not ported: `ERR_TYPE`'s
+# `rewrite_callable` (no `callable` type error is raised yet).
 
 # PORT: pl-error.h PL_error_code
 # DIVERGES: the codes raised so far; upstream's enum has some forty.

@@ -12,7 +12,10 @@
 # DIVERGES (both structs): upstream has ONE GD per process and one LD per thread, reached through
 # globals. The kernel allows no module-level mutable state (tools/lint_globals.jl), so a GD and an
 # LD are VALUES the caller creates and passes wherever upstream reads `GD->` or `LD->` — one pair
-# per database, over one term type `T`. There are no threads: one LD per GD.
+# per database, over one term type `T`. There are no threads (upstream: one LD per thread or
+# engine): one LD per GD, by convention — nothing enforces it, and clause GC marks the frames of the
+# one LD it is given, where upstream marks every thread's (the divergence audit, docs/divergence_audit.md). One process-wide counter is
+# allowlisted (`_KERNEL_VAR_COUNTER`, tools/lint_globals.jl).
 
 # PORT: pl-global.h PL_global_data
 """

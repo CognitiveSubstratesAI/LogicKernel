@@ -19,7 +19,9 @@
 # so that a cyclic term is refused instead of walked forever, and clears the marks as it leaves
 # (`ac_clearTermAgenda`). Interface terms are finite trees with no cells to mark: `ac_pushTermAgenda`
 # never meets a cycle, and there is nothing to clear. (Cycles made by BINDINGS are the unifier's
-# business: pl-prims.c keeps its own visited and link records.)
+# business: pl-prims.c keeps its own visited and link records.) Nor does `ac_nextTermAgenda`
+# dereference a subterm, as upstream's does: it walks resolved terms, which have no bindings
+# (`variant_hash_walk`). The segstack is a Vector.
 
 # ── the plain agenda (!AC_TERM_WALK) ─────────────────────────────────────────────────────────────
 # PORT: pl-termwalk.c aNode

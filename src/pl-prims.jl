@@ -404,7 +404,8 @@ end
 # PORT: pl-prims.c compare_descend
 # DIVERGES: two compounds are the same pair when they are the same objects (`===`) — a cycle passes
 # through a binding, and a binding's value is one object (upstream: the same `Functor` cells). No
-# `CMP_ERROR` from the argument tests (no memory overflow).
+# `CMP_ERROR` from the argument tests (no memory overflow). The result is returned, a tuple, where
+# upstream writes it through `*c1` and `*c2`.
 """
     compare_descend(ld, t1, t2, mode) -> (Int, T, T)
 
@@ -437,7 +438,7 @@ function compare_descend(
         end
         n = nchildren(p1)
         i = 1                                   # the pair differs, so the last child need not
-        while i < n                             # be tested (the head, child 1, is equal)
+        while i < n                             # be tested; child 1, the head, is compared too
             rc, _ = compare_fast(ld, child(p1, i), child(p2, i), CMP_MODE_EQUAL)
             rc == CMP_EQUAL || break
             i += 1

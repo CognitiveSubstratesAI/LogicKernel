@@ -173,6 +173,10 @@ end
     @test LK.PL_close_query(ld, q1) == LK.PL_S_NOT_INNER
     @test _ynext(p[:g], q2) == 2 && lk_eq(_yval(p[:g], a2), _ys(:only))
     @test LK.PL_close_query(ld, q2) == 1
+    # a CLOSED handle names no open query (`QueryFromQid` gives 0; DIVERGES, src/pl-wam.jl): it is
+    # not the innermost, and nothing is indexed by it — with another query open, and with none
+    @test LK.PL_close_query(ld, q2) == LK.PL_S_NOT_INNER
+    @test LK.PL_cut_query(ld, q2) == LK.PL_S_NOT_INNER
     LK.PL_close_foreign_frame(ld, fid2)
     @test LK.PL_current_query(ld) == q1
     @test _ynext(p[:f], q1) == 1 && lk_eq(_yval(p[:f], a1), _ys(:b))
@@ -180,6 +184,8 @@ end
     @test lk_eq(_yval(p[:f], a1), _ys(:b))                      # cut keeps the bindings
     LK.PL_close_foreign_frame(ld, fid1)
     @test LK.PL_current_query(ld) == 0
+    @test LK.PL_close_query(ld, q1) == LK.PL_S_NOT_INNER        # no query open at all
+    @test LK.PL_cut_query(ld, q1) == LK.PL_S_NOT_INNER
 end
 
 @testset "cut keeps the bindings, close undoes them; after a deterministic last answer" begin

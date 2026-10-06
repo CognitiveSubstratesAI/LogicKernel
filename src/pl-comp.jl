@@ -663,9 +663,12 @@ end
 
 # PORT: pl-comp.c FUNCTOR_dot2
 # DIVERGES: upstream's `FUNCTOR_dot2` is the handle of SWI-7's list constructor `'[|]'/2` in the
-# functor table; the kernel has none, so it is a fixed functor word of its own — what `argKey` reads
-# from `H_LIST`/`H_RLIST`/`H_LIST_FF` and `indexOfWord` gives every list cell (`is_pair`), distinct
-# from the key of any other `name/2` but by chance, as any two keys (user, 2026-10-04).
+# functor table (generated from src/ATOMS; pl-comp.c uses it); the kernel has none, so it is a fixed
+# functor word of its own — what `argKey` reads from `H_LIST`/`H_RLIST`/`H_LIST_FF` and `indexOfWord`
+# gives every list cell (`is_pair`), distinct from the key of any other `name/2` but by chance, as
+# any two keys (user, 2026-10-04). An INDEX tolerates a chance collision (it narrows less), but
+# `listSupervisor` takes this key and `ATOM_nil` as identity: a `name/2` keyed equal to it would
+# get `S_LIST`, which fails a call on that name — about 2^-52 per name (the divergence audit, docs/divergence_audit.md).
 "The key of a list cell `'[|]'/2`: what `argKey` reads from `H_LIST*` and `indexOfWord` gives `[H|T]`."
 const FUNCTOR_dot2 = MK_FUNCTOR(UInt64(0x0004_c495_354e_4f43), UInt64(2))   # "LISTCONS"-ish, arity 2
 
@@ -1605,11 +1608,13 @@ function _compile_clause_head!(
 end
 
 # PORT: pl-comp.c compileClause
-# DIVERGES: the body is `nothing` for a fact (upstream: the body `true`, which also makes one); the
-# body's goals are plain goals and conjunctions (see `compileBody!`); no SSU, warnings, flags or
-# resource limits, and a clause of a multifile predicate is refused (it would need `I_CONTEXT`:
-# modules are not ported); the clause is returned where upstream stores it through `cp`, created at
-# generation 0 (`assertDefinition!` sets the rest); a body starting with `!` sets `COMMIT_CLAUSE`. The
+# DIVERGES: the body is `nothing` for a fact (upstream's NULL body; a body `true` makes one too, as
+# upstream); the body's goals are plain goals and conjunctions (see `compileBody!`); no SSU,
+# warnings, flags or resource limits; a RULE of a multifile predicate is refused (its body would
+# need `I_CONTEXT`: modules are not ported), and `P_MFCONTEXT` is never set; a goal that is not
+# callable, or past MAXARITY, THROWS (`CallableTypeError`, an `ErrorException`) where upstream
+# raises it with `PL_error`; the clause is returned where upstream stores it through `cp`, created
+# at generation 0 (`assertDefinition!` sets the rest). The
 # database's global data `gd` is an argument, where upstream reaches GD — its functor table, the
 # `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl); so is the compiling
 # thread's local data `ld` (since V6b), where upstream's `DECL_LD` functions reach LD: its flags

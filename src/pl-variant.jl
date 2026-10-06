@@ -355,8 +355,7 @@ end
 
 # ── the built-in (V5a2, decision 5) ──────────────────────────────────────────────────────────────
 # PORT: pl-variant.c variant as pl_variant2_va
-# (PRED_IMPL("=@=", 2, variant, 0))
-# DIVERGES: no ERR_NOMEM (`is_variant_ptr` cannot overflow).
+# (PRED_IMPL("=@=", 2, variant, 0)) — upstream's one line; its ERR_NOMEM is `is_variant_ptr`'s
 "`=@=/2` (pl-variant.c): the arguments are variants, under the bindings."
 function pl_variant2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}

@@ -365,8 +365,10 @@ end
 MSB64(i::Int64)::Int = 63 - leading_zeros(i)
 
 # PORT: pl-arith.c ar_shift
-# DIVERGES: `long` is `Int64`, so an `Int64` shift amount always fits. `O_BIGNUM_PRECHECK_ALLOCATIONS`
-# is on (pl-arith.c:84): a left shift's size is checked before GMP is asked.
+# DIVERGES: upstream's `V_INTEGER` branch checks the amount against `LONG_MIN`/`LONG_MAX`; the
+# kernel takes LP64's `long`, an `Int64`, where that check can never fire, and drops it. Otherwise as
+# upstream, `O_BIGNUM_PRECHECK_ALLOCATIONS` on (pl-arith.c:84): a left shift's size is checked
+# before GMP is asked. Julia's `BigInt` needs no `mpz_init`/`mpz_clear`.
 "`n1 << n2` (`dir` -1) or `n1 >> n2` (`dir` 1) (pl-arith.c `ar_shift`)."
 function ar_shift(
     ld::PL_local_data{T}, n1::number, n2::number, r::number, dir::Int

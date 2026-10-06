@@ -649,13 +649,16 @@ function _load_registers!(
 end
 
 # PORT: pl-wam.c SAVE_REGISTERS
-# DIVERGES: a macro over the run loop's locals, as upstream's; the work is `_save_registers!`.
+# DIVERGES: a macro over the run loop's locals, as upstream's; the work is `_save_registers!`, a
+# function the static-analysis gate checks. `PC` is three locals (`PCc`, `PCl`, `PC`), and the query
+# record is found by position (`QueryFromQid`).
 "Save the run loop's registers into query `qid` (pl-wam.c), before calling out of the VM."
 macro SAVE_REGISTERS(qid)
     return esc(:(_save_registers!(ld, $qid, FR, ARGP, PCc, PCl, PC)))
 end
 
 # PORT: pl-wam.c LOAD_REGISTERS
+# DIVERGES: as `SAVE_REGISTERS`: the work is `_load_registers!`.
 "Load the run loop's registers from query `qid` (pl-wam.c), after calling out of the VM."
 macro LOAD_REGISTERS(qid)
     return esc(:((FR, ARGP, PCc, PCl, PC) = _load_registers!(ld, $qid)))

@@ -323,7 +323,8 @@ end
     atomic_compare(a::Term{G}, b::Term{G}) -> Int
 
 The reference atomic order: SWI-Prolog's — numbers by value with the float first on a tie, then
-strings, then atoms, by character codes — and after atoms, values Prolog has no counterpart for.
+strings, then values Prolog has no counterpart for (as SWI's non-text blobs, see `_RANK_OTHER`),
+then atoms, by character codes.
 """
 function atomic_compare(a::Term{G}, b::Term{G})::Int where {G}
     ra, rb = _atomic_rank(a), _atomic_rank(b)

@@ -4,7 +4,10 @@
 
 Decided 2026-10-03 (user): **LogicKernel follows swipl-devel as is — its logic, its data structures,
 its semantics.** Where SWI uses a mechanism, the kernel uses that mechanism; a departure is a
-`# DIVERGES:` with its reason, never a design preference. Two consequences that differ from Core:
+`# DIVERGES:` with its reason, never a design preference. The sampled audit of those markers
+(docs/divergence_audit.md, 2026-10-06) found none unjustified. About two in three are forced by the
+representation. Their comments rot, though: 19 of 40 needed rewording, four of them stale. Two
+consequences that differ from Core:
 
 * **Bindings use SWI's trail with marks.** Unification binds in a mutable binding store and records
   each binding on a trail; `Mark` before an attempt, `Undo` back to it afterwards — `pl-prims.c`'s

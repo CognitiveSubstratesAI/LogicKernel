@@ -89,9 +89,12 @@ function registerBuiltins!(
 end
 
 # PORT: pl-ext.c initBuildIns as initBuildIns!
-# DIVERGES: the tables ported (see `foreigns`, `_PRED_TABLES`); no `initProcedures` (nothing to
-# reset in a new database) and no `setBuiltinPredicateProperties` (its procedures are created with
-# the global data, src/pl-global.jl).
+# DIVERGES: the tables ported (see `foreigns`, `_PRED_TABLES`), in upstream's order. `initProcedures`
+# creates `GD->procedures.dirty`, which the kernel creates with the global data (`procedures_dirty`,
+# src/pl-global.jl). NOT PORTED: `setBuiltinPredicateProperties` — it caches about sixteen system
+# procedures in GD, sets `call/1`'s flags and declares the meta-predicates; of these only
+# `$c_call_prolog/0` exists, created with the global data — and the extensions' binding loop
+# (`bindExtensions`, `extensions_loaded`: no `PL_register_extensions`).
 "Register the built-ins in the database whose global data is `gd` (pl-ext.c `initBuildIns`)."
 function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     registerBuiltins!(gd, _extension_sigs(foreigns), 0)

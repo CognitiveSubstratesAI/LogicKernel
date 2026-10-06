@@ -23,9 +23,11 @@ function cgcActivatePredicate!(
 end
 
 # PORT: pl-thread.c pushPredicateAccessObj
-# DIVERGES: the reference stack is a Vector (upstream: blocks of doubling size); no
-# enterDefinition() reference count ("probably not needed in the end", upstream says) and no limit
-# on the depth of the stack.
+# DIVERGES: the reference stack is a Vector (upstream: blocks of doubling size). Upstream's
+# `enterDefinition()` is a no-op macro (pl-incl.h), so there is nothing to port. NOT PORTED: the
+# depth limit — upstream raises `representation_error(predicate references)` past 2^20 − 1000
+# references (MAX_BLOCKS) and returns NULL, which its callers handle; here the stack grows without
+# limit (the divergence audit, docs/divergence_audit.md).
 """
     pushPredicateAccessObj!(ld, gd, def) -> definition_ref
 

@@ -84,6 +84,31 @@ function _kmur(data::Vector{UInt8}, pieces::Vector{Int})::UInt32
     return hash_end(s)
 end
 
+# ── MurmurHashAligned2 against upstream's own function: KNOWN ANSWERS ───────────────────────────────
+# The kernel ports pl-hash.c's byte-wise body (src/pl-hash.jl); swipl on a little-endian host runs
+# the aligned one, which upstream says gives the same hash. Checked by the divergence audit
+# (2026-10-06): upstream's aligned body, compiled from pl-hash.c at bae881a2, for every length 0..40
+# at four alignments and three seeds, gives these 492 lines, `seed offset length hash` — their
+# SHA-1, and some of the values themselves.
+@testset "MurmurHashAligned2 == upstream's, 492 known answers (pl-hash.c at bae881a2)" begin
+    buf = UInt8[UInt8((i * 37 + 11) % 256) for i in 0:63]
+    io = IOBuffer()
+    for seed in (0x1a3be34a, 0x00000000, 0xdeadbeef), off in 0:3, len in 0:40
+        h = MurmurHashAligned2(buf[(off + 1):end], len, UInt32(seed))
+        println(io, Int(seed), " ", off, " ", len, " ", Int(h))
+    end
+    @test bytes2hex(sha1(take!(io))) == "02deabd1d66695c040d213923b53c99b69911416"
+    for (seed, off, len, want) in (
+        (0x1a3be34a, 0, 0, 1747181055), (0x1a3be34a, 0, 1, 2329118897),
+        (0x1a3be34a, 0, 7, 472877332), (0x1a3be34a, 0, 8, 1224129436),
+        (0x1a3be34a, 0, 13, 4015555493), (0x00000000, 1, 5, 1757487611),
+        (0xdeadbeef, 3, 40, 931406165)
+    )
+        @test MurmurHashAligned2(buf[(off + 1):end], len, UInt32(seed)) == want
+    end
+    @test MURMUR_SEED == 0x1a3be34a                              # pl-hash.h
+end
+
 @testset "incremental MurmurHash (hash_state)" begin
     @testset "within one block it is MurmurHashAligned2 of the bytes" begin
         rng = Xoshiro(7)

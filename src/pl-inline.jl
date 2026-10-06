@@ -57,7 +57,10 @@ current_generation(gd::PL_global_data{T}, def::Definition{T}) where {T} =
     global_generation(gd)
 
 # PORT: pl-inline.h next_generation
-# DIVERGES: no transactions — always the next global generation.
+# DIVERGES: no transactions — always the next global generation — and no `L_GENERATION` lock (no
+# threads). Upstream's database starts at generation 1 (`setupProlog` calls it), the kernel's at 0
+# (`gen_t(0)`, src/pl-global.jl): not observable from Prolog. (The assert and retract paths increment
+# the generation inline, as upstream's do.)
 "Advance the database generation; the new generation (pl-inline.h)."
 function next_generation!(gd::PL_global_data{T}, def::Definition{T})::gen_t where {T}
     gd._generation += 1

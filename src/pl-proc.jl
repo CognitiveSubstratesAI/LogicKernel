@@ -73,8 +73,8 @@ end
 # PORT: pl-proc.c hasClausesDefinition
 # DIVERGES: no `acquire_def`/`release_def` around the walk — with no threads, clause GC cannot run
 # during it — and no reload generation (`LD->reload.generation` is always `GEN_INVALID`: reloading
-# is not ported). Foreign and thread-local predicates do not exist, so the `P_FOREIGN|P_THREAD_LOCAL`
-# test is upstream's and always passes.
+# is not ported). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign (V5a2), so
+# it has no clauses here, as upstream; no predicate is thread-local.
 """
 The first clause reference of `def` whose clause is visible in the current generation of the
 database `gd` — the first clause at all for a static predicate not registered as dirty — or
@@ -263,8 +263,10 @@ end
 
 # PORT: pl-proc.c cleanDefinition
 # DIVERGES: no transactions (`tr_starts`), no debugger call-back (`announceErasedClause`), and the
-# unlinked references are left to the garbage collector (upstream lingers them) — an unlinked
-# reference keeps its `next`, so an enumeration standing on it continues.
+# unlinked references are left to the garbage collector (upstream lingers them and frees what no
+# one uses, `free_lingering`) — an unlinked reference keeps its `next`, so an enumeration standing on
+# it continues. No `LOCKDEF` (no threads) and no `rcp` result; the caller sets `cgc_active`, which
+# upstream asserts.
 """
 Unlink from `def`'s clause list every erased clause no generation in use can see, then clean its
 indexes; the number removed (pl-proc.c).

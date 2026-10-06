@@ -96,7 +96,8 @@ const PL_FA_SIG_ATOMIC = 0x80
 # PORT: SWI-Prolog.h PL_extension
 # DIVERGES: `function` is a Julia keyword, so the field is `function_`; it holds the Julia function
 # itself (a singleton type), where upstream holds a `pl_function_t` pointer — a table of them is a
-# TUPLE, concretely typed, so reading an entry dispatches statically (decision 5).
+# TUPLE, concretely typed, so reading an entry dispatches statically (decision 5). `arity` is an
+# `Int` and `flags` a `UInt8`, where upstream has `short`s (every `PL_FA_*` flag fits).
 "One predicate of a registration table (SWI-Prolog.h `PL_extension`)."
 struct PL_extension{F}
     predicate_name::String          # Name of the predicate

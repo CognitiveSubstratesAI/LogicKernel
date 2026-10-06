@@ -9,12 +9,15 @@
 # which leaves one foreign frame at the base of the local stack.
 
 # PORT: pl-setup.c emptyStacks as emptyStacks!
-# DIVERGES: no global or argument stack to empty, and the trail's bindings go with it (`bindings`).
-# `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`. Of the
+# DIVERGES: no global stack to empty; the argument stack is emptied, with the write-mode builder's
+# (`bTop`, `nbframes`, the kernel's own), and the trail's bindings go with the trail (`bindings`).
+# `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`, and no
+# `lTop && gTop` guard (the stacks always exist). Of the
 # engine's permanent term references upstream allocates in the base foreign frame, the exception's
 # four are (`exception_bin`, `exception_printed`, `exception.tmp`, `exception.pending`, in
 # upstream's order); the others belong to subsystems not ported (`trim.dummy`, attributed
-# variables, undo hooks, tabling). So later term references lie at other absolute positions than in
+# variables, undo hooks, tabling, `LD->tmp.h[]`; nor `destroyGlobalVars`). So later term references
+# lie at other absolute positions than in
 # swipl: compare DIFFERENCES between positions with swipl, never absolute ones.
 "Empty the local stack and the trail, then open the base foreign frame (pl-setup.c)."
 function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}

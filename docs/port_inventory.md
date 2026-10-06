@@ -52,7 +52,7 @@ how many of the upstream file's functions are ported.
 | swipl-bench `programs/qsort.pl` | design | `d74163e6d756` | `bench/programs/qsort.jl` | 4 | 0 |
 | swipl-devel `src/SWI-Prolog.h` | code | `bae881a24a3f` | `src/SWI-Prolog.jl` | 26 | 2 |
 | swipl-devel `src/SWI-Prolog.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 1 | 0 |
-| swipl-devel `src/pl-alloc.c` | code | `bae881a24a3f` | `src/pl-alloc.jl` | 2 | 2 |
+| swipl-devel `src/pl-alloc.c` | code | `bae881a24a3f` | `src/pl-alloc.jl` | 2 | 1 |
 | swipl-devel `src/pl-arith.c` | code | `bae881a24a3f` | `src/pl-arith.jl` | 37 | 8 |
 | swipl-devel `src/pl-arith.h` | code | `bae881a24a3f` | `src/pl-arith.jl` | 5 | 1 |
 | swipl-devel `src/pl-builtin.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 5 | 1 |
@@ -101,10 +101,10 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-termwalk.c` | code | `bae881a24a3f` | `src/pl-termwalk.jl` | 18 | 5 |
 | swipl-devel `src/pl-thread.c` | code | `bae881a24a3f` | `src/pl-thread.jl` | 4 | 2 |
 | swipl-devel `src/pl-trace.c` | code | `bae881a24a3f` | `src/pl-trace.jl` | 5 | 2 |
-| swipl-devel `src/pl-variant.c` | code | `bae881a24a3f` | `src/pl-variant.jl` | 17 | 8 |
+| swipl-devel `src/pl-variant.c` | code | `bae881a24a3f` | `src/pl-variant.jl` | 17 | 7 |
 | swipl-devel `src/pl-vmi.c` | code | `bae881a24a3f` | `src/pl-vmi.jl` | 86 | 0 |
 | swipl-devel `src/pl-vmi.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 92 | 58 |
-| swipl-devel `src/pl-wam.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 29 | 21 |
+| swipl-devel `src/pl-wam.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 29 | 22 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `bae881a24a3f` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_hash.pl` | code | `bae881a24a3f` | `test/core_lang/test_hash.jl` | 16 | 1 |
 | swipl-devel `tests/core_lang/test_occurs_check.pl` | code | `bae881a24a3f` | `test/core_lang/test_occurs_check.jl` | 10 | 1 |
@@ -135,7 +135,7 @@ checkout is pulled.
 | swipl-bench `programs/poly_10.pl` | `d74163e6d756` | 11 | 11 | 0 | bench/programs/poly_10.jl |
 | swipl-bench `programs/qsort.pl` | `d74163e6d756` | 3 | 3 | 0 | bench/programs/qsort.jl |
 | swipl-devel `src/SWI-Prolog.h` | `bae881a24a3f` | 0 | 1 | 0 | src/SWI-Prolog.jl, src/pl-incl.jl |
-| swipl-devel `src/pl-alloc.c` | `bae881a24a3f` | 2 | 73 | 2 | src/pl-alloc.jl |
+| swipl-devel `src/pl-alloc.c` | `bae881a24a3f` | 2 | 73 | 1 | src/pl-alloc.jl |
 | swipl-devel `src/pl-arith.c` | `bae881a24a3f` | 29 | 166 | 7 | src/pl-arith.jl |
 | swipl-devel `src/pl-arith.h` | `bae881a24a3f` | 0 | 8 | 0 | src/pl-arith.jl |
 | swipl-devel `src/pl-builtin.h` | `bae881a24a3f` | 0 | 3 | 0 | src/pl-incl.jl |
@@ -183,7 +183,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `bae881a24a3f` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `bae881a24a3f` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `bae881a24a3f` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **518** | **2569** | **227** | |
+| **total** | | **518** | **2569** | **226** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
