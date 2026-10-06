@@ -18,6 +18,9 @@
 # reaches the kernel only through the term interface, so it runs on the reference type AND on the
 # deliberately different second implementation, plain and sharing ground compounds
 # (`LK_TERM_IMPLS`); those runs' test sets are named `<file> [alt]` and `<file> [alt_interned]`.
+# THE GATE SPLIT (user, 2026-10-06; test/term_scope.jl): with LOGICKERNEL_TERM_TYPES=chunk — what
+# tools/run_tests.sh sets for a chunk's local gate when no trigger changed — a file declared
+# REFERENCE runs on the reference implementation only. Without it (CI, `Pkg.test`), every unit runs.
 #
 # UNITS, AND THREE WAYS TO RUN THEM. A unit is one file on one term implementation. With no
 # environment (CI, `Pkg.test`) every unit runs here, in order. tools/run_tests.sh runs the suite as
@@ -33,14 +36,14 @@ using LogicKernel
 
 include("inert_testset_guard.jl")
 include("term_under_test.jl")         # LK_TERM_IMPLS — the one list of implementations
+include("term_scope.jl")              # the gate split's declarations (ONE extractor)
 
 const LK_TEST_DIR = @__DIR__
-const LK_TEST_FILES = sort!([
-    joinpath(dir, f) for (dir, _, files) in walkdir(LK_TEST_DIR) for
-    f in files if startswith(f, "test_") && endswith(f, ".jl")
-])
-const LK_TERM_GENERIC_RX = r"^include\(joinpath\(@__DIR__, \"\.\.\", \"term_under_test\.jl\"\)\)"m
-lk_term_generic(f::String)::Bool = occursin(LK_TERM_GENERIC_RX, read(f, String))
+const LK_TEST_FILES = lk_test_files(LK_TEST_DIR)
+"Each term-generic file's declaration (test/term_scope.jl); a missing or bad one stops the suite."
+const LK_TERM_SCOPES = lk_term_scopes(LK_TEST_DIR)
+"`all` (every unit: CI, a milestone, a trigger changed) or `chunk` (tools/run_tests.sh)."
+const LK_TERM_TYPES = get(ENV, "LOGICKERNEL_TERM_TYPES", "all")
 
 # ── the units ────────────────────────────────────────────────────────────────────────────────────
 "Every unit, `(file, implementation, label)`, in the order of discovery."
@@ -54,7 +57,13 @@ const LK_UNITS = [
             "$(relpath(f, LK_TEST_DIR)) [$impl]"
         end
     )
-    for f in LK_TEST_FILES for impl in (lk_term_generic(f) ? LK_TERM_IMPLS : ("",))
+    for f in LK_TEST_FILES for impl in (
+        if haskey(LK_TERM_SCOPES, f)
+            lk_units_impls(LK_TERM_SCOPES[f][1], LK_TERM_TYPES, LK_TERM_IMPLS)
+        else
+            ("",)
+        end
+    )
 ]
 const LK_SHARD_DIR = get(ENV, "LOGICKERNEL_SHARD_DIR", "")
 const LK_SHARD_ID = get(ENV, "LOGICKERNEL_SHARD_ID", "")
@@ -82,8 +91,21 @@ lk_claim(i::Int)::Bool =
     catch
         false
     end
+let nall = count(v -> v[1] === :all, values(LK_TERM_SCOPES))
+    println(
+        "  term types: ",
+        LK_TERM_TYPES,
+        " — ",
+        if LK_TERM_TYPES == "all"
+            "every term-generic file on every implementation"
+        else
+            "$nall of $(length(LK_TERM_SCOPES)) term-generic files on every implementation, the rest on the reference"
+        end
+    )
+end
 if LK_SHARD
     write(joinpath(LK_SHARD_DIR, "units_total"), string(length(LK_RUN)))
+    write(joinpath(LK_SHARD_DIR, "types_" * LK_SHARD_ID), LK_TERM_TYPES * "\n")  # _check_run
     println("  shard ", LK_SHARD_ID, " of a run with ", length(LK_RUN), " units")
 elseif !isempty(LK_REPLAY)
     println("  REPLAY of ", LK_REPLAY, ": ", length(LK_RUN), " units, in order")
@@ -112,7 +134,9 @@ Test.@with_testset LK_TS begin
     # …and on the term-generic files: the conformance suite itself must be one of them, or the
     # second implementation is never checked against it.
     @testset "discovery found the term-generic files" begin
-        generic = [relpath(f, LK_TEST_DIR) for f in LK_TEST_FILES if lk_term_generic(f)]
+        generic = [
+            relpath(f, LK_TEST_DIR) for f in LK_TEST_FILES if haskey(LK_TERM_SCOPES, f)
+        ]
         @test "core_lang/test_term_interface.jl" in generic
         @test "core_lang/test_unify.jl" in generic
         @test length(generic) >= 20

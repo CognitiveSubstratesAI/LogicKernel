@@ -150,6 +150,59 @@ a real worker refusing a swipl that is not the pin, the machine numbers' helpers
 loading from the evidence depot (22 cases); the duplicate check, the AltTerm
 check, the worker's two refusals and the PATH it is given are mutation-proved.
 
+**The gate split (user, 2026-10-06).** The two alternative term implementations took 59% of a
+cold run's unit time (1514 s of 2564 s, almost all of it compiling). CI already runs every unit on
+all three implementations on every push. So the LOCAL commit gate runs only a declared subset on
+the alternative ones between milestones (test/term_scope.jl), and CI keeps the full run.
+* **Declarations:** every term-generic test file declares its term types per chunk in ONE line. The
+  runner refuses a file without exactly one declaration of a known kind:
+  * `# TERM TYPES PER CHUNK: ALL — the term layer: src/…` marks the 12 files that test the term
+    layer and the primitives that walk terms (the term interface, bindings, unification, comparison
+    and sort, hashing, variants, the occurs check, `$expr`), each naming the sources behind it;
+  * `# TERM TYPES PER CHUNK: REFERENCE — …` marks the other 23, which run on the reference
+    implementation alone in a chunk.
+  One extractor (test/term_scope.jl) serves the runner and the coordinator's decision.
+* **The term types of a run** (`tools/term_scope.jl`, from every path that differs from
+  `origin/main`, untracked files included):
+  * `chunk` by default;
+  * `all` when a TRIGGER changed: the term layer (the interface, the reference type, the alternative
+    type and its test library), a source an ALL file names, or the gate's own logic;
+  * `all` too when `LOGICKERNEL_FULL=1` marks a milestone, or with no `origin/main` to compare.
+  * The coordinator hands the types to every worker in its `go` file, since workers inherit no
+    environment. Every shard records the types it ran, and `_check_run` refuses a shard that ran
+    others.
+  * `LOGICKERNEL_TERM_TYPES_FORCE` forces them for a verification of the split itself, and such a
+    run never writes evidence.
+* **The condition: no gate cycle passes while the previous push is red** (`tools/ci_status.sh`,
+  `_ci_gate` in tools/lib_evidence.sh):
+  * The preflight reads `origin/main`'s CI first, and so does a full run, before the suite: red or
+    unreadable stops it in seconds.
+  * No verdict yet passes at a cycle's start. At a full run's end it is waited for (up to
+    `LOGICKERNEL_CI_WAIT_S`, 1200 s), and evidence is written only for a green push.
+  * `LOGICKERNEL_CI_CHECK=off` skips the check loudly, for a machine without network.
+* **MEASURED:** a forced `chunk` run ran 71 units instead of 116, with 1573 s of unit time against
+  2564 s (−39%), and 9.5 min wall against 14.5. The static-analysis unit now sets the floor (about
+  8.5 min alone).
+* **Gate:** test/test_gate_split.jl:
+  * the declarations, and the parser's refusals;
+  * the trigger set and the term types on fixture paths;
+  * the units a REFERENCE file runs;
+  * `ci_status.sh` on eight CI fixtures and one unreadable answer;
+  * `_ci_gate` at a cycle's start and after a wait;
+  * `_check_run`'s term-type check.
+
+  The preflight and a full run stop on a red fixture in under 3 s (checked). Mutation-proved — 13 of 13 caught at verdict level:
+  * twelve judged by test_gate_split.jl:
+    * a missing declaration taken as REFERENCE; an ALL one without sources accepted; a named
+      source that does not exist accepted;
+    * a changed trigger ignored; the named sources dropped from the triggers;
+    * a REFERENCE file run on every implementation;
+    * a failed CI run, or no verdict, read as green; another commit's runs counted;
+    * an unreadable CI, or no verdict after the wait, passing the gate;
+    * `_check_run` ignoring the shards' types;
+  * one end to end: a worker ignoring its `go` file's types made every shard run all 117 units,
+    and the coordinator refused the run.
+
 **The precompile workload** (`src/precompile_workload.jl`, PrecompileTools — the one allowlisted
 dependency): the hot paths on `DefaultTerm`, compiled at precompile time. MEASURED (three fresh
 processes each, a quiet machine): the first call of the workload in a fresh process fell from

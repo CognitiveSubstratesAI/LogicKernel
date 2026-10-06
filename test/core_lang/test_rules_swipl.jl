@@ -18,6 +18,7 @@
 #     baseline every cycle;
 #   * warm, a query of calls and exits allocates nothing (reference type).
 using Test, LogicKernel, Random
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const LK = LogicKernel
 

@@ -128,6 +128,16 @@ _check_run() {
     else
         echo "  units: $units, each run exactly once"
     fi
+    # the gate split: every shard ran the term types the coordinator decided (tools/worker.jl reads
+    # them from its `go` file; a worker that dropped them would run every unit and pass, slower)
+    local want="${LOGICKERNEL_TERM_TYPES:-all}" got
+    got=$(cat "$run"/types_* 2>/dev/null | sort -u | tr '\n' ' ')
+    if [ "$got" != "$want " ]; then
+        echo "  term types: the shards ran '${got% }', the run decided '$want'" >&2
+        ok=1
+    else
+        echo "  term types: $want, in every shard"
+    fi
     read -r plain interned shared < <(cat "$run"/stats_* 2>/dev/null |
         awk '{p += $1; i += $2; s += $3} END {print p + 0, i + 0, s + 0}')
     echo "  AltTerm over all shards: $plain plain compounds, $interned interned, $shared shared"
@@ -136,6 +146,40 @@ _check_run() {
         ok=1
     fi
     return "$ok"
+}
+
+# _ci_gate ROOT WAIT_S [SHA] — the gate split's condition (user, 2026-10-06): no gate cycle passes
+# while the previous push is red. tools/ci_status.sh on SHA (default origin/main): 0 passes;
+# 1 (red) fails; 2 (unreadable) fails CLOSED; 3 (no verdict yet) passes when WAIT_S is 0 — a cycle's
+# start, where the evidence run's end checks again — and otherwise polls every
+# LOGICKERNEL_CI_POLL_S (30) seconds for up to WAIT_S, failing if there is still no verdict.
+# LOGICKERNEL_CI_CHECK=off skips it LOUDLY: for a machine without network, never by default.
+_ci_gate() {
+    local root="$1" wait_s="$2" sha="${3:-}" t0 rc
+    if [ "${LOGICKERNEL_CI_CHECK:-on}" = "off" ]; then
+        echo "  CI check: OFF (LOGICKERNEL_CI_CHECK=off) — the previous push's CI was NOT checked" >&2
+        return 0
+    fi
+    t0=$(date +%s)
+    while :; do
+        "$root/tools/ci_status.sh" $sha
+        rc=$?
+        case "$rc" in
+            0) echo "  CI check: the previous push is green"; return 0 ;;
+            1) echo "  CI check: the previous push is RED — fix it before the next commit" >&2; return 1 ;;
+            3) ;;
+            *) echo "  CI check: unreadable — fails closed (LOGICKERNEL_CI_CHECK=off skips it)" >&2; return 1 ;;
+        esac
+        if [ "$wait_s" -le 0 ]; then
+            echo "  CI check: no verdict yet on the previous push — the evidence run's end checks again"
+            return 0
+        fi
+        if [ $(( $(date +%s) - t0 )) -ge "$wait_s" ]; then
+            echo "  CI check: still no verdict after ${wait_s} s — no evidence until there is one" >&2
+            return 1
+        fi
+        sleep "${LOGICKERNEL_CI_POLL_S:-30}"
+    done
 }
 
 # _wait_ready DIR UNIT TIMEOUT_S — 0 when the worker is ready; 1 when its unit died or timed out.

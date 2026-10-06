@@ -12,6 +12,7 @@ include(joinpath(@__DIR__, "index_testlib.jl"))
 using LogicKernel:
     PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, fresh_var_keys!
 
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _CV = lk_term_type(Union{Int64, Float64, String})
 _cvs(n) = lk_sym(_CV, Symbol(n))

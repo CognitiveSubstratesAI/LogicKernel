@@ -62,7 +62,11 @@ let t0 = time()
         sleep(0.1)
     end
 end
-fp, sdir, sid = split(read(GO, String), '\n')[1:3]
+go = split(read(GO, String), '\n')
+fp, sdir, sid = go[1:3]
+# the gate split's term types (test/term_scope.jl), decided by the coordinator after this worker
+# started: the 4th line, when present (`all` otherwise, as in CI)
+length(go) >= 4 && !isempty(go[4]) && (ENV["LOGICKERNEL_TERM_TYPES"] = go[4])
 if fp != FP
     write(joinpath(WDIR, "rc"), "3")
     println(

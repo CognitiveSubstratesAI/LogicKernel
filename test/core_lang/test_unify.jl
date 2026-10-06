@@ -19,6 +19,7 @@ using Test, LogicKernel
 using LogicKernel:
     PL_local_data, pl_unify!, pl_can_compare, unifiable, resolve_term, Mark, Undo!
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _UT = lk_term_type(Union{Int64, Float64, String})
 _us(x::Symbol) = lk_sym(_UT, x)

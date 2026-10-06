@@ -187,6 +187,13 @@ _preflight_once() {
     local t0 rc=0 f files pooled=""
     PF_SA_FAIL=0 PF_OTHER_FAIL=0                       # which steps failed, for _preflight
     t0=$(date +%s)
+    # THE GATE SPLIT'S CONDITION (user, 2026-10-06): a gate cycle starts by reading the previous
+    # push's CI — red, or unreadable, stops it here (tools/lib_evidence.sh `_ci_gate`)
+    _ci_gate "$ROOT" 0 || {
+        PF_OTHER_FAIL=1
+        echo "preflight: FAIL — the previous push's CI (tools/ci_status.sh)"
+        return 1
+    }
     local snippet="$DIR/preflight_snippet.jl"
     cat > "$snippet" <<JL
 using JuliaFormatter

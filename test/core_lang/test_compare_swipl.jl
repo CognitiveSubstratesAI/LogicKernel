@@ -11,6 +11,7 @@
 # required — never a silent pass.
 using Test, LogicKernel
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-prims.jl, src/pl-termwalk.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _OT = lk_term_type(Union{Int64, Float64, String, Bool})   # Bool: a value of no SWI type
 _os(x) = lk_sym(_OT, x)

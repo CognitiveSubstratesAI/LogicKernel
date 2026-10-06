@@ -23,6 +23,7 @@
 using Test, LogicKernel
 using LogicKernel: pl_variant_sha1, pl_variant_hash, pl_term_hash
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-termhash.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _HT = lk_term_type(Union{Int64, Float64, String})
 _ha(x::Symbol) = lk_sym(_HT, x)

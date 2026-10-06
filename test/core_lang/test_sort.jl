@@ -17,6 +17,7 @@
 #                                                       also need dicts
 using Test, LogicKernel
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _ST = lk_term_type(Union{Int64, Float64, String})
 

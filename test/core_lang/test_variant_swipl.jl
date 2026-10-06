@@ -20,6 +20,7 @@
 using Test, LogicKernel, Random
 using LogicKernel: is_variant_ptr, pl_variant_sha1, pl_variant_hash
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-variant.jl, src/pl-termhash.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _VT = lk_term_type(Union{Int64, Float64, String})
 const _VNVARS = 4

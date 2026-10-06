@@ -12,6 +12,7 @@
 #   * defined is a `PROC_DEFINED` flag or a clause visible NOW: for a dynamic predicate
 #     `hasClausesDefinition` walks past the erased clauses.
 include(joinpath(@__DIR__, "index_testlib.jl"))
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 
 const _P = lk_term_type(Union{Int64, Float64})

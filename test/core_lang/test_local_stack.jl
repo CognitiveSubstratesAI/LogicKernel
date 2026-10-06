@@ -18,6 +18,7 @@
 using Test, LogicKernel
 const LK = LogicKernel
 
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _L = lk_term_type(Union{Int64, Float64, String})
 "The database the clauses of this file are compiled in (its global data)."

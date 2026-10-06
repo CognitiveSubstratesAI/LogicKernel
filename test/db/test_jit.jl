@@ -14,6 +14,7 @@
 # the units call `garbage_collect_clauses`.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _J = lk_term_type(Union{Int64, Float64, String})
 _js(n) = lk_sym(_J, Symbol(n))

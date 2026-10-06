@@ -17,6 +17,7 @@
 #   * `$expr/n` names no literal and every symbol head names its own (V1 L2 — Q2's marking bit is
 #     retired, user 2026-10-04), so `argKey` and `indexOfWord` agree on every argument.
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
+# TERM TYPES PER CHUNK: ALL — the term layer: src/default_term.jl, src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 using Random
 

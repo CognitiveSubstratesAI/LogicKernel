@@ -24,6 +24,7 @@
 #   * the builder: reset with the argument stack — at an answer after a head failed inside a nested
 #     compound, the stack is at the query's height; push and save allocate nothing (reference type).
 using Test, LogicKernel
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 

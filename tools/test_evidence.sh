@@ -28,6 +28,7 @@ fixture() {   # fixture DIR N "claimed ids" "seq ids" "plain interned shared"
     for i in $3; do mkdir "$1/claims/$i"; done
     for i in $4; do printf '%s\tunit %s\t1.0\n' "$i" "$i" >> "$1/seq_1.tsv"; done
     echo "$5" > "$1/stats_1"
+    echo "${LOGICKERNEL_TERM_TYPES:-all}" > "$1/types_1"     # the term types the shard ran
 }
 F="$T/run"
 fixture "$F" 4 "1 2 3 4" "1 2 3 4" "5 6 7";  _check_run "$F" > /dev/null 2>&1; check "a complete run passes" 0 $?

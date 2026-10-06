@@ -18,6 +18,7 @@
 using Test, LogicKernel
 using LogicKernel: is_variant_ptr
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-prims.jl, src/pl-variant.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _TT = lk_term_type(Union{Int64, Float64, String})
 _ta(x::Symbol) = lk_sym(_TT, x)

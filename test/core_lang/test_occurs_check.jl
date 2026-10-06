@@ -25,6 +25,7 @@ using LogicKernel:
     OCCURS_CHECK_TRUE,
     OCCURS_CHECK_ERROR
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _OT = lk_term_type(Union{Int64, Float64, String})
 _os(x::Symbol) = lk_sym(_OT, x)

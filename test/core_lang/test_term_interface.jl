@@ -16,6 +16,7 @@ const _CG = Union{Int64, BigInt, Float64, Float32, BigFloat, Rational{Int64},
     String, Bool, Char,
     Vector{Float64},
     Tuple{Float64, Int64}, ComplexF64, Missing, CustomEq}
+# TERM TYPES PER CHUNK: ALL — the term layer: src/term_interface.jl, src/default_term.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _CT = lk_term_type(_CG)
 

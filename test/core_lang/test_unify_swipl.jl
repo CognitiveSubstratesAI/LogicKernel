@@ -32,6 +32,7 @@ using LogicKernel:
     OCCURS_CHECK_TRUE,
     OCCURS_CHECK_ERROR
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-prims.jl, src/pl-termwalk.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _ZT = lk_term_type(Union{Int64, BigInt, Float64, String})
 const _ZPOOL = 4                                            # variables V1…V4 shared by both sides

@@ -16,6 +16,7 @@
 # float flags and arithmetic are not part of the kernel.
 using Test, LogicKernel
 
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _IT = lk_term_type(Union{Int64, Float64, String})
 _ig(x) = lk_gnd(_IT, x)

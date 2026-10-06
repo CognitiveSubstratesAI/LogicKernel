@@ -6,6 +6,7 @@ using Test, LogicKernel
 using LogicKernel:
     PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, OCCURS_CHECK_FALSE
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-inline.jl, src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _BT = lk_term_type(Union{Int64, Float64, String})
 _bs(x::Symbol) = lk_sym(_BT, x)

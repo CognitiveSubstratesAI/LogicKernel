@@ -19,6 +19,7 @@
 # loud note — never a silent pass. swipl 10.1.16 can ABORT in its occurs-check error path
 # (LogicKernel#3): it runs in chunks, and a chunk that aborts is re-run one case per process.
 using Test, LogicKernel, Random
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 

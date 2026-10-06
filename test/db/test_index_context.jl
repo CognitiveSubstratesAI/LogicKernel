@@ -4,6 +4,7 @@
 # re-entered mid-call; the guard makes a violation loud.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _IC = lk_term_type(Union{Int64, Float64, String})
 _ics(n) = lk_sym(_IC, Symbol(n))

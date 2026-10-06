@@ -19,6 +19,7 @@
 #   * clause/2 and retract/1 answer for the body `true` — facts only; retractall/1 takes rules too;
 #   * `COMMIT_CLAUSE`: set exactly when the body starts with `!` (c:2165).
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "code_testlib.jl"))
 using Random

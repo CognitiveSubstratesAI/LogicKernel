@@ -4,6 +4,8 @@
 #   tools/run_tests.sh                       # full suite
 #   tools/run_tests.sh test/some/test_x.jl   # one file (not evidence for a commit)
 #   LOGICKERNEL_SHARDS=1 tools/run_tests.sh   # the full suite in ONE process (default: shards)
+#   LOGICKERNEL_FULL=1 tools/run_tests.sh     # a milestone: every term-generic file on every
+#                                             # implementation (test/term_scope.jl, the gate split)
 #   LOGICKERNEL_REPLAY=.evidence/<run>/seq_2.tsv tools/run_tests.sh   # one shard's units, in its
 #                                            # order, in one process — never evidence
 #
@@ -37,9 +39,16 @@ DRIVER="$(mktemp "${TMPDIR:-/tmp}/LogicKernel_run_tests_XXXXXX.jl")"
 _finish() {
     local rc="$1"
     rm -f "$DRIVER"
+    # THE GATE SPLIT'S CONDITION (user, 2026-10-06): no evidence while the previous push is red, or
+    # has no verdict yet (waited for, up to LOGICKERNEL_CI_WAIT_S) — tools/lib_evidence.sh `_ci_gate`
+    if [ "$rc" -eq 0 ] && [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
+        _ci_gate "$ROOT" "${LOGICKERNEL_CI_WAIT_S:-1200}" || rc=1
+    fi
     if command -v write_marker >/dev/null 2>&1; then
-        if [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
-            write_marker "$ROOT" "$rc" "run_tests.sh full suite" "$_LAUNCH_FP"
+        if [ -n "${LOGICKERNEL_TERM_TYPES_FORCE:-}" ]; then
+            echo "  test_marker: NOT evidence — term types forced (LOGICKERNEL_TERM_TYPES_FORCE)"
+        elif [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
+            write_marker "$ROOT" "$rc" "run_tests.sh full suite (term types: ${LOGICKERNEL_TERM_TYPES:-all})" "$_LAUNCH_FP"
         else
             echo "  test_marker: NOT evidence — filtered run (TARGET=$TARGET)"
         fi
@@ -75,9 +84,14 @@ _check_swipl_pin "$ROOT" run_tests.sh || exit 1
 JULIA_DEPOT_PATH="$(_evidence_depot_path "$ROOT")"
 export JULIA_DEPOT_PATH
 
-# 🔴 FULL RUNS ONLY — two checks that stop a COMMIT (a full run is the commit's evidence), not an
-# iteration. Both run BEFORE the suite, so a failure exits with no evidence written.
+# 🔴 FULL RUNS ONLY — three checks that stop a COMMIT (a full run is the commit's evidence), not an
+# iteration. All run BEFORE the suite, so a failure exits with no evidence written.
 if [ "$TARGET" = "test/runtests.jl" ]; then
+    # (0) The gate split's condition (user, 2026-10-06): the previous push's CI, read FIRST, so a red
+    # push costs seconds, not a run; no verdict yet is checked again at the end (`_finish`).
+    if [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
+        _ci_gate "$ROOT" 0 || exit 1
+    fi
     # (1) The commit-message rule is git's own commit-msg hook (tools/githooks/commit-msg). A clone
     # without it would commit unchecked messages SILENTLY, so its absence fails the run.
     if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -139,6 +153,26 @@ JL
     julia --startup-file=no -e "$FMT_JL" "$FMT_PIN" < /dev/null || exit 1
 fi
 
+# THE GATE SPLIT (user, 2026-10-06; test/term_scope.jl): a full run's term types. `chunk` runs the
+# term-generic files declared ALL on every implementation and the rest on the reference one; `all`
+# runs every unit, as CI always does — when a trigger changed (the term layer, a source an ALL file
+# names, the gate's own logic), when LOGICKERNEL_FULL=1 marks a milestone, or with no origin/main.
+if [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
+    TERM_SCOPE="$(julia --startup-file=no "$ROOT/tools/term_scope.jl" < /dev/null)" || {
+        echo "run_tests.sh: the term-type declarations are broken (tools/term_scope.jl)" >&2
+        exit 1
+    }
+    LOGICKERNEL_TERM_TYPES="${TERM_SCOPE%%$'\t'*}"
+    echo "run_tests.sh: term types ${LOGICKERNEL_TERM_TYPES} — ${TERM_SCOPE#*$'\t'}"
+    # a VERIFICATION of the split itself (test/test_gate_split.jl cannot run a shard): forced term
+    # types, and the run is never evidence, so it cannot stand in for the run the trigger asked for
+    if [ -n "${LOGICKERNEL_TERM_TYPES_FORCE:-}" ]; then
+        LOGICKERNEL_TERM_TYPES="$LOGICKERNEL_TERM_TYPES_FORCE"
+        echo "run_tests.sh: term types FORCED to ${LOGICKERNEL_TERM_TYPES} — this run is NOT evidence"
+    fi
+    export LOGICKERNEL_TERM_TYPES
+fi
+
 # ── THE SHARDED EVIDENCE RUN (user, 2026-10-03) ─────────────────────────────────────────────────
 # The suite is single-threaded, and here it took 10-16 min where CI's newer CPUs take 2m44s: a full
 # run is therefore split across several FRESH processes (tools/worker.jl), each started clean —
@@ -188,7 +222,8 @@ _sharded_run() {   # (tools/lib_evidence.sh is sourced above)
             tail -20 "${dirs[$i]}/log" >&2; _finish 1; }
     done
     for i in "${!dirs[@]}"; do
-        printf '%s\n%s\n%s\n' "$fp" "$run" "$((i + 1))" > "${dirs[$i]}/go.tmp"
+        printf '%s\n%s\n%s\n%s\n' "$fp" "$run" "$((i + 1))" "${LOGICKERNEL_TERM_TYPES:-all}" \
+            > "${dirs[$i]}/go.tmp"
         mv "${dirs[$i]}/go.tmp" "${dirs[$i]}/go"
     done
     for i in "${!dirs[@]}"; do

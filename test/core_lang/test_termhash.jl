@@ -20,6 +20,7 @@ using LogicKernel:
     MurmurHashAligned2,
     MURMUR_SEED
 
+# TERM TYPES PER CHUNK: ALL — the term layer: src/pl-termhash.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _KT = lk_term_type(Union{Int64, Float64, String})
 _ka(x::Symbol) = lk_sym(_KT, x)

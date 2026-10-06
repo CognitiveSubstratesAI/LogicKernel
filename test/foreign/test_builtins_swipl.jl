@@ -25,6 +25,7 @@ using LogicKernel:
     PL_global_data, PL_local_data, OCCURS_CHECK_FALSE, OCCURS_CHECK_TRUE,
     OCCURS_CHECK_ERROR
 
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _BT = lk_term_type(Union{Int64, Float64, String})
 const LKB = LogicKernel

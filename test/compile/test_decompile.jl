@@ -14,6 +14,7 @@
 #     the value itself, matched by `gnd_equal` (DIVERGES — SWI has no such case; src/pl-comp.jl § the
 #     literal table).
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 using Random
 

@@ -13,6 +13,7 @@
 # the `dynamic`, `protect` and `res_compiler` units.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
+# TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _D = lk_term_type(Union{Int64, Float64, String})
 _ds(n) = lk_sym(_D, Symbol(n))
