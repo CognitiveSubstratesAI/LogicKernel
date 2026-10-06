@@ -2021,6 +2021,10 @@ function pl_clause!(
                     end
                     sink(clause) || return nothing      # FRG_CUTTED
                 end
+                # an occurs-check error from the head's unification does NOT stop the scan: upstream
+                # raises it in `unify_head`, after `decompile`, and checks `exception_term` only when
+                # `decompile` fails. swipl 10.1.16 answers from the next clause, the error pending
+                # (S10, probed 2026-10-06)
             finally
                 Undo!(ld, m)                            # backtracking undoes the answer
             end

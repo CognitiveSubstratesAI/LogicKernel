@@ -655,12 +655,15 @@ end
             # PORT: x.c m
             # NOT PORTED: until V5c, as decided since Q-B
             m() = 4
+            # PORT: x.c n
+            # DIVERGES (interim, the user's Q-B): the annotated form, which the PORT parse skips
+            n() = 5
             """
         )
         blocks = marker_blocks(read(joinpath(root, "src", "x.jl"), String))
-        @test first.(blocks) == [2, 5, 8, 11, 14]  # the prose mention is no marker
+        @test first.(blocks) == [2, 5, 8, 11, 14, 17]  # the prose mention is no marker
         v = stale_marker_violations(root, ["src/x.jl"], st)
-        @test length(v) == 3
+        @test length(v) == 4
         @test occursin(
             "src/x.jl:2: names V5a, which docs/port_inventory.md marks DONE", v[1]
         )
@@ -670,10 +673,15 @@ end
             "src/x.jl:11: names Q-AR1, which docs/port_inventory.md marks DECIDED", v[3]
         )
         @test occursin("the step that implements the decision", v[3])
-        # open steps, an open question, and a decision cited as history
-        @test !any(x -> occursin(r"V5c|V9|Q-E|Q-B", x), v)
+        # the `# DIVERGES (interim, …)` form, which port_check's PORT parse does not read as a
+        # DIVERGES marker (`^#\s*DIVERGES:`), is still a marker here (user, 2026-10-06)
+        @test occursin(
+            "src/x.jl:17: names Q-B, which docs/port_inventory.md marks DECIDED", v[4]
+        )
+        # open steps, an open question, and a decision cited as history (line 14)
+        @test !any(x -> occursin(r"V5c|V9|Q-E|x\.jl:14:", x), v)
         # a `# DIVERGES: NOT PORTED:` line is a DIVERGES line still to split, not a NOT PORTED marker
-        @test marker_counts(root, ["src/x.jl"]) == (; diverges=3, not_ported=3, both=1)
+        @test marker_counts(root, ["src/x.jl"]) == (; diverges=4, not_ported=3, both=1)
     end
     # and LogicKernel itself: no stale marker, the counts reported (port_check's violations are
     # checked at the top of this file)

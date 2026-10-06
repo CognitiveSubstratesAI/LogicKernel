@@ -1269,8 +1269,7 @@ function PL_next_solution_guarded(
     # DIVERGES (decision 2): in write mode under `occurs_check=false` the dereferenced slot is COPIED
     # into the cell — the address rules (`k > ARGP`, the trail space) disappear, as a keyed variable
     # lives in no cell. Under `true`/`error` the VM never enters write mode (decision 3), so the
-    # `setVar(*ARGP)` branch is not reached. The occurs-check error `unify_ptrs` raises arrives as the
-    # kernel unifier's `OccursCheckError` and is raised as the Prolog error here (`PL_error`).
+    # `setVar(*ARGP)` branch is not reached.
     @label H_VAR
     hv_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     PC += 1
@@ -1293,7 +1292,7 @@ function PL_next_solution_guarded(
     end
 
     @SAVE_REGISTERS(QID)
-    hv_ok = _unify_ptrs_raising(ld, ld.slots[hv_k + 1], _argp_raw(ld, ARGP))
+    hv_ok = unify_ptrs(ld, ld.slots[hv_k + 1], _argp_raw(ld, ARGP))
     @LOAD_REGISTERS(QID)
     if hv_ok
         ARGP = _argp_add(ARGP, 1)
@@ -2429,17 +2428,4 @@ function PL_next_solution_guarded(
     @LOAD_REGISTERS(QID)
 
     return (br_q.flags & PL_Q_EXT_STATUS) != 0 ? PL_S_EXCEPTION : 0
-end
-
-# The kernel's unifier throws an `OccursCheckError` where upstream's `unify_ptrs` raises the error
-# itself (`failed_unify_with_occurs_check` → `PL_error`, pl-prims.c:690): turn it into the pending
-# Prolog error here, and fail, as upstream's returns false.
-function _unify_ptrs_raising(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
-    try
-        return unify_ptrs(ld, t1, t2)
-    catch e
-        e isa OccursCheckError{T} || rethrow()
-        PL_error(ld, ERR_OCCURS_CHECK, e.var, e.term)
-        return false
-    end
 end

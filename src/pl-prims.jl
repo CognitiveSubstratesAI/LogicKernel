@@ -584,17 +584,6 @@ end
 # UNIFICATION (pl-prims.c)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
 
-"""
-    OccursCheckError{T}(var, term)
-
-Raised where SWI-Prolog raises `error(occurs_check(Var, Term), _)`: the `occurs_check` flag is
-`OCCURS_CHECK_ERROR` and a unification would bind `var` to a `term` that contains it.
-"""
-struct OccursCheckError{T} <: Exception
-    var::T
-    term::T
-end
-
 # ── cyclic terms (O_CYCLIC) ──────────────────────────────────────────────────────────────────────
 # Bart Demoen's algorithm, as pl-prims.c describes it: before unifying the arguments of two
 # compounds, link the first to the second; a compound met again resolves through its link, and a
@@ -788,15 +777,15 @@ function raw_unify_ptrs(ld::PL_local_data{T}, t1::T, t2::T)::boolex_t where {T}
 end
 
 # PORT: pl-prims.c unify_ptrs
-# DIVERGES: no `flags` and no overflow retry — stacks cannot overflow; `true` or `false` (an
-# occurs-check error is thrown).
+# DIVERGES: no `flags` and no overflow retry — stacks cannot overflow; `true` or `false`. An
+# occurs-check error is raised, as upstream's: `false`, with the error pending.
 "Unify `t1` and `t2` (pl-prims.c `unify_ptrs`): `true` or `false`; does not undo on failure."
 unify_ptrs(ld::PL_local_data{T}, t1::T, t2::T) where {T} =
     raw_unify_ptrs(ld, t1, t2) == BOOLEX_TRUE
 
 # PORT: pl-prims.c can_unify
 # DIVERGES: no foreign frame and no wakeup of delayed goals (no attributed variables): a mark, and
-# an undo whatever happens. An exception (an occurs-check error) propagates after the undo, where
+# an undo whatever happens. An occurs-check error stays pending (`ld.exception_term`), where
 # upstream hands it back through `ex`.
 "Whether `t1` and `t2` can be unified, leaving no binding behind (pl-prims.c)."
 function can_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
@@ -871,7 +860,8 @@ function var_occurs_in(ld::PL_local_data{T}, v::T, t::T)::Bool where {T}
 end
 
 # PORT: pl-prims.c failed_unify_with_occurs_check
-# DIVERGES: raises an `OccursCheckError` where upstream raises the Prolog error term.
+# NOT PORTED: `blockGC`/`unblockGC` around `PL_error`: they hold off the stack garbage collector
+# (pl-gc.c), which the kernel does not have until G1.
 "Fail (`OCCURS_CHECK_TRUE`) or raise the occurs-check error, as `Var = Term` (pl-prims.c)."
 function failed_unify_with_occurs_check(
     ld::PL_local_data{T}, t1::T, t2::T, mode::occurs_check_t
@@ -884,7 +874,7 @@ function failed_unify_with_occurs_check(
     if kind(t2) === VAR                             # try to make Var = Term
         t1, t2 = t2, t1
     end
-    throw(OccursCheckError{T}(t1, t2))
+    return PL_error(ld, ERR_OCCURS_CHECK, t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE
 end
 
 # PORT: pl-prims.c unify_with_occurs_check
@@ -950,14 +940,15 @@ pl_unify!(ld::PL_local_data{T}, t1::T, t2::T) where {T} = unify_ptrs(ld, t1, t2)
 """
     pl_not_unify(ld, t1, t2) -> Bool
 
-`\\=/2` (pl-prims.c): `t1` and `t2` cannot be unified. Leaves no binding behind.
+`\\=/2` (pl-prims.c): `t1` and `t2` cannot be unified. Leaves no binding behind. An occurs-check
+error from the full check stays pending, and the result is `false`, as the predicate raises it.
 """
 function pl_not_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     p1 = deRef(ld, t1)
     p2 = deRef(ld, t2)
     if kind(p1) === VAR || kind(p2) === VAR
         ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return false   # can unify
-        return !can_unify(ld, p1, p2)               # full_check
+        return !can_unify(ld, p1, p2) && ld.exception_term == 0   # full_check
     end
     p1 === p2 && return false
     kind(p1) !== kind(p2) && return true
@@ -966,7 +957,7 @@ function pl_not_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     elseif kind(p1) === GND
         return !gnd_equal(p1, p2)
     end
-    return !can_unify(ld, p1, p2)                   # full_check
+    return !can_unify(ld, p1, p2) && ld.exception_term == 0       # full_check
 end
 
 # PORT: pl-prims.c unify_with_occurs_check as pl_unify_with_occurs_check
@@ -990,7 +981,8 @@ end
     pl_can_compare(ld, t1, t2) -> Bool
 
 `?=/2` (pl-prims.c): it can be decided now and forever whether `t1` and `t2` are equal — they are
-identical (they unify without binding anything) or they cannot unify. Leaves no binding behind.
+identical (they unify without binding anything) or they cannot unify. Leaves no binding behind. An
+occurs-check error stays pending, and the result is `false` (upstream: "keep exception").
 """
 function pl_can_compare(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     m = Mark(ld)
@@ -998,7 +990,7 @@ function pl_can_compare(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
         if unify_ptrs(ld, t1, t2)
             return length(ld.trail) == m.trailtop  # fr->mark.trailtop != tTop ⇒ false
         end
-        return true                                 # could not unify
+        return ld.exception_term == 0               # could not unify, unless an error is pending
     finally
         Undo!(ld, m)
     end
@@ -1021,11 +1013,13 @@ function unify_all_trail_ptrs(
     ld::PL_local_data{T}, t1::T, t2::T
 )::Tuple{Bool, mark} where {T}
     m = Mark(ld)
-    rc = raw_unify_ptrs(ld, t1, t2)                 # an occurs-check error propagates, no undo
+    rc = raw_unify_ptrs(ld, t1, t2)
     if rc == BOOLEX_TRUE
         return (true, m)
     end
-    Undo!(ld, m)
+    if ld.exception_term == 0                       # check for occurs error
+        Undo!(ld, m)
+    end
     return (false, m)
 end
 
@@ -1126,8 +1120,7 @@ end
 
 # PORT: pl-prims.c can_unify
 # DIVERGES: `t1`/`t2` are terms (upstream: cells); `ex` is a term reference or 0 (NULL). No
-# `foreignWakeup` (no attributed variables). An occurs-check error is the pending Prolog error
-# (`_unify_ptrs_raising`).
+# `foreignWakeup` (no attributed variables).
 """
     can_unify(ld, t1, t2, ex) -> Bool
 
@@ -1141,7 +1134,7 @@ function can_unify(ld::PL_local_data{T}, t1::T, t2::T, ex::term_t)::Bool where {
         if ex == 0
             ex = PL_new_term_ref(ld)
         end
-        if _unify_ptrs_raising(ld, t1, t2)              # && foreignWakeup(ex)
+        if unify_ptrs(ld, t1, t2)                       # && foreignWakeup(ex)
             PL_discard_foreign_frame(ld, fid)
             return true
         end
@@ -1415,8 +1408,7 @@ end
 # PORT: pl-prims.c unifiable
 # DIVERGES: the list is BUILT (`mk_expr`) where upstream writes it onto the global stack, and unified
 # with `subst` directly (upstream: through `pushWordAsTermRef`, a temporary reference that occupies
-# no local-stack position). An occurs-check error from the unification or from the occurs check is
-# the pending Prolog error. No attributed variables (`isTrailVal`), no overflow retry.
+# no local-stack position). No attributed variables (`isTrailVal`), no overflow retry.
 """
     unifiable(ld, t1, t2, subst) -> Bool
 
@@ -1427,38 +1419,32 @@ function unifiable(
     ld::PL_local_data{T}, t1::term_t, t2::term_t, subst::term_t
 )::Bool where {T}
     dot, eq, nil = mk_sym(T, Symbol("[|]")), mk_sym(T, :(=)), mk_nil(T)
-    try
-        if PL_is_variable(ld, t1)
-            if PL_compare(ld, t1, t2) == CMP_EQUAL
-                return PL_unify_atom(ld, subst, nil)
-            end
-            unifiable_occurs_check(ld, ld.slots[t1 + 1], ld.slots[t2 + 1]) || return false
-            b = mk_expr(T, T[eq, ld.slots[t1 + 1], ld.slots[t2 + 1]])
-            return _unify_ptrs_raising(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
+    if PL_is_variable(ld, t1)
+        if PL_compare(ld, t1, t2) == CMP_EQUAL
+            return PL_unify_atom(ld, subst, nil)
         end
-        if PL_is_variable(ld, t2)
-            unifiable_occurs_check(ld, ld.slots[t2 + 1], ld.slots[t1 + 1]) || return false
-            b = mk_expr(T, T[eq, ld.slots[t2 + 1], ld.slots[t1 + 1]])
-            return _unify_ptrs_raising(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
-        end
-        ok, m = unify_all_trail_ptrs(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
-        ok || return false
-        if length(ld.trail) > m.trailtop                # tt > mt
-            pairs = T[]
-            while length(ld.trail) > m.trailtop         # while(--tt >= mt), newest first
-                key = pop!(ld.trail)
-                push!(pairs, mk_expr(T, T[eq, mk_var(T, key), ld.bindings[key]]))
-                delete!(ld.bindings, key)               # setVar(*p)
-            end
-            list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
-            return _unify_ptrs_raising(ld, list, ld.slots[subst + 1])
-        end
-        return PL_unify_atom(ld, subst, nil)            # DiscardMark(m)
-    catch e
-        e isa OccursCheckError{T} || rethrow()
-        PL_error(ld, ERR_OCCURS_CHECK, e.var, e.term)
-        return false
+        unifiable_occurs_check(ld, ld.slots[t1 + 1], ld.slots[t2 + 1]) || return false
+        b = mk_expr(T, T[eq, ld.slots[t1 + 1], ld.slots[t2 + 1]])
+        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
     end
+    if PL_is_variable(ld, t2)
+        unifiable_occurs_check(ld, ld.slots[t2 + 1], ld.slots[t1 + 1]) || return false
+        b = mk_expr(T, T[eq, ld.slots[t2 + 1], ld.slots[t1 + 1]])
+        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
+    end
+    ok, m = unify_all_trail_ptrs(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
+    ok || return false
+    if length(ld.trail) > m.trailtop                    # tt > mt
+        pairs = T[]
+        while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
+            key = pop!(ld.trail)
+            push!(pairs, mk_expr(T, T[eq, mk_var(T, key), ld.bindings[key]]))
+            delete!(ld.bindings, key)                   # setVar(*p)
+        end
+        list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
+        return unify_ptrs(ld, list, ld.slots[subst + 1])
+    end
+    return PL_unify_atom(ld, subst, nil)                # DiscardMark(m)
 end
 
 # PORT: pl-prims.c unifiable as pl_unifiable3_va

@@ -581,6 +581,7 @@ function pl_retract!(
                         gen = setGenerationFrame(gd, def)
                     end
                 end
+                ld.exception_term != 0 && return nothing   # if ( PL_exception(0) ) break
             finally
                 Undo!(ld, m)                            # PL_rewind_foreign_frame(fid)
             end
@@ -614,7 +615,8 @@ end
 
 `retractall/1` on predicate `def` (pl-proc.c): retract every clause visible in the generation it
 starts in whose head unifies with `head` — all of them, without unifying, when every argument of
-`head` is a distinct variable. Leaves no binding behind.
+`head` is a distinct variable. Leaves no binding behind. `false` when an exception is pending (an
+occurs-check error from a head), which stops it.
 """
 function pl_retractall!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T
@@ -630,6 +632,7 @@ function pl_retractall!(
         return true                                     # nothing to retract
     end
     allvars = kind(head) === EXPR ? allVars(head) : true
+    rc = true
     dref = pushPredicateAccessObj!(ld, gd, def)
     try
         gen = dref.generation
@@ -638,23 +641,33 @@ function pl_retractall!(
             while cref !== nothing
                 cl = cref.clause::Clause{T}
                 if visibleClauseCNT(cl, gen)
-                    retractClauseDefinition!(gd, def, cl, true)
+                    if !retractClauseDefinition!(gd, def, cl, true)
+                        ld.exception_term != 0 && break    # if ( PL_exception(0) ) break
+                    end
                 end
                 cref = cref.next
             end
+            rc = ld.exception_term == 0                 # ignore plain failures, keep an exception
         else
             chp = ClauseChoice{T}(nothing, word(0))
             cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
             while cref !== nothing
                 cl = cref.clause::Clause{T}
                 m = Mark(ld)
+                stop = false
                 try
                     if decompileHead!(ld, cl, head)
-                        retractClauseDefinition!(gd, def, cl, true)
+                        if !retractClauseDefinition!(gd, def, cl, true)
+                            stop = ld.exception_term != 0   # if ( PL_exception(0) ) break
+                        end
+                    elseif ld.exception_term != 0
+                        rc = false                      # rc = false; break
+                        stop = true
                     end
                 finally
                     Undo!(ld, m)                        # PL_rewind_foreign_frame(fid)
                 end
+                stop && break
                 chp.cref === nothing && break
                 cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)
             end
@@ -662,7 +675,7 @@ function pl_retractall!(
     finally
         popPredicateAccess!(ld, def)
     end
-    return true
+    return rc
 end
 
 # PORT: pl-proc.h mode_arg_is_unbound

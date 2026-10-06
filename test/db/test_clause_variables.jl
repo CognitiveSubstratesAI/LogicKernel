@@ -10,7 +10,8 @@
 #   * a sink sees the bindings and they are gone after it — also when it throws.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 using LogicKernel:
-    PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, fresh_var_keys!
+    PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, fresh_var_keys!,
+    PL_clear_exception, OCCURS_CHECK_FALSE, OCCURS_CHECK_ERROR
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -118,4 +119,41 @@ end
     @test LK.pl_retractall!(db.gd, db.ld, p.def, _cve(:p, _cve(:h, X)))  # unifies, binds X…
     @test isempty(db.ld.trail) && isempty(db.ld.bindings)   # …and undoes it per clause
     @test length(ix_clause(p, _cve(:p, X))) == 2
+end
+
+# S10 (user, 2026-10-06): an occurs-check error from a clause's head under occurs_check=error.
+# swipl 10.1.16, probed with `q(Y, Y). q(a, f(a)).` and the goal head `q(A, f(A))`: retract/1 and
+# retractall/1 raise the error and retract nothing; clause/2 goes on and answers from the next
+# clause, the error pending (upstream checks `exception_term` only when `decompile` fails, and the
+# error comes from `unify_head`).
+@testset "an occurs-check error from a head: retract and retractall stop, clause goes on" begin
+    db = IxDB{_CV}()
+    p = ix_pred(_CV, :q, 2; dynamic=true, db=db)
+    ix_assertz!(p, _cve(:q, _cvv(1), _cvv(1)))                         # q(Y, Y)
+    ix_assertz!(p, _cve(:q, _cvs(:a), _cve(:f, _cvs(:a))))             # q(a, f(a))
+    A = _cvv(2)
+    goal = _cve(:q, A, _cve(:f, A))
+    ld = db.ld
+    pending() =
+        if ld.exception_term == 0
+            nothing
+        else
+            lk_name(child(child(ld.slots[ld.exception_term + 1], 2), 1))
+        end
+    ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
+    answers = 0
+    LK.pl_retract!(db.gd, ld, p.def, goal, cl -> (answers += 1; true))
+    @test answers == 0 && pending() === :occurs_check                  # stopped at the first
+    PL_clear_exception(ld)
+    @test !LK.pl_retractall!(db.gd, ld, p.def, goal)
+    @test pending() === :occurs_check
+    PL_clear_exception(ld)
+    seen = Int[]
+    LK.pl_clause!(db.gd, ld, p.def, goal, cl -> (push!(seen, 1); true))
+    @test length(seen) == 1                                             # q(a, f(a)) answers
+    @test pending() === :occurs_check                                   # q(Y, Y)'s error stays
+    PL_clear_exception(ld)
+    @test isempty(ld.trail) && isempty(ld.bindings) && isempty(ld.predicate_references)
+    ld.prolog_flag_occurs_check = OCCURS_CHECK_FALSE
+    @test length(ix_clause(p, _cve(:q, _cvv(3), _cvv(4)))) == 2         # nothing was retracted
 end

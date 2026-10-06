@@ -497,7 +497,6 @@ function _manifest_index(T)
         (LK.PL_next_solution, Tuple{GD, LD, Int}, false),
         (LK.PL_next_solution_guarded, Tuple{GD, LD, Int, Bool}, false),
         (LK._abandon_query, Tuple{LD, Int}, false),
-        (LK._unify_ptrs_raising, Tuple{LD, T, T}, false),
         (LK._check_foreign_environment, Tuple{LD, String}, true),
         (LK.PL_raise_exception, Tuple{LD, Int}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, T, T}, false),

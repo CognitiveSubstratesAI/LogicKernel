@@ -255,12 +255,11 @@ PL_is_number(ld::PL_local_data{T}, t::term_t) where {T} =
     isNumber(deRef(ld, ld.slots[t + 1]))
 
 # PORT: pl-fli.c PL_unify
-# DIVERGES: an occurs-check error is RAISED (pending, false), as upstream's `unify_ptrs` raises it —
-# the kernel's unifier throws a Julia `OccursCheckError`, turned into the Prolog error here
-# (`_unify_ptrs_raising`), so no Julia exception leaves a built-in. No `ALLOW_GC|ALLOW_SHIFT`.
+# DIVERGES: no `ALLOW_GC|ALLOW_SHIFT`: the kernel's `unify_ptrs` takes no flags, as the binding store
+# and the trail cannot overflow during a unification (its DIVERGES).
 "Unify the terms `t1` and `t2` reference (pl-fli.c `PL_unify`); does not undo on failure."
 PL_unify(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
-    _unify_ptrs_raising(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
+    unify_ptrs(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
 
 # PORT: pl-fli.c PL_unify_atomic
 # DIVERGES: `w` is an atomic TERM (no words); "the same word" and `equalIndirect` are the standard

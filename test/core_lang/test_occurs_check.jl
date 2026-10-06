@@ -21,7 +21,6 @@ using LogicKernel:
     pl_unify_with_occurs_check!,
     pl_can_compare,
     unifiable,
-    OccursCheckError,
     OCCURS_CHECK_TRUE,
     OCCURS_CHECK_ERROR
 
@@ -40,15 +39,19 @@ function _old(flag)
     return ld
 end
 
-"The `OccursCheckError` `f()` raises, or `nothing` if it raises none."
-function _oerr(f)
-    try
-        f()
-    catch e
-        e isa OccursCheckError && return e
-        rethrow()
-    end
-    return nothing
+"""
+The occurs-check error `f()` leaves pending in `ld`, as upstream raises it (S10): `(var, term)` of
+the ball `error(occurs_check(Var, Term), _)`, after `f()` failed — or `nothing` if none is pending.
+"""
+function _oerr(ld, f)
+    rc = f()
+    ld.exception_term == 0 && return nothing
+    @test rc === false || rc === nothing            # it failed, the error pending
+    ball = ld.slots[ld.exception_term + 1]
+    lk_name(child(ball, 1)) == :error || return nothing
+    formal = child(ball, 2)
+    lk_name(child(formal, 1)) == :occurs_check || return nothing
+    return (var=child(formal, 2), term=child(formal, 3))
 end
 
 @testset "unify_with_occurs_check" begin
@@ -87,28 +90,30 @@ end
     # PORT: test_occurs_check.pl unify
     @testset "unify" begin                       # error(occurs_check(X, f(X))): X = f(X)
         X = _ov(1)
-        e = _oerr(() -> pl_unify!(_old(OCCURS_CHECK_ERROR), X, _oc(:f, X)))
+        ld = _old(OCCURS_CHECK_ERROR)
+        e = _oerr(ld, () -> pl_unify!(ld, X, _oc(:f, X)))
         @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
     end
     # PORT: test_occurs_check.pl unify
     @testset "unify" begin                       # error(occurs_check(X, f(X))): unify(X, f(X))
         X, A = _ov(1), _ov(2)
         ld = _old(OCCURS_CHECK_ERROR)
-        e = _oerr(() -> pl_unify!(ld, _oc(:unify, X, _oc(:f, X)), _oc(:unify, A, A)))
+        e = _oerr(ld, () -> pl_unify!(ld, _oc(:unify, X, _oc(:f, X)), _oc(:unify, A, A)))
         @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
         @test isempty(ld.trail) && isempty(ld.bindings)     # undone before the error
     end
     # PORT: test_occurs_check.pl unifiable
     @testset "unifiable" begin                   # error(occurs_check(X, f(X)))
         X = _ov(1)
-        e = _oerr(() -> unifiable(_old(OCCURS_CHECK_ERROR), X, _oc(:f, X)))
+        ld = _old(OCCURS_CHECK_ERROR)
+        e = _oerr(ld, () -> unifiable(ld, X, _oc(:f, X)))
         @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
     end
     # PORT: test_occurs_check.pl ?=
     @testset "?=" begin                          # error(occurs_check(X, f(X))): ?=(X, f(X))
         X = _ov(1)
         ld = _old(OCCURS_CHECK_ERROR)
-        e = _oerr(() -> pl_can_compare(ld, X, _oc(:f, X)))
+        e = _oerr(ld, () -> pl_can_compare(ld, X, _oc(:f, X)))
         @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
         @test isempty(ld.trail)                             # ?= undoes, error or not
     end
@@ -119,11 +124,10 @@ end
     # 2026-10-03: `occurs_check(_752, s(_758))`). The test pins that shape.
     @testset "head" begin                        # my_unify(X, X) against my_unify(Y, s(Y))
         X, Y = _ov(1), _ov(2)
+        ld = _old(OCCURS_CHECK_ERROR)
         e = _oerr(
-            () -> pl_unify!(
-                _old(OCCURS_CHECK_ERROR), _oc(:my_unify, X, X),
-                _oc(:my_unify, Y, _oc(:s, Y))
-            )
+            ld,
+            () -> pl_unify!(ld, _oc(:my_unify, X, X), _oc(:my_unify, Y, _oc(:s, Y)))
         )
         @test e !== nothing && _oid(e.var, X)
         @test _oid(e.term, _oc(:s, Y))                      # s(Y), as swipl's `=` (see header)

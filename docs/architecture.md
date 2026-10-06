@@ -1231,6 +1231,56 @@ src/pl-funct.jl, src/pl-global.jl).
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
 
+**S10 — the occurs-check error raised by the unifier: BUILT (2026-10-06)** (the divergence audit's
+S10, docs/divergence_audit.md; the head-unification chunk's first commit, user 2026-10-06;
+src/pl-prims.jl, pl-wam.jl, pl-fli.jl, pl-proc.jl, pl-comp.jl). Research: the workspace's
+`docs/research/v9-inline-unification/` (both memos, § C).
+* **Ported:** `failed_unify_with_occurs_check` raises the error itself, as upstream
+  (pl-prims.c:666-686): `PL_error(ERR_OCCURS_CHECK, Var, Term)`, the result false, the error
+  pending. The Julia `OccursCheckError` and the wrapper that turned it into the Prolog error
+  (`_unify_ptrs_raising`) are gone; `H_VAR`, `PL_unify`, `can_unify(…, ex)` and `unifiable/3` call
+  `unify_ptrs` directly, as upstream's do.
+* **What follows from "false, the error pending", each as upstream:**
+  * `unify_all_trail_ptrs` undoes only when no exception is pending (pl-prims.c:4164-4185). Not
+    observable today: `unify_with_occurs_check` undoes before it raises (mutant MS8, equivalent).
+  * The term-level `\=` and `?=` fail with the error pending, as their predicates raise it; before,
+    a failed unification read as "cannot unify".
+  * `retract/1` stops at a pending exception (pl-proc.c:3240-3241); `retractall/1` returns false,
+    stopping on a head's error or a failed retract with an exception (pl-proc.c:3341-3370).
+  * `clause/2` does NOT stop. Upstream raises the error in `unify_head`, after `decompile`, and
+    checks `exception_term` only when `decompile` fails (pl-comp.c:7393-7426). swipl 10.1.16, probed
+    with `q(Y, Y). q(a, f(a)).` and `clause(q(A, f(A)), B)` under `error`, answers from the second
+    clause and warns that the exception was not cleared.
+* **NOT PORTED:** `blockGC`/`unblockGC` around `PL_error`; they hold off the stack garbage
+  collector, which the kernel does not have until G1.
+* **Gates:**
+  * test/core_lang/test_occurs_check.jl: upstream's `occurs_check_error` units read the ball
+    pending in `ld` (`error(occurs_check(V, T), _)`) after the call fails.
+  * test/core_lang/test_unify_swipl.jl: the live differential reads "error" from the pending
+    exception and clears it before the next pair (`PL_error` never overrules one); a new testset
+    pins the term-level `\=` and `?=`.
+  * test/db/test_clause_variables.jl: retract, retractall and clause against swipl's probed
+    behaviour.
+  * test/test_port_check.jl: a `# DIVERGES (interim, …)` marker naming a decided question is stale
+    (user, 2026-10-06), so MARKER-STALE provably covers the annotated form.
+* **Mutation-proved — 13 of 14 caught at verdict level** (reference term type, one warm file
+  per mutant, the tree restored byte for byte after each). Caught:
+  * the unifier raising nothing, seen both from test_occurs_check.jl and from the VM's
+    head-unification differential;
+  * the term-level `\=` and `?=` reading a pending error as "cannot unify";
+  * retract/1 going on past the error, retractall/1 ignoring it, clause/2 stopping at it;
+  * `=/2` losing the error `PL_unify` leaves pending (the live first-users differential);
+  * a marker that needs a colon (the new `(interim, …)` fixture).
+
+  **MS8 is EQUIVALENT:** `unify_all_trail_ptrs` undoing whatever happens. The only exception raised
+  inside the unification is the occurs-check error, and `unify_with_occurs_check!` undoes its
+  bindings before it raises; the variable path binds nothing. So on every path the kernel reaches,
+  the conditional undo has nothing to keep. It stays upstream's, for an exception that was pending
+  beforehand.
+* **Also proved here, after the fact, for `95064ce`**, which was committed without mutants:
+  MARKER-STALE's question rows. A question row not read as a plan row, `DECIDED` not counted as
+  done, a marker's question not read as a wait, a question given a step's advice: 4 of 4 caught.
+
 **V6b2 — the other goals compiled inline, as upstream decides: BUILT (2026-10-06)** (port_inventory
 row V6, its split; src/pl-comp.jl, pl-funct.jl, pl-incl.jl). From the cut memo (scratchpad
 `V6_memo_cut.md` § 5, Q-1 (a)). V2's interim refused these functors whole (choice Q5). It is gone:

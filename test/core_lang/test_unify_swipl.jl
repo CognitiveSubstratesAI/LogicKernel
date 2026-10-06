@@ -27,7 +27,7 @@ using LogicKernel:
     Mark,
     Undo!,
     resolve_term,
-    OccursCheckError,
+    PL_clear_exception,
     OCCURS_CHECK_FALSE,
     OCCURS_CHECK_TRUE,
     OCCURS_CHECK_ERROR
@@ -283,7 +283,11 @@ function _zkernel(ld, a::_ZT, b::_ZT, mode)::String
     ld.prolog_flag_occurs_check = mode
     m = Mark(ld)
     try
-        pl_unify!(ld, a, b) || return "fail"
+        if !pl_unify!(ld, a, b)
+            ld.exception_term == 0 && return "fail"
+            PL_clear_exception(ld)                  # PL_error never overrules a pending one
+            return "error"
+        end
         sig = _zcmpsig(ld)
         return try
             vs = mk_expr(_ZT, _ZT[_zs(:vs); [resolve_term(ld, _zv(k)) for k in 1:_ZALL]])
@@ -292,9 +296,6 @@ function _zkernel(ld, a::_ZT, b::_ZT, mode)::String
             e isa ArgumentError || rethrow()
             "cyclic " * sig
         end
-    catch e
-        e isa OccursCheckError || rethrow()
-        return "error"
     finally
         Undo!(ld, m)
     end
@@ -344,6 +345,7 @@ function _zswipl_run!(
         a, b = pairs[i]
         println(prog, "p($i, $(_zsrc(a)), $(_zsrc(b)), $vs).")
     end
+    # allow-docstring-interp: the string below is swipl program text, not a docstring; its `$mode` interpolates on purpose
     print(
         prog,
         """
@@ -645,5 +647,25 @@ else
     @info "=/2 DIFFERENTIAL NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI's analysis job."
     @testset "=/2 differential skipped only where it is not required" begin
         @test !_ZSWIPL_REQUIRED
+    end
+end
+
+# S10 (the divergence audit; user, 2026-10-06): the occurs-check error is RAISED where the unifier
+# meets it, as upstream's `failed_unify_with_occurs_check`: `false`, the error pending. The
+# term-level `\=` and `?=` then fail, rather than read the failed unification as "cannot unify";
+# swipl 10.1.16 raises from both (probed: `X \= f(X)` gives `error(occurs_check(X, f(X)), _)`).
+@testset "S10: \\= and ?= under occurs_check=error fail with the error pending" begin
+    for f in (LogicKernel.pl_not_unify, LogicKernel.pl_can_compare)
+        ld = PL_local_data{_ZT}()
+        ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
+        X = _zv(1)
+        @test f(ld, X, _zc(:f, X)) === false
+        @test ld.exception_term != 0
+        ball = ld.slots[ld.exception_term + 1]
+        @test lk_name(child(ball, 1)) == :error
+        @test lk_name(child(child(ball, 2), 1)) == :occurs_check
+        @test isempty(ld.trail) && isempty(ld.bindings)
+        PL_clear_exception(ld)
+        @test ld.exception_term == 0
     end
 end
