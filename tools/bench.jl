@@ -184,6 +184,36 @@ function _vm_nreverse()::Int
 end
 @assert _vm_nreverse() == LogicKernel.PL_S_TRUE
 
+# built-in calls (V5a2): a 1000-element list walk calling `compare/3` from a clause body — `I_CALL`
+# into a foreign predicate and back, per element; swipl runs the same clauses (`BW_PROLOG`), the list
+# a literal on both sides
+let (X, T) = (_v(), _v())
+    _nr_add!(_nrf(:bw, _nrnil()), nothing)
+    _nr_add!(
+        _nrf(:bw, _nrcons(X, T)),
+        _nrf(Symbol(","), _nrf(:compare, _v(), X, X), _nrf(:bw, T))
+    )
+    _nr_add!(
+        _a(:bwtop),
+        _nrf(:bw, foldr(_nrcons, [gnd_term(BT, i) for i in 1:1000]; init=_nrnil()))
+    )
+end
+const BW_PROC = lookupProcedure(_a(:bwtop), 0, NR_USER)
+function _vm_bw()::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    qid = LogicKernel.PL_open_query(
+        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, BW_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    return rc
+end
+@assert _vm_bw() == LogicKernel.PL_S_TRUE
+const BW_PROLOG =
+    "bw([]).\nbw([X|T]) :- compare(_, X, X), bw(T).\nbwtop :- bw([" * join(1:1000, ",") *
+    "]).\n"
+
 # allow-docstring-interp: not a docstring — this Prolog source interpolates DEPTH on purpose
 const PROLOG_FIXTURES =
     """
@@ -193,7 +223,7 @@ fixtures(G1, G2, V1, V2) :-
     tree($DEPTH, a, G1), tree($DEPTH, a, G2), tree($DEPTH, _, V1), tree($DEPTH, _, V2),
     forall(between(1, 1000, I), assertz(cp(I, a))).
 :- dynamic cp/2.
-""" * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String)
+""" * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) * BW_PROLOG
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
 const CASES = [
@@ -237,6 +267,7 @@ const CASES = [
     ("query cp(500,Y)", () -> _vm_query(Q_LD, Q_ONE), "forall(cp(500, _), true)"),
     # rules (V4b): nreverse of 30, 496 calls with last-call reuse, open to close
     ("nreverse", _vm_nreverse, "nreverse"),
+    ("compare/3 ×1000, body", _vm_bw, "bwtop"),
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs

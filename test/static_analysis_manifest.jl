@@ -470,10 +470,50 @@ function _manifest_index(T)
         (LK.PL_next_solution, Tuple{GD, LD, Int}, false),
         (LK.PL_next_solution_guarded, Tuple{GD, LD, Int, Bool}, false),
         (LK._abandon_query, Tuple{LD, Int}, false),
-        (LK._unify_ptrs_raising, Tuple{GD, LD, T, T}, false),
+        (LK._unify_ptrs_raising, Tuple{LD, T, T}, false),
         (LK._check_foreign_environment, Tuple{LD, String}, true),
         (LK.PL_raise_exception, Tuple{LD, Int}, false),
-        (LK.PL_error, Tuple{GD, LD, LK.PL_error_code, T, T}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, T, T}, false),
+        # V5a2 — the built-in call path (src/pl-ext.jl, pl-trace.jl, pl-error.jl, pl-fli.jl,
+        # pl-supervisor.jl, pl-wam.jl, pl-prims.jl, pl-variant.jl), over DefaultTerm only, as V4a's
+        (LK.PL_error, Tuple{LD, LK.PL_error_code}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, T, Int}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, String, Int}, false),
+        (LK._PL_error_open, Tuple{LD}, false),
+        (LK._PL_error_close!, Tuple{LD, Union{Nothing, D}, Int, Int, Int, Int}, false),
+        (LK.PL_type_error, Tuple{LD, String, Int}, false),
+        (LK.PL_domain_error, Tuple{LD, String, Int}, false),
+        (LK.PL_is_variable, Tuple{LD, Int}, true),
+        (LK.PL_unify, Tuple{LD, Int, Int}, false),
+        (LK.PL_unify_atomic, Tuple{LD, Int, T}, false),
+        (LK.PL_unify_atom, Tuple{LD, Int, T}, false),
+        (LK.PL_unify_integer, Tuple{LD, Int, Int}, false),
+        (LK.PL_put_intptr, Tuple{LD, Int, Int}, false),
+        (LK.PL_compare, Tuple{LD, Int, Int}, false),
+        (LK.PL_clear_exception, Tuple{LD}, false),
+        (LK.PL_clear_foreign_exception, Tuple{LD, Int}, false),
+        (LK.vmi_fopen, Tuple{LD, Int, D}, true),
+        (LK.error_foreign_return_code, Tuple{LD, UInt}, false),
+        (LK.createForeignSupervisor!, Tuple{D, Int}, false),
+        (LK.builtin_pred_flags, Tuple{UInt8, UInt64}, true),
+        (LK.registerBuiltins!, Tuple{GD, Vector{Tuple{String, Int, UInt8}}, Int}, false),
+        (LK.initBuildIns!, Tuple{GD}, false),
+        (LK._fcall_va, Tuple{Int, LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK._fcall_det, Tuple{Int, LD, Int}, false),
+        (LK.MODULE_system, Tuple{GD}, true),
+        (LK.PL_unify_frame, Tuple{LD, Int, Int}, false),
+        (LK.PL_unify_choice, Tuple{LD, Int, Int}, false),
+        (LK.pl_prolog_current_frame, Tuple{LD, Int}, false),
+        (LK.can_unify, Tuple{LD, T, T, Int}, false),
+        (LK.unifiable, Tuple{LD, Int, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_unify2_va, LK.pl_not_unify2_va, LK.pl_unify_with_occurs_check2_va,
+                LK.pl_equal2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
+                LK.pl_unifiable3_va,
+                LK.pl_variant2_va, LK.pl_prolog_current_choice1_va
+            )
+        ]...,
         # V4b — the call path's helpers: the record checks and the procedure a call names allocate
         # nothing; the run loop's call-path labels are checked by their own test (static_analysis_body.jl)
         (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
@@ -644,7 +684,16 @@ const DISPATCH_MANIFEST = (
     (Base.Enums._enum_hash, Tuple{LK.PL_error_code, UInt64}, false),
     # term-type-independent parts of the VM (V4a)
     (LK.StackMagic, Tuple{Int}, true), (LK.initSupervisors, Tuple{}, false),
-    (LK._vmi_dispatch_tree, Tuple{Symbol, Vector{Tuple{UInt64, Symbol}}}, false)
+    (LK._vmi_dispatch_tree, Tuple{Symbol, Vector{Tuple{UInt64, Symbol}}}, false),
+    # the registration tables (V5a2, src/pl-ext.jl), each read as `(name, arity, flags)`
+    (LK._extension_sigs, Tuple{typeof(LK.foreigns)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_prims)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_variant)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_trace)}, false),
+    # the built-ins' dispatch trees, built when src/pl-ext.jl loads
+    (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._va_leaf)}, false),
+    (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),
+    (LK._va_leaf, Tuple{Int}, false), (LK._det_leaf, Tuple{Int}, false)
 )
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
@@ -675,5 +724,11 @@ const DISPATCH_EXEMPT = (
     ),
     (
         (LK.var"@vmi_dispatch", Tuple{LineNumberNode, Module, Any, Symbol}) => "a macro (the run loop's dispatch tree): it builds Exprs at load time, with _vmi_dispatch_tree, which is checked; its expansion runs in PL_next_solution_guarded, which is checked"
+    ),
+    (
+        (LK.var"@_fcall_va_body", Tuple{LineNumberNode, Module}) => "a macro (the built-ins' dispatch tree, V5a2): it builds Exprs at load time; its expansion is _fcall_va, which is checked"
+    ),
+    (
+        (LK.var"@_fcall_det_body", Tuple{LineNumberNode, Module}) => "a macro (the FRG built-ins' dispatch tree, V5a2): it builds Exprs at load time; its expansion is _fcall_det, which is checked"
     )
 )

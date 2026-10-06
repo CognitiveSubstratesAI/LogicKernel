@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-fli.c @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-fli.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1996-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -7,8 +8,8 @@
 #
 # THE TERM REFERENCES of SWI-Prolog's foreign language interface (pl-fli.c): a `term_t` is a
 # position on the local stack (src/pl-incl.jl § the local stack), allocated at `lTop` inside the
-# innermost foreign frame, which counts them. The `PL_get_*`/`PL_put_*`/`PL_unify_*` family the
-# built-ins use arrives with them (V5).
+# innermost foreign frame, which counts them. Since V5a2, the `PL_*` functions the first built-ins
+# and the foreign call path use, under upstream's names, on `(ld, term_t)`.
 
 # The check upstream's API entry points make (fli:535-548): a term reference is made inside a
 # foreign frame newer than the running Prolog frame — never while a query's answer has been left
@@ -134,4 +135,74 @@ function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T
     ld.exception_term = ld.exception_bin
 
     return false
+end
+
+# ── the subset built-ins use (V5a2) ──────────────────────────────────────────────────────────────
+
+# PORT: pl-fli.h PL_is_variable
+"Whether term reference `t` holds an unbound variable (pl-fli.h; `canBind`: no attributed variables)."
+PL_is_variable(ld::PL_local_data{T}, t::term_t) where {T} =
+    kind(deRef(ld, ld.slots[t + 1])) === VAR
+
+# PORT: pl-fli.c PL_unify
+# DIVERGES: an occurs-check error is RAISED (pending, false), as upstream's `unify_ptrs` raises it —
+# the kernel's unifier throws a Julia `OccursCheckError`, turned into the Prolog error here
+# (`_unify_ptrs_raising`), so no Julia exception leaves a built-in. No `ALLOW_GC|ALLOW_SHIFT`.
+"Unify the terms `t1` and `t2` reference (pl-fli.c `PL_unify`); does not undo on failure."
+PL_unify(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
+    _unify_ptrs_raising(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
+
+# PORT: pl-fli.c PL_unify_atomic
+# DIVERGES: `w` is an atomic TERM (no words); "the same word" and `equalIndirect` are the standard
+# order's identity of two atomic terms (`compare_primitives` in equality mode) — `1` is not `1.0`.
+"Unify the term `t` references with the atomic term `w` (pl-fli.c `PL_unify_atomic`)."
+function PL_unify_atomic(ld::PL_local_data{T}, t::term_t, w::T)::Bool where {T}
+    p = deRef(ld, ld.slots[t + 1])
+    if kind(p) === VAR                                  # canBind(*p)
+        Trail!(ld, var_key(p), w)                       # bindConst(p, w)
+        return true
+    end
+    return compare_primitives(p, w, CMP_MODE_EQUAL) == CMP_EQUAL
+end
+
+# PORT: pl-fli.c PL_unify_atom
+"Unify the term `t` references with the atom `a` (pl-fli.c `PL_unify_atom`)."
+PL_unify_atom(ld::PL_local_data{T}, t::term_t, a::T) where {T} = PL_unify_atomic(ld, t, a)
+
+# PORT: pl-fli.c PL_unify_integer
+# DIVERGES: every `Int` is one grounded value — no `consInt` range and no `unify_int64_ex`.
+"Unify the term `t` references with the integer `i` (pl-fli.c `PL_unify_integer`)."
+PL_unify_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
+    PL_unify_atomic(ld, t, mk_gnd(T, i))
+
+# PORT: pl-fli.h PL_put_intptr
+# DIVERGES: `PL_put_int64`'s work, inline: the reference holds the integer.
+"Make term reference `t` hold the integer `i` (pl-fli.h `PL_put_intptr`)."
+function PL_put_intptr(ld::PL_local_data{T}, t::term_t, i::Int)::Bool where {T}
+    ld.slots[t + 1] = mk_gnd(T, i)
+    return true
+end
+
+# PORT: pl-fli.c PL_compare
+"The standard order of the terms `t1` and `t2` reference: -1, 0 or 1 (pl-fli.c `PL_compare`)."
+PL_compare(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
+    compareStandard(ld, ld.slots[t1 + 1], ld.slots[t2 + 1], false)
+
+# PORT: pl-fli.c PL_clear_exception
+# DIVERGES: no `LD->outofstack` (the spare stacks are V5b's).
+"Drop the pending exception, if any (pl-fli.c `PL_clear_exception`)."
+function PL_clear_exception(ld::PL_local_data{T})::Nothing where {T}
+    if ld.exception_term != 0
+        resumeAfterException(ld, true)
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_clear_foreign_exception
+# DIVERGES: nothing is printed — the kernel has no `Serror` (decision 1: no messages); upstream
+# prints "Foreign predicate … did not clear exception" and the ball.
+"A foreign predicate succeeded with an exception pending: drop it (pl-fli.c)."
+function PL_clear_foreign_exception(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
+    PL_clear_exception(ld)
+    return nothing
 end

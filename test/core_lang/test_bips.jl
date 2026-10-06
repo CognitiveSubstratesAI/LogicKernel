@@ -6,10 +6,11 @@
 # `ground/1` (our `is_ground`) and `compare/3` / `==/2` (our `compareStandard`, src/pl-prims.jl) —
 # under upstream's own unit names, each case as upstream states it.
 #
+# `iso_8_4_2_3_a/b` — compare/3 rejecting a non-atom / non-order first argument — call the BUILT-IN
+# `compare/3` (V5a2, through the foreign call path) and check the error's formal, as plunit's
+# `error(F)` does.
+#
 # NOT PORTED from this file, and why:
-#   iso_8_4_2_3_a/b       compare/3 rejecting a non-atom / non-order first argument — Prolog
-#                         argument checking; `compareStandard` returns the order instead of
-#                         unifying it, so there is no argument to reject.
 #   iso_8_11_8            stream positions at end of file — streams are not part of the kernel.
 #   bips_occurs_check_error, arg, length, is_most_general_term — builtins not ported yet.
 using Test, LogicKernel
@@ -22,6 +23,26 @@ _bc(xs::_BT...) = mk_expr(_BT, _BT[xs...])
 _bv(k) = mk_var(_BT, UInt64(k))
 # Prolog's order atom from our -1/0/1, so each case reads like upstream's `Order == (<)`.
 _border(a, b) = (:<, :(=), :>)[compareStandard(a, b) + 2]
+# The built-in `compare/3` (V5a2) called as a query on `o, x, y`: its exception's formal, or nothing.
+function _bcompare_formal(o::_BT, x::_BT, y::_BT)
+    LK = LogicKernel
+    gd = LK.PL_global_data{_BT}()
+    ld = LK.PL_local_data{_BT}()
+    p = LK.isCurrentProcedure(sym_key(_ba(:compare)), 3, LK.MODULE_system(gd))
+    a = LK.PL_new_term_refs(ld, 3)
+    ld.slots[a + 1], ld.slots[a + 2], ld.slots[a + 3] = o, x, y
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, p, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    f = if rc == LK.PL_S_EXCEPTION
+        child(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]), 2)
+    else
+        nothing
+    end
+    LK.PL_close_query(ld, qid)
+    return f
+end
 
 @testset "bips" begin
     # PORT: test_bips.pl iso_8_3_10_4
@@ -44,6 +65,20 @@ _border(a, b) = (:<, :(=), :>)[compareStandard(a, b) + 2]
         @test _border(_ba(:d), _ba(:d)) === :(=)                   # compare(Order, d, d)
         # upstream comments out `compare(Order, 3, 3.0)` as a "current disagreement" (ISO says >,
         # SWI's non-ISO mode puts the float first); the live differential pins SWI's behaviour.
+    end
+
+    # PORT: test_bips.pl iso_8_4_2_3_a
+    @testset "iso_8_4_2_3_a" begin                  # error(type_error(atom, 1+1))
+        x = _bc(_ba(:+), _bg(1), _bg(1))
+        f = _bcompare_formal(x, _ba(:b), _ba(:c))   # compare(1+1, b, c)
+        @test f !== nothing &&
+            compareStandard(f, _bc(_ba(:type_error), _ba(:atom), x)) == 0
+    end
+    # PORT: test_bips.pl iso_8_4_2_3_b
+    @testset "iso_8_4_2_3_b" begin                  # error(domain_error(order, a))
+        f = _bcompare_formal(_ba(:a), _ba(:b), _ba(:c))     # compare(a, b, c)
+        @test f !== nothing &&
+            compareStandard(f, _bc(_ba(:domain_error), _ba(:order), _ba(:a))) == 0
     end
 
     # Compare must order by Unicode CODE POINT, not by UTF-16 code unit (upstream's comment): a

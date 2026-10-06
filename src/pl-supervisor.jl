@@ -16,7 +16,8 @@
 # freeing a supervisor and lingering it for other threads do not exist. The database's global data
 # is passed in where upstream reads `global_generation()`.
 #
-# NOT PORTED: the foreign supervisors (`createForeignSupervisor`, V5), the wrapper supervisors
+# Since V5a2, the deterministic foreign supervisors (`createForeignSupervisor`). NOT PORTED: the
+# non-deterministic ones (`I_FOPENNDET` …, V9), the wrapper supervisors
 # (`S_CALLWRAPPER`, `wrap_predicate/4`), the tabling supervisors (`S_INCR_DYNAMIC`, `S_TRIE_GEN`) and
 # `S_THREAD_LOCAL` — none of their subsystems exists.
 
@@ -244,5 +245,37 @@ function setDefaultSupervisor(gd::PL_global_data{T}, def::Definition{T})::Bool w
         end
     end
 
+    return true
+end
+
+# PORT: pl-supervisor.c MAX_FLI_ARGS
+"The most arguments a foreign predicate with the `a1, a2, …` convention takes (pl-supervisor.c)."
+const MAX_FLI_ARGS = 10
+
+# PORT: pl-supervisor.c createForeignSupervisor as createForeignSupervisor!
+# DIVERGES: `f` is the built-in's index in its dispatch table (decision 5; src/pl-ext.jl), where
+# upstream's operand is the function's address (`ptr2code`). The non-deterministic supervisor
+# (`I_FOPENNDET`, `I_FCALLNDET*`, `I_FEXITNDET`, `I_FREDO`) is V9's: refused by name.
+"Give foreign predicate `def` its supervisor calling built-in `f` (pl-supervisor.c)."
+function createForeignSupervisor!(def::Definition{T}, f::Int)::Bool where {T}
+    @assert (def.flags & P_FOREIGN) != 0
+    if (def.flags & P_VARARG) == 0 && def.arity > MAX_FLI_ARGS
+        error(
+            "Too many arguments to foreign function $(repr(def.name))/$(def.arity) (>$MAX_FLI_ARGS)"
+        )
+    end
+    if (def.flags & P_NONDET) == 0
+        if (def.flags & P_VARARG) != 0
+            def.codes = code[I_FCALLDETVA, code(f)]
+        else
+            def.codes = code[I_FCALLDET0 + code(def.arity), code(f), I_FEXITDET]
+        end
+    else
+        throw(
+            NotPortedError{T}(
+                def.name, "a non-deterministic foreign predicate's supervisor", "V9"
+            )
+        )
+    end
     return true
 end

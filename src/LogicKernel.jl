@@ -44,6 +44,8 @@ include("pl-error.jl")         # swipl-devel src/pl-error.c — error terms (the
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
+include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
+include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 
 # ── exports ─────────────────────────────────────────────────────────────────────────────────────

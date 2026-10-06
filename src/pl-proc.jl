@@ -53,7 +53,9 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
         clauses.args = nothing
     end
     cd = m.code_data
-    def = Definition{T}(key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd)
+    def = Definition{T}(
+        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0
+    )
     proc = Procedure{T}(def, UInt32(0))
     m.procedures[(key, arity)] = proc
     return proc

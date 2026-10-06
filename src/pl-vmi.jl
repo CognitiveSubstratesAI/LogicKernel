@@ -14,7 +14,8 @@
 # (`VIF_LCO`, `VIF_BREAK`) and its operand kinds (`CA1_*`). The BODIES are in `PL_next_solution`'s run
 # loop (src/pl-wam.jl), as upstream `#include`s pl-vmi.c inside it. Upstream numbers instructions by
 # their order in pl-vmi.c; these numbers keep that order up to `I_TCALL` (`B_VAR0 + index` needs the
-# three consecutive) and then append, in the order the steps declared them: `I_CUT` (V2), then V4a's.
+# three consecutive) and then append, in the order the steps declared them: `I_CUT` (V2), then V4a's,
+# then V5a2's deterministic foreign calls (`I_FCALLDET0 + arity` needs the eleven consecutive).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -281,6 +282,45 @@ const S_TRUSTME = code(59)
 # PORT: pl-vmi.c S_LIST
 "Supervisor of a `[]`/`[_|_]` pair: run the clause the argument selects; operands: the argument, the two clause references (pl-vmi.c)."
 const S_LIST = code(60)
+# PORT: pl-vmi.c I_FCALLDETVA
+"Call a deterministic foreign predicate with the `t0, ac, ctx` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDETVA = code(61)
+# PORT: pl-vmi.c I_FCALLDET0
+"Call a deterministic foreign predicate of 0 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET0 = code(62)
+# PORT: pl-vmi.c I_FCALLDET1
+"Call a deterministic foreign predicate of 1 argument, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET1 = code(63)
+# PORT: pl-vmi.c I_FCALLDET2
+"Call a deterministic foreign predicate of 2 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET2 = code(64)
+# PORT: pl-vmi.c I_FCALLDET3
+"Call a deterministic foreign predicate of 3 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET3 = code(65)
+# PORT: pl-vmi.c I_FCALLDET4
+"Call a deterministic foreign predicate of 4 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET4 = code(66)
+# PORT: pl-vmi.c I_FCALLDET5
+"Call a deterministic foreign predicate of 5 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET5 = code(67)
+# PORT: pl-vmi.c I_FCALLDET6
+"Call a deterministic foreign predicate of 6 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET6 = code(68)
+# PORT: pl-vmi.c I_FCALLDET7
+"Call a deterministic foreign predicate of 7 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET7 = code(69)
+# PORT: pl-vmi.c I_FCALLDET8
+"Call a deterministic foreign predicate of 8 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET8 = code(70)
+# PORT: pl-vmi.c I_FCALLDET9
+"Call a deterministic foreign predicate of 9 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET9 = code(71)
+# PORT: pl-vmi.c I_FCALLDET10
+"Call a deterministic foreign predicate of 10 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLDET10 = code(72)
+# PORT: pl-vmi.c I_FEXITDET
+"After a deterministic foreign call — never executed: the calls jump to its helper (pl-vmi.c)."
+const I_FEXITDET = code(73)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS (a literal is one, see above); `argtype`
@@ -356,7 +396,20 @@ const _CODE_TABLE = (
     code_info(:S_DYNAMIC, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:S_MULTIFILE, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:S_TRUSTME, 0x00, 1, (CA1_CLAUSEREF, 0x00, 0x00, 0x00)),
-    code_info(:S_LIST, 0x00, 3, (CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF, 0x00))
+    code_info(:S_LIST, 0x00, 3, (CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF, 0x00)),
+    code_info(:I_FCALLDETVA, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET0, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET1, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET2, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET3, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET4, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET5, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET6, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET7, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET8, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET9, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLDET10, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FEXITDET, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

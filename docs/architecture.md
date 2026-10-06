@@ -212,7 +212,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
@@ -222,10 +222,12 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
 | `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
-| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception` | `src/pl-fli.c` |
-| `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`) | `src/SWI-Prolog.h` |
+| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`; since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`) | `src/pl-fli.c`, `src/pl-fli.h` |
+| `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
-| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`; the occurs-check error so far) | `src/pl-error.c`, `src/pl-error.h` |
+| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
+| `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer) | `src/pl-ext.c` |
+| `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_query.jl` | V4a's query API: answers, return codes and determinism; the supervisors; positions identical to swipl's; nested queries; cut against close; a closed `qid`; exceptions caught and passed; a Julia exception closing the query; clause GC under a running query; warm allocation | — |
@@ -305,6 +307,8 @@ graph LR
     pl_setup["pl-setup.jl"]
     pl_proc["pl-proc.jl"]
     pl_supervisor["pl-supervisor.jl"]
+    pl_trace["pl-trace.jl"]
+    pl_ext["pl-ext.jl"]
     precompile_workload["precompile_workload.jl"]
     term_interface --> default_term
     default_term --> term_interface
@@ -339,6 +343,7 @@ graph LR
     pl_global --> pl_wam
     pl_global --> pl_setup
     pl_global --> pl_supervisor
+    pl_global --> pl_ext
     pl_inline --> term_interface
     pl_inline --> default_term
     pl_inline --> pl_incl
@@ -347,12 +352,16 @@ graph LR
     pl_prims --> term_interface
     pl_prims --> default_term
     pl_prims --> pl_incl
+    pl_prims --> SWI_Prolog
     pl_prims --> pl_termwalk
     pl_prims --> pl_global
     pl_prims --> pl_inline
     pl_prims --> pl_ressymbol
     pl_prims --> pl_comp
     pl_prims --> pl_variant
+    pl_prims --> pl_wam
+    pl_prims --> pl_fli
+    pl_prims --> pl_error
     pl_ressymbol --> term_interface
     pl_ressymbol --> default_term
     pl_ressymbol --> pl_incl
@@ -372,6 +381,8 @@ graph LR
     pl_comp --> pl_proc
     pl_variant --> term_interface
     pl_variant --> default_term
+    pl_variant --> pl_incl
+    pl_variant --> SWI_Prolog
     pl_variant --> pl_global
     pl_variant --> pl_inline
     pl_variant --> pl_prims
@@ -411,9 +422,11 @@ graph LR
     pl_wam --> pl_fli
     pl_wam --> pl_error
     pl_wam --> pl_supervisor
+    pl_wam --> pl_ext
     pl_fli --> term_interface
     pl_fli --> default_term
     pl_fli --> pl_incl
+    pl_fli --> SWI_Prolog
     pl_fli --> pl_global
     pl_fli --> pl_inline
     pl_fli --> pl_prims
@@ -422,6 +435,7 @@ graph LR
     pl_error --> term_interface
     pl_error --> default_term
     pl_error --> pl_incl
+    pl_error --> SWI_Prolog
     pl_error --> pl_global
     pl_error --> pl_wam
     pl_error --> pl_fli
@@ -448,6 +462,23 @@ graph LR
     pl_supervisor --> pl_comp
     pl_supervisor --> pl_wam
     pl_supervisor --> pl_proc
+    pl_trace --> term_interface
+    pl_trace --> default_term
+    pl_trace --> pl_incl
+    pl_trace --> SWI_Prolog
+    pl_trace --> pl_global
+    pl_trace --> pl_wam
+    pl_trace --> pl_fli
+    pl_ext --> term_interface
+    pl_ext --> default_term
+    pl_ext --> pl_incl
+    pl_ext --> SWI_Prolog
+    pl_ext --> pl_global
+    pl_ext --> pl_prims
+    pl_ext --> pl_variant
+    pl_ext --> pl_proc
+    pl_ext --> pl_supervisor
+    pl_ext --> pl_trace
     precompile_workload --> term_interface
     precompile_workload --> default_term
     precompile_workload --> pl_incl
@@ -1083,6 +1114,63 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V5a2 — the built-in call path: BUILT (2026-10-05)** (port_inventory row V5, its split; decision 5;
+src/pl-ext.jl, src/pl-trace.jl NEW; src/pl-wam.jl, src/pl-vmi.jl, src/pl-incl.jl, src/SWI-Prolog.jl,
+src/pl-fli.jl, src/pl-error.jl, src/pl-supervisor.jl, src/pl-comp.jl, src/pl-global.jl,
+src/pl-prims.jl, src/pl-variant.jl). Built from the call-path memo and decision 5; only genuinely new
+questions parked (session-log §0: Q-A..Q-D).
+* **Ported:**
+  * the types and flags — `term_t`, `fid_t`, `foreign_t`, `FTRUE`/`FFALSE`, `PL_FA_*`,
+    `PL_extension`, `frg_code`, `foreign_context`/`control_t` (on the query record, pooled: upstream's
+    is a C local of the run loop), the `P_*` bits `registerBuiltins` sets, `definition`'s
+    `impl_foreign_function`;
+  * registration as upstream registers — `builtin_pred_flags`, `registerBuiltins!`, `initBuildIns!`
+    (FRG first, then prims, variant, trace), into a `system` module record (with `$c_call_prolog/0`,
+    where `setBuiltinPredicateProperties` puts it), `createForeignSupervisor!`: `I_FCALLDETVA f`, or
+    `I_FCALLDET<n> f I_FEXITDET`;
+  * the instructions — `I_FCALLDETVA`, `I_FCALLDET0..10`, `I_FEXITDET` (asserting) and its helper
+    `helper_I_FEXITDET` (upstream's switch-build label), `vmi_fopen`, `error_foreign_return_code`,
+    `discardFrame`'s foreign branch, `SAVE_REGISTERS`/`LOAD_REGISTERS` at upstream's points;
+  * `lookupBodyProcedure`'s ISO branch — a body goal binds an ISO built-in at compile time;
+  * the FLI subset — `PL_unify` (an occurs-check error RAISED, never a Julia exception out of a
+    built-in), `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`,
+    `PL_clear_exception`, `PL_clear_foreign_exception`; `PL_error` as one typed method per code family
+    (`ERR_INSTANTIATION`, `ERR_TYPE`, `ERR_CHARS_TYPE`, `ERR_DOMAIN`, `ERR_OCCURS_CHECK`; upstream's
+    `instantiation_error` rule for an unbound culprit), `PL_type_error`, `PL_domain_error`;
+  * the first users' PRED_IMPLs, line for line over term references — `=`, `\=` (with
+    `can_unify(…, ex)`), `unify_with_occurs_check/2`, `==`, `compare/3`, `?=`, `unifiable/3`, `=@=` —
+    and the position built-ins `prolog_current_frame/1` (FRG) and `prolog_current_choice/1`.
+* **The dispatch — MEASURED, decision 5's condition 2** (src/pl-ext.jl, the numbers in its header):
+  the generated branch tree against a typed function pointer (FunctionWrappers' mechanism, written
+  locally — the memos' Q3). The tree is as fast as a direct call at V5's table size (99 ns vs the
+  pointer's 170 ns, a ~70 ns harness included); the pointer is opaque to AllocCheck ("dynamic
+  dispatch") and allocates 192 bytes a call; 785 tree leaves compile in 10.8 s, 785 pointers in
+  19.3 s. The tree was kept, the pointer removed.
+* **Gate — test/foreign/test_builtins_swipl.jl** (three term types): registration (system module,
+  flags, supervisors); the first users as queries against a LIVE swipl, 600 random goals × the three
+  `occurs_check` modes — every outcome identical (true with bindings, false, cyclic, or the error's
+  formal and the context's predicate), the context's module stripped and counted (swipl qualifies
+  every built-in context: Q-A); the ISO ones from clause bodies, a non-last call and a last call,
+  identical to the direct call; the position built-ins as queries pinned to libswipl's (probed:
+  frame at the handle + 31, choice + 21); a built-in's foreign frame leaves every pool and the trail
+  as they were over 10^4 queries, raising ones included. test/core_lang/test_bips.jl: SWI's
+  `iso_8_4_2_3_a/b` (compare/3's type and domain errors) ported, through the built-in.
+* **Static (static_analysis_body.jl):** every new method in the manifest — JET finds no dispatch in
+  the run loop with the foreign labels, nor in the dispatch trees, which are built at load time
+  from named leaf builders; and a FOREIGN call's own path allocates nothing — every allocation site
+  in the foreign labels' spans lies inside the built-in it calls or on an error path (a bad return
+  value, the "false alarm"), the check seeing the built-ins' own allocations so it cannot pass by
+  seeing nothing.
+* **Found while building it:** kernel code had used `sym_name`, which only the reference term type
+  has — the AltTerm runs failed at once (the same lesson as V4a's `_body_functor`): a symbol is
+  identified by `sym_key` through the interface. And a gate run after a struct change read stale
+  methods from Revise's old world (`@world(...)` in the uncovered list): the daemon was restarted,
+  as the warm lane's rule says.
+* **Mutation-proved — 12 of 12 caught at verdict level** (baseline 14 s after a restart, limit 240 s): the exit helper taking a failure for success and an error for a failure, `vmi_fopen` not raising `lTop`, the foreign frames not popped (by the timeout), the ISO branch removed, the dispatch tree calling the next entry (a restart BEFORE the run: Revise would not re-expand the macro), `\=` swallowing its error, `compare/3` taking any atom for `<`, `unify_with_occurs_check/2` not restoring the flag, `prolog_current_frame` not skipping its own frame, `prolog_current_choice` skipping the newest choice point. **One was BLIND until a direct test was added:** `ERR_DOMAIN` without upstream's instantiation rule — no first user passes an unbound culprit (`compare/3` tests `canBind` first), so the rule is now tested on `PL_error` itself.**
+* **Not here:** module resolution — `user`'s super module, `autoImport` for the non-ISO built-ins,
+  qualified error contexts (V5c, Q-A); `S_UNDEF`'s `existence_error` and the stack limit's
+  `resource_error` (V5b); non-deterministic built-ins (V9); `PL_register_foreign`.
 
 **V5a1 — the standard order and `=@=` under bindings: BUILT (2026-10-05)** (port_inventory row V5,
 its split; src/pl-prims.jl, src/pl-variant.jl, src/pl-global.jl). The first step of V5, from the two

@@ -1,6 +1,8 @@
 # UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-data.h @ bae881a24a3f
 # UPSTREAM: swipl-devel src/pl-global.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-builtin.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -84,6 +86,15 @@ const P_SHRUNKPOW2 = FLAG64(5)
 # PORT: pl-incl.h P_FOREIGN
 "Predicate flag: implemented in C (pl-incl.h)."
 const P_FOREIGN = FLAG64(6)
+# PORT: pl-incl.h P_NONDET
+"Predicate flag: a non-deterministic foreign predicate (pl-incl.h)."
+const P_NONDET = FLAG64(7)
+# PORT: pl-incl.h P_VARARG
+"Predicate flag: a foreign predicate called with `t0, ac, ctx` (pl-incl.h)."
+const P_VARARG = FLAG64(8)
+# PORT: pl-incl.h P_FOREIGN_CREF
+"Predicate flag: a foreign predicate whose non-deterministic context is a clause (pl-incl.h)."
+const P_FOREIGN_CREF = FLAG64(9)
 # PORT: pl-incl.h P_DYNAMIC
 "Predicate flag: dynamic predicate (pl-incl.h)."
 const P_DYNAMIC = FLAG64(10)
@@ -96,15 +107,33 @@ const P_DISCONTIGUOUS = FLAG64(14)
 # PORT: pl-incl.h P_MULTIFILE
 "Predicate flag: clauses are in multiple files (pl-incl.h)."
 const P_MULTIFILE = FLAG64(15)
+# PORT: pl-incl.h P_ISO
+"Predicate flag: part of the ISO standard (pl-incl.h)."
+const P_ISO = FLAG64(17)
+# PORT: pl-incl.h P_LOCKED
+"Predicate flag: locked as a system predicate (pl-incl.h)."
+const P_LOCKED = FLAG64(18)
+# PORT: pl-incl.h P_TRANSPARENT
+"Predicate flag: inherits the calling module (pl-incl.h)."
+const P_TRANSPARENT = FLAG64(20)
 # PORT: pl-incl.h P_DIRTYREG
 "Predicate flag: registered as dirty (pl-incl.h)."
 const P_DIRTYREG = FLAG64(23)
+# PORT: pl-incl.h HIDE_CHILDS
+"Predicate flag: hide the children from the tracer (pl-incl.h; set on built-ins, read only by the debugger)."
+const HIDE_CHILDS = FLAG64(25)
+# PORT: pl-incl.h TRACE_ME
+"Predicate flag: can be debugged (pl-incl.h; the debugger's, never set here — see `registerBuiltins!`)."
+const TRACE_ME = FLAG64(27)
 # PORT: pl-incl.h P_LOCKED_SUPERVISOR
 "Predicate flag: fixed supervisor (pl-incl.h)."
 const P_LOCKED_SUPERVISOR = FLAG64(31)
 # PORT: pl-incl.h P_REDEFINED
 "Predicate flag: overrules a definition (pl-incl.h)."
 const P_REDEFINED = FLAG64(33)
+# PORT: pl-incl.h P_SIG_ATOMIC
+"Predicate flag: do not call handleSignals (pl-incl.h)."
+const P_SIG_ATOMIC = FLAG64(34)
 # PORT: pl-incl.h P_TRANSACT
 "Predicate flag: subject to transactions (pl-incl.h)."
 const P_TRANSACT = FLAG64(35)
@@ -363,8 +392,10 @@ end
 # PORT: pl-incl.h definition
 # DIVERGES: `functor` (a pointer into SWI's functor table) is its parts here — the name's `sym_key`,
 # the arity, and the name itself (`name`, the symbol: an error term names the predicate) — as there
-# is no functor table; `impl` holds only the `clauses` member of upstream's union (the other members
-# are foreign, wrapped and thread-local predicates). `codes`, the supervisor, keeps its
+# is no functor table; `impl` holds the `clauses` member of upstream's union and, since V5a2, its
+# `foreign.function` as `impl_foreign_function`, the built-in's index in the dispatch table
+# (decision 5: "the operand is the table index"; src/pl-ext.jl) — two fields, as Julia has no union
+# of a clause list and an integer; the wrapped and thread-local members are not ported. `codes`, the supervisor, keeps its
 # clause-reference operands in a side table, `codes_crefs`, as a clause's code keeps its literals:
 # the operand is an index into it. `code_data` reaches the database's shared supervisors.
 "A predicate (pl-incl.h `struct definition`)."
@@ -379,6 +410,7 @@ mutable struct definition{T}
         clause_ref{clause{T, definition{T}}, clause_list{clause{T, definition{T}}}}
     }
     const code_data::PL_code_data                           # PL_code_data (the database's)
+    impl_foreign_function::Int                              # impl.foreign.function (0: none)
 end
 
 # PORT: pl-incl.h module as module_t
@@ -689,6 +721,34 @@ const QF_FRAME = 39
 "The words from `saved_environment` to the top frame: `parentFrame` of a top frame reads there (pl-incl.h)."
 const QF_PARENT_ENV_OFFSET = QF_TOP_FRAME - QF_SAVED_ENVIRONMENT
 
+# PORT: pl-builtin.h FRG_FIRST_CALL
+"Foreign control: the initial call (pl-builtin.h `frg_code`)."
+const FRG_FIRST_CALL = 0
+# PORT: pl-builtin.h FRG_CUTTED
+"Foreign control: the context was cut (pl-builtin.h `frg_code`)."
+const FRG_CUTTED = 1
+# PORT: pl-builtin.h FRG_REDO
+"Foreign control: a normal redo (pl-builtin.h `frg_code`)."
+const FRG_REDO = 2
+# PORT: pl-builtin.h FRG_RESUME
+"Foreign control: resume from a yield (pl-builtin.h `frg_code`)."
+const FRG_RESUME = 3
+
+# PORT: pl-builtin.h foreign_context
+# DIVERGES: no `engine` — a built-in is passed `ld` (decision 5's signature), so the field that is
+# upstream's way to it has no use; `predicate` is `nothing` until a call sets it. Upstream's lives in
+# the run loop's C-stack register file (`FNDET_CONTEXT`); here it is a field of the QUERY record,
+# which is pooled, so a call allocates none (nested queries each own one, as each C frame does).
+"The control argument of a foreign predicate (pl-builtin.h `struct foreign_context`; `control_t`)."
+mutable struct foreign_context{T}
+    control::Int                                    # FRG_* action
+    context::UInt                                   # context value
+    predicate::Union{Nothing, definition{T}}        # called Prolog predicate
+end
+# PORT: SWI-Prolog.h control_t
+"The control argument a foreign predicate receives (SWI-Prolog.h `control_t`)."
+const control_t{T} = foreign_context{T}
+
 # PORT: pl-incl.h queryFrame
 # DIVERGES: a pool record (see above). Its embedded `choice`, `top_frame` and `frame` are records in
 # their own pools at `base + QF_CHOICE`, `+ QF_TOP_FRAME` and `+ QF_FRAME`, held here by index, as
@@ -720,6 +780,7 @@ mutable struct queryFrame{T}
     saved_environment::Int          # Parent local-frame (an index)
     top_frame::Int                  # The (dummy) top local frame (an index)
     frame::Int                      # The initial frame (an index)
+    fndet_context::foreign_context{T}   # (the run loop's FNDET_CONTEXT; see foreign_context)
 end
 
 # PORT: pl-incl.h argFrameP

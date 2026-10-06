@@ -228,6 +228,37 @@ function open_foreign_frame(ld::PL_local_data{T})::Int where {T}
     return f.base                               # consTermRef(fr)
 end
 
+# PORT: pl-wam.c vmi_fopen
+# DIVERGES: the debugger's branch (a `CHP_DEBUG` choice point, wam:552-557) is not ported;
+# `FLI_SET_VALID` is `O_DEBUG` only.
+"Open the foreign frame of a deterministic foreign call of `def` in frame `fr` (pl-wam.c `vmi_fopen`)."
+function vmi_fopen(ld::PL_local_data{T}, fr::Int, def::Definition{T})::Nothing where {T}
+    p = argFrameP(ld.frames[fr].base, def.arity)        # ffr = (FliFrame)argFrameP(fr, arity)
+    ffr = pushFliFrame!(ld, p)
+    setLTop!(ld, p + SIZEOF_FLIFRAME)                   # lTop = (LocalFrame)(ffr+1)
+    f = ld.fliframes[ffr]
+    f.size = 0
+    f.mark = NoMark()                                   # NoMark(ffr->mark)
+    f.parent = ld.fli_context
+    ld.fli_context = ffr
+    return nothing
+end
+
+# PORT: pl-wam.c error_foreign_return_code
+# DIVERGES: one foreign frame — upstream opens one, overwrites its handle with a second, and closes
+# only the second (pl-wam.c:582-584); the first is no position anyone reads.
+"A foreign predicate returned neither true nor false: raise `domain_error(foreign_return_value, Rc)` (pl-wam.c)."
+function error_foreign_return_code(ld::PL_local_data{T}, rc::foreign_t)::Nothing where {T}
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        ex = PL_new_term_ref(ld)
+        ex != 0 && PL_put_intptr(ld, ex, Int(rc)) &&
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :foreign_return_value), ex)
+        PL_close_foreign_frame(ld, fid)
+    end
+    return nothing
+end
+
 # PORT: pl-wam.c PL_close_foreign_frame
 # DIVERGES: a handle that names no open foreign frame is refused (`fliFrameOfFid`), where upstream
 # checks only `!id` (`FLI_VALID` is `O_DEBUG` only). `FLI_SET_CLOSED` is `O_DEBUG` only.
@@ -324,14 +355,19 @@ function leaveFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
 end
 
 # PORT: pl-wam.c discardFrame
-# DIVERGES: no foreign predicates yet (V5), so never the `discardForeignFrame` branch.
+# DIVERGES: a foreign frame's `clause` is set only by a NON-deterministic call (V9), so the
+# `discardForeignFrame` branch is asserted unreached.
 "Frame `fr` is discarded (pl-wam.c)."
 function discardFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     f = ld.frames[fr]
     def = f.predicate::Definition{T}
-    @assert (def.flags & P_FOREIGN) == 0 "discardFrame: foreign predicates arrive in V5"
-    f.clause = nothing                  # leaveDefinition() may destroy clauses (no more)
-    # leaveDefinition(def): (void)0 upstream
+    if (def.flags & P_FOREIGN) != 0
+        @assert f.clause === nothing "discardFrame: a non-deterministic foreign frame (V9)"
+        # if ( fr->clause ) discardForeignFrame(fr) — V9
+    else
+        f.clause = nothing              # leaveDefinition() may destroy clauses (no more)
+        # leaveDefinition(def): (void)0 upstream
+    end
     return nothing
 end
 
@@ -687,7 +723,10 @@ const VMI_RUN = (
     :L_VAR,
     :L_VOID, :L_ATOM, :L_NIL, :L_SMALLINT, :I_LCALL, :I_TCALL, :S_VIRGIN, :S_UNDEF,
     :S_STATIC,
-    :S_DYNAMIC, :S_MULTIFILE, :S_TRUSTME, :S_LIST
+    :S_DYNAMIC, :S_MULTIFILE, :S_TRUSTME, :S_LIST, :I_FCALLDETVA, :I_FCALLDET0,
+    :I_FCALLDET1,
+    :I_FCALLDET2, :I_FCALLDET3, :I_FCALLDET4, :I_FCALLDET5, :I_FCALLDET6, :I_FCALLDET7,
+    :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1047,6 +1086,7 @@ function PL_next_solution_guarded(
     hc_c::T = ph                                    # h_const's constant
     tc_cref::ClauseRef{T} = gd.clauses_top_cref     # TRUST_CLAUSE's clause
     bv_voffset::Int = 0                             # bvar_cont's voffset
+    fexitdet_rc::foreign_t = FTRUE                  # I_FEXITDET's rc
 
     if qid == 0                                     # PL_open_query() failed
         return 0
@@ -1226,7 +1266,7 @@ function PL_next_solution_guarded(
     end
 
     @SAVE_REGISTERS(QID)
-    hv_ok = _unify_ptrs_raising(gd, ld, ld.slots[hv_k + 1], _argp_raw(ld, ARGP))
+    hv_ok = _unify_ptrs_raising(ld, ld.slots[hv_k + 1], _argp_raw(ld, ARGP))
     @LOAD_REGISTERS(QID)
     if hv_ok
         ARGP = _argp_add(ARGP, 1)
@@ -1914,6 +1954,92 @@ function PL_next_solution_guarded(
     PC += 3
     @goto TRUST_CLAUSE
 
+    # ── deterministic foreign calls (pl-vmi.c; V5a2, decision 5) ─────────────────────────────────
+    # PORT: pl-vmi.c I_FCALLDETVA
+    # DIVERGES: the operand is the built-in's index in the dispatch table (src/pl-ext.jl), called by
+    # `_fcall_va` where upstream calls through the pointer; `FNDET_CONTEXT` is the query record's
+    # (see `foreign_context`). `VMH_GOTO(I_FEXITDET, rc)` is the helper's argument and a jump.
+    @label I_FCALLDETVA
+    fv_i = Int(PCc[PC])
+    PC += 1
+    fv_h0 = argFrameP(ld.frames[FR].base, 0)        # consTermRef(argFrameP(FR, 0))
+    vmi_fopen(ld, FR, DEF)                          # inline I_FOPEN
+    fv_ctx = ld.queries[QueryFromQid(ld, QID)].fndet_context
+    fv_ctx.control = FRG_FIRST_CALL
+    fv_ctx.context = UInt(0)
+    fv_ctx.predicate = DEF
+    @SAVE_REGISTERS(QID)
+    fexitdet_rc = _fcall_va(fv_i, ld, fv_h0, DEF.arity, fv_ctx)
+    @goto helper_I_FEXITDET
+
+    # PORT: pl-vmi.c I_FCALLDET0
+    # DIVERGES: as `I_FCALLDET1`; upstream's `(*f)()` takes no argument, and does not step past the
+    # `I_FEXITDET` word (the exit reloads PC from the frame, so the step is not observable).
+    @label I_FCALLDET0
+    fd_i = Int(PCc[PC])
+    PC += 1
+    vmi_fopen(ld, FR, DEF)                          # inline I_FOPEN
+    @SAVE_REGISTERS(QID)
+    fexitdet_rc = _fcall_det(fd_i, ld, argFrameP(ld.frames[FR].base, 0))
+    @goto helper_I_FEXITDET
+
+    # PORT: pl-vmi.c FCALL_DETN as I_FCALLDET1
+    # DIVERGES: one label per instruction, all calling `_fcall_det`, whose leaf for each FRG built-in
+    # passes its arity's term references `h0, h0+1, …` (FCALL_DETN's `__VA_ARGS__`).
+    @label I_FCALLDET1
+    @goto fcall_detn
+    @label I_FCALLDET2
+    @goto fcall_detn
+    @label I_FCALLDET3
+    @goto fcall_detn
+    @label I_FCALLDET4
+    @goto fcall_detn
+    @label I_FCALLDET5
+    @goto fcall_detn
+    @label I_FCALLDET6
+    @goto fcall_detn
+    @label I_FCALLDET7
+    @goto fcall_detn
+    @label I_FCALLDET8
+    @goto fcall_detn
+    @label I_FCALLDET9
+    @goto fcall_detn
+    @label I_FCALLDET10
+    @label fcall_detn
+    fd_i = Int(PCc[PC])
+    PC += 1
+    fd_h0 = argFrameP(ld.frames[FR].base, 0)        # consTermRef(argFrameP(FR, 0))
+    vmi_fopen(ld, FR, DEF)                          # inline I_FOPEN
+    PC += 1
+    @SAVE_REGISTERS(QID)
+    fexitdet_rc = _fcall_det(fd_i, ld, fd_h0)
+    @goto helper_I_FEXITDET
+
+    # PORT: pl-vmi.c I_FEXITDET
+    @label I_FEXITDET
+    @assert false "I_FEXITDET is never executed: the calls jump to its helper"
+    @goto b_throw                                   # THROW_EXCEPTION
+
+    # PORT: pl-vmi.c I_FEXITDET as helper_I_FEXITDET
+    # DIVERGES: the label is upstream's switch-build helper name (`helper_ ## Name`, wam:3492) — a
+    # Julia label cannot share the instruction's; its argument is `fexitdet_rc`.
+    @label helper_I_FEXITDET
+    @LOAD_REGISTERS(QID)
+    while ld.fli_context != 0 && ld.fliframes[ld.fli_context].base > ld.frames[FR].base
+        ld.fli_context = ld.fliframes[ld.fli_context].parent
+    end
+    if fexitdet_rc == FTRUE
+        if ld.exception_term != 0                   # false alarm
+            PL_clear_foreign_exception(ld, FR)
+        end
+        @goto exit_checking_wakeup
+    elseif fexitdet_rc == FFALSE
+        ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
+        @goto deep_backtrack                        # FRAME_FAILED
+    end
+    error_foreign_return_code(ld, fexitdet_rc)
+    @goto b_throw                                   # THROW_EXCEPTION
+
     # ── backtracking (pl-vmi.c) ───────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c unify_backtrack
     # DIVERGES: the builder is reset with the argument stack (Q3).
@@ -2152,14 +2278,12 @@ end
 # The kernel's unifier throws an `OccursCheckError` where upstream's `unify_ptrs` raises the error
 # itself (`failed_unify_with_occurs_check` → `PL_error`, pl-prims.c:690): turn it into the pending
 # Prolog error here, and fail, as upstream's returns false.
-function _unify_ptrs_raising(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, t1::T, t2::T
-)::Bool where {T}
+function _unify_ptrs_raising(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     try
         return unify_ptrs(ld, t1, t2)
     catch e
         e isa OccursCheckError{T} || rethrow()
-        PL_error(gd, ld, ERR_OCCURS_CHECK, e.var, e.term)
+        PL_error(ld, ERR_OCCURS_CHECK, e.var, e.term)
         return false
     end
 end

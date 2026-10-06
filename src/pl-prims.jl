@@ -1105,3 +1105,251 @@ function resolve_term(ld::PL_local_data{T}, t::T)::T where {T}
         end
     end
 end
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════
+# THE BUILT-INS (V5a2, decision 5) — pl-prims.c's PRED_IMPLs of the predicates ported above, under
+# upstream's C names (`PRED_IMPL(name, arity, fname, flags)` is `pl_<fname><arity>_va`), each a
+# line-for-line port over term references: `A1` is `PL__t0`, `A2` is `PL__t0 + 1`, … — a built-in's
+# handles ARE its frame's argument slots. The functions above, on bare terms, stay the kernel's
+# term-level API.
+# ═════════════════════════════════════════════════════════════════════════════════════════════════
+
+# PORT: pl-prims.c can_unify
+# DIVERGES: `t1`/`t2` are terms (upstream: cells); `ex` is a term reference or 0 (NULL). No
+# `foreignWakeup` (no attributed variables). An occurs-check error is the pending Prolog error
+# (`_unify_ptrs_raising`).
+"""
+    can_unify(ld, t1, t2, ex) -> Bool
+
+Whether `t1` and `t2` unify, leaving no binding behind (pl-prims.c `can_unify`); an exception
+raised by the attempt is moved into term reference `ex` and cleared when the caller passes one.
+"""
+function can_unify(ld::PL_local_data{T}, t1::T, t2::T, ex::term_t)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        handle_exception = ex == 0
+        if ex == 0
+            ex = PL_new_term_ref(ld)
+        end
+        if _unify_ptrs_raising(ld, t1, t2)              # && foreignWakeup(ex)
+            PL_discard_foreign_frame(ld, fid)
+            return true
+        end
+        if ld.exception_term != 0 && kind(ld.slots[ex + 1]) === VAR
+            PL_put_term(ld, ex, ld.exception_term)
+        end
+        if !handle_exception && kind(ld.slots[ex + 1]) !== VAR
+            PL_clear_exception(ld)
+        end
+        PL_discard_foreign_frame(ld, fid)
+    end
+    return false
+end
+
+# PORT: pl-prims.c unify as pl_unify2_va
+# (PRED_IMPL("=", 2, unify, 0))
+"`=/2` (pl-prims.c)."
+function pl_unify2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c not_unify as pl_not_unify2_va
+# (PRED_IMPL("\\=", 2, not_unify, 0))
+# DIVERGES: the quick tests on words are the kernel's atomic identity (`compare_primitives`):
+# two atomic terms unify exactly when they are identical, as upstream's word and indirect tests
+# decide; a compound on either side goes to the full check. No attributed variables.
+"`\\=/2` (pl-prims.c): the arguments cannot unify; an occurs-check error is raised again."
+function pl_not_unify2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    p1 = deRef(ld, ld.slots[A1 + 1])                    # Word p1 = valTermRef(A1)
+    p2 = deRef(ld, ld.slots[A1 + 2])                    # Word p2 = p1+1
+    if kind(p1) === VAR || kind(p2) === VAR
+        ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return FFALSE   # can unify
+        @goto full_check
+    end
+    p1 === p2 && return FFALSE                          # w1 == w2
+    if kind(p1) !== EXPR || kind(p2) !== EXPR           # tag(w1) != tag(w2), the atomic cases
+        return compare_primitives(p1, p2, CMP_MODE_EQUAL) == CMP_EQUAL ? FFALSE : FTRUE
+    end
+    @label full_check
+    ex = PL_new_term_ref(ld)
+    can_unify(ld, p1, p2, ex) && return FFALSE
+    if !PL_is_variable(ld, ex)
+        return PL_raise_exception(ld, ex) ? FTRUE : FFALSE
+    end
+    return FTRUE
+end
+
+# PORT: pl-prims.c unify_with_occurs_check as pl_unify_with_occurs_check2_va
+# (PRED_IMPL("unify_with_occurs_check", 2, unify_with_occurs_check, 0))
+"`unify_with_occurs_check/2` (pl-prims.c): `=` with the `occurs_check` flag `true` for its duration."
+function pl_unify_with_occurs_check2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    old = ld.prolog_flag_occurs_check
+    ld.prolog_flag_occurs_check = OCCURS_CHECK_TRUE
+    rc = PL_unify(ld, A1, A2)
+    ld.prolog_flag_occurs_check = old
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c equal as pl_equal2_va
+# (PRED_IMPL("==", 2, equal, 0))
+# DIVERGES: no `CMP_ERROR` (the kernel's compare raises nothing; see `compare_std`).
+"`==/2` (pl-prims.c): the arguments are identical."
+function pl_equal2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    p1 = ld.slots[A1 + 1]                               # Word p1 = valTermRef(A1)
+    p2 = ld.slots[A1 + 2]                               # Word p2 = p1+1
+    return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c compare as pl_compare3_va
+# (PRED_IMPL("compare", 3, compare, PL_FA_ISO))
+# DIVERGES: no `CMP_ERROR` (see `pl_equal2_va`). An atom is any symbol, `[]` included (`isAtom`:
+# SWI-7's `[]` is an atom to it).
+"`compare/3` (pl-prims.c): the order of the second and third arguments, unified with or checked against the first."
+function pl_compare3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    d = deRef(ld, ld.slots[A1 + 1])                     # Word d = valTermRef(A1); deRef(d)
+    p1 = ld.slots[A2 + 1]                               # Word p1 = valTermRef(A2)
+    p2 = ld.slots[A2 + 2]                               # Word p2 = p1+1
+    given = kind(d) !== VAR                             # canBind(*d) ⇒ a = 0
+    smaller = false
+    if given
+        if kind(d) === SYM                              # isAtom(*d)
+            k = sym_key(d)
+            if k == sym_key(mk_sym(T, :(=)))            # ATOM_equals
+                return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FTRUE : FFALSE
+            end
+            smaller = k == sym_key(mk_sym(T, :<))       # ATOM_smaller
+            if !smaller && k != sym_key(mk_sym(T, :>))  # ATOM_larger
+                return PL_error(ld, ERR_DOMAIN, mk_sym(T, :order), A1) ? FTRUE : FFALSE
+            end
+        else
+            return PL_type_error(ld, "atom", A1) ? FTRUE : FFALSE
+        end
+    end
+    val = compareStandard(ld, p1, p2, false)
+    if given                                            # diff is given
+        return (smaller ? val < 0 : val > 0) ? FTRUE : FFALSE
+    end
+    a = if val < 0
+        :<
+    elseif val > 0
+        :>
+    else
+        :(=)
+    end              # unify diff
+    return PL_unify_atom(ld, A1, mk_sym(T, a)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c can_compare as pl_can_compare2_va
+# (PRED_IMPL("?=", 2, can_compare, 0))
+"`?=/2` (pl-prims.c): it can be decided now and forever whether the arguments are equal."
+function pl_can_compare2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    fid = PL_open_foreign_frame(ld)
+    rc = PL_unify(ld, A1, A2)
+    if rc
+        fr = ld.fliframes[fliFrameOfFid(ld, fid)]      # FliFrame fr = valTermRef(fid)
+        if fr.mark.trailtop != length(ld.trail)         # fr->mark.trailtop != tTop
+            rc = false
+        end
+    elseif ld.exception_term != 0
+        PL_close_foreign_frame(ld, fid)                 # keep exception
+        return FFALSE
+    else
+        rc = true                                       # could not unify
+    end
+    PL_discard_foreign_frame(ld, fid)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c unifiable
+# DIVERGES: the list is BUILT (`mk_expr`) where upstream writes it onto the global stack, and unified
+# with `subst` directly (upstream: through `pushWordAsTermRef`, a temporary reference that occupies
+# no local-stack position). An occurs-check error from the unification or from the occurs check is
+# the pending Prolog error. No attributed variables (`isTrailVal`), no overflow retry.
+"""
+    unifiable(ld, t1, t2, subst) -> Bool
+
+`unifiable/3` (pl-prims.c) on term references: unify `subst` with the list of `Var = Value` that
+would make `t1` and `t2` identical, newest binding first — nothing stays bound.
+"""
+function unifiable(
+    ld::PL_local_data{T}, t1::term_t, t2::term_t, subst::term_t
+)::Bool where {T}
+    dot, eq, nil = mk_sym(T, Symbol("[|]")), mk_sym(T, :(=)), mk_nil(T)
+    try
+        if PL_is_variable(ld, t1)
+            if PL_compare(ld, t1, t2) == CMP_EQUAL
+                return PL_unify_atom(ld, subst, nil)
+            end
+            unifiable_occurs_check(ld, ld.slots[t1 + 1], ld.slots[t2 + 1]) || return false
+            b = mk_expr(T, T[eq, ld.slots[t1 + 1], ld.slots[t2 + 1]])
+            return _unify_ptrs_raising(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
+        end
+        if PL_is_variable(ld, t2)
+            unifiable_occurs_check(ld, ld.slots[t2 + 1], ld.slots[t1 + 1]) || return false
+            b = mk_expr(T, T[eq, ld.slots[t2 + 1], ld.slots[t1 + 1]])
+            return _unify_ptrs_raising(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
+        end
+        ok, m = unify_all_trail_ptrs(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
+        ok || return false
+        if length(ld.trail) > m.trailtop                # tt > mt
+            pairs = T[]
+            while length(ld.trail) > m.trailtop         # while(--tt >= mt), newest first
+                key = pop!(ld.trail)
+                push!(pairs, mk_expr(T, T[eq, mk_var(T, key), ld.bindings[key]]))
+                delete!(ld.bindings, key)               # setVar(*p)
+            end
+            list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
+            return _unify_ptrs_raising(ld, list, ld.slots[subst + 1])
+        end
+        return PL_unify_atom(ld, subst, nil)            # DiscardMark(m)
+    catch e
+        e isa OccursCheckError{T} || rethrow()
+        PL_error(ld, ERR_OCCURS_CHECK, e.var, e.term)
+        return false
+    end
+end
+
+# PORT: pl-prims.c unifiable as pl_unifiable3_va
+# (PRED_IMPL("unifiable", 3, unifiable, 0))
+"`unifiable/3` (pl-prims.c)."
+function pl_unifiable3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    return unifiable(ld, A1, A2, A3) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
+# DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6623);
+# `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
+"pl-prims.c's registration table (`BeginPredDefs(prims)`): the ported entries."
+const PL_predicates_from_prims = (
+    PL_extension("=", 2, pl_unify2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("\\=", 2, pl_not_unify2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension(
+        "unify_with_occurs_check", 2, pl_unify_with_occurs_check2_va,
+        PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension("==", 2, pl_equal2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("compare", 3, pl_compare3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("?=", 2, pl_can_compare2_va, PL_FA_VARARGS),
+    PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS)
+)

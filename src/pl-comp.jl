@@ -736,15 +736,15 @@ end
 # `type_error(callable, Goal)`, as are the other goals compileSubClause finds NOT_CALLABLE (a
 # number, a string, `[]`, a compound named by a reserved symbol other than `[]`; probed in swipl
 # 10.1.16: `assertz((p :- 1))`, `(p :- "s")`, `(p :- [])` raise it, `(p :- '[]')` does not) (user,
-# 2026-10-04). No `system` module until built-ins are registered there (V5), so the branch that
-# prefers an ISO system predicate is not ported; with one module, every other path ends in the
-# module's procedure table.
+# 2026-10-04). The branch that prefers an ISO system predicate is ported since V5a2, when built-ins
+# came to be registered in the `system` module; there is no boot session (`GD->bootsession` is
+# always false).
 """
     lookupBodyProcedure(gd, goal, tm) -> Procedure{T}
 
 The procedure body goal `goal` calls in module `tm` of the database whose global data is `gd`: the
-current one if it is defined or redefined, else the one `lookupProcedure` finds or creates
-(pl-comp.c). Throws [`CallableTypeError`](@ref) for a goal that is not callable.
+current one if it is defined or redefined, else the `system` module's if it is an ISO built-in,
+else the one `lookupProcedure` finds or creates (pl-comp.c). Throws [`CallableTypeError`](@ref) for a goal that is not callable.
 """
 function lookupBodyProcedure(
     gd::PL_global_data{T}, goal::T, tm::module_t{T}
@@ -755,6 +755,12 @@ function lookupBodyProcedure(
     if proc !== nothing &&
         (isDefinedProcedure(gd, proc) || (proc.definition.flags & P_REDEFINED) != 0)
         return proc
+    end
+    if tm !== MODULE_system(gd)
+        sp = isCurrentProcedure(sym_key(name), arity, MODULE_system(gd))
+        if sp !== nothing && (sp.definition.flags & P_ISO) != 0      # && !GD->bootsession
+            return sp
+        end
     end
     return lookupProcedure(name, arity, tm)
 end

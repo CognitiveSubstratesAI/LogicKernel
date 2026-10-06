@@ -352,3 +352,20 @@ function is_variant_ptr(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     _variant_functor(p1, p2) === nothing && return false
     return variant(ld, push_start_args(p1, p2), variant_buffer{T}())
 end
+
+# ── the built-in (V5a2, decision 5) ──────────────────────────────────────────────────────────────
+# PORT: pl-variant.c variant as pl_variant2_va
+# (PRED_IMPL("=@=", 2, variant, 0))
+# DIVERGES: no ERR_NOMEM (`is_variant_ptr` cannot overflow).
+"`=@=/2` (pl-variant.c): the arguments are variants, under the bindings."
+function pl_variant2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return is_variant_ptr(ld, ld.slots[A1 + 1], ld.slots[A2 + 1]) ? FTRUE : FFALSE
+end
+
+# PORT: pl-variant.c BeginPredDefs as PL_predicates_from_variant
+# DIVERGES: the ported entry only (upstream's table also has `\=@=`, var:544-546).
+"pl-variant.c's registration table (`BeginPredDefs(variant)`): the ported entry."
+const PL_predicates_from_variant = (PL_extension("=@=", 2, pl_variant2_va, PL_FA_VARARGS),)

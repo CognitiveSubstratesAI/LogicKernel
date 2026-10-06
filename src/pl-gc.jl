@@ -99,7 +99,8 @@ function _grow_pool!(
             queryFrame{T}(
                 0, UInt(0), 0, argp_t{T}(ARGP_SLOT, 0, ld.placeholder), ld.null_code, 0, 0,
                 0,
-                UInt32(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                UInt32(0), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                foreign_context{T}(FRG_FIRST_CALL, UInt(0), nothing)
             )
         )
     end

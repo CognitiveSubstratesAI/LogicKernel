@@ -5,7 +5,8 @@
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
 # What the kernel takes from SWI-Prolog's public C interface header (SWI-Prolog.h): the flags a
-# query is opened with and the codes `PL_next_solution` returns (decision 1). Not ported: the flags
+# query is opened with and the codes `PL_next_solution` returns (decision 1); since V5a2 the types
+# and the registration record of the foreign interface (decision 5). Not ported: the flags
 # of the parts decision 1 leaves out — `PL_Q_ALLOW_YIELD`, `PL_Q_EXCEPT_HALT`,
 # `PL_Q_TRACE_WITH_YIELD`, `PL_Q_EXCEPT_THREAD_EXIT` — and the yield codes `PL_S_YIELD_DEBUG`,
 # `PL_S_YIELD`.
@@ -47,3 +48,59 @@ const PL_S_TRUE = 1
 # PORT: SWI-Prolog.h PL_S_LAST
 "The query succeeded without a choice point (SWI-Prolog.h)."
 const PL_S_LAST = 2
+
+# ── the foreign interface (decision 5; V5a2) ─────────────────────────────────────────────────────
+# PORT: SWI-Prolog.h term_t
+"A term reference (SWI-Prolog.h `term_t`): a position on the local stack (src/pl-incl.jl)."
+const term_t = Int
+# PORT: SWI-Prolog.h PL_fid_t as fid_t
+"A foreign frame handle (SWI-Prolog.h `PL_fid_t`, `fid_t`): the frame's position."
+const fid_t = Int
+# PORT: SWI-Prolog.h foreign_t
+"What a foreign predicate returns (SWI-Prolog.h `foreign_t`, a `uintptr_t`)."
+const foreign_t = UInt
+# PORT: SWI-Prolog.h TRUE as FTRUE
+# DIVERGES: named `FTRUE`/`FFALSE` — `true` and `false` are Julia's `Bool`s; upstream's are the
+# `int` values 1 and 0, which a foreign predicate returns.
+"A foreign predicate succeeded: `foreign_t` 1 (SWI-Prolog.h `TRUE`)."
+const FTRUE = foreign_t(1)
+# PORT: SWI-Prolog.h FALSE as FFALSE
+"A foreign predicate failed (or raised, when an exception is pending): `foreign_t` 0 (SWI-Prolog.h `FALSE`)."
+const FFALSE = foreign_t(0)
+
+# PORT: SWI-Prolog.h PL_FA_NOTRACE
+"Registration flag: the foreign predicate cannot be traced (SWI-Prolog.h)."
+const PL_FA_NOTRACE = 0x01
+# PORT: SWI-Prolog.h PL_FA_TRANSPARENT
+"Registration flag: module transparent, deprecated (SWI-Prolog.h)."
+const PL_FA_TRANSPARENT = 0x02
+# PORT: SWI-Prolog.h PL_FA_NONDETERMINISTIC
+"Registration flag: non-deterministic (SWI-Prolog.h)."
+const PL_FA_NONDETERMINISTIC = 0x04
+# PORT: SWI-Prolog.h PL_FA_VARARGS
+"Registration flag: called with `t0, ac, ctx` (SWI-Prolog.h)."
+const PL_FA_VARARGS = 0x08
+# PORT: SWI-Prolog.h PL_FA_CREF
+"Registration flag, internal: has a clause reference (SWI-Prolog.h)."
+const PL_FA_CREF = 0x10
+# PORT: SWI-Prolog.h PL_FA_ISO
+"Registration flag, internal: an ISO core predicate (SWI-Prolog.h)."
+const PL_FA_ISO = 0x20
+# PORT: SWI-Prolog.h PL_FA_META
+"Registration flag: an additional meta-argument spec (SWI-Prolog.h)."
+const PL_FA_META = 0x40
+# PORT: SWI-Prolog.h PL_FA_SIG_ATOMIC
+"Registration flag, internal: do not dispatch signals (SWI-Prolog.h)."
+const PL_FA_SIG_ATOMIC = 0x80
+
+# PORT: SWI-Prolog.h PL_extension
+# DIVERGES: `function` is a Julia keyword, so the field is `function_`; it holds the Julia function
+# itself (a singleton type), where upstream holds a `pl_function_t` pointer — a table of them is a
+# TUPLE, concretely typed, so reading an entry dispatches statically (decision 5).
+"One predicate of a registration table (SWI-Prolog.h `PL_extension`)."
+struct PL_extension{F}
+    predicate_name::String          # Name of the predicate
+    arity::Int                      # Arity of the predicate
+    function_::F                    # Implementing functions
+    flags::UInt8                    # Or of PL_FA_...
+end

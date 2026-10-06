@@ -31,6 +31,7 @@ mutable struct PL_global_data{T}
     clauses_cgc_active::Bool                                    # clauses.cgc_active: CGC running
     const functors_control::ControlFunctors                     # functors.array's CONTROL_F
     const modules_user::module_t{T}                             # modules.user: user module
+    const modules_system::module_t{T}                           # modules.system: system module
     const subclause_names::SubClauseNames                       # (the ATOM_/FUNCTOR_ tables)
     const code_data::PL_code_data                               # PL_code_data (its supervisors)
     const procedures_dc_call_prolog0::Procedure{T}              # procedures.dc_call_prolog0
@@ -43,23 +44,31 @@ end
 # DIVERGES: `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
 # `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
 # per database. The user module is created with the database — upstream's initModules creates it, with
-# the `system` module, at start-up (pl-modul.c). There is no `system` module until built-ins are
-# registered in it (V5), and no module table (`modules.table`): one module per database. The shared
+# the `system` module, at start-up (pl-modul.c); since V5a2 there is a `system` module too, which the
+# built-ins are registered in (`initBuildIns!`, src/pl-ext.jl). There is no module table
+# (`modules.table`) and no module links (`supers`: how `user` reaches `system` is the user's open
+# question Q-A, V5c) — so a body goal reaches a built-in only through `lookupBodyProcedure`'s ISO
+# branch, and a query through its procedure. The shared
 # supervisors are the database's (`PL_code_data`, src/pl-incl.jl). `$c_call_prolog/0`, the top
 # frame's predicate, is created as `setBuiltinPredicateProperties` creates it (no clauses, flags 0,
-# `SUPERVISOR(virgin)`), but in NO module table: there is no `system` module, and the `user` table
-# must not show it. Then `initVM` builds the top clause (setup:158, then 160). `atom_nil` and
+# `SUPERVISOR(virgin)`), in the `system` module's table. `initVM` builds the top clause, and then
+# the built-ins are registered — upstream registers them first (setup:158, then 160); neither reads
+# the other. `atom_nil` and
 # `atom_dot` are the terms the VM writes for `[]` and a list cell's head, built once — upstream's are
 # constants; `no_literals` is the literal table a supervisor's code has (none).
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
     dc = mk_sym(T, Symbol("\$c_call_prolog"))
     dc_def = Definition{T}(
-        sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd
+        sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd, 0
     )
     dc_proc = Procedure{T}(dc_def, UInt32(0))
     top_clause, top_cref = initVM(dc_proc)
-    return PL_global_data{T}(
+    system = module_t{T}(
+        sym_key(mk_sym(T, :system)), Dict{Tuple{UInt64, Int}, Procedure{T}}(), cd
+    )
+    system.procedures[(sym_key(dc), 0)] = dc_proc
+    gd = PL_global_data{T}(
         gen_t(0),
         Dict{Definition{T}, dirty_def_info{T}}(),
         false,
@@ -67,6 +76,7 @@ function PL_global_data{T}() where {T}
         module_t{T}(
             sym_key(mk_sym(T, :user)), Dict{Tuple{UInt64, Int}, Procedure{T}}(), cd
         ),
+        system,
         _subclause_names(T),
         cd,
         dc_proc,
@@ -76,11 +86,17 @@ function PL_global_data{T}() where {T}
         mk_sym(T, Symbol("[|]")),
         T[]
     )
+    initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
+    return gd
 end
 
 # PORT: pl-incl.h MODULE_user
 "The user module of the database whose global data is `gd` (pl-incl.h `MODULE_user`)."
 MODULE_user(gd::PL_global_data{T}) where {T} = gd.modules_user
+
+# PORT: pl-incl.h MODULE_system
+"The system module of the database whose global data is `gd`, where built-ins live (pl-incl.h `MODULE_system`)."
+MODULE_system(gd::PL_global_data{T}) where {T} = gd.modules_system
 
 # ── the kernel's variable keys ───────────────────────────────────────────────────────────────────
 # DIVERGES: SWI's fresh variables are new cells on the global stack, unique by address. Interface
@@ -195,7 +211,7 @@ function PL_local_data{T}() where {T}
             gen_t(0),
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
-                PL_code_data(code[], code[], code[], code[], code[], code[])
+                PL_code_data(code[], code[], code[], code[], code[], code[]), 0
             ),
             nothing,
             0,

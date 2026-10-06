@@ -137,6 +137,35 @@ end
             LK._argp_add)
             @test any(e -> e[1] === c && e[3], DISPATCH_MANIFEST)
         end
+        # V5a2: a FOREIGN call's own path allocates nothing — a built-in may (it builds terms), so
+        # every site in the foreign labels' spans must come from inside the built-in it calls
+        # (`_fcall_va`, `_fcall_det`) or from an error path: a bad return value
+        # (`error_foreign_return_code`), or success with an exception still pending, the "false alarm"
+        # (`PL_clear_foreign_exception`, which resets the ball).
+        fpath = ("I_FCALLDETVA", "I_FCALLDET0", "fcall_detn", "helper_I_FEXITDET")
+        @test all(n -> any(x -> x[2] == n, labels), fpath)
+        fspans = [span(n) for n in fpath]
+        inside = (
+            :_fcall_va, :_fcall_det, :error_foreign_return_code, :PL_clear_foreign_exception
+        )
+        stray = [
+            a.backtrace[k].line for a in allocs
+            for k in (findfirst(fr -> fr.func === :PL_next_solution_guarded, a.backtrace),)
+            if k !== nothing && any(s -> s[1] <= a.backtrace[k].line <= s[2], fspans) &&
+                !any(fr -> fr.func in inside, a.backtrace)
+        ]
+        isempty(stray) ||
+            println(
+                stderr,
+                "  a foreign call allocates outside its built-in, pl-wam.jl lines: ",
+                stray
+            )
+        @test isempty(stray)
+        # …and the check sees the built-ins' own allocations, so it cannot pass by seeing nothing
+        @test any(
+            a -> any(fr -> fr.func === :_fcall_va, a.backtrace), allocs
+        )
+        @test any(e -> e[1] === LK.vmi_fopen && e[3], DISPATCH_MANIFEST)
     end
 
     @testset "controls: each gate fails on a planted defect" begin
