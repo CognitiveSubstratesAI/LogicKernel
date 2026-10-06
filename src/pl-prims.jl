@@ -43,6 +43,15 @@ const CMP_LESS = -1
 const CMP_EQUAL = 0
 "Standard-order result: the first term sorts after the second (pl-incl.h `CMP_GREATER`)."
 const CMP_GREATER = 1
+# PORT: pl-incl.h CMPEX_LESS
+"`cmpNumbers`' less (pl-incl.h `cmpex_t`)."
+const CMPEX_LESS = -1
+# PORT: pl-incl.h CMPEX_EQUAL
+"`cmpNumbers`' equal (pl-incl.h `cmpex_t`)."
+const CMPEX_EQUAL = 0
+# PORT: pl-incl.h CMPEX_GREATER
+"`cmpNumbers`' greater (pl-incl.h `cmpex_t`)."
+const CMPEX_GREATER = 1
 "Equality-mode result: the terms differ, order not computed (pl-incl.h `CMP_NOTEQ`)."
 const CMP_NOTEQ = 2
 "`compare_primitives` result: both terms are compound — descend (pl-incl.h `CMP_COMPOUND`)."

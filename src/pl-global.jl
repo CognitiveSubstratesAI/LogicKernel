@@ -158,6 +158,10 @@ mutable struct PL_local_data{T}
     prolog_flag_portable_vmi::Bool                              # truePrologFlag(PLFLAG_PORTABLE_VMI)
     prolog_flag_last_call::Bool                                 # truePrologFlag(PLFLAG_LASTCALL)
     prolog_flag_optimise::Bool                                  # truePrologFlag(PLFLAG_OPTIMISE)
+    arith_f_flags::UInt32                                       # arith.f.flags (V6c)
+    arith_numbers::Vector{number}                               # (the numbers' C stack, pooled)
+    arith_top::Int                                              # (how many of them are in use)
+    arith_frames::Vector{Tuple{T, Int}}                         # evalExpression's term_stack
     cycle_lstack::Vector{T}                                     # cycle.lstack: linked compounds
     cycle_links::IdDict{T, T}                                   # the links themselves
     occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
@@ -203,6 +207,8 @@ function PL_local_data{T}() where {T}
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, true,
         true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
         false,                                  # optimise: off without -O (pl-prologflag.c:2394)
+        UInt32(0x0081),                         # FLT_ROUND_NEAREST|FLT_UNDERFLOW (initArith)
+        number[], 0, Tuple{T, Int}[],
         T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),

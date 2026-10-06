@@ -148,6 +148,10 @@ end
 # ── the Prolog layer (src/term_interface.jl, Q1) ─────────────────────────────────────────────────
 mk_sym(::Type{Term{G}}, name::Symbol) where {G} = sym_term(Term{G}, name)
 mk_gnd(::Type{Term{G}}, v::G) where {G} = gnd_term(Term{G}, v)
+
+# Whether `Term{G}` can hold a value of type `X` (`mk_gnd`'s method exists): a compile-time
+# constant, so a caller's branch on it is folded (src/pl-gmp.jl, the interim for the user's Q-AR1).
+_holds_payload(::Type{Term{G}}, ::Type{X}) where {G, X} = X <: G
 mk_reserved_symbol(::Type{Term{G}}, name::Symbol) where {G} =
     Term{G}(
         SYM, true, false, true, _reserved_sym_key(name), name, nothing,

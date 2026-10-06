@@ -8,15 +8,19 @@
 # What the kernel takes from SWI-Prolog's error reporting (pl-error.c): building an ISO error term
 # `error(Formal, context(Name/Arity, Msg))` for the running predicate and raising it — the
 # occurs-check error, which unification raises under `occurs_check=error` (V4a), and since V5a2 the
-# codes the first built-ins raise — instantiation, type and domain errors — and since V5b the
-# undefined procedure's existence error. The other codes arrive with the code that raises them.
+# codes the first built-ins raise — instantiation, type and domain errors — since V5b the
+# undefined procedure's existence error, and since V6c arithmetic's: an expression that is not
+# evaluable and the float checks' evaluation errors. The other codes arrive with the code that
+# raises them.
 #
 # DIVERGES (file-wide): upstream's `PL_error` is ONE variadic function that reads its arguments by
 # the code (`va_arg`); here each code family is a METHOD with typed arguments — no `Vararg{Any}` —
-# and the shared head and tail are `_PL_error_open` and `_PL_error_close!`. No predicate name or
-# message is given by a caller yet (`pred`, `msg`), so the context is the CALLER's — the running
-# frame's predicate — written `Name/Arity`, never module-qualified: whether built-ins' contexts read
-# `system:Name/Arity`, as swipl's do (`unify_definition`), is the user's open question Q-A (V5c).
+# and the shared head and tail are `_PL_error_open` and `_PL_error_close!`. Upstream's leading
+# `pred`, `arity`, `msg` are taken by the methods that need them (since V6c; the others pass none),
+# `pred` and `msg` as Strings, EMPTY for upstream's NULL (a `Union` would dispatch at run time):
+# the context is `pred/arity` when given, else the CALLER — the running frame's predicate — written
+# `Name/Arity`, never module-qualified: whether built-ins' contexts read `system:Name/Arity`, as
+# swipl's do (`unify_definition`), is the user's open question Q-A (V5c).
 # The formal and the context are BUILT (`mk_expr`) where upstream unifies them into fresh term
 # references (`PL_unify_term`), which cannot fail here. Raised with `PL_raise_exception`, never
 # thrown (`do_throw` is only for errors raised outside the VM).
@@ -31,6 +35,11 @@
     ERR_DOMAIN                      # atom_t domain, term_t value
     ERR_OCCURS_CHECK                # Word, Word
     ERR_UNDEFINED_PROC              # Definition def, Definition clr
+    ERR_NOT_EVALUABLE               # functor_t func
+    ERR_AR_UNDEF                    # void
+    ERR_AR_OVERFLOW                 # void
+    ERR_AR_UNDERFLOW                # void
+    ERR_AR_RAT_OVERFLOW             # void
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -51,15 +60,27 @@ function _PL_error_open(
     return (caller, fid, except, formal, swi)
 end
 
-# The tail of upstream's `PL_error`: the SWI-Prolog context term for the caller, the error term,
-# and raising it; returns false (`PL_raise_exception`'s result).
-function _PL_error_close!(
+# The tail of upstream's `PL_error`: the SWI-Prolog context term — `pred/arity` when given, else
+# the caller; `msg` as an atom, else a fresh variable — the error term, and raising it; returns
+# false (`PL_raise_exception`'s result).
+_PL_error_close!(
     ld::PL_local_data{T}, caller::Union{Nothing, Definition{T}}, fid::Int, except::Int,
     formal::Int, swi::Int
+) where {T} = _PL_error_close!(ld, caller, fid, except, formal, swi, "", 0, "")
+
+function _PL_error_close!(
+    ld::PL_local_data{T}, caller::Union{Nothing, Definition{T}}, fid::Int, except::Int,
+    formal::Int, swi::Int, pred::String, arity::Int, msg::String
 )::Bool where {T}
-    if caller !== nothing                   # build SWI-Prolog context term
-        msgterm = mk_var(T, fresh_var_keys!(1))
-        predterm = mk_expr(T, T[mk_sym(T, :/), caller.name, mk_gnd(T, caller.arity)])
+    if !isempty(pred) || !isempty(msg) || caller !== nothing        # build SWI-Prolog context term
+        msgterm = isempty(msg) ? mk_var(T, fresh_var_keys!(1)) : mk_sym(T, Symbol(msg))
+        predterm = if !isempty(pred)
+            mk_expr(T, T[mk_sym(T, :/), mk_sym(T, Symbol(pred)), mk_gnd(T, arity)])
+        elseif caller !== nothing
+            mk_expr(T, T[mk_sym(T, :/), caller.name, mk_gnd(T, caller.arity)])
+        else
+            mk_var(T, fresh_var_keys!(1))                   # PL_new_term_ref(): unbound
+        end
         ld.slots[swi + 1] = mk_expr(T, T[mk_sym(T, :context), predterm, msgterm])
     end
     ld.slots[except + 1] = mk_expr(
@@ -87,16 +108,50 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code, p1::T, p2::T)::Bool w
 end
 
 """
-    PL_error(ld, ERR_INSTANTIATION) -> false
+    PL_error(ld, ERR_INSTANTIATION | ERR_AR_UNDEF | ERR_AR_OVERFLOW | ERR_AR_UNDERFLOW |
+             ERR_AR_RAT_OVERFLOW) -> false
 
-Raise `error(instantiation_error, context(Name/Arity, _))` (pl-error.c).
+Raise `error(instantiation_error, context(Name/Arity, _))`, or an arithmetic evaluation error —
+`evaluation_error(undefined)`, `(float_overflow)`, `(float_underflow)`, `(rational_overflow)` —
+(pl-error.c).
 """
 function PL_error(ld::PL_local_data{T}, id::PL_error_code)::Bool where {T}
     h = _PL_error_open(ld)
     h === nothing && return false
     caller, fid, except, formal, swi = h
-    @assert id == ERR_INSTANTIATION
-    ld.slots[formal + 1] = mk_sym(T, :instantiation_error)          # err_instantiation:
+    if id == ERR_INSTANTIATION
+        ld.slots[formal + 1] = mk_sym(T, :instantiation_error)      # err_instantiation:
+    else                                                            # evaluation_error(formal, …)
+        what = if id == ERR_AR_UNDEF
+            :undefined
+        elseif id == ERR_AR_OVERFLOW
+            :float_overflow
+        elseif id == ERR_AR_UNDERFLOW
+            :float_underflow
+        else
+            :rational_overflow
+        end
+        @assert id == ERR_AR_UNDEF || id == ERR_AR_OVERFLOW || id == ERR_AR_UNDERFLOW ||
+            id == ERR_AR_RAT_OVERFLOW
+        ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :evaluation_error), mk_sym(T, what)])
+    end
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
+    PL_error(ld, ERR_NOT_EVALUABLE, (name, arity)) -> false
+
+Raise `error(type_error(evaluable, Name/Arity), …)` for the function `name/arity` (pl-error.c).
+"""
+function PL_error(ld::PL_local_data{T}, id::PL_error_code, f::Tuple{T, Int})::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_NOT_EVALUABLE
+    actual = mk_expr(T, T[mk_sym(T, :/), f[1], mk_gnd(T, f[2])])   # put_name_arity(actual, f)
+    ld.slots[formal + 1] = mk_expr(
+        T, T[mk_sym(T, :type_error), mk_sym(T, :evaluable), actual]
+    )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
@@ -107,8 +162,18 @@ Raise `error(type_error(Atom, Actual), …)` or `error(domain_error(Atom, Actual
 `instantiation_error` when `actual` holds a variable (for `ERR_TYPE`, unless the expected type is
 `variable`) (pl-error.c).
 """
+PL_error(ld::PL_local_data{T}, id::PL_error_code, a::T, actual::term_t) where {T} =
+    PL_error(ld, "", 0, "", id, a, actual)
+
+"""
+    PL_error(ld, pred, arity, msg, ERR_TYPE | ERR_DOMAIN, atom, actual::term_t) -> false
+
+As the form without them, with upstream's leading `pred`, `arity` and `msg` (empty: not given): the
+context names `pred/arity` when `pred` is given, and holds `msg` as an atom (pl-error.c).
+"""
 function PL_error(
-    ld::PL_local_data{T}, id::PL_error_code, a::T, actual::term_t
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code, a::T,
+    actual::term_t
 )::Bool where {T}
     h = _PL_error_open(ld)
     h === nothing && return false
@@ -132,7 +197,7 @@ function PL_error(
             )
         end
     end
-    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
 """

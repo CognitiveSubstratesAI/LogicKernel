@@ -154,6 +154,7 @@ _rclause_text(h::_R, b) =
 # choice point (`call_cleanup/2` ran its cleanup), as `PL_S_LAST` reports it.
 const _R_DRIVER = raw"""
 :- style_check(-singleton).
+:- style_check(-no_effect).
 r(G) :- ( call_cleanup(G, Det = true), ( Det == true -> D = det ; D = nondet ),
           ( cyclic_term(G) -> write(cyclic) ; write_canonical(G) ), write(' '), write(D), nl,
           fail ; true ), write(end), nl.

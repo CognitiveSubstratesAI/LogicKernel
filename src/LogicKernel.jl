@@ -42,6 +42,8 @@ include("pl-alloc.jl")         # swipl-devel src/pl-alloc.c — raising a stack 
 include("pl-wam.jl")           # swipl-devel src/pl-wam.c — the local stack's operations; the query API and the run loop
 include("pl-fli.jl")           # swipl-devel src/pl-fli.c — term references; raising an exception
 include("pl-error.jl")         # swipl-devel src/pl-error.c — error terms (the occurs-check error)
+include("pl-gmp.jl")           # swipl-devel src/pl-gmp.c — numbers: read, written, promoted, compared
+include("pl-arith.jl")         # swipl-devel src/pl-arith.c — evaluation, is/2, the comparisons
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first

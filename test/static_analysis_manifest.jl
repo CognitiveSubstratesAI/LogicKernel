@@ -545,6 +545,71 @@ function _manifest_index(T)
         (LK.classify_exception_p, Tuple{LD, T}, false),
         (LK.classify_exception, Tuple{LD, Int}, false),
         (LK.getUnknownModule, Tuple{MOD}, true),
+        # V6c — arithmetic (src/pl-gmp.jl, pl-arith.jl, pl-error.jl), over DefaultTerm only, as V4a's:
+        # its big results raise (the interim for Q-AR1), folded at compile time (`_holds_payload`)
+        [
+            (f, Tuple{T, LK.number}, false) for f in (LK.get_rational, LK.get_number)
+        ]...,
+        (LK.put_mpz, Tuple{Type{T}, BigInt}, false),
+        (LK._put_big, Tuple{Type{T}, BigInt}, false),
+        (LK._put_big, Tuple{Type{T}, Rational{BigInt}}, false),
+        (LK.put_number, Tuple{Type{T}, LK.number}, false),
+        (LK.PL_unify_number, Tuple{LD, Int, LK.number}, false),
+        (LK.promoteToMPZNumber, Tuple{LK.number}, false),
+        (LK.promoteToMPQNumber, Tuple{LD, LK.number}, false),
+        (LK.promoteToFloatNumber, Tuple{LD, LK.number}, false),
+        (LK.promoteNumber, Tuple{LD, LK.number, LK.numtype}, false),
+        (LK.make_same_type_numbers, Tuple{LD, LK.number, LK.number}, false),
+        (LK.same_type_numbers, Tuple{LD, LK.number, LK.number}, false),
+        (LK._mpz_get_d, Tuple{BigInt}, false), (LK._mpz_tstbit, Tuple{BigInt, Int}, false),
+        (LK._sa_minus_scan1, Tuple{BigInt, Int}, false),
+        (LK.mpz_to_double, Tuple{BigInt}, false),
+        (LK.mpz_fdiv, Tuple{BigInt, BigInt}, false),
+        (LK.mpq_to_double, Tuple{Rational{BigInt}}, false),
+        (LK.cmpFloatNumbers, Tuple{LK.number, LK.number}, false),
+        (LK.cmpNumbers, Tuple{LD, LK.number, LK.number}, false),
+        (LK._holds_payload, Tuple{Type{T}, Type{BigInt}}, true),
+        (LK._number_alloc!, Tuple{LD}, false), (LK._number_free!, Tuple{LD, Int}, true),
+        (LK.cpNumber, Tuple{LK.number, LK.number}, true),
+        (LK.check_float, Tuple{LD, LK.number}, false),
+        (LK.check_mpq, Tuple{LK.number}, true),
+        (LK.check_int_bits, Tuple{UInt64}, true),
+        (LK.promoteIntNumber, Tuple{LK.number}, false),
+        [
+            (f, Tuple{LD, LK.number, LK.number, LK.number}, false) for
+            f in (LK.pl_ar_add, LK.ar_minus, LK.ar_mul)
+        ]...,
+        (LK.mul64, Tuple{Int64, Int64}, true),
+        (LK.ar_u_minus, Tuple{LK.number, LK.number}, false),
+        (LK.ar_u_plus, Tuple{LK.number, LK.number}, true),
+        (LK.isCurrentArithFunction, Tuple{Type{T}, UInt64, Int}, false),
+        (LK._ar_call2, Tuple{LD, Int, LK.number, LK.number, LK.number}, false),
+        (LK._ar_call1, Tuple{Int, LK.number, LK.number}, false),
+        (LK.arithChar, Tuple{LD, T}, false),
+        (LK.getCharExpression, Tuple{LD, T, LK.number}, false),
+        (LK._len_not_one, Tuple{LD, T}, false),
+        (LK.evalExpression, Tuple{LD, Int, LK.number}, false),
+        (LK._ar_type_error, Tuple{LD, Symbol, T}, false),
+        (LK.valueExpression, Tuple{LD, Int, LK.number}, false),
+        (LK.ar_compare, Tuple{LD, LK.number, LK.number, Int}, false),
+        (LK.compareNumbers, Tuple{LD, Int, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_is2_va, LK.pl_lt2_va, LK.pl_gt2_va, LK.pl_leq2_va, LK.pl_geq2_va,
+                LK.pl_neq2_va, LK.pl_eq2_va
+            )
+        ]...,
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, Tuple{T, Int}}, false),
+        (
+            LK.PL_error,
+            Tuple{LD, String, Int, String, LK.PL_error_code, T, Int},
+            false
+        ),
+        (
+            LK._PL_error_close!,
+            Tuple{LD, Union{Nothing, D}, Int, Int, Int, Int, String, Int, String},
+            false
+        ),
         # V4b — the call path's helpers: the record checks and the procedure a call names allocate
         # nothing; the run loop's call-path labels are checked by their own test (static_analysis_body.jl)
         (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
@@ -720,6 +785,9 @@ const DISPATCH_MANIFEST = (
     (Base.Enums._enum_hash, Tuple{LK.finished, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.PL_error_code, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.except_class, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.numtype, UInt64}, false),
+    (LK._holds_payload, Tuple{Type, Type}, false),   # not a dispatch tuple: JET only
+    (LK.number, Tuple{}, false),
     # term-type-independent parts of the VM (V4a)
     (LK.StackMagic, Tuple{Int}, true), (LK.initSupervisors, Tuple{}, false),
     (LK._vmi_dispatch_tree, Tuple{Symbol, Vector{Tuple{UInt64, Symbol}}}, false),

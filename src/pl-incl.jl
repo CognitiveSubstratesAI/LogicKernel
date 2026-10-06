@@ -943,3 +943,27 @@ isNumber(t)::Bool = isRational(t) || isFloat(t)
 # PORT: pl-data.h isAtomic
 "Whether `t` is atomic (pl-data.h `isAtomic`): neither a variable nor a compound."
 isAtomic(t)::Bool = !canBind(t) && !isTerm(t)
+
+# ── arithmetic (pl-incl.h), V6c ──────────────────────────────────────────────────────────────────
+# PORT: pl-incl.h numtype
+"The number types (pl-incl.h `numtype`), a TOTAL order: promotion goes up it."
+@enum numtype::UInt8 begin
+    V_INTEGER                       # integer (64-bit) value
+    V_MPZ                           # mpz_t
+    V_MPQ                           # mpq_t
+    V_FLOAT                         # Floating point number (double)
+end
+
+# PORT: pl-incl.h number
+# DIVERGES: one field per member of upstream's union — a Julia `Union` field would box the
+# integer — so a member not in use keeps a value nobody reads. Pooled in the local data
+# (src/pl-arith.jl), where upstream's are C locals.
+"A number being computed with (pl-incl.h `number`): its type and its value."
+mutable struct number
+    type::numtype                   # type of number
+    i::Int64                        # value as integer
+    f::Float64                      # value as a floating point number
+    mpz::BigInt                     # GMP integer
+    mpq::Rational{BigInt}           # GMP rational
+end
+number() = number(V_INTEGER, 0, 0.0, BigInt(0), Rational{BigInt}(0))

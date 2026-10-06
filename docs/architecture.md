@@ -225,13 +225,16 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`) | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
-| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, and since V5b the undefined procedure's existence error with its caller; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
+| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, and since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer) | `src/pl-ext.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
+| `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
+| `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h` |
 | `src/pl-modul.jl` | what a call of an undefined predicate reads from its module: the `unknown` flag's values and `getUnknownModule` (the default, `error`: a module has no flags yet, V5c) | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
+| `test/core_lang/test_arith_swipl.jl` | V6c1's gate: SWI's test_arith.pl units for what is ported; the error order and terms; a bound `is/2`; the rounding to double; a live differential of 600 `is/2` goals and 300 comparisons; the interims (Q-AR1, Q-AR7, Q-AR8) and the kernel-only terms | — |
 | `test/foreign/test_typetests_swipl.jl` | V6b1's gate: the type tests and `\==` registered; the truth table of the eleven tests on thirteen values, called, inline and as a body call, pinned to swipl and live; kernel-only terms | — |
 | `test/foreign/test_exceptions_swipl.jl` | V5b's gate: an undefined procedure's error, return codes and caller pinned to libswipl; the exception classes and `PL_raise_exception`'s rule against a live swipl's `'$urgent_exception'/3` | — |
 | `test/foreign/test_query.jl` | V4a's query API: answers, return codes and determinism; the supervisors; positions identical to swipl's; nested queries; cut against close; a closed `qid`; exceptions caught and passed; a Julia exception closing the query; clause GC under a running query; warm allocation | — |
@@ -309,6 +312,8 @@ graph LR
     pl_wam["pl-wam.jl"]
     pl_fli["pl-fli.jl"]
     pl_error["pl-error.jl"]
+    pl_gmp["pl-gmp.jl"]
+    pl_arith["pl-arith.jl"]
     pl_setup["pl-setup.jl"]
     pl_proc["pl-proc.jl"]
     pl_supervisor["pl-supervisor.jl"]
@@ -318,6 +323,7 @@ graph LR
     term_interface --> default_term
     default_term --> term_interface
     default_term --> pl_prims
+    default_term --> pl_gmp
     pl_hash --> default_term
     pl_incl --> term_interface
     pl_incl --> default_term
@@ -327,6 +333,7 @@ graph LR
     pl_termwalk --> pl_comp
     pl_vmi --> pl_incl
     pl_vmi --> pl_wam
+    pl_vmi --> pl_arith
     pl_index --> term_interface
     pl_index --> default_term
     pl_index --> pl_hash
@@ -336,6 +343,7 @@ graph LR
     pl_index --> pl_ressymbol
     pl_index --> pl_comp
     pl_index --> pl_wam
+    pl_index --> pl_arith
     pl_index --> pl_proc
     pl_funct --> term_interface
     pl_funct --> default_term
@@ -387,6 +395,7 @@ graph LR
     pl_comp --> pl_thread
     pl_comp --> pl_wam
     pl_comp --> pl_fli
+    pl_comp --> pl_arith
     pl_comp --> pl_proc
     pl_variant --> term_interface
     pl_variant --> default_term
@@ -431,6 +440,7 @@ graph LR
     pl_wam --> pl_alloc
     pl_wam --> pl_fli
     pl_wam --> pl_error
+    pl_wam --> pl_arith
     pl_wam --> pl_supervisor
     pl_wam --> pl_ext
     pl_fli --> term_interface
@@ -442,6 +452,7 @@ graph LR
     pl_fli --> pl_prims
     pl_fli --> pl_gc
     pl_fli --> pl_wam
+    pl_fli --> pl_arith
     pl_error --> term_interface
     pl_error --> default_term
     pl_error --> pl_incl
@@ -449,6 +460,27 @@ graph LR
     pl_error --> pl_global
     pl_error --> pl_wam
     pl_error --> pl_fli
+    pl_error --> pl_arith
+    pl_gmp --> term_interface
+    pl_gmp --> default_term
+    pl_gmp --> pl_incl
+    pl_gmp --> SWI_Prolog
+    pl_gmp --> pl_global
+    pl_gmp --> pl_inline
+    pl_gmp --> pl_prims
+    pl_gmp --> pl_error
+    pl_gmp --> pl_arith
+    pl_arith --> term_interface
+    pl_arith --> default_term
+    pl_arith --> pl_incl
+    pl_arith --> SWI_Prolog
+    pl_arith --> pl_global
+    pl_arith --> pl_inline
+    pl_arith --> pl_prims
+    pl_arith --> pl_comp
+    pl_arith --> pl_fli
+    pl_arith --> pl_error
+    pl_arith --> pl_gmp
     pl_setup --> pl_global
     pl_setup --> pl_wam
     pl_setup --> pl_fli
@@ -461,6 +493,7 @@ graph LR
     pl_proc --> pl_comp
     pl_proc --> pl_thread
     pl_proc --> pl_gc
+    pl_proc --> pl_arith
     pl_proc --> pl_supervisor
     pl_supervisor --> default_term
     pl_supervisor --> pl_incl
@@ -471,6 +504,7 @@ graph LR
     pl_supervisor --> pl_ressymbol
     pl_supervisor --> pl_comp
     pl_supervisor --> pl_wam
+    pl_supervisor --> pl_arith
     pl_supervisor --> pl_proc
     pl_trace --> term_interface
     pl_trace --> default_term
@@ -486,6 +520,7 @@ graph LR
     pl_ext --> pl_global
     pl_ext --> pl_prims
     pl_ext --> pl_variant
+    pl_ext --> pl_arith
     pl_ext --> pl_proc
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
@@ -1124,6 +1159,71 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V6c1 — arithmetic at run time: BUILT (2026-10-06)** (port_inventory row V6, its split; src/pl-gmp.jl
+and src/pl-arith.jl NEW; src/pl-error.jl, pl-incl.jl, pl-prims.jl, pl-global.jl, pl-ext.jl,
+default_term.jl). From the arithmetic memo (scratchpad `V6_memo_arith.md`). `is/2` and the six
+comparisons run as built-ins. Compiling them from a clause body is V6c2.
+* **Ported:**
+  * the number core (pl-gmp.c), as `number` records (pl-incl.h's `numtype`, `number`):
+    * reading and writing terms: `get_rational`, `get_number`, `put_number`, `put_mpz`;
+    * `PL_unify_number`, where a bound float compares by its bit pattern;
+    * the promotions: `promoteToMPZNumber`/`MPQ`/`Float`, `promoteNumber`,
+      `make_same_type_numbers`, `same_type_numbers`;
+    * `cmpNumbers` and `cmpFloatNumbers`, where an integer meets a float AS A DOUBLE: not exact,
+      as upstream;
+    * `mpz_to_double` and `mpz_fdiv`/`mpq_to_double`, rounded to nearest as upstream rounds;
+  * evaluation (pl-arith.c):
+    * `valueExpression` and `evalExpression`, last argument first, with upstream's cycle check
+      every 1024 compounds;
+    * `getCharExpression` and `arithChar` for one-character strings and `[Code]`;
+    * the functions the programs reach — `pl_ar_add`, `ar_minus`, `ar_mul`/`mul64`, `ar_u_minus`,
+      `ar_u_plus` — with overflow promoting to a big integer;
+    * `check_float` under upstream's default flags;
+    * `ar_compare` and `compareNumbers`;
+    * the seven PRED_IMPLs, registered before pl-prims.c's, as pl-ext.c does;
+  * `PL_error`: the arithmetic codes (`ERR_NOT_EVALUABLE`, `ERR_AR_UNDEF`/`OVERFLOW`/`UNDERFLOW`/
+    `RAT_OVERFLOW`) and upstream's leading `pred`, `arity`, `msg`. They are `String`s, empty for
+    upstream's NULL, because three `Union` arguments would dispatch at run time (the static gate
+    caught it).
+* **Found while building it:**
+  * GMP's comparisons return ANY sign, and upstream normalises them (`SCALAR_TO_CMP`). The first port
+    returned Julia's `cmp` of two rationals as is, which gave 2, read as "not equal". The live
+    differential caught it: five comparisons between a rational and an integer said `false` where
+    swipl said `true`.
+  * `mpz_to_double(0)`: upstream's comment says "a != 0", yet a big-integer 0 does reach it from
+    inside an expression. It returns 0.0 because `sa - mpz_scan1(0)` WRAPS in `size_t`. Julia's
+    `trailing_zeros(big(0))` throws, so the wrap is written out (probed: swipl compares such a 0
+    correctly).
+* **Interims (`# DIVERGES`, each pinned by a test, each the user's open question):**
+  * **Q-AR1:** a result `DefaultTerm` cannot hold (`BigInt`/`Rational{BigInt}`) raises a Julia
+    `ArgumentError`, and the query closes. A compile-time payload check (`_holds_payload`) folds the
+    branch away for a type that holds them.
+  * **Q-AR7:** `[Atom]` is refused (`NotPortedError`): the term interface has no atom text.
+  * **Q-AR8 (NEW):** the cycle is detected as upstream detects it, but the error's ball holds the
+    rational tree. A ball is resolved into an interface term (decision 1), which a rational tree does
+    not have (V5a1), so `resolve_term` raises.
+* **Kernel-only terms (Q-AR5), `# DIVERGES`:** a `NUM_OTHER` value is `type_error(evaluable, V)`; a
+  `$expr/n` evaluates its arguments, then is not evaluable (`'$expr'/n`).
+* **Gate — NEW test/core_lang/test_arith_swipl.jl** (three term types, a payload with `BigInt` and
+  `Rational{BigInt}`):
+  * SWI's own test_arith.pl units that need only what is ported: arith_1/2/4, cmp_1, add_promote1/2,
+    neg_1, neg_promote, ar_add_ui, mpz_to_int64, minint and maxint promotion ×6 each;
+  * the error order, formals, contexts and messages (the memo's probes), pinned;
+  * a bound left side of `is/2` (`1 is 1.0` and `-0.0 is 0.0` fail);
+  * a big integer between two doubles, rounded to the nearer;
+  * the comparison's left side evaluated first;
+  * a LIVE differential of 600 random `is/2` goals and 300 random comparisons. The leaves sit at the
+    Int64 and tagged boundaries and include big integers, floats with `-0.0`, rationals, strings and
+    planted errors. Every value, every error formal, context predicate (module stripped) and message
+    is identical to swipl's, 123 of them errors. Both sides print a structural encoding, and a float
+    is compared by its bit pattern.
+* **Static:** every new method in the manifest; the arithmetic is checked over DefaultTerm, its big
+  results folded to the interim.
+* **Mutation-proved — 14 of 14 run, all caught at verdict level** (baseline 49 s after a restart, limit 360 s). The mutants: evaluating the first argument first; the rational comparison without `SCALAR_TO_CMP` (the defect found while building); `+`, `-`, `*` and unary `-` wrapping instead of promoting; a big integer truncated to a double instead of rounded; `PL_unify_number` comparing floats by value; `check_float` letting an infinity through; a function found whatever its arity; a string of any length taken as its first character; `compareNumbers` evaluating the right side first; `=<` taken as `<`; `mpz_fdiv`'s hard case truncating. **One NOT RUN, on purpose:** removing the cycle check. `is/2` on a rational tree then never ends, and its term stack grows by gigabytes a second, so the run would exhaust the machine's memory before any timeout. The check is the only way such an evaluation terminates, and the cyclic test pins it.
+* **Not here:** compiling arithmetic in a body, so `derive` runs (V6c2); `A_ADD_FC` (V8); `>>`,
+  `<<` and every other function (when a program needs them); `optimise=true`'s inline arithmetic
+  (memo Q-AR3).
 
 **V6b1 — the type tests: BUILT (2026-10-06)** (port_inventory row V6, its split; src/pl-comp.jl,
 pl-funct.jl, pl-wam.jl, pl-vmi.jl, pl-prims.jl, pl-fli.jl, pl-incl.jl, pl-global.jl). From the cut
