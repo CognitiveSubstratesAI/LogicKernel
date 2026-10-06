@@ -22,6 +22,7 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _L = lk_term_type(Union{Int64, Float64, String})
 "The database the clauses of this file are compiled in (its global data)."
 const _LGD = LK.PL_global_data{_L}()
+const _LLD = LK.PL_local_data{_L}()          # the compiler reads its flags
 _ls(n) = lk_sym(_L, Symbol(n))
 _lf(f, xs::_L...) = mk_expr(_L, _L[_ls(f); collect(_L, xs)])
 _lv(k::Integer) = mk_var(_L, UInt64(k))
@@ -32,7 +33,7 @@ function _lclause(head::_L, body::Union{Nothing, _L})::LK.Clause{_L}
     user = LK.MODULE_user(_LGD)
     name, ar = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
     proc = LK.lookupProcedure(name, ar, user)
-    return LK.compileClause(_LGD, head, body, proc, user)
+    return LK.compileClause(_LGD, _LLD, head, body, proc, user)
 end
 
 "Prolog text of a term built here: variables `V<key>`, symbols by name, `','/2` as written."

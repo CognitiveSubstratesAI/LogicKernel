@@ -286,7 +286,7 @@ end
     ld = db.ld
     r = ix_pred(_Y, :r, 1; db=db)
     cl = LK.compileClause(
-        db.gd, _yf(:r, _yv(1)), _yf(:f, _yv(1)), r.proc, LK.MODULE_user(db.gd)
+        db.gd, db.ld, _yf(:r, _yv(1)), _yf(:f, _yv(1)), r.proc, LK.MODULE_user(db.gd)
     )
     LK.assertDefinition!(db.gd, r.def, cl, LK.CL_END)       # r(X) :- f(X).
     cl.codes[1] = op                                        # …its first instruction, not run

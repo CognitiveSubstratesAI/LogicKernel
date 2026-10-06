@@ -194,6 +194,65 @@ end
 PL_is_variable(ld::PL_local_data{T}, t::term_t) where {T} =
     kind(deRef(ld, ld.slots[t + 1])) === VAR
 
+# The type tests on a term reference (V6b): `valHandle(t)` is the slot dereferenced through the
+# bindings; each then asks pl-data.h's test (src/pl-incl.jl).
+
+# PORT: pl-fli.c PL_is_integer
+"Whether term reference `t` holds an integer (pl-fli.c)."
+PL_is_integer(ld::PL_local_data{T}, t::term_t) where {T} =
+    isInteger(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.c PL_is_float
+"Whether term reference `t` holds a float (pl-fli.c)."
+PL_is_float(ld::PL_local_data{T}, t::term_t) where {T} = isFloat(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.c PL_is_rational
+"Whether term reference `t` holds a rational number, an integer included (pl-fli.c)."
+PL_is_rational(ld::PL_local_data{T}, t::term_t) where {T} =
+    isRational(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.c PL_is_compound
+"Whether term reference `t` holds a compound term (pl-fli.c)."
+PL_is_compound(ld::PL_local_data{T}, t::term_t) where {T} =
+    isTerm(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.c isCallable
+# DIVERGES: no closure blobs. A compound with a non-symbol head (`$expr/n`, the kernel's) is not
+# callable: its name is no text atom, as `lookupBodyProcedure` refuses it as a goal.
+"Whether `t` is callable (pl-fli.c `isCallable`): a text atom, or a compound named by one or by `[]`."
+function isCallable(t)::Bool
+    if isTerm(t)
+        h = child(t, 1)
+        return kind(h) === SYM && (!is_reserved_symbol(h) || is_nil(h))  # PL_BLOB_TEXT || ATOM_nil
+    end
+    return isTextAtom(t)
+end
+
+# PORT: pl-fli.c PL_is_callable
+"Whether term reference `t` holds a callable term (pl-fli.c)."
+PL_is_callable(ld::PL_local_data{T}, t::term_t) where {T} =
+    isCallable(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.c PL_is_string
+"Whether term reference `t` holds a string (pl-fli.c)."
+PL_is_string(ld::PL_local_data{T}, t::term_t) where {T} =
+    isString(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.h PL_is_atom
+"Whether term reference `t` holds a text atom — not `[]` (pl-fli.h)."
+PL_is_atom(ld::PL_local_data{T}, t::term_t) where {T} =
+    isTextAtom(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.h PL_is_atomic
+"Whether term reference `t` holds an atomic term (pl-fli.h)."
+PL_is_atomic(ld::PL_local_data{T}, t::term_t) where {T} =
+    isAtomic(deRef(ld, ld.slots[t + 1]))
+
+# PORT: pl-fli.h PL_is_number
+"Whether term reference `t` holds a number (pl-fli.h)."
+PL_is_number(ld::PL_local_data{T}, t::term_t) where {T} =
+    isNumber(deRef(ld, ld.slots[t + 1]))
+
 # PORT: pl-fli.c PL_unify
 # DIVERGES: an occurs-check error is RAISED (pending, false), as upstream's `unify_ptrs` raises it —
 # the kernel's unifier throws a Julia `OccursCheckError`, turned into the Prolog error here

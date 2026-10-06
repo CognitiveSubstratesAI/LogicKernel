@@ -157,6 +157,7 @@ mutable struct PL_local_data{T}
     prolog_flag_occurs_check::occurs_check_t                    # prolog_flag.occurs_check
     prolog_flag_portable_vmi::Bool                              # truePrologFlag(PLFLAG_PORTABLE_VMI)
     prolog_flag_last_call::Bool                                 # truePrologFlag(PLFLAG_LASTCALL)
+    prolog_flag_optimise::Bool                                  # truePrologFlag(PLFLAG_OPTIMISE)
     cycle_lstack::Vector{T}                                     # cycle.lstack: linked compounds
     cycle_links::IdDict{T, T}                                   # the links themselves
     occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
@@ -201,6 +202,7 @@ function PL_local_data{T}() where {T}
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, true,
         true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
+        false,                                  # optimise: off without -O (pl-prologflag.c:2394)
         T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),

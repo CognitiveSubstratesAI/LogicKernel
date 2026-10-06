@@ -900,3 +900,46 @@ struct definition_ref{T}
     predicate::Definition{T}            # Referenced definition
     generation::gen_t                   # at generation
 end
+
+# ── the type tests on a term (pl-data.h) ─────────────────────────────────────────────────────────
+# Upstream's tests read a word's TAG; here they read the term interface's kinds (invariant 8: never
+# a Julia type). Each takes a DEREFERENCED term, as upstream's take a word. A kernel-only grounded
+# value (`NUM_OTHER`) is a non-text blob, as it sorts (`OTHER_BLOB_RANK`): atomic, and no other
+# type; a compound with a non-symbol head (`$expr/n`) is a compound.
+
+# PORT: pl-data.h canBind
+# DIVERGES: no attributed variables, so an unbound variable is all that can bind.
+"Whether `t` can be bound (pl-data.h `canBind`): an unbound variable."
+canBind(t)::Bool = kind(t) === VAR
+
+# PORT: pl-data.h isTextAtom
+"Whether `t` is a text atom (pl-data.h `isTextAtom`): a symbol, not a reserved one such as `[]`."
+isTextAtom(t)::Bool = kind(t) === SYM && !is_reserved_symbol(t)
+
+# PORT: pl-data.h isRational
+"Whether `t` is a rational number (pl-data.h `isRational`): an integer or a rational."
+isRational(t)::Bool = (k=number_kind(t); k === NUM_INTEGER || k === NUM_RATIONAL)
+
+# PORT: pl-data.h isFloat
+"Whether `t` is a float (pl-data.h `isFloat`)."
+isFloat(t)::Bool = number_kind(t) === NUM_FLOAT
+
+# PORT: pl-data.h isString
+"Whether `t` is a string (pl-data.h `isString`)."
+isString(t)::Bool = number_kind(t) === NUM_STRING
+
+# PORT: pl-data.h isTerm
+"Whether `t` is a compound term (pl-data.h `isTerm`)."
+isTerm(t)::Bool = kind(t) === EXPR
+
+# PORT: pl-data.h isInteger
+"Whether `t` is an integer of any size (pl-data.h `isInteger`, `O_BIGNUM`: not a rational)."
+isInteger(t)::Bool = number_kind(t) === NUM_INTEGER
+
+# PORT: pl-data.h isNumber
+"Whether `t` is a number (pl-data.h `isNumber`): a rational or a float."
+isNumber(t)::Bool = isRational(t) || isFloat(t)
+
+# PORT: pl-data.h isAtomic
+"Whether `t` is atomic (pl-data.h `isAtomic`): neither a variable nor a compound."
+isAtomic(t)::Bool = !canBind(t) && !isTerm(t)

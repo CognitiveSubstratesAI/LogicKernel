@@ -50,7 +50,7 @@ end
 
 "`assertz(Head)`: compile the fact and add it at the end."
 function ix_assertz!(p::IxPred{T}, head::T)::Nothing where {T}
-    cl = LK.compileClause(p.db.gd, head, nothing, p.proc, LK.MODULE_user(p.db.gd))
+    cl = LK.compileClause(p.db.gd, p.db.ld, head, nothing, p.proc, LK.MODULE_user(p.db.gd))
     LK.assertDefinition!(p.db.gd, p.def, cl, LK.CL_END)
     if (p.def.flags & LK.P_DYNAMIC) == 0
         p.virgin = true                       # freeCodesDefinition(): back to S_VIRGIN

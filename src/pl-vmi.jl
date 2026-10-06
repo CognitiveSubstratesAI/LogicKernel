@@ -15,7 +15,8 @@
 # loop (src/pl-wam.jl), as upstream `#include`s pl-vmi.c inside it. Upstream numbers instructions by
 # their order in pl-vmi.c; these numbers keep that order up to `I_TCALL` (`B_VAR0 + index` needs the
 # three consecutive) and then append, in the order the steps declared them: `I_CUT` (V2), then V4a's,
-# then V5a2's deterministic foreign calls (`I_FCALLDET0 + arity` needs the eleven consecutive).
+# then V5a2's deterministic foreign calls (`I_FCALLDET0 + arity` needs the eleven consecutive), then
+# V6b's type tests (`I_VAR` … `I_CALLABLE`, in pl-vmi.c's order).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -321,6 +322,39 @@ const I_FCALLDET10 = code(72)
 # PORT: pl-vmi.c I_FEXITDET
 "After a deterministic foreign call — never executed: the calls jump to its helper (pl-vmi.c)."
 const I_FEXITDET = code(73)
+# PORT: pl-vmi.c I_VAR
+"`var/1` inline: continue if the variable at the operand's offset is an unbound variable, else fail (pl-vmi.c)."
+const I_VAR = code(74)
+# PORT: pl-vmi.c I_NONVAR
+"`nonvar/1` inline: continue if the variable at the operand's offset is not an unbound variable, else fail (pl-vmi.c)."
+const I_NONVAR = code(75)
+# PORT: pl-vmi.c I_INTEGER
+"`integer/1` inline: continue if the variable at the operand's offset is an integer, else fail (pl-vmi.c)."
+const I_INTEGER = code(76)
+# PORT: pl-vmi.c I_RATIONAL
+"`rational/1` inline: continue if the variable at the operand's offset is a rational number, else fail (pl-vmi.c)."
+const I_RATIONAL = code(77)
+# PORT: pl-vmi.c I_FLOAT
+"`float/1` inline: continue if the variable at the operand's offset is a float, else fail (pl-vmi.c)."
+const I_FLOAT = code(78)
+# PORT: pl-vmi.c I_NUMBER
+"`number/1` inline: continue if the variable at the operand's offset is a number, else fail (pl-vmi.c)."
+const I_NUMBER = code(79)
+# PORT: pl-vmi.c I_ATOMIC
+"`atomic/1` inline: continue if the variable at the operand's offset is atomic, else fail (pl-vmi.c)."
+const I_ATOMIC = code(80)
+# PORT: pl-vmi.c I_ATOM
+"`atom/1` inline: continue if the variable at the operand's offset is a text atom, else fail (pl-vmi.c)."
+const I_ATOM = code(81)
+# PORT: pl-vmi.c I_STRING
+"`string/1` inline: continue if the variable at the operand's offset is a string, else fail (pl-vmi.c)."
+const I_STRING = code(82)
+# PORT: pl-vmi.c I_COMPOUND
+"`compound/1` inline: continue if the variable at the operand's offset is a compound, else fail (pl-vmi.c)."
+const I_COMPOUND = code(83)
+# PORT: pl-vmi.c I_CALLABLE
+"`callable/1` inline: continue if the variable at the operand's offset is callable, else fail (pl-vmi.c)."
+const I_CALLABLE = code(84)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS (a literal is one, see above); `argtype`
@@ -409,7 +443,18 @@ const _CODE_TABLE = (
     code_info(:I_FCALLDET8, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
     code_info(:I_FCALLDET9, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
     code_info(:I_FCALLDET10, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
-    code_info(:I_FEXITDET, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:I_FEXITDET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_VAR, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_NONVAR, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_INTEGER, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_RATIONAL, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_FLOAT, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_NUMBER, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_ATOMIC, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_ATOM, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_STRING, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_COMPOUND, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_CALLABLE, VIF_BREAK, 1, (CA1_VAR, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

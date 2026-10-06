@@ -23,6 +23,7 @@ using Random
 const _Q = lk_term_type(Union{Int64, Float64, String})
 "The database the fresh predicates of this file are compiled in (its global data)."
 const _QGD = LK.PL_global_data{_Q}()
+const _QLD = LK.PL_local_data{_Q}()          # the compiler reads its flags
 _qs(n) = lk_sym(_Q, Symbol(n))
 _qg(v) = lk_gnd(_Q, v)
 _qv(k::Int) = lk_var(_Q, UInt64(k))
@@ -38,7 +39,7 @@ _qvm_call(pr, goal)::Union{Nothing, Vector{_Q}} = first.(vm_call(pr, goal))
 function _qclause(head::_Q)::LK.Clause{_Q}
     user = LK.MODULE_user(_QGD)
     proc = LK.lookupProcedure(child(head, 1), nchildren(head) - 1, user)
-    return LK.compileClause(_QGD, head, nothing, proc, user)
+    return LK.compileClause(_QGD, _QLD, head, nothing, proc, user)
 end
 
 "The head code of `head` (a clause of a fresh predicate): `(instruction name, operands...)`."

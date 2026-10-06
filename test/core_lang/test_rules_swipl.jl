@@ -48,7 +48,7 @@ _rproc(db::_RDB, t::_R) = LK.lookupProcedure(_rfunctor(t)..., db.user)
 "`head :- body` (`body` nothing: a fact), compiled and added at the end of its predicate."
 function _radd!(db::_RDB, head::_R, body::Union{Nothing, _R}=nothing)
     pr = _rproc(db, head)
-    cl = LK.compileClause(db.gd, head, body, pr, db.user)
+    cl = LK.compileClause(db.gd, db.ld, head, body, pr, db.user)
     LK.assertDefinition!(db.gd, pr.definition, cl, LK.CL_END)
     return cl
 end
@@ -281,7 +281,8 @@ const _R_FAMILY = (
     LK.B_ARGVAR, LK.B_VAR0, LK.B_VAR1, LK.B_VAR2, LK.B_VAR, LK.B_ARGFIRSTVAR, LK.B_FIRSTVAR,
     LK.B_VOID, LK.B_FUNCTOR, LK.B_RFUNCTOR, LK.B_LIST, LK.B_RLIST, LK.B_POP, LK.B_ATOM,
     LK.B_SMALLINT, LK.B_NIL, LK.I_ENTER, LK.I_CALL, LK.I_DEPART, LK.L_NOLCO, LK.L_VAR,
-    LK.L_VOID, LK.L_ATOM, LK.L_NIL, LK.L_SMALLINT, LK.I_LCALL, LK.I_TCALL, LK.I_CUT
+    LK.L_VOID, LK.L_ATOM, LK.L_NIL, LK.L_SMALLINT, LK.I_LCALL, LK.I_TCALL, LK.I_CUT,
+    LK.I_INTEGER, LK.I_ATOM, LK.I_VAR, LK.I_NONVAR, LK.I_ATOMIC, LK.I_COMPOUND
 )
 
 "Every instruction in clause `cl`'s code."
@@ -336,8 +337,8 @@ end
 """
 A random program, layered so every query terminates, suffixed `_i`: facts, fixed rules that cover
 the last-call forms and the cut's paths, and random rules over them; and a query for every
-predicate. Where a random body gets a `!` is drawn from `crng` (V6a), so the rest of each program
-is what V4b's corpus drew.
+predicate. What V6 adds at random — where a body gets a `!` (V6a), a value `tsel_i` is asked about
+(V6b) — is drawn from `crng`, so the rest of each program is what V4b's corpus drew.
 """
 function _rprogram(rng, i::Int, crng)
     p(n) = "$(n)_$i"
@@ -382,7 +383,22 @@ function _rprogram(rng, i::Int, crng)
         (_rf(p("cdeep"), X), _rconj(_rf(p("nd"), X), _rs("!"))),
         (_rf(p("clast"), X), _rf(p("e2"), X)),
         (_rf(p("clast"), X), _rconj(_rs("!"), _rf(p("e1"), X, _rv(24)))),
-        (_rf(p("clast"), _rs(:c)), nothing)
+        (_rf(p("clast"), _rs(:c)), nothing),
+        # the type tests (V6b): inline on a seen variable, failing into the frame's own clause
+        # choice point (FASTCOND_FAILED → shallow backtracking) or into a callee's (→ deep); and the
+        # fall-back calls of the other shapes
+        (_rf(p("tsel"), X, _rs(:int)), _rf("integer", X)),
+        (_rf(p("tsel"), X, _rs(:atm)), _rf("atom", X)),
+        (_rf(p("tsel"), X, _rs(:cmp)), _rconj(_rf("compound", X), _rs("!"))),
+        (_rf(p("tsel"), _rv(25), _rs(:other)), nothing),
+        (_rf(p("tnd"), X), _rconj(_rf(p("e1"), X, _rv(26)), _rf("atomic", X))),
+        (_rf(p("tv"), X, Y), _rconj(_rf("var", X), _rf(p("e2"), Y))),
+        (_rf(p("tnv"), X), _rconj(_rf(p("e1"), X, Y), _rf("nonvar", Y))),
+        (
+            _rf(p("tfb"), Y),
+            _rconj(_rf(p("e2"), Y), _rf("number", _rg(3)), _rf("atom", _rv(27)))
+        ),
+        (_rf(p("tfb2"), Y), _rconj(_rf("callable", _rf(:f, Y)), _rf(p("e2"), Y)))
     ]
     append!(clauses, fixed)
     callable = [(p("e1"), 2), (p("e2"), 1), (p("e3"), 2)]
@@ -422,12 +438,17 @@ function _rprogram(rng, i::Int, crng)
         (callable..., (p("lblk"), 2), (p("bld"), 2), (p("nd"), 1), (p("four"), 4),
         (p("afv"), 1),
         (p("r1"), 3), (p("r2"), 3), (p("cnd"), 2), (p("cmid"), 1), (p("cfirst"), 1),
-        (p("cdet"), 1), (p("cown"), 1), (p("cdeep"), 1), (p("clast"), 1))
+        (p("cdet"), 1), (p("cown"), 1), (p("cdeep"), 1), (p("clast"), 1), (p("tsel"), 2),
+        (p("tnd"), 1), (p("tv"), 2), (p("tnv"), 1), (p("tfb"), 1), (p("tfb2"), 1))
         push!(goals, _rf(f, (_rv(40 + k) for k in 1:n)...))
     end
     push!(goals, _rs(p("top")))
     push!(goals, _rf(p("app"), _rints(1:3), _rlist(_rs(:z)), _rv(50)))
     push!(goals, _rf(p("walk"), _rints(1:4), _rs(:x), _rv(51)))
+    for v in (_rg(1), _rs(:a), _rf(:f, _rs(:a)), _rnil(), _rconst(crng)) # tsel_i on each kind
+        push!(goals, _rf(p("tsel"), v, _rv(52)))
+    end
+    push!(goals, _rf(p("tv"), _rs(:a), _rv(53)))                        # var/1 failing inline
     return clauses, goals
 end
 

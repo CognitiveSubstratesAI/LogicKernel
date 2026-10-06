@@ -80,13 +80,18 @@ cut, compiled to `I_CUT`, c:3521), the other goal ATOMS it compiles inline (`tru
 `\$catch`, `\$reset`, `\$call_cleanup`, `\$cut`, `\$yield`, `\$`; c:3527-3554) and the goal FUNCTORS it compiles inline or as arithmetic: `is/2`
 (c:3475) and, under O_COMPILE_IS, `=/2`, `==/2`, `\\==/2`, `var/1`, `nonvar/1`, the nine type tests
 (c:4649-4660), `\$call_continuation/1`, `\$shift/1`, `\$shift_for_copy/1` and `arg/3` (c:3488-3517).
+Since V6b `var/1`, `nonvar/1` and the type tests are compiled as upstream compiles them
+(`atom_var`, `atom_nonvar`, `type_tests`); the others are still refused whole (`inline_functors`).
 """
 struct SubClauseNames
     atom_true::UInt64                           # ATOM_true
     atom_call::UInt64                           # ATOM_call
     atom_cut::UInt64                            # ATOM_cut: `!`
     reserved_atoms::Set{UInt64}                 # the goal atoms compiled inline
-    inline_functors::Set{Tuple{UInt64, Int}}    # the goal functors compiled inline
+    inline_functors::Set{Tuple{UInt64, Int}}    # the goal functors compiled inline, still refused
+    atom_var::UInt64                            # FUNCTOR_var1's name
+    atom_nonvar::UInt64                         # FUNCTOR_nonvar1's name
+    type_tests::NTuple{9, UInt64}               # type_tests[]'s names (pl-comp.c), in its order
 end
 
 "The names compileSubClause treats specially, for term type `T` (see `SubClauseNames`)."
@@ -106,17 +111,21 @@ function _subclause_names(::Type{T})::SubClauseNames where {T}
     end
     functors = Set{Tuple{UInt64, Int}}()
     for (n, a) in (
-        ("is", 2), ("=", 2), ("==", 2), ("\\==", 2), ("var", 1), ("nonvar", 1),
-        ("integer", 1),
-        ("rational", 1), ("float", 1), ("number", 1), ("atomic", 1), ("atom", 1),
-        ("string", 1),
-        ("compound", 1), ("callable", 1), ("\$call_continuation", 1), ("\$shift", 1),
-        ("\$shift_for_copy", 1), ("arg", 3)
+        ("is", 2), ("=", 2), ("==", 2), ("\\==", 2), ("\$call_continuation", 1),
+        ("\$shift", 1), ("\$shift_for_copy", 1), ("arg", 3)
     )
         push!(functors, (sym_key(mk_sym(T, Symbol(n))), a))
     end
     return SubClauseNames(
-        sym_key(mk_sym(T, Symbol("true"))), sym_key(mk_sym(T, :call)),
-        sym_key(mk_sym(T, Symbol("!"))), atoms, functors
+        _name_key(T, "true"), _name_key(T, "call"), _name_key(T, "!"), atoms, functors,
+        _name_key(T, "var"), _name_key(T, "nonvar"),
+        (
+            _name_key(T, "integer"), _name_key(T, "rational"), _name_key(T, "float"),
+            _name_key(T, "number"), _name_key(T, "atomic"), _name_key(T, "atom"),
+            _name_key(T, "string"), _name_key(T, "compound"), _name_key(T, "callable")
+        )
     )
 end
+
+"The key of the symbol named `n` in term type `T`."
+_name_key(::Type{T}, n::String) where {T} = sym_key(mk_sym(T, Symbol(n)))

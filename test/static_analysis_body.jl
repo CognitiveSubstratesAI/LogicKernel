@@ -111,8 +111,9 @@ end
         path = ("I_ENTER", "I_CALL", "normal_call", "depart_or_retry_continue", "I_DEPART",
             "I_EXIT", "exit_continue", "L_NOLCO", "L_VAR", "L_ATOM", "L_NIL", "L_SMALLINT",
             "I_LCALL", "I_TCALL", "I_CUT", "B_VAR0", "B_VAR1", "B_VAR2", "B_VAR",
-            "bvar_cont",
-            "B_ARGVAR")
+            "bvar_cont", "B_ARGVAR", "I_VAR", "I_NONVAR", "I_INTEGER", "I_RATIONAL",
+            "I_FLOAT", "I_NUMBER", "I_ATOMIC", "I_ATOM", "I_STRING", "I_COMPOUND",
+            "I_CALLABLE")
         @test all(n -> any(x -> x[2] == n, labels), path)
         spans = [span(n) for n in path]
         allocs = check_allocs(
@@ -135,7 +136,9 @@ end
             LK.lcoSetNextFrameFlags, LK.lcoSetNextFrameFlags2, LK.copyFrameArguments,
             LK.lowerLTop!, LK.deRef, LK.tcallSetNextFrameFlags, LK.linkValI,
             LK._argp_store!,
-            LK._argp_add, LK.discardChoicesAfter, LK._save_registers!, LK._load_registers!)
+            LK._argp_add, LK.discardChoicesAfter, LK._save_registers!, LK._load_registers!,
+            LK.canBind, LK.isInteger, LK.isRational, LK.isFloat, LK.isNumber, LK.isAtomic,
+            LK.isTextAtom, LK.isString, LK.isTerm, LK.isCallable)
             @test any(e -> e[1] === c && e[3], DISPATCH_MANIFEST)
         end
         # V5a2: a FOREIGN call's own path allocates nothing — a built-in may (it builds terms), so

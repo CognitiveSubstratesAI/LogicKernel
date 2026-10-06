@@ -36,7 +36,9 @@ _bv(k::Int) = mk_var(_BT, UInt64(k))
 # The first users, `(name, arity, iso)`, as upstream's tables register them.
 const _B_FIRST = (
     (:(=), 2, true), (Symbol("\\="), 2, true), (:unify_with_occurs_check, 2, true),
-    (:(==), 2, true), (:compare, 3, true), (Symbol("?="), 2, false), (:unifiable, 3, false),
+    (:(==), 2, true), (Symbol("\\=="), 2, true), (:compare, 3, true),
+    (Symbol("?="), 2, false),
+    (:unifiable, 3, false),
     (Symbol("=@="), 2, false)
 )
 
@@ -373,13 +375,14 @@ if _BSWIPL !== nothing
         user = LKB.MODULE_user(db)
         z = LKB.lookupProcedure(_bs(:z), 0, user)
         LKB.assertDefinition!(
-            db, z.definition, LKB.compileClause(db, _bs(:z), nothing, z, user), LKB.CL_END
+            db, z.definition, LKB.compileClause(db, ld, _bs(:z), nothing, z, user),
+            LKB.CL_END
         )
         bad = String[]
         n = 0
         for (name, arity, iso) in _B_FIRST
             iso || continue
-            (name === :(=) || name === :(==)) && continue   # compiled INLINE upstream: V9
+            (name === :(=) || name === :(==) || name === Symbol("\\==")) && continue  # INLINE upstream: V9
             vs = _BT[_bv(10 + k) for k in 1:arity]
             goal = mk_expr(_BT, _BT[_bs(name); vs])
             for (pn, body) in (
@@ -387,7 +390,9 @@ if _BSWIPL !== nothing
                 (Symbol("bn_", name), _bc(Symbol(","), goal, _bs(:z)))
             )
                 p = LKB.lookupProcedure(_bs(pn), arity, user)
-                cl = LKB.compileClause(db, mk_expr(_BT, _BT[_bs(pn); vs]), body, p, user)
+                cl = LKB.compileClause(
+                    db, ld, mk_expr(_BT, _BT[_bs(pn); vs]), body, p, user
+                )
                 LKB.assertDefinition!(db, p.definition, cl, LKB.CL_END)
             end
             for _ in 1:40

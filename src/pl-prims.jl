@@ -1199,6 +1199,117 @@ function pl_unify_with_occurs_check2_va(
     return rc ? FTRUE : FFALSE
 end
 
+# ── type checking (pl-prims.c), registered since V6b ─────────────────────────────────────────────
+# PORT: pl-prims.c nonvar as pl_nonvar1_va
+# (PRED_IMPL("nonvar", 1, nonvar, 0))
+"`nonvar/1` (pl-prims.c): the argument is not an unbound variable."
+function pl_nonvar1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_variable(ld, A1) ? FFALSE : FTRUE
+end
+
+# PORT: pl-prims.c var as pl_var1_va
+# (PRED_IMPL("var", 1, var, 0))
+"`var/1` (pl-prims.c): the argument is an unbound variable."
+function pl_var1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_variable(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c integer as pl_integer1_va
+# (PRED_IMPL("integer", 1, integer, 0))
+"`integer/1` (pl-prims.c): the argument is an integer."
+function pl_integer1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_integer(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c float as pl_float1_va
+# (PRED_IMPL("float", 1, float, 0))
+"`float/1` (pl-prims.c): the argument is a float."
+function pl_float1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_float(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c rational as pl_rational1_va
+# (PRED_IMPL("rational", 1, rational, 0))
+"`rational/1` (pl-prims.c): the argument is a rational number, an integer included."
+function pl_rational1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_rational(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c string as pl_string1_va
+# (PRED_IMPL("string", 1, string, 0))
+"`string/1` (pl-prims.c): the argument is a string."
+function pl_string1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_string(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c number as pl_number1_va
+# (PRED_IMPL("number", 1, number, 0))
+"`number/1` (pl-prims.c): the argument is a number."
+function pl_number1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_number(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c atom as pl_atom1_va
+# (PRED_IMPL("atom", 1, atom, 0))
+"`atom/1` (pl-prims.c): the argument is a text atom (not `[]`)."
+function pl_atom1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_atom(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c atomic as pl_atomic1_va
+# (PRED_IMPL("atomic", 1, atomic, 0))
+"`atomic/1` (pl-prims.c): the argument is atomic."
+function pl_atomic1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_atomic(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c compound as pl_compound1_va
+# (PRED_IMPL("compound", 1, compound, 0))
+"`compound/1` (pl-prims.c): the argument is a compound term."
+function pl_compound1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_compound(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c callable as pl_callable1_va
+# (PRED_IMPL("callable", 1, callable, PL_FA_ISO))
+"`callable/1` (pl-prims.c): the argument is callable."
+function pl_callable1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return PL_is_callable(ld, A1) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c equal as pl_equal2_va
 # (PRED_IMPL("==", 2, equal, 0))
 # DIVERGES: no `CMP_ERROR` (the kernel's compare raises nothing; see `compare_std`).
@@ -1210,6 +1321,19 @@ function pl_equal2_va(
     p1 = ld.slots[A1 + 1]                               # Word p1 = valTermRef(A1)
     p2 = ld.slots[A1 + 2]                               # Word p2 = p1+1
     return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c nonequal as pl_nonequal2_va
+# (PRED_IMPL("\\==", 2, nonequal, 0))
+# DIVERGES: no `CMP_ERROR` (see `pl_equal2_va`).
+"`\\==/2` (pl-prims.c): the arguments are not identical."
+function pl_nonequal2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    p1 = ld.slots[A1 + 1]                               # Word p1 = valTermRef(A1)
+    p2 = ld.slots[A1 + 2]                               # Word p2 = p1+1
+    return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FFALSE : FTRUE
 end
 
 # PORT: pl-prims.c compare as pl_compare3_va
@@ -1348,7 +1472,19 @@ const PL_predicates_from_prims = (
         "unify_with_occurs_check", 2, pl_unify_with_occurs_check2_va,
         PL_FA_ISO | PL_FA_VARARGS
     ),
+    PL_extension("nonvar", 1, pl_nonvar1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("var", 1, pl_var1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("integer", 1, pl_integer1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("float", 1, pl_float1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("rational", 1, pl_rational1_va, PL_FA_VARARGS),
+    PL_extension("number", 1, pl_number1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("atomic", 1, pl_atomic1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("atom", 1, pl_atom1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("string", 1, pl_string1_va, PL_FA_VARARGS),
+    PL_extension("compound", 1, pl_compound1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("callable", 1, pl_callable1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("==", 2, pl_equal2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("\\==", 2, pl_nonequal2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("compare", 3, pl_compare3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("?=", 2, pl_can_compare2_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS)

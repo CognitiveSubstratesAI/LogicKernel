@@ -87,7 +87,7 @@ end
     @test LK.addProcedure!(ci, pa) == LK.code(1)
     @test LK.addProcedure!(ci, pb) == LK.code(2)
     @test ci.procedures[1] === pa && ci.procedures[2] === pb
-    cl = LK.compileClause(gd, _of(:r, _og(7)), nothing, pr, user)      # a fact calls nothing
+    cl = LK.compileClause(gd, LK.PL_local_data{_O}(), _of(:r, _og(7)), nothing, pr, user)      # a fact calls nothing
     @test cl.procedures isa Vector{LK.Procedure{_O}} && isempty(cl.procedures)
     @test cl.predicate === pr.definition
 end

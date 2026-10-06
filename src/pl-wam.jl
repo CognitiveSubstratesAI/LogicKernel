@@ -661,6 +661,23 @@ macro LOAD_REGISTERS(qid)
     return esc(:((FR, ARGP, PCc, PCl, PC) = _load_registers!(ld, $qid)))
 end
 
+# PORT: pl-vmi.c TYPE_TEST
+# DIVERGES: a macro over the run loop's locals, as upstream's, without its `functor` argument: that
+# names the predicate of the `vmi_builtin=false` branch (`debug_pred1`), NOT PORTED — only the
+# debugger and coverage clear the flag. `FASTCOND_FAILED` is `BODY_FAILED`: `LD->fast_condition` is
+# set only by `C_FASTCOND` (V9).
+"The body of a type-test instruction (pl-vmi.c `TYPE_TEST`): `test` the variable at the operand."
+macro TYPE_TEST(test)
+    return esc(
+        quote
+            tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+            PC += 1
+            $test(tt_p) && @goto next_instruction
+            @goto shallow_backtrack                 # FASTCOND_FAILED
+        end
+    )
+end
+
 # PORT: pl-vmi.c ENSURE_LOCAL_SPACE
 # DIVERGES: in positions. The overflow raises a Julia `LocalStackOverflow` until the stack limit's
 # `resource_error` is ported (V5b, waiting for the user's Q-B on its context)
@@ -728,7 +745,9 @@ const VMI_RUN = (
     :S_DYNAMIC, :S_MULTIFILE, :S_TRUSTME, :S_LIST, :I_FCALLDETVA, :I_FCALLDET0,
     :I_FCALLDET1,
     :I_FCALLDET2, :I_FCALLDET3, :I_FCALLDET4, :I_FCALLDET5, :I_FCALLDET6, :I_FCALLDET7,
-    :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET
+    :I_FCALLDET8, :I_FCALLDET9, :I_FCALLDET10, :I_FEXITDET, :I_VAR, :I_NONVAR, :I_INTEGER,
+    :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
+    :I_CALLABLE
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1854,6 +1873,60 @@ function PL_next_solution_guarded(
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
     ld.exception_term != 0 && @goto b_throw         # THROW_EXCEPTION
     @goto next_instruction
+
+    # ── the type tests (pl-vmi.c), V6b ────────────────────────────────────────────────────────────
+    # PORT: pl-vmi.c I_VAR
+    # DIVERGES: NOT PORTED: the `vmi_builtin=false` branch (`debug_pred1`; see `TYPE_TEST`).
+    # `FASTCOND_FAILED` is `BODY_FAILED` (see `TYPE_TEST`).
+    @label I_VAR
+    tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    PC += 1
+    canBind(tt_p) && @goto next_instruction
+    @goto shallow_backtrack                         # FASTCOND_FAILED
+
+    # PORT: pl-vmi.c I_NONVAR
+    # DIVERGES: as `I_VAR`'s.
+    @label I_NONVAR
+    tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    PC += 1
+    !canBind(tt_p) && @goto next_instruction
+    @goto shallow_backtrack                         # FASTCOND_FAILED
+
+    # PORT: pl-vmi.c I_INTEGER
+    @label I_INTEGER
+    @TYPE_TEST(isInteger)
+
+    # PORT: pl-vmi.c I_RATIONAL
+    @label I_RATIONAL
+    @TYPE_TEST(isRational)
+
+    # PORT: pl-vmi.c I_FLOAT
+    @label I_FLOAT
+    @TYPE_TEST(isFloat)
+
+    # PORT: pl-vmi.c I_NUMBER
+    @label I_NUMBER
+    @TYPE_TEST(isNumber)
+
+    # PORT: pl-vmi.c I_ATOMIC
+    @label I_ATOMIC
+    @TYPE_TEST(isAtomic)
+
+    # PORT: pl-vmi.c I_ATOM
+    @label I_ATOM
+    @TYPE_TEST(isTextAtom)
+
+    # PORT: pl-vmi.c I_STRING
+    @label I_STRING
+    @TYPE_TEST(isString)
+
+    # PORT: pl-vmi.c I_COMPOUND
+    @label I_COMPOUND
+    @TYPE_TEST(isTerm)
+
+    # PORT: pl-vmi.c I_CALLABLE
+    @label I_CALLABLE
+    @TYPE_TEST(isCallable)
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN

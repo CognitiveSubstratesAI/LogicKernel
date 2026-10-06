@@ -26,6 +26,7 @@ using Random
 const _B = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 "The database the clauses of this file are compiled in (its global data)."
 const _BGD = LK.PL_global_data{_B}()
+const _BLD = LK.PL_local_data{_B}()          # the compiler reads its flags
 _bs(n) = lk_sym(_B, Symbol(n))
 _be(f, xs::AbstractVector) = mk_expr(_B, _B[_bs(f); xs])
 _bf(f, xs::_B...) = _be(f, collect(_B, xs))
@@ -52,13 +53,13 @@ end
 _bfunctor(t::_B) = kind(t) === SYM ? (t, 0) : (child(t, 1), nchildren(t) - 1)
 
 "`head :- body` (`body` `nothing` for a fact) compiled as a clause of its predicate in `_BGD`."
-function _bclause(head::_B, body::Union{Nothing, _B}; gd=_BGD)::LK.Clause{_B}
+function _bclause(head::_B, body::Union{Nothing, _B}; gd=_BGD, ld=_BLD)::LK.Clause{_B}
     _bnames!(head)
     body === nothing || _bnames!(body)
     user = LK.MODULE_user(gd)
     name, ar = _bfunctor(head)
     proc = LK.lookupProcedure(name, ar, user)
-    return LK.compileClause(gd, head, body, proc, user)
+    return LK.compileClause(gd, ld, head, body, proc, user)
 end
 
 "An operand word `w` of kind `k` of instruction `op`, as both sides write it."
@@ -511,6 +512,90 @@ _bc_names(code::Vector{String}) =
     end
 end
 
+# ── the type tests and var/nonvar (V6b): upstream's decision, cell by cell ────────────────────
+# compileBodyVar1/NonVar1 and compileTypeTest (c:4539-4673): inline (`i_<test>`) on a variable
+# already seen — a head argument, a head-subterm variable, an earlier body occurrence — and a CALL
+# of the predicate for every other shape (a first occurrence, a void, any non-variable), since
+# `always` falls back unless `optimise` (c:4522-4536). The shapes are the research probe's
+# (scratchpad v6c/p3_clauses.pl), plus a float and a string; each clause's code == swipl's, live.
+const _BC_TYPE_TESTS = (
+    "var", "nonvar", "integer", "rational", "float", "number", "atomic", "atom", "string",
+    "compound", "callable"
+)
+const _BC_TT_INLINE = ("argvar", "headvar", "notlast")      # the cells compiled inline
+function _bc_type_test_cells()
+    cells = Tuple{String, String, _B, _B}[]                 # (test, shape, head, body)
+    A, Y = _bv(1), _bv(2)
+    for t in _BC_TYPE_TESTS
+        h(shape, args::_B...) =
+            isempty(args) ? _bs("p_$(t)_$shape") : _bf("p_$(t)_$shape", args...)
+        g(x) = _bf(t, x)
+        q(x) = _bf("q", x)
+        push!(cells, (t, "argvar", h("argvar", A), g(A)))
+        push!(cells, (t, "headvar", h("headvar", _bf("f", A)), g(A)))
+        push!(cells, (t, "notlast", h("notlast", A), _bconj(g(A), q(A))))
+        push!(cells, (t, "firstvar", h("firstvar"), _bconj(g(A), q(A))))
+        push!(cells, (t, "singleton", h("singleton"), g(_bv(3))))
+        push!(cells, (t, "int", h("int"), _bconj(g(_bg(3)), q(_bg(1)))))
+        push!(cells, (t, "atom", h("atom"), _bconj(g(_bs("a")), q(_bg(1)))))
+        push!(cells, (t, "compound", h("compound", Y), _bconj(g(_bf("f", Y)), q(Y))))
+        push!(cells, (t, "nil", h("nil"), _bconj(g(mk_nil(_B)), q(_bg(1)))))
+        push!(cells, (t, "float", h("float"), _bconj(g(_bg(1.5)), q(_bg(1)))))
+        push!(cells, (t, "string", h("string"), _bconj(g(_bg("s")), q(_bg(1)))))
+    end
+    return cells
+end
+
+@testset "the type tests and var/nonvar compile as upstream decides, cell by cell (V6b)" begin
+    cells = _bc_type_test_cells()
+    ours = [_bc_kernel(_bclause(h, b)) for (_, _, h, b) in cells]
+    # the class of each cell: inline exactly where upstream compiles inline, a call elsewhere
+    for (k, (t, shape, _, _)) in enumerate(cells)
+        inline = any(startswith("i_$(t)("), ours[k])
+        called = any(c -> occursin("P:[$(join(Int.(codeunits(t)), ","))]/1", c), ours[k])
+        if shape in _BC_TT_INLINE
+            @test inline && !called
+        else
+            @test called && !inline
+        end
+    end
+    @test length(cells) == length(_BC_TYPE_TESTS) * 11
+    # a goal of the same NAME but arity 2 is a user predicate: a call, never a type test
+    two = [(_bf("p2_$t", _bv(1)), _bf(t, _bv(1), _bs("a"))) for t in _BC_TYPE_TESTS]
+    ours2 = [_bc_kernel(_bclause(h, b)) for (h, b) in two]
+    for (k, t) in enumerate(_BC_TYPE_TESTS)
+        @test any(c -> occursin("P:[$(join(Int.(codeunits(t)), ","))]/2", c), ours2[k])
+        @test !any(startswith("i_$(t)("), ours2[k])
+    end
+    if _BC_SWIPL_BIN !== nothing
+        theirs2 = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in two])
+        @test theirs2 == ours2
+        theirs = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (_, _, h, b) in cells])
+        @test length(theirs) == length(cells)
+        bad = 0
+        for k in eachindex(cells)
+            k <= length(theirs) || break
+            if ours[k] != theirs[k]
+                bad += 1
+                bad <= 5 && println(stderr, "  ", _bc_text(cells[k][3], cells[k][4]),
+                    "\n    ours  ", ours[k], "\n    swipl ", theirs[k])
+            end
+        end
+        @test bad == 0
+    end
+    # under `optimise` upstream compiles the fall-back cells to I_TRUE/I_FAIL (+ C_VAR): V9's, refused
+    ld = LK.PL_local_data{_B}()
+    ld.prolog_flag_optimise = true
+    @test_throws LK.NotPortedError _bclause(_bs("po_int"), _bf("integer", _bg(3)); ld=ld)
+    @test_throws LK.NotPortedError _bclause(
+        _bs("po_first"), _bconj(_bf("atom", _bv(1)), _bf("q", _bv(1))); ld=ld
+    )
+    @test_throws LK.NotPortedError _bclause(_bs("po_var"), _bf("var", _bv(1)); ld=ld)
+    @test !isempty(
+        _bc_kernel(_bclause(_bf("po_inl", _bv(1)), _bf("integer", _bv(1)); ld=ld))
+    )
+end
+
 @testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
     commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
     @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
@@ -521,13 +606,13 @@ end
     @test !commit(_bs("pc5"), _bf("q", _bs("!")))           # `!` as DATA is no cut
 end
 
-@testset "what V2 refuses, and swipl's type_error(callable, Body)" begin
+@testset "what is still refused (V2's interim, V6b: the type tests compile), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
         _bf(";", _bs("a"), _bs("b")), _bf("->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
-        _bf("=", _bv(1), _bs("a")), _bf("==", _bv(1), _bs("a")), _bf("integer", _bv(1)),
+        _bf("=", _bv(1), _bs("a")), _bf("==", _bv(1), _bs("a")),
         _bf("arg", _bg(1), _bv(1), _bv(2)), _bf("is", _bv(1), _bf("+", _bv(2), _bg(1))),
         _bconj(_bs("q"), _bs("true")), _bs("fail"),
         _bf("call", _bv(1)), _bf("call", _bv(1), _bs("a"))
@@ -557,8 +642,9 @@ end
     user = LK.MODULE_user(gd)
     mf = LK.lookupProcedure(_bs("mf"), 0, user)
     mf.definition.flags |= LK.P_MULTIFILE
-    @test_throws LK.NotPortedError LK.compileClause(gd, _bs("mf"), _bs("q"), mf, user)
-    @test LK.compileClause(gd, _bs("mf"), nothing, mf, user).flags & LK.UNIT_CLAUSE != 0
+    @test_throws LK.NotPortedError LK.compileClause(gd, _BLD, _bs("mf"), _bs("q"), mf, user)
+    @test LK.compileClause(gd, _BLD, _bs("mf"), nothing, mf, user).flags & LK.UNIT_CLAUSE !=
+        0
 end
 
 @testset "kernel-only cases (no SWI counterpart)" begin
@@ -572,7 +658,9 @@ end
     user = LK.MODULE_user(gd)
     po = LK.lookupProcedure(lk_sym(O, :po), 0, user)
     v = lk_gnd(O, true)
-    cl = LK.compileClause(gd, lk_sym(O, :po), mk_expr(O, O[lk_sym(O, :q), v]), po, user)
+    cl = LK.compileClause(
+        gd, LK.PL_local_data{O}(), lk_sym(O, :po), mk_expr(O, O[lk_sym(O, :q), v]), po, user
+    )
     i = findfirst(==(LK.L_ATOM), cl.codes)
     j = findfirst(==(LK.B_ATOM), cl.codes)
     @test i !== nothing && j !== nothing && cl.codes[i + 2] == cl.codes[j + 1]
@@ -584,7 +672,9 @@ end
     pr = ix_pred(_B, :cr, 1; dynamic=true, db=db)
     ix_assertz!(pr, _bf("cr", _bg(1)))
     user = LK.MODULE_user(db.gd)
-    rule = LK.compileClause(db.gd, _bf("cr", _bv(1)), _bf("q", _bv(1)), pr.proc, user)
+    rule = LK.compileClause(
+        db.gd, db.ld, _bf("cr", _bv(1)), _bf("q", _bv(1)), pr.proc, user
+    )
     LK.assertDefinition!(db.gd, pr.def, rule, LK.CL_END)
     @test length(ix_clause(pr, _bf("cr", _bv(5)))) == 1         # the fact, not the rule
     @test length(ix_retract!(pr, _bf("cr", _bv(5)))) == 1       # retracts the fact only

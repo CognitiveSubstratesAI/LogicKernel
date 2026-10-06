@@ -22,6 +22,7 @@ const _D = lk_term_type(
 )
 "The database the fresh predicates of this file are compiled in (its global data)."
 const _DGD = LK.PL_global_data{_D}()
+const _DLD = LK.PL_local_data{_D}()          # the compiler reads its flags
 _ds(n) = lk_sym(_D, Symbol(n))
 _dg(v) = lk_gnd(_D, v)
 _de(f, xs::_D...) = mk_expr(_D, _D[_ds(f), xs...])
@@ -32,7 +33,7 @@ _dcons(h::_D, t::_D) = mk_expr(_D, _D[_ds("[|]"), h, t])
 function _dclause(head::_D)::LK.Clause{_D}
     user = LK.MODULE_user(_DGD)
     proc = LK.lookupProcedure(child(head, 1), nchildren(head) - 1, user)
-    return LK.compileClause(_DGD, head, nothing, proc, user)
+    return LK.compileClause(_DGD, _DLD, head, nothing, proc, user)
 end
 
 "Compile `head`, then decompile it into `name(_, …, _)`: the head the code describes."

@@ -77,11 +77,12 @@ const SMALL_A, SMALL_B = mk_expr(BT, BT[_a(:f), _v()]), mk_expr(BT, BT[_a(:f), _
 
 # a dynamic predicate cp/2 of 1000 facts cp(I, a), for clause/2 — Prolog `cp/2` below
 const CP_GD = PL_global_data{BT}()
+const CP_LD = PL_local_data{BT}()                             # the compiler reads its flags
 const CP_USER = MODULE_user(CP_GD)
 const CP_PROC = lookupProcedure(_a(:cp), 2, CP_USER)
 const CP_DEF = CP_PROC.definition
 setDynamicDefinition!(CP_DEF, true)                            # :- dynamic cp/2.
-_cp_compile(h::BT) = compileClause(CP_GD, h, nothing, CP_PROC, CP_USER)
+_cp_compile(h::BT) = compileClause(CP_GD, CP_LD, h, nothing, CP_PROC, CP_USER)
 for i in 1:1000
     assertDefinition!(
         CP_GD, CP_DEF, _cp_compile(mk_expr(BT, BT[_a(:cp), gnd_term(BT, i), _a(:a)])),
@@ -147,7 +148,7 @@ function _nr_add!(head::BT, body::Union{Nothing, BT})
     name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
     pr = lookupProcedure(name, n, NR_USER)
     assertDefinition!(
-        NR_GD, pr.definition, compileClause(NR_GD, head, body, pr, NR_USER), CL_END
+        NR_GD, pr.definition, compileClause(NR_GD, NR_LD, head, body, pr, NR_USER), CL_END
     )
     return pr
 end
@@ -259,7 +260,7 @@ const CASES = [
     ),
     (
         "compileClause rule",
-        () -> compileClause(CP_GD, APP_HEAD, APP_BODY, APP_PROC, CP_USER),
+        () -> compileClause(CP_GD, CP_LD, APP_HEAD, APP_BODY, APP_PROC, CP_USER),
         ""
     ),
     # the VM's run loop (V4a): every answer, and one answer through the index
@@ -340,7 +341,7 @@ t_load = @elapsed begin
     proc = LK.lookupProcedure(sym_term(T, :p), 1, user)
     LK.setDynamicDefinition!(proc.definition, true)
     LK.assertDefinition!(gd, proc.definition,
-        LK.compileClause(gd, mk_expr(T, T[sym_term(T, :p), sym_term(T, :a)]), nothing, proc, user), LK.CL_END)
+        LK.compileClause(gd, ld, mk_expr(T, T[sym_term(T, :p), sym_term(T, :a)]), nothing, proc, user), LK.CL_END)
 end
 t_first = @elapsed begin
     fid = LK.PL_open_foreign_frame(ld)

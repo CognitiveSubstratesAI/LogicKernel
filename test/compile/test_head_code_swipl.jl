@@ -24,6 +24,7 @@ include(joinpath(@__DIR__, "code_testlib.jl"))
 const _H = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 "The database the fresh predicates of this file are compiled in (its global data)."
 const _HGD = LK.PL_global_data{_H}()
+const _HLD = LK.PL_local_data{_H}()          # the compiler reads its flags
 _hs(n) = lk_sym(_H, Symbol(n))
 # Any vector of terms: a comprehension's element type is a LEAF type when the term type is abstract.
 _he(f, xs::AbstractVector) = mk_expr(_H, _H[_hs(f); xs])
@@ -113,7 +114,7 @@ end
 function _hclause(head::_H)::LK.Clause{_H}
     user = LK.MODULE_user(_HGD)
     proc = LK.lookupProcedure(child(head, 1), nchildren(head) - 1, user)
-    return LK.compileClause(_HGD, head, nothing, proc, user)
+    return LK.compileClause(_HGD, _HLD, head, nothing, proc, user)
 end
 
 """

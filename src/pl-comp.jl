@@ -1048,15 +1048,154 @@ function lco!(ci::compileInfo, pc0::Int)::Nothing
     return nothing
 end
 
+# ── the type tests compiled inline (pl-comp.c, O_COMPILE_IS), V6b ────────────────────────────────
+# PORT: pl-comp.c always
+# DIVERGES: `val` is a Bool for `ATOM_true`/`ATOM_false`. NOT PORTED: the style check's
+# `compiler_warning` (`NOEFFECT_CHECK`) — the compiler has no warnings (see `compileClause`).
+# Under `optimise` upstream emits `I_TRUE`/`I_FAIL`, V9's instructions: refused.
+"""
+    always(ld, ci, val, pred, arg) -> boolex_t
+
+A goal whose outcome is known at compile time (pl-comp.c): `BOOLEX_FALSE` — compile it as a call —
+unless `optimise` is on, where upstream emits `I_TRUE`/`I_FAIL` (refused: V9).
+"""
+function always(
+    ld::PL_local_data{T}, ci::compileInfo{T}, val::Bool, pred::String, arg::T
+)::boolex_t where {T}
+    if ld.prolog_flag_optimise                                 # truePrologFlag(PLFLAG_OPTIMISE)
+        what = string(val ? "I_TRUE" : "I_FAIL", " for ", pred, "/1 (always, optimise)")
+        throw(NotPortedError{T}(arg, what, "V9"))
+    end
+    return BOOLEX_FALSE
+end
+
+# PORT: pl-comp.c compileBodyVar1
+"`var/1` in a body (pl-comp.c): `I_VAR` on a variable already seen; otherwise as `always` decides."
+function compileBodyVar1(
+    ld::PL_local_data{T}, ci::compileInfo{T}, arg::T
+)::boolex_t where {T}
+    a1 = child(arg, 2)                                         # argTermP(*arg, 0)
+    i1 = kind(a1) === VAR ? isIndexedVarTerm(ci, a1) : -1
+    if kind(a1) === VAR && i1 < 0                              # Singleton: always true
+        return always(ld, ci, true, "var", a1)
+    end
+    if i1 >= 0
+        f1 = isFirstVar(ci.used_var, i1)
+        if f1                                                  # first var
+            return always(ld, ci, true, "var", a1)
+        end
+        Output_1!(ci, I_VAR, VAROFFSET(i1))
+        return BOOLEX_TRUE
+    end
+    return always(ld, ci, false, "var", a1)
+end
+
+# PORT: pl-comp.c compileBodyNonVar1
+"`nonvar/1` in a body (pl-comp.c): `I_NONVAR` on a variable already seen; otherwise as `always` decides."
+function compileBodyNonVar1(
+    ld::PL_local_data{T}, ci::compileInfo{T}, arg::T
+)::boolex_t where {T}
+    a1 = child(arg, 2)                                         # argTermP(*arg, 0)
+    i1 = kind(a1) === VAR ? isIndexedVarTerm(ci, a1) : -1
+    if kind(a1) === VAR && i1 < 0                              # Singleton: always false
+        return always(ld, ci, false, "nonvar", a1)
+    end
+    if i1 >= 0
+        f1 = isFirstVar(ci.used_var, i1)
+        if f1
+            return always(ld, ci, false, "nonvar", a1)
+        end
+        Output_1!(ci, I_NONVAR, VAROFFSET(i1))
+        return BOOLEX_TRUE
+    end
+    return always(ld, ci, true, "nonvar", a1)
+end
+
+# PORT: pl-comp.c type_tests
+# DIVERGES: the names are in `SubClauseNames.type_tests` (one key per database, as the other names
+# compileSubClause tests); this table holds what goes with each, in the same order, and the test
+# is `_type_test(k, w)` — a branch on the entry, where upstream holds a function pointer.
+"pl-comp.c's `type_tests[]`: the instruction and the name of each type test compiled inline."
+const type_tests = (
+    (I_INTEGER, "integer"), (I_RATIONAL, "rational"), (I_FLOAT, "float"),
+    (I_NUMBER, "number"),
+    (I_ATOMIC, "atomic"), (I_ATOM, "atom"), (I_STRING, "string"), (I_COMPOUND, "compound"),
+    (I_CALLABLE, "callable")
+)
+
+# The test of `type_tests` entry `k` on `w` (upstream's `fisInteger` … `fisCallable`).
+function _type_test(k::Int, w)::Bool
+    k == 1 && return isInteger(w)                              # fisInteger
+    k == 2 && return isRational(w)                             # fisRational
+    k == 3 && return isFloat(w)                                # fisFloat
+    k == 4 && return isNumber(w)                               # fisNumber
+    k == 5 && return isAtomic(w)                               # fisAtomic
+    k == 6 && return isTextAtom(w)                             # fisAtom
+    k == 7 && return isString(w)                               # fisString
+    k == 8 && return isTerm(w)                                 # fisCompound
+    return isCallable(w)                                       # fisCallable
+end
+
+# PORT: pl-comp.c compileTypeTest
+# DIVERGES: the test is `type_tests` entry `k` (see there). The first-variable branch's `C_VAR` is
+# V9's: refused — reached only under `optimise`, where `always` refuses first.
+"""
+A type test in a body (pl-comp.c): its `I_<TEST>` on a variable already seen; a void, a first
+occurrence or a non-variable as `always` decides (a call unless `optimise`).
+"""
+function compileTypeTest(
+    ld::PL_local_data{T}, ci::compileInfo{T}, arg::T, k::Int
+)::boolex_t where {T}
+    instruction, name = type_tests[k]
+    a1 = child(arg, 2)                                         # argTermP(*arg, 0)
+    i1 = kind(a1) === VAR ? isIndexedVarTerm(ci, a1) : -1
+    if kind(a1) === VAR && i1 < 0                              # Singleton: always false
+        return always(ld, ci, false, name, a1)
+    end
+    if i1 >= 0
+        f1 = isFirstVar(ci.used_var, i1)
+        if f1
+            rc = always(ld, ci, false, name, a1)
+            if rc == BOOLEX_TRUE
+                # isFirstVarSet(ci->used_var, i1); Output_1(ci, C_VAR, VAROFFSET(i1))
+                throw(NotPortedError{T}(a1, "C_VAR (compileTypeTest, optimise)", "V9"))
+            end
+            return rc
+        end
+        Output_1!(ci, instruction, VAROFFSET(i1))
+        return BOOLEX_TRUE
+    end
+    if _type_test(k, a1)                                       # (*test)(*a1)
+        return always(ld, ci, true, name, a1)
+    else
+        return always(ld, ci, false, name, a1)
+    end
+end
+
+# PORT: pl-comp.c compileBodyTypeTest
+# DIVERGES: the goal's functor is its name's key (`name`) — the caller has checked arity 1.
+"A type test `name/1` in a body (pl-comp.c): `compileTypeTest` for a `type_tests` name, else `BOOLEX_FALSE`."
+function compileBodyTypeTest(
+    ld::PL_local_data{T}, names::SubClauseNames, name::UInt64, ci::compileInfo{T}, arg::T
+)::boolex_t where {T}
+    for k in 1:length(type_tests)                              # for(tt = type_tests; …)
+        if name == names.type_tests[k]
+            return compileTypeTest(ld, ci, arg, k)
+        end
+    end
+    return BOOLEX_FALSE
+end
+
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
 # 2026-10-05: the cut's COMPILE side with the body compiler, its execution V6a). The meta-call (a
 # variable goal, `call/N`), the other goals compiled inline — the reserved atoms (`true`, `fail`, …)
-# and O_COMPILE_IS's functors (`=`, `==`, the type tests,
-# `arg/3`, …) — and `is/2` (compileSimpleAddition) throw `NotPortedError` BEFORE any code is
-# emitted (V6, V8, V9): upstream compiles each of them otherwise, so a call would be wrong code; and
-# refusing the whole functor, where upstream's inline compilers sometimes fall back to a call, never
-# emits wrong code (user's review: `# choice made`). The names are the global data's
+# and O_COMPILE_IS's functors still to port (`=`, `==`, `\==`, `arg/3`, …) — and `is/2`
+# (compileSimpleAddition) throw `NotPortedError` BEFORE any code is emitted (V6, V8, V9): upstream
+# compiles each of them otherwise, so a call would be wrong code; and refusing the whole functor,
+# where upstream's inline compilers sometimes fall back to a call, never emits wrong code (user's
+# review: `# choice made`). Since V6b `var/1`, `nonvar/1` and the type tests are compiled as upstream
+# compiles them: inline on a variable already seen, otherwise a call. The names are the global data's
 # (`subclause_names`). One module: no `I_CALLM`/`I_DEPARTM`/`I_CALLATM*`, and no colon or at
 # context. The call operand indexes the clause's procedure table (V1).
 """
@@ -1065,7 +1204,7 @@ then last-call-optimised (`lco!`) — after its arguments (pl-comp.c). Returns `
 `NOT_CALLABLE`/`MAX_ARITY_OVERFLOW` as upstream does.
 """
 function compileSubClause!(
-    gd::PL_global_data{T}, ci::compileInfo{T}, arg::T, call::code
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, arg::T, call::code
 )::boolex_t where {T}
     names = gd.subclause_names
     k = kind(arg)
@@ -1090,6 +1229,18 @@ function compileSubClause!(
             )
         name == names.atom_call &&
             throw(NotPortedError{T}(arg, "call/N (the meta-call)", "V9"))
+        # O_COMPILE_IS (c:3484-3519; `!ci->islocal`: no local compilation), the branches ported
+        # (V6b): var/1, nonvar/1 and the type tests; a `false` falls through to the call below
+        if ar == 1
+            rc = if name == names.atom_var                     # FUNCTOR_var1
+                compileBodyVar1(ld, ci, arg)
+            elseif name == names.atom_nonvar                   # FUNCTOR_nonvar1
+                compileBodyNonVar1(ld, ci, arg)
+            else
+                compileBodyTypeTest(ld, names, name, ci, arg)
+            end
+            rc == BOOLEX_FALSE || return rc
+        end
     elseif k === SYM && !is_reserved_symbol(arg)               # isTextAtom(*arg)
         if sym_key(arg) == names.atom_cut                      # ATOM_cut
             if ci.cut.var != 0                                 # local cut for \+
@@ -1129,7 +1280,7 @@ Compile clause body `body`, its last goal called with `call` (pl-comp.c): a conj
 right, every goal but the last with `I_CALL`. Returns `BOOLEX_TRUE` or the first goal's error code.
 """
 function compileBody!(
-    gd::PL_global_data{T}, ci::compileInfo{T}, body::T, call::code
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, body::T, call::code
 )::boolex_t where {T}
     cf = gd.functors_control
     stack = Tuple{T, code}[]                                   # CB_COMMA_RHS: (B, call)
@@ -1143,7 +1294,7 @@ function compileBody!(
         end
         throw(NotPortedError{T}(body, "a control construct other than ,/2", "V9"))
     end
-    rc = compileSubClause!(gd, ci, body, call)
+    rc = compileSubClause!(gd, ld, ci, body, call)
     rc == BOOLEX_TRUE || return rc
     isempty(stack) && return BOOLEX_TRUE
     body, call = pop!(stack)
@@ -1192,21 +1343,24 @@ end
 # modules are not ported); the clause is returned where upstream stores it through `cp`, created at
 # generation 0 (`assertDefinition!` sets the rest); a body starting with `!` sets `COMMIT_CLAUSE`. The
 # database's global data `gd` is an argument, where upstream reaches GD — its functor table, the
-# `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl).
+# `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl); so is the compiling
+# thread's local data `ld` (since V6b), where upstream's `DECL_LD` functions reach LD: its flags
+# (`optimise`, `portable_vmi`) decide how a body goal compiles.
 # `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
 """
-    compileClause(gd, head, body, proc, m) -> Clause
+    compileClause(gd, ld, head, body, proc, m) -> Clause
 
 Compile the clause `head :- body` (`body` `nothing` or `true` for a fact) of procedure `proc` into
-module `m`, in the database whose global data is `gd` (pl-comp.c): analyse its variables, emit the
+module `m`, in the database whose global data is `gd`, under the flags of local data `ld`
+(pl-comp.c): analyse its variables, emit the
 head code argument by argument, then a fact's `I_EXITFACT`, or a rule's `I_ENTER`, its body and
 `I_EXIT`. The clause keeps the code, the literal table its operands index (V1 L2) and the procedure
 table its call operands index (V1). A body goal that is not callable raises
 `CallableTypeError(body)` — the WHOLE body, as swipl reports it (probed in 10.1.16).
 """
 function compileClause(
-    gd::PL_global_data{T}, head::T, body::Union{Nothing, T}, proc::Procedure{T},
-    m::module_t{T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
+    proc::Procedure{T}, m::module_t{T}
 )::Clause{T} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
     ci = compileInfo{T}(def.arity, m, proc)
@@ -1221,7 +1375,7 @@ function compileClause(
     flags = UInt32(0)
     if rule
         bi = PC(ci)
-        rc = compileBody!(gd, ci, body::T, I_DEPART)
+        rc = compileBody!(gd, ld, ci, body::T, I_DEPART)
         if rc == NOT_CALLABLE
             throw(CallableTypeError{T}(body::T))
         elseif rc == MAX_ARITY_OVERFLOW

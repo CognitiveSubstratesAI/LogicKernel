@@ -38,7 +38,7 @@ function _edb()
     add!(head, body) = begin
         name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
         pr = LKE.lookupProcedure(name, n, user)
-        cl = LKE.compileClause(db.gd, head, body, pr, user)
+        cl = LKE.compileClause(db.gd, db.ld, head, body, pr, user)
         LKE.assertDefinition!(db.gd, pr.definition, cl, LKE.CL_END)
     end
     X = _ev(1)

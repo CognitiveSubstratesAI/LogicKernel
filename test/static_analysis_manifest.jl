@@ -235,15 +235,28 @@ function _manifest_index(T)
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
         (LK.reverse_code!, Tuple{Vector{UInt64}, Int, Int}, true),
         (LK.lco!, Tuple{CInfo, Int}, false),
-        (LK.compileSubClause!, Tuple{GD, CInfo, T, UInt64}, false),
-        (LK.compileBody!, Tuple{GD, CInfo, T, UInt64}, false),
+        (LK.compileSubClause!, Tuple{GD, LD, CInfo, T, UInt64}, false),
+        (LK.compileBody!, Tuple{GD, LD, CInfo, T, UInt64}, false),
+        # V6b — the type tests compiled inline (src/pl-comp.jl, pl-incl.jl, pl-fli.jl)
+        (LK.always, Tuple{LD, CInfo, Bool, String, T}, false),
+        (LK.compileBodyVar1, Tuple{LD, CInfo, T}, false),
+        (LK.compileBodyNonVar1, Tuple{LD, CInfo, T}, false),
+        (LK._type_test, Tuple{Int, T}, true),
+        (LK.compileTypeTest, Tuple{LD, CInfo, T, Int}, false),
+        (LK.compileBodyTypeTest, Tuple{LD, LK.SubClauseNames, UInt64, CInfo, T}, false),
+        (LK.canBind, Tuple{T}, true), (LK.isTextAtom, Tuple{T}, true),
+        (LK.isRational, Tuple{T}, true), (LK.isFloat, Tuple{T}, true),
+        (LK.isString, Tuple{T}, true), (LK.isTerm, Tuple{T}, true),
+        (LK.isInteger, Tuple{T}, true), (LK.isNumber, Tuple{T}, true),
+        (LK.isAtomic, Tuple{T}, true), (LK.isCallable, Tuple{T}, true),
         (LK._is_rule_body, Tuple{GD, Nothing}, true),
         (LK._is_rule_body, Tuple{GD, T}, true),
-        (LK.compileClause, Tuple{GD, T, Nothing, PR, MOD}, false),
-        (LK.compileClause, Tuple{GD, T, T, PR, MOD}, false),
+        (LK.compileClause, Tuple{GD, LD, T, Nothing, PR, MOD}, false),
+        (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD}, false),
         # src/pl-funct.jl — the control functors the global data holds
         (LK.registerControlFunctors, Tuple{Type{T}}, false),
         (LK._subclause_names, Tuple{Type{T}}, false),
+        (LK._name_key, Tuple{Type{T}, String}, false),
         (LK._has_functor, Tuple{T, UInt64, Int}, true),
         (LK._is_control, Tuple{T, LK.ControlFunctors}, true),
         # src/pl-index.jl
@@ -511,7 +524,18 @@ function _manifest_index(T)
                 LK.pl_unify2_va, LK.pl_not_unify2_va, LK.pl_unify_with_occurs_check2_va,
                 LK.pl_equal2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
                 LK.pl_unifiable3_va,
-                LK.pl_variant2_va, LK.pl_prolog_current_choice1_va
+                LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,
+                # V6b: the type checks and \\== (src/pl-prims.jl)
+                LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
+                LK.pl_rational1_va, LK.pl_string1_va, LK.pl_number1_va, LK.pl_atom1_va,
+                LK.pl_atomic1_va, LK.pl_compound1_va, LK.pl_callable1_va, LK.pl_nonequal2_va
+            )
+        ]...,
+        [
+            (f, Tuple{LD, Int}, true) for f in (
+                LK.PL_is_integer, LK.PL_is_float, LK.PL_is_rational, LK.PL_is_compound,
+                LK.PL_is_callable, LK.PL_is_string, LK.PL_is_atom, LK.PL_is_atomic,
+                LK.PL_is_number
             )
         ]...,
         # V5b — the exception path's entries (src/pl-error.jl, pl-fli.jl, pl-modul.jl), over
@@ -534,12 +558,18 @@ end
 _index_entry_points(T) = (
     (
         LK.compileClause,
-        Tuple{LK.PL_global_data{T}, T, Nothing, LK.Procedure{T}, LK.module_t{T}},
+        Tuple{
+            LK.PL_global_data{T}, LK.PL_local_data{T}, T, Nothing, LK.Procedure{T},
+            LK.module_t{T}
+        },
         false
     ),
     (
         LK.compileClause,
-        Tuple{LK.PL_global_data{T}, T, T, LK.Procedure{T}, LK.module_t{T}},
+        Tuple{
+            LK.PL_global_data{T}, LK.PL_local_data{T}, T, T, LK.Procedure{T},
+            LK.module_t{T}
+        },
         false
     ),
     (LK.lookupBodyProcedure, Tuple{LK.PL_global_data{T}, T, LK.module_t{T}}, false),
@@ -726,6 +756,9 @@ const DISPATCH_EXEMPT = (
     ),
     (
         (LK.var"@LOAD_REGISTERS", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-wam.c LOAD_REGISTERS): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its work is _load_registers!, which is checked"
+    ),
+    (
+        (LK.var"@TYPE_TEST", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c TYPE_TEST): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its tests (isInteger … isCallable) are checked"
     ),
     (
         (LK.var"@ENSURE_LOCAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_LOCAL_SPACE): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
