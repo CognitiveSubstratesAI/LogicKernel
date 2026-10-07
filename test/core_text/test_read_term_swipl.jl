@@ -14,7 +14,8 @@
 #   * THE ENTRY POINTS: term_to_atom/2 and term_string/2 on every text a term can hold (atom,
 #     string, number, code and character lists, `[]`) and their errors; atom_to_term/3's bindings;
 #   * THE REFUSALS (R1's decision): a dict, a quasi-quotation — `NotPortedError` where swipl reads
-#     or raises a syntax error — and term-to-text (the writer, R1e).
+#     or raises a syntax error — and a float's text (format_float, R1e's floats). The write
+#     direction is R1e's (test_write_swipl.jl).
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -572,14 +573,9 @@ a6 :- catch(( atom_to_term('g', T, B) -> enc(T-B) ; write(fails) ), E, (write('e
         _tr_compare(["a1", "a2", "a3", "a4", "a5", "a6"], ours, theirs)
     end
 
-    @testset "term_to_atom/2's write direction waits for the writer (R1e)" begin
-        # term_to_atom(f(X), A): the term's text needs PL_write_term — refused, explicitly
-        @test _tr_call(
-            "term_to_atom", _TR[mk_expr(_TR, _TR[_trs("f"), _tr_var()]), _tr_var()]
-        )[1] ===
-            :notported
-        @test _tr_call("term_string", _TR[_trs("a"), _tr_var()])[1] === :notported
-        # and a float's text (PL_get_text's format_float)
+    @testset "a float's text waits for format_float (R1e's floats)" begin
+        # term_to_atom(T, 1.5): PL_get_text of a float needs format_float — refused, explicitly
+        # (the write direction is R1e's core: test_write_swipl.jl)
         @test _tr_call("term_to_atom", _TR[_tr_var(), lk_gnd(_TR, 1.5)])[1] === :notported
     end
 elseif _TR_SWIPL_REQUIRED

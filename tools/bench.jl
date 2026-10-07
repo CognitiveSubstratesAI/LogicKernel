@@ -517,6 +517,37 @@ function _vm_read()::Int
 end
 @assert _vm_read() == LogicKernel.PL_S_TRUE
 
+# the writer (R1e): term_to_atom/2 writes that clause back as text — writeTerm2's state machine,
+# operators, the token layer, quoting. The term is read once; swipl's goal takes it from a fact
+# (`wr_term/1`), whose copy is in its timing (a few dozen cells)
+const WR_TERM = let
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    a = LogicKernel.PL_new_term_refs(NR_LD, 2)
+    NR_LD.slots[a + 2] = _a(Symbol(RD_TEXT))
+    qid = LogicKernel.PL_open_query(
+        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, RD_PROC, a
+    )
+    @assert LogicKernel.PL_next_solution(NR_GD, NR_LD, qid) == LogicKernel.PL_S_TRUE
+    t = LogicKernel.resolve_term(NR_LD, NR_LD.slots[a + 1])
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    t
+end
+const WR_PROLOG = "wr_term((" * chop(RD_TEXT) * ")).\n"
+function _vm_write()::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    a = LogicKernel.PL_new_term_refs(NR_LD, 2)
+    NR_LD.slots[a + 1] = WR_TERM
+    qid = LogicKernel.PL_open_query(
+        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, RD_PROC, a
+    )
+    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    return rc
+end
+@assert _vm_write() == LogicKernel.PL_S_TRUE
+
 # allow-docstring-interp: not a docstring — this Prolog source interpolates DEPTH on purpose
 const PROLOG_FIXTURES =
     """
@@ -528,7 +559,7 @@ fixtures(G1, G2, V1, V2) :-
 :- dynamic cp/2.
 """ * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) *
     BW_PROLOG * BU_PROLOG *
-    DERIVE_PROLOG * QSORT_PROLOG * POLY_PROLOG
+    DERIVE_PROLOG * QSORT_PROLOG * POLY_PROLOG * WR_PROLOG
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
 const CASES = [
@@ -583,6 +614,8 @@ const CASES = [
     ("poly_10", _vm_poly, "poly_10"),
     # the reader (R1d): one clause's text through term_to_atom/2
     ("term_to_atom clause", _vm_read, "term_to_atom(_, '" * RD_TEXT * "')"),
+    # the writer (R1e): the same clause's term written back by term_to_atom/2
+    ("term_to_atom write clause", _vm_write, "wr_term(T), term_to_atom(T, _)"),
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs

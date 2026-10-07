@@ -319,7 +319,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), local)` (`raiseStackOverflow`, `outOfStack!`, the context as decided since Q-B), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack | `src/pl-alloc.c` |
 | `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data; since V5c `getProcDefinedDefinition` where upstream calls it (`PL_open_query`, `I_LCALL`, `S_VIRGIN`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space`; since V5c `PL_strip_module_ex`; since R1a `charCode`; since R1b `PL_get_atom`, `PL_get_integer`, `PL_get_list`, `PL_get_nil`, `PL_is_list`, `PL_strip_module` | `src/pl-fli.c`, `src/pl-fli.h` |
-| `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`); since R1c `PL_CTYPE_SPACE`; since R1d the text conversion flags (`CVT_*`), the text types `PL_ATOM`, `PL_STRING`, and the write flags `PL_WRT_QUOTE_NON_ASCII`, `PL_WRT_PATTERN_SYNTAX_SOLO` | `src/SWI-Prolog.h` |
+| `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`); since R1c `PL_CTYPE_SPACE`; since R1d the text conversion flags (`CVT_*`), the text types `PL_ATOM`, `PL_STRING`, and since R1e every write flag (`PL_WRT_*`, as `Int`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`); since V5c `createUndefSupervisor` | `src/pl-supervisor.c` |
 | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`, since R1b `ERR_PERMISSION`; `PL_type_error`, `PL_domain_error`; since R1b `PL_get_atom_ex`, `PL_get_integer_ex`, `PL_get_list_ex`, `PL_get_nil_ex`) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer); the tables in `initBuildIns`' order (arith, comp, prims, variant, trace, read — since R1d — op) | `src/pl-ext.c` |
@@ -328,8 +328,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan` | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
 | `src/pl-modul.jl` | the module table and its two modules, `system` and `user` — `user`'s super `system` (`_lookupModule!`, `lookupModule`, `isCurrentModule`; since V5c) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's) | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-op.jl` | the operator tables (since R1b): each module's table, `system`'s holding SWI's defaults (`initOperators!`), defining an operator (`defOperator!`, `op/3`) and looking one up through the supers (`currentOperator`, `priorityOperator`); what `current_op/3` enumerates (`scanVisibleOperators!`) | `src/pl-op.c` |
-| `src/pl-write.jl` | the writer (R1e); since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`, `unquoted_text`, `atomType`, `wr_is_symbol`, `wr_is_solo`, `code_requires_quoted`) | `src/pl-write.c` |
-| `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (read direction) | `src/pl-read.c` |
+| `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused) and `PL_write_term` | `src/pl-write.c` |
+| `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`) | `src/pl-read.c` |
 | `src/pl-umap.jl` | the Unicode map (since R1c): the syntax category and display width of every code point (`uflags_map`), its POSIX class (`uctype_map`, `ctype_to_flags`), the decimal digit runs, the paired brackets and quotes — data GENERATED from pl-umap.c by `tools/gen_umap.jl`, byte for byte — and their lookups (`uflagsRaw`, `uctypeRaw`, `pl_pair_lookup`) | `src/pl-umap.c`, `src/Unicode/prolog_syntax_map.pl` |
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
 | `src/os/pl-ctype.jl` | the ASCII character types (since R1c): `_PL_char_types` and the `is*` macros; `isBlankW` through the Unicode classes | `src/os/pl-ctype.c`, `src/os/pl-ctype.h` |
@@ -364,7 +364,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_lang/test_op_swipl.jl` | R1b's gate: the operators visible from `user` as a set against swipl's `current_op/3` (boot's `$` the one difference), `currentOperator` and `priorityOperator` by kind, `op/3`'s outcomes and errors identical to swipl's, and a cancelled kind hiding `system`'s | — |
 | `test/core_lang/test_read_swipl.jl` | R1c's reader gate: `atom_number/2` on every number syntax and generated texts, `raw_read` against `'$raw_read'/2`, raw syntax errors and their `string(Text, CharNo)` against `term_to_atom/2`, escapes, and the tokens (`[]` vs `'[]'`, `{}`, strings, `0'c`, `1r3`); `const_nan` is `str_number`'s `1.5NaN`; an atom holding character 0 refused | — |
 | `test/files/test_stream_swipl.jl` | R1c's stream gate: memory and string streams round trip, peek and push-back, a Julia IO; the position record (character, line, line position, byte) against swipl's `stream_position_data/3` on `open_string/2` | — |
-| `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations, term-to-text); `$` not an operator (pinned); `unquoted_atom` | — |
+| `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations, a float's text); `$` not an operator (pinned); `unquoted_atom` | — |
+| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream defects #11 and #12 pinned; the refusals (a float, a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms | — |
 | `test/core_text/test_syntax.jl` | SWI's `syntax` and `iso_op_table_6` units (R1d): operators, quoting and escapes, bases, the blob notation's errors | `tests/core_text/test_syntax.pl` |
 | `test/core_text/test_read.jl` | SWI's `read_op` (block operators), `read_numbers` and `read_deep` units (R1d): terms nested 20,000 deep | `tests/core_text/test_read.pl` |
 | `test/core_text/test_op.jl` | SWI's `op_syntax` units (R1d) over 84 user operators | `tests/core_text/test_op.pl` |
@@ -635,6 +636,7 @@ graph LR
     pl_fli --> pl_error
     pl_fli --> pl_arith
     pl_fli --> os_pl_text
+    pl_fli --> pl_write
     pl_error --> term_interface
     pl_error --> default_term
     pl_error --> pl_incl
@@ -743,9 +745,19 @@ graph LR
     pl_op --> os_pl_text
     pl_write --> term_interface
     pl_write --> default_term
+    pl_write --> os_pl_ctype
     pl_write --> os_pl_stream
     pl_write --> pl_incl
     pl_write --> SWI_Prolog
+    pl_write --> pl_global
+    pl_write --> pl_inline
+    pl_write --> pl_prims
+    pl_write --> pl_comp
+    pl_write --> pl_error
+    pl_write --> pl_arith
+    pl_write --> os_pl_text
+    pl_write --> pl_proc
+    pl_write --> pl_op
     pl_write --> pl_read
     pl_read --> term_interface
     pl_read --> default_term
@@ -1417,6 +1429,100 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**R1e (core) — the writer: BUILT (2026-10-07)** (port_inventory row R1, its split; src/pl-write.jl,
+src/SWI-Prolog.jl, src/pl-read.jl's write direction). Decided by the user, 2026-10-07: 1b — the
+writer's CORE first (then R1f the loader, then the rest of R1e); 2a — the current output a Julia
+IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, pinned against swipl;
+4a — a cyclic term refused explicitly.
+* **Ported (pl-write.c 36–2760, 3044–3067):** `write_options` (`WRITE_OPTIONS_DEFAULTS`), the
+  `W_*` locations, `wf_kind`, `wsub`, `wframe`; the quoting rules with write options
+  (`atomType` with the stream and flags, `unquoted_text`, `atomIsVarName`, `atomIsAnyVarName`,
+  `text_has_combining`, `atom_has_combining`, `bracketPairAtom`); the TOKEN LAYER (`Putc`,
+  `PutString`, `PutComma`, `PutBar`, the `C_*` flags of `lastc`, `isquote`, `needSpace`,
+  `PutOpenToken`, `PutToken`, `PutVarName`, `PutElipsis`, `PutOpenBrace`, `PutCloseBrace`,
+  `unicode_quoted_escape`, `putQuoted`); atoms, strings and numbers (`write_chars`, `writeText`
+  with `max_text`, `writeAtom`, `writeUCSAtom`, `writeReservedSymbol`, `writeString`, `writeMPZ`,
+  `separate_number`, `writeNumber` — integers and rationals, `varName`, `writePrimitive`,
+  `writeNumberVar`); `callPortray`, `isBlockOp`, `sub_term`; the list writers (`[…|…]` and the
+  dotted notation), the operator writers (prefix, postfix, infix, BLOCK operators), `writeCanonArg`;
+  `writeTerm2`, `writeTermResume`, `writeTerm` — a state machine over an explicit stack, no
+  recursion (a term 100,000 deep is written) — `writeTopTerm` and `PL_write_term`; SWI-Prolog.h's
+  `PL_WRT_*` flags, all of them, as `Int`. `atom_to_term`'s write direction: term_to_atom/2 and
+  term_string/2 write the term to a memory stream with `PL_WRT_QUOTED`, as upstream.
+* **print/1 is NOT writeq/1 with portray (decision 3a's condition, measured):** swipl's print/1
+  goes through `pl_write_term3` with `print_write_options` `[portray(true), quoted(true),
+  numbervars(true)]`, and `pl_write_term3` adds `PL_WRT_CHARESCAPES_UNICODE` from the
+  `character_escapes_unicode` flag (on by default): print/1 writes `'\u0001'` where writeq/1 writes
+  `'\x1\'`. The differential runs print/1's flags with it, and with portray/1 undefined the
+  writer never calls Prolog; DEFINED, `callPortray` refuses (`NotPortedError`: the meta-call, V9),
+  never on a variable (upstream does not ask portray/1 about one).
+* **Ported AS IS, two known upstream defects (docs/upstream_reports.md #11, #12, drafted):**
+  (#11) a single-byte atom's characters are read as C's signed `char` — `writeText`'s
+  `PutOpenToken(s[0])`, so `dynamic é` is written `dynamicé`, and `atomType`'s
+  `code_requires_quoted(*s)` (with the first character never tested), so `quote_non_ascii(true)`
+  — write_canonical/1's — leaves `aé` unquoted; the kernel passes the same value
+  (`_signed_char`); (#12) `bracketPairAtom` takes ASCII pairs too, so `'[]'(a)` is written `[a]`
+  and `'()'(a)` `(a)`. Both pinned, and a mutant fixing either is caught.
+* **DIVERGES:** a level of the stack holds its terms themselves, where upstream holds term
+  references in a foreign frame per level (no garbage collector moves a kernel term); the stack is
+  a frame pool in the options, reused; the token layer takes the stream and the flags where
+  upstream takes the options; a variable is written `_<key>` (upstream: `_<stack offset>`; no test
+  compares the number — the differential renames both sides' variables by first occurrence); an
+  integer is written by `~d`'s rule directly (`do_format` is not ported; `integer_format` is
+  write_term's option); a compound whose head is no symbol (the kernel's `$expr/n`) is written
+  `'$expr'(Child, …)`; no `var_prefix` (always off); no stream lock or acquire/release.
+* **Refused, explicitly (`NotPortedError`):** a float (`format_float`, R1e's floats — the rest of
+  R1e); a CYCLIC term (decision 4a: `PL_factorize_term`'s `@(Template, Substitutions)`), tested
+  first, so no write walks a cycle — `X = f(X)`, a cycle through two lists, a cyclic exception
+  ball (V5d); with `cycles(false)` the domain error, as upstream; user:portray/1 defined (above);
+  `blobs(portray)`; an atom holding the character 0 (term_to_atom/2 of a string with one: the
+  term interface's atoms cannot hold it; term_string/2 can); a grounded value SWI has no type for.
+* **NOT PORTED (the rest of R1e):** `format_float` and the float differential; write/1,
+  writeq/1, print/1, write_canonical/1, writeln/1, write_term/2,3 with `PL_scan_options` and their
+  options (`max_depth`, `max_text`, `spacing`, `variable_names`, `portray_goal`, …), nl/0,1, the
+  stream table's current output (decision 2a), `numbervars_frame`, read_term_from_atom/3. Never:
+  attributed variables, dicts, blobs other than reserved symbols.
+* **Gates:** test/core_text/test_write_swipl.jl (new): every term written FIVE ways —
+  term_to_atom/2, term_string/2 (through the query API), and `PL_write_term` with writeq/1's,
+  print/1's and write/1's flags — against swipl's own predicates, on a hand corpus of 252 texts
+  (operators of every type and priority, prefix operators before numbers, brackets and symbols,
+  operator atoms as arguments, quoting and escapes, Latin-1, wide and combining characters,
+  `'$VAR'` in and out of the tagged range, lists, `{}`, bracket pairs, rationals, big integers,
+  strings) and 3,000 random terms built on both sides from one encoding; user operators in three
+  databases (postfix, prefix-and-infix, the block operators `[]` and `{}` as postfix, prefix and
+  infix); WRITE_TERM's FLAGS through `PL_write_term` — twelve sets (ignore_ops, dotlists,
+  no_lists, brace_terms(false), portable, quote_non_ascii, pattern_syntax_solo,
+  back_quotes(string), character_escapes(false), character_escapes_unicode(false), and two
+  without quoting) against `write_term/2` with the options that give them, on the corpus and on
+  1,000 random terms; the variable naming; the two defects pinned; the refusals; `$expr`; depth
+  (100,000 levels, a 100,000-element list, 100,000 prefix and infix operators). swipl's boot-file
+  operator `$` (R2) is removed in the driver, so both sides write with pl-op.c's table.
+* **Mutation-proved — 65 of 67 caught at verdict level, TARGETED (each mutant against its own
+  texts, against a green baseline of all 67 targets), two equivalent with reach proven:**
+  needSpace's every rule (the sign, `(`, `{` and symbol after a prefix op — `(` shown after a
+  prefix block's `]`, punctuation — the infix `(` exit, identifier and symbol pairs, the `C_*`
+  bits cleared); putQuoted (the quote raw, hex case, `\u` padding, width-0 characters); #11 and #12
+  each FIXED (caught: the pins hold); bracket pairs off; atomType's `{}`, `/*`, `.`; combining
+  marks; strings' quote and back_quotes(string); `separate_number`; a rational's `lastc`;
+  `'$VAR'` letters, modulus, `S_`, the tagged range, quoting, `?x`; operator atoms as arguments;
+  `{Term}`; the priorities of prefix, fx, xfx/yfx right, xfx/xfy left, xf arguments; the space
+  after an alphanumeric infix op (shown before `-1` and `(`); `C_INFIX_OP`, `C_PREFIX_OP` (shown
+  before `{`), the sign only for `-`; postfix `{}` blocks, block operators, prefix blocks; list
+  tail, first element and compound arguments at 999; dotlists (`.`, the end, the parentheses),
+  no_lists, ignore_ops, portable's comma, brace_terms(false), pattern_syntax_solo,
+  quote_non_ascii, character_escapes(false) and its doubled quote; portray/1 defined and never
+  for a variable; the variable's `_`; `$expr`; term_string/2's string; the frame pool; `[]`; a big
+  negative integer's space. EQUIVALENT: `{Term}` written by the bracket-pair branch when its own
+  is removed (`{` `}` is an `f_paren_close` pair, written the same); an infix block operator's
+  block at 999 (a block is a list or `{…}`, never an operator term, so its priority cannot show).
+  First run: three survivors had targets without the distinguishing input, two patterns did not
+  match — fixed and rerun. Driver, mutants and logs: the workspace's
+  docs/research/logickernel-step-memos/R1e_mutation/.
+* **Bench** (QUIET before and after): a new case, `term_to_atom write clause` — R1d's clause term
+  written back: 56.5 µs against swipl's 17.7 µs (3.19×; 153 allocations); R1d's read is 3.40×.
+  HALF the time is `is_acyclic` (pl-prims.jl `ph_acyclic_mark`'s `IdDict`), not the writer —
+  upstream marks in place; a candidate for later.
 
 **R1d — the parser: BUILT (2026-10-07)** (port_inventory row R1, its split; src/pl-read.jl,
 src/os/pl-text.jl and src/os/pl-codelist.jl NEW, pl-write.jl, pl-incl.jl, SWI-Prolog.jl,

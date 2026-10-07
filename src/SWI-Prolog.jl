@@ -128,12 +128,90 @@ const CVT_EXCEPTION = 0x00001000
 # PORT: SWI-Prolog.h CVT_VARNOFAIL
 "Text conversion: report an unbound argument instead of failing (SWI-Prolog.h)."
 const CVT_VARNOFAIL = 0x00002000
+# PORT: SWI-Prolog.h PL_WRT_QUOTED
+"Write flag: quote atoms and strings (SWI-Prolog.h)."
+const PL_WRT_QUOTED = Int(0x01)
+# PORT: SWI-Prolog.h PL_WRT_IGNOREOPS
+"Write flag: ignore list/operators (SWI-Prolog.h)."
+const PL_WRT_IGNOREOPS = Int(0x02)
+# PORT: SWI-Prolog.h PL_WRT_NUMBERVARS
+"Write flag: print \$VAR(N) as a variable (SWI-Prolog.h)."
+const PL_WRT_NUMBERVARS = Int(0x04)
+# PORT: SWI-Prolog.h PL_WRT_PORTRAY
+"Write flag: call portray (SWI-Prolog.h)."
+const PL_WRT_PORTRAY = Int(0x08)
+# PORT: SWI-Prolog.h PL_WRT_CHARESCAPES
+"Write flag: Output ISO escape sequences (SWI-Prolog.h)."
+const PL_WRT_CHARESCAPES = Int(0x10)
+# PORT: SWI-Prolog.h PL_WRT_BACKQUOTED_STRING
+"Write flag: Write strings as `...` (SWI-Prolog.h)."
+const PL_WRT_BACKQUOTED_STRING = Int(0x20)
+# PORT: SWI-Prolog.h PL_WRT_ATTVAR_IGNORE
+"Write flag: Default: just write the var (SWI-Prolog.h)."
+const PL_WRT_ATTVAR_IGNORE = Int(0x040)
+# PORT: SWI-Prolog.h PL_WRT_ATTVAR_DOTS
+"Write flag: Write as Var{...} (SWI-Prolog.h)."
+const PL_WRT_ATTVAR_DOTS = Int(0x080)
+# PORT: SWI-Prolog.h PL_WRT_ATTVAR_WRITE
+"Write flag: Write as Var{Attributes} (SWI-Prolog.h)."
+const PL_WRT_ATTVAR_WRITE = Int(0x100)
+# PORT: SWI-Prolog.h PL_WRT_ATTVAR_PORTRAY
+"Write flag: Use Module:portray_attrs/2 (SWI-Prolog.h)."
+const PL_WRT_ATTVAR_PORTRAY = Int(0x200)
+# PORT: SWI-Prolog.h PL_WRT_BLOB_PORTRAY
+"Write flag: Use portray for non-text blobs (SWI-Prolog.h)."
+const PL_WRT_BLOB_PORTRAY = Int(0x400)
+# PORT: SWI-Prolog.h PL_WRT_NO_CYCLES
+"Write flag: Never emit @(Template,Subst) (SWI-Prolog.h)."
+const PL_WRT_NO_CYCLES = Int(0x800)
+# PORT: SWI-Prolog.h PL_WRT_NEWLINE
+"Write flag: Add a newline (SWI-Prolog.h)."
+const PL_WRT_NEWLINE = Int(0x2000)
+# PORT: SWI-Prolog.h PL_WRT_VARNAMES
+"Write flag: Internal: variable_names(List) (SWI-Prolog.h)."
+const PL_WRT_VARNAMES = Int(0x4000)
+# PORT: SWI-Prolog.h PL_WRT_BACKQUOTE_IS_SYMBOL
+"Write flag: ` is a symbol char (SWI-Prolog.h)."
+const PL_WRT_BACKQUOTE_IS_SYMBOL = Int(0x8000)
+# PORT: SWI-Prolog.h PL_WRT_DOTLISTS
+"Write flag: Write lists as .(A,B) (SWI-Prolog.h)."
+const PL_WRT_DOTLISTS = Int(0x10000)
+# PORT: SWI-Prolog.h PL_WRT_BRACETERMS
+"Write flag: Write {A} as {}(A) (SWI-Prolog.h)."
+const PL_WRT_BRACETERMS = Int(0x20000)
+# PORT: SWI-Prolog.h PL_WRT_NODICT
+"Write flag: Do not write dicts pretty (SWI-Prolog.h)."
+const PL_WRT_NODICT = Int(0x40000)
+# PORT: SWI-Prolog.h PL_WRT_NODOTINATOM
+"Write flag: never write a.b unquoted (SWI-Prolog.h)."
+const PL_WRT_NODOTINATOM = Int(0x80000)
+# PORT: SWI-Prolog.h PL_WRT_NO_LISTS
+"Write flag: Do not write lists as [...] (SWI-Prolog.h)."
+const PL_WRT_NO_LISTS = Int(0x100000)
+# PORT: SWI-Prolog.h PL_WRT_RAT_NATURAL
+"Write flag: Write rationals as 1/3 (SWI-Prolog.h)."
+const PL_WRT_RAT_NATURAL = Int(0x200000)
+# PORT: SWI-Prolog.h PL_WRT_CHARESCAPES_UNICODE
+"Write flag: Use \\uXXXX escapes (SWI-Prolog.h)."
+const PL_WRT_CHARESCAPES_UNICODE = Int(0x400000)
 # PORT: SWI-Prolog.h PL_WRT_QUOTE_NON_ASCII
 "Write flag: quote atoms containing non-ASCII (SWI-Prolog.h)."
-const PL_WRT_QUOTE_NON_ASCII = 0x800000
+const PL_WRT_QUOTE_NON_ASCII = Int(0x800000)
+# PORT: SWI-Prolog.h PL_WRT_PARTIAL
+"Write flag: Partial output (SWI-Prolog.h)."
+const PL_WRT_PARTIAL = Int(0x1000000)
+# PORT: SWI-Prolog.h PL_WRT_NO_CHARESCAPES
+"Write flag: Do not Output ISO escapes (SWI-Prolog.h)."
+const PL_WRT_NO_CHARESCAPES = Int(0x2000000)
+# PORT: SWI-Prolog.h PL_WRT_INFIX_COMMA
+"Write flag: Write (a,b), with PL_WRT_IGNOREOPS (SWI-Prolog.h)."
+const PL_WRT_INFIX_COMMA = Int(0x4000000)
 # PORT: SWI-Prolog.h PL_WRT_PATTERN_SYNTAX_SOLO
 "Write flag: quote single-character solo atoms outside Pattern_Syntax (SWI-Prolog.h)."
-const PL_WRT_PATTERN_SYNTAX_SOLO = 0x8000000
+const PL_WRT_PATTERN_SYNTAX_SOLO = Int(0x8000000)
+# PORT: SWI-Prolog.h PL_WRT_PORTABLE
+"Write flags: ignore operators, but write `(a,b)` with the comma (SWI-Prolog.h)."
+const PL_WRT_PORTABLE = PL_WRT_IGNOREOPS | PL_WRT_INFIX_COMMA
 # PORT: SWI-Prolog.h PL_CTYPE_SPACE
 "Character class: Unicode White_Space (SWI-Prolog.h `PL_ctype_flags`)."
 const PL_CTYPE_SPACE = 0x0400

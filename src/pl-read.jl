@@ -13,7 +13,8 @@
 # the tokeniser (`get_token`). Since R1d the PARSER: the term stack, the operator queues and their
 # resolution, `complex_term`'s state machine (its suspended levels on a vector of frames), the
 # list, bracket and compound readers, `read_term`; and `atom_to_term/3`, `term_to_atom/2`,
-# `term_string/2` (read direction). read_term/2,3 take a stream (the stream table, R2).
+# `term_string/2` — since R1e's core, in both directions (the write: src/pl-write.jl
+# `PL_write_term`). read_term/2,3 take a stream (the stream table, R2).
 
 # ── the Unicode classifiers (pl-read.c) ─────────────────────────────────────────────────────────
 
@@ -3449,9 +3450,9 @@ end
 # ── term <-> atom (pl-read.c) ───────────────────────────────────────────────────────────────────
 
 # PORT: pl-read.c atom_to_term
-# DIVERGES: writing the term as text (`term` unbound text and no bindings: `PL_write_term`) needs
-# the writer: refused until R1e (`NotPortedError`); no `LD->read_source` to save (see
-# `setCurrentSourceLocation`).
+# DIVERGES: the memory stream's buffer starts empty and grows (upstream's starts as 1024 bytes on
+# the C stack); the text is made an atom or a string as `_text_term` makes it (`PL_unify_text`);
+# no `LD->read_source` to save (see `setCurrentSourceLocation`).
 """
 `atom_to_term/3`, `term_to_atom/2` and `term_string/2`'s common part (pl-read.c): read the term
 the text `atom` holds into `term`, binding `bindings` (0: none) to its variables' names.
@@ -3459,20 +3460,31 @@ the text `atom` holds into `term`, binding `bindings` (0: none) to its variables
 function atom_to_term(
     ld::PL_local_data{T}, atom::term_t, term::term_t, bindings::term_t, text_type::Int
 )::Bool where {T}
+    gd = _query_gd(ld)
     if bindings == 0 && PL_is_variable(ld, atom)   # term_to_atom(+, -)
-        throw(
-            NotPortedError{Nothing}(
-                nothing,
-                "term_to_atom/2, term_string/2: the text of a term (PL_write_term, " *
-                (text_type == PL_ATOM ? "an atom" : "a string") * ")",
-                "R1e (the writer)"
-            )
-        )
+        bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+        bufsize = Ref(0)
+
+        wstream = Sopenmem(bufp, bufsize, "w")
+        wstream === nothing && error("atom_to_term: Sopenmem")
+        wstream.encoding = ENC_UTF8
+        wrval = PL_write_term(gd, ld, wstream, term, 1200, PL_WRT_QUOTED)
+        if wrval
+            Sflush(wstream)
+
+            b = bufp[]
+            bytes = (b === nothing || bufsize[] == 0) ? UInt8[] : b[1:bufsize[]]
+            t = _text_term(T, bytes, text_type == PL_ATOM ? :atom : :string)
+            wrval = PL_unify_atomic(ld, atom, t)    # PL_unify_text(atom, 0, &txt, text_type)
+        end
+
+        Sclose(wstream)
+
+        return wrval
     end
 
     txt = PL_get_text(ld, atom, CVT_ALL | CVT_EXCEPTION)
     txt === nothing && return false
-    gd = _query_gd(ld)
     stream = Sopen_text(txt, "r")
     stream === nothing && error("atom_to_term: Sopen_text")
 
@@ -3505,7 +3517,7 @@ end
 
 # PORT: pl-read.c term_to_atom as pl_term_to_atom2_va
 # (PRED_IMPL("term_to_atom", 2, term_to_atom, 0))
-"`term_to_atom(?Term, ?Atom)` (pl-read.c): read direction; the write direction waits for R1e."
+"`term_to_atom(?Term, ?Atom)` (pl-read.c): the term read from the text, or written as an atom."
 function pl_term_to_atom2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
@@ -3515,7 +3527,7 @@ end
 
 # PORT: pl-read.c term_string as pl_term_string2_va
 # (PRED_IMPL("term_string", 2, term_string, 0))
-"`term_string(?Term, ?String)` (pl-read.c): read direction; the write direction waits for R1e."
+"`term_string(?Term, ?String)` (pl-read.c): the term read from the text, or written as a string."
 function pl_term_string2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
