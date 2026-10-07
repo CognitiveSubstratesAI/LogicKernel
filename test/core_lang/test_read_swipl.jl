@@ -1,4 +1,4 @@
-# ORIGINAL: R1c's gate — the reader's scanner (src/pl-read.jl) against swipl 10.1.16; upstream's reader units (tests/core_lang/test_read.pl, test_syntax.pl) read whole terms, so they wait for the parser (R1d).
+# ORIGINAL: R1c's gate — the reader's scanner (src/pl-read.jl) against swipl 10.1.16; upstream's reader units (tests/core_text/test_read.pl, test_syntax.pl, test_op.pl) read whole terms: ported with the parser (R1d), in test/core_text/.
 # test/core_lang/test_read_swipl.jl — R1c's gate (port_inventory row R1; user, 2026-10-07: SWI-7's
 # default syntax, the tests covering `1r3`, `0'c`, the escapes, `{}`, `[]` vs `'[]'`):
 #   * NUMBERS: `atom_number/2` through the query API on every syntax `str_number` reads or refuses

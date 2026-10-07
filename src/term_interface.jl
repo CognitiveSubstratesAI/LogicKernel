@@ -373,8 +373,17 @@ function is_ground_walk(t)::Bool
     k = kind(t)
     k === VAR && return false
     k === EXPR || return true
-    for i in 1:nchildren(t)
-        is_ground_walk(child(t, i)) || return false
+    # an agenda, not recursion: a term can be nested deeper than the Julia stack (R1d: SWI's
+    # read_deep units read 80,000 levels, and `resolve_term` asks `is_ground` of the answer)
+    agenda = term_type(t)[t]
+    while !isempty(agenda)
+        u = pop!(agenda)
+        for i in 1:nchildren(u)
+            c = child(u, i)
+            kc = kind(c)
+            kc === VAR && return false
+            kc === EXPR && push!(agenda, c)
+        end
     end
     return true
 end

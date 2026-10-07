@@ -49,13 +49,15 @@ include("pl-fli.jl")           # swipl-devel src/pl-fli.c — term references; r
 include("pl-error.jl")         # swipl-devel src/pl-error.c — error terms (the occurs-check error)
 include("pl-gmp.jl")           # swipl-devel src/pl-gmp.c — numbers: read, written, promoted, compared
 include("pl-arith.jl")         # swipl-devel src/pl-arith.c — evaluation, is/2, the comparisons
+include("os/pl-codelist.jl")   # swipl-devel src/os/pl-codelist.c — the text of a code or character list
+include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a term holds; a stream on it
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
-include("pl-write.jl")         # swipl-devel src/pl-write.c — (since R1c) the NaN helpers the reader needs
-include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c): raw_read, numbers, get_token
+include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
+include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c) and the parser (R1d): read_term, term_to_atom
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 

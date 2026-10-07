@@ -33,15 +33,17 @@
 const foreigns = (PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),)
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, comp, prims, variant,
-# trace, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
+# trace, read, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
 # constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_arith, PL_predicates_from_comp, PL_predicates_from_prims,
-    PL_predicates_from_variant, PL_predicates_from_trace, PL_predicates_from_op
+    PL_predicates_from_variant, PL_predicates_from_trace, PL_predicates_from_read,
+    PL_predicates_from_op
 )
 const _FOREIGN_VA = (
     PL_predicates_from_arith..., PL_predicates_from_comp..., PL_predicates_from_prims...,
-    PL_predicates_from_variant..., PL_predicates_from_trace..., PL_predicates_from_op...
+    PL_predicates_from_variant..., PL_predicates_from_trace..., PL_predicates_from_read...,
+    PL_predicates_from_op...
 )
 const _FOREIGN_DET = foreigns
 

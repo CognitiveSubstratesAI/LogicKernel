@@ -74,6 +74,66 @@ const PL_FA_NOTRACE = 0x01
 # PORT: SWI-Prolog.h PL_FA_TRANSPARENT
 "Registration flag: module transparent, deprecated (SWI-Prolog.h)."
 const PL_FA_TRANSPARENT = 0x02
+# PORT: SWI-Prolog.h PL_ATOM
+"Text type: an atom (SWI-Prolog.h)."
+const PL_ATOM = 2
+# PORT: SWI-Prolog.h PL_STRING
+"Text type: a string (SWI-Prolog.h)."
+const PL_STRING = 6
+# PORT: SWI-Prolog.h CVT_ATOM
+"Text conversion: an atom (SWI-Prolog.h)."
+const CVT_ATOM = 0x00000001
+# PORT: SWI-Prolog.h CVT_STRING
+"Text conversion: a string (SWI-Prolog.h)."
+const CVT_STRING = 0x00000002
+# PORT: SWI-Prolog.h CVT_LIST
+"Text conversion: a code or character list (SWI-Prolog.h)."
+const CVT_LIST = 0x00000004
+# PORT: SWI-Prolog.h CVT_INTEGER
+"Text conversion: an integer (SWI-Prolog.h)."
+const CVT_INTEGER = 0x00000008
+# PORT: SWI-Prolog.h CVT_RATIONAL
+"Text conversion: a rational number (SWI-Prolog.h)."
+const CVT_RATIONAL = 0x00000010
+# PORT: SWI-Prolog.h CVT_FLOAT
+"Text conversion: a float (SWI-Prolog.h)."
+const CVT_FLOAT = 0x00000020
+# PORT: SWI-Prolog.h CVT_VARIABLE
+"Text conversion: a variable's name (SWI-Prolog.h)."
+const CVT_VARIABLE = 0x00000040
+# PORT: SWI-Prolog.h CVT_NUMBER
+"Text conversion: a number (SWI-Prolog.h)."
+const CVT_NUMBER = CVT_RATIONAL | CVT_FLOAT
+# PORT: SWI-Prolog.h CVT_ATOMIC
+"Text conversion: an atomic term (SWI-Prolog.h)."
+const CVT_ATOMIC = CVT_NUMBER | CVT_ATOM | CVT_STRING
+# PORT: SWI-Prolog.h CVT_WRITE
+"Text conversion: any term, as `write/1` writes it (SWI-Prolog.h)."
+const CVT_WRITE = 0x00000080
+# PORT: SWI-Prolog.h CVT_WRITE_CANONICAL
+"Text conversion: any term, as `write_canonical/1` writes it (SWI-Prolog.h)."
+const CVT_WRITE_CANONICAL = 0x00000100
+# PORT: SWI-Prolog.h CVT_WRITEQ
+"Text conversion: any term, as `writeq/1` writes it (SWI-Prolog.h)."
+const CVT_WRITEQ = 0x00000200
+# PORT: SWI-Prolog.h CVT_ALL
+"Text conversion: an atomic term or a list (SWI-Prolog.h)."
+const CVT_ALL = CVT_ATOMIC | CVT_LIST
+# PORT: SWI-Prolog.h CVT_XINTEGER
+"Text conversion: an integer, in hexadecimal (SWI-Prolog.h)."
+const CVT_XINTEGER = 0x00000400 | CVT_INTEGER
+# PORT: SWI-Prolog.h CVT_EXCEPTION
+"Text conversion: raise an error where the conversion fails (SWI-Prolog.h)."
+const CVT_EXCEPTION = 0x00001000
+# PORT: SWI-Prolog.h CVT_VARNOFAIL
+"Text conversion: report an unbound argument instead of failing (SWI-Prolog.h)."
+const CVT_VARNOFAIL = 0x00002000
+# PORT: SWI-Prolog.h PL_WRT_QUOTE_NON_ASCII
+"Write flag: quote atoms containing non-ASCII (SWI-Prolog.h)."
+const PL_WRT_QUOTE_NON_ASCII = 0x800000
+# PORT: SWI-Prolog.h PL_WRT_PATTERN_SYNTAX_SOLO
+"Write flag: quote single-character solo atoms outside Pattern_Syntax (SWI-Prolog.h)."
+const PL_WRT_PATTERN_SYNTAX_SOLO = 0x8000000
 # PORT: SWI-Prolog.h PL_CTYPE_SPACE
 "Character class: Unicode White_Space (SWI-Prolog.h `PL_ctype_flags`)."
 const PL_CTYPE_SPACE = 0x0400

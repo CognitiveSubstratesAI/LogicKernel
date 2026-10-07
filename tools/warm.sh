@@ -83,6 +83,12 @@ _stop() {
 # _send FILE — run the snippet in the daemon; print its output; exit with its verdict.
 _send() {
     _running || { echo "warm lane: not running — tools/warm.sh start" >&2; return 3; }
+    # ONE SNIPPET AT A TIME. Two senders race on in.jl, seq and out.txt, and one of them can read
+    # the other's verdict: MEASURED 2026-10-07 (R1d), a probe sent during a preflight made the
+    # preflight's test_read_term_swipl.jl step "pass" with an EMPTY log, its run never made. The
+    # lock is held until this process exits, so a preflight's steps queue behind any other sender.
+    exec 9>"$DIR/send.lock"
+    flock 9
     local seq=$(( $(cat "$DIR/seq" 2>/dev/null || echo 0) + 1 ))
     cat "${1:-/dev/stdin}" > "$DIR/in.jl"
     rm -f "$DIR/status"                       # never inherit the previous run's verdict

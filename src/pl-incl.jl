@@ -1125,3 +1125,24 @@ mutable struct number
     mpq::Rational{BigInt}           # GMP rational
 end
 number() = number(V_INTEGER, 0, 0.0, BigInt(0), Rational{BigInt}(0))
+
+# ── text processing (pl-incl.h), R1d ─────────────────────────────────────────────────────────────
+# PORT: pl-incl.h CVT_status
+"How a text conversion of a list went (pl-incl.h `CVT_status`)."
+@enum CVT_status::UInt8 begin
+    CVT_ok = 0                      # Conversion ok
+    CVT_wide                        # Conversion needs wide characters
+    CVT_partial                     # Input list is partial
+    CVT_nolist                      # Input list is not a list
+    CVT_nocode                      # List contains a non-code
+    CVT_nochar                      # List contains a non-char
+    CVT_representation              # List contains non-reprentable code
+end
+
+# PORT: pl-incl.h CVT_result
+# DIVERGES: the culprit is a term (`nothing`: none yet), where upstream holds its word.
+"A list's text conversion: its status, and the element that stopped it (pl-incl.h)."
+mutable struct CVT_result{T}
+    status::CVT_status
+    culprit::Union{Nothing, T}      # for CVT_nocode/CVT_nochar
+end

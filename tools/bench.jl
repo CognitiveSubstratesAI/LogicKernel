@@ -494,6 +494,29 @@ const BU_PROLOG =
     "bu([]).\nbu([X|T]) :- Y = f(X), Y = f(Z), Z == X, W = Z, W \\== a, bu(T).\n" *
     "butop :- bu([" * join(1:1000, ",") * "]).\n"
 
+# the reader (R1d): term_to_atom/2 reads one clause's text — raw_read, the tokens, operators of
+# several priorities and kinds, a list with a tail, a string, brackets; swipl runs the same goal on
+# the same text (no `'` or `\` in it: it is quoted as an atom in the swipl goal)
+const RD_TEXT =
+    "nrev([H|T], R) :- nrev(T, RT), app(RT, [H], R), X is 1 + 2 * 3 - f(a, \"s\", " *
+    "[1, 2, 3 | Y]), Z = W, (A -> B ; C), - - 1 =< 2, {p, q}."
+const RD_PROC = LogicKernel.isCurrentProcedure(
+    sym_key(_a(:term_to_atom)), 2, LogicKernel.MODULE_system(NR_GD)
+)
+function _vm_read()::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    a = LogicKernel.PL_new_term_refs(NR_LD, 2)
+    NR_LD.slots[a + 2] = _a(Symbol(RD_TEXT))
+    qid = LogicKernel.PL_open_query(
+        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, RD_PROC, a
+    )
+    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    return rc
+end
+@assert _vm_read() == LogicKernel.PL_S_TRUE
+
 # allow-docstring-interp: not a docstring — this Prolog source interpolates DEPTH on purpose
 const PROLOG_FIXTURES =
     """
@@ -558,6 +581,8 @@ const CASES = [
     ("qsort", _vm_qsort, "qsort"),
     # poly_10 (V8): (1+x+y+z)^10, A_ADD_FC and the shifts in poly_exp
     ("poly_10", _vm_poly, "poly_10"),
+    # the reader (R1d): one clause's text through term_to_atom/2
+    ("term_to_atom clause", _vm_read, "term_to_atom(_, '" * RD_TEXT * "')"),
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs
