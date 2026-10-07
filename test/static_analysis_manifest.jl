@@ -267,6 +267,7 @@ function _manifest_index(T)
         # V6c2 — arithmetic in a body (src/pl-comp.jl, pl-funct.jl)
         (LK.compileSimpleAddition, Tuple{LD, LK.SubClauseNames, T, CInfo}, false),
         (LK.canBind, Tuple{T}, true), (LK.isTextAtom, Tuple{T}, true),
+        (LK.isCallableAtom, Tuple{T}, true),
         (LK.isRational, Tuple{T}, true), (LK.isFloat, Tuple{T}, true),
         (LK.isString, Tuple{T}, true), (LK.isTerm, Tuple{T}, true),
         (LK.isInteger, Tuple{T}, true), (LK.isNumber, Tuple{T}, true),
@@ -660,7 +661,26 @@ function _manifest_index(T)
         (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
         (LK._no_record_above, Tuple{LD, Int}, true),
         (LK._is_newest_live_frame, Tuple{LD, Int}, true),
-        (LK._call_procedure, Tuple{LD, Int, LK.code}, true)
+        (LK._call_procedure, Tuple{LD, Int, LK.code}, true),
+        # V9c — assert/1, assertz/1, asserta/1 (src/pl-comp.jl, pl-proc.jl, pl-error.jl), over
+        # DefaultTerm only, as V4a's: their errors build `Name/Arity` with `mk_gnd(T, ::Int)`
+        (LK.assert_term!, Tuple{GD, LD, Int, Int}, false),
+        (LK.get_head_and_body_clause, Tuple{GD, LD, Int, Int, Int}, false),
+        (LK.is_neck, Tuple{LD, Int}, false),
+        (LK._strip_module_refused, Tuple{GD, LD, Int}, false),
+        (LK._query_gd, Tuple{LD}, false),
+        (LK.get_head_functor, Tuple{LD, Int, Int}, false),
+        (LK.checkModifySystemProc, Tuple{GD, LD, UInt64, Int}, false),
+        (LK.isStaticSystemProcedure, Tuple{GD, UInt64, Int}, false),
+        (LK.assertProcedure!, Tuple{GD, PR, C, Int}, false),
+        (LK.rewrite_callable, Tuple{LD, T, Int}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, T}, false),
+        (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, T}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, PR}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for
+            f in (LK.pl_assertz1_va, LK.pl_asserta1_va)
+        ]...
     )
 end
 

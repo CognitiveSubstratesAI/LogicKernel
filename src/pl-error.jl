@@ -9,9 +9,10 @@
 # `error(Formal, context(Name/Arity, Msg))` for the running predicate and raising it — the
 # occurs-check error, which unification raises under `occurs_check=error` (V4a), and since V5a2 the
 # codes the first built-ins raise — instantiation, type and domain errors — since V5b the
-# undefined procedure's existence error, and since V6c arithmetic's: an expression that is not
-# evaluable and the float checks' evaluation errors. The other codes arrive with the code that
-# raises them.
+# undefined procedure's existence error, since V6c arithmetic's: an expression that is not
+# evaluable and the float checks' evaluation errors, and since V9c the clause compiler's and
+# `assert_term`'s: a representation error, the `callable` type error and the static procedure's
+# permission error. The other codes arrive with the code that raises them.
 #
 # DIVERGES (file-wide): upstream's `PL_error` is ONE variadic function that reads its arguments by
 # the code (`va_arg`); here each code family is a METHOD with typed arguments — no `Vararg{Any}` —
@@ -25,8 +26,7 @@
 # The formal and the context are BUILT (`mk_expr`) where upstream unifies them into fresh term
 # references (`PL_unify_term`), which cannot fail here. Raised with `PL_raise_exception`, never
 # thrown (upstream's `do_throw` is set for one code only, `ERR_CLOSED_STREAM`, not ported). Not set:
-# `LD->exception.processing` (it guards the spare stacks, not ported). Not ported: `ERR_TYPE`'s
-# `rewrite_callable` (no `callable` type error is raised yet).
+# `LD->exception.processing` (it guards the spare stacks, not ported).
 
 # PORT: pl-error.h PL_error_code
 # DIVERGES: the codes raised so far; upstream's enum has some forty.
@@ -44,6 +44,8 @@
     ERR_AR_UNDERFLOW                # void
     ERR_AR_RAT_OVERFLOW             # void
     ERR_AR_TYPE                     # atom_t expected, Number value
+    ERR_REPRESENTATION              # atom_t what
+    ERR_MODIFY_STATIC_PROC          # Procedure proc
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -178,12 +180,47 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code, f::Tuple{T, Int})::Bo
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
+# PORT: pl-error.c rewrite_callable
+# DIVERGES: returns the expected type, where upstream writes it through `expected`; `actual` is
+# rewritten in place, as upstream's `PL_put_term(actual, a)`.
+"""
+    rewrite_callable(ld, expected, actual) -> expected
+
+For a `callable` type error, strip the qualifiers `M:` off the culprit in term reference `actual`
+while each `M` is an atom; at one that is not, the culprit becomes `M` and the expected type
+`atom` (pl-error.c). Gives up after 100 levels on a cyclic culprit.
+"""
+function rewrite_callable(ld::PL_local_data{T}, expected::T, actual::term_t)::T where {T}
+    loops = 0
+    colon = sym_key(mk_sym(T, :(:)))
+    while true
+        t = deRef(ld, ld.slots[actual + 1])
+        # PL_is_functor(actual, FUNCTOR_colon2)
+        (
+            kind(t) === EXPR && nchildren(t) == 3 && kind(child(t, 1)) === SYM &&
+            sym_key(child(t, 1)) == colon
+        ) || break
+        a = deRef(ld, child(t, 2))                                  # _PL_get_arg(1, actual, a)
+        if !isTextAtom(a)                                           # !PL_is_atom(a)
+            ld.slots[actual + 1] = a                                # PL_put_term(actual, a)
+            return mk_sym(T, :atom)                                 # *expected = ATOM_atom
+        else
+            ld.slots[actual + 1] = child(t, 3)                      # _PL_get_arg(2, actual, a)
+        end
+        loops += 1
+        if loops > 100 && !is_acyclic(ld, ld.slots[actual + 1])
+            break
+        end
+    end
+    return expected
+end
+
 """
     PL_error(ld, ERR_TYPE | ERR_DOMAIN, atom, actual::term_t) -> false
 
 Raise `error(type_error(Atom, Actual), …)` or `error(domain_error(Atom, Actual), …)` — or
 `instantiation_error` when `actual` holds a variable (for `ERR_TYPE`, unless the expected type is
-`variable`) (pl-error.c).
+`variable`) (pl-error.c). A `callable` culprit is rewritten first (`rewrite_callable`).
 """
 PL_error(ld::PL_local_data{T}, id::PL_error_code, a::T, actual::term_t) where {T} =
     PL_error(ld, "", 0, "", id, a, actual)
@@ -201,8 +238,11 @@ function PL_error(
     h = _PL_error_open(ld)
     h === nothing && return false
     caller, fid, except, formal, swi = h
+    if id == ERR_TYPE && kind(a) === SYM && sym_key(a) == sym_key(mk_sym(T, :callable))
+        a = rewrite_callable(ld, a, actual)
+    end
     var = PL_is_variable(ld, actual)
-    if id == ERR_TYPE                                               # (ATOM_callable: not raised)
+    if id == ERR_TYPE
         if var && !(kind(a) === SYM && sym_key(a) == sym_key(mk_sym(T, :variable)))
             ld.slots[formal + 1] = mk_sym(T, :instantiation_error)  # goto err_instantiation
         else
@@ -268,6 +308,58 @@ function PL_error(
     ld.slots[pred + 1] = mk_expr(T, T[mk_sym(T, :/), def.name, mk_gnd(T, def.arity)])
     ld.slots[formal + 1] = mk_expr(
         T, T[mk_sym(T, :existence_error), mk_sym(T, :procedure), ld.slots[pred + 1]]
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
+    PL_error(ld, ERR_REPRESENTATION, what) -> false
+
+Raise `error(representation_error(What), context(Name/Arity, _))` (pl-error.c).
+"""
+PL_error(ld::PL_local_data{T}, id::PL_error_code, what::T) where {T} =
+    PL_error(ld, "", 0, "", id, what)
+
+"""
+    PL_error(ld, pred, arity, msg, ERR_REPRESENTATION, what) -> false
+
+As the form without them, with upstream's leading `pred`, `arity` and `msg` (empty: not given): the
+context holds `msg` as an atom (pl-error.c).
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code, what::T
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_REPRESENTATION
+    ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :representation_error), what])
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+"""
+    PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) -> false
+
+Raise `error(permission_error(modify, static_procedure, Name/Arity), context(Caller, _))` for the
+static procedure `proc` (pl-error.c).
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, proc::Procedure{T}
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_MODIFY_STATIC_PROC
+    def = proc.definition                                           # goto modify_static
+    pred = new_term_ref(ld)
+    # unify_definition(MODULE_user, pred, def, 0, GP_NAMEARITY|GP_HIDESYSTEM): `Name/Arity`
+    ld.slots[pred + 1] = mk_expr(T, T[mk_sym(T, :/), def.name, mk_gnd(T, def.arity)])
+    ld.slots[formal + 1] = mk_expr(
+        T,
+        T[
+            mk_sym(T, :permission_error), mk_sym(T, :modify), mk_sym(T, :static_procedure),
+            ld.slots[pred + 1]
+        ]
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end

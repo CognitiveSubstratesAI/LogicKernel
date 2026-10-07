@@ -944,9 +944,8 @@ end
 "Forget the per-argument assessments of `def` (pl-index.c)."
 function clearTriedIndexes!(def::Definition{T})::Nothing where {T}
     arity = def.arity
-    args = def.impl_clauses.args::Vector{arg_info}
-    for i in 0:(arity - 1)
-        ainfo = args[i + 1]
+    for i in 0:(arity - 1)                          # (no `args` at arity 0: upstream's are NULL)
+        ainfo = (def.impl_clauses.args::Vector{arg_info})[i + 1]
         ainfo.assessed = false
     end
     def.impl_clauses.jiti_tried = 0

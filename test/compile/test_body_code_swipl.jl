@@ -1355,7 +1355,16 @@ end
     if _BC_SWIPL_BIN !== nothing
         @test _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in tf]) == ours_tf
     end
-    # type_error(callable, Body): the WHOLE body, as swipl 10.1.16 reports it (probed)
+    # type_error(callable, Body): the WHOLE body, as swipl 10.1.16 reports it (probed) — raised
+    # with PL_error (since V9c): compileClause answers `nothing`, the error pending in its local data
+    "The error compiling `pr :- body` raises, in a local data of its own; `nothing` if none."
+    function clause_error(body)
+        ld = LK.PL_local_data{_B}()
+        user = LK.MODULE_user(_BGD)
+        cl = LK.compileClause(_BGD, ld, p, body, LK.lookupProcedure(p, 0, user), user)
+        (cl === nothing && ld.exception_term != 0) || return nothing
+        return ld.slots[ld.exception_term + 1]
+    end
     for body in (
         _bconj(_bs("q"), _bv(1)),                               # p :- q, _
         _bconj(_bs("q"), _bg(1)),                               # p :- q, 1
@@ -1363,16 +1372,14 @@ end
         mk_nil(_B),                                             # p :- []
         _bconj(_bs("q"), mk_expr(_B, _B[_bv(1), _bs("a")]))     # p :- q, (X a): `$expr/2`
     )
-        err = try
-            _bclause(p, body)
-            nothing
-        catch e
-            e
-        end
-        @test err isa LK.CallableTypeError{_B} && err.culprit === body
+        ball = clause_error(body)
+        @test ball !== nothing &&
+            lk_eq(child(ball, 2), _bf("type_error", _bs("callable"), body))
     end
     # representation_error(max_procedure_arity): a goal of 1025 arguments (MAXARITY)
-    @test_throws ErrorException _bclause(p, _be("q", [_bg(1) for _ in 1:(LK.MAXARITY + 1)]))
+    ball = clause_error(_be("q", [_bg(1) for _ in 1:(LK.MAXARITY + 1)]))
+    @test ball !== nothing &&
+        lk_eq(child(ball, 2), _bf("representation_error", _bs("max_procedure_arity")))
     # a rule of a multifile predicate needs I_CONTEXT (modules): refused; its facts are not
     gd = LK.PL_global_data{_B}()
     user = LK.MODULE_user(gd)

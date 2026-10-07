@@ -32,16 +32,16 @@
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entry."
 const foreigns = (PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),)
 
-# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: prims, variant, trace); and the
-# two dispatch tables. A comment, not a docstring, as for every module-level constant the global-state
-# lint reads.
+# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, comp, prims, variant,
+# trace); and the two dispatch tables. A comment, not a docstring, as for every module-level
+# constant the global-state lint reads.
 const _PRED_TABLES = (
-    PL_predicates_from_arith, PL_predicates_from_prims, PL_predicates_from_variant,
-    PL_predicates_from_trace
+    PL_predicates_from_arith, PL_predicates_from_comp, PL_predicates_from_prims,
+    PL_predicates_from_variant, PL_predicates_from_trace
 )
 const _FOREIGN_VA = (
-    PL_predicates_from_arith..., PL_predicates_from_prims..., PL_predicates_from_variant...,
-    PL_predicates_from_trace...
+    PL_predicates_from_arith..., PL_predicates_from_comp..., PL_predicates_from_prims...,
+    PL_predicates_from_variant..., PL_predicates_from_trace...
 )
 const _FOREIGN_DET = foreigns
 

@@ -28,6 +28,10 @@
 # directly follows two or more void arguments (`skipArgs`, LogicKernel#1), and that defect is
 # FIXED here (user, 2026-10-02), so the kernel indexes those arguments where swipl 10.1.16 does not.
 #
+# ASSERT (since V9c): `assert_term!`, the path of assert/1, assertz/1 and asserta/1 — the clause's
+# head and body, its predicate, compiled, added — and their registration table
+# (`PL_predicates_from_comp`).
+#
 # NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
 # `link_local_var`; V9), SSU (`=>`) clauses,
 # SSU clauses' moves (`?=>` always moves, `=>` never: no SSU), and singleton, multiton and branch
@@ -814,8 +818,9 @@ end
 """
     CallableTypeError{T}(culprit)
 
-Raised where SWI-Prolog raises `error(type_error(callable, Culprit), _)`: a body goal that is not
-callable (pl-comp.c `NOT_CALLABLE`).
+Thrown by `lookupBodyProcedure` for a goal that is not callable, where SWI-Prolog raises
+`error(type_error(callable, Culprit), _)`. The clause compiler never meets it: `compileSubClause!`
+finds such a goal `NOT_CALLABLE` first, and `compileClause` raises the error with `PL_error`.
 """
 struct CallableTypeError{T} <: Exception
     culprit::T
@@ -1781,17 +1786,20 @@ end
 # DIVERGES: the body is `nothing` for a fact (upstream's NULL body; a body `true` makes one too, as
 # upstream); the body's goals are plain goals and conjunctions (see `compileBody!`); no SSU,
 # warnings, flags or resource limits; a RULE of a multifile predicate is refused (its body would
-# need `I_CONTEXT`: modules are not ported), and `P_MFCONTEXT` is never set; a goal that is not
-# callable, or past MAXARITY, THROWS (`CallableTypeError`, an `ErrorException`) where upstream
-# raises it with `PL_error`; the clause is returned where upstream stores it through `cp`, created
-# at generation 0 (`assertDefinition!` sets the rest). The
+# need `I_CONTEXT`: modules are not ported), and `P_MFCONTEXT` is never set; the clause is returned
+# where upstream stores it through `cp` — `nothing` for upstream's failure, its error raised with
+# `PL_error` as upstream raises it (since V9c) — created at generation 0 (`assertDefinition!` sets
+# the rest). `head` and `body` are terms without bindings, so the analysis meets no cycle
+# (`CYCLIC_HEAD`, `CYCLIC_BODY`): a caller that holds a clause under bindings checks it and resolves
+# it first (`assert_term!`). `pushWordAsTermRef(body)` is a new term reference of the current
+# foreign frame, released with it (no `popTermRef`). The
 # database's global data `gd` is an argument, where upstream reaches GD — its functor table, the
 # `CONTROL_F` flags the analysis reads — as a global (src/pl-global.jl); so is the compiling
 # thread's local data `ld` (since V6b), where upstream's `DECL_LD` functions reach LD: its flags
 # (`optimise`, `portable_vmi`) decide how a body goal compiles.
 # `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
 """
-    compileClause(gd, ld, head, body, proc, m) -> Clause
+    compileClause(gd, ld, head, body, proc, m) -> Clause, or nothing
 
 Compile the clause `head :- body` (`body` `nothing` or `true` for a fact) of procedure `proc` into
 module `m`, in the database whose global data is `gd`, under the flags of local data `ld`
@@ -1799,12 +1807,14 @@ module `m`, in the database whose global data is `gd`, under the flags of local 
 head code argument by argument, then a fact's `I_EXITFACT`, or a rule's `I_ENTER`, its body and
 `I_EXIT`. The clause keeps the code, the literal table its operands index (V1 L2) and the procedure
 table its call operands index (V1). A body goal that is not callable raises
-`CallableTypeError(body)` — the WHOLE body, as swipl reports it (probed in 10.1.16).
+`type_error(callable, Body)` — the WHOLE body, as swipl reports it (probed in 10.1.16) — and a
+goal past `MAXARITY` `representation_error(max_procedure_arity)`, with `PL_error` in `ld`: the
+result is then `nothing`.
 """
 function compileClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
     proc::Procedure{T}, m::module_t{T}
-)::Clause{T} where {T}
+)::Union{Nothing, Clause{T}} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
     ci = compileInfo{T}(def.arity, m, proc)
     # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
@@ -1821,10 +1831,15 @@ function compileClause(
     if rule
         bi = PC(ci)
         rc = compileBody!(gd, ld, ci, body::T, I_DEPART)
-        if rc == NOT_CALLABLE
-            throw(CallableTypeError{T}(body::T))
-        elseif rc == MAX_ARITY_OVERFLOW
-            error("compileClause: representation_error(max_procedure_arity)")
+        if rc != BOOLEX_TRUE
+            if rc == NOT_CALLABLE
+                b = new_term_ref(ld)                           # pushWordAsTermRef(body)
+                ld.slots[b + 1] = body::T
+                PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
+            elseif rc == MAX_ARITY_OVERFLOW
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
+            end
+            return nothing                                     # goto exit_fail
         end
         Output_0!(ci, I_EXIT)
         if ci.codes[bi + 1] == I_CUT                           # OpCode(ci, bi) == encode(I_CUT)
@@ -1840,6 +1855,172 @@ function compileClause(
         ci.procedures
     )
 end
+
+# ── assert/1, assertz/1, asserta/1 (pl-comp.c) ───────────────────────────────────────────────
+# From pl-fli.c PL_strip_module_ex: what stands in its place until V5c brings module resolution.
+# NOT PORTED: stripping `Module:Term` — a module-qualified clause or head is refused
+# (`NotPortedError`), as the kernel has one module for clauses (`user`) and no `:/2` to strip it
+# to; any other term is its own plain part, as upstream leaves it.
+"Refuse the term in term reference `t` if it is module-qualified (`Module:Term`): see above."
+function _strip_module_refused(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
+)::Nothing where {T}
+    p = deRef(ld, ld.slots[t + 1])
+    if isTerm(p) && _has_functor(p, gd.functors_control.colon, 2)
+        throw(
+            NotPortedError{T}(p, "a module-qualified clause or head (Module:Term)", "V5c")
+        )
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c is_neck
+# DIVERGES: the SSU necks `=>/2` and `?=>/2` are refused (`NotPortedError`): SSU is not ported,
+# and taken for facts they would assert other clauses; so no `flags` is set.
+"Whether term reference `t` holds a rule, `Head :- Body` (pl-comp.c)."
+function is_neck(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    p = deRef(ld, ld.slots[t + 1])
+    if isTerm(p)
+        _has_functor(p, sym_key(mk_sym(T, Symbol(":-"))), 2) && return true  # FUNCTOR_prove2
+        if _has_functor(p, sym_key(mk_sym(T, Symbol("=>"))), 2) ||
+            _has_functor(p, sym_key(mk_sym(T, Symbol("?=>"))), 2)
+            throw(NotPortedError{T}(p, "an SSU clause (=>, ?=>)", "SSU"))
+        end
+    end
+    return false
+end
+
+# PORT: pl-comp.c get_head_and_body_clause
+# DIVERGES: no module out-argument and no `flags` — the head's module is not stripped but refused
+# (`_strip_module_refused`, until V5c), and `flags` carries SSU's necks or `UNIT_CLAUSE`, which
+# `compileClause` sets itself from the body `true`; the database `gd` is an argument.
+"""
+    get_head_and_body_clause(gd, ld, clause, head, body) -> Bool
+
+Put the head and the body of the clause in term reference `clause` into `head` and `body`: a
+fact's body is `true` (pl-comp.c).
+"""
+function get_head_and_body_clause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, clause::term_t, head::term_t, body::term_t
+)::Bool where {T}
+    if is_neck(ld, clause)
+        c = deRef(ld, ld.slots[clause + 1])
+        ld.slots[head + 1] = child(c, 2)                         # _PL_get_arg(1, clause, head)
+        ld.slots[body + 1] = child(c, 3)                         # _PL_get_arg(2, clause, body)
+        _strip_module_refused(gd, ld, head)                     # PL_strip_module_ex(head, m, head)
+    else
+        ld.slots[head + 1] = ld.slots[clause + 1]               # PL_put_term(head, clause): facts
+        ld.slots[body + 1] = mk_sym(T, Symbol("true"))          # PL_put_atom(body, ATOM_true)
+    end
+    return true
+end
+
+# PORT: pl-comp.c assert_term as assert_term!
+# DIVERGES: the path of assert/1, assertz/1 and asserta/1 only — `loc` NULL, `owner` NULL, `flags`
+# 0 (user, 2026-10-06, Q8 (a)) — returning the clause or `nothing`, upstream's NULL, the error
+# raised; the database `gd` is an argument (upstream: GD); the module is `user` (no source module:
+# `module` is NULL on this path). The clause is checked for cycles and RESOLVED through the bindings
+# before it is compiled (`is_acyclic`, `resolve_term`), because `compileClause` takes terms without
+# bindings: `representation_error(cyclic_term)` is raised here, where upstream's analysis raises it
+# (after the procedure is looked up). A clause the static procedure's error rejects is left to
+# Julia's garbage collector (upstream: `freeClause`).
+# NOT PORTED: stripping `Module:` off the term and the head (`PL_strip_module_ex`): refused until
+# V5c (`_strip_module_refused`); `PL_CREATE_INCREMENTAL` and `PL_CREATE_THREAD_LOCAL` (assert/2's
+# `flags`: no tabling, no threads); the module's assert hook (`O_PROLOG_HOOK`: `module_t` has no
+# `hook`); the `CHECK_INTERRUPT` retry (no signal handling); the consult path `loc` (the source file
+# and line, the owner, reconsult and redefinition, system-mode locking, compiler warnings) until
+# R1's loader; transactions (`assertDefinition!`'s, not ported there).
+"""
+    assert_term!(gd, ld, term, where_) -> Clause, or nothing
+
+Compile the clause in term reference `term` and add it to its predicate in the `user` module of the
+database `gd`, at its start (`CL_START`) or its end (`CL_END`) (pl-comp.c): a predicate that is not
+yet defined becomes dynamic; a static one that is raises `permission_error(modify,
+static_procedure, PI)`. `nothing` with the error raised when the clause is not callable, cyclic,
+or past `MAXARITY`.
+"""
+function assert_term!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, term::term_t, where_::Int
+)::Union{Nothing, Clause{T}} where {T}
+    tmp = PL_new_term_refs(ld, 3)
+    tmp == 0 && return nothing
+    head = tmp + 1
+    body = tmp + 2
+    module_ = MODULE_user(gd)                                   # (no source module: see above)
+    _strip_module_refused(gd, ld, term)                         # PL_strip_module_ex(term, …, tmp)
+    ld.slots[tmp + 1] = ld.slots[term + 1]
+    mhead = module_
+    get_head_and_body_clause(gd, ld, tmp, head, body) || return nothing
+    name, arity = get_head_functor(ld, head, 0)
+    arity < 0 && return nothing                                 # not callable, arity too high
+    proc = isCurrentProcedure(sym_key(name), arity, mhead)
+    if proc === nothing
+        if checkModifySystemProc(gd, ld, sym_key(name), arity)
+            proc = lookupProcedure(name, arity, mhead)
+        end
+        proc === nothing && return nothing
+    end
+    h = deRef(ld, ld.slots[head + 1])
+    b = deRef(ld, ld.slots[body + 1])
+    if !is_acyclic(ld, h) || !is_acyclic(ld, b)                 # CYCLIC_HEAD, CYCLIC_BODY
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
+        return nothing
+    end
+    clause = compileClause(gd, ld, resolve_term(ld, h), resolve_term(ld, b), proc, module_)
+    clause === nothing && return nothing
+    def = proc.definition                                       # getProcDefinition(proc)
+    # assert[az]/1
+    if (def.flags & P_DYNAMIC) == 0
+        if isDefinedProcedure(gd, proc)
+            PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
+            return nothing                                      # derror: freeClause(clause)
+        end
+        setDynamicDefinition!(def, true) || return nothing
+    end
+    assertProcedure!(gd, proc, clause, where_)
+    return clause                                               # cref->value.clause
+end
+
+"The database of the running query (`ld.GD`, set by `PL_open_query`): a built-in's GD."
+function _query_gd(ld::PL_local_data{T})::PL_global_data{T} where {T}
+    gd = ld.GD
+    gd === nothing && error("a built-in that needs the database runs outside a query")
+    return gd
+end
+
+# PORT: pl-comp.c assertz1 as pl_assertz1_va
+# (PRED_IMPL("assertz", 1, assertz1, PL_FA_TRANSPARENT))
+"`assertz/1` and `assert/1` (pl-comp.c): add the clause at the end of its predicate."
+function pl_assertz1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return assert_term!(_query_gd(ld), ld, A1, CL_END) !== nothing ? FTRUE : FFALSE
+end
+
+# PORT: pl-comp.c asserta1 as pl_asserta1_va
+# (PRED_IMPL("asserta", 1, asserta1, PL_FA_TRANSPARENT))
+"`asserta/1` (pl-comp.c): add the clause at the start of its predicate."
+function pl_asserta1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return assert_term!(_query_gd(ld), ld, A1, CL_START) !== nothing ? FTRUE : FFALSE
+end
+
+# PORT: pl-comp.c BeginPredDefs as PL_predicates_from_comp
+# DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
+# (c:9193-9223); `META` is `PL_FA_TRANSPARENT` (c:9190) and `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-comp.c's registration table (`BeginPredDefs(comp)`): the ported entries."
+const PL_predicates_from_comp = (
+    PL_extension("assert", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension(
+        "assertz", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "asserta", 1, pl_asserta1_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
+    )
+)
 
 # ── decompiling the head (pl-comp.c) ────────────────────────────────────────────────────────────
 # PORT: pl-comp.c decompileHead

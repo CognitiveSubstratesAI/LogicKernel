@@ -7,8 +7,9 @@
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
 # PREDICATES AND THEIR CLAUSE LISTS — SWI-Prolog's pl-proc.c, as far as the clause database goes:
-# allocating a predicate (`lookupProcedure`); adding a clause (`assertDefinition!`, which stamps
-# it with a new generation of the database); retracting one (`retract_clause!`, which only sets
+# allocating a predicate (`lookupProcedure`); the checks `assert_term` (src/pl-comp.jl) makes
+# before it compiles a clause (`get_head_functor`, `checkModifySystemProc`, since V9c); adding a
+# clause (`assertDefinition!`, which stamps it with a new generation of the database); retracting one (`retract_clause!`, which only sets
 # its erased generation — the LOGICAL UPDATE VIEW: an enumeration started earlier still sees it);
 # clause garbage collection, which unlinks erased clauses once no generation in use can see them
 # (`pl_garbage_collect_clauses!`, `cleanDefinition!`, the dirty-definition records `ddi_*`); and
@@ -68,6 +69,89 @@ function isCurrentProcedure(
     name::UInt64, arity::Int, m::module_t{T}
 )::Union{Nothing, Procedure{T}} where {T}
     return get(m.procedures, (name, arity), nothing)
+end
+
+# PORT: pl-proc.c isStaticSystemProcedure
+# DIVERGES: the functor is its name's `sym_key` and its arity, and the `system` module is `gd`'s.
+# No `SYSTEM_MODE` test: the kernel has no system mode (no boot compilation), so it is always off;
+# the `system` module always exists (`MODULE_system`).
+"""
+The `system` module's procedure `name/arity` in the database `gd` if it is static and locked — a
+built-in — or `nothing` (pl-proc.c).
+"""
+function isStaticSystemProcedure(
+    gd::PL_global_data{T}, name::UInt64, arity::Int
+)::Union{Nothing, Procedure{T}} where {T}
+    proc = isCurrentProcedure(name, arity, MODULE_system(gd))
+    if proc !== nothing && (proc.definition.flags & P_LOCKED) != 0 &&
+        (proc.definition.flags & P_DYNAMIC) == 0
+        return proc
+    end
+    return nothing
+end
+
+# PORT: pl-proc.c checkModifySystemProc
+# DIVERGES: the functor is its name's `sym_key` and its arity; the database `gd` and the local data
+# `ld` are arguments (upstream: GD and LD).
+"""
+    checkModifySystemProc(gd, ld, name, arity) -> Bool
+
+False, with `permission_error(modify, static_procedure, Name/Arity)` raised, when `name/arity` is
+an ISO built-in of the database `gd`; true otherwise (pl-proc.c).
+"""
+function checkModifySystemProc(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::UInt64, arity::Int
+)::Bool where {T}
+    proc = isStaticSystemProcedure(gd, name, arity)
+    if proc !== nothing && (proc.definition.flags & P_ISO) != 0
+        return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
+    end
+    return true
+end
+
+# PORT: pl-proc.c get_head_functor
+# DIVERGES: the functor is returned as its parts — the name and the arity, arity -1 for upstream's
+# false — where upstream writes a `functor_t` (there is no functor table). `PL_get_functor` is
+# inlined: a compound's name is its first child, a compound with none has no functor, and every
+# symbol is a callable atom or a reserved symbol (`name/0`). A compound named by a term that is no
+# symbol (`$expr/n`, the kernel's) has a name that is no callable atom.
+"""
+    get_head_functor(ld, head, how) -> (name, arity)
+
+The functor of the clause head in term reference `head` — arity -1 when it has none, the arity is
+past `MAXARITY`, or the name is no callable atom: then `type_error(callable, Head)` or
+`representation_error(max_procedure_arity)` is raised, unless `how` has `GP_TYPE_QUIET` (pl-proc.c).
+"""
+function get_head_functor(
+    ld::PL_local_data{T}, head::term_t, how::Int
+)::Tuple{T, Int} where {T}
+    t = deRef(ld, ld.slots[head + 1])
+    if kind(t) === EXPR && nchildren(t) >= 1                    # PL_get_functor(head, fdef)
+        name, arity = child(t, 1), nchildren(t) - 1
+    elseif kind(t) === SYM                                      # isCallableAtom || isReservedSymbol
+        name, arity = t, 0
+    else
+        if (how & GP_TYPE_QUIET) == 0
+            PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head)
+        end
+        return (t, -1)
+    end
+    if arity > MAXARITY
+        if (how & GP_TYPE_QUIET) == 0
+            PL_error(
+                ld, "", 0, "limit is $MAXARITY, request = $arity", ERR_REPRESENTATION,
+                mk_sym(T, :max_procedure_arity)
+            )
+        end
+        return (t, -1)
+    end
+    if !isCallableAtom(name)
+        if (how & GP_TYPE_QUIET) == 0
+            PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head)
+        end
+        return (t, -1)
+    end
+    return (name, arity)
 end
 
 # PORT: pl-proc.c hasClausesDefinition
@@ -196,6 +280,15 @@ function assertDefinition!(
     clause.generation_erased = max_generation(def)
     return cref
 end
+
+# PORT: pl-proc.c assertProcedure as assertProcedure!
+# DIVERGES: the database `gd` is an argument (upstream: GD); `getProcDefinition(proc)` is
+# `proc.definition` (no thread-local predicates).
+"Add `clause` to procedure `proc` at `where_` (pl-proc.c): see [`assertDefinition!`](@ref)."
+assertProcedure!(
+    gd::PL_global_data{T}, proc::Procedure{T}, clause::Clause{T},
+    where_::Union{Int, ClauseRef{T}}
+) where {T} = assertDefinition!(gd, proc.definition, clause, where_)
 
 # PORT: pl-proc.c retract_clause
 # DIVERGES: no transactions, statistics, breakpoints or incremental-tabling notification.

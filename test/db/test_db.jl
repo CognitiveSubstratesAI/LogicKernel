@@ -3,14 +3,13 @@
 # COPYRIGHT: Copyright (c)  2009-2020, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 #
-# SWI-Prolog's own tests of the core database functions, the `retract` and `retractall` units the
-# clause database can run (src/pl-proc.jl), through test/db/index_testlib.jl. Unification is the
-# harness's until it is ported.
+# SWI-Prolog's own tests of the core database functions: the `assert` units, assert/1 called through
+# the query API (since V9c; src/pl-comp.jl `assert_term!`), and the `retract` and `retractall` units
+# the clause database can run (src/pl-proc.jl), through test/db/index_testlib.jl.
 #
-# NOT PORTED YET: the `assert` units (cyclic heads, maximum arity, a body with a cut — they need
-# clause bodies and the compiler), `retract` theorist ×2 (rules with bodies), `qhead` (modules),
-# `concurrent` (threads), `retractall` type(callable) (the API takes a predicate, not a term), and
-# the `dynamic`, `protect` and `res_compiler` units.
+# NOT PORTED YET: `assert` cut_cond (`->` in a body, V9), `retract` theorist ×2 (rules with
+# bodies), `qhead` (modules), `concurrent` (threads), `retractall` type(callable) (the API takes a
+# predicate, not a term), and the `dynamic`, `protect` and `res_compiler` units.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
@@ -24,6 +23,78 @@ let n = UInt64(0)
 end
 "The head `name(_, …)` of predicate `p`, every argument a fresh variable."
 _dall(p::IxPred{_D}, name::Symbol) = _de(name, (_dv() for _ in 1:(p.def.arity))...)
+
+"""
+The built-in `name`/1 (`assert`, `assertz`, `asserta`) of database `db` called on `arg` through the
+query API: `(rc, ball)` — the return code, and the error term raised (`PL_exception`), resolved, or
+`nothing`.
+"""
+function _dassert(db::IxDB{_D}, name::String, arg::_D)
+    gd, ld = db.gd, db.ld
+    proc = LK.isCurrentProcedure(sym_key(_ds(name)), 1, LK.MODULE_system(gd))
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    ld.slots[a + 1] = arg
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    ball = if rc == LK.PL_S_EXCEPTION
+        LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1])
+    else
+        nothing
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return (rc, ball)
+end
+
+"Whether `(rc, ball)` is the error `error(Formal, _)` with formal `formal`."
+_derror(r, formal::_D) =
+    r[1] == LK.PL_S_EXCEPTION && r[2] !== nothing && lk_eq(child(r[2]::_D, 2), formal)
+
+@testset "assert" begin
+    db = IxDB{_D}()                                 # :- dynamic term/0, f/1, f/2, f/0.
+    for (n, a) in ((:term, 0), (:f, 1), (:f, 2), (:f, 0))
+        ix_pred(_D, n, a; dynamic=true, db=db)
+    end
+    cyclic = _de(:representation_error, _ds(:cyclic_term))
+    maxarity = _de(:representation_error, _ds(:max_procedure_arity))
+    "`X = Term(X)` under the default `occurs_check` (sto(rational_trees)), then `assert(Clause(X))`."
+    function cyclic_assert(term, clause)
+        X = _dv()
+        m = LK.Mark(db.ld)
+        try
+            @test LK.pl_unify!(db.ld, X, term(X))
+            return _dassert(db, "assert", clause(X))
+        finally
+            LK.Undo!(db.ld, m)
+        end
+    end
+    # PORT: test_db.pl right_cyclic_head
+    @testset "right_cyclic_head" begin              # X = f(X), assert(X)
+        @test _derror(cyclic_assert(x -> _de(:f, x), identity), cyclic)
+    end
+    # PORT: test_db.pl cyclic_head
+    @testset "cyclic_head" begin                    # X = f(X, 1), assert(X)
+        @test _derror(cyclic_assert(x -> _de(:f, x, _dg(1)), identity), cyclic)
+    end
+    # PORT: test_db.pl cyclic_body
+    @testset "cyclic_body" begin                    # X = f(X), assert((f(a) :- X))
+        @test _derror(
+            cyclic_assert(x -> _de(:f, x), x -> _de(Symbol(":-"), _de(:f, _ds(:a)), x)),
+            cyclic
+        )
+    end
+    # PORT: test_db.pl max_procedure_arity
+    @testset "max_procedure_arity" begin            # functor(F, f, Max*2), assert(F)
+        F = _de(:f, (_dv() for _ in 1:(2 * LK.MAXARITY))...)
+        @test _derror(_dassert(db, "assert", F), maxarity)
+        # functor(F, f, Max*2), assert((p :- F))
+        @test _derror(_dassert(db, "assert", _de(Symbol(":-"), _ds(:p), F)), maxarity)
+    end
+    @test db.ld.exception_term == 0                 # every error was caught at the query
+end
 
 @testset "retract" begin
     db = IxDB{_D}()                                 # one module: one database

@@ -68,6 +68,9 @@ const CL_START = 1
 # PORT: pl-incl.h CL_END
 "Insertion point: the end of the clause list — `assertz` (pl-incl.h)."
 const CL_END = 2
+# PORT: pl-incl.h GP_TYPE_QUIET
+"`get_head_functor` flag: fail without raising on a culprit of the wrong type (pl-incl.h)."
+const GP_TYPE_QUIET = 0x400
 # PORT: pl-incl.h CL_ERASED
 "Clause flag: the clause was erased (pl-incl.h)."
 const CL_ERASED = UInt32(0x0001)
@@ -932,6 +935,10 @@ isTaggedInt(t)::Bool =
 # PORT: pl-data.h isTextAtom
 "Whether `t` is a text atom (pl-data.h `isTextAtom`): a symbol, not a reserved one such as `[]`."
 isTextAtom(t)::Bool = kind(t) === SYM && !is_reserved_symbol(t)
+
+# PORT: pl-data.h isCallableAtom
+"Whether `t` is an atom a goal can be named by (pl-data.h `isCallableAtom`): a text atom, or `[]`."
+isCallableAtom(t)::Bool = isTextAtom(t) || is_nil(t)
 
 # PORT: pl-data.h isRational
 "Whether `t` is a rational number (pl-data.h `isRational`): an integer or a rational."

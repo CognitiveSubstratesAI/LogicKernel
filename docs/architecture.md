@@ -281,11 +281,11 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt` | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
-| `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers) | `src/pl-global.h`, `src/pl-incl.h` |
+| `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), and since V9c the running query's database (`GD`, which a built-in reads) | `src/pl-global.h`, `src/pl-incl.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
@@ -293,7 +293,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`) | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
-| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, and since V8 `ERR_AR_TYPE`; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
+| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer) | `src/pl-ext.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
@@ -313,7 +313,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence; under bindings (`ld`, V5a1) upstream's node numbering — `var_id`, `term_id`, `Root`, `isomorphic` | `src/pl-variant.c` |
 | `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
 | `test/db/test_procedures.jl` | V1's predicate table: one procedure per functor and database, `[]` apart from `'[]'`, `:- dynamic`, defined = a `PROC_DEFINED` flag or a clause visible now | — |
-| `test/compile/test_body_code_swipl.jl` | V2's differential: whole-clause code (operands by kind, the LCO label) identical to swipl's on pinned clauses, 400 random rule clauses, and nreverse and qsort as swipl consults them; V2's refusals and swipl's `type_error(callable, Body)`; clause/2 and retract/1 on rules | — |
+| `test/compile/test_body_code_swipl.jl` | V2's differential: whole-clause code (operands by kind, the LCO label) identical to swipl's on pinned clauses, 400 random rule clauses, and nreverse and qsort as swipl consults them; V2's refusals and swipl's `type_error(callable, Body)` (raised with `PL_error` since V9c); clause/2 and retract/1 on rules | — |
 | `test/compile/test_call_operands.jl` | V1's call operands: `lookupBodyProcedure` (the database's procedure; non-callable goals refused as swipl refuses them, `$expr/n` too), the clause's procedure table, `Output_3`/`Output_n` | — |
 | `test/compile/test_decompile.jl` | V1 L2's own tests: each literal decompiled exactly, kind included; random heads back as variants; the table referenced once per literal and `argKey == indexOfWord`; `NUM_OTHER` as an opaque literal | — |
 | `test/core_lang/test_expr_functor.jl` | Q2's own tests: `$expr/n`'s standard order, its head code, the index keeping it a wildcard (top level and among same-functor clauses), unification and `=@=` child by child | — |
@@ -336,7 +336,8 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `tools/swipl_pin.jl` | the pinned-swipl check a worker and the warm daemon make WHERE THEY RUN | — |
 | `src/precompile_workload.jl` | the precompile workload: the hot paths on `DefaultTerm` (ORIGINAL; PrecompileTools) | — |
 | `test/db/test_jit.jl` | SWI's own JIT-indexing tests (`jit`, `jit_static`), every unit but the static-determinism checks of supervisors — on one shared `d/2`, as upstream | `tests/db/test_jit.pl` |
-| `test/db/test_db.jl` | SWI's own `retract` and `retractall` tests that need no clause bodies, modules or threads | `tests/db/test_db.pl` |
+| `test/db/test_db.jl` | SWI's own `assert` tests (cyclic heads and body, the maximum arity; since V9c, through the query API) and its `retract` and `retractall` tests that need no clause bodies, modules or threads | `tests/db/test_db.pl` |
+| `test/db/test_assert_swipl.jl` | V9c's differential: assertz/1 and asserta/1 called from clauses through the VM, every outcome and error identical to swipl's, then each changed predicate's code (the first assertz moved, the second and a declared dynamic not); assert/1 and its interim until V5c; `rewrite_callable`; the refusals | — |
 | `test/db/test_clause_variables.jl` | clause variables: renamed apart from the goal's, kernel keys unique across attempts and databases (a retained answer moves between databases), `var_term` rejecting the kernel's half, a sink's bindings gone after it — also when it throws | — |
 | `test/db/test_update_view_gc.jl` | the logical update view under clause GC: an enumeration still sees a clause retracted and collected after it started — pinned and live against swipl | — |
 | `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1's fix pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
@@ -454,6 +455,7 @@ graph LR
     pl_comp --> term_interface
     pl_comp --> default_term
     pl_comp --> pl_incl
+    pl_comp --> SWI_Prolog
     pl_comp --> pl_vmi
     pl_comp --> pl_index
     pl_comp --> pl_funct
@@ -464,6 +466,7 @@ graph LR
     pl_comp --> pl_thread
     pl_comp --> pl_wam
     pl_comp --> pl_fli
+    pl_comp --> pl_error
     pl_comp --> pl_arith
     pl_comp --> pl_proc
     pl_variant --> term_interface
@@ -528,6 +531,8 @@ graph LR
     pl_error --> pl_incl
     pl_error --> SWI_Prolog
     pl_error --> pl_global
+    pl_error --> pl_inline
+    pl_error --> pl_prims
     pl_error --> pl_wam
     pl_error --> pl_fli
     pl_error --> pl_gmp
@@ -558,12 +563,14 @@ graph LR
     pl_proc --> term_interface
     pl_proc --> default_term
     pl_proc --> pl_incl
+    pl_proc --> SWI_Prolog
     pl_proc --> pl_index
     pl_proc --> pl_global
     pl_proc --> pl_inline
     pl_proc --> pl_comp
     pl_proc --> pl_thread
     pl_proc --> pl_gc
+    pl_proc --> pl_error
     pl_proc --> pl_arith
     pl_proc --> pl_supervisor
     pl_supervisor --> default_term
@@ -590,6 +597,7 @@ graph LR
     pl_ext --> SWI_Prolog
     pl_ext --> pl_global
     pl_ext --> pl_prims
+    pl_ext --> pl_comp
     pl_ext --> pl_variant
     pl_ext --> pl_arith
     pl_ext --> pl_proc
@@ -1230,6 +1238,74 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V9c — assert/1, assertz/1 and asserta/1: BUILT (2026-10-07)** (port_inventory row V9, its
+split; the head-unification chunk's fourth commit; src/pl-comp.jl, pl-proc.jl, pl-error.jl,
+pl-ext.jl, pl-global.jl, pl-wam.jl, pl-incl.jl, pl-index.jl). Decided by the user, 2026-10-06
+(Q8 (a): the assertz path of `assert_term`, with upstream's exact sequence and its errors compared
+with swipl's; the predicates registered from upstream's table, so the differential runs them from
+Prolog clauses through the VM; what is left out marked for R1). Research and plan: the workspace's
+`docs/research/v9-inline-unification/plan_commit4_assert.md`.
+* **Ported:**
+  * `assert_term` (pl-comp.c:4845-5033), the path with `loc` NULL: `get_head_and_body_clause` and
+    `is_neck` (721-747), `get_head_functor` (pl-proc.c:663-697), `isCurrentProcedure`, else
+    `checkModifySystemProc` and `isStaticSystemProcedure` (pl-proc.c:466-494) and
+    `lookupProcedure`; `compileClause`; then for a predicate that is not dynamic the static
+    procedure's `permission_error(modify, static_procedure, PI)` if it is defined, else
+    `setDynamicDefinition`; `assertProcedure` (pl-proc.c:1493). So the FIRST assertz into a fresh
+    predicate compiles as static code (V9b's moves apply), and every later one as dynamic code.
+  * `assertz1`, `asserta1` and `BeginPredDefs(comp)`'s `assert/1`, `assertz/1`, `asserta/1`
+    (`META` = `PL_FA_TRANSPARENT`; the last two `PL_FA_ISO`), registered between arith and prims
+    as `initBuildIns` registers them.
+  * `compileClause` raises its errors with `PL_error` and answers `nothing` (pl-comp.c:2052-2059,
+    2142-2152): `type_error(callable, Body)` and `representation_error(max_procedure_arity)` were
+    Julia exceptions until now.
+  * `PL_error`'s `ERR_REPRESENTATION` and `ERR_MODIFY_STATIC_PROC` (pl-error.c:298-325), and
+    `rewrite_callable` (pl-error.c:72), which a `callable` type error runs.
+* **DIVERGES:** a built-in reaches its database through `ld.GD`, set by `PL_open_query`, where
+  upstream reads the global `GD` (a built-in here receives LD alone). The clause term is checked for
+  cycles and resolved through the bindings before it is compiled (`compileClause` takes terms
+  without bindings): `representation_error(cyclic_term)` is raised there, after the procedure is
+  looked up, as upstream's analysis raises it.
+* **NOT PORTED:** `PL_strip_module_ex` — a module-qualified clause or head is REFUSED
+  (`NotPortedError`) until V5c; the SSU necks (refused); `PL_CREATE_*` (assert/2's flags: no
+  tabling, no threads); the module's assert hook (`O_PROLOG_HOOK`); the `CHECK_INTERRUPT` retry; the
+  consult path `loc` (source file and line, owner, reconsult, redefinition, system-mode locking,
+  compiler warnings) — R1's loader; transactions (`assertDefinition!`'s).
+* **The interim until V5c:** assert/1 is not ISO, so a clause of `user` does not reach it —
+  `lookupBodyProcedure` prefers `system` for ISO predicates only, and the rest come through
+  `autoImport` (V5c). Called through the query API it works, as assertz/1; from a clause it raises
+  `existence_error(procedure, assert/1)` where swipl answers. Pinned against swipl's `ok`, so the
+  testset FAILS once V5c lands (as the `Module:Clause` refusal's does), and the interim cannot
+  outlive its reason (user, 2026-10-07).
+* **Found and fixed:** `clearTriedIndexes!` asserted the per-argument table's type BEFORE its loop,
+  so a dynamic predicate of arity 0 (whose table is `nothing`, upstream's NULL) failed at its first
+  clause: upstream's loop simply runs zero times. No test had added a clause to one.
+* **Gates:**
+  * test/db/test_assert_swipl.jl (new): a program whose clauses call assertz/1 and asserta/1,
+    compiled into the kernel and consulted by swipl, its 26 goals run in order through the VM —
+    every outcome identical to swipl's (`ok`, or the error term, the context's `system:` stripped
+    until V5c): permission errors on a static predicate and on ISO built-ins, the callable type
+    errors (the whole body), instantiation errors, the cyclic and arity representation errors; then
+    each changed predicate's dynamic flag and its clauses' code instruction by instruction: the
+    first assertz moved, the second and a declared dynamic predicate not, asserta's clause first.
+    Pinned for the jobs without swipl. assert/1 through the query API; its interim from a clause.
+    The refusals (`Module:Clause`, SSU, a variable goal).
+  * test/db/test_db.jl: upstream's `assert` units — right_cyclic_head, cyclic_head, cyclic_body,
+    max_procedure_arity ×2 — through the query API; cut_cond waits for `->` (V9).
+  * test/compile/test_body_code_swipl.jl: the not-callable and arity pins read the raised error.
+* **Bench** (a freshly restarted daemon; the machine quiet before and after): the run-time
+  allocations unchanged — nreverse 2941, compare/3 body 7000, derive 527, qsort 2733, poly_10
+  188268 — and the compile cases as V9b left them (compileClause rule 40 allocations, 3088 bytes).
+  Ratios to swipl: nreverse 10.87× (its runs spread 62%), derive 7.62×, qsort 9.21×, poly_10 8.52×.
+* **Mutation-proved — 16 of 16 caught at verdict level:** compiling after the dynamic flag (the
+  first assertz no longer moves), no static-procedure error, a new predicate left static, ISO
+  built-ins modifiable, asserta at the end, no head arity check, no callable-atom check on the
+  head's name, no cycle check, compileClause's two errors not raised, `rewrite_callable` not run or
+  without its `atom` branch, `GD` not set, `clearTriedIndexes!`'s defect restored, the arity message
+  dropped; and V5c simulated (a clause of `user` reaching a non-ISO built-in), which fails the
+  interim's testset. Its first form, the table's ISO flag, never took effect in the warm daemon:
+  `_PRED_TABLES` captured the table when it loaded, and Revise does not re-evaluate it.
 
 **V9b — the unifications moved into the head: BUILT (2026-10-06)** (port_inventory row V9, its
 split; the head-unification chunk's third commit; src/pl-comp.jl, pl-incl.jl, pl-global.jl). Decided

@@ -146,6 +146,10 @@ end
 # `argstack_entry`s (upstream: `Word*`); the write-mode builder (`bcells`, `bframes`; decision 2, Q3)
 # has no upstream field — it builds where upstream fills cells on the global stack. The `exception.*`
 # fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
+# `GD` is the database of the query `PL_open_query` opened last (since V9c): upstream's code reaches
+# the global data as a process global (`GD`), and a built-in here receives LD alone (`t0, ac, ctx`),
+# so one that changes the database (`assertz/1`) reads it through this field; `nothing` until a
+# query is opened.
 """
     PL_local_data{T}()
 
@@ -208,6 +212,7 @@ mutable struct PL_local_data{T}
     exception_pending::Int                                      # exception.pending
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's term but in a cursor)
+    GD::Union{Nothing, PL_global_data{T}}                       # (the running query's database)
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -242,7 +247,8 @@ function PL_local_data{T}() where {T}
         Vector{argstack_entry{T}}(undef, 64), 0,
         Vector{T}(undef, 256), 0, Vector{bframe{T}}(undef, 64), 0,
         0, 0, 0, 0, 0,
-        ClauseChoice{T}(nothing, word(0)), e
+        ClauseChoice{T}(nothing, word(0)), e,
+        nothing                                 # GD: set by PL_open_query
     )
     growStacks!(ld, LOCAL_INITIAL)              # allocStacks: the initial local stack
     emptyStacks!(ld)

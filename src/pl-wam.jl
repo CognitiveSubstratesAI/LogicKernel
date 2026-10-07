@@ -824,7 +824,8 @@ const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 # PORT: pl-wam.c PL_open_query
 # DIVERGES: the query is a record at `lTop`, with its CHP_TOP choice point and its top frame and
 # frame as records at upstream's offsets (since V3; src/pl-incl.jl); its handle is its position
-# (decision 1).
+# (decision 1). It records its database in `ld.GD` (since V9c), which a built-in reads where
+# upstream reads its global `GD` (src/pl-global.jl).
 # NOT PORTED: `getProcDefinedDefinition` (until V5c: `autoImport`, no autoload), `globalizeTermRef`
 # (a keyed variable lives in no cell, decision 2), the profiler, the debugger state `PL_Q_NODEBUG`
 # saves (all but `FR_HIDE_CHILDS`), the context module of a transparent predicate, `updateAlerted`.
@@ -846,6 +847,7 @@ function PL_open_query(
 
     def = proc.definition                       # getProcDefinedDefinition(): not ported (see above)
     arity = def.arity
+    ld.GD = gd                                  # (the built-ins' GD; see above)
 
     lneeded = SIZEOF_QUERYFRAME + MAXARITY
     if !ensureLocalSpace(ld, lneeded)
