@@ -428,6 +428,22 @@ function _manifest_index(T)
         # src/pl-proc.jl
         (LK.MODULE_user, Tuple{GD}, true),
         (LK.lookupProcedure, Tuple{T, Int, MOD}, false),
+        # V5c — the module path (src/pl-modul.jl, pl-proc.jl, pl-wam.jl, pl-comp.jl, pl-fli.jl,
+        # pl-supervisor.jl)
+        (LK.isCurrentModule, Tuple{Vector{MOD}, T}, false),
+        (LK._lookupModule!, Tuple{Vector{MOD}, LK.PL_code_data, T}, false),
+        (LK.lookupModule, Tuple{GD, T}, false),
+        (LK.inheritUnknown, Tuple{GD, MOD}, true),
+        (LK.stripModuleName, Tuple{LD, T}, false),
+        (LK.stripModule, Tuple{GD, LD, T}, false),
+        (LK.PL_strip_module_ex, Tuple{GD, LD, Int, Int, Int}, false),
+        (LK._impl_any_defined, Tuple{D}, true),
+        (LK.autoImport, Tuple{GD, T, Int, MOD}, false),
+        (LK.trapUndefined, Tuple{GD, D}, false),
+        (LK.createUndefSupervisor, Tuple{D}, false),
+        (LK.getProcDefinedDefinition, Tuple{GD, D}, false),
+        (LK.unify_functor, Tuple{Type{T}, D, Int}, false),
+        (LK.unify_definition, Tuple{GD, MOD, D, Int}, false),
         (LK.isCurrentProcedure, Tuple{UInt64, Int, MOD}, false),
         (LK.hasClausesDefinition, Tuple{GD, D}, true),
         (LK.isDefinedProcedure, Tuple{GD, PR}, true),
@@ -582,7 +598,7 @@ function _manifest_index(T)
         (LK._hasFunctor, Tuple{T, T, Int}, true),
         (LK.classify_exception_p, Tuple{LD, T}, false),
         (LK.classify_exception, Tuple{LD, Int}, false),
-        (LK.getUnknownModule, Tuple{MOD}, true),
+        (LK.getUnknownModule, Tuple{GD, MOD}, true),
         # V6c — arithmetic (src/pl-gmp.jl, pl-arith.jl, pl-error.jl), over DefaultTerm only, as V4a's:
         # its big results raise (the interim for Q-AR1), folded at compile time (`_holds_payload`)
         [
@@ -678,9 +694,8 @@ function _manifest_index(T)
         # V9c — assert/1, assertz/1, asserta/1 (src/pl-comp.jl, pl-proc.jl, pl-error.jl), over
         # DefaultTerm only, as V4a's: their errors build `Name/Arity` with `mk_gnd(T, ::Int)`
         (LK.assert_term!, Tuple{GD, LD, Int, Int}, false),
-        (LK.get_head_and_body_clause, Tuple{GD, LD, Int, Int, Int}, false),
+        (LK.get_head_and_body_clause, Tuple{GD, LD, Int, Int, Int, Int}, false),
         (LK.is_neck, Tuple{LD, Int}, false),
-        (LK._strip_module_refused, Tuple{GD, LD, Int}, false),
         (LK._query_gd, Tuple{LD}, false),
         (LK.get_head_functor, Tuple{LD, Int, Int}, false),
         (LK.checkModifySystemProc, Tuple{GD, LD, UInt64, Int}, false),

@@ -113,6 +113,17 @@ function undefSupervisor(def::Definition{T})::_SV{T} where {T}
     return nothing
 end
 
+# PORT: pl-supervisor.c createUndefSupervisor
+"Install `S_UNDEF` as `def`'s supervisor, if it has no clauses and is not defined otherwise (pl-supervisor.c)."
+function createUndefSupervisor(def::Definition{T})::Bool where {T}
+    sv = undefSupervisor(def)
+    if sv !== nothing
+        def.codes, def.codes_crefs = sv
+        return true
+    end
+    return false
+end
+
 # PORT: pl-supervisor.c singleClauseSupervisor
 "`S_TRUSTME <cref>` for a predicate with exactly one visible clause (pl-supervisor.c)."
 function singleClauseSupervisor(gd::PL_global_data{T}, def::Definition{T})::_SV{T} where {T}

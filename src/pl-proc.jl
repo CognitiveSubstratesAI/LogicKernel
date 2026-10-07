@@ -55,7 +55,7 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
     end
     cd = m.code_data
     def = Definition{T}(
-        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0
+        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index
     )
     proc = Procedure{T}(def, UInt32(0))
     m.procedures[(key, arity)] = proc
@@ -194,6 +194,67 @@ function isDefinedProcedure(gd::PL_global_data{T}, proc::Procedure{T})::Bool whe
     def = proc.definition
     (def.flags & PROC_DEFINED) != 0 && return true
     return hasClausesDefinition(gd, def) !== nothing
+end
+
+# From pl-incl.h `impl.any.defined`: the first word of the definition's implementation — the
+# clause list's first clause, or the foreign function — upstream's test "has a body at all".
+"Whether `def` has an implementation: a clause, or a foreign function (pl-incl.h `impl.any.defined`)."
+_impl_any_defined(def::Definition)::Bool =
+    def.impl_foreign_function != 0 || def.impl_clauses.first_clause !== nothing
+
+# PORT: pl-proc.c autoImport
+# DIVERGES: the functor is its parts; the database `gd` is an argument and the super modules are
+# indices into its module table. The definition replaced in `m`'s procedure is left to Julia's
+# garbage collector, where upstream unshares it and frees or lingers it; no lock (no threads).
+"""
+    autoImport(gd, name, arity, m) -> Definition, or nothing
+
+The definition of `name/arity` visible in module `m`: `m`'s own if it is defined, else a super
+module's — LINKED into `m`'s procedure, created if needed — or `nothing` (pl-proc.c).
+"""
+function autoImport(
+    gd::PL_global_data{T}, name::T, arity::Int, m::module_t{T}
+)::Union{Nothing, Definition{T}} where {T}
+    proc = isCurrentProcedure(sym_key(name), arity, m)
+    if proc !== nothing                                 # Defined: no problem
+        isDefinedProcedure(gd, proc) && return proc.definition
+        (proc.definition.flags & P_AUTOLOAD) != 0 && return nothing
+    end
+    def::Union{Nothing, Definition{T}} = nothing
+    for s in m.supers
+        def = autoImport(gd, name, arity, gd.modules[s])
+        def !== nothing && break                        # goto found
+    end
+    def === nothing && return nothing
+    if proc === nothing                                 # Create header if not there
+        proc = lookupProcedure(name, arity, m)
+    end
+    if proc.definition !== def                          # Nope, we must link the def
+        proc.definition = def                           # shareDefinition(def)
+    end
+    return def
+end
+
+# PORT: pl-proc.c trapUndefined
+# DIVERGES: the database `gd` is an argument; the module is the definition's index into its table.
+# NOT PORTED: the autoloader — the `autoload` flag, `autoLoader` and its retry — as decided since Q-A
+# (no autoload), and `GD->bootsession`'s `sysError` (no boot session).
+"""
+    trapUndefined(gd, def) -> Definition
+
+Resolve the undefined `def`: a definition `autoImport` finds through its module's supers; else
+`def` itself, its supervisor `S_UNDEF` unless it is defined otherwise or its module's `unknown`
+flag is `fail` (pl-proc.c).
+"""
+function trapUndefined(gd::PL_global_data{T}, def::Definition{T})::Definition{T} where {T}
+    m = gd.modules[def.module_]
+    newdef = autoImport(gd, def.name, def.arity, m)     # Auto import
+    newdef !== nothing && return newdef
+    if (def.flags & PROC_DEFINED) != 0 || getUnknownModule(gd, m) == UNKNOWN_FAIL
+        return def                                      # Pred/Module does not want to trap
+    end
+    createUndefSupervisor(def)                          # No one wants to intercept
+    return def
 end
 
 # PORT: pl-proc.c setDynamicDefinition

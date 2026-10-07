@@ -9,8 +9,8 @@
 #   * a LIVE DIFFERENTIAL: random expressions over `+ - *`, unary `-`/`+`, integers at the Int64 and
 #     tagged boundaries, big integers, floats (`-0.0` among them), rationals, one-character strings
 #     and `[Code]`, and planted errors (a variable, an atom, `[]`, an unknown function, `"ab"`, a
-#     float overflow); every value and every error — its formal, its context's predicate (swipl's
-#     module stripped until V5c) and its message — identical; and random comparisons with all six
+#     float overflow); every value and every error — its formal, its context's predicate (qualified
+#     as swipl's, since V5c) and its message — identical; and random comparisons with all six
 #     operators;
 #   * what the kernel decides alone, pinned: the interim for a term type that cannot hold a big
 #     result (until T1), `[Atom]` refused (until R1), and the kernel-only terms (Q-AR5).
@@ -180,9 +180,12 @@ end
     @test occursin(_aenc(_af(:type_error, _as(:evaluable), mk_nil(_A))), at(mk_nil(_A)))
     @test occursin(_aenc(_af(:type_error, _as(:evaluable), _af(:/, _as(:f), _ag(3)))),
         at(_af(:f, _ag(1), _ag(2), _ag(3))))                                     # f/3 after its args
-    # the context: the built-in (swipl: system:(is)/2, Q-A) and a message only where upstream gives one
+    # the context: the built-in, `system:(is)/2` (since V5c, Q-A), and a message only where upstream
+    # gives one
     out = at(_af(:+, _ag("ab"), _ag(1)))
-    @test occursin(_aenc(_af(:/, _as(:is), _ag(2))), out)
+    @test occursin(
+        "@" * _aenc(_af(:(:), _as(:system), _af(:/, _as(:is), _ag(2)))) * "@", out
+    )
     @test endswith(out, "@" * _aenc(_as("\"x\" must hold one character")))
     @test endswith(at(_af(:+, _as(:a), _ag(1))), "@_")
     @test isctx(_af(:*, _ag(1.0e308), _ag(10)))                                 # float_overflow
@@ -211,7 +214,9 @@ end
         lk_name(child(formal, 2)) === :expression
     @test LKA.compareStandard(ld, child(formal, 3), T1, true) == 0              # the culprit: T
     @test lk_eq(LKA.resolve_term(ld, child(ball, 3)),
-        _af(:context, _af(:/, _as(:is), _ag(2)), _as("cyclic term")))
+        _af(
+            :context, _af(:(:), _as(:system), _af(:/, _as(:is), _ag(2))), _as("cyclic term")
+        ))
     LKA.PL_close_query(ld, qid)
     LKA.PL_close_foreign_frame(ld, fid)
     @test ld.query == 0
@@ -401,7 +406,6 @@ enc_args([]).
 enc_args([A]) :- !, enc(A).
 enc_args([A|As]) :- enc(A), write(','), enc_args(As).
 enc_codes(Cs) :- write('['), atomic_list_concat(Cs, ', ', A), write(A), write(']').
-ctx(context(M:P, Msg), P, Msg) :- atom(M), !.
 ctx(context(P, Msg), P, Msg) :- !.
 ctx(_, _, _).
 err(F, C) :- ctx(C, P, Msg), write('err:'), enc(F), write('@'), enc(P), write('@'), enc(Msg), nl.

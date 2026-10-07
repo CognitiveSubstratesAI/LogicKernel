@@ -33,6 +33,7 @@ mutable struct PL_global_data{T}
     procedures_dirty::Dict{Definition{T}, dirty_def_info{T}}    # procedures.dirty
     clauses_cgc_active::Bool                                    # clauses.cgc_active: CGC running
     const functors_control::ControlFunctors                     # functors.array's CONTROL_F
+    const modules::Vector{module_t{T}}                          # tables.modules: the modules
     const modules_user::module_t{T}                             # modules.user: user module
     const modules_system::module_t{T}                           # modules.system: system module
     const subclause_names::SubClauseNames                       # (the ATOM_/FUNCTOR_ tables)
@@ -47,12 +48,11 @@ mutable struct PL_global_data{T}
 end
 # DIVERGES: `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
 # `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
-# per database. The user module is created with the database — upstream's initModules creates it, with
-# the `system` module, at start-up (pl-modul.c); since V5a2 there is a `system` module too, which the
-# built-ins are registered in (`initBuildIns!`, src/pl-ext.jl). There is no module table
-# (`modules.table`) and no module links (`supers`: V5c makes `system` the super module of `user`,
-# as decided since Q-A), so a body goal reaches a built-in only through `lookupBodyProcedure`'s
-# ISO branch, and a query through its procedure. The shared
+# per database. The module table (`tables.modules`, since V5c a vector: src/pl-modul.jl) holds the
+# `system` and `user` modules, created with the database as upstream's initModules creates them at
+# start-up (pl-modul.c), `user`'s super module `system`, which the built-ins are registered in
+# (`initBuildIns!`, src/pl-ext.jl): a call from `user` reaches a built-in through `autoImport`
+# (src/pl-proc.jl), as decided since Q-A. The shared
 # supervisors are the database's (`PL_code_data`, src/pl-incl.jl). `$c_call_prolog/0`, the top
 # frame's predicate, is created as `setBuiltinPredicateProperties` creates it (no clauses, flags 0,
 # `SUPERVISOR(virgin)`), in the `system` module's table. `initVM` builds the top clause, and then
@@ -64,24 +64,24 @@ end
 # constants; `no_literals` is the literal table a supervisor's code has (none).
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
+    modules = module_t{T}[]                     # initModules: system, then user
+    system = _lookupModule!(modules, cd, mk_sym(T, :system))
+    user = _lookupModule!(modules, cd, mk_sym(T, :user))
     dc = mk_sym(T, Symbol("\$c_call_prolog"))
     dc_def = Definition{T}(
-        sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd, 0
+        sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd, 0,
+        system.index
     )
     dc_proc = Procedure{T}(dc_def, UInt32(0))
     top_clause, top_cref = initVM(dc_proc)
-    system = module_t{T}(
-        sym_key(mk_sym(T, :system)), Dict{Tuple{UInt64, Int}, Procedure{T}}(), cd
-    )
     system.procedures[(sym_key(dc), 0)] = dc_proc
     gd = PL_global_data{T}(
         gen_t(0),
         Dict{Definition{T}, dirty_def_info{T}}(),
         false,
         registerControlFunctors(T),
-        module_t{T}(
-            sym_key(mk_sym(T, :user)), Dict{Tuple{UInt64, Int}, Procedure{T}}(), cd
-        ),
+        modules,
+        user,
         system,
         _subclause_names(T),
         cd,
@@ -243,7 +243,7 @@ function PL_local_data{T}() where {T}
             gen_t(0),
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
-                PL_code_data(code[], code[], code[], code[], code[], code[]), 0
+                PL_code_data(code[], code[], code[], code[], code[], code[]), 0, 0
             ),
             nothing,
             0,

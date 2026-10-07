@@ -7,8 +7,8 @@
 #   * a frame that fails before it is filled (`S_LIST`, vmi:3607-3608): dropped where `deep_backtrack`
 #     leaves it, and swipl's answers;
 #   * POSITIONS after a deterministic exit (MQ6): seven clauses as swipl's `prolog_current_frame/1`
-#     and `prolog_current_choice/1` differences — stand-in facts of those names in the kernel (V5
-#     brings the real ones), pinned and live — and libswipl's query API, pinned (the first term
+#     and `prolog_current_choice/1` differences — the real built-ins, reached from `user` through
+#     `autoImport` (since V5c), pinned and live — and libswipl's query API, pinned (the first term
 #     reference after an answer); at every answer the record pools hold exactly the live records;
 #   * FLATNESS: concatenate/3 on 10^3, 10^4, 10^5 elements reaches the same high-water mark, read by a
 #     sentinel fill of the slots and with growth turned into an error — and with
@@ -943,9 +943,10 @@ end
 
 # ── MQ6: positions after a deterministic exit ───────────────────────────────────────────────────
 # A: swipl's `prolog_current_frame/1` / `prolog_current_choice/1` differences (V4b research, probed),
-# the kernel running the SAME clauses with stand-in facts of those two names (user, 2026-10-05; V5
-# brings the real built-ins — port_inventory row V5). Read at the first answer from the records:
-# the choice point above the clause's frame, or (`:frame`) the callee's frame left by `qn`.
+# the kernel running the SAME clauses with the real built-ins: not ISO, so a clause of `user` reaches
+# them through `autoImport` (since V5c; the stand-in facts of V4b are gone, user, 2026-10-07). The
+# distance is the answer's `B - A`, as swipl's: the choice point above the clause's frame, or
+# (`:frame`) the callee's frame left by `qn`.
 function _rpos_clauses()
     F, Ch, X, A, B, C, F0, F1, Y, P, Q, R = (_rv(k) for k in 1:12)
     pcf(v) = _rf("prolog_current_frame", v)
@@ -989,30 +990,21 @@ const _R_POS = [(:c1, 20, :choice), (:mq6a, 20, :choice), (:mq6b, 20, :choice),
 @testset "positions after deterministic exits are swipl's (MQ6), and the pools hold only live records" begin
     clauses = _rpos_clauses()
     db = _rdb(clauses)
-    _radd!(db, _rf("prolog_current_frame", _rv(1)))                # the stand-ins (V5: the real ones)
-    _radd!(db, _rf("prolog_current_choice", _rv(1)))
     ld = db.ld
     ours = Int[]
     live = Bool[]
-    for (n, _, what) in _R_POS
-        _rcall(
-            db,
-            _rf(n, _rv(90), _rv(91));
-            at=function (qid, k)
-                push!(live, _rpools_live(ld))
-                k == 1 || return nothing
-                q = ld.queries[LK.QueryFromQid(ld, qid)]
-                f = ld.frames[q.frame].base
-                push!(
-                    ours,
-                    if what === :choice
-                        ld.choices[ld.BFR].base - f
-                    else
-                        ld.frames[ld.choices[ld.BFR].frame].base - f
-                    end
-                )
-            end
+    for (n, _, _) in _R_POS
+        ans = _rcall(
+            db, _rf(n, _rv(90), _rv(91)); at=(qid, k) -> push!(live, _rpools_live(ld))
         )
+        m = match(r"^\w+\((-?\d+),(-?\d+)\)$", ans[1][1])     # the first answer: n(A,B)
+        a, b = parse(Int, m[1]), parse(Int, m[2])
+        push!(ours, b - a)
+    end
+    # the built-ins were reached through autoImport: `user`'s procedures hold `system`'s definitions
+    for name in ("prolog_current_frame", "prolog_current_choice")
+        up = LK.isCurrentProcedure(sym_key(_rs(name)), 1, db.user)
+        @test up !== nothing && up.definition.module_ == LK.MODULE_system(db.gd).index
     end
     @test ours == [d for (_, d, _) in _R_POS]
     @test !isempty(live) && all(live)

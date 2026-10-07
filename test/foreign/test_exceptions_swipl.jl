@@ -6,9 +6,8 @@
 #     code under each flag combination, the next term reference, the exception pending or not, and
 #     the error term — `existence_error(procedure, Name/Arity)` with the CALLER in its context, which
 #     the last-call optimisation decides — pinned to libswipl's (probed 2026-10-05 through the C query
-#     API, scratchpad v5err/qerr.c over qprog.pl); swipl qualifies the system predicate
-#     `$c_call_prolog/0` (`system:'$c_call_prolog'/0`) and the kernel does not until V5c (as decided
-#     since Q-A), so a pinned context is the probe's without its module;
+#     API, scratchpad v5err/qerr.c over qprog.pl); the system predicate `$c_call_prolog/0` is
+#     qualified, `system:'$c_call_prolog'/0`, as the probe's (since V5c, as decided since Q-A);
 #   * the `CHP_DEBUG` choice point `S_UNDEF` pushes, read back from its record;
 #   * the EXCEPTION CLASSES (`classify_exception`, which decides whether a raise replaces a pending
 #     ball): every ordered pair of a set of balls, the more urgent one as swipl's own
@@ -91,11 +90,12 @@ const _ECE = LKE.PL_Q_CATCH_EXCEPTION | LKE.PL_Q_EXT_STATUS
 
 @testset "an undefined procedure raises existence_error, its caller as libswipl's" begin
     db = _edb()
-    # the caller, as libswipl's qerr.out: `$c_call_prolog/0` (swipl: system:'$c_call_prolog'/0,
-    # Q-A) when the undefined call is the query's own or a last call; otherwise the calling clause
+    # the caller, as libswipl's qerr.out: `system:'$c_call_prolog'/0` when the undefined call is the
+    # query's own or a last call; otherwise the calling clause, a `user` predicate, unqualified
+    dc = _ef(:(:), _es(:system), _epi(Symbol("\$c_call_prolog"), 0))
     for (name, arg, caller) in (
-        (:foo, _eg(1), _epi(Symbol("\$c_call_prolog"), 0)),       # foo/1 itself
-        (:p, _eg(1), _epi(Symbol("\$c_call_prolog"), 0)),         # p(X) :- foo(X).  (last call)
+        (:foo, _eg(1), dc),                                       # foo/1 itself
+        (:p, _eg(1), dc),                                         # p(X) :- foo(X).  (last call)
         (:p2, _eg(1), _epi(:p2, 1)),                              # p2(X) :- foo(X), z.
         (:p3, _ev(9), _epi(:p3, 1))                               # p3(X) :- r(X), foo(X).
     )

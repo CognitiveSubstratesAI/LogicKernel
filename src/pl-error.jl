@@ -19,10 +19,10 @@
 # and the shared head and tail are `_PL_error_open` and `_PL_error_close!`. Upstream's leading
 # `pred`, `arity`, `msg` are taken by the methods that need them (since V6c; the others pass none),
 # `pred` and `msg` as Strings, EMPTY for upstream's NULL (a `Union` would dispatch at run time):
-# the context is `pred/arity` when given, else the CALLER — the running frame's predicate — written
-# `Name/Arity`, never module-qualified, until V5c: as decided since Q-A, definitions then carry
-# their module, so a built-in's context reads `system:Name/Arity`, as swipl's does
-# (`unify_definition`).
+# the context is `pred/arity` when given, else the CALLER — the running frame's predicate — written by
+# `unify_definition` from `user`: a built-in's reads `system:Name/Arity`, as swipl's does (since V5c,
+# as decided since Q-A). The database is the running query's (`ld.GD`): a definition names its module
+# by its index into the database's table.
 # The formal and the context are BUILT (`mk_expr`) where upstream unifies them into fresh term
 # references (`PL_unify_term`), which cannot fail here. Raised with `PL_raise_exception`, never
 # thrown (upstream's `do_throw` is set for one code only, `ERR_CLOSED_STREAM`, not ported). Sets
@@ -84,7 +84,8 @@ function _PL_error_close!(
         predterm = if !isempty(pred)
             mk_expr(T, T[mk_sym(T, :/), mk_sym(T, Symbol(pred)), mk_gnd(T, arity)])
         elseif caller !== nothing
-            mk_expr(T, T[mk_sym(T, :/), caller.name, mk_gnd(T, caller.arity)])
+            gd = _query_gd(ld)
+            unify_definition(gd, MODULE_user(gd), caller, GP_NAMEARITY)
         else
             mk_var(T, fresh_var_keys!(1))                   # PL_new_term_ref(): unbound
         end
@@ -305,8 +306,8 @@ function PL_error(
     if clr !== nothing
         caller = clr
     end
-    # unify_definition(MODULE_user, pred, def, 0, GP_NAMEARITY): `Name/Arity` (see the file header)
-    ld.slots[pred + 1] = mk_expr(T, T[mk_sym(T, :/), def.name, mk_gnd(T, def.arity)])
+    gd = _query_gd(ld)
+    ld.slots[pred + 1] = unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY)
     ld.slots[formal + 1] = mk_expr(
         T, T[mk_sym(T, :existence_error), mk_sym(T, :procedure), ld.slots[pred + 1]]
     )
@@ -353,8 +354,10 @@ function PL_error(
     @assert id == ERR_MODIFY_STATIC_PROC
     def = proc.definition                                           # goto modify_static
     pred = new_term_ref(ld)
-    # unify_definition(MODULE_user, pred, def, 0, GP_NAMEARITY|GP_HIDESYSTEM): `Name/Arity`
-    ld.slots[pred + 1] = mk_expr(T, T[mk_sym(T, :/), def.name, mk_gnd(T, def.arity)])
+    gd = _query_gd(ld)
+    ld.slots[pred + 1] = unify_definition(
+        gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM
+    )
     ld.slots[formal + 1] = mk_expr(
         T,
         T[

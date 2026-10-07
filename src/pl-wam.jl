@@ -767,6 +767,19 @@ macro vmi_dispatch(x, table::Symbol)
     return esc(_vmi_dispatch_tree(x, pairs))
 end
 
+# PORT: pl-wam.c getProcDefinedDefinition
+# DIVERGES: the database `gd` is an argument (`trapUndefined` reads its modules).
+# NOT PORTED: thread-local predicates (`getLocalProcDefinition`: no threads).
+"`def`, or the definition `trapUndefined` resolves it to when it is not defined (pl-wam.c)."
+function getProcDefinedDefinition(
+    gd::PL_global_data{T}, def::Definition{T}
+)::Definition{T} where {T}
+    if !_impl_any_defined(def) && (def.flags & PROC_DEFINED) == 0
+        def = trapUndefined(gd, def)
+    end
+    return def
+end
+
 # PORT: pl-wam.c resumeAfterException
 # DIVERGES: `outofstack` is a flag (the local stack is the only one that overflows); there is no
 # stack garbage collector to consult (`considerGarbageCollect`, the `gced_size`s; G1), so the stacks
@@ -840,9 +853,9 @@ const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 # (decision 1). It records its database in `ld.GD` (since V9c), which a built-in reads where
 # upstream reads its global `GD` (src/pl-global.jl), and refuses a local data that a second stack
 # overflow made unusable (since V5d; `outOfStack!`, src/pl-alloc.jl).
-# NOT PORTED: `getProcDefinedDefinition` (until V5c: `autoImport`, no autoload), `globalizeTermRef`
-# (a keyed variable lives in no cell, decision 2), the profiler, the debugger state `PL_Q_NODEBUG`
-# saves (all but `FR_HIDE_CHILDS`), the context module of a transparent predicate, `updateAlerted`.
+# NOT PORTED: `globalizeTermRef` (a keyed variable lives in no cell, decision 2), the profiler, the
+# debugger state `PL_Q_NODEBUG` saves (all but `FR_HIDE_CHILDS`), the context module of a transparent
+# predicate (`ctx`: every clause is `user`'s until R2's `module/2`), `updateAlerted`.
 """
     PL_open_query(gd, ld, ctx, flags, proc, args) -> qid, or 0
 
@@ -863,9 +876,9 @@ function PL_open_query(
         "PL_open_query: this local data is unusable after a second local-stack overflow; " *
         "create a fresh PL_local_data"
     )
-    def = proc.definition                       # getProcDefinedDefinition(): not ported (see above)
-    arity = def.arity
     ld.GD = gd                                  # (the built-ins' GD; see above)
+    def = getProcDefinedDefinition(gd, proc.definition)    # resolve can call-back
+    arity = def.arity
 
     lneeded = SIZEOF_QUERYFRAME + MAXARITY
     if !ensureLocalSpace(ld, lneeded)
@@ -1957,7 +1970,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_DEPART
     # DIVERGES: the operand as `I_CALL`'s; `BFR <= FR` compares positions (decision 3). Last-call reuse
     # ASSERTS that FR is the newest live record (user, 2026-10-05), which upstream's reuse relies on.
-    # NOT PORTED: `FR_WATCHED` (`frameFinished`, V9; asserted absent), `P_TRANSPARENT` (one module),
+    # NOT PORTED: `FR_WATCHED` (`frameFinished`, V9; asserted absent), `P_TRANSPARENT` (every clause
+    # is `user`'s until R2's `module/2`),
     # `HIDE_CHILDS` (only the debugger reads it; port_inventory § "Not ported: nothing here can set or
     # observe it").
     @label I_DEPART
@@ -2103,9 +2117,8 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_LCALL
     # DIVERGES: the operand as `I_CALL`'s. QUIRK kept: `setFramePredicate` twice (vmi:2499, 2527).
-    # NOT PORTED: the context module (one module), `FR_WATCHED` (asserted absent),
-    # `getProcDefinedDefinition` until V5c (`autoImport`, no autoload, as decided since Q-A —
-    # `S_VIRGIN` takes an undefined procedure as it is), `P_TRANSPARENT`, `HIDE_CHILDS`.
+    # NOT PORTED: the context module and `P_TRANSPARENT` (every clause is `user`'s until R2's
+    # `module/2`), `FR_WATCHED` (asserted absent), `HIDE_CHILDS`.
     @label I_LCALL
     il_proc = _call_procedure(ld, FR, PCc[PC])
     PC += 1
@@ -2116,6 +2129,11 @@ function PL_next_solution_guarded(
     setFramePredicate(il_f, DEF)
     setLTop!(ld, argFrameP(il_f.base, DEF.arity))
     @assert (il_f.flags & FR_WATCHED) == 0
+    if !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
+        @SAVE_REGISTERS(QID)
+        DEF = getProcDefinedDefinition(gd, DEF)
+        @LOAD_REGISTERS(QID)
+    end
     lcoSetNextFrameFlags(il_f)
     setFramePredicate(il_f, DEF)
     @goto depart_or_retry_continue
@@ -2264,17 +2282,19 @@ function PL_next_solution_guarded(
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c S_VIRGIN
-    # NOT PORTED: `getProcDefinedDefinition`, until V5c (`autoImport`, no autoload, as decided
-    # since Q-A), so `DEF` is kept; the profiler; thread-local predicates (no threads).
+    # NOT PORTED: the profiler; thread-local predicates (no threads).
     @label S_VIRGIN
     setLTop!(
         ld, argFrameP(ld.frames[FR].base, (ld.frames[FR].predicate::Definition{T}).arity)
     )
 
-    if DEF.impl_clauses.first_clause === nothing && (DEF.flags & PROC_DEFINED) == 0
+    if !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
+        @SAVE_REGISTERS(QID)
+        DEF = getProcDefinedDefinition(gd, DEF)     # since V5c: autoImport, as decided since Q-A
+        @LOAD_REGISTERS(QID)
         setFramePredicate(ld.frames[FR], DEF)
         setGenerationFrame(gd, ld, FR)
-        if DEF.impl_clauses.first_clause !== nothing
+        if _impl_any_defined(DEF)
             @goto depart_or_retry_continue
         end
     end
@@ -2290,14 +2310,13 @@ function PL_next_solution_guarded(
     end
 
     # PORT: pl-vmi.c S_UNDEF
-    # DIVERGES: the error context names the caller `Name/Arity`, never module-qualified, until V5c
-    # (src/pl-error.jl). The `CHP_DEBUG` choice point is pushed as upstream pushes it; only the
-    # debugger's retry reads it upstream (not ported), and `b_throw` discards it.
+    # DIVERGES: the `CHP_DEBUG` choice point is pushed as upstream pushes it; only the debugger's
+    # retry reads it upstream (not ported), and `b_throw` discards it. (The context is qualified as
+    # upstream's since V5c: src/pl-error.jl.)
     @label S_UNDEF
-    # getUnknownModule(DEF->module): a definition has no module here until V5c, and every user
-    # predicate lives in `user`; the flag is the default there, UNKNOWN_ERROR (src/pl-modul.jl), so
-    # the warning and fail branches are not reachable and not ported.
-    @assert getUnknownModule(MODULE_user(gd)) == UNKNOWN_ERROR
+    # getUnknownModule(DEF->module): nothing sets a module's `unknown` flag, so it is `system`'s,
+    # UNKNOWN_ERROR (src/pl-modul.jl); the warning and fail branches are not reachable, not ported.
+    @assert getUnknownModule(gd, gd.modules[DEF.module_]) == UNKNOWN_ERROR
     su_caller =
         ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
     setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))

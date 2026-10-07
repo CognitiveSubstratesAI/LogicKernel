@@ -68,9 +68,18 @@ const CL_START = 1
 # PORT: pl-incl.h CL_END
 "Insertion point: the end of the clause list — `assertz` (pl-incl.h)."
 const CL_END = 2
+# PORT: pl-incl.h GP_NAMEARITY
+"`unify_definition` flag: write the predicate indicator `Name/Arity`, not a head (pl-incl.h)."
+const GP_NAMEARITY = Int(0x100)
+# PORT: pl-incl.h GP_HIDESYSTEM
+"`unify_definition` flag: do not qualify a predicate of a system module (pl-incl.h)."
+const GP_HIDESYSTEM = Int(0x200)
+# PORT: pl-incl.h GP_QUALIFY
+"`unify_definition` flag: always module-qualify (pl-incl.h)."
+const GP_QUALIFY = Int(0x1000)
 # PORT: pl-incl.h GP_TYPE_QUIET
 "`get_head_functor` flag: fail without raising on a culprit of the wrong type (pl-incl.h)."
-const GP_TYPE_QUIET = 0x400
+const GP_TYPE_QUIET = Int(0x400)
 # PORT: pl-incl.h CL_ERASED
 "Clause flag: the clause was erased (pl-incl.h)."
 const CL_ERASED = UInt32(0x0001)
@@ -143,6 +152,9 @@ const P_SIG_ATOMIC = FLAG64(34)
 # PORT: pl-incl.h P_TRANSACT
 "Predicate flag: subject to transactions (pl-incl.h)."
 const P_TRANSACT = FLAG64(35)
+# PORT: pl-incl.h P_AUTOLOAD
+"Predicate flag: an explicit `autoload/2` import (pl-incl.h)."
+const P_AUTOLOAD = FLAG64(29)
 # PORT: pl-incl.h PROC_DEFINED
 "The predicate flags that make a predicate defined without clauses (pl-incl.h)."
 const PROC_DEFINED =
@@ -411,6 +423,12 @@ end
 # of a clause list and an integer; the wrapped and thread-local members are not ported. `codes`, the supervisor, keeps its
 # clause-reference operands in a side table, `codes_crefs`, as a clause's code keeps its literals:
 # the operand is an index into it. `code_data` reaches the database's shared supervisors.
+# DIVERGES (since V5c; user, 2026-10-07): `module_` (`module` is a Julia keyword) is the module's
+# INDEX in the database's module
+# table (`PL_global_data.modules`), where upstream holds a pointer: a module record holds its
+# procedures, hence their definitions, and Julia cannot declare two mutually recursive struct
+# types. An index is as cheap to follow as the pointer on the hot paths that read it; the module's
+# name stays on its record, for error contexts.
 "A predicate (pl-incl.h `struct definition`)."
 mutable struct definition{T}
     functor_name::UInt64                                    # functor->name, as a sym_key
@@ -424,22 +442,35 @@ mutable struct definition{T}
     }
     const code_data::PL_code_data                           # PL_code_data (the database's)
     impl_foreign_function::Int                              # impl.foreign.function (0: none)
+    module_::Int                                            # module (an index: see below)
 end
 
 # PORT: pl-incl.h module as module_t
-# DIVERGES: a module's name and its procedure table only — no source file, public list,
-# operators, super modules, lingering definitions, code size or flags. The kernel has ONE module
-# per database, `user` (see `MODULE_user`, src/pl-global.jl): modules are not ported. The table is
-# keyed by the FUNCTOR — upstream's `functor_t`, here the name's `sym_key` and the arity. Named
-# `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword and `Module` Core's.
-# `code_data` (no upstream field) is the database's shared supervisors, which a new procedure starts
-# with (`SUPERVISOR(virgin)`).
-"A module (pl-incl.h `struct module`): its name and the procedures defined in it."
+# DIVERGES: a module's name, its procedure table, its flags and its super modules (since V5c) — no
+# source file, public list, operators, lingering definitions or code size. The database has the
+# `system` and `user` modules (src/pl-modul.jl; user, 2026-10-07). The table is keyed by the FUNCTOR —
+# upstream's `functor_t`, here the name's `sym_key` and the arity. `name` is the name's `sym_key` and
+# `atom` the name itself (upstream's `atom_t` is both); `index` (no upstream field) is the module's
+# position in the database's module table, which a definition holds as its module (see
+# `definition`), and `supers` are the super modules' indices, where upstream holds a list of
+# pointers; the flags are set when the module is created (nothing sets them later: no
+# `set_module/1`, no module-local `unknown` flag). Named `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword and
+# `Module` Core's. `code_data` (no upstream field) is the database's shared supervisors, which a new
+# procedure starts with (`SUPERVISOR(virgin)`).
+"A module (pl-incl.h `struct module`): its name, the procedures defined in it, its flags and supers."
 struct module_t{T}
     name::UInt64                                                # name of module, as a sym_key
+    atom::T                                                     # name of module, the symbol
+    index::Int                                                  # (its place in the module table)
     procedures::Dict{Tuple{UInt64, Int}, procedure{definition{T}}}  # predicates of the module
     code_data::PL_code_data                                     # the database's shared supervisors
+    flags::UInt32                                               # booleans (M_*, UNKNOWN_*)
+    supers::Vector{Int}                                         # Import predicates from here
 end
+
+# PORT: pl-incl.h M_SYSTEM
+"Module flag: a system module (pl-incl.h)."
+const M_SYSTEM = UInt32(0x00000001)
 
 # PORT: pl-incl.h clause_choice
 "Where a clause search resumes (pl-incl.h `struct clause_choice`)."
@@ -604,7 +635,8 @@ const FR_CLEAR_FLAGS = FR_CLEAR_NEXT | FR_CLEAR_ALWAYS
 # PORT: pl-incl.h localFrame
 # DIVERGES: a pool record (see above). `parent` is a frame index; `programPointer` is a `Code` —
 # the clause's code and an index into it, as everywhere here. Not kept: `context`, the context
-# module, read only for transparent predicates (`contextModule`; one module, no transparency yet)
+# module, read only for transparent predicates (`contextModule`; every clause is `user`'s until
+# R2's `module/2`)
 # and `prof_node` (no profiler); both still count in `SIZEOF_LOCALFRAME`.
 "A frame on the local stack (pl-incl.h `struct localFrame`)."
 mutable struct localFrame{T}

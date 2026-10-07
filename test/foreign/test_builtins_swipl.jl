@@ -9,11 +9,12 @@
 #   * a DIFFERENTIAL of random goals of the first users (`=`, `\=`, `unify_with_occurs_check/2`,
 #     `==`, `compare/3`, `?=`, `unifiable/3`, `=@=`), each the query's own predicate, in every
 #     `occurs_check` mode: the outcome — `true` with the bindings, `false`, or the error's formal and
-#     the predicate in its context — identical to swipl's. swipl QUALIFIES a built-in's context
-#     (`system:compare/3`) and the kernel does not until V5c (as decided since Q-A), so the
-#     context's predicate is compared without its module, and the qualification is counted;
-#   * the same goals from a CLAUSE BODY, for the ISO built-ins (a body reaches a non-ISO one only
-#     through module resolution, V5c): a non-last call (`I_CALL`) and a last call (`I_DEPART`);
+#     the predicate in its context — identical to swipl's, the module included: both QUALIFY a
+#     built-in's context (`system:compare/3`; the kernel since V5c, as decided since Q-A), and the
+#     qualification is counted;
+#   * the same goals from a CLAUSE BODY: a non-last call (`I_CALL`) and a last call (`I_DEPART`) —
+#     the ISO built-ins bound by `lookupBodyProcedure`, the others reached through `autoImport`
+#     (since V5c);
 #   * POSITIONS: `prolog_current_frame/1` and `prolog_current_choice/1` as queries, pinned to
 #     libswipl's (probed 2026-10-05, scratchpad v5a2/qposd.c: frame at the handle + 31, choice + 21);
 #   * a built-in's foreign frame leaves the stacks as they were, over 10^4 queries.
@@ -171,7 +172,7 @@ const _BMODES = ((OCCURS_CHECK_FALSE, "false"), (OCCURS_CHECK_TRUE, "true"),
 """
 The outcome of calling `proc` on `args` as a query: `true(Args)` (the arguments after the call,
 canonical), `false`, `cyclic` (a rational tree, which has no interface term), or `error(Formal,PI)` — the
-context's predicate, without a module.
+context's predicate, qualified as the kernel writes it (since V5c).
 """
 function _bcall(gd, ld, proc, args::Vector{_BT})::String
     fid = LKB.PL_open_foreign_frame(ld)
@@ -232,7 +233,7 @@ function _bswipl(goals, mode::String)::Tuple{Vector{String}, Int}
         out(t(X)) :- T =.. [x|X], with_output_to(string(S), write_canonical(T)),
             sub_string(S, 2, _, 1, In), format("true(~w)", [In]).
         out(e(F, C)) :-
-            ( nonvar(C), C = context(_:P, _) -> Q = 1 ; nonvar(C), C = context(P, _) -> Q = 0
+            ( nonvar(C), C = context(P, _) -> ( nonvar(P), P = _:_ -> Q = 1 ; Q = 0 )
             ; P = none, Q = 0 ),
             T = x(F, P), with_output_to(string(S), write_canonical(T)),
             sub_string(S, 2, _, 1, In), format("error(~w)", [In]),
@@ -369,7 +370,7 @@ if _BSWIPL !== nothing
             get(tally, "error", 0) >= 50
         @test qualified == get(tally, "error", 0)                # every built-in context, today
     end
-    @testset "the ISO first users from a clause body (I_CALL, I_DEPART) == the query's outcome" begin
+    @testset "the first users from a clause body (I_CALL, I_DEPART) == the query's outcome" begin
         rng = Xoshiro(20261007)
         db = PL_global_data{_BT}()
         ld = PL_local_data{_BT}()
@@ -381,8 +382,7 @@ if _BSWIPL !== nothing
         )
         bad = String[]
         n = 0
-        for (name, arity, iso) in _B_FIRST
-            iso || continue
+        for (name, arity, iso) in _B_FIRST          # the non-ISO ones through autoImport (V5c)
             (name === :(=) || name === :(==) || name === Symbol("\\==")) && continue  # INLINE upstream: V9
             vs = _BT[_bv(10 + k) for k in 1:arity]
             goal = mk_expr(_BT, _BT[_bs(name); vs])
@@ -403,6 +403,8 @@ if _BSWIPL !== nothing
                         _bground(rng, 2),
                         _bground(rng, 2)
                     ]
+                elseif name === :unifiable
+                    _BT[_barg(rng, 2), _barg(rng, 2), _bv(4)]
                 else
                     _BT[_barg(rng, 2), _barg(rng, 2)]
                 end
@@ -420,7 +422,7 @@ if _BSWIPL !== nothing
         end
         foreach(b -> println(stderr, "  DIVERGES: ", b), first(bad, 20))
         @test isempty(bad)
-        @test n == 3 * 40 * 2                                   # \=, unify_with_occurs_check, compare
+        @test n == 6 * 40 * 2               # \=, unify_with_occurs_check, compare, ?=, unifiable, =@=
     end
 elseif _BSWIPL_REQUIRED
     error(

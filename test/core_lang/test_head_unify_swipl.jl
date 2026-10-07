@@ -412,9 +412,7 @@ end
 # The inline unification family (`B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*`, `I_TRUE`, `I_FAIL`, `C_VAR`)
 # through the VM, against swipl consulting the same clauses, in every `occurs_check` mode. Under
 # `true`/`error` upstream turns every body unification into a call of `=/2` (`slow_unify`), so an
-# error's context is `=/2`: swipl writes `system:(=)/2`, the kernel `(=)/2` until V5c gives
-# definitions their module, so the comparison strips `system:`, as the other differentials do until
-# then. Since V9b a leading `ArgVar = Term` moves into the head (`optimise_unify`): every case runs
+# error's context is `system:(=)/2`, on both sides since V5c gave definitions their module. Since V9b a leading `ArgVar = Term` moves into the head (`optimise_unify`): every case runs
 # with the flag on (swipl's default) and off, each against swipl under the same flag. PINNED (user,
 # 2026-10-06, 3a): `X = f(X)` with `X` a first occurrence is cyclic under `false`, fails under
 # `true` and raises under `error`; and the cyclic term compared with itself (`==`, `compare/3`).
@@ -502,8 +500,6 @@ const _HB_FAMILY = (
     LK.B_UNIFY_FV, LK.B_UNIFY_VV, LK.B_UNIFY_FC, LK.B_UNIFY_VC, LK.B_EQ_VV, LK.B_EQ_VC,
     LK.B_NEQ_VV, LK.B_NEQ_VC, LK.C_VAR, LK.I_FAIL, LK.I_TRUE
 )
-# swipl's context `system:(=)/2`, written as the kernel writes it until V5c qualifies contexts
-_hb_unqualify(s::AbstractString) = replace(s, r":\(system,(/\([^()]*,\d+\))\)" => s"\1")
 
 "The kernel's outcomes of `_HB_CASES` in every mode, compiled under `optimise_unify` `ou`, and the instructions compiled."
 function _hb_ours(ou::Bool)
@@ -540,7 +536,7 @@ end
         @test ours[(named(:hb1), "false")] == "ok 1 cyclic"
         @test ours[(named(:hb1), "true")] == "ok 0"
         @test startswith(ours[(named(:hb1), "error")], "err error(occurs_check(")
-        @test endswith(ours[(named(:hb1), "error")], "context(/(=,2),_))")
+        @test endswith(ours[(named(:hb1), "error")], "context(:(system,/(=,2)),_))")
         @test ours[(named(:hb9), "false")] == "ok 1 hb9(=)"
         @test ours[(named(:hb9b), "false")] == "ok 1 hb9b(=)"
         @test ours[(named(:hb2), "false")] == "ok 1 cyclic"
@@ -548,7 +544,7 @@ end
         # hb2's X = f(X) is MOVED into the head (V9b): its error is the head's, naming the
         # clause's predicate; under the flag false it is the body's, naming =/2 — as swipl's
         @test endswith(ours[(named(:hb2), "error")], "context(/(hb2,1),_))")
-        @test endswith(oursf[(named(:hb2), "error")], "context(/(=,2),_))")
+        @test endswith(oursf[(named(:hb2), "error")], "context(:(system,/(=,2)),_))")
     end
     if _HSWIPL !== nothing
         @testset "identical to swipl, the flag on and off" begin
@@ -558,7 +554,7 @@ end
                 theirs, _ = _hswipl(_HB_CASES; prelude=prelude)
                 bad = [
                     (i, m) for i in eachindex(_HB_CASES) for (_, m) in _HMODES if
-                    o[(i, m)] != _hb_unqualify(theirs[(i, m)])
+                    o[(i, m)] != theirs[(i, m)]
                 ]
                 for (i, m) in bad[1:min(end, 6)]
                     println(stderr, "  case $i ($m) ", repr(prelude), ": ",

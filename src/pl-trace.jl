@@ -38,8 +38,8 @@ end
 # DIVERGES: "that's me" compares the frame's predicate with this built-in by name, arity and
 # `P_FOREIGN` — upstream compares `impl.foreign.function` with the C function's address, which a
 # table index (decision 5) is not; only a registered built-in is foreign. (The index would serve if
-# qualified by its table, FRG or PRED_DEF, both numbered from 1; with one module and no
-# `PL_register_foreign`, the name test is equivalent.)
+# qualified by its table, FRG or PRED_DEF, both numbered from 1; with the built-ins all in `system`
+# and no `PL_register_foreign`, the name test is equivalent.)
 "`prolog_current_frame/1` (pl-trace.c): the running frame's position — the caller's, not this call's."
 function pl_prolog_current_frame(ld::PL_local_data{T}, frame::term_t)::foreign_t where {T}
     fr = ld.environment_frame

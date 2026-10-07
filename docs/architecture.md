@@ -281,24 +281,24 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt` | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`); since V5c `unify_definition` (a definition's reference, module-qualified) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
-| `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark | `src/pl-global.h`, `src/pl-incl.h` |
+| `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark | `src/pl-global.h`, `src/pl-incl.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), local)` (`raiseStackOverflow`, `outOfStack!`, the context as decided since Q-B), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack | `src/pl-alloc.c` |
-| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
-| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space` | `src/pl-fli.c`, `src/pl-fli.h` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data; since V5c `getProcDefinedDefinition` where upstream calls it (`PL_open_query`, `I_LCALL`, `S_VIRGIN`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
+| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space`; since V5c `PL_strip_module_ex` | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`) | `src/SWI-Prolog.h` |
-| `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
+| `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`); since V5c `createUndefSupervisor` | `src/pl-supervisor.c` |
 | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer) | `src/pl-ext.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
-| `src/pl-modul.jl` | what a call of an undefined predicate reads from its module: the `unknown` flag's values and `getUnknownModule` (the default, `error`: a module has no flags yet, V5c) | `src/pl-modul.c`, `src/pl-incl.h` |
+| `src/pl-modul.jl` | the module table and its two modules, `system` and `user` — `user`'s super `system` (`_lookupModule!`, `lookupModule`, `isCurrentModule`; since V5c) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`) | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
@@ -322,6 +322,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses | `src/pl-termwalk.c` |
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
 | `test/core_lang/test_occurs_check.jl` | SWI's own occurs-check units in all three modes but the attributed-variable ones | `tests/core_lang/test_occurs_check.pl` |
+| `test/core_lang/test_module_path.jl` | V5c's units: the module table (`system`, `user` and its super, other names refused until R2), a definition's module index, `autoImport` and `trapUndefined`, `unify_definition`'s qualification, `PL_strip_module_ex` | — |
 | `test/core_lang/test_exception.jl` | SWI's own `throw` unit (test_exception.pl): `throw/1` through the query API — a variable, a ground, an unbound and a CYCLIC ball, which keeps its cycle after the undo (since V5d) | `tests/core_lang/test_exception.pl` |
 | `test/core_lang/test_resource_error.jl` | SWI's own `local` unit (test_resource_error.pl): the local stack's overflow under upstream's small limit (since V5d) | `tests/core_lang/test_resource_error.pl` |
 | `test/core_lang/test_stack_overflow_swipl.jl` | V5d's differential: three overflowing programs, the formal identical to swipl's and the context by kind (Q-B); recovery and the spare; a second overflow making the local data unusable, later queries refused | — |
@@ -427,11 +428,21 @@ graph LR
     pl_global --> pl_termwalk
     pl_global --> pl_index
     pl_global --> pl_funct
+    pl_global --> pl_modul
     pl_global --> pl_wam
     pl_global --> pl_setup
     pl_global --> pl_supervisor
     pl_global --> pl_ext
+    pl_modul --> term_interface
+    pl_modul --> default_term
     pl_modul --> pl_incl
+    pl_modul --> pl_global
+    pl_modul --> pl_inline
+    pl_modul --> pl_prims
+    pl_modul --> pl_comp
+    pl_modul --> pl_fli
+    pl_modul --> pl_error
+    pl_modul --> pl_arith
     pl_inline --> term_interface
     pl_inline --> default_term
     pl_inline --> pl_incl
@@ -521,6 +532,7 @@ graph LR
     pl_wam --> pl_gmp
     pl_wam --> pl_arith
     pl_wam --> pl_setup
+    pl_wam --> pl_proc
     pl_wam --> pl_supervisor
     pl_wam --> pl_ext
     pl_fli --> term_interface
@@ -528,12 +540,14 @@ graph LR
     pl_fli --> pl_incl
     pl_fli --> SWI_Prolog
     pl_fli --> pl_global
+    pl_fli --> pl_modul
     pl_fli --> pl_inline
     pl_fli --> pl_prims
     pl_fli --> pl_variant
     pl_fli --> pl_gc
     pl_fli --> pl_alloc
     pl_fli --> pl_wam
+    pl_fli --> pl_error
     pl_fli --> pl_arith
     pl_error --> term_interface
     pl_error --> default_term
@@ -542,6 +556,7 @@ graph LR
     pl_error --> pl_global
     pl_error --> pl_inline
     pl_error --> pl_prims
+    pl_error --> pl_comp
     pl_error --> pl_wam
     pl_error --> pl_fli
     pl_error --> pl_gmp
@@ -578,6 +593,7 @@ graph LR
     pl_proc --> SWI_Prolog
     pl_proc --> pl_index
     pl_proc --> pl_global
+    pl_proc --> pl_modul
     pl_proc --> pl_inline
     pl_proc --> pl_comp
     pl_proc --> pl_thread
@@ -1250,6 +1266,70 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V5c — the module path: BUILT (2026-10-07)** (port_inventory row V5, its split; src/pl-modul.jl,
+pl-proc.jl, pl-wam.jl, pl-comp.jl, pl-fli.jl, pl-error.jl, pl-global.jl, pl-incl.jl,
+pl-supervisor.jl). As decided since Q-A — upstream's minimum — and by the user, 2026-10-07: (1) a
+definition's module is an INDEX into the database's module VECTOR; (2) `user` and `system` only,
+`system` the super module of `user`, other names refused until R2; (3) `Module:Goal` in a body
+refused until V9; (4) MQ6 with the real built-ins. Research: the workspace's
+`docs/research/logickernel-step-memos/V5c_memo.md`.
+* **Ported:**
+  * The module table, as `initModules` builds it: `system` (a system module, `unknown` = `error`),
+    then `user`, its super `system` (`_lookupModule`, `lookupModule`, `isCurrentModule`).
+  * A call from `user` reaches a `system` built-in through `autoImport`, which LINKS the super's
+    definition into `user`'s procedure; `trapUndefined` (no autoloader) installs `S_UNDEF` when none
+    is found; `getProcDefinedDefinition` where upstream calls it (`PL_open_query`, `I_LCALL`,
+    `S_VIRGIN`); `getUnknownModule` inherits through the supers.
+  * `unify_definition` and `unify_functor`: an error's context reads `system:compare/3`, as swipl's;
+    a `user` predicate stays `p/2`; `GP_HIDESYSTEM` for the static procedure's PI.
+  * `PL_strip_module_ex`, `stripModule`, `stripModuleName`: `assert_term` strips `Module:` off the
+    clause and the head; a module that is no atom raises `type_error(module, M)`, a variable
+    `instantiation_error`, a cyclic chain `type_error(acyclic_term, …)`.
+* **DIVERGES:** a definition's module is its index (`module_`; `module` is a Julia keyword), where
+  upstream holds a pointer: a module record holds its definitions, and Julia cannot declare
+  mutually recursive struct types — an index is as cheap to follow (user, 2026-10-07). A module's
+  super modules are indices too. The context module is always `user` (no frame keeps one: every
+  clause is `user`'s until R2's `module/2`).
+* **NOT PORTED:** any module but `system` and `user` (`NotPortedError`, until R2); `$`-modules;
+  `Module:Goal` in a body (V9); the context module of a transparent predicate; the autoloader; a
+  module's syntax flags, public table and class; `SM_NOCREATE`; `unify_definition`'s bound-head
+  branch.
+* **The interims it ended, each pinned to fail when it did:** assert/1 from a clause (now through
+  `autoImport`); `rational/1` and `string/1` as body calls (test_typetests_swipl.jl's body row is
+  swipl's); `Module:Clause` refused (now stripped; an unknown module is refused, R2); MQ6's stand-in
+  facts (the real built-ins answer the seven cases); and every differential's stripping of swipl's
+  `system:` (test_builtins_swipl.jl, test_head_unify_swipl.jl, test_assert_swipl.jl,
+  test_arith_swipl.jl, test_exceptions_swipl.jl compare the qualified contexts).
+* **Gates:**
+  * test/core_lang/test_module_path.jl (new): the table, the index, `autoImport` (linking, a defined
+    procedure kept, `P_AUTOLOAD`), `trapUndefined`'s `S_UNDEF`, `unify_definition`'s qualification,
+    `PL_strip_module_ex`'s cases.
+  * test/db/test_assert_swipl.jl: assert/1 back in the program, from clauses; `user:uf`,
+    `(user:uh :- true)`, `1:x` and `_:x` against swipl; the refusal of `mm:foo` names R2.
+  * test/foreign/test_builtins_swipl.jl: 600 goals × 3 modes with the qualified contexts (all 119
+    of swipl's errors qualified, the kernel's identical); the non-ISO first users from a clause body.
+  * test/core_lang/test_rules_swipl.jl: MQ6's seven cases with the real built-ins, the distance read
+    from the answer as swipl's.
+* **The call-path AllocCheck gate, changed:** `I_LCALL` now resolves an undefined predicate
+  (`getProcDefinedDefinition`, as upstream's `I_LCALL` does), and that cold path allocates
+  (`trapUndefined` installs `S_UNDEF` with a fresh table; `autoImport` may create a procedure). It
+  runs once per predicate, at its first call, so the gate (test/static_analysis_body.jl) no longer
+  counts sites whose backtrace passes through `getProcDefinedDefinition`; every other site in the
+  call path's spans still counts, and the gate asserts the exemption matches real sites.
+  Mutation-proved at verdict level: an allocation planted in `I_LCALL` outside the exemption is
+  caught, and an exemption that swallows every site is caught.
+* **Bench** (a freshly restarted daemon; quiet before and after): the run-time allocations unchanged
+  (nreverse 2941, compare/3 body 7000, derive 527, qsort 2733, poly_10 188268); compileClause rule
+  40 allocations, 3120 bytes (+32: the definition's `module_`); nreverse 12.02×, derive 6.91×,
+  qsort 7.93×, poly_10 8.22×.
+* **Mutation-proved — 12 of 12 caught at verdict level (exit 1 each):** `user` without its super;
+  `autoImport` not linking; `S_VIRGIN` not resolving; `trapUndefined` without `S_UNDEF`;
+  `unify_definition` never qualifying, ignoring `GP_HIDESYSTEM`, or qualifying its own module; a
+  module that is no atom accepted; the outermost qualifier winning; `inheritUnknown` ignoring the
+  supers; every definition `system`'s; a defined procedure imported over. NOT mutated, as
+  EQUIVALENT here: the `getProcDefinedDefinition` of `PL_open_query` and `I_LCALL` — an unresolved
+  definition's code is `S_VIRGIN`, which resolves it; ported as upstream calls it.
 
 **V5d — throw/1, cyclic balls, the stack limit's error and the spare: BUILT (2026-10-07)**
 (port_inventory row V5, its split; src/pl-alloc.jl, pl-fli.jl, pl-setup.jl, pl-gc.jl, pl-wam.jl,

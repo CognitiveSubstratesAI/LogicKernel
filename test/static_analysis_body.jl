@@ -120,8 +120,15 @@ end
             LK.PL_next_solution_guarded,
             (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)
         )
+        # V5c: resolving an UNDEFINED predicate (`getProcDefinedDefinition` → `trapUndefined` →
+        # `autoImport`, which may create a procedure, or `S_UNDEF`'s supervisor) runs once per
+        # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
+        # sites are not the call path's; every other site in the spans still is
+        cold(a) = any(fr -> fr.func === :getProcDefinedDefinition, a.backtrace)
+        @test any(cold, allocs)                     # the exemption matches real sites
         attributed = Int[]
         for a in allocs
+            cold(a) && continue
             k = findfirst(fr -> fr.func === :PL_next_solution_guarded, a.backtrace)
             k === nothing || push!(attributed, a.backtrace[k].line)
         end

@@ -165,6 +165,38 @@ function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class 
     return classify_exception_p(ld, ld.slots[exception + 1])
 end
 
+# PORT: pl-fli.c PL_strip_module_ex
+# DIVERGES: the module is an INDEX into `gd`'s table (0 for upstream's NULL), passed in and returned
+# with the result; with none given, an unqualified term gets the context module, `user` (see
+# `stripModule`). No `globalizeTermRef` (a keyed variable lives in no cell, decision 2).
+"""
+    PL_strip_module_ex(gd, ld, raw, m, plain) -> (ok, m)
+
+Put the term in `raw`, stripped of its `Module:` qualifiers, into `plain`, and return the module
+they name — `m` if there are none and `m` is given, else `user` (pl-fli.c). A qualifier that is not
+an atom raises `type_error(module, M)`, or `instantiation_error` when it is a variable.
+"""
+function PL_strip_module_ex(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
+)::Tuple{Bool, Int} where {T}
+    p = deRef(ld, ld.slots[raw + 1])
+    if _hasFunctor(p, mk_sym(T, :(:)), 2)
+        ok, p, m = stripModule(gd, ld, p)
+        ok || return (false, m)
+        if _hasFunctor(p, mk_sym(T, :(:)), 2)
+            ld.slots[plain + 1] = deRef(ld, child(p, 2))    # Word a1 = argTermP(*p, 0)
+            return (PL_type_error(ld, "module", plain), m)
+        end
+        ld.slots[plain + 1] = p
+    else
+        if m == 0
+            m = MODULE_user(gd).index               # (environment_frame ? contextModule(…) : user)
+        end
+        ld.slots[plain + 1] = p                     # linkValG(p)
+    end
+    return (true, m)
+end
+
 # PORT: pl-fli.c has_emergency_space
 # DIVERGES: the local stack's, in positions.
 """
