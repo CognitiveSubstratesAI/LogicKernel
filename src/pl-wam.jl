@@ -688,9 +688,8 @@ macro TYPE_TEST(test)
 end
 
 # PORT: pl-vmi.c ENSURE_LOCAL_SPACE
-# DIVERGES: in positions. The overflow raises a Julia `LocalStackOverflow` until V5d ports the stack
-# limit's `resource_error` (`raiseStackOverflow`, its context as decided since Q-B), so its `ifnot`
-# (`THROW_EXCEPTION`) is not reached.
+# DIVERGES: in positions. Its `ifnot` is `THROW_EXCEPTION` (`@goto b_throw`): the overflow is the
+# pending `resource_error` (since V5d).
 "Make room for `n` positions above `lTop`, saving the registers around the growth (pl-vmi.c)."
 macro ENSURE_LOCAL_SPACE(n)
     return esc(
@@ -769,9 +768,20 @@ macro vmi_dispatch(x, table::Symbol)
 end
 
 # PORT: pl-wam.c resumeAfterException
-# DIVERGES: no stack GC or trimming, no spare stacks; `fr_rewritten` is not kept.
-"After an exception: clear it (when `clear`) and resume normal operation (pl-wam.c)."
-function resumeAfterException(ld::PL_local_data{T}, clear::Bool)::Nothing where {T}
+# DIVERGES: `outofstack` is a flag (the local stack is the only one that overflows); there is no
+# stack garbage collector to consult (`considerGarbageCollect`, the `gced_size`s; G1), so the stacks
+# are trimmed (`trimStacks!`: the spare reserved again) as when it declines; `fr_rewritten` is not
+# kept.
+# NOT PORTED: `clear_low_c_stack` (no C stack) and `updatePendingThreadSignals` (no threads).
+"""
+    resumeAfterException(ld, clear, outofstack)
+
+After an exception: clear it (when `clear`), reserve the local stack's spare again, and resume
+normal operation (pl-wam.c).
+"""
+function resumeAfterException(
+    ld::PL_local_data{T}, clear::Bool, outofstack::Bool
+)::Nothing where {T}
     if clear
         ld.exception_term = 0
         k = fresh_var_keys!(3)
@@ -779,6 +789,9 @@ function resumeAfterException(ld::PL_local_data{T}, clear::Bool)::Nothing where 
         ld.slots[ld.exception_printed + 1] = mk_var(T, k + UInt64(1))
         ld.slots[ld.exception_pending + 1] = mk_var(T, k + UInt64(2))
     end
+    trimStacks!(ld, outofstack)                     # !considerGarbageCollect(NULL)
+    ld.exception_processing = false
+    ld.outofstack = false
     return nothing
 end
 
@@ -825,7 +838,8 @@ const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 # DIVERGES: the query is a record at `lTop`, with its CHP_TOP choice point and its top frame and
 # frame as records at upstream's offsets (since V3; src/pl-incl.jl); its handle is its position
 # (decision 1). It records its database in `ld.GD` (since V9c), which a built-in reads where
-# upstream reads its global `GD` (src/pl-global.jl).
+# upstream reads its global `GD` (src/pl-global.jl), and refuses a local data that a second stack
+# overflow made unusable (since V5d; `outOfStack!`, src/pl-alloc.jl).
 # NOT PORTED: `getProcDefinedDefinition` (until V5c: `autoImport`, no autoload), `globalizeTermRef`
 # (a keyed variable lives in no cell, decision 2), the profiler, the debugger state `PL_Q_NODEBUG`
 # saves (all but `FR_HIDE_CHILDS`), the context module of a transparent predicate, `updateAlerted`.
@@ -845,6 +859,10 @@ function PL_open_query(
     @assert ld.lTop >=
         refFliP(ld.fliframes[ld.fli_context].base, ld.fliframes[ld.fli_context].size)
 
+    ld.unusable && error(                       # (after a second overflow: see outOfStack!)
+        "PL_open_query: this local data is unusable after a second local-stack overflow; " *
+        "create a fresh PL_local_data"
+    )
     def = proc.definition                       # getProcDefinedDefinition(): not ported (see above)
     arity = def.arity
     ld.GD = gd                                  # (the built-ins' GD; see above)
@@ -1127,6 +1145,7 @@ function PL_next_solution_guarded(
     bu_first::Bool = false                          # unify_var_cont came from B_UNIFY_FIRSTVAR
     bu_hold::Int = 0                                # B_UNIFY_FIRSTVAR's holder cell (0: none)
     bu_var::T = ph                                  # B_UNIFY_FIRSTVAR's fresh variable
+    bt_outofstack::Bool = false                     # b_throw's outofstack
 
     if qid == 0                                     # PL_open_query() failed
         return 0
@@ -1904,8 +1923,6 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c normal_call
     # DIVERGES: the new frame stays ABOVE `lTop` (vmi:1869) until its supervisor raises `lTop`; one
     # whose call fails first is dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`).
-    # The overflow raises a Julia `LocalStackOverflow` until V5d ports the stack limit's
-    # `resource_error` (`raiseStackOverflow`, its context as decided since Q-B).
     @label normal_call
     nc_f = ld.frames[NFR]
     nc_f.parent = FR
@@ -2627,21 +2644,29 @@ function PL_next_solution_guarded(
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c b_throw
     # DIVERGES: the no-catcher path (user, 2026-10-05): `findCatcher` finds no catcher, as there is no
-    # catch/3 before V9 — so it is not called, and the catcher reference is 0. NOT PORTED: the
-    # exception hook that rewrites an exception, `LD->outofstack`, the emergency-space check (the
-    # foreign frame is opened with room made first), `fast_condition`.
+    # catch/3 before V9 — so it is not called, and the catcher reference is 0. `outofstack` is a flag
+    # (the local stack's); with no emergency space, `outOfStack!`'s second-overflow branch marks the
+    # local data unusable and throws, where upstream ends the process (see there). NOT PORTED: the
+    # exception hook that rewrites an exception, `fast_condition` (no `A_FUNC` conditions).
     @label b_throw
     QF = QueryFromQid(ld, QID)
     _reset_argument_stack!(ld, ld.queries[QF])
     @assert ld.exception_term != 0
+    bt_outofstack = ld.outofstack                   # outofstack = LD->outofstack
+    ld.outofstack = false
 
     bt_low = argFrameP(ld.frames[FR].base, (ld.frames[FR].predicate::Definition{T}).arity)
     if ld.lTop < bt_low
         ld.lTop = bt_low
     end
 
-    ensureLocalSpace(ld, SIZEOF_FLIFRAME)
-    bt_fid = open_foreign_frame(ld)
+    if has_emergency_space(ld, SIZEOF_LOCALFRAME)
+        bt_fid = open_foreign_frame(ld)
+    else                                            # fatal
+        ld.outofstack = true
+        outOfStack!(ld, STACK_OVERFLOW_THROW)       # throws: see outOfStack!
+        bt_fid = 0
+    end
     # catchfr_ref = findCatcher(fid, FR, LD->choicepoints, exception_term): no catch/3 (V9)
     PL_close_foreign_frame(ld, bt_fid)
     @goto b_throw_debug
@@ -2699,7 +2724,7 @@ function PL_next_solution_guarded(
     br_q.exception = PL_copy_term_ref(ld, ld.exception_term)
 
     @SAVE_REGISTERS(QID)
-    resumeAfterException(ld, (br_q.flags & PL_Q_PASS_EXCEPTION) == 0)
+    resumeAfterException(ld, (br_q.flags & PL_Q_PASS_EXCEPTION) == 0, bt_outofstack)
     @LOAD_REGISTERS(QID)
 
     return (br_q.flags & PL_Q_EXT_STATUS) != 0 ? PL_S_EXCEPTION : 0

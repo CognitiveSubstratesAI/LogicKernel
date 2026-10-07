@@ -146,6 +146,11 @@ end
 # `argstack_entry`s (upstream: `Word*`); the write-mode builder (`bcells`, `bframes`; decision 2, Q3)
 # has no upstream field — it builds where upstream fills cells on the global stack. The `exception.*`
 # fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
+# The local stack's `spare` and `def_spare` are `stacks.local`'s, in positions (since V5d); the
+# other stacks have none. `outofstack` is upstream's `LD->outofstack` for the one stack that can
+# overflow, the local stack, so a flag. `unusable` has no upstream field: a second overflow of the
+# local stack before the first is recovered from marks the engine broken, where upstream ends the
+# process (`outOfStack`, src/pl-alloc.jl; user, 2026-10-07).
 # `GD` is the database of the query `PL_open_query` opened last (since V9c): upstream's code reaches
 # the global data as a process global (`GD`), and a built-in here receives LD alone (`t0, ac, ctx`),
 # so one that changes the database (`assertz/1`) reads it through this field; `nothing` until a
@@ -186,6 +191,8 @@ mutable struct PL_local_data{T}
     lTop::Int                                                   # stacks.local.top
     lMax::Int                                                   # stacks.local.max
     stacks_limit::Int                                           # stacks.limit
+    local_spare::Int                                            # stacks.local.spare
+    local_def_spare::Int                                        # stacks.local.def_spare
     frames::Vector{localFrame{T}}                               # the frame records
     nframes::Int                                                # … live: frames[1:nframes]
     choices::Vector{choice{T}}                                  # the choice-point records
@@ -210,6 +217,9 @@ mutable struct PL_local_data{T}
     exception_printed::Int                                      # exception.printed
     exception_tmp::Int                                          # exception.tmp
     exception_pending::Int                                      # exception.pending
+    exception_processing::Bool                                  # exception.processing
+    outofstack::Bool                                            # outofstack (the local stack)
+    unusable::Bool                                              # (after a second overflow)
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's term but in a cursor)
     GD::Union{Nothing, PL_global_data{T}}                       # (the running query's database)
@@ -240,17 +250,20 @@ function PL_local_data{T}() where {T}
             _TOP_POSITION,
             false
         ),
-        T[], 0, 0, STACK_LIMIT_DEFAULT, localFrame{T}[], 0, choice{T}[], 0, fliFrame[], 0,
+        T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, localFrame{T}[], 0, choice{T}[], 0,
+        fliFrame[],
+        0,
         0, 0,
         0, Code{T}(code[], T[], 0),
         queryFrame{T}[], 0, 0,
         Vector{argstack_entry{T}}(undef, 64), 0,
         Vector{T}(undef, 256), 0, Vector{bframe{T}}(undef, 64), 0,
         0, 0, 0, 0, 0,
+        false, false, false,
         ClauseChoice{T}(nothing, word(0)), e,
         nothing                                 # GD: set by PL_open_query
     )
-    growStacks!(ld, LOCAL_INITIAL)              # allocStacks: the initial local stack
+    allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
     return ld
 end

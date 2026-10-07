@@ -203,7 +203,10 @@ end
 
 @testset "a new local data: emptyStacks leaves one foreign frame at the base" begin
     ld = LK.PL_local_data{_L}()
-    @test ld.lMax == LK.LOCAL_INITIAL
+    # allocStacks (since V5d): LOCAL_INITIAL positions, the spare reserved above `max`
+    @test ld.lMax == LK.LOCAL_INITIAL - LK.LOCAL_SPARE
+    @test ld.local_spare == ld.local_def_spare == LK.LOCAL_SPARE
+    @test LK.LOCAL_SPARE == 512 + LK.LOCAL_MARGIN                    # pl-setup.c:1631-1632
     @test ld.nfliframes == 1 && ld.fli_context == 1 && ld.fliframes[1].base == 0
     # the engine's permanent references, in upstream's order, so no term_t and no fid_t is 0
     perm = LK.SIZEOF_FLIFRAME
@@ -213,9 +216,9 @@ end
         (perm, perm + 1, perm + 2, perm + 3)
     @test ld.fliframes[1].size == 4 && ld.lTop == perm + 4 && ld.exception_term == 0
     @test ld.nframes == 0 && ld.nchoices == 0 && ld.BFR == 0 && ld.environment_frame == 0
-    @test length(ld.frames) == cld(ld.lMax, LK.SIZEOF_LOCALFRAME)
-    @test length(ld.choices) == cld(ld.lMax, LK.SIZEOF_CHOICE)
-    @test length(ld.fliframes) == cld(ld.lMax, LK.SIZEOF_FLIFRAME)
+    @test length(ld.frames) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_LOCALFRAME)
+    @test length(ld.choices) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_CHOICE)
+    @test length(ld.fliframes) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_FLIFRAME)
     r = LK.PL_new_term_ref(ld)
     @test r == perm + 4
     LK.Trail!(ld, var_key(ld.slots[r + 1]), _ls("a"))
@@ -308,7 +311,9 @@ end
     # a frame opened at the stack's end grows it
     at = ld.lMax - 3
     ld.lTop = at
-    @test LK.PL_open_foreign_frame(ld) == at && ld.lMax == 2 * LK.LOCAL_INITIAL
+    @test LK.PL_open_foreign_frame(ld) == at &&
+        ld.lMax + ld.local_spare == 2 * LK.LOCAL_INITIAL &&
+        ld.local_spare == LK.LOCAL_SPARE                              # reserved again on top
 end
 
 @testset "term references" begin
@@ -459,28 +464,78 @@ end
         LK.FR_MAGIC & LK.FR_MAGIC_MASK == LK.FR_MAGIC
 end
 
-@testset "growing the local stack; the limit" begin
+@testset "growing the local stack; the limit; the spare (since V5d)" begin
     ld = LK.PL_local_data{_L}()
+    region(ld) = ld.lMax + ld.local_spare
     @test LK.hasLocalSpace(ld, ld.lMax - ld.lTop) &&
         !LK.hasLocalSpace(ld, ld.lMax - ld.lTop + 1)
     @test LK.growLocalSpace(ld, 10_000, 0) == LK.LOCAL_OVERFLOW &&
-        ld.lMax == LK.LOCAL_INITIAL
+        region(ld) == LK.LOCAL_INITIAL
     @test LK.ensureLocalSpace(ld, 10_000)
-    @test ld.lMax == 4 * LK.LOCAL_INITIAL                   # doubled until it fits
-    @test length(ld.frames) == cld(ld.lMax, LK.SIZEOF_LOCALFRAME)
-    @test length(ld.choices) == cld(ld.lMax, LK.SIZEOF_CHOICE)
-    @test length(ld.fliframes) == cld(ld.lMax, LK.SIZEOF_FLIFRAME)
+    # doubled until the request fits WITH the spare above it (include_spare_stack), which is then
+    # reserved again (reenable_spare_stack)
+    @test region(ld) == 4 * LK.LOCAL_INITIAL && ld.local_spare == LK.LOCAL_SPARE
+    @test ld.lTop + 10_000 + LK.LOCAL_SPARE <= region(ld)
+    @test length(ld.frames) == cld(region(ld), LK.SIZEOF_LOCALFRAME)
+    @test length(ld.choices) == cld(region(ld), LK.SIZEOF_CHOICE)
+    @test length(ld.fliframes) == cld(region(ld), LK.SIZEOF_FLIFRAME)
     @test LK.growLocalSpace(ld, 10, LK.ALLOW_SHIFT) == LK.BOOLEX_TRUE
-    ld.stacks_limit = ld.lMax
-    e = try
-        LK.ensureLocalSpace(ld, ld.lMax)
-        nothing
-    catch err
-        err
-    end
-    @test e isa LK.LocalStackOverflow && e.limit == ld.lMax
-    @test occursin("cannot grow past its limit", sprint(showerror, e))
+    # the limit: the overflow is the pending resource_error, its context the stack's name (Q-B);
+    # near the top, so the free room is below the spare's size and outOfStack enables it
+    ld.stacks_limit = region(ld)
+    ld.lTop = ld.lMax - 10
+    @test !LK.ensureLocalSpace(ld, 20)
+    ball = ld.slots[ld.exception_term + 1]
+    @test lk_eq(ball, _lf("error", _lf("resource_error", _ls("stack")), _ls("local")))
+    @test ld.outofstack && ld.exception_processing
+    @test ld.local_spare == 0 && ld.lMax == region(ld)                 # the spare enabled
+    # while the exception is processed the limit stretches by 1 MiB (grow_stacks' error condition)
+    full = region(ld)
+    @test LK.ensureLocalSpace(ld, ld.lMax - ld.lTop + 1)
+    @test region(ld) == min(2 * full, full + 1 + LK.LOCAL_SPARE + LK.EMERGENCY_LIMIT) > full
+    # recovery gives the spare back (resumeAfterException → trimStacks)
+    LK.PL_clear_exception(ld)
+    @test !ld.outofstack && !ld.exception_processing && ld.local_spare == LK.LOCAL_SPARE
     @test LK.raiseStackOverflow(ld, LK.BOOLEX_FALSE) == false
+    # exception.processing: set by PL_error and PL_raise_exception, cleared by the recovery; while
+    # it is set, growLocalSpace takes the spare before growing (pl-gc.c growLocalSpace)
+    ld3 = LK.PL_local_data{_L}()
+    @test !ld3.exception_processing
+    LK.PL_error(ld3, LK.ERR_INSTANTIATION)
+    @test ld3.exception_processing
+    LK.PL_clear_exception(ld3)
+    @test !ld3.exception_processing && ld3.local_spare == LK.LOCAL_SPARE
+    ld3.lTop = ld3.lMax - 10
+    @test LK.growLocalSpace(ld3, 20, 0) == LK.LOCAL_OVERFLOW         # no growth, no spare
+    b = LK.PL_new_term_ref(ld3)
+    # a ball classify_exception ranks EXCEPT_RESOURCE enables the spare; at bae881a2 that is the
+    # formal ATOM `resource_error` only (upstream defect #5, ported as is: src/pl-fli.jl)
+    ld3.slots[b + 1] = _lf("error", _ls("resource_error"), _ls("c"))
+    LK.PL_raise_exception(ld3, b)
+    @test ld3.exception_processing && ld3.local_spare == 0
+    LK.PL_clear_exception(ld3)
+    @test ld3.local_spare == LK.LOCAL_SPARE
+    ld3.lTop = ld3.lMax - 10
+    ld3.exception_processing = true                 # (as PL_error leaves it)
+    @test LK.growLocalSpace(ld3, 20, 0) == LK.BOOLEX_TRUE && ld3.local_spare == 0
+    # PL_error sets exception.processing BEFORE it opens its foreign frame (pl-error.c:138), so near
+    # the limit the frame takes the spare and the error raised is the one asked for
+    ld4 = LK.PL_local_data{_L}()
+    ld4.stacks_limit = ld4.lMax + ld4.local_spare
+    ld4.lTop = ld4.lMax - 2
+    LK.PL_error(ld4, LK.ERR_INSTANTIATION)
+    @test ld4.exception_term != 0 && ld4.local_spare == 0
+    @test lk_eq(child(ld4.slots[ld4.exception_term + 1], 2), _ls("instantiation_error"))
+    # has_emergency_space takes what is lacking from the spare, and no more
+    ld2 = LK.PL_local_data{_L}()
+    ld2.lTop = ld2.lMax - 2
+    @test LK.has_emergency_space(ld2, 10) && ld2.local_spare == LK.LOCAL_SPARE - 8 &&
+        ld2.lMax == ld2.lTop + 10
+    @test !LK.has_emergency_space(ld2, 10 + ld2.local_spare)
+    # trim_stack reserves the spare only within the free room
+    ld2.lTop = ld2.lMax - 3
+    LK.trim_stack!(ld2)
+    @test ld2.local_spare == LK.LOCAL_SPARE - 5 && ld2.lMax == ld2.lTop
     # upstream's quirk: `here` above `top` reads as space (the distance converts to unsigned)
     @test LK.f_hasSpace(10, 5, 1, 1) && !LK.f_hasSpace(5, 6, 2, 1) &&
         LK.f_hasSpace(5, 6, 1, 1)

@@ -1210,7 +1210,11 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
         gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, goal), args
     )
     rc = LK.PL_next_solution(gd, ld, qid)
-    @assert rc == LK.PL_S_LAST
+    if rc != LK.PL_S_LAST                                           # the tripwire: say what tripped
+        ex = rc == LK.PL_S_EXCEPTION ? LK.PL_exception(ld, qid) : 0
+        ball = ex == 0 ? "none" : string(ld.slots[ex + 1])
+        error("_rhighwater: $(_rsrc(goal)) returned $rc, ball $ball (growth past lMax?)")
+    end
     high = findlast(t -> t !== _R_SENTINEL, ld.slots) - 1           # a position: slots[p + 1]
     tr, st = length(ld.trail), length(ld.bindings)
     LK.PL_close_query(ld, qid)
@@ -1229,8 +1233,9 @@ end
         @test marks[n][2] == n + 1 && marks[n][3] == n + 1
     end
     # …and the check can fail: without the last-call optimisation the mark grows with the list
+    # (lists short enough for the region below the spare, which the tripwire keeps fixed: V5d)
     db.ld.prolog_flag_last_call = false
-    off = [_rhighwater(db, catg(n))[1] for n in (50, 100, 200)]
+    off = [_rhighwater(db, catg(n))[1] for n in (25, 50, 100)]
     db.ld.prolog_flag_last_call = true
     @test off[1] < off[2] < off[3] && off[1] > marks[10 ^ 3][1]
     # and the same answer either way

@@ -165,22 +165,94 @@ function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class 
     return classify_exception_p(ld, ld.slots[exception + 1])
 end
 
+# PORT: pl-fli.c has_emergency_space
+# DIVERGES: the local stack's, in positions.
+"""
+Whether `needed` positions fit above `lTop` — taking what is lacking from the local stack's spare
+(pl-fli.c).
+"""
+function has_emergency_space(ld::PL_local_data{T}, needed::Int)::Bool where {T}
+    lacking = ld.lTop + needed - ld.lMax
+    lacking <= 0 && return true
+    if lacking < ld.local_spare
+        ld.lMax += lacking
+        ld.local_spare -= lacking
+        return true
+    end
+    return false
+end
+
+# PORT: pl-fli.c copy_exception as copy_exception!
+# DIVERGES: the ball is RESOLVED through the bindings (decision 1), where upstream duplicates it
+# (`duplicate_term`: fresh variables): a variable keeps its key, and undoing bindings cannot change
+# the copy. A CYCLE — a compound met again on its own path — is cut by a fresh variable bound to the
+# copy of that compound WITHOUT a trail entry, so no undo removes it: upstream's `freezeGlobal`, in
+# the kernel's terms (since V5d; user, 2026-10-07).
+# NOT PORTED: the fallbacks for a copy that does not fit the global stack (the context dropped, a
+# global-stack `resource_error`, `abort`): the copy is a value on Julia's heap; and reclaiming a
+# frozen binding: upstream's garbage collector frees a frozen ball once it is unreachable, and the
+# kernel's binding store has no collector until G1.
+"Copy the ball `ex` references into `bin`, its cycles kept (pl-fli.c)."
+function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
+    ld.slots[bin + 1] = _copy_ball(ld, ld.slots[ex + 1])
+    return true
+end
+
+# `t` resolved through the bindings as `resolve_term` resolves it, but a compound met again on its
+# own path is replaced by a variable bound — untrailed — to that compound's copy.
+function _copy_ball(ld::PL_local_data{T}, t::T)::T where {T}
+    t = deRef(ld, t)
+    (kind(t) !== EXPR || is_ground(t)) && return t
+    stack = Tuple{T, Vector{T}}[(t, T[])]           # (compound, its children copied so far)
+    on_path = IdDict{T, Nothing}(t => nothing)      # compounds being copied
+    cut = IdDict{T, T}()                            # a compound met on its own path → its variable
+    while true
+        node, kids = stack[end]
+        i = length(kids) + 1
+        if i > nchildren(node)
+            pop!(stack)
+            delete!(on_path, node)
+            r = mk_expr(T, kids)
+            v = get(cut, node, nothing)
+            if v !== nothing && !haskey(ld.bindings, var_key(v))
+                ld.bindings[var_key(v)] = r         # frozen: no trail entry, no undo
+            end
+            isempty(stack) && return r
+            push!(stack[end][2], r)
+            continue
+        end
+        c = deRef(ld, child(node, i))
+        if kind(c) === EXPR && !is_ground(c)
+            if haskey(on_path, c)                   # a cycle
+                push!(kids, get!(() -> mk_var(T, fresh_var_keys!(1)), cut, c))
+            else
+                on_path[c] = nothing
+                push!(stack, (c, T[]))
+            end
+        else
+            push!(kids, c)
+        end
+    end
+end
+
 # PORT: pl-fli.c PL_raise_exception
-# DIVERGES: the ball is RESOLVED through the bindings into `exception_bin` (decision 1), so undoing
-# bindings cannot change it, where upstream copies it and freezes the global stack under it.
-# NOT PORTED: `enableSpareStacks` for a resource error — there are no spare stacks. V5d raises the
-# stack limit's error, as decided since Q-B, and decides whether the local stack gets its spare.
+# DIVERGES: the ball is copied by `copy_exception!` (see there: resolved, its cycles kept as
+# untrailed bindings); `freezeGlobal` is that copy's.
 "Make the term `exception` references the pending exception, unless a more urgent one is pending; false (pl-fli.c)."
 function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T}
     @assert exception < ld.lTop                             # valTermRef(exception) < lTop
     kind(deRef(ld, ld.slots[exception + 1])) === VAR &&
         error("Cannot throw variable exception")            # fatalError()
 
+    ld.exception_processing = true                          # LD->exception.processing = true
     if exception != ld.exception_bin                        # re-throwing
         co = classify_exception(ld, ld.exception_bin)
         cn = classify_exception(ld, exception)
-        if cn >= co                                         # (EXCEPT_RESOURCE: enableSpareStacks)
-            ld.slots[ld.exception_bin + 1] = resolve_term(ld, ld.slots[exception + 1])
+        if cn >= co
+            if cn == EXCEPT_RESOURCE
+                enableSpareStacks!(ld)
+            end
+            copy_exception!(ld, exception, ld.exception_bin)
         end
     end
     ld.exception_term = ld.exception_bin
@@ -298,12 +370,11 @@ PL_compare(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
     compareStandard(ld, ld.slots[t1 + 1], ld.slots[t2 + 1], false)
 
 # PORT: pl-fli.c PL_clear_exception
-# NOT PORTED: `LD->outofstack`, which `resumeAfterException` reads, until V5d raises the stack
-# limit's error, as decided since Q-B.
 "Drop the pending exception, if any (pl-fli.c `PL_clear_exception`)."
 function PL_clear_exception(ld::PL_local_data{T})::Nothing where {T}
     if ld.exception_term != 0
-        resumeAfterException(ld, true)
+        resumeAfterException(ld, true, ld.outofstack)
+        ld.outofstack = false
     end
     return nothing
 end

@@ -143,6 +143,19 @@ _manifest_per_type(T) = (
     (LK.growLocalSpace, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.ensureLocalSpace, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.raiseStackOverflow, Tuple{LK.PL_local_data{T}, LK.boolex_t}, false),
+    # V5d: the overflow raised, the spare enabled and reserved again; the ball copied, its cycles kept
+    (LK.outOfStack!, Tuple{LK.PL_local_data{T}, LK.stack_overflow_action}, false),
+    (LK.push_overflow_context, Tuple{Type{T}}, false),
+    (LK.enableSpareStack!, Tuple{LK.PL_local_data{T}, Bool}, true),
+    (LK.enableSpareStacks!, Tuple{LK.PL_local_data{T}}, true),
+    (LK.has_emergency_space, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.trim_stack!, Tuple{LK.PL_local_data{T}}, true),
+    (LK.trimStacks!, Tuple{LK.PL_local_data{T}, Bool}, true),
+    (LK.init_stack!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.allocStacks!, Tuple{LK.PL_local_data{T}}, false),
+    (LK._resize_local!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.copy_exception!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK._copy_ball, Tuple{LK.PL_local_data{T}, T}, false),
     (LK.hasLocalSpace, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.DiscardMark, Tuple{LK.PL_local_data{T}, LK.mark}, true),
     (LK.linkValI, Tuple{LK.PL_local_data{T}, T}, true),
@@ -495,7 +508,7 @@ function _manifest_index(T)
             true
         ),
         (LK._load_registers!, Tuple{LD, Int}, true),
-        (LK.resumeAfterException, Tuple{LD, Bool}, false),
+        (LK.resumeAfterException, Tuple{LD, Bool, Bool}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
         (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),
@@ -548,7 +561,7 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_unify2_va, LK.pl_not_unify2_va, LK.pl_unify_with_occurs_check2_va,
                 LK.pl_equal2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
-                LK.pl_unifiable3_va,
+                LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
@@ -787,7 +800,6 @@ const DISPATCH_MANIFEST = (
     (LK.argFrameP, Tuple{Int, Int}, true), (LK.varFrameP, Tuple{Int, Int}, true),
     (LK.refFliP, Tuple{Int, Int}, true), (LK.f_hasSpace, Tuple{Int, Int, Int, Int}, true),
     (LK.NoMark, Tuple{}, true), (LK.isRealMark, Tuple{LK.mark}, true),
-    (Base.showerror, Tuple{IOBuffer, LK.LocalStackOverflow}, false),
     (LK.isFirstVarSet!, Tuple{BitVector, Int}, true),
     (LK.isFirstVar, Tuple{BitVector, Int}, true),
     (LK.MSB, Tuple{Int}, true), (LK.MSB, Tuple{UInt32}, true),
@@ -852,6 +864,7 @@ const DISPATCH_MANIFEST = (
     (Base.Enums._enum_hash, Tuple{LK.unify_mode, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.finished, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.PL_error_code, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.stack_overflow_action, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.except_class, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.numtype, UInt64}, false),
     (LK._holds_payload, Tuple{Type, Type}, false),   # not a dispatch tuple: JET only

@@ -1457,8 +1457,21 @@ function pl_unifiable3_va(
     return unifiable(ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
+# PORT: pl-prims.c throw as pl_throw1_va
+# (PRED_IMPL("throw", 1, throw, 0))
+"`throw/1` (pl-prims.c): raise the ball; a variable raises `instantiation_error`."
+function pl_throw1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    if PL_is_variable(ld, A1)
+        return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+    end
+    return PL_raise_exception(ld, A1) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
-# DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6623);
+# DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
 "pl-prims.c's registration table (`BeginPredDefs(prims)`): the ported entries."
 const PL_predicates_from_prims = (
@@ -1483,5 +1496,6 @@ const PL_predicates_from_prims = (
     PL_extension("\\==", 2, pl_nonequal2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("compare", 3, pl_compare3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("?=", 2, pl_can_compare2_va, PL_FA_VARARGS),
-    PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS)
+    PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
+    PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )

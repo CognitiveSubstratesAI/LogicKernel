@@ -43,24 +43,44 @@ end
 # DIVERGES: grows the local stack only — there is no global, trail or argument stack of fixed
 # size — and moves nothing: positions are offsets and records are indices, so upstream's work here,
 # shifting the stacks and relocating every pointer into them, does not exist. The size doubles until
-# the request fits, within `stacks_limit`; past the limit nothing grows, and the caller's re-check
-# reports the overflow, as upstream's does when `grow_stacks` refuses.
+# the request fits with the spare above it (`include_spare_stack`), within `stacks_limit`; while an
+# exception is processed the limit is raised to the need plus 1 MiB (`grow_stacks`' error condition,
+# in positions; since V5d). Past the limit nothing grows, and the caller's re-check reports the
+# overflow, as upstream's does when `grow_stacks` refuses. After growing, the spare is reserved again
+# at the top (`reenable_spare_stack`: the room is at least the spare, so `trim_stack`).
 "Grow the local stack so `l` more positions fit above `lTop` (pl-gc.c `growStacks`)."
 function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     need = ld.lTop + l
     need <= ld.lMax && return nothing
-    size = max(ld.lMax, 1)
-    while size < need
+    want = need + ld.local_def_spare                # include_spare_stack: the spare on top
+    size = max(ld.lMax + ld.local_spare, 1)
+    while size < want
         size *= 2
     end
-    size = min(size, ld.stacks_limit)
-    size < need && return nothing
-    resize!(ld.slots, size)                     # the cells: never read before they are written
+    limit = ld.stacks_limit
+    if size > limit && ld.exception_processing      # in error condition: raising limit with 1Mb
+        limit = max(limit, want + EMERGENCY_LIMIT)
+    end
+    size = min(size, limit)
+    size < want && return nothing
+    _resize_local!(ld, size)
+    ld.lMax = size                                  # include_spare_stack: max += spare
+    ld.local_spare = 0
+    trim_stack!(ld)                                 # reenable_spare_stack
+    return nothing
+end
+
+# gc:5374 the room an exception being processed may take past the limit: 1 MiB, in positions.
+"How far past `stacks_limit` the local stack grows while an exception is processed (pl-gc.c)."
+const EMERGENCY_LIMIT = (1024 * 1024) ÷ 8
+
+"Make the cells and the record pools of the local stack hold `size` positions."
+function _resize_local!(ld::PL_local_data{T}, size::Int)::Nothing where {T}
+    length(ld.slots) < size && resize!(ld.slots, size)  # never read before they are written
     _grow_pool!(ld, ld.frames, cld(size, SIZEOF_LOCALFRAME))
     _grow_pool!(ld, ld.choices, cld(size, SIZEOF_CHOICE))
     _grow_pool!(ld, ld.fliframes, cld(size, SIZEOF_FLIFRAME))
     _grow_pool!(ld, ld.queries, cld(size, SIZEOF_QUERYFRAME))
-    ld.lMax = size
     return nothing
 end
 
@@ -108,12 +128,18 @@ function _grow_pool!(
 end
 
 # PORT: pl-gc.c growLocalSpace
-# DIVERGES: `n` is in positions, where upstream's is in bytes. Not ported: the spare stack enabled
-# while an exception is processed or GC runs (neither exists yet).
+# DIVERGES: `n` is in positions, where upstream's is in bytes; the spare is enabled while an
+# exception is processed (since V5d), not while GC runs (no stack garbage collector until G1).
 "Make room for `n` positions above `lTop`, growing the stack if `flags` allows (pl-gc.c)."
 function growLocalSpace(ld::PL_local_data{T}, n::Int, flags::Int)::boolex_t where {T}
     if ld.lTop + n <= ld.lMax                   # addPointer(lTop, bytes) <= (void*)lMax
         return BOOLEX_TRUE
+    end
+    if ld.exception_processing                  # || LD->gc.status.active
+        enableSpareStack!(ld, true)
+        if ld.lTop + n <= ld.lMax
+            return BOOLEX_TRUE
+        end
     end
     if flags == 0
         @goto nospace

@@ -262,18 +262,29 @@ end
     LK.PL_close_foreign_frame(ld, fid0)
 end
 
-@testset "a Julia exception ends the query and is rethrown" begin
+# Since V5d the stack limit raises `error(resource_error(stack), local)` (the context as decided
+# since Q-B) and the query ends at its boundary, where it threw a Julia exception before; a Julia
+# exception's own path stays covered by the refusal testset below.
+@testset "the stack limit: resource_error(stack) at the query boundary; the query recovers" begin
     db, p = _ydb()
     ld = db.ld
-    ld.stacks_limit = ld.lMax                                   # no growth past here
+    ld.stacks_limit = ld.lMax + ld.local_spare                  # no growth past here
     fid = LK.PL_open_foreign_frame(ld)
     LK.PL_new_term_refs(ld, ld.lMax - ld.lTop - (LK.SIZEOF_QUERYFRAME + LK.MAXARITY) - 1)
     a = LK.PL_new_term_ref(ld)
     ld.slots[a + 1] = _yv(1)
     qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL, p[:f].proc, a)
     @test qid != 0
-    @test_throws LK.LocalStackOverflow LK.PL_next_solution(db.gd, ld, qid)  # S_STATIC's space
-    @test ld.query == 0 && ld.lTop == qid && ld.nqueries == 0  # closed, its records dropped
+    @test LK.PL_next_solution(db.gd, ld, qid) == LK.PL_S_FALSE  # S_STATIC's space; no EXT_STATUS
+    ex = LK.PL_exception(ld, qid)
+    @test ex != 0 &&
+        lk_eq(
+        ld.slots[ex + 1], _yf(:error, _yf(:resource_error, _ys(:stack)), _ys(:local))
+    )
+    @test !ld.outofstack && !ld.exception_processing           # recovered at the boundary
+    @test ld.local_spare == ld.local_def_spare                  # the spare reserved again
+    LK.PL_close_query(ld, qid)
+    @test ld.query == 0 && ld.nqueries == 0                     # closed, its records dropped
     LK.PL_close_foreign_frame(ld, fid)
 end
 

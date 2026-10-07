@@ -189,22 +189,32 @@ end
 end
 
 # swipl raises `type_error(expression, T)` with the message 'cyclic term' (research probe p8). The
-# kernel detects the cycle as upstream does, but the ball holds the rational tree, and a ball is
-# RESOLVED into an interface term (decision 1), which a rational tree does not have (V5a1): the
-# resolution raises a Julia `ArgumentError`, and the query closes (decision 1). Pinned as the interim
-# until V9's placeholder culprit, as decided since Q-AR8 (a catching program needs catch/3).
-@testset "cyclic: T = T+1, X is T — detected; its ball cannot be resolved (Q-AR8, pinned)" begin
+# kernel detects the cycle as upstream does and raises with the REAL culprit, as upstream: since V5d
+# a ball keeps its cycles (src/pl-fli.jl `copy_exception!`; user, 2026-10-07), which ends Q-AR8's
+# placeholder. The ball is read under the bindings, where its cycle lives.
+@testset "cyclic: T = T+1, X is T — type_error(expression, T), the real culprit (Q-AR8, since V5d)" begin
     ld = LKA.PL_local_data{_A}()
     T1 = _av()
     LKA.Trail!(ld, var_key(T1), _af(:+, T1, _ag(1)))                             # T = T+1
-    err = try
-        _arun(:is, _A[_av(), T1]; ld=ld)
-        nothing
-    catch e
-        e
-    end
-    @test err isa ArgumentError && occursin("rational tree", err.msg)
-    @test ld.query == 0                                         # the query is closed
+    p = LKA.isCurrentProcedure(sym_key(_as(:is)), 2, LKA.MODULE_system(_AGD))
+    fid = LKA.PL_open_foreign_frame(ld)
+    a = LKA.PL_new_term_refs(ld, 2)
+    ld.slots[a + 1] = _av()
+    ld.slots[a + 2] = T1
+    qid = LKA.PL_open_query(
+        _AGD, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
+    )
+    @test LKA.PL_next_solution(_AGD, ld, qid) == LKA.PL_S_EXCEPTION
+    ball = ld.slots[LKA.PL_exception(ld, qid) + 1]
+    formal = LKA.deRef(ld, child(ball, 2))
+    @test lk_name(child(formal, 1)) === :type_error &&
+        lk_name(child(formal, 2)) === :expression
+    @test LKA.compareStandard(ld, child(formal, 3), T1, true) == 0              # the culprit: T
+    @test lk_eq(LKA.resolve_term(ld, child(ball, 3)),
+        _af(:context, _af(:/, _as(:is), _ag(2)), _as("cyclic term")))
+    LKA.PL_close_query(ld, qid)
+    LKA.PL_close_foreign_frame(ld, fid)
+    @test ld.query == 0
 end
 
 # ── a bound left side, and the rounding to double — pinned to swipl 10.1.16 (probed) ───────────

@@ -270,7 +270,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 |---|---|---|
 | `src/LogicKernel.jl` | the module entry file: the include order (the code graph below follows it) and the exports (ORIGINAL) | — |
 | `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation) | — |
-| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out; since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2` | `src/pl-prims.c`, `src/pl-incl.h` |
+| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out; since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1` | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
@@ -285,12 +285,12 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), and since V9c the running query's database (`GD`, which a built-in reads) | `src/pl-global.h`, `src/pl-incl.h` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and the `user` module (`MODULE_user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark | `src/pl-global.h`, `src/pl-incl.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
-| `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
-| `src/pl-alloc.jl` | raising a local-stack overflow (`raiseStackOverflow`; a Julia `LocalStackOverflow` until V5) | `src/pl-alloc.c` |
-| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
-| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`) | `src/pl-fli.c`, `src/pl-fli.h` |
+| `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
+| `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), local)` (`raiseStackOverflow`, `outOfStack!`, the context as decided since Q-B), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack | `src/pl-alloc.c` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
+| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space` | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`) | `src/pl-supervisor.c` |
 | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`; `PL_type_error`, `PL_domain_error`) | `src/pl-error.c`, `src/pl-error.h` |
@@ -299,13 +299,13 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
 | `src/pl-modul.jl` | what a call of an undefined predicate reads from its module: the `unknown` flag's values and `getUnknownModule` (the default, `error`: a module has no flags yet, V5c) | `src/pl-modul.c`, `src/pl-incl.h` |
-| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base | `src/pl-setup.c` |
+| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
-| `test/core_lang/test_arith_swipl.jl` | V6c1's gate: SWI's test_arith.pl units for what is ported; the error order and terms; a bound `is/2`; the rounding to double; a live differential of 600 `is/2` goals and 300 comparisons; the interims (Q-AR1, Q-AR7, Q-AR8) and the kernel-only terms | — |
+| `test/core_lang/test_arith_swipl.jl` | V6c1's gate: SWI's test_arith.pl units for what is ported; the error order and terms; a bound `is/2`; the rounding to double; a live differential of 600 `is/2` goals and 300 comparisons; the interims (Q-AR1, Q-AR7) and, since V5d, Q-AR8's real cyclic culprit; the kernel-only terms | — |
 | `test/foreign/test_typetests_swipl.jl` | V6b1's gate: the type tests and `\==` registered; the truth table of the eleven tests on thirteen values, called, inline and as a body call, pinned to swipl and live; kernel-only terms | — |
 | `test/foreign/test_exceptions_swipl.jl` | V5b's gate: an undefined procedure's error, return codes and caller pinned to libswipl; the exception classes and `PL_raise_exception`'s rule against a live swipl's `'$urgent_exception'/3` | — |
-| `test/foreign/test_query.jl` | V4a's query API: answers, return codes and determinism; the supervisors; positions identical to swipl's; nested queries; cut against close; a closed `qid`; exceptions caught and passed; a Julia exception closing the query; clause GC under a running query; warm allocation | — |
+| `test/foreign/test_query.jl` | V4a's query API: answers, return codes and determinism; the supervisors; positions identical to swipl's; nested queries; cut against close; a closed `qid`; exceptions caught and passed; the stack limit's `resource_error` at the boundary (since V5d); clause GC under a running query; warm allocation | — |
 | `test/core_lang/test_head_unify_swipl.jl` | V4a's differential: head unification of random and pinned fact queries identical to swipl under `occurs_check` false, true and error (the error term included), every head instruction exercised in each mode; since V9a the same for body unification (22 cases, every instruction of the family; the cyclic `X = f(X)` pinned) | — |
 | `test/db/test_index_argv.jl` | a bound argument narrows the index through both argument views (frame and term), dereferenced | — |
 | `test/core_lang/test_local_stack.jl` | V3's tests: positions identical to swipl's (frame and choice-point placement, pinned and live), the record discipline, foreign frames and term references, growth, and that the primitives allocate nothing warm | — |
@@ -322,6 +322,9 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses | `src/pl-termwalk.c` |
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
 | `test/core_lang/test_occurs_check.jl` | SWI's own occurs-check units in all three modes but the attributed-variable ones | `tests/core_lang/test_occurs_check.pl` |
+| `test/core_lang/test_exception.jl` | SWI's own `throw` unit (test_exception.pl): `throw/1` through the query API — a variable, a ground, an unbound and a CYCLIC ball, which keeps its cycle after the undo (since V5d) | `tests/core_lang/test_exception.pl` |
+| `test/core_lang/test_resource_error.jl` | SWI's own `local` unit (test_resource_error.pl): the local stack's overflow under upstream's small limit (since V5d) | `tests/core_lang/test_resource_error.pl` |
+| `test/core_lang/test_stack_overflow_swipl.jl` | V5d's differential: three overflowing programs, the formal identical to swipl's and the context by kind (Q-B); recovery and the spare; a second overflow making the local data unusable, later queries refused | — |
 | `test/rational/test_ieee754.jl` | SWI's identity and standard-order assertions on IEEE floats (`0.0 \== -0.0`, `nan == nan`, the order of NaN, ±Inf, ±0.0) | `tests/rational/test_ieee754.pl` |
 | `test/core_lang/test_bindings.jl` | the trail (`Mark`/`Undo!`, marks nest), the unifier's divergences, `resolve_term`, and that a warm attempt allocates nothing (on the reference type) | — |
 | `test/core_lang/test_unify_swipl.jl` | live differential: `=/2` on 1500 hard random pairs in each `occurs_check` mode, outcomes and bindings identical to swipl's | — |
@@ -424,7 +427,6 @@ graph LR
     pl_global --> pl_termwalk
     pl_global --> pl_index
     pl_global --> pl_funct
-    pl_global --> pl_gc
     pl_global --> pl_wam
     pl_global --> pl_setup
     pl_global --> pl_supervisor
@@ -493,10 +495,14 @@ graph LR
     pl_gc --> pl_inline
     pl_gc --> pl_thread
     pl_gc --> pl_alloc
+    pl_gc --> pl_setup
     pl_gc --> pl_proc
+    pl_alloc --> term_interface
     pl_alloc --> default_term
     pl_alloc --> pl_incl
     pl_alloc --> pl_global
+    pl_alloc --> pl_comp
+    pl_alloc --> pl_arith
     pl_wam --> term_interface
     pl_wam --> default_term
     pl_wam --> pl_incl
@@ -514,6 +520,7 @@ graph LR
     pl_wam --> pl_error
     pl_wam --> pl_gmp
     pl_wam --> pl_arith
+    pl_wam --> pl_setup
     pl_wam --> pl_supervisor
     pl_wam --> pl_ext
     pl_fli --> term_interface
@@ -523,7 +530,9 @@ graph LR
     pl_fli --> pl_global
     pl_fli --> pl_inline
     pl_fli --> pl_prims
+    pl_fli --> pl_variant
     pl_fli --> pl_gc
+    pl_fli --> pl_alloc
     pl_fli --> pl_wam
     pl_fli --> pl_arith
     pl_error --> term_interface
@@ -557,7 +566,10 @@ graph LR
     pl_arith --> pl_fli
     pl_arith --> pl_error
     pl_arith --> pl_gmp
+    pl_setup --> default_term
+    pl_setup --> pl_incl
     pl_setup --> pl_global
+    pl_setup --> pl_gc
     pl_setup --> pl_wam
     pl_setup --> pl_fli
     pl_proc --> term_interface
@@ -1238,6 +1250,72 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**V5d — throw/1, cyclic balls, the stack limit's error and the spare: BUILT (2026-10-07)**
+(port_inventory row V5, its split; src/pl-alloc.jl, pl-fli.jl, pl-setup.jl, pl-gc.jl, pl-wam.jl,
+pl-prims.jl, pl-error.jl, pl-global.jl, pl-incl.jl). As decided since Q-B and Q-D, and by the user,
+2026-10-07: (0) V5d before V5c; (1) a cyclic ball keeps its cycles; (2) a second overflow marks the
+local data unusable; (3) the spare stacks ported. Research: the workspace's
+`docs/research/logickernel-step-memos/V5d_memo.md`.
+* **Ported:**
+  * `throw/1` (pl-prims.c:6546-6553), registered from the prims table (`PL_FA_ISO`).
+  * `PL_raise_exception` as upstream: `exception.processing` set, the spare enabled for a resource
+    error, the ball copied (`copy_exception`).
+  * `raiseStackOverflow` → `outOfStack` (pl-alloc.c:669-765): the spare enabled, the exception
+    processed, `outofstack` set, the ball `error(resource_error(stack), Ctx)` built into the bin,
+    `Ctx` the stack's name atom `local` — `push_overflow_context`'s fallback, as decided since Q-B
+    (an interim until dicts).
+  * The local stack's SPARE: `init_stack` and `allocStacks` reserve it above `max`;
+    `enableSpareStack(s)`, `has_emergency_space`, `trim_stack`, `trimStacks`; `growStacks` sizes
+    with the spare on top and, while an exception is processed, stretches the limit by 1 MiB
+    (`grow_stacks`); `growLocalSpace` enables the spare while an exception is processed; `b_throw`
+    checks for emergency space (fatal without it); `resumeAfterException` gives the spare back and
+    clears `outofstack` and `exception.processing`; `PL_error` sets `exception.processing`.
+* **DIVERGES:**
+  * **A cyclic ball** (user, 2026-10-07, 1 (a)): the ball is resolved through the bindings
+    (decision 1), and a compound met again on its own path is cut by a fresh variable bound to its
+    copy WITHOUT a trail entry, so no undo removes it — upstream's `freezeGlobal` in the kernel's
+    terms. So test_exception.pl's `cyclic` unit runs, and **Q-AR8's placeholder is gone**: the
+    arithmetic error carries the real cyclic culprit, as upstream.
+  * **A second overflow before recovery** (user, 2026-10-07, 2 (a) with the addition): upstream
+    ends the process (`fatalError`). The kernel throws upstream's message and marks the local data
+    UNUSABLE: `PL_open_query` refuses every later query on it, while a fresh local data runs on the
+    same database.
+  * The local stack is the only stack with a spare and the only one that overflows; the stack is
+    never shrunk (`trimStacks`' resize).
+* **NOT PORTED:** the `stack_overflow{…}` dict (no dicts); reclaiming frozen bindings (the binding
+  store has no collector until G1); `trim_stack_requested` (its readers are the stack GC's, G1); the
+  backtraces and messages; `STACK_OVERFLOW_THROW`'s longjmp (every local-stack caller takes the fatal
+  branch first); test_exception.pl's `ex_coroutining` (freeze/2) and test_resource_error.pl's other
+  units (the global stack, as decided since Q-C; strings, `length/2`, threads).
+* **Gates:**
+  * test/core_lang/test_exception.jl (new): SWI's `throw` unit — error, ground, unbound, cyclic.
+  * test/core_lang/test_resource_error.jl (new): SWI's `local` unit under its small limit.
+  * test/core_lang/test_stack_overflow_swipl.jl (new): three overflowing programs, the formal
+    identical to swipl's and the context by kind (swipl's `stack_overflow` dict, the kernel's
+    `local`, pinned as the interim); recovery with the spare reserved again; a second overflow
+    before recovery making the local data unusable, the next query refused, a fresh one running.
+  * test/core_lang/test_local_stack.jl: the spare in a new local data, growth with the spare on
+    top, the overflow enabling it near the top, the 1 MiB stretch, recovery, `has_emergency_space`
+    and `trim_stack`.
+  * test/foreign/test_query.jl: the limit's `resource_error` at the boundary (it was a Julia
+    exception); test/core_lang/test_arith_swipl.jl: Q-AR8's real culprit.
+* **Bench** (a freshly restarted daemon; the first run NOT QUIET — `apt-check` at 101% of a CPU — so
+  rerun; the second quiet before and after): the run-time allocations unchanged (nreverse 2941,
+  compare/3 body 7000, derive 527, qsort 2733, poly_10 188268), the compile cases too; nreverse
+  11.25×, derive 6.19×, qsort 7.48×, poly_10 7.39×.
+* **Mutation-proved — 18 of 18 caught at verdict level (exit 1 each):** `throw(_)` not an
+  instantiation error; the cycle's binding trailed, or left unbound; the overflow's context not the
+  stack's name; a second overflow not fatal, the local data not marked, `PL_open_query` not refusing;
+  the spare not enabled at the overflow, not given back after it, ignored by growth, by
+  `growLocalSpace` while processing, by `has_emergency_space`, or by a resource ball; no 1 MiB
+  stretch; `PL_error` or `PL_raise_exception` not setting `exception.processing`; the recovery
+  leaving it set; the overflow a plain failure. **The driver's own guard failed first:** it counted
+  any non-zero exit as caught, and three mutants "caught" by a timeout (2) and a dead daemon (3).
+  Only exit 1 is a verdict now. With `exception.processing` stuck, every overflow stretched the limit
+  by 1 MiB more, without end (as upstream would); the follow-up overflow is guarded so the testset's
+  own check fails fast. `PL_error` setting the flag survived until a test opened its foreign frame at
+  the limit.
 
 **V9c — assert/1, assertz/1 and asserta/1: BUILT (2026-10-07)** (port_inventory row V9, its
 split; the head-unification chunk's fourth commit; src/pl-comp.jl, pl-proc.jl, pl-error.jl,

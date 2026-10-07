@@ -244,6 +244,13 @@ const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
     MAX_ARITY_OVERFLOW = -10    # pl-comp.c
 end
 
+# PORT: pl-incl.h stack_overflow_action
+"How `outOfStack` delivers a stack overflow (pl-incl.h): raised, or thrown to `PL_throw`'s catcher."
+@enum stack_overflow_action::UInt8 begin
+    STACK_OVERFLOW_RAISE
+    STACK_OVERFLOW_THROW
+end
+
 # PORT: pl-incl.h occurs_check_t
 "The `occurs_check` Prolog flag (pl-incl.h `occurs_check_t`); SWI's default is `OCCURS_CHECK_FALSE`."
 @enum occurs_check_t::UInt8 begin

@@ -25,8 +25,8 @@
 # (`unify_definition`).
 # The formal and the context are BUILT (`mk_expr`) where upstream unifies them into fresh term
 # references (`PL_unify_term`), which cannot fail here. Raised with `PL_raise_exception`, never
-# thrown (upstream's `do_throw` is set for one code only, `ERR_CLOSED_STREAM`, not ported). Not set:
-# `LD->exception.processing` (it guards the spare stacks, not ported).
+# thrown (upstream's `do_throw` is set for one code only, `ERR_CLOSED_STREAM`, not ported). Sets
+# `LD->exception.processing`, which lets the local stack use its spare (since V5d).
 
 # PORT: pl-error.h PL_error_code
 # DIVERGES: the codes raised so far; upstream's enum has some forty.
@@ -57,6 +57,7 @@ function _PL_error_open(
     if ld.exception_term != 0               # do not overrule older exception
         return nothing
     end
+    ld.exception_processing = true          # allow using spare stack
     caller = ld.environment_frame != 0 ? ld.frames[ld.environment_frame].predicate : nothing
     fid = PL_open_foreign_frame(ld)
     fid == 0 && error("Cannot report error: no memory")   # goto nomem
