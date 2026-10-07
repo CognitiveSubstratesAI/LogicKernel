@@ -92,6 +92,34 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     implementation.
   MEASURED the day it was built: two of three cold runs (~11 min each) had failed on exactly those
   checks, port_check and JET;
+  * **it FAILS CLOSED (2026-10-07, after a false green in R1d):** a step passes only when its own
+    output SHOWS the verdict — a test file's summary line (`warm: <file> |`), the format and
+    port_check pass lines. An empty or truncated output is NO VERDICT, a failure whatever the exit
+    code (`tools/warm.sh file` exits 4). R1d's preflight had a step "pass" with an EMPTY log: a probe
+    sent to the daemon meanwhile raced it (`send` had no lock; it holds `flock` now), and any other
+    lost run — a crash, a killed process — would look the same. tools/test_warm.sh injects an empty
+    and a cut-off output into passing runs (`LOGICKERNEL_WARM_FAULT`, `LOGICKERNEL_PREFLIGHT_FAULT`)
+    and requires both to fail; mutation-proved (with the check removed, both "pass"). A commit never
+    rested on a preflight: only a full `tools/run_tests.sh` in fresh processes records the evidence
+    the commit hook reads, for the exact tree, and it never goes through the daemon. `send`'s lock
+    covers ONE snippet (write, wait, read the verdict, in a subshell holding the lock): one held
+    for the whole process deadlocked the preflight's rerun after a daemon restart, which sends
+    from a subshell against its parent. tools/test_warm.sh: two concurrent senders each get their
+    own verdict and output;
+  * **a RUN holds the whole lane (the lane lock):** a preflight, an evidence run, or
+    `tools/warm.sh locked CMD` (a mutation driver) takes `run.lock` exclusively for its whole run
+    and exports `WARM_LOCK_OWNER`; its own subshells and child calls pass, and every other command
+    is REFUSED (exit 5) — a probe between a preflight's steps could define a method, load a file or
+    trigger Revise, and a later step would test a daemon the preflight did not set up. The marker
+    counts only for the run holding the lane now (its pid in `run.owner`, alive, the lock held).
+    tools/test_warm.sh: a probe during a run, and mid-preflight, is refused while the preflight's
+    verdict stays its own; a forged marker bypasses nothing; a second run is refused; a run's own
+    sends pass from a subshell; mutation-proved (with the check disabled, 4 cases fail);
+  * **the CI gate reads through the rate limit:** `tools/ci_status.sh` uses the stored token
+    whenever GitHub's anonymous answer is no run list, not only for "Not Found" — the anonymous
+    limit (60 an hour, used up by a CI poll every 30 s) made every later preflight stop at
+    "unreadable" (fail closed, but blind to what it was run to check); and the gate's own poll
+    waits 150 s between reads (`LOGICKERNEL_CI_POLL_S`; it was 30);
   * **it RECOVERS from a stale daemon** (user, 2026-10-04: "make the gate recover, not just
     detect"). Revise can leave a deleted method alive in the daemon: Julia's method table keeps it,
     and the manifest gate's live-method filter (`which(m.sig) === m`) cannot tell it from a live one,
@@ -1425,10 +1453,12 @@ explicit error, term positions refused until needed.
   from the previous session) took the text atom `'[]'` as `AT_SPECIAL`; upstream compares the ATOM
   with `ATOM_nil`, SWI-7's reserved `[]`, so `'[]'` is quoted (writeq('[]') writes `'[]'`).
 * **Fixed, found by SWI's `read_deep` units on the alternative term types:** the term layer's `is_ground_walk` — the interface's default `is_ground`, which an implementation without a cached bit uses — recursed, so `resolve_term` overflowed the Julia stack on an answer 80,000 levels deep (`f([{-…}])`); it walks an agenda now (typed by `term_type`, JET-clean on the manifest's types; a 200,000-deep term checked). The reference type caches the bit and never walked.
-* **Fixed, the warm lane (tools/warm.sh):** `send` held no lock, so two senders raced on the daemon's input and verdict. MEASURED: a probe sent during the preflight made its test_read_term_swipl.jl step pass with an EMPTY log — the run never made. `_send` now holds `flock` until its process exits; proved both ways (without it, two concurrent sends lose one run; with it, each gets its own output).
+* **Fixed, the warm lane (tools/warm.sh):** `send` held no lock, so two senders raced on the daemon's input and verdict. MEASURED: a probe sent during the preflight made its test_read_term_swipl.jl step pass with an EMPTY log — the run never made. `_send` now holds `flock` for ONE snippet; proved both ways (without it, two concurrent sends lose one run; with it, each gets its own output). (A first version held it until the process exited, and deadlocked the preflight's own rerun, which sends from a subshell: corrected in the next commit, R1e's first item.)
 * **Ported AS IS, a known upstream defect (docs/upstream_reports.md #10, drafted):** the argument
   of `end_of_file_in_quoted(Quote)` is made with `PL_CHARS` (ISO Latin-1) from the quote's UTF-8, so
-  `«x` raises `end_of_file_in_quoted('Â«')`; `makeErrorTerm` does the same.
+  `«x` raises `end_of_file_in_quoted('Â«')`; `makeErrorTerm` does the same. The other text caller, `escape_char`'s undefined escape, passes the code
+  point's LOW BYTE (`(char)c`): `\Ω` raises `undefined_char_escape('©')`, `\∀` an empty atom — ported
+  as is too (R1d had passed UTF-8 there, turning `\é` into `'Ã©'`: FIXED in R1e's first commit).
 * **DIVERGES:** the term stack holds the terms themselves (immutable values) with a tag each — a
   plain value, an unbound cell, or a variable record — where upstream holds term references; a
   list is built when it ends from the elements kept in its frame (each made a value where upstream

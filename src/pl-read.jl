@@ -1325,7 +1325,12 @@ function escape_char(
             # undef:
             if rd !== nothing
                 rd.token_start = inp - 1
-                errorWarningA1("undefined_char_escape", string(Char(c)), nothing, rd)
+                # char tmp[2] = {(char)c, EOS}: the code point's LOW BYTE, read by
+                # makeErrorTerm as ISO Latin-1 — a KNOWN UPSTREAM DEFECT ported as is
+                # (docs/upstream_reports.md #10): `\Ω` names `©`, `\∀` the empty atom
+                lowbyte = UInt8(c & 0xff)
+                tmp = lowbyte == 0x00 ? "" : String(UInt8[lowbyte])
+                errorWarningA1("undefined_char_escape", tmp, nothing, rd)
             end
             return (ESC_ERROR, inp)
         end

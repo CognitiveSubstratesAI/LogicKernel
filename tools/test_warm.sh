@@ -179,5 +179,66 @@ cp "$ROOT/test/term_under_test.jl" "$T/term_under_test.jl"
 mkdir -p "$T/core_lang" && cp "$ROOT/test/core_lang/alt_term.jl" "$T/core_lang/alt_term.jl"
 "$W" file "$T/core_lang/test_wfail.jl" > "$T/out" 2>&1; check "file: a FAILING test file exits 1" 1 $?
 
+# THE LANE LOCK (2026-10-07): a RUN (preflight, evidence, `locked CMD`) holds the lane for its WHOLE
+# run; its own calls pass, from subshells too, and anyone else's are REFUSED (exit 5) — a probe
+# between a preflight's steps would change the daemon under it.
+_wait_owner() {     # _wait_owner PID — until the lane's owner is PID (at most 30 s)
+    for _ in $(seq 1 150); do
+        [ "$(cat "$ROOT/.warm/run.owner" 2>/dev/null)" = "$1" ] && return 0
+        sleep 0.2
+    done
+    return 1
+}
+"$W" locked sleep 20 > /dev/null 2>&1 &
+holder=$!
+_wait_owner "$holder"; check "lane: a run takes it" 0 $?
+"$W" send "$T/ok.jl" > "$T/out" 2>&1; check "lane: a probe while a run holds it is REFUSED (exit 5)" 5 $?
+has "…saying so" "$T/out" "REFUSED" 1
+WARM_LOCK_OWNER=99999 "$W" send "$T/ok.jl" > "$T/out" 2>&1
+check "lane: …and a forged owner marker bypasses nothing" 5 $?
+WARM_RUN_LOCK_WAIT_S=2 "$W" locked true > "$T/out" 2>&1; check "lane: a second run is REFUSED too" 5 $?
+wait "$holder"
+"$W" send "$T/ok.jl" > "$T/out" 2>&1; check "lane: once the run ends, a probe runs" 0 $?
+"$W" locked bash -c '"$0" send "$1" && ( "$0" send "$1" )' "$W" "$T/ok.jl" > "$T/out" 2>&1
+check "lane: inside a run its own sends pass, from a subshell too (no self-deadlock)" 0 $?
+LOGICKERNEL_PREFLIGHT_FAULT=format-empty LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1 &
+pf=$!
+_wait_owner "$pf"; check "lane: a preflight takes it" 0 $?
+"$W" send "$T/ok.jl" > "$T/out" 2>&1; check "lane: a probe mid-preflight is REFUSED (exit 5)" 5 $?
+wait "$pf"; check "…and the preflight's verdict is its own (the planted fault: exit 1)" 1 $?
+has "…NO VERDICT, as planted" "$T/pf" "preflight: NO VERDICT" 1
+
+# THE SEND LOCK (2026-10-07): two concurrent senders each get their OWN verdict and output — without
+# it, the second overwrote the first's snippet and the first waited for a run never made (R1d: a
+# preflight step "passed" with an empty log). A short timeout makes a lost run FAIL, not hang.
+printf 'sleep(3); println("A-OUT")\n' > "$T/la.jl"
+printf 'println("B-OUT")\n' > "$T/lb.jl"
+( WARM_TIMEOUT_S=90 "$W" send "$T/la.jl" > "$T/la.out" 2>&1; echo $? > "$T/la.rc" ) &
+sleep 1
+WARM_TIMEOUT_S=90 "$W" send "$T/lb.jl" > "$T/lb.out" 2>&1; check "lock: the second of two concurrent senders gets its verdict" 0 $?
+wait
+check "lock: …and so does the first" 0 "$(cat "$T/la.rc")"
+has "…the first its own output" "$T/la.out" "A-OUT" 1
+has "…the second its own output" "$T/lb.out" "B-OUT" 1
+has "…and not the first's" "$T/lb.out" "A-OUT" 0
+
+# FAIL CLOSED (2026-10-07, after R1d's false green: a step "passed" with an EMPTY log, its run never
+# made): a step whose output is empty, or lacks its own end marker, is a FAILURE whatever its exit
+# code — `file` exits 4 (NO VERDICT), and the preflight fails. Faults injected by the TEST SEAMS
+# (LOGICKERNEL_WARM_FAULT, LOGICKERNEL_PREFLIGHT_FAULT) after a real, passing run.
+for fault in empty cut; do
+    LOGICKERNEL_WARM_FAULT=$fault "$W" file test/core_lang/test_sort.jl > "$T/out" 2>&1
+    check "file: a passing run whose output is $fault is NO VERDICT (exit 4)" 4 $?
+    has "…saying so" "$T/out" "NO VERDICT" 1
+done
+"$W" file test/core_lang/test_sort.jl > "$T/out" 2>&1; check "…and the same run, whole, passes" 0 $?
+for fault in format-empty format-cut; do
+    s=$(date +%s)
+    LOGICKERNEL_PREFLIGHT_FAULT=$fault LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+    check "preflight FAILS on a step log that is $fault" 1 $?
+    has "…saying NO VERDICT" "$T/pf" "preflight: NO VERDICT" 1
+    [ $(( $(date +%s) - s )) -lt 120 ]; check "…before the slow gate" 0 $?
+done
+
 echo "test_warm: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

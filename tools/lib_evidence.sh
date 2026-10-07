@@ -152,7 +152,7 @@ _check_run() {
 # while the previous push is red. tools/ci_status.sh on SHA (default origin/main): 0 passes;
 # 1 (red) fails; 2 (unreadable) fails CLOSED; 3 (no verdict yet) passes when WAIT_S is 0 — a cycle's
 # start, where the evidence run's end checks again — and otherwise polls every
-# LOGICKERNEL_CI_POLL_S (30) seconds for up to WAIT_S, failing if there is still no verdict.
+# LOGICKERNEL_CI_POLL_S (150) seconds for up to WAIT_S, failing if there is still no verdict.
 # LOGICKERNEL_CI_CHECK=off skips it LOUDLY: for a machine without network, never by default.
 _ci_gate() {
     local root="$1" wait_s="$2" sha="${3:-}" t0 rc
@@ -178,7 +178,7 @@ _ci_gate() {
             echo "  CI check: still no verdict after ${wait_s} s — no evidence until there is one" >&2
             return 1
         fi
-        sleep "${LOGICKERNEL_CI_POLL_S:-30}"
+        sleep "${LOGICKERNEL_CI_POLL_S:-150}"           # GitHub allows 60 anonymous calls an hour
     done
 }
 

@@ -5,13 +5,17 @@
 #   tools/warm.sh start | stop | restart | status
 #   tools/warm.sh file test/core_lang/test_unify.jl [impl]   # one test file, REAL exit code: a term-
 #                                                            # generic file on every implementation
-#                                                            # (or just `impl`), swipl REQUIRED
+#                                                            # (or just `impl`), swipl REQUIRED;
+#                                                            # exit 4 = NO VERDICT (fail closed)
 #   tools/warm.sh send snippet.jl          # any snippet (or stdin); exit 0 ok · 1 threw · 2 timeout · 3 no daemon
 #   tools/warm.sh bench [bench.jl args]    # tools/bench.jl in the daemon: no JIT in the timings
 #   tools/warm.sh preflight                # WARM: what a full run would fail on, BEFORE one (exit 0/1);
 #                                          # a stale daemon (a deleted method it kept) is restarted
 #                                          # and the preflight rerun once
 #   tools/warm.sh evidence                 # a FRESH tools/run_tests.sh — the commit gate's run
+#   tools/warm.sh locked CMD [ARGS…]       # run CMD holding the lane for its WHOLE run (a mutation
+#                                          # driver): its own warm.sh calls pass, everyone else's are
+#                                          # REFUSED (exit 5)
 #   tools/warm.sh pool                     # pre-warm the evidence workers for THIS tree
 #   tools/warm.sh workload on|off          # the precompile workload, for THIS checkout only
 #
@@ -80,33 +84,72 @@ _stop() {
     echo "warm lane: stopped"
 }
 
+# THE LANE LOCK (2026-10-07, after R1d). A RUN — preflight, evidence, or `locked CMD` (a mutation
+# driver) — takes $DIR/run.lock EXCLUSIVELY for its whole run and exports WARM_LOCK_OWNER=<its pid>:
+# its own subshells and child warm.sh calls inherit it and pass. Every other command takes the lock
+# SHARED and non-blocking, so while a run holds the lane it is REFUSED (exit 5): a probe between a
+# preflight's steps could define a method, load a file or trigger Revise, and a later step would test
+# a daemon the preflight did not set up. Plain senders still queue among themselves, per snippet
+# (`_send`'s own lock). The marker counts only for the run that holds the lane NOW (its pid in
+# run.owner, alive, and the lock held): a stale or inherited one bypasses nothing.
+_lane_owned() {
+    [ -n "${WARM_LOCK_OWNER:-}" ] && [ "$(cat "$DIR/run.owner" 2>/dev/null)" = "$WARM_LOCK_OWNER" ] &&
+        kill -0 "$WARM_LOCK_OWNER" 2>/dev/null && ! flock -n -s "$DIR/run.lock" true 2>/dev/null
+}
+
+# _run_lock — take the lane for this whole run; 5 when another run keeps it past WARM_RUN_LOCK_WAIT_S.
+_run_lock() {
+    _lane_owned && return 0                             # a run inside our own run
+    mkdir -p "$DIR"
+    exec 8>"$DIR/run.lock"
+    if ! flock -w "${WARM_RUN_LOCK_WAIT_S:-120}" 8; then
+        echo "warm lane: REFUSED — another run holds the lane (pid $(cat "$DIR/run.owner" 2>/dev/null || echo '?')): a preflight, an evidence or a mutation run must have it alone (exit 5)" >&2
+        return 5
+    fi
+    echo "$$" > "$DIR/run.owner"
+    export WARM_LOCK_OWNER=$$
+}
+
+# _lane_check — a command outside any run: refused (5) while a run holds the lane.
+_lane_check() {
+    _lane_owned && return 0
+    mkdir -p "$DIR"
+    exec 8>"$DIR/run.lock"
+    flock -n -s 8 && return 0
+    echo "warm lane: REFUSED — a run holds the lane (pid $(cat "$DIR/run.owner" 2>/dev/null || echo '?')): a preflight, an evidence or a mutation run; a probe now would change the daemon under it (exit 5)" >&2
+    return 5
+}
+
 # _send FILE — run the snippet in the daemon; print its output; exit with its verdict.
 _send() {
     _running || { echo "warm lane: not running — tools/warm.sh start" >&2; return 3; }
     # ONE SNIPPET AT A TIME. Two senders race on in.jl, seq and out.txt, and one of them can read
     # the other's verdict: MEASURED 2026-10-07 (R1d), a probe sent during a preflight made the
     # preflight's test_read_term_swipl.jl step "pass" with an EMPTY log, its run never made. The
-    # lock is held until this process exits, so a preflight's steps queue behind any other sender.
-    exec 9>"$DIR/send.lock"
-    flock 9
-    local seq=$(( $(cat "$DIR/seq" 2>/dev/null || echo 0) + 1 ))
-    cat "${1:-/dev/stdin}" > "$DIR/in.jl"
-    rm -f "$DIR/status"                       # never inherit the previous run's verdict
-    echo "$seq" > "$DIR/seq"
-    local deadline=$(( $(date +%s) + ${WARM_TIMEOUT_S:-1800} ))
-    while [ "$(cat "$DIR/done" 2>/dev/null)" != "$seq" ]; do
-        if ! systemctl --user is-active --quiet "$UNIT"; then
-            echo "warm lane: the daemon DIED during seq=$seq — $DIR/session.log" >&2; return 2
-        fi
-        if [ "$(date +%s)" -ge "$deadline" ]; then
-            echo "warm lane: TIMEOUT after ${WARM_TIMEOUT_S:-1800}s on seq=$seq — it may still be running;" >&2
-            echo "           output NOT printed (it would be the previous run's)" >&2
-            return 2
-        fi
-        sleep 0.2
-    done
-    cat "$DIR/out.txt"
-    return "$(cat "$DIR/status" 2>/dev/null || echo 1)"     # a missing verdict is a FAILURE
+    # lock covers ONE snippet — write, wait, read its verdict — in a subshell that holds fd 9, and
+    # is released when it exits. NOT for a whole process: a lock kept by the process (the first
+    # version) deadlocked the preflight's own rerun, which sends from a SUBSHELL, against its parent.
+    (
+        flock 9
+        seq=$(( $(cat "$DIR/seq" 2>/dev/null || echo 0) + 1 ))
+        cat "${1:-/dev/stdin}" > "$DIR/in.jl"
+        rm -f "$DIR/status"                       # never inherit the previous run's verdict
+        echo "$seq" > "$DIR/seq"
+        deadline=$(( $(date +%s) + ${WARM_TIMEOUT_S:-1800} ))
+        while [ "$(cat "$DIR/done" 2>/dev/null)" != "$seq" ]; do
+            if ! systemctl --user is-active --quiet "$UNIT"; then
+                echo "warm lane: the daemon DIED during seq=$seq — $DIR/session.log" >&2; exit 2
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "warm lane: TIMEOUT after ${WARM_TIMEOUT_S:-1800}s on seq=$seq — it may still be running;" >&2
+                echo "           output NOT printed (it would be the previous run's)" >&2
+                exit 2
+            fi
+            sleep 0.2
+        done
+        cat "$DIR/out.txt"
+        exit "$(cat "$DIR/status" 2>/dev/null || echo 1)"     # a missing verdict is a FAILURE
+    ) 9>"$DIR/send.lock"
 }
 
 # _file PATH [IMPL] — one test file in a fresh module, as test/runtests.jl runs it.
@@ -119,7 +162,7 @@ _file() {
         impls='("reference", "alt", "alt_interned")'
         [ -n "$impl" ] && impls="(\"$impl\",)"
     fi
-    local snippet="$DIR/file_snippet.jl"
+    local snippet="$DIR/file_snippet.jl" out="$DIR/file_out.$$" rc
     cat > "$snippet" <<JL
 let f = raw"$f", ts = Test.DefaultTestSet("warm: " * basename(f); verbose=true)
     Test.@with_testset ts begin
@@ -136,8 +179,28 @@ let f = raw"$f", ts = Test.DefaultTestSet("warm: " * basename(f); verbose=true)
     Test.finish(ts)                          # throws on any failure or error: the verdict
 end
 JL
-    _send "$snippet"
+    _send "$snippet" > "$out" 2>&1
+    rc=$?
+    case "${LOGICKERNEL_WARM_FAULT:-}" in                          # TEST SEAMS (tools/test_warm.sh)
+        empty) : > "$out" ;;                                        # a lost run: nothing at all
+        cut) head -n 1 "$out" > "$out.cut" && mv "$out.cut" "$out" ;;   # a run cut off early
+    esac
+    cat "$out"
+    # FAIL CLOSED: a pass must SHOW its verdict — the summary line Test.finish prints for this file.
+    # An empty or truncated output is NO VERDICT, whatever the exit code (exit 4): MEASURED
+    # 2026-10-07 (R1d), a probe sent during a preflight left a step with an EMPTY log and exit 0. The
+    # lock in _send fixes that cause; this check stops any other (a crash, a killed process).
+    if [ "$rc" -eq 0 ] && ! _verdict_in "$out" "^warm: $(basename "$f") +\\|"; then
+        echo "warm lane: NO VERDICT — the output for $(basename "$f") is empty or lacks its test summary; a FAILURE (exit 4)" >&2
+        rc=4
+    fi
+    rm -f "$out"
+    return "$rc"
 }
+
+# _verdict_in FILE PATTERN — FILE is non-empty and holds a line matching PATTERN (grep -E): a step's
+# own end marker, without which its exit code is not taken as a pass.
+_verdict_in() { [ -s "$1" ] && grep -qE "$2" "$1"; }
 
 _bench() {
     local snippet="$DIR/bench_snippet.jl" args=""
@@ -228,7 +291,21 @@ let pc = Module(:PreflightPortCheck)
         " DIVERGES, ", mk.not_ported, " NOT PORTED, ", mk.both, " DIVERGES lines still saying NOT PORTED)")
 end
 JL
-    _send "$snippet" || {
+    local fmtlog="$DIR/preflight_format_port_check.log"
+    _send "$snippet" > "$fmtlog" 2>&1
+    rc=$?
+    case "${LOGICKERNEL_PREFLIGHT_FAULT:-}" in                     # TEST SEAMS (tools/test_warm.sh)
+        format-empty) : > "$fmtlog" ;;
+        format-cut) grep -v '^preflight: port_check clean' "$fmtlog" > "$fmtlog.cut"; mv "$fmtlog.cut" "$fmtlog" ;;
+    esac
+    cat "$fmtlog"
+    # FAIL CLOSED (see _file): both checks must SHOW their pass lines, or the step failed
+    if [ "$rc" -eq 0 ] && { ! _verdict_in "$fmtlog" '^preflight: Blue-clean' ||
+        ! _verdict_in "$fmtlog" '^preflight: port_check clean'; }; then
+        echo "preflight: NO VERDICT — the format/port_check output is empty or lacks its pass lines"
+        rc=4
+    fi
+    [ "$rc" -eq 0 ] || {
         PF_OTHER_FAIL=1
         echo "preflight: FAIL (format/port_check) in $(( $(date +%s) - t0 ))s"
         return 1
@@ -334,6 +411,11 @@ _workload() {
 
 cmd="${1:-status}"; shift || true
 case "$cmd" in
+    status) ;;
+    preflight | evidence | locked) _run_lock || exit 5 ;;
+    *) _lane_check || exit 5 ;;
+esac
+case "$cmd" in
     start) _start ;;
     stop) _stop ;;
     restart) _stop; _start ;;
@@ -343,7 +425,8 @@ case "$cmd" in
     bench) _bench "$@" ;;
     preflight) _preflight ;;
     evidence) exec "$ROOT/tools/run_tests.sh" ;;
+    locked) [ $# -ge 1 ] || { echo "usage: tools/warm.sh locked CMD [ARGS…]" >&2; exit 2; }; "$@" ;;
     pool) _pool ;;
     workload) _workload "${1:-}" ;;
-    *) sed -n '2,12p' "$0"; exit 2 ;;
+    *) sed -n '2,15p' "$0"; exit 2 ;;
 esac

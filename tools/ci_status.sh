@@ -28,7 +28,11 @@ else
     slug="$(git -C "$ROOT" remote get-url origin 2>/dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"
     API="https://api.github.com/repos/$slug/actions/runs?head_sha=$SHA&per_page=50"
     J="$(curl -s -m 25 "$API")"
-    if printf '%s' "$J" | grep -q '"message": *"Not Found"'; then
+    # the stored token whenever the anonymous answer is no run list — a private repo ("Not Found")
+    # or the anonymous RATE LIMIT (60 an hour): MEASURED 2026-10-07, a CI poll every 30 s used it
+    # up, every later preflight stopped at "unreadable", and tools/test_warm.sh's cases could not
+    # reach the checks they test
+    if ! printf '%s' "$J" | grep -q '"workflow_runs"'; then
         TOK="$(printf 'protocol=https\nhost=github.com\n\n' |
             git -c credential.useHttpPath=false credential fill 2>/dev/null | sed -n 's/^password=//p')"
         [ -n "$TOK" ] &&
