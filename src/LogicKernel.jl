@@ -22,6 +22,11 @@ module LogicKernel
 include("term_interface.jl")   # ORIGINAL — the term interface (settled 2026-10-02)
 include("default_term.jl")     # ORIGINAL — Term{G}, the reference implementation
 include("pl-hash.jl")          # swipl-devel src/pl-hash.c — MurmurHash2
+include("os/pl-utf8.jl")       # swipl-devel src/os/pl-utf8.c — UTF-8 over a byte buffer
+include("pl-umap.jl")          # swipl-devel src/pl-umap.c — the Unicode map (generated: tools/gen_umap.jl)
+include("os/pl-ctype.jl")      # swipl-devel src/os/pl-ctype.c — the ASCII character types
+include("os/pl-string.jl")     # swipl-devel src/os/pl-string.c — digitValue
+include("os/pl-stream.jl")     # swipl-devel src/os/pl-stream.c — the IOSTREAM subset (pl-incl, pl-global hold IOPOS)
 include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause list, index structs
 include("SWI-Prolog.jl")       # swipl-devel src/SWI-Prolog.h — query flags and return codes
 include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — term agendas (the local data holds two)
@@ -49,6 +54,8 @@ include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, asser
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
+include("pl-write.jl")         # swipl-devel src/pl-write.c — (since R1c) the NaN helpers the reader needs
+include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c): raw_read, numbers, get_token
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 

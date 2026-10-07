@@ -513,6 +513,59 @@ const OP_YFX = UInt8(0x70 | OP_INFIX)
 # PORT: pl-incl.h M_SYSTEM
 "Module flag: a system module (pl-incl.h)."
 const M_SYSTEM = UInt32(0x00000001)
+# PORT: pl-incl.h M_CHARESCAPE
+"Module syntax flag: character escapes in quoted text (pl-incl.h)."
+const M_CHARESCAPE = UInt32(0x00000002)
+# PORT: pl-incl.h DBLQ_CHARS
+"Module syntax flag: `\"ab\"` reads as `[a, b]` (pl-incl.h)."
+const DBLQ_CHARS = UInt32(0x00000004)
+# PORT: pl-incl.h DBLQ_ATOM
+"Module syntax flag: `\"ab\"` reads as `'ab'` (pl-incl.h)."
+const DBLQ_ATOM = UInt32(0x00000008)
+# PORT: pl-incl.h DBLQ_STRING
+"Module syntax flag: `\"ab\"` reads as a string (pl-incl.h)."
+const DBLQ_STRING = UInt32(0x00000010)
+# PORT: pl-incl.h DBLQ_MASK
+"The double-quote flags (pl-incl.h)."
+const DBLQ_MASK = DBLQ_CHARS | DBLQ_ATOM | DBLQ_STRING
+# PORT: pl-incl.h BQ_STRING
+"Module syntax flag: `` `ab` `` reads as a string (pl-incl.h)."
+const BQ_STRING = UInt32(0x00000020)
+# PORT: pl-incl.h BQ_CODES
+"Module syntax flag: `` `ab` `` reads as `[97, 98]` (pl-incl.h)."
+const BQ_CODES = UInt32(0x00000040)
+# PORT: pl-incl.h BQ_CHARS
+"Module syntax flag: `` `ab` `` reads as `[a, b]` (pl-incl.h)."
+const BQ_CHARS = UInt32(0x00000080)
+# PORT: pl-incl.h BQ_MASK
+"The back-quote flags (pl-incl.h)."
+const BQ_MASK = BQ_STRING | BQ_CODES | BQ_CHARS
+# PORT: pl-incl.h RAT_COMPAT
+"Rational syntax `1r3` only (pl-incl.h)."
+const RAT_COMPAT = UInt32(0)
+# PORT: pl-incl.h RAT_NATURAL
+"Rational syntax `1/3` too (pl-incl.h)."
+const RAT_NATURAL = UInt32(0x00000100)
+# PORT: pl-incl.h RAT_MASK
+"The rational syntax flags (pl-incl.h)."
+const RAT_MASK = RAT_NATURAL
+# PORT: pl-incl.h O_RATIONAL_SYNTAX
+"The default rational syntax (pl-incl.h)."
+const O_RATIONAL_SYNTAX = RAT_COMPAT
+# PORT: pl-incl.h M_RDSTRING_TERM
+"Read flag: read/1 and friends demand a term (pl-incl.h)."
+const M_RDSTRING_TERM = UInt32(0x00040000)
+
+# PORT: pl-incl.h strnumstat
+"The outcome of reading a number (pl-incl.h)."
+@enum strnumstat::Int8 begin
+    NUM_ERROR = 0           # Syntax error
+    NUM_OK = 1              # Ok
+    NUM_FUNDERFLOW = -1     # Float underflow
+    NUM_FOVERFLOW = -2      # Float overflow
+    NUM_IOVERFLOW = -3      # Integer overflow
+    NUM_CONSTRANGE = -4     # numeric constant out of range
+end
 
 # PORT: pl-incl.h clause_choice
 "Where a clause search resumes (pl-incl.h `struct clause_choice`)."

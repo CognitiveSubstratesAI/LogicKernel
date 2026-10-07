@@ -74,6 +74,9 @@ const PL_FA_NOTRACE = 0x01
 # PORT: SWI-Prolog.h PL_FA_TRANSPARENT
 "Registration flag: module transparent, deprecated (SWI-Prolog.h)."
 const PL_FA_TRANSPARENT = 0x02
+# PORT: SWI-Prolog.h PL_CTYPE_SPACE
+"Character class: Unicode White_Space (SWI-Prolog.h `PL_ctype_flags`)."
+const PL_CTYPE_SPACE = 0x0400
 # PORT: SWI-Prolog.h PL_FA_NONDETERMINISTIC
 "Registration flag: non-deterministic (SWI-Prolog.h)."
 const PL_FA_NONDETERMINISTIC = 0x04

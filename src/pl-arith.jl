@@ -71,10 +71,16 @@ const FLT_UNDEFINED = UInt32(0x0040)
 "`float_underflow=ignore` (pl-arith.h)."
 const FLT_UNDERFLOW = UInt32(0x0080)
 
-# DIVERGES: `nan15()` reads "1.5NaN" with the number reader, which the kernel does not have yet
-# (R1); that is the quiet NaN, 0x7ff8000000000000 — Julia's `NaN`.
+# DIVERGES: a constant, where upstream's `initArith` sets it from `nan15()`, `str_number` reading
+# "1.5NaN" (src/pl-read.jl, since R1c), which a module constant cannot call (no local data at
+# load): the same value, the quiet NaN 0x7ff8000000000000 (Julia's `NaN`). test_read_swipl.jl
+# checks that `str_number` gives exactly these bits.
 "The NaN `float_undefined=nan` gives (pl-arith.c `const_nan`)."
 const const_nan = NaN
+
+# PORT: pl-arith.c PL_nan
+"SWI-Prolog's canonical NaN, `1.5NaN` (pl-arith.c): every NaN stored in a term is this one."
+PL_nan()::Float64 = const_nan
 
 # PORT: pl-arith.c check_float
 "Check a float result against the float flags (pl-arith.c): NaN, subnormal, infinite."
@@ -134,6 +140,20 @@ check_int_bits(ld::PL_local_data, bits::UInt64)::Bool =
 # PORT: pl-arith.c promoteIntNumber
 "Promote a `V_INTEGER` to more capacity (pl-arith.c; O_BIGNUM: `V_MPZ`)."
 promoteIntNumber(n::number)::Bool = promoteToMPZNumber(n)
+
+# PORT: pl-arith.c ar_rdiv_mpz
+"`n1 / n2` of two big integers as an exact number (pl-arith.c): an integer if it divides, else a rational."
+function ar_rdiv_mpz(n1::number, n2::number, r::number)::Bool
+    if rem(n1.mpz, n2.mpz) == 0                         # mpz_divisible_p
+        r.type = V_MPZ
+        r.mpz = div(n1.mpz, n2.mpz)                     # mpz_divexact
+    else
+        r.type = V_MPQ
+        r.mpq = n1.mpz // n2.mpz                        # mpq_canonicalize
+        return check_mpq(r)
+    end
+    return true
+end
 
 # PORT: pl-arith.c ar_add_si
 "`n += add` in place (pl-arith.c `ar_add_si`): A_ADD_FC's slow path."

@@ -17,6 +17,14 @@
 # one LD it is given, where upstream marks every thread's (the divergence audit, docs/divergence_audit.md). One process-wide counter is
 # allowlisted (`_KERNEL_VAR_COUNTER`, tools/lint_globals.jl).
 
+# PORT: pl-global.h source_location
+# DIVERGES: the file is the atom (`nothing` for NULL_ATOM).
+"Where a term starts: its source file and position (pl-global.h)."
+mutable struct source_location{T}
+    file::Union{Nothing, T}     # current source file
+    position::IOPOS             # Line, line pos, char and byte
+end
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()

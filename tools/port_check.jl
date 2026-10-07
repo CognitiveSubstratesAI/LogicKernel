@@ -782,6 +782,15 @@ function port_check(pkgroot::AbstractString;
             text = _git_show(dir, u.commit * ":" * u.path)
             if u === f.upstreams[1]
                 sq = _squash(text)
+                # A GENERATED first file carries no copyright notice at all (swipl-devel's
+                # src/pl-umap.c, written by src/Unicode/prolog_syntax_map.pl): its lines are
+                # checked against the file's other upstreams — its generator — instead.
+                if !occursin(r"copyright"i, text)
+                    for u2 in f.upstreams[2:end]
+                        _git_ok(dir, "cat-file", "-e", u2.commit * ":" * u2.path) &&
+                            (sq *= _squash(_git_show(dir, u2.commit * ":" * u2.path)))
+                    end
+                end
                 for c in f.copyright
                     occursin(_squash(c), sq) ||
                         push!(

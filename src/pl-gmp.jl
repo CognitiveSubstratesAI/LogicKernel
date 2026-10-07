@@ -85,6 +85,12 @@ function _put_big(::Type{T}, v::Union{BigInt, Rational{BigInt}})::T where {T}
     )
 end
 
+# PORT: pl-gmp.h clearNumber
+# DIVERGES: nothing to free (a `number`'s big integer and rational are Julia's GC's); kept so the
+# callers read as upstream's.
+"Release a number's GMP storage (pl-gmp.h): nothing, here."
+clearNumber(n::number)::Nothing = nothing
+
 # PORT: pl-gmp.c put_number
 # DIVERGES: returns the term (upstream writes it through `at`, with room ensured for `bindConst`:
 # no global stack here). `put_int64`'s overflow branch cannot be taken: every `Int64` is one value.
@@ -101,7 +107,9 @@ function put_number(::Type{T}, n::number)::T where {T}
         end
         return _put_big(T, n.mpq)                           # globalMPQ(at, n->value.mpq)
     end
-    return mk_gnd(T, n.f)                                   # put_double(at, n->value.f)
+    f = n.f
+    isnan(f) && (f = PL_nan())                              # put_double: canonical 1.5NaN
+    return mk_gnd(T, f)                                     # put_double(at, n->value.f)
 end
 
 # PORT: pl-gmp.c PL_unify_number

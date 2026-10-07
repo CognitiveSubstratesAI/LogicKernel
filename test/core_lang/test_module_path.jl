@@ -30,8 +30,10 @@ _mpv() = mk_var(_MP, LK.fresh_var_keys!(1))
     @test sys === LK.MODULE_system(gd) && user === LK.MODULE_user(gd)
     @test (sys.index, user.index) == (1, 2)
     @test lk_name(sys.atom) === :system && lk_name(user.atom) === :user
-    @test sys.flags == (LK.M_SYSTEM | UInt32(LK.UNKNOWN_ERROR)) && isempty(sys.supers)
-    @test user.flags == 0 && user.supers == [sys.index]
+    syntax = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_SYNTAX   # since R1c
+    @test sys.flags == (syntax | LK.M_SYSTEM | UInt32(LK.UNKNOWN_ERROR)) &&
+        isempty(sys.supers)
+    @test user.flags == syntax && user.supers == [sys.index]
     @test LK.isCurrentModule(gd.modules, _mps(:user)) === user
     @test LK.isCurrentModule(gd.modules, _mps(:nomod)) === nothing
     @test LK.lookupModule(gd, _mps(:system)) === sys                # found, not created

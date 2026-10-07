@@ -48,6 +48,17 @@ typedef enum { FOO_A, FOO_B } foo_kind;
 #define foo_twice(x) ((x)*2)
 """
     )
+    # a generated file with no copyright notice, and the generator that carries one (R1c:
+    # src/pl-umap.c and src/Unicode/prolog_syntax_map.pl)
+    for f in ("pl-gen.c", "pl-gen2.c")
+        write(
+            joinpath(up, "src", f), "/* Generated file. Do not edit! */\nint gen_table;\n"
+        )
+    end
+    write(
+        joinpath(up, "src", "gen.pl"),
+        "/*  Copyright (c)  2006-2026, Generator Lab */\ngen.\n"
+    )
     for f in ("pl-nocopy.c", "pl-badcopy.c", "pl-noclass.c")
         write(
             joinpath(up, "src", f),
@@ -278,6 +289,16 @@ _pc_codes(vs) = sort!([
             )
             _pc_write(
                 root,
+                "src/pl-gen.jl",
+                "# UPSTREAM: swipl-devel src/pl-gen.c @ $sha\n# UPSTREAM: swipl-devel src/gen.pl @ $sha\n# CLASS: code\n# COPYRIGHT: Copyright (c)  2006-2026, Generator Lab\n"
+            )
+            _pc_write(
+                root,
+                "src/pl-gen2.jl",
+                "# UPSTREAM: swipl-devel src/pl-gen2.c @ $sha\n# UPSTREAM: swipl-devel src/gen.pl @ $sha\n# CLASS: code\n# COPYRIGHT: Copyright (c) 1999, Nobody\n"
+            )
+            _pc_write(
+                root,
                 "src/pl-gone.jl",
                 "# UPSTREAM: swipl-devel src/pl-gone.c @ $sha\n# CLASS: design\n"
             )
@@ -338,6 +359,7 @@ _pc_codes(vs) = sort!([
                 ("ORIGINAL-NO-REASON", "orig3.jl"), ("DIVERGES-ORPHAN", "orig4.jl"),
                 ("COPYRIGHT-ABSENT", "pl-nocopy.jl"),
                 ("COPYRIGHT-MISMATCH", "pl-badcopy.jl"),
+                ("COPYRIGHT-MISMATCH", "pl-gen2.jl"),
                 ("UPSTREAM-FILE-MISSING", "pl-gone.jl"), ("COMMIT-MISSING", "pl-badsha.jl"),
                 ("UNKNOWN-REPO", "unknownrepo.jl"), ("PATH-MISMATCH", "unknownrepo.jl"),
                 ("CLASS-MISSING", "pl-noclass.jl"), ("HEADER-BOTH", "both.jl"),

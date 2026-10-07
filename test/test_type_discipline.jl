@@ -37,6 +37,20 @@ m(d, s, n) = unsafe_copyto!(d, s, n)              # line 6
 c() = ccall(:jl_gc_collect, Cvoid, ())            # line 7
 """
 
+# The term-type rule's fixture (R1c): three methods build terms on a `T` bound only by term
+# arguments (a bare `T`, a `Union`, a `Tuple`); four bind it exactly or build nothing.
+const _TD_TERMTYPE_FIXTURE = """
+bad1(a::T) where {T} = mk_sym(T, :x)
+bad2(a::Union{Nothing, T}, b::Int)::Int where {T} = (T[]; 1)
+good1(ld::PL_local_data{T}, a::T) where {T} = mk_sym(T, :x)
+good2(::Type{T}, a::T) where {T} = mk_sym(T, :x)
+good3(a::T) where {T} = sym_key(a)
+function bad3(op::Tuple{T, Int})::T where {T}
+    return mk_nil(T)
+end
+good4(v::Vector{T}, a::T)::T where {T} = mk_expr(T, T[a])
+"""
+
 # The ALLOWLIST of unchecked constructs in src/ (user, 2026-10-04): `"file construct" => (count,
 # reason)`. A new one fails the rule until it is listed here with a measured reason; a listed one
 # that is gone fails it too — so the list cannot go stale.
@@ -50,10 +64,29 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         1,
         "_sha1_memcpy!: upstream's memcpy into `wbuf`'s bytes (4 ns against 15 ns, measured); " *
         "its byte range is CHECKED first, so it cannot write outside `wbuf` or read outside `data`"
+    ),
+    "pl-read.jl ccall" => (
+        1,
+        "_strtod (R1c): the C library's strtod, as upstream's ascii_to_double calls it, for its " *
+        "rounding and its errno (ERANGE drives the float_overflow/underflow rules); the text is " *
+        "copied into a 0-terminated vector held by GC.@preserve, so strtod reads only that copy"
     )
 )
 
 @testset "type discipline" begin
+    @testset "a method that builds terms binds T from the term type, not from a term (R1c)" begin
+        hits = term_type_from_term_arg_uses(joinpath(pkgdir(LogicKernel), "src"))
+        isempty(hits) || foreach(
+            h -> println(stderr, "  T bound only by a term argument: src/", h), hits
+        )
+        @test isempty(hits)
+        fx = mktempdir() do d
+            write(joinpath(d, "fixture.jl"), _TD_TERMTYPE_FIXTURE)
+            term_type_from_term_arg_uses(d)
+        end
+        @test fx == ["fixture.jl:1 bad1", "fixture.jl:2 bad2", "fixture.jl:6 bad3"]
+    end
+
     @testset "no Any in LogicKernel's src" begin
         hits = any_uses(joinpath(pkgdir(LogicKernel), "src"))
         isempty(hits) || foreach(h -> println(stderr, "  Any at src/", h), hits)

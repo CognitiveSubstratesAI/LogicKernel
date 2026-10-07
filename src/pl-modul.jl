@@ -44,8 +44,8 @@ end
 # are created. `addSuperModule_no_lock` is the push of the super's index.
 # NOT PORTED: modules other than `system` and `user` — a `$`-module or one `module/2` would create —
 # are refused (`NotPortedError`) until R2's loader needs them (user, 2026-10-07); a module's mutex
-# (no threads), its syntax flags (`M_CHARESCAPE`, `DBLQ_STRING`, …: no reader until R1), its public
-# table and its class.
+# (no threads), its public table and its class. Since R1c the syntax flags as upstream sets them,
+# SWI-7's (`GD->options.traditional` is false: no `--traditional`).
 """
     _lookupModule!(modules, cd, name) -> module_t
 
@@ -58,13 +58,15 @@ function _lookupModule!(
     m = isCurrentModule(modules, name)
     m === nothing || return m
     supers = Int[]
+    syntax = M_CHARESCAPE                           # set(m, M_CHARESCAPE)
+    syntax |= DBLQ_STRING | BQ_CODES | O_RATIONAL_SYNTAX    # !GD->options.traditional
     if sym_key(name) == sym_key(mk_sym(T, :user))
         sys = isCurrentModule(modules, mk_sym(T, :system))
         sys === nothing && error("_lookupModule: `user` before `system`")
         push!(supers, sys.index)                    # super = MODULE_system
-        flags = UInt32(0)
+        flags = syntax
     elseif sym_key(name) == sym_key(mk_sym(T, :system))
-        flags = M_SYSTEM | UInt32(UNKNOWN_ERROR)    # set(m, M_SYSTEM|UNKNOWN_ERROR)
+        flags = syntax | M_SYSTEM | UInt32(UNKNOWN_ERROR)   # set(m, M_SYSTEM|UNKNOWN_ERROR)
     else
         throw(
             NotPortedError{T}(name, "a module other than system and user (module/2)", "R2")

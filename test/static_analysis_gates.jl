@@ -213,3 +213,113 @@ function manifest_uncovered(mod::Module, manifest, exempt)
     ]
     return (; uncovered, stale_exempt=stale)
 end
+
+# ── the term-type rule (R1c) ─────────────────────────────────────────────────────────────────────
+# A method that BUILDS terms on its type parameter `T` (`mk_sym(T, …)`, `T[…]`, …) must bind `T`
+# from something that names the term type EXACTLY: `Type{T}`, or an invariant parametric type
+# (`PL_local_data{T}`, `read_data{T}`, `Vector{T}`, …). A `T` bound only by a term argument
+# (`x::T`), a `Union` or a covariant `Tuple` is the argument's own concrete type — under the
+# alternative term types a SUBTYPE (`AltSym`), which cannot build. It broke AltTerm three times
+# (the last in R1b: `atomToOperatorType(atom::T)`); a prose rule did not hold, so this is a gate.
+
+"The calls that build a term on their first argument, the term type."
+const TERM_BUILDERS = (
+    :mk_sym, :mk_expr, :mk_gnd, :mk_nil, :mk_var, :mk_reserved_symbol, :put_number,
+    :_atom_from_text, :_text_atom, :_text_term
+)
+
+"`file:line name` of every method in `dir` that builds terms on a `T` bound only by term arguments."
+function term_type_from_term_arg_uses(dir::AbstractString)::Vector{String}
+    out = String[]
+    for (d, _, fs) in walkdir(dir), f in sort(fs)
+        endswith(f, ".jl") || continue
+        p = joinpath(d, f)
+        _scan_term_type!(
+            out, Meta.parseall(read(p, String); filename=p), relpath(p, dir), 0
+        )
+    end
+    return out
+end
+
+# The where-variables and the argument types of a signature, and its name; `nothing` if not one.
+function _tt_signature(sig)
+    wh = Symbol[]
+    while sig isa Expr && sig.head === :where
+        for v in sig.args[2:end]
+            v isa Symbol && push!(wh, v)
+            v isa Expr && v.head === :(<:) && v.args[1] isa Symbol && push!(wh, v.args[1])
+        end
+        sig = sig.args[1]
+    end
+    if sig isa Expr && sig.head === :(::) && length(sig.args) == 2
+        # the short form `f(…)::R where {T} = …` parses as `f(…)::(R where {T})`
+        rt = sig.args[2]
+        while rt isa Expr && rt.head === :where
+            for v in rt.args[2:end]
+                v isa Symbol && push!(wh, v)
+                v isa Expr && v.head === :(<:) && v.args[1] isa Symbol &&
+                    push!(wh, v.args[1])
+            end
+            rt = rt.args[1]
+        end
+        sig = sig.args[1]
+    end
+    (sig isa Expr && sig.head === :call) || return nothing
+    types = Any[]
+    for a in sig.args[2:end]
+        a isa Expr && a.head === :parameters && continue
+        a isa Expr && a.head === :kw && (a = a.args[1])
+        a isa Expr && a.head === :(::) && push!(types, a.args[end])
+    end
+    return (wh, types, sig.args[1])
+end
+
+_tt_mentions(ex, T::Symbol)::Bool =
+    ex === T || (ex isa Expr && any(a -> _tt_mentions(a, T), ex.args))
+
+# Does the type expression `ty` bind `T` exactly: `Type{T}`, or an invariant parametric type?
+function _tt_binds_exactly(ty, T::Symbol)::Bool
+    (ty isa Expr && ty.head === :curly) || return false
+    head = ty.args[1]
+    if head === :Union || head === :Tuple || head === :NTuple || head === :Vararg
+        return any(p -> _tt_binds_exactly(p, T), ty.args[2:end])
+    end
+    return any(p -> _tt_mentions(p, T), ty.args[2:end])
+end
+
+# Does `body` build a term on `T`?
+function _tt_builds_on(ex, T::Symbol)::Bool
+    ex isa Expr || return false
+    if ex.head === :call && length(ex.args) >= 2 && ex.args[2] === T
+        f = _unchecked_name(ex.args[1])
+        f !== nothing && f in TERM_BUILDERS && return true
+    end
+    ex.head === :ref && !isempty(ex.args) && ex.args[1] === T && return true     # T[…]
+    return any(a -> _tt_builds_on(a, T), ex.args)
+end
+
+function _scan_term_type!(out::Vector{String}, ex, file::String, line::Int)::Nothing
+    ex isa Expr || return nothing
+    if (ex.head === :function || ex.head === :(=)) && length(ex.args) == 2
+        s = _tt_signature(ex.args[1])
+        if s !== nothing
+            wh, types, name = s
+            for T in wh
+                bytermsonly =
+                    any(ty -> _tt_mentions(ty, T), types) &&
+                    !any(ty -> _tt_binds_exactly(ty, T), types)
+                bytermsonly && _tt_builds_on(ex.args[2], T) &&
+                    push!(out, "$file:$line $name")
+            end
+        end
+    end
+    cur = line
+    for a in ex.args
+        if a isa LineNumberNode
+            cur = a.line
+        else
+            _scan_term_type!(out, a, file, cur)
+        end
+    end
+    return nothing
+end

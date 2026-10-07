@@ -1457,6 +1457,72 @@ function pl_unifiable3_va(
     return unifiable(ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
+# The decimal text of an integer or rational number record (upstream's format for `CVT_NUMBER`:
+# `NrD` for a rational).
+function _number_text(n::number)::String
+    n.type === V_INTEGER && return string(n.i)
+    n.type === V_MPZ && return string(n.mpz)
+    return string(numerator(n.mpq), "r", denominator(n.mpq))
+end
+
+# PORT: pl-prims.c atom_number as pl_atom_number2_va
+# (PRED_IMPL("atom_number", 2, atom_number, 0))
+# DIVERGES: a float's text needs the writer's float format (R1e): refused until then
+# (`NotPortedError`); an atom's or a string's text is read as its UTF-8 bytes.
+"""
+`atom_number/2` (pl-prims.c): the number a text atom or string writes, by `str_number` with no
+flags (so no escapes: `0'\\n` fails); else the atom a number writes; else a type error.
+"""
+function pl_atom_number2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    p1 = deRef(ld, ld.slots[A1 + 1])
+    text = if isTextAtom(p1)
+        sym_text(p1)
+    elseif isString(p1)
+        string_value(p1)
+    else
+        nothing
+    end
+    if text !== nothing                             # PL_get_nchars(A1, …, CVT_ATOM|CVT_STRING)
+        b = Vector{UInt8}(codeunits(text))
+        push!(b, 0x00)
+        n = number()
+        rc, q = str_number(ld, b, 1, n, UInt32(0))
+        if rc == NUM_OK
+            # DIVERGES: `0'` at the end of the text makes str_number step past the terminator,
+            # and upstream then reads the byte after it (undefined; swipl 10.1.16 fails
+            # `atom_number('0\'', X)`): an end past the terminator is not the end here.
+            if q == length(b) && b[q] == 0x00       # *q == EOS
+                ok = PL_unify_number(ld, A2, n)
+                clearNumber(n)
+                return ok ? FTRUE : FFALSE
+            end
+            clearNumber(n)
+            return FFALSE
+        end
+        return FFALSE
+    end
+    p2 = deRef(ld, ld.slots[A2 + 1])
+    if isNumber(p2)                                 # PL_get_nchars(A2, …, CVT_NUMBER)
+        isFloat(p2) && throw(
+            NotPortedError{T}(
+                p2, "atom_number/2: a float's text (the writer's float format)", "R1e"
+            )
+        )
+        n = number()
+        get_number(p2, n)
+        return PL_unify_atom(ld, A1, mk_sym(T, Symbol(_number_text(n)))) ? FTRUE : FFALSE
+    end
+    if !PL_is_variable(ld, A2)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :number), A2) ? FTRUE : FFALSE
+    elseif !PL_is_atom(ld, A1)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :atom), A1) ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
 # PORT: pl-prims.c throw as pl_throw1_va
 # (PRED_IMPL("throw", 1, throw, 0))
 "`throw/1` (pl-prims.c): raise the ball; a variable raises `instantiation_error`."
@@ -1497,5 +1563,6 @@ const PL_predicates_from_prims = (
     PL_extension("compare", 3, pl_compare3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("?=", 2, pl_can_compare2_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
+    PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )
