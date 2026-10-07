@@ -165,6 +165,78 @@ function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class 
     return classify_exception_p(ld, ld.slots[exception + 1])
 end
 
+# PORT: pl-fli.c PL_get_atom
+# DIVERGES: returns the atom, or `nothing`, where upstream writes it through `a` and returns a Bool.
+"The atom term reference `t` holds — a text atom or a reserved symbol such as `[]` — or `nothing` (pl-fli.c)."
+function PL_get_atom(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where {T}
+    w = deRef(ld, ld.slots[t + 1])
+    kind(w) === SYM && return w                             # isAtom(w)
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_integer
+# DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`.
+"The C `int` term reference `t` holds — a tagged integer in `int`'s range — or `nothing` (pl-fli.c)."
+function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    w = deRef(ld, ld.slots[t + 1])
+    if isTaggedInt(w)
+        val = int64_value(w)
+        (val > typemax(Int32) || val < typemin(Int32)) && return nothing
+        return Int(val)
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_list
+"Put the head and the tail of the list cell term reference `l` holds into `h` and `t` (pl-fli.c); false if it holds none."
+function PL_get_list(ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t)::Bool where {T}
+    w = deRef(ld, ld.slots[l + 1])
+    if is_pair(w)                                           # isList(w)
+        ld.slots[h + 1] = child(w, 2)                       # linkValI(a++)
+        ld.slots[t + 1] = child(w, 3)
+        return true
+    end
+    return false
+end
+
+# PORT: pl-fli.c PL_get_nil
+"Whether term reference `l` holds `[]` (pl-fli.c)."
+PL_get_nil(ld::PL_local_data{T}, l::term_t) where {T} = is_nil(deRef(ld, ld.slots[l + 1]))
+
+# PORT: pl-fli.c PL_is_list
+"Whether term reference `t` holds a list cell or `[]` (pl-fli.c)."
+function PL_is_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    w = deRef(ld, ld.slots[t + 1])
+    return is_pair(w) || is_nil(w)
+end
+
+# PORT: pl-fli.c PL_strip_module_flags as PL_strip_module
+# DIVERGES: as `PL_strip_module_ex` — the module an index into `gd`'s table, passed in and returned
+# (0 for upstream's NULL), an unqualified term getting `user` when none is given; no `flags`
+# (`SM_NOCREATE`: its callers are not ported).
+"""
+    PL_strip_module(gd, ld, raw, m, plain) -> (ok, m)
+
+Put the term in `raw`, stripped of its atom `Module:` qualifiers, into `plain`, and return the
+module they name (pl-fli.c): unlike `PL_strip_module_ex`, a qualifier that is no atom stays.
+"""
+function PL_strip_module(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
+)::Tuple{Bool, Int} where {T}
+    p = deRef(ld, ld.slots[raw + 1])
+    if _hasFunctor(p, mk_sym(T, :(:)), 2)
+        ok, p, m = stripModule(gd, ld, p)
+        ok || return (false, m)
+        ld.slots[plain + 1] = p                             # setHandle(plain, linkValI(p))
+    else
+        if m == 0
+            m = MODULE_user(gd).index               # (environment_frame ? contextModule(…) : user)
+        end
+        ld.slots[plain + 1] = p
+    end
+    return (true, m)
+end
+
 # PORT: pl-fli.c charCode
 # DIVERGES: the atom's text is its `sym_text` (since R1): ONE CHARACTER — one code point — gives its
 # code, where upstream reads a one-byte ISO-Latin-1 atom or a one-`wchar_t` UCS atom (and, on a

@@ -454,7 +454,11 @@ end
 # position in the database's module table, which a definition holds as its module (see
 # `definition`), and `supers` are the super modules' indices, where upstream holds a list of
 # pointers; the flags are set when the module is created (nothing sets them later: no
-# `set_module/1`, no module-local `unknown` flag). Named `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword and
+# `set_module/1`, no module-local `unknown` flag). `operators` (since R1b) is the module's operator
+# table, keyed by the name's `sym_key`: each entry is pl-op.c's `operator` record — `type[3]`,
+# `priority[3]`, by `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX` — with its key atom, as a tuple (the
+# record is pl-op.c's, src/pl-op.jl; a tuple needs no struct here); it is created with the module,
+# where upstream allocates it at the first `op/3`. Named `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword and
 # `Module` Core's. `code_data` (no upstream field) is the database's shared supervisors, which a new
 # procedure starts with (`SUPERVISOR(virgin)`).
 "A module (pl-incl.h `struct module`): its name, the procedures defined in it, its flags and supers."
@@ -466,7 +470,45 @@ struct module_t{T}
     code_data::PL_code_data                                     # the database's shared supervisors
     flags::UInt32                                               # booleans (M_*, UNKNOWN_*)
     supers::Vector{Int}                                         # Import predicates from here
+    operators::Dict{UInt64, Tuple{T, NTuple{3, UInt8}, NTuple{3, Int16}}}  # local operator table
 end
+
+# PORT: pl-incl.h OP_MAXPRIORITY
+"The highest operator priority (pl-incl.h)."
+const OP_MAXPRIORITY = 1200
+# PORT: pl-incl.h OP_PREFIX
+"An operator's kind: prefix (pl-incl.h); its index into an operator record's arrays, 0-based."
+const OP_PREFIX = 0
+# PORT: pl-incl.h OP_INFIX
+"An operator's kind: infix (pl-incl.h)."
+const OP_INFIX = 1
+# PORT: pl-incl.h OP_POSTFIX
+"An operator's kind: postfix (pl-incl.h)."
+const OP_POSTFIX = 2
+# PORT: pl-incl.h OP_MASK
+"The kind's bits in an operator type (pl-incl.h)."
+const OP_MASK = 0x0f
+# PORT: pl-incl.h OP_FX
+"Operator type `fx` (pl-incl.h)."
+const OP_FX = UInt8(0x10 | OP_PREFIX)
+# PORT: pl-incl.h OP_FY
+"Operator type `fy` (pl-incl.h)."
+const OP_FY = UInt8(0x20 | OP_PREFIX)
+# PORT: pl-incl.h OP_XF
+"Operator type `xf` (pl-incl.h)."
+const OP_XF = UInt8(0x30 | OP_POSTFIX)
+# PORT: pl-incl.h OP_YF
+"Operator type `yf` (pl-incl.h)."
+const OP_YF = UInt8(0x40 | OP_POSTFIX)
+# PORT: pl-incl.h OP_XFX
+"Operator type `xfx` (pl-incl.h)."
+const OP_XFX = UInt8(0x50 | OP_INFIX)
+# PORT: pl-incl.h OP_XFY
+"Operator type `xfy` (pl-incl.h)."
+const OP_XFY = UInt8(0x60 | OP_INFIX)
+# PORT: pl-incl.h OP_YFX
+"Operator type `yfx` (pl-incl.h)."
+const OP_YFX = UInt8(0x70 | OP_INFIX)
 
 # PORT: pl-incl.h M_SYSTEM
 "Module flag: a system module (pl-incl.h)."

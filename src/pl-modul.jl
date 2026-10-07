@@ -72,7 +72,8 @@ function _lookupModule!(
     end
     m = module_t{T}(
         sym_key(name), name, length(modules) + 1,
-        Dict{Tuple{UInt64, Int}, procedure{definition{T}}}(), cd, flags, supers
+        Dict{Tuple{UInt64, Int}, procedure{definition{T}}}(), cd, flags, supers,
+        Dict{UInt64, Tuple{T, NTuple{3, UInt8}, NTuple{3, Int16}}}()
     )
     push!(modules, m)                               # addNewHTableWP(GD->tables.modules, name, m)
     return m

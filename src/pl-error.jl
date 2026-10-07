@@ -46,6 +46,7 @@
     ERR_AR_TYPE                     # atom_t expected, Number value
     ERR_REPRESENTATION              # atom_t what
     ERR_MODIFY_STATIC_PROC          # Procedure proc
+    ERR_PERMISSION                  # atom_t, atom_t, term_t
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -366,6 +367,71 @@ function PL_error(
         ]
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
+    PL_error(ld, pred, arity, msg, ERR_PERMISSION, action, type, obj::term_t) -> false
+
+Raise `error(permission_error(Action, Type, Obj), context(…, Msg))` (pl-error.c).
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
+    action::T, type::T, obj::term_t
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_PERMISSION
+    ld.slots[formal + 1] = mk_expr(
+        T, T[mk_sym(T, :permission_error), action, type, ld.slots[obj + 1]]
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+# PORT: pl-error.c PL_get_atom_ex
+# DIVERGES: returns the atom, or `nothing` with the error raised (see `PL_get_atom`).
+"The atom term reference `t` holds, or `nothing` after raising `type_error(atom, T)` (pl-error.c)."
+function PL_get_atom_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where {T}
+    a = PL_get_atom(ld, t)
+    a === nothing || return a
+    PL_error(ld, ERR_TYPE, mk_sym(T, :atom), t)
+    return nothing
+end
+
+# PORT: pl-error.c PL_get_integer_ex
+# DIVERGES: returns the value, or `nothing` with the error raised (see `PL_get_integer`).
+"""
+The C `int` term reference `t` holds, or `nothing` after raising `representation_error(int)` (an
+integer out of range) or `type_error(integer, T)` (pl-error.c).
+"""
+function PL_get_integer_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    i = PL_get_integer(ld, t)
+    i === nothing || return i
+    if PL_is_integer(ld, t)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int))
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return nothing
+end
+
+# PORT: pl-error.c PL_get_list_ex
+"As `PL_get_list`; on neither a list cell nor `[]`, false after raising `type_error(list, L)` (pl-error.c)."
+function PL_get_list_ex(
+    ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t
+)::Bool where {T}
+    PL_get_list(ld, l, h, t) && return true
+    PL_get_nil(ld, l) && return false
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :list), l)
+end
+
+# PORT: pl-error.c PL_get_nil_ex
+"Whether term reference `l` holds `[]`; on a non-list, false after raising `type_error(list, L)` (pl-error.c)."
+function PL_get_nil_ex(ld::PL_local_data{T}, l::term_t)::Bool where {T}
+    ld.exception_term != 0 && return false                  # PL_exception(0)
+    PL_get_nil(ld, l) && return true
+    PL_is_list(ld, l) && return false
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :list), l)
 end
 
 # PORT: pl-error.c PL_type_error

@@ -445,6 +445,53 @@ function _manifest_index(T)
         (LK.getProcDefinedDefinition, Tuple{GD, D}, false),
         (LK.unify_functor, Tuple{Type{T}, D, Int}, false),
         (LK.unify_definition, Tuple{GD, MOD, D, Int}, false),
+        # R1b — the operator tables (src/pl-op.jl) and the FLI getters op/3 uses (pl-fli.jl,
+        # pl-error.jl)
+        (LK.defOperator!, Tuple{GD, LD, MOD, T, UInt8, Int16, Bool}, false),
+        (LK.defOperator!, Tuple{GD, Nothing, MOD, T, UInt8, Int16, Bool}, false),
+        (LK.visibleOperator, Tuple{GD, MOD, UInt64, Int}, false),
+        (LK.currentOperator, Tuple{GD, MOD, T, Int}, false),
+        (LK.currentOperator, Tuple{GD, Nothing, T, Int}, false),
+        (LK.maxOp, Tuple{LK._operator{T}, Int, Int}, true),
+        (LK.scanPriorityOperator, Tuple{GD, MOD, UInt64, Int, Int}, false),
+        (LK.priorityOperator, Tuple{GD, MOD, T}, false),
+        (LK.priorityOperator, Tuple{GD, Nothing, T}, false),
+        (LK.atomToOperatorType, Tuple{Type{T}, T}, false),
+        (LK.operatorTypeToAtom, Tuple{Type{T}, UInt8}, false),
+        (LK.addOpToBuffer!, Tuple{Vector{Tuple{T, UInt8, Int16}}, T, UInt8, Int16}, false),
+        [
+            (
+                LK.addOpsFromTable!,
+                Tuple{
+                    Dict{UInt64, LK._operator{T}},
+                    N,
+                    Int,
+                    UInt8,
+                    Vector{Tuple{T, UInt8, Int16}}
+                },
+                false
+            ) for N in (Nothing, T)
+        ]...,
+        [
+            (
+                LK.scanVisibleOperators!,
+                Tuple{GD, MOD, N, Int, UInt8, Vector{Tuple{T, UInt8, Int16}}, Bool},
+                false
+            ) for N in (Nothing, T)
+        ]...,
+        (LK.initOperators!, Tuple{GD}, false),
+        (LK.pl_op3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.PL_get_atom, Tuple{LD, Int}, false),
+        (LK.PL_get_integer, Tuple{LD, Int}, false),
+        (LK.PL_get_list, Tuple{LD, Int, Int, Int}, false),
+        (LK.PL_get_nil, Tuple{LD, Int}, false),
+        (LK.PL_is_list, Tuple{LD, Int}, false),
+        (LK.PL_strip_module, Tuple{GD, LD, Int, Int, Int}, false),
+        (LK.PL_get_atom_ex, Tuple{LD, Int}, false),
+        (LK.PL_get_integer_ex, Tuple{LD, Int}, false),
+        (LK.PL_get_list_ex, Tuple{LD, Int, Int, Int}, false),
+        (LK.PL_get_nil_ex, Tuple{LD, Int}, false),
+        (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, T, T, Int}, false),
         (LK.isCurrentProcedure, Tuple{UInt64, Int, MOD}, false),
         (LK.hasClausesDefinition, Tuple{GD, D}, true),
         (LK.isDefinedProcedure, Tuple{GD, PR}, true),

@@ -94,6 +94,7 @@ function PL_global_data{T}() where {T}
         T[]
     )
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
+    initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     return gd
 end
 
