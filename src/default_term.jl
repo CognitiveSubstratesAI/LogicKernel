@@ -158,6 +158,10 @@ mk_reserved_symbol(::Type{Term{G}}, name::Symbol) where {G} =
         _no_children(Term{G})
     )
 is_reserved_symbol(t::Term)::Bool = t.kind === SYM && t.reserved
+function sym_text(t::Term)::String
+    t.kind === SYM || throw(ArgumentError("sym_text: not a symbol"))
+    return String(t.name)
+end
 is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME
 function is_pair(t::Term)::Bool
     (t.kind === EXPR && length(t.children) == 3) || return false

@@ -227,6 +227,16 @@ atom of the same name it has
 function mk_reserved_symbol end
 
 """
+    sym_text(t) -> String
+
+The TEXT of the [`SYM`](@ref) `t` (pl-atom.c, an atom's `name`, decoded): `"foo"` for `foo`,
+`"[]"` for SWI-7's `[]` and for the text atom `'[]'` alike — the two differ by their blob type
+([`is_reserved_symbol`](@ref)), not by their text (user, 2026-10-06, Q-AR7). The reader, the writer
+and `charCode` need it (R1).
+"""
+function sym_text end
+
+"""
     is_reserved_symbol(t) -> Bool
 
 Whether `t` is a reserved symbol (pl-ressymbol.c `isReservedSymbol`); `false` for every term that

@@ -470,21 +470,15 @@ end
 
 # ── characters (pl-arith.c) ──────────────────────────────────────────────────────────────────────
 # PORT: pl-arith.c arithChar
-# NOT PORTED: a one-character ATOM (`X is [a]`), until R1: it needs the atom's text (`charCode`),
-# which the term interface gives from R1's `sym_text` on, as decided since Q-AR7. It is refused
-# (`NotPortedError`), never answered wrongly. A code point is as upstream.
-"The character code `p` stands for in `[X]` (pl-arith.c): a code point (an atom: refused until R1); -1 after raising."
+"The character code `p` stands for in `[X]` (pl-arith.c): a code point, or a one-character atom's code; -1 after raising."
 function arithChar(ld::PL_local_data{T}, p::T)::Int where {T}
     p = deRef(ld, p)
     if number_kind(p) === NUM_INTEGER && integer_is_int64(p)    # isTaggedInt(*p)
         chr = int64_value(p)
         0 <= chr <= 0x10ffff && return Int(chr)             # VALID_CODE_POINT(chr)
-    elseif kind(p) === SYM && !is_reserved_symbol(p)        # isAtom(*p): charCode(*p); `[]`: -1
-        throw(
-            NotPortedError{T}(
-                p, "a one-character atom in [X] (charCode: no atom text)", "R1"
-            )
-        )
+    elseif kind(p) === SYM                                  # isAtom(*p)
+        chr = charCode(p)
+        chr >= 0 && return chr
     end
     _ar_type_error(ld, :character, p)                       # ERR_TYPE, ATOM_character
     return -1                                               # EOF

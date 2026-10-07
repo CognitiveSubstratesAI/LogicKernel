@@ -165,6 +165,20 @@ function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class 
     return classify_exception_p(ld, ld.slots[exception + 1])
 end
 
+# PORT: pl-fli.c charCode
+# DIVERGES: the atom's text is its `sym_text` (since R1): ONE CHARACTER — one code point — gives its
+# code, where upstream reads a one-byte ISO-Latin-1 atom or a one-`wchar_t` UCS atom (and, on a
+# 2-byte `wchar_t`, a surrogate pair): the same characters, read from UTF-8.
+"The character code of the one-character text atom `w`, else -1 (pl-fli.c): `[]` is not text."
+function charCode(w)::Int
+    if kind(w) === SYM                                      # isAtom(w)
+        is_reserved_symbol(w) && return -1                  # not PL_BLOB_TEXT
+        s = sym_text(w)
+        length(s) == 1 && return Int(s[1])
+    end
+    return -1
+end
+
 # PORT: pl-fli.c PL_strip_module_ex
 # DIVERGES: the module is an INDEX into `gd`'s table (0 for upstream's NULL), passed in and returned
 # with the result; with none given, an unqualified term gets the context module, `user` (see

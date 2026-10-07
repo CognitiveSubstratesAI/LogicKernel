@@ -59,6 +59,7 @@ export kind, term_type,
 export mk_var, mk_expr, is_ground, is_ground_walk, KERNEL_VAR_BASE
 # …and its Prolog layer (Q1): symbols, grounded values, reserved symbols, numbers by kind
 export mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol, mk_nil, is_nil, is_pair
+export sym_text
 export NumKind, NUM_NONE, NUM_INTEGER, NUM_RATIONAL, NUM_FLOAT, NUM_STRING, NUM_OTHER
 export number_kind,
     integer_is_int64, int64_value, bigint_value, rational_value, float_value,

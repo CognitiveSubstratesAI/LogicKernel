@@ -13,7 +13,8 @@
 #     as swipl's, since V5c) and its message — identical; and random comparisons with all six
 #     operators;
 #   * what the kernel decides alone, pinned: the interim for a term type that cannot hold a big
-#     result (until T1), `[Atom]` refused (until R1), and the kernel-only terms (Q-AR5).
+#     result (until T1), `[Atom]` against swipl's answers (since R1), and the kernel-only terms
+#     (Q-AR5).
 #
 # swipl present ⇒ the live comparisons run. Absent: an ERROR when LOGICKERNEL_REQUIRE_SWIPL=1,
 # otherwise a LOUD note plus an assertion that it was not required — never a silent pass.
@@ -301,7 +302,7 @@ end
 end
 
 # ── what the kernel decides alone ────────────────────────────────────────────────────────────────
-@testset "the interims (Q-AR1, Q-AR7) and the kernel-only terms (Q-AR5), pinned" begin
+@testset "the interim (Q-AR1), [Atom] (Q-AR7, since R1) and the kernel-only terms (Q-AR5), pinned" begin
     # Q-AR1: DefaultTerm holds no BigInt: a big result raises, loudly — never a wrong value
     D = DefaultTerm
     dgd, dld = LKA.PL_global_data{D}(), LKA.PL_local_data{D}()
@@ -314,9 +315,18 @@ end
     @test_throws ArgumentError LKA.PL_next_solution(dgd, dld, qid)
     @test dld.query == 0                                       # the query is closed (decision 1)
     LKA.PL_close_foreign_frame(dld, fid)
-    # Q-AR7: [Atom] needs the atom's text: refused
-    @test_throws LKA.NotPortedError _arun(:is, _A[_av(), _af("[|]", _as(:a), mk_nil(_A))])
-    @test lk_value(_ais(_af("[|]", _ag(97), mk_nil(_A)))) == 97                 # [Code] is ported
+    # Q-AR7: [Atom], through the atom's text (`sym_text`, since R1): swipl 10.1.16's answers (probed
+    # 2026-10-07) — a one-code-point atom is its code; `ab`, '[]', `[]`, '' and a string are not
+    # characters
+    one(x) = _af("[|]", x, mk_nil(_A))
+    @test lk_value(_ais(one(_as(:a)))) == 97
+    @test lk_value(_ais(one(_as("é")))) == 233
+    @test lk_value(_ais(one(_as("\U0001D11E")))) == 119070
+    @test lk_value(_ais(one(_ag(97)))) == 97                                       # [Code]
+    for x in (_as(:ab), _as("[]"), mk_nil(_A), _as(""), _ag("a"))
+        o = _aoutcome(_arun(:is, _A[_av(), one(x)])...)
+        @test startswith(o, "err:" * _aenc(_af(:type_error, _as(:character), x)) * "@")
+    end
     # Q-AR5: a value of no SWI type is not evaluable; `$expr/n` is evaluated, then not evaluable
     O = lk_term_type(Union{Int64, Bool})
     ogd, old = LKA.PL_global_data{O}(), LKA.PL_local_data{O}()

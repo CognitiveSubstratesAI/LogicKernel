@@ -201,6 +201,17 @@ function run_term_conformance(
             @test !is_nil(mk_var(T, UInt64(1)))
         end
 
+        # an atom's TEXT (Q-AR7, R1): the name, decoded; `[]` and `'[]'` have the same text
+        @testset "sym_text: an atom's text; [] and '[]' alike" begin
+            for n in (:foo, Symbol(""), Symbol("[]"), Symbol("[|]"), Symbol("a b"),
+                Symbol("\U0001D11E"), Symbol("é"))
+                @test sym_text(mk_sym(T, n))::String == String(n)
+            end
+            @test sym_text(mk_nil(T)) == "[]" == sym_text(mk_sym(T, Symbol("[]")))
+            @test sym_text(mk_reserved_symbol(T, :dict)) == "dict"
+            @test length(sym_text(mk_sym(T, Symbol("\U0001D11E")))) == 1      # one code point
+        end
+
         # SWI's list cell (pl-fli.c `PL_is_pair`; user, 2026-10-04): a compound whose head is the
         # TEXT atom '[|]' with exactly two arguments — `[H|T]` and '[|]'(H, T) are one term. Not:
         # another arity, a `[]` or `'[]'` head, a reserved '[|]', a non-symbol head (`$expr/n`).

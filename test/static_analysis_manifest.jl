@@ -27,6 +27,7 @@ _manifest_per_type(T) = (
     (mk_reserved_symbol, Tuple{Type{T}, Symbol}, false),
     (mk_nil, Tuple{Type{T}}, false),
     (is_reserved_symbol, Tuple{T}, true), (is_nil, Tuple{T}, true),
+    (sym_text, Tuple{T}, false), (LK.charCode, Tuple{T}, false),     # R1a: an atom's text
     (is_pair, Tuple{T}, true),
     (LK.isReservedSymbol, Tuple{T}, true), (LK._functor_name, Tuple{T}, true),
     (number_kind, Tuple{T}, true), (integer_is_int64, Tuple{T}, true),
