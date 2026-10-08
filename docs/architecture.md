@@ -298,7 +298,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 |---|---|---|
 | `src/LogicKernel.jl` | the module entry file: the include order (the code graph below follows it) and the exports (ORIGINAL) | — |
 | `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation; `sym_text`, an atom's text, added in R1a, as decided since Q-AR7) | — |
-| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out; since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1`; since R1c `atom_number/2` | `src/pl-prims.c`, `src/pl-incl.h` |
+| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out; since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1`; since R1c `atom_number/2` (a float's text since R1e's floats) | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
@@ -330,14 +330,14 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan` | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
 | `src/pl-modul.jl` | the module table and its two modules, `system` and `user` — `user`'s super `system` (`_lookupModule!`, `lookupModule`, `isCurrentModule`; since V5c) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's) | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-op.jl` | the operator tables (since R1b): each module's table, `system`'s holding SWI's defaults (`initOperators!`), defining an operator (`defOperator!`, `op/3`) and looking one up through the supers (`currentOperator`, `priorityOperator`); what `current_op/3` enumerates (`scanVisibleOperators!`) | `src/pl-op.c` |
-| `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused) and `PL_write_term` | `src/pl-write.c` |
+| `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused) and `PL_write_term`; since R1e's floats `format_float` (Ryu's digits in pl-write.c's layout), `format_special_float`, `writeNaN`, `writeINF` | `src/pl-write.c` |
 | `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`); since R1f `read_clause` (the consult's read: singletons reported, a syntax error reported and the next clause read), `check_singletons` and its kin, `reportReadError`, `LD->read_source` | `src/pl-read.c` |
 | `src/pl-umap.jl` | the Unicode map (since R1c): the syntax category and display width of every code point (`uflags_map`), its POSIX class (`uctype_map`, `ctype_to_flags`), the decimal digit runs, the paired brackets and quotes — data GENERATED from pl-umap.c by `tools/gen_umap.jl`, byte for byte — and their lookups (`uflagsRaw`, `uctypeRaw`, `pl_pair_lookup`) | `src/pl-umap.c`, `src/Unicode/prolog_syntax_map.pl` |
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
 | `src/os/pl-ctype.jl` | the ASCII character types (since R1c): `_PL_char_types` and the `is*` macros; `isBlankW` through the Unicode classes | `src/os/pl-ctype.c`, `src/os/pl-ctype.h` |
 | `src/os/pl-string.jl` | `digitValue` (since R1c), a digit's value in a base | `src/os/pl-string.c` |
 | `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h` |
-| `src/os/pl-text.jl` | the text a term holds (since R1d): `PL_get_text` — an atom, a string, an integer or a rational, a code or character list — with its errors, and a stream reading it (`Sopen_text`); `PL_chars_t` | `src/os/pl-text.c`, `src/os/pl-text.h` |
+| `src/os/pl-text.jl` | the text a term holds (since R1d): `PL_get_text` — an atom, a string, an integer or a rational, a code or character list, since R1e's floats a float (`format_float`) — with its errors, and a stream reading it (`Sopen_text`); `PL_chars_t` | `src/os/pl-text.c`, `src/os/pl-text.h` |
 | `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs | `src/os/pl-file.c` |
 | `src/os/pl-codelist.jl` | the text of a code list or a character list (since R1d): `codes_or_chars_to_buffer`, with its partial, wide and non-code results | `src/os/pl-codelist.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
@@ -368,10 +368,11 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_lang/test_read_swipl.jl` | R1c's reader gate: `atom_number/2` on every number syntax and generated texts, `raw_read` against `'$raw_read'/2`, raw syntax errors and their `string(Text, CharNo)` against `term_to_atom/2`, escapes, and the tokens (`[]` vs `'[]'`, `{}`, strings, `0'c`, `1r3`); `const_nan` is `str_number`'s `1.5NaN`; an atom holding character 0 refused | — |
 | `test/files/test_stream_swipl.jl` | R1c's stream gate: memory and string streams round trip, peek and push-back, a Julia IO; the position record (character, line, line position, byte) against swipl's `stream_position_data/3` on `open_string/2` | — |
 | `test/files/test_load_swipl.jl` | R1f's loader gate: 12 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
-| `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; floats, upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail) | — |
+| `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
+| `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
 | `test/core_text/text_corpora_testlib.jl` | the reader's and the writer's hand corpora and the random-term generator, shared by their differentials and the round trip (R1f) | — |
-| `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations, a float's text); `$` not an operator (pinned); `unquoted_atom` | — |
-| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream defects #11 and #12 pinned; the refusals (a float, a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
+| `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations); a float's text read back (since R1e's floats); `$` not an operator (pinned); `unquoted_atom` | — |
+| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream defects #11 and #12 pinned; the refusals (a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
 | `test/core_text/test_syntax.jl` | SWI's `syntax` and `iso_op_table_6` units (R1d): operators, quoting and escapes, bases, the blob notation's errors | `tests/core_text/test_syntax.pl` |
 | `test/core_text/test_read.jl` | SWI's `read_op` (block operators), `read_numbers` and `read_deep` units (R1d): terms nested 20,000 deep | `tests/core_text/test_read.pl` |
 | `test/core_text/test_op.jl` | SWI's `op_syntax` units (R1d) over 84 user operators | `tests/core_text/test_op.pl` |
@@ -552,6 +553,7 @@ graph LR
     pl_prims --> pl_error
     pl_prims --> pl_gmp
     pl_prims --> pl_arith
+    pl_prims --> pl_write
     pl_prims --> pl_read
     pl_ressymbol --> term_interface
     pl_ressymbol --> default_term
@@ -703,6 +705,7 @@ graph LR
     os_pl_text --> pl_gmp
     os_pl_text --> pl_arith
     os_pl_text --> os_pl_codelist
+    os_pl_text --> pl_write
     os_pl_file --> term_interface
     os_pl_file --> default_term
     os_pl_file --> os_pl_stream
@@ -1473,6 +1476,49 @@ src/pl-funct.jl, src/pl-global.jl).
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
 
+**R1e (floats) — `format_float`: BUILT (2026-10-08)** (port_inventory row R1, its split; src/pl-write.jl,
+src/os/pl-text.jl, src/pl-prims.jl). Decided by the user (2026-10-07: "floats Ryu's digits with
+`format_float`'s layout, backed by a large float differential"; 2026-10-08: "the large differential
+… is the gate that matters most; that's where Ryu and dtoa could differ").
+* **Ported (C):** pl-write.c `format_float` (`~Nh`'s layout: fixed point, or the exponential form
+  `%c%03d` / `%c+%02d` past `N`), `format_special_float`, `writeNaN` (the payload's float, then
+  `NaN`), `writeINF`; `writeNumber`'s float branch (`separate_number` by the SIGN BIT, so `a- -0.0`);
+  pl-text.c `PL_get_text`'s `CVT_FLOAT` (term_to_atom/2 of a float for the atom); atom_number/2's
+  float text.
+* **DIVERGES — the digit source only:** `_dtoa_mode0` takes the shortest round-trip digits from
+  Julia's `Base.Ryu.reduce_shortest` where upstream calls David Gay's dtoa (pl-dtoa.c, mode 0); the
+  layout around them is pl-write.c's line for line. Each returns the text, where upstream fills a
+  buffer.
+* **NaN is canonical in a term** (pl-alloc.c `put_double`: "SWI-Prolog canonical 1.5NaN"; the
+  kernel's `put_number` since R1c): a payload in a NaN's text does not survive a read, in either
+  system. `writeNaN`'s payload text is reached only from a host value and is checked at the function
+  (`1.5000000000000002NaN`, `1.75NaN`, `1.571111111111111NaN`).
+* **Refused, explicitly (`NotPortedError`):** a `float_format` other than `~h` (write_term/2,3's
+  option, with the rest of R1e).
+* **Gates:** test/core_text/test_float_write_swipl.jl (new) — THE FLOAT DIFFERENTIAL: `format_float`
+  against swipl 10.1.16's write/1 on **500,943 floats, 0 diverging**: 400,000 random bit patterns
+  (every finite float equally likely by its bits — subnormals, both exponent extremes), 100,000
+  random short decimals (1–17 significant digits, where the shortest-digit choice is tightest) and
+  the edge cases (±0.0, the smallest and largest subnormal, the smallest normal, the largest finite,
+  every power of ten and of two in range, 2^53 and its neighbours, 1e22, 1e23, 0.1–0.3, integers
+  filling 1–17 places); the float crosses to swipl as Julia's shortest text, asserted to read back
+  to the same bits. ±Inf and NaN texts read and written by both systems; the kernel reads its own
+  text back bit for bit (22,500 samples); the callers (the writer's `- 1.5`, `- -1.5`, `- -0.0`,
+  `a- -0.0`, `a-0.0`, `f(-0.0,1.0Inf)`, term_to_atom/2 both ways, atom_number/2). The round trip's
+  FLOAT EXCLUSION IS LIFTED: the hand corpora's floats round-trip (388 texts), and 22 floats in
+  operator contexts (`- 1.0`, `a- -0.0`, `-(1.0Inf)`, `1.5NaN`, `2.5e-7 * -1.0e300`, …) both
+  directions. test_write_swipl.jl's float refusal and test_read_term_swipl.jl's float-text refusal
+  became checks of the written float. All three term types.
+* **Mutation-proved — 18 of 18 caught at verdict level, targeted** (the workspace's
+  R1e_float_mutation/): the NaN suffix, a NaN's payload ignored, the infinity's sign, an infinity
+  not special, zero's sign, the decimal point off by one, both exponent thresholds and widths, a
+  one-digit mantissa without `.0`, the leading and the trailing zeros, the dot at the end, the
+  `.0`, `separate_number` by `f < 0` (F16: it SURVIVED the first run — `- -0.0` is spaced by the
+  prefix operator, not by `separate_number`; `a- -0.0` added, caught), PL_get_text's and
+  atom_number/2's float text. Dropped as equivalent before the run, with the reason: zero's
+  `decpt` 1 → 0 (both lay out `0.0`), and `N >= 0` dropped from the dot-inside test (every caller
+  passes `N = 3`).
+
 **R1f — the minimal loader: BUILT (2026-10-07)** (port_inventory row R1, its split; boot/init.jl,
 src/pl-srcfile.jl and src/os/pl-file.jl NEW; pl-comp.jl, pl-proc.jl, pl-read.jl, pl-error.jl,
 pl-incl.jl, pl-global.jl, pl-ext.jl; tools/bench.jl). Decided by the user, 2026-10-07 ("1a 2a 3a
@@ -1520,7 +1566,13 @@ pl-incl.jl, pl-global.jl, pl-ext.jl; tools/bench.jl). Decided by the user, 2026-
   predicate: after swipl's `redefined_procedure` warning), `as/2` declarations, thread-local, det
   and clausable attributes.
 * **NOT PORTED:** the compiler's own warnings (`compiler_warnings(Clause, …)`: pl-comp.c's variable
-  analysis, `VD_*` — a multiton `v(_A, _A)`); a named, counted exclusion in the differential.
+  analysis, `VD_*` — a multiton `v(_A, _A)`, a singleton in one branch of a disjunction); a named,
+  counted exclusion in the differential — PLANNED as R1g (docs/port_inventory.md, R1 row): the
+  warnings users see most.
+* **The round trip's exclusions, each with its cause:** a float — the writer's floats were R1e's
+  rest (LIFTED since R1e (floats)); #11, #12 — upstream defects, ported as is; a text holding the character 0 — a KERNEL GAP in
+  the term interface (an atom is named by a Julia `Symbol`, which cannot hold `\0`; swipl writes
+  and reads it back unchanged, so no report), planned in the R1 row.
 * **Gates:** test/files/test_load_swipl.jl (new): 12 case files consulted by the kernel and by
   swipl — messages (as terms), status, every solution and the dynamic flag of each case predicate;
   the four bench programs' answers vs swipl; a loaded predicate's source record (static, file,
@@ -1591,12 +1643,13 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   write_term's option); a compound whose head is no symbol (the kernel's `$expr/n`) is written
   `'$expr'(Child, …)`; no `var_prefix` (always off); no stream lock or acquire/release.
 * **Refused, explicitly (`NotPortedError`):** a float (`format_float`, R1e's floats — the rest of
-  R1e); a CYCLIC term (decision 4a: `PL_factorize_term`'s `@(Template, Substitutions)`), tested
+  R1e; written since R1e (floats)); a CYCLIC term (decision 4a: `PL_factorize_term`'s `@(Template, Substitutions)`), tested
   first, so no write walks a cycle — `X = f(X)`, a cycle through two lists, a cyclic exception
   ball (V5d); with `cycles(false)` the domain error, as upstream; user:portray/1 defined (above);
   `blobs(portray)`; an atom holding the character 0 (term_to_atom/2 of a string with one: the
   term interface's atoms cannot hold it; term_string/2 can); a grounded value SWI has no type for.
-* **NOT PORTED (the rest of R1e):** `format_float` and the float differential; write/1,
+* **NOT PORTED (the rest of R1e):** `format_float` and the float differential (since R1e (floats):
+  ported); write/1,
   writeq/1, print/1, write_canonical/1, writeln/1, write_term/2,3 with `PL_scan_options` and their
   options (`max_depth`, `max_text`, `spacing`, `variable_names`, `portray_goal`, …), nl/0,1, the
   stream table's current output (decision 2a), `numbervars_frame`, read_term_from_atom/3. Never:
@@ -1697,7 +1750,7 @@ explicit error, term positions refused until needed.
   read only with the blob option), a quasi-quotation (`{|Syntax||Text|}`) — at `start_pframe`,
   where swipl reads a dict or raises a syntax error inside one (pinned); term-to-text
   (`term_to_atom(+T, -A)`, `term_string(+T, -S)`: `PL_write_term`, R1e) and a float's text
-  (`PL_get_text`'s `format_float`, R1e).
+  (`PL_get_text`'s `format_float`, R1e) — both ported since, R1e's core and R1e (floats).
 * **NOT PORTED:** read_term/2,3 and read_clause/3 (a stream argument: the stream table, R2),
   read_term_from_atom/3 (its options need `PL_scan_options`, which write_term/2,3 needs too: R1e),
   so `bind_variables`, `check_singletons`, `instantiate_template` (their options) and

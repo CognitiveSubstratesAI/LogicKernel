@@ -430,10 +430,11 @@ end
 end
 
 @testset "the refusals: explicit, never a wrong text, a hang or a stack overflow" begin
-    # a float: format_float is R1e's floats
-    @test _tw_call("term_to_atom", _TW[_twf("f", lk_gnd(_TW, 1.5)), _tw_var()])[1] ===
-        :notported
-    @test _tw_write(lk_gnd(_TW, -0.0), _TW_WRITE) == "NOTPORTED"
+    # a float, written since R1e's floats (format_float; its gate: test_float_write_swipl.jl)
+    rc, ans = _tw_call("term_to_atom", _TW[_twf("f", lk_gnd(_TW, 1.5)), _tw_var()])
+    @test rc === :true && sym_text(ans[2]) == "f(1.5)"
+    @test _tw_write(lk_gnd(_TW, -0.0), _TW_WRITE) == "-0.0"
+    @test _tw_write(_twf("-", lk_gnd(_TW, 1.0)), _TW_WRITEQ) == "- 1.0"
     # an atom holding the character 0 (a string written quoted keeps it raw, as upstream): the
     # term interface's atoms cannot hold it; term_string/2's string can
     s0 = lk_gnd(_TW, "a\0b")

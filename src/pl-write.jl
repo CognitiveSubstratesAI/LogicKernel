@@ -14,8 +14,8 @@
 # integers and rationals, `'$VAR'` terms, and `writeTerm2`'s state machine over an explicit stack —
 # operators, lists, `{}`, Unicode bracket pairs, canonical compounds — and `PL_write_term`, which
 # `term_to_atom/2` and `term_string/2` write with (src/pl-read.jl). REFUSED (`NotPortedError`): a
-# cyclic term (decision 4a), `user:portray/1` when it is defined (decision 3a), a float (R1e's
-# floats). NOT PORTED, the rest of R1e: `format_float`, `write/1`, `writeq/1`, `print/1`,
+# cyclic term (decision 4a), `user:portray/1` when it is defined (decision 3a). Since R1e's floats,
+# `format_float` (`~h`). NOT PORTED, the rest of R1e: `write/1`, `writeq/1`, `print/1`,
 # `write_canonical/1`, `write_term/2,3` and their options, `nl/0,1`; never: attributed variables,
 # dicts, blobs other than the reserved symbols.
 
@@ -38,6 +38,95 @@ function make_nan(f::Float64)::Tuple{strnumstat, Float64}
     d = reinterpret(Float64, u | (UInt64(0x7ff) << 52))  # NaN exponent
     isnan(d) && return (NUM_OK, d)
     return (NUM_CONSTRANGE, f)                          # 1.0NaN is in fact 1.0Inf
+end
+
+# ── formatting a float (pl-write.c), since R1e's floats ─────────────────────────────────────────
+
+# PORT: pl-write.c writeNaN
+# DIVERGES: returns the text (upstream fills a buffer and returns its length).
+"The text of NaN `f`: its payload's float in `format_float`'s layout, then `NaN` — `1.5NaN` (pl-write.c)."
+writeNaN(f::Float64)::String = format_float(NaN_value(f), 3, 'e') * "NaN"
+
+# PORT: pl-write.c writeINF
+# DIVERGES: returns the text; the sign is the float's sign bit (`ar_signbit`).
+"The text of an infinity: `1.0Inf` or `-1.0Inf` (pl-write.c)."
+writeINF(f::Float64)::String = signbit(f) ? "-1.0Inf" : "1.0Inf"
+
+# PORT: pl-write.c format_special_float
+# DIVERGES: returns the text, or `nothing` (upstream: its length, 0 for an ordinary float).
+"The text of a NaN or an infinity, or `nothing` for a finite float (pl-write.c)."
+function format_special_float(f::Float64)::Union{Nothing, String}
+    isnan(f) && return writeNaN(f)
+    isinf(f) && return writeINF(f)
+    return nothing
+end
+
+# The shortest digits of `f` that read back as `f`, as dtoa's mode 0 gives them: the digit string
+# (no trailing zeros; "0" for zero), the decimal point's position (`decpt`: the value is
+# 0.DIGITS × 10^decpt) and the sign. DIVERGES — the DIGIT SOURCE ONLY (user, 2026-10-07): Julia's
+# `Base.Ryu.reduce_shortest` (Ryu, shortest round-trip) in place of David Gay's dtoa (pl-dtoa.c),
+# both the shortest decimal that rounds back to `f`; the float differential compares them.
+function _dtoa_mode0(f::Float64)::Tuple{String, Int, Bool}
+    sign = signbit(f)
+    f == 0.0 && return ("0", 1, sign)
+    sig, e10 = Base.Ryu.reduce_shortest(abs(f))
+    s = string(sig)
+    return (s, length(s) + Int(e10), sign)
+end
+
+# PORT: pl-write.c format_float
+# DIVERGES: returns the text (upstream writes into `buf` of `size` and returns the length, the
+# caller retrying with a larger buffer); the digits are `_dtoa_mode0`'s (Ryu's, see there).
+"""
+    format_float(f, N, E) -> String
+
+`f` in fixed point or in exponential notation (`E`: `'e'` or `'E'`) with the fewest digits that
+read back as `f` (pl-write.c): `~Nh` of format/2 — the exponential form when the exponent is past
+`N` (and before `-N-1`); `N < 0` always exponential. `1.0e+22`, `1.0e-05`, `0.001`, `100.0`.
+"""
+function format_float(f::Float64, N::Int, E::Char)::String
+    sp = format_special_float(f)
+    sp === nothing || return sp
+
+    s, decpt, sign = _dtoa_mode0(f)
+    o = IOBuffer()
+    nd = ncodeunits(s)                              # end-s
+
+    sign && print(o, '-')
+
+    if decpt <= 0                                   # decimal dot before
+        e = decpt - 1
+        if N < 0 || e < -N - 1
+            print(o, s[1], '.')
+            nd > 1 ? print(o, SubString(s, 2)) : print(o, '0')
+            print(o, E, e < 0 ? "-" * lpad(string(-e), 2, '0') : lpad(string(e), 3, '0'))   # %c%03d
+        else
+            print(o, "0.")
+            for _ in 1:(-decpt)
+                print(o, '0')
+            end
+            print(o, s)
+        end
+    elseif N >= 0 && nd > decpt                     # decimal dot inside
+        print(o, SubString(s, 1, decpt), '.', SubString(s, decpt + 1))
+    else                                            # decimal dot after
+        d = nd
+        trailing = decpt - d
+        exp = trailing + d - 1
+        if N < 0 || exp >= N + d                    # over precision: use eE
+            print(o, s[1], '.')
+            d > 1 ? print(o, SubString(s, 2)) : print(o, '0')
+            print(o, E, '+', lpad(string(exp), 2, '0'))     # %c+%02d
+        else                                        # within precision trail with .0
+            print(o, s)
+            for _ in d:(decpt - 1)
+                print(o, '0')
+            end
+            print(o, ".0")
+        end
+    end
+
+    return String(take!(o))
 end
 
 # ── quoting (pl-write.c) ────────────────────────────────────────────────────────────────────────
@@ -857,9 +946,10 @@ function separate_number(s::IOSTREAM, negative::Bool, fmt::String)::Bool
 end
 
 # PORT: pl-write.c writeNumber
-# DIVERGES: an integer is written as `do_format` writes it with the default format `~d`, the only
-# one before write_term/2,3's `integer_format` option (R1e): its decimal digits. NOT PORTED: a
-# float (`format_float`, `~h`: R1e) — refused (`NotPortedError`).
+# DIVERGES: a number is written as `do_format` writes it with the default formats, the only ones
+# before write_term/2,3's `integer_format` and `float_format` options (R1e): an integer's decimal
+# digits (`~d`), a float's `format_float(f, 3, 'e')` (`~h`, since R1e's floats); another format is
+# refused (`NotPortedError`).
 "Write the number `t` (pl-write.c): an integer, or a rational as `NrD` (`N/D` for `RAT_NATURAL`)."
 function writeNumber(t::T, options::write_options{T})::Bool where {T}
     k = number_kind(t)
@@ -886,7 +976,13 @@ function writeNumber(t::T, options::write_options{T})::Bool where {T}
         options.out.lastc = EOF
         return writeMPZ(denominator(q), options)
     end
-    throw(NotPortedError{T}(t, "writing a float (format_float)", "R1e (floats)"))
+    # V_FLOAT: do_format(out, "~h", 1, t, module) — format_float(f, 3, 'e'), its default `~h`
+    options.float_format == "~h" || throw(
+        NotPortedError{T}(t, "float_format other than ~h", "R1e (write_term/2,3)")
+    )
+    f = float_value(t)
+    separate_number(options.out, signbit(f), options.float_format) || return false
+    return PutString(format_float(f, 3, 'e'), options.out)
 end
 
 # PORT: pl-write.c varName

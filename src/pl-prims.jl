@@ -1467,8 +1467,8 @@ end
 
 # PORT: pl-prims.c atom_number as pl_atom_number2_va
 # (PRED_IMPL("atom_number", 2, atom_number, 0))
-# DIVERGES: a float's text needs the writer's float format (R1e): refused until then
-# (`NotPortedError`); an atom's or a string's text is read as its UTF-8 bytes.
+# DIVERGES: an atom's or a string's text is read as its UTF-8 bytes; a float's text is
+# `format_float`'s (since R1e's floats), as `PL_get_nchars(…, CVT_NUMBER)` makes it.
 """
 `atom_number/2` (pl-prims.c): the number a text atom or string writes, by `str_number` with no
 flags (so no escapes: `0'\\n` fails); else the atom a number writes; else a type error.
@@ -1506,11 +1506,15 @@ function pl_atom_number2_va(
     end
     p2 = deRef(ld, ld.slots[A2 + 1])
     if isNumber(p2)                                 # PL_get_nchars(A2, …, CVT_NUMBER)
-        isFloat(p2) && throw(
-            NotPortedError{T}(
-                p2, "atom_number/2: a float's text (the writer's float format)", "R1e"
+        if isFloat(p2)                              # PL_get_nchars: format_float(…, 3, 'e')
+            return if PL_unify_atom(
+                ld, A1, mk_sym(T, Symbol(format_float(float_value(p2), 3, 'e')))
             )
-        )
+                FTRUE
+            else
+                FFALSE
+            end
+        end
         n = number()
         get_number(p2, n)
         return PL_unify_atom(ld, A1, mk_sym(T, Symbol(_number_text(n)))) ? FTRUE : FFALSE

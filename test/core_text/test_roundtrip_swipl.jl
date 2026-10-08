@@ -8,12 +8,14 @@
 #   over R1d's and R1e's hand corpora, the four bench programs' clauses (their source texts, cut
 #   out by swipl's term positions) and random terms (R1e's generator).
 #   * EXCLUSIONS, BY NAME AND COUNTED (user, 2026-10-07), each with its reason, lifted when it goes:
-#     a FLOAT (the writer's floats are R1e's rest); upstream #11 (a prefix operator named by
+#     upstream #11 (a prefix operator named by
 #     letters before an atom starting with a Latin-1 letter: no space) and #12 (`'[]'(X)`,
 #     `'()'(X)`: written as a list / a bracket). An excluded #11 or #12 term must FAIL the round
 #     trip — so a fix upstream (or here) shows up as a stale exclusion, never silently. Texts
 #     either side cannot read (the R1d corpus's syntax errors and refusals) are counted too, and a
-#     text holding the character 0 (an atom cannot hold it: R1e's refusal).
+#     text holding the character 0 (an atom cannot hold it: R1e's refusal). A FLOAT was excluded
+#     until R1e's floats (format_float); lifted, the corpora's floats must round-trip, and a set of
+#     floats in operator contexts (`- 1.0`, `a- -0.0`, `1.5NaN`, …) is checked on its own.
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -119,8 +121,13 @@ _rt_issue12(t) =
     kind(t) === EXPR && nchildren(t) == 2 && kind(child(t, 1)) === SYM &&
     !is_reserved_symbol(child(t, 1)) && sym_text(child(t, 1)) in ("[]", "()")
 
-# a text holding the character 0: term_to_atom/2's text is then an atom with a 0, which the term
-# interface's atoms cannot hold (R1e's named refusal)
+# a text holding the character 0. CAUSE (probed 2026-10-08): a KERNEL GAP in the term interface —
+# an atom is named by a Julia `Symbol` (`mk_sym(T, ::Symbol)`), which cannot hold `\0`, so
+# term_to_atom/2 cannot make the atom of the written text (R1e's named refusal; the reader refuses
+# such an atom too, R1d). Not the writer (it writes the 0 raw inside the quotes, as swipl does),
+# not the stream layer, not the harness, not a swipl defect: swipl writes `'a\0b'` and
+# `"a\0b"` raw and reads both back unchanged. term_string/2 round-trips them (a string can hold
+# 0). Lifted when the interface's atoms can hold any text (docs/port_inventory.md, R1 row).
 _rt_nul(t) =
     (
         kind(t) === GND && lk_value(t) isa AbstractString &&
@@ -130,9 +137,7 @@ _rt_nul(t) =
 
 "The reason `t` is excluded, or `nothing`."
 _rt_exclusion(t::_RT) =
-    if _rt_has(_rt_float, t)
-        :float
-    elseif _rt_has(_rt_nul, t)
+    if _rt_has(_rt_nul, t)
         :nul
     elseif _rt_has(_rt_issue11, t)
         :issue11
@@ -261,7 +266,10 @@ if _RT_SWIPL !== nothing
         passed, excluded = _rt_run(items)
         println(stderr, "  hand corpora: $passed round-tripped; excluded: $excluded")
         @test passed > 350
-        @test get(excluded, :float, 0) > 0              # the corpora hold floats
+        # the float exclusion is LIFTED (R1e's floats): the corpora's floats round-trip
+        nfloat = count(it -> it[3] !== nothing && _rt_has(_rt_float, it[3]), items)
+        println(stderr, "  hand corpora: $nfloat items hold a float")
+        @test nfloat > 0 && !haskey(excluded, :float)
         @test get(excluded, :issue11, 0) > 0            # `dynamic é` …
         @test get(excluded, :issue12, 0) > 0            # `'[]'(a)`, `'()'(a)`
     end
@@ -287,7 +295,7 @@ if _RT_SWIPL !== nothing
         ]
         passed, excluded = _rt_run(items)
         println(stderr, "  bench clauses: $passed round-tripped; excluded: $excluded")
-        # THE CONDITION (decision 1b): no float in the four programs — and nothing else excluded
+        # THE CONDITION (decision 1b): nothing excluded
         @test isempty(excluded)
         @test passed == length(texts)
     end
@@ -303,7 +311,20 @@ if _RT_SWIPL !== nothing
         passed, excluded = _rt_run(items)
         println(stderr, "  random terms: $passed round-tripped; excluded: $excluded")
         @test passed > 1800
-        @test get(excluded, :float, 0) == 0             # the generator makes no float
+    end
+
+    @testset "floats in operator contexts (R1e's floats): both directions" begin
+        # probed against swipl 10.1.16: each is written back as swipl writes it (`- 1.0`, `a- -0.0`,
+        # `- 1.0Inf`, `1- -1.0`, `2.5e-07* -1.0e+300`)
+        texts = ["- 1.0", "-(1.0)", "a- -0.0", "a-0.0", "-(1.0Inf)", "-(-1.0Inf)", "1.5NaN",
+            "- -1.5", "1-(-1.0)", "f(-0.0,1.0e22)", "-(-(1.0))", "2.5e-7 * -1.0e300",
+            "[1.0,-2.0|-3.0]", "-(0.0)", "-(-0.0)", "1.0e15", "1.0e-5 - 1.0e-4",
+            "f(5.0e-324)",
+            "1.7976931348623157e308", "0.1+0.2", "- (1.0e+22)", "a = -1.0Inf"]
+        items = [(repr(s), "rt(" * _tc_codes(s) * ", ", _rt_read(s)) for s in texts]
+        @test all(it -> it[3] !== nothing && _rt_has(_rt_float, it[3]), items)
+        passed, excluded = _rt_run(items)
+        @test passed == length(texts) && isempty(excluded)
     end
 elseif _RT_SWIPL_REQUIRED
     error(

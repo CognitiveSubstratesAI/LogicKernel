@@ -25,7 +25,7 @@ end
 # PORT: pl-text.c PL_get_text
 # DIVERGES: returns the text, or `nothing` where upstream returns false (the error raised under
 # `CVT_EXCEPTION`, as upstream); an atom's or a string's text is its UTF-8 (see `PL_chars_t`); a
-# float's text needs the writer's `format_float` (R1e): refused (`NotPortedError`). NOT PORTED,
+# float's text is `format_float`'s (since R1e's floats). NOT PORTED,
 # as no caller passes them yet: `CVT_VARIABLE` (`varName`), the write conversions (`CVT_WRITE`,
 # `CVT_WRITEQ`, `CVT_WRITE_CANONICAL`: the writer, R1e) — refused where reached — and
 # `CVT_VARNOFAIL`; no buffer rings (`BUF_*`).
@@ -63,12 +63,8 @@ function PL_get_text(
         end
         return PL_chars_t(Vector{UInt8}(codeunits(s)), length(s), ENC_ISO_LATIN_1, true)
     elseif (flags & CVT_FLOAT) != 0 && isFloat(w)
-        throw(
-            NotPortedError{T}(
-                w, "PL_get_text: a float's text (the writer's format_float)",
-                "R1e (the writer)"
-            )
-        )
+        s = format_float(float_value(w), 3, 'e')    # format_float(text->buf, …, 3, 'e')
+        return PL_chars_t(Vector{UInt8}(codeunits(s)), length(s), ENC_ISO_LATIN_1, true)
     elseif (flags & CVT_LIST) != 0
         @label case_list
         b, result = codes_or_chars_to_buffer(ld, l, false)
