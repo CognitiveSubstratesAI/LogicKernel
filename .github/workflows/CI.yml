@@ -140,6 +140,11 @@ jobs:
           apt-get update -q
           apt-get install -y -q --no-install-recommends git ca-certificates jq curl
       - uses: actions/checkout@v4
+      # The job runs as root over a checkout the runner's user owns, so git refuses the repository
+      # ("detected dubious ownership") once checkout's own safe.directory is gone — MEASURED run
+      # 37711043499: `git rev-parse HEAD` (test_gate_split.jl, tools/ci_status.sh) exited 128.
+      - name: Mark the checkout a safe git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.13'
