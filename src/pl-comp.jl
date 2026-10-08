@@ -1852,7 +1852,7 @@ function compileClause(
     flags |= ci.flags                                          # CL_HEAD_TERMS, set on ci->clause
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), flags, ci.codes, ci.literals,
-        ci.procedures
+        ci.procedures, UInt32(0), UInt32(0), UInt32(0)     # line_no, source_no, owner_no
     )
 end
 
@@ -1938,39 +1938,55 @@ function get_head_and_body_clause(
     return (true, m)
 end
 
+# PORT: pl-incl.h sourceloc
+# DIVERGES: the file is its atom, the line an `Int`.
+"A source location (pl-incl.h `sourceloc`): a file and a line in it."
+struct sourceloc{T}
+    file::T                                 # name of the file
+    line::Int                               # line number
+end
+
 # PORT: pl-comp.c assert_term as assert_term!
-# DIVERGES: the path of assert/1, assertz/1 and asserta/1 only — `loc` NULL, `owner` NULL, `flags`
-# 0 (user, 2026-10-06, Q8 (a)) — returning the clause or `nothing`, upstream's NULL, the error
-# raised; the database `gd` is an argument (upstream: GD); a module is an index into its table,
-# `user` when the term names none (no source module: `module` is NULL on this path). The clause is
-# checked for cycles and RESOLVED through the bindings before it is compiled (`is_acyclic`,
-# `resolve_term`), because `compileClause` takes terms without bindings:
+# DIVERGES: returns the clause or `nothing`, upstream's NULL, the error raised; the database `gd` is
+# an argument (upstream: GD); a module is an index into its table — `module_` 0 is upstream's NULL:
+# the source module (`LD->modules.source`) when loading (`loc`), else `user` (`PL_strip_module_ex`).
+# The clause is checked for cycles and RESOLVED through the bindings before it is compiled
+# (`is_acyclic`, `resolve_term`), because `compileClause` takes terms without bindings:
 # `representation_error(cyclic_term)` is raised here, where upstream's analysis raises it (after the
-# procedure is looked up). A clause the static procedure's error rejects is left to
-# Julia's garbage collector (upstream: `freeClause`).
-# NOT PORTED: `PL_CREATE_INCREMENTAL` and `PL_CREATE_THREAD_LOCAL` (assert/2's
-# `flags`: no tabling, no threads); the module's assert hook (`O_PROLOG_HOOK`: `module_t` has no
-# `hook`); the `CHECK_INTERRUPT` retry (no signal handling); the consult path `loc` (the source file
-# and line, the owner, reconsult and redefinition, system-mode locking, compiler warnings) until
-# R1's loader; transactions (`assertDefinition!`'s, not ported there).
+# procedure is looked up). A clause the static procedure's error rejects is left to Julia's garbage
+# collector (upstream: `freeClause`). The consult path (`loc`, since R1f) is upstream's for a FIRST
+# load (pl-srcfile.jl): the clause's file and line, its owner, `overruleImportedProcedure`,
+# `redefineProcedure`, the source file's current procedure. NOT PORTED: `PL_CREATE_INCREMENTAL`
+# and `PL_CREATE_THREAD_LOCAL` (assert/2's `flags`: no tabling, no threads); the module's assert
+# hook (`O_PROLOG_HOOK`: `module_t` has no `hook`); the `CHECK_INTERRUPT` retry (no signal
+# handling); system mode (no boot compilation); the compiler's warnings (`compileClause` makes
+# none: no singleton or branch analysis); transactions (`assertDefinition!`'s, not ported there).
 """
+    assert_term!(gd, ld, term, module_, where_, owner, loc, flags) -> Clause, or nothing
     assert_term!(gd, ld, term, where_) -> Clause, or nothing
 
 Compile the clause in term reference `term` and add it to its predicate — in the module its head
-names, else `user` — of the database `gd`, at its start (`CL_START`) or its end (`CL_END`)
-(pl-comp.c): a predicate that is not
-yet defined becomes dynamic; a static one that is raises `permission_error(modify,
-static_procedure, PI)`. `nothing` with the error raised when the clause is not callable, cyclic,
-or past `MAXARITY`.
+names, else `module_` (0: `user`, or the source module when loading) — of the database `gd`
+(pl-comp.c). assert/1's path (`loc` nothing): at the start (`CL_START`) or the end (`CL_END`); a
+predicate that is not yet defined becomes dynamic; a static one that is raises
+`permission_error(modify, static_procedure, PI)`. The consult path (`loc` the clause's file and
+line, `owner` the file loading it): the clause goes at the end of a static predicate the file
+defines. `nothing` with the error raised when the clause is not callable, cyclic, or past
+`MAXARITY`, or the predicate may not be defined.
 """
 function assert_term!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, term::term_t, where_::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, term::term_t, module_::Int, where_::Int,
+    owner::Union{Nothing, T}, loc::Union{Nothing, sourceloc{T}}, flags::Int
 )::Union{Nothing, Clause{T}} where {T}
-    tmp = PL_new_term_refs(ld, 3)
+    source_module = loc !== nothing ? ld.modules_source : 0
+    tmp = PL_new_term_refs(ld, 4)
     tmp == 0 && return nothing
     head = tmp + 1
     body = tmp + 2
-    module_ = 0                                                 # (no source module: see above)
+    # warnings = (owner ? tmp+3 : 0): the compiler makes none
+
+    module_ == 0 && (module_ = source_module)
+
     ok, module_ = PL_strip_module_ex(gd, ld, term, module_, tmp)
     ok || return nothing
     ok, mh = get_head_and_body_clause(gd, ld, tmp, head, body, module_)
@@ -1985,6 +2001,13 @@ function assert_term!(
         end
         proc === nothing && return nothing
     end
+    flags == 0 || throw(
+        NotPortedError{T}(
+            name,
+            "assert_term: PL_CREATE_INCREMENTAL/THREAD_LOCAL",
+            "no tabling, threads"
+        )
+    )
     h = deRef(ld, ld.slots[head + 1])
     b = deRef(ld, ld.slots[body + 1])
     if !is_acyclic(ld, h) || !is_acyclic(ld, b)                 # CYCLIC_HEAD, CYCLIC_BODY
@@ -1996,6 +2019,40 @@ function assert_term!(
     )
     clause === nothing && return nothing
     def = proc.definition                                       # getProcDefinition(proc)
+
+    # If loc is defined, we are called from '$record_clause'/2. This code takes care of
+    # reconsult, redefinition, etc.
+    if loc !== nothing
+        sf = lookupSourceFile(gd, loc.file, true)::SourceFile{T}
+        clause.line_no = UInt32(loc.line)
+        clause.source_no = UInt32(sf.index)
+        own = owner === nothing ? loc.file : owner              # if ( !loc->file ) …: never
+        of = if sym_key(own) == sym_key(loc.file)
+            sf
+        else
+            lookupSourceFile(gd, own, true)::SourceFile{T}
+        end
+        clause.owner_no = UInt32(of.index)
+
+        overruleImportedProcedure(gd, ld, proc, mhead) || return nothing   # error: freeClause
+        def = proc.definition                                   # may be changed
+
+        if proc !== of.current_procedure
+            if _impl_any_defined(def)
+                redefineProcedure(gd, ld, proc, of, 0) || return nothing
+            end
+            # locks predicates as system predicates in system mode: no system mode here
+            if !isDefinedProcedure(gd, proc)
+                def.flags &= ~HIDE_CHILDS                       # truePrologFlag(PLFLAG_DEBUGINFO)
+            end
+            addProcedureSourceFile(of, proc)
+            of.current_procedure = proc
+        end
+
+        cref = assertProcedureSource(gd, of, proc, clause)      # (no compiler warnings)
+        return cref.clause
+    end
+
     # assert[az]/1
     if (def.flags & P_DYNAMIC) == 0
         if isDefinedProcedure(gd, proc)
@@ -2007,6 +2064,10 @@ function assert_term!(
     assertProcedure!(gd, proc, clause, where_)
     return clause                                               # cref->value.clause
 end
+
+assert_term!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, term::term_t, where_::Int
+) where {T} = assert_term!(gd, ld, term, 0, where_, nothing, nothing, 0)
 
 "The database of the running query (`ld.GD`, set by `PL_open_query`): a built-in's GD."
 function _query_gd(ld::PL_local_data{T})::PL_global_data{T} where {T}
@@ -2035,11 +2096,64 @@ function pl_asserta1_va(
     return assert_term!(_query_gd(ld), ld, A1, CL_START) !== nothing ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c record_clause
+# DIVERGES: the database is the running query's (`_query_gd`); `ref` 0 is upstream's NULL
+# (`'$record_clause'/4`, the clause reference, is not ported: no clause references as terms). The
+# source `-` is the start of the term read last (`LD->read_source`: `source_file_name`,
+# `source_line_no`).
+"Compile the clause `term` from loading the file `owner`, at the source location `source` (pl-comp.c)."
+function record_clause(
+    ld::PL_local_data{T}, term::term_t, owner::term_t, source::term_t, ref::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    a_owner = PL_get_atom_ex(ld, owner)
+    a_owner === nothing && return false
+
+    a = PL_get_atom(ld, source)
+    w = deRef(ld, ld.slots[source + 1])
+    if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :-))
+        f = ld.read_source.file
+        line = ld.read_source.position.lineno
+        @assert line != -1 && f !== nothing
+        loc = sourceloc{T}(f, line)                             # source_file_name, source_line_no
+    elseif _hasFunctor(w, mk_sym(T, :(:)), 2)                   # file:line
+        arg = PL_new_term_ref(ld)
+        ld.slots[arg + 1] = child(w, 2)
+        file = PL_get_atom_ex(ld, arg)
+        file === nothing && return false
+        ld.slots[arg + 1] = child(w, 3)
+        line = PL_get_integer_ex(ld, arg)
+        line === nothing && return false
+        loc = sourceloc{T}(file, line)
+    else
+        return PL_type_error(ld, "source-location", source)
+    end
+
+    clause = assert_term!(gd, ld, term, 0, CL_END, a_owner, loc, 0)
+    if clause !== nothing
+        ref == 0 ||
+            throw(NotPortedError{T}(a_owner, "'\$record_clause'/4", "no clause references"))
+        return true
+    end
+    return false
+end
+
+# PORT: pl-comp.c record_clause as pl_record_clause3_va
+# (PRED_IMPL("$record_clause", 3, record_clause, 0))
+"`'\$record_clause'(+Term, +Owner, +Source)` (pl-comp.c): compile a clause from loading a file."
+function pl_record_clause3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    return record_clause(ld, A1, A2, A3, 0) ? FTRUE : FFALSE
+end
+
 # PORT: pl-comp.c BeginPredDefs as PL_predicates_from_comp
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (c:9193-9223); `META` is `PL_FA_TRANSPARENT` (c:9190) and `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-comp.c's registration table (`BeginPredDefs(comp)`): the ported entries."
 const PL_predicates_from_comp = (
+    PL_extension("\$record_clause", 3, pl_record_clause3_va, PL_FA_VARARGS),
     PL_extension("assert", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension(
         "assertz", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS

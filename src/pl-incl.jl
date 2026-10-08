@@ -68,6 +68,12 @@ const CL_START = 1
 # PORT: pl-incl.h CL_END
 "Insertion point: the end of the clause list — `assertz` (pl-incl.h)."
 const CL_END = 2
+# PORT: pl-incl.h GP_DEFINE
+"`get_procedure`: define a procedure (pl-incl.h)."
+const GP_DEFINE = Int(4)
+# PORT: pl-incl.h GP_HOW_MASK
+"`get_procedure`: the bits saying how to find the procedure (pl-incl.h)."
+const GP_HOW_MASK = Int(0x0ff)
 # PORT: pl-incl.h GP_NAMEARITY
 "`unify_definition` flag: write the predicate indicator `Name/Arity`, not a head (pl-incl.h)."
 const GP_NAMEARITY = Int(0x100)
@@ -165,6 +171,57 @@ const P_MODIFIED = FLAG64(36)
 # PORT: pl-incl.h P_RELOADING
 "Predicate flag: being reloaded (pl-incl.h — an alias of `P_MODIFIED`)."
 const P_RELOADING = P_MODIFIED
+# PORT: pl-incl.h FILE_ASSIGNED
+"Predicate flag: assigned to a source file (pl-incl.h)."
+const FILE_ASSIGNED = FLAG64(32)
+# PORT: pl-incl.h P_CLAUSABLE
+"Predicate flag: clause/2 always works (pl-incl.h)."
+const P_CLAUSABLE = FLAG64(2)
+# PORT: pl-incl.h P_DET
+"Predicate flag: the predicate is deterministic (pl-incl.h)."
+const P_DET = FLAG64(28)
+# PORT: pl-incl.h SPY_ME
+"Predicate flag: a spy point is placed (pl-incl.h)."
+const SPY_ME = FLAG64(26)
+# PORT: pl-incl.h P_VOLATILE
+"Predicate flag: clauses are not saved (pl-incl.h)."
+const P_VOLATILE = FLAG64(13)
+# PORT: pl-incl.h P_NOPROFILE
+"Predicate flag: profile children, not me (pl-incl.h)."
+const P_NOPROFILE = FLAG64(19)
+# PORT: pl-incl.h P_PUBLIC
+"Predicate flag: called from somewhere (pl-incl.h)."
+const P_PUBLIC = FLAG64(16)
+# PORT: pl-incl.h P_NON_TERMINAL
+"Predicate flag: a grammar rule (Name//Arity) (pl-incl.h)."
+const P_NON_TERMINAL = FLAG64(4)
+# PORT: pl-incl.h P_QUASI_QUOTATION_SYNTAX
+"Predicate flag: a quasi-quotation syntax (pl-incl.h)."
+const P_QUASI_QUOTATION_SYNTAX = FLAG64(3)
+# PORT: pl-incl.h P_SSU_DET
+"Predicate flag: single sided unification: det (pl-incl.h)."
+const P_SSU_DET = FLAG64(1)
+# PORT: pl-incl.h PROC_WEAK
+"Procedure flag: an implicit import (pl-incl.h)."
+const PROC_WEAK = UInt32(0x0001)
+# PORT: pl-incl.h PROC_MULTISOURCE
+"Procedure flag: assigned to more than one source file (pl-incl.h)."
+const PROC_MULTISOURCE = UInt32(0x0002)
+# PORT: pl-incl.h SINGLETON_CHECK
+"Style check: singleton variables, as read/1 reports them (pl-incl.h)."
+const SINGLETON_CHECK = 0x0002
+# PORT: pl-incl.h MULTITON_CHECK
+"Style check: `_X` variables used more than once (pl-incl.h)."
+const MULTITON_CHECK = 0x0004
+# PORT: pl-incl.h DISCONTIGUOUS_STYLE
+"Style check: warn on a discontiguous predicate (pl-incl.h)."
+const DISCONTIGUOUS_STYLE = 0x0008
+# PORT: pl-incl.h SEMSINGLETON_CHECK
+"Style check: semantic singletons (pl-incl.h; the compiler's, not ported)."
+const SEMSINGLETON_CHECK = 0x0040
+# PORT: pl-incl.h NOEFFECT_CHECK
+"Style check: goals with no effect (pl-incl.h; the compiler's, not ported)."
+const NOEFFECT_CHECK = 0x0080
 # PORT: pl-incl.h MA_VAR
 "Meta-argument specifier `-`: the argument is unbound on entry (pl-incl.h)."
 const MA_VAR = UInt8(11)
@@ -297,12 +354,13 @@ end
 arg_info() = arg_info(0.0f0, false, 0x00, false, 0x00)
 
 # PORT: pl-incl.h procedure
-# DIVERGES: no `source_no` (source files are not ported). D is the predicate's type —
-# `definition{T}` — a parameter only to break the struct cycle with `clause`.
+# DIVERGES: D is the predicate's type — `definition{T}` — a parameter only to break the struct
+# cycle with `clause`. `source_no` since R1f (the source file that defines it, 0: none).
 "A procedure (pl-incl.h `struct procedure`): the predicate a functor names in a module."
 mutable struct procedure{D}
     definition::D           # definition of procedure
     flags::UInt32           # PROC_WEAK
+    source_no::UInt32       # Source file it was defined in
 end
 
 # PORT: pl-incl.h clause
@@ -311,7 +369,7 @@ end
 # hold the atom, functor or number itself — and its PROCEDURE TABLE (`procedures`, since V1): the
 # procedures its call operands (`I_CALL`, `I_DEPART`, …) index, where upstream's operand is the
 # `Procedure` pointer itself (user, 2026-10-04: decoding stays local to the clause, as with the
-# literals). No source-file fields (`line_no`, `source_no`, `owner_no`), no `references` (no
+# literals). The source-file fields (`line_no`, `source_no`, `owner_no`) since R1f; no `references` (no
 # reference-counted clause references) and no `tr_erased_no` (transactions); `code_size` is the
 # length of `codes`. D is the predicate's type — `definition{T}` — a parameter only to break the
 # struct cycle.
@@ -329,6 +387,9 @@ mutable struct clause{T, D}
     codes::Vector{code}             # VM codes of clause
     literals::Vector{T}             # the terms the codes' literal operands index
     procedures::Vector{procedure{D}}    # the procedures the codes' call operands index
+    line_no::UInt32                 # Source line-number
+    source_no::UInt32               # Index of source-file
+    owner_no::UInt32                # Index of owning source-file
 end
 
 "The start of `cl`'s code (upstream's `PC = cl->codes`), with its literal table."
@@ -599,6 +660,38 @@ const ClauseChoice{T} = clause_choice{ClauseRef{T}}
 # PORT: pl-incl.h Procedure
 "A procedure of terms `T` (pl-incl.h `Procedure`)."
 const Procedure{T} = procedure{definition{T}}
+
+# ── source files (pl-incl.h), since R1f ─────────────────────────────────────────────────────────
+
+# PORT: pl-incl.h SF_MAGIC
+"A live source file's magic number (pl-incl.h)."
+const SF_MAGIC = 0x14a3c90f
+
+# PORT: pl-incl.h sourceFile
+# DIVERGES: the file's procedures are a vector, the most recent LAST, where upstream's `ListCell`
+# chain holds it FIRST; no `modules` (no module files), no `reload` (reconsult is not ported: a
+# second consult of a file is refused), no mutex (no threads); `name` is the file's atom.
+"A source file (pl-incl.h `struct sourceFile`): its name, its procedures, the one being loaded."
+mutable struct sourceFile{T}
+    name::T                                             # name of source file
+    mtime::Float64                                      # modification time when loaded
+    ltime::Float64                                      # load time
+    procedures::Vector{Procedure{T}}                    # List of associated procedures
+    current_procedure::Union{Nothing, Procedure{T}}     # currently loading one
+    magic::Int                                          # Magic number
+    count::Int                                          # number of times loaded
+    number_of_clauses::UInt32                           # number of clauses
+    index::Int                                          # index number (1,2,...)
+    references::UInt32                                  # Reference count
+    isfile::Bool                                        # Is a real file
+    system::Bool                                        # system sourcefile: do not reload
+    from_state::Bool                                    # Loaded from resource DB state
+    resource::Bool                                      # Loaded from resource DB file
+end
+
+# PORT: pl-incl.h SourceFile
+"A source file of terms `T` (pl-incl.h `SourceFile`)."
+const SourceFile{T} = sourceFile{T}
 
 # ── the local stack: positions, frames, choice points, foreign frames (pl-incl.h; decision 3) ───
 #

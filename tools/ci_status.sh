@@ -3,7 +3,8 @@
 # (user, 2026-10-06): a chunk's gate stops while the previous push is red, so a defect the local
 # gate defers to CI (the alternative term types) is fixed before anything builds on it.
 #
-#   tools/ci_status.sh [SHA]          default: origin/main's commit, the last push
+#   tools/ci_status.sh [SHA]          default: origin/main's commit, the last push; any commit name
+#                                     (a short SHA, a branch) is resolved to the full SHA
 #
 # Exit status, the answer:
 #   0  every workflow run of that commit completed and succeeded
@@ -21,6 +22,16 @@ if [ -z "$SHA" ]; then
         echo "ci_status: no origin/main to read"
         exit 2
     }
+fi
+# THE FULL SHA, ALWAYS: the API's head_sha filter matches only a full one, so a short SHA read as
+# "no run yet" (exit 3) whatever CI said — MEASURED 2026-10-07, `ci_status.sh b615e51` while its
+# run was in progress. Resolve any commit name; keep a full SHA git does not have (an unfetched
+# commit, the tests' fixtures); anything else is unreadable (exit 2), never a silent "no run".
+if full="$(git -C "$ROOT" rev-parse --verify --quiet "$SHA^{commit}" 2>/dev/null)"; then
+    SHA="$full"
+elif ! printf '%s' "$SHA" | grep -qE '^[0-9a-f]{40}$'; then
+    echo "ci_status: $SHA: not a commit this repository has, nor a full SHA"
+    exit 2
 fi
 if [ -n "${LOGICKERNEL_CI_FIXTURE:-}" ]; then
     J="$(cat "$LOGICKERNEL_CI_FIXTURE")"

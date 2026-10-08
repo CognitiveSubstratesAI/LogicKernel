@@ -413,12 +413,11 @@ function addToBuffer(c::Int, rd::read_data)::Nothing
 end
 
 # PORT: pl-read.c setCurrentSourceLocation
-# DIVERGES: the file is the stream's when it is a named file stream (no stream table:
-# `fileNameStream` is the IO's name); NOT PORTED: `LD->read_source`.
+# DIVERGES: `LD->read_source` gets a copy (a struct assignment upstream).
 "Record where the term starts: the stream's position less the character just read (pl-read.c)."
 function setCurrentSourceLocation(rd::read_data{T})::Nothing where {T}
     s = rd._rb.stream
-    rd.start_of_term.file = nothing
+    rd.start_of_term.file = fileNameStream(rd.gd, s)   # NULL_ATOM: nothing
     p = s.position
     sp = rd.start_of_term.position
     if p !== nothing
@@ -432,6 +431,10 @@ function setCurrentSourceLocation(rd::read_data{T})::Nothing where {T}
         sp.charno = 0
         sp.byteno = 0
     end
+    ld = rd.ld                                      # LD->read_source = _PL_rd->start_of_term
+    ld.read_source = source_location{T}(
+        rd.start_of_term.file, IOPOS(sp.byteno, sp.charno, sp.lineno, sp.linepos, 0)
+    )
     return nothing
 end
 
@@ -2233,8 +2236,8 @@ end
 
 # PORT: pl-read.c init_read_data
 # DIVERGES: returns the read data, where upstream initialises a caller's struct; the module is
-# `MODULE_parse` (`user`: no source is being loaded until R1f); `styleCheck` 0 (no style checks
-# until the loader); no character conversion table.
+# `MODULE_parse` — `user` (`read_clause` sets the source module: `set_module_read_data`); no
+# character conversion table.
 "Fresh read data for reading from stream `inp` (pl-read.c)."
 function init_read_data(
     gd::PL_global_data{T}, ld::PL_local_data{T}, inp::IOSTREAM
@@ -2243,7 +2246,7 @@ function init_read_data(
     rd = read_data{T}(
         0, 0, 0, 0, token{T}(), false, RD_MAGIC,
         source_location{T}(nothing, IOPOS()), 0, 0,
-        m.index, m.flags, 0, 0,                     # module, its syntax flags, var_prefix, style
+        m.index, m.flags, 0, ld.debugstatus_styleCheck,    # module, syntax flags, var_prefix, style
         :error, false, PL_new_term_ref(ld),         # on_error, has_exception, exception
         0, 0, 0, 0, 0,                              # variables, varnames, singles, subtpos, comments
         false, false, inp.unicode_atoms, 0,          # cycles, dotlists, unicode_atoms, strictness
@@ -3394,9 +3397,9 @@ function bind_variable_names(rd::read_data{T})::Bool where {T}
 end
 
 # PORT: pl-read.c read_term
-# DIVERGES: the `variables(V)` and `singletons(S)` options (`bind_variables`, `check_singletons`)
-# and `cycles(true)` (`instantiate_template`) are NOT PORTED: no entry point sets them (their
-# options need `PL_scan_options`); no quasi-quotations to parse (`parse_quasi_quotations`: one is
+# DIVERGES: the `variables(V)` and `singletons(S)` options (`bind_variables`, `check_singletons`'s
+# list) and `cycles(true)` (`instantiate_template`) are NOT PORTED: no entry point sets them (their
+# options need `PL_scan_options`); the singleton REPORT is (`read_clause`, since R1f); no quasi-quotations to parse (`parse_quasi_quotations`: one is
 # refused before it is collected); no overflow codes (`raiseStackOverflow`).
 """
 Read one term from the read data's stream and unify it with term reference `term` (pl-read.c):
@@ -3439,12 +3442,212 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
         rc = bind_variable_names(rd)
         rc || @goto out
     end
+    if rd.singles != 0
+        rc = check_singletons(term, rd)
+        rc || @goto out
+    end
 
     rc = true
 
     @label out
     PL_close_foreign_frame(ld, fid)
     return rc
+end
+
+# ── singletons and read_clause (pl-read.c), since R1f ───────────────────────────────────────────
+
+# `rd.singles` when the singletons are only REPORTED: upstream stores `true` (1) in the term_t field;
+# here -1, which no term reference is.
+const _SINGLES_REPORT = -1
+
+# PORT: pl-read.c MAX_SINGLETONS
+"The most singletons reported for one term (pl-read.c)."
+const MAX_SINGLETONS = 256
+
+# PORT: pl-read.c IS_SINGLETON
+"`is_singleton`'s question: a singleton to warn about (pl-read.c)."
+const IS_SINGLETON = 0
+# PORT: pl-read.c LIST_SINGLETONS
+"`is_singleton`'s question: any singleton (pl-read.c)."
+const LIST_SINGLETONS = 1
+# PORT: pl-read.c IS_MULTITON
+"`is_singleton`'s question: a `_X` variable used more than once (pl-read.c)."
+const IS_MULTITON = 2
+
+# PORT: pl-read.c var_name_body
+# DIVERGES: the name's bytes; returns the body's start index (2 past a prefix symbol, else 1).
+"Where a variable name's body starts: past a var_prefix symbol such as `?` (pl-read.c)."
+var_name_body(name::AbstractVector{UInt8})::Int =
+    (length(name) >= 2 && (Int(name[1]) % UInt32) < 0x80 && PlSymbolW(Int(name[1]))) ? 2 : 1
+
+# The byte at `i` of a C string `name`, 0 past its end.
+_cbyte(name::AbstractVector{UInt8}, i::Int)::Int = i <= length(name) ? Int(name[i]) : 0
+
+# PORT: pl-read.c warn_singleton
+# DIVERGES: the name's bytes (UTF-8).
+"Should a singleton variable named `name` be reported (pl-read.c)? `_` and `__x` never are."
+function warn_singleton(name::AbstractVector{UInt8})::Bool
+    b = var_name_body(name)
+    prefixed = b != 1
+    _cbyte(name, b) != Int('_') && return true      # not _*: always warn
+    _cbyte(name, b + 1) == Int('_') && return false # __*: never warn
+    if _cbyte(name, b + 1) != 0                     # _a: warn
+        _, c = utf8_get_char(name, b + 1)
+        isDigitW(c) && return false
+        !prefixed && !PlUpperW(c) && return true
+    end
+    return false
+end
+
+# PORT: pl-read.c warn_multiton
+# DIVERGES: the name's bytes (UTF-8).
+"Should a variable named `name` used more than once be reported (pl-read.c)?"
+function warn_multiton(name::AbstractVector{UInt8})::Bool
+    if !warn_singleton(name)
+        b = var_name_body(name)
+        prefixed = b != 1
+        if _cbyte(name, b) == Int('_') && _cbyte(name, b + 1) != 0
+            _, c = utf8_get_char(name, b + 1)
+            isDigitW(c) && return false             # _<digit>: never warn
+            !prefixed && !PlUpperW(c) && return false   # _<lower>: never warn
+        end
+        return true
+    end
+    return false
+end
+
+# PORT: pl-read.c is_singleton
+# DIVERGES: no quasi-quotation scan (a quasi-quotation is refused before it is collected).
+"Is `var` a singleton (or multiton) of the kind `type` asks (pl-read.c)?"
+function is_singleton(var::variable, type::Int, rd::read_data)::Bool
+    name = view(var.name, 1:(var.namelen))
+    if type == IS_SINGLETON
+        return var.times == 1 && warn_singleton(name)
+    elseif type == LIST_SINGLETONS
+        return var.times == 1
+    end
+    return var.times > 1 && warn_multiton(name)
+end
+
+# PORT: pl-read.c singletonWarning
+# DIVERGES: the names are the variables' bytes; the message goes to `printMessage`.
+"Report `which(Term, Names)` — `singletons` or `multitons` — as a warning (pl-read.c)."
+function singletonWarning(
+    term::term_t, which::String, vars::Vector{String}, rd::read_data{T}
+)::Bool where {T}
+    ld = rd.ld
+    names = T[_atom_from_text(T, v) for v in vars]  # PL_unify_chars(h, REP_UTF8|PL_ATOM, …)
+    l = mk_nil(T)
+    for n in reverse(names)
+        l = mk_expr(T, T[mk_sym(T, Symbol("[|]")), n, l])
+    end
+    return printMessage(
+        ld, :warning, mk_expr(T, T[mk_sym(T, Symbol(which)), ld.slots[term + 1], l])
+    )
+end
+
+# PORT: pl-read.c check_singletons
+# DIVERGES: the LIST form (`singletons(S)`: `rd.singles` a term reference) is NOT PORTED — no entry
+# point sets the option (`PL_scan_options`) — refused; the report form as upstream.
+"Report the singletons (and, with `MULTITON_CHECK`, the multitons) of the term read (pl-read.c)."
+function check_singletons(term::term_t, rd::read_data{T})::Bool where {T}
+    if rd.singles != _SINGLES_REPORT                # returns <name> = var bindings
+        throw(NotPortedError{Nothing}(nothing, "read_term/2's singletons(S) option", "R1e"))
+    end
+    singletons = String[]                           # just report
+    for var in rd.vt.var_buffer                     # FOR_VARS(var): singletons
+        if is_singleton(var, IS_SINGLETON, rd)
+            length(singletons) < MAX_SINGLETONS &&
+                push!(singletons, String(var.name[1:var.namelen]))
+        end
+    end
+    if !isempty(singletons)
+        singletonWarning(term, "singletons", singletons, rd) || return false
+    end
+    if (rd.styleCheck & MULTITON_CHECK) != 0
+        empty!(singletons)                          # multiple _X*
+        for var in rd.vt.var_buffer
+            if is_singleton(var, IS_MULTITON, rd)
+                length(singletons) < MAX_SINGLETONS &&
+                    push!(singletons, String(var.name[1:var.namelen]))
+            end
+        end
+        if !isempty(singletons)
+            singletonWarning(term, "multitons", singletons, rd) || return false
+        end
+    end
+    return true
+end
+
+# PORT: pl-read.c reportReadError
+# DIVERGES: the message goes to `printMessage`.
+"Handle the syntax error just read as `on_error` says: raise it, or report it; true to read on (pl-read.c)."
+function reportReadError(rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    rd.on_error === :error && return PL_raise_exception(ld, rd.exception)
+    if rd.on_error !== :quiet
+        printMessage(ld, :error, ld.slots[rd.exception + 1])
+    end
+    PL_clear_exception(ld)
+
+    rd.on_error === :dec10 && return true
+
+    return false
+end
+
+# PORT: pl-read.c set_module_read_data
+# DIVERGES: the module is an index into the database's table; no `var_prefix` (the module flag is
+# not ported: 0).
+"Read in module `m`: its syntax flags (pl-read.c)."
+function set_module_read_data(rd::read_data{T}, m::Int)::Nothing where {T}
+    rd.module_ = m
+    rd.flags = rd.gd.modules[m].flags
+    rd.var_prefix = 0                               # _PL_rd->module->var_prefix
+    return nothing
+end
+
+# PORT: pl-read.c read_clause
+# DIVERGES: the read options (`PL_scan_options`: variable names, positions, comments, syntax
+# errors, …) are NOT PORTED — `options` 0 only, else refused; so no comment hook
+# (`prolog:comment_hook/3` is not defined), no term position, `syntax_errors(dec10)`; a stream
+# whose unquoted atoms must be NFC is refused (`ensure_unicode_normalize_hook`: no normalizer). The
+# foreign frame is closed before returning, where upstream leaves it to its caller's.
+"""
+Read a clause from `s` into term reference `term`, as consulting a file does (pl-read.c): in the
+source module, its singletons reported, a syntax error reported and the next clause read.
+"""
+function read_clause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, term::term_t, options::term_t
+)::Bool where {T}
+    options == 0 ||
+        throw(NotPortedError{T}(mk_sym(T, :read_clause), "read_clause/3's options", "R1e"))
+
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return false
+
+    while true                                      # retry:
+        rd = init_read_data(gd, ld, s)
+        if rd.unicode_atoms == S_UATOMS_NFC
+            PL_close_foreign_frame(ld, fid)
+            throw(
+                NotPortedError{T}(
+                    mk_sym(T, :read_clause), "unicode_atoms(nfc)", "no normalizer"
+                )
+            )
+        end
+
+        set_module_read_data(rd, ld.modules_source)
+        rd.on_error = :dec10                        # syntax_errors = ATOM_dec10
+        rd.singles = (rd.styleCheck & SINGLETON_CHECK) != 0 ? _SINGLES_REPORT : 0
+        rval = read_term(term, rd)
+        if !rval && rd.has_exception && reportReadError(rd)
+            ld.exception_processing = false
+            PL_rewind_foreign_frame(ld, fid)
+            continue                                # goto retry (free_read_data: GC)
+        end
+        PL_close_foreign_frame(ld, fid)
+        return rval
+    end
 end
 
 # ── term <-> atom (pl-read.c) ───────────────────────────────────────────────────────────────────

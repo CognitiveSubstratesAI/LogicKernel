@@ -308,12 +308,13 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
-| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`); since V5c `unify_definition` (a definition's reference, module-qualified) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
+| `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`); since V5c `unify_definition` (a definition's reference, module-qualified); since R1f the consult path of `assert_term!` (a clause's file, line and owner; `overruleImportedProcedure`, `redefineProcedure`) and `record_clause`, `'$record_clause'/3` | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
-| `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1` | `src/pl-proc.c`, `src/pl-proc.h` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location` | `src/pl-global.h`, `src/pl-incl.h` |
+| `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1`; since R1f `overruleImportedProcedure`, `redefineProcedure` (the `discontiguous` and `redefined_procedure` warnings), `lookupProcedureToDefine`, `get_procedure` (`GP_DEFINE`), `'$set_predicate_attribute'/3` with `attribute_mask` and `setAttrDefinition`, registered as `PL_predicates_from_proc` | `src/pl-proc.c`, `src/pl-proc.h` |
+| `src/pl-srcfile.jl` | source files (R1f): the record of each consulted file (`lookupSourceFile`, numbered as upstream), the procedures it defines (`addProcedureSourceFile`), a clause added on its behalf (`assertProcedureSource`), `startConsult`/`endConsult`, `setAttrProcedureSource` — a FIRST load (a reconsult refused) | `src/pl-srcfile.c` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects | `src/pl-global.h`, `src/pl-incl.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), local)` (`raiseStackOverflow`, `outOfStack!`, the context as decided since Q-B), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack | `src/pl-alloc.c` |
@@ -321,21 +322,23 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space`; since V5c `PL_strip_module_ex`; since R1a `charCode`; since R1b `PL_get_atom`, `PL_get_integer`, `PL_get_list`, `PL_get_nil`, `PL_is_list`, `PL_strip_module` | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`); since R1c `PL_CTYPE_SPACE`; since R1d the text conversion flags (`CVT_*`), the text types `PL_ATOM`, `PL_STRING`, and since R1e every write flag (`PL_WRT_*`, as `Int`) | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`); since V5c `createUndefSupervisor` | `src/pl-supervisor.c` |
-| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`, since R1b `ERR_PERMISSION`; `PL_type_error`, `PL_domain_error`; since R1b `PL_get_atom_ex`, `PL_get_integer_ex`, `PL_get_list_ex`, `PL_get_nil_ex`) | `src/pl-error.c`, `src/pl-error.h` |
+| `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`, since R1b `ERR_PERMISSION`; `PL_type_error`, `PL_domain_error`; since R1b `PL_get_atom_ex`, `PL_get_integer_ex`, `PL_get_list_ex`, `PL_get_nil_ex`); since R1f `ERR_PERMISSION_PROC` and `printMessage` (the message collected, not printed: print_message/2 is R2's) | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer); the tables in `initBuildIns`' order (arith, comp, prims, variant, trace, read — since R1d — op) | `src/pl-ext.c` |
+| `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan` | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
 | `src/pl-modul.jl` | the module table and its two modules, `system` and `user` — `user`'s super `system` (`_lookupModule!`, `lookupModule`, `isCurrentModule`; since V5c) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's) | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-op.jl` | the operator tables (since R1b): each module's table, `system`'s holding SWI's defaults (`initOperators!`), defining an operator (`defOperator!`, `op/3`) and looking one up through the supers (`currentOperator`, `priorityOperator`); what `current_op/3` enumerates (`scanVisibleOperators!`) | `src/pl-op.c` |
 | `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused) and `PL_write_term` | `src/pl-write.c` |
-| `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`) | `src/pl-read.c` |
+| `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`); since R1f `read_clause` (the consult's read: singletons reported, a syntax error reported and the next clause read), `check_singletons` and its kin, `reportReadError`, `LD->read_source` | `src/pl-read.c` |
 | `src/pl-umap.jl` | the Unicode map (since R1c): the syntax category and display width of every code point (`uflags_map`), its POSIX class (`uctype_map`, `ctype_to_flags`), the decimal digit runs, the paired brackets and quotes — data GENERATED from pl-umap.c by `tools/gen_umap.jl`, byte for byte — and their lookups (`uflagsRaw`, `uctypeRaw`, `pl_pair_lookup`) | `src/pl-umap.c`, `src/Unicode/prolog_syntax_map.pl` |
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
 | `src/os/pl-ctype.jl` | the ASCII character types (since R1c): `_PL_char_types` and the `is*` macros; `isBlankW` through the Unicode classes | `src/os/pl-ctype.c`, `src/os/pl-ctype.h` |
 | `src/os/pl-string.jl` | `digitValue` (since R1c), a digit's value in a base | `src/os/pl-string.c` |
 | `src/os/pl-stream.jl` | the IOSTREAM subset (since R1c; user, 2026-10-07): a stream with upstream's buffer discipline (the undo area, `S__fillbuf`, `S__flushbuf`), characters in its encoding (`Sgetcode`, `Speekcode`, `Sputcode`, `Sungetc`), the position record (`IOPOS`, `Supdatepos` with ANSI escapes and wide characters), the error flags, memory streams (`Sopenmem`), string streams (`Sopen_string`) and a Julia IO (`Sopen_julia_io`) | `src/os/pl-stream.c`, `src/os/SWI-Stream.h` |
 | `src/os/pl-text.jl` | the text a term holds (since R1d): `PL_get_text` — an atom, a string, an integer or a rational, a code or character list — with its errors, and a stream reading it (`Sopen_text`); `PL_chars_t` | `src/os/pl-text.c`, `src/os/pl-text.h` |
+| `src/os/pl-file.jl` | the file an open stream reads (R1f): `fileNameStream`, `setFileNameStream` — pl-file.c's stream context, the part the loader needs | `src/os/pl-file.c` |
 | `src/os/pl-codelist.jl` | the text of a code list or a character list (since R1d): `codes_or_chars_to_buffer`, with its partial, wide and non-code results | `src/os/pl-codelist.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
@@ -364,8 +367,11 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_lang/test_op_swipl.jl` | R1b's gate: the operators visible from `user` as a set against swipl's `current_op/3` (boot's `$` the one difference), `currentOperator` and `priorityOperator` by kind, `op/3`'s outcomes and errors identical to swipl's, and a cancelled kind hiding `system`'s | — |
 | `test/core_lang/test_read_swipl.jl` | R1c's reader gate: `atom_number/2` on every number syntax and generated texts, `raw_read` against `'$raw_read'/2`, raw syntax errors and their `string(Text, CharNo)` against `term_to_atom/2`, escapes, and the tokens (`[]` vs `'[]'`, `{}`, strings, `0'c`, `1r3`); `const_nan` is `str_number`'s `1.5NaN`; an atom holding character 0 refused | — |
 | `test/files/test_stream_swipl.jl` | R1c's stream gate: memory and string streams round trip, peek and push-back, a Julia IO; the position record (character, line, line position, byte) against swipl's `stream_position_data/3` on `open_string/2` | — |
+| `test/files/test_load_swipl.jl` | R1f's loader gate: 12 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
+| `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; floats, upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail) | — |
+| `test/core_text/text_corpora_testlib.jl` | the reader's and the writer's hand corpora and the random-term generator, shared by their differentials and the round trip (R1f) | — |
 | `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations, a float's text); `$` not an operator (pinned); `unquoted_atom` | — |
-| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream defects #11 and #12 pinned; the refusals (a float, a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms | — |
+| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream defects #11 and #12 pinned; the refusals (a float, a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
 | `test/core_text/test_syntax.jl` | SWI's `syntax` and `iso_op_table_6` units (R1d): operators, quoting and escapes, bases, the blob notation's errors | `tests/core_text/test_syntax.pl` |
 | `test/core_text/test_read.jl` | SWI's `read_op` (block operators), `read_numbers` and `read_deep` units (R1d): terms nested 20,000 deep | `tests/core_text/test_read.pl` |
 | `test/core_text/test_op.jl` | SWI's `op_syntax` units (R1d) over 84 user operators | `tests/core_text/test_op.pl` |
@@ -442,14 +448,17 @@ graph LR
     pl_arith["pl-arith.jl"]
     os_pl_codelist["os/pl-codelist.jl"]
     os_pl_text["os/pl-text.jl"]
+    os_pl_file["os/pl-file.jl"]
     pl_setup["pl-setup.jl"]
     pl_proc["pl-proc.jl"]
+    pl_srcfile["pl-srcfile.jl"]
     pl_supervisor["pl-supervisor.jl"]
     pl_trace["pl-trace.jl"]
     pl_op["pl-op.jl"]
     pl_write["pl-write.jl"]
     pl_read["pl-read.jl"]
     pl_ext["pl-ext.jl"]
+    ___boot_init["../boot/init.jl"]
     precompile_workload["precompile_workload.jl"]
     term_interface --> default_term
     default_term --> term_interface
@@ -566,6 +575,7 @@ graph LR
     pl_comp --> pl_arith
     pl_comp --> os_pl_text
     pl_comp --> pl_proc
+    pl_comp --> pl_srcfile
     pl_variant --> term_interface
     pl_variant --> default_term
     pl_variant --> pl_incl
@@ -693,6 +703,10 @@ graph LR
     os_pl_text --> pl_gmp
     os_pl_text --> pl_arith
     os_pl_text --> os_pl_codelist
+    os_pl_file --> term_interface
+    os_pl_file --> default_term
+    os_pl_file --> os_pl_stream
+    os_pl_file --> pl_global
     pl_setup --> default_term
     pl_setup --> pl_incl
     pl_setup --> pl_global
@@ -710,10 +724,20 @@ graph LR
     pl_proc --> pl_comp
     pl_proc --> pl_thread
     pl_proc --> pl_gc
+    pl_proc --> pl_fli
     pl_proc --> pl_error
     pl_proc --> pl_arith
     pl_proc --> os_pl_text
+    pl_proc --> pl_srcfile
     pl_proc --> pl_supervisor
+    pl_srcfile --> term_interface
+    pl_srcfile --> default_term
+    pl_srcfile --> pl_incl
+    pl_srcfile --> pl_global
+    pl_srcfile --> pl_comp
+    pl_srcfile --> pl_arith
+    pl_srcfile --> os_pl_text
+    pl_srcfile --> pl_proc
     pl_supervisor --> default_term
     pl_supervisor --> pl_incl
     pl_supervisor --> pl_vmi
@@ -778,6 +802,7 @@ graph LR
     pl_read --> pl_gmp
     pl_read --> pl_arith
     pl_read --> os_pl_text
+    pl_read --> os_pl_file
     pl_read --> pl_op
     pl_read --> pl_write
     pl_ext --> term_interface
@@ -794,6 +819,24 @@ graph LR
     pl_ext --> pl_trace
     pl_ext --> pl_op
     pl_ext --> pl_read
+    ___boot_init --> term_interface
+    ___boot_init --> default_term
+    ___boot_init --> os_pl_stream
+    ___boot_init --> pl_incl
+    ___boot_init --> SWI_Prolog
+    ___boot_init --> pl_global
+    ___boot_init --> pl_inline
+    ___boot_init --> pl_prims
+    ___boot_init --> pl_comp
+    ___boot_init --> pl_wam
+    ___boot_init --> pl_fli
+    ___boot_init --> pl_error
+    ___boot_init --> pl_arith
+    ___boot_init --> os_pl_text
+    ___boot_init --> os_pl_file
+    ___boot_init --> pl_proc
+    ___boot_init --> pl_srcfile
+    ___boot_init --> pl_read
     precompile_workload --> term_interface
     precompile_workload --> default_term
     precompile_workload --> pl_incl
@@ -1429,6 +1472,81 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**R1f — the minimal loader: BUILT (2026-10-07)** (port_inventory row R1, its split; boot/init.jl,
+src/pl-srcfile.jl and src/os/pl-file.jl NEW; pl-comp.jl, pl-proc.jl, pl-read.jl, pl-error.jl,
+pl-incl.jl, pl-global.jl, pl-ext.jl; tools/bench.jl). Decided by the user, 2026-10-07 ("1a 2a 3a
+4 yes", with three additions; the workspace's docs/research/logickernel-step-memos/R1f_plan.md).
+* **Ported (C):** pl-comp.c `assert_term`'s consult path (`loc`: the clause's file, line and owner,
+  `overruleImportedProcedure`, `redefineProcedure`, the file's current procedure,
+  `assertProcedureSource`) and `record_clause`/`'$record_clause'/3`; pl-srcfile.c for a FIRST load
+  (`sourceFile`, `lookupSourceFile`, `registerSourceFile`, `addProcedureSourceFile`,
+  `hasProcedureSourceFile`, `associateSource`, `assertProcedureSource`, `setAttrProcedureSource`,
+  `startConsult`, `endConsult`); pl-proc.c `overruleImportedProcedure`, `redefineProcedure`
+  (`discontiguous(…)` and `redefined_procedure(…)` warnings), `lookupProcedureToDefine`,
+  `get_procedure` (`GP_DEFINE`), `'$set_predicate_attribute'/3` (`attribute_mask`, `patt_masks`,
+  `get_bool_or_int_ex`, `setAttrDefinition`), registered as `PL_predicates_from_proc` between read
+  and op; pl-read.c `read_clause` (no options: singletons from the style check, `syntax_errors(dec10)`),
+  `check_singletons`, `is_singleton`, `warn_singleton`, `warn_multiton`, `var_name_body`,
+  `singletonWarning`, `reportReadError`, `set_module_read_data`, `LD->read_source`; pl-file.c
+  `fileNameStream`/`setFileNameStream`; pl-error.c `printMessage`, `ERR_PERMISSION_PROC`.
+* **boot/init.jl (CLASS design: boot/init.pl's Prolog, R2):** `load_file!(gd, ld, path)` —
+  `'$start_consult'`, the read loop (`read_clause`, bindings undone after each term),
+  `'$valid_term'` (`[]` skipped; a variable's error printed, then raised), `'$compile_term'`,
+  `'$store_clause'` (through `'$record_clause'/3` by the query API — so an error's context is
+  swipl's — `cannot_redefine_comma`), `'$execute_directive_3'` (one goal or a `,`-conjunction,
+  each through the query API, BACKTRACKING into an earlier conjunct; a failure gives
+  `goal_failed(directive, user:Goal)`, an `error(_,_)` the error AND `goal_failed`, any other
+  exception ENDS the load, returned), `'$pattr_directive'`/`'$set_pattr'`/`'$pi_head'` (through
+  `'$set_predicate_attribute'/3`; each error printed with `context(Name/1, _)`; a variable spec ends
+  the load), `'$end_consult'`. A goal resolves as the compiler resolves a call
+  (`lookupBodyProcedure`: an ISO built-in from `system`, else the user module's procedure, which the
+  call links) — so a clause for a called non-ISO built-in raises swipl's
+  `permission_error(redefine, built_in_procedure, PI)`.
+* **The messages are swipl's TERMS:** `printMessage` collects `(kind, term)` (print_message/2 is
+  boot/messages.pl's, R2) and `load_file!` returns them; the differential compares them with the
+  terms swipl's `message_hook/3` sees, contexts included.
+* **DIVERGES:** a directive goal's error context is the query's top frame,
+  `system:'$c_call_prolog'/0`, where swipl's is `system:catch/3` (boot's wrapper) — normalised by
+  name in the test, counted; no reload context (a FIRST load: a reconsult refused); no stream table
+  (the file name an open stream reads is the database's `stream_filenames`); the source-file table
+  never makes a hole (no unload); a file's procedures a vector; `read_clause` closes its foreign
+  frame.
+* **Refused, explicitly (`NotPortedError`):** DCG rules (`-->`), `term_expansion`/`goal_expansion`
+  defined, `:- module`, `:- use_module`, `:- ensure_loaded`, `:- include`, `:- initialization`,
+  `:- encoding`, conditional compilation (`:- if/elif/else/endif`), a directive that needs the
+  meta-call (`;`, `->`, `*->`, `\+`, `call/N`, a variable goal, the inlined `true`/`fail`/`false`/`!`:
+  V9), a reconsult, `abolishProcedure` (a second file — or a file after an `assertz` — defining a
+  predicate: after swipl's `redefined_procedure` warning), `as/2` declarations, thread-local, det
+  and clausable attributes.
+* **NOT PORTED:** the compiler's own warnings (`compiler_warnings(Clause, …)`: pl-comp.c's variable
+  analysis, `VD_*` — a multiton `v(_A, _A)`); a named, counted exclusion in the differential.
+* **Gates:** test/files/test_load_swipl.jl (new): 12 case files consulted by the kernel and by
+  swipl — messages (as terms), status, every solution and the dynamic flag of each case predicate;
+  the four bench programs' answers vs swipl; a loaded predicate's source record (static, file,
+  lines); 25 refusals. test/core_text/test_roundtrip_swipl.jl (new): both directions over R1d's and
+  R1e's hand corpora (383 texts), the four bench programs' 31 clauses (NOTHING excluded: the float
+  condition holds) and 2,000 random terms — floats, #11, #12 and texts holding the character 0
+  excluded by name and counted, and an excluded #11/#12 must still FAIL (a stale exclusion is an
+  error). All three term types.
+* **The bench switch (decision addition 3):** tools/bench.jl loads the four programs from their .pl
+  files; at load it ASSERTS that every loaded predicate compiles to exactly the hand-built clauses'
+  VM code, literal table, called procedures, frame size and flags (`_vm_code_differences`), and the
+  cases run the loaded clauses.
+* **Mutation-proved — 24 of 24 caught at verdict level, targeted** (the workspace's
+  R1f_mutation/): singletons reported, `_x` and `__z`, dec10 reading on, the syntax error reported,
+  its file name, a clause's line, an import overruled, the file's current procedure, discontiguous
+  declared, a system predicate declared, an attribute's mask, `goal_failed`, backtracking into a
+  conjunct, a non-error exception ending the load, a comma clause, `[]` skipped (L17b: its first
+  target never looked), a variable term's error, a variable spec ending the load, `Name//Arity`,
+  `Name/0`, a directive goal resolved as the compiler resolves it; and the round trip's guards (#12
+  fixed ⇒ a stale exclusion; #11 undetected ⇒ the excluded items fail). The bench guard proved by
+  hand: a hand-built clause changed makes the bench refuse to load, naming the clause.
+* **Also in this commit:** tools/ci_status.sh resolves a short SHA to the full one (it read "no run"
+  for a short SHA — the API filter needs the full SHA) with test/test_gate_split.jl's test that a
+  short, a full SHA and `HEAD` give one answer (mutant without it: 7 failures); upstream #11's
+  notes say the kernel follows swipl ON X86-64 (`# DIVERGES (platform)` at `_signed_char`); the
+  reader's and writer's corpora moved to test/core_text/text_corpora_testlib.jl.
 
 **R1e (core) — the writer: BUILT (2026-10-07)** (port_inventory row R1, its split; src/pl-write.jl,
 src/SWI-Prolog.jl, src/pl-read.jl's write direction). Decided by the user, 2026-10-07: 1b — the

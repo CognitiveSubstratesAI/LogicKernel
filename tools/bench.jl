@@ -172,15 +172,96 @@ let (X, L0, L, L1, L2, L3) = (_v() for _ in 1:6)
     )
     _nr_add!(_nrf(:concatenate, _nrnil(), L, L), nothing)
 end
-const NR_PROC = lookupProcedure(_a(:nreverse), 0, NR_USER)
-function _vm_nreverse()::Int
-    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
-    qid = LogicKernel.PL_open_query(
-        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, NR_PROC, 0
+# THE BENCH SWITCH (R1f; user, 2026-10-07): each program runs from its .pl file, loaded by
+# `load_file!` — after its clauses are shown to compile to EXACTLY the VM code of the hand-built
+# clauses above, predicate by predicate (codes, literal tables, called procedures), so the bench
+# series stays comparable across the switch and the loader is checked against something
+# independent of the writer. The hand-built databases remain, as that oracle.
+"Load the bench program `name`.pl into a database of its own: `(gd, ld)`."
+function _load_program(name::String)
+    gd, ld = PL_global_data{BT}(), PL_local_data{BT}()
+    st, ball, msgs = LogicKernel.load_file!(
+        gd, ld, joinpath(@__DIR__, "..", "bench", "programs", name * ".pl")
     )
-    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
-    LogicKernel.PL_close_query(NR_LD, qid)
-    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    (st === :ok && isempty(msgs)) ||
+        error("tools/bench.jl: loading $name.pl: $st $ball $msgs")
+    return (gd, ld)
+end
+"The clauses of `def`, in order."
+function _clauses_of(def)
+    out = []
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        push!(out, c.clause)
+        c = c.next
+    end
+    return out
+end
+"""
+How the defined predicates of `loaded`'s `user` module differ from `hand`'s — each must be there
+with the same clauses: VM codes, literals (standard order), called procedures (name and arity) —
+leaving out `except` (predicates only one side defines by design).
+"""
+function _vm_code_differences(
+    hand::PL_global_data{BT}, loaded::PL_global_data{BT}, except::Vector{String}
+)::Vector{String}
+    diffs = String[]
+    hu, lu = MODULE_user(hand), MODULE_user(loaded)
+    pi(p) = sym_text(p.definition.name) * "/" * string(p.definition.arity)
+    for (key, lp) in lu.procedures
+        LogicKernel.isDefinedProcedure(loaded, lp) || continue
+        pi(lp) in except && continue
+        hp = get(hu.procedures, key, nothing)
+        if hp === nothing || !LogicKernel.isDefinedProcedure(hand, hp)
+            push!(diffs, pi(lp) * ": not hand-built")
+            continue
+        end
+        lc, hc = _clauses_of(lp.definition), _clauses_of(hp.definition)
+        if length(lc) != length(hc)
+            push!(diffs, pi(lp) * ": $(length(lc)) clauses, hand-built $(length(hc))")
+            continue
+        end
+        for (i, (a, b)) in enumerate(zip(lc, hc))
+            a.codes == b.codes || push!(diffs, pi(lp) * " clause $i: VM codes differ")
+            (
+                length(a.literals) == length(b.literals) &&
+                all(compareStandard(x, y) == 0 for (x, y) in zip(a.literals, b.literals))
+            ) ||
+                push!(diffs, pi(lp) * " clause $i: literals differ")
+            map(pi, a.procedures) == map(pi, b.procedures) ||
+                push!(diffs, pi(lp) * " clause $i: called procedures differ")
+            (a.variables, a.prolog_vars, a.flags) ==
+            (b.variables, b.prolog_vars, b.flags) ||
+                push!(diffs, pi(lp) * " clause $i: frame size or flags differ")
+        end
+    end
+    for (key, hp) in hu.procedures                  # nothing hand-built is missing from the file
+        LogicKernel.isDefinedProcedure(hand, hp) || continue
+        pi(hp) in except && continue
+        lp = get(lu.procedures, key, nothing)
+        (lp !== nothing && LogicKernel.isDefinedProcedure(loaded, lp)) ||
+            push!(diffs, pi(hp) * ": hand-built only")
+    end
+    return diffs
+end
+
+const NR_LOADED = _load_program("nreverse")
+# nreverse.pl's `top/0` is not hand-built (the bench calls `nreverse/0`); bw/bu are bench fixtures
+let d = _vm_code_differences(
+        NR_GD, NR_LOADED[1], ["top/0", "bw/1", "bwtop/0", "bu/1", "butop/0"]
+    )
+    isempty(d) ||
+        error("tools/bench.jl: nreverse.pl loads to other VM code than hand-built: $d")
+end
+const NR_PROC = lookupProcedure(_a(:nreverse), 0, MODULE_user(NR_LOADED[1]))
+function _vm_nreverse()::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LOADED[2])
+    qid = LogicKernel.PL_open_query(
+        NR_LOADED[1], NR_LOADED[2], nothing, LogicKernel.PL_Q_NORMAL, NR_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(NR_LOADED[1], NR_LOADED[2], qid)
+    LogicKernel.PL_close_query(NR_LOADED[2], qid)
+    LogicKernel.PL_close_foreign_frame(NR_LOADED[2], fid)
     return rc
 end
 @assert _vm_nreverse() == LogicKernel.PL_S_TRUE
@@ -234,15 +315,20 @@ let (U, V, X, DU, DV, N, N1) = (_v() for _ in 1:7)
     _dr_add!(d(X, X, gnd_term(BT, 1)), cut)
     _dr_add!(d(_v(), _v(), gnd_term(BT, 0)), nothing)
 end
-const DR_PROC = lookupProcedure(_a(:top), 0, DR_USER)
+const DR_LOADED = _load_program("derive")
+let d = _vm_code_differences(DR_GD, DR_LOADED[1], String[])
+    isempty(d) ||
+        error("tools/bench.jl: derive.pl loads to other VM code than hand-built: $d")
+end
+const DR_PROC = lookupProcedure(_a(:top), 0, MODULE_user(DR_LOADED[1]))
 function _vm_derive()::Int
-    fid = LogicKernel.PL_open_foreign_frame(DR_LD)
+    fid = LogicKernel.PL_open_foreign_frame(DR_LOADED[2])
     qid = LogicKernel.PL_open_query(
-        DR_GD, DR_LD, nothing, LogicKernel.PL_Q_NORMAL, DR_PROC, 0
+        DR_LOADED[1], DR_LOADED[2], nothing, LogicKernel.PL_Q_NORMAL, DR_PROC, 0
     )
-    rc = LogicKernel.PL_next_solution(DR_GD, DR_LD, qid)
-    LogicKernel.PL_close_query(DR_LD, qid)
-    LogicKernel.PL_close_foreign_frame(DR_LD, fid)
+    rc = LogicKernel.PL_next_solution(DR_LOADED[1], DR_LOADED[2], qid)
+    LogicKernel.PL_close_query(DR_LOADED[2], qid)
+    LogicKernel.PL_close_foreign_frame(DR_LOADED[2], fid)
     return rc
 end
 @assert _vm_derive() == LogicKernel.PL_S_TRUE
@@ -287,15 +373,20 @@ let (X, L, R, R0, L1, L2, R1, Y) = (_v() for _ in 1:8)
         _nrf(:partition, L, Y, L1, L2))
     _qs_add!(_nrf(:partition, _nrnil(), _v(), _nrnil(), _nrnil()), nothing)
 end
-const QS_PROC = lookupProcedure(_a(:qsort), 0, QS_USER)
+const QS_LOADED = _load_program("qsort")
+let d = _vm_code_differences(QS_GD, QS_LOADED[1], String["top/0"])
+    isempty(d) ||
+        error("tools/bench.jl: qsort.pl loads to other VM code than hand-built: $d")
+end
+const QS_PROC = lookupProcedure(_a(:qsort), 0, MODULE_user(QS_LOADED[1]))
 function _vm_qsort()::Int
-    fid = LogicKernel.PL_open_foreign_frame(QS_LD)
+    fid = LogicKernel.PL_open_foreign_frame(QS_LOADED[2])
     qid = LogicKernel.PL_open_query(
-        QS_GD, QS_LD, nothing, LogicKernel.PL_Q_NORMAL, QS_PROC, 0
+        QS_LOADED[1], QS_LOADED[2], nothing, LogicKernel.PL_Q_NORMAL, QS_PROC, 0
     )
-    rc = LogicKernel.PL_next_solution(QS_GD, QS_LD, qid)
-    LogicKernel.PL_close_query(QS_LD, qid)
-    LogicKernel.PL_close_foreign_frame(QS_LD, fid)
+    rc = LogicKernel.PL_next_solution(QS_LOADED[1], QS_LOADED[2], qid)
+    LogicKernel.PL_close_query(QS_LOADED[2], qid)
+    LogicKernel.PL_close_foreign_frame(QS_LOADED[2], fid)
     return rc
 end
 @assert _vm_qsort() == LogicKernel.PL_S_TRUE
@@ -405,15 +496,20 @@ let (Var, Terms1, Terms2, Terms, Var1, Var2, Poly, C, C1, C2, X, E, E1, E2, N, M
             _nrf(:poly_mul, Term, Poly, NewTerm), _nrf(:mul_through, Terms, Poly, NewTerms)
         ))
 end
-const PY_PROC = lookupProcedure(_a(:poly_10), 0, PY_USER)
+const PY_LOADED = _load_program("poly_10")
+let d = _vm_code_differences(PY_GD, PY_LOADED[1], String["top/0"])
+    isempty(d) ||
+        error("tools/bench.jl: poly_10.pl loads to other VM code than hand-built: $d")
+end
+const PY_PROC = lookupProcedure(_a(:poly_10), 0, MODULE_user(PY_LOADED[1]))
 function _vm_poly()::Int
-    fid = LogicKernel.PL_open_foreign_frame(PY_LD)
+    fid = LogicKernel.PL_open_foreign_frame(PY_LOADED[2])
     qid = LogicKernel.PL_open_query(
-        PY_GD, PY_LD, nothing, LogicKernel.PL_Q_NORMAL, PY_PROC, 0
+        PY_LOADED[1], PY_LOADED[2], nothing, LogicKernel.PL_Q_NORMAL, PY_PROC, 0
     )
-    rc = LogicKernel.PL_next_solution(PY_GD, PY_LD, qid)
-    LogicKernel.PL_close_query(PY_LD, qid)
-    LogicKernel.PL_close_foreign_frame(PY_LD, fid)
+    rc = LogicKernel.PL_next_solution(PY_LOADED[1], PY_LOADED[2], qid)
+    LogicKernel.PL_close_query(PY_LOADED[2], qid)
+    LogicKernel.PL_close_foreign_frame(PY_LOADED[2], fid)
     return rc
 end
 @assert _vm_poly() == LogicKernel.PL_S_TRUE

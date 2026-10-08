@@ -51,14 +51,17 @@ include("pl-gmp.jl")           # swipl-devel src/pl-gmp.c — numbers: read, wri
 include("pl-arith.jl")         # swipl-devel src/pl-arith.c — evaluation, is/2, the comparisons
 include("os/pl-codelist.jl")   # swipl-devel src/os/pl-codelist.c — the text of a code or character list
 include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a term holds; a stream on it
+include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
+include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: consulting a file (first load)
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
 include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
 include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c) and the parser (R1d): read_term, term_to_atom
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
+include("../boot/init.jl")     # swipl-devel boot/init.pl — the minimal loader (R1f): load_file!
 include("precompile_workload.jl")  # ORIGINAL — the hot paths, compiled at precompile time (LAST)
 
 # ── exports ─────────────────────────────────────────────────────────────────────────────────────

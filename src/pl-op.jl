@@ -184,8 +184,8 @@ end
 
 # PORT: pl-op.c op as pl_op3_va
 # (PRED_IMPL("op", 3, op, PL_FA_TRANSPARENT|PL_FA_ISO))
-# DIVERGES: the module is `MODULE_parse`, which is `user` here (no source being loaded; R1f's loader
-# reads into `user`); modules are indices into the database's table (src/pl-modul.jl).
+# DIVERGES: the module is `MODULE_parse`, which is `user` here (since R1f the loader reads into
+# `user`, its source module); modules are indices into the database's table (src/pl-modul.jl).
 "`op/3` (pl-op.c): define operators in `user`, or in the module the name is qualified with."
 function pl_op3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}

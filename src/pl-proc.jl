@@ -57,7 +57,7 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
     def = Definition{T}(
         key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index
     )
-    proc = Procedure{T}(def, UInt32(0))
+    proc = Procedure{T}(def, UInt32(0), UInt32(0))
     m.procedures[(key, arity)] = proc
     return proc
 end
@@ -836,3 +836,292 @@ end
 "True when argument `arg0` (0-based) of `def` has mode `-` (pl-proc.h)."
 mode_arg_is_unbound(def::definition, arg0::Int)::Bool =
     (def.impl_clauses.args::Vector{arg_info})[arg0 + 1].meta == MA_VAR
+
+# ── defining a predicate from a file (pl-proc.c), since R1f ─────────────────────────────────────
+
+# PORT: pl-proc.c overruleImportedProcedure
+# DIVERGES: the database `gd` is an argument; a module is an index into its table. NOT PORTED:
+# a weak (implicit) import is abolished (`abolishProcedure`) — refused (`NotPortedError`): the
+# kernel makes no weak imports (`autoImport` links strongly), so it is not reached.
+"""
+May `target` define `proc` — its own, or an import it may overrule (pl-proc.c)? Raises
+`permission_error(redefine, built_in_procedure | imported_procedure, PI)` when not.
+"""
+function overruleImportedProcedure(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, target::module_t{T}
+)::Bool where {T}
+    def = proc.definition                   # we do *not* want a thread-local version
+    if (def.flags & P_AUTOLOAD) != 0
+        return PL_error(
+            ld, ERR_PERMISSION_PROC, mk_sym(T, :redefine), mk_sym(T, :imported_procedure),
+            proc
+        )
+    end
+    def.module_ == target.index && return true
+    if (gd.modules[def.module_].flags & M_SYSTEM) != 0
+        return PL_error(
+            ld, ERR_PERMISSION_PROC, mk_sym(T, :redefine), mk_sym(T, :built_in_procedure),
+            proc
+        )
+    elseif (proc.flags & PROC_WEAK) != 0
+        throw(
+            NotPortedError{T}(def.name, "overruling a weak import (abolishProcedure)", "R2")
+        )
+    end
+    return PL_error(
+        ld, ERR_PERMISSION_PROC, mk_sym(T, :redefine), mk_sym(T, :imported_procedure), proc
+    )
+end
+
+# `Name/Arity` of `def`, as `_PL_PREDICATE_INDICATOR` makes it (`unify_definition`, GP_HIDESYSTEM).
+_redefine_indicator(gd::PL_global_data{T}, def::Definition{T}) where {T} =
+    unify_definition(gd, MODULE_user(gd), def, GP_HIDESYSTEM | GP_NAMEARITY)
+
+# PORT: pl-proc.c redefineProcedure
+# DIVERGES: the database `gd` is an argument; the warnings go to `printMessage`. No reload context
+# (a first load). NOT PORTED, refused (`NotPortedError`): abolishing a definition another file — or
+# C — made (`abolishProcedure`: a second file defining a predicate, a foreign predicate redefined),
+# after its warning; a thread-local predicate (no threads).
+"""
+`proc` is about to get a clause from the source file `sf`, which owns the definition: warn of a
+discontiguous predicate or a redefinition, as the style checks ask (pl-proc.c). True to go on.
+"""
+function redefineProcedure(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, sf::SourceFile{T},
+    suppress::Int
+)::Bool where {T}
+    def = proc.definition
+
+    if (def.flags & P_FOREIGN) != 0
+        # first call printMessage() so we can provide info about the old definition
+        printMessage(
+            ld, :warning,
+            mk_expr(
+                T,
+                T[
+                    mk_sym(T, :redefined_procedure),
+                    mk_sym(T, :foreign),
+                    _redefine_indicator(gd, def)
+                ]
+            )
+        ) || return false
+        throw(
+            NotPortedError{T}(
+                def.name, "redefining a foreign predicate (abolishProcedure)", "R2"
+            )
+        )
+    elseif (def.flags & P_MULTIFILE) == 0
+        first = hasClausesDefinition(gd, def)       # def = getLocalProcDefinition(def)
+        first === nothing && return true            # (*) see above
+
+        cl = first.clause::Clause{T}
+        if cl.owner_no == sf.index
+            # sf->reload: never (no reload context)
+            if ((ld.debugstatus_styleCheck & ~suppress) & DISCONTIGUOUS_STYLE) != 0 &&
+                (def.flags & P_DISCONTIGUOUS) == 0 && sf.current_procedure !== nothing
+                cur = (sf.current_procedure::Procedure{T}).definition
+                printMessage(
+                    ld, :warning,
+                    mk_expr(
+                        T,
+                        T[
+                            mk_sym(T, :discontiguous), _redefine_indicator(gd, def),
+                            unify_definition(
+                                gd, MODULE_user(gd), cur, GP_HIDESYSTEM | GP_NAMEARITY
+                            )
+                        ]
+                    )
+                ) || return false
+            end
+        elseif !hasProcedureSourceFile(sf, proc)
+            if (def.flags & P_THREAD_LOCAL) != 0
+                throw(NotPortedError{T}(def.name, "a thread-local predicate", "no threads"))
+            end
+            printMessage(
+                ld, :warning,
+                mk_expr(
+                    T,
+                    T[
+                        mk_sym(T, :redefined_procedure),
+                        mk_sym(T, :static),
+                        _redefine_indicator(gd, def)
+                    ]
+                )
+            ) || return false
+            # again, _after_ the printMessage()
+            throw(
+                NotPortedError{T}(
+                    def.name,
+                    "redefining a predicate another file defined (abolishProcedure)",
+                    "R2"
+                )
+            )
+        end
+    end
+    return true
+end
+
+# PORT: pl-proc.c lookupProcedureToDefine
+# DIVERGES: the functor is its parts (name, arity); the database `gd` is an argument.
+"The procedure `name/arity` of `m` to give a definition, or `nothing` with the error raised (pl-proc.c)."
+function lookupProcedureToDefine(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::T, arity::Int, m::module_t{T}
+)::Union{Nothing, Procedure{T}} where {T}
+    proc = isCurrentProcedure(sym_key(name), arity, m)
+    if proc !== nothing
+        overruleImportedProcedure(gd, ld, proc, m) || return nothing
+        return proc
+    end
+    checkModifySystemProc(gd, ld, sym_key(name), arity) &&
+        return lookupProcedure(name, arity, m)
+    return nothing
+end
+
+# PORT: pl-proc.c patt_masks
+"The predicate attributes `'\$set_predicate_attribute'/3` sets, by name (pl-proc.c)."
+const patt_masks = (
+    (:dynamic, P_DYNAMIC), (:transact, P_TRANSACT), (:multifile, P_MULTIFILE),
+    (:locked, P_LOCKED), (:system, P_LOCKED), (:spy, SPY_ME), (:trace, TRACE_ME),
+    (:hide_childs, HIDE_CHILDS), (:transparent, P_TRANSPARENT),
+    (:discontiguous, P_DISCONTIGUOUS), (:volatile, P_VOLATILE),
+    (:thread_local, P_THREAD_LOCAL),
+    (:noprofile, P_NOPROFILE), (:iso, P_ISO), (:public, P_PUBLIC),
+    (:non_terminal, P_NON_TERMINAL), (:quasi_quotation_syntax, P_QUASI_QUOTATION_SYNTAX),
+    (:clausable, P_CLAUSABLE), (:autoload, P_AUTOLOAD), (:ssu, P_SSU_DET), (:det, P_DET),
+    (:sig_atomic, P_SIG_ATOMIC)
+)
+
+# PORT: pl-proc.c attribute_mask
+# DIVERGES: the key is an atom term; the domain error's culprit is put in a new term reference.
+"The mask of the predicate attribute `key`, or 0 with `domain_error(predicate_property, Key)` (pl-proc.c)."
+function attribute_mask(ld::PL_local_data{T}, key::T)::UInt64 where {T}
+    for (k, mask) in patt_masks
+        sym_key(key) == sym_key(mk_sym(T, k)) && return mask
+    end
+    t = PL_new_term_ref(ld)
+    ld.slots[t + 1] = key
+    PL_domain_error(ld, "predicate_property", t)
+    return UInt64(0)
+end
+
+# PORT: pl-proc.c get_bool_or_int_ex
+# DIVERGES: returns the value, or `nothing` with the error raised; `PL_get_bool` inlined — `true`,
+# `false`, `on`, `off` — then 0 or 1; else `type_error(bool, T)` (`PL_get_bool_ex`).
+"`true`/`on`/1 → 1, `false`/`off`/0 → 0; else `nothing` with `type_error(bool, T)` (pl-proc.c)."
+function get_bool_or_int_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    w = deRef(ld, ld.slots[t + 1])
+    if isTextAtom(w)
+        k = sym_key(w)
+        (k == sym_key(mk_sym(T, Symbol("true"))) || k == sym_key(mk_sym(T, :on))) &&
+            return 1
+        (k == sym_key(mk_sym(T, Symbol("false"))) || k == sym_key(mk_sym(T, :off))) &&
+            return 0
+    end
+    v = PL_get_integer(ld, t)
+    v !== nothing && (v & ~1) == 0 && return v      # accept 0 and 1
+    if kind(w) === VAR
+        PL_error(ld, ERR_INSTANTIATION)
+    else
+        PL_error(ld, ERR_TYPE, mk_sym(T, :bool), t)
+    end
+    return nothing
+end
+
+# PORT: pl-proc.c get_procedure
+# DIVERGES: the `GP_DEFINE` path only (the one `'$set_predicate_attribute'/3` asks for): the term
+# stripped of its module, its functor from a head or a `Name/Arity` (`get_functor`), and
+# `lookupProcedureToDefine` in that module (which exists: no module is created).
+"The procedure the term `descr` (`M:Head` or `M:Name/Arity`) names, to define (pl-proc.c)."
+function get_procedure(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, how::Int
+)::Union{Nothing, Procedure{T}} where {T}
+    (how & GP_HOW_MASK) == GP_DEFINE || throw(
+        NotPortedError{T}(
+            mk_sym(T, :get_procedure), "get_procedure: other than GP_DEFINE", "V9"
+        )
+    )
+    head = PL_new_term_ref(ld)
+    ok, m = PL_strip_module(gd, ld, descr, 0, head)
+    ok || return nothing
+    h = deRef(ld, ld.slots[head + 1])
+    if _hasFunctor(h, mk_sym(T, :/), 2)                 # Name/Arity
+        a = PL_new_term_ref(ld)
+        ld.slots[a + 1] = child(h, 2)
+        name = PL_get_atom_ex(ld, a)
+        name === nothing && return nothing
+        ld.slots[a + 1] = child(h, 3)
+        arity = PL_get_integer_ex(ld, a)
+        arity === nothing && return nothing
+        if arity < 0
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
+            return nothing
+        end
+    else
+        name, arity = get_head_functor(ld, head, 0)
+        arity < 0 && return nothing
+    end
+    return lookupProcedureToDefine(gd, ld, name, arity, gd.modules[m])
+end
+
+# PORT: pl-proc.c set_predicate_attribute as pl_set_predicate_attribute3_va
+# (PRED_IMPL("$set_predicate_attribute", 3, set_predicate_attribute, PL_FA_TRANSPARENT))
+# DIVERGES: no tabling attributes (`tbl_is_predicate_attribute`: refused, as is `spy`, which needs
+# `GP_RESOLVE`); `ReadingSource` is `LD->read_source`'s file and line, `MODULE_parse` the source
+# module while reading, else `user`.
+"`'\$set_predicate_attribute'(:Head, +Key, +Value)` (pl-proc.c): set a predicate attribute."
+function pl_set_predicate_attribute3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pred, what, value = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    key = PL_get_atom_ex(ld, what)
+    key === nothing && return FFALSE
+    val = get_bool_or_int_ex(ld, value)
+    val === nothing && return FFALSE
+    att = attribute_mask(ld, key)
+    att == 0 && return FFALSE
+
+    (att & SPY_ME) != 0 &&
+        throw(NotPortedError{T}(key, "spy points (GP_RESOLVE)", "the debugger"))
+    proc = get_procedure(gd, ld, pred, GP_DEFINE | GP_NAMEARITY)
+    proc === nothing && return FFALSE
+    def = proc.definition
+
+    reading = ld.read_source.position.lineno > 0 && ld.read_source.file !== nothing  # ReadingSource
+    mparse = reading ? ld.modules_source : MODULE_user(gd).index                      # MODULE_parse
+    if reading && mparse == def.module_
+        sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
+        rc = setAttrProcedureSource(sf, proc, att, val == 1)
+        releaseSourceFile(sf)
+        return rc ? FTRUE : FFALSE
+    else
+        return setAttrDefinition(def, att, val == 1) ? FTRUE : FFALSE
+    end
+end
+
+# PORT: pl-proc.c setAttrDefinition
+# DIVERGES: `P_THREAD_LOCAL`, `P_CLAUSABLE` and `P_DET` (their own setters) are refused.
+"Set (or clear) attribute `attr` of `def` (pl-proc.c)."
+function setAttrDefinition(def::Definition{T}, attr::UInt64, val::Bool)::Bool where {T}
+    attr == P_DYNAMIC && return setDynamicDefinition!(def, val)
+    (attr == P_THREAD_LOCAL || attr == P_CLAUSABLE || attr == P_DET) && throw(
+        NotPortedError{T}(def.name, "setAttrDefinition: attribute $attr", "not ported")
+    )
+    if val
+        def.flags |= attr
+    else
+        def.flags &= ~attr
+    end
+    return true
+end
+
+# PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
+# DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
+const PL_predicates_from_proc = (
+    PL_extension(
+        "\$set_predicate_attribute", 3, pl_set_predicate_attribute3_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+)

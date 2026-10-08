@@ -21,6 +21,7 @@ const LK = LogicKernel
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+include(joinpath(@__DIR__, "text_corpora_testlib.jl"))
 const _TR = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _trs(x) = lk_sym(_TR, Symbol(x))
 
@@ -209,52 +210,7 @@ end
 # taken as atoms, `-` before a number, the comma and the bar, lists and their errors, `{}`, `f()`,
 # strings and the quotes, numbers, Unicode brackets, the full stop, layout and comments, and the
 # quasi-quotation detection (`||`, `[|`, `{ |`: swipl's `quasi_quotations` flag is on).
-const _TR_CORPUS = [
-    "a", "f(X,Y,X)", "a+b*c", "a*b+c", "a-b-c", "a^b^c", "2 ** 3", "2 ** 3 ** 4", "- 1",
-    "-1",
-    "-(1)", "- (1)", "-(-(1))", "- - 1", "- - - a", "-a", "- a", "-(a)", "a- -1", "a - -1",
-    "a- - -b", "1 - -1", "1 -1", "a * - 1", "a * -1", "a - (-1)", "- (1) ^ 2", "-(1) ^ 2",
-    "- 1 ^ 2", "-1 ^ 2", "- (a) * b", "-(a) * b", "- a * b", "a = \\+", "\\+a", "\\+ \\+ a",
-    "\\+ (a,b)", "\\+(a)", "- (-)", "-(-)", "- -", "- - -", "- - - -", "(-)", "[-]",
-    "- = -",
-    "f(- , -)", "f(- , a)", "f(a, -)", "[-, +]", "- \$", "a\$b", "a:b:c", "a:-b,c;d->e",
-    "(a,b;c->d)", "p :- a, b ; c -> d", "a :- b :- c", ":- a", ":- dynamic a/1, b/2.",
-    "?- a",
-    "a --> b", "dynamic a, b", "dynamic foo/1", "X is 1 + 2", "1 + 2 * 3 - 4", "2 ^ 3 ^ 4",
-    "a=b", "a=..b", "a = '|'", "a '|' b", "'|'(a,b)", "a|b", "a | b", "(a|b)", "(a|b|c)",
-    "a|", "(a|)", "|", "{a|b}", "f(a;b)", "f(a:-b)", "[a:-b]", "{a:-b}", "(a:-b)",
-    "[a]", "[a,b|c]", "[a|b]", "[a|[]]", "[a|b|c]", "[a|b,c]", "[a|b,]", "[a|]", "[a,]",
-    "[a", "[|]", "'[|]'", "[]", "'[]'", "[ ]", "{}", "'{}'", "{ }", "{a}", "{a,b}", "{,}",
-    "- [a]", "-[a]", "- {a}", "p:-{a}", "a- {a}", "f()", "f( )", "f(,)", "f(a,)", "f(a",
-    "f(a b)",
-    "f(a)(b)", "f(a)[b]", "a[b]", "[a](b)", "{a}(b)", "(a", "a)", "{a", "a}", "(a,)",
-    "(a;)",
-    "a,", "- ,", "a ;", "f(a ;)", ":- ,", "a = ,", ",", "- (,)", "(a,b)", "a , b",
-    "','(a,b)",
-    "\"s\"", "\"abc\"", "\"a||b\"", "`abc`", "`a`", "0'a", "0'c", "0''", "0'''", "0' ",
-    "0'\\n",
-    "1r3", "-1r3", "1.5", "1.0e10", "-0.0", "1.0Inf", "1.5NaN",
-    "123456789012345678901234567890",
-    "0x1F", "16'FF", "-16'2f", "2'", "X", "_", "_X", "f(_,_)", "[X|Y]", "f(A,g(B),_,h(_C))",
-    "'hello world'(x)", "'\\+'(a)", "'a'", "'A'", "a.b", "X.b", "a.B", "\"s\".b", "f(a).b",
-    "[a].b", "a. b", "a .b", "1.e", "a.", "f(.)", "a = .", ". = a", "a % comment",
-    "a /* c */",
-    "end_of_file", "f(a).%x", "a::b", "«x»", "«x", "⟨a⟩", "⟨a, b⟩", "f(⟨a⟩)", "⟩",
-    "a||b", "(a||b)", "{a||b}", "f(||)", "'||'", "[|a]", "{ |a}", "[ |a]", "0'||", "0'|a",
-    "[a||b]", "[a||b|}]", "a||b|}", "f(a)||g", "[a ||b|}]", "f(a||b|})", "x+ab||b|}",
-    "a b", "ab cd", "f(ab cd)", "f(a, bc de)", "[a, bc de]", "a∀", "aé", "é", "Ébc",
-    "Ébc ébc",
-    "<stream>(0x40e8900)", "f(<a>(b))", "a<b>(c)", "<(a,b)", "<>(a)", "f(a<b, c>d)",
-    "a:-b:-c", "\"\\0\\x\"", "hello(\"\\000\\x\")", "'\\x\\'", "'\\x61\\'", "f(a, (b:-c))",
-    "[a, (b,c)]", "f((a,b))", "- (1,2)", "-(1,2)", "a- (1)", "\\+ (-)", "-(-) ", "f(;)",
-    "f(;, a)", "[;]", "{;}", "a = ;", "(;)", "f(!)", "!", "a!", "[!]", "f(:-)", "f(:- , a)",
-    # upstream report #10: the arguments of end_of_file_in_quoted and undefined_char_escape
-    "“x", "'\\q'", "'\\é'", "'\\Ω'", "'\\中'", "'\\∀'", "'\\😀'", "'\\Ā'",
-    "a = (:-)", "- - - - - - - - 1", "f(- - - 1)", "'-' 1", "'-'(1)", "'-' (1)", "'-'",
-    "'\\+' a",
-    "a '=' b", "a '+' b", "'dynamic' a", "f('-', -)", "[X, f(Y), Z|T]", "[f(X), Y|g(Z)]",
-    "f([A|B], {C}, (D, E))", "g(X, Y, Z, Y, X)", "[_, _A, _]"
-]
+# (the hand corpus: text_corpora_testlib.jl)
 
 @testset "the variables' order: where readValHandle places them, as swipl's (by address)" begin
     # probed (swipl 10.1.16): term_to_atom(T, 'f(A,g(B),_,h(_C))'), T = f(A,g(B),V,h(C)):

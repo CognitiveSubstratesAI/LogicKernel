@@ -53,6 +53,10 @@ mutable struct PL_global_data{T}
     const atom_nil::T                                           # ATOM_nil, the `[]` term
     const atom_dot::T                                           # ATOM_dot, the `'[|]'` symbol
     const no_literals::Vector{T}                                # (a supervisor's literal table)
+    const files_table::Dict{UInt64, SourceFile{T}}              # files.table: name → source file
+    const files_array::Vector{SourceFile{T}}                    # files.array: index → source file
+    files_no_hole_before::Int                                   # files.no_hole_before
+    const stream_filenames::IdDict{IOSTREAM, T}                 # (pl-file.c's stream context)
 end
 # DIVERGES: `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
 # `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
@@ -69,7 +73,12 @@ end
 # at the end of `initBuildIns!`, once `=/2` is registered (until then it holds `$c_call_prolog/0`,
 # which nothing reads it as). `atom_nil` and
 # `atom_dot` are the terms the VM writes for `[]` and a list cell's head, built once — upstream's are
-# constants; `no_literals` is the literal table a supervisor's code has (none).
+# constants; `no_literals` is the literal table a supervisor's code has (none). Since R1f the source
+# files (`files.table`, keyed by the name's `sym_key`; `files.array`, a vector — no hole is ever
+# made, as no source file is destroyed: no unload), created with the database where upstream makes
+# the table at the first lookup; and `stream_filenames`, the file name of an open stream, which
+# upstream keeps in the stream's context (pl-file.c `streamContext`, the stream table: R2) — the
+# loader registers the stream it opens.
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
     modules = module_t{T}[]                     # initModules: system, then user
@@ -80,7 +89,7 @@ function PL_global_data{T}() where {T}
         sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd, 0,
         system.index
     )
-    dc_proc = Procedure{T}(dc_def, UInt32(0))
+    dc_proc = Procedure{T}(dc_def, UInt32(0), UInt32(0))
     top_clause, top_cref = initVM(dc_proc)
     system.procedures[(sym_key(dc), 0)] = dc_proc
     gd = PL_global_data{T}(
@@ -99,7 +108,11 @@ function PL_global_data{T}() where {T}
         top_cref,
         mk_nil(T),
         mk_sym(T, Symbol("[|]")),
-        T[]
+        T[],
+        Dict{UInt64, SourceFile{T}}(),
+        SourceFile{T}[],
+        1,                                      # files.no_hole_before = 1
+        IdDict{IOSTREAM, T}()
     )
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
@@ -163,7 +176,10 @@ end
 # `GD` is the database of the query `PL_open_query` opened last (since V9c): upstream's code reaches
 # the global data as a process global (`GD`), and a built-in here receives LD alone (`t0, ac, ctx`),
 # so one that changes the database (`assertz/1`) reads it through this field; `nothing` until a
-# query is opened.
+# query is opened. Since R1f: `read_source` (the start of the term read last), the style checks
+# (`_debugstatus.styleCheck`, pl-init.c's default), `modules.source` (a module index: `user`), and
+# `messages` — no upstream field: `printMessage` appends `(kind, message)` there, as print_message/2
+# (boot/messages.pl, R2) is not ported; the loader returns them.
 """
     PL_local_data{T}()
 
@@ -232,6 +248,10 @@ mutable struct PL_local_data{T}
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's term but in a cursor)
     GD::Union{Nothing, PL_global_data{T}}                       # (the running query's database)
+    read_source::source_location{T}                             # read_source: file, line, …
+    debugstatus_styleCheck::Int                                 # _debugstatus.styleCheck
+    modules_source::Int                                         # modules.source (an index)
+    messages::Vector{Tuple{Symbol, T}}                          # (printMessage's messages)
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -270,7 +290,11 @@ function PL_local_data{T}() where {T}
         0, 0, 0, 0, 0,
         false, false, false,
         ClauseChoice{T}(nothing, word(0)), e,
-        nothing                                 # GD: set by PL_open_query
+        nothing,                                # GD: set by PL_open_query
+        source_location{T}(nothing, IOPOS()),
+        SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK,  # pl-init.c:1663
+        2,                                      # modules.source: user (the module table's 2nd)
+        Tuple{Symbol, T}[]
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

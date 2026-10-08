@@ -160,4 +160,41 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 "LOGICKERNEL_CI_FIXTURE" => garbage, "LOGICKERNEL_CI_CHECK" => "off") == 0
         end
     end
+
+    @testset "tools/ci_status.sh: a short SHA gives the full SHA's answer, never a silent 'no run'" begin
+        # MEASURED 2026-10-07: `ci_status.sh b615e51` said "no CI run yet" while the run was in
+        # progress — the API's head_sha filter, and the verdict's own match, need the FULL SHA
+        tool = joinpath(_GS_ROOT, "tools", "ci_status.sh")
+        full = readchomp(`git -C $(_GS_ROOT) rev-parse HEAD`)
+        short = full[1:7]
+        out(cmd, env...) =
+            withenv(env...) do
+                o = IOBuffer()
+                p = run(pipeline(ignorestatus(cmd); stdout=o, stderr=devnull))
+                (p.exitcode, String(take!(o)))
+            end
+        mktempdir() do d
+            for (status, conclusion, want) in
+                (("completed", "\"success\"", 0), ("completed", "\"failure\"", 1),
+                ("in_progress", "null", 3))
+                f = joinpath(d, "f.json")
+                write(
+                    f,
+                    "{\"workflow_runs\":[{\"head_sha\":\"$full\",\"name\":\"CI\"," *
+                    "\"status\":\"$status\",\"conclusion\":$conclusion," *
+                    "\"html_url\":\"https://x/1\"}]}"
+                )
+                a = out(`$tool $full`, "LOGICKERNEL_CI_FIXTURE" => f)
+                b = out(`$tool $short`, "LOGICKERNEL_CI_FIXTURE" => f)
+                c = out(`$tool HEAD`, "LOGICKERNEL_CI_FIXTURE" => f)
+                @test a[1] == want                      # the fixture's verdict…
+                @test b == a && c == a                  # …the same, text included, for each name
+                @test occursin(full[1:7], b[2]) && !occursin("no CI run", b[2])
+            end
+            # a short SHA the repository does not have: unreadable (exit 2), not "no run" (3)
+            f = joinpath(d, "e.json")
+            write(f, "{\"workflow_runs\":[]}")
+            @test out(`$tool 0000000`, "LOGICKERNEL_CI_FIXTURE" => f)[1] == 2
+        end
+    end
 end

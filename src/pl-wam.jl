@@ -837,7 +837,8 @@ function initVM(dc::Procedure{T})::Tuple{Clause{T}, ClauseRef{T}} where {T}
         UInt32(0),
         code[I_EXITQUERY],              # cl->code_size = 1; cl->codes[0] = encode(I_EXITQUERY)
         T[],
-        Procedure{T}[]
+        Procedure{T}[],
+        UInt32(0), UInt32(0), UInt32(0)  # no source
     )
     cref = ClauseRef{T}(nothing, word(0), cl, nothing)     # GD->clauses.top_cref.value.clause = cl
     return (cl, cref)

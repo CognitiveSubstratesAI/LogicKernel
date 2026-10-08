@@ -47,6 +47,7 @@
     ERR_REPRESENTATION              # atom_t what
     ERR_MODIFY_STATIC_PROC          # Procedure proc
     ERR_PERMISSION                  # atom_t, atom_t, term_t
+    ERR_PERMISSION_PROC             # op, type, Definition
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -370,6 +371,30 @@ function PL_error(
 end
 
 """
+    PL_error(ld, ERR_PERMISSION_PROC, op, type, proc) -> false
+
+Raise `error(permission_error(Op, Type, Name/Arity), context(Caller, _))` for the procedure `proc`
+(pl-error.c), as `overruleImportedProcedure` raises it (since R1f).
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, op::T, type::T, proc::Procedure{T}
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_PERMISSION_PROC
+    pi = new_term_ref(ld)
+    gd = _query_gd(ld)
+    ld.slots[pi + 1] = unify_definition(                       # PL_unify_predicate(pi, pred, …)
+        gd, MODULE_user(gd), proc.definition, GP_NAMEARITY | GP_HIDESYSTEM
+    )
+    ld.slots[formal + 1] = mk_expr(
+        T, T[mk_sym(T, :permission_error), op, type, ld.slots[pi + 1]]
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
     PL_error(ld, pred, arity, msg, ERR_PERMISSION, action, type, obj::term_t) -> false
 
 Raise `error(permission_error(Action, Type, Obj), context(…, Msg))` (pl-error.c).
@@ -443,3 +468,16 @@ PL_type_error(ld::PL_local_data{T}, expected::String, actual::term_t) where {T} 
 "Raise `domain_error(Expected, Actual)` (pl-error.c `PL_domain_error`); false."
 PL_domain_error(ld::PL_local_data{T}, expected::String, actual::term_t) where {T} =
     PL_error(ld, ERR_DOMAIN, mk_sym(T, Symbol(expected)), actual)
+
+# ── printing messages (pl-error.c), since R1f ───────────────────────────────────────────────────
+
+# PORT: pl-error.c printMessage
+# DIVERGES: the message is a built term, where upstream builds it from `PL_unify_term` arguments; it
+# is not printed — print_message/2 is boot/messages.pl's (R2) — but appended, resolved through the
+# bindings, to the local data's `messages` as `(severity, message)`, which the loader returns. So
+# it never fails and never raises: no recursion guard, no wakeup state to save.
+"Report the message `msg` of severity `severity` (`:warning`, `:error`, …) (pl-error.c)."
+function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::T)::Bool where {T}
+    push!(ld.messages, (severity, resolve_term(ld, msg)))
+    return true
+end

@@ -21,6 +21,7 @@ const LK = LogicKernel
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+include(joinpath(@__DIR__, "text_corpora_testlib.jl"))
 const _TW = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _tws(x) = lk_sym(_TW, Symbol(x))
 _twf(f, xs::_TW...) = mk_expr(_TW, _TW[_tws(f), xs...])
@@ -238,158 +239,10 @@ function _tw_compare(
     return length(bad)
 end
 
-# ── the hand corpus: texts both sides read, then write ─────────────────────────────────────────
-const _TW_CORPUS = [
-    # operators: priorities, associativity, embracing
-    "a:-b,c;d->e", "(a:-b):-c", "f((a:-b))", "[(a:-b)]", "{a:-b}", "1+2+3", "1+(2+3)",
-    "2^3^4",
-    "(2^3)^4", "a*(b+c)", "a*b+c", "a=..b", "a:b:c", "(a,b)", "f((a,b))", "f(a;b)",
-    "f((a->b))",
-    "\\+a", "\\+ (a,b)", "\\+ \\+ q", "a=(\\+b)", "- (1)", "-(a)", "- - a", "- (-(1))",
-    "1 - -1",
-    "a- (-1)", "-(2)^2", "(-2)^2", "-(2^2)", "1 + -2", "1- - 2", "a = -5", "f(- 1)",
-    "-(1)+2",
-    "+(1)", "+(a)", "+(-(1))", "- - - a", "- - - 1", "a: -1", "a- (1r3)", "- (1r3)",
-    "-(-1r3)",
-    "-(a,b)", "dynamic a", "dynamic (a,b)", "(dynamic a), b", "f(dynamic)", "- (dynamic)",
-    "\\ (-)", "- (-)", "f(-)", "[-]", "[- , +]", "-(-(-))", "- (:-)", "f(:-, a)",
-    "(:-) :- (:-)",
-    "[:-|:-]", "{:-}", "a-(',')", "f(',')", "','(a,b)", "'|'(a,b)", "f('|')", "a|b",
-    "(a|b)",
-    "f(;)", "f(a, (b:-c))", "- {a}", "- (a)", "- [a]", "-(\"s\")", "-'[]'", "- []",
-    "- '{}'",
-    "f(?-)", "?-a", ":- (a,b)", "a-->b", "a=>b", "a==>b", "x is 1+2", "a mod b", "a rem b",
-    "a xor b", "a rdiv b", "a//b", "a<<b", "a>>b", "a/\\b", "a\\/b", "a**b", "a**(b**c)",
-    "(a**b)**c", "a=@=b", "a\\=@=b", "a>:<b", "a:<b", "a as b", "a*->b", "1-(2-3)",
-    "(1-2)-3",
-    "- (1-2)", "-(1)-2", "2-(-1)", "2 - (- 1)", "1*(-1)", "1*(- 1)", "- a^2", "(- a)^2",
-    "f(a- -1)", "\\+ (-)", "dynamic - a",
-    # atoms and quoting
-    "'hello world'", "'[]'", "[]", "'{}'", "{}", "'[|]'", "'()'", "''", "'\\t'", "'\\n'",
-    "'it''s'",
-    "'a\\\\b'", "'/*'", "'%'", "'.'", "'a.b'", "'A'", "'_'", "'_x'", "abc", "aBc", "'1a'",
-    "é",
-    "'éa'", "aé", "'ŝ'", "f(é)", "'Ωmega'", "αβ", "日本", "'e\\x301\\'", "'\\x301\\'",
-    "'\\x2028\\'",
-    "'\\x7F\\'", "'\\x85\\'", "'\\x1\\'", "'\\xA0\\'", "'∀'", "'≠'", "'😀'", "⟨⟩", "'«»'",
-    "'⟨'",
-    "!", ";", "'|'", "','", "[]", "'$VAR'", "end_of_file", "'\\\\'", "\\", "?", "@", "#",
-    "'`'",
-    "'\"'", "'a b'", "f('A', 'b c', \"d\")",
-    # dynamic é: KNOWN UPSTREAM DEFECT #11 (a Latin-1 first letter after a letter: no space)
-    "dynamic é", "dynamic 'éa'", "- é", "a- é", "dynamic ŝ", "dynamic 'Ωmega'",
-    # bracket pairs: '⟨⟩'(a) prints ⟨a⟩; KNOWN UPSTREAM DEFECT #12: '[]'(a) prints [a], '()'(a) (a)
-    "'⟨⟩'(a)", "⟨a⟩", "'«»'(a)", "'[]'(a)", "'()'(a)", "- '()'(a)", "'[]'(a,b)", "'{}'(a)",
-    "'{}'(a,b)", "{a,b}", "{}(a)",
-    # lists
-    "[a]", "[a|b]", "[a,b|c]", "[a|[]]", "[a,b,c]", "[[a]]", "[a|X]", "'[|]'(a,b,c)",
-    "'[|]'",
-    "[a|'[]']", "[1,-1,- 1]",
-    # numbers and strings
-    "1r3", "-1r3", "123456789012345678901234567890", "-123456789012345678901234567890", "0",
-    "-0", "f(-5)", "- (5)", "1152921504606846976", "\"str\\n\"", "\"\"", "\"a b\"",
-    "f(\"x\",'Y',\"\")", "\"x\\\"y\"", "\"it's\"", "\"é\"", "\"\\x301\\\"", "\"`\"",
-    "\"\\\\\"",
-    # '$VAR'
-    "'\$VAR'(1)", "'\$VAR'(27)", "'\$VAR'(-3)", "'\$VAR'('Foo')", "'\$VAR'(x)",
-    "'\$VAR'('?x')",
-    "'\$VAR'('A_1')", "'\$VAR'('_')", "'\$VAR'(\"s\")", "'\$VAR'(1r3)", "'\$VAR'(a,b)",
-    "'\$VAR'(72057594037927935)", "'\$VAR'(72057594037927936)",
-    "'\$VAR'(-72057594037927936)",
-    "'\$VAR'(-72057594037927937)", "f('\$VAR'(1), '\$VAR'(2))", "- '\$VAR'(1)",
-    "'\$VAR'(1)- a",
-    # variables
-    "f(X,Y,X)", "X", "[X|Y]", "- X", "f(_)", "X = Y", "{X}", "'⟨⟩'(X)",
-    # the operator table: `$` is no operator on either side; `.` and `:=` are on both
-    "f(\$)", "- (\$)", "'\$'(a)", "'.'(a,b)", "':='(a,b)"
-]
+# (the hand corpus: text_corpora_testlib.jl)
 
-# ── random terms, built on both sides from one encoding ─────────────────────────────────────────
-const _TW_ATOMS = [
-    "a", "foo", "b1", "[]", "{}", "[|]", "()", "'", "\"", "`", ",", "|", ";", "!", "-", "+",
-    "*",
-    "\\", "\\+", ":-", "?-", "-->", "->", "=", "is", "mod", "dynamic", "table", "^", "**",
-    ":",
-    "\$", ".", ":=", "", " ", "hello world", "A", "Abc", "_", "_x", "é", "éa", "aé", "ŝ",
-    "Ωmega", "αβ", "日本", "é", "́", "x‍", "⟨⟩", "«»", "⟨", "/*", "%", "a.b", "\n",
-    "\t", "it's", "a\\b", " ", "\x7f", "\u0085", "\x01", "\$VAR", "end_of_file", "[a]",
-    "{a}", "?", "@", "#", "&", "~", "-1", "1", "xor", "rdiv", " ", "　", "∀", "≠", "a b",
-    "😀", "\\=", "=..", "@<", "<", "//", "/", "\\/", "rem", "as", "*->", "=>", "=@="
-]
-const _TW_STRINGS = [
-    "", "a", "a b", "x\"y", "it's", "é", "日本", "\n", "`", "\\", "é", "😀", "\$", "''"
-]
-const _TW_VARNAMES = ["A", "Foo", "_", "x", "?x", "A_b", "é", "Ω", "?", "_a", "a b"]
-const _TW_INTS = BigInt[
-    0, 1, -1, 7, -42, 25, 26, 27, -26, big(2) ^ 56 - 1, big(2) ^ 56, -big(2) ^ 56,
-    -big(2) ^ 56 - 1,
-    big(10) ^ 30, -big(10) ^ 30, big(2) ^ 63, -big(2) ^ 63
-]
-
-"A random term of depth at most `d`: its encoding for the swipl driver and the kernel term."
-function _tw_gen(rng, d::Int, vars::Vector{_TW})::Tuple{String, _TW}
-    r = d <= 0 ? rand(rng, 1:6) : rand(rng, 1:14)
-    if r == 1
-        a = rand(rng, _TW_ATOMS)
-        return ("a(" * _tw_codes(a) * ")", _tws(a))
-    elseif r == 2
-        return ("nil", mk_nil(_TW))
-    elseif r == 3
-        n = rand(rng, _TW_INTS)
-        return ("i($n)", _tw_int(n))
-    elseif r == 4
-        q = rand(rng, [1 // 3, -2 // 7, big(10)^20 // 3, -1 // big(10)^20])
-        q = Rational{BigInt}(q)
-        return ("q($(numerator(q)),$(denominator(q)))", lk_gnd(_TW, q))
-    elseif r == 5
-        s = rand(rng, _TW_STRINGS)
-        return ("s(" * _tw_codes(s) * ")", lk_gnd(_TW, s))
-    elseif r == 6
-        k = rand(rng, 0:3)
-        return ("v($k)", vars[k + 1])
-    elseif r <= 9                                   # a compound named by any atom
-        name = rand(rng, _TW_ATOMS)
-        args = [_tw_gen(rng, d - 1, vars) for _ in 1:rand(rng, 1:3)]
-        return (
-            "c(" * _tw_codes(name) * ",[" * join(first.(args), ",") * "])",
-            mk_expr(_TW, _TW[_tws(name), last.(args)...])
-        )
-    elseif r == 10                                  # '$VAR'(…)
-        x = if rand(rng, Bool)
-            n = rand(rng, _TW_INTS)
-            ("i($n)", _tw_int(n))
-        else
-            v = rand(rng, _TW_VARNAMES)
-            ("a(" * _tw_codes(v) * ")", _tws(v))
-        end
-        return ("c(" * _tw_codes("\$VAR") * ",[" * x[1] * "])", _twf("\$VAR", x[2]))
-    elseif r == 11                                  # a list, its tail [], a variable or a term
-        n = rand(rng, 1:3)
-        els = [_tw_gen(rng, d - 1, vars) for _ in 1:n]
-        tail = rand(rng, [("nil", mk_nil(_TW)), ("v(0)", vars[1]), _tw_gen(rng, 0, vars)])
-        enc, t = tail
-        for (e, x) in reverse(els)
-            enc = "c(" * _tw_codes("[|]") * ",[" * e * "," * enc * "])"
-            t = _twf("[|]", x, t)
-        end
-        return (enc, t)
-    elseif r == 12                                  # a compound named by the reserved `[]`
-        args = [_tw_gen(rng, d - 1, vars) for _ in 1:rand(rng, 1:2)]
-        return (
-            "cn([" * join(first.(args), ",") * "])",
-            mk_expr(_TW, _TW[mk_nil(_TW), last.(args)...])
-        )
-    else                                            # an operator term of the right arity
-        ops = LK.operators
-        op = ops[rand(rng, 1:length(ops))]
-        arity = (op[2] & LK.OP_MASK) == LK.OP_INFIX ? 2 : 1
-        args = [_tw_gen(rng, d - 1, vars) for _ in 1:arity]
-        return (
-            "c(" * _tw_codes(op[1]) * ",[" * join(first.(args), ",") * "])",
-            mk_expr(_TW, _TW[_tws(op[1]), last.(args)...])
-        )
-    end
-end
+# (the random terms: text_corpora_testlib.jl `_tc_gen`)
+_tw_gen(rng, d::Int, vars::Vector{_TW})::Tuple{String, _TW} = _tc_gen(_TW, rng, d, vars)
 
 if _TW_SWIPL !== nothing
     @testset "the hand corpus: read, then written five ways, as swipl" begin

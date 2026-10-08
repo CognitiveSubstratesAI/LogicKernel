@@ -65,6 +65,11 @@ const AT_SPECIAL = 5
 # out negative. Upstream reads a single-byte atom's or string's text as `char` in places
 # (`atomType`'s `code_requires_quoted(*s, …)`, `writeText`'s `PutOpenToken(s[0], …)`); the kernel
 # passes the same value there (docs/upstream_reports.md #11).
+# DIVERGES (platform): this follows swipl on x86-64 — the oracle's platform, where `char` is
+# signed. swipl's build pins no signedness, so it is the compiler's default per ABI: unsigned on
+# Linux aarch64 (AAPCS64), signed on macOS arm64 (Apple's ABI departs here). There swipl writes
+# what the unsigned value gives; an upstream fix that casts to `unsigned char` is NOT a regression
+# — drop `_signed_char` then.
 _signed_char(c::Int)::Int = c >= 0x80 ? c - 0x100 : c
 
 # PORT: pl-write.c wr_is_symbol
@@ -135,7 +140,9 @@ end
 # written by `writeReservedSymbol`), so only `{}` is `AT_SPECIAL` by its text. KNOWN UPSTREAM
 # DEFECT, ported AS IS (docs/upstream_reports.md #11): a character after the first goes to
 # `code_requires_quoted` as C's signed `char` (`_signed_char`), and the first is never tested, so
-# `quote_non_ascii(true)` — write_canonical/1's — leaves a Latin-1 atom (`aé`) unquoted.
+# `quote_non_ascii(true)` — write_canonical/1's — leaves a Latin-1 atom (`aé`) unquoted. The first
+# omission holds on every platform (`éa`, `é`); the signed `char` only where `char` is signed —
+# x86-64, the oracle's (see `_signed_char`).
 "How the single-byte atom with text `name` must be written to `fd` with `flags` (pl-write.c `AT_*`)."
 function atomType(name::String, fd::Union{Nothing, IOSTREAM}, flags::Int)::Int
     n = length(name)
@@ -654,7 +661,8 @@ end
 # `_is_ucs_text`); a single-byte text's first character goes to `PutOpenToken` as C's signed `char`
 # (`_signed_char`), as upstream's `s[0]` does — KNOWN UPSTREAM DEFECT, ported AS IS
 # (docs/upstream_reports.md #11): an atom starting with a Latin-1 letter is not separated from a
-# letter before it, so `dynamic é` is written `dynamicé`.
+# letter before it, so `dynamic é` is written `dynamicé` — on signed-`char` platforms (x86-64, the
+# oracle's), not on unsigned ones (Linux aarch64): see `_signed_char`.
 "Write `txt` inside quotes `quote` (0: none), cut to `max_text`: 0, 1, or `TRUE_WITH_SPACE` (pl-write.c)."
 function writeText(txt::String, wide::Bool, qc::Int, options::write_options)::Int
     rc = 1
