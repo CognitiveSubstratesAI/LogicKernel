@@ -50,6 +50,8 @@ include("pl-error.jl")         # swipl-devel src/pl-error.c — error terms (the
 include("pl-gmp.jl")           # swipl-devel src/pl-gmp.c — numbers: read, written, promoted, compared
 include("pl-arith.jl")         # swipl-devel src/pl-arith.c — evaluation, is/2, the comparisons
 include("os/pl-codelist.jl")   # swipl-devel src/os/pl-codelist.c — the text of a code or character list
+include("os/pl-option.jl")     # swipl-devel src/os/pl-option.c — option lists (PL_scan_options)
+include("os/pl-prologflag.jl") # swipl-devel src/os/pl-prologflag.c — setBackQuotes (write_term's back_quotes)
 include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a term holds; a stream on it
 include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD

@@ -535,6 +535,51 @@ function ph_acyclic_mark(ld::PL_local_data{T}, top::T)::Bool where {T}
     end
 end
 
+# PORT: pl-prims.c skip_list
+# DIVERGES: the term itself and its tail returned, `(length, tail)`, where upstream writes the tail
+# through `tailp`; two cells are the same cell when `===` (upstream compares the cell words).
+"Walk the list `l` (Brent's cycle detection): `(cells, tail)`, the tail the first non-list or the cell a cycle returns to (pl-prims.c)."
+function skip_list(ld::PL_local_data{T}, l::T)::Tuple{Int, T} where {T}
+    l = deRef(ld, l)
+
+    if !is_pair(l)
+        return (0, l)
+    else
+        length = 0
+        checkCell = currentCell = l
+        lam = 0
+        power = 1
+
+        while true
+            currentCell = deRef(ld, child(currentCell, 3))      # TailList(currentCell)
+            length += 1
+
+            (!is_pair(currentCell) || checkCell === currentCell) && break
+
+            lam += 1
+            if power == lam
+                checkCell = currentCell
+                power *= 2
+                lam = 0
+            end
+        end
+
+        return (length, currentCell)
+    end
+end
+
+# PORT: pl-prims.c lengthList
+"The length of the list term reference `list` holds; -1 if it is not one, -2 if partial (pl-prims.c)."
+function lengthList(ld::PL_local_data{T}, list::term_t, errors::Bool)::Int where {T}
+    length, tail = skip_list(ld, ld.slots[list + 1])
+
+    is_nil(tail) && return length
+
+    errors && PL_error(ld, ERR_TYPE, mk_sym(T, :list), list)
+
+    return kind(tail) === VAR ? -2 : -1
+end
+
 # PORT: pl-prims.c is_acyclic
 "Whether `p` is acyclic under the bindings in `ld` (pl-prims.c `is_acyclic`)."
 function is_acyclic(ld::PL_local_data{T}, p::T)::Bool where {T}

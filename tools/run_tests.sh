@@ -204,7 +204,7 @@ _sharded_run() {   # (tools/lib_evidence.sh is sourced above)
     fp="$(_tree_fp "$ROOT")"
     for w in "$ROOT"/.warm/pool/w*; do
         [ "${#dirs[@]}" -ge "$n" ] && break
-        [ -f "$w/ready" ] && [ "$(cat "$w/fp" 2>/dev/null)" = "$fp" ] || continue
+        _pool_usable "$w" "$fp" || continue                  # ready, this tree, ALIVE
         mkdir "$w/claimed" 2>/dev/null || continue           # another run took it
         dirs+=("$w"); units_+=("$(cat "$w/unit")")
     done

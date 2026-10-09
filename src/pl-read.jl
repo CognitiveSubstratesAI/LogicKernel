@@ -3741,8 +3741,8 @@ end
 # PORT: pl-read.c BeginPredDefs as PL_predicates_from_read
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (read:7431-7444). NOT PORTED: read_term/2,3 and read_clause/3 (a stream argument: the stream
-# table, R2; options: `PL_scan_options`), read_term_from_atom/3 (its options: `PL_scan_options`,
-# which the writer's write_term/2,3 needs too, R1e), `$code_class/2`, `$is_named_var/1`,
+# table, R2), read_term_from_atom/3 (the rest of R1e; `PL_scan_options` is ported since R1e's
+# write/1 family, src/os/pl-option.jl), `$code_class/2`, `$is_named_var/1`,
 # `$qq_open/2` (no quasi-quotations).
 "pl-read.c's registration table (`BeginPredDefs(read)`): the ported entries."
 const PL_predicates_from_read = (

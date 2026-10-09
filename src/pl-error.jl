@@ -48,6 +48,8 @@
     ERR_MODIFY_STATIC_PROC          # Procedure proc
     ERR_PERMISSION                  # atom_t, atom_t, term_t
     ERR_PERMISSION_PROC             # op, type, Definition
+    ERR_EXISTENCE                   # atom_t type, term_t obj
+    ERR_STREAM_OP                   # atom_t action, term_t obj
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -220,11 +222,12 @@ function rewrite_callable(ld::PL_local_data{T}, expected::T, actual::term_t)::T 
 end
 
 """
-    PL_error(ld, ERR_TYPE | ERR_DOMAIN, atom, actual::term_t) -> false
+    PL_error(ld, ERR_TYPE | ERR_DOMAIN | ERR_EXISTENCE | ERR_STREAM_OP, atom, actual::term_t) -> false
 
 Raise `error(type_error(Atom, Actual), …)` or `error(domain_error(Atom, Actual), …)` — or
 `instantiation_error` when `actual` holds a variable (for `ERR_TYPE`, unless the expected type is
-`variable`) (pl-error.c). A `callable` culprit is rewritten first (`rewrite_callable`).
+`variable`) — or `error(existence_error(Atom, Actual), …)`, or `error(io_error(Atom, Actual), …)`
+(pl-error.c). A `callable` culprit is rewritten first (`rewrite_callable`).
 """
 PL_error(ld::PL_local_data{T}, id::PL_error_code, a::T, actual::term_t) where {T} =
     PL_error(ld, "", 0, "", id, a, actual)
@@ -254,6 +257,12 @@ function PL_error(
                 T, T[mk_sym(T, :type_error), a, ld.slots[actual + 1]]
             )
         end
+    elseif id == ERR_EXISTENCE                      # (since R1e's write/1 family: streams)
+        ld.slots[formal + 1] = mk_expr(
+            T, T[mk_sym(T, :existence_error), a, ld.slots[actual + 1]]
+        )
+    elseif id == ERR_STREAM_OP                      # (since R1e's write/1 family)
+        ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :io_error), a, ld.slots[actual + 1]])
     else
         @assert id == ERR_DOMAIN
         if var
@@ -411,6 +420,35 @@ function PL_error(
         T, T[mk_sym(T, :permission_error), action, type, ld.slots[obj + 1]]
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+# PORT: pl-error.c PL_get_stdbool_ex
+# DIVERGES: returns the Boolean, or `nothing` with the error raised (see `PL_get_stdbool`).
+"The Boolean term reference `t` holds, or `nothing` after raising `type_error(bool, T)` (pl-error.c)."
+function PL_get_stdbool_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Bool} where {T}
+    b = PL_get_stdbool(ld, t)
+    b === nothing || return b
+    PL_error(ld, ERR_TYPE, mk_sym(T, :bool), t)
+    return nothing
+end
+
+# PORT: pl-error.c PL_get_bool_ex
+# DIVERGES: as `PL_get_stdbool_ex` (upstream writes an `int`).
+"The Boolean term reference `t` holds, or `nothing` after raising `type_error(bool, T)` (pl-error.c)."
+PL_get_bool_ex(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_stdbool_ex(ld, t)
+
+# PORT: pl-error.c PL_unify_bool_ex
+"""
+Unify term reference `t` with the Boolean `val`: a variable gets `true` or `false`; a Boolean must
+agree; anything else raises `type_error(bool, T)` (pl-error.c).
+"""
+function PL_unify_bool_ex(ld::PL_local_data{T}, t::term_t, val::Bool)::Bool where {T}
+    if PL_is_variable(ld, t)
+        return PL_unify_atom(ld, t, mk_sym(T, val ? Symbol("true") : Symbol("false")))
+    end
+    v = PL_get_bool(ld, t)
+    v === nothing || return v == val
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :bool), t)
 end
 
 # PORT: pl-error.c PL_get_atom_ex

@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-write.c @ bae881a2
+# UPSTREAM: swipl-devel src/pl-incl.h @ bae881a2
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -15,9 +16,10 @@
 # operators, lists, `{}`, Unicode bracket pairs, canonical compounds — and `PL_write_term`, which
 # `term_to_atom/2` and `term_string/2` write with (src/pl-read.jl). REFUSED (`NotPortedError`): a
 # cyclic term (decision 4a), `user:portray/1` when it is defined (decision 3a). Since R1e's floats,
-# `format_float` (`~h`). NOT PORTED, the rest of R1e: `write/1`, `writeq/1`, `print/1`,
-# `write_canonical/1`, `write_term/2,3` and their options, `nl/0,1`; never: attributed variables,
-# dicts, blobs other than the reserved symbols.
+# `format_float` (`~h`). Since R1e's write/1 family (the end of this file): write/1,2, writeq/1,2,
+# writeln/1,2, print/1,2, write_term/2,3 and their options, nl/0,1, over the standard streams
+# (src/os/pl-file.jl). NOT PORTED, the rest of R1e: write_canonical/1,2 (`numberVars`); never:
+# attributed variables, dicts, blobs other than the reserved symbols.
 
 # PORT: pl-write.c NaN_value
 # DIVERGES: the exponent field is replaced on the bits (`reinterpret`), where upstream writes it
@@ -457,7 +459,8 @@ wframe{T}(z::T) where {T} =
 # `:next_argument`), where upstream holds atoms. The text atoms the writer compares a functor with
 # (upstream's `ATOM_*`) are their keys, made once per write (`k_*`); `writeTerm`'s stack (upstream's
 # segstack, a local of each call) is a field, so a write allocates it once. NOT PORTED:
-# `portray_goal`, `write_options` and `prec_opt` (write_term/2,3's `portray_goal` option, R1e).
+# `portray_goal`, `write_options` and `prec_opt` (write_term/2,3's `portray_goal` option: refused,
+# calling Prolog needs V9's meta-call).
 "The options of a write (pl-write.c)."
 mutable struct write_options{T}
     flags::Int                      # PL_WRT_* flags
@@ -946,10 +949,10 @@ function separate_number(s::IOSTREAM, negative::Bool, fmt::String)::Bool
 end
 
 # PORT: pl-write.c writeNumber
-# DIVERGES: a number is written as `do_format` writes it with the default formats, the only ones
-# before write_term/2,3's `integer_format` and `float_format` options (R1e): an integer's decimal
-# digits (`~d`), a float's `format_float(f, 3, 'e')` (`~h`, since R1e's floats); another format is
-# refused (`NotPortedError`).
+# DIVERGES: a number is written as `do_format` writes it with the default formats: an integer's
+# decimal digits (`~d`), a float's `format_float(f, 3, 'e')` (`~h`, since R1e's floats); another
+# format — write_term/2,3's `integer_format` and `float_format` options, since R1e's write/1
+# family — is refused (`NotPortedError`: `do_format`, format/2's, is not ported).
 "Write the number `t` (pl-write.c): an integer, or a rational as `NrD` (`N/D` for `RAT_NATURAL`)."
 function writeNumber(t::T, options::write_options{T})::Bool where {T}
     k = number_kind(t)
@@ -1007,17 +1010,49 @@ function writePrimitive(t::T, options::write_options{T})::Bool where {T}
     throw(NotPortedError{T}(t, "writing a grounded value SWI has no type for", "never"))
 end
 
+# Whether the `'$VAR'` term `t0` reaches — `t0` before it is dereferenced — was made since the
+# numbervars frame opened (upstream: the compound lies above the frame's global-stack mark). Such a
+# term is made by `bind_varnames` (or write_canonical's numbering) and is reached only through a
+# variable bound since the frame opened: the last variable of `t0`'s chain is trailed above the
+# frame's trail mark. A `'$VAR'` written in the term itself, or reached through an older binding,
+# is older.
+function _numbervars_newer(ld::PL_local_data{T}, t0::T)::Bool where {T}
+    fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
+    top = ld.fliframes[fr].mark.trailtop
+    bound = false
+    last = UInt64(0)
+    while kind(t0) === VAR
+        v = get(ld.bindings, var_key(t0), nothing)
+        v === nothing && break
+        bound = true
+        last = var_key(t0)
+        t0 = v
+    end
+    bound || return false
+    for i in (top + 1):length(ld.trail)
+        ld.trail[i] == last && return true
+    end
+    return false
+end
+
 # PORT: pl-write.c writeNumberVar
-# DIVERGES: the term itself, dereferenced; no `numbervars_frame` (write_canonical/1 and
-# write_term/2,3's `variable_names`, R1e: an older `'$VAR'` term is then written as a term); no
-# var_prefix (`out_var_prefix` is 0). The atom `quoted(false)` writes is written with the write's
-# options, its flag cleared and restored, where upstream writes it with a copy (`o2`) — so
+# DIVERGES: the term itself, dereferenced, and `t0`, the term before (for `numbervars_frame`: an
+# OLDER `'$VAR'` term is not a variable name when `numbervars` is off — `_numbervars_newer` decides
+# "older" by how the term is reached, where upstream compares its address with the frame's mark);
+# no var_prefix (`out_var_prefix` is 0). The atom `quoted(false)` writes is written with the
+# write's options, its flag cleared and restored, where upstream writes it with a copy (`o2`) — so
 # `truncated` is restored too.
 "Write `'\$VAR'(N)` as a variable name: 1 (written), 0 (not such a term), -1 (error) (pl-write.c)."
-function writeNumberVar(t::T, options::write_options{T})::Int where {T}
+function writeNumberVar(t::T, options::write_options{T}, t0::T)::Int where {T}
     ld = options.ld
     kind(t) === EXPR || return 0
     (nchildren(t) == 2 && _is_text_atom_key(child(t, 1), options.k_isovar)) || return 0
+
+    if ld.var_names_numbervars_frame != 0
+        if !_ison(options, PL_WRT_NUMBERVARS) && !_numbervars_newer(ld, t0)
+            return 0                                # older $VAR term
+        end
+    end
 
     p = deRef(ld, child(t, 2))
     if isTaggedInt(p)
@@ -1055,7 +1090,7 @@ end
 # ── portray (pl-write.c) ────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-write.c callPortray
-# DIVERGES: no `portray_goal` (write_term/2,3, R1e) and no halt state. Calling Prolog from the
+# DIVERGES: no `portray_goal` (write_term/2,3 refuses it) and no halt state. Calling Prolog from the
 # writer needs the meta-call (V9): so where upstream would call `user:portray/1` — it is DEFINED —
 # the kernel refuses (`NotPortedError`; user, 2026-10-07, decision 3a); where it is not, upstream
 # returns false at once, and so does the kernel.
@@ -1176,7 +1211,8 @@ function writeListElemDone(
     if !is_pair(l)
         Putc(Int('|'), options.out) || return 0
 
-        return sub_term(f, WF_LIST_TAIL, sub, l, 999, W_LIST_TAIL)
+        # the tail before it is dereferenced (writeTerm2 does): `_numbervars_newer` reads its chain
+        return sub_term(f, WF_LIST_TAIL, sub, f.list, 999, W_LIST_TAIL)
     end
 
     PutComma(options) || return 0
@@ -1223,7 +1259,7 @@ function writeDotHeadDone(
         return writeCloseParens(options, f) ? 1 : 0
     end
 
-    is_pair(l) || return sub_term(f, WF_DOT_TAIL, sub, l, 999, W_COMPOUND_ARG)
+    is_pair(l) || return sub_term(f, WF_DOT_TAIL, sub, f.list, 999, W_COMPOUND_ARG)
 
     return writeDotListHead(options, f, sub)
 end
@@ -1349,6 +1385,7 @@ function writeTerm2(
     t::T, prec::Int, options::write_options{T}, flags::Int, f::wframe{T}, sub::wsub{T}
 )::Int where {T}
     out = options.out
+    t0 = t
     t = deRef(options.ld, t)
 
     if kind(t) !== VAR && _ison(options, PL_WRT_PORTRAY)
@@ -1382,7 +1419,7 @@ function writeTerm2(
     end
 
     if _ison(options, PL_WRT_NUMBERVARS | PL_WRT_VARNAMES)
-        rc = writeNumberVar(t, options)
+        rc = writeNumberVar(t, options, t0)
         rc == -1 && return 0
         rc == 1 && return 1
     end
@@ -1653,3 +1690,449 @@ function PL_write_term(
 
     return rc
 end
+
+# ── nl/0,1 (pl-write.c), since R1e's write/1 family ────────────────────────────────────────────
+
+# PORT: pl-write.c pl_nl
+"Write a newline to the output stream term reference `stream` names (0: the current output) (pl-write.c)."
+function pl_nl(ld::PL_local_data{T}, stream::term_t)::Bool where {T}
+    s = getTextOutputStream(ld, stream)
+    if s !== nothing
+        Sputcode(Int('\n'), s)
+        return streamStatus(ld, s)
+    end
+
+    return false
+end
+
+# PORT: pl-write.c nl as pl_nl1_va
+# (PRED_IMPL("nl", 1, nl, PL_FA_ISO))
+function pl_nl1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return pl_nl(ld, A1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-write.c nl as pl_nl0_va
+# (PRED_IMPL("nl", 0, nl, PL_FA_ISO))
+function pl_nl0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_nl(ld, 0) ? FTRUE : FFALSE
+end
+
+# ── write_term/2,3 (pl-write.c), since R1e's write/1 family ────────────────────────────────────
+
+# PORT: pl-write.c writeAttributeMask
+# DIVERGES: the mask, 0 for none (upstream's `int`), of the atom `a`.
+"The `PL_WRT_ATTVAR_*` flag the `attributes` option's atom names, or 0 (pl-write.c)."
+function writeAttributeMask(ld::PL_local_data{T}, a::T)::Int where {T}
+    k = sym_key(a)
+    k == sym_key(mk_sym(T, :ignore)) && return PL_WRT_ATTVAR_IGNORE
+    k == sym_key(mk_sym(T, :dots)) && return PL_WRT_ATTVAR_DOTS
+    k == sym_key(mk_sym(T, :write)) && return PL_WRT_ATTVAR_WRITE
+    k == sym_key(mk_sym(T, :portray)) && return PL_WRT_ATTVAR_PORTRAY
+    return 0
+end
+
+# PORT: pl-write.c writeBlobMask
+"The `PL_WRT_BLOB_*` flag the `blobs` option's atom names: 0 (`default`), the portray flag, or -1 (pl-write.c)."
+function writeBlobMask(ld::PL_local_data{T}, a::T)::Int where {T}
+    k = sym_key(a)
+    k == sym_key(mk_sym(T, :default)) && return 0
+    k == sym_key(mk_sym(T, :portray)) && return PL_WRT_BLOB_PORTRAY
+    return -1
+end
+
+# PORT: pl-write.c write_term_options
+"write_term/2,3's options, in upstream's order (pl-write.c)."
+const write_term_options = (
+    PL_option_t(:quoted, OPT_BOOL),
+    PL_option_t(:quote_non_ascii, OPT_BOOL),
+    PL_option_t(:pattern_syntax_solo, OPT_BOOL),
+    PL_option_t(:ignore_ops, OPT_BOOL),
+    PL_option_t(:portable, OPT_BOOL),
+    PL_option_t(:dotlists, OPT_BOOL),
+    PL_option_t(:brace_terms, OPT_BOOL),
+    PL_option_t(:numbervars, OPT_BOOL),
+    PL_option_t(:portray, OPT_BOOL),
+    PL_option_t(:portrayed, OPT_BOOL),
+    PL_option_t(:portray_goal, OPT_TERM),
+    PL_option_t(:character_escapes, OPT_BOOL),
+    PL_option_t(:character_escapes_unicode, OPT_BOOL),
+    PL_option_t(:max_depth, OPT_INT),
+    PL_option_t(:max_text, OPT_INT),
+    PL_option_t(:truncated, OPT_TERM),
+    PL_option_t(:module, OPT_ATOM),
+    PL_option_t(:back_quotes, OPT_ATOM),
+    PL_option_t(:attributes, OPT_ATOM),
+    PL_option_t(:priority, OPT_INT),
+    PL_option_t(:partial, OPT_BOOL),
+    PL_option_t(:spacing, OPT_ATOM),
+    PL_option_t(:blobs, OPT_ATOM),
+    PL_option_t(:cycles, OPT_BOOL),
+    PL_option_t(:variable_names, OPT_TERM),
+    PL_option_t(:nl, OPT_BOOL),
+    PL_option_t(:fullstop, OPT_BOOL),
+    PL_option_t(:no_lists, OPT_BOOL),
+    PL_option_t(:integer_format, OPT_ATOM),
+    PL_option_t(:float_format, OPT_ATOM)
+)
+
+# PORT: pl-incl.h BEGIN_NUMBERVARS
+# DIVERGES: a function returning the frame to restore (upstream's macro keeps it in a local).
+"Open the numbervars frame when `save`: the frame it replaces, to give `END_NUMBERVARS` (pl-incl.h)."
+function BEGIN_NUMBERVARS(ld::PL_local_data, save::Bool)::Int
+    save || return 0
+    savedf = ld.var_names_numbervars_frame
+    ld.var_names_numbervars_frame = PL_open_foreign_frame(ld)
+    return savedf
+end
+
+# PORT: pl-incl.h END_NUMBERVARS
+"Discard the numbervars frame — undoing its bindings — and restore `savedf` (pl-incl.h)."
+function END_NUMBERVARS(ld::PL_local_data, save::Bool, savedf::Int)::Nothing
+    if save
+        PL_discard_foreign_frame(ld, ld.var_names_numbervars_frame)
+        ld.var_names_numbervars_frame = savedf
+    end
+    return nothing
+end
+
+# PORT: pl-write.c bind_varnames
+"Bind each variable of the `Name = Var` list term reference `names` holds to `'\$VAR'(Name)` (pl-write.c)."
+function bind_varnames(ld::PL_local_data{T}, names::term_t)::Bool where {T}
+    check_cycle_after = 1000
+
+    tail = PL_copy_term_ref(ld, names)
+    head = PL_new_term_ref(ld)
+    var = PL_new_term_ref(ld)
+    namet = PL_new_term_ref(ld)
+    tmp = PL_new_term_ref(ld)
+
+    while PL_get_list_ex(ld, tail, head, tail)
+        if PL_is_functor(ld, head, mk_sym(T, :(=)), 2)
+            _PL_get_arg(ld, 2, head, var)
+            _PL_get_arg(ld, 1, head, namet)
+
+            name = PL_get_atom_ex(ld, namet)
+            name === nothing && return false
+            if !atomIsAnyVarName(sym_text(name))
+                return PL_domain_error(ld, "variable_name", namet)
+            end
+
+            if PL_is_variable(ld, var)
+                ld.slots[tmp + 1] = mk_expr(T, T[mk_sym(T, Symbol("\$VAR")), name])
+                PL_unify(ld, var, tmp) || return false      # PL_unify_term(var, FUNCTOR_isovar1, …)
+            end
+        else
+            return PL_type_error(ld, "variable_assignment", head)
+        end
+
+        check_cycle_after -= 1
+        if check_cycle_after == 0 && lengthList(ld, tail, false) == -1
+            return PL_type_error(ld, "list", head)
+        end
+    end
+
+    return PL_get_nil_ex(ld, tail)
+end
+
+# PORT: pl-write.c pl_write_term3
+# DIVERGES: the write options are built once the stream is known (upstream fills them as it goes);
+# `portray_goal` is refused — calling it needs the meta-call (`NotPortedError`, V9); the module's
+# flags are the kernel's (`user`, or the one `module` names, else `user`); no quoted-stream
+# representation flag is lost (`SIO_REPPL`/`SIO_REPPLU` set and restored, as upstream).
+"""
+Write the term `term` references to the stream `stream` names (0: the current output) with the
+write_term/2,3 options list `opts` holds (pl-write.c).
+"""
+function pl_write_term3(
+    ld::PL_local_data{T}, stream::term_t, term::term_t, opts::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+
+    vals = PL_scan_options(ld, opts, 0, "write_option", write_term_options)
+    vals === nothing && return false
+
+    quoted = something(vals[1], false)::Bool
+    quote_non_ascii = something(vals[2], false)::Bool
+    pattern_syntax_solo = something(vals[3], false)::Bool
+    ignore_ops = something(vals[4], false)::Bool
+    portable = something(vals[5], false)::Bool
+    dotlists = something(vals[6], false)::Bool
+    braceterms = vals[7] === nothing ? -1 : Int(vals[7]::Bool)
+    numbervars = vals[8] === nothing ? -1 : Int(vals[8]::Bool)
+    portray = false                                 # portray and portrayed write one variable
+    vals[9] === nothing || (portray = vals[9]::Bool)
+    vals[10] === nothing || (portray = vals[10]::Bool)
+    gportray = something(vals[11], 0)::Int
+    charescape = vals[12] === nothing ? -1 : Int(vals[12]::Bool)
+    charescape_unicode = vals[13] === nothing ? -1 : Int(vals[13]::Bool)
+    max_depth = something(vals[14], 0)::Int
+    max_text = something(vals[15], -1)::Int
+    truncated = something(vals[16], 0)::Int
+    mname = vals[17] === nothing ? mk_sym(T, :user) : vals[17]::T
+    bq = vals[18]
+    attr = vals[19]
+    priority = something(vals[20], 1200)::Int
+    partial = something(vals[21], false)::Bool
+    spacing = vals[22] === nothing ? :standard : Symbol(sym_text(vals[22]::T))
+    blobs = vals[23]
+    cycles = something(vals[24], true)::Bool
+    varnames = something(vals[25], 0)::Int
+    nl = something(vals[26], false)::Bool
+    fullstop = something(vals[27], false)::Bool
+    no_lists = something(vals[28], false)::Bool
+    integer_format = vals[29] === nothing ? "~d" : sym_text(vals[29]::T)
+    float_format = vals[30] === nothing ? "~h" : sym_text(vals[30]::T)
+
+    flags = 0
+    if attr === nothing
+        flags |= ld.prolog_flag_write_attributes
+    else
+        mask = writeAttributeMask(ld, attr::T)
+        mask == 0 && return PL_error(ld, ERR_DOMAIN, mk_sym(T, :write_option), opts)
+        flags |= mask
+    end
+    if blobs !== nothing
+        mask = writeBlobMask(ld, blobs::T)
+        mask < 0 && return PL_error(ld, ERR_DOMAIN, mk_sym(T, :write_option), opts)
+        flags |= mask
+    end
+    if priority < 0 || priority > OP_MAXPRIORITY
+        t = PL_new_term_ref(ld)
+        ld.slots[t + 1] = mk_gnd(T, priority)           # PL_put_integer(t, priority)
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :operator_priority), t)
+    end
+    if spacing !== :standard && spacing !== :next_argument
+        t = PL_new_term_ref(ld)
+        ld.slots[t + 1] = vals[22]::T                   # PL_put_atom(t, options.spacing)
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :spacing), t)
+    end
+
+    m = isCurrentModule(gd.modules, mname)
+    m === nothing && (m = MODULE_user(gd))
+    if charescape == 1 || (charescape == -1 && (m.flags & M_CHARESCAPE) != 0)
+        flags |= PL_WRT_CHARESCAPES
+    end
+    if charescape_unicode == 1 ||
+        (charescape_unicode == -1 && ld.prolog_flag_character_escapes_unicode)
+        flags |= PL_WRT_CHARESCAPES_UNICODE
+    end
+    (m.flags & RAT_NATURAL) != 0 && (flags |= PL_WRT_RAT_NATURAL)
+    if gportray != 0
+        throw(
+            NotPortedError{T}(
+                ld.slots[gportray + 1], "write_term's portray_goal option (calling Prolog)",
+                "V9 (the meta-call)"
+            )
+        )
+    end
+    if numbervars == -1
+        numbervars = portray ? 1 : 0
+    end
+
+    quoted && (flags |= PL_WRT_QUOTED)
+    quote_non_ascii && (flags |= PL_WRT_QUOTE_NON_ASCII)
+    pattern_syntax_solo && (flags |= PL_WRT_PATTERN_SYNTAX_SOLO)
+    ignore_ops && (flags |= PL_WRT_IGNOREOPS | PL_WRT_BRACETERMS)
+    portable && (flags |= PL_WRT_PORTABLE)
+    dotlists && (flags |= PL_WRT_DOTLISTS)
+    braceterms == 0 && (flags |= PL_WRT_BRACETERMS)
+    braceterms == 1 && (flags &= ~PL_WRT_BRACETERMS)
+    numbervars == 1 && (flags |= PL_WRT_NUMBERVARS)
+    portray && (flags |= PL_WRT_PORTRAY)
+    cycles || (flags |= PL_WRT_NO_CYCLES)
+    no_lists && (flags |= PL_WRT_NO_LISTS)
+    partial && (flags |= PL_WRT_PARTIAL)
+
+    # Set backquote handling flags
+    mflags = m.flags
+    if bq !== nothing
+        f = setBackQuotes(ld, bq::T, mflags)
+        f === nothing && return false
+        mflags = f
+    end
+    if (mflags & BQ_STRING) != 0
+        flags |= PL_WRT_BACKQUOTED_STRING
+    elseif mflags == 0
+        flags |= PL_WRT_BACKQUOTE_IS_SYMBOL
+    end
+
+    s = nothing
+    rc = false
+    savedf = BEGIN_NUMBERVARS(ld, varnames != 0)
+    try
+        if varnames != 0
+            rc = bind_varnames(ld, varnames)
+            rc || return false                          # goto out
+            flags |= PL_WRT_VARNAMES
+        end
+        s = getTextOutputStream(ld, stream)
+        s === nothing && return false                   # goto out
+
+        options = write_options(gd, ld, s)
+        options.flags = flags
+        options.max_depth = max_depth
+        options.max_text = max_text
+        options.spacing = spacing
+        options.integer_format = integer_format
+        options.float_format = float_format
+        options.m = m
+
+        partial || PutOpenToken(EOF, s, options.flags) # reset this
+        if (options.flags & PL_WRT_QUOTED) != 0 && (s.flags & (SIO_REPPL | SIO_REPPLU)) == 0
+            flag = ld.prolog_flag_character_escapes_unicode ? SIO_REPPLU : SIO_REPPL
+            s.flags |= flag
+            rc = writeTopTerm(term, priority, options)
+            s.flags &= ~flag
+        else
+            rc = writeTopTerm(term, priority, options)
+        end
+
+        if rc && fullstop
+            rc = PutToken(".", s, options.flags) != 0 && Putc(nl ? Int('\n') : Int(' '), s)
+        elseif nl
+            rc = Putc(Int('\n'), s)
+        end
+
+        if rc && truncated != 0
+            rc = PL_unify_bool_ex(ld, truncated, options.truncated)
+        end
+    finally
+        END_NUMBERVARS(ld, varnames != 0, savedf)        # out:
+    end
+
+    return (s === nothing || streamStatus(ld, s)) && rc
+end
+
+# PORT: pl-write.c write_term2 as pl_write_term2_va
+# (PRED_IMPL("write_term", 2, write_term2, PL_FA_TRANSPARENT|PL_FA_ISO))
+function pl_write_term2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return pl_write_term3(ld, 0, A1, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-write.c write_term3 as pl_write_term3_va
+# (PRED_IMPL("write_term", 3, write_term3, PL_FA_TRANSPARENT|PL_FA_ISO))
+function pl_write_term3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    return pl_write_term3(ld, A1, A2, A3) ? FTRUE : FFALSE
+end
+
+# ── write/1,2, writeq/1,2, writeln/1,2, print/1,2 (pl-write.c), since R1e's write/1 family ─────
+
+# PORT: pl-write.c do_write2
+# DIVERGES: no stream release (no locks). NOT PORTED: `canonical` true (write_canonical/1,2: the
+# variable numbering, `numberVars`, is the next commit's).
+"Write the term `term` references to the stream `stream` names (0: the current output) with `flags` (pl-write.c)."
+function do_write2(
+    ld::PL_local_data{T}, stream::term_t, term::term_t, flags::Int, canonical::Bool
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    s = getTextOutputStream(ld, stream)
+
+    if s !== nothing
+        options = write_options(gd, ld, s)
+
+        options.flags = flags
+        if !canonical
+            options.flags |= ld.prolog_flag_write_attributes
+        end
+        options.m = MODULE_user(gd)
+        (options.m.flags & M_CHARESCAPE) != 0 && (options.flags |= PL_WRT_CHARESCAPES)
+        (options.m.flags & BQ_STRING) != 0 && (options.flags |= PL_WRT_BACKQUOTED_STRING)
+        (options.m.flags & RAT_NATURAL) != 0 && (options.flags |= PL_WRT_RAT_NATURAL)
+
+        PutOpenToken(EOF, s, options.flags)          # reset this
+        rc = writeTopTerm(term, 1200, options)
+        if rc && (flags & PL_WRT_NEWLINE) != 0
+            rc = Putc(Int('\n'), s)
+        end
+
+        return streamStatus(ld, s) && rc ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-write.c pl_write2
+"write/2: write the term `term` references to the stream `stream` names (pl-write.c)."
+pl_write2(ld::PL_local_data{T}, stream::term_t, term::term_t) where {T} =
+    do_write2(ld, stream, term, PL_WRT_NUMBERVARS, false)
+
+# PORT: pl-write.c pl_writeln2
+"writeln/2: as write/2, then a newline (pl-write.c)."
+pl_writeln2(ld::PL_local_data{T}, stream::term_t, term::term_t) where {T} =
+    do_write2(ld, stream, term, PL_WRT_NUMBERVARS | PL_WRT_NEWLINE, false)
+
+# PORT: pl-write.c pl_writeq2
+"writeq/2: write the term `term` references, quoted, to the stream `stream` names (pl-write.c)."
+pl_writeq2(ld::PL_local_data{T}, stream::term_t, term::term_t) where {T} =
+    do_write2(ld, stream, term, PL_WRT_QUOTED | PL_WRT_NUMBERVARS, false)
+
+# The `print_write_options` flag's value: its default, `[portray(true), quoted(true),
+# numbervars(true)]` (boot/toplevel.pl `init_debug_flags`) — the kernel has no flag table, so no
+# `set_prolog_flag/2` can change it.
+function _print_write_options(::Type{T})::T where {T}
+    l = mk_nil(T)
+    for name in (:numbervars, :quoted, :portray)             # from the end
+        opt = mk_expr(T, T[mk_sym(T, name), mk_sym(T, Symbol("true"))])
+        l = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), opt, l])
+    end
+    return l
+end
+
+# PORT: pl-write.c pl_print2
+# DIVERGES: the `print_write_options` flag always exists, with its default (`_print_write_options`),
+# so print/2 is write_term/3 with it (upstream falls back to `do_write2` without the flag).
+"print/2: write the term `term` references as the `print_write_options` flag says (pl-write.c)."
+function pl_print2(ld::PL_local_data{T}, stream::term_t, term::term_t)::foreign_t where {T}
+    fid = PL_open_foreign_frame(ld)
+    opts = PL_new_term_ref(ld)
+
+    ld.slots[opts + 1] = _print_write_options(T)    # PL_current_prolog_flag(ATOM_print_write_options, …)
+    rc = pl_write_term3(ld, stream, term, opts)
+
+    PL_discard_foreign_frame(ld, fid)
+
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-write.c pl_write
+"write/1: write the term `term` references to the current output (pl-write.c)."
+pl_write(ld::PL_local_data{T}, term::term_t) where {T} = pl_write2(ld, 0, term)
+
+# PORT: pl-write.c pl_writeq
+"writeq/1: write the term `term` references, quoted, to the current output (pl-write.c)."
+pl_writeq(ld::PL_local_data{T}, term::term_t) where {T} = pl_writeq2(ld, 0, term)
+
+# PORT: pl-write.c pl_print
+"print/1: print/2 to the current output (pl-write.c)."
+pl_print(ld::PL_local_data{T}, term::term_t) where {T} = pl_print2(ld, 0, term)
+
+# PORT: pl-write.c pl_writeln
+"writeln/1: write/1, then a newline (pl-write.c)."
+pl_writeln(ld::PL_local_data{T}, term::term_t) where {T} =
+    do_write2(ld, 0, term, PL_WRT_NUMBERVARS | PL_WRT_NEWLINE, false)
+
+# PORT: pl-write.c BeginPredDefs as PL_predicates_from_write
+# DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
+# (write:3423-3432). NOT PORTED: `$put_token/2`, `$put_quoted/4`, `$needs_quotes/1`, write_size/4.
+"pl-write.c's registration table (`BeginPredDefs(write)`): the ported entries."
+const PL_predicates_from_write = (
+    PL_extension(
+        "write_term", 2, pl_write_term2_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "write_term", 3, pl_write_term3_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension("nl", 0, pl_nl0_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("nl", 1, pl_nl1_va, PL_FA_ISO | PL_FA_VARARGS)
+)

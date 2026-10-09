@@ -68,6 +68,16 @@ const SIO_NOLINENO = UInt32(1) << 8
 # PORT: SWI-Stream.h SIO_NOLINEPOS
 "The line position is void (SWI-Stream.h)."
 const SIO_NOLINEPOS = UInt32(1) << 9
+# PORT: SWI-Stream.h SIO_FILE
+"Stream flag: refers to an OS file (SWI-Stream.h)."
+const SIO_FILE = UInt32(1) << 12
+# PORT: SWI-Stream.h SIO_NOCLOSE
+"Stream flag: do not close on abort (SWI-Stream.h)."
+const SIO_NOCLOSE = UInt32(1) << 18
+# PORT: SWI-Stream.h SIO_ISATTY
+"Stream flag: the stream is a tty (SWI-Stream.h)."
+const SIO_ISATTY = UInt32(1) << 21
+
 # PORT: SWI-Stream.h SIO_STATIC
 "The stream is in static memory (SWI-Stream.h)."
 const SIO_STATIC = UInt32(1) << 10
@@ -80,6 +90,9 @@ const SIO_NOFEOF = UInt32(1) << 14
 # PORT: SWI-Stream.h SIO_TEXT
 "Text-mode operation (SWI-Stream.h)."
 const SIO_TEXT = UInt32(1) << 15
+# PORT: pl-stream.c SIO_STDIO
+"The flags every standard stream has (pl-stream.c)."
+const SIO_STDIO = SIO_FILE | SIO_STATIC | SIO_NOCLOSE | SIO_ISATTY | SIO_TEXT
 # PORT: SWI-Stream.h SIO_FEOF2
 "An attempt to read past the end of file (SWI-Stream.h)."
 const SIO_FEOF2 = UInt32(1) << 16
@@ -188,10 +201,12 @@ mutable struct memfile
     free_on_close::Bool                                # free allocated buffer on close
 end
 
-# ORIGINAL: the handle of `Siofunctions` — a Julia IO in place of the OS file descriptor.
+# ORIGINAL: the handle of `Siofunctions` — a Julia IO in place of the OS file descriptor: a file or
+# a buffer, and since R1e's write/1 family a terminal or a pipe, what a process's stdin, stdout and
+# stderr are (four concrete types: a call on the field splits, no dynamic dispatch).
 "A Julia IO that a stream reads from or writes to (the handle of `Siofunctions`)."
 mutable struct Sjulia_io
-    io::Union{IOStream, IOBuffer}
+    io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}
     close_io::Bool                                     # close the IO with the stream
 end
 
@@ -1205,14 +1220,17 @@ function Sread_julia_io(h::Sjulia_io, buf::Vector{UInt8}, from::Int, size::Int):
 end
 
 # PORT: pl-stream.c Swrite_file as Swrite_julia_io
-# DIVERGES: to a Julia IO, where upstream writes a file descriptor.
-"Write the `size` bytes of `buf` from `from` to the IO: the count."
+# DIVERGES: to a Julia IO, where upstream writes a file descriptor; an IO that throws (closed, a
+# broken pipe) is a write error, -1, as upstream's `write()` failing.
+"Write the `size` bytes of `buf` from `from` to the IO: the count, or -1 on error."
 function Swrite_julia_io(h::Sjulia_io, buf::Vector{UInt8}, from::Int, size::Int)::Int
     io = h.io
-    for k in from:(from + size - 1)
-        write(io, buf[k])
+    try
+        return write(io, view(buf, from:(from + size - 1)))
+    catch e
+        e isa Union{Base.IOError, ArgumentError, EOFError} || rethrow()
+        return -1
     end
-    return size
 end
 
 # PORT: pl-stream.c Sclose_file as Sclose_julia_io
@@ -1228,7 +1246,7 @@ end
 # where upstream opens a file by name with mode and options.
 "A text stream on `io`: mode `\"r\"` or `\"w\"`; closing it closes `io` if `close_io`."
 function Sopen_julia_io(
-    io::Union{IOStream, IOBuffer}, mode::String, close_io::Bool
+    io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}, mode::String, close_io::Bool
 )::Union{Nothing, IOSTREAM}
     flags = SIO_FBUF | SIO_RECORDPOS | SIO_NOMUTEX | SIO_TEXT
     if mode == "r"

@@ -28,22 +28,34 @@
 # the pointer was removed. User registration (`PL_register_foreign`) will need its own design.
 
 # PORT: pl-ext.c foreigns
-# DIVERGES: the ported entry only (upstream's table has 56, pl-ext.c:98-190).
-"pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entry."
-const foreigns = (PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),)
+# DIVERGES: the ported entries only, in upstream's order (upstream's table has 56, pl-ext.c:98-190);
+# since R1e's write/1 family, write/1,2, writeq/1,2, writeln/1,2 and print/1,2. NOT PORTED:
+# write_canonical/1,2 (the variable numbering, `numberVars`: the next commit).
+"pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
+const foreigns = (
+    PL_extension("write", 1, pl_write, PL_FA_ISO),
+    PL_extension("writeq", 1, pl_writeq, PL_FA_ISO),
+    PL_extension("writeln", 1, pl_writeln, 0x00),
+    PL_extension("print", 1, pl_print, 0x00),
+    PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
+    PL_extension("write", 2, pl_write2, PL_FA_ISO),
+    PL_extension("writeln", 2, pl_writeln2, 0x00),
+    PL_extension("writeq", 2, pl_writeq2, PL_FA_ISO),
+    PL_extension("print", 2, pl_print2, 0x00)
+)
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, comp, prims, variant,
-# trace, read, proc, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
+# trace, read, proc, write, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
 # constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_arith, PL_predicates_from_comp, PL_predicates_from_prims,
     PL_predicates_from_variant, PL_predicates_from_trace, PL_predicates_from_read,
-    PL_predicates_from_proc, PL_predicates_from_op
+    PL_predicates_from_proc, PL_predicates_from_write, PL_predicates_from_op
 )
 const _FOREIGN_VA = (
     PL_predicates_from_arith..., PL_predicates_from_comp..., PL_predicates_from_prims...,
     PL_predicates_from_variant..., PL_predicates_from_trace..., PL_predicates_from_read...,
-    PL_predicates_from_proc..., PL_predicates_from_op...
+    PL_predicates_from_proc..., PL_predicates_from_write..., PL_predicates_from_op...
 )
 const _FOREIGN_DET = foreigns
 

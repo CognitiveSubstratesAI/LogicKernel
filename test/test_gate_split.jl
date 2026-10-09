@@ -1,7 +1,7 @@
 # ORIGINAL: the gate split's own tests (user, 2026-10-06): the declarations (test/term_scope.jl), the
 # term types a chunk's local gate runs, and the CI verdict that stops a gate cycle
 # (tools/ci_status.sh, tools/lib_evidence.sh `_ci_gate`). Each guard is judged by its VERDICT.
-using Test
+using Test, SHA
 
 include(joinpath(@__DIR__, "term_scope.jl"))
 
@@ -100,6 +100,30 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         end
     end
 
+    @testset "_pool_usable: a pool worker is used only if ready, for this tree, and ALIVE" begin
+        # MEASURED 2026-10-09: after a reboot, dead workers with `ready` files and the tree's
+        # fingerprint were handed the evidence run's shards
+        lib = joinpath(_GS_ROOT, "tools", "lib_evidence.sh")
+        mktempdir() do d
+            usable(fp, alive) =
+                withenv("LOGICKERNEL_UNIT_ACTIVE" => alive ? "true" : "false") do
+                    run(
+                        pipeline(ignorestatus(`bash -c ". $lib; _pool_usable $d $fp"`);
+                            stdout=devnull, stderr=devnull)
+                    ).exitcode
+                end
+            write(joinpath(d, "fp"), "abc123\n")
+            write(joinpath(d, "unit"), "lk-pool-x-1\n")
+            @test usable("abc123", true) == 1                       # not ready yet
+            write(joinpath(d, "ready"), "4242")
+            @test usable("abc123", true) == 0                       # ready, this tree, alive
+            @test usable("abc123", false) == 1                      # DEAD (the reboot case)
+            @test usable("def456", true) == 1                       # another tree
+            rm(joinpath(d, "unit"))
+            @test usable("abc123", true) == 1                       # no unit named
+        end
+    end
+
     @testset "tools/term_scope.jl prints one decision" begin
         out = read(
             pipeline(
@@ -158,6 +182,54 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             @test gate(garbage, 0) == 1                              # unreadable fails CLOSED
             @test exitof(`bash -c ". $lib; _ci_gate $(_GS_ROOT) 0 $sha"`,
                 "LOGICKERNEL_CI_FIXTURE" => garbage, "LOGICKERNEL_CI_CHECK" => "off") == 0
+        end
+    end
+
+    @testset "tools/mutate.sh recover: restores from the saved copy, then lifts the sentinel" begin
+        # (user, 2026-10-08) a killed mutation driver leaves .warm/MUTATION_IN_PROGRESS, which the
+        # commit hook refuses on; deleting it by hand would let a leftover mutation through
+        tool = joinpath(_GS_ROOT, "tools", "mutate.sh")
+        sha(s) = bytes2hex(sha256(s))
+        mktempdir() do d
+            mkpath(joinpath(d, ".warm"))
+            mkpath(joinpath(d, "src"))
+            f = joinpath(d, "src", "x.jl")
+            sentinel = joinpath(d, ".warm", "MUTATION_IN_PROGRESS")
+            saved = joinpath(d, ".warm", "MUTATION_ORIGINAL")
+            original = "f(x) = x + 1\n# the chunk's own uncommitted work\n"
+            recover() = withenv("MUTATE_ROOT" => d) do
+                run(pipeline(ignorestatus(`$tool recover`); stdout=devnull, stderr=devnull)).exitcode
+            end
+            setup(file_now; copy=original, sha_of=original) = begin
+                write(f, file_now)
+                copy === nothing ? rm(saved; force=true) : write(saved, copy)
+                write(sentinel, "file=src/x.jl\nsha256=$(sha(sha_of))\nmutant=W3 test\n")
+            end
+            # a mutation left behind: restored from the copy (not from HEAD), then lifted
+            setup("f(x) = x - 1\n# the chunk's own uncommitted work\n")
+            @test recover() == 0
+            @test read(f, String) == original && !isfile(sentinel) && !isfile(saved)
+            # the file intact: lifted, the file untouched
+            setup(original)
+            @test recover() == 0
+            @test read(f, String) == original && !isfile(sentinel) && !isfile(saved)
+            # the copy missing: REFUSED, the sentinel and the mutated file kept
+            setup("broken\n"; copy=nothing)
+            @test recover() == 1
+            @test isfile(sentinel) && read(f, String) == "broken\n"
+            # the copy not the one the sentinel records: REFUSED
+            setup("broken\n"; copy="something else\n")
+            @test recover() == 1
+            @test isfile(sentinel) && read(f, String) == "broken\n"
+            # a sentinel naming no file: REFUSED
+            write(sentinel, "mutant=W3 test\n")
+            @test recover() == 1
+            @test isfile(sentinel)
+            # no sentinel: nothing to recover; a stray copy is removed
+            rm(sentinel)
+            write(saved, original)
+            @test recover() == 0
+            @test !isfile(saved)
         end
     end
 

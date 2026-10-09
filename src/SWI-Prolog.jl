@@ -246,3 +246,71 @@ struct PL_extension{F}
     function_::F                    # Implementing functions
     flags::UInt8                    # Or of PL_FA_...
 end
+
+# ── option processing (SWI-Prolog.h `_PL_opt_type`, `PL_option_t`), since R1e's write_term ────────
+
+# PORT: SWI-Prolog.h OPT_BOOL
+"Option type: a Boolean, `true`/`false` (`on`/`off`, `1`/`0`) (SWI-Prolog.h)."
+const OPT_BOOL = 0
+# PORT: SWI-Prolog.h OPT_INT
+"Option type: a C `int` (SWI-Prolog.h)."
+const OPT_INT = 1
+# PORT: SWI-Prolog.h OPT_INT64
+"Option type: a 64-bit integer (SWI-Prolog.h)."
+const OPT_INT64 = 2
+# PORT: SWI-Prolog.h OPT_UINT64
+"Option type: an unsigned 64-bit integer (SWI-Prolog.h)."
+const OPT_UINT64 = 3
+# PORT: SWI-Prolog.h OPT_SIZE
+"Option type: a `size_t` (SWI-Prolog.h)."
+const OPT_SIZE = 4
+# PORT: SWI-Prolog.h OPT_DOUBLE
+"Option type: a float (SWI-Prolog.h)."
+const OPT_DOUBLE = 5
+# PORT: SWI-Prolog.h OPT_STRING
+"Option type: a text, as UTF-8 (SWI-Prolog.h)."
+const OPT_STRING = 6
+# PORT: SWI-Prolog.h OPT_ATOM
+"Option type: an atom (SWI-Prolog.h)."
+const OPT_ATOM = 7
+# PORT: SWI-Prolog.h OPT_TERM
+"Option type: any term, as a term reference (SWI-Prolog.h)."
+const OPT_TERM = 8
+# PORT: SWI-Prolog.h OPT_LOCALE
+"Option type: a locale (SWI-Prolog.h)."
+const OPT_LOCALE = 9
+# PORT: SWI-Prolog.h OPT_STDBOOL
+"Option type: a C11 `bool` (SWI-Prolog.h)."
+const OPT_STDBOOL = 10
+
+# PORT: SWI-Prolog.h OPT_TYPE_MASK
+"The type bits of an option's `type` (SWI-Prolog.h)."
+const OPT_TYPE_MASK = Int(0xff)
+# PORT: SWI-Prolog.h OPT_INF
+"Option type bit: `inf` allowed (SWI-Prolog.h)."
+const OPT_INF = Int(0x100)
+
+# PORT: SWI-Prolog.h OPT_UNKNOWN_DEFAULT
+"Unknown options: as the `unknown_option` flag says (SWI-Prolog.h)."
+const OPT_UNKNOWN_DEFAULT = Int(0x0)
+# PORT: SWI-Prolog.h OPT_UNKNOWN_ERROR
+"Unknown options raise a domain error (SWI-Prolog.h)."
+const OPT_UNKNOWN_ERROR = Int(0x1)
+# PORT: SWI-Prolog.h OPT_UNKNOWN_IGNORE
+"Unknown options are ignored (SWI-Prolog.h)."
+const OPT_UNKNOWN_IGNORE = Int(0x2)
+# PORT: SWI-Prolog.h OPT_UNKNOWN_WARNING
+"Unknown options print a warning (SWI-Prolog.h)."
+const OPT_UNKNOWN_WARNING = Int(0x3)
+# PORT: SWI-Prolog.h OPT_UNKNOWN_MASK
+"The unknown-option bits of `PL_scan_options`' flags (SWI-Prolog.h)."
+const OPT_UNKNOWN_MASK = Int(0x3)
+
+# PORT: SWI-Prolog.h PL_option_t
+# DIVERGES: the name is the atom's text (a `Symbol`), compared by its key in the term type a scan
+# runs on, where upstream holds an `atom_t`; no `string` (the API stub's form, which fills `name`).
+"An option's specification: its name and its `OPT_*` type (SWI-Prolog.h `PL_option_t`)."
+struct PL_option_t
+    name::Symbol                    # Name of the option
+    type::Int                       # Type of the option
+end

@@ -182,6 +182,24 @@ _ci_gate() {
     done
 }
 
+# _unit_active UNIT — 0 when the systemd user unit runs. A TEST SEAM: LOGICKERNEL_UNIT_ACTIVE names
+# the command (default `systemctl --user is-active --quiet`), so test/test_gate_split.jl can decide
+# alive and dead on a machine with no user systemd (CI).
+_unit_active() {
+    [ -n "$1" ] || return 1
+    ${LOGICKERNEL_UNIT_ACTIVE:-systemctl --user is-active --quiet} "$1"
+}
+
+# _pool_usable W FP — 0 when the pool worker in W was started for the tree FP, is ready, and its
+# unit still RUNS. MEASURED 2026-10-09: after a reboot the pool kept three DEAD workers whose `ready`
+# files and fingerprints matched the tree (nothing had changed since they were started); the
+# evidence run handed them its shards and got no verdict from any (fail closed, an hour lost).
+_pool_usable() {
+    local w="$1" fp="$2"
+    [ -f "$w/ready" ] && [ "$(cat "$w/fp" 2>/dev/null)" = "$fp" ] &&
+        _unit_active "$(cat "$w/unit" 2>/dev/null)"
+}
+
 # _wait_ready DIR UNIT TIMEOUT_S — 0 when the worker is ready; 1 when its unit died or timed out.
 _wait_ready() {
     local dir="$1" unit="$2" deadline=$(( $(date +%s) + $3 ))

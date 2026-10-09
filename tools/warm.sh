@@ -224,7 +224,9 @@ _pool() {
     mkdir -p "$DIR/pool"
     for w in "$DIR"/pool/w*; do
         [ -d "$w" ] || continue
-        if [ "$(cat "$w/fp" 2>/dev/null)" != "$fp" ] || [ -d "$w/claimed" ]; then
+        # another tree, claimed, or DEAD (a reboot leaves `ready` and a matching `fp` behind)
+        if [ "$(cat "$w/fp" 2>/dev/null)" != "$fp" ] || [ -d "$w/claimed" ] ||
+            { [ -f "$w/unit" ] && ! _unit_active "$(cat "$w/unit")"; }; then
             systemctl --user stop "$(cat "$w/unit" 2>/dev/null)" 2>/dev/null
             rm -rf "$w"
         fi

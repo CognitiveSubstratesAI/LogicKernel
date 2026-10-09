@@ -179,7 +179,13 @@ end
 # query is opened. Since R1f: `read_source` (the start of the term read last), the style checks
 # (`_debugstatus.styleCheck`, pl-init.c's default), `modules.source` (a module index: `user`), and
 # `messages` — no upstream field: `printMessage` appends `(kind, message)` there, as print_message/2
-# (boot/messages.pl, R2) is not ported; the loader returns them.
+# (boot/messages.pl, R2) is not ported; the loader returns them. Since R1e's write/1 family:
+# `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
+# the process's stdin, stdout and stderr when first asked for (`initIO`, src/os/pl-file.jl), or set
+# by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`
+# flag), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and three
+# flags as swipl 10.1.16 has them: `unknown_option` (`ignore`), `write_attributes` (`ignore`),
+# `character_escapes_unicode` (`true`).
 """
     PL_local_data{T}()
 
@@ -252,6 +258,13 @@ mutable struct PL_local_data{T}
     debugstatus_styleCheck::Int                                 # _debugstatus.styleCheck
     modules_source::Int                                         # modules.source (an index)
     messages::Vector{Tuple{Symbol, T}}                          # (printMessage's messages)
+    IO_streams::Vector{Union{Nothing, IOSTREAM}}                # IO.streams[SNO_*]
+    IO_initialised::Bool                                        # GD->io_initialised (per LD)
+    IO_stream_type_check::Int                                   # IO.stream_type_check
+    var_names_numbervars_frame::Int                             # var_names.numbervars_frame
+    prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
+    prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
+    prolog_flag_character_escapes_unicode::Bool                 # PLFLAG_CHARESCAPE_UNICODE
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -294,7 +307,14 @@ function PL_local_data{T}() where {T}
         source_location{T}(nothing, IOPOS()),
         SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK,  # pl-init.c:1663
         2,                                      # modules.source: user (the module table's 2nd)
-        Tuple{Symbol, T}[]
+        Tuple{Symbol, T}[],
+        Union{Nothing, IOSTREAM}[nothing, nothing, nothing, nothing, nothing, nothing],
+        false,                                  # the standard streams: opened when first asked
+        0,                                      # stream_type_check: loose (ST_LOOSE)
+        0,                                      # no numbervars frame
+        0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
+        0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
+        true                                    # character_escapes_unicode: true
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

@@ -187,6 +187,71 @@ function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} wh
     return nothing
 end
 
+# PORT: pl-fli.c atom_to_bool
+# DIVERGES: `nothing` for neither, where upstream returns -1.
+"The Boolean atom `a` names — `true`/`on` or `false`/`off` — or `nothing` (pl-fli.c)."
+function atom_to_bool(ld::PL_local_data{T}, a::T)::Union{Nothing, Bool} where {T}
+    k = sym_key(a)
+    (k == sym_key(mk_sym(T, Symbol("true"))) || k == sym_key(mk_sym(T, :on))) && return true
+    (k == sym_key(mk_sym(T, Symbol("false"))) || k == sym_key(mk_sym(T, :off))) &&
+        return false
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_stdbool
+# DIVERGES: returns the Boolean, or `nothing`, where upstream writes it through `b`.
+"The Boolean term reference `t` holds — `true`/`on`, `false`/`off`, `1` or `0` — or `nothing` (pl-fli.c)."
+function PL_get_stdbool(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Bool} where {T}
+    w = deRef(ld, ld.slots[t + 1])
+    kind(w) === SYM && return atom_to_bool(ld, w)           # isAtom(w)
+    if isInteger(w)
+        isTaggedInt(w) && int64_value(w) == 0 && return false   # w == consInt(0)
+        isTaggedInt(w) && int64_value(w) == 1 && return true
+        return nothing
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_bool
+# DIVERGES: as `PL_get_stdbool` (upstream writes an `int`).
+"The Boolean term reference `t` holds, or `nothing` (pl-fli.c)."
+PL_get_bool(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_stdbool(ld, t)
+
+# PORT: pl-fli.c PL_get_name_arity_sz as PL_get_name_arity
+# DIVERGES: returns `(name, arity)`, or `nothing`, where upstream writes them through pointers; a
+# compound whose head is no symbol (the kernel's `$expr/n`) is named `$expr`, its arity the number
+# of its children, as the writer writes it.
+"The name and arity of the compound or the text atom term reference `t` holds, or `nothing` (pl-fli.c)."
+function PL_get_name_arity(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Tuple{T, Int}} where {T}
+    w = deRef(ld, ld.slots[t + 1])
+    if isTerm(w)
+        h = child(w, 1)
+        kind(h) === SYM && return (h, nchildren(w) - 1)
+        return (mk_sym(T, Symbol("\$expr")), nchildren(w))
+    end
+    isTextAtom(w) && return (w, 0)
+    return nothing
+end
+
+# PORT: pl-fli.c _PL_get_arg_sz as _PL_get_arg
+# DIVERGES: a compound whose head is no symbol (`$expr/n`) has every child as an argument (see
+# `PL_get_name_arity`), so its argument `index` is child `index`; else child `index + 1`.
+"Put argument `index` (from 1) of the compound term reference `t` holds into `a` (pl-fli.c)."
+function _PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bool where {T}
+    w = deRef(ld, ld.slots[t + 1])
+    off = kind(child(w, 1)) === SYM ? 1 : 0
+    ld.slots[a + 1] = child(w, index + off)                 # linkValI(&f->arguments[index-1])
+    return true
+end
+
+# PORT: pl-fli.h PL_is_functor
+# DIVERGES: the functor is a name and an arity (upstream: a `functor_t`).
+"Whether term reference `t` holds a compound `name/arity` (pl-fli.h)."
+PL_is_functor(ld::PL_local_data{T}, t::term_t, name::T, arity::Int) where {T} =
+    _hasFunctor(deRef(ld, ld.slots[t + 1]), name, arity)
+
 # PORT: pl-fli.c PL_get_list
 "Put the head and the tail of the list cell term reference `l` holds into `h` and `t` (pl-fli.c); false if it holds none."
 function PL_get_list(ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t)::Bool where {T}
