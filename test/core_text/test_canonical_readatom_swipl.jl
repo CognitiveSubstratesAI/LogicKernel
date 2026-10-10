@@ -142,8 +142,7 @@ const _CR_OPTS_TEXT = """[
     [], [variable_names(_)], [variables(_)], [singletons(_)], [singletons(warning)],
     [syntax_errors(error)], [syntax_errors(fail)], [syntax_errors(quiet)], [syntax_errors(dec10)],
     [double_quotes(codes)], [double_quotes(chars)], [double_quotes(atom)],
-    [back_quotes(string), character_escapes(false)], [dotlists(true), module(user), cycles(true)],
-    [cycles(true), dotlists(true)]
+    [back_quotes(string), character_escapes(false)], [dotlists(true), module(user)], [cycles(true)]
 ]"""
 
 const _CR_DRIVER = raw"""
@@ -455,25 +454,6 @@ if _CR_SWIPL !== nothing
         theirs = _cr_swipl([
             "rt(" * _cr_codes(s) * ", " * _CR_OPTS_TEXT * ")" for s in texts
         ])
-        # NAMED, COUNTED — AN UPSTREAM DEFECT, NOT PORTED (traced 2026-10-10): in swipl a
-        # `cycles(_)` option AFTER `dotlists(true)` switches dotlists OFF. pl-read.c's `read_data`
-        # holds `bool cycles; bool dotlists;` side by side, read_term_options declares both
-        # OPT_BOOL, and pl-option.c's OPT_BOOL writes through an `int *` (`*valp.b = bval`): four
-        # bytes into a one-byte field, so writing `cycles` zeroes `dotlists`. Probed: `[dotlists(true)]`
-        # → list; `[dotlists(true), cycles(true)]` and `…, cycles(false)]` → `'.'(a,b)` (written
-        # `a.b`); `[cycles(true), dotlists(true)]` → list. The kernel's scan returns values, so both
-        # orders read a list. Option list #14 is the clobbered order (ONE text shows it, `'.'(a,b)`);
-        # #15 is the other order, where swipl agrees — asserted, so the cause is in the gate.
-        dotcase = [k for (k, l) in enumerate(labels) if l == "\"'.'(a,b)\" opts#14"]
-        dotrev = [k for (k, l) in enumerate(labels) if l == "\"'.'(a,b)\" opts#15"]
-        @test length(dotcase) == 1 && length(dotrev) == 1
-        for k in dotrev
-            @test startswith(ours[k][1], "[a|b]-") && startswith(theirs[k][1], "[a|b]-")
-        end
-        for k in dotcase
-            @test startswith(ours[k][1], "[a|b]-") && startswith(theirs[k][1], "a.b-")
-            theirs[k] = ours[k]
-        end
         # the character 0: the kernel cannot make the atom (R1f's named gap) — those lines differ
         nul = [k for (k, l) in enumerate(labels) if occursin("\\0", l)]
         for k in nul

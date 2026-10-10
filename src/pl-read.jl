@@ -3791,10 +3791,7 @@ const read_term_options = (
 # DIVERGES: the options the kernel cannot honour are REFUSED (`NotPortedError`) where upstream
 # honours them: `term_position`, `subterm_positions`, `comments` (term positions: R2),
 # `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook), `blob` (no blobs),
-# `quasi_quotations` (none are read). UPSTREAM DEFECT, NOT PORTED: `rd.cycles` and `rd.dotlists`
-# are adjacent `bool`s that `PL_scan_options` writes as `OPT_BOOL` — through an `int *` — so in
-# swipl a `cycles(_)` option after `dotlists(true)` zeroes dotlists; here each keeps its value
-# (pinned in test_canonical_readatom_swipl.jl). The module is the kernel's table's; a syntax error is
+# `quasi_quotations` (none are read). The module is the kernel's table's; a syntax error is
 # reported through `printMessage` (`reportReadError`); the retry on a `dec10` error re-reads from
 # the same stream, as upstream. No `free_read_data` (Julia's GC).
 "Read a term from `s` into term reference `term` with the read options list `options` holds (pl-read.c)."
