@@ -373,7 +373,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
 | `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; `protocol` pinned (swipl aborts); portray_goal refused; the host's streams, a write error, the variable_names bindings undone | — |
-| `test/core_text/test_canonical_readatom_swipl.jl` | R1e's last gate: write_canonical/1,2 on 400 corpus lines + 1,000 random terms, literally as swipl (variables numbered both sides) and read back; read_term_from_atom/3 on every corpus text × 14 option lists (term, options after, verdict, messages) and 42 hand goals; the refusals; three named exclusions (a cut-UTF-8 ball, a NUL string, the dotlists `'.'(a,b)` text) | — |
+| `test/core_text/test_canonical_readatom_swipl.jl` | R1e's last gate: write_canonical/1,2 on 400 corpus lines + 1,000 random terms, literally as swipl (variables numbered both sides) and read back; read_term_from_atom/3 on every corpus text × 15 option lists (term, options after, verdict, messages) and 49 hand goals; the refusals; three named exclusions (a cut-UTF-8 ball, a NUL string, upstream's `cycles`-after-`dotlists` overwrite) | — |
 | `test/core_text/text_corpora_testlib.jl` | the reader's and the writer's hand corpora and the random-term generator, shared by their differentials and the round trip (R1f) | — |
 | `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations); a float's text read back (since R1e's floats); `$` not an operator (pinned); `unquoted_atom` | — |
 | `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream defects #11 and #12 pinned; the refusals (a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
@@ -1534,12 +1534,16 @@ src/pl-write.jl, src/pl-read.jl, src/os/pl-prologflag.jl, pl-ext.jl, pl-global.j
 * **Named, counted exclusions (the gate):** a syntax error whose culprit holds a CUT UTF-8 byte
   (`«x`: swipl names the quote's first byte, `string("Â", 0)`, and so does the kernel; its writer
   cannot write that string); a STRING holding the character 0 (readable; no atom can be made of it:
-  R1f's gap); `'.'(a,b)` read with `dotlists(true)` — both read the cell `[a|b]`, but swipl's
-  term_to_atom/2 of the term READ writes it `a.b` (cause in pl-write.c, not yet read: ONE case).
+  R1f's gap); and an UPSTREAM DEFECT, NOT PORTED (traced 2026-10-10; report drafted, not filed): in
+  swipl a `cycles(_)` option AFTER `dotlists(true)` switches dotlists off — pl-read.c's `bool
+  cycles; bool dotlists;` are adjacent, both `OPT_BOOL`, and pl-option.c writes an `OPT_BOOL` through
+  an `int *` (four bytes into a one-byte field). The kernel's scan returns values, so both orders
+  read a list; option list #14 is the clobbered order (one text, `'.'(a,b)`, shows it), #15 the
+  other order, where swipl agrees (asserted).
 * **Gates:** test/core_text/test_canonical_readatom_swipl.jl (new): write_canonical/1 and /2 on
   the reader's and writer's hand corpora (400 lines) and 1,000 random terms, compared LITERALLY
   with swipl (both sides number the variables: `A`, `B`, `_`), and read back; read_term_from_atom/3
-  on every corpus text × 14 option lists — the term and the options after the call (the bindings
+  on every corpus text × 15 option lists — the term and the options after the call (the bindings
   of `variable_names`, `variables`, `singletons`), the verdict (a syntax error's ball, position
   included) and the MESSAGES (`dec10`'s error, `singletons(warning)`'s warning, through swipl's
   message_hook); 42 hand goals (the text argument's errors, option errors, `end_of_file`, a

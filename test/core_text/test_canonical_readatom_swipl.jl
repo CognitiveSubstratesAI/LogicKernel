@@ -5,7 +5,7 @@
 #     with swipl on user_output, user_error and the verdict. Variables are numbered on both sides
 #     (`A`, `B`, … for repeated variables, `_` for singletons: numberVars' singletons mode), so the
 #     texts compare LITERALLY — no renaming; then read back on the kernel: a variant of the term.
-#   * READ_TERM_FROM_ATOM/3: every corpus text read with 14 option lists — none, variable_names,
+#   * READ_TERM_FROM_ATOM/3: every corpus text read with 15 option lists — none, variable_names,
 #     variables, singletons(S), singletons(warning), each syntax_errors mode, double_quotes ×3,
 #     back_quotes, character_escapes(false), dotlists, module — the term's writeq text, the
 #     options list after the call (its bindings), and the verdict compared with swipl; a syntax
@@ -142,7 +142,8 @@ const _CR_OPTS_TEXT = """[
     [], [variable_names(_)], [variables(_)], [singletons(_)], [singletons(warning)],
     [syntax_errors(error)], [syntax_errors(fail)], [syntax_errors(quiet)], [syntax_errors(dec10)],
     [double_quotes(codes)], [double_quotes(chars)], [double_quotes(atom)],
-    [back_quotes(string), character_escapes(false)], [dotlists(true), module(user), cycles(true)]
+    [back_quotes(string), character_escapes(false)], [dotlists(true), module(user), cycles(true)],
+    [cycles(true), dotlists(true)]
 ]"""
 
 const _CR_DRIVER = raw"""
@@ -442,7 +443,7 @@ if _CR_SWIPL !== nothing
             end
             xs
         end
-        @test length(optss) == 14
+        @test length(optss) == 15
         texts = unique(vcat(_TR_CORPUS, _TW_CORPUS))
         labels, ours = String[], Vector{String}[]
         for s in texts, (k, os) in enumerate(optss)
@@ -454,14 +455,21 @@ if _CR_SWIPL !== nothing
         theirs = _cr_swipl([
             "rt(" * _cr_codes(s) * ", " * _CR_OPTS_TEXT * ")" for s in texts
         ])
-        # NAMED, COUNTED (2026-10-10): `'.'(a,b)` read with dotlists(true) — both sides read the
-        # list cell `[a|b]` (swipl: `X = [H|T]` succeeds, write_canonical writes `[a|b]`), but
-        # swipl's term_to_atom/2 of the term READ writes `a.b` where the kernel's writes `[a|b]`
-        # (a typed `[a|b]` writes `[a|b]` on both). The cause is in pl-write.c, not yet read: the
-        # term swipl reads under dotlists carries something its writer sees (a functor flag?). ONE
-        # text, one option list; both sides' texts kept here so a change shows.
+        # NAMED, COUNTED — AN UPSTREAM DEFECT, NOT PORTED (traced 2026-10-10): in swipl a
+        # `cycles(_)` option AFTER `dotlists(true)` switches dotlists OFF. pl-read.c's `read_data`
+        # holds `bool cycles; bool dotlists;` side by side, read_term_options declares both
+        # OPT_BOOL, and pl-option.c's OPT_BOOL writes through an `int *` (`*valp.b = bval`): four
+        # bytes into a one-byte field, so writing `cycles` zeroes `dotlists`. Probed: `[dotlists(true)]`
+        # → list; `[dotlists(true), cycles(true)]` and `…, cycles(false)]` → `'.'(a,b)` (written
+        # `a.b`); `[cycles(true), dotlists(true)]` → list. The kernel's scan returns values, so both
+        # orders read a list. Option list #14 is the clobbered order (ONE text shows it, `'.'(a,b)`);
+        # #15 is the other order, where swipl agrees — asserted, so the cause is in the gate.
         dotcase = [k for (k, l) in enumerate(labels) if l == "\"'.'(a,b)\" opts#14"]
-        @test length(dotcase) == 1
+        dotrev = [k for (k, l) in enumerate(labels) if l == "\"'.'(a,b)\" opts#15"]
+        @test length(dotcase) == 1 && length(dotrev) == 1
+        for k in dotrev
+            @test startswith(ours[k][1], "[a|b]-") && startswith(theirs[k][1], "[a|b]-")
+        end
         for k in dotcase
             @test startswith(ours[k][1], "[a|b]-") && startswith(theirs[k][1], "a.b-")
             theirs[k] = ours[k]
