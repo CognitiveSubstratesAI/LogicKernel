@@ -580,6 +580,188 @@ function lengthList(ld::PL_local_data{T}, list::term_t, errors::Bool)::Int where
     return kind(tail) === VAR ? -2 : -1
 end
 
+# ── numbervars (pl-prims.c), since R1e's write_canonical ────────────────────────────────────────
+
+# PORT: pl-incl.h av_action
+"What `numberVars` does with an attributed variable (pl-incl.h `av_action`)."
+@enum av_action::UInt8 begin
+    AV_BIND
+    AV_SKIP
+    AV_ERROR
+end
+
+# PORT: pl-incl.h NV_ERROR
+"`numberVars`' result when it raised an error (pl-incl.h)."
+const NV_ERROR = -1
+
+# PORT: pl-incl.h nv_options
+# DIVERGES: the functor is its name (every `'$VAR'/1`); `singletons` and `numbered_check` are
+# `Int`s as upstream's (`singletons` takes 0, 1 and 2 in `numberVars`).
+"The options of `numberVars` (pl-incl.h `nv_options`)."
+mutable struct nv_options{T}
+    functor::T                      # Functor to use ($VAR/1): its name
+    offset::Int                     # offset
+    on_attvar::av_action            # How to handle attvars
+    singletons::Int                 # Write singletons as $VAR('_')
+    numbered_check::Bool            # Check for already numbered
+end
+
+# PORT: pl-prims.c ALREADY_NUMBERED
+"`do_number_vars`' code: a `'\$VAR'(N)` with `N` past the start (pl-prims.c)."
+const ALREADY_NUMBERED = -10
+# PORT: pl-prims.c CONTAINS_ATTVAR
+"`do_number_vars`' code: an attributed variable under `AV_ERROR` (pl-prims.c)."
+const CONTAINS_ATTVAR = -11
+# PORT: pl-prims.c REPRESENTATION_ERROR
+"`do_number_vars`' code: a number past the tagged range (pl-prims.c)."
+const REPRESENTATION_ERROR = -12
+
+# PORT: pl-prims.c do_number_vars
+# DIVERGES: a variable is bound to a NEW `'$VAR'(A)` compound through the trail (`Trail!`; upstream
+# builds it on the global stack and `bindConst`s), whose argument `A` is a FRESH VARIABLE bound to
+# the number — or, in singletons mode, to `_` — so the compound keeps its identity while its
+# argument is rewritten (upstream writes the argument cell in place: `*p = ATOM_var`, `*p =
+# consInt(v)`); "new one we created ourselves" — a `'$VAR'` compound above the mark's global top —
+# is one in `ld.numbervars_made` (the compounds this walk made, cleared by `numberVars`); `visited`
+# is an `IdDict` of the compounds entered (upstream's mark bits). No attributed variables (none in
+# the kernel: `AV_*` is kept for `nv_options`); no signals (`NV_EINTR`); no global-stack overflow.
+"Number the variables of `p` from `n`: the next number, or a code below 0 (pl-prims.c)."
+function do_number_vars(
+    ld::PL_local_data{T}, p::T, options::nv_options{T}, n::Int
+)::Int where {T}
+    agenda = ld.occurs_agenda
+    start = n
+    visited = ld.numbervars_visited
+    made = ld.numbervars_made
+    fkey = sym_key(options.functor)
+    k_anon = sym_key(mk_sym(T, :_))                 # ATOM_anonvar
+    k_var = sym_key(mk_sym(T, :var))                # ATOM_var
+
+    initTermAgenda!(agenda, 0, p, 1)                # (initTermAgenda(&agenda, 1, p))
+    first = true
+    while true
+        if first
+            first = false
+            q = deRef(ld, p)
+        else
+            q = nextTermAgenda!(ld, agenda)
+            q === nothing && break
+        end
+        if kind(q) === VAR                          # canBind(*p)
+            arg = mk_var(T, fresh_var_keys!(1))     # the argument cell, rewritable
+            if options.singletons != 0
+                Trail!(ld, var_key(arg), mk_sym(T, :_))             # a[1] = ATOM_anonvar
+            else
+                v = n + options.offset
+                (PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT) || return REPRESENTATION_ERROR
+                Trail!(ld, var_key(arg), mk_gnd(T, Int64(v)))       # a[1] = consInt(v)
+                n += 1
+            end
+            a = mk_expr(T, T[options.functor, arg])
+            made[a] = nothing
+            Trail!(ld, var_key(q), a)               # bindConst(p, v)
+        elseif kind(q) === EXPR                     # isTerm(*p)
+            h = child(q, 1)
+            if nchildren(q) == 2 && kind(h) === SYM && sym_key(h) == fkey
+                if haskey(made, q)                  # new one we created ourselves
+                    if options.singletons != 0
+                        cell = child(q, 2)          # Word p = &f->arguments[0] (a variable)
+                        cur = deRef(ld, cell)
+                        if options.singletons == 1
+                            if kind(cur) === SYM && sym_key(cur) == k_anon
+                                v = n + options.offset
+                                (PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT) ||
+                                    return REPRESENTATION_ERROR
+                                ld.bindings[var_key(cell)] = mk_sym(T, :var)   # *p = ATOM_var
+                                n += 1
+                            end
+                        else
+                            if kind(cur) === SYM && sym_key(cur) == k_var
+                                v = n + options.offset
+                                ld.bindings[var_key(cell)] = mk_gnd(T, Int64(v))   # *p = consInt(v)
+                                n += 1
+                            end
+                        end
+                    end
+                else
+                    arg = deRef(ld, child(q, 2))
+                    if options.numbered_check && isInteger(arg)
+                        if isTaggedInt(arg) && int64_value(arg) >= start
+                            return ALREADY_NUMBERED
+                        end
+                    end
+                    if kind(arg) === VAR || kind(arg) === EXPR
+                        @goto do_number             # number '$VAR'(_)
+                    end
+                end
+                continue
+            end
+
+            @label do_number
+            if options.singletons == 0
+                haskey(visited, q) && continue      # visited(f)
+                visited[q] = nothing
+            end
+            pushWorkAgenda!(agenda, nchildren(q) - 1, q, 2)
+        end
+    end
+
+    clearTermAgenda!(agenda)                        # out:
+    return n                                        # anything else
+end
+
+# PORT: pl-prims.c numberVars
+# DIVERGES: the marks of a walk (`made`, `visited`) are the local data's scratch, cleared here
+# (upstream: `initvisited`/`unvisit`, the global-stack mark); the error for `CONTAINS_ATTVAR` is
+# kept for the shape (no attributed variables); no signals, no stack growth (`makeMoreStackSpace`).
+"Number the variables of term reference `t` from `n`: the next number, or `NV_ERROR` with the error raised (pl-prims.c)."
+function numberVars(
+    ld::PL_local_data{T}, t::term_t, options::nv_options{T}, n::Int
+)::Int where {T}
+    if !(PLMINTAGGEDINT <= n <= PLMAXTAGGEDINT)     # inTaggedNumRange(n)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :tagged_integer))
+        return NV_ERROR
+    end
+
+    options.offset = n
+
+    m = Mark(ld)
+    empty!(ld.numbervars_visited)
+    empty!(ld.numbervars_made)
+    rc = do_number_vars(ld, ld.slots[t + 1], options, 0)
+    empty!(ld.numbervars_visited)                   # unvisit()
+    if rc >= 0                                      # all ok
+        DiscardMark(ld, m)
+        if options.singletons != 0
+            options.singletons = 2
+            rc2 = do_number_vars(ld, ld.slots[t + 1], options, 0)
+            empty!(ld.numbervars_visited)
+            @assert rc == rc2
+        end
+        empty!(ld.numbervars_made)
+        return rc + options.offset
+    else
+        empty!(ld.numbervars_made)
+        if rc == CONTAINS_ATTVAR
+            DiscardMark(ld, m)
+            PL_error(ld, ERR_TYPE, mk_sym(T, :free_of_attvar), t)
+            return NV_ERROR
+        elseif rc == ALREADY_NUMBERED
+            DiscardMark(ld, m)
+            PL_error(
+                ld, "", 0, "already numbered", ERR_PERMISSION, mk_sym(T, :numbervars),
+                mk_sym(T, :term), t
+            )
+            return NV_ERROR
+        else
+            @assert rc == REPRESENTATION_ERROR
+            DiscardMark(ld, m)
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :tagged_integer))
+            return NV_ERROR
+        end
+    end
+end
+
 # PORT: pl-prims.c is_acyclic
 "Whether `p` is acyclic under the bindings in `ld` (pl-prims.c `is_acyclic`)."
 function is_acyclic(ld::PL_local_data{T}, p::T)::Bool where {T}

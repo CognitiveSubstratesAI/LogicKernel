@@ -3396,11 +3396,20 @@ function bind_variable_names(rd::read_data{T})::Bool where {T}
     return unify_ptrs(ld, ld.slots[rd.varnames + 1], _read_list_term(pairs, mk_nil(T)))
 end
 
+# PORT: pl-read.c bind_variables
+"Unify the `variables` term with the list of the variables read (pl-read.c)."
+function bind_variables(rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    vars = T[ld.slots[var.variable + 1] for var in rd.vt.var_buffer]    # FOR_VARS(var)
+    return unify_ptrs(ld, ld.slots[rd.variables + 1], _read_list_term(vars, mk_nil(T)))
+end
+
 # PORT: pl-read.c read_term
-# DIVERGES: the `variables(V)` and `singletons(S)` options (`bind_variables`, `check_singletons`'s
-# list) and `cycles(true)` (`instantiate_template`) are NOT PORTED: no entry point sets them (their
-# options need `PL_scan_options`); the singleton REPORT is (`read_clause`, since R1f); no quasi-quotations to parse (`parse_quasi_quotations`: one is
-# refused before it is collected); no overflow codes (`raiseStackOverflow`).
+# DIVERGES: `cycles(true)` (`instantiate_template`) is NOT PORTED — no `@(Template, Bindings)`
+# is ever read into a cycle (R1e decision 4a refuses cyclic terms; the option is accepted and does
+# nothing, as it does for a text without one); no quasi-quotations to parse
+# (`parse_quasi_quotations`: one is refused before it is collected); no overflow codes
+# (`raiseStackOverflow`).
 """
 Read one term from the read data's stream and unify it with term reference `term` (pl-read.c):
 the raw text, the term up to the full stop, then the variable names. False on a syntax error,
@@ -3440,6 +3449,10 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
     rc || @goto out
     if rd.varnames != 0
         rc = bind_variable_names(rd)
+        rc || @goto out
+    end
+    if rd.variables != 0
+        rc = bind_variables(rd)
         rc || @goto out
     end
     if rd.singles != 0
@@ -3551,8 +3564,22 @@ end
 # point sets the option (`PL_scan_options`) — refused; the report form as upstream.
 "Report the singletons (and, with `MULTITON_CHECK`, the multitons) of the term read (pl-read.c)."
 function check_singletons(term::term_t, rd::read_data{T})::Bool where {T}
+    ld = rd.ld
     if rd.singles != _SINGLES_REPORT                # returns <name> = var bindings
-        throw(NotPortedError{Nothing}(nothing, "read_term/2's singletons(S) option", "R1e"))
+        pairs = T[]
+        for var in rd.vt.var_buffer                 # FOR_VARS(var)
+            if is_singleton(var, LIST_SINGLETONS, rd)
+                push!(
+                    pairs,
+                    mk_expr(
+                        T,
+                        T[mk_sym(T, :(=)), _atom_from_text(T, String(copy(var.name))),
+                            ld.slots[var.variable + 1]]
+                    )
+                )
+            end
+        end
+        return unify_ptrs(ld, ld.slots[rd.singles + 1], _read_list_term(pairs, mk_nil(T)))
     end
     singletons = String[]                           # just report
     for var in rd.vt.var_buffer                     # FOR_VARS(var): singletons
@@ -3738,14 +3765,164 @@ function pl_term_string2_va(
     return atom_to_term(ld, A2, A1, 0, PL_STRING) ? FTRUE : FFALSE
 end
 
+# PORT: pl-read.c read_term_options
+"read_term/2,3's and read_term_from_atom/3's options, in upstream's order (pl-read.c)."
+const read_term_options = (
+    PL_option_t(:variable_names, OPT_TERM),
+    PL_option_t(:variables, OPT_TERM),
+    PL_option_t(:singletons, OPT_TERM),
+    PL_option_t(:term_position, OPT_TERM),
+    PL_option_t(:subterm_positions, OPT_TERM),
+    PL_option_t(:character_escapes, OPT_BOOL),
+    PL_option_t(:var_prefix, OPT_TERM),
+    PL_option_t(:double_quotes, OPT_ATOM),
+    PL_option_t(:module, OPT_ATOM),
+    PL_option_t(:syntax_errors, OPT_ATOM),
+    PL_option_t(:back_quotes, OPT_ATOM),
+    PL_option_t(:comments, OPT_TERM),
+    PL_option_t(:quasi_quotations, OPT_TERM),
+    PL_option_t(:cycles, OPT_BOOL),
+    PL_option_t(:dotlists, OPT_BOOL),
+    PL_option_t(:unicode_atoms, OPT_ATOM),
+    PL_option_t(:blob, OPT_ATOM)
+)
+
+# PORT: pl-read.c read_term_from_stream
+# DIVERGES: the options the kernel cannot honour are REFUSED (`NotPortedError`) where upstream
+# honours them: `term_position`, `subterm_positions`, `comments` (term positions: R2),
+# `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook), `blob` (no blobs),
+# `quasi_quotations` (none are read). The module is the kernel's table's; a syntax error is
+# reported through `printMessage` (`reportReadError`); the retry on a `dec10` error re-reads from
+# the same stream, as upstream. No `free_read_data` (Julia's GC).
+"Read a term from `s` into term reference `term` with the read options list `options` holds (pl-read.c)."
+function read_term_from_stream(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, term::term_t, options::term_t
+)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+
+    @label retry
+    rd = init_read_data(gd, ld, s)
+
+    vals = PL_scan_options(ld, options, 0, "read_option", read_term_options)
+    vals === nothing && return false
+
+    rd.varnames = something(vals[1], 0)::Int
+    rd.variables = something(vals[2], 0)::Int
+    rd.singles = something(vals[3], 0)::Int
+    tpos = something(vals[4], 0)::Int
+    rd.subtpos = something(vals[5], 0)::Int
+    charescapes = vals[6] === nothing ? -1 : Int(vals[6]::Bool)
+    varprefix = something(vals[7], 0)::Int
+    dq = vals[8]
+    mname = vals[9]
+    vals[10] === nothing || (rd.on_error = Symbol(sym_text(vals[10]::T)))
+    bq = vals[11]
+    tcomments = something(vals[12], 0)::Int
+    qq = something(vals[13], 0)::Int
+    vals[14] === nothing || (rd.cycles = vals[14]::Bool)
+    vals[15] === nothing || (rd.dotlists = vals[15]::Bool)
+    opt_unicode_atoms = vals[16]
+    opt_blobs = vals[17]
+
+    for (v, what) in (
+        (tpos, "term_position"), (rd.subtpos, "subterm_positions"), (tcomments, "comments"),
+        (varprefix, "var_prefix"), (qq, "quasi_quotations")
+    )
+        v != 0 && throw(
+            NotPortedError{T}(
+                ld.slots[v + 1], "read_term's $what option", "R2 (term positions)"
+            )
+        )
+    end
+    opt_blobs === nothing || throw(
+        NotPortedError{T}(opt_blobs::T, "read_term's blob option", "never (no blobs)")
+    )
+    opt_unicode_atoms === nothing || throw(
+        NotPortedError{T}(
+            opt_unicode_atoms::T, "read_term's unicode_atoms option",
+            "R2 (the NFC hook)"
+        )
+    )
+
+    if mname !== nothing
+        m = isCurrentModule(gd.modules, mname::T)
+        m === nothing && (m = MODULE_user(gd))
+        set_module_read_data(rd, m.index)            # rd.module = …; set_module_read_data
+    end
+
+    if charescapes != -1
+        if charescapes == 1
+            rd.flags |= M_CHARESCAPE                # set(&rd, M_CHARESCAPE)
+        else
+            rd.flags &= ~M_CHARESCAPE
+        end
+    end
+    if dq !== nothing
+        f = setDoubleQuotes(ld, dq::T, rd.flags)
+        f === nothing && return false
+        rd.flags = f
+    end
+    if bq !== nothing
+        f = setBackQuotes(ld, bq::T, rd.flags)
+        f === nothing && return false
+        rd.flags = f
+    end
+    if rd.singles != 0
+        w = PL_get_atom(ld, rd.singles)
+        if w !== nothing && sym_key(w) == sym_key(mk_sym(T, :warning))
+            rd.singles = _SINGLES_REPORT            # rd.singles = true
+        end
+    end
+
+    rval = read_term(term, rd)
+    Sferror(s) != 0 && return false
+
+    if !rval
+        if rd.has_exception && reportReadError(rd)
+            PL_rewind_foreign_frame(ld, fid)
+            @goto retry
+        end
+    end
+
+    return rval
+end
+
+# PORT: pl-read.c read_term_from_atom as pl_read_term_from_atom3_va
+# (PRED_IMPL("read_term_from_atom", 3, read_term_from_atom, 0))
+# DIVERGES: `CVT_LIST` is accepted as upstream (a code or character list); `BUF_STACK` is nothing.
+"`read_term_from_atom(+Text, -Term, +Options)` (pl-read.c)."
+function pl_read_term_from_atom3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    gd = _query_gd(ld)
+
+    txt = PL_get_text(ld, A1, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION)
+    txt === nothing && return FFALSE
+
+    oldsrc = ld.read_source
+    stream = Sopen_text(txt, "r")
+    rc = if stream !== nothing
+        r = read_term_from_stream(gd, ld, stream, A2, A3)
+        Sclose(stream)
+        r
+    else
+        false
+    end
+
+    ld.read_source = oldsrc
+
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-read.c BeginPredDefs as PL_predicates_from_read
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (read:7431-7444). NOT PORTED: read_term/2,3 and read_clause/3 (a stream argument: the stream
-# table, R2), read_term_from_atom/3 (the rest of R1e; `PL_scan_options` is ported since R1e's
-# write/1 family, src/os/pl-option.jl), `$code_class/2`, `$is_named_var/1`,
+# table, R2), `$code_class/2`, `$is_named_var/1`,
 # `$qq_open/2` (no quasi-quotations).
 "pl-read.c's registration table (`BeginPredDefs(read)`): the ported entries."
 const PL_predicates_from_read = (
+    PL_extension("read_term_from_atom", 3, pl_read_term_from_atom3_va, PL_FA_VARARGS),
     PL_extension("atom_to_term", 3, pl_atom_to_term3_va, PL_FA_VARARGS),
     PL_extension("term_to_atom", 2, pl_term_to_atom2_va, PL_FA_VARARGS),
     PL_extension("term_string", 2, pl_term_string2_va, PL_FA_VARARGS)

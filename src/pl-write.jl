@@ -2029,8 +2029,7 @@ end
 # ── write/1,2, writeq/1,2, writeln/1,2, print/1,2 (pl-write.c), since R1e's write/1 family ─────
 
 # PORT: pl-write.c do_write2
-# DIVERGES: no stream release (no locks). NOT PORTED: `canonical` true (write_canonical/1,2: the
-# variable numbering, `numberVars`, is the next commit's).
+# DIVERGES: no stream release (no locks).
 "Write the term `term` references to the stream `stream` names (0: the current output) with `flags` (pl-write.c)."
 function do_write2(
     ld::PL_local_data{T}, stream::term_t, term::term_t, flags::Int, canonical::Bool
@@ -2104,6 +2103,43 @@ function pl_print2(ld::PL_local_data{T}, stream::term_t, term::term_t)::foreign_
 
     return rc ? FTRUE : FFALSE
 end
+
+# PORT: pl-write.c pl_write_canonical2
+# DIVERGES: `singletons` is `PL_is_acyclic`'s verdict as upstream (a cyclic term is then refused
+# by `writeTopTerm`, decision 4a); the numbering is undone with the numbervars frame.
+"write_canonical/2: the term `term` references, variables numbered, quoted, operators ignored (pl-write.c)."
+function pl_write_canonical2(
+    ld::PL_local_data{T}, stream::term_t, term::term_t
+)::foreign_t where {T}
+    savedf = BEGIN_NUMBERVARS(ld, true)
+    rc = FFALSE
+    try
+        options = nv_options{T}(
+            mk_sym(T, Symbol("\$VAR")),              # FUNCTOR_isovar1
+            0, AV_SKIP,
+            is_acyclic(ld, ld.slots[term + 1]) ? 1 : 0,   # PL_is_acyclic(term)
+            false
+        )
+
+        if numberVars(ld, term, options, 0) != NV_ERROR
+            rc = do_write2(
+                ld, stream, term,
+                PL_WRT_QUOTED | PL_WRT_QUOTE_NON_ASCII | PL_WRT_PATTERN_SYNTAX_SOLO |
+                PL_WRT_IGNOREOPS | PL_WRT_VARNAMES | PL_WRT_NODOTINATOM | PL_WRT_BRACETERMS,
+                true
+            )
+        end
+    finally
+        END_NUMBERVARS(ld, true, savedf)
+    end
+
+    return rc
+end
+
+# PORT: pl-write.c pl_write_canonical
+"write_canonical/1: write_canonical/2 to the current output (pl-write.c)."
+pl_write_canonical(ld::PL_local_data{T}, term::term_t) where {T} =
+    pl_write_canonical2(ld, 0, term)
 
 # PORT: pl-write.c pl_write
 "write/1: write the term `term` references to the current output (pl-write.c)."

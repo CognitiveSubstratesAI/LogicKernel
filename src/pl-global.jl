@@ -185,7 +185,8 @@ end
 # by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`
 # flag), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and three
 # flags as swipl 10.1.16 has them: `unknown_option` (`ignore`), `write_attributes` (`ignore`),
-# `character_escapes_unicode` (`true`).
+# `character_escapes_unicode` (`true`). Since write_canonical: `numbervars_visited` and
+# `numbervars_made`, `numberVars`' scratch (upstream's visited marks and global-stack mark).
 """
     PL_local_data{T}()
 
@@ -265,6 +266,8 @@ mutable struct PL_local_data{T}
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
     prolog_flag_character_escapes_unicode::Bool                 # PLFLAG_CHARESCAPE_UNICODE
+    numbervars_visited::IdDict{T, Nothing}                      # (numberVars' visited marks)
+    numbervars_made::IdDict{T, Nothing}                         # (the '$VAR's a numberVars made)
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -314,7 +317,8 @@ function PL_local_data{T}() where {T}
         0,                                      # no numbervars frame
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
-        true                                    # character_escapes_unicode: true
+        true,                                   # character_escapes_unicode: true
+        IdDict{T, Nothing}(), IdDict{T, Nothing}()
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

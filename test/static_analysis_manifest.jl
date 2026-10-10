@@ -742,6 +742,11 @@ function _manifest_index(T)
             Tuple{LD, Int64, Int64, String, typeof(LK.write_term_options)},
             false
         ),
+        (
+            LK.PL_scan_options,
+            Tuple{LD, Int64, Int64, String, typeof(LK.read_term_options)},
+            false
+        ),
         (LK.get_optval, Tuple{LD, LK.PL_option_t, Int64}, false),
         (LK.setBackQuotes, Tuple{LD, T, UInt32}, false),
         (LK.atom_to_bool, Tuple{LD, T}, false),
@@ -778,6 +783,20 @@ function _manifest_index(T)
         (LK.PL_unify_stream_or_alias, Tuple{LD, Int64, LK.IOSTREAM}, false),
         (LK.reportStreamError, Tuple{LD, LK.IOSTREAM}, false),
         (LK.streamStatus, Tuple{LD, LK.IOSTREAM}, false),
+        # R1e — write_canonical/1,2 (pl-prims.c numberVars) and read_term_from_atom/3
+        (LK.nv_options{T}, Tuple{T, Int64, LK.av_action, Int64, Bool}, false),
+        (LK.do_number_vars, Tuple{LD, T, LK.nv_options{T}, Int64}, false),
+        (LK.numberVars, Tuple{LD, Int64, LK.nv_options{T}, Int64}, false),
+        (LK.pl_write_canonical2, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_write_canonical, Tuple{LD, Int64}, false),
+        (LK.setDoubleQuotes, Tuple{LD, T, UInt32}, false),
+        (LK.bind_variables, Tuple{LK.read_data{T}}, false),
+        (LK.read_term_from_stream, Tuple{GD, LD, LK.IOSTREAM, Int64, Int64}, false),
+        (
+            LK.pl_read_term_from_atom3_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         (LK.isCurrentProcedure, Tuple{UInt64, Int, MOD}, false),
         (LK.hasClausesDefinition, Tuple{GD, D}, true),
         (LK.isDefinedProcedure, Tuple{GD, PR}, true),
@@ -1444,6 +1463,7 @@ const DISPATCH_MANIFEST = (
     (LK.utf8_strlen, Tuple{Vector{UInt8}, Int64, Int64}, true),
     (LK.variableHash, Tuple{LK.variable}, false),
     # the enums R1c adds
+    (Base.Enums._enum_hash, Tuple{LK.av_action, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.IOENC, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.IOFUNCTIONS, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.Sunicode_atoms_t, UInt64}, false),

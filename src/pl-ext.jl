@@ -29,10 +29,10 @@
 
 # PORT: pl-ext.c foreigns
 # DIVERGES: the ported entries only, in upstream's order (upstream's table has 56, pl-ext.c:98-190);
-# since R1e's write/1 family, write/1,2, writeq/1,2, writeln/1,2 and print/1,2. NOT PORTED:
-# write_canonical/1,2 (the variable numbering, `numberVars`: the next commit).
+# since R1e's write/1 family, write/1,2, writeq/1,2, writeln/1,2, print/1,2 and write_canonical/1,2.
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
+    PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
     PL_extension("write", 1, pl_write, PL_FA_ISO),
     PL_extension("writeq", 1, pl_writeq, PL_FA_ISO),
     PL_extension("writeln", 1, pl_writeln, 0x00),
@@ -41,7 +41,8 @@ const foreigns = (
     PL_extension("write", 2, pl_write2, PL_FA_ISO),
     PL_extension("writeln", 2, pl_writeln2, 0x00),
     PL_extension("writeq", 2, pl_writeq2, PL_FA_ISO),
-    PL_extension("print", 2, pl_print2, 0x00)
+    PL_extension("print", 2, pl_print2, 0x00),
+    PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO)
 )
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, comp, prims, variant,
