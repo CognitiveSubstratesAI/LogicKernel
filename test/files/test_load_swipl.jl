@@ -3,8 +3,10 @@
 #   * THE MESSAGES: each case file consulted by the kernel and by swipl, the messages swipl would
 #     print compared as TERMS — swipl's captured with `user:message_hook/3` — with the load's
 #     status (an exception that ended it, as consult/1 raises it) and, after it, every solution
-#     of the case's predicates and whether each is dynamic. One NAMED exclusion, counted: swipl's
-#     `compiler_warnings` (the compiler's variable analysis is not ported). One NAMED normalisation, counted: an
+#     of the case's predicates and whether each is dynamic. The compiler's warnings are among
+#     them since R1g (`compiler_warnings(Clause, Warnings)`: its `Clause`, swipl's clause
+#     reference, is an unbound variable on both sides — the kernel has no clause references as
+#     terms). One NAMED normalisation, counted: an
 #     error a directive's goal raises has the context `system:'$c_call_prolog'/0` (the query's top
 #     frame) where swipl's is `system:catch/3` (boot's wrapper; boot/init.jl `execute_directive!`);
 #   * THE BENCH PROGRAMS loaded from their .pl files, their answers compared with swipl's;
@@ -49,10 +51,6 @@ function _tl_enc(t::_TL, seen::Vector{UInt64}=UInt64[])::String
            join([_tl_enc(child(t, i), seen) for i in 2:nchildren(t)], ",") * ")"
 end
 _tl_codes(s::String)::String = "[" * join(Int.(collect(s)), ",") * "]"
-
-# swipl's messages excluded from the comparison, by name: `compiler_warnings(Clause, Warnings)` —
-# the compiler's variable analysis (multitons, branch singletons) is not ported (src/pl-comp.jl).
-const _TL_EXCLUDED = String[]
 
 # The named normalisation: a directive goal's error context — swipl's boot calls the goal from
 # catch/3; the kernel from the query's top frame. Counted.
@@ -165,8 +163,8 @@ run(File, Preds) :-
     catch(( consult(File), S = ok ), E, S = exc(E)),
     ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
     forall(retract(seen(K, T)),
-           (   T = compiler_warnings(_, Ws)
-           ->  findall(F, (member(W, Ws), functor(W, F, _)), Fs), format("excluded ~w ~w~n", [K, Fs])
+           (   T = compiler_warnings(_, Ws)          % the clause reference: a variable
+           ->  write(K), write(' '), enc(compiler_warnings(_, Ws)), nl
            ;   write(K), write(' '), enc(T), nl
            )),
     forall(member(P, Preds), pred(P)).
@@ -229,22 +227,34 @@ const _TL_CASES = [
         [("atom_number", 2)]),
     ("a static predicate asserted into",
         "late(0).\n:- assertz(late(9)).\n:- assertz(fresh(1)).\n",
-        [("late", 1), ("fresh", 1)])
+        [("late", 1), ("fresh", 1)]),
+    # the compiler's warnings (R1g), between the reader's singletons and the next clause's
+    # messages: a multiton, `==`/`\\==` on a void and on a first variable, type tests with a
+    # known outcome (one on an unnamed variable), two warnings for one clause, a clause with
+    # none, and a warning for a clause of a discontiguous predicate
+    ("compiler warnings",
+        "w1(_A, _A).\nw2(X) :- X == Y.\nw3 :- X == X.\nw4(X) :- Y \\== X.\n" *
+        "w5 :- X \\== X.\nw6(X) :- var(Y), q(X).\nw7 :- integer(_).\n" *
+        "w8(_X, _X, __y, __y, _1, _1).\nq(1).\nw9(X) :- f(X) == Y, atom(Z), q(Z).\n" *
+        "w10(X) :- q(X), X == 1.\nw2(X) :- nonvar(Y), q(X).\nw1(_B, _B).\n",
+        [("w1", 2), ("q", 1), ("w10", 1)])
 ]
 
 if _TL_SWIPL !== nothing
     @testset "consulting a file, as swipl: messages, status, the predicates after" begin
         _TL_NORMALISED[] = 0
-        empty!(_TL_EXCLUDED)
+        nwarn = 0
         mktempdir() do d
             for (i, (name, text, preds)) in enumerate(_TL_CASES)
                 path = joinpath(d, "case$i.pl")
                 write(path, text)
                 ours = _tl_kernel(path, preds)
                 theirs = _tl_swipl(path, preds)
-                ex = filter(l -> startswith(l, "excluded "), theirs)
-                append!(_TL_EXCLUDED, ex)
-                theirs = filter(l -> !startswith(l, "excluded "), theirs)
+                nwarn += count(
+                    l ->
+                        startswith(l, "warning c" * _tl_codes("compiler_warnings") * "/2("),
+                    theirs
+                )
                 if ours != theirs
                     println(stderr, "  DIVERGES (", name, "):")
                     for k in 1:max(length(ours), length(theirs))
@@ -258,9 +268,9 @@ if _TL_SWIPL !== nothing
         end
         # the named normalisation is used, and only for directive goals' errors
         @test 1 <= _TL_NORMALISED[] <= 4
-        # the NAMED, COUNTED exclusion: the compiler's own warnings (pl-comp.c's variable analysis,
-        # `VD_*`: not ported) — exactly the one this corpus provokes, `v(_A, _A)`'s multiton
-        @test _TL_EXCLUDED == ["excluded warning [multiton]"]
+        # the compiler's own warnings (since R1g) are compared, not excluded: swipl sends this
+        # many `compiler_warnings/2` messages on the corpus, and the kernel the same ones
+        @test nwarn == 12
     end
 
     @testset "the bench programs, loaded from their .pl files: the answers swipl gives" begin

@@ -217,11 +217,14 @@ const MULTITON_CHECK = 0x0004
 "Style check: warn on a discontiguous predicate (pl-incl.h)."
 const DISCONTIGUOUS_STYLE = 0x0008
 # PORT: pl-incl.h SEMSINGLETON_CHECK
-"Style check: semantic singletons (pl-incl.h; the compiler's, not ported)."
+"Style check: semantic singletons — in a branch, in `\\+`, a `_Name` used twice (pl-incl.h; the compiler's)."
 const SEMSINGLETON_CHECK = 0x0040
 # PORT: pl-incl.h NOEFFECT_CHECK
-"Style check: goals with no effect (pl-incl.h; the compiler's, not ported)."
+"Style check: goals with no effect (pl-incl.h; the compiler's)."
 const NOEFFECT_CHECK = 0x0080
+# PORT: pl-incl.h VARBRANCH_CHECK
+"Style check: warn on unbalanced variables (pl-incl.h; the compiler's)."
+const VARBRANCH_CHECK = 0x0100
 # PORT: pl-incl.h MA_VAR
 "Meta-argument specifier `-`: the argument is unbound on entry (pl-incl.h)."
 const MA_VAR = UInt8(11)

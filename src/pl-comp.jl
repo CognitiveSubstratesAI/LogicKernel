@@ -34,9 +34,14 @@
 #
 # NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
 # `link_local_var`; V9), SSU (`=>`) clauses,
-# SSU clauses' moves (`?=>` always moves, `=>` never: no SSU), and singleton, multiton and branch
-# warnings (the `VD_*` flags). The body compiler is ported since V2, and the instructions run in the
-# VM since V4a (src/pl-wam.jl).
+# SSU clauses' moves (`?=>` always moves, `=>` never: no SSU).
+#
+# The body compiler is ported since V2, and the instructions run in the VM since V4a
+# (src/pl-wam.jl). THE COMPILER'S WARNINGS are ported since R1g: the variable analysis' `VD_*`
+# flags — a singleton in one branch of `;`, in the goal of `\+`, a `_Name` used twice, an
+# unbalanced variable — and the body compiler's goals with no effect (`==`, `\==`, a type test
+# with a known outcome), collected for a caller that asks (`compiler_warning`,
+# `push_compiler_warnings`) and printed by `assert_term!` when loading a file.
 
 # ── argument positions (pl-comp.c) ──────────────────────────────────────────────────────────────
 # PORT: pl-comp.c A_HEAD
@@ -100,21 +105,79 @@ function initVMIMerge(c1::code)::Union{Nothing, NTuple{4, vmi_merge}}
     return nothing
 end
 
+# ── warning declarations (pl-comp.c), since R1g ─────────────────────────────────────────────────
+# PORT: pl-comp.c CW_MAX_ARGC
+"The most context arguments of a compiler warning (pl-comp.c)."
+const CW_MAX_ARGC = 3
+
+# PORT: pl-comp.c cw_def
+"A compiler warning's declaration: its name and how many context arguments it takes (pl-comp.c `cw_def`)."
+struct cw_def
+    name::Symbol
+    argc::Int
+end
+
+# PORT: pl-comp.c cw_defs
+# DIVERGES: a tuple, without upstream's closing `CW(NULL, 0)`.
+"The compiler's warnings (pl-comp.c `cw_defs`)."
+const cw_defs = (
+    cw_def(:eq_vv, 2),                  # Var == Var
+    cw_def(:eq_singleton, 2),           # SingleTon == ?
+    cw_def(:neq_vv, 2),                 # Var \== Var
+    cw_def(:neq_singleton, 2),          # SingleTon \== ?
+    cw_def(:unify_singleton, 2),        # SingleTon = ?
+    cw_def(:always, 1),                 # always(Bool, pred(Arg))
+    cw_def(:nonvar_false, 1),           # nonvar(SingleTonOrFirst)
+    cw_def(:unbalanced_var, 1),         # Var initialised in some disjunctions
+    cw_def(:branch_singleton, 1),       # Singleton in some branch
+    cw_def(:negation_singleton, 1),     # Singleton in \+(Goal)
+    cw_def(:multiton, 1),               # Multiple _Name variables
+    cw_def(:integer_false, 1),          # integer(VarOrNonInt)
+    cw_def(:integer_true, 1)            # integer(Integer)
+)
+
+# PORT: pl-comp.c c_warning
+# DIVERGES: the context arguments are the terms themselves (`argv`), where upstream keeps their
+# addresses and `push_compiler_warnings` makes term references of them (`av`); the warnings of one
+# compilation are a vector in the order raised (`compileInfo.warnings`), so no `next`.
+"A warning raised while compiling a clause (pl-comp.c `c_warning`)."
+struct c_warning{T}
+    def::cw_def         # Warning definition
+    pc::Int             # PC offset in clause
+    argv::Vector{T}     # context arguments
+end
+
 # ── compiler state (pl-comp.c) ──────────────────────────────────────────────────────────────────
 # PORT: pl-comp.c vardef as VarDef
-# DIVERGES: what the analysis needs of upstream's record — the slot, the occurrence count and the
-# flags of a unification moved into the head. A variable is found by its `var_key` in
-# `compileInfo.vardefs` where upstream overwrites the variable's cell with a reference to the record.
-# `arg_value`, the term moved, is kept in `compileInfo.arg_value` by the argument's slot (this record
-# has no term type); `arg_pos` identifies the `=/2` goal moved (see `annotate_unify!`).
+# DIVERGES: what the analysis needs of upstream's record — the slot, the occurrence count, the
+# flags and the name. A variable is found by its `var_key` in `compileInfo.vardefs` where upstream
+# overwrites the variable's cell with a reference to the record, so there is no `address` or
+# `saved`: the variable of a slot is rebuilt from its key (`analyse_variables!`). `arg_value`, the
+# term moved, is kept in `compileInfo.arg_value` by the argument's slot (this record has no term
+# type); `arg_pos` identifies the `=/2` goal moved (see `annotate_unify!`). `name` is the atom's
+# name as a `Symbol` (`nothing`: upstream's 0).
 "The analysis of one variable of a clause (pl-comp.c `vardef`)."
 mutable struct VarDef
     index::Int          # slot assigned by the analysis
     offset::Int         # offset in environment frame
     times::Int          # occurrences
-    flags::UInt32       # VD_*: VD_ARGUMENT, VD_ARGUMENT_DONE
+    flags::UInt32       # VD_*
     arg_pos::Int        # the ordinal of the =/2 goal moved into the head (VD_ARGUMENT)
+    name::Union{Nothing, Symbol}    # name (if available)
 end
+
+# PORT: pl-comp.c VD_MAYBE_SINGLETON
+"`VarDef` flag: used once in a branch of `;`, not yet seen after it (pl-comp.c)."
+const VD_MAYBE_SINGLETON = UInt32(0x01)
+# PORT: pl-comp.c VD_SINGLETON
+"`VarDef` flag: introduced in the goal of `\\+` and used once there (pl-comp.c)."
+const VD_SINGLETON = UInt32(0x02)
+# PORT: pl-comp.c VD_MAYBE_UNBALANCED
+"`VarDef` flag: met in one branch of `;` and not in the other (pl-comp.c)."
+const VD_MAYBE_UNBALANCED = UInt32(0x04)
+# PORT: pl-comp.c VD_UNBALANCED
+"`VarDef` flag: unbalanced, and used after the branches (pl-comp.c)."
+const VD_UNBALANCED = UInt32(0x08)
 
 # PORT: pl-comp.c VD_ARGUMENT
 "`VarDef` flag: unified against an argument — a unification moved into the head (pl-comp.c)."
@@ -124,11 +187,11 @@ const VD_ARGUMENT = UInt32(0x10)
 const VD_ARGUMENT_DONE = UInt32(0x20)
 
 # PORT: pl-comp.c branch_var
-# DIVERGES: no `saved_flags` — the flags a branch saves are the warnings' (`VD_*`, not ported).
 "A variable met inside a branch of `;` or the goal of `\\+` (pl-comp.c `branch_var`)."
 mutable struct branch_var
     vdef::VarDef        # Definition record
     saved_times::Int    # Times saved from left branch
+    saved_flags::UInt32 # Flags saved from left branch
 end
 
 # PORT: pl-comp.c cutInfo
@@ -146,8 +209,12 @@ end
 # `branch_vars` is `nothing` or the vector upstream keeps in `branch_varbuf`, `literals` the
 # clause's literal table as it is built (since V1 L2), and `procedures` its procedure table (since V1). No
 # `clause` (the clause is created after the code), and the fields of subsystems not yet ported:
-# `islocal`, `subclausearg`, `argvars`, `argvar` (V9), `singletons` and the warnings,
-# `progress` (interrupts), `colon_context` and `at_context` (modules). `cut` is a clause-level cut
+# `islocal`, `subclausearg`, `argvars`, `argvar` (V9),
+# `progress` (interrupts), `colon_context` and `at_context` (modules). Since R1g: `singletons`,
+# `warning_list` (0: the caller wants no warnings) and `warnings` (`nothing` until the first one,
+# then in the order raised — see `c_warning`); `styleCheck` is upstream's GLOBAL
+# `debugstatus.styleCheck`, copied from the local data when the compilation starts, and
+# `variable_names` the value of `$variable_names` then (`get_variable_names`). `cut` is a clause-level cut
 # (`var` 0) until the control constructs set a local one (V9). `module_` is
 # upstream's `module`, a Julia keyword.
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
@@ -169,6 +236,11 @@ mutable struct compileInfo{T}
     av_unify::Int                                           # (=/2 goals the analysis met)
     cb_unify::Int                                           # (=/2 goals the compiler met)
     arg_value::Dict{Int, T}                                 # (vardef arg_value, by argument slot)
+    singletons::Int                                         # Marked singletons in disjunctions
+    styleCheck::Int                                         # (debugstatus.styleCheck)
+    warning_list::term_t                                    # see compiler_warning()
+    warnings::Union{Nothing, Vector{c_warning{T}}}
+    variable_names::Union{Nothing, T}                       # ($variable_names, resolved)
 end
 
 """
@@ -179,7 +251,8 @@ compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
     compileInfo{T}(
         m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
-        false, UInt32(0), 0, 0, Dict{Int, T}()                  # head_unify: compileClause's
+        false, UInt32(0), 0, 0, Dict{Int, T}(),                 # head_unify: compileClause's
+        0, 0, 0, nothing, nothing                               # no style checks, no warnings
     )
 
 # PORT: pl-comp.c pushBranchVar
@@ -187,8 +260,88 @@ compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
 function pushBranchVar!(ci::compileInfo, v::VarDef)::Nothing
     bvs = ci.branch_vars
     bvs === nothing && error("pushBranchVar: not in a branch")
-    push!(bvs, branch_var(v, 0))
+    push!(bvs, branch_var(v, 0, UInt32(0)))
     return nothing
+end
+
+# ── warnings (pl-comp.c), since R1g ─────────────────────────────────────────────────────────────
+# PORT: pl-comp.c compiler_warning
+# DIVERGES: the warning is named by a `Symbol` and its context arguments come as a vector of TERMS
+# (upstream: varargs of addresses) — for `always` the value, the predicate's name and the argument,
+# the first two made atoms by the caller (upstream makes them here, on the global stack, and can
+# return `GLOBAL_OVERFLOW`); an undefined name is an `error` (upstream: `sysError`). Nothing is
+# allocated that can fail, so it returns `true`.
+"""
+Record the warning `name`, with its context arguments `argv`, for the clause being compiled — when
+the caller of the compiler asked for warnings (`ci.warning_list`; pl-comp.c).
+"""
+function compiler_warning(ci::compileInfo{T}, name::Symbol, argv::Vector{T})::Bool where {T}
+    ci.warning_list == 0 && return true
+
+    k = findfirst(d -> d.name === name, cw_defs)
+    k === nothing && error("Undefined compiler warning: $name")
+    def = cw_defs[k]
+    @assert length(argv) == def.argc + (name === :always ? 2 : 0)
+
+    ws = ci.warnings
+    if ws === nothing
+        ws = c_warning{T}[]
+        ci.warnings = ws
+    end
+    push!(ws, c_warning{T}(def, length(ci.codes), argv))        # w->pc = entriesBuffer(&ci->codes)
+
+    return true
+end
+
+# PORT: pl-comp.c push_compiler_warnings
+# DIVERGES: the list is built from the terms (see `c_warning`) and put into the term reference; the
+# warnings are in the order raised already, where upstream walks a newest-first chain and conses
+# each in front (the same list). Nothing can overflow, so it returns `true`; no
+# `free_compiler_warnings` (Julia's GC).
+"Turn the compiler's warnings into a Prolog list in `ci.warning_list`: `[Name(Arg, …), …]` (pl-comp.c)."
+function push_compiler_warnings(ld::PL_local_data{T}, ci::compileInfo{T})::Bool where {T}
+    l = mk_nil(T)                                               # PL_put_nil(ci->warning_list)
+    ws = ci.warnings
+    if ws !== nothing
+        for k in length(ws):-1:1
+            cw = ws[k]
+            w = mk_expr(T, T[mk_sym(T, cw.def.name); cw.argv])  # PL_cons_functor_v(tmp, f, cw->av)
+            l = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), w, l])  # PL_cons_list(…)
+        end
+        ci.warnings = nothing                                   # free_compiler_warnings(ci)
+    end
+    ld.slots[ci.warning_list + 1] = l
+    return true
+end
+
+# PORT: pl-comp.c get_variable_names
+# DIVERGES: `$variable_names` is not a global variable here (see `PL_local_data`'s
+# `variable_names`): `compileClause` resolves its value into `ci.variable_names` (`nothing`:
+# `gvar_value` fails), a term without bindings as the clause is; a variable's record is found by its
+# key, upstream's `isVarInfo(*v)`.
+"Name the variable records that `\$variable_names` names (`[Name = Var, …]`); how many (pl-comp.c)."
+function get_variable_names(ci::compileInfo{T})::Int where {T}
+    found = 0
+
+    p = ci.variable_names
+    p === nothing && return found
+    while is_pair(p)                                            # isList(*p)
+        b = child(p, 2)
+        if _hasFunctor(b, mk_sym(T, :(=)), 2)                   # FUNCTOR_equals2
+            n = child(b, 2)
+            v = child(b, 3)
+            if kind(n) === SYM && kind(v) === VAR               # isAtom(*n) && isVarInfo(*v)
+                vd = get(ci.vardefs, var_key(v), nothing)
+                if vd !== nothing
+                    vd.name = Symbol(sym_text(n))
+                    found += 1
+                end
+            end
+        end
+        p = child(p, 3)
+    end
+
+    return found
 end
 
 # PORT: pl-comp.c is_portable_smallint
@@ -444,9 +597,23 @@ end
 "The representation error past MAX_VARIABLES (pl-comp.c `AVARS_MAX` → `compileClause`'s error)."
 _max_frame_size()::Union{} = error("compileClause: representation_error(max_frame_size)")
 
+# PORT: pl-comp.c in_branch
+# DIVERGES: the entries `from+1:to` of the branch buffer (0-based bounds, as the frame keeps them);
+# a variable is its record (upstream compares `vdef->address`).
+"Whether the variable of record `v` is among the branch variables `from+1:to` of `bvs` (pl-comp.c)."
+function in_branch(bvs::Vector{branch_var}, from::Int, to::Int, v::VarDef)::Bool
+    for i in (from + 1):to
+        if bvs[i].vdef === v
+            return true
+        end
+    end
+
+    return false
+end
+
 # PORT: pl-comp.c analyseVariables2
 # DIVERGES: no `islocal` (goal clauses: `subclausearg`, `argvars` and AV_SUBCLAUSE_LOOP come with
-# the meta-call, V9); no warnings (`VD_*` flags, `singletons`, `name`); no cycle,
+# the meta-call, V9); no cycle,
 # depth or interrupt check — a kernel term is a tree. A compound whose head is not a symbol has every
 # child as an argument (see `compileArgument!`). Past MAX_VARIABLES it throws, where upstream returns
 # `AVARS_MAX` and unwinds its stack and branch buffer: nothing outside `ci` has changed, and
@@ -478,7 +645,7 @@ function analyseVariables2!(
                 index = ci.arity + nvars
                 nvars += 1
             end
-            vd = VarDef(index, -1, 1, UInt32(0), 0)
+            vd = VarDef(index, -1, 1, UInt32(0), 0, nothing)
             ci.vardefs[var_key(head)] = vd
             if ci.branch_vars !== nothing
                 pushBranchVar!(ci, vd)
@@ -487,6 +654,21 @@ function analyseVariables2!(
             vd.times += 1
             if vd.times == 1 && ci.branch_vars !== nothing      # vd->times++ == 0
                 pushBranchVar!(ci, vd)
+            else
+                if (ci.styleCheck & VARBRANCH_CHECK) != 0
+                    if (vd.flags & VD_MAYBE_UNBALANCED) != 0 &&
+                        (vd.flags & VD_UNBALANCED) == 0
+                        vd.flags |= VD_UNBALANCED
+                        compiler_warning(ci, :unbalanced_var, T[head])  # vd->address
+                    end
+                end
+                if (ci.styleCheck & SEMSINGLETON_CHECK) != 0
+                    if (vd.flags & VD_MAYBE_SINGLETON) != 0
+                        @assert vd.times > 1
+                        vd.flags &= ~VD_MAYBE_SINGLETON     # Not a singleton
+                        ci.singletons -= 1
+                    end
+                end
             end
         end
         @goto resume
@@ -593,7 +775,9 @@ function analyseVariables2!(
         for i in (top.start_vars + 1):at_branch_vars            # reset the left branch's vars
             bv = bvs[i]
             bv.saved_times = bv.vdef.times
+            bv.saved_flags = bv.vdef.flags
             bv.vdef.times = 0
+            bv.vdef.flags = UInt32(0)
         end
         stack[end] = av_frame{T}(
             AV_SEMI_AFTER_RIGHT, top.base, top.off, 0, top.argn_next, 0, top.control,
@@ -609,10 +793,28 @@ function analyseVariables2!(
         for i in (top.start_vars + 1):at_end_vars
             bv = bvs[i]
             vd = bv.vdef
+            if (ci.styleCheck & VARBRANCH_CHECK) != 0
+                if bv.saved_times > 0 && vd.times == 0
+                    vd.flags |= VD_MAYBE_UNBALANCED             # in left, not in right
+                end
+                if vd.times > 0 && !in_branch(bvs, top.start_vars, top.at_branch_vars, vd)
+                    vd.flags |= VD_MAYBE_UNBALANCED             # in right, not in left
+                end
+            end
+            if (ci.styleCheck & SEMSINGLETON_CHECK) != 0
+                if bv.saved_times == 1 || vd.times == 1
+                    if (vd.flags & VD_MAYBE_SINGLETON) == 0
+                        vd.flags |= VD_MAYBE_SINGLETON          # Possible singleton
+                        ci.singletons += 1
+                    end
+                end
+            end
             if vd.times < bv.saved_times
                 vd.times = bv.saved_times
             end
+            vd.flags |= bv.saved_flags                          # TBD: Dubious
             bv.saved_times = 0
+            bv.saved_flags = UInt32(0)
         end
         if !top.obv
             ci.branch_vars = nothing                            # discardBuffer(ci->branch_vars)
@@ -620,7 +822,15 @@ function analyseVariables2!(
         pop!(stack)
         @goto resume
     end
-    # AV_NOT_AFTER (its VD_SINGLETON marking is a warning's)
+    # AV_NOT_AFTER
+    nbvs = ci.branch_vars::Vector{branch_var}
+    for i in (top.start_vars + 1):length(nbvs)                  # at_end_vars > top->start_vars
+        vd = nbvs[i].vdef
+        if vd.times == 1
+            vd.flags |= VD_SINGLETON
+            ci.singletons += 1
+        end
+    end
     if !top.obv
         ci.branch_vars = nothing
     else
@@ -682,8 +892,8 @@ function argMoveUnify!(ci::compileInfo{T}, vd::VarDef)::Union{Nothing, T} where 
 end
 
 # PORT: pl-comp.c analyse_variables
-# DIVERGES: `argvars` is 0 (it counts only for `islocal` goal clauses, V9), and there are no
-# `$variable_names` or warnings. Returns the frame size `nv`, which `compileClause` records as the
+# DIVERGES: `argvars` is 0 (it counts only for `islocal` goal clauses, V9). A warning's variable
+# (`vd->address`) is rebuilt from the slot's key. Returns the frame size `nv`, which `compileClause` records as the
 # clause's `variables` and `prolog_vars` (upstream sets them here, through `ci->clause`); past
 # MAX_VARIABLES it throws `representation_error(max_frame_size)`. The global data `gd` is passed in
 # for the body's control functors (see `analyseVariables2!`).
@@ -701,9 +911,13 @@ function analyse_variables!(
     argvars = 0
     body_voids = 0
     ci.branch_vars = nothing
+    ci.singletons = 0
     nvars = analyseVariables2!(gd, ci, head, 0, -1, false)
     if body !== nothing
         nvars = analyseVariables2!(gd, ci, body, nvars, arity, true)
+    end
+    if ci.warning_list != 0
+        get_variable_names(ci)
     end
     # upstream walks LD->comp.vardefs[n] for n in slot order; here the records are keyed by
     # `var_key`, so index them by slot first (a slot without a variable is `!vd->address`)
@@ -717,6 +931,20 @@ function analyse_variables!(
         slot_used[n + 1] || continue
         key = slot_key[n + 1]
         vd = ci.vardefs[key]
+        name = vd.name
+        if name !== nothing && (ci.styleCheck & SEMSINGLETON_CHECK) != 0
+            named = atom_is_named_var(codeunits(String(name)))
+            if (vd.flags & (VD_MAYBE_SINGLETON | VD_SINGLETON)) != 0 && named > 0
+                type = if (vd.flags & VD_MAYBE_SINGLETON) != 0
+                    :branch_singleton
+                else
+                    :negation_singleton
+                end
+                compiler_warning(ci, type, T[mk_var(T, key)])  # vd->address
+            elseif vd.times > 1 && named < 0
+                compiler_warning(ci, :multiton, T[mk_var(T, key)])
+            end
+        end
         if vd.times == 1                                       # ISVOID
             delete!(ci.vardefs, key)
             if n >= arity                                      # an argument keeps its slot
@@ -1175,17 +1403,24 @@ end
 
 # ── the type tests compiled inline (pl-comp.c, O_COMPILE_IS), V6b ────────────────────────────────
 # PORT: pl-comp.c always
-# DIVERGES: `val` is a Bool for `ATOM_true`/`ATOM_false`. NOT PORTED: the style check's
-# `compiler_warning` (`NOEFFECT_CHECK`) — the compiler has no warnings (see `compileClause`).
+# DIVERGES: `val` is a Bool for `ATOM_true`/`ATOM_false`; the warning's value and predicate name
+# are made atoms here (see `compiler_warning`), which cannot fail.
 """
     always(ld, ci, val, pred, arg) -> boolex_t
 
-A goal whose outcome is known at compile time (pl-comp.c): under `optimise` `I_TRUE` or `I_FAIL`;
-otherwise `BOOLEX_FALSE`, compile it as a call.
+A goal whose outcome is known at compile time (pl-comp.c): warned about (`always(Bool, Pred,
+Arg)`, under the `no_effect` style check); under `optimise` `I_TRUE` or `I_FAIL`; otherwise
+`BOOLEX_FALSE`, compile it as a call.
 """
 function always(
     ld::PL_local_data{T}, ci::compileInfo{T}, val::Bool, pred::String, arg::T
 )::boolex_t where {T}
+    if (ci.styleCheck & NOEFFECT_CHECK) != 0
+        compiler_warning(
+            ci, :always,
+            T[mk_sym(T, Symbol(val ? "true" : "false")), mk_sym(T, Symbol(pred)), arg]
+        )
+    end
     if ld.prolog_flag_optimise                                 # truePrologFlag(PLFLAG_OPTIMISE)
         Output_0!(ci, val ? I_TRUE : I_FAIL)
         return BOOLEX_TRUE
@@ -1315,8 +1550,7 @@ end
 # every other emission (`B_ARG_*`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`) throws `NotPortedError`
 # where upstream emits it, before anything is emitted (V9); each `false` is upstream's, and
 # compiles as a call. A void variable is
-# upstream's `isVar(*a)`: a variable the analysis gave no slot. NOT PORTED: the style check's
-# `compiler_warning` (`NOEFFECT_CHECK`) — the compiler has no warnings (see `compileClause`).
+# upstream's `isVar(*a)`: a variable the analysis gave no slot.
 
 "Whether `a` is a void variable — upstream's `isVar(*a)` in the compiler: a variable with no slot."
 _comp_void(ci::compileInfo, a)::Bool = kind(a) === VAR && isIndexedVarTerm(ci, a) < 0
@@ -1434,6 +1668,9 @@ function compileBodyEQ(
 )::boolex_t where {T}
     a1, a2 = child(arg, 2), child(arg, 3)
     if _comp_void(ci, a1) || _comp_void(ci, a2)                # Singleton == ?: always fail
+        if (ci.styleCheck & NOEFFECT_CHECK) != 0
+            compiler_warning(ci, :eq_singleton, T[a1, a2])
+        end
         if ld.prolog_flag_optimise
             skippedVar!(ci, a1)
             skippedVar!(ci, a2)
@@ -1445,11 +1682,16 @@ function compileBodyEQ(
     i1, i2 = _comp_ivar(ci, a1), _comp_ivar(ci, a2)
     if i1 >= 0 && i2 >= 0                                      # Var1 == Var2
         f1, f2 = isFirstVar(ci.used_var, i1), isFirstVar(ci.used_var, i2)
-        if (f1 || f2) && ld.prolog_flag_optimise
-            skippedVar!(ci, a1)
-            skippedVar!(ci, a2)
-            Output_0!(ci, i1 == i2 ? I_TRUE : I_FAIL)
-            return BOOLEX_TRUE
+        if f1 || f2
+            if (ci.styleCheck & NOEFFECT_CHECK) != 0
+                compiler_warning(ci, :eq_vv, T[a1, a2])
+            end
+            if ld.prolog_flag_optimise
+                skippedVar!(ci, a1)
+                skippedVar!(ci, a2)
+                Output_0!(ci, i1 == i2 ? I_TRUE : I_FAIL)
+                return BOOLEX_TRUE
+            end
         end
         f1 && Output_1!(ci, C_VAR, VAROFFSET(i1))
         f2 && Output_1!(ci, C_VAR, VAROFFSET(i2))
@@ -1481,6 +1723,9 @@ function compileBodyNEQ(
 )::boolex_t where {T}
     a1, a2 = child(arg, 2), child(arg, 3)
     if _comp_void(ci, a1) || _comp_void(ci, a2)                # Singleton \== ?: always true
+        if (ci.styleCheck & NOEFFECT_CHECK) != 0
+            compiler_warning(ci, :neq_singleton, T[a1, a2])
+        end
         if ld.prolog_flag_optimise
             skippedVar!(ci, a1)
             skippedVar!(ci, a2)
@@ -1492,11 +1737,16 @@ function compileBodyNEQ(
     i1, i2 = _comp_ivar(ci, a1), _comp_ivar(ci, a2)
     if i1 >= 0 && i2 >= 0                                      # Var1 \== Var2
         f1, f2 = isFirstVar(ci.used_var, i1), isFirstVar(ci.used_var, i2)
-        if (f1 || f2) && ld.prolog_flag_optimise
-            skippedVar!(ci, a1)
-            skippedVar!(ci, a2)
-            Output_0!(ci, i1 == i2 ? I_FAIL : I_TRUE)
-            return BOOLEX_TRUE
+        if f1 || f2
+            if (ci.styleCheck & NOEFFECT_CHECK) != 0
+                compiler_warning(ci, :neq_vv, T[a1, a2])
+            end
+            if ld.prolog_flag_optimise
+                skippedVar!(ci, a1)
+                skippedVar!(ci, a2)
+                Output_0!(ci, i1 == i2 ? I_FAIL : I_TRUE)
+                return BOOLEX_TRUE
+            end
         end
         f1 && Output_1!(ci, C_VAR, VAROFFSET(i1))
         f2 && Output_1!(ci, C_VAR, VAROFFSET(i2))
@@ -1785,7 +2035,9 @@ end
 # PORT: pl-comp.c compileClause
 # DIVERGES: the body is `nothing` for a fact (upstream's NULL body; a body `true` makes one too, as
 # upstream); the body's goals are plain goals and conjunctions (see `compileBody!`); no SSU,
-# warnings, flags or resource limits; a RULE of a multifile predicate is refused (its body would
+# flags or resource limits; `warnings` (since R1g) is upstream's term reference, 0 for a caller
+# that wants none (the six-argument method), and the style checks and `$variable_names` are read
+# from `ld` here (see `compileInfo`); a RULE of a multifile predicate is refused (its body would
 # need `I_CONTEXT`: modules are not ported), and `P_MFCONTEXT` is never set; the clause is returned
 # where upstream stores it through `cp` — `nothing` for upstream's failure, its error raised with
 # `PL_error` as upstream raises it (since V9c) — created at generation 0 (`assertDefinition!` sets
@@ -1800,6 +2052,7 @@ end
 # `getProcDefinition(proc)` is `proc.definition`: no thread-local predicates.
 """
     compileClause(gd, ld, head, body, proc, m) -> Clause, or nothing
+    compileClause(gd, ld, head, body, proc, m, warnings) -> Clause, or nothing
 
 Compile the clause `head :- body` (`body` `nothing` or `true` for a fact) of procedure `proc` into
 module `m`, in the database whose global data is `gd`, under the flags of local data `ld`
@@ -1809,14 +2062,21 @@ head code argument by argument, then a fact's `I_EXITFACT`, or a rule's `I_ENTER
 table its call operands index (V1). A body goal that is not callable raises
 `type_error(callable, Body)` — the WHOLE body, as swipl reports it (probed in 10.1.16) — and a
 goal past `MAXARITY` `representation_error(max_procedure_arity)`, with `PL_error` in `ld`: the
-result is then `nothing`.
+result is then `nothing`. With a term reference `warnings`, it is set to the list of the
+compiler's warnings for the clause (`[]`: none).
 """
 function compileClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
-    proc::Procedure{T}, m::module_t{T}
+    proc::Procedure{T}, m::module_t{T}, warnings::term_t
 )::Union{Nothing, Clause{T}} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
     ci = compileInfo{T}(def.arity, m, proc)
+    ci.styleCheck = ld.debugstatus_styleCheck                  # (debugstatus.styleCheck)
+    ci.warning_list = warnings
+    ci.warnings = nothing
+    if warnings != 0 && ld.variable_names != 0                 # (gvar_value(ATOM_dvariable_names))
+        ci.variable_names = resolve_term(ld, ld.slots[ld.variable_names + 1])
+    end
     # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
     ci.head_unify = (def.flags & P_DYNAMIC) == 0 && ld.prolog_flag_optimise_unify
     rule = _is_rule_body(gd, body)
@@ -1849,12 +2109,20 @@ function compileClause(
         flags = UNIT_CLAUSE
         Output_0!(ci, I_EXITFACT)                              # fact (for decompiler)
     end
+    if ci.warning_list != 0 && !push_compiler_warnings(ld, ci)
+        return nothing                                         # goto exit_fail
+    end
     flags |= ci.flags                                          # CL_HEAD_TERMS, set on ci->clause
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), flags, ci.codes, ci.literals,
         ci.procedures, UInt32(0), UInt32(0), UInt32(0)     # line_no, source_no, owner_no
     )
 end
+
+compileClause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
+    proc::Procedure{T}, m::module_t{T}
+) where {T} = compileClause(gd, ld, head, body, proc, m, 0)
 
 # ── a definition's Prolog reference (pl-comp.c) ─────────────────────────────────────────────────
 # PORT: pl-comp.c unify_functor
@@ -1959,8 +2227,11 @@ end
 # `redefineProcedure`, the source file's current procedure. NOT PORTED: `PL_CREATE_INCREMENTAL`
 # and `PL_CREATE_THREAD_LOCAL` (assert/2's `flags`: no tabling, no threads); the module's assert
 # hook (`O_PROLOG_HOOK`: `module_t` has no `hook`); the `CHECK_INTERRUPT` retry (no signal
-# handling); system mode (no boot compilation); the compiler's warnings (`compileClause` makes
-# none: no singleton or branch analysis); transactions (`assertDefinition!`'s, not ported there).
+# handling); system mode (no boot compilation); transactions (`assertDefinition!`'s, not ported
+# there). THE COMPILER'S WARNINGS (since R1g): asked for when loading (`owner`), and printed after
+# the clause is added — `compiler_warnings(Clause, Warnings)`, whose `Clause` is an UNBOUND
+# VARIABLE here, where upstream passes the clause reference: the kernel has no clause references as
+# terms (`'$record_clause'/4`), and boot/messages.pl ignores the argument.
 """
     assert_term!(gd, ld, term, module_, where_, owner, loc, flags) -> Clause, or nothing
     assert_term!(gd, ld, term, where_) -> Clause, or nothing
@@ -1983,7 +2254,7 @@ function assert_term!(
     tmp == 0 && return nothing
     head = tmp + 1
     body = tmp + 2
-    # warnings = (owner ? tmp+3 : 0): the compiler makes none
+    warnings = owner !== nothing ? tmp + 3 : 0
 
     module_ == 0 && (module_ = source_module)
 
@@ -2015,7 +2286,8 @@ function assert_term!(
         return nothing
     end
     clause = compileClause(
-        gd, ld, resolve_term(ld, h), resolve_term(ld, b), proc, gd.modules[module_]
+        gd, ld, resolve_term(ld, h), resolve_term(ld, b), proc, gd.modules[module_],
+        warnings
     )
     clause === nothing && return nothing
     def = proc.definition                                       # getProcDefinition(proc)
@@ -2049,8 +2321,27 @@ function assert_term!(
             of.current_procedure = proc
         end
 
-        cref = assertProcedureSource(gd, of, proc, clause)      # (no compiler warnings)
-        return cref.clause
+        cref = assertProcedureSource(gd, of, proc, clause)
+        clause = cref.clause
+
+        if warnings != 0 && !PL_get_nil(ld, warnings)
+            fid = PL_open_foreign_frame(ld)
+            cl = PL_new_term_ref(ld)                            # PL_put_clref(cl, clause): unbound
+            rc = printMessage(
+                ld, :warning,
+                mk_expr(
+                    T,
+                    T[
+                        mk_sym(T, :compiler_warnings),
+                        ld.slots[cl + 1],
+                        ld.slots[warnings + 1]
+                    ]
+                )
+            )
+            PL_discard_foreign_frame(ld, fid)
+            rc || return nothing
+        end
+        return clause
     end
 
     # assert[az]/1

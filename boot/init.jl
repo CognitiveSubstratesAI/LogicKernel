@@ -22,9 +22,11 @@
 # DIVERGES: one file, consulted into `user`, from its path (no search, no extensions, no
 # `load_files/2` options, no "already loaded" check: a reconsult is refused by `startConsult`); the
 # source file's name is the absolute path, as swipl's id is; the loop is `'$consult_file'`'s —
-# `'$start_consult'`, read a clause (`read_clause`), compile it (`'$compile_term'`), each with its
-# bindings undone after it (the failure-driven loop), `'$end_consult'`, the stream closed whatever
-# happens (`setup_call_cleanup`). An exception that is not `error(_,_)` ENDS the load, as in swipl
+# `'$start_consult'`, read a clause (`read_clause`, with `variable_names(Bindings)` — of
+# `'$term_in_file'`'s options the one the kernel's reader honours), `b_setval('$variable_names',
+# Bindings)` (the local data's `variable_names`: the compiler's warnings name their variables from
+# it), compile it (`'$compile_term'`), each with its bindings undone after it (the failure-driven
+# loop), `'$end_consult'`, the stream closed whatever happens (`setup_call_cleanup`). An exception that is not `error(_,_)` ENDS the load, as in swipl
 # (consult/1 raises it); it is returned, not raised.
 """
     load_file!(gd, ld, path) -> (status, ball, messages)
@@ -57,17 +59,31 @@ function load_file!(
         while true                                              # '$load_file'/… loop
             fid = PL_open_foreign_frame(ld)
             t = PL_new_term_ref(ld)
-            ok = read_clause(gd, ld, s, t, 0)
+            bindings = PL_new_term_ref(ld)
+            options = PL_new_term_ref(ld)                       # [variable_names(Bindings)]
+            ld.slots[options + 1] = mk_expr(
+                T,
+                T[
+                    mk_sym(T, LIST_CONS_NAME),
+                    mk_expr(T, T[mk_sym(T, :variable_names), ld.slots[bindings + 1]]),
+                    mk_nil(T)
+                ]
+            )
+            ok = read_clause(gd, ld, s, t, options)
+            ld.variable_names = bindings                        # b_setval('$variable_names', …)
             w = deRef(ld, ld.slots[t + 1])
             if !ok || (kind(w) === SYM && sym_key(w) == sym_key(mk_sym(T, :end_of_file)))
+                ld.variable_names = 0
                 PL_discard_foreign_frame(ld, fid)
                 break
             end
             if !valid_term(ld, w)                               # '$valid_term'(Term): `[]`
+                ld.variable_names = 0
                 PL_discard_foreign_frame(ld, fid)
                 continue
             end
             r, b = compile_term!(gd, ld, t, file)
+            ld.variable_names = 0                               # (b_setval: undone on backtracking)
             PL_discard_foreign_frame(ld, fid)                   # the failure-driven loop
             if r === :exception
                 status, ball = :exception, b
@@ -75,6 +91,7 @@ function load_file!(
             end
         end
     finally
+        ld.variable_names = 0
         ld.modules_source = old_source
         sf2 = lookupSourceFile(gd, file, false)::SourceFile{T} # '$end_consult'(Id)
         endConsult(sf2)

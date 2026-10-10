@@ -3529,6 +3529,26 @@ function warn_multiton(name::AbstractVector{UInt8})::Bool
     return false
 end
 
+# PORT: pl-read.c atom_is_named_var
+# DIVERGES: the name's bytes (UTF-8), as `warn_singleton`'s — upstream has one branch for a
+# single-byte name and one for a wide one, the same tests on the character.
+"""
+What a variable named `name` is to the style checks (pl-read.c): 1 a properly named variable, 0
+neutral (`_<digit>`), -1 anonymous (`_<Upper>`, `__<lower>`, `_`).
+"""
+function atom_is_named_var(name::AbstractVector{UInt8})::Int       # see warn_singleton()
+    b = var_name_body(name)
+    prefixed = b != 1
+    _cbyte(name, b) != Int('_') && return 1
+    if _cbyte(name, b + 1) != 0
+        _cbyte(name, b + 1) == Int('_') && return -1
+        _, c = utf8_get_char(name, b + 1)
+        isDigitW(c) && return 0
+        !prefixed && !PlUpperW(c) && return 1
+    end
+    return -1
+end
+
 # PORT: pl-read.c is_singleton
 # DIVERGES: no quasi-quotation scan (a quasi-quotation is refused before it is collected).
 "Is `var` a singleton (or multiton) of the kind `type` asks (pl-read.c)?"
@@ -3633,12 +3653,29 @@ function set_module_read_data(rd::read_data{T}, m::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-read.c read_clause_options
+"read_clause/3's options, in upstream's order (pl-read.c)."
+const read_clause_options = (
+    PL_option_t(:variable_names, OPT_TERM),
+    PL_option_t(:term_position, OPT_TERM),
+    PL_option_t(:subterm_positions, OPT_TERM),
+    PL_option_t(:process_comment, OPT_BOOL),
+    PL_option_t(:comments, OPT_TERM),
+    PL_option_t(:syntax_errors, OPT_ATOM),
+    PL_option_t(:unicode_atoms, OPT_ATOM),
+    PL_option_t(:blob, OPT_ATOM),
+    PL_option_t(:var_prefix, OPT_TERM)
+)
+
 # PORT: pl-read.c read_clause
-# DIVERGES: the read options (`PL_scan_options`: variable names, positions, comments, syntax
-# errors, …) are NOT PORTED — `options` 0 only, else refused; so no comment hook
-# (`prolog:comment_hook/3` is not defined), no term position, `syntax_errors(dec10)`; a stream
-# whose unquoted atoms must be NFC is refused (`ensure_unicode_normalize_hook`: no normalizer). The
-# foreign frame is closed before returning, where upstream leaves it to its caller's.
+# DIVERGES: of the read options (`PL_scan_options`), `variable_names` and `syntax_errors` are
+# honoured (since R1g); the others the kernel cannot honour are REFUSED (`NotPortedError`), as
+# `read_term_from_stream`'s: `term_position`, `subterm_positions`, `comments`,
+# `process_comment(true)` (term positions and the comment hook: R2 — `prolog:comment_hook/3` is not
+# defined, so `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the
+# NFC hook), `blob` (no blobs); a stream whose unquoted atoms must be NFC is refused
+# (`ensure_unicode_normalize_hook`: no normalizer). The foreign frame is closed before returning,
+# where upstream leaves it to its caller's.
 """
 Read a clause from `s` into term reference `term`, as consulting a file does (pl-read.c): in the
 source module, its singletons reported, a syntax error reported and the next clause read.
@@ -3646,14 +3683,55 @@ source module, its singletons reported, a syntax error reported and the next cla
 function read_clause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, term::term_t, options::term_t
 )::Bool where {T}
-    options == 0 ||
-        throw(NotPortedError{T}(mk_sym(T, :read_clause), "read_clause/3's options", "R1e"))
-
     fid = PL_open_foreign_frame(ld)
     fid == 0 && return false
 
     while true                                      # retry:
         rd = init_read_data(gd, ld, s)
+        syntax_errors = :dec10                      # ATOM_dec10
+
+        if options != 0
+            vals = PL_scan_options(ld, options, 0, "read_option", read_clause_options)
+            if vals === nothing
+                PL_close_foreign_frame(ld, fid)
+                return false
+            end
+            rd.varnames = something(vals[1], 0)::Int
+            tpos = something(vals[2], 0)::Int
+            rd.subtpos = something(vals[3], 0)::Int
+            process_comment = vals[4] === nothing ? false : vals[4]::Bool
+            opt_comments = something(vals[5], 0)::Int
+            vals[6] === nothing || (syntax_errors = Symbol(sym_text(vals[6]::T)))
+            opt_unicode_atoms = vals[7]
+            opt_blobs = vals[8]
+            varprefix = something(vals[9], 0)::Int
+
+            for (v, what) in (
+                (tpos, "term_position"), (rd.subtpos, "subterm_positions"),
+                (opt_comments, "comments"), (varprefix, "var_prefix")
+            )
+                if v != 0
+                    PL_close_foreign_frame(ld, fid)
+                    throw(
+                        NotPortedError{T}(
+                            ld.slots[v + 1], "read_clause's $what option",
+                            "R2 (term positions)"
+                        )
+                    )
+                end
+            end
+            if process_comment || opt_blobs !== nothing || opt_unicode_atoms !== nothing
+                PL_close_foreign_frame(ld, fid)
+                throw(
+                    NotPortedError{T}(
+                        mk_sym(T, :read_clause),
+                        "read_clause's process_comment(true), blob or unicode_atoms option",
+                        "R2 (the comment hook, the NFC hook); no blobs"
+                    )
+                )
+            end
+        end
+
         if rd.unicode_atoms == S_UATOMS_NFC
             PL_close_foreign_frame(ld, fid)
             throw(
@@ -3664,7 +3742,7 @@ function read_clause(
         end
 
         set_module_read_data(rd, ld.modules_source)
-        rd.on_error = :dec10                        # syntax_errors = ATOM_dec10
+        rd.on_error = syntax_errors
         rd.singles = (rd.styleCheck & SINGLETON_CHECK) != 0 ? _SINGLES_REPORT : 0
         rval = read_term(term, rd)
         if !rval && rd.has_exception && reportReadError(rd)

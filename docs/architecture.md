@@ -369,7 +369,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/core_lang/test_op_swipl.jl` | R1b's gate: the operators visible from `user` as a set against swipl's `current_op/3` (boot's `$` the one difference), `currentOperator` and `priorityOperator` by kind, `op/3`'s outcomes and errors identical to swipl's, and a cancelled kind hiding `system`'s | — |
 | `test/core_lang/test_read_swipl.jl` | R1c's reader gate: `atom_number/2` on every number syntax and generated texts, `raw_read` against `'$raw_read'/2`, raw syntax errors and their `string(Text, CharNo)` against `term_to_atom/2`, escapes, and the tokens (`[]` vs `'[]'`, `{}`, strings, `0'c`, `1r3`); `const_nan` is `str_number`'s `1.5NaN`; an atom holding character 0 refused | — |
 | `test/files/test_stream_swipl.jl` | R1c's stream gate: memory and string streams round trip, peek and push-back, a Julia IO; the position record (character, line, line position, byte) against swipl's `stream_position_data/3` on `open_string/2` | — |
-| `test/files/test_load_swipl.jl` | R1f's loader gate: 12 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
+| `test/files/test_load_swipl.jl` | R1f's loader gate: 13 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`; the compiler's warnings among them since R1g), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
 | `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; `protocol` pinned (swipl aborts); portray_goal refused; the host's streams, a write error, the variable_names bindings undone | — |
@@ -405,6 +405,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/db/test_update_view_gc.jl` | the logical update view under clause GC: an enumeration still sees a clause retracted and collected after it started — pinned and live against swipl | — |
 | `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1's fix pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
 | `test/compile/test_head_code_swipl.jl` | live differential: compiled heads are instruction-for-instruction swipl's `vm_list`, frame-slot operands included (slots compacted past voids above the arity, 2026-10-03), with three hand-pinned heads and their frame sizes | — |
+| `test/compile/test_compiler_warnings_swipl.jl` | R1g's gate: the compiler's warnings of 33 pinned + 3,000 random clauses (control constructs: the analysis; inline goals: the whole compiler), in two style passes, compared with swipl's `compiler_warnings/2` in order and by variable name | — |
 | `test/compile/test_analyse_variables_swipl.jl` | live differential of the variable analysis of clauses WITH A BODY (V1): head code to `i_enter`, the slot of every body variable occurrence (swipl's `clause_vm/2`), and the frame size (the `$cont$` frame a `shift/1` captures), on 600 random and 18 pinned clauses | — |
 | `test/compile/code_testlib.jl` | how both code differentials write an instruction, the kernel's and swipl's alike: operands by meaning, literals by value | — |
 | `tools/githooks/commit-msg` | git's commit-msg hook: a commit message must start with a category (`ADDED:` … `UPSTREAM:`); installed with `git config core.hooksPath tools/githooks` | — |
@@ -584,6 +585,7 @@ graph LR
     pl_comp --> os_pl_text
     pl_comp --> pl_proc
     pl_comp --> pl_srcfile
+    pl_comp --> pl_read
     pl_variant --> term_interface
     pl_variant --> default_term
     pl_variant --> pl_incl
@@ -1455,7 +1457,8 @@ implementations** (src/pl-comp.jl `analyseVariables2!`, `analyse_variables!`; pl
     the kernel compiles what swipl compiles with `optimise_unify` false. **Probed for V9:** an
     `assertz` to a FRESH predicate moves the unification too (`assertz((d1(X) :- X = f(Y), q(Y)))`
     compiles `h_functor(f/1)`), so the predicate's state at compile time decides it, not "dynamic";
-  * warnings: singletons, multitons and unbalanced branch variables (`VD_*` flags, `singletons`).
+  * warnings: singletons, multitons and unbalanced branch variables (`VD_*` flags, `singletons`)
+    — PORTED since R1g (below).
 * **Pinned — test/compile/test_analyse_variables_swipl.jl (new, ORIGINAL, term-generic), live
   against swipl 10.1.16:**
   * the head code to `i_enter`, written by test/compile/code_testlib.jl, which the head-code
@@ -1511,6 +1514,59 @@ src/pl-funct.jl, src/pl-global.jl).
   are elided when only `sym_key` is used, and takes about 8 ns, against about 2 ns to read the field.
   That saving is below the case's noise (about 1.5 µs). The change stands on upstream's timing and on
   there being one set per database, not on speed.
+
+**R1g — the compiler's warnings: BUILT (2026-10-10)** (port_inventory row R1, its split;
+src/pl-comp.jl, src/pl-read.jl, boot/init.jl, pl-global.jl, pl-incl.jl).
+* **Ported (C):** pl-comp.c `cw_def`/`cw_defs`, `c_warning`, `compiler_warning`,
+  `push_compiler_warnings`, `get_variable_names`, `in_branch`; the `VD_MAYBE_SINGLETON`,
+  `VD_SINGLETON`, `VD_MAYBE_UNBALANCED`, `VD_UNBALANCED` flags and `branch_var.saved_flags` in
+  `analyseVariables2!` (a variable met again, the left branch's reset, the join after the right
+  branch, the exit of `\+`), the warnings loop of `analyse_variables!`; the `no_effect` warnings
+  of `compileBodyEQ`, `compileBodyNEQ` and `always`; `compileClause`'s `warnings` argument and
+  `assert_term!`'s `compiler_warnings(Clause, Warnings)` message. pl-read.c `atom_is_named_var`,
+  `read_clause_options` and read_clause's option scan (`variable_names`, `syntax_errors`).
+  pl-incl.h `VARBRANCH_CHECK`. boot/init.pl: `'$term_in_file'` reads with
+  `variable_names(Bindings)` and sets `$variable_names`.
+* **Ten warnings are raised upstream, nine by default:** `branch_singleton`,
+  `negation_singleton`, `multiton` (the analysis), `eq_singleton`, `eq_vv`, `neq_singleton`,
+  `neq_vv`, `always` (the body compiler), and `unbalanced_var` under
+  `style_check(+var_branches)`. `unify_singleton` is commented out upstream; `nonvar_false`,
+  `integer_false` and `integer_true` are declared and never raised.
+* **DIVERGES, each marked at its function:**
+  * `$variable_names` is a GLOBAL VARIABLE upstream (`b_setval`, pl-gvar.c). The kernel has no
+    global variables, so it is a term reference of the local data (`variable_names`, 0: none)
+    that the loader sets per clause; `compileClause` resolves its value into the compilation.
+  * `compiler_warnings(Clause, Warnings)`: `Clause` is an UNBOUND VARIABLE, where upstream passes
+    the clause reference. The kernel has no clause references as terms (`'$record_clause'/4`);
+    boot/messages.pl ignores the argument. To revisit with clause references (R2).
+  * the style checks are a field of the compilation (`styleCheck`), copied from the local data
+    when it starts, where upstream reads the global `debugstatus.styleCheck` at each test;
+  * a warning's arguments are terms, kept in the order raised (upstream: addresses, in a
+    newest-first chain that `push_compiler_warnings` reverses); a warned variable is rebuilt from
+    its slot's key (`vd->address`).
+* **NOT REACHABLE THROUGH THE LOADER YET:** a clause whose body has `;`, `->`, `*->` or `\+` is
+  analysed — its warnings are computed — and then refused by the body compiler (V9: control
+  constructs). So `branch_singleton`, `negation_singleton` and `unbalanced_var` are gated at the
+  ANALYSIS (below), and reach a user when V9 compiles those bodies; nothing else is needed then.
+* **NOT PORTED:** read_clause's other options (`term_position`, `subterm_positions`, `comments`,
+  `process_comment(true)`, `var_prefix`, `unicode_atoms`, `blob`: refused, as read_term's);
+  `read_clause/3` as a predicate and `style_check/1` (R2: the stream table, boot's flags).
+* **Gates:** test/compile/test_compiler_warnings_swipl.jl (new): 33 pinned clauses + 1,500
+  random clauses nesting `,`, `;`, `->`, `*->`, `\+` (the analysis) + 1,500 random conjunctions
+  of `==`, `\==`, `=`, `var`, `nonvar`, nine type tests and user goals (the whole compiler), each
+  in two passes (default style; with `var_branches`), the warnings compared with swipl's IN ORDER
+  and BY VARIABLE NAME: 0 diverging on three term types — always 1,876, branch_singleton 1,316,
+  eq_singleton 754, eq_vv 170, multiton 3,506, negation_singleton 296, neq_singleton 716, neq_vv
+  128, unbalanced_var 360. test/files/test_load_swipl.jl: the named exclusion is LIFTED — the 12
+  `compiler_warnings/2` messages of its corpus (a new case file among them) are compared as the
+  other messages are, in their place between the reader's singletons and the next clause.
+* **Mutants: 40 of 40 caught** (the workspace's R1g_mutation/README.md): the flags at every
+  point they are set, cleared, saved and restored, each name class, each body-compiler warning,
+  the list's order, the message, the loader's and the reader's names.
+* **Bench:** allocation counts unchanged in every program case (nreverse 2941, compare/3 body
+  7000, derive 527, qsort 2733, poly_10 188268); `compileClause rule` 40 allocations as before,
+  3248 bytes (+80: the compilation's five new fields and a name per variable record),
+  `compileClause fact` 24 / 1664 (+16). The machine was not quiet, so no ratio is quoted.
 
 **R1e (canonical, read_term_from_atom) — write_canonical/1,2 and read_term_from_atom/3: BUILT
 (2026-10-10)** (port_inventory row R1, its split — the LAST piece of R1e; src/pl-prims.jl,
@@ -1704,10 +1760,9 @@ pl-incl.jl, pl-global.jl, pl-ext.jl; tools/bench.jl). Decided by the user, 2026-
   V9), a reconsult, `abolishProcedure` (a second file — or a file after an `assertz` — defining a
   predicate: after swipl's `redefined_procedure` warning), `as/2` declarations, thread-local, det
   and clausable attributes.
-* **NOT PORTED:** the compiler's own warnings (`compiler_warnings(Clause, …)`: pl-comp.c's variable
-  analysis, `VD_*` — a multiton `v(_A, _A)`, a singleton in one branch of a disjunction); a named,
-  counted exclusion in the differential — PLANNED as R1g (docs/port_inventory.md, R1 row): the
-  warnings users see most.
+* **The compiler's own warnings** (`compiler_warnings(Clause, …)`: pl-comp.c's variable
+  analysis, `VD_*` — a multiton `v(_A, _A)`, a singleton in one branch of a disjunction) were a
+  named, counted exclusion in the differential here; PORTED in R1g (above), the exclusion lifted.
 * **The round trip's exclusions, each with its cause:** a float — the writer's floats were R1e's
   rest (LIFTED since R1e (floats)); #11, #12 — upstream defects, ported as is; a text holding the character 0 — a KERNEL GAP in
   the term interface (an atom is named by a Julia `Symbol`, which cannot hold `\0`; swipl writes

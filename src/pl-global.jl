@@ -180,7 +180,10 @@ end
 # (`_debugstatus.styleCheck`, pl-init.c's default), `modules.source` (a module index: `user`), and
 # `messages` — no upstream field: `printMessage` appends `(kind, message)` there, as print_message/2
 # (boot/messages.pl, R2) is not ported; the loader returns them. Since R1e's write/1 family:
-# `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
+# `variable_names` (since R1g) — upstream's GLOBAL VARIABLE `$variable_names`, which boot/init.pl
+# sets to the bindings of the clause being loaded (`b_setval`) and the compiler reads for its
+# warnings (`get_variable_names`); the kernel has no global variables (pl-gvar.c), so it is a term
+# reference here, 0 while there is no such variable. `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
 # the process's stdin, stdout and stderr when first asked for (`initIO`, src/os/pl-file.jl), or set
 # by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`
 # flag), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and three
@@ -268,6 +271,7 @@ mutable struct PL_local_data{T}
     prolog_flag_character_escapes_unicode::Bool                 # PLFLAG_CHARESCAPE_UNICODE
     numbervars_visited::IdDict{T, Nothing}                      # (numberVars' visited marks)
     numbervars_made::IdDict{T, Nothing}                         # (the '$VAR's a numberVars made)
+    variable_names::Int                                         # (gvar `$variable_names`: a term_t)
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -318,7 +322,8 @@ function PL_local_data{T}() where {T}
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
         true,                                   # character_escapes_unicode: true
-        IdDict{T, Nothing}(), IdDict{T, Nothing}()
+        IdDict{T, Nothing}(), IdDict{T, Nothing}(),
+        0                                       # $variable_names: no such global variable
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
