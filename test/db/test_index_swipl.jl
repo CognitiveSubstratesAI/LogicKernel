@@ -4,8 +4,9 @@
 # THREE JUDGES:
 #   1. THE CONTRACT (always runs): for every call, the answers through the index equal the answers
 #      of a scan of every clause — in order, duplicates kept. Indexing never changes answers.
-#   2. SWI-Prolog/swipl-devel#1537, PINNED (always runs): SWI's H_VOID_N defect is FIXED in the kernel (user,
-#      2026-10-02) — its reproducers get the indexes swipl 10.1.16 fails to build.
+#   2. SWI-Prolog/swipl-devel#1537 (always runs): an argument right after a run of void head
+#      arguments is indexed — its reproducers get their indexes (upstream defect, fixed in 0728e8c;
+#      the kernel had fixed it on 2026-10-02).
 #   3. LIVE swipl: random fact programs (static and dynamic, unique / few / variable-heavy /
 #      compound / deep arguments) and a random sequence of calls — on dynamic predicates
 #      interleaved with retract/1 (first answer), retractall/1 and garbage_collect_clauses, swipl's
@@ -25,8 +26,6 @@ include(joinpath(@__DIR__, "index_testlib.jl"))
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
-include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
-const _SYNC_FILE = "db/test_index_swipl.jl" # as the sync's list names this file
 const _X = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _xs(n) = lk_sym(_X, Symbol(n))
 _xg(v::Int) = lk_gnd(_X, v)
@@ -554,13 +553,13 @@ const _XSEED = 20261002
         @info "index differential mutations: $(count(l -> !endswith(l, " none"), ret)) of $(length(ret)) retracts removed a clause; $(count(l -> endswith(l, " retractall"), ours.lines)) retractalls; $(count(l -> endswith(l, " gc"), ours.lines)) collections"
     end
 
-    @testset "SWI-Prolog/swipl-devel#1537 pinned: the H_VOID_N defect is fixed" begin
+    @testset "an argument right after a run of voids is indexed (swipl-devel#1537)" begin
         hv(pa) = [i[2:4] for i in ours.idx if i[1] == pa]
-        @test hv("hv_p/3") == [([3], Int[], 100.0f0)]  # p(_,_,a50): indexed (swipl 10.1.16: none)
+        @test hv("hv_p/3") == [([3], Int[], 100.0f0)]  # p(_,_,a50): indexed
         @test hv("hv_q/3") == [([3], Int[], 100.0f0)]
         @test hv("hv_p4/4") == [([4], Int[], 100.0f0)]
         @test sort(hv("hv_q4/4")) ==                   # q4(_,_,a50,b50) first, then q4(_,_,_,b50):
-            [([3], Int[], 100.0f0), ([4], Int[], 100.0f0)]  # (swipl: none, and stays so)
+            [([3], Int[], 100.0f0), ([4], Int[], 100.0f0)]
         # the fix only narrows: p(_,_,a50) is now deterministic, with the same single answer
         k = findfirst(==("hv_p/3"), ours.goalpred)
         @test [l for l in ours.lines if startswith(l, "$k ")] ==
@@ -570,7 +569,7 @@ const _XSEED = 20261002
     end
 
     if _XSWIPL !== nothing
-        @testset "identical to swipl (but where the kernel fixes SWI-Prolog/swipl-devel#1537)" begin
+        @testset "identical to swipl" begin
             theirs = _xswipl(program)
             # every call: the same answers, in order
             d = _xline_diff(_xstrip_det(ours.lines), _xstrip_det(theirs.lines))
@@ -602,18 +601,21 @@ const _XSEED = 20261002
             exact = count(((o, t),) -> o[4] == t[4], pairs)
             @test length(pairs) == length(ti) > 80
             @test exact >= 0.9 * length(pairs)
-            # the defect is still swipl's: the day swipl indexes these, revisit SWI-Prolog/swipl-devel#1537
-            @test !any(i -> i[1] in ("hv_p/3", "hv_q4/4"), theirs.idx) ||
-                sync_mismatch(_SYNC_FILE, "swipl builds no index for hv_p/3 and hv_q4/4")
-            # and the fix shows: on the predicates it touches, the kernel narrows where swipl cannot
-            @test _xuntouched(theirs.lines, ours) != theirs.lines
-            @test (
-                _xstrip_det(ours.lines) == _xstrip_det(theirs.lines) &&
-                ours.lines != theirs.lines
-            ) || sync_mismatch(_SYNC_FILE, "the kernel narrows where swipl cannot")
+            # swipl indexes an argument after a run of voids too (upstream defect, fixed in
+            # 0728e8c), so the predicates the fix touches are IDENTICAL as well: every call's
+            # determinism, every index, every primary index — no carve-out is left
+            @test any(i -> i[1] == "hv_p/3", theirs.idx) &&
+                any(i -> i[1] == "hv_q4/4", theirs.idx)
+            @test _xuntouched(theirs.lines, ours) != theirs.lines     # (the carve-out is not empty)
+            dall = _xline_diff(ours.lines, theirs.lines)
+            isempty(dall) ||
+                foreach(x -> println(stderr, "  determinism: ", x), dall[1:min(end, 8)])
+            @test isempty(dall)
+            @test isempty(_xidx_diff(ours.idx, theirs.idx))
+            @test ours.pidx == theirs.pidx
             # control: with no index at all the answers are the same, the determinism is not
             @test !isempty(_xline_diff(_xuntouched(oracle.lines, ours), their_u))
-            @info "clause index: $(length(theirs.lines)) answer lines identical; $(nuntouched) of $(length(program)) predicates also identical in determinism and indexes ($(length(pairs)) indexes, $exact bit-identical speedups); the other $(length(ours.affected)) carry the kernel's fix (SWI-Prolog/swipl-devel#1537) — vs $(strip(read(`swipl --version`, String)))"
+            @info "clause index: $(length(theirs.lines)) answer lines identical; $(nuntouched) of $(length(program)) predicates also identical in determinism and indexes ($(length(pairs)) indexes, $exact bit-identical speedups); the other $(length(ours.affected)), with an argument after a run of voids, identical too — vs $(strip(read(`swipl --version`, String)))"
         end
     elseif _XSWIPL_REQUIRED
         error(
@@ -625,12 +627,4 @@ const _XSEED = 20261002
             @test !_XSWIPL_REQUIRED
         end
     end
-end
-
-@testset "the sync: every expected mismatch of this file still mismatches" begin
-    stale = sync_stale(_SYNC_FILE)
-    foreach(
-        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
-    )
-    @test isempty(stale)
 end

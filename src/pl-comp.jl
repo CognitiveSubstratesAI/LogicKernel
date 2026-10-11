@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-comp.c @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-comp.c @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-comp.h @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-incl.h @ ac807ba8bcc7
 # CLASS: code
@@ -24,9 +24,9 @@
 #
 # WHY THE INDEX READS CODE, NOT TERMS (user, 2026-10-02): SWI computes a clause's index keys from
 # this code, and the code's shape changes the result. Reading the code as upstream does keeps the
-# kernel's index SWI's — with one deliberate exception: SWI loses the key of an argument that
-# directly follows two or more void arguments (`skipArgs`, SWI-Prolog/swipl-devel#1537), and that defect is
-# FIXED here (user, 2026-10-02), so the kernel indexes those arguments where swipl 10.1.16 does not.
+# kernel's index SWI's. (Until the 2026-10-11 sync there was one exception: SWI lost the key of an
+# argument directly after two or more void arguments — `skipArgs`, an upstream defect, fixed in
+# 0728e8c — which the kernel had fixed the same way on 2026-10-02.)
 #
 # ASSERT (since V9c): `assert_term!`, the path of assert/1, assertz/1 and asserta/1 — the clause's
 # head and body, its predicate, compiled, added — and their registration table
@@ -650,7 +650,9 @@ function analyseVariables2!(
             if ci.branch_vars !== nothing
                 pushBranchVar!(ci, vd)
             end
+            control && (ci.head_unify = false)                 # variable goal: call/1
         else
+            control && (ci.head_unify = false)                 # variable goal: call/1
             vd.times += 1
             if vd.times == 1 && ci.branch_vars !== nothing      # vd->times++ == 0
                 pushBranchVar!(ci, vd)
@@ -746,8 +748,8 @@ function analyseVariables2!(
             @goto resume
         end
     end                                                         # arity 0: term done
-    # e.g. atomic goals; a VARIABLE goal never gets here (`@goto resume` above), so it does not end
-    # the run of moved unifications: upstream's defect #6 (E1), ported as is (user, 2026-10-06)
+    # e.g. atomic goals; a VARIABLE goal never gets here (`@goto resume` above) and ends the run
+    # of moved unifications in its own branches (upstream defect, fixed in 699e53c)
     if control && !(kind(head) === SYM && sym_key(head) == gd.subclause_names.atom_true)
         ci.head_unify = false
     end
@@ -1197,6 +1199,7 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
                 if (where_ & A_ARG) == 0
                     p = argMoveUnify!(ci, vd)
                     if p !== nothing
+                        ci.flags |= CL_HEAD_TERMS              # set(ci->clause, CL_HEAD_TERMS)
                         arg = p
                         @goto next_arg                         # tail-call
                     end
@@ -2608,8 +2611,7 @@ stepPC(PC::Code{T}) where {T} =
     Code{T}(PC.codes, PC.literals, PC.pc + 1 + codeTable(decode(PC)).arguments)::Code{T}
 
 # PORT: pl-comp.c skipArgs
-# DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer;
-# and an exact landing at the end of an H_VOID_N run is FIXED (SWI-Prolog/swipl-devel#1537, see below).
+# DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer.
 """
     skipArgs(PC, skip, in_hvoid) -> (Code, in_hvoid)
 
@@ -2662,11 +2664,9 @@ function skipArgs(PC::Code{T}, skip::Int, in_hvoid::Int)::Tuple{Code{T}, Int} wh
         elseif c == H_VOID_N
             if nested == 0
                 skip -= Int(PC.codes[PC.pc + 1])
-                # DIVERGES (SWI-Prolog/swipl-devel#1537, fixed 2026-10-02): upstream's single `skip <= 0` also
-                # catches an EXACT landing (skip == 0) and returns the H_VOID_N itself with
-                # in_hvoid 0, so the argument after the voids reads as a void and a later
-                # skipArgs counts the run twice. Inside the run the H_VOID_N is right; at its end
-                # the target is the next instruction.
+                # inside the run the H_VOID_N is the target; landing exactly at its end, the
+                # next instruction is (upstream defect, fixed in 0728e8c: a single `skip <= 0`
+                # returned the H_VOID_N there too, and the argument after the voids read as void)
                 if skip < 0
                     in_hvoid = -skip
                     return (PC, in_hvoid)
@@ -2731,9 +2731,8 @@ end
 # PORT: pl-comp.c arg1Key
 # DIVERGES: returns `(found, key)` where upstream returns a flag and sets an out-parameter, and keys
 # a literal as `argKey` does (`indexOfWord` of the literal, since V1 L2). `$expr/n` (literal 0, Q2) has no
-# functor: not found. AN UPSTREAM DEFECT FIXED: upstream's switch lists `H_MPZ` but not `H_MPQ`, which
-# falls to `assert(0)` — swipl 10.1.16 aborts calling `p(1r3, a). p(2r3, b).` (probed 2026-10-05:
-# `arg1Key: Assertion failed`); here `H_MPQ` is not found, as `H_MPZ` is. docs/upstream_reports.md #4.
+# functor: not found. `H_MPQ` is not found, as `H_MPZ` is (upstream defect, fixed in 97370c0e: the
+# switch lacked `H_MPQ`, which fell to `assert(0)`; docs/upstream_reports.md #4).
 """
     arg1Key(PC) -> (found, key)
 

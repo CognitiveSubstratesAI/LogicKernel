@@ -330,6 +330,16 @@ ported files' headers to either.
     mismatch's key is the whole of it (the case, the kernel's result, swipl's);
   * the list exists exactly while `sync-from:` does, is never empty, and no test file uses it
     without an entry (test/test_gate_split.jl). The sync's last commit removes both.
+* **The 2026-10-11 sync, upstream file by upstream file** (each fix's entries leave the list in
+  the commit that ports it):
+  * `pl-comp.c` — `97370c0e` (`arg1Key`: `H_MPQ`; the kernel already had it), `0728e8c`
+    (`skipArgs`: an exact landing at the end of an `H_VOID_N` run — upstream's fix is the
+    kernel's own of 2026-10-02, so the index differential now compares those predicates in full),
+    `699e53c` (`analyseVariables2`: a variable goal ends the run of moved unifications),
+    `27dd7c3` (`compileArgument`: `CL_HEAD_TERMS` at every moved unification; its decompiler
+    part, `mark_bvar_access`, is not ported yet and comes with V9's decompiler). Upstream's new
+    units: test_jit.pl `h_void_n_1`, `h_void_n_2`, `b_primary`; test_moved_ubody.pl `var_goal`
+    as a head-code case; test_rational.pl `first_arg`'s answers. Mutants 4 of 4.
 * **The build runs capped.** MEASURED 2026-10-11: the recipe's first version made a partial
   clone (`--filter=blob:none`) of a LOCAL repository — an empty promisor clone in which every git
   command fetched what it lacked, and the fetch fetched again: thousands of small processes,

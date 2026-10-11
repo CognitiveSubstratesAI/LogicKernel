@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/db/test_jit.pl @ bae881a24a3f
+# UPSTREAM: swipl-devel tests/db/test_jit.pl @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -241,6 +241,29 @@ const _JBig = lk_term_type(BigInt)
         ix_assertz!(p1, _je(:p1, nest((:a, :b, :c, :d, :e, :f, :g), _jg(k))))
         ix_assertz!(p2, _je(:p2, nest((:a, :b, :c, :d, :e, :f, :g, :h), _jg(k))))
     end
+    # Issue #1537: an argument right after a run of void head arguments (H_VOID_N) must be
+    # indexable.
+    hv3 = ix_pred(_J, :hv3, 3; dynamic=true)        # :- dynamic hv3/3, hv4/4.
+    hv4 = ix_pred(_J, :hv4, 4; dynamic=true)
+    # PORT: test_jit.pl h_void_n_1
+    @testset "h_void_n_1" begin
+        ix_retractall!(hv3, _je(:hv3, _jv(), _jv(), _jv()))
+        for i in 1:100
+            ix_assertz!(hv3, _je(:hv3, _jv(), _jv(), _js("a$i")))
+        end
+        @test !isempty(ix_call(hv3, _je(:hv3, _jv(), _jv(), _js(:a50))))
+        @test has_hashes(hv3, [3])
+    end
+    # PORT: test_jit.pl h_void_n_2
+    @testset "h_void_n_2" begin
+        ix_retractall!(hv4, _je(:hv4, _jv(), _jv(), _jv(), _jv()))
+        for i in 1:100
+            ix_assertz!(hv4, _je(:hv4, _jv(), _jv(), _js("a$i"), _js("b$i")))
+        end
+        @test !isempty(ix_call(hv4, _je(:hv4, _jv(), _jv(), _js(:a50), _js(:b50))))
+        @test !isempty(ix_call(hv4, _je(:hv4, _jv(), _jv(), _jv(), _js(:b50))))
+        @test has_hashes(hv4, [3, 4])
+    end
     # PORT: test_jit.pl depth
     @testset "depth" begin
         @test !isempty(ix_call(p1, _je(:p1, nest((:a, :b, :c, :d, :e, :f, :g), _jg(1)))))
@@ -291,6 +314,11 @@ end
     @testset "b" begin                              # may not use S_LIST (test H_VOID_N)
         ans = ix_call(b, _je(:b, _jv(), _jv(), _jv(), _jv(), nil))
         @test !isempty(ans) && !ans[1][2]           # call_cleanup(..., Det=true), var(Det)
+    end
+    # PORT: test_jit.pl b_primary
+    @testset "b_primary" begin                      # Issue #1537: must find an index
+        @test !isempty(ix_call(b, _je(:b, _jv(), _jv(), _jv(), _jv(), nil)))
+        @test ix_primary_index(b) !== nothing       # '$get_predicate_attribute'(…, primary_index, _)
     end
     # PORT: test_jit.pl m
     @testset "m" begin                              # may not use S_LIST (test mode/1)

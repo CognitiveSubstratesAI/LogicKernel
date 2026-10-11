@@ -22,8 +22,6 @@ include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "code_testlib.jl"))
-include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
-const _SYNC_FILE = "compile/test_body_code_swipl.jl" # as the sync's list names this file
 using Random
 
 const _B = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
@@ -1261,8 +1259,9 @@ end
             _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1))), dp, user)
     )
     @test any(startswith("b_unify_var"), dyn)
-    # CL_HEAD_TERMS where upstream sets it (c:3100 a body use, 3127 a head H_VAR, 4252 var-var), and
-    # NOT where upstream does not (a use through B_EQ_VC: the decompiler's gap, E2, report #7)
+    # CL_HEAD_TERMS where upstream sets it: at EVERY moved unification (c:3122, since the fix of
+    # swipl-devel#1540 in 27dd7c3 — before, a later use through B_EQ_VC, or no later use, left it
+    # unset), and at a body use, a head H_VAR and var-var as before
     hflag(n) =
         (
             _bclause(_BC_MOVE_CELLS[named(n)][2], _BC_MOVE_CELLS[named(n)][3]).flags &
@@ -1271,10 +1270,12 @@ end
     @test hflag("then a use")                               # q(X): B_VAR0 of the moved argument
     @test hflag("a repeated head argument")                 # the second X: H_VAR
     @test hflag("the term holds the argument")              # f(X): H_VAR inside the moved term
-    @test !hflag("then ==")                                 # X == a: B_EQ_VC (E2)
-    @test !hflag("compound")                                # nothing uses X
-    # E1, upstream's defect #6, ported as is: a VARIABLE goal does not end the run. Such a clause is
-    # refused (the meta-call, V9), so the move is pinned in its head code, as swipl compiles it
+    @test hflag("then ==")                                  # X == a: B_EQ_VC — set by the move
+    @test hflag("compound")                                 # nothing uses X — set by the move
+    @test !hflag("var = var: no move")                      # nothing moved, no head term
+    # E1: a VARIABLE goal is a call and ENDS the run (upstream defect, fixed in 699e53c: it did
+    # not). Such a clause is refused (the meta-call, V9), so this is pinned in its head code, as
+    # swipl compiles it: nothing moved, the code starts with I_ENTER
     e1g = LK.PL_global_data{_B}()
     e1u = LK.MODULE_user(e1g)
     e1p = LK.lookupProcedure(_bs("c18"), 2, e1u)
@@ -1283,7 +1284,29 @@ end
     LK._compile_clause_head!(
         e1g, ci, _bf("c18", _bv(1), _bv(2)), _bconj(_bv(2), _bf("=", _bv(1), _bs("a")))
     )
-    @test LK.codeTable(ci.codes[1]).name === :H_ATOM        # X = a moved past the goal G
+    @test LK.codeTable(ci.codes[1]).name === :I_ENTER       # X = a is NOT moved past the goal G
+    # …and upstream's own case (tests/core_lang/test_moved_ubody.pl `var_goal`, added with the
+    # fix): var_goal(X) :- G = var(X), G, X = a — `X = a` stays behind the call of G
+    vgp = LK.lookupProcedure(_bs("var_goal"), 1, e1u)
+    vgci = LK.compileInfo{_B}(1, e1u, vgp)
+    vgci.head_unify = true
+    LK._compile_clause_head!(
+        e1g,
+        vgci,
+        _bf("var_goal", _bv(1)),
+        _bconj(_bf("=", _bv(2), _bf("var", _bv(1))), _bv(2), _bf("=", _bv(1), _bs("a")))
+    )
+    @test LK.codeTable(vgci.codes[1]).name === :I_ENTER
+    # …and a goal variable met for the FIRST time (the analysis' other variable branch; swipl
+    # itself refuses to assert this clause — type_error(callable, _) — so only the kernel's
+    # analysis is pinned)
+    fgp = LK.lookupProcedure(_bs("c19"), 1, e1u)
+    fgci = LK.compileInfo{_B}(1, e1u, fgp)
+    fgci.head_unify = true
+    LK._compile_clause_head!(
+        e1g, fgci, _bf("c19", _bv(1)), _bconj(_bv(2), _bf("=", _bv(1), _bs("a")))
+    )
+    @test LK.codeTable(fgci.codes[1]).name === :I_ENTER
     # `;` and `\+` end the run (c:1007-1011, 1047): pinned in the head code too, as the compiler
     # refuses those clauses until V9 — nothing moved, so the void head argument emits nothing and
     # the code starts with I_ENTER (a move would start it with H_ATOM)
@@ -1320,10 +1343,9 @@ end
             "(dynamic(dm1/1), bc_case_show((dm1(X) :- X = f(a), q(X))))"
         ])[1] == dyn
         e1 = _bc_swipl(["bc_case_show((c18(X, G) :- G, X = a))"])[1]
-        @test startswith(e1[1], "h_atom(") ||               # swipl moves it too (E1)
-            sync_mismatch(
-            _SYNC_FILE, "c18(X, G) :- G, X = a: swipl moves the unification"
-        )
+        @test e1[1] == "i_enter"                            # swipl does not move it either (E1)
+        vg = _bc_swipl(["bc_case_show((var_goal(X) :- G = var(X), G, X = a))"])[1]
+        @test vg[1] == "i_enter"
         ends = _bc_swipl([
             "bc_case_show((c26b(X) :- (X = a ; X = b)))",
             "bc_case_show((c46b(X) :- \\+ X = a))"
@@ -1429,12 +1451,4 @@ end
     @test isempty(ix_retract!(pr, _bf("cr", _bv(5))))           # the rule is not `cr(_) :- true`
     ix_retractall!(pr, _bf("cr", _bv(5)))                        # retractall takes rules too
     @test LK.hasClausesDefinition(db.gd, pr.def) === nothing
-end
-
-@testset "the sync: every expected mismatch of this file still mismatches" begin
-    stale = sync_stale(_SYNC_FILE)
-    foreach(
-        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
-    )
-    @test isempty(stale)
 end

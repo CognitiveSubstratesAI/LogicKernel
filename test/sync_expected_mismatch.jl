@@ -1058,18 +1058,3 @@ sync_cases(
         "raise error(resource_error,c) over error(resource_error(stack),c): swipl 1, kernel 2"
     ]
 )
-sync_cases(
-    "db/test_index_swipl.jl",
-    "0728e8c",
-    [
-        "swipl builds no index for hv_p/3 and hv_q4/4",
-        "the kernel narrows where swipl cannot"
-    ]
-)
-sync_cases(
-    "compile/test_body_code_swipl.jl",
-    "699e53c",
-    [
-        "c18(X, G) :- G, X = a: swipl moves the unification"
-    ]
-)

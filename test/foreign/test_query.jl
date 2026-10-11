@@ -322,10 +322,12 @@ end
     LK.PL_close_foreign_frame(ld, fid)
 end
 
-@testset "two clauses with rational first arguments: no key, S_STATIC, both answers (upstream aborts)" begin
-    # docs/upstream_reports.md #4: swipl 10.1.16 ABORTS on the first call of `p(1r3, a). p(2r3, b).` —
-    # pl-comp.c `arg1Key` lists H_MPZ but not H_MPQ, so `listSupervisor` reaches its `assert(0)`.
-    # The kernel treats H_MPQ as H_MPZ (DIVERGES): no key, so the predicate gets S_STATIC.
+@testset "two clauses with rational first arguments: no key, S_STATIC, both answers" begin
+    # docs/upstream_reports.md #4 (upstream defect, fixed in 97370c0e): pl-comp.c `arg1Key` listed
+    # H_MPZ but not H_MPQ, so `listSupervisor` reached its `assert(0)` on the first call of
+    # `p(1r3, a). p(2r3, b).` H_MPQ is as H_MPZ: no key, so the predicate gets S_STATIC. The
+    # answers are those of upstream's own unit (tests/rational/test_rational.pl `first_arg`):
+    # findall(X-Y, rat_arg1(X, Y), L), L == [1r3-a, 2r3-b].
     Q = lk_term_type(Union{Int64, Rational{BigInt}})
     db = IxDB{Q}()
     p = ix_pred(Q, :p, 2; db=db)
@@ -337,6 +339,7 @@ end
     @test LK.arg1Key(pc) == (false, LK.word(0))
     ans = vm_call(p, pq(mk_var(Q, UInt64(1)), mk_var(Q, UInt64(2))))
     @test [lk_name(child(t, 3)) for (t, _) in ans] == [:a, :b]
+    @test [lk_value(child(t, 2)) for (t, _) in ans] == [1//3, 2//3]
     @test last.(ans) == [false, true]                           # the last answer is deterministic
     @test p.def.codes === p.def.code_data.staticp              # no list supervisor
 end

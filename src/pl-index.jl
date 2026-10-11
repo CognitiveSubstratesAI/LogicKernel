@@ -37,7 +37,7 @@
 #     2..), read DEREFERENCED as upstream's readers follow references (`argv_at`). A deep index
 #     descends into an argument compound by switching to its `argv_term`.
 #   * A clause's keys are read from its head CODE (src/pl-comp.jl), exactly as upstream reads
-#     them, except that `skipArgs`'s H_VOID_N defect is fixed (SWI-Prolog/swipl-devel#1537).
+#     them (`skipArgs`'s H_VOID_N defect: upstream defect, fixed in 0728e8c).
 #   * Keys are words in SWI's layout (`indexOfWord`).
 
 # ── PARAMETERS ──────────────────────────────────────────────────────────────────────────────────
