@@ -220,30 +220,27 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             @test all(e -> occursin(r"^[0-9a-f]{7,40}(\+[0-9a-f]{7,40})*$", e[3]), entries)
             @test allunique([(e[1], e[2]) for e in entries])
             # the list's own functions, on its first entry: a case that is not listed is not
-            # expected; a listed one is, once; and until it has mismatched it is stale
+            # expected; a listed one is, once; and until it has mismatched it is stale — WHERE
+            # THERE IS A swipl. Without one the differentials do not run, so nothing is stale
+            # there (CI's `test` jobs have none: run 38156167094 was red on that, and run
+            # 38159492161 on THIS test, which then asked for staleness with whatever PATH it had).
+            # Both sides are therefore asked on a PATH this test makes.
             file, case = entries[1][1], entries[1][2]
             call(f, args...) = Base.invokelatest(getfield(m, f), args...)
-            @test call(:sync_mismatch, file, "a case that is not on the list") == false
-            @test case in call(:sync_stale, file)
-            @test call(:sync_unexpected, file, [case, "another mismatch"]) ==
-                ["another mismatch"]
-            @test !(case in call(:sync_stale, file))
-            @test call(:sync_mismatch, "no/such_file.jl", case) == false
-            # where there is no swipl the differentials do not run, so nothing is stale there
-            # (CI's `test` jobs: run 38156167094 was red on exactly this) — and with one, an
-            # entry that has not mismatched is
-            other = entries[end][1] == file ? entries[end][2] : case
-            m2 = Module(:GSSync2)
-            Base.include(m2, list)
-            stale2(path) = withenv("PATH" => path) do
-                Base.invokelatest(getfield(m2, :sync_stale), file)
-            end
             mktempdir() do d
-                @test isempty(stale2(d))                        # no swipl on PATH
-                sw = joinpath(d, "swipl")
-                write(sw, "#!/bin/sh\nexit 0\n")
-                chmod(sw, 0o755)
-                @test other in stale2(d)                        # a swipl: not hit means stale
+                none, with = joinpath(d, "none"), joinpath(d, "with")
+                mkpath(none)
+                mkpath(with)
+                write(joinpath(with, "swipl"), "#!/bin/sh\nexit 0\n")
+                chmod(joinpath(with, "swipl"), 0o755)
+                stale(path) = withenv(() -> call(:sync_stale, file), "PATH" => path)
+                @test call(:sync_mismatch, file, "a case that is not on the list") == false
+                @test case in stale(with)                       # not hit yet: stale
+                @test isempty(stale(none))                      # …but not where nothing ran
+                @test call(:sync_unexpected, file, [case, "another mismatch"]) ==
+                    ["another mismatch"]
+                @test !(case in stale(with))                    # hit: no longer stale
+                @test call(:sync_mismatch, "no/such_file.jl", case) == false
             end
         else
             @test isempty(users)
