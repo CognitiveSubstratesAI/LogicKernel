@@ -6,13 +6,24 @@ SWI-Prolog
 https://github.com/SWI-Prolog/swipl-devel
 =====================================================================================================
 
-Parts of this software are ported from SWI-Prolog. As of version 0.1.0 NO SWI-Prolog code is
-included yet; this notice is in place before the first port so that it cannot be forgotten.
+LogicKernel is a PORT of SWI-Prolog to Julia, and so a derivative work of it. Its source files
+under src/ and boot/ and its ported tests under test/ are translated, file by file, from
+SWI-Prolog's C and Prolog sources (the swipl-devel repository above); they keep upstream's paths,
+names and logic. SWI-Prolog is the work of Jan Wielemaker and its contributors.
 
-Every ported file reproduces, in its header, the upstream file it was ported from, the upstream
-commit it was read at, and that upstream file's own copyright line VERBATIM (SWI-Prolog's copyright
-lines name, among others, Jan Wielemaker, the University of Amsterdam, VU University Amsterdam,
-CWI Amsterdam and SWI-Prolog Solutions b.v.). docs/port_inventory.md lists every such file.
+SWI-Prolog's copyright notice, as its source files carry it:
+
+    Copyright (c)  1985-2026, University of Amsterdam
+                              VU University Amsterdam
+                              CWI, Amsterdam
+                              SWI-Prolog Solutions b.v.
+    All rights reserved.
+
+The years and the holders differ from file to file. Every ported file therefore reproduces, in its
+header, the upstream file it was ported from, the upstream commit it was read at, and that upstream
+file's own copyright lines VERBATIM (`# UPSTREAM:`, `# COPYRIGHT:`); tools/port_check.jl fails the
+test suite when a ported file lacks them or when a line is not upstream's. docs/port_inventory.md
+lists every ported file.
 
 SWI-Prolog's licence, reproduced from its LICENSE file:
 
@@ -42,3 +53,42 @@ SWI-Prolog is covered by the Simplified BSD license:
     LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
     ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
+
+=====================================================================================================
+Code by other authors that SWI-Prolog includes, ported with it
+=====================================================================================================
+
+SHA-1 (src/pl-termhash.jl, from SWI-Prolog's src/pl-termhash.c) is a port of Brian Gladman's
+byte-oriented SHA-1. Its notice and terms, reproduced from that file:
+
+    Copyright (c) 2002, Dr Brian Gladman, Worcester, UK.   All rights reserved.
+
+    LICENSE TERMS
+
+    The free distribution and use of this software in both source and binary
+    form is allowed (with or without changes) provided that:
+
+      1. distributions of this source code include the above copyright
+         notice, this list of conditions and the following disclaimer;
+
+      2. distributions in binary form include the above copyright
+         notice, this list of conditions and the following disclaimer
+         in the documentation and/or other associated materials;
+
+      3. the copyright holder's name is not used to endorse products
+         built using this software without specific written permission.
+
+    ALTERNATIVELY, provided that this notice is retained in full, this product
+    may be distributed under the terms of the GNU General Public License (GPL),
+    in which case the provisions of the GPL apply INSTEAD OF those given above.
+
+    DISCLAIMER
+
+    This software is provided 'as is' with no explicit or implied warranties
+    in respect of its properties, including, but not limited to, correctness
+    and/or fitness for purpose.
+
+MurmurHash2 (src/pl-hash.jl, from SWI-Prolog's src/pl-hash.c): author Austin Appleby; public domain.
+
+The benchmark programs under bench/programs/*.pl are copied unchanged from SWI-Prolog's benchmark
+set (https://github.com/SWI-Prolog/bench); each keeps its own header.

@@ -4,16 +4,18 @@ A standalone logic-programming kernel for Julia: terms, unification, a clause da
 indexing, term tries, SLG tabling and a clause VM — for languages in which **every matching clause
 fires** and answers are multisets.
 
-> **Lineage.** Algorithms ported from SWI-Prolog (`swipl-devel`, Simplified BSD) and checked against
-> a live `swipl`. Algorithms are ported as code; machinery (clause compilation, frames, generations)
-> is re-expressed for multiset semantics, never transliterated.
-> Every ported file records its upstream file and commit: see [`NOTICE`](NOTICE) and
+> **LogicKernel is a port of [SWI-Prolog](https://www.swi-prolog.org)** — of
+> [swipl-devel](https://github.com/SWI-Prolog/swipl-devel), BSD-2-Clause — to Julia: upstream's C
+> and Prolog sources translated file by file, at upstream's paths and under upstream's names, and
+> checked against a live `swipl`. Every ported file records its upstream file, the commit it was
+> read at and upstream's copyright lines: see [`NOTICE`](NOTICE) and
 > [`docs/port_inventory.md`](docs/port_inventory.md).
 
 ## Status
 
-**0.1.0.** Ported so far: SWI-Prolog's standard order of terms (`compareStandard`, from
-`pl-prims.c`) with upstream's own tests, behind the settled term interface and its reference type.
+**0.1.0.** What is ported so far, upstream file by upstream file and function by function, is
+listed in [`docs/port_inventory.md`](docs/port_inventory.md); how it is built is in
+[`docs/architecture.md`](docs/architecture.md).
 The version stays **0.x until the term interface has a second implementation** in real use — until
 then the interface is only as general as one implementation makes it. First real work: `src/terms/`.
 
@@ -53,7 +55,7 @@ subsystem grouping are in [`docs/architecture.md`](docs/architecture.md); every 
 | path | what |
 |---|---|
 | `src/` | ports at swipl-devel's paths, plus ORIGINAL code (the term interface, `Term{G}`) |
-| `boot/` | ports of swipl-devel `boot/*.pl` (none yet) |
+| `boot/` | ports of swipl-devel `boot/*.pl` |
 | `bench/programs/` | the standalone consumer: swipl-devel's benchmark programs (its `bench` submodule) written on the public API, beside the verbatim `.pl` |
 | `test/<area>/` | tests in swipl-devel's `tests/` areas — ported upstream tests keep their names |
 | `test/` root | package infrastructure: lint, port check, type discipline, static analysis |
@@ -88,5 +90,7 @@ global environment, which Julia stacks under `--project`. Formatting is Blue
 
 ## Licence
 
-BSD-2-Clause — see [`LICENSE`](LICENSE). Code ported from SWI-Prolog keeps SWI-Prolog's own BSD-2
-notice and copyright lines — see [`NOTICE`](NOTICE).
+BSD-2-Clause — see [`LICENSE`](LICENSE). LogicKernel is a port of
+[swipl-devel](https://github.com/SWI-Prolog/swipl-devel), which is BSD-2-Clause too: SWI-Prolog's
+copyright notice and licence text are reproduced in [`NOTICE`](NOTICE), and each ported file keeps
+its upstream file's copyright lines.
