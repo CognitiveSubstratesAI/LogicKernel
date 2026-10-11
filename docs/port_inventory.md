@@ -113,7 +113,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-prims.c` | code | `ac807ba8bcc7` | `src/pl-prims.jl` | 67 | 33 |
 | swipl-devel `src/pl-proc.c` | code | `ac807ba8bcc7` | `src/pl-proc.jl` | 43 | 29 |
 | swipl-devel `src/pl-proc.h` | code | `ac807ba8bcc7` | `src/pl-proc.jl` | 1 | 0 |
-| swipl-devel `src/pl-read.c` | code | `bae881a2` | `src/pl-read.jl` | 183 | 77 |
+| swipl-devel `src/pl-read.c` | code | `ac807ba8bcc7` | `src/pl-read.jl` | 183 | 77 |
 | swipl-devel `src/pl-ressymbol.c` | code | `ac807ba8bcc7` | `src/pl-ressymbol.jl` | 3 | 2 |
 | swipl-devel `src/pl-setup.c` | code | `ac807ba8bcc7` | `src/pl-setup.jl` | 5 | 5 |
 | swipl-devel `src/pl-srcfile.c` | code | `ac807ba8bcc7` | `src/pl-srcfile.jl` | 13 | 10 |
@@ -138,7 +138,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `tests/core_lang/test_term.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_term.jl` | 25 | 0 |
 | swipl-devel `tests/core_lang/test_unify.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_unify.jl` | 10 | 0 |
 | swipl-devel `tests/core_text/test_op.pl` | code | `ac807ba8bcc7` | `test/core_text/test_op.jl` | 4 | 0 |
-| swipl-devel `tests/core_text/test_read.pl` | code | `bae881a2` | `test/core_text/test_read.jl` | 14 | 0 |
+| swipl-devel `tests/core_text/test_read.pl` | code | `ac807ba8bcc7` | `test/core_text/test_read.jl` | 23 | 0 |
 | swipl-devel `tests/core_text/test_syntax.pl` | code | `ac807ba8bcc7` | `test/core_text/test_syntax.jl` | 46 | 0 |
 | swipl-devel `tests/db/test_db.pl` | code | `ac807ba8bcc7` | `test/db/test_db.jl` | 13 | 0 |
 | swipl-devel `tests/db/test_jit.pl` | code | `ac807ba8bcc7` | `test/db/test_jit.jl` | 33 | 0 |
@@ -211,7 +211,7 @@ checkout is pulled.
 | swipl-devel `src/pl-prims.c` | `ac807ba8bcc7` | 46 | 188 | 24 | src/pl-prims.jl |
 | swipl-devel `src/pl-proc.c` | `ac807ba8bcc7` | 41 | 126 | 28 | src/pl-proc.jl |
 | swipl-devel `src/pl-proc.h` | `ac807ba8bcc7` | 1 | 2 | 0 | src/pl-proc.jl |
-| swipl-devel `src/pl-read.c` | `bae881a2` | 133 | 209 | 64 | src/pl-read.jl |
+| swipl-devel `src/pl-read.c` | `ac807ba8bcc7` | 133 | 209 | 64 | src/pl-read.jl |
 | swipl-devel `src/pl-ressymbol.c` | `ac807ba8bcc7` | 2 | 7 | 1 | src/pl-ressymbol.jl |
 | swipl-devel `src/pl-setup.c` | `ac807ba8bcc7` | 5 | 62 | 5 | src/pl-setup.jl |
 | swipl-devel `src/pl-srcfile.c` | `ac807ba8bcc7` | 13 | 74 | 10 | src/pl-srcfile.jl |
@@ -235,7 +235,7 @@ checkout is pulled.
 | swipl-devel `tests/core_lang/test_term.pl` | `ac807ba8bcc7` | 2 | 11 | 0 | test/core_lang/test_term.jl |
 | swipl-devel `tests/core_lang/test_unify.pl` | `ac807ba8bcc7` | 1 | 9 | 0 | test/core_lang/test_unify.jl |
 | swipl-devel `tests/core_text/test_op.pl` | `ac807ba8bcc7` | 1 | 3 | 0 | test/core_text/test_op.jl |
-| swipl-devel `tests/core_text/test_read.pl` | `bae881a2` | 0 | 10 | 0 | test/core_text/test_read.jl |
+| swipl-devel `tests/core_text/test_read.pl` | `ac807ba8bcc7` | 0 | 10 | 0 | test/core_text/test_read.jl |
 | swipl-devel `tests/core_text/test_syntax.pl` | `ac807ba8bcc7` | 0 | 3 | 0 | test/core_text/test_syntax.jl |
 | swipl-devel `tests/db/test_db.pl` | `ac807ba8bcc7` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `ac807ba8bcc7` | 15 | 19 | 0 | test/db/test_jit.jl |

@@ -399,25 +399,14 @@ if _RD_SWIPL !== nothing
         theirs = split(chomp(text), '\n')
         @test length(theirs) == length(ours)
         for (t, o, s) in zip(_RD_RAWERR, ours, theirs)
-            if t == "/* x"
-                # DIVERGES (src/pl-read.jl `clearBuffer`; internal record #8): swipl's text is not compared
-                @test startswith(
-                    s, "err error(syntax_error(end_of_file_in_block_comment),string("
-                )
-                @test o ==
-                    "err error(syntax_error(end_of_file_in_block_comment),string(\"\",0))"
-            else
-                @test o == s
-                o == s || println(
-                    stderr,
-                    "  DIVERGES: ",
-                    repr(t),
-                    "\n    kernel ",
-                    o,
-                    "\n    swipl  ",
-                    s
-                )
-            end
+            # every case, `/* x` at the start included: before anything is read the error's text
+            # is empty in swipl too (upstream defect, fixed in 5f50eb2: it was a stale byte)
+            @test o == s
+            o == s || println(
+                stderr, "  DIVERGES: ", repr(t), "\n    kernel ", o, "\n    swipl  ", s
+            )
+            t == "/* x" && @test o ==
+                "err error(syntax_error(end_of_file_in_block_comment),string(\"\",0))"
         end
     end
 

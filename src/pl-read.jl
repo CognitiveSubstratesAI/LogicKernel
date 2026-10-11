@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-read.c @ bae881a2
+# UPSTREAM: swipl-devel src/pl-read.c @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -350,8 +350,9 @@ end
 # ── the read buffer (pl-read.c) ─────────────────────────────────────────────────────────────────
 
 # PORT: pl-read.c clearBuffer
-# DIVERGES: the first buffer is zeroed (upstream defect, reported privately; see the workspace register:
-# internal record #8).
+# DIVERGES: the first buffer is zeroed, where upstream's is an uninitialised array on the C stack.
+# Nothing reads it before it is written (since 5f50eb2, the fix of an upstream defect: a syntax
+# error raised before anything was read took its text from that array).
 "Empty the read buffer (pl-read.c)."
 function clearBuffer(rd::read_data)::Nothing
     rb = rd._rb
@@ -454,7 +455,9 @@ getchrq(rd::read_data)::Int = Sgetcode(rd._rb.stream)
 # DIVERGES: no `LD->read_source`; the position is the error's, which `rawSyntaxError` reads.
 "Move the error's location to `pos`, and the buffer back to its start (pl-read.c)."
 function setErrorLocation(pos::Union{Nothing, IOPOS}, rd::read_data)::Nothing
-    rd._rb.here = 2                                 # see rawSyntaxError()
+    if rd._rb.here > 1                              # rb.here > rb.base; nothing read: leave empty
+        rd._rb.here = 2                             # see rawSyntaxError()
+    end
     return nothing
 end
 
@@ -1054,9 +1057,8 @@ end
 
 # PORT: pl-read.c makeErrorTerm
 # DIVERGES: returns the term, where upstream returns a term reference to it.
-# KNOWN UPSTREAM DEFECT, ported AS IS (docs/upstream_reports.md #10): the argument is made with
-# `PL_CHARS`, whose text is ISO Latin-1, but `raw_read_quoted` passes the UTF-8 of the quote — so a
-# non-ASCII quote's error names its BYTES: `«x` raises `end_of_file_in_quoted('Â«')` (probed).
+# The argument is UTF-8 text (`PL_UTF8_CHARS`; upstream defect, fixed in abdcf74: it was read as
+# ISO Latin-1, so a non-ASCII quote's error named its bytes).
 "`error(syntax_error(Id), Location)`, the location the last token's start (pl-read.c)."
 function makeErrorTerm(
     id_str::String, id_arg::Union{Nothing, String}, id_term::Union{Nothing, T},
@@ -1064,8 +1066,7 @@ function makeErrorTerm(
 )::T where {T}
     if id_term === nothing
         id_term = if id_arg !== nothing
-            latin1 = String(Char.(codeunits(id_arg)))       # PL_CHARS: ISO Latin-1 text
-            mk_expr(T, T[mk_sym(T, Symbol(id_str)), mk_sym(T, Symbol(latin1))])
+            mk_expr(T, T[mk_sym(T, Symbol(id_str)), mk_sym(T, Symbol(id_arg))])  # PL_UTF8_CHARS
         else
             mk_sym(T, Symbol(id_str))
         end
@@ -1327,11 +1328,9 @@ function escape_char(
             # undef:
             if rd !== nothing
                 rd.token_start = inp - 1
-                # char tmp[2] = {(char)c, EOS}: the code point's LOW BYTE, read by
-                # makeErrorTerm as ISO Latin-1 — a KNOWN UPSTREAM DEFECT ported as is
-                # (docs/upstream_reports.md #10): `\Ω` names `©`, `\∀` the empty atom
-                lowbyte = UInt8(c & 0xff)
-                tmp = lowbyte == 0x00 ? "" : String(UInt8[lowbyte])
+                # *utf8_put_char(tmp, c) = EOS: the character itself (upstream defect, fixed in
+                # abdcf74: only the code point's low byte was passed)
+                tmp = c == 0 ? "" : string(Char(c))
                 errorWarningA1("undefined_char_escape", tmp, nothing, rd)
             end
             return (ESC_ERROR, inp)
@@ -1751,6 +1750,7 @@ function str_number(
         base = 0
         c1 = _byte(b, inp + 1)
         if c1 == Int('\'')                          # 0'<char>
+            _byte(b, inp + 2) == 0 && return (NUM_ERROR, inp)      # 0'<EOS>
             if (flags & M_CHARESCAPE) != 0 && _byte(b, inp + 2) == Int('\\')   # 0'\n, etc
                 chr, e = escape_char(b, inp + 3, Int('\''), nothing)
                 chr < 0 && return (NUM_ERROR, inp)
@@ -3671,7 +3671,7 @@ const read_clause_options = (
 # DIVERGES: of the read options (`PL_scan_options`), `variable_names` and `syntax_errors` are
 # honoured (since R1g); the others the kernel cannot honour are REFUSED (`NotPortedError`), as
 # `read_term_from_stream`'s: `term_position`, `subterm_positions`, `comments`,
-# `process_comment(true)` (term positions and the comment hook: R2 — `prolog:comment_hook/3` is not
+# `process_comment(true)` (term positions and the comment hook: R2 — `prolog:comment_hook/4` is not
 # defined, so `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the
 # NFC hook), `blob` (no blobs); a stream whose unquoted atoms must be NFC is refused
 # (`ensure_unicode_normalize_hook`: no normalizer). The foreign frame is closed before returning,
@@ -3859,8 +3859,8 @@ const read_term_options = (
     PL_option_t(:back_quotes, OPT_ATOM),
     PL_option_t(:comments, OPT_TERM),
     PL_option_t(:quasi_quotations, OPT_TERM),
-    PL_option_t(:cycles, OPT_BOOL),
-    PL_option_t(:dotlists, OPT_BOOL),
+    PL_option_t(:cycles, OPT_STDBOOL),
+    PL_option_t(:dotlists, OPT_STDBOOL),
     PL_option_t(:unicode_atoms, OPT_ATOM),
     PL_option_t(:blob, OPT_ATOM)
 )

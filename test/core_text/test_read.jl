@@ -1,9 +1,10 @@
-# UPSTREAM: swipl-devel tests/core_text/test_read.pl @ bae881a2
+# UPSTREAM: swipl-devel tests/core_text/test_read.pl @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2024, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# swipl-devel's test_read.pl — the `read_op`, `read_numbers` and `read_deep` units — against the
+# swipl-devel's test_read.pl — the `read_op`, `read_numbers` and `read_deep` units, and the units
+# of `read_term` that came with upstream's fixes of 2026-10-11 — against the
 # parser (src/pl-read.jl, since R1d), through `term_string/2` and the query API. `read_op`'s
 # operators (`:- op(600, fy, !)`, `:- op(600, fy, [])` — a BLOCK operator) are made with op/3 in
 # `user`, where `term_string/2` reads (upstream passes `module(M)`, an option of term_string/3).
@@ -17,6 +18,9 @@
 #   positions                                    decision)
 #   valid_position_dict*, dict                   dicts: refused (R1's decision)
 #   float_overflow (the second)                  the float_overflow flag (no Prolog flags yet)
+#   quote_eos (the second)                       number_codes/2 is not a built-in of the kernel yet
+#   read_term's other units                      read_term/2,3 on streams with positions, comments
+#                                                and variable names: R2
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -82,6 +86,90 @@ function _rt_syntax_formal(ball)
     end
 end
 
+"The ball of `term_to_atom(_, Text)`: `(rc, ball or nothing)`."
+function _rt_atom_ball(db, text::String)
+    rc, ans = _rt_call(
+        db, "term_to_atom", _RT[mk_var(_RT, LK.fresh_var_keys!(1)), _rts(text)]
+    )
+    return (rc, rc === :exception ? ans[1] : nothing)
+end
+
+"`read_term_from_atom(Text, T, Options)`: `(rc, T)`; upstream's units call term_string/3, a library predicate over the same reader and options."
+function _rt_read_opts(db, text::String, opts::_RT)
+    rc, ans = _rt_call(
+        db, "read_term_from_atom", _RT[_rts(text), mk_var(_RT, LK.fresh_var_keys!(1)), opts]
+    )
+    return (rc, rc === :true ? ans[2] : nothing)
+end
+
+@testset "read_term" begin
+    db = _rt_db([])
+    # Issue #1541: non-ASCII characters in syntax error arguments
+    # PORT: test_read.pl eof_in_quoted
+    @testset "eof_in_quoted" begin                  # E == end_of_file_in_quoted(Q), Q = «
+        rc, ball = _rt_atom_ball(db, "«x")
+        @test rc === :exception &&
+            lk_eq(_rt_syntax_formal(ball), _rtf("end_of_file_in_quoted", _rts("«")))
+    end
+    # PORT: test_read.pl undefined_char_escape
+    @testset "undefined_char_escape" begin          # E == undefined_char_escape(C), C = Ω
+        rc, ball = _rt_atom_ball(db, "'\\Ω'")
+        @test rc === :exception &&
+            lk_eq(_rt_syntax_formal(ball), _rtf("undefined_char_escape", _rts("Ω")))
+    end
+    # PORT: test_read.pl undefined_char_escape
+    @testset "undefined_char_escape" begin          # C = 😀 (U+1F600)
+        rc, ball = _rt_atom_ball(db, "'\\😀'")
+        @test rc === :exception &&
+            lk_eq(_rt_syntax_formal(ball), _rtf("undefined_char_escape", _rts("😀")))
+    end
+    # (not a unit of upstream's) the undefined escape of the character 0: its argument is the
+    # empty text, as in swipl — `utf8_put_char` writes the terminator itself
+    @testset "an undefined escape of the character 0" begin
+        rc, ball = _rt_read(db, "'\\\0'")
+        @test rc === :exception &&
+            lk_eq(_rt_syntax_formal(ball), _rtf("undefined_char_escape", _rts("")))
+    end
+    # context of an error before anything was read showed a stale byte
+    # PORT: test_read.pl eof_in_comment
+    @testset "eof_in_comment" begin                 # Ctx == string("", 0)
+        _rt_atom_ball(db, "abcdef")
+        rc, ball = _rt_atom_ball(db, "/* x")
+        @test rc === :exception &&
+            lk_eq(child(ball, 3), _rtf("string", lk_gnd(_RT, ""), lk_gnd(_RT, 0)))
+    end
+    # cycles(Bool) was written as int, overwriting dotlists
+    dotted = "'.'(a,b)"
+    ab = _rtf("[|]", _rts("a"), _rts("b"))
+    opt(n, v) = _rtf(n, _rts(v))
+    # PORT: test_read.pl dotlists
+    @testset "dotlists" begin                       # T == [a|b]
+        rc, t = _rt_read_opts(db, dotted, _rtl(opt("dotlists", "true")))
+        @test rc === :true && lk_eq(t, ab)
+    end
+    # PORT: test_read.pl dotlists_cycles
+    @testset "dotlists_cycles" begin
+        rc, t = _rt_read_opts(
+            db, dotted, _rtl(opt("dotlists", "true"), opt("cycles", "true"))
+        )
+        @test rc === :true && lk_eq(t, ab)
+    end
+    # PORT: test_read.pl dotlists_cycles
+    @testset "dotlists_cycles" begin
+        rc, t = _rt_read_opts(
+            db, dotted, _rtl(opt("dotlists", "true"), opt("cycles", "false"))
+        )
+        @test rc === :true && lk_eq(t, ab)
+    end
+    # PORT: test_read.pl dotlists_cycles
+    @testset "dotlists_cycles" begin
+        rc, t = _rt_read_opts(
+            db, dotted, _rtl(opt("cycles", "true"), opt("dotlists", "true"))
+        )
+        @test rc === :true && lk_eq(t, ab)
+    end
+end
+
 @testset "read_op" begin
     db = _rt_db([(600, "fy", "!"), (600, "fy", "[]")])
     # PORT: test_read.pl modify
@@ -107,6 +195,14 @@ end
     @testset "float_overflow" begin                 # error(syntax_error(float_overflow))
         rc, ball = _rt_read(db, "1.797693134862316e+308")
         @test rc === :exception && lk_eq(_rt_syntax_formal(ball), _rts("float_overflow"))
+    end
+    # 0' at the end of the text used to read beyond the end
+    # PORT: test_read.pl quote_eos
+    @testset "quote_eos" begin                      # atom_number('0\'', _) fails
+        rc, _ = _rt_call(
+            db, "atom_number", _RT[_rts("0'"), mk_var(_RT, LK.fresh_var_keys!(1))]
+        )
+        @test rc === :false
     end
 end
 

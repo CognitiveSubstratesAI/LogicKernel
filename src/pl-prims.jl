@@ -1718,9 +1718,7 @@ function pl_atom_number2_va(
         n = number()
         rc, q = str_number(ld, b, 1, n, UInt32(0))
         if rc == NUM_OK
-            # DIVERGES: the end is also tested against the text's length (upstream defect,
-            # reported privately; see the workspace register: internal record #9).
-            if q == length(b) && b[q] == 0x00       # *q == EOS
+            if b[q] == 0x00                         # *q == EOS
                 ok = PL_unify_number(ld, A2, n)
                 clearNumber(n)
                 return ok ? FTRUE : FFALSE

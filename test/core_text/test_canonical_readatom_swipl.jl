@@ -144,7 +144,8 @@ const _CR_OPTS_TEXT = """[
     [], [variable_names(_)], [variables(_)], [singletons(_)], [singletons(warning)],
     [syntax_errors(error)], [syntax_errors(fail)], [syntax_errors(quiet)], [syntax_errors(dec10)],
     [double_quotes(codes)], [double_quotes(chars)], [double_quotes(atom)],
-    [back_quotes(string), character_escapes(false)], [dotlists(true), module(user)], [cycles(true)]
+    [back_quotes(string), character_escapes(false)], [dotlists(true), module(user), cycles(true)],
+    [cycles(true), dotlists(true)]
 ]"""
 
 const _CR_DRIVER = raw"""
@@ -446,7 +447,11 @@ if _CR_SWIPL !== nothing
             xs
         end
         @test length(optss) == 15
-        texts = unique(vcat(_TR_CORPUS, _TW_CORPUS))
+        # …and texts whose SECOND read fails before anything is read: under syntax_errors(dec10)
+        # the reader goes on in the same buffer, which then still holds the first term (the
+        # error's text there is empty: upstream defect, fixed in 5f50eb2 — it was the buffer's
+        # first byte)
+        texts = unique(vcat(_TR_CORPUS, _TW_CORPUS, ["a b. /* x", "foo bar. /* y */ /* x"]))
         labels, ours = String[], Vector{String}[]
         for s in texts, (k, os) in enumerate(optss)
             push!(labels, "$(repr(s)) opts#$k")
