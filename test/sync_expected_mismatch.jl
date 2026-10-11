@@ -68,10 +68,19 @@ function sync_unexpected(file::AbstractString, bad::AbstractVector; key=string)
     return filter(b -> !sync_mismatch(file, key(b)), bad)
 end
 
-"The entries of `file` that did not mismatch in this run: stale — their fix is in, or they never differed."
-sync_stale(file::AbstractString)::Vector{String} = [
-    e[2] for e in SYNC_EXPECTED if e[1] == file && !((e[1], e[2]) in _SYNC_HIT)
-]
+"""
+The entries of `file` that did not mismatch in this run: stale — their fix is in, or they never
+differed. NONE where there is no `swipl` to compare with (Pkg.test's environment, CI's `test`
+jobs): the differentials do not run there, so nothing was compared and nothing can be stale.
+MEASURED 2026-10-11 (CI run 38156167094): without this, every entry read as stale in the two
+jobs that have no swipl, while every local gate — which always has one — was green.
+"""
+function sync_stale(file::AbstractString)::Vector{String}
+    Sys.which("swipl") === nothing && return String[]
+    return [
+        e[2] for e in SYNC_EXPECTED if e[1] == file && !((e[1], e[2]) in _SYNC_HIT)
+    ]
+end
 
 # ── the list ─────────────────────────────────────────────────────────────────────────────────────
 sync_cases(

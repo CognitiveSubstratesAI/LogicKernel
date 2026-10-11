@@ -229,6 +229,22 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 ["another mismatch"]
             @test !(case in call(:sync_stale, file))
             @test call(:sync_mismatch, "no/such_file.jl", case) == false
+            # where there is no swipl the differentials do not run, so nothing is stale there
+            # (CI's `test` jobs: run 38156167094 was red on exactly this) — and with one, an
+            # entry that has not mismatched is
+            other = entries[end][1] == file ? entries[end][2] : case
+            m2 = Module(:GSSync2)
+            Base.include(m2, list)
+            stale2(path) = withenv("PATH" => path) do
+                Base.invokelatest(getfield(m2, :sync_stale), file)
+            end
+            mktempdir() do d
+                @test isempty(stale2(d))                        # no swipl on PATH
+                sw = joinpath(d, "swipl")
+                write(sw, "#!/bin/sh\nexit 0\n")
+                chmod(sw, 0o755)
+                @test other in stale2(d)                        # a swipl: not hit means stale
+            end
         else
             @test isempty(users)
         end
