@@ -16,8 +16,9 @@
 # two-clause cases pin that an error in the first clause stops the second being tried.
 #
 # swipl present ⇒ the differential runs; absent ⇒ an error under LOGICKERNEL_REQUIRE_SWIPL=1, else a
-# loud note — never a silent pass. swipl 10.1.16 can ABORT in its occurs-check error path
-# (LogicKernel#3): it runs in chunks, and a chunk that aborts is re-run one case per process.
+# loud note — never a silent pass. swipl runs in chunks, and a chunk whose process ends without
+# its answers is re-run one case per process (upstream defect, reported privately; see the workspace register:
+# internal record #3).
 using Test, LogicKernel, Random
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -287,7 +288,7 @@ function _hswipl_run!(
     return true
 end
 
-"swipl's outcomes for every case in every mode, and how many chunks aborted (LogicKernel#3)."
+"swipl's outcomes for every case in every mode, and how many chunks were re-run case by case (internal record #3)."
 function _hswipl(cases; prelude::String="")
     res = Dict{Tuple{Int, String}, String}()
     aborts = 0
@@ -296,7 +297,7 @@ function _hswipl(cases; prelude::String="")
             aborts += 1
             for i in chunk
                 _hswipl_run!(res, cases, [i], mode; prelude=prelude) ||
-                    error("swipl aborts on case $i alone in mode $mode")
+                    error("swipl gives no answers for case $i alone in mode $mode")
             end
         end
     end
@@ -394,7 +395,7 @@ const _HHEAD_INSTRUCTIONS = (
             end
             @test isempty(bad)
             @test length(theirs) == 3 * length(cases)
-            @info "head unification: $(length(cases)) cases × 3 modes identical to swipl; $aborts chunk(s) re-run one by one after a swipl abort (LogicKernel#3)"
+            @info "head unification: $(length(cases)) cases × 3 modes identical to swipl; $aborts chunk(s) re-run one by one (internal record #3)"
         end
     elseif _HSWIPL_REQUIRED
         error(

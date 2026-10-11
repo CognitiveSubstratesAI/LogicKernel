@@ -12,7 +12,7 @@
 #     a buffer for each (`set_standard_stream!`). Variables are named by first occurrence on both
 #     sides before the texts are compared;
 #   * THE ERRORS AND EDGES, 91 hand goals as whole goals: every stream argument (`foo`, `1`, a
-#     variable, `user_input`, `current_input`, `protocol`), every option error (a non-list, a
+#     variable, `user_input`, `current_input`), every option error (a non-list, a
 #     partial list, a bad item, a bad value of each type, an unknown option ignored), the
 #     `variable_names` option (its errors; a `'$VAR'` written in the term stays a term), max_depth,
 #     max_text and `truncated`, fullstop and nl, nl/0,1;
@@ -20,9 +20,9 @@
 #   * THE HOST: the streams opened over stdin/stdout/stderr when first asked for; one replaced
 #     (`set_standard_stream!`) — current output follows; a write error on a stream (a closed
 #     buffer) is `io_error(write, Alias)`; the `variable_names` bindings are undone after the write.
-#   * `protocol` (no protocol stream) is `existence_error(stream, protocol)` — swipl 10.1.16 ABORTS
-#     on it (a lock released twice in `get_stream_handle`); pinned against the expected term, never
-#     run on swipl.
+#   * a standard alias with no stream is `existence_error(stream, Alias)`: pinned against the
+#     expected term, not compared with swipl (upstream defect, reported privately; see the workspace register:
+#     internal record #13).
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -186,7 +186,7 @@ end
 _wf_term_results(t::_WF, ops) =
     [_wf_run(name, _WF[pre..., t, post...]) for (name, pre, post) in ops]
 
-# The hand goals: whole goals, each run as read. (`protocol` is pinned below, never run on swipl.)
+# The hand goals: whole goals, each run as read. (Internal record #13's goals are pinned below.)
 const _WF_GOALS = [
     "nl", "nl(user_output)", "nl(user_error)", "nl(user)", "nl(foo)", "nl(_)", "nl(1)",
     "nl(user_input)", "nl(current_output)", "write(foo, x)", "write(1, x)",
@@ -438,7 +438,7 @@ else
     end
 end
 
-@testset "protocol: no protocol stream is existence_error(stream, protocol) (swipl aborts)" begin
+@testset "a standard alias with no stream is existence_error(stream, Alias) (internal record #13)" begin
     for g in ("write(protocol, x)", "nl(protocol)", "write_term(protocol, x, [])")
         r = _wf_goal_results([g])[1]
         @test r[1] == "" && r[2] == ""

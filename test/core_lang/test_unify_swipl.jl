@@ -305,13 +305,10 @@ end
 swipl's outcome of `A = B` for each pair, in each mode: `(outcomes, aborts)`, the outcomes a Dict
 `(i, mode) => outcome`.
 
-swipl 10.1.16 ABORTS (SIGABRT, "Cannot report error: no memory" in `PL_error` under
-`unify_with_occurs_check`) on this workload in `error` mode, deterministically but depending on what
-else the process has loaded and run — measured 2026-10-03; reproducers in the workspace at
-docs/tracking/repros/swipl_occurs_check_error_abort/; tracked as LogicKernel#3, docs/upstream_reports.md
-(upstream report: pending — when it is fixed, return to one process per mode). So swipl runs in
-CHUNKS of pairs, one process each; a chunk that aborts is re-run ONE PAIR PER PROCESS, and every
-abort recovered that way is counted and reported (`aborts`), never silently absorbed.
+A swipl process can end without its answers on this workload (upstream defect, reported privately; see the workspace register:
+internal record #3 — when it is fixed, return to one process per mode). So swipl runs in CHUNKS of
+pairs, one process each; a chunk whose process ends that way is re-run ONE PAIR PER PROCESS, and
+every chunk recovered that way is counted and reported (`aborts`), never silently absorbed.
 """
 function _zswipl(pairs)
     res = Dict{Tuple{Int, String}, String}()
@@ -321,7 +318,7 @@ function _zswipl(pairs)
             aborts += 1
             for i in chunk
                 _zswipl_run!(res, pairs, [i], mode) ||
-                    error("swipl aborts on pair $i alone in mode $mode")
+                    error("swipl gives no answers for pair $i alone in mode $mode")
             end
         end
     end
@@ -332,7 +329,7 @@ end
 
 """
 swipl's outcome of `A = B` for the pairs `idx` with the `occurs_check` flag `mode`, into `res`;
-`false` if the swipl process died by a signal (the abort above).
+`false` if the swipl process died by a signal (see `_zswipl`).
 """
 function _zswipl_run!(
     res::Dict{Tuple{Int, String}, String}, pairs, idx::Vector{Int}, mode::String
@@ -554,7 +551,7 @@ if _ZSWIPL !== nothing
         pairs, kinds = _zpairs(Xoshiro(20261003), 2000)
         theirs, aborts = _zswipl(pairs)
         aborts > 0 &&
-            @warn "swipl ABORTED in $aborts chunk(s) (its occurs-check error path; see _zswipl); those pairs were re-run one per process"
+            @warn "swipl ended early in $aborts chunk(s) (internal record #3; see _zswipl); those pairs were re-run one per process"
         ld = PL_local_data{_ZT}()
         bad = String[]
         tally = Dict{Tuple{String, String}, Int}()

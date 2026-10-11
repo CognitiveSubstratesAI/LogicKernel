@@ -1718,9 +1718,8 @@ function pl_atom_number2_va(
         n = number()
         rc, q = str_number(ld, b, 1, n, UInt32(0))
         if rc == NUM_OK
-            # DIVERGES: `0'` at the end of the text makes str_number step past the terminator,
-            # and upstream then reads the byte after it (undefined; swipl 10.1.16 fails
-            # `atom_number('0\'', X)`): an end past the terminator is not the end here.
+            # DIVERGES: the end is also tested against the text's length (upstream defect,
+            # reported privately; see the workspace register: internal record #9).
             if q == length(b) && b[q] == 0x00       # *q == EOS
                 ok = PL_unify_number(ld, A2, n)
                 clearNumber(n)

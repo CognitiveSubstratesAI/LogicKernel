@@ -278,10 +278,8 @@ end
 # PORT: pl-file.c get_stream_handle
 # DIVERGES: the alias table is the standard streams' (no stream blobs, no user aliases: R2), so an
 # atom is a standard stream's name or no stream; returns the stream or `nothing`; no locks. A
-# standard name whose stream is NULL — `protocol` — is `existence_error(stream, protocol)`: upstream
-# releases the file lock twice on that path, `PL_UNLOCK(L_FILE)` inside the alias branch and again
-# before `goto noent`, and swipl 10.1.16 aborts on it (`countingMutexUnlock: Assertion failed`;
-# repro: docs/tracking/repros/ in the workspace) — the kernel takes the path upstream intends.
+# standard name whose stream is NULL is `existence_error(stream, Name)`, the path upstream intends
+# (upstream defect, reported privately; see the workspace register: internal record #13).
 "The stream the atom `a` names, as `flags` (`SH_*`) ask, or `nothing` with the error raised (pl-file.c)."
 function get_stream_handle(
     ld::PL_local_data{T}, a::T, flags::Int

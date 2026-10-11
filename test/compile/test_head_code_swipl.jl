@@ -209,7 +209,7 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     @test any(c -> any(startswith("h_rfunctor("), c), ours) &&
         any(c -> any(startswith("h_firstvar("), c), ours)
     @test any(c -> any(startswith("h_var("), c), ours)
-    # a hand-checked case: p(_,_,a) is h_void_n(2), h_atom, i_exitfact (swipl vm_list, LogicKernel#1)
+    # a hand-checked case: p(_,_,a) is h_void_n(2), h_atom, i_exitfact (swipl vm_list, SWI-Prolog/swipl-devel#1537)
     @test _hcode(_he(:p, [mk_var(_H, UInt64(1)), mk_var(_H, UInt64(2)), _hs(:a)])) ==
         ["h_void_n(2)", "h_atom($(_ha("a")))", "i_exitfact"]
     # slots are COMPACTED past voids (pl-comp.c analyse_variables, `n + argvars - body_voids`),

@@ -400,7 +400,7 @@ if _RD_SWIPL !== nothing
         @test length(theirs) == length(ours)
         for (t, o, s) in zip(_RD_RAWERR, ours, theirs)
             if t == "/* x"
-                # DIVERGES (src/pl-read.jl `clearBuffer`): swipl's text is a stale buffer byte
+                # DIVERGES (src/pl-read.jl `clearBuffer`; internal record #8): swipl's text is not compared
                 @test startswith(
                     s, "err error(syntax_error(end_of_file_in_block_comment),string("
                 )

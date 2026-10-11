@@ -246,6 +246,31 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
   * one end to end: a worker ignoring its `go` file's types made every shard run all 117 units,
     and the coordinator refused the run.
 
+**The static-analysis gate's own cost** (Tooling 2, 2026-10-11; test/static_analysis_manifest.jl).
+The unit had grown to 19–22 min of an evidence run and 16 min of a preflight. MEASURED, testset by
+testset in a fresh process on a quiet machine, before any change: 783 s, 504 s of it compiling —
+and the analysis itself (Aqua, JET's package and per-entry checks, the coverage check, AllocCheck)
+was about 370 s. The rest was the gate's OWN code:
+* The manifest was one tuple of 1,663 entries, so a tuple type with 1,663 different element types.
+  Every closure and every loop over it made Julia infer that type again: ~10 s each (probed: 9.5 s
+  and 9.9 s for two closures over the tuple, 0.05 s and 0.02 s over a vector). The call-path test
+  alone has 30 such closures; the duplicate check cost ~120 s more.
+* A warm daemon paid it on every preflight, because each run includes the file into a new module
+  and its closures are new.
+* **The change:** the entries are written as before and held as a `Vector{ManifestEntry}`, one
+  concrete struct type that destructures and indexes as its tuple did. The gate's code
+  (test/static_analysis_body.jl, `manifest_uncovered`) is unchanged, byte for byte.
+* **What is checked did not change:** the 1,663 entries dumped before and after are identical, in
+  order (560 marked allocation-free); the unit passes the same 2,300 tests in the daemon.
+* **MEASURED after:** a fresh process 246 s (48 s compiling); the daemon 5 min 30 s where the
+  last preflight took 16 min 14 s.
+* **Mutation-proved — 5 of 5 caught at verdict level**, baselines green before and after: a
+  written entry twice; the conversion dropping the last entry; the conversion losing the
+  allocation flag, or setting it on every entry; an allocating entry marked allocation-free.
+* The unit was NOT split. A split spreads a cost over the shards; this cost was not analysis and
+  is gone. Whether the unit still sets a run's floor is read from the runs' own unit timings
+  (`slowest units`, printed by every evidence run), and a split is decided on those.
+
 **The precompile workload** (`src/precompile_workload.jl`, PrecompileTools — the one allowlisted
 dependency): the hot paths on `DefaultTerm`, compiled at precompile time. MEASURED (three fresh
 processes each, a quiet machine): the first call of the workload in a fresh process fell from
@@ -290,7 +315,8 @@ write time. The generated table in [`port_inventory.md`](port_inventory.md) list
 | `doc/`, `man/` | `docs/` | Julia documentation convention |
 
 Porting this way finds defects in swipl-devel itself; they are recorded in
-[`upstream_reports.md`](upstream_reports.md) — LogicKernel issues first, reported upstream later.
+[`upstream_reports.md`](upstream_reports.md), an index: each is described there once upstream has
+fixed it or a public issue exists.
 
 ## What is here now
 
@@ -372,7 +398,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/files/test_load_swipl.jl` | R1f's loader gate: 13 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`; the compiler's warnings among them since R1g), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
-| `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; `protocol` pinned (swipl aborts); portray_goal refused; the host's streams, a write error, the variable_names bindings undone | — |
+| `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; a standard alias with no stream pinned (internal record #13); portray_goal refused; the host's streams, a write error, the variable_names bindings undone | — |
 | `test/core_text/test_canonical_readatom_swipl.jl` | R1e's last gate: write_canonical/1,2 on 400 corpus lines + 1,000 random terms, literally as swipl (variables numbered both sides) and read back; read_term_from_atom/3 on every corpus text × 15 option lists (term, options after, verdict, messages) and 49 hand goals; the refusals; two named exclusions (a cut-UTF-8 ball, a NUL string) | — |
 | `test/core_text/text_corpora_testlib.jl` | the reader's and the writer's hand corpora and the random-term generator, shared by their differentials and the round trip (R1f) | — |
 | `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations); a float's text read back (since R1e's floats); `$` not an operator (pinned); `unquoted_atom` | — |
@@ -403,7 +429,7 @@ Porting this way finds defects in swipl-devel itself; they are recorded in
 | `test/db/test_assert_swipl.jl` | V9c's differential: assertz/1 and asserta/1 called from clauses through the VM, every outcome and error identical to swipl's, then each changed predicate's code (the first assertz moved, the second and a declared dynamic not); assert/1 and its interim until V5c; `rewrite_callable`; the refusals | — |
 | `test/db/test_clause_variables.jl` | clause variables: renamed apart from the goal's, kernel keys unique across attempts and databases (a retained answer moves between databases), `var_term` rejecting the kernel's half, a sink's bindings gone after it — also when it throws | — |
 | `test/db/test_update_view_gc.jl` | the logical update view under clause GC: an enumeration still sees a clause retracted and collected after it started — pinned and live against swipl | — |
-| `test/db/test_index_swipl.jl` | the indexing contract, LogicKernel#1's fix pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
+| `test/db/test_index_swipl.jl` | the indexing contract, the kernel's fix of SWI-Prolog/swipl-devel#1537 pinned, and a live differential: random programs give identical answers to swipl for every call, and identical determinism, indexes and primary indexes wherever the fix cannot apply | — |
 | `test/compile/test_head_code_swipl.jl` | live differential: compiled heads are instruction-for-instruction swipl's `vm_list`, frame-slot operands included (slots compacted past voids above the arity, 2026-10-03), with three hand-pinned heads and their frame sizes | — |
 | `test/compile/test_compiler_warnings_swipl.jl` | R1g's gate: the compiler's warnings of 33 pinned + 3,000 random clauses (control constructs: the analysis; inline goals: the whole compiler), in two style passes, compared with swipl's `compiler_warnings/2` in order and by variable name | — |
 | `test/compile/test_analyse_variables_swipl.jl` | live differential of the variable analysis of clauses WITH A BODY (V1): head code to `i_enter`, the slot of every body variable occurrence (swipl's `clause_vm/2`), and the frame size (the `$cont$` frame a `shift/1` captures), on 600 random and 18 pinned clauses | — |
@@ -924,7 +950,7 @@ graph TD
 | `unify` | code | `src/pl-variant.c`, `src/pl-termhash.c`, unification in `src/pl-prims.c` | variant checking and term hashing ported 2026-10-03 (finite trees: no cycle marking, no attributed variables); unification ported 2026-10-03 as SWI's: a binding store and a trail with marks, the occurs-check modes, rational trees through bindings |
 | `constraints` | code | `src/pl-attvar.c` | attributed-variable hooks |
 | `trie` | code | `src/pl-trie.c` | answer and variant tables, variables keyed by first occurrence |
-| `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([LogicKernel#1](https://github.com/CognitiveSubstratesAI/LogicKernel/issues/1)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
+| `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([SWI-Prolog/swipl-devel#1537](https://github.com/SWI-Prolog/swipl-devel/issues/1537)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
 | `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2, which unify with the kernel's unification since 2026-10-03; since V1 L2 (2026-10-04) each attempt DECOMPILES the head from the clause's code and literal table (`decompile_head`, as upstream) — a clause stores no head term. Not yet: abolish, reload, transactions |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
 | `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported — the head instructions as swipl selects them (V1 L1), the clause's literal table and the head decompiler (V1 L2), the variable analysis of head and body (V1, pl-funct.c's control functors with it); body code and the instructions' execution are not |
@@ -1636,11 +1662,9 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
   returns the values (`nothing` where the list gives none); option dicts not ported (no dicts);
   print/2 always reads the `print_write_options` flag's default, `[portray(true), quoted(true),
   numbervars(true)]` (boot/toplevel.pl; no flag table to change it).
-* **UPSTREAM DEFECT, not ported (report drafted for review, not filed):** `write(protocol, x)` and
-  `nl(protocol)` ABORT swipl 10.1.16 (`countingMutexUnlock: Assertion failed`) — `get_stream_handle`
-  releases `L_FILE` twice when a standard alias's stream is NULL (`Sprotocol`). The kernel takes
-  the path upstream intends, `existence_error(stream, protocol)`, pinned. Confirmed two ways: the
-  abort (a minimal goal) and the code path. A second oddity, ported AS IS: write_term's
+* **Upstream defect, not mirrored** (upstream defect, reported privately; see the workspace register:
+  internal record #13): at `get_stream_handle` the kernel takes the path upstream intends, pinned.
+  A second oddity, ported AS IS: write_term's
   `back_quotes(symbol_char)` never sets `PL_WRT_BACKQUOTE_IS_SYMBOL` — upstream tests the module's
   WHOLE flag word against 0, not its `BQ_*` bits — and swipl agrees (no effect, probed).
 * **Refused, explicitly (`NotPortedError`):** write_term's `portray_goal` (calling Prolog: V9).
@@ -1654,7 +1678,7 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
   max_text, `truncated`, fullstop, nl/0,1): each compared with swipl on THREE outputs — user_output,
   user_error, the verdict (the exception term, context included); swipl's run rebinds the two
   aliases and the current output to files per call, as the host gives the kernel a buffer per
-  call; non-vacuity asserted (texts on both streams). Plus `protocol`, a cyclic option list
+  call; non-vacuity asserted (texts on both streams). Plus internal record #13's pin, a cyclic option list
   (`type_error(list, L)` after 1,000 items, as swipl), the `portray_goal` refusal, the host
   interface, a write error, the bindings undone. All three term types.
 * **Mutation-proved — 46 of 46 caught at verdict level, targeted** (the workspace's
@@ -2003,10 +2027,10 @@ constructs an explicit error.
 * **DIVERGES:** a C pointer into a buffer is an index into a byte vector (the streams, the read
   buffer, every scanner function, which return the moved index); a stream's function table is an
   enum over three function sets and a typed handle; `Sopen_julia_io` in place of the OS file
-  functions; a text stream is UTF-8 (`initEncoding`: no locale); the read buffer is zeroed, where
-  upstream's error text for `/* x` at the start is a stale byte (upstream report #8, drafted); an
-  end past the text's terminator (`atom_number('0\'', X)`) is not the end, where upstream reads
-  the byte after it (#9, drafted); an atom holding the character 0 is refused (`NotPortedError`):
+  functions; a text stream is UTF-8 (`initEncoding`: no locale); the read buffer is zeroed
+  (`clearBuffer`) and `pl_atom_number2_va` has one more end test (two upstream defects, reported
+  privately; see the workspace register: internal records #8 and #9); an atom holding the
+  character 0 is refused (`NotPortedError`):
   the term interface's atoms are Julia Symbols; the `swi_backslash_newline` warning is not printed
   (no message system); `nan15()` is a constant.
 * **NOT PORTED (explicit errors where reachable):** ENC_ANSI, UTF-16 and wchar encodings (UTF-8
@@ -2028,7 +2052,7 @@ constructs an explicit error.
   the alternative term types three times, last in R1b), with a fixture; and the `strtod` `ccall`
   allowlisted. port_check: a generated first upstream with no copyright notice is checked against
   the file's other upstreams (its generator), with a fixture.
-* **Mutation-proved — 23 of 23 caught at verdict level (exit 1 each):** rationals not read; `\n` read as `\r`; digit groups not skipped; a tab advancing one column; ANSI escapes counted; `get_byte` not counting bytes; a constant map page's byte; every pair an opener; nested comments not counted; `[]` read as the text atom; the read buffer not zeroed; a stored NaN not canonical; an end past the terminator taken as the end; an atom holding character 0 accepted; `isBlankW` blind to non-ASCII layout; `Speekcode` not restoring the buffer; a string stream's end needing a full stop; the R1b defect planted back (the gate); the gate blind to a `Union`; UTF-8 continuation bits dropped; `-1.0Inf` read as `+Inf`; a malformed UTF-8 start not replaced; a map entry's high byte dropped. Two gaps were closed before the run: a full stop before a non-ASCII blank, and a string stream's text without one. Not mutated, as equivalent: `decimal_weight`'s `code > *m + 10` (upstream's bound; valid digits are `*m..*m+9`, so `+ 9` answers the same).
+* **Mutation-proved — 23 of 23 caught at verdict level (exit 1 each):** rationals not read; `\n` read as `\r`; digit groups not skipped; a tab advancing one column; ANSI escapes counted; `get_byte` not counting bytes; a constant map page's byte; every pair an opener; nested comments not counted; `[]` read as the text atom; the read buffer not zeroed; a stored NaN not canonical; `pl_atom_number2_va`'s extra end test dropped; an atom holding character 0 accepted; `isBlankW` blind to non-ASCII layout; `Speekcode` not restoring the buffer; a string stream's end needing a full stop; the R1b defect planted back (the gate); the gate blind to a `Union`; UTF-8 continuation bits dropped; `-1.0Inf` read as `+Inf`; a malformed UTF-8 start not replaced; a map entry's high byte dropped. Two gaps were closed before the run: a full stop before a non-ASCII blank, and a string stream's text without one. Not mutated, as equivalent: `decimal_weight`'s `code > *m + 10` (upstream's bound; valid digits are `*m..*m+9`, so `+ 9` answers the same).
 * **Bench** (a freshly restarted daemon; the machine quiet before and after): the run-time allocations unchanged (nreverse 2941, compare/3 body 7000, derive 527, qsort 2733, poly_10 188268) and the compile cases as R1b left them (1648, 3168 bytes), measured before the tables
   became Strings and tuples, which no bench case reaches; `variant_sha1` one allocation (32 bytes) fewer than R1b's run, which no R1c change touches: noted, not traced. Ratios to swipl: nreverse 12.55×, derive 6.29×, qsort 7.75×, poly_10 7.20×.
 
@@ -3534,8 +3558,8 @@ records — § "V3 — machine state" below. They take precedence over decision 
   first version linked every compound pair for cycle detection as upstream does and was 27–38×
   slower — the link is one pointer write upstream and an identity-map entry here — so only pairs
   reached through a binding are linked (DIVERGES in `do_unify`). The rest is the store itself: a
-  `Dict` entry per binding where SWI writes a cell. The differential found a swipl abort in the
-  occurs-check error path (`docs/tracking/repros/swipl_occurs_check_error_abort/` in the workspace).
+  `Dict` entry per binding where SWI writes a cell. The differential found an upstream
+  defect, reported privately (see the workspace register: internal record #3).
   ✅ retract/1, retractall/1 and clause/2 use it (2026-10-03): a mark per candidate clause, the
   answer's bindings live while the caller's sink runs, undone after it (in a `finally`: ≲ 0.1 µs).
   Variable keys: a caller owns those below 2^63 (`var_term` checks), the kernel takes its own from

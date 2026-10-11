@@ -59,7 +59,7 @@ function _tr_enc(t::_TR, seen::Vector{UInt64}=UInt64[])::String
            join([_tr_enc(child(t, i), seen) for i in 2:nchildren(t)], ",") * ")"
 end
 # A text's codes; a byte that is no UTF-8 character counts as its own code, as upstream's decoder
-# takes it (a syntax error's text can end inside a character: docs/upstream_reports.md #8).
+# takes it (docs/upstream_reports.md #8).
 _tr_codes(s::String)::String =
     "[" * join([isvalid(c) ? Int(c) : Int(codeunit(string(c), 1)) for c in s], ",") * "]"
 

@@ -350,10 +350,8 @@ end
 # ── the read buffer (pl-read.c) ─────────────────────────────────────────────────────────────────
 
 # PORT: pl-read.c clearBuffer
-# DIVERGES: the first buffer is zeroed, where upstream's `fast` array holds whatever the stack held:
-# a syntax error raised before anything was read (`end_of_file_in_block_comment` at the start)
-# reports the buffer's first byte as its text, which upstream reads uninitialised (swipl 10.1.16:
-# `"\x1\"`, or the previous read's first character); here it is empty. Upstream report #8, drafted for the user to file.
+# DIVERGES: the first buffer is zeroed (upstream defect, reported privately; see the workspace register:
+# internal record #8).
 "Empty the read buffer (pl-read.c)."
 function clearBuffer(rd::read_data)::Nothing
     rb = rd._rb
@@ -1963,6 +1961,8 @@ end
 # interface, which cannot hold the character 0; upstream's atoms can (`'a\0\b'` reads as
 # `[97,0,98]` in swipl 10.1.16): refused explicitly here, never misread.
 function _atom_from_text(::Type{T}, str::String)::T where {T}
+    # DIVERGES (settled, user 2026-10-10: keep refusing): upstream's atoms hold the character 0,
+    # the kernel's do not; the point to revisit is phase 2's atom table.
     occursin('\0', str) && throw(
         NotPortedError{Nothing}(
             nothing, "an atom containing the character 0 (a Symbol cannot hold it)",

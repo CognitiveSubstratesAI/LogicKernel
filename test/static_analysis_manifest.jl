@@ -7,6 +7,7 @@
 #
 # DISPATCH_MANIFEST: (function, Tuple{argument types...}, must_not_allocate::Bool)
 #   CONCRETE argument types only — the gate analyses exactly these specialisations.
+#   Written as tuples; held as a `Vector{ManifestEntry}` (see `ManifestEntry`, at the end).
 # DISPATCH_EXEMPT:   (function, Tuple{...}) => "reason"   — a method that legitimately cannot be
 #   called with the reference types. An empty reason, or an entry naming no method of LogicKernel,
 #   fails the gate.
@@ -1197,7 +1198,7 @@ _index_entry_points(T) = (
     (LK.indexOfWord, Tuple{T}, true)
 )
 
-const DISPATCH_MANIFEST = (
+const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_per_type(_M1)...,
     _manifest_per_type(_M2)...,
     _manifest_per_type(_M3)...,
@@ -1559,6 +1560,40 @@ const DISPATCH_MANIFEST = (
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),
     (LK._va_leaf, Tuple{Int}, false), (LK._det_leaf, Tuple{Int}, false)
 )
+
+"""
+One entry of the manifest, `(f, argument types, must_not_allocate)`, as ONE concrete type.
+
+The entries are written as tuples, and a tuple of them has a different element type per entry:
+every loop and every closure over it made Julia infer that whole tuple type again. MEASURED
+2026-10-11, 1,663 entries, a fresh process: ~10 s for each closure (30 in the call-path test
+alone) and ~120 s for the duplicate check — 410 of the gate's 783 s, none of it analysis; a warm
+daemon paid it again on every preflight, each run's closures being new. A `Vector` of one struct
+type costs nothing to walk. An entry destructures and indexes as its tuple did, so the gate's code
+(test/static_analysis_body.jl, `manifest_uncovered`) reads either.
+"""
+struct ManifestEntry
+    f::Union{Function, Type}
+    tt::Type
+    noalloc::Bool
+end
+Base.iterate(e::ManifestEntry, i::Int=1) = i > 3 ? nothing : (getfield(e, i), i + 1)
+Base.getindex(e::ManifestEntry, i::Int) = getfield(e, i)
+
+"""
+The entries of the tuple `t`, in order. `t` is read with `getfield` and is not specialised on, so
+nothing here is inferred over its type either; an entry of another shape is a `TypeError`.
+"""
+function _manifest_entries(@nospecialize(t::Tuple))::Vector{ManifestEntry}
+    v = ManifestEntry[]
+    for i in 1:nfields(t)
+        e = getfield(t, i)::Tuple{Union{Function, Type}, Type, Bool}
+        push!(v, ManifestEntry(e[1], e[2], e[3]))
+    end
+    return v
+end
+
+const DISPATCH_MANIFEST = _manifest_entries(_DISPATCH_MANIFEST_TUPLE)
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
 # cached bit; `Term` overrides it, so no reference type reaches it. (`Tuple{Int}` names the fallback

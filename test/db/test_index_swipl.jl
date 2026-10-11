@@ -4,7 +4,7 @@
 # THREE JUDGES:
 #   1. THE CONTRACT (always runs): for every call, the answers through the index equal the answers
 #      of a scan of every clause — in order, duplicates kept. Indexing never changes answers.
-#   2. LogicKernel#1, PINNED (always runs): SWI's H_VOID_N defect is FIXED in the kernel (user,
+#   2. SWI-Prolog/swipl-devel#1537, PINNED (always runs): SWI's H_VOID_N defect is FIXED in the kernel (user,
 #      2026-10-02) — its reproducers get the indexes swipl 10.1.16 fails to build.
 #   3. LIVE swipl: random fact programs (static and dynamic, unique / few / variable-heavy /
 #      compound / deep arguments) and a random sequence of calls — on dynamic predicates
@@ -166,7 +166,7 @@ function _xprogram(seed::Int, n::Int)::Vector{_XPred}
     return preds
 end
 
-"The LogicKernel#1 reproducers, with the call orders of the issue."
+"The SWI-Prolog/swipl-devel#1537 reproducers, with the call orders of the issue."
 function _xhvoid()::Vector{_XPred}
     hp = [_xe(:hv_p, _xv(), _xv(), _xs("a$i")) for i in 1:100]
     hq = [_xe(:hv_q, _xv(), _xs(:x), _xs("a$i")) for i in 1:100]
@@ -298,7 +298,7 @@ end
 "One `idx` report line's fields."
 const _XIdx = Tuple{String, Vector{Int}, Vector{Int}, Float32, Bool, Bool, Int}
 
-"True when a clause of `p` has an H_VOID_N in its head code — where LogicKernel#1's fix applies."
+"True when a clause of `p` has an H_VOID_N in its head code — where the kernel's fix (SWI-Prolog/swipl-devel#1537) applies."
 function _xvoid_run(p::IxPred)::Bool
     cref = p.def.impl_clauses.first_clause
     while cref !== nothing
@@ -316,8 +316,8 @@ end
 
 """
 Run the program; answers as text lines, index reports, primary indexes, the predicates the
-LogicKernel#1 fix can touch, and the predicate of each call. `unindexed`: the oracle. `vm`: every
-call through the virtual machine (`vm_call`, V4a) — determinism is `PL_S_LAST`.
+kernel's fix (SWI-Prolog/swipl-devel#1537) can touch, and the predicate of each call.
+`unindexed`: the oracle. `vm`: every call through the virtual machine (`vm_call`, V4a) — determinism is `PL_S_LAST`.
 """
 function _xrun(preds::Vector{_XPred}; unindexed::Bool=false, vm::Bool=false)
     lines = String[]
@@ -374,7 +374,7 @@ function _xrun(preds::Vector{_XPred}; unindexed::Bool=false, vm::Bool=false)
     return (; lines, idx, pidx, affected, goalpred)
 end
 
-"The answer lines of the calls to predicates the LogicKernel#1 fix cannot touch."
+"The answer lines of the calls to predicates the kernel's fix (SWI-Prolog/swipl-devel#1537) cannot touch."
 _xuntouched(lines::Vector{String}, run)::Vector{String} =
     [l for l in lines if !(run.goalpred[parse(Int, split(l, ' ')[1])] in run.affected)]
 
@@ -552,7 +552,7 @@ const _XSEED = 20261002
         @info "index differential mutations: $(count(l -> !endswith(l, " none"), ret)) of $(length(ret)) retracts removed a clause; $(count(l -> endswith(l, " retractall"), ours.lines)) retractalls; $(count(l -> endswith(l, " gc"), ours.lines)) collections"
     end
 
-    @testset "LogicKernel#1 pinned: the H_VOID_N defect is fixed" begin
+    @testset "SWI-Prolog/swipl-devel#1537 pinned: the H_VOID_N defect is fixed" begin
         hv(pa) = [i[2:4] for i in ours.idx if i[1] == pa]
         @test hv("hv_p/3") == [([3], Int[], 100.0f0)]  # p(_,_,a50): indexed (swipl 10.1.16: none)
         @test hv("hv_q/3") == [([3], Int[], 100.0f0)]
@@ -568,7 +568,7 @@ const _XSEED = 20261002
     end
 
     if _XSWIPL !== nothing
-        @testset "identical to swipl (but where LogicKernel#1 is fixed)" begin
+        @testset "identical to swipl (but where the kernel fixes SWI-Prolog/swipl-devel#1537)" begin
             theirs = _xswipl(program)
             # every call: the same answers, in order
             d = _xline_diff(_xstrip_det(ours.lines), _xstrip_det(theirs.lines))
@@ -600,7 +600,7 @@ const _XSEED = 20261002
             exact = count(((o, t),) -> o[4] == t[4], pairs)
             @test length(pairs) == length(ti) > 80
             @test exact >= 0.9 * length(pairs)
-            # the defect is still swipl's: the day swipl indexes these, revisit LogicKernel#1
+            # the defect is still swipl's: the day swipl indexes these, revisit SWI-Prolog/swipl-devel#1537
             @test !any(i -> i[1] in ("hv_p/3", "hv_q4/4"), theirs.idx)
             # and the fix shows: on the predicates it touches, the kernel narrows where swipl cannot
             @test _xuntouched(theirs.lines, ours) != theirs.lines
@@ -608,7 +608,7 @@ const _XSEED = 20261002
                 ours.lines != theirs.lines
             # control: with no index at all the answers are the same, the determinism is not
             @test !isempty(_xline_diff(_xuntouched(oracle.lines, ours), their_u))
-            @info "clause index: $(length(theirs.lines)) answer lines identical; $(nuntouched) of $(length(program)) predicates also identical in determinism and indexes ($(length(pairs)) indexes, $exact bit-identical speedups); the other $(length(ours.affected)) carry LogicKernel#1's fix — vs $(strip(read(`swipl --version`, String)))"
+            @info "clause index: $(length(theirs.lines)) answer lines identical; $(nuntouched) of $(length(program)) predicates also identical in determinism and indexes ($(length(pairs)) indexes, $exact bit-identical speedups); the other $(length(ours.affected)) carry the kernel's fix (SWI-Prolog/swipl-devel#1537) — vs $(strip(read(`swipl --version`, String)))"
         end
     elseif _XSWIPL_REQUIRED
         error(

@@ -25,7 +25,7 @@
 # WHY THE INDEX READS CODE, NOT TERMS (user, 2026-10-02): SWI computes a clause's index keys from
 # this code, and the code's shape changes the result. Reading the code as upstream does keeps the
 # kernel's index SWI's — with one deliberate exception: SWI loses the key of an argument that
-# directly follows two or more void arguments (`skipArgs`, LogicKernel#1), and that defect is
+# directly follows two or more void arguments (`skipArgs`, SWI-Prolog/swipl-devel#1537), and that defect is
 # FIXED here (user, 2026-10-02), so the kernel indexes those arguments where swipl 10.1.16 does not.
 #
 # ASSERT (since V9c): `assert_term!`, the path of assert/1, assertz/1 and asserta/1 — the clause's
@@ -2609,7 +2609,7 @@ stepPC(PC::Code{T}) where {T} =
 
 # PORT: pl-comp.c skipArgs
 # DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer;
-# and an exact landing at the end of an H_VOID_N run is FIXED (LogicKernel#1, see below).
+# and an exact landing at the end of an H_VOID_N run is FIXED (SWI-Prolog/swipl-devel#1537, see below).
 """
     skipArgs(PC, skip, in_hvoid) -> (Code, in_hvoid)
 
@@ -2662,7 +2662,7 @@ function skipArgs(PC::Code{T}, skip::Int, in_hvoid::Int)::Tuple{Code{T}, Int} wh
         elseif c == H_VOID_N
             if nested == 0
                 skip -= Int(PC.codes[PC.pc + 1])
-                # DIVERGES (LogicKernel#1, fixed 2026-10-02): upstream's single `skip <= 0` also
+                # DIVERGES (SWI-Prolog/swipl-devel#1537, fixed 2026-10-02): upstream's single `skip <= 0` also
                 # catches an EXACT landing (skip == 0) and returns the H_VOID_N itself with
                 # in_hvoid 0, so the argument after the voids reads as a void and a later
                 # skipArgs counts the run twice. Inside the run the H_VOID_N is right; at its end
