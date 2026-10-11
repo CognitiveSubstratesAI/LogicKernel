@@ -97,9 +97,9 @@ const _TW_CORPUS = [
     "!", ";", "'|'", "','", "[]", "'$VAR'", "end_of_file", "'\\\\'", "\\", "?", "@", "#",
     "'`'",
     "'\"'", "'a b'", "f('A', 'b c', \"d\")",
-    # dynamic é: KNOWN UPSTREAM DEFECT #11 (a Latin-1 first letter after a letter: no space)
+    # dynamic é: a Latin-1 first letter after an operator's letters (swipl-devel#1542, fixed)
     "dynamic é", "dynamic 'éa'", "- é", "a- é", "dynamic ŝ", "dynamic 'Ωmega'",
-    # bracket pairs: '⟨⟩'(a) prints ⟨a⟩; KNOWN UPSTREAM DEFECT #12: '[]'(a) prints [a], '()'(a) (a)
+    # bracket pairs: '⟨⟩'(a) prints ⟨a⟩; ASCII '[]'(a) and '()'(a) do not (swipl-devel#1543, fixed)
     "'⟨⟩'(a)", "⟨a⟩", "'«»'(a)", "'[]'(a)", "'()'(a)", "- '()'(a)", "'[]'(a,b)", "'{}'(a)",
     "'{}'(a,b)", "{a,b}", "{}(a)",
     # lists

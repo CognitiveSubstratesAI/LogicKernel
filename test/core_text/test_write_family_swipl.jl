@@ -29,8 +29,6 @@ const LK = LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "text_corpora_testlib.jl"))
-include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
-const _SYNC_FILE = "core_text/test_write_family_swipl.jl" # as the sync's list names this file
 const _WF = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _wfs(x) = lk_sym(_WF, Symbol(x))
 _wf_var() = mk_var(_WF, LK.fresh_var_keys!(1))
@@ -346,7 +344,6 @@ function _wf_compare(labels, ours, theirs)
         s = [_wf_norm(x) for x in theirs[k]]
         o == s || push!(bad, "$(labels[k])\n    kernel $(repr(o))\n    swipl  $(repr(s))")
     end
-    bad = sync_unexpected(_SYNC_FILE, bad)
     for b in bad[1:min(end, 12)]
         println(stderr, "  DIVERGES: ", b)
     end
@@ -539,12 +536,4 @@ end
     @test kind(LK.deRef(_WF_LD, x)) === VAR                  # before the query closes
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_close_foreign_frame(_WF_LD, fid)
-end
-
-@testset "the sync: every expected mismatch of this file still mismatches" begin
-    stale = sync_stale(_SYNC_FILE)
-    foreach(
-        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
-    )
-    @test isempty(stale)
 end

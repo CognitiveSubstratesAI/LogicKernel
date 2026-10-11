@@ -7,12 +7,11 @@
 #     term (compared by an encoding that numbers variables by first occurrence);
 #   over R1d's and R1e's hand corpora, the four bench programs' clauses (their source texts, cut
 #   out by swipl's term positions) and random terms (R1e's generator).
-#   * EXCLUSIONS, BY NAME AND COUNTED (user, 2026-10-07), each with its reason, lifted when it goes:
-#     upstream #11 (a prefix operator named by
-#     letters before an atom starting with a Latin-1 letter: no space) and #12 (`'[]'(X)`,
-#     `'()'(X)`: written as a list / a bracket). An excluded #11 or #12 term must FAIL the round
-#     trip — so a fix upstream (or here) shows up as a stale exclusion, never silently. Texts
-#     either side cannot read (the R1d corpus's syntax errors and refusals) are counted too, and a
+#   * EXCLUSIONS, BY NAME AND COUNTED (user, 2026-10-07), each with its reason, lifted when it goes.
+#     Upstream's two writer defects (#11: a prefix operator named by letters before an atom
+#     starting with a Latin-1 letter; #12: `'[]'(X)`, `'()'(X)`) were excluded until upstream
+#     fixed them (765ef01, b0eadba): LIFTED at the 2026-10-11 sync, those terms round-trip. Texts
+#     either side cannot read (the R1d corpus's syntax errors and refusals) are counted, and a
 #     text holding the character 0 (an atom cannot hold it: R1e's refusal). A FLOAT was excluded
 #     until R1e's floats (format_float); lifted, the corpora's floats must round-trip, and a set of
 #     floats in operator contexts (`- 1.0`, `a- -0.0`, `1.5NaN`, …) is checked on its own.
@@ -101,26 +100,6 @@ _rt_has(p, t) =
 
 _rt_float(t) = kind(t) === GND && lk_value(t) isa AbstractFloat
 
-# #11: a compound Op(A), `Op` a prefix operator whose name ends in a letter or digit, `A` an atom
-# written unquoted whose first character is a Latin-1 letter (128-255) of a single-byte atom
-function _rt_issue11(t)
-    kind(t) === EXPR && nchildren(t) == 2 || return false
-    op, a = child(t, 1), child(t, 2)
-    (kind(op) === SYM && kind(a) === SYM && !is_reserved_symbol(a)) || return false
-    found, _, _ = LK.currentOperator(_RT_GD, nothing, op, LK.OP_PREFIX)
-    found || return false
-    on, an = sym_text(op), sym_text(a)
-    (isempty(on) || isempty(an)) && return false
-    return LK.f_is_prolog_identifier_continue(Int(last(on))) &&
-           0x80 <= Int(an[1]) <= 0xff &&
-           all(c -> Int(c) <= 0xff, an) && LK.unquoted_atom(a)
-end
-
-# #12: a compound of one argument named by the text atom '[]' or '()'
-_rt_issue12(t) =
-    kind(t) === EXPR && nchildren(t) == 2 && kind(child(t, 1)) === SYM &&
-    !is_reserved_symbol(child(t, 1)) && sym_text(child(t, 1)) in ("[]", "()")
-
 # a text holding the character 0. CAUSE (probed 2026-10-08): a KERNEL GAP in the term interface —
 # an atom is named by a Julia `Symbol` (`mk_sym(T, ::Symbol)`), which cannot hold `\0`, so
 # term_to_atom/2 cannot make the atom of the written text (R1e's named refusal; the reader refuses
@@ -139,10 +118,6 @@ _rt_nul(t) =
 _rt_exclusion(t::_RT) =
     if _rt_has(_rt_nul, t)
         :nul
-    elseif _rt_has(_rt_issue11, t)
-        :issue11
-    elseif _rt_has(_rt_issue12, t)
-        :issue12
     else
         nothing
     end
@@ -214,7 +189,6 @@ function _rt_run(items)
     lines = _rt_swipl(goals)
     @test length(lines) == length(items)
     excluded = Dict{Symbol, Int}()
-    stale = String[]
     bad = String[]
     passed = 0
     for (k, ((label, _, t), kt, line)) in enumerate(zip(items, ktexts, lines))
@@ -234,9 +208,6 @@ function _rt_run(items)
         ok1 = verdict == "same"
         if reason !== nothing
             excluded[reason] = get(excluded, reason, 0) + 1
-            # an excluded defect must still break the trip (kernel writes, swipl reads)
-            reason in (:issue11, :issue12) && ok1 &&
-                push!(stale, "$label ($reason): passes now")
             continue
         end
         if ok1 && ok2
@@ -251,11 +222,7 @@ function _rt_run(items)
     for b in bad[1:min(end, 10)]
         println(stderr, "  ROUND TRIP FAILS: ", b)
     end
-    for s in stale
-        println(stderr, "  STALE EXCLUSION: ", s)
-    end
     @test isempty(bad)
-    @test isempty(stale)
     return (passed, excluded)
 end
 
@@ -270,8 +237,10 @@ if _RT_SWIPL !== nothing
         nfloat = count(it -> it[3] !== nothing && _rt_has(_rt_float, it[3]), items)
         println(stderr, "  hand corpora: $nfloat items hold a float")
         @test nfloat > 0 && !haskey(excluded, :float)
-        @test get(excluded, :issue11, 0) > 0            # `dynamic é` …
-        @test get(excluded, :issue12, 0) > 0            # `'[]'(a)`, `'()'(a)`
+        # the two writer exclusions are LIFTED (765ef01, b0eadba): their texts are in the corpora
+        # and round-trip like any other
+        @test all(s -> s in texts, ("dynamic é", "'[]'(a)", "'()'(a)", "- '()'(a)"))
+        @test !haskey(excluded, :issue11) && !haskey(excluded, :issue12)
     end
 
     @testset "the four bench programs' clauses: both directions" begin

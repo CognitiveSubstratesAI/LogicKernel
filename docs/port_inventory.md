@@ -128,7 +128,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-vmi.c` | code | `ac807ba8bcc7` | `src/pl-vmi.jl` | 102 | 0 |
 | swipl-devel `src/pl-vmi.c` | code | `ac807ba8bcc7` | `src/pl-wam.jl` | 110 | 71 |
 | swipl-devel `src/pl-wam.c` | code | `ac807ba8bcc7` | `src/pl-wam.jl` | 30 | 23 |
-| swipl-devel `src/pl-write.c` | code | `bae881a2` | `src/pl-write.jl` | 112 | 45 |
+| swipl-devel `src/pl-write.c` | code | `ac807ba8bcc7` | `src/pl-write.jl` | 112 | 45 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_exception.jl` | 4 | 0 |
 | swipl-devel `tests/core_lang/test_hash.pl` | code | `bae881a24a3f` | `test/core_lang/test_hash.jl` | 16 | 1 |
@@ -225,7 +225,7 @@ checkout is pulled.
 | swipl-devel `src/pl-variant.c` | `ac807ba8bcc7` | 10 | 17 | 4 | src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `ac807ba8bcc7` | 102 | 240 | 52 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `ac807ba8bcc7` | 26 | 96 | 21 | src/pl-wam.jl |
-| swipl-devel `src/pl-write.c` | `bae881a2` | 81 | 111 | 41 | src/pl-write.jl |
+| swipl-devel `src/pl-write.c` | `ac807ba8bcc7` | 81 | 111 | 41 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `ac807ba8bcc7` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_exception.pl` | `ac807ba8bcc7` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
 | swipl-devel `tests/core_lang/test_hash.pl` | `bae881a24a3f` | 0 | 3 | 0 | test/core_lang/test_hash.jl |

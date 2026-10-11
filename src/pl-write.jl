@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-write.c @ bae881a2
+# UPSTREAM: swipl-devel src/pl-write.c @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-incl.h @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
@@ -153,14 +153,13 @@ const AT_SOLO = 4
 const AT_SPECIAL = 5
 
 # The value C's `char` gives a Latin-1 character `c`: x86-64's `char` is signed, so 0x80-0xFF come
-# out negative. Upstream reads a single-byte atom's or string's text as `char` in places
-# (`atomType`'s `code_requires_quoted(*s, …)`, `writeText`'s `PutOpenToken(s[0], …)`); the kernel
-# passes the same value there (docs/upstream_reports.md #11).
+# out negative. Upstream still reads a reserved symbol's text as plain `char`
+# (`writeReservedSymbol`'s `putQuoted(*s++, …)`, `PutOpenToken(s[0], …)`, `Putc(*s, …)`), and the
+# kernel passes the same value there. `atomType` and `writeText` cast to `unsigned char` since
+# 765ef01 (the fix of an upstream defect, docs/upstream_reports.md #11) and no longer use this.
 # DIVERGES (platform): this follows swipl on x86-64 — the oracle's platform, where `char` is
 # signed. swipl's build pins no signedness, so it is the compiler's default per ABI: unsigned on
-# Linux aarch64 (AAPCS64), signed on macOS arm64 (Apple's ABI departs here). There swipl writes
-# what the unsigned value gives; an upstream fix that casts to `unsigned char` is NOT a regression
-# — drop `_signed_char` then.
+# Linux aarch64 (AAPCS64), signed on macOS arm64 (Apple's ABI departs here).
 _signed_char(c::Int)::Int = c >= 0x80 ? c - 0x100 : c
 
 # PORT: pl-write.c wr_is_symbol
@@ -207,9 +206,8 @@ _is_ucs_text(text::String)::Bool = any(ch -> Int(ch) > 0xff, text)
 
 # PORT: pl-write.c bracketPairAtom
 # DIVERGES: returns `(found, open, close)`, where upstream writes them through pointers; the atom's
-# text (`sym_text`), a reserved symbol having none (`get_atom_text`). KNOWN UPSTREAM DEFECT, ported
-# AS IS (docs/upstream_reports.md #12): the pair need not be above ASCII, so `'[]'(a)` is written
-# `[a]` and `'()'(a)` `(a)` — texts that read back as another term.
+# text (`sym_text`), a reserved symbol having none (`get_atom_text`). ASCII `()` and `[]` are not
+# bracket terms (upstream defect, fixed in b0eadba: `'[]'(a)` was written `[a]`).
 "Is `a` a bracket-pair atom `'<open><close>'`, and which are its brackets (pl-write.c)?"
 function bracketPairAtom(a::T)::Tuple{Bool, Int, Int} where {T}
     isTextAtom(a) || return (false, 0, 0)
@@ -217,6 +215,7 @@ function bracketPairAtom(a::T)::Tuple{Bool, Int, Int} where {T}
     length(s) == 2 || return (false, 0, 0)
     c0 = Int(s[1])
     c1 = Int(s[nextind(s, 1)])
+    c0 >= 0x80 || return (false, 0, 0)              # ASCII () and [] are not bracket terms
     cl = f_paren_close(c0)
     if cl != -1 && cl == c1
         return (true, c0, cl)
@@ -228,36 +227,32 @@ end
 # DIVERGES: the single-byte atom's text (`sym_text`), the stream and the flags of the write options
 # (`nothing` and 0 for upstream's NULL options); no `var_prefix` (the module flag is not ported,
 # so it is off) and `dot_in_atom` off (SWI-7's default); `[]` is a reserved symbol (`ATOM_nil`,
-# written by `writeReservedSymbol`), so only `{}` is `AT_SPECIAL` by its text. KNOWN UPSTREAM
-# DEFECT, ported AS IS (docs/upstream_reports.md #11): a character after the first goes to
-# `code_requires_quoted` as C's signed `char` (`_signed_char`), and the first is never tested, so
-# `quote_non_ascii(true)` — write_canonical/1's — leaves a Latin-1 atom (`aé`) unquoted. The first
-# omission holds on every platform (`éa`, `é`); the signed `char` only where `char` is signed —
-# x86-64, the oracle's (see `_signed_char`).
+# written by `writeReservedSymbol`), so only `{}` is `AT_SPECIAL` by its text. Every character,
+# the first included, goes to `code_requires_quoted` as an unsigned value (upstream defect, fixed
+# in 765ef01: `quote_non_ascii(true)` left Latin-1 atoms unquoted).
 "How the single-byte atom with text `name` must be written to `fd` with `flags` (pl-write.c `AT_*`)."
 function atomType(name::String, fd::Union{Nothing, IOSTREAM}, flags::Int)::Int
     n = length(name)
     n == 0 && return AT_QUOTE
     c0 = Int(name[1])
     if f_is_prolog_atom_start(c0)
+        code_requires_quoted(c0, fd, flags) && return AT_QUOTE
         k = nextind(name, 1)
         left = n - 1
         while left > 0
             c = Int(name[k])
-            (
-                f_is_prolog_identifier_continue(c) &&
-                !code_requires_quoted(_signed_char(c), fd, flags)
-            ) || break
+            (f_is_prolog_identifier_continue(c) && !code_requires_quoted(c, fd, flags)) ||
+                break
             k = nextind(name, k)
             left -= 1
         end
         return left == 0 ? AT_LOWER : AT_QUOTE
     end
-    if wr_is_symbol(_signed_char(c0), flags)
+    if wr_is_symbol(c0, flags)
         n == 1 && c0 == Int('.') && return AT_FULLSTOP
         n >= 2 && c0 == Int('/') && name[nextind(name, 1)] == '*' && return AT_QUOTE
         for ch in name
-            c = _signed_char(Int(ch))
+            c = Int(ch)
             (wr_is_symbol(c, flags) && !code_requires_quoted(c, fd, flags)) ||
                 return AT_QUOTE
         end
@@ -750,18 +745,15 @@ end
 
 # PORT: pl-write.c writeText
 # DIVERGES: the text is a String, `wide` saying whether upstream holds it as ENC_WCHAR (see
-# `_is_ucs_text`); a single-byte text's first character goes to `PutOpenToken` as C's signed `char`
-# (`_signed_char`), as upstream's `s[0]` does — KNOWN UPSTREAM DEFECT, ported AS IS
-# (docs/upstream_reports.md #11): an atom starting with a Latin-1 letter is not separated from a
-# letter before it, so `dynamic é` is written `dynamicé` — on signed-`char` platforms (x86-64, the
-# oracle's), not on unsigned ones (Linux aarch64): see `_signed_char`.
+# `_is_ucs_text`); the first character goes to `PutOpenToken` as an unsigned value (upstream
+# defect, fixed in 765ef01: `dynamic é` was written `dynamicé` where `char` is signed).
 "Write `txt` inside quotes `quote` (0: none), cut to `max_text`: 0, 1, or `TRUE_WITH_SPACE` (pl-write.c)."
 function writeText(txt::String, wide::Bool, qc::Int, options::write_options)::Int
     rc = 1
     len = length(txt)
     len == 0 && return 1
     out = options.out
-    first = wide ? Int(txt[1]) : _signed_char(Int(txt[1]))
+    first = Int(txt[1])                             # (unsigned char)s[0]
 
     if options.max_text >= 0
         if len > options.max_text

@@ -15,15 +15,14 @@
 #     ball), user:portray/1 defined (calling Prolog), an atom holding the character 0 — each an
 #     explicit `NotPortedError`, never a wrong text, a hang or a stack overflow;
 #   * DEPTH: a term 100,000 levels deep and a list of 100,000 elements, written without recursion;
-#   * KNOWN UPSTREAM DEFECTS, ported AS IS and pinned (docs/upstream_reports.md #11, #12).
+#   * upstream's units for its two writer fixes (docs/upstream_reports.md #11, #12; swipl-devel
+#     tests/core_text/test_write.pl `quote_non_ascii`, `op_4`, `bracket_1..3`), pinned here.
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "text_corpora_testlib.jl"))
-include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
-const _SYNC_FILE = "core_text/test_write_swipl.jl" # as the sync's list names this file
 const _TW = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _tws(x) = lk_sym(_TW, Symbol(x))
 _twf(f, xs::_TW...) = mk_expr(_TW, _TW[_tws(f), xs...])
@@ -233,7 +232,6 @@ function _tw_compare(
         o, s = _tw_norm(ours[k][m]), _tw_norm(theirs[k][m])
         o == s || push!(bad, (labels[k], modes[m], o, s))
     end
-    bad = sync_unexpected(_SYNC_FILE, bad; key=b -> what * " " * string(b))
     for (l, m, o, s) in bad[1:min(end, 12)]
         println(stderr, "  DIVERGES", what, " ", m, ": ", l, "\n    kernel ", repr(o),
             "\n    swipl  ", repr(s))
@@ -411,25 +409,33 @@ end
         !lk_eq(child(t, 2), child(t, 3))
 end
 
-@testset "KNOWN UPSTREAM DEFECTS, ported as is" begin
-    # #11: writeText passes a Latin-1 text's first character as C's signed `char`, so after a
-    # letter no space separates it: `dynamic é` is written `dynamicé`, which reads as one atom
-    t = _twf("dynamic", _tws("é"))
-    @test _tw_write(t, _TW_WRITEQ) == "dynamicé"
-    rc, ans = _tw_call("term_to_atom", _TW[_tw_var(), _tws("dynamicé")])
-    @test rc === :true && kind(ans[1]) === SYM && sym_text(ans[1]) == "dynamicé"
-    @test _tw_write(_twf("dynamic", _tws("ŝ")), _TW_WRITEQ) == "dynamic ŝ"   # a wide one: spaced
-    # …and atomType passes a single-byte atom's characters as signed `char` and never tests the
-    # first one, so quote_non_ascii(true) (write_canonical/1's flag) leaves a Latin-1 atom
-    # unquoted, where it quotes a wide one
+@testset "upstream's units for its writer fixes (test_write.pl, 765ef01 and b0eadba)" begin
+    # `quote_non_ascii` (Issue #1542): write_term(f(aé,éa,é,ab), [quoted(true),
+    # quote_non_ascii(true)]) is "f('aé','éa','é',ab)" — a Latin-1 atom is quoted like a wide one
     qna = LK.PL_WRT_QUOTED | LK.PL_WRT_QUOTE_NON_ASCII
-    @test _tw_write(_tws("aé"), qna) == "aé"
-    @test _tw_write(_tws("éa"), qna) == "éa"
+    @test _tw_write(_twf("f", _tws("aé"), _tws("éa"), _tws("é"), _tws("ab")), qna) ==
+        "f('aé','éa','é',ab)"
     @test _tw_write(_tws("aŝ"), qna) == "'aŝ'"
-    # #12: a bracket pair need not be above ASCII: '[]'(a) is written [a] (a list), '()'(a) (a)
-    @test _tw_write(_twf("[]", _tws("a")), _TW_WRITEQ) == "[a]"
-    @test _tw_write(_twf("()", _tws("a")), _TW_WRITEQ) == "(a)"
+    # `op_4` (Issue #1542): term_to_atom(dynamic(é), X) gives 'dynamic é' — a Latin-1 first
+    # letter is separated from the operator's letters, and the text reads back as the term
+    t = _twf("dynamic", _tws("é"))
+    @test _tw_write(t, _TW_WRITEQ) == "dynamic é"
+    rc, ans = _tw_call("term_to_atom", _TW[_tw_var(), _tws("dynamic é")])
+    @test rc === :true && lk_eq(ans[1], t)
+    @test _tw_write(_twf("dynamic", _tws("ŝ")), _TW_WRITEQ) == "dynamic ŝ"
+    # `bracket_1`, `bracket_2` (Issue #1543): ASCII [] and () are not bracket terms;
+    # `bracket_3`: a pair above ASCII is
+    @test _tw_write(_twf("[]", _tws("a")), _TW_WRITEQ) == "'[]'(a)"
+    @test _tw_write(_twf("()", _tws("a")), _TW_WRITEQ) == "'()'(a)"
     @test _tw_write(_twf("⟨⟩", _tws("a")), _TW_WRITEQ) == "⟨a⟩"
+    # 765ef01 also casts in atomType's SYMBOL branch. No Latin-1 code point is a symbol character
+    # (nor is its signed-char value), so those casts change no output: pinned, so that a change
+    # of the character table shows here. `¬` alone is written bare, two of them quoted, as swipl.
+    @test !any(c -> LK.wr_is_symbol(Int(c), 0), 0x80:0xff)
+    @test !any(c -> LK.wr_is_symbol(c, 0), -128:-1)
+    @test _tw_write(_tws("¬"), _TW_WRITEQ) == "¬"
+    @test _tw_write(_tws("¬¬"), _TW_WRITEQ) == "'¬¬'"
+    @test _tw_write(_tws("×÷"), _TW_WRITEQ) == "'×÷'"
 end
 
 @testset "the refusals: explicit, never a wrong text, a hang or a stack overflow" begin
@@ -516,12 +522,4 @@ end
         o = _twf("+", o, _tws("b"))
     end
     @test _tw_write(o, _TW_WRITEQ) == "a" * "+b"^n
-end
-
-@testset "the sync: every expected mismatch of this file still mismatches" begin
-    stale = sync_stale(_SYNC_FILE)
-    foreach(
-        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
-    )
-    @test isempty(stale)
 end

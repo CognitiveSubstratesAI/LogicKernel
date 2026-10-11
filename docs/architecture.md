@@ -350,6 +350,15 @@ ported files' headers to either.
     code the kernel has not ported. Upstream's new units of test_read.pl: `eof_in_quoted`,
     `undefined_char_escape` (two), `eof_in_comment`, `dotlists`, `dotlists_cycles` (three),
     `quote_eos` (the first; the second calls number_codes/2).
+  * `pl-write.c` — `765ef01` (`atomType`: every character, the first included, is tested as
+    an unsigned value; `writeText`: the token opens with an unsigned value — so Latin-1 atoms
+    are quoted under `quote_non_ascii(true)` and `dynamic é` keeps its space), `b0eadba`
+    (`bracketPairAtom`: ASCII `()` and `[]` are not bracket terms). 615 expected mismatches
+    leave the list, and the round-trip test's two named exclusions are lifted. Upstream's units
+    of test_write.pl (`quote_non_ascii`, `op_4`, `bracket_1..3`) are pinned in
+    test/core_text/test_write_swipl.jl. Mutants 4 of 6 caught, 2 equivalent: the casts in
+    `atomType`'s symbol branch change nothing while no Latin-1 code point is a symbol
+    character, which a test now pins.
 * **The build runs capped.** MEASURED 2026-10-11: the recipe's first version made a partial
   clone (`--filter=blob:none`) of a LOCAL repository — an empty promisor clone in which every git
   command fetched what it lacked, and the fetch fetched again: thousands of small processes,
