@@ -22,7 +22,7 @@
 # BUMP RULE: the pin, the local build and CI's build move TOGETHER, as a scheduled step with the
 # drift report (tools/upstream_drift.jl) and every differential rerun — never to turn a red run
 # green. The 2026-10-11 sync: bae881a2 → ac807ba8 (72 commits; 17 ported upstream files changed,
-# the fourteen fixes of docs/upstream_reports.md among them).
+# the fourteen fixes of docs/upstream_reports.md among them) — finished the same day: every header
+# is at `commit` and no `sync-from:` line is left.
 version: 10.1.17
 commit: ac807ba8bcc7aa852c0bc1a03902c0084a1011f7
-sync-from: bae881a24a3ff4d7f446856664ca2897378dd93a

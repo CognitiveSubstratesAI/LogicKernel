@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/SWI-Prolog.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

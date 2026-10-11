@@ -50,9 +50,9 @@ how many of the upstream file's functions are ported.
 | swipl-bench `programs/nreverse.pl` | design | `d74163e6d756` | `bench/programs/nreverse.jl` | 4 | 0 |
 | swipl-bench `programs/poly_10.pl` | design | `d74163e6d756` | `bench/programs/poly_10.jl` | 12 | 0 |
 | swipl-bench `programs/qsort.pl` | design | `d74163e6d756` | `bench/programs/qsort.jl` | 4 | 0 |
-| swipl-devel `boot/init.pl` | design | `bae881a2` | `boot/init.jl` | 8 | 8 |
-| swipl-devel `src/SWI-Prolog.h` | code | `bae881a24a3f` | `src/SWI-Prolog.jl` | 92 | 3 |
-| swipl-devel `src/SWI-Prolog.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 1 | 0 |
+| swipl-devel `boot/init.pl` | design | `ac807ba8bcc7` | `boot/init.jl` | 8 | 8 |
+| swipl-devel `src/SWI-Prolog.h` | code | `ac807ba8bcc7` | `src/SWI-Prolog.jl` | 92 | 3 |
+| swipl-devel `src/SWI-Prolog.h` | code | `ac807ba8bcc7` | `src/pl-incl.jl` | 1 | 0 |
 | swipl-devel `src/Unicode/prolog_syntax_map.pl` | code | `ac807ba8bcc7` | `src/pl-umap.jl` | 0 | 0 |
 | swipl-devel `src/os/SWI-Stream.h` | code | `ac807ba8bcc7` | `src/os/pl-stream.jl` | 44 | 3 |
 | swipl-devel `src/os/pl-codelist.c` | code | `ac807ba8bcc7` | `src/os/pl-codelist.jl` | 1 | 1 |
@@ -62,7 +62,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-file.h` | code | `ac807ba8bcc7` | `src/os/pl-file.jl` | 9 | 0 |
 | swipl-devel `src/os/pl-option.c` | code | `ac807ba8bcc7` | `src/os/pl-option.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-option.h` | code | `ac807ba8bcc7` | `src/os/pl-option.jl` | 0 | 0 |
-| swipl-devel `src/os/pl-prologflag.c` | code | `bae881a2` | `src/os/pl-prologflag.jl` | 2 | 2 |
+| swipl-devel `src/os/pl-prologflag.c` | code | `ac807ba8bcc7` | `src/os/pl-prologflag.jl` | 2 | 2 |
 | swipl-devel `src/os/pl-stream.c` | code | `ac807ba8bcc7` | `src/os/pl-stream.jl` | 60 | 17 |
 | swipl-devel `src/os/pl-string.c` | code | `ac807ba8bcc7` | `src/os/pl-string.jl` | 1 | 0 |
 | swipl-devel `src/os/pl-text.c` | code | `ac807ba8bcc7` | `src/os/pl-text.jl` | 2 | 2 |
@@ -87,9 +87,9 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-gc.c` | code | `ac807ba8bcc7` | `src/pl-gc.jl` | 3 | 3 |
 | swipl-devel `src/pl-gc.c` | code | `ac807ba8bcc7` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.h` | code | `ac807ba8bcc7` | `src/pl-gc.jl` | 1 | 1 |
-| swipl-devel `src/pl-global.h` | code | `bae881a24a3f` | `src/pl-global.jl` | 3 | 3 |
-| swipl-devel `src/pl-global.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 1 | 1 |
-| swipl-devel `src/pl-global.h` | code | `bae881a2` | `src/os/pl-file.jl` | 5 | 0 |
+| swipl-devel `src/pl-global.h` | code | `ac807ba8bcc7` | `src/os/pl-file.jl` | 5 | 0 |
+| swipl-devel `src/pl-global.h` | code | `ac807ba8bcc7` | `src/pl-global.jl` | 3 | 3 |
+| swipl-devel `src/pl-global.h` | code | `ac807ba8bcc7` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-gmp.c` | code | `ac807ba8bcc7` | `src/pl-gmp.jl` | 14 | 3 |
 | swipl-devel `src/pl-gmp.h` | code | `ac807ba8bcc7` | `src/pl-gmp.jl` | 4 | 2 |
 | swipl-devel `src/pl-hash.c` | code | `ac807ba8bcc7` | `src/pl-hash.jl` | 1 | 1 |
@@ -122,7 +122,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-termhash.h` | code | `ac807ba8bcc7` | `src/pl-termhash.jl` | 3 | 1 |
 | swipl-devel `src/pl-termwalk.c` | code | `ac807ba8bcc7` | `src/pl-termwalk.jl` | 18 | 5 |
 | swipl-devel `src/pl-thread.c` | code | `ac807ba8bcc7` | `src/pl-thread.jl` | 4 | 2 |
-| swipl-devel `src/pl-trace.c` | code | `bae881a24a3f` | `src/pl-trace.jl` | 5 | 2 |
+| swipl-devel `src/pl-trace.c` | code | `ac807ba8bcc7` | `src/pl-trace.jl` | 5 | 2 |
 | swipl-devel `src/pl-umap.c` | code | `ac807ba8bcc7` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `ac807ba8bcc7` | `src/pl-variant.jl` | 17 | 7 |
 | swipl-devel `src/pl-vmi.c` | code | `ac807ba8bcc7` | `src/pl-vmi.jl` | 102 | 0 |
@@ -164,8 +164,8 @@ checkout is pulled.
 | swipl-bench `programs/nreverse.pl` | `d74163e6d756` | 3 | 3 | 0 | bench/programs/nreverse.jl |
 | swipl-bench `programs/poly_10.pl` | `d74163e6d756` | 11 | 11 | 0 | bench/programs/poly_10.jl |
 | swipl-bench `programs/qsort.pl` | `d74163e6d756` | 3 | 3 | 0 | bench/programs/qsort.jl |
-| swipl-devel `boot/init.pl` | `bae881a2` | 8 | 314 | 8 | boot/init.jl |
-| swipl-devel `src/SWI-Prolog.h` | `bae881a24a3f` | 0 | 1 | 0 | src/SWI-Prolog.jl, src/pl-incl.jl |
+| swipl-devel `boot/init.pl` | `ac807ba8bcc7` | 8 | 315 | 8 | boot/init.jl |
+| swipl-devel `src/SWI-Prolog.h` | `ac807ba8bcc7` | 0 | 1 | 0 | src/SWI-Prolog.jl, src/pl-incl.jl |
 | swipl-devel `src/Unicode/prolog_syntax_map.pl` | `ac807ba8bcc7` | 0 | 125 | 0 | src/pl-umap.jl |
 | swipl-devel `src/os/SWI-Stream.h` | `ac807ba8bcc7` | 0 | 2 | 0 | src/os/pl-stream.jl |
 | swipl-devel `src/os/pl-codelist.c` | `ac807ba8bcc7` | 1 | 1 | 1 | src/os/pl-codelist.jl |
@@ -175,7 +175,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-file.h` | `ac807ba8bcc7` | 0 | 0 | 0 | src/os/pl-file.jl |
 | swipl-devel `src/os/pl-option.c` | `ac807ba8bcc7` | 2 | 6 | 2 | src/os/pl-option.jl |
 | swipl-devel `src/os/pl-option.h` | `ac807ba8bcc7` | 0 | 1 | 0 | src/os/pl-option.jl |
-| swipl-devel `src/os/pl-prologflag.c` | `bae881a2` | 2 | 79 | 2 | src/os/pl-prologflag.jl |
+| swipl-devel `src/os/pl-prologflag.c` | `ac807ba8bcc7` | 2 | 83 | 2 | src/os/pl-prologflag.jl |
 | swipl-devel `src/os/pl-stream.c` | `ac807ba8bcc7` | 46 | 141 | 16 | src/os/pl-stream.jl |
 | swipl-devel `src/os/pl-string.c` | `ac807ba8bcc7` | 1 | 12 | 0 | src/os/pl-string.jl |
 | swipl-devel `src/os/pl-text.c` | `ac807ba8bcc7` | 2 | 37 | 2 | src/os/pl-text.jl |
@@ -198,8 +198,7 @@ checkout is pulled.
 | swipl-devel `src/pl-funct.c` | `ac807ba8bcc7` | 2 | 17 | 2 | src/pl-funct.jl |
 | swipl-devel `src/pl-gc.c` | `ac807ba8bcc7` | 4 | 166 | 4 | src/pl-gc.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `ac807ba8bcc7` | 1 | 2 | 1 | src/pl-gc.jl |
-| swipl-devel `src/pl-global.h` | `bae881a2` | 0 | 0 | 0 | src/os/pl-file.jl |
-| swipl-devel `src/pl-global.h` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-global.jl, src/pl-incl.jl |
+| swipl-devel `src/pl-global.h` | `ac807ba8bcc7` | 0 | 0 | 0 | src/os/pl-file.jl, src/pl-global.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-gmp.c` | `ac807ba8bcc7` | 14 | 81 | 3 | src/pl-gmp.jl |
 | swipl-devel `src/pl-gmp.h` | `ac807ba8bcc7` | 3 | 9 | 2 | src/pl-gmp.jl |
 | swipl-devel `src/pl-hash.c` | `ac807ba8bcc7` | 1 | 3 | 1 | src/pl-hash.jl |
@@ -221,7 +220,7 @@ checkout is pulled.
 | swipl-devel `src/pl-termhash.h` | `ac807ba8bcc7` | 0 | 0 | 0 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termwalk.c` | `ac807ba8bcc7` | 12 | 28 | 5 | src/pl-termwalk.jl |
 | swipl-devel `src/pl-thread.c` | `ac807ba8bcc7` | 4 | 267 | 2 | src/pl-thread.jl |
-| swipl-devel `src/pl-trace.c` | `bae881a24a3f` | 5 | 77 | 2 | src/pl-trace.jl |
+| swipl-devel `src/pl-trace.c` | `ac807ba8bcc7` | 5 | 77 | 2 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `ac807ba8bcc7` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `ac807ba8bcc7` | 10 | 17 | 4 | src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `ac807ba8bcc7` | 102 | 240 | 52 | src/pl-vmi.jl, src/pl-wam.jl |
@@ -242,7 +241,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `ac807ba8bcc7` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `ac807ba8bcc7` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `ac807ba8bcc7` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **950** | **4029** | **475** | |
+| **total** | | **950** | **4034** | **475** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

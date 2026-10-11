@@ -194,7 +194,9 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         # (user, 2026-10-11) test/sync_expected_mismatch.jl: there while tools/SWIPL_VERSION has a
         # `sync-from:` line, each entry naming a test file that checks it for staleness and the
         # upstream fix that clears it; and no test file uses it without an entry. It is EMPTY once
-        # every fix is ported, and the sync's last commit deletes it.
+        # every fix is ported, and the sync's last commit deletes it. (The 2026-10-11 sync's list
+        # and its functions are in the repository's history, last at 5b0c136: a new sync starts
+        # from that file.)
         list = joinpath(_GS_ROOT, "test", "sync_expected_mismatch.jl")
         pin = read(joinpath(_GS_ROOT, "tools", "SWIPL_VERSION"), String)
         syncing = occursin(r"^sync-from:\s*[0-9a-f]{40}\s*$"m, pin)

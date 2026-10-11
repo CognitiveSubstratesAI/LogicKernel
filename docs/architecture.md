@@ -330,7 +330,8 @@ ported files' headers to either.
     mismatch's key is the whole of it (the case, the kernel's result, swipl's);
   * the list exists exactly while `sync-from:` does, and no test file uses it without an entry
     (test/test_gate_split.jl). It is empty once the last fix is ported; the sync's last commit
-    removes it and the `sync-from:` line.
+    removes it and the `sync-from:` line. (The 2026-10-11 sync's list, with its functions, is in
+    the history, last at `5b0c136`: the next sync starts from that file.)
 * **The 2026-10-11 sync, upstream file by upstream file** (each fix's entries leave the list in
   the commit that ports it):
   * `pl-comp.c` — `97370c0e` (`arg1Key`: `H_MPQ`; the kernel already had it), `0728e8c`
@@ -378,6 +379,20 @@ ported files' headers to either.
     is a vector. With the fix a swipl process no longer ends by a signal on the unification
     differentials, so both run ONE swipl process per mode again and a process that ends by a
     signal is an error. Upstream's unit `occurs_check_error_space: full_stack` needs catch/3 (V9).
+  * **The commits that are not fixes** change no function the kernel has, in the ported files
+    they touch: `os/pl-prologflag.c` (`9e1eddc0`,
+    `d99ea669`, `ae07a733`: shared flags, the `theme` flag, `user_flags`; `setDoubleQuotes` and
+    `setBackQuotes` are byte-identical at both pins), `pl-trace.c` (`099d5ce8`: `setupFind`,
+    `traceAction`), `boot/init.pl` (`1619b15d`: the .qlf checks; `f0d9cac7`: `comment_hook/4`),
+    `pl-global.h` (the shared-flag mutex, `comment_hook4`), `SWI-Prolog.h` (`fad80029`:
+    `PLVERSION` 100117 — the kernel has no such constant; the pin file carries the version).
+    Their headers moved in the last commit, with no code.
+  * **FINISHED 2026-10-11**: 906 expected mismatches at the pin's move, 0 at the end; the list
+    file and the `sync-from:` line are gone; every header is at `ac807ba8bcc7`. The index
+    differential compares every predicate in full (its carve-out for predicates with an
+    `H_VOID_N` is removed). The canonical differential's two named exclusions STAY, measured
+    (50 balls a run are still named and counted): a ball holding a cut UTF-8 sequence (upstream
+    defect, see register Q1) and a string holding the character 0 (the term interface's gap).
 * **The build runs capped.** MEASURED 2026-10-11: the recipe's first version made a partial
   clone (`--filter=blob:none`) of a LOCAL repository — an empty promisor clone in which every git
   command fetched what it lacked, and the fetch fetched again: thousands of small processes,
@@ -492,7 +507,7 @@ fixed it or a public issue exists.
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), local)` (`raiseStackOverflow`, `outOfStack!`, the context as decided since Q-B), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack | `src/pl-alloc.c` |
 | `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data; since V5c `getProcDefinedDefinition` where upstream calls it (`PL_open_query`, `I_LCALL`, `S_VIRGIN`) | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
-| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`, as is: upstream defect #5); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space`; since V5c `PL_strip_module_ex`; since R1a `charCode`; since R1b `PL_get_atom`, `PL_get_integer`, `PL_get_list`, `PL_get_nil`, `PL_is_list`, `PL_strip_module`; since R1e's write/1 family `atom_to_bool`, `PL_get_stdbool`, `PL_get_bool`, `PL_get_name_arity`, `_PL_get_arg`, `PL_is_functor` | `src/pl-fli.c`, `src/pl-fli.h` |
+| `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`; `error(resource_error(_), _)` is the resource class since upstream's `85d0cc2`); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space`; since V5c `PL_strip_module_ex`; since R1a `charCode`; since R1b `PL_get_atom`, `PL_get_integer`, `PL_get_list`, `PL_get_nil`, `PL_is_list`, `PL_strip_module`; since R1e's write/1 family `atom_to_bool`, `PL_get_stdbool`, `PL_get_bool`, `PL_get_name_arity`, `_PL_get_arg`, `PL_is_functor` | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`); since R1c `PL_CTYPE_SPACE`; since R1d the text conversion flags (`CVT_*`), the text types `PL_ATOM`, `PL_STRING`, and since R1e every write flag (`PL_WRT_*`, as `Int`); since R1e's write/1 family the option types (`OPT_*`) and `PL_option_t` | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`); since V5c `createUndefSupervisor` | `src/pl-supervisor.c` |
 | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`, since R1b `ERR_PERMISSION`; `PL_type_error`, `PL_domain_error`; since R1b `PL_get_atom_ex`, `PL_get_integer_ex`, `PL_get_list_ex`, `PL_get_nil_ex`); since R1f `ERR_PERMISSION_PROC` and `printMessage` (the message collected, not printed: print_message/2 is R2's); since R1e's write/1 family `ERR_EXISTENCE`, `ERR_STREAM_OP`, `PL_get_stdbool_ex`, `PL_get_bool_ex`, `PL_unify_bool_ex` | `src/pl-error.c`, `src/pl-error.h` |
@@ -549,7 +564,7 @@ fixed it or a public issue exists.
 | `test/core_text/test_canonical_readatom_swipl.jl` | R1e's last gate: write_canonical/1,2 on 400 corpus lines + 1,000 random terms, literally as swipl (variables numbered both sides) and read back; read_term_from_atom/3 on every corpus text × 15 option lists (term, options after, verdict, messages) and 49 hand goals; the refusals; two named exclusions (a cut-UTF-8 ball, a NUL string) | — |
 | `test/core_text/text_corpora_testlib.jl` | the reader's and the writer's hand corpora and the random-term generator, shared by their differentials and the round trip (R1f) | — |
 | `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations); a float's text read back (since R1e's floats); `$` not an operator (pinned); `unquoted_atom` | — |
-| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream defects #11 and #12 pinned; the refusals (a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
+| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream's units for its fixes of #11 and #12 pinned; the refusals (a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
 | `test/core_text/test_syntax.jl` | SWI's `syntax` and `iso_op_table_6` units (R1d): operators, quoting and escapes, bases, the blob notation's errors | `tests/core_text/test_syntax.pl` |
 | `test/core_text/test_read.jl` | SWI's `read_op` (block operators), `read_numbers` and `read_deep` units (R1d): terms nested 20,000 deep | `tests/core_text/test_read.pl` |
 | `test/core_text/test_op.jl` | SWI's `op_syntax` units (R1d) over 84 user operators | `tests/core_text/test_op.pl` |
@@ -1097,7 +1112,7 @@ graph TD
 | `unify` | code | `src/pl-variant.c`, `src/pl-termhash.c`, unification in `src/pl-prims.c` | variant checking and term hashing ported 2026-10-03 (finite trees: no cycle marking, no attributed variables); unification ported 2026-10-03 as SWI's: a binding store and a trail with marks, the occurs-check modes, rational trees through bindings |
 | `constraints` | code | `src/pl-attvar.c` | attributed-variable hooks |
 | `trie` | code | `src/pl-trie.c` | answer and variant tables, variables keyed by first occurrence |
-| `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — with ONE deliberate divergence: `skipArgs`'s H_VOID_N defect is fixed ([SWI-Prolog/swipl-devel#1537](https://github.com/SWI-Prolog/swipl-devel/issues/1537)), so an argument right after `_,_` is indexed where swipl 10.1.16 does not; see the contract below |
+| `index` | code | `src/pl-index.c` | ported 2026-10-02, verbatim: keys are read from compiled head code as upstream reads them — and `skipArgs`'s H_VOID_N defect fixed ([SWI-Prolog/swipl-devel#1537](https://github.com/SWI-Prolog/swipl-devel/issues/1537)): an argument right after `_,_` is indexed, as in swipl since upstream's own fix `0728e8c` (no divergence left since the 2026-10-11 sync); see the contract below |
 | `db` | code | `src/pl-proc.c` | clauses in source order, generations (logical update view), clause GC — ported 2026-10-02 with retract/1, retractall/1, clause/2, which unify with the kernel's unification since 2026-10-03; since V1 L2 (2026-10-04) each attempt DECOMPILES the head from the clause's code and literal table (`decompile_head`, as upstream) — a clause stores no head term. Not yet: abolish, reload, transactions |
 | `tabling` | code (WFS) | `src/pl-tabling.c`, `boot/tabling.pl`; scryer `src/lib/tabling.pl` | SLG: suspension, SCC completion, WFS delays; scryer's is the delimited-control design |
 | `vm` | design | `src/pl-comp.c`, `src/pl-wam.c` | SWI is ZIP-based, not the WAM; compiled clauses decompile back to terms. The head side of pl-comp.c is ported — the head instructions as swipl selects them (V1 L1), the clause's literal table and the head decompiler (V1 L2), the variable analysis of head and body (V1, pl-funct.c's control functors with it); body code and the instructions' execution are not |
@@ -1809,9 +1824,10 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
   returns the values (`nothing` where the list gives none); option dicts not ported (no dicts);
   print/2 always reads the `print_write_options` flag's default, `[portray(true), quoted(true),
   numbervars(true)]` (boot/toplevel.pl; no flag table to change it).
-* **Upstream defect, not mirrored** (upstream defect, reported privately; see the workspace register:
-  internal record #13): at `get_stream_handle` the kernel takes the path upstream intends, pinned.
-  A second oddity, ported AS IS: write_term's
+* **A standard alias with no stream** (docs/upstream_reports.md #13): at `get_stream_handle` the
+  kernel raised `existence_error(stream, Alias)` where swipl 10.1.16 failed an assertion; fixed
+  upstream in `cd76c1a` and compared with swipl since the 2026-10-11 sync.
+  An oddity, ported AS IS: write_term's
   `back_quotes(symbol_char)` never sets `PL_WRT_BACKQUOTE_IS_SYMBOL` — upstream tests the module's
   WHOLE flag word against 0, not its `BQ_*` bits — and swipl agrees (no effect, probed).
 * **Refused, explicitly (`NotPortedError`):** write_term's `portray_goal` (calling Prolog: V9).
@@ -1825,7 +1841,7 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
   max_text, `truncated`, fullstop, nl/0,1): each compared with swipl on THREE outputs — user_output,
   user_error, the verdict (the exception term, context included); swipl's run rebinds the two
   aliases and the current output to files per call, as the host gives the kernel a buffer per
-  call; non-vacuity asserted (texts on both streams). Plus internal record #13's pin, a cyclic option list
+  call; non-vacuity asserted (texts on both streams). Plus the pin of #13's three goals, a cyclic option list
   (`type_error(list, L)` after 1,000 items, as swipl), the `portray_goal` refusal, the host
   interface, a write error, the bindings undone. All three term types.
 * **Mutation-proved — 46 of 46 caught at verdict level, targeted** (the workspace's
@@ -1935,7 +1951,7 @@ pl-incl.jl, pl-global.jl, pl-ext.jl; tools/bench.jl). Decided by the user, 2026-
   analysis, `VD_*` — a multiton `v(_A, _A)`, a singleton in one branch of a disjunction) were a
   named, counted exclusion in the differential here; PORTED in R1g (above), the exclusion lifted.
 * **The round trip's exclusions, each with its cause:** a float — the writer's floats were R1e's
-  rest (LIFTED since R1e (floats)); #11, #12 — upstream defects, ported as is; a text holding the character 0 — a KERNEL GAP in
+  rest (LIFTED since R1e (floats)); #11, #12 — upstream defects, ported as is (LIFTED at the 2026-10-11 sync: fixed upstream in `765ef01`, `b0eadba`); a text holding the character 0 — a KERNEL GAP in
   the term interface (an atom is named by a Julia `Symbol`, which cannot hold `\0`; swipl writes
   and reads it back unchanged, so no report), planned in the R1 row.
 * **Gates:** test/files/test_load_swipl.jl (new): 12 case files consulted by the kernel and by
@@ -1992,7 +2008,9 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   `'\x1\'`. The differential runs print/1's flags with it, and with portray/1 undefined the
   writer never calls Prolog; DEFINED, `callPortray` refuses (`NotPortedError`: the meta-call, V9),
   never on a variable (upstream does not ask portray/1 about one).
-* **Ported AS IS, two known upstream defects (docs/upstream_reports.md #11, #12, drafted):**
+* **Ported AS IS until the 2026-10-11 sync, two upstream defects (docs/upstream_reports.md #11,
+  #12; fixed upstream in `765ef01` and `b0eadba`, and the kernel follows the fixes — see "The
+  2026-10-11 sync"). As they were:**
   (#11) a single-byte atom's characters are read as C's signed `char` — `writeText`'s
   `PutOpenToken(s[0])`, so `dynamic é` is written `dynamicé`, and `atomType`'s
   `code_requires_quoted(*s)` (with the first character never tested), so `quote_non_ascii(true)`
@@ -2096,7 +2114,8 @@ explicit error, term positions refused until needed.
   with `ATOM_nil`, SWI-7's reserved `[]`, so `'[]'` is quoted (writeq('[]') writes `'[]'`).
 * **Fixed, found by SWI's `read_deep` units on the alternative term types:** the term layer's `is_ground_walk` — the interface's default `is_ground`, which an implementation without a cached bit uses — recursed, so `resolve_term` overflowed the Julia stack on an answer 80,000 levels deep (`f([{-…}])`); it walks an agenda now (typed by `term_type`, JET-clean on the manifest's types; a 200,000-deep term checked). The reference type caches the bit and never walked.
 * **Fixed, the warm lane (tools/warm.sh):** `send` held no lock, so two senders raced on the daemon's input and verdict. MEASURED: a probe sent during the preflight made its test_read_term_swipl.jl step pass with an EMPTY log — the run never made. `_send` now holds `flock` for ONE snippet; proved both ways (without it, two concurrent sends lose one run; with it, each gets its own output). (A first version held it until the process exited, and deadlocked the preflight's own rerun, which sends from a subshell: corrected in the next commit, R1e's first item.)
-* **Ported AS IS, a known upstream defect (docs/upstream_reports.md #10, drafted):** the argument
+* **Ported AS IS until the 2026-10-11 sync, an upstream defect (docs/upstream_reports.md #10;
+  fixed upstream in `abdcf74`: the argument is the character itself now). As it was:** the argument
   of `end_of_file_in_quoted(Quote)` is made with `PL_CHARS` (ISO Latin-1) from the quote's UTF-8, so
   `«x` raises `end_of_file_in_quoted('Â«')`; `makeErrorTerm` does the same. The other text caller, `escape_char`'s undefined escape, passes the code
   point's LOW BYTE (`(char)c`): `\Ω` raises `undefined_char_escape('©')`, `\∀` an empty atom — ported
@@ -2175,8 +2194,8 @@ constructs an explicit error.
   buffer, every scanner function, which return the moved index); a stream's function table is an
   enum over three function sets and a typed handle; `Sopen_julia_io` in place of the OS file
   functions; a text stream is UTF-8 (`initEncoding`: no locale); the read buffer is zeroed
-  (`clearBuffer`) and `pl_atom_number2_va` has one more end test (two upstream defects, reported
-  privately; see the workspace register: internal records #8 and #9); an atom holding the
+  (`clearBuffer`) and, until the 2026-10-11 sync, `pl_atom_number2_va` had one more end test
+  (docs/upstream_reports.md #8 and #9, fixed upstream in `5f50eb2` and `baf5745`); an atom holding the
   character 0 is refused (`NotPortedError`):
   the term interface's atoms are Julia Symbols; the `swi_backslash_newline` warning is not printed
   (no message system); `nan15()` is a constant.
@@ -2473,11 +2492,13 @@ by the user, 2026-10-06 (4a, 5a; identity by position). Research and plan: the w
   * The head code: `argMoveUnify` compiles the moved term as the head argument itself (3116-3119);
     `isUnifiedArg` makes the goal compile to nothing (4266-4270); `argUnifiedTo` and `CL_HEAD_TERMS`
     where upstream sets it (3100, 3127, 4252).
-* **E1, ported AS IS** (user, 2026-10-06; upstream report #6): a VARIABLE goal does not end the run,
-  so `c(X) :- G = var(X), G, X = a.` moves `X = a` past the meta-call. The kernel refuses a variable
-  goal until V9, so the move is pinned in the head code and against swipl's.
+* **E1, ported AS IS until the 2026-10-11 sync** (user, 2026-10-06; upstream report #6, fixed
+  upstream in `699e53c`: a variable goal ENDS the run now, here too): a VARIABLE goal did not end
+  the run, so `c(X) :- G = var(X), G, X = a.` moved `X = a` past the meta-call. The kernel refuses
+  a variable goal until V9, so the head code is pinned and compared with swipl's.
 * **E2:** `CL_HEAD_TERMS` is not set by a use through `B_UNIFY_VC`, `B_EQ_*`, `B_NEQ_*` or a type
-  test, as upstream; the decompiler's resulting gaps come with V9's decompiler (upstream report #7).
+  test, as upstream; upstream report #7's fix (`27dd7c3`) sets it at every moved unification
+  (taken at the sync), and its decompiler part comes with V9's decompiler.
 * **DIVERGES:** the goal moved is identified by its ORDINAL among the body's `=/2` goals at control
   positions, counted alike by the analysis and the compiler, where upstream compares the address of
   its other side: the kernel's terms are values, and a term type may share structure
@@ -2937,11 +2958,13 @@ upstream).
   * `PL_error`'s `ERR_UNDEFINED_PROC` (`Definition def, Definition clr`): the given caller replaces
     the running frame's predicate in the context, as upstream.
   * the exception classes: `except_class` (pl-incl.h), `classify_exception_p` (pl-fli.c) and
-    `classify_exception` (pl-fli.h), AS IS, upstream defect #5 included (below).
+    `classify_exception` (pl-fli.h), AS IS, upstream defect #5 included (below; fixed upstream in
+    `85d0cc2` and taken at the 2026-10-11 sync).
     `PL_raise_exception` now applies upstream's rule: a ball raised over a pending one replaces it
     only if its class is not lower. Before V5b every raise replaced.
-* **Upstream defect #5, kept AS IS** (docs/upstream_reports.md; the workspace's
-  `docs/tracking/repros/swipl_except_resource_class/`, with a draft report the user files).
+* **Upstream defect #5, kept AS IS until the 2026-10-11 sync** (docs/upstream_reports.md;
+  swipl-devel#1535, fixed in `85d0cc2`: `error(resource_error(_), _)` is `EXCEPT_RESOURCE` now,
+  here too). As it was:
   `classify_exception_p` tests a resource error's formal for the ATOM `resource_error`, where
   pl-incl.h documents `error(resource_error(_), _)`. Every resource error swipl raises has the
   compound formal, so none is `EXCEPT_RESOURCE`: a real stack overflow's
@@ -3294,8 +3317,9 @@ return codes, the positions and the closed handle; the open questions went to th
 * **AN UPSTREAM DEFECT, FIXED here:** pl-comp.c `arg1Key` lists `H_MPZ` but not `H_MPQ`, which falls
   to `assert(0)`: swipl 10.1.16 ABORTS on the first call of `p(1r3, a). p(2r3, b).` (two clauses —
   the list supervisor's test runs; probed: `arg1Key: Assertion failed`). The kernel treats `H_MPQ`
-  as `H_MPZ` (not found), `# DIVERGES`. Recorded as #4 in `docs/upstream_reports.md`, pinned in
-  test/foreign/test_query.jl; the upstream report is drafted, for the user to file.
+  as `H_MPZ` (not found). Recorded as #4 in `docs/upstream_reports.md`, pinned in
+  test/foreign/test_query.jl; fixed upstream the same way in `97370c0e`, so the `# DIVERGES` went
+  at the 2026-10-11 sync.
 * **Gate:**
   * test/foreign/test_query.jl (term-generic: the three types): answers, return codes and
     determinism as libswipl's (1, 1, `PL_S_LAST` under `PL_Q_EXT_STATUS`, then 0); the supervisors
@@ -3706,7 +3730,7 @@ records — § "V3 — machine state" below. They take precedence over decision 
   slower — the link is one pointer write upstream and an identity-map entry here — so only pairs
   reached through a binding are linked (DIVERGES in `do_unify`). The rest is the store itself: a
   `Dict` entry per binding where SWI writes a cell. The differential found an upstream
-  defect, reported privately (see the workspace register: internal record #3).
+  defect (docs/upstream_reports.md #3; fixed upstream in `ac807ba`).
   ✅ retract/1, retractall/1 and clause/2 use it (2026-10-03): a mark per candidate clause, the
   answer's bindings live while the caller's sink runs, undone after it (in a `finally`: ≲ 0.1 µs).
   Variable keys: a caller owns those below 2^63 (`var_term` checks), the kernel takes its own from

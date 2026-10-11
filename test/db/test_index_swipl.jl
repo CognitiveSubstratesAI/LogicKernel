@@ -12,13 +12,13 @@
 #      interleaved with retract/1 (first answer), retractall/1 and garbage_collect_clauses, swipl's
 #      automatic clause GC switched off so both collect at the same points — run by swipl and by
 #      the kernel, in one database. Equal for EVERY operation: the answers, in order, and the clause
-#      each retract removed. Equal for every predicate the fix cannot touch — no
-#      clause whose head code holds an H_VOID_N — also: each answer's determinism
-#      (`call_cleanup(G, Det=true)` — exactly where the index left no clause choice); every index
+#      each retract removed; each answer's determinism (`call_cleanup(G, Det=true)` — exactly
+#      where the index left no clause choice), also through the VM; every index
 #      `predicate_property(P, indexed(L))` reports (arguments, position, speedup to the float, list,
-#      realised; the bucket count where it does not depend on hash values); the primary index. On
-#      the predicates the fix touches the kernel indexes where swipl does not, so their determinism
-#      and indexes legitimately differ — and a check fails the day swipl stops showing the defect.
+#      realised; the bucket count where it does not depend on hash values); the primary index.
+#      EVERY predicate is compared in full since the 2026-10-11 sync: until upstream's 0728e8c
+#      swipl did not index an argument after a run of voids, and the predicates whose head code
+#      holds an H_VOID_N were compared on their answers alone.
 #      A control proves the determinism channel can fail: a run without any index answers the same
 #      but is judged different.
 using Random
@@ -375,10 +375,6 @@ function _xrun(preds::Vector{_XPred}; unindexed::Bool=false, vm::Bool=false)
     return (; lines, idx, pidx, affected, goalpred)
 end
 
-"The answer lines of the calls to predicates the kernel's fix (SWI-Prolog/swipl-devel#1537) cannot touch."
-_xuntouched(lines::Vector{String}, run)::Vector{String} =
-    [l for l in lines if !(run.goalpred[parse(Int, split(l, ' ')[1])] in run.affected)]
-
 "Without the determinism word: what the indexing contract compares."
 _xstrip_det(ls::Vector{String})::Vector{String} =
     [replace(l, r" (det|nondet)$" => "") for l in ls]
@@ -575,47 +571,35 @@ const _XSEED = 20261002
             d = _xline_diff(_xstrip_det(ours.lines), _xstrip_det(theirs.lines))
             isempty(d) || foreach(x -> println(stderr, "  answers: ", x), d)
             @test isempty(d)
-            # every call the fix cannot touch: the same determinism too
-            our_u, their_u = _xuntouched(ours.lines, ours), _xuntouched(theirs.lines, ours)
-            d = _xline_diff(our_u, their_u)
-            isempty(d) || foreach(x -> println(stderr, "  determinism: ", x), d)
+            # every call: the same determinism too
+            d = _xline_diff(ours.lines, theirs.lines)
+            isempty(d) ||
+                foreach(x -> println(stderr, "  determinism: ", x), d[1:min(end, 8)])
             @test isempty(d)
             # and through the VM: PL_S_LAST where swipl's call is deterministic (V4a)
-            dv = _xline_diff(_xuntouched(vmrun.lines, ours), their_u)
+            dv = _xline_diff(vmrun.lines, theirs.lines)
             isempty(dv) ||
                 foreach(x -> println(stderr, "  vm determinism: ", x), dv[1:min(end, 8)])
             @test isempty(dv)
-            untouched(v) = [i for i in v if !(i[1] in ours.affected)]
-            oi, ti = untouched(ours.idx), untouched(theirs.idx)
-            di = _xidx_diff(oi, ti)
+            di = _xidx_diff(ours.idx, theirs.idx)
             isempty(di) ||
                 foreach(x -> println(stderr, "  indexed: ", x), di[1:min(end, 8)])
             @test isempty(di)
-            keep(v) = [l for l in v if !(split(l, ' ')[1] in ours.affected)]
-            @test keep(ours.pidx) == keep(theirs.pidx)
-            # the carve-out stays narrow: most predicates, calls and indexes are compared in full
-            nuntouched = length(program) - length(ours.affected)
-            @test nuntouched >= 30
-            @test count(l -> !endswith(l, " end"), our_u) > 1500
-            pairs = collect(zip(_xorder(oi), _xorder(ti)))
+            @test ours.pidx == theirs.pidx
+            # non-vacuity: many calls and indexes, the speedups bit-identical almost everywhere
+            @test count(l -> !endswith(l, " end"), ours.lines) > 1500
+            pairs = collect(zip(_xorder(ours.idx), _xorder(theirs.idx)))
             exact = count(((o, t),) -> o[4] == t[4], pairs)
-            @test length(pairs) == length(ti) > 80
+            @test length(pairs) == length(theirs.idx) > 80
             @test exact >= 0.9 * length(pairs)
-            # swipl indexes an argument after a run of voids too (upstream defect, fixed in
-            # 0728e8c), so the predicates the fix touches are IDENTICAL as well: every call's
-            # determinism, every index, every primary index — no carve-out is left
+            # the predicates with an argument after a run of voids are among them, indexed in
+            # swipl too (upstream defect, fixed in 0728e8c)
             @test any(i -> i[1] == "hv_p/3", theirs.idx) &&
                 any(i -> i[1] == "hv_q4/4", theirs.idx)
-            @test _xuntouched(theirs.lines, ours) != theirs.lines     # (the carve-out is not empty)
-            dall = _xline_diff(ours.lines, theirs.lines)
-            isempty(dall) ||
-                foreach(x -> println(stderr, "  determinism: ", x), dall[1:min(end, 8)])
-            @test isempty(dall)
-            @test isempty(_xidx_diff(ours.idx, theirs.idx))
-            @test ours.pidx == theirs.pidx
+            @test length(ours.affected) >= 4
             # control: with no index at all the answers are the same, the determinism is not
-            @test !isempty(_xline_diff(_xuntouched(oracle.lines, ours), their_u))
-            @info "clause index: $(length(theirs.lines)) answer lines identical; $(nuntouched) of $(length(program)) predicates also identical in determinism and indexes ($(length(pairs)) indexes, $exact bit-identical speedups); the other $(length(ours.affected)), with an argument after a run of voids, identical too — vs $(strip(read(`swipl --version`, String)))"
+            @test !isempty(_xline_diff(oracle.lines, theirs.lines))
+            @info "clause index: $(length(theirs.lines)) answer lines, the determinism of every call and $(length(pairs)) indexes ($exact bit-identical speedups) of $(length(program)) predicates identical — $(length(ours.affected)) of them with an argument after a run of voids — vs $(strip(read(`swipl --version`, String)))"
         end
     elseif _XSWIPL_REQUIRED
         error(
