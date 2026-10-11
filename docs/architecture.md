@@ -328,8 +328,9 @@ ported files' headers to either.
     through it: one on the list is expected, any other fails as before, and an entry that no
     longer mismatches is STALE and fails too — so porting a fix forces its entries out. A
     mismatch's key is the whole of it (the case, the kernel's result, swipl's);
-  * the list exists exactly while `sync-from:` does, is never empty, and no test file uses it
-    without an entry (test/test_gate_split.jl). The sync's last commit removes both.
+  * the list exists exactly while `sync-from:` does, and no test file uses it without an entry
+    (test/test_gate_split.jl). It is empty once the last fix is ported; the sync's last commit
+    removes it and the `sync-from:` line.
 * **The 2026-10-11 sync, upstream file by upstream file** (each fix's entries leave the list in
   the commit that ports it):
   * `pl-comp.c` — `97370c0e` (`arg1Key`: `H_MPQ`; the kernel already had it), `0728e8c`
@@ -359,6 +360,24 @@ ported files' headers to either.
     test/core_text/test_write_swipl.jl. Mutants 4 of 6 caught, 2 equivalent: the casts in
     `atomType`'s symbol branch change nothing while no Latin-1 code point is a symbol
     character, which a test now pins.
+  * `pl-termhash.c` — `e02d93f` (`hash_compile`: `data` advances by each chunk copied, so a piece
+    that crosses a block is hashed whole; hash values of such terms change). The kernel feeds it
+    pieces of at most 8 bytes, so only a word straddling a block was affected. Upstream's units
+    `long_atom`, `long_string` in test/core_lang/test_hash.jl; the function's pin, on upstream's
+    own two texts, flipped in test/core_lang/test_termhash.jl.
+  * `pl-fli.c` — `85d0cc2` (`classify_exception_p`: `error(resource_error(_), _)` is
+    `EXCEPT_RESOURCE`; the bare atom is an ordinary error's formal). The stack limit's own error
+    is now of the resource class, so no ordinary error replaces it while it is pending. The last
+    8 expected mismatches leave the list: THE LIST IS EMPTY.
+  * `os/pl-file.c` — `cd76c1a` (`get_stream_handle`: a standard alias with no stream goes to
+    `noent` once, not through a second unlock). The kernel already raised
+    `existence_error(stream, Alias)` there; the three `protocol` goals join the live write-family
+    differential, and upstream's unit `no_protocol_out` is test/core_text/test_io.jl (new).
+  * `pl-gc.c` — `ac807ba` (`f_ensureStackSpace` uses the spare stacks while an exception is
+    processed). No code: the kernel has no global or trail stack to grow, and its bindings' trail
+    is a vector. With the fix a swipl process no longer ends by a signal on the unification
+    differentials, so both run ONE swipl process per mode again and a process that ends by a
+    signal is an error. Upstream's unit `occurs_check_error_space: full_stack` needs catch/3 (V9).
 * **The build runs capped.** MEASURED 2026-10-11: the recipe's first version made a partial
   clone (`--filter=blob:none`) of a LOCAL repository — an empty promisor clone in which every git
   command fetched what it lacked, and the fetch fetched again: thousands of small processes,

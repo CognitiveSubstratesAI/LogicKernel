@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-fli.c @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-fli.c @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-fli.h @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1996-2026, University of Amsterdam
@@ -125,10 +125,9 @@ _hasFunctor(p, name, arity::Int) =
     sym_key(child(p, 1)) == sym_key(name)
 
 # PORT: pl-fli.c classify_exception_p
-# KNOWN UPSTREAM DEFECT, ported AS IS (docs/upstream_reports.md #5): `error(F, _)` is
-# `EXCEPT_RESOURCE` only when `F` is the ATOM `resource_error`, where pl-incl.h documents the class as
-# `error(resource_error(_), _)` — so the stack overflow's `error(resource_error(stack), _)` ranks as an
-# ordinary error (probed: `'$urgent_exception'/3` keeps a type error over it).
+# `error(resource_error(_), _)` is `EXCEPT_RESOURCE` since upstream's fix 85d0cc2
+# (SWI-Prolog/swipl-devel#1535, docs/upstream_reports.md #5); until it the test was for the ATOM
+# `resource_error`, which nothing raises, and the stack overflow's error ranked as an ordinary one.
 "The class of the ball `p` (pl-fli.c `classify_exception_p`)."
 function classify_exception_p(ld::PL_local_data{T}, p::T)::except_class where {T}
     p = deRef(ld, p)
@@ -138,9 +137,7 @@ function classify_exception_p(ld::PL_local_data{T}, p::T)::except_class where {T
         sym_key(p) == sym_key(mk_sym(T, :time_limit_exceeded)) && return EXCEPT_TIMEOUT
     elseif _hasFunctor(p, mk_sym(T, :error), 2)
         a = deRef(ld, child(p, 2))                          # p = argTermP(*p, 0)
-        if kind(a) === SYM && sym_key(a) == sym_key(mk_sym(T, :resource_error))
-            return EXCEPT_RESOURCE
-        end
+        _hasFunctor(a, mk_sym(T, :resource_error), 1) && return EXCEPT_RESOURCE
         return EXCEPT_ERROR
     elseif _hasFunctor(p, mk_sym(T, :time_limit_exceeded), 1)
         return EXCEPT_TIMEOUT

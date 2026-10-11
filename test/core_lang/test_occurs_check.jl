@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_occurs_check.pl @ bae881a24a3f
+# UPSTREAM: swipl-devel tests/core_lang/test_occurs_check.pl @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (C): 2007-2024, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
@@ -14,6 +14,9 @@
 #
 # NOT PORTED, and why:
 #   attvar_1 … attvar_4   attributed variables (freeze/2) — the kernel has none.
+#   occurs_check_error_space: full_stack (since ac807ba)
+#                         catch/3 in a loop (V9), raising the error with the GLOBAL stack nearly
+#                         full — the kernel has no global stack (G1).
 using Test, LogicKernel
 using LogicKernel:
     PL_local_data,

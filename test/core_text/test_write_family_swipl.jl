@@ -20,9 +20,10 @@
 #   * THE HOST: the streams opened over stdin/stdout/stderr when first asked for; one replaced
 #     (`set_standard_stream!`) — current output follows; a write error on a stream (a closed
 #     buffer) is `io_error(write, Alias)`; the `variable_names` bindings are undone after the write.
-#   * a standard alias with no stream is `existence_error(stream, Alias)`: pinned against the
-#     expected term, not compared with swipl (upstream defect, reported privately; see the workspace register:
-#     internal record #13).
+#   * a standard alias with no stream is `existence_error(stream, Alias)`: compared with swipl
+#     among the hand goals since upstream's fix cd76c1a (docs/upstream_reports.md #13), and pinned
+#     against the expected term where there is no swipl; upstream's own unit is in
+#     test/core_text/test_io.jl.
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -186,9 +187,11 @@ end
 _wf_term_results(t::_WF, ops) =
     [_wf_run(name, _WF[pre..., t, post...]) for (name, pre, post) in ops]
 
-# The hand goals: whole goals, each run as read. (Internal record #13's goals are pinned below.)
+# The hand goals: whole goals, each run as read. (`protocol`: a standard alias with no stream —
+# those three are pinned below too.)
 const _WF_GOALS = [
     "nl", "nl(user_output)", "nl(user_error)", "nl(user)", "nl(foo)", "nl(_)", "nl(1)",
+    "write(protocol, x)", "nl(protocol)", "write_term(protocol, x, [])",
     "nl(user_input)", "nl(current_output)", "write(foo, x)", "write(1, x)",
     "write(f(x), x)",
     "write(_, x)", "write(user_input, x)", "write(current_input, x)",
@@ -438,7 +441,7 @@ else
     end
 end
 
-@testset "a standard alias with no stream is existence_error(stream, Alias) (internal record #13)" begin
+@testset "a standard alias with no stream is existence_error(stream, Alias) (upstream's cd76c1a)" begin
     for g in ("write(protocol, x)", "nl(protocol)", "write_term(protocol, x, [])")
         r = _wf_goal_results([g])[1]
         @test r[1] == "" && r[2] == ""

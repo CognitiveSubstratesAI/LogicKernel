@@ -11,8 +11,9 @@
 #   * the `CHP_DEBUG` choice point `S_UNDEF` pushes, read back from its record;
 #   * the EXCEPTION CLASSES (`classify_exception`, which decides whether a raise replaces a pending
 #     ball): every ordered pair of a set of balls, the more urgent one as swipl's own
-#     `'$urgent_exception'/3` picks it — including upstream defect #5 (docs/upstream_reports.md),
-#     ported as is: `error(resource_error(stack), _)` ranks as an ordinary error;
+#     `'$urgent_exception'/3` picks it — `error(resource_error(_), _)` is the resource class and
+#     the atom `resource_error` an ordinary error's formal, since upstream's fix 85d0cc2
+#     (docs/upstream_reports.md #5);
 #   * `PL_raise_exception`'s rule, from the same live table: a ball raised over a pending one
 #     replaces it iff its class is not lower — swipl's `'$urgent_exception'/3` with the pair reversed.
 #
@@ -23,8 +24,6 @@ using Test, LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
-include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
-const _SYNC_FILE = "foreign/test_exceptions_swipl.jl" # as the sync's list names this file
 const _E = lk_term_type(Union{Int64, Float64, String})
 const LKE = LogicKernel
 _es(x::Symbol) = lk_sym(_E, x)
@@ -210,11 +209,18 @@ end
 const _ESWIPL = Sys.which("swipl")
 const _ESWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
-@testset "the exception classes, as written: defect #5 included" begin
+@testset "the exception classes, as written (the resource class as fixed in 85d0cc2)" begin
     ld = LKE.PL_local_data{_E}()
     cls(i) = LKE.classify_exception_p(ld, _EBALLS[i][2])
-    @test cls(5) == LKE.EXCEPT_ERROR && cls(6) == LKE.EXCEPT_RESOURCE
-    @test cls(7) == LKE.EXCEPT_ERROR                    # error(resource_error(stack),_) — #5, as is
+    @test cls(5) == LKE.EXCEPT_ERROR
+    @test cls(6) == LKE.EXCEPT_ERROR                    # error(resource_error,_): the bare atom
+    @test cls(7) == LKE.EXCEPT_RESOURCE                 # error(resource_error(stack),_)
+    # the functor is resource_error/1: another arity, or a bound variable's value, by its value
+    @test LKE.classify_exception_p(
+        ld, _ef(:error, _ef(:resource_error, _es(:a), _es(:b)), _es(:c))
+    ) == LKE.EXCEPT_ERROR
+    @test LKE.classify_exception_p(ld, _ef(:resource_error, _es(:stack))) ==
+        LKE.EXCEPT_OTHER
     @test cls(8) == LKE.EXCEPT_ABORT && cls(9) == LKE.EXCEPT_HALT &&
         cls(11) == LKE.EXCEPT_UNWIND
     @test cls(12) == LKE.EXCEPT_OTHER && cls(13) == LKE.EXCEPT_UNWIND &&
@@ -271,7 +277,6 @@ if _ESWIPL !== nothing
                     "raise $(_EBALLS[j][1]) over $(_EBALLS[i][1]): swipl $want, kernel $ours"
                 )
         end
-        bad = sync_unexpected(_SYNC_FILE, bad)
         foreach(b -> println(stderr, "  DIVERGES: ", b), bad)
         @test isempty(bad)
         @test length(urgent) == n * (n - 1)
@@ -285,12 +290,4 @@ else
     @testset "exception-class differential skipped only where it is not required" begin
         @test !_ESWIPL_REQUIRED
     end
-end
-
-@testset "the sync: every expected mismatch of this file still mismatches" begin
-    stale = sync_stale(_SYNC_FILE)
-    foreach(
-        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
-    )
-    @test isempty(stale)
 end

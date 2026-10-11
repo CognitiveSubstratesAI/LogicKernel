@@ -11,8 +11,9 @@
 #   * An entry that did NOT mismatch is stale, and an error: every file that uses the list ends
 #     with `@test isempty(sync_stale(<file>))`. So when a fix is ported, its entries MUST go.
 #   * test/test_gate_split.jl holds the list to the sync: it exists exactly while
-#     tools/SWIPL_VERSION has a `sync-from:` line, it is never empty, every entry names a test file
-#     that checks it and a fix commit. The sync's last commit deletes this file and its uses.
+#     tools/SWIPL_VERSION has a `sync-from:` line, every entry names a test file that checks it
+#     and a fix commit, and no test file uses it without an entry. The sync's last commit deletes
+#     this file.
 # LOGICKERNEL_SYNC_DISCOVER=<file>: every mismatch is taken as expected and written to <file>
 # (`test file<TAB>case`) — how the list is drawn up after the oracle moves; never set in a gate.
 using SHA
@@ -83,17 +84,5 @@ function sync_stale(file::AbstractString)::Vector{String}
 end
 
 # ── the list ─────────────────────────────────────────────────────────────────────────────────────
-sync_cases(
-    "foreign/test_exceptions_swipl.jl",
-    "85d0cc2",
-    [
-        "error(type_error(a,b),c) vs error(resource_error,c): swipl 1, kernel 2",
-        "error(type_error(a,b),c) vs error(resource_error(stack),c): swipl 2, kernel 1",
-        "error(resource_error,c) vs error(resource_error(stack),c): swipl 2, kernel 1",
-        "error(resource_error(stack),c) vs error(resource_error,c): swipl 1, kernel 2",
-        "raise error(type_error(a,b),c) over error(resource_error,c): swipl 2, kernel 1",
-        "raise error(resource_error(stack),c) over error(resource_error,c): swipl 2, kernel 1",
-        "raise error(type_error(a,b),c) over error(resource_error(stack),c): swipl 1, kernel 2",
-        "raise error(resource_error,c) over error(resource_error(stack),c): swipl 1, kernel 2"
-    ]
-)
+# EMPTY since the sync's fifth commit (2026-10-11): every upstream fix is ported and no differential
+# differs from the oracle. 906 entries at the pin's move; the last eight left with 85d0cc2.

@@ -302,38 +302,25 @@ function _zkernel(ld, a::_ZT, b::_ZT, mode)::String
 end
 
 """
-swipl's outcome of `A = B` for each pair, in each mode: `(outcomes, aborts)`, the outcomes a Dict
-`(i, mode) => outcome`.
-
-A swipl process can end without its answers on this workload (upstream defect, reported privately; see the workspace register:
-internal record #3 — when it is fixed, return to one process per mode). So swipl runs in CHUNKS of
-pairs, one process each; a chunk whose process ends that way is re-run ONE PAIR PER PROCESS, and
-every chunk recovered that way is counted and reported (`aborts`), never silently absorbed.
+swipl's outcome of `A = B` for each pair, in each mode: a Dict `(i, mode) => outcome`. ONE swipl
+process per mode. (Until upstream's fix ac807ba a process could end by a signal on this workload —
+an occurs-check error raised with a full global stack, docs/upstream_reports.md #3 — and swipl ran
+in chunks that were re-run pair by pair. A process that ends so is an ERROR now.)
 """
 function _zswipl(pairs)
     res = Dict{Tuple{Int, String}, String}()
-    aborts = 0
-    for (_, mode) in _ZMODES, chunk in Iterators.partition(eachindex(pairs), 100)
-        if !_zswipl_run!(res, pairs, collect(chunk), mode)
-            aborts += 1
-            for i in chunk
-                _zswipl_run!(res, pairs, [i], mode) ||
-                    error("swipl gives no answers for pair $i alone in mode $mode")
-            end
-        end
+    for (_, mode) in _ZMODES
+        _zswipl_run!(res, pairs, collect(eachindex(pairs)), mode)
     end
     length(res) == 3 * length(pairs) ||
         error("swipl answered $(length(res)) of $(3 * length(pairs)) pair×mode cases")
-    return res, aborts
+    return res
 end
 
-"""
-swipl's outcome of `A = B` for the pairs `idx` with the `occurs_check` flag `mode`, into `res`;
-`false` if the swipl process died by a signal (see `_zswipl`).
-"""
+"swipl's outcome of `A = B` for the pairs `idx` with the `occurs_check` flag `mode`, into `res`."
 function _zswipl_run!(
     res::Dict{Tuple{Int, String}, String}, pairs, idx::Vector{Int}, mode::String
-)::Bool
+)::Nothing
     prog = IOBuffer()
     println(prog, ":- style_check(-singleton).")
     println(prog, ":- set_prolog_flag(double_quotes, string).")
@@ -372,7 +359,8 @@ function _zswipl_run!(
         write(f, String(take!(prog)))
         run(pipeline(ignorestatus(`swipl -q $f`); stdout=out, stderr=devnull))
     end
-    proc.termsignal != 0 && return false
+    proc.termsignal != 0 &&
+        error("swipl ended by signal $(proc.termsignal) in mode $mode (see `_zswipl`)")
     success(proc) || error("swipl failed (exit $(proc.exitcode)) on pairs $(first(idx))…")
     n = 0
     for l in eachline(IOBuffer(take!(out)))
@@ -381,7 +369,7 @@ function _zswipl_run!(
         n += 1
     end
     n == length(idx) || error("swipl answered $n of $(length(idx)) in mode $mode")
-    return true
+    return nothing
 end
 
 # ── GROUND RATIONAL TREES (V5a): `==`, `=@=` and `compare/3` under bindings, where the order of
@@ -549,9 +537,7 @@ const _ZSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 if _ZSWIPL !== nothing
     @testset "=/2 == live swipl =/2 in every occurs_check mode" begin
         pairs, kinds = _zpairs(Xoshiro(20261003), 2000)
-        theirs, aborts = _zswipl(pairs)
-        aborts > 0 &&
-            @warn "swipl ended early in $aborts chunk(s) (internal record #3; see _zswipl); those pairs were re-run one per process"
+        theirs = _zswipl(pairs)
         ld = PL_local_data{_ZT}()
         bad = String[]
         tally = Dict{Tuple{String, String}, Int}()

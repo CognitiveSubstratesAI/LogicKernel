@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_hash.pl @ bae881a24a3f
+# UPSTREAM: swipl-devel tests/core_lang/test_hash.pl @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2025, University of Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
@@ -32,6 +32,9 @@ _hc(f::Symbol, xs::_HT...) = mk_expr(_HT, _HT[_ha(f), xs...])
 let n = UInt64(0)
     global _hv() = mk_var(_HT, n += 1)
 end
+# PORT: test_hash.pl long_text
+"`format(Spec, '~*c~*c', [300, 0'a, 10, Tail])`: 300 `a`s, then 10 of `tail`."
+long_text(tail::Char)::String = "a"^300 * string(tail)^10
 
 @testset "variant_sha1" begin
     # PORT: test_hash.pl atom
@@ -81,6 +84,22 @@ end
     @testset "variant" begin
         a, b = _hv(), _hv()
         @test pl_variant_hash(_hc(:x, a, _hv())) == pl_variant_hash(_hc(:x, b, _hv()))
+    end
+    # The two units of upstream's fix e02d93f (issue #1538). The kernel hashes an atom's `sym_hash`
+    # and a string's `gnd_key`, eight bytes each (the file's DIVERGES), not the text, so these two
+    # never collided here; the fix itself is pinned at `hash_compile!`, on these very texts, in
+    # test/core_lang/test_termhash.jl.
+    # PORT: test_hash.pl long_atom
+    @testset "long_atom" begin                          # Issue #1538
+        a = _ha(Symbol(long_text('x')))
+        b = _ha(Symbol(long_text('y')))
+        @test pl_variant_hash(a) != pl_variant_hash(b)
+    end
+    # PORT: test_hash.pl long_string
+    @testset "long_string" begin
+        a = _hg(long_text('x'))
+        b = _hg(long_text('y'))
+        @test pl_variant_hash(a) != pl_variant_hash(b)
     end
 end
 

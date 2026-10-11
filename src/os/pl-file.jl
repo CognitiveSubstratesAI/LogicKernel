@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-file.c @ bae881a2
+# UPSTREAM: swipl-devel src/os/pl-file.c @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/os/pl-file.h @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-global.h @ bae881a2
 # CLASS: code
@@ -278,8 +278,8 @@ end
 # PORT: pl-file.c get_stream_handle
 # DIVERGES: the alias table is the standard streams' (no stream blobs, no user aliases: R2), so an
 # atom is a standard stream's name or no stream; returns the stream or `nothing`; no locks. A
-# standard name whose stream is NULL is `existence_error(stream, Name)`, the path upstream intends
-# (upstream defect, reported privately; see the workspace register: internal record #13).
+# standard name whose stream is NULL is `existence_error(stream, Name)`: upstream's `goto noent`
+# since its fix cd76c1a (docs/upstream_reports.md #13), and what the kernel did before it.
 "The stream the atom `a` names, as `flags` (`SH_*`) ask, or `nothing` with the error raised (pl-file.c)."
 function get_stream_handle(
     ld::PL_local_data{T}, a::T, flags::Int

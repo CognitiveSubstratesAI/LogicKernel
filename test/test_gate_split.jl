@@ -192,8 +192,9 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
 
     @testset "the sync's expected-mismatch list exists exactly while a sync lasts" begin
         # (user, 2026-10-11) test/sync_expected_mismatch.jl: there while tools/SWIPL_VERSION has a
-        # `sync-from:` line, never empty, each entry naming a test file that checks it for
-        # staleness and the upstream fix that clears it; and no test file uses it without an entry
+        # `sync-from:` line, each entry naming a test file that checks it for staleness and the
+        # upstream fix that clears it; and no test file uses it without an entry. It is EMPTY once
+        # every fix is ported, and the sync's last commit deletes it.
         list = joinpath(_GS_ROOT, "test", "sync_expected_mismatch.jl")
         pin = read(joinpath(_GS_ROOT, "tools", "SWIPL_VERSION"), String)
         syncing = occursin(r"^sync-from:\s*[0-9a-f]{40}\s*$"m, pin)
@@ -207,8 +208,7 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         if syncing && isfile(list)
             m = Module(:GSSync)
             Base.include(m, list)
-            entries = Base.invokelatest(() -> m.SYNC_EXPECTED)
-            @test !isempty(entries)                 # an empty list is deleted, with its uses
+            entries = copy(Base.invokelatest(() -> m.SYNC_EXPECTED))
             files = unique(first.(entries))
             for f in files
                 text =
@@ -219,14 +219,17 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             @test Set(users) == Set(files)          # no use of the list without an entry
             @test all(e -> occursin(r"^[0-9a-f]{7,40}(\+[0-9a-f]{7,40})*$", e[3]), entries)
             @test allunique([(e[1], e[2]) for e in entries])
-            # the list's own functions, on its first entry: a case that is not listed is not
+            # the list's own functions, on an entry made HERE (in this test's own copy of the
+            # list, which may hold no other): a case that is not listed is not
             # expected; a listed one is, once; and until it has mismatched it is stale — WHERE
             # THERE IS A swipl. Without one the differentials do not run, so nothing is stale
             # there (CI's `test` jobs have none: run 38156167094 was red on that, and run
             # 38159492161 on THIS test, which then asked for staleness with whatever PATH it had).
             # Both sides are therefore asked on a PATH this test makes.
-            file, case = entries[1][1], entries[1][2]
+            file, case = "gate_split/an_entry_made_by_this_test.jl", "a listed case"
             call(f, args...) = Base.invokelatest(getfield(m, f), args...)
+            call(:sync_cases, file, "0123abc", [case])
+            @test Base.invokelatest(() -> length(m.SYNC_EXPECTED)) == length(entries) + 1
             mktempdir() do d
                 none, with = joinpath(d, "none"), joinpath(d, "with")
                 mkpath(none)

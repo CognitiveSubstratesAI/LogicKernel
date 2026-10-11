@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-termhash.c @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-termhash.c @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-termhash.h @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2023, University of Amsterdam
@@ -417,26 +417,25 @@ function hash_init!(state::hash_state)::Nothing
 end
 
 # PORT: pl-termhash.c hash_compile
-# UPSTREAM DEFECT (kept verbatim): when `data` does not fit in the block, the loop copies every
-# chunk from the START of `data` — it never advances `data` — so the bytes past the first chunk are
-# replaced by `data`'s first bytes. Measured on swipl 10.1.16 (2026-10-03): two 310-byte atoms that
-# differ only after byte 247 get the same `variant_hash/2` (14123625) while `variant_sha1/2` and
-# `term_hash/2` tell them apart. Variants still hash alike (equal input, equal bytes); only more
-# non-variants collide. Here the inputs are at most 8 bytes, so only a word straddling a block loses
-# its high bytes. Reported: SWI-Prolog/swipl-devel#1538 (docs/upstream_reports.md #2).
+# `data += copy` is upstream's fix e02d93f (SWI-Prolog/swipl-devel#1538, docs/upstream_reports.md
+# #2): until it, every chunk of a piece that did not fit in the block was copied from the START of
+# `data`, so the bytes past the first chunk were replaced by `data`'s first bytes. The hash of a
+# term with such a piece CHANGED with the fix. `data` is not a pointer here: `at` is the offset.
 "Add the first `len` bytes of `data` (pl-termhash.c)."
 function hash_compile!(state::hash_state, data::AbstractVector{UInt8}, len::Int)::Nothing
     if len + state.len <= HASH_BLOCK_SIZE
         copyto!(state.buf, state.len + 1, data, 1, len)
         state.len += len
     else
+        at = 1
         while len > 0
             copy = len
             if len > HASH_BLOCK_SIZE - state.len
                 copy = HASH_BLOCK_SIZE - state.len
             end
             len -= copy
-            copyto!(state.buf, state.len + 1, data, 1, copy)
+            copyto!(state.buf, state.len + 1, data, at, copy)
+            at += copy                                      # data += copy
             state.len += copy
             if state.len == HASH_BLOCK_SIZE
                 state.hash = MurmurHashAligned2(state.buf, HASH_BLOCK_SIZE, state.hash)

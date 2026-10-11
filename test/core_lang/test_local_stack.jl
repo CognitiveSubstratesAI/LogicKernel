@@ -508,9 +508,13 @@ end
     ld3.lTop = ld3.lMax - 10
     @test LK.growLocalSpace(ld3, 20, 0) == LK.LOCAL_OVERFLOW         # no growth, no spare
     b = LK.PL_new_term_ref(ld3)
-    # a ball classify_exception ranks EXCEPT_RESOURCE enables the spare; at bae881a2 that is the
-    # formal ATOM `resource_error` only (upstream defect #5, ported as is: src/pl-fli.jl)
+    # a ball classify_exception ranks EXCEPT_RESOURCE enables the spare: error(resource_error(_), _)
+    # (since upstream's fix 85d0cc2; the bare atom `resource_error`, the class until then, does not)
     ld3.slots[b + 1] = _lf("error", _ls("resource_error"), _ls("c"))
+    LK.PL_raise_exception(ld3, b)
+    @test ld3.exception_processing && ld3.local_spare == LK.LOCAL_SPARE
+    LK.PL_clear_exception(ld3)
+    ld3.slots[b + 1] = _lf("error", _lf("resource_error", _ls("memory")), _ls("c"))
     LK.PL_raise_exception(ld3, b)
     @test ld3.exception_processing && ld3.local_spare == 0
     LK.PL_clear_exception(ld3)

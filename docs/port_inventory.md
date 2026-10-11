@@ -58,7 +58,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-codelist.c` | code | `ac807ba8bcc7` | `src/os/pl-codelist.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.c` | code | `ac807ba8bcc7` | `src/os/pl-ctype.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.h` | code | `ac807ba8bcc7` | `src/os/pl-ctype.jl` | 29 | 0 |
-| swipl-devel `src/os/pl-file.c` | code | `bae881a2` | `src/os/pl-file.jl` | 26 | 11 |
+| swipl-devel `src/os/pl-file.c` | code | `ac807ba8bcc7` | `src/os/pl-file.jl` | 26 | 11 |
 | swipl-devel `src/os/pl-file.h` | code | `ac807ba8bcc7` | `src/os/pl-file.jl` | 9 | 0 |
 | swipl-devel `src/os/pl-option.c` | code | `ac807ba8bcc7` | `src/os/pl-option.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-option.h` | code | `ac807ba8bcc7` | `src/os/pl-option.jl` | 0 | 0 |
@@ -81,11 +81,11 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-error.c` | code | `ac807ba8bcc7` | `src/pl-error.jl` | 12 | 6 |
 | swipl-devel `src/pl-error.h` | code | `ac807ba8bcc7` | `src/pl-error.jl` | 1 | 1 |
 | swipl-devel `src/pl-ext.c` | code | `ac807ba8bcc7` | `src/pl-ext.jl` | 5 | 3 |
-| swipl-devel `src/pl-fli.c` | code | `bae881a24a3f` | `src/pl-fli.jl` | 37 | 24 |
+| swipl-devel `src/pl-fli.c` | code | `ac807ba8bcc7` | `src/pl-fli.jl` | 37 | 24 |
 | swipl-devel `src/pl-fli.h` | code | `ac807ba8bcc7` | `src/pl-fli.jl` | 7 | 2 |
 | swipl-devel `src/pl-funct.c` | code | `ac807ba8bcc7` | `src/pl-funct.jl` | 2 | 2 |
-| swipl-devel `src/pl-gc.c` | code | `bae881a24a3f` | `src/pl-gc.jl` | 3 | 3 |
-| swipl-devel `src/pl-gc.c` | code | `bae881a24a3f` | `src/pl-wam.jl` | 1 | 1 |
+| swipl-devel `src/pl-gc.c` | code | `ac807ba8bcc7` | `src/pl-gc.jl` | 3 | 3 |
+| swipl-devel `src/pl-gc.c` | code | `ac807ba8bcc7` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.h` | code | `ac807ba8bcc7` | `src/pl-gc.jl` | 1 | 1 |
 | swipl-devel `src/pl-global.h` | code | `bae881a24a3f` | `src/pl-global.jl` | 3 | 3 |
 | swipl-devel `src/pl-global.h` | code | `bae881a24a3f` | `src/pl-incl.jl` | 1 | 1 |
@@ -118,7 +118,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-setup.c` | code | `ac807ba8bcc7` | `src/pl-setup.jl` | 5 | 5 |
 | swipl-devel `src/pl-srcfile.c` | code | `ac807ba8bcc7` | `src/pl-srcfile.jl` | 13 | 10 |
 | swipl-devel `src/pl-supervisor.c` | code | `ac807ba8bcc7` | `src/pl-supervisor.jl` | 17 | 9 |
-| swipl-devel `src/pl-termhash.c` | code | `bae881a24a3f` | `src/pl-termhash.jl` | 35 | 7 |
+| swipl-devel `src/pl-termhash.c` | code | `ac807ba8bcc7` | `src/pl-termhash.jl` | 35 | 7 |
 | swipl-devel `src/pl-termhash.h` | code | `ac807ba8bcc7` | `src/pl-termhash.jl` | 3 | 1 |
 | swipl-devel `src/pl-termwalk.c` | code | `ac807ba8bcc7` | `src/pl-termwalk.jl` | 18 | 5 |
 | swipl-devel `src/pl-thread.c` | code | `ac807ba8bcc7` | `src/pl-thread.jl` | 4 | 2 |
@@ -131,12 +131,13 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-write.c` | code | `ac807ba8bcc7` | `src/pl-write.jl` | 112 | 45 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_exception.jl` | 4 | 0 |
-| swipl-devel `tests/core_lang/test_hash.pl` | code | `bae881a24a3f` | `test/core_lang/test_hash.jl` | 16 | 1 |
-| swipl-devel `tests/core_lang/test_occurs_check.pl` | code | `bae881a24a3f` | `test/core_lang/test_occurs_check.jl` | 10 | 1 |
+| swipl-devel `tests/core_lang/test_hash.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_hash.jl` | 19 | 1 |
+| swipl-devel `tests/core_lang/test_occurs_check.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_occurs_check.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_resource_error.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_resource_error.jl` | 1 | 0 |
 | swipl-devel `tests/core_lang/test_sort.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_sort.jl` | 1 | 0 |
 | swipl-devel `tests/core_lang/test_term.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_term.jl` | 25 | 0 |
 | swipl-devel `tests/core_lang/test_unify.pl` | code | `ac807ba8bcc7` | `test/core_lang/test_unify.jl` | 10 | 0 |
+| swipl-devel `tests/core_text/test_io.pl` | code | `ac807ba8bcc7` | `test/core_text/test_io.jl` | 1 | 0 |
 | swipl-devel `tests/core_text/test_op.pl` | code | `ac807ba8bcc7` | `test/core_text/test_op.jl` | 4 | 0 |
 | swipl-devel `tests/core_text/test_read.pl` | code | `ac807ba8bcc7` | `test/core_text/test_read.jl` | 23 | 0 |
 | swipl-devel `tests/core_text/test_syntax.pl` | code | `ac807ba8bcc7` | `test/core_text/test_syntax.jl` | 46 | 0 |
@@ -170,7 +171,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-codelist.c` | `ac807ba8bcc7` | 1 | 1 | 1 | src/os/pl-codelist.jl |
 | swipl-devel `src/os/pl-ctype.c` | `ac807ba8bcc7` | 0 | 43 | 0 | src/os/pl-ctype.jl |
 | swipl-devel `src/os/pl-ctype.h` | `ac807ba8bcc7` | 0 | 0 | 0 | src/os/pl-ctype.jl |
-| swipl-devel `src/os/pl-file.c` | `bae881a2` | 17 | 219 | 10 | src/os/pl-file.jl |
+| swipl-devel `src/os/pl-file.c` | `ac807ba8bcc7` | 17 | 219 | 10 | src/os/pl-file.jl |
 | swipl-devel `src/os/pl-file.h` | `ac807ba8bcc7` | 0 | 0 | 0 | src/os/pl-file.jl |
 | swipl-devel `src/os/pl-option.c` | `ac807ba8bcc7` | 2 | 6 | 2 | src/os/pl-option.jl |
 | swipl-devel `src/os/pl-option.h` | `ac807ba8bcc7` | 0 | 1 | 0 | src/os/pl-option.jl |
@@ -192,10 +193,10 @@ checkout is pulled.
 | swipl-devel `src/pl-error.c` | `ac807ba8bcc7` | 12 | 41 | 6 | src/pl-error.jl |
 | swipl-devel `src/pl-error.h` | `ac807ba8bcc7` | 0 | 0 | 0 | src/pl-error.jl |
 | swipl-devel `src/pl-ext.c` | `ac807ba8bcc7` | 4 | 10 | 2 | src/pl-ext.jl |
-| swipl-devel `src/pl-fli.c` | `bae881a24a3f` | 36 | 286 | 23 | src/pl-fli.jl |
+| swipl-devel `src/pl-fli.c` | `ac807ba8bcc7` | 36 | 286 | 23 | src/pl-fli.jl |
 | swipl-devel `src/pl-fli.h` | `ac807ba8bcc7` | 7 | 15 | 2 | src/pl-fli.jl |
 | swipl-devel `src/pl-funct.c` | `ac807ba8bcc7` | 2 | 17 | 2 | src/pl-funct.jl |
-| swipl-devel `src/pl-gc.c` | `bae881a24a3f` | 4 | 166 | 4 | src/pl-gc.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-gc.c` | `ac807ba8bcc7` | 4 | 166 | 4 | src/pl-gc.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `ac807ba8bcc7` | 1 | 2 | 1 | src/pl-gc.jl |
 | swipl-devel `src/pl-global.h` | `bae881a2` | 0 | 0 | 0 | src/os/pl-file.jl |
 | swipl-devel `src/pl-global.h` | `bae881a24a3f` | 0 | 0 | 0 | src/pl-global.jl, src/pl-incl.jl |
@@ -216,7 +217,7 @@ checkout is pulled.
 | swipl-devel `src/pl-setup.c` | `ac807ba8bcc7` | 5 | 62 | 5 | src/pl-setup.jl |
 | swipl-devel `src/pl-srcfile.c` | `ac807ba8bcc7` | 13 | 74 | 10 | src/pl-srcfile.jl |
 | swipl-devel `src/pl-supervisor.c` | `ac807ba8bcc7` | 16 | 28 | 9 | src/pl-supervisor.jl |
-| swipl-devel `src/pl-termhash.c` | `bae881a24a3f` | 11 | 16 | 2 | src/pl-termhash.jl |
+| swipl-devel `src/pl-termhash.c` | `ac807ba8bcc7` | 11 | 16 | 2 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `ac807ba8bcc7` | 0 | 0 | 0 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termwalk.c` | `ac807ba8bcc7` | 12 | 28 | 5 | src/pl-termwalk.jl |
 | swipl-devel `src/pl-thread.c` | `ac807ba8bcc7` | 4 | 267 | 2 | src/pl-thread.jl |
@@ -228,19 +229,20 @@ checkout is pulled.
 | swipl-devel `src/pl-write.c` | `ac807ba8bcc7` | 81 | 111 | 41 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `ac807ba8bcc7` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_exception.pl` | `ac807ba8bcc7` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
-| swipl-devel `tests/core_lang/test_hash.pl` | `bae881a24a3f` | 0 | 3 | 0 | test/core_lang/test_hash.jl |
-| swipl-devel `tests/core_lang/test_occurs_check.pl` | `bae881a24a3f` | 1 | 6 | 0 | test/core_lang/test_occurs_check.jl |
+| swipl-devel `tests/core_lang/test_hash.pl` | `ac807ba8bcc7` | 1 | 4 | 0 | test/core_lang/test_hash.jl |
+| swipl-devel `tests/core_lang/test_occurs_check.pl` | `ac807ba8bcc7` | 1 | 7 | 0 | test/core_lang/test_occurs_check.jl |
 | swipl-devel `tests/core_lang/test_resource_error.pl` | `ac807ba8bcc7` | 0 | 11 | 0 | test/core_lang/test_resource_error.jl |
 | swipl-devel `tests/core_lang/test_sort.pl` | `ac807ba8bcc7` | 0 | 2 | 0 | test/core_lang/test_sort.jl |
 | swipl-devel `tests/core_lang/test_term.pl` | `ac807ba8bcc7` | 2 | 11 | 0 | test/core_lang/test_term.jl |
 | swipl-devel `tests/core_lang/test_unify.pl` | `ac807ba8bcc7` | 1 | 9 | 0 | test/core_lang/test_unify.jl |
+| swipl-devel `tests/core_text/test_io.pl` | `ac807ba8bcc7` | 0 | 3 | 0 | test/core_text/test_io.jl |
 | swipl-devel `tests/core_text/test_op.pl` | `ac807ba8bcc7` | 1 | 3 | 0 | test/core_text/test_op.jl |
 | swipl-devel `tests/core_text/test_read.pl` | `ac807ba8bcc7` | 0 | 10 | 0 | test/core_text/test_read.jl |
 | swipl-devel `tests/core_text/test_syntax.pl` | `ac807ba8bcc7` | 0 | 3 | 0 | test/core_text/test_syntax.jl |
 | swipl-devel `tests/db/test_db.pl` | `ac807ba8bcc7` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `ac807ba8bcc7` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `ac807ba8bcc7` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **949** | **4024** | **475** | |
+| **total** | | **950** | **4029** | **475** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

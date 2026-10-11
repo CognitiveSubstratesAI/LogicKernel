@@ -17,6 +17,7 @@ using LogicKernel:
     hash_init!,
     hash_compile!,
     hash_end,
+    HASH_BLOCK_SIZE,
     MurmurHashAligned2,
     MURMUR_SEED
 
@@ -117,15 +118,28 @@ end
             @test _kmur(data, [len]) == MurmurHashAligned2(data, len, MURMUR_SEED)
         end
     end
-    # The defect src/pl-termhash.jl keeps (see `hash_compile!`): a piece that straddles a block is
-    # copied from its START twice, so its tail is never hashed. Measured on swipl 10.1.16 through
-    # variant_hash/2 on two long atoms; here it is pinned at the function, both ways.
-    # SWI-Prolog/swipl-devel#1538 — when upstream fixes it, port the fix and flip this pin.
-    @testset "UPSTREAM DEFECT kept: a straddling piece's tail is not hashed" begin
+    # Upstream's fix e02d93f (SWI-Prolog/swipl-devel#1538; see `hash_compile!`): a piece that
+    # straddles a block is hashed whole. Until it the piece was copied from its START for every
+    # block, so its tail was never hashed and the two texts below — upstream's own, test_hash.pl
+    # long_atom — hashed alike when added in one piece.
+    @testset "a straddling piece is hashed whole, however the bytes are cut (e02d93f)" begin
         a = vcat(fill(UInt8('a'), 300), Vector{UInt8}("xxxxxxxxxx"))
         b = vcat(fill(UInt8('a'), 300), Vector{UInt8}("yyyyyyyyyy"))
-        @test _kmur(a, [length(a)]) == _kmur(b, [length(b)])        # one straddling piece
+        @test _kmur(a, [length(a)]) != _kmur(b, [length(b)])        # one straddling piece
         @test _kmur(a, fill(1, length(a))) != _kmur(b, fill(1, length(b)))  # byte by byte
+        # the same bytes hash alike in one piece, byte by byte, and in uneven pieces that end
+        # before, on and after a block boundary (no total here is a whole number of blocks above
+        # one: there the last block is flushed or not by how the pieces fall, upstream's as well)
+        rng = Xoshiro(11)
+        for len in (HASH_BLOCK_SIZE - 1, HASH_BLOCK_SIZE, HASH_BLOCK_SIZE + 1, 310, 1000)
+            data = rand(rng, UInt8, len)
+            whole = _kmur(data, [len])
+            @test whole == _kmur(data, fill(1, len))
+            @test whole == _kmur(data, [7, len - 7])
+            @test whole == _kmur(data, [len - 1, 1])
+            len > HASH_BLOCK_SIZE &&
+                @test whole == _kmur(data, [HASH_BLOCK_SIZE, len - HASH_BLOCK_SIZE])
+        end
     end
 end
 

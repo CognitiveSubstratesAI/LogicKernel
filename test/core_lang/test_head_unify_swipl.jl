@@ -16,9 +16,8 @@
 # two-clause cases pin that an error in the first clause stops the second being tried.
 #
 # swipl present ⇒ the differential runs; absent ⇒ an error under LOGICKERNEL_REQUIRE_SWIPL=1, else a
-# loud note — never a silent pass. swipl runs in chunks, and a chunk whose process ends without
-# its answers is re-run one case per process (upstream defect, reported privately; see the workspace register:
-# internal record #3).
+# loud note — never a silent pass. swipl runs once per mode; a process that ends by a signal is an
+# error (it could, until upstream's fix ac807ba: docs/upstream_reports.md #3).
 using Test, LogicKernel, Random
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -235,7 +234,7 @@ function _hvm(p::IxPred{_HT}, goal::_HT, mode)::String
     return strip("ok $(length(answers)) " * join(answers, " "))
 end
 
-# the driver swipl runs for one chunk of cases (the mode is appended as its own line)
+# the driver swipl runs for the cases (the mode is appended as its own line)
 const _HSWIPL_DRIVER = raw"""
 out(X) :- ( cyclic_term(X) -> write(cyclic) ; write_canonical(X) ).
 run(Mode) :-
@@ -251,13 +250,13 @@ run(Mode) :-
 """
 
 """
-swipl's outcomes for the cases `idx` in `mode`, into `res`; `false` if swipl died by a signal.
-`prelude` is loaded before the cases (a flag the clauses are compiled under).
+swipl's outcomes for the cases `idx` in `mode`, into `res`. `prelude` is loaded before the cases
+(a flag the clauses are compiled under).
 """
 function _hswipl_run!(
     res::Dict{Tuple{Int, String}, String}, cases, idx::Vector{Int}, mode::String;
     prelude::String=""
-)::Bool
+)::Nothing
     prog = IOBuffer()
     print(prog, prelude)
     println(prog, ":- style_check(-singleton).")
@@ -276,7 +275,8 @@ function _hswipl_run!(
         write(f, String(take!(prog)))
         run(pipeline(ignorestatus(`swipl -q $f`); stdout=out, stderr=devnull))
     end
-    proc.termsignal != 0 && return false
+    proc.termsignal != 0 &&
+        error("swipl ended by signal $(proc.termsignal) in mode $mode (see `_hswipl`)")
     success(proc) || error("swipl failed (exit $(proc.exitcode)) on cases $(first(idx))…")
     n = 0
     for l in eachline(IOBuffer(take!(out)))
@@ -285,23 +285,16 @@ function _hswipl_run!(
         n += 1
     end
     n == length(idx) || error("swipl answered $n of $(length(idx)) in mode $mode")
-    return true
+    return nothing
 end
 
-"swipl's outcomes for every case in every mode, and how many chunks were re-run case by case (internal record #3)."
+"swipl's outcomes for every case in every mode: one swipl process per mode."
 function _hswipl(cases; prelude::String="")
     res = Dict{Tuple{Int, String}, String}()
-    aborts = 0
-    for (_, mode) in _HMODES, chunk in Iterators.partition(eachindex(cases), 100)
-        if !_hswipl_run!(res, cases, collect(chunk), mode; prelude=prelude)
-            aborts += 1
-            for i in chunk
-                _hswipl_run!(res, cases, [i], mode; prelude=prelude) ||
-                    error("swipl gives no answers for case $i alone in mode $mode")
-            end
-        end
+    for (_, mode) in _HMODES
+        _hswipl_run!(res, cases, collect(eachindex(cases)), mode; prelude=prelude)
     end
-    return res, aborts
+    return res
 end
 
 "The instructions of clause `cl`'s code."
@@ -383,7 +376,7 @@ const _HHEAD_INSTRUCTIONS = (
 
     if _HSWIPL !== nothing
         @testset "identical to swipl" begin
-            theirs, aborts = _hswipl(cases)
+            theirs = _hswipl(cases)
             bad = [
                 (i, m) for i in eachindex(cases) for (_, m) in _HMODES if
                 ours[(i, m)] != theirs[(i, m)]
@@ -395,7 +388,7 @@ const _HHEAD_INSTRUCTIONS = (
             end
             @test isempty(bad)
             @test length(theirs) == 3 * length(cases)
-            @info "head unification: $(length(cases)) cases × 3 modes identical to swipl; $aborts chunk(s) re-run one by one (internal record #3)"
+            @info "head unification: $(length(cases)) cases × 3 modes identical to swipl"
         end
     elseif _HSWIPL_REQUIRED
         error(
@@ -552,7 +545,7 @@ end
             for (o, prelude) in (
                 (ours, ""), (oursf, ":- set_prolog_flag(optimise_unify, false).\n")
             )
-                theirs, _ = _hswipl(_HB_CASES; prelude=prelude)
+                theirs = _hswipl(_HB_CASES; prelude=prelude)
                 bad = [
                     (i, m) for i in eachindex(_HB_CASES) for (_, m) in _HMODES if
                     o[(i, m)] != theirs[(i, m)]
