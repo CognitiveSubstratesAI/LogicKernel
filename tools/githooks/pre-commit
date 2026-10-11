@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# tools/githooks/pre-commit — a MUTANT WORKTREE never commits (user, 2026-10-11). tools/mutate.sh
+# builds a second worktree of this repository in which mutants are applied — deliberately broken
+# code, on a detached HEAD — and marks it with .warm/MUTANT_WORKTREE. Nothing made there may reach
+# the history: this hook refuses there, and does nothing anywhere else.
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+if [ -e "$top/.warm/MUTANT_WORKTREE" ]; then
+    echo "pre-commit: REFUSED — $top is the mutant worktree of $(cat "$top/.warm/MUTANT_WORKTREE"): it holds mutated code and never commits. Work in the main tree; remove this one with tools/mutate.sh remove." >&2
+    exit 1
+fi
+exit 0

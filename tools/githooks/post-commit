@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# tools/githooks/post-commit — the declared CI fix is for ONE commit (user, 2026-10-11): once that
+# commit exists, the record a gate cycle left (.warm/CI_FIX, tools/lib_evidence.sh `_ci_fix_gate`)
+# is removed, so the commit-msg hook accepts no second `CI-Fix:` trailer on it.
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+rm -f "${LOGICKERNEL_CI_FIX_FILE:-$top/.warm/CI_FIX}"
+exit 0

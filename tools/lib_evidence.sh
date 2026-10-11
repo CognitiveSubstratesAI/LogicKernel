@@ -148,11 +148,53 @@ _check_run() {
     return "$ok"
 }
 
+# _ci_full_sha ROOT NAME — the full SHA of the commit NAME (a SHA, short or full, or a ref); a full
+# SHA git does not have is kept as it is (an unfetched commit, the tests' fixtures); else nothing.
+_ci_full_sha() {
+    git -C "$1" rev-parse --verify --quiet "$2^{commit}" 2>/dev/null && return 0
+    printf '%s' "$2" | grep -qE '^[0-9a-f]{40}$' && printf '%s\n' "$2"
+}
+
+# _ci_fix_file ROOT — where a gate cycle that passed a RED push as its DECLARED FIX records the red
+# commit, for the commit-msg hook (tools/githooks/commit-msg): the fixing commit must name it.
+_ci_fix_file() { echo "${LOGICKERNEL_CI_FIX_FILE:-$1/.warm/CI_FIX}"; }
+
+# _ci_fix_gate ROOT RC [SHA] — THE DECLARED FIX (user, 2026-10-11). The gate refuses every cycle
+# while the previous push is red, the cycle of the commit that FIXES it included (`264a7f2` went in
+# with the whole check switched off). LOGICKERNEL_CI_FIX=<sha> lets ONE thing through: a RED verdict
+# (RC 1) on exactly that commit, which must be the push the gate is reading (SHA, default
+# origin/main). Everything else FAILS while the variable is set — a green push, one with no verdict
+# yet, an unreadable answer, another commit — so it cannot stay set past the fix: once the fix is
+# pushed, origin/main is another commit and its CI is pending. The red commit is recorded
+# (`_ci_fix_file`); the commit-msg hook then requires the trailer `CI-Fix: <sha>` and checks it.
+_ci_fix_gate() {
+    local root="$1" rc="$2" checked fix
+    checked="$(_ci_full_sha "$root" "${3:-origin/main}")"
+    fix="$(_ci_full_sha "$root" "$LOGICKERNEL_CI_FIX")"
+    if [ -z "$checked" ] || [ -z "$fix" ]; then
+        echo "  CI check: LOGICKERNEL_CI_FIX=$LOGICKERNEL_CI_FIX or the previous push names no commit — fails closed" >&2
+        return 1
+    fi
+    if [ "$rc" != 1 ]; then
+        echo "  CI check: LOGICKERNEL_CI_FIX is set, but the previous push ${checked:0:7} is not RED (exit $rc of tools/ci_status.sh: 0 green, 3 no verdict yet, 2 unreadable) — a declared fix is for a red push only; unset it" >&2
+        return 1
+    fi
+    if [ "$fix" != "$checked" ]; then
+        echo "  CI check: LOGICKERNEL_CI_FIX names ${fix:0:7}, but the red push is ${checked:0:7} — it must name the commit CI reports red" >&2
+        return 1
+    fi
+    mkdir -p "$(dirname "$(_ci_fix_file "$root")")"
+    printf '%s\n' "$checked" > "$(_ci_fix_file "$root")"
+    echo "  CI check: the previous push ${checked:0:7} is RED — passed as the DECLARED FIX (LOGICKERNEL_CI_FIX); the commit must carry the trailer 'CI-Fix: $checked'"
+    return 0
+}
+
 # _ci_gate ROOT WAIT_S [SHA] — the gate split's condition (user, 2026-10-06): no gate cycle passes
 # while the previous push is red. tools/ci_status.sh on SHA (default origin/main): 0 passes;
 # 1 (red) fails; 2 (unreadable) fails CLOSED; 3 (no verdict yet) passes when WAIT_S is 0 — a cycle's
 # start, where the evidence run's end checks again — and otherwise polls every
 # LOGICKERNEL_CI_POLL_S (150) seconds for up to WAIT_S, failing if there is still no verdict.
+# LOGICKERNEL_CI_FIX=<sha> is the one way past a red push: `_ci_fix_gate`.
 # LOGICKERNEL_CI_CHECK=off skips it LOUDLY: for a machine without network, never by default.
 _ci_gate() {
     local root="$1" wait_s="$2" sha="${3:-}" t0 rc
@@ -164,6 +206,11 @@ _ci_gate() {
     while :; do
         "$root/tools/ci_status.sh" $sha
         rc=$?
+        if [ -n "${LOGICKERNEL_CI_FIX:-}" ]; then
+            _ci_fix_gate "$root" "$rc" "$sha"
+            return $?
+        fi
+        rm -f "$(_ci_fix_file "$root")"                 # no fix declared: an earlier cycle's record is stale
         case "$rc" in
             0) echo "  CI check: the previous push is green"; return 0 ;;
             1) echo "  CI check: the previous push is RED — fix it before the next commit" >&2; return 1 ;;
@@ -181,6 +228,22 @@ _ci_gate() {
         sleep "${LOGICKERNEL_CI_POLL_S:-150}"           # GitHub allows 60 anonymous calls an hour
     done
 }
+
+# ── the two lanes on one machine (Tooling 1, 2026-10-11): mutants run in a separate worktree with
+# their own daemon (tools/mutate.sh), beside the main tree's preflight but never beside its EVIDENCE
+# run, whose timings and worker count they would change.
+# _mutants_dir — the mutant worktree
+_mutants_dir() { echo "${LOGICKERNEL_MUTANTS_DIR:-$HOME/code/lk-mutants/worktree}"; }
+# _lane_held TREE — 0 when a run (preflight, evidence, `locked CMD`) holds TREE's warm lane now
+_lane_held() { [ -e "$1/.warm/run.lock" ] && ! flock -n -s "$1/.warm/run.lock" true 2>/dev/null; }
+# _mutants_running ROOT — 0 when a mutation run holds the lane of ROOT's mutant worktree
+_mutants_running() {
+    local w
+    w="$(_mutants_dir)"
+    [ "$(cat "$w/.warm/MUTANT_WORKTREE" 2>/dev/null)" = "$1" ] && _lane_held "$w"
+}
+# _evidence_running ROOT — 0 when an evidence run holds ROOT's lane (tools/warm.sh writes run.kind)
+_evidence_running() { _lane_held "$1" && [ "$(cat "$1/.warm/run.kind" 2>/dev/null)" = evidence ]; }
 
 # _unit_active UNIT — 0 when the systemd user unit runs. A TEST SEAM: LOGICKERNEL_UNIT_ACTIVE names
 # the command (default `systemctl --user is-active --quiet`), so test/test_gate_split.jl can decide

@@ -1,6 +1,8 @@
 # ORIGINAL: the gate split's own tests (user, 2026-10-06): the declarations (test/term_scope.jl), the
 # term types a chunk's local gate runs, and the CI verdict that stops a gate cycle
-# (tools/ci_status.sh, tools/lib_evidence.sh `_ci_gate`). Each guard is judged by its VERDICT.
+# (tools/ci_status.sh, tools/lib_evidence.sh `_ci_gate`) with its one way past a red push, the
+# declared fix; and the mutation lane (tools/mutate.sh): the worktree, its guard, the recovery.
+# Each guard is judged by its VERDICT.
 using Test, SHA
 
 include(joinpath(@__DIR__, "term_scope.jl"))
@@ -163,9 +165,12 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 withenv(env...) do
                     run(pipeline(ignorestatus(cmd); stdout=devnull, stderr=devnull)).exitcode
                 end
+            # (never under a real declared fix, never on this repository's own record)
             gate(f, wait) = exitof(
                 `bash -c ". $lib; _ci_gate $(_GS_ROOT) $wait $sha"`,
-                "LOGICKERNEL_CI_FIXTURE" => f, "LOGICKERNEL_CI_POLL_S" => "1"
+                "LOGICKERNEL_CI_FIXTURE" => f, "LOGICKERNEL_CI_POLL_S" => "1",
+                "LOGICKERNEL_CI_FIX" => nothing,
+                "LOGICKERNEL_CI_FIX_FILE" => joinpath(d, "CI_FIX")
             )
             for (name, runs, want) in fixtures
                 f = joinpath(d, "f.json")
@@ -182,6 +187,83 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             @test gate(garbage, 0) == 1                              # unreadable fails CLOSED
             @test exitof(`bash -c ". $lib; _ci_gate $(_GS_ROOT) 0 $sha"`,
                 "LOGICKERNEL_CI_FIXTURE" => garbage, "LOGICKERNEL_CI_CHECK" => "off") == 0
+        end
+    end
+
+    @testset "_ci_gate: a declared fix passes ONE red commit, and nothing else" begin
+        # (user, 2026-10-11) LOGICKERNEL_CI_FIX=<sha>: RED on exactly that commit passes, and is
+        # recorded for the commit-msg hook; while the variable is set, a green push, one with no
+        # verdict, an unreadable answer and another commit all FAIL
+        sha, other = "0123456789abcdef0123456789abcdef01234567", "f"^40
+        lib = joinpath(_GS_ROOT, "tools", "lib_evidence.sh")
+        runs(status, conclusion) =
+            "{\"workflow_runs\":[{\"head_sha\":\"$sha\",\"name\":\"CI\"," *
+            "\"status\":\"$status\",\"conclusion\":$conclusion,\"html_url\":\"https://x/1\"}]}"
+        red, green = runs("completed", "\"failure\""), runs("completed", "\"success\"")
+        pending = runs("in_progress", "null")
+        mktempdir() do d
+            rec, f = joinpath(d, "CI_FIX"), joinpath(d, "f.json")
+            function gate(json, fix; wait=0)
+                write(f, json)
+                return withenv(
+                    "LOGICKERNEL_CI_FIXTURE" => f, "LOGICKERNEL_CI_POLL_S" => "1",
+                    "LOGICKERNEL_CI_FIX_FILE" => rec, "LOGICKERNEL_CI_FIX" => fix,
+                    "LOGICKERNEL_CI_CHECK" => nothing
+                ) do
+                    run(
+                        pipeline(
+                            ignorestatus(
+                                `bash -c ". $lib; _ci_gate $(_GS_ROOT) $wait $sha"`
+                            );
+                            stdout=devnull, stderr=devnull)
+                    ).exitcode
+                end
+            end
+            @test gate(red, nothing) == 1 && !isfile(rec)       # red, nothing declared
+            @test gate(red, sha) == 0                           # the declared fix…
+            @test strip(read(rec, String)) == sha               # …recorded
+            @test gate(red, sha[1:7]) == 1                      # a short SHA this repo lacks
+            @test gate(red, other) == 1                         # another commit named
+            @test gate(green, sha) == 1                         # nothing to fix: a stale variable
+            @test gate(pending, sha) == 1                       # no verdict yet, at a cycle's start…
+            @test gate(pending, sha; wait=2) == 1               # …and after the wait
+            @test gate("<html>rate limited</html>", sha) == 1   # unreadable fails closed
+            # a cycle with no fix declared removes an earlier cycle's record
+            @test isfile(rec)
+            @test gate(green, nothing) == 0 && !isfile(rec)
+        end
+    end
+
+    @testset "the two lanes: an evidence run and a mutation run are told apart" begin
+        # (Tooling 1) tools/run_tests.sh refuses a full run while mutants run in the worktree, and
+        # tools/mutate.sh refuses to start them during an evidence run: both read a HELD lane lock
+        lib = joinpath(_GS_ROOT, "tools", "lib_evidence.sh")
+        mktempdir() do d
+            main, wt = joinpath(d, "main"), joinpath(d, "wt")
+            mkpath(joinpath(main, ".warm"))
+            mkpath(joinpath(wt, ".warm"))
+            # `held`: the tree whose lane lock the shell takes before it asks
+            function ask(fn, held)
+                hold = held === nothing ? "" : "exec 8>$held/.warm/run.lock; flock 8; "
+                return withenv("LOGICKERNEL_MUTANTS_DIR" => wt) do
+                    run(
+                        pipeline(
+                            ignorestatus(`bash -c ". $lib; $hold$fn $main"`);
+                            stdout=devnull, stderr=devnull)
+                    ).exitcode
+                end
+            end
+            write(joinpath(wt, ".warm", "MUTANT_WORKTREE"), main * "\n")
+            @test ask("_mutants_running", wt) == 0              # a run holds the worktree's lane
+            @test ask("_mutants_running", nothing) == 1         # the lane is free
+            @test ask("_mutants_running", main) == 1            # the MAIN lane is not the worktree's
+            write(joinpath(wt, ".warm", "MUTANT_WORKTREE"), "/another/tree\n")
+            @test ask("_mutants_running", wt) == 1              # another repository's worktree
+            write(joinpath(main, ".warm", "run.kind"), "evidence\n")
+            @test ask("_evidence_running", main) == 0
+            @test ask("_evidence_running", nothing) == 1        # the kind of a run that ended
+            write(joinpath(main, ".warm", "run.kind"), "preflight\n")
+            @test ask("_evidence_running", main) == 1           # a preflight holds it: mutants may run
         end
     end
 
@@ -230,6 +312,105 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             write(saved, original)
             @test recover() == 0
             @test !isfile(saved)
+        end
+    end
+
+    @testset "tools/mutate.sh: the mutant worktree holds the chunk's tree, and never commits" begin
+        # (Tooling 1, 2026-10-11) a second worktree on a detached HEAD, the chunk's uncommitted
+        # work copied over it; REFUSED unless both trees hold the same content
+        tool = joinpath(_GS_ROOT, "tools", "mutate.sh")
+        quiet(cmd) = pipeline(cmd; stdout=devnull, stderr=devnull)
+        git(dir, args...) = readchomp(
+            pipeline(
+                setenv(`git -c user.name=t -c user.email=t@t.invalid $args`; dir=dir);
+                stderr=devnull)
+        )
+        mktempdir() do d
+            main, wt = joinpath(d, "main"), joinpath(d, "wt")
+            mkpath(joinpath(main, "src"))
+            mkpath(joinpath(main, "tools"))
+            cp(joinpath(_GS_ROOT, "tools", "githooks"), joinpath(main, "tools", "githooks"))
+            write(joinpath(main, ".gitignore"), ".warm/\nManifest.toml\n")
+            for n in ("a", "b", "gone")
+                write(joinpath(main, "src", "$n.jl"), "$n = 1\n")
+            end
+            git(main, "init", "-q")
+            git(main, "config", "core.hooksPath", "tools/githooks")
+            git(main, "add", "-A")
+            git(main, "commit", "-q", "-m", "ADDED: the fixture")
+            # the chunk's uncommitted work: an edit, a STAGED edit, a deletion, an untracked file,
+            # and an ignored file that decides what loads
+            write(joinpath(main, "src", "a.jl"), "a = 2\n")
+            write(joinpath(main, "src", "b.jl"), "b = 2\n")
+            git(main, "add", "src/b.jl")
+            rm(joinpath(main, "src", "gone.jl"))
+            write(joinpath(main, "src", "new.jl"), "n = 1\n")
+            write(joinpath(main, "Manifest.toml"), "m = 1\n")
+            mut(args...; dir=wt, fault=nothing) = withenv(
+                "MUTATE_ROOT" => main, "LOGICKERNEL_MUTANTS_DIR" => dir,
+                "MUTATE_FAULT_FP" => fault
+            ) do
+                run(quiet(ignorestatus(`$tool $args`))).exitcode
+            end
+            same(f) = read(joinpath(main, f)) == read(joinpath(wt, f))
+            @test mut("setup") == 0
+            @test same("src/a.jl") && same("src/b.jl") && same("src/new.jl")
+            @test same("Manifest.toml") && !isfile(joinpath(wt, "src", "gone.jl"))
+            @test git(wt, "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"     # detached
+            @test git(wt, "rev-parse", "HEAD") == git(main, "rev-parse", "HEAD")
+            @test strip(read(joinpath(wt, ".warm", "MUTANT_WORKTREE"), String)) == main
+            # it never commits or pushes: git's own hooks refuse THERE, and nowhere else
+            commits(dir) = success(
+                quiet(
+                    setenv(
+                        `git -c user.name=t -c user.email=t@t.invalid commit -q --allow-empty -m "TEST: x"`;
+                        dir=dir)
+                )
+            )
+            pushes(dir) = success(
+                quiet(setenv(`$(joinpath(dir, "tools", "githooks", "pre-push"))`; dir=dir))
+            )
+            @test !commits(wt) && commits(main)
+            @test !pushes(wt) && pushes(main)
+            # a later state of the chunk: `setup` again brings the worktree to it
+            write(joinpath(main, "src", "a.jl"), "a = 3\n")
+            rm(joinpath(main, "src", "new.jl"))
+            @test mut("setup") == 0
+            @test same("src/a.jl") && !isfile(joinpath(wt, "src", "new.jl"))
+            # THE GUARD: trees that do not hold the same content are REFUSED
+            @test mut("setup"; fault="0"^40) == 1
+            # a directory that is not this repository's mutant worktree is REFUSED, and left alone
+            other = joinpath(d, "other")
+            mkpath(other)
+            write(joinpath(other, "keep"), "x")
+            @test mut("setup"; dir=other) == 1 && isfile(joinpath(other, "keep"))
+            # …and so is another worktree of this repository that is not marked as the mutants'
+            # — its own edits and untracked files are left as they are
+            plain = joinpath(d, "plain")
+            git(main, "worktree", "add", "-q", "--detach", plain)
+            write(joinpath(plain, "src", "a.jl"), "a = :someone_elses_work\n")
+            write(joinpath(plain, "untracked.jl"), "u = 1\n")
+            @test mut("setup"; dir=plain) == 1
+            @test read(joinpath(plain, "src", "a.jl"), String) ==
+                "a = :someone_elses_work\n"
+            @test isfile(joinpath(plain, "untracked.jl"))
+            # a mutation left in the WORKTREE: setup refuses; recover restores it there
+            f = joinpath(wt, "src", "a.jl")
+            original = read(f, String)
+            sentinel = joinpath(wt, ".warm", "MUTATION_IN_PROGRESS")
+            write(joinpath(wt, ".warm", "MUTATION_ORIGINAL"), original)
+            write(
+                sentinel,
+                "file=src/a.jl\nsha256=$(bytes2hex(sha256(original)))\nmutant=W1 test\n"
+            )
+            write(f, "a = 99\n")
+            @test mut("setup") == 1 && read(f, String) == "a = 99\n"
+            @test mut("recover") == 0
+            @test read(f, String) == original && !isfile(sentinel)
+            # the chunk ends: the worktree goes, the main tree keeps its work
+            @test mut("remove") == 0
+            @test !isdir(wt) && read(joinpath(main, "src", "a.jl"), String) == "a = 3\n"
+            @test mut("remove") == 0                                         # nothing left to remove
         end
     end
 

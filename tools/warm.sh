@@ -2,7 +2,7 @@
 # tools/warm.sh — LogicKernel's WARM LANE: one daemon with LogicKernel loaded under Revise
 # (tools/warm_session.jl), for ITERATION (user, 2026-10-03).
 #
-#   tools/warm.sh start | stop | restart | status
+#   tools/warm.sh start | stop | restart | status          # status prints the daemon's memory too
 #   tools/warm.sh file test/core_lang/test_unify.jl [impl]   # one test file, REAL exit code: a term-
 #                                                            # generic file on every implementation
 #                                                            # (or just `impl`), swipl REQUIRED;
@@ -66,7 +66,7 @@ _start() {
     systemd-run --user --unit="$UNIT" --collect --quiet -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
         -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" "${copy_env[@]}" \
         -E JULIA_REVISE=manual \
-        /bin/bash -c "exec '$julia' --project=. --threads=\"\${JULIA_TEST_THREADS:-4}\" --heap-size-hint=6G tools/warm_session.jl >> '$DIR/session.log' 2>&1" ||
+        /bin/bash -c "exec '$julia' --project=. --threads=\"\${JULIA_TEST_THREADS:-4}\" --heap-size-hint=${LOGICKERNEL_WARM_HEAP_HINT:-6G} tools/warm_session.jl >> '$DIR/session.log' 2>&1" ||
         { echo "warm lane: systemd-run failed" >&2; return 1; }
     local deadline=$(( $(date +%s) + ${WARM_START_TIMEOUT_S:-600} ))
     until [ -f "$DIR/ready" ]; do
@@ -82,6 +82,45 @@ _stop() {
     systemctl --user stop "$UNIT" 2>/dev/null
     rm -f "$DIR/ready"
     echo "warm lane: stopped"
+}
+
+# THE DAEMON'S MEMORY (user, 2026-10-11). MEASURED that day: after eight runs of the static-analysis
+# gate the daemon held 7.5 GB, and the evidence run that followed got two workers instead of three
+# — its shard count is read from free memory — and took 33 min instead of about 25. So a gate
+# cycle starts by reading the daemon's resident set: above LOGICKERNEL_WARM_RSS_MAX_GB (5) it is
+# restarted, with the reason printed, "rss <n> GB > 5 GB". Every reading goes to .warm/rss.log —
+# when, which gate, start or end, the size, kept or restarted — so the growth is on record: a
+# daemon that grows WITHIN one run has a leak to find; the restart only keeps it from costing a
+# worker meanwhile.
+# _daemon_rss_kb — the daemon process's resident set in kB; 0 when it cannot be read
+_daemon_rss_kb() {
+    if [ -n "${LOGICKERNEL_WARM_RSS_FAKE_KB:-}" ]; then      # TEST SEAM (tools/test_warm.sh)
+        echo "$LOGICKERNEL_WARM_RSS_FAKE_KB"
+        return
+    fi
+    awk '/^VmRSS:/ {print $2; f = 1} END {if (!f) print 0}' \
+        "/proc/$(cat "$DIR/ready" 2>/dev/null)/status" 2>/dev/null || echo 0
+}
+_gb() { awk -v kb="$1" 'BEGIN { printf "%.1f", kb / 1048576 }'; }
+# _rss_log GATE WHEN KB ACTION — one line of the growth record
+_rss_log() {
+    printf '%s\t%s\t%s\t%s GB\t%s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$1" "$2" "$(_gb "$3")" "$4" >> "$DIR/rss.log"
+}
+# _rss_gate GATE — at a gate's start: log the daemon's size, and restart it when it is too big
+_rss_gate() {
+    _running || return 0
+    local kb max
+    kb="$(_daemon_rss_kb)"
+    max="${LOGICKERNEL_WARM_RSS_MAX_GB:-5}"
+    if awk -v kb="$kb" -v max="$max" 'BEGIN { exit !(kb > max * 1048576) }'; then
+        echo "warm lane: restarting the daemon — rss $(_gb "$kb") GB > $max GB"
+        _rss_log "$1" start "$kb" "restarted (rss $(_gb "$kb") GB > $max GB)"
+        _stop > /dev/null
+        _start > /dev/null || { echo "warm lane: the daemon did not restart" >&2; return 1; }
+    else
+        echo "warm lane: daemon rss $(_gb "$kb") GB (limit $max GB)"
+        _rss_log "$1" start "$kb" kept
+    fi
 }
 
 # THE LANE LOCK (2026-10-07, after R1d). A RUN — preflight, evidence, or `locked CMD` (a mutation
@@ -377,7 +416,11 @@ JL
 # names classified so a stale one is not mistaken for a code failure.
 _preflight() {
     local rc log="$DIR/preflight_test_static_analysis.log" cls nfail ncov
+    if [ "${LOGICKERNEL_PREFLIGHT_RETRY:-0}" != 1 ]; then          # once per cycle, not on the rerun
+        _rss_gate preflight || return 1
+    fi
     _preflight_once; rc=$?
+    _running && _rss_log preflight end "$(_daemon_rss_kb)" "exit $rc"
     [ "$rc" -eq 0 ] && return 0
     if [ "${LOGICKERNEL_PREFLIGHT_RETRY:-0}" = 1 ]; then
         echo "preflight: still FAILS after a daemon restart — a REAL failure"
@@ -414,19 +457,26 @@ _workload() {
 cmd="${1:-status}"; shift || true
 case "$cmd" in
     status) ;;
-    preflight | evidence | locked) _run_lock || exit 5 ;;
+    preflight | evidence | locked)
+        _run_lock || exit 5
+        echo "$cmd" > "$DIR/run.kind"                   # tools/lib_evidence.sh `_evidence_running`
+        ;;
     *) _lane_check || exit 5 ;;
 esac
 case "$cmd" in
     start) _start ;;
     stop) _stop ;;
     restart) _stop; _start ;;
-    status) if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"))"; else echo "warm lane: not running"; exit 3; fi ;;
+    status) if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"; else echo "warm lane: not running"; exit 3; fi ;;
     send) _send "${1:-}" ;;
     file) [ $# -ge 1 ] || { echo "usage: tools/warm.sh file PATH [impl]" >&2; exit 2; }; _file "$@" ;;
     bench) _bench "$@" ;;
     preflight) _preflight ;;
-    evidence) exec "$ROOT/tools/run_tests.sh" ;;
+    evidence)
+        # the evidence run reads its worker count from free memory: an oversized daemon goes first
+        _rss_gate evidence || exit 1
+        exec "$ROOT/tools/run_tests.sh"
+        ;;
     locked) [ $# -ge 1 ] || { echo "usage: tools/warm.sh locked CMD [ARGS…]" >&2; exit 2; }; "$@" ;;
     pool) _pool ;;
     workload) _workload "${1:-}" ;;

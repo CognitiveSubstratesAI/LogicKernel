@@ -59,7 +59,7 @@ subsystem grouping are in [`docs/architecture.md`](docs/architecture.md); every 
 | `bench/programs/` | the standalone consumer: swipl-devel's benchmark programs (its `bench` submodule) written on the public API, beside the verbatim `.pl` |
 | `test/<area>/` | tests in swipl-devel's `tests/` areas — ported upstream tests keep their names |
 | `test/` root | package infrastructure: lint, port check, type discipline, static analysis |
-| `tools/` | `run_tests.sh`, `warm.sh` (the warm lane), `port_check.jl`, `upstream_drift.jl`, `lint_globals.jl`, `repl.jl`, `jet_report.jl`, `bench.jl` |
+| `tools/` | `run_tests.sh`, `warm.sh` (the warm lane), `mutate.sh` (mutants in a separate worktree), `port_check.jl`, `upstream_drift.jl`, `lint_globals.jl`, `repl.jl`, `jet_report.jl`, `bench.jl` |
 
 ## Testing
 

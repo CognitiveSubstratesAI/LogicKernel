@@ -223,6 +223,16 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
   * No verdict yet passes at a cycle's start. At a full run's end it is waited for (up to
     `LOGICKERNEL_CI_WAIT_S`, 1200 s), and evidence is written only for a green push.
   * `LOGICKERNEL_CI_CHECK=off` skips the check loudly, for a machine without network.
+  * **The declared fix (user, 2026-10-11)** is the one way past a red push, for the commit that
+    fixes it — until then that commit went in with the whole check switched off (`264a7f2`).
+    `LOGICKERNEL_CI_FIX=<sha>` lets a gate cycle pass a RED verdict on exactly that commit, which
+    must be the push the gate reads; while it is set, a green push, one with no verdict yet, an
+    unreadable answer and any other commit all FAIL, so it cannot outlive the fix. The cycle
+    records the commit (`.warm/CI_FIX`), and git's commit-msg hook then holds the ONE commit made
+    on it to the trailer `CI-Fix: <sha>`: refused without it; refused with it unless `<sha>` is
+    the commit's parent, `tools/ci_status.sh` reports that commit red, and a cycle recorded it. The
+    post-commit hook removes the record: one use. Gates: test/test_gate_split.jl (the gate, on CI
+    fixtures) and test/test_commit_msg_hook.jl (the trailer, in a scratch repository).
 * **MEASURED:** a forced `chunk` run ran 71 units instead of 116, with 1573 s of unit time against
   2564 s (−39%), and 9.5 min wall against 14.5. The static-analysis unit now sets the floor (about
   8.5 min alone).
@@ -245,6 +255,57 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
     * `_check_run` ignoring the shards' types;
   * one end to end: a worker ignoring its `go` file's types made every shard run all 117 units,
     and the coordinator refused the run.
+
+**The mutation lane: a separate worktree** (Tooling 1, 2026-10-11; `tools/mutate.sh`,
+`tools/mutate_drive.py`). A mutant is a deliberately broken line; applied in the working tree it
+sat one killed driver away from a commit (measured 2026-10-08: a SIGTERM left one in
+src/pl-fli.jl) and kept the tree and its daemon from anything else for the whole run.
+* `tools/mutate.sh run MUTANTS.py TARGET…` applies the mutants in a second `git worktree` of the
+  repository (`~/code/lk-mutants/worktree`, outside the workspace), on a detached HEAD at the main
+  tree's HEAD, with the chunk's uncommitted work copied over it: what differs from HEAD, staged or
+  not, what is untracked, deletions, and the two ignored files that decide what loads
+  (`Manifest.toml`, `LocalPreferences.toml`).
+* **The guard:** `setup` refuses unless both trees then hold the same content — the evidence
+  run's own tree fingerprint, over a non-empty file list. A mutant judged on other code than the
+  chunk's proves nothing about the chunk.
+* **It never commits or pushes:** `.warm/MUTANT_WORKTREE` marks it, and git's own `pre-commit` and
+  `pre-push` hooks (tools/githooks) refuse there and do nothing anywhere else.
+* **Its own daemon**, in a depot of its own, capped at 6 GB: the main tree's daemon and its
+  preflight go on meanwhile. Not beside an EVIDENCE run, whose worker count and timings it would
+  change — `run` refuses while one holds the main lane (`.warm/run.kind`), and a full
+  `tools/run_tests.sh` refuses to start while a mutation run holds the worktree's lane.
+* **One driver for every chunk** (`tools/mutate_drive.py`): each mutant's text must match exactly
+  once; the targets are whole test files, green before the first mutant and after the last; the
+  verdict is the exit code (1 caught, 0 survived, anything else invalid). A chunk keeps only its
+  mutant list.
+* **The sentinel stays**, in whichever tree the mutant is applied; `tools/mutate.sh recover`
+  handles both trees; `run-in-tree` is the old lane, where the commit hook refuses every commit
+  while the sentinel exists. `tools/mutate.sh remove` ends it (`git worktree remove`).
+* Gate: test/test_gate_split.jl builds a scratch repository and drives `setup`, the guard, the
+  hooks, `recover` and `remove` on it.
+* **Mutation-proved in the lane itself — 30 of 30 caught at verdict level**, its first use:
+  * 24 judged by test/test_gate_split.jl and test/test_commit_msg_hook.jl — the declared fix
+    passing whatever the verdict or the commit named, not recorded, falling back to the ordinary
+    gate, a stale record kept; a lane read as held, as this tree's, as an evidence run, when it
+    is not; the fingerprint guard comparing nothing; any worktree taken for the mutants'; a left
+    mutation overwritten; the sync missing staged changes or keeping a deleted file; `recover`
+    blind to the worktree; the worktree committing or pushing, no tree committing; `remove`
+    removing nothing; and six on the trailer (not required, any commit, any verdict, no record,
+    any shape, the record outliving its commit);
+  * one of them SURVIVED first: an unmarked worktree was "refused" only because a later step
+    failed, after `checkout -f` and `clean` had already run on it. The test now plants an edit and
+    an untracked file there and requires both to be left alone;
+  * 6 judged by `tools/test_warm.sh rss`, on the daemon's memory check below.
+
+**The daemon's memory** (user, 2026-10-11; `tools/warm.sh` `_rss_gate`). Measured that day: after
+eight runs of the static-analysis gate the daemon held 7.5 GB, the evidence run that followed got
+two workers instead of three — its shard count is read from free memory — and took 33 min instead
+of about 25. A gate cycle (`preflight`, `evidence`) now starts by reading the daemon's resident
+set: above `LOGICKERNEL_WARM_RSS_MAX_GB` (5) the daemon is restarted, the reason printed, "rss
+<n> GB > 5 GB". Every reading goes to `.warm/rss.log` — when, which gate, start or end, the size,
+kept or restarted — so the growth is on record: a daemon that grows within ONE run has a leak to
+find, and the restart only keeps it from costing a worker meanwhile. Gate: tools/test_warm.sh
+(a planted size under, over and at a raised limit).
 
 **The static-analysis gate's own cost** (Tooling 2, 2026-10-11; test/static_analysis_manifest.jl).
 The unit had grown to 19–22 min of an evidence run and 16 min of a preflight. MEASURED, testset by

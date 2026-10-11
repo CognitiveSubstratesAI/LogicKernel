@@ -48,7 +48,9 @@ _finish() {
         if [ -n "${LOGICKERNEL_TERM_TYPES_FORCE:-}" ]; then
             echo "  test_marker: NOT evidence — term types forced (LOGICKERNEL_TERM_TYPES_FORCE)"
         elif [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
-            write_marker "$ROOT" "$rc" "run_tests.sh full suite (term types: ${LOGICKERNEL_TERM_TYPES:-all})" "$_LAUNCH_FP"
+            local fix=""
+            [ -f "$(_ci_fix_file "$ROOT")" ] && fix="; CI-Fix: $(cat "$(_ci_fix_file "$ROOT")")"
+            write_marker "$ROOT" "$rc" "run_tests.sh full suite (term types: ${LOGICKERNEL_TERM_TYPES:-all}$fix)" "$_LAUNCH_FP"
         else
             echo "  test_marker: NOT evidence — filtered run (TARGET=$TARGET)"
         fi
@@ -91,6 +93,12 @@ if [ "$TARGET" = "test/runtests.jl" ]; then
     # push costs seconds, not a run; no verdict yet is checked again at the end (`_finish`).
     if [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
         _ci_gate "$ROOT" 0 || exit 1
+    fi
+    # (0b) Tooling 1 (2026-10-11): mutants run in their own worktree and daemon (tools/mutate.sh),
+    # beside a preflight but never beside an evidence run — they would take its cores and memory.
+    if _mutants_running "$ROOT"; then
+        echo "run_tests.sh: a mutation run holds the mutant worktree's lane ($(_mutants_dir)) — an evidence run does not share the machine with it; wait for it to finish" >&2
+        exit 1
     fi
     # (1) The commit-message rule is git's own commit-msg hook (tools/githooks/commit-msg). A clone
     # without it would commit unchecked messages SILENTLY, so its absence fails the run.

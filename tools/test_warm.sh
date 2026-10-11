@@ -4,6 +4,7 @@
 # mutation-proved tests"). Starts its own daemon and stops it.
 #
 #   tools/test_warm.sh          # exit 0 only if every case passes
+#   tools/test_warm.sh rss      # the daemon's-memory cases alone
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
 # load and present the result as fresh; run a file on fewer implementations than the suite does.
@@ -22,6 +23,41 @@ has() {     # has NAME FILE PATTERN WANT(1 present / 0 absent)
     if grep -q "$3" "$2"; then got=1; else got=0; fi
     check "$1" "$4" "$got"
 }
+
+# THE DAEMON'S MEMORY (2026-10-11): a gate cycle starts by reading the daemon's resident set — under
+# the limit it is kept, over it RESTARTED (a new pid) with the reason printed — and every reading
+# goes to .warm/rss.log. The size is planted (LOGICKERNEL_WARM_RSS_FAKE_KB); the preflight behind
+# it is cut short by a planted fault, so each case costs seconds.
+_rss_cases() {
+    pid0=$(cat "$ROOT/.warm/ready")
+    LOGICKERNEL_WARM_RSS_FAKE_KB=1048576 LOGICKERNEL_PREFLIGHT_FAULT=format-empty LOGICKERNEL_PREFLIGHT_POOL=0 \
+        "$W" preflight > "$T/pf" 2>&1
+    [ "$(cat "$ROOT/.warm/ready")" = "$pid0" ]; check "rss: a daemon under the limit is kept" 0 $?
+    has "…its size printed" "$T/pf" "daemon rss 1.0 GB (limit 5 GB)" 1
+    tail -2 "$ROOT/.warm/rss.log" > "$T/rss"
+    has "…and logged at the gate's start" "$T/rss" "preflight.start.1.0 GB.kept" 1
+    has "…and at its end" "$T/rss" "preflight.end.1.0 GB.exit 1" 1
+    LOGICKERNEL_WARM_RSS_FAKE_KB=7864320 LOGICKERNEL_PREFLIGHT_FAULT=format-empty LOGICKERNEL_PREFLIGHT_POOL=0 \
+        "$W" preflight > "$T/pf" 2>&1
+    [ "$(cat "$ROOT/.warm/ready")" != "$pid0" ]; check "rss: a daemon over the limit is RESTARTED" 0 $?
+    has "…with its reason" "$T/pf" "restarting the daemon — rss 7.5 GB > 5 GB" 1
+    tail -2 "$ROOT/.warm/rss.log" > "$T/rss"
+    has "…and the restart logged" "$T/rss" "restarted (rss 7.5 GB > 5 GB)" 1
+    "$W" send "$T/ok.jl" > /dev/null 2>&1; check "…and the new daemon answers" 0 $?
+    pid1=$(cat "$ROOT/.warm/ready")
+    LOGICKERNEL_WARM_RSS_MAX_GB=9 LOGICKERNEL_WARM_RSS_FAKE_KB=7864320 LOGICKERNEL_PREFLIGHT_FAULT=format-empty \
+        LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+    [ "$(cat "$ROOT/.warm/ready")" = "$pid1" ]; check "rss: the limit is LOGICKERNEL_WARM_RSS_MAX_GB" 0 $?
+}
+if [ "${1:-}" = rss ]; then                          # the memory cases alone (a mutation target)
+    "$W" stop > /dev/null 2>&1
+    "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
+    echo 'println("ok")' > "$T/ok.jl"
+    _rss_cases
+    echo "test_warm (rss): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
+fi
 
 "$W" stop >/dev/null 2>&1
 echo 'println("x")' > "$T/s.jl"
@@ -239,6 +275,8 @@ for fault in format-empty format-cut; do
     has "…saying NO VERDICT" "$T/pf" "preflight: NO VERDICT" 1
     [ $(( $(date +%s) - s )) -lt 120 ]; check "…before the slow gate" 0 $?
 done
+
+_rss_cases
 
 echo "test_warm: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

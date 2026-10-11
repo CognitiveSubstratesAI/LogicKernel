@@ -17,7 +17,19 @@
 # heredoc, the editor) and whoever commits — what the agent-side command-text check it replaces
 # (the workspace's .claude/hooks/require-commit-category.py, retired 2026-10-03) could not guarantee.
 # Its contract, both sides: test/test_commit_msg_hook.jl.
+#
+# THE DECLARED CI FIX (user, 2026-10-11; tools/lib_evidence.sh `_ci_fix_gate`). A gate cycle passes
+# a RED previous push only with LOGICKERNEL_CI_FIX=<sha>, and records that commit in .warm/CI_FIX.
+# The ONE commit made on it says so, with the trailer
+#     CI-Fix: <sha>
+# and this hook checks both directions:
+#   * a recorded declared fix and no trailer: REFUSED — a commit whose gate passed a red CI names it;
+#   * a trailer: REFUSED unless <sha> is this commit's PARENT (HEAD now), tools/ci_status.sh reports
+#     that commit RED (green, pending and unreadable all refuse), and a gate cycle recorded it.
+# tools/githooks/post-commit removes the record, so the next commit cannot use it: one use.
+import os
 import re
+import subprocess
 import sys
 
 CATEGORIES = ("ADDED", "FIXED", "ENHANCED", "MODIFIED", "DOC", "TEST", "CLEANUP")
@@ -25,6 +37,55 @@ RX_CATEGORY = re.compile(r"^(?:%s): \S" % "|".join(CATEGORIES))
 RX_UPSTREAM = re.compile(
     r"^UPSTREAM: (?=.*\S\.(?:c|h|pl)\b).+\((?:swipl-devel|scryer-prolog|swipl-bench) [0-9a-f]{7,40}\)\s*$"
 )
+
+
+RX_CI_FIX = re.compile(r"^CI-Fix:[ \t]*(\S*)[ \t]*$", re.M)
+
+
+def _git(*args):
+    r = subprocess.run(("git",) + args, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def ci_fix_refusal(text):
+    """Why the message's `CI-Fix:` trailer, or its absence, refuses the commit; None when it does not."""
+    body = "\n".join(l for l in text.splitlines() if not l.startswith("#"))
+    named = RX_CI_FIX.findall(body)
+    top = _git("rev-parse", "--show-toplevel")
+    record = os.environ.get("LOGICKERNEL_CI_FIX_FILE") or os.path.join(top, ".warm", "CI_FIX")
+    recorded = ""
+    if os.path.isfile(record):
+        with open(record, encoding="utf-8") as f:
+            recorded = f.read().strip()
+    if not named:
+        if recorded:
+            return (
+                "this commit's gate passed the RED push %s as its declared fix (LOGICKERNEL_CI_FIX);\n"
+                "  the message must say so with the trailer\n    CI-Fix: %s" % (recorded[:7], recorded)
+            )
+        return None
+    if len(named) != 1 or not re.fullmatch(r"[0-9a-f]{7,40}", named[0]):
+        return "one `CI-Fix: <sha>` trailer, a SHA of 7 to 40 hex digits; seen: %r" % (named,)
+    sha = named[0]
+    head = _git("rev-parse", "--verify", "HEAD")
+    if not head or not head.startswith(sha):
+        return (
+            "CI-Fix names %s, but this commit's parent is %s: the trailer is for the ONE commit made\n"
+            "  on the red push" % (sha, head[:7] or "(none)")
+        )
+    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ci_status.sh")
+    rc = subprocess.run([tool, head], capture_output=True, text=True).returncode
+    if rc != 1:
+        return (
+            "CI-Fix names %s, whose CI is not RED (tools/ci_status.sh exit %d: 0 green, 3 no verdict\n"
+            "  yet, 2 unreadable) — there is nothing to declare a fix for" % (sha, rc)
+        )
+    if recorded != head:
+        return (
+            "CI-Fix names %s, but no gate cycle passed it as a declared fix (no record): run the\n"
+            "  gates with LOGICKERNEL_CI_FIX=%s" % (sha, head)
+        )
+    return None
 
 
 def first_line(text):
@@ -40,9 +101,14 @@ def main(argv):
         sys.stderr.write("commit-msg: expected the message file as the only argument\n")
         return 2
     with open(argv[1], encoding="utf-8", errors="replace") as f:
-        subject = first_line(f.read())
+        text = f.read()
+    subject = first_line(text)
     if RX_CATEGORY.match(subject) or RX_UPSTREAM.match(subject):
-        return 0
+        why = ci_fix_refusal(text)
+        if why is None:
+            return 0
+        sys.stderr.write("commit-msg: REFUSED — %s\n" % why)
+        return 1
     sys.stderr.write(
         "commit-msg: a LogicKernel commit message must start with a category (user, 2026-10-03):\n"
         "    ADDED: FIXED: ENHANCED: MODIFIED: DOC: TEST: CLEANUP:\n"
