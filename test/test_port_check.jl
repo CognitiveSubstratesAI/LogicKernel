@@ -386,6 +386,20 @@ _pc_codes(vs) = sort!([
                 foreach(v -> println(stderr, "  clean: ", v), r.violations)
             @test isempty(r.violations)
             @test length(r.files) == 5
+            # THE PIN (user, 2026-10-11): with a pin file, every swipl-devel header cites the
+            # pinned commit — the fixture's own passes; another commit is a violation in each of
+            # the swipl-devel ports; and DURING A SYNC the previous pin is allowed too
+            mkpath(joinpath(root, "tools"))
+            pinfile = joinpath(root, "tools", "SWIPL_VERSION")
+            full = readchomp(`git -C $(dirs["swipl-devel"]) rev-parse $sha`)
+            write(pinfile, "version: 1.0.0\ncommit: $full\n")
+            @test isempty(port_check(root; upstream_dirs=dirs).violations)
+            write(pinfile, "version: 1.0.0\ncommit: $("f"^40)\n")
+            moved = _pc_codes(port_check(root; upstream_dirs=dirs).violations)
+            @test !isempty(moved) && all(c -> c[1] == "PIN-MISMATCH", moved)
+            write(pinfile, "version: 1.0.0\ncommit: $("f"^40)\nsync-from: $full\n")
+            @test isempty(port_check(root; upstream_dirs=dirs).violations)
+            rm(pinfile)
             inv = read(joinpath(root, "docs/port_inventory.md"), String)
             @test occursin("`src/pl-fake.jl` | 6 |", inv)      # struct, const, enum, macro count
             @test occursin("`boot/tabling.jl` | 1 |", inv)
@@ -635,6 +649,34 @@ end
     else
         @test length(d) == length(rows) && all(isempty(u) for (_, u) in d)
     end
+end
+
+# ── the pin (user, 2026-10-11) ───────────────────────────────────────────────────────────────────
+@testset "the pin: a swipl-devel header cites the pinned commit — or, during a sync, the previous one" begin
+    new, old = "a"^40, "b"^40
+    ref(c; repo="swipl-devel") = UpstreamRef(repo, "src/pl-x.c", c)
+    @test pin_violation(nothing, ref("c"^12)) === nothing           # no pin file: no rule
+    @test pin_violation((new, ""), ref(new[1:12])) === nothing      # an abbreviation of the pin
+    @test pin_violation((new, ""), ref(new)) === nothing
+    @test pin_violation((new, ""), ref(old[1:12])) !== nothing      # outside a sync: the pin only
+    @test pin_violation((new, old), ref(old[1:12])) === nothing     # during one: the previous too
+    @test pin_violation((new, old), ref("c"^12)) !== nothing
+    @test pin_violation((new, ""), ref("aaaa")) !== nothing         # too short to name a commit
+    @test pin_violation((new, ""), ref("c"^12; repo="scryer-prolog")) === nothing
+    mktempdir() do d
+        @test read_pin(d) === nothing
+        mkpath(joinpath(d, "tools"))
+        f = joinpath(d, "tools", "SWIPL_VERSION")
+        write(f, "# a comment\nversion: 1.2.3\ncommit: $new\n")
+        @test read_pin(d) == (new, "")
+        write(f, "version: 1.2.3\ncommit: $new\nsync-from: $old\n")
+        @test read_pin(d) == (new, old)
+        write(f, "version: 1.2.3\n")
+        @test_throws ErrorException read_pin(d)                     # a pin file names a commit
+        write(f, "commit: $new\nsync-from: abc\n")
+        @test_throws ErrorException read_pin(d)
+    end
+    @test read_pin(joinpath(@__DIR__, "..")) !== nothing            # LogicKernel has a pin
 end
 
 # ── markers that name a finished plan step (the divergence audit; user, 2026-10-06) ──────────────

@@ -23,6 +23,8 @@ using Test, LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
+include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
+const _SYNC_FILE = "foreign/test_exceptions_swipl.jl" # as the sync's list names this file
 const _E = lk_term_type(Union{Int64, Float64, String})
 const LKE = LogicKernel
 _es(x::Symbol) = lk_sym(_E, x)
@@ -269,6 +271,7 @@ if _ESWIPL !== nothing
                     "raise $(_EBALLS[j][1]) over $(_EBALLS[i][1]): swipl $want, kernel $ours"
                 )
         end
+        bad = sync_unexpected(_SYNC_FILE, bad)
         foreach(b -> println(stderr, "  DIVERGES: ", b), bad)
         @test isempty(bad)
         @test length(urgent) == n * (n - 1)
@@ -282,4 +285,12 @@ else
     @testset "exception-class differential skipped only where it is not required" begin
         @test !_ESWIPL_REQUIRED
     end
+end
+
+@testset "the sync: every expected mismatch of this file still mismatches" begin
+    stale = sync_stale(_SYNC_FILE)
+    foreach(
+        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
+    )
+    @test isempty(stale)
 end

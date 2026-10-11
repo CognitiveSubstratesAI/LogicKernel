@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-umap.c @ bae881a2
-# UPSTREAM: swipl-devel src/Unicode/prolog_syntax_map.pl @ bae881a2
+# UPSTREAM: swipl-devel src/pl-umap.c @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/Unicode/prolog_syntax_map.pl @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2006-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

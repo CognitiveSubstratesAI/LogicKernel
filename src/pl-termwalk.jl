@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-termwalk.c @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-termwalk.c @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2009-2016, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

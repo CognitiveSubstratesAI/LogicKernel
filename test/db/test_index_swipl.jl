@@ -25,6 +25,8 @@ include(joinpath(@__DIR__, "index_testlib.jl"))
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
+include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
+const _SYNC_FILE = "db/test_index_swipl.jl" # as the sync's list names this file
 const _X = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _xs(n) = lk_sym(_X, Symbol(n))
 _xg(v::Int) = lk_gnd(_X, v)
@@ -601,11 +603,14 @@ const _XSEED = 20261002
             @test length(pairs) == length(ti) > 80
             @test exact >= 0.9 * length(pairs)
             # the defect is still swipl's: the day swipl indexes these, revisit SWI-Prolog/swipl-devel#1537
-            @test !any(i -> i[1] in ("hv_p/3", "hv_q4/4"), theirs.idx)
+            @test !any(i -> i[1] in ("hv_p/3", "hv_q4/4"), theirs.idx) ||
+                sync_mismatch(_SYNC_FILE, "swipl builds no index for hv_p/3 and hv_q4/4")
             # and the fix shows: on the predicates it touches, the kernel narrows where swipl cannot
             @test _xuntouched(theirs.lines, ours) != theirs.lines
-            @test _xstrip_det(ours.lines) == _xstrip_det(theirs.lines) &&
+            @test (
+                _xstrip_det(ours.lines) == _xstrip_det(theirs.lines) &&
                 ours.lines != theirs.lines
+            ) || sync_mismatch(_SYNC_FILE, "the kernel narrows where swipl cannot")
             # control: with no index at all the answers are the same, the determinism is not
             @test !isempty(_xline_diff(_xuntouched(oracle.lines, ours), their_u))
             @info "clause index: $(length(theirs.lines)) answer lines identical; $(nuntouched) of $(length(program)) predicates also identical in determinism and indexes ($(length(pairs)) indexes, $exact bit-identical speedups); the other $(length(ours.affected)) carry the kernel's fix (SWI-Prolog/swipl-devel#1537) — vs $(strip(read(`swipl --version`, String)))"
@@ -620,4 +625,12 @@ const _XSEED = 20261002
             @test !_XSWIPL_REQUIRED
         end
     end
+end
+
+@testset "the sync: every expected mismatch of this file still mismatches" begin
+    stale = sync_stale(_SYNC_FILE)
+    foreach(
+        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
+    )
+    @test isempty(stale)
 end

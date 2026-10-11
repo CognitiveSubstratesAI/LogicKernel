@@ -32,21 +32,37 @@ _evidence_depot_path() {
     fi
 }
 
-# _check_swipl_pin ROOT WHO — 0 when the `swipl` on THIS PATH is the pinned version
-# (tools/SWIPL_VERSION); otherwise says which swipl it found, and where. Both sides non-empty.
+# _swipl_pin ROOT KEY — the pin file's value for KEY: `version`, `commit` or `sync-from`
+_swipl_pin() {
+    sed -n "s/^$2:[[:space:]]*//p" "$1/tools/SWIPL_VERSION" 2>/dev/null | tr -d '[:space:]'
+}
+
+# _check_swipl_pin ROOT WHO — 0 when the `swipl` on THIS PATH is THE ORACLE (tools/SWIPL_VERSION):
+# its `--version` is the pinned version AND its `version_git` flag names the pinned commit — a
+# build of exactly the commit the ports cite (tools/build_oracle.sh; user, 2026-10-11). A release
+# binary has no such flag and is refused, and so is a build of another commit: the oracle and the
+# ported source cannot drift. Otherwise says what it found, and where. Both sides non-empty.
 _check_swipl_pin() {
-    local pin have
-    pin=$(grep -v '^#' "$1/tools/SWIPL_VERSION" 2>/dev/null | tr -d '[:space:]')
-    have=$(swipl --version 2>/dev/null)
-    if [ -z "$pin" ]; then
-        echo "$2: tools/SWIPL_VERSION is missing or empty — no pinned swipl to judge against" >&2
+    local ver commit have vg sfx
+    ver="$(_swipl_pin "$1" version)"
+    commit="$(_swipl_pin "$1" commit)"
+    if [ -z "$ver" ] || ! printf '%s' "$commit" | grep -qE '^[0-9a-f]{40}$'; then
+        echo "$2: tools/SWIPL_VERSION names no pinned version and commit — no oracle to judge against" >&2
         return 1
     fi
+    have=$(swipl --version 2>/dev/null)
     case "$have" in
-        *"version $pin "*) return 0 ;;
-        *) echo "$2: swipl must be $pin (tools/SWIPL_VERSION); found: ${have:-no swipl} at $(command -v swipl || echo '(none on PATH)')" >&2
+        *"version $ver "*) ;;
+        *) echo "$2: swipl must be $ver (tools/SWIPL_VERSION); found: ${have:-no swipl} at $(command -v swipl || echo '(none on PATH)')" >&2
            return 1 ;;
     esac
+    vg="$(swipl -g "current_prolog_flag(version_git, G), writeln(G)" -t halt 2>/dev/null)"
+    sfx="${vg##*-g}"
+    if [ "$sfx" = "$vg" ] || [ "${#sfx}" -lt 7 ] || [ "${commit#"$sfx"}" = "$commit" ]; then
+        echo "$2: the oracle must be a BUILD OF THE PINNED COMMIT ${commit:0:12} (tools/SWIPL_VERSION); the swipl at $(command -v swipl) says version_git '${vg:-none}' — build it: tools/build_oracle.sh PREFIX" >&2
+        return 1
+    fi
+    return 0
 }
 
 # ── what the MACHINE did during a run (user, 2026-10-04: a slow run must say whether it was the

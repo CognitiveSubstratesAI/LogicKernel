@@ -1,5 +1,5 @@
 # UPSTREAM: swipl-devel src/os/pl-file.c @ bae881a2
-# UPSTREAM: swipl-devel src/os/pl-file.h @ bae881a2
+# UPSTREAM: swipl-devel src/os/pl-file.h @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-global.h @ bae881a2
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2024, University of Amsterdam

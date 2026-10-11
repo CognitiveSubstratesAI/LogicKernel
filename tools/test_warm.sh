@@ -26,28 +26,31 @@ has() {     # has NAME FILE PATTERN WANT(1 present / 0 absent)
 
 # THE DAEMON'S MEMORY (2026-10-11): a gate cycle starts by reading the daemon's resident set — under
 # the limit it is kept, over it RESTARTED (a new pid) with the reason printed — and every reading
-# goes to .warm/rss.log. The size is planted (LOGICKERNEL_WARM_RSS_FAKE_KB); the preflight behind
+# goes to the log (a temporary one here, LOGICKERNEL_WARM_RSS_LOG). The size is planted
+# (LOGICKERNEL_WARM_RSS_FAKE_KB); the preflight behind
 # it is cut short by a planted fault, so each case costs seconds.
 _rss_cases() {
+    export LOGICKERNEL_WARM_RSS_LOG="$T/rss.log"        # planted sizes stay out of the real record
     pid0=$(cat "$ROOT/.warm/ready")
     LOGICKERNEL_WARM_RSS_FAKE_KB=1048576 LOGICKERNEL_PREFLIGHT_FAULT=format-empty LOGICKERNEL_PREFLIGHT_POOL=0 \
         "$W" preflight > "$T/pf" 2>&1
     [ "$(cat "$ROOT/.warm/ready")" = "$pid0" ]; check "rss: a daemon under the limit is kept" 0 $?
     has "…its size printed" "$T/pf" "daemon rss 1.0 GB (limit 5 GB)" 1
-    tail -2 "$ROOT/.warm/rss.log" > "$T/rss"
+    tail -2 "$T/rss.log" > "$T/rss"
     has "…and logged at the gate's start" "$T/rss" "preflight.start.1.0 GB.kept" 1
     has "…and at its end" "$T/rss" "preflight.end.1.0 GB.exit 1" 1
     LOGICKERNEL_WARM_RSS_FAKE_KB=7864320 LOGICKERNEL_PREFLIGHT_FAULT=format-empty LOGICKERNEL_PREFLIGHT_POOL=0 \
         "$W" preflight > "$T/pf" 2>&1
     [ "$(cat "$ROOT/.warm/ready")" != "$pid0" ]; check "rss: a daemon over the limit is RESTARTED" 0 $?
     has "…with its reason" "$T/pf" "restarting the daemon — rss 7.5 GB > 5 GB" 1
-    tail -2 "$ROOT/.warm/rss.log" > "$T/rss"
+    tail -2 "$T/rss.log" > "$T/rss"
     has "…and the restart logged" "$T/rss" "restarted (rss 7.5 GB > 5 GB)" 1
     "$W" send "$T/ok.jl" > /dev/null 2>&1; check "…and the new daemon answers" 0 $?
     pid1=$(cat "$ROOT/.warm/ready")
     LOGICKERNEL_WARM_RSS_MAX_GB=9 LOGICKERNEL_WARM_RSS_FAKE_KB=7864320 LOGICKERNEL_PREFLIGHT_FAULT=format-empty \
         LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
     [ "$(cat "$ROOT/.warm/ready")" = "$pid1" ]; check "rss: the limit is LOGICKERNEL_WARM_RSS_MAX_GB" 0 $?
+    unset LOGICKERNEL_WARM_RSS_LOG
 }
 if [ "${1:-}" = rss ]; then                          # the memory cases alone (a mutation target)
     "$W" stop > /dev/null 2>&1

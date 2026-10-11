@@ -1,7 +1,7 @@
-# UPSTREAM: swipl-devel src/pl-incl.h @ bae881a24a3f
-# UPSTREAM: swipl-devel src/pl-data.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-incl.h @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-data.h @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/pl-global.h @ bae881a24a3f
-# UPSTREAM: swipl-devel src/pl-builtin.h @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-builtin.h @ ac807ba8bcc7
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ bae881a24a3f
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,

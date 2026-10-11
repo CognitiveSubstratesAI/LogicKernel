@@ -113,16 +113,14 @@ jobs:
   analysis:
     name: Static analysis + live swipl differential
     runs-on: ubuntu-latest
-    # THE ORACLE IS FIXED (user, 2026-10-04): the whole job runs INSIDE the official SWI-Prolog image
-    # of the pinned release, so `swipl` is native and never moves under a port. Before, it came from
-    # the devel PPA, which serves only its latest build: 10.1.17, published 2026-10-04 14:25 UTC,
-    # turned this job red mid-port (run 37218978326). The image tag and tools/SWIPL_VERSION move
-    # TOGETHER, as a deliberate step with its own differential reruns — never because a release
-    # appeared. (A wrapper running `docker run` per `swipl` call would add a container start to every
-    # call the differentials make; inside the container each call is native.)
-    container:
-      image: swipl:10.1.16
-    timeout-minutes: 60
+    # THE ORACLE IS A BUILD OF THE PINNED COMMIT (user, 2026-10-11): tools/SWIPL_VERSION names one
+    # swipl-devel commit — the one the ported files cite — and `swipl` here is built from exactly
+    # it by tools/build_oracle.sh, the recipe the local oracle is built with. The install is
+    # CACHED, keyed by the commit and the build flags (`tools/build_oracle.sh --key`), so only the
+    # first run after a pin move builds. Before, the job ran inside the official image of a
+    # RELEASE, some commits away from the ported source (and before that swipl came from the devel
+    # PPA, which moved under a port: 10.1.17, 2026-10-04, run 37218978326).
+    timeout-minutes: 75
     permissions:
       contents: read
       actions: write
@@ -131,41 +129,36 @@ jobs:
       LOGICKERNEL_REQUIRE_TOOLS: '1'
       LOGICKERNEL_REQUIRE_SWIPL: '1'
     steps:
-      # The image is Debian slim and the job runs as root: git, so actions/checkout makes a real
-      # repository (port_check's own tests build git repositories), and the CA certificates; jq and
-      # curl for julia-actions/cache, whose jq installer downloads with curl and is skipped when jq
-      # is present (measured: run 37220151694 failed at the cache step without them).
-      - name: Install git, jq and curl into the SWI-Prolog image
-        run: |
-          apt-get update -q
-          apt-get install -y -q --no-install-recommends git ca-certificates jq curl
       - uses: actions/checkout@v4
-      # The job runs as root over a checkout the runner's user owns, so git refuses the repository
-      # ("detected dubious ownership") once checkout's own safe.directory is gone — MEASURED run
-      # 37711043499: `git rev-parse HEAD` (test_gate_split.jl, tools/ci_status.sh) exited 128.
-      - name: Mark the checkout a safe git directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: The oracle's cache key (pinned commit + build flags)
+        id: oracle
+        run: echo "key=$(tools/build_oracle.sh --key)" >> "$GITHUB_OUTPUT"
+      - name: Restore the oracle
+        id: oracle_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/swipl-oracle
+          key: ${{ runner.os }}-${{ steps.oracle.outputs.key }}
+      - name: Build the oracle from the pinned commit
+        if: steps.oracle_cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends cmake ninja-build libgmp-dev zlib1g-dev
+          ORACLE_WORK="$RUNNER_TEMP/swipl-oracle-work" tools/build_oracle.sh "$HOME/swipl-oracle"
+      - name: Put the oracle on PATH
+        run: echo "$HOME/swipl-oracle/bin" >> "$GITHUB_PATH"
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.13'
       - uses: julia-actions/cache@v2
-      # The image must BE the pin: a misconfigured container (a tag that is not tools/SWIPL_VERSION)
-      # fails HERE, loudly — the differentials must run against the version the local suite uses.
-      - name: Refuse any swipl but the pinned one
+      # The swipl on PATH must BE the oracle: the pinned version, built from the pinned commit —
+      # the same check every local gate makes (tools/lib_evidence.sh). It fails HERE, loudly.
+      - name: Refuse any swipl but the oracle
         run: |
-          pin=$(grep -v '^#' tools/SWIPL_VERSION | tr -d '[:space:]')
-          have=$(swipl --version)
-          echo "$have (pinned: $pin)"
+          swipl --version
           swipl -g "(current_prolog_flag(version_git, G) -> format('version_git: ~w~n', [G]) ; writeln('version_git: none (a release build)'))" -t halt
-          if [ -z "$pin" ]; then
-            echo "::error::tools/SWIPL_VERSION is empty: no pinned swipl to judge against"
-            exit 1
-          fi
-          case "$have" in
-            *"version $pin "*) ;;
-            *) echo "::error::CI swipl is '$have' but tools/SWIPL_VERSION pins $pin. The job's container image must be the pin: change the image tag and the pin together, never the pin alone."
-               exit 1 ;;
-          esac
+          . tools/lib_evidence.sh
+          _check_swipl_pin "$PWD" CI || { echo "::error::the swipl on PATH is not the oracle of tools/SWIPL_VERSION"; exit 1; }
       # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as
       # a set. A pin on one of them (2026-10-03, LoweredCodeUtils v3.9.1 while JET lagged) breaks as
       # soon as the others move on — JET 0.12.3 then REQUIRED LoweredCodeUtils 3.10 (run 37139741792).

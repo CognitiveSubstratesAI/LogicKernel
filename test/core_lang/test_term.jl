@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_term.pl @ bae881a24a3f
+# UPSTREAM: swipl-devel tests/core_lang/test_term.pl @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2020, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

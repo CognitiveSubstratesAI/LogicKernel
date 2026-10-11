@@ -307,6 +307,44 @@ kept or restarted — so the growth is on record: a daemon that grows within ONE
 find, and the restart only keeps it from costing a worker meanwhile. Gate: tools/test_warm.sh
 (a planted size under, over and at a raised limit).
 
+**The pin and the oracle are ONE commit** (user, 2026-10-11; `tools/SWIPL_VERSION`,
+`tools/build_oracle.sh`). Until then the pin was a version: the local oracle was a build of
+`bae881a2`, CI ran inside the image of the release 20 commits before it, and nothing held the
+ported files' headers to either.
+* `tools/SWIPL_VERSION` names a `version` and a `commit`. The oracle is a BUILD of that commit —
+  core system, no packages, Release, GMP — made by `tools/build_oracle.sh`, the same recipe here
+  and in CI, where the install is cached by the commit and the build flags (`--key`).
+* **Every gate asserts it where it runs** (`_check_swipl_pin`, tools/swipl_pin.jl: the runner,
+  each evidence worker, the warm daemon, CI): `swipl --version` is the pinned version AND the
+  binary's `version_git` flag names the pinned commit. A release binary has no such flag and is
+  refused; so is a build of another commit.
+* **Every ported file cites it** (port_check `PIN-MISMATCH`): a `# UPSTREAM: swipl-devel … @
+  <commit>` header at another commit is a violation.
+* **A sync** moves the pin and the oracle FIRST, then ports upstream's changes file by file:
+  * `sync-from:` in the pin file names the previous pin, which a header may still cite until its
+    file's upstream changes are ported; a file identical at both commits moves at once;
+  * **test/sync_expected_mismatch.jl** lists every differential case that differs from the new
+    oracle, each with the upstream fix that clears it. A differential routes its mismatches
+    through it: one on the list is expected, any other fails as before, and an entry that no
+    longer mismatches is STALE and fails too — so porting a fix forces its entries out. A
+    mismatch's key is the whole of it (the case, the kernel's result, swipl's);
+  * the list exists exactly while `sync-from:` does, is never empty, and no test file uses it
+    without an entry (test/test_gate_split.jl). The sync's last commit removes both.
+* **The build runs capped.** MEASURED 2026-10-11: the recipe's first version made a partial
+  clone (`--filter=blob:none`) of a LOCAL repository — an empty promisor clone in which every git
+  command fetched what it lacked, and the fetch fetched again: thousands of small processes,
+  20 GB in minutes, and the kernel's OOM killer took the machine. It ran as a plain background
+  command, in no memory-capped unit. Now: a full clone only, `GIT_NO_LAZY_FETCH`, a partial clone
+  refused, and the script re-runs itself in a scope with a memory AND a task ceiling.
+* Gates: test/test_gate_split.jl (a fake `swipl` on PATH: the oracle; another commit; a release;
+  another version; a pin naming no commit — in the shell and in Julia; the list's rules),
+  test/test_port_check.jl (`read_pin`, `pin_violation`, and the rule on the fixture).
+  Mutation-proved, 15 of 15 caught at verdict level: the shell and the Julia check each ignoring
+  `version_git`, accepting any version, a release, or a suffix too short to name a commit; every
+  header counted as at the pin; any commit allowed during a sync; the rule not applied; a pin file
+  naming no commit; a mismatch off the list passing; a stale entry never reported; an entry
+  removed; an entry that does not mismatch; an entry under another file's name.
+
 **The static-analysis gate's own cost** (Tooling 2, 2026-10-11; test/static_analysis_manifest.jl).
 The unit had grown to 19–22 min of an evidence run and 16 min of a preflight. MEASURED, testset by
 testset in a fresh process on a quiet machine, before any change: 783 s, 504 s of it compiling —

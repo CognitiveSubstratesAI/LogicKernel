@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-ressymbol.c @ bae881a24a3f
+# UPSTREAM: swipl-devel src/pl-ressymbol.c @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2024, VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.

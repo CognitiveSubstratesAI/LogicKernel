@@ -102,9 +102,11 @@ _daemon_rss_kb() {
         "/proc/$(cat "$DIR/ready" 2>/dev/null)/status" 2>/dev/null || echo 0
 }
 _gb() { awk -v kb="$1" 'BEGIN { printf "%.1f", kb / 1048576 }'; }
-# _rss_log GATE WHEN KB ACTION — one line of the growth record
+# _rss_log GATE WHEN KB ACTION — one line of the growth record (LOGICKERNEL_WARM_RSS_LOG: another
+# file — the lane's own tests plant sizes, and those do not belong in the record)
 _rss_log() {
-    printf '%s\t%s\t%s\t%s GB\t%s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$1" "$2" "$(_gb "$3")" "$4" >> "$DIR/rss.log"
+    printf '%s\t%s\t%s\t%s GB\t%s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$1" "$2" "$(_gb "$3")" "$4" \
+        >> "${LOGICKERNEL_WARM_RSS_LOG:-$DIR/rss.log}"
 }
 # _rss_gate GATE — at a gate's start: log the daemon's size, and restart it when it is too big
 _rss_gate() {

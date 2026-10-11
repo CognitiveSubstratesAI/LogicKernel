@@ -22,6 +22,8 @@ const LK = LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "text_corpora_testlib.jl"))
+include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
+const _SYNC_FILE = "core_text/test_read_term_swipl.jl" # as the sync's list names this file
 const _TR = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _trs(x) = lk_sym(_TR, Symbol(x))
 
@@ -189,6 +191,7 @@ function _tr_compare(texts, ours, theirs; label="")
         (texts[k], ours[k], theirs[k]) for
         k in 1:min(length(ours), length(theirs)) if ours[k] != theirs[k]
     ]
+    bad = sync_unexpected(_SYNC_FILE, bad; key=b -> label * " " * string(b))
     for (t, o, s) in bad[1:min(end, 10)]
         println(
             stderr,
@@ -547,4 +550,12 @@ else
     @testset "parser differential skipped only where it is not required" begin
         @test !_TR_SWIPL_REQUIRED
     end
+end
+
+@testset "the sync: every expected mismatch of this file still mismatches" begin
+    stale = sync_stale(_SYNC_FILE)
+    foreach(
+        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
+    )
+    @test isempty(stale)
 end

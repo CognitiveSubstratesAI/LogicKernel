@@ -1,27 +1,28 @@
-# ORIGINAL: the SWI-Prolog version every live differential is judged against, locally AND in CI.
-# tools/run_tests.sh and CI's `analysis` job both refuse any other `swipl --version` (user,
-# 2026-10-03): a differential against a different swipl is a different oracle, and the devel PPA CI
-# installs from moves on by itself. Bump it deliberately, together with the local install — never
-# to turn a red run green.
+# ORIGINAL: THE PIN — the upstream commit the ports cite, and the oracle every live differential is
+# judged against, locally AND in CI: ONE commit (user, 2026-10-11).
 #
-# WHICH UPSTREAM COMMIT THE ORACLE IS (checked 2026-10-03). The ports cite swipl-devel `bae881a2`.
-#   local binary: `current_prolog_flag(version_git, G)` = 10.1.16-20-gbae881a2 — built FROM bae881a2,
-#                 so the local oracle and the ported source are the same commit;
-#   CI binary:    the official Docker image `swipl:10.1.16`, the 10.1.16 RELEASE (tag V10.1.16 =
-#                 ee20d44f): CI's analysis job runs INSIDE it (.github/workflows/CI.yml, since
-#                 2026-10-04; before, the devel PPA's build of the same release). V10.1.16..bae881a2
-#                 is 20 commits, ONE in src/: b453a6ad (pl-prof.c, profile/1 interrupt handling) —
-#                 outside every ported file, so CI and local agree on everything the differentials
-#                 exercise. The image tag and this pin move together.
-# Bump RULE: the cited upstream commit, the local build and this pin move TOGETHER, then every
-# differential reruns; a mismatch seen across a version gap is not yet a port defect.
+#   version:  what `swipl --version` says
+#   commit:   the swipl-devel commit — the ported files' `# UPSTREAM: … @ <commit>` headers cite it
+#             (tools/port_check.jl), and the oracle is a BUILD OF IT (tools/build_oracle.sh, the
+#             same recipe here and in CI, cached there by commit + build flags)
+#   sync-from: present only DURING a sync: the previous pin, which a ported file's header may
+#             still cite until its upstream changes are ported. The sync's last commit removes the
+#             line, and from then on every header is at `commit`.
 #
-# KNOWN COST — DECIDED at the first break (user, 2026-10-04): the devel PPA serves only its latest
-# build, and 10.1.17 (published 2026-10-04 14:25 UTC) turned CI red mid-port. CI now runs a FIXED
-# version, the official image of the pin, so a release never moves the oracle. Bumping is a
-# SCHEDULED step at a natural boundary (user: e.g. after the `nreverse` milestone), with the drift
-# report showing which ported files changed upstream, and every differential rerun.
-# 10.1.17 (V10.1.17 = ce288eef), checked 2026-10-04 for information: of the 26 commits from
-# bae881a2, none touches any of the 35 upstream files LogicKernel ports from (they touch
-# boot/init.pl, boot/tabling.pl, src/pl-qlf.c, the version header, tests and packages).
-10.1.16
+# EVERY GATE ASSERTS IT WHERE IT RUNS (tools/lib_evidence.sh `_check_swipl_pin`, tools/swipl_pin.jl:
+# the runner, each evidence worker, the warm daemon, CI's analysis job): `swipl --version` is
+# `version`, and the binary's `version_git` flag — `<version>-<n>-g<sha>`, written into a build
+# from a git checkout — names `commit`. A release binary has no such flag and is refused: the
+# oracle and the ported source cannot drift apart.
+#
+# HISTORY. Until 2026-10-11 the pin was a version alone, 10.1.16: the local oracle was a build of
+# bae881a2 and CI ran inside the official image `swipl:10.1.16`, the release 20 commits earlier
+# (one of them in src/, outside every ported file). A release moved CI's oracle once, mid-port
+# (10.1.17 on the devel PPA, 2026-10-04), which is why CI's oracle is fixed.
+# BUMP RULE: the pin, the local build and CI's build move TOGETHER, as a scheduled step with the
+# drift report (tools/upstream_drift.jl) and every differential rerun — never to turn a red run
+# green. The 2026-10-11 sync: bae881a2 → ac807ba8 (72 commits; 17 ported upstream files changed,
+# the fourteen fixes of docs/upstream_reports.md among them).
+version: 10.1.17
+commit: ac807ba8bcc7aa852c0bc1a03902c0084a1011f7
+sync-from: bae881a24a3ff4d7f446856664ca2897378dd93a

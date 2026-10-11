@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_resource_error.pl @ bae881a24a3f
+# UPSTREAM: swipl-devel tests/core_lang/test_resource_error.pl @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2018, VU University, Amsterdam
 #

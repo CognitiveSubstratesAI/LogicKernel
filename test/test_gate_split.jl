@@ -190,6 +190,107 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         end
     end
 
+    @testset "the sync's expected-mismatch list exists exactly while a sync lasts" begin
+        # (user, 2026-10-11) test/sync_expected_mismatch.jl: there while tools/SWIPL_VERSION has a
+        # `sync-from:` line, never empty, each entry naming a test file that checks it for
+        # staleness and the upstream fix that clears it; and no test file uses it without an entry
+        list = joinpath(_GS_ROOT, "test", "sync_expected_mismatch.jl")
+        pin = read(joinpath(_GS_ROOT, "tools", "SWIPL_VERSION"), String)
+        syncing = occursin(r"^sync-from:\s*[0-9a-f]{40}\s*$"m, pin)
+        @test isfile(list) == syncing
+        testdir = joinpath(_GS_ROOT, "test")
+        users = [
+            relpath(f, testdir) for f in lk_test_files(testdir) if
+            basename(f) != "test_gate_split.jl" &&
+                occursin("sync_expected_mismatch.jl", read(f, String))
+        ]
+        if syncing && isfile(list)
+            m = Module(:GSSync)
+            Base.include(m, list)
+            entries = Base.invokelatest(() -> m.SYNC_EXPECTED)
+            @test !isempty(entries)                 # an empty list is deleted, with its uses
+            files = unique(first.(entries))
+            for f in files
+                text =
+                    isfile(joinpath(testdir, f)) ? read(joinpath(testdir, f), String) : ""
+                @test occursin("const _SYNC_FILE = \"$f\"", text)
+                @test occursin("sync_stale(_SYNC_FILE)", text)
+            end
+            @test Set(users) == Set(files)          # no use of the list without an entry
+            @test all(e -> occursin(r"^[0-9a-f]{7,40}(\+[0-9a-f]{7,40})*$", e[3]), entries)
+            @test allunique([(e[1], e[2]) for e in entries])
+            # the list's own functions, on its first entry: a case that is not listed is not
+            # expected; a listed one is, once; and until it has mismatched it is stale
+            file, case = entries[1][1], entries[1][2]
+            call(f, args...) = Base.invokelatest(getfield(m, f), args...)
+            @test call(:sync_mismatch, file, "a case that is not on the list") == false
+            @test case in call(:sync_stale, file)
+            @test call(:sync_unexpected, file, [case, "another mismatch"]) ==
+                ["another mismatch"]
+            @test !(case in call(:sync_stale, file))
+            @test call(:sync_mismatch, "no/such_file.jl", case) == false
+        else
+            @test isempty(users)
+        end
+    end
+
+    @testset "the oracle: the pinned version, BUILT FROM the pinned commit" begin
+        # (user, 2026-10-11) tools/lib_evidence.sh `_check_swipl_pin` and tools/swipl_pin.jl hold
+        # the swipl on PATH to tools/SWIPL_VERSION: its version, and a `version_git` flag naming
+        # the pinned commit — a release binary, or a build of another commit, is refused
+        commit, other = "0123456789abcdef0123456789abcdef01234567", "f"^40
+        lib = joinpath(_GS_ROOT, "tools", "lib_evidence.sh")
+        pinmod = Module(:GSPin)
+        Base.include(pinmod, joinpath(_GS_ROOT, "tools", "swipl_pin.jl"))
+        mktempdir() do d
+            mkpath(joinpath(d, "tools"))
+            mkpath(joinpath(d, "bin"))
+            pin(text) = write(joinpath(d, "tools", "SWIPL_VERSION"), text)
+            # a `swipl` that answers the two questions the checks ask
+            function fake(version, version_git)
+                f = joinpath(d, "bin", "swipl")
+                write(
+                    f,
+                    "#!/bin/sh\ncase \"\$1\" in\n  --version) echo \"SWI-Prolog version " *
+                    "$version for x86_64-linux\" ;;\n  *) " *
+                    (version_git === nothing ? "exit 1" : "echo \"$version_git\"") *
+                    " ;;\nesac\n"
+                )
+                return chmod(f, 0o755)
+            end
+            path = joinpath(d, "bin") * ":" * ENV["PATH"]
+            sh() = withenv("PATH" => path) do
+                run(
+                    pipeline(
+                        ignorestatus(`bash -c ". $lib; _check_swipl_pin $d test"`);
+                        stdout=devnull, stderr=devnull)
+                ).exitcode
+            end
+            jl() = withenv("PATH" => path) do
+                Base.invokelatest(pinmod.swipl_pin_refusal, d) === nothing ? 0 : 1
+            end
+            both() = (sh(), jl())
+            pin("# the pin\nversion: 9.9.9\ncommit: $commit\n")
+            fake("9.9.9", "9.9.9-46-g" * commit[1:9])
+            @test both() == (0, 0)                              # the oracle
+            fake("9.9.9", "9.9.9-46-g" * other[1:9])
+            @test both() == (1, 1)                              # a build of another commit
+            fake("9.9.9", nothing)
+            @test both() == (1, 1)                              # a release: no version_git
+            fake("9.9.9", "9.9.9")
+            @test both() == (1, 1)                              # a version_git naming no commit
+            fake("9.9.9", "9.9.9-46-g" * commit[1:4])
+            @test both() == (1, 1)                              # too short to name one
+            fake("9.9.8", "9.9.8-46-g" * commit[1:9])
+            @test both() == (1, 1)                              # another version of that commit
+            fake("9.9.9", "9.9.9-46-g" * commit[1:9])
+            pin("version: 9.9.9\n")
+            @test both() == (1, 1)                              # a pin that names no commit
+            pin("commit: $commit\n")
+            @test both() == (1, 1)                              # …or no version
+        end
+    end
+
     @testset "_ci_gate: a declared fix passes ONE red commit, and nothing else" begin
         # (user, 2026-10-11) LOGICKERNEL_CI_FIX=<sha>: RED on exactly that commit passes, and is
         # recorded for the commit-msg hook; while the variable is set, a green push, one with no

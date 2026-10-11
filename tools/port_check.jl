@@ -31,7 +31,8 @@
 #   marker in an ORIGINAL file · each PORT names one of the file's upstream files and is followed by
 #   a definition / @testset of exactly that name (found by PARSING) · every DIVERGES has a reason ·
 #   commit exists · upstream file exists at it · each PORT name occurs in it · each COPYRIGHT line
-#   occurs in it · no ORIGINAL file shadows an upstream file · docs/port_inventory.md's generated
+#   occurs in it · every swipl-devel header cites THE PIN (tools/SWIPL_VERSION `commit:`; during a
+#   sync the previous pin too, `sync-from:`) · no ORIGINAL file shadows an upstream file · docs/port_inventory.md's generated
 #   table equals the headers · its VM inventory's `declared` column equals the `# PORT: pl-vmi.c`
 #   markers.
 # Markers are read from COMMENT TOKENS (Base.JuliaSyntax), so `# PORT:` inside a string — this
@@ -666,6 +667,7 @@ function port_check(pkgroot::AbstractString;
     architecture::AbstractString="docs/architecture.md")
     root = abspath(pkgroot)
     v = String[]
+    pin = read_pin(root)                                 # the pinned upstream commit, if any
     files = [read_source(root, rel, v) for rel in _scan_files(root)]
     # `.git` is a FILE in a submodule checkout (swipl-devel/bench), a directory otherwise.
     available = Set(r for (r, d) in upstream_dirs if ispath(joinpath(d, ".git")))
@@ -764,6 +766,10 @@ function port_check(pkgroot::AbstractString;
                     "DEF-MISMATCH $(f.rel):$(m.line): PORT $(m.name) is followed by `$(defs[nxt][2])`, want `$(m.jl_name)`"
                 )
             end
+        end
+        for u in f.upstreams
+            why = pin_violation(pin, u)
+            why === nothing || push!(v, "PIN-MISMATCH $(f.rel): $why")
         end
         for u in f.upstreams
             u.repo in available || continue
@@ -876,6 +882,44 @@ function port_check(pkgroot::AbstractString;
     return (;
         violations=v, files=files, existence_checked=sort!(collect(available)),
         coverage_checked=coverage_checked, markers=marker_counts(root, srcs)
+    )
+end
+
+# ── the pin (user, 2026-10-11) ───────────────────────────────────────────────────────────────────
+# tools/SWIPL_VERSION names ONE swipl-devel commit: the oracle is a build of it, and every ported
+# file's `# UPSTREAM: swipl-devel <path> @ <commit>` cites it — a header at another commit says
+# "ported from source the oracle is not". DURING A SYNC the file also names the previous pin
+# (`sync-from:`): a header may still cite that one until its file's upstream changes are ported.
+# The sync's last commit removes the line, and every header is then at the pin. A package without
+# the file (this tool's test fixtures) has no pin and no such rule.
+const RX_PIN_COMMIT = r"^[0-9a-f]{40}$"
+
+"The pin of the package at `root`: `(commit, sync_from)` — `sync_from` empty outside a sync — or `nothing`."
+function read_pin(root::AbstractString)::Union{Nothing, Tuple{String, String}}
+    f = joinpath(root, "tools", "SWIPL_VERSION")
+    isfile(f) || return nothing
+    commit, from = "", ""
+    for l in eachline(f)
+        startswith(l, "commit:") && (commit = String(strip(l[8:end])))
+        startswith(l, "sync-from:") && (from = String(strip(l[11:end])))
+    end
+    occursin(RX_PIN_COMMIT, commit) ||
+        error("$f: no `commit: <40 hex digits>` line — the pin names the upstream commit")
+    isempty(from) || occursin(RX_PIN_COMMIT, from) ||
+        error("$f: `sync-from:` is not a 40-digit commit")
+    return (commit, from)
+end
+
+"Why the upstream reference `u` is not at the pin, or `nothing`: it is, or there is no pin, or `u` is no swipl-devel file."
+function pin_violation(pin::Union{Nothing, Tuple{String, String}}, u::UpstreamRef)
+    (pin === nothing || u.repo != "swipl-devel") && return nothing
+    commit, from = pin
+    length(u.commit) >= 7 || return "$(u.path) @ $(u.commit): a commit of at least 7 digits"
+    startswith(commit, u.commit) && return nothing
+    !isempty(from) && startswith(from, u.commit) && return nothing
+    return "$(u.path) is cited @ $(u.commit); the pin (tools/SWIPL_VERSION) is $(commit[1:12])" *
+           (
+        isempty(from) ? "" : " — or $(from[1:12]), the previous pin, while the sync lasts"
     )
 end
 

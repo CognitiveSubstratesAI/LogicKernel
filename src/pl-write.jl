@@ -1,5 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-write.c @ bae881a2
-# UPSTREAM: swipl-devel src/pl-incl.h @ bae881a2
+# UPSTREAM: swipl-devel src/pl-incl.h @ ac807ba8bcc7
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

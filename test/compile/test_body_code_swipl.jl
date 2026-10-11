@@ -22,6 +22,8 @@ include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "code_testlib.jl"))
+include(joinpath(@__DIR__, "..", "sync_expected_mismatch.jl"))
+const _SYNC_FILE = "compile/test_body_code_swipl.jl" # as the sync's list names this file
 using Random
 
 const _B = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
@@ -1318,7 +1320,10 @@ end
             "(dynamic(dm1/1), bc_case_show((dm1(X) :- X = f(a), q(X))))"
         ])[1] == dyn
         e1 = _bc_swipl(["bc_case_show((c18(X, G) :- G, X = a))"])[1]
-        @test startswith(e1[1], "h_atom(")                  # swipl moves it too (E1)
+        @test startswith(e1[1], "h_atom(") ||               # swipl moves it too (E1)
+            sync_mismatch(
+            _SYNC_FILE, "c18(X, G) :- G, X = a: swipl moves the unification"
+        )
         ends = _bc_swipl([
             "bc_case_show((c26b(X) :- (X = a ; X = b)))",
             "bc_case_show((c46b(X) :- \\+ X = a))"
@@ -1424,4 +1429,12 @@ end
     @test isempty(ix_retract!(pr, _bf("cr", _bv(5))))           # the rule is not `cr(_) :- true`
     ix_retractall!(pr, _bf("cr", _bv(5)))                        # retractall takes rules too
     @test LK.hasClausesDefinition(db.gd, pr.def) === nothing
+end
+
+@testset "the sync: every expected mismatch of this file still mismatches" begin
+    stale = sync_stale(_SYNC_FILE)
+    foreach(
+        c -> println(stderr, "  STALE sync entry (it no longer mismatches): ", c), stale
+    )
+    @test isempty(stale)
 end
