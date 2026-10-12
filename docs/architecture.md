@@ -307,6 +307,20 @@ kept or restarted — so the growth is on record: a daemon that grows within ONE
 find, and the restart only keeps it from costing a worker meanwhile. Gate: tools/test_warm.sh
 (a planted size under, over and at a raised limit).
 
+**A changed struct restarts the daemon** (user, 2026-10-12; `tools/warm.sh` `_struct_gate`,
+`tools/struct_snapshot.py`). Measured twice on 2026-10-12 (V9d): a field added to a struct —
+`choice`, then `PL_local_data` — left the daemon with a method compiled for the OLD type beside
+the one for the new (src/pl-op.jl's `defOperator!`: the type sits inside a `Union` in its
+signature, and Revise did not re-evaluate it), so every call failed as ambiguous. Both times it
+was found by running the tests and reading the `MethodError`. Now, before a snippet is sent, the
+struct definitions under src/ are compared with the ones the daemon started from (each hashed
+from its `struct` line to its `end`, comments and spacing left out): a definition that CHANGED
+or went away restarts the daemon, the reason printed and written to `.warm/restart.log` — "struct
+changed: <name>[,<name>…]". A new struct, a comment or a re-indentation restarts nothing. A
+snapshot that cannot be taken fails the send (the gate does not fail open). Gate:
+`tools/test_warm.sh structs` (22 cases on a planted probe struct: new, a field added, a comment,
+a type changed, made mutable, a second new one, both removed).
+
 **The pin and the oracle are ONE commit** (user, 2026-10-11; `tools/SWIPL_VERSION`,
 `tools/build_oracle.sh`). Until then the pin was a version: the local oracle was a build of
 `bae881a2`, CI ran inside the image of the release 20 commits before it, and nothing held the

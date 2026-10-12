@@ -5,6 +5,7 @@
 #
 #   tools/test_warm.sh          # exit 0 only if every case passes
 #   tools/test_warm.sh rss      # the daemon's-memory cases alone
+#   tools/test_warm.sh structs  # the struct gate's cases alone
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
 # load and present the result as fresh; run a file on fewer implementations than the suite does.
@@ -13,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
+trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -52,6 +53,66 @@ _rss_cases() {
     [ "$(cat "$ROOT/.warm/ready")" = "$pid1" ]; check "rss: the limit is LOGICKERNEL_WARM_RSS_MAX_GB" 0 $?
     unset LOGICKERNEL_WARM_RSS_LOG
 }
+# THE STRUCT GATE (2026-10-12): before a snippet is sent, a struct the daemon loaded whose definition
+# CHANGED, or went away, restarts the daemon (a new pid), the reason printed and logged — "struct
+# changed: <name>"; a NEW struct, a comment or a re-indentation restarts nothing. The probe struct
+# is a file under src/ that LogicKernel does not include: the gate reads the source, so the daemon
+# need not load it, and nothing else sees it.
+_struct_cases() {
+    probe="$ROOT/src/_struct_probe_$$.jl"
+    pid() { cat "$ROOT/.warm/ready"; }
+    sendok() { "$W" send "$T/ok.jl" > "$T/so" 2> "$T/se"; }
+    rm -f "$ROOT/.warm/restart.log"
+    sendok; check "structs: a send on an unchanged tree" 0 $?
+    p0=$(pid)
+    printf 'struct WarmStructProbe\n    a::Int\nend\n' > "$probe"
+    sendok; check "structs: a NEW struct — the send passes" 0 $?
+    [ "$(pid)" = "$p0" ]; check "…and the daemon is KEPT" 0 $?
+    has "…with no restart announced" "$T/se" "struct changed" 0
+    printf 'struct WarmStructProbe\n    a::Int\n    b::Int\nend\n' > "$probe"
+    sendok; check "structs: a field ADDED — the send passes" 0 $?
+    [ "$(pid)" != "$p0" ]; check "…on a RESTARTED daemon" 0 $?
+    has "…with its reason" "$T/se" "restarting the daemon — struct changed: WarmStructProbe$" 1
+    has "…and the reason logged" "$ROOT/.warm/restart.log" "struct changed: WarmStructProbe$" 1
+    has "…the snippet's own output intact" "$T/so" "^ok$" 1
+    p1=$(pid)
+    sendok; [ "$(pid)" = "$p1" ]; check "structs: the next send restarts nothing" 0 $?
+    printf '# a comment\nstruct WarmStructProbe\n    a::Int      # the first\n\n    b::Int\nend\n' > "$probe"
+    sendok; [ "$(pid)" = "$p1" ]; check "structs: a comment, a blank line, spacing — KEPT" 0 $?
+    printf 'struct WarmStructProbe\n    a::Int\n    b::Float64\nend\n' > "$probe"
+    sendok; [ "$(pid)" != "$p1" ]; check "structs: a field's TYPE changed — RESTARTED" 0 $?
+    p2=$(pid)
+    printf 'mutable struct WarmStructProbe\n    a::Int\n    b::Float64\nend\n' > "$probe"
+    sendok; [ "$(pid)" != "$p2" ]; check "structs: made mutable — RESTARTED" 0 $?
+    p3=$(pid)
+    printf 'mutable struct WarmStructProbe\n    a::Int\n    b::Float64\nend\nstruct WarmStructProbe2 x::Int end\n' > "$probe"
+    sendok; [ "$(pid)" = "$p3" ]; check "structs: a second, new struct beside it — KEPT" 0 $?
+    rm -f "$probe"
+    sendok; check "structs: the structs REMOVED — the send passes" 0 $?
+    [ "$(pid)" != "$p3" ]; check "…on a RESTARTED daemon" 0 $?
+    has "…naming both" "$T/se" "struct changed: WarmStructProbe,WarmStructProbe2$" 1
+    [ "$(grep -c 'struct changed' "$ROOT/.warm/restart.log")" = 4 ]; check "…four restarts logged in all" 0 $?
+    "$W" file test/test_package.jl reference > /dev/null 2>&1; check "…and the lane still runs a test file" 0 $?
+    # the snapshot is taken WHEN THE DAEMON STARTS, not at its first snippet: a struct changed
+    # between the two is a change
+    printf 'struct WarmStructProbe\n    a::Int\nend\n' > "$probe"
+    "$W" stop > /dev/null 2>&1
+    "$W" start > /dev/null 2>&1; check "structs: a fresh start with the probe in the tree" 0 $?
+    p4=$(pid)
+    printf 'struct WarmStructProbe\n    a::Int\n    c::Int\nend\n' > "$probe"
+    sendok; [ "$(pid)" != "$p4" ]; check "…changed before the FIRST snippet — RESTARTED" 0 $?
+    rm -f "$probe"
+    sendok; check "…and removed again" 0 $?
+}
+if [ "${1:-}" = structs ]; then                      # the struct gate's cases alone (a mutation target)
+    "$W" stop > /dev/null 2>&1
+    "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
+    echo 'println("ok")' > "$T/ok.jl"
+    _struct_cases
+    echo "test_warm (structs): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
+fi
 if [ "${1:-}" = rss ]; then                          # the memory cases alone (a mutation target)
     "$W" stop > /dev/null 2>&1
     "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
@@ -280,6 +341,8 @@ for fault in format-empty format-cut; do
 done
 
 _rss_cases
+echo 'println("ok")' > "$T/ok.jl"
+_struct_cases
 
 echo "test_warm: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

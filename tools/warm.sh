@@ -21,9 +21,11 @@
 #
 # 🔴 ITERATION ONLY, NEVER EVIDENCE (user, 2026-10-03): a long-lived daemon is where state leaks
 # hide, so commit evidence is a process that started clean — `evidence` runs tools/run_tests.sh,
-# which shares nothing with the daemon. A STRUCT edit needs no restart on Julia ≥ 1.12 (Revise
-# redefines types); `restart` clears what a long-lived process accumulates — values of a type's old
-# layout, test residue, an update that failed partway — and recovers from a refused revision.
+# which shares nothing with the daemon. A CHANGED STRUCT restarts the daemon by itself, with the
+# reason printed, "struct changed: <name>" (`_struct_gate`, user 2026-10-12): Revise redefines the
+# type, but a method it does not re-evaluate stays compiled for the old one. `restart` also clears
+# what a long-lived process accumulates — values of a type's old layout, test residue, an update
+# that failed partway — and recovers from a refused revision.
 #
 # Exit codes are the snippet's own (Core's tools/warm_send.sh, whose two silent-success bugs this
 # keeps fixed): a missing verdict is a FAILURE, and a timeout prints no output — it would be the
@@ -75,6 +77,7 @@ _start() {
         [ "$(date +%s)" -ge "$deadline" ] && { echo "warm lane: not ready after ${WARM_START_TIMEOUT_S:-600}s" >&2; return 1; }
         sleep 1
     done
+    _struct_snapshot > "$DIR/structs"               # what this daemon loaded (`_struct_gate`)
     echo "warm lane: ready (unit $UNIT, pid $(cat "$DIR/ready"))"
 }
 
@@ -125,6 +128,46 @@ _rss_gate() {
     fi
 }
 
+# THE STRUCT GATE (user, 2026-10-12). MEASURED twice that night (V9d): a field added to a struct
+# (`choice`, then `PL_local_data`) left the daemon with a method compiled for the OLD type beside
+# the one for the new — src/pl-op.jl's `defOperator!`, whose signature holds the type inside a
+# `Union`, which Revise did not re-evaluate — and every call failed as AMBIGUOUS (`MethodError`).
+# It was found by running the tests and reading the error, twice. So before a snippet is sent, the
+# struct definitions of src/ are compared with the ones the daemon started from: a definition that
+# CHANGED or went away restarts the daemon, the reason printed — "struct changed: <name>[,<name>…]"
+# — and written to .warm/restart.log. A NEW struct restarts nothing (no method can be stale for
+# it); nor does a comment or a blank inside one.
+# _struct_snapshot — `name<TAB>hash` for every struct src/ defines, comments and layout left out
+_struct_snapshot() { python3 "$ROOT/tools/struct_snapshot.py" "$ROOT/src"; }
+# _struct_gate — before a snippet: restart the daemon when a struct it loaded has changed
+_struct_gate() {
+    _running || return 0
+    local now changed
+    now="$(_struct_snapshot)" && [ -n "$now" ] || {
+        echo "warm lane: the struct snapshot failed (tools/struct_snapshot.py) — not sending" >&2
+        return 1
+    }
+    if [ ! -f "$DIR/structs" ]; then                # a daemon started before this gate existed
+        printf '%s\n' "$now" > "$DIR/structs"
+        return 0
+    fi
+    [ "$now" = "$(cat "$DIR/structs")" ] && return 0
+    # the names the daemon loaded whose definition is gone or different now
+    changed="$(printf '%s\n' "$now" | awk -F'\t' 'NR == FNR { h[$1] = $2; next }
+        !($1 in h) || h[$1] != $2 { print $1 }' - "$DIR/structs" | paste -sd, -)"
+    if [ -z "$changed" ]; then                      # only new structs: nothing can be stale
+        printf '%s\n' "$now" > "$DIR/structs"
+        return 0
+    fi
+    echo "warm lane: restarting the daemon — struct changed: $changed" >&2
+    printf '%s\tstruct changed: %s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$changed" >> "$DIR/restart.log"
+    _stop > /dev/null
+    _start > /dev/null || {
+        echo "warm lane: the daemon did not restart after a struct change — fix the load error, then tools/warm.sh start" >&2
+        return 1
+    }
+}
+
 # THE LANE LOCK (2026-10-07, after R1d). A RUN — preflight, evidence, or `locked CMD` (a mutation
 # driver) — takes $DIR/run.lock EXCLUSIVELY for its whole run and exports WARM_LOCK_OWNER=<its pid>:
 # its own subshells and child warm.sh calls inherit it and pass. Every other command takes the lock
@@ -164,6 +207,7 @@ _lane_check() {
 # _send FILE — run the snippet in the daemon; print its output; exit with its verdict.
 _send() {
     _running || { echo "warm lane: not running — tools/warm.sh start" >&2; return 3; }
+    _struct_gate || return 3
     # ONE SNIPPET AT A TIME. Two senders race on in.jl, seq and out.txt, and one of them can read
     # the other's verdict: MEASURED 2026-10-07 (R1d), a probe sent during a preflight made the
     # preflight's test_read_term_swipl.jl step "pass" with an EMPTY log, its run never made. The
