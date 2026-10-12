@@ -100,7 +100,9 @@ function _grow_pool!(
     while length(pool) < n
         push!(
             pool,
-            choice{T}(0, CHP_JUMP, 0, mark(0), 0, ClauseChoice{T}(nothing, word(0)), 0)
+            choice{T}(
+                0, CHP_JUMP, 0, mark(0), 0, ClauseChoice{T}(nothing, word(0)), 0, false
+            )
         )
     end
     return nothing

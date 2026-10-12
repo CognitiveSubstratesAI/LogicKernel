@@ -2439,6 +2439,44 @@ local data unusable; (3) the spare stacks ported. Research: the workspace's
   own check fails fast. `PL_error` setting the flag survived until a test opened its foreign frame at
   the limit.
 
+**V9d: the SOFT-CUT `*->` — BUILT (2026-10-12)** (user's decision; port_inventory row V9;
+src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-incl.jl, pl-gc.jl, pl-global.jl). Ported from pl-comp.c
+and pl-vmi.c at the pin `ac807ba8`, upstream names.
+* **Ported — the compiler:** `compileBody`'s `*->` arms — `(A *-> B ; C)` shares the conditional
+  path with `->` (`C_SOFTIF` in place of `C_IFTHENELSE`, `C_SOFTCUT` in place of `C_CUT`, the
+  local cut `C_LSCUT` in place of `C_LCUT`), and `(A *-> B)` shares the if-then path
+  (`C_SOFTIFTHEN`, `C_SCUT`). `$/1` stays refused by name (V9f).
+* **Ported — the VM:** `C_SOFTIF` keeps the choice point the condition is about to make and runs
+  as `C_OR`; `C_SOFTCUT` takes that one choice point OUT of the chain, once, and leaves A's
+  choice points in place, so B runs for every answer of A; `C_SOFTIFTHEN`/`C_SCUT` are the
+  else-less form; `C_LSCUT` is a `!` in a soft condition.
+* **Ported — the decompiler:** `*->` in both `(A *-> B ; C)` (`C_SOFTIF` → `*->`/`;`) and
+  `(A *-> B)` (`C_SOFTIFTHEN`), telling `C_SCUT` (no operand) from `C_CUT`.
+* **The pool invariant, RESTATED (user, 2026-10-12):** upstream leaves a soft-cut choice point's
+  struct on the local stack, unreachable, until `lTop` falls below it. Here the record stays in
+  the pool, marked `unlinked` (`choice.unlinked`), and the pools hold the live records PLUS the
+  unlinked ones whose stack region is still in use; they are reclaimed when that region is popped
+  — by every lowering of `lTop` (`dropRecords!`), and, where upstream reuses the region without
+  lowering `lTop` (a last call reusing its frame, a clause choice point resumed in place), by
+  `dropUnlinkedChoices!` first (`I_DEPART`, `L_NOLCO`, `shallow_backtrack`). So `_no_record_above`
+  stays exact. `_rpools_live` checks it AT EVERY ANSWER: a record on the chain is never unlinked,
+  one off the chain always is and lies below `lTop`.
+* **DIVERGES (representation, logged — behaviour identical on every differential):** `choice.unlinked`
+  marks the pooled record where upstream tells by address; the soft-cut's frame slot holds the
+  condition's choice-point POSITION as an integer, NEGATED once the cut has run, where upstream
+  holds a (negated) local-stack term reference.
+* **Gate — against swipl 10.1.17 (`ac807ba8`), all three term types:** 524 queries, 994 answers
+  with their determinism identical to swipl's, the pools checked at every answer (475 answers hold
+  an unlinked record); 24 pinned programs (every answer of A then B; the else branch; A with no
+  choice point; `!` in a soft condition; a last call after a soft-cut, the frame reused 2,000
+  times; a clause choice point resumed in place) and ~500 random soft-cut predicates; the frame
+  POSITIONS around a soft-cut, read with `prolog_current_frame/1` on both sides, equal swipl's
+  `[20, 11, 37, 11, 11, 20, 28]`. The random differentials leave out the predicates on which
+  upstream is undefined (see register Q3; `_R_Q3_SKIP`).
+* **Mutation-proved — at verdict level:** `C_SOFTCUT` not dropping the dead record, the record not
+  marked `unlinked`, the slot not negated, each `C_LSCUT` step, each clause of `_rpools_live`,
+  and `dropUnlinkedChoices!` at the reuse points.
+
 **V9d: the decompiler puts MOVED UNIFICATIONS back — BUILT (2026-10-12)** (src/pl-comp.jl). The
 decompiler part of upstream's 27dd7c3 (swipl-devel#1540), whose compiler part came with the sync.
 * **Ported:** `mark_bvar_access` with `add_bvar_access` — the head arguments the clause's code

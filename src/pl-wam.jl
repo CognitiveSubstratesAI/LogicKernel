@@ -181,6 +181,7 @@ function newChoice(ld::PL_local_data{T}, type::choice_type, fr::Int)::Int where 
     c.value_clause.cref = nothing
     c.value_clause.key = word(0)
     c.value_pc = 0
+    c.unlinked = false
     ld.BFR = ch
 
     return ch
@@ -532,6 +533,35 @@ function _init_clause_vars!(
     return nothing
 end
 
+# THE POOLS' INVARIANT (user, 2026-10-05; restated 2026-10-12 for `*->`): the pools hold the LIVE
+# records — the choice points on the `BFR` chain, the frames on the parent chains of the running
+# frame and of those choice points' frames — PLUS the choice-point records `C_SOFTCUT` unlinked
+# (`unlinked`) whose stack region is still in use; those are reclaimed when that region is popped:
+# by every lowering of `lTop` to or below them (`dropRecords!`), and, where upstream reuses the
+# region WITHOUT lowering `lTop` past it — a last call reusing its frame, a clause choice point
+# resumed in place — by `dropUnlinkedChoices!` first. So `_no_record_above` stays exact at those
+# points. test/core_lang/test_rules_swipl.jl `_rpools_live` checks exactly this at every answer.
+"""
+    dropUnlinkedChoices!(ld, p)
+
+Reclaim the choice-point records above position `p` that `C_SOFTCUT` took out of the chain: the
+region above `p` is about to be reused. A record above `p` must BE one `C_SOFTCUT` unlinked — "no
+LIVE record above `p`" is a precondition at every call site (the LCO guard at `I_DEPART`/`L_NOLCO`,
+`_no_record_above` after this call at `shallow_backtrack`), so `unlinked` is a CHECKED assertion
+here, not a loop guard: a future call site (V9e's `islocal` temporary clauses, the exception
+unwind, tabling) that broke the precondition would be caught here rather than silently reclaiming a
+live record (mutation 2026-10-12, SC11′).
+"""
+function dropUnlinkedChoices!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
+    n = ld.nchoices
+    while n > 0 && ld.choices[n].base > p
+        @assert ld.choices[n].unlinked "dropUnlinkedChoices!: a LIVE choice record above p=$p at n=$n (the pool invariant: no live record above a region about to be reused)"
+        n -= 1
+    end
+    ld.nchoices = n
+    return nothing
+end
+
 # Whether no record of any kind lies above position `p`.
 function _no_record_above(ld::PL_local_data{T}, p::Int)::Bool where {T}
     return (ld.nframes == 0 || ld.frames[ld.nframes].base <= p) &&
@@ -819,7 +849,7 @@ const VMI_RUN = (
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
-    :C_LCUT, :C_LCUTIFTHEN
+    :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -2045,6 +2075,7 @@ function PL_next_solution_guarded(
         (id_def.impl_clauses.first_clause !== nothing || (id_def.flags & PROC_DEFINED) != 0)
         id_f = ld.frames[FR]
         @assert (id_f.flags & FR_WATCHED) == 0
+        dropUnlinkedChoices!(ld, id_f.base)         # (the region above the frame is reused)
         @assert _is_newest_live_frame(ld, FR) "I_DEPART: last-call reuse of a frame that is not the newest live record"
         id_f.clause = nothing                       # for save atom-gc
         # leaveDefinition(DEF): (void)0 upstream
@@ -2133,6 +2164,7 @@ function PL_next_solution_guarded(
     PC += 1
     if (ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) &&
         ld.prolog_flag_last_call
+        dropUnlinkedChoices!(ld, ld.frames[FR].base)    # (the region above the frame is reused)
         @assert _is_newest_live_frame(ld, FR) "L_NOLCO: last-call reuse of a frame that is not the newest live record"
         @goto next_instruction
     end
@@ -2359,12 +2391,13 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c c_lcut_cont
     # DIVERGES: `och` is a position: the choice point made right after the mark — the
-    # condition's own — is the one whose parent lies at it.
+    # condition's own — is the one whose parent lies at it. A NULL `och` (`C_LSCUT` at the bottom
+    # of the chain) is position 0.
     @label c_lcut_cont
     cl_ch = ld.BFR
     while cl_ch != 0
         cl_parent = ld.choices[cl_ch].parent
-        if cl_parent != 0 && ld.choices[cl_parent].base == cl_och      # ch->parent == och
+        if (cl_parent == 0 ? 0 : ld.choices[cl_parent].base) == cl_och  # ch->parent == och
             cc_och = ld.choices[cl_ch].base         # VMH_GOTO(c_cut, ch)
             @goto c_cut
         end
@@ -2376,6 +2409,73 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_LCUTIFTHEN
     @label C_LCUTIFTHEN
     @goto C_CUT
+
+    # ── the soft-cut (pl-vmi.c), V9d ──────────────────────────────────────────────────────────────
+    # PORT: pl-vmi.c C_SOFTIFTHEN
+    @label C_SOFTIFTHEN
+    @goto C_IFTHEN
+
+    # PORT: pl-vmi.c C_SOFTIF
+    # DIVERGES: the slot holds a POSITION (see `C_IFTHENELSE`) — here `lTop`, where `C_OR` is about
+    # to make the condition's choice point.
+    @label C_SOFTIF
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(T, ld.lTop)  # see C_SOFTCUT
+    PC += 1
+    @goto C_OR
+
+    # PORT: pl-vmi.c C_SOFTCUT
+    # DIVERGES: the slot holds a position, NEGATED once the soft-cut has run, as upstream negates
+    # its term reference. The choice point taken out of the chain is marked `unlinked`: its record
+    # stays in the pool while its stack region is in use (see `dropUnlinkedChoices!`), where
+    # upstream leaves the struct on the local stack.
+    @label C_SOFTCUT
+    sc_slot = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1
+    PC += 1
+    sc_ref = Int(int64_value(ld.slots[sc_slot]))
+    if sc_ref > 0
+        sc_bfr = ld.BFR
+        if ld.choices[sc_bfr].base == sc_ref        # bfr == ch
+            ld.choices[sc_bfr].unlinked = true
+            ld.BFR = ld.choices[sc_bfr].parent
+            ld.slots[sc_slot] = mk_gnd(T, -ld.choices[ld.BFR].base)
+        else
+            while sc_bfr != 0 && ld.choices[sc_bfr].base >= sc_ref      # for(; bfr >= ch; …)
+                sc_par = ld.choices[sc_bfr].parent
+                if sc_par != 0 && ld.choices[sc_par].base == sc_ref     # bfr->parent == ch
+                    ld.choices[sc_par].unlinked = true
+                    ld.choices[sc_bfr].parent = ld.choices[sc_par].parent
+                    ld.slots[sc_slot] = mk_gnd(
+                        T, -ld.choices[ld.choices[sc_par].parent].base
+                    )
+                    break
+                end
+                sc_bfr = sc_par
+            end
+        end
+    end                                             # else: Already killed
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_SCUT
+    @label C_SCUT
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_LSCUT
+    # DIVERGES: the slot holds a position (see `C_SOFTCUT`); the choice point at it is found on the
+    # chain, and its parent's position — 0 for none — is what `c_lcut_cont` cuts back to.
+    @label C_LSCUT
+    ls_ref = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    PC += 1
+    if ls_ref < 0
+        ls_ref = -ls_ref
+    end
+    ls_ch = ld.BFR
+    while ls_ch != 0 && ld.choices[ls_ch].base > ls_ref
+        ls_ch = ld.choices[ls_ch].parent
+    end
+    @assert ls_ch != 0 && ld.choices[ls_ch].base == ls_ref "C_LSCUT: the slot's choice point is not on the chain"
+    ls_par = ld.choices[ls_ch].parent
+    cl_och = ls_par == 0 ? 0 : ld.choices[ls_par].base          # ch->parent
+    @goto c_lcut_cont
 
     # PORT: pl-vmi.c C_END
     @label C_END
@@ -2791,6 +2891,8 @@ function PL_next_solution_guarded(
                 # MQ18 (user, 2026-10-05): when the failing frame owns the youngest choice point, no
                 # record lives above that choice point — every path that removes a younger one also
                 # lowers `lTop` — so the drop below finds nothing. Asserted, so every run checks it.
+                # (A record C_SOFTCUT unlinked may lie there: it is reclaimed first — `*->`, V9d.)
+                dropUnlinkedChoices!(ld, sb_c.base)
                 @assert _no_record_above(ld, sb_c.base) "shallow_backtrack: a record above the resumed choice point"
                 dropRecords!(ld, sb_c.base + 1)     # the failed attempt's records (none: above)
                 if sb_c.value_clause.cref !== nothing

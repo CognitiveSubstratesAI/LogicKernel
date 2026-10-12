@@ -231,7 +231,7 @@ mutable struct PL_local_data{T}
     frames::Vector{localFrame{T}}                               # the frame records
     nframes::Int                                                # … live: frames[1:nframes]
     choices::Vector{choice{T}}                                  # the choice-point records
-    nchoices::Int                                               # … live: choices[1:nchoices]
+    nchoices::Int                                               # … choices[1:nchoices]: the live ones and those C_SOFTCUT unlinked
     fliframes::Vector{fliFrame}                                 # the foreign-frame records
     nfliframes::Int                                             # … live: fliframes[1:nfliframes]
     environment_frame::Int                                      # environment: current frame

@@ -35,7 +35,7 @@
 # CONTROL CONSTRUCTS (V9d, one per step): the disjunction `;` (and `|`) since 2026-10-12 —
 # `compileBody!`'s frames, with the variable tables it balances (`setVars`, `balanceVars`, `c_var`,
 # `orVars`, `copyVarTable`) — and the conditionals `(A -> B ; C)`, `(A -> B)` (`allocChoiceVar!`,
-# `try_fast_condition!`) — and `\+`; `*->` and `$/1` are still refused there, by name.
+# `try_fast_condition!`), `\+` and the soft-cut `*->`; `$/1` is still refused there, by name (V9f).
 # THE DECOMPILER (since V9d): `decompile!` rebuilds `Head :- Body` from a clause's code
 # (`decompile_head!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`), and clause/2
 # answers for rule bodies (`pl_clause!` with a body). A clause with a unification moved into its
@@ -2086,10 +2086,10 @@ end
 end
 
 # PORT: pl-comp.c cb_frame
-# DIVERGES: the fields of the constructs ported so far (`,`, `;`, `->`, `\+`): no `isnot` — a
-# `CB_NOT_INNER` frame is always `\+`'s until `$/1` — or `tmsave` (modules); `hard` is always true
-# until `*->`. The three variable tables are ONE tuple of three (`nothing` where upstream leaves
-# them unset; `\+` uses the first, `vsave`, alone), so a frame is a flat value.
+# DIVERGES: the fields of the constructs ported so far (`,`, `;`, `->`, `*->`, `\+`): no `isnot` — a
+# `CB_NOT_INNER` frame is always `\+`'s until `$/1` (V9f) — or `tmsave` (modules). The three
+# variable tables are ONE tuple of three (`nothing` where upstream leaves them unset; `\+` uses
+# the first, `vsave`, alone), so a frame is a flat value.
 "A pending step of `compileBody` (pl-comp.c): the state to restore and the step to run."
 struct cb_frame{T}
     kind::cb_kind
@@ -2153,8 +2153,8 @@ function try_fast_condition!(ci::compileInfo, tc_or::Int)::Bool
 end
 
 # PORT: pl-comp.c compileBody
-# DIVERGES: `,`, `;`, `|`, `->` and `\+` — the other control constructs (`*->`, alone or as the left
-# side of a `;`, `$/1`, `:/2`, `@/2`) throw `NotPortedError` (V9d's next steps; modules), before
+# DIVERGES: `,`, `;`, `|`, `->`, `*->` and `\+` — the other control constructs (`$/1`: V9f, with
+# the messages `det_goal_error` needs; `:/2`, `@/2`: modules) throw `NotPortedError`, before
 # anything is emitted; the pending steps (upstream's `cb_frame`s) are a Vector where upstream uses a
 # segstack, so there is no MEMORY_OVERFLOW; no `islocal` (see the file header).
 """
@@ -2163,6 +2163,8 @@ right, every goal but the last with `I_CALL`; a disjunction as `C_OR <A> C_JMP <
 variables each branch leaves unset made fresh (`C_VAR`); `(A -> B ; C)` as
 `C_IFTHENELSE <A> C_CUT <B> C_JMP <C>` — `C_FASTCOND`/`C_FASTCUT` when the condition is only
 tests — and `(A -> B)` as `C_IFTHEN <A> C_CUT <B> C_END`, a `!` in the condition cutting locally;
+`(A *-> B ; C)` as `C_SOFTIF <A> C_SOFTCUT <B> C_JMP <C>` and `(A *-> B)` as
+`C_SOFTIFTHEN <A> C_SCUT <B> C_END`;
 `\\+ A` as `C_NOT <A> C_CUT C_FAIL`, the variables A first used made fresh after it.
 Returns `BOOLEX_TRUE` or the first goal's error code.
 """
@@ -2186,29 +2188,29 @@ function compileBody!(
             @goto next_body
         elseif _has_functor(body, cf.semicolon, 2) || _has_functor(body, cf.bar, 2)
             a0 = child(body, 2)                                # A ; B and (A -> B ; C)
-            _has_functor(a0, cf.softcut, 2) &&
-                throw(NotPortedError{T}(body, "soft-cut (*-> in a ;)", "V9d"))
             vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
             valt1 = copy(ci.used_var)
             valt2 = copy(ci.used_var)
             setVars(ci, child(body, 2), valt1)
             setVars(ci, child(body, 3), valt2)
-            if _has_functor(a0, cf.ifthen, 2)                  # A  -> B ; C
+            if _has_functor(a0, cf.ifthen, 2) ||               # A  -> B ; C
+                _has_functor(a0, cf.softcut, 2)                 # A *-> B ; C
+                hard = _has_functor(a0, cf.ifthen, 2)
                 var = allocChoiceVar!(ld, ci)
                 if var == 0
                     rc = BOOLEX_FALSE
                     @goto resume
                 end
-                Output_2!(ci, C_IFTHENELSE, code(var), code(0))
+                Output_2!(ci, hard ? C_IFTHENELSE : C_SOFTIF, code(var), code(0))
                 push!(
                     stack,
                     cb_frame{T}(
                         CB_ITE_COND, call, body, a0, var, PC(ci), 0, (vsave, valt1, valt2),
-                        ci.cut, true
+                        ci.cut, hard
                     )
                 )
                 # Cut locally in the condition
-                ci.cut = cutInfo(var, ci.cut.nextvar, C_LCUT)
+                ci.cut = cutInfo(var, ci.cut.nextvar, hard ? C_LCUT : C_LSCUT)
                 body = child(a0, 2)
                 call = I_CALL
                 @goto next_body
@@ -2225,16 +2227,18 @@ function compileBody!(
                 call = I_CALL
                 @goto next_body
             end
-        elseif _has_functor(body, cf.ifthen, 2)                # A -> B
+        elseif _has_functor(body, cf.ifthen, 2) ||             # A -> B
+            _has_functor(body, cf.softcut, 2)                   # A *-> B
+            hard = _has_functor(body, cf.ifthen, 2)
             var = allocChoiceVar!(ld, ci)
             if var == 0
                 rc = BOOLEX_FALSE
                 @goto resume
             end
-            Output_1!(ci, C_IFTHEN, code(var))
+            Output_1!(ci, hard ? C_IFTHEN : C_SOFTIFTHEN, code(var))
             push!(
                 stack,
-                cb_frame{T}(CB_IT_COND, call, body, body, var, 0, 0, nothing, ci.cut, true)
+                cb_frame{T}(CB_IT_COND, call, body, body, var, 0, 0, nothing, ci.cut, hard)
             )
             ci.cut = cutInfo(var, ci.cut.nextvar, C_LCUTIFTHEN) # Cut locally in the condition
             body = child(body, 2)
@@ -2268,7 +2272,8 @@ function compileBody!(
         end
         throw(
             NotPortedError{T}(
-                body, "a control construct other than ,/2, ;/2, ->/2 and \\+/1", "V9d"
+                body, "a control construct other than ,/2, ;/2, ->/2, *->/2 and \\+/1",
+                "V9f"
             )
         )
     end
@@ -2305,9 +2310,17 @@ function compileBody!(
             fast = try_fast_condition!(ci, frame.tc_or)
         end
         ci.cut = frame.cutsave
-        frame.hard ||
-            throw(NotPortedError{T}(frame.body, "soft-cut (C_SOFTCUT)", "V9d"))
-        Output_1!(ci, fast ? C_FASTCUT : C_CUT, code(frame.var))
+        Output_1!(
+            ci,
+            if fast
+                C_FASTCUT
+            elseif frame.hard
+                C_CUT
+            else
+                C_SOFTCUT
+            end,
+            code(frame.var)
+        )
         push!(stack, _cb_next(frame, CB_ITE_THEN))
         body = child(frame.a0, 3)
         call = frame.call
@@ -2332,9 +2345,11 @@ function compileBody!(
         @goto resume
     elseif frame.kind == CB_IT_COND                            # (A -> B) after A
         ci.cut = frame.cutsave
-        frame.hard ||
-            throw(NotPortedError{T}(frame.body, "soft-cut (C_SCUT)", "V9d"))
-        Output_1!(ci, C_CUT, code(frame.var))
+        if frame.hard
+            Output_1!(ci, C_CUT, code(frame.var))
+        else
+            Output_0!(ci, C_SCUT)
+        end
         push!(stack, _cb_next(frame, CB_IT_THEN))
         body = child(frame.body, 3)
         call = frame.call
@@ -3122,8 +3137,7 @@ end
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
 # upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3, `$/1` and `*->`
-# (V9d's next steps, V9e–g).
+# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3 and `$/1` (V9e–g).
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
 each goal is built on the decompilation stack from its arguments' instructions, and the goals are
@@ -3270,7 +3284,7 @@ function decompileBodyNoShift!(
             pushed += 1
         elseif op == C_VAR || op == C_JMP || op == C_CUT || op == C_FASTCUT
             di.pc += 1
-        elseif op == C_LCUTIFTHEN || op == C_LCUT               # a `!` in a condition
+        elseif op == C_LCUTIFTHEN || op == C_LSCUT || op == C_LCUT      # a `!` in a condition
             di.pc += 1
             push!(di.argp, mk_sym(T, Symbol("!")))
             pushed += 1
@@ -3289,8 +3303,15 @@ function decompileBodyNoShift!(
             decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
             build_term!(di, mk_sym(T, Symbol(";")), 2)
             pushed += 1
-        elseif op == C_IFTHENELSE || op == C_FASTCOND           # A -> B ; C (ifcommon)
-            icut = op == C_FASTCOND ? C_FASTCUT : C_CUT
+        elseif op == C_IFTHENELSE || op == C_FASTCOND || op == C_SOFTIF    # A -> B ; C (ifcommon)
+            icut = if op == C_FASTCOND
+                C_FASTCUT
+            elseif op == C_SOFTIF                               # A *-> B ; C
+                C_SOFTCUT
+            else
+                C_CUT
+            end
+            arrow = op == C_SOFTIF ? Symbol("*->") : Symbol("->")
             di.pc += 1                                          # skip the 'MARK' variable
             jmp = Int(codes[di.pc])
             di.pc += 1
@@ -3298,7 +3319,7 @@ function decompileBodyNoShift!(
             decompileBodyNoShift!(di, icut, 0)                  # A
             di.pc += 2                                          # skip the cut
             decompileBodyNoShift!(di, code(typemax(UInt64)), adr1)      # B
-            build_term!(di, mk_sym(T, Symbol("->")), 2)
+            build_term!(di, mk_sym(T, arrow), 2)
             di.pc -= 1
             to_jump = Int(codes[di.pc])                         # DECOMPILETOJUMP: C
             di.pc += 1
@@ -3311,13 +3332,14 @@ function decompileBodyNoShift!(
             di.pc += 3                                          # skip C_CUT <n> and C_FAIL
             build_term!(di, mk_sym(T, Symbol("\\+")), 1)
             pushed += 1
-        elseif op == C_IFTHEN                                   # A -> B (c_ifthen)
+        elseif op == C_IFTHEN || op == C_SOFTIFTHEN             # A -> B, A *-> B (c_ifthen)
+            cut = op == C_IFTHEN ? C_CUT : C_SCUT               # C_CUT takes 1 arg, C_SCUT 0
             di.pc += 1
-            decompileBodyNoShift!(di, C_CUT, 0)                 # A
-            di.pc += 2                                          # skip C_CUT
+            decompileBodyNoShift!(di, cut, 0)                   # A
+            di.pc += cut == C_CUT ? 2 : 1                       # skip C_(S)CUT
             decompileBodyNoShift!(di, C_END, 0)                 # B
             di.pc += 1
-            build_term!(di, mk_sym(T, Symbol("->")), 2)
+            build_term!(di, mk_sym(T, op == C_IFTHEN ? Symbol("->") : Symbol("*->")), 2)
             pushed += 1
         elseif op == I_EXIT
             # break (out of upstream's switch): nothing

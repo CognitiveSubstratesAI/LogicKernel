@@ -860,7 +860,10 @@ end
 # resets it. `value.pc` (since V9d, `C_OR`) is a field of its own, `value_pc`: an index into the
 # code of the frame's clause, where upstream holds an address. The union's `foreign` member
 # arrives with the non-deterministic built-ins (V9). `prof_node` is not kept (no profiler) but
-# counts in `SIZEOF_CHOICE`.
+# counts in `SIZEOF_CHOICE`. `unlinked` (since V9d, `*->`) marks a record `C_SOFTCUT` took out of
+# the chain: upstream leaves such a choice point's struct on the local stack, unreachable, until
+# `lTop` falls below it; here the record stays in the pool as long, and the mark is what lets the
+# pools be CHECKED (below).
 "A choice point on the local stack (pl-incl.h `struct choice`)."
 mutable struct choice{T}
     base::Int                               # its position (upstream: its address)
@@ -870,6 +873,7 @@ mutable struct choice{T}
     frame::Int                              # Frame I am related to (an index)
     const value_clause::ClauseChoice{T}     # value.clause — Next candidate clause
     value_pc::Int                           # value.pc — where a CHP_JUMP continues (an index)
+    unlinked::Bool                          # (taken out of the chain by C_SOFTCUT: see below)
 end
 
 # PORT: pl-incl.h fliFrame

@@ -2268,6 +2268,596 @@ const _BC_MOVE_DECOMPILED = Dict{String, String}(
     end
 end
 
+# ── V9d: the soft-cut `(A *-> B ; C)` and `(A *-> B)` ───────────────────────────────────────────
+# `C_SOFTIF <A> C_SOFTCUT <B> C_JMP <C>` and `C_SOFTIFTHEN <A> C_SCUT <B> C_END`; a `!` in the
+# condition of the first is `C_LSCUT`, of the second `C_LCUTIFTHEN`; never a fast condition.
+# The cells are the conditionals' own, `->` turned into `*->` — so each has its hard twin above.
+"`t` with every `->` at a control position turned into `*->`."
+function _bcsoften(t::_B)::_B
+    kind(t) === EXPR || return t
+    h = child(t, 1)
+    kind(h) === SYM || return t
+    n = String(lk_name(h))
+    n in (",", ";", "->", "\\+") || return t
+    return _be(n == "->" ? "*->" : n, [_bcsoften(child(t, i)) for i in 2:nchildren(t)])
+end
+const _BC_SOFT_CELLS = [
+    (n,
+        _be("s" * String(lk_name(kind(h) === SYM ? h : child(h, 1))),
+            kind(h) === SYM ? _B[] : [child(h, i) for i in 2:nchildren(h)]), _bcsoften(b))
+    for
+    (n, h, b) in _BC_ITE_CELLS
+]
+
+"A random body of `,`, `;`, `->`, `*->` and `\\+`: `_bcnotbody`'s, some of its `->` softened."
+function _bcsoftbody(g::_BcGen, pool::Vector{_B}, depth::Int)::_B
+    r = rand(g.rng)
+    if depth < 4 && r < 0.22
+        return _bf(";",
+            _bf("*->", _bcsoftbody(g, pool, depth + 1), _bcsoftbody(g, pool, depth + 1)),
+            _bcsoftbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.32
+        return _bf("*->", _bcsoftbody(g, pool, depth + 1), _bcsoftbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.42
+        return _bf(";",
+            _bf("->", _bcsoftbody(g, pool, depth + 1), _bcsoftbody(g, pool, depth + 1)),
+            _bcsoftbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.5
+        return _bf("\\+", _bcsoftbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.58
+        return _bf(";", _bcsoftbody(g, pool, depth + 1), _bcsoftbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.75
+        return _bf(",", _bcsoftbody(g, pool, depth + 1), _bcsoftbody(g, pool, depth + 1))
+    end
+    return _bcorbody(g, pool, 4)                                # a goal
+end
+
+"A random rule clause `bs<k>(…) :- Body`, the body a soft-cut at the top or below a `,`."
+function _bcsoftclause(g::_BcGen, k::Int)::Tuple{_B, _B}
+    pool = _B[_bcfresh!(g) for _ in 1:rand(g.rng, 2:6)]
+    har = rand(g.rng, 0:3)
+    head = har == 0 ? _bs("bs$k") : _be("bs$k", [rand(g.rng, pool) for _ in 1:har])
+    cond = _bcsoftbody(g, pool, 2)
+    body = if rand(g.rng) < 0.7
+        _bf(";", _bf("*->", cond, _bcsoftbody(g, pool, 2)), _bcsoftbody(g, pool, 2))
+    else
+        _bf("*->", cond, _bcsoftbody(g, pool, 2))
+    end
+    r = rand(g.rng)
+    if r < 0.3
+        body = _bf(",", body, _bcsoftbody(g, pool, 2))
+    elseif r < 0.5
+        body = _bf(",", _bcsoftbody(g, pool, 2), body)
+    end
+    return (head, body)
+end
+
+# Each cell's code, as the kernel AND swipl 10.1.17 gave it in one run (2026-10-12).
+const _BC_SOFT_CODE = Dict{String, Vector{String}}(
+    "if-then-else" =>
+        [
+            "i_enter",
+            "c_softif(1,L1)",
+            "b_var0",
+            "i_call(P:[113]/1)",
+            "c_softcut(1)",
+            "l_nolco(L2)",
+            "i_lcall(P:[114]/1)",
+            "L2:",
+            "b_var0",
+            "i_depart(P:[114]/1)",
+            "c_jmp(L3)",
+            "L1:",
+            "l_nolco(L4)",
+            "i_lcall(P:[115]/1)",
+            "L4:",
+            "b_var0",
+            "i_depart(P:[115]/1)",
+            "L3:",
+            "i_exit"
+        ],
+    "a fast condition" =>
+        [
+            "i_enter",
+            "c_softif(1,L1)",
+            "i_integer(0)",
+            "b_eq_vc(0,i:1)",
+            "c_softcut(1)",
+            "l_nolco(L2)",
+            "i_lcall(P:[114]/1)",
+            "L2:",
+            "b_var0",
+            "i_depart(P:[114]/1)",
+            "c_jmp(L3)",
+            "L1:",
+            "l_nolco(L4)",
+            "i_lcall(P:[115]/1)",
+            "L4:",
+            "b_var0",
+            "i_depart(P:[115]/1)",
+            "L3:",
+            "i_exit"
+        ],
+    "rational/1 is not fast" =>
+        [
+            "i_enter",
+            "c_softif(1,L1)",
+            "i_rational(0)",
+            "c_softcut(1)",
+            "l_nolco(L2)",
+            "i_lcall(P:[114]/0)",
+            "L2:",
+            "i_depart(P:[114]/0)",
+            "c_jmp(L3)",
+            "L1:",
+            "l_nolco(L4)",
+            "i_lcall(P:[115]/0)",
+            "L4:",
+            "i_depart(P:[115]/0)",
+            "L3:",
+            "i_exit"
+        ],
+    "a cut in the condition" =>
+        [
+            "i_enter",
+            "c_softif(1,L1)",
+            "b_var0",
+            "i_call(P:[113]/1)",
+            "c_lscut(1)",
+            "c_softcut(1)",
+            "l_nolco(L2)",
+            "i_lcall(P:[114]/1)",
+            "L2:",
+            "b_var0",
+            "i_depart(P:[114]/1)",
+            "c_jmp(L3)",
+            "L1:",
+            "l_nolco(L4)",
+            "i_lcall(P:[115]/1)",
+            "L4:",
+            "b_var0",
+            "i_depart(P:[115]/1)",
+            "L3:",
+            "i_exit"
+        ],
+    "if-then" =>
+        [
+            "i_enter",
+            "c_softifthen(1)",
+            "b_var0",
+            "i_call(P:[113]/1)",
+            "c_scut",
+            "b_var0",
+            "i_call(P:[114]/1)",
+            "c_end",
+            "l_nolco(L1)",
+            "i_lcall(P:[115]/1)",
+            "L1:",
+            "b_var0",
+            "i_depart(P:[115]/1)",
+            "i_exit"
+        ],
+    "a cut in an if-then's condition" =>
+        [
+            "i_enter",
+            "c_softifthen(1)",
+            "b_var0",
+            "i_call(P:[113]/1)",
+            "c_lcutifthen(1)",
+            "c_scut",
+            "l_nolco(L1)",
+            "i_lcall(P:[114]/1)",
+            "L1:",
+            "b_var0",
+            "i_depart(P:[114]/1)",
+            "c_end",
+            "i_exit"
+        ],
+    "a variable to balance" =>
+        [
+            "i_enter",
+            "c_softif(2,L1)",
+            "b_var0",
+            "i_call(P:[113]/1)",
+            "c_softcut(2)",
+            "b_unify_vc(1,i:1)",
+            "c_jmp(L2)",
+            "L1:",
+            "i_true",
+            "L2:",
+            "l_nolco(L3)",
+            "l_var(0,1)",
+            "i_lcall(P:[117]/1)",
+            "L3:",
+            "b_var1",
+            "i_depart(P:[117]/1)",
+            "i_exit"
+        ],
+    "nested in then and in else" =>
+        [
+            "i_enter",
+            "c_softif(0,L1)",
+            "i_call(P:[97]/0)",
+            "c_softcut(0)",
+            "c_softif(1,L2)",
+            "i_call(P:[98]/0)",
+            "c_softcut(1)",
+            "l_nolco(L3)",
+            "i_lcall(P:[99]/0)",
+            "L3:",
+            "i_depart(P:[99]/0)",
+            "c_jmp(L4)",
+            "L2:",
+            "l_nolco(L5)",
+            "i_lcall(P:[100]/0)",
+            "L5:",
+            "i_depart(P:[100]/0)",
+            "L4:",
+            "c_jmp(L6)",
+            "L1:",
+            "c_softif(2,L7)",
+            "i_call(P:[101]/0)",
+            "c_softcut(2)",
+            "l_nolco(L8)",
+            "i_lcall(P:[102]/0)",
+            "L8:",
+            "i_depart(P:[102]/0)",
+            "c_jmp(L6)",
+            "L7:",
+            "l_nolco(L9)",
+            "i_lcall(P:[103]/0)",
+            "L9:",
+            "i_depart(P:[103]/0)",
+            "L6:",
+            "i_exit"
+        ],
+    "a disjunction as the condition" =>
+        [
+            "i_enter",
+            "c_softif(0,L1)",
+            "c_or(L2)",
+            "i_call(P:[97]/0)",
+            "c_jmp(L3)",
+            "L2:",
+            "i_call(P:[98]/0)",
+            "L3:",
+            "c_softcut(0)",
+            "l_nolco(L4)",
+            "i_lcall(P:[99]/0)",
+            "L4:",
+            "i_depart(P:[99]/0)",
+            "c_jmp(L5)",
+            "L1:",
+            "l_nolco(L6)",
+            "i_lcall(P:[100]/0)",
+            "L6:",
+            "i_depart(P:[100]/0)",
+            "L5:",
+            "i_exit"
+        ],
+    "a conditional as the condition" =>
+        [
+            "i_enter",
+            "c_softif(0,L1)",
+            "c_softif(1,L2)",
+            "i_call(P:[97]/0)",
+            "c_softcut(1)",
+            "i_call(P:[98]/0)",
+            "c_jmp(L3)",
+            "L2:",
+            "i_call(P:[99]/0)",
+            "L3:",
+            "c_softcut(0)",
+            "l_nolco(L4)",
+            "i_lcall(P:[100]/0)",
+            "L4:",
+            "i_depart(P:[100]/0)",
+            "c_jmp(L5)",
+            "L1:",
+            "l_nolco(L6)",
+            "i_lcall(P:[101]/0)",
+            "L6:",
+            "i_depart(P:[101]/0)",
+            "L5:",
+            "i_exit"
+        ],
+    "a cut in then is the clause's" =>
+        [
+            "i_enter",
+            "c_softif(0,L1)",
+            "i_call(P:[97]/0)",
+            "c_softcut(0)",
+            "i_cut",
+            "c_jmp(L2)",
+            "L1:",
+            "i_call(P:[98]/0)",
+            "L2:",
+            "l_nolco(L3)",
+            "i_lcall(P:[99]/0)",
+            "L3:",
+            "i_depart(P:[99]/0)",
+            "i_exit"
+        ],
+    "a cut in else" =>
+        [
+            "i_enter",
+            "c_softif(0,L1)",
+            "i_call(P:[97]/0)",
+            "c_softcut(0)",
+            "l_nolco(L2)",
+            "i_lcall(P:[98]/0)",
+            "L2:",
+            "i_depart(P:[98]/0)",
+            "c_jmp(L3)",
+            "L1:",
+            "i_cut",
+            "L3:",
+            "i_exit"
+        ],
+    "if-then as a disjunction's right side" =>
+        [
+            "i_enter",
+            "c_or(L1)",
+            "i_call(P:[97]/0)",
+            "c_jmp(L2)",
+            "L1:",
+            "c_softifthen(0)",
+            "i_call(P:[98]/0)",
+            "c_scut",
+            "l_nolco(L3)",
+            "i_lcall(P:[99]/0)",
+            "L3:",
+            "i_depart(P:[99]/0)",
+            "c_end",
+            "L2:",
+            "i_exit"
+        ],
+    "the condition binds a variable used after" =>
+        [
+            "i_enter",
+            "c_softif(2,L1)",
+            "b_firstvar(1)",
+            "i_call(P:[113]/1)",
+            "c_softcut(2)",
+            "b_var1",
+            "i_call(P:[114]/1)",
+            "c_jmp(L2)",
+            "L1:",
+            "b_unify_fc(1,i:0)",
+            "L2:",
+            "b_var1",
+            "b_var0",
+            "i_depart(P:[115]/2)",
+            "i_exit"
+        ],
+    "a fast condition on var/1" =>
+        [
+            "i_enter",
+            "c_softif(2,L1)",
+            "i_var(0)",
+            "c_softcut(2)",
+            "b_unify_vc(1,a:[97])",
+            "c_jmp(L2)",
+            "L1:",
+            "b_unify_vc(1,a:[98])",
+            "L2:",
+            "i_exit"
+        ],
+    "two conditionals in a row" =>
+        [
+            "i_enter",
+            "c_softif(0,L1)",
+            "i_call(P:[97]/0)",
+            "c_softcut(0)",
+            "i_call(P:[98]/0)",
+            "c_jmp(L2)",
+            "L1:",
+            "i_call(P:[99]/0)",
+            "L2:",
+            "c_softif(1,L3)",
+            "i_call(P:[100]/0)",
+            "c_softcut(1)",
+            "l_nolco(L4)",
+            "i_lcall(P:[101]/0)",
+            "L4:",
+            "i_depart(P:[101]/0)",
+            "c_jmp(L5)",
+            "L3:",
+            "l_nolco(L6)",
+            "i_lcall(P:[102]/0)",
+            "L6:",
+            "i_depart(P:[102]/0)",
+            "L5:",
+            "i_exit"
+        ],
+    "== as the condition" =>
+        [
+            "i_enter",
+            "c_softif(2,L1)",
+            "b_eq_vv(0,1)",
+            "c_softcut(2)",
+            "l_nolco(L2)",
+            "i_lcall(P:[97]/0)",
+            "L2:",
+            "i_depart(P:[97]/0)",
+            "c_jmp(L3)",
+            "L1:",
+            "l_nolco(L4)",
+            "i_lcall(P:[98]/0)",
+            "L4:",
+            "i_depart(P:[98]/0)",
+            "L3:",
+            "i_exit"
+        ],
+    "a chain of conditions" =>
+        [
+            "i_enter",
+            "c_softif(2,L1)",
+            "b_neq_vv(0,1)",
+            "c_softcut(2)",
+            "l_nolco(L2)",
+            "i_lcall(P:[97]/0)",
+            "L2:",
+            "i_depart(P:[97]/0)",
+            "c_jmp(L3)",
+            "L1:",
+            "c_softif(3,L4)",
+            "b_eq_vc(0,a:[97])",
+            "c_softcut(3)",
+            "l_nolco(L5)",
+            "i_lcall(P:[98]/0)",
+            "L5:",
+            "i_depart(P:[98]/0)",
+            "c_jmp(L3)",
+            "L4:",
+            "l_nolco(L6)",
+            "i_lcall(P:[99]/0)",
+            "L6:",
+            "i_depart(P:[99]/0)",
+            "L3:",
+            "i_exit"
+        ],
+    "if-then on a test: never fast" =>
+        [
+            "i_enter",
+            "c_softifthen(1)",
+            "i_atom(0)",
+            "c_scut",
+            "l_nolco(L1)",
+            "i_lcall(P:[113]/1)",
+            "L1:",
+            "b_var0",
+            "i_depart(P:[113]/1)",
+            "c_end",
+            "i_exit"
+        ],
+    "a fast condition, then a call that is not" =>
+        [
+            "i_enter",
+            "c_softif(1,L1)",
+            "i_atom(0)",
+            "b_var0",
+            "i_call(P:[113]/1)",
+            "c_softcut(1)",
+            "l_nolco(L2)",
+            "i_lcall(P:[97]/0)",
+            "L2:",
+            "i_depart(P:[97]/0)",
+            "c_jmp(L3)",
+            "L1:",
+            "l_nolco(L4)",
+            "i_lcall(P:[98]/0)",
+            "L4:",
+            "i_depart(P:[98]/0)",
+            "L3:",
+            "i_exit"
+        ]
+)
+# What `decompile!` rebuilds from each cell, variables renamed in order — variants of swipl's clause/2.
+const _BC_SOFT_DECOMPILED = Dict{String, String}(
+    "if-then-else" => "':-'(si1(A),';'('*->'(q(A),r(A)),s(A)))",
+    "a fast condition" => "':-'(si2(A),';'('*->'(','(integer(A),'=='(A,1)),r(A)),s(A)))",
+    "rational/1 is not fast" => "':-'(si3(A),';'('*->'(rational(A),r),s))",
+    "a cut in the condition" => "':-'(si4(A),';'('*->'(','(q(A),'!'),r(A)),s(A)))",
+    "if-then" => "':-'(si5(A),','('*->'(q(A),r(A)),s(A)))",
+    "a cut in an if-then's condition" => "':-'(si6(A),'*->'(','(q(A),'!'),r(A)))",
+    "a variable to balance" => "':-'(si7(A,B),','(';'('*->'(q(A),'='(B,1)),true),u(B)))",
+    "nested in then and in else" => "':-'(si8,';'('*->'(a,';'('*->'(b,c),d)),';'('*->'(e,f),g)))",
+    "a disjunction as the condition" => "':-'(si9,';'('*->'(';'(a,b),c),d))",
+    "a conditional as the condition" => "':-'(si10,';'('*->'(';'('*->'(a,b),c),d),e))",
+    "a cut in then is the clause's" => "':-'(si11,','(';'('*->'(a,'!'),b),c))",
+    "a cut in else" => "':-'(si12,';'('*->'(a,b),'!'))",
+    "if-then as a disjunction's right side" => "':-'(si13,';'(a,'*->'(b,c)))",
+    "the condition binds a variable used after" => "':-'(si14(A),','(';'('*->'(q(B),r(B)),'='(B,0)),s(B,A)))",
+    "a fast condition on var/1" => "':-'(si15(A,B),';'('*->'(var(A),'='(B,a)),'='(B,b)))",
+    "two conditionals in a row" => "':-'(si16,','(';'('*->'(a,b),c),';'('*->'(d,e),f)))",
+    "== as the condition" => "':-'(si17(A,B),';'('*->'('=='(A,B),a),b))",
+    "a chain of conditions" => "':-'(si18(A,B),';'('*->'('\\\\=='(A,B),a),';'('*->'('=='(A,a),b),c)))",
+    "if-then on a test: never fast" => "':-'(si19(A),'*->'(atom(A),q(A)))",
+    "a fast condition, then a call that is not" => "':-'(si20(A),';'('*->'(','(atom(A),q(A)),a),b))"
+)
+
+@testset "the soft-cut compiles as swipl's (V9d)" begin
+    ours = [_bc_kernel(_bclause(h, b)) for (_, h, b) in _BC_SOFT_CELLS]
+    # pinned from the run in which every cell was identical to swipl's code (the jobs without
+    # swipl check these)
+    for (k, c) in enumerate(_BC_SOFT_CELLS)
+        want = get(_BC_SOFT_CODE, c[1], String[])
+        ours[k] == want || println(stderr, "  CODE (\"", c[1], "\", ", repr(ours[k]), "),")
+        @test ours[k] == want
+    end
+    g = _BcGen(Xoshiro(20261017), UInt64(150_000))
+    random = [_bcsoftclause(g, k) for k in 1:400]
+    rours = [_bc_kernel(_bclause(h, b)) for (h, b) in random]
+    @testset "the random bodies exercise it" begin
+        used = union((_bc_names(c) for c in rours)...)
+        missing_ = setdiff(
+            ["c_softif", "c_softcut", "c_softifthen", "c_scut", "c_lscut", "c_lcutifthen",
+                "c_ifthenelse", "c_not", "c_or", "c_end", "c_var"], used)
+        isempty(missing_) || println(stderr, "  not exercised: ", missing_)
+        @test isempty(missing_)
+        @test !any(c -> any(startswith("c_fastcond"), c), ours)     # a soft condition is never fast
+    end
+    dcases = [[(h, b) for (_, h, b) in _BC_SOFT_CELLS]; random]
+    dclauses = [_bclause(h, b) for (h, b) in dcases]                # the default flags
+    decomp = [
+        try
+            _bdecompile(cl, h)
+        catch
+            println(
+                stderr, "  decompiling ", _bc_text(h, b), "\n    code ", _bc_kernel(cl)
+            )
+            rethrow()
+        end for (cl, (h, b)) in zip(dclauses, dcases)
+    ]
+    @testset "the decompiler: pinned clauses" begin
+        for (k, c) in enumerate(_BC_SOFT_CELLS)
+            t = _bnorm(_bc_text(decomp[k]...))
+            want = get(_BC_SOFT_DECOMPILED, c[1], "")
+            t == want ||
+                println(stderr, "  DEC (\"", c[1], "\", \"", escape_string(t), "\"),")
+            @test t == want
+        end
+    end
+    if _BC_SWIPL_BIN !== nothing
+        @testset "the decompiled clauses are variants of swipl's clause/2" begin
+            shows = [
+                "bc_decomp(($(_bc_text(h, b))), ($(_bc_text(dh, db))))" for
+                ((h, b), (dh, db)) in zip(dcases, decomp)
+            ]
+            theirs = _bc_swipl(shows)
+            @test length(theirs) == length(shows)
+            bad = 0
+            for k in eachindex(shows)
+                k <= length(theirs) || break
+                if theirs[k] != ["same"]
+                    bad += 1
+                    bad <= 5 &&
+                        println(stderr, "  ", _bc_text(dcases[k]...), "\n    ours  ",
+                            _bc_text(decomp[k]...), "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+        @testset "identical to swipl" begin
+            all_ = [[(h, b) for (_, h, b) in _BC_SOFT_CELLS]; random]
+            allours = [ours; rours]
+            theirs = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in all_])
+            @test length(theirs) == length(all_)
+            bad = 0
+            for k in eachindex(all_)
+                k <= length(theirs) || break
+                if allours[k] != theirs[k]
+                    bad += 1
+                    bad <= 5 && println(stderr, "  ", _bc_text(all_[k]...), "\n    ours  ",
+                        allours[k], "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+    end
+end
+
 @testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
     commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
     @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
@@ -2281,8 +2871,6 @@ end
 @testset "what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
-        _bf(";", _bf("*->", _bs("a"), _bs("b")), _bs("c")),     # soft-cut: V9d's next step
-        _bf("*->", _bs("a"), _bs("b")),
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
         _bconj(_bs("q"), _bs("\$catch")),                      # a reserved goal atom (V9)

@@ -447,6 +447,21 @@ const C_NOT = code(113)
 # PORT: pl-vmi.c C_FAIL
 "Fail: what `\\+ A` does once A succeeded and its choice points are cut (pl-vmi.c)."
 const C_FAIL = code(114)
+# PORT: pl-vmi.c C_SOFTIF
+"`(A *-> B ; C)`: as `C_OR`, keeping the choice point it makes in the operand's slot (pl-vmi.c)."
+const C_SOFTIF = code(115)
+# PORT: pl-vmi.c C_SOFTCUT
+"Commit `(A *-> B ; C)` to A's answers: take the condition's own choice point out of the chain, once (pl-vmi.c)."
+const C_SOFTCUT = code(116)
+# PORT: pl-vmi.c C_SOFTIFTHEN
+"`(A *-> B)`: as `C_IFTHEN` (pl-vmi.c)."
+const C_SOFTIFTHEN = code(117)
+# PORT: pl-vmi.c C_SCUT
+"The end of the condition of `(A *-> B)`: nothing to do (pl-vmi.c)."
+const C_SCUT = code(118)
+# PORT: pl-vmi.c C_LSCUT
+"A `!` in the condition of `(A *-> B ; C)` (pl-vmi.c)."
+const C_LSCUT = code(119)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -578,7 +593,12 @@ const _CODE_TABLE = (
     code_info(:C_LCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
     code_info(:C_LCUTIFTHEN, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
     code_info(:C_NOT, 0x00, 2, (CA1_CHP, CA1_JUMP, 0x00, 0x00)),
-    code_info(:C_FAIL, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:C_FAIL, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:C_SOFTIF, 0x00, 2, (CA1_CHP, CA1_JUMP, 0x00, 0x00)),
+    code_info(:C_SOFTCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_SOFTIFTHEN, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_SCUT, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:C_LSCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable
