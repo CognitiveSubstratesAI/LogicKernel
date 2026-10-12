@@ -12,6 +12,9 @@
 #     old     the text to replace — it must occur EXACTLY once, or the mutant is BADMATCH
 #     new     the replacement
 #     expect  optional, "hang": a mutant that must time out (it is then "caught (hang)")
+#     equivalent  optional, the REASON (file:line) a mutant cannot be told apart from the original —
+#             recorded in the chunk's mutation memo first; such a mutant must SURVIVE ("EQUIVALENT
+#             (declared)"); if a target catches it, the claim was wrong and that blocks
 #     targets optional: this mutant's own targets, in place of the command line's
 # Each TARGET is a test file, run whole in the tree's warm daemon (`tools/warm.sh file`, on the term
 # implementation MUTATE_IMPL, default `reference`) — or `sh:<command>`, a shell command run in the
@@ -20,10 +23,13 @@
 # first (the baseline) and again after the last mutant (the closing baseline: a daemon that
 # degraded mid-run would turn every later mutant red for a reason of its own).
 # THE VERDICT, at the level of the exit code, never of a message: a target exits 1 = caught; every
-# target exits 0 = SURVIVED; anything else = INVALID (a timeout is INVALID unless expected: the
-# daemon is restarted after one). The driver exits 0 only when both baselines are green — whatever
-# the mutants did — and prints the summary; a survivor or an invalid mutant is listed, and its
-# output kept beside the mutant list (MUTATE_OUT overrides the directory).
+# target exits 0 = SURVIVED; a target that runs past the limit = TIMEOUT (its own outcome, never
+# caught — user, 2026-10-12; the daemon is restarted after one), unless the mutant expects a hang;
+# anything else = INVALID. SURVIVED, TIMEOUT and INVALID BLOCK a commit until the mutant is rerun to
+# a verdict: killed by a test, or declared `equivalent` with its reason. The driver exits 0 only when
+# both baselines are green AND no mutant blocks; 1 when a mutant blocks; 2 when the final baseline
+# is not green. Every non-caught mutant is listed, and its output kept beside the mutant list
+# (MUTATE_OUT overrides the directory).
 # WHILE A MUTANT IS APPLIED, .warm/MUTATION_IN_PROGRESS in the tree names it and
 # .warm/MUTATION_ORIGINAL holds the file as it was (`tools/mutate.sh recover`); SIGTERM restores
 # the file first. MUTATE_LIMIT_S (240) is the limit per target.
@@ -162,10 +168,7 @@ def main(argv):
             os.remove(sentinel)                         # first the sentinel, then the copy
             os.remove(saved)
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        if rc == "hang":
-            v = "caught (hang)" if m.get("expect") == "hang" else "INVALID(timeout)"
-        else:
-            v = "caught" if rc == 1 else ("SURVIVED" if rc == 0 else "INVALID(%s)" % rc)
+        v = verdict(rc, m)
         if v != "caught":
             keep("mutant_%s.log" % name, out)
         results.append((m["id"], v))
@@ -177,15 +180,49 @@ def main(argv):
         keep("final_baseline.log", out)
         print("FINAL BASELINE NOT GREEN — the verdicts above prove nothing")
         return 2
-    print("SUMMARY", sum(1 for _, v in results if v.startswith("caught")), "of", len(results), "caught")
+    print("SUMMARY", sum(1 for _, v in results if v.startswith("caught")), "of", len(results), "caught;",
+          sum(1 for _, v in results if blocks(v)), "blocking")
     for mid, v in results:
         if not v.startswith("caught"):
             print("  ", mid, v)
+    return 1 if any(blocks(v) for _, v in results) else 0
+
+
+def verdict(rc, m):
+    """A mutant's outcome from its targets' result (`run`: 1, 0, "hang" or another exit code)."""
+    if rc == "hang":
+        return "caught (hang)" if m.get("expect") == "hang" else "TIMEOUT"
+    if rc == 1:
+        return "CAUGHT BUT DECLARED EQUIVALENT" if m.get("equivalent") else "caught"
+    if rc == 0:
+        return "EQUIVALENT (declared)" if m.get("equivalent") else "SURVIVED"
+    return "INVALID(%s)" % rc
+
+
+def blocks(v):
+    """Whether outcome `v` blocks a commit: everything but caught and a declared equivalent."""
+    return not (v.startswith("caught") or v == "EQUIVALENT (declared)")
+
+
+def selftest():
+    """The verdict table, each row the decision it encodes (run: mutate_drive.py --selftest)."""
+    plain, hang, eq = {}, {"expect": "hang"}, {"equivalent": "x.jl:1 — never read"}
+    table = [((1, plain), "caught", False), ((0, plain), "SURVIVED", True),
+             (("hang", plain), "TIMEOUT", True), (("hang", hang), "caught (hang)", False),
+             ((5, plain), "INVALID(5)", True), ((0, eq), "EQUIVALENT (declared)", False),
+             ((1, eq), "CAUGHT BUT DECLARED EQUIVALENT", True)]
+    for (rc, m), want, blocking in table:
+        got = verdict(rc, m)
+        assert got == want, (rc, m, got, want)
+        assert blocks(got) == blocking, (got, blocks(got), blocking)
+    print("mutate_drive selftest: %d rows ok" % len(table))
     return 0
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4 and sys.argv[1] == "--sync":
+    if len(sys.argv) == 2 and sys.argv[1] == "--selftest":
+        sys.exit(selftest())
+    elif len(sys.argv) == 4 and sys.argv[1] == "--sync":
         sync(sys.argv[2], sys.argv[3])
     elif len(sys.argv) >= 4:
         sys.exit(main(sys.argv))

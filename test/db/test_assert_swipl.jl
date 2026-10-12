@@ -389,8 +389,7 @@ end
     for (goal, step) in (
         (_af("assertz", _af(":", _as("m"), _as("foo"))), "R2"),        # a module other than
         (_af("assertz", _arule(_af(":", _as("m"), _as("foo")), _as("true"))), "R2"),  # user, system
-        (_af("assertz", _af("=>", _as("foo"), _as("true"))), "SSU"),   # an SSU clause
-        (_af("assertz", _arule(_af("g", _AX), _AX)), "V9")             # a variable goal
+        (_af("assertz", _af("=>", _as("foo"), _as("true"))), "SSU")    # an SSU clause
     )
         db = _aload([(_as("r"), goal)])
         err = try

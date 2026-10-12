@@ -70,6 +70,8 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
     elseif k == LK.CA1_INTEGER
         return if op == LK.H_VOID_N || op == LK.C_VAR_N                 # a count, or a literal
             string(Int(w))
+        elseif op == LK.I_CALLN                                          # swipl writes the count as `i:N`
+            "i:" * string(Int(w))
         else
             _hlit(lits[w])
         end
@@ -2872,9 +2874,7 @@ end
     p = _bs("pr")
     for body in (
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
-        _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
-        _bconj(_bs("q"), _bs("\$catch")),                      # a reserved goal atom (V9)
-        _bf("call", _bv(1)), _bf("call", _bv(1), _bs("a"))
+        _bconj(_bs("q"), _bs("\$catch"))                       # a reserved goal atom (V9)
     )
         @test_throws LK.NotPortedError _bclause(p, body)
     end
@@ -2954,4 +2954,67 @@ end
     @test isempty(ix_retract!(pr, _bf("cr", _bv(5))))           # the rule is not `cr(_) :- true`
     ix_retractall!(pr, _bf("cr", _bv(5)))                        # retractall takes rules too
     @test LK.hasClausesDefinition(db.gd, pr.def) === nothing
+end
+
+# ── the meta-call of plain goals (V9e-1): a variable goal and call/N compile as swipl's ──────────
+# A variable goal is `I_CALL1` after its argument, `call/1` the same, `call/N` is `I_CALLN N-1`
+# (pl-comp.c compileSubClause); a void variable stays a type error. Each cell's code is compared
+# whole with swipl's (the cells run in the meta-call's own file too: test/core_lang/test_metacall.jl).
+const _BC_META_CELLS = let X = _bv(1), Y = _bv(2), Z = _bv(3), G = _bv(4)
+    [
+        ("a variable goal", _bf("mv1", G), G),
+        ("a variable goal, not last", _bf("mv2", G, X), _bconj(G, _bf("=", X, _bs("a")))),
+        ("a variable goal after a goal", _bf("mv3", G), _bconj(_bs("a"), G, _bs("b"))),
+        (
+            "a variable goal built in the body",
+            _bf("mv4", X),
+            _bconj(_bf("=", G, _bf("p", X)), G)
+        ),
+        ("call/1", _bf("mc1", G), _bf("call", G)),
+        ("call/1 of a callable", _bs("mc2"), _bf("call", _bs("a"))),
+        ("call/1 of a compound", _bf("mc3", X), _bf("call", _bf("p", X, _bs("b")))),
+        ("call/2", _bf("mc4", G, X), _bf("call", G, X)),
+        ("call/3", _bf("mc5", G, X, Y), _bf("call", G, X, Y)),
+        ("call/8", _bf("mc6", G, X), _bf("call", G, X, X, X, X, X, X, X)),
+        ("call/N not last", _bf("mc7", G, X), _bconj(_bf("call", G, X), _bs("a"))),
+        ("call/1 twice", _bf("mc8", G, Z), _bconj(_bf("call", G), _bf("call", Z))),
+        ("call/2 with a constant", _bf("mc9", G), _bf("call", G, _bg(1))),
+        (
+            "a variable that is a goal and an argument",
+            _bf("mv5", G),
+            _bconj(_bf("p", G), G)
+        )
+    ]
+end
+
+@testset "a variable goal and call/N compile as swipl's (V9e-1)" begin
+    ours = [_bc_kernel(_bclause(h, b)) for (_, h, b) in _BC_META_CELLS]
+    for (k, (shape, _, _)) in enumerate(_BC_META_CELLS)
+        @test any(startswith(c, "i_call1") || startswith(c, "i_calln") for c in ours[k])
+    end
+    @test any(c -> any(startswith("i_call1"), c), ours) &&
+        any(c -> any(startswith("i_calln"), c), ours)
+    # a void variable is no goal
+    let ld = LK.PL_local_data{_B}(), user = LK.MODULE_user(_BGD), h = _bf("mv0", _bv(1))
+        @test LK.compileClause(
+            _BGD, ld, h, _bv(2), LK.lookupProcedure(_bs("mv0"), 1, user), user
+        ) ===
+              nothing && ld.exception_term != 0
+    end
+    if _BC_SWIPL_BIN !== nothing
+        theirs = _bc_swipl([
+            "bc_case_show(($(_bc_text(h, b))))" for (_, h, b) in _BC_META_CELLS
+        ])
+        @test length(theirs) == length(_BC_META_CELLS)
+        for (k, (shape, _, _)) in enumerate(_BC_META_CELLS)
+            k <= length(theirs) || break
+            ours[k] == theirs[k] ||
+                println(
+                    stderr, "  ", shape, "\n    ours  ", ours[k], "\n    swipl ", theirs[k]
+                )
+            @test ours[k] == theirs[k]
+        end
+    elseif _BC_SWIPL_REQUIRED
+        @test false
+    end
 end

@@ -849,7 +849,8 @@ const VMI_RUN = (
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
-    :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT
+    :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT,
+    :I_CALL1, :I_CALLN
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -2090,6 +2091,124 @@ function PL_next_solution_guarded(
     lcoSetNextFrameFlags2(ld.frames[NFR], ld.frames[FR])
     DEF = id_def
     @goto normal_call
+
+    # PORT: pl-vmi.c I_CALL1
+    # DIVERGES: the new frame is the record pushed at `lTop`, upstream's cast `NFR = lTop`.
+    # NOT PORTED: the debug output.
+    @label I_CALL1
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    mc_callargs = 0
+    mc_call0 = true
+    @goto i_metacall_common
+
+    # PORT: pl-vmi.c I_CALLN
+    # DIVERGES: as `I_CALL1`'s.
+    @label I_CALLN
+    mc_callargs = Int(PCc[PC])
+    PC += 1
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    mc_call0 = false
+    @goto i_metacall_common
+
+    # PORT: pl-vmi.c i_metacall_common
+    # DIVERGES: values for the stack's words: the goal's arguments are copied (`linkValI`) and the
+    # extra arguments of `call/N` move without the reference adjustment (a term is a value); the
+    # module is an index into the database's table; the procedure is `resolveProcedure`'s.
+    # `max_arity_overflow` raises `lTop` over the frame, as upstream's does, and so does a stripModule
+    # error and the V9e-2 refusal (a Julia exception unwinds the frame being filled: no `b_throw`).
+    # NOT PORTED (V9e-2): the control constructs and `call/N` for N > 8 under `call/1`, which
+    # upstream compiles to a temporary clause (`compileClause(…, NULL, …)`), and `Goal@Module`'s
+    # check. NOT PORTED: closures (`_PL_closure_blob`: no closures), `FR_INRESET` (no `reset/3`:
+    # asserted absent) and the `mcall_cont` trap of an undefined procedure (the supervisor
+    # `S_VIRGIN` traps it, as for `I_CALL`).
+    @label i_metacall_common
+    mc_nb = ld.frames[NFR].base
+    mc_ok, mc_goal, mc_mi = stripModule(gd, ld, ld.slots[argFrameP(mc_nb, 0) + 1])
+    if !mc_ok
+        setLTop!(ld, argFrameP(mc_nb, 1))
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+    mc_arity = 0
+    mc_name = mc_goal
+    mc_kind = kind(mc_goal)
+    if mc_kind === SYM
+        # ison(ap->type, PL_BLOB_TEXT) || goal == ATOM_nil
+        (isTextAtom(mc_goal) || is_nil(mc_goal)) || @goto call_type_error
+    elseif mc_kind === EXPR
+        nchildren(mc_goal) >= 1 || @goto call_type_error
+        mc_name = child(mc_goal, 1)
+        kind(mc_name) === SYM || @goto call_type_error      # `$expr/n`
+        mc_arity = nchildren(mc_goal) - 1
+        if mc_call0 && _has_functor(mc_goal, gd.functors_control.colon, 2)
+            @goto call_type_error
+        end
+        # !isCallableAtom(fd->name): no closures here
+        (isTextAtom(mc_name) || is_nil(mc_name)) || @goto call_type_error
+        mc_arity + mc_callargs > MAXARITY && @goto max_arity_overflow
+        if mc_call0 &&
+            (
+            _is_control(mc_goal, gd.functors_control) ||
+            (sym_key(mc_name) == gd.subclause_names.atom_call && mc_arity > 8)
+        )
+            @assert (ld.frames[FR].flags & FR_INRESET) == 0
+            setLTop!(ld, argFrameP(mc_nb, 1))       # the frame being filled is below lTop when the query unwinds
+            throw(
+                NotPortedError{T}(
+                    mc_goal, "call/1 of a control construct (the temporary clause)", "V9e-2"
+                )
+            )
+        end
+    else
+        @goto call_type_error
+    end
+    if !mc_call0 && mc_arity != 1
+        mc_a1 = argFrameP(mc_nb, 1)                 # pointer to 1-st arg
+        mc_shift = mc_arity - 1
+        if mc_shift > 0
+            for mc_i in (mc_callargs - 1):-1:0
+                ld.slots[mc_a1 + mc_i + mc_shift + 1] = ld.slots[mc_a1 + mc_i + 1]
+            end
+        else
+            for mc_i in 0:(mc_callargs - 1)
+                ld.slots[mc_a1 + mc_i + mc_shift + 1] = ld.slots[mc_a1 + mc_i + 1]
+            end
+        end
+    end
+    for mc_i in 1:mc_arity                          # the arguments of the goal
+        ld.slots[argFrameP(mc_nb, mc_i - 1) + 1] = linkValI(ld, child(mc_goal, mc_i + 1))
+    end
+    mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
+    DEF = mc_proc.definition
+    @goto mcall_cont
+
+    # PORT: pl-vmi.c mcall_cont
+    # DIVERGES: only the part reached here: no `P_TRANSPARENT` (every clause is `user`'s until R2's `module/2`).
+    @label mcall_cont
+    setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+    @goto normal_call
+
+    # PORT: pl-vmi.c call_type_error
+    @label call_type_error
+    @SAVE_REGISTERS(QID)
+    cte_fid = PL_open_foreign_frame(ld)
+    if cte_fid != 0
+        cte_t = new_term_ref(ld)                    # pushWordAsTermRef(argFrameP(NFR, 0))
+        ld.slots[cte_t + 1] = ld.slots[argFrameP(mc_nb, 0) + 1]
+        PL_error(ld, ERR_TYPE, mk_sym(T, :callable), cte_t)
+        PL_close_foreign_frame(ld, cte_fid)
+    end
+    @LOAD_REGISTERS(QID)
+    @goto b_throw                                   # THROW_EXCEPTION
+
+    # PORT: pl-vmi.c max_arity_overflow
+    @label max_arity_overflow
+    setLTop!(ld, argFrameP(mc_nb, 1))
+    @SAVE_REGISTERS(QID)
+    mao_fid = PL_open_foreign_frame(ld)
+    PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
+    PL_close_foreign_frame(ld, mao_fid)
+    @LOAD_REGISTERS(QID)
+    @goto b_throw                                   # THROW_EXCEPTION
 
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT

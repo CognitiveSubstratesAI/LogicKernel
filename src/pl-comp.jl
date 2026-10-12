@@ -1877,9 +1877,9 @@ end
 # PORT: pl-comp.c compileSubClause
 # DIVERGES: plain goals and `!` (`I_CUT`, or a local cut's instruction once V9 sets `ci.cut`; user,
 # 2026-10-05: the cut's COMPILE side with the body compiler, its execution since V6a). The meta-call (a
-# variable goal, `call/N`) and the reserved atoms compiled inline but `true` and `fail` (`$catch`,
-# `$reset`, …) throw `NotPortedError` BEFORE any code is emitted (V9): upstream always compiles them
-# inline. `true` and `fail` compile to `I_TRUE` and `I_FAIL` (since V9a). O_COMPILE_IS's
+# variable goal → `I_CALL1`, `call/N` → `I_CALL1`/`I_CALLN`) as upstream compiles it, since V9e-1. The
+# reserved atoms compiled inline but `true` and `fail` (`$catch`, `$reset`, …) throw `NotPortedError`
+# BEFORE any code is emitted (V9): upstream always compiles them inline. `true` and `fail` compile to `I_TRUE` and `I_FAIL` (since V9a). O_COMPILE_IS's
 # functors (since V6b2) and is/2 (since V8) are compiled as upstream decides, by upstream's own
 # compilers in upstream's order: inline where upstream emits an instruction — each emission of an
 # instruction the kernel does not execute yet throws `NotPortedError` (V9, the memo's Q-1) — and a
@@ -1897,9 +1897,14 @@ function compileSubClause!(
     names = gd.subclause_names
     k = kind(arg)
     off, ar = 2, 0
+    is_call = false                                            # fdef->name == ATOM_call
     if k === VAR
-        isIndexedVarTerm(ci, arg) >= 0 &&
-            throw(NotPortedError{T}(arg, "a variable goal (the meta-call, I_CALL1)", "V9"))
+        if isIndexedVarTerm(ci, arg) >= 0                      # a non-void variable: I_CALL1
+            # metacall: (one module: no colon or at context)
+            compileArgument!(ci, arg, A_BODY | A_NOARGVAR)
+            Output_0!(ci, I_CALL1)
+            return BOOLEX_TRUE
+        end
         return NOT_CALLABLE                                    # a void goal
     elseif k === EXPR
         off, ar = _comp_shape(arg)
@@ -1909,6 +1914,7 @@ function compileSubClause!(
         # !isTextAtom(fdef->name) && fdef->name != ATOM_nil
         is_reserved_symbol(h) && !is_nil(h) && return NOT_CALLABLE
         name = sym_key(h)
+        is_call = name == names.atom_call
         # ison(fdef, ARITH_F) && !ci->islocal (c:3474-3482; no local compilation)
         if (name, ar) in names.arith_functors
             if name == names.atom_is && compileSimpleAddition(ld, names, arg, ci)
@@ -1918,8 +1924,6 @@ function compileSubClause!(
             ld.prolog_flag_optimise &&
                 throw(NotPortedError{T}(arg, "compileArith (optimise)", "the user's Q-AR3"))
         end
-        name == names.atom_call &&
-            throw(NotPortedError{T}(arg, "call/N (the meta-call)", "V9"))
         # O_COMPILE_IS (c:3484-3519; `!ci->islocal`: no local compilation): upstream's chain, in its
         # order; a `false` falls through to the call below
         rc = BOOLEX_FALSE
@@ -1974,6 +1978,14 @@ function compileSubClause!(
     pc0 = PC(ci)
     for i in 0:(ar - 1)                                        # term: there are arguments
         compileArgument!(ci, _comp_arg(arg, off, i), A_BODY)
+    end
+    if is_call
+        if ar == 1                                             # (no colon or at context)
+            Output_0!(ci, I_CALL1)
+        else
+            Output_1!(ci, I_CALLN, code(ar - 1))
+        end
+        return BOOLEX_TRUE
     end
     proc = lookupBodyProcedure(gd, arg, ci.module_)
     Output_1!(ci, call, addProcedure!(ci, proc))
@@ -3276,6 +3288,11 @@ function decompileBodyNoShift!(
             pushed += 1
         elseif op == I_CUT
             push!(di.argp, mk_sym(T, Symbol("!")))
+            pushed += 1
+        elseif op == I_CALL1 || op == I_CALLN
+            n = op == I_CALLN ? Int(codes[di.pc]) : 0           # BUILD_TERM(FUNCTOR_call1) / callN
+            op == I_CALLN && (di.pc += 1)
+            build_term!(di, mk_sym(T, :call), n + 1)
             pushed += 1
         elseif op == I_DEPART || op == I_CALL
             def = di.clause.procedures[codes[di.pc]].definition

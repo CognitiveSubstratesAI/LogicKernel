@@ -827,6 +827,7 @@ graph LR
     pl_wam --> SWI_Prolog
     pl_wam --> pl_vmi
     pl_wam --> pl_index
+    pl_wam --> pl_funct
     pl_wam --> pl_global
     pl_wam --> pl_modul
     pl_wam --> pl_inline
@@ -2476,6 +2477,35 @@ and pl-vmi.c at the pin `ac807ba8`, upstream names.
 * **Mutation-proved — at verdict level:** `C_SOFTCUT` not dropping the dead record, the record not
   marked `unlinked`, the slot not negated, each `C_LSCUT` step, each clause of `_rpools_live`,
   and `dropUnlinkedChoices!` at the reuse points.
+
+**V9e-1: the META-CALL of plain goals — BUILT (2026-10-12)** (the user's order: V9e in two gates,
+plain goals first; port_inventory row V9; src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-proc.jl).
+Ported from pl-comp.c `compileSubClause` and pl-vmi.c at the pin `ac807ba8`.
+* **Ported — the compiler:** a non-void variable goal is its argument then `I_CALL1`; `call/1` is
+  `I_CALL1`, `call/N` is `I_CALLN N-1` (the goal's arguments first, as for any call); a void
+  variable stays `type_error(callable, Body)`. `A_NOARGVAR` is passed as upstream passes it. The
+  decompiler rebuilds `call(G)` and `call(G, …)`.
+* **Ported — the VM:** `I_CALL1` and `I_CALLN` push the frame at `lTop` and enter
+  `i_metacall_common`: strip the module (`stripModule`), find the name and arity (an atom, or a
+  compound whose head is a text atom; else `call_type_error`), `max_arity_overflow` past
+  `MAXARITY`, move `call/N`'s extra arguments up or down past the goal's own, copy the goal's
+  arguments (`linkValI`), `resolveProcedure` (`visibleProcedure`, else a new undefined procedure),
+  `mcall_cont` and `normal_call`. `visibleProcedure`, `resolveProcedure` and
+  `isDefinedOrAutoloadProcedure` are ported from pl-proc.c.
+* **DIVERGES (representation):** a term is a value, so the references upstream adjusts when it
+  shifts `call/N`'s arguments are plain copies; the module is an index into the database's table;
+  `max_arity_overflow` raises `lTop` over the frame being filled, as upstream's does; so do a
+  `stripModule` error and the V9e-2 refusal, which a Julia exception unwinds (no `b_throw`).
+* **NOT PORTED, refused by name (V9e-2):** `call/1` of a control construct, and of `call/N` for
+  N > 8 — upstream compiles a temporary clause (`compileClause(…, NULL, …)`); closures,
+  `FR_INRESET` (asserted absent) and `Goal@Module`'s check. The V9e checklist stands: the temporary
+  clauses call `_init_clause_vars!` and respect `dropUnlinkedChoices!`.
+* **Gates:** test/core_lang/test_metacall.jl (its own file, so upstream's test_call.pl path is not
+  shadowed): answers and determinism of variable goals, `call/1..4`, builtins through the visible
+  path, equal swipl's; the error formals (instantiation, type, existence, `max_procedure_arity`)
+  equal swipl's; 120 random programs mixing the call forms, answers equal swipl's, the record pools
+  checked at every answer; the control-construct refusal. test/compile/test_body_code_swipl.jl: 14
+  cells, each clause's code equal swipl's.
 
 **V9d: the decompiler puts MOVED UNIFICATIONS back — BUILT (2026-10-12)** (src/pl-comp.jl). The
 decompiler part of upstream's 27dd7c3 (swipl-devel#1540), whose compiler part came with the sync.

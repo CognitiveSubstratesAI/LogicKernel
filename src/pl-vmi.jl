@@ -462,6 +462,12 @@ const C_SCUT = code(118)
 # PORT: pl-vmi.c C_LSCUT
 "A `!` in the condition of `(A *-> B ; C)` (pl-vmi.c)."
 const C_LSCUT = code(119)
+# PORT: pl-vmi.c I_CALL1
+"Call the goal in the new frame's first argument: a variable goal, or `call/1` (pl-vmi.c)."
+const I_CALL1 = code(120)
+# PORT: pl-vmi.c I_CALLN
+"`call(Goal, A1, …)`: the operand is the count of extra arguments (pl-vmi.c)."
+const I_CALLN = code(121)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -598,7 +604,9 @@ const _CODE_TABLE = (
     code_info(:C_SOFTCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
     code_info(:C_SOFTIFTHEN, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
     code_info(:C_SCUT, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:C_LSCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00))
+    code_info(:C_LSCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:I_CALL1, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_CALLN, VIF_BREAK, 1, (CA1_INTEGER, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

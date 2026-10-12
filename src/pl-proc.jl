@@ -202,6 +202,53 @@ end
 _impl_any_defined(def::Definition)::Bool =
     def.impl_foreign_function != 0 || def.impl_clauses.first_clause !== nothing
 
+# PORT: pl-proc.c isDefinedOrAutoloadProcedure
+"Whether `proc` is defined, or marked for autoloading, in the database `gd` (pl-proc.c)."
+function isDefinedOrAutoloadProcedure(
+    gd::PL_global_data{T}, proc::Procedure{T}
+)::Bool where {T}
+    def = proc.definition
+    (def.flags & (PROC_DEFINED | P_AUTOLOAD)) != 0 && return true
+    return hasClausesDefinition(gd, def) !== nothing
+end
+
+# PORT: pl-proc.c visibleProcedure
+# DIVERGES: the functor is its parts (name, arity); the database `gd` is an argument and the super
+# modules are indices into its module table.
+"The defined procedure `name/arity` visible in module `m`: its own, else the first its super modules see (pl-proc.c)."
+function visibleProcedure(
+    gd::PL_global_data{T}, name::T, arity::Int, m::module_t{T}
+)::Union{Nothing, Procedure{T}} where {T}
+    while true
+        p = isCurrentProcedure(sym_key(name), arity, m)
+        p !== nothing && isDefinedOrAutoloadProcedure(gd, p) && return p
+        supers = m.supers
+        isempty(supers) && return nothing
+        last = length(supers)
+        for i in 1:(last - 1)
+            r = visibleProcedure(gd, name, arity, gd.modules[supers[i]])
+            r !== nothing && return r
+        end
+        m = gd.modules[supers[last]]                    # goto next: the last super in the loop
+    end
+end
+
+# PORT: pl-proc.c resolveProcedure
+# DIVERGES: the functor is its parts (name, arity); the database `gd` is an argument.
+"""
+    resolveProcedure(gd, name, arity, m) -> Procedure
+
+The procedure a dynamic call to `name/arity` in `m` runs: the visible one, else an undefined one
+created in `m` (pl-proc.c).
+"""
+function resolveProcedure(
+    gd::PL_global_data{T}, name::T, arity::Int, m::module_t{T}
+)::Procedure{T} where {T}
+    proc = visibleProcedure(gd, name, arity, m)
+    proc !== nothing && return proc
+    return lookupProcedure(name, arity, m)
+end
+
 # PORT: pl-proc.c autoImport
 # DIVERGES: the functor is its parts; the database `gd` is an argument and the super modules are
 # indices into its module table. The definition replaced in `m`'s procedure is left to Julia's

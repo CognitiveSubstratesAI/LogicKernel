@@ -32,13 +32,23 @@ case "$TARGET" in /*) ABS_TARGET="$TARGET" ;; *) ABS_TARGET="$ROOT/$TARGET" ;; e
 
 # shellcheck source=/dev/null
 . "$ROOT/../workflows/test_marker.sh" 2>/dev/null || true
+# A WORKTREE outside the workspace (~/code/lk-*: the next chunk while a gate runs, user 2026-10-12) has
+# no ../workflows: without the helper a full run writes NO marker and the commit hook finds no evidence
+# (measured 2026-10-12, V9e-1). LOGICKERNEL_WORKSPACE names the workspace; the default is the usual one.
+command -v write_marker >/dev/null 2>&1 ||
+    . "${LOGICKERNEL_WORKSPACE:-$HOME/code/CognitiveSubstratesAI}/workflows/test_marker.sh" 2>/dev/null || true
 _LAUNCH_FP=""
 command -v start_marker >/dev/null 2>&1 && _LAUNCH_FP="$(start_marker "$ROOT")"
 
 DRIVER="$(mktemp "${TMPDIR:-/tmp}/LogicKernel_run_tests_XXXXXX.jl")"
 _finish() {
-    local rc="$1"
+    local rc="$1" oc=""
     rm -f "$DRIVER"
+    if [ -n "${LOGICKERNEL_ORACLE_STATS:-}" ]; then
+        oc="; oracle cache: $(grep -c '^hit' "$LOGICKERNEL_ORACLE_STATS") hit, $(grep -c '^miss' "$LOGICKERNEL_ORACLE_STATS") miss, $(grep -c '^bypass' "$LOGICKERNEL_ORACLE_STATS") bypass"
+        echo "  ${oc#; }"
+        rm -f "$LOGICKERNEL_ORACLE_STATS"
+    fi
     # THE GATE SPLIT'S CONDITION (user, 2026-10-06): no evidence while the previous push is red, or
     # has no verdict yet (waited for, up to LOGICKERNEL_CI_WAIT_S) — tools/lib_evidence.sh `_ci_gate`
     if [ "$rc" -eq 0 ] && [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
@@ -50,7 +60,7 @@ _finish() {
         elif [ "$TARGET" = "test/runtests.jl" ] && [ -z "${LOGICKERNEL_REPLAY:-}" ]; then
             local fix=""
             [ -f "$(_ci_fix_file "$ROOT")" ] && fix="; CI-Fix: $(cat "$(_ci_fix_file "$ROOT")")"
-            write_marker "$ROOT" "$rc" "run_tests.sh full suite (term types: ${LOGICKERNEL_TERM_TYPES:-all}$fix)" "$_LAUNCH_FP"
+            write_marker "$ROOT" "$rc" "run_tests.sh full suite (term types: ${LOGICKERNEL_TERM_TYPES:-all}$fix$oc)" "$_LAUNCH_FP"
         else
             echo "  test_marker: NOT evidence — filtered run (TARGET=$TARGET)"
         fi
@@ -81,6 +91,18 @@ export LOGICKERNEL_REQUIRE_SWIPL=1
 # shellcheck source=/dev/null
 . "$ROOT/tools/lib_evidence.sh"
 _check_swipl_pin "$ROOT" run_tests.sh || exit 1
+# 🔴 THE ORACLE'S ANSWERS ARE CACHED (user, 2026-10-12): while the pin is fixed swipl's answer to a
+# program does not change, so a `swipl` SHIM (tools/oracle_cache/swipl) answers from a cache keyed by
+# the program, the pinned commit and the binary, and runs the real one on a miss or any doubt. The pin
+# was checked above against the REAL swipl; the shim always forwards `--version` and `version_git`.
+# LOGICKERNEL_ORACLE_CACHE=0 turns it off. Only the LogicKernel side then always runs fresh.
+if [ "${LOGICKERNEL_ORACLE_CACHE:-1}" != 0 ]; then
+    LOGICKERNEL_ORACLE_PIN="$(_swipl_pin "$ROOT" commit)"
+    export LOGICKERNEL_ORACLE_PIN
+    LOGICKERNEL_ORACLE_STATS="$(mktemp "${TMPDIR:-/tmp}/LogicKernel_oracle_stats_XXXXXX")"
+    export LOGICKERNEL_ORACLE_STATS
+    export PATH="$ROOT/tools/oracle_cache:$PATH"
+fi
 # Every Julia process of this runner compiles into the EVIDENCE depot, ahead of the default ones, so
 # it never rewrites the cache the warm daemon loaded (tools/lib_evidence.sh `_evidence_depot`).
 JULIA_DEPOT_PATH="$(_evidence_depot_path "$ROOT")"

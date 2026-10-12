@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# ORIGINAL: the oracle's answer cache (user, 2026-10-12) — no swipl-devel counterpart.
+# tools/oracle_cache/swipl — a `swipl` SHIM for a suite run: while the pin is fixed, swipl's answer
+# to a program does not change, so it is cached and only the LogicKernel side runs again.
+#
+#   PATH=tools/oracle_cache:$PATH LOGICKERNEL_ORACLE_PIN=<commit> swipl …    # tools/run_tests.sh does this
+#
+# THE KEY is the SHA-256 of: the pinned commit (LOGICKERNEL_ORACLE_PIN), the real binary's size and
+# mtime, the arguments with every existing FILE argument replaced by the CONTENT of that file and of
+# its directory's other files (a program is a path in a fresh temporary directory — the path varies,
+# the program does not), what stdin holds, and whether stdout and stderr are one stream. The cache
+# lives in ${LOGICKERNEL_ORACLE_CACHE_DIR:-~/.cache/logickernel-oracle}; an entry is the exit code,
+# stdout and stderr, with the directory of the file arguments written as a token and put back as the
+# CURRENT run's directory on a hit.
+#
+# IT FAILS OPEN — every doubt runs the real swipl and caches nothing:
+#   * no pin, no real swipl, LOGICKERNEL_ORACLE_CACHE=0;
+#   * `--version` and the `version_git` flag — the pin check always asks the real oracle;
+#   * a program that reads what is not in its file: a path or a clock, a random number, the
+#     environment, a file, a thread (`_BYPASS` below), or an argument with a `/` that is no file;
+#   * a directory of more than 64 files; stdin larger than 1 MiB;
+#   * an exit code of 124 or more (a timeout, a signal, an abort: the answer may not repeat).
+# LOGICKERNEL_ORACLE_STATS, when set, receives one line per call: `hit`, `miss` or `bypass`.
+set -u
+here="$(cd "$(dirname "$0")" && pwd)"
+real=""
+IFS=: read -r -a _dirs <<< "$PATH"
+for d in "${_dirs[@]}"; do
+    [ -n "$d" ] && [ -x "$d/swipl" ] && [ "$(cd "$d" && pwd)" != "$here" ] && { real="$d/swipl"; break; }
+done
+if [ -z "$real" ]; then
+    echo "oracle_cache/swipl: no real swipl on PATH" >&2
+    exit 127
+fi
+_stat() { [ -n "${LOGICKERNEL_ORACLE_STATS:-}" ] && echo "$1" >> "$LOGICKERNEL_ORACLE_STATS"; return 0; }
+_bypass() { _stat bypass; rm -rf "${tmp:-}"; exec "$real" "$@"; }
+
+pin="${LOGICKERNEL_ORACLE_PIN:-}"
+{ [ -z "$pin" ] || [ "${LOGICKERNEL_ORACLE_CACHE:-1}" = 0 ]; } && exec "$real" "$@"
+for a in "$@"; do
+    case "$a" in *--version* | *version_git*) exec "$real" "$@" ;; esac
+done
+
+_BYPASS='get_time|statistics|cputime|random|tmp_file|getenv|setenv|shell\(|thread|open\(|see\(|consult|load_files|exists_file|exists_directory|directory_files|prolog_load_context|source_file|current_prolog_flag\(pid|garbage_collect_atoms|sleep\('
+
+tmp="$(mktemp -d)" || _bypass "$@"
+trap 'rm -rf "$tmp"' EXIT
+key="$tmp/key"
+{
+    printf 'pin:%s\n' "$pin"
+    printf 'bin:%s\n' "$(stat -L -c '%s:%Y' "$real")"
+} > "$key"
+
+fdirs=()                       # the directory of each file argument, in order: its token is @@LKDIR<i>@@
+n=0
+for a in "$@"; do
+    if [ -f "$a" ]; then
+        dir="$(cd "$(dirname "$a")" && pwd)"
+        idx=-1
+        for i in "${!fdirs[@]}"; do [ "${fdirs[$i]}" = "$dir" ] && idx=$i; done
+        if [ "$idx" -lt 0 ]; then
+            idx=${#fdirs[@]}
+            fdirs+=("$dir")
+            nfiles=$(find "$dir" -maxdepth 1 -type f | wc -l)
+            [ "$nfiles" -gt 64 ] && _bypass "$@"
+            : > "$tmp/dir$idx"
+            while IFS= read -r f; do
+                printf 'sib:%s:%s\n' "$(basename "$f")" "$(sha256sum < "$f" | cut -d' ' -f1)" >> "$tmp/dir$idx"
+            done < <(find "$dir" -maxdepth 1 -type f | sort)
+            cat "$tmp/dir$idx" >> "$key"
+            grep -q -E "$_BYPASS" "$dir"/* 2> /dev/null && _bypass "$@"
+        fi
+        printf 'file:%s:%s:%s\n' "$idx" "$(basename "$a")" "$(sha256sum < "$a" | cut -d' ' -f1)" >> "$key"
+    else
+        case "$a" in */*) _bypass "$@" ;; esac
+        printf 'arg:%s\n' "$a" >> "$key"
+        printf '%s' "$a" | grep -q -E "$_BYPASS" && _bypass "$@"
+    fi
+    n=$((n + 1))
+done
+
+if [ -t 0 ]; then
+    : > "$tmp/stdin"
+else
+    head -c 1048577 > "$tmp/stdin"
+    [ "$(stat -c %s "$tmp/stdin")" -gt 1048576 ] && { cat "$tmp/stdin" - | "$real" "$@"; _stat bypass; exit $?; }
+fi
+printf 'stdin:%s\n' "$(sha256sum < "$tmp/stdin" | cut -d' ' -f1)" >> "$key"
+merged=0
+[ "$(readlink /proc/$$/fd/1)" = "$(readlink /proc/$$/fd/2)" ] && merged=1
+printf 'merged:%s\n' "$merged" >> "$key"
+
+h="$(sha256sum < "$key" | cut -d' ' -f1)"
+root="${LOGICKERNEL_ORACLE_CACHE_DIR:-$HOME/.cache/logickernel-oracle}/${pin:0:12}"
+ent="$root/$h"
+
+_tok() {                       # stdin → stdout, with `from`=1 the directories tokenised, 0 put back
+    local s i
+    s="$(cat; printf x)"; s="${s%x}"
+    for i in "${!fdirs[@]}"; do
+        if [ "$1" = 1 ]; then s="${s//"${fdirs[$i]}"/@@LKDIR${i}@@}"; else s="${s//@@LKDIR${i}@@/"${fdirs[$i]}"}"; fi
+    done
+    printf '%s' "$s"
+}
+
+if [ -f "$ent/rc" ]; then
+    _stat hit
+    _tok 0 < "$ent/out"
+    [ "$merged" = 0 ] && _tok 0 < "$ent/err" >&2
+    exit "$(cat "$ent/rc")"
+fi
+
+if [ "$merged" = 1 ]; then
+    "$real" "$@" < "$tmp/stdin" > "$tmp/out" 2>&1
+else
+    "$real" "$@" < "$tmp/stdin" > "$tmp/out" 2> "$tmp/err"
+fi
+rc=$?
+cat "$tmp/out"
+[ "$merged" = 0 ] && cat "$tmp/err" >&2
+if [ "$rc" -lt 124 ]; then
+    mkdir -p "$root" && staging="$(mktemp -d "$root/.new.XXXXXX")" && {
+        _tok 1 < "$tmp/out" > "$staging/out"
+        if [ "$merged" = 0 ]; then _tok 1 < "$tmp/err" > "$staging/err"; fi
+        printf '%s' "$rc" > "$staging/rc"
+        mv -T "$staging" "$ent" 2> /dev/null || rm -rf "$staging"
+    }
+    _stat miss
+else
+    _stat bypass
+fi
+exit "$rc"
