@@ -693,6 +693,7 @@ that implements the decision, and cites the decision as history, `since Q-B`.
 | **Q-AR1** big numbers in `DefaultTerm` — ✅ **DECIDED 2026-10-06** | trial (b), the direct payload, against (a), the wrapper; (b) unless its gate shows dispatch (a) avoids | T1 |
 | **Q-AR7** an atom's text — ✅ **DECIDED 2026-10-06** | `sym_text` in the interface's Prolog layer, conformance-tested on three implementations; `[]` and `'[]'` both give `[]`. **Built in R1a (2026-10-07)** | R1 |
 | **Q-AR8** a cyclic culprit in an error — ✅ **DECIDED 2026-10-06** | a placeholder no program can build, `# DIVERGES`; the class and message swipl's; a catching program keeps running (so it needs `catch/3`). **Superseded 2026-10-07 (user): since V5d a ball keeps its cycles, so the error carries the real culprit, as upstream; no placeholder** | V5d |
+| **Q-V1** defensive initialisation; see register Q3 — ✅ **DECIDED 2026-10-12** | a clause's `init_vars` cells are set to fresh variables when it gets its frame (`_init_clause_vars!`), a behavioural `# DIVERGES`; re-checked when upstream fixes Q3 | test/core_lang/test_rules_swipl.jl, one predicate per point that hands a frame to a clause; the bench before and after |
 
 **Not ported** (no consumer, or not part of the kernel): the debugger (`D_BREAK`, `CHP_DEBUG`, trace ports),
 modules (`I_CONTEXT`, `I_CALLM`/`I_DEPARTM`/`I_CALLATM*`, `S_MQUAL`/`S_LMQUAL`), threads (`S_THREAD_LOCAL`),

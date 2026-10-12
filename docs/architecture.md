@@ -1310,6 +1310,21 @@ Writing a slot is not a binding, and upstream does not trail it either (vmi:741-
 
 The instruction semantics, frames, choice points and query API above are independent of that choice.
 
+**Defensive initialisation; see register Q3** (user, 2026-10-12). `# DIVERGES`, in behaviour: a
+clause can carry a list of its variables' offsets, `init_vars` (src/pl-incl.jl; filled by the
+compiler, `_clause_init_vars`, src/pl-comp.jl; empty for most clauses, which then share one
+vector), and the cells it lists are set to fresh variables at each of the four points that hand a
+frame to a clause — `S_STATIC`, `TRUST_CLAUSE`, `shallow_backtrack`, `deep_backtrack`
+(`_init_clause_vars!`, src/pl-wam.jl). **To re-check when upstream fixes Q3:** with that fix
+ported this goes. Cost: none where the list is empty; the bench on the four programs, before and
+after, is in the commit message. Gate: test/core_lang/test_rules_swipl.jl, "defensive
+initialisation" — a value planted over the stack above `lTop`, one predicate per entry point, the
+listed cells and one that is not listed read from the stack afterwards. A static check in the same
+file ("every clause-entry point initialises the clause's cells") fails if a new way of handing a
+frame to a clause does not call `_init_clause_vars!`. **Coverage to add as the VM grows:** V9e's
+temporary clauses for control constructs (the `islocal` compilation), and later `S_DYNAMIC` and
+tabling, each hand a frame to a clause and must call it.
+
 ### Decision 3 — frames and choice points: vector-backed stacks, integer positions
 
 * **One position space, as upstream's one local stack.**

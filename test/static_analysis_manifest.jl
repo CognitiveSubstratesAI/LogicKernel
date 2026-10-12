@@ -251,6 +251,7 @@ function _manifest_index(T)
         (LK.analyse_variables!, Tuple{GD, CInfo, T, T}, false),
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing}, false),
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, T}, false),
+        (LK._clause_init_vars, Tuple{CInfo, Int}, false),   # defensive initialisation; see register Q3
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
         (LK.reverse_code!, Tuple{Vector{UInt64}, Int, Int}, true),
         (LK.lco!, Tuple{CInfo, Int}, false),
@@ -1083,6 +1084,7 @@ function _manifest_index(T)
         # nothing; the run loop's call-path labels are checked by their own test (static_analysis_body.jl)
         (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
         (LK._no_record_above, Tuple{LD, Int}, true),
+        (LK._init_clause_vars!, Tuple{LD, Int, LK.Clause{T}}, false),
         (LK._is_newest_live_frame, Tuple{LD, Int}, true),
         (LK._call_procedure, Tuple{LD, Int, LK.code}, true),
         # V9c — assert/1, assertz/1, asserta/1 (src/pl-comp.jl, pl-proc.jl, pl-error.jl), over

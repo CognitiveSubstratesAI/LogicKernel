@@ -374,7 +374,8 @@ end
 # `Procedure` pointer itself (user, 2026-10-04: decoding stays local to the clause, as with the
 # literals). The source-file fields (`line_no`, `source_no`, `owner_no`) since R1f; no `references` (no
 # reference-counted clause references) and no `tr_erased_no` (transactions); `code_size` is the
-# length of `codes`. D is the predicate's type — `definition{T}` — a parameter only to break the
+# length of `codes`. `init_vars` has no upstream field: defensive initialisation; see register Q3
+# (`_init_clause_vars!`, src/pl-wam.jl). D is the predicate's type — `definition{T}` — a parameter only to break the
 # struct cycle.
 """
 A clause (pl-incl.h `struct clause`): its predicate, generations, frame size, flags, VM code, and
@@ -393,6 +394,7 @@ mutable struct clause{T, D}
     line_no::UInt32                 # Source line-number
     source_no::UInt32               # Index of source-file
     owner_no::UInt32                # Index of owning source-file
+    init_vars::Vector{Int32}        # (defensive initialisation; see register Q3: variable offsets)
 end
 
 "The start of `cl`'s code (upstream's `PC = cl->codes`), with its literal table."

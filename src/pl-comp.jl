@@ -252,6 +252,7 @@ mutable struct compileInfo{T}
     warning_list::term_t                                    # see compiler_warning()
     warnings::Union{Nothing, Vector{c_warning{T}}}
     variable_names::Union{Nothing, T}                       # ($variable_names, resolved)
+    init_vars::Union{Nothing, BitVector}                    # (defensive initialisation; see register Q3)
 end
 
 """
@@ -263,7 +264,8 @@ compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
         m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
         0, false, UInt32(0), 0, 0, Dict{Int, T}(),              # head_unify: compileClause's
-        0, 0, 0, nothing, nothing                               # no style checks, no warnings
+        0, 0, 0, nothing, nothing,                              # no style checks, no warnings
+        nothing                                                 # init_vars
     )
 
 # PORT: pl-comp.c pushBranchVar
@@ -2246,6 +2248,11 @@ function compileBody!(
                 @goto resume
             end
             vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
+            iv = ci.init_vars                                  # (defensive initialisation; see
+            if iv === nothing                                  # register Q3)
+                iv = ci.init_vars = falses(length(ci.used_var))
+            end
+            setVars(ci, child(body, 2), iv)
             Output_2!(ci, C_NOT, code(var), code(0))
             push!(
                 stack,
@@ -2474,7 +2481,8 @@ function compileClause(
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(ci.variables), clsize_t(nv), flags, ci.codes,
         ci.literals,
-        ci.procedures, UInt32(0), UInt32(0), UInt32(0)     # line_no, source_no, owner_no
+        ci.procedures, UInt32(0), UInt32(0), UInt32(0),    # line_no, source_no, owner_no
+        _clause_init_vars(ci, def.arity)
     )
 end
 
@@ -2482,6 +2490,14 @@ compileClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
     proc::Procedure{T}, m::module_t{T}
 ) where {T} = compileClause(gd, ld, head, body, proc, m, 0)
+
+# DIVERGES: no upstream counterpart — defensive initialisation; see register Q3.
+"The clause's `init_vars`: the offsets `ci.init_vars` marks that are not arguments."
+function _clause_init_vars(ci::compileInfo, arity::Int)::Vector{Int32}
+    iv = ci.init_vars
+    iv === nothing && return Int32[]
+    return Int32[i - 1 for i in findall(iv) if i - 1 >= arity]
+end
 
 # ── a definition's Prolog reference (pl-comp.c) ─────────────────────────────────────────────────
 # PORT: pl-comp.c unify_functor
