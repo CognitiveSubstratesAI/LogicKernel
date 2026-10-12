@@ -855,9 +855,10 @@ end
 # DIVERGES: a pool record (see above); `parent` is a choice index and `frame` a frame index.
 # `value.clause` is the choice's OWN `clause_choice`, created with the record and reused with it —
 # where upstream embeds the struct and hands out a pointer to it (user, 2026-10-05). `newChoice`
-# resets it. The union's other members arrive with their creators: `pc` with `C_OR` and `foreign`
-# with non-deterministic built-ins (V9). `prof_node` is not kept (no profiler) but counts in
-# `SIZEOF_CHOICE`.
+# resets it. `value.pc` (since V9d, `C_OR`) is a field of its own, `value_pc`: an index into the
+# code of the frame's clause, where upstream holds an address. The union's `foreign` member
+# arrives with the non-deterministic built-ins (V9). `prof_node` is not kept (no profiler) but
+# counts in `SIZEOF_CHOICE`.
 "A choice point on the local stack (pl-incl.h `struct choice`)."
 mutable struct choice{T}
     base::Int                               # its position (upstream: its address)
@@ -866,6 +867,7 @@ mutable struct choice{T}
     mark::mark                              # data mark for undo
     frame::Int                              # Frame I am related to (an index)
     const value_clause::ClauseChoice{T}     # value.clause — Next candidate clause
+    value_pc::Int                           # value.pc — where a CHP_JUMP continues (an index)
 end
 
 # PORT: pl-incl.h fliFrame

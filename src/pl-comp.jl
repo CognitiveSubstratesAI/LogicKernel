@@ -32,6 +32,14 @@
 # head and body, its predicate, compiled, added — and their registration table
 # (`PL_predicates_from_comp`).
 #
+# CONTROL CONSTRUCTS (V9d, one per step): the disjunction `;` (and `|`) since 2026-10-12 —
+# `compileBody!`'s frames, with the variable tables it balances (`setVars`, `balanceVars`, `c_var`,
+# `orVars`, `copyVarTable`); `->`, `*->`, `\+` and `$/1` are still refused there, by name.
+# THE DECOMPILER (since V9d): `decompile!` rebuilds `Head :- Body` from a clause's code
+# (`decompile_head!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`), and clause/2
+# answers for rule bodies (`pl_clause!` with a body). A clause with a unification moved into its
+# head (`CL_HEAD_TERMS`) is refused until `moved_unifications` is ported (V9d's last step).
+#
 # NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
 # `link_local_var`; V9), SSU (`=>`) clauses,
 # SSU clauses' moves (`?=>` always moves, `=>` never: no SSU).
@@ -1970,34 +1978,189 @@ function compileSubClause!(
     return BOOLEX_TRUE
 end
 
+# PORT: pl-comp.c c_var_state
+"The run of `C_VAR`s `balanceVars` is collecting (pl-comp.c): `count` slots from offset `at`."
+struct c_var_state
+    at::Int
+    count::Int
+end
+
+# PORT: pl-comp.c c_var
+# DIVERGES: returns the new state, where upstream updates it through a pointer.
+"""
+Add the slot at offset `at` to the run `s`, emitting the run collected so far when `at` does not
+continue it (pl-comp.c): `C_VAR` for one slot, `C_VAR_N` for more. As upstream, a slot continues a
+run only when it follows the run's FIRST slot, so a run is at most two slots.
+"""
+function c_var(s::c_var_state, at::Int, ci::compileInfo)::c_var_state
+    if s.count == 0
+        return c_var_state(at, 1)
+    elseif at == s.at + 1
+        return c_var_state(s.at, s.count + 1)
+    else
+        if s.count == 1
+            Output_1!(ci, C_VAR, code(s.at))
+        else
+            Output_2!(ci, C_VAR_N, code(s.at), code(s.count))
+        end
+        return c_var_state(at, 1)
+    end
+end
+
+# PORT: pl-comp.c balanceVars
+"""
+Emit `C_VAR` for every variable that is uninitialised in `valt1` and initialised in `valt2`
+(pl-comp.c): after both branches of a disjunction the same slots hold a value. Returns how many.
+"""
+function balanceVars(valt1::BitVector, valt2::BitVector, ci::compileInfo)::Int
+    done = 0
+    vstate = c_var_state(0, 0)
+    for n in 0:(length(ci.used_var) - 1)                       # vartablesize
+        if !valt1[n + 1] && valt2[n + 1]                       # ~(*p1) & *p2
+            vstate = c_var(vstate, Int(VAROFFSET(n)), ci)
+            done += 1
+        end
+    end
+    if vstate.count != 0
+        c_var(vstate, 0, ci)
+    end
+    return done
+end
+
+# PORT: pl-comp.c orVars
+"Mark in `valt1` every variable marked in `valt2` (pl-comp.c)."
+function orVars(valt1::BitVector, valt2::BitVector)::Nothing
+    valt1 .|= valt2
+    return nothing
+end
+
+# PORT: pl-comp.c setVars
+# DIVERGES: the pending arguments are a Vector where upstream uses a segstack.
+"Mark in `vt` every clause variable that appears in `t` (pl-comp.c)."
+function setVars(ci::compileInfo{T}, t::T, vt::BitVector)::Nothing where {T}
+    stack = T[]
+    while true
+        if kind(t) === VAR
+            index = isIndexedVarTerm(ci, t)
+            index >= 0 && isFirstVarSet!(vt, index)
+        elseif kind(t) === EXPR
+            n = nchildren(t)
+            if n > 0
+                for i in n:-1:2                                # the head is child 1
+                    push!(stack, child(t, i))
+                end
+                t = child(t, 1)
+                continue
+            end
+        end
+        isempty(stack) && break
+        t = pop!(stack)
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c copyVarTable
+"Make `to` a copy of `from` (pl-comp.c)."
+function copyVarTable(to::BitVector, from::BitVector)::BitVector
+    copyto!(to, from)
+    return to
+end
+
+# PORT: pl-comp.c cb_kind
+"What `compileBody` resumes with when a sub-compilation ends (pl-comp.c)."
+@enum cb_kind::UInt8 begin
+    CB_COMMA_RHS            # (A, B): compile B after A
+    CB_SEMI_A               # (A ; B): resume after A
+    CB_SEMI_B               # (A ; B): resume after B
+end
+
+# PORT: pl-comp.c cb_frame
+# DIVERGES: the fields of the constructs ported so far (`,` and `;`): no `a0`, `var`, `cutsave`,
+# `hard`, `isnot` (the conditions and `\+`: V9d's next steps) or `tmsave` (modules). The three
+# variable tables are ONE vector of three (`nothing` for a comma), so a frame is a flat value.
+"A pending step of `compileBody` (pl-comp.c): the state to restore and the step to run."
+struct cb_frame{T}
+    kind::cb_kind
+    call::code                                  # 'call' passed to the pending sub-compilation
+    body::T                                     # the enclosing control term (`,`: its B)
+    tc_or::Int                                  # patch offset of C_OR
+    tc_jmp::Int                                 # patch offset of forward C_JMP
+    vars::Union{Nothing, NTuple{3, BitVector}}  # vsave, valt1, valt2
+end
+
 # PORT: pl-comp.c compileBody
-# DIVERGES: `,` only — every other control construct (`;`, `|`, `->`, `*->`, `\+`, `$/1`, `:/2`,
-# `@/2`) throws `NotPortedError` (V9), and with them the variable tables they save; the pending
-# right-hand sides (upstream's CB_COMMA_RHS frames) are a Vector where upstream uses a segstack.
+# DIVERGES: `,`, `;` and `|` — every other control construct (`->`, `*->`, also as the left side of
+# a `;`, `\+`, `$/1`, `:/2`, `@/2`) throws `NotPortedError` (V9d's next steps; modules), before
+# anything is emitted; the pending steps (upstream's `cb_frame`s) are a Vector where upstream uses a
+# segstack, so there is no MEMORY_OVERFLOW; no `islocal` (see the file header).
 """
 Compile clause body `body`, its last goal called with `call` (pl-comp.c): a conjunction left to
-right, every goal but the last with `I_CALL`. Returns `BOOLEX_TRUE` or the first goal's error code.
+right, every goal but the last with `I_CALL`; a disjunction as `C_OR <A> C_JMP <B>`, the
+variables each branch leaves unset made fresh (`C_VAR`). Returns `BOOLEX_TRUE` or the first
+goal's error code.
 """
 function compileBody!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, body::T, call::code
 )::boolex_t where {T}
     cf = gd.functors_control
-    stack = Tuple{T, code}[]                                   # CB_COMMA_RHS: (B, call)
+    stack = cb_frame{T}[]
     @label next_body
     if kind(body) === EXPR && _is_control(body, cf)
         if _has_functor(body, cf.comma, 2)                     # A , B
-            push!(stack, (child(body, 3), call))
+            push!(stack, cb_frame{T}(CB_COMMA_RHS, call, child(body, 3), 0, 0, nothing))
+            body = child(body, 2)
+            call = I_CALL
+            @goto next_body
+        elseif _has_functor(body, cf.semicolon, 2) || _has_functor(body, cf.bar, 2)
+            a0 = child(body, 2)                                # A ; B and (A -> B ; C)
+            (_has_functor(a0, cf.ifthen, 2) || _has_functor(a0, cf.softcut, 2)) &&
+                throw(NotPortedError{T}(body, "if-then-else (-> or *-> in a ;)", "V9d"))
+            vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
+            valt1 = copy(ci.used_var)
+            valt2 = copy(ci.used_var)
+            setVars(ci, child(body, 2), valt1)
+            setVars(ci, child(body, 3), valt2)
+            Output_1!(ci, C_OR, code(0))
+            push!(
+                stack, cb_frame{T}(CB_SEMI_A, call, body, PC(ci), 0, (vsave, valt1, valt2))
+            )
             body = child(body, 2)
             call = I_CALL
             @goto next_body
         end
-        throw(NotPortedError{T}(body, "a control construct other than ,/2", "V9"))
+        throw(NotPortedError{T}(body, "a control construct other than ,/2 and ;/2", "V9d"))
     end
     rc = compileSubClause!(gd, ld, ci, body, call)
+    @label resume
     rc == BOOLEX_TRUE || return rc
     isempty(stack) && return BOOLEX_TRUE
-    body, call = pop!(stack)
-    @goto next_body
+    frame = pop!(stack)
+    if frame.kind == CB_COMMA_RHS
+        body = frame.body
+        call = frame.call
+        @goto next_body
+    elseif frame.kind == CB_SEMI_A                             # (A ; B) after A
+        vsave, valt1, valt2 = frame.vars::NTuple{3, BitVector}
+        balanceVars(valt1, valt2, ci)
+        Output_1!(ci, C_JMP, code(0))
+        tc_jmp = PC(ci)
+        ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)     # OpCode(ci, tc_or-1)
+        copyVarTable(ci.used_var, vsave)
+        push!(
+            stack,
+            cb_frame{T}(CB_SEMI_B, frame.call, frame.body, frame.tc_or, tc_jmp, frame.vars)
+        )
+        body = child(frame.body, 3)
+        call = frame.call
+        @goto next_body
+    else                                                       # CB_SEMI_B: (A ; B) after B
+        _, valt1, valt2 = frame.vars::NTuple{3, BitVector}
+        balanceVars(valt2, valt1, ci)
+        ci.codes[frame.tc_jmp] = code(PC(ci) - frame.tc_jmp)   # OpCode(ci, tc_jmp-1)
+        orVars(valt1, valt2)
+        copyVarTable(ci.used_var, valt1)
+        @goto resume
+    end
 end
 
 "Whether `body` makes a rule: present and not the atom `true` (pl-comp.c `body && *body != ATOM_true`)."
@@ -2598,6 +2761,312 @@ function _decompile_void(
     return mk_var(T, fresh_var_keys!(1))
 end
 
+# ── decompiling a clause: head and body (pl-comp.c), V9d ────────────────────────────────────────
+# PORT: pl-comp.c decompileInfo
+# DIVERGES: `pc` is an index into the clause's code; `variables` is `base` — slot `i`'s variable has
+# key `base + i`, as `decompile_head!`'s — so a variable reference IS the variable (no `makeVarRef`
+# resolved later by `unifyVar`); `argp` is the decompilation stack, a Vector where upstream builds
+# on top of the local stack; `frames` are the compounds being built, upstream's argument stack
+# (see `decompile_head!`). No `nvars`, `arity`, `bindings` (clause/3's variable names) or
+# `bvar_access` (the moved unifications: see `decompile!`).
+"The state of one clause decompilation (pl-comp.c `decompileInfo`)."
+mutable struct decompileInfo{T}
+    const clause::Clause{T}
+    pc::Int                                     # pc: pc for decompilation
+    const base::UInt64                          # (variables: slot i's variable is key base + i)
+    const argp::Vector{T}                       # argp: the decompilation stack
+    const frames::Vector{DecompileFrame{T}}     # (the compounds being built)
+end
+
+"The variable of the slot at frame offset `index` (upstream's `makeVarRef`, resolved at once)."
+_dvar(di::decompileInfo{T}, index::code) where {T} =
+    mk_var(T, di.base + (index - VAROFFSET(0)))
+
+"Push `v`: an argument of the compound being built, or the next value on the decompilation stack (`*ARGP++ = v`)."
+function _dpush!(di::decompileInfo{T}, v::T)::Nothing where {T}
+    if isempty(di.frames)
+        push!(di.argp, v)
+    else
+        push!(di.frames[end].kids, v)
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c build_term
+# DIVERGES: the functor is its name and arity; the arguments are terms already (see
+# `decompileInfo`), so nothing is unified here and nothing can overflow.
+"""
+Build `name/arity` from the top `arity` values of the decompilation stack and push it back
+(pl-comp.c): the last value is the last argument, or with `dir` 1 the first.
+"""
+function build_term!(
+    di::decompileInfo{T}, name::T, arity::Int, dir::Int=-1
+)::Nothing where {T}
+    if arity == 0
+        push!(di.argp, name)                                    # *ARGP++ = nameFunctor(f)
+        return nothing
+    end
+    n = length(di.argp)
+    kids = Vector{T}(undef, arity + 1)
+    kids[1] = name
+    for i in 1:arity
+        kids[i + 1] = dir == -1 ? di.argp[n - arity + i] : di.argp[n - i + 1]
+    end
+    resize!(di.argp, n - arity)
+    push!(di.argp, mk_expr(T, kids))
+    return nothing
+end
+
+# PORT: pl-comp.c decompileBodyNoShift
+# DIVERGES: every instruction the kernel's compiler emits in a body — the `H_` ones too, which
+# build the other side of an inline `Var = Term` (the others raise, as upstream's
+# `sysError` for an unknown instruction); a constant is the clause's literal, exactly; a compound
+# under construction is a frame closed at its `B_POP`, with the `B_RFUNCTOR`/`B_RLIST` chain of its
+# last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
+# `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
+# upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
+# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3, `$/1` and the
+# conditions (V9d's next steps, V9e–g).
+"""
+Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
+each goal is built on the decompilation stack from its arguments' instructions, and the goals are
+joined by `,/2`, right-nested — one term is left on the stack.
+"""
+function decompileBodyNoShift!(
+    di::decompileInfo{T}, end_::code, until::Int
+)::Nothing where {T}
+    pushed = 0                                                  # Subclauses pushed on the stack
+    codes = di.clause.codes
+    lits = di.clause.literals
+    while di.pc != until
+        op = codes[di.pc]
+        di.pc += 1
+        if op == end_
+            di.pc -= 1
+            break
+        end
+        if op == I_NOP || op == I_CHP
+            continue
+        elseif op == B_ATOM || op == B_SMALLINT || op == B_FLOAT || op == B_MPZ ||
+            op == B_MPQ || op == B_STRING || op == H_ATOM || op == H_SMALLINT ||
+            op == H_FLOAT || op == H_MPZ || op == H_MPQ || op == H_STRING
+            _dpush!(di, lits[codes[di.pc]])
+            di.pc += 1
+        elseif op == B_NIL || op == H_NIL
+            _dpush!(di, mk_nil(T))
+        elseif op == B_ARGVAR || op == B_ARGFIRSTVAR || op == B_FIRSTVAR ||
+            op == B_UNIFY_VAR || op == B_UNIFY_FIRSTVAR || op == B_VAR ||
+            op == H_FIRSTVAR || op == H_VAR
+            _dpush!(di, _dvar(di, codes[di.pc]))
+            di.pc += 1
+        elseif op == B_VAR0
+            _dpush!(di, _dvar(di, VAROFFSET(0)))
+        elseif op == B_VAR1
+            _dpush!(di, _dvar(di, VAROFFSET(1)))
+        elseif op == B_VAR2
+            _dpush!(di, _dvar(di, VAROFFSET(2)))
+        elseif op == B_UNIFY_FF || op == B_UNIFY_FV || op == B_UNIFY_VV
+            _dpush!(di, _dvar(di, codes[di.pc]))
+            _dpush!(di, _dvar(di, codes[di.pc + 1]))
+            di.pc += 2
+            build_term!(di, mk_sym(T, Symbol("=")), 2)          # b_unify_exit
+            pushed += 1
+        elseif op == B_UNIFY_VF
+            _dpush!(di, _dvar(di, codes[di.pc + 1]))            # ARGP[0]: the second operand
+            _dpush!(di, _dvar(di, codes[di.pc]))                # ARGP[1]: the first
+            di.pc += 2
+            build_term!(di, mk_sym(T, Symbol("=")), 2)
+            pushed += 1
+        elseif op == B_UNIFY_FC || op == B_UNIFY_VC || op == B_EQ_VC || op == B_NEQ_VC
+            _dpush!(di, _dvar(di, codes[di.pc]))
+            _dpush!(di, lits[codes[di.pc + 1]])
+            di.pc += 2
+            f = if op == B_EQ_VC
+                Symbol("==")
+            elseif op == B_NEQ_VC
+                Symbol("\\==")
+            else
+                Symbol("=")
+            end
+            build_term!(di, mk_sym(T, f), 2)
+            pushed += 1
+        elseif op == B_EQ_VV || op == B_NEQ_VV
+            _dpush!(di, _dvar(di, codes[di.pc]))
+            _dpush!(di, _dvar(di, codes[di.pc + 1]))
+            di.pc += 2
+            build_term!(di, mk_sym(T, op == B_EQ_VV ? Symbol("==") : Symbol("\\==")), 2)
+            pushed += 1
+        elseif op == B_VOID || op == H_VOID
+            _dpush!(di, mk_var(T, fresh_var_keys!(1)))          # setVar(*ARGP++)
+        elseif op == H_VOID_N
+            for _ in 1:Int(codes[di.pc])
+                _dpush!(di, mk_var(T, fresh_var_keys!(1)))
+            end
+            di.pc += 1
+        elseif op == B_FUNCTOR || op == B_RFUNCTOR || op == H_FUNCTOR || op == H_RFUNCTOR
+            w = codes[di.pc]
+            di.pc += 1
+            i = functor_literal(w)
+            kids = i == 0 ? T[] : T[lits[i]]                    # `$expr/n`: no head symbol
+            push!(
+                di.frames,
+                DecompileFrame{T}(
+                    kids, length(kids) + functor_arity(w),
+                    op == B_FUNCTOR || op == H_FUNCTOR
+                )
+            )
+        elseif op == B_LIST || op == B_RLIST || op == H_LIST || op == H_RLIST
+            push!(
+                di.frames,
+                DecompileFrame{T}(
+                    T[mk_sym(T, LIST_CONS_NAME)], 3, op == B_LIST || op == H_LIST
+                )
+            )
+        elseif op == H_LIST_FF
+            x = _dvar(di, codes[di.pc])
+            y = _dvar(di, codes[di.pc + 1])
+            di.pc += 2
+            _dpush!(di, mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), x, y]))
+        elseif op == B_POP || op == H_POP
+            local v::T
+            while true                                          # the R chain, then the pushed one
+                f = pop!(di.frames)
+                while length(f.kids) < f.need
+                    push!(f.kids, mk_var(T, fresh_var_keys!(1)))
+                end
+                v = mk_expr(T, f.kids)
+                f.pushed && break
+                push!(di.frames[end].kids, v)
+            end
+            _dpush!(di, v)
+        elseif op == B_UNIFY_EXIT
+            build_term!(di, mk_sym(T, Symbol("=")), 2)
+            pushed += 1
+        elseif op == A_ADD_FC
+            push!(di.argp, _dvar(di, codes[di.pc]))             # rvar
+            push!(di.argp, _dvar(di, codes[di.pc + 1]))         # ivar
+            push!(di.argp, lits[codes[di.pc + 2]])              # consInt(add)
+            di.pc += 3
+            build_term!(di, mk_sym(T, Symbol("+")), 2)          # create B+<n>
+            build_term!(di, mk_sym(T, :is), 2)
+            pushed += 1
+        elseif op == I_FAIL
+            push!(di.argp, mk_sym(T, :fail))
+            pushed += 1
+        elseif op == I_TRUE
+            push!(di.argp, mk_sym(T, Symbol("true")))
+            pushed += 1
+        elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_RATIONAL ||
+            op == I_FLOAT || op == I_NUMBER || op == I_ATOMIC || op == I_ATOM ||
+            op == I_STRING || op == I_COMPOUND || op == I_CALLABLE
+            push!(di.argp, _dvar(di, codes[di.pc]))             # common_type_test
+            di.pc += 1
+            build_term!(di, mk_sym(T, _type_test_name(op)), 1)
+            pushed += 1
+        elseif op == I_CUT
+            push!(di.argp, mk_sym(T, Symbol("!")))
+            pushed += 1
+        elseif op == I_DEPART || op == I_CALL
+            def = di.clause.procedures[codes[di.pc]].definition
+            di.pc += 1
+            build_term!(di, def.name, def.arity)
+            pushed += 1
+        elseif op == C_VAR || op == C_JMP
+            di.pc += 1
+        elseif op == L_NOLCO
+            di.pc += Int(codes[di.pc])
+            di.pc += 1
+        elseif op == C_VAR_N
+            di.pc += 2
+        elseif op == C_OR                                       # A ; B
+            to_jump = Int(codes[di.pc])                         # DECOMPILETOJUMP: A
+            di.pc += 1
+            decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
+            di.pc -= 1                                          # get C_JMP argument
+            to_jump = Int(codes[di.pc])                         # DECOMPILETOJUMP: B
+            di.pc += 1
+            decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
+            build_term!(di, mk_sym(T, Symbol(";")), 2)
+            pushed += 1
+        elseif op == I_EXIT
+            # break (out of upstream's switch): nothing
+        else
+            error(
+                "Decompiler: unknown instruction in clause body: $(codeTable(op).name)"
+            )
+        end
+    end
+
+    while pushed > 1
+        build_term!(di, mk_sym(T, Symbol(",")), 2)
+        pushed -= 1
+    end
+    return nothing
+end
+
+"The name of the type test instruction `op` compiles (`type_tests`, and var/1, nonvar/1)."
+function _type_test_name(op::code)::Symbol
+    op == I_VAR && return :var
+    op == I_NONVAR && return :nonvar
+    for (instruction, name) in type_tests
+        op == instruction && return Symbol(name)
+    end
+    error("_type_test_name: $(codeTable(op).name) is not a type test")
+end
+
+# PORT: pl-comp.c decompileBody
+# DIVERGES: no foreign frame and no retry after a stack shift (see `decompileBodyNoShift!`).
+"Decompile body code from `di.pc` (see `decompileBodyNoShift!`) and unify `body` with it (pl-comp.c)."
+function decompileBody!(
+    ld::PL_local_data{T}, di::decompileInfo{T}, body::T, end_::code, until::Int
+)::Bool where {T}
+    decompileBodyNoShift!(di, end_, until)
+    @assert length(di.argp) == 1 && isempty(di.frames)
+    return pl_unify!(ld, body, pop!(di.argp))
+end
+
+# PORT: pl-comp.c decompile
+# DIVERGES: the clause term is its two sides, `head` and `body` — upstream takes `Head :- Body` or a
+# bare head, and for a fact with a body unifies that with `true` first, as here; the functor of the
+# head is not unified (see `decompile_head!`). The body's code starts after `I_ENTER`, found by
+# stepping over the head's instructions, where upstream's head decompiler leaves `di->pc` there. No
+# `bindings`; no `I_CONTEXT` (modules). NOT PORTED: a clause with `CL_HEAD_TERMS` — its moved
+# unifications are put back by `mark_bvar_access` and `moved_unifications` (V9d's last step) —
+# raises `NotPortedError`.
+"""
+    decompile!(ld, clause, head, body) -> Bool
+
+Unify `head` and `body` with the clause `clause`'s code describes, with fresh variables, under the
+bindings in `ld` (pl-comp.c): a fact's body is `true`. The bindings stay on the trail for the
+caller to undo.
+"""
+function decompile!(
+    ld::PL_local_data{T}, clause::Clause{T}, head::T, body::T
+)::Bool where {T}
+    (clause.flags & CL_HEAD_TERMS) != 0 && throw(
+        NotPortedError{T}(
+            head, "decompiling a clause with unifications moved into its head", "V9d"
+        )
+    )
+    nv = Int(clause.prolog_vars)
+    base = nv == 0 ? UInt64(0) : fresh_var_keys!(nv)
+    if (clause.flags & UNIT_CLAUSE) != 0                        # fact; deal with a :- A
+        pl_unify!(ld, body, mk_sym(T, Symbol("true"))) || return false
+        return decompile_head!(ld, clause, head, base)
+    end
+    decompile_head!(ld, clause, head, base) || return false
+    PC = Code(clause, 1)
+    while decode(PC) != I_ENTER
+        PC = stepPC(PC)
+    end
+    pc = PC.pc + 1
+    if clause.codes[pc] == I_EXIT
+        return pl_unify!(ld, body, mk_sym(T, Symbol("true")))
+    end
+    di = decompileInfo{T}(clause, pc, base, T[], DecompileFrame{T}[])
+    return decompileBody!(ld, di, body, I_EXIT, 0)
+end
+
 # ── reading code (pl-incl.h, pl-comp.h, pl-comp.c) ──────────────────────────────────────────────
 # PORT: pl-incl.h decode
 # DIVERGES: takes the position and reads the word there — upstream's `decode(*PC)`; instructions
@@ -2797,6 +3266,54 @@ function pl_clause!(
             try
                 # a rule's body is not `true`: only a fact answers clause(Head, true)
                 if (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
+                    if chp.cref === nothing             # the last one: out
+                        popPredicateAccess!(ld, def)
+                        popped = true
+                        sink(clause)
+                        return nothing
+                    end
+                    sink(clause) || return nothing      # FRG_CUTTED
+                end
+                # an occurs-check error from the head's unification does NOT stop the scan: upstream
+                # raises it in `unify_head`, after `decompile`, and checks `exception_term` only when
+                # `decompile` fails. swipl 10.1.16 answers from the next clause, the error pending
+                # (S10, probed 2026-10-06)
+            finally
+                Undo!(ld, m)                            # backtracking undoes the answer
+            end
+            cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)    # FRG_REDO
+        end
+    finally
+        popped || popPredicateAccess!(ld, def)
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c clause as pl_clause
+# DIVERGES: as the method above, with the body: clause/2 with an unbound clause reference, every
+# clause decompiled whole (`decompile!`, since V9d) — a fact's body is `true`.
+"""
+    pl_clause!(gd, ld, def, head, body, sink)
+
+`clause/2` on predicate `def` (pl-comp.c): in the generation it starts in, unify `head` and `body`
+with each clause in turn (`decompile!`) and call `sink(clause)` while the bindings hold; undo them
+after each.
+"""
+function pl_clause!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, body::T,
+    sink::S
+)::Nothing where {T, S}
+    dref = pushPredicateAccessObj!(ld, gd, def)
+    popped = false
+    try
+        gen = dref.generation                           # setGenerationFrameVal()
+        chp = ClauseChoice{T}(nothing, word(0))
+        cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
+        while cref !== nothing
+            clause = cref.clause::Clause{T}
+            m = Mark(ld)
+            try
+                if decompile!(ld, clause, head, body)
                     if chp.cref === nothing             # the last one: out
                         popPredicateAccess!(ld, def)
                         popped = true

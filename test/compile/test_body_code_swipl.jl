@@ -68,7 +68,11 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
     if k == LK.CA1_VAR || k == LK.CA1_FVAR
         return string(LK.VARNUM(w))
     elseif k == LK.CA1_INTEGER
-        return op == LK.H_VOID_N ? string(Int(w)) : _hlit(lits[w])     # a count, or a literal
+        return if op == LK.H_VOID_N || op == LK.C_VAR_N                 # a count, or a literal
+            string(Int(w))
+        else
+            _hlit(lits[w])
+        end
     elseif k in (LK.CA1_DATA, LK.CA1_FLOAT, LK.CA1_MPZ, LK.CA1_MPQ, LK.CA1_STRING)
         return _hlit(lits[w])
     elseif k == LK.CA1_FUNC
@@ -145,9 +149,16 @@ bc_op(_, var, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(_, fvar, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(_, jump, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(h_void_n, integer, X, S) :- !, format(string(S), "~w", [X]).
+bc_op(c_var_n, integer, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(_, lproc, F/A, S) :- !, atom_codes(F, C), format(string(S), "P:~w/~d", [C, A]).
 bc_op(N, _, X, S) :- hc_op(N, X, S).
 bc_case_show(Cl) :- assertz(Cl, Ref), bc_show(Ref).
+% clause/2 of the clause as swipl decompiles it, against the kernel's decompiled clause Ours
+bc_decomp(Cl, Ours) :-
+    assertz(Cl, Ref), clause(H, B, Ref),
+    (   (H :- B) =@= Ours -> writeln(same)
+    ;   writeln(differs), write_canonical((H :- B)), nl
+    ).
 % the I-th clause of a CONSULTED program, tied to the kernel's clause by =@= first
 bc_prog_show(Cl, I) :-
     ( Cl = (H :- _) -> true ; H = Cl ),
@@ -1354,6 +1365,370 @@ end
     end
 end
 
+# ── V9d: disjunctions ───────────────────────────────────────────────────────────────────────────
+# `;` and `|` compile to `C_OR <A> C_JMP <B>`, with `C_VAR`/`C_VAR_N` for the variables one branch
+# leaves unset (pl-comp.c `compileBody`, `balanceVars`). Pinned cells, then random bodies of `,`
+# and `;` over plain goals, cuts and the goals compiled inline — the ones that set variables.
+const _BC_OR_CELLS =
+    let X = _bv(1), Y = _bv(2), A = _bv(3), B = _bv(4), C = _bv(5), D = _bv(6)
+
+        _or(a, b) = _bf(";", a, b)
+        [
+            ("a ; b", _bs("d1"), _or(_bs("a"), _bs("b"))),
+            ("a | b", _bs("d2"), _bf("|", _bs("a"), _bs("b"))),
+            ("not last", _bs("d3"), _bconj(_or(_bs("a"), _bs("b")), _bs("c"))),
+            ("three branches", _bs("d4"), _or(_bs("a"), _or(_bs("b"), _bs("c")))),
+            ("left-nested", _bs("d5"), _or(_or(_bs("a"), _bs("b")), _bs("c"))),
+            ("a conjunction in a branch", _bs("d6"),
+                _or(_bconj(_bs("a"), _bs("b")), _bconj(_bs("c"), _bs("d")))),
+            ("one variable to balance", _bf("d7", X),
+                _bconj(_or(_bf("q", X, Y), _bf("r", X)), _bf("s", Y))),
+            ("balance in the second branch", _bf("d8", X),
+                _bconj(_or(_bf("r", X), _bf("q", X, Y)), _bf("s", Y))),
+            ("both branches set it", _bf("d9", X),
+                _bconj(_or(_bf("q", X, Y), _bf("r", Y)), _bf("s", Y))),
+            ("a run of four", _bs("d10"),
+                _bconj(_or(_bf("q", A, B, C, D), _bs("true")), _bf("r", A, B, C, D))),
+            ("a run of three", _bs("d11"),
+                _bconj(_or(_bs("a"), _bf("q", A, B, C)), _bf("r", A, B, C))),
+            ("two apart", _bs("d12"),
+                _bconj(_or(_bconj(_bf("q", A), _bf("z", B), _bf("s", C)), _bf("t", B)),
+                    _bf("r", A, B, C))),
+            ("a cut in a branch", _bs("d13"), _or(_bconj(_bs("a"), _bs("!")), _bs("b"))),
+            ("inline goals", _bf("d14", X),
+                _or(_bf("=", X, _bs("a")), _or(_bf("==", X, _bs("b")), _bf("var", X)))),
+            ("a first variable unified in one branch", _bs("d15"),
+                _bconj(_or(_bf("=", Y, _bs("a")), _bs("true")), _bf("q", Y))),
+            ("true ; fail", _bs("d16"), _or(_bs("true"), _bs("fail"))),
+            ("arithmetic in a branch", _bf("d17", X, Y),
+                _or(_bf("is", Y, _bf("+", X, _bg(1))), _bf("=", Y, _bg(0)))),
+            ("a variable only inside", _bs("d18"),
+                _or(_bconj(_bf("q", A), _bf("r", A)), _bf("s", B, B))),
+            ("after a disjunction that set nothing", _bf("d19", X),
+                _bconj(_or(_bs("a"), _bs("b")), _bf("q", X, Y), _bf("r", Y))),
+            ("a disjunction in a disjunction's branch", _bf("d20", X),
+                _bconj(
+                    _or(_bconj(_or(_bf("q", A), _bf("r", B)), _bf("s", A, B)), _bf("t", C)),
+                    _bf("u", A, B, C)))
+        ]
+    end
+
+"A random body of `,` and `;` over plain goals, `!`, `true`, `fail` and inline goals on `pool`'s variables."
+function _bcorbody(g::_BcGen, pool::Vector{_B}, depth::Int)::_B
+    r = rand(g.rng)
+    if depth < 4 && r < 0.3
+        return _bf(";", _bcorbody(g, pool, depth + 1), _bcorbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.55
+        return _bf(",", _bcorbody(g, pool, depth + 1), _bcorbody(g, pool, depth + 1))
+    end
+    v() = rand(g.rng, pool)
+    r = rand(g.rng, 1:12)
+    r == 1 && return _bs("!")
+    r == 2 && return _bs(rand(g.rng, ("true", "fail")))
+    r == 3 && return _bf("=", v(), rand(g.rng, Bool) ? v() : _bcconst(g))
+    r == 4 &&
+        return _bf(rand(g.rng, ("==", "\\==")), v(), rand(g.rng, Bool) ? v() : _bs("a"))
+    r == 5 && return _bf(rand(g.rng, ("var", "nonvar", "atom", "integer")), v())
+    r == 6 && return _bf("is", v(), _bf("+", v(), _bg(1)))
+    ar = rand(g.rng, 0:3)
+    name = "bg$(rand(g.rng, 0:5))"
+    return ar == 0 ? _bs(name) : _be(name, [v() for _ in 1:ar])
+end
+
+"A random rule clause `bo<k>(…) :- Body`, the body a `;` at the top or below a `,`."
+function _bcorclause(g::_BcGen, k::Int)::Tuple{_B, _B}
+    pool = _B[_bcfresh!(g) for _ in 1:rand(g.rng, 2:6)]
+    har = rand(g.rng, 0:3)
+    head = har == 0 ? _bs("bo$k") : _be("bo$k", [rand(g.rng, pool) for _ in 1:har])
+    body = _bf(";", _bcorbody(g, pool, 1), _bcorbody(g, pool, 1))
+    r = rand(g.rng)
+    if r < 0.3
+        body = _bf(",", body, _bcorbody(g, pool, 2))
+    elseif r < 0.5
+        body = _bf(",", _bcorbody(g, pool, 2), body)
+    end
+    return (head, body)
+end
+
+"A clause text with its variables renamed `A`, `B`, … in order of first occurrence (`_` stays)."
+function _bnorm(text::String)::String
+    names = Dict{String, String}()
+    return replace(
+        text, r"V\d+" => v -> get!(() -> string('A' + length(names)), names, String(v))
+    )
+end
+
+# The decompiler's own cells: the goals compiled inline, whose other side is head-mode code, and
+# every argument kind — compiled with `optimise_unify` false, as the disjunction cells are.
+const _BC_DEC_CELLS = let X = _bv(1), Y = _bv(2), Z = _bv(3), T = _bv(4)
+    [
+        ("unify with a compound", _bf("e1", X),
+            _bconj(_bf("=", X, _bf("f", Y, _bcons(_bs("a"), T), _bg("s"), _bg(1.5))),
+                _bf("q", Y, T))),
+        (
+            "unify: voids in the term",             # H_VOID_N in the middle, then a slot
+            _bf("e2", X),
+            _bconj(_bf("=", X, _bf("g", _bv(7), _bv(8), Y, _bv(9))), _bf("q", Y))
+        ),
+        ("unify two first variables", _bs("e3"), _bconj(_bf("=", Y, Z), _bf("q", Y, Z))),
+        ("unify first with old", _bf("e4", X), _bconj(_bf("=", Y, X), _bf("q", Y))),
+        ("unify old with first", _bf("e5", X), _bconj(_bf("=", X, Y), _bf("q", Y))),
+        ("unify two old", _bf("e6", X, Y), _bf("=", X, Y)),
+        ("unify with constants", _bf("e7", X),
+            _bconj(_bf("=", Y, _bs("a")), _bf("=", X, _bg(7)), _bf("q", Y))),
+        ("== and \\==", _bf("e8", X, Y),
+            _bconj(_bf("==", X, Y), _bf("\\==", X, _bs("a")), _bf("==", Y, _bs("b")),
+                _bf("\\==", X, Y))),
+        ("type tests", _bf("e9", X),
+            _bconj(_bf("var", X), _bf("nonvar", X), _bf("atom", X), _bf("integer", X),
+                _bf("callable", X))),
+        ("is with a small constant", _bf("e10", X, Y), _bf("is", Y, _bf("+", X, _bg(1)))),
+        ("is, constant first", _bf("e11", X, Y), _bf("is", Y, _bf("+", _bg(2), X))),
+        ("is, minus", _bf("e12", X, Y), _bf("is", Y, _bf("-", X, _bg(3)))),
+        ("arguments of every kind", _bf("e13", X),
+            _bf("q", _bs("a"), _bg(1), mk_nil(_B), _bg(2.5), _bg(big(2)^70), _bg("s"),
+                _bf("f", X, _bv(7), _bf("g", _bv(8))), _blist(X, Y), Y)),
+        ("true, fail and a cut", _bs("e14"), _bconj(_bs("true"), _bs("!"), _bs("fail"))),
+        ("a left-nested conjunction", _bs("e15"),
+            _bf(",", _bf(",", _bs("a"), _bs("b")), _bs("c"))),
+        (
+            "a last call that reuses the frame",
+            _bf("e16", X, Y),
+            _bconj(_bf("q", X), _bf("e16", Y, X))
+        ),
+        ("a unification that is always true", _bs("e17"), _bconj(_bf("=", Y, Y), _bs("a")))
+    ]
+end
+
+"`cl` decompiled (`decompile!`): its head and body, with fresh variables."
+function _bdecompile(cl::LK.Clause{_B}, head::_B)::Tuple{_B, _B}
+    ld = LK.PL_local_data{_B}()
+    name, ar = _bfunctor(head)
+    fresh() = mk_var(_B, LK.fresh_var_keys!(1))
+    h = ar == 0 ? name : mk_expr(_B, _B[name; [fresh() for _ in 1:ar]])
+    b = fresh()
+    LK.decompile!(ld, cl, h, b) || error("_bdecompile: decompile! failed")
+    return (LK.resolve_term(ld, h), LK.resolve_term(ld, b))
+end
+
+# What `decompile!` rebuilds from each cell's code, variables renamed in order (`_bnorm`): pinned,
+# so the jobs without swipl check the decompiler too. Each is a variant of swipl's clause/2 (below).
+const _BC_OR_DECOMPILED = Dict{String, String}(
+    "a ; b" => "':-'(d1,';'(a,b))",
+    "a | b" => "':-'(d2,';'(a,b))",
+    "not last" => "':-'(d3,','(';'(a,b),c))",
+    "three branches" => "':-'(d4,';'(a,';'(b,c)))",
+    "left-nested" => "':-'(d5,';'(';'(a,b),c))",
+    "a conjunction in a branch" => "':-'(d6,';'(','(a,b),','(c,d)))",
+    "one variable to balance" => "':-'(d7(A),','(';'(q(A,B),r(A)),s(B)))",
+    "balance in the second branch" => "':-'(d8(A),','(';'(r(A),q(A,B)),s(B)))",
+    "both branches set it" => "':-'(d9(A),','(';'(q(A,B),r(B)),s(B)))",
+    "a run of four" => "':-'(d10,','(';'(q(A,B,C,D),true),r(A,B,C,D)))",
+    "a run of three" => "':-'(d11,','(';'(a,q(A,B,C)),r(A,B,C)))",
+    "two apart" => "':-'(d12,','(';'(','(q(A),','(z(B),s(C))),t(B)),r(A,B,C)))",
+    "a cut in a branch" => "':-'(d13,';'(','(a,'!'),b))",
+    "inline goals" => "':-'(d14(A),';'('='(A,a),';'('=='(A,b),var(A))))",
+    "a first variable unified in one branch" => "':-'(d15,','(';'('='(A,a),true),q(A)))",
+    "true ; fail" => "':-'(d16,';'(true,fail))",
+    "arithmetic in a branch" => "':-'(d17(A,B),';'(is(B,'+'(A,1)),'='(B,0)))",
+    "a variable only inside" => "':-'(d18,';'(','(q(A),r(A)),s(B,B)))",
+    "after a disjunction that set nothing" => "':-'(d19(A),','(';'(a,b),','(q(A,B),r(B))))",
+    "a disjunction in a disjunction's branch" => "':-'(d20(_),','(';'(','(';'(q(A),r(B)),s(A,B)),t(C)),u(A,B,C)))"
+)
+const _BC_DEC_DECOMPILED = Dict{String, String}(
+    "unify with a compound" => "':-'(e1(A),','('='(A,f(B,[a|C],\"s\",1.5)),q(B,C)))",
+    "unify: voids in the term" => "':-'(e2(A),','('='(A,g(_,_,B,_)),q(B)))",
+    "unify two first variables" => "':-'(e3,','('='(A,B),q(A,B)))",
+    "unify first with old" => "':-'(e4(A),','('='(B,A),q(B)))",
+    "unify old with first" => "':-'(e5(A),','('='(A,B),q(B)))",
+    "unify two old" => "':-'(e6(A,B),'='(A,B))",
+    "unify with constants" => "':-'(e7(A),','('='(B,a),','('='(A,7),q(B))))",
+    "== and \\==" => "':-'(e8(A,B),','('=='(A,B),','('\\\\=='(A,a),','('=='(B,b),'\\\\=='(A,B)))))",
+    "type tests" => "':-'(e9(A),','(var(A),','(nonvar(A),','(atom(A),','(integer(A),callable(A))))))",
+    "is with a small constant" => "':-'(e10(A,B),is(B,'+'(A,1)))",
+    "is, constant first" => "':-'(e11(A,B),is(B,'+'(2,A)))",
+    "is, minus" => "':-'(e12(A,B),is(B,'-'(A,3)))",
+    "arguments of every kind" => "':-'(e13(A),q(a,1,[],2.5,1180591620717411303424,\"s\",f(A,_,g(_)),[A,B],B))",
+    "true, fail and a cut" => "':-'(e14,','(true,','('!',fail)))",
+    "a left-nested conjunction" => "':-'(e15,','(a,','(b,c)))",
+    "a last call that reuses the frame" => "':-'(e16(A,B),','(q(A),e16(B,A)))",
+    "a unification that is always true" => "':-'(e17,','(true,a))"
+)
+
+@testset "disjunctions compile as swipl's (V9d)" begin
+    ours = [_bc_kernel(_bclause(h, b)) for (_, h, b) in _BC_OR_CELLS]
+    named(n) = ours[findfirst(c -> c[1] == n, _BC_OR_CELLS)]
+    # the shape: C_OR's jump lands after the first branch's C_JMP, and that one at the end; the
+    # first branch's goal is an I_CALL, the second's the body's last call (its LCO block included)
+    @test named("a ; b") ==
+        ["i_enter", "c_or(L1)", "i_call(P:[97]/0)", "c_jmp(L2)", "L1:", "l_nolco(L3)",
+        "i_lcall(P:[98]/0)", "L3:", "i_depart(P:[98]/0)", "L2:", "i_exit"]
+    @test named("not last")[2:6] ==
+        ["c_or(L1)", "i_call(P:[97]/0)", "c_jmp(L2)", "L1:", "i_call(P:[98]/0)"]
+    @test named("a | b")[2:end] == named("a ; b")[2:end]        # `|` is `;`
+    # balancing: the branch that leaves a variable unset makes it fresh, before its C_JMP or at
+    # its end — also a variable that lives in the other branch alone; a variable both branches
+    # set is not touched
+    @test count(startswith("c_var("), named("one variable to balance")) == 1
+    @test count(startswith("c_var("), named("balance in the second branch")) == 1
+    @test !any(startswith("c_var"), named("both branches set it"))
+    @test named("a variable only inside") == [
+        "i_enter", "c_or(L1)", "b_firstvar(0)", "i_call(P:[113]/1)", "b_var0",
+        "i_call(P:[114]/1)", "c_var(1)", "c_jmp(L2)", "L1:", "b_firstvar(1)", "b_var1",
+        "i_depart(P:[115]/2)", "c_var(0)", "L2:", "i_exit"
+    ]
+    # upstream's `c_var` joins a slot to a run only when it follows the run's FIRST slot: four
+    # slots in a row are two C_VAR_N of two, three are a C_VAR_N of two and a C_VAR
+    @test count(startswith("c_var_n("), named("a run of four")) == 2 &&
+        !any(startswith("c_var("), named("a run of four"))
+    @test count(startswith("c_var_n("), named("a run of three")) == 1 &&
+        count(startswith("c_var("), named("a run of three")) == 1
+    @test count(startswith("c_var("), named("two apart")) == 2
+    @test "i_cut" in named("a cut in a branch")                 # a clause-level cut: I_CUT
+
+    g = _BcGen(Xoshiro(20261012), UInt64(50_000))
+    random = [_bcorclause(g, k) for k in 1:400]
+    rours = [_bc_kernel(_bclause(h, b)) for (h, b) in random]
+    @testset "the random bodies exercise it" begin
+        used = union((_bc_names(c) for c in rours)...)
+        missing_ = setdiff(
+            ["c_or", "c_jmp", "c_var", "c_var_n", "i_cut", "i_true", "i_fail",
+                "b_unify_var",
+                "b_unify_fc", "b_eq_vv", "i_var", "a_add_fc", "i_depart", "i_call"], used)
+        isempty(missing_) || println(stderr, "  not exercised: ", missing_)
+        @test isempty(missing_)
+        @test count(c -> count(startswith("c_or"), c) >= 3, rours) > 50      # nested
+    end
+    # the decompiler (`decompile!`, `decompileBodyNoShift!`): compiled with `optimise_unify` false,
+    # so no unification is moved into a head (those clauses are refused until V9d's last step)
+    ldf = LK.PL_local_data{_B}()
+    ldf.prolog_flag_optimise_unify = false
+    v2g = _BcGen(Xoshiro(20261005), UInt64(90_000))
+    plain = [_bcclause(v2g, 2000 + k) for k in 1:200]           # V2's bodies: plain goals and `!`
+    dcases = [
+        [(h, b) for (_, h, b) in _BC_OR_CELLS]; [(h, b) for (_, h, b) in _BC_DEC_CELLS]
+        random; plain
+    ]
+    dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
+    decomp = [
+        try
+            _bdecompile(cl, h)
+        catch
+            println(
+                stderr, "  decompiling ", _bc_text(h, b), "\n    code ", _bc_kernel(cl)
+            )
+            rethrow()
+        end for (cl, (h, b)) in zip(dclauses, dcases)
+    ]
+    @testset "the decompiler: pinned clauses" begin
+        got = [(c[1], _bnorm(_bc_text(decomp[k]...))) for (k, c) in enumerate(_BC_OR_CELLS)]
+        for (n, t) in got
+            want = get(_BC_OR_DECOMPILED, n, "")
+            t == want || println(stderr, "  (\"", n, "\", \"", escape_string(t), "\"),")
+            @test t == want
+        end
+        xg = [
+            (n, _bnorm(_bc_text(_bdecompile(_bclause(h, b; ld=ldf), h)...))) for
+            (n, h, b) in _BC_DEC_CELLS
+        ]
+        for (n, t) in xg
+            want = get(_BC_DEC_DECOMPILED, n, "")
+            t == want || println(stderr, "  (\"", n, "\", \"", escape_string(t), "\"),")
+            @test t == want
+        end
+        # a clause with a unification moved into its head is refused, by name, until its step
+        moved = _bclause(
+            _bf("dm", _bv(1)), _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1)))
+        )
+        @test moved.flags & LK.CL_HEAD_TERMS != 0
+        @test_throws LK.NotPortedError _bdecompile(moved, _bf("dm", _bv(1)))
+        # a fact's body is `true`; an instantiated body or head that does not match fails
+        fact = _bclause(_bf("df", _bs("a")), nothing)
+        @test _bc_text(_bdecompile(fact, _bf("df", _bv(1)))...) == "':-'(df(a),true)"
+        ld = LK.PL_local_data{_B}()
+        d1 = dclauses[1]
+        @test LK.decompile!(ld, d1, _bs("d1"), _bf(";", _bs("a"), _bv(9001)))
+        @test !LK.decompile!(ld, d1, _bs("d1"), _bf(";", _bs("b"), _bv(9002)))
+        @test !LK.decompile!(ld, d1, _bs("d1"), _bs("true"))
+        @test !LK.decompile!(ld, fact, _bf("df", _bv(9003)), _bs("a"))
+    end
+    @testset "clause/2 with a body (pl_clause!)" begin
+        gd = LK.PL_global_data{_B}()
+        user = LK.MODULE_user(gd)
+        pr = LK.lookupProcedure(_bs("cz"), 1, user)
+        for (h, b) in (
+            (_bf("cz", _bs("a")), nothing),
+            (_bf("cz", _bv(1)), _bf(";", _bf("q", _bv(1)), _bf("r", _bv(1), _bv(2)))),
+            (_bf("cz", _bs("b")), _bconj(_bs("s"), _bs("!")))
+        )
+            cl = LK.compileClause(gd, ldf, h, b, pr, user)
+            LK.assertDefinition!(gd, pr.definition, cl, LK.CL_END)
+        end
+        ld = LK.PL_local_data{_B}()
+        function answers(head, body)
+            out = String[]
+            LK.pl_clause!(
+                gd,
+                ld,
+                pr.definition,
+                head,
+                body,
+                _ -> begin
+                    push!(out, _bc_text(LK.resolve_term(ld, head), LK.resolve_term(ld, body)))
+                    true
+                end
+            )
+            return out
+        end
+        @test answers(_bf("cz", _bv(1)), _bv(2)) == [
+            "':-'(cz(a),true)", "':-'(cz(V1),';'(q(V1),r(V1,_)))", "':-'(cz(b),','(s,'!'))"
+        ]
+        @test answers(_bf("cz", _bs("b")), _bv(2)) ==           # the head's binding reaches the body
+            ["':-'(cz(b),';'(q(b),r(b,_)))", "':-'(cz(b),','(s,'!'))"]
+        @test answers(_bf("cz", _bv(1)), _bs("true")) == ["':-'(cz(a),true)"]
+        @test answers(_bf("cz", _bv(1)), _bf(";", _bv(2), _bv(3))) ==
+            ["':-'(cz(V1),';'(q(V1),r(V1,_)))"]
+        @test isempty(answers(_bf("cz", _bs("c")), _bs("true")))
+    end
+    if _BC_SWIPL_BIN !== nothing
+        @testset "the decompiled clauses are variants of swipl's clause/2" begin
+            shows = [
+                "bc_decomp(($(_bc_text(h, b))), ($(_bc_text(dh, db))))" for
+                ((h, b), (dh, db)) in zip(dcases, decomp)
+            ]
+            theirs = _bc_swipl(shows; prelude="set_prolog_flag(optimise_unify, false)")
+            @test length(theirs) == length(shows)
+            bad = 0
+            for k in eachindex(shows)
+                k <= length(theirs) || break
+                if theirs[k] != ["same"]
+                    bad += 1
+                    bad <= 5 &&
+                        println(stderr, "  ", _bc_text(dcases[k]...), "\n    ours  ",
+                            _bc_text(decomp[k]...), "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+        @testset "identical to swipl" begin
+            all_ = [[(h, b) for (_, h, b) in _BC_OR_CELLS]; random]
+            allours = [ours; rours]
+            theirs = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in all_])
+            @test length(theirs) == length(all_)
+            bad = 0
+            for k in eachindex(all_)
+                k <= length(theirs) || break
+                if allours[k] != theirs[k]
+                    bad += 1
+                    bad <= 5 && println(stderr, "  ", _bc_text(all_[k]...), "\n    ours  ",
+                        allours[k], "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+    end
+end
+
 @testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
     commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
     @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
@@ -1367,7 +1742,9 @@ end
 @testset "what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
-        _bf(";", _bs("a"), _bs("b")), _bf("->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
+        _bf(";", _bf("->", _bs("a"), _bs("b")), _bs("c")),      # if-then-else: V9d's next step
+        _bf(";", _bf("*->", _bs("a"), _bs("b")), _bs("c")),
+        _bf("->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
         _bconj(_bs("q"), _bs("\$catch")),                      # a reserved goal atom (V9)

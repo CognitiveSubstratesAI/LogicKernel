@@ -99,7 +99,8 @@ function _grow_pool!(
 )::Nothing where {T}
     while length(pool) < n
         push!(
-            pool, choice{T}(0, CHP_JUMP, 0, mark(0), 0, ClauseChoice{T}(nothing, word(0)))
+            pool,
+            choice{T}(0, CHP_JUMP, 0, mark(0), 0, ClauseChoice{T}(nothing, word(0)), 0)
         )
     end
     return nothing

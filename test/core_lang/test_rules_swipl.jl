@@ -861,6 +861,251 @@ end
     end
 end
 
+# ── V9d: disjunctions ───────────────────────────────────────────────────────────────────────────
+# `;` through the VM (`C_OR`, `C_JMP`, `C_VAR`/`C_VAR_N`, backtracking into a `CHP_JUMP` choice point
+# from the clause itself and from a frame below it): every answer and its determinism are swipl's.
+_ror(a::_R, b::_R) = _rf(";", a, b)
+
+"The pinned disjunction programs: facts `n/1`, `m/1`, `q4/4` and one clause per case."
+function _ror_clauses()
+    X, Y, Z, A, B, C, D, H, T = (_rv(k) for k in 1:9)
+    n(x) = _rf("n", x)
+    m(x) = _rf("m", x)
+    eq(a, b) = _rf("=", a, b)
+    cl = Tuple{_R, Union{Nothing, _R}}[
+        (n(_rg(1)), nothing), (n(_rg(2)), nothing), (n(_rg(3)), nothing),
+        (m(_rs("a")), nothing), (m(_rs("b")), nothing),
+        (_rf("q4", _rg(1), _rg(2), _rg(3), _rg(4)), nothing),
+        (_rf("o1", X), _ror(eq(X, _rs("a")), eq(X, _rs("b")))),
+        (_rf("o2", X), _ror(n(X), m(X))),
+        (_rf("o3", X, Y), _rconj(_ror(n(X), m(X)), _ror(eq(Y, _rs("p")), eq(Y, _rs("q"))))),
+        (_rf("o4", X), _ror(_rconj(n(X), _rf(">", X, _rg(1))), m(X))),
+        (_rf("o5", X), _ror(_rconj(n(X), _rs("!")), m(X))),          # a clause-level cut
+        (_rf("o6", X, Y), _ror(eq(X, _rg(1)), eq(Y, _rg(2)))),       # each branch leaves one unset
+        (_rf("o7", Y),
+            _rconj(_ror(_rs("true"), _rs("fail")), _ror(eq(Z, _rg(1)), _rs("true")),
+                eq(Y, _rf("f", Z)))),
+        (_rf("o8", X), _rconj(_ror(_rs("fail"), n(X)), _rf(">=", X, _rg(2)))),
+        (_rf("o9", X),
+            _ror(_ror(eq(X, _rg(1)), eq(X, _rg(2))), _ror(eq(X, _rg(3)), _rs("fail")))),
+        # the failure comes from a frame BELOW the clause: deep_backtrack into the CHP_JUMP
+        (_rf("o10", X), _ror(_rconj(n(X), _rf(">", X, _rg(5))), eq(X, _rs("z")))),
+        (_rf("o11", X), _rconj(_ror(n(X), eq(X, _rs("z"))), _rf("\\==", X, _rg(2)))),
+        (_rf("o12", X), _ror(eq(X, _rg(0)), n(X))),                 # a last call in a branch
+        (_rs("o13"), _ror(_rs("fail"), _rs("true"))),
+        (_rf("o14", X, Y),
+            _rconj(_ror(eq(X, _rg(1)), _ror(eq(X, _rg(2)), eq(X, _rg(3)))), n(Y),
+                _rf(">", Y, X))),
+        (_rf("o15", A, B, C, D), _ror(_rf("q4", A, B, C, D), _rs("true"))),   # nothing to balance
+        (_rf("o16", X),
+            _rconj(_ror(_rf("q4", A, B, C, D), _rs("true")), eq(X, _rf("r", A, B, C, D)))),
+        (_rf("o17", X),                                              # C_VAR_N and a C_VAR
+            _rconj(_ror(_rs("fail"), _ror(_rf("q4", A, B, C, _rg(4)), _rs("true"))),
+                eq(X, _rf("r", A, B, C)))),
+        (_rf("mem", X, _rcons(H, T)), _ror(eq(X, H), _rf("mem", X, T))),
+        # a cut after a disjunction removes its choice point; one inside the second branch too
+        (_rf("o18", X), _rconj(_ror(n(X), m(X)), _rs("!"))),
+        (_rf("o19", X), _ror(_rs("fail"), _rconj(_ror(n(X), m(X)), _rs("!")))),
+        (_rf("o20", X, Y), _rconj(_rf("o2", X), _ror(eq(Y, X), eq(Y, _rs("other"))))),
+        # `Y is X + 1` writes Y's slot directly (A_ADD_FC: no binding to undo), so after the first
+        # branch failed the slot still holds the number: C_VAR / C_VAR_N must make it fresh
+        (_rf("o21", X, Y),
+            _rconj(
+                _ror(
+                    _rconj(_rf("is", A, _rf("+", X, _rg(1))),
+                        _rf("is", B, _rf("+", X, _rg(2))),
+                        _rs("fail")), _rs("true")),
+                eq(Y, _rf("r", A, B)))),
+        (_rf("o22", X, Y),
+            _rconj(
+                _ror(_rconj(_rf("is", A, _rf("+", X, _rg(1))), _rs("fail")), _rs("true")),
+                eq(Y, _rf("r", A))))
+    ]
+    return cl
+end
+
+function _ror_goals()
+    X, Y, A, B, C, D = (_rv(k) for k in 101:106)
+    abc = _rlist(_rs("a"), _rs("b"), _rs("c"))
+    return _R[
+        _rf("o1", X), _rf("o1", _rs("a")), _rf("o1", _rs("b")), _rf("o1", _rs("c")),
+        _rf("o2", X), _rf("o2", _rg(2)), _rf("o2", _rs("b")), _rf("o3", X, Y),
+        _rf("o4", X), _rf("o5", X), _rf("o6", X, Y), _rf("o7", X), _rf("o8", X),
+        _rf("o9", X), _rf("o10", X), _rf("o11", X), _rf("o12", X), _rf("o12", _rg(3)),
+        _rs("o13"), _rf("o14", X, Y), _rf("o15", A, B, C, D), _rf("o16", X), _rf("o17", X),
+        _rf("mem", X, abc), _rf("mem", _rs("b"), abc), _rf("mem", _rs("c"), abc),
+        _rf("mem", _rs("d"), abc), _rf("o18", X), _rf("o19", X), _rf("o20", X, Y),
+        _rf("o21", _rg(1), Y), _rf("o22", _rg(1), Y)
+    ]
+end
+
+"A random body of `,` and `;` over `n/1`, `m/1`, the inline goals and `!` on `vars`."
+function _rorbody(rng, vars::Vector{_R}, depth::Int)::_R
+    r = rand(rng)
+    if depth < 4 && r < 0.3
+        return _ror(_rorbody(rng, vars, depth + 1), _rorbody(rng, vars, depth + 1))
+    elseif depth < 4 && r < 0.55
+        return _rf(",", _rorbody(rng, vars, depth + 1), _rorbody(rng, vars, depth + 1))
+    end
+    v() = rand(rng, vars)
+    c() = rand(rng, (_rg(1), _rg(2), _rs("a"), _rs("z")))
+    r = rand(rng, 1:14)
+    r <= 3 && return _rf("n", v())
+    r <= 5 && return _rf("m", v())
+    r <= 7 && return _rf("=", v(), rand(rng, Bool) ? c() : v())
+    r == 8 && return _rf("==", v(), c())
+    r == 9 && return _rf("\\==", v(), rand(rng, Bool) ? c() : v())
+    r == 10 && return _rf(rand(rng, ("var", "nonvar")), v())
+    r == 11 && return _rs("!")
+    r == 12 && return _rs("fail")
+    r == 13 && return _rf("=", v(), _rf("f", v()))
+    return _rs("true")
+end
+
+"Random predicates `rd<i>/k` of one or two clauses, each body a disjunction, and goals on them."
+function _ror_random(rng, count::Int)
+    clauses = Tuple{_R, Union{Nothing, _R}}[]
+    goals = _R[]
+    key = 10_000
+    for i in 1:count
+        k = rand(rng, 1:3)
+        for _ in 1:rand(rng, 1:2)
+            vars = _R[_rv(key + j) for j in 1:rand(rng, k:(k + 2))]
+            key += 10
+            body = _ror(_rorbody(rng, vars, 1), _rorbody(rng, vars, 1))
+            rand(rng) < 0.4 && (body = _rf(",", body, _rorbody(rng, vars, 2)))
+            push!(clauses, (mk_expr(_R, _R[_rs("rd$i"); vars[1:k]]), body))
+        end
+        fresh = _R[_rv(key + j) for j in 1:k]
+        key += 10
+        push!(goals, mk_expr(_R, _R[_rs("rd$i"); fresh]))
+        bound = copy(fresh)
+        bound[1] = rand(rng, (_rg(1), _rs("a"), _rg(3)))
+        push!(goals, mk_expr(_R, _R[_rs("rd$i"); bound]))
+    end
+    return clauses, goals
+end
+
+@testset "disjunctions: every answer and its determinism are swipl's (V9d)" begin
+    clauses = _ror_clauses()
+    goals = _ror_goals()
+    rc, rg = _ror_random(Xoshiro(20261012), 150)
+    append!(clauses, rc)
+    append!(goals, rg)
+    db = _rdb(clauses)
+    ops = Set{UInt64}()
+    for (h, _) in clauses
+        cref = _rproc(db, h).definition.impl_clauses.first_clause
+        while cref !== nothing
+            union!(ops, _rops(cref.clause))
+            cref = cref.next
+        end
+    end
+    @test all(in(ops), (LK.C_OR, LK.C_JMP, LK.C_VAR, LK.C_VAR_N, LK.I_CUT))
+    ours = _rlines(db, goals)
+    @test count(==("end"), ours) == length(goals)
+    # pinned, so the jobs without swipl check them too
+    ends = findall(==("end"), ours)
+    answers(i) = ours[(i == 1 ? 1 : ends[i - 1] + 1):(ends[i] - 1)]        # of the i-th goal
+    @test answers(1) == ["o1(a) nondet", "o1(b) det"]                       # o1(X)
+    @test answers(11) == ["o6(1,_) nondet", "o6(_,2) det"]                  # o6(X, Y)
+    @test answers(15) == ["o10(z) det"]                                     # o10(X)
+    @test answers(10) == ["o5(1) det"]                                      # o5(X): the cut
+    @test answers(31) == ["o21(1,r(_,_)) det"]              # C_VAR_N over slots written directly
+    @test answers(32) == ["o22(1,r(_)) det"]                # C_VAR
+    ndet = count(endswith(" nondet"), ours)
+    @info "disjunction programs: $(length(goals)) queries, $(length(ours) - length(goals)) answers ($ndet non-deterministic)"
+    @test ndet > 100 && count(endswith(" det"), ours) > 100
+    @test _rpools_live(db.ld)
+    if _R_SWIPL
+        theirs = _rswipl(clauses, goals)
+        @test ours == theirs
+        if ours != theirs
+            k = findfirst(i -> i > length(theirs) || ours[i] != theirs[i], eachindex(ours))
+            @info "first difference" k ours[something(k, 1)] get(
+                theirs, something(k, 1), "—"
+            )
+        end
+    end
+end
+
+# ── where the next frame lands around a disjunction (V9d) ───────────────────────────────────────
+# Backtracking into a `CHP_JUMP` choice point lowers `lTop` to it (vmi: `lTop = (LocalFrame)ch`), so
+# the next frame lands where the choice point was — from the clause itself (`oshallow`; `odeep`
+# after a callee's own choice point is used up) and from a callee's frame that fails (`ofail`:
+# `deep_backtrack`); a frame pushed while the choice point is alive lands above it, inside
+# the first branch (`oleft`) and after the disjunction (`oafter`). Read as the cut's positions are
+# (below): `qn/1` keeps its frame, and the distance is its frame from the clause's.
+function _ror_pos_clauses()
+    F0, F1 = _rv(1), _rv(2)
+    pcf(v) = _rf("prolog_current_frame", v)
+    return [
+        (_rs("z"), nothing), (_rs("nd2"), nothing), (_rs("nd2"), nothing),
+        (_rf("qn", F1), _rconj(pcf(F1), _rs("z"))), (_rf("qn", _rv(20)), nothing),
+        (
+            _rf("oshallow", F0, F1),
+            _rconj(pcf(F0), _ror(_rs("fail"), _rf("qn", F1)), _rs("z"))
+        ),
+        (
+            _rf("odeep", F0, F1),
+            _rconj(pcf(F0), _ror(_rconj(_rs("nd2"), _rs("fail")), _rf("qn", F1)), _rs("z"))
+        ),
+        (_rf("nomatch", _rs("b")), nothing),
+        (
+            _rf("ofail", F0, F1),                   # the callee has no matching clause: FRAME_FAILED
+            _rconj(pcf(F0), _ror(_rf("nomatch", _rs("a")), _rf("qn", F1)), _rs("z"))
+        ),
+        (_rf("oleft", F0, F1), _rconj(pcf(F0), _ror(_rf("qn", F1), _rs("z")), _rs("z"))),
+        (
+            _rf("oafter", F0, F1),
+            _rconj(pcf(F0), _ror(_rs("z"), _rs("z")), _rf("qn", F1), _rs("z"))
+        )
+    ]
+end
+# swipl's distances (10.1.17, live below): 10 = the frame header (8) + the two variables — the
+# choice point is gone; 19 = that + a choice point (9).
+const _R_ORPOS = [(:oshallow, 10), (:odeep, 10), (:ofail, 10), (:oleft, 19), (:oafter, 19)]
+
+@testset "around a disjunction the next frame lands where swipl's does (C_OR, CHP_JUMP)" begin
+    clauses = _ror_pos_clauses()
+    db = _rdb(clauses)
+    _radd!(db, _rf("prolog_current_frame", _rv(1)))                # the stand-in, as for the cut
+    ld = db.ld
+    ours = Int[]
+    live = Bool[]
+    for (n, _) in _R_ORPOS
+        answers = _rcall(
+            db,
+            _rf(n, _rv(90), _rv(91));
+            at=function (qid, k)
+                push!(live, _rpools_live(ld))
+                k == 1 || return nothing
+                q = ld.queries[LK.QueryFromQid(ld, qid)]
+                push!(
+                    ours, ld.frames[ld.choices[ld.BFR].frame].base - ld.frames[q.frame].base
+                )
+            end
+        )
+        @test !isempty(answers)
+    end
+    ours == last.(_R_ORPOS) || println(stderr, "  disjunction positions, kernel: ", ours)
+    @test ours == last.(_R_ORPOS)
+    @test !isempty(live) && all(live)
+    if _R_SWIPL
+        main =
+            "main :- " *
+            join(
+                ("$n(A$n, B$n), D$n is B$n - A$n, writeln(D$n)" for (n, _) in _R_ORPOS),
+                ", "
+            ) *
+            "."
+        theirs = parse.(Int, _rswipl(clauses, (); main_text=main))
+        theirs == last.(_R_ORPOS) ||
+            println(stderr, "  disjunction positions, swipl: ", theirs)
+        @test theirs == last.(_R_ORPOS)
+    end
+end
+
 # ── a frame whose call fails before it is filled ────────────────────────────────────────────────
 # ── the inline compilers' fall-back calls (V6b2) ────────────────────────────────────────────────
 # Where upstream's compiler falls back to a call (pl-comp.c c:3488-3517), the kernel calls the

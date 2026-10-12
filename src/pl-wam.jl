@@ -180,6 +180,7 @@ function newChoice(ld::PL_local_data{T}, type::choice_type, fr::Int)::Int where 
     c.mark = Mark(ld)
     c.value_clause.cref = nothing
     c.value_clause.key = word(0)
+    c.value_pc = 0
     ld.BFR = ch
 
     return ch
@@ -757,7 +758,7 @@ const VMI_RUN = (
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
     :I_CALLABLE, :A_ADD_FC, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
-    :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE
+    :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -2178,6 +2179,36 @@ function PL_next_solution_guarded(
     PC += 1
     @goto next_instruction
 
+    # ── disjunctions (pl-vmi.c), V9d ──────────────────────────────────────────────────────────────
+    # PORT: pl-vmi.c C_JMP
+    @label C_JMP
+    PC += Int(PCc[PC])
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_OR
+    # DIVERGES: the choice point's `value.pc` is an index into the clause's code (see `choice`).
+    @label C_OR
+    co_skip = Int(PCc[PC])
+    PC += 1
+    @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)              # hasLocalSpace(sizeof(struct choice))
+    co_ch = newChoice(ld, CHP_JUMP, FR)
+    ld.choices[co_ch].value_pc = PC + co_skip
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_VAR_N
+    # DIVERGES: fresh variables into the slots (decision 2), as `C_VAR`.
+    @label C_VAR_N
+    cvn_vp = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
+    cvn_count = Int(PCc[PC + 1])
+    PC += 2
+    cvn_key = fresh_var_keys!(cvn_count)
+    for cvn_i in 0:(cvn_count - 1)
+        ld.slots[cvn_vp + cvn_i + 1] = mk_var(T, cvn_key + UInt64(cvn_i))
+    end
+    @goto next_instruction
+
     # PORT: pl-vmi.c I_FAIL
     # NOT PORTED: the `vmi_builtin=false` branch, which calls `fail/0` (only the debugger clears the
     # flag).
@@ -2520,7 +2551,9 @@ function PL_next_solution_guarded(
     # failed attempt's — are dropped (user, 2026-10-05), because `lTop` can rise over them here. A
     # popped choice point is dropped at its old position. When it cannot move for lack of room, its
     # `clause_choice` is copied out first: `newChoice` resets the record it reuses, which is this one.
-    # `CHP_JUMP` arrives with `C_OR` (V9); the debugger's `CHP_DEBUG` is NOT PORTED.
+    # `CHP_JUMP` (since V9d): the popped choice point's record, and any above it, are dropped before
+    # `lTop` is lowered to it, and the code registers are reloaded from the frame's clause (see
+    # `deep_backtrack`). The debugger's `CHP_DEBUG` is NOT PORTED.
     @label shallow_backtrack
     sb_ch = ld.BFR
     sb_c = ld.choices[sb_ch]
@@ -2528,11 +2561,21 @@ function PL_next_solution_guarded(
         Undo!(ld, sb_c.mark)
 
         if sb_c.type == CHP_JUMP
-            throw(
-                NotPortedError{T}(
-                    DEF.name, "backtracking into a disjunction (CHP_JUMP)", "V9"
-                )
-            )
+            DiscardMark(ld, sb_c.mark)
+            # PC = ch->value.pc: an index into the code of the frame's clause, which the code
+            # registers need not hold — a retry (PL_next_solution) arrives here from the query's
+            # own code
+            sb_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
+            PCc = sb_jclause.codes
+            PCl = sb_jclause.literals
+            PC = sb_c.value_pc
+            ld.BFR = sb_c.parent
+            sb_base = sb_c.base
+            dropRecords!(ld, sb_base)               # the popped choice point and all above it
+            ld.lTop = sb_base                       # lTop = (LocalFrame)ch
+            ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+
+            @goto next_instruction
         elseif sb_c.type == CHP_CLAUSE
             ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
             sb_cl = nextClause!(
@@ -2596,7 +2639,9 @@ function PL_next_solution_guarded(
     # data's scratch `clause_choice`. `CHP_TOP` leaves `lTop` where it is, as upstream:
     # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`,
     # `CHP_DEBUG`), `frameFailed` for `FR_WATCHED`/det frames (asserted absent), the `LD->alerted`
-    # block; `CHP_JUMP` arrives with `C_OR`, `CHP_CATCH` with catch/3 (V9).
+    # block, the inference count; `CHP_CATCH` arrives with catch/3 (V9). `CHP_JUMP` (since V9d): the
+    # code registers are reloaded from the frame's clause, because `value.pc` is an index into it
+    # where upstream's is an address.
     @label deep_backtrack                           # next_choice:
     while FR != 0 && ld.frames[FR].base > ld.choices[ld.BFR].base     # NULL is below every choice
         leaveFrame(ld, FR)                          # LEAVE_FAILED_FRAME(FR)
@@ -2616,7 +2661,19 @@ function PL_next_solution_guarded(
     _reset_argument_stack!(ld, ld.queries[QF])
     DEF = ld.frames[FR].predicate::Definition{T}
 
-    if db_c.type == CHP_CLAUSE                      # try next clause
+    if db_c.type == CHP_JUMP
+        db_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
+        PCc = db_jclause.codes
+        PCl = db_jclause.literals
+        PC = db_c.value_pc
+        DiscardMark(ld, db_c.mark)
+        db_jbase = db_c.base
+        ld.BFR = db_c.parent
+        dropRecords!(ld, db_jbase)                  # the popped choice point and all above it
+        ld.lTop = db_jbase                          # lTop = (LocalFrame)(BFR)
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        @goto next_instruction
+    elseif db_c.type == CHP_CLAUSE                  # try next clause
         db_chp = ld.chp_scratch                     # struct clause_choice chp = BFR->value.clause
         db_chp.cref = db_c.value_clause.cref
         db_chp.key = db_c.value_clause.key

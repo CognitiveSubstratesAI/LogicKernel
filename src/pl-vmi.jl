@@ -408,6 +408,15 @@ const I_FAIL = code(100)
 # PORT: pl-vmi.c I_TRUE
 "`true/0` inline (pl-vmi.c)."
 const I_TRUE = code(101)
+# PORT: pl-vmi.c C_JMP
+"Skip the operand's count of code words (pl-vmi.c)."
+const C_JMP = code(102)
+# PORT: pl-vmi.c C_OR
+"Create a choice point in the clause: on backtracking, continue the operand's count further on (pl-vmi.c)."
+const C_OR = code(103)
+# PORT: pl-vmi.c C_VAR_N
+"Make the second operand's count of slots, from the first operand's, fresh variables (pl-vmi.c)."
+const C_VAR_N = code(104)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -526,7 +535,10 @@ const _CODE_TABLE = (
     code_info(:B_NEQ_VC, VIF_BREAK, 2, (CA1_VAR, CA1_DATA, 0x00, 0x00)),
     code_info(:C_VAR, 0x00, 1, (CA1_FVAR, 0x00, 0x00, 0x00)),
     code_info(:I_FAIL, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:I_TRUE, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:I_TRUE, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:C_JMP, 0x00, 1, (CA1_JUMP, 0x00, 0x00, 0x00)),
+    code_info(:C_OR, 0x00, 1, (CA1_JUMP, 0x00, 0x00, 0x00)),
+    code_info(:C_VAR_N, 0x00, 2, (CA1_FVAR, CA1_INTEGER, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable
