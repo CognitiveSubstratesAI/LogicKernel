@@ -1252,6 +1252,159 @@ end
     end
 end
 
+# ── V9d: negation ───────────────────────────────────────────────────────────────────────────────
+# `\+ A` through the VM (`C_NOT`, `C_CUT`, `C_FAIL`): every answer and its determinism are swipl's.
+# A `!` inside it compiles (`C_LCUT`) but runs with the cut's own step, so no `\+` here holds one.
+_rnot(a::_R) = _rf("\\+", a)
+
+"The pinned negation programs: facts `n/1`, `m/1` and one clause per case."
+function _rnot_clauses()
+    X, Y, Z, A = (_rv(k) for k in 1:4)
+    n(x) = _rf("n", x)
+    m(x) = _rf("m", x)
+    eq(a, b) = _rf("=", a, b)
+    return Tuple{_R, Union{Nothing, _R}}[
+        (n(_rg(1)), nothing), (n(_rg(2)), nothing), (n(_rg(3)), nothing),
+        (m(_rs("a")), nothing), (m(_rs("b")), nothing),
+        (_rf("t1", X), _rnot(n(X))),
+        (_rf("t2", X), _rconj(_rnot(n(X)), eq(X, _rs("free")))),
+        # nothing A binds survives: X is unbound after \+ n(X) failed … and after it succeeded
+        (_rf("t3", X, Y), _rconj(_rnot(_rconj(n(X), _rs("fail"))), eq(Y, _rf("r", X)))),
+        (
+            _rf("t4", Y),
+            _rconj(_rnot(_rconj(eq(Z, _rg(1)), _rs("fail"))), eq(Y, _rf("r", Z)))
+        ),
+        # a slot A writes directly (A_ADD_FC) is fresh afterwards: the C_VAR behind the jump
+        (_rf("t5", X, Y),
+            _rconj(
+                _rnot(_rconj(_rf("is", A, _rf("+", X, _rg(1))), _rs("fail"))),
+                eq(Y, _rf("r", A))
+            )),
+        (_rf("t6", X), _rconj(m(X), _rnot(_rf("==", X, _rs("a"))))),
+        (_rf("t7", X), _rconj(n(X), _rnot(_rf(">", X, _rg(1))))),
+        (_rf("t8", X), _rnot(_rnot(n(X)))),                        # \+ \+: true, X unbound
+        (_rf("t9", X), _rconj(n(X), _rnot(_rnot(_rf(">", X, _rg(2)))))),
+        (_rf("t10", X), _rconj(m(X), _rnot(_ror(_rf("==", X, _rs("b")), _rs("fail"))))),
+        (_rf("t11", X, Y), _rite(_rnot(n(X)), eq(Y, _rs("none")), eq(Y, _rs("some")))),
+        (_rf("t12", X), _ror(_rnot(_rs("true")), n(X))),
+        (_rf("t13", X), _rconj(n(X), _rnot(_rconj(n(Y), _rf(">", Y, X))))),       # the maximum
+        (_rf("t14", X), _rconj(n(X), _rnot(_rf("nomatch", X)))),
+        (_rf("nomatch", _rs("b")), nothing),
+        (_rs("t15"), _rconj(_rnot(_rs("fail")), _rnot(_rs("fail")))),
+        (_rs("t16"), _rnot(_rs("true")))
+    ]
+end
+
+function _rnot_goals()
+    X, Y = _rv(101), _rv(102)
+    return _R[
+        _rf("t1", X), _rf("t1", _rg(2)), _rf("t1", _rg(9)), _rf("t2", X),
+        _rf("t2", _rs("free")),
+        _rf("t3", X, Y), _rf("t4", Y), _rf("t5", _rg(1), Y), _rf("t6", X), _rf("t7", X),
+        _rf("t8", X), _rf("t8", _rg(7)), _rf("t9", X), _rf("t10", X), _rf("t11", X, Y),
+        _rf("t11", _rg(9), Y), _rf("t12", X), _rf("t13", X), _rf("t14", X), _rs("t15"),
+        _rs("t16")
+    ]
+end
+
+"A random body like `_ritebody`'s with `\\+`; inside a `\\+` or a condition there is no `!`."
+function _rnotbody(rng, vars::Vector{_R}, depth::Int, nocut::Bool)::_R
+    r = rand(rng)
+    if depth < 4 && r < 0.25
+        return _rnot(_rnotbody(rng, vars, depth + 1, true))
+    elseif depth < 4 && r < 0.4
+        return _rite(_rnotbody(rng, vars, depth + 1, true),
+            _rnotbody(rng, vars, depth + 1, nocut),
+            _rnotbody(rng, vars, depth + 1, nocut))
+    elseif depth < 4 && r < 0.5
+        return _ror(
+            _rnotbody(rng, vars, depth + 1, nocut), _rnotbody(rng, vars, depth + 1, nocut)
+        )
+    elseif depth < 4 && r < 0.68
+        return _rf(",", _rnotbody(rng, vars, depth + 1, nocut),
+            _rnotbody(rng, vars, depth + 1, nocut))
+    end
+    while true
+        g = _rorbody(rng, vars, 4)                                  # a goal
+        (nocut && kind(g) === SYM && lk_name(g) === Symbol("!")) || return g
+    end
+end
+
+"Random predicates `rn<i>/k` of one or two clauses, each with a `\\+`, and goals on them."
+function _rnot_random(rng, count::Int)
+    clauses = Tuple{_R, Union{Nothing, _R}}[]
+    goals = _R[]
+    key = 40_000
+    for i in 1:count
+        k = rand(rng, 1:3)
+        for _ in 1:rand(rng, 1:2)
+            vars = _R[_rv(key + j) for j in 1:rand(rng, k:(k + 2))]
+            key += 10
+            body = _rnot(_rnotbody(rng, vars, 2, true))
+            r = rand(rng)
+            if r < 0.45
+                body = _rf(",", body, _rnotbody(rng, vars, 2, false))
+            elseif r < 0.7
+                body = _rf(",", _rnotbody(rng, vars, 2, false), body)
+            end
+            push!(clauses, (mk_expr(_R, _R[_rs("rn$i"); vars[1:k]]), body))
+        end
+        fresh = _R[_rv(key + j) for j in 1:k]
+        key += 10
+        push!(goals, mk_expr(_R, _R[_rs("rn$i"); fresh]))
+        bound = copy(fresh)
+        bound[1] = rand(rng, (_rg(1), _rs("a"), _rg(3)))
+        push!(goals, mk_expr(_R, _R[_rs("rn$i"); bound]))
+    end
+    return clauses, goals
+end
+
+@testset "negation: every answer and its determinism are swipl's (V9d)" begin
+    clauses = _rnot_clauses()
+    goals = _rnot_goals()
+    rc, rg = _rnot_random(Xoshiro(20261014), 200)
+    append!(clauses, rc)
+    append!(goals, rg)
+    db = _rdb(clauses)
+    ops = Set{UInt64}()
+    for (h, _) in clauses
+        cref = _rproc(db, h).definition.impl_clauses.first_clause
+        while cref !== nothing
+            union!(ops, _rops(cref.clause))
+            cref = cref.next
+        end
+    end
+    @test all(in(ops), (LK.C_NOT, LK.C_FAIL, LK.C_CUT, LK.C_VAR, LK.C_JMP))
+    @test !(LK.C_LCUT in ops)                                          # the cut's own step
+    ours = _rlines(db, goals)
+    @test count(==("end"), ours) == length(goals)
+    ends = findall(==("end"), ours)
+    answers(i) = ours[(i == 1 ? 1 : ends[i - 1] + 1):(ends[i] - 1)]        # of the i-th goal
+    @test isempty(answers(1)) && isempty(answers(2))        # \+ n(X), \+ n(2): n has answers
+    @test answers(3) == ["t1(9) det"]
+    @test isempty(answers(4)) && answers(5) == ["t2(free) det"]    # \+ n(X); \+ n(free)
+    @test answers(6) == ["t3(A,r(A)) det"]                  # nothing A bound survives: X unbound
+    @test answers(7) == ["t4(r(_)) det"]
+    @test answers(8) == ["t5(1,r(_)) det"]                  # the slot A wrote directly is fresh
+    @test answers(9) == ["t6(b) det"]
+    @test answers(11) == ["t8(_) det"]                      # \+ \+ n(X): true, X unbound
+    @test answers(18) == ["t13(3) det"]
+    ndet = count(endswith(" nondet"), ours)
+    @info "negation programs: $(length(goals)) queries, $(length(ours) - length(goals)) answers ($ndet non-deterministic)"
+    @test ndet > 50 && count(endswith(" det"), ours) > 100
+    @test _rpools_live(db.ld)
+    if _R_SWIPL
+        theirs = _rswipl(clauses, goals)
+        @test ours == theirs
+        if ours != theirs
+            k = findfirst(i -> i > length(theirs) || ours[i] != theirs[i], eachindex(ours))
+            @info "first difference" k ours[something(k, 1)] get(
+                theirs, something(k, 1), "—"
+            )
+        end
+    end
+end
+
 # ── where the next frame lands around a disjunction (V9d) ───────────────────────────────────────
 # Backtracking into a `CHP_JUMP` choice point lowers `lTop` to it (vmi: `lTop = (LocalFrame)ch`), so
 # the next frame lands where the choice point was — from the clause itself (`oshallow`; `odeep`
@@ -1305,7 +1458,17 @@ function _ror_pos_clauses()
             _rf("pelsef", F0, F1),
             _rconj(pcf(F0), _rite(_rf("nonvar", F1), _rs("z"), _rf("qn", F1)), _rs("z"))
         ),
-        (_rf("pit", F0, F1), _rconj(pcf(F0), _rit(_rs("nd2"), _rf("qn", F1)), _rs("z")))
+        (_rf("pit", F0, F1), _rconj(pcf(F0), _rit(_rs("nd2"), _rf("qn", F1)), _rs("z"))),
+        (
+            _rf("pnot", F0, F1),
+            _rconj(pcf(F0), _rnot(_rf("nomatch", _rs("a"))), _rf("qn", F1), _rs("z"))
+        ),
+        (
+            _rf("pnotd", F0, F1),
+            _rconj(
+                pcf(F0), _rnot(_rconj(_rs("nd2"), _rs("fail"))), _rf("qn", F1), _rs("z")
+            )
+        )
     ]
 end
 # swipl's distances (10.1.17, live below): 10 = the frame header (8) + the two variables — the
@@ -1317,7 +1480,10 @@ const _R_ORPOS = [
     # (`pfast`); in the else branch (`pelse`: a callee failed; `pelsef`: a fast test failed); after
     # an if-then (`pit`)
     # — 11 everywhere: the frame header (8) + its three slots; nothing of the condition is left
-    (:pthen, 11), (:pthen0, 11), (:pfast, 11), (:pelse, 11), (:pelsef, 11), (:pit, 11)
+    (:pthen, 11), (:pthen0, 11), (:pfast, 11), (:pelse, 11), (:pelsef, 11), (:pit, 11),
+    # after a negation succeeded: its goal failed in a callee (`pnot`), or after leaving and
+    # using up a callee's choice points (`pnotd`)
+    (:pnot, 11), (:pnotd, 11)
 ]
 
 @testset "around a disjunction the next frame lands where swipl's does (C_OR, CHP_JUMP)" begin

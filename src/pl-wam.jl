@@ -800,7 +800,7 @@ const VMI_RUN = (
     :I_CALLABLE, :A_ADD_FC, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
-    :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END
+    :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -2333,6 +2333,14 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_END
     @label C_END
     @goto next_instruction
+
+    # PORT: pl-vmi.c C_NOT
+    @label C_NOT
+    @goto C_IFTHENELSE
+
+    # PORT: pl-vmi.c C_FAIL
+    @label C_FAIL
+    @goto shallow_backtrack                         # BODY_FAILED
 
     # PORT: pl-vmi.c C_VAR_N
     # DIVERGES: fresh variables into the slots (decision 2), as `C_VAR`.

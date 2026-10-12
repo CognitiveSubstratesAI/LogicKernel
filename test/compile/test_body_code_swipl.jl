@@ -1957,6 +1957,197 @@ const _BC_ITE_DECOMPILED = Dict{String, String}(
     end
 end
 
+# ── V9d: negation `\+ A` ────────────────────────────────────────────────────────────────────────
+# `C_NOT <A> C_CUT C_FAIL`, then — only when A first uses a variable — a `C_JMP` over the `C_VAR`s
+# that make those variables fresh on the way out (pl-comp.c `compileBody`, CB_NOT_INNER).
+const _BC_NOT_CELLS = let X = _bv(1), Y = _bv(2), Z = _bv(3)
+    no(a) = _bf("\\+", a)
+    [
+        ("not", _bf("n1", X), no(_bf("q", X))),
+        ("not, then a goal", _bf("n2", X), _bconj(no(_bf("q", X)), _bf("r", X))),
+        (
+            "a variable first used inside",
+            _bf("n3", X),
+            _bconj(no(_bf("q", X, Y)), _bf("r", Y))
+        ),
+        ("two variables first used inside", _bs("n4"),
+            _bconj(no(_bf("q", Y, Z)), _bf("r", Y, Z))),
+        ("a variable used before and inside", _bf("n5", X),
+            _bconj(_bf("s", Y), no(_bf("q", X, Y)), _bf("r", Y))),
+        ("a cut inside", _bs("n6"), no(_bconj(_bs("a"), _bs("!"), _bs("b")))),
+        ("not not", _bf("n7", X), no(no(_bf("q", X)))),
+        ("a conjunction inside", _bf("n8", X), no(_bconj(_bf("q", X), _bf("r", X)))),
+        ("a disjunction inside", _bs("n9"), no(_bf(";", _bs("a"), _bs("b")))),
+        ("a conditional inside", _bs("n10"),
+            no(_bf(";", _bf("->", _bs("a"), _bs("b")), _bs("c")))),
+        ("as a condition", _bf("n11", X),
+            _bf(";", _bf("->", no(_bf("q", X)), _bs("a")), _bs("b"))),
+        ("in a disjunction's branches", _bf("n12", X),
+            _bf(";", no(_bf("q", X)), no(_bf("r", X, Y)))),
+        ("an inline test inside", _bf("n13", X), no(_bf("==", X, _bs("a")))),
+        (
+            "a unification inside",
+            _bf("n14", X),
+            _bconj(no(_bf("=", X, _bs("a"))), _bs("b"))
+        ),
+        ("true and fail inside", _bs("n15"), _bconj(no(_bs("fail")), no(_bs("true")))),
+        (
+            "last, after a cut",
+            _bf("n16", X),
+            _bconj(_bf("q", X), _bs("!"), no(_bf("r", X)))
+        )
+    ]
+end
+
+"A random body like `_bcitebody`'s with `\\+` over any of it."
+function _bcnotbody(g::_BcGen, pool::Vector{_B}, depth::Int)::_B
+    r = rand(g.rng)
+    if depth < 4 && r < 0.25
+        return _bf("\\+", _bcnotbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.4
+        return _bf(";",
+            _bf("->", _bcnotbody(g, pool, depth + 1), _bcnotbody(g, pool, depth + 1)),
+            _bcnotbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.5
+        return _bf(";", _bcnotbody(g, pool, depth + 1), _bcnotbody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.68
+        return _bf(",", _bcnotbody(g, pool, depth + 1), _bcnotbody(g, pool, depth + 1))
+    end
+    return _bcorbody(g, pool, 4)                                # a goal
+end
+
+"A random rule clause `bn<k>(…) :- Body` with a `\\+` at the top or below a `,`."
+function _bcnotclause(g::_BcGen, k::Int)::Tuple{_B, _B}
+    pool = _B[_bcfresh!(g) for _ in 1:rand(g.rng, 2:6)]
+    har = rand(g.rng, 0:3)
+    head = har == 0 ? _bs("bn$k") : _be("bn$k", [rand(g.rng, pool) for _ in 1:har])
+    body = _bf("\\+", _bcnotbody(g, pool, 2))
+    r = rand(g.rng)
+    if r < 0.45
+        body = _bf(",", body, _bcnotbody(g, pool, 2))
+    elseif r < 0.7
+        body = _bf(",", _bcnotbody(g, pool, 2), body)
+    end
+    return (head, body)
+end
+
+# What `decompile!` rebuilds from each negation cell, variables renamed in order (`_bnorm`).
+const _BC_NOT_DECOMPILED = Dict{String, String}(
+    "not" => "':-'(n1(A),'\\\\+'(q(A)))",
+    "not, then a goal" => "':-'(n2(A),','('\\\\+'(q(A)),r(A)))",
+    "a variable first used inside" => "':-'(n3(A),','('\\\\+'(q(A,B)),r(B)))",
+    "two variables first used inside" => "':-'(n4,','('\\\\+'(q(A,B)),r(A,B)))",
+    "a variable used before and inside" => "':-'(n5(A),','(s(B),','('\\\\+'(q(A,B)),r(B))))",
+    "a cut inside" => "':-'(n6,'\\\\+'(','(a,','('!',b))))",
+    "not not" => "':-'(n7(A),'\\\\+'('\\\\+'(q(A))))",
+    "a conjunction inside" => "':-'(n8(A),'\\\\+'(','(q(A),r(A))))",
+    "a disjunction inside" => "':-'(n9,'\\\\+'(';'(a,b)))",
+    "a conditional inside" => "':-'(n10,'\\\\+'(';'('->'(a,b),c)))",
+    "as a condition" => "':-'(n11(A),';'('->'('\\\\+'(q(A)),a),b))",
+    "in a disjunction's branches" => "':-'(n12(A),';'('\\\\+'(q(A)),'\\\\+'(r(A,_))))",
+    "an inline test inside" => "':-'(n13(A),'\\\\+'('=='(A,a)))",
+    "a unification inside" => "':-'(n14(A),','('\\\\+'('='(A,a)),b))",
+    "true and fail inside" => "':-'(n15,','('\\\\+'(fail),'\\\\+'(true)))",
+    "last, after a cut" => "':-'(n16(A),','(q(A),','('!','\\\\+'(r(A)))))"
+)
+
+@testset "negation compiles as swipl's (V9d)" begin
+    ours = [_bc_kernel(_bclause(h, b)) for (_, h, b) in _BC_NOT_CELLS]
+    named(n) = ours[findfirst(c -> c[1] == n, _BC_NOT_CELLS)]
+    # A sets no variable: no jump after the C_FAIL; the C_NOT's own jump lands right after it
+    @test named("not") ==
+        ["i_enter", "c_not(1,L1)", "b_var0", "i_call(P:[113]/1)", "c_cut(1)", "c_fail",
+        "L1:",
+        "i_exit"]
+    # A first uses Y: Y is made fresh on the way out, behind a jump nothing reaches
+    @test named("a variable first used inside")[6:10] ==
+        ["c_cut(2)", "c_fail", "c_jmp(L2)", "L1:", "c_var(1)"]
+    @test any(startswith("c_var_n("), named("two variables first used inside"))
+    @test !any(startswith("c_var"), named("a variable used before and inside"))
+    @test "c_lcut(0)" in named("a cut inside")                  # a `!` in \+ cuts locally
+    @test "i_cut" in named("last, after a cut")
+
+    g = _BcGen(Xoshiro(20261014), UInt64(110_000))
+    random = [_bcnotclause(g, k) for k in 1:400]
+    rours = [_bc_kernel(_bclause(h, b)) for (h, b) in random]
+    @testset "the random bodies exercise it" begin
+        used = union((_bc_names(c) for c in rours)...)
+        missing_ = setdiff(
+            ["c_not", "c_fail", "c_cut", "c_lcut", "c_jmp", "c_var", "c_var_n",
+                "c_ifthenelse",
+                "c_or"], used)
+        isempty(missing_) || println(stderr, "  not exercised: ", missing_)
+        @test isempty(missing_)
+        @test count(c -> count(startswith("c_not"), c) >= 2, rours) > 50     # nested
+        # both forms occur: with the jump (A first uses a variable) and without
+        @test any(
+            c -> any(i -> c[i] == "c_fail" && startswith(c[i + 1], "c_jmp"),
+                1:(length(c) - 1)), rours)
+        @test any(
+            c -> any(i -> c[i] == "c_fail" && !startswith(c[i + 1], "c_jmp"),
+                1:(length(c) - 1)), rours)
+    end
+    ldf = LK.PL_local_data{_B}()
+    ldf.prolog_flag_optimise_unify = false
+    dcases = [[(h, b) for (_, h, b) in _BC_NOT_CELLS]; random]
+    dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
+    decomp = [
+        try
+            _bdecompile(cl, h)
+        catch
+            println(
+                stderr, "  decompiling ", _bc_text(h, b), "\n    code ", _bc_kernel(cl)
+            )
+            rethrow()
+        end for (cl, (h, b)) in zip(dclauses, dcases)
+    ]
+    @testset "the decompiler: pinned clauses" begin
+        for (k, c) in enumerate(_BC_NOT_CELLS)
+            t = _bnorm(_bc_text(decomp[k]...))
+            want = get(_BC_NOT_DECOMPILED, c[1], "")
+            t == want || println(stderr, "  (\"", c[1], "\", \"", escape_string(t), "\"),")
+            @test t == want
+        end
+    end
+    if _BC_SWIPL_BIN !== nothing
+        @testset "the decompiled clauses are variants of swipl's clause/2" begin
+            shows = [
+                "bc_decomp(($(_bc_text(h, b))), ($(_bc_text(dh, db))))" for
+                ((h, b), (dh, db)) in zip(dcases, decomp)
+            ]
+            theirs = _bc_swipl(shows; prelude="set_prolog_flag(optimise_unify, false)")
+            @test length(theirs) == length(shows)
+            bad = 0
+            for k in eachindex(shows)
+                k <= length(theirs) || break
+                if theirs[k] != ["same"]
+                    bad += 1
+                    bad <= 5 &&
+                        println(stderr, "  ", _bc_text(dcases[k]...), "\n    ours  ",
+                            _bc_text(decomp[k]...), "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+        @testset "identical to swipl" begin
+            all_ = [[(h, b) for (_, h, b) in _BC_NOT_CELLS]; random]
+            allours = [ours; rours]
+            theirs = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in all_])
+            @test length(theirs) == length(all_)
+            bad = 0
+            for k in eachindex(all_)
+                k <= length(theirs) || break
+                if allours[k] != theirs[k]
+                    bad += 1
+                    bad <= 5 && println(stderr, "  ", _bc_text(all_[k]...), "\n    ours  ",
+                        allours[k], "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+    end
+end
+
 @testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
     commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
     @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
@@ -1971,7 +2162,7 @@ end
     p = _bs("pr")
     for body in (
         _bf(";", _bf("*->", _bs("a"), _bs("b")), _bs("c")),     # soft-cut: V9d's next step
-        _bf("*->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
+        _bf("*->", _bs("a"), _bs("b")),
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
         _bconj(_bs("q"), _bs("\$catch")),                      # a reserved goal atom (V9)

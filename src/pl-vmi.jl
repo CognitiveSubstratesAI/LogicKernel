@@ -441,6 +441,12 @@ const C_LCUT = code(111)
 # PORT: pl-vmi.c C_LCUTIFTHEN
 "A `!` in the condition of `(A -> B)` (pl-vmi.c)."
 const C_LCUTIFTHEN = code(112)
+# PORT: pl-vmi.c C_NOT
+"`\\+ A`: as `C_IFTHENELSE`, under a name of its own for the decompiler (pl-vmi.c)."
+const C_NOT = code(113)
+# PORT: pl-vmi.c C_FAIL
+"Fail: what `\\+ A` does once A succeeded and its choice points are cut (pl-vmi.c)."
+const C_FAIL = code(114)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -570,7 +576,9 @@ const _CODE_TABLE = (
     code_info(:C_FASTCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
     code_info(:C_END, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:C_LCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
-    code_info(:C_LCUTIFTHEN, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00))
+    code_info(:C_LCUTIFTHEN, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_NOT, 0x00, 2, (CA1_CHP, CA1_JUMP, 0x00, 0x00)),
+    code_info(:C_FAIL, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

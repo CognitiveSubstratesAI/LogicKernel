@@ -35,7 +35,7 @@
 # CONTROL CONSTRUCTS (V9d, one per step): the disjunction `;` (and `|`) since 2026-10-12 —
 # `compileBody!`'s frames, with the variable tables it balances (`setVars`, `balanceVars`, `c_var`,
 # `orVars`, `copyVarTable`) — and the conditionals `(A -> B ; C)`, `(A -> B)` (`allocChoiceVar!`,
-# `try_fast_condition!`); `*->`, `\+` and `$/1` are still refused there, by name.
+# `try_fast_condition!`) — and `\+`; `*->` and `$/1` are still refused there, by name.
 # THE DECOMPILER (since V9d): `decompile!` rebuilds `Head :- Body` from a clause's code
 # (`decompile_head!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`), and clause/2
 # answers for rule bodies (`pl_clause!` with a body). A clause with a unification moved into its
@@ -2080,12 +2080,14 @@ end
     CB_ITE_ELSE             # (A -> B ; C): resume after C
     CB_IT_COND              # (A -> B): resume after A
     CB_IT_THEN              # (A -> B): resume after B
+    CB_NOT_INNER            # (\+ A): resume after A
 end
 
 # PORT: pl-comp.c cb_frame
-# DIVERGES: the fields of the constructs ported so far (`,`, `;`, `->`): no `isnot` (`\+`: V9d's
-# next steps) or `tmsave` (modules); `hard` is always true until `*->`. The three variable tables
-# are ONE tuple of three (`nothing` where upstream leaves them unset), so a frame is a flat value.
+# DIVERGES: the fields of the constructs ported so far (`,`, `;`, `->`, `\+`): no `isnot` — a
+# `CB_NOT_INNER` frame is always `\+`'s until `$/1` — or `tmsave` (modules); `hard` is always true
+# until `*->`. The three variable tables are ONE tuple of three (`nothing` where upstream leaves
+# them unset; `\+` uses the first, `vsave`, alone), so a frame is a flat value.
 "A pending step of `compileBody` (pl-comp.c): the state to restore and the step to run."
 struct cb_frame{T}
     kind::cb_kind
@@ -2149,8 +2151,8 @@ function try_fast_condition!(ci::compileInfo, tc_or::Int)::Bool
 end
 
 # PORT: pl-comp.c compileBody
-# DIVERGES: `,`, `;`, `|` and `->` — the other control constructs (`*->`, alone or as the left side
-# of a `;`, `\+`, `$/1`, `:/2`, `@/2`) throw `NotPortedError` (V9d's next steps; modules), before
+# DIVERGES: `,`, `;`, `|`, `->` and `\+` — the other control constructs (`*->`, alone or as the left
+# side of a `;`, `$/1`, `:/2`, `@/2`) throw `NotPortedError` (V9d's next steps; modules), before
 # anything is emitted; the pending steps (upstream's `cb_frame`s) are a Vector where upstream uses a
 # segstack, so there is no MEMORY_OVERFLOW; no `islocal` (see the file header).
 """
@@ -2158,7 +2160,8 @@ Compile clause body `body`, its last goal called with `call` (pl-comp.c): a conj
 right, every goal but the last with `I_CALL`; a disjunction as `C_OR <A> C_JMP <B>`, the
 variables each branch leaves unset made fresh (`C_VAR`); `(A -> B ; C)` as
 `C_IFTHENELSE <A> C_CUT <B> C_JMP <C>` — `C_FASTCOND`/`C_FASTCUT` when the condition is only
-tests — and `(A -> B)` as `C_IFTHEN <A> C_CUT <B> C_END`, a `!` in the condition cutting locally.
+tests — and `(A -> B)` as `C_IFTHEN <A> C_CUT <B> C_END`, a `!` in the condition cutting locally;
+`\\+ A` as `C_NOT <A> C_CUT C_FAIL`, the variables A first used made fresh after it.
 Returns `BOOLEX_TRUE` or the first goal's error code.
 """
 function compileBody!(
@@ -2236,9 +2239,29 @@ function compileBody!(
             call = I_CALL
             @goto next_body
         end
+        if _has_functor(body, cf.not_provable, 1)              # \+/1
+            var = allocChoiceVar!(ld, ci)
+            if var == 0
+                rc = BOOLEX_FALSE
+                @goto resume
+            end
+            vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
+            Output_2!(ci, C_NOT, code(var), code(0))
+            push!(
+                stack,
+                cb_frame{T}(
+                    CB_NOT_INNER, call, body, body, var, PC(ci), 0, (vsave, vsave, vsave),
+                    ci.cut, true
+                )
+            )
+            ci.cut = cutInfo(var, ci.cut.nextvar, C_LCUT)
+            body = child(body, 2)
+            call = I_CALL
+            @goto next_body
+        end
         throw(
             NotPortedError{T}(
-                body, "a control construct other than ,/2, ;/2 and ->/2", "V9d"
+                body, "a control construct other than ,/2, ;/2, ->/2 and \\+/1", "V9d"
             )
         )
     end
@@ -2309,8 +2332,24 @@ function compileBody!(
         body = child(frame.body, 3)
         call = frame.call
         @goto next_body
-    else                                                       # CB_IT_THEN: (A -> B) after B
+    elseif frame.kind == CB_IT_THEN                            # (A -> B) after B
         Output_0!(ci, C_END)
+        @goto resume
+    else                                                       # CB_NOT_INNER: (\+ A) after A
+        vsave = (frame.vars::NTuple{3, BitVector})[1]
+        ci.cut = frame.cutsave
+        Output_1!(ci, C_CUT, code(frame.var))
+        Output_0!(ci, C_FAIL)
+        Output_1!(ci, C_JMP, code(0))
+        tc_jmp = PC(ci)
+        ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)     # OpCode(ci, tc_or-1)
+        if balanceVars(vsave, ci.used_var, ci) > 0
+            # copyVarTable(ci->used_var, vsave) is commented out upstream: see its comment
+            ci.codes[tc_jmp] = code(PC(ci) - tc_jmp)           # OpCode(ci, tc_jmp-1)
+        else                                                   # delete the jmp
+            resize!(ci.codes, tc_jmp - 2)                      # seekBuffer(&ci->codes, tc_jmp-2)
+            ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)
+        end
         @goto resume
     end
 end
@@ -2979,8 +3018,8 @@ end
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
 # upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3, `$/1`, `*->` and
-# `\+` (V9d's next steps, V9e–g).
+# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3, `$/1` and `*->`
+# (V9d's next steps, V9e–g).
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
 each goal is built on the decompilation stack from its arguments' instructions, and the goals are
@@ -3161,6 +3200,12 @@ function decompileBodyNoShift!(
             di.pc += 1
             decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
             build_term!(di, mk_sym(T, Symbol(";")), 2)
+            pushed += 1
+        elseif op == C_NOT                                      # \+ A
+            di.pc += 2                                          # skip the two arguments
+            decompileBodyNoShift!(di, C_CUT, 0)                 # A
+            di.pc += 3                                          # skip C_CUT <n> and C_FAIL
+            build_term!(di, mk_sym(T, Symbol("\\+")), 1)
             pushed += 1
         elseif op == C_IFTHEN                                   # A -> B (c_ifthen)
             di.pc += 1
