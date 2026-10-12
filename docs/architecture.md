@@ -506,7 +506,7 @@ fixed it or a public issue exists.
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!`; `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), local)` (`raiseStackOverflow`, `outOfStack!`, the context as decided since Q-B), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack | `src/pl-alloc.c` |
-| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data; since V5c `getProcDefinedDefinition` where upstream calls it (`PL_open_query`, `I_LCALL`, `S_VIRGIN`); since V9d (`;`) `C_OR`, `C_JMP`, `C_VAR_N` and backtracking into a `CHP_JUMP` choice point (`shallow_backtrack`, `deep_backtrack`); since V9d (`->`) `C_IFTHENELSE`, `C_IFTHEN`, `C_CUT` (`c_cut`, `in_continuation`), `C_FASTCOND`/`C_FASTCUT` (`FASTCOND_FAILED`), `C_END`, and (`\+`) `C_NOT`, `C_FAIL` | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
+| `src/pl-wam.jl` | the local stack's operations (V3): `newChoice`, `copyFrameArguments`, the foreign frames; the record discipline — pushing a record (upstream's casts of a position), dropping the records above a lowered `lTop`; THE RUN LOOP (V4a): `PL_next_solution_guarded`, one function holding pl-vmi.c's head, exit and supervisor instructions and its backtracking and throw paths as labels, inside one `try` (`PL_next_solution`); the query API (`PL_open_query`, `PL_next_solution`, `PL_cut_query`, `PL_close_query`, `PL_exception`, `PL_current_query`); RULES (V4b): the calls and last calls (`I_ENTER`, `I_CALL`, `normal_call`, `I_DEPART`, the `L_*` block, `I_LCALL`, `I_TCALL`) and the body arguments (`B_*`, through the head's builder); since V5b the undefined procedure (`S_UNDEF`); since V6a the cut (`I_CUT`); since V6b1 the type tests (`I_VAR` … `I_CALLABLE`, `TYPE_TEST`); since V8 `A_ADD_FC`; since V9a the inline unification family (`B_UNIFY_*`, `unify_var_cont`, `debug_equals2`, `B_EQ_*`, `B_NEQ_*`, `C_VAR`, `I_TRUE`, `I_FAIL`); since V5d `b_throw`'s emergency space and `resumeAfterException` giving the spare back, and `PL_open_query` refusing an unusable local data; since V5c `getProcDefinedDefinition` where upstream calls it (`PL_open_query`, `I_LCALL`, `S_VIRGIN`); since V9d (`;`) `C_OR`, `C_JMP`, `C_VAR_N` and backtracking into a `CHP_JUMP` choice point (`shallow_backtrack`, `deep_backtrack`); since V9d (`->`) `C_IFTHENELSE`, `C_IFTHEN`, `C_CUT` (`c_cut`, `in_continuation`), `C_FASTCOND`/`C_FASTCUT` (`FASTCOND_FAILED`), `C_END`, (`\+`) `C_NOT`, `C_FAIL`, and (the local cut) `C_LCUT`, `C_LCUTIFTHEN` | `src/pl-wam.c`, `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-gc.c` |
 | `src/pl-fli.jl` | term references: positions on the local stack inside the innermost foreign frame (`PL_new_term_refs`, `PL_reset_term_refs`, `PL_copy_term_ref`, `PL_put_term`), with the foreign-environment check; `PL_raise_exception`, with upstream's class rule since V5b (`classify_exception`, `classify_exception_p`; `error(resource_error(_), _)` is the resource class since upstream's `85d0cc2`); since V5a2 the subset built-ins use (`PL_unify`, `PL_unify_atomic`/`_atom`/`_integer`, `PL_is_variable`, `PL_put_intptr`, `PL_compare`, `PL_clear_exception`, `PL_clear_foreign_exception`); since V6b1 the type tests on a term reference (`PL_is_integer` … `PL_is_callable`, `isCallable`); since V5d the ball copied with its cycles kept as untrailed bindings (`copy_exception!`), and `has_emergency_space`; since V5c `PL_strip_module_ex`; since R1a `charCode`; since R1b `PL_get_atom`, `PL_get_integer`, `PL_get_list`, `PL_get_nil`, `PL_is_list`, `PL_strip_module`; since R1e's write/1 family `atom_to_bool`, `PL_get_stdbool`, `PL_get_bool`, `PL_get_name_arity`, `_PL_get_arg`, `PL_is_functor` | `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/SWI-Prolog.jl` | the query API's flags (`PL_Q_*`) and return codes (`PL_S_*`); the foreign interface's types (`term_t`, `fid_t`, `foreign_t`), registration flags (`PL_FA_*`) and record (`PL_extension`); since R1c `PL_CTYPE_SPACE`; since R1d the text conversion flags (`CVT_*`), the text types `PL_ATOM`, `PL_STRING`, and since R1e every write flag (`PL_WRT_*`, as `Int`); since R1e's write/1 family the option types (`OPT_*`) and `PL_option_t` | `src/SWI-Prolog.h` |
 | `src/pl-supervisor.jl` | supervisors: the code a call enters first — `S_VIRGIN` installing `S_UNDEF`, `S_DYNAMIC`, `S_MULTIFILE`, `S_TRUSTME`, `S_LIST` or `S_STATIC` (`createSupervisor`, `setDefaultSupervisor`), reset when the clauses change (`freeCodesDefinition!`); since V5c `createUndefSupervisor` | `src/pl-supervisor.c` |
@@ -2410,6 +2410,25 @@ local data unusable; (3) the spare stacks ported. Research: the workspace's
   own check fails fast. `PL_error` setting the flag survived until a test opened its foreign frame at
   the limit.
 
+**V9d, fourth construct BUILT: the cut inside a condition and a negation (2026-10-12)**
+(src/pl-wam.jl). The compiler and the decompiler have had it since the conditionals (`ci.cut`,
+`C_LCUT`/`C_LCUTIFTHEN` → `!`); this step RUNS it.
+* **Ported — the VM:** `C_LCUT` with `c_lcut_cont` — a `!` in the condition of `(A -> B ; C)` or in
+  `\+ A` cuts the choice points made since the construct started but NOT the construct's own (the
+  one whose parent is the mark), by `c_cut` to that choice point — and `C_LCUTIFTHEN`, the `!` in
+  the condition of `(A -> B)`, which is `C_CUT`: an if-then has no choice point of its own.
+* **Gate — against swipl 10.1.17 (`ac807ba8`), all three term types:** 516 ANSWERS of 518 queries
+  identical with their determinism — 18 pinned (upstream's own case `\+ (b, !, fail)`; a cut that
+  stops the condition retrying, beside the same clause without it; the choice points made BEFORE
+  the construct left alone; deeper frames' choice points cut; nested conditions; a cut first, a
+  cut never reached) and 500 on 250 random predicates with `!` anywhere, a choice point often
+  made before the construct; the frame POSITIONS inside the condition after the cut, read with the
+  real `prolog_current_frame/1` on both sides, beside the same clauses without it: 20 / 37 and
+  11 / 28 — the construct's own choice point kept by `C_LCUT`, none by `C_LCUTIFTHEN`.
+* **Mutation-proved — 5 of 5 caught at verdict level:** `C_LCUT` cutting the construct's own
+  choice point too, cutting nothing, cutting to the newest choice point; `C_LCUTIFTHEN` cutting
+  nothing, or keeping the first choice point after the mark as `C_LCUT` does.
+
 **V9d, third construct BUILT: negation `\+ A` (2026-10-12)** (src/pl-comp.jl, pl-wam.jl,
 pl-vmi.jl). Taken before `*->`, which waits for a decision of the user's (see the handoff).
 * **Ported — the compiler:** `compileBody!`'s `CB_NOT_INNER` frame: `C_NOT <A> C_CUT C_FAIL`, A's
@@ -2446,9 +2465,9 @@ own gate.
   branch, no choice point made); `b_throw` clears it.
 * **Ported — the decompiler:** upstream's `ifcommon` (`C_IFTHENELSE`, `C_FASTCOND`) and
   `c_ifthen`; `C_LCUT`/`C_LCUTIFTHEN` come back as `!`.
-* **DECLARED, NOT RUN: `C_LCUT`, `C_LCUTIFTHEN`.** A `!` inside a condition compiles and
-  decompiles (both compared with swipl), and the VM refuses the instruction by name until the
-  cut's own step — the last of the constructs.
+* **`C_LCUT`, `C_LCUTIFTHEN` were declared and compiled in this step, and RUN since the cut's own
+  step (above):** a `!` inside a condition compiled and decompiled here (both compared with
+  swipl) while the VM still refused the instruction by name.
 * **DIVERGES (representation):** the choice reference a condition keeps in its slot (upstream:
   `consTermRef(BFR)`, an offset on the local stack) is the choice point's POSITION as an integer
   term, and `c_cut` compares positions, as `discardChoicesAfter` does; `LD->fast_condition` is an

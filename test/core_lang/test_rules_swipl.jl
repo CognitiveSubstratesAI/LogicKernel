@@ -1405,6 +1405,246 @@ end
     end
 end
 
+# ── V9d: the cut inside a condition and a negation ──────────────────────────────────────────────
+# A `!` in the condition of `(A -> B ; C)` or in `\+ A` is `C_LCUT`: it cuts the choice points made
+# since the construct started, but not the construct's own (`c_lcut_cont`, then `c_cut`); in the
+# condition of `(A -> B)` it is `C_LCUTIFTHEN`, which cuts back to the mark. Every answer and its
+# determinism are swipl's.
+"The pinned programs: facts `n/1`, `m/1`, `deep/1` and one clause per case."
+function _rlcut_clauses()
+    X, Y, Z = (_rv(k) for k in 1:3)
+    n(x) = _rf("n", x)
+    m(x) = _rf("m", x)
+    eq(a, b) = _rf("=", a, b)
+    cut = _rs("!")
+    return Tuple{_R, Union{Nothing, _R}}[
+        (n(_rg(1)), nothing), (n(_rg(2)), nothing), (n(_rg(3)), nothing),
+        (m(_rs("a")), nothing), (m(_rs("b")), nothing),
+        (_rf("deep", X), _rconj(n(X), n(_rv(9)))),
+        # upstream's own case (pl-vmi.c, above C_LSCUT): a :- \+ (b, !, fail) succeeds
+        (_rs("u1"), _rnot(_rconj(m(_rv(8)), cut, _rs("fail")))),
+        (_rf("u2", X), _rite(_rconj(n(X), cut), _rs("true"), eq(X, _rs("none")))),
+        # the cut stops the condition retrying: 1 > 1 fails, so the else branch — without it, 2
+        (
+            _rf("u3", X),
+            _rite(_rconj(n(X), cut, _rf(">", X, _rg(1))), _rs("true"), eq(X, _rs("else")))
+        ),
+        (
+            _rf("u4", X),
+            _rite(_rconj(n(X), _rf(">", X, _rg(1))), _rs("true"), eq(X, _rs("else")))
+        ),
+        (
+            _rf("u5", X),
+            _rite(_rconj(_ror(n(X), eq(X, _rs("z"))), cut), _rs("true"), _rs("fail"))
+        ),
+        # the local cut leaves the choice points made BEFORE the construct alone
+        (_rf("u6", X, Y), _rconj(m(X), _rite(_rconj(n(Y), cut), _rs("true"), _rs("fail")))),
+        (_rf("u7", X), _rconj(_rit(_rconj(n(X), cut), _rs("true")), m(_rv(8)))),      # C_LCUTIFTHEN
+        (_rf("u8", X), _rconj(n(X), _rnot(_rconj(n(Y), cut, _rf("<", Y, X))))),
+        (_rf("u9", X), _rconj(m(X), _rnot(_rconj(m(Y), cut, _rf("==", Y, X))))),
+        (
+            _rf("u10", X),
+            _rite(_rconj(_rf("deep", X), cut), _rs("true"), eq(X, _rs("none")))
+        ),
+        (_rf("u11", X, Y), _rite(_rconj(n(X), cut, m(Y)), _rs("true"), _rs("fail"))),
+        (_rf("u12", X),
+            _rite(
+                _rite(_rconj(n(X), cut), _rs("true"), _rs("fail")),
+                _rs("true"),
+                eq(X, _rs("none"))
+            )),
+        (_rf("u13", X), _rite(_rconj(_rs("fail"), cut), eq(X, _rs("a")), eq(X, _rs("b")))),
+        (_rf("u14", X), _rite(_rconj(_rs("true"), cut), eq(X, _rs("a")), eq(X, _rs("b")))),
+        (_rf("u15", X), _rite(_rconj(cut, n(X)), _rs("true"), eq(X, _rs("none")))),
+        (_rf("u16", X), _rconj(_rit(_rconj(cut, n(X)), _rs("true")), _rf(">", X, _rg(1)))),
+        # a cut in a condition inside a disjunction's branch: the other branch still runs
+        (
+            _rf("u17", X),
+            _ror(
+                _rite(_rconj(n(X), cut), _rf(">", X, _rg(5)), _rs("fail")),
+                eq(X, _rs("other"))
+            )
+        ),
+        (
+            _rf("u18", X, Y),
+            _rconj(n(X), _rit(_rconj(m(Y), cut), _rs("true")), _rf("<", X, _rg(3)))
+        )
+    ]
+end
+
+function _rlcut_goals()
+    X, Y = _rv(101), _rv(102)
+    return _R[
+        _rs("u1"), _rf("u2", X), _rf("u3", X), _rf("u4", X), _rf("u5", X), _rf("u6", X, Y),
+        _rf("u7", X), _rf("u8", X), _rf("u9", X), _rf("u10", X), _rf("u11", X, Y),
+        _rf("u12", X), _rf("u13", X), _rf("u14", X), _rf("u15", X), _rf("u16", X),
+        _rf("u17", X), _rf("u18", X, Y)
+    ]
+end
+
+"A random body of `,`, `;`, `->` and `\\+` with `!` anywhere, conditions and negations included."
+function _rlcutbody(rng, vars::Vector{_R}, depth::Int)::_R
+    r = rand(rng)
+    if depth < 4 && r < 0.2
+        return _rnot(_rlcutbody(rng, vars, depth + 1))
+    elseif depth < 4 && r < 0.35
+        return _rite(_rlcutbody(rng, vars, depth + 1), _rlcutbody(rng, vars, depth + 1),
+            _rlcutbody(rng, vars, depth + 1))
+    elseif depth < 4 && r < 0.42
+        return _rit(_rlcutbody(rng, vars, depth + 1), _rlcutbody(rng, vars, depth + 1))
+    elseif depth < 4 && r < 0.5
+        return _ror(_rlcutbody(rng, vars, depth + 1), _rlcutbody(rng, vars, depth + 1))
+    elseif depth < 4 && r < 0.72
+        return _rf(",", _rlcutbody(rng, vars, depth + 1), _rlcutbody(rng, vars, depth + 1))
+    end
+    rand(rng) < 0.25 && return _rs("!")
+    return _rorbody(rng, vars, 4)                                   # a goal
+end
+
+"Random predicates `ru<i>/k` of one or two clauses, a condition or a negation at the top, and goals."
+function _rlcut_random(rng, count::Int)
+    clauses = Tuple{_R, Union{Nothing, _R}}[]
+    goals = _R[]
+    key = 60_000
+    for i in 1:count
+        k = rand(rng, 1:3)
+        for _ in 1:rand(rng, 1:2)
+            vars = _R[_rv(key + j) for j in 1:rand(rng, k:(k + 2))]
+            key += 10
+            cond = _rf(",", _rlcutbody(rng, vars, 2), _rlcutbody(rng, vars, 2))
+            r = rand(rng)
+            body = if r < 0.4
+                _rite(cond, _rlcutbody(rng, vars, 2), _rlcutbody(rng, vars, 2))
+            elseif r < 0.6
+                _rit(cond, _rlcutbody(rng, vars, 2))
+            else
+                _rnot(cond)
+            end
+            r = rand(rng)
+            if r < 0.3
+                body = _rf(",", body, _rlcutbody(rng, vars, 2))
+            elseif r < 0.6
+                body = _rf(",", _rf("n", vars[1]), body)            # a choice point made BEFORE
+            end
+            push!(clauses, (mk_expr(_R, _R[_rs("ru$i"); vars[1:k]]), body))
+        end
+        fresh = _R[_rv(key + j) for j in 1:k]
+        key += 10
+        push!(goals, mk_expr(_R, _R[_rs("ru$i"); fresh]))
+        bound = copy(fresh)
+        bound[1] = rand(rng, (_rg(1), _rs("a"), _rg(3)))
+        push!(goals, mk_expr(_R, _R[_rs("ru$i"); bound]))
+    end
+    return clauses, goals
+end
+
+@testset "a cut in a condition or a negation: every answer and its determinism are swipl's (V9d)" begin
+    clauses = _rlcut_clauses()
+    goals = _rlcut_goals()
+    rc, rg = _rlcut_random(Xoshiro(20261015), 250)
+    append!(clauses, rc)
+    append!(goals, rg)
+    db = _rdb(clauses)
+    ops = Set{UInt64}()
+    for (h, _) in clauses
+        cref = _rproc(db, h).definition.impl_clauses.first_clause
+        while cref !== nothing
+            union!(ops, _rops(cref.clause))
+            cref = cref.next
+        end
+    end
+    @test all(in(ops), (LK.C_LCUT, LK.C_LCUTIFTHEN, LK.C_NOT, LK.C_IFTHENELSE, LK.C_IFTHEN))
+    ours = _rlines(db, goals)
+    @test count(==("end"), ours) == length(goals)
+    ends = findall(==("end"), ours)
+    answers(i) = ours[(i == 1 ? 1 : ends[i - 1] + 1):(ends[i] - 1)]        # of the i-th goal
+    @test answers(1) == ["u1 det"]                          # upstream's case: \+ (b, !, fail)
+    @test answers(2) == ["u2(1) det"]
+    @test answers(3) == ["u3(else) det"] && answers(4) == ["u4(2) det"]    # with and without
+    @test answers(6) == ["u6(a,1) nondet", "u6(b,1) det"]   # the choice points before it stay
+    @test answers(7) == ["u7(1) nondet", "u7(1) det"]       # C_LCUTIFTHEN
+    @test answers(8) == ["u8(1) nondet"] || answers(8) == ["u8(1) det"]
+    @test answers(9) == ["u9(b) det"]
+    @test answers(11) == ["u11(1,a) det"]
+    ndet = count(endswith(" nondet"), ours)
+    @info "local-cut programs: $(length(goals)) queries, $(length(ours) - length(goals)) answers ($ndet non-deterministic)"
+    @test ndet > 50 && count(endswith(" det"), ours) > 100
+    @test _rpools_live(db.ld)
+    if _R_SWIPL
+        theirs = _rswipl(clauses, goals)
+        @test ours == theirs
+        if ours != theirs
+            k = findfirst(i -> i > length(theirs) || ours[i] != theirs[i], eachindex(ours))
+            @info "first difference" k ours[something(k, 1)] get(
+                theirs, something(k, 1), "—"
+            )
+        end
+    end
+end
+
+# Where a frame lands after a local cut, read with the real `prolog_current_frame/1` on both sides
+# (as MQ6): `qn/1` is called INSIDE the condition, after `nd2` left a choice point — with the cut
+# that choice point is gone and the frame lands right above the construct's own; without it, above
+# `nd2`'s as well.
+function _rlcut_pos_clauses()
+    F0, F1 = _rv(1), _rv(2)
+    pcf(v) = _rf("prolog_current_frame", v)
+    cut = _rs("!")
+    return [
+        (_rs("z"), nothing), (_rs("nd2"), nothing), (_rs("nd2"), nothing),
+        (_rf("qn", F1), _rconj(pcf(F1), _rs("z"))), (_rf("qn", _rv(20)), nothing),
+        (_rf("lcut", F0, F1),
+            _rconj(
+                pcf(F0),
+                _rite(_rconj(_rs("nd2"), cut, _rf("qn", F1)), _rs("z"), _rs("z")),
+                _rs("z")
+            )),
+        (_rf("lnocut", F0, F1),
+            _rconj(
+                pcf(F0),
+                _rite(_rconj(_rs("nd2"), _rf("qn", F1)), _rs("z"), _rs("z")),
+                _rs("z")
+            )),
+        (_rf("lcutit", F0, F1),
+            _rconj(
+                pcf(F0), _rit(_rconj(_rs("nd2"), cut, _rf("qn", F1)), _rs("z")), _rs("z")
+            )),
+        (_rf("lnocutit", F0, F1),
+            _rconj(pcf(F0), _rit(_rconj(_rs("nd2"), _rf("qn", F1)), _rs("z")), _rs("z")))
+    ]
+end
+# swipl's distances (10.1.17, live below): 11 is the clause's frame (header 8, two variables, the
+# condition's slot). `lcut` 20 = that + the construct's own choice point (9), which `C_LCUT` keeps;
+# `lnocut` 37 = + `nd2`'s frame (8) and choice point (9); `lcutit` 11: an if-then has no choice
+# point of its own and `C_LCUTIFTHEN` cuts back to the mark; `lnocutit` 28 = 11 + 8 + 9.
+const _R_LCUTPOS = [(:lcut, 20), (:lnocut, 37), (:lcutit, 11), (:lnocutit, 28)]
+
+@testset "after a local cut the next frame lands where swipl's does (C_LCUT, C_LCUTIFTHEN)" begin
+    clauses = _rlcut_pos_clauses()
+    db = _rdb(clauses)
+    ours = Int[]
+    for (n, _) in _R_LCUTPOS
+        ans = _rcall(db, _rf(n, _rv(90), _rv(91)))
+        m = match(r"^\w+\((-?\d+),(-?\d+)\)$", ans[1][1])     # the first answer: n(A,B)
+        push!(ours, parse(Int, m[2]) - parse(Int, m[1]))
+    end
+    ours == last.(_R_LCUTPOS) || println(stderr, "  local-cut positions, kernel: ", ours)
+    @test ours == last.(_R_LCUTPOS)
+    @test _rpools_live(db.ld)
+    if _R_SWIPL
+        main =
+            "main :- " *
+            join(
+                ("$n(A$n, B$n), D$n is B$n - A$n, writeln(D$n)" for (n, _) in _R_LCUTPOS),
+                ", "
+            ) * "."
+        theirs = parse.(Int, _rswipl(clauses, (); main_text=main))
+        theirs == last.(_R_LCUTPOS) ||
+            println(stderr, "  local-cut positions, swipl: ", theirs)
+        @test theirs == last.(_R_LCUTPOS)
+    end
+end
+
 # ── where the next frame lands around a disjunction (V9d) ───────────────────────────────────────
 # Backtracking into a `CHP_JUMP` choice point lowers `lTop` to it (vmi: `lTop = (LocalFrame)ch`), so
 # the next frame lands where the choice point was — from the clause itself (`oshallow`; `odeep`

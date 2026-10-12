@@ -800,7 +800,8 @@ const VMI_RUN = (
     :I_CALLABLE, :A_ADD_FC, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
-    :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL
+    :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
+    :C_LCUT, :C_LCUTIFTHEN
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -2329,6 +2330,33 @@ function PL_next_solution_guarded(
     end
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
     @goto next_instruction
+
+    # PORT: pl-vmi.c C_LCUT
+    # DIVERGES: the slot holds the choice point's position (see `C_IFTHENELSE`).
+    @label C_LCUT
+    cl_och = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    PC += 1
+    @goto c_lcut_cont
+
+    # PORT: pl-vmi.c c_lcut_cont
+    # DIVERGES: `och` is a position: the choice point made right after the mark — the
+    # condition's own — is the one whose parent lies at it.
+    @label c_lcut_cont
+    cl_ch = ld.BFR
+    while cl_ch != 0
+        cl_parent = ld.choices[cl_ch].parent
+        if cl_parent != 0 && ld.choices[cl_parent].base == cl_och      # ch->parent == och
+            cc_och = ld.choices[cl_ch].base         # VMH_GOTO(c_cut, ch)
+            @goto c_cut
+        end
+        cl_ch = cl_parent
+    end
+    @assert ld.choices[ld.BFR].base == cl_och       # assert(BFR == och): no choicepoint yet
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_LCUTIFTHEN
+    @label C_LCUTIFTHEN
+    @goto C_CUT
 
     # PORT: pl-vmi.c C_END
     @label C_END
