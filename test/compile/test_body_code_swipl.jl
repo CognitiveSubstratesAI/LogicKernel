@@ -1637,12 +1637,14 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
             t == want || println(stderr, "  (\"", n, "\", \"", escape_string(t), "\"),")
             @test t == want
         end
-        # a clause with a unification moved into its head is refused, by name, until its step
+        # a clause with a unification moved into its head gets it back as a goal (below: the
+        # whole corpus again under the default flags)
         moved = _bclause(
             _bf("dm", _bv(1)), _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1)))
         )
         @test moved.flags & LK.CL_HEAD_TERMS != 0
-        @test_throws LK.NotPortedError _bdecompile(moved, _bf("dm", _bv(1)))
+        @test _bnorm(_bc_text(_bdecompile(moved, _bf("dm", _bv(1)))...)) ==
+            "':-'(dm(A),','('='(A,f(a)),q(A)))"
         # a fact's body is `true`; an instantiated body or head that does not match fails
         fact = _bclause(_bf("df", _bs("a")), nothing)
         @test _bc_text(_bdecompile(fact, _bf("df", _bv(1)))...) == "':-'(df(a),true)"
@@ -2141,6 +2143,124 @@ const _BC_NOT_DECOMPILED = Dict{String, String}(
                     bad += 1
                     bad <= 5 && println(stderr, "  ", _bc_text(all_[k]...), "\n    ours  ",
                         allours[k], "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+    end
+end
+
+# ── V9d: decompiling a clause whose unifications were moved into its head ───────────────────────
+# Under the default flags a leading `Arg = Term` of a static clause is compiled into the head
+# (V9b). `decompile!` puts it back: `mark_bvar_access` finds the head arguments the code reads,
+# the head decompiler gives such an argument its slot's variable and keeps the term, and
+# `moved_unifications!` writes `Arg = Term` before the body's own goals — swipl's clause/2.
+"A random rule clause `bm<k>(V1, …, Vn) :- Vi = Term, …, Body`: unifications on head arguments first."
+function _bcmoveclause(g::_BcGen, k::Int)::Tuple{_B, _B}
+    n = rand(g.rng, 1:3)
+    hvars = _B[_bcfresh!(g) for _ in 1:n]
+    pool = _B[hvars; [_bcfresh!(g) for _ in 1:2]]
+    goals = _B[]
+    for v in shuffle(g.rng, hvars)
+        rand(g.rng) < 0.75 || continue
+        t = _bcarg(g, pool, 1)
+        push!(goals, rand(g.rng) < 0.8 ? _bf("=", v, t) : _bf("=", t, v))
+    end
+    isempty(goals) && push!(goals, _bf("=", hvars[1], _bcconst(g)))
+    rand(g.rng) < 0.7 && push!(goals, _bcnotbody(g, pool, 2))
+    rand(g.rng) < 0.3 && push!(goals, _bf("=", rand(g.rng, hvars), _bcconst(g)))  # one more, after
+    return (_be("bm$k", hvars), _bconj(goals...))
+end
+
+# What `decompile!` rebuilds from each moved-unification cell (V9b's), variables renamed in order.
+const _BC_MOVE_DECOMPILED = Dict{String, String}(
+    "compound" => "':-'(mv1(f(a)),true)",
+    "then a use" => "':-'(um1(A),','('='(A,f(a)),q(A)))",
+    "atom" => "':-'(um2(A),','('='(A,a),q(A)))",
+    "var = var: no move" => "':-'(mv2(A),','('='(A,B),q(B)))",
+    "var = arg: no move" => "':-'(mv3(A),','('='(B,A),q(B)))",
+    "after a goal: no move" => "':-'(mv4(A),','(q,'='(A,a)))",
+    "a non-argument = does not stop it" => "':-'(mv6(a),','('='(A,b),q(A)))",
+    "no head argument" => "':-'(mv7,','('='(A,f(B)),q(A,B)))",
+    "cut first: no move" => "':-'(mv12(A),','('!','='(A,a)))",
+    "then a cut" => "':-'(mv13(A),','('='(A,a),','('!',q(A))))",
+    "reversed" => "':-'(mv15(A),','('='(A,a),q(A)))",
+    "a repeated head argument" => "':-'(mv16(A,A),'='(A,a))",
+    "the second = stays" => "':-'(mv17(A),','('='(A,a),'='(A,b)))",
+    "true is skipped" => "':-'(mv19(a),true)",
+    "the term holds the argument" => "':-'(mv20(A),'='(A,f(A)))",
+    "a nested head variable: no move" => "':-'(mv22(f(A)),'='(A,a))",
+    "a float" => "':-'(mv23(A),','('='(A,1.5),q(A)))",
+    "then ==" => "':-'(mv24(A),','('='(A,a),'=='(A,a)))",
+    "through another argument" => "':-'(mv25(A,B),','('='(A,f(B)),','('='(B,B),'='(B,A))))",
+    "two arguments" => "':-'(mv29(a,b),true)",
+    "two, out of order" => "':-'(mv30(A,B),','('='(A,a),','('='(B,b),q(A,B))))",
+    "past the tagged range" => "':-'(mv35(3000000000),true)",
+    "a list" => "':-'(mv42([a|A]),q(A))",
+    "a string" => "':-'(mv43(A),','('='(A,\"str\"),q(A)))",
+    "a void first" => "':-'(mv58(a),true)",
+    "past var = var" => "':-'(mv59(A),','('='(A,a),','('='(A,B),'='(B,b))))",
+    "past another =" => "':-'(mv67(a),','('='(A,true),q(A)))"
+)
+
+@testset "the decompiler puts moved unifications back (V9d)" begin
+    g1 = _BcGen(Xoshiro(20261012), UInt64(50_000))
+    g2 = _BcGen(Xoshiro(20261013), UInt64(70_000))
+    g3 = _BcGen(Xoshiro(20261014), UInt64(110_000))
+    gm = _BcGen(Xoshiro(20261016), UInt64(130_000))
+    cells = [(h, b) for (_, h, b) in _BC_MOVE_CELLS]
+    dcases = [
+        cells; [(h, b) for (_, h, b) in _BC_OR_CELLS];
+        [(h, b) for (_, h, b) in _BC_DEC_CELLS]
+        [(h, b) for (_, h, b) in _BC_ITE_CELLS]; [(h, b) for (_, h, b) in _BC_NOT_CELLS]
+        [_bcmoveclause(gm, k) for k in 1:400]; [_bcorclause(g1, k) for k in 1:400]
+        [_bciteclause(g2, k) for k in 1:400]; [_bcnotclause(g3, k) for k in 1:400]
+    ]
+    dclauses = [_bclause(h, b) for (h, b) in dcases]                # the default flags
+    nmoved = count(cl -> cl.flags & LK.CL_HEAD_TERMS != 0, dclauses)
+    @test nmoved > 250                                              # the corpus has them
+    decomp = [
+        try
+            _bdecompile(cl, h)
+        catch
+            println(
+                stderr, "  decompiling ", _bc_text(h, b), "\n    code ", _bc_kernel(cl)
+            )
+            rethrow()
+        end for (cl, (h, b)) in zip(dclauses, dcases)
+    ]
+    @testset "pinned clauses" begin
+        for (k, c) in enumerate(_BC_MOVE_CELLS)
+            t = _bnorm(_bc_text(decomp[k]...))
+            want = get(_BC_MOVE_DECOMPILED, c[1], "")
+            t == want || println(stderr, "  (\"", c[1], "\", \"", escape_string(t), "\"),")
+            @test t == want
+        end
+        # where a moved argument is not read again the bit is never set (`mark_bvar_access` gives
+        # `nothing`) and the term stays in the head — upstream's, and swipl's clause/2
+        mv1 = dclauses[findfirst(c -> c[1] == "compound", _BC_MOVE_CELLS)]
+        @test mv1.flags & LK.CL_HEAD_TERMS != 0 && LK.mark_bvar_access(mv1) === nothing
+        um1 = dclauses[findfirst(c -> c[1] == "then a use", _BC_MOVE_CELLS)]
+        @test LK.mark_bvar_access(um1) == BitVector([true])
+    end
+    if _BC_SWIPL_BIN !== nothing
+        @testset "the decompiled clauses are variants of swipl's clause/2" begin
+            shows = [
+                "bc_decomp(($(_bc_text(h, b))), ($(_bc_text(dh, db))))" for
+                ((h, b), (dh, db)) in zip(dcases, decomp)
+            ]
+            theirs = _bc_swipl(shows)
+            @test length(theirs) == length(shows)
+            bad = 0
+            for k in eachindex(shows)
+                k <= length(theirs) || break
+                if theirs[k] != ["same"]
+                    bad += 1
+                    bad <= 8 &&
+                        println(stderr, "  ", _bc_text(dcases[k]...), "\n    ours  ",
+                            _bc_text(decomp[k]...), "\n    swipl ", theirs[k],
+                            "\n    code  ",
+                            _bc_kernel(dclauses[k]))
                 end
             end
             @test bad == 0

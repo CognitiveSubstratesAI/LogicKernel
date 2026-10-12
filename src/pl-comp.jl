@@ -39,7 +39,7 @@
 # THE DECOMPILER (since V9d): `decompile!` rebuilds `Head :- Body` from a clause's code
 # (`decompile_head!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`), and clause/2
 # answers for rule bodies (`pl_clause!` with a body). A clause with a unification moved into its
-# head (`CL_HEAD_TERMS`) is refused until `moved_unifications` is ported (V9d's last step).
+# head (`CL_HEAD_TERMS`) gets it back as a goal (`mark_bvar_access`, `moved_unifications!`).
 #
 # NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
 # `link_local_var`; V9), SSU (`=>`) clauses,
@@ -2845,26 +2845,45 @@ end
 # open compounds are a stack allocated at the first one, so a head of atomic arguments allocates
 # nothing here. The functor is not unified: every caller (`pl_clause!`, `retract/1`, `retractall/1`)
 # passes a head of this predicate, and `definition` keeps the name's key only. No `bindings`
-# (clause/3), `bvar_access` (moved unifications come from a body) or goal clauses. A literal is the
+# (clause/3) or goal clauses. `bvar_access` (since V9d) is a BitVector, `nothing` where upstream's
+# is NULL, and `bvar_args` the terms of the moved unifications, by argument. A literal is the
 # very term of the clause's table (since V1 L2), so its kind comes back exactly; a nested void is a fresh
 # variable of its own.
 """
     decompile_head!(ld, clause, head, base) -> Bool
+    decompile_head!(ld, clause, head, base, bvar_access, bvar_args) -> Bool
 
 Rebuild the head arguments of `clause` from its code and literal table — slot `i`'s variable has
-key `base + i` — unifying `head`'s arguments with them in turn (pl-comp.c).
+key `base + i` — unifying `head`'s arguments with them in turn (pl-comp.c). With `bvar_access`
+(`mark_bvar_access`): an argument the body reads whose head code is not a void holds a
+unification MOVED into the head — `head`'s argument is unified with the slot's variable, the term
+goes to `bvar_args`, and the bit stays set; every other bit is cleared.
 """
 function decompile_head!(
-    ld::PL_local_data{T}, clause::Clause{T}, head::T, base::UInt64
+    ld::PL_local_data{T}, clause::Clause{T}, head::T, base::UInt64,
+    bvar_access::Union{Nothing, BitVector}, bvar_args::Union{Nothing, Vector{T}}
 )::Bool where {T}
     arity = clause.predicate.arity                              # di->arity
     arity == 0 && return true                                   # PL_unify_atom(head, name)
     argn = 0                                                    # the head argument being built
     frames::Union{Nothing, Vector{DecompileFrame{T}}} = nothing
+    write_bvar = false                                          # this argument's term is moved
     PC = Code(clause, 1)
     while true
         c = decode(PC)
         local v::T
+        if bvar_access !== nothing && !write_bvar &&
+            (frames === nothing || isempty(frames)) &&
+            argn < arity && bvar_access[argn + 1] && c != I_NOP && c != I_CHP
+            if c != H_VOID && c != H_VOID_N && c != I_ENTER
+                # Found moved var for arg: it is H_VOID; move the output to di->bvar_args
+                pl_unify!(ld, child(head, argn + 2), mk_var(T, base + UInt64(argn))) ||
+                    return false
+                write_bvar = true
+            else
+                bvar_access[argn + 1] = false
+            end
+        end
         if c == I_NOP || c == I_CHP
             PC = stepPC(PC)
             continue
@@ -2882,6 +2901,9 @@ function decompile_head!(
                 w = _decompile_void(T, frames, base, argn)
                 if frames === nothing || isempty(frames)
                     pl_unify!(ld, child(head, argn + 2), w) || return false
+                    if bvar_access !== nothing                  # not moved
+                        bvar_access[argn + 1] = false
+                    end
                     argn += 1                                   # NEXTARG
                 else
                     push!(frames[end].kids, w)
@@ -2926,6 +2948,9 @@ function decompile_head!(
         elseif c == I_EXITFACT || c == I_ENTER
             @assert frames === nothing || isempty(frames)
             while argn < arity                                  # trailing voids: their slots
+                if bvar_access !== nothing
+                    bvar_access[argn + 1] = false
+                end
                 pl_unify!(ld, child(head, argn + 2), mk_var(T, base + UInt64(argn))) ||
                     return false
                 argn += 1
@@ -2937,13 +2962,76 @@ function decompile_head!(
             )
         end
         if frames === nothing || isempty(frames)
-            pl_unify!(ld, child(head, argn + 2), v) || return false
+            if write_bvar
+                bvar_args === nothing &&
+                    error("decompile_head: bvar_access without bvar_args")
+                bvar_args[argn + 1] = v
+                write_bvar = false
+            else
+                pl_unify!(ld, child(head, argn + 2), v) || return false
+            end
             argn += 1                                           # NEXTARG
         else
             push!(frames[end].kids, v)
         end
         PC = stepPC(PC)
     end
+end
+
+decompile_head!(
+    ld::PL_local_data{T}, clause::Clause{T}, head::T, base::UInt64
+) where {T} = decompile_head!(ld, clause, head, base, nothing, nothing)
+
+# PORT: pl-comp.c add_bvar_access
+# DIVERGES: returns the new maximum, where upstream updates it through a pointer.
+"Record that the code reads frame slot `index`, if that is a head argument (pl-comp.c)."
+function add_bvar_access!(bits::BitVector, index::Int, max::Int)::Int
+    if index < length(bits)                                     # index < di->arity
+        bits[index + 1] = true
+        if index > max
+            max = index
+        end
+    end
+    return max
+end
+
+# PORT: pl-comp.c mark_bvar_access
+# DIVERGES: returns the bits — `nothing` where upstream sets `di->bvar_access` to NULL — and no
+# `bvar_args` term references: `decompile!` makes that vector. An operand is one word here, so
+# there is no `VM_DYNARGC`, `CA1_FLOAT` or `CA1_WORD` to step over.
+"""
+The head arguments the clause's code READS (pl-comp.c): by `B_VAR<N>`, by an operand that is a
+variable to read, by an inline unification of two variables. One that the head code does not
+leave a void holds a unification moved into the head. `nothing` when no argument is read.
+"""
+function mark_bvar_access(clause::Clause{T})::Union{Nothing, BitVector} where {T}
+    bits = falses(clause.predicate.arity)
+    max = -1
+    codes = clause.codes
+    pc = 1
+    while pc <= length(codes)
+        c = codes[pc]
+        info = codeTable(c)
+        if c == B_VAR0
+            max = add_bvar_access!(bits, 0, max)
+        elseif c == B_VAR1
+            max = add_bvar_access!(bits, 1, max)
+        elseif c == B_VAR2
+            max = add_bvar_access!(bits, 2, max)
+        elseif c == B_UNIFY_FF || c == B_UNIFY_FV || c == B_UNIFY_VF
+            max = add_bvar_access!(bits, VARNUM(codes[pc + 1]), max)
+            max = add_bvar_access!(bits, VARNUM(codes[pc + 2]), max)
+        else
+            for i in 1:Int(info.arguments)
+                if info.argtype[i] == CA1_VAR                   # CA1_FVAR is a write
+                    max = add_bvar_access!(bits, VARNUM(codes[pc + i]), max)
+                end
+            end
+        end
+        pc += 1 + info.arguments                                # stepPC(pc)
+    end
+    max < 0 && return nothing                                   # moved, but not used in the body
+    return bits
 end
 
 "A void the decompiler meets: in an argument, its slot's variable; in a compound, a fresh one."
@@ -3257,9 +3345,10 @@ end
 # bare head, and for a fact with a body unifies that with `true` first, as here; the functor of the
 # head is not unified (see `decompile_head!`). The body's code starts after `I_ENTER`, found by
 # stepping over the head's instructions, where upstream's head decompiler leaves `di->pc` there. No
-# `bindings`; no `I_CONTEXT` (modules). NOT PORTED: a clause with `CL_HEAD_TERMS` — its moved
-# unifications are put back by `mark_bvar_access` and `moved_unifications` (V9d's last step) —
-# raises `NotPortedError`.
+# `bindings`; no `I_CONTEXT` (modules). A clause with `CL_HEAD_TERMS` gets its moved unifications
+# back (`mark_bvar_access`, the head decompiler, `moved_unifications`): they are BUILT here, as
+# `Var = Term` goals before the body's, and unified with `body` in one step — upstream unifies
+# `body` conjunct by conjunct as it goes.
 """
     decompile!(ld, clause, head, body) -> Bool
 
@@ -3270,28 +3359,82 @@ caller to undo.
 function decompile!(
     ld::PL_local_data{T}, clause::Clause{T}, head::T, body::T
 )::Bool where {T}
-    (clause.flags & CL_HEAD_TERMS) != 0 && throw(
-        NotPortedError{T}(
-            head, "decompiling a clause with unifications moved into its head", "V9d"
-        )
-    )
     nv = Int(clause.prolog_vars)
     base = nv == 0 ? UInt64(0) : fresh_var_keys!(nv)
+    bvar_access = (clause.flags & CL_HEAD_TERMS) != 0 ? mark_bvar_access(clause) : nothing
+    if bvar_access !== nothing                                  # (a rule: a fact moves nothing)
+        bvar_args = Vector{T}(undef, length(bvar_access))
+        decompile_head!(ld, clause, head, base, bvar_access, bvar_args) || return false
+        pc = _body_start(clause)
+        return moved_unifications!(
+            ld, clause, pc, base, body, bvar_access, bvar_args, clause.codes[pc] != I_EXIT
+        )
+    end
     if (clause.flags & UNIT_CLAUSE) != 0                        # fact; deal with a :- A
         pl_unify!(ld, body, mk_sym(T, Symbol("true"))) || return false
         return decompile_head!(ld, clause, head, base)
     end
     decompile_head!(ld, clause, head, base) || return false
-    PC = Code(clause, 1)
-    while decode(PC) != I_ENTER
-        PC = stepPC(PC)
-    end
-    pc = PC.pc + 1
+    pc = _body_start(clause)
     if clause.codes[pc] == I_EXIT
         return pl_unify!(ld, body, mk_sym(T, Symbol("true")))
     end
     di = decompileInfo{T}(clause, pc, base, T[], DecompileFrame{T}[])
     return decompileBody!(ld, di, body, I_EXIT, 0)
+end
+
+"Where a rule's body code starts: after its `I_ENTER` (upstream's `di->pc` after `decompile_head`)."
+function _body_start(clause::Clause{T})::Int where {T}
+    PC = Code(clause, 1)
+    while decode(PC) != I_ENTER
+        PC = stepPC(PC)
+    end
+    return PC.pc + 1
+end
+
+# PORT: pl-comp.c moved_unifications
+# DIVERGES: builds the whole body — each moved unification as `Var = Term` (upstream's
+# `moved_unification`), in argument order, then the body's own goals — and unifies `body` with it
+# once, where upstream unifies `body` with `,/2` conjunct by conjunct and then decompiles the rest
+# into what is left. With nothing to write `body` is left as it is, as upstream (upstream defect,
+# see register Q2).
+"""
+Unify `body` with the moved unifications of the clause — `Var = Term` for each argument whose
+bit `decompile_head!` left set, in order — followed by the body's own goals when it `hasbody`
+(pl-comp.c).
+"""
+function moved_unifications!(
+    ld::PL_local_data{T}, clause::Clause{T}, pc::Int, base::UInt64, body::T,
+    bvar_access::BitVector, bvar_args::Vector{T}, hasbody::Bool
+)::Bool where {T}
+    goals = T[]
+    for i in 0:(length(bvar_access) - 1)
+        if bvar_access[i + 1]                                   # moved_unification(i, eq, a, di)
+            push!(
+                goals,
+                mk_expr(
+                    T,
+                    T[
+                        mk_sym(T, Symbol("=")),
+                        mk_var(T, base + UInt64(i)),
+                        bvar_args[i + 1]
+                    ]
+                )
+            )
+        end
+    end
+    if hasbody
+        di = decompileInfo{T}(clause, pc, base, T[], DecompileFrame{T}[])
+        decompileBodyNoShift!(di, I_EXIT, 0)
+        @assert length(di.argp) == 1 && isempty(di.frames)
+        push!(goals, pop!(di.argp))
+    end
+    isempty(goals) && return true                               # (see register Q2)
+    full = goals[end]
+    for k in (length(goals) - 1):-1:1
+        full = mk_expr(T, T[mk_sym(T, Symbol(",")), goals[k], full])
+    end
+    return pl_unify!(ld, body, full)
 end
 
 # ── reading code (pl-incl.h, pl-comp.h, pl-comp.c) ──────────────────────────────────────────────

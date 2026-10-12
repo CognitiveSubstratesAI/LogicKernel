@@ -276,6 +276,19 @@ function _manifest_index(T)
         (LK._type_test_name, Tuple{UInt64}, false),
         (LK.decompileBody!, Tuple{LD, LK.decompileInfo{T}, T, UInt64, Int}, false),
         (LK.decompile!, Tuple{LD, C, T, T}, false),
+        (
+            LK.decompile_head!,
+            Tuple{LD, C, T, UInt64, Union{Nothing, BitVector}, Union{Nothing, Vector{T}}},
+            false
+        ),
+        (LK.add_bvar_access!, Tuple{BitVector, Int, Int}, true),
+        (LK._body_start, Tuple{C}, false),
+        (LK.mark_bvar_access, Tuple{C}, false),
+        (
+            LK.moved_unifications!,
+            Tuple{LD, C, Int, UInt64, T, BitVector, Vector{T}, Bool},
+            false
+        ),
         (LK.pl_clause!, Tuple{GD, LD, D, T, T, SNK}, false),
         # V6b — the type tests compiled inline (src/pl-comp.jl, pl-incl.jl, pl-fli.jl)
         (LK.always, Tuple{LD, CInfo, Bool, String, T}, false),
