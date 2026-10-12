@@ -262,6 +262,12 @@ function _manifest_index(T)
         (LK.orVars, Tuple{BitVector, BitVector}, false),
         (LK.setVars, Tuple{CInfo, T, BitVector}, false),
         (LK.copyVarTable, Tuple{BitVector, BitVector}, false),
+        (LK._cb_next, Tuple{LK.cb_frame{T}, LK.cb_kind, Int}, false),
+        (LK._cb_next, Tuple{LK.cb_frame{T}, LK.cb_kind}, false),
+        (LK.allocChoiceVar!, Tuple{LD, CInfo}, false),
+        (LK.try_fast_condition!, Tuple{CInfo, Int}, false),
+        (LK.in_continuation, Tuple{LD, Int, Int, Int}, true),
+        (LK.killFrame, Tuple{LK.localFrame{T}}, true),
         (LK._dvar, Tuple{LK.decompileInfo{T}, UInt64}, false),
         (LK._dpush!, Tuple{LK.decompileInfo{T}, T}, false),
         (LK.build_term!, Tuple{LK.decompileInfo{T}, T, Int, Int}, false),
@@ -1636,6 +1642,9 @@ const DISPATCH_EXEMPT = (
     ),
     (
         (LK.var"@TYPE_TEST", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c TYPE_TEST): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its tests (isInteger … isCallable) are checked"
+    ),
+    (
+        (LK.var"@FASTCOND_FAILED", Tuple{LineNumberNode, Module}) => "a macro (pl-vmi.c FASTCOND_FAILED): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
     ),
     (
         (LK.var"@ENSURE_LOCAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_LOCAL_SPACE): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"

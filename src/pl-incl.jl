@@ -1052,6 +1052,10 @@ refFliP(f::Int, n::Int)::Int = f + SIZEOF_FLIFRAME + n
 # PORT: pl-incl.h isFrame
 "Whether `fr`'s flags carry the frame magic (pl-incl.h)."
 isFrame(fr::localFrame)::Bool = (fr.flags & FR_MAGIC_MASK) == FR_MAGIC
+# PORT: pl-incl.h killFrame
+"Mark frame `fr` dead: clear the magic bits that do not survive (pl-incl.h)."
+killFrame(fr::localFrame)::Nothing =
+    (fr.flags &= ~(FR_MAGIC_MASK & ~FR_MAGIC_MASK2); nothing)
 
 # PORT: pl-incl.h generationFrame
 "The database generation frame `fr` runs in (pl-incl.h)."

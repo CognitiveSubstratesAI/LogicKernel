@@ -65,7 +65,7 @@ end
 
 "An operand word `w` of kind `k` of instruction `op`, as both sides write it."
 function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
-    if k == LK.CA1_VAR || k == LK.CA1_FVAR
+    if k == LK.CA1_VAR || k == LK.CA1_FVAR || k == LK.CA1_CHP
         return string(LK.VARNUM(w))
     elseif k == LK.CA1_INTEGER
         return if op == LK.H_VOID_N || op == LK.C_VAR_N                 # a count, or a literal
@@ -147,6 +147,7 @@ bc_elem(vmi(I, _), Out) :-
     ).
 bc_op(_, var, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(_, fvar, X, S) :- !, format(string(S), "~w", [X]).
+bc_op(_, chp, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(_, jump, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(h_void_n, integer, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(c_var_n, integer, X, S) :- !, format(string(S), "~w", [X]).
@@ -1729,6 +1730,233 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
     end
 end
 
+# ── V9d: the conditionals `(A -> B ; C)` and `(A -> B)` ─────────────────────────────────────────
+# `C_IFTHENELSE <A> C_CUT <B> C_JMP <C>` — `C_FASTCOND`/`C_FASTCUT` when A is only type tests and
+# `==`/`\==` — and `C_IFTHEN <A> C_CUT <B> C_END`; each takes a frame slot past the Prolog
+# variables for its choice-point reference (`allocChoiceVar!`), and a `!` in A cuts locally
+# (`C_LCUT`, `C_LCUTIFTHEN`). Pinned cells, then random bodies of `,`, `;` and `->`.
+const _BC_ITE_CELLS = let X = _bv(1), Y = _bv(2), Z = _bv(3)
+    ite(a, b, c) = _bf(";", _bf("->", a, b), c)
+    it(a, b) = _bf("->", a, b)
+    [
+        ("if-then-else", _bf("i1", X), ite(_bf("q", X), _bf("r", X), _bf("s", X))),
+        ("a fast condition", _bf("i2", X),
+            ite(_bconj(_bf("integer", X), _bf("==", X, _bg(1))), _bf("r", X), _bf("s", X))),
+        (
+            "rational/1 is not fast",
+            _bf("i3", X),
+            ite(_bf("rational", X), _bs("r"), _bs("s"))
+        ),
+        ("a cut in the condition", _bf("i4", X),
+            ite(_bconj(_bf("q", X), _bs("!")), _bf("r", X), _bf("s", X))),
+        ("if-then", _bf("i5", X), _bconj(it(_bf("q", X), _bf("r", X)), _bf("s", X))),
+        ("a cut in an if-then's condition", _bf("i6", X),
+            it(_bconj(_bf("q", X), _bs("!")), _bf("r", X))),
+        ("a variable to balance", _bf("i7", X, Y),
+            _bconj(ite(_bf("q", X), _bf("=", Y, _bg(1)), _bs("true")), _bf("u", Y))),
+        ("nested in then and in else", _bs("i8"),
+            ite(
+                _bs("a"),
+                ite(_bs("b"), _bs("c"), _bs("d")),
+                ite(_bs("e"), _bs("f"), _bs("g"))
+            )),
+        ("a disjunction as the condition", _bs("i9"),
+            ite(_bf(";", _bs("a"), _bs("b")), _bs("c"), _bs("d"))),
+        ("a conditional as the condition", _bs("i10"),
+            ite(ite(_bs("a"), _bs("b"), _bs("c")), _bs("d"), _bs("e"))),
+        ("a cut in then is the clause's", _bs("i11"),
+            _bconj(ite(_bs("a"), _bs("!"), _bs("b")), _bs("c"))),
+        ("a cut in else", _bs("i12"), ite(_bs("a"), _bs("b"), _bs("!"))),
+        ("if-then as a disjunction's right side", _bs("i13"),
+            _bf(";", _bs("a"), it(_bs("b"), _bs("c")))),
+        ("the condition binds a variable used after", _bf("i14", Y),
+            _bconj(ite(_bf("q", Z), _bf("r", Z), _bf("=", Z, _bg(0))), _bf("s", Z, Y))),
+        ("a fast condition on var/1", _bf("i15", X, Y),
+            ite(_bf("var", X), _bf("=", Y, _bs("a")), _bf("=", Y, _bs("b")))),
+        ("two conditionals in a row", _bs("i16"),
+            _bconj(ite(_bs("a"), _bs("b"), _bs("c")), ite(_bs("d"), _bs("e"), _bs("f")))),
+        ("== as the condition", _bf("i17", X, Y), ite(_bf("==", X, Y), _bs("a"), _bs("b"))),
+        ("a chain of conditions", _bf("i18", X, Y),
+            ite(
+                _bf("\\==", X, Y),
+                _bs("a"),
+                ite(_bf("==", X, _bs("a")), _bs("b"), _bs("c"))
+            )),
+        ("if-then on a test: never fast", _bf("i19", X), it(_bf("atom", X), _bf("q", X))),
+        ("a fast condition, then a call that is not", _bf("i20", X),
+            ite(_bconj(_bf("atom", X), _bf("q", X)), _bs("a"), _bs("b")))
+    ]
+end
+
+"A random body of `,`, `;`, `(C -> T ; E)` and `(C -> T)`; a condition is sometimes tests only."
+function _bcitebody(g::_BcGen, pool::Vector{_B}, depth::Int)::_B
+    r = rand(g.rng)
+    v() = rand(g.rng, pool)
+    tests() = _bconj(
+        [
+            if rand(g.rng, Bool)
+                _bf(rand(g.rng, ("var", "nonvar", "atom", "integer")), v())
+            else
+                _bf(rand(g.rng, ("==", "\\==")), v(), rand(g.rng, Bool) ? v() : _bs("a"))
+            end for
+            _ in 1:rand(g.rng, 1:2)
+        ]...
+    )
+    if depth < 4 && r < 0.2
+        cond = rand(g.rng) < 0.4 ? tests() : _bcitebody(g, pool, depth + 1)
+        return _bf(";", _bf("->", cond, _bcitebody(g, pool, depth + 1)),
+            _bcitebody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.3
+        cond = rand(g.rng) < 0.3 ? tests() : _bcitebody(g, pool, depth + 1)
+        return _bf("->", cond, _bcitebody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.42
+        return _bf(";", _bcitebody(g, pool, depth + 1), _bcitebody(g, pool, depth + 1))
+    elseif depth < 4 && r < 0.6
+        return _bf(",", _bcitebody(g, pool, depth + 1), _bcitebody(g, pool, depth + 1))
+    end
+    return _bcorbody(g, pool, 4)                                # a goal
+end
+
+"A random rule clause `bi<k>(…) :- Body`, the body a conditional at the top or below a `,`."
+function _bciteclause(g::_BcGen, k::Int)::Tuple{_B, _B}
+    pool = _B[_bcfresh!(g) for _ in 1:rand(g.rng, 2:6)]
+    har = rand(g.rng, 0:3)
+    head = har == 0 ? _bs("bi$k") : _be("bi$k", [rand(g.rng, pool) for _ in 1:har])
+    cond = _bcitebody(g, pool, 2)
+    body = if rand(g.rng) < 0.75
+        _bf(";", _bf("->", cond, _bcitebody(g, pool, 2)), _bcitebody(g, pool, 2))
+    else
+        _bf("->", cond, _bcitebody(g, pool, 2))
+    end
+    r = rand(g.rng)
+    if r < 0.3
+        body = _bf(",", body, _bcitebody(g, pool, 2))
+    elseif r < 0.5
+        body = _bf(",", _bcitebody(g, pool, 2), body)
+    end
+    return (head, body)
+end
+
+# What `decompile!` rebuilds from each conditional cell, variables renamed in order (`_bnorm`).
+const _BC_ITE_DECOMPILED = Dict{String, String}(
+    "if-then-else" => "':-'(i1(A),';'('->'(q(A),r(A)),s(A)))",
+    "a fast condition" => "':-'(i2(A),';'('->'(','(integer(A),'=='(A,1)),r(A)),s(A)))",
+    "rational/1 is not fast" => "':-'(i3(A),';'('->'(rational(A),r),s))",
+    "a cut in the condition" => "':-'(i4(A),';'('->'(','(q(A),'!'),r(A)),s(A)))",
+    "if-then" => "':-'(i5(A),','('->'(q(A),r(A)),s(A)))",
+    "a cut in an if-then's condition" => "':-'(i6(A),'->'(','(q(A),'!'),r(A)))",
+    "a variable to balance" => "':-'(i7(A,B),','(';'('->'(q(A),'='(B,1)),true),u(B)))",
+    "nested in then and in else" => "':-'(i8,';'('->'(a,';'('->'(b,c),d)),';'('->'(e,f),g)))",
+    "a disjunction as the condition" => "':-'(i9,';'('->'(';'(a,b),c),d))",
+    "a conditional as the condition" => "':-'(i10,';'('->'(';'('->'(a,b),c),d),e))",
+    "a cut in then is the clause's" => "':-'(i11,','(';'('->'(a,'!'),b),c))",
+    "a cut in else" => "':-'(i12,';'('->'(a,b),'!'))",
+    "if-then as a disjunction's right side" => "':-'(i13,';'(a,'->'(b,c)))",
+    "the condition binds a variable used after" => "':-'(i14(A),','(';'('->'(q(B),r(B)),'='(B,0)),s(B,A)))",
+    "a fast condition on var/1" => "':-'(i15(A,B),';'('->'(var(A),'='(B,a)),'='(B,b)))",
+    "two conditionals in a row" => "':-'(i16,','(';'('->'(a,b),c),';'('->'(d,e),f)))",
+    "== as the condition" => "':-'(i17(A,B),';'('->'('=='(A,B),a),b))",
+    "a chain of conditions" => "':-'(i18(A,B),';'('->'('\\\\=='(A,B),a),';'('->'('=='(A,a),b),c)))",
+    "if-then on a test: never fast" => "':-'(i19(A),'->'(atom(A),q(A)))",
+    "a fast condition, then a call that is not" => "':-'(i20(A),';'('->'(','(atom(A),q(A)),a),b))"
+)
+
+@testset "conditionals compile as swipl's (V9d)" begin
+    ours = [_bc_kernel(_bclause(h, b)) for (_, h, b) in _BC_ITE_CELLS]
+    named(n) = ours[findfirst(c -> c[1] == n, _BC_ITE_CELLS)]
+    # the choice-point slot is the first past the Prolog variables; the condition's goals are
+    # calls, the then branch ends at a C_JMP over the else branch
+    @test named("if-then-else")[2:5] ==
+        ["c_ifthenelse(1,L1)", "b_var0", "i_call(P:[113]/1)", "c_cut(1)"]
+    @test named("a fast condition")[2:5] ==
+        ["c_fastcond(1,L1)", "i_integer(0)", "b_eq_vc(0,i:1)", "c_fastcut(1)"]
+    @test named("rational/1 is not fast")[2] == "c_ifthenelse(1,L1)"   # not in upstream's list
+    @test named("a fast condition, then a call that is not")[2] == "c_ifthenelse(1,L1)"
+    @test "c_lcut(1)" in named("a cut in the condition")
+    @test "c_lcutifthen(1)" in named("a cut in an if-then's condition")
+    @test named("if-then")[2] == "c_ifthen(1)" && "c_end" in named("if-then")
+    @test named("if-then on a test: never fast")[2] == "c_ifthen(1)"
+    @test "i_cut" in named("a cut in then is the clause's") &&
+        "i_cut" in named("a cut in else")
+    # each condition has a slot of its own, counted in the frame and not among the variables
+    cl = _bclause(_BC_ITE_CELLS[8][2], _BC_ITE_CELLS[8][3])    # three conditions, no variable
+    @test cl.prolog_vars == 0 && cl.variables == 3
+    cl = _bclause(_BC_ITE_CELLS[7][2], _BC_ITE_CELLS[7][3])    # two variables, one condition
+    @test cl.prolog_vars == 2 && cl.variables == 3
+
+    g = _BcGen(Xoshiro(20261013), UInt64(70_000))
+    random = [_bciteclause(g, k) for k in 1:400]
+    rours = [_bc_kernel(_bclause(h, b)) for (h, b) in random]
+    @testset "the random bodies exercise it" begin
+        used = union((_bc_names(c) for c in rours)...)
+        missing_ = setdiff(
+            ["c_ifthenelse", "c_ifthen", "c_cut", "c_fastcond", "c_fastcut", "c_end",
+                "c_lcut", "c_lcutifthen", "c_or", "c_jmp", "c_var", "i_cut"], used)
+        isempty(missing_) || println(stderr, "  not exercised: ", missing_)
+        @test isempty(missing_)
+        @test count(c -> count(startswith("c_if"), c) >= 3, rours) > 50      # nested
+    end
+    ldf = LK.PL_local_data{_B}()
+    ldf.prolog_flag_optimise_unify = false
+    dcases = [[(h, b) for (_, h, b) in _BC_ITE_CELLS]; random]
+    dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
+    decomp = [
+        try
+            _bdecompile(cl, h)
+        catch
+            println(
+                stderr, "  decompiling ", _bc_text(h, b), "\n    code ", _bc_kernel(cl)
+            )
+            rethrow()
+        end for (cl, (h, b)) in zip(dclauses, dcases)
+    ]
+    @testset "the decompiler: pinned clauses" begin
+        for (k, c) in enumerate(_BC_ITE_CELLS)
+            t = _bnorm(_bc_text(decomp[k]...))
+            want = get(_BC_ITE_DECOMPILED, c[1], "")
+            t == want || println(stderr, "  (\"", c[1], "\", \"", escape_string(t), "\"),")
+            @test t == want
+        end
+    end
+    if _BC_SWIPL_BIN !== nothing
+        @testset "the decompiled clauses are variants of swipl's clause/2" begin
+            shows = [
+                "bc_decomp(($(_bc_text(h, b))), ($(_bc_text(dh, db))))" for
+                ((h, b), (dh, db)) in zip(dcases, decomp)
+            ]
+            theirs = _bc_swipl(shows; prelude="set_prolog_flag(optimise_unify, false)")
+            @test length(theirs) == length(shows)
+            bad = 0
+            for k in eachindex(shows)
+                k <= length(theirs) || break
+                if theirs[k] != ["same"]
+                    bad += 1
+                    bad <= 5 &&
+                        println(stderr, "  ", _bc_text(dcases[k]...), "\n    ours  ",
+                            _bc_text(decomp[k]...), "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+        @testset "identical to swipl" begin
+            all_ = [[(h, b) for (_, h, b) in _BC_ITE_CELLS]; random]
+            allours = [ours; rours]
+            theirs = _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in all_])
+            @test length(theirs) == length(all_)
+            bad = 0
+            for k in eachindex(all_)
+                k <= length(theirs) || break
+                if allours[k] != theirs[k]
+                    bad += 1
+                    bad <= 5 && println(stderr, "  ", _bc_text(all_[k]...), "\n    ours  ",
+                        allours[k], "\n    swipl ", theirs[k])
+                end
+            end
+            @test bad == 0
+        end
+    end
+end
+
 @testset "COMMIT_CLAUSE: set exactly when the body starts with `!` (c:2165)" begin
     commit(h, b) = _bclause(h, b).flags & LK.COMMIT_CLAUSE != 0
     @test commit(_bs("pc1"), _bconj(_bs("!"), _bf("q", _bv(1))))
@@ -1742,9 +1970,8 @@ end
 @testset "what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
-        _bf(";", _bf("->", _bs("a"), _bs("b")), _bs("c")),      # if-then-else: V9d's next step
-        _bf(";", _bf("*->", _bs("a"), _bs("b")), _bs("c")),
-        _bf("->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
+        _bf(";", _bf("*->", _bs("a"), _bs("b")), _bs("c")),     # soft-cut: V9d's next step
+        _bf("*->", _bs("a"), _bs("b")), _bf("\\+", _bs("a")),
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
         _bconj(_bf("q", _bv(1)), _bv(1)),                       # a variable goal (meta-call)
         _bconj(_bs("q"), _bs("\$catch")),                      # a reserved goal atom (V9)

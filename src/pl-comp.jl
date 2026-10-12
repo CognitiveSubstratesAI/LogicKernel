@@ -34,7 +34,8 @@
 #
 # CONTROL CONSTRUCTS (V9d, one per step): the disjunction `;` (and `|`) since 2026-10-12 —
 # `compileBody!`'s frames, with the variable tables it balances (`setVars`, `balanceVars`, `c_var`,
-# `orVars`, `copyVarTable`); `->`, `*->`, `\+` and `$/1` are still refused there, by name.
+# `orVars`, `copyVarTable`) — and the conditionals `(A -> B ; C)`, `(A -> B)` (`allocChoiceVar!`,
+# `try_fast_condition!`); `*->`, `\+` and `$/1` are still refused there, by name.
 # THE DECOMPILER (since V9d): `decompile!` rebuilds `Head :- Body` from a clause's code
 # (`decompile_head!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`), and clause/2
 # answers for rule bodies (`pl_clause!` with a body). A clause with a unification moved into its
@@ -223,7 +224,8 @@ end
 # then in the order raised — see `c_warning`); `styleCheck` is upstream's GLOBAL
 # `debugstatus.styleCheck`, copied from the local data when the compilation starts, and
 # `variable_names` the value of `$variable_names` then (`get_variable_names`). `cut` is a clause-level cut
-# (`var` 0) until the control constructs set a local one (V9). `module_` is
+# (`var` 0) until a condition sets a local one (since V9d). `variables` is `ci->clause->variables`,
+# the frame size: the Prolog variables, then one slot per condition (`allocChoiceVar!`). `module_` is
 # upstream's `module`, a Julia keyword.
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
 mutable struct compileInfo{T}
@@ -239,6 +241,7 @@ mutable struct compileInfo{T}
     procedures::Vector{Procedure{T}}                        # the procedure table being built
     branch_vars::Union{Nothing, Vector{branch_var}}         # We are in a branch
     cut::cutInfo                                            # how to compile !
+    variables::Int                                          # (ci->clause->variables: the frame size)
     head_unify::Bool                                        # In unifications against arguments
     flags::UInt32                                           # (ci->clause's flags: CL_HEAD_TERMS)
     av_unify::Int                                           # (=/2 goals the analysis met)
@@ -259,7 +262,7 @@ compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
     compileInfo{T}(
         m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
-        false, UInt32(0), 0, 0, Dict{Int, T}(),                 # head_unify: compileClause's
+        0, false, UInt32(0), 0, 0, Dict{Int, T}(),              # head_unify: compileClause's
         0, 0, 0, nothing, nothing                               # no style checks, no warnings
     )
 
@@ -2072,63 +2075,172 @@ end
     CB_COMMA_RHS            # (A, B): compile B after A
     CB_SEMI_A               # (A ; B): resume after A
     CB_SEMI_B               # (A ; B): resume after B
+    CB_ITE_COND             # (A -> B ; C): resume after A
+    CB_ITE_THEN             # (A -> B ; C): resume after B
+    CB_ITE_ELSE             # (A -> B ; C): resume after C
+    CB_IT_COND              # (A -> B): resume after A
+    CB_IT_THEN              # (A -> B): resume after B
 end
 
 # PORT: pl-comp.c cb_frame
-# DIVERGES: the fields of the constructs ported so far (`,` and `;`): no `a0`, `var`, `cutsave`,
-# `hard`, `isnot` (the conditions and `\+`: V9d's next steps) or `tmsave` (modules). The three
-# variable tables are ONE vector of three (`nothing` for a comma), so a frame is a flat value.
+# DIVERGES: the fields of the constructs ported so far (`,`, `;`, `->`): no `isnot` (`\+`: V9d's
+# next steps) or `tmsave` (modules); `hard` is always true until `*->`. The three variable tables
+# are ONE tuple of three (`nothing` where upstream leaves them unset), so a frame is a flat value.
 "A pending step of `compileBody` (pl-comp.c): the state to restore and the step to run."
 struct cb_frame{T}
     kind::cb_kind
     call::code                                  # 'call' passed to the pending sub-compilation
     body::T                                     # the enclosing control term (`,`: its B)
-    tc_or::Int                                  # patch offset of C_OR
+    a0::T                                       # the (A -> B) inside (;)
+    var::Int                                    # choice-point variable
+    tc_or::Int                                  # patch offset of C_OR / C_IFTHENELSE / ...
     tc_jmp::Int                                 # patch offset of forward C_JMP
     vars::Union{Nothing, NTuple{3, BitVector}}  # vsave, valt1, valt2
+    cutsave::cutInfo
+    hard::Bool                                  # -> vs *->
+end
+
+"`frame` with another `kind` and forward-jump offset: the next step of the same construct."
+_cb_next(frame::cb_frame{T}, kind::cb_kind, tc_jmp::Int=frame.tc_jmp) where {T} =
+    cb_frame{T}(
+        kind, frame.call, frame.body, frame.a0, frame.var, frame.tc_or, tc_jmp, frame.vars,
+        frame.cutsave, frame.hard
+    )
+
+# PORT: pl-comp.c allocChoiceVar
+# DIVERGES: the frame size is `ci.variables` (see `compileInfo`); the error needs the local data.
+"""
+Reserve a frame slot for a condition's choice-point reference and return its offset (pl-comp.c);
+0, with `representation_error(max_frame_size)` raised, when the frame size overflows.
+"""
+function allocChoiceVar!(ld::PL_local_data{T}, ci::compileInfo{T})::Int where {T}
+    var = Int(VAROFFSET(ci.variables))
+    ci.variables += 1
+    if ci.variables % clsize_t == 0                             # ci->clause->variables == 0
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_frame_size))
+        return 0
+    end
+    return var
+end
+
+# PORT: pl-comp.c try_fast_condition
+# DIVERGES: positions are indices into `ci.codes`. Of upstream's list the kernel has the type tests
+# and `==`/`\==` (the arithmetic `A_` instructions: only under `optimise`, since V6c2);
+# `I_RATIONAL` is not in upstream's list, so a `rational/1` condition is not fast.
+"""
+Make the condition whose code starts at `tc_or` a fast one — `C_IFTHENELSE` becomes `C_FASTCOND` —
+when it is only tests that cannot bind or call (pl-comp.c); true when it did.
+"""
+function try_fast_condition!(ci::compileInfo, tc_or::Int)::Bool
+    pc = tc_or + 1                                              # &OpCode(ci, tc_or)
+    while pc <= PC(ci)
+        op = ci.codes[pc]
+        (
+            op == I_INTEGER || op == I_FLOAT || op == I_NUMBER || op == I_ATOMIC ||
+            op == I_ATOM || op == I_STRING || op == I_COMPOUND || op == I_CALLABLE ||
+            op == I_VAR || op == I_NONVAR || op == B_EQ_VV || op == B_EQ_VC ||
+            op == B_NEQ_VV || op == B_NEQ_VC
+        ) || return false
+        pc += 1 + codeTable(op).arguments                       # stepPC(pc)
+    end
+    @assert ci.codes[tc_or - 2] == C_IFTHENELSE                 # decode(pc[-3])
+    ci.codes[tc_or - 2] = C_FASTCOND
+    return true
 end
 
 # PORT: pl-comp.c compileBody
-# DIVERGES: `,`, `;` and `|` — every other control construct (`->`, `*->`, also as the left side of
-# a `;`, `\+`, `$/1`, `:/2`, `@/2`) throws `NotPortedError` (V9d's next steps; modules), before
+# DIVERGES: `,`, `;`, `|` and `->` — the other control constructs (`*->`, alone or as the left side
+# of a `;`, `\+`, `$/1`, `:/2`, `@/2`) throw `NotPortedError` (V9d's next steps; modules), before
 # anything is emitted; the pending steps (upstream's `cb_frame`s) are a Vector where upstream uses a
 # segstack, so there is no MEMORY_OVERFLOW; no `islocal` (see the file header).
 """
 Compile clause body `body`, its last goal called with `call` (pl-comp.c): a conjunction left to
 right, every goal but the last with `I_CALL`; a disjunction as `C_OR <A> C_JMP <B>`, the
-variables each branch leaves unset made fresh (`C_VAR`). Returns `BOOLEX_TRUE` or the first
-goal's error code.
+variables each branch leaves unset made fresh (`C_VAR`); `(A -> B ; C)` as
+`C_IFTHENELSE <A> C_CUT <B> C_JMP <C>` — `C_FASTCOND`/`C_FASTCUT` when the condition is only
+tests — and `(A -> B)` as `C_IFTHEN <A> C_CUT <B> C_END`, a `!` in the condition cutting locally.
+Returns `BOOLEX_TRUE` or the first goal's error code.
 """
 function compileBody!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, body::T, call::code
 )::boolex_t where {T}
     cf = gd.functors_control
     stack = cb_frame{T}[]
+    rc = BOOLEX_TRUE
     @label next_body
     if kind(body) === EXPR && _is_control(body, cf)
         if _has_functor(body, cf.comma, 2)                     # A , B
-            push!(stack, cb_frame{T}(CB_COMMA_RHS, call, child(body, 3), 0, 0, nothing))
+            push!(
+                stack,
+                cb_frame{T}(
+                    CB_COMMA_RHS, call, child(body, 3), body, 0, 0, 0, nothing, ci.cut, true
+                )
+            )
             body = child(body, 2)
             call = I_CALL
             @goto next_body
         elseif _has_functor(body, cf.semicolon, 2) || _has_functor(body, cf.bar, 2)
             a0 = child(body, 2)                                # A ; B and (A -> B ; C)
-            (_has_functor(a0, cf.ifthen, 2) || _has_functor(a0, cf.softcut, 2)) &&
-                throw(NotPortedError{T}(body, "if-then-else (-> or *-> in a ;)", "V9d"))
+            _has_functor(a0, cf.softcut, 2) &&
+                throw(NotPortedError{T}(body, "soft-cut (*-> in a ;)", "V9d"))
             vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
             valt1 = copy(ci.used_var)
             valt2 = copy(ci.used_var)
             setVars(ci, child(body, 2), valt1)
             setVars(ci, child(body, 3), valt2)
-            Output_1!(ci, C_OR, code(0))
+            if _has_functor(a0, cf.ifthen, 2)                  # A  -> B ; C
+                var = allocChoiceVar!(ld, ci)
+                if var == 0
+                    rc = BOOLEX_FALSE
+                    @goto resume
+                end
+                Output_2!(ci, C_IFTHENELSE, code(var), code(0))
+                push!(
+                    stack,
+                    cb_frame{T}(
+                        CB_ITE_COND, call, body, a0, var, PC(ci), 0, (vsave, valt1, valt2),
+                        ci.cut, true
+                    )
+                )
+                # Cut locally in the condition
+                ci.cut = cutInfo(var, ci.cut.nextvar, C_LCUT)
+                body = child(a0, 2)
+                call = I_CALL
+                @goto next_body
+            else                                               # A ; B
+                Output_1!(ci, C_OR, code(0))
+                push!(
+                    stack,
+                    cb_frame{T}(
+                        CB_SEMI_A, call, body, body, 0, PC(ci), 0, (vsave, valt1, valt2),
+                        ci.cut, true
+                    )
+                )
+                body = child(body, 2)
+                call = I_CALL
+                @goto next_body
+            end
+        elseif _has_functor(body, cf.ifthen, 2)                # A -> B
+            var = allocChoiceVar!(ld, ci)
+            if var == 0
+                rc = BOOLEX_FALSE
+                @goto resume
+            end
+            Output_1!(ci, C_IFTHEN, code(var))
             push!(
-                stack, cb_frame{T}(CB_SEMI_A, call, body, PC(ci), 0, (vsave, valt1, valt2))
+                stack,
+                cb_frame{T}(CB_IT_COND, call, body, body, var, 0, 0, nothing, ci.cut, true)
             )
+            ci.cut = cutInfo(var, ci.cut.nextvar, C_LCUTIFTHEN) # Cut locally in the condition
             body = child(body, 2)
             call = I_CALL
             @goto next_body
         end
-        throw(NotPortedError{T}(body, "a control construct other than ,/2 and ;/2", "V9d"))
+        throw(
+            NotPortedError{T}(
+                body, "a control construct other than ,/2, ;/2 and ->/2", "V9d"
+            )
+        )
     end
     rc = compileSubClause!(gd, ld, ci, body, call)
     @label resume
@@ -2146,19 +2258,59 @@ function compileBody!(
         tc_jmp = PC(ci)
         ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)     # OpCode(ci, tc_or-1)
         copyVarTable(ci.used_var, vsave)
-        push!(
-            stack,
-            cb_frame{T}(CB_SEMI_B, frame.call, frame.body, frame.tc_or, tc_jmp, frame.vars)
-        )
+        push!(stack, _cb_next(frame, CB_SEMI_B, tc_jmp))
         body = child(frame.body, 3)
         call = frame.call
         @goto next_body
-    else                                                       # CB_SEMI_B: (A ; B) after B
+    elseif frame.kind == CB_SEMI_B                             # (A ; B) after B
         _, valt1, valt2 = frame.vars::NTuple{3, BitVector}
         balanceVars(valt2, valt1, ci)
         ci.codes[frame.tc_jmp] = code(PC(ci) - frame.tc_jmp)   # OpCode(ci, tc_jmp-1)
         orVars(valt1, valt2)
         copyVarTable(ci.used_var, valt1)
+        @goto resume
+    elseif frame.kind == CB_ITE_COND                           # (A -> B ; C) after A
+        fast = false
+        if frame.hard
+            fast = try_fast_condition!(ci, frame.tc_or)
+        end
+        ci.cut = frame.cutsave
+        frame.hard ||
+            throw(NotPortedError{T}(frame.body, "soft-cut (C_SOFTCUT)", "V9d"))
+        Output_1!(ci, fast ? C_FASTCUT : C_CUT, code(frame.var))
+        push!(stack, _cb_next(frame, CB_ITE_THEN))
+        body = child(frame.a0, 3)
+        call = frame.call
+        @goto next_body
+    elseif frame.kind == CB_ITE_THEN                           # (A -> B ; C) after B
+        vsave, valt1, valt2 = frame.vars::NTuple{3, BitVector}
+        balanceVars(valt1, valt2, ci)
+        Output_1!(ci, C_JMP, code(0))
+        tc_jmp = PC(ci)
+        ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)     # OpCode(ci, tc_or-1)
+        copyVarTable(ci.used_var, vsave)
+        push!(stack, _cb_next(frame, CB_ITE_ELSE, tc_jmp))
+        body = child(frame.body, 3)
+        call = frame.call
+        @goto next_body
+    elseif frame.kind == CB_ITE_ELSE                           # (A -> B ; C) after C
+        _, valt1, valt2 = frame.vars::NTuple{3, BitVector}
+        balanceVars(valt2, valt1, ci)
+        ci.codes[frame.tc_jmp] = code(PC(ci) - frame.tc_jmp)   # OpCode(ci, tc_jmp-1)
+        orVars(valt1, valt2)
+        copyVarTable(ci.used_var, valt1)
+        @goto resume
+    elseif frame.kind == CB_IT_COND                            # (A -> B) after A
+        ci.cut = frame.cutsave
+        frame.hard ||
+            throw(NotPortedError{T}(frame.body, "soft-cut (C_SCUT)", "V9d"))
+        Output_1!(ci, C_CUT, code(frame.var))
+        push!(stack, _cb_next(frame, CB_IT_THEN))
+        body = child(frame.body, 3)
+        call = frame.call
+        @goto next_body
+    else                                                       # CB_IT_THEN: (A -> B) after B
+        Output_0!(ci, C_END)
         @goto resume
     end
 end
@@ -2186,6 +2338,7 @@ function _compile_clause_head!(
     gd::PL_global_data{T}, ci::compileInfo{T}, head::T, body::Union{Nothing, T}
 )::Int where {T}
     nv = analyse_variables!(gd, ci, head, body)               # prolog_vars = variables = nv
+    ci.variables = nv
     initMerge!(ci)
     if ci.arity > 0
         for n in 0:(ci.arity - 1)
@@ -2280,7 +2433,8 @@ function compileClause(
     end
     flags |= ci.flags                                          # CL_HEAD_TERMS, set on ci->clause
     return Clause{T}(
-        def, gen_t(0), gen_t(0), clsize_t(nv), clsize_t(nv), flags, ci.codes, ci.literals,
+        def, gen_t(0), gen_t(0), clsize_t(ci.variables), clsize_t(nv), flags, ci.codes,
+        ci.literals,
         ci.procedures, UInt32(0), UInt32(0), UInt32(0)     # line_no, source_no, owner_no
     )
 end
@@ -2825,8 +2979,8 @@ end
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
 # upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3, `$/1` and the
-# conditions (V9d's next steps, V9e–g).
+# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3, `$/1`, `*->` and
+# `\+` (V9d's next steps, V9e–g).
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
 each goal is built on the decompilation stack from its arguments' instructions, and the goals are
@@ -2971,8 +3125,12 @@ function decompileBodyNoShift!(
             di.pc += 1
             build_term!(di, def.name, def.arity)
             pushed += 1
-        elseif op == C_VAR || op == C_JMP
+        elseif op == C_VAR || op == C_JMP || op == C_CUT || op == C_FASTCUT
             di.pc += 1
+        elseif op == C_LCUTIFTHEN || op == C_LCUT               # a `!` in a condition
+            di.pc += 1
+            push!(di.argp, mk_sym(T, Symbol("!")))
+            pushed += 1
         elseif op == L_NOLCO
             di.pc += Int(codes[di.pc])
             di.pc += 1
@@ -2987,6 +3145,30 @@ function decompileBodyNoShift!(
             di.pc += 1
             decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
             build_term!(di, mk_sym(T, Symbol(";")), 2)
+            pushed += 1
+        elseif op == C_IFTHENELSE || op == C_FASTCOND           # A -> B ; C (ifcommon)
+            icut = op == C_FASTCOND ? C_FASTCUT : C_CUT
+            di.pc += 1                                          # skip the 'MARK' variable
+            jmp = Int(codes[di.pc])
+            di.pc += 1
+            adr1 = di.pc + jmp
+            decompileBodyNoShift!(di, icut, 0)                  # A
+            di.pc += 2                                          # skip the cut
+            decompileBodyNoShift!(di, code(typemax(UInt64)), adr1)      # B
+            build_term!(di, mk_sym(T, Symbol("->")), 2)
+            di.pc -= 1
+            to_jump = Int(codes[di.pc])                         # DECOMPILETOJUMP: C
+            di.pc += 1
+            decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
+            build_term!(di, mk_sym(T, Symbol(";")), 2)
+            pushed += 1
+        elseif op == C_IFTHEN                                   # A -> B (c_ifthen)
+            di.pc += 1
+            decompileBodyNoShift!(di, C_CUT, 0)                 # A
+            di.pc += 2                                          # skip C_CUT
+            decompileBodyNoShift!(di, C_END, 0)                 # B
+            di.pc += 1
+            build_term!(di, mk_sym(T, Symbol("->")), 2)
             pushed += 1
         elseif op == I_EXIT
             # break (out of upstream's switch): nothing

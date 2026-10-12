@@ -417,6 +417,30 @@ const C_OR = code(103)
 # PORT: pl-vmi.c C_VAR_N
 "Make the second operand's count of slots, from the first operand's, fresh variables (pl-vmi.c)."
 const C_VAR_N = code(104)
+# PORT: pl-vmi.c C_IFTHENELSE
+"`(A -> B ; C)`: keep the current choice point in the operand's slot, then as `C_OR` (pl-vmi.c)."
+const C_IFTHENELSE = code(105)
+# PORT: pl-vmi.c C_IFTHEN
+"`(A -> B)`: keep the current choice point in the operand's slot (pl-vmi.c)."
+const C_IFTHEN = code(106)
+# PORT: pl-vmi.c C_CUT
+"Commit a condition: discard the choice points made since the one the operand's slot keeps (pl-vmi.c)."
+const C_CUT = code(107)
+# PORT: pl-vmi.c C_FASTCOND
+"`C_IFTHENELSE` for a condition of tests only: no choice point, a failing test jumps to the else branch (pl-vmi.c)."
+const C_FASTCOND = code(108)
+# PORT: pl-vmi.c C_FASTCUT
+"Commit a fast condition: nothing to do unless it was turned into a normal one (pl-vmi.c)."
+const C_FASTCUT = code(109)
+# PORT: pl-vmi.c C_END
+"The end of `(A -> B)`, for the decompiler (pl-vmi.c)."
+const C_END = code(110)
+# PORT: pl-vmi.c C_LCUT
+"A `!` in the condition of `(A -> B ; C)`: cut the choice points made since the mark, not the mark (pl-vmi.c)."
+const C_LCUT = code(111)
+# PORT: pl-vmi.c C_LCUTIFTHEN
+"A `!` in the condition of `(A -> B)` (pl-vmi.c)."
+const C_LCUTIFTHEN = code(112)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -538,7 +562,15 @@ const _CODE_TABLE = (
     code_info(:I_TRUE, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:C_JMP, 0x00, 1, (CA1_JUMP, 0x00, 0x00, 0x00)),
     code_info(:C_OR, 0x00, 1, (CA1_JUMP, 0x00, 0x00, 0x00)),
-    code_info(:C_VAR_N, 0x00, 2, (CA1_FVAR, CA1_INTEGER, 0x00, 0x00))
+    code_info(:C_VAR_N, 0x00, 2, (CA1_FVAR, CA1_INTEGER, 0x00, 0x00)),
+    code_info(:C_IFTHENELSE, 0x00, 2, (CA1_CHP, CA1_JUMP, 0x00, 0x00)),
+    code_info(:C_IFTHEN, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_CUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_FASTCOND, 0x00, 2, (CA1_CHP, CA1_JUMP, 0x00, 0x00)),
+    code_info(:C_FASTCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_END, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:C_LCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_LCUTIFTHEN, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

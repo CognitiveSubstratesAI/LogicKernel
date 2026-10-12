@@ -372,6 +372,30 @@ function discardFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-wam.c in_continuation
+# DIVERGES: frames and choice points are compared by position (`base`); a NULL frame or choice
+# point is index 0, below every position.
+"""
+True if frame `fr` is in the continuation of `frame`, or of the frame of choice point `ch` or of
+one of `ch`'s parents (pl-wam.c).
+"""
+function in_continuation(ld::PL_local_data{T}, fr::Int, frame::Int, ch::Int)::Bool where {T}
+    frbase = ld.frames[fr].base
+    while true
+        while frame != 0 && ld.frames[frame].base > frbase
+            frame = ld.frames[frame].parent
+        end
+        frame == fr && return true
+
+        if ch != 0 && ld.choices[ch].base > frbase
+            frame = ld.choices[ch].frame
+            ch = ld.choices[ch].parent
+        else
+            return false
+        end
+    end
+end
+
 # PORT: pl-wam.c discardChoicesAfter
 # DIVERGES: the age tests compare `base` positions; `frameFinished` on an `FR_WATCHED` frame is not
 # ported — nothing sets the flag before `setup_call_cleanup/3` (V9) — so it is asserted absent; the
@@ -671,11 +695,28 @@ macro LOAD_REGISTERS(qid)
     return esc(:((FR, ARGP, PCc, PCl, PC) = _load_registers!(ld, $qid)))
 end
 
+# PORT: pl-vmi.c FASTCOND_FAILED
+# DIVERGES: `LD->fast_condition` is an index into the running clause's code (0 for NULL): a fast
+# condition holds no call, so the code registers are that clause's.
+"A test compiled inline failed (pl-vmi.c): in a fast condition jump to its else branch, else `BODY_FAILED`."
+macro FASTCOND_FAILED()
+    return esc(
+        quote
+            if ld.fast_condition == 0
+                @goto shallow_backtrack             # BODY_FAILED
+            else
+                PC = ld.fast_condition
+                ld.fast_condition = 0
+                @goto next_instruction
+            end
+        end
+    )
+end
+
 # PORT: pl-vmi.c TYPE_TEST
 # DIVERGES: a macro over the run loop's locals, as upstream's, without its `functor` argument: that
 # names the predicate of the `vmi_builtin=false` branch (`debug_pred1`), NOT PORTED — only the
-# debugger and coverage clear the flag. `FASTCOND_FAILED` is `BODY_FAILED`: `LD->fast_condition` is
-# set only by `C_FASTCOND` (V9).
+# debugger and coverage clear the flag.
 "The body of a type-test instruction (pl-vmi.c `TYPE_TEST`): `test` the variable at the operand."
 macro TYPE_TEST(test)
     return esc(
@@ -683,7 +724,7 @@ macro TYPE_TEST(test)
             tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
             PC += 1
             $test(tt_p) && @goto next_instruction
-            @goto shallow_backtrack                 # FASTCOND_FAILED
+            @FASTCOND_FAILED
         end
     )
 end
@@ -758,7 +799,8 @@ const VMI_RUN = (
     :I_RATIONAL, :I_FLOAT, :I_NUMBER, :I_ATOMIC, :I_ATOM, :I_STRING, :I_COMPOUND,
     :I_CALLABLE, :A_ADD_FC, :B_UNIFY_FIRSTVAR, :B_UNIFY_VAR, :B_UNIFY_EXIT, :B_UNIFY_FF,
     :B_UNIFY_VF, :B_UNIFY_FV, :B_UNIFY_VV, :B_UNIFY_FC, :B_UNIFY_VC, :B_EQ_VV, :B_EQ_VC,
-    :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N
+    :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
+    :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1868,7 +1910,6 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c B_EQ_VV
     # DIVERGES: the kernel's standard order raises nothing, so there is no `CMP_ERROR`.
-    # `FASTCOND_FAILED` is `BODY_FAILED` (see `TYPE_TEST`).
     # NOT PORTED: the `vmi_builtin=false` branch (`debug_eq_vv`; only the debugger clears the flag).
     @label B_EQ_VV
     beq_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
@@ -1877,12 +1918,11 @@ function PL_next_solution_guarded(
     if compareStandard(ld, ld.slots[beq_1 + 1], ld.slots[beq_2 + 1], true) == CMP_EQUAL
         @goto next_instruction
     end
-    @goto shallow_backtrack                         # FASTCOND_FAILED
+    @FASTCOND_FAILED
 
     # PORT: pl-vmi.c B_EQ_VC
     # DIVERGES: the constant operand is a literal; `*v1 == c` is SWI's identity of atomic terms
-    # (`compare_primitives` in equality mode, as `PL_unify_atomic`). `FASTCOND_FAILED` is
-    # `BODY_FAILED`.
+    # (`compare_primitives` in equality mode, as `PL_unify_atomic`).
     # NOT PORTED: the `vmi_builtin=false` branch.
     @label B_EQ_VC
     beqc_v = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
@@ -1891,7 +1931,7 @@ function PL_next_solution_guarded(
     if compare_primitives(beqc_v, beqc_c, CMP_MODE_EQUAL) == CMP_EQUAL
         @goto next_instruction
     end
-    @goto shallow_backtrack                         # FASTCOND_FAILED
+    @FASTCOND_FAILED
 
     # PORT: pl-vmi.c B_NEQ_VV
     # DIVERGES: as `B_EQ_VV`'s.
@@ -1900,7 +1940,7 @@ function PL_next_solution_guarded(
     bneq_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if compareStandard(ld, ld.slots[bneq_1 + 1], ld.slots[bneq_2 + 1], true) == CMP_EQUAL
-        @goto shallow_backtrack                     # FASTCOND_FAILED
+        @FASTCOND_FAILED
     end
     @goto next_instruction
 
@@ -1913,7 +1953,7 @@ function PL_next_solution_guarded(
     if compare_primitives(bneqc_v, bneqc_c, CMP_MODE_EQUAL) != CMP_EQUAL
         @goto next_instruction
     end
-    @goto shallow_backtrack                         # FASTCOND_FAILED
+    @FASTCOND_FAILED
 
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
@@ -2197,6 +2237,103 @@ function PL_next_solution_guarded(
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
     @goto next_instruction
 
+    # ── the conditionals (pl-vmi.c), V9d ──────────────────────────────────────────────────────────
+    # A condition keeps the choice point that was current when it started in a frame slot of its own
+    # (upstream: `consTermRef(BFR)`, an offset on the local stack). Here the slot holds the choice
+    # point's POSITION (`base`) as an integer term, and `c_cut` compares positions, as
+    # `discardChoicesAfter` does (decision 3).
+    # PORT: pl-vmi.c C_IFTHENELSE
+    # DIVERGES: the slot's value (above).
+    @label C_IFTHENELSE
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(
+        T, ld.choices[ld.BFR].base
+    )                                               # == C_IFTHEN
+    PC += 1
+    @goto C_OR
+
+    # PORT: pl-vmi.c C_IFTHEN
+    # DIVERGES: the slot's value (above).
+    @label C_IFTHEN
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(
+        T, ld.choices[ld.BFR].base
+    )
+    PC += 1
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_FASTCOND
+    # DIVERGES: the slot's value (above); `LD->fast_condition` is an index (see `FASTCOND_FAILED`).
+    # NOT PORTED: the `vmi_builtin=false` branch (only the debugger clears the flag).
+    @label C_FASTCOND
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(
+        T, ld.choices[ld.BFR].base
+    )                                               # == C_IFTHEN
+    cfc_skip = Int(PCc[PC + 1])
+    PC += 2
+    ld.fast_condition = PC + cfc_skip
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_FASTCUT
+    @label C_FASTCUT
+    if ld.fast_condition == 0
+        @goto C_CUT
+    end
+    PC += 1
+    ld.fast_condition = 0
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_CUT
+    # DIVERGES: the slot holds the choice point's position (above).
+    @label C_CUT
+    cc_och = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    PC += 1                                         # cannot be in macro!
+    @goto c_cut
+
+    # PORT: pl-vmi.c c_cut
+    # DIVERGES: `och` is a position; the walk compares positions. The frames a choice point
+    # protected are discarded and killed as upstream, and their records — with the choice points' —
+    # are dropped when `lTop` is lowered (decision 3). NOT PORTED: `frameFinished` on an
+    # `FR_WATCHED` frame (setup_call_cleanup/3, V9g; asserted absent), so there is no re-basing
+    # after a shift and no exception to rethrow.
+    @label c_cut
+    cc_ch = ld.BFR
+    @assert ld.choices[cc_ch].base >= cc_och        # assert(BFR>=och)
+    while ld.choices[cc_ch].base > cc_och
+        cc_c = ld.choices[cc_ch]
+        cc_fr2 = cc_c.frame
+        while !in_continuation(ld, cc_fr2, FR, cc_c.parent)     # See (*)
+            cc_f2 = ld.frames[cc_fr2]
+            @assert cc_f2.clause !== nothing ||
+                ((cc_f2.predicate::Definition{T}).flags & P_FOREIGN) != 0
+            @assert (cc_f2.flags & FR_WATCHED) == 0 "c_cut: frameFinished (FR_WATCHED) arrives with setup_call_cleanup (V9g)"
+            discardFrame(ld, cc_fr2)
+            killFrame(cc_f2)                        # kill for markPredicates()
+            cc_fr2 = cc_f2.parent
+        end
+        if cc_c.parent != 0 && ld.choices[cc_c.parent].base == cc_och   # ch->parent == och
+            DiscardMark(ld, cc_c.mark)
+        end
+        cc_ch = cc_c.parent
+    end
+    @assert ld.choices[cc_ch].base == cc_och        # assert(och == ch)
+    ld.BFR = cc_ch
+    if cc_och > ld.frames[FR].base                  # (void *)och > (void *)FR
+        setLTop!(ld, cc_och + SIZEOF_CHOICE)        # lTop = (LocalFrame)(och+1)
+    else
+        cc_pred = ld.frames[FR].predicate::Definition{T}
+        cc_nvar = if (cc_pred.flags & P_FOREIGN) != 0
+            cc_pred.arity
+        else
+            Int(((ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}).variables)
+        end
+        setLTop!(ld, argFrameP(ld.frames[FR].base, cc_nvar))
+    end
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c C_END
+    @label C_END
+    @goto next_instruction
+
     # PORT: pl-vmi.c C_VAR_N
     # DIVERGES: fresh variables into the slots (decision 2), as `C_VAR`.
     @label C_VAR_N
@@ -2223,12 +2360,11 @@ function PL_next_solution_guarded(
     # ── the type tests (pl-vmi.c), V6b ────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_VAR
     # DIVERGES: NOT PORTED: the `vmi_builtin=false` branch (`debug_pred1`; see `TYPE_TEST`).
-    # `FASTCOND_FAILED` is `BODY_FAILED` (see `TYPE_TEST`).
     @label I_VAR
     tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
     PC += 1
     canBind(tt_p) && @goto next_instruction
-    @goto shallow_backtrack                         # FASTCOND_FAILED
+    @FASTCOND_FAILED
 
     # PORT: pl-vmi.c I_NONVAR
     # DIVERGES: as `I_VAR`'s.
@@ -2236,7 +2372,7 @@ function PL_next_solution_guarded(
     tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
     PC += 1
     !canBind(tt_p) && @goto next_instruction
-    @goto shallow_backtrack                         # FASTCOND_FAILED
+    @FASTCOND_FAILED
 
     # PORT: pl-vmi.c I_INTEGER
     @label I_INTEGER
@@ -2724,8 +2860,9 @@ function PL_next_solution_guarded(
     # catch/3 before V9 — so it is not called, and the catcher reference is 0. `outofstack` is a flag
     # (the local stack's); with no emergency space, `outOfStack!`'s second-overflow branch marks the
     # local data unusable and throws, where upstream ends the process (see there). NOT PORTED: the
-    # exception hook that rewrites an exception, `fast_condition` (no `A_FUNC` conditions).
+    # exception hook that rewrites an exception.
     @label b_throw
+    ld.fast_condition = 0                           # A_FUNC exceptions
     QF = QueryFromQid(ld, QID)
     _reset_argument_stack!(ld, ld.queries[QF])
     @assert ld.exception_term != 0

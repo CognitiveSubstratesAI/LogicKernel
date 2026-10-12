@@ -1029,6 +1029,229 @@ end
     end
 end
 
+# ── V9d: the conditionals ───────────────────────────────────────────────────────────────────────
+# `(A -> B ; C)` and `(A -> B)` through the VM (`C_IFTHENELSE`, `C_IFTHEN`, `C_CUT` and `c_cut`,
+# `C_FASTCOND`/`C_FASTCUT`, `C_END`): every answer and its determinism are swipl's. A `!` inside a
+# condition compiles (`C_LCUT`) but runs with the cut's own step, so no condition here has one.
+_rite(a::_R, b::_R, c::_R) = _ror(_rf("->", a, b), c)
+_rit(a::_R, b::_R) = _rf("->", a, b)
+
+"The pinned conditional programs: facts `n/1`, `m/1` and one clause per case."
+function _rite_clauses()
+    X, Y, Z, A, B = (_rv(k) for k in 1:5)
+    n(x) = _rf("n", x)
+    m(x) = _rf("m", x)
+    eq(a, b) = _rf("=", a, b)
+    return Tuple{_R, Union{Nothing, _R}}[
+        (n(_rg(1)), nothing), (n(_rg(2)), nothing), (n(_rg(3)), nothing),
+        (m(_rs("a")), nothing), (m(_rs("b")), nothing),
+        # the condition commits to its FIRST answer; the then branch may still leave choices
+        (_rf("c1", X), _rite(n(X), _rs("true"), eq(X, _rs("none")))),
+        (_rf("c2", X, Y), _rite(n(X), m(Y), eq(Y, _rs("none")))),
+        (_rf("c3", X), _rite(_rf("nope", X), eq(X, _rs("then")), eq(X, _rs("else")))),
+        (_rf("nope", _rs("never")), nothing),
+        (_rf("c4", X), _rite(_rs("fail"), eq(X, _rs("then")), m(X))),
+        # a fast condition: tests only — taken, not taken, and with a second test
+        (_rf("c5", X, Y), _rite(_rf("integer", X), eq(Y, _rs("int")), eq(Y, _rs("other")))),
+        (_rf("c6", X, Y),
+            _rite(_rconj(_rf("atom", X), _rf("\\==", X, _rs("a"))), eq(Y, _rs("yes")),
+                eq(Y, _rs("no")))),
+        (_rf("c7", X, Y), _rite(_rf("var", X), eq(Y, _rs("unbound")), eq(Y, _rs("bound")))),
+        (_rf("c8", X, Y), _rite(_rf("==", X, Y), _rs("true"), _rs("fail"))),
+        # the condition's bindings stay in the then branch and are undone for the else branch
+        (
+            _rf("c9", X, Y),
+            _rite(_rconj(eq(Z, _rg(1)), n(X)), eq(Y, _rf("t", Z, X)), eq(Y, Z))
+        ),
+        (
+            _rf("c10", Y),
+            _rite(_rconj(eq(Z, _rg(1)), _rs("fail")), eq(Y, _rg(0)), eq(Y, _rf("e", Z)))
+        ),
+        # nested, and a chain
+        (_rf("c11", X, Y),
+            _rite(_rf("integer", X),
+                _rite(_rf(">", X, _rg(1)), eq(Y, _rs("big")), eq(Y, _rs("small"))),
+                eq(Y, _rs("nan")))),
+        (_rf("c12", X, Y),
+            _rite(_rf("==", X, _rs("a")), eq(Y, _rg(1)),
+                _rite(_rf("==", X, _rs("b")), eq(Y, _rg(2)), eq(Y, _rg(3))))),
+        # a conditional whose condition is a disjunction or a conditional
+        (_rf("c13", X), _rite(_ror(_rs("fail"), n(X)), _rs("true"), eq(X, _rg(0)))),
+        (_rf("c14", X, Y),
+            _rite(
+                _rite(n(X), _rf(">", X, _rg(5)), _rs("true")),
+                eq(Y, _rs("in")),
+                eq(Y, _rs("out"))
+            )),
+        # if-then without else: fails when the condition does
+        (_rf("c15", X), _rconj(_rit(n(X), _rs("true")), m(_rs("a")))),
+        (_rf("c16", X), _rit(_rf("nope", X), _rs("true"))),
+        (_rf("c16", _rs("second")), nothing),
+        (_rf("c17", X, Y), _rconj(_rit(n(X), m(Y)), _rf("\\==", Y, _rs("a")))),
+        # a disjunction of an if-then and a goal: the if-then failing lets the second branch run
+        (_rf("c18", X), _ror(_rs("fail"), _rit(n(X), _rf(">", X, _rg(1))))),
+        # choice points made INSIDE the condition by deeper frames are cut; older ones are kept
+        (_rf("c19", X, Y), _rconj(m(X), _rite(n(Y), _rs("true"), _rs("fail")))),
+        (_rf("deep", X), _rconj(n(X), n(_rv(9)))),
+        (_rf("c20", X, Y), _rite(_rf("deep", X), eq(Y, _rs("got")), eq(Y, _rs("none")))),
+        # a clause-level cut in the then and in the else branch
+        (_rf("c21", X), _rconj(n(X), _rite(_rf(">", X, _rg(1)), _rs("!"), _rs("fail")))),
+        (_rf("c22", X), _rconj(n(X), _rite(_rf(">", X, _rg(5)), _rs("true"), _rs("!")))),
+        # a variable only one branch sets, then used
+        (_rf("c23", X, Y), _rconj(_rite(n(X), eq(A, X), _rs("true")), eq(Y, _rf("r", A)))),
+        (_rf("c24", X, Y),
+            _rconj(
+                _rite(_rf("nope", X), _rf("is", A, _rf("+", _rg(1), _rg(1))), _rs("true")),
+                eq(Y, _rf("r", A)))),
+        # recursion through a conditional (last call in the else branch)
+        (_rf("len", _rnil(), _rg(0)), nothing),
+        (_rf("count", X, Y, Z),
+            _rite(
+                _rf(">=", X, Y),
+                eq(Z, X),
+                _rconj(_rf("is", A, _rf("+", X, _rg(1))), _rf("count", A, Y, Z))
+            ))
+    ]
+end
+
+function _rite_goals()
+    X, Y = _rv(101), _rv(102)
+    return _R[
+        _rf("c1", X), _rf("c1", _rg(2)), _rf("c1", _rg(9)), _rf("c2", X, Y), _rf("c3", X),
+        _rf("c4", X), _rf("c5", _rg(1), Y), _rf("c5", _rs("a"), Y), _rf("c5", X, Y),
+        _rf("c6", _rs("b"), Y), _rf("c6", _rs("a"), Y), _rf("c6", _rg(1), Y),
+        _rf("c7", X, Y), _rf("c7", _rg(1), Y), _rf("c8", X, X), _rf("c8", X, Y),
+        _rf("c9", X, Y), _rf("c10", Y), _rf("c11", _rg(3), Y), _rf("c11", _rg(1), Y),
+        _rf("c11", _rs("a"), Y), _rf("c12", _rs("a"), Y), _rf("c12", _rs("b"), Y),
+        _rf("c12", _rs("c"), Y), _rf("c13", X), _rf("c14", X, Y), _rf("c15", X),
+        _rf("c16", X), _rf("c17", X, Y), _rf("c18", X), _rf("c19", X, Y), _rf("c20", X, Y),
+        _rf("c21", X), _rf("c22", X), _rf("c23", X, Y), _rf("c24", X, Y),
+        _rf("count", _rg(0), _rg(2000), Y)
+    ]
+end
+
+"A random body of `,`, `;`, `->` (with and without else); `nocut`: inside a condition, no `!`."
+function _ritebody(rng, vars::Vector{_R}, depth::Int, nocut::Bool)::_R
+    r = rand(rng)
+    v() = rand(rng, vars)
+    tests() = _rconj(
+        [
+            if rand(rng, Bool)
+                _rf(rand(rng, ("var", "nonvar")), v())
+            else
+                _rf(rand(rng, ("==", "\\==")), v(), rand(rng, Bool) ? v() : _rs("a"))
+            end for
+            _ in 1:rand(rng, 1:2)
+        ]...
+    )
+    if depth < 4 && r < 0.2
+        cond = rand(rng) < 0.4 ? tests() : _ritebody(rng, vars, depth + 1, true)
+        return _rite(cond, _ritebody(rng, vars, depth + 1, nocut),
+            _ritebody(rng, vars, depth + 1, nocut))
+    elseif depth < 4 && r < 0.3
+        cond = rand(rng) < 0.3 ? tests() : _ritebody(rng, vars, depth + 1, true)
+        return _rit(cond, _ritebody(rng, vars, depth + 1, nocut))
+    elseif depth < 4 && r < 0.42
+        return _ror(
+            _ritebody(rng, vars, depth + 1, nocut), _ritebody(rng, vars, depth + 1, nocut)
+        )
+    elseif depth < 4 && r < 0.6
+        return _rf(",", _ritebody(rng, vars, depth + 1, nocut),
+            _ritebody(rng, vars, depth + 1, nocut))
+    end
+    while true
+        g = _rorbody(rng, vars, 4)                                  # a goal
+        (nocut && kind(g) === SYM && lk_name(g) === Symbol("!")) || return g
+    end
+end
+
+"Random predicates `rc<i>/k` of one or two clauses, each body a conditional, and goals on them."
+function _rite_random(rng, count::Int)
+    clauses = Tuple{_R, Union{Nothing, _R}}[]
+    goals = _R[]
+    key = 20_000
+    for i in 1:count
+        k = rand(rng, 1:3)
+        for _ in 1:rand(rng, 1:2)
+            vars = _R[_rv(key + j) for j in 1:rand(rng, k:(k + 2))]
+            key += 10
+            cond = _ritebody(rng, vars, 2, true)
+            body = if rand(rng) < 0.75
+                _rite(cond, _ritebody(rng, vars, 2, false), _ritebody(rng, vars, 2, false))
+            else
+                _rit(cond, _ritebody(rng, vars, 2, false))
+            end
+            rand(rng) < 0.4 && (body = _rf(",", body, _ritebody(rng, vars, 2, false)))
+            push!(clauses, (mk_expr(_R, _R[_rs("rc$i"); vars[1:k]]), body))
+        end
+        fresh = _R[_rv(key + j) for j in 1:k]
+        key += 10
+        push!(goals, mk_expr(_R, _R[_rs("rc$i"); fresh]))
+        bound = copy(fresh)
+        bound[1] = rand(rng, (_rg(1), _rs("a"), _rg(3)))
+        push!(goals, mk_expr(_R, _R[_rs("rc$i"); bound]))
+    end
+    return clauses, goals
+end
+
+@testset "conditionals: every answer and its determinism are swipl's (V9d)" begin
+    clauses = _rite_clauses()
+    goals = _rite_goals()
+    rc, rg = _rite_random(Xoshiro(20261013), 200)
+    append!(clauses, rc)
+    append!(goals, rg)
+    db = _rdb(clauses)
+    ops = Set{UInt64}()
+    for (h, _) in clauses
+        cref = _rproc(db, h).definition.impl_clauses.first_clause
+        while cref !== nothing
+            union!(ops, _rops(cref.clause))
+            cref = cref.next
+        end
+    end
+    @test all(
+        in(ops),
+        (
+            LK.C_IFTHENELSE,
+            LK.C_IFTHEN,
+            LK.C_CUT,
+            LK.C_FASTCOND,
+            LK.C_FASTCUT,
+            LK.C_END,
+            LK.C_OR
+        )
+    )
+    @test !(LK.C_LCUT in ops) && !(LK.C_LCUTIFTHEN in ops)             # the cut's own step
+    ours = _rlines(db, goals)
+    @test count(==("end"), ours) == length(goals)
+    ends = findall(==("end"), ours)
+    answers(i) = ours[(i == 1 ? 1 : ends[i - 1] + 1):(ends[i] - 1)]        # of the i-th goal
+    @test answers(1) == ["c1(1) det"]                       # the condition's first answer only
+    @test isempty(answers(3))                               # c1(9): the else branch, 9 = none
+    @test answers(4) == ["c2(1,a) nondet", "c2(1,b) det"]   # the then branch keeps its choices
+    @test answers(7) == ["c5(1,int) det"] && answers(8) == ["c5(a,other) det"]
+    @test answers(18) == ["c10(e(_)) det"]                  # the condition's binding is undone
+    @test answers(28) == ["c16(never) nondet", "c16(second) det"]  # if-then, then clause 2
+    # c3: the condition succeeds (X = never), the then branch fails, and the else is NOT tried
+    @test isempty(answers(5)) && answers(6) == ["c4(a) nondet", "c4(b) det"]
+    @test answers(37) == ["count(0,2000,2000) det"]
+    @test db.ld.fast_condition == 0                         # no fast condition is left open
+    ndet = count(endswith(" nondet"), ours)
+    @info "conditional programs: $(length(goals)) queries, $(length(ours) - length(goals)) answers ($ndet non-deterministic)"
+    @test ndet > 100 && count(endswith(" det"), ours) > 100
+    @test _rpools_live(db.ld)
+    if _R_SWIPL
+        theirs = _rswipl(clauses, goals)
+        @test ours == theirs
+        if ours != theirs
+            k = findfirst(i -> i > length(theirs) || ours[i] != theirs[i], eachindex(ours))
+            @info "first difference" k ours[something(k, 1)] get(
+                theirs, something(k, 1), "—"
+            )
+        end
+    end
+end
+
 # ── where the next frame lands around a disjunction (V9d) ───────────────────────────────────────
 # Backtracking into a `CHP_JUMP` choice point lowers `lTop` to it (vmi: `lTop = (LocalFrame)ch`), so
 # the next frame lands where the choice point was — from the clause itself (`oshallow`; `odeep`
@@ -1059,12 +1282,43 @@ function _ror_pos_clauses()
         (
             _rf("oafter", F0, F1),
             _rconj(pcf(F0), _ror(_rs("z"), _rs("z")), _rf("qn", F1), _rs("z"))
-        )
+        ),
+        (
+            _rf("pthen", F0, F1),
+            _rconj(pcf(F0), _rite(_rs("nd2"), _rf("qn", F1), _rs("z")), _rs("z"))
+        ),
+        (
+            _rf("pthen0", F0, F1),
+            _rconj(pcf(F0), _rite(_rs("z"), _rf("qn", F1), _rs("z")), _rs("z"))
+        ),
+        (
+            _rf("pfast", F0, F1),
+            _rconj(pcf(F0), _rite(_rf("var", F1), _rf("qn", F1), _rs("z")), _rs("z"))
+        ),
+        (
+            _rf("pelse", F0, F1),
+            _rconj(
+                pcf(F0), _rite(_rf("nomatch", _rs("a")), _rs("z"), _rf("qn", F1)), _rs("z")
+            )
+        ),
+        (
+            _rf("pelsef", F0, F1),
+            _rconj(pcf(F0), _rite(_rf("nonvar", F1), _rs("z"), _rf("qn", F1)), _rs("z"))
+        ),
+        (_rf("pit", F0, F1), _rconj(pcf(F0), _rit(_rs("nd2"), _rf("qn", F1)), _rs("z")))
     ]
 end
 # swipl's distances (10.1.17, live below): 10 = the frame header (8) + the two variables — the
 # choice point is gone; 19 = that + a choice point (9).
-const _R_ORPOS = [(:oshallow, 10), (:odeep, 10), (:ofail, 10), (:oleft, 19), (:oafter, 19)]
+const _R_ORPOS = [
+    (:oshallow, 10), (:odeep, 10), (:ofail, 10), (:oleft, 19), (:oafter, 19),
+    # the conditionals (their clauses have a third slot, the condition's): after the commit of a
+    # condition that left choice points (`pthen`), of one that left none (`pthen0`), of a fast one
+    # (`pfast`); in the else branch (`pelse`: a callee failed; `pelsef`: a fast test failed); after
+    # an if-then (`pit`)
+    # — 11 everywhere: the frame header (8) + its three slots; nothing of the condition is left
+    (:pthen, 11), (:pthen0, 11), (:pfast, 11), (:pelse, 11), (:pelsef, 11), (:pit, 11)
+]
 
 @testset "around a disjunction the next frame lands where swipl's does (C_OR, CHP_JUMP)" begin
     clauses = _ror_pos_clauses()

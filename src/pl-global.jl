@@ -255,6 +255,7 @@ mutable struct PL_local_data{T}
     exception_processing::Bool                                  # exception.processing
     outofstack::Bool                                            # outofstack (the local stack)
     unusable::Bool                                              # (after a second overflow)
+    fast_condition::Int                                         # fast_condition (0: NULL; an index)
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's term but in a cursor)
     GD::Union{Nothing, PL_global_data{T}}                       # (the running query's database)
@@ -308,7 +309,7 @@ function PL_local_data{T}() where {T}
         Vector{argstack_entry{T}}(undef, 64), 0,
         Vector{T}(undef, 256), 0, Vector{bframe{T}}(undef, 64), 0,
         0, 0, 0, 0, 0,
-        false, false, false,
+        false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,
         nothing,                                # GD: set by PL_open_query
         source_location{T}(nothing, IOPOS()),
