@@ -188,6 +188,23 @@ function _rct_clauses()
                     _rf("=", R, _rs("lost"))
                 )
             )
+        ),
+        # 30. after a caught ball NOTHING is pending: the next error is raised as itself. (An error
+        # of `PL_error` is not built while an older exception is pending — pl-error.c "do not
+        # overrule older exception" — so a ball left pending would be thrown again in its place.)
+        # The recover goal is a clause of the program: a FOREIGN one that succeeds clears a
+        # pending exception itself (`PL_clear_foreign_exception`) and would hide the difference.
+        (_rf("rec", _rs("ok")), nothing),
+        (
+            _rf("t30", R),
+            _rconj(
+                c(th(_rs("a")), _rv(13), _rf("rec", _rv(14))),
+                c(
+                    _rf("is", X, _rf("+", _rv(10), _rg(1))),
+                    _rf("error", E, _rv(8)),
+                    _rf("=", R, E)
+                )
+            )
         )
     ]
 end
@@ -201,7 +218,8 @@ function _rct_goals()
             _rf("t14", X, Y), _rf("t15", X), _rf("t16", X, Y), _rf("t17", X),
             _rs("t18"), _rs("t19"), _rs("t20"), _rs("t21"), _rf("t22", X), _rf("t23", X),
             _rf("t24", X),
-            _rf("t25", X), _rf("t26", X), _rf("t27", X, Y), _rf("t28", X), _rf("t29", X)]
+            _rf("t25", X), _rf("t26", X), _rf("t27", X, Y), _rf("t28", X), _rf("t29", X),
+            _rf("t30", X)]
     )
     return g
 end
@@ -212,7 +230,11 @@ end
     db = _rdb(clauses)
     ours = String[]
     for g in goals
-        for (a, det) in _rcall(db, g; at=(qid, k) -> (@test _rpools_live(db.ld)))
+        # at every answer: the pools hold the live records, and no exception is pending — a caught
+        # ball is cleared when its recover goal is called (pl-vmi.c b_throw_resume)
+        for (a, det) in _rcall(
+            db, g; at=(qid, k) -> (@test _rpools_live(db.ld) && db.ld.exception_term == 0)
+        )
             push!(ours, a * (det ? " det" : " nondet"))
         end
         push!(ours, "end")

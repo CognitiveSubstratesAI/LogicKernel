@@ -2629,6 +2629,26 @@ pin `8609e216`, upstream names.
   block's unlinked record. test/compile/test_body_code_swipl.jl — nine `$` clauses compile to
   swipl's code (`vm_list`) and decompile to swipl's `clause/2`.
 
+**V9f's MUTATION BATTERY (2026-10-13, in CI; `tools/mutants/V9f.py`, 44 mutants — 20 of catch/3,
+22 of `$/1` and `$/0`, 2 carried from the meta-call).** First run (run 38441762084, started by a push
+to `mutants/V9f`; baseline green): **37 caught, 7 blocking**, each settled before the step closed:
+* **Two were missing tests.** MK6 (`restoreWakeup` does not make the saved exception pending
+  again): with `exception_term` 0 the ball is written to and read from term reference 0, so every
+  catch still worked; killed by test/foreign/test_query.jl (a ball passed on is pending after the
+  query), which was not among the targets — it is now. MK11 (the catcher branch does not clear the
+  exception): every recover goal of the tests was a FOREIGN predicate, whose success clears a
+  pending exception itself; killed by the new case `t30` (a recover goal that is a program clause,
+  then an error of `PL_error`, which is not built while an older exception is pending) and by "no
+  exception is pending at an answer".
+* **Four are recorded equivalent, each with its code reason in the list:** MK2 (`fr <= ch` in
+  `findCatcher`: the call port of catch/3, where nothing can raise), MK13 (`I_EXITCATCH`'s
+  `unlinked` mark: the frame's deterministic exit drops the record at the next instruction), MD22
+  (`frameFailed`'s `lTop`: only where the error's foreign frame opens), MC19 (an `lTop` raise before
+  a throw: every way out of `b_throw` sets `lTop` itself — `cp5` does NOT kill it, as V9f-a claimed).
+* **One equivalence was refuted, rightly:** MC17 (`mcall_cont` does not set the next frame's flags)
+  was equivalent while nothing read the frame flags; V9f-b reads the guard flags, and the mutant is
+  caught. The claim is withdrawn.
+
 **V9f-a: `catch/3` — BUILT (2026-10-13)** (the user's order: V9f in two gates, catch/3 then `$/1`;
 port_inventory row V9; src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-attvar.jl (new), pl-fli.jl, pl-ext.jl,
 pl-prims.jl, pl-funct.jl, pl-global.jl, pl-incl.jl). Ported from pl-comp.c, pl-vmi.c, pl-wam.c and

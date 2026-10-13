@@ -5,11 +5,14 @@
 # `equivalent` (a mutant that must SURVIVE, with the code reason) and `targets`.
 #
 # V9f-a, catch/3 (MK1–MK18, MK21, MK22): the new path only. V9f-b, `$/1` and `$/0` (MD1–MD22).
-# Carried from V9e-1 (the meta-call): MC17, declared equivalent there and rerun at each later step's
-# close; MC19, equivalent until catch/3 existed — its kill test is test_catch_swipl.jl's `cp5`.
+# Carried from V9e-1 (the meta-call): MC17 and MC19.
+# THE BATTERY OF 2026-10-13 (run 38441762084, 44 mutants): 37 caught; MK6 and MK11 survived for want
+# of a test (now killed: test_query.jl among the targets; t30); MK2, MK13, MD22 and MC19 survived and
+# are recorded equivalent, each with its code reason; MC17's old equivalence was refuted (caught).
 #
 # The targets, smallest first (a run started by a push to `mutants/V9f` reads them from here).
 TARGETS = [
+    "test/foreign/test_query.jl",
     "test/core_lang/test_catch_swipl.jl",
     "test/core_lang/test_det_swipl.jl",
     "test/compile/test_body_code_swipl.jl",
@@ -28,13 +31,9 @@ MUTANTS = [
          new='''            true &&'''),                    # kill: t22 (rg/2's clause choice keeps `fr <= ch` true)
     dict(id="MK2 findCatcher ignores `fr <= ch` (the call port of catch/3)", file=W,
          old='''            f.base <= chpos                              # not call-port of catch/3''',
-         new='''            true'''
-         # PENDING AUDIT, not declared (the battery's verdict decides): probably EQUIVALENT. Between
-         # the frame becoming the environment (I_ENTER) and I_CATCH's newChoice nothing can raise
-         # (the debugger's call port is not ported); after it CHP_CATCH at argFrameP(FR, 3) lies
-         # above the frame until the catch itself discards it (findCatcher has set FR_CAUGHT first),
-         # I_EXITCATCH drops it (FR_CAUGHT set) or deep_backtrack pops it (the frame is left).
-         ),
+         new='''            true''',
+         # SURVIVED the battery of 2026-10-13 (run 38441762084); recorded equivalent:
+         equivalent="src/pl-wam.jl findCatcher: the test excludes a catch/3 frame whose CHP_CATCH does not exist yet — its call port. Between the frame becoming the environment (I_ENTER) and I_CATCH's newChoice nothing can raise (the debugger's call port is not ported); after it the CHP_CATCH at argFrameP(FR, 3) lies above the frame until findCatcher itself has set FR_CAUGHT, I_EXITCATCH has dropped it (FR_CAUGHT set) or deep_backtrack has popped it (the frame is left). So `fr <= ch` holds for every frame the other two tests let through."),
     dict(id="MK3 findCatcher does not set FR_CAUGHT on a match", file=W,
          old='''                PL_put_term(ld, ld.exception_term, ex)
                 f.flags |= FR_CAUGHT
@@ -54,7 +53,10 @@ MUTANTS = [
          old='''                elseif (state.flags & WAKEUP_STATE_SKIP_EXCEPTION) == 0
                     restore_exception(ld, p)''',
          new='''                elseif false
-                    restore_exception(ld, p)'''),   # exception_term stays 0: PL_put_term(0, ex) — every caught ball
+                    restore_exception(ld, p)'''),   # kill: test/foreign/test_query.jl (a ball passed on,
+    # PL_Q_PASS_EXCEPTION, is pending after the query). SURVIVED the first battery (2026-10-13):
+    # that file was not among the targets, and with `exception_term` 0 the ball is written to and
+    # read from term reference 0 — every catch still "works".
     # ── b_throw_unwind / b_throw_resume ──
     dict(id="MK7 b_throw_unwind does not stop at the catcher", file=W,
          old='''    while FR != 0 && (bt_catchfr == 0 || ld.frames[FR].base > ld.frames[bt_catchfr].base)''',
@@ -74,7 +76,8 @@ MUTANTS = [
         @goto I_CALL1''',
          new='''        resumeAfterException(ld, false, bt_outofstack)
         @LOAD_REGISTERS(QID)
-        @goto I_CALL1'''),
+        @goto I_CALL1'''),                      # kill: t30 (added after the first battery, where it
+    # SURVIVED: every recover goal was a FOREIGN predicate, whose success clears a pending exception)
     # ── I_EXITCATCH, deep_backtrack ──
     dict(id="MK12 I_EXITCATCH leaves its CHP_CATCH on the chain (the last answer not deterministic)", file=W,
          old='''        ld.BFR = ld.choices[iec_b].parent
@@ -83,7 +86,9 @@ MUTANTS = [
     dict(id="MK13 I_EXITCATCH does not mark the record unlinked (the pool check)", file=W,
          old='''        ld.BFR = ld.choices[iec_b].parent
         ld.choices[iec_b].unlinked = true''',
-         new='''        ld.BFR = ld.choices[iec_b].parent'''),
+         new='''        ld.BFR = ld.choices[iec_b].parent''',
+         # SURVIVED the battery of 2026-10-13; recorded equivalent:
+         equivalent="src/pl-wam.jl I_EXITCATCH: the record is taken out of the chain only when it is the newest choice point, and catch/3's one clause is `I_ENTER I_CATCH I_EXITCATCH I_EXIT`: the next instruction is the frame's deterministic exit, whose lowerLTop!(frame base) drops the record (it lies at argFrameP(FR, 3)). No instruction and no answer comes between, so nothing can read the mark; it is kept for the pools' invariant (a record off the chain is marked)."),
     dict(id="MK14 deep_backtrack has no CHP_CATCH case", file=W,
          old='''    elseif db_c.type == CHP_CATCH                   # catch/3 & setup_call_cleanup/3''',
          new='''    elseif false'''),
@@ -198,22 +203,26 @@ MUTANTS = [
          old='''    setLTop!(ld, argFrameP(f.base, (f.predicate::Definition{T}).arity))
 
     if (f.flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0''',
-         new='''    if (f.flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0'''
-         # PENDING AUDIT, not declared (the battery's verdict decides): upstream sets lTop so the
-         # foreign frame PL_error opens cannot overwrite the frame's arguments; here the frame is
-         # read only for its predicate and flags after that, so this may be EQUIVALENT.
-         ),
+         new='''    if (f.flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0''',
+         # SURVIVED the battery of 2026-10-13; recorded equivalent:
+         equivalent="src/pl-wam.jl frameFailed: upstream sets lTop so that the foreign frame the error opens cannot overwrite the failed frame's arguments. A guarded frame is always filled (`$` runs in a clause; I_DEPART keeps the guard on a frame it has filled), so lTop is never below its arguments; determinism_error opens its foreign frame at lTop wherever that is and closes it before returning; and both ways on set lTop themselves — b_throw (setLTop! in b_throw_unwind and b_throw_resume) and deep_backtrack's choice-point branch (dropRecords! and lTop from the choice point)."),
     # ── carried from V9e-1 ──
     dict(id="MC17 mcall_cont does not set the next frame's flags", file=W,
          old='''    @label mcall_cont
     setNextFrameFlags(ld.frames[NFR], ld.frames[FR])''',
          new='''    @label mcall_cont
-    nothing''',
-         equivalent="src/pl-wam.jl mcall_cont: setNextFrameFlags writes the new frame's level and flags, and nothing reads them yet — `level` is read nowhere in src/, the flags only by asserts that they are CLEAR (FR_WATCHED, FR_INRESET); the debugger, depth_limit and prolog_frame_attribute are not ported (the same for I_CALL's own call)"),
+    nothing'''),
+    # MC17 was declared equivalent from V9e-1 ("nothing reads the frame flags"). REFUTED by the
+    # battery of 2026-10-13, as it should be: since V9f-b the guard flags ARE read
+    # (determinism_error), and a meta-call frame left with a reused record's flags reports a
+    # determinism error it does not have. The claim is withdrawn; the mutant is caught.
     dict(id="MC19 the stripModule failure raises lTop over the frame before THROW_EXCEPTION", file=W,
          old='''    mc_ok || @goto b_throw                          # THROW_EXCEPTION''',
          new='''    if !mc_ok
         setLTop!(ld, argFrameP(mc_nb, 1))
         @goto b_throw
-    end'''),                                     # kill: cp5 (a frame position after the caught error)
+    end''',
+         # SURVIVED the battery of 2026-10-13 — `cp5` (test_catch_swipl.jl) does not kill it, as
+         # was claimed at V9f-a; recorded equivalent:
+         equivalent="src/pl-wam.jl b_throw: the raise moves only where b_throw opens the foreign frame of the catcher search, closed before the unwind (PL_close_foreign_frame after findCatcher). Every way out then sets lTop itself: b_throw_unwind per frame left (argFrameP(FR, arity)), b_throw_resume to argFrameP(catch/3's frame, 3) for a caught ball, or to the query's top frame's arguments. No frame position after the exception depends on lTop at the raise."),
 ]
