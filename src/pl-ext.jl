@@ -49,17 +49,19 @@ const foreigns = (
     PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO)
 )
 
-# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, comp, prims, variant,
+# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, bag, comp, list, prims, variant,
 # copyterm, trace, pro, read, proc, write, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
 # constant the global-state lint reads.
 const _PRED_TABLES = (
-    PL_predicates_from_arith, PL_predicates_from_comp, PL_predicates_from_prims,
+    PL_predicates_from_arith, PL_predicates_from_bag, PL_predicates_from_comp,
+    PL_predicates_from_list, PL_predicates_from_prims,
     PL_predicates_from_variant, PL_predicates_from_copyterm, PL_predicates_from_trace,
     PL_predicates_from_pro, PL_predicates_from_read,
     PL_predicates_from_proc, PL_predicates_from_write, PL_predicates_from_op
 )
 const _FOREIGN_VA = (
-    PL_predicates_from_arith..., PL_predicates_from_comp..., PL_predicates_from_prims...,
+    PL_predicates_from_arith..., PL_predicates_from_bag..., PL_predicates_from_comp...,
+    PL_predicates_from_list..., PL_predicates_from_prims...,
     PL_predicates_from_variant..., PL_predicates_from_copyterm...,
     PL_predicates_from_trace..., PL_predicates_from_pro...,
     PL_predicates_from_read...,
@@ -127,6 +129,8 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     setBuiltinPredicateProperties!(gd)
     _boot_catch3!(gd)
     _boot_cleanup!(gd)
+    _boot_lists!(gd)
+    _boot_bags!(gd)
     return nothing
 end
 
@@ -173,17 +177,17 @@ function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
     setup = mk_expr(
         T, T[mk_sym(T, Symbol(",")), mk_expr(T, T[mk_sym(T, :sig_atomic), v[1]]), cleanup]
     )
-    _boot_clause!(gd, ld, :setup_call_catcher_cleanup, v, setup, false)
-    _boot_clause!(gd, ld, :setup_call_cleanup, v[1:3], setup, false)
-    _boot_clause!(gd, ld, :call_cleanup, v[1:2], cleanup, false)
-    _boot_clause!(gd, ld, :call, v[1:1], v[1], true)
+    _boot_clause!(gd, ld, :setup_call_catcher_cleanup, v, setup, P_LOCKED)
+    _boot_clause!(gd, ld, :setup_call_cleanup, v[1:3], setup, P_LOCKED)
+    _boot_clause!(gd, ld, :call_cleanup, v[1:2], cleanup, P_LOCKED)
+    _boot_clause!(gd, ld, :call, v[1:1], v[1], P_ISO | P_LOCKED)
     return nothing
 end
 
-"Compile `name(args…) :- body` into the `system` module of `gd`, locked (and ISO when `iso`)."
+"Compile `name(args…) :- body` (`body` nothing: a fact) into the `system` module of `gd`, and set the predicate's `flags`."
 function _boot_clause!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, name::Symbol, args::Vector{T}, body::T,
-    iso::Bool
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::Symbol, args::Vector{T},
+    body::Union{Nothing, T}, flags::UInt64
 )::Nothing where {T}
     m = MODULE_system(gd)
     proc = lookupProcedure(mk_sym(T, name), length(args), m)
@@ -192,7 +196,409 @@ function _boot_clause!(
     )
     cl === nothing && error("_boot_clause!: the boot clause of $name does not compile")
     assertDefinition!(gd, proc.definition, cl, CL_END)
-    proc.definition.flags |= iso ? (P_ISO | P_LOCKED) : P_LOCKED
+    proc.definition.flags |= flags
+    return nothing
+end
+
+"The compound `name(args…)` of a boot clause."
+function _boot_term(name::Symbol, args::Vector{T})::T where {T}
+    return mk_expr(T, pushfirst!(copy(args), mk_sym(T, name)))
+end
+
+"The conjunction `(g1, g2, …)` of a boot clause's body."
+function _boot_conj(goals::Vector{T})::T where {T}
+    c = goals[end]
+    for i in (length(goals) - 1):-1:1
+        c = _boot_term(Symbol(","), T[goals[i], c])
+    end
+    return c
+end
+
+"`(c -> a ; b)` of a boot clause's body."
+function _boot_ite(::Type{T}, c::T, a::T, b::T)::T where {T}
+    return _boot_term(Symbol(";"), T[_boot_term(Symbol("->"), T[c, a]), b])
+end
+
+"The list cell `[h|t]` of a boot clause."
+function _boot_cons(::Type{T}, h::T, t::T)::T where {T}
+    return mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), h, t])
+end
+
+"`n` fresh variables for the clauses of a boot stand-in."
+function _boot_vars(::Type{T}, n::Int)::Vector{T} where {T}
+    k = fresh_var_keys!(n)
+    v = Vector{T}(undef, n)
+    for i in 1:n
+        v[i] = mk_var(T, k + UInt64(i - 1))
+    end
+    return v
+end
+
+"`throw(error(formal, context(length/2, _)))`, as boot/init.pl's length/2 raises its errors."
+function _boot_length_error(::Type{T}, formal::T, anon::T)::T where {T}
+    indicator = _boot_term(:/, T[mk_sym(T, :length), mk_gnd(T, 2)])
+    ball = _boot_term(:error, T[formal, _boot_term(:context, T[indicator, anon])])
+    return _boot_term(:throw, T[ball])
+end
+
+# DIVERGES (no upstream function; as `_boot_catch3!`): boot/init.pl's length/2 (init.pl:4469-4506)
+# and `'$append'/3` (init.pl:4413-4415), which boot/bags.pl's `alloc_bind_key_list/2` calls,
+# compiled when the database is created:
+#     length(List, Length) :-
+#         var(Length), !,
+#         '$skip_list'(Length0, List, Tail),
+#         (   Tail == [] -> Length = Length0                    % +,-
+#         ;   var(Tail) -> Tail \== Length,                     % avoid length(L,L)
+#             '$length3'(Tail, Length, Length0)                 % -,-
+#         ;   throw(error(type_error(list, List), context(length/2, _)))
+#         ).
+#     length(List, Length) :-
+#         integer(Length), Length >= 0, !,
+#         '$skip_list'(Length0, List, Tail),
+#         (   Tail == [] -> Length = Length0                    % proper list
+#         ;   var(Tail) -> Extra is Length-Length0, '$length'(Tail, Extra)
+#         ;   throw(error(type_error(list, List), context(length/2, _)))
+#         ).
+#     length(_, Length) :-
+#         integer(Length), !,
+#         throw(error(domain_error(not_less_than_zero, Length), context(length/2, _))).
+#     length(_, Length) :-
+#         throw(error(type_error(integer, Length), context(length/2, _))).
+#     '$length3'([], N, N).
+#     '$length3'([_|List], N, N0) :- N1 is N0+1, '$length3'(List, N, N1).
+#     '$append'([], L, L).
+#     '$append'([H|T], L, [H|R]) :- '$append'(T, L, R).
+# R2 loads boot/init.pl, which defines them the same way. boot code is system code (`P_LOCKED`);
+# length/2 is ISO (init.pl:4467, `'$iso'`).
+"Define length/2, `'\$length3'/3` and `'\$append'/3` in the `system` module of `gd` as boot/init.pl defines them."
+function _boot_lists!(gd::PL_global_data{T})::Nothing where {T}
+    ld = PL_local_data{T}()
+    v = _boot_vars(T, 8)
+    List, Length, Length0, Tail = v[1], v[2], v[3], v[4]
+    Extra, Anon, N1, H = v[5], v[6], v[7], v[8]
+    nil = mk_nil(T)
+    cut = mk_sym(T, :!)
+    skip = _boot_term(Symbol("\$skip_list"), T[Length0, List, Tail])
+    not_a_list = _boot_length_error(T,
+        _boot_term(:type_error, T[mk_sym(T, :list), List]), Anon
+    )
+    proper = _boot_term(:(==), T[Tail, nil])
+    same = _boot_term(:(=), T[Length, Length0])
+    partial = _boot_term(:var, T[Tail])
+    flags = P_ISO | P_LOCKED
+    counting = _boot_conj(                              # -,-
+        T[
+            _boot_term(Symbol("\\=="), T[Tail, Length]),
+            _boot_term(Symbol("\$length3"), T[Tail, Length, Length0])
+        ]
+    )
+    _boot_clause!(
+        gd, ld, :length, T[List, Length],
+        _boot_conj(
+            T[
+                _boot_term(:var, T[Length]),
+                cut,
+                skip,
+                _boot_ite(T, proper, same, _boot_ite(T, partial, counting, not_a_list))
+            ]
+        ),
+        flags
+    )
+    extend = _boot_conj(
+        T[
+            _boot_term(:is, T[Extra, _boot_term(:-, T[Length, Length0])]),
+            _boot_term(Symbol("\$length"), T[Tail, Extra])
+        ]
+    )
+    _boot_clause!(
+        gd, ld, :length, T[List, Length],
+        _boot_conj(
+            T[
+                _boot_term(:integer, T[Length]),
+                _boot_term(:>=, T[Length, mk_gnd(T, 0)]),
+                cut,
+                skip,
+                _boot_ite(T, proper, same, _boot_ite(T, partial, extend, not_a_list))
+            ]
+        ),
+        flags
+    )
+    negative = _boot_term(:domain_error, T[mk_sym(T, :not_less_than_zero), Length])
+    _boot_clause!(
+        gd, ld, :length, T[List, Length],
+        _boot_conj(
+            T[_boot_term(:integer, T[Length]), cut, _boot_length_error(T, negative, Anon)]
+        ),
+        flags
+    )
+    _boot_clause!(
+        gd, ld, :length, T[List, Length],
+        _boot_length_error(
+            T, _boot_term(:type_error, T[mk_sym(T, :integer), Length]), Anon
+        ),
+        flags
+    )
+    length3 = Symbol("\$length3")                       # (N: Length, N0: Length0)
+    _boot_clause!(gd, ld, length3, T[nil, Length, Length], nothing, P_LOCKED)
+    _boot_clause!(
+        gd, ld, length3, T[_boot_cons(T, Anon, List), Length, Length0],
+        _boot_conj(
+            T[
+                _boot_term(:is, T[N1, _boot_term(:+, T[Length0, mk_gnd(T, 1)])]),
+                _boot_term(length3, T[List, Length, N1])
+            ]
+        ),
+        P_LOCKED
+    )
+    append = Symbol("\$append")                         # (T: Tail, L: List, R: Extra)
+    _boot_clause!(gd, ld, append, T[nil, List, List], nothing, P_LOCKED)
+    _boot_clause!(
+        gd, ld, append, T[_boot_cons(T, H, Tail), List, _boot_cons(T, H, Extra)],
+        _boot_term(append, T[Tail, List, Extra]), P_LOCKED
+    )
+    return nothing
+end
+
+# DIVERGES (no upstream function; as `_boot_catch3!`): boot/bags.pl's findall/3,4
+# (bags.pl:91-112), compiled when the database is created:
+#     findall(Templ, Goal, List) :- findall(Templ, Goal, List, []).
+#     findall(Templ, Goal, List, Tail) :-
+#         cleanup_bag(findall_loop(Templ, Goal, List, Tail), '$destroy_findall_bag').
+#     cleanup_bag(_Goal, _Cleanup) :- '$new_findall_bag', '$call_cleanup'.
+#     findall_loop(Templ, Goal, List, Tail) :-
+#         (   Goal, '$add_findall_bag'(Templ) ; '$collect_findall_bag'(List, Tail) ).
+# and its bagof/3 and setof/3 (bags.pl:189-283), with their helpers, each clause as upstream's:
+#     bagof(Templ, Goal0, List) :-
+#         '$free_variable_set'(Templ^Goal0, Goal, Vars),
+#         (   Vars == v
+#         ->  findall(Templ, Goal, List), List \== []
+#         ;   alloc_bind_key_list(Vars, VDict),
+#             findall(Vars-Templ, Goal, Answers),
+#             bind_bagof_keys(Answers, VDict),
+#             keysort(Answers, Sorted),
+#             pick(Sorted, Vars, List)
+#         ).
+#     alloc_bind_key_list(Vars, VDict) :-
+#         functor(Vars, _, Count), length(List, Count), '$append'(List, _, VDict).
+#     bind_bagof_keys([], _).
+#     bind_bagof_keys([W-_|WTs], Vars) :- term_variables(W, Vars, _), bind_bagof_keys(WTs, Vars).
+#     pick(Bags, Vars1, Bag1) :-
+#         pick_first(Bags, Vars0, Bag0, RestBags), select_bag(RestBags, Vars0, Bag0, Vars1, Bag1).
+#     select_bag([], Vars0, Bag0, Vars1, Bag1) :- !, Vars0 = Vars1, Bag0 = Bag1.
+#     select_bag(_, Vars, Bag, Vars, Bag).
+#     select_bag(RestBags, _, _, Vars1, Bag1) :- pick(RestBags, Vars1, Bag1).
+#     pick_first([Vars-Templ|T0], Vars, [Templ|T], RestBag) :- pick_same(T0, Vars, T, RestBag).
+#     pick_same([V-H|T0], Vars, [H|T], Bag) :- V == Vars, !, pick_same(T0, Vars, T, Bag).
+#     pick_same(Bag, _, [], Bag).
+#     setof(Templ, Goal0, List) :-
+#         '$free_variable_set'(Templ^Goal0, Goal, Vars),
+#         (   Vars == v
+#         ->  findall(Templ, Goal, Answers), Answers \== [], sort(Answers, List)
+#         ;   alloc_bind_key_list(Vars, VDict),
+#             findall(Vars-Templ, Goal, Answers),
+#             (   ground(Answers)
+#             ->  sort(Answers, Sorted), pick(Sorted, Vars, List)
+#             ;   bind_bagof_keys(Answers, VDict), sort(Answers, Sorted),
+#                 pick(Sorted, Vars, Listu), sort(Listu, List)
+#             )
+#         ).
+# R2 loads boot/bags.pl, which defines them the same way — in its module `'$bags'`, which exports
+# findall/3,4, bagof/3 and setof/3. Until then they are `system`'s: the exported ones locked
+# (system code; findall/3, bagof/3 and setof/3 ISO, bags.pl:76 `'$iso'`), and the module's PRIVATE
+# predicates (`cleanup_bag/2`, `findall_loop/4`, `alloc_bind_key_list/2`, `bind_bagof_keys/2`,
+# `pick/3`, `select_bag/5`, `pick_first/4`, `pick_same/4`) NOT locked, so `user` may define
+# predicates of those names as it may in swipl — but a call to one that `user` does not define
+# reaches `system`'s, where swipl raises an existence error (R2 checklist). The two goals
+# findall/4 hands to `cleanup_bag/2` are written `system:Goal` here: upstream's meta-predicate
+# declaration `cleanup_bag(0, 0)` qualifies them with the module of the clause (`'$bags'`), and
+# unqualified they would be called in `user` — a `findall_loop/4` of the user's would be run.
+# NOT PORTED: the meta-predicate declarations themselves (bags.pl:57-64: the goal of findall/3,
+# bagof/3 and setof/3 runs in `user`), `noprofile/1`, findnsols/4,5 (`'$suspend_findall_bag'`,
+# src/pl-bag.jl).
+"Define findall/3,4, bagof/3 and setof/3 in the `system` module of `gd` as boot/bags.pl defines them."
+function _boot_bags!(gd::PL_global_data{T})::Nothing where {T}
+    ld = PL_local_data{T}()
+    k = fresh_var_keys!(4)
+    Templ, Goal, List, Tail = mk_var(T, k),
+    mk_var(T, k + 1), mk_var(T, k + 2),
+    mk_var(T, k + 3)
+    sys = mk_sym(T, :system)
+    _boot_clause!(
+        gd, ld, :findall, T[Templ, Goal, List],
+        _boot_term(:findall, T[Templ, Goal, List, mk_nil(T)]), P_ISO | P_LOCKED
+    )
+    _boot_clause!(
+        gd, ld, :findall, T[Templ, Goal, List, Tail],
+        _boot_term(
+            :cleanup_bag,
+            T[
+                _boot_term(
+                    :(:), T[sys, _boot_term(:findall_loop, T[Templ, Goal, List, Tail])]
+                ),
+                _boot_term(:(:), T[sys, mk_sym(T, Symbol("\$destroy_findall_bag"))])
+            ]
+        ),
+        P_LOCKED
+    )
+    _boot_clause!(
+        gd, ld, :cleanup_bag, T[Goal, List],
+        _boot_term(
+            Symbol(","),
+            T[mk_sym(T, Symbol("\$new_findall_bag")), mk_sym(T, Symbol("\$call_cleanup"))]
+        ),
+        UInt64(0)
+    )
+    _boot_clause!(
+        gd, ld, :findall_loop, T[Templ, Goal, List, Tail],
+        _boot_term(
+            Symbol(";"),
+            T[
+                _boot_term(
+                    Symbol(","), T[Goal, _boot_term(Symbol("\$add_findall_bag"), T[Templ])]
+                ),
+                _boot_term(Symbol("\$collect_findall_bag"), T[List, Tail])
+            ]
+        ),
+        UInt64(0)
+    )
+    _boot_bagof!(gd, ld)
+    return nothing
+end
+
+"Define bagof/3, setof/3 and their helpers (see `_boot_bags!`)."
+function _boot_bagof!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    v = _boot_vars(T, 12)
+    Templ, Goal0, List, Goal, Vars, VDict = v[1], v[2], v[3], v[4], v[5], v[6]
+    Answers, Sorted, Listu, A1, A2, A3 = v[7], v[8], v[9], v[10], v[11], v[12]
+    nil = mk_nil(T)
+    cut = mk_sym(T, :!)
+    none = UInt64(0)
+    fvs = _boot_term(
+        Symbol("\$free_variable_set"), T[_boot_term(:^, T[Templ, Goal0]), Goal, Vars]
+    )
+    no_free = _boot_term(:(==), T[Vars, mk_sym(T, :v)])
+    alloc = _boot_term(:alloc_bind_key_list, T[Vars, VDict])
+    keyed = _boot_term(:findall, T[_boot_term(:-, T[Vars, Templ]), Goal, Answers])
+    bind = _boot_term(:bind_bagof_keys, T[Answers, VDict])
+    plain = _boot_conj(
+        T[
+            _boot_term(:findall, T[Templ, Goal, List]),
+            _boot_term(Symbol("\\=="), T[List, nil])
+        ]
+    )
+    grouped = _boot_conj(
+        T[
+            alloc, keyed, bind, _boot_term(:keysort, T[Answers, Sorted]),
+            _boot_term(:pick, T[Sorted, Vars, List])
+        ]
+    )
+    _boot_clause!(
+        gd, ld, :bagof, T[Templ, Goal0, List],
+        _boot_conj(T[fvs, _boot_ite(T, no_free, plain, grouped)]), P_ISO | P_LOCKED
+    )
+    set = _boot_conj(
+        T[
+            _boot_term(:findall, T[Templ, Goal, Answers]),
+            _boot_term(Symbol("\\=="), T[Answers, nil]),
+            _boot_term(:sort, T[Answers, List])
+        ]
+    )
+    ground_keys = _boot_conj(
+        T[_boot_term(:sort, T[Answers, Sorted]), _boot_term(:pick, T[Sorted, Vars, List])]
+    )
+    bound_keys = _boot_conj(
+        T[
+            bind, _boot_term(:sort, T[Answers, Sorted]),
+            _boot_term(:pick, T[Sorted, Vars, Listu]), _boot_term(:sort, T[Listu, List])
+        ]
+    )
+    sets = _boot_conj(
+        T[
+            alloc,
+            keyed,
+            _boot_ite(T, _boot_term(:ground, T[Answers]), ground_keys, bound_keys)
+        ]
+    )
+    _boot_clause!(
+        gd, ld, :setof, T[Templ, Goal0, List],
+        _boot_conj(T[fvs, _boot_ite(T, no_free, set, sets)]), P_ISO | P_LOCKED
+    )
+    # alloc_bind_key_list(Vars, VDict) (A1: _, A2: Count, A3: _)
+    _boot_clause!(
+        gd, ld, :alloc_bind_key_list, T[Vars, VDict],
+        _boot_conj(
+            T[
+                _boot_term(:functor, T[Vars, A1, A2]),
+                _boot_term(:length, T[List, A2]),
+                _boot_term(Symbol("\$append"), T[List, A3, VDict])
+            ]
+        ),
+        none
+    )
+    # bind_bagof_keys/2 (A1: W, A2: _, A3: WTs, Templ: _)
+    _boot_clause!(gd, ld, :bind_bagof_keys, T[nil, A1], nothing, none)
+    _boot_clause!(
+        gd, ld, :bind_bagof_keys, T[_boot_cons(T, _boot_term(:-, T[A1, A2]), A3), Vars],
+        _boot_conj(
+            T[
+                _boot_term(:term_variables, T[A1, Vars, Templ]),
+                _boot_term(:bind_bagof_keys, T[A3, Vars])
+            ]
+        ),
+        none
+    )
+    # pick(Bags, Vars1, Bag1) (Answers: Bags, Vars: Vars1, List: Bag1, A1: Vars0, A2: Bag0,
+    # A3: RestBags)
+    _boot_clause!(
+        gd, ld, :pick, T[Answers, Vars, List],
+        _boot_conj(
+            T[
+                _boot_term(:pick_first, T[Answers, A1, A2, A3]),
+                _boot_term(:select_bag, T[A3, A1, A2, Vars, List])
+            ]
+        ),
+        none
+    )
+    # select_bag/5 (A1: Vars0, A2: Bag0, Vars: Vars1, List: Bag1, A3: RestBags or _)
+    _boot_clause!(
+        gd, ld, :select_bag, T[nil, A1, A2, Vars, List],
+        _boot_conj(T[cut, _boot_term(:(=), T[A1, Vars]), _boot_term(:(=), T[A2, List])]),
+        none
+    )
+    _boot_clause!(gd, ld, :select_bag, T[A3, Vars, List, Vars, List], nothing, none)
+    _boot_clause!(
+        gd, ld, :select_bag, T[A3, A1, A2, Vars, List],
+        _boot_term(:pick, T[A3, Vars, List]), none
+    )
+    # pick_first([Vars-Templ|T0], Vars, [Templ|T], RestBag) (A1: T0, A2: T, A3: RestBag)
+    _boot_clause!(
+        gd, ld, :pick_first,
+        T[
+            _boot_cons(T, _boot_term(:-, T[Vars, Templ]), A1),
+            Vars,
+            _boot_cons(T, Templ, A2),
+            A3
+        ],
+        _boot_term(:pick_same, T[A1, Vars, A2, A3]), none
+    )
+    # pick_same([V-H|T0], Vars, [H|T], Bag) (Goal: V, Templ: H, A1: T0, A2: T, A3: Bag)
+    _boot_clause!(
+        gd, ld, :pick_same,
+        T[
+            _boot_cons(T, _boot_term(:-, T[Goal, Templ]), A1),
+            Vars,
+            _boot_cons(T, Templ, A2),
+            A3
+        ],
+        _boot_conj(
+            T[
+                _boot_term(:(==), T[Goal, Vars]), cut,
+                _boot_term(:pick_same, T[A1, Vars, A2, A3])
+            ]
+        ),
+        none
+    )
+    _boot_clause!(gd, ld, :pick_same, T[A3, A1, nil, A3], nothing, none)
     return nothing
 end
 

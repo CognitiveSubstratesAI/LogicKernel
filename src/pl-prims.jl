@@ -1764,6 +1764,389 @@ function pl_throw1_va(
     return PL_raise_exception(ld, A1) ? FTRUE : FFALSE
 end
 
+# ── ground/1, functor/3, term_variables/2,3, '$free_variable_set'/3, '$skip_list'/3 (pl-prims.c),
+# since V9g-b: what boot/bags.pl's bagof/3 and setof/3 and boot/init.pl's length/2 call ───────────
+
+# PORT: pl-prims.c ph_ground
+# DIVERGES: one walk — a visited compound is an entry in an identity map that lives for the call,
+# where upstream marks its functor cell in one walk and unmarks it in a second (`ph_mark`,
+# `ph_unmark`); the walk starts at the compound's arguments.
+"The first unbound variable of compound `top` under the bindings in `ld`, or `nothing` (pl-prims.c)."
+function ph_ground(ld::PL_local_data{T}, top::T)::Union{Nothing, T} where {T}
+    visited = IdDict{T, Nothing}()
+    agenda = term_agenda{T}(aNode{T}(top, 0, 0), aNode{T}[])
+
+    visited[top] = nothing
+    off, arity = _comp_shape(top)
+    initTermAgenda!(agenda, arity, top, off)
+    while true
+        p = nextTermAgenda!(ld, agenda)
+        p === nothing && break
+        if canBind(p)
+            clearTermAgenda!(agenda)
+            return p
+        end
+        if isTerm(p)
+            if !haskey(visited, p)                      # !ph_visited(f, ph)
+                visited[p] = nothing
+                o, a = _comp_shape(p)
+                pushWorkAgenda!(agenda, a, p, o)
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-prims.c ground
+# DIVERGES: a compound whose own value holds no variable (`is_ground`) is ground without a walk.
+"The first unbound variable of `p` under the bindings in `ld`, or `nothing` when it is ground (pl-prims.c)."
+function ground(ld::PL_local_data{T}, p::T)::Union{Nothing, T} where {T}
+    p = deRef(ld, p)
+    if canBind(p)
+        return p
+    end
+    if !isTerm(p)
+        return nothing
+    end
+    is_ground(p) && return nothing
+
+    return ph_ground(ld, p)
+end
+
+# PORT: pl-prims.c ground as pl_ground1_va
+# (PRED_IMPL("ground", 1, ground, PL_FA_ISO))
+"`ground(@Term)`: `Term` holds no unbound variable (pl-prims.c)."
+function pl_ground1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+
+    return ground(ld, ld.slots[A1 + 1]) === nothing ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c functor as pl_functor3_va
+# (PRED_IMPL("functor", 3, functor, 0)); the table's flag is `PL_FA_ISO`.
+# DIVERGES: a compound whose head is no symbol is named `$expr`, its arity the number of its
+# children (`PL_get_name_arity`). NOT PORTED: the global stack's overflow — an arity that does not
+# fit the stacks is refused (`NotPortedError`) rather than built (see `'$length'/2`, src/pl-list.jl).
+"`functor(?Term, ?Name, ?Arity)` (pl-prims.c): the name and arity of `Term`, or the term of that name and arity."
+function pl_functor3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    p = deRef(ld, ld.slots[A1 + 1])
+
+    if isTerm(p)
+        na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
+
+        if na[2] == 0
+            return PL_domain_error(ld, "compound_non_zero_arity", A1) ? FTRUE : FFALSE
+        end
+
+        return if (PL_unify_atom(ld, A2, na[1]) && PL_unify_integer(ld, A3, na[2]))
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+    if isAtomic(p)
+        return (PL_unify(ld, A2, A1) && PL_unify_integer(ld, A3, 0)) ? FTRUE : FFALSE
+    end
+    if !PL_is_atomic(ld, A2)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :atomic), A2) ? FTRUE : FFALSE
+    end
+
+    arity = PL_get_size_ex(ld, A3)
+    if arity === nothing
+        return FFALSE
+    end
+    if arity == 0
+        return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
+    end
+    name = PL_get_atom_ex(ld, A2)
+    if name !== nothing
+        if arity >= ld.stacks_limit                     # !ensureGlobalSpace(1+arity, ALLOW_GC)
+            throw(
+                NotPortedError{T}(
+                    ld.slots[A3 + 1],
+                    "a compound larger than the stacks (the global stack's overflow)", "L1"
+                )
+            )
+        end
+        return PL_unify_functor(ld, A1, name, arity) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-prims.c term_variables_loop
+# DIVERGES: the variables are pushed on `vars` (upstream: term references); a visited variable is
+# its key in `visitedv`, a visited compound an entry in `visitedf` (upstream: marks on the cells).
+# NOT PORTED: `flags` (`TV_ATTVAR`, `TV_SINGLETON`, `TV_SHARED`, `TV_ATTS`: term_singletons/2,
+# term_attvars/2 and friends), the signal check, `TV_NOSPACE`/`TV_NOMEM`.
+"Push the unbound variables the agenda walks on `vars`, each once, in depth-first order; their count, or `maxcount + 1` as soon as there are more (pl-prims.c)."
+function term_variables_loop(
+    ld::PL_local_data{T}, agenda::term_agenda{T}, maxcount::Int, vars::Vector{T},
+    visitedv::Set{UInt64}, visitedf::IdDict{T, Nothing}
+)::Int where {T}
+    count = 0
+
+    while true
+        p = nextTermAgenda!(ld, agenda)
+        p === nothing && break
+
+        if canBind(p)
+            k = var_key(p)
+            if k in visitedv                            # visitedWord(p)
+                continue
+            end
+            push!(visitedv, k)
+
+            count += 1
+            if count > maxcount
+                return count
+            end
+            push!(vars, p)                              # *valTermRef(v) = makeRefG(p)
+        elseif isTerm(p)
+            if haskey(visitedf, p)                      # visited(f)
+                continue
+            end
+            visitedf[p] = nothing
+            off, arity = _comp_shape(p)
+            pushWorkAgenda!(agenda, arity, p, off)
+        end
+    end
+
+    return count
+end
+
+# PORT: pl-prims.c term_variables_to_termv
+# DIVERGES: returns `(count, variables)` where upstream leaves the variables in term references
+# from `*vp`; the walk starts at a compound holding the term (an agenda walks arguments).
+"The unbound variables of the term `t` references, in depth-first order, and their count — `maxcount + 1` if there are more (pl-prims.c)."
+function term_variables_to_termv(
+    ld::PL_local_data{T}, t::term_t, maxcount::Int
+)::Tuple{Int, Vector{T}} where {T}
+    root = mk_expr(T, T[ld.slots[t + 1]])
+    agenda = term_agenda{T}(aNode{T}(root, 0, 0), aNode{T}[])
+    vars = T[]
+
+    initTermAgenda!(agenda, 1, root, 1)
+    count = term_variables_loop(
+        ld, agenda, maxcount, vars, Set{UInt64}(), IdDict{T, Nothing}()
+    )
+    clearTermAgenda!(agenda)
+
+    return (count, vars)
+end
+
+# PORT: pl-prims.c term_variables
+# DIVERGES: `tail` 0 is "no tail", as upstream's. NOT PORTED: `flags` (see `term_variables_loop`),
+# and the retries after `TV_NOSPACE`, `TV_EINTR`, `TV_NOMEM`.
+"Unify `vars` with the list of the unbound variables of `t`, ending in `tail` (0: in `[]`) (pl-prims.c)."
+function term_variables(
+    ld::PL_local_data{T}, t::term_t, vars::term_t, tail::term_t
+)::Bool where {T}
+    list = PL_copy_term_ref(ld, vars)
+    head = PL_new_term_ref(ld)
+    maxcount = typemax(Int)                             # ~0
+
+    if tail == 0
+        type, len = PL_skip_list(ld, vars)
+        type == PL_LIST && (maxcount = len)
+    end
+
+    count, v = term_variables_to_termv(ld, t, maxcount)
+    if count > maxcount
+        return false
+    end
+
+    for i in 1:count
+        if !PL_unify_list(ld, list, head, list) || !unify_ptrs(ld, ld.slots[head + 1], v[i])
+            return false
+        end
+    end
+    PL_reset_term_refs(ld, head)
+
+    if tail != 0
+        return PL_unify(ld, list, tail)
+    else
+        return PL_unify_nil(ld, list)
+    end
+end
+
+# PORT: pl-prims.c term_variables2 as pl_term_variables2_va
+# (PRED_IMPL("term_variables", 2, term_variables2, PL_FA_ISO))
+"`term_variables(+Term, -Vars)`: the unbound variables of `Term`, in depth-first order (pl-prims.c)."
+function pl_term_variables2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    return term_variables(ld, A1, A2, 0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c term_variables3 as pl_term_variables3_va
+# (PRED_IMPL("term_variables", 3, term_variables3, 0))
+"`term_variables(+Term, -Vars, ?Tail)`: as term_variables/2, the list ending in `Tail` (pl-prims.c)."
+function pl_term_variables3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    return term_variables(ld, A1, A2, A3) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c free_variables_loop
+# DIVERGES: returns `(goal, module name)` — `nothing` where upstream leaves `goal` unbound or
+# `*mname` 0 — and pushes the free variables on `vars`; the marks are as `term_variables_loop`'s;
+# `&mark` is an agenda entry that no term can be (`mark`, held by `markbox`); the walk starts at a
+# compound holding the term. The goal after `Module:` is read as every other argument is
+# (upstream defect, see register Q4).
+"""
+The free variables of `Template^Goal` as the ISO standard defines them (7.1.1.4; pl-prims.c): walk
+`t0`, pushing on `vars` every unbound variable met outside the left side of an outermost `^`, and
+return the goal without its `^` and `Module:` prefixes, and the last module named.
+"""
+function free_variables_loop(
+    ld::PL_local_data{T}, t0::T, vars::Vector{T}
+)::Tuple{Union{Nothing, T}, Union{Nothing, T}} where {T}
+    in_goal = false
+    existential = false                 # true when processing left of ^
+    mark = mk_expr(T, T[])              # mark that tells us we completed vars
+    markbox = mk_expr(T, T[mark])
+    root = mk_expr(T, T[t0])
+    agenda = term_agenda{T}(aNode{T}(root, 0, 0), aNode{T}[])
+    visitedv = Set{UInt64}()
+    visitedf = IdDict{T, Nothing}()
+    goal::Union{Nothing, T} = nothing
+    mname::Union{Nothing, T} = nothing
+    hat = mk_sym(T, :^)
+    colon = mk_sym(T, :(:))
+
+    initTermAgenda!(agenda, 1, root, 1)
+    while true
+        n = nextTermAgenda!(ld, agenda)
+        n === nothing && break
+        t = n
+        if t === mark
+            existential = false
+            continue
+        end
+
+        @label again
+        if canBind(t)
+            k = var_key(t)
+            if !(k in visitedv)                         # !visitedWord(t) && !existential
+                push!(visitedv, k)
+                existential || push!(vars, t)
+            end
+
+            continue
+        end
+
+        if isTerm(t)
+            off, arity = _comp_shape(t)
+
+            if haskey(visitedf, t)                      # visited(f)
+                if !in_goal && !existential
+                    goal = t
+                    in_goal = true
+                end
+                continue
+            end
+            visitedf[t] = nothing
+
+            if !in_goal
+                if _hasFunctor(t, hat, 2) && existential == false   # fd == FUNCTOR_hat2
+                    pushWorkAgenda!(agenda, 1, t, off + 1)          # &f->arguments[1]
+                    pushWorkAgenda!(agenda, 1, markbox, 1)          # &mark
+                    pushWorkAgenda!(agenda, 1, t, off)              # &f->arguments[0]
+                    existential = true
+                    continue
+                end
+                if _hasFunctor(t, colon, 2) && !existential         # fd == FUNCTOR_colon2
+                    a1 = deRef(ld, child(t, off))
+
+                    if isAtom(a1)
+                        mname = a1
+                    end
+                    t = deRef(ld, child(t, off + 1))    # (see DIVERGES)
+                    @goto again
+                elseif !existential
+                    goal = t
+                    in_goal = true
+                end
+            end
+
+            pushWorkAgenda!(agenda, arity, t, off)
+
+            continue
+        elseif !in_goal && !existential     # non-term goal (atom or invalid)
+            goal = t
+            in_goal = true
+        end
+    end
+
+    clearTermAgenda!(agenda)
+
+    return (goal, mname)
+end
+
+# PORT: pl-prims.c free_variable_set as pl_free_variable_set3_va
+# (PRED_IMPL("$free_variable_set", 3, free_variable_set, 0))
+# DIVERGES: the free variables come back in a vector (upstream: term references), so there is no
+# retry for local space; `PL_cons_functor(goal, FUNCTOR_colon2, m, goal)` is written out.
+"`'\$free_variable_set'(+Template^GoalIn, -GoalOut, -VarTemplate)`: `GoalOut` is `GoalIn` without its `^`, `VarTemplate` is `v(V1, …)` of its free variables (pl-prims.c)."
+function pl_free_variable_set3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    goal = PL_new_term_ref(ld)
+    vars = T[]
+
+    g, mname = free_variables_loop(ld, ld.slots[A1 + 1], vars)
+    g === nothing || (ld.slots[goal + 1] = g)
+    n = length(vars)
+
+    if PL_unify_functor(ld, A3, mk_sym(T, :v), n)
+        v = PL_new_term_ref(ld)
+        for i in 1:n
+            ld.slots[v + 1] = vars[i]
+            if !PL_unify_arg(ld, i, A3, v)
+                return FFALSE
+            end
+        end
+
+        if mname !== nothing            # PL_cons_functor(goal, FUNCTOR_colon2, m, goal)
+            ld.slots[goal + 1] = mk_expr(
+                T, T[mk_sym(T, :(:)), mname, linkValI(ld, ld.slots[goal + 1])]
+            )
+        end
+
+        return PL_unify(ld, A2, goal) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-prims.c skip_list as pl_skip_list3_va
+# (PRED_IMPL("$skip_list", 3, skip_list, 0))
+"`'\$skip_list'(-Length, +List, -Tail)`: the cells of `List` before its `Tail` — `[]`, a variable, or what else ends it (pl-prims.c)."
+function pl_skip_list3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    len, tail = skip_list(ld, ld.slots[A2 + 1])
+    if unify_ptrs(ld, ld.slots[A3 + 1], tail) && PL_unify_integer(ld, A1, len)
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
@@ -1784,14 +2167,20 @@ const PL_predicates_from_prims = (
     PL_extension("atomic", 1, pl_atomic1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("atom", 1, pl_atom1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("string", 1, pl_string1_va, PL_FA_VARARGS),
+    PL_extension("ground", 1, pl_ground1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("compound", 1, pl_compound1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("callable", 1, pl_callable1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("==", 2, pl_equal2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("\\==", 2, pl_nonequal2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("compare", 3, pl_compare3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("?=", 2, pl_can_compare2_va, PL_FA_VARARGS),
+    PL_extension("functor", 3, pl_functor3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
+    PL_extension("\$free_variable_set", 3, pl_free_variable_set3_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
+    PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )
 

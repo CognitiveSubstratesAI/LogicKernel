@@ -592,7 +592,7 @@ fixed it or a public issue exists.
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags; since V9g-b a recorded term (`record`: the term itself, its cyclic references beside it) and the bag of a findall/3 in progress (`findall_bag`, pl-bag.c's — the local data holds the bags, so the struct is declared here) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h`, `src/pl-bag.c` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`); since V5c `unify_definition` (a definition's reference, module-qualified); since R1f the consult path of `assert_term!` (a clause's file, line and owner; `overruleImportedProcedure`, `redefineProcedure`) and `record_clause`, `'$record_clause'/3`; since V9d (`;`) `compileBody!`'s frames for a disjunction with the variable tables it balances (`setVars`, `balanceVars`, `c_var`, `orVars`, `copyVarTable`), and the BODY DECOMPILER (`decompile!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`) with clause/2 over rule bodies (`pl_clause!` with a body); since V9d (`->`) the conditionals' frames, `allocChoiceVar!` and `try_fast_condition!`, (`\+`) the negation's frame, and the decompiler's moved unifications (`mark_bvar_access`, `moved_unifications!`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
@@ -611,6 +611,9 @@ fixed it or a public issue exists.
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); attributed variables themselves are not ported | `src/pl-attvar.c` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
+| `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; the recorded database (`recorda/3`, `recorded/3`, `erase/1`) is not ported | `src/pl-rec.c` |
+| `src/pl-bag.jl` | the bags of findall/3 (since V9g-b): `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`, `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the innermost bag of the thread is implicit, the answers are records, and the last answer is put back first; `'$suspend_findall_bag'/0` (findnsols/4,5: a nondeterministic foreign predicate) is not ported | `src/pl-bag.c` |
+| `src/pl-list.jl` | lists (since V9g-b): `is_list/1`, `'$length'/2`, and `sort/2`, `msort/2`, `keysort/2` over `nat_sort` — Richard O'Keefe's bottom-up natural merge sort, ported line for line over records that are indices into three vectors; `sort/4` and `'$memberchk'/3` are not ported | `src/pl-list.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan` | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
@@ -731,6 +734,7 @@ graph LR
     pl_comp["pl-comp.jl"]
     pl_variant["pl-variant.jl"]
     pl_copyterm["pl-copyterm.jl"]
+    pl_rec["pl-rec.jl"]
     pl_termhash["pl-termhash.jl"]
     pl_thread["pl-thread.jl"]
     pl_gc["pl-gc.jl"]
@@ -752,6 +756,8 @@ graph LR
     pl_supervisor["pl-supervisor.jl"]
     pl_trace["pl-trace.jl"]
     pl_pro["pl-pro.jl"]
+    pl_bag["pl-bag.jl"]
+    pl_list["pl-list.jl"]
     pl_op["pl-op.jl"]
     pl_write["pl-write.jl"]
     pl_read["pl-read.jl"]
@@ -780,6 +786,7 @@ graph LR
     os_pl_stream --> pl_read
     pl_incl --> term_interface
     pl_incl --> default_term
+    pl_incl --> pl_prims
     pl_incl --> pl_arith
     pl_incl --> pl_op
     pl_termwalk --> term_interface
@@ -896,6 +903,15 @@ graph LR
     pl_copyterm --> pl_fli
     pl_copyterm --> pl_arith
     pl_copyterm --> pl_read
+    pl_rec --> term_interface
+    pl_rec --> default_term
+    pl_rec --> pl_incl
+    pl_rec --> SWI_Prolog
+    pl_rec --> pl_global
+    pl_rec --> pl_inline
+    pl_rec --> pl_prims
+    pl_rec --> pl_variant
+    pl_rec --> pl_copyterm
     pl_termhash --> term_interface
     pl_termhash --> default_term
     pl_termhash --> pl_hash
@@ -957,6 +973,7 @@ graph LR
     pl_fli --> pl_modul
     pl_fli --> pl_inline
     pl_fli --> pl_prims
+    pl_fli --> pl_comp
     pl_fli --> pl_copyterm
     pl_fli --> pl_gc
     pl_fli --> pl_alloc
@@ -1111,6 +1128,25 @@ graph LR
     pl_pro --> pl_fli
     pl_pro --> pl_error
     pl_pro --> pl_proc
+    pl_bag --> term_interface
+    pl_bag --> default_term
+    pl_bag --> pl_incl
+    pl_bag --> SWI_Prolog
+    pl_bag --> pl_global
+    pl_bag --> pl_rec
+    pl_bag --> pl_fli
+    pl_bag --> pl_error
+    pl_list --> term_interface
+    pl_list --> default_term
+    pl_list --> pl_incl
+    pl_list --> SWI_Prolog
+    pl_list --> pl_global
+    pl_list --> pl_inline
+    pl_list --> pl_prims
+    pl_list --> pl_comp
+    pl_list --> pl_fli
+    pl_list --> pl_error
+    pl_list --> pl_read
     pl_op --> term_interface
     pl_op --> default_term
     pl_op --> pl_incl
@@ -1184,6 +1220,8 @@ graph LR
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
     pl_ext --> pl_pro
+    pl_ext --> pl_bag
+    pl_ext --> pl_list
     pl_ext --> pl_op
     pl_ext --> pl_write
     pl_ext --> pl_read
@@ -2642,6 +2680,64 @@ pin `8609e216`, upstream names.
   `det_goal` units among them; `start_of_cdet` on nested blocks; the guard's frame flags and the
   block's unlinked record. test/compile/test_body_code_swipl.jl — nine `$` clauses compile to
   swipl's code (`vm_list`) and decompile to swipl's `clause/2`.
+
+**V9g-b: the bags — `findall/3,4`, `bagof/3`, `setof/3` — BUILT (2026-10-13)** (the user's
+overnight queue; port_inventory row V9; src/pl-rec.jl, pl-bag.jl, pl-list.jl (all new), pl-prims.jl,
+pl-fli.jl, pl-error.jl, pl-ext.jl, pl-incl.jl, pl-global.jl). Ported from pl-bag.c, pl-rec.c,
+pl-list.c, pl-prims.c and pl-fli.c at the pin `8609e216`, upstream names; boot/bags.pl's clauses
+and the four of boot/init.pl they call are compiled at database creation until R2 loads the files.
+* **Ported — recorded terms (pl-rec.c):** `compileTermToHeap` and `copyRecordToGlobal`. A record
+  is the term itself (decision 2), copied by `copy_term`'s walk with its cyclic references kept
+  beside it instead of in the binding store, so backtracking cannot touch it; putting it back
+  renames its variables to fresh ones. THE STANDARD ORDER OF THOSE FRESH VARIABLES IS UPSTREAM'S:
+  `copy_record` lays a compound's cells out when it meets the compound and a variable lives in the
+  lowest argument cell that holds it, so `_rec_copy` gives a compound's own variable arguments
+  their keys before it descends (tested: `f(g(X), Y)` comes back with `Y` older than `X`).
+* **Ported — the bag (pl-bag.c):** `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`,
+  `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the bag is implicit, the innermost of
+  the thread (the local data's `bags`); the answers are taken from the top, so the LAST answer's
+  variables are the oldest, as upstream's.
+* **Ported — the sorts (pl-list.c):** `nat_sort`, Richard O'Keefe's bottom-up natural merge sort,
+  line for line over records that are indices into three vectors; `sort/2`, `msort/2`, `keysort/2`
+  (`pl_nat_sort`, `prolog_list_to_sort_list`, `extract_key`, `put_sort_list`); `is_list/1`;
+  `'$length'/2`.
+* **Ported — what bagof/3 and setof/3 call of pl-prims.c:** `'$free_variable_set'/3`
+  (`free_variables_loop`: the free variables of `Template^Goal` as ISO 7.1.1.4 defines them, the
+  goal without its `^` and `Module:` prefixes), `term_variables/2,3` (`term_variables_loop`),
+  `functor/3`, `ground/1` (`ph_ground`), `'$skip_list'/3`. From pl-fli.c: `PL_cons_list`,
+  `PL_unify_list`, `PL_unify_nil`, `PL_skip_list`, `PL_unify_functor`, `PL_unify_arg`; from
+  pl-error.c `PL_get_size_ex`.
+* **The boot clauses** (src/pl-ext.jl, as catch/3's): boot/bags.pl's findall/3,4, `cleanup_bag/2`,
+  `findall_loop/4`, bagof/3, setof/3, `alloc_bind_key_list/2`, `bind_bagof_keys/2`, `pick/3`,
+  `select_bag/5`, `pick_first/4`, `pick_same/4` (`_boot_bags!`, `_boot_bagof!`), and boot/init.pl's
+  length/2, `'$length3'/3`, `'$append'/3` (`_boot_lists!`) — each clause as upstream's, built as a
+  term and compiled into `system`. The exported predicates are locked system predicates; the
+  PRIVATE predicates of the module `'$bags'` are `system`'s but NOT locked, so `user` may define
+  predicates of those names (tested). The two goals findall/4 hands to `cleanup_bag/2` are
+  written `system:Goal`: upstream's meta-predicate declaration qualifies them, and unqualified
+  they would be called in `user`.
+* **DIVERGES:** a record is a term, not a byte code (representation only; every answer equal). `free_variables_loop`
+  carries one neutral marker (upstream defect, register Q4). A call from `user` to one of
+  the private names that `user` does not define reaches `system`'s predicate, where swipl raises
+  an existence error; the context of an error raised inside findall/3 names `system:findall_loop/4`
+  where swipl's names `'$bags':findall_loop/4` (pinned in the test) — both go with R2's modules.
+* **NOT PORTED:** findnsols/4,5 and `'$suspend_findall_bag'/0` (the kernel has no
+  NONDETERMINISTIC foreign predicate yet); `sort/4`, `'$memberchk'/3`; the recorded database; the
+  GLOBAL STACK's overflow — upstream raises a resource error for a findall/3 whose answers, a
+  `'$length'/2` whose list or a functor/3 whose term does not fit the stacks: the two built-ins
+  refuse such a size (`NotPortedError`), findall/3 has no limit (L1 checklist).
+* **Gates — against the oracle, all three term types:** test/core_lang/test_findall_swipl.jl (39
+  cases: the answers in order, fresh and shared variables, nesting, findall/4, a bound list, a cut,
+  a ball and three errors out of the goal — the bag is closed every time — a rational tree, the
+  standard order of the fresh variables, the primitives; "no bag open" at every answer; the
+  records, white box); test/core_lang/test_bagof_swipl.jl (65 cases: a bag for each binding of the
+  free variables in the order of the bindings, `^`, witnesses that are not ground, setof/3 on both
+  of its paths, nesting, `Module:Goal`, a bound list, errors, 300 answers in three bags, and 20
+  cases of `'$free_variable_set'/3`; `user` defining every private name; the flags);
+  test/core_lang/test_sortlist_swipl.jl (118 cases of sort/2, msort/2, keysort/2, length/2,
+  is_list/1, `'$skip_list'/3`, `'$length'/2`, functor/3, term_variables/2,3, ground/1; and
+  `nat_sort` against a stable sort for every length up to 40, with and without duplicates, both
+  directions).
 
 **V9g-a: the cleanup family — `setup_call_cleanup/3`, `setup_call_catcher_cleanup/4`,
 `call_cleanup/2` — BUILT (2026-10-13)** (the user's overnight queue; port_inventory row V9;

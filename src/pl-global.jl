@@ -196,6 +196,8 @@ end
 # `numbervars_made`, `numberVars`' scratch (upstream's visited marks and global-stack mark).
 # Since V9f: `prolog_flag_determinism_error`, the `determinism_error` flag — `:error` (the default),
 # `:warning` or `:silent` — which upstream reads from the flag table (`PL_current_prolog_flag`).
+# Since V9g-b: `bags`, upstream's `bags` (a `findall_state`: the stack of findall/3's bags, the
+# innermost last — src/pl-bag.jl).
 """
     PL_local_data{T}()
 
@@ -280,6 +282,7 @@ mutable struct PL_local_data{T}
     numbervars_made::IdDict{T, Nothing}                         # (the '$VAR's a numberVars made)
     variable_names::Int                                         # (gvar `$variable_names`: a term_t)
     prolog_flag_determinism_error::Symbol                       # the `determinism_error` flag
+    bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
 end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
@@ -332,7 +335,8 @@ function PL_local_data{T}() where {T}
         true,                                   # character_escapes_unicode: true
         IdDict{T, Nothing}(), IdDict{T, Nothing}(),
         0,                                      # $variable_names: no such global variable
-        :error                                  # determinism_error: error (os/pl-prologflag.c:2708)
+        :error,                                 # determinism_error: error (os/pl-prologflag.c:2708)
+        findall_bag{T}[]                        # bags: none (pl-bag.c: `LD->bags` is NULL)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

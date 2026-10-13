@@ -77,6 +77,18 @@ const PL_FA_TRANSPARENT = 0x02
 # PORT: SWI-Prolog.h PL_ATOM
 "Text type: an atom (SWI-Prolog.h)."
 const PL_ATOM = 2
+# PORT: SWI-Prolog.h PL_LIST
+"`PL_skip_list`'s result: a proper list (SWI-Prolog.h)."
+const PL_LIST = 12
+# PORT: SWI-Prolog.h PL_PARTIAL_LIST
+"`PL_skip_list`'s result: a partial list (SWI-Prolog.h)."
+const PL_PARTIAL_LIST = 41
+# PORT: SWI-Prolog.h PL_CYCLIC_TERM
+"`PL_skip_list`'s result: a cyclic list (SWI-Prolog.h)."
+const PL_CYCLIC_TERM = 42
+# PORT: SWI-Prolog.h PL_NOT_A_LIST
+"`PL_skip_list`'s result: not a list (SWI-Prolog.h)."
+const PL_NOT_A_LIST = 43
 # PORT: SWI-Prolog.h PL_STRING
 "Text type: a string (SWI-Prolog.h)."
 const PL_STRING = 6

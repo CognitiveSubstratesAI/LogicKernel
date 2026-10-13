@@ -41,6 +41,7 @@ include("pl-ressymbol.jl")     # swipl-devel src/pl-ressymbol.c — reserved sym
 include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
 include("pl-copyterm.jl")      # swipl-devel src/pl-copyterm.c — copy_term/2, copy_term_nat/2, duplicate_term/2
+include("pl-rec.jl")           # swipl-devel src/pl-rec.c — recorded terms: compileTermToHeap, copyRecordToGlobal
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
@@ -62,6 +63,8 @@ include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: 
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
 include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_atomic/1
+include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findall/3
+include("pl-list.jl")          # swipl-devel src/pl-list.c — is_list/1, '$length'/2, sort/2, msort/2, keysort/2
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
 include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
 include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c) and the parser (R1d): read_term, term_to_atom

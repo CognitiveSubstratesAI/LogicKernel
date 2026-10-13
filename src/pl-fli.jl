@@ -110,6 +110,123 @@ function PL_copy_term_ref(ld::PL_local_data{T}, from::Int)::Int where {T}
     return r
 end
 
+# PORT: pl-fli.c PL_cons_list
+# DIVERGES: no global space to ensure, so it cannot fail; the cell is a compound of the
+# dereferenced head and tail (`bindConsVal`).
+"Make term reference `l` hold the list cell of the terms `head` and `tail` reference (pl-fli.c)."
+function PL_cons_list(
+    ld::PL_local_data{T}, l::term_t, head::term_t, tail::term_t
+)::Bool where {T}
+    ld.slots[l + 1] = mk_expr(
+        T,
+        T[
+            mk_sym(T, LIST_CONS_NAME), linkValI(ld, ld.slots[head + 1]),
+            linkValI(ld, ld.slots[tail + 1])
+        ]
+    )
+
+    return true
+end
+
+# PORT: pl-fli.c PL_unify_list
+# DIVERGES: no global space to ensure. An unbound list is bound to a cell of two fresh variables.
+"Unify term reference `l` with a list cell, putting its head and tail into `h` and `t` (pl-fli.c)."
+function PL_unify_list(
+    ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t
+)::Bool where {T}
+    p = deRef(ld, ld.slots[l + 1])
+
+    if canBind(p)
+        k = fresh_var_keys!(2)
+        a1, a2 = mk_var(T, k), mk_var(T, k + 1)
+        c = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), a1, a2])
+        ld.slots[h + 1] = a1                            # setHandle(h, makeRefG(a))
+        ld.slots[t + 1] = a2
+
+        Trail!(ld, var_key(p), c)                       # bindConst(p, c)
+    elseif is_pair(p)                                   # isList(*p)
+        ld.slots[h + 1] = linkValI(ld, child(p, 2))
+        ld.slots[t + 1] = linkValI(ld, child(p, 3))
+    else
+        return false
+    end
+
+    return true
+end
+
+# PORT: pl-fli.c PL_unify_nil
+"Unify term reference `l` with `[]` (pl-fli.c)."
+PL_unify_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_unify_atom(ld, l, mk_nil(T))
+
+# PORT: pl-fli.c PL_skip_list
+# DIVERGES: returns `(type, length)` where upstream writes the length through `len`. NOT PORTED:
+# `tail` (upstream unifies it with the list's tail): no caller here passes one.
+"The type of the list term reference `list` holds — `PL_LIST`, `PL_PARTIAL_LIST`, `PL_CYCLIC_TERM`, `PL_NOT_A_LIST` — and its cells (pl-fli.c)."
+function PL_skip_list(ld::PL_local_data{T}, list::term_t)::Tuple{Int, Int} where {T}
+    length, t = skip_list(ld, ld.slots[list + 1])
+
+    if is_nil(t)
+        return (PL_LIST, length)
+    elseif kind(t) === VAR
+        return (PL_PARTIAL_LIST, length)
+    elseif is_pair(t)
+        return (PL_CYCLIC_TERM, length)
+    else
+        return (PL_NOT_A_LIST, length)
+    end
+end
+
+# PORT: pl-fli.c PL_unify_functor
+# DIVERGES: the functor is its name and arity; no global space to ensure. An unbound term is bound
+# to `name` of `arity` fresh variables, their keys in argument order.
+"Unify term reference `t` with a term `name/arity` — binding it to one of fresh variables, or checking its functor (pl-fli.c)."
+function PL_unify_functor(
+    ld::PL_local_data{T}, t::term_t, name::T, arity::Int
+)::Bool where {T}
+    p = deRef(ld, ld.slots[t + 1])
+
+    if canBind(p)
+        if arity != 0
+            k = fresh_var_keys!(arity)
+            a = Vector{T}(undef, 1 + arity)
+            a[1] = name
+            for i in 1:arity
+                a[i + 1] = mk_var(T, k + UInt64(i - 1))    # setVar(a[i])
+            end
+
+            Trail!(ld, var_key(p), mk_expr(T, a))       # bindConst(p, to)
+            return true
+        else
+            Trail!(ld, var_key(p), name)                # bindConst(p, name)
+            return true
+        end
+    else
+        if arity != 0
+            return _hasFunctor(p, name, arity)
+        else
+            return kind(p) === SYM && sym_key(p) == sym_key(name)
+        end
+    end
+end
+
+# PORT: pl-fli.c PL_unify_arg_sz as PL_unify_arg
+# DIVERGES: a compound whose head is no symbol has every child as an argument (see `_PL_get_arg`).
+"Unify argument `index` (from 1) of the compound term reference `t` holds with the term `a` references (pl-fli.c)."
+function PL_unify_arg(
+    ld::PL_local_data{T}, index::Int, t::term_t, a::term_t
+)::Bool where {T}
+    w = deRef(ld, ld.slots[t + 1])
+
+    if isTerm(w)
+        off, arity = _comp_shape(w)
+        if index > 0 && index <= arity
+            return unify_ptrs(ld, child(w, off + index - 1), ld.slots[a + 1])
+        end
+    end
+
+    return false
+end
+
 # PORT: pl-fli.c PL_put_term
 # DIVERGES: no `globalizeTermRef` (as `PL_copy_term_ref`), so it cannot fail.
 "Make term reference `t1` reference the term `t2` references (pl-fli.c)."

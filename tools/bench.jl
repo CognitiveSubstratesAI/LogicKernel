@@ -608,6 +608,50 @@ const BU_PROLOG =
     "bu([]).\nbu([X|T]) :- Y = f(X), Y = f(Z), Z == X, W = Z, W \\== a, bu(T).\n" *
     "butop :- bu([" * join(1:1000, ",") * "]).\n"
 
+# the bags (V9g-b): findall/3 over 1000 facts; the same list then sorted (the facts are in
+# descending order, so the merge sort's every run is a swapped pair); bagof/3 over 1000 facts with
+# one free variable of three values — the keyed findall/3, keysort/2 and the bags, taken to the
+# third; swipl runs the same clauses (`BAG_PROLOG`)
+let (X, K, L) = (_v(), _v(), _v())
+    for i in 1000:-1:1
+        _nr_add!(_nrf(:bn, gnd_term(BT, i)), nothing)
+        _nr_add!(_nrf(:bk, gnd_term(BT, i), _a((:a, :b, :c)[i % 3 + 1])), nothing)
+    end
+    _nr_add!(_a(:fatop), _nrf(:findall, X, _nrf(:bn, X), _v()))
+    _nr_add!(
+        _a(:fstop),
+        _nrf(Symbol(","), _nrf(:findall, X, _nrf(:bn, X), L), _nrf(:sort, L, _v()))
+    )
+    _nr_add!(
+        _a(:botop),
+        _nrf(
+            Symbol(","), _nrf(:bagof, X, _nrf(:bk, X, K), _v()), _nrf(:(==), K, _a(:c))
+        )
+    )
+end
+const FA_PROC = lookupProcedure(_a(:fatop), 0, NR_USER)
+const FS_PROC = lookupProcedure(_a(:fstop), 0, NR_USER)
+const BO_PROC = lookupProcedure(_a(:botop), 0, NR_USER)
+function _vm_bag(proc)::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    qid = LogicKernel.PL_open_query(NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, proc, 0)
+    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    return rc
+end
+_vm_findall()::Int = _vm_bag(FA_PROC)
+_vm_fsort()::Int = _vm_bag(FS_PROC)
+_vm_bagof()::Int = _vm_bag(BO_PROC)
+@assert _vm_findall() == LogicKernel.PL_S_TRUE
+@assert _vm_fsort() == LogicKernel.PL_S_TRUE
+@assert _vm_bagof() == LogicKernel.PL_S_TRUE
+const BAG_PROLOG =
+    join("bn($i).\n" for i in 1000:-1:1) *
+    join("bk($i, $(("a", "b", "c")[i % 3 + 1])).\n" for i in 1000:-1:1) *
+    "fatop :- findall(X, bn(X), _).\nfstop :- findall(X, bn(X), L), sort(L, _).\n" *
+    "botop :- bagof(X, bk(X, K), _), K == c.\n"
+
 # the reader (R1d): term_to_atom/2 reads one clause's text — raw_read, the tokens, operators of
 # several priorities and kinds, a list with a tail, a string, brackets; swipl runs the same goal on
 # the same text (no `'` or `\` in it: it is quoted as an atom in the swipl goal)
@@ -672,7 +716,7 @@ fixtures(G1, G2, V1, V2) :-
     forall(between(1, 1000, I), assertz(cp(I, a))).
 :- dynamic cp/2.
 """ * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) *
-    BW_PROLOG * BU_PROLOG *
+    BW_PROLOG * BU_PROLOG * BAG_PROLOG *
     DERIVE_PROLOG * QSORT_PROLOG * POLY_PROLOG * WR_PROLOG
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
@@ -720,6 +764,10 @@ const CASES = [
     ("compare/3 ×1000, body", _vm_bw, "bwtop"),
     # unification and comparison inline in a body (V9a), per element of a 1000-element list
     ("unify inline ×1000, body", _vm_bu, "butop"),
+    # the bags (V9g-b): 1000 answers recorded and put back; the list sorted; three bags of bagof/3
+    ("findall/3 ×1000", _vm_findall, "fatop"),
+    ("findall/3 + sort/2 ×1000", _vm_fsort, "fstop"),
+    ("bagof/3 ×1000, 3 bags", _vm_bagof, "botop"),
     # derive (V6c2): the first program with cuts, type tests and is/2 from a body
     ("derive", _vm_derive, "ops8, log10, divide10"),
     # qsort (V7): 50 numbers, `=</2` and a cut per partition step

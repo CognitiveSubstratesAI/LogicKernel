@@ -528,6 +528,35 @@ function PL_get_integer_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int}
     return nothing
 end
 
+# PORT: pl-error.c PL_get_size_ex
+# DIVERGES: returns the value, or `nothing` with the error raised (or none: upstream's plain
+# `false`). An integer beyond `Int64` is beyond `size_t` or negative.
+"""
+The size term reference `t` holds — a non-negative integer — or `nothing` after raising
+`domain_error(not_less_than_zero, T)`, `representation_error(size_t)` or `type_error(integer, T)`
+(pl-error.c).
+"""
+function PL_get_size_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    p = deRef(ld, ld.slots[t + 1])
+    if isInteger(p)
+        if integer_is_int64(p)
+            v = int64_value(p)
+            v >= 0 && return Int(v)
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+            return nothing
+        end
+        if bigint_value(p) < 0                          # mpz_to_uint64: -1
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+        else
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+        end
+        return nothing
+    end
+
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return nothing
+end
+
 # PORT: pl-error.c PL_get_list_ex
 "As `PL_get_list`; on neither a list cell nor `[]`, false after raising `type_error(list, L)` (pl-error.c)."
 function PL_get_list_ex(
