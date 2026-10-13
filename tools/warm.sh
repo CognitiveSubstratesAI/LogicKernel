@@ -9,6 +9,8 @@
 #                                                            # exit 4 = NO VERDICT (fail closed)
 #   tools/warm.sh send snippet.jl          # any snippet (or stdin); exit 0 ok · 1 threw · 2 timeout · 3 no daemon
 #   tools/warm.sh bench [bench.jl args]    # tools/bench.jl in the daemon: no JIT in the timings
+#   tools/warm.sh check                    # the formatter and port_check alone (seconds): after an
+#                                          # edit to a header, a marker or the inventory
 #   tools/warm.sh preflight                # WARM: what a full run would fail on, BEFORE one (exit 0/1);
 #                                          # a stale daemon (a deleted method it kept) is restarted
 #                                          # and the preflight rerun once
@@ -330,28 +332,12 @@ _pool() {
     echo "pool: $n workers warming for tree ${fp:0:12} — tools/run_tests.sh uses them while the tree is unchanged"
 }
 
-# _preflight — what a full run would fail on, checked WARM before the cold evidence run (user,
-# 2026-10-04: "do not waste time on cold starts .. make use of possible solutions to run warm").
-# MEASURED that day: two of three cold runs (~11 min each) failed on port_check and on JET — each
-# answer this gives in about a minute. Fast checks first, failing fast: Blue formatting (as
-# run_tests.sh and CI check it) and port_check. Then, while the evidence workers pre-warm for this
-# tree (`pool`, in the evidence depot, so the daemon's cache is untouched): the static-analysis gate
-# (JET/Aqua/AllocCheck — ~26 s warm, against ~200 s in a cold worker) and every test file changed
-# since HEAD, on every implementation. Exit 0 only if all of it passed; the cold run that follows is
-# then the evidence, and starts from loaded workers. LOGICKERNEL_PREFLIGHT_POOL=0 skips the pool.
-_preflight_once() {
-    _running || _start > /dev/null || return 1
-    local t0 rc=0 f files pooled=""
-    PF_SA_FAIL=0 PF_OTHER_FAIL=0                       # which steps failed, for _preflight
-    t0=$(date +%s)
-    # THE GATE SPLIT'S CONDITION (user, 2026-10-06): a gate cycle starts by reading the previous
-    # push's CI — red, or unreadable, stops it here (tools/lib_evidence.sh `_ci_gate`)
-    _ci_gate "$ROOT" 0 || {
-        PF_OTHER_FAIL=1
-        echo "preflight: FAIL — the previous push's CI (tools/ci_status.sh)"
-        return 1
-    }
-    local snippet="$DIR/preflight_snippet.jl"
+# _format_port_check — the formatter (as CI's Format job checks it) and port_check, in the warm
+# daemon: the preflight's first step, and `tools/warm.sh check` on its own (user, 2026-10-13: a
+# documentation slip is then found seconds after the edit, without starting a preflight). Prints
+# both pass lines; 0 only when both were SHOWN (fail closed).
+_format_port_check() {
+    local rc snippet="$DIR/preflight_snippet.jl" fmtlog="$DIR/preflight_format_port_check.log"
     cat > "$snippet" <<JL
 using JuliaFormatter
 if !format("."; overwrite=false)
@@ -379,7 +365,6 @@ let pc = Module(:PreflightPortCheck)
         " DIVERGES, ", mk.not_ported, " NOT PORTED, ", mk.both, " DIVERGES lines still saying NOT PORTED)")
 end
 JL
-    local fmtlog="$DIR/preflight_format_port_check.log"
     _send "$snippet" > "$fmtlog" 2>&1
     rc=$?
     case "${LOGICKERNEL_PREFLIGHT_FAULT:-}" in                     # TEST SEAMS (tools/test_warm.sh)
@@ -393,6 +378,32 @@ JL
         echo "preflight: NO VERDICT — the format/port_check output is empty or lacks its pass lines"
         rc=4
     fi
+    return "$rc"
+}
+
+# _preflight — what a full run would fail on, checked WARM before the cold evidence run (user,
+# 2026-10-04: "do not waste time on cold starts .. make use of possible solutions to run warm").
+# MEASURED that day: two of three cold runs (~11 min each) failed on port_check and on JET — each
+# answer this gives in about a minute. Fast checks first, failing fast: Blue formatting (as
+# run_tests.sh and CI check it) and port_check. Then, while the evidence workers pre-warm for this
+# tree (`pool`, in the evidence depot, so the daemon's cache is untouched): the static-analysis gate
+# (JET/Aqua/AllocCheck — ~26 s warm, against ~200 s in a cold worker) and every test file changed
+# since HEAD, on every implementation. Exit 0 only if all of it passed; the cold run that follows is
+# then the evidence, and starts from loaded workers. LOGICKERNEL_PREFLIGHT_POOL=0 skips the pool.
+_preflight_once() {
+    _running || _start > /dev/null || return 1
+    local t0 rc=0 f files pooled=""
+    PF_SA_FAIL=0 PF_OTHER_FAIL=0                       # which steps failed, for _preflight
+    t0=$(date +%s)
+    # THE GATE SPLIT'S CONDITION (user, 2026-10-06): a gate cycle starts by reading the previous
+    # push's CI — red, or unreadable, stops it here (tools/lib_evidence.sh `_ci_gate`)
+    _ci_gate "$ROOT" 0 || {
+        PF_OTHER_FAIL=1
+        echo "preflight: FAIL — the previous push's CI (tools/ci_status.sh)"
+        return 1
+    }
+    _format_port_check
+    rc=$?
     [ "$rc" -eq 0 ] || {
         PF_OTHER_FAIL=1
         echo "preflight: FAIL (format/port_check) in $(( $(date +%s) - t0 ))s"
@@ -530,6 +541,14 @@ case "$cmd" in
     send) _send "${1:-}" ;;
     file) [ $# -ge 1 ] || { echo "usage: tools/warm.sh file PATH [impl]" >&2; exit 2; }; _file "$@" ;;
     bench) _bench "$@" ;;
+    check)
+        _running || _start > /dev/null || exit 1
+        _ck_t0=$(date +%s)
+        _format_port_check
+        _ck_rc=$?
+        echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check) in $(( $(date +%s) - _ck_t0 ))s"
+        (exit "$_ck_rc")
+        ;;
     preflight)
         # A PASSED PREFLIGHT IS EVIDENCE FOR A BRANCH COMMIT (user, 2026-10-13: the gate is CI's —
         # commit on a branch after the local preflight, push it as gate/<name>, evidence.yml judges

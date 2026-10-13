@@ -130,7 +130,9 @@ file) — so evidence is a process that started clean. The daemon follows Revise
   ITS `src/` (the "not watching" guard refused exactly that, measured);
 * **`tools/warm.sh preflight`, before every full run (user, 2026-10-04: "do not waste time on cold
   starts"):**
-  * the fast checks fail fast: Blue formatting, as CI checks it, and `port_check`;
+  * the fast checks fail fast: Blue formatting, as CI checks it, and `port_check` — also on their
+    own, `tools/warm.sh check` (seconds; user, 2026-10-13: after an edit to a header, a marker or
+    the inventory, before a preflight is started at all);
   * then, while the evidence workers pre-warm for the tree (`pool`): the static-analysis gate (26 s
     warm, against ~200 s in a cold worker) and every test file changed since HEAD, on every
     implementation.
