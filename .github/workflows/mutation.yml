@@ -1,8 +1,12 @@
 # The mutation battery of one step, in CI (user, 2026-10-13): ONE JOB PER MUTANT, in parallel, on the
 # free standard runners — the battery that takes about an hour on one machine. Started by hand, at a
-# step's close (Actions → Mutation battery → Run workflow, or the API's workflow_dispatch), with
-#   mutants = tools/mutants/V9f.py
-#   targets = test/core_lang/test_catch_swipl.jl test/compile/test_body_code_swipl.jl
+# step's close, one of two ways:
+#   * a PUSH of the commit to the branch `mutants/<step>` — the list is then tools/mutants/<step>.py
+#     and the targets its own `TARGETS` (`git push origin <sha>:refs/heads/mutants/V9f`); no token
+#     permission beyond pushing is needed;
+#   * Actions → Mutation battery → Run workflow (or the API's workflow_dispatch), with
+#       mutants = tools/mutants/V9f.py
+#       targets = test/core_lang/test_catch_swipl.jl test/compile/test_body_code_swipl.jl
 # THE VERDICT RULES ARE THE LOCAL DRIVER'S (tools/mutate_drive.py), applied by tools/mutate_ci.py:
 # a target exits 1 = caught; every target exits 0 = SURVIVED; past the limit = TIMEOUT; anything
 # else = INVALID; a mutant declared `equivalent` must survive. SURVIVED, TIMEOUT, INVALID, BADMATCH
@@ -10,6 +14,9 @@
 # NO BENCHMARKS HERE: shared runners vary; timings stay on the quiet local machine.
 name: Mutation battery
 on:
+  push:
+    branches:
+      - 'mutants/**'
   workflow_dispatch:
     inputs:
       mutants:
@@ -32,7 +39,7 @@ on:
         type: string
 
 concurrency:
-  group: mutation-${{ github.ref }}-${{ inputs.mutants }}
+  group: mutation-${{ github.ref }}-${{ inputs.mutants || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -43,10 +50,11 @@ permissions:
 env:
   JULIA_NUM_THREADS: '4'
   LOGICKERNEL_REQUIRE_SWIPL: '1'      # a missing oracle is an error, never a skipped differential
-  MUTANTS: ${{ inputs.mutants }}
-  TARGETS: ${{ inputs.targets }}
+  # a push to mutants/<step> has no inputs: the list is tools/mutants/<step>.py, the targets the
+  # list's own (the `plan` job's output), the limit the default
+  MUTANTS: ${{ inputs.mutants || format('tools/{0}.py', github.ref_name) }}
   IDS: ${{ inputs.ids }}
-  LIMIT_S: ${{ inputs.limit_s }}
+  LIMIT_S: ${{ inputs.limit_s || '1500' }}
 
 jobs:
   # The matrix: one entry per mutant, from the list itself (the same file the local driver reads).
@@ -56,6 +64,7 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
+      targets: ${{ steps.plan.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
       - id: plan
@@ -65,8 +74,11 @@ jobs:
   # (a guard is proved against a green one), so `verdicts` refuses the battery when this is red.
   baseline:
     name: Baseline (unmutated)
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/oracle
@@ -107,6 +119,7 @@ jobs:
         run: python3 tools/mutate_ci.py one "$MUTANTS" "$MUTANT" "$LIMIT_S" $TARGETS
         env:
           MUTANT: ${{ matrix.name }}
+          TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

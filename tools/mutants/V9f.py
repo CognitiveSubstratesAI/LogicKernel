@@ -8,9 +8,12 @@
 # Carried from V9e-1 (the meta-call): MC17, declared equivalent there and rerun at each later step's
 # close; MC19, equivalent until catch/3 existed — its kill test is test_catch_swipl.jl's `cp5`.
 #
-# Targets, smallest first:
-#   test/core_lang/test_catch_swipl.jl test/core_lang/test_det_swipl.jl
-#   test/compile/test_body_code_swipl.jl
+# The targets, smallest first (a run started by a push to `mutants/V9f` reads them from here).
+TARGETS = [
+    "test/core_lang/test_catch_swipl.jl",
+    "test/core_lang/test_det_swipl.jl",
+    "test/compile/test_body_code_swipl.jl",
+]
 W = "src/pl-wam.jl"
 C = "src/pl-comp.jl"
 F = "src/pl-fli.jl"

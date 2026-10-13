@@ -86,8 +86,10 @@ the local driver's rules — a target exits 1 = caught, every target exits 0 = S
 limit = TIMEOUT, another code = INVALID, a declared `equivalent` must survive — and SURVIVED,
 TIMEOUT, INVALID, BADMATCH, a refuted equivalence, a missing verdict and a baseline that is not
 green all block. No benchmarks in CI: shared runners vary, `tools/bench.jl` stays local.
-Started from the terminal by `tools/ci_dispatch.sh mutation.yml <branch> mutants=… targets=…` (the
-API's `workflow_dispatch`; the token as `tools/ci_status.sh` reads it, never in a command line).
+Started by PUSHING the commit to the branch `mutants/<step>` — the list is then
+`tools/mutants/<step>.py` and the targets its own `TARGETS` — or by hand in Actions. (The API's
+`workflow_dispatch` needs a token that may start workflows; the stored one may not: HTTP 403,
+2026-10-13.)
 
 Every guard here has planted cases in test/test_gate_split.jl: the push hook (no run found, CI green
 without the evidence run, still running, red, another commit's run, unreadable, deleting `main`, a

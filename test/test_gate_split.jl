@@ -775,6 +775,19 @@ MUTANTS = [
             ).exitcode
             out(args...) = read(ignorestatus(Cmd(`python3 $tool $args`; dir=d)), String)
             @test occursin("count=8", out("plan", "m.py"))
+            # the list's own targets, for a run started by a push: none named → an empty line;
+            # named → space-separated; a target with a blank in it is refused
+            @test occursin("targets=\n", out("plan", "m.py"))
+            write(
+                joinpath(d, "mt.py"),
+                read(joinpath(d, "m.py"), String) * "TARGETS = [\"a.jl\", \"b.jl\"]\n"
+            )
+            @test occursin("targets=a.jl b.jl\n", out("plan", "mt.py"))
+            write(
+                joinpath(d, "mb.py"),
+                read(joinpath(d, "m.py"), String) * "TARGETS = [\"a.jl b.jl\"]\n"
+            )
+            @test sh("plan", "mb.py") != 0
             @test occursin("\"name\": \"K3\"", out("plan", "m.py"))
             @test occursin("count=1", out("plan", "m.py", "K2"))
             @test sh("plan", "m.py", "K9") != 0                     # no such mutant

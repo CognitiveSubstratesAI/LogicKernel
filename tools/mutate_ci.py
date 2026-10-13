@@ -6,7 +6,9 @@
 # ARE THE SAME (see mutate_drive.py's header): `id`, `file`, `old` (must occur EXACTLY once), `new`,
 # optional `expect: "hang"`, `equivalent: <reason>`, `targets`.
 #
-#   mutate_ci.py plan MUTANTS.py [ID…]            print `matrix=…` and `count=…` for $GITHUB_OUTPUT
+#   mutate_ci.py plan MUTANTS.py [ID…]            print `matrix=…`, `count=…` and `targets=…` (the
+#                                                 list's own `TARGETS`, space-separated; empty when
+#                                                 it names none) for $GITHUB_OUTPUT
 #   mutate_ci.py baseline LIMIT_S TARGET…         the targets on the unmutated tree → baseline.json
 #   mutate_ci.py one MUTANTS.py ID LIMIT_S TARGET…   apply ID, run the targets → <ID>.json, <ID>.log
 #   mutate_ci.py collect MUTANTS.py COUNT [ID…]   the verdict table (stdout, verdicts.md); exit 0/1
@@ -96,6 +98,11 @@ def plan(argv):
     matrix = {"include": [{"name": m["id"].split()[0]} for m in mutants]}
     print("matrix=" + json.dumps(matrix))
     print("count=%d" % len(mutants))
+    # the list's own targets: what a run started by a push (no inputs) uses
+    targets = runpy.run_path(argv[0]).get("TARGETS", [])
+    if any(" " in t or "\n" in t for t in targets):
+        sys.exit("mutate_ci: a target of TARGETS holds a blank")
+    print("targets=" + " ".join(targets))
     return 0
 
 
