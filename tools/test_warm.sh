@@ -6,6 +6,7 @@
 #   tools/test_warm.sh          # exit 0 only if every case passes
 #   tools/test_warm.sh rss      # the daemon's-memory cases alone
 #   tools/test_warm.sh structs  # the struct gate's cases alone
+#   tools/test_warm.sh fast     # the fast static pre-check's planted-defect cases alone
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
 # load and present the result as fresh; run a file on fewer implementations than the suite does.
@@ -104,6 +105,56 @@ _struct_cases() {
     rm -f "$probe"
     sendok; check "…and removed again" 0 $?
 }
+_fast_cases() {
+    local ti="$ROOT/src/term_interface.jl" rc s
+    [ -f "$T/term_interface.jl.bak" ] || cp "$ti" "$T/term_interface.jl.bak"
+
+    # THE FAST STATIC PRE-CHECK (user, 2026-10-12): a formatter violation, a JET error and an Aqua
+# ambiguity each STOP the preflight within seconds, before the static-analysis stage starts. One
+# planted defect per stage (the control; no mutation run).
+    fast_case() {   # fast_case NAME EXPECT_PATTERN — the preflight just ran into $T/pf
+    check "$1: the preflight FAILS" 1 "$2"
+    has "…at the pre-check, naming it" "$T/pf" "$3" 1
+    has "…before the static-analysis stage" "$T/pf" "preflight: the static-analysis gate" 0
+}
+fmt_probe="$ROOT/test/core_lang/test_preflight_probe_fmt_$$.jl"
+printf 'x   =   [1,2,\n   3]\nfunction f( a,b )\n a+b end\n' > "$fmt_probe"
+s=$(date +%s)
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; rc=$?
+rm -f "$fmt_probe"
+fast_case "fast pre-check, formatter" "$rc" "NOT Blue-formatted"
+[ $(( $(date +%s) - s )) -lt 120 ]; check "…in under two minutes" 0 $?
+jet="_preflight_probe_jet_$$"
+printf '\n%s(x::Int) = %s_undefined(x)\n' "$jet" "$jet" >> "$ti"
+s=$(date +%s)
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; rc=$?
+cp "$T/term_interface.jl.bak" "$ti"
+fast_case "fast pre-check, JET" "$rc" "FAIL (fast static pre-check)"
+has "…the JET report names the planted function" "$ROOT/.warm/preflight_static_fast.log" "$jet" 1
+amb="_preflight_probe_amb_$$"
+printf '\n%s(::Int, ::Any) = 1\n%s(::Any, ::Int) = 2\n' "$amb" "$amb" >> "$ti"
+s=$(date +%s)
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; rc=$?
+cp "$T/pf" "$T/pf_amb"
+cp "$T/term_interface.jl.bak" "$ti"
+fast_case "fast pre-check, Aqua" "$rc" "FAIL (fast static pre-check)"
+has "…the failure is Aqua's ambiguity test" "$ROOT/.warm/preflight_static_fast.log" "ambig" 1
+cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored after the pre-check cases" 0 $?
+    # the steady state: a clean tree, the daemon warm (the first run after an edit pays a Revise and a
+    # JET recompile — minutes; measured 137 s, then 9 s)
+    "$W" file test/static_analysis_fast.jl > /dev/null 2>&1; check "the pre-check passes on the restored tree" 0 $?
+    s=$(date +%s); "$W" file test/static_analysis_fast.jl > /dev/null 2>&1; rc=$?
+    [ "$rc" -eq 0 ] && [ $(( $(date +%s) - s )) -lt 60 ]; check "…and a second run takes under a minute (warm: seconds)" 0 $?
+
+}
+if [ "${1:-}" = fast ]; then                         # the fast pre-check's planted-defect cases alone
+    "$W" stop > /dev/null 2>&1
+    "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
+    _fast_cases
+    echo "test_warm (fast): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
+fi
 if [ "${1:-}" = structs ]; then                      # the struct gate's cases alone (a mutation target)
     "$W" stop > /dev/null 2>&1
     "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
@@ -210,6 +261,8 @@ has "…classified REAL" "$T/pf" "REAL (still defined in src/.*$real" 1
 has "…with NO restart" "$T/pf" "STALE DAEMON" 0
 cp "$T/term_interface.jl.bak" "$ti"
 cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored" 0 $?
+
+_fast_cases
 rm -f "$T/term_interface.jl.bak"
 "$W" restart > /dev/null 2>&1
 

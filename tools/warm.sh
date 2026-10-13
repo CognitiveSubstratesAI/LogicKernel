@@ -397,6 +397,18 @@ JL
         echo "preflight: FAIL (format/port_check) in $(( $(date +%s) - t0 ))s"
         return 1
     }
+    # THE FAST STATIC PRE-CHECK (user, 2026-10-12): Aqua and JET's report_package alone, in the warm
+    # daemon, BEFORE the long stages — a JET error cost a 14-minute preflight on V9e-1. The long
+    # stages (and the pool's workers) start only if both are clean.
+    echo "preflight: the fast static pre-check (Aqua, JET report_package)"
+    local fastlog="$DIR/preflight_static_fast.log"
+    _file test/static_analysis_fast.jl > "$fastlog" 2>&1 || {
+        PF_OTHER_FAIL=1
+        grep -E "Test Failed|Error During|JET-test failed|Aqua|ambigu|no matching method|possible error" "$fastlog" | head -20
+        echo "preflight: FAIL (fast static pre-check) in $(( $(date +%s) - t0 ))s — $fastlog"
+        return 1
+    }
+    echo "preflight: fast static pre-check clean in $(( $(date +%s) - t0 ))s"
     if [ "${LOGICKERNEL_PREFLIGHT_POOL:-1}" != "0" ]; then
         _pool > "$DIR/preflight_pool.log" 2>&1 &
         pooled=$!

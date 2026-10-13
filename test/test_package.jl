@@ -65,7 +65,7 @@ function _pkg_loads!(out::Set{Symbol}, ex)::Set{Symbol}
     return out
 end
 
-"Loaded only by test/static_analysis_body.jl, which runs only where the tools are installed."
+"Loaded only by test/static_analysis_body.jl (which runs only where the tools are installed) and by the preflight's test/static_analysis_fast.jl."
 const ANALYSIS_TOOLS = (:JET, :Aqua, :AllocCheck)
 
 @testset "package" begin
@@ -108,7 +108,11 @@ const ANALYSIS_TOOLS = (:JET, :Aqua, :AllocCheck)
             endswith(f, ".jl") || continue
             nfiles += 1
             path = joinpath(d, f)
-            ok = f == "static_analysis_body.jl" ? union(declared, ANALYSIS_TOOLS) : declared
+            ok = if f in ("static_analysis_body.jl", "static_analysis_fast.jl")
+                union(declared, ANALYSIS_TOOLS)
+            else
+                declared
+            end
             for m in
                 setdiff(_pkg_loads!(Set{Symbol}(), Meta.parseall(read(path, String))), ok)
                 push!(bad, "$(relpath(path, root)): `$m` is not in [extras]")
