@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "rules_common.jl"))
 # choice point or fails raises `determinism_error(Goal, det, nondet|fail, goal)`; after `$` the
 # clause must exit without a choice point and must not fail — `guard` when the frame is the one
 # that ran `$`, `guard_in_caller` when a last call reused that frame.
-const _RDT_N = 37
+const _RDT_N = 38
 function _rdt_clauses()
     X, Y, Z, E = _rv(1), _rv(2), _rv(3), _rv(4)
     d(g) = _rf("\$", g)
@@ -70,7 +70,23 @@ function _rdt_clauses()
         (_rf("d34", X), _rconj(d(_rf("nd", X)), _rs("uend"))),  # d(X) :- $nd(X), end.
         (_rf("d35", X), _rconj(d(_rf("ndd", Y)), _rf("u", Y), eq(X, Y))),   # d1
         (_rf("d36", X), _rconj(d(_rf("nd3", Y)), _rf("u", Y), eq(X, Y))),   # d2
-        (_rf("d37", X), _rconj(d(_rf("ndf", Y)), _rf("u", Y), eq(X, Y)))    # d3
+        (_rf("d37", X), _rconj(d(_rf("ndf", Y)), _rf("u", Y), eq(X, Y))),   # d3
+        # A goal that fails BEFORE it initialises two of its variables, in a frame whose region
+        # held another frame's arguments: the ball shows fresh variables there — pl-gc.c
+        # `clearUninitialisedVarsFrame` (without it: `q3(A,g2,g3)`).
+        (_rf("fill5", _rv(31), _rv(32), _rv(33), _rv(34), _rv(35)), nothing),
+        (_rf("q3", X, Y, Z), nothing),
+        (
+            _rf("d38i", X),
+            _rconj(d(_rconj(_rf("==", X, _rg(1)), _rf("q3", X, Y, Z))), _rf("q3", X, Y, Z))
+        ),
+        (
+            _rf("d38", X),
+            _rconj(
+                _rf("fill5", _rs("g1"), _rs("g2"), _rs("g3"), _rs("g4"), _rs("g5")),
+                _rf("d38i", X), _rs("true")
+            )
+        )
     ]
     for k in 1:_RDT_N
         push!(cases, (_rf("t$k", X, E), _rf("catch", _rf("d$k", X), E, _rs("true"))))

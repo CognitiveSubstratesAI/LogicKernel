@@ -4,18 +4,20 @@
 # format is tools/mutate_drive.py's: `id`, `file`, `old` (must occur EXACTLY once), `new`, optional
 # `equivalent` (a mutant that must SURVIVE, with the code reason) and `targets`.
 #
-# V9f-a, catch/3 (MK1–MK18, MK21, MK22): the new path only. V9f-b adds its mutants below.
+# V9f-a, catch/3 (MK1–MK18, MK21, MK22): the new path only. V9f-b, `$/1` and `$/0` (MD1–MD22).
 # Carried from V9e-1 (the meta-call): MC17, declared equivalent there and rerun at each later step's
 # close; MC19, equivalent until catch/3 existed — its kill test is test_catch_swipl.jl's `cp5`.
 #
 # Targets, smallest first:
-#   test/core_lang/test_catch_swipl.jl test/compile/test_body_code_swipl.jl
+#   test/core_lang/test_catch_swipl.jl test/core_lang/test_det_swipl.jl
+#   test/compile/test_body_code_swipl.jl
 W = "src/pl-wam.jl"
 C = "src/pl-comp.jl"
 F = "src/pl-fli.jl"
 P = "src/pl-prims.jl"
 A = "src/pl-attvar.jl"
 E = "src/pl-ext.jl"
+R = "src/pl-error.jl"
 MUTANTS = [
     # ── findCatcher ──
     dict(id="MK1 findCatcher ignores FR_CAUGHT (a ball from the recovery is caught by the same catch/3)", file=W,
@@ -104,6 +106,100 @@ MUTANTS = [
     dict(id="MK21 catch/3 is not locked", file=E,
          old='''    def.flags |= P_ISO | P_LOCKED''',
          new='''    def.flags |= P_ISO'''),                  # kill: t23 (assertz into catch/3)
+    # ── V9f-b: `$/1`, `$/0` (kill tests: test_det_swipl.jl unless said) ──
+    dict(id="MD1 I_DET does not mark the frame as the one that ran `$` (FR_DETGUARD_SET)", file=W,
+         old='''    ld.frames[FR].flags |= FR_DETGUARD | FR_DETGUARD_SET       # set(FR, FR_DETGUARD|FR_DETGUARD_SET)''',
+         new='''    ld.frames[FR].flags |= FR_DETGUARD'''),      # kill: d19, d23 (`guard`)
+    dict(id="MD2 I_DET sets no guard", file=W,
+         old='''    ld.frames[FR].flags |= FR_DETGUARD | FR_DETGUARD_SET       # set(FR, FR_DETGUARD|FR_DETGUARD_SET)''',
+         new='''    nothing'''),
+    dict(id="MD3 C_DETTRUE leaves the block's choice-point record linked in the pool", file=W,
+         old='''        ld.choices[cdt_ch].unlinked = true
+''',
+         new=''''''),                                # kill: the pools at d13's answers
+    dict(id="MD4 C_DETTRUE takes every goal for deterministic", file=W,
+         old='''    if cdt_parent != 0 && ld.choices[cdt_parent].base == cdt_och    # ch->parent == och''',
+         new='''    if cdt_parent != 0'''),
+    dict(id="MD5 C_DETTRUE reports a failure where the goal left a choice point", file=W,
+         old='''    det_goal_error(ld, FR, PC - 1, :nondet)''',
+         new='''    det_goal_error(ld, FR, PC - 1, :fail)'''),
+    dict(id="MD6 C_DETFALSE reports a choice point where the goal failed", file=W,
+         old='''    det_goal_error(ld, FR, PC - 1, :fail)''',
+         new='''    det_goal_error(ld, FR, PC - 1, :nondet)'''),
+    dict(id="MD7 a nondeterministic exit of a guarded frame is not checked", file=W,
+         old='''            determinism_error(ld, FR, ld.BFR, :nondet)''',
+         new='''            nothing'''),
+    dict(id="MD8 a guarded frame left by failure is not reported", file=W,
+         old='''            frameFailed(ld, FR)''',
+         new='''            nothing'''),
+    dict(id="MD9 S_STATIC pushes no CHP_DEBUG for a guarded frame no clause matches", file=W,
+         old='''            newChoice(ld, CHP_DEBUG, FR)            # (`debugstatus.debugging`: no debugger)''',
+         new='''            nothing'''),             # kill: `warning` — t21(c) reports twice
+    dict(id="MD10 backtracking into a guarded frame's CHP_DEBUG reports nothing", file=W,
+         old='''            db_rc = ssu_or_det_failed(ld, FR)''',
+         new='''            db_rc = true'''),         # kill: `warning` — t21(c) reports twice
+    dict(id="MD11 determinism_error: the frame a last call reused reports `guard`", file=W,
+         old='''                decl = :guard_in_caller''',
+         new='''                decl = :guard'''),
+    dict(id="MD12 determinism_error ignores `silent`", file=W,
+         old='''    a = ld.prolog_flag_determinism_error
+    a === :silent && return true
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        f = ld.frames[fr]''',
+         new='''    a = ld.prolog_flag_determinism_error
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        f = ld.frames[fr]'''),
+    dict(id="MD13 determinism_error raises under `warning`", file=W,
+         old='''        if a === :warning
+            gd = _query_gd(ld)''',
+         new='''        if false
+            gd = _query_gd(ld)'''),
+    dict(id="MD14 det_goal_error ignores `silent`", file=C,
+         old='''    pc_det = start_of_cdet(cl, pc_error)
+    a = ld.prolog_flag_determinism_error
+    a === :silent && return true''',
+         new='''    pc_det = start_of_cdet(cl, pc_error)
+    a = ld.prolog_flag_determinism_error'''),
+    dict(id="MD15 det_goal_error decompiles a failed goal over stale frame cells", file=C,
+         old='''        clearUninitialisedVarsFrame(ld, fr, cl.codes, pc_det)''',
+         new='''        nothing'''),                  # kill: d38 (`q3(A,g2,g3)`)
+    dict(id="MD16 start_of_cdet takes the outer block for an inner C_DETTRUE", file=C,
+         old='''                        found = false                           # goto continue_outer''',
+         new='''                        found = true'''),   # kill: d7, and the white-box test
+    dict(id="MD17 the goal atom `$` compiles to a plain cut", file=C,
+         old='''            Output_0!(ci, I_DET)''',
+         new='''            Output_0!(ci, I_CUT)'''),
+    dict(id="MD18 `$(Goal)` is compiled without the fresh variables of its failure exit", file=C,
+         old='''        else                                                   # $(Goal)
+            balanceVars(vsave, ci.used_var, ci)''',
+         new='''        else                                                   # $(Goal)
+            nothing'''),                           # kill: test_body_code_swipl.jl (`$ sets a variable`)
+    dict(id="MD19 the decompiler rebuilds `$(Goal)` as `\\+ Goal`", file=C,
+         old='''            build_term!(di, mk_sym(T, Symbol("\\$")), 1)''',
+         new='''            build_term!(di, mk_sym(T, Symbol("\\\\+")), 1)'''),
+    dict(id="MD20 the goal clauses' predicate is `$call`, not upstream's `<meta-call>`", file=E,
+         old='''Symbol("<meta-call>")''',
+         new='''Symbol("\\$call")'''),               # kill: d32's context
+    dict(id="MD21 ERR_DET_GOAL declares `guard`", file=R,
+         old='''            found,
+            mk_sym(T, :goal)
+        ]''',
+         new='''            found,
+            mk_sym(T, :guard)
+        ]'''),
+    dict(id="MD22 frameFailed does not move lTop over the failed frame's arguments", file=W,
+         old='''    setLTop!(ld, argFrameP(f.base, (f.predicate::Definition{T}).arity))
+
+    if (f.flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0''',
+         new='''    if (f.flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0'''
+         # PENDING AUDIT, not declared (the battery's verdict decides): upstream sets lTop so the
+         # foreign frame PL_error opens cannot overwrite the frame's arguments; here the frame is
+         # read only for its predicate and flags after that, so this may be EQUIVALENT.
+         ),
     # ── carried from V9e-1 ──
     dict(id="MC17 mcall_cont does not set the next frame's flags", file=W,
          old='''    @label mcall_cont
