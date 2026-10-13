@@ -522,10 +522,204 @@ function leaveFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-wam.c unify_finished
+# DIVERGES: the reason's atom is written out per reason (upstream's `reason_decls[]`).
+"""
+Unify the term reference `catcher` with how a frame finished (pl-wam.c): `exception(Ball)` or
+`external_exception(Ball)`, `fail`, `!` (a cut), or `exit` for the cleanup instruction's own exit. A plain
+`FINISH_EXIT` fails: that exit is not reported.
+"""
+function unify_finished(
+    ld::PL_local_data{T}, catcher::term_t, reason::finished
+)::Bool where {T}
+    if is_exception_finish(reason)
+        f = reason == FINISH_EXCEPT ? :exception : :external_exception
+        return pl_unify!(
+            ld,
+            ld.slots[catcher + 1],
+            mk_expr(T, T[mk_sym(T, f), ld.slots[ld.exception_bin + 1]])
+        )
+    elseif reason == FINISH_EXIT
+        return false
+    else
+        # reason_decls[]: ATOM_fail, ATOM_cut — whose text is `!` (src/ATOMS) — ATOM_exit
+        name = if reason == FINISH_FAIL
+            :fail
+        elseif reason == FINISH_CUT
+            :!
+        else
+            :exit
+        end
+        return pl_unify!(ld, ld.slots[catcher + 1], mk_sym(T, name))
+    end
+end
+
+# PORT: pl-wam.c call1
+# DIVERGES: the module is `user` (see `call_term`); `call/1` is looked up in `system` at each call,
+# where upstream caches the procedure (`GD->procedures.call1`).
+"Call the goal in term reference `goal` once through `call/1`, in a query of its own (pl-wam.c)."
+function call1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t)::Bool where {T}
+    pred = lookupProcedure(mk_sym(T, :call), 1, MODULE_system(gd))
+
+    qid = PL_open_query(gd, ld, MODULE_user(gd), PL_Q_PASS_EXCEPTION, pred, goal)
+    rc = PL_next_solution(gd, ld, qid) != 0
+    PL_cut_query(ld, qid)
+
+    return rc
+end
+
+# PORT: pl-wam.c call_term
+# DIVERGES: the database `gd` is an argument. No `mdef`: the context module of an unqualified goal
+# is `user` until R2 (`stripModule`; `contextModule(fr)` reads frames' context modules, not
+# ported). The goal's arguments go to the new term references as values.
+"""
+Call the goal in term reference `goal` once, from the VM (pl-wam.c): a plain goal directly, in a
+query of its own; a control construct, a goal that is no text atom or `call/N` beyond 8 through
+`call/1`. True when it succeeded; false when it failed or raised (`PL_Q_PASS_EXCEPTION`: the
+exception stays pending).
+"""
+function call_term(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t
+)::Bool where {T}
+    ok, p, mi = stripModule(gd, ld, deRef(ld, ld.slots[goal + 1]))
+    if ok
+        p = deRef(ld, p)
+        m = gd.modules[mi]
+        av = 0
+        if isAtom(p)
+            if isTextAtom(p)
+                name = p
+                arity = 0
+            else
+                return call1(gd, ld, goal)
+            end
+        elseif isTerm(p)
+            h = child(p, 1)
+            arity = nchildren(p) - 1
+            if isTextAtom(h) && !_is_control(p, gd.functors_control) &&
+                !(sym_key(h) == gd.subclause_names.atom_call && arity > 8)
+                av = PL_new_term_refs(ld, arity)
+                for i in 1:arity
+                    ld.slots[av + i] = child(p, i + 1)          # *ap = linkValG(&args[i])
+                end
+                name = h
+            else
+                return call1(gd, ld, goal)
+            end
+        else
+            return PL_type_error(ld, "callable", goal)
+        end
+
+        proc = resolveProcedure(gd, name, arity, m)
+        qid = PL_open_query(gd, ld, m, PL_Q_PASS_EXCEPTION, proc, av)
+        rval = PL_next_solution(gd, ld, qid) != 0
+        PL_cut_query(ld, qid)
+
+        return rval
+    else
+        return false                                    # exception in env
+    end
+end
+
+# PORT: pl-wam.c callCleanupHandler
+# DIVERGES: the frame is an index (it cannot move); the arguments are positions. NOT PORTED:
+# `startCritical`/`endCritical` around the handler (no signals).
+"""
+    callCleanupHandler(ld, fr, reason)
+
+Frame `fr` runs one of the cleanup family — `call_cleanup/2`, `setup_call_cleanup/3`,
+`setup_call_catcher_cleanup/4`, told apart by arity — and finished for `reason`: unless its handler
+ran already (`FR_CAUGHT`), unify the catcher of the `/4` with the reason and call the cleanup goal
+once (pl-wam.c). The goal runs with no exception pending; an exception it raises replaces a
+pending one only when it is the more urgent.
+"""
+function callCleanupHandler(
+    ld::PL_local_data{T}, fr::Int, reason::finished
+)::Nothing where {T}
+    f = ld.frames[fr]
+    if (f.flags & FR_CAUGHT) == 0                   # from handler
+        cid = PL_open_foreign_frame(ld)
+        cid == 0 && return nothing                  # exception is in the environment
+
+        arity = (f.predicate::Definition{T}).arity
+        arg_catcher = 0
+        if arity == 2                               # call_cleanup(Goal, Cleanup)
+            arg_cleanup = 2
+        elseif arity == 3                           # setup_call_cleanup(Setup, Goal, Cleanup)
+            arg_cleanup = 3
+        elseif arity == 4                           # setup_call_catcher_cleanup(Stp, Goal, Catcher, Cln)
+            arg_cleanup = 4
+            arg_catcher = 3
+        else
+            error("callCleanupHandler: a cleanup frame of arity $arity")    # assert(0)
+        end
+
+        f.flags |= FR_CAUGHT
+
+        # Unify the catcher
+        if arg_catcher == 0 ||
+            unify_finished(ld, argFrameP(f.base, arg_catcher - 1), reason)
+            # Call the cleanup handler
+            clean = argFrameP(f.base, arg_cleanup - 1)
+            wstate = saveWakeup(ld, false)
+            if wstate !== nothing
+                rval = call_term(_query_gd(ld), ld, clean)
+                if !rval && ld.exception_term != 0
+                    wstate = wakeup_state(
+                        wstate.fid, wstate.outofstack,
+                        wstate.flags | WAKEUP_KEEP_URGENT_EXCEPTION
+                    )
+                end
+                restoreWakeup(ld, wstate)
+            end
+        end
+
+        PL_close_foreign_frame(ld, cid)
+    end
+    return nothing
+end
+
+# PORT: pl-wam.c frameFinished
+# DIVERGES: NOT PORTED: the event hook of an `FR_NOTIFY` frame (`callEventHook`: the debugger's).
+"""
+Frame `fr` is finished for `reason`: run the cleanup handler of a cleanup frame (pl-wam.c). False
+when an exception is pending after it.
+"""
+function frameFinished(ld::PL_local_data{T}, fr::Int, reason::finished)::Bool where {T}
+    if (ld.frames[fr].flags & FR_CLEANUP) != 0
+        callCleanupHandler(ld, fr, reason)
+        ld.exception_term != 0 && return false
+    end
+
+    return true
+end
+
+# PORT: pl-wam.c mustBeCallable
+# DIVERGES: upstream accepts ONLY `Module:Goal` — the cleanup family's goals reach it qualified by
+# their meta-predicate declarations (boot/init.pl:381-383). Those are not ported (no module
+# transparency until R2), so an UNQUALIFIED term is checked as the goal itself: unbound is an
+# instantiation error, anything but a compound or a text atom `type_error(callable, Term)`. The
+# culprit of that error is then the plain term where upstream's is `Module:Term` (R2).
+"Whether the term reference `call` holds a callable goal, raising the error when not (pl-wam.c)."
+function mustBeCallable(ld::PL_local_data{T}, call::term_t)::Bool where {T}
+    p = deRef(ld, ld.slots[call + 1])
+    kind(p) === VAR && return PL_error(ld, ERR_INSTANTIATION)
+    ap = p
+    if _hasFunctor(p, mk_sym(T, :(:)), 2)
+        mp = deRef(ld, child(p, 2))
+        kind(mp) === VAR && return PL_error(ld, ERR_INSTANTIATION)
+        isAtom(mp) || return PL_type_error(ld, "callable", call)
+        ap = deRef(ld, child(p, 3))
+        kind(ap) === VAR && return PL_error(ld, ERR_INSTANTIATION)
+    end
+    (isTerm(ap) || isTextAtom(ap)) || return PL_type_error(ld, "callable", call)
+
+    return true
+end
+
 # PORT: pl-wam.c frameFailed
-# DIVERGES: NOT PORTED: `frameFinished(fr, FINISH_FAIL)` — the cleanup handler of an `FR_WATCHED`
-# frame (setup_call_cleanup/3, V9g; the caller asserts the flag absent) and the event hook.
-"Frame `fr` failed: report a frame that must not (pl-wam.c). False when that raised an exception."
+# DIVERGES: NOT PORTED: the event hook (`frameFinished`'s `FR_NOTIFY` branch).
+"Frame `fr` failed: report a frame that must not, and run a cleanup frame's handler (pl-wam.c). False when that raised an exception."
 function frameFailed(ld::PL_local_data{T}, fr::Int)::Bool where {T}
     ld.environment_frame = fr
     f = ld.frames[fr]
@@ -536,7 +730,7 @@ function frameFailed(ld::PL_local_data{T}, fr::Int)::Bool where {T}
         ld.exception_term != 0 && return false
     end
 
-    return true                                     # frameFinished(fr, FINISH_FAIL)
+    return frameFinished(ld, fr, FINISH_FAIL)
 end
 
 # PORT: pl-wam.c discardFrame
@@ -581,9 +775,8 @@ function in_continuation(ld::PL_local_data{T}, fr::Int, frame::Int, ch::Int)::Bo
 end
 
 # PORT: pl-wam.c discardChoicesAfter
-# DIVERGES: the age tests compare `base` positions; `frameFinished` on an `FR_WATCHED` frame is not
-# ported — nothing sets the flag before `setup_call_cleanup/3` (V9) — so it is asserted absent; the
-# stack never moves, so there is no re-basing after a shift.
+# DIVERGES: the age tests compare `base` positions; the stack never moves, so there is no
+# re-basing after `frameFinished` (since V9g: the cleanup handler of a discarded cleanup frame).
 "Discard the choice points created after frame `fr`, and the frames they protected (pl-wam.c)."
 function discardChoicesAfter(
     ld::PL_local_data{T}, fr::Int, reason::finished
@@ -608,7 +801,17 @@ function discardChoicesAfter(
                 f2 = ld.frames[fr2]
                 @assert f2.clause !== nothing ||
                     ((f2.predicate::Definition{T}).flags & P_FOREIGN) != 0
-                @assert (f2.flags & FR_WATCHED) == 0 "discardChoicesAfter: frameFinished (FR_WATCHED) arrives with setup_call_cleanup (V9)"
+                if (f2.flags & FR_WATCHED) != 0
+                    if !me_undone && is_exception_finish(reason)
+                        me_undone = true
+                        Undo!(ld, mec.mark)
+                        DiscardMark(ld, mec.mark)
+                    end
+                    ld.BFR = me
+                    frameFinished(ld, fr2, reason)
+                    ld.BFR = ld.choices[ld.BFR].parent
+                end
+
                 discardFrame(ld, fr2)
                 fr2 = f2.parent
             end
@@ -1015,7 +1218,8 @@ const VMI_RUN = (
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
     :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT,
-    :I_CALL1, :I_CALLN, :I_CATCH, :I_EXITCATCH, :I_DET, :C_DET, :C_DETTRUE, :C_DETFALSE
+    :I_CALL1, :I_CALLN, :I_CATCH, :I_EXITCATCH, :I_DET, :C_DET, :C_DETTRUE, :C_DETFALSE,
+    :I_CALLCLEANUP, :I_EXITCLEANUP
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1221,14 +1425,17 @@ function PL_open_query(
 end
 
 # PORT: pl-wam.c discard_query
-# DIVERGES: `frameFinished` on an `FR_WATCHED` query frame is not ported (setup_call_cleanup, V9).
 "Discard the choice points and frames a non-deterministic query left (pl-wam.c)."
 function discard_query(ld::PL_local_data{T}, qid::Int)::Nothing where {T}
     q = ld.queries[QueryFromQid(ld, qid)]
     discardChoicesAfter(ld, q.frame, FINISH_CUT)
     q = ld.queries[QueryFromQid(ld, qid)]       # may be shifted
     discardFrame(ld, q.frame)
-    @assert (ld.frames[q.frame].flags & FR_WATCHED) == 0
+    qfr = ld.frames[q.frame]
+    if (qfr.flags & FR_WATCHED) != 0
+        setLTop!(ld, argFrameP(qfr.base, (qfr.predicate::Definition{T}).arity))
+        frameFinished(ld, q.frame, FINISH_CUT)
+    end
     return nothing
 end
 
@@ -1383,9 +1590,10 @@ end
 # `fli_context` live in `ld`, as upstream's in `LD`. A helper's arguments (`helper_args`) are locals
 # named for the helper. Instructions not ported yet raise `NotPortedError` (their step in
 # port_inventory). Blocks for subsystems not ported are marked `NOT PORTED` where they stand: the
-# signals, debugger, profiler, depth and inference limits of `LD->alerted`; `FR_WATCHED`
-# (`frameFinished`: setup_call_cleanup, V9); `FR_DET` (the `det` property: nothing sets it — the
-# `$/0` guard's `FR_DETGUARD` is ported, V9f); yield.
+# signals, debugger, profiler, depth and inference limits of `LD->alerted`; `FR_NOTIFY` (the
+# debugger's half of `FR_WATCHED`: `frameFinished` runs the cleanup handler of an `FR_CLEANUP`
+# frame since V9g); `FR_DET` (the `det` property: nothing sets it — the `$/0` guard's
+# `FR_DETGUARD` is ported, V9f); yield.
 """
     PL_next_solution_guarded(gd, ld, qid, except) -> Int
 
@@ -2228,7 +2436,10 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_DEPART
     # DIVERGES: the operand as `I_CALL`'s; `BFR <= FR` compares positions (decision 3). Last-call reuse
     # ASSERTS that FR is the newest live record (user, 2026-10-05), which upstream's reuse relies on.
-    # NOT PORTED: `FR_WATCHED` (`frameFinished`, V9; asserted absent), `P_TRANSPARENT` (every clause
+    # NOT PORTED: `frameFinished` on an `FR_WATCHED` frame — a cleanup frame's clause ends in
+    # `I_CALLCLEANUP I_EXITCLEANUP I_EXIT` and makes no last call, so only the debugger's
+    # `FR_NOTIFY` could be set here (asserted absent; so too at `I_LCALL` and `I_TCALL`);
+    # `P_TRANSPARENT` (every clause
     # is `user`'s until R2's `module/2`),
     # `HIDE_CHILDS` (only the debugger reads it; port_inventory § "Not ported: nothing here can set or
     # observe it").
@@ -2434,6 +2645,69 @@ function PL_next_solution_guarded(
     end
     @goto I_EXIT
 
+    # ── the cleanup family (pl-vmi.c), V9g ─────────────────────────────────────────────────────
+    # PORT: pl-vmi.c I_CALLCLEANUP
+    # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`linkValI`), as `I_CATCH`'s.
+    @label I_CALLCLEANUP
+    icc_f = ld.frames[FR]
+    icc_arity = (icc_f.predicate::Definition{T}).arity
+    icc_arg_goal = icc_arity == 2 ? 1 : 2
+
+    # last arg is cleanup
+    @SAVE_REGISTERS(QID)
+    icc_fid = PL_open_foreign_frame(ld)
+    icc_ok = mustBeCallable(ld, argFrameP(icc_f.base, icc_arity - 1))
+    PL_close_foreign_frame(ld, icc_fid)
+    @LOAD_REGISTERS(QID)
+    if !icc_ok
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+
+    newChoice(ld, CHP_CATCH, FR)
+    icc_f.flags |= FR_CLEANUP                       # set(FR, FR_CLEANUP)
+
+    icc_p = argFrameP(icc_f.base, icc_arg_goal - 1)
+    if kind(deRef(ld, ld.slots[icc_p + 1])) === VAR
+        @SAVE_REGISTERS(QID)
+        icc_fid = PL_open_foreign_frame(ld)
+        PL_error(ld, ERR_INSTANTIATION)
+        PL_close_foreign_frame(ld, icc_fid)
+        @LOAD_REGISTERS(QID)
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+    ld.slots[argFrameP(ld.lTop, 0) + 1] = linkValI(ld, ld.slots[icc_p + 1])     # = B_VAR1
+    @goto I_CALL1
+
+    # PORT: pl-vmi.c I_EXITCLEANUP
+    # DIVERGES: positions for addresses. The frame's `CHP_CATCH` record, and any other the walk
+    # steps over, taken out of the chain while its stack region stays in use, is marked `unlinked`
+    # (as `I_EXITCATCH`'s). NOT PORTED: the debugger's `CHP_DEBUG` (none can be the newest here).
+    @label I_EXITCLEANUP
+    iecl_b = ld.BFR
+    while iecl_b != 0 && ld.choices[iecl_b].type == CHP_DEBUG
+        iecl_b = ld.choices[iecl_b].parent
+    end
+    if iecl_b != 0 && ld.choices[iecl_b].frame == FR && ld.choices[iecl_b].type == CHP_CATCH
+        ld.choices[iecl_b].unlinked = true
+        ld.BFR = ld.choices[iecl_b].parent
+        while ld.BFR != 0 && ld.choices[ld.BFR].base > ld.frames[FR].base  # BFR > (Choice)FR
+            iecl_c = ld.choices[ld.BFR]
+            if iecl_c.type != CHP_DEBUG && ld.frames[iecl_c.frame].base > ld.frames[FR].base
+                @goto next_instruction              # choice from setup of setup_call_catcher_cleanup/4
+            end
+            iecl_c.unlinked = true
+            ld.BFR = iecl_c.parent
+        end
+
+        @SAVE_REGISTERS(QID)
+        frameFinished(ld, FR, FINISH_EXITCLEANUP)
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
+    @goto next_instruction                          # goto i_exit?
+
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT
     # DIVERGES: NOT PORTED: the `LD->alerted` block (the debugger's exit port).
@@ -2442,13 +2716,19 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c exit_continue
     # DIVERGES: lowering `lTop` to the frame drops its record and everything above it (decision 3),
-    # and the record is still read after, as here (since V3). `FR_WATCHED` (`frameFinished`) is
-    # NOT PORTED: nothing sets it yet; asserted. `FR_DET`/`FR_DETGUARD` (`determinism_error`): since
-    # V9f (`$/0` sets the guard; the `det` property's `FR_DET` is still set by nothing).
+    # and the record is still read after, as here (since V3). `FR_DET`/`FR_DETGUARD`
+    # (`determinism_error`): since V9f (`$/0` sets the guard; the `det` property's `FR_DET` is still
+    # set by nothing). `leave` (since V9g): a cleanup frame that exits deterministically has run its
+    # handler at `I_EXITCLEANUP` (`FR_CAUGHT`; asserted), so `frameFinished` finds nothing to do —
+    # it reads the dropped record's flags only.
     @label exit_continue
     ec_f = ld.frames[FR]
+    ec_leave = 0
     if ld.BFR == 0 || ld.choices[ld.BFR].base <= ec_f.base   # deterministic
-        @assert (ec_f.flags & FR_WATCHED) == 0
+        if (ec_f.flags & FR_WATCHED) != 0
+            @assert (ec_f.flags & FR_CAUGHT) != 0 "exit_continue: a cleanup frame exits before its handler ran"
+            ec_leave = FR
+        end
         ec_f.clause = nothing                       # leaveDefinition() destroys clause
         # leaveDefinition(DEF): (void)0 upstream
         lowerLTop!(ld, ec_f.base)                   # lTop = FR
@@ -2471,6 +2751,14 @@ function PL_next_solution_guarded(
     ld.environment_frame = FR
     DEF = ld.frames[FR].predicate::Definition{T}
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+    if ec_leave != 0
+        @SAVE_REGISTERS(QID)
+        frameFinished(ld, ec_leave, FINISH_EXIT)
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
     @goto next_instruction
 
     # PORT: pl-vmi.c I_EXITFACT
@@ -2485,7 +2773,8 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_EXITQUERY
     # DIVERGES: `QueryFromQid` is recomputed as upstream does ("may be shifted"), though positions never
-    # move. NOT PORTED: `FR_WATCHED` (asserted absent) and the profiler.
+    # move. NOT PORTED: the profiler; `frameFinished` on the query's TOP frame — only the debugger
+    # watches it (`FR_NOTIFY`): the frame of the goal is `qf->frame`, below it (asserted absent).
     @label I_EXITQUERY
     @assert ld.frames[FR].parent == 0
     QF = QueryFromQid(ld, QID)                      # may be shifted: recompute
@@ -2563,7 +2852,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_LCALL
     # DIVERGES: the operand as `I_CALL`'s. QUIRK kept: `setFramePredicate` twice (vmi:2499, 2527).
     # NOT PORTED: the context module and `P_TRANSPARENT` (every clause is `user`'s until R2's
-    # `module/2`), `FR_WATCHED` (asserted absent), `HIDE_CHILDS`.
+    # `module/2`), `FR_WATCHED` (asserted absent: see `I_DEPART`), `HIDE_CHILDS`.
     @label I_LCALL
     il_proc = _call_procedure(ld, FR, PCc[PC])
     PC += 1
@@ -2599,8 +2888,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_CUT
     # DIVERGES: the age test compares positions (`base`), as `discardChoicesAfter`'s. NOT PORTED: the
     # debugger branch (`tracePort(…, CUT_CALL_PORT)`: no debugger). The `exception_term` test after
-    # the discard is kept, though nothing can set it yet: only `frameFinished` on an `FR_WATCHED`
-    # frame (V9), which `discardChoicesAfter` asserts absent.
+    # the discard is read since V9g: a cleanup frame the cut discards runs its handler
+    # (`discardChoicesAfter` → `frameFinished`), which can raise.
     @label I_CUT
     ld.frames[FR].flags &= ~FR_SSU_DET              # clear(FR, FR_SSU_DET)
     if ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base   # (LocalFrame)BFR <= FR
@@ -2699,9 +2988,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c c_cut
     # DIVERGES: `och` is a position; the walk compares positions. The frames a choice point
     # protected are discarded and killed as upstream, and their records — with the choice points' —
-    # are dropped when `lTop` is lowered (decision 3). NOT PORTED: `frameFinished` on an
-    # `FR_WATCHED` frame (setup_call_cleanup/3, V9g; asserted absent), so there is no re-basing
-    # after a shift and no exception to rethrow.
+    # are dropped when `lTop` is lowered (decision 3). Since V9g a cleanup frame cut away runs its
+    # handler (`frameFinished`, `cut`); the stack never moves, so there is no re-basing after it.
     @label c_cut
     cc_ch = ld.BFR
     @assert ld.choices[cc_ch].base >= cc_och        # assert(BFR>=och)
@@ -2712,7 +3000,15 @@ function PL_next_solution_guarded(
             cc_f2 = ld.frames[cc_fr2]
             @assert cc_f2.clause !== nothing ||
                 ((cc_f2.predicate::Definition{T}).flags & P_FOREIGN) != 0
-            @assert (cc_f2.flags & FR_WATCHED) == 0 "c_cut: frameFinished (FR_WATCHED) arrives with setup_call_cleanup (V9g)"
+            if (cc_f2.flags & FR_WATCHED) != 0
+                ld.BFR = cc_ch
+                @SAVE_REGISTERS(QID)
+                frameFinished(ld, cc_fr2, FINISH_CUT)
+                @LOAD_REGISTERS(QID)
+                if ld.exception_term != 0
+                    @goto b_throw                   # THROW_EXCEPTION
+                end
+            end
             discardFrame(ld, cc_fr2)
             killFrame(cc_f2)                        # kill for markPredicates()
             cc_fr2 = cc_f2.parent
@@ -3330,19 +3626,18 @@ function PL_next_solution_guarded(
     # and the records above it are dropped before `lTop` is set (user, 2026-10-05); `chp` is the local
     # data's scratch `clause_choice`. `CHP_TOP` leaves `lTop` where it is, as upstream:
     # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`),
-    # `frameFinished` for an `FR_WATCHED` frame (asserted absent), the `LD->alerted` block, the
+    # the `LD->alerted` block, the
     # inference count. Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
     # choice point of such a frame (`S_STATIC` with no clause) — the popped record and the dead ones
     # above it are dropped at once, as at `CHP_CATCH`. `CHP_JUMP` (since V9d): the code registers are reloaded from the
     # frame's clause, because `value.pc` is an index into it where upstream's is an address.
     # `CHP_CATCH` (since V9f): the popped record and the dead ones above it are dropped at once, as
-    # at `CHP_CLAUSE`; its `FR_WATCHED` branch (`callCleanupHandler`: setup_call_cleanup/3) is NOT
-    # PORTED (asserted absent, V9g).
+    # at `CHP_CLAUSE`; since V9g its `FR_WATCHED` branch: the goal of a cleanup frame failed, the
+    # handler runs with `fail` (`callCleanupHandler`).
     @label deep_backtrack                           # next_choice:
     while FR != 0 && ld.frames[FR].base > ld.choices[ld.BFR].base     # NULL is below every choice
         leaveFrame(ld, FR)                          # LEAVE_FAILED_FRAME(FR)
-        @assert (ld.frames[FR].flags & FR_WATCHED) == 0
-        if (ld.frames[FR].flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0
+        if (ld.frames[FR].flags & (FR_WATCHED | FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0
             @SAVE_REGISTERS(QID)
             frameFailed(ld, FR)
             @LOAD_REGISTERS(QID)
@@ -3417,8 +3712,24 @@ function PL_next_solution_guarded(
         db_q.foreign_frame = PL_open_foreign_frame(ld)
         return 0                                    # SOLUTION_RETURN(false)
     elseif db_c.type == CHP_CATCH                   # catch/3 & setup_call_cleanup/3
-        @assert (ld.frames[FR].flags & FR_WATCHED) == 0
-        ld.frames[FR].flags |= FR_CAUGHT            # set(BFR->frame, FR_CAUGHT)
+        if (ld.frames[FR].flags & FR_WATCHED) != 0  # (BFR->frame is FR here)
+            DiscardMark(ld, db_c.mark)
+            ld.environment_frame = FR               # environment_frame = FR = BFR->frame
+            setLTop!(ld, db_c.base + SIZEOF_CHOICE) # lTop = (LocalFrame)(BFR+1)
+            ld.frames[FR].clause = nothing
+            if (ld.frames[FR].flags & FR_CLEANUP) != 0
+                @SAVE_REGISTERS(QID)
+                callCleanupHandler(ld, FR, FINISH_FAIL)
+                @LOAD_REGISTERS(QID)
+            else
+                ld.frames[FR].flags |= FR_CAUGHT
+            end
+            if ld.exception_term != 0
+                @goto b_throw                       # THROW_EXCEPTION
+            end
+        else
+            ld.frames[FR].flags |= FR_CAUGHT        # set(BFR->frame, FR_CAUGHT)
+        end
         DiscardMark(ld, db_c.mark)
         ld.BFR = db_c.parent
         dropRecords!(ld, db_c.base)                 # the popped choice point and all above it
@@ -3485,7 +3796,8 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c b_throw_unwind
     # DIVERGES: frames compared by position; the frames above the catcher (or, with none, up to the
-    # query's top) are left; `frameFinished` on an `FR_WATCHED` frame is not ported (asserted absent).
+    # query's top) are left; since V9g a cleanup frame left runs its handler (`frameFinished`,
+    # `exception(Ball)`), with the ball pending around it.
     @label b_throw_unwind
     while FR != 0 && (bt_catchfr == 0 || ld.frames[FR].base > ld.frames[bt_catchfr].base)
         ld.environment_frame = FR
@@ -3503,7 +3815,11 @@ function PL_next_solution_guarded(
             ld.fli_context = ld.fliframes[ld.fli_context].parent
         end
         discardFrame(ld, FR)
-        @assert (ld.frames[FR].flags & FR_WATCHED) == 0
+        if (ld.frames[FR].flags & FR_WATCHED) != 0
+            @SAVE_REGISTERS(QID)
+            frameFinished(ld, FR, FINISH_EXCEPT)
+            @LOAD_REGISTERS(QID)
+        end
 
         PCc = ld.frames[FR].programPointer.codes
         PCl = ld.frames[FR].programPointer.literals

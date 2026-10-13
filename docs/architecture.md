@@ -610,6 +610,7 @@ fixed it or a public issue exists.
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer); the tables in `initBuildIns`' order (arith, comp, prims, variant, trace, read — since R1d — proc — since R1f — write — since R1e's write/1 family — op); pl-ext.c's own FRG table, since R1e's write/1 family with write/1,2, writeq/1,2, writeln/1,2, print/1,2 | `src/pl-ext.c` |
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); attributed variables themselves are not ported | `src/pl-attvar.c` |
+| `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan` | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
@@ -750,6 +751,7 @@ graph LR
     pl_srcfile["pl-srcfile.jl"]
     pl_supervisor["pl-supervisor.jl"]
     pl_trace["pl-trace.jl"]
+    pl_pro["pl-pro.jl"]
     pl_op["pl-op.jl"]
     pl_write["pl-write.jl"]
     pl_read["pl-read.jl"]
@@ -1098,6 +1100,17 @@ graph LR
     pl_trace --> pl_global
     pl_trace --> pl_wam
     pl_trace --> pl_fli
+    pl_pro --> term_interface
+    pl_pro --> default_term
+    pl_pro --> pl_incl
+    pl_pro --> SWI_Prolog
+    pl_pro --> pl_global
+    pl_pro --> pl_inline
+    pl_pro --> pl_comp
+    pl_pro --> pl_wam
+    pl_pro --> pl_fli
+    pl_pro --> pl_error
+    pl_pro --> pl_proc
     pl_op --> term_interface
     pl_op --> default_term
     pl_op --> pl_incl
@@ -1170,6 +1183,7 @@ graph LR
     pl_ext --> pl_proc
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
+    pl_ext --> pl_pro
     pl_ext --> pl_op
     pl_ext --> pl_write
     pl_ext --> pl_read
@@ -2628,6 +2642,52 @@ pin `8609e216`, upstream names.
   `det_goal` units among them; `start_of_cdet` on nested blocks; the guard's frame flags and the
   block's unlinked record. test/compile/test_body_code_swipl.jl — nine `$` clauses compile to
   swipl's code (`vm_list`) and decompile to swipl's `clause/2`.
+
+**V9g-a: the cleanup family — `setup_call_cleanup/3`, `setup_call_catcher_cleanup/4`,
+`call_cleanup/2` — BUILT (2026-10-13)** (the user's overnight queue; port_inventory row V9;
+src/pl-vmi.jl, pl-comp.jl, pl-wam.jl, pl-pro.jl (new), pl-ext.jl, pl-funct.jl). Ported from pl-vmi.c,
+pl-wam.c, pl-comp.c and pl-pro.c at the pin `8609e216`, upstream names.
+* **Ported — the instructions:** `'$call_cleanup'` compiles to `I_CALLCLEANUP I_EXITCLEANUP` and
+  decompiles back. `I_CALLCLEANUP` checks the cleanup goal (`mustBeCallable`), pushes the frame's
+  `CHP_CATCH` choice point, marks the frame `FR_CLEANUP` and calls the goal (which argument is
+  which follows from the predicate's arity); `I_EXITCLEANUP` runs the handler when the goal left
+  no choice point (reason `exit`).
+* **Ported — the handler, at every way out:** `callCleanupHandler` (once per frame: `FR_CAUGHT`;
+  the catcher of the `/4` unified by `unify_finished` — `exit`, `fail`, `!`, `exception(Ball)`,
+  `external_exception(Ball)`; the goal run with no exception pending — `saveWakeup` — and an
+  exception it raises replacing a pending one only when it is the more urgent), `frameFinished`,
+  called where upstream calls it: `I_EXITCLEANUP` (exit); backtracking into the frame's `CHP_CATCH`
+  (fail; `deep_backtrack`); `c_cut` and `discardChoicesAfter` (cut — and an exception from outside
+  while the goal still has choice points: `external_exception`); `b_throw_unwind` (exception);
+  `discard_query` (a query cut with answers left); `frameFailed`; the deterministic exit's `leave`.
+* **Ported — calling a goal from the VM:** `call_term` (a plain goal in a query of its own; a
+  control construct through `call/1`: `call1`), and pl-pro.c's `callProlog` with `sig_atomic/1`,
+  which runs the Setup goal as once/1. These are the kernel's first NESTED runs of the VM from
+  inside it: the registers are saved and loaded around each (`SAVE_REGISTERS`/`LOAD_REGISTERS`),
+  the nested query's records lie above `lTop` and go when it is cut.
+* **The boot clauses** (src/pl-ext.jl `_boot_cleanup!`, as catch/3's): boot/init.pl's three
+  clauses of the family and `call(Goal) :- Goal.`, compiled when the database is created; R2 loads
+  boot/init.pl instead.
+* **DIVERGES:** `mustBeCallable` — upstream accepts only `Module:Goal`, which the family's
+  meta-predicate declarations supply; with no module transparency before R2 an unqualified term
+  is checked as the goal itself, so the culprit of `type_error(callable, _)` is the plain term
+  where swipl's is `user:Term` (pinned in the test; R2 checklist). The context module of the
+  handler's goal is `user` (`contextModule(fr)`: R2). The records taken out of the chain at
+  `I_EXITCLEANUP` are marked `unlinked` (the pools' invariant).
+* **NOT PORTED:** `startCritical`/`endCritical` around Setup and the handler (no signals);
+  `FR_NOTIFY` and the event hook (the debugger) — so `frameFinished` at `I_DEPART`, `I_LCALL`,
+  `I_TCALL` and on a query's TOP frame stays asserted absent: a cleanup frame makes no last call;
+  `callProlog`'s `ex` argument (no caller asks for it yet).
+* **Gates — against the oracle, all three term types:** test/core_lang/test_cleanup_swipl.jl —
+  30 cases, each followed by a listing of what the cleanup goals logged so far (549 lines equal to
+  swipl's: answers, determinism, WHAT ran and WHEN): the four ways out, the catcher's five values,
+  nesting (exit, fail, exception, a cut two frames up), a cleanup goal that fails, binds, raises at
+  exit and at fail, raises while a ball is pending (the ball stays) and raises an error while a
+  ball is pending (the error wins), a control construct as cleanup goal, a failing, a
+  nondeterministic and a raising Setup, `call_cleanup/2`, an unbound goal (the handler runs: the
+  frame is a cleanup frame before the error); the pools and "no exception pending" at every
+  answer; the frame flags; a query cut with answers left. test_body_code_swipl.jl:
+  `'$call_cleanup'` compiles to swipl's code and decompiles to swipl's clause.
 
 **V9f's MUTATION BATTERY (2026-10-13, in CI; `tools/mutants/V9f.py`, 44 mutants — 20 of catch/3,
 22 of `$/1` and `$/0`, 2 carried from the meta-call).** First run (run 38441762084, started by a push

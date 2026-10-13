@@ -61,6 +61,7 @@ include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, asser
 include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: consulting a file (first load)
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
+include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_atomic/1
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
 include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
 include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c) and the parser (R1d): read_term, term_to_atom

@@ -137,13 +137,16 @@ end
         isempty(inpath) ||
             println(stderr, "  allocates in the call path, pl-wam.jl lines: ", inpath)
         @test isempty(inpath)
+        # (`discardChoicesAfter` left this list with V9g: a cut that discards a CLEANUP frame runs
+        # its handler — a goal — so the function is no longer allocation-free as a whole; the
+        # spans above still hold the cut's own sites to "allocates nothing")
         for c in
             (LK._call_procedure, LK.pushFrame!, LK.setNextFrameFlags, LK.setFramePredicate,
             LK.hasLocalSpace, LK.setLTop!, LK.setGenerationFrame, LK._is_newest_live_frame,
             LK.lcoSetNextFrameFlags, LK.lcoSetNextFrameFlags2, LK.copyFrameArguments,
             LK.lowerLTop!, LK.deRef, LK.tcallSetNextFrameFlags, LK.linkValI,
             LK._argp_store!,
-            LK._argp_add, LK.discardChoicesAfter, LK._save_registers!, LK._load_registers!,
+            LK._argp_add, LK._save_registers!, LK._load_registers!,
             LK.canBind, LK.isInteger, LK.isRational, LK.isFloat, LK.isNumber, LK.isAtomic,
             LK.isTextAtom, LK.isString, LK.isTerm, LK.isCallable)
             @test any(e -> e[1] === c && e[3], DISPATCH_MANIFEST)

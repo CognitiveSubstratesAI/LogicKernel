@@ -1644,7 +1644,14 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         # `\$catch` (since V9f): I_CATCH decompiles to the atom, I_EXITCATCH to nothing (c:6744, c:6918)
         [
             (_bf("dk1", _bv(1), _bv(2), _bv(3)), _bs("\$catch")),
-            (_bs("dk2"), _bconj(_bs("q"), _bs("\$catch")))
+            (_bs("dk2"), _bconj(_bs("q"), _bs("\$catch"))),
+            # `\$call_cleanup` (since V9g): I_CALLCLEANUP decompiles to the atom and takes the
+            # I_EXITCLEANUP after it along (c:6778)
+            (
+                _bf("dk3", _bv(1), _bv(2), _bv(3)),
+                _bconj(_bf("sig_atomic", _bv(1)), _bs("\$call_cleanup"))
+            ),
+            (_bf("dk4", _bv(1), _bv(2)), _bs("\$call_cleanup"))
         ]
     ]
     dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
@@ -2918,7 +2925,14 @@ end
     tf = [
         (_bs("pt1"), _bconj(_bs("q"), _bs("true"))), (_bs("pt2"), _bs("fail")),
         (_bf("pt3", _bv(1), _bv(2), _bv(3)), _bs("\$catch")),
-        (_bs("pt4"), _bconj(_bs("q"), _bs("\$catch")))
+        (_bs("pt4"), _bconj(_bs("q"), _bs("\$catch"))),
+        # since V9g `\$call_cleanup` compiles to I_CALLCLEANUP I_EXITCLEANUP (c:3547): boot/init.pl's
+        # setup_call_cleanup/3 is `sig_atomic(Setup), '\$call_cleanup'`
+        (
+            _bf("pt5", _bv(1), _bv(2), _bv(3)),
+            _bconj(_bf("sig_atomic", _bv(1)), _bs("\$call_cleanup"))
+        ),
+        (_bf("pt6", _bv(1), _bv(2)), _bs("\$call_cleanup"))
     ]
     ours_tf = [_bc_kernel(_bclause(h, b)) for (h, b) in tf]
     @test any(startswith("i_true"), ours_tf[1]) && any(startswith("i_fail"), ours_tf[2])

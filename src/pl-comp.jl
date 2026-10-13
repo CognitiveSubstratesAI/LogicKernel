@@ -2077,6 +2077,10 @@ function compileSubClause!(
         elseif sym_key(arg) == names.atom_dollar               # ATOM_dollar: $ (since V9f)
             Output_0!(ci, I_DET)
             return BOOLEX_TRUE
+        elseif sym_key(arg) == names.atom_dcall_cleanup        # $call_cleanup (since V9g)
+            Output_0!(ci, I_CALLCLEANUP)
+            Output_0!(ci, I_EXITCLEANUP)
+            return BOOLEX_TRUE
         end
         sym_key(arg) in names.reserved_atoms &&
             throw(
@@ -3594,6 +3598,12 @@ function decompileBodyNoShift!(
         elseif op == I_DET                                      # (since V9f)
             push!(di.argp, mk_sym(T, Symbol("\$")))
             pushed += 1
+        elseif op == I_CALLCLEANUP                              # (since V9g)
+            push!(di.argp, mk_sym(T, Symbol("\$call_cleanup")))
+            pushed += 1
+            if codes[di.pc] == I_EXITCLEANUP
+                di.pc += 1
+            end
         elseif op == I_EXIT || op == I_EXITCATCH
             # break (out of upstream's switch): nothing
         else

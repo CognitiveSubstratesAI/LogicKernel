@@ -50,18 +50,18 @@ const foreigns = (
 )
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, comp, prims, variant,
-# copyterm, trace, read, proc, write, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
+# copyterm, trace, pro, read, proc, write, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
 # constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_arith, PL_predicates_from_comp, PL_predicates_from_prims,
     PL_predicates_from_variant, PL_predicates_from_copyterm, PL_predicates_from_trace,
-    PL_predicates_from_read,
+    PL_predicates_from_pro, PL_predicates_from_read,
     PL_predicates_from_proc, PL_predicates_from_write, PL_predicates_from_op
 )
 const _FOREIGN_VA = (
     PL_predicates_from_arith..., PL_predicates_from_comp..., PL_predicates_from_prims...,
     PL_predicates_from_variant..., PL_predicates_from_copyterm...,
-    PL_predicates_from_trace...,
+    PL_predicates_from_trace..., PL_predicates_from_pro...,
     PL_predicates_from_read...,
     PL_predicates_from_proc..., PL_predicates_from_write..., PL_predicates_from_op...
 )
@@ -126,6 +126,7 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     @assert first == length(_FOREIGN_VA)
     setBuiltinPredicateProperties!(gd)
     _boot_catch3!(gd)
+    _boot_cleanup!(gd)
     return nothing
 end
 
@@ -148,6 +149,50 @@ function _boot_catch3!(gd::PL_global_data{T})::Nothing where {T}
     cl === nothing && error("_boot_catch3!: catch/3's boot clause does not compile")
     assertDefinition!(gd, def, cl, CL_END)
     def.flags |= P_ISO | P_LOCKED
+    return nothing
+end
+
+# DIVERGES (no upstream function; as `_boot_catch3!`): boot/init.pl's cleanup family
+# (init.pl:676-685) and its `call/1` (init.pl:501-502), compiled when the database is created:
+#     setup_call_catcher_cleanup(Setup, _Goal, _Catcher, _Cleanup) :- sig_atomic(Setup), '$call_cleanup'.
+#     setup_call_cleanup(Setup, _Goal, _Cleanup) :- sig_atomic(Setup), '$call_cleanup'.
+#     call_cleanup(_Goal, _Cleanup) :- '$call_cleanup'.
+#     call(Goal) :- Goal.
+# `'$call_cleanup'` compiles to `I_CALLCLEANUP I_EXITCLEANUP` (pl-comp.c), which read the frame's
+# arguments by the predicate's arity; `call/1` is what the cleanup handler calls a goal through
+# that is a control construct (`call1`, pl-wam.c). R2 loads boot/init.pl, which defines all four
+# the same way — and `call/2..8` beside them. boot code is system code (`P_LOCKED`); `call/1` is
+# ISO (init.pl:388, `'$iso'`). NOT PORTED: the meta-predicate declarations
+# (init.pl:381-383: no module transparency until R2), `noprofile/1`.
+"Define the cleanup family and `call/1` in the `system` module of `gd` as boot/init.pl defines them."
+function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
+    ld = PL_local_data{T}()
+    k = fresh_var_keys!(4)
+    v = T[mk_var(T, k), mk_var(T, k + 1), mk_var(T, k + 2), mk_var(T, k + 3)]
+    cleanup = mk_sym(T, Symbol("\$call_cleanup"))
+    setup = mk_expr(
+        T, T[mk_sym(T, Symbol(",")), mk_expr(T, T[mk_sym(T, :sig_atomic), v[1]]), cleanup]
+    )
+    _boot_clause!(gd, ld, :setup_call_catcher_cleanup, v, setup, false)
+    _boot_clause!(gd, ld, :setup_call_cleanup, v[1:3], setup, false)
+    _boot_clause!(gd, ld, :call_cleanup, v[1:2], cleanup, false)
+    _boot_clause!(gd, ld, :call, v[1:1], v[1], true)
+    return nothing
+end
+
+"Compile `name(args…) :- body` into the `system` module of `gd`, locked (and ISO when `iso`)."
+function _boot_clause!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::Symbol, args::Vector{T}, body::T,
+    iso::Bool
+)::Nothing where {T}
+    m = MODULE_system(gd)
+    proc = lookupProcedure(mk_sym(T, name), length(args), m)
+    cl = compileClause(
+        gd, ld, mk_expr(T, pushfirst!(copy(args), mk_sym(T, name))), body, proc, m
+    )
+    cl === nothing && error("_boot_clause!: the boot clause of $name does not compile")
+    assertDefinition!(gd, proc.definition, cl, CL_END)
+    proc.definition.flags |= iso ? (P_ISO | P_LOCKED) : P_LOCKED
     return nothing
 end
 
