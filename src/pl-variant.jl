@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-variant.c @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-variant.c @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2016, Kuniaki Mukai
 #

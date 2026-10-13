@@ -24,5 +24,10 @@
 # green. The 2026-10-11 sync: bae881a2 → ac807ba8 (72 commits; 17 ported upstream files changed,
 # the fourteen fixes of docs/upstream_reports.md among them) — finished the same day: every header
 # is at `commit` and no `sync-from:` line is left.
-version: 10.1.17
-commit: ac807ba8bcc7aa852c0bc1a03902c0084a1011f7
+# The 2026-10-13 mini-sync: ac807ba8 → 8609e216 (26 commits, 10 of them in src/ or boot/; ONE
+# commit here, so no `sync-from:` line was ever written): pl-comp.c's two fixes for a first-occurrence
+# variable under `\+` in a branch of `;` (7dba157e, 27c742f0) ported, the kernel's own defensive
+# initialisation of those variables removed with them; the others touch no ported function
+# (docs/architecture.md, the pin's section).
+version: 10.1.18
+commit: 8609e216cab90e476dafac799a9e323151e3c499

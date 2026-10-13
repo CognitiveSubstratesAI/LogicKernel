@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_lang/test_exception.pl @ ac807ba8bcc7
+# UPSTREAM: swipl-devel tests/core_lang/test_exception.pl @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2007-2011, University of Amsterdam
 #

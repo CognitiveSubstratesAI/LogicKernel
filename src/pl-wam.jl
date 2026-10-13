@@ -1,7 +1,7 @@
-# UPSTREAM: swipl-devel src/pl-wam.c @ ac807ba8bcc7
-# UPSTREAM: swipl-devel src/pl-vmi.c @ ac807ba8bcc7
-# UPSTREAM: swipl-devel src/pl-incl.h @ ac807ba8bcc7
-# UPSTREAM: swipl-devel src/pl-gc.c @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-wam.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-vmi.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-gc.c @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -578,24 +578,6 @@ function _drop_unfilled_frame!(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     return nothing
 end
 
-# DIVERGES (user, 2026-10-12): defensive initialisation; see register Q3. RE-CHECK when upstream
-# fixes it: this can then go. Called at each point that hands a frame to a clause (`S_STATIC`,
-# `TRUST_CLAUSE`, `shallow_backtrack`, `deep_backtrack`).
-"Set the cells of `clause.init_vars`, in the frame at `base` the clause is about to run in, to fresh variables."
-function _init_clause_vars!(
-    ld::PL_local_data{T}, base::Int, clause::Clause{T}
-)::Nothing where {T}
-    vars = clause.init_vars
-    n = length(vars)
-    if n > 0
-        k = fresh_var_keys!(n)
-        for i in 1:n
-            ld.slots[argFrameP(base, Int(vars[i])) + 1] = mk_var(T, k + UInt64(i - 1))
-        end
-    end
-    return nothing
-end
-
 # THE POOLS' INVARIANT (user, 2026-10-05; restated 2026-10-12 for `*->`): the pools hold the LIVE
 # records — the choice points on the `BFR` chain, the frames on the parent chains of the running
 # frame and of those choice points' frames — PLUS the choice-point records `C_SOFTCUT` unlinked
@@ -994,8 +976,7 @@ function initVM(dc::Procedure{T})::Tuple{Clause{T}, ClauseRef{T}} where {T}
         code[I_EXITQUERY],              # cl->code_size = 1; cl->codes[0] = encode(I_EXITQUERY)
         T[],
         Procedure{T}[],
-        UInt32(0), UInt32(0), UInt32(0), # no source
-        Int32[]
+        UInt32(0), UInt32(0), UInt32(0)  # no source
     )
     cref = ClauseRef{T}(nothing, word(0), cl, nothing)     # GD->clauses.top_cref.value.clause = cl
     return (cl, cref)
@@ -2238,7 +2219,6 @@ function PL_next_solution_guarded(
             FR = NFR                                # environment_frame = FR = NFR
             ld.environment_frame = FR
             setLTop!(ld, argFrameP(mc_nb, Int(mc_cl.variables)))   # lTop = p (compileClause)
-            _init_clause_vars!(ld, ld.frames[FR].base, mc_cl)      # (an empty list: see there)
             ld.frames[FR].clause = mc_cref          # fr->clause = cref
             PCc = mc_cl.codes                       # PC = cl->codes
             PCl = mc_cl.literals
@@ -2922,7 +2902,6 @@ function PL_next_solution_guarded(
     PC = 1
     @ENSURE_LOCAL_SPACE(LOCAL_MARGIN + Int(ss_clause.variables))
     setLTop!(ld, ARGP.pos + Int(ss_clause.variables))
-    _init_clause_vars!(ld, ld.frames[FR].base, ss_clause)
     ld.frames[FR].clause = ss_cl                    # CL = cl
 
     if ss_chp.cref !== nothing
@@ -2961,7 +2940,6 @@ function PL_next_solution_guarded(
     tc_clause = tc_cref.clause::Clause{T}
     setLTop!(ld, ARGP.pos + Int(tc_clause.variables))
     @ENSURE_LOCAL_SPACE(LOCAL_MARGIN)
-    _init_clause_vars!(ld, ld.frames[FR].base, tc_clause)
     PCc = tc_clause.codes
     PCl = tc_clause.literals
     PC = 1
@@ -3140,14 +3118,14 @@ function PL_next_solution_guarded(
                 if sb_c.value_clause.cref !== nothing
                     sb_c.base = sb_ntop             # Choice point needs to move
                     ld.lTop = sb_ntop + SIZEOF_CHOICE       # lTop = (LocalFrame)(ch+1)
-                    @goto sb_clause_entered
+                    @goto next_instruction
                 end
 
                 DiscardMark(ld, sb_c.mark)
                 ld.BFR = sb_c.parent
                 dropRecords!(ld, sb_c.base)         # the popped choice point
                 ld.lTop = sb_ntop                   # lTop = (LocalFrame)ch
-                @goto sb_clause_entered
+                @goto next_instruction
             else                                    # We need GC/shift to move the choice point
                 sb_chp = ld.chp_scratch
                 DiscardMark(ld, sb_c.mark)
@@ -3164,16 +3142,11 @@ function PL_next_solution_guarded(
                     sb_v.cref = sb_chp.cref
                     sb_v.key = sb_chp.key
                 end
-                @goto sb_clause_entered
+                @goto next_instruction
             end
         end
     end
     @goto deep_backtrack
-
-    # DIVERGES: the three ways above into the frame's next clause meet here (`_init_clause_vars!`).
-    @label sb_clause_entered
-    _init_clause_vars!(ld, ld.frames[FR].base, sb_clause)
-    @goto next_instruction
 
     # PORT: pl-vmi.c deep_backtrack
     # DIVERGES: frames and choice points are compared by `base`; the popped `CHP_CLAUSE` choice point
@@ -3249,7 +3222,6 @@ function PL_next_solution_guarded(
         end
         # require space for the args of the next frame
         @ENSURE_LOCAL_SPACE(LOCAL_MARGIN)
-        _init_clause_vars!(ld, ld.frames[FR].base, db_clause)
         @goto next_instruction
     elseif db_c.type == CHP_TOP                     # Query toplevel
         DiscardMark(ld, db_c.mark)

@@ -451,6 +451,38 @@ ported files' headers to either.
     `H_VOID_N` is removed). The canonical differential's two named exclusions STAY, measured
     (50 balls a run are still named and counted): a ball holding a cut UTF-8 sequence (upstream
     defect, see register Q1) and a string holding the character 0 (the term interface's gap).
+* **The 2026-10-13 mini-sync: `ac807ba8` → `8609e216`** (10.1.18; 26 upstream commits, 10 of them
+  in `src/` or `boot/`; the pin was frozen at upstream's head when the sync started). ONE commit
+  here, so no `sync-from:` line and no expected-mismatch list were needed: the pin, the oracle,
+  the port and every header moved together.
+  * **Ported — `pl-comp.c`:** `7dba157e` (`compileBodyEQ`, `compileBodyNEQ`: each `C_VAR` for a
+    first occurrence now marks the variable, `isFirstVarSet` — six sites) and `27c742f0` (the new
+    `alwaysFirstVar`: a test replaced by `I_TRUE`/`I_FAIL` under `optimise` still initialises and
+    marks its variable; called by `compileBodyVar1`, `compileBodyNonVar1`, `compileTypeTest`).
+    With them the kernel's own defensive initialisation is removed (decision 2's section).
+  * **Header only, no function the kernel has changes:** `pl-write.c` (`c1d618a1`:
+    `atomIsVarName`, `atomIsAnyVarName`, `separate_number` read a code point where they read a
+    `wchar_t` unit — different only where `wchar_t` is 16 bits; the kernel walks a `String` by
+    code point), `os/pl-text.c` (`266a7c07`: `PL_unify_text_units`, `PL_text_unit_offset`,
+    `text_next_code`, `text_prev_code`, `text_chr` — none ported), `pl-proc.c` (`78073eae`:
+    `reconsultFinalizePredicate` — the reload path, refused by name until R2, where the fix and
+    upstream's `tests/unprotected/reload/del_clause_indexed.pl` go with it), `SWI-Prolog.h`
+    (`b7c0c6b6`: `PLVERSION` 100118 — the kernel has no version constant and no `version` flag;
+    the pin file carries the version. R2 adds the `version` and `version_data` flags).
+  * **Not ported files:** `os/pl-fmt.c` (`c1d31af1`), `pl-string.c` (`266a7c07`),
+    `pl-tabling.c` (`986463d0`, #1545), `pl-prof.c` (`fff4ff0d`), `boot/messages.pl` and
+    `boot/toplevel.pl` (`1d4fc09e`: theme predicates only — no message rule or text changes, and
+    the kernel mirrors neither file), `library/prolog_clause.pl` (`8609e216`).
+  * **Upstream's tests taken:** tests/test.pl `control(not-3)` … `(not-7)` — in
+    test/core_lang/test_firstvar_swipl.jl with four more shapes upstream's units do not reach
+    (the constant on the left, two variables both met first) and one case per clause-entry
+    point, under default flags AND `optimise`; tests/core_text/test_write.pl's two
+    `variable_names` units (a name with a code point above 0xffff) in the write differential;
+    its `float_format_non_bmp` unit needs a `float_format` other than `~h` (not ported).
+  * **Mutation-proved, the fix lines:** 8 of 8 caught by test_firstvar_swipl.jl — `alwaysFirstVar`
+    without the mark, without `C_VAR`, and each of the six guards of `compileBodyEQ`/`NEQ`. The
+    first run caught 4: the `const == Var` and `Var1 == Var2` guards had no case of their shape,
+    in upstream's units or here; four cases were added and all eight rerun.
 * **The build runs capped.** MEASURED 2026-10-11: the recipe's first version made a partial
   clone (`--filter=blob:none`) of a LOCAL repository — an empty promisor clone in which every git
   command fetched what it lacked, and the fetch fetched again: thousands of small processes,
@@ -1366,20 +1398,15 @@ Writing a slot is not a binding, and upstream does not trail it either (vmi:741-
 
 The instruction semantics, frames, choice points and query API above are independent of that choice.
 
-**Defensive initialisation; see register Q3** (user, 2026-10-12). `# DIVERGES`, in behaviour: a
-clause can carry a list of its variables' offsets, `init_vars` (src/pl-incl.jl; filled by the
-compiler, `_clause_init_vars`, src/pl-comp.jl; empty for most clauses, which then share one
-vector), and the cells it lists are set to fresh variables at each of the four points that hand a
-frame to a clause — `S_STATIC`, `TRUST_CLAUSE`, `shallow_backtrack`, `deep_backtrack`
-(`_init_clause_vars!`, src/pl-wam.jl). **To re-check when upstream fixes Q3:** with that fix
-ported this goes. Cost: none where the list is empty; the bench on the four programs, before and
-after, is in the commit message. Gate: test/core_lang/test_rules_swipl.jl, "defensive
-initialisation" — a value planted over the stack above `lTop`, one predicate per entry point, the
-listed cells and one that is not listed read from the stack afterwards. A static check in the same
-file ("every clause-entry point initialises the clause's cells") fails if a new way of handing a
-frame to a clause does not call `_init_clause_vars!`. **Coverage to add as the VM grows:** V9e's
-temporary clauses for control constructs (the `islocal` compilation), and later `S_DYNAMIC` and
-tabling, each hand a frame to a clause and must call it.
+**The defensive initialisation of 2026-10-12 is GONE (the 2026-10-13 mini-sync).** For one day a
+clause carried a list of variable offsets, `init_vars`, whose cells were set to fresh variables at
+every point that hands a frame to a clause — the kernel's own guard against an upstream compiler
+defect: a variable whose FIRST occurrence was a test (`==`, `\==`, and under `optimise` `var/1`,
+`nonvar/1`) inside `\+` in a branch of `;` was initialised without being marked, so the code after
+the disjunction read whatever the local stack held. Upstream fixed it in `7dba157e` and `27c742f0`;
+both are ported (src/pl-comp.jl `compileBodyEQ`, `compileBodyNEQ`, `alwaysFirstVar`) and the guard,
+its field, its five call sites, its coverage check and the differentials' skip list are removed.
+Gate: test/core_lang/test_firstvar_swipl.jl, against the oracle under default flags and `optimise`.
 
 ### Decision 3 — frames and choice points: vector-backed stacks, integer positions
 
@@ -2596,8 +2623,8 @@ and pl-vmi.c at the pin `ac807ba8`, upstream names.
   choice point; `!` in a soft condition; a last call after a soft-cut, the frame reused 2,000
   times; a clause choice point resumed in place) and ~500 random soft-cut predicates; the frame
   POSITIONS around a soft-cut, read with `prolog_current_frame/1` on both sides, equal swipl's
-  `[20, 11, 37, 11, 11, 20, 28]`. The random differentials leave out the predicates on which
-  upstream is undefined (see register Q3; `_R_Q3_SKIP`).
+  `[20, 11, 37, 11, 11, 20, 28]`. (Until the 2026-10-13 mini-sync the random differentials left out
+  three predicates on which upstream was undefined; with upstream's fix ported they run in full.)
 * **Mutation-proved — at verdict level:** `C_SOFTCUT` not dropping the dead record, the record not
   marked `unlinked`, the slot not negated, each `C_LSCUT` step, each clause of `_rpools_live`,
   and `dropUnlinkedChoices!` at the reuse points.
@@ -2619,8 +2646,7 @@ pl-global.jl, pl-ext.jl). Ported from pl-vmi.c `i_metacall_common`'s control bra
   the environment with its own clause reference, generation and program pointer, and runs its code;
   `call/N` for N > 8 under `call/1` goes the same way. `lTop` lands where upstream's does: the frame
   size grows by `SIZEOF_CREF_CLAUSE + sizeofClause(code_size)` (3 + 8 + code positions on a 64-bit
-  build), the space upstream's clause occupies on the local stack. `_init_clause_vars!` is called at
-  the new clause entry (an empty list: every cell is written; the coverage check counts the entry).
+  build), the space upstream's clause occupies on the local stack.
 * **DIVERGES (representation):** the goal clause is a heap `Clause` no definition holds, freed by
   Julia's GC with its frame (upstream: on the local stack, freed when `lTop` drops); `localGoal`
   dereferences the goal's control skeleton and its sub-goals' arguments first, where upstream
@@ -2658,7 +2684,7 @@ Ported from pl-comp.c `compileSubClause` and pl-vmi.c at the pin `ac807ba8`.
 * **NOT PORTED, refused by name (V9e-2):** `call/1` of a control construct, and of `call/N` for
   N > 8 — upstream compiles a temporary clause (`compileClause(…, NULL, …)`); closures,
   `FR_INRESET` (asserted absent) and `Goal@Module`'s check. The V9e checklist stands: the temporary
-  clauses call `_init_clause_vars!` and respect `dropUnlinkedChoices!`.
+  clauses respect `dropUnlinkedChoices!`.
 * **Gates:** test/core_lang/test_metacall.jl (its own file, so upstream's test_call.pl path is not
   shadowed): answers and determinism of variable goals, `call/1..4`, builtins through the visible
   path, equal swipl's; the error formals (instantiation, type, existence, `max_procedure_arity`)

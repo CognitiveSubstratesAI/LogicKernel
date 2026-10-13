@@ -252,7 +252,6 @@ function _manifest_index(T)
         (LK.analyse_variables!, Tuple{GD, CInfo, Nothing, T}, false),    # a goal clause (V9e-2)
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing}, false),
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, T}, false),
-        (LK._clause_init_vars, Tuple{CInfo, Int}, false),   # defensive initialisation; see register Q3
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
         (LK.link_local_var!, Tuple{CInfo, T, Int}, false),
         (LK._local_cell!, Tuple{CInfo, Int, T}, false),
@@ -296,6 +295,7 @@ function _manifest_index(T)
         (LK.pl_clause!, Tuple{GD, LD, D, T, T, SNK}, false),
         # V6b — the type tests compiled inline (src/pl-comp.jl, pl-incl.jl, pl-fli.jl)
         (LK.always, Tuple{LD, CInfo, Bool, String, T}, false),
+        (LK.alwaysFirstVar, Tuple{LD, CInfo, Bool, String, T, Int}, false),
         (LK.compileBodyVar1, Tuple{LD, CInfo, T}, false),
         (LK.compileBodyNonVar1, Tuple{LD, CInfo, T}, false),
         (LK._type_test, Tuple{Int, T}, true),
@@ -1101,7 +1101,6 @@ function _manifest_index(T)
         # nothing; the run loop's call-path labels are checked by their own test (static_analysis_body.jl)
         (LK._drop_unfilled_frame!, Tuple{LD, Int}, true),
         (LK._no_record_above, Tuple{LD, Int}, true),
-        (LK._init_clause_vars!, Tuple{LD, Int, LK.Clause{T}}, false),
         (LK.dropUnlinkedChoices!, Tuple{LD, Int}, true),
         (LK._is_newest_live_frame, Tuple{LD, Int}, true),
         (LK._call_procedure, Tuple{LD, Int, LK.code}, true),

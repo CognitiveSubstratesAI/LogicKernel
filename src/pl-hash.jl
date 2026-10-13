@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-hash.c @ ac807ba8bcc7
-# UPSTREAM: swipl-devel src/pl-hash.h @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-hash.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-hash.h @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Author:	Austin Appleby
 # COPYRIGHT: License:	Public domain

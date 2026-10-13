@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-modul.c @ ac807ba8bcc7
-# UPSTREAM: swipl-devel src/pl-incl.h @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-modul.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

@@ -1,6 +1,6 @@
 # ORIGINAL: the shared helpers of the rules differentials (a library, not run on its own: only test_*.jl run);
-# Prolog has no counterpart. test/core_lang/rules_common.jl — included by test_rules_swipl.jl, test_softcut.jl and
-# test_init_vars.jl after `term_under_test.jl` and `const LK = LogicKernel` (split 2026-10-12, user: mutants
+# Prolog has no counterpart. test/core_lang/rules_common.jl — included by test_rules_swipl.jl, test_softcut.jl,
+# test_catch_swipl.jl and the other rule differentials after `term_under_test.jl` and `const LK = LogicKernel` (split 2026-10-12, user: mutants
 # target the smallest test file holding the killing assertion; each test file runs in its own module).
 
 const _R = lk_term_type(Union{Int64, Float64, String})
@@ -278,20 +278,6 @@ _rite(a::_R, b::_R, c::_R) = _ror(_rf("->", a, b), c)
 _rit(a::_R, b::_R) = _rf("->", a, b)
 
 _rnot(a::_R) = _rf("\\+", a)
-
-# Left out of the random differentials; see register Q3. A random predicate is named by its
-# stream's seed and its index in the stream.
-const _R_Q3_SKIP = Set([(20261015, 77), (20261015, 213), (20261017, 101)])
-
-"The stream of `seed` — its predicates named `prefix<index>` — without those `_R_Q3_SKIP` lists."
-function _rq3_keep(seed::Int, prefix::String, clauses, goals)
-    index(t::_R) = parse(Int, chopprefix(String(lk_name(_rfunctor(t)[1])), prefix))
-    kept(t::_R) = !((seed, index(t)) in _R_Q3_SKIP)
-    n = length(unique(index(g) for g in goals))
-    out = count(((s, _),) -> s == seed, _R_Q3_SKIP)
-    @info "random stream $seed: $out of $n predicates left out (see register Q3)"
-    return [c for c in clauses if kept(c[1])], [g for g in goals if kept(g)]
-end
 
 const _R_SENTINEL = _rs(Symbol("\$lk_sentinel"))
 

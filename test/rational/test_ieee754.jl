@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/rational/test_ieee754.pl @ ac807ba8bcc7
+# UPSTREAM: swipl-devel tests/rational/test_ieee754.pl @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Author:        Rick Workman
 #

@@ -216,7 +216,7 @@ const _R_SOFT_PINNED = Dict{Int, Vector{String}}(
     clauses = _rsoft_clauses()
     goals = _rsoft_goals()
     npinned = length(goals)
-    rc, rg = _rq3_keep(20261017, "rs", _rsoft_random(Xoshiro(20261017), 250)...)
+    rc, rg = _rsoft_random(Xoshiro(20261017), 250)
     append!(clauses, rc)
     append!(goals, rg)
     db = _rdb(clauses)

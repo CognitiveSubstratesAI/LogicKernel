@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-thread.c @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-thread.c @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1999-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam

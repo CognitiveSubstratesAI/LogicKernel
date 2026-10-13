@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-op.c @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-op.c @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam

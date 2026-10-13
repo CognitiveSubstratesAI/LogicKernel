@@ -1107,7 +1107,7 @@ end
 @testset "negation: every answer and its determinism are swipl's (V9d)" begin
     clauses = _rnot_clauses()
     goals = _rnot_goals()
-    rc, rg = _rq3_keep(20261014, "rn", _rnot_random(Xoshiro(20261014), 200)...)
+    rc, rg = _rnot_random(Xoshiro(20261014), 200)
     append!(clauses, rc)
     append!(goals, rg)
     db = _rdb(clauses)
@@ -1286,7 +1286,7 @@ end
 @testset "a cut in a condition or a negation: every answer and its determinism are swipl's (V9d)" begin
     clauses = _rlcut_clauses()
     goals = _rlcut_goals()
-    rc, rg = _rq3_keep(20261015, "ru", _rlcut_random(Xoshiro(20261015), 250)...)
+    rc, rg = _rlcut_random(Xoshiro(20261015), 250)
     append!(clauses, rc)
     append!(goals, rg)
     db = _rdb(clauses)

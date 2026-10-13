@@ -1,6 +1,6 @@
-# UPSTREAM: swipl-devel src/pl-comp.c @ ac807ba8bcc7
-# UPSTREAM: swipl-devel src/pl-comp.h @ ac807ba8bcc7
-# UPSTREAM: swipl-devel src/pl-incl.h @ ac807ba8bcc7
+# UPSTREAM: swipl-devel src/pl-comp.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-comp.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -254,7 +254,6 @@ mutable struct compileInfo{T}
     warning_list::term_t                                    # see compiler_warning()
     warnings::Union{Nothing, Vector{c_warning{T}}}
     variable_names::Union{Nothing, T}                       # ($variable_names, resolved)
-    init_vars::Union{Nothing, BitVector}                    # (defensive initialisation; see register Q3)
     islocal::Bool                                           # Temporary local clause
     subclausearg::Bool                                      # processing subclausearg
     argvars::Int                                            # islocal argument pseudo vars
@@ -273,7 +272,6 @@ compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
         0, false, UInt32(0), 0, 0, Dict{Int, T}(),              # head_unify: compileClause's
         0, 0, 0, nothing, nothing,                              # no style checks, no warnings
-        nothing,                                                # init_vars
         false, false, 0, 0, nothing, 0                          # not a goal clause
     )
 
@@ -1528,6 +1526,26 @@ function always(
     return BOOLEX_FALSE
 end
 
+# PORT: pl-comp.c alwaysFirstVar
+"""
+    alwaysFirstVar(ld, ci, val, pred, arg, i) -> boolex_t
+
+As [`always`](@ref), for a test on the FIRST occurrence of variable `i` (pl-comp.c, since upstream's
+27c742f0): if the test is replaced by `I_TRUE` or `I_FAIL` the variable is still initialised
+(`C_VAR`) and marked, as code after a disjunction may assume the branch with the test has set it —
+notably a test inside `\\+`.
+"""
+function alwaysFirstVar(
+    ld::PL_local_data{T}, ci::compileInfo{T}, val::Bool, pred::String, arg::T, i::Int
+)::boolex_t where {T}
+    rc = always(ld, ci, val, pred, arg)
+    if rc == BOOLEX_TRUE
+        isFirstVarSet!(ci.used_var, i)
+        Output_1!(ci, C_VAR, VAROFFSET(i))
+    end
+    return rc
+end
+
 # PORT: pl-comp.c compileBodyVar1
 "`var/1` in a body (pl-comp.c): `I_VAR` on a variable already seen; otherwise as `always` decides."
 function compileBodyVar1(
@@ -1541,7 +1559,7 @@ function compileBodyVar1(
     if i1 >= 0
         f1 = isFirstVar(ci.used_var, i1)
         if f1                                                  # first var
-            return always(ld, ci, true, "var", a1)
+            return alwaysFirstVar(ld, ci, true, "var", a1, i1)
         end
         Output_1!(ci, I_VAR, VAROFFSET(i1))
         return BOOLEX_TRUE
@@ -1562,7 +1580,7 @@ function compileBodyNonVar1(
     if i1 >= 0
         f1 = isFirstVar(ci.used_var, i1)
         if f1
-            return always(ld, ci, false, "nonvar", a1)
+            return alwaysFirstVar(ld, ci, false, "nonvar", a1, i1)
         end
         Output_1!(ci, I_NONVAR, VAROFFSET(i1))
         return BOOLEX_TRUE
@@ -1613,12 +1631,7 @@ function compileTypeTest(
     if i1 >= 0
         f1 = isFirstVar(ci.used_var, i1)
         if f1
-            rc = always(ld, ci, false, name, a1)
-            if rc == BOOLEX_TRUE
-                isFirstVarSet!(ci.used_var, i1)
-                Output_1!(ci, C_VAR, VAROFFSET(i1))
-            end
-            return rc
+            return alwaysFirstVar(ld, ci, false, name, a1, i1)
         end
         Output_1!(ci, instruction, VAROFFSET(i1))
         return BOOLEX_TRUE
@@ -1759,8 +1772,9 @@ end
 # `compileBodyUnify`'s.
 """
 `==/2` in a body (pl-comp.c): `B_EQ_VV` on two variables, `B_EQ_VC` on a variable and a portable
-constant (either order), each after a `C_VAR` for a first occurrence, which stays a first occurrence
-(`isFirstVar`); under `optimise`, `I_FAIL` for a void side, `I_TRUE`/`I_FAIL` for a first occurrence;
+constant (either order), each after a `C_VAR` for a first occurrence, which is then MARKED
+(`isFirstVarSet`, since upstream's 7dba157e: code after a disjunction may assume the branch set
+it); under `optimise`, `I_FAIL` for a void side, `I_TRUE`/`I_FAIL` for a first occurrence;
 `BOOLEX_FALSE`, a call, otherwise.
 """
 function compileBodyEQ(
@@ -1793,18 +1807,20 @@ function compileBodyEQ(
                 return BOOLEX_TRUE
             end
         end
-        f1 && Output_1!(ci, C_VAR, VAROFFSET(i1))
-        f2 && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        f1 && isFirstVarSet!(ci.used_var, i1) && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        f2 && isFirstVarSet!(ci.used_var, i2) && Output_1!(ci, C_VAR, VAROFFSET(i2))
         Output_2!(ci, B_EQ_VV, VAROFFSET(i1), VAROFFSET(i2))
         return BOOLEX_TRUE
     end
     if i1 >= 0 && is_portable_constant(ld, a2)                # Var == const
-        isFirstVar(ci.used_var, i1) && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        isFirstVar(ci.used_var, i1) && isFirstVarSet!(ci.used_var, i1) &&
+            Output_1!(ci, C_VAR, VAROFFSET(i1))
         Output_2!(ci, B_EQ_VC, VAROFFSET(i1), addLiteral!(ci, a2))
         return BOOLEX_TRUE
     end
     if i2 >= 0 && is_portable_constant(ld, a1)                # const == Var
-        isFirstVar(ci.used_var, i2) && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        isFirstVar(ci.used_var, i2) && isFirstVarSet!(ci.used_var, i2) &&
+            Output_1!(ci, C_VAR, VAROFFSET(i2))
         Output_2!(ci, B_EQ_VC, VAROFFSET(i2), addLiteral!(ci, a1))
         return BOOLEX_TRUE
     end
@@ -1848,18 +1864,20 @@ function compileBodyNEQ(
                 return BOOLEX_TRUE
             end
         end
-        f1 && Output_1!(ci, C_VAR, VAROFFSET(i1))
-        f2 && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        f1 && isFirstVarSet!(ci.used_var, i1) && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        f2 && isFirstVarSet!(ci.used_var, i2) && Output_1!(ci, C_VAR, VAROFFSET(i2))
         Output_2!(ci, B_NEQ_VV, VAROFFSET(i1), VAROFFSET(i2))
         return BOOLEX_TRUE
     end
     if i1 >= 0 && is_portable_constant(ld, a2)                # Var \== const
-        isFirstVar(ci.used_var, i1) && Output_1!(ci, C_VAR, VAROFFSET(i1))
+        isFirstVar(ci.used_var, i1) && isFirstVarSet!(ci.used_var, i1) &&
+            Output_1!(ci, C_VAR, VAROFFSET(i1))
         Output_2!(ci, B_NEQ_VC, VAROFFSET(i1), addLiteral!(ci, a2))
         return BOOLEX_TRUE
     end
     if i2 >= 0 && is_portable_constant(ld, a1)                # const \== Var
-        isFirstVar(ci.used_var, i2) && Output_1!(ci, C_VAR, VAROFFSET(i2))
+        isFirstVar(ci.used_var, i2) && isFirstVarSet!(ci.used_var, i2) &&
+            Output_1!(ci, C_VAR, VAROFFSET(i2))
         Output_2!(ci, B_NEQ_VC, VAROFFSET(i2), addLiteral!(ci, a1))
         return BOOLEX_TRUE
     end
@@ -2354,11 +2372,6 @@ function compileBody!(
                 @goto resume
             end
             vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
-            iv = ci.init_vars                                  # (defensive initialisation; see
-            if iv === nothing                                  # register Q3)
-                iv = ci.init_vars = falses(length(ci.used_var))
-            end
-            setVars(ci, child(body, 2), iv)
             Output_2!(ci, C_NOT, code(var), code(0))
             push!(
                 stack,
@@ -2598,8 +2611,7 @@ function compileClause(
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(ci.variables), clsize_t(nv), flags, ci.codes,
         ci.literals,
-        ci.procedures, UInt32(0), UInt32(0), UInt32(0),    # line_no, source_no, owner_no
-        _clause_init_vars(ci, def.arity)
+        ci.procedures, UInt32(0), UInt32(0), UInt32(0)     # line_no, source_no, owner_no
     )
 end
 
@@ -2691,17 +2703,8 @@ function compileGoalClause(
     ensureLocalSpace(ld, variables + LOCAL_MARGIN + SIZEOF_CHOICE) || return nothing
     return Clause{T}(
         def, global_generation(gd), GEN_INFINITE, clsize_t(variables), clsize_t(nv), flags,
-        ci.codes, ci.literals, ci.procedures, UInt32(0), UInt32(0), UInt32(0),
-        Int32[]                                                # init_vars: every cell is written
+        ci.codes, ci.literals, ci.procedures, UInt32(0), UInt32(0), UInt32(0)
     )
-end
-
-# DIVERGES: no upstream counterpart — defensive initialisation; see register Q3.
-"The clause's `init_vars`: the offsets `ci.init_vars` marks that are not arguments."
-function _clause_init_vars(ci::compileInfo, arity::Int)::Vector{Int32}
-    iv = ci.init_vars
-    iv === nothing && return Int32[]
-    return Int32[i - 1 for i in findall(iv) if i - 1 >= arity]
 end
 
 # ── a definition's Prolog reference (pl-comp.c) ─────────────────────────────────────────────────
