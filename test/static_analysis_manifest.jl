@@ -945,6 +945,18 @@ function _manifest_index(T)
         (LK.saveWakeup, Tuple{LD, Bool}, false),
         (LK.restore_exception, Tuple{LD, Int}, false),
         (LK.restoreWakeup, Tuple{LD, LK.wakeup_state}, false),
+        # V9f — `$/1`, `$/0`: the determinism errors (src/pl-wam.jl, pl-comp.jl, pl-error.jl) and
+        # the frame's variables made fresh before its goal is decompiled (src/pl-gc.jl)
+        (LK.determinism_error, Tuple{LD, Int, Int, Symbol}, false),
+        (LK.ssu_or_det_failed, Tuple{LD, Int}, false),
+        (LK.frameFailed, Tuple{LD, Int}, false),
+        (LK.det_goal_error, Tuple{LD, Int, Int, Symbol}, false),
+        (LK.start_of_cdet, Tuple{C, Int}, false),
+        (LK.decompile_body_range, Tuple{LD, Int, Int, C, Int, UInt64}, false),
+        (LK.clearUninitialisedVarsFrame, Tuple{LD, Int, Vector{LK.code}, Int}, false),
+        (LK._setVar!, Tuple{LD, Int, Int}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, D, T, T, T}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, Int, T, T}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
         (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),

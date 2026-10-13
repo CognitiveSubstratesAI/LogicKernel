@@ -130,8 +130,12 @@ function _ranswer(ld::LK.PL_local_data{_R}, goal::_R)::String
     return _rcanonical(t)
 end
 
-_rclause_text(h::_R, b) =
-    b === nothing ? _rsrc(h) * "." : _rsrc(h) * " :- " * _rsrc(b) * "."
+# A clause that ends in a symbol-character atom (`p :- $`) gets a space before its end: `$.` is
+# one atom to the reader.
+function _rclause_text(h::_R, b)::String
+    t = b === nothing ? _rsrc(h) : _rsrc(h) * " :- " * _rsrc(b)
+    return t * (last(t) in "#\$&*+-./:<=>?@^~\\" ? " ." : ".")
+end
 
 # Each query's answers, then `end`: `G det|nondet` per answer — deterministic when the goal left no
 # choice point (`call_cleanup/2` ran its cleanup), as `PL_S_LAST` reports it.

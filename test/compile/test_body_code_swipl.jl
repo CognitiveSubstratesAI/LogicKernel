@@ -1412,7 +1412,20 @@ const _BC_OR_CELLS =
             ("a disjunction in a disjunction's branch", _bf("d20", X),
                 _bconj(
                     _or(_bconj(_or(_bf("q", A), _bf("r", B)), _bf("s", A, B)), _bf("t", C)),
-                    _bf("u", A, B, C)))
+                    _bf("u", A, B, C))),
+            # `$/1` and `$/0` (since V9f): C_DET <A> C_DETTRUE C_JMP C_DETFALSE, and I_DET
+            ("\$ a goal", _bf("d21", X), _bf("\$", _bf("q", X))),
+            ("\$ sets a variable", _bf("d22", X),
+                _bconj(_bf("\$", _bf("q", X, Y)), _bf("r", Y))),
+            ("\$ the atom", _bs("d23"), _bconj(_bs("a"), _bs("\$"), _bs("b"))),
+            ("\$ nested", _bf("d24", X), _bf("\$", _bf("\$", _bf("q", X)))),
+            ("\$ with a cut", _bs("d25"), _bf("\$", _bconj(_bs("a"), _bs("!")))),
+            ("\$ in a branch", _bf("d26", X),
+                _bconj(_or(_bf("\$", _bf("q", X, Y)), _bf("r", X)), _bf("s", Y))),
+            ("\\+ \$", _bs("d27"), _bf("\\+", _bf("\$", _bs("a")))),
+            ("\$ the atom last", _bs("d28"), _bconj(_bs("a"), _bs("\$"))),
+            ("\$ two goals, two variables", _bf("d29", X),
+                _bconj(_bf("\$", _bconj(_bf("q", A), _bf("r", A, B))), _bf("s", B, C)))
         ]
     end
 
@@ -1536,7 +1549,17 @@ const _BC_OR_DECOMPILED = Dict{String, String}(
     "arithmetic in a branch" => "':-'(d17(A,B),';'(is(B,'+'(A,1)),'='(B,0)))",
     "a variable only inside" => "':-'(d18,';'(','(q(A),r(A)),s(B,B)))",
     "after a disjunction that set nothing" => "':-'(d19(A),','(';'(a,b),','(q(A,B),r(B))))",
-    "a disjunction in a disjunction's branch" => "':-'(d20(_),','(';'(','(';'(q(A),r(B)),s(A,B)),t(C)),u(A,B,C)))"
+    "a disjunction in a disjunction's branch" => "':-'(d20(_),','(';'(','(';'(q(A),r(B)),s(A,B)),t(C)),u(A,B,C)))",
+    # `$/1`, `$/0` (since V9f): each equal to swipl's `clause/2` (the differential below)
+    "\$ a goal" => "':-'(d21(A),'\$'(q(A)))",
+    "\$ sets a variable" => "':-'(d22(A),','('\$'(q(A,B)),r(B)))",
+    "\$ the atom" => "':-'(d23,','(a,','('\$',b)))",
+    "\$ nested" => "':-'(d24(A),'\$'('\$'(q(A))))",
+    "\$ with a cut" => "':-'(d25,'\$'(','(a,'!')))",
+    "\$ in a branch" => "':-'(d26(A),','(';'('\$'(q(A,B)),r(A)),s(B)))",
+    "\\+ \$" => "':-'(d27,'\\\\+'('\$'(a)))",
+    "\$ the atom last" => "':-'(d28,','(a,'\$'))",
+    "\$ two goals, two variables" => "':-'(d29(_),','('\$'(','(q(A),r(A,B))),s(B,_)))"
 )
 const _BC_DEC_DECOMPILED = Dict{String, String}(
     "unify with a compound" => "':-'(e1(A),','('='(A,f(B,[a|C],\"s\",1.5)),q(B,C)))",
@@ -1588,6 +1611,13 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         count(startswith("c_var("), named("a run of three")) == 1
     @test count(startswith("c_var("), named("two apart")) == 2
     @test "i_cut" in named("a cut in a branch")                 # a clause-level cut: I_CUT
+    # `$/1` (since V9f, c:2577-2616, c:2793-2826): the block, its success exit jumping over the
+    # failure exit; `$/0`: I_DET
+    @test named("\$ a goal") == ["i_enter", "c_det(1,L1)", "b_var0", "i_call(P:[113]/1)",
+        "c_dettrue(1)", "c_jmp(L2)", "L1:", "c_detfalse", "L2:", "i_exit"]
+    @test "i_det" in named("\$ the atom") && "i_det" in named("\$ the atom last")
+    @test count(startswith("c_det("), named("\$ nested")) == 2
+    @test any(startswith("c_lcut("), named("\$ with a cut"))  # a cut in `$` is local
 
     g = _BcGen(Xoshiro(20261012), UInt64(50_000))
     random = [_bcorclause(g, k) for k in 1:400]
@@ -2878,7 +2908,7 @@ end
 @testset "what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
     for body in (
-        _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
+        _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")),
         _bconj(_bs("q"), _bs("\$reset"))                       # a reserved goal atom (V9)
     )
         @test_throws LK.NotPortedError _bclause(p, body)

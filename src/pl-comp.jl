@@ -35,7 +35,8 @@
 # CONTROL CONSTRUCTS (V9d, one per step): the disjunction `;` (and `|`) since 2026-10-12 —
 # `compileBody!`'s frames, with the variable tables it balances (`setVars`, `balanceVars`, `c_var`,
 # `orVars`, `copyVarTable`) — and the conditionals `(A -> B ; C)`, `(A -> B)` (`allocChoiceVar!`,
-# `try_fast_condition!`), `\+` and the soft-cut `*->`; `$/1` is still refused there, by name (V9f).
+# `try_fast_condition!`), `\+` and the soft-cut `*->`; and, since V9f, `$/1` (`C_DET`, with
+# `det_goal_error` and `start_of_cdet` for its errors) and `$/0` (`I_DET`).
 # THE DECOMPILER (since V9d): `decompile!` rebuilds `Head :- Body` from a clause's code
 # (`decompile_head!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`), and clause/2
 # answers for rule bodies (`pl_clause!` with a body). A clause with a unification moved into its
@@ -2073,6 +2074,9 @@ function compileSubClause!(
             Output_0!(ci, I_CATCH)
             Output_0!(ci, I_EXITCATCH)
             return BOOLEX_TRUE
+        elseif sym_key(arg) == names.atom_dollar               # ATOM_dollar: $ (since V9f)
+            Output_0!(ci, I_DET)
+            return BOOLEX_TRUE
         end
         sym_key(arg) in names.reserved_atoms &&
             throw(
@@ -2202,14 +2206,13 @@ end
     CB_ITE_ELSE             # (A -> B ; C): resume after C
     CB_IT_COND              # (A -> B): resume after A
     CB_IT_THEN              # (A -> B): resume after B
-    CB_NOT_INNER            # (\+ A): resume after A
+    CB_NOT_INNER            # (\+ A) / ($ A): resume after A
 end
 
 # PORT: pl-comp.c cb_frame
-# DIVERGES: the fields of the constructs ported so far (`,`, `;`, `->`, `*->`, `\+`): no `isnot` — a
-# `CB_NOT_INNER` frame is always `\+`'s until `$/1` (V9f) — or `tmsave` (modules). The three
-# variable tables are ONE tuple of three (`nothing` where upstream leaves them unset; `\+` uses
-# the first, `vsave`, alone), so a frame is a flat value.
+# DIVERGES: the fields of the constructs ported so far (`,`, `;`, `->`, `*->`, `\+`, `$`): no
+# `tmsave` (modules). The three variable tables are ONE tuple of three (`nothing` where upstream
+# leaves them unset; `\+` and `$` use the first, `vsave`, alone), so a frame is a flat value.
 "A pending step of `compileBody` (pl-comp.c): the state to restore and the step to run."
 struct cb_frame{T}
     kind::cb_kind
@@ -2222,13 +2225,14 @@ struct cb_frame{T}
     vars::Union{Nothing, NTuple{3, BitVector}}  # vsave, valt1, valt2
     cutsave::cutInfo
     hard::Bool                                  # -> vs *->
+    isnot::Bool                                 # CB_NOT_INNER: \+ (true) vs $ (false)
 end
 
 "`frame` with another `kind` and forward-jump offset: the next step of the same construct."
 _cb_next(frame::cb_frame{T}, kind::cb_kind, tc_jmp::Int=frame.tc_jmp) where {T} =
     cb_frame{T}(
         kind, frame.call, frame.body, frame.a0, frame.var, frame.tc_or, tc_jmp, frame.vars,
-        frame.cutsave, frame.hard
+        frame.cutsave, frame.hard, frame.isnot
     )
 
 # PORT: pl-comp.c allocChoiceVar
@@ -2273,8 +2277,8 @@ function try_fast_condition!(ci::compileInfo, tc_or::Int)::Bool
 end
 
 # PORT: pl-comp.c compileBody
-# DIVERGES: `,`, `;`, `|`, `->`, `*->` and `\+` — the other control constructs (`$/1`: V9f, with
-# the messages `det_goal_error` needs; `:/2`, `@/2`: modules) throw `NotPortedError`, before
+# DIVERGES: `,`, `;`, `|`, `->`, `*->`, `\+` and `$/1` (since V9f) — the other control constructs
+# (`:/2`, `@/2`: modules) throw `NotPortedError`, before
 # anything is emitted; the pending steps (upstream's `cb_frame`s) are a Vector where upstream uses a
 # segstack, so there is no MEMORY_OVERFLOW; no `islocal` (see the file header).
 """
@@ -2285,7 +2289,8 @@ variables each branch leaves unset made fresh (`C_VAR`); `(A -> B ; C)` as
 tests — and `(A -> B)` as `C_IFTHEN <A> C_CUT <B> C_END`, a `!` in the condition cutting locally;
 `(A *-> B ; C)` as `C_SOFTIF <A> C_SOFTCUT <B> C_JMP <C>` and `(A *-> B)` as
 `C_SOFTIFTHEN <A> C_SCUT <B> C_END`;
-`\\+ A` as `C_NOT <A> C_CUT C_FAIL`, the variables A first used made fresh after it.
+`\\+ A` as `C_NOT <A> C_CUT C_FAIL`, the variables A first used made fresh after it;
+`\$(A)` as `C_DET <A> C_DETTRUE C_JMP <fresh variables> C_DETFALSE`.
 Returns `BOOLEX_TRUE` or the first goal's error code.
 """
 function compileBody!(
@@ -2300,7 +2305,9 @@ function compileBody!(
             push!(
                 stack,
                 cb_frame{T}(
-                    CB_COMMA_RHS, call, child(body, 3), body, 0, 0, 0, nothing, ci.cut, true
+                    CB_COMMA_RHS, call, child(body, 3), body, 0, 0, 0, nothing, ci.cut,
+                    true,
+                    true
                 )
             )
             body = child(body, 2)
@@ -2326,7 +2333,7 @@ function compileBody!(
                     stack,
                     cb_frame{T}(
                         CB_ITE_COND, call, body, a0, var, PC(ci), 0, (vsave, valt1, valt2),
-                        ci.cut, hard
+                        ci.cut, hard, true
                     )
                 )
                 # Cut locally in the condition
@@ -2340,7 +2347,7 @@ function compileBody!(
                     stack,
                     cb_frame{T}(
                         CB_SEMI_A, call, body, body, 0, PC(ci), 0, (vsave, valt1, valt2),
-                        ci.cut, true
+                        ci.cut, true, true
                     )
                 )
                 body = child(body, 2)
@@ -2358,26 +2365,30 @@ function compileBody!(
             Output_1!(ci, hard ? C_IFTHEN : C_SOFTIFTHEN, code(var))
             push!(
                 stack,
-                cb_frame{T}(CB_IT_COND, call, body, body, var, 0, 0, nothing, ci.cut, hard)
+                cb_frame{T}(
+                    CB_IT_COND, call, body, body, var, 0, 0, nothing, ci.cut, hard, true
+                )
             )
             ci.cut = cutInfo(var, ci.cut.nextvar, C_LCUTIFTHEN) # Cut locally in the condition
             body = child(body, 2)
             call = I_CALL
             @goto next_body
         end
-        if _has_functor(body, cf.not_provable, 1)              # \+/1
+        if _has_functor(body, cf.not_provable, 1) ||           # \+/1
+            _has_functor(body, cf.dollar, 1)                    # $/1
+            isnot = _has_functor(body, cf.not_provable, 1)
             var = allocChoiceVar!(ld, ci)
             if var == 0
                 rc = BOOLEX_FALSE
                 @goto resume
             end
             vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
-            Output_2!(ci, C_NOT, code(var), code(0))
+            Output_2!(ci, isnot ? C_NOT : C_DET, code(var), code(0))
             push!(
                 stack,
                 cb_frame{T}(
                     CB_NOT_INNER, call, body, body, var, PC(ci), 0, (vsave, vsave, vsave),
-                    ci.cut, true
+                    ci.cut, true, isnot
                 )
             )
             ci.cut = cutInfo(var, ci.cut.nextvar, C_LCUT)
@@ -2387,8 +2398,9 @@ function compileBody!(
         end
         throw(
             NotPortedError{T}(
-                body, "a control construct other than ,/2, ;/2, ->/2, *->/2 and \\+/1",
-                "V9f"
+                body,
+                "a control construct other than ,/2, ;/2, ->/2, *->/2, \\+/1 and \$/1",
+                "modules"
             )
         )
     end
@@ -2472,20 +2484,36 @@ function compileBody!(
     elseif frame.kind == CB_IT_THEN                            # (A -> B) after B
         Output_0!(ci, C_END)
         @goto resume
-    else                                                       # CB_NOT_INNER: (\+ A) after A
+    else                                                       # CB_NOT_INNER: (\+ A) / ($ A) after A
         vsave = (frame.vars::NTuple{3, BitVector})[1]
+        tc_det = 0
         ci.cut = frame.cutsave
-        Output_1!(ci, C_CUT, code(frame.var))
-        Output_0!(ci, C_FAIL)
-        Output_1!(ci, C_JMP, code(0))
-        tc_jmp = PC(ci)
-        ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)     # OpCode(ci, tc_or-1)
-        if balanceVars(vsave, ci.used_var, ci) > 0
-            # copyVarTable(ci->used_var, vsave) is commented out upstream: see its comment
-            ci.codes[tc_jmp] = code(PC(ci) - tc_jmp)           # OpCode(ci, tc_jmp-1)
-        else                                                   # delete the jmp
-            resize!(ci.codes, tc_jmp - 2)                      # seekBuffer(&ci->codes, tc_jmp-2)
+        if frame.isnot
+            Output_1!(ci, C_CUT, code(frame.var))
+            Output_0!(ci, C_FAIL)
+        else
+            Output_1!(ci, C_DETTRUE, code(frame.var))
+            Output_1!(ci, C_JMP, code(0))
+            tc_det = PC(ci)
+        end
+        if frame.isnot
+            Output_1!(ci, C_JMP, code(0))
+            tc_jmp = PC(ci)
+            ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or) # OpCode(ci, tc_or-1)
+            if balanceVars(vsave, ci.used_var, ci) > 0
+                # copyVarTable(ci->used_var, vsave) is commented out upstream: see its comment
+                ci.codes[tc_jmp] = code(PC(ci) - tc_jmp)       # OpCode(ci, tc_jmp-1)
+            else                                               # delete the jmp
+                resize!(ci.codes, tc_jmp - 2)                  # seekBuffer(&ci->codes, tc_jmp-2)
+                ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)
+            end
+        else                                                   # $(Goal)
+            balanceVars(vsave, ci.used_var, ci)
             ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)
+        end
+        if !frame.isnot
+            Output_0!(ci, C_DETFALSE)
+            ci.codes[tc_det] = code(PC(ci) - tc_det)           # OpCode(ci, tc_det-1)
         end
         @goto resume
     end
@@ -2658,7 +2686,7 @@ end
 """
     compileGoalClause(gd, ld, goal, m, base) -> Clause, or nothing
 
-Compile `goal`, under the bindings in `ld`, to a temporary clause of `\$call/1` in module `m` for the
+Compile `goal`, under the bindings in `ld`, to a temporary clause of `'<meta-call>'/1` in module `m` for the
 frame at `base` (= `lTop`), writing its pseudo variables' cells as upstream does (pl-comp.c).
 """
 function compileGoalClause(
@@ -3281,11 +3309,22 @@ mutable struct decompileInfo{T}
     const base::UInt64                          # (variables: slot i's variable is key base + i)
     const argp::Vector{T}                       # argp: the decompilation stack
     const frames::Vector{DecompileFrame{T}}     # (the compounds being built)
+    # variables, when the clause runs in a frame (`decompile_body_range`): the local stack's slots
+    # and the frame's position — slot i's term is the frame's own; `nothing`: fresh variables
+    const variables::Union{Nothing, Tuple{Vector{T}, Int}}
 end
 
+decompileInfo{T}(
+    clause::Clause{T}, pc::Int, base::UInt64, argp::Vector{T},
+    frames::Vector{DecompileFrame{T}}
+) where {T} = decompileInfo{T}(clause, pc, base, argp, frames, nothing)
+
 "The variable of the slot at frame offset `index` (upstream's `makeVarRef`, resolved at once)."
-_dvar(di::decompileInfo{T}, index::code) where {T} =
-    mk_var(T, di.base + (index - VAROFFSET(0)))
+function _dvar(di::decompileInfo{T}, index::code)::T where {T}
+    v = di.variables
+    v === nothing && return mk_var(T, di.base + (index - VAROFFSET(0)))
+    return v[1][varFrameP(v[2], Int(index)) + 1]            # the running frame's own cell
+end
 
 "Push `v`: an argument of the compound being built, or the next value on the decompilation stack (`*ARGP++ = v`)."
 function _dpush!(di::decompileInfo{T}, v::T)::Nothing where {T}
@@ -3330,7 +3369,7 @@ end
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
 # upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`, modules and `$/1` (V9f-b, R2).
+# arithmetic instructions but `A_ADD_FC`, and modules (R2).
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
 each goal is built on the decompilation stack from its arguments' instructions, and the goals are
@@ -3530,6 +3569,16 @@ function decompileBodyNoShift!(
             di.pc += 3                                          # skip C_CUT <n> and C_FAIL
             build_term!(di, mk_sym(T, Symbol("\\+")), 1)
             pushed += 1
+        elseif op == C_DET                                      # $ A
+            di.pc += 2                                          # skip the two arguments
+            decompileBodyNoShift!(di, C_DETTRUE, 0)             # A
+            while true                                          # Skip to after C_DETFALSE
+                op = codes[di.pc]
+                di.pc += 1 + codeTable(op).arguments            # stepPC(PC)
+                op == C_DETFALSE && break
+            end
+            build_term!(di, mk_sym(T, Symbol("\$")), 1)
+            pushed += 1
         elseif op == C_IFTHEN || op == C_SOFTIFTHEN             # A -> B, A *-> B (c_ifthen)
             cut = op == C_IFTHEN ? C_CUT : C_SCUT               # C_CUT takes 1 arg, C_SCUT 0
             di.pc += 1
@@ -3541,6 +3590,9 @@ function decompileBodyNoShift!(
             pushed += 1
         elseif op == I_CATCH                                    # (since V9f)
             push!(di.argp, mk_sym(T, Symbol("\$catch")))
+            pushed += 1
+        elseif op == I_DET                                      # (since V9f)
+            push!(di.argp, mk_sym(T, Symbol("\$")))
             pushed += 1
         elseif op == I_EXIT || op == I_EXITCATCH
             # break (out of upstream's switch): nothing
@@ -3620,6 +3672,118 @@ function decompile!(
     end
     di = decompileInfo{T}(clause, pc, base, T[], DecompileFrame{T}[])
     return decompileBody!(ld, di, body, I_EXIT, 0)
+end
+
+# PORT: pl-comp.c decompile_body_range
+# DIVERGES: the frame's variables are the local stack's slots and the frame's position (see
+# `decompileInfo`); `start` is an index into the clause's code.
+"""
+Decompile the body code of `clause` from `start` up to the instruction `end_` into term reference
+`goal`, with the variables of the running frame `fr` (pl-comp.c).
+"""
+function decompile_body_range(
+    ld::PL_local_data{T}, goal::term_t, fr::Int, clause::Clause{T}, start::Int, end_::code
+)::Bool where {T}
+    variables = clause.prolog_vars != 0 ? (ld.slots, ld.frames[fr].base) : nothing
+    di = decompileInfo{T}(clause, start, UInt64(0), T[], DecompileFrame{T}[], variables)
+    return decompileBody!(ld, di, ld.slots[goal + 1], end_, 0)
+end
+
+# PORT: pl-comp.c start_of_cdet
+# DIVERGES: positions are indexes into the clause's code.
+"""
+The `C_DET` that starts the guarded area whose `C_DETTRUE` or `C_DETFALSE` is at `pc_error`
+(pl-comp.c): walking the clause's code, a `C_DET` whose `C_DETFALSE` is the error location is it;
+for a `C_DETTRUE` it is the one with only `C_JMP` and variable balancing between that and its
+`C_DETFALSE`.
+"""
+function start_of_cdet(cl::Clause{T}, pc_error::Int)::Int where {T}
+    codes = cl.codes
+    pc = 1
+    while pc <= length(codes)
+        c = codes[pc]
+        if c == C_DET
+            pcfalse = pc + Int(codes[pc + 2]) + 3
+            @assert codes[pcfalse] == C_DETFALSE
+            pc_error == pcfalse && return pc
+
+            if codes[pc_error] == C_DETTRUE
+                pc2 = pc_error
+                found = true
+                while pc2 < pcfalse
+                    c2 = codes[pc2]
+                    if !(c2 == C_DETTRUE || c2 == C_JMP || c2 == C_VAR_N || c2 == C_VAR)
+                        found = false                           # goto continue_outer
+                        break
+                    end
+                    pc2 += 1 + codeTable(c2).arguments          # stepPC(pc2)
+                end
+                found && return pc
+            end
+        end
+        pc += 1 + codeTable(c).arguments                        # stepPC(pc)
+    end
+    return error("start_of_cdet: no C_DET for the instruction at $pc_error")    # assert(0)
+end
+
+# PORT: pl-comp.c det_goal_error
+# DIVERGES: the flag is the local data's `prolog_flag_determinism_error`; `found` is a symbol;
+# `pc_error` an index into the frame's clause's code. NOT PORTED: the `DEBUG(MSG_DETERMINISM)` line.
+"""
+    det_goal_error(ld, fr, pc_error, found) -> Bool
+
+The goal of a `\$/1` in frame `fr` — its `C_DETTRUE` or `C_DETFALSE` is at `pc_error` — was not
+deterministic: `found` is `:nondet` or `:fail` (pl-comp.c). Under the flag `determinism_error`:
+`error` raises `determinism_error(Goal, det, Found, goal)` and returns false, `warning` reports it
+and returns true, `silent` returns true.
+"""
+function det_goal_error(
+    ld::PL_local_data{T}, fr::Int, pc_error::Int, found::Symbol
+)::Bool where {T}
+    cl = (ld.frames[fr].clause::ClauseRef{T}).clause::Clause{T}
+    pc_det = start_of_cdet(cl, pc_error)
+    a = ld.prolog_flag_determinism_error
+    a === :silent && return true
+
+    if found === :fail
+        clearUninitialisedVarsFrame(ld, fr, cl.codes, pc_det)
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        goal = PL_new_term_ref(ld)
+        rc = decompile_body_range(ld, goal, fr, cl, pc_det + 3, C_DETTRUE)
+        if rc
+            if a === :warning
+                rc = printMessage(
+                    ld,
+                    :warning,
+                    mk_expr(
+                        T,
+                        T[
+                            mk_sym(T, :error),
+                            mk_expr(
+                                T,
+                                T[
+                                    mk_sym(T, :determinism_error), ld.slots[goal + 1],
+                                    mk_sym(T, :det), mk_sym(T, found), mk_sym(T, :goal)
+                                ]
+                            ),
+                            mk_var(T, fresh_var_keys!(1))
+                        ]
+                    )
+                )
+            else
+                rc = PL_error(ld, ERR_DET_GOAL, goal, mk_sym(T, :det), mk_sym(T, found))
+            end
+        end
+
+        PL_close_foreign_frame(ld, fid)
+
+        return rc
+    end
+
+    return false
 end
 
 "Where a rule's body code starts: after its `I_ENTER` (upstream's `di->pc` after `decompile_head`)."

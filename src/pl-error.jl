@@ -50,6 +50,8 @@
     ERR_PERMISSION_PROC             # op, type, Definition
     ERR_EXISTENCE                   # atom_t type, term_t obj
     ERR_STREAM_OP                   # atom_t action, term_t obj
+    ERR_DETERMINISM                 # Definition def, atom_t expected, atom_t found, atom_t decl
+    ERR_DET_GOAL                    # term_t goal, atom_t expected, atom_t found
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -420,6 +422,54 @@ function PL_error(
         T, T[mk_sym(T, :permission_error), action, type, ld.slots[obj + 1]]
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+"""
+    PL_error(ld, ERR_DETERMINISM, def, expected, found, decl) -> false
+
+Raise `error(determinism_error(Name/Arity, Expected, Found, Decl), context(Caller, _))` for the
+predicate `def` (pl-error.c): `decl` is `guard`, `guard_in_caller` or `property`.
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, def::Definition{T}, expected::T, found::T,
+    decl::T
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_DETERMINISM
+    gd = _query_gd(ld)
+    pi = unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM)
+    ld.slots[formal + 1] = mk_expr(
+        T, T[mk_sym(T, :determinism_error), pi, expected, found, decl]
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
+    PL_error(ld, ERR_DET_GOAL, goal::term_t, expected, found) -> false
+
+Raise `error(determinism_error(Goal, Expected, Found, goal), context(Caller, _))` for the goal of a
+`\$/1` (pl-error.c).
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, goal::term_t, expected::T, found::T
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_DET_GOAL
+    ld.slots[formal + 1] = mk_expr(
+        T,
+        T[
+            mk_sym(T, :determinism_error),
+            ld.slots[goal + 1],
+            expected,
+            found,
+            mk_sym(T, :goal)
+        ]
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
 # PORT: pl-error.c PL_get_stdbool_ex

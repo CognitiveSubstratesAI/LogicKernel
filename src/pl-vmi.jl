@@ -18,14 +18,16 @@
 # then V5a2's deterministic foreign calls (`I_FCALLDET0 + arity` needs the eleven consecutive), then
 # V6b's type tests (`I_VAR` … `I_CALLABLE`, in pl-vmi.c's order), then V8's `A_ADD_FC`, then V9a's
 # inline unification family (`B_UNIFY_FIRSTVAR` … `B_NEQ_VC`, `C_VAR`, `I_FAIL`, `I_TRUE`, in
-# pl-vmi.c's order).
+# pl-vmi.c's order), then V9d's control constructs (`C_JMP` … `C_LSCUT`), V9e's meta-call
+# (`I_CALL1`, `I_CALLN`) and V9f's `I_CATCH`, `I_EXITCATCH`, `I_DET`, `C_DET`, `C_DETTRUE`,
+# `C_DETFALSE`.
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
-# probed in 10.1.16); the SSU instructions; `B_ARG_*`, the meta-call (`I_CALL1`, `I_USERCALL0`,
-# `I_CALLN`), the module calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`) and the control constructs (`C_*`
-# but `C_VAR`): V9. `I_CUT` is declared and compiled (a clause-level `!`, user 2026-10-05) and, since
-# V6a, executed.
+# probed in 10.1.16); the SSU instructions; `B_ARG_*`, `I_USERCALL0` (its work is `I_CALL1`'s
+# here), the module calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`), `I_RESET`, `I_CALLCLEANUP`,
+# `I_CUTCHP`, `I_YIELD` (V9g and after). `I_CUT` is declared and compiled (a clause-level `!`, user
+# 2026-10-05) and, since V6a, executed.
 #
 # OPERANDS: every literal operand (`*_ATOM`, `*_SMALLINT`, `*_FLOAT`, `*_MPZ`, `*_MPQ`, `*_STRING`)
 # is ONE word, the index of the literal in the clause's literal table (V1 L2), where upstream
@@ -474,6 +476,18 @@ const I_CATCH = code(122)
 # PORT: pl-vmi.c I_EXITCATCH
 "`catch/3`'s exit: drop its `CHP_CATCH` if the goal left no choice point (pl-vmi.c)."
 const I_EXITCATCH = code(123)
+# PORT: pl-vmi.c I_DET
+"`\$/0`: cut, and the clause must then succeed without a choice point (pl-vmi.c)."
+const I_DET = code(124)
+# PORT: pl-vmi.c C_DET
+"`\$(Goal)`: start a block that must succeed without a choice point; as `C_NOT` (pl-vmi.c)."
+const C_DET = code(125)
+# PORT: pl-vmi.c C_DETTRUE
+"`\$(Goal)` after `Goal`: a choice point left is a determinism error (pl-vmi.c)."
+const C_DETTRUE = code(126)
+# PORT: pl-vmi.c C_DETFALSE
+"`\$(Goal)` when `Goal` failed: a determinism error (pl-vmi.c)."
+const C_DETFALSE = code(127)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -614,7 +628,11 @@ const _CODE_TABLE = (
     code_info(:I_CALL1, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_CALLN, VIF_BREAK, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
     code_info(:I_CATCH, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:I_EXITCATCH, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:I_EXITCATCH, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_DET, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:C_DET, 0x00, 2, (CA1_CHP, CA1_JUMP, 0x00, 0x00)),
+    code_info(:C_DETTRUE, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
+    code_info(:C_DETFALSE, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

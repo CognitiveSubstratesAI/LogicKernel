@@ -91,6 +91,7 @@ struct SubClauseNames
     atom_cut::UInt64                            # ATOM_cut: `!`
     reserved_atoms::Set{UInt64}                 # the goal atoms compiled inline
     atom_dcatch::UInt64                         # ATOM_dcatch: `$catch` (since V9f)
+    atom_dollar::UInt64                         # ATOM_dollar: `$` (since V9f)
     atom_var::UInt64                            # FUNCTOR_var1's name
     atom_nonvar::UInt64                         # FUNCTOR_nonvar1's name
     type_tests::NTuple{9, UInt64}               # type_tests[]'s names (pl-comp.c), in its order
@@ -124,7 +125,7 @@ function _subclause_names(::Type{T})::SubClauseNames where {T}
     end
     return SubClauseNames(
         _name_key(T, "true"), _name_key(T, "fail"), _name_key(T, "call"), _name_key(T, "!"),
-        atoms, _name_key(T, "\$catch"),
+        atoms, _name_key(T, "\$catch"), _name_key(T, "\$"),
         _name_key(T, "var"), _name_key(T, "nonvar"),
         (
             _name_key(T, "integer"), _name_key(T, "rational"), _name_key(T, "float"),

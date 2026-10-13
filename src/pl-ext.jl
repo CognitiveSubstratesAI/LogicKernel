@@ -162,7 +162,8 @@ end
 function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T}
     m = MODULE_system(gd)
     gd.procedures_equals2 = lookupProcedure(mk_sym(T, :(=)), 2, m)   # LOOKUPPROC(equals2)
-    gd.procedures_dcall1 = lookupProcedure(mk_sym(T, Symbol("\$call")), 1, m)   # LOOKUPPROC(dcall1)
+    # ATOM_dcall's text is `<meta-call>` (src/ATOMS: `A dcall "<meta-call>"`), not `$call`
+    gd.procedures_dcall1 = lookupProcedure(mk_sym(T, Symbol("<meta-call>")), 1, m)  # LOOKUPPROC(dcall1)
     d = gd.procedures_dcall1.definition                 # allow debugging in call/1
     d.flags &= ~(HIDE_CHILDS | TRACE_ME)
     d.flags |= P_DYNAMIC | P_LOCKED

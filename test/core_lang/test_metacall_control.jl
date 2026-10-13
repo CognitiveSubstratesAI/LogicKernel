@@ -328,10 +328,8 @@ end
 
 @testset "call/1 of control constructs: what stays refused, by name" begin
     X = _rv(71)
-    for g in (
-        _rf("c", _rf("@", _rf("p", X), _rs("user"))),                   # Goal@Module (R2)
-        _rf("c", _rconj(_rf("p", X), _rf("\$", _rf("q", _rv(72)))))      # $/1 (V9f)
-    )
+    # (`$/1` was refused here until V9f-b: test_det_swipl.jl calls one through call/1)
+    for g in (_rf("c", _rf("@", _rf("p", X), _rs("user"))),)            # Goal@Module (R2)
         db = _rdb(_rmcc_clauses())                                      # a refusal abandons the query
         @test_throws LK.NotPortedError _rcall(db, g)
     end

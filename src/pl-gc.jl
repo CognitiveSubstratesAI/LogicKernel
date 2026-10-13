@@ -7,8 +7,9 @@
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
 # What the kernel takes from SWI-Prolog's garbage collector (pl-gc.c, pl-gc.h): finding the
-# generations the predicates are being executed in, for clause GC, and growing the local stack.
-# Stack garbage collection and stack shifting are not the kernel's.
+# generations the predicates are being executed in, for clause GC, growing the local stack, and
+# (since V9f) `clearUninitialisedVarsFrame`. Stack garbage collection and stack shifting are not
+# the kernel's.
 
 # PORT: pl-gc.c markPredicatesInEnvironments
 # DIVERGES: walks the live FRAME RECORDS where upstream scans every word of the local stack below
@@ -166,4 +167,53 @@ function ensureLocalSpace(ld::PL_local_data{T}, n::Int)::Bool where {T}
         return true
     end
     return raiseStackOverflow(ld, rc)
+end
+
+"Make the cell at offset `n` of the frame at `base` a variable (`setVar(varFrame(fr, n))`)."
+function _setVar!(ld::PL_local_data{T}, base::Int, n::Int)::Nothing where {T}
+    ld.slots[varFrameP(base, n) + 1] = mk_var(T, fresh_var_keys!(1))
+    return nothing
+end
+
+# PORT: pl-gc.c clearUninitialisedVarsFrame
+# DIVERGES: `PC` is the clause's code and an index into it; a cell is set to a FRESH variable, where
+# upstream's `setVar` makes the cell itself the variable (decision 2). The instructions walked are
+# the ones the kernel declares — not `I_EXITRESET`, `I_FEXITNDET`, `I_FREDO`, `A_FIRSTVAR_IS`,
+# `B_ARG_CF`, `B_ARG_VF`.
+"""
+    clearUninitialisedVarsFrame(ld, fr, codes, pc)
+
+Assuming frame `fr`'s clause resumes at `codes[pc]`, set the variables the code from there still
+has to initialise to variables (pl-gc.c): what reads the frame meanwhile — the decompiler of
+`det_goal_error` — then finds no stale cell.
+"""
+function clearUninitialisedVarsFrame(
+    ld::PL_local_data{T}, fr::Int, codes::Vector{code}, pc::Int
+)::Nothing where {T}
+    base = ld.frames[fr].base
+    while true
+        c = codes[pc]
+        while c == C_JMP || c == L_NOLCO                        # jumps
+            pc += Int(codes[pc + 1]) + 2
+            c = codes[pc]
+        end
+        if c == I_EXIT || c == I_EXITFACT || c == I_EXITCATCH || c == I_EXITQUERY ||
+            c == I_FEXITDET || c == I_FCALLDETVA || c == S_TRUSTME || c == S_LIST
+            return nothing                                      # terminate code list
+        elseif c == H_FIRSTVAR || c == B_FIRSTVAR || c == B_ARGFIRSTVAR ||
+            c == B_UNIFY_FIRSTVAR || c == C_VAR                 # Firstvar assignments
+            _setVar!(ld, base, Int(codes[pc + 1]))
+        elseif c == C_VAR_N
+            var = Int(codes[pc + 1])
+            for i in 0:(Int(codes[pc + 2]) - 1)
+                _setVar!(ld, base, var + i)
+            end
+        elseif c == H_LIST_FF || c == B_UNIFY_FF
+            _setVar!(ld, base, Int(codes[pc + 1]))
+            _setVar!(ld, base, Int(codes[pc + 2]))
+        elseif c == B_UNIFY_FV || c == B_UNIFY_VF || c == B_UNIFY_FC || c == A_ADD_FC
+            _setVar!(ld, base, Int(codes[pc + 1]))
+        end
+        pc += 1 + codeTable(c).arguments                        # stepPC(PC)
+    end
 end

@@ -404,6 +404,109 @@ end
     FINISH_EXCEPT
 end
 
+# PORT: pl-wam.c determinism_error
+# DIVERGES: `bfr` is a choice point's index (0: none) and the age test compares positions; the flag
+# is the local data's `prolog_flag_determinism_error`; `found` and the declaration are symbols.
+"""
+    determinism_error(ld, fr, bfr, found) -> Bool
+
+Frame `fr`, which must be deterministic — a `\$/0` guard, in it or in a caller, or the `det`
+property — `found` otherwise: `:nondet` (it exits with choice point `bfr` left) or `:fail`
+(pl-wam.c). Under the flag `determinism_error`: `error` raises
+`determinism_error(PI, det, Found, Decl)` and returns false; `warning` reports it and returns true;
+`silent` returns true. A `:nondet` whose `bfr` is older than the frame is no error: true.
+"""
+function determinism_error(
+    ld::PL_local_data{T}, fr::Int, bfr::Int, found::Symbol
+)::Bool where {T}
+    rc = false
+    if found === :nondet
+        while bfr != 0 && ld.choices[bfr].type == CHP_DEBUG
+            bfr = ld.choices[bfr].parent
+        end
+        if bfr == 0 || ld.choices[bfr].base < ld.frames[fr].base   # (void*)bfr < (void*)fr
+            return true
+        end
+    end
+
+    a = ld.prolog_flag_determinism_error
+    a === :silent && return true
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        f = ld.frames[fr]
+        def = f.predicate::Definition{T}
+        if (f.flags & FR_DETGUARD) != 0
+            if (f.flags & FR_DETGUARD_SET) != 0
+                decl = :guard
+            else
+                decl = :guard_in_caller
+                fr2 = f.parent
+                while fr2 != 0
+                    if (ld.frames[fr2].flags & FR_DETGUARD_SET) != 0
+                        def = ld.frames[fr2].predicate::Definition{T}
+                        break
+                    end
+                    fr2 = ld.frames[fr2].parent
+                end
+            end
+        else
+            decl = :property
+            if (def.flags & P_DET) == 0
+                fr2 = f.parent
+                while fr2 != 0
+                    def2 = ld.frames[fr2].predicate::Definition{T}
+                    if (def2.flags & P_DET) != 0
+                        def = def2
+                        break
+                    end
+                    fr2 = ld.frames[fr2].parent
+                end
+            end
+        end
+
+        if a === :warning
+            gd = _query_gd(ld)
+            pi = unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM)
+            rc = printMessage(
+                ld,
+                :warning,
+                mk_expr(
+                    T,
+                    T[
+                        mk_sym(T, :error),
+                        mk_expr(
+                            T,
+                            T[
+                                mk_sym(T, :determinism_error), pi, mk_sym(T, :det),
+                                mk_sym(T, found), mk_sym(T, decl)
+                            ]
+                        ),
+                        mk_var(T, fresh_var_keys!(1))
+                    ]
+                )
+            )
+        else
+            rc = PL_error(
+                ld, ERR_DETERMINISM, def, mk_sym(T, :det), mk_sym(T, found), mk_sym(T, decl)
+            )
+        end
+
+        PL_close_foreign_frame(ld, fid)
+    end
+
+    return rc
+end
+
+# PORT: pl-wam.c ssu_or_det_failed
+# DIVERGES: NOT PORTED: the `FR_SSU_DET` branch (`existence_error(matching_rule, Goal)`: SSU is not
+# ported, nothing sets the flag — asserted).
+"Frame `fr`, which must not fail, failed: the determinism error (pl-wam.c)."
+function ssu_or_det_failed(ld::PL_local_data{T}, fr::Int)::Bool where {T}
+    @assert (ld.frames[fr].flags & FR_SSU_DET) == 0
+    return determinism_error(ld, fr, 0, :fail)
+end
+
 # PORT: pl-wam.c is_exception_finish
 # DIVERGES: `reason_decls`' `is_exception` column, written as the set it marks.
 "Whether `reason` finishes a frame because of an exception (pl-wam.c)."
@@ -417,6 +520,23 @@ function leaveFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     ld.frames[fr].clause = nothing
     # leaveDefinition(fr->predicate): (void)0 upstream (pl-incl.h:1303)
     return nothing
+end
+
+# PORT: pl-wam.c frameFailed
+# DIVERGES: NOT PORTED: `frameFinished(fr, FINISH_FAIL)` — the cleanup handler of an `FR_WATCHED`
+# frame (setup_call_cleanup/3, V9g; the caller asserts the flag absent) and the event hook.
+"Frame `fr` failed: report a frame that must not (pl-wam.c). False when that raised an exception."
+function frameFailed(ld::PL_local_data{T}, fr::Int)::Bool where {T}
+    ld.environment_frame = fr
+    f = ld.frames[fr]
+    setLTop!(ld, argFrameP(f.base, (f.predicate::Definition{T}).arity))
+
+    if (f.flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0
+        ssu_or_det_failed(ld, fr)
+        ld.exception_term != 0 && return false
+    end
+
+    return true                                     # frameFinished(fr, FINISH_FAIL)
 end
 
 # PORT: pl-wam.c discardFrame
@@ -895,7 +1015,7 @@ const VMI_RUN = (
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
     :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT,
-    :I_CALL1, :I_CALLN, :I_CATCH, :I_EXITCATCH
+    :I_CALL1, :I_CALLN, :I_CATCH, :I_EXITCATCH, :I_DET, :C_DET, :C_DETTRUE, :C_DETFALSE
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1264,7 +1384,8 @@ end
 # named for the helper. Instructions not ported yet raise `NotPortedError` (their step in
 # port_inventory). Blocks for subsystems not ported are marked `NOT PORTED` where they stand: the
 # signals, debugger, profiler, depth and inference limits of `LD->alerted`; `FR_WATCHED`
-# (`frameFinished`: setup_call_cleanup, V9); `FR_DET`/`FR_DETGUARD` (det declarations); yield.
+# (`frameFinished`: setup_call_cleanup, V9); `FR_DET` (the `det` property: nothing sets it — the
+# `$/0` guard's `FR_DETGUARD` is ported, V9f); yield.
 """
     PL_next_solution_guarded(gd, ld, qid, except) -> Int
 
@@ -2202,7 +2323,7 @@ function PL_next_solution_guarded(
             mc_cl = try
                 compileGoalClause(gd, ld, mc_goal, gd.modules[mc_mi], mc_nb)
             catch mc_e
-                # a construct the compiler refuses by name (`$/1`, `Module:Goal`, …): a Julia
+                # a construct the compiler refuses by name (`Module:Goal`, …): a Julia
                 # exception, which unwinds the frame being filled from below lTop
                 mc_e isa NotPortedError && setLTop!(ld, argFrameP(mc_nb, 1))
                 rethrow()
@@ -2321,8 +2442,9 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c exit_continue
     # DIVERGES: lowering `lTop` to the frame drops its record and everything above it (decision 3),
-    # and the record is still read after, as here (since V3). `FR_WATCHED` (`frameFinished`) and
-    # `FR_DET`/`FR_DETGUARD` (`determinism_error`) are NOT PORTED: nothing sets them yet; asserted.
+    # and the record is still read after, as here (since V3). `FR_WATCHED` (`frameFinished`) is
+    # NOT PORTED: nothing sets it yet; asserted. `FR_DET`/`FR_DETGUARD` (`determinism_error`): since
+    # V9f (`$/0` sets the guard; the `det` property's `FR_DET` is still set by nothing).
     @label exit_continue
     ec_f = ld.frames[FR]
     if ld.BFR == 0 || ld.choices[ld.BFR].base <= ec_f.base   # deterministic
@@ -2332,7 +2454,14 @@ function PL_next_solution_guarded(
         lowerLTop!(ld, ec_f.base)                   # lTop = FR
     else
         ec_f.flags &= ~FR_INBOX
-        @assert (ec_f.flags & (FR_DET | FR_DETGUARD)) == 0
+        if (ec_f.flags & (FR_DET | FR_DETGUARD)) != 0
+            @SAVE_REGISTERS(QID)
+            determinism_error(ld, FR, ld.BFR, :nondet)
+            @LOAD_REGISTERS(QID)
+            if ld.exception_term != 0
+                @goto b_throw                       # THROW_EXCEPTION
+            end
+        end
     end
 
     PCc = ec_f.programPointer.codes
@@ -2461,6 +2590,11 @@ function PL_next_solution_guarded(
     tcallSetNextFrameFlags(ld.frames[FR])
     ld.frames[FR].clause = nothing
     @goto depart_or_retry_continue
+
+    # PORT: pl-vmi.c I_DET
+    @label I_DET
+    ld.frames[FR].flags |= FR_DETGUARD | FR_DETGUARD_SET       # set(FR, FR_DETGUARD|FR_DETGUARD_SET)
+    @goto I_CUT
 
     # PORT: pl-vmi.c I_CUT
     # DIVERGES: the age test compares positions (`base`), as `discardChoicesAfter`'s. NOT PORTED: the
@@ -2707,6 +2841,46 @@ function PL_next_solution_guarded(
     @label C_NOT
     @goto C_IFTHENELSE
 
+    # PORT: pl-vmi.c C_DET
+    @label C_DET
+    @goto C_IFTHENELSE
+
+    # PORT: pl-vmi.c C_DETTRUE
+    # DIVERGES: the slot holds the choice point's position (see `C_IFTHENELSE`), so `ch->parent ==
+    # och` compares the parent's position. The block's own choice point, taken out of the chain while
+    # its stack region stays in use (upstream lowers nothing here), is marked `unlinked`, as
+    # `C_SOFTCUT`'s: the pools hold live records only (decision 3).
+    @label C_DETTRUE
+    cdt_och = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    cdt_ch = ld.BFR
+    cdt_parent = ld.choices[cdt_ch].parent
+    if cdt_parent != 0 && ld.choices[cdt_parent].base == cdt_och    # ch->parent == och
+        @assert ld.choices[cdt_ch].type == CHP_JUMP
+        ld.choices[cdt_ch].unlinked = true
+        ld.BFR = cdt_parent                         # BFR = och
+        @assert PCc[PC + 1] == C_JMP                # assert(PC[1] == encode(C_JMP))
+        PC += Int(PCc[PC + 2])
+        PC += 3
+        @goto next_instruction
+    end
+    @SAVE_REGISTERS(QID)
+    det_goal_error(ld, FR, PC - 1, :nondet)
+    @LOAD_REGISTERS(QID)
+    if ld.exception_term != 0
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+    @goto C_CUT
+
+    # PORT: pl-vmi.c C_DETFALSE
+    @label C_DETFALSE
+    @SAVE_REGISTERS(QID)
+    det_goal_error(ld, FR, PC - 1, :fail)
+    @LOAD_REGISTERS(QID)
+    if ld.exception_term != 0
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+    @goto shallow_backtrack                         # BODY_FAILED
+
     # PORT: pl-vmi.c C_FAIL
     @label C_FAIL
     @goto shallow_backtrack                         # BODY_FAILED
@@ -2880,8 +3054,8 @@ function PL_next_solution_guarded(
     # QUIRK, as upstream (vmi:3358): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds
     # `arity` whole frames — `8·arity` positions, not `arity` (probed live: after a failing query of
     # f/1 the next term reference lies at qf+61, of h/2 at qf+69). `chp` is the local data's scratch
-    # `clause_choice` where upstream's is on the C stack. NOT PORTED: the debugger's and the det
-    # declarations' `CHP_DEBUG` choice point.
+    # `clause_choice` where upstream's is on the C stack. With no clause, a frame that must not fail
+    # (`FR_DETGUARD`, since V9f) gets upstream's `CHP_DEBUG` choice point; NOT PORTED: the debugger's.
     @label S_STATIC
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
     setLTop!(ld, ARGP.pos + DEF.arity * SIZEOF_LOCALFRAME)
@@ -2893,6 +3067,9 @@ function PL_next_solution_guarded(
         ld, argv_frame(ld, ARGP.pos), generationFrame(ld.frames[FR]), DEF, ss_chp
     )
     if ss_cl === nothing
+        if (ld.frames[FR].flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0
+            newChoice(ld, CHP_DEBUG, FR)            # (`debugstatus.debugging`: no debugger)
+        end
         @goto deep_backtrack                        # FRAME_FAILED
     end
 
@@ -3152,9 +3329,11 @@ function PL_next_solution_guarded(
     # DIVERGES: frames and choice points are compared by `base`; the popped `CHP_CLAUSE` choice point
     # and the records above it are dropped before `lTop` is set (user, 2026-10-05); `chp` is the local
     # data's scratch `clause_choice`. `CHP_TOP` leaves `lTop` where it is, as upstream:
-    # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`,
-    # `CHP_DEBUG`), `frameFailed` for `FR_WATCHED`/det frames (asserted absent), the `LD->alerted`
-    # block, the inference count. `CHP_JUMP` (since V9d): the code registers are reloaded from the
+    # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`),
+    # `frameFinished` for an `FR_WATCHED` frame (asserted absent), the `LD->alerted` block, the
+    # inference count. Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
+    # choice point of such a frame (`S_STATIC` with no clause) — the popped record and the dead ones
+    # above it are dropped at once, as at `CHP_CATCH`. `CHP_JUMP` (since V9d): the code registers are reloaded from the
     # frame's clause, because `value.pc` is an index into it where upstream's is an address.
     # `CHP_CATCH` (since V9f): the popped record and the dead ones above it are dropped at once, as
     # at `CHP_CLAUSE`; its `FR_WATCHED` branch (`callCleanupHandler`: setup_call_cleanup/3) is NOT
@@ -3162,8 +3341,15 @@ function PL_next_solution_guarded(
     @label deep_backtrack                           # next_choice:
     while FR != 0 && ld.frames[FR].base > ld.choices[ld.BFR].base     # NULL is below every choice
         leaveFrame(ld, FR)                          # LEAVE_FAILED_FRAME(FR)
-        @assert (ld.frames[FR].flags & (FR_WATCHED | FR_SSU_DET | FR_DET | FR_DETGUARD)) ==
-            0
+        @assert (ld.frames[FR].flags & FR_WATCHED) == 0
+        if (ld.frames[FR].flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0
+            @SAVE_REGISTERS(QID)
+            frameFailed(ld, FR)
+            @LOAD_REGISTERS(QID)
+            if ld.exception_term != 0
+                @goto b_throw                       # THROW_EXCEPTION
+            end
+        end
         if ld.frames[FR].base >= ld.lTop            # its own call failed before it was filled
             _drop_unfilled_frame!(ld, FR)
         end
@@ -3233,6 +3419,21 @@ function PL_next_solution_guarded(
     elseif db_c.type == CHP_CATCH                   # catch/3 & setup_call_cleanup/3
         @assert (ld.frames[FR].flags & FR_WATCHED) == 0
         ld.frames[FR].flags |= FR_CAUGHT            # set(BFR->frame, FR_CAUGHT)
+        DiscardMark(ld, db_c.mark)
+        ld.BFR = db_c.parent
+        dropRecords!(ld, db_c.base)                 # the popped choice point and all above it
+        @goto deep_backtrack                        # goto next_choice
+    elseif db_c.type == CHP_DEBUG                   # Just for debugging purposes
+        if (ld.frames[FR].flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0 &&
+            db_c.frame == FR
+            @SAVE_REGISTERS(QID)
+            db_rc = ssu_or_det_failed(ld, FR)
+            @LOAD_REGISTERS(QID)
+            if !db_rc
+                @assert ld.exception_term != 0
+                @goto b_throw                       # THROW_EXCEPTION
+            end
+        end
         DiscardMark(ld, db_c.mark)
         ld.BFR = db_c.parent
         dropRecords!(ld, db_c.base)                 # the popped choice point and all above it

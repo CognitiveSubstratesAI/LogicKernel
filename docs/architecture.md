@@ -809,6 +809,8 @@ graph LR
     pl_global --> pl_funct
     pl_global --> pl_modul
     pl_global --> pl_wam
+    pl_global --> pl_arith
+    pl_global --> os_pl_text
     pl_global --> pl_setup
     pl_global --> pl_supervisor
     pl_global --> pl_op
@@ -898,12 +900,15 @@ graph LR
     pl_thread --> pl_global
     pl_thread --> pl_inline
     pl_thread --> pl_proc
+    pl_gc --> term_interface
     pl_gc --> default_term
     pl_gc --> pl_incl
+    pl_gc --> pl_vmi
     pl_gc --> pl_global
     pl_gc --> pl_inline
     pl_gc --> pl_thread
     pl_gc --> pl_alloc
+    pl_gc --> pl_wam
     pl_gc --> pl_setup
     pl_gc --> pl_proc
     pl_alloc --> term_interface
@@ -2569,6 +2574,57 @@ pl-ext.jl, pl-fli.jl). Ported from pl-copyterm.c's attribute-free path, upstream
   Mutation-proved on its branch: 10 mutants, 8 caught, 2 declared equivalent (the `done` memo; the
   atomic shortcut) — they join V9g's battery in CI.
 
+**V9f-b: `$/1` and `$/0`, the determinism guards — BUILT (2026-10-13)** (the second gate of V9f;
+port_inventory row V9; src/pl-vmi.jl, pl-comp.jl, pl-wam.jl, pl-error.jl, pl-gc.jl, pl-funct.jl,
+pl-global.jl, pl-ext.jl). Ported from pl-vmi.c, pl-comp.c, pl-wam.c, pl-error.c and pl-gc.c at the
+pin `8609e216`, upstream names.
+* **Ported — the instructions:** `I_DET` (`$/0`: sets `FR_DETGUARD|FR_DETGUARD_SET` on the frame,
+  then `I_CUT`); `C_DET` (`$(Goal)`: as `C_NOT`, a `C_IFTHENELSE`); `C_DETTRUE` (the block's own
+  choice point is the newest → drop it and jump over the failure exit; else `det_goal_error(nondet)`
+  and, when that only warns, `C_CUT`); `C_DETFALSE` (`det_goal_error(fail)`, then `BODY_FAILED`).
+  Numbered 124–127, after `I_EXITCATCH`.
+* **Ported — the compiler:** `$/1` shares `\+`'s branch of `compileBody` (`cb_frame.isnot`, the
+  field upstream has): `C_DET var L1, <Goal>, C_DETTRUE var, C_JMP L2, <fresh variables>, L1:
+  C_DETFALSE, L2:`; a cut in the goal is local. The goal atom `$` is `I_DET`. The decompiler
+  rebuilds both.
+* **Ported — the errors:** `det_goal_error` and `start_of_cdet` (pl-comp.c: which `C_DET` an error
+  location belongs to — nested blocks apart), `decompile_body_range` (the goal decompiled with the
+  RUNNING frame's variables: `decompileInfo.variables`, as upstream's `di->variables`),
+  `clearUninitialisedVarsFrame` (pl-gc.c: before a failed goal is decompiled, the variables its
+  code would still initialise are made fresh); `determinism_error`, `ssu_or_det_failed`,
+  `frameFailed` (pl-wam.c), called where upstream calls them: a nondeterministic exit
+  (`exit_continue`), a failing frame left (`deep_backtrack`'s `LEAVE_FAILED_FRAME`), and the
+  `CHP_DEBUG` choice point `S_STATIC` pushes for a guarded frame no clause matches. `PL_error`'s
+  `ERR_DETERMINISM` and `ERR_DET_GOAL`. The declaration is `guard` in the frame that ran `$`,
+  `guard_in_caller` in a frame a last call made of it (`I_DEPART` keeps `FR_DETGUARD`, drops
+  `_SET`), `property` for the `det` declaration.
+* **The flag `determinism_error`** is a field of the local data (`prolog_flag_determinism_error`:
+  `:error`, the default; `:warning`; `:silent`), read where upstream reads the flag table. Under
+  `warning` the error term goes to `printMessage` — the local data's `messages`, until
+  boot/messages.pl prints it (R2).
+* **A port defect of V9e-2 found here, fixed:** the goal clauses' predicate (`PROCEDURE_dcall1`)
+  was named `$call`; upstream's `ATOM_dcall` is the text `<meta-call>` (src/ATOMS). The
+  differential showed it as the context of a ball raised from a `$(Goal)` under call/1:
+  `context(system:'<meta-call>'/1, _)`.
+* **DIVERGES, representation:** the slot of a block holds the choice point's POSITION (as every
+  conditional's); the block's choice point that `C_DETTRUE` takes out of the chain while its stack
+  region stays in use is marked `unlinked`, as `C_SOFTCUT`'s (the pools hold live records only).
+* **NOT PORTED:** the `det/1` declaration (`P_DET`'s setter, `FR_DET`: R2 — the `property` branch
+  is ported and unreachable); the SSU branch of `ssu_or_det_failed` (SSU; asserted); the debugger's
+  `CHP_DEBUG`; `frameFinished` on a failed `FR_WATCHED` frame (V9g).
+* **R2 checklist:** `$/1` and `$/0` as PREDICATES (boot/init.pl: `$(Goal) :- $(Goal).`, `$ :- $.`
+  — what `call($)` reaches); `det/1` and `'$set_predicate_attribute'(…, det, …)`;
+  `set_prolog_flag(determinism_error, …)`; the mirror of upstream's
+  tests/core_lang/test_det_decl.pl under plunit (its `det_decl` unit needs `det/1`, its
+  `with_debug/1` cases the debugger, `garbage_collect/0`).
+* **Gates — against the oracle, all three term types:** test/core_lang/test_det_swipl.jl — 37
+  cases, 49 goals: every answer, ball and determinism equal swipl's under `error`, `silent` and
+  `warning` (there the reported terms too, in order — including the frame no clause matches, which
+  reports twice, as swipl), the record pools checked at every answer; upstream's `det_guard` and
+  `det_goal` units among them; `start_of_cdet` on nested blocks; the guard's frame flags and the
+  block's unlinked record. test/compile/test_body_code_swipl.jl — nine `$` clauses compile to
+  swipl's code (`vm_list`) and decompile to swipl's `clause/2`.
+
 **V9f-a: `catch/3` — BUILT (2026-10-13)** (the user's order: V9f in two gates, catch/3 then `$/1`;
 port_inventory row V9; src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-attvar.jl (new), pl-fli.jl, pl-ext.jl,
 pl-prims.jl, pl-funct.jl, pl-global.jl, pl-incl.jl). Ported from pl-comp.c, pl-vmi.c, pl-wam.c and
@@ -2688,8 +2744,9 @@ pl-global.jl, pl-ext.jl). Ported from pl-vmi.c `i_metacall_common`'s control bra
   argument counting a pseudo variable; control functors are walked as control; no branch analysis
   for `;`/`\+`; no voids. `compileArgument`: a compound or string argument goes into the next pseudo
   variable's cell and is loaded by `B_VAR0..2`/`B_VAR n` (`argvar`), a variable is linked into its own
-  cell (`link_local_var`). Arithmetic and `O_COMPILE_IS` are not inlined; `$call/1` is created in
-  `system` (`LOOKUPPROC(dcall1)`, `P_DYNAMIC|P_LOCKED`).
+  cell (`link_local_var`). Arithmetic and `O_COMPILE_IS` are not inlined; `'<meta-call>'/1` (upstream's
+  `ATOM_dcall`; named `$call` here until V9f-b, corrected there) is created in `system`
+  (`LOOKUPPROC(dcall1)`, `P_DYNAMIC|P_LOCKED`).
 * **Ported — the VM:** the control branch compiles the goal clause into the frame at `lTop`, makes it
   the environment with its own clause reference, generation and program pointer, and runs its code;
   `call/N` for N > 8 under `call/1` goes the same way. `lTop` lands where upstream's does: the frame
