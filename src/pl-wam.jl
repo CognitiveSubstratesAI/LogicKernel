@@ -2114,8 +2114,9 @@ function PL_next_solution_guarded(
     # DIVERGES: values for the stack's words: the goal's arguments are copied (`linkValI`) and the
     # extra arguments of `call/N` move without the reference adjustment (a term is a value); the
     # module is an index into the database's table; the procedure is `resolveProcedure`'s.
-    # `max_arity_overflow` raises `lTop` over the frame, as upstream's does, and so does a stripModule
-    # error and the V9e-2 refusal (a Julia exception unwinds the frame being filled: no `b_throw`).
+    # `max_arity_overflow` raises `lTop` over the frame, as upstream's does; the V9e-2 refusal does too
+    # (a Julia exception unwinds the frame being filled: no `b_throw`). A stripModule error and
+    # `call_type_error` reach `b_throw` as upstream's do, with the frame above `lTop`.
     # NOT PORTED (V9e-2): the control constructs and `call/N` for N > 8 under `call/1`, which
     # upstream compiles to a temporary clause (`compileClause(…, NULL, …)`), and `Goal@Module`'s
     # check. NOT PORTED: closures (`_PL_closure_blob`: no closures), `FR_INRESET` (no `reset/3`:
@@ -2124,10 +2125,7 @@ function PL_next_solution_guarded(
     @label i_metacall_common
     mc_nb = ld.frames[NFR].base
     mc_ok, mc_goal, mc_mi = stripModule(gd, ld, ld.slots[argFrameP(mc_nb, 0) + 1])
-    if !mc_ok
-        setLTop!(ld, argFrameP(mc_nb, 1))
-        @goto b_throw                               # THROW_EXCEPTION
-    end
+    mc_ok || @goto b_throw                          # THROW_EXCEPTION
     mc_arity = 0
     mc_name = mc_goal
     mc_kind = kind(mc_goal)

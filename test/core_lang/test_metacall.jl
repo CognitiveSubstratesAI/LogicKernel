@@ -287,3 +287,63 @@ end
         @test LK.isCurrentProcedure(sym_key(_rs(n)), ar, db.user) === nothing
     end
 end
+
+# A Module:Goal chain that loops — `X = user:X, call(X)` — makes `stripModule` FAIL: upstream's
+# `i_metacall_common` takes `THROW_EXCEPTION` with `type_error(acyclic_term, X)` (raised in
+# `stripModuleName`), X cyclic. Neither side can write a cyclic culprit canonically, so each reports
+# the formal's name, its type argument and whether the culprit is cyclic. `call(1:true)` is the other
+# path — `call_type_error` (`1` is no module): `type_error(atom, 1)`, acyclic.
+# The error a goal raises, read with `deRef` only: name, type argument, and whether the culprit is
+# cyclic — `resolve_term` (which `_rmc_formal_term` uses) refuses a rational tree.
+function _rmc_type_error_shape(db::_RDB, goal::_R)::String
+    gd, ld = db.gd, db.ld
+    fid = LK.PL_open_foreign_frame(ld)
+    args = LK.PL_new_term_refs(ld, 0)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, _rproc(db, goal),
+        args
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    out = "no_error"
+    if rc == LK.PL_S_EXCEPTION
+        fd = LK.deRef(ld, child(LK.deRef(ld, ld.slots[LK.PL_exception(ld, qid) + 1]), 2))
+        out = string(
+            lk_name(child(fd, 1)), " ", lk_name(LK.deRef(ld, child(fd, 2))), " ",
+            LK.is_acyclic(ld, child(fd, 3)) ? "acyclic" : "cyclic"
+        )
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return out
+end
+
+@testset "meta-call: a looping Module:Goal raises type_error(acyclic_term, Goal), as swipl" begin
+    X = _rv(1)
+    clauses = Tuple{_R, Union{Nothing, _R}}[
+        (_rs("cyc1"), _rconj(_rf("=", X, _rf(":", _rs("user"), X)), _rf("call", X))),
+        (
+            _rs("cyc2"),
+            _rconj(
+                _rf("=", X, _rf(":", _rs("user"), _rf(":", _rs("user"), X))), _rf("call", X)
+            )
+        ),
+        (_rs("cycv"), _rconj(_rf("=", X, _rf(":", _rs("user"), X)), X)),             # I_CALL1 of a variable
+        (_rs("num"), _rf("call", _rf(":", _rg(1), _rs("true"))))
+    ]
+    db = _rdb(clauses)
+    ours = [_rmc_type_error_shape(db, _rs(g)) for g in ("cyc1", "cyc2", "cycv", "num")]
+    @test ours[1] == "type_error acyclic_term cyclic" &&
+        ours[4] == "type_error atom acyclic"
+    if _R_SWIPL
+        driver = """
+        t(G) :- catch((call(G) -> write(no_error) ; write(failed)), error(type_error(T, C), _),
+                      (write(type_error), write(' '), write(T), (cyclic_term(C) -> write(' cyclic') ; write(' acyclic')))), nl.
+        main :- t(cyc1), t(cyc2), t(cycv), t(num).
+        """
+        theirs = _rswipl(clauses, (); main_text=driver)
+        @test ours == theirs
+        ours == theirs || @info "looping Module:Goal" ours theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end

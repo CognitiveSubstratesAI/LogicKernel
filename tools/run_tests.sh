@@ -45,6 +45,11 @@ _finish() {
     local rc="$1" oc=""
     rm -f "$DRIVER"
     if [ -n "${LOGICKERNEL_ORACLE_STATS:-}" ]; then
+        # the pre-warmed pool's workers counted in the pool's own file (tools/lib_evidence.sh)
+        if [ -f "$(_oracle_pool_stats "$ROOT")" ]; then
+            cat "$(_oracle_pool_stats "$ROOT")" >> "$LOGICKERNEL_ORACLE_STATS"
+            rm -f "$(_oracle_pool_stats "$ROOT")"
+        fi
         oc="; oracle cache: $(grep -c '^hit' "$LOGICKERNEL_ORACLE_STATS") hit, $(grep -c '^miss' "$LOGICKERNEL_ORACLE_STATS") miss, $(grep -c '^bypass' "$LOGICKERNEL_ORACLE_STATS") bypass"
         echo "  ${oc#; }"
         rm -f "$LOGICKERNEL_ORACLE_STATS"
@@ -97,11 +102,7 @@ _check_swipl_pin "$ROOT" run_tests.sh || exit 1
 # was checked above against the REAL swipl; the shim always forwards `--version` and `version_git`.
 # LOGICKERNEL_ORACLE_CACHE=0 turns it off. Only the LogicKernel side then always runs fresh.
 if [ "${LOGICKERNEL_ORACLE_CACHE:-1}" != 0 ]; then
-    LOGICKERNEL_ORACLE_PIN="$(_swipl_pin "$ROOT" commit)"
-    export LOGICKERNEL_ORACLE_PIN
-    LOGICKERNEL_ORACLE_STATS="$(mktemp "${TMPDIR:-/tmp}/LogicKernel_oracle_stats_XXXXXX")"
-    export LOGICKERNEL_ORACLE_STATS
-    export PATH="$ROOT/tools/oracle_cache:$PATH"
+    _oracle_env "$ROOT" "$(mktemp "${TMPDIR:-/tmp}/LogicKernel_oracle_stats_XXXXXX")"
 fi
 # Every Julia process of this runner compiles into the EVIDENCE depot, ahead of the default ones, so
 # it never rewrites the cache the warm daemon loaded (tools/lib_evidence.sh `_evidence_depot`).

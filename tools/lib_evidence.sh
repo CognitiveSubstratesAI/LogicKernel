@@ -37,6 +37,30 @@ _swipl_pin() {
     sed -n "s/^$2:[[:space:]]*//p" "$1/tools/SWIPL_VERSION" 2>/dev/null | tr -d '[:space:]'
 }
 
+# _oracle_env ROOT STATS — export the oracle cache's environment (tools/oracle_cache/swipl) for this
+# process and every worker it spawns (`_spawn_worker` passes it to the unit): the pinned commit, the
+# shim first on PATH, and the file the shim counts hits, misses and bypasses in. ONE helper for both
+# spawners — tools/run_tests.sh's fresh workers and tools/warm.sh's pre-warmed pool — because the pool
+# was spawned without it, and the evidence run that used the pool then showed `0 hit, 0 miss, 0 bypass`
+# (measured 2026-10-13: the real swipl answered every differential, the cache was never consulted).
+# LOGICKERNEL_ORACLE_CACHE=0: nothing is exported, the real swipl runs.
+_oracle_env() {
+    [ "${LOGICKERNEL_ORACLE_CACHE:-1}" = 0 ] && return 0
+    LOGICKERNEL_ORACLE_PIN="$(_swipl_pin "$1" commit)"
+    export LOGICKERNEL_ORACLE_PIN
+    case ":$PATH:" in
+        *":$1/tools/oracle_cache:"*) ;;
+        *) PATH="$1/tools/oracle_cache:$PATH"; export PATH ;;
+    esac
+    LOGICKERNEL_ORACLE_STATS="$2"
+    export LOGICKERNEL_ORACLE_STATS
+}
+
+# _oracle_pool_stats ROOT — where the pre-warmed pool's workers count: they are spawned by a preflight,
+# before the evidence run that claims them has made its own stats file, so they count here and that
+# run folds this file into its own (tools/run_tests.sh `_finish`).
+_oracle_pool_stats() { printf '%s/.warm/pool/oracle_stats' "$1"; }
+
 # _check_swipl_pin ROOT WHO — 0 when the `swipl` on THIS PATH is THE ORACLE (tools/SWIPL_VERSION):
 # its `--version` is the pinned version AND its `version_git` flag names the pinned commit — a
 # build of exactly the commit the ports cite (tools/build_oracle.sh; user, 2026-10-11). A release

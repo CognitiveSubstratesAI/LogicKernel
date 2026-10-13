@@ -103,5 +103,23 @@ for v in LOGICKERNEL_ORACLE_PIN LOGICKERNEL_ORACLE_STATS LOGICKERNEL_ORACLE_CACH
     ok "$n" "1" "_spawn_worker passes $v to the worker unit"
 done
 
+# one environment for both spawners (2026-10-13: the preflight's pool was spawned without it, and the
+# evidence run that claimed the pool showed 0/0/0): `_oracle_env` exports the pin, the shim on PATH once,
+# and the stats file; tools/warm.sh's pool calls it; tools/run_tests.sh folds the pool's count
+oe="$( (
+    . "$ROOT/tools/lib_evidence.sh"
+    PATH="/usr/bin:/bin"; unset LOGICKERNEL_ORACLE_PIN LOGICKERNEL_ORACLE_CACHE
+    _oracle_env "$ROOT" "$W/pool_stats"; _oracle_env "$ROOT" "$W/pool_stats"
+    n=$(printf '%s' "$PATH" | tr ':' '\n' | grep -c -x "$ROOT/tools/oracle_cache")
+    printf '%s|%s|%s' "${#LOGICKERNEL_ORACLE_PIN}" "$n" "$LOGICKERNEL_ORACLE_STATS"
+) )"
+ok "$oe" "40|1|$W/pool_stats" "_oracle_env exports the 40-character pin, the shim on PATH exactly once, the stats file"
+oe0="$( ( . "$ROOT/tools/lib_evidence.sh"; unset LOGICKERNEL_ORACLE_PIN; LOGICKERNEL_ORACLE_CACHE=0 _oracle_env "$ROOT" x; printf '%s' "${LOGICKERNEL_ORACLE_PIN:-none}" ) )"
+ok "$oe0" "none" "…and nothing under LOGICKERNEL_ORACLE_CACHE=0"
+n=$(sed -n '/^_pool() {/,/^}/p' "$ROOT/tools/warm.sh" | grep -c '_oracle_env "$ROOT" "$(_oracle_pool_stats "$ROOT")"')
+ok "$n" "1" "tools/warm.sh's pool exports the oracle environment before it spawns"
+n=$(grep -c 'cat "$(_oracle_pool_stats "$ROOT")" >> "$LOGICKERNEL_ORACLE_STATS"' "$ROOT/tools/run_tests.sh")
+ok "$n" "1" "tools/run_tests.sh folds the pool's count into its own"
+
 [ $fail -eq 0 ] && echo "test_oracle_cache: all cases pass" || echo "test_oracle_cache: FAILED"
 exit $fail

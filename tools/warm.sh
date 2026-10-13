@@ -318,6 +318,7 @@ _pool() {
     done
     (cd "$ROOT" && JULIA_DEPOT_PATH="$(_evidence_depot_path "$ROOT")" \
         julia --project=. --startup-file=no -e 'using LogicKernel' < /dev/null) || return 1
+    _oracle_env "$ROOT" "$(_oracle_pool_stats "$ROOT")"   # the workers consult the oracle cache too
     for k in $(seq 1 "$n"); do
         w="$DIR/pool/w$k"
         [ -f "$w/fp" ] && continue                       # already warming for this tree
