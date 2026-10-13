@@ -480,10 +480,15 @@ end
         @test kind(f) === EXPR && sym_text(child(f, 1)) == "type_error" &&
             sym_text(LK.deRef(_WF_LD, child(f, 2))) == "list"
         # the culprit is the options list itself, cyclic (swipl: type_error(list, L)); the ball is a
-        # copy, so a `[quoted(true)|T]` cell whose tail leads back to that same cell
+        # copy (`duplicate_term`), so a `[quoted(true)|T]` cell whose tail is a cell that leads back
+        # to ITSELF. Not necessarily to `c`: the culprit is the dereferenced cell, the walk meets
+        # it before its variable, and the copy of a cell is not one cell (pl-copyterm.jl, DIVERGES;
+        # swipl: one cell, `same_term/2` on the list and its tail is true — the L1 checklist).
         c = LK.deRef(_WF_LD, child(f, 3))
-        @test is_pair(c) && sym_text(child(LK.deRef(_WF_LD, child(c, 2)), 1)) == "quoted" &&
-            LK.deRef(_WF_LD, child(c, 3)) === c
+        quoted(x) =
+            is_pair(x) && sym_text(child(LK.deRef(_WF_LD, child(x, 2)), 1)) == "quoted"
+        t = quoted(c) ? LK.deRef(_WF_LD, child(c, 3)) : c
+        @test quoted(c) && quoted(t) && LK.deRef(_WF_LD, child(t, 3)) === t
     end
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_discard_foreign_frame(_WF_LD, fid)

@@ -23,6 +23,15 @@
 # the walk follows a bound variable once and meets it again as an `in progress` mark: the copy is then
 # a FRESH variable bound (trailed) to the copy of the term — a cyclic copy, as upstream's.
 #
+# CELL IDENTITY (the marker is at `copy_term`): the copy keeps the TERM, not the identity of its
+# cells. Upstream marks cells, so a compound met twice is copied once; the walk here knows a
+# compound again only by the bound variable it was reached through. A compound met both directly
+# and through its variable is copied twice — and where that is the entry of a cycle (`f(C)`,
+# `C = [a|X]`, `X` bound to `C`) the copy is the cycle unrolled by one compound: `[a|R]` with
+# `R = [a|R]`. Every answer is the same (`==`, `=@=`, unification, writing); `same_term/2` and the
+# factorising of a cyclic term would tell, and the kernel has neither. It goes with the term layout
+# (step L1), where a copy is of cells.
+#
 # NOT PORTED: attributed variables (`COPY_ATTRS`, `must_copy_attvar`, `unshare_attvar`: no attributed
 # variables), `copy_term/4`, `copy_term_nat/4` (`COPY_MARKED`, `mark_vars`), `size_abstract_term/3`
 # (`COPY_ABSTRACT`), `duplicate_term`'s `nshare`/`share` (the shared subterms of `duplicate_term/2`
@@ -57,7 +66,8 @@ end
 
 # PORT: pl-copyterm.c copy_term
 # DIVERGES: see the file header — one bottom-up walk over values; the cyclic copy is a fresh
-# variable bound to the copy.
+# variable bound to the copy; a compound met both directly and through its variable is copied
+# twice (the header's CELL IDENTITY: no answer differs, `same_term/2` would — step L1).
 """
     copy_term(ld, from, options) -> T
 

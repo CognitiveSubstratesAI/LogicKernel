@@ -2550,6 +2550,13 @@ pl-ext.jl, pl-fli.jl). Ported from pl-copyterm.c's attribute-free path, upstream
   variable renaming is gone. A ball must survive the unwind, cycles included, so the trail entries of
   the copy's OWN bindings are dropped after the copy (no undo removes them): upstream's
   `freezeGlobal`, in the kernel's terms. One direct `ld.bindings` site fewer (the ceiling is 13).
+* **DIVERGES, representation only (found by CI on the merge, 2026-10-13):** the copy keeps the
+  term, not the identity of its cells. A compound met both directly and through the variable bound
+  to it is copied twice; at the entry of a cycle the copy is the cycle unrolled by one compound
+  (`[a|R]`, `R = [a|R]`). swipl copies one cell: `X = [a|X], copy_term(f(X), f(Y)), Y = [_|T],
+  same_term(Y, T)` is true there. No answer differs — the kernel has no `same_term/2` and does not
+  factorise a cyclic term. **L1 checklist:** with SWI's cells the copy marks cells as upstream's
+  does; `same_term/2` on a copy and its tail joins the differential then.
 * **NOT PORTED:** attributed variables (`COPY_ATTRS`), `copy_term/4`, `copy_term_nat/4`,
   `size_abstract_term/3`, the fast heap terms, the stack-space retry loop.
 * **Gates — against the oracle, all three term types:** test/core_lang/test_copyterm_swipl.jl — 49
