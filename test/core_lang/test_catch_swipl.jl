@@ -171,6 +171,23 @@ function _rct_clauses()
                 _rf("=", Y, _rg(1)),
                 _rf("=", R, _rf("x", X))
             )
+        ),
+        # a CYCLIC ball keeps its cycle through the unwind: the copy's own bindings are frozen
+        # (copy_exception's freezeGlobal, pl-fli.c) — undone with the rest, Y would come back unbound
+        (
+            _rf("t29", R),
+            _rconj(
+                c(
+                    _rconj(_rf("=", X, _rf("f", X)), th(_rf("b", X))),
+                    _rf("b", Y),
+                    _rs("true")
+                ),
+                _rf("=", Y, _rf("f", _rv(12))),
+                _ror(
+                    _rit(_rf("==", _rv(12), Y), _rf("=", R, _rs("cyclic"))),
+                    _rf("=", R, _rs("lost"))
+                )
+            )
         )
     ]
 end
@@ -184,7 +201,7 @@ function _rct_goals()
             _rf("t14", X, Y), _rf("t15", X), _rf("t16", X, Y), _rf("t17", X),
             _rs("t18"), _rs("t19"), _rs("t20"), _rs("t21"), _rf("t22", X), _rf("t23", X),
             _rf("t24", X),
-            _rf("t25", X), _rf("t26", X), _rf("t27", X, Y), _rf("t28", X)]
+            _rf("t25", X), _rf("t26", X), _rf("t27", X, Y), _rf("t28", X), _rf("t29", X)]
     )
     return g
 end

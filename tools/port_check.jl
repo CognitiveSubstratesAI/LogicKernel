@@ -667,7 +667,7 @@ found; ports into any other repo were checked for structure only.
 # fails too, so the ceiling is lowered and a removed site cannot be silently re-added. Comments do not
 # count. Both sides are non-empty: a tree with src/pl-inline.jl (where deRef/Trail!/Undo! live — the
 # kernel's own, not a fixture) and no site found counts 0, which is below the ceiling and fails.
-const BINDINGS_DIRECT_MAX = 14
+const BINDINGS_DIRECT_MAX = 13
 
 "The direct `ld.bindings` sites in the code (not the comments) of `src/`, as `file:line`."
 function bindings_direct_sites(root::AbstractString)::Vector{String}

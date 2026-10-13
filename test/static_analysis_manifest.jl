@@ -70,6 +70,17 @@ _manifest_per_type(T) = (
     (LK.isomorphic, Tuple{LK.PL_local_data{T}, LK.variant_buffer{T}, Int, Int}, false),
     (LK.variant, Tuple{LK.PL_local_data{T}, LK.argPairs{T}, LK.variant_buffer{T}}, false),
     (LK.is_variant_ptr, Tuple{LK.PL_local_data{T}, T, T}, false),
+    # copy_term/2 (src/pl-copyterm.jl)
+    (LK.copy_term, Tuple{LK.PL_local_data{T}, T, LK.cp_options}, false),
+    (
+        LK._cp_visit!,
+        Tuple{LK.PL_local_data{T}, LK._cp_state{T}, Vector{LK._cp_frame{T}}, T},
+        false
+    ),
+    (LK._cp_chain_done!, Tuple{LK._cp_state{T}, Vector{UInt64}, T}, false),
+    (LK._cp_finish!, Tuple{LK.PL_local_data{T}, LK._cp_state{T}, LK._cp_frame{T}}, false),
+    (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, LK.cp_options}, false),
+    (LK._cp_atomic, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.do_compare, Tuple{LK.PL_local_data{T}, T, T, Bool, Int}, false),
     (LK.compare_fast, Tuple{LK.PL_local_data{T}, T, T, Int}, false),
     (LK.compare_descend, Tuple{LK.PL_local_data{T}, T, T, Int}, false),
@@ -157,7 +168,6 @@ _manifest_per_type(T) = (
     (LK.allocStacks!, Tuple{LK.PL_local_data{T}}, false),
     (LK._resize_local!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.copy_exception!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
-    (LK._copy_ball, Tuple{LK.PL_local_data{T}, T}, false),
     (LK.hasLocalSpace, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.DiscardMark, Tuple{LK.PL_local_data{T}, LK.mark}, true),
     (LK.linkValI, Tuple{LK.PL_local_data{T}, T}, true),
@@ -991,6 +1001,7 @@ function _manifest_index(T)
                 LK.pl_equal2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,
+                LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
                 LK.pl_rational1_va, LK.pl_string1_va, LK.pl_number1_va, LK.pl_atom1_va,

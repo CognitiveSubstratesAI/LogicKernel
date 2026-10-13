@@ -4,7 +4,7 @@
 # format is tools/mutate_drive.py's: `id`, `file`, `old` (must occur EXACTLY once), `new`, optional
 # `equivalent` (a mutant that must SURVIVE, with the code reason) and `targets`.
 #
-# V9f-a, catch/3 (MK1–MK21): the new path only. V9f-b adds its mutants below.
+# V9f-a, catch/3 (MK1–MK18, MK21, MK22): the new path only. V9f-b adds its mutants below.
 # Carried from V9e-1 (the meta-call): MC17, declared equivalent there and rerun at each later step's
 # close; MC19, equivalent until catch/3 existed — its kill test is test_catch_swipl.jl's `cp5`.
 #
@@ -96,12 +96,11 @@ MUTANTS = [
     dict(id="MK18 fail/0 the predicate succeeds", file=P,
          old='''pl_fail(ld::PL_local_data{T}) where {T} = FFALSE''',
          new='''pl_fail(ld::PL_local_data{T}) where {T} = FTRUE'''),
-    dict(id="MK19 the ball's variables keep their keys (no duplicate_term renaming)", file=F,
-         old='''            push!(kids, get!(() -> mk_var(T, fresh_var_keys!(1)), fresh, var_key(c)))''',
-         new='''            push!(kids, c)'''),              # kill: t26, t27, t28, and t24's shared variable
-    dict(id="MK20 the ball's variables are renamed per occurrence (sharing lost)", file=F,
-         old='''            push!(kids, get!(() -> mk_var(T, fresh_var_keys!(1)), fresh, var_key(c)))''',
-         new='''            push!(kids, mk_var(T, fresh_var_keys!(1)))'''),   # kill: t27 (shared), t15
+    # (MK19, MK20 — the ball's variable renaming — went with V9f-a's own copy routine: since the
+    # copy_term merge the ball copy IS `copy_term` without sharing, whose mutants are V9g's)
+    dict(id="MK22 copy_exception keeps the copy's trail entries (a cyclic ball loses its cycle at the unwind)", file=F,
+         old='''    resize!(ld.trail, tt)                       # frozen: the copy's own bindings keep no trail entry''',
+         new='''    nothing'''),                         # kill: t29
     dict(id="MK21 catch/3 is not locked", file=E,
          old='''    def.flags |= P_ISO | P_LOCKED''',
          new='''    def.flags |= P_ISO'''),                  # kill: t23 (assertz into catch/3)

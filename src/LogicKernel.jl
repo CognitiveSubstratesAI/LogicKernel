@@ -40,6 +40,7 @@ include("pl-prims.jl")         # swipl-devel src/pl-prims.c — the standard ord
 include("pl-ressymbol.jl")     # swipl-devel src/pl-ressymbol.c — reserved symbols (SWI-7's `[]`)
 include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause heads; clause/2
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
+include("pl-copyterm.jl")      # swipl-devel src/pl-copyterm.c — copy_term/2, copy_term_nat/2, duplicate_term/2
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack

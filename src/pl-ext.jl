@@ -50,16 +50,19 @@ const foreigns = (
 )
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, comp, prims, variant,
-# trace, read, proc, write, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
+# copyterm, trace, read, proc, write, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
 # constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_arith, PL_predicates_from_comp, PL_predicates_from_prims,
-    PL_predicates_from_variant, PL_predicates_from_trace, PL_predicates_from_read,
+    PL_predicates_from_variant, PL_predicates_from_copyterm, PL_predicates_from_trace,
+    PL_predicates_from_read,
     PL_predicates_from_proc, PL_predicates_from_write, PL_predicates_from_op
 )
 const _FOREIGN_VA = (
     PL_predicates_from_arith..., PL_predicates_from_comp..., PL_predicates_from_prims...,
-    PL_predicates_from_variant..., PL_predicates_from_trace..., PL_predicates_from_read...,
+    PL_predicates_from_variant..., PL_predicates_from_copyterm...,
+    PL_predicates_from_trace...,
+    PL_predicates_from_read...,
     PL_predicates_from_proc..., PL_predicates_from_write..., PL_predicates_from_op...
 )
 const _FOREIGN_DET = foreigns

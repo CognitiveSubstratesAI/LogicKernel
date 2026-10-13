@@ -363,66 +363,25 @@ function has_emergency_space(ld::PL_local_data{T}, needed::Int)::Bool where {T}
 end
 
 # PORT: pl-fli.c copy_exception as copy_exception!
-# DIVERGES: the ball is RESOLVED through the bindings (decision 1), so undoing bindings cannot change
-# the copy, and each unbound variable is replaced by a FRESH one, the same for every occurrence —
-# upstream's `duplicate_term` (since V9f: with catch/3 a program can compare the caught ball's
-# variables with the thrown term's; until then a variable kept its key). A ground compound is shared,
-# not copied (terms are immutable). A CYCLE — a compound met again on its own path — is cut by a fresh variable bound to the
-# copy of that compound WITHOUT a trail entry, so no undo removes it: upstream's `freezeGlobal`, in
-# the kernel's terms (since V5d; user, 2026-10-07).
+# DIVERGES: upstream's `duplicate_term(ex, bin, 0, 0)` is `copy_term` without sharing
+# (src/pl-copyterm.jl): the bindings resolved, each unbound variable a FRESH one — the same for every
+# occurrence —, every compound rebuilt. A CYCLIC ball's copy is a fresh variable bound to the copy of
+# the term; that binding's trail entry is DROPPED here, so no undo removes it and the ball survives
+# the unwind: upstream's `freezeGlobal`, in the kernel's terms (since V5d; user, 2026-10-07).
 # NOT PORTED: the fallbacks for a copy that does not fit the global stack (the context dropped, a
 # global-stack `resource_error`, `abort`): the copy is a value on Julia's heap; and reclaiming a
 # frozen binding: upstream's garbage collector frees a frozen ball once it is unreachable, and the
 # kernel's binding store has no collector until G1.
 "Copy the ball `ex` references into `bin`, its cycles kept (pl-fli.c)."
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
-    ld.slots[bin + 1] = _copy_ball(ld, ld.slots[ex + 1])
+    tt = length(ld.trail)
+    ld.slots[bin + 1] = copy_term(ld, ld.slots[ex + 1], cp_options(false))     # duplicate_term()
+    resize!(ld.trail, tt)                       # frozen: the copy's own bindings keep no trail entry
     return true
 end
 
-# `t` resolved through the bindings as `resolve_term` resolves it, its unbound variables renamed, and
-# a compound met again on its own path replaced by a variable bound — untrailed — to that compound's
-# copy.
-function _copy_ball(ld::PL_local_data{T}, t::T)::T where {T}
-    t = deRef(ld, t)
-    (kind(t) !== EXPR || is_ground(t)) && return t
-    fresh = Dict{UInt64, T}()                       # an unbound variable's key → its fresh variable
-    stack = Tuple{T, Vector{T}}[(t, T[])]           # (compound, its children copied so far)
-    on_path = IdDict{T, Nothing}(t => nothing)      # compounds being copied
-    cut = IdDict{T, T}()                            # a compound met on its own path → its variable
-    while true
-        node, kids = stack[end]
-        i = length(kids) + 1
-        if i > nchildren(node)
-            pop!(stack)
-            delete!(on_path, node)
-            r = mk_expr(T, kids)
-            v = get(cut, node, nothing)
-            if v !== nothing && !haskey(ld.bindings, var_key(v))
-                ld.bindings[var_key(v)] = r         # frozen: no trail entry, no undo
-            end
-            isempty(stack) && return r
-            push!(stack[end][2], r)
-            continue
-        end
-        c = deRef(ld, child(node, i))
-        if kind(c) === EXPR && !is_ground(c)
-            if haskey(on_path, c)                   # a cycle
-                push!(kids, get!(() -> mk_var(T, fresh_var_keys!(1)), cut, c))
-            else
-                on_path[c] = nothing
-                push!(stack, (c, T[]))
-            end
-        elseif kind(c) === VAR
-            push!(kids, get!(() -> mk_var(T, fresh_var_keys!(1)), fresh, var_key(c)))
-        else
-            push!(kids, c)
-        end
-    end
-end
-
 # PORT: pl-fli.c PL_raise_exception
-# DIVERGES: the ball is copied by `copy_exception!` (see there: resolved, its variables fresh, its cycles kept as
+# DIVERGES: the ball is copied by `copy_exception!` (see there: `duplicate_term`, its cycles kept as
 # untrailed bindings); `freezeGlobal` is that copy's.
 "Make the term `exception` references the pending exception, unless a more urgent one is pending; false (pl-fli.c)."
 function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T}

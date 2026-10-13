@@ -635,6 +635,7 @@ fixed it or a public issue exists.
 | `test/core_lang/test_local_stack.jl` | V3's tests: positions identical to swipl's (frame and choice-point placement, pinned and live), the record discipline, foreign frames and term references, growth, and that the primitives allocate nothing warm | — |
 | `src/pl-hash.jl` | MurmurHash2, for multi-argument keys and the term hashes | `src/pl-hash.c`, `src/pl-hash.h` |
 | `src/pl-variant.jl` | `=@=` (`is_variant_ptr`): the argument agenda and the two-way variable correspondence; under bindings (`ld`, V5a1) upstream's node numbering — `var_id`, `term_id`, `Root`, `isomorphic` | `src/pl-variant.c` |
+| `src/pl-copyterm.jl` | `copy_term/2`, `copy_term_nat/2`, `duplicate_term/2` (attribute-free): one bottom-up walk over values with an explicit work stack — variables renamed consistently, a compound with no variable below SHARED (`copy_term`) or rebuilt (`duplicate_term`), a cyclic term (through the binding store) copied as a fresh variable bound to the copy | `src/pl-copyterm.c` |
 | `src/pl-ressymbol.jl` | reserved symbols (SWI-7's `[]`): `isReservedSymbol`, `compareReservedSymbol`, their rank, `ATOM_nil`'s index key; the reserved set and what is not ported; and Q2's reserved functor `$expr/n` (literal 0 in `H_FUNCTOR`'s operand since V1 L2, DIVERGES) | `src/pl-ressymbol.c` |
 | `test/db/test_procedures.jl` | V1's predicate table: one procedure per functor and database, `[]` apart from `'[]'`, `:- dynamic`, defined = a `PROC_DEFINED` flag or a clause visible now | — |
 | `test/compile/test_body_code_swipl.jl` | V2's differential: whole-clause code (operands by kind, the LCO label) identical to swipl's on pinned clauses, 400 random rule clauses, and nreverse and qsort as swipl consults them; V2's refusals and swipl's `type_error(callable, Body)` (raised with `PL_error` since V9c); clause/2 and retract/1 on rules | — |
@@ -724,6 +725,7 @@ graph LR
     pl_ressymbol["pl-ressymbol.jl"]
     pl_comp["pl-comp.jl"]
     pl_variant["pl-variant.jl"]
+    pl_copyterm["pl-copyterm.jl"]
     pl_termhash["pl-termhash.jl"]
     pl_thread["pl-thread.jl"]
     pl_gc["pl-gc.jl"]
@@ -877,6 +879,15 @@ graph LR
     pl_variant --> pl_inline
     pl_variant --> pl_prims
     pl_variant --> pl_comp
+    pl_copyterm --> term_interface
+    pl_copyterm --> default_term
+    pl_copyterm --> pl_incl
+    pl_copyterm --> SWI_Prolog
+    pl_copyterm --> pl_global
+    pl_copyterm --> pl_inline
+    pl_copyterm --> pl_fli
+    pl_copyterm --> pl_arith
+    pl_copyterm --> pl_read
     pl_termhash --> term_interface
     pl_termhash --> default_term
     pl_termhash --> pl_hash
@@ -935,7 +946,7 @@ graph LR
     pl_fli --> pl_modul
     pl_fli --> pl_inline
     pl_fli --> pl_prims
-    pl_fli --> pl_variant
+    pl_fli --> pl_copyterm
     pl_fli --> pl_gc
     pl_fli --> pl_alloc
     pl_fli --> pl_wam
@@ -1144,6 +1155,7 @@ graph LR
     pl_ext --> pl_prims
     pl_ext --> pl_comp
     pl_ext --> pl_variant
+    pl_ext --> pl_copyterm
     pl_ext --> pl_arith
     pl_ext --> os_pl_text
     pl_ext --> pl_proc
@@ -2524,6 +2536,32 @@ local data unusable; (3) the spare stacks ported. Research: the workspace's
   own check fails fast. `PL_error` setting the flag survived until a test opened its foreign frame at
   the limit.
 
+**copy_term/2, copy_term_nat/2, duplicate_term/2 — MERGED (2026-10-13)** (V9g's groundwork, written
+2026-10-12 on a branch and merged at the user's order right after V9f-a; src/pl-copyterm.jl NEW,
+pl-ext.jl, pl-fli.jl). Ported from pl-copyterm.c's attribute-free path, upstream names.
+* **Ported:** `copy_term` — one bottom-up walk over values with an explicit work stack (a long list
+  copies without recursion), where upstream marks cells with the GC bits, copies, and clears the
+  marks. Variables are renamed consistently; a compound with no variable below is SHARED
+  (`copy_term/2`, `copy_term_nat/2`: `COPY_SHARE`) or rebuilt (`duplicate_term/2`); a CYCLIC term —
+  one that exists only through the binding store — is copied as a cyclic term: a fresh variable,
+  trailed, bound to the copy that holds it. Registered in upstream's table order (after variant).
+* **ONE implementation of a duplicate (user, 2026-10-13):** `copy_exception!` (src/pl-fli.jl) is
+  upstream's `duplicate_term(ex, bin, 0, 0)` — `copy_term` without sharing — and V9f-a's own
+  variable renaming is gone. A ball must survive the unwind, cycles included, so the trail entries of
+  the copy's OWN bindings are dropped after the copy (no undo removes them): upstream's
+  `freezeGlobal`, in the kernel's terms. One direct `ld.bindings` site fewer (the ceiling is 13).
+* **NOT PORTED:** attributed variables (`COPY_ATTRS`), `copy_term/4`, `copy_term_nat/4`,
+  `size_abstract_term/3`, the fast heap terms, the stack-space retry loop.
+* **Gates — against the oracle, all three term types:** test/core_lang/test_copyterm_swipl.jl — 49
+  answers (renaming, variables shared among a term's arguments, bound variables, atomic arguments,
+  a copy that fails to unify, cyclic copies `X = f(X)`, `X = f(X, Y)`, a mutual cycle, a
+  20,000-element list), the record pools checked at every answer; identity tests (`copy_term/2`
+  shares a ground compound, `duplicate_term/2` does not). The ball: test_catch_swipl.jl (the caught
+  ball's variables fresh, their sharing kept; the occurs-check error's shared variable),
+  test_arith_swipl.jl and test_exception.jl (a cyclic ball keeps its cycle past the unwind).
+  Mutation-proved on its branch: 10 mutants, 8 caught, 2 declared equivalent (the `done` memo; the
+  atomic shortcut) — they join V9g's battery in CI.
+
 **V9f-a: `catch/3` — BUILT (2026-10-13)** (the user's order: V9f in two gates, catch/3 then `$/1`;
 port_inventory row V9; src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-attvar.jl (new), pl-fli.jl, pl-ext.jl,
 pl-prims.jl, pl-funct.jl, pl-global.jl, pl-incl.jl). Ported from pl-comp.c, pl-vmi.c, pl-wam.c and
@@ -2553,7 +2591,8 @@ pl-attvar.c at the pin `ac807ba8`, upstream names.
   ball and kept each unbound variable's key, logged as a DIVERGES from upstream's `duplicate_term`;
   nothing could observe it without catch/3. Now `catch(throw(f(X)), f(Y), true), X == Y` can: swipl
   answers no, the kernel answered yes. The copy renames each unbound variable, one fresh variable
-  per variable (sharing kept), as upstream.
+  per variable (sharing kept), as upstream. (Since the copy_term merge, 2026-10-13, the ball copy
+  IS upstream's `duplicate_term`: see the next entry up.)
 * **Two defects of the first draft, found by the differential and fixed before the gate:** the
   draft left `saveWakeup` out as "attributed variables only" — so under `occurs_check = error` a
   catcher whose unification would build a cycle let the ORIGINAL ball pass uncaught, where swipl
