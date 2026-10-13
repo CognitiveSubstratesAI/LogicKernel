@@ -8,6 +8,24 @@
 #   julia --project=. tools/bench.jl --no-profile
 #   julia --project=. tools/bench.jl --no-compile        # without the run loop's fresh-process report
 #
+# THREE DIAGNOSTIC REPORTS (user, 2026-10-13), each instead of the timing run; their full output goes
+# to .warm/bench/ (ignored by git), a summary to the terminal:
+#   julia --project=. tools/bench.jl --descend[=A,B]     # Cthulhu's descent into the hot functions
+#                                                        # (`HOT`; default: all): its typed-source
+#                                                        # view with ONLY the non-concrete types shown
+#                                                        # — where a type is a Union, Any or boxed —
+#                                                        # and the calls one can descend into next
+#   julia --project=. tools/bench.jl --flame[=CASE]      # a flame graph of CASE (default nreverse):
+#                                                        # ProfileView's window when it is installed
+#                                                        # and a display exists; the profile is SAVED
+#                                                        # either way, with the command that opens it
+#   julia --project=. tools/bench.jl --code              # the run loop's `code_llvm` and
+#                                                        # `code_native`, and what they contain: dynamic
+#                                                        # calls, allocations, boxes, jump tables
+# Cthulhu and ProfileView come from the global environment, as Profile does; neither is a dependency.
+# In an interactive session `@descend` itself goes further: `using Cthulhu, LogicKernel` and
+# `@descend LogicKernel.<function>(…)` — the report here is the same view, printed once per function.
+#
 # A STANDING STEP for every chunk, beside the JET/Aqua/AllocCheck gates (user, 2026-10-03) — a
 # report, not a pass/fail gate: a new primitive gets a case here, with its swipl goal. It follows
 # the workspace's measurement rules: THREE runs from ONE process, the minimum reported and the
@@ -18,7 +36,7 @@
 #
 # Profile is not a dependency: it comes from the global environment (see
 # tools/repl.jl). swipl comes from PATH; without it the report has no upstream column.
-using LogicKernel, Profile, Printf
+using LogicKernel, Profile, Printf, Serialization, InteractiveUtils
 using LogicKernel:
     is_variant_ptr,
     pl_variant_sha1,
@@ -917,7 +935,324 @@ function julia_times(f)
     return ts, n, (@allocations f()), (@allocated f())
 end
 
+# ── the diagnostic reports: Cthulhu's descent, a flame graph, the run loop's code ────────────────
+"Where the diagnostic reports write their full output."
+const BENCH_OUT = joinpath(dirname(@__DIR__), ".warm", "bench")
+
+"The hot functions `--descend` looks into, on the bench's term type: name => (function, argument types)."
+const HOT = [
+    "run_loop" => (
+        LogicKernel.PL_next_solution_guarded,
+        Tuple{PL_global_data{BT}, PL_local_data{BT}, Int, Bool}
+    ),
+    "deRef" => (LogicKernel.deRef, Tuple{PL_local_data{BT}, BT}),
+    "do_unify" => (LogicKernel.do_unify, Tuple{PL_local_data{BT}, BT, BT}),
+    "compare" => (compareStandard, Tuple{PL_local_data{BT}, BT, BT, Bool}),
+    "newChoice" =>
+        (LogicKernel.newChoice, Tuple{PL_local_data{BT}, LogicKernel.choice_type, Int}),
+    "discardFrame" => (LogicKernel.discardFrame, Tuple{PL_local_data{BT}, Int})
+]
+
+_plain(s::AbstractString)::String = replace(s, r"\e\[[0-9;?]*[A-Za-z]" => "")
+
+"`text` before and after the first `sep` (the whole text and \"\" when it does not occur)."
+function _split2(text::AbstractString, sep::AbstractString)::Tuple{String, String}
+    r = findfirst(sep, text)
+    r === nothing && return (String(text), "")
+    return (
+        String(text[1:prevind(text, first(r))]), String(text[nextind(text, last(r)):end])
+    )
+end
+
+"""
+Cthulhu's view of `f(tt)`, as text: `Cthulhu.descend` on a terminal whose only key press is `q` — the
+first screen (the typed source, warnings on, type-stable statements hidden, and the list of calls),
+printed once.
+"""
+function _descend_text(cth::Module, f, tt; optimize::Bool=false)::String
+    repl = Base.require(
+        Base.PkgId(Base.UUID("3fa0cd96-eef1-5676-8a61-b3b8758bbffb"), "REPL")
+    )
+    inp = Pipe()
+    Base.link_pipe!(inp; reader_supports_async=true, writer_supports_async=true)
+    out = IOBuffer()
+    term = Base.invokelatest(
+        repl.Terminals.TTYTerminal, "dumb", inp.out,
+        IOContext(out, :color => true, :displaysize => (1_000_000, 200)), devnull
+    )
+    write(inp.in, "q")
+    try
+        Base.invokelatest(
+            cth.descend, f, tt; terminal=term, iswarn=true, hide_type_stable=true,
+            optimize=optimize
+        )
+    catch e
+        return "ERROR: " * sprint(showerror, e) * "\n" * _plain(String(take!(out)))
+    finally
+        close(inp.in)
+    end
+    return _plain(String(take!(out)))
+end
+
+"""
+What Julia's own inference says of `f(tt)`, for a function Cthulhu cannot show (the run loop): the
+VARIABLES and the intermediate values whose inferred type is not concrete — a Union, `Any`, an
+abstract type, a `Core.Box` — from `code_typed(…; optimize=false)`.
+"""
+function _typed_fallback(name::String, f, tt)::Nothing
+    ci, rt = only(code_typed(f, tt; optimize=false))
+    wc(t) = t isa Type ? t : (isdefined(t, :typ) ? wc(t.typ) : typeof(t))    # a lattice element's type
+    loose(t) = t === Core.Box || !(isconcretetype(t) || t === Union{})
+    slots = [
+        (string(ci.slotnames[i]), wc(ci.slottypes[i])) for i in eachindex(ci.slotnames)
+    ]
+    bad = unique!([(n, t) for (n, t) in slots if loose(t) && !startswith(n, "#")])
+    sort!(bad; by=x -> (x[1], string(x[2])))
+    # the values of CALLS whose result is USED: a control-flow statement has no value, and inference
+    # records no type (`Any`) for a result nothing reads — `x.f = v`, `a[i] = v`
+    used = Set{Int}()
+    uses!(x) =
+        if x isa Core.SSAValue
+            push!(used, x.id)
+        elseif x isa Expr
+            foreach(uses!, x.args)
+        elseif x isa Core.GotoIfNot
+            uses!(x.cond)
+        elseif x isa Core.ReturnNode
+            isdefined(x, :val) && uses!(x.val)
+        elseif x isa Core.PiNode
+            uses!(x.val)
+        end
+    foreach(uses!, ci.code)
+    iscall(i) =
+        i in used && ci.code[i] isa Expr &&
+        ci.code[i].head in (:call, :invoke, :new, :foreigncall)
+    ssa = [wc(ci.ssavaluetypes[i]) for i in eachindex(ci.code) if iscall(i)]
+    @printf(
+        "%-14s inference: %d of %d variables and %d of %d used call results are not concrete (Any: %d, Core.Box: %d); returns %s\n",
+        name, length(bad), length(slots), count(loose, ssa), length(ssa),
+        count(==(Any), ssa),
+        count(==(Core.Box), ssa), rt
+    )
+    # which calls give the non-concrete results: by callee, most frequent first
+    callees = Dict{String, Int}()
+    for i in eachindex(ci.code)
+        ex = ci.code[i]
+        (iscall(i) && loose(wc(ci.ssavaluetypes[i]))) || continue
+        k =
+            first(string(ex.args[ex.head === :invoke ? 2 : 1]), 60) * " → " *
+            first(string(wc(ci.ssavaluetypes[i])), 50)
+        callees[k] = get(callees, k, 0) + 1
+    end
+    for (k, c) in first(sort!(collect(callees); by=x -> -x[2]), 8)
+        @printf("      %5d × %s\n", c, k)
+    end
+    path = joinpath(BENCH_OUT, "descend_$(name)_inference.txt")
+    open(path, "w") do io
+        foreach(((n, t),) -> println(io, n, " :: ", t), bad)
+    end
+    for (n, t) in first(bad, 12)
+        println("      ", n, " :: ", first(string(t), 130))
+    end
+    length(bad) > 12 && println("      … ", length(bad) - 12, " more in ", path)
+    return nothing
+end
+
+"`--descend`: each hot function's view to a file, and how many of its types are not concrete."
+function descend_report(names::Vector{String})::Nothing
+    Base.find_package("Cthulhu") === nothing &&
+        error(
+            "tools/bench.jl --descend: Cthulhu is not installed in the global environment"
+        )
+    cth = Base.require(Main, :Cthulhu)
+    mkpath(BENCH_OUT)
+    picked = isempty(names) ? HOT : [h for h in HOT if h.first in names]
+    isempty(picked) &&
+        error("tools/bench.jl --descend: none of $(names) is in HOT ($(first.(HOT)))")
+    println(
+        "Cthulhu ",
+        pkgversion(cth),
+        " — non-concrete types in the hot functions (full views: ",
+        BENCH_OUT,
+        ")"
+    )
+    @printf("%-14s %8s %8s %8s %10s\n", "function", "Union", "Any", "Box", "calls")
+    for (name, (f, tt)) in picked
+        t = @elapsed text = _descend_text(cth, f, tt)
+        note = ""
+        if startswith(text, "ERROR")
+            # Cthulhu's view of the code BEFORE optimisation can fail on a very large function (the
+            # run loop: an assertion of the compiler's own); its view of the OPTIMISED code is next
+            println(
+                name,
+                ": the unoptimised view failed — ",
+                first(split(text, '\n')),
+                "; trying the optimised one"
+            )
+            t += @elapsed text = _descend_text(cth, f, tt; optimize=true)
+            note = " (optimised view)"
+        end
+        path = joinpath(BENCH_OUT, "descend_$name.txt")
+        write(path, text)
+        if startswith(text, "ERROR")
+            println(
+                name, ": ", first(split(text, '\n')), " — Cthulhu cannot show this function"
+            )
+            _typed_fallback(name, f, tt)
+            continue
+        end
+        name *= note
+        body, menu = _split2(text, "Select a call to descend into")
+        calls = count(
+            l -> startswith(lstrip(l), "•") || startswith(l, "   "), split(menu, '\n')
+        )
+        @printf(
+            "%-14s %8d %8d %8d %10d   (%.1f s)\n", name,
+            length(collect(eachmatch(r"::Union\{", body))),
+            length(collect(eachmatch(r"::Any\b", body))),
+            length(collect(eachmatch(r"Core\.Box", body))), calls, t
+        )
+        marked = unique!([strip(l) for l in split(body, '\n') if occursin("::", l)][2:end])
+        for l in first(marked, 8)
+            println("      ", first(l, 150))
+        end
+        length(marked) > 8 &&
+            println("      … ", length(marked) - 8, " more lines in ", path)
+    end
+    return nothing
+end
+
+"`--code`: the run loop's LLVM IR and native code, to files, and what they contain."
+function code_report()::Nothing
+    f, tt = HOT[1].second
+    mkpath(BENCH_OUT)
+    llvm = sprint(io -> code_llvm(io, f, tt; debuginfo=:none))
+    native = sprint(io -> code_native(io, f, tt; debuginfo=:none, syntax=:intel))
+    write(joinpath(BENCH_OUT, "run_loop.ll"), llvm)
+    write(joinpath(BENCH_OUT, "run_loop.s"), native)
+    n(text, rx) = length(collect(eachmatch(rx, text)))
+    println(
+        "the run loop, PL_next_solution_guarded on ",
+        BT,
+        " (files: ",
+        BENCH_OUT,
+        "/run_loop.ll, run_loop.s)"
+    )
+    for (what, v) in (
+        ("LLVM IR lines", count(==('\n'), llvm)),
+        ("  basic blocks", n(llvm, r"(?m)^[A-Za-z0-9_.]+:")),
+        ("  calls", n(llvm, r"\bcall\b")),
+        (
+            "  DYNAMIC calls (jl_apply_generic, jl_invoke)",
+            n(llvm, r"@i?jl_(apply_generic|invoke)\b")
+        ),
+        (
+            "  allocations (gc_alloc, gc_small_alloc, gc_big_alloc)",
+            n(llvm, r"@(julia\.gc_alloc_obj|i?jl_gc_(small|big|pool)_alloc\w*)")
+        ),
+        ("  boxes (jl_box_*)", n(llvm, r"@i?jl_box_\w+")),
+        ("  switch instructions", n(llvm, r"\bswitch\b")),
+        (
+            "  bounds-check failure sites (throw_boundserror)",
+            n(llvm, r"@(j_throw_boundserror_\w+|i?jl_bounds_error\w*)")
+        ),
+        (
+            "  method-error fallbacks (a union the compiler did not close)",
+            n(llvm, r"@jl_f_throw_methoderror\b")
+        ),
+        ("  other throw sites (ijl_throw)", n(llvm, r"@ijl_throw\b")),
+        ("native code lines", count(==('\n'), native)),
+        (
+            "  indirect jumps through a table (jmp qword ptr [...])",
+            n(native, r"(?m)^\s*jmp\s+qword ptr \[[^\]]+\]\s*$")
+        ),
+        ("  calls", n(native, r"(?m)^\s*call\b")),
+        ("  conditional jumps", n(native, r"(?m)^\s*j(?!mp)[a-z]+\b"))
+    )
+        @printf("%-58s %8d\n", what, v)
+    end
+    return nothing
+end
+
+"`--flame`: a profile of case `name`, saved; ProfileView's flame graph when it can be shown."
+function flame_report(name::String)::Nothing
+    i = findfirst(c -> c[1] == name, CASES)
+    i === nothing &&
+        error("tools/bench.jl --flame=$name names no case ($(join(first.(CASES), ", ")))")
+    f = CASES[i][2]
+    f()                                                         # compiled before the profile
+    Profile.clear()
+    t0 = time()
+    Profile.@profile while time() - t0 < 3.0
+        f()
+    end
+    data, lidict = Profile.retrieve()
+    mkpath(BENCH_OUT)
+    path = joinpath(BENCH_OUT, "flame_$name.jlprof")
+    serialize(path, (data, lidict))
+    tree = joinpath(BENCH_OUT, "flame_$name.txt")
+    open(tree, "w") do io
+        Profile.print(
+            IOContext(io, :displaysize => (100_000, 250));
+            format=:tree,
+            C=false,
+            mincount=10
+        )
+    end
+    println(
+        "profile of ",
+        name,
+        ": ",
+        length(data),
+        " samples words; saved to ",
+        path,
+        " (and as a call tree: ",
+        tree,
+        ")"
+    )
+    display_ = haskey(ENV, "DISPLAY") || haskey(ENV, "WAYLAND_DISPLAY")
+    if display_ && Base.find_package("ProfileView") !== nothing
+        pv = Base.require(Main, :ProfileView)
+        Base.invokelatest(pv.view, data; lidict=lidict)
+        println(
+            "ProfileView: the flame graph of ",
+            name,
+            " is open — press Enter here to close it"
+        )
+        readline()
+    else
+        println(
+            if display_
+                "ProfileView is not installed (julia -e 'using Pkg; Pkg.add(\"ProfileView\")')"
+            else
+                "no display in this session (DISPLAY/WAYLAND_DISPLAY unset): the flame graph cannot be shown here"
+            end
+        )
+        println("open it where there is one:")
+        println(
+            "  julia -e 'using Serialization, ProfileView; d, l = deserialize(\"",
+            path,
+            "\"); ProfileView.view(d; lidict=l); readline()'"
+        )
+    end
+    return nothing
+end
+
 function main(args)
+    diag = filter(a -> occursin(r"^--(descend|code|flame)(=|$)", a), args)
+    if !isempty(diag)
+        for a in diag
+            key, val = _split2(a, "=")
+            if key == "--descend"
+                descend_report(String.(filter(!isempty, split(val, ','))))
+            elseif key == "--code"
+                code_report()
+            else
+                flame_report(isempty(val) ? "nreverse" : String(val))
+            end
+        end
+        return nothing
+    end
     filt = filter(a -> !startswith(a, "--"), args)
     cases = [c for c in CASES if isempty(filt) || any(f -> occursin(f, c[1]), filt)]
     isempty(cases) && error("tools/bench.jl: no case matches $(filt)")
