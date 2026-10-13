@@ -780,6 +780,7 @@ graph LR
     pl_comp --> pl_prims
     pl_comp --> pl_ressymbol
     pl_comp --> pl_thread
+    pl_comp --> pl_gc
     pl_comp --> pl_wam
     pl_comp --> pl_fli
     pl_comp --> pl_error
@@ -2477,6 +2478,41 @@ and pl-vmi.c at the pin `ac807ba8`, upstream names.
 * **Mutation-proved — at verdict level:** `C_SOFTCUT` not dropping the dead record, the record not
   marked `unlinked`, the slot not negated, each `C_LSCUT` step, each clause of `_rpools_live`,
   and `dropUnlinkedChoices!` at the reuse points.
+
+**V9e-2: CONTROL CONSTRUCTS under `call/1` — the temporary goal clause — BUILT (2026-10-13)** (the
+user's order: V9e in two gates; port_inventory row V9; src/pl-comp.jl, pl-wam.jl, pl-incl.jl,
+pl-global.jl, pl-ext.jl). Ported from pl-vmi.c `i_metacall_common`'s control branch and pl-comp.c
+`compileClause` with a NULL head, at the pin `ac807ba8`.
+* **Ported — the compiler:** `compileGoalClause` is upstream's `compileClause(&cl, NULL, goal,
+  PROCEDURE_dcall1, module)`: `islocal`, `argvars = argvar = 1`, `arity 0`, no procedure (NO LCO), no
+  head unification, `GOAL_CLAUSE`; the goal in pseudo variable 1. The analysis under `islocal`: a
+  sub-goal's arguments are walked with `subclausearg` (`AV_SUBCLAUSE_LOOP`), each compound or string
+  argument counting a pseudo variable; control functors are walked as control; no branch analysis
+  for `;`/`\+`; no voids. `compileArgument`: a compound or string argument goes into the next pseudo
+  variable's cell and is loaded by `B_VAR0..2`/`B_VAR n` (`argvar`), a variable is linked into its own
+  cell (`link_local_var`). Arithmetic and `O_COMPILE_IS` are not inlined; `$call/1` is created in
+  `system` (`LOOKUPPROC(dcall1)`, `P_DYNAMIC|P_LOCKED`).
+* **Ported — the VM:** the control branch compiles the goal clause into the frame at `lTop`, makes it
+  the environment with its own clause reference, generation and program pointer, and runs its code;
+  `call/N` for N > 8 under `call/1` goes the same way. `lTop` lands where upstream's does: the frame
+  size grows by `SIZEOF_CREF_CLAUSE + sizeofClause(code_size)` (3 + 8 + code positions on a 64-bit
+  build), the space upstream's clause occupies on the local stack. `_init_clause_vars!` is called at
+  the new clause entry (an empty list: every cell is written; the coverage check counts the entry).
+* **DIVERGES (representation):** the goal clause is a heap `Clause` no definition holds, freed by
+  Julia's GC with its frame (upstream: on the local stack, freed when `lTop` drops); `localGoal`
+  dereferences the goal's control skeleton and its sub-goals' arguments first, where upstream
+  dereferences each cell as it walks (the kernel's compiler is written for clauses without bindings);
+  the cells hold values (a keyed variable is its own reference); the variable table is all set under
+  `islocal` where upstream has none and skips its uses — the same code.
+* **NOT PORTED, refused by name:** `Goal@Module` (R2), `$/1` (V9f), `Module:Goal` inside the goal
+  (modules); `FR_INRESET` (no `reset/3`: `'$meta_call'/1`) asserted absent. **R2 items:** `call/2..8`
+  meta-called as a TERM resolve boot/init.pl's predicates (none here: the kernel answers an existence
+  error for `call/8` where swipl calls the goal — pinned exactly in test_metacall.jl).
+* **Gates:** test/core_lang/test_metacall_control.jl — answers and determinism of every control
+  construct, the local cut against a clause's cut, shared variables, pseudo variables (`B_VAR n`),
+  nesting, call/9, equal swipl's with the record pools checked at every answer; the error formals;
+  14 frame positions inside meta-called goals equal swipl's (a string argument included, its swipl
+  clause written by hand: the program writer writes strings as atoms).
 
 **V9e-1: the META-CALL of plain goals — BUILT (2026-10-12)** (the user's order: V9e in two gates,
 plain goals first; port_inventory row V9; src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-proc.jl).

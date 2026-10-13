@@ -249,10 +249,13 @@ function _manifest_index(T)
         (LK.analyseVariables2!, Tuple{GD, CInfo, T, Int, Int, Bool}, false),
         (LK.analyse_variables!, Tuple{GD, CInfo, T, Nothing}, false),
         (LK.analyse_variables!, Tuple{GD, CInfo, T, T}, false),
+        (LK.analyse_variables!, Tuple{GD, CInfo, Nothing, T}, false),    # a goal clause (V9e-2)
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing}, false),
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, T}, false),
         (LK._clause_init_vars, Tuple{CInfo, Int}, false),   # defensive initialisation; see register Q3
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
+        (LK.link_local_var!, Tuple{CInfo, T, Int}, false),
+        (LK._local_cell!, Tuple{CInfo, Int, T}, false),
         (LK.reverse_code!, Tuple{Vector{UInt64}, Int, Int}, true),
         (LK.lco!, Tuple{CInfo, Int}, false),
         (LK.compileSubClause!, Tuple{GD, LD, CInfo, T, UInt64}, false),
@@ -332,6 +335,8 @@ function _manifest_index(T)
         (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD}, false),
         (LK.compileClause, Tuple{GD, LD, T, Nothing, PR, MOD, Int}, false),
         (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD, Int}, false),
+        (LK.localGoal, Tuple{GD, LD, T}, false),
+        (LK.compileGoalClause, Tuple{GD, LD, T, MOD, Int}, false),
         # src/pl-funct.jl — the control functors the global data holds
         (LK.registerControlFunctors, Tuple{Type{T}}, false),
         (LK._subclause_names, Tuple{Type{T}}, false),
@@ -1279,6 +1284,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.functor_operand, Tuple{UInt64, Int}, false),
     (LK.functor_literal, Tuple{UInt64}, true), (LK.functor_arity, Tuple{UInt64}, true),
     (LK.VAROFFSET, Tuple{Int}, true), (LK.VARNUM, Tuple{UInt64}, true),
+    (LK.sizeofClause, Tuple{Int}, true),
     (LK.argFrameP, Tuple{Int, Int}, true), (LK.varFrameP, Tuple{Int, Int}, true),
     (LK.refFliP, Tuple{Int, Int}, true), (LK.f_hasSpace, Tuple{Int, Int, Int, Int}, true),
     (LK.NoMark, Tuple{}, true), (LK.isRealMark, Tuple{LK.mark}, true),

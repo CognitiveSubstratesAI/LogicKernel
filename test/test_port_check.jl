@@ -754,3 +754,35 @@ end
     @test !any(x -> startswith(x, "MARKER-STALE"), r.violations)
     @test r.markers.diverges > 0 && r.markers.not_ported > 0
 end
+
+# THE L1 RATCHET (user, 2026-10-13): no new direct `ld.bindings` site until SWI's term layout replaces
+# the store (L1). Each verdict is proved on its own case, and the count on a fixture (code lines only).
+@testset "the L1 ratchet: direct ld.bindings sites" begin
+    root = joinpath(@__DIR__, "..")
+    real = bindings_direct_sites(root)
+    @test length(real) == BINDINGS_DIRECT_MAX > 0                   # both sides non-empty
+    @test bindings_verdict(real, BINDINGS_DIRECT_MAX) === nothing
+    mktempdir() do d
+        mkpath(joinpath(d, "src", "os"))
+        write(
+            joinpath(d, "src", "a.jl"),
+            """
+b = get(ld.bindings, k, nothing)
+# ld.bindings in a comment does not count
+x = foo.bindings
+ld.bindings[k] = v   # trailing comment: ld.bindings
+"""
+        )
+        write(joinpath(d, "src", "os", "b.jl"), "delete!(ld.bindings, k)\n")
+        sites = bindings_direct_sites(d)
+        @test sites == ["src/a.jl:1", "src/a.jl:4", "src/os/b.jl:1"]
+        @test startswith(something(bindings_verdict(sites, 2), ""), "BINDINGS-DIRECT")
+        @test startswith(
+            something(bindings_verdict(sites, 4), ""), "BINDINGS-CEILING-STALE"
+        )
+        @test bindings_verdict(sites, 3) === nothing
+        @test startswith(
+            something(bindings_verdict(String[], 3), ""), "BINDINGS-CEILING-STALE"
+        )
+    end
+end

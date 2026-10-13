@@ -2114,12 +2114,13 @@ function PL_next_solution_guarded(
     # DIVERGES: values for the stack's words: the goal's arguments are copied (`linkValI`) and the
     # extra arguments of `call/N` move without the reference adjustment (a term is a value); the
     # module is an index into the database's table; the procedure is `resolveProcedure`'s.
-    # `max_arity_overflow` raises `lTop` over the frame, as upstream's does; the V9e-2 refusal does too
-    # (a Julia exception unwinds the frame being filled: no `b_throw`). A stripModule error and
-    # `call_type_error` reach `b_throw` as upstream's do, with the frame above `lTop`.
-    # NOT PORTED (V9e-2): the control constructs and `call/N` for N > 8 under `call/1`, which
-    # upstream compiles to a temporary clause (`compileClause(…, NULL, …)`), and `Goal@Module`'s
-    # check. NOT PORTED: closures (`_PL_closure_blob`: no closures), `FR_INRESET` (no `reset/3`:
+    # `max_arity_overflow` raises `lTop` over the frame, as upstream's does; so does a refusal by name
+    # (a Julia exception unwinds the frame being filled: no `b_throw`). A stripModule error, a goal
+    # clause that does not compile and `call_type_error` reach `b_throw` as upstream's do, with the
+    # frame above `lTop`.
+    # Since V9e-2 the control constructs and `call/N` for N > 8 under `call/1` run in a temporary
+    # clause (`compileGoalClause`, src/pl-comp.jl), entered here as upstream enters it; NOT PORTED:
+    # `Goal@Module` (refused by name, R2). NOT PORTED: closures (`_PL_closure_blob`: no closures), `FR_INRESET` (no `reset/3`:
     # asserted absent) and the `mcall_cont` trap of an undefined procedure (the supervisor
     # `S_VIRGIN` traps it, as for `I_CALL`).
     @label i_metacall_common
@@ -2148,13 +2149,39 @@ function PL_next_solution_guarded(
             _is_control(mc_goal, gd.functors_control) ||
             (sym_key(mc_name) == gd.subclause_names.atom_call && mc_arity > 8)
         )
-            @assert (ld.frames[FR].flags & FR_INRESET) == 0
-            setLTop!(ld, argFrameP(mc_nb, 1))       # the frame being filled is below lTop when the query unwinds
-            throw(
-                NotPortedError{T}(
-                    mc_goal, "call/1 of a control construct (the temporary clause)", "V9e-2"
-                )
-            )
+            @assert (ld.frames[FR].flags & FR_INRESET) == 0     # (no reset/3: '$meta_call'/1)
+            if _has_functor(mc_goal, gd.functors_control.at_sign, 2)
+                setLTop!(ld, argFrameP(mc_nb, 1))   # (a Julia exception unwinds this frame)
+                throw(NotPortedError{T}(mc_goal, "call/1 of Goal@Module", "R2"))
+            end
+            # lTop = NFR (it is); compileClause(&cl, NULL, a, PROCEDURE_dcall1, module, 0, 0)
+            mc_cl = try
+                compileGoalClause(gd, ld, mc_goal, gd.modules[mc_mi], mc_nb)
+            catch mc_e
+                # a construct the compiler refuses by name (`$/1`, `Module:Goal`, …): a Julia
+                # exception, which unwinds the frame being filled from below lTop
+                mc_e isa NotPortedError && setLTop!(ld, argFrameP(mc_nb, 1))
+                rethrow()
+            end
+            mc_cl === nothing && @goto b_throw      # case false: THROW_EXCEPTION
+            DEF = gd.procedures_dcall1.definition   # NFR->predicate
+            mc_f = ld.frames[NFR]
+            setFramePredicate(mc_f, DEF)            # (compileClause: fr->predicate)
+            setNextFrameFlags(mc_f, ld.frames[FR])  # setNextFrameFlags(NFR, FR)
+            mc_f.parent = FR
+            mc_f.programPointer = Code{T}(PCc, PCl, PC)
+            setGenerationFrame(gd, ld, NFR)         # cl->generation set by compileGoalClause
+            mc_cref = ClauseRef{T}(nothing, word(0), mc_cl, nothing)
+            FR = NFR                                # environment_frame = FR = NFR
+            ld.environment_frame = FR
+            setLTop!(ld, argFrameP(mc_nb, Int(mc_cl.variables)))   # lTop = p (compileClause)
+            _init_clause_vars!(ld, ld.frames[FR].base, mc_cl)      # (an empty list: see there)
+            ld.frames[FR].clause = mc_cref          # fr->clause = cref
+            PCc = mc_cl.codes                       # PC = cl->codes
+            PCl = mc_cl.literals
+            PC = 1
+            ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+            @goto next_instruction
         end
     else
         @goto call_type_error

@@ -661,6 +661,40 @@ end
 test can assert exactly which checks fired. `existence_checked` lists the repos whose checkout was
 found; ports into any other repo were checked for structure only.
 """
+# THE L1 RULE (user, 2026-10-13): SWI's term layout replaces the binding store at step L1 (after R2),
+# so until then new code reaches bindings only through `deRef`/`Trail!`/`Undo!` — no new DIRECT
+# `ld.bindings` site. The count is a RATCHET: above the ceiling fails and names the sites; below it
+# fails too, so the ceiling is lowered and a removed site cannot be silently re-added. Comments do not
+# count. Both sides are non-empty: a tree with src/pl-inline.jl (where deRef/Trail!/Undo! live — the
+# kernel's own, not a fixture) and no site found counts 0, which is below the ceiling and fails.
+const BINDINGS_DIRECT_MAX = 14
+
+"The direct `ld.bindings` sites in the code (not the comments) of `src/`, as `file:line`."
+function bindings_direct_sites(root::AbstractString)::Vector{String}
+    sites = String[]
+    srcdir = joinpath(root, "src")
+    isdir(srcdir) || return sites
+    for (dir, _, fs) in walkdir(srcdir), f in sort(fs)
+        endswith(f, ".jl") || continue
+        p = joinpath(dir, f)
+        for (i, l) in enumerate(eachline(p))
+            code = first(split(l, '#'; limit=2))
+            occursin(r"\bld\.bindings\b", code) && push!(sites, "$(relpath(p, root)):$i")
+        end
+    end
+    return sites
+end
+
+"The L1 ratchet's verdict for `sites` against the ceiling `maxn`: `nothing`, or the violation."
+function bindings_verdict(sites::Vector{String}, maxn::Int)::Union{Nothing, String}
+    n = length(sites)
+    n > maxn &&
+        return "BINDINGS-DIRECT src/: $n direct `ld.bindings` sites, the ceiling is $maxn (L1 rule: use deRef/Trail!/Undo!) — $(join(sites, ", "))"
+    n < maxn &&
+        return "BINDINGS-CEILING-STALE tools/port_check.jl: $n direct `ld.bindings` sites — lower BINDINGS_DIRECT_MAX from $maxn to $n"
+    return nothing
+end
+
 function port_check(pkgroot::AbstractString;
     upstream_dirs::Dict{String, String}=default_upstream_dirs(),
     inventory::AbstractString="docs/port_inventory.md",
@@ -672,6 +706,10 @@ function port_check(pkgroot::AbstractString;
     # `.git` is a FILE in a submodule checkout (swipl-devel/bench), a directory otherwise.
     available = Set(r for (r, d) in upstream_dirs if ispath(joinpath(d, ".git")))
     _check_dirs!(v, root)
+    if isfile(joinpath(root, "src", "pl-inline.jl"))   # the kernel's own tree (not a fixture)
+        bv = bindings_verdict(bindings_direct_sites(root), BINDINGS_DIRECT_MAX)
+        bv === nothing || push!(v, bv)
+    end
     swi = first(PORT_REPOS)
     if swi in available
         live_src, live_tests = _git_dirs(upstream_dirs[swi], "src"),

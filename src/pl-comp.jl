@@ -216,9 +216,11 @@ end
 # `vardefs` is upstream's LD->comp.vardefs keyed by `var_key`, `mstate_candidates`/
 # `mstate_merge_pos` are `mstate`, `used_var` is the VarTable (`vartablesize` its length),
 # `branch_vars` is `nothing` or the vector upstream keeps in `branch_varbuf`, `literals` the
-# clause's literal table as it is built (since V1 L2), and `procedures` its procedure table (since V1). No
-# `clause` (the clause is created after the code), and the fields of subsystems not yet ported:
-# `islocal`, `subclausearg`, `argvars`, `argvar` (V9),
+# clause's literal table as it is built (since V1 L2), and `procedures` its procedure table (since V1).
+# `islocal`, `subclausearg`, `argvars`, `argvar` since V9e-2 (a GOAL clause for `call/1` of a control
+# construct): the pseudo variables' cells are written as the clause compiles, into the frame at
+# `local_base` of the local data `local_ld` (upstream writes them at `lTop` through LD). No `clause`
+# (the clause is created after the code), and the fields of subsystems not yet ported:
 # `progress` (interrupts), `colon_context` and `at_context` (modules). Since R1g: `singletons`,
 # `warning_list` (0: the caller wants no warnings) and `warnings` (`nothing` until the first one,
 # then in the order raised — see `c_warning`); `styleCheck` is upstream's GLOBAL
@@ -253,6 +255,12 @@ mutable struct compileInfo{T}
     warnings::Union{Nothing, Vector{c_warning{T}}}
     variable_names::Union{Nothing, T}                       # ($variable_names, resolved)
     init_vars::Union{Nothing, BitVector}                    # (defensive initialisation; see register Q3)
+    islocal::Bool                                           # Temporary local clause
+    subclausearg::Bool                                      # processing subclausearg
+    argvars::Int                                            # islocal argument pseudo vars
+    argvar::Int                                             # islocal current pseudo var
+    local_ld::Union{Nothing, PL_local_data{T}}              # (islocal: the frame's local data)
+    local_base::Int                                         # (islocal: the frame, lTop)
 end
 
 """
@@ -265,7 +273,8 @@ compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
         0, false, UInt32(0), 0, 0, Dict{Int, T}(),              # head_unify: compileClause's
         0, 0, 0, nothing, nothing,                              # no style checks, no warnings
-        nothing                                                 # init_vars
+        nothing,                                                # init_vars
+        false, false, 0, 0, nothing, 0                          # not a goal clause
     )
 
 # PORT: pl-comp.c pushBranchVar
@@ -578,6 +587,9 @@ const MAX_VARIABLES = 1_000_000_000
 # PORT: pl-comp.c AV_ARG_LOOP
 "`av_frame` kind: general N-arg descent (pl-comp.c `av_kind`)."
 const AV_ARG_LOOP = 0
+# PORT: pl-comp.c AV_SUBCLAUSE_LOOP
+"`av_frame` kind: the arguments of a sub-goal of a goal clause — `islocal`, not a control functor (pl-comp.c `av_kind`)."
+const AV_SUBCLAUSE_LOOP = 1
 # PORT: pl-comp.c AV_SEMI_AFTER_LEFT
 "`av_frame` kind: `(A;B)` after A — save and reset A's variables, then B (pl-comp.c `av_kind`)."
 const AV_SEMI_AFTER_LEFT = 2
@@ -591,11 +603,10 @@ const AV_NOT_AFTER = 4
 # PORT: pl-comp.c av_frame
 # DIVERGES: `base`/`off`/`next` stand for `head_next`, a pointer into the arguments; `obv` is
 # whether a branch buffer existed when the frame was pushed (upstream keeps the pointer); no
-# `depth_before_entry` (there is no cycle check, see `analyseVariables2!`). AV_SUBCLAUSE_LOOP is
-# `islocal`'s, not ported.
+# `depth_before_entry` (there is no cycle check, see `analyseVariables2!`).
 "A compound whose arguments the analysis is walking (pl-comp.c `av_frame`)."
 struct av_frame{T}
-    kind::Int               # AV_ARG_LOOP, AV_SEMI_AFTER_LEFT, AV_SEMI_AFTER_RIGHT, AV_NOT_AFTER
+    kind::Int               # AV_ARG_LOOP, AV_SUBCLAUSE_LOOP, AV_SEMI_AFTER_LEFT, …RIGHT, AV_NOT_AFTER
     base::T                 # the compound (the enclosing term `f` for SEMI/NOT)
     off::Int                # child index of its argument 0 (see `_comp_shape`)
     next::Int               # next argument (0-based)
@@ -625,8 +636,9 @@ function in_branch(bvs::Vector{branch_var}, from::Int, to::Int, v::VarDef)::Bool
 end
 
 # PORT: pl-comp.c analyseVariables2
-# DIVERGES: no `islocal` (goal clauses: `subclausearg`, `argvars` and AV_SUBCLAUSE_LOOP come with
-# the meta-call, V9); no cycle,
+# DIVERGES: under `islocal` (a goal clause, V9e-2) the goal is the meta-call's term under the
+# bindings, with its control skeleton and its sub-goals' arguments dereferenced first (see
+# `localGoal`), where upstream dereferences each cell as it walks; no cycle,
 # depth or interrupt check — a kernel term is a tree. A compound whose head is not a symbol has every
 # child as an argument (see `compileArgument!`). Past MAX_VARIABLES it throws, where upstream returns
 # `AVARS_MAX` and unwinds its stack and branch buffer: nothing outside `ci` has changed, and
@@ -689,7 +701,24 @@ function analyseVariables2!(
         @goto resume
     end
     if kind(head) === EXPR
-        if control
+        if ci.islocal
+            if ci.subclausearg                                  # a compound argument: an argvar
+                ci.argvars += 1
+                @goto resume                                    # term done, no args processed
+            elseif !_is_control(head, cf)
+                soff, sar = _comp_shape(head)
+                sar == 0 && @goto resume
+                ci.subclausearg = true
+                push!(
+                    stack,
+                    av_frame{T}(
+                        AV_SUBCLAUSE_LOOP, head, soff, 0, ci.arity, sar, false, false, 0, 0
+                    )
+                )
+                @goto resume
+            end                                 # ci->local && control functor: the normal case
+        end
+        if control && !ci.islocal
             # Check for singletons in branches (A;B). These are variables introduced in a
             # branch, used only once in the branch and not used in code after the branches
             # re-unite.
@@ -766,22 +795,26 @@ function analyseVariables2!(
     if control && !(kind(head) === SYM && sym_key(head) == gd.subclause_names.atom_true)
         ci.head_unify = false
     end
+    if ci.subclausearg && isString(head)                        # (no attributed variables)
+        ci.argvars += 1
+    end
     @label resume
     if isempty(stack)
         return nvars
     end
     top = stack[end]
-    if top.kind == AV_ARG_LOOP
+    if top.kind == AV_ARG_LOOP || top.kind == AV_SUBCLAUSE_LOOP
         if top.remaining > 0
             head = _comp_arg(top.base, top.off, top.next)
             argn = top.argn_next
             control = top.control
             stack[end] = av_frame{T}(
-                AV_ARG_LOOP, top.base, top.off, top.next + 1, top.argn_next + 1,
+                top.kind, top.base, top.off, top.next + 1, top.argn_next + 1,
                 top.remaining - 1, top.control, false, 0, 0
             )
             @goto next_head
         end
+        top.kind == AV_SUBCLAUSE_LOOP && (ci.subclausearg = false)
         pop!(stack)
         @goto resume
     elseif top.kind == AV_SEMI_AFTER_LEFT
@@ -907,7 +940,12 @@ function argMoveUnify!(ci::compileInfo{T}, vd::VarDef)::Union{Nothing, T} where 
 end
 
 # PORT: pl-comp.c analyse_variables
-# DIVERGES: `argvars` is 0 (it counts only for `islocal` goal clauses, V9). A warning's variable
+# DIVERGES: `head` is `nothing` for a goal clause (upstream's NULL head; V9e-2), whose pseudo variables
+# `argvars` counts — slot 0 is the goal, the compound and string arguments of its sub-goals follow,
+# then its Prolog variables, none a void (every one is shared with the goal and so initialised).
+# Under `islocal` the variable table is all set (`trues`), where upstream has none and skips each use
+# of it (`!ci->islocal`): a table in which every variable has been seen makes the same code — no
+# `C_VAR`, no first-variable instruction, no jump kept for a balance. A warning's variable
 # (`vd->address`) is rebuilt from the slot's key. Returns the frame size `nv`, which `compileClause` records as the
 # clause's `variables` and `prolog_vars` (upstream sets them here, through `ci->clause`); past
 # MAX_VARIABLES it throws `representation_error(max_frame_size)`. The global data `gd` is passed in
@@ -920,17 +958,18 @@ walking the slots in order and COMPACTING past every void above the arity — an
 slot whatever it holds (pl-comp.c). Returns the frame size.
 """
 function analyse_variables!(
-    gd::PL_global_data{T}, ci::compileInfo{T}, head::T, body::Union{Nothing, T}
+    gd::PL_global_data{T}, ci::compileInfo{T}, head::Union{Nothing, T},
+    body::Union{Nothing, T}
 )::Int where {T}
     arity = ci.arity
-    argvars = 0
     body_voids = 0
     ci.branch_vars = nothing
     ci.singletons = 0
-    nvars = analyseVariables2!(gd, ci, head, 0, -1, false)
+    nvars = head === nothing ? 0 : analyseVariables2!(gd, ci, head, 0, -1, false)
     if body !== nothing
         nvars = analyseVariables2!(gd, ci, body, nvars, arity, true)
     end
+    argvars = ci.argvars                                       # counted by the analysis
     if ci.warning_list != 0
         get_variable_names(ci)
     end
@@ -960,7 +999,7 @@ function analyse_variables!(
                 compiler_warning(ci, :multiton, T[mk_var(T, key)])
             end
         end
-        if vd.times == 1                                       # ISVOID
+        if vd.times == 1 && !ci.islocal                        # ISVOID
             delete!(ci.vardefs, key)
             if n >= arity                                      # an argument keeps its slot
                 body_voids += 1
@@ -971,7 +1010,7 @@ function analyse_variables!(
     end
     nv = nvars + arity + argvars - body_voids
     nv > MAX_VARIABLES && _max_frame_size()
-    ci.used_var = falses(nv)                                   # vartablesize
+    ci.used_var = ci.islocal ? trues(nv) : falses(nv)          # vartablesize (see above)
     return nv
 end
 
@@ -1165,8 +1204,29 @@ function _gnd_code(t, where_::Int)::code
     return body ? B_ATOM : H_ATOM                              # NUM_OTHER: an opaque literal
 end
 
+# PORT: pl-comp.c link_local_var as link_local_var!
+# DIVERGES: the variable's VALUE goes into the cell (a keyed variable is its own reference, decision
+# 2) where upstream stores `makeRefG(vd->address)`; no LOCAL_OVERFLOW — the cells were made room for
+# before the code is compiled (`compileGoalClause`).
+"Link variable `v`, at slot `iv`, into its cell of the goal clause's frame (pl-comp.c)."
+function link_local_var!(ci::compileInfo{T}, v::T, iv::Int)::Bool where {T}
+    _local_cell!(ci, Int(VAROFFSET(iv)), v)
+    return true
+end
+
+# The cell at variable offset `voffset` of the goal clause's frame (`varFrameP(lTop, voffset)`) := `t`.
+function _local_cell!(ci::compileInfo{T}, voffset::Int, t::T)::Nothing where {T}
+    ld = ci.local_ld::PL_local_data{T}
+    ld.slots[varFrameP(ci.local_base, voffset) + 1] = t
+    return nothing
+end
+
 # PORT: pl-comp.c compileArgument
-# DIVERGES: no `islocal` (goal clauses: `link_local_var`, `argvar`, `subclausearg`; V9), no
+# DIVERGES: under `islocal` (a goal clause, V9e-2) a compound or string argument is not compiled but
+# stored in the next pseudo variable's cell and loaded by `B_VAR0+n`/`B_VAR` (`argvar`), and a
+# variable is linked into its own cell (`link_local_var`) — the cells of the frame at `ci.local_base`,
+# the value itself where upstream stores a reference to the variable's cell (a keyed variable IS
+# its reference, decision 2). No
 # attributed variables, no `CL_HEAD_TERMS`/`argMoveUnify` (the moved head unifications, V9), and no
 # stack-overflow returns. SWI-7's `[]` compiles to `H_NIL`/`B_NIL` (Q1), any other symbol to
 # `H_ATOM`/`B_ATOM`; a grounded value to the SMALLINT/MPZ/MPQ/FLOAT/STRING instruction of its kind
@@ -1192,6 +1252,15 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
         index = isIndexedVarTerm(ci, arg)
         if index < 0                                           # a void
             Output_0!(ci, (where_ & A_BODY) != 0 ? B_VOID : H_VOID)
+            @goto resume
+        end
+        if ci.islocal
+            link_local_var!(ci, arg, index)
+            if index < 3
+                Output_0!(ci, B_VAR0 + code(index))
+            else
+                Output_1!(ci, B_VAR, VAROFFSET(index))
+            end
             @goto resume
         end
         first = isFirstVarSet!(ci.used_var, index)
@@ -1251,10 +1320,25 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
         end
         @goto resume
     elseif k === GND
+        if ci.islocal && isString(arg) && (where_ & A_NOARGVAR) == 0
+            @goto argvar
+        end
         Output_1!(ci, _gnd_code(arg, where_), addLiteral!(ci, arg))
         @goto resume
     end
     # a compound
+    if ci.islocal && (where_ & A_NOARGVAR) == 0
+        @label argvar
+        av_off = VAROFFSET(ci.argvar)
+        _local_cell!(ci, Int(av_off), arg)                     # a copy! (no attributed variables)
+        if ci.argvar < 3
+            Output_0!(ci, B_VAR0 + code(ci.argvar))
+        else
+            Output_1!(ci, B_VAR, av_off)
+        end
+        ci.argvar += 1
+        @goto resume
+    end
     isright = (where_ & A_RIGHT) != 0
     off, ar = _comp_shape(arg)
     if is_pair(arg)                                            # fdef == FUNCTOR_dot2
@@ -1915,8 +1999,8 @@ function compileSubClause!(
         is_reserved_symbol(h) && !is_nil(h) && return NOT_CALLABLE
         name = sym_key(h)
         is_call = name == names.atom_call
-        # ison(fdef, ARITH_F) && !ci->islocal (c:3474-3482; no local compilation)
-        if (name, ar) in names.arith_functors
+        # ison(fdef, ARITH_F) && !ci->islocal (c:3474-3482)
+        if !ci.islocal && (name, ar) in names.arith_functors
             if name == names.atom_is && compileSimpleAddition(ld, names, arg, ci)
                 return BOOLEX_TRUE
             end
@@ -1924,10 +2008,12 @@ function compileSubClause!(
             ld.prolog_flag_optimise &&
                 throw(NotPortedError{T}(arg, "compileArith (optimise)", "the user's Q-AR3"))
         end
-        # O_COMPILE_IS (c:3484-3519; `!ci->islocal`: no local compilation): upstream's chain, in its
-        # order; a `false` falls through to the call below
+        # O_COMPILE_IS (c:3484-3519), `!ci->islocal`: upstream's chain, in its order; a `false` falls
+        # through to the call below; a goal clause calls them all
         rc = BOOLEX_FALSE
-        if ar == 2 && name == names.atom_equals                # FUNCTOR_equals2
+        if ci.islocal
+            # (no inline compilation in a goal clause)
+        elseif ar == 2 && name == names.atom_equals            # FUNCTOR_equals2
             rc = compileBodyUnify(ld, ci, arg)
         elseif ar == 2 && name == names.atom_strict_equal      # FUNCTOR_strict_equal2
             rc = compileBodyEQ(ld, ci, arg)
@@ -1989,7 +2075,7 @@ function compileSubClause!(
     end
     proc = lookupBodyProcedure(gd, arg, ci.module_)
     Output_1!(ci, call, addProcedure!(ci, proc))
-    if call == I_DEPART                                        # && ci->procedure: always set here
+    if call == I_DEPART && !ci.islocal                         # && ci->procedure (NULL: islocal)
         lco!(ci, pc0)
     end
     return BOOLEX_TRUE
@@ -2517,6 +2603,94 @@ compileClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
     proc::Procedure{T}, m::module_t{T}
 ) where {T} = compileClause(gd, ld, head, body, proc, m, 0)
+
+# ── goal clauses: call/1 of a control construct (pl-comp.c compileClause, head NULL), since V9e-2 ──
+# DIVERGES (no upstream function; upstream dereferences each cell as `analyseVariables2`,
+# `compileBody` and `compileArgument` walk it): the meta-call's goal holds VARIABLES BOUND in the
+# store, which the kernel's compiler — written for clauses without bindings — does not follow. So the
+# parts of the goal the compiler inspects are dereferenced first: the children of each control
+# construct, recursively, and the arguments of each sub-goal, one level. A compound or string
+# argument then becomes a pseudo variable holding the term as it is (bindings and all), and an
+# unbound variable its own cell: exactly what upstream's walk sees.
+"The goal `goal` with its control skeleton and its sub-goals' arguments dereferenced under `ld`."
+function localGoal(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::T where {T}
+    g = deRef(ld, goal)
+    kind(g) === EXPR || return g
+    n = nchildren(g)
+    kids = Vector{T}(undef, n)
+    if _is_control(g, gd.functors_control)
+        kids[1] = child(g, 1)
+        for i in 2:n
+            kids[i] = localGoal(gd, ld, child(g, i))
+        end
+    else
+        for i in 1:n
+            kids[i] = deRef(ld, child(g, i))
+        end
+    end
+    return mk_expr(T, kids)
+end
+
+# PORT: pl-comp.c compileClause as compileGoalClause
+# DIVERGES: upstream's `compileClause` with a NULL head (pl-comp.c:2031-2039, 2201-2266), as its own
+# function: the goal is `localGoal`'s; the clause is a heap `Clause` (GOAL_CLAUSE, of `$call/1`) that
+# no definition holds — upstream builds it on the local stack above the frame — and its frame size
+# `variables` grows by what upstream's occupies there (`SIZEOF_CREF_CLAUSE + sizeofClause(code_size)`,
+# positions), so `lTop` lands where upstream's does; the cells are made room for after the analysis
+# (`ensureLocalSpace`), where upstream checks the total after compiling and retries on
+# LOCAL_OVERFLOW. Returns `nothing` with the error raised as `compileClause` raises it.
+"""
+    compileGoalClause(gd, ld, goal, m, base) -> Clause, or nothing
+
+Compile `goal`, under the bindings in `ld`, to a temporary clause of `\$call/1` in module `m` for the
+frame at `base` (= `lTop`), writing its pseudo variables' cells as upstream does (pl-comp.c).
+"""
+function compileGoalClause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T, m::module_t{T}, base::Int
+)::Union{Nothing, Clause{T}} where {T}
+    proc = gd.procedures_dcall1
+    def = proc.definition
+    body = localGoal(gd, ld, goal)
+    ci = compileInfo{T}(0, m, proc)
+    ci.islocal = true
+    ci.subclausearg = false
+    ci.argvars = 1
+    ci.argvar = 1
+    ci.local_ld = ld
+    ci.local_base = base
+    ci.head_unify = false
+    nv = analyse_variables!(gd, ci, nothing, body)
+    ensureLocalSpace(ld, nv + LOCAL_MARGIN) || return nothing
+    _local_cell!(ci, Int(VAROFFSET(1)), body)                  # *g = *body
+    ci.variables = nv
+    initMerge!(ci)
+    bi = PC(ci)
+    rc = compileBody!(gd, ld, ci, body, I_DEPART)
+    if rc != BOOLEX_TRUE
+        if rc == NOT_CALLABLE
+            b = new_term_ref(ld)                               # pushWordAsTermRef(body)
+            ld.slots[b + 1] = body
+            PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
+        elseif rc == MAX_ARITY_OVERFLOW
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
+        end
+        return nothing                                         # goto exit_fail
+    end
+    Output_0!(ci, I_EXIT)
+    flags = GOAL_CLAUSE
+    if ci.codes[bi + 1] == I_CUT                               # OpCode(ci, bi) == encode(I_CUT)
+        flags |= COMMIT_CLAUSE
+    end
+    @assert ci.argvars == ci.argvar "compileGoalClause: $(ci.argvars) argvars counted, $(ci.argvar) compiled"
+    code_size = length(ci.codes)
+    variables = ci.variables + SIZEOF_CREF_CLAUSE + sizeofClause(code_size)  # cl->variables += p-p0
+    ensureLocalSpace(ld, variables + LOCAL_MARGIN + SIZEOF_CHOICE) || return nothing
+    return Clause{T}(
+        def, global_generation(gd), GEN_INFINITE, clsize_t(variables), clsize_t(nv), flags,
+        ci.codes, ci.literals, ci.procedures, UInt32(0), UInt32(0), UInt32(0),
+        Int32[]                                                # init_vars: every cell is written
+    )
+end
 
 # DIVERGES: no upstream counterpart — defensive initialisation; see register Q3.
 "The clause's `init_vars`: the offsets `ci.init_vars` marks that are not arguments."

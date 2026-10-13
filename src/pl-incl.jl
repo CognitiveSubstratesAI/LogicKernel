@@ -62,6 +62,9 @@ const GEN_TRANSACTION_BASE = 0x8000000000000000
 # PORT: pl-incl.h GEN_MAX
 "The largest global generation; a live clause's `generation_erased` (pl-incl.h)."
 const GEN_MAX = GEN_TRANSACTION_BASE - 1
+# PORT: pl-incl.h GEN_INFINITE
+"The generation that never comes: a goal clause's `generation_erased` (pl-incl.h)."
+const GEN_INFINITE = typemax(gen_t)
 # PORT: pl-incl.h CL_START
 "Insertion point: the start of the clause list — `asserta` (pl-incl.h)."
 const CL_START = 1
@@ -92,9 +95,23 @@ const CL_ERASED = UInt32(0x0001)
 # PORT: pl-incl.h UNIT_CLAUSE
 "Clause flag: the clause has no body (pl-incl.h)."
 const UNIT_CLAUSE = UInt32(0x0002)
+# PORT: pl-incl.h GOAL_CLAUSE
+"Clause flag: a temporary clause compiled for `call/1` of a control construct (pl-incl.h; dummy for meta-calling)."
+const GOAL_CLAUSE = UInt32(0x0008)
 # PORT: pl-incl.h COMMIT_CLAUSE
 "Clause flag: the clause will commit — its body starts with `!` (pl-incl.h)."
 const COMMIT_CLAUSE = UInt32(0x0010)
+# PORT: pl-incl.h sizeofClause
+# DIVERGES: in positions (words), where upstream's is in bytes — `offsetof(struct clause, codes[n])`,
+# 64 bytes of fields on a 64-bit build (pl-incl.h:1457-1474) and one `code` word per VM word. Only a
+# goal clause's frame reads it (its code lives on the local stack upstream, so it moves `lTop`).
+"The size of a clause of `n` code words, in positions (pl-incl.h)."
+sizeofClause(n::Int)::Int = 8 + n
+# PORT: pl-incl.h SIZEOF_CREF_CLAUSE
+# DIVERGES: in positions: `offsetof(clause_ref, value.clause) + sizeof(Clause)`, 24 bytes on a 64-bit
+# build (pl-incl.h:1522-1534).
+"The size of a clause reference holding one clause, in positions (pl-incl.h)."
+const SIZEOF_CREF_CLAUSE = 3
 # PORT: pl-incl.h CL_HEAD_TERMS
 "Clause flag: the head contains terms used in the body — a unification moved into it (pl-incl.h)."
 const CL_HEAD_TERMS = UInt32(0x0400)

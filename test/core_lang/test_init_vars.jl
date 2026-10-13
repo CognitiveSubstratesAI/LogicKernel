@@ -94,11 +94,11 @@ end
     inits = [l for l in lines if occursin(r"_init_clause_vars!\(ld,", code(l))]
     @test !isempty(entries) && !isempty(inits)                  # both sides non-empty
     @test length(entries) == length(inits)                      # no entry bypasses the call
-    # and the known four are present by name, so a rename cannot hollow the check out
-    for cl in ("ss_cl", "tc_cref", "sb_cl", "db_cl")
+    # and the known five are present by name, so a rename cannot hollow the check out
+    for cl in ("ss_cl", "tc_cref", "sb_cl", "db_cl", "mc_cref")        # mc_: a goal clause (V9e-2)
         @test any(l -> occursin("frames[FR].clause = $cl", code(l)), entries)
     end
-    for v in ("ss_clause", "tc_clause", "sb_clause", "db_clause")
+    for v in ("ss_clause", "tc_clause", "sb_clause", "db_clause", "mc_cl")
         @test any(
             l -> occursin("_init_clause_vars!(ld, ld.frames[FR].base, $v)", code(l)), inits
         )

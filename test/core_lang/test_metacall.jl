@@ -245,20 +245,16 @@ end
     end
 end
 
-@testset "meta-call: what stays refused until V9e-2 (control constructs under call/1)" begin
-    X, Y = _rv(71), _rv(72)
+@testset "meta-call: call/8 meta-called as a term resolves a procedure (boot/init.pl's, R2)" begin
+    # since V9e-2 the control constructs and call/9 run in a goal clause (test_metacall_control.jl);
+    # call/8 is no control: it resolves the PROCEDURE `call/8`, which boot/init.pl defines (R2) — none
+    # here. KNOWN DIFFERENCE until R2, pinned exactly (user, 2026-10-13):
+    #   kernel: existence_error(procedure, call/8)
+    #   swipl 10.1.17: existence_error(procedure, nop/7) — its call/8 runs nop/7 (probed)
+    # R2 checklist: "boot/init.pl defines call/8; flip this test to the oracle differential".
     db = _rdb(_rmc_clauses())
-    for g in (
-        _rf("c1", _rf(",", _rf("p", X), _rf("p", Y))),
-        _rf("c1", _rf(";", _rs("nop"), _rs("nop"))),
-        _rf("c1", _rf("->", _rs("nop"), _rs("nop"))), _rf("c1", _rf("\\+", _rs("nop"))),
-        _rf("v", _rf("*->", _rs("nop"), _rs("nop"))),
-        _rf("v", _rf("call", (_rs("nop") for _ in 1:9)...))                # call/9: compiled
-    )
-        @test_throws LK.NotPortedError _rcall(db, g)
-    end
-    # call/8 is no control: it resolves a procedure like any other (existence error here)
-    @test _rmc_formal(db, _rf("v", _rf("call", (_rs("nop") for _ in 1:8)...))) != "no_error"
+    @test _rmc_formal(db, _rf("v", _rf("call", (_rs("nop") for _ in 1:8)...))) ==
+        "existence_error(procedure,/(call,8))"
 end
 
 @testset "meta-call: a reserved symbol is no goal" begin

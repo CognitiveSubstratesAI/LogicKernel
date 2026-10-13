@@ -122,7 +122,8 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
 end
 
 # PORT: pl-ext.c setBuiltinPredicateProperties as setBuiltinPredicateProperties!
-# NOT PORTED: every `LOOKUPPROC` but `equals2` — the procedures nothing reads yet (`catch/3`,
+# NOT PORTED: every `LOOKUPPROC` but `equals2` and `dcall1` (the goal clauses' predicate, since
+# V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set) — the procedures nothing reads yet (`catch/3`,
 # `true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …), each when its first reader is ported;
 # `$c_call_prolog/0` is created with the global data (src/pl-global.jl); `heartbeat/0`; `call/1`'s
 # flags and the meta-predicate declarations (no meta-call, V9).
@@ -130,6 +131,10 @@ end
 function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T}
     m = MODULE_system(gd)
     gd.procedures_equals2 = lookupProcedure(mk_sym(T, :(=)), 2, m)   # LOOKUPPROC(equals2)
+    gd.procedures_dcall1 = lookupProcedure(mk_sym(T, Symbol("\$call")), 1, m)   # LOOKUPPROC(dcall1)
+    d = gd.procedures_dcall1.definition                 # allow debugging in call/1
+    d.flags &= ~(HIDE_CHILDS | TRACE_ME)
+    d.flags |= P_DYNAMIC | P_LOCKED
     return nothing
 end
 

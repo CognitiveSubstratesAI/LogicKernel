@@ -67,10 +67,11 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
 end
 
 # ── Prolog text: the program for swipl, and answers as write_canonical/1 writes them ───────────
-"An atom as `write_canonical/1` writes it: a name made only of symbol characters bare."
+"An atom as `write_canonical/1` writes it: a name made only of symbol characters, and the solo atoms `;` and `!`, bare."
 function _ratom_text(t::_R)::String
     n = String(lk_name(t))
     !is_nil(t) && !isempty(n) && all(in("#\$&*+-./:<=>?@^~\\"), n) && return n
+    !is_nil(t) && (n == ";" || n == "!") && return n             # solo characters (swipl 10.1.17)
     return lk_atom_text(t)
 end
 
