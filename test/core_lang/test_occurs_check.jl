@@ -33,7 +33,13 @@ const _OT = lk_term_type(Union{Int64, Float64, String})
 _os(x::Symbol) = lk_sym(_OT, x)
 _oc(f::Symbol, xs::_OT...) = mk_expr(_OT, _OT[_os(f), xs...])
 _ov(k::Int) = mk_var(_OT, UInt64(k))
-_oid(a, b) = compareStandard(a, b) == 0                     # ==/2
+# The ball `error(occurs_check(Var, Term), _)` against the expected pair, UP TO A RENAMING of the
+# variables (`=@=`): the ball is a copy with fresh variables (copy_exception: duplicate_term,
+# pl-fli.c; since V9f), and plunit's `error(E)` asks only that the ball is subsumed by `E`.
+_oball(e, var, term) =
+    LogicKernel.is_variant_ptr(
+        _oc(:occurs_check, e.var, e.term), _oc(:occurs_check, var, term)
+    )
 
 "Local data with the `occurs_check` flag set."
 function _old(flag)
@@ -95,14 +101,14 @@ end
         X = _ov(1)
         ld = _old(OCCURS_CHECK_ERROR)
         e = _oerr(ld, () -> pl_unify!(ld, X, _oc(:f, X)))
-        @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
+        @test e !== nothing && _oball(e, X, _oc(:f, X))
     end
     # PORT: test_occurs_check.pl unify
     @testset "unify" begin                       # error(occurs_check(X, f(X))): unify(X, f(X))
         X, A = _ov(1), _ov(2)
         ld = _old(OCCURS_CHECK_ERROR)
         e = _oerr(ld, () -> pl_unify!(ld, _oc(:unify, X, _oc(:f, X)), _oc(:unify, A, A)))
-        @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
+        @test e !== nothing && _oball(e, X, _oc(:f, X))
         @test isempty(ld.trail) && isempty(ld.bindings)     # undone before the error
     end
     # PORT: test_occurs_check.pl unifiable
@@ -110,14 +116,14 @@ end
         X = _ov(1)
         ld = _old(OCCURS_CHECK_ERROR)
         e = _oerr(ld, () -> unifiable(ld, X, _oc(:f, X)))
-        @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
+        @test e !== nothing && _oball(e, X, _oc(:f, X))
     end
     # PORT: test_occurs_check.pl ?=
     @testset "?=" begin                          # error(occurs_check(X, f(X))): ?=(X, f(X))
         X = _ov(1)
         ld = _old(OCCURS_CHECK_ERROR)
         e = _oerr(ld, () -> pl_can_compare(ld, X, _oc(:f, X)))
-        @test e !== nothing && _oid(e.var, X) && _oid(e.term, _oc(:f, X))
+        @test e !== nothing && _oball(e, X, _oc(:f, X))
         @test isempty(ld.trail)                             # ?= undoes, error or not
     end
     # PORT: test_occurs_check.pl head
@@ -132,7 +138,6 @@ end
             ld,
             () -> pl_unify!(ld, _oc(:my_unify, X, X), _oc(:my_unify, Y, _oc(:s, Y)))
         )
-        @test e !== nothing && _oid(e.var, X)
-        @test _oid(e.term, _oc(:s, Y))                      # s(Y), as swipl's `=` (see header)
+        @test e !== nothing && _oball(e, X, _oc(:s, Y))     # s(Y), as swipl's `=` (see header)
     end
 end

@@ -905,6 +905,29 @@ mutable struct fliFrame
     mark::mark                              # data-stack mark
 end
 
+# PORT: pl-incl.h WAKEUP_STATE_WAKEUP
+"Wakeup-state flag: the state contains a wakeup (pl-incl.h)."
+const WAKEUP_STATE_WAKEUP = UInt32(0x1)
+# PORT: pl-incl.h WAKEUP_STATE_EXCEPTION
+"Wakeup-state flag: the state contains an exception (pl-incl.h)."
+const WAKEUP_STATE_EXCEPTION = UInt32(0x2)
+# PORT: pl-incl.h WAKEUP_STATE_SKIP_EXCEPTION
+"Wakeup-state flag: do not restore the exception from the state (pl-incl.h)."
+const WAKEUP_STATE_SKIP_EXCEPTION = UInt32(0x4)
+# PORT: pl-incl.h WAKEUP_KEEP_URGENT_EXCEPTION
+"Wakeup-state flag: keep the most urgent exception (pl-incl.h)."
+const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
+
+# PORT: pl-incl.h wakeup_state
+# DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
+# `outofstack` is a flag (the local stack's, as `LD->outofstack` here).
+"What `saveWakeup` set aside (pl-incl.h `wakeup_state`): its foreign frame, `outofstack`, the flags."
+struct wakeup_state
+    fid::Int                                # foreign frame reference
+    outofstack::Bool                        # Stack we are out of
+    flags::UInt32                           # WAKEUP_STATE_*
+end
+
 # The VM's argument pointer — upstream's `Word ARGP` register (pl-wam.c), which points at "the
 # next cell" — as ONE concrete immutable value in its three forms (user, 2026-10-05), so the register,
 # the argument stack and a query's saved registers have one type:

@@ -468,6 +468,12 @@ const I_CALL1 = code(120)
 # PORT: pl-vmi.c I_CALLN
 "`call(Goal, A1, …)`: the operand is the count of extra arguments (pl-vmi.c)."
 const I_CALLN = code(121)
+# PORT: pl-vmi.c I_CATCH
+"`catch/3`'s call of its goal, under a `CHP_CATCH` choice point (pl-vmi.c)."
+const I_CATCH = code(122)
+# PORT: pl-vmi.c I_EXITCATCH
+"`catch/3`'s exit: drop its `CHP_CATCH` if the goal left no choice point (pl-vmi.c)."
+const I_EXITCATCH = code(123)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -606,7 +612,9 @@ const _CODE_TABLE = (
     code_info(:C_SCUT, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:C_LSCUT, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
     code_info(:I_CALL1, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:I_CALLN, VIF_BREAK, 1, (CA1_INTEGER, 0x00, 0x00, 0x00))
+    code_info(:I_CALLN, VIF_BREAK, 1, (CA1_INTEGER, 0x00, 0x00, 0x00)),
+    code_info(:I_CATCH, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_EXITCATCH, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

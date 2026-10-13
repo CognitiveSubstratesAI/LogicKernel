@@ -1794,3 +1794,15 @@ const PL_predicates_from_prims = (
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )
+
+# ── fail/0, true/0 (since V9f: a meta-called `true`, as catch/3's recover goal often is) ─────────
+# In a clause body they compile inline (`I_FAIL`, `I_TRUE`, since V9a); called as a TERM —
+# `call(true)`, a variable goal — they resolve these predicates, registered from pl-ext.c's table
+# (`foreigns`, src/pl-ext.jl).
+# PORT: pl-prims.c pl_fail
+"`fail/0` as a predicate (pl-prims.c): fails."
+pl_fail(ld::PL_local_data{T}) where {T} = FFALSE
+
+# PORT: pl-prims.c pl_true
+"`true/0` as a predicate (pl-prims.c): succeeds."
+pl_true(ld::PL_local_data{T}) where {T} = FTRUE

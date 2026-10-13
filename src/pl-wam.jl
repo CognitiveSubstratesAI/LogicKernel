@@ -306,6 +306,69 @@ function PL_rewind_foreign_frame(ld::PL_local_data{T}, id::Int)::Nothing where {
     return nothing
 end
 
+# PORT: pl-wam.c findCatcher
+# DIVERGES: frames and choice points are records found by index, compared by POSITION (`fr <= ch`:
+# the frame lies below the newest choice point — it is not catch/3's call port); the result is the
+# catching frame's index (0: none) where upstream returns a term reference to it, which GC can move.
+# NOT PORTED: `foreignWakeup` (no attributed variables: nothing to wake, so no `ex2`).
+"""
+    findCatcher(gd, ld, fid, fr, ch, ex0) -> frame index, or 0
+
+The frame running catch/3, from `fr` upward, that has not caught yet (`FR_CAUGHT`: a ball from its
+recover goal passes on) and whose catcher unifies with the ball `ex0` references; it is marked
+`FR_CAUGHT`. The search runs with NO exception pending (`saveWakeup`), so an error the catcher's
+unification raises is raised — and is the ball from there on; the bindings of the unification are
+undone when the search ends (`restoreWakeup`; `b_throw_resume` unifies again) (pl-wam.c).
+"""
+function findCatcher(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fid::Int, fr::Int, ch::Int, ex0::Int
+)::Int where {T}
+    catch3 = gd.procedures_catch3.definition
+    ex = PL_copy_term_ref(ld, ex0)
+    wstate = saveWakeup(ld, false)
+    if wstate === nothing
+        ld.outofstack = true
+        outOfStack!(ld, STACK_OVERFLOW_THROW)           # throws: see outOfStack!
+        return 0                                        # assert(0)
+    end
+    chpos = ch == 0 ? typemax(Int) : ld.choices[ch].base
+    while fr != 0
+        f = ld.frames[fr]
+        if f.predicate === catch3 &&
+            (f.flags & FR_CAUGHT) == 0 &&               # not thrown from recover
+            f.base <= chpos                              # not call-port of catch/3
+            catcher = argFrameP(f.base, 1)               # consTermRef(argFrameP(fr, 1))
+            if PL_unify(ld, catcher, ex)
+                restoreWakeup(ld, wstate)
+                PL_put_term(ld, ld.exception_term, ex)
+                f.flags |= FR_CAUGHT
+                return fr
+            elseif ld.exception_term != 0               # Exception from PL_unify()
+                PL_put_term(ld, ex, ld.exception_term)
+            end
+            PL_rewind_foreign_frame(ld, wstate.fid != 0 ? wstate.fid : fid)
+        end
+        fr = f.parent
+    end
+    restoreWakeup(ld, wstate)
+    PL_put_term(ld, ld.exception_term, ex)
+    return 0
+end
+
+# PORT: pl-wam.c findCatchExit
+# DIVERGES: the code position (an index into catch/3's clause) where upstream caches the address in
+# `GD->exceptions.catch_exit_address`.
+"The position of catch/3's `I_EXIT`, the recover goal's return address: its clause's last code (pl-wam.c)."
+function findCatchExit(gd::PL_global_data{T})::Code{T} where {T}
+    cl =
+        (gd.procedures_catch3.definition.impl_clauses.first_clause::ClauseRef{T}).clause::Clause{
+            T
+        }
+    n = length(cl.codes)
+    @assert cl.codes[n] == I_EXIT
+    return Code{T}(cl.codes, cl.literals, n)
+end
+
 # PORT: pl-wam.c PL_discard_foreign_frame
 # DIVERGES: the frame is found by its handle (`fliFrameOfFid`), which must name an open one.
 "Undo foreign frame `id`'s bindings and close it (pl-wam.c)."
@@ -850,7 +913,7 @@ const VMI_RUN = (
     :B_NEQ_VV, :B_NEQ_VC, :C_VAR, :I_FAIL, :I_TRUE, :C_JMP, :C_OR, :C_VAR_N,
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
     :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT,
-    :I_CALL1, :I_CALLN
+    :I_CALL1, :I_CALLN, :I_CATCH, :I_EXITCATCH
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -2235,6 +2298,41 @@ function PL_next_solution_guarded(
     @LOAD_REGISTERS(QID)
     @goto b_throw                                   # THROW_EXCEPTION
 
+    # PORT: pl-vmi.c I_CATCH
+    # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`linkValI`). NOT PORTED: retyping the
+    # frame's `CHP_DEBUG` choice point (the debugger's; none here).
+    @label I_CATCH
+    icatch_p = argFrameP(ld.frames[FR].base, 0)
+    newChoice(ld, CHP_CATCH, FR)
+    if kind(deRef(ld, ld.slots[icatch_p + 1])) === VAR
+        @SAVE_REGISTERS(QID)
+        icatch_fid = PL_open_foreign_frame(ld)
+        PL_error(ld, ERR_INSTANTIATION)
+        PL_close_foreign_frame(ld, icatch_fid)
+        @LOAD_REGISTERS(QID)
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+    ld.slots[argFrameP(ld.lTop, 0) + 1] = linkValI(ld, ld.slots[icatch_p + 1])   # = B_VAR0
+    @goto I_CALL1
+
+    # PORT: pl-vmi.c I_EXITCATCH
+    # DIVERGES: the CHP_CATCH record taken out of the chain is marked `unlinked` (the soft-cut's
+    # record, since V9d): its region is reclaimed when `lTop` drops below it. NOT PORTED: the
+    # debugger's `CHP_DEBUG` (none here; `debugstatus.debugging` is never set).
+    @label I_EXITCATCH
+    iec_b = ld.BFR
+    while iec_b != 0 && ld.choices[iec_b].type == CHP_DEBUG
+        iec_b = ld.choices[iec_b].parent
+    end
+    if iec_b != 0 && ld.choices[iec_b].frame == FR &&
+        ld.choices[iec_b].base == argFrameP(ld.frames[FR].base, 3)
+        @assert ld.choices[iec_b].type == CHP_CATCH
+        ld.BFR = ld.choices[iec_b].parent
+        ld.choices[iec_b].unlinked = true
+        ld.frames[FR].flags |= FR_CAUGHT
+    end
+    @goto I_EXIT
+
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT
     # DIVERGES: NOT PORTED: the `LD->alerted` block (the debugger's exit port).
@@ -3083,9 +3181,11 @@ function PL_next_solution_guarded(
     # data's scratch `clause_choice`. `CHP_TOP` leaves `lTop` where it is, as upstream:
     # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`,
     # `CHP_DEBUG`), `frameFailed` for `FR_WATCHED`/det frames (asserted absent), the `LD->alerted`
-    # block, the inference count; `CHP_CATCH` arrives with catch/3 (V9). `CHP_JUMP` (since V9d): the
-    # code registers are reloaded from the frame's clause, because `value.pc` is an index into it
-    # where upstream's is an address.
+    # block, the inference count. `CHP_JUMP` (since V9d): the code registers are reloaded from the
+    # frame's clause, because `value.pc` is an index into it where upstream's is an address.
+    # `CHP_CATCH` (since V9f): the popped record and the dead ones above it are dropped at once, as
+    # at `CHP_CLAUSE`; its `FR_WATCHED` branch (`callCleanupHandler`: setup_call_cleanup/3) is NOT
+    # PORTED (asserted absent, V9g).
     @label deep_backtrack                           # next_choice:
     while FR != 0 && ld.frames[FR].base > ld.choices[ld.BFR].base     # NULL is below every choice
         leaveFrame(ld, FR)                          # LEAVE_FAILED_FRAME(FR)
@@ -3158,6 +3258,13 @@ function PL_next_solution_guarded(
         db_q.flags |= PL_Q_DETERMINISTIC
         db_q.foreign_frame = PL_open_foreign_frame(ld)
         return 0                                    # SOLUTION_RETURN(false)
+    elseif db_c.type == CHP_CATCH                   # catch/3 & setup_call_cleanup/3
+        @assert (ld.frames[FR].flags & FR_WATCHED) == 0
+        ld.frames[FR].flags |= FR_CAUGHT            # set(BFR->frame, FR_CAUGHT)
+        DiscardMark(ld, db_c.mark)
+        ld.BFR = db_c.parent
+        dropRecords!(ld, db_c.base)                 # the popped choice point and all above it
+        @goto deep_backtrack                        # goto next_choice
     end
     throw(
         NotPortedError{T}(DEF.name, "backtracking into a $(db_c.type) choice point", "V9")
@@ -3165,11 +3272,10 @@ function PL_next_solution_guarded(
 
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c b_throw
-    # DIVERGES: the no-catcher path (user, 2026-10-05): `findCatcher` finds no catcher, as there is no
-    # catch/3 before V9 — so it is not called, and the catcher reference is 0. `outofstack` is a flag
+    # DIVERGES: since V9f `findCatcher` finds catch/3's frame (an index; 0 when none). `outofstack` is a flag
     # (the local stack's); with no emergency space, `outOfStack!`'s second-overflow branch marks the
-    # local data unusable and throws, where upstream ends the process (see there). NOT PORTED: the
-    # exception hook that rewrites an exception.
+    # local data unusable and throws, where upstream ends the process (see there). The rewrite loop's
+    # `exception_hook` runs only when `'$exception_hook'/5` has clauses — none: not entered.
     @label b_throw
     ld.fast_condition = 0                           # A_FUNC exceptions
     QF = QueryFromQid(ld, QID)
@@ -3190,7 +3296,11 @@ function PL_next_solution_guarded(
         outOfStack!(ld, STACK_OVERFLOW_THROW)       # throws: see outOfStack!
         bt_fid = 0
     end
-    # catchfr_ref = findCatcher(fid, FR, LD->choicepoints, exception_term): no catch/3 (V9)
+    # find the catching frame (since V9f). The rewrite loop runs `exception_hook` only when
+    # `'$exception_hook'/5` has clauses (pl-wam.c:2276): none here, so it is not entered.
+    @SAVE_REGISTERS(QID)
+    bt_catchfr = findCatcher(gd, ld, bt_fid, FR, ld.BFR, ld.exception_term)
+    @LOAD_REGISTERS(QID)
     PL_close_foreign_frame(ld, bt_fid)
     @goto b_throw_debug
 
@@ -3201,10 +3311,10 @@ function PL_next_solution_guarded(
     @goto b_throw_unwind
 
     # PORT: pl-vmi.c b_throw_unwind
-    # DIVERGES: with no catcher, every frame up to the query's top is left; `frameFinished` on an
-    # `FR_WATCHED` frame is not ported (asserted absent).
+    # DIVERGES: frames compared by position; the frames above the catcher (or, with none, up to the
+    # query's top) are left; `frameFinished` on an `FR_WATCHED` frame is not ported (asserted absent).
     @label b_throw_unwind
-    while FR != 0
+    while FR != 0 && (bt_catchfr == 0 || ld.frames[FR].base > ld.frames[bt_catchfr].base)
         ld.environment_frame = FR
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
 
@@ -3230,8 +3340,40 @@ function PL_next_solution_guarded(
     @goto b_throw_resume
 
     # PORT: pl-vmi.c b_throw_resume
-    # DIVERGES: its no-catcher branch only (V9 adds the catcher); no GC request to honour.
+    # DIVERGES: since V9f both branches. The catcher's: the recover goal is copied to
+    # `argFrameP(lTop, 0)` as a value; `LD->query->next_environment` (GC's) is not kept; an `unwind(_)`
+    # ball (`uncachableException`: abort, halt — `'$recover_and_rethrow'/2`, boot/init.pl) is refused by
+    # name (R2). No GC request to honour.
     @label b_throw_resume
+    if bt_catchfr != 0
+        @assert FR == bt_catchfr
+        br_base = ld.frames[FR].base
+        @SAVE_REGISTERS(QID)
+        dbg_discardChoicesAfter(ld, FR, FINISH_EXTERNAL_EXCEPT_UNDO)
+        @LOAD_REGISTERS(QID)
+        ld.environment_frame = FR
+        PL_unify(ld, argFrameP(br_base, 1), ld.exception_term)      # re-unify
+        setLTop!(ld, argFrameP(br_base, 3))                         # above the catch/3
+        if _hasFunctor(deRef(ld, ld.slots[ld.exception_term + 1]), mk_sym(T, :unwind), 1)
+            throw(
+                NotPortedError{T}(
+                    ld.slots[ld.exception_term + 1],
+                    "an unwind(_) ball caught ('\$recover_and_rethrow'/2, boot/init.pl)",
+                    "R2"
+                )
+            )
+        end
+        ld.slots[argFrameP(ld.lTop, 0) + 1] = ld.slots[argFrameP(br_base, 2) + 1]   # recover goal
+        br_exit = findCatchExit(gd)                                 # PC = findCatchExit()
+        PCc = br_exit.codes
+        PCl = br_exit.literals
+        PC = br_exit.pc
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 1), ph)
+        @SAVE_REGISTERS(QID)
+        resumeAfterException(ld, true, bt_outofstack)
+        @LOAD_REGISTERS(QID)
+        @goto I_CALL1
+    end
     QF = QueryFromQid(ld, QID)                      # may be shifted
     br_q = ld.queries[QF]
     br_q.flags |= PL_Q_DETERMINISTIC

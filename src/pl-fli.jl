@@ -363,9 +363,11 @@ function has_emergency_space(ld::PL_local_data{T}, needed::Int)::Bool where {T}
 end
 
 # PORT: pl-fli.c copy_exception as copy_exception!
-# DIVERGES: the ball is RESOLVED through the bindings (decision 1), where upstream duplicates it
-# (`duplicate_term`: fresh variables): a variable keeps its key, and undoing bindings cannot change
-# the copy. A CYCLE — a compound met again on its own path — is cut by a fresh variable bound to the
+# DIVERGES: the ball is RESOLVED through the bindings (decision 1), so undoing bindings cannot change
+# the copy, and each unbound variable is replaced by a FRESH one, the same for every occurrence —
+# upstream's `duplicate_term` (since V9f: with catch/3 a program can compare the caught ball's
+# variables with the thrown term's; until then a variable kept its key). A ground compound is shared,
+# not copied (terms are immutable). A CYCLE — a compound met again on its own path — is cut by a fresh variable bound to the
 # copy of that compound WITHOUT a trail entry, so no undo removes it: upstream's `freezeGlobal`, in
 # the kernel's terms (since V5d; user, 2026-10-07).
 # NOT PORTED: the fallbacks for a copy that does not fit the global stack (the context dropped, a
@@ -378,11 +380,13 @@ function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool wh
     return true
 end
 
-# `t` resolved through the bindings as `resolve_term` resolves it, but a compound met again on its
-# own path is replaced by a variable bound — untrailed — to that compound's copy.
+# `t` resolved through the bindings as `resolve_term` resolves it, its unbound variables renamed, and
+# a compound met again on its own path replaced by a variable bound — untrailed — to that compound's
+# copy.
 function _copy_ball(ld::PL_local_data{T}, t::T)::T where {T}
     t = deRef(ld, t)
     (kind(t) !== EXPR || is_ground(t)) && return t
+    fresh = Dict{UInt64, T}()                       # an unbound variable's key → its fresh variable
     stack = Tuple{T, Vector{T}}[(t, T[])]           # (compound, its children copied so far)
     on_path = IdDict{T, Nothing}(t => nothing)      # compounds being copied
     cut = IdDict{T, T}()                            # a compound met on its own path → its variable
@@ -409,6 +413,8 @@ function _copy_ball(ld::PL_local_data{T}, t::T)::T where {T}
                 on_path[c] = nothing
                 push!(stack, (c, T[]))
             end
+        elseif kind(c) === VAR
+            push!(kids, get!(() -> mk_var(T, fresh_var_keys!(1)), fresh, var_key(c)))
         else
             push!(kids, c)
         end
@@ -416,7 +422,7 @@ function _copy_ball(ld::PL_local_data{T}, t::T)::T where {T}
 end
 
 # PORT: pl-fli.c PL_raise_exception
-# DIVERGES: the ball is copied by `copy_exception!` (see there: resolved, its cycles kept as
+# DIVERGES: the ball is copied by `copy_exception!` (see there: resolved, its variables fresh, its cycles kept as
 # untrailed bindings); `freezeGlobal` is that copy's.
 "Make the term `exception` references the pending exception, unless a more urgent one is pending; false (pl-fli.c)."
 function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T}

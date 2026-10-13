@@ -2051,6 +2051,10 @@ function compileSubClause!(
         elseif sym_key(arg) == names.atom_fail                 # ATOM_fail
             Output_0!(ci, I_FAIL)
             return BOOLEX_TRUE
+        elseif sym_key(arg) == names.atom_dcatch               # ATOM_dcatch: $catch (since V9f)
+            Output_0!(ci, I_CATCH)
+            Output_0!(ci, I_EXITCATCH)
+            return BOOLEX_TRUE
         end
         sym_key(arg) in names.reserved_atoms &&
             throw(
@@ -3162,7 +3166,7 @@ function decompile_head!(
             x = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
             y = mk_var(T, base + (PC.codes[PC.pc + 2] - VAROFFSET(0)))
             v = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), x, y])
-        elseif c == I_EXITFACT || c == I_ENTER
+        elseif c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH
             @assert frames === nothing || isempty(frames)
             while argn < arity                                  # trailing voids: their slots
                 if bvar_access !== nothing
@@ -3323,7 +3327,7 @@ end
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
 # upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`, the meta-call, modules, catch/3 and `$/1` (V9e–g).
+# arithmetic instructions but `A_ADD_FC`, modules and `$/1` (V9f-b, R2).
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
 each goal is built on the decompilation stack from its arguments' instructions, and the goals are
@@ -3532,7 +3536,10 @@ function decompileBodyNoShift!(
             di.pc += 1
             build_term!(di, mk_sym(T, op == C_IFTHEN ? Symbol("->") : Symbol("*->")), 2)
             pushed += 1
-        elseif op == I_EXIT
+        elseif op == I_CATCH                                    # (since V9f)
+            push!(di.argp, mk_sym(T, Symbol("\$catch")))
+            pushed += 1
+        elseif op == I_EXIT || op == I_EXITCATCH
             # break (out of upstream's switch): nothing
         else
             error(
@@ -3786,7 +3793,7 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
         elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST
             return FUNCTOR_dot2                                 # *key = FUNCTOR_dot2
         elseif c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_VOID_N ||
-            c == H_POP || c == I_EXITFACT || c == I_ENTER
+            c == H_POP || c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH
             return word(0)
         elseif c == I_NOP || c == I_CHP
             # continue
@@ -3825,7 +3832,7 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
         elseif c == H_FLOAT || c == H_STRING || c == H_MPZ || c == H_MPQ ||
             c == H_FIRSTVAR ||
             c == H_VAR || c == H_VOID || c == H_VOID_N || c == I_EXITFACT || c == I_EXIT ||
-            c == I_ENTER
+            c == I_ENTER || c == I_EXITCATCH
             return (false, word(0))
         elseif c == I_NOP || c == I_CHP
             # continue

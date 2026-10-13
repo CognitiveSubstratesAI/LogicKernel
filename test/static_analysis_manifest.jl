@@ -928,6 +928,13 @@ function _manifest_index(T)
         ),
         (LK._load_registers!, Tuple{LD, Int}, true),
         (LK.resumeAfterException, Tuple{LD, Bool, Bool}, false),
+        # V9f — catch/3: the catcher search and catch/3's exit position (src/pl-wam.jl)
+        (LK.findCatcher, Tuple{GD, LD, Int, Int, Int, Int}, false),
+        (LK.findCatchExit, Tuple{GD}, false),
+        # …run with no exception pending (src/pl-attvar.jl)
+        (LK.saveWakeup, Tuple{LD, Bool}, false),
+        (LK.restore_exception, Tuple{LD, Int}, false),
+        (LK.restoreWakeup, Tuple{LD, LK.wakeup_state}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
         (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),
@@ -968,6 +975,8 @@ function _manifest_index(T)
         (LK.registerBuiltins!, Tuple{GD, Vector{Tuple{String, Int, UInt8}}, Int}, false),
         (LK.initBuildIns!, Tuple{GD}, false),
         (LK.setBuiltinPredicateProperties!, Tuple{GD}, false),
+        (LK._boot_catch3!, Tuple{GD}, false),                   # V9f: boot/init.pl's catch/3
+        (LK.pl_true, Tuple{LD}, true), (LK.pl_fail, Tuple{LD}, true),   # V9f: true/0, fail/0, $fail/0
         (LK._fcall_va, Tuple{Int, LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._fcall_det, Tuple{Int, LD, Int}, false),
         (LK.MODULE_system, Tuple{GD}, true),

@@ -29,7 +29,8 @@
 
 # PORT: pl-ext.c foreigns
 # DIVERGES: the ported entries only, in upstream's order (upstream's table has 56, pl-ext.c:98-190);
-# since R1e's write/1 family, write/1,2, writeq/1,2, writeln/1,2, print/1,2 and write_canonical/1,2.
+# since R1e's write/1 family, write/1,2, writeq/1,2, writeln/1,2, print/1,2 and write_canonical/1,2;
+# since V9f fail/0, true/0 and `$fail/0` (pl-prims.c; `!/0`, pl-pro.c's `pl_metacut`, is not yet).
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
     PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
@@ -37,6 +38,9 @@ const foreigns = (
     PL_extension("writeq", 1, pl_writeq, PL_FA_ISO),
     PL_extension("writeln", 1, pl_writeln, 0x00),
     PL_extension("print", 1, pl_print, 0x00),
+    PL_extension("fail", 0, pl_fail, PL_FA_ISO),
+    PL_extension("true", 0, pl_true, PL_FA_ISO),
+    PL_extension("\$fail", 0, pl_fail, PL_FA_NOTRACE),
     PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
     PL_extension("write", 2, pl_write2, PL_FA_ISO),
     PL_extension("writeln", 2, pl_writeln2, 0x00),
@@ -118,13 +122,37 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     end
     @assert first == length(_FOREIGN_VA)
     setBuiltinPredicateProperties!(gd)
+    _boot_catch3!(gd)
+    return nothing
+end
+
+# DIVERGES (no upstream function; user's unattended rule: behaviour as upstream's): boot/init.pl's
+# `catch(_Goal, _Catcher, _Recover) :- '\$catch'.` (init.pl:564-565), compiled when the database is
+# created — `'\$catch'` compiles to `I_CATCH I_EXITCATCH` (pl-comp.c), so the clause is upstream's
+# `I_ENTER I_CATCH I_EXITCATCH I_EXIT`. R2 loads boot/init.pl, which defines it the same way. `'\$iso'`
+# (init.pl:388) sets `P_ISO`; boot code is system code (`P_LOCKED`). NOT PORTED: `noprofile/1`, the
+# meta-predicate declaration `catch(0, ?, 0)` (no module transparency until R2).
+"Define `catch/3` in the `system` module of `gd` as boot/init.pl defines it."
+function _boot_catch3!(gd::PL_global_data{T})::Nothing where {T}
+    proc = gd.procedures_catch3
+    def = proc.definition
+    ld = PL_local_data{T}()
+    k = fresh_var_keys!(3)
+    head = mk_expr(
+        T, T[mk_sym(T, :catch), mk_var(T, k), mk_var(T, k + 1), mk_var(T, k + 2)]
+    )
+    cl = compileClause(gd, ld, head, mk_sym(T, Symbol("\$catch")), proc, MODULE_system(gd))
+    cl === nothing && error("_boot_catch3!: catch/3's boot clause does not compile")
+    assertDefinition!(gd, def, cl, CL_END)
+    def.flags |= P_ISO | P_LOCKED
     return nothing
 end
 
 # PORT: pl-ext.c setBuiltinPredicateProperties as setBuiltinPredicateProperties!
-# NOT PORTED: every `LOOKUPPROC` but `equals2` and `dcall1` (the goal clauses' predicate, since
-# V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set) — the procedures nothing reads yet (`catch/3`,
-# `true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …), each when its first reader is ported;
+# NOT PORTED: every `LOOKUPPROC` but `equals2`, `dcall1` (the goal clauses' predicate, since
+# V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set) and `catch3` (since V9f) — the
+# procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …), each when
+# its first reader is ported;
 # `$c_call_prolog/0` is created with the global data (src/pl-global.jl); `heartbeat/0`; `call/1`'s
 # flags and the meta-predicate declarations (no meta-call, V9).
 "Cache the system procedures the VM calls directly in the global data (pl-ext.c)."
@@ -135,6 +163,7 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     d = gd.procedures_dcall1.definition                 # allow debugging in call/1
     d.flags &= ~(HIDE_CHILDS | TRACE_ME)
     d.flags |= P_DYNAMIC | P_LOCKED
+    gd.procedures_catch3 = lookupProcedure(mk_sym(T, :catch), 3, m)   # LOOKUPPROC(catch3)
     return nothing
 end
 

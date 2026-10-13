@@ -6,8 +6,8 @@
 # since V5d), called through the query API: with no catch/3 until V9, the ball is read where the
 # query ends, with `PL_exception`, as plunit's `throws(Ball)` reads the one its catch/3 caught. A ball is
 # the RESOLVED copy `PL_raise_exception` keeps (src/pl-fli.jl `copy_exception!`): an unbound variable
-# keeps its key (upstream's `duplicate_term` renames it; `throws` holds either way), and a cyclic
-# ball keeps its cycle as a binding no undo removes (user, 2026-10-07).
+# is renamed, as upstream's `duplicate_term` renames it (since V9f; `throws` holds either way), and
+# a cyclic ball keeps its cycle as a binding no undo removes (user, 2026-10-07).
 #
 # NOT PORTED, and why:
 #   ex_coroutining not, non_unify   freeze/2: the kernel has no attributed variables.

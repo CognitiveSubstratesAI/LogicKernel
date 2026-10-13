@@ -1611,6 +1611,11 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
     dcases = [
         [(h, b) for (_, h, b) in _BC_OR_CELLS]; [(h, b) for (_, h, b) in _BC_DEC_CELLS]
         random; plain
+        # `\$catch` (since V9f): I_CATCH decompiles to the atom, I_EXITCATCH to nothing (c:6744, c:6918)
+        [
+            (_bf("dk1", _bv(1), _bv(2), _bv(3)), _bs("\$catch")),
+            (_bs("dk2"), _bconj(_bs("q"), _bs("\$catch")))
+        ]
     ]
     dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
     decomp = [
@@ -2874,14 +2879,20 @@ end
     p = _bs("pr")
     for body in (
         _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")), _bf("\$", _bs("g")),
-        _bconj(_bs("q"), _bs("\$catch"))                       # a reserved goal atom (V9)
+        _bconj(_bs("q"), _bs("\$reset"))                       # a reserved goal atom (V9)
     )
         @test_throws LK.NotPortedError _bclause(p, body)
     end
     # since V9a `true` and `fail` compile to I_TRUE and I_FAIL, as swipl's do
-    tf = [(_bs("pt1"), _bconj(_bs("q"), _bs("true"))), (_bs("pt2"), _bs("fail"))]
+    # since V9f `\$catch` compiles to I_CATCH I_EXITCATCH (c:3539): boot/init.pl's catch/3 is `\$catch`
+    tf = [
+        (_bs("pt1"), _bconj(_bs("q"), _bs("true"))), (_bs("pt2"), _bs("fail")),
+        (_bf("pt3", _bv(1), _bv(2), _bv(3)), _bs("\$catch")),
+        (_bs("pt4"), _bconj(_bs("q"), _bs("\$catch")))
+    ]
     ours_tf = [_bc_kernel(_bclause(h, b)) for (h, b) in tf]
     @test any(startswith("i_true"), ours_tf[1]) && any(startswith("i_fail"), ours_tf[2])
+    @test ours_tf[3] == ["i_enter", "i_catch", "i_exitcatch", "i_exit"]     # c:3540-3541, then compileClause's I_EXIT
     if _BC_SWIPL_BIN !== nothing
         @test _bc_swipl(["bc_case_show(($(_bc_text(h, b))))" for (h, b) in tf]) == ours_tf
     end
@@ -2902,9 +2913,13 @@ end
         mk_nil(_B),                                             # p :- []
         _bconj(_bs("q"), mk_expr(_B, _B[_bv(1), _bs("a")]))     # p :- q, (X a): `$expr/2`
     )
+        # a VARIANT of the body: the ball is a copy with fresh variables (copy_exception:
+        # duplicate_term, pl-fli.c; since V9f)
         ball = clause_error(body)
         @test ball !== nothing &&
-            lk_eq(child(ball, 2), _bf("type_error", _bs("callable"), body))
+            LK.is_variant_ptr(child(ball, 2), _bf("type_error", _bs("callable"), body))
+        kind(body) === EXPR && !is_ground(body) &&
+            @test !lk_eq(child(ball, 2), _bf("type_error", _bs("callable"), body))
     end
     # representation_error(max_procedure_arity): a goal of 1025 arguments (MAXARITY)
     ball = clause_error(_be("q", [_bg(1) for _ in 1:(LK.MAXARITY + 1)]))

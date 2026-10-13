@@ -527,6 +527,7 @@ fixed it or a public issue exists.
 | `src/pl-error.jl` | building and raising an ISO error term for the running predicate (`PL_error`, one typed method per code family: instantiation, type, domain and occurs-check errors, since V5b the undefined procedure's existence error with its caller, since V6c1 arithmetic's (`ERR_NOT_EVALUABLE`, the evaluation errors) with upstream's `pred`, `arity`, `msg`, since V8 `ERR_AR_TYPE`, and since V9c `ERR_REPRESENTATION`, `ERR_MODIFY_STATIC_PROC` and `rewrite_callable`, since R1b `ERR_PERMISSION`; `PL_type_error`, `PL_domain_error`; since R1b `PL_get_atom_ex`, `PL_get_integer_ex`, `PL_get_list_ex`, `PL_get_nil_ex`); since R1f `ERR_PERMISSION_PROC` and `printMessage` (the message collected, not printed: print_message/2 is R2's); since R1e's write/1 family `ERR_EXISTENCE`, `ERR_STREAM_OP`, `PL_get_stdbool_ex`, `PL_get_bool_ex`, `PL_unify_bool_ex` | `src/pl-error.c`, `src/pl-error.h` |
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer); the tables in `initBuildIns`' order (arith, comp, prims, variant, trace, read — since R1d — proc — since R1f — write — since R1e's write/1 family — op); pl-ext.c's own FRG table, since R1e's write/1 family with write/1,2, writeq/1,2, writeln/1,2, print/1,2 | `src/pl-ext.c` |
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
+| `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); attributed variables themselves are not ported | `src/pl-attvar.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan` | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
@@ -651,6 +652,7 @@ graph LR
     pl_alloc["pl-alloc.jl"]
     pl_wam["pl-wam.jl"]
     pl_fli["pl-fli.jl"]
+    pl_attvar["pl-attvar.jl"]
     pl_error["pl-error.jl"]
     pl_gmp["pl-gmp.jl"]
     pl_arith["pl-arith.jl"]
@@ -837,6 +839,7 @@ graph LR
     pl_wam --> pl_gc
     pl_wam --> pl_alloc
     pl_wam --> pl_fli
+    pl_wam --> pl_attvar
     pl_wam --> pl_error
     pl_wam --> pl_gmp
     pl_wam --> pl_arith
@@ -844,6 +847,7 @@ graph LR
     pl_wam --> pl_setup
     pl_wam --> pl_proc
     pl_wam --> pl_supervisor
+    pl_wam --> pl_write
     pl_wam --> pl_ext
     pl_fli --> term_interface
     pl_fli --> default_term
@@ -861,6 +865,11 @@ graph LR
     pl_fli --> pl_arith
     pl_fli --> os_pl_text
     pl_fli --> pl_write
+    pl_attvar --> default_term
+    pl_attvar --> pl_incl
+    pl_attvar --> pl_global
+    pl_attvar --> pl_wam
+    pl_attvar --> pl_fli
     pl_error --> term_interface
     pl_error --> default_term
     pl_error --> pl_incl
@@ -1058,6 +1067,7 @@ graph LR
     pl_ext --> pl_comp
     pl_ext --> pl_variant
     pl_ext --> pl_arith
+    pl_ext --> os_pl_text
     pl_ext --> pl_proc
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
@@ -2440,6 +2450,75 @@ local data unusable; (3) the spare stacks ported. Research: the workspace's
   by 1 MiB more, without end (as upstream would); the follow-up overflow is guarded so the testset's
   own check fails fast. `PL_error` setting the flag survived until a test opened its foreign frame at
   the limit.
+
+**V9f-a: `catch/3` — BUILT (2026-10-13)** (the user's order: V9f in two gates, catch/3 then `$/1`;
+port_inventory row V9; src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-attvar.jl (new), pl-fli.jl, pl-ext.jl,
+pl-prims.jl, pl-funct.jl, pl-global.jl, pl-incl.jl). Ported from pl-comp.c, pl-vmi.c, pl-wam.c and
+pl-attvar.c at the pin `ac807ba8`, upstream names.
+* **Ported — the compiler:** the goal atom `$catch` is `I_CATCH I_EXITCATCH` (c:3539-3541), and
+  decompiles back (`I_CATCH` → the atom, `I_EXITCATCH` → nothing); `I_EXITCATCH` joins `I_EXITFACT`
+  in `argKey`, `arg1Key` and `decompile_head`, as upstream lists it.
+* **Ported — the VM:** `I_CATCH` (a `CHP_CATCH` choice point for the frame, an instantiation error
+  for an unbound goal, the goal to `argFrameP(lTop, 0)`, then `I_CALL1`); `I_EXITCATCH` (the frame's
+  own `CHP_CATCH` taken off the chain when it is the newest choice — the goal left none — and
+  `FR_CAUGHT` set; then `I_EXIT`); `findCatcher` (pl-wam.c: from the throwing frame upward, a frame
+  of catch/3 that is not `FR_CAUGHT` and lies below the newest choice point, whose catcher unifies
+  with the ball); `saveWakeup`/`restoreWakeup` around that search (pl-attvar.c, src/pl-attvar.jl:
+  the pending exception is set aside in a foreign frame of its own and `exception_term` cleared, so
+  an error the catcher's unification raises — the occurs check under `occurs_check = error` — IS
+  raised, `PL_error` refusing to overrule a pending exception, and is the ball from there on; the
+  frame's discard undoes the catcher's bindings, which is why `b_throw_resume` unifies again);
+  `b_throw` calls it; `b_throw_unwind` stops
+  at the catcher frame; `b_throw_resume`'s catcher branch (discard the choices above, re-unify the
+  catcher, `lTop = argFrameP(FR, 3)`, the recover goal to `argFrameP(lTop, 0)`, `PC = findCatchExit()`
+  — catch/3's `I_EXIT` —, `resumeAfterException(true, …)`, `I_CALL1`); `deep_backtrack`'s `CHP_CATCH`
+  case (the goal failed, or its last answer was left: `FR_CAUGHT`, pop, next choice).
+* **Ported — the predicates:** `true/0`, `fail/0` and `$fail/0` as foreign predicates (pl-prims.c
+  `pl_true`, `pl_fail`; pl-ext.c's table order) — a meta-called `true`, as a recover goal often is,
+  resolves the predicate; in a clause body they still compile inline (`I_TRUE`, `I_FAIL`).
+* **A divergence REMOVED — the ball's variables are fresh:** since V5d `copy_exception!` resolved the
+  ball and kept each unbound variable's key, logged as a DIVERGES from upstream's `duplicate_term`;
+  nothing could observe it without catch/3. Now `catch(throw(f(X)), f(Y), true), X == Y` can: swipl
+  answers no, the kernel answered yes. The copy renames each unbound variable, one fresh variable
+  per variable (sharing kept), as upstream.
+* **Two defects of the first draft, found by the differential and fixed before the gate:** the
+  draft left `saveWakeup` out as "attributed variables only" — so under `occurs_check = error` a
+  catcher whose unification would build a cycle let the ORIGINAL ball pass uncaught, where swipl
+  raises `occurs_check(A, g(A))` in `throw/1`'s context and an outer catch/3 catches that; and the
+  ball's variables (above).
+* **DIVERGES (behaviour as upstream's, logged):** catch/3's ONE clause, boot/init.pl:564-565
+  `catch(_Goal, _Catcher, _Recover) :- '$catch'.`, is compiled when the database is created
+  (`_boot_catch3!`, src/pl-ext.jl; `P_ISO|P_LOCKED`), because boot/init.pl is not loaded until R2 —
+  which then defines it the same way. **Representation:** `findCatcher` answers the frame's index
+  (0: none) where upstream answers a term reference; `findCatchExit` a code position in catch/3's
+  clause where upstream caches an address; `I_EXITCATCH` marks the record it takes off the chain
+  `unlinked` (V9d's mechanism: its region is still in use), and `deep_backtrack` drops the popped
+  `CHP_CATCH` record with the dead ones above it, as at `CHP_CLAUSE`.
+* **NOT PORTED, refused by name or asserted absent:** an `unwind(_)` ball reaching a catcher
+  (`uncachableException`: `'$recover_and_rethrow'/2`, boot/init.pl — R2; pinned, swipl's answer in
+  the test's comment); the wakeup list `saveWakeup` also saves and `foreignWakeup` (attributed
+  variables); `exception_hook` (it runs
+  only when `'$exception_hook'/5` has clauses: none); the `FR_WATCHED` branches (`callCleanupHandler`,
+  `frameFinished`: setup_call_cleanup/3, V9g); the debugger's `CHP_DEBUG` retyping; the
+  meta-predicate declaration `catch(0, ?, 0)` (modules, R2); `!/0` as a predicate (`pl_metacut`,
+  pl-pro.c — R2). **R2 items:** `call/1..8` meta-called as a TERM (`catch(call(1), …)`) resolve
+  boot/init.pl's predicates (pinned for `call/8` in test_metacall.jl).
+* **Gates — against swipl 10.1.17 (`ac807ba8`), all three term types:**
+  test/core_lang/test_catch_swipl.jl — 28 goals, every answer with its determinism equal to swipl's
+  and the record pools checked at every answer: a ball and its catcher, a catcher that does not
+  match (the ball passes to the outer catch/3), a ball thrown five frames down, a built-in's error
+  caught by its formal, a ball from the recover goal (not caught by the same catch/3), backtracking
+  into the goal and out of catch/3 (the last answer deterministic), a cut inside the goal, bindings
+  undone at the ball and the catcher's kept, an unbound goal, a failing recovery, a failing goal,
+  a ball from a recovery that left a choice point above catch/3's frame (`FR_CAUGHT` alone decides),
+  `assertz/1` into catch/3 (locked: `permission_error`), a catcher whose unification builds a cycle
+  (caught under `occurs_check = false`; the occurs-check error the ball under `error`, a second
+  testset), the caught ball's variables fresh with their sharing kept;
+  FIVE FRAME POSITIONS after catch/3, read with `prolog_current_frame/1` on both sides (after a
+  caught ball, after a goal that exits, inside the recover goal, and after a looping `user:X`
+  qualifier chain is caught — **MC19's kill test**, V9e-1). test/compile/test_body_code_swipl.jl:
+  the code of `p :- '$catch'` and `p :- q, '$catch'` equal swipl's listing, and their decompiled
+  clauses are variants of swipl's clause/2.
 
 **V9d: the SOFT-CUT `*->` — BUILT (2026-10-12)** (user's decision; port_inventory row V9;
 src/pl-comp.jl, pl-vmi.jl, pl-wam.jl, pl-incl.jl, pl-gc.jl, pl-global.jl). Ported from pl-comp.c

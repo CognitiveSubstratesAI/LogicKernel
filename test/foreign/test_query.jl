@@ -255,7 +255,8 @@ end
     qid, a, fid = _yopen(p[:f], _yv(1); flags=LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
     @test_throws ErrorException LK.PL_new_term_ref(ld)          # no foreign frame above the query's
     @test LK.PL_next_solution_guarded(db.gd, ld, qid, true) == LK.PL_S_EXCEPTION
-    @test lk_eq(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]),
+    # (a variant: the ball is a copy with fresh variables, copy_exception — since V9f)
+    @test LK.is_variant_ptr(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]),
         _yf(:error, _ys(:boom), _yv(2)))
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
