@@ -1,0 +1,38 @@
+# THE ORACLE, ONE RECIPE FOR EVERY WORKFLOW (user, 2026-10-13): swipl built from the
+# pinned commit of tools/SWIPL_VERSION by tools/build_oracle.sh — once per pin, then restored from
+# the cache (key: the pinned commit + the build flags, `tools/build_oracle.sh --key`) — put on PATH,
+# and CHECKED to be that build (`_check_swipl_pin`, the check every local gate makes). These are
+# CI.yml's `analysis` job's own steps, moved here so mutation.yml and evidence.yml cannot drift from
+# them; CI.yml uses this action too.
+name: The oracle (swipl at the pin)
+description: Restore or build swipl at the pinned commit, put it on PATH, refuse any other swipl
+runs:
+  using: composite
+  steps:
+    - name: The oracle's cache key (pinned commit + build flags)
+      id: oracle
+      shell: bash
+      run: echo "key=$(tools/build_oracle.sh --key)" >> "$GITHUB_OUTPUT"
+    - name: Restore the oracle
+      id: oracle_cache
+      uses: actions/cache@v4
+      with:
+        path: ~/swipl-oracle
+        key: ${{ runner.os }}-${{ steps.oracle.outputs.key }}
+    - name: Build the oracle from the pinned commit
+      if: steps.oracle_cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q --no-install-recommends cmake ninja-build libgmp-dev zlib1g-dev
+        ORACLE_WORK="$RUNNER_TEMP/swipl-oracle-work" tools/build_oracle.sh "$HOME/swipl-oracle"
+    - name: Put the oracle on PATH
+      shell: bash
+      run: echo "$HOME/swipl-oracle/bin" >> "$GITHUB_PATH"
+    - name: Refuse any swipl but the oracle
+      shell: bash
+      run: |
+        export PATH="$HOME/swipl-oracle/bin:$PATH"
+        swipl --version
+        . tools/lib_evidence.sh
+        _check_swipl_pin "$PWD" CI || { echo "::error::the swipl on PATH is not the oracle of tools/SWIPL_VERSION"; exit 1; }

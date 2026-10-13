@@ -49,7 +49,51 @@ every committer. Install it once per clone with `git config core.hooksPath tools
 `test/test_commit_msg_hook.jl`. It replaces a workspace-side check of the command text, which is now
 retired.
 
-## A full run of `tools/run_tests.sh` is the commit gate
+## The commit gate runs in CI; a full local run is the fallback (user, 2026-10-13)
+
+An evidence run on all three term types takes about an hour on the development machine, and the
+machine can do nothing else meanwhile. So the gate for `main` is CI's:
+
+1. **Commit on a branch, after the local preflight** (`tools/warm.sh preflight`: format, port_check,
+   the static analysis, the changed test files). The preflight records its pass as evidence for a
+   BRANCH commit only; on `main` the commit hook still asks for a full local suite.
+2. **Push the commit as `gate/<name>`.** There `.github/workflows/evidence.yml` runs the whole suite
+   with every gate required, ONE JOB PER TERM TYPE in parallel (`LOGICKERNEL_TERM_ONLY`,
+   test/runtests.jl: the files that are not term-generic — the static analysis among them — go with
+   the reference job; each job asserts the OTHER types built no compound), and
+   `tools/evidence_ci.py` checks that the three jobs ran every unit of the suite exactly once.
+   CI.yml's `test` and `format` jobs run on the gate branch too; its `analysis` job (the same suite
+   in one job) is skipped there and still runs on `main`.
+3. **Fast-forward `main` to that commit.** `tools/githooks/pre-push` refuses a push to `main` unless
+   `tools/ci_status.sh --require "Evidence (three term types)" <sha>` is green for EXACTLY the pushed
+   commit: every run completed and succeeded, the evidence workflow among them. A run that is
+   missing, red or still going, and an unreadable answer, are refusals. The run is not named in the
+   commit: it exists only after the commit does, and amending would make `main` a commit CI never
+   saw. The handoff records the run.
+4. **The fallback, when CI itself is down:** a full local run (`tools/warm.sh evidence`, every term
+   type), then `LOGICKERNEL_PUSH_LOCAL_EVIDENCE=<the full SHA>` on the push — the hook checks that
+   it names the pushed commit, that the checkout IS that commit, and that the evidence marker says
+   a full suite on every term type passed on this tree.
+
+**The oracle is one recipe** (`.github/actions/oracle`): swipl built at the pin by
+`tools/build_oracle.sh`, cached by pinned commit + build flags, put on PATH and checked to be that
+build — used by CI.yml, evidence.yml and mutation.yml alike.
+
+**The mutation battery runs once per step, at its close, in CI** (`.github/workflows/mutation.yml`,
+started by hand with the step's list, `tools/mutants/<step>.py`): a baseline job, ONE JOB PER MUTANT
+(`fail-fast: false`), and a verdict table in the last job's summary. `tools/mutate_ci.py` applies
+the local driver's rules — a target exits 1 = caught, every target exits 0 = SURVIVED, past the
+limit = TIMEOUT, another code = INVALID, a declared `equivalent` must survive — and SURVIVED,
+TIMEOUT, INVALID, BADMATCH, a refuted equivalence, a missing verdict and a baseline that is not
+green all block. No benchmarks in CI: shared runners vary, `tools/bench.jl` stays local.
+
+Every guard here has planted cases in test/test_gate_split.jl: the push hook (no run found, CI green
+without the evidence run, still running, red, another commit's run, unreadable, deleting `main`, a
+fallback that names another commit), the partition check (a unit run by no job, by two, outside the
+suite; two suites; an empty one; a job that failed or died) and the mutant verdicts (each of the
+eight outcomes, and what blocks).
+
+## A full run of `tools/run_tests.sh` is the local gate
 
 Besides the suite, a FULL run first refuses to start unless:
 * the commit-msg hook above is installed;

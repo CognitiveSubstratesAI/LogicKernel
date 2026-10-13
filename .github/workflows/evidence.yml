@@ -1,0 +1,95 @@
+# The evidence run, in CI (user, 2026-10-13): the whole suite with EVERY gate required — the static
+# analysis (JET, Aqua, AllocCheck), the live differentials against the oracle — as ONE JOB PER TERM
+# TYPE, in parallel. THE COMMIT GATE: a commit is pushed to a branch `gate/<name>`, this workflow
+# runs there, and `main` is fast-forwarded to that commit only when the run is green
+# (tools/githooks/pre-push asks tools/ci_status.sh for a green run of THIS workflow, by name, on
+# exactly the pushed commit). Also nightly on `main`, and by hand.
+# Each job runs the units of ONE implementation (LOGICKERNEL_TERM_ONLY, test/runtests.jl); the
+# files that are not term-generic — the static analysis among them — run in the `reference` job.
+# `units` then checks that the three jobs together ran EVERY unit exactly once: a filter that
+# dropped a unit would otherwise read as green.
+# NO BENCHMARKS HERE (tools/bench.jl stays local, on a quiet machine).
+# 🔴 THE NAME BELOW IS READ BY tools/githooks/pre-push (`EVIDENCE_WORKFLOW`): rename both or neither.
+name: Evidence (three term types)
+on:
+  push:
+    branches:
+      - 'gate/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'              # nightly, 02:17 UTC
+
+concurrency:
+  group: evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write          # julia-actions/cache deletes old caches (its README)
+
+jobs:
+  evidence:
+    name: ${{ matrix.term }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        term: [reference, alt, alt_interned]
+    env:
+      JULIA_NUM_THREADS: '4'
+      LOGICKERNEL_REQUIRE_TOOLS: '1'
+      LOGICKERNEL_REQUIRE_SWIPL: '1'
+      LOGICKERNEL_TERM_ONLY: ${{ matrix.term }}
+      LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_${{ matrix.term }}.tsv
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/oracle
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@v2
+      # The analysis tools, as CI.yml's `analysis` job installs them (JET, LoweredCodeUtils and Aqua
+      # from master, as a set); only the `reference` job analyses, the others need none.
+      - name: Install the analysis tools into the default environment
+        if: matrix.term == 'reference'
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(name="AllocCheck")])'
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run this term type's units with every gate required
+        run: |
+          mkdir -p evidence-out
+          start=$(date +%s)
+          julia --project=. test/runtests.jl
+          echo "| ${{ matrix.term }} | passed | $(( $(date +%s) - start )) s |" >> evidence-out/row_${{ matrix.term }}.md
+      - name: Record a failed run
+        if: ${{ failure() }}
+        run: |
+          mkdir -p evidence-out
+          echo "| ${{ matrix.term }} | **FAILED** | — |" >> evidence-out/row_${{ matrix.term }}.md
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: evidence-${{ matrix.term }}
+          path: evidence-out/
+
+  units:
+    name: Verdict table
+    needs: evidence
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: evidence-*
+          path: evidence-out
+          merge-multiple: true
+      # The table (term type · verdict · seconds), and the partition check: the union of the three
+      # unit lists is the full list of units (test/runtests.jl's own enumeration), none twice.
+      - name: Collect
+        run: python3 tools/evidence_ci.py evidence-out | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}

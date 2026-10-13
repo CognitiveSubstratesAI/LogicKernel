@@ -1,11 +1,98 @@
 #!/usr/bin/env bash
-# tools/githooks/pre-push — a MUTANT WORKTREE never pushes (user, 2026-10-11). tools/mutate.sh
-# builds a second worktree of this repository in which mutants are applied — deliberately broken
-# code, on a detached HEAD — and marks it with .warm/MUTANT_WORKTREE. Nothing made there may reach
-# the history: this hook refuses there, and does nothing anywhere else.
+# tools/githooks/pre-push — two refusals.
+#
+# 1. A MUTANT WORKTREE never pushes (user, 2026-10-11). tools/mutate.sh builds a second worktree of
+#    this repository in which mutants are applied — deliberately broken code, on a detached HEAD —
+#    and marks it with .warm/MUTANT_WORKTREE. Nothing made there may reach the history.
+#
+# 2. `main` TAKES ONLY A COMMIT THE EVIDENCE WORKFLOW JUDGED GREEN (user, 2026-10-13). The gate:
+#    commit → push to a branch `gate/<name>` → .github/workflows/evidence.yml runs the whole suite
+#    there, three term types in parallel → `main` is fast-forwarded to THAT commit. So a push that
+#    updates `refs/heads/main` is refused unless tools/ci_status.sh reports, for exactly the pushed
+#    commit, every workflow run completed and green AND a run of the evidence workflow among them.
+#    A run that is MISSING, RED or STILL RUNNING is a refusal — "no run found" is not green — and so
+#    is an unreadable answer (no network, an API error): the hook fails closed.
+#    Not in the commit: the run cannot be named in a trailer, because it exists only after the
+#    commit does, and amending would make `main` a commit CI never saw.
+#    Any other branch, and tags, are not this hook's: a gate branch is pushed BEFORE its run exists.
+#
+#    THE FALLBACK, when CI itself is down (user: "local full evidence runs only as a fallback"):
+#    LOGICKERNEL_PUSH_LOCAL_EVIDENCE=<the full SHA being pushed> — it must name that commit, the
+#    checkout must be that commit with nothing changed, and the workspace's evidence marker must
+#    say a FULL local suite on every term type passed on this tree (tools/run_tests.sh writes it).
+#    In a clone without that marker's helper the fallback cannot be checked, and is refused.
+#
+# LOGICKERNEL_CI_FIXTURE (tools/ci_status.sh) lets test/test_gate_split.jl plant each answer.
+EVIDENCE_WORKFLOW="Evidence (three term types)"     # 🔴 evidence.yml's `name:` — rename both or neither
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 if [ -e "$top/.warm/MUTANT_WORKTREE" ]; then
     echo "pre-push: REFUSED — $top is the mutant worktree of $(cat "$top/.warm/MUTANT_WORKTREE"): it holds mutated code and never pushes. Work in the main tree; remove this one with tools/mutate.sh remove." >&2
     exit 1
 fi
-exit 0
+
+# _local_evidence SHA — 0 when the declared fallback holds for SHA (see the header)
+_local_evidence() {
+    local sha="$1" lib=""
+    [ "${LOGICKERNEL_PUSH_LOCAL_EVIDENCE:-}" = "$sha" ] || {
+        echo "pre-push: LOGICKERNEL_PUSH_LOCAL_EVIDENCE=${LOGICKERNEL_PUSH_LOCAL_EVIDENCE:-} does not name the pushed commit $sha" >&2
+        return 1
+    }
+    [ "$(git -C "$top" rev-parse HEAD)" = "$sha" ] && [ -z "$(git -C "$top" status --porcelain)" ] || {
+        echo "pre-push: the local-evidence fallback needs this checkout to BE $sha, with nothing changed" >&2
+        return 1
+    }
+    for lib in "$top/../workflows/test_marker.sh" \
+        "${LOGICKERNEL_WORKSPACE:-$HOME/code/CognitiveSubstratesAI}/workflows/test_marker.sh"; do
+        [ -f "$lib" ] && break
+        lib=""
+    done
+    [ -n "$lib" ] || {
+        echo "pre-push: the local-evidence fallback cannot be checked here (no workflows/test_marker.sh)" >&2
+        return 1
+    }
+    # shellcheck source=/dev/null
+    . "$lib"
+    check_marker "$top" || {
+        echo "pre-push: no local evidence for this tree (the marker is missing, or for other content)" >&2
+        return 1
+    }
+    sed -n 3p "$(marker_path "$top")" | grep -q '^run_tests.sh full suite (term types: all' || {
+        echo "pre-push: the local evidence is not a full suite on every term type: $(sed -n 3p "$(marker_path "$top")")" >&2
+        return 1
+    }
+    echo "pre-push: main ← ${sha:0:7} on LOCAL evidence (the declared fallback; no green CI evidence run)" >&2
+    return 0
+}
+
+rc=0
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+    [ "$remote_ref" = "refs/heads/main" ] || continue
+    case "$local_sha" in
+        *[!0]*) ;;
+        *)                                              # all zeros: deleting the branch
+            echo "pre-push: REFUSED — deleting main" >&2
+            rc=1
+            continue
+            ;;
+    esac
+    out="$("$top/tools/ci_status.sh" --require "$EVIDENCE_WORKFLOW" "$local_sha" 2>&1)"
+    st=$?
+    if [ "$st" -eq 0 ]; then
+        echo "pre-push: main ← ${local_sha:0:7}: green, the evidence workflow among its runs" >&2
+        printf '%s\n' "$out" | sed 's/^/  /' >&2
+        continue
+    fi
+    if [ -n "${LOGICKERNEL_PUSH_LOCAL_EVIDENCE:-}" ] && _local_evidence "$local_sha"; then
+        continue
+    fi
+    case "$st" in
+        1) why="a workflow run of it is RED" ;;
+        3) why="no verdict: a run is missing or still going — \`$EVIDENCE_WORKFLOW\` must have run on this commit and finished green" ;;
+        *) why="the CI answer is unreadable (exit $st): failing closed" ;;
+    esac
+    echo "pre-push: REFUSED — main ← ${local_sha:0:7}: $why" >&2
+    printf '%s\n' "$out" | sed 's/^/  /' >&2
+    echo "  The gate: push the commit to a branch gate/<name>, wait for its evidence run, then fast-forward main to it." >&2
+    rc=1
+done
+exit "$rc"

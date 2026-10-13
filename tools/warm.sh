@@ -530,7 +530,23 @@ case "$cmd" in
     send) _send "${1:-}" ;;
     file) [ $# -ge 1 ] || { echo "usage: tools/warm.sh file PATH [impl]" >&2; exit 2; }; _file "$@" ;;
     bench) _bench "$@" ;;
-    preflight) _preflight ;;
+    preflight)
+        # A PASSED PREFLIGHT IS EVIDENCE FOR A BRANCH COMMIT (user, 2026-10-13: the gate is CI's —
+        # commit on a branch after the local preflight, push it as gate/<name>, evidence.yml judges
+        # it, `main` is fast-forwarded). The workspace's marker records it, bound to this tree as
+        # it was when the preflight STARTED, under a label the commit hook reads: it accepts a
+        # preflight on a branch and refuses it on `main`. In a standalone clone: no helper, no marker.
+        # shellcheck source=/dev/null
+        . "$ROOT/../workflows/test_marker.sh" 2>/dev/null ||
+            . "${LOGICKERNEL_WORKSPACE:-$HOME/code/CognitiveSubstratesAI}/workflows/test_marker.sh" 2>/dev/null || true
+        _pf_fp=""
+        command -v start_marker >/dev/null 2>&1 && _pf_fp="$(start_marker "$ROOT")"
+        _preflight
+        _pf_rc=$?
+        command -v write_marker >/dev/null 2>&1 &&
+            write_marker "$ROOT" "$_pf_rc" "preflight (warm, the chunk's term types: evidence for a BRANCH commit, never for main)" "$_pf_fp"
+        (exit "$_pf_rc")
+        ;;
     evidence)
         # the evidence run reads its worker count from free memory: an oversized daemon goes first
         _rss_gate evidence || exit 1

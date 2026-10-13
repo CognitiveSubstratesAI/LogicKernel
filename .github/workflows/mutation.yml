@@ -1,0 +1,139 @@
+# The mutation battery of one step, in CI (user, 2026-10-13): ONE JOB PER MUTANT, in parallel, on the
+# free standard runners — the battery that takes about an hour on one machine. Started by hand, at a
+# step's close (Actions → Mutation battery → Run workflow, or the API's workflow_dispatch), with
+#   mutants = tools/mutants/V9f.py
+#   targets = test/core_lang/test_catch_swipl.jl test/compile/test_body_code_swipl.jl
+# THE VERDICT RULES ARE THE LOCAL DRIVER'S (tools/mutate_drive.py), applied by tools/mutate_ci.py:
+# a target exits 1 = caught; every target exits 0 = SURVIVED; past the limit = TIMEOUT; anything
+# else = INVALID; a mutant declared `equivalent` must survive. SURVIVED, TIMEOUT, INVALID, BADMATCH
+# and a caught "equivalent" BLOCK: the `verdicts` job is red. The table is in that job's summary.
+# NO BENCHMARKS HERE: shared runners vary; timings stay on the quiet local machine.
+name: Mutation battery
+on:
+  workflow_dispatch:
+    inputs:
+      mutants:
+        description: "The step's mutant list, in the repository (tools/mutants/<step>.py)"
+        required: true
+        type: string
+      targets:
+        description: "Test files, space-separated, smallest first (a mutant's own `targets` win)"
+        required: true
+        type: string
+      ids:
+        description: "Only these mutants (names, space-separated); empty = all"
+        required: false
+        default: ""
+        type: string
+      limit_s:
+        description: "Seconds per target before TIMEOUT (a cold process: compilation included)"
+        required: false
+        default: "1500"
+        type: string
+
+concurrency:
+  group: mutation-${{ github.ref }}-${{ inputs.mutants }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write          # julia-actions/cache deletes old caches (its README)
+
+# The inputs reach the scripts as ENVIRONMENT VARIABLES, never spliced into a command line.
+env:
+  JULIA_NUM_THREADS: '4'
+  LOGICKERNEL_REQUIRE_SWIPL: '1'      # a missing oracle is an error, never a skipped differential
+  MUTANTS: ${{ inputs.mutants }}
+  TARGETS: ${{ inputs.targets }}
+  IDS: ${{ inputs.ids }}
+  LIMIT_S: ${{ inputs.limit_s }}
+
+jobs:
+  # The matrix: one entry per mutant, from the list itself (the same file the local driver reads).
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        run: python3 tools/mutate_ci.py plan "$MUTANTS" $IDS >> "$GITHUB_OUTPUT"
+
+  # The targets on the UNMUTATED tree. A mutant's "caught" means nothing against a red baseline
+  # (a guard is proved against a green one), so `verdicts` refuses the battery when this is red.
+  baseline:
+    name: Baseline (unmutated)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/oracle
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@v2
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run the targets
+        run: python3 tools/mutate_ci.py baseline "$LIMIT_S" $TARGETS
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: verdict-baseline
+          path: mutation-out/
+
+  mutant:
+    name: ${{ matrix.name }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false                # every mutant gets its verdict
+      max-parallel: 20
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/oracle
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@v2
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      # Applies the mutant (its text must occur exactly once: else BADMATCH), runs the targets in
+      # fresh processes, writes mutation-out/<name>.json and the log. Exits 0 whatever the verdict:
+      # the verdict is DATA here, judged in one place (`verdicts`).
+      - name: Apply the mutant and run the targets
+        run: python3 tools/mutate_ci.py one "$MUTANTS" "$MUTANT" "$LIMIT_S" $TARGETS
+        env:
+          MUTANT: ${{ matrix.name }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: verdict-${{ matrix.name }}
+          path: mutation-out/
+
+  verdicts:
+    name: Verdict table
+    needs: [plan, baseline, mutant]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: verdict-*
+          path: mutation-out
+          merge-multiple: true
+      # The table (mutant · verdict · seconds · what it breaks), written to the job summary and to
+      # verdicts.md. Exit 1 when the baseline is not green, a planned mutant has no verdict file
+      # (a job that died is not a verdict), or any mutant blocks.
+      - name: Collect
+        run: python3 tools/mutate_ci.py collect "$MUTANTS" "$COUNT" $IDS | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
+        env:
+          COUNT: ${{ needs.plan.outputs.count }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: verdicts
+          path: mutation-out/verdicts.md

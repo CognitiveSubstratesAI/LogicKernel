@@ -569,4 +569,244 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             @test out(`$tool 0000000`, "LOGICKERNEL_CI_FIXTURE" => f)[1] == 2
         end
     end
+    # THE PUSH GATE (user, 2026-10-13): `main` takes only a commit the evidence workflow judged
+    # green. Every answer is PLANTED (LOGICKERNEL_CI_FIXTURE), and the hook runs in a repository
+    # of its own — a copy of the two scripts — so nothing here depends on this checkout's state.
+    @testset "tools/githooks/pre-push: main only on a green evidence run of exactly that commit" begin
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        ev = "Evidence (three term types)"
+        @test occursin(
+            "name: $ev\n",
+            read(
+                joinpath(_GS_ROOT, ".github", "workflows", "evidence.yml"), String
+            )
+        )                                              # the hook asks for the workflow BY NAME
+        run_(name, status, conclusion; s=sha) =
+            "{\"head_sha\":\"$s\",\"name\":\"$name\",\"status\":\"$status\"," *
+            "\"conclusion\":$(conclusion === nothing ? "null" : "\"$conclusion\"")," *
+            "\"html_url\":\"https://x/1\"}"
+        green(n) = run_(n, "completed", "success")
+        # (what the API answered, what the tool must say under --require, whether main may move)
+        cases = [
+            (
+                "the evidence run green, CI green",
+                "[" * green("CI") * "," * green(ev) * "]",
+                0,
+                true
+            ),
+            ("NO RUN FOUND", "[]", 3, false),
+            ("CI green, but no evidence run", "[" * green("CI") * "]", 3, false),
+            ("the evidence run still going",
+                "[" * green("CI") * "," * run_(ev, "in_progress", nothing) * "]", 3, false),
+            ("the evidence run queued", "[" * run_(ev, "queued", nothing) * "]", 3, false),
+            ("the evidence run red",
+                "[" * green("CI") * "," * run_(ev, "completed", "failure") * "]", 1, false),
+            (
+                "the evidence run cancelled",
+                "[" * run_(ev, "completed", "cancelled") * "]",
+                1,
+                false
+            ),
+            ("the evidence run green, CI red",
+                "[" * run_("CI", "completed", "failure") * "," * green(ev) * "]", 1, false),
+            ("a green evidence run of ANOTHER commit",
+                "[" * run_(ev, "completed", "success"; s="f" ^ 40) * "]", 3, false)
+        ]
+        mktempdir() do d
+            repo = joinpath(d, "repo")
+            mkpath(joinpath(repo, "tools", "githooks"))
+            for f in ("ci_status.sh", joinpath("githooks", "pre-push"))
+                cp(joinpath(_GS_ROOT, "tools", f), joinpath(repo, "tools", f))
+            end
+            run(pipeline(`git -C $repo init -q`; stdout=devnull, stderr=devnull))
+            tool = joinpath(repo, "tools", "ci_status.sh")
+            hook = joinpath(repo, "tools", "githooks", "pre-push")
+            fx = joinpath(d, "f.json")
+            exitof(cmd, env...) =
+                withenv(env...) do
+                    run(pipeline(ignorestatus(cmd); stdout=devnull, stderr=devnull)).exitcode
+                end
+            "The hook's exit for one pushed ref, `LOCAL_SHA → remote_ref`."
+            push_(local_sha, remote_ref, env...) = exitof(
+                pipeline(
+                    IOBuffer("refs/heads/x $local_sha $remote_ref $("0" ^ 40)\n"),
+                    Cmd(`bash $hook origin https://x`; dir=repo)
+                ),
+                "LOGICKERNEL_CI_FIXTURE" => fx,
+                "LOGICKERNEL_PUSH_LOCAL_EVIDENCE" => nothing,
+                env...
+            )
+            for (name, runs, want, may) in cases
+                write(fx, "{\"workflow_runs\":" * runs * "}")
+                @testset "$name" begin
+                    @test exitof(
+                        `$tool --require $ev $sha`, "LOGICKERNEL_CI_FIXTURE" => fx
+                    ) == want
+                    @test push_(sha, "refs/heads/main") == (may ? 0 : 1)
+                    # any other branch is not this hook's: a gate branch is pushed BEFORE its run
+                    @test push_(sha, "refs/heads/gate/x") == 0
+                end
+            end
+            # without --require the same "CI green, no evidence run" answer IS green: the option,
+            # not the tool's old verdict, is what refuses it
+            write(fx, "{\"workflow_runs\":[" * green("CI") * "]}")
+            @test exitof(`$tool $sha`, "LOGICKERNEL_CI_FIXTURE" => fx) == 0
+            # unreadable: fails closed
+            write(fx, "<html>rate limited</html>")
+            @test push_(sha, "refs/heads/main") == 1
+            # deleting main, whatever CI says
+            write(fx, "{\"workflow_runs\":[" * green("CI") * "," * green(ev) * "]}")
+            @test push_("0" ^ 40, "refs/heads/main") == 1
+            # the declared fallback must name the pushed commit, and this checkout must BE it
+            write(fx, "{\"workflow_runs\":[]}")
+            @test push_(
+                sha, "refs/heads/main", "LOGICKERNEL_PUSH_LOCAL_EVIDENCE" => "f" ^ 40
+            ) == 1
+            @test push_(sha, "refs/heads/main", "LOGICKERNEL_PUSH_LOCAL_EVIDENCE" => sha) ==
+                1
+            # two refs in one push: a refused main refuses the push
+            @test exitof(
+                pipeline(
+                    IOBuffer(
+                        "refs/heads/x $sha refs/heads/gate/x $("0" ^ 40)\n" *
+                        "refs/heads/x $sha refs/heads/main $("0" ^ 40)\n"
+                    ),
+                    Cmd(`bash $hook origin https://x`; dir=repo)
+                ),
+                "LOGICKERNEL_CI_FIXTURE" => fx, "LOGICKERNEL_PUSH_LOCAL_EVIDENCE" =>
+                    nothing
+            ) == 1
+        end
+    end
+    # CI's EVIDENCE RUN IS THREE JOBS, ONE PER TERM TYPE (user, 2026-10-13): tools/evidence_ci.py
+    # judges them together. Planted unit lists: a job that skipped a unit, ran another job's, or
+    # died must not read as green.
+    @testset "tools/evidence_ci.py: three green jobs that do not PARTITION the suite are not green" begin
+        tool = joinpath(_GS_ROOT, "tools", "evidence_ci.py")
+        all_ = ["a.jl", "g.jl", "g.jl [alt]", "g.jl [alt_interned]"]
+        good = Dict(
+            "reference" => ["a.jl", "g.jl"], "alt" => ["g.jl [alt]"],
+            "alt_interned" => ["g.jl [alt_interned]"]
+        )
+        "The tool's exit over planted lists; `rows`: term → verdict row, absent = no row."
+        function verdict(ran; alls=Dict(t => all_ for t in keys(ran)), rows=nothing)
+            mktempdir() do d
+                for (t, r) in ran
+                    open(joinpath(d, "units_$t.tsv"), "w") do io
+                        foreach(u -> println(io, "all\t", u), alls[t])
+                        foreach(u -> println(io, "ran\t", u), r)
+                    end
+                end
+                for t in ("reference", "alt", "alt_interned")
+                    row = rows === nothing ? "| $t | passed | 1 s |" : get(rows, t, nothing)
+                    row === nothing || write(joinpath(d, "row_$t.md"), row * "\n")
+                end
+                run(
+                    pipeline(
+                        ignorestatus(`python3 $tool $d`); stdout=devnull, stderr=devnull
+                    )
+                ).exitcode
+            end
+        end
+        @test verdict(good) == 0                                    # the positive control
+        @test verdict(merge(good, Dict("alt" => String[]))) == 1    # a unit run by no job
+        @test verdict(merge(good, Dict("alt" => ["g.jl [alt]", "g.jl"]))) == 1      # by two jobs
+        @test verdict(merge(good, Dict("alt" => ["g.jl [alt]", "x.jl"]))) == 1      # not in the suite
+        @test verdict(
+            good; alls=Dict(
+                "reference" => all_, "alt" => all_[1:3], "alt_interned" => all_
+            )
+        ) == 1                                                     # the jobs enumerated two suites
+        @test verdict(
+            Dict(t => String[] for t in keys(good));
+            alls=Dict(
+                t => String[] for t in keys(good)
+            )
+        ) == 1                                                     # an EMPTY suite is not a pass
+        @test verdict(delete!(copy(good), "alt")) == 1              # a job left no unit list
+        @test verdict(
+            good;
+            rows=Dict(
+                "reference" => "| reference | passed | 1 s |",
+                "alt" => "| alt | **FAILED** | — |",
+                "alt_interned" => "| alt_interned | passed | 1 s |"
+            )
+        ) == 1                                                     # a job failed
+        @test verdict(
+            good;
+            rows=Dict(
+                "reference" => "| reference | passed | 1 s |",
+                "alt_interned" => "| alt_interned | passed | 1 s |"
+            )
+        ) == 1                                                     # a job died without a row
+    end
+    # CI's MUTATION BATTERY (user, 2026-10-13): tools/mutate_ci.py gives each mutant the local
+    # driver's verdict from its targets' EXIT CODES. Planted targets (`sh:` commands) and a planted
+    # list, in a directory of their own.
+    @testset "tools/mutate_ci.py: a verdict per mutant, and what blocks" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(joinpath(d, "f.txt"), "alpha\nbeta\nbeta\n")
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="K1 caught by its target", file="f.txt", old="alpha", new="ALPHA"),
+    dict(id="K2 no target sees it", file="f.txt", old="alpha", new="alpha "),
+    dict(id="K3 its text occurs twice", file="f.txt", old="beta", new="BETA"),
+    dict(id="K4 declared equivalent, and survives", file="f.txt", old="alpha",
+         new="alpha ", equivalent="f.txt:1 nothing reads the blank"),
+    dict(id="K5 declared equivalent, but caught", file="f.txt", old="alpha",
+         new="ALPHA", equivalent="a wrong claim"),
+    dict(id="K6 hangs", file="f.txt", old="alpha", new="HANG"),
+    dict(id="K7 hangs, as expected", file="f.txt", old="alpha", new="HANG",
+         expect="hang"),
+    dict(id="K8 its target breaks otherwise", file="f.txt", old="alpha", new="ODD"),
+]
+"""
+            )
+            # exit 1 when the file holds ALPHA; hang on HANG; exit 7 on ODD; else exit 0
+            target = "sh:grep -q ALPHA f.txt && exit 1; grep -q HANG f.txt && sleep 30; grep -q ODD f.txt && exit 7; exit 0"
+            sh(args...) = run(
+                pipeline(
+                    ignorestatus(Cmd(`python3 $tool $args`; dir=d)); stdout=devnull,
+                    stderr=devnull
+                )
+            ).exitcode
+            out(args...) = read(ignorestatus(Cmd(`python3 $tool $args`; dir=d)), String)
+            @test occursin("count=8", out("plan", "m.py"))
+            @test occursin("\"name\": \"K3\"", out("plan", "m.py"))
+            @test occursin("count=1", out("plan", "m.py", "K2"))
+            @test sh("plan", "m.py", "K9") != 0                     # no such mutant
+            @test sh("baseline", "3", target) == 0
+            want = Dict(
+                "K1" => "caught", "K2" => "SURVIVED", "K3" => "BADMATCH",
+                "K4" => "EQUIVALENT (declared)", "K5" => "EQUIVALENT REFUTED",
+                "K6" => "TIMEOUT",
+                "K7" => "caught (hang)", "K8" => "INVALID"
+            )
+            for k in sort!(collect(keys(want)))
+                write(joinpath(d, "f.txt"), "alpha\nbeta\nbeta\n")     # each job: a fresh checkout
+                @test sh("one", "m.py", k, "3", target) == 0        # the verdict is data
+                rec = read(joinpath(d, "mutation-out", "$k.json"), String)
+                @test occursin("\"verdict\": \"$(want[k])\"", rec)
+            end
+            table = out("collect", "m.py", "8")
+            @test sh("collect", "m.py", "8") == 1                   # five of the eight block
+            @test occursin("blocking: K2, K3, K5, K6, K8", table)
+            # only the decided ones: green
+            @test sh("collect", "m.py", "3", "K1", "K4", "K7") == 0
+            # a planned mutant whose job left no verdict blocks…
+            rm(joinpath(d, "mutation-out", "K1.json"))
+            @test sh("collect", "m.py", "3", "K1", "K4", "K7") == 1
+            @test occursin("NO VERDICT", out("collect", "m.py", "3", "K1", "K4", "K7"))
+            # …and so does a baseline that is not green, whatever the mutants say
+            @test sh("collect", "m.py", "2", "K4", "K7") == 0
+            write(joinpath(d, "f.txt"), "ALPHA\n")
+            @test sh("baseline", "3", target) == 1
+            @test sh("collect", "m.py", "2", "K4", "K7") == 1
+            rm(joinpath(d, "mutation-out", "baseline.json"))
+            @test sh("collect", "m.py", "2", "K4", "K7") == 1       # no baseline at all
+        end
+    end
 end

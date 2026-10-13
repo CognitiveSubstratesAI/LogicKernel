@@ -3,19 +3,30 @@
 # (user, 2026-10-06): a chunk's gate stops while the previous push is red, so a defect the local
 # gate defers to CI (the alternative term types) is fixed before anything builds on it.
 #
-#   tools/ci_status.sh [SHA]          default: origin/main's commit, the last push; any commit name
+#   tools/ci_status.sh [--require NAME] [SHA]
+#                                     default: origin/main's commit, the last push; any commit name
 #                                     (a short SHA, a branch) is resolved to the full SHA
+#   --require NAME: a run of the workflow NAMED so must be among that commit's runs — the push gate
+#   (tools/githooks/pre-push; user, 2026-10-13) asks for `Evidence (three term types)`: other green
+#   runs of a commit the evidence workflow never ran on are NOT a verdict (exit 3).
 #
 # Exit status, the answer:
-#   0  every workflow run of that commit completed and succeeded
+#   0  every workflow run of that commit completed and succeeded (the required one among them)
 #   1  one completed and did not succeed (failure, cancelled, timed out, …): RED
-#   3  no verdict yet: a run is queued or in progress, or none has started
+#   3  no verdict yet: a run is queued or in progress, none has started, or the required one is
+#      missing
 #   2  unreadable: no origin/main, no network, an API error
 # LOGICKERNEL_CI_FIXTURE=<file>: read that JSON instead of the API (test/test_gate_split.jl).
 # The token, only when the API answers "Not Found" (a private repository): read with `git credential
 # fill`, handed to curl on STDIN (`-K -`) — never in argv, shell history or output.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REQUIRE=""
+if [ "${1:-}" = "--require" ]; then
+    REQUIRE="${2:-}"
+    [ -n "$REQUIRE" ] || { echo "ci_status: --require needs a workflow name"; exit 2; }
+    shift 2
+fi
 SHA="${1:-}"
 if [ -z "$SHA" ]; then
     SHA="$(git -C "$ROOT" rev-parse --verify --quiet origin/main)" || {
@@ -53,7 +64,7 @@ else
 fi
 printf '%s' "$J" | python3 -c '
 import json, sys
-sha = sys.argv[1]
+sha, require = sys.argv[1], sys.argv[2]
 try:
     runs = [r for r in json.load(sys.stdin)["workflow_runs"] if r["head_sha"] == sha]
 except Exception:
@@ -67,5 +78,12 @@ red = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in 
 pending = [r for r in runs if r["status"] != "completed"]
 for r in runs:
     print("ci_status: %s  %s  %s  %s  %s" % (sha[:7], r["name"], r["status"], r["conclusion"] or "-", r["html_url"]))
-sys.exit(1 if red else 3 if pending else 0)
-' "$SHA"
+if red:
+    sys.exit(1)
+if pending:
+    sys.exit(3)
+if require and not any(r["name"] == require for r in runs):
+    print("ci_status: %s: no run of the required workflow `%s`" % (sha[:7], require))
+    sys.exit(3)
+sys.exit(0)
+' "$SHA" "$REQUIRE"

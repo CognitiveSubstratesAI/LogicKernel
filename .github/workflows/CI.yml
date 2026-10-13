@@ -3,6 +3,11 @@ on:
   push:
     branches:
       - main
+      # A GATE BRANCH (user, 2026-10-13): a commit is pushed to `gate/<name>` first; there
+      # `test` and `format` run here and the whole suite runs as evidence.yml's three parallel
+      # jobs — `analysis` below is skipped, it is that same suite in one job. `main` is then
+      # fast-forwarded to the commit CI judged (tools/githooks/pre-push refuses anything else).
+      - 'gate/**'
     tags: ['*']
   pull_request:
   workflow_dispatch:
@@ -112,6 +117,7 @@ jobs:
   # LoweredCodeUtils from master), so local and CI analyse with the same versions.
   analysis:
     name: Static analysis + live swipl differential
+    if: ${{ !startsWith(github.ref_name, 'gate/') }}
     runs-on: ubuntu-latest
     # THE ORACLE IS A BUILD OF THE PINNED COMMIT (user, 2026-10-11): tools/SWIPL_VERSION names one
     # swipl-devel commit — the one the ported files cite — and `swipl` here is built from exactly
@@ -130,35 +136,13 @@ jobs:
       LOGICKERNEL_REQUIRE_SWIPL: '1'
     steps:
       - uses: actions/checkout@v4
-      - name: The oracle's cache key (pinned commit + build flags)
-        id: oracle
-        run: echo "key=$(tools/build_oracle.sh --key)" >> "$GITHUB_OUTPUT"
-      - name: Restore the oracle
-        id: oracle_cache
-        uses: actions/cache@v4
-        with:
-          path: ~/swipl-oracle
-          key: ${{ runner.os }}-${{ steps.oracle.outputs.key }}
-      - name: Build the oracle from the pinned commit
-        if: steps.oracle_cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends cmake ninja-build libgmp-dev zlib1g-dev
-          ORACLE_WORK="$RUNNER_TEMP/swipl-oracle-work" tools/build_oracle.sh "$HOME/swipl-oracle"
-      - name: Put the oracle on PATH
-        run: echo "$HOME/swipl-oracle/bin" >> "$GITHUB_PATH"
+      # The oracle: restored from the cache or built at the pin, put on PATH, and checked to BE
+      # that build — one recipe for this job, evidence.yml and mutation.yml (.github/actions/oracle).
+      - uses: ./.github/actions/oracle
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1.13'
       - uses: julia-actions/cache@v2
-      # The swipl on PATH must BE the oracle: the pinned version, built from the pinned commit —
-      # the same check every local gate makes (tools/lib_evidence.sh). It fails HERE, loudly.
-      - name: Refuse any swipl but the oracle
-        run: |
-          swipl --version
-          swipl -g "(current_prolog_flag(version_git, G) -> format('version_git: ~w~n', [G]) ; writeln('version_git: none (a release build)'))" -t halt
-          . tools/lib_evidence.sh
-          _check_swipl_pin "$PWD" CI || { echo "::error::the swipl on PATH is not the oracle of tools/SWIPL_VERSION"; exit 1; }
       # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as
       # a set. A pin on one of them (2026-10-03, LoweredCodeUtils v3.9.1 while JET lagged) breaks as
       # soon as the others move on — JET 0.12.3 then REQUIRED LoweredCodeUtils 3.10 (run 37139741792).

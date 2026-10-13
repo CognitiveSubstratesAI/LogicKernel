@@ -69,6 +69,24 @@ const LK_SHARD_DIR = get(ENV, "LOGICKERNEL_SHARD_DIR", "")
 const LK_SHARD_ID = get(ENV, "LOGICKERNEL_SHARD_ID", "")
 const LK_SHARD = !isempty(LK_SHARD_DIR)
 const LK_REPLAY = get(ENV, "LOGICKERNEL_REPLAY", "")
+# ONE TERM TYPE PER PROCESS (CI's evidence.yml; user, 2026-10-13): LOGICKERNEL_TERM_ONLY=<impl> runs
+# that implementation's units alone — the files that are not term-generic go with the reference —
+# so three CI jobs run the suite in parallel. Each job writes the units it ran and the full list
+# (LOGICKERNEL_UNITS_OUT), and tools/evidence_ci.py checks that the three lists PARTITION the full
+# one: a filter that dropped a unit must not read as green.
+const LK_TERM_ONLY = get(ENV, "LOGICKERNEL_TERM_ONLY", "")
+isempty(LK_TERM_ONLY) || LK_TERM_ONLY in LK_TERM_IMPLS ||
+    error(
+        "LOGICKERNEL_TERM_ONLY=$(repr(LK_TERM_ONLY)): expected one of $(join(LK_TERM_IMPLS, ", "))"
+    )
+isempty(LK_TERM_ONLY) || (!LK_SHARD && isempty(LK_REPLAY) && LK_TERM_TYPES == "all") ||
+    error(
+        "LOGICKERNEL_TERM_ONLY is for a whole run on every term type: not with shards, a replay or LOGICKERNEL_TERM_TYPES=chunk"
+    )
+"Whether a unit of implementation `impl` (`\"\"`: not term-generic) runs in this process."
+lk_term_only(impl)::Bool =
+    isempty(LK_TERM_ONLY) || impl == LK_TERM_ONLY ||
+    (isempty(impl) && LK_TERM_ONLY == first(LK_TERM_IMPLS))
 # Costliest first, for the shards' queue: the static-analysis gate (JET, AllocCheck), then the live
 # swipl differentials, then the rest — measured costs replace this order once the [unit] timings exist.
 _lk_cost_rank(label) =
@@ -81,7 +99,7 @@ elseif !isempty(LK_REPLAY)
         [byname[split(l, '\t')[2]] for l in eachline(LK_REPLAY) if !isempty(strip(l))]
     end
 else
-    LK_UNITS
+    filter(u -> lk_term_only(u[2]), LK_UNITS)
 end
 "Claim unit `i` of the shards' queue: an atomic `mkdir`, so exactly one shard gets each unit."
 lk_claim(i::Int)::Bool =
@@ -203,10 +221,18 @@ Test.@with_testset LK_TS begin
         write(joinpath(LK_SHARD_DIR, "stats_$LK_SHARD_ID"),
             "$(s.compounds_plain) $(s.compounds_interned) $(s.shared)\n")
     elseif isempty(LK_REPLAY)
+        # (under LOGICKERNEL_TERM_ONLY each job checks its own type's count — and that the OTHER
+        # types' counts are zero: a job that ran another type's units is caught here)
         @testset "the second implementation was exercised, plain and sharing" begin
-            @test s.compounds_plain > 0
-            @test s.compounds_interned > 0
-            @test s.shared > 0
+            @test (s.compounds_plain > 0) == (LK_TERM_ONLY in ("", "alt"))
+            @test (s.compounds_interned > 0) == (LK_TERM_ONLY in ("", "alt_interned"))
+            @test (s.shared > 0) == (LK_TERM_ONLY in ("", "alt_interned"))
+        end
+    end
+    let out = get(ENV, "LOGICKERNEL_UNITS_OUT", "")
+        isempty(out) || open(out, "w") do io
+            foreach(u -> println(io, "all\t", u[3]), LK_UNITS)
+            foreach(u -> println(io, "ran\t", u[3]), LK_RUN)
         end
     end
 end
