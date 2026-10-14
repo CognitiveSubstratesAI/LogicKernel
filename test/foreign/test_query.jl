@@ -498,3 +498,19 @@ LK_TERM_IMPL == "reference" &&
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid2)
 end
+
+# `vm_call` (test/db/index_testlib.jl) SHARES A GOAL'S VARIABLES (the user's review, 2026-10-14): it puts the arguments with
+# ONE PutVarMap (the L1b boundary). `pair(X, X)` over `pair(1, 1). pair(1, 2).` answers ONCE only if
+# its two arguments are one variable; separate puts would answer twice, as `pair(X, Y)` does — the
+# dropped map of L1b 1b passed 13 files. Hand-written: a property of the test helper, not of the
+# kernel against swipl (swipl: `findall(p(X,X), p(X,X), L)` → `[p(1,1)]`).
+@testset "vm_call shares a goal's variables across its arguments" begin
+    db, _ = _ydb()
+    p = ix_pred(_Y, :lk_ypair, 2; db=db)
+    ix_assertz!(p, _yf(:lk_ypair, _yg(1), _yg(1)))
+    ix_assertz!(p, _yf(:lk_ypair, _yg(1), _yg(2)))
+    X = _yv(1)
+    same = vm_call(p, _yf(:lk_ypair, X, X))
+    @test length(same) == 1 && all(i -> lk_eq(child(first(same[1]), i), _yg(1)), 2:3)
+    @test length(vm_call(p, _yf(:lk_ypair, X, _yv(2)))) == 2
+end

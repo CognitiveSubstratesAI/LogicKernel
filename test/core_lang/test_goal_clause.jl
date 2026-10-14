@@ -66,3 +66,19 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
 end
+
+# `_rcall` (test/core_lang/rules_common.jl) SHARES A GOAL'S VARIABLES (the user's review, 2026-10-14): it puts the arguments with
+# ONE PutVarMap (the L1b boundary). `pair(X, X)` over `pair(1, 1). pair(1, 2).` answers ONCE only if
+# its two arguments are one variable; separate puts would answer twice, as `pair(X, Y)` does — the
+# dropped map of L1b 1b passed 13 files. Hand-written: a property of the test helper, not of the
+# kernel against swipl (swipl: `findall(p(X,X), p(X,X), L)` → `[p(1,1)]`).
+@testset "_rcall shares a goal's variables across its arguments" begin
+    db = _rdb([
+        (_rf("lk_rpair", _rg(1), _rg(1)), nothing),
+        (_rf("lk_rpair", _rg(1), _rg(2)), nothing)
+    ])
+    X = _rv(1)
+    @test first.(_rcall(db, _rf("lk_rpair", X, X))) == ["lk_rpair(1,1)"]
+    @test first.(_rcall(db, _rf("lk_rpair", X, _rv(2)))) ==
+        ["lk_rpair(1,1)", "lk_rpair(1,2)"]
+end

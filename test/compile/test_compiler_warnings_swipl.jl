@@ -275,15 +275,36 @@ function _cwkernel(gd, ld, c::_CwClause, style::Int)::String
         fid = LK.PL_open_foreign_frame(ld)
         warnings = LK.PL_new_term_ref(ld)
         vn = LK.PL_new_term_ref(ld)
-        LK.putSlotValue!(ld, vn + 1, _cwbindings(c))
+        hb = LK.PL_new_term_refs(ld, 2)
+        # the clause and its `variable_names` are ONE record, as read_term/2 returns them: one
+        # PutVarMap, and the compiler reads the clause back through its handles, so a name names
+        # the clause's variable (L1b boundary, user 2026-10-14: variable identity = handle; with two
+        # separate puts every name named a copy, and all 1308 singleton/multiton warnings vanished —
+        # Evidence on 94ac71a)
+        pvm = LK.PutVarMap()
+        LK.putSlotValue!(ld, hb + 1, c.head, pvm)
+        LK.putSlotValue!(ld, hb + 2, c.body, pvm)
+        LK.putSlotValue!(ld, vn + 1, _cwbindings(c), pvm)
+        # …and a warning's variables are named through that handle too: the engine's variables,
+        # read off the `Name = Var` pairs the put made
+        enames = Dict{UInt64, String}()
+        b = LK.deRef(ld, LK.slotValue(ld, vn + 1))
+        while is_pair(b)
+            nv = child(b, 2)
+            enames[var_key(LK.deRef(ld, child(nv, 3)))] = sym_text(child(nv, 2))
+            b = LK.deRef(ld, child(b, 3))
+        end
         ld.variable_names = vn
         ld.debugstatus_styleCheck = style
         try
-            cl = LK.compileClause(gd, ld, c.head, c.body, proc, user, warnings)
+            cl = LK.compileClause(
+                gd, ld, LK.slotValue(ld, hb + 1), LK.slotValue(ld, hb + 2), proc, user,
+                warnings
+            )
             cl === nothing && error("compileClause failed for " * _cwtext(c.head, c.names))
             l = LK.deRef(ld, LK.slotValue(ld, warnings + 1))
             while is_pair(l)
-                push!(out, _cwtext(child(l, 2), c.names))
+                push!(out, _cwtext(LK.resolve_term(ld, child(l, 2)), enames))
                 l = child(l, 3)
             end
             is_nil(l) || error("the warnings are not a list")

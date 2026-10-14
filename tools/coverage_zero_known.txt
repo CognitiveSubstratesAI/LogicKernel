@@ -2,7 +2,6 @@
 # This list may only SHRINK. Each entry is an open audit item: missing tests, or tests that run
 # in a subprocess coverage does not see (Codecov, 2026-10-14: both at 0%).
 src/os/pl-prologflag.jl
-src/os/pl-codelist.jl
 # runs at PRECOMPILE time (PrecompileTools' workload), which coverage never instruments — 0% is
 # structural, not a missing test (MEASURED: CI 7d1437f, Julia 1 job; Codecov's view did not show it)
 src/precompile_workload.jl

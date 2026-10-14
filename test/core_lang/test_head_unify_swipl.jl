@@ -571,3 +571,19 @@ end
         )
     end
 end
+
+# THE HELPER SHARES A GOAL'S VARIABLES (the user's review, 2026-10-14): it puts the arguments with
+# ONE PutVarMap (the L1b boundary). `pair(X, X)` over `pair(1, 1). pair(1, 2).` answers ONCE only if
+# its two arguments are one variable; separate puts would answer twice, as `pair(X, Y)` does — the
+# dropped map of L1b 1b passed 13 files. Hand-written: a property of the test helper, not of the
+# kernel against swipl (swipl: `findall(p(X,X), p(X,X), L)` → `[p(1,1)]`).
+@testset "_hvm shares a goal's variables across its arguments" begin
+    db = IxDB{_HT}()
+    p = ix_pred(_HT, :lk_hpair, 2; db=db)
+    ix_assertz!(p, _hc(:lk_hpair, lk_gnd(_HT, 1), lk_gnd(_HT, 1)))
+    ix_assertz!(p, _hc(:lk_hpair, lk_gnd(_HT, 1), lk_gnd(_HT, 2)))
+    X = _hv(1)
+    @test _hvm(p, _hc(:lk_hpair, X, X), LK.OCCURS_CHECK_FALSE) == "ok 1 lk_hpair(1,1)"
+    @test _hvm(p, _hc(:lk_hpair, X, _hv(2)), LK.OCCURS_CHECK_FALSE) ==
+        "ok 2 lk_hpair(1,1) lk_hpair(1,2)"
+end
