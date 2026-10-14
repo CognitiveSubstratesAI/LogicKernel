@@ -74,6 +74,7 @@ ok "$(last)" "bypass" "a program that reads the random generator is a bypass"
 swipl -q -g "write('/x'), nl" -t halt < /dev/null > /dev/null
 ok "$(last)" "bypass" "an argument with a / that is no file is a bypass"
 swipl --version > /dev/null; n=$(calls); v="$(swipl --version)"; ok "$(calls)/${v:0:5}" "$((n + 1))/SWI-P" "--version always asks the real oracle (a second call too)"
+p="$(swipl -g "absolute_file_name(library(plunit), F, [file_type(prolog), access(read), file_errors(fail)]), writeln(F)" -t halt 2> /dev/null < /dev/null)"; n=$(calls); p="$(swipl -g "absolute_file_name(library(plunit), F, [file_type(prolog), access(read), file_errors(fail)]), writeln(F)" -t halt 2> /dev/null < /dev/null)"; ok "$(calls)/${p##*/}" "$((n + 1))/plunit.pl" "where library(plunit) is always asks the real oracle (a second call too)"
 
 # stdin and the pin are in the key
 prog "$W/j" 'main :- read(X), write(got(X)), nl.'

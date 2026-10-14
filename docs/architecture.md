@@ -4480,6 +4480,15 @@ records — § "V3 — machine state" below. They take precedence over decision 
 
 ## Still to come
 
+* 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
+  (pl-data.h: tagged words; global, local and trail stacks; bindings in the cell; conditional
+  trailing; `mark_bar`) behind the existing interface, its design document first — then
+  **attributed variables** (`pl-attvar.c`, faithfully: attributes, wakeup, `attr_unify_hook`), then
+  **R2** (modules, the boot loader, plunit). Why this order: boot/expand.pl puts an attribute on the
+  variables of every clause it loads, so R2 needs attributed variables, and the 93 built-ins R2
+  needs before plunit runs would otherwise be ported twice (the workspace's R2 plan, draft 2).
+  **plunit** is SWI-Prolog/packages-plunit at the commit the pin names (`tools/SWIPL_VERSION`
+  `plunit:`), vendored read-only at packages/plunit and built into the oracle.
 * **A test-time cost, not a defect (found 2026-10-03).** The reference type orders two Julia-only
   host types by `string(T)` (`_cmp_types` in src/default_term.jl), and printing a type searches
   every loaded module for an alias (`make_typealias`), so its cost grows with the modules loaded —

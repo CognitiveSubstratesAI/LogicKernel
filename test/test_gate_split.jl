@@ -264,15 +264,19 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             mkpath(joinpath(d, "tools"))
             mkpath(joinpath(d, "bin"))
             pin(text) = write(joinpath(d, "tools", "SWIPL_VERSION"), text)
-            # a `swipl` that answers the two questions the checks ask
-            function fake(version, version_git)
+            # a `swipl` that answers the three questions the checks ask: its version, its
+            # version_git, and where its library(plunit) is (`plunit_at`, or none)
+            function fake(version, version_git; plunit_at=nothing)
                 f = joinpath(d, "bin", "swipl")
                 write(
                     f,
                     "#!/bin/sh\ncase \"\$1\" in\n  --version) echo \"SWI-Prolog version " *
-                    "$version for x86_64-linux\" ;;\n  *) " *
+                    "$version for x86_64-linux\" ;;\n  *) case \"\$2\" in\n" *
+                    "    *'library(plunit)'*) " *
+                    (plunit_at === nothing ? "exit 1" : "echo \"$plunit_at\"") *
+                    " ;;\n    *) " *
                     (version_git === nothing ? "exit 1" : "echo \"$version_git\"") *
-                    " ;;\nesac\n"
+                    " ;;\n  esac ;;\nesac\n"
                 )
                 return chmod(f, 0o755)
             end
@@ -306,6 +310,35 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             @test both() == (1, 1)                              # a pin that names no commit
             pin("commit: $commit\n")
             @test both() == (1, 1)                              # …or no version
+            # (user, 2026-10-14) a pin that names `plunit:` holds the oracle's library(plunit) to
+            # the vendored packages/plunit/plunit.pl, byte for byte; a pin without it (above) does
+            # not ask
+            pin("version: 9.9.9\ncommit: $commit\nplunit: $other\n")
+            mkpath(joinpath(d, "packages", "plunit"))
+            mkpath(joinpath(d, "oracle"))
+            mine = joinpath(d, "packages", "plunit", "plunit.pl")
+            theirs = joinpath(d, "oracle", "plunit.pl")
+            write(mine, ":- module(plunit, []).\n")
+            write(theirs, ":- module(plunit, []).\n")
+            fake("9.9.9", "9.9.9-46-g" * commit[1:9]; plunit_at=theirs)
+            @test both() == (0, 0)                              # the oracle, with the pinned plunit
+            write(theirs, ":- module(plunit, [run_tests/0]).\n")
+            @test both() == (1, 1)                              # another plunit
+            fake("9.9.9", "9.9.9-46-g" * commit[1:9])
+            @test both() == (1, 1)                              # an oracle without plunit
+            fake(
+                "9.9.9",
+                "9.9.9-46-g" * commit[1:9];
+                plunit_at=joinpath(d, "oracle", "gone.pl")
+            )
+            @test both() == (1, 1)                              # …or naming a file that is not there
+            write(theirs, "")
+            write(mine, "")
+            fake("9.9.9", "9.9.9-46-g" * commit[1:9]; plunit_at=theirs)
+            @test both() == (1, 1)                              # empty equals empty: refused
+            write(theirs, ":- module(plunit, []).\n")
+            rm(mine)
+            @test both() == (1, 1)                              # no vendored plunit
         end
     end
 

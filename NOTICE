@@ -92,3 +92,29 @@ MurmurHash2 (src/pl-hash.jl, from SWI-Prolog's src/pl-hash.c): author Austin App
 
 The benchmark programs under bench/programs/*.pl are copied unchanged from SWI-Prolog's benchmark
 set (https://github.com/SWI-Prolog/bench); each keeps its own header.
+
+=====================================================================================================
+plunit — vendored unchanged
+https://github.com/SWI-Prolog/packages-plunit
+=====================================================================================================
+
+packages/plunit/ is SWI-Prolog's unit-test package at commit
+bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895 — the commit swipl-devel 8609e216 records as its submodule
+packages/plunit (tools/SWIPL_VERSION) — copied READ-ONLY: every file is upstream's, byte for byte
+(test/test_vendored_plunit.jl holds each to upstream's blob id, tools/plunit_blobs.txt). Each source
+file keeps its own header; their copyright lines (plunit.pl indents with tabs):
+
+    plunit.pl:
+    Copyright (c)  2006-2025, University of Amsterdam
+                              VU University Amsterdam
+                              CWI, Amsterdam
+                              SWI-Prolog Solutions b.v.
+    All rights reserved.
+
+    swi.pl, test_wizard.pl:
+    Copyright (c)  2006-2012, University of Amsterdam
+                              VU University Amsterdam
+    All rights reserved.
+
+They are distributed under the Simplified BSD license, whose text is SWI-Prolog's, reproduced
+above. The other files (CMakeLists.txt, plunit.plx, .plrc, .gitignore, examples/) carry no header.

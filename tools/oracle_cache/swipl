@@ -15,7 +15,8 @@
 #
 # IT FAILS OPEN — every doubt runs the real swipl and caches nothing:
 #   * no pin, no real swipl, LOGICKERNEL_ORACLE_CACHE=0;
-#   * `--version` and the `version_git` flag — the pin check always asks the real oracle;
+#   * `--version`, the `version_git` flag and where `library(plunit)` is — the pin check always
+#     asks the real oracle;
 #   * a program that reads what is not in its file: a path or a clock, a random number, the
 #     environment, a file, a thread (`_BYPASS` below), or an argument with a `/` that is no file;
 #   * a directory of more than 64 files; stdin larger than 1 MiB;
@@ -38,7 +39,7 @@ _bypass() { _stat bypass; rm -rf "${tmp:-}"; exec "$real" "$@"; }
 pin="${LOGICKERNEL_ORACLE_PIN:-}"
 { [ -z "$pin" ] || [ "${LOGICKERNEL_ORACLE_CACHE:-1}" = 0 ]; } && exec "$real" "$@"
 for a in "$@"; do
-    case "$a" in *--version* | *version_git*) exec "$real" "$@" ;; esac
+    case "$a" in *--version* | *version_git* | *'library(plunit)'*) exec "$real" "$@" ;; esac
 done
 
 _BYPASS='get_time|statistics|cputime|random|tmp_file|getenv|setenv|shell\(|thread|open\(|see\(|consult|load_files|exists_file|exists_directory|directory_files|prolog_load_context|source_file|current_prolog_flag\(pid|garbage_collect_atoms|sleep\('

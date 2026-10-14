@@ -11,8 +11,15 @@
 #
 # ORACLE_REPO: what to clone (default: SWI-Prolog's repository; a local clone that has the commit
 # is faster). ORACLE_WORK: where to clone and build (default: PREFIX.work; left in place).
-# The build is the CORE system only (no packages: no differential needs one), Release, with GMP —
-# the FLAGS below are part of the cache key, so a changed flag is a new oracle.
+# The build is the core system and THREE PACKAGES, Release, with GMP — the FLAGS below are part of the
+# cache key, so a changed flag is a new oracle. THE PACKAGES (user, 2026-10-14): plunit, which the
+# kernel vendors at the commit the pin names (`plunit:`; packages/plunit), so the oracle runs
+# upstream's test files with the same plunit the kernel loads; and its dependency closure as
+# upstream's package selection declares it — plunit needs clib, clib needs sgml
+# (cmake/PackageSelection.cmake `SWIPL_PKG_DEPS_plunit`, `SWIPL_PKG_DEPS_clib`). Each is
+# the submodule commit the pinned swipl-devel commit records; plunit's must equal the pin's.
+# ORACLE_PKG_BASE: where the package repositories are (default: SWI-Prolog's on GitHub — the
+# submodule URLs are relative, so a local ORACLE_REPO would otherwise look for them beside it).
 #
 # 🔴 A FULL CLONE, NEVER A PARTIAL ONE, AND THE WHOLE BUILD IN A CAPPED SCOPE. MEASURED 2026-10-11:
 # the first version cloned with `--filter=blob:none` from a LOCAL repository. That made an EMPTY
@@ -33,8 +40,9 @@ if [ "${1:-}" != "--key" ] && [ -z "${ORACLE_CAPPED:-}" ] && command -v systemd-
         -p MemoryMax="${ORACLE_MEM_MAX:-6G}" -p MemorySwapMax=0 \
         -p TasksMax="${ORACLE_TASKS_MAX:-512}" "$0" "$@"
 fi
-FLAGS=(-DCMAKE_BUILD_TYPE=Release -DSWIPL_PACKAGES=OFF -DINSTALL_DOCUMENTATION=OFF
-    -DBUILD_TESTING=OFF -DUSE_GMP=ON -DUSE_TCMALLOC=OFF)
+FLAGS=(-DCMAKE_BUILD_TYPE=Release -DSWIPL_PACKAGES=OFF "-DSWIPL_PACKAGE_LIST=sgml;clib;plunit"
+    -DINSTALL_DOCUMENTATION=OFF -DBUILD_TESTING=OFF -DUSE_GMP=ON -DUSE_TCMALLOC=OFF)
+PKGS=(sgml clib plunit)
 COMMIT="$(sed -n 's/^commit:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION" | tr -d '[:space:]')"
 if ! printf '%s' "$COMMIT" | grep -qE '^[0-9a-f]{40}$'; then
     echo "build_oracle: tools/SWIPL_VERSION names no pinned commit (a \`commit: <40 hex>\` line)" >&2
@@ -66,6 +74,17 @@ git -C "$WORK/src" cat-file -e "$COMMIT^{commit}" 2> /dev/null ||
 git -C "$WORK/src" -c advice.detachedHead=false checkout -q --detach "$COMMIT"
 [ "$(git -C "$WORK/src" rev-parse HEAD)" = "$COMMIT" ] ||
     { echo "build_oracle: the checkout is not at $COMMIT" >&2; exit 1; }
+PKG_BASE="${ORACLE_PKG_BASE:-https://github.com/SWI-Prolog}"
+for p in "${PKGS[@]}"; do
+    git -C "$WORK/src" config "submodule.packages/$p.url" "$PKG_BASE/packages-$p.git"
+    git -C "$WORK/src" submodule update -q --init "packages/$p"
+    want="$(git -C "$WORK/src" ls-tree HEAD "packages/$p" | awk '{print $3}')"
+    [ -n "$want" ] && [ "$(git -C "$WORK/src/packages/$p" rev-parse HEAD)" = "$want" ] ||
+        { echo "build_oracle: packages/$p is not at the commit $COMMIT records ($want)" >&2; exit 1; }
+done
+PLUNIT="$(sed -n 's/^plunit:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION" | tr -d '[:space:]')"
+[ "$(git -C "$WORK/src/packages/plunit" rev-parse HEAD)" = "$PLUNIT" ] ||
+    { echo "build_oracle: packages/plunit at $COMMIT is not the pin's plunit (${PLUNIT:-none})" >&2; exit 1; }
 GEN=()
 command -v ninja > /dev/null 2>&1 && GEN=(-G Ninja)
 cmake -S "$WORK/src" -B "$WORK/build" "${GEN[@]}" "${FLAGS[@]}" -DCMAKE_INSTALL_PREFIX="$PREFIX" > "$WORK/cmake.log" 2>&1 ||

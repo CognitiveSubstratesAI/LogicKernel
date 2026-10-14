@@ -29,5 +29,11 @@
 # variable under `\+` in a branch of `;` (7dba157e, 27c742f0) ported, the kernel's own defensive
 # initialisation of those variables removed with them; the others touch no ported function
 # (docs/architecture.md, the pin's section).
+# plunit (user, 2026-10-14): the commit of SWI-Prolog/packages-plunit that `commit` records as its
+# submodule `packages/plunit` — vendored READ-ONLY at packages/plunit (test/test_vendored_plunit.jl
+# holds every file to upstream's blob), and built into the oracle (tools/build_oracle.sh). The pin
+# checks above then also assert that the oracle's library(plunit) IS packages/plunit/plunit.pl, byte
+# for byte (the oracle cache's shim always asks the real swipl where it is).
 version: 10.1.18
 commit: 8609e216cab90e476dafac799a9e323151e3c499
+plunit: bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895

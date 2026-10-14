@@ -6,7 +6,7 @@
 # manager's PATH, which found /usr/local/bin/swipl 10.1.12, while the shell that checked the pin
 # found the pinned 10.1.16 — so every differential of a sharded run was judged against 10.1.12.
 
-"The pin file's value for `key` (`version`, `commit`, `sync-from`), or `\"\"`."
+"The pin file's value for `key` (`version`, `commit`, `sync-from`, `plunit`), or `\"\"`."
 function swipl_pin(root::AbstractString, key::AbstractString)::String
     f = joinpath(root, "tools", "SWIPL_VERSION")
     isfile(f) || return ""
@@ -19,7 +19,8 @@ end
 """
 `nothing` when the `swipl` on this process's PATH is THE ORACLE — the pinned version, and a build
 of the pinned commit (its `version_git` flag names it; tools/lib_evidence.sh `_check_swipl_pin`
-is the same rule in the shell); otherwise why not.
+is the same rule in the shell), and — when the pin names `plunit:` — its `library(plunit)` is the
+vendored packages/plunit/plunit.pl; otherwise why not.
 """
 function swipl_pin_refusal(root::AbstractString)::Union{Nothing, String}
     ver, commit = swipl_pin(root, "version"), swipl_pin(root, "commit")
@@ -38,8 +39,25 @@ function swipl_pin_refusal(root::AbstractString)::Union{Nothing, String}
                "$(isempty(version) ? "none" : version) at $(isempty(have) ? "(none on PATH)" : have)"
     vg = out(["-g", "current_prolog_flag(version_git, G), writeln(G)", "-t", "halt"])
     m = match(r"-g([0-9a-f]{7,40})$", vg)
-    (m !== nothing && startswith(commit, m[1])) && return nothing
-    return "the oracle must be a BUILD OF THE PINNED COMMIT $(commit[1:12]) " *
-           "(tools/SWIPL_VERSION); the swipl at $have says version_git " *
-           "'$(isempty(vg) ? "none" : vg)' — build it: tools/build_oracle.sh PREFIX"
+    (m !== nothing && startswith(commit, something(m[1]))) ||
+        return "the oracle must be a BUILD OF THE PINNED COMMIT $(commit[1:12]) " *
+               "(tools/SWIPL_VERSION); the swipl at $have says version_git " *
+               "'$(isempty(vg) ? "none" : vg)' — build it: tools/build_oracle.sh PREFIX"
+    # When the pin names `plunit:` (user, 2026-10-14), the oracle's library(plunit) is the
+    # vendored packages/plunit/plunit.pl BYTE FOR BYTE, and non-empty (equal files: one non-empty
+    # side is both; `filesize` of "" or of a missing file is 0)
+    isempty(swipl_pin(root, "plunit")) && return nothing
+    pf = out([
+        "-g",
+        "absolute_file_name(library(plunit), F, [file_type(prolog), access(read), " *
+        "file_errors(fail)]), writeln(F)",
+        "-t",
+        "halt"
+    ])
+    mine = joinpath(root, "packages", "plunit", "plunit.pl")
+    (filesize(pf) > 0 && isfile(mine) && read(pf) == read(mine)) &&
+        return nothing
+    return "the oracle's library(plunit) must be packages/plunit/plunit.pl byte for byte " *
+           "(tools/SWIPL_VERSION names plunit); the swipl at $have has " *
+           "'$(isempty(pf) ? "none" : pf)' — build it: tools/build_oracle.sh PREFIX"
 end

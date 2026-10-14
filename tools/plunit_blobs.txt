@@ -1,0 +1,12 @@
+# SWI-Prolog/packages-plunit bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895 — every file vendored at packages/plunit, as
+# `git ls-tree -r` lists it: mode, type, blob id, path. Generated once; test/test_vendored_plunit.jl
+# holds the vendored files to these blob ids (git's SHA-1 of "blob <size>\0<content>").
+100644 blob 046247d2ade215b83db888980837fd7732badd01	.gitignore
+100644 blob 6450f6999f1d6cc2f0ad50fa45fef92f450381a2	.plrc
+100644 blob 6ed9b633b853b1f4b4020b66b63f2bceb6b75cca	CMakeLists.txt
+100644 blob 37f1d21d428f7c0a280e6b8234ac02441dc4af0d	examples/read.pl
+100644 blob fab6c5c6d4c735ddc5f8bb2852342cb4003e6465	examples/simple.pl
+100644 blob fdcc025cc582962cc5699e5c935e7c20ad35209e	plunit.pl
+100644 blob 7e23d29aa19dfe771870e73d00c970ac6b43fdf9	plunit.plx
+100644 blob f7fe389cebcb2b42957dcf12bb66cd00a9b4bd93	swi.pl
+100644 blob 0b7bb40c9c6ea15ff113c511d421563950cc1f72	test_wizard.pl

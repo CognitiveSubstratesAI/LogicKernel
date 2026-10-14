@@ -86,6 +86,16 @@ _check_swipl_pin() {
         echo "$2: the oracle must be a BUILD OF THE PINNED COMMIT ${commit:0:12} (tools/SWIPL_VERSION); the swipl at $(command -v swipl) says version_git '${vg:-none}' — build it: tools/build_oracle.sh PREFIX" >&2
         return 1
     fi
+    # When the pin names `plunit:` (user, 2026-10-14), the oracle's library(plunit) is the vendored
+    # packages/plunit/plunit.pl BYTE FOR BYTE, and non-empty (equal files: one non-empty side is both)
+    if [ -n "$(_swipl_pin "$1" plunit)" ]; then
+        local pf
+        pf="$(swipl -g "absolute_file_name(library(plunit), F, [file_type(prolog), access(read), file_errors(fail)]), writeln(F)" -t halt 2>/dev/null)"
+        if [ ! -s "$pf" ] || ! cmp -s "$pf" "$1/packages/plunit/plunit.pl"; then
+            echo "$2: the oracle's library(plunit) must be packages/plunit/plunit.pl byte for byte (tools/SWIPL_VERSION names plunit); the swipl at $(command -v swipl) has '${pf:-none}' — build it: tools/build_oracle.sh PREFIX" >&2
+            return 1
+        fi
+    fi
     return 0
 }
 
