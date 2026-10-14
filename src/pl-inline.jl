@@ -199,12 +199,14 @@ end
 # PORT: pl-inline.h Trail
 # DIVERGES: a cell variable is trailed as upstream trails a global cell — only below
 # `LD->mark_bar`; a KEYED variable (src/pl-global.jl) has no age, and is always trailed, as
-# upstream always trails a local-stack cell (`p >= lBase`).
+# upstream always trails a local-stack cell (`p >= lBase`). Positions are 1-based and `gTop` is the
+# LAST cell in use (upstream's `gTop` points at the first free word), so upstream's `p < mark_bar`
+# is `p <= mark_bar` here.
 "Bind variable `key` to `v`, recording it on the trail where backtracking must undo it (pl-inline.h)."
 function Trail!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
     p = _cell_pos(ld, key)
     if p != 0
-        p < ld.mark_bar && push!(ld.trail, key) # if ( p < LD->mark_bar ) (tTop++)->address = p
+        p <= ld.mark_bar && push!(ld.trail, key)    # if ( p < LD->mark_bar ) (tTop++)->address = p
         ld.gstack[p] = v              # *p = v
     else
         push!(ld.trail, key)                    # (tTop++)->address = p

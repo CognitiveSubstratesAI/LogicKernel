@@ -52,14 +52,19 @@ function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
         return record{T}(p, nothing, true)
     end
     m = Mark(ld)
+    ld.mark_bar = NO_MARK_BAR       # the harvest below reads the copy's bindings off the trail
     c = copy_term(ld, p, cp_options(true))
-    length(ld.trail) == m.trailtop && return record{T}(c, nothing, false)
+    if length(ld.trail) == m.trailtop
+        DiscardMark(ld, m)
+        return record{T}(c, nothing, false)
+    end
     cycles = Tuple{UInt64, T}[]                     # the cyclic copies: w = r, and r holds w
     for i in (m.trailtop + 1):length(ld.trail)
         key = ld.trail[i]
         push!(cycles, (key, deRef(ld, mk_var(T, key))))
     end
     Undo!(ld, m)
+    DiscardMark(ld, m)
     return record{T}(c, cycles, false)
 end
 

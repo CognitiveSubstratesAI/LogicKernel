@@ -1129,7 +1129,9 @@ function unify_with_occurs_check!(
     end
 
     m = Mark(ld)
+    ld.mark_bar = NO_MARK_BAR                       # see also unify_all_trail_ptrs()
     rc = do_unify(ld, t1, t2)
+    DiscardMark(ld, m)
     if rc == BOOLEX_TRUE
         tt = length(ld.trail)
         mt = m.trailtop
@@ -1240,13 +1242,15 @@ function unify_all_trail_ptrs(
     ld::PL_local_data{T}, t1::T, t2::T
 )::Tuple{Bool, mark} where {T}
     m = Mark(ld)
+    ld.mark_bar = NO_MARK_BAR                       # every assignment trailed
     rc = raw_unify_ptrs(ld, t1, t2)
-    if rc == BOOLEX_TRUE
+    if rc == BOOLEX_TRUE                            # the caller discards the mark
         return (true, m)
     end
     if ld.exception_term == 0                       # check for occurs error
         Undo!(ld, m)
     end
+    DiscardMark(ld, m)
     return (false, m)
 end
 
@@ -1279,6 +1283,7 @@ function unifiable(
 
     ok, m = unify_all_trail_ptrs(ld, t1, t2)
     ok || return nothing
+    DiscardMark(ld, m)
     list = Pair{T, T}[]
     while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
         key = pop!(ld.trail)
@@ -1661,6 +1666,7 @@ function unifiable(
     end
     ok, m = unify_all_trail_ptrs(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
     ok || return false
+    DiscardMark(ld, m)
     if length(ld.trail) > m.trailtop                    # tt > mt
         pairs = T[]
         while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
@@ -1671,7 +1677,7 @@ function unifiable(
         list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
         return unify_ptrs(ld, list, ld.slots[subst + 1])
     end
-    return PL_unify_atom(ld, subst, nil)                # DiscardMark(m)
+    return PL_unify_atom(ld, subst, nil)
 end
 
 # PORT: pl-prims.c unifiable as pl_unifiable3_va

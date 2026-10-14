@@ -321,7 +321,7 @@ function PL_local_data{T}() where {T}
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[],
         Union{Nothing, T}[], UInt64[], 0,
-        NO_MARK_BAR,                            # mark_bar: every binding trailed (L1a-1)
+        0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,
         true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
