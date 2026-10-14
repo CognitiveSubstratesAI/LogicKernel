@@ -4,6 +4,13 @@
 # run). The format is tools/mutate_drive.py's: `id`, `file`, `old` (must occur EXACTLY once), `new`,
 # optional `equivalent` (a mutant that must SURVIVE, with the code reason) and `targets`.
 #
+# THE BATTERY OF 2026-10-14 (run 38486691571 on `63e631a`, 66 mutants, baseline green): 61 decided
+# — 57 caught, 4 declared equivalent (MG12, MG21, CT9, CT10) — and 5 SURVIVED, all of the cleanup
+# family, all for want of a test (now killed: cases k31–k34 and the handler's position at a
+# failure, test_cleanup_swipl.jl): MG14, MG15, MG17, MG18, MG24. MG17 was first written down as
+# equivalent; the position test refuted that the same hour (see at the mutant).
+# Every mutant of the bags (MB1–MB31) and of copy_term was caught; MC17 stays caught.
+#
 # V9g-a, the cleanup family (MG1–MG24). V9g-b, the bags (MB1–MB31). copy_term (CT1–CT10: the list
 # of its own battery of 2026-10-13, run then on the branch — 8 caught, CT9 and CT10 recorded
 # equivalent). Carried from V9e-1: MC17 (caught since V9f-b; it must stay caught).
@@ -103,6 +110,10 @@ MUTANTS = [
     dict(id="MG17 backtracking into the CHP_CATCH of a cleanup frame does not run the handler", file=W, targets=T_CLEAN,
          old='''                callCleanupHandler(ld, FR, FINISH_FAIL)''',
          new='''                nothing'''),
+    # MG17 SURVIVED the battery of 2026-10-14 (run 38486691571) and looked equivalent: `deep_backtrack`'s
+    # first loop leaves the frame right after and `frameFailed` runs the handler for the same reason.
+    # REFUTED by the position test added for MG18: the handler then runs where the popped choice
+    # point was — its frame lands 9 positions lower than swipl's (78 against 87). Killed by it.
     dict(id="MG18 backtracking into a watched CHP_CATCH does not lower lTop", file=W, targets=T_CLEAN,
          old='''            setLTop!(ld, db_c.base + SIZEOF_CHOICE) # lTop = (LocalFrame)(BFR+1)''',
          new='''            nothing'''),

@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "rules_common.jl"))
 # logged item, in order — so the differential compares WHAT ran, WHEN (between which answers), and
 # how often. The four ways a goal finishes — exit, fail, cut, exception — each alone, nested, and
 # with a cleanup goal that itself fails or raises.
-const _RCL_N = 30
+const _RCL_N = 34
 function _rcl_clauses()
     X, Y, Z, C, E = _rv(1), _rv(2), _rv(3), _rv(4), _rv(5)
     T = _rs("true")
@@ -95,14 +95,41 @@ function _rcl_clauses()
         (_rf("k28", X), _rf("call_cleanup", _rf("p", X), log(_rs("c28")))),
         (_rf("k29", X), scc(T, _rconj(_rf("p", X), _rs("!")), log(_rs("c29")))),
         # an unbound goal: the frame is a cleanup frame already when the error is raised
-        (_rf("k30", X), c3(scc(T, Y, log(_rs("c30"))), _rf("error", E, Z), eq(X, E)))
+        (_rf("k30", X), c3(scc(T, Y, log(_rs("c30"))), _rf("error", E, Z), eq(X, E))),
+        # ── V9g's battery: the cut of a CONDITION discards the goal's choice points (`c_cut`) ──
+        (_rf("k31", X), _rite(scc(T, _rf("p", X), log(_rs("c31"))), T, T)),
+        (_rf("k32", X, C), _rite(sccc(T, _rf("p", X), C, log(_rf("c32", C))), T, T)),
+        # an exception from outside: the goal's bindings are UNDONE before the handler runs
+        (
+            _rf("k33", X),
+            c3(
+                _rconj(
+                    sccc(
+                        T, _rconj(_rf("p", Y), eq(Z, _rs("seen"))), C,
+                        log(_rf("c33", C, Y, Z))
+                    ),
+                    th(_rs("b"))
+                ),
+                E,
+                eq(X, E)
+            )
+        ),
+        # a cleanup goal that is not callable is refused BEFORE the goal runs: nothing is logged
+        (
+            _rf("k34", X),
+            c3(
+                scc(T, log(_rs("g34")), _rg(1)),
+                _rf("error", _rf("type_error", X, Y), Z),
+                T
+            )
+        )
     ]
 end
 
 "Every case, each followed by the log so far."
 function _rcl_goals()
     X, C, L = _rv(51), _rv(52), _rv(53)
-    catcher = (6, 7, 8, 9, 10, 11)
+    catcher = (6, 7, 8, 9, 10, 11, 32)
     g = _R[]
     for k in 1:_RCL_N
         push!(g, k in catcher ? _rf("k$k", X, C) : _rf("k$k", X))
@@ -231,4 +258,66 @@ end
     )
     ])
     @test [a for (a, _) in _rcall(db, _rf("nc", _rv(51)))] == ["nc(type_error(callable,1))"]
+end
+
+# Where the handler runs when the goal FAILS, read with prolog_current_frame/1 on both sides as the
+# difference from the caller's frame: backtracking into the cleanup frame's choice point lowers
+# `lTop` to just above it (pl-vmi.c: `lTop = (LocalFrame)(BFR+1)`), so the handler's frame lands at
+# the same place however deep the goal went before it failed (MG18's kill test).
+function _rcl_pos_clauses()
+    F0, F, D, N, M, K = _rv(1), _rv(2), _rv(3), _rv(4), _rv(5), _rv(6)
+    pcf(v) = _rf("prolog_current_frame", v)
+    return Tuple{_R, Union{Nothing, _R}}[
+        (
+            _rf("lp", K, F0),
+            _rconj(
+                pcf(F), _rf("is", D, _rf("-", F, F0)), _rf("assertz", _rf("posd", K, D))
+            )
+        ),
+        (
+            _rf("dfail", N),
+            _rconj(
+                _rf(">", N, _rg(0)), _rf("is", M, _rf("-", N, _rg(1))), _rf("dfail", M),
+                _rs("true")
+            )
+        ),
+        (
+            _rf("hp", N, D),
+            _rconj(
+                pcf(F0),
+                _ror(
+                    _rf(
+                        "setup_call_cleanup", _rs("true"), _rf("dfail", N), _rf("lp", N, F0)
+                    ),
+                    _rs("true")
+                ),
+                _rf("posd", N, D)
+            )
+        )
+    ]
+end
+
+@testset "the handler's frame at a failure is at one position, whatever the goal's depth — swipl's" begin
+    clauses = _rcl_pos_clauses()
+    depths = (1, 5, 40)
+    db = _rdb(clauses)
+    ours = Int[]
+    for n in depths
+        ans = _rcall(db, _rf("hp", _rg(n), _rv(80)))
+        @test length(ans) == 1
+        push!(ours, parse(Int, match(r",(-?\d+)\)", first(ans[1]))[1]))
+    end
+    @test ours[1] == ours[2] == ours[3]
+    if _R_SWIPL
+        main =
+            "main :- " *
+            join(("hp($n, D$n), writeln(D$n)" for n in depths), ", ") * "."
+        theirs = parse.(
+            Int, _rswipl(clauses, (); extra=":- dynamic posd/2.\n", main_text=main)
+        )
+        ours == theirs || println(stderr, "  positions, kernel: ", ours, " swipl: ", theirs)
+        @test ours == theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
 end

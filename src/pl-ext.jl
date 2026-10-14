@@ -269,7 +269,8 @@ end
 #     '$append'([], L, L).
 #     '$append'([H|T], L, [H|R]) :- '$append'(T, L, R).
 # R2 loads boot/init.pl, which defines them the same way. boot code is system code (`P_LOCKED`);
-# length/2 is ISO (init.pl:4467, `'$iso'`).
+# length/2 is ISO (init.pl:4467, `'$iso'`). DIVERGES: a database over a term type that cannot hold
+# an `Int64` gets `'$append'/3` only — length/2's clauses contain integers.
 "Define length/2, `'\$length3'/3` and `'\$append'/3` in the `system` module of `gd` as boot/init.pl defines them."
 function _boot_lists!(gd::PL_global_data{T})::Nothing where {T}
     ld = PL_local_data{T}()
@@ -277,6 +278,15 @@ function _boot_lists!(gd::PL_global_data{T})::Nothing where {T}
     List, Length, Length0, Tail = v[1], v[2], v[3], v[4]
     Extra, Anon, N1, H = v[5], v[6], v[7], v[8]
     nil = mk_nil(T)
+    append = Symbol("\$append")                         # (T: Tail, L: List, R: Extra)
+    _boot_clause!(gd, ld, append, T[nil, List, List], nothing, P_LOCKED)
+    _boot_clause!(
+        gd, ld, append, T[_boot_cons(T, H, Tail), List, _boot_cons(T, H, Extra)],
+        _boot_term(append, T[Tail, List, Extra]), P_LOCKED
+    )
+    # the other clauses hold the integers 0, 1 and 2: a term type that cannot hold an `Int64`
+    # (the tests' `Term{BigInt}`) gets no length/2
+    _holds_payload(T, Int64) || return nothing
     cut = mk_sym(T, :!)
     skip = _boot_term(Symbol("\$skip_list"), T[Length0, List, Tail])
     not_a_list = _boot_length_error(T,
@@ -349,12 +359,6 @@ function _boot_lists!(gd::PL_global_data{T})::Nothing where {T}
             ]
         ),
         P_LOCKED
-    )
-    append = Symbol("\$append")                         # (T: Tail, L: List, R: Extra)
-    _boot_clause!(gd, ld, append, T[nil, List, List], nothing, P_LOCKED)
-    _boot_clause!(
-        gd, ld, append, T[_boot_cons(T, H, Tail), List, _boot_cons(T, H, Extra)],
-        _boot_term(append, T[Tail, List, Extra]), P_LOCKED
     )
     return nothing
 end

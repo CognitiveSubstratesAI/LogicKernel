@@ -1214,6 +1214,7 @@ graph LR
     pl_ext --> pl_comp
     pl_ext --> pl_variant
     pl_ext --> pl_copyterm
+    pl_ext --> pl_gmp
     pl_ext --> pl_arith
     pl_ext --> os_pl_text
     pl_ext --> pl_proc
@@ -2680,6 +2681,34 @@ pin `8609e216`, upstream names.
   `det_goal` units among them; `start_of_cdet` on nested blocks; the guard's frame flags and the
   block's unlinked record. test/compile/test_body_code_swipl.jl — nine `$` clauses compile to
   swipl's code (`vm_list`) and decompile to swipl's `clause/2`.
+
+**V9g's MUTATION BATTERY (2026-10-14, in CI; `tools/mutants/V9g.py`, 66 mutants — 24 of the
+cleanup family, 31 of the bags, copy_term's 10, MC17 carried from the meta-call).** First run (run
+38486691571 on `63e631a`, started by a push to `mutants/V9g`; baseline green): **57 caught, 4
+declared equivalent** (MG12, MG21, CT9, CT10 — each with its code reason in the list) **and 5
+blocking**, all of the cleanup family, each settled before the step closed:
+* **All five were missing tests**, now in test/core_lang/test_cleanup_swipl.jl, each equal to swipl:
+  MG15 (`c_cut` does not run the handler of a frame it discards) — every cut of the tests was a
+  clause's own `!`, which goes through `discardChoicesAfter`; killed by `k31`, `k32` (the cut of an
+  if-then-else CONDITION). MG14 (`discardChoicesAfter` does not undo before an exception's
+  handler) — no cleanup goal looked at the goal's bindings; killed by `k33` (the handler logs
+  them: unbound). MG24 (`mustBeCallable` accepts any bound term) — the pinned type error is raised
+  by `call_term` too, later; killed by `k34` (the goal must NOT have run). MG18 (backtracking into
+  the cleanup frame's `CHP_CATCH` does not lower `lTop`) — killed by the handler's frame position at
+  a failure, read with `prolog_current_frame/1` on both sides: one position whatever the goal's
+  depth, swipl's.
+  MG17 (that same branch does not run the handler) looked equivalent — `deep_backtrack`'s first
+  loop leaves the cleanup frame right after and `frameFailed` runs the handler for the same
+  reason, so every answer and log is the same — and was first written down so; the position test
+  REFUTED it: the handler then runs where the popped choice point was, 9 positions below swipl's
+  (78 against 87). It is killed by that test, and nothing is recorded equivalent for it.
+* Every mutant of the bags and of copy_term was caught; MC17 stays caught. The closing run is on
+  the commit that carries this text.
+* **Found by the same push, not by a mutant:** the evidence run failed in test/db/test_jit.jl — a
+  database over `Term{BigInt}` could not be created, because length/2's boot clauses hold the
+  integers 0, 1 and 2. They are now defined only where the term type can hold an `Int64`
+  (`_holds_payload`); `'$append'/3` always. The preflight runs only the changed test files, so
+  this showed in CI only.
 
 **V9g-b: the bags — `findall/3,4`, `bagof/3`, `setof/3` — BUILT (2026-10-13)** (the user's
 overnight queue; port_inventory row V9; src/pl-rec.jl, pl-bag.jl, pl-list.jl (all new), pl-prims.jl,
