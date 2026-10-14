@@ -310,6 +310,27 @@ indexAtom(w::word)::Int = Int(w >> LMASK_BITS)
 # DIVERGES: the atom table is an argument (`GD->atoms`: one per database, src/pl-atom.jl).
 "The atom (src/pl-atom.jl `atom`) that word `w` names in the table `atoms` (pl-data.h)."
 atomValue(atoms, w::word) = fetchAtomArray(atoms, indexAtom(w))
+# PORT: pl-data.h indexFunctor
+"The index of functor word `w` in the functor table (pl-data.h)."
+indexFunctor(w::word)::Int = Int(w >> (LMASK_BITS + F_ARITY_BITS))
+# PORT: pl-data.h valueFunctor
+# DIVERGES: the functor table is an argument (`GD->functors`: one per database, src/pl-funct.jl).
+"The definition (src/pl-funct.jl `functorDef`) that functor word `w` names (pl-data.h)."
+valueFunctor(functors, w::word) = fetchFunctorArray(functors, indexFunctor(w))
+# PORT: pl-data.h _arityFunc_
+"The arity bits of functor word `w`: the arity, or `F_ARITY_MASK` when it is the table's (pl-data.h)."
+_arityFunc_(w::word)::Int = Int((w >> LMASK_BITS) & F_ARITY_MASK)
+# PORT: pl-data.h arityFunctor
+# DIVERGES: the functor table is an argument, read only for an arity of `F_ARITY_MASK` or more.
+"The arity of functor word `w` (pl-data.h): inline below `F_ARITY_MASK`, else from the table."
+arityFunctor(functors, w::word)::Int =
+    _arityFunc_(w) == F_ARITY_MASK ? valueFunctor(functors, w).arity : _arityFunc_(w)
+# PORT: pl-data.h isAtomFunctor
+"Whether functor word `w` has arity 0 (pl-data.h)."
+isAtomFunctor(functors, w::word)::Bool = arityFunctor(functors, w) == 0
+# PORT: pl-data.h nameFunctor
+"The name (an atom word) of functor word `w` (pl-data.h)."
+nameFunctor(functors, w::word)::UInt64 = valueFunctor(functors, w).name
 # PORT: pl-data.h MK_FUNCTOR
 "The functor word of functor number `n` with arity `a` (pl-data.h)."
 MK_FUNCTOR(n::UInt64, a::UInt64)::word =

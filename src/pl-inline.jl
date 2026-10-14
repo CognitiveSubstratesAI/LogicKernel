@@ -27,6 +27,15 @@ function fetchAtomArray(atoms::atoms_t, index::Int)::atom
     return (atoms.array[idx + 1]::Vector{atom})[index - (1 << idx) + 1]
 end
 
+# PORT: pl-inline.h fetchFunctorArray
+# DIVERGES: the table is an argument (`GD->functors`); block `idx` is `array[idx + 1]`, from 1.
+"The functor definition at `index` in the table `functors` (pl-inline.h)."
+function fetchFunctorArray(functors::functors_t, index::Int)::functorDef
+    idx = MSB(index)
+    b = functors.array[idx + 1]::Vector{Union{Nothing, functorDef}}
+    return b[index - (1 << idx) + 1]::functorDef
+end
+
 # PORT: pl-inline.h clean_index_key
 "A hashed key that is never 0 and never reads as a functor (pl-inline.h)."
 function clean_index_key(key::word)::word

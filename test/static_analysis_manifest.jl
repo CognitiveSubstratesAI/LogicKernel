@@ -1745,7 +1745,31 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.lookupUCSAtom, Tuple{LK.atoms_t, Vector{UInt32}}, false),
     (LK.lookupUCSAtom, Tuple{LK.atoms_t, Vector{UInt32}, Int}, false),
     (LK.PL_canonicalise_text, Tuple{LK.PL_chars_t}, false),
-    (LK.textToAtom, Tuple{LK.atoms_t, LK.PL_chars_t}, false)
+    (LK.textToAtom, Tuple{LK.atoms_t, LK.PL_chars_t}, false),
+    # the functor table (L1b stage B: src/pl-funct.jl; pl-data.h's indexFunctor/valueFunctor/
+    # arityFunctor/isAtomFunctor/nameFunctor, pl-inline.h's fetchFunctorArray, os/pl-table.h's
+    # pointerHashValue)
+    (LK.functors_t, Tuple{}, false),
+    (LK.FUNCTOR_IS_VALID, Tuple{UInt32}, true),
+    (LK.pointerHashValue, Tuple{UInt64, Int}, true),
+    (LK.allocateFunctorBlock, Tuple{LK.functors_t, Int}, false),
+    (LK.registerFunctor, Tuple{LK.functors_t, LK.functorDef}, false),
+    (LK.lookupFunctorDef, Tuple{LK.functors_t, UInt64, Int}, false),
+    (LK.rehashFunctors, Tuple{LK.functors_t}, false),
+    (LK.isCurrentFunctor, Tuple{LK.functors_t, UInt64, Int}, false),
+    (LK.allocFunctorTable, Tuple{LK.functors_t}, false),
+    (LK.registerBuiltinFunctors, Tuple{LK.functors_t}, false),
+    (LK.builtin_functor, Tuple{String, Int}, false),
+    (LK.registerControlFunctors!, Tuple{LK.functors_t}, false),
+    (LK.registerArithFunctors!, Tuple{LK.functors_t}, false),
+    (LK.initFunctors!, Tuple{LK.functors_t}, false),
+    (LK.indexFunctor, Tuple{UInt64}, true),
+    (LK.valueFunctor, Tuple{LK.functors_t, UInt64}, true),
+    (LK._arityFunc_, Tuple{UInt64}, true),
+    (LK.arityFunctor, Tuple{LK.functors_t, UInt64}, true),
+    (LK.isAtomFunctor, Tuple{LK.functors_t, UInt64}, true),
+    (LK.nameFunctor, Tuple{LK.functors_t, UInt64}, true),
+    (LK.fetchFunctorArray, Tuple{LK.functors_t, Int}, true)
 )
 
 """
