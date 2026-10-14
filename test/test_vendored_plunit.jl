@@ -5,9 +5,10 @@
 # READ-ONLY means nobody edits packages/plunit: the kernel loads upstream's plunit as it is, and a
 # fix belongs upstream (or in the kernel). So each file is held to the blob id git gives it
 # upstream (tools/plunit_blobs.txt, written from `git ls-tree -r` at the pinned commit): a changed
-# byte changes the id. Where an upstream checkout is found (`~/dev-zone/swipl-devel`, or
-# LOGICKERNEL_UPSTREAM_SWIPL_DEVEL, as tools/port_check.jl finds it) the list itself is checked
-# against the package's commit, and that commit against the gitlink of the pinned swipl-devel.
+# byte changes the id. With an upstream checkout (`~/dev-zone/swipl-devel`, or
+# LOGICKERNEL_UPSTREAM_SWIPL_DEVEL — in CI, ALWAYS: the workflows check swipl-devel out at the pin)
+# the list itself is checked against the package's commit, and that commit against the gitlink of
+# the pinned swipl-devel.
 using Test
 
 const _VP_ROOT = joinpath(@__DIR__, "..")
@@ -57,23 +58,51 @@ _vp_blob(path::String)::String = readchomp(`git hash-object --no-filters $path`)
     @test sort!(present) == sort!(collect(keys(blobs)))      # nothing added, nothing missing
 end
 
-@testset "the pinned plunit is the submodule commit of the pinned swipl-devel" begin
-    up = get(
-        ENV,
-        "LOGICKERNEL_UPSTREAM_SWIPL_DEVEL",
-        joinpath(homedir(), "dev-zone", "swipl-devel")
-    )
-    if isdir(joinpath(up, ".git"))
-        pin = _vp_pin("commit")
-        link = split(readchomp(`git -C $up ls-tree $pin packages/plunit`))
-        @test length(link) >= 3 && link[2] == "commit" && link[3] == _vp_pin("plunit")
-        sub = joinpath(up, "packages", "plunit")
-        if isdir(sub) && success(`git -C $sub cat-file -e $(_vp_pin("plunit"))^\{commit\}`)
-            listed = readlines(`git -C $sub ls-tree -r $(_vp_pin("plunit"))`)
-            _, blobs = _vp_manifest()
-            @test sort!(listed) == sort!(["100644 blob $id\t$rel" for (rel, id) in blobs])
+# THE GITLINK (user, 2026-10-14): no silently inert test in CI. CI's jobs check out swipl-devel at
+# the pinned commit with its submodules (.github/workflows: `LOGICKERNEL_UPSTREAM_SWIPL_DEVEL`), so
+# there (`CI=true`) this testset FAILS when the checkout, or plunit at the pinned commit in it, is
+# missing. Only a LOCAL run without a checkout skips it, and says so; a testset that ran and
+# asserted nothing would fail the suite anyway (test/inert_testset_guard.jl).
+const _VP_UP = get(
+    ENV,
+    "LOGICKERNEL_UPSTREAM_SWIPL_DEVEL",
+    joinpath(homedir(), "dev-zone", "swipl-devel")
+)
+const _VP_CI = get(ENV, "CI", "") == "true"
+if _VP_CI || isdir(joinpath(_VP_UP, ".git"))
+    @testset "the pinned plunit is the submodule commit of the pinned swipl-devel" begin
+        up = _VP_UP
+        have_up = isdir(joinpath(up, ".git"))
+        have_up ||
+            @error "test_vendored_plunit: CI must check out swipl-devel at the pinned " *
+                "commit (LOGICKERNEL_UPSTREAM_SWIPL_DEVEL = $up): none there"
+        @test have_up
+        if have_up
+            pin = _vp_pin("commit")
+            link = split(readchomp(`git -C $up ls-tree $pin packages/plunit`))
+            @test length(link) >= 3 && link[2] == "commit" && link[3] == _vp_pin("plunit")
+            sub = joinpath(up, "packages", "plunit")
+            have_sub =
+                isdir(sub) &&
+                success(`git -C $sub cat-file -e $(_vp_pin("plunit"))^\{commit\}`)
+            if have_sub || _VP_CI
+                have_sub ||
+                    @error "test_vendored_plunit: CI must check out packages/plunit at " *
+                        "$(_vp_pin("plunit")) in $up (submodules: true): it is not there"
+                @test have_sub
+                if have_sub
+                    listed = readlines(`git -C $sub ls-tree -r $(_vp_pin("plunit"))`)
+                    _, blobs = _vp_manifest()
+                    @test sort!(listed) ==
+                        sort!(["100644 blob $id\t$rel" for (rel, id) in blobs])
+                end
+            else
+                @info "test_vendored_plunit: the local checkout $up has no packages/plunit at " *
+                    "$(_vp_pin("plunit")) — the blob list is not checked against it (it is in CI)"
+            end
         end
-    else
-        @info "test_vendored_plunit: no swipl-devel checkout here — the blob ids are checked, the gitlink is not"
     end
+else
+    @info "test_vendored_plunit: no swipl-devel checkout here (a local run) — the blob ids are " *
+        "checked, the gitlink is not (it is in CI)"
 end

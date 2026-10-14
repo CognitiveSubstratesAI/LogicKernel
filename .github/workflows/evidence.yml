@@ -42,8 +42,22 @@ jobs:
       LOGICKERNEL_REQUIRE_SWIPL: '1'
       LOGICKERNEL_TERM_ONLY: ${{ matrix.term }}
       LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_${{ matrix.term }}.tsv
+      LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
     steps:
       - uses: actions/checkout@v4
+      # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
+      # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
+      # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
+      # (.gitignore, .JuliaFormatter.toml: `.upstream`).
+      - name: The pinned swipl-devel commit
+        id: pin
+        run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: SWI-Prolog/swipl-devel
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .upstream/swipl-devel
+          submodules: true
       - uses: ./.github/actions/oracle
       - uses: julia-actions/setup-julia@v2
         with:

@@ -24,4 +24,5 @@ ignore = [
     "docs/build",
     ".warm",       # the warm lane's scratch snippets (tools/warm.sh), gitignored
     ".evidence",   # the sharded runs' logs (tools/run_tests.sh), gitignored
+    ".upstream",   # CI's checkout of swipl-devel at the pin (.github/workflows), gitignored
 ]

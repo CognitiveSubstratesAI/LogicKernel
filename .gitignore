@@ -36,6 +36,8 @@ bench/results/
 # The warm lane (tools/warm.sh) and the local precompile switch (tools/warm.sh workload)
 .warm/
 .evidence/
+# CI's checkout of swipl-devel at the pin (.github/workflows: test/test_vendored_plunit.jl's gitlink)
+.upstream/
 LocalPreferences.toml
 
 # Codecov Test Analytics input, written by test/runtests.jl when LOGICKERNEL_JUNIT is set
