@@ -14,6 +14,9 @@
 #   tools/warm.sh preflight                # WARM: what a full run would fail on, BEFORE one (exit 0/1);
 #                                          # a stale daemon (a deleted method it kept) is restarted
 #                                          # and the preflight rerun once
+#   tools/warm.sh branch-gate              # WARM: a BRANCH commit's evidence (never main's) — the
+#                                          # fast check, then the tree-wide files and every changed
+#                                          # test file on every term type; CI's full run is the gate
 #   tools/warm.sh evidence                 # a FRESH tools/run_tests.sh — the commit gate's run
 #   tools/warm.sh locked CMD [ARGS…]       # run CMD holding the lane for its WHOLE run (a mutation
 #                                          # driver): its own warm.sh calls pass, everyone else's are
@@ -33,6 +36,19 @@
 # keeps fixed): a missing verdict is a FAILURE, and a timeout prints no output — it would be the
 # previous run's — and exits 2, distinct from a failure.
 set -uo pipefail
+# 🔴 A TASK CEILING ON THIS SCRIPT'S OWN WORK (user, 2026-10-14). The daemon and the evidence workers
+# run in capped units, but this shell and what it forks did not: MEASURED that day, a backtick in an
+# unquoted heredoc made a `check` run itself recursively — a 1558-process fork chain, outside every
+# unit, while the background-job hook exempted warm.sh as "self-capped". So, where user systemd
+# exists, the script re-runs itself in a scope with a task ceiling (LOGICKERNEL_TASKS_MAX, 512), as
+# tools/build_oracle.sh does: a runaway is one killed scope. The PID is kept (systemd-run --scope
+# execs in place), so the lane lock's owner checks hold; a nested call inherits the scope. No
+# memory ceiling here: the heavy work is in its own units, each with its own.
+if [ -z "${LOGICKERNEL_TASKS_CAPPED:-}" ] && command -v systemd-run > /dev/null 2>&1 &&
+    systemd-run --user --scope true > /dev/null 2>&1; then
+    exec env LOGICKERNEL_TASKS_CAPPED=1 systemd-run --user --scope --quiet \
+        -p TasksMax="${LOGICKERNEL_TASKS_MAX:-512}" "$0" "$@"
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$ROOT/.warm"
 # shellcheck source=/dev/null
@@ -348,8 +364,9 @@ _checks_fresh() {
         echo "$(date -u +%FT%TZ) restart: daemon leftovers found by the manifest check" >> "$DIR/restarts.log"
         _stop
         _start > /dev/null || return 1
-        _format_port_check
+        _format_port_check 1
         rc=$?
+        [ "$rc" -eq 0 ] || echo "check: still FAILS after a daemon restart — a REAL failure (the method needs its manifest entry)"
     fi
     return "$rc"
 }
@@ -358,8 +375,9 @@ _checks_fresh() {
 # daemon: the preflight's first step, and `tools/warm.sh check` on its own (user, 2026-10-13: a
 # documentation slip is then found seconds after the edit, without starting a preflight). Prints
 # both pass lines; 0 only when both were SHOWN (fail closed).
-_format_port_check() {
+_format_port_check() {   # _format_port_check [1 = the check after a leftover restart]
     local rc snippet="$DIR/preflight_snippet.jl" fmtlog="$DIR/preflight_format_port_check.log"
+    local after_restart="${1:-0}"
     cat > "$snippet" <<JL
 using JuliaFormatter
 if !format("."; overwrite=false)
@@ -412,13 +430,33 @@ let sa = Module(:PreflightManifest)
     # old signature of a re-signed function that Revise failed to delete: no manifest entry fixes
     # it, a restart does (_checks_fresh, in tools/warm.sh).
     owned = Base.invokelatest(() -> sa.owned_methods(LogicKernel))
-    leftovers = Set(
+    # ...and so is a method whose function NO src/ file defines (the static gate's STALE rule,
+    # _preflight_stale: port_check's own definitions): Revise kept it after its definition was
+    # deleted (FIXED 2026-10-14 — it read NOT IN THE MANIFEST and nothing restarted the daemon).
+    # After that one restart, whatever is still uncovered is REAL: it needs its manifest entry.
+    pcd = Module(:PreflightManifestDefs)
+    Base.include(pcd, raw"$ROOT/tools/port_check.jl")
+    defined = Set{String}()
+    for (dir, _, fs) in walkdir(raw"$ROOT/src"), f in fs
+        endswith(f, ".jl") || continue
+        p = joinpath(dir, f)
+        foreach(d -> push!(defined, d[2]), Base.invokelatest(() -> pcd.definitions(read(p, String), p)))
+    end
+    isempty(defined) && error("preflight: no definitions found under src/ — cannot classify")
+    resigned = Set(
         "\$(m.name) \$(m.sig)  (\$(m.file):\$(m.line))" for m in owned if
         count(n -> n.name === m.name && n.file === m.file && n.line == m.line, owned) > 1
     )
+    deleted = Set(
+        "\$(m.name) \$(m.sig)  (\$(m.file):\$(m.line))" for m in owned if !(String(m.name) in defined)
+    )
     for u in r.uncovered
-        println(u in leftovers ? "  A DAEMON LEFTOVER (the old signature of a re-signed function — " *
-                              "tools/warm.sh restart, with its reason): " : "  NOT IN THE MANIFEST: ", u)
+        println($after_restart == 1 ?
+                "  NOT IN THE MANIFEST (still there after a daemon restart — a REAL method: add its entry): " :
+            u in resigned ? "  A DAEMON LEFTOVER (the old signature of a re-signed function — " *
+                            "tools/warm.sh restart, with its reason): " :
+            u in deleted ? "  A DAEMON LEFTOVER (defined in no src/ file — a method Revise kept): " :
+            "  NOT IN THE MANIFEST: ", u)
     end
     foreach(u -> println("  stale exemption: ", u), r.stale_exempt)
     (isempty(r.uncovered) && isempty(r.stale_exempt)) ||
@@ -576,6 +614,42 @@ _preflight() {
     return "$rc"
 }
 
+# _branch_gate — THE BRANCH-GATE (user, approved 2026-10-14): commits are made off `main`, and a
+# branch commit's evidence is the fast check (`check`: format, port_check, manifest) plus the
+# tree-wide gates and every test file changed since HEAD, each on EVERY term type (`_file` with no
+# implementation). `main` moves only to a commit whose full CI run is green (the commit hook refuses
+# a commit on `main` in this repo; tools/githooks/pre-push refuses `main` without that run). Not the
+# preflight: no JET/Aqua/AllocCheck here — CI's full run judges those.
+_branch_gate() {
+    _running || _start > /dev/null || return 1
+    local t0 rc=0 f files log
+    t0=$(date +%s)
+    _ci_gate "$ROOT" 0 || { echo "branch-gate: FAIL — the previous push's CI (tools/ci_status.sh)"; return 1; }
+    _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest) in $(( $(date +%s) - t0 ))s"; return 1; }
+    # the tree-wide gates check src/, so a src edit can fail them while their own file is unchanged
+    files=$( {
+        printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
+        cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
+            grep -E '^test/(.*/)?test_[^/]*\.jl$'
+    } | sort -u)
+    for f in $files; do
+        [ -f "$ROOT/$f" ] || continue
+        echo "branch-gate: $f"
+        log="$DIR/branch_gate_$(basename "$f" .jl).log"
+        _file "$f" > "$log" 2>&1 || { rc=1; echo "branch-gate: FAILED — $log"; }
+        grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$log"
+    done
+    echo "branch-gate: $([ "$rc" -eq 0 ] && echo PASS || echo FAIL) in $(( $(date +%s) - t0 ))s"
+    return "$rc"
+}
+
+# _marker_lib — the workspace's evidence marker (workflows/test_marker.sh); in a standalone clone none
+_marker_lib() {
+    # shellcheck source=/dev/null
+    . "$ROOT/../workflows/test_marker.sh" 2>/dev/null ||
+        . "${LOGICKERNEL_WORKSPACE:-$HOME/code/CognitiveSubstratesAI}/workflows/test_marker.sh" 2>/dev/null || true
+}
+
 _workload() {
     local v
     case "${1:-}" in on) v=true ;; off) v=false ;; *) echo "usage: tools/warm.sh workload on|off" >&2; return 2 ;; esac
@@ -589,7 +663,16 @@ _workload() {
 cmd="${1:-status}"; shift || true
 case "$cmd" in
     status) ;;
-    preflight | evidence | locked)
+    preflight | evidence | locked | branch-gate)
+        if [ "$cmd" = branch-gate ]; then
+            _bg_br="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2> /dev/null)"
+            case "$_bg_br" in
+                "" | main | master)
+                    echo "branch-gate: REFUSED — it is evidence for a BRANCH commit, and this checkout is on '${_bg_br:-a detached HEAD}': commit on a branch, push it as gate/<name>, and fast-forward main to it once CI is green (exit 2)" >&2
+                    exit 2
+                    ;;
+            esac
+        fi
         _run_lock || exit 5
         echo "$cmd" > "$DIR/run.kind"                   # tools/lib_evidence.sh `_evidence_running`
         ;;
@@ -617,9 +700,7 @@ case "$cmd" in
         # it, `main` is fast-forwarded). The workspace's marker records it, bound to this tree as
         # it was when the preflight STARTED, under a label the commit hook reads: it accepts a
         # preflight on a branch and refuses it on `main`. In a standalone clone: no helper, no marker.
-        # shellcheck source=/dev/null
-        . "$ROOT/../workflows/test_marker.sh" 2>/dev/null ||
-            . "${LOGICKERNEL_WORKSPACE:-$HOME/code/CognitiveSubstratesAI}/workflows/test_marker.sh" 2>/dev/null || true
+        _marker_lib
         _pf_fp=""
         command -v start_marker >/dev/null 2>&1 && _pf_fp="$(start_marker "$ROOT")"
         _preflight
@@ -627,6 +708,18 @@ case "$cmd" in
         command -v write_marker >/dev/null 2>&1 &&
             write_marker "$ROOT" "$_pf_rc" "preflight (warm, the chunk's term types: evidence for a BRANCH commit, never for main)" "$_pf_fp"
         (exit "$_pf_rc")
+        ;;
+    branch-gate)
+        # the marker is bound to the tree as it was when the run STARTED, under the label the commit
+        # hook reads: `branch-gate…` is accepted on a branch, refused on main (as a preflight is)
+        _marker_lib
+        _bg_fp=""
+        command -v start_marker > /dev/null 2>&1 && _bg_fp="$(start_marker "$ROOT")"
+        _branch_gate
+        _bg_rc=$?
+        command -v write_marker > /dev/null 2>&1 &&
+            write_marker "$ROOT" "$_bg_rc" "branch-gate (warm: the fast check + the tree-wide and changed test files on every term type — evidence for a BRANCH commit, never for main)" "$_bg_fp"
+        (exit "$_bg_rc")
         ;;
     evidence)
         # the evidence run reads its worker count from free memory: an oversized daemon goes first
@@ -636,5 +729,5 @@ case "$cmd" in
     locked) [ $# -ge 1 ] || { echo "usage: tools/warm.sh locked CMD [ARGS…]" >&2; exit 2; }; "$@" ;;
     pool) _pool ;;
     workload) _workload "${1:-}" ;;
-    *) sed -n '2,15p' "$0"; exit 2 ;;
+    *) sed -n '2,25p' "$0"; exit 2 ;;
 esac

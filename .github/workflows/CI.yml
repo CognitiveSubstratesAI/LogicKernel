@@ -207,3 +207,118 @@ jobs:
             exit 1
           fi
           echo "All files Blue-formatted."
+
+  # ── THE TOOLING GATE (user, 2026-10-14) ──────────────────────────────────────────────────────────
+  # The gate checked the engine and not the tools that run the gate: 1dada85 passed CI with a
+  # defect tools/test_warm.sh catches (a deleted function Revise kept failed `warm.sh check` instead
+  # of restarting the daemon — 11 failed cases, found by the next session). This job runs the
+  # tooling suites whenever the tooling changes; it is part of the CI workflow, so `main` moves only
+  # when it is green too (tools/githooks/pre-push: every run on the SHA completed and green).
+  # It always RUNS and decides inside whether the tooling changed — GitHub's `paths:` filter is
+  # unreliable on a newly pushed branch — and an undecidable diff runs everything (fails closed).
+  tooling:
+    name: Tooling suites (warm lane, evidence, oracle cache)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: write
+    env:
+      JULIA_NUM_THREADS: '4'
+      LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Did the tooling change?
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}   # through env, never interpolated into the script
+        run: |
+          # against main for a gate branch or a PR; against the previous push on main itself
+          if [ "$GITHUB_REF" = refs/heads/main ] && [ -n "$BEFORE" ] &&
+             git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+              base="$BEFORE"
+          else
+              base="$(git merge-base origin/main HEAD 2> /dev/null)" || base=""
+          fi
+          if [ -z "$base" ]; then
+              echo "no base to compare with — running every tooling suite (fails closed)"
+              echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files="$(git diff --name-only "$base" HEAD -- tools .github test/test_port_check.jl test/test_gate_split.jl)"
+          printf 'tooling files changed since %s:\n%s\n' "${base:0:7}" "${files:-(none)}"
+          echo "run=$([ -n "$files" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: No tooling change — nothing to run
+        if: steps.changed.outputs.run != 'true'
+        run: echo "::notice title=Tooling suites::no file under tools/, .github/ or the tooling tests changed"
+      - name: The pinned swipl-devel commit
+        if: steps.changed.outputs.run == 'true'
+        id: pin
+        run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.changed.outputs.run == 'true'
+        with:
+          repository: SWI-Prolog/swipl-devel
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .upstream/swipl-devel
+          submodules: true
+      - uses: ./.github/actions/oracle
+        if: steps.changed.outputs.run == 'true'
+      - uses: julia-actions/setup-julia@v2
+        if: steps.changed.outputs.run == 'true'
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@v2
+        if: steps.changed.outputs.run == 'true'
+      # the warm lane's preflight runs the formatter and the fast static pre-check in the daemon:
+      # the same tools, the same versions as `analysis` and `format`
+      - name: Install the analysis tools and the formatter into the default environment
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(name="AllocCheck"),
+            PackageSpec(name="JuliaFormatter", version="2.14.0")])'
+      - if: steps.changed.outputs.run == 'true'
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      # The warm daemon and the evidence workers are `systemd-run --user` units, and the scripts
+      # cap themselves in user scopes: a runner has no user manager until lingering is enabled.
+      # REQUIRED here — the step fails if `systemd-run --user --scope` still does not work, so the
+      # cap cases of test_warm.sh cannot skip silently.
+      - name: A user systemd manager (the warm lane's units and scopes)
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          sudo loginctl enable-linger "$USER"
+          uid="$(id -u)"
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus"
+          for _ in $(seq 60); do
+              systemctl --user is-system-running 2> /dev/null | grep -qE '^(running|degraded)$' && break
+              sleep 1
+          done
+          systemctl --user is-system-running || true
+          systemd-run --user --scope --quiet true
+      # tools/ci_status.sh (the preflight's first step) falls back to `git credential fill` when the
+      # anonymous API answers no run list (its 60-an-hour limit, shared runner IPs); checkout keeps
+      # its token as an http header, not a credential, so serve the job's token as one.
+      - name: The job's token for tools/ci_status.sh
+        if: steps.changed.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global credential.https://github.com.helper \
+            '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+          echo "GH_TOKEN=$GH_TOKEN" >> "$GITHUB_ENV"
+      - name: tools/test_oracle_cache.sh
+        if: steps.changed.outputs.run == 'true'
+        run: tools/test_oracle_cache.sh
+      - name: tools/test_evidence.sh
+        if: steps.changed.outputs.run == 'true'
+        run: tools/test_evidence.sh
+      - name: tools/test_warm.sh
+        if: steps.changed.outputs.run == 'true'
+        run: tools/test_warm.sh

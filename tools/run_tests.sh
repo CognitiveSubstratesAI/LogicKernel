@@ -24,6 +24,13 @@
 # marker the commit hook checks, and fingerprints the tree at LAUNCH so an edit made DURING a run is
 # refused rather than certified. In a standalone clone the helper is absent and both steps are no-ops.
 set -uo pipefail
+# 🔴 A TASK CEILING ON THIS SCRIPT'S OWN WORK (user, 2026-10-14) — tools/warm.sh's header says why.
+# Before the `cd`: a relative $0 still names this file. Its julia runs in its own scope below.
+if [ -z "${LOGICKERNEL_TASKS_CAPPED:-}" ] && command -v systemd-run > /dev/null 2>&1 &&
+    systemd-run --user --scope true > /dev/null 2>&1; then
+    exec env LOGICKERNEL_TASKS_CAPPED=1 systemd-run --user --scope --quiet \
+        -p TasksMax="${LOGICKERNEL_TASKS_MAX:-512}" "$0" "$@"
+fi
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 TARGET="${1:-test/runtests.jl}"

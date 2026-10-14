@@ -7,6 +7,8 @@
 #   tools/test_warm.sh rss      # the daemon's-memory cases alone
 #   tools/test_warm.sh structs  # the struct gate's cases alone
 #   tools/test_warm.sh fast     # the fast static pre-check's planted-defect cases alone
+#   tools/test_warm.sh cap      # the task-ceiling cases alone (no daemon)
+#   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
 # load and present the result as fresh; run a file on fewer implementations than the suite does.
@@ -15,7 +17,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
+trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -106,8 +108,23 @@ _struct_cases() {
     sendok; check "…and removed again" 0 $?
 }
 _fast_cases() {
-    local ti="$ROOT/src/term_interface.jl" rc s
+    local ti="$ROOT/src/term_interface.jl" man="$ROOT/test/static_analysis_manifest.jl" rc s
     [ -f "$T/term_interface.jl.bak" ] || cp "$ti" "$T/term_interface.jl.bak"
+    [ -f "$T/manifest.bak" ] || cp "$man" "$T/manifest.bak"
+    # plant_exempt FUNC TUPLE… — the planted probe's manifest exemption, first in DISPATCH_EXEMPT
+    # (Blue-stable there: one line, a trailing comma), so the manifest's coverage — in the fast
+    # check since 1dada85, BEFORE the pre-check — passes and the planted defect reaches the stage
+    # each case tests (measured 2026-10-14: without it both cases failed at the manifest instead)
+    plant_exempt() {
+        local f="$1" t n
+        shift
+        for t in "$@"; do
+            n=$(grep -c '^const DISPATCH_EXEMPT = ($' "$man")
+            [ "$n" = 1 ] || { echo "  FAIL plant_exempt: the DISPATCH_EXEMPT anchor is there $n times"; fail=$((fail + 1)); return; }
+            awk -v l="    ((LK.$f, $t) => \"planted (test_warm)\")," '{ print } /^const DISPATCH_EXEMPT = \($/ { print l }' \
+                "$man" > "$man.tmp" && mv "$man.tmp" "$man"
+        done
+    }
 
     # THE FAST STATIC PRE-CHECK (user, 2026-10-12): a formatter violation, a JET error and an Aqua
 # ambiguity each STOP the preflight within seconds, before the static-analysis stage starts. One
@@ -126,20 +143,25 @@ fast_case "fast pre-check, formatter" "$rc" "NOT Blue-formatted"
 [ $(( $(date +%s) - s )) -lt 120 ]; check "…in under two minutes" 0 $?
 jet="_preflight_probe_jet_$$"
 printf '\n%s(x::Int) = %s_undefined(x)\n' "$jet" "$jet" >> "$ti"
+plant_exempt "$jet" "Tuple{Int}"
 s=$(date +%s)
 LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; rc=$?
 cp "$T/term_interface.jl.bak" "$ti"
+cp "$T/manifest.bak" "$man"
 fast_case "fast pre-check, JET" "$rc" "FAIL (fast static pre-check)"
 has "…the JET report names the planted function" "$ROOT/.warm/preflight_static_fast.log" "$jet" 1
 amb="_preflight_probe_amb_$$"
 printf '\n%s(::Int, ::Any) = 1\n%s(::Any, ::Int) = 2\n' "$amb" "$amb" >> "$ti"
+plant_exempt "$amb" "Tuple{Int, Any}" "Tuple{Any, Int}"
 s=$(date +%s)
 LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; rc=$?
 cp "$T/pf" "$T/pf_amb"
 cp "$T/term_interface.jl.bak" "$ti"
+cp "$T/manifest.bak" "$man"
 fast_case "fast pre-check, Aqua" "$rc" "FAIL (fast static pre-check)"
 has "…the failure is Aqua's ambiguity test" "$ROOT/.warm/preflight_static_fast.log" "ambig" 1
 cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored after the pre-check cases" 0 $?
+cmp -s "$T/manifest.bak" "$man"; check "…and the manifest" 0 $?
     # the steady state: a clean tree, the daemon warm (the first run after an edit pays a Revise and a
     # JET recompile — minutes; measured 137 s, then 9 s)
     "$W" file test/static_analysis_fast.jl > /dev/null 2>&1; check "the pre-check passes on the restored tree" 0 $?
@@ -147,6 +169,90 @@ cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restore
     [ "$rc" -eq 0 ] && [ $(( $(date +%s) - s )) -lt 60 ]; check "…and a second run takes under a minute (warm: seconds)" 0 $?
 
 }
+# THE TASK CEILING (user, 2026-10-14): warm.sh and run_tests.sh re-run themselves in a scope with
+# TasksMax, so their own forks are bounded — the 1558-process fork chain (the backtick cases) ran
+# outside every unit. Read the
+# ceiling of the cgroup a command run BY warm.sh is in. Only where user systemd exists (not in CI).
+_cap_cases() {
+    systemd-run --user --scope true > /dev/null 2>&1 || { echo "  (cap: no user systemd here — skipped)"; return 0; }
+    _pids='cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/pids.max'
+    check "cap: warm.sh's own work runs under TasksMax 512" 0 \
+        "$([ "$(env -u LOGICKERNEL_TASKS_CAPPED "$W" locked bash -c "$_pids")" = 512 ]; echo $?)"
+    check "cap: …LOGICKERNEL_TASKS_MAX sets it" 0 \
+        "$([ "$(env -u LOGICKERNEL_TASKS_CAPPED LOGICKERNEL_TASKS_MAX=37 "$W" locked bash -c "$_pids")" = 37 ]; echo $?)"
+    check "cap: …a nested call stays in the outer scope" 0 \
+        "$([ "$(env -u LOGICKERNEL_TASKS_CAPPED LOGICKERNEL_TASKS_MAX=37 "$W" locked "$W" locked bash -c "$_pids")" = 37 ]; echo $?)"
+    # run_tests.sh runs no command of ours, so a systemd-run shim on PATH records how it re-ran itself
+    mkdir -p "$T/shim"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\nexec %q "$@"\n' "$T/shim.log" "$(command -v systemd-run)" > "$T/shim/systemd-run"
+    chmod +x "$T/shim/systemd-run"
+    : > "$T/shim.log"
+    env -u LOGICKERNEL_TASKS_CAPPED LOGICKERNEL_TASKS_MAX=37 PATH="$T/shim:$PATH" \
+        "$ROOT/tools/run_tests.sh" /nonexistent.jl > /dev/null 2>&1
+    has "cap: …and run_tests.sh re-runs itself under TasksMax" "$T/shim.log" "scope --quiet -p TasksMax=37 .*tools/run_tests.sh /nonexistent.jl" 1
+}
+
+_stale_cases() {
+# preflight RECOVERS from a stale daemon (user, 2026-10-04: "make the gate recover, not just
+# detect") — and never suppresses a NOT CHECKED. Both ways:
+#   (a) a method the daemon holds but no src/ file defines (as Revise leaves a deleted one): STALE,
+#       the daemon restarts, the preflight reruns once — and PASSES;
+#   (b) a method loaded FROM SOURCE under a name no syntax tree shows (`@eval` of a built name): the
+#       classifier calls it STALE, the daemon restarts — and it is still NOT CHECKED: a REAL failure;
+#   (c) a method defined in source by name: REAL at once, the preflight FAILS, and no restart.
+stale="_preflight_probe_stale_$$"
+printf 'Core.eval(LogicKernel, :(%s(x::Int) = x))\nisdefined(LogicKernel, :%s) || error("not planted")\n' \
+    "$stale" "$stale" > "$T/stale.jl"
+"$W" send "$T/stale.jl" > "$T/out" 2>&1; check "stale: a daemon-only method is planted" 0 $?
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+# Since 1dada85 the manifest's coverage runs in the fast check, BEFORE the static gate: a
+# daemon-only method is caught there, as a leftover (defined in no src/ file — the same STALE rule),
+# and the restart happens there (_checks_fresh). Measured 2026-10-14: before that rule the fast
+# check called it NOT IN THE MANIFEST and nothing restarted — these cases failed, 13 of them.
+check "stale: a daemon-only method restarts the daemon, and the rerun PASSES" 0 $?
+has "…classified a leftover" "$T/pf" "A DAEMON LEFTOVER (defined in no src/ file.*$stale" 1
+has "…restarting the daemon once" "$T/pf" "DAEMON LEFTOVERS .*restarting the warm lane once" 1
+has "…and the rerun passed" "$T/pf" "preflight: PASS" 1
+printf 'isdefined(LogicKernel, :%s) && error("still there")\n' "$stale" > "$T/gone.jl"
+"$W" send "$T/gone.jl" > "$T/out" 2>&1; check "…the restart cleared it" 0 $?
+
+ti="$ROOT/src/term_interface.jl"
+cp "$ti" "$T/term_interface.jl.bak"
+gen="_preflight_probe_gen_$$"
+printf '\n@eval $(Symbol("_preflight_probe_gen_", %s))(x::Int) = x + 1\n' "$$" >> "$ti"
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+check "real: a source method no syntax tree shows still FAILS after the restart" 1 $?
+has "…the daemon was restarted once" "$T/pf" "DAEMON LEFTOVERS .*restarting the warm lane once" 1
+has "…and the failure reported REAL after it" "$T/pf" "still FAILS after a daemon restart" 1
+has "…naming the method" "$T/pf" "still there after a daemon restart.*$gen" 1
+cp "$T/term_interface.jl.bak" "$ti"
+
+real="_preflight_probe_real_$$"
+printf '\n%s(x::Int) = x + 1\n' "$real" >> "$ti"
+"$W" restart > /dev/null 2>&1          # the daemon may hold the previous case's method
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
+check "real: a method defined in source by name FAILS at once" 1 $?
+has "…classified REAL (not in the manifest, no leftover)" "$T/pf" "  NOT IN THE MANIFEST: $real" 1
+has "…with NO restart" "$T/pf" "restarting the warm lane once" 0
+cp "$T/term_interface.jl.bak" "$ti"
+cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored" 0 $?
+}
+
+if [ "${1:-}" = stale ]; then                        # the stale-daemon recovery cases alone
+    "$W" stop > /dev/null 2>&1
+    "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
+    _stale_cases
+    echo "test_warm (stale): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
+fi
+if [ "${1:-}" = cap ]; then                          # the task-ceiling cases alone (no daemon)
+    trap 'rm -rf "$T"' EXIT                            # nothing to stop: these never start the lane
+    _cap_cases
+    echo "test_warm (cap): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
+fi
 if [ "${1:-}" = fast ]; then                         # the fast pre-check's planted-defect cases alone
     "$W" stop > /dev/null 2>&1
     "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
@@ -222,45 +328,7 @@ rm -f "$probe_test"
 has "…past format and port_check" "$T/pf" "port_check clean" 1
 has "…by that file's own failure" "$T/pf" "planted: Test Failed" 1
 
-# preflight RECOVERS from a stale daemon (user, 2026-10-04: "make the gate recover, not just
-# detect") — and never suppresses a NOT CHECKED. Both ways:
-#   (a) a method the daemon holds but no src/ file defines (as Revise leaves a deleted one): STALE,
-#       the daemon restarts, the preflight reruns once — and PASSES;
-#   (b) a method loaded FROM SOURCE under a name no syntax tree shows (`@eval` of a built name): the
-#       classifier calls it STALE, the daemon restarts — and it is still NOT CHECKED: a REAL failure;
-#   (c) a method defined in source by name: REAL at once, the preflight FAILS, and no restart.
-stale="_preflight_probe_stale_$$"
-printf 'Core.eval(LogicKernel, :(%s(x::Int) = x))\nisdefined(LogicKernel, :%s) || error("not planted")\n' \
-    "$stale" "$stale" > "$T/stale.jl"
-"$W" send "$T/stale.jl" > "$T/out" 2>&1; check "stale: a daemon-only method is planted" 0 $?
-LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
-check "stale: its NOT CHECKED restarts the daemon, and the rerun PASSES" 0 $?
-has "…classified STALE" "$T/pf" "STALE (defined in no src/ file.*$stale" 1
-has "…restarting the daemon once" "$T/pf" "STALE DAEMON — restarting" 1
-has "…and the rerun passed" "$T/pf" "preflight: PASS" 1
-printf 'isdefined(LogicKernel, :%s) && error("still there")\n' "$stale" > "$T/gone.jl"
-"$W" send "$T/gone.jl" > "$T/out" 2>&1; check "…the restart cleared it" 0 $?
-
-ti="$ROOT/src/term_interface.jl"
-cp "$ti" "$T/term_interface.jl.bak"
-gen="_preflight_probe_gen_$$"
-printf '\n@eval $(Symbol("_preflight_probe_gen_", %s))(x::Int) = x + 1\n' "$$" >> "$ti"
-LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
-check "real: a source method no syntax tree shows still FAILS after the restart" 1 $?
-has "…the daemon was restarted once" "$T/pf" "STALE DAEMON — restarting" 1
-has "…and the failure reported REAL after it" "$T/pf" "still FAILS after a daemon restart" 1
-has "…naming the method" "$T/pf" "NOT CHECKED for dispatch: $gen" 1
-cp "$T/term_interface.jl.bak" "$ti"
-
-real="_preflight_probe_real_$$"
-printf '\n%s(x::Int) = x + 1\n' "$real" >> "$ti"
-"$W" restart > /dev/null 2>&1          # the daemon may hold the previous case's method
-LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1
-check "real: a method defined in source by name FAILS at once" 1 $?
-has "…classified REAL" "$T/pf" "REAL (still defined in src/.*$real" 1
-has "…with NO restart" "$T/pf" "STALE DAEMON" 0
-cp "$T/term_interface.jl.bak" "$ti"
-cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored" 0 $?
+_stale_cases
 
 _fast_cases
 rm -f "$T/term_interface.jl.bak"
@@ -405,6 +473,8 @@ _bt=$(awk '/<<JL$/{f=1; next} /^JL$/{f=0} f && /`/{n++} END{print n+0}' "$ROOT/t
 check "no backtick inside an unquoted <<JL heredoc of tools/warm.sh (found $_bt)" 0 "$_bt"
 _bt_fixture=$(printf 'cat > f <<JL\n# a `name` here\nJL\n' | awk '/<<JL$/{f=1; next} /^JL$/{f=0} f && /`/{n++} END{print n+0}')
 check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
+
+_cap_cases
 
 echo "test_warm: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
