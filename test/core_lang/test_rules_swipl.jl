@@ -1837,7 +1837,10 @@ end
     @test marks[10 ^ 3][1] == marks[10 ^ 4][1] == marks[10 ^ 5][1]
     for n in (10^3, 10^4, 10^5)                                     # reported: no collector yet (G1)
         @info "concatenate/3, $n elements: local high-water qid+$(marks[n][1]), trail $(marks[n][2]), binding store $(marks[n][3])"
-        @test marks[n][2] == n + 1 && marks[n][3] == n + 1
+        # L1a-2 (`mark_bar`): every cell the call makes lies above the query's bar, so its binding is
+        # not trailed — only the caller's argument, older than the mark, is (1 entry, as in SWI);
+        # the bound variables still number n + 1 (both kinds, `lk_bound_count`)
+        @test marks[n][2] == 1 && marks[n][3] == n + 1
     end
     # …and the check can fail: without the last-call optimisation the mark grows with the list
     # (lists short enough for the region below the spare, which the tripwire keeps fixed: V5d)

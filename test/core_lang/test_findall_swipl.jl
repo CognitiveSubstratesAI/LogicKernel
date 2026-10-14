@@ -246,7 +246,9 @@ end
     @test length(ld.trail) == n0 && rc.cycles !== nothing && length(rc.cycles) == 1
     out = LK.PL_new_term_ref(ld)
     @test LK.copyRecordToGlobal(ld, out, rc)
-    @test length(ld.trail) == n0 + 1                            # the copy's cyclic reference: bound, trailed
+    # the copy's cyclic reference is a FRESH cell above the foreign frame's bar: bound, and not
+    # trailed (L1a-2, `mark_bar`) — upstream builds the copy in place on the global stack
+    @test length(ld.trail) == n0
     LK.PL_close_foreign_frame(ld, fid)
 end
 

@@ -239,7 +239,10 @@ end
     c = ld.choices[c1]
     @test c.base == top && ld.lTop == top + LK.SIZEOF_CHOICE
     @test c.type == LK.CHP_CLAUSE && c.frame == fr && c.parent == 0 && ld.BFR == c1
-    @test c.mark == LK.Mark(ld)
+    # the choice point's mark is at the current heights, and set the bar (L1a-2) — not compared with a
+    # second `Mark`, whose `saved_bar` is the bar the first one set
+    @test c.mark.trailtop == length(ld.trail) && c.mark.globaltop == ld.gTop &&
+        ld.mark_bar == ld.gTop
     LK.Trail!(ld, UInt64(7), _ls("a"))
     c2 = LK.newChoice(ld, LK.CHP_JUMP, fr)
     @test ld.choices[c2].parent == c1 && ld.BFR == c2
@@ -275,7 +278,9 @@ end
     f = ld.fli_context
     @test ld.fliframes[f].base == fid && ld.fliframes[f].parent == 1 &&
         ld.fliframes[f].size == 0
-    @test ld.fliframes[f].no_free_before == -1 && ld.fliframes[f].mark == LK.Mark(ld)
+    @test ld.fliframes[f].no_free_before == -1 &&
+        ld.fliframes[f].mark.trailtop == length(ld.trail) &&
+        ld.fliframes[f].mark.globaltop == ld.gTop && ld.mark_bar == ld.gTop     # (see newChoice's)
     @test LK.fliFrameOfFid(ld, fid) == f && LK.fliFrameOfFid(ld, 0) == 1
     @test LK.fliFrameOfFid(ld, fid + 1) == 0
 
