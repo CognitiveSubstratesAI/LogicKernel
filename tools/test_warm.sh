@@ -8,6 +8,7 @@
 #   tools/test_warm.sh structs  # the struct gate's cases alone
 #   tools/test_warm.sh fast     # the fast static pre-check's planted-defect cases alone
 #   tools/test_warm.sh cap      # the task-ceiling cases alone (no daemon)
+#   tools/test_warm.sh bgfiles  # the branch-gate's file selection alone (no daemon)
 #   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
@@ -17,7 +18,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '[ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
+trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -173,6 +174,40 @@ cmp -s "$T/manifest.bak" "$man"; check "…and the manifest" 0 $?
 # TasksMax, so their own forks are bounded — the 1558-process fork chain (the backtick cases) ran
 # outside every unit. Read the
 # ceiling of the cgroup a command run BY warm.sh is in. Only where user systemd exists (not in CI).
+# THE BRANCH-GATE'S FILES (user, 2026-10-14): a changed HELPER (a test/ `.jl` not named `test_*`)
+# brings in every test file that includes it, directly or through other helpers — its dependents had
+# been skipped twice (L1a-1; L1b 1b's dropped PutVarMap, which 13 of them passed without). Each
+# case plants a change in a tracked helper and restores it; the baselines are asserted on the
+# helper unchanged. No daemon: the selection alone (`branch-gate-files`).
+_bgfiles_cases() {
+    local rc_f="$ROOT/test/core_lang/rules_common.jl" man_f="$ROOT/test/static_analysis_manifest.jl"
+    if git -C "$ROOT" diff --quiet HEAD -- "$rc_f" "$man_f"; then
+        "$W" branch-gate-files > "$T/bg0" 2>&1; check "bgfiles: the list is produced" 0 $?
+        has "…the tree-wide gates in it" "$T/bg0" '^test/test_type_discipline.jl$' 1
+        has "bgfiles: baseline — an unchanged helper's dependent is NOT listed" "$T/bg0" \
+            '^test/core_lang/test_rules_swipl.jl$' 0
+    else
+        check "bgfiles: the planted helpers must be unchanged in this tree" 0 1
+    fi
+    cp "$rc_f" "$T/rules_common.jl.bak"
+    echo "# bgfiles probe" >> "$rc_f"
+    "$W" branch-gate-files > "$T/bg1" 2>&1; check "bgfiles: listed with a changed helper" 0 $?
+    cp "$T/rules_common.jl.bak" "$rc_f"
+    has "bgfiles: a changed helper brings in its UNCHANGED dependent" "$T/bg1" \
+        '^test/core_lang/test_rules_swipl.jl$' 1
+    has "…every one (test_softcut.jl)" "$T/bg1" '^test/core_lang/test_softcut.jl$' 1
+    has "…but not the helper itself (it is no test file)" "$T/bg1" 'rules_common' 0
+    has "…nor a file that does not include it" "$T/bg1" '^test/core_lang/test_unify.jl$' 0
+    cp "$man_f" "$T/manifest.bak"
+    echo "# bgfiles probe" >> "$man_f"
+    LOGICKERNEL_BRANCH_GATE_CI_ONLY=none "$W" branch-gate-files > "$T/bg2" 2>&1
+    "$W" branch-gate-files > "$T/bg3" 2>&1
+    cp "$T/manifest.bak" "$man_f"; rm -f "$T/manifest.bak"
+    has "bgfiles: TRANSITIVE — manifest → static_analysis_body.jl → test_static_analysis.jl" \
+        "$T/bg2" '^test/test_static_analysis.jl$' 1
+    has "…which the gate leaves to CI (JET, Aqua, AllocCheck)" "$T/bg3" '^test/test_static_analysis.jl$' 0
+}
+
 _cap_cases() {
     systemd-run --user --scope true > /dev/null 2>&1 || { echo "  (cap: no user systemd here — skipped)"; return 0; }
     _pids='cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/pids.max'
@@ -245,6 +280,11 @@ if [ "${1:-}" = stale ]; then                        # the stale-daemon recovery
     echo "test_warm (stale): $pass passed, $fail failed"
     [ "$fail" -eq 0 ]
     exit
+fi
+if [ "${1:-}" = bgfiles ]; then                      # the branch-gate's file selection alone (no daemon)
+    _bgfiles_cases
+    echo "test_warm (bgfiles): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]; exit $?
 fi
 if [ "${1:-}" = cap ]; then                          # the task-ceiling cases alone (no daemon)
     trap 'rm -rf "$T"' EXIT                            # nothing to stop: these never start the lane
@@ -475,6 +515,7 @@ _bt_fixture=$(printf 'cat > f <<JL\n# a `name` here\nJL\n' | awk '/<<JL$/{f=1; n
 check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
 
 _cap_cases
+_bgfiles_cases
 
 echo "test_warm: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

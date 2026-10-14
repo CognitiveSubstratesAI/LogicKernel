@@ -17,6 +17,7 @@
 #   tools/warm.sh branch-gate              # WARM: a BRANCH commit's evidence (never main's) — the
 #                                          # fast check, then the tree-wide files and every changed
 #                                          # test file on every term type; CI's full run is the gate
+#   tools/warm.sh branch-gate-files        # the test files a branch-gate would run, one per line
 #   tools/warm.sh evidence                 # a FRESH tools/run_tests.sh — the commit gate's run
 #   tools/warm.sh locked CMD [ARGS…]       # run CMD holding the lane for its WHOLE run (a mutation
 #                                          # driver): its own warm.sh calls pass, everyone else's are
@@ -614,6 +615,42 @@ _preflight() {
     return "$rc"
 }
 
+# _branch_gate_files — the test files a branch commit's evidence runs, one per line: the tree-wide
+# gates (they check src/, so a src edit can fail them while their own file is unchanged), every test
+# file changed since HEAD or new, and every test file that INCLUDES a changed HELPER — a `.jl` under
+# test/ not named `test_*` — directly or through other helpers (user, 2026-10-14: a changed helper's
+# unchanged dependents were skipped twice, L1a-1 and L1b 1b's dropped `PutVarMap`, which 13 of
+# them passed without). A helper is matched by its file name in an `include(` line, so two helpers
+# of one name select both sets: a superset, never a miss. EXCEPT the static-analysis gate
+# (test_static_analysis.jl: JET, Aqua, AllocCheck), which every manifest change would bring in
+# through static_analysis_body.jl: CI's full run judges it, as below
+# (LOGICKERNEL_BRANCH_GATE_CI_ONLY replaces that exclusion: tools/test_warm.sh bgfiles).
+_branch_gate_files() {
+    local changed helpers more h re f
+    changed=$(cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } | sort -u)
+    helpers=$(printf '%s\n' "$changed" | grep -E '^test/(.*/)?[^/]*\.jl$' | grep -vE '(^|/)test_[^/]*\.jl$')
+    while :; do                                         # helpers that include a changed helper
+        more=""
+        for h in $helpers; do
+            re=$(basename "$h" | sed 's/\./\\./g')
+            for f in $(cd "$ROOT" && grep -rlE --include='*.jl' "include\(.*[\"/]$re\"" test 2> /dev/null); do
+                case "$(basename "$f")" in test_*) continue ;; esac
+                printf '%s\n' $helpers $more | grep -qxF "$f" || more="$more $f"
+            done
+        done
+        [ -z "$more" ] && break
+        helpers="$helpers $more"
+    done
+    {
+        printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
+        printf '%s\n' "$changed" | grep -E '^test/(.*/)?test_[^/]*\.jl$'
+        for h in $helpers; do
+            re=$(basename "$h" | sed 's/\./\\./g')
+            (cd "$ROOT" && grep -rlE --include='test_*.jl' "include\(.*[\"/]$re\"" test 2> /dev/null)
+        done
+    } | grep -vxF "${LOGICKERNEL_BRANCH_GATE_CI_ONLY-test/test_static_analysis.jl}" | sort -u
+}
+
 # _branch_gate — THE BRANCH-GATE (user, approved 2026-10-14): commits are made off `main`, and a
 # branch commit's evidence is the fast check (`check`: format, port_check, manifest) plus the
 # tree-wide gates and every test file changed since HEAD, each on EVERY term type (`_file` with no
@@ -626,12 +663,7 @@ _branch_gate() {
     t0=$(date +%s)
     _ci_gate "$ROOT" 0 || { echo "branch-gate: FAIL — the previous push's CI (tools/ci_status.sh)"; return 1; }
     _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest) in $(( $(date +%s) - t0 ))s"; return 1; }
-    # the tree-wide gates check src/, so a src edit can fail them while their own file is unchanged
-    files=$( {
-        printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
-        cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
-            grep -E '^test/(.*/)?test_[^/]*\.jl$'
-    } | sort -u)
+    files=$(_branch_gate_files)
     for f in $files; do
         [ -f "$ROOT/$f" ] || continue
         echo "branch-gate: $f"
@@ -684,6 +716,7 @@ case "$cmd" in
     restart) _stop; _start ;;
     status) if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"; else echo "warm lane: not running"; exit 3; fi ;;
     send) _send "${1:-}" ;;
+    branch-gate-files) _branch_gate_files ;;     # the files a branch-gate would run (no daemon)
     file) [ $# -ge 1 ] || { echo "usage: tools/warm.sh file PATH [impl]" >&2; exit 2; }; _file "$@" ;;
     bench) _bench "$@" ;;
     check)
