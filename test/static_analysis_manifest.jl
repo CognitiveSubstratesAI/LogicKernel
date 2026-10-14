@@ -1718,7 +1718,34 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # the built-ins' dispatch trees, built when src/pl-ext.jl loads
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._va_leaf)}, false),
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),
-    (LK._va_leaf, Tuple{Int}, false), (LK._det_leaf, Tuple{Int}, false)
+    (LK._va_leaf, Tuple{Int}, false), (LK._det_leaf, Tuple{Int}, false),
+    # the atom table (L1b stage A: src/pl-atom.jl; pl-data.h's indexAtom/atomValue, pl-inline.h's
+    # fetchAtomArray, pl-ressymbol.c's initReservedSymbols, pl-fli.c's lookupUCSAtom, pl-text.c)
+    (LK.atoms_t, Tuple{}, false),
+    (LK._blob_registration, Tuple{LK.atoms_t, LK.PL_blob_t}, false),
+    (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t}, false),
+    (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t, UInt64}, false),
+    (LK.allocateAtomBlock, Tuple{LK.atoms_t, Int}, false),
+    (LK.reserveAtom, Tuple{LK.atoms_t}, false),
+    (LK.same_name, Tuple{LK.atom, Vector{UInt8}, Int, LK.PL_blob_t}, false),
+    (LK.lookupBlob, Tuple{LK.atoms_t, Vector{UInt8}, Int, LK.PL_blob_t}, false),
+    (LK.lookupAtom, Tuple{LK.atoms_t, Vector{UInt8}}, false),
+    (LK.lookupAtom, Tuple{LK.atoms_t, Vector{UInt8}, Int}, false),
+    (LK.rehashAtoms, Tuple{LK.atoms_t}, false),
+    (LK.registerBuiltinAtoms, Tuple{LK.atoms_t}, false),
+    (LK.lockAtoms, Tuple{LK.atoms_t}, true),
+    (LK.builtin_atom, Tuple{String}, false),
+    (LK.do_init_atoms!, Tuple{LK.atoms_t}, false),
+    (LK.indexAtom, Tuple{UInt64}, true),
+    (LK.atomValue, Tuple{LK.atoms_t, UInt64}, true),
+    (LK.fetchAtomArray, Tuple{LK.atoms_t, Int}, true),
+    (LK.ATOM_IS_FREE, Tuple{UInt32}, true), (LK.ATOM_IS_RESERVED, Tuple{UInt32}, true),
+    (LK.ATOM_IS_VALID, Tuple{UInt32}, true),
+    (LK.initReservedSymbols!, Tuple{LK.atoms_t}, false),
+    (LK.lookupUCSAtom, Tuple{LK.atoms_t, Vector{UInt32}}, false),
+    (LK.lookupUCSAtom, Tuple{LK.atoms_t, Vector{UInt32}, Int}, false),
+    (LK.PL_canonicalise_text, Tuple{LK.PL_chars_t}, false),
+    (LK.textToAtom, Tuple{LK.atoms_t, LK.PL_chars_t}, false)
 )
 
 """

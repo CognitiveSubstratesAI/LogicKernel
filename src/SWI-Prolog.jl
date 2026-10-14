@@ -326,3 +326,29 @@ struct PL_option_t
     name::Symbol                    # Name of the option
     type::Int                       # Type of the option
 end
+
+# PORT: SWI-Prolog.h PL_BLOB_UNIQUE
+"Blob content is unique (SWI-Prolog.h)."
+const PL_BLOB_UNIQUE = UInt32(0x01)
+# PORT: SWI-Prolog.h PL_BLOB_TEXT
+"Blob contains text (SWI-Prolog.h)."
+const PL_BLOB_TEXT = UInt32(0x02)
+# PORT: SWI-Prolog.h PL_BLOB_NOCOPY
+"Do not copy the data (SWI-Prolog.h)."
+const PL_BLOB_NOCOPY = UInt32(0x04)
+# PORT: SWI-Prolog.h PL_BLOB_WCHAR
+"Wide character string (SWI-Prolog.h)."
+const PL_BLOB_WCHAR = UInt32(0x08)
+
+# PORT: SWI-Prolog.h PL_blob_t
+# DIVERGES: the type's identity — its flags and its name — only, an immutable value: what
+# `PL_register_blob_type` writes into upstream's struct (`registered`, `rank`, `padding`,
+# `atom_name`, `next`) is kept per database (`blob_registration`, src/pl-atom.jl), as the kernel
+# keeps no mutable state at module level. NOT PORTED: `magic` (a Julia type is its check), the
+# hooks (`release`, `compare`, `write`, `acquire`, `save`, `load`, `write_ex`) — each comes with its
+# first reader (the writer, the comparison of blobs, qlf).
+"A blob type (SWI-Prolog.h `PL_blob_t`): its flags (`PL_BLOB_*`) and its name."
+struct PL_blob_t
+    flags::UInt32                   # PL_BLOB_*
+    name::String                    # name of the type
+end

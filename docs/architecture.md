@@ -594,6 +594,7 @@ fixed it or a public issue exists.
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
 | `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags; since V9g-b a recorded term (`record`: the term itself, its cyclic references beside it) and the bag of a findall/3 in progress (`findall_bag`, pl-bag.c's — the local data holds the bags, so the struct is declared here) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h`, `src/pl-bag.c` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`); since V5c `unify_definition` (a definition's reference, module-qualified); since R1f the consult path of `assert_term!` (a clause's file, line and owner; `overruleImportedProcedure`, `redefineProcedure`) and `record_clause`, `'$record_clause'/3`; since V9d (`;`) `compileBody!`'s frames for a disjunction with the variable tables it balances (`setVars`, `balanceVars`, `c_var`, `orVars`, `copyVarTable`), and the BODY DECOMPILER (`decompile!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`) with clause/2 over rule bodies (`pl_clause!` with a body); since V9d (`->`) the conditionals' frames, `allocChoiceVar!` and `try_fast_condition!`, (`\+`) the negation's frame, and the decompiler's moved unifications (`mark_bvar_access`, `moved_unifications!`) | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
+| `src/pl-atom.jl` | since L1b stage A, the ATOM TABLE (pl-atom.c), one per database (`atoms_t`, `GD->atoms`): `struct atom`, the blocks (`allocateAtomBlock`, `fetchAtomArray`), `reserveAtom`, `same_name`, `lookupBlob`, `lookupAtom`, `rehashAtoms`, `registerBuiltinAtoms`, `lockAtoms`, `do_init_atoms!`, blob registration per database (`PL_register_blob_type`, `blob_registration`); the built-in atoms GENERATED from src/ATOMS at the pin by tools/gen_atoms.jl (1048, the empty atom first); with `ucs_atom`/`lookupUCSAtom` (pl-fli.jl), `PL_canonicalise_text`/`textToAtom` (os/pl-text.jl) and `initReservedSymbols!` (pl-ressymbol.jl). Nothing reads it yet but its tests: stage C's words do. AGC NOT PORTED (with pl-gc.c) | `src/pl-atom.c`, `src/ATOMS`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from | `src/pl-funct.c` |
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1`; since R1f `overruleImportedProcedure`, `redefineProcedure` (the `discontiguous` and `redefined_procedure` warnings), `lookupProcedureToDefine`, `get_procedure` (`GP_DEFINE`), `'$set_predicate_attribute'/3` with `attribute_mask` and `setAttrDefinition`, registered as `PL_predicates_from_proc` | `src/pl-proc.c`, `src/pl-proc.h` |
@@ -722,6 +723,7 @@ graph LR
     os_pl_stream["os/pl-stream.jl"]
     pl_incl["pl-incl.jl"]
     SWI_Prolog["SWI-Prolog.jl"]
+    pl_atom["pl-atom.jl"]
     pl_termwalk["pl-termwalk.jl"]
     pl_vmi["pl-vmi.jl"]
     pl_index["pl-index.jl"]
@@ -786,9 +788,17 @@ graph LR
     os_pl_stream --> pl_read
     pl_incl --> term_interface
     pl_incl --> default_term
+    pl_incl --> pl_atom
+    pl_incl --> pl_inline
     pl_incl --> pl_prims
     pl_incl --> pl_arith
     pl_incl --> pl_op
+    pl_atom --> default_term
+    pl_atom --> pl_hash
+    pl_atom --> pl_incl
+    pl_atom --> SWI_Prolog
+    pl_atom --> pl_inline
+    pl_atom --> pl_ressymbol
     pl_termwalk --> term_interface
     pl_termwalk --> default_term
     pl_termwalk --> pl_inline
@@ -817,6 +827,7 @@ graph LR
     pl_global --> default_term
     pl_global --> os_pl_stream
     pl_global --> pl_incl
+    pl_global --> pl_atom
     pl_global --> pl_termwalk
     pl_global --> pl_index
     pl_global --> pl_funct
@@ -842,6 +853,7 @@ graph LR
     pl_inline --> term_interface
     pl_inline --> default_term
     pl_inline --> pl_incl
+    pl_inline --> pl_atom
     pl_inline --> pl_global
     pl_inline --> pl_copyterm
     pl_inline --> pl_alloc
@@ -849,6 +861,7 @@ graph LR
     pl_prims --> default_term
     pl_prims --> pl_incl
     pl_prims --> SWI_Prolog
+    pl_prims --> pl_atom
     pl_prims --> pl_termwalk
     pl_prims --> pl_global
     pl_prims --> pl_inline
@@ -866,11 +879,14 @@ graph LR
     pl_ressymbol --> term_interface
     pl_ressymbol --> default_term
     pl_ressymbol --> pl_incl
+    pl_ressymbol --> SWI_Prolog
+    pl_ressymbol --> pl_atom
     pl_ressymbol --> pl_prims
     pl_comp --> term_interface
     pl_comp --> default_term
     pl_comp --> pl_incl
     pl_comp --> SWI_Prolog
+    pl_comp --> pl_atom
     pl_comp --> pl_vmi
     pl_comp --> pl_index
     pl_comp --> pl_funct
@@ -975,6 +991,7 @@ graph LR
     pl_fli --> default_term
     pl_fli --> pl_incl
     pl_fli --> SWI_Prolog
+    pl_fli --> pl_atom
     pl_fli --> pl_global
     pl_fli --> pl_modul
     pl_fli --> pl_inline
@@ -998,6 +1015,7 @@ graph LR
     pl_error --> default_term
     pl_error --> pl_incl
     pl_error --> SWI_Prolog
+    pl_error --> pl_atom
     pl_error --> pl_global
     pl_error --> pl_inline
     pl_error --> pl_prims
@@ -1051,15 +1069,18 @@ graph LR
     os_pl_prologflag --> term_interface
     os_pl_prologflag --> default_term
     os_pl_prologflag --> pl_incl
+    os_pl_prologflag --> pl_atom
     os_pl_prologflag --> pl_global
     os_pl_prologflag --> pl_inline
     os_pl_prologflag --> pl_fli
     os_pl_prologflag --> pl_error
     os_pl_text --> term_interface
     os_pl_text --> default_term
+    os_pl_text --> os_pl_utf8
     os_pl_text --> os_pl_stream
     os_pl_text --> pl_incl
     os_pl_text --> SWI_Prolog
+    os_pl_text --> pl_atom
     os_pl_text --> pl_global
     os_pl_text --> pl_inline
     os_pl_text --> pl_comp
@@ -1163,6 +1184,7 @@ graph LR
     pl_op --> default_term
     pl_op --> pl_incl
     pl_op --> SWI_Prolog
+    pl_op --> pl_atom
     pl_op --> pl_global
     pl_op --> pl_inline
     pl_op --> pl_comp
@@ -1176,6 +1198,7 @@ graph LR
     pl_write --> os_pl_stream
     pl_write --> pl_incl
     pl_write --> SWI_Prolog
+    pl_write --> pl_atom
     pl_write --> pl_global
     pl_write --> pl_modul
     pl_write --> pl_inline
@@ -1202,6 +1225,7 @@ graph LR
     pl_read --> os_pl_stream
     pl_read --> pl_incl
     pl_read --> SWI_Prolog
+    pl_read --> pl_atom
     pl_read --> pl_index
     pl_read --> pl_global
     pl_read --> pl_modul
@@ -1246,6 +1270,7 @@ graph LR
     ___boot_init --> os_pl_stream
     ___boot_init --> pl_incl
     ___boot_init --> SWI_Prolog
+    ___boot_init --> pl_atom
     ___boot_init --> pl_global
     ___boot_init --> pl_inline
     ___boot_init --> pl_prims

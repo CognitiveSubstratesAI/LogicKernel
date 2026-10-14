@@ -13,13 +13,15 @@
 # PORT: pl-text.h PL_chars_t
 # DIVERGES: the text is a byte vector in its encoding — ISO Latin-1, or UTF-8 (ENC_UTF8) where
 # upstream holds `pl_wchar_t` (ENC_WCHAR), as the term interface's texts are UTF-8; no storage
-# class (`storage`, `buf`: Julia's GC owns the bytes).
+# class (`storage`, `buf`: Julia's GC owns the bytes). A UTF-8 text is NEVER canonical, as
+# upstream's never is: `PL_canonicalise_text` recodes it to ISO Latin-1 or `ENC_WCHAR` (since L1b
+# stage A, an `ENC_WCHAR` text is upstream's buffer: native 4-byte `pl_wchar_t`s).
 "A text and its encoding (pl-text.h)."
 mutable struct PL_chars_t
     text::Vector{UInt8}             # the text
     length::Int                     # its length, in characters
     encoding::IOENC                 # how it is encoded
-    canonical::Bool                 # true: ENC_ISO_LATIN_1 or ENC_WCHAR
+    canonical::Bool                 # true: ENC_ISO_LATIN_1 or ENC_WCHAR, never ENC_UTF8
 end
 
 # PORT: pl-text.c PL_get_text
@@ -72,7 +74,8 @@ function PL_get_text(
             return PL_chars_t(b, length(b), ENC_ISO_LATIN_1, true)
         elseif result.status == CVT_wide
             b, result = codes_or_chars_to_buffer(ld, l, true)
-            b !== nothing && return PL_chars_t(b, length(String(copy(b))), ENC_UTF8, true)
+            # upstream: ENC_WCHAR, canonical; here UTF-8, so NOT canonical (see `PL_chars_t`)
+            b !== nothing && return PL_chars_t(b, length(String(copy(b))), ENC_UTF8, false)
         end
         (flags & (CVT_WRITE | CVT_WRITE_CANONICAL | CVT_WRITEQ)) != 0 && @goto case_write
         if (flags & CVT_EXCEPTION) != 0
@@ -135,4 +138,96 @@ function Sopen_text(txt::PL_chars_t, mode::String)::Union{Nothing, IOSTREAM}
     stream === nothing && return nothing
     stream.encoding = txt.encoding
     return stream
+end
+
+# PORT: pl-text.h ERR_TEXT_INVALID_CODE_POINT
+"`PL_canonicalise_text`'s error: a code point that is not Unicode (pl-text.h)."
+const ERR_TEXT_INVALID_CODE_POINT = -5
+
+# PORT: pl-text.c PL_canonicalise_text
+# DIVERGES: an `ENC_WCHAR` text is its code points as native 4-byte `pl_wchar_t`s in `text.text`,
+# as upstream's buffer is; the demotion of an all-Latin-1 wide text (`PL_demote_text`) is inline.
+# NOT PORTED: `ENC_UTF16LE`/`BE` and `ENC_ANSI` (no caller produces them) — refused by name.
+"""
+    PL_canonicalise_text(text) -> true or ERR_TEXT_*
+
+Recode `text` to a canonical encoding (pl-text.c): ISO Latin-1 when every code point is ≤ 0xFF,
+else `ENC_WCHAR`.
+"""
+function PL_canonicalise_text(text::PL_chars_t)::Int
+    if !text.canonical
+        enc = text.encoding
+        if enc === ENC_OCTET || enc === ENC_ISO_LATIN_1
+            text.encoding = ENC_ISO_LATIN_1
+            text.canonical = true                       # nothing to do
+        elseif enc === ENC_WCHAR
+            w = reinterpret(UInt32, view(text.text, 1:(4 * text.length)))
+            wide = false
+            for c in w
+                c > 0xff && (wide = true)
+                VALID_CODE_POINT(Int(c)) || return ERR_TEXT_INVALID_CODE_POINT
+            end
+            if !wide                                    # PL_demote_text(text, 0)
+                text.text = UInt8[c & 0xff for c in w]
+                text.encoding = ENC_ISO_LATIN_1
+            end
+            text.canonical = true
+        elseif enc === ENC_UTF8
+            b = text.text
+            e = length(b)
+            s = 1
+            while s <= e && b[s] & 0x80 == 0
+                s += 1
+            end
+            if s > e
+                text.encoding = ENC_ISO_LATIN_1
+                text.length = e
+                text.canonical = true
+            else
+                cps = Int[]
+                i = 1
+                while i <= e
+                    _, i, chr = _PL__utf8_code_point(b, i, e + 1)
+                    push!(cps, chr)
+                end
+                text.length = length(cps)
+                if any(>(0xff), cps)
+                    text.text = Vector{UInt8}(reinterpret(UInt8, UInt32.(cps)))
+                    text.encoding = ENC_WCHAR
+                else
+                    text.text = UInt8.(cps)
+                    text.encoding = ENC_ISO_LATIN_1
+                end
+                text.canonical = true
+            end
+        else
+            throw(
+                NotPortedError{Nothing}(
+                    nothing, "PL_canonicalise_text of $enc", "no caller"
+                )
+            )
+        end
+    end
+    return 1                                            # true
+end
+
+# PORT: pl-text.c textToAtom
+# DIVERGES: the atom table is an argument (`GD->atoms`); a canonicalisation error returns 0 without
+# raising (`text_error` is NOT PORTED: no caller yet — stage C's boundary is the first).
+"""
+    textToAtom(atoms, text) -> atom_t
+
+The atom of `text` (pl-text.c): canonicalised first, so one text is one atom — a text atom when
+every code point is ≤ 0xFF, else a wide one; 0 if the text cannot be canonicalised.
+"""
+function textToAtom(atoms::atoms_t, text::PL_chars_t)::UInt64
+    rc = PL_canonicalise_text(text)
+    rc == 1 || return UInt64(0)
+    if text.encoding === ENC_ISO_LATIN_1
+        return lookupAtom(atoms, text.text, text.length)
+    else
+        return lookupUCSAtom(
+            atoms, reinterpret(UInt32, view(text.text, 1:(4 * text.length))), text.length
+        )
+    end
 end

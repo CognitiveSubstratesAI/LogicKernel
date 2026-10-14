@@ -59,8 +59,10 @@ mutable struct PL_global_data{T}
     const files_array::Vector{SourceFile{T}}                    # files.array: index → source file
     files_no_hole_before::Int                                   # files.no_hole_before
     const stream_filenames::IdDict{IOSTREAM, T}                 # (pl-file.c's stream context)
+    const atoms::atoms_t                                        # atoms: the atom table (L1b A)
 end
-# DIVERGES: `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
+# DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
+# database, built first as upstream's `initAtoms` runs first. `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
 # `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
 # per database. The module table (`tables.modules`, since V5c a vector: src/pl-modul.jl) holds the
 # `system` and `user` modules, created with the database as upstream's initModules creates them at
@@ -116,7 +118,8 @@ function PL_global_data{T}() where {T}
         Dict{UInt64, SourceFile{T}}(),
         SourceFile{T}[],
         1,                                      # files.no_hole_before = 1
-        IdDict{IOSTREAM, T}()
+        IdDict{IOSTREAM, T}(),
+        do_init_atoms!(atoms_t())               # initAtoms (setup: before everything here)
     )
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)

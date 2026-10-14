@@ -303,6 +303,13 @@ isFunctor(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_GLOBAL)
 # PORT: pl-incl.h MK_ATOM
 "The atom word of atom number `n` (pl-incl.h)."
 MK_ATOM(n::UInt64)::word = (n << 7) | TAG_ATOM | STG_STATIC
+# PORT: pl-data.h indexAtom
+"The index of atom word `w` in the atom table (pl-data.h)."
+indexAtom(w::word)::Int = Int(w >> LMASK_BITS)
+# PORT: pl-data.h atomValue
+# DIVERGES: the atom table is an argument (`GD->atoms`: one per database, src/pl-atom.jl).
+"The atom (src/pl-atom.jl `atom`) that word `w` names in the table `atoms` (pl-data.h)."
+atomValue(atoms, w::word) = fetchAtomArray(atoms, indexAtom(w))
 # PORT: pl-data.h MK_FUNCTOR
 "The functor word of functor number `n` with arity `a` (pl-data.h)."
 MK_FUNCTOR(n::UInt64, a::UInt64)::word =

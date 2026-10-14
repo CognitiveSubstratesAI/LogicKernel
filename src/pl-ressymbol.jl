@@ -20,11 +20,13 @@
 #                                      subsystems the kernel does not have yet — dicts, trie nodes,
 #                                      the foreign interface's unbound and freed handles. Each comes
 #                                      with its subsystem, built by `mk_reserved_symbol`.
-# NOT PORTED, and why: `initReservedSymbols` itself — it registers the blob type and retypes atoms
-# in the atom table at start-up, and the kernel has no atom table; what it decides remains, as
-# `RESERVED_SYMBOL_RANK` below and the reserved set above. The `--traditional` mode (`[]` is then the
-# text atom `'[]'`) — the kernel is SWI-7; `_PL_atoms` (the foreign interface's table of special
-# atoms); `blob_write_reserved_symbol` (it comes with the writer).
+# Since L1b stage A, `initReservedSymbols!` registers the blob type and retypes those atoms in the
+# database's ATOM TABLE (src/pl-atom.jl), as upstream does at start-up; nothing reads the table's
+# types yet (the terms still carry `is_reserved_symbol`) — stage C's words do.
+# NOT PORTED, and why: the `--traditional` mode (`[]` is then the text atom `'[]'`) — the kernel is
+# SWI-7; `_PL_atoms` (the foreign interface's table of special atoms); `blob_write_reserved_symbol`
+# (it comes with the writer) and `compareReservedSymbol`'s place in the type (`PL_blob_t` carries
+# no hooks).
 
 # PORT: pl-ressymbol.c isReservedSymbol
 """
@@ -83,3 +85,31 @@ const ATOM_nil = MK_ATOM(UInt64(0x0052_4553_5652_4544))      # "RESERVED", withi
 #     user 2026-10-04; Q2's marking bit is retired with it);
 #   * index: a WILDCARD — `argKey` and `indexOfWord` give 0 — because unification goes child by
 #     child (src/pl-prims.jl `_unify_functor`): `(X a)` unifies with `f(a)`, whose functor is `f/1`.
+
+# PORT: pl-ressymbol.c reserved_symbol
+# DIVERGES: flags and name only (`PL_blob_t`, src/SWI-Prolog.jl); `padding` is `sizeof(char)`, as
+# upstream's (registration sets it for text types only: `blob_registration`).
+"The blob type of a reserved symbol (pl-ressymbol.c): unique, NOT text."
+const reserved_symbol = PL_blob_t(PL_BLOB_UNIQUE, "reserved_symbol")
+
+# PORT: pl-ressymbol.c reserved_symbols
+"The atoms that are reserved symbols in SWI-7 mode (pl-ressymbol.c): `[]` alone."
+const reserved_symbols = ("nil",)                   # ATOM_nil: `[]`
+
+# PORT: pl-ressymbol.c initReservedSymbols
+# DIVERGES: on one database's atom table (`GD->atoms`); the atoms by their generated ids
+# (`builtin_atom`); always SWI-7 (`!GD->options.traditional`).
+"Register `reserved_symbol` and retype the reserved atoms (pl-ressymbol.c)."
+function initReservedSymbols!(atoms::atoms_t)::Nothing
+    r = PL_register_blob_type(atoms, reserved_symbol, builtin_atom("reserved_symbol"))
+    r.padding = sizeof(UInt8)                           # the static type's `sizeof(char)`
+    r.rank = 0                                          # sort between normal blob and text
+    atoms.nontext_rank += 1
+    for id in ("dict", "trienode", "no_value", "term_t_free")
+        atomValue(atoms, builtin_atom(id)).type = reserved_symbol
+    end
+    for id in reserved_symbols
+        atomValue(atoms, builtin_atom(id)).type = reserved_symbol
+    end
+    return nothing
+end

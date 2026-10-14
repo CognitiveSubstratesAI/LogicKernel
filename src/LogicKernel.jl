@@ -29,6 +29,7 @@ include("os/pl-string.jl")     # swipl-devel src/os/pl-string.c — digitValue
 include("os/pl-stream.jl")     # swipl-devel src/os/pl-stream.c — the IOSTREAM subset (pl-incl, pl-global hold IOPOS)
 include("pl-incl.jl")          # swipl-devel src/pl-incl.h — clause, clause list, index structs
 include("SWI-Prolog.jl")       # swipl-devel src/SWI-Prolog.h — query flags and return codes
+include("pl-atom.jl")          # swipl-devel src/pl-atom.c — the atom table (generated: tools/gen_atoms.jl; GD holds it)
 include("pl-termwalk.jl")      # swipl-devel src/pl-termwalk.c — term agendas (the local data holds two)
 include("pl-vmi.jl")           # swipl-devel src/pl-vmi.c — the VM instructions heads compile to (pl-index reads them)
 include("pl-index.jl")         # swipl-devel src/pl-index.c — just-in-time clause indexing (LD holds its scratch)

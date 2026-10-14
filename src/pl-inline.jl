@@ -18,6 +18,15 @@
 "Index of the most significant set bit: `MSB(1) == 0`, `MSB(2) == 1` (pl-inline.h)."
 MSB(i::Integer)::Int = 63 - leading_zeros(UInt64(i))
 
+# PORT: pl-inline.h fetchAtomArray
+# DIVERGES: the table is an argument (`GD->atoms`); block `idx` is `array[idx + 1]`, indexed from 1
+# (upstream offsets each block's pointer so `blocks[idx][index]` is direct).
+"The atom at `index` in the table `atoms` (pl-inline.h)."
+function fetchAtomArray(atoms::atoms_t, index::Int)::atom
+    idx = MSB(index)
+    return (atoms.array[idx + 1]::Vector{atom})[index - (1 << idx) + 1]
+end
+
 # PORT: pl-inline.h clean_index_key
 "A hashed key that is never 0 and never reads as a functor (pl-inline.h)."
 function clean_index_key(key::word)::word

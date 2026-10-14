@@ -655,3 +655,21 @@ function PL_clear_foreign_exception(ld::PL_local_data{T}, fr::Int)::Nothing wher
     PL_clear_exception(ld)
     return nothing
 end
+
+# PORT: pl-fli.c ucs_atom
+# DIVERGES: flags and name only (`PL_blob_t`, src/SWI-Prolog.jl); NOT PORTED: its hooks
+# (`compareUCSAtom`, `blob_write_usc_atom`, the qlf `saveUCSAtom`/`loadUCSAtom`).
+"The blob type of a wide-character text atom (pl-fli.c): unique, text, `pl_wchar_t` code points."
+const ucs_atom = PL_blob_t(PL_BLOB_UNIQUE | PL_BLOB_TEXT | PL_BLOB_WCHAR, "ucs_text")
+
+# PORT: pl-fli.c lookupUCSAtom
+# DIVERGES: the table is an argument (`GD->atoms`). The key is upstream's: the code points as
+# `pl_wchar_t` — 4 bytes each on Linux, in the machine's byte order — and the length in BYTES
+# (`len * sizeof(pl_wchar_t)`).
+"The wide text atom of the first `len` code points of `s` (pl-fli.c), created if new."
+function lookupUCSAtom(
+    atoms::atoms_t, s::AbstractVector{UInt32}, len::Int=length(s)
+)::UInt64
+    bytes = Vector{UInt8}(reinterpret(UInt8, Vector{UInt32}(view(s, 1:len))))
+    return first(lookupBlob(atoms, bytes, len * sizeof(UInt32), ucs_atom))
+end
