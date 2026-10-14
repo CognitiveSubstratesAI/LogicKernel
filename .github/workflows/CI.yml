@@ -57,7 +57,7 @@ jobs:
         arch:
           - x64
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
       # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
       # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
@@ -65,17 +65,17 @@ jobs:
       - name: The pinned swipl-devel commit
         id: pin
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: SWI-Prolog/swipl-devel
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
-      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
       - uses: julia-actions/julia-buildpkg@e3eb439fad4f9aba7da2667e7510e4a46ebc46e1  # v1
       - uses: julia-actions/julia-runtest@6e050c8013b833b1195105ff2fce9cd802f53271  # v1
         with:
@@ -112,7 +112,7 @@ jobs:
       # is fast-forwarded to the same SHA later, so Codecov's main view stayed at 12ddbf7 — the last
       # commit pushed to main directly. The upload on main re-files the commit under main.
       - id: upload_coverage
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         continue-on-error: ${{ github.ref != 'refs/heads/main' }}
         with:
           files: lcov.info
@@ -126,7 +126,7 @@ jobs:
       - name: Upload test results to Codecov
         id: upload_results
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         continue-on-error: ${{ github.ref != 'refs/heads/main' }}
         with:
           report_type: test_results
@@ -173,7 +173,7 @@ jobs:
       LOGICKERNEL_REQUIRE_SWIPL: '1'
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
       # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
       # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
@@ -181,7 +181,7 @@ jobs:
       - name: The pinned swipl-devel commit
         id: pin
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: SWI-Prolog/swipl-devel
           ref: ${{ steps.pin.outputs.commit }}
@@ -190,10 +190,10 @@ jobs:
       # The oracle: restored from the cache or built at the pin, put on PATH, and checked to BE
       # that build — one recipe for this job, evidence.yml and mutation.yml (.github/actions/oracle).
       - uses: ./.github/actions/oracle
-      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
         with:
           version: '1.13'
-      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
       # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as
       # a set. A pin on one of them (2026-10-03, LoweredCodeUtils v3.9.1 while JET lagged) breaks as
       # soon as the others move on — JET 0.12.3 then REQUIRED LoweredCodeUtils 3.10 (run 37139741792).
@@ -212,8 +212,8 @@ jobs:
     name: Format (Blue)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
         with:
           version: '1.13'
       # No julia-actions/cache here — a cached Manifest can pin an older JuliaFormatter than the one
@@ -250,7 +250,7 @@ jobs:
       JULIA_NUM_THREADS: '4'
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
       - name: Did the tooling change?
@@ -279,7 +279,7 @@ jobs:
         if: steps.changed.outputs.run == 'true'
         id: pin
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: steps.changed.outputs.run == 'true'
         with:
           repository: SWI-Prolog/swipl-devel
@@ -288,11 +288,11 @@ jobs:
           submodules: true
       - uses: ./.github/actions/oracle
         if: steps.changed.outputs.run == 'true'
-      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32  # v3.0.2
         if: steps.changed.outputs.run == 'true'
         with:
           version: '1.13'
-      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
         if: steps.changed.outputs.run == 'true'
       # the warm lane's preflight runs the formatter and the fast static pre-check in the daemon:
       # the same tools, the same versions as `analysis` and `format`. And REVISE: the daemon loads
