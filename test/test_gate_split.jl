@@ -606,7 +606,29 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
     # green. Every answer is PLANTED (LOGICKERNEL_CI_FIXTURE), and the hook runs in a repository
     # of its own — a copy of the two scripts — so nothing here depends on this checkout's state.
     @testset "tools/githooks/pre-push: main only on a green evidence run of exactly that commit" begin
-        sha = "0123456789abcdef0123456789abcdef01234567"
+        # REAL commits (user, 2026-10-14): the hook reads the identity of every pushed commit not
+        # yet on the remote (its refusal 3.), so a pushed SHA must exist — the noreply identity
+        noreply = "11524260+sivaji1012@users.noreply.github.com"
+        gs_dir = mktempdir()
+        repo = joinpath(gs_dir, "repo")
+        mkpath(joinpath(repo, "tools", "githooks"))
+        run(pipeline(`git -C $repo init -q`; stdout=devnull, stderr=devnull))
+        "A new empty commit by `author` and `committer` (emails) in the fixture; its SHA."
+        function gs_commit(author::String, committer::String)::String
+            withenv(
+                "GIT_AUTHOR_NAME" => "t", "GIT_AUTHOR_EMAIL" => author,
+                "GIT_COMMITTER_NAME" => "t", "GIT_COMMITTER_EMAIL" => committer
+            ) do
+                run(
+                    pipeline(
+                        `git -C $repo commit -q --allow-empty -m x`; stdout=devnull,
+                        stderr=devnull
+                    )
+                )
+            end
+            return readchomp(`git -C $repo rev-parse HEAD`)
+        end
+        sha = gs_commit(noreply, noreply)
         ev = "Evidence (three term types)"
         @test occursin(
             "name: $ev\n",
@@ -646,12 +668,9 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 "[" * run_(ev, "completed", "success"; s="f" ^ 40) * "]", 3, false)
         ]
         mktempdir() do d
-            repo = joinpath(d, "repo")
-            mkpath(joinpath(repo, "tools", "githooks"))
             for f in ("ci_status.sh", joinpath("githooks", "pre-push"))
                 cp(joinpath(_GS_ROOT, "tools", f), joinpath(repo, "tools", f))
             end
-            run(pipeline(`git -C $repo init -q`; stdout=devnull, stderr=devnull))
             tool = joinpath(repo, "tools", "ci_status.sh")
             hook = joinpath(repo, "tools", "githooks", "pre-push")
             fx = joinpath(d, "f.json")
@@ -709,7 +728,21 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 "LOGICKERNEL_CI_FIXTURE" => fx, "LOGICKERNEL_PUSH_LOCAL_EVIDENCE" =>
                     nothing
             ) == 1
+            # 3. THE IDENTITY, on ANY ref (gate branches too): every commit not yet on the remote
+            @testset "the noreply identity on every new commit" begin
+                @test push_(sha, "refs/heads/gate/x") == 0                  # noreply: allowed
+                bad = gs_commit("someone@gmail.example", "someone@gmail.example")
+                @test push_(bad, "refs/heads/gate/x") == 1                  # another author
+                badc = gs_commit(noreply, "someone@gmail.example")
+                @test push_(badc, "refs/heads/gate/x") == 1                 # another committer
+                # already on the remote: passes — main may move over commits a gate branch carried
+                run(`git -C $repo update-ref refs/remotes/origin/gate/old $badc`)
+                @test push_(badc, "refs/heads/gate/x") == 0
+                @test push_(gs_commit(noreply, noreply), "refs/heads/gate/x") == 0   # new, on top
+                @test push_("e"^40, "refs/heads/gate/x") == 1               # unknown: fails closed
+            end
         end
+        rm(gs_dir; recursive=true)
     end
     # CI's EVIDENCE RUN IS THREE JOBS, ONE PER TERM TYPE (user, 2026-10-13): tools/evidence_ci.py
     # judges them together. Planted unit lists: a job that skipped a unit, ran another job's, or
