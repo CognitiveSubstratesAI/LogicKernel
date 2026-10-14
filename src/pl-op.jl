@@ -52,7 +52,7 @@ function defOperator!(
             ld === nothing &&
                 error("defOperator!: an unforced definition needs the local data")
             tr = new_term_ref(ld)
-            ld.slots[tr + 1] = name                         # PL_put_atom(t, name)
+            setSlotValue!(ld, tr + 1, name)                         # PL_put_atom(t, name)
             return PL_error(ld, "", 0, "", ERR_PERMISSION, action, mk_sym(T, :operator), tr)
         end
     end
@@ -198,8 +198,12 @@ function pl_op3_va(
     ok || return FFALSE
     if m == MODULE_system(gd).index
         t = new_term_ref(ld)
-        ld.slots[t + 1] = mk_expr(
-            T, T[mk_sym(T, :(:)), gd.modules[m].atom, ld.slots[name + 1]]
+        setSlotValue!(
+            ld,
+            t + 1,
+            mk_expr(
+                T, T[mk_sym(T, :(:)), gd.modules[m].atom, slotValue(ld, name + 1)]
+            )
         )
         PL_error(
             ld, "", 0, "system operators are protected", ERR_PERMISSION,

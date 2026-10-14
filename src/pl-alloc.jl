@@ -71,12 +71,17 @@ function outOfStack!(ld::PL_local_data{T}, how::stack_overflow_action)::Bool whe
     ld.exception_processing = true
     ld.outofstack = true
     ctx = push_overflow_context(T)
-    ld.slots[ld.exception_bin + 1] = mk_expr(
-        T,
-        T[
-            mk_sym(T, :error), mk_expr(T, T[mk_sym(T, :resource_error), mk_sym(T, :stack)]),
-            ctx
-        ]
+    setSlotValue!(
+        ld,
+        ld.exception_bin + 1,
+        mk_expr(
+            T,
+            T[
+                mk_sym(T, :error),
+                mk_expr(T, T[mk_sym(T, :resource_error), mk_sym(T, :stack)]),
+                ctx
+            ]
+        )
     )
     ld.exception_term = ld.exception_bin
     return false

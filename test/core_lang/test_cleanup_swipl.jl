@@ -228,7 +228,7 @@ _rcall_logged(db::_RDB)::Vector{String} =
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, 4)
     for i in 1:4
-        ld.slots[args + i] = child(goal, i + 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
     end
     proc = LK.lookupProcedure(_rs("setup_call_catcher_cleanup"), 4, LK.MODULE_system(gd))
     qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, proc, args)

@@ -178,10 +178,10 @@ if LK_TERM_IMPL != "alt_interned"
         ))
             fid = LK.PL_open_foreign_frame(ld)
             t0 = LK.PL_new_term_refs(ld, 2)
-            ld.slots[t0 + 1] = ground
-            ld.slots[t0 + 2] = _rv(70 + i)                  # a variable of its own: bindings persist
+            LK.putSlotValue!(ld, t0 + 1, ground)
+            LK.putSlotValue!(ld, t0 + 2, _rv(70 + i))                  # a variable of its own: bindings persist
             @test fn(ld, t0, 2, ctx) == LK.FTRUE
-            out = LK.deRef(ld, ld.slots[t0 + 2])
+            out = LK.deRef(ld, LK.slotValue(ld, t0 + 2))
             @test (out === ground) == shared
             @test LK.compareStandard(out, ground, true) == 0
             LK.PL_close_foreign_frame(ld, fid)

@@ -64,14 +64,14 @@ function _ttrun(gd, ld, proc, args::Vector{_TT})::String
     fid = LKT.PL_open_foreign_frame(ld)
     a = LKT.PL_new_term_refs(ld, max(length(args), 1))
     for (k, t) in enumerate(args)
-        ld.slots[a + k] = t
+        LogicKernel.putSlotValue!(ld, a + k, t)
     end
     qid = LKT.PL_open_query(
         gd, ld, nothing, LKT.PL_Q_CATCH_EXCEPTION | LKT.PL_Q_EXT_STATUS, proc, a
     )
     rc = LKT.PL_next_solution(gd, ld, qid)
     out = if rc == LKT.PL_S_EXCEPTION
-        ball = LKT.resolve_term(ld, ld.slots[LKT.PL_exception(ld, qid) + 1])
+        ball = LKT.resolve_term(ld, LogicKernel.slotValue(ld, LKT.PL_exception(ld, qid) + 1))
         String(lk_name(child(child(ball, 2), 1)))
     else
         rc == LKT.PL_S_FALSE ? "false" : "true"
@@ -207,7 +207,7 @@ end
         p = LKT.isCurrentProcedure(sym_key(lk_sym(O, t)), 1, LKT.MODULE_system(ogd))
         fid = LKT.PL_open_foreign_frame(old)
         a = LKT.PL_new_term_ref(old)
-        old.slots[a + 1] = v
+        LogicKernel.putSlotValue!(old, a + 1, v)
         qid = LKT.PL_open_query(ogd, old, nothing, LKT.PL_Q_EXT_STATUS, p, a)
         rc = LKT.PL_next_solution(ogd, old, qid)
         LKT.PL_close_query(old, qid)

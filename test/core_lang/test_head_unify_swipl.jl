@@ -203,7 +203,7 @@ function _hvm(p::IxPred{_HT}, goal::_HT, mode)::String
     ar = nchildren(goal) - 1
     args = LK.PL_new_term_refs(ld, ar)
     for i in 1:ar
-        ld.slots[args + i] = child(goal, i + 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
     end
     flags = LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS
     qid = LK.PL_open_query(gd, ld, nothing, flags, p.proc, args)
@@ -222,7 +222,7 @@ function _hvm(p::IxPred{_HT}, goal::_HT, mode)::String
         else
             if rc == LK.PL_S_EXCEPTION
                 ex = LK.PL_exception(ld, qid)
-                out = "err " * _hcanonical(LK.resolve_term(ld, ld.slots[ex + 1]))
+                out = "err " * _hcanonical(LK.resolve_term(ld, LK.slotValue(ld, ex + 1)))
             end
             break
         end

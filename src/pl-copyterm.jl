@@ -178,13 +178,13 @@ function copy_term_refs(
     ld::PL_local_data{T}, from::term_t, options::cp_options
 )::term_t where {T}
     copy = new_term_ref(ld)
-    ld.slots[copy + 1] = copy_term(ld, ld.slots[from + 1], options)
+    setSlotValue!(ld, copy + 1, copy_term(ld, slotValue(ld, from + 1), options))
     return copy
 end
 
 # `PL_is_atomic(t)`: the term `t` references is neither a variable nor a compound.
 function _cp_atomic(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k = kind(deRef(ld, ld.slots[t + 1]))
+    k = kind(deRef(ld, slotValue(ld, t + 1)))
     return k !== VAR && k !== EXPR
 end
 

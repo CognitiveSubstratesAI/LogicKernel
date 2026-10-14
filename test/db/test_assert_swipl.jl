@@ -204,7 +204,8 @@ function _arun(db::_ADB, goal::_A)::String
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
         "ok"
     elseif rc == LK.PL_S_EXCEPTION
-        "err " * _acanonical(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]))
+        "err " *
+        _acanonical(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)))
     else
         "failed"
     end
@@ -338,7 +339,7 @@ proc_of(db::_ADB, name::String) =
     proc = LK.isCurrentProcedure(sym_key(_as("assert")), 1, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
-    ld.slots[a + 1] = _af("as1", _ag(2))
+    LK.putSlotValue!(ld, a + 1, _af("as1", _ag(2)))
     qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_EXT_STATUS, proc, a)
     @test LK.PL_next_solution(gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)
     LK.PL_close_query(ld, qid)
@@ -373,10 +374,10 @@ end
     )
         ld = LK.PL_local_data{_A}()
         t = LK.PL_new_term_refs(ld, 1)
-        ld.slots[t + 1] = culprit
+        LK.putSlotValue!(ld, t + 1, culprit)
         @test !LK.PL_error(ld, LK.ERR_TYPE, _as("callable"), t)
         @test ld.exception_term != 0 &&
-            lk_eq(child(ld.slots[ld.exception_term + 1], 2), want)
+            lk_eq(child(LK.slotValue(ld, ld.exception_term + 1), 2), want)
     end
     # a compound named by a number (`$expr/n`, the kernel's): its name is no callable atom
     db = _aload([(_as("r"), _af("assertz", mk_expr(_A, _A[_ag(1), _as("a")])))])

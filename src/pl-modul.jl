@@ -109,7 +109,7 @@ function stripModuleName(
         depth -= 1
         if depth == 0 && !is_acyclic(ld, term)
             t = new_term_ref(ld)                    # pushWordAsTermRef(term)
-            ld.slots[t + 1] = term
+            setSlotValue!(ld, t + 1, term)
             PL_error(ld, ERR_TYPE, mk_sym(T, :acyclic_term), t)
             return (false, term, nm)
         end

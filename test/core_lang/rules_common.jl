@@ -45,7 +45,7 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
     for i in 1:n
-        ld.slots[args + i] = child(goal, i + 1)            # term reference args + (i - 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1))            # term reference args + (i - 1)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, goal), args
@@ -298,7 +298,7 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
     for i in 1:n
-        ld.slots[args + i] = child(goal, i + 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
     end
     fill!(view(ld.slots, (ld.lTop + 1):length(ld.slots)), _R_SENTINEL)
     qid = LK.PL_open_query(
@@ -307,7 +307,7 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
     rc = LK.PL_next_solution(gd, ld, qid)
     if rc != LK.PL_S_LAST                                           # the tripwire: say what tripped
         ex = rc == LK.PL_S_EXCEPTION ? LK.PL_exception(ld, qid) : 0
-        ball = ex == 0 ? "none" : string(ld.slots[ex + 1])
+        ball = ex == 0 ? "none" : string(LK.slotValue(ld, ex + 1))
         error("_rhighwater: $(_rsrc(goal)) returned $rc, ball $ball (growth past lMax?)")
     end
     high = findlast(t -> t !== _R_SENTINEL, ld.slots) - 1           # a position: slots[p + 1]

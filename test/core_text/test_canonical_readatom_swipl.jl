@@ -42,7 +42,7 @@ function _cr_call(name::String, args::Vector{_CR})
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
     for (i, x) in enumerate(args)
-        ld.slots[a + i] = x
+        LK.putSlotValue!(ld, a + i, x)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -50,9 +50,17 @@ function _cr_call(name::String, args::Vector{_CR})
     out = try
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            (:true, [LK.resolve_term(ld, ld.slots[a + i]) for i in 1:length(args)], nothing)
+            (
+                :true,
+                [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)],
+                nothing
+            )
         elseif rc == LK.PL_S_EXCEPTION
-            (:exception, _CR[], LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]))
+            (
+                :exception,
+                _CR[],
+                LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+            )
         else
             (:false, _CR[], nothing)
         end
@@ -343,7 +351,7 @@ function _cr_run_goal(t::_CR)
         @assert proc !== nothing "no system predicate $(sym_text(h))/$n"
         a = LK.PL_new_term_refs(_CR_LD, n)
         for i in 1:n
-            _CR_LD.slots[a + i] = child(g, i + 1)
+            LK.putSlotValue!(_CR_LD, a + i, child(g, i + 1))
         end
         qid = LK.PL_open_query(
             _CR_GD, _CR_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -361,7 +369,9 @@ function _cr_run_goal(t::_CR)
         if rc == LK.PL_S_EXCEPTION
             verdict =
                 "ex:" * _cr_text(
-                    LK.resolve_term(_CR_LD, _CR_LD.slots[LK.PL_exception(_CR_LD, qid) + 1])
+                    LK.resolve_term(
+                        _CR_LD, LK.slotValue(_CR_LD, LK.PL_exception(_CR_LD, qid) + 1)
+                    )
                 )
             LK.PL_close_query(_CR_LD, qid)
             break

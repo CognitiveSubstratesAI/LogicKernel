@@ -38,7 +38,7 @@ function PL_new_term_refs(ld::PL_local_data{T}, n::Int)::Int where {T}
 
     k = allocGlobalVars!(ld, n)
     for i in 0:(n - 1)
-        ld.slots[t + 1] = mk_var(T, k + UInt64(i))   # setVar(*t++)
+        setSlotValue!(ld, t + 1, mk_var(T, k + UInt64(i)))   # setVar(*t++)
         t += 1
     end
     ld.lTop = t
@@ -54,7 +54,7 @@ end
 function new_term_ref(ld::PL_local_data{T})::Int where {T}
     t = ld.lTop
     r = t                                       # consTermRef(t)
-    ld.slots[t + 1] = mk_var(T, allocGlobalVars!(ld, 1))  # setVar(*t++)
+    setSlotValue!(ld, t + 1, mk_var(T, allocGlobalVars!(ld, 1)))  # setVar(*t++)
     t += 1
 
     ld.lTop = t
@@ -102,7 +102,7 @@ function PL_copy_term_ref(ld::PL_local_data{T}, from::Int)::Int where {T}
 
     t = ld.lTop
     r = t                                       # consTermRef(t)
-    ld.slots[t + 1] = linkValI(ld, ld.slots[from + 1])   # *t = linkValI(valHandleP(from))
+    setSlotValue!(ld, t + 1, linkValI(ld, slotValue(ld, from + 1)))   # *t = linkValI(valHandleP(from))
     ld.lTop = t + 1
     fr = ld.fli_context
     ld.fliframes[fr].size += 1
@@ -117,12 +117,16 @@ end
 function PL_cons_list(
     ld::PL_local_data{T}, l::term_t, head::term_t, tail::term_t
 )::Bool where {T}
-    ld.slots[l + 1] = mk_expr(
-        T,
-        T[
-            mk_sym(T, LIST_CONS_NAME), linkValI(ld, ld.slots[head + 1]),
-            linkValI(ld, ld.slots[tail + 1])
-        ]
+    setSlotValue!(
+        ld,
+        l + 1,
+        mk_expr(
+            T,
+            T[
+                mk_sym(T, LIST_CONS_NAME), linkValI(ld, slotValue(ld, head + 1)),
+                linkValI(ld, slotValue(ld, tail + 1))
+            ]
+        )
     )
 
     return true
@@ -134,19 +138,19 @@ end
 function PL_unify_list(
     ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t
 )::Bool where {T}
-    p = deRef(ld, ld.slots[l + 1])
+    p = deRef(ld, slotValue(ld, l + 1))
 
     if canBind(p)
         k = allocGlobalVars!(ld, 2)
         a1, a2 = mk_var(T, k), mk_var(T, k + 1)
         c = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), a1, a2])
-        ld.slots[h + 1] = a1                            # setHandle(h, makeRefG(a))
-        ld.slots[t + 1] = a2
+        setSlotValue!(ld, h + 1, a1)                            # setHandle(h, makeRefG(a))
+        setSlotValue!(ld, t + 1, a2)
 
         Trail!(ld, var_key(p), c)                       # bindConst(p, c)
     elseif is_pair(p)                                   # isList(*p)
-        ld.slots[h + 1] = linkValI(ld, child(p, 2))
-        ld.slots[t + 1] = linkValI(ld, child(p, 3))
+        setSlotValue!(ld, h + 1, linkValI(ld, child(p, 2)))
+        setSlotValue!(ld, t + 1, linkValI(ld, child(p, 3)))
     else
         return false
     end
@@ -163,7 +167,7 @@ PL_unify_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_unify_atom(ld, l, m
 # `tail` (upstream unifies it with the list's tail): no caller here passes one.
 "The type of the list term reference `list` holds — `PL_LIST`, `PL_PARTIAL_LIST`, `PL_CYCLIC_TERM`, `PL_NOT_A_LIST` — and its cells (pl-fli.c)."
 function PL_skip_list(ld::PL_local_data{T}, list::term_t)::Tuple{Int, Int} where {T}
-    length, t = skip_list(ld, ld.slots[list + 1])
+    length, t = skip_list(ld, slotValue(ld, list + 1))
 
     if is_nil(t)
         return (PL_LIST, length)
@@ -183,7 +187,7 @@ end
 function PL_unify_functor(
     ld::PL_local_data{T}, t::term_t, name::T, arity::Int
 )::Bool where {T}
-    p = deRef(ld, ld.slots[t + 1])
+    p = deRef(ld, slotValue(ld, t + 1))
 
     if canBind(p)
         if arity != 0
@@ -215,12 +219,12 @@ end
 function PL_unify_arg(
     ld::PL_local_data{T}, index::Int, t::term_t, a::term_t
 )::Bool where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
 
     if isTerm(w)
         off, arity = _comp_shape(w)
         if index > 0 && index <= arity
-            return unify_ptrs(ld, child(w, off + index - 1), ld.slots[a + 1])
+            return unify_ptrs(ld, child(w, off + index - 1), slotValue(ld, a + 1))
         end
     end
 
@@ -231,7 +235,7 @@ end
 # DIVERGES: no `globalizeTermRef` (as `PL_copy_term_ref`), so it cannot fail.
 "Make term reference `t1` reference the term `t2` references (pl-fli.c)."
 function PL_put_term(ld::PL_local_data{T}, t1::Int, t2::Int)::Bool where {T}
-    ld.slots[t1 + 1] = linkValI(ld, ld.slots[t2 + 1])    # setHandle(t1, linkValI(p2))
+    setSlotValue!(ld, t1 + 1, linkValI(ld, slotValue(ld, t2 + 1)))    # setHandle(t1, linkValI(p2))
     return true
 end
 
@@ -276,14 +280,14 @@ end
 "The class of the ball term reference `exception` holds, `EXCEPT_NONE` for none (pl-fli.h)."
 function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class where {T}
     exception == 0 && return EXCEPT_NONE
-    return classify_exception_p(ld, ld.slots[exception + 1])
+    return classify_exception_p(ld, slotValue(ld, exception + 1))
 end
 
 # PORT: pl-fli.c PL_get_atom
 # DIVERGES: returns the atom, or `nothing`, where upstream writes it through `a` and returns a Bool.
 "The atom term reference `t` holds — a text atom or a reserved symbol such as `[]` — or `nothing` (pl-fli.c)."
 function PL_get_atom(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     kind(w) === SYM && return w                             # isAtom(w)
     return nothing
 end
@@ -292,7 +296,7 @@ end
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`.
 "The C `int` term reference `t` holds — a tagged integer in `int`'s range — or `nothing` (pl-fli.c)."
 function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     if isTaggedInt(w)
         val = int64_value(w)
         (val > typemax(Int32) || val < typemin(Int32)) && return nothing
@@ -316,7 +320,7 @@ end
 # DIVERGES: returns the Boolean, or `nothing`, where upstream writes it through `b`.
 "The Boolean term reference `t` holds — `true`/`on`, `false`/`off`, `1` or `0` — or `nothing` (pl-fli.c)."
 function PL_get_stdbool(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Bool} where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     kind(w) === SYM && return atom_to_bool(ld, w)           # isAtom(w)
     if isInteger(w)
         isTaggedInt(w) && int64_value(w) == 0 && return false   # w == consInt(0)
@@ -339,7 +343,7 @@ PL_get_bool(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_stdbool(ld, t)
 function PL_get_name_arity(
     ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, Tuple{T, Int}} where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     if isTerm(w)
         h = child(w, 1)
         kind(h) === SYM && return (h, nchildren(w) - 1)
@@ -354,9 +358,9 @@ end
 # `PL_get_name_arity`), so its argument `index` is child `index`; else child `index + 1`.
 "Put argument `index` (from 1) of the compound term reference `t` holds into `a` (pl-fli.c)."
 function _PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bool where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     off = kind(child(w, 1)) === SYM ? 1 : 0
-    ld.slots[a + 1] = child(w, index + off)                 # linkValI(&f->arguments[index-1])
+    setSlotValue!(ld, a + 1, child(w, index + off))                 # linkValI(&f->arguments[index-1])
     return true
 end
 
@@ -364,15 +368,15 @@ end
 # DIVERGES: the functor is a name and an arity (upstream: a `functor_t`).
 "Whether term reference `t` holds a compound `name/arity` (pl-fli.h)."
 PL_is_functor(ld::PL_local_data{T}, t::term_t, name::T, arity::Int) where {T} =
-    _hasFunctor(deRef(ld, ld.slots[t + 1]), name, arity)
+    _hasFunctor(deRef(ld, slotValue(ld, t + 1)), name, arity)
 
 # PORT: pl-fli.c PL_get_list
 "Put the head and the tail of the list cell term reference `l` holds into `h` and `t` (pl-fli.c); false if it holds none."
 function PL_get_list(ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t)::Bool where {T}
-    w = deRef(ld, ld.slots[l + 1])
+    w = deRef(ld, slotValue(ld, l + 1))
     if is_pair(w)                                           # isList(w)
-        ld.slots[h + 1] = child(w, 2)                       # linkValI(a++)
-        ld.slots[t + 1] = child(w, 3)
+        setSlotValue!(ld, h + 1, child(w, 2))                       # linkValI(a++)
+        setSlotValue!(ld, t + 1, child(w, 3))
         return true
     end
     return false
@@ -380,12 +384,13 @@ end
 
 # PORT: pl-fli.c PL_get_nil
 "Whether term reference `l` holds `[]` (pl-fli.c)."
-PL_get_nil(ld::PL_local_data{T}, l::term_t) where {T} = is_nil(deRef(ld, ld.slots[l + 1]))
+PL_get_nil(ld::PL_local_data{T}, l::term_t) where {T} =
+    is_nil(deRef(ld, slotValue(ld, l + 1)))
 
 # PORT: pl-fli.c PL_is_list
 "Whether term reference `t` holds a list cell or `[]` (pl-fli.c)."
 function PL_is_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     return is_pair(w) || is_nil(w)
 end
 
@@ -402,16 +407,16 @@ module they name (pl-fli.c): unlike `PL_strip_module_ex`, a qualifier that is no
 function PL_strip_module(
     gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
 )::Tuple{Bool, Int} where {T}
-    p = deRef(ld, ld.slots[raw + 1])
+    p = deRef(ld, slotValue(ld, raw + 1))
     if _hasFunctor(p, mk_sym(T, :(:)), 2)
         ok, p, m = stripModule(gd, ld, p)
         ok || return (false, m)
-        ld.slots[plain + 1] = p                             # setHandle(plain, linkValI(p))
+        setSlotValue!(ld, plain + 1, p)                             # setHandle(plain, linkValI(p))
     else
         if m == 0
             m = MODULE_user(gd).index               # (environment_frame ? contextModule(…) : user)
         end
-        ld.slots[plain + 1] = p
+        setSlotValue!(ld, plain + 1, p)
     end
     return (true, m)
 end
@@ -444,20 +449,20 @@ an atom raises `type_error(module, M)`, or `instantiation_error` when it is a va
 function PL_strip_module_ex(
     gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
 )::Tuple{Bool, Int} where {T}
-    p = deRef(ld, ld.slots[raw + 1])
+    p = deRef(ld, slotValue(ld, raw + 1))
     if _hasFunctor(p, mk_sym(T, :(:)), 2)
         ok, p, m = stripModule(gd, ld, p)
         ok || return (false, m)
         if _hasFunctor(p, mk_sym(T, :(:)), 2)
-            ld.slots[plain + 1] = deRef(ld, child(p, 2))    # Word a1 = argTermP(*p, 0)
+            setSlotValue!(ld, plain + 1, deRef(ld, child(p, 2)))    # Word a1 = argTermP(*p, 0)
             return (PL_type_error(ld, "module", plain), m)
         end
-        ld.slots[plain + 1] = p
+        setSlotValue!(ld, plain + 1, p)
     else
         if m == 0
             m = MODULE_user(gd).index               # (environment_frame ? contextModule(…) : user)
         end
-        ld.slots[plain + 1] = p                     # linkValG(p)
+        setSlotValue!(ld, plain + 1, p)                     # linkValG(p)
     end
     return (true, m)
 end
@@ -492,7 +497,7 @@ end
 "Copy the ball `ex` references into `bin`, its cycles kept (pl-fli.c)."
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
     tt = length(ld.trail)
-    ld.slots[bin + 1] = copy_term(ld, ld.slots[ex + 1], cp_options(false))     # duplicate_term()
+    setSlotValue!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))     # duplicate_term()
     resize!(ld.trail, tt)                       # frozen: the copy's own bindings keep no trail entry
     return true
 end
@@ -503,7 +508,7 @@ end
 "Make the term `exception` references the pending exception, unless a more urgent one is pending; false (pl-fli.c)."
 function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T}
     @assert exception < ld.lTop                             # valTermRef(exception) < lTop
-    kind(deRef(ld, ld.slots[exception + 1])) === VAR &&
+    kind(deRef(ld, slotValue(ld, exception + 1))) === VAR &&
         error("Cannot throw variable exception")            # fatalError()
 
     ld.exception_processing = true                          # LD->exception.processing = true
@@ -527,7 +532,7 @@ end
 # PORT: pl-fli.h PL_is_variable
 "Whether term reference `t` holds an unbound variable (pl-fli.h; `canBind`: no attributed variables)."
 PL_is_variable(ld::PL_local_data{T}, t::term_t) where {T} =
-    kind(deRef(ld, ld.slots[t + 1])) === VAR
+    kind(deRef(ld, slotValue(ld, t + 1))) === VAR
 
 # The type tests on a term reference (V6b): `valHandle(t)` is the slot dereferenced through the
 # bindings; each then asks pl-data.h's test (src/pl-incl.jl).
@@ -535,21 +540,22 @@ PL_is_variable(ld::PL_local_data{T}, t::term_t) where {T} =
 # PORT: pl-fli.c PL_is_integer
 "Whether term reference `t` holds an integer (pl-fli.c)."
 PL_is_integer(ld::PL_local_data{T}, t::term_t) where {T} =
-    isInteger(deRef(ld, ld.slots[t + 1]))
+    isInteger(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.c PL_is_float
 "Whether term reference `t` holds a float (pl-fli.c)."
-PL_is_float(ld::PL_local_data{T}, t::term_t) where {T} = isFloat(deRef(ld, ld.slots[t + 1]))
+PL_is_float(ld::PL_local_data{T}, t::term_t) where {T} =
+    isFloat(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.c PL_is_rational
 "Whether term reference `t` holds a rational number, an integer included (pl-fli.c)."
 PL_is_rational(ld::PL_local_data{T}, t::term_t) where {T} =
-    isRational(deRef(ld, ld.slots[t + 1]))
+    isRational(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.c PL_is_compound
 "Whether term reference `t` holds a compound term (pl-fli.c)."
 PL_is_compound(ld::PL_local_data{T}, t::term_t) where {T} =
-    isTerm(deRef(ld, ld.slots[t + 1]))
+    isTerm(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.c isCallable
 # DIVERGES: no closure blobs. A compound with a non-symbol head (`$expr/n`, the kernel's) is not
@@ -566,41 +572,41 @@ end
 # PORT: pl-fli.c PL_is_callable
 "Whether term reference `t` holds a callable term (pl-fli.c)."
 PL_is_callable(ld::PL_local_data{T}, t::term_t) where {T} =
-    isCallable(deRef(ld, ld.slots[t + 1]))
+    isCallable(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.c PL_is_string
 "Whether term reference `t` holds a string (pl-fli.c)."
 PL_is_string(ld::PL_local_data{T}, t::term_t) where {T} =
-    isString(deRef(ld, ld.slots[t + 1]))
+    isString(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.h PL_is_atom
 "Whether term reference `t` holds a text atom — not `[]` (pl-fli.h)."
 PL_is_atom(ld::PL_local_data{T}, t::term_t) where {T} =
-    isTextAtom(deRef(ld, ld.slots[t + 1]))
+    isTextAtom(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.h PL_is_atomic
 "Whether term reference `t` holds an atomic term (pl-fli.h)."
 PL_is_atomic(ld::PL_local_data{T}, t::term_t) where {T} =
-    isAtomic(deRef(ld, ld.slots[t + 1]))
+    isAtomic(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.h PL_is_number
 "Whether term reference `t` holds a number (pl-fli.h)."
 PL_is_number(ld::PL_local_data{T}, t::term_t) where {T} =
-    isNumber(deRef(ld, ld.slots[t + 1]))
+    isNumber(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.c PL_unify
 # DIVERGES: no `ALLOW_GC|ALLOW_SHIFT`: the kernel's `unify_ptrs` takes no flags, as the binding store
 # and the trail cannot overflow during a unification (its DIVERGES).
 "Unify the terms `t1` and `t2` reference (pl-fli.c `PL_unify`); does not undo on failure."
 PL_unify(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
-    unify_ptrs(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
+    unify_ptrs(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1))
 
 # PORT: pl-fli.c PL_unify_atomic
 # DIVERGES: `w` is an atomic TERM (no words); "the same word" and `equalIndirect` are the standard
 # order's identity of two atomic terms (`compare_primitives` in equality mode) — `1` is not `1.0`.
 "Unify the term `t` references with the atomic term `w` (pl-fli.c `PL_unify_atomic`)."
 function PL_unify_atomic(ld::PL_local_data{T}, t::term_t, w::T)::Bool where {T}
-    p = deRef(ld, ld.slots[t + 1])
+    p = deRef(ld, slotValue(ld, t + 1))
     if kind(p) === VAR                                  # canBind(*p)
         Trail!(ld, var_key(p), w)                       # bindConst(p, w)
         return true
@@ -622,14 +628,14 @@ PL_unify_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
 # DIVERGES: `PL_put_int64`'s work, inline: the reference holds the integer.
 "Make term reference `t` hold the integer `i` (pl-fli.h `PL_put_intptr`)."
 function PL_put_intptr(ld::PL_local_data{T}, t::term_t, i::Int)::Bool where {T}
-    ld.slots[t + 1] = mk_gnd(T, i)
+    setSlotValue!(ld, t + 1, mk_gnd(T, i))
     return true
 end
 
 # PORT: pl-fli.c PL_compare
 "The standard order of the terms `t1` and `t2` reference: -1, 0 or 1 (pl-fli.c `PL_compare`)."
 PL_compare(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
-    compareStandard(ld, ld.slots[t1 + 1], ld.slots[t2 + 1], false)
+    compareStandard(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1), false)
 
 # PORT: pl-fli.c PL_clear_exception
 "Drop the pending exception, if any (pl-fli.c `PL_clear_exception`)."

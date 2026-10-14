@@ -98,7 +98,7 @@ function _tl_kernel(path::String, preds::Vector{Tuple{String, Int}})::Vector{Str
         fid = LK.PL_open_foreign_frame(ld)
         a = LK.PL_new_term_refs(ld, max(arity, 1))
         for i in 1:arity
-            ld.slots[a + i] = mk_var(_TL, LK.fresh_var_keys!(1))
+            LK.putSlotValue!(ld, a + i, mk_var(_TL, LK.fresh_var_keys!(1)))
         end
         qid = LK.PL_open_query(
             gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -113,7 +113,8 @@ function _tl_kernel(path::String, preds::Vector{Tuple{String, Int}})::Vector{Str
                         _TL,
                         _TL[
                             _tls(name),
-                            (LK.resolve_term(ld, ld.slots[a + i]) for i in 1:arity)...
+                            (LK.resolve_term(ld, LK.slotValue(ld, a + i)) for
+                             i in 1:arity)...
                         ]
                     )
                 end
@@ -301,18 +302,18 @@ if _TL_SWIPL !== nothing
             )
             fid = LK.PL_open_foreign_frame(ld)
             a = LK.PL_new_term_refs(ld, 2)
-            ld.slots[a + 1] = mk_var(_TL, LK.fresh_var_keys!(1))
-            ld.slots[a + 2] = _tls(goal)
+            LK.putSlotValue!(ld, a + 1, mk_var(_TL, LK.fresh_var_keys!(1)))
+            LK.putSlotValue!(ld, a + 2, _tls(goal))
             q = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, t2a, a)
             @test LK.PL_next_solution(gd, ld, q) != LK.PL_S_FALSE
-            g = LK.resolve_term(ld, ld.slots[a + 1])
+            g = LK.resolve_term(ld, LK.slotValue(ld, a + 1))
             LK.PL_close_query(ld, q)
             proc = LK.isCurrentProcedure(
                 child(g, 1) |> sym_key, nchildren(g) - 1, LK.MODULE_user(gd)
             )
             b = LK.PL_new_term_refs(ld, nchildren(g) - 1)
             for i in 2:nchildren(g)
-                ld.slots[b + i - 1] = child(g, i)
+                LK.putSlotValue!(ld, b + i - 1, child(g, i))
             end
             q2 = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, proc, b)
             rc = LK.PL_next_solution(gd, ld, q2)
@@ -324,7 +325,7 @@ if _TL_SWIPL !== nothing
                         _TL,
                         _TL[
                             child(g, 1),
-                            (LK.resolve_term(ld, ld.slots[b + i - 1]) for
+                            (LK.resolve_term(ld, LK.slotValue(ld, b + i - 1)) for
                              i in 2:nchildren(g))...
                         ]
                     )

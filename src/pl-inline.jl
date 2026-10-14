@@ -173,6 +173,31 @@ function _unbind!(ld::PL_local_data, key::UInt64)::Nothing
     return nothing
 end
 
+# ── the local stack's slots: three accessors (L1b) ───────────────────────────────────────────────
+# Every read and write of a slot goes through one of these, so that L1b's switch of the slots to
+# WORDS (pl-data.h) changes three functions, not the 400 sites that call them (the L1 plan, §5 —
+# docs/research/logickernel-step-memos/L1_plan/l1_plan.md in the workspace). `i` is the slot's
+# 1-based position on the local stack: term reference `t` is position `t + 1`.
+
+# ORIGINAL: the slot read (L1b commit 1a: the value as stored; then built from the cells).
+"The value slot `i` holds (the term reference `t` is slot `t + 1`)."
+@inline slotValue(ld::PL_local_data{T}, i::Int) where {T} = ld.slots[i]::T
+
+# ORIGINAL: the ENGINE's slot write — its own value, variable identity kept (upstream `setHandle`).
+"Store the engine's value `v` in slot `i`; returns `v`, as the assignment it replaces did."
+@inline function setSlotValue!(ld::PL_local_data{T}, i::Int, v::T)::T where {T}
+    ld.slots[i] = v
+    return v
+end
+
+# ORIGINAL: THE BOUNDARY — a Julia caller's value put into a slot (L1b commit 1a: a plain store;
+# commit 1b gives it SWI's semantics: a separate put makes new variables).
+"Put a CALLER's value `v` into slot `i` (the boundary of the user's decision, 2026-10-14)."
+@inline function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T)::T where {T}
+    ld.slots[i] = v
+    return v
+end
+
 # PORT: pl-data.h deRef
 # DIVERGES: follows a cell variable's cell, and a keyed variable's entry in the store, where
 # upstream follows reference cells.

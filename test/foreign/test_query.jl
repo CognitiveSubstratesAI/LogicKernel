@@ -60,13 +60,13 @@ function _yopen(p::IxPred{_Y}, args::_Y...; flags=LK.PL_Q_NORMAL | LK.PL_Q_EXT_S
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
     for (i, t) in enumerate(args)
-        ld.slots[a + i] = t
+        LK.putSlotValue!(ld, a + i, t)
     end
     qid = LK.PL_open_query(p.db.gd, ld, nothing, flags, p.proc, a)
     return qid, a, fid
 end
 _ynext(p, qid) = LK.PL_next_solution(p.db.gd, p.db.ld, qid)
-_yval(p, a) = LK.resolve_term(p.db.ld, p.db.ld.slots[a + 1])
+_yval(p, a) = LK.resolve_term(p.db.ld, LK.slotValue(p.db.ld, a + 1))
 
 @testset "answers, determinism and the return codes" begin
     db, p = _ydb()
@@ -126,7 +126,7 @@ end
     X = _yv(1)
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
-    ld.slots[a + 1] = X
+    LK.putSlotValue!(ld, a + 1, X)
     top = ld.lTop
     qid = LK.PL_open_query(
         db.gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, p[:f].proc, a
@@ -224,7 +224,7 @@ end
     qid, a, fid = _yopen(pr, A, A; flags=LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
     @test _ynext(pr, qid) == LK.PL_S_EXCEPTION
     ex = LK.PL_exception(ld, qid)
-    e = LK.resolve_term(ld, ld.slots[ex + 1])
+    e = LK.resolve_term(ld, LK.slotValue(ld, ex + 1))
     @test lk_name(child(e, 1)) === :error &&
         lk_name(child(child(e, 2), 1)) === :occurs_check
     ctx = child(e, 3)
@@ -249,14 +249,15 @@ end
     # it before its first answer — PL_new_term_ref refuses there, as upstream)
     fid0 = LK.PL_open_foreign_frame(ld)
     b = LK.PL_new_term_ref(ld)
-    ld.slots[b + 1] = _yf(:error, _ys(:boom), _yv(2))
+    LK.putSlotValue!(ld, b + 1, _yf(:error, _ys(:boom), _yv(2)))
     LK.PL_raise_exception(ld, b)
     @test ld.exception_term == ld.exception_bin
     qid, a, fid = _yopen(p[:f], _yv(1); flags=LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
     @test_throws ErrorException LK.PL_new_term_ref(ld)          # no foreign frame above the query's
     @test LK.PL_next_solution_guarded(db.gd, ld, qid, true) == LK.PL_S_EXCEPTION
     # (a variant: the ball is a copy with fresh variables, copy_exception — since V9f)
-    @test LK.is_variant_ptr(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]),
+    @test LK.is_variant_ptr(
+        LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)),
         _yf(:error, _ys(:boom), _yv(2)))
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
@@ -273,14 +274,15 @@ end
     fid = LK.PL_open_foreign_frame(ld)
     LK.PL_new_term_refs(ld, ld.lMax - ld.lTop - (LK.SIZEOF_QUERYFRAME + LK.MAXARITY) - 1)
     a = LK.PL_new_term_ref(ld)
-    ld.slots[a + 1] = _yv(1)
+    LK.putSlotValue!(ld, a + 1, _yv(1))
     qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL, p[:f].proc, a)
     @test qid != 0
     @test LK.PL_next_solution(db.gd, ld, qid) == LK.PL_S_FALSE  # S_STATIC's space; no EXT_STATUS
     ex = LK.PL_exception(ld, qid)
     @test ex != 0 &&
         lk_eq(
-        ld.slots[ex + 1], _yf(:error, _yf(:resource_error, _ys(:stack)), _ys(:local))
+        LK.slotValue(ld, ex + 1),
+        _yf(:error, _yf(:resource_error, _ys(:stack)), _ys(:local))
     )
     @test !ld.outofstack && !ld.exception_processing           # recovered at the boundary
     @test ld.local_spare == ld.local_def_spare                  # the spare reserved again

@@ -34,7 +34,7 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
     base = ld.lTop
     cl = LK.compileGoalClause(gd, ld, goal, db.user, base)
     @test cl !== nothing && (cl.flags & LK.GOAL_CLAUSE) != 0
-    cell(i) = ld.slots[LK.varFrameP(base, Int(LK.VAROFFSET(i))) + 1]
+    cell(i) = LK.slotValue(ld, LK.varFrameP(base, Int(LK.VAROFFSET(i))) + 1)
     @test LK.compareStandard(cell(1), _rf("f", _rg(1)), true) == 0      # argvar 1 (c:2035, 3181)
     @test LK.compareStandard(cell(2), _rg("s"), true) == 0              # argvar 2: a string (c:3065)
     @test LK.compareStandard(cell(3), _rf("f", _rg(3)), true) == 0      # argvar 3 (c:3189)
@@ -49,7 +49,7 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
     g = _rf("c", _rconj(_rf("p", _rv(51)), _rf("q", _rv(52))))
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, 1)
-    ld.slots[args + 1] = child(g, 2)
+    LK.putSlotValue!(ld, args + 1, child(g, 2))
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, g), args
     )

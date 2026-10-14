@@ -38,16 +38,16 @@ function _rt_call(db, name::String, args::Vector{_RT})
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
     for (i, x) in enumerate(args)
-        ld.slots[a + i] = x
+        LK.putSlotValue!(ld, a + i, x)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        (:true, [LK.resolve_term(ld, ld.slots[a + i]) for i in 1:length(args)])
+        (:true, [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)])
     elseif rc == LK.PL_S_EXCEPTION
-        (:exception, [LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1])])
+        (:exception, [LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))])
     else
         (:false, _RT[])
     end

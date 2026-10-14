@@ -331,7 +331,7 @@ function push_compiler_warnings(ld::PL_local_data{T}, ci::compileInfo{T})::Bool 
         end
         ci.warnings = nothing                                   # free_compiler_warnings(ci)
     end
-    ld.slots[ci.warning_list + 1] = l
+    setSlotValue!(ld, ci.warning_list + 1, l)
     return true
 end
 
@@ -1216,7 +1216,7 @@ end
 # The cell at variable offset `voffset` of the goal clause's frame (`varFrameP(lTop, voffset)`) := `t`.
 function _local_cell!(ci::compileInfo{T}, voffset::Int, t::T)::Nothing where {T}
     ld = ci.local_ld::PL_local_data{T}
-    ld.slots[varFrameP(ci.local_base, voffset) + 1] = t
+    setSlotValue!(ld, varFrameP(ci.local_base, voffset) + 1, t)
     return nothing
 end
 
@@ -2602,7 +2602,7 @@ function compileClause(
     ci.warning_list = warnings
     ci.warnings = nothing
     if warnings != 0 && ld.variable_names != 0                 # (gvar_value(ATOM_dvariable_names))
-        ci.variable_names = resolve_term(ld, ld.slots[ld.variable_names + 1])
+        ci.variable_names = resolve_term(ld, slotValue(ld, ld.variable_names + 1))
     end
     # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
     ci.head_unify = (def.flags & P_DYNAMIC) == 0 && ld.prolog_flag_optimise_unify
@@ -2621,7 +2621,7 @@ function compileClause(
         if rc != BOOLEX_TRUE
             if rc == NOT_CALLABLE
                 b = new_term_ref(ld)                           # pushWordAsTermRef(body)
-                ld.slots[b + 1] = body::T
+                setSlotValue!(ld, b + 1, body::T)
                 PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
             elseif rc == MAX_ARITY_OVERFLOW
                 PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
@@ -2717,7 +2717,7 @@ function compileGoalClause(
     if rc != BOOLEX_TRUE
         if rc == NOT_CALLABLE
             b = new_term_ref(ld)                               # pushWordAsTermRef(body)
-            ld.slots[b + 1] = body
+            setSlotValue!(ld, b + 1, body)
             PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
         elseif rc == MAX_ARITY_OVERFLOW
             PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
@@ -2783,7 +2783,7 @@ end
 # and taken for facts they would assert other clauses; so no `flags` is set.
 "Whether term reference `t` holds a rule, `Head :- Body` (pl-comp.c)."
 function is_neck(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    p = deRef(ld, ld.slots[t + 1])
+    p = deRef(ld, slotValue(ld, t + 1))
     if isTerm(p)
         _has_functor(p, sym_key(mk_sym(T, Symbol(":-"))), 2) && return true  # FUNCTOR_prove2
         if _has_functor(p, sym_key(mk_sym(T, Symbol("=>"))), 2) ||
@@ -2809,14 +2809,14 @@ function get_head_and_body_clause(
     m::Int
 )::Tuple{Bool, Int} where {T}
     if is_neck(ld, clause)
-        c = deRef(ld, ld.slots[clause + 1])
-        ld.slots[head + 1] = child(c, 2)                         # _PL_get_arg(1, clause, head)
-        ld.slots[body + 1] = child(c, 3)                         # _PL_get_arg(2, clause, body)
+        c = deRef(ld, slotValue(ld, clause + 1))
+        setSlotValue!(ld, head + 1, child(c, 2))                         # _PL_get_arg(1, clause, head)
+        setSlotValue!(ld, body + 1, child(c, 3))                         # _PL_get_arg(2, clause, body)
         ok, m = PL_strip_module_ex(gd, ld, head, m, head)
         ok || return (false, m)
     else
-        ld.slots[head + 1] = ld.slots[clause + 1]               # PL_put_term(head, clause): facts
-        ld.slots[body + 1] = mk_sym(T, Symbol("true"))          # PL_put_atom(body, ATOM_true)
+        setSlotValue!(ld, head + 1, slotValue(ld, clause + 1))               # PL_put_term(head, clause): facts
+        setSlotValue!(ld, body + 1, mk_sym(T, Symbol("true")))          # PL_put_atom(body, ATOM_true)
     end
     return (true, m)
 end
@@ -2894,8 +2894,8 @@ function assert_term!(
             "no tabling, threads"
         )
     )
-    h = deRef(ld, ld.slots[head + 1])
-    b = deRef(ld, ld.slots[body + 1])
+    h = deRef(ld, slotValue(ld, head + 1))
+    b = deRef(ld, slotValue(ld, body + 1))
     if !is_acyclic(ld, h) || !is_acyclic(ld, b)                 # CYCLIC_HEAD, CYCLIC_BODY
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
         return nothing
@@ -2948,8 +2948,8 @@ function assert_term!(
                     T,
                     T[
                         mk_sym(T, :compiler_warnings),
-                        ld.slots[cl + 1],
-                        ld.slots[warnings + 1]
+                        slotValue(ld, cl + 1),
+                        slotValue(ld, warnings + 1)
                     ]
                 )
             )
@@ -3016,7 +3016,7 @@ function record_clause(
     a_owner === nothing && return false
 
     a = PL_get_atom(ld, source)
-    w = deRef(ld, ld.slots[source + 1])
+    w = deRef(ld, slotValue(ld, source + 1))
     if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :-))
         f = ld.read_source.file
         line = ld.read_source.position.lineno
@@ -3024,10 +3024,10 @@ function record_clause(
         loc = sourceloc{T}(f, line)                             # source_file_name, source_line_no
     elseif _hasFunctor(w, mk_sym(T, :(:)), 2)                   # file:line
         arg = PL_new_term_ref(ld)
-        ld.slots[arg + 1] = child(w, 2)
+        setSlotValue!(ld, arg + 1, child(w, 2))
         file = PL_get_atom_ex(ld, arg)
         file === nothing && return false
-        ld.slots[arg + 1] = child(w, 3)
+        setSlotValue!(ld, arg + 1, child(w, 3))
         line = PL_get_integer_ex(ld, arg)
         line === nothing && return false
         loc = sourceloc{T}(file, line)
@@ -3698,7 +3698,7 @@ function decompile_body_range(
 )::Bool where {T}
     variables = clause.prolog_vars != 0 ? (ld.slots, ld.frames[fr].base) : nothing
     di = decompileInfo{T}(ld, clause, start, UInt64(0), T[], DecompileFrame{T}[], variables)
-    return decompileBody!(ld, di, ld.slots[goal + 1], end_, 0)
+    return decompileBody!(ld, di, slotValue(ld, goal + 1), end_, 0)
 end
 
 # PORT: pl-comp.c start_of_cdet
@@ -3777,7 +3777,7 @@ function det_goal_error(
                             mk_expr(
                                 T,
                                 T[
-                                    mk_sym(T, :determinism_error), ld.slots[goal + 1],
+                                    mk_sym(T, :determinism_error), slotValue(ld, goal + 1),
                                     mk_sym(T, :det), mk_sym(T, found), mk_sym(T, :goal)
                                 ]
                             ),

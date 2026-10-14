@@ -37,7 +37,7 @@ it holds none of them, raising the error under `CVT_EXCEPTION`.
 function PL_get_text(
     ld::PL_local_data{T}, l::term_t, flags::UInt32
 )::Union{Nothing, PL_chars_t} where {T}
-    w = deRef(ld, ld.slots[l + 1])
+    w = deRef(ld, slotValue(ld, l + 1))
 
     if (flags & CVT_ATOM) != 0 && isAtom(w)
         is_nil(w) && (flags & CVT_LIST) != 0 && @goto case_list
@@ -83,7 +83,7 @@ function PL_get_text(
                 culprit = new_term_ref(ld)
                 c = result.culprit
                 c === nothing && error("PL_get_text: no culprit")   # set with the status
-                ld.slots[culprit + 1] = c           # *valTermRef(culprit) = result.culprit
+                setSlotValue!(ld, culprit + 1, c)           # *valTermRef(culprit) = result.culprit
                 type = result.status == CVT_nocode ? :character_code : :character
                 PL_error(ld, ERR_TYPE, mk_sym(T, type), culprit)
                 return nothing

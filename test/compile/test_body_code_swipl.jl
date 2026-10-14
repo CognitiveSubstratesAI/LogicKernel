@@ -2948,7 +2948,7 @@ end
         user = LK.MODULE_user(_BGD)
         cl = LK.compileClause(_BGD, ld, p, body, LK.lookupProcedure(p, 0, user), user)
         (cl === nothing && ld.exception_term != 0) || return nothing
-        return ld.slots[ld.exception_term + 1]
+        return LK.slotValue(ld, ld.exception_term + 1)
     end
     for body in (
         _bconj(_bs("q"), _bv(1)),                               # p :- q, _

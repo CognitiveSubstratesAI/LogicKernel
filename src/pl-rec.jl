@@ -46,7 +46,7 @@ Record the term `t` references (pl-rec.c): a copy that no longer needs the bindi
 that undoing them does not change.
 """
 function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
-    p = deRef(ld, ld.slots[t + 1])
+    p = deRef(ld, slotValue(ld, t + 1))
     k = kind(p)
     if k !== VAR && (k !== EXPR || is_ground(p))
         return record{T}(p, nothing, true)
@@ -133,11 +133,11 @@ function copyRecordToGlobal(
     ld::PL_local_data{T}, copy::term_t, r::record{T}
 )::Bool where {T}
     if r.ground
-        ld.slots[copy + 1] = r.term
+        setSlotValue!(ld, copy + 1, r.term)
         return true
     end
     vars = Dict{UInt64, T}()
-    ld.slots[copy + 1] = _rec_copy(ld, vars, r.term)
+    setSlotValue!(ld, copy + 1, _rec_copy(ld, vars, r.term))
     cycles = r.cycles
     if cycles !== nothing
         for (key, v) in cycles

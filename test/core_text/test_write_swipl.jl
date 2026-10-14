@@ -46,7 +46,7 @@ function _tw_call(name::String, args::Vector{_TW}; gd=_TW_GD, ld=_TW_LD)
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
     for (i, x) in enumerate(args)
-        ld.slots[a + i] = x
+        LK.putSlotValue!(ld, a + i, x)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -54,9 +54,9 @@ function _tw_call(name::String, args::Vector{_TW}; gd=_TW_GD, ld=_TW_LD)
     out = try
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            (:true, [LK.resolve_term(ld, ld.slots[a + i]) for i in 1:length(args)])
+            (:true, [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)])
         elseif rc == LK.PL_S_EXCEPTION
-            (:exception, [LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1])])
+            (:exception, [LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))])
         else
             (:false, _TW[])
         end
@@ -73,7 +73,7 @@ end
 function _tw_write(t::_TW, flags::Int; gd=_TW_GD, ld=_TW_LD)::String
     fid = LK.PL_open_foreign_frame(ld)
     r = LK.PL_new_term_refs(ld, 1)
-    ld.slots[r + 1] = t
+    LK.putSlotValue!(ld, r + 1, t)
     bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
     sizep = Ref(0)
     s = LK.Sopenmem(bufp, sizep, "w")
@@ -471,14 +471,14 @@ end
     fid = LK.PL_open_foreign_frame(ld2)
     a = LK.PL_new_term_refs(ld2, 1)
     @test LK.unify_ptrs(ld2, b, _twf("error", _twf("e", b), _tw_var()))
-    ld2.slots[a + 1] = b
+    LK.putSlotValue!(ld2, a + 1, b)
     qid = LK.PL_open_query(
         gd2, ld2, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, th, a
     )
     @test LK.PL_next_solution(gd2, ld2, qid) == LK.PL_S_EXCEPTION
     ex = LK.PL_exception(ld2, qid)
-    @test ex != 0 && !LK.is_acyclic(ld2, ld2.slots[ex + 1])
-    @test _tw_write(ld2.slots[ex + 1], _TW_WRITEQ; gd=gd2, ld=ld2) == "NOTPORTED"
+    @test ex != 0 && !LK.is_acyclic(ld2, LK.slotValue(ld2, ex + 1))
+    @test _tw_write(LK.slotValue(ld2, ex + 1), _TW_WRITEQ; gd=gd2, ld=ld2) == "NOTPORTED"
     LK.PL_close_query(ld2, qid)
     LK.PL_close_foreign_frame(ld2, fid)
 

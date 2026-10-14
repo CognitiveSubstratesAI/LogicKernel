@@ -39,16 +39,16 @@ function _arun(name, args::Vector{_A}; gd=_AGD, ld=_ALD)
     fid = LKA.PL_open_foreign_frame(ld)
     a = LKA.PL_new_term_refs(ld, length(args))
     for (k, t) in enumerate(args)
-        ld.slots[a + k] = t
+        LogicKernel.putSlotValue!(ld, a + k, t)
     end
     qid = LKA.PL_open_query(
         gd, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
     )
     rc = LKA.PL_next_solution(gd, ld, qid)
     out = if rc == LKA.PL_S_EXCEPTION
-        LKA.resolve_term(ld, ld.slots[LKA.PL_exception(ld, qid) + 1])
+        LKA.resolve_term(ld, LogicKernel.slotValue(ld, LKA.PL_exception(ld, qid) + 1))
     else
-        LKA.resolve_term(ld, ld.slots[a + 1])
+        LKA.resolve_term(ld, LogicKernel.slotValue(ld, a + 1))
     end
     LKA.PL_close_query(ld, qid)
     LKA.PL_close_foreign_frame(ld, fid)
@@ -60,20 +60,23 @@ function _arun_proc(gd, ld, p, args::Vector{_A})
     fid = LKA.PL_open_foreign_frame(ld)
     a = LKA.PL_new_term_refs(ld, length(args))
     for (k, t) in enumerate(args)
-        ld.slots[a + k] = t
+        LogicKernel.putSlotValue!(ld, a + k, t)
     end
     qid = LKA.PL_open_query(
         gd, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
     )
     rc = LKA.PL_next_solution(gd, ld, qid)
     out = if rc == LKA.PL_S_EXCEPTION
-        LKA.resolve_term(ld, ld.slots[LKA.PL_exception(ld, qid) + 1])
+        LKA.resolve_term(ld, LogicKernel.slotValue(ld, LKA.PL_exception(ld, qid) + 1))
     else
         mk_expr(
             _A,
             _A[
                 _as(:goal);
-                [LKA.resolve_term(ld, ld.slots[a + k]) for k in eachindex(args)]
+                [
+                    LKA.resolve_term(ld, LogicKernel.slotValue(ld, a + k)) for
+                    k in eachindex(args)
+                ]
             ]
         )
     end
@@ -203,13 +206,13 @@ end
     p = LKA.isCurrentProcedure(sym_key(_as(:is)), 2, LKA.MODULE_system(_AGD))
     fid = LKA.PL_open_foreign_frame(ld)
     a = LKA.PL_new_term_refs(ld, 2)
-    ld.slots[a + 1] = _av()
-    ld.slots[a + 2] = T1
+    LogicKernel.putSlotValue!(ld, a + 1, _av())
+    LogicKernel.putSlotValue!(ld, a + 2, T1)
     qid = LKA.PL_open_query(
         _AGD, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
     )
     @test LKA.PL_next_solution(_AGD, ld, qid) == LKA.PL_S_EXCEPTION
-    ball = ld.slots[LKA.PL_exception(ld, qid) + 1]
+    ball = LogicKernel.slotValue(ld, LKA.PL_exception(ld, qid) + 1)
     formal = LKA.deRef(ld, child(ball, 2))
     @test lk_name(child(formal, 1)) === :type_error &&
         lk_name(child(formal, 2)) === :expression
@@ -309,8 +312,10 @@ end
     p = LKA.isCurrentProcedure(sym_key(mk_sym(D, :is)), 2, LKA.MODULE_system(dgd))
     fid = LKA.PL_open_foreign_frame(dld)
     a = LKA.PL_new_term_refs(dld, 2)
-    dld.slots[a + 1] = mk_var(D, UInt64(1))
-    dld.slots[a + 2] = mk_expr(D, D[mk_sym(D, :+), mk_gnd(D, typemax(Int64)), mk_gnd(D, 1)])
+    LogicKernel.putSlotValue!(dld, a + 1, mk_var(D, UInt64(1)))
+    LogicKernel.putSlotValue!(
+        dld, a + 2, mk_expr(D, D[mk_sym(D, :+), mk_gnd(D, typemax(Int64)), mk_gnd(D, 1)])
+    )
     qid = LKA.PL_open_query(dgd, dld, nothing, LKA.PL_Q_CATCH_EXCEPTION, p, a)
     @test_throws ArgumentError LKA.PL_next_solution(dgd, dld, qid)
     @test dld.query == 0                                       # the query is closed (decision 1)
@@ -333,13 +338,13 @@ end
     po = LKA.isCurrentProcedure(sym_key(lk_sym(O, :is)), 2, LKA.MODULE_system(ogd))
     fid = LKA.PL_open_foreign_frame(old)
     a = LKA.PL_new_term_refs(old, 2)
-    old.slots[a + 1] = mk_var(O, UInt64(1))
-    old.slots[a + 2] = lk_gnd(O, true)
+    LogicKernel.putSlotValue!(old, a + 1, mk_var(O, UInt64(1)))
+    LogicKernel.putSlotValue!(old, a + 2, lk_gnd(O, true))
     qid = LKA.PL_open_query(
         ogd, old, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, po, a
     )
     @test LKA.PL_next_solution(ogd, old, qid) == LKA.PL_S_EXCEPTION
-    ball = LKA.resolve_term(old, old.slots[LKA.PL_exception(old, qid) + 1])
+    ball = LKA.resolve_term(old, LogicKernel.slotValue(old, LKA.PL_exception(old, qid) + 1))
     @test lk_name(child(child(ball, 2), 2)) == :evaluable
     LKA.PL_close_query(old, qid)
     LKA.PL_close_foreign_frame(old, fid)

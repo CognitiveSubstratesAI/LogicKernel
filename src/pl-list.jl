@@ -38,7 +38,7 @@ function pl_dlength2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    p = deRef(ld, ld.slots[A2 + 1])
+    p = deRef(ld, slotValue(ld, A2 + 1))
 
     if isInteger(p) && integer_is_int64(p)              # PL_get_intptr(A2, &len)
         len = Int(int64_value(p))
@@ -60,7 +60,7 @@ function pl_dlength2_va(
             for i in len:-1:1
                 l = mk_expr(T, T[dot, mk_var(T, k + UInt64(i - 1)), l])
             end
-            ld.slots[list + 1] = l
+            setSlotValue!(ld, list + 1, l)
 
             return PL_unify(ld, A1, list) ? FTRUE : FFALSE
         elseif len == 0
@@ -260,7 +260,7 @@ function extract_key(ld::PL_local_data{T}, p1::T, pair::Bool)::Union{Nothing, T}
             return deRef(ld, child(p1, 2))              # argTermP(*p1, 0); deRef(p1)
         else
             err_t = PL_new_term_ref(ld)                 # pushWordAsTermRef(p1)
-            ld.slots[err_t + 1] = p1
+            setSlotValue!(ld, err_t + 1, p1)
 
             PL_error(ld, "keysort", 2, "", ERR_TYPE, mk_sym(T, :pair), err_t)
             PL_reset_term_refs(ld, err_t)               # popTermRef()
@@ -292,7 +292,7 @@ that needs no key. A cyclic list is sorted when `remove_dups`.
 function prolog_list_to_sort_list(
     ld::PL_local_data{T}, t::term_t, remove_dups::Bool, pair::Bool
 )::Tuple{list_sort, Union{Nothing, List_Record{T}}} where {T}
-    len, tail = skip_list(ld, ld.slots[t + 1])
+    len, tail = skip_list(ld, slotValue(ld, t + 1))
     if !(is_nil(tail) ||                                # proper list
          (is_pair(tail) && remove_dups))                # sort/2 on cyclic list
         if kind(tail) === VAR
@@ -315,7 +315,7 @@ function prolog_list_to_sort_list(
         Vector{Int}(undef, len + 1), Vector{T}(undef, len), Vector{T}(undef, len)
     )
 
-    l = deRef(ld, ld.slots[t + 1])
+    l = deRef(ld, slotValue(ld, t + 1))
     for p in 1:len
         item = deRef(ld, child(l, 2))                   # HeadList(l)
         key = extract_key(ld, item, pair)
@@ -351,7 +351,7 @@ function put_sort_list(
     for i in length(items):-1:1
         list = mk_expr(T, T[dot, items[i], list])
     end
-    ld.slots[l + 1] = list
+    setSlotValue!(ld, l + 1, list)
     return nothing
 end
 

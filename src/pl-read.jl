@@ -1090,7 +1090,7 @@ function errorWarningA1(
     ld.exception_processing = true                  # allow using spare stack
     ex = makeErrorTerm(id_str, id_arg, id_term, rd)
     rd.has_exception = true
-    ld.slots[rd.exception + 1] = ex
+    setSlotValue!(ld, rd.exception + 1, ex)
     return false
 end
 
@@ -2341,7 +2341,7 @@ function readValHandle(term::Int, rd::read_data{T})::T where {T}
             var.variable = PL_new_term_ref(ld)
             @assert var.variable != 0
         end
-        ld.slots[var.variable + 1]                  # (or) reference to existing var
+        slotValue(ld, var.variable + 1)                  # (or) reference to existing var
     elseif tag == TS_UNBOUND
         mk_var(T, allocGlobalVars!(rd.ld, 1))               # setVar(*argp)
     else
@@ -3388,20 +3388,20 @@ function bind_variable_names(rd::read_data{T})::Bool where {T}
                 mk_expr(
                     T,
                     T[mk_sym(T, :(=)), _atom_from_text(T, String(copy(var.name))),
-                        ld.slots[var.variable + 1]]
+                        slotValue(ld, var.variable + 1)]
                 )
             )
         end
     end
-    return unify_ptrs(ld, ld.slots[rd.varnames + 1], _read_list_term(pairs, mk_nil(T)))
+    return unify_ptrs(ld, slotValue(ld, rd.varnames + 1), _read_list_term(pairs, mk_nil(T)))
 end
 
 # PORT: pl-read.c bind_variables
 "Unify the `variables` term with the list of the variables read (pl-read.c)."
 function bind_variables(rd::read_data{T})::Bool where {T}
     ld = rd.ld
-    vars = T[ld.slots[var.variable + 1] for var in rd.vt.var_buffer]    # FOR_VARS(var)
-    return unify_ptrs(ld, ld.slots[rd.variables + 1], _read_list_term(vars, mk_nil(T)))
+    vars = T[slotValue(ld, var.variable + 1) for var in rd.vt.var_buffer]    # FOR_VARS(var)
+    return unify_ptrs(ld, slotValue(ld, rd.variables + 1), _read_list_term(vars, mk_nil(T)))
 end
 
 # PORT: pl-read.c read_term
@@ -3443,7 +3443,7 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
         @goto out
     end
 
-    rc = unify_ptrs(ld, ld.slots[term + 1], _ts_term(result, rd))    # PL_unify(term, result[0])
+    rc = unify_ptrs(ld, slotValue(ld, term + 1), _ts_term(result, rd))    # PL_unify(term, result[0])
 
     truncate_term_stack(result, rd)
     rc || @goto out
@@ -3575,7 +3575,7 @@ function singletonWarning(
         l = mk_expr(T, T[mk_sym(T, Symbol("[|]")), n, l])
     end
     return printMessage(
-        ld, :warning, mk_expr(T, T[mk_sym(T, Symbol(which)), ld.slots[term + 1], l])
+        ld, :warning, mk_expr(T, T[mk_sym(T, Symbol(which)), slotValue(ld, term + 1), l])
     )
 end
 
@@ -3594,12 +3594,14 @@ function check_singletons(term::term_t, rd::read_data{T})::Bool where {T}
                     mk_expr(
                         T,
                         T[mk_sym(T, :(=)), _atom_from_text(T, String(copy(var.name))),
-                            ld.slots[var.variable + 1]]
+                            slotValue(ld, var.variable + 1)]
                     )
                 )
             end
         end
-        return unify_ptrs(ld, ld.slots[rd.singles + 1], _read_list_term(pairs, mk_nil(T)))
+        return unify_ptrs(
+            ld, slotValue(ld, rd.singles + 1), _read_list_term(pairs, mk_nil(T))
+        )
     end
     singletons = String[]                           # just report
     for var in rd.vt.var_buffer                     # FOR_VARS(var): singletons
@@ -3633,7 +3635,7 @@ function reportReadError(rd::read_data{T})::Bool where {T}
     ld = rd.ld
     rd.on_error === :error && return PL_raise_exception(ld, rd.exception)
     if rd.on_error !== :quiet
-        printMessage(ld, :error, ld.slots[rd.exception + 1])
+        printMessage(ld, :error, slotValue(ld, rd.exception + 1))
     end
     PL_clear_exception(ld)
 
@@ -3714,7 +3716,7 @@ function read_clause(
                     PL_close_foreign_frame(ld, fid)
                     throw(
                         NotPortedError{T}(
-                            ld.slots[v + 1], "read_clause's $what option",
+                            slotValue(ld, v + 1), "read_clause's $what option",
                             "R2 (term positions)"
                         )
                     )
@@ -3908,7 +3910,7 @@ function read_term_from_stream(
     )
         v != 0 && throw(
             NotPortedError{T}(
-                ld.slots[v + 1], "read_term's $what option", "R2 (term positions)"
+                slotValue(ld, v + 1), "read_term's $what option", "R2 (term positions)"
             )
         )
     end

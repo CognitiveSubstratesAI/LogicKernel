@@ -221,7 +221,7 @@ end
     @test length(ld.fliframes) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_FLIFRAME)
     r = LK.PL_new_term_ref(ld)
     @test r == perm + 4
-    LK.Trail!(ld, var_key(ld.slots[r + 1]), _ls("a"))
+    LK.Trail!(ld, var_key(LK.slotValue(ld, r + 1)), _ls("a"))
     LK.pushFrame!(ld, ld.lTop)
     ld.lTop += 20
     LK.newChoice(ld, LK.CHP_JUMP, 1)
@@ -286,7 +286,7 @@ end
 
     # close: the bindings are KEPT, the frame and its references are gone
     r = LK.PL_new_term_ref(ld)
-    k = var_key(ld.slots[r + 1])
+    k = var_key(LK.slotValue(ld, r + 1))
     LK.Trail!(ld, k, _ls("a"))
     LK.PL_close_foreign_frame(ld, fid)
     @test ld.lTop == fid && ld.fli_context == 1 && ld.nfliframes == 1
@@ -295,7 +295,7 @@ end
     # rewind: the bindings are UNDONE, the references dropped, the frame stays open
     fid = LK.PL_open_foreign_frame(ld)
     r = LK.PL_new_term_refs(ld, 2)
-    k = var_key(ld.slots[r + 1])
+    k = var_key(LK.slotValue(ld, r + 1))
     LK.Trail!(ld, k, _ls("b"))
     inner = LK.PL_open_foreign_frame(ld)
     LK.PL_rewind_foreign_frame(ld, fid)
@@ -305,7 +305,7 @@ end
 
     # discard: the bindings are undone and the frame is closed
     r = LK.PL_new_term_ref(ld)
-    k = var_key(ld.slots[r + 1])
+    k = var_key(LK.slotValue(ld, r + 1))
     LK.Trail!(ld, k, _ls("c"))
     LK.PL_discard_foreign_frame(ld, fid)
     @test ld.lTop == fid && ld.fli_context == 1 && LK._binding(ld, k) === nothing
@@ -328,7 +328,7 @@ end
     n0 = nrefs(ld)                                          # the engine's permanent ones
     r = LK.PL_new_term_refs(ld, 3)
     @test r == LK.SIZEOF_FLIFRAME + n0 && ld.lTop == r + 3
-    vs = [ld.slots[r + 1 + i] for i in 0:2]
+    vs = [LK.slotValue(ld, r + 1 + i) for i in 0:2]
     @test all(v -> kind(v) === VAR, vs) && length(unique(var_key.(vs))) == 3
     @test all(v -> var_key(v) >= KERNEL_VAR_BASE, vs)       # the kernel's own variables
     @test nrefs(ld) == n0 + 3 && ld.lTop == LK.refFliP(base, nrefs(ld))   # O_CHECK_TERM_REFS
@@ -339,11 +339,12 @@ end
     @test LK.PL_new_term_refs(ld, 0) == ld.lTop && nrefs(ld) == n0 + 5
 
     # copy and put: the new reference holds the term the other one references, dereferenced
-    LK.Trail!(ld, var_key(ld.slots[r + 1]), _lf("f", _ls("a")))
+    LK.Trail!(ld, var_key(LK.slotValue(ld, r + 1)), _lf("f", _ls("a")))
     c = LK.PL_copy_term_ref(ld, r)
-    @test c == r + 5 && nrefs(ld) == n0 + 6 && lk_eq(ld.slots[c + 1], _lf("f", _ls("a")))
+    @test c == r + 5 && nrefs(ld) == n0 + 6 &&
+        lk_eq(LK.slotValue(ld, c + 1), _lf("f", _ls("a")))
     @test LK.PL_put_term(ld, t, r + 1)
-    @test ld.slots[t + 1] === ld.slots[r + 2]                 # an unbound variable: itself
+    @test LK.slotValue(ld, t + 1) === LK.slotValue(ld, r + 2)                 # an unbound variable: itself
 
     # reset: lTop back to `r`, the count recomputed
     LK.PL_reset_term_refs(ld, r + 1)
@@ -440,10 +441,10 @@ end
     from = LK.argFrameP(to, 5)                              # the arguments pushed above lTop
     xs = [_ls("a"), _lf("f", _lv(1)), lk_gnd(_L, 3)]
     for (i, x) in enumerate(xs)
-        ld.slots[LK.argFrameP(from, i - 1) + 1] = x
+        LK.putSlotValue!(ld, LK.argFrameP(from, i - 1) + 1, x)
     end
     LK.copyFrameArguments(ld, from, to, 3)
-    @test all(i -> ld.slots[LK.argFrameP(to, i - 1) + 1] === xs[i], 1:3)
+    @test all(i -> LK.slotValue(ld, LK.argFrameP(to, i - 1) + 1) === xs[i], 1:3)
     LK.copyFrameArguments(ld, from, to + 100, 0)            # argc 0: nothing
     @test !isassigned(ld.slots, LK.argFrameP(to + 100, 0) + 1)
 end
@@ -490,7 +491,7 @@ end
     ld.stacks_limit = region(ld)
     ld.lTop = ld.lMax - 10
     @test !LK.ensureLocalSpace(ld, 20)
-    ball = ld.slots[ld.exception_term + 1]
+    ball = LK.slotValue(ld, ld.exception_term + 1)
     @test lk_eq(ball, _lf("error", _lf("resource_error", _ls("stack")), _ls("local")))
     @test ld.outofstack && ld.exception_processing
     @test ld.local_spare == 0 && ld.lMax == region(ld)                 # the spare enabled
@@ -515,11 +516,13 @@ end
     b = LK.PL_new_term_ref(ld3)
     # a ball classify_exception ranks EXCEPT_RESOURCE enables the spare: error(resource_error(_), _)
     # (since upstream's fix 85d0cc2; the bare atom `resource_error`, the class until then, does not)
-    ld3.slots[b + 1] = _lf("error", _ls("resource_error"), _ls("c"))
+    LK.putSlotValue!(ld3, b + 1, _lf("error", _ls("resource_error"), _ls("c")))
     LK.PL_raise_exception(ld3, b)
     @test ld3.exception_processing && ld3.local_spare == LK.LOCAL_SPARE
     LK.PL_clear_exception(ld3)
-    ld3.slots[b + 1] = _lf("error", _lf("resource_error", _ls("memory")), _ls("c"))
+    LK.putSlotValue!(
+        ld3, b + 1, _lf("error", _lf("resource_error", _ls("memory")), _ls("c"))
+    )
     LK.PL_raise_exception(ld3, b)
     @test ld3.exception_processing && ld3.local_spare == 0
     LK.PL_clear_exception(ld3)
@@ -534,7 +537,9 @@ end
     ld4.lTop = ld4.lMax - 2
     LK.PL_error(ld4, LK.ERR_INSTANTIATION)
     @test ld4.exception_term != 0 && ld4.local_spare == 0
-    @test lk_eq(child(ld4.slots[ld4.exception_term + 1], 2), _ls("instantiation_error"))
+    @test lk_eq(
+        child(LK.slotValue(ld4, ld4.exception_term + 1), 2), _ls("instantiation_error")
+    )
     # has_emergency_space takes what is lacking from the spare, and no more
     ld2 = LK.PL_local_data{_L}()
     ld2.lTop = ld2.lMax - 2
@@ -580,8 +585,8 @@ LK_TERM_IMPL == "reference" &&
             LK.lowerLTop!(ld, base)
             nothing
         end
-        ld.slots[LK.argFrameP(ld.lTop, 0) + 1] = _ls("a")
-        ld.slots[LK.argFrameP(ld.lTop, 1) + 1] = _ls("b")
+        LK.putSlotValue!(ld, LK.argFrameP(ld.lTop, 0) + 1, _ls("a"))
+        LK.putSlotValue!(ld, LK.argFrameP(ld.lTop, 1) + 1, _ls("b"))
         cycle!(ld), deep!(ld, 1000)
         @test @allocated(cycle!(ld)) == 0
         @test @allocated(deep!(ld, 1000)) == 0                # 1000 frames and choice points deep

@@ -146,7 +146,7 @@ Argument `i` (0-based, as upstream's `argv[i]`) of a call, DEREFERENCED: upstrea
 bound argument keys by its value. (A frame slot almost always holds a variable bound to the
 argument, so without this no argument would narrow the search.)
 """
-argv_at(v::argv_frame, i::Int) = deRef(v.ld, v.ld.slots[v.base + i + 1])
+argv_at(v::argv_frame, i::Int) = deRef(v.ld, slotValue(v.ld, v.base + i + 1))
 argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
 
 # PORT: pl-index.c canIndex

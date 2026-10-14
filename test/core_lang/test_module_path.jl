@@ -120,11 +120,15 @@ end
     function strip(t, m=0)
         ld = LK.PL_local_data{_MP}()
         r = LK.PL_new_term_refs(ld, 2)
-        ld.slots[r + 1] = t
+        LK.putSlotValue!(ld, r + 1, t)
         ok, mod = LK.PL_strip_module_ex(gd, ld, r, m, r + 1)
         formal =
-            ld.exception_term == 0 ? nothing : child(ld.slots[ld.exception_term + 1], 2)
-        return (ok, mod, ld.slots[r + 2], formal)
+            if ld.exception_term == 0
+                nothing
+            else
+                child(LK.slotValue(ld, ld.exception_term + 1), 2)
+            end
+        return (ok, mod, LK.slotValue(ld, r + 2), formal)
     end
     ok, m, plain, _ = strip(_mpf(":", _mps(:user), _mps(:foo)))
     @test ok && m == user.index && lk_eq(plain, _mps(:foo))
@@ -151,5 +155,6 @@ end
     @test LK.pl_unify!(ld, X, _mpf(":", _mps(:user), X))
     ok, _, _ = LK.stripModuleName(ld, X)
     @test !ok &&
-        lk_name(child(child(ld.slots[ld.exception_term + 1], 2), 2)) === :acyclic_term
+        lk_name(child(child(LK.slotValue(ld, ld.exception_term + 1), 2), 2)) ===
+          :acyclic_term
 end

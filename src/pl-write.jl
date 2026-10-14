@@ -1623,7 +1623,7 @@ end
 "Write the term `term` references at priority `prec` (pl-write.c)."
 function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool where {T}
     ld = options.ld
-    t = ld.slots[term + 1]
+    t = slotValue(ld, term + 1)
 
     if _ison(options, PL_WRT_PARTIAL) && prec != 999 && prec != 1200
         wflags = W_OP_ARG
@@ -1815,7 +1815,7 @@ function bind_varnames(ld::PL_local_data{T}, names::term_t)::Bool where {T}
             end
 
             if PL_is_variable(ld, var)
-                ld.slots[tmp + 1] = mk_expr(T, T[mk_sym(T, Symbol("\$VAR")), name])
+                setSlotValue!(ld, tmp + 1, mk_expr(T, T[mk_sym(T, Symbol("\$VAR")), name]))
                 PL_unify(ld, var, tmp) || return false      # PL_unify_term(var, FUNCTOR_isovar1, …)
             end
         else
@@ -1895,12 +1895,12 @@ function pl_write_term3(
     end
     if priority < 0 || priority > OP_MAXPRIORITY
         t = PL_new_term_ref(ld)
-        ld.slots[t + 1] = mk_gnd(T, priority)           # PL_put_integer(t, priority)
+        setSlotValue!(ld, t + 1, mk_gnd(T, priority))           # PL_put_integer(t, priority)
         return PL_error(ld, ERR_DOMAIN, mk_sym(T, :operator_priority), t)
     end
     if spacing !== :standard && spacing !== :next_argument
         t = PL_new_term_ref(ld)
-        ld.slots[t + 1] = vals[22]::T                   # PL_put_atom(t, options.spacing)
+        setSlotValue!(ld, t + 1, vals[22]::T)                   # PL_put_atom(t, options.spacing)
         return PL_error(ld, ERR_DOMAIN, mk_sym(T, :spacing), t)
     end
 
@@ -1917,7 +1917,8 @@ function pl_write_term3(
     if gportray != 0
         throw(
             NotPortedError{T}(
-                ld.slots[gportray + 1], "write_term's portray_goal option (calling Prolog)",
+                slotValue(ld, gportray + 1),
+                "write_term's portray_goal option (calling Prolog)",
                 "V9 (the meta-call)"
             )
         )
@@ -2088,7 +2089,7 @@ function pl_print2(ld::PL_local_data{T}, stream::term_t, term::term_t)::foreign_
     fid = PL_open_foreign_frame(ld)
     opts = PL_new_term_ref(ld)
 
-    ld.slots[opts + 1] = _print_write_options(T)    # PL_current_prolog_flag(ATOM_print_write_options, …)
+    setSlotValue!(ld, opts + 1, _print_write_options(T))    # PL_current_prolog_flag(ATOM_print_write_options, …)
     rc = pl_write_term3(ld, stream, term, opts)
 
     PL_discard_foreign_frame(ld, fid)
@@ -2109,7 +2110,7 @@ function pl_write_canonical2(
         options = nv_options{T}(
             mk_sym(T, Symbol("\$VAR")),              # FUNCTOR_isovar1
             0, AV_SKIP,
-            is_acyclic(ld, ld.slots[term + 1]) ? 1 : 0,   # PL_is_acyclic(term)
+            is_acyclic(ld, slotValue(ld, term + 1)) ? 1 : 0,   # PL_is_acyclic(term)
             false
         )
 

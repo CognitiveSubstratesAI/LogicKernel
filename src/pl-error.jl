@@ -95,10 +95,14 @@ function _PL_error_close!(
         else
             mk_var(T, allocGlobalVars!(ld, 1))                   # PL_new_term_ref(): unbound
         end
-        ld.slots[swi + 1] = mk_expr(T, T[mk_sym(T, :context), predterm, msgterm])
+        setSlotValue!(ld, swi + 1, mk_expr(T, T[mk_sym(T, :context), predterm, msgterm]))
     end
-    ld.slots[except + 1] = mk_expr(
-        T, T[mk_sym(T, :error), ld.slots[formal + 1], ld.slots[swi + 1]]
+    setSlotValue!(
+        ld,
+        except + 1,
+        mk_expr(
+            T, T[mk_sym(T, :error), slotValue(ld, formal + 1), slotValue(ld, swi + 1)]
+        )
     )
     rc = PL_raise_exception(ld, except)
     PL_close_foreign_frame(ld, fid)
@@ -117,7 +121,7 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code, p1::T, p2::T)::Bool w
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_OCCURS_CHECK
-    ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :occurs_check), p1, p2])
+    setSlotValue!(ld, formal + 1, mk_expr(T, T[mk_sym(T, :occurs_check), p1, p2]))
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
@@ -134,7 +138,7 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code)::Bool where {T}
     h === nothing && return false
     caller, fid, except, formal, swi = h
     if id == ERR_INSTANTIATION
-        ld.slots[formal + 1] = mk_sym(T, :instantiation_error)      # err_instantiation:
+        setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))      # err_instantiation:
     else                                                            # evaluation_error(formal, …)
         what = if id == ERR_AR_UNDEF
             :undefined
@@ -147,7 +151,9 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code)::Bool where {T}
         end
         @assert id == ERR_AR_UNDEF || id == ERR_AR_OVERFLOW || id == ERR_AR_UNDERFLOW ||
             id == ERR_AR_RAT_OVERFLOW
-        ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :evaluation_error), mk_sym(T, what)])
+        setSlotValue!(
+            ld, formal + 1, mk_expr(T, T[mk_sym(T, :evaluation_error), mk_sym(T, what)])
+        )
     end
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -167,7 +173,7 @@ function PL_error(
     caller, fid, except, formal, swi = h
     @assert id == ERR_AR_TYPE
     actual = put_number(T, num)                                     # _PL_put_number(actual, num)
-    ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :type_error), expected, actual])
+    setSlotValue!(ld, formal + 1, mk_expr(T, T[mk_sym(T, :type_error), expected, actual]))
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
@@ -182,8 +188,10 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code, f::Tuple{T, Int})::Bo
     caller, fid, except, formal, swi = h
     @assert id == ERR_NOT_EVALUABLE
     actual = mk_expr(T, T[mk_sym(T, :/), f[1], mk_gnd(T, f[2])])   # put_name_arity(actual, f)
-    ld.slots[formal + 1] = mk_expr(
-        T, T[mk_sym(T, :type_error), mk_sym(T, :evaluable), actual]
+    setSlotValue!(
+        ld, formal + 1, mk_expr(
+            T, T[mk_sym(T, :type_error), mk_sym(T, :evaluable), actual]
+        )
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -202,7 +210,7 @@ function rewrite_callable(ld::PL_local_data{T}, expected::T, actual::term_t)::T 
     loops = 0
     colon = sym_key(mk_sym(T, :(:)))
     while true
-        t = deRef(ld, ld.slots[actual + 1])
+        t = deRef(ld, slotValue(ld, actual + 1))
         # PL_is_functor(actual, FUNCTOR_colon2)
         (
             kind(t) === EXPR && nchildren(t) == 3 && kind(child(t, 1)) === SYM &&
@@ -210,13 +218,13 @@ function rewrite_callable(ld::PL_local_data{T}, expected::T, actual::term_t)::T 
         ) || break
         a = deRef(ld, child(t, 2))                                  # _PL_get_arg(1, actual, a)
         if !isTextAtom(a)                                           # !PL_is_atom(a)
-            ld.slots[actual + 1] = a                                # PL_put_term(actual, a)
+            setSlotValue!(ld, actual + 1, a)                                # PL_put_term(actual, a)
             return mk_sym(T, :atom)                                 # *expected = ATOM_atom
         else
-            ld.slots[actual + 1] = child(t, 3)                      # _PL_get_arg(2, actual, a)
+            setSlotValue!(ld, actual + 1, child(t, 3))                      # _PL_get_arg(2, actual, a)
         end
         loops += 1
-        if loops > 100 && !is_acyclic(ld, ld.slots[actual + 1])
+        if loops > 100 && !is_acyclic(ld, slotValue(ld, actual + 1))
             break
         end
     end
@@ -253,25 +261,41 @@ function PL_error(
     var = PL_is_variable(ld, actual)
     if id == ERR_TYPE
         if var && !(kind(a) === SYM && sym_key(a) == sym_key(mk_sym(T, :variable)))
-            ld.slots[formal + 1] = mk_sym(T, :instantiation_error)  # goto err_instantiation
+            setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))  # goto err_instantiation
         else
-            ld.slots[formal + 1] = mk_expr(
-                T, T[mk_sym(T, :type_error), a, ld.slots[actual + 1]]
+            setSlotValue!(
+                ld,
+                formal + 1,
+                mk_expr(
+                    T, T[mk_sym(T, :type_error), a, slotValue(ld, actual + 1)]
+                )
             )
         end
     elseif id == ERR_EXISTENCE                      # (since R1e's write/1 family: streams)
-        ld.slots[formal + 1] = mk_expr(
-            T, T[mk_sym(T, :existence_error), a, ld.slots[actual + 1]]
+        setSlotValue!(
+            ld,
+            formal + 1,
+            mk_expr(
+                T, T[mk_sym(T, :existence_error), a, slotValue(ld, actual + 1)]
+            )
         )
     elseif id == ERR_STREAM_OP                      # (since R1e's write/1 family)
-        ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :io_error), a, ld.slots[actual + 1]])
+        setSlotValue!(
+            ld,
+            formal + 1,
+            mk_expr(T, T[mk_sym(T, :io_error), a, slotValue(ld, actual + 1)])
+        )
     else
         @assert id == ERR_DOMAIN
         if var
-            ld.slots[formal + 1] = mk_sym(T, :instantiation_error)  # goto err_instantiation
+            setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))  # goto err_instantiation
         else
-            ld.slots[formal + 1] = mk_expr(
-                T, T[mk_sym(T, :domain_error), a, ld.slots[actual + 1]]
+            setSlotValue!(
+                ld,
+                formal + 1,
+                mk_expr(
+                    T, T[mk_sym(T, :domain_error), a, slotValue(ld, actual + 1)]
+                )
             )
         end
     end
@@ -292,10 +316,19 @@ function PL_error(
     caller, fid, except, formal, swi = h
     @assert id == ERR_CHARS_TYPE
     if PL_is_variable(ld, actual) && expected != "variable"
-        ld.slots[formal + 1] = mk_sym(T, :instantiation_error)      # goto err_instantiation
+        setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))      # goto err_instantiation
     else
-        ld.slots[formal + 1] = mk_expr(
-            T, T[mk_sym(T, :type_error), mk_sym(T, Symbol(expected)), ld.slots[actual + 1]]
+        setSlotValue!(
+            ld,
+            formal + 1,
+            mk_expr(
+                T,
+                T[
+                    mk_sym(T, :type_error),
+                    mk_sym(T, Symbol(expected)),
+                    slotValue(ld, actual + 1)
+                ]
+            )
         )
     end
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
@@ -320,9 +353,14 @@ function PL_error(
         caller = clr
     end
     gd = _query_gd(ld)
-    ld.slots[pred + 1] = unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY)
-    ld.slots[formal + 1] = mk_expr(
-        T, T[mk_sym(T, :existence_error), mk_sym(T, :procedure), ld.slots[pred + 1]]
+    setSlotValue!(ld, pred + 1, unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY))
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T,
+            T[mk_sym(T, :existence_error), mk_sym(T, :procedure), slotValue(ld, pred + 1)]
+        )
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -348,7 +386,7 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_REPRESENTATION
-    ld.slots[formal + 1] = mk_expr(T, T[mk_sym(T, :representation_error), what])
+    setSlotValue!(ld, formal + 1, mk_expr(T, T[mk_sym(T, :representation_error), what]))
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
@@ -368,15 +406,24 @@ function PL_error(
     def = proc.definition                                           # goto modify_static
     pred = new_term_ref(ld)
     gd = _query_gd(ld)
-    ld.slots[pred + 1] = unify_definition(
-        gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM
+    setSlotValue!(
+        ld,
+        pred + 1,
+        unify_definition(
+            gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM
+        )
     )
-    ld.slots[formal + 1] = mk_expr(
-        T,
-        T[
-            mk_sym(T, :permission_error), mk_sym(T, :modify), mk_sym(T, :static_procedure),
-            ld.slots[pred + 1]
-        ]
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T,
+            T[
+                mk_sym(T, :permission_error), mk_sym(T, :modify),
+                mk_sym(T, :static_procedure),
+                slotValue(ld, pred + 1)
+            ]
+        )
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -396,11 +443,19 @@ function PL_error(
     @assert id == ERR_PERMISSION_PROC
     pi = new_term_ref(ld)
     gd = _query_gd(ld)
-    ld.slots[pi + 1] = unify_definition(                       # PL_unify_predicate(pi, pred, …)
-        gd, MODULE_user(gd), proc.definition, GP_NAMEARITY | GP_HIDESYSTEM
+    setSlotValue!(
+        ld,
+        pi + 1,
+        unify_definition(                       # PL_unify_predicate(pi, pred, …)
+            gd, MODULE_user(gd), proc.definition, GP_NAMEARITY | GP_HIDESYSTEM
+        )
     )
-    ld.slots[formal + 1] = mk_expr(
-        T, T[mk_sym(T, :permission_error), op, type, ld.slots[pi + 1]]
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T, T[mk_sym(T, :permission_error), op, type, slotValue(ld, pi + 1)]
+        )
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -418,8 +473,12 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_PERMISSION
-    ld.slots[formal + 1] = mk_expr(
-        T, T[mk_sym(T, :permission_error), action, type, ld.slots[obj + 1]]
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T, T[mk_sym(T, :permission_error), action, type, slotValue(ld, obj + 1)]
+        )
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
@@ -440,8 +499,12 @@ function PL_error(
     @assert id == ERR_DETERMINISM
     gd = _query_gd(ld)
     pi = unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM)
-    ld.slots[formal + 1] = mk_expr(
-        T, T[mk_sym(T, :determinism_error), pi, expected, found, decl]
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T, T[mk_sym(T, :determinism_error), pi, expected, found, decl]
+        )
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -459,15 +522,19 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_DET_GOAL
-    ld.slots[formal + 1] = mk_expr(
-        T,
-        T[
-            mk_sym(T, :determinism_error),
-            ld.slots[goal + 1],
-            expected,
-            found,
-            mk_sym(T, :goal)
-        ]
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T,
+            T[
+                mk_sym(T, :determinism_error),
+                slotValue(ld, goal + 1),
+                expected,
+                found,
+                mk_sym(T, :goal)
+            ]
+        )
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -537,7 +604,7 @@ The size term reference `t` holds — a non-negative integer — or `nothing` af
 (pl-error.c).
 """
 function PL_get_size_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    p = deRef(ld, ld.slots[t + 1])
+    p = deRef(ld, slotValue(ld, t + 1))
     if isInteger(p)
         if integer_is_int64(p)
             v = int64_value(p)

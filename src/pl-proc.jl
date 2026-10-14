@@ -125,7 +125,7 @@ past `MAXARITY`, or the name is no callable atom: then `type_error(callable, Hea
 function get_head_functor(
     ld::PL_local_data{T}, head::term_t, how::Int
 )::Tuple{T, Int} where {T}
-    t = deRef(ld, ld.slots[head + 1])
+    t = deRef(ld, slotValue(ld, head + 1))
     if kind(t) === EXPR && nchildren(t) >= 1                    # PL_get_functor(head, fdef)
         name, arity = child(t, 1), nchildren(t) - 1
     elseif kind(t) === SYM                                      # isCallableAtom || isReservedSymbol
@@ -1046,7 +1046,7 @@ function attribute_mask(ld::PL_local_data{T}, key::T)::UInt64 where {T}
         sym_key(key) == sym_key(mk_sym(T, k)) && return mask
     end
     t = PL_new_term_ref(ld)
-    ld.slots[t + 1] = key
+    setSlotValue!(ld, t + 1, key)
     PL_domain_error(ld, "predicate_property", t)
     return UInt64(0)
 end
@@ -1056,7 +1056,7 @@ end
 # `false`, `on`, `off` — then 0 or 1; else `type_error(bool, T)` (`PL_get_bool_ex`).
 "`true`/`on`/1 → 1, `false`/`off`/0 → 0; else `nothing` with `type_error(bool, T)` (pl-proc.c)."
 function get_bool_or_int_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     if isTextAtom(w)
         k = sym_key(w)
         (k == sym_key(mk_sym(T, Symbol("true"))) || k == sym_key(mk_sym(T, :on))) &&
@@ -1090,13 +1090,13 @@ function get_procedure(
     head = PL_new_term_ref(ld)
     ok, m = PL_strip_module(gd, ld, descr, 0, head)
     ok || return nothing
-    h = deRef(ld, ld.slots[head + 1])
+    h = deRef(ld, slotValue(ld, head + 1))
     if _hasFunctor(h, mk_sym(T, :/), 2)                 # Name/Arity
         a = PL_new_term_ref(ld)
-        ld.slots[a + 1] = child(h, 2)
+        setSlotValue!(ld, a + 1, child(h, 2))
         name = PL_get_atom_ex(ld, a)
         name === nothing && return nothing
-        ld.slots[a + 1] = child(h, 3)
+        setSlotValue!(ld, a + 1, child(h, 3))
         arity = PL_get_integer_ex(ld, a)
         arity === nothing && return nothing
         if arity < 0

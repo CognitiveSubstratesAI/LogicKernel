@@ -235,7 +235,7 @@ end
 "Raise `existence_error(stream, Symbol)` (pl-file.c); false."
 function symbol_no_stream(ld::PL_local_data{T}, symbol::T)::Bool where {T}
     t = PL_new_term_ref(ld)
-    ld.slots[t + 1] = symbol                        # PL_put_atom(t, symbol)
+    setSlotValue!(ld, t + 1, symbol)                        # PL_put_atom(t, symbol)
     return no_stream(ld, t, :stream)
 end
 
@@ -245,7 +245,7 @@ function symbol_stream_wrong_mode(
     ld::PL_local_data{T}, symbol::T, action::Symbol
 )::Bool where {T}
     t = PL_new_term_ref(ld)
-    ld.slots[t + 1] = symbol                        # PL_put_atom(t, symbol)
+    setSlotValue!(ld, t + 1, symbol)                        # PL_put_atom(t, symbol)
     return PL_error(
         ld, "", 0, "requested stream has wrong mode", ERR_PERMISSION, mk_sym(T, action),
         mk_sym(T, :stream), t
@@ -359,7 +359,7 @@ function getOutputStream(
 
     if t == 0
         t = PL_new_term_ref(ld)
-        ld.slots[t + 1] = mk_sym(T, :current_output)    # PL_put_atom(t, ATOM_current_output)
+        setSlotValue!(ld, t + 1, mk_sym(T, :current_output))    # PL_put_atom(t, ATOM_current_output)
     end
     PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :output), mk_sym(T, tp), t)
 
@@ -420,7 +420,7 @@ function reportStreamError(ld::PL_local_data{T}, s::IOSTREAM)::Bool where {T}
                 mk_expr(
                     T,
                     T[
-                        mk_sym(T, :io_warning), ld.slots[stream + 1],
+                        mk_sym(T, :io_warning), slotValue(ld, stream + 1),
                         mk_sym(T, Symbol(something(s.message, "")))
                     ]
                 )

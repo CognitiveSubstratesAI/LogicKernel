@@ -941,6 +941,7 @@ graph LR
     pl_alloc --> default_term
     pl_alloc --> pl_incl
     pl_alloc --> pl_global
+    pl_alloc --> pl_inline
     pl_alloc --> pl_comp
     pl_alloc --> pl_arith
     pl_alloc --> os_pl_text
@@ -989,6 +990,7 @@ graph LR
     pl_attvar --> default_term
     pl_attvar --> pl_incl
     pl_attvar --> pl_global
+    pl_attvar --> pl_inline
     pl_attvar --> pl_wam
     pl_attvar --> pl_fli
     pl_error --> term_interface
@@ -1039,6 +1041,7 @@ graph LR
     os_pl_option --> default_term
     os_pl_option --> SWI_Prolog
     os_pl_option --> pl_global
+    os_pl_option --> pl_inline
     os_pl_option --> pl_prims
     os_pl_option --> pl_fli
     os_pl_option --> pl_error
@@ -1048,6 +1051,7 @@ graph LR
     os_pl_prologflag --> default_term
     os_pl_prologflag --> pl_incl
     os_pl_prologflag --> pl_global
+    os_pl_prologflag --> pl_inline
     os_pl_prologflag --> pl_fli
     os_pl_prologflag --> pl_error
     os_pl_text --> term_interface
@@ -1070,6 +1074,7 @@ graph LR
     os_pl_file --> pl_incl
     os_pl_file --> SWI_Prolog
     os_pl_file --> pl_global
+    os_pl_file --> pl_inline
     os_pl_file --> pl_fli
     os_pl_file --> pl_error
     pl_setup --> default_term
@@ -1158,6 +1163,7 @@ graph LR
     pl_op --> pl_incl
     pl_op --> SWI_Prolog
     pl_op --> pl_global
+    pl_op --> pl_inline
     pl_op --> pl_comp
     pl_op --> pl_fli
     pl_op --> pl_error
@@ -1198,6 +1204,7 @@ graph LR
     pl_read --> pl_index
     pl_read --> pl_global
     pl_read --> pl_modul
+    pl_read --> pl_inline
     pl_read --> pl_prims
     pl_read --> pl_comp
     pl_read --> pl_alloc

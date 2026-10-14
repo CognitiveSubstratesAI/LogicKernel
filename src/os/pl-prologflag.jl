@@ -26,7 +26,7 @@ function setDoubleQuotes(
         f = DBLQ_STRING
     else
         value = PL_new_term_ref(ld)
-        ld.slots[value + 1] = a                     # PL_put_atom(value, a)
+        setSlotValue!(ld, value + 1, a)                     # PL_put_atom(value, a)
         PL_error(ld, ERR_DOMAIN, mk_sym(T, :double_quotes), value)
         return nothing
     end
@@ -55,7 +55,7 @@ function setBackQuotes(
         f = BQ_CHARS
     else
         value = PL_new_term_ref(ld)
-        ld.slots[value + 1] = a                     # PL_put_atom(value, a)
+        setSlotValue!(ld, value + 1, a)                     # PL_put_atom(value, a)
         PL_error(ld, ERR_DOMAIN, mk_sym(T, :back_quotes), value)
         return nothing
     end

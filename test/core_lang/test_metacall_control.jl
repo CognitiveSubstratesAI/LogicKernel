@@ -151,7 +151,7 @@ function _rmcc_formal(db::_RDB, goal::_R)::String
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
     for i in 1:n
-        ld.slots[args + i] = child(goal, i + 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, _rproc(db, goal),
@@ -161,7 +161,7 @@ function _rmcc_formal(db::_RDB, goal::_R)::String
     out = "no_error"
     if rc == LK.PL_S_EXCEPTION
         out = _rcanonical(
-            child(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]), 2)
+            child(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)), 2)
         )
     end
     LK.PL_close_query(ld, qid)

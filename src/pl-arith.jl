@@ -527,7 +527,7 @@ end
 # getCharExpression's `len_not_one:`.
 function _len_not_one(ld::PL_local_data{T}, p::T)::Bool where {T}
     a = new_term_ref(ld)
-    ld.slots[a + 1] = p
+    setSlotValue!(ld, a + 1, p)
     PL_error(ld, "", 0, "\"x\" must hold one character", ERR_TYPE, mk_sym(T, :character), a)
     return false
 end
@@ -552,7 +552,7 @@ function evalExpression(ld::PL_local_data{T}, expr::term_t, result::number)::Boo
     n = result                                              # number *n = result
     pushed = 0
     known_acyclic = false
-    start = deRef(ld, ld.slots[expr + 1])
+    start = deRef(ld, slotValue(ld, expr + 1))
     p = start
     @label next_term
     k = kind(p)
@@ -653,7 +653,7 @@ end
 # `PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_<expected>, pushWordAsTermRef(p))`.
 function _ar_type_error(ld::PL_local_data{T}, expected::Symbol, p::T)::Bool where {T}
     a = new_term_ref(ld)
-    ld.slots[a + 1] = p
+    setSlotValue!(ld, a + 1, p)
     return PL_error(ld, ERR_TYPE, mk_sym(T, expected), a)
 end
 
@@ -662,7 +662,7 @@ end
 # float); `EXCEPTION_GUARDED` has nothing to guard — no `longjmp`.
 "Evaluate the expression `expr` refers to into `n` (pl-arith.c): the fast paths, else `evalExpression`."
 function valueExpression(ld::PL_local_data{T}, expr::term_t, n::number)::Bool where {T}
-    p = deRef(ld, ld.slots[expr + 1])
+    p = deRef(ld, slotValue(ld, expr + 1))
     nk = number_kind(p)
     if nk === NUM_INTEGER && integer_is_int64(p)            # (TAG_INTEGER|STG_INLINE)
         n.i = int64_value(p)

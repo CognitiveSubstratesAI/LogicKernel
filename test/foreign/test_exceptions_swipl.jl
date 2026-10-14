@@ -58,16 +58,16 @@ function _erun(db, name::Symbol, arg::_E, flags::UInt32)
     proc = LKE.lookupProcedure(_es(name), 1, LKE.MODULE_user(db.gd))
     fid = LKE.PL_open_foreign_frame(ld)
     a = LKE.PL_new_term_refs(ld, 1)
-    ld.slots[a + 1] = arg
+    LogicKernel.putSlotValue!(ld, a + 1, arg)
     qid = LKE.PL_open_query(db.gd, ld, nothing, flags, proc, a)
     rc = LKE.PL_next_solution(db.gd, ld, qid)
     t = LKE.PL_new_term_ref(ld)
     LKE.PL_reset_term_refs(ld, t)
     tref = t - qid
     ex = LKE.PL_exception(ld, qid)
-    ball = ex == 0 ? nothing : LKE.resolve_term(ld, ld.slots[ex + 1])
+    ball = ex == 0 ? nothing : LKE.resolve_term(ld, LogicKernel.slotValue(ld, ex + 1))
     before = ld.exception_term != 0
-    after_arg = LKE.resolve_term(ld, ld.slots[a + 1])
+    after_arg = LKE.resolve_term(ld, LogicKernel.slotValue(ld, a + 1))
     rc2 = rc == LKE.PL_S_EXCEPTION || rc == 0 ? LKE.PL_next_solution(db.gd, ld, qid) : -9
     LKE.PL_close_query(ld, qid)
     after = ld.exception_term != 0
@@ -188,12 +188,12 @@ end
 function _eraise(ld, i::Int, j::Int)::Int
     fid = LKE.PL_open_foreign_frame(ld)
     a = LKE.PL_new_term_refs(ld, 2)
-    ld.slots[a + 1] = _EBALLS[i][2]
-    ld.slots[a + 2] = _EBALLS[j][2]
+    LogicKernel.putSlotValue!(ld, a + 1, _EBALLS[i][2])
+    LogicKernel.putSlotValue!(ld, a + 2, _EBALLS[j][2])
     LKE.PL_raise_exception(ld, a)
     LKE.PL_raise_exception(ld, a + 1)
     @assert ld.exception_term == ld.exception_bin
-    pending = LKE.resolve_term(ld, ld.slots[ld.exception_bin + 1])
+    pending = LKE.resolve_term(ld, LogicKernel.slotValue(ld, ld.exception_bin + 1))
     r = if _eeq(pending, _EBALLS[j][2])
         2
     elseif _eeq(pending, _EBALLS[i][2])

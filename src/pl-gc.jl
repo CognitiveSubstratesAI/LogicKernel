@@ -172,7 +172,7 @@ end
 
 "Make the cell at offset `n` of the frame at `base` a variable (`setVar(varFrame(fr, n))`)."
 function _setVar!(ld::PL_local_data{T}, base::Int, n::Int)::Nothing where {T}
-    ld.slots[varFrameP(base, n) + 1] = mk_var(T, allocGlobalVars!(ld, 1))
+    setSlotValue!(ld, varFrameP(base, n) + 1, mk_var(T, allocGlobalVars!(ld, 1)))
     return nothing
 end
 

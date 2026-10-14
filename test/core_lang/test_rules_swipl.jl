@@ -1553,11 +1553,11 @@ end
     gd, ld = db2.gd, db2.ld
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
-    ld.slots[a + 1] = _rv(100)
+    LK.putSlotValue!(ld, a + 1, _rv(100))
     qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS,
         _rproc(db2, _rf("ag", _rv(100))), a)
     @test LK.PL_next_solution(gd, ld, qid) == LK.PL_S_EXCEPTION
-    ball = LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1])
+    ball = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
     formal = child(ball, 2)
     @test lk_name(child(formal, 1)) === :existence_error
     @test lk_name(child(formal, 2)) === :procedure

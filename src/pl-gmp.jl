@@ -115,7 +115,7 @@ end
 # PORT: pl-gmp.c PL_unify_number
 "Unify term reference `t` with the number `n` (pl-gmp.c): bind a variable, else compare by value."
 function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
-    p = deRef(ld, ld.slots[t + 1])
+    p = deRef(ld, slotValue(ld, t + 1))
     if canBind(p)                                           # isVar(*p) && …: varBindConst
         Trail!(ld, var_key(p), put_number(T, n))            # bindConst(p, w)
         return true

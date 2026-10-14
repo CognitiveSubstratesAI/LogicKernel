@@ -31,13 +31,15 @@ function _bcompare_formal(o::_BT, x::_BT, y::_BT)
     ld = LK.PL_local_data{_BT}()
     p = LK.isCurrentProcedure(sym_key(_ba(:compare)), 3, LK.MODULE_system(gd))
     a = LK.PL_new_term_refs(ld, 3)
-    ld.slots[a + 1], ld.slots[a + 2], ld.slots[a + 3] = o, x, y
+    LK.putSlotValue!(ld, a + 1, o)
+    LK.putSlotValue!(ld, a + 2, x)
+    LK.putSlotValue!(ld, a + 3, y)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, p, a
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     f = if rc == LK.PL_S_EXCEPTION
-        child(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]), 2)
+        child(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)), 2)
     else
         nothing
     end

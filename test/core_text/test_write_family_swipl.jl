@@ -47,7 +47,7 @@ function _wf_call(name::String, args::Vector{_WF}; gd=_WF_GD, ld=_WF_LD)
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
     for (i, x) in enumerate(args)
-        ld.slots[a + i] = x
+        LK.putSlotValue!(ld, a + i, x)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -57,7 +57,7 @@ function _wf_call(name::String, args::Vector{_WF}; gd=_WF_GD, ld=_WF_LD)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
             (:true, nothing)
         elseif rc == LK.PL_S_EXCEPTION
-            (:exception, LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]))
+            (:exception, LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)))
         else
             (:false, nothing)
         end
@@ -75,15 +75,15 @@ function _wf_read(text::String)::Union{Nothing, _WF}
     v = _wf_var()
     fid = LK.PL_open_foreign_frame(_WF_LD)
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    _WF_LD.slots[a + 1] = v
-    _WF_LD.slots[a + 2] = lk_gnd(_WF, text)
+    LK.putSlotValue!(_WF_LD, a + 1, v)
+    LK.putSlotValue!(_WF_LD, a + 2, lk_gnd(_WF, text))
     proc = LK.isCurrentProcedure(sym_key(_wfs("term_to_atom")), 2, LK.MODULE_system(_WF_GD))
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(_WF_GD, _WF_LD, qid)
     t = if (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST)
-        LK.resolve_term(_WF_LD, _WF_LD.slots[a + 1])
+        LK.resolve_term(_WF_LD, LK.slotValue(_WF_LD, a + 1))
     else
         nothing
     end
@@ -96,15 +96,15 @@ end
 function _wf_text(t::_WF)::String
     fid = LK.PL_open_foreign_frame(_WF_LD)
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    _WF_LD.slots[a + 1] = t
-    _WF_LD.slots[a + 2] = _wf_var()
+    LK.putSlotValue!(_WF_LD, a + 1, t)
+    LK.putSlotValue!(_WF_LD, a + 2, _wf_var())
     proc = LK.isCurrentProcedure(sym_key(_wfs("term_to_atom")), 2, LK.MODULE_system(_WF_GD))
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(_WF_GD, _WF_LD, qid)
     @assert rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-    s = sym_text(LK.resolve_term(_WF_LD, _WF_LD.slots[a + 2]))
+    s = sym_text(LK.resolve_term(_WF_LD, LK.slotValue(_WF_LD, a + 2)))
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_close_foreign_frame(_WF_LD, fid)
     return s
@@ -467,15 +467,15 @@ end
     # bindings, before the query closes
     proc = LK.isCurrentProcedure(sym_key(_wfs("write_term")), 2, LK.MODULE_system(_WF_GD))
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    _WF_LD.slots[a + 1] = _wfs("a")
-    _WF_LD.slots[a + 2] = l
+    LK.putSlotValue!(_WF_LD, a + 1, _wfs("a"))
+    LK.putSlotValue!(_WF_LD, a + 2, l)
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(_WF_GD, _WF_LD, qid)
     @test rc == LK.PL_S_EXCEPTION
     if rc == LK.PL_S_EXCEPTION
-        ball = LK.deRef(_WF_LD, _WF_LD.slots[LK.PL_exception(_WF_LD, qid) + 1])
+        ball = LK.deRef(_WF_LD, LK.slotValue(_WF_LD, LK.PL_exception(_WF_LD, qid) + 1))
         f = LK.deRef(_WF_LD, child(ball, 2))
         @test kind(f) === EXPR && sym_text(child(f, 1)) == "type_error" &&
             sym_text(LK.deRef(_WF_LD, child(f, 2))) == "list"
@@ -540,8 +540,8 @@ end
     proc = LK.isCurrentProcedure(sym_key(_wfs("write_term")), 2, LK.MODULE_system(_WF_GD))
     fid = LK.PL_open_foreign_frame(_WF_LD)
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    _WF_LD.slots[a + 1] = mk_expr(_WF, _WF[_wfs("f"), x])
-    _WF_LD.slots[a + 2] = cons(vn, mk_nil(_WF))
+    LK.putSlotValue!(_WF_LD, a + 1, mk_expr(_WF, _WF[_wfs("f"), x]))
+    LK.putSlotValue!(_WF_LD, a + 2, cons(vn, mk_nil(_WF)))
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )

@@ -121,7 +121,7 @@ function vm_call(
     ar = kind(goal) === EXPR ? nchildren(goal) - 1 : 0
     args = LK.PL_new_term_refs(ld, ar)
     for i in 1:ar
-        ld.slots[args + i] = child(goal, i + 1)        # term reference args + (i - 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1))        # term reference args + (i - 1)
     end
     qid = LK.PL_open_query(gd, ld, nothing, flags, p.proc, args)
     out = Tuple{T, Bool}[]

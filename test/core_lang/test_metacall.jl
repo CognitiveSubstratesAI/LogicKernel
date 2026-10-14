@@ -92,7 +92,7 @@ function _rmc_formal_term(db::_RDB, goal::_R)::Union{Nothing, _R}
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
     for i in 1:n
-        ld.slots[args + i] = child(goal, i + 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, _rproc(db, goal),
@@ -100,7 +100,7 @@ function _rmc_formal_term(db::_RDB, goal::_R)::Union{Nothing, _R}
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     out = if rc == LK.PL_S_EXCEPTION
-        e = LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1])
+        e = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
         child(e, 2)
     else
         nothing
@@ -302,7 +302,9 @@ function _rmc_type_error_shape(db::_RDB, goal::_R)::String
     rc = LK.PL_next_solution(gd, ld, qid)
     out = "no_error"
     if rc == LK.PL_S_EXCEPTION
-        fd = LK.deRef(ld, child(LK.deRef(ld, ld.slots[LK.PL_exception(ld, qid) + 1]), 2))
+        fd = LK.deRef(
+            ld, child(LK.deRef(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)), 2)
+        )
         out = string(
             lk_name(child(fd, 1)), " ", lk_name(LK.deRef(ld, child(fd, 2))), " ",
             LK.is_acyclic(ld, child(fd, 3)) ? "acyclic" : "cyclic"

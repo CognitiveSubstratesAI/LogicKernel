@@ -644,7 +644,7 @@ end
         X = _zv(1)
         @test f(ld, X, _zc(:f, X)) === false
         @test ld.exception_term != 0
-        ball = ld.slots[ld.exception_term + 1]
+        ball = LogicKernel.slotValue(ld, ld.exception_term + 1)
         @test lk_name(child(ball, 1)) == :error
         @test lk_name(child(child(ball, 2), 1)) == :occurs_check
         @test isempty(ld.trail) && lk_no_bindings(ld)

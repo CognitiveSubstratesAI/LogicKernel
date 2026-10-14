@@ -90,7 +90,7 @@ function PL_scan_options(
         implicit_true = false
 
         if count == 1000
-            if !is_acyclic(ld, ld.slots[list + 1])
+            if !is_acyclic(ld, slotValue(ld, list + 1))
                 PL_error(ld, ERR_TYPE, mk_sym(T, :list), options)
                 return nothing
             end
@@ -158,7 +158,7 @@ function PL_scan_options(
                 T[
                     mk_sym(T, :unknown_option),
                     mk_sym(T, Symbol(opttype)),
-                    ld.slots[head + 1]
+                    slotValue(ld, head + 1)
                 ]
             )
             printMessage(ld, :warning, msg) || return nothing

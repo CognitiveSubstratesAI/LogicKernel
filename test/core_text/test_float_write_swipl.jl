@@ -36,14 +36,14 @@ function _fw_call(name::String, args::Vector{_FW})
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
     for (i, x) in enumerate(args)
-        ld.slots[a + i] = x
+        LK.putSlotValue!(ld, a + i, x)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        [LK.resolve_term(ld, ld.slots[a + i]) for i in 1:length(args)]
+        [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)]
     else
         _FW[]
     end
@@ -190,7 +190,7 @@ end
     w(t, flags) = begin
         fid = LK.PL_open_foreign_frame(_FW_LD)
         r = LK.PL_new_term_refs(_FW_LD, 1)
-        _FW_LD.slots[r + 1] = t
+        LK.putSlotValue!(_FW_LD, r + 1, t)
         bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
         sizep = Ref(0)
         s = LK.Sopenmem(bufp, sizep, "w")

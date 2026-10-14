@@ -275,13 +275,13 @@ function _cwkernel(gd, ld, c::_CwClause, style::Int)::String
         fid = LK.PL_open_foreign_frame(ld)
         warnings = LK.PL_new_term_ref(ld)
         vn = LK.PL_new_term_ref(ld)
-        ld.slots[vn + 1] = _cwbindings(c)
+        LK.putSlotValue!(ld, vn + 1, _cwbindings(c))
         ld.variable_names = vn
         ld.debugstatus_styleCheck = style
         try
             cl = LK.compileClause(gd, ld, c.head, c.body, proc, user, warnings)
             cl === nothing && error("compileClause failed for " * _cwtext(c.head, c.names))
-            l = LK.deRef(ld, ld.slots[warnings + 1])
+            l = LK.deRef(ld, LK.slotValue(ld, warnings + 1))
             while is_pair(l)
                 push!(out, _cwtext(child(l, 2), c.names))
                 l = child(l, 3)
@@ -419,13 +419,13 @@ if _CW_SWIPL !== nothing
         fid = LK.PL_open_foreign_frame(ld)
         w = LK.PL_new_term_ref(ld)
         @test LK.compileClause(gd, ld, head, body, proc, user, w) !== nothing
-        l = ld.slots[w + 1]
+        l = LK.slotValue(ld, w + 1)
         @test is_pair(l) && sym_text(child(child(l, 2), 1)) == "eq_singleton" &&
             is_nil(child(l, 3))
         # a clause with nothing to warn about: `[]`
         @test LK.compileClause(gd, ld, _cwe("nw", [x]), _cwe("g1", [x]), proc, user, w) !==
             nothing
-        @test is_nil(ld.slots[w + 1])
+        @test is_nil(LK.slotValue(ld, w + 1))
         LK.PL_discard_foreign_frame(ld, fid)
         # an undefined warning is an error, and an argument count that is not the declaration's
         ci2 = LK.compileInfo{_CW}(1, user, proc)

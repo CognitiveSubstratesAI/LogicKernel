@@ -204,7 +204,7 @@ function copyFrameArguments(
     ARGE = ARGS + argc
     ARGD = argFrameP(to, 0)
     while ARGS < ARGE                           # now copy them
-        ld.slots[ARGD + 1] = ld.slots[ARGS + 1]
+        setSlotValue!(ld, ARGD + 1, slotValue(ld, ARGS + 1))
         ARGD += 1
         ARGS += 1
     end
@@ -536,8 +536,8 @@ function unify_finished(
         f = reason == FINISH_EXCEPT ? :exception : :external_exception
         return pl_unify!(
             ld,
-            ld.slots[catcher + 1],
-            mk_expr(T, T[mk_sym(T, f), ld.slots[ld.exception_bin + 1]])
+            slotValue(ld, catcher + 1),
+            mk_expr(T, T[mk_sym(T, f), slotValue(ld, ld.exception_bin + 1)])
         )
     elseif reason == FINISH_EXIT
         return false
@@ -550,7 +550,7 @@ function unify_finished(
         else
             :exit
         end
-        return pl_unify!(ld, ld.slots[catcher + 1], mk_sym(T, name))
+        return pl_unify!(ld, slotValue(ld, catcher + 1), mk_sym(T, name))
     end
 end
 
@@ -581,7 +581,7 @@ exception stays pending).
 function call_term(
     gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t
 )::Bool where {T}
-    ok, p, mi = stripModule(gd, ld, deRef(ld, ld.slots[goal + 1]))
+    ok, p, mi = stripModule(gd, ld, deRef(ld, slotValue(ld, goal + 1)))
     if ok
         p = deRef(ld, p)
         m = gd.modules[mi]
@@ -600,7 +600,7 @@ function call_term(
                 !(sym_key(h) == gd.subclause_names.atom_call && arity > 8)
                 av = PL_new_term_refs(ld, arity)
                 for i in 1:arity
-                    ld.slots[av + i] = child(p, i + 1)          # *ap = linkValG(&args[i])
+                    setSlotValue!(ld, av + i, child(p, i + 1))          # *ap = linkValG(&args[i])
                 end
                 name = h
             else
@@ -702,7 +702,7 @@ end
 # culprit of that error is then the plain term where upstream's is `Module:Term` (R2).
 "Whether the term reference `call` holds a callable goal, raising the error when not (pl-wam.c)."
 function mustBeCallable(ld::PL_local_data{T}, call::term_t)::Bool where {T}
-    p = deRef(ld, ld.slots[call + 1])
+    p = deRef(ld, slotValue(ld, call + 1))
     kind(p) === VAR && return PL_error(ld, ERR_INSTANTIATION)
     ap = p
     if _hasFunctor(p, mk_sym(T, :(:)), 2)
@@ -841,11 +841,11 @@ function dbg_discardChoicesAfter(
     ld::PL_local_data{T}, fr::Int, reason::finished
 )::Nothing where {T}
     if ld.exception_term != 0
-        w = deRef(ld, ld.slots[ld.exception_term + 1])
+        w = deRef(ld, slotValue(ld, ld.exception_term + 1))
         @assert kind(w) !== VAR
         ld.exception_term = 0
         discardChoicesAfter(ld, fr, reason)
-        ld.slots[ld.exception_bin + 1] = w
+        setSlotValue!(ld, ld.exception_bin + 1, w)
         ld.exception_term = ld.exception_bin
     else
         discardChoicesAfter(ld, fr, reason)
@@ -956,7 +956,7 @@ end
 # What `ARGP` points at, as is (upstream's `*ARGP`).
 function _argp_raw(ld::PL_local_data{T}, a::argp_t{T})::T where {T}
     if a.form == ARGP_SLOT
-        return ld.slots[a.pos + 1]
+        return slotValue(ld, a.pos + 1)
     elseif a.form == ARGP_CURSOR
         return child(a.term, a.pos)
     end
@@ -971,7 +971,7 @@ function _argp_store!(ld::PL_local_data{T}, a::argp_t{T}, t::T)::Nothing where {
     if a.form == ARGP_BUILD
         ld.bcells[a.pos] = t
     elseif a.form == ARGP_SLOT
-        ld.slots[a.pos + 1] = t
+        setSlotValue!(ld, a.pos + 1, t)
     else
         error("_argp_store!: read mode never writes into the caller's term")
     end
@@ -1032,7 +1032,7 @@ function _bclose!(ld::PL_local_data{T})::Nothing where {T}
     ld.bTop = fr.start - 1
     ld.nbframes -= 1
     if fr.slot >= 0
-        ld.slots[fr.slot + 1] = t               # a body argument: above lTop, untrailed
+        setSlotValue!(ld, fr.slot + 1, t)               # a body argument: above lTop, untrailed
     elseif fr.cell != 0
         ld.bcells[fr.cell] = t                  # into the parent's cell, untrailed
     else
@@ -1139,7 +1139,7 @@ end
 macro TYPE_TEST(test)
     return esc(
         quote
-            tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+            tt_p = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
             PC += 1
             $test(tt_p) && @goto next_instruction
             @FASTCOND_FAILED
@@ -1262,9 +1262,9 @@ function resumeAfterException(
     if clear
         ld.exception_term = 0
         k = allocGlobalVars!(ld, 3)
-        ld.slots[ld.exception_bin + 1] = mk_var(T, k)                  # setVar(*valTermRef(…))
-        ld.slots[ld.exception_printed + 1] = mk_var(T, k + UInt64(1))
-        ld.slots[ld.exception_pending + 1] = mk_var(T, k + UInt64(2))
+        setSlotValue!(ld, ld.exception_bin + 1, mk_var(T, k))                  # setVar(*valTermRef(…))
+        setSlotValue!(ld, ld.exception_printed + 1, mk_var(T, k + UInt64(1)))
+        setSlotValue!(ld, ld.exception_pending + 1, mk_var(T, k + UInt64(2)))
     end
     trimStacks!(ld, outofstack)                     # !considerGarbageCollect(NULL)
     ld.exception_processing = false
@@ -1400,7 +1400,7 @@ function PL_open_query(
     # fill frame arguments
     ap = argFrameP(f.base, 0)
     for n in 0:(arity - 1)
-        ld.slots[ap + 1] = linkValI(ld, ld.slots[args + n + 1])
+        setSlotValue!(ld, ap + 1, linkValI(ld, slotValue(ld, args + n + 1)))
         ap += 1
     end
     ld.lTop = ap                                # lTop above the arguments
@@ -1448,7 +1448,7 @@ end
 function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     q = ld.queries[qf]
     if q.exception != 0 && ld.exception_term == 0
-        ld.slots[ld.exception_printed + 1] = mk_var(T, allocGlobalVars!(ld, 1))
+        setSlotValue!(ld, ld.exception_printed + 1, mk_var(T, allocGlobalVars!(ld, 1)))
     end
 
     DiscardMark(ld, ld.choices[q.choice].mark)
@@ -1791,13 +1791,13 @@ function PL_next_solution_guarded(
     PC += 1
     if UMODE == uwrite
         @assert ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE "write mode under occurs_check true/error (decision 3)"
-        _argp_store!(ld, ARGP, deRef(ld, ld.slots[hv_k + 1]))
+        _argp_store!(ld, ARGP, deRef(ld, slotValue(ld, hv_k + 1)))
         ARGP = _argp_add(ARGP, 1)
         @goto next_instruction
     end
     # First try the simple case.
     if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
-        hv_rc = do_unify(ld, ld.slots[hv_k + 1], _argp_raw(ld, ARGP))
+        hv_rc = do_unify(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
         if hv_rc == BOOLEX_TRUE
             ARGP = _argp_add(ARGP, 1)
             @goto next_instruction
@@ -1808,7 +1808,7 @@ function PL_next_solution_guarded(
     end
 
     @SAVE_REGISTERS(QID)
-    hv_ok = unify_ptrs(ld, ld.slots[hv_k + 1], _argp_raw(ld, ARGP))
+    hv_ok = unify_ptrs(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
     @LOAD_REGISTERS(QID)
     if hv_ok
         ARGP = _argp_add(ARGP, 1)
@@ -1828,9 +1828,9 @@ function PL_next_solution_guarded(
     if UMODE == uwrite
         hfv_v = mk_var(T, allocGlobalVars!(ld, 1))      # setVar(*ARGP)
         _argp_store!(ld, ARGP, hfv_v)
-        ld.slots[hfv_k + 1] = hfv_v                 # varFrame(FR, *PC++) = makeRefG(ARGP)
+        setSlotValue!(ld, hfv_k + 1, hfv_v)                 # varFrame(FR, *PC++) = makeRefG(ARGP)
     else
-        ld.slots[hfv_k + 1] = _argp_raw(ld, ARGP)
+        setSlotValue!(ld, hfv_k + 1, _argp_raw(ld, ARGP))
     end
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -1954,8 +1954,8 @@ function PL_next_solution_guarded(
         hff_k = allocGlobalVars!(ld, 2)
         hff_x = mk_var(T, hff_k)
         hff_y = mk_var(T, hff_k + UInt64(1))
-        ld.slots[hff_a + 1] = hff_x
-        ld.slots[hff_b + 1] = hff_y
+        setSlotValue!(ld, hff_a + 1, hff_x)
+        setSlotValue!(ld, hff_b + 1, hff_y)
         _argp_store!(ld, ARGP, mk_expr(T, T[gd.atom_dot, hff_x, hff_y]))   # *p = c
     else
         hff_p = _argp_deref(ld, ARGP)
@@ -1964,14 +1964,14 @@ function PL_next_solution_guarded(
             _is_expr3(hff_p) &&
             unify_simple_ptrs(ld, deRef(ld, child(hff_p, 1)), gd.atom_dot) == BOOLEX_TRUE
         )
-            ld.slots[hff_a + 1] = child(hff_p, 2)
-            ld.slots[hff_b + 1] = child(hff_p, 3)
+            setSlotValue!(ld, hff_a + 1, child(hff_p, 2))
+            setSlotValue!(ld, hff_b + 1, child(hff_p, 3))
         elseif kind(hff_p) === VAR
             hff_k = allocGlobalVars!(ld, 2)
             hff_x = mk_var(T, hff_k)
             hff_y = mk_var(T, hff_k + UInt64(1))
-            ld.slots[hff_a + 1] = hff_x
-            ld.slots[hff_b + 1] = hff_y
+            setSlotValue!(ld, hff_a + 1, hff_x)
+            setSlotValue!(ld, hff_b + 1, hff_y)
             Trail!(ld, var_key(hff_p), mk_expr(T, T[gd.atom_dot, hff_x, hff_y]))   # bindConst
         else
             @goto unify_backtrack
@@ -2029,7 +2029,7 @@ function PL_next_solution_guarded(
     # direction of the link (`ARGP < k`) and the trail-space check disappear.
     @label B_ARGVAR
     _argp_store!(
-        ld, ARGP, deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+        ld, ARGP, deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
     )
     PC += 1
     ARGP = _argp_add(ARGP, 1)
@@ -2061,7 +2061,7 @@ function PL_next_solution_guarded(
     # no cell (decision 2), so the slot's term is stored as is (`linkValI`).
     @label bvar_cont
     _argp_store!(
-        ld, ARGP, linkValI(ld, ld.slots[varFrameP(ld.frames[FR].base, bv_voffset) + 1])
+        ld, ARGP, linkValI(ld, slotValue(ld, varFrameP(ld.frames[FR].base, bv_voffset) + 1))
     )
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -2071,7 +2071,7 @@ function PL_next_solution_guarded(
     @label B_ARGFIRSTVAR
     baf_v = mk_var(T, allocGlobalVars!(ld, 1))
     _argp_store!(ld, ARGP, baf_v)                   # setVar(*ARGP)
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = baf_v   # varFrame(FR, *PC++)
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, baf_v)   # varFrame(FR, *PC++)
     PC += 1
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -2081,7 +2081,7 @@ function PL_next_solution_guarded(
     # `ENSURE_GLOBAL_SPACE`.
     @label B_FIRSTVAR
     bfv_v = mk_var(T, allocGlobalVars!(ld, 1))
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = bfv_v   # *k = w
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, bfv_v)   # *k = w
     PC += 1
     _argp_store!(ld, ARGP, bfv_v)                   # *ARGP++ = w
     ARGP = _argp_add(ARGP, 1)
@@ -2150,7 +2150,7 @@ function PL_next_solution_guarded(
     bu_var = mk_var(T, allocGlobalVars!(ld, 1))
     ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
     PC += 1
-    ld.slots[ARGP.pos + 1] = bu_var                 # setVar(*ARGP): needed for GC
+    setSlotValue!(ld, ARGP.pos + 1, bu_var)                 # setVar(*ARGP): needed for GC
     bu_first = true
     @goto unify_var_cont
 
@@ -2177,7 +2177,7 @@ function PL_next_solution_guarded(
     @label unify_var_cont
     SLOW_UNIFY = _slow_unify(ld)
     if SLOW_UNIFY
-        uvc_k = ld.slots[ARGP.pos + 1]              # Word k = ARGP
+        uvc_k = slotValue(ld, ARGP.pos + 1)              # Word k = ARGP
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, uvc_k)               # *ARGP++ = *k
         ARGP = _argp_add(ARGP, 1)
@@ -2228,10 +2228,10 @@ function PL_next_solution_guarded(
     buff_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     buff_v = mk_var(T, allocGlobalVars!(ld, 1))
-    ld.slots[buff_1 + 1] = buff_v                   # *v1 = makeRefG(v)
+    setSlotValue!(ld, buff_1 + 1, buff_v)                   # *v1 = makeRefG(v)
     if _slow_unify(ld)
         buff_w = mk_var(T, allocGlobalVars!(ld, 1))
-        ld.slots[buff_2 + 1] = buff_w               # *v2 = makeRefG(v)
+        setSlotValue!(ld, buff_2 + 1, buff_w)               # *v2 = makeRefG(v)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, buff_v)
         ARGP = _argp_add(ARGP, 1)
@@ -2239,7 +2239,7 @@ function PL_next_solution_guarded(
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
-    ld.slots[buff_2 + 1] = buff_v                   # *v2 = *v1
+    setSlotValue!(ld, buff_2 + 1, buff_v)                   # *v2 = *v1
     @goto next_instruction
 
     # PORT: pl-vmi.c B_UNIFY_VF
@@ -2254,15 +2254,15 @@ function PL_next_solution_guarded(
     bufv_v = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if _slow_unify(ld)
-        ld.slots[bufv_f + 1] = mk_var(T, allocGlobalVars!(ld, 1))   # globaliseFirstVar(f)
+        setSlotValue!(ld, bufv_f + 1, mk_var(T, allocGlobalVars!(ld, 1)))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, ld.slots[bufv_f + 1])
+        _argp_store!(ld, ARGP, slotValue(ld, bufv_f + 1))
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, ld.slots[bufv_v + 1])
+        _argp_store!(ld, ARGP, slotValue(ld, bufv_v + 1))
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
-    ld.slots[bufv_f + 1] = linkValI(ld, ld.slots[bufv_v + 1])   # *f = linkValI(v)
+    setSlotValue!(ld, bufv_f + 1, linkValI(ld, slotValue(ld, bufv_v + 1)))   # *f = linkValI(v)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_UNIFY_VV
@@ -2274,14 +2274,14 @@ function PL_next_solution_guarded(
     PC += 2
     if _slow_unify(ld)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, ld.slots[buvv_1 + 1])
+        _argp_store!(ld, ARGP, slotValue(ld, buvv_1 + 1))
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, ld.slots[buvv_2 + 1])
+        _argp_store!(ld, ARGP, slotValue(ld, buvv_2 + 1))
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
     @SAVE_REGISTERS(QID)
-    buvv_rc = unify_ptrs(ld, ld.slots[buvv_1 + 1], ld.slots[buvv_2 + 1])
+    buvv_rc = unify_ptrs(ld, slotValue(ld, buvv_1 + 1), slotValue(ld, buvv_2 + 1))
     @LOAD_REGISTERS(QID)
     buvv_rc && @goto next_instruction
     ld.exception_term != 0 && @goto b_throw         # THROW_EXCEPTION
@@ -2302,15 +2302,15 @@ function PL_next_solution_guarded(
     bufc_c = PCl[PCc[PC + 1]]
     PC += 2
     if _slow_unify(ld)
-        ld.slots[bufc_f + 1] = mk_var(T, allocGlobalVars!(ld, 1))   # globaliseFirstVar(f)
+        setSlotValue!(ld, bufc_f + 1, mk_var(T, allocGlobalVars!(ld, 1)))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, ld.slots[bufc_f + 1])
+        _argp_store!(ld, ARGP, slotValue(ld, bufc_f + 1))
         ARGP = _argp_add(ARGP, 1)
         _argp_store!(ld, ARGP, bufc_c)
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
-    ld.slots[bufc_f + 1] = bufc_c                   # *f = c
+    setSlotValue!(ld, bufc_f + 1, bufc_c)                   # *f = c
     @goto next_instruction
 
     # PORT: pl-vmi.c B_UNIFY_VC
@@ -2323,13 +2323,13 @@ function PL_next_solution_guarded(
     PC += 2
     if _slow_unify(ld)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, ld.slots[buvc_k + 1])
+        _argp_store!(ld, ARGP, slotValue(ld, buvc_k + 1))
         ARGP = _argp_add(ARGP, 1)
         _argp_store!(ld, ARGP, buvc_c)
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
-    if unify_simple_ptrs(ld, deRef(ld, ld.slots[buvc_k + 1]), buvc_c) == BOOLEX_TRUE
+    if unify_simple_ptrs(ld, deRef(ld, slotValue(ld, buvc_k + 1)), buvc_c) == BOOLEX_TRUE
         @goto next_instruction
     end
     @goto unify_backtrack                           # CLAUSE_FAILED
@@ -2341,7 +2341,8 @@ function PL_next_solution_guarded(
     beq_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     beq_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
-    if compareStandard(ld, ld.slots[beq_1 + 1], ld.slots[beq_2 + 1], true) == CMP_EQUAL
+    if compareStandard(ld, slotValue(ld, beq_1 + 1), slotValue(ld, beq_2 + 1), true) ==
+        CMP_EQUAL
         @goto next_instruction
     end
     @FASTCOND_FAILED
@@ -2351,7 +2352,7 @@ function PL_next_solution_guarded(
     # (`compare_primitives` in equality mode, as `PL_unify_atomic`).
     # NOT PORTED: the `vmi_builtin=false` branch.
     @label B_EQ_VC
-    beqc_v = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    beqc_v = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
     beqc_c = PCl[PCc[PC + 1]]
     PC += 2
     if compare_primitives(beqc_v, beqc_c, CMP_MODE_EQUAL) == CMP_EQUAL
@@ -2365,7 +2366,8 @@ function PL_next_solution_guarded(
     bneq_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     bneq_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
-    if compareStandard(ld, ld.slots[bneq_1 + 1], ld.slots[bneq_2 + 1], true) == CMP_EQUAL
+    if compareStandard(ld, slotValue(ld, bneq_1 + 1), slotValue(ld, bneq_2 + 1), true) ==
+        CMP_EQUAL
         @FASTCOND_FAILED
     end
     @goto next_instruction
@@ -2373,7 +2375,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_NEQ_VC
     # DIVERGES: as `B_EQ_VC`'s.
     @label B_NEQ_VC
-    bneqc_v = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    bneqc_v = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
     bneqc_c = PCl[PCc[PC + 1]]
     PC += 2
     if compare_primitives(bneqc_v, bneqc_c, CMP_MODE_EQUAL) != CMP_EQUAL
@@ -2503,7 +2505,7 @@ function PL_next_solution_guarded(
     # `S_VIRGIN` traps it, as for `I_CALL`).
     @label i_metacall_common
     mc_nb = ld.frames[NFR].base
-    mc_ok, mc_goal, mc_mi = stripModule(gd, ld, ld.slots[argFrameP(mc_nb, 0) + 1])
+    mc_ok, mc_goal, mc_mi = stripModule(gd, ld, slotValue(ld, argFrameP(mc_nb, 0) + 1))
     mc_ok || @goto b_throw                          # THROW_EXCEPTION
     mc_arity = 0
     mc_name = mc_goal
@@ -2568,16 +2570,22 @@ function PL_next_solution_guarded(
         mc_shift = mc_arity - 1
         if mc_shift > 0
             for mc_i in (mc_callargs - 1):-1:0
-                ld.slots[mc_a1 + mc_i + mc_shift + 1] = ld.slots[mc_a1 + mc_i + 1]
+                setSlotValue!(
+                    ld, mc_a1 + mc_i + mc_shift + 1, slotValue(ld, mc_a1 + mc_i + 1)
+                )
             end
         else
             for mc_i in 0:(mc_callargs - 1)
-                ld.slots[mc_a1 + mc_i + mc_shift + 1] = ld.slots[mc_a1 + mc_i + 1]
+                setSlotValue!(
+                    ld, mc_a1 + mc_i + mc_shift + 1, slotValue(ld, mc_a1 + mc_i + 1)
+                )
             end
         end
     end
     for mc_i in 1:mc_arity                          # the arguments of the goal
-        ld.slots[argFrameP(mc_nb, mc_i - 1) + 1] = linkValI(ld, child(mc_goal, mc_i + 1))
+        setSlotValue!(
+            ld, argFrameP(mc_nb, mc_i - 1) + 1, linkValI(ld, child(mc_goal, mc_i + 1))
+        )
     end
     mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
     DEF = mc_proc.definition
@@ -2595,7 +2603,7 @@ function PL_next_solution_guarded(
     cte_fid = PL_open_foreign_frame(ld)
     if cte_fid != 0
         cte_t = new_term_ref(ld)                    # pushWordAsTermRef(argFrameP(NFR, 0))
-        ld.slots[cte_t + 1] = ld.slots[argFrameP(mc_nb, 0) + 1]
+        setSlotValue!(ld, cte_t + 1, slotValue(ld, argFrameP(mc_nb, 0) + 1))
         PL_error(ld, ERR_TYPE, mk_sym(T, :callable), cte_t)
         PL_close_foreign_frame(ld, cte_fid)
     end
@@ -2618,7 +2626,7 @@ function PL_next_solution_guarded(
     @label I_CATCH
     icatch_p = argFrameP(ld.frames[FR].base, 0)
     newChoice(ld, CHP_CATCH, FR)
-    if kind(deRef(ld, ld.slots[icatch_p + 1])) === VAR
+    if kind(deRef(ld, slotValue(ld, icatch_p + 1))) === VAR
         @SAVE_REGISTERS(QID)
         icatch_fid = PL_open_foreign_frame(ld)
         PL_error(ld, ERR_INSTANTIATION)
@@ -2626,7 +2634,7 @@ function PL_next_solution_guarded(
         @LOAD_REGISTERS(QID)
         @goto b_throw                               # THROW_EXCEPTION
     end
-    ld.slots[argFrameP(ld.lTop, 0) + 1] = linkValI(ld, ld.slots[icatch_p + 1])   # = B_VAR0
+    setSlotValue!(ld, argFrameP(ld.lTop, 0) + 1, linkValI(ld, slotValue(ld, icatch_p + 1)))   # = B_VAR0
     @goto I_CALL1
 
     # PORT: pl-vmi.c I_EXITCATCH
@@ -2669,7 +2677,7 @@ function PL_next_solution_guarded(
     icc_f.flags |= FR_CLEANUP                       # set(FR, FR_CLEANUP)
 
     icc_p = argFrameP(icc_f.base, icc_arg_goal - 1)
-    if kind(deRef(ld, ld.slots[icc_p + 1])) === VAR
+    if kind(deRef(ld, slotValue(ld, icc_p + 1))) === VAR
         @SAVE_REGISTERS(QID)
         icc_fid = PL_open_foreign_frame(ld)
         PL_error(ld, ERR_INSTANTIATION)
@@ -2677,7 +2685,7 @@ function PL_next_solution_guarded(
         @LOAD_REGISTERS(QID)
         @goto b_throw                               # THROW_EXCEPTION
     end
-    ld.slots[argFrameP(ld.lTop, 0) + 1] = linkValI(ld, ld.slots[icc_p + 1])     # = B_VAR1
+    setSlotValue!(ld, argFrameP(ld.lTop, 0) + 1, linkValI(ld, slotValue(ld, icc_p + 1)))     # = B_VAR1
     @goto I_CALL1
 
     # PORT: pl-vmi.c I_EXITCLEANUP
@@ -2817,16 +2825,24 @@ function PL_next_solution_guarded(
     # DIVERGES: the value, dereferenced: a keyed variable is its own reference, so the chain is
     # followed to its end and an unbound variable is copied as itself (decision 2).
     @label L_VAR
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = deRef(
-        ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1]
+    setSlotValue!(
+        ld,
+        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
+        deRef(
+            ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1)
+        )
     )
     PC += 2
     @goto next_instruction
 
     # PORT: pl-vmi.c L_VOID
     @label L_VOID
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_var(
-        T, allocGlobalVars!(ld, 1)
+    setSlotValue!(
+        ld,
+        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
+        mk_var(
+            T, allocGlobalVars!(ld, 1)
+        )
     )               # setVar(*varFrameP(FR, *PC++))
     PC += 1
     @goto next_instruction
@@ -2834,20 +2850,20 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c L_ATOM
     # DIVERGES: the operand indexes the literal table (since V1 L2); no atom GC, so no `pushVolatileAtom`.
     @label L_ATOM
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = PCl[PCc[PC + 1]]
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, PCl[PCc[PC + 1]])
     PC += 2
     @goto next_instruction
 
     # PORT: pl-vmi.c L_NIL
     @label L_NIL
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = gd.atom_nil
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, gd.atom_nil)
     PC += 1
     @goto next_instruction
 
     # PORT: pl-vmi.c L_SMALLINT
     # DIVERGES: the operand indexes the literal table (since V1 L2).
     @label L_SMALLINT
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = PCl[PCc[PC + 1]]
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, PCl[PCc[PC + 1]])
     PC += 2
     @goto next_instruction
 
@@ -2912,8 +2928,12 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_VAR
     # DIVERGES: a fresh variable into the slot (decision 2).
     @label C_VAR
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_var(
-        T, allocGlobalVars!(ld, 1)
+    setSlotValue!(
+        ld,
+        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
+        mk_var(
+            T, allocGlobalVars!(ld, 1)
+        )
     )
     PC += 1
     @goto next_instruction
@@ -2944,8 +2964,12 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_IFTHENELSE
     # DIVERGES: the slot's value (above).
     @label C_IFTHENELSE
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(
-        T, ld.choices[ld.BFR].base
+    setSlotValue!(
+        ld,
+        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
+        mk_gnd(
+            T, ld.choices[ld.BFR].base
+        )
     )                                               # == C_IFTHEN
     PC += 1
     @goto C_OR
@@ -2953,8 +2977,12 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_IFTHEN
     # DIVERGES: the slot's value (above).
     @label C_IFTHEN
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(
-        T, ld.choices[ld.BFR].base
+    setSlotValue!(
+        ld,
+        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
+        mk_gnd(
+            T, ld.choices[ld.BFR].base
+        )
     )
     PC += 1
     @goto next_instruction
@@ -2963,8 +2991,12 @@ function PL_next_solution_guarded(
     # DIVERGES: the slot's value (above); `LD->fast_condition` is an index (see `FASTCOND_FAILED`).
     # NOT PORTED: the `vmi_builtin=false` branch (only the debugger clears the flag).
     @label C_FASTCOND
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(
-        T, ld.choices[ld.BFR].base
+    setSlotValue!(
+        ld,
+        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
+        mk_gnd(
+            T, ld.choices[ld.BFR].base
+        )
     )                                               # == C_IFTHEN
     cfc_skip = Int(PCc[PC + 1])
     PC += 2
@@ -2983,7 +3015,9 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_CUT
     # DIVERGES: the slot holds the choice point's position (above).
     @label C_CUT
-    cc_och = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    cc_och = Int(
+        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    )
     PC += 1                                         # cannot be in macro!
     @goto c_cut
 
@@ -3039,7 +3073,9 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_LCUT
     # DIVERGES: the slot holds the choice point's position (see `C_IFTHENELSE`).
     @label C_LCUT
-    cl_och = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    cl_och = Int(
+        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    )
     PC += 1
     @goto c_lcut_cont
 
@@ -3073,7 +3109,7 @@ function PL_next_solution_guarded(
     # DIVERGES: the slot holds a POSITION (see `C_IFTHENELSE`) — here `lTop`, where `C_OR` is about
     # to make the condition's choice point.
     @label C_SOFTIF
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_gnd(T, ld.lTop)  # see C_SOFTCUT
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, mk_gnd(T, ld.lTop))  # see C_SOFTCUT
     PC += 1
     @goto C_OR
 
@@ -3085,21 +3121,23 @@ function PL_next_solution_guarded(
     @label C_SOFTCUT
     sc_slot = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1
     PC += 1
-    sc_ref = Int(int64_value(ld.slots[sc_slot]))
+    sc_ref = Int(int64_value(slotValue(ld, sc_slot)))
     if sc_ref > 0
         sc_bfr = ld.BFR
         if ld.choices[sc_bfr].base == sc_ref        # bfr == ch
             ld.choices[sc_bfr].unlinked = true
             ld.BFR = ld.choices[sc_bfr].parent
-            ld.slots[sc_slot] = mk_gnd(T, -ld.choices[ld.BFR].base)
+            setSlotValue!(ld, sc_slot, mk_gnd(T, -ld.choices[ld.BFR].base))
         else
             while sc_bfr != 0 && ld.choices[sc_bfr].base >= sc_ref      # for(; bfr >= ch; …)
                 sc_par = ld.choices[sc_bfr].parent
                 if sc_par != 0 && ld.choices[sc_par].base == sc_ref     # bfr->parent == ch
                     ld.choices[sc_par].unlinked = true
                     ld.choices[sc_bfr].parent = ld.choices[sc_par].parent
-                    ld.slots[sc_slot] = mk_gnd(
-                        T, -ld.choices[ld.choices[sc_par].parent].base
+                    setSlotValue!(
+                        ld, sc_slot, mk_gnd(
+                            T, -ld.choices[ld.choices[sc_par].parent].base
+                        )
                     )
                     break
                 end
@@ -3117,7 +3155,9 @@ function PL_next_solution_guarded(
     # DIVERGES: the slot holds a position (see `C_SOFTCUT`); the choice point at it is found on the
     # chain, and its parent's position — 0 for none — is what `c_lcut_cont` cuts back to.
     @label C_LSCUT
-    ls_ref = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    ls_ref = Int(
+        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    )
     PC += 1
     if ls_ref < 0
         ls_ref = -ls_ref
@@ -3149,7 +3189,9 @@ function PL_next_solution_guarded(
     # its stack region stays in use (upstream lowers nothing here), is marked `unlinked`, as
     # `C_SOFTCUT`'s: the pools hold live records only (decision 3).
     @label C_DETTRUE
-    cdt_och = Int(int64_value(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
+    cdt_och = Int(
+        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    )
     cdt_ch = ld.BFR
     cdt_parent = ld.choices[cdt_ch].parent
     if cdt_parent != 0 && ld.choices[cdt_parent].base == cdt_och    # ch->parent == och
@@ -3191,7 +3233,7 @@ function PL_next_solution_guarded(
     PC += 2
     cvn_key = allocGlobalVars!(ld, cvn_count)
     for cvn_i in 0:(cvn_count - 1)
-        ld.slots[cvn_vp + cvn_i + 1] = mk_var(T, cvn_key + UInt64(cvn_i))
+        setSlotValue!(ld, cvn_vp + cvn_i + 1, mk_var(T, cvn_key + UInt64(cvn_i)))
     end
     @goto next_instruction
 
@@ -3210,7 +3252,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_VAR
     # DIVERGES: NOT PORTED: the `vmi_builtin=false` branch (`debug_pred1`; see `TYPE_TEST`).
     @label I_VAR
-    tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    tt_p = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
     PC += 1
     canBind(tt_p) && @goto next_instruction
     @FASTCOND_FAILED
@@ -3218,7 +3260,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_NONVAR
     # DIVERGES: as `I_VAR`'s.
     @label I_NONVAR
-    tt_p = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1])
+    tt_p = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
     PC += 1
     !canBind(tt_p) && @goto next_instruction
     @FASTCOND_FAILED
@@ -3268,12 +3310,12 @@ function PL_next_solution_guarded(
     # branch, which calls `is/2` (only the debugger and coverage clear the flag).
     @label A_ADD_FC
     af_rp = varFrameP(ld.frames[FR].base, Int(PCc[PC]))                 # A =
-    af_np = deRef(ld, ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1])  # B +
+    af_np = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1))  # B +
     af_add = int64_value(PCl[PCc[PC + 2]])                              # <int>
     PC += 3
     if number_kind(af_np) === NUM_INTEGER && integer_is_int64(af_np) &&
         PLMINTAGGEDINT <= int64_value(af_np) <= PLMAXTAGGEDINT          # isTaggedInt(*np)
-        ld.slots[af_rp + 1] = mk_gnd(T, int64_value(af_np) + af_add)    # *rp = consInt(r)
+        setSlotValue!(ld, af_rp + 1, mk_gnd(T, int64_value(af_np) + af_add))    # *rp = consInt(r)
         @goto next_instruction
     end
     @SAVE_REGISTERS(QID)
@@ -3282,7 +3324,7 @@ function PL_next_solution_guarded(
     af_fid = PL_open_foreign_frame(ld)                  # Still needed?
     if af_fid != 0
         af_t = new_term_ref(ld)                         # pushWordAsTermRef(np)
-        ld.slots[af_t + 1] = af_np
+        setSlotValue!(ld, af_t + 1, af_np)
         af_n = _number_alloc!(ld)
         af_rc = evalExpression(ld, af_t, af_n)
         if af_rc                                        # ensureWritableNumber: numbers are values
@@ -3294,7 +3336,7 @@ function PL_next_solution_guarded(
     end
     @LOAD_REGISTERS(QID)
     af_rc || @goto b_throw                              # THROW_EXCEPTION
-    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC - 3])) + 1] = af_w  # rp: may have shifted
+    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC - 3])) + 1, af_w)  # rp: may have shifted
     @goto next_instruction
 
     # ── supervisors (pl-vmi.c) ────────────────────────────────────────────────────────────────────
@@ -3425,7 +3467,7 @@ function PL_next_solution_guarded(
     # one does — it can unify with a list-cell clause child by child (Q2; user, 2026-10-05).
     @label S_LIST
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
-    sl_k = deRef(ld, ld.slots[ARGP.pos + Int(PCc[PC]) + 1])     # deRef2(ARGP+PC[0], k)
+    sl_k = deRef(ld, slotValue(ld, ARGP.pos + Int(PCc[PC]) + 1))     # deRef2(ARGP+PC[0], k)
     if is_pair(sl_k)
         tc_cref = DEF.codes_crefs[Int(PCc[PC + 2])]
     elseif is_nil(sl_k)
@@ -3845,16 +3887,20 @@ function PL_next_solution_guarded(
         ld.environment_frame = FR
         PL_unify(ld, argFrameP(br_base, 1), ld.exception_term)      # re-unify
         setLTop!(ld, argFrameP(br_base, 3))                         # above the catch/3
-        if _hasFunctor(deRef(ld, ld.slots[ld.exception_term + 1]), mk_sym(T, :unwind), 1)
+        if _hasFunctor(
+            deRef(ld, slotValue(ld, ld.exception_term + 1)), mk_sym(T, :unwind), 1
+        )
             throw(
                 NotPortedError{T}(
-                    ld.slots[ld.exception_term + 1],
+                    slotValue(ld, ld.exception_term + 1),
                     "an unwind(_) ball caught ('\$recover_and_rethrow'/2, boot/init.pl)",
                     "R2"
                 )
             )
         end
-        ld.slots[argFrameP(ld.lTop, 0) + 1] = ld.slots[argFrameP(br_base, 2) + 1]   # recover goal
+        setSlotValue!(
+            ld, argFrameP(ld.lTop, 0) + 1, slotValue(ld, argFrameP(br_base, 2) + 1)
+        )   # recover goal
         br_exit = findCatchExit(gd)                                 # PC = findCatchExit()
         PCc = br_exit.codes
         PCl = br_exit.literals

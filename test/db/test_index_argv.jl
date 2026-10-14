@@ -28,8 +28,8 @@ end
 "The views of the call `p(a1, a2)`: the goal's arguments, and the same two in a frame's slots."
 function _a_views(ld, a1, a2)
     base = LK.argFrameP(ld.lTop, 0)
-    ld.slots[base + 1] = a1
-    ld.slots[base + 2] = a2
+    LK.putSlotValue!(ld, base + 1, a1)
+    LK.putSlotValue!(ld, base + 2, a2)
     return (LK.argv_term(ld, mk_expr(_A, _A[_as(:p), a1, a2])), LK.argv_frame(ld, base))
 end
 

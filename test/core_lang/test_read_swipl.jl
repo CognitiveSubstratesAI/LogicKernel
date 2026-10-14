@@ -39,16 +39,16 @@ function _rd_atom_number(text::String)::String
     proc = LK.isCurrentProcedure(sym_key(_rds(:atom_number)), 2, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 2)
-    ld.slots[a + 1] = _rds(text)
-    ld.slots[a + 2] = mk_var(_RD, LK.fresh_var_keys!(1))
+    LK.putSlotValue!(ld, a + 1, _rds(text))
+    LK.putSlotValue!(ld, a + 2, mk_var(_RD, LK.fresh_var_keys!(1)))
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        _rd_num(LK.resolve_term(ld, ld.slots[a + 2]))
+        _rd_num(LK.resolve_term(ld, LK.slotValue(ld, a + 2)))
     elseif rc == LK.PL_S_EXCEPTION
-        f = child(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]), 2)   # error(F, _)
+        f = child(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)), 2)   # error(F, _)
         "err " * string(lk_name(kind(f) === SYM ? f : child(f, 1)))
     else
         "fails"
@@ -90,7 +90,7 @@ function _rd_raw(text::String, kind::Symbol)::String
         st = LK.skipSpaces(b, 1)
         String(b[st:(top - 1)])
     else
-        "err " * _rd_write(LK.resolve_term(ld, ld.slots[rd.exception + 1]))
+        "err " * _rd_write(LK.resolve_term(ld, LK.slotValue(ld, rd.exception + 1)))
     end
     LK.Sclose(s)
     LK.PL_close_foreign_frame(ld, fid)
@@ -126,7 +126,10 @@ function _rd_tokens(text::String)::Vector{String}
     ok, e = LK.raw_read(rd)
     toks = String[]
     if !ok
-        push!(toks, "err " * _rd_write(LK.resolve_term(ld, ld.slots[rd.exception + 1])))
+        push!(
+            toks,
+            "err " * _rd_write(LK.resolve_term(ld, LK.slotValue(ld, rd.exception + 1)))
+        )
     else
         rd.here = 1
         rd.end_ = e
@@ -135,7 +138,8 @@ function _rd_tokens(text::String)::Vector{String}
             if tk === nothing
                 push!(
                     toks,
-                    "err " * _rd_write(LK.resolve_term(ld, ld.slots[rd.exception + 1]))
+                    "err " *
+                    _rd_write(LK.resolve_term(ld, LK.slotValue(ld, rd.exception + 1)))
                 )
                 break
             end
@@ -176,7 +180,7 @@ function _rd_first_text(text::String)::String
         tk = LK.get_token(false, rd)
     end
     out = if tk === nothing
-        "err " * _rd_write(child(LK.resolve_term(ld, ld.slots[rd.exception + 1]), 2))
+        "err " * _rd_write(child(LK.resolve_term(ld, LK.slotValue(ld, rd.exception + 1)), 2))
     elseif tk.type == LK.TK_QNAME || tk.type == LK.TK_NAME
         "a[" * join(Int.(collect(String(lk_name(tk.atom)))), ",") * "]"
     elseif tk.type == LK.TK_STRING

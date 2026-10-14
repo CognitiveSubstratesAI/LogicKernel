@@ -21,7 +21,7 @@ function codes_or_chars_to_buffer(
     ld::PL_local_data{T}, l::term_t, wide::Bool
 )::Tuple{Union{Nothing, Vector{UInt8}}, CVT_result{T}} where {T}
     result = CVT_result{T}(CVT_ok, nothing)
-    list = deRef(ld, ld.slots[l + 1])
+    list = deRef(ld, slotValue(ld, l + 1))
     CHARS, CODES = 0, 1
     type = CHARS
 

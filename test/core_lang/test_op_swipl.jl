@@ -46,7 +46,9 @@ function _oprun(gd, ld, p::_OP, t::_OP, n::_OP)::String
     proc = LK.isCurrentProcedure(sym_key(_ops(:op)), 3, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 3)
-    ld.slots[a + 1], ld.slots[a + 2], ld.slots[a + 3] = p, t, n
+    LK.putSlotValue!(ld, a + 1, p)
+    LK.putSlotValue!(ld, a + 2, t)
+    LK.putSlotValue!(ld, a + 3, n)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
@@ -54,7 +56,7 @@ function _oprun(gd, ld, p::_OP, t::_OP, n::_OP)::String
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
         "ok"
     elseif rc == LK.PL_S_EXCEPTION
-        "err " * _opwrite(LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1]))
+        "err " * _opwrite(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)))
     else
         "failed"
     end

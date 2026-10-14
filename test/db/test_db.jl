@@ -34,13 +34,13 @@ function _dassert(db::IxDB{_D}, name::String, arg::_D)
     proc = LK.isCurrentProcedure(sym_key(_ds(name)), 1, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
-    ld.slots[a + 1] = arg
+    LK.putSlotValue!(ld, a + 1, arg)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     ball = if rc == LK.PL_S_EXCEPTION
-        LK.resolve_term(ld, ld.slots[LK.PL_exception(ld, qid) + 1])
+        LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
     else
         nothing
     end

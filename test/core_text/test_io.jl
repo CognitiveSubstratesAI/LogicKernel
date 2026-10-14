@@ -32,14 +32,14 @@ function _tiorun(gd, ld, name::String, args::_TIO...)
     fid = _TIO_LK.PL_open_foreign_frame(ld)
     a = _TIO_LK.PL_new_term_refs(ld, length(args))
     for (i, x) in enumerate(args)
-        ld.slots[a + i] = x
+        _TIO_LK.putSlotValue!(ld, a + i, x)
     end
     qid = _TIO_LK.PL_open_query(
         gd, ld, nothing, _TIO_LK.PL_Q_CATCH_EXCEPTION | _TIO_LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = _TIO_LK.PL_next_solution(gd, ld, qid)
     ex = _TIO_LK.PL_exception(ld, qid)
-    ball = ex == 0 ? nothing : _TIO_LK.resolve_term(ld, ld.slots[ex + 1])
+    ball = ex == 0 ? nothing : _TIO_LK.resolve_term(ld, _TIO_LK.slotValue(ld, ex + 1))
     _TIO_LK.PL_close_query(ld, qid)
     _TIO_LK.PL_close_foreign_frame(ld, fid)
     return (rc, ball)

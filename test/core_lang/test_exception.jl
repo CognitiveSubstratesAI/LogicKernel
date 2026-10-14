@@ -30,13 +30,13 @@ function _xthrow(ball::_X; ld::LK.PL_local_data{_X}=LK.PL_local_data{_X}())
     th = LK.isCurrentProcedure(sym_key(_xs("throw")), 1, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
-    ld.slots[a + 1] = ball
+    LK.putSlotValue!(ld, a + 1, ball)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, th, a
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     ex = LK.PL_exception(ld, qid)
-    caught = ex == 0 ? nothing : ld.slots[ex + 1]
+    caught = ex == 0 ? nothing : LK.slotValue(ld, ex + 1)
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
     return (rc, caught)

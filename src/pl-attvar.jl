@@ -38,7 +38,7 @@ function saveWakeup(
         if ld.exception_term != 0
             flags |= WAKEUP_STATE_EXCEPTION
             s = PL_new_term_ref(ld)
-            ld.slots[s + 1] = ld.slots[ld.exception_term + 1]
+            setSlotValue!(ld, s + 1, slotValue(ld, ld.exception_term + 1))
             ld.exception_term = 0
         end
         return wakeup_state(fid, outofstack, flags)
@@ -50,7 +50,7 @@ end
 # DIVERGES: `p` is a position on the local stack, where upstream's is a pointer.
 "Make the ball saved at position `p` the pending exception again (pl-attvar.c)."
 function restore_exception(ld::PL_local_data{T}, p::Int)::Nothing where {T}
-    ld.slots[ld.exception_bin + 1] = ld.slots[p + 1]
+    setSlotValue!(ld, ld.exception_bin + 1, slotValue(ld, p + 1))
     ld.exception_term = ld.exception_bin
     return nothing
 end
@@ -77,7 +77,7 @@ function restoreWakeup(ld::PL_local_data{T}, state::wakeup_state)::Nothing where
 
             if (state.flags & WAKEUP_STATE_EXCEPTION) != 0
                 if (state.flags & WAKEUP_KEEP_URGENT_EXCEPTION) != 0
-                    if classify_exception_p(ld, ld.slots[p + 1]) >=
+                    if classify_exception_p(ld, slotValue(ld, p + 1)) >=
                         classify_exception(ld, ld.exception_term)
                         restore_exception(ld, p)
                     end

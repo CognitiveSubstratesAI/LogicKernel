@@ -361,7 +361,7 @@ function pl_variant2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    return is_variant_ptr(ld, ld.slots[A1 + 1], ld.slots[A2 + 1]) ? FTRUE : FFALSE
+    return is_variant_ptr(ld, slotValue(ld, A1 + 1), slotValue(ld, A2 + 1)) ? FTRUE : FFALSE
 end
 
 # PORT: pl-variant.c BeginPredDefs as PL_predicates_from_variant

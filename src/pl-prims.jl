@@ -571,7 +571,7 @@ end
 # PORT: pl-prims.c lengthList
 "The length of the list term reference `list` holds; -1 if it is not one, -2 if partial (pl-prims.c)."
 function lengthList(ld::PL_local_data{T}, list::term_t, errors::Bool)::Int where {T}
-    length, tail = skip_list(ld, ld.slots[list + 1])
+    length, tail = skip_list(ld, slotValue(ld, list + 1))
 
     is_nil(tail) && return length
 
@@ -728,13 +728,13 @@ function numberVars(
     m = Mark(ld)
     empty!(ld.numbervars_visited)
     empty!(ld.numbervars_made)
-    rc = do_number_vars(ld, ld.slots[t + 1], options, 0)
+    rc = do_number_vars(ld, slotValue(ld, t + 1), options, 0)
     empty!(ld.numbervars_visited)                   # unvisit()
     if rc >= 0                                      # all ok
         DiscardMark(ld, m)
         if options.singletons != 0
             options.singletons = 2
-            rc2 = do_number_vars(ld, ld.slots[t + 1], options, 0)
+            rc2 = do_number_vars(ld, slotValue(ld, t + 1), options, 0)
             empty!(ld.numbervars_visited)
             @assert rc == rc2
         end
@@ -1370,10 +1370,10 @@ function can_unify(ld::PL_local_data{T}, t1::T, t2::T, ex::term_t)::Bool where {
             PL_discard_foreign_frame(ld, fid)
             return true
         end
-        if ld.exception_term != 0 && kind(ld.slots[ex + 1]) === VAR
+        if ld.exception_term != 0 && kind(slotValue(ld, ex + 1)) === VAR
             PL_put_term(ld, ex, ld.exception_term)
         end
-        if !handle_exception && kind(ld.slots[ex + 1]) !== VAR
+        if !handle_exception && kind(slotValue(ld, ex + 1)) !== VAR
             PL_clear_exception(ld)
         end
         PL_discard_foreign_frame(ld, fid)
@@ -1401,8 +1401,8 @@ function pl_not_unify2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
-    p1 = deRef(ld, ld.slots[A1 + 1])                    # Word p1 = valTermRef(A1)
-    p2 = deRef(ld, ld.slots[A1 + 2])                    # Word p2 = p1+1
+    p1 = deRef(ld, slotValue(ld, A1 + 1))                    # Word p1 = valTermRef(A1)
+    p2 = deRef(ld, slotValue(ld, A1 + 2))                    # Word p2 = p1+1
     if kind(p1) === VAR || kind(p2) === VAR
         ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return FFALSE   # can unify
         @goto full_check
@@ -1553,8 +1553,8 @@ function pl_equal2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
-    p1 = ld.slots[A1 + 1]                               # Word p1 = valTermRef(A1)
-    p2 = ld.slots[A1 + 2]                               # Word p2 = p1+1
+    p1 = slotValue(ld, A1 + 1)                               # Word p1 = valTermRef(A1)
+    p2 = slotValue(ld, A1 + 2)                               # Word p2 = p1+1
     return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FTRUE : FFALSE
 end
 
@@ -1566,8 +1566,8 @@ function pl_nonequal2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
-    p1 = ld.slots[A1 + 1]                               # Word p1 = valTermRef(A1)
-    p2 = ld.slots[A1 + 2]                               # Word p2 = p1+1
+    p1 = slotValue(ld, A1 + 1)                               # Word p1 = valTermRef(A1)
+    p2 = slotValue(ld, A1 + 2)                               # Word p2 = p1+1
     return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FFALSE : FTRUE
 end
 
@@ -1580,9 +1580,9 @@ function pl_compare3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    d = deRef(ld, ld.slots[A1 + 1])                     # Word d = valTermRef(A1); deRef(d)
-    p1 = ld.slots[A2 + 1]                               # Word p1 = valTermRef(A2)
-    p2 = ld.slots[A2 + 2]                               # Word p2 = p1+1
+    d = deRef(ld, slotValue(ld, A1 + 1))                     # Word d = valTermRef(A1); deRef(d)
+    p1 = slotValue(ld, A2 + 1)                               # Word p1 = valTermRef(A2)
+    p2 = slotValue(ld, A2 + 2)                               # Word p2 = p1+1
     given = kind(d) !== VAR                             # canBind(*d) ⇒ a = 0
     smaller = false
     if given
@@ -1655,16 +1655,18 @@ function unifiable(
         if PL_compare(ld, t1, t2) == CMP_EQUAL
             return PL_unify_atom(ld, subst, nil)
         end
-        unifiable_occurs_check(ld, ld.slots[t1 + 1], ld.slots[t2 + 1]) || return false
-        b = mk_expr(T, T[eq, ld.slots[t1 + 1], ld.slots[t2 + 1]])
-        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
+        unifiable_occurs_check(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1)) ||
+            return false
+        b = mk_expr(T, T[eq, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1)])
+        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), slotValue(ld, subst + 1))
     end
     if PL_is_variable(ld, t2)
-        unifiable_occurs_check(ld, ld.slots[t2 + 1], ld.slots[t1 + 1]) || return false
-        b = mk_expr(T, T[eq, ld.slots[t2 + 1], ld.slots[t1 + 1]])
-        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), ld.slots[subst + 1])
+        unifiable_occurs_check(ld, slotValue(ld, t2 + 1), slotValue(ld, t1 + 1)) ||
+            return false
+        b = mk_expr(T, T[eq, slotValue(ld, t2 + 1), slotValue(ld, t1 + 1)])
+        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), slotValue(ld, subst + 1))
     end
-    ok, m = unify_all_trail_ptrs(ld, ld.slots[t1 + 1], ld.slots[t2 + 1])
+    ok, m = unify_all_trail_ptrs(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1))
     ok || return false
     DiscardMark(ld, m)
     if length(ld.trail) > m.trailtop                    # tt > mt
@@ -1675,7 +1677,7 @@ function unifiable(
             _unbind!(ld, key)                           # setVar(*p)
         end
         list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
-        return unify_ptrs(ld, list, ld.slots[subst + 1])
+        return unify_ptrs(ld, list, slotValue(ld, subst + 1))
     end
     return PL_unify_atom(ld, subst, nil)
 end
@@ -1710,7 +1712,7 @@ function pl_atom_number2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    p1 = deRef(ld, ld.slots[A1 + 1])
+    p1 = deRef(ld, slotValue(ld, A1 + 1))
     text = if isTextAtom(p1)
         sym_text(p1)
     elseif isString(p1)
@@ -1734,7 +1736,7 @@ function pl_atom_number2_va(
         end
         return FFALSE
     end
-    p2 = deRef(ld, ld.slots[A2 + 1])
+    p2 = deRef(ld, slotValue(ld, A2 + 1))
     if isNumber(p2)                                 # PL_get_nchars(A2, …, CVT_NUMBER)
         if isFloat(p2)                              # PL_get_nchars: format_float(…, 3, 'e')
             return if PL_unify_atom(
@@ -1828,7 +1830,7 @@ function pl_ground1_va(
 )::foreign_t where {T}
     A1 = PL__t0
 
-    return ground(ld, ld.slots[A1 + 1]) === nothing ? FTRUE : FFALSE
+    return ground(ld, slotValue(ld, A1 + 1)) === nothing ? FTRUE : FFALSE
 end
 
 # PORT: pl-prims.c functor as pl_functor3_va
@@ -1841,7 +1843,7 @@ function pl_functor3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
-    p = deRef(ld, ld.slots[A1 + 1])
+    p = deRef(ld, slotValue(ld, A1 + 1))
 
     if isTerm(p)
         na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
@@ -1875,7 +1877,7 @@ function pl_functor3_va(
         if arity >= ld.stacks_limit                     # !ensureGlobalSpace(1+arity, ALLOW_GC)
             throw(
                 NotPortedError{T}(
-                    ld.slots[A3 + 1],
+                    slotValue(ld, A3 + 1),
                     "a compound larger than the stacks (the global stack's overflow)", "L1"
                 )
             )
@@ -1934,7 +1936,7 @@ end
 function term_variables_to_termv(
     ld::PL_local_data{T}, t::term_t, maxcount::Int
 )::Tuple{Int, Vector{T}} where {T}
-    root = mk_expr(T, T[ld.slots[t + 1]])
+    root = mk_expr(T, T[slotValue(ld, t + 1)])
     agenda = term_agenda{T}(aNode{T}(root, 0, 0), aNode{T}[])
     vars = T[]
 
@@ -1969,7 +1971,8 @@ function term_variables(
     end
 
     for i in 1:count
-        if !PL_unify_list(ld, list, head, list) || !unify_ptrs(ld, ld.slots[head + 1], v[i])
+        if !PL_unify_list(ld, list, head, list) ||
+            !unify_ptrs(ld, slotValue(ld, head + 1), v[i])
             return false
         end
     end
@@ -2112,22 +2115,26 @@ function pl_free_variable_set3_va(
     goal = PL_new_term_ref(ld)
     vars = T[]
 
-    g, mname = free_variables_loop(ld, ld.slots[A1 + 1], vars)
-    g === nothing || (ld.slots[goal + 1] = g)
+    g, mname = free_variables_loop(ld, slotValue(ld, A1 + 1), vars)
+    g === nothing || (setSlotValue!(ld, goal + 1, g))
     n = length(vars)
 
     if PL_unify_functor(ld, A3, mk_sym(T, :v), n)
         v = PL_new_term_ref(ld)
         for i in 1:n
-            ld.slots[v + 1] = vars[i]
+            setSlotValue!(ld, v + 1, vars[i])
             if !PL_unify_arg(ld, i, A3, v)
                 return FFALSE
             end
         end
 
         if mname !== nothing            # PL_cons_functor(goal, FUNCTOR_colon2, m, goal)
-            ld.slots[goal + 1] = mk_expr(
-                T, T[mk_sym(T, :(:)), mname, linkValI(ld, ld.slots[goal + 1])]
+            setSlotValue!(
+                ld,
+                goal + 1,
+                mk_expr(
+                    T, T[mk_sym(T, :(:)), mname, linkValI(ld, slotValue(ld, goal + 1))]
+                )
             )
         end
 
@@ -2145,8 +2152,8 @@ function pl_skip_list3_va(
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
 
-    len, tail = skip_list(ld, ld.slots[A2 + 1])
-    if unify_ptrs(ld, ld.slots[A3 + 1], tail) && PL_unify_integer(ld, A1, len)
+    len, tail = skip_list(ld, slotValue(ld, A2 + 1))
+    if unify_ptrs(ld, slotValue(ld, A3 + 1), tail) && PL_unify_integer(ld, A1, len)
         return FTRUE
     end
 

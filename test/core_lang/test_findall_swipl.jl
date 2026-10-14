@@ -218,20 +218,20 @@ end
     X, Y = _rv(1), _rv(2)
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_ref(ld)
-    ld.slots[t + 1] = _rf("f", X, Y, X)
+    LK.putSlotValue!(ld, t + 1, _rf("f", X, Y, X))
     m = LK.Mark(ld)
     LK.Trail!(ld, var_key(Y), _rf("g", _rg(1)))
     r = LK.compileTermToHeap(ld, t)
     @test !r.ground && r.cycles === nothing
     g = LK.PL_new_term_ref(ld)
-    ld.slots[g + 1] = _rf("g", _rg(1))
+    LK.putSlotValue!(ld, g + 1, _rf("g", _rg(1)))
     rg = LK.compileTermToHeap(ld, g)
-    @test rg.ground && rg.term === ld.slots[g + 1]
+    @test rg.ground && rg.term === LK.slotValue(ld, g + 1)
     LK.Undo!(ld, m)
     @test length(ld.trail) == m.trailtop            # recording left nothing on the trail
     a, b = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
     @test LK.copyRecordToGlobal(ld, a, r) && LK.copyRecordToGlobal(ld, b, r)
-    ta, tb = ld.slots[a + 1], ld.slots[b + 1]
+    ta, tb = LK.slotValue(ld, a + 1), LK.slotValue(ld, b + 1)
     @test _rcanonical(ta) == "f(A,g(1),A)" && _rcanonical(tb) == "f(A,g(1),A)"
     @test var_key(child(ta, 2)) != var_key(child(tb, 2))        # fresh each time
     @test var_key(child(ta, 2)) != var_key(X)                   # … and not the original's
@@ -240,7 +240,7 @@ end
     C = _rv(3)
     LK.Trail!(ld, var_key(C), _rf("c", C, X))
     cy = LK.PL_new_term_ref(ld)
-    ld.slots[cy + 1] = C
+    LK.putSlotValue!(ld, cy + 1, C)
     n0 = length(ld.trail)
     rc = LK.compileTermToHeap(ld, cy)
     @test length(ld.trail) == n0 && rc.cycles !== nothing && length(rc.cycles) == 1

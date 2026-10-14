@@ -80,7 +80,7 @@ function _precompile_workload()::Nothing
     # a query (V4a): p(7, X) through the run loop, every answer
     fid = PL_open_foreign_frame(ld)
     args = PL_new_term_refs(ld, 2)
-    ld.slots[args + 1] = mk_gnd(T, 7)                   # term reference args + 0
+    setSlotValue!(ld, args + 1, mk_gnd(T, 7))                   # term reference args + 0
     qid = PL_open_query(gd, ld, nothing, PL_Q_NORMAL | PL_Q_EXT_STATUS, proc, args)
     rc = PL_next_solution(gd, ld, qid)
     while rc == PL_S_TRUE

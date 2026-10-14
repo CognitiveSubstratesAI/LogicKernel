@@ -138,7 +138,7 @@ end
         if ld.exception_term == 0
             nothing
         else
-            lk_name(child(child(ld.slots[ld.exception_term + 1], 2), 1))
+            lk_name(child(child(LK.slotValue(ld, ld.exception_term + 1), 2), 1))
         end
     ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
     answers = 0
