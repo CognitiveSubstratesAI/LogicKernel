@@ -3,9 +3,10 @@
 # (swipl cannot be asked for a macro's value, so these are hand-written; the comment on each case
 # quotes the definition it follows):
 #   * every tag × storage pair: `tag`, `storage`, `tagex`, and each type test on a word —
-#     `isVar` (the word 0 only), `isAtom` against `isFunctor` (one tag, two storages),
-#     `isTaggedInt`, `isIndirect` (an integer, float or string on the global or local stack),
-#     `isRef`, `isAttVar`, `needsRef`, `isConst`;
+#     `isVar` (the word 0 only), `isAtomW` against `isFunctor` (one tag, two storages),
+#     `isTaggedIntW`, `isIndirect` (an integer, float or string on the global or local stack),
+#     `isRef`, `isAttVar`, `needsRef`, `isConst` (the six tests whose names the kernel's term-level
+#     tests hold are `isAtomW` … `isTaggedIntW`, and the term-level ones have no word method);
 #   * `consPtr`/`valPtr` round trips at positions 1, 2^27 and the last a word can hold, on both
 #     stacks, and `makeRefG`/`makeRefLok`/`unRef`;
 #   * `consInt`/`valInt` at the tagged range's edges: the largest and smallest tagged integer round
@@ -34,11 +35,11 @@ end
         w = (UInt64(12345) << LK.LMASK_BITS) | s | t
         @test LK.tag(w) == t && LK.storage(w) == s && LK.tagex(w) == (t | s)
         # isAtom: tagex == TAG_ATOM|STG_STATIC; isFunctor: tagex == TAG_ATOM|STG_GLOBAL
-        @test LK.isAtom(w) == (t == LK.TAG_ATOM && s == LK.STG_STATIC)
+        @test LK.isAtomW(w) == (t == LK.TAG_ATOM && s == LK.STG_STATIC)
         @test LK.isFunctor(w) == (t == LK.TAG_ATOM && s == LK.STG_GLOBAL)
-        @test !(LK.isAtom(w) && LK.isFunctor(w))
+        @test !(LK.isAtomW(w) && LK.isFunctor(w))
         # isTaggedInt: tagex == TAG_INTEGER|STG_INLINE
-        @test LK.isTaggedInt(w) == (t == LK.TAG_INTEGER && s == LK.STG_STATIC)
+        @test LK.isTaggedIntW(w) == (t == LK.TAG_INTEGER && s == LK.STG_STATIC)
         # INDIRECT_BM: INTEGER, FLOAT, STRING with STG_GLOBAL or STG_LOCAL
         @test LK.isIndirect(w) ==
             (
@@ -48,10 +49,11 @@ end
         @test LK.isRef(w) == (t == LK.TAG_REFERENCE)
         @test LK.isAttVar(w) == (t == LK.TAG_ATTVAR)
         @test LK.needsRef(w) == (t <= LK.TAG_ATTVAR)              # tag(w) <= TAG_ATTVAR
-        @test LK.isTerm(w) == (t == LK.TAG_COMPOUND)
-        @test LK.isFloat(w) == (t == LK.TAG_FLOAT) && LK.isString(w) == (t == LK.TAG_STRING)
-        @test LK.isRational(w) == (t == LK.TAG_INTEGER)
-        @test LK.isConst(w) == (LK.isAtom(w) || LK.isTaggedInt(w))
+        @test LK.isTermW(w) == (t == LK.TAG_COMPOUND)
+        @test LK.isFloatW(w) == (t == LK.TAG_FLOAT) &&
+            LK.isStringW(w) == (t == LK.TAG_STRING)
+        @test LK.isRationalW(w) == (t == LK.TAG_INTEGER)
+        @test LK.isConst(w) == (LK.isAtomW(w) || LK.isTaggedIntW(w))
         @test !LK.isVar(w)                                         # nonzero: never a variable
     end
     # #define isVar(w) ((w) == (word)0): the word 0 only; a TAG_VAR word with bits above is not
@@ -76,7 +78,7 @@ end
 @testset "consInt/valInt at the tagged range's edges" begin
     for n in (0, 1, -1, 42, -42, LK.PLMAXTAGGEDINT, LK.PLMINTAGGEDINT)
         w = LK.consInt(n)
-        @test LK.valInt(w) == n && LK.isTaggedInt(w)               # put_int64: valInt(r) == l
+        @test LK.valInt(w) == n && LK.isTaggedIntW(w)               # put_int64: valInt(r) == l
     end
     # one past each edge does not survive the shift: put_int64 makes it an MPZ indirect instead
     @test LK.valInt(LK.consInt(LK.PLMAXTAGGEDINT + 1)) != LK.PLMAXTAGGEDINT + 1
@@ -105,4 +107,13 @@ end
         @test z & LK.MP_RAT_MASK == 0 && q & LK.MP_RAT_MASK == 1
         @test LK.mpz_stack_size(z) == sz && LK.mpq_stack_size(q) == sz
     end
+end
+
+@testset "the term-level type tests have no method on a word (JET, CI on 7fa3df4)" begin
+    # a method on `word` of a term-level test let JET's whole-package analysis follow a word into
+    # term-only code (19 reports); the word tests are the `W` functions until the term tests go (L1f)
+    for f in (LK.isAtom, LK.isRational, LK.isFloat, LK.isString, LK.isTerm, LK.isTaggedInt)
+        @test which(f, (UInt64,)).sig == Tuple{typeof(f), Any}         # only the untyped term method
+    end
+    @test hasmethod(LK.isAtomW, Tuple{UInt64}) && hasmethod(LK.isTaggedIntW, Tuple{UInt64})
 end

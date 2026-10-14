@@ -353,8 +353,11 @@ const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
 # The rest of pl-data.h's word layout, for the stacks that hold words from stage C2 on (the
 # workspace's L1_plan/stageC_design.md). A pointer is a 1-based POSITION in the stack the storage
 # bits name — `STG_GLOBAL` the global stack, `STG_LOCAL` the local stack (`consPtr`, `valPtr`). The
-# type tests on a WORD dispatch on `word`; the kernel's tests of the same names on a TERM (below,
-# V6b1/V6b2) are other methods of the same functions.
+# kernel already has type tests of six of these names on a TERM (below, V6b1/V6b2: `isAtom`,
+# `isRational`, `isFloat`, `isString`, `isTerm`, `isTaggedInt`), so their tests on a WORD are named
+# with a `W` (`isAtomW`, …): a method on `word` of the same function let JET's whole-package
+# analysis follow a word into the term-level code (19 reports, CI on 7fa3df4). They take upstream's
+# names when the term-level tests go (L1f).
 # PORT: pl-data.h TAG_ATTVAR
 "Tag of an attributed variable (pl-data.h)."
 const TAG_ATTVAR = UInt64(0x00000001)
@@ -412,27 +415,27 @@ isIndirect(w::word)::Bool = EXBIT(tagex(w)) & INDIRECT_BM != 0
 # PORT: pl-data.h isVar
 "Whether `w` is an unbound variable: the word 0 (pl-data.h)."
 isVar(w::word)::Bool = w == word(0)
-# PORT: pl-data.h isAtom
+# PORT: pl-data.h isAtom as isAtomW
 "Whether `w` is an atom, not a functor (pl-data.h; `tagex`, so a functor word is not one)."
-isAtom(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_STATIC)
-# PORT: pl-data.h isRational
+isAtomW(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_STATIC)
+# PORT: pl-data.h isRational as isRationalW
 "Whether `w` is an integer or a rational (pl-data.h)."
-isRational(w::word)::Bool = tag(w) == TAG_INTEGER
-# PORT: pl-data.h isFloat
+isRationalW(w::word)::Bool = tag(w) == TAG_INTEGER
+# PORT: pl-data.h isFloat as isFloatW
 "Whether `w` is a float (pl-data.h)."
-isFloat(w::word)::Bool = tag(w) == TAG_FLOAT
-# PORT: pl-data.h isString
+isFloatW(w::word)::Bool = tag(w) == TAG_FLOAT
+# PORT: pl-data.h isString as isStringW
 "Whether `w` is a string (pl-data.h)."
-isString(w::word)::Bool = tag(w) == TAG_STRING
-# PORT: pl-data.h isTerm
+isStringW(w::word)::Bool = tag(w) == TAG_STRING
+# PORT: pl-data.h isTerm as isTermW
 "Whether `w` is a compound term (pl-data.h)."
-isTerm(w::word)::Bool = tag(w) == TAG_COMPOUND
-# PORT: pl-data.h isTaggedInt
+isTermW(w::word)::Bool = tag(w) == TAG_COMPOUND
+# PORT: pl-data.h isTaggedInt as isTaggedIntW
 "Whether `w` is a tagged small integer (pl-data.h)."
-isTaggedInt(w::word)::Bool = tagex(w) == (TAG_INTEGER | STG_INLINE)
+isTaggedIntW(w::word)::Bool = tagex(w) == (TAG_INTEGER | STG_INLINE)
 # PORT: pl-data.h isConst
 "Whether `w` is an atom or a tagged small integer (pl-data.h)."
-isConst(w::word)::Bool = isAtom(w) || isTaggedInt(w)
+isConst(w::word)::Bool = isAtomW(w) || isTaggedIntW(w)
 # PORT: pl-data.h isRef
 "Whether `w` is a reference pointer (pl-data.h)."
 isRef(w::word)::Bool = tag(w) == TAG_REFERENCE
