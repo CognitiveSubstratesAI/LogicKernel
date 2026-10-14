@@ -105,3 +105,47 @@ function f_pushArgumentStack(ld::PL_local_data{T}, e::argstack_entry{T})::Nothin
     ld.astack[ld.aTop] = e
     return nothing
 end
+
+# PORT: pl-alloc.c allocGlobal as allocGlobalVars!
+# DIVERGES: allocates `n` cell VARIABLES (L1a): each cell unbound (`setVar`), its key recorded;
+# returns the first key, the others follow it (`k + i`). One stamp per allocation (src/pl-global.jl
+# `CELL_KEY_TAG`). Growth is `_growGlobalStack!`'s, the only allocating path; no garbage collection
+# (`ensureGlobalSpace`'s `ALLOW_GC`) until pl-gc.c's collector is ported, after L1.
+"Allocate `n` fresh variables on the global stack; the key of the first (pl-alloc.c `allocGlobal`)."
+function allocGlobalVars!(ld::PL_local_data, n::Int)::UInt64
+    ld.stamp_next == ld.stamp_end && _reserveStamps!(ld)
+    stamp = ld.stamp_next & CELL_STAMP_MASK
+    ld.stamp_next += UInt64(1)
+    p = ld.gTop + 1
+    top = ld.gTop + n
+    top > length(ld.gstack) && _growGlobalStack!(ld, top)
+    k = CELL_KEY_TAG | (stamp << 28) | UInt64(p)
+    for i in 0:(n - 1)
+        ld.gstack[p + i] = nothing    # setVar()
+        ld.gkey[p + i] = k + UInt64(i)
+    end
+    ld.gTop = top
+    return k
+end
+
+# ORIGINAL: a block of stamps from the process-wide counter (src/pl-global.jl).
+"Reserve the engine's next block of stamps."
+@noinline function _reserveStamps!(ld::PL_local_data)::Nothing
+    first = Threads.atomic_add!(_CELL_STAMP_COUNTER, CELL_STAMP_BLOCK)
+    ld.stamp_next = first
+    ld.stamp_end = first + CELL_STAMP_BLOCK
+    return nothing
+end
+
+# ORIGINAL: the global stack's growth (upstream: `growStacks`, pl-gc.c, which shifts the stacks):
+# the two vectors grow to hold position `top`, doubling. No limit until `stack_limit` covers the
+# global stack (after L1), beyond the positions a key can name.
+"Grow the global stack to hold at least `top` cells."
+@noinline function _growGlobalStack!(ld::PL_local_data, top::Int)::Nothing
+    top <= Int(CELL_POS_MASK) || error("the global stack is full: $top cells (L1a: 2^28)")
+    n = max(top, 2 * length(ld.gstack), 1024)
+    n = min(n, Int(CELL_POS_MASK))
+    resize!(ld.gstack, n)
+    resize!(ld.gkey, n)
+    return nothing
+end

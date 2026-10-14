@@ -64,19 +64,19 @@ function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
 end
 
 # The fresh variable of the record's variable `key`, made when first asked for.
-function _rec_var(vars::Dict{UInt64, T}, key::UInt64)::T where {T}
+function _rec_var(ld::PL_local_data{T}, vars::Dict{UInt64, T}, key::UInt64)::T where {T}
     w = get(vars, key, nothing)
     w === nothing || return w
-    v = mk_var(T, fresh_var_keys!(1))
+    v = mk_var(T, allocGlobalVars!(ld, 1))
     vars[key] = v
     return v
 end
 
 # Give the variable arguments of compound `t` their fresh variables, in argument order.
-function _rec_block!(vars::Dict{UInt64, T}, t::T)::Nothing where {T}
+function _rec_block!(ld::PL_local_data{T}, vars::Dict{UInt64, T}, t::T)::Nothing where {T}
     for i in 1:nchildren(t)
         c = child(t, i)
-        kind(c) === VAR && _rec_var(vars, var_key(c))
+        kind(c) === VAR && _rec_var(ld, vars, var_key(c))
     end
     return nothing
 end
@@ -86,11 +86,11 @@ end
 # walk is upstream's (a compound's cells are made when it is met, its arguments then in order),
 # with an explicit stack for the term agenda. A ground subterm is shared, not rebuilt.
 "The record's term `t` with its variables renamed by `vars`, fresh ones made as they are met."
-function _rec_copy(vars::Dict{UInt64, T}, t::T)::T where {T}
+function _rec_copy(ld::PL_local_data{T}, vars::Dict{UInt64, T}, t::T)::T where {T}
     k = kind(t)
-    k === VAR && return _rec_var(vars, var_key(t))
+    k === VAR && return _rec_var(ld, vars, var_key(t))
     (k !== EXPR || is_ground(t)) && return t
-    _rec_block!(vars, t)
+    _rec_block!(ld, vars, t)
     stack = Tuple{T, Vector{T}}[(t, T[])]           # (compound, its arguments copied so far)
     while true
         node, kids = stack[end]
@@ -105,9 +105,9 @@ function _rec_copy(vars::Dict{UInt64, T}, t::T)::T where {T}
         c = child(node, i)
         kc = kind(c)
         if kc === VAR
-            push!(kids, _rec_var(vars, var_key(c)))
+            push!(kids, _rec_var(ld, vars, var_key(c)))
         elseif kc === EXPR && !is_ground(c)
-            _rec_block!(vars, c)
+            _rec_block!(ld, vars, c)
             push!(stack, (c, T[]))
         else
             push!(kids, c)
@@ -132,12 +132,12 @@ function copyRecordToGlobal(
         return true
     end
     vars = Dict{UInt64, T}()
-    ld.slots[copy + 1] = _rec_copy(vars, r.term)
+    ld.slots[copy + 1] = _rec_copy(ld, vars, r.term)
     cycles = r.cycles
     if cycles !== nothing
         for (key, v) in cycles
-            w = _rec_var(vars, key)
-            Trail!(ld, var_key(w), _rec_copy(vars, v))
+            w = _rec_var(ld, vars, key)
+            Trail!(ld, var_key(w), _rec_copy(ld, vars, v))
         end
     end
     return true

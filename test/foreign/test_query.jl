@@ -200,7 +200,7 @@ end
     @test _ynext(p[:g], qid) == 2
     @test LK.PL_cut_query(ld, qid) == 1 && lk_eq(_yval(p[:g], a), _ys(:only))
     LK.PL_close_foreign_frame(ld, fid)
-    LK.Undo!(ld, LK.mark(0))
+    LK.Undo!(ld, LK.mark(0, 0, LK.NO_MARK_BAR))
     # the next call after a deterministic last answer undoes it and fails — and leaves no foreign
     # frame open, so no term reference can be made until the query is closed (swipl: fatal)
     qid, a, fid = _yopen(p[:g], X)

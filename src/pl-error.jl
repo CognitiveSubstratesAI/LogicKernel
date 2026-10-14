@@ -86,14 +86,14 @@ function _PL_error_close!(
     formal::Int, swi::Int, pred::String, arity::Int, msg::String
 )::Bool where {T}
     if !isempty(pred) || !isempty(msg) || caller !== nothing        # build SWI-Prolog context term
-        msgterm = isempty(msg) ? mk_var(T, fresh_var_keys!(1)) : mk_sym(T, Symbol(msg))
+        msgterm = isempty(msg) ? mk_var(T, allocGlobalVars!(ld, 1)) : mk_sym(T, Symbol(msg))
         predterm = if !isempty(pred)
             mk_expr(T, T[mk_sym(T, :/), mk_sym(T, Symbol(pred)), mk_gnd(T, arity)])
         elseif caller !== nothing
             gd = _query_gd(ld)
             unify_definition(gd, MODULE_user(gd), caller, GP_NAMEARITY)
         else
-            mk_var(T, fresh_var_keys!(1))                   # PL_new_term_ref(): unbound
+            mk_var(T, allocGlobalVars!(ld, 1))                   # PL_new_term_ref(): unbound
         end
         ld.slots[swi + 1] = mk_expr(T, T[mk_sym(T, :context), predterm, msgterm])
     end

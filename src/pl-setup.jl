@@ -105,6 +105,8 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.nbframes = 0
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
     empty!(ld.bindings)
+    ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
+    ld.mark_bar = NO_MARK_BAR
 
     PL_open_foreign_frame(ld)
     ld.exception_term = 0

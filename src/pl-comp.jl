@@ -3081,7 +3081,7 @@ Unify `head` with the head `clause`'s code describes, with fresh variables, unde
 """
 function decompileHead!(ld::PL_local_data{T}, clause::Clause{T}, head::T)::Bool where {T}
     nv = Int(clause.variables)
-    base = nv == 0 ? UInt64(0) : fresh_var_keys!(nv)
+    base = nv == 0 ? UInt64(0) : allocGlobalVars!(ld, nv)
     return decompile_head!(ld, clause, head, base)
 end
 
@@ -3151,10 +3151,10 @@ function decompile_head!(
         elseif c == H_FIRSTVAR || c == H_VAR
             v = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
         elseif c == H_VOID
-            v = _decompile_void(T, frames, base, argn)
+            v = _decompile_void(ld, frames, base, argn)
         elseif c == H_VOID_N
             for _ in 1:Int(PC.codes[PC.pc + 1])
-                w = _decompile_void(T, frames, base, argn)
+                w = _decompile_void(ld, frames, base, argn)
                 if frames === nothing || isempty(frames)
                     pl_unify!(ld, child(head, argn + 2), w) || return false
                     if bvar_access !== nothing                  # not moved
@@ -3191,7 +3191,7 @@ function decompile_head!(
             while true                                          # the R chain, then the pushed one
                 f = pop!(fs)
                 while length(f.kids) < f.need
-                    push!(f.kids, mk_var(T, fresh_var_keys!(1)))
+                    push!(f.kids, mk_var(T, allocGlobalVars!(ld, 1)))
                 end
                 v = mk_expr(T, f.kids)
                 f.pushed && break
@@ -3292,10 +3292,11 @@ end
 
 "A void the decompiler meets: in an argument, its slot's variable; in a compound, a fresh one."
 function _decompile_void(
-    ::Type{T}, frames::Union{Nothing, Vector{DecompileFrame{T}}}, base::UInt64, argn::Int
+    ld::PL_local_data{T}, frames::Union{Nothing, Vector{DecompileFrame{T}}}, base::UInt64,
+    argn::Int
 )::T where {T}
     (frames === nothing || isempty(frames)) && return mk_var(T, base + UInt64(argn))   # FIRSTVAR
-    return mk_var(T, fresh_var_keys!(1))
+    return mk_var(T, allocGlobalVars!(ld, 1))
 end
 
 # ── decompiling a clause: head and body (pl-comp.c), V9d ────────────────────────────────────────
@@ -3444,10 +3445,10 @@ function decompileBodyNoShift!(
             build_term!(di, mk_sym(T, op == B_EQ_VV ? Symbol("==") : Symbol("\\==")), 2)
             pushed += 1
         elseif op == B_VOID || op == H_VOID
-            _dpush!(di, mk_var(T, fresh_var_keys!(1)))          # setVar(*ARGP++)
+            _dpush!(di, mk_var(T, allocGlobalVars!(di.ld, 1)))          # setVar(*ARGP++)
         elseif op == H_VOID_N
             for _ in 1:Int(codes[di.pc])
-                _dpush!(di, mk_var(T, fresh_var_keys!(1)))
+                _dpush!(di, mk_var(T, allocGlobalVars!(di.ld, 1)))
             end
             di.pc += 1
         elseif op == B_FUNCTOR || op == B_RFUNCTOR || op == H_FUNCTOR || op == H_RFUNCTOR
@@ -3479,7 +3480,7 @@ function decompileBodyNoShift!(
             while true                                          # the R chain, then the pushed one
                 f = pop!(di.frames)
                 while length(f.kids) < f.need
-                    push!(f.kids, mk_var(T, fresh_var_keys!(1)))
+                    push!(f.kids, mk_var(T, allocGlobalVars!(di.ld, 1)))
                 end
                 v = mk_expr(T, f.kids)
                 f.pushed && break
@@ -3661,7 +3662,7 @@ function decompile!(
     ld::PL_local_data{T}, clause::Clause{T}, head::T, body::T
 )::Bool where {T}
     nv = Int(clause.prolog_vars)
-    base = nv == 0 ? UInt64(0) : fresh_var_keys!(nv)
+    base = nv == 0 ? UInt64(0) : allocGlobalVars!(ld, nv)
     bvar_access = (clause.flags & CL_HEAD_TERMS) != 0 ? mark_bvar_access(clause) : nothing
     if bvar_access !== nothing                                  # (a rule: a fact moves nothing)
         bvar_args = Vector{T}(undef, length(bvar_access))
@@ -3779,7 +3780,7 @@ function det_goal_error(
                                     mk_sym(T, :det), mk_sym(T, found), mk_sym(T, :goal)
                                 ]
                             ),
-                            mk_var(T, fresh_var_keys!(1))
+                            mk_var(T, allocGlobalVars!(ld, 1))
                         ]
                     )
                 )

@@ -116,12 +116,15 @@ function _cp_visit!(
     chain = UInt64[]
     while kind(t) === VAR
         k = var_key(t)
-        b = get(ld.bindings, k, nothing)
+        b = _binding(ld, k)
         b === nothing && break
         if haskey(st.done, k)                           # copied already
             return _cp_chain_done!(st, chain, st.done[k])
         end
         if k in st.inprogress                           # a cycle: its copy is a variable, bound later
+            # a KEYED variable, not a cell (L1a): `copy_exception!` drops its binding's trail entry
+            # to freeze a cyclic ball, which a cell's binding would not survive (`Undo!` frees the
+            # cell); bound at once, it is never compared unbound, so its key's order is not seen
             w = get!(() -> mk_var(T, fresh_var_keys!(1)), st.cyclic, k)
             return _cp_chain_done!(st, chain, w)
         end
@@ -130,7 +133,7 @@ function _cp_visit!(
     end
     kt = kind(t)
     if kt === VAR                                       # unbound: one fresh variable per variable
-        w = get!(() -> mk_var(T, fresh_var_keys!(1)), st.vars, var_key(t))
+        w = get!(() -> mk_var(T, allocGlobalVars!(ld, 1)), st.vars, var_key(t))
         return _cp_chain_done!(st, chain, w)
     elseif kt !== EXPR
         return _cp_chain_done!(st, chain, t)

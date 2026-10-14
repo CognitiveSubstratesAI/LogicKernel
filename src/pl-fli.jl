@@ -36,7 +36,7 @@ function PL_new_term_refs(ld::PL_local_data{T}, n::Int)::Int where {T}
     t = ld.lTop
     r = t                                       # consTermRef(t)
 
-    k = fresh_var_keys!(n)
+    k = allocGlobalVars!(ld, n)
     for i in 0:(n - 1)
         ld.slots[t + 1] = mk_var(T, k + UInt64(i))   # setVar(*t++)
         t += 1
@@ -54,7 +54,7 @@ end
 function new_term_ref(ld::PL_local_data{T})::Int where {T}
     t = ld.lTop
     r = t                                       # consTermRef(t)
-    ld.slots[t + 1] = mk_var(T, fresh_var_keys!(1))  # setVar(*t++)
+    ld.slots[t + 1] = mk_var(T, allocGlobalVars!(ld, 1))  # setVar(*t++)
     t += 1
 
     ld.lTop = t
@@ -137,7 +137,7 @@ function PL_unify_list(
     p = deRef(ld, ld.slots[l + 1])
 
     if canBind(p)
-        k = fresh_var_keys!(2)
+        k = allocGlobalVars!(ld, 2)
         a1, a2 = mk_var(T, k), mk_var(T, k + 1)
         c = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), a1, a2])
         ld.slots[h + 1] = a1                            # setHandle(h, makeRefG(a))
@@ -187,7 +187,7 @@ function PL_unify_functor(
 
     if canBind(p)
         if arity != 0
-            k = fresh_var_keys!(arity)
+            k = allocGlobalVars!(ld, arity)
             a = Vector{T}(undef, 1 + arity)
             a[1] = name
             for i in 1:arity

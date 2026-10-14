@@ -117,6 +117,14 @@ _manifest_per_type(T) = (
     (LK.Trail!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
     (LK.Mark, Tuple{LK.PL_local_data{T}}, true),
     (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, true),
+    # L1a: cell variables on the global stack (src/pl-inline.jl, src/pl-alloc.jl)
+    (LK._cell_pos, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._binding, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._set_binding!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
+    (LK._unbind!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK.allocGlobalVars!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._reserveStamps!, Tuple{LK.PL_local_data{T}}, false),
+    (LK._growGlobalStack!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.linkTermsCyclic!, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.exitCyclic!, Tuple{LK.PL_local_data{T}}, false),
     (LK._cyclic_deref, Tuple{LK.PL_local_data{T}, T}, false),
@@ -479,10 +487,10 @@ function _manifest_index(T)
         (LK.decompile_head!, Tuple{LD, C, T, UInt64}, false),
         (
             LK._decompile_void,
-            Tuple{Type{T}, Vector{LK.DecompileFrame{T}}, UInt64, Int},
+            Tuple{LK.PL_local_data{T}, Vector{LK.DecompileFrame{T}}, UInt64, Int},
             false
         ),
-        (LK._decompile_void, Tuple{Type{T}, Nothing, UInt64, Int}, false),
+        (LK._decompile_void, Tuple{LK.PL_local_data{T}, Nothing, UInt64, Int}, false),
         # src/pl-proc.jl
         (LK.MODULE_user, Tuple{GD}, true),
         (LK.lookupProcedure, Tuple{T, Int, MOD}, false),
@@ -929,7 +937,7 @@ function _manifest_index(T)
         (LK._reset_argument_stack!, Tuple{LD, LK.queryFrame{T}}, true),
         (LK._bopen!, Tuple{LD, Int, T, Bool, Int, Int, T}, false),
         (LK._bclose!, Tuple{LD}, false),
-        (LK._fresh_compound, Tuple{Type{T}, T, Bool, Int}, false),
+        (LK._fresh_compound, Tuple{LK.PL_local_data{T}, T, Bool, Int}, false),
         (LK._slow_unify, Tuple{LD}, true),
         (LK._is_expr3, Tuple{T}, true),
         (
@@ -975,9 +983,9 @@ function _manifest_index(T)
         # sorts and '$length'/2 (src/pl-list.jl), what bagof/3 and setof/3 call of pl-prims.c, the
         # list and functor unifiers (src/pl-fli.jl), the boot clauses (src/pl-ext.jl)
         (LK.compileTermToHeap, Tuple{LD, Int}, false),
-        (LK._rec_var, Tuple{Dict{UInt64, T}, UInt64}, false),
-        (LK._rec_block!, Tuple{Dict{UInt64, T}, T}, false),
-        (LK._rec_copy, Tuple{Dict{UInt64, T}, T}, false),
+        (LK._rec_var, Tuple{LK.PL_local_data{T}, Dict{UInt64, T}, UInt64}, false),
+        (LK._rec_block!, Tuple{LK.PL_local_data{T}, Dict{UInt64, T}, T}, false),
+        (LK._rec_copy, Tuple{LK.PL_local_data{T}, Dict{UInt64, T}, T}, false),
         (LK.copyRecordToGlobal, Tuple{LD, Int, LK.record{T}}, false),
         (LK.current_bag, Tuple{LD}, true),
         (LK.add_findall_bag, Tuple{LD, Int, Int}, false),

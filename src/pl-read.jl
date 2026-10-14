@@ -2319,7 +2319,7 @@ function _ts_term(h::Int, rd::read_data{T})::T where {T}
     ts = rd.term_stack
     ts.vars[h] == TS_VALUE && return ts.terms[h]
     @assert ts.vars[h] == TS_UNBOUND
-    return mk_var(T, fresh_var_keys!(1))
+    return mk_var(T, allocGlobalVars!(rd.ld, 1))
 end
 
 # ── term building (pl-read.c) ───────────────────────────────────────────────────────────────────
@@ -2343,7 +2343,7 @@ function readValHandle(term::Int, rd::read_data{T})::T where {T}
         end
         ld.slots[var.variable + 1]                  # (or) reference to existing var
     elseif tag == TS_UNBOUND
-        mk_var(T, fresh_var_keys!(1))               # setVar(*argp)
+        mk_var(T, allocGlobalVars!(rd.ld, 1))               # setVar(*argp)
     else
         ts.terms[term]                              # plain value
     end

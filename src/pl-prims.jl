@@ -648,7 +648,7 @@ function do_number_vars(
             q === nothing && break
         end
         if kind(q) === VAR                          # canBind(*p)
-            arg = mk_var(T, fresh_var_keys!(1))     # the argument cell, rewritable
+            arg = mk_var(T, allocGlobalVars!(ld, 1))     # the argument cell, rewritable
             if options.singletons != 0
                 Trail!(ld, var_key(arg), mk_sym(T, :_))             # a[1] = ATOM_anonvar
             else
@@ -672,13 +672,13 @@ function do_number_vars(
                                 v = n + options.offset
                                 (PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT) ||
                                     return REPRESENTATION_ERROR
-                                ld.bindings[var_key(cell)] = mk_sym(T, :var)   # *p = ATOM_var
+                                _set_binding!(ld, var_key(cell), mk_sym(T, :var))   # *p = ATOM_var
                                 n += 1
                             end
                         else
                             if kind(cur) === SYM && sym_key(cur) == k_var
                                 v = n + options.offset
-                                ld.bindings[var_key(cell)] = mk_gnd(T, Int64(v))   # *p = consInt(v)
+                                _set_binding!(ld, var_key(cell), mk_gnd(T, Int64(v)))   # *p = consInt(v)
                                 n += 1
                             end
                         end
@@ -1135,7 +1135,7 @@ function unify_with_occurs_check!(
         mt = m.trailtop
         while tt > mt                               # while(--tt >= mt)
             key = ld.trail[tt]                      # tt->address
-            p2 = deRef(ld, ld.bindings[key])        # deRef2(p, p2): its value, dereferenced
+            p2 = deRef(ld, something(_binding(ld, key)))   # deRef2(p, p2): its value, dereferenced
             if var_occurs_in(ld, p2, p2)
                 if mode == OCCURS_CHECK_ERROR
                     t = p2                          # *t = *p2: the value, kept past the undo
@@ -1282,9 +1282,9 @@ function unifiable(
     list = Pair{T, T}[]
     while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
         key = pop!(ld.trail)
-        value = ld.bindings[key]                    # gp[5] = *p
+        value = something(_binding(ld, key))        # gp[5] = *p
         push!(list, mk_var(T, key) => value)        # gp[4] = makeRefG(p)
-        delete!(ld.bindings, key)                   # setVar(*p)
+        _unbind!(ld, key)                           # setVar(*p)
     end
     return list
 end
@@ -1665,8 +1665,8 @@ function unifiable(
         pairs = T[]
         while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
             key = pop!(ld.trail)
-            push!(pairs, mk_expr(T, T[eq, mk_var(T, key), ld.bindings[key]]))
-            delete!(ld.bindings, key)                   # setVar(*p)
+            push!(pairs, mk_expr(T, T[eq, mk_var(T, key), something(_binding(ld, key))]))
+            _unbind!(ld, key)                           # setVar(*p)
         end
         list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
         return unify_ptrs(ld, list, ld.slots[subst + 1])

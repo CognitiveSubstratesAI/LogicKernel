@@ -131,12 +131,57 @@ function pushArgumentStack(ld::PL_local_data{T}, e::argstack_entry{T})::Nothing 
 end
 
 # ── bindings: deRef, Trail, Mark, Undo ───────────────────────────────────────────────────────────
+# ORIGINAL: the two kinds of variable (L1a; src/pl-global.jl `CELL_KEY_TAG`).
+"""
+The position of the live cell variable `key` names on this engine's global stack, or 0: the key of
+a KEYED variable (a caller's, a counter's, another engine's, or a cell's whose position was reused).
+"""
+@inline function _cell_pos(ld::PL_local_data, key::UInt64)::Int
+    (key & CELL_KEY_TAG) == CELL_KEY_TAG || return 0
+    p = Int(key & CELL_POS_MASK)
+    return (1 <= p <= ld.gTop && ld.gkey[p] == key) ? p : 0
+end
+
+# ORIGINAL: what a variable is bound to, for the few readers that look a binding up by key.
+"The value variable `key` is bound to, or `nothing` (unbound): its cell, or the store."
+function _binding(ld::PL_local_data{T}, key::UInt64)::Union{Nothing, T} where {T}
+    p = _cell_pos(ld, key)
+    return p != 0 ? ld.gstack[p] : get(ld.bindings, key, nothing)
+end
+
+# ORIGINAL: bind without a trail entry — the callers that restore the binding themselves.
+"Bind variable `key` to `v` WITHOUT trailing it: its cell, or the store."
+function _set_binding!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
+    p = _cell_pos(ld, key)
+    if p != 0
+        ld.gstack[p] = v              # *p = v
+    else
+        ld.bindings[key] = v
+    end
+    return nothing
+end
+
+# ORIGINAL: unbind, as `setVar(*p)` does.
+"Make variable `key` unbound again (`setVar`): its cell, or its entry in the store."
+function _unbind!(ld::PL_local_data, key::UInt64)::Nothing
+    p = _cell_pos(ld, key)
+    if p != 0
+        ld.gstack[p] = nothing        # setVar(*p)
+    else
+        delete!(ld.bindings, key)
+    end
+    return nothing
+end
+
 # PORT: pl-data.h deRef
-# DIVERGES: follows bindings in the store where upstream follows reference cells.
+# DIVERGES: follows a cell variable's cell, and a keyed variable's entry in the store, where
+# upstream follows reference cells.
 "`t` with its variable bindings followed: an unbound variable, or a non-variable (pl-data.h)."
 function deRef(ld::PL_local_data{T}, t::T)::T where {T}
     while kind(t) === VAR
-        b = get(ld.bindings, var_key(t), nothing)
+        k = var_key(t)
+        p = _cell_pos(ld, k)
+        b = p != 0 ? ld.gstack[p] : get(ld.bindings, k, nothing)
         b === nothing && return t
         t = b
     end
@@ -152,18 +197,29 @@ function linkValI(ld::PL_local_data{T}, t::T)::T where {T}
 end
 
 # PORT: pl-inline.h Trail
-# DIVERGES: every binding is trailed. Upstream skips an assignment to a cell created after the last
-# mark (`p >= LD->mark_bar`: backtracking discards the cell itself); bindings here have no age.
-"Bind variable `key` to `v`, recording it on the trail (pl-inline.h)."
+# DIVERGES: a cell variable is trailed as upstream trails a global cell — only below
+# `LD->mark_bar`; a KEYED variable (src/pl-global.jl) has no age, and is always trailed, as
+# upstream always trails a local-stack cell (`p >= lBase`).
+"Bind variable `key` to `v`, recording it on the trail where backtracking must undo it (pl-inline.h)."
 function Trail!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
-    push!(ld.trail, key)                        # (tTop++)->address = p
-    ld.bindings[key] = v                        # *p = v
+    p = _cell_pos(ld, key)
+    if p != 0
+        p < ld.mark_bar && push!(ld.trail, key) # if ( p < LD->mark_bar ) (tTop++)->address = p
+        ld.gstack[p] = v              # *p = v
+    else
+        push!(ld.trail, key)                    # (tTop++)->address = p
+        ld.bindings[key] = v                    # *p = v
+    end
     return nothing
 end
 
 # PORT: pl-incl.h Mark
-"A mark at the current height of the trail (pl-incl.h `Mark`)."
-Mark(ld::PL_local_data)::mark = mark(length(ld.trail))
+"A mark at the current heights of the trail and the global stack; sets `mark_bar` (pl-incl.h `Mark`)."
+function Mark(ld::PL_local_data)::mark
+    m = mark(length(ld.trail), ld.gTop, ld.mark_bar)
+    ld.mark_bar != NO_MARK_BAR && (ld.mark_bar = ld.gTop)
+    return m
+end
 
 # PORT: pl-incl.h f_hasSpace
 # QUIRK, as upstream: the distance is signed and `esize` unsigned, so C converts a NEGATIVE distance
@@ -180,15 +236,16 @@ end
 hasLocalSpace(ld::PL_local_data, n::Int)::Bool = f_hasSpace(ld.lTop, ld.lMax, n, 1)
 
 # PORT: pl-incl.h DiscardMark
-# DIVERGES: a no-op. Upstream restores `LD->mark_bar`, which decides what needs trailing; every
-# binding is trailed here (`Trail!`), so there is no bar. Kept, so every upstream call site reads
-# `DiscardMark(…)` and a future `mark_bar` (condition 1's collector) has its place.
-"Abandon mark `m` without undoing to it (pl-incl.h `DiscardMark`)."
-DiscardMark(ld::PL_local_data, m::mark)::Nothing = nothing
+# DIVERGES: no `frozen_bar` — the kernel's ball is a value (decision 1).
+"Abandon mark `m` without undoing to it: `mark_bar` back to what `m` replaced (pl-incl.h `DiscardMark`)."
+function DiscardMark(ld::PL_local_data, m::mark)::Nothing
+    ld.mark_bar = m.saved_bar
+    return nothing
+end
 
 # PORT: pl-incl.h NoMark
 "A mark that must never be undone to (pl-incl.h `NoMark`): a built-in's foreign frame has one."
-NoMark()::mark = mark(NOT_A_MARK)
+NoMark()::mark = mark(NOT_A_MARK, 0, 0)
 
 # PORT: pl-incl.h isRealMark
 "Whether `m` was taken by `Mark`, not made by `NoMark` (pl-incl.h)."
@@ -197,14 +254,17 @@ isRealMark(m::mark)::Bool = m.trailtop != NOT_A_MARK
 # PORT: pl-incl.h Undo
 # DIVERGES: the body of upstream's `Undo` without O_DESTRUCTIVE_ASSIGNMENT (with it, `do_undo` also
 # restores destructive assignments — setarg/3, b_setval/2 — which the kernel does not have), and no
-# global stack to reset. Marks nest: undoing to a mark above the trail's top is a misuse, asserted;
-# so is undoing to a `NoMark`, which upstream never does.
-"Undo every binding made since mark `m` (pl-incl.h `Undo`)."
+# `frozen_bar` (the kernel's ball is a value, decision 1). Marks nest: undoing to a mark above the
+# trail's or the global stack's top is a misuse, asserted; so is undoing to a `NoMark`, which
+# upstream never does.
+"Undo every binding made since mark `m`, and free the cells allocated since (pl-incl.h `Undo`)."
 function Undo!(ld::PL_local_data, m::mark)::Nothing
     @assert isRealMark(m) "Undo! to a NoMark"
     @assert m.trailtop <= length(ld.trail) "Undo! to a mark above the trail: marks undone out of order"
+    @assert m.globaltop <= ld.gTop "Undo! to a mark above the global stack: marks undone out of order"
     while length(ld.trail) > m.trailtop
-        delete!(ld.bindings, pop!(ld.trail))    # setVar(*tt->address)
+        _unbind!(ld, pop!(ld.trail))            # setVar(*tt->address)
     end
+    ld.gTop = m.globaltop                       # gTop = (b).globaltop
     return nothing
 end

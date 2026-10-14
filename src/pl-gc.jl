@@ -102,7 +102,8 @@ function _grow_pool!(
         push!(
             pool,
             choice{T}(
-                0, CHP_JUMP, 0, mark(0), 0, ClauseChoice{T}(nothing, word(0)), 0, false
+                0, CHP_JUMP, 0, mark(0, 0, 0), 0, ClauseChoice{T}(nothing, word(0)), 0,
+                false
             )
         )
     end
@@ -110,7 +111,7 @@ function _grow_pool!(
 end
 function _grow_pool!(::PL_local_data, pool::Vector{fliFrame}, n::Int)::Nothing
     while length(pool) < n
-        push!(pool, fliFrame(0, 0, 0, 0, mark(0)))
+        push!(pool, fliFrame(0, 0, 0, 0, mark(0, 0, 0)))
     end
     return nothing
 end
@@ -171,7 +172,7 @@ end
 
 "Make the cell at offset `n` of the frame at `base` a variable (`setVar(varFrame(fr, n))`)."
 function _setVar!(ld::PL_local_data{T}, base::Int, n::Int)::Nothing where {T}
-    ld.slots[varFrameP(base, n) + 1] = mk_var(T, fresh_var_keys!(1))
+    ld.slots[varFrameP(base, n) + 1] = mk_var(T, allocGlobalVars!(ld, 1))
     return nothing
 end
 

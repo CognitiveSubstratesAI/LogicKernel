@@ -150,15 +150,41 @@ Reserve `n` kernel variable keys, never issued before in this process: they are
 """
 function fresh_var_keys!(n::Int)::UInt64
     first = Threads.atomic_add!(_KERNEL_VAR_COUNTER, UInt64(n))
-    @assert first >= KERNEL_VAR_BASE && first + UInt64(n) >= first "kernel variable keys exhausted"
+    @assert first >= KERNEL_VAR_BASE && first + UInt64(n) <= CELL_KEY_TAG "kernel variable keys exhausted"
     return first
 end
+
+# ── cell variables: the global stack's keys (L1a) ───────────────────────────────────────────────
+# DIVERGES: a variable on the global stack (`allocGlobalVars!`, src/pl-inline.jl) is still an
+# interface variable — a slot holds a term until L1b — so its CELL is named by a key: the cell tag
+# (the top two bits), a STAMP (34 bits) and the position (28 bits). The stamp comes from ONE
+# PROCESS-WIDE counter, reserved by each engine in blocks, so stamps are unique across engines and
+# grow with time; the engine keeps the key of the cell living at each position (`gkey`). A key is
+# this engine's live cell iff its position is at most `gTop` and `gkey` holds it: a key retained
+# after its position was freed and reused, or from another engine, is not — it is a KEYED variable,
+# bound in `bindings` (the workspace's L1 plan, §2). The cells of one allocation have consecutive
+# keys, and keys order by stamp, then position: allocation order, as the counter's keys before L1a.
+# Limits: 2^28 positions; the stamp wraps after 2^34 allocations in one process.
+"The top bits of a cell variable's key (pl-global.jl, L1a): `0b11` above the kernel's keys."
+const CELL_KEY_TAG = UInt64(0b11) << 62
+"The bits of a cell variable's key that hold its position on the global stack."
+const CELL_POS_MASK = (UInt64(1) << 28) - UInt64(1)
+"The bits of a stamp, below the cell tag and above the position."
+const CELL_STAMP_MASK = (UInt64(1) << 34) - UInt64(1)
+"The stamps an engine reserves at a time."
+const CELL_STAMP_BLOCK = UInt64(1024)
+# the next free stamp (see `CELL_KEY_TAG`) — module-level, allowlisted in tools/lint_globals.jl as
+# `_KERNEL_VAR_COUNTER` is: a monotonic source of fresh ids carries no behaviour between callers
+const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 
 # PORT: pl-global.h PL_local_data
 # DIVERGES: `index_ctx` is scratch upstream declares on the C stack in each firstClause/nextClause.
 # `bindings` has no field upstream — SWI binds a variable by overwriting its cell on the
 # global stack; interface variables are immutable values, so a binding is an entry keyed by
-# `var_key`. `trail` is `stacks.trail` (its length is `tTop`) and holds those keys. A cyclic link or
+# `var_key`. Since L1a it holds only KEYED variables' bindings: a CELL variable's binding is in its
+# cell on `gstack`, the global stack of variables (`gkey`, `gTop`; see `CELL_KEY_TAG`), and
+# `mark_bar` is upstream's. `trail` is `stacks.trail` (its length is `tTop`) and holds the keys of
+# both kinds. A cyclic link or
 # a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
 # overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
 # `var_occurs_in`'s `visited`). The agendas and the `visited` stack are scratch upstream keeps on
@@ -213,6 +239,12 @@ mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
     bindings::Dict{UInt64, T}                                   # var_key → value (see above)
     trail::Vector{UInt64}                                       # stacks.trail: bound var_keys
+    gstack::Vector{Union{Nothing, T}}                           # stacks.global: the cells (L1a)
+    gkey::Vector{UInt64}                                        # … the key of each cell's variable
+    gTop::Int                                                   # stacks.global.top
+    mark_bar::Int                                               # mark_bar
+    stamp_next::UInt64                                          # (the engine's reserved stamps:
+    stamp_end::UInt64                                           #  stamp_next until stamp_end)
     prolog_flag_occurs_check::occurs_check_t                    # prolog_flag.occurs_check
     prolog_flag_portable_vmi::Bool                              # truePrologFlag(PLFLAG_PORTABLE_VMI)
     prolog_flag_last_call::Bool                                 # truePrologFlag(PLFLAG_LASTCALL)
@@ -287,7 +319,11 @@ end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
-        definition_ref{T}[], Dict{UInt64, T}(), UInt64[], OCCURS_CHECK_FALSE, true,
+        definition_ref{T}[], Dict{UInt64, T}(), UInt64[],
+        Union{Nothing, T}[], UInt64[], 0,
+        NO_MARK_BAR,                            # mark_bar: every binding trailed (L1a-1)
+        UInt64(0), UInt64(0),                   # no stamps reserved yet
+        OCCURS_CHECK_FALSE, true,
         true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
         false,                                  # optimise: off without -O (pl-prologflag.c:2394)
         true,                                   # optimise_unify: on (pl-prologflag.c:2395)

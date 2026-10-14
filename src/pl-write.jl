@@ -1014,7 +1014,7 @@ function _numbervars_newer(ld::PL_local_data{T}, t0::T)::Bool where {T}
     bound = false
     last = UInt64(0)
     while kind(t0) === VAR
-        v = get(ld.bindings, var_key(t0), nothing)
+        v = _binding(ld, var_key(t0))
         v === nothing && break
         bound = true
         last = var_key(t0)

@@ -854,6 +854,7 @@ graph LR
     pl_prims --> pl_ressymbol
     pl_prims --> pl_comp
     pl_prims --> pl_variant
+    pl_prims --> pl_alloc
     pl_prims --> pl_wam
     pl_prims --> pl_fli
     pl_prims --> pl_error
@@ -878,6 +879,7 @@ graph LR
     pl_comp --> pl_ressymbol
     pl_comp --> pl_thread
     pl_comp --> pl_gc
+    pl_comp --> pl_alloc
     pl_comp --> pl_wam
     pl_comp --> pl_fli
     pl_comp --> pl_error
@@ -900,6 +902,7 @@ graph LR
     pl_copyterm --> SWI_Prolog
     pl_copyterm --> pl_global
     pl_copyterm --> pl_inline
+    pl_copyterm --> pl_alloc
     pl_copyterm --> pl_fli
     pl_copyterm --> pl_arith
     pl_copyterm --> pl_read
@@ -912,6 +915,7 @@ graph LR
     pl_rec --> pl_prims
     pl_rec --> pl_variant
     pl_rec --> pl_copyterm
+    pl_rec --> pl_alloc
     pl_termhash --> term_interface
     pl_termhash --> default_term
     pl_termhash --> pl_hash
@@ -995,6 +999,7 @@ graph LR
     pl_error --> pl_inline
     pl_error --> pl_prims
     pl_error --> pl_comp
+    pl_error --> pl_alloc
     pl_error --> pl_wam
     pl_error --> pl_fli
     pl_error --> pl_gmp
@@ -1144,6 +1149,7 @@ graph LR
     pl_list --> pl_inline
     pl_list --> pl_prims
     pl_list --> pl_comp
+    pl_list --> pl_alloc
     pl_list --> pl_fli
     pl_list --> pl_error
     pl_list --> pl_read
@@ -1194,6 +1200,7 @@ graph LR
     pl_read --> pl_modul
     pl_read --> pl_prims
     pl_read --> pl_comp
+    pl_read --> pl_alloc
     pl_read --> pl_wam
     pl_read --> pl_fli
     pl_read --> pl_error

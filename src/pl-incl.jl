@@ -350,17 +350,27 @@ end
 end
 
 # PORT: pl-incl.h mark
-# DIVERGES: only `trailtop`. Bindings live in a store, not on a global stack, so there is no
-# `globaltop` to reset, and no `saved_bar` (`LD->mark_bar` decides which assignments need trailing;
-# every binding is trailed here).
-"A backtrack mark (pl-incl.h `struct mark`): the height of the trail when it was taken."
+# DIVERGES: heights, where upstream holds pointers: `globaltop` is the height of the global stack
+# of cell variables (src/pl-global.jl, L1a), `saved_bar` the `LD->mark_bar` the mark replaced.
+"""
+A backtrack mark (pl-incl.h `struct mark`): the heights of the trail and the global stack when it
+was taken, and the `mark_bar` it replaced.
+"""
 struct mark
     trailtop::Int               # top of the trail stack
+    globaltop::Int              # top of the global stack
+    saved_bar::Int              # LD->mark_bar before this mark
 end
 
 # PORT: pl-incl.h NOT_A_MARK
 "The `trailtop` of a mark that must never be undone to (pl-incl.h; `~(word)0` as a trail height)."
 const NOT_A_MARK = -1
+
+# PORT: pl-incl.h NO_MARK_BAR
+# DIVERGES: a height, `typemax(Int)` for upstream's `(Word)~0`: above every cell, so every binding
+# of a cell variable is trailed while `LD->mark_bar` is set to it.
+"The `mark_bar` that makes every binding trailed (pl-incl.h `NO_MARK_BAR`)."
+const NO_MARK_BAR = typemax(Int)
 
 # ── the structs ─────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-incl.h arg_info

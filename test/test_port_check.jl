@@ -786,3 +786,42 @@ ld.bindings[k] = v   # trailing comment: ld.bindings
         )
     end
 end
+
+# THE STAMP RATCHET (user, 2026-10-14, the L1 audit): the cell keys' stamp machinery may only fall,
+# and is zero once L1f is DONE. Each verdict on its own case; the count on a fixture.
+@testset "the stamp ratchet: transitional cell-key sites, zero at L1f" begin
+    root = joinpath(@__DIR__, "..")
+    real = stamp_sites(root)
+    @test length(real) == STAMP_SITES_MAX > 0                       # both sides non-empty
+    inv = read(joinpath(root, "docs", "port_inventory.md"), String)
+    @test !l1f_done(inv)                                            # L1f is not done yet
+    @test stamp_verdict(real, STAMP_SITES_MAX, l1f_done(inv)) === nothing
+    mktempdir() do d
+        mkpath(joinpath(d, "src", "os"))
+        write(
+            joinpath(d, "src", "a.jl"),
+            """
+p = _cell_pos(ld, k)
+# CELL_KEY_TAG in a comment does not count
+x = foo.gkeys + stamp_nextx
+k = CELL_KEY_TAG | s   # trailing comment: gkey
+"""
+        )
+        write(joinpath(d, "src", "os", "b.jl"), "ld.gkey[p] = k\n")
+        sites = stamp_sites(d)
+        @test sites == ["src/a.jl:1", "src/a.jl:4", "src/os/b.jl:1"]
+        @test startswith(something(stamp_verdict(sites, 2, false), ""), "STAMP-SITES")
+        @test startswith(
+            something(stamp_verdict(sites, 4, false), ""), "STAMP-CEILING-STALE"
+        )
+        @test stamp_verdict(sites, 3, false) === nothing
+        @test startswith(something(stamp_verdict(sites, 3, true), ""), "STAMP-AT-L1F")
+        @test stamp_verdict(String[], 0, true) === nothing             # L1f done, none left
+        @test startswith(
+            something(stamp_verdict(String[], 3, false), ""), "STAMP-CEILING-STALE"
+        )
+    end
+    @test l1f_done("| **L1f** copy_term — ✅ **DONE 2026-12-01** |")
+    @test !l1f_done("| **L1f** copy_term over cells — NEXT |")
+    @test !l1f_done("| **L1e** — ✅ **DONE** | L1f waits |")
+end

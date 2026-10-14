@@ -667,7 +667,7 @@ found; ports into any other repo were checked for structure only.
 # fails too, so the ceiling is lowered and a removed site cannot be silently re-added. Comments do not
 # count. Both sides are non-empty: a tree with src/pl-inline.jl (where deRef/Trail!/Undo! live — the
 # kernel's own, not a fixture) and no site found counts 0, which is below the ceiling and fails.
-const BINDINGS_DIRECT_MAX = 13
+const BINDINGS_DIRECT_MAX = 6
 
 "The direct `ld.bindings` sites in the code (not the comments) of `src/`, as `file:line`."
 function bindings_direct_sites(root::AbstractString)::Vector{String}
@@ -695,6 +695,50 @@ function bindings_verdict(sites::Vector{String}, maxn::Int)::Union{Nothing, Stri
     return nothing
 end
 
+# THE STAMP RATCHET (user, 2026-10-14, the L1 audit): the cell keys' stamp machinery (src/pl-global.jl
+# `CELL_KEY_TAG`) is TRANSITIONAL — it exists only while a variable is an interface term named by a
+# key — and is GONE by L1f. Its sites — code lines of src/ that name it — may only fall: above the
+# ceiling fails and names them, below it fails until the ceiling is lowered. Once docs/
+# port_inventory.md marks L1f DONE, any site fails. Comments do not count; the kernel's own tree only.
+const STAMP_SITES_MAX = 30
+
+"The names of the stamp machinery; a code line of src/ naming one is a stamp site."
+const STAMP_NAMES = r"\b(CELL_KEY_TAG|CELL_POS_MASK|CELL_STAMP_MASK|CELL_STAMP_BLOCK|_CELL_STAMP_COUNTER|stamp_next|stamp_end|gkey|_cell_pos|_reserveStamps!)(?![A-Za-z0-9_!])"
+
+"The stamp sites in the code (not the comments) of `src/`, as `file:line`."
+function stamp_sites(root::AbstractString)::Vector{String}
+    sites = String[]
+    srcdir = joinpath(root, "src")
+    isdir(srcdir) || return sites
+    for (dir, _, fs) in walkdir(srcdir), f in sort(fs)
+        endswith(f, ".jl") || continue
+        p = joinpath(dir, f)
+        for (i, l) in enumerate(eachline(p))
+            code = first(split(l, '#'; limit=2))
+            occursin(STAMP_NAMES, code) && push!(sites, "$(relpath(p, root)):$i")
+        end
+    end
+    return sites
+end
+
+"Whether `inventory` (docs/port_inventory.md's text) marks step L1f DONE."
+l1f_done(inventory::AbstractString)::Bool =
+    any(
+        l -> occursin(r"\*\*L1f\*\*", l) && occursin("✅ **DONE", l), split(inventory, '\n')
+    )
+
+"The stamp ratchet's verdict for `sites` against the ceiling `maxn`: `nothing`, or the violation."
+function stamp_verdict(sites::Vector{String}, maxn::Int, done::Bool)::Union{Nothing, String}
+    n = length(sites)
+    done && n > 0 &&
+        return "STAMP-AT-L1F src/: L1f is DONE and $n stamp sites remain (user, 2026-10-14: zero at L1f) — $(join(sites, ", "))"
+    n > maxn &&
+        return "STAMP-SITES src/: $n stamp sites, the ceiling is $maxn (they may only fall) — $(join(sites, ", "))"
+    n < maxn &&
+        return "STAMP-CEILING-STALE tools/port_check.jl: $n stamp sites — lower STAMP_SITES_MAX from $maxn to $n"
+    return nothing
+end
+
 function port_check(pkgroot::AbstractString;
     upstream_dirs::Dict{String, String}=default_upstream_dirs(),
     inventory::AbstractString="docs/port_inventory.md",
@@ -709,6 +753,11 @@ function port_check(pkgroot::AbstractString;
     if isfile(joinpath(root, "src", "pl-inline.jl"))   # the kernel's own tree (not a fixture)
         bv = bindings_verdict(bindings_direct_sites(root), BINDINGS_DIRECT_MAX)
         bv === nothing || push!(v, bv)
+        invf = joinpath(root, inventory)
+        sv = stamp_verdict(
+            stamp_sites(root), STAMP_SITES_MAX, isfile(invf) && l1f_done(read(invf, String))
+        )
+        sv === nothing || push!(v, sv)
     end
     swi = first(PORT_REPOS)
     if swi in available

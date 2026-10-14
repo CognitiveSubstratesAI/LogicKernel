@@ -54,7 +54,7 @@ function pl_dlength2_va(
                 )
             end
 
-            k = fresh_var_keys!(len)
+            k = allocGlobalVars!(ld, len)
             dot = mk_sym(T, LIST_CONS_NAME)
             l = mk_nil(T)                               # p[-1] = ATOM_nil
             for i in len:-1:1

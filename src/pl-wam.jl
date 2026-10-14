@@ -482,7 +482,7 @@ function determinism_error(
                                 mk_sym(T, found), mk_sym(T, decl)
                             ]
                         ),
-                        mk_var(T, fresh_var_keys!(1))
+                        mk_var(T, allocGlobalVars!(ld, 1))
                     ]
                 )
             )
@@ -1008,7 +1008,7 @@ function _bopen!(
         ld.bcells[start] = head
     end
     first = hashead ? start + 1 : start
-    k = fresh_var_keys!(need - first + 1)
+    k = allocGlobalVars!(ld, need - first + 1)
     for i in first:need                         # setVar(*ap++)
         ld.bcells[i] = mk_var(T, k + UInt64(i - first))
     end
@@ -1044,9 +1044,11 @@ end
 # A compound of fresh variables: `head(V1, …, Vk)` when `hashead`, else `$expr(V1, …, Vn)` — what
 # upstream allocates (`setVar` of every cell) before binding the caller's variable to it. Under
 # `occurs_check` `true`/`error` the VM binds it at once and reads it (decision 3, DIVERGES).
-function _fresh_compound(::Type{T}, head::T, hashead::Bool, n::Int)::T where {T}
+function _fresh_compound(
+    ld::PL_local_data{T}, head::T, hashead::Bool, n::Int
+)::T where {T}
     nv = hashead ? n - 1 : n
-    k = fresh_var_keys!(nv)
+    k = allocGlobalVars!(ld, nv)
     kids = Vector{T}(undef, n)
     i = 1
     if hashead
@@ -1259,7 +1261,7 @@ function resumeAfterException(
 )::Nothing where {T}
     if clear
         ld.exception_term = 0
-        k = fresh_var_keys!(3)
+        k = allocGlobalVars!(ld, 3)
         ld.slots[ld.exception_bin + 1] = mk_var(T, k)                  # setVar(*valTermRef(…))
         ld.slots[ld.exception_printed + 1] = mk_var(T, k + UInt64(1))
         ld.slots[ld.exception_pending + 1] = mk_var(T, k + UInt64(2))
@@ -1446,7 +1448,7 @@ end
 function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     q = ld.queries[qf]
     if q.exception != 0 && ld.exception_term == 0
-        ld.slots[ld.exception_printed + 1] = mk_var(T, fresh_var_keys!(1))
+        ld.slots[ld.exception_printed + 1] = mk_var(T, allocGlobalVars!(ld, 1))
     end
 
     DiscardMark(ld, ld.choices[q.choice].mark)
@@ -1824,7 +1826,7 @@ function PL_next_solution_guarded(
     hfv_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     PC += 1
     if UMODE == uwrite
-        hfv_v = mk_var(T, fresh_var_keys!(1))      # setVar(*ARGP)
+        hfv_v = mk_var(T, allocGlobalVars!(ld, 1))      # setVar(*ARGP)
         _argp_store!(ld, ARGP, hfv_v)
         ld.slots[hfv_k + 1] = hfv_v                 # varFrame(FR, *PC++) = makeRefG(ARGP)
     else
@@ -1864,7 +1866,7 @@ function PL_next_solution_guarded(
             ARGP = _bopen!(ld, hf_n, hf_head, hf_lit != 0, 0, -1, hf_p)
             UMODE = uwrite
         else
-            hf_t = _fresh_compound(T, hf_head, hf_lit != 0, hf_n)
+            hf_t = _fresh_compound(ld, hf_head, hf_lit != 0, hf_n)
             Trail!(ld, var_key(hf_p), hf_t)         # bindConst(p, c)
             ARGP = argp_t{T}(ARGP_CURSOR, hf_lit == 0 ? 1 : 2, hf_t)
         end
@@ -1921,7 +1923,7 @@ function PL_next_solution_guarded(
             ARGP = _bopen!(ld, 3, gd.atom_dot, true, 0, -1, hl_p)
             UMODE = uwrite
         else
-            hl_t = _fresh_compound(T, gd.atom_dot, true, 3)
+            hl_t = _fresh_compound(ld, gd.atom_dot, true, 3)
             Trail!(ld, var_key(hl_p), hl_t)
             ARGP = argp_t{T}(ARGP_CURSOR, 2, hl_t)
         end
@@ -1949,7 +1951,7 @@ function PL_next_solution_guarded(
     hff_b = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if UMODE == uwrite
-        hff_k = fresh_var_keys!(2)
+        hff_k = allocGlobalVars!(ld, 2)
         hff_x = mk_var(T, hff_k)
         hff_y = mk_var(T, hff_k + UInt64(1))
         ld.slots[hff_a + 1] = hff_x
@@ -1965,7 +1967,7 @@ function PL_next_solution_guarded(
             ld.slots[hff_a + 1] = child(hff_p, 2)
             ld.slots[hff_b + 1] = child(hff_p, 3)
         elseif kind(hff_p) === VAR
-            hff_k = fresh_var_keys!(2)
+            hff_k = allocGlobalVars!(ld, 2)
             hff_x = mk_var(T, hff_k)
             hff_y = mk_var(T, hff_k + UInt64(1))
             ld.slots[hff_a + 1] = hff_x
@@ -2067,7 +2069,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_ARGFIRSTVAR
     # DIVERGES: a fresh variable into the builder cell and the slot (`setVar` + `makeRefG`).
     @label B_ARGFIRSTVAR
-    baf_v = mk_var(T, fresh_var_keys!(1))
+    baf_v = mk_var(T, allocGlobalVars!(ld, 1))
     _argp_store!(ld, ARGP, baf_v)                   # setVar(*ARGP)
     ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = baf_v   # varFrame(FR, *PC++)
     PC += 1
@@ -2078,7 +2080,7 @@ function PL_next_solution_guarded(
     # DIVERGES: a fresh variable into the slot and the argument; no global stack, so no
     # `ENSURE_GLOBAL_SPACE`.
     @label B_FIRSTVAR
-    bfv_v = mk_var(T, fresh_var_keys!(1))
+    bfv_v = mk_var(T, allocGlobalVars!(ld, 1))
     ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = bfv_v   # *k = w
     PC += 1
     _argp_store!(ld, ARGP, bfv_v)                   # *ARGP++ = w
@@ -2087,7 +2089,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c B_VOID
     @label B_VOID
-    _argp_store!(ld, ARGP, mk_var(T, fresh_var_keys!(1)))  # setVar(*ARGP++)
+    _argp_store!(ld, ARGP, mk_var(T, allocGlobalVars!(ld, 1)))  # setVar(*ARGP++)
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
@@ -2145,7 +2147,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_UNIFY_FIRSTVAR
     # DIVERGES: the slot gets a fresh variable (decision 2); see `unify_var_cont` for the term.
     @label B_UNIFY_FIRSTVAR
-    bu_var = mk_var(T, fresh_var_keys!(1))
+    bu_var = mk_var(T, allocGlobalVars!(ld, 1))
     ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
     PC += 1
     ld.slots[ARGP.pos + 1] = bu_var                 # setVar(*ARGP): needed for GC
@@ -2179,7 +2181,7 @@ function PL_next_solution_guarded(
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, uvc_k)               # *ARGP++ = *k
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, mk_var(T, fresh_var_keys!(1)))   # setVar(*ARGP)
+        _argp_store!(ld, ARGP, mk_var(T, allocGlobalVars!(ld, 1)))   # setVar(*ARGP)
         UMODE = bu_first ? uwrite : uread           # must write for GC to work (see above)
         bu_hold = 0
         @goto next_instruction
@@ -2225,10 +2227,10 @@ function PL_next_solution_guarded(
     buff_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     buff_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
-    buff_v = mk_var(T, fresh_var_keys!(1))
+    buff_v = mk_var(T, allocGlobalVars!(ld, 1))
     ld.slots[buff_1 + 1] = buff_v                   # *v1 = makeRefG(v)
     if _slow_unify(ld)
-        buff_w = mk_var(T, fresh_var_keys!(1))
+        buff_w = mk_var(T, allocGlobalVars!(ld, 1))
         ld.slots[buff_2 + 1] = buff_w               # *v2 = makeRefG(v)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, buff_v)
@@ -2252,7 +2254,7 @@ function PL_next_solution_guarded(
     bufv_v = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if _slow_unify(ld)
-        ld.slots[bufv_f + 1] = mk_var(T, fresh_var_keys!(1))   # globaliseFirstVar(f)
+        ld.slots[bufv_f + 1] = mk_var(T, allocGlobalVars!(ld, 1))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, ld.slots[bufv_f + 1])
         ARGP = _argp_add(ARGP, 1)
@@ -2300,7 +2302,7 @@ function PL_next_solution_guarded(
     bufc_c = PCl[PCc[PC + 1]]
     PC += 2
     if _slow_unify(ld)
-        ld.slots[bufc_f + 1] = mk_var(T, fresh_var_keys!(1))   # globaliseFirstVar(f)
+        ld.slots[bufc_f + 1] = mk_var(T, allocGlobalVars!(ld, 1))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, ld.slots[bufc_f + 1])
         ARGP = _argp_add(ARGP, 1)
@@ -2824,7 +2826,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c L_VOID
     @label L_VOID
     ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_var(
-        T, fresh_var_keys!(1)
+        T, allocGlobalVars!(ld, 1)
     )               # setVar(*varFrameP(FR, *PC++))
     PC += 1
     @goto next_instruction
@@ -2911,7 +2913,7 @@ function PL_next_solution_guarded(
     # DIVERGES: a fresh variable into the slot (decision 2).
     @label C_VAR
     ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = mk_var(
-        T, fresh_var_keys!(1)
+        T, allocGlobalVars!(ld, 1)
     )
     PC += 1
     @goto next_instruction
@@ -3187,7 +3189,7 @@ function PL_next_solution_guarded(
     cvn_vp = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     cvn_count = Int(PCc[PC + 1])
     PC += 2
-    cvn_key = fresh_var_keys!(cvn_count)
+    cvn_key = allocGlobalVars!(ld, cvn_count)
     for cvn_i in 0:(cvn_count - 1)
         ld.slots[cvn_vp + cvn_i + 1] = mk_var(T, cvn_key + UInt64(cvn_i))
     end
