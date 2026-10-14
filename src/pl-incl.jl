@@ -4,6 +4,7 @@
 # UPSTREAM: swipl-devel src/pl-builtin.h @ 8609e216cab9
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ 8609e216cab9
 # UPSTREAM: swipl-devel src/pl-bag.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-gmp.h @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -347,6 +348,144 @@ const PLMINTAGGEDINT32 = -(Int64(1) << (32 - LMASK_BITS - 1))
 # PORT: pl-incl.h PLMAXTAGGEDINT32
 "The largest integer a 32-bit word holds tagged (pl-incl.h); `variant_hash/2` masks with it."
 const PLMAXTAGGEDINT32 = -PLMINTAGGEDINT32 - 1
+
+# ── the words of the stacks (pl-data.h; L1b stage C1) ───────────────────────────────────────────
+# The rest of pl-data.h's word layout, for the stacks that hold words from stage C2 on (the
+# workspace's L1_plan/stageC_design.md). A pointer is a 1-based POSITION in the stack the storage
+# bits name — `STG_GLOBAL` the global stack, `STG_LOCAL` the local stack (`consPtr`, `valPtr`). The
+# type tests on a WORD dispatch on `word`; the kernel's tests of the same names on a TERM (below,
+# V6b1/V6b2) are other methods of the same functions.
+# PORT: pl-data.h TAG_ATTVAR
+"Tag of an attributed variable (pl-data.h)."
+const TAG_ATTVAR = UInt64(0x00000001)
+# PORT: pl-data.h TAG_FLOAT
+"Tag of a floating point number (pl-data.h)."
+const TAG_FLOAT = UInt64(0x00000002)
+# PORT: pl-data.h TAG_INTEGER
+"Tag of an integer: tagged small int, or an indirect big integer or rational (pl-data.h)."
+const TAG_INTEGER = UInt64(0x00000003)
+# PORT: pl-data.h TAG_STRING
+"Tag of a string (pl-data.h)."
+const TAG_STRING = UInt64(0x00000004)
+# PORT: pl-data.h TAG_COMPOUND
+"Tag of a compound term (pl-data.h)."
+const TAG_COMPOUND = UInt64(0x00000006)
+# PORT: pl-data.h TAG_REFERENCE
+"Tag of a reference pointer (pl-data.h)."
+const TAG_REFERENCE = UInt64(0x00000007)
+# PORT: pl-data.h STG_LOCAL
+"Storage: local stack (pl-data.h)."
+const STG_LOCAL = UInt64(0x2) << 3
+# PORT: pl-data.h STG_RESERVED
+"Storage: reserved (pl-data.h)."
+const STG_RESERVED = UInt64(0x3) << 3
+# PORT: pl-data.h STG_INLINE
+"Storage of an inline value: `STG_STATIC` (pl-data.h)."
+const STG_INLINE = STG_STATIC
+# PORT: pl-data.h FIRST_MASK
+"The GC first-mark bit (pl-data.h)."
+const FIRST_MASK = UInt64(0x2) << 5
+# PORT: pl-data.h tag
+"The tag bits of `w` (pl-data.h)."
+tag(w::word)::word = w & TAG_MASK
+# PORT: pl-data.h storage
+"The storage bits of `w` (pl-data.h)."
+storage(w::word)::word = w & STG_MASK
+# PORT: pl-data.h valInt
+"The integer a tagged-integer word holds (pl-data.h): an arithmetic shift."
+valInt(w::word)::Int64 = reinterpret(Int64, w) >> LMASK_BITS
+# PORT: pl-data.h valUInt
+"The unsigned value above the tag and storage bits of `w` (pl-data.h)."
+valUInt(w::word)::UInt64 = w >> LMASK_BITS
+# PORT: pl-data.h EXBIT
+"Bit `w` of the extended-tag bitmap (pl-data.h)."
+EXBIT(w::word)::UInt64 = UInt64(1) << w
+# PORT: pl-data.h INDIRECT_BM
+"The extended tags of an indirect: an integer, float or string on a stack (pl-data.h)."
+const INDIRECT_BM =
+    EXBIT(STG_GLOBAL | TAG_INTEGER) | EXBIT(STG_LOCAL | TAG_INTEGER) |
+    EXBIT(STG_GLOBAL | TAG_FLOAT) | EXBIT(STG_LOCAL | TAG_FLOAT) |
+    EXBIT(STG_GLOBAL | TAG_STRING) | EXBIT(STG_LOCAL | TAG_STRING)
+# PORT: pl-data.h isIndirect
+"Whether `w` points at an indirect — a big integer, a float or a string (pl-data.h)."
+isIndirect(w::word)::Bool = EXBIT(tagex(w)) & INDIRECT_BM != 0
+# PORT: pl-data.h isVar
+"Whether `w` is an unbound variable: the word 0 (pl-data.h)."
+isVar(w::word)::Bool = w == word(0)
+# PORT: pl-data.h isAtom
+"Whether `w` is an atom, not a functor (pl-data.h; `tagex`, so a functor word is not one)."
+isAtom(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_STATIC)
+# PORT: pl-data.h isRational
+"Whether `w` is an integer or a rational (pl-data.h)."
+isRational(w::word)::Bool = tag(w) == TAG_INTEGER
+# PORT: pl-data.h isFloat
+"Whether `w` is a float (pl-data.h)."
+isFloat(w::word)::Bool = tag(w) == TAG_FLOAT
+# PORT: pl-data.h isString
+"Whether `w` is a string (pl-data.h)."
+isString(w::word)::Bool = tag(w) == TAG_STRING
+# PORT: pl-data.h isTerm
+"Whether `w` is a compound term (pl-data.h)."
+isTerm(w::word)::Bool = tag(w) == TAG_COMPOUND
+# PORT: pl-data.h isTaggedInt
+"Whether `w` is a tagged small integer (pl-data.h)."
+isTaggedInt(w::word)::Bool = tagex(w) == (TAG_INTEGER | STG_INLINE)
+# PORT: pl-data.h isConst
+"Whether `w` is an atom or a tagged small integer (pl-data.h)."
+isConst(w::word)::Bool = isAtom(w) || isTaggedInt(w)
+# PORT: pl-data.h isRef
+"Whether `w` is a reference pointer (pl-data.h)."
+isRef(w::word)::Bool = tag(w) == TAG_REFERENCE
+# PORT: pl-data.h isAttVar
+"Whether `w` is an attributed variable (pl-data.h)."
+isAttVar(w::word)::Bool = tag(w) == TAG_ATTVAR
+# PORT: pl-data.h needsRef
+"Whether `w` must be reached through a reference: a variable or attributed variable (pl-data.h, O_ATTVAR)."
+needsRef(w::word)::Bool = tag(w) <= TAG_ATTVAR
+# PORT: pl-data.h consInt
+"The tagged-integer word of `n` (pl-data.h); `valInt` gives `n` back only within the tagged range."
+consInt(n::Int64)::word = (reinterpret(word, n) << LMASK_BITS) | TAG_INTEGER
+# PORT: pl-data.h consUInt
+"The tagged-integer word of the unsigned `n` (pl-data.h)."
+consUInt(n::UInt64)::word = (n << LMASK_BITS) | TAG_INTEGER
+# PORT: pl-data.h PADBITS
+"Bits of an indirect header holding its pad count (pl-data.h; 8-byte words)."
+const PADBITS = 3
+# PORT: pl-data.h PADMASK
+"Mask of an indirect header's pad count (pl-data.h)."
+const PADMASK = UInt64(sizeof(word) - 1)
+# PORT: pl-data.h mkIndHdr
+"The header word of an indirect of `size` data words with tag `tag` (pl-data.h)."
+mkIndHdr(size::Int, tag::word)::word =
+    (UInt64(size) << (LMASK_BITS + PADBITS)) | tag | STG_LOCAL
+# PORT: pl-data.h wsizeofInd
+"The number of data words of the indirect whose header is `w` (pl-data.h)."
+wsizeofInd(w::word)::Int = Int(w >> (LMASK_BITS + PADBITS))
+# PORT: pl-data.h padHdr
+"The pad bytes of a blob indirect's header `iw`: 1-7, and 0 means 8 (pl-data.h)."
+padHdr(iw::word)::Int =
+    (iw >> LMASK_BITS) & PADMASK != 0 ? Int((iw >> LMASK_BITS) & PADMASK) : sizeof(word)
+# PORT: pl-data.h mkPadHdr
+"The pad-count bits of a blob header for `n` pad bytes (pl-data.h)."
+mkPadHdr(n::Int)::word = (UInt64(n) & PADMASK) << LMASK_BITS
+# PORT: pl-data.h mkBlobHdr
+"The header of a blob indirect of `n` data words, `pad` pad bytes and tag `tag` (pl-data.h)."
+mkBlobHdr(n::Int, pad::Int, tag::word)::word = mkIndHdr(n, tag) | mkPadHdr(pad)
+# PORT: pl-data.h MP_RAT_MASK
+"The low bit of a big number's size word: set for a rational (pl-data.h)."
+const MP_RAT_MASK = UInt64(0x1)
+# PORT: pl-gmp.h mpz_size_stack
+"The size word of an integer of `sz` limbs (negative: a negative integer) on a stack (pl-gmp.h)."
+mpz_size_stack(sz::Int32)::word = (reinterpret(word, Int64(sz)) << 1) & ~MP_RAT_MASK
+# PORT: pl-gmp.h mpq_size_stack
+"The size word of a rational's numerator of `sz` limbs on a stack (pl-gmp.h)."
+mpq_size_stack(sz::Int32)::word = (reinterpret(word, Int64(sz)) << 1) | MP_RAT_MASK
+# PORT: pl-gmp.h mpz_stack_size
+"The limb count (signed) a size word holds (pl-gmp.h): `(int)w >> 1`."
+mpz_stack_size(w::word)::Int32 = reinterpret(Int32, w % UInt32) >> 1
+# PORT: pl-gmp.h mpq_stack_size
+"The limb count (signed) a rational's size word holds (pl-gmp.h)."
+mpq_stack_size(w::word)::Int32 = reinterpret(Int32, w % UInt32) >> 1
 
 # ── unification: return codes, the occurs-check flag, backtrack marks ──────────────────────────
 # PORT: pl-incl.h boolex_t

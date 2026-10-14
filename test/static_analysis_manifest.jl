@@ -1769,7 +1769,37 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.arityFunctor, Tuple{LK.functors_t, UInt64}, true),
     (LK.isAtomFunctor, Tuple{LK.functors_t, UInt64}, true),
     (LK.nameFunctor, Tuple{LK.functors_t, UInt64}, true),
-    (LK.fetchFunctorArray, Tuple{LK.functors_t, Int}, true)
+    (LK.fetchFunctorArray, Tuple{LK.functors_t, Int}, true),
+    # the words of the stacks (L1b stage C1: pl-data.h, pl-inline.h's consPtr/valPtr, pl-gmp.h's
+    # size words) — pure bit operations: none allocates
+    (LK.tag, Tuple{UInt64}, true),
+    (LK.storage, Tuple{UInt64}, true),
+    (LK.valInt, Tuple{UInt64}, true),
+    (LK.valUInt, Tuple{UInt64}, true),
+    (LK.EXBIT, Tuple{UInt64}, true),
+    (LK.isIndirect, Tuple{UInt64}, true),
+    (LK.isVar, Tuple{UInt64}, true),
+    (LK.isAtom, Tuple{UInt64}, true),
+    (LK.isRational, Tuple{UInt64}, true),
+    (LK.isFloat, Tuple{UInt64}, true),
+    (LK.isString, Tuple{UInt64}, true),
+    (LK.isTerm, Tuple{UInt64}, true),
+    (LK.isTaggedInt, Tuple{UInt64}, true),
+    (LK.isConst, Tuple{UInt64}, true),
+    (LK.isRef, Tuple{UInt64}, true),
+    (LK.isAttVar, Tuple{UInt64}, true),
+    (LK.needsRef, Tuple{UInt64}, true),
+    (LK.wsizeofInd, Tuple{UInt64}, true),
+    (LK.padHdr, Tuple{UInt64}, true),
+    (LK.mpz_stack_size, Tuple{UInt64}, true),
+    (LK.mpq_stack_size, Tuple{UInt64}, true),
+    (LK.valPtr, Tuple{UInt64}, true),
+    (LK.unRef, Tuple{UInt64}, true),
+    (LK.consInt, Tuple{Int64}, true), (LK.consUInt, Tuple{UInt64}, true),
+    (LK.consPtr, Tuple{Int, UInt64}, true), (LK.makeRefG, Tuple{Int}, true),
+    (LK.makeRefLok, Tuple{Int}, true), (LK.mkIndHdr, Tuple{Int, UInt64}, true),
+    (LK.mkPadHdr, Tuple{Int}, true), (LK.mkBlobHdr, Tuple{Int, Int, UInt64}, true),
+    (LK.mpz_size_stack, Tuple{Int32}, true), (LK.mpq_size_stack, Tuple{Int32}, true)
 )
 
 """

@@ -18,6 +18,25 @@
 "Index of the most significant set bit: `MSB(1) == 0`, `MSB(2) == 1` (pl-inline.h)."
 MSB(i::Integer)::Int = 63 - leading_zeros(UInt64(i))
 
+# PORT: pl-inline.h consPtr
+# DIVERGES: `p` is a 1-based POSITION in the stack the storage bits of `ts` name (`STG_GLOBAL` the
+# global stack, `STG_LOCAL` the local stack), where upstream's is an address (`ptr2word`).
+"The word pointing at position `p` with tag and storage `ts` (pl-inline.h)."
+consPtr(p::Int, ts::word)::word = (UInt64(p) << LMASK_BITS) | ts
+# PORT: pl-inline.h valPtr
+# DIVERGES: the POSITION `w` points at (see `consPtr`), in the stack its storage bits name.
+"The position word `w` points at (pl-inline.h)."
+valPtr(w::word)::Int = Int(w >> LMASK_BITS)
+# PORT: pl-data.h makeRefG
+"A reference to position `p` of the global stack (pl-data.h)."
+makeRefG(p::Int)::word = consPtr(p, TAG_REFERENCE | STG_GLOBAL)
+# PORT: pl-data.h makeRefLok
+"A reference to position `p` of the local stack (pl-data.h)."
+makeRefLok(p::Int)::word = consPtr(p, TAG_REFERENCE | STG_LOCAL)
+# PORT: pl-data.h unRef
+"The position a reference word points at (pl-data.h)."
+unRef(w::word)::Int = valPtr(w)
+
 # PORT: pl-inline.h fetchAtomArray
 # DIVERGES: the table is an argument (`GD->atoms`); block `idx` is `array[idx + 1]`, indexed from 1
 # (upstream offsets each block's pointer so `blocks[idx][index]` is direct).
