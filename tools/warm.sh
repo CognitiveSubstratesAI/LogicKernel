@@ -332,6 +332,28 @@ _pool() {
     echo "pool: $n workers warming for tree ${fp:0:12} — tools/run_tests.sh uses them while the tree is unchanged"
 }
 
+# _checks_fresh — `_format_port_check`, and once more on a FRESH daemon when the first run found
+# DAEMON LEFTOVERS (user, 2026-10-14: a restart costs less than a failed 13-minute preflight).
+# ROOT CAUSE of the leftovers L1a-1 lost two preflights to, FOUND and FIXED the same day: Revise
+# DOES delete the old method of a re-signed function, but the gate's live-method filter
+# (test/static_analysis_gates.jl `_current_method`) counted a deleted method as live. What this
+# still catches is a method Revise genuinely failed to delete (the documented suspect: a precompile
+# in another process rewriting the cache it diffs against, tools/warm_session.jl). Logged.
+_checks_fresh() {
+    local rc
+    _format_port_check
+    rc=$?
+    if [ "$rc" -ne 0 ] && grep -q 'A DAEMON LEFTOVER' "$DIR/preflight_format_port_check.log" 2> /dev/null; then
+        echo "check: DAEMON LEFTOVERS (old signatures of re-signed functions) — restarting the warm lane once, then checking again"
+        echo "$(date -u +%FT%TZ) restart: daemon leftovers found by the manifest check" >> "$DIR/restarts.log"
+        _stop
+        _start > /dev/null || return 1
+        _format_port_check
+        rc=$?
+    fi
+    return "$rc"
+}
+
 # _format_port_check — the formatter (as CI's Format job checks it) and port_check, in the warm
 # daemon: the preflight's first step, and `tools/warm.sh check` on its own (user, 2026-10-13: a
 # documentation slip is then found seconds after the edit, without starting a preflight). Prints
@@ -364,6 +386,45 @@ let pc = Module(:PreflightPortCheck)
     println("preflight: port_check clean (", length(r.files), " files; markers: ", mk.diverges,
         " DIVERGES, ", mk.not_ported, " NOT PORTED, ", mk.both, " DIVERGES lines still saying NOT PORTED)")
 end
+# THE MANIFEST, in seconds (user, 2026-10-14): every entry of test/static_analysis_manifest.jl names
+# exactly one method (which), and every method LogicKernel defines is reached by an entry or
+# exempted — the static-analysis gate's coverage test, without JET, so a new or re-signed function
+# without its entry fails HERE, not after ~13 minutes of analysis (V9g-a, L1a-1). Fresh module,
+# current files, every time.
+let sa = Module(:PreflightManifest)
+    Core.eval(sa, :(using LogicKernel))
+    Base.include(sa, raw"$ROOT/test/static_analysis_gates.jl")
+    Base.include(sa, raw"$ROOT/test/static_analysis_manifest.jl")
+    entries = Base.invokelatest(() -> sa.DISPATCH_MANIFEST)
+    exempt = Base.invokelatest(() -> sa.DISPATCH_EXEMPT)
+    stale = String[]
+    for (f, tt, _) in entries
+        try
+            which(f, tt)
+        catch
+            push!(stale, string(f, tt))
+        end
+    end
+    foreach(x -> println("  NO SUCH METHOD (stale manifest entry): ", x), stale)
+    isempty(stale) || error("preflight: the manifest names methods that do not exist")
+    r = Base.invokelatest(() -> sa.manifest_uncovered(LogicKernel, entries, exempt))
+    # An uncovered method at the file and line of ANOTHER live method of the same function is the
+    # old signature of a re-signed function that Revise failed to delete: no manifest entry fixes
+    # it, a restart does (_checks_fresh, in tools/warm.sh).
+    owned = Base.invokelatest(() -> sa.owned_methods(LogicKernel))
+    leftovers = Set(
+        "\$(m.name) \$(m.sig)  (\$(m.file):\$(m.line))" for m in owned if
+        count(n -> n.name === m.name && n.file === m.file && n.line == m.line, owned) > 1
+    )
+    for u in r.uncovered
+        println(u in leftovers ? "  A DAEMON LEFTOVER (the old signature of a re-signed function — " *
+                              "tools/warm.sh restart, with its reason): " : "  NOT IN THE MANIFEST: ", u)
+    end
+    foreach(u -> println("  stale exemption: ", u), r.stale_exempt)
+    (isempty(r.uncovered) && isempty(r.stale_exempt)) ||
+        error("preflight: the manifest does not cover LogicKernel (test/static_analysis_manifest.jl)")
+    println("preflight: manifest covers every method (", length(entries), " entries)")
+end
 JL
     _send "$snippet" > "$fmtlog" 2>&1
     rc=$?
@@ -374,8 +435,9 @@ JL
     cat "$fmtlog"
     # FAIL CLOSED (see _file): both checks must SHOW their pass lines, or the step failed
     if [ "$rc" -eq 0 ] && { ! _verdict_in "$fmtlog" '^preflight: Blue-clean' ||
-        ! _verdict_in "$fmtlog" '^preflight: port_check clean'; }; then
-        echo "preflight: NO VERDICT — the format/port_check output is empty or lacks its pass lines"
+        ! _verdict_in "$fmtlog" '^preflight: port_check clean' ||
+        ! _verdict_in "$fmtlog" '^preflight: manifest covers every method'; }; then
+        echo "preflight: NO VERDICT — the format/port_check/manifest output is empty or lacks its pass lines"
         rc=4
     fi
     return "$rc"
@@ -402,7 +464,7 @@ _preflight_once() {
         echo "preflight: FAIL — the previous push's CI (tools/ci_status.sh)"
         return 1
     }
-    _format_port_check
+    _checks_fresh
     rc=$?
     [ "$rc" -eq 0 ] || {
         PF_OTHER_FAIL=1
@@ -544,9 +606,9 @@ case "$cmd" in
     check)
         _running || _start > /dev/null || exit 1
         _ck_t0=$(date +%s)
-        _format_port_check
+        _checks_fresh
         _ck_rc=$?
-        echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check) in $(( $(date +%s) - _ck_t0 ))s"
+        echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest) in $(( $(date +%s) - _ck_t0 ))s"
         (exit "$_ck_rc")
         ;;
     preflight)

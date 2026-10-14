@@ -170,13 +170,18 @@ function owned_methods(mod::Module)::Vector{Method}
     return sort!(ms; by=m -> (String(m.name), string(m.sig)))
 end
 
-"True when `m` is the method its own signature dispatches to now — not one a redefinition replaced."
+"""
+True when `m` is live in the current world — not one a redefinition replaced or Revise deleted.
+
+MEASURED 2026-10-14 (L1a-1): the rule was `which(m.sig) === m`, with ANY exception read as "an
+ambiguous signature: keep it". But the OLD signature of a re-signed function is a method Revise has
+DELETED, and nothing else matches it, so `which` throws "no method" — and the deleted method counted
+as live: every re-sign read "NOT CHECKED for dispatch" until the daemon was restarted (two lost
+preflights). The current world's matches (`Base._methods_by_ftype`, ambiguous ones included) never
+hold a deleted or replaced method.
+"""
 _current_method(m::Method)::Bool =
-    try
-        which(m.sig) === m
-    catch
-        true                                    # an ambiguous signature: keep it, to be checked
-    end
+    any(mm -> mm.method === m, Base._methods_by_ftype(m.sig, -1, Base.get_world_counter()))
 
 """
     manifest_uncovered(mod, manifest, exempt) -> (; uncovered, stale_exempt)

@@ -149,3 +149,21 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         ]
     end
 end
+
+# THE MANIFEST'S LIVE-METHOD FILTER (test/static_analysis_gates.jl `_current_method`; measured
+# 2026-10-14): a method Revise DELETED — the old signature of a re-signed function — is not live; a
+# live one is, and so is each method of an ambiguous pair (the gate must still check those).
+module _TDCurrent
+f(x::Int) = 1
+g(x::Integer, y::Int) = 1
+g(x::Int, y::Integer) = 2
+end
+@testset "the manifest's live-method filter: a deleted method is not live" begin
+    old = only(methods(_TDCurrent.f))
+    @test _current_method(old)
+    Base.delete_method(old)                     # what Revise does when a signature changes
+    Core.eval(_TDCurrent, :(f(x::Int, y::Int) = 2))
+    @test !_current_method(old)
+    @test _current_method(only(methods(_TDCurrent.f)))
+    @test all(_current_method, methods(_TDCurrent.g))
+end

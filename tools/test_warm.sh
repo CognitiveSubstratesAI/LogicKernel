@@ -397,5 +397,14 @@ _rss_cases
 echo 'println("ok")' > "$T/ok.jl"
 _struct_cases
 
+# NO BACKTICK IN AN UNQUOTED HEREDOC (measured 2026-10-14): the snippets tools/warm.sh writes with
+# `<<JL` expand `$ROOT`, so a backtick in their Julia text is COMMAND SUBSTITUTION. A comment naming
+# `_checks_fresh` in backticks made expanding the snippet RUN that function, which expands the
+# snippet again: a fork chain of 1558 processes before it was killed. Count them in every <<JL body.
+_bt=$(awk '/<<JL$/{f=1; next} /^JL$/{f=0} f && /`/{n++} END{print n+0}' "$ROOT/tools/warm.sh")
+check "no backtick inside an unquoted <<JL heredoc of tools/warm.sh (found $_bt)" 0 "$_bt"
+_bt_fixture=$(printf 'cat > f <<JL\n# a `name` here\nJL\n' | awk '/<<JL$/{f=1; next} /^JL$/{f=0} f && /`/{n++} END{print n+0}')
+check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
+
 echo "test_warm: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
