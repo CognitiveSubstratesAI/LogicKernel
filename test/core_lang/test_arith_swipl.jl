@@ -38,8 +38,9 @@ function _arun(name, args::Vector{_A}; gd=_AGD, ld=_ALD)
     p = LKA.isCurrentProcedure(sym_key(_as(name)), length(args), LKA.MODULE_system(gd))
     fid = LKA.PL_open_foreign_frame(ld)
     a = LKA.PL_new_term_refs(ld, length(args))
+    pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (k, t) in enumerate(args)
-        LogicKernel.putSlotValue!(ld, a + k, t)
+        LogicKernel.putSlotValue!(ld, a + k, t, pvm)
     end
     qid = LKA.PL_open_query(
         gd, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
@@ -59,8 +60,9 @@ end
 function _arun_proc(gd, ld, p, args::Vector{_A})
     fid = LKA.PL_open_foreign_frame(ld)
     a = LKA.PL_new_term_refs(ld, length(args))
+    pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (k, t) in enumerate(args)
-        LogicKernel.putSlotValue!(ld, a + k, t)
+        LogicKernel.putSlotValue!(ld, a + k, t, pvm)
     end
     qid = LKA.PL_open_query(
         gd, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
@@ -206,8 +208,9 @@ end
     p = LKA.isCurrentProcedure(sym_key(_as(:is)), 2, LKA.MODULE_system(_AGD))
     fid = LKA.PL_open_foreign_frame(ld)
     a = LKA.PL_new_term_refs(ld, 2)
-    LogicKernel.putSlotValue!(ld, a + 1, _av())
-    LogicKernel.putSlotValue!(ld, a + 2, T1)
+    pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LogicKernel.putSlotValue!(ld, a + 1, _av(), pvm)
+    LogicKernel.putSlotValue!(ld, a + 2, T1, pvm)
     qid = LKA.PL_open_query(
         _AGD, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
     )
@@ -338,8 +341,9 @@ end
     po = LKA.isCurrentProcedure(sym_key(lk_sym(O, :is)), 2, LKA.MODULE_system(ogd))
     fid = LKA.PL_open_foreign_frame(old)
     a = LKA.PL_new_term_refs(old, 2)
-    LogicKernel.putSlotValue!(old, a + 1, mk_var(O, UInt64(1)))
-    LogicKernel.putSlotValue!(old, a + 2, lk_gnd(O, true))
+    pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LogicKernel.putSlotValue!(old, a + 1, mk_var(O, UInt64(1)), pvm)
+    LogicKernel.putSlotValue!(old, a + 2, lk_gnd(O, true), pvm)
     qid = LKA.PL_open_query(
         ogd, old, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, po, a
     )

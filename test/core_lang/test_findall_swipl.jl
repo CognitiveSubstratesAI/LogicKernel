@@ -220,7 +220,9 @@ end
     t = LK.PL_new_term_ref(ld)
     LK.putSlotValue!(ld, t + 1, _rf("f", X, Y, X))
     m = LK.Mark(ld)
-    LK.Trail!(ld, var_key(Y), _rf("g", _rg(1)))
+    # Y bound through the handle: the put copied it to a fresh variable, which is the engine's
+    # (L1b boundary, user 2026-10-14: variable identity = handle; the caller's Y is never bound)
+    LK.Trail!(ld, var_key(child(LK.slotValue(ld, t + 1), 3)), _rf("g", _rg(1)))
     r = LK.compileTermToHeap(ld, t)
     @test !r.ground && r.cycles === nothing
     g = LK.PL_new_term_ref(ld)

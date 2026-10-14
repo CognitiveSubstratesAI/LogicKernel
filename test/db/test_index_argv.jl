@@ -28,8 +28,9 @@ end
 "The views of the call `p(a1, a2)`: the goal's arguments, and the same two in a frame's slots."
 function _a_views(ld, a1, a2)
     base = LK.argFrameP(ld.lTop, 0)
-    LK.putSlotValue!(ld, base + 1, a1)
-    LK.putSlotValue!(ld, base + 2, a2)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(ld, base + 1, a1, pvm)
+    LK.putSlotValue!(ld, base + 2, a2, pvm)
     return (LK.argv_term(ld, mk_expr(_A, _A[_as(:p), a1, a2])), LK.argv_frame(ld, base))
 end
 

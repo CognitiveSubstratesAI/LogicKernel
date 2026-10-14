@@ -120,15 +120,23 @@ function vm_call(
     fid = LK.PL_open_foreign_frame(ld)
     ar = kind(goal) === EXPR ? nchildren(goal) - 1 : 0
     args = LK.PL_new_term_refs(ld, ar)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for i in 1:ar
-        LK.putSlotValue!(ld, args + i, child(goal, i + 1))        # term reference args + (i - 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1), pvm)        # term reference args + (i - 1)
     end
     qid = LK.PL_open_query(gd, ld, nothing, flags, p.proc, args)
     out = Tuple{T, Bool}[]
     while true
         rc = LK.PL_next_solution(gd, ld, qid)
         (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
-        push!(out, (LK.resolve_term(ld, goal), rc == LK.PL_S_LAST))
+        # the answer through the argument handles, never the caller's variables (L1b boundary,
+        # user 2026-10-14: a put copies, variable identity is the handle)
+        ag = if ar == 0
+            goal
+        else
+            mk_expr(T, T[child(goal, 1); [LK.slotValue(ld, args + i) for i in 1:ar]])
+        end
+        push!(out, (LK.resolve_term(ld, ag), rc == LK.PL_S_LAST))
     end
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)

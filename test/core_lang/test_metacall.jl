@@ -91,8 +91,9 @@ function _rmc_formal_term(db::_RDB, goal::_R)::Union{Nothing, _R}
     _, n = _rfunctor(goal)
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for i in 1:n
-        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1), pvm)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, _rproc(db, goal),

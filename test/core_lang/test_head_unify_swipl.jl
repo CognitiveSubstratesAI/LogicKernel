@@ -202,8 +202,9 @@ function _hvm(p::IxPred{_HT}, goal::_HT, mode)::String
     fid = LK.PL_open_foreign_frame(ld)
     ar = nchildren(goal) - 1
     args = LK.PL_new_term_refs(ld, ar)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for i in 1:ar
-        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1), pvm)
     end
     flags = LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS
     qid = LK.PL_open_query(gd, ld, nothing, flags, p.proc, args)
@@ -213,7 +214,12 @@ function _hvm(p::IxPred{_HT}, goal::_HT, mode)::String
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
             a = try
-                _hcanonical(LK.resolve_term(ld, goal))
+                # through the argument handles, never the caller's variables (L1b boundary,
+                # user 2026-10-14: a put copies, variable identity is the handle)
+                ag = mk_expr(
+                    _HT, _HT[child(goal, 1); [LK.slotValue(ld, args + i) for i in 1:ar]]
+                )
+                _hcanonical(LK.resolve_term(ld, ag))
             catch e
                 e isa ArgumentError || rethrow()
                 "cyclic"

@@ -50,6 +50,15 @@ is specified in [`src/term_interface.jl`](src/term_interface.jl). One conformanc
 every implementation: the default term type here, and a deliberately different second one in the
 tests ([`test/core_lang/alt_term.jl`](test/core_lang/alt_term.jl)) — a test vehicle, not real use.
 
+**Variable identity = handle; separate puts create new variables** (user, 2026-10-14). A Julia
+value put into the engine (`putSlotValue!`) is COPIED, as SWI-Prolog copies a record onto its
+stacks: every unbound variable in it becomes a fresh variable of the engine. Two separate puts of
+the same Julia variable therefore make two variables; puts that should share their variables — a
+goal's arguments, put slot by slot — pass one `PutVarMap()`, as one SWI record would. An answer is
+read through the term references (`slotValue` of the argument slots, then `resolve_term`), never
+through the caller's variables, which the engine does not bind. Sharing with a variable already in
+the engine goes through its handle, as `PL_put_term(t2, t1)` does in SWI's C interface.
+
 ## Layout — a mirror of swipl-devel
 
 A port lives at upstream's own path and keeps upstream's names: swipl-devel `src/pl-prims.c` →

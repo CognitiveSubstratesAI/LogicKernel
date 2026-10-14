@@ -63,8 +63,9 @@ end
 function _ttrun(gd, ld, proc, args::Vector{_TT})::String
     fid = LKT.PL_open_foreign_frame(ld)
     a = LKT.PL_new_term_refs(ld, max(length(args), 1))
+    pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (k, t) in enumerate(args)
-        LogicKernel.putSlotValue!(ld, a + k, t)
+        LogicKernel.putSlotValue!(ld, a + k, t, pvm)
     end
     qid = LKT.PL_open_query(
         gd, ld, nothing, LKT.PL_Q_CATCH_EXCEPTION | LKT.PL_Q_EXT_STATUS, proc, a

@@ -97,8 +97,9 @@ function _tl_kernel(path::String, preds::Vector{Tuple{String, Int}})::Vector{Str
         sols = String[]
         fid = LK.PL_open_foreign_frame(ld)
         a = LK.PL_new_term_refs(ld, max(arity, 1))
+        pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
         for i in 1:arity
-            LK.putSlotValue!(ld, a + i, mk_var(_TL, LK.fresh_var_keys!(1)))
+            LK.putSlotValue!(ld, a + i, mk_var(_TL, LK.fresh_var_keys!(1)), pvm)
         end
         qid = LK.PL_open_query(
             gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -302,8 +303,9 @@ if _TL_SWIPL !== nothing
             )
             fid = LK.PL_open_foreign_frame(ld)
             a = LK.PL_new_term_refs(ld, 2)
-            LK.putSlotValue!(ld, a + 1, mk_var(_TL, LK.fresh_var_keys!(1)))
-            LK.putSlotValue!(ld, a + 2, _tls(goal))
+            pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+            LK.putSlotValue!(ld, a + 1, mk_var(_TL, LK.fresh_var_keys!(1)), pvm)
+            LK.putSlotValue!(ld, a + 2, _tls(goal), pvm)
             q = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, t2a, a)
             @test LK.PL_next_solution(gd, ld, q) != LK.PL_S_FALSE
             g = LK.resolve_term(ld, LK.slotValue(ld, a + 1))
@@ -312,8 +314,9 @@ if _TL_SWIPL !== nothing
                 child(g, 1) |> sym_key, nchildren(g) - 1, LK.MODULE_user(gd)
             )
             b = LK.PL_new_term_refs(ld, nchildren(g) - 1)
+            pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
             for i in 2:nchildren(g)
-                LK.putSlotValue!(ld, b + i - 1, child(g, i))
+                LK.putSlotValue!(ld, b + i - 1, child(g, i), pvm)
             end
             q2 = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, proc, b)
             rc = LK.PL_next_solution(gd, ld, q2)

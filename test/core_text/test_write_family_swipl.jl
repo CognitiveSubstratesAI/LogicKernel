@@ -46,8 +46,9 @@ function _wf_call(name::String, args::Vector{_WF}; gd=_WF_GD, ld=_WF_LD)
     @assert proc !== nothing "no system predicate $name/$(length(args))"
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (i, x) in enumerate(args)
-        LK.putSlotValue!(ld, a + i, x)
+        LK.putSlotValue!(ld, a + i, x, pvm)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -75,8 +76,9 @@ function _wf_read(text::String)::Union{Nothing, _WF}
     v = _wf_var()
     fid = LK.PL_open_foreign_frame(_WF_LD)
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    LK.putSlotValue!(_WF_LD, a + 1, v)
-    LK.putSlotValue!(_WF_LD, a + 2, lk_gnd(_WF, text))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(_WF_LD, a + 1, v, pvm)
+    LK.putSlotValue!(_WF_LD, a + 2, lk_gnd(_WF, text), pvm)
     proc = LK.isCurrentProcedure(sym_key(_wfs("term_to_atom")), 2, LK.MODULE_system(_WF_GD))
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -96,8 +98,9 @@ end
 function _wf_text(t::_WF)::String
     fid = LK.PL_open_foreign_frame(_WF_LD)
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    LK.putSlotValue!(_WF_LD, a + 1, t)
-    LK.putSlotValue!(_WF_LD, a + 2, _wf_var())
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(_WF_LD, a + 1, t, pvm)
+    LK.putSlotValue!(_WF_LD, a + 2, _wf_var(), pvm)
     proc = LK.isCurrentProcedure(sym_key(_wfs("term_to_atom")), 2, LK.MODULE_system(_WF_GD))
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -467,8 +470,9 @@ end
     # bindings, before the query closes
     proc = LK.isCurrentProcedure(sym_key(_wfs("write_term")), 2, LK.MODULE_system(_WF_GD))
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    LK.putSlotValue!(_WF_LD, a + 1, _wfs("a"))
-    LK.putSlotValue!(_WF_LD, a + 2, l)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(_WF_LD, a + 1, _wfs("a"), pvm)
+    LK.putSlotValue!(_WF_LD, a + 2, l, pvm)
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
@@ -540,8 +544,9 @@ end
     proc = LK.isCurrentProcedure(sym_key(_wfs("write_term")), 2, LK.MODULE_system(_WF_GD))
     fid = LK.PL_open_foreign_frame(_WF_LD)
     a = LK.PL_new_term_refs(_WF_LD, 2)
-    LK.putSlotValue!(_WF_LD, a + 1, mk_expr(_WF, _WF[_wfs("f"), x]))
-    LK.putSlotValue!(_WF_LD, a + 2, cons(vn, mk_nil(_WF)))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(_WF_LD, a + 1, mk_expr(_WF, _WF[_wfs("f"), x]), pvm)
+    LK.putSlotValue!(_WF_LD, a + 2, cons(vn, mk_nil(_WF)), pvm)
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )

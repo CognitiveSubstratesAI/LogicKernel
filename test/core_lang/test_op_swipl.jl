@@ -46,9 +46,10 @@ function _oprun(gd, ld, p::_OP, t::_OP, n::_OP)::String
     proc = LK.isCurrentProcedure(sym_key(_ops(:op)), 3, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 3)
-    LK.putSlotValue!(ld, a + 1, p)
-    LK.putSlotValue!(ld, a + 2, t)
-    LK.putSlotValue!(ld, a + 3, n)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(ld, a + 1, p, pvm)
+    LK.putSlotValue!(ld, a + 2, t, pvm)
+    LK.putSlotValue!(ld, a + 3, n, pvm)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )

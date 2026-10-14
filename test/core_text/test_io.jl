@@ -31,8 +31,9 @@ function _tiorun(gd, ld, name::String, args::_TIO...)
     )
     fid = _TIO_LK.PL_open_foreign_frame(ld)
     a = _TIO_LK.PL_new_term_refs(ld, length(args))
+    pvm = _TIO_LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (i, x) in enumerate(args)
-        _TIO_LK.putSlotValue!(ld, a + i, x)
+        _TIO_LK.putSlotValue!(ld, a + i, x, pvm)
     end
     qid = _TIO_LK.PL_open_query(
         gd, ld, nothing, _TIO_LK.PL_Q_CATCH_EXCEPTION | _TIO_LK.PL_Q_EXT_STATUS, proc, a

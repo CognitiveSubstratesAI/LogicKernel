@@ -39,8 +39,9 @@ function _rd_atom_number(text::String)::String
     proc = LK.isCurrentProcedure(sym_key(_rds(:atom_number)), 2, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 2)
-    LK.putSlotValue!(ld, a + 1, _rds(text))
-    LK.putSlotValue!(ld, a + 2, mk_var(_RD, LK.fresh_var_keys!(1)))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(ld, a + 1, _rds(text), pvm)
+    LK.putSlotValue!(ld, a + 2, mk_var(_RD, LK.fresh_var_keys!(1)), pvm)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )

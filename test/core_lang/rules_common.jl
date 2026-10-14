@@ -44,8 +44,9 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
     _, n = _rfunctor(goal)
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for i in 1:n
-        LK.putSlotValue!(ld, args + i, child(goal, i + 1))            # term reference args + (i - 1)
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1), pvm)            # term reference args + (i - 1)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, goal), args
@@ -59,7 +60,9 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
         length(out) < 10_000 ||
             error("_rcall: over 10000 answers to $(_rsrc(goal)) — answering without end?")
         at(qid, length(out) + 1)
-        push!(out, (_ranswer(ld, goal), rc == LK.PL_S_LAST))
+        # the answer through the argument handles, never the caller's variables (L1b boundary,
+        # user 2026-10-14: a put copies, variable identity is the handle)
+        push!(out, (_ranswer(ld, _rhandles_goal(ld, goal, args, n)), rc == LK.PL_S_LAST))
     end
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
@@ -114,6 +117,12 @@ function _rcanonical(t::_R)::String
         counts[k] > 1 && (names[k] = string('A' + length(names)))
     end
     return _rwrite(t, u -> get(names, var_key(u), "_"))
+end
+
+"`goal` rebuilt from its `n` argument handles at `args` (the answer is read through them)."
+function _rhandles_goal(ld::LK.PL_local_data{_R}, goal::_R, args::Int, n::Int)::_R
+    n == 0 && return goal
+    return mk_expr(_R, _R[child(goal, 1); [LK.slotValue(ld, args + i) for i in 1:n]])
 end
 
 """
@@ -297,8 +306,9 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
     _, n = _rfunctor(goal)
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for i in 1:n
-        LK.putSlotValue!(ld, args + i, child(goal, i + 1))
+        LK.putSlotValue!(ld, args + i, child(goal, i + 1), pvm)
     end
     fill!(view(ld.slots, (ld.lTop + 1):length(ld.slots)), _R_SENTINEL)
     qid = LK.PL_open_query(

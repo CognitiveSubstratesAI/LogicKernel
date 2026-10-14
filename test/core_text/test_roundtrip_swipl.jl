@@ -57,8 +57,9 @@ function _rt_call(name::String, args::Vector{_RT})
     proc = LK.isCurrentProcedure(sym_key(_rts(name)), length(args), LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (i, x) in enumerate(args)
-        LK.putSlotValue!(ld, a + i, x)
+        LK.putSlotValue!(ld, a + i, x, pvm)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a

@@ -190,13 +190,50 @@ end
     return v
 end
 
-# ORIGINAL: THE BOUNDARY — a Julia caller's value put into a slot (L1b commit 1a: a plain store;
-# commit 1b gives it SWI's semantics: a separate put makes new variables).
-"Put a CALLER's value `v` into slot `i` (the boundary of the user's decision, 2026-10-14)."
-@inline function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T)::T where {T}
-    ld.slots[i] = v
-    return v
+# ORIGINAL: the variables one put shares with the puts that pass the same map (L1b): a caller's
+# variable key → the key of its fresh cell. One map is one record's worth of variables — a goal's
+# arguments put slot by slot with one map share them as SWI's record of the goal would.
+# It DIVERGES from SWI as a Julia-side convenience with no C counterpart: SWI shares variables
+# between puts only through `term_t` handles (`PL_put_term`), or by putting one compound.
+"""
+    PutVarMap()
+
+The variables shared by the puts that pass this map (`putSlotValue!`): each caller variable met
+by any of them is ONE fresh variable of the engine. A map is good while its cells live — not across
+backtracking below the puts.
+"""
+struct PutVarMap
+    cells::Dict{UInt64, UInt64}
 end
+PutVarMap() = PutVarMap(Dict{UInt64, UInt64}())
+
+# ORIGINAL: THE BOUNDARY — a Julia caller's value put into a slot, with SWI's semantics (user,
+# 2026-10-14): the value is COPIED as a record is (`copyRecordToGlobal`) — bindings followed, every
+# unbound variable, a caller's or one of this engine's, a fresh cell, one per variable per `vm` — so
+# separate puts make separate variables, and sharing with a variable already in the engine goes
+# through its handle (`PL_put_term`, `setSlotValue!`), as in SWI's C interface. The put never asks
+# whether a variable is a live cell: no stamp site.
+"""
+    putSlotValue!(ld, i, v[, vm]) -> the value put
+
+Put a CALLER's value `v` into slot `i`: a copy with fresh variables, shared with the other puts
+that pass the same `vm` (`PutVarMap`); without `vm`, a put of its own. Variable identity is the
+handle: read an answer through the slot, never through the caller's variable.
+"""
+function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::T where {T}
+    vars = Dict{UInt64, T}()
+    for (k, c) in vm.cells
+        vars[k] = mk_var(T, c)
+    end
+    c = copy_term(ld, v, cp_options(true), vars)
+    for (k, w) in vars
+        vm.cells[k] = var_key(w)
+    end
+    ld.slots[i] = c
+    return c
+end
+putSlotValue!(ld::PL_local_data{T}, i::Int, v::T) where {T} =
+    putSlotValue!(ld, i, v, PutVarMap())
 
 # PORT: pl-data.h deRef
 # DIVERGES: follows a cell variable's cell, and a keyed variable's entry in the store, where

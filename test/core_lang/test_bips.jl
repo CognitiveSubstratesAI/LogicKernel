@@ -31,9 +31,10 @@ function _bcompare_formal(o::_BT, x::_BT, y::_BT)
     ld = LK.PL_local_data{_BT}()
     p = LK.isCurrentProcedure(sym_key(_ba(:compare)), 3, LK.MODULE_system(gd))
     a = LK.PL_new_term_refs(ld, 3)
-    LK.putSlotValue!(ld, a + 1, o)
-    LK.putSlotValue!(ld, a + 2, x)
-    LK.putSlotValue!(ld, a + 3, y)
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LK.putSlotValue!(ld, a + 1, o, pvm)
+    LK.putSlotValue!(ld, a + 2, x, pvm)
+    LK.putSlotValue!(ld, a + 3, y, pvm)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, p, a
     )

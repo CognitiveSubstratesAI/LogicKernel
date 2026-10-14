@@ -843,6 +843,7 @@ graph LR
     pl_inline --> default_term
     pl_inline --> pl_incl
     pl_inline --> pl_global
+    pl_inline --> pl_copyterm
     pl_inline --> pl_alloc
     pl_prims --> term_interface
     pl_prims --> default_term
@@ -1425,6 +1426,27 @@ take precedence over the text above them where they differ. The inventory, the m
   * `PL_cut_query` keeps the bindings and `PL_close_query` undoes them — unless the query ended in an
     exception it passes on (`qf->exception && PL_Q_PASS_EXCEPTION`, wam:3159). That is the only
     difference between the two.
+* **Putting a Julia value into a term reference — SWI's semantics (user, 2026-10-14; L1b):
+  variable identity = handle; separate puts create new variables.**
+  * `putSlotValue!(ld, slot, v[, vm])` (`# ORIGINAL`, src/pl-inline.jl) is the boundary. It copies `v`
+    as `copyRecordToGlobal` copies a record (pl-rec.c). Bindings are followed, and every unbound
+    variable becomes a fresh variable of the engine, a caller's variable or one of the engine's
+    own alike. There is one fresh variable per variable per `PutVarMap`. Ground subterms are shared.
+  * Puts that pass the same `vm` share their variables, as the arguments of ONE record do. A
+    goal's arguments, put slot by slot before `PL_open_query`, take one map. Without `vm` a put
+    has a map of its own, so two separate puts of one caller variable make TWO variables.
+  * A map is valid while its cells live. It does not carry across backtracking below the puts.
+  * Sharing with a variable already in the engine goes through its handle, as in SWI's C
+    interface: `PL_put_term(t2, t1)` is `setSlotValue!`, the ENGINE's write, which keeps variable
+    identity.
+  * An answer is read through the term references: `slotValue` of the argument slots, then
+    `resolve_term`. It is never read through the caller's variables, which the engine no longer
+    binds.
+  * The put never asks whether a variable is a live cell, so it adds no stamp site (the L1 ratchet,
+    tools/port_check.jl `STAMP_SITES_MAX`).
+  * The test helpers that read answers through the caller's goal were adapted in the same commit,
+    each with a comment citing this decision. No check was weakened: the answer text and the
+    sharing between arguments are compared as before.
 * **Nested queries, upstream's rules:**
   * queries form a stack (`LD->query`, `qf->parent`);
   * only the innermost query may be advanced, cut or closed — anything else returns `PL_S_NOT_INNER`

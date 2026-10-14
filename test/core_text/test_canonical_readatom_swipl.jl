@@ -41,8 +41,9 @@ function _cr_call(name::String, args::Vector{_CR})
     @assert proc !== nothing "no system predicate $name/$(length(args))"
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (i, x) in enumerate(args)
-        LK.putSlotValue!(ld, a + i, x)
+        LK.putSlotValue!(ld, a + i, x, pvm)
     end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
@@ -345,13 +346,17 @@ function _cr_run_goal(t::_CR)
     empty!(_CR_LD.messages)
     verdict = "true"
     fid = LK.PL_open_foreign_frame(_CR_LD)
+    # ONE PutVarMap for the whole conjunction: its conjuncts share their variables as one record
+    # does, and a later conjunct sees an earlier one's bindings through them (L1b boundary, user
+    # 2026-10-14: a put copies, variable identity is the handle)
+    pvm = LK.PutVarMap()
     for g in _cr_conjuncts(t)
         h, n = kind(g) === SYM ? (g, 0) : (child(g, 1), nchildren(g) - 1)
         proc = LK.isCurrentProcedure(sym_key(h), n, LK.MODULE_system(_CR_GD))
         @assert proc !== nothing "no system predicate $(sym_text(h))/$n"
         a = LK.PL_new_term_refs(_CR_LD, n)
         for i in 1:n
-            LK.putSlotValue!(_CR_LD, a + i, child(g, i + 1))
+            LK.putSlotValue!(_CR_LD, a + i, child(g, i + 1), pvm)
         end
         qid = LK.PL_open_query(
             _CR_GD, _CR_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a

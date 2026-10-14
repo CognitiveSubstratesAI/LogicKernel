@@ -59,8 +59,9 @@ function _yopen(p::IxPred{_Y}, args::_Y...; flags=LK.PL_Q_NORMAL | LK.PL_Q_EXT_S
     ld = p.db.ld
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (i, t) in enumerate(args)
-        LK.putSlotValue!(ld, a + i, t)
+        LK.putSlotValue!(ld, a + i, t, pvm)
     end
     qid = LK.PL_open_query(p.db.gd, ld, nothing, flags, p.proc, a)
     return qid, a, fid
@@ -440,3 +441,60 @@ LK_TERM_IMPL == "reference" &&
         LK.PL_close_query(ld, qid)
         LK.PL_close_foreign_frame(ld, fid)
     end
+
+# THE PUT BOUNDARY (L1b; user, 2026-10-14): "variable identity = handle; separate puts create new
+# variables". A caller's value is copied as SWI copies a record onto its stacks; puts that pass one
+# `PutVarMap` share their variables, as the arguments of one record do. White-box: swipl's C
+# interface has no Julia caller; its counterpart is two `PL_recorded` copies of one record (two
+# variables) and `PL_put_term(t2, t1)` (one).
+@testset "the put boundary: variable identity = handle, separate puts make new variables" begin
+    db, p = _ydb()
+    ld = db.ld
+    X, Y = _yv(501), _yv(502)
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 3)
+    # two SEPARATE puts of one caller variable: two variables, neither of them the caller's
+    LK.putSlotValue!(ld, a + 1, X)
+    LK.putSlotValue!(ld, a + 2, X)
+    x1, x2 = LK.deRef(ld, LK.slotValue(ld, a + 1)), LK.deRef(ld, LK.slotValue(ld, a + 2))
+    @test kind(x1) === VAR && kind(x2) === VAR && var_key(x1) != var_key(x2)
+    @test var_key(x1) != var_key(X) && var_key(x2) != var_key(X)
+    # ONE map: one variable per caller variable, across the puts that pass it
+    vm = LK.PutVarMap()
+    s1 = LK.putSlotValue!(ld, a + 1, _yf(:g, X, Y), vm)
+    s2 = LK.putSlotValue!(ld, a + 2, X, vm)
+    @test s1 === LK.slotValue(ld, a + 1) && s2 === LK.slotValue(ld, a + 2)
+    @test var_key(child(s1, 2)) == var_key(s2) && var_key(child(s1, 3)) != var_key(s2)
+    # within one put, a variable met twice is one variable
+    s3 = LK.putSlotValue!(ld, a + 3, _yf(:g, X, X))
+    @test var_key(child(s3, 2)) == var_key(child(s3, 3)) &&
+        var_key(child(s3, 2)) != var_key(s2)
+    # sharing with a variable already in the engine goes through its handle (PL_put_term)
+    @test LK.PL_put_term(ld, a + 2, a + 1)                         # term refs: slot a+3 ← slot a+2
+    @test LK.unify_ptrs(ld, LK.slotValue(ld, a + 3), _ys(:z))
+    @test lk_name(LK.deRef(ld, LK.slotValue(ld, a + 2))) === :z
+    @test lk_name(LK.deRef(ld, child(s1, 2))) === :z               # the map's variable is bound
+    @test kind(LK.deRef(ld, X)) === VAR                              # the caller's never is
+    # bindings are followed: an engine variable bound is put as its value
+    s4 = LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
+    @test LK.unify_ptrs(ld, x1, _ys(:b)) && kind(child(s4, 2)) === VAR  # bound AFTER the put: a copy
+    s5 = LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
+    @test lk_name(child(s5, 2)) === :b                               # bound BEFORE: its value
+    # a ground value comes back as the same value (`==`, not `===`). TRANSITIONAL: the put shares
+    # it today (`copy_term`'s COPY_SHARE); once slots hold words (L1b stage C) it is copied onto
+    # the global stack as `copyRecordToGlobal` copies it, and only the value is observable
+    gt = _yf(:g, _ys(:a), _yf(:h, _yg(1)))
+    @test lk_eq(LK.putSlotValue!(ld, a + 3, gt), gt)
+    @test lk_eq(LK.resolve_term(ld, LK.slotValue(ld, a + 3)), gt)
+    LK.PL_close_foreign_frame(ld, fid)
+    # a query: f(X) answers a, b, c through the handle; the caller's X is never bound
+    qid, h, fid2 = _yopen(p[:f], X)
+    got = Symbol[]
+    while LK.PL_next_solution(db.gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)
+        push!(got, lk_name(LK.deRef(ld, LK.slotValue(ld, h + 1))))
+        @test kind(LK.deRef(ld, X)) === VAR
+    end
+    @test got == [:a, :b, :c]
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid2)
+end

@@ -177,8 +177,9 @@ context's predicate, qualified as the kernel writes it (since V5c).
 function _bcall(gd, ld, proc, args::Vector{_BT})::String
     fid = LKB.PL_open_foreign_frame(ld)
     a = LKB.PL_new_term_refs(ld, length(args))
+    pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (k, t) in enumerate(args)
-        LogicKernel.putSlotValue!(ld, a + k, t)
+        LogicKernel.putSlotValue!(ld, a + k, t, pvm)
     end
     qid = LKB.PL_open_query(
         gd, ld, nothing, LKB.PL_Q_CATCH_EXCEPTION | LKB.PL_Q_EXT_STATUS, proc, a

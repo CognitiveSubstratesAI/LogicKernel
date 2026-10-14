@@ -72,6 +72,7 @@ _manifest_per_type(T) = (
     (LK.is_variant_ptr, Tuple{LK.PL_local_data{T}, T, T}, false),
     # copy_term/2 (src/pl-copyterm.jl)
     (LK.copy_term, Tuple{LK.PL_local_data{T}, T, LK.cp_options}, false),
+    (LK.copy_term, Tuple{LK.PL_local_data{T}, T, LK.cp_options, Dict{UInt64, T}}, false),
     (
         LK._cp_visit!,
         Tuple{LK.PL_local_data{T}, LK._cp_state{T}, Vector{LK._cp_frame{T}}, T},
@@ -125,6 +126,7 @@ _manifest_per_type(T) = (
     (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.setSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
+    (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T, LK.PutVarMap}, false),
     (LK.allocGlobalVars!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK._reserveStamps!, Tuple{LK.PL_local_data{T}}, false),
     (LK._growGlobalStack!, Tuple{LK.PL_local_data{T}, Int}, false),

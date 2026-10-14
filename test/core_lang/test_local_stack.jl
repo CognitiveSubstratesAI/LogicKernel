@@ -440,11 +440,16 @@ end
     to = ld.lTop
     from = LK.argFrameP(to, 5)                              # the arguments pushed above lTop
     xs = [_ls("a"), _lf("f", _lv(1)), lk_gnd(_L, 3)]
-    for (i, x) in enumerate(xs)
-        LK.putSlotValue!(ld, LK.argFrameP(from, i - 1) + 1, x)
-    end
+    # the values the puts made (a put copies, its variables fresh: the L1b boundary, user
+    # 2026-10-14) are what the frame below must then hold, the same objects
+    pvm = LK.PutVarMap()
+    ys = [
+        LK.putSlotValue!(ld, LK.argFrameP(from, i - 1) + 1, x, pvm) for
+        (i, x) in enumerate(xs)
+    ]
+    @test lk_eq(ys[1], xs[1]) && lk_eq(ys[3], xs[3]) && kind(child(ys[2], 2)) === VAR
     LK.copyFrameArguments(ld, from, to, 3)
-    @test all(i -> LK.slotValue(ld, LK.argFrameP(to, i - 1) + 1) === xs[i], 1:3)
+    @test all(i -> LK.slotValue(ld, LK.argFrameP(to, i - 1) + 1) === ys[i], 1:3)
     LK.copyFrameArguments(ld, from, to + 100, 0)            # argc 0: nothing
     @test !isassigned(ld.slots, LK.argFrameP(to + 100, 0) + 1)
 end
@@ -585,8 +590,9 @@ LK_TERM_IMPL == "reference" &&
             LK.lowerLTop!(ld, base)
             nothing
         end
-        LK.putSlotValue!(ld, LK.argFrameP(ld.lTop, 0) + 1, _ls("a"))
-        LK.putSlotValue!(ld, LK.argFrameP(ld.lTop, 1) + 1, _ls("b"))
+        pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+        LK.putSlotValue!(ld, LK.argFrameP(ld.lTop, 0) + 1, _ls("a"), pvm)
+        LK.putSlotValue!(ld, LK.argFrameP(ld.lTop, 1) + 1, _ls("b"), pvm)
         cycle!(ld), deep!(ld, 1000)
         @test @allocated(cycle!(ld)) == 0
         @test @allocated(deep!(ld, 1000)) == 0                # 1000 frames and choice points deep

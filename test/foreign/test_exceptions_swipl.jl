@@ -188,8 +188,9 @@ end
 function _eraise(ld, i::Int, j::Int)::Int
     fid = LKE.PL_open_foreign_frame(ld)
     a = LKE.PL_new_term_refs(ld, 2)
-    LogicKernel.putSlotValue!(ld, a + 1, _EBALLS[i][2])
-    LogicKernel.putSlotValue!(ld, a + 2, _EBALLS[j][2])
+    pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
+    LogicKernel.putSlotValue!(ld, a + 1, _EBALLS[i][2], pvm)
+    LogicKernel.putSlotValue!(ld, a + 2, _EBALLS[j][2], pvm)
     LKE.PL_raise_exception(ld, a)
     LKE.PL_raise_exception(ld, a + 1)
     @assert ld.exception_term == ld.exception_bin

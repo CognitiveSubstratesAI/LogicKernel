@@ -75,9 +75,18 @@ A copy of `from` under the bindings in `ld`: variables renamed consistently, gro
 shared where `options.share`, a cyclic term copied as a cyclic term (pl-copyterm.c `copy_term`).
 """
 function copy_term(ld::PL_local_data{T}, from::T, options::cp_options)::T where {T}
+    return copy_term(ld, from, options, Dict{UInt64, T}())
+end
+
+# ORIGINAL: the walk with the caller's map of fresh variables — an unbound variable already in
+# `vars` is copied to its entry, a new one is added to it — so that several copies share their
+# variables, as the arguments of one record do (`putSlotValue!`, src/pl-inline.jl: L1b's boundary).
+"`copy_term` with the fresh variables of `vars` (an unbound variable's key → its copy), extended in place."
+function copy_term(
+    ld::PL_local_data{T}, from::T, options::cp_options, vars::Dict{UInt64, T}
+)::T where {T}
     st = _cp_state{T}(
-        options.share, Dict{UInt64, T}(), Dict{UInt64, T}(), Set{UInt64}(),
-        Dict{UInt64, T}()
+        options.share, vars, Dict{UInt64, T}(), Set{UInt64}(), Dict{UInt64, T}()
     )
     stack = _cp_frame{T}[]
     result = _cp_visit!(ld, st, stack, from)
