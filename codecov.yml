@@ -5,7 +5,7 @@ coverage:
     project:
       default:
         target: auto
-        threshold: 1%
+        threshold: 1%      # at most 1 point lower per L1 step (user, 2026-10-14)
     patch:
       default:
         target: 80%

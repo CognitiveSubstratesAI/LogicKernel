@@ -16,6 +16,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# LEAST PRIVILEGE (user, 2026-10-14): a job without its own block reads the repository only.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
@@ -53,7 +57,7 @@ jobs:
         arch:
           - x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
       # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
       # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
@@ -61,19 +65,19 @@ jobs:
       - name: The pinned swipl-devel commit
         id: pin
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           repository: SWI-Prolog/swipl-devel
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
-      - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
+      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - uses: julia-actions/julia-buildpkg@e3eb439fad4f9aba7da2667e7510e4a46ebc46e1  # v1
+      - uses: julia-actions/julia-runtest@6e050c8013b833b1195105ff2fce9cd802f53271  # v1
         with:
           check_bounds: 'yes'
       # Coverage → Codecov. The repo's CODECOV_TOKEN secret when it exists; GitHub OIDC when it does
@@ -87,7 +91,12 @@ jobs:
       # ✅ `fail_ci_if_error: true` since 2026-10-02: the OIDC upload from a668c1c LANDED (Codecov:
       # activated, last upload 19:15:07Z, log "Upload queued for processing complete"). A failed
       # upload now turns CI red instead of hiding behind a green check.
-      - uses: julia-actions/julia-processcoverage@v1
+      - uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38  # v1
+      # NO src/ FILE AT 0% (user, 2026-10-14): the known ones are listed, and the list only shrinks
+      # (tools/coverage_zero.py; its own tests run in the `tooling` job). Once per run.
+      - name: No src/ file at 0% coverage (the ratchet)
+        if: matrix.version == '1'
+        run: python3 tools/coverage_zero.py lcov.info tools/coverage_zero_known.txt
       # 🔴 THE UPLOADS DO NOT GATE THE JOB (user, 2026-10-05). Coverage is not a correctness gate, and
       # a job that goes red on every push because of an outside outage trains everyone to ignore
       # red — measured: from 2026-10-05 00:07 UTC Codecov's uploader could not download its own
@@ -95,11 +104,20 @@ jobs:
       # `fail_ci_if_error: true` (so a failure is a FAILED STEP, not a silent success) under
       # `continue-on-error`, and the step after them prints a warning annotation when one failed.
       # The test step above is unchanged and still gates.
+      # 🔴 ON main A FAILED UPLOAD IS RED (user, 2026-10-14 — reverses the 2026-10-05 decision on
+      # main only): `continue-on-error` holds off main, so a gate branch still is not held hostage
+      # by a Codecov outage, while main's dashboard can no longer go stale unnoticed.
+      # `override_branch: main` on main (MEASURED 2026-10-14, Codecov API): every commit WAS
+      # uploaded, but filed under `gate/ci-offload`, the first branch its SHA was pushed on; `main`
+      # is fast-forwarded to the same SHA later, so Codecov's main view stayed at 12ddbf7 — the last
+      # commit pushed to main directly. The upload on main re-files the commit under main.
       - id: upload_coverage
-        uses: codecov/codecov-action@v5
-        continue-on-error: true
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5
+        continue-on-error: ${{ github.ref != 'refs/heads/main' }}
         with:
           files: lcov.info
+          flags: julia-${{ matrix.version }}
+          override_branch: ${{ github.ref == 'refs/heads/main' && 'main' || '' }}
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
           fail_ci_if_error: true
@@ -108,18 +126,23 @@ jobs:
       - name: Upload test results to Codecov
         id: upload_results
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
-        continue-on-error: true
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5
+        continue-on-error: ${{ github.ref != 'refs/heads/main' }}
         with:
           report_type: test_results
           files: junit.xml
+          flags: julia-${{ matrix.version }}
+          override_branch: ${{ github.ref == 'refs/heads/main' && 'main' || '' }}
           token: ${{ secrets.CODECOV_TOKEN }}
           use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
           fail_ci_if_error: true
-      - name: Warn if a Codecov upload failed (it does not gate the job)
+      - name: Warn if a Codecov upload failed (off main it does not gate the job)
         if: ${{ !cancelled() && (steps.upload_coverage.outcome == 'failure' || steps.upload_results.outcome == 'failure') }}
+        env:
+          COV: ${{ steps.upload_coverage.outcome }}
+          RES: ${{ steps.upload_results.outcome }}
         run: |
-          echo "::warning title=Codecov upload failed::coverage ${{ steps.upload_coverage.outcome }}, test results ${{ steps.upload_results.outcome }} — the tests gate this job; see the upload step's log for Codecov's error"
+          echo "::warning title=Codecov upload failed::coverage $COV, test results $RES — the tests gate this job; see the upload step's log for Codecov's error"
 
   # ── THE PROACTIVE GATES, WITH NOTHING ALLOWED TO SKIP ────────────────────────────────────────────
   # `test` above runs Pkg.test, whose isolated environment has no JET/Aqua/AllocCheck and no swipl,
@@ -150,7 +173,7 @@ jobs:
       LOGICKERNEL_REQUIRE_SWIPL: '1'
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
       # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
       # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
@@ -158,7 +181,7 @@ jobs:
       - name: The pinned swipl-devel commit
         id: pin
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           repository: SWI-Prolog/swipl-devel
           ref: ${{ steps.pin.outputs.commit }}
@@ -167,10 +190,10 @@ jobs:
       # The oracle: restored from the cache or built at the pin, put on PATH, and checked to BE
       # that build — one recipe for this job, evidence.yml and mutation.yml (.github/actions/oracle).
       - uses: ./.github/actions/oracle
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
         with:
           version: '1.13'
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
       # JET, LoweredCodeUtils and JuliaInterpreter release together: install the tools from master as
       # a set. A pin on one of them (2026-10-03, LoweredCodeUtils v3.9.1 while JET lagged) breaks as
       # soon as the others move on — JET 0.12.3 then REQUIRED LoweredCodeUtils 3.10 (run 37139741792).
@@ -189,8 +212,8 @@ jobs:
     name: Format (Blue)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
         with:
           version: '1.13'
       # No julia-actions/cache here — a cached Manifest can pin an older JuliaFormatter than the one
@@ -227,7 +250,7 @@ jobs:
       JULIA_NUM_THREADS: '4'
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0
       - name: Did the tooling change?
@@ -256,7 +279,7 @@ jobs:
         if: steps.changed.outputs.run == 'true'
         id: pin
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         if: steps.changed.outputs.run == 'true'
         with:
           repository: SWI-Prolog/swipl-devel
@@ -265,11 +288,11 @@ jobs:
           submodules: true
       - uses: ./.github/actions/oracle
         if: steps.changed.outputs.run == 'true'
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
         if: steps.changed.outputs.run == 'true'
         with:
           version: '1.13'
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
         if: steps.changed.outputs.run == 'true'
       # the warm lane's preflight runs the formatter and the fast static pre-check in the daemon:
       # the same tools, the same versions as `analysis` and `format`
@@ -313,6 +336,9 @@ jobs:
           git config --global credential.https://github.com.helper \
             '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
           echo "GH_TOKEN=$GH_TOKEN" >> "$GITHUB_ENV"
+      - name: tools/test_coverage_zero.sh
+        if: steps.changed.outputs.run == 'true'
+        run: tools/test_coverage_zero.sh
       - name: tools/test_oracle_cache.sh
         if: steps.changed.outputs.run == 'true'
         run: tools/test_oracle_cache.sh

@@ -1,0 +1,5 @@
+# ORIGINAL: the src/ files known to be at 0% coverage (tools/coverage_zero.py; user, 2026-10-14).
+# This list may only SHRINK. Each entry is an open audit item: missing tests, or tests that run
+# in a subprocess coverage does not see (Codecov, 2026-10-14: both at 0%).
+src/os/pl-prologflag.jl
+src/os/pl-codelist.jl

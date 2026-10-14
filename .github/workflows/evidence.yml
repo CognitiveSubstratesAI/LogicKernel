@@ -31,6 +31,11 @@ jobs:
   evidence:
     name: ${{ matrix.term }}
     runs-on: ubuntu-latest
+    # a job-level block REPLACES the workflow's: every scope listed (id-token for Codecov's OIDC)
+    permissions:
+      contents: read
+      actions: write
+      id-token: write
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -44,7 +49,7 @@ jobs:
       LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_${{ matrix.term }}.tsv
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
       # with it, so test/test_vendored_plunit.jl checks the vendored plunit against the gitlink
       # HERE — that testset FAILS in CI without it, never inert. Outside git and the formatter
@@ -52,17 +57,17 @@ jobs:
       - name: The pinned swipl-devel commit
         id: pin
         run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           repository: SWI-Prolog/swipl-devel
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
       - uses: ./.github/actions/oracle
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
         with:
           version: '1.13'
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
       # The analysis tools, as CI.yml's `analysis` job installs them (JET, LoweredCodeUtils and Aqua
       # from master, as a set); only the `reference` job analyses, the others need none.
       - name: Install the analysis tools into the default environment
@@ -74,18 +79,37 @@ jobs:
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
             PackageSpec(name="AllocCheck")])'
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      # COVERAGE PER TERM TYPE (user, 2026-10-14): each type's run is instrumented and uploaded
+      # under its own Codecov flag; Codecov merges the uploads of one commit, so the three flags
+      # land on the SHA `main` is later fast-forwarded to (CI.yml re-files it under main).
       - name: Run this term type's units with every gate required
+        env:
+          TERM_TYPE: ${{ matrix.term }}       # through env, never interpolated into the script
         run: |
           mkdir -p evidence-out
           start=$(date +%s)
-          julia --project=. test/runtests.jl
-          echo "| ${{ matrix.term }} | passed | $(( $(date +%s) - start )) s |" >> evidence-out/row_${{ matrix.term }}.md
+          julia --project=. --code-coverage=user test/runtests.jl
+          echo "| $TERM_TYPE | passed | $(( $(date +%s) - start )) s |" >> "evidence-out/row_$TERM_TYPE.md"
       - name: Record a failed run
         if: ${{ failure() }}
+        env:
+          TERM_TYPE: ${{ matrix.term }}
         run: |
           mkdir -p evidence-out
-          echo "| ${{ matrix.term }} | **FAILED** | — |" >> evidence-out/row_${{ matrix.term }}.md
-      - uses: actions/upload-artifact@v4
+          echo "| $TERM_TYPE | **FAILED** | — |" >> "evidence-out/row_$TERM_TYPE.md"
+      - uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38  # v1
+        if: ${{ !cancelled() }}
+      # A gate branch's upload does not gate the evidence (main's, in CI.yml, does)
+      - uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        with:
+          files: lcov.info
+          flags: ${{ matrix.term }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
+          fail_ci_if_error: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         if: ${{ !cancelled() }}
         with:
           name: evidence-${{ matrix.term }}
@@ -97,8 +121,8 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           pattern: evidence-*
           path: evidence-out

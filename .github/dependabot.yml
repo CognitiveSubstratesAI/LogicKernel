@@ -1,0 +1,14 @@
+# Dependabot keeps the SHA-pinned actions current (user, 2026-10-14): every third-party action is
+# pinned by commit with its tag in a comment, and Dependabot bumps both together. Weekly, grouped,
+# so the updates arrive as one pull request to go through the gate.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:            # the workflows, and the composite action (it pins actions/cache)
+      - /
+      - /.github/actions/oracle
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
