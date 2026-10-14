@@ -565,7 +565,7 @@ if _ZSWIPL !== nothing
         end
         foreach(b -> println(stderr, "  DIVERGES: ", b), first(bad, 20))
         @test isempty(bad)
-        @test isempty(ld.trail) && isempty(ld.bindings)     # every attempt undone
+        @test isempty(ld.trail) && lk_no_bindings(ld)     # every attempt undone
         # the data exercised every outcome the modes can give
         @test get(tally, ("false", "ok"), 0) >= 300 &&
             get(tally, ("false", "fail"), 0) >= 150
@@ -598,7 +598,7 @@ if _ZSWIPL !== nothing
         ]
         foreach(b -> println(stderr, "  DIVERGES: ", b), first(bad, 20))
         @test isempty(bad)
-        @test isempty(ld.trail) && isempty(ld.bindings)
+        @test isempty(ld.trail) && lk_no_bindings(ld)
         # the data reached each answer: identical, and both orders (ground: `=@=` is `==`)
         sigs = join(ours)
         n_eq = count(k -> sigs[k] == 'e', 1:3:length(sigs))
@@ -647,7 +647,7 @@ end
         ball = ld.slots[ld.exception_term + 1]
         @test lk_name(child(ball, 1)) == :error
         @test lk_name(child(child(ball, 2), 1)) == :occurs_check
-        @test isempty(ld.trail) && isempty(ld.bindings)
+        @test isempty(ld.trail) && lk_no_bindings(ld)
         PL_clear_exception(ld)
         @test ld.exception_term == 0
     end

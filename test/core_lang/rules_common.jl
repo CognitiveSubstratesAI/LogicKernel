@@ -311,7 +311,7 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
         error("_rhighwater: $(_rsrc(goal)) returned $rc, ball $ball (growth past lMax?)")
     end
     high = findlast(t -> t !== _R_SENTINEL, ld.slots) - 1           # a position: slots[p + 1]
-    tr, st = length(ld.trail), length(ld.bindings)
+    tr, st = length(ld.trail), lk_bound_count(ld)
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
     ld.stacks_limit = saved_limit

@@ -49,7 +49,7 @@ _uid(a, b) = compareStandard(a, b) == 0                     # ==/2
         ld = PL_local_data{_UT}()
         U, V = _uv(1), _uv(2)
         @test pl_unify!(ld, U, U) && pl_unify!(ld, V, V)
-        @test isempty(ld.trail) && isempty(ld.bindings)
+        @test isempty(ld.trail) && lk_no_bindings(ld)
     end
     # PORT: test_unify.pl unify_arity_0
     @testset "unify_arity_0" begin                           # A = f(), X == f()
@@ -92,7 +92,7 @@ end
     @testset "ground" begin                                  # fail
         ld = PL_local_data{_UT}()
         @test !pl_can_compare(ld, _us(:a), _uv(1))                     # ?=(a,X)
-        @test isempty(ld.trail) && isempty(ld.bindings)                # nothing left bound
+        @test isempty(ld.trail) && lk_no_bindings(ld)                # nothing left bound
     end
 end
 
@@ -113,6 +113,6 @@ end
         @test S !== nothing && length(S) == 2
         @test _uid(S[1].first, Z) && _uid(S[1].second, X)
         @test _uid(S[2].first, Y) && _uid(S[2].second, X)
-        @test isempty(ld.trail) && isempty(ld.bindings)     # read off the trail, rewound
+        @test isempty(ld.trail) && lk_no_bindings(ld)     # read off the trail, rewound
     end
 end

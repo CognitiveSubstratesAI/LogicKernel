@@ -227,7 +227,7 @@ end
     LK.newChoice(ld, LK.CHP_JUMP, 1)
     LK.emptyStacks!(ld)
     @test ld.lTop == perm + 4 && ld.nfliframes == 1 && ld.nframes == 0 && ld.nchoices == 0
-    @test ld.BFR == 0 && isempty(ld.trail) && isempty(ld.bindings)
+    @test ld.BFR == 0 && isempty(ld.trail) && lk_no_bindings(ld)
 end
 
 @testset "newChoice: at lTop, linked to BFR, with a mark" begin
@@ -285,7 +285,7 @@ end
     LK.Trail!(ld, k, _ls("a"))
     LK.PL_close_foreign_frame(ld, fid)
     @test ld.lTop == fid && ld.fli_context == 1 && ld.nfliframes == 1
-    @test haskey(ld.bindings, k)
+    @test LK._binding(ld, k) !== nothing
 
     # rewind: the bindings are UNDONE, the references dropped, the frame stays open
     fid = LK.PL_open_foreign_frame(ld)
@@ -295,7 +295,7 @@ end
     inner = LK.PL_open_foreign_frame(ld)
     LK.PL_rewind_foreign_frame(ld, fid)
     @test ld.lTop == fid + LK.SIZEOF_FLIFRAME && ld.fliframes[ld.fli_context].base == fid
-    @test ld.fliframes[ld.fli_context].size == 0 && !haskey(ld.bindings, k)
+    @test ld.fliframes[ld.fli_context].size == 0 && LK._binding(ld, k) === nothing
     @test LK.fliFrameOfFid(ld, inner) == 0 && ld.nfliframes == 2      # the inner one dropped
 
     # discard: the bindings are undone and the frame is closed
@@ -303,7 +303,7 @@ end
     k = var_key(ld.slots[r + 1])
     LK.Trail!(ld, k, _ls("c"))
     LK.PL_discard_foreign_frame(ld, fid)
-    @test ld.lTop == fid && ld.fli_context == 1 && !haskey(ld.bindings, k)
+    @test ld.lTop == fid && ld.fli_context == 1 && LK._binding(ld, k) === nothing
 
     # a handle that names no open frame is refused
     @test_throws ErrorException LK.PL_close_foreign_frame(ld, 0)

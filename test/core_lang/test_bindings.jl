@@ -44,7 +44,7 @@ _btree(d::Int, leaf) = d == 0 ? leaf() : _bc(:f, _btree(d - 1, leaf), _btree(d -
         kind(deRef(ld, Z)) === VAR
     @test length(ld.trail) == 1
     Undo!(ld, m0)
-    @test isempty(ld.trail) && isempty(ld.bindings)
+    @test isempty(ld.trail) && lk_no_bindings(ld)
     # marks nest: undoing to a mark above the trail's top is a misuse, and asserted
     m2 = Mark(ld)
     @test pl_unify!(ld, X, _bs(:b))
@@ -116,5 +116,5 @@ LK_TERM_IMPL == "reference" &&
             @test count(==(0), allocs) >= 40
             @test _battempt!(ld, a, b)
         end
-        @test isempty(ld.trail) && isempty(ld.bindings)
+        @test isempty(ld.trail) && lk_no_bindings(ld)
     end

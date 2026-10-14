@@ -3309,6 +3309,7 @@ end
 # `bvar_access` (the moved unifications: see `decompile!`).
 "The state of one clause decompilation (pl-comp.c `decompileInfo`)."
 mutable struct decompileInfo{T}
+    const ld::PL_local_data{T}                  # (upstream's LD: the engine whose cells it makes, L1a)
     const clause::Clause{T}
     pc::Int                                     # pc: pc for decompilation
     const base::UInt64                          # (variables: slot i's variable is key base + i)
@@ -3320,9 +3321,9 @@ mutable struct decompileInfo{T}
 end
 
 decompileInfo{T}(
-    clause::Clause{T}, pc::Int, base::UInt64, argp::Vector{T},
+    ld::PL_local_data{T}, clause::Clause{T}, pc::Int, base::UInt64, argp::Vector{T},
     frames::Vector{DecompileFrame{T}}
-) where {T} = decompileInfo{T}(clause, pc, base, argp, frames, nothing)
+) where {T} = decompileInfo{T}(ld, clause, pc, base, argp, frames, nothing)
 
 "The variable of the slot at frame offset `index` (upstream's `makeVarRef`, resolved at once)."
 function _dvar(di::decompileInfo{T}, index::code)::T where {T}
@@ -3681,7 +3682,7 @@ function decompile!(
     if clause.codes[pc] == I_EXIT
         return pl_unify!(ld, body, mk_sym(T, Symbol("true")))
     end
-    di = decompileInfo{T}(clause, pc, base, T[], DecompileFrame{T}[])
+    di = decompileInfo{T}(ld, clause, pc, base, T[], DecompileFrame{T}[])
     return decompileBody!(ld, di, body, I_EXIT, 0)
 end
 
@@ -3696,7 +3697,7 @@ function decompile_body_range(
     ld::PL_local_data{T}, goal::term_t, fr::Int, clause::Clause{T}, start::Int, end_::code
 )::Bool where {T}
     variables = clause.prolog_vars != 0 ? (ld.slots, ld.frames[fr].base) : nothing
-    di = decompileInfo{T}(clause, start, UInt64(0), T[], DecompileFrame{T}[], variables)
+    di = decompileInfo{T}(ld, clause, start, UInt64(0), T[], DecompileFrame{T}[], variables)
     return decompileBody!(ld, di, ld.slots[goal + 1], end_, 0)
 end
 
@@ -3838,7 +3839,7 @@ function moved_unifications!(
         end
     end
     if hasbody
-        di = decompileInfo{T}(clause, pc, base, T[], DecompileFrame{T}[])
+        di = decompileInfo{T}(ld, clause, pc, base, T[], DecompileFrame{T}[])
         decompileBodyNoShift!(di, I_EXIT, 0)
         @assert length(di.argp) == 1 && isempty(di.frames)
         push!(goals, pop!(di.argp))

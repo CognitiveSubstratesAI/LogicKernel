@@ -81,5 +81,11 @@ vectors of terms elementwise. A term-generic test compares terms with this, neve
 which is the reference type's own convenience — `AltTerm`'s throws.
 """
 lk_eq(a, b)::Bool = compareStandard(a, b, true) == 0
+
+# The variables bound in an engine (L1a): a KEYED variable's entry in the store plus every CELL
+# variable whose cell is bound — so "nothing left bound" sees both kinds (src/pl-global.jl).
+lk_bound_count(ld)::Int =
+    length(ld.bindings) + count(!isnothing, view(ld.gstack, 1:(ld.gTop)))
+lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
 lk_eq(a::AbstractVector, b::AbstractVector)::Bool =
     length(a) == length(b) && all(((x, y),) -> lk_eq(x, y), zip(a, b))

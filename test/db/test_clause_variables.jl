@@ -108,7 +108,7 @@ end
     @test_throws ErrorException LK.pl_clause!(
         db.gd, db.ld, p.def, _cve(:p, X), cl -> error("the sink fails")
     )
-    @test isempty(db.ld.trail) && isempty(db.ld.bindings)   # undone on the way out
+    @test isempty(db.ld.trail) && lk_no_bindings(db.ld)   # undone on the way out
     @test isempty(db.ld.predicate_references)               # and the access popped
     @test_throws ErrorException LK.pl_retract!(
         db.gd, db.ld, p.def, _cve(:p, X), cl -> error("the sink fails")
@@ -117,7 +117,7 @@ end
     @test length(ix_clause(p, _cve(:p, X))) == 2            # the first retract did happen
     ix_assertz!(p, _cve(:p, _cve(:h, _cvg(1))))
     @test LK.pl_retractall!(db.gd, db.ld, p.def, _cve(:p, _cve(:h, X)))  # unifies, binds X…
-    @test isempty(db.ld.trail) && isempty(db.ld.bindings)   # …and undoes it per clause
+    @test isempty(db.ld.trail) && lk_no_bindings(db.ld)   # …and undoes it per clause
     @test length(ix_clause(p, _cve(:p, X))) == 2
 end
 
@@ -153,7 +153,7 @@ end
     @test length(seen) == 1                                             # q(a, f(a)) answers
     @test pending() === :occurs_check                                   # q(Y, Y)'s error stays
     PL_clear_exception(ld)
-    @test isempty(ld.trail) && isempty(ld.bindings) && isempty(ld.predicate_references)
+    @test isempty(ld.trail) && lk_no_bindings(ld) && isempty(ld.predicate_references)
     ld.prolog_flag_occurs_check = OCCURS_CHECK_FALSE
     @test length(ix_clause(p, _cve(:q, _cvv(3), _cvv(4)))) == 2         # nothing was retracted
 end

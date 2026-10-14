@@ -1869,7 +1869,7 @@ end
     snap() = (ld.lTop, ld.nframes, ld.nchoices, ld.nfliframes, ld.nqueries, ld.BFR,
         ld.fli_context,
         ld.environment_frame, ld.aTop, ld.nbframes, ld.bTop, length(ld.trail),
-        length(ld.bindings))
+        lk_bound_count(ld), ld.gTop)                                # L1a: the global stack too
     goal = _rs("nreverse")
     base = snap()
     ok = 0

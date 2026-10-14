@@ -109,7 +109,7 @@ end
         ld = _old(OCCURS_CHECK_ERROR)
         e = _oerr(ld, () -> pl_unify!(ld, _oc(:unify, X, _oc(:f, X)), _oc(:unify, A, A)))
         @test e !== nothing && _oball(e, X, _oc(:f, X))
-        @test isempty(ld.trail) && isempty(ld.bindings)     # undone before the error
+        @test isempty(ld.trail) && lk_no_bindings(ld)     # undone before the error
     end
     # PORT: test_occurs_check.pl unifiable
     @testset "unifiable" begin                   # error(occurs_check(X, f(X)))

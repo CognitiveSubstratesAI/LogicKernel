@@ -205,5 +205,5 @@ _tlist(xs::_TT...) = foldr(_tl, xs; init=_tnil())
             _tu(A, _tl(A, _tv())) && _tu(X, _tl(A, Y)) && _tu(B, _tl(X, Y)) && !_tvr(A, B)
         end
     end
-    @test isempty(_TLD.trail) && isempty(_TLD.bindings)     # every case undone
+    @test isempty(_TLD.trail) && lk_no_bindings(_TLD)     # every case undone
 end
