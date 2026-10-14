@@ -126,7 +126,7 @@ function allocGlobalVars!(ld::PL_local_data, n::Int)::UInt64
     top > length(ld.gstack) && _growGlobalStack!(ld, top)
     k = CELL_KEY_TAG | (stamp << 28) | UInt64(p)
     for i in 0:(n - 1)
-        ld.gstack[p + i] = nothing    # setVar()
+        ld.gstack[p + i] = word(0)    # setVar()
         ld.gkey[p + i] = k + UInt64(i)
     end
     ld.gTop = top

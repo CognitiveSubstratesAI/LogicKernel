@@ -176,14 +176,57 @@ a KEYED variable (a caller's, a counter's, another engine's, or a cell's whose p
 @inline function _cell_pos(ld::PL_local_data, key::UInt64)::Int
     (key & CELL_KEY_TAG) == CELL_KEY_TAG || return 0
     p = Int(key & CELL_POS_MASK)
-    return (1 <= p <= ld.gTop && ld.gkey[p] == key) ? p : 0
+    return (1 <= p <= ld.gTop && ld.gkey[p] == key && !_is_box(ld, p)) ? p : 0
+end
+
+# ORIGINAL: a value table's box (L1b stage C2) holds the word of its own entry, whose box is here —
+# so a retained key at a position a box now occupies names no cell (a cell's word names an entry
+# boxed elsewhere, or is 0).
+"Whether position `p` of the global stack is a value-table box."
+@inline function _is_box(ld::PL_local_data, p::Int)::Bool
+    w = ld.gstack[p]
+    tagex(w) == (TAG_COMPOUND | STG_RESERVED) || return false
+    i = valPtr(w)
+    return i <= length(ld.vbox) && ld.vbox[i] == p
+end
+
+# ORIGINAL: the value table (L1b stage C2; src/pl-global.jl): a value with no word form yet, held
+# by entry, pinned by a box word on the global stack so `Undo!` truncates the table with `gTop`.
+"The word of a new value-table entry holding `v`; its box is the next word of the global stack."
+@inline function _vword!(ld::PL_local_data{T}, v::T)::word where {T}
+    p = ld.gTop + 1
+    p > length(ld.gstack) && _growGlobalStack!(ld, p)
+    push!(ld.vtable, v)
+    push!(ld.vbox, p)
+    w = consPtr(length(ld.vtable), TAG_COMPOUND | STG_RESERVED)
+    ld.gstack[p] = w                  # the box: the entry's own word (`_cell_pos` tells it apart)
+    ld.gTop = p
+    return w
+end
+
+# ORIGINAL: the value a cell's word holds (L1b stage C2): unbound (0), or a value-table entry.
+"The value word `w` of a bound cell names, or `nothing` for an unbound cell (the word 0)."
+@inline function _cell_value(ld::PL_local_data{T}, w::word)::Union{Nothing, T} where {T}
+    isVar(w) && return nothing
+    return ld.vtable[valPtr(w)]
+end
+
+# ORIGINAL: the value table follows the global stack down (L1b stage C2): every entry whose box lies
+# above `gTop` is gone with it.
+"Drop the value-table entries whose boxes lie above `gTop`."
+@inline function _truncate_vtable!(ld::PL_local_data)::Nothing
+    while !isempty(ld.vbox) && ld.vbox[end] > ld.gTop
+        pop!(ld.vbox)
+        pop!(ld.vtable)
+    end
+    return nothing
 end
 
 # ORIGINAL: what a variable is bound to, for the few readers that look a binding up by key.
 "The value variable `key` is bound to, or `nothing` (unbound): its cell, or the store."
 function _binding(ld::PL_local_data{T}, key::UInt64)::Union{Nothing, T} where {T}
     p = _cell_pos(ld, key)
-    return p != 0 ? ld.gstack[p] : get(ld.bindings, key, nothing)
+    return p != 0 ? _cell_value(ld, ld.gstack[p]) : get(ld.bindings, key, nothing)
 end
 
 # ORIGINAL: bind without a trail entry — the callers that restore the binding themselves.
@@ -191,7 +234,7 @@ end
 function _set_binding!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
     p = _cell_pos(ld, key)
     if p != 0
-        ld.gstack[p] = v              # *p = v
+        ld.gstack[p] = _vword!(ld, v)  # *p = v
     else
         ld.bindings[key] = v
     end
@@ -203,7 +246,7 @@ end
 function _unbind!(ld::PL_local_data, key::UInt64)::Nothing
     p = _cell_pos(ld, key)
     if p != 0
-        ld.gstack[p] = nothing        # setVar(*p)
+        ld.gstack[p] = word(0)        # setVar(*p)
     else
         delete!(ld.bindings, key)
     end
@@ -280,7 +323,7 @@ function deRef(ld::PL_local_data{T}, t::T)::T where {T}
     while kind(t) === VAR
         k = var_key(t)
         p = _cell_pos(ld, k)
-        b = p != 0 ? ld.gstack[p] : get(ld.bindings, k, nothing)
+        b = p != 0 ? _cell_value(ld, ld.gstack[p]) : get(ld.bindings, k, nothing)
         b === nothing && return t
         t = b
     end
@@ -306,7 +349,7 @@ function Trail!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
     p = _cell_pos(ld, key)
     if p != 0
         p <= ld.mark_bar && push!(ld.trail, key)    # if ( p < LD->mark_bar ) (tTop++)->address = p
-        ld.gstack[p] = v              # *p = v
+        ld.gstack[p] = _vword!(ld, v)  # *p = v
     else
         push!(ld.trail, key)                    # (tTop++)->address = p
         ld.bindings[key] = v                    # *p = v
@@ -367,5 +410,6 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
         _unbind!(ld, pop!(ld.trail))            # setVar(*tt->address)
     end
     ld.gTop = m.globaltop                       # gTop = (b).globaltop
+    _truncate_vtable!(ld)                       # (the value table follows it: L1b stage C2)
     return nothing
 end

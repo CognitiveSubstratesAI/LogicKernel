@@ -1107,6 +1107,7 @@ graph LR
     pl_setup --> default_term
     pl_setup --> pl_incl
     pl_setup --> pl_global
+    pl_setup --> pl_inline
     pl_setup --> pl_gc
     pl_setup --> pl_wam
     pl_setup --> pl_fli

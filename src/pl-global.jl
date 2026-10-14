@@ -189,7 +189,13 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # global stack; interface variables are immutable values, so a binding is an entry keyed by
 # `var_key`. Since L1a it holds only KEYED variables' bindings: a CELL variable's binding is in its
 # cell on `gstack`, the global stack of variables (`gkey`, `gTop`; see `CELL_KEY_TAG`), and
-# `mark_bar` is upstream's. `trail` is `stacks.trail` (its length is `tTop`) and holds the keys of
+# `mark_bar` is upstream's. Since L1b stage C2 the global stack holds WORDS (pl-data.h): an unbound
+# cell is 0 (`setVar`), a bound one a value-table word, `consPtr(i, TAG_COMPOUND|STG_RESERVED)`,
+# naming entry `i` of `vtable` — the VALUE TABLE, transitional (the workspace's L1 plan §5 L1b),
+# which holds every bound value until its kind has a word form (atoms and small integers: stage C3;
+# floats, big numbers, strings: C4; compounds: L1c). Each entry is pinned by a BOX, a word of its own
+# on the global stack (`vbox`), so when `Undo` lowers `gTop` the table is truncated with it: an
+# entry never outlives the stack it shadows. `trail` is `stacks.trail` (its length is `tTop`) and holds the keys of
 # both kinds. A cyclic link or
 # a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
 # overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
@@ -245,9 +251,11 @@ mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
     bindings::Dict{UInt64, T}                                   # var_key → value (see above)
     trail::Vector{UInt64}                                       # stacks.trail: bound var_keys
-    gstack::Vector{Union{Nothing, T}}                           # stacks.global: the cells (L1a)
+    gstack::Vector{UInt64}                                      # stacks.global: its WORDS (L1b C2)
     gkey::Vector{UInt64}                                        # … the key of each cell's variable
     gTop::Int                                                   # stacks.global.top
+    vtable::Vector{T}                                           # (the value table, L1b: see above)
+    vbox::Vector{Int}                                           # … each entry's box on the stack
     mark_bar::Int                                               # mark_bar
     stamp_next::UInt64                                          # (the engine's reserved stamps:
     stamp_end::UInt64                                           #  stamp_next until stamp_end)
@@ -326,7 +334,7 @@ function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[],
-        Union{Nothing, T}[], UInt64[], 0,
+        UInt64[], UInt64[], 0, T[], Int[],
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,

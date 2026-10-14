@@ -83,9 +83,16 @@ which is the reference type's own convenience — `AltTerm`'s throws.
 lk_eq(a, b)::Bool = compareStandard(a, b, true) == 0
 
 # The variables bound in an engine (L1a): a KEYED variable's entry in the store plus every CELL
-# variable whose cell is bound — so "nothing left bound" sees both kinds (src/pl-global.jl).
+# variable whose cell is bound — so "nothing left bound" sees both kinds (src/pl-global.jl). Since
+# L1b stage C2 a cell is a word, 0 when unbound; a value table's box is not a variable, though its
+# position may still hold the key of a cell freed there before (`gkey` is not cleared: the stamp
+# ratchet), so a box is told apart as `_cell_pos` tells it (`_is_box`).
 lk_bound_count(ld)::Int =
-    length(ld.bindings) + count(!isnothing, view(ld.gstack, 1:(ld.gTop)))
+    length(ld.bindings) +
+    count(
+        p -> ld.gkey[p] != 0 && ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p),
+        1:(ld.gTop)
+    )
 lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
 lk_eq(a::AbstractVector, b::AbstractVector)::Bool =
     length(a) == length(b) && all(((x, y),) -> lk_eq(x, y), zip(a, b))

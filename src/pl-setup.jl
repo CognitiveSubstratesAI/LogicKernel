@@ -106,6 +106,7 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
     empty!(ld.bindings)
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
+    _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)
     ld.mark_bar = ld.gTop                       # LD->mark_bar = gTop;
 
     PL_open_foreign_frame(ld)

@@ -123,6 +123,11 @@ _manifest_per_type(T) = (
     (LK._binding, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._set_binding!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
     (LK._unbind!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    # the value table (L1b stage C2): a push may grow its vectors; the reads and the truncation do not
+    (LK._vword!, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK._cell_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._truncate_vtable!, Tuple{LK.PL_local_data{T}}, true),
+    (LK._is_box, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.setSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
