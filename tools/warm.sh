@@ -2,7 +2,12 @@
 # tools/warm.sh — LogicKernel's WARM LANE: one daemon with LogicKernel loaded under Revise
 # (tools/warm_session.jl), for ITERATION (user, 2026-10-03).
 #
-#   tools/warm.sh start | stop | restart | status          # status prints the daemon's memory too
+#   tools/warm.sh start | stop | restart | status          # status prints the daemon's memory too;
+#                                                          # start exits 6 while ANOTHER checkout's
+#                                                          # daemon runs, naming it (user, 2026-10-14);
+#                                                          # a daemon exits after LOGICKERNEL_WARM_IDLE_S
+#                                                          # (3600) with no request; all of them share
+#                                                          # lk-warm.slice (tools/lib_evidence.sh)
 #   tools/warm.sh file test/core_lang/test_unify.jl [impl]   # one test file, REAL exit code: a term-
 #                                                            # generic file on every implementation
 #                                                            # (or just `impl`), swipl REQUIRED;
@@ -58,12 +63,44 @@ UNIT="logickernel-warm-$(printf '%s' "$ROOT" | md5sum | cut -c1-8)"   # one daem
 
 _running() { systemctl --user is-active --quiet "$UNIT" && [ -f "$DIR/ready" ]; }
 
+# ONE WARM DAEMON AT A TIME (user, 2026-10-14). MEASURED that evening: the machine stalled and was
+# reset with four daemons up, three of them idle for hours in OTHER worktrees. So `start` REFUSES
+# (exit 6) while another checkout's daemon runs, and names it — pid, worktree, age, rss — so it can
+# be stopped. It never stops one itself: that could be another session's, mid-job. With the idle
+# exit (tools/warm_session.jl) and the shared slice (tools/lib_evidence.sh `_lk_slice`).
+# _other_daemons — one line per OTHER checkout's active warm daemon
+_other_daemons() {
+    local u pid wd age rss
+    for u in $(systemctl --user list-units 'logickernel-warm-*.service' --state=active,activating \
+        --no-legend --plain 2>/dev/null | awk '{print $1}'); do
+        [ "$u" = "$UNIT.service" ] && continue
+        pid=$(systemctl --user show "$u" -p MainPID --value 2>/dev/null)
+        wd=$(systemctl --user show "$u" -p WorkingDirectory --value 2>/dev/null)
+        age=$(ps -o etime= -p "${pid:-0}" 2>/dev/null | tr -d ' ')
+        rss=$(awk '/^VmRSS:/ {printf "%.1f GB", $2 / 1048576}' "/proc/${pid:-0}/status" 2>/dev/null)
+        echo "unit $u, pid ${pid:-?}, worktree ${wd:-?}, age ${age:-?}, rss ${rss:-?}"
+    done
+}
+
 _start() {
     if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"))"; return 0; fi
+    local others
+    others="$(_other_daemons)"
+    if [ -n "$others" ]; then
+        {
+            echo "warm lane: REFUSED — another checkout's warm daemon is running (one at a time, user 2026-10-14):"
+            printf '%s\n' "$others" | sed 's/^/  /'
+            echo "  stop it first, in its worktree: tools/warm.sh stop   (# allow-restart: <reason>)"
+        } >&2
+        return 6
+    fi
     mkdir -p "$DIR"
     rm -f "$DIR/ready" "$DIR/done" "$DIR/status" "$DIR/in.jl"
-    local julia
+    local julia slice
     julia="$(command -v julia)" || { echo "warm lane: no julia on PATH" >&2; return 1; }
+    slice="$(_lk_slice)" || return 1                    # the shared budget (tools/lib_evidence.sh)
+    local in_slice=()
+    [ -n "$slice" ] && in_slice=(systemd-run --user --scope --quiet "$slice" -p MemorySwapMax=0)
     # PRECOMPILE the current source into the daemon's depot first — no daemon is running, so nothing
     # can refuse a rewritten cache — so `stale_load` starts from a cache that IS the source. Evidence
     # compiles elsewhere (the evidence depot), so this cache only aged: measured 2026-10-04, a start
@@ -72,7 +109,7 @@ _start() {
     local depot_env=()
     [ -n "${LOGICKERNEL_WARM_DEPOT:-}" ] &&
         depot_env=("JULIA_DEPOT_PATH=$LOGICKERNEL_WARM_DEPOT:$HOME/.julia:")
-    (cd "$ROOT" && env "${depot_env[@]}" \
+    (cd "$ROOT" && "${in_slice[@]}" env "${depot_env[@]}" \
         "$julia" --project=. --startup-file=no -e 'using LogicKernel' < /dev/null) ||
         { echo "warm lane: LogicKernel does not precompile" >&2; return 1; }
     # the same ceiling and flags as tools/run_tests.sh. A service starts from systemd's own PATH, not
@@ -84,9 +121,10 @@ _start() {
         copy_env=(-E "JULIA_DEPOT_PATH=$LOGICKERNEL_WARM_DEPOT:$HOME/.julia:"
             -E LOGICKERNEL_WARM_NO_STALE_LOAD=1)
     fi
-    systemd-run --user --unit="$UNIT" --collect --quiet -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
+    # shellcheck disable=SC2086                          # $slice: empty without user systemd
+    systemd-run --user --unit="$UNIT" --collect --quiet $slice -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
         -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" "${copy_env[@]}" \
-        -E JULIA_REVISE=manual \
+        -E JULIA_REVISE=manual -E LOGICKERNEL_WARM_IDLE_S="${LOGICKERNEL_WARM_IDLE_S:-3600}" \
         /bin/bash -c "exec '$julia' --project=. --threads=\"\${JULIA_TEST_THREADS:-4}\" --heap-size-hint=${LOGICKERNEL_WARM_HEAP_HINT:-6G} tools/warm_session.jl >> '$DIR/session.log' 2>&1" ||
         { echo "warm lane: systemd-run failed" >&2; return 1; }
     local deadline=$(( $(date +%s) + ${WARM_START_TIMEOUT_S:-600} ))

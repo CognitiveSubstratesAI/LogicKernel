@@ -304,7 +304,9 @@ if [ "$MEM_MAX" = "none" ]; then
     "${JL[@]}" < /dev/null
     _finish $?
 elif command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope true >/dev/null 2>&1; then
-    systemd-run --user --scope -p MemoryMax="$MEM_MAX" -p MemorySwapMax=0 --quiet "${JL[@]}" < /dev/null
+    SLICE=$(_lk_slice) || _finish 1                     # the shared budget (tools/lib_evidence.sh)
+    # shellcheck disable=SC2086                          # empty without user systemd
+    systemd-run --user --scope $SLICE -p MemoryMax="$MEM_MAX" -p MemorySwapMax=0 --quiet "${JL[@]}" < /dev/null
     rc=$?
     [ $rc -eq 137 ] && echo "run_tests.sh: KILLED at the ${MEM_MAX} ceiling — a test allocated without bound. Find it before raising LOGICKERNEL_TEST_MEM_MAX." >&2
     _finish $rc

@@ -127,17 +127,76 @@ _host_probe_s() {
     awk -v a="$t0" -v b="$t1" 'BEGIN { printf "%.2f", b - a }'
 }
 
+# ONE SHARED MEMORY BUDGET (user, 2026-10-14). MEASURED that evening: the machine stalled and was
+# reset with FOUR warm daemons up — three of them idle for hours in other worktrees — each under its
+# own 8 GB cap, but nothing capped their SUM (4 × 8 GB on a 23 GB machine). So every warm daemon,
+# evidence worker and capped test run starts inside ONE user slice, `lk-warm.slice` (MemoryMax 10G,
+# no swap): past the budget the kernel kills inside the slice, and the machine stays up. Each job's
+# own cap stays. LOGICKERNEL_SLICE / LOGICKERNEL_SLICE_MEM_MAX name another slice and budget (the
+# lane's own tests use a small nested one: `lk-warm-<x>.slice` sits INSIDE `lk-warm.slice`).
+# LOCAL ONLY (user, 2026-10-14): a GitHub runner has no shared budget, so there it is OFF and every
+# job sizes as before; LOGICKERNEL_SHARED_BUDGET=1 turns it on anyway (the lane's own tests, so CI
+# still exercises it), =0 off anywhere.
+_lk_budget_on() {
+    case "${LOGICKERNEL_SHARED_BUDGET:-}" in
+        1) return 0 ;;
+        0) return 1 ;;
+    esac
+    [ -z "${GITHUB_ACTIONS:-}" ]
+}
+# _lk_slice — make sure the slice's unit file holds its budget (rewritten and reloaded when it
+# differs), then print the `systemd-run` option that puts a unit in it; nothing without user systemd.
+_lk_slice() {
+    local s="${LOGICKERNEL_SLICE:-lk-warm.slice}" mem="${LOGICKERNEL_SLICE_MEM_MAX:-10G}"
+    local d="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" want
+    _lk_budget_on || return 0
+    systemctl --user show-environment > /dev/null 2>&1 || return 0
+    want=$(printf '[Unit]\nDescription=LogicKernel warm daemons and capped test runs: one memory budget (tools/lib_evidence.sh)\n\n[Slice]\nMemoryMax=%s\nMemorySwapMax=0' "$mem")
+    if [ "$(cat "$d/$s" 2>/dev/null)" != "$want" ]; then
+        mkdir -p "$d" && printf '%s\n' "$want" > "$d/$s" && systemctl --user daemon-reload ||
+            { echo "lib_evidence: cannot write the slice $d/$s" >&2; return 1; }
+    fi
+    # an ACTIVE slice keeps its old limits across a reload: set them on the running one too
+    systemctl --user is-active --quiet "$s" &&
+        systemctl --user set-property --runtime "$s" MemoryMax="$mem" MemorySwapMax=0
+    echo "--slice=$s"
+}
+# _slice_headroom_gb — the slice's budget less what it holds now, in whole GB (the budget when
+# nothing runs in it; a large number when the budget is off or there is no user systemd)
+_slice_headroom_gb() {
+    local s="${LOGICKERNEL_SLICE:-lk-warm.slice}" cg max cur
+    _lk_budget_on || { echo 1000; return; }
+    systemctl --user show-environment > /dev/null 2>&1 || { echo 1000; return; }
+    max=$(numfmt --from=iec "${LOGICKERNEL_SLICE_MEM_MAX:-10G}" 2>/dev/null || echo 10737418240)
+    cg=$(systemctl --user show "$s" -p ControlGroup --value 2>/dev/null)
+    cur=0
+    [ -n "$cg" ] && cur=$(cat "/sys/fs/cgroup$cg/memory.current" 2>/dev/null || echo 0)
+    echo $(( (max - cur) / 1073741824 ))
+}
+
 # _shard_count — from the machine: one core left free, and ~2.5 GB per worker (Julia with the
-# analysis tools loaded, plus swipl children) with 3 GB kept back. LOGICKERNEL_SHARDS overrides.
+# analysis tools loaded, plus swipl children) with 3 GB kept back — and since 2026-10-14 the same
+# share of the shared budget's headroom, 1 GB kept back (a warm daemon in the slice counts against
+# the workers; local only, see `_lk_budget_on`). LOGICKERNEL_SHARDS overrides. The choice and each
+# bound go to STDERR (user, 2026-10-14: a slow run must be explainable); stdout is the count alone.
 _shard_count() {
-    if [ -n "${LOGICKERNEL_SHARDS:-}" ]; then echo "$LOGICKERNEL_SHARDS"; return; fi
-    local cores mem n m
+    if [ -n "${LOGICKERNEL_SHARDS:-}" ]; then
+        echo "evidence workers: $LOGICKERNEL_SHARDS (LOGICKERNEL_SHARDS)" >&2
+        echo "$LOGICKERNEL_SHARDS"; return
+    fi
+    local cores mem n m b bs="off"
     cores=$(nproc 2>/dev/null || echo 1)
     mem=$(awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo 2>/dev/null || echo 4)
     n=$(( cores - 1 ))
     m=$(( (mem - 3) * 2 / 5 ))
     [ "$m" -lt "$n" ] && n=$m
+    if _lk_budget_on; then
+        b=$(( ($(_slice_headroom_gb) - 1) * 2 / 5 ))
+        bs="$b (shared budget headroom $(_slice_headroom_gb) GB)"
+        [ "$b" -lt "$n" ] && n=$b
+    fi
     [ "$n" -lt 1 ] && n=1
+    echo "evidence workers: $n = min(cores-1 $(( cores - 1 )), memory $m (MemAvailable $mem GB), budget $bs), at least 1" >&2
     echo "$n"
 }
 
@@ -154,7 +213,9 @@ _spawn_worker() {
     mkdir -p "$dir"
     rm -f "$dir/ready" "$dir/go" "$dir/rc"
     echo "$fp" > "$dir/fp"
-    systemd-run --user --unit="$unit" --collect --quiet \
+    local slice
+    slice=$(_lk_slice) || return 1                  # the shared budget (above)
+    systemd-run --user --unit="$unit" --collect --quiet $slice \
         -p MemoryMax="${LOGICKERNEL_WORKER_MEM_MAX:-5G}" -p MemorySwapMax=0 \
         --working-directory="$root" -E "PATH=$PATH" -E "JULIA_DEPOT_PATH=$(_evidence_depot_path "$root")" \
         -E JULIA_PKG_PRECOMPILE_AUTO=0 -E LOGICKERNEL_REQUIRE_TOOLS=1 -E LOGICKERNEL_REQUIRE_SWIPL=1 \

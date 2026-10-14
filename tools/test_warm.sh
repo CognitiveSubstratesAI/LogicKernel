@@ -8,6 +8,7 @@
 #   tools/test_warm.sh structs  # the struct gate's cases alone
 #   tools/test_warm.sh fast     # the fast static pre-check's planted-defect cases alone
 #   tools/test_warm.sh cap      # the task-ceiling cases alone (no daemon)
+#   tools/test_warm.sh guard    # the daemon guard alone: one daemon at a time, the idle exit, the budget
 #   tools/test_warm.sh bgfiles  # the branch-gate's file selection alone (no daemon)
 #   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
 #
@@ -208,6 +209,84 @@ _bgfiles_cases() {
     has "…which the gate leaves to CI (JET, Aqua, AllocCheck)" "$T/bg3" '^test/test_static_analysis.jl$' 0
 }
 
+# THE DAEMON GUARD (user, 2026-10-14, after the machine stalled with four daemons up, three idle for
+# hours in other worktrees): `start` REFUSES while another checkout's daemon runs and names it; a
+# daemon EXITS after LOGICKERNEL_WARM_IDLE_S with no request; every daemon and capped run sits in ONE
+# slice, lk-warm.slice (10G, no swap), where the kernel kills past the budget and the rest survives.
+# Another checkout's daemon is a DECOY: a unit by the daemons' name, run in $T.
+_guard_cases() {
+    systemctl --user show-environment > /dev/null 2>&1 || { echo "  (guard: no user systemd here — skipped)"; return 0; }
+    local unit decoy="logickernel-warm-decoy$$" dpid cg
+    unit="logickernel-warm-$(printf '%s' "$ROOT" | md5sum | cut -c1-8)"
+    echo 'println("ok")' > "$T/ok.jl"
+    # LOCAL ONLY (user, 2026-10-14): on a GitHub runner the budget is OFF — no slice, and a 1 GB
+    # budget that would cut the workers to 1 does not bound them; switched on, it does
+    local lib=". \"$ROOT/tools/lib_evidence.sh\""
+    [ -z "$(env -u LOGICKERNEL_SHARED_BUDGET GITHUB_ACTIONS=true bash -c "$lib; _lk_slice")" ]
+    check "budget: OFF on a GitHub runner — no slice" 0 $?
+    env -u LOGICKERNEL_SHARED_BUDGET GITHUB_ACTIONS=true LOGICKERNEL_SLICE_MEM_MAX=1G \
+        bash -c "$lib; _shard_count" > "$T/sc1" 2>&1
+    has "budget: …and the worker count is not bounded by it" "$T/sc1" "budget off" 1
+    LOGICKERNEL_SHARED_BUDGET=1 GITHUB_ACTIONS=true LOGICKERNEL_SLICE_MEM_MAX=1G \
+        bash -c "$lib; _shard_count" > "$T/sc2" 2>&1
+    has "budget: LOGICKERNEL_SHARED_BUDGET=1 turns it on there — the count bounded by the budget" \
+        "$T/sc2" "budget -\?[0-9]* (shared budget headroom" 1
+    tail -1 "$T/sc2" > "$T/sc2n"
+    has "…to 1 worker" "$T/sc2n" "^1$" 1
+    export LOGICKERNEL_SHARED_BUDGET=1                   # the rest exercises it, on a runner too
+    "$W" stop > /dev/null 2>&1
+    systemd-run --user --unit="$decoy" --collect --quiet --working-directory="$T" sleep 600
+    dpid=$(systemctl --user show "$decoy" -p MainPID --value)
+    "$W" start > "$T/g1" 2>&1; check "guard: start is REFUSED while another checkout's daemon runs (exit 6)" 6 $?
+    has "…naming its pid" "$T/g1" "pid $dpid," 1
+    has "…its worktree" "$T/g1" "worktree $T," 1
+    has "…its age and rss" "$T/g1" "age [0-9:-]*, rss [0-9.]* GB" 1
+    systemctl --user is-active --quiet "$decoy"; check "…the other daemon is NOT stopped" 0 $?
+    ! systemctl --user is-active --quiet "$unit"; check "…and this one is not started" 0 $?
+    systemctl --user stop "$decoy" > /dev/null 2>&1
+    "$W" start > /dev/null 2>&1; check "guard: once it is stopped, start succeeds" 0 $?
+    "$W" start > /dev/null 2>&1; check "guard: …and THIS checkout's running daemon is not refused" 0 $?
+    # the shared budget: the daemon in the slice, the slice's limits effective in its cgroup
+    [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm.slice ]
+    check "budget: the daemon runs in lk-warm.slice" 0 $?
+    cg=$(systemctl --user show lk-warm.slice -p ControlGroup --value)
+    [ -n "$cg" ] && [ "$(cat "/sys/fs/cgroup$cg/memory.max")" = 10737418240 ]
+    check "budget: …whose memory.max is 10G" 0 $?
+    [ -n "$cg" ] && [ "$(cat "/sys/fs/cgroup$cg/memory.swap.max")" = 0 ]
+    check "budget: …with no swap" 0 $?
+    # past a slice's budget the kernel kills INSIDE it, and the shell that started the job survives.
+    # A small nested slice (lk-warm-probe.slice sits inside lk-warm.slice); the control: the same
+    # job, outside it, completes.
+    cat > "$T/hog.sh" <<'SH'
+. "$1/tools/lib_evidence.sh"
+s=$(_lk_slice) || exit 90
+[ "$2" = in ] || s=""
+# shellcheck disable=SC2086
+systemd-run --user --scope --quiet $s -p MemorySwapMax=0 python3 -I -c 'b = b"x" * (600 << 20); print(len(b))'
+echo "rc=$?"
+SH
+    LOGICKERNEL_SLICE=lk-warm-probe.slice LOGICKERNEL_SLICE_MEM_MAX=200M bash "$T/hog.sh" "$ROOT" out > "$T/g3" 2>&1
+    has "budget: the control — 600 MB outside the slice completes" "$T/g3" "rc=0" 1
+    LOGICKERNEL_SLICE=lk-warm-probe.slice LOGICKERNEL_SLICE_MEM_MAX=200M bash "$T/hog.sh" "$ROOT" in > "$T/g3" 2>&1
+    check "budget: the shell that started an over-budget job SURVIVES" 0 $?
+    has "budget: …and the job, 600 MB in a 200 MB slice, is KILLED (137)" "$T/g3" "rc=137" 1
+    rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/lk-warm-probe.slice"
+    systemctl --user daemon-reload
+    # the idle exit: a daemon with a 3 s limit serves a request, then exits by itself
+    "$W" stop > /dev/null 2>&1
+    local log0                                          # session.log is appended: read only this run's
+    log0=$(wc -l < "$ROOT/.warm/session.log" 2>/dev/null || echo 0)
+    LOGICKERNEL_WARM_IDLE_S=3 "$W" start > /dev/null 2>&1; check "idle: a daemon starts with a 3 s idle limit" 0 $?
+    "$W" send "$T/ok.jl" > /dev/null 2>&1; check "idle: …serves a request" 0 $?
+    for _ in $(seq 1 60); do systemctl --user is-active --quiet "$unit" || break; sleep 1; done
+    ! systemctl --user is-active --quiet "$unit"; check "idle: …then EXITS by itself" 0 $?
+    tail -n +"$((log0 + 1))" "$ROOT/.warm/session.log" > "$T/g4"
+    has "…saying why (in this run's log lines)" "$T/g4" "WARM LANE IDLE EXIT: no request for 3 s" 1
+    [ ! -f "$ROOT/.warm/ready" ]; check "…and leaves no ready marker" 0 $?
+    "$W" start > /dev/null 2>&1; check "idle: …and the lane starts again" 0 $?
+    unset LOGICKERNEL_SHARED_BUDGET
+}
+
 _cap_cases() {
     systemd-run --user --scope true > /dev/null 2>&1 || { echo "  (cap: no user systemd here — skipped)"; return 0; }
     _pids='cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/pids.max'
@@ -285,6 +364,12 @@ if [ "${1:-}" = bgfiles ]; then                      # the branch-gate's file se
     _bgfiles_cases
     echo "test_warm (bgfiles): $pass passed, $fail failed"
     [ "$fail" -eq 0 ]; exit $?
+fi
+if [ "${1:-}" = guard ]; then                        # the daemon guard alone: one daemon, idle exit, budget
+    _guard_cases
+    echo "test_warm (guard): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
 fi
 if [ "${1:-}" = cap ]; then                          # the task-ceiling cases alone (no daemon)
     trap 'rm -rf "$T"' EXIT                            # nothing to stop: these never start the lane
@@ -514,6 +599,7 @@ check "no backtick inside an unquoted <<JL heredoc of tools/warm.sh (found $_bt)
 _bt_fixture=$(printf 'cat > f <<JL\n# a `name` here\nJL\n' | awk '/<<JL$/{f=1; next} /^JL$/{f=0} f && /`/{n++} END{print n+0}')
 check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
 
+_guard_cases
 _cap_cases
 _bgfiles_cases
 

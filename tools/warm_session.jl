@@ -131,7 +131,21 @@ function _serve()
     write(joinpath(DIR, "ready"), string(getpid()))
     println("WARM LANE READY (LogicKernel, pid $(getpid()))")
     flush(stdout)
+    # THE IDLE EXIT (user, 2026-10-14): a daemon left idle for hours in another worktree held memory
+    # the machine then lacked. With no request for LOGICKERNEL_WARM_IDLE_S seconds (3600; set by
+    # tools/warm.sh) it exits by itself. The clock runs from the END of the last request, so a long
+    # one — a bench, a mutation driver's — is never cut short.
+    idle_s = parse(Int, get(ENV, "LOGICKERNEL_WARM_IDLE_S", "3600"))
+    last_request = time()
     while true
+        if time() - last_request > idle_s
+            rm(joinpath(DIR, "ready"); force=true)
+            println(
+                "WARM LANE IDLE EXIT: no request for $(idle_s) s (LOGICKERNEL_WARM_IDLE_S)"
+            )
+            flush(stdout)
+            exit(0)
+        end
         if isfile(SEQF) && isfile(INF)
             n = strip(read(SEQF, String))
             if n != seen && !isempty(n)
@@ -198,6 +212,7 @@ function _serve()
                 end
                 write(STATUSF, string(status))      # BEFORE `done`
                 write(DONE, n)
+                last_request = time()
             end
         end
         sleep(0.1)
