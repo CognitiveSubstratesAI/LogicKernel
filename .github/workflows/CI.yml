@@ -295,8 +295,11 @@ jobs:
       - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
         if: steps.changed.outputs.run == 'true'
       # the warm lane's preflight runs the formatter and the fast static pre-check in the daemon:
-      # the same tools, the same versions as `analysis` and `format`
-      - name: Install the analysis tools and the formatter into the default environment
+      # the same tools, the same versions as `analysis` and `format`. And REVISE: the daemon loads
+      # it from the default environment (tools/warm_session.jl), and without it no src edit
+      # hot-reloads — MEASURED on this job's first run (7d1437f): 15 test_warm.sh cases red, every
+      # one that plants an edit and expects the daemon to see it.
+      - name: Install the analysis tools, the formatter and Revise into the default environment
         if: steps.changed.outputs.run == 'true'
         run: |
           julia -e 'using Pkg; Pkg.add([
@@ -304,7 +307,8 @@ jobs:
             PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
             PackageSpec(name="AllocCheck"),
-            PackageSpec(name="JuliaFormatter", version="2.14.0")])'
+            PackageSpec(name="JuliaFormatter", version="2.14.0"),
+            PackageSpec(name="Revise")])'
       - if: steps.changed.outputs.run == 'true'
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       # The warm daemon and the evidence workers are `systemd-run --user` units, and the scripts
