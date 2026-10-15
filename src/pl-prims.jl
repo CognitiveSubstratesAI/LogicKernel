@@ -1136,7 +1136,13 @@ function unify_with_occurs_check!(
         tt = length(ld.trail)
         mt = m.trailtop
         while tt > mt                               # while(--tt >= mt)
-            key = ld.trail[tt]                      # tt->address
+            e = ld.trail[tt]                        # Word p = tt->address
+            if isTrailVal(e)                        # assignment of an attvar (L1b D: the branch)
+                tt -= 1
+                e = ld.trail[tt]                    # p = (--tt)->address
+                # NOT PORTED: the `attvar` wakeup list's two entries below (src/pl-attvar.jl)
+            end
+            key = _trail_key(ld, e)
             p2 = deRef(ld, something(_binding(ld, key)))   # deRef2(p, p2): its value, dereferenced
             if var_occurs_in(ld, p2, p2)
                 if mode == OCCURS_CHECK_ERROR
@@ -1286,10 +1292,19 @@ function unifiable(
     DiscardMark(ld, m)
     list = Pair{T, T}[]
     while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
-        key = pop!(ld.trail)
+        e = pop!(ld.trail)
+        if isTrailVal(e)                            # an assignment (L1b D): the cell below it
+            a = pop!(ld.trail)                      # p2 = tt[-1].address; then tt--
+            key = _trail_key(ld, a)
+            push!(list, mk_var(T, key) => something(_binding(ld, key)))     # gp[4], gp[5] = *p2
+            ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]  # *tt->address = trailVal(p)
+            # NOT PORTED: the `attvar` wakeup list's restore (src/pl-attvar.jl)
+            continue
+        end
+        key = _trail_key(ld, e)
         value = something(_binding(ld, key))        # gp[5] = *p
         push!(list, mk_var(T, key) => value)        # gp[4] = makeRefG(p)
-        _unbind!(ld, key)                           # setVar(*p)
+        _untrail!(ld, e)                            # setVar(*p)
     end
     return list
 end
@@ -1672,9 +1687,19 @@ function unifiable(
     if length(ld.trail) > m.trailtop                    # tt > mt
         pairs = T[]
         while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
-            key = pop!(ld.trail)
+            e = pop!(ld.trail)
+            if isTrailVal(e)                            # an assignment (L1b D): the cell below it
+                a = pop!(ld.trail)
+                key = _trail_key(ld, a)
+                push!(
+                    pairs, mk_expr(T, T[eq, mk_var(T, key), something(_binding(ld, key))])
+                )
+                ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]  # *tt->address = trailVal(p)
+                continue                                # NOT PORTED: the `attvar` wakeup restore
+            end
+            key = _trail_key(ld, e)
             push!(pairs, mk_expr(T, T[eq, mk_var(T, key), something(_binding(ld, key))]))
-            _unbind!(ld, key)                           # setVar(*p)
+            _untrail!(ld, e)                            # setVar(*p)
         end
         list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
         return unify_ptrs(ld, list, slotValue(ld, subst + 1))

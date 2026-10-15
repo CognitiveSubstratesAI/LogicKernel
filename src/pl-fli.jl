@@ -498,7 +498,7 @@ end
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
     tt = length(ld.trail)
     setSlotValue!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))     # duplicate_term()
-    resize!(ld.trail, tt)                       # frozen: the copy's own bindings keep no trail entry
+    _trail_truncate!(ld, tt)                    # frozen: the copy's own bindings keep no trail entry
     return true
 end
 

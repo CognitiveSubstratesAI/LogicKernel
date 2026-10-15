@@ -84,7 +84,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-comp.c` | code | `8609e216cab9` | `src/pl-comp.jl` | 123 | 71 |
 | swipl-devel `src/pl-comp.h` | code | `8609e216cab9` | `src/pl-comp.jl` | 1 | 0 |
 | swipl-devel `src/pl-copyterm.c` | code | `8609e216cab9` | `src/pl-copyterm.jl` | 7 | 3 |
-| swipl-devel `src/pl-data.h` | code | `8609e216cab9` | `src/pl-incl.jl` | 71 | 6 |
+| swipl-devel `src/pl-data.h` | code | `8609e216cab9` | `src/pl-incl.jl` | 77 | 8 |
 | swipl-devel `src/pl-data.h` | code | `8609e216cab9` | `src/pl-inline.jl` | 4 | 1 |
 | swipl-devel `src/pl-error.c` | code | `8609e216cab9` | `src/pl-error.jl` | 13 | 7 |
 | swipl-devel `src/pl-error.h` | code | `8609e216cab9` | `src/pl-error.jl` | 1 | 1 |

@@ -104,6 +104,7 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.bTop = 0
     ld.nbframes = 0
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
+    empty!(ld.trail_keys)
     empty!(ld.bindings)
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
     _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)

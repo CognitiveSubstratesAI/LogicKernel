@@ -60,7 +60,9 @@ function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
     end
     cycles = Tuple{UInt64, T}[]                     # the cyclic copies: w = r, and r holds w
     for i in (m.trailtop + 1):length(ld.trail)
-        key = ld.trail[i]
+        e = ld.trail[i]
+        isTrailVal(e) && continue                   # a value entry names no variable (L1b D)
+        key = _trail_key(ld, e)
         push!(cycles, (key, deRef(ld, mk_var(T, key))))
     end
     Undo!(ld, m)

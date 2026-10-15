@@ -48,10 +48,10 @@ end
     @test length(ld.trail) == t0                        # newer than the mark: no entry
     # the boundary: the LAST cell before the mark (position == mark_bar) is older — trailed below
     LK.Trail!(ld, old, _mb_sym(:b))
-    @test ld.trail[end] == old && length(ld.trail) == t0 + 1
+    @test LK._trail_key(ld, ld.trail[end]) == old && length(ld.trail) == t0 + 1   # (L1b D: an entry)
     keyed = UInt64(7)                                   # a caller's variable
     LK.Trail!(ld, keyed, _mb_sym(:c))
-    @test ld.trail[end] == keyed && length(ld.trail) == t0 + 2
+    @test LK._trail_key(ld, ld.trail[end]) == keyed && length(ld.trail) == t0 + 2
     @test lk_eq(LK.deRef(ld, _mb_var(new)), _mb_sym(:a))
     @test lk_eq(LK.deRef(ld, _mb_var(old)), _mb_sym(:b))
     @test lk_eq(LK.deRef(ld, _mb_var(keyed)), _mb_sym(:c))

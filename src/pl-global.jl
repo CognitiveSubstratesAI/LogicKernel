@@ -189,7 +189,12 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # global stack; interface variables are immutable values, so a binding is an entry keyed by
 # `var_key`. Since L1a it holds only KEYED variables' bindings: a CELL variable's binding is in its
 # cell on `gstack`, the global stack of variables (`gkey`, `gTop`; see `CELL_KEY_TAG`), and
-# `mark_bar` is upstream's. Since L1b stage C2 the global stack holds WORDS (pl-data.h): an unbound
+# `mark_bar` is upstream's. Since L1b stage D the trail holds upstream's ENTRY WORDS (pl-data.h's
+# `TAG_TRAILADDR`/`TAG_TRAILVAL` in bit 0; src/pl-inline.jl `_trail_addr`): an address entry names a
+# cell by position and stack, `(pos << 3) | (stack << 1)`, and while keyed variables live (until
+# the stamp falls) a third stack code names entry `pos` of `trail_keys`, the keyed variable's key (a
+# key is too wide to shift); a value entry `tagTrailPtr(gpos)` names the old value saved at global
+# position `gpos`, above its address entry. Since L1b stage C2 the global stack holds WORDS (pl-data.h): an unbound
 # cell is 0 (`setVar`), a bound one a value-table word, `consPtr(i, TAG_COMPOUND|STG_RESERVED)`,
 # naming entry `i` of `vtable` — the VALUE TABLE, transitional (the workspace's L1 plan §5 L1b),
 # which holds every bound value until its kind has a word form (atoms and small integers: stage C3;
@@ -200,8 +205,8 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # atom table (`atoms`), DIVERGES from upstream's one `GD->atoms` while nothing outside the engine
 # holds a word (clauses and records are values) — 255 test lines make an engine with no database —
 # until clause code carries words; `atom_words` and `atom_values` cache the symbol ↔ atom
-# conversion both ways, so neither direction looks text up twice. `trail` is `stacks.trail` (its length is `tTop`) and holds the keys of
-# both kinds. A cyclic link or
+# conversion both ways, so neither direction looks text up twice. `trail` is `stacks.trail` (its
+# length is `tTop`), entries of both kinds of variable (above). A cyclic link or
 # a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
 # overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
 # `var_occurs_in`'s `visited`). The agendas and the `visited` stack are scratch upstream keeps on
@@ -255,7 +260,8 @@ its base.
 mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
     bindings::Dict{UInt64, T}                                   # var_key → value (see above)
-    trail::Vector{UInt64}                                       # stacks.trail: bound var_keys
+    trail::Vector{UInt64}                                       # stacks.trail: its entries (L1b D)
+    trail_keys::Vector{UInt64}                                  # … the keyed variables' keys
     gstack::Vector{UInt64}                                      # stacks.global: its WORDS (L1b C2)
     gkey::Vector{UInt64}                                        # … the key of each cell's variable
     gTop::Int                                                   # stacks.global.top
@@ -341,7 +347,7 @@ end
 function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
-        definition_ref{T}[], Dict{UInt64, T}(), UInt64[],
+        definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
         UInt64[], UInt64[], 0, T[], Int[],
         do_init_atoms!(atoms_t()), Dict{UInt64, UInt64}(), Union{Nothing, T}[],
         0,                                      # mark_bar: gTop, set by emptyStacks!

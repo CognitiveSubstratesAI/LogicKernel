@@ -1022,7 +1022,9 @@ function _numbervars_newer(ld::PL_local_data{T}, t0::T)::Bool where {T}
     end
     bound || return false
     for i in (top + 1):length(ld.trail)
-        ld.trail[i] == last && return true
+        e = ld.trail[i]
+        isTrailVal(e) && continue                   # a value entry names no variable (L1b D)
+        _trail_key(ld, e) == last && return true
     end
     return false
 end

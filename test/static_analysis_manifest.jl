@@ -122,7 +122,10 @@ _manifest_per_type(T) = (
     (LK._cell_pos, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._binding, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._set_binding!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
-    (LK._unbind!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    # the trail's entries (L1b stage D)
+    (LK._trail_key, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._untrail!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK._trail_truncate!, Tuple{LK.PL_local_data{T}, Int}, false),
     # the value table (L1b stage C2): a push may grow its vectors; the reads and the truncation do not
     (LK._vword!, Tuple{LK.PL_local_data{T}, T}, false),
     (LK._cell_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
@@ -1812,7 +1815,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.makeRefLok, Tuple{Int}, true), (LK.mkIndHdr, Tuple{Int, UInt64}, true),
     (LK.mkPadHdr, Tuple{Int}, true), (LK.mkBlobHdr, Tuple{Int, Int, UInt64}, true),
     (LK.mpz_size_stack, Tuple{Int32}, true), (LK.mpq_size_stack, Tuple{Int32}, true),
-    (LK.AtomNotRepresentableError, Tuple{Vector{UInt32}}, false)
+    (LK.AtomNotRepresentableError, Tuple{Vector{UInt32}}, false),
+    (LK.tagTrailPtr, Tuple{Int}, true), (LK.isTrailVal, Tuple{UInt64}, true),
+    (LK.trailValP, Tuple{UInt64}, true), (LK._trail_addr, Tuple{Int, Int}, true),
+    (LK._trail_stack, Tuple{UInt64}, true), (LK._trail_pos, Tuple{UInt64}, true)
 )
 
 """

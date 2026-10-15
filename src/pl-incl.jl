@@ -489,6 +489,27 @@ mpz_stack_size(w::word)::Int32 = reinterpret(Int32, w % UInt32) >> 1
 # PORT: pl-gmp.h mpq_stack_size
 "The limb count (signed) a rational's size word holds (pl-gmp.h)."
 mpq_stack_size(w::word)::Int32 = reinterpret(Int32, w % UInt32) >> 1
+# PORT: pl-data.h TAG_TRAILMASK
+"The tag bit of a trail entry (pl-data.h)."
+const TAG_TRAILMASK = UInt64(0x1)
+# PORT: pl-data.h TAG_TRAILADDR
+"A trail entry that is an address: the cell to reset (pl-data.h)."
+const TAG_TRAILADDR = UInt64(0x0)
+# PORT: pl-data.h TAG_TRAILVAL
+"A trail entry that is a value: the old value of the address entry below it (pl-data.h)."
+const TAG_TRAILVAL = UInt64(0x1)
+# PORT: pl-data.h tagTrailPtr
+# DIVERGES: a global-stack POSITION shifted past the entry's tag and stack bits (`_trail_addr`,
+# src/pl-inline.jl), where upstream tags the address itself (a word-aligned pointer's free bit 0).
+"The value entry naming the old value saved at global position `p` (pl-data.h)."
+tagTrailPtr(p::Int)::word = (UInt64(p) << 3) | TAG_TRAILVAL
+# PORT: pl-data.h isTrailVal
+"Whether trail entry `e` is a value entry (pl-data.h)."
+isTrailVal(e::word)::Bool = e & TAG_TRAILVAL != 0
+# PORT: pl-data.h trailValP
+# DIVERGES: the global POSITION of the saved value (see `tagTrailPtr`).
+"The global position of the old value value entry `e` names (pl-data.h)."
+trailValP(e::word)::Int = Int(e >> 3)
 
 # ── unification: return codes, the occurs-check flag, backtrack marks ──────────────────────────
 # PORT: pl-incl.h boolex_t

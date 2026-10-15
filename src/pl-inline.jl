@@ -328,14 +328,51 @@ function _set_binding!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {
     return nothing
 end
 
-# ORIGINAL: unbind, as `setVar(*p)` does.
-"Make variable `key` unbound again (`setVar`): its cell, or its entry in the store."
-function _unbind!(ld::PL_local_data, key::UInt64)::Nothing
-    p = _cell_pos(ld, key)
-    if p != 0
-        ld.gstack[p] = word(0)        # setVar(*p)
+# ── the trail's entries (L1b stage D; src/pl-global.jl) ─────────────────────────────────────────
+# ORIGINAL: the address entry's stack codes: upstream's address says which stack itself.
+"Trail stack code: a cell of the global stack."
+const TRAIL_GLOBAL = 0
+"Trail stack code: a KEYED variable — entry `pos` of `trail_keys` (until the stamp falls)."
+const TRAIL_KEYED = 2
+
+# ORIGINAL: an address entry, `(pos << 3) | (stack << 1) | TAG_TRAILADDR`.
+"The address entry naming position `p` of stack code `stack`."
+_trail_addr(p::Int, stack::Int)::word =
+    (UInt64(p) << 3) | (UInt64(stack) << 1) | TAG_TRAILADDR
+"The stack code of address entry `e`."
+_trail_stack(e::word)::Int = Int((e >> 1) & 0x3)
+"The position address entry `e` names."
+_trail_pos(e::word)::Int = Int(e >> 3)
+
+# ORIGINAL: the variable an address entry names, for the readers that build it (unifiable/3, the
+# occurs check, records, the writer): a cell's key from the position it names, a keyed one's from
+# `trail_keys`.
+"The key of the variable address entry `e` names."
+function _trail_key(ld::PL_local_data, e::word)::UInt64
+    _trail_stack(e) == TRAIL_KEYED && return ld.trail_keys[_trail_pos(e)]
+    return ld.gkey[_trail_pos(e)]
+end
+
+# ORIGINAL: `setVar(*tt->address)` for an address entry: a cell to 0, a keyed variable out of the
+# store (and its key off `trail_keys`, which the entries above it have left).
+"Reset the variable address entry `e` names, as the newest entry popped."
+function _untrail!(ld::PL_local_data, e::word)::Nothing
+    if _trail_stack(e) == TRAIL_KEYED
+        @assert _trail_pos(e) == length(ld.trail_keys) "trail_keys out of step with the trail"
+        delete!(ld.bindings, pop!(ld.trail_keys))
     else
-        delete!(ld.bindings, key)
+        ld.gstack[_trail_pos(e)] = word(0)  # setVar(*p)
+    end
+    return nothing
+end
+
+# ORIGINAL: drop the entries above `n` WITHOUT undoing them (a frozen ball's bindings,
+# `copy_exception!`), `trail_keys` kept in step.
+"Truncate the trail to `n` entries, leaving their bindings in place."
+function _trail_truncate!(ld::PL_local_data, n::Int)::Nothing
+    while length(ld.trail) > n
+        e = pop!(ld.trail)
+        !isTrailVal(e) && _trail_stack(e) == TRAIL_KEYED && pop!(ld.trail_keys)
     end
     return nothing
 end
@@ -435,10 +472,12 @@ end
 function Trail!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
     p = _cell_pos(ld, key)
     if p != 0
-        p <= ld.mark_bar && push!(ld.trail, key)    # if ( p < LD->mark_bar ) (tTop++)->address = p
+        # if ( p < LD->mark_bar ) (tTop++)->address = p
+        p <= ld.mark_bar && push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))
         ld.gstack[p] = _word_of!(ld, v)  # *p = v
     else
-        push!(ld.trail, key)                    # (tTop++)->address = p
+        push!(ld.trail_keys, key)               # (tTop++)->address = p: a keyed variable's entry
+        push!(ld.trail, _trail_addr(length(ld.trail_keys), TRAIL_KEYED))
         ld.bindings[key] = v                    # *p = v
     end
     return nothing
@@ -483,18 +522,27 @@ NoMark()::mark = mark(NOT_A_MARK, 0, 0)
 isRealMark(m::mark)::Bool = m.trailtop != NOT_A_MARK
 
 # PORT: pl-incl.h Undo
-# DIVERGES: the body of upstream's `Undo` without O_DESTRUCTIVE_ASSIGNMENT (with it, `do_undo` also
-# restores destructive assignments — setarg/3, b_setval/2 — which the kernel does not have), and no
-# `frozen_bar` (the kernel's ball is a value, decision 1). Marks nest: undoing to a mark above the
-# trail's or the global stack's top is a misuse, asserted; so is undoing to a `NoMark`, which
-# upstream never does.
+# DIVERGES: since L1b stage D the body of upstream's `Undo` WITH O_DESTRUCTIVE_ASSIGNMENT, pl-wam.c's
+# `__do_undo`: newest first, an address entry resets its cell (a keyed variable leaves the store), a
+# value entry steps down to its address entry and restores the old value saved on the global stack
+# (`*tt->address = trailVal(p)`) — nothing pushes one yet (setarg/3, attributed variables). NOT
+# PORTED: `push_undo` and `reclaim_attvars` (no attributed variables), and `frozen_bar` (the
+# kernel's ball is a value, decision 1): `gTop = m.globaltop` (upstream: `max(frozen_bar, …)`,
+# L1e). Marks nest: undoing to a mark above the trail's or the global stack's top is a misuse,
+# asserted; so is undoing to a `NoMark`, which upstream never does.
 "Undo every binding made since mark `m`, and free the cells allocated since (pl-incl.h `Undo`)."
 function Undo!(ld::PL_local_data, m::mark)::Nothing
     @assert isRealMark(m) "Undo! to a NoMark"
     @assert m.trailtop <= length(ld.trail) "Undo! to a mark above the trail: marks undone out of order"
     @assert m.globaltop <= ld.gTop "Undo! to a mark above the global stack: marks undone out of order"
-    while length(ld.trail) > m.trailtop
-        _unbind!(ld, pop!(ld.trail))            # setVar(*tt->address)
+    while length(ld.trail) > m.trailtop        # while(--tt >= mt)
+        e = pop!(ld.trail)
+        if !isTrailVal(e)
+            _untrail!(ld, e)                    # setVar(*p)
+        else
+            a = pop!(ld.trail)                  # tt--
+            ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]     # *tt->address = trailVal(p)
+        end
     end
     ld.gTop = m.globaltop                       # gTop = (b).globaltop
     _truncate_vtable!(ld)                       # (the value table follows it: L1b stage C2)
