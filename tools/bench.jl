@@ -6,6 +6,7 @@
 #   julia --project=. tools/bench.jl variant             # the cases whose name contains "variant"
 #   julia --project=. tools/bench.jl --profile=NAME      # profile case NAME (default: worst ratio)
 #   julia --project=. tools/bench.jl --no-profile
+#   julia --project=. tools/bench.jl --note=TEXT         # a line for the raw file's header (how to read it)
 #   julia --project=. tools/bench.jl --no-compile        # without the run loop's fresh-process report
 #
 # THREE DIAGNOSTIC REPORTS (user, 2026-10-13), each instead of the timing run; their full output goes
@@ -1384,6 +1385,8 @@ function main(args)
     isempty(cases) && error("tools/bench.jl: no case matches $(filt)")
     k = findfirst(a -> startswith(a, "--profile="), args)
     prof = k === nothing ? "" : String(split(args[k], '='; limit=2)[2])
+    kn = findfirst(a -> startswith(a, "--note="), args)
+    note = kn === nothing ? "" : String(split(args[kn], '='; limit=2)[2])
     kr = findfirst(a -> startswith(a, "--runs="), args)
     runs = kr === nothing ? RUNS_DEFAULT : parse(Int, split(args[kr], '='; limit=2)[2])
     sp = swipl_server(cases)
@@ -1436,6 +1439,7 @@ function main(args)
             "$(round(Sys.total_physical_memory() / 2^30; digits=1)) GiB")
         println(io, "# commit: $sha$(dirty ? " (+ uncommitted changes)" : "")")
         println(io, "# date: $(Dates.format(now_utc, "yyyy-mm-dd HH:MM:SS")) UTC")
+        isempty(note) || println(io, "# note: ", note)
         println(
             io, "# start gate: 1-minute load average $(round(START_GATE.load; digits=2)) ",
             "(≤ $BENCH_MAX_LOAD), other julia processes: ",
