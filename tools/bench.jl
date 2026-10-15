@@ -275,6 +275,33 @@ How the defined predicates of `loaded`'s `user` module differ from `hand`'s — 
 with the same clauses: VM codes, literals (standard order), called procedures (name and arity) —
 leaving out `except` (predicates only one side defines by design).
 """
+# A clause's code made DATABASE-NEUTRAL (L1c; C6b for atoms): an atom's and a functor's operand
+# hold their index in THEIR database's atom/functor table, which two databases fill in their own
+# order — so they are compared by what they name: a functor by its literal and arity, an atom by
+# its literal (the literal tables are compared as terms below).
+function _neutral_codes(codes::Vector{UInt64})::Vector{UInt64}
+    out = copy(codes)
+    i = 1
+    while i <= length(out)
+        c = out[i]
+        ci = LogicKernel.codeTable(c)
+        atom = c == LogicKernel.H_ATOM || c == LogicKernel.B_ATOM || c == LogicKernel.L_ATOM
+        for k in 1:(ci.arguments)
+            t = ci.argtype[k]
+            op = out[i + k]
+            if t == LogicKernel.CA1_FUNC
+                out[i + k] =
+                    (UInt64(LogicKernel.functor_literal(op)) << 32) |
+                    UInt64(LogicKernel.functor_arity(op))
+            elseif t == LogicKernel.CA1_DATA && atom
+                out[i + k] = UInt64(LogicKernel.atom_literal(op))
+            end
+        end
+        i += 1 + ci.arguments
+    end
+    return out
+end
+
 function _vm_code_differences(
     hand::PL_global_data{BT}, loaded::PL_global_data{BT}, except::Vector{String}
 )::Vector{String}
@@ -295,7 +322,8 @@ function _vm_code_differences(
             continue
         end
         for (i, (a, b)) in enumerate(zip(lc, hc))
-            a.codes == b.codes || push!(diffs, pi(lp) * " clause $i: VM codes differ")
+            _neutral_codes(a.codes) == _neutral_codes(b.codes) ||
+                push!(diffs, pi(lp) * " clause $i: VM codes differ")
             (
                 length(a.literals) == length(b.literals) &&
                 all(compareStandard(x, y) == 0 for (x, y) in zip(a.literals, b.literals))

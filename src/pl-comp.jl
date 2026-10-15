@@ -1169,16 +1169,41 @@ end
 
 const _OPERAND_HALF = code(typemax(UInt32))
 
-"The `H_FUNCTOR`/`H_RFUNCTOR` operand naming literal `i` (0: `\$expr/n`) and `arity` (V1 L2)."
-function functor_operand(i::code, arity::Int)::code
-    (i <= _OPERAND_HALF && 0 <= arity && code(arity) <= _OPERAND_HALF) ||
-        throw(ArgumentError("functor_operand: literal $i or arity $arity beyond 32 bits"))
-    return (i << 32) | code(arity)
+# DIVERGES (L1c; user, 2026-10-15): upstream's `H_FUNCTOR`/`B_FUNCTOR` operand IS the functor word
+# (`(functor_t) *PC++`). Here ONE packed operand, as `atom_operand`'s: the literal of the head
+# symbol (its exact term, for decompiling and the index keys; 0 for `$expr/n`), the arity, and the
+# index of the functor in the DATABASE's table (`GD->functors`), from which the word is made by
+# shifts (`MK_FUNCTOR`) — 24 | 16 | 24 bits; past them the compiler raises.
+const _FOP_LIT_BITS = 24
+const _FOP_ARITY_BITS = 16
+const _FOP_INDEX_BITS = 24
+
+"The `H_FUNCTOR`/`B_FUNCTOR` operand naming literal `i` (0: `\$expr/n`), `arity` and functor word `f` (L1c)."
+function functor_operand(i::code, arity::Int, f::word)::code
+    fi = indexFunctor(f)
+    (
+        i < (code(1) << _FOP_LIT_BITS) && 0 <= arity < (1 << _FOP_ARITY_BITS) &&
+        fi < (1 << _FOP_INDEX_BITS)
+    ) || throw(
+        ArgumentError(
+            "functor_operand: literal $i, arity $arity or functor index $fi too large"
+        )
+    )
+    return (i << (_FOP_ARITY_BITS + _FOP_INDEX_BITS)) | (code(arity) << _FOP_INDEX_BITS) |
+           code(fi)
 end
 "The literal index an `H_FUNCTOR` operand names: 0 for `\$expr/n` (V1 L2)."
-functor_literal(op::code)::Int = Int(op >> 32)
+functor_literal(op::code)::Int = Int(op >> (_FOP_ARITY_BITS + _FOP_INDEX_BITS))
 "The arity an `H_FUNCTOR` operand holds (V1 L2)."
-functor_arity(op::code)::Int = Int(op & _OPERAND_HALF)
+functor_arity(op::code)::Int =
+    Int((op >> _FOP_INDEX_BITS) & ((code(1) << _FOP_ARITY_BITS) - 1))
+"The functor word an `H_FUNCTOR` operand holds (L1c): `code2functor(*PC)`."
+@inline function functor_operand_word(op::code)::word
+    a = UInt64(functor_arity(op))
+    return MK_FUNCTOR(
+        op & ((code(1) << _FOP_INDEX_BITS) - 1), a < F_ARITY_MASK ? a : F_ARITY_MASK
+    )
+end
 
 # DIVERGES (L1b stage C6b; user, 2026-10-15: approved): upstream's `H_ATOM`/`B_ATOM` operand IS the
 # atom word (`code2atom(*PC++)`). Here ONE packed operand, as `functor_operand`'s: the literal (its
@@ -1382,7 +1407,12 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
         end
     else
         lit = off == 2 ? addLiteral!(ci, child(arg, 1)) : code(0)    # `$expr/n`: no literal
-        fdef = functor_operand(lit, ar)
+        fname = if off == 2
+            _atom_word!(ci.gd.atoms, ci.gd.atom_symbols, child(arg, 1))
+        else
+            ci.gd.atom_dexpr
+        end
+        fdef = functor_operand(lit, ar, lookupFunctorDef(ci.gd.functors, fname, ar))
         if (where_ & A_HEAD) != 0                              # index in array!
             Output_1!(ci, isright ? H_RFUNCTOR : H_FUNCTOR, fdef)
         else

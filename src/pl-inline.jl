@@ -287,21 +287,172 @@ end
     )
 end
 
-# ORIGINAL: a value's word on the global stack (L1b C3): an atom its own word, anything else (for
-# now) a value-table entry (`_vword!`) — small integers too, since building a term back from
-# `consInt` would allocate on every read until the instructions read words (C6).
+# ORIGINAL: the ONE place that tells a live cell variable from a keyed one (L1c: `_slot_store!`,
+# `_word_of!` and the cold import read it, so the stamp machinery has one site here).
+"The reference word of `v`'s cell when `v` is a live cell variable (`makeRefG`), else 0."
+@inline function _var_ref_word(ld::PL_local_data{T}, v::T)::word where {T}
+    kind(v) === VAR || return word(0)
+    p = _cell_pos(ld, var_key(v))
+    return p == 0 ? word(0) : makeRefG(p)
+end
+
+# ORIGINAL: a value's word on the global stack (L1b C3): an atom its own word, a compound a copy on
+# the stack (L1c: `_compound_word!`, the cold import), a live cell variable a reference to its cell
+# (L1c: upstream's `makeRefG`), anything else (for now) a value-table entry
+# (`_vword!`) — small integers too, since building a term back from `consInt` would allocate on
+# every read until the instructions read words (L1d).
 "The word that holds `v` in a cell."
 @inline function _word_of!(ld::PL_local_data{T}, v::T)::word where {T}
-    kind(v) === SYM && return _atom_word!(ld, v)
+    k = kind(v)
+    k === SYM && return _atom_word!(ld, v)
+    k === EXPR && return _compound_word!(ld, v)
+    if k === VAR                                    # a live cell variable: its reference (L1c)
+        r = _var_ref_word(ld, v)
+        r != 0 && return r
+    end
     return _vword!(ld, v)
 end
 
-# ORIGINAL: the value a cell's word holds (L1b stage C2): unbound (0), an atom (C3), or a
-# value-table entry.
+# ── compounds on the global stack (L1c; the workspace's L1_plan/stageL1c_design.md) ─────────────
+# A compound is its functor word at position `p` and its arguments at `p+1 … p+n`, referenced by
+# `consPtr(p, TAG_COMPOUND|STG_GLOBAL)` (pl-data.h). A `$expr/n` compound (Q2) has the reserved
+# `$expr` as its functor's name and ALL its children as arguments.
+"Whether `w` references a compound on the global stack (pl-data.h `isTerm` with `STG_GLOBAL`)."
+@inline _is_gcompound(w::word)::Bool = tagex(w) == (TAG_COMPOUND | STG_GLOBAL)
+
+# ORIGINAL: upstream's in-place layout (pl-vmi.c B_RFUNCTOR: `*ARGP++ = f; setVar(*ap++)…; gTop =
+# ap`) as one call: the functor word and `n` unbound arguments at `gTop`.
+"Lay out a compound of functor word `f` with `n` unbound arguments on the global stack; its position."
+@inline function _alloc_compound!(ld::PL_local_data, f::word, n::Int)::Int
+    p = allocGlobalCells!(ld, 1 + n)
+    ld.gstack[p] = f
+    return p
+end
+
+# ORIGINAL — THE COLD EXPORT (L1c; user, 2026-10-15): the compound at global position `p` as an
+# interface TERM, for a reader that does not work on words yet (the FLI, the built-ins, the writer).
+# COUNTED in `cold_exports` — every call. ONE term per compound, kept in `gterms[p]` until `gTop`
+# falls below it (`_truncate_gterms!`, beside the value table's truncation): the term-level
+# algorithms that are not over
+# cells yet (`do_unify`'s cycle links, the occurs check's marks, compare, copy_term, the writer)
+# recognise a compound they revisit by its term's IDENTITY — a fresh term per read would make a
+# cyclic structure (`X = f(X), Y = f(Y), X = Y`) never terminate. Transitional: it goes when those
+# readers work on the cells (L1d, L1f) — see the workspace's L1_plan/stageL1c_design.md.
+# ONE LEVEL DEEP and IMMUTABLE: the head symbol (none for `$expr`), then per argument THE CELL'S
+# VARIABLE TERM, which the reader dereferences (`deRef`: the cell's word now — an atom, a value, a
+# reference, again this export for a compound). So the term stays right as the cells are bound and
+# undone (a memoized `f(a)` would outlive the `Undo` of its argument's binding), a cyclic structure
+# never loops it, and a variable keeps its identity (its key).
+"The compound at global position `p` as a term (the cold export, counted)."
+function _compound_term(ld::PL_local_data{T}, p::Int)::T where {T}
+    ld.cold_exports += 1
+    m = ld.gterms[p]
+    m === nothing || return m
+    f = ld.gstack[p]
+    n = arityFunctor(ld.functors, f)
+    name = nameFunctor(ld.functors, f)
+    expr = name == ld.atom_dexpr
+    kids = Vector{T}(undef, expr ? n : n + 1)
+    k = 0
+    if !expr
+        kids[1] = _atom_value(ld, name)
+        k = 1
+    end
+    for i in 1:n
+        kids[k + i] = _cell_var(ld, p + i)
+    end
+    t = mk_expr(T, kids)
+    # TRANSITIONAL (L1c; user, 2026-10-15: approved): the export memo — REMOVED when the term-level
+    # cycle detectors work on the cells (L1d: do_unify, compare, the occurs check; L1f: copy_term).
+    ld.gterms[p] = t
+    n = ld.ngterm + 1
+    n > length(ld.gterm_pos) ? push!(ld.gterm_pos, p) : (ld.gterm_pos[n] = p)
+    ld.ngterm = n
+    Threads.atomic_add!(_COLD_EXPORT_TERMS, 1)
+    return t
+end
+
+# ORIGINAL: the export memo follows the global stack down (L1c), as the value table does: every
+# entry at a position above `gTop` goes. TRANSITIONAL, with the memo.
+"Drop the exports of the compounds above `gTop` (in place: `Undo!` allocates nothing)."
+function _truncate_gterms!(ld::PL_local_data)::Nothing
+    n = ld.ngterm
+    n == 0 && return nothing
+    top = ld.gTop
+    j = 0
+    for i in 1:n                                    # positions in no order: compacted in place
+        p = ld.gterm_pos[i]
+        if p <= top
+            j += 1
+            ld.gterm_pos[j] = p
+        else
+            ld.gterms[p] = nothing
+        end
+    end
+    ld.ngterm = j
+    return nothing
+end
+
+# ORIGINAL — THE COLD IMPORT (L1c): a compound TERM copied onto the global stack, for a writer that
+# does not work on words yet (a built-in's result, a query's argument, a keyed variable's binding
+# stored in a cell) — so neither the value table nor a `SLOT_VALUE` slot holds a compound. COUNTED in
+# `cold_imports`. ITERATIVE (a long list nests in its last argument): each compound's cells laid out,
+# then its arguments written — an atom its word, a live cell variable a reference to its cell (its
+# identity kept: upstream's `makeRefG`), a nested compound its own copy, anything else (a number, a
+# string, a keyed variable) a value-table word.
+"Copy the compound term `t` onto the global stack; its compound word (the cold import, counted)."
+function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
+    ld.cold_imports += 1
+    todo = Tuple{T, Int}[]
+    root = _import_layout!(ld, t, todo)
+    while !isempty(todo)
+        u, p = pop!(todo)
+        off = _import_offset(u)
+        for i in 1:(nchildren(u) - off)
+            c = child(u, i + off)
+            kc = kind(c)
+            w = if kc === SYM
+                _atom_word!(ld, c)
+            elseif kc === EXPR
+                _import_layout!(ld, c, todo)
+            elseif kc === VAR
+                r = _var_ref_word(ld, c)
+                r != 0 ? r : _vword!(ld, c)
+            else
+                _vword!(ld, c)
+            end
+            ld.gstack[p + i] = w
+        end
+    end
+    return root
+end
+
+# ORIGINAL: how many leading children of `u` the functor names: 1 for a symbol head, 0 for `$expr`.
+"The children of compound term `u` that are not arguments: 1 (a symbol head) or 0 (`\$expr`)."
+@inline _import_offset(u)::Int = (nchildren(u) >= 1 && kind(child(u, 1)) === SYM) ? 1 : 0
+
+# ORIGINAL: the cells of one compound of an import, its arguments still to be written.
+"Lay out compound term `u`'s cells and queue its arguments; its compound word."
+function _import_layout!(
+    ld::PL_local_data{T}, u::T, todo::Vector{Tuple{T, Int}}
+)::word where {T}
+    off = _import_offset(u)
+    n = nchildren(u) - off
+    name = off == 1 ? _atom_word!(ld, child(u, 1)) : ld.atom_dexpr
+    p = _alloc_compound!(ld, lookupFunctorDef(ld.functors, name, n), n)
+    push!(todo, (u, p))
+    return consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+end
+
+# ORIGINAL: the value a cell's word holds (L1b stage C2): unbound (0), an atom (C3), a reference —
+# the variable of the cell it points at, which `deRef` follows on (L1c) — a compound on the stack,
+# as a term through the cold export (L1c), or a value-table entry.
 "The value word `w` of a bound cell names, or `nothing` for an unbound cell (the word 0)."
 @inline function _cell_value(ld::PL_local_data{T}, w::word)::Union{Nothing, T} where {T}
     isVar(w) && return nothing
     isAtomW(w) && return _atom_value(ld, w)
+    isRef(w) && return _cell_var(ld, unRef(w))
+    _is_gcompound(w) && return _compound_term(ld, valPtr(w))
     return ld.vtable[valPtr(w)]
 end
 
@@ -391,12 +542,13 @@ end
 # 1-based position on the local stack: term reference `t` is position `t + 1`.
 
 # ORIGINAL: THE SLOT WORDS (L1b stage C5; the workspace's L1_plan/stageC_design.md). A slot holds one
-# of three words: `makeRefG(p)`, a reference to the cell variable at global position `p` (every
+# of four words: `makeRefG(p)`, a reference to the cell variable at global position `p` (every
 # live cell variable, whether the VM made it or it arrived as a term); an atom
-# word, when one arrives as a word (copied from a cell); or `SLOT_VALUE`, whose value is the slot's
-# OWN entry of `slot_values` — a value with no word form yet (a compound until L1c; a float, big
-# integer or string until L1d; a small integer until C6b; a keyed variable until the stamp falls),
-# or a symbol that arrived as a term (converting it would cost a lookup per store). DIVERGES,
+# word, when one arrives as a word (copied from a cell); a COMPOUND word, a compound on the global
+# stack (L1c: built there by the VM, or a term copied there by the cold import); or `SLOT_VALUE`,
+# whose value is the slot's OWN entry of `slot_values` — a value with no word form yet (a float, big
+# integer, string or small integer until L1d; a keyed variable until the stamp falls), or a symbol
+# that arrived as a term (converting it would cost a lookup per store). DIVERGES,
 # transitional: the side entry is the slot's own, so a copy of a `SLOT_VALUE` word copies the value
 # too (`_slot_copy!`) and no word names another slot's entry. The word 0 is a slot never written.
 "The slot word whose value is the slot's own entry of `slot_values` (L1b stage C5)."
@@ -409,6 +561,7 @@ const SLOT_VALUE = TAG_COMPOUND | STG_LOCAL
     w = ld.slots[i]
     w == SLOT_VALUE && return ld.slot_values[i]
     isRef(w) && return _cell_var(ld, unRef(w))
+    _is_gcompound(w) && return _compound_term(ld, valPtr(w))   # the cold export (L1c)
     return _slot_atom(ld, w)
 end
 
@@ -426,19 +579,36 @@ end
 )
 
 # ORIGINAL: a term's slot word (L1b stage C5): a LIVE cell variable is its reference, anything else
-# the slot's own side entry. `_cell_pos` is the one place that knows a cell from a keyed variable.
+# the slot's own side entry. `_var_ref_word` is the one place that knows a cell from a keyed variable.
 "Store the term `v` in slot `i` as its word."
 @inline function _slot_store!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
-    if kind(v) === VAR
-        p = _cell_pos(ld, var_key(v))
-        if p != 0
-            ld.slots[i] = makeRefG(p)
+    if kind(v) === EXPR                                         # a copy on the stack (L1c)
+        ld.slots[i] = _compound_word!(ld, v)
+        return nothing
+    elseif kind(v) === VAR
+        r = _var_ref_word(ld, v)
+        if r != 0
+            ld.slots[i] = r
             return nothing
         end
     end
     ld.slot_values[i] = v
     ld.slots[i] = SLOT_VALUE
     return nothing
+end
+
+# ORIGINAL: a term stored in slot `i` as a VALUE (L1c): a compound stays a term in the slot's side
+# entry (`SLOT_VALUE`) instead of being copied onto the global stack — for the exception's ball,
+# which the kernel keeps as a value outside the stacks (decision 1: upstream's `freezeGlobal`), so
+# the `Undo` of the unwinding cannot free its cells; anything else as `_slot_store!`.
+"Store the term `v` in slot `i`, a compound as a value (`SLOT_VALUE`), not copied onto the stack."
+@inline function _slot_store_value!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
+    if kind(v) === EXPR
+        ld.slot_values[i] = v
+        ld.slots[i] = SLOT_VALUE
+        return nothing
+    end
+    return _slot_store!(ld, i, v)
 end
 
 # ORIGINAL: a slot's word into another slot (L1b stage C5) — upstream's `*to = *from` between frame
@@ -507,7 +677,7 @@ function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::T whe
         vm.cells[k] = var_key(w)
     end
     _slot_store!(ld, i, c)
-    return c
+    return kind(c) === EXPR ? slotValue(ld, i) : c  # the value stored (L1c: a compound's export)
 end
 putSlotValue!(ld::PL_local_data{T}, i::Int, v::T) where {T} =
     putSlotValue!(ld, i, v, PutVarMap())
@@ -535,7 +705,8 @@ end
 
 # PORT: pl-inline.h linkValI as _slot_link!
 # DIVERGES: from slot to slot on the WORDS (L1b stage C6a): a reference is followed through the
-# cells it is bound to; an unbound cell gives its reference, an atom its word, and anything else
+# cells it is bound to; an unbound cell gives its reference, an atom or a compound (L1c) its word,
+# and anything else
 # (a value-table word, a `SLOT_VALUE`) its value into `to`'s side entry — a keyed variable
 # dereferenced first, as `linkValI` on terms does.
 "Store in slot `to` what slot `from` refers to, dereferenced (pl-inline.h `*to = linkValI(from)`)."
@@ -550,7 +721,7 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
                 return nothing
             elseif isRef(c)
                 p = unRef(c)
-            elseif isAtomW(c)
+            elseif isAtomW(c) || _is_gcompound(c)   # an atom or a compound: its word (L1c)
                 ld.slots[to] = c
                 return nothing
             else
@@ -558,11 +729,43 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
                 return nothing
             end
         end
-    elseif w == SLOT_VALUE
-        _slot_store!(ld, to, deRef(ld, ld.slot_values[from]))
+    elseif w == SLOT_VALUE                          # a value stays a value (L1c: the ball)
+        _slot_store_value!(ld, to, deRef(ld, ld.slot_values[from]))
     else
-        isAtomW(w) || throw(_slot_word_error(w))
+        (isAtomW(w) || _is_gcompound(w)) || throw(_slot_word_error(w))
         ld.slots[to] = w
+    end
+    return nothing
+end
+
+# PORT: pl-inline.h linkValI as _cell_link!
+# DIVERGES: from slot `i` into the global cell `p` on the WORDS (L1c), as `_slot_link!` into a slot:
+# a reference followed through the cells; an unbound cell gives its reference (upstream's
+# `makeRefG(k)`), an atom, a compound or a value-table word its word (`*ARGP = *k`: an entry shared,
+# as upstream shares an indirect; the entry's box lies below every cell that can reach it); a slot's
+# side value dereferenced, as its word.
+"Store in global cell `p` what slot `i` refers to, dereferenced (`*ARGP = linkValI(k)`)."
+function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
+    w = ld.slots[i]
+    if isRef(w)
+        q = unRef(w)
+        while true
+            c = ld.gstack[q]
+            if isVar(c)
+                ld.gstack[p] = makeRefG(q)
+                return nothing
+            elseif isRef(c)
+                q = unRef(c)
+            else                                # an atom, a compound, a value: its word
+                ld.gstack[p] = c                    # (a value-table word shared, as upstream
+                return nothing                      #  copies an indirect's pointer)
+            end
+        end
+    elseif w == SLOT_VALUE
+        ld.gstack[p] = _word_of!(ld, deRef(ld, ld.slot_values[i]))
+    else
+        (isAtomW(w) || _is_gcompound(w)) || throw(_slot_word_error(w))
+        ld.gstack[p] = w
     end
     return nothing
 end
@@ -651,5 +854,6 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
     end
     ld.gTop = m.globaltop                       # gTop = (b).globaltop
     _truncate_vtable!(ld)                       # (the value table follows it: L1b stage C2)
+    _truncate_gterms!(ld)                       # (and the export memo: L1c)
     return nothing
 end

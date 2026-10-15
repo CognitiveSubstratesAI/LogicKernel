@@ -1833,14 +1833,34 @@ end
 @testset "flatness: concatenate on 10^3..10^5 elements reaches one high-water mark" begin
     db = _rdb(_rnreverse_clauses())
     catg(n) = _rf("concatenate", _rints(1:n), _rlist(_rs(:x)), _rv(1))
-    marks = Dict(n => _rhighwater(db, catg(n)) for n in (10^3, 10^4, 10^5))
+    # each size on a database of its own: since L1c a put copies its argument onto the global stack
+    # and closing the foreign frame keeps it (upstream's `PL_close_foreign_frame`; no collector until
+    # G1), so a reused engine would count the earlier sizes' input lists too (MEASURED 2026-10-15:
+    # 6013 / 63022 / 633031 — 3 × the earlier sizes on top)
+    marks = Dict(
+        n => _rhighwater(_rdb(_rnreverse_clauses()), catg(n)) for n in (10^3, 10^4, 10^5)
+    )
     @test marks[10 ^ 3][1] == marks[10 ^ 4][1] == marks[10 ^ 5][1]
     for n in (10^3, 10^4, 10^5)                                     # reported: no collector yet (G1)
         @info "concatenate/3, $n elements: local high-water qid+$(marks[n][1]), trail $(marks[n][2]), binding store $(marks[n][3])"
         # L1a-2 (`mark_bar`): every cell the call makes lies above the query's bar, so its binding is
-        # not trailed — only the caller's argument, older than the mark, is (1 entry, as in SWI);
-        # the bound variables still number n + 1 (both kinds, `lk_bound_count`)
-        @test marks[n][2] == 1 && marks[n][3] == n + 1
+        # not trailed — only the caller's argument, older than the mark, is (1 entry, as in SWI)
+        @test marks[n][2] == 1
+        # the non-empty cells (`lk_bound_count`): until L1c the n + 1 bound variables; since L1c the
+        # lists themselves are cells, EXACTLY 6n + 7 (dumped cell by cell at n = 3, 2026-10-15):
+        #   3n  the input list, copied on by its put — per element its functor, its head (a
+        #       value-table word) and its tail (the next cell's compound word; the last `[]`)
+        #    3  `[x]`, put the same way: functor, `x`, `[]`
+        #    1  the caller's `R`, bound to the result's first cell
+        #   3n  the output list built in place — functor, head (the input's value-table word,
+        #       shared) and tail (bound to the next cell)
+        #    3  the last tail bound to a COPY of `[x]`'s first cell (functor + two references): the
+        #       cold import, as `concatenate([], L, L)`'s `H_VAR` unifies on terms — a reference to
+        #       `[x]` itself (−3) once `do_unify` works on cells: L1c SUB-COMMIT 4 CHANGES THIS
+        #       PIN TO `6n + 4` (deliberately — the copy gone is the point of that step)
+        # (MEASURED: an argument move that copied its compound — `L_VAR` through the term boundary —
+        # made it ~9 per element, a copy per call)
+        @test marks[n][3] == 6n + 7
     end
     # …and the check can fail: without the last-call optimisation the mark grows with the list
     # (lists short enough for the region below the spare, which the tripwire keeps fixed: V5d)
@@ -1871,7 +1891,7 @@ end
     ld = db.ld
     snap() = (ld.lTop, ld.nframes, ld.nchoices, ld.nfliframes, ld.nqueries, ld.BFR,
         ld.fli_context,
-        ld.environment_frame, ld.aTop, ld.nbframes, ld.bTop, length(ld.trail),
+        ld.environment_frame, ld.aTop, length(ld.trail),
         lk_bound_count(ld), ld.gTop)                                # L1a: the global stack too
     goal = _rs("nreverse")
     base = snap()

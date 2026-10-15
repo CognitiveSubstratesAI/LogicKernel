@@ -62,6 +62,8 @@ mutable struct PL_global_data{T}
     const atoms::atoms_t                                        # atoms: the atom table (L1b A)
     const atom_symbols::atom_symbols{T}                         # (each atom's symbol, L1b C6b)
     const functors::functors_t                                  # functors: the table (L1b B)
+    const atom_dexpr::UInt64                                    # (`$expr`, a reserved atom: L1c)
+    const functor_dot2::UInt64                                  # FUNCTOR_dot2: '[|]'/2's word
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -102,6 +104,11 @@ function PL_global_data{T}() where {T}
     dc_proc = Procedure{T}(dc_def, UInt32(0), UInt32(0))
     top_clause, top_cref = initVM(dc_proc)
     system.procedures[(sym_key(dc), 0)] = dc_proc
+    atoms = do_init_atoms!(atoms_t())          # initAtoms (setup: before everything here)
+    syms = atom_symbols{T}()                   # (the atoms' symbols: filled as words are made)
+    functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
+    dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
+    dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
     gd = PL_global_data{T}(
         gen_t(0),
         Dict{Definition{T}, dirty_def_info{T}}(),
@@ -125,9 +132,11 @@ function PL_global_data{T}() where {T}
         SourceFile{T}[],
         1,                                      # files.no_hole_before = 1
         IdDict{IOSTREAM, T}(),
-        do_init_atoms!(atoms_t()),              # initAtoms (setup: before everything here)
-        atom_symbols{T}(),                      # (the atoms' symbols: filled as words are made)
-        initFunctors!(functors_t())             # initFunctors (after the atoms, as upstream's)
+        atoms,
+        syms,
+        functors,
+        dexpr,
+        dot2
     )
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
@@ -152,6 +161,11 @@ MODULE_system(gd::PL_global_data{T}) where {T} = gd.modules_system
 # the next free kernel variable key (see `fresh_var_keys!`) — a comment, not a docstring: a docstring
 # on a constant keeps a second binding to the value, which the global-state lint rightly flags
 const _KERNEL_VAR_COUNTER = Threads.Atomic{UInt64}(KERNEL_VAR_BASE)
+
+# the number of compound terms the cold export has made in this process (L1c; user, 2026-10-15:
+# "report the memo's entry count over the whole suite") — a meter, read by test/runtests.jl; it
+# carries no behaviour (allowlisted in tools/lint_globals.jl)
+const _COLD_EXPORT_TERMS = Threads.Atomic{Int}(0)
 
 """
     fresh_var_keys!(n) -> UInt64
@@ -229,8 +243,12 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # `environment_frame`, `BFR` and `fli_context` — and the last three are pool indices (0 = NULL).
 # `stacks.limit` is the local stack's alone, in positions: there is no global or trail stack to
 # share it with. `query` is a query-frame index (0 = NULL). The argument stack `astack` holds
-# `argstack_entry`s (upstream: `Word*`); the write-mode builder (`bcells`, `bframes`; decision 2, Q3)
-# has no upstream field — it builds where upstream fills cells on the global stack. The `exception.*`
+# `argstack_entry`s (upstream: `Word*`). Since L1c a compound is built IN PLACE on the global stack,
+# as upstream's (the write-mode builder of decision 2 is gone); `functors` is the database's
+# `GD->functors` (`$expr` and `FUNCTOR_dot2` copied from it), and `cold_exports`/`cold_imports`
+# count the compounds the boundary converts — a compound word read as a term
+# (`_compound_term`), a term copied onto the stack (`_compound_word!`): no upstream fields, the
+# transitional adapters' meters until the readers and writers work on words. The `exception.*`
 # fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
 # The local stack's `spare` and `def_spare` are `stacks.local`'s, in positions (since V5d); the
 # other stacks have none. `outofstack` is upstream's `LD->outofstack` for the one stack that can
@@ -277,12 +295,20 @@ mutable struct PL_local_data{T}
     gstack::Vector{UInt64}                                      # stacks.global: its WORDS (L1b C2)
     gkey::Vector{UInt64}                                        # … the key of each cell's variable
     gvars::Vector{T}                                            # … and its variable term (L1b C5)
+    gterms::Vector{Union{Nothing, T}}                           # … a compound's export (L1c)
+    gterm_pos::Vector{Int}                                      # … the positions holding one
+    ngterm::Int                                                 # … in use: gterm_pos[1:ngterm]
     gTop::Int                                                   # stacks.global.top
     vtable::Vector{T}                                           # (the value table, L1b: see above)
     vbox::Vector{Int}                                           # … each entry's box on the stack
     atoms::atoms_t                                              # GD->atoms: its database's (L1b C3)
     atom_words::Dict{UInt64, UInt64}                            # (a CACHE of GD's lookupAtom)
     atom_symbols::atom_symbols{T}                               # GD's: an atom's symbol (C6b)
+    functors::functors_t                                        # GD->functors: its database's
+    atom_dexpr::UInt64                                          # GD's `$expr` (L1c)
+    functor_dot2::UInt64                                        # GD's FUNCTOR_dot2 (L1c)
+    cold_exports::Int                                           # (compounds read as terms, L1c)
+    cold_imports::Int                                           # (terms copied onto the stack)
     mark_bar::Int                                               # mark_bar
     stamp_next::UInt64                                          # (the engine's reserved stamps:
     stamp_end::UInt64                                           #  stamp_next until stamp_end)
@@ -325,10 +351,6 @@ mutable struct PL_local_data{T}
     query::Int                                                  # query: the innermost open one
     astack::Vector{argstack_entry{T}}                           # stacks.argument
     aTop::Int                                                   # … its top (entries in use)
-    bcells::Vector{T}                                           # the write-mode builder's cells
-    bTop::Int                                                   # … in use: bcells[1:bTop]
-    bframes::Vector{bframe{T}}                                  # … the compounds it is building
-    nbframes::Int                                               # … open: bframes[1:nbframes]
     exception_term::Int                                         # exception.term (0: none)
     exception_bin::Int                                          # exception.bin
     exception_printed::Int                                      # exception.printed
@@ -362,8 +384,10 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
-        UInt64[], UInt64[], T[], 0, T[], Int[],
+        UInt64[], UInt64[], T[], Union{Nothing, T}[], Int[], 0, 0, T[], Int[],
         gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
+        gd.functors, gd.atom_dexpr, gd.functor_dot2,             # GD->functors (L1c)
+        0, 0,                                   # no compound exported or imported yet
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,
@@ -396,7 +420,6 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0, Code{T}(code[], T[], 0),
         queryFrame{T}[], 0, 0,
         Vector{argstack_entry{T}}(undef, 64), 0,
-        Vector{T}(undef, 256), 0, Vector{bframe{T}}(undef, 64), 0,
         0, 0, 0, 0, 0,
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,

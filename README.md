@@ -59,6 +59,15 @@ read through the term references (`slotValue` of the argument slots, then `resol
 through the caller's variables, which the engine does not bind. Sharing with a variable already in
 the engine goes through its handle, as `PL_put_term(t2, t1)` does in SWI's C interface.
 
+**Memory at the boundary** (L1c, 2026-10-15). A put copies its term onto the engine's global
+stack, as SWI-Prolog does, and — as in SWI — closing a foreign frame (`PL_close_foreign_frame`)
+KEEPS what was built in it; the kernel has no garbage collector for its stacks yet (G1). So a host
+that runs many queries must DISCARD each query's foreign frame once it has copied its answers out
+(`PL_discard_foreign_frame`, or `PL_rewind_foreign_frame` to reuse it), exactly as embedding code
+does with libswipl — or the global stack grows without bound. `LogicKernel.pl_query_answers(gd,
+ld, goal)` does this for you: it returns the answers (each the goal with its bindings resolved, a
+term of its own) and the uncaught exception's ball, and leaves the stacks as it found them.
+
 ## Layout — a mirror of swipl-devel
 
 A port lives at upstream's own path and keeps upstream's names: swipl-devel `src/pl-prims.c` →

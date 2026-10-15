@@ -81,7 +81,7 @@ const ATOM_nil = MK_ATOM(UInt64(0x0052_4553_5652_4544))      # "RESERVED", withi
 #   * standard order (src/pl-prims.jl `compare_functors`): by arity, then name — `$expr` before
 #     every symbol, as a reserved symbol sorts before the text atoms and, by `strcmp`, before `[]`;
 #   * head code (src/pl-comp.jl `compileArgument!`): `H_FUNCTOR` whose operand names NO literal —
-#     literal index 0, `functor_operand(0, n)` — where a symbol head's names its literal (since V1 L2,
+#     literal index 0, `functor_operand(0, n, f)` — where a symbol head's names its literal (since V1 L2,
 #     user 2026-10-04; Q2's marking bit is retired with it);
 #   * index: a WILDCARD — `argKey` and `indexOfWord` give 0 — because unification goes child by
 #     child (src/pl-prims.jl `_unify_functor`): `(X a)` unifies with `f(a)`, whose functor is `f/1`.

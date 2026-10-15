@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-attvar.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-attvar.h @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2004-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -6,7 +7,8 @@
 #
 # PORTED FROM pl-attvar.c, exactly these: `saveWakeup`, `restoreWakeup` and the helper
 # `restore_exception` — the SAVE/RESTORE of the pending exception around foreign code that must run
-# with none pending.
+# with none pending. From pl-attvar.h, `varBindConst` (L1c: the VM's `bindConst` of a global cell,
+# attributed variables not ported).
 # `findCatcher` (src/pl-wam.jl) is their first caller: while it unifies a ball with the catchers no
 # exception is pending, so an error that unification raises (the occurs check under
 # `occurs_check = error`) is raised, and becomes the ball.
@@ -38,7 +40,7 @@ function saveWakeup(
         if ld.exception_term != 0
             flags |= WAKEUP_STATE_EXCEPTION
             s = PL_new_term_ref(ld)
-            setSlotValue!(ld, s + 1, slotValue(ld, ld.exception_term + 1))
+            _slot_store_value!(ld, s + 1, slotValue(ld, ld.exception_term + 1))   # a value (L1c)
             ld.exception_term = 0
         end
         return wakeup_state(fid, outofstack, flags)
@@ -89,5 +91,15 @@ function restoreWakeup(ld::PL_local_data{T}, state::wakeup_state)::Nothing where
 
         PL_discard_foreign_frame(ld, state.fid)
     end
+    return nothing
+end
+
+# PORT: pl-attvar.h varBindConst as _bind_const!
+# DIVERGES: positions, 1-based, and `gTop` the last cell in use, so upstream's `p < mark_bar` is
+# `p <= mark_bar` (as `Trail!`); only global cells (a frame slot is never bound: no unbound slot).
+"Bind the unbound cell at global position `p` to word `c`, trailed below `mark_bar` (pl-attvar.h)."
+@inline function _bind_const!(ld::PL_local_data, p::Int, c::word)::Nothing
+    ld.gstack[p] = c                                # *p = (c)
+    p <= ld.mark_bar && push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))   # trail_ptr(p)
     return nothing
 end

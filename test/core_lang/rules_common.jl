@@ -65,7 +65,7 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
         push!(out, (_ranswer(ld, _rhandles_goal(ld, goal, args, n)), rc == LK.PL_S_LAST))
     end
     LK.PL_close_query(ld, qid)
-    LK.PL_close_foreign_frame(ld, fid)
+    LK.PL_discard_foreign_frame(ld, fid)     # answers copied out: nothing stays (L1c)
     return out
 end
 
@@ -323,7 +323,7 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
     high = findlast(w -> w != _R_SENTINEL, ld.slots) - 1            # a position: slots[p + 1]
     tr, st = length(ld.trail), lk_bound_count(ld)
     LK.PL_close_query(ld, qid)
-    LK.PL_close_foreign_frame(ld, fid)
+    LK.PL_discard_foreign_frame(ld, fid)     # answers copied out: nothing stays (L1c)
     ld.stacks_limit = saved_limit
     return (high - qid, tr, st)
 end

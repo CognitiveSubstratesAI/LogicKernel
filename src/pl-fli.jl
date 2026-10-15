@@ -232,10 +232,12 @@ function PL_unify_arg(
 end
 
 # PORT: pl-fli.c PL_put_term
-# DIVERGES: no `globalizeTermRef` (as `PL_copy_term_ref`), so it cannot fail.
+# DIVERGES: no `globalizeTermRef` (as `PL_copy_term_ref`), so it cannot fail; on the WORDS
+# (`_slot_link!`, L1c) — a compound's word moved, not exported and copied back, and a value (the
+# exception's ball, decision 1) kept a value, as upstream's frozen ball stays where it is.
 "Make term reference `t1` reference the term `t2` references (pl-fli.c)."
 function PL_put_term(ld::PL_local_data{T}, t1::Int, t2::Int)::Bool where {T}
-    setSlotValue!(ld, t1 + 1, linkValI(ld, slotValue(ld, t2 + 1)))    # setHandle(t1, linkValI(p2))
+    _slot_link!(ld, t1 + 1, t2 + 1)                 # setHandle(t1, linkValI(p2))
     return true
 end
 
@@ -497,7 +499,7 @@ end
 "Copy the ball `ex` references into `bin`, its cycles kept (pl-fli.c)."
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
     tt = length(ld.trail)
-    setSlotValue!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))     # duplicate_term()
+    _slot_store_value!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))     # duplicate_term()
     _trail_truncate!(ld, tt)                    # frozen: the copy's own bindings keep no trail entry
     return true
 end

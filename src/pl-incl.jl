@@ -1134,10 +1134,11 @@ end
 #   * ARGP_SLOT — a position on the local stack (`pos`): a frame's argument slot, or above `lTop`;
 #   * ARGP_CURSOR — child `pos` of the compound `term` (read mode inside a caller's compound, where
 #     upstream points into its arguments);
-#   * ARGP_BUILD — cell `pos` of the write-mode builder (LD's `bcells`), where upstream points into a
-#     compound it is filling on the global stack.
-# `term` is meaningful for a cursor only; the other forms carry any term there.
-"The VM's argument pointer (upstream's `Word ARGP`): a slot, a cursor into a compound, or a builder cell."
+#   * ARGP_GLOBAL — a position on the global stack (`pos`), since L1c: an argument cell of a compound
+#     there — written in write mode, read in read mode (`argTermP`) — as upstream's.
+# `term` is meaningful for a cursor only; the other forms carry any term there. Since L1c a cursor is
+# only ever into a compound that is a TERM (a keyed variable's binding, until the stamp falls).
+"The VM's argument pointer (upstream's `Word ARGP`): a slot, a cell of the global stack, or a cursor into a term."
 struct argp_t{T}
     form::UInt8
     pos::Int
@@ -1147,33 +1148,15 @@ end
 const ARGP_SLOT = 0x00
 "`argp_t` form: child `pos` of the compound `term`."
 const ARGP_CURSOR = 0x01
-"`argp_t` form: cell `pos` of the write-mode builder."
-const ARGP_BUILD = 0x02
+"`argp_t` form: cell `pos` of the global stack (L1c)."
+const ARGP_GLOBAL = 0x02
 
 # An argument-stack entry. Upstream pushes `(ARGP+1)|UMODE` — the mode in the pointer's low bit
-# (vmi:777, 873-875); the kernel also records how many builders were open, because the `H_POP`
-# that pops the entry closes the builders opened since (decision 2 and Q3: the builder is a stack).
-"An argument-stack entry: the `ARGP` to resume at, whether that is in write mode, the builders open."
+# (vmi:777, 873-875).
+"An argument-stack entry: the `ARGP` to resume at, and whether that is in write mode."
 struct argstack_entry{T}
     argp::argp_t{T}
     uwrite::Bool
-    builders::Int
-end
-
-# A compound being built in write mode (decision 2, Q3): its cells are `bcells[start:start+n-1]` —
-# the children vector of the term to build: the head symbol first for `f/k` and lists, none for
-# `$expr/n` — and the finished compound goes to one of three places when it is closed: the parent's
-# builder cell `cell`; the frame slot at position `slot` — a body argument, written untrailed above
-# `lTop` as upstream's `*ARGP = consPtr(gTop)` (V4b, user 2026-10-05: the SAME builder for bodies);
-# or, when it was opened in read mode on the caller's unbound variable `var`, `var` (trailed).
-# `cell` is 0 and `slot` is -1 where unused.
-"A write-mode builder: its cells, and where the compound goes when it is closed."
-struct bframe{T}
-    start::Int
-    n::Int
-    cell::Int
-    slot::Int
-    var::T
 end
 
 # PORT: pl-incl.h StackMagic
@@ -1252,7 +1235,7 @@ const control_t{T} = foreign_context{T}
 # their own pools at `base + QF_CHOICE`, `+ QF_TOP_FRAME` and `+ QF_FRAME`, held here by index, as
 # are `parent`, `saved_bfr`, `saved_environment` and `next_environment`; `saved_ltop` is a position,
 # `exception` a term reference, `foreign_frame` a foreign-frame handle. `aSave` is the argument
-# stack's height, and `bSave`/`bcSave` the builder's (frames and cells), saved with it. `registers.pc`
+# stack's height. `registers.pc`
 # is a `Code`. Not kept, but counted in `SIZEOF_QUERYFRAME`: the depth limit (`O_LIMIT_DEPTH`; no
 # depth limit), `yield` (not ported, decision 1), `debugSave` and `flags_saved` (the debugger and
 # the run-mode flags, not ported), `qid` (the query is identified by its position, decision 1).
@@ -1269,8 +1252,6 @@ mutable struct queryFrame{T}
     flags::UInt32
     solutions::Int                  # # of solutions produced
     aSave::Int                      # saved argument-stack
-    bSave::Int                      # (the builder's frames)
-    bcSave::Int                     # (the builder's cells)
     saved_bfr::Int                  # Saved choice-point (an index)
     saved_ltop::Int                 # Saved lTop
     parent::Int                     # Parent queryFrame (an index)

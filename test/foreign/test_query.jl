@@ -388,7 +388,7 @@ end
     @test length(ans) == 1
     @test lk_eq(child(first(first(ans)), 2), _yf(:f, _ys(:c), _yv(103), _yv(104))) ||
         lk_name(child(child(first(first(ans)), 2), 2)) === :c
-    @test ld.aTop == 0 && ld.nbframes == 0 && ld.bTop == 0      # reset, as the argument stack
+    @test ld.aTop == 0                                          # reset, as the argument stack
     ans = vm_call(w, _yf(:w, X, _ys(:x)))
     t = child(first(first(ans)), 2)
     @test lk_name(child(t, 1)) === :f && lk_name(child(t, 2)) === :a
@@ -412,7 +412,7 @@ end
     qid, a, fid = _yopen(v, _yf(:f, _ys(:a), _ys(:b)), Y)
     @test _ynext(v, qid) == LK.PL_S_LAST && lk_eq(_yval(v, a + 1), _ys(:y))
     q = ld.queries[LK.QueryFromQid(ld, qid)]
-    @test ld.aTop == q.aSave && ld.nbframes == q.bSave && ld.bTop == q.bcSave
+    @test ld.aTop == q.aSave
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
 end
@@ -421,7 +421,7 @@ LK_TERM_IMPL == "reference" &&
     @testset "warm, the argument-stack push and the register save allocate nothing" begin
         db, p = _ydb()
         ld = db.ld
-        e = LK.argstack_entry{_Y}(LK.argp_t{_Y}(LK.ARGP_SLOT, 7, ld.placeholder), false, 0)
+        e = LK.argstack_entry{_Y}(LK.argp_t{_Y}(LK.ARGP_SLOT, 7, ld.placeholder), false)
         push!(n) = (
             for _ in 1:n
                 LK.pushArgumentStack(ld, e)
@@ -464,11 +464,13 @@ LK_TERM_IMPL == "reference" &&
     s1 = LK.putSlotValue!(ld, a + 1, _yf(:g, X, Y), vm)
     s2 = LK.putSlotValue!(ld, a + 2, X, vm)
     @test s1 === LK.slotValue(ld, a + 1) && s2 === LK.slotValue(ld, a + 2)
-    @test var_key(child(s1, 2)) == var_key(s2) && var_key(child(s1, 3)) != var_key(s2)
+    # (since L1c a compound's children are its argument cells' variables: compared dereferenced)
+    d(t) = LK.deRef(ld, t)
+    @test var_key(d(child(s1, 2))) == var_key(s2) && var_key(d(child(s1, 3))) != var_key(s2)
     # within one put, a variable met twice is one variable
     s3 = LK.putSlotValue!(ld, a + 3, _yf(:g, X, X))
-    @test var_key(child(s3, 2)) == var_key(child(s3, 3)) &&
-        var_key(child(s3, 2)) != var_key(s2)
+    @test var_key(d(child(s3, 2))) == var_key(d(child(s3, 3))) &&
+        var_key(d(child(s3, 2))) != var_key(s2)
     # sharing with a variable already in the engine goes through its handle (PL_put_term)
     @test LK.PL_put_term(ld, a + 2, a + 1)                         # term refs: slot a+3 ← slot a+2
     @test LK.unify_ptrs(ld, LK.slotValue(ld, a + 3), _ys(:z))
@@ -479,12 +481,12 @@ LK_TERM_IMPL == "reference" &&
     s4 = LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
     @test LK.unify_ptrs(ld, x1, _ys(:b)) && kind(child(s4, 2)) === VAR  # bound AFTER the put: a copy
     s5 = LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
-    @test lk_name(child(s5, 2)) === :b                               # bound BEFORE: its value
-    # a ground value comes back as the same value (`==`, not `===`). TRANSITIONAL: the put shares
-    # it today (`copy_term`'s COPY_SHARE); once slots hold words (L1b stage C) it is copied onto
-    # the global stack as `copyRecordToGlobal` copies it, and only the value is observable
+    @test lk_name(d(child(s5, 2))) === :b                            # bound BEFORE: its value
+    # a ground value comes back as the same value (`==`, not `===`): since L1c it is copied onto
+    # the global stack, as `copyRecordToGlobal` copies it, and only the value is observable — the
+    # put returns the stored compound, its arguments its cells' variables, compared resolved
     gt = _yf(:g, _ys(:a), _yf(:h, _yg(1)))
-    @test lk_eq(LK.putSlotValue!(ld, a + 3, gt), gt)
+    @test lk_eq(LK.resolve_term(ld, LK.putSlotValue!(ld, a + 3, gt)), gt)
     @test lk_eq(LK.resolve_term(ld, LK.slotValue(ld, a + 3)), gt)
     LK.PL_close_foreign_frame(ld, fid)
     # a query: f(X) answers a, b, c through the handle; the caller's X is never bound

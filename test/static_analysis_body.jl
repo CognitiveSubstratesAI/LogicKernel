@@ -140,12 +140,23 @@ end
         # (`discardChoicesAfter` left this list with V9g: a cut that discards a CLEANUP frame runs
         # its handler — a goal — so the function is no longer allocation-free as a whole; the
         # spans above still hold the cut's own sites to "allocates nothing")
+        # L1c's allocation exemptions: a ratchet, each naming its step (static_analysis_manifest.jl)
+        @test length(L1C_ALLOC_EXEMPT) <= L1C_ALLOC_EXEMPT_MAX
+        @test length(unique(first.(L1C_ALLOC_EXEMPT))) == length(L1C_ALLOC_EXEMPT)
+        for (f, step) in L1C_ALLOC_EXEMPT
+            @test step in L1C_STEPS
+            es = [e for e in DISPATCH_MANIFEST if e[1] === f]
+            @test !isempty(es) && all(e -> !e[3], es)   # listed ⇒ marked allocating
+        end
         for c in
             (LK._call_procedure, LK.pushFrame!, LK.setNextFrameFlags, LK.setFramePredicate,
             LK.hasLocalSpace, LK.setLTop!, LK.setGenerationFrame, LK._is_newest_live_frame,
             LK.lcoSetNextFrameFlags, LK.lcoSetNextFrameFlags2, LK.copyFrameArguments,
-            LK.lowerLTop!, LK.deRef, LK.tcallSetNextFrameFlags, LK.linkValI,
-            LK._argp_store!,
+            LK.lowerLTop!, LK.tcallSetNextFrameFlags,
+            # (L1c: `deRef`, `linkValI` and `_argp_store!` left this list — they reach the cold
+            # adapters on a compound; the call path moves WORDS (`_slot_link!`, `_slot_copy!`),
+            # its own sites stay checked by the spans above, and nreverse/qsort's zero-export test
+            # guards the hot path)
             LK._argp_add, LK._save_registers!, LK._load_registers!,
             LK.canBind, LK.isInteger, LK.isRational, LK.isFloat, LK.isNumber, LK.isAtomic,
             LK.isTextAtom, LK.isString, LK.isTerm, LK.isCallable)

@@ -103,8 +103,9 @@ end
     ld.slots[s] = wa
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH
     @test LK._h_const_word!(ld, s, wb) == LK.H_CONST_FAIL
-    LK.setSlotValue!(ld, s, _rf("f", _kw_s(:a)))                # a compound: SLOT_VALUE
-    @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_TERMS
+    LK.setSlotValue!(ld, s, _rf("f", _kw_s(:a)))                # a compound: its word (L1c)
+    @test LK._is_gcompound(ld.slots[s])
+    @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_FAIL
     LK.setSlotValue!(ld, s, _rg(Int64(1)))                      # a small integer: SLOT_VALUE
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_TERMS
 end
@@ -138,14 +139,19 @@ end
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH
     @test ld.gstack[p2] == wa && ld.gstack[p1] == LK.makeRefG(p2)
     @test LK._h_const_word!(ld, s, wb) == LK.H_CONST_FAIL
-    # bound through the value table (a number, a cell variable until L1d): undecided on the words
+    # bound through the value table (a number, until L1d): undecided on the words
     ld2, u, v, _, wa2, _ = _kw_engine()
     k = LK._cell_key(ld2, LK._slot_new_var!(ld2, u))
     LK.Trail!(ld2, k, _rg(Int64(7)))
     @test LK._h_const_word!(ld2, u, wa2) == LK.H_CONST_TERMS
+    # a cell bound to a cell variable holds a REFERENCE (L1c: upstream's `makeRefG`): followed, the
+    # unbound cell at its end bound
     k2 = LK._cell_key(ld2, LK._slot_new_var!(ld2, v))
-    LK.Trail!(ld2, k2, mk_var(_R, LK._cell_key(ld2, LK._slot_new_var!(ld2, u))))
-    @test LK._h_const_word!(ld2, v, wa2) == LK.H_CONST_TERMS
+    pw = LK._slot_new_var!(ld2, u)
+    LK.Trail!(ld2, k2, mk_var(_R, LK._cell_key(ld2, pw)))
+    @test LK.isRef(ld2.gstack[LK._cell_pos(ld2, k2)])
+    @test LK._h_const_word!(ld2, v, wa2) == LK.H_CONST_MATCH
+    @test ld2.gstack[pw] == wa2
 end
 
 @testset "the constant instructions answer as swipl" begin

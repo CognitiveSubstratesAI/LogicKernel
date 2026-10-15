@@ -38,6 +38,10 @@ const LINT_ALLOWLIST = (
         "the same kind of counter for the stamps of cell variables' keys (src/pl-global.jl, L1a): " *
         "a stamp must be unique ACROSS PL_local_data instances for the same reason — a retained " *
         "answer's key passed into another engine must not name one of its cells. 2026-10-14.",
+    "LogicKernel._COLD_EXPORT_TERMS" =>
+        "a monotonic, process-wide METER of the terms L1c's cold export makes (src/pl-global.jl): " *
+        "the user asked for its count over the whole suite (2026-10-15); it is only ever added " *
+        "to and read by test/runtests.jl — no function's result depends on it. 2026-10-15.",
     "LogicKernel.H_LIST_FF_VOIDS" =>
         "upstream's own `static code var[2]` in pl-index.c `skipToTerm`: the two-void dummy code a " *
         "deep index position inside an H_LIST_FF reads (src/pl-index.jl). Read-only — no function " *

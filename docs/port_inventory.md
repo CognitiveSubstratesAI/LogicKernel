@@ -77,6 +77,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-arith.h` | code | `8609e216cab9` | `src/pl-arith.jl` | 5 | 1 |
 | swipl-devel `src/pl-atom.c` | code | `8609e216cab9` | `src/pl-atom.jl` | 11 | 6 |
 | swipl-devel `src/pl-attvar.c` | code | `8609e216cab9` | `src/pl-attvar.jl` | 3 | 3 |
+| swipl-devel `src/pl-attvar.h` | code | `8609e216cab9` | `src/pl-attvar.jl` | 1 | 1 |
 | swipl-devel `src/pl-bag.c` | code | `8609e216cab9` | `src/pl-bag.jl` | 9 | 6 |
 | swipl-devel `src/pl-bag.c` | code | `8609e216cab9` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-builtin.h` | code | `8609e216cab9` | `src/pl-incl.jl` | 5 | 1 |
@@ -118,7 +119,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-index.c` | code | `8609e216cab9` | `src/pl-index.jl` | 110 | 33 |
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-gmp.jl` | 1 | 0 |
-| swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-inline.jl` | 17 | 14 |
+| swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-inline.jl` | 18 | 15 |
 | swipl-devel `src/pl-list.c` | code | `8609e216cab9` | `src/pl-list.jl` | 14 | 8 |
 | swipl-devel `src/pl-modul.c` | code | `8609e216cab9` | `src/pl-modul.jl` | 7 | 6 |
 | swipl-devel `src/pl-op.c` | code | `8609e216cab9` | `src/pl-op.jl` | 16 | 13 |
@@ -140,7 +141,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-umap.c` | code | `8609e216cab9` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `8609e216cab9` | `src/pl-variant.jl` | 17 | 7 |
 | swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-vmi.jl` | 130 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 146 | 97 |
+| swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 146 | 93 |
 | swipl-devel `src/pl-wam.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 42 | 34 |
 | swipl-devel `src/pl-write.c` | code | `8609e216cab9` | `src/pl-write.jl` | 112 | 45 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `8609e216cab9` | `test/core_lang/test_bips.jl` | 10 | 1 |
@@ -203,6 +204,7 @@ checkout is pulled.
 | swipl-devel `src/pl-arith.h` | `8609e216cab9` | 0 | 8 | 0 | src/pl-arith.jl |
 | swipl-devel `src/pl-atom.c` | `8609e216cab9` | 10 | 78 | 6 | src/pl-atom.jl |
 | swipl-devel `src/pl-attvar.c` | `8609e216cab9` | 3 | 42 | 3 | src/pl-attvar.jl |
+| swipl-devel `src/pl-attvar.h` | `8609e216cab9` | 1 | 2 | 1 | src/pl-attvar.jl |
 | swipl-devel `src/pl-bag.c` | `8609e216cab9` | 3 | 15 | 3 | src/pl-bag.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-builtin.h` | `8609e216cab9` | 0 | 3 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-codetable.c` | `8609e216cab9` | 0 | 0 | 0 | src/pl-vmi.jl |
@@ -246,7 +248,7 @@ checkout is pulled.
 | swipl-devel `src/pl-trace.c` | `8609e216cab9` | 5 | 77 | 2 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `8609e216cab9` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `8609e216cab9` | 10 | 17 | 4 | src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `8609e216cab9` | 130 | 240 | 73 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `8609e216cab9` | 130 | 240 | 69 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `8609e216cab9` | 38 | 96 | 32 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `8609e216cab9` | 81 | 111 | 41 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `8609e216cab9` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
@@ -264,7 +266,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8609e216cab9` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8609e216cab9` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8609e216cab9` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1089** | **4361** | **579** | |
+| **total** | | **1090** | **4363** | **576** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

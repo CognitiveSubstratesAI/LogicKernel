@@ -71,7 +71,7 @@ function outOfStack!(ld::PL_local_data{T}, how::stack_overflow_action)::Bool whe
     ld.exception_processing = true
     ld.outofstack = true
     ctx = push_overflow_context(T)
-    setSlotValue!(
+    _slot_store_value!(                             # the ball: a value (decision 1; L1c)
         ld,
         ld.exception_bin + 1,
         mk_expr(
@@ -161,5 +161,8 @@ end
     resize!(ld.gstack, n)
     resize!(ld.gkey, n)
     resize!(ld.gvars, n)
+    old = length(ld.gterms)
+    resize!(ld.gterms, n)
+    fill!(view(ld.gterms, (old + 1):n), nothing)     # (a new position holds no export: L1c)
     return nothing
 end

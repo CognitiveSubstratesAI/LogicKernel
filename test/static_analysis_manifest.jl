@@ -106,7 +106,7 @@ _manifest_per_type(T) = (
     (LK.initTermAgenda!, Tuple{LK.term_agenda{T}, Int, T, Int}, true),
     (LK.clearTermAgenda!, Tuple{LK.term_agenda{T}}, true),
     (LK.nextTermAgendaNoDeRef!, Tuple{LK.term_agenda{T}}, true),
-    (LK.nextTermAgenda!, Tuple{LK.PL_local_data{T}, LK.term_agenda{T}}, true),
+    (LK.nextTermAgenda!, Tuple{LK.PL_local_data{T}, LK.term_agenda{T}}, false),   # L1c: the cold export (words: L1d/L1e)
     (LK.pushWorkAgenda!, Tuple{LK.term_agenda{T}, Int, T, Int}, false),
     (LK.initTermAgendaLR!, Tuple{LK.term_agendaLR{T}, Int, T, T, Int}, true),
     (LK.clearTermAgendaLR!, Tuple{LK.term_agendaLR{T}}, true),
@@ -114,13 +114,13 @@ _manifest_per_type(T) = (
     (LK.pushWorkAgendaLR!, Tuple{LK.term_agendaLR{T}, Int, T, T, Int}, false),
     # bindings (src/pl-inline.jl) and unification (src/pl-prims.jl)
     (LK.PL_local_data{T}, Tuple{LK.PL_global_data{T}}, false),
-    (LK.deRef, Tuple{LK.PL_local_data{T}, T}, true),
+    (LK.deRef, Tuple{LK.PL_local_data{T}, T}, false),   # L1c: a compound reached exports (cold), until L1d
     (LK.Trail!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
     (LK.Mark, Tuple{LK.PL_local_data{T}}, true),
     (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, true),
     # L1a: cell variables on the global stack (src/pl-inline.jl, src/pl-alloc.jl)
     (LK._cell_pos, Tuple{LK.PL_local_data{T}, UInt64}, true),
-    (LK._binding, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._binding, Tuple{LK.PL_local_data{T}, UInt64}, false),   # L1c: the cold export
     (LK._set_binding!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
     # the trail's entries (L1b stage D)
     (LK._trail_key, Tuple{LK.PL_local_data{T}, UInt64}, true),
@@ -128,7 +128,7 @@ _manifest_per_type(T) = (
     (LK._trail_truncate!, Tuple{LK.PL_local_data{T}, Int}, false),
     # the value table (L1b stage C2): a push may grow its vectors; the reads and the truncation do not
     (LK._vword!, Tuple{LK.PL_local_data{T}, T}, false),
-    (LK._cell_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._cell_value, Tuple{LK.PL_local_data{T}, UInt64}, false),    # L1c: a compound's cold export
     (LK._truncate_vtable!, Tuple{LK.PL_local_data{T}}, true),
     (LK._is_box, Tuple{LK.PL_local_data{T}, Int}, true),
     # the atom words (L1b stage C3): the write fills the caches; the read allocates nothing (a miss
@@ -137,19 +137,38 @@ _manifest_per_type(T) = (
     (LK._atom_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._atom_value_error, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
+    # compounds on the global stack (L1c): the layout grows the stack; the two cold adapters allocate
+    (LK._var_ref_word, Tuple{LK.PL_local_data{T}, T}, true),
+    (LK.pl_query_answers, Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, T}, false),
+    # (its `limit=` keyword method: the Julia-facing form, covered as itself)
+    (
+        Core.kwcall,
+        Tuple{
+            NamedTuple{(:limit,), Tuple{Int}}, typeof(LK.pl_query_answers),
+            LK.PL_global_data{T}, LK.PL_local_data{T}, T
+        },
+        false
+    ),
+    (LK._truncate_gterms!, Tuple{LK.PL_local_data{T}}, true),   # on every Undo!: in place
+    (LK._slot_store_value!, Tuple{LK.PL_local_data{T}, Int, T}, false),
+    (LK._alloc_compound!, Tuple{LK.PL_local_data{T}, UInt64, Int}, false),
+    (LK._compound_term, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._compound_word!, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK._import_offset, Tuple{T}, true),
+    (LK._import_layout!, Tuple{LK.PL_local_data{T}, T, Vector{Tuple{T, Int}}}, false),
     # the atoms' symbols, the DATABASE's (L1b stage C6b): the read allocates nothing; a record may
     # allocate its block; the compiler's word for a literal looks its text up
     (LK._atom_word!, Tuple{LK.atoms_t, LK.atom_symbols{T}, T}, false),
     (LK.atom_symbols{T}, Tuple{}, false),
     (LK.atomSymbol, Tuple{LK.atom_symbols{T}, Int}, true),
     (LK.setAtomSymbol!, Tuple{LK.atom_symbols{T}, Int, T}, false),
-    (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, false),   # L1c: the cold export
     # the slot words (L1b stage C5/C6a): reads, stores and moves allocate nothing; a fresh cell may
     # grow the global stack
     (LK._slot_atom, Tuple{LK.PL_local_data{T}, UInt64}, true),
-    (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, true),
+    (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1c: the cold import
     (LK._slot_copy!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
-    (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, false),  # L1c: the cold import
     (LK._slot_new_var!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK._cell_key, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK._cell_var, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -213,7 +232,7 @@ _manifest_per_type(T) = (
     (LK.copy_exception!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.hasLocalSpace, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.DiscardMark, Tuple{LK.PL_local_data{T}, LK.mark}, true),
-    (LK.linkValI, Tuple{LK.PL_local_data{T}, T}, true),
+    (LK.linkValI, Tuple{LK.PL_local_data{T}, T}, false),   # L1c: the cold export
     (LK.pushFrame!, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.pushChoice!, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.pushFliFrame!, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -232,7 +251,7 @@ _manifest_per_type(T) = (
     (LK.PL_new_term_ref, Tuple{LK.PL_local_data{T}}, false),
     (LK.PL_reset_term_refs, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.PL_copy_term_ref, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.PL_put_term, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK.PL_put_term, Tuple{LK.PL_local_data{T}, Int, Int}, false),   # L1c: the cold export (words: L1d/L1e)
     (LK.emptyStacks!, Tuple{LK.PL_local_data{T}}, false),
     (LK.levelFrame, Tuple{LK.localFrame{T}}, true),
     (LK.setLevelFrame, Tuple{LK.localFrame{T}, UInt32}, true),
@@ -411,11 +430,11 @@ function _manifest_index(T)
         (LK.nextClauseFromBucket!, Tuple{CI, AF, CTX}, false),
         (LK.setClauseChoice!, Tuple{CR, CTX}, true),
         (LK.setClauseChoice!, Tuple{Nothing, CTX}, true),
-        (LK.indexKeyFromArgv, Tuple{CI, AT}, true),
-        (LK.indexKeyFromArgv, Tuple{CI, AF}, true),
+        (LK.indexKeyFromArgv, Tuple{CI, AT}, false),   # L1c: the cold export (words: L1d/L1e)
+        (LK.indexKeyFromArgv, Tuple{CI, AF}, false),   # L1c: the cold export (words: L1d/L1e)
         (LK.is_var, Tuple{T}, true),
-        (LK.is_satifies_index, Tuple{CI, AT}, true),
-        (LK.is_satifies_index, Tuple{CI, AF}, true),
+        (LK.is_satifies_index, Tuple{CI, AT}, false),   # L1c: the cold export (words: L1d/L1e)
+        (LK.is_satifies_index, Tuple{CI, AF}, false),   # L1c: the cold export (words: L1d/L1e)
         (LK.existing_hash, Tuple{CIP, AT}, false),
         (LK.existing_hash, Tuple{CIP, AF}, false),
         (LK.createIndex!, Tuple{AT, Int, CL, CI, CTX}, false),
@@ -428,7 +447,8 @@ function _manifest_index(T)
         (LK.firstClause!, Tuple{LD, AF, UInt64, D, CH}, false),
         (LK.nextClause!, Tuple{LD, CH, AT, UInt64, D}, true),
         (LK.nextClause!, Tuple{LD, CH, AF, UInt64, D}, true),
-        (LK.argv_at, Tuple{AT, Int}, true), (LK.argv_at, Tuple{AF, Int}, true),
+        # (L1c: the cold export until indexing reads words, L1c sub-commit 5)
+        (LK.argv_at, Tuple{AT, Int}, false), (LK.argv_at, Tuple{AF, Int}, false),
         (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH}, true),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
@@ -967,14 +987,18 @@ function _manifest_index(T)
         (LK.dbg_discardChoicesAfter, Tuple{LD, Int, LK.finished}, false),
         (LK.queryOfFrame, Tuple{LD, Int}, true), (LK.parentFrame, Tuple{LD, Int}, true),
         (LK.setLTop!, Tuple{LD, Int}, true),
-        (LK._argp_raw, Tuple{LD, ARGP}, true), (LK._argp_deref, Tuple{LD, ARGP}, true),
-        (LK._argp_store!, Tuple{LD, ARGP, T}, true), (LK._argp_add, Tuple{ARGP, Int}, true),
-        (LK._argp_store_var!, Tuple{LD, ARGP, Int}, true),
+        (LK._argp_raw, Tuple{LD, ARGP}, false), (LK._argp_deref, Tuple{LD, ARGP}, false),   # L1c
+        # (L1c: a store may copy a compound onto the stack — the cold import allocates)
+        (LK._argp_store!, Tuple{LD, ARGP, T}, false),
+        (LK._argp_add, Tuple{ARGP, Int}, true),
+        (LK._argp_fresh_var!, Tuple{LD, ARGP, Int}, false),
+        (LK._argp_void!, Tuple{LD, ARGP}, false),
+        (LK._bind_const!, Tuple{LD, Int, UInt64}, false),       # a binding may grow the trail
+        (LK._argp_deref_word, Tuple{LD, ARGP}, true),
+        (LK._cell_link!, Tuple{LD, Int, Int}, false),
+        (LK._slot_from_cell!, Tuple{LD, Int, Int}, true),
         (LK._h_const_word!, Tuple{LD, Int, UInt64}, false),     # a binding may grow the trail
         (LK._reset_argument_stack!, Tuple{LD, LK.queryFrame{T}}, true),
-        (LK._bopen!, Tuple{LD, Int, T, Bool, Int, Int, T}, false),
-        (LK._bclose!, Tuple{LD}, false),
-        (LK._fresh_compound, Tuple{LK.PL_local_data{T}, T, Bool, Int}, false),
         (LK._slow_unify, Tuple{LD}, true),
         (LK._is_expr3, Tuple{T}, true),
         (
@@ -1092,7 +1116,7 @@ function _manifest_index(T)
         (LK._PL_error_close!, Tuple{LD, Union{Nothing, D}, Int, Int, Int, Int}, false),
         (LK.PL_type_error, Tuple{LD, String, Int}, false),
         (LK.PL_domain_error, Tuple{LD, String, Int}, false),
-        (LK.PL_is_variable, Tuple{LD, Int}, true),
+        (LK.PL_is_variable, Tuple{LD, Int}, false),   # L1c: the cold export (words: L1d/L1e)
         (LK.PL_unify, Tuple{LD, Int, Int}, false),
         (LK.PL_unify_atomic, Tuple{LD, Int, T}, false),
         (LK.PL_unify_atom, Tuple{LD, Int, T}, false),
@@ -1131,8 +1155,9 @@ function _manifest_index(T)
                 LK.pl_atomic1_va, LK.pl_compound1_va, LK.pl_callable1_va, LK.pl_nonequal2_va
             )
         ]...,
+        # (L1c: they may reach the cold export on a compound — words at L1e, the FLI over cells)
         [
-            (f, Tuple{LD, Int}, true) for f in (
+            (f, Tuple{LD, Int}, false) for f in (
                 LK.PL_is_integer, LK.PL_is_float, LK.PL_is_rational, LK.PL_is_compound,
                 LK.PL_is_callable, LK.PL_is_string, LK.PL_is_atom, LK.PL_is_atomic,
                 LK.PL_is_number
@@ -1423,7 +1448,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isFunctor, Tuple{UInt64}, true), (LK.MK_ATOM, Tuple{UInt64}, true),
     (LK.MK_FUNCTOR, Tuple{UInt64, UInt64}, true), (LK.codeTable, Tuple{UInt64}, true),
     (LK.initVMIMerge, Tuple{UInt64}, true),
-    (LK.functor_operand, Tuple{UInt64, Int}, false),
+    (LK.functor_operand, Tuple{UInt64, Int, UInt64}, false),
+    (LK.functor_operand_word, Tuple{UInt64}, true),
+    (LK._is_gcompound, Tuple{UInt64}, true),
     (LK.functor_literal, Tuple{UInt64}, true), (LK.functor_arity, Tuple{UInt64}, true),
     (LK.atom_operand, Tuple{UInt64, UInt64}, false),
     (LK.atom_literal, Tuple{UInt64}, true), (LK.atom_operand_word, Tuple{UInt64}, true),
@@ -1879,6 +1906,37 @@ const DISPATCH_MANIFEST = _manifest_entries(_DISPATCH_MANIFEST_TUPLE)
 # cached bit; `Term` overrides it, so no reference type reaches it. (`Tuple{Int}` names the fallback
 # method by a non-term argument type — it is the method `which` selects.) Its body is
 # `is_ground_walk`, which IS in the manifest.
+# L1c's ALLOCATION EXEMPTIONS — a RATCHET (user, 2026-10-15): the functions whose entries were
+# allocation-free before L1c and are marked allocating since, because a compound reaching them goes
+# through the transitional term boundary (the cold export or import). Each names the step at which
+# it is allocation-free again; the list may only SHRINK (`L1C_ALLOC_EXEMPT_MAX`, measured 25), and
+# test/static_analysis_body.jl checks that each listed function is marked allocating. A NEW
+# exemption joins this list, with its step — never silently.
+"The steps that return an L1c exemption to allocation-free."
+const L1C_STEPS = ("L1c-5", "L1d", "L1e", "L1f")
+"L1c's allocation exemptions: (function, the step at which it is allocation-free again)."
+const L1C_ALLOC_EXEMPT = [
+    # the term reads that reach a compound's cold export: until no reader takes a term (L1f, with
+    # copy_term over cells and the keyed variables gone)
+    (LK.deRef, "L1f"), (LK._binding, "L1f"), (LK._cell_value, "L1f"),
+    (LK.slotValue, "L1f"), (LK.linkValI, "L1f"), (LK._argp_raw, "L1f"),
+    (LK._argp_deref, "L1f"),
+    # the term writes that reach the cold import: until the FLI and the built-ins write cells (L1e)
+    (LK._slot_store!, "L1e"), (LK._slot_link!, "L1e"), (LK._argp_store!, "L1e"),
+    (LK.PL_put_term, "L1e"),
+    # the FLI type checks on a compound: words at L1e
+    (LK.PL_is_integer, "L1e"), (LK.PL_is_float, "L1e"), (LK.PL_is_rational, "L1e"),
+    (LK.PL_is_compound, "L1e"), (LK.PL_is_callable, "L1e"), (LK.PL_is_string, "L1e"),
+    (LK.PL_is_atom, "L1e"), (LK.PL_is_atomic, "L1e"), (LK.PL_is_number, "L1e"),
+    (LK.PL_is_variable, "L1e"),
+    # the term agenda of unification and comparison: over cells at L1d
+    (LK.nextTermAgenda!, "L1d"),
+    # first-argument indexing: from words at L1c sub-commit 5
+    (LK.argv_at, "L1c-5"), (LK.indexKeyFromArgv, "L1c-5"), (LK.is_satifies_index, "L1c-5")
+]
+"The ratchet: L1c's exemptions may only fall (measured 25, 2026-10-15)."
+const L1C_ALLOC_EXEMPT_MAX = 25
+
 const DISPATCH_EXEMPT = (
     (
         (is_ground, Tuple{Int}) => "interface fallback; Term overrides it, and its body is_ground_walk is checked"

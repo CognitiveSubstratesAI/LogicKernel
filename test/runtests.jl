@@ -217,6 +217,9 @@ Test.@with_testset LK_TS begin
     # units, so it writes its counts and the coordinator checks their SUM.
     s = Main.LKAltTerm.alt_stats()
     println("  AltTerm: ", s)            # how much sharing the [alt_interned] runs exercised
+    # L1c's cold traffic over the run (user, 2026-10-15): the compound terms the export memo made —
+    # every one a compound read as a term by a reader not yet on words (a shard reports its own)
+    println("  L1c cold export: ", LogicKernel._COLD_EXPORT_TERMS[], " compound terms made")
     if LK_SHARD
         write(joinpath(LK_SHARD_DIR, "stats_$LK_SHARD_ID"),
             "$(s.compounds_plain) $(s.compounds_interned) $(s.shared)\n")

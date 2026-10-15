@@ -78,8 +78,7 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
 end
 
 # PORT: pl-setup.c emptyStacks as emptyStacks!
-# DIVERGES: no global stack to empty; the argument stack is emptied, with the write-mode builder's
-# (`bTop`, `nbframes`, the kernel's own), and the trail's bindings go with the trail (`bindings`).
+# DIVERGES: the argument stack is emptied, and the trail's bindings go with the trail (`bindings`).
 # `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`, and no
 # `lTop && gTop` guard (the stacks always exist). Of the
 # engine's permanent term references upstream allocates in the base foreign frame, the exception's
@@ -101,13 +100,12 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.nqueries = 0
     ld.query = 0                                # LD->query = NULL;
     ld.aTop = 0                                 # emptyStack((Stack)&LD->stacks.argument);
-    ld.bTop = 0
-    ld.nbframes = 0
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
     empty!(ld.trail_keys)
     empty!(ld.bindings)
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
     _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)
+    _truncate_gterms!(ld)                       # (and the export memo: L1c)
     ld.mark_bar = ld.gTop                       # LD->mark_bar = gTop;
 
     PL_open_foreign_frame(ld)

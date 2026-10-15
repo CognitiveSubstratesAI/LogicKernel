@@ -621,6 +621,60 @@ function call_term(
     end
 end
 
+# ORIGINAL: the Julia-facing query helper (L1c; user, 2026-10-15). Since L1c a put copies its term
+# onto the global stack and closing a foreign frame keeps global data, as upstream's
+# `PL_close_foreign_frame` does — with no collector until G1, a host that ran many queries through
+# open/close would grow the stack without bound. So this helper copies every answer OUT (resolved:
+# an interface term, no cell of the engine's in it) and then DISCARDS its foreign frame
+# (upstream's `PL_discard_foreign_frame`, as embedding code does with libswipl): `gTop`, the trail
+# and the local stack are back where they were. A host using the FLI itself must open and discard
+# frames the same way (README: "Memory at the boundary").
+"""
+    pl_query_answers(gd, ld, goal; limit = typemax(Int)) -> (answers, exception)
+
+Run `goal` (a symbol or a compound) in `user` and return its answers — each `goal` with its
+bindings resolved, a term of its own — at most `limit`, and the uncaught exception's ball (resolved)
+or `nothing`. The engine's stacks are left as they were found.
+"""
+function pl_query_answers(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T; limit::Int=typemax(Int)
+)::Tuple{Vector{T}, Union{Nothing, T}} where {T}
+    k = kind(goal)
+    (k === SYM || (k === EXPR && nchildren(goal) >= 1 && kind(child(goal, 1)) === SYM)) ||
+        throw(ArgumentError("pl_query_answers: the goal must be an atom or a compound"))
+    name = k === SYM ? goal : child(goal, 1)
+    arity = k === SYM ? 0 : nchildren(goal) - 1
+    fid = PL_open_foreign_frame(ld)
+    a = PL_new_term_refs(ld, max(arity, 1))
+    vm = PutVarMap()                                # the goal's variables shared across its arguments
+    for i in 1:arity
+        putSlotValue!(ld, a + i, child(goal, i + 1), vm)
+    end
+    proc = resolveProcedure(gd, name, arity, MODULE_user(gd))
+    qid = PL_open_query(gd, ld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
+    answers = T[]
+    ex = nothing
+    while length(answers) < limit
+        rc = PL_next_solution(gd, ld, qid)
+        if rc == PL_S_TRUE || rc == PL_S_LAST
+            kids = T[name]
+            for i in 1:arity
+                push!(kids, slotValue(ld, a + i))
+            end
+            push!(answers, resolve_term(ld, arity == 0 ? name : mk_expr(T, kids)))
+            rc == PL_S_LAST && break
+        elseif rc == PL_S_EXCEPTION
+            ex = resolve_term(ld, slotValue(ld, PL_exception(ld, qid) + 1))
+            break
+        else
+            break
+        end
+    end
+    PL_close_query(ld, qid)
+    PL_discard_foreign_frame(ld, fid)               # not closed: nothing of the query stays
+    return (answers, ex)
+end
+
 # PORT: pl-wam.c callCleanupHandler
 # DIVERGES: the frame is an index (it cannot move); the arguments are positions. NOT PORTED:
 # `startCritical`/`endCritical` around the handler (no signals).
@@ -845,7 +899,7 @@ function dbg_discardChoicesAfter(
         @assert kind(w) !== VAR
         ld.exception_term = 0
         discardChoicesAfter(ld, fr, reason)
-        setSlotValue!(ld, ld.exception_bin + 1, w)
+        _slot_store_value!(ld, ld.exception_bin + 1, w)          # a value (decision 1)
         ld.exception_term = ld.exception_bin
     else
         discardChoicesAfter(ld, fr, reason)
@@ -952,48 +1006,114 @@ function _call_procedure(ld::PL_local_data{T}, fr::Int, op::code)::Procedure{T} 
     return ((ld.frames[fr].clause::ClauseRef{T}).clause::Clause{T}).procedures[Int(op)]
 end
 
-# ── the argument pointer, the argument stack and the write-mode builder (decision 2, Q3) ─────────
-# What `ARGP` points at, as is (upstream's `*ARGP`).
+# ── the argument pointer and the argument stack ────────────────────────────────────────────────
+# What `ARGP` points at, as is (upstream's `*ARGP`): a slot's value; a cell of the global stack as
+# its variable term, which `deRef` follows (L1c); a term's child.
 function _argp_raw(ld::PL_local_data{T}, a::argp_t{T})::T where {T}
     if a.form == ARGP_SLOT
         return slotValue(ld, a.pos + 1)
-    elseif a.form == ARGP_CURSOR
-        return child(a.term, a.pos)
+    elseif a.form == ARGP_GLOBAL
+        return _cell_var(ld, a.pos)
     end
-    return ld.bcells[a.pos]
+    return child(a.term, a.pos)
 end
 
 # What `ARGP` points at, dereferenced (upstream's `deRef2(ARGP, k)`).
 _argp_deref(ld::PL_local_data{T}, a::argp_t{T}) where {T} = deRef(ld, _argp_raw(ld, a))::T
 
-# Write `t` where `ARGP` points (upstream's `*ARGP = t`): a builder cell, or a slot (body mode).
+# Write `t` where `ARGP` points (upstream's `*ARGP = t`): a slot (body mode), or a cell of the global
+# stack (write mode, L1c) as `t`'s word.
 function _argp_store!(ld::PL_local_data{T}, a::argp_t{T}, t::T)::Nothing where {T}
-    if a.form == ARGP_BUILD
-        ld.bcells[a.pos] = t
-    elseif a.form == ARGP_SLOT
+    if a.form == ARGP_SLOT
         setSlotValue!(ld, a.pos + 1, t)
+    elseif a.form == ARGP_GLOBAL
+        ld.gstack[a.pos] = _word_of!(ld, t)
     else
         error("_argp_store!: read mode never writes into the caller's term")
     end
     return nothing
 end
 
-# Write a reference to the fresh cell variable at global position `p` where `ARGP` points
-# (upstream's `setVar(*ARGP)` of a global cell): its word into a slot, its term into a builder
-# cell, which holds terms until L1c.
-function _argp_store_var!(ld::PL_local_data{T}, a::argp_t{T}, p::Int)::Nothing where {T}
-    if a.form == ARGP_SLOT
-        ld.slots[a.pos + 1] = makeRefG(p)
-    elseif a.form == ARGP_BUILD
-        ld.bcells[a.pos] = _cell_var(ld, p)
+# A fresh variable where `ARGP` points, referenced from slot `i` (upstream's `setVar(*ARGP);
+# varFrame(FR, n) = makeRefG(ARGP)`): on the global stack the ARGUMENT CELL is the variable (L1c);
+# a slot (a frame argument) gets a reference to a fresh cell, as the slot `i` does.
+function _argp_fresh_var!(ld::PL_local_data{T}, a::argp_t{T}, i::Int)::Nothing where {T}
+    if a.form == ARGP_GLOBAL
+        ld.gstack[a.pos] = word(0)                  # setVar(*ARGP)
+        ld.slots[i] = makeRefG(a.pos)               # varFrame(FR, n) = makeRefG(ARGP)
+    elseif a.form == ARGP_SLOT
+        ld.slots[a.pos + 1] = makeRefG(_slot_new_var!(ld, i))
     else
-        error("_argp_store_var!: read mode never writes into the caller's term")
+        error("_argp_fresh_var!: read mode never writes into the caller's term")
+    end
+    return nothing
+end
+
+# An unbound variable where `ARGP` points (upstream's `setVar(*ARGP)`): the argument cell itself on
+# the global stack (L1c); a reference to a fresh cell in a slot.
+function _argp_void!(ld::PL_local_data{T}, a::argp_t{T})::Nothing where {T}
+    if a.form == ARGP_GLOBAL
+        ld.gstack[a.pos] = word(0)
+    elseif a.form == ARGP_SLOT
+        ld.slots[a.pos + 1] = makeRefG(allocGlobalCells!(ld, 1))
+    else
+        error("_argp_void!: read mode never writes into the caller's term")
     end
     return nothing
 end
 
 # `ARGP + n`.
 _argp_add(a::argp_t{T}, n::Int) where {T} = argp_t{T}(a.form, a.pos + n, a.term)
+
+# `deRef2(ARGP, p)` on the WORDS (L1c): where ARGP's value lives — `DREF_CELL`: an unbound cell, its
+# position in the second word; `DREF_WORD`: an atom or a compound, its word; `DREF_TERM`: a value
+# with no word form (a value-table word, a `SLOT_VALUE`, a cursor's child), decided on terms.
+"`_argp_deref_word`: an unbound cell at the position returned."
+const DREF_CELL = 0x01
+"`_argp_deref_word`: an atom or a compound, the word returned."
+const DREF_WORD = 0x02
+"`_argp_deref_word`: a value with no word form: decide on terms (`_argp_deref`)."
+const DREF_TERM = 0x03
+
+# ORIGINAL: upstream's `deRef2(ARGP, p)` (pl-data.h) on the words of a slot or a cell (L1c).
+"ARGP dereferenced on the words: `(DREF_CELL, position)`, `(DREF_WORD, word)` or `(DREF_TERM, 0)`."
+@inline function _argp_deref_word(
+    ld::PL_local_data{T}, a::argp_t{T}
+)::Tuple{UInt8, word} where {T}
+    if a.form == ARGP_SLOT
+        w = ld.slots[a.pos + 1]
+        if !isRef(w)
+            (isAtomW(w) || _is_gcompound(w)) && return (DREF_WORD, w)
+            return (DREF_TERM, word(0))
+        end
+        p = unRef(w)
+    elseif a.form == ARGP_GLOBAL
+        p = a.pos
+    else
+        return (DREF_TERM, word(0))
+    end
+    while true
+        c = ld.gstack[p]
+        isVar(c) && return (DREF_CELL, word(p))
+        if isRef(c)
+            p = unRef(c)
+        elseif isAtomW(c) || _is_gcompound(c)
+            return (DREF_WORD, c)
+        else
+            return (DREF_TERM, word(0))
+        end
+    end
+end
+
+# ORIGINAL: upstream's `varFrame(FR, n) = (needsRef(*p) ? makeRefG(p) : *p)` (pl-vmi.c H_LIST_FF) for
+# slot `i` and global cell `p` (L1c): the cell's own word when it is an atom, a compound or a
+# reference; else a reference to the cell (an unbound cell, or a value-table word: no slot holds one).
+"Slot `i` takes global cell `p`'s word, or a reference to the cell (pl-vmi.c H_LIST_FF)."
+@inline function _slot_from_cell!(ld::PL_local_data, i::Int, p::Int)::Nothing
+    c = ld.gstack[p]
+    ld.slots[i] = (isRef(c) || isAtomW(c) || _is_gcompound(c)) ? c : makeRefG(p)
+    return nothing
+end
 
 # h_const's outcomes on the words (`_h_const_word!`): matched or bound, failed, or undecided.
 "`_h_const_word!`: the slot's word is the constant, or a cell it reaches was bound to it."
@@ -1009,7 +1129,7 @@ const H_CONST_TERMS = Int8(-1)
 # form — a reference to a cell, followed through the cells it is bound to (`deRef`), or an atom
 # word: `*k == c` matches; an unbound cell is bound (`bindConst`, pl-attvar.h `varBindConst`:
 # `*p = c`, trailed when `p < mark_bar` — `<=` here, `gTop` being the last cell in use, as
-# `Trail!` trails a cell); any other atom word fails. A value-table word (a value with no word form
+# `Trail!` trails a cell); any other atom word, and a compound (L1c), fails. A value-table word (a value with no word form
 # yet, a keyed variable among them) and a `SLOT_VALUE` slot are UNDECIDED: the VM decides on terms,
 # as before C6b, until L1d (unification over cells) gives them words.
 "h_const on slot `i`'s words for the atom word `c`: `H_CONST_MATCH`, `H_CONST_FAIL` or `H_CONST_TERMS`."
@@ -1021,12 +1141,11 @@ const H_CONST_TERMS = Int8(-1)
             k = ld.gstack[p]
             k == c && return H_CONST_MATCH                          # *k == c
             if isVar(k)                                             # canBind(*k)
-                p <= ld.mark_bar && push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))
-                ld.gstack[p] = c                                    # bindConst(k, c)
+                _bind_const!(ld, p, c)                              # bindConst(k, c)
                 return H_CONST_MATCH
             elseif isRef(k)
                 p = unRef(k)
-            elseif isAtomW(k)
+            elseif isAtomW(k) || _is_gcompound(k)
                 return H_CONST_FAIL
             else
                 return H_CONST_TERMS                                # a value-table word
@@ -1034,88 +1153,14 @@ const H_CONST_TERMS = Int8(-1)
         end
     end
     w == c && return H_CONST_MATCH
-    isAtomW(w) && return H_CONST_FAIL
+    (isAtomW(w) || _is_gcompound(w)) && return H_CONST_FAIL
     return H_CONST_TERMS                                            # SLOT_VALUE
 end
 
-# The argument stack's height, and the builder's, back to what query `q` saved (`aTop = QF->aSave`):
-# the builder is reset wherever upstream resets the argument stack (user, 2026-10-05).
+# The argument stack's height back to what query `q` saved (`aTop = QF->aSave`).
 function _reset_argument_stack!(ld::PL_local_data{T}, q::queryFrame{T})::Nothing where {T}
     ld.aTop = q.aSave
-    ld.nbframes = q.bSave
-    ld.bTop = q.bcSave
     return nothing
-end
-
-# Open a compound of `n` cells in the builder — the head symbol `head` in its first cell if `hashead`
-# — going into the parent's builder cell `cell`, into the frame slot at position `slot` (a body
-# argument, V4b), or (`cell` 0, `slot` -1) bound to the caller's unbound variable `var` when it is
-# closed. Every argument cell starts as a fresh variable, as upstream
-# `setVar`s every cell it allocates ("must clear if we want to do GC"): `H_VOID` and `H_VOID_N` skip
-# cells in write mode. Returns the `ARGP` of its first argument cell.
-function _bopen!(
-    ld::PL_local_data{T}, n::Int, head::T, hashead::Bool, cell::Int, slot::Int, var::T
-)::argp_t{T} where {T}
-    start = ld.bTop + 1
-    need = ld.bTop + n
-    if need > length(ld.bcells)
-        resize!(ld.bcells, max(need, 2 * length(ld.bcells)))
-    end
-    if hashead
-        ld.bcells[start] = head
-    end
-    first = hashead ? start + 1 : start
-    k = allocGlobalCells!(ld, need - first + 1)
-    for i in first:need                         # setVar(*ap++)
-        ld.bcells[i] = _cell_var(ld, k + i - first)
-    end
-    ld.bTop = need
-    nb = ld.nbframes + 1
-    if nb > length(ld.bframes)
-        resize!(ld.bframes, 2 * length(ld.bframes))
-    end
-    ld.bframes[nb] = bframe{T}(start, n, cell, slot, var)
-    ld.nbframes = nb
-    return argp_t{T}(ARGP_BUILD, hashead ? start + 1 : start, ld.placeholder)
-end
-
-# Close the innermost compound being built — a cell never written holds the fresh variable it was
-# opened with (the voids the compiler drops: `f(a,g(_))` ends in `h_rfunctor(g/1) h_pop`) — build it
-# (`mk_expr`) and deliver it.
-function _bclose!(ld::PL_local_data{T})::Nothing where {T}
-    fr = ld.bframes[ld.nbframes]
-    stop = fr.start + fr.n - 1
-    t = mk_expr(T, ld.bcells[(fr.start):stop])
-    ld.bTop = fr.start - 1
-    ld.nbframes -= 1
-    if fr.slot >= 0
-        setSlotValue!(ld, fr.slot + 1, t)               # a body argument: above lTop, untrailed
-    elseif fr.cell != 0
-        ld.bcells[fr.cell] = t                  # into the parent's cell, untrailed
-    else
-        Trail!(ld, var_key(fr.var), t)          # bindConst(p, c): the caller's variable
-    end
-    return nothing
-end
-
-# A compound of fresh variables: `head(V1, …, Vk)` when `hashead`, else `$expr(V1, …, Vn)` — what
-# upstream allocates (`setVar` of every cell) before binding the caller's variable to it. Under
-# `occurs_check` `true`/`error` the VM binds it at once and reads it (decision 3, DIVERGES).
-function _fresh_compound(
-    ld::PL_local_data{T}, head::T, hashead::Bool, n::Int
-)::T where {T}
-    nv = hashead ? n - 1 : n
-    k = allocGlobalCells!(ld, nv)
-    kids = Vector{T}(undef, n)
-    i = 1
-    if hashead
-        kids[1] = head
-        i = 2
-    end
-    for j in 0:(nv - 1)
-        kids[i + j] = _cell_var(ld, k + j)
-    end
-    return mk_expr(T, kids)
 end
 
 # Upstream's `LD->slow_unify` (pl-wam.c `updateAlerted`: `!PLFLAG_VMI_BUILTIN || occurs_check !=
@@ -1451,8 +1496,6 @@ function PL_open_query(
     @assert parentFrame(ld, top) == env
     q.saved_bfr = ld.BFR
     q.aSave = ld.aTop
-    q.bSave = ld.nbframes
-    q.bcSave = ld.bTop
     q.solutions = 0
     q.exception = 0
     q.registers_fr = 0                          # invalid
@@ -1460,7 +1503,7 @@ function PL_open_query(
     # fill frame arguments
     ap = argFrameP(f.base, 0)
     for n in 0:(arity - 1)
-        setSlotValue!(ld, ap + 1, linkValI(ld, slotValue(ld, args + n + 1)))
+        _slot_link!(ld, ap + 1, args + n + 1)          # *ap++ = linkValI(…) — words (L1c)
         ap += 1
     end
     ld.lTop = ap                                # lTop above the arguments
@@ -1687,9 +1730,7 @@ function PL_next_solution_guarded(
     bv_voffset::Int = 0                             # bvar_cont's voffset
     fexitdet_rc::foreign_t = FTRUE                  # I_FEXITDET's rc
     SLOW_UNIFY::Bool = false                        # unify_var_cont's copy of LD->slow_unify
-    bu_first::Bool = false                          # unify_var_cont came from B_UNIFY_FIRSTVAR
-    bu_hold::Int = 0                                # B_UNIFY_FIRSTVAR's holder cell (0: none)
-    bu_var::T = ph                                  # B_UNIFY_FIRSTVAR's fresh variable
+    dot_f::word = gd.functor_dot2                   # FUNCTOR_dot2 (L1c)
     bt_outofstack::Bool = false                     # b_throw's outofstack
 
     if qid == 0                                     # PL_open_query() failed
@@ -1857,18 +1898,25 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c H_VAR
-    # DIVERGES (decision 2): in write mode under `occurs_check=false` the dereferenced slot is COPIED
-    # into the cell — the address rules (`k > ARGP`, the trail space) disappear, as a keyed variable
-    # lives in no cell. Under `true`/`error` the VM never enters write mode (decision 3), so the
-    # `setVar(*ARGP)` branch is not reached.
+    # DIVERGES: in write mode under `occurs_check=false` the variable's value goes into the argument
+    # cell on the WORDS (`_cell_link!`: `makeRefG(k)` for an unbound cell, else `*k`) — the address
+    # test `k > ARGP` and the trail space disappear, as no variable lives in a frame slot (each is a
+    # cell). Under `true`/`error`: `setVar(*ARGP)` and unification decides, as upstream (L1c; the
+    # "never write under those flags" of decision 3 is retired with the builder).
     @label H_VAR
     hv_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     PC += 1
     if UMODE == uwrite
-        @assert ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE "write mode under occurs_check true/error (decision 3)"
-        _argp_store!(ld, ARGP, deRef(ld, slotValue(ld, hv_k + 1)))
-        ARGP = _argp_add(ARGP, 1)
-        @goto next_instruction
+        if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
+            if ARGP.form == ARGP_GLOBAL
+                _cell_link!(ld, ARGP.pos, hv_k + 1)
+            else
+                _argp_store!(ld, ARGP, deRef(ld, slotValue(ld, hv_k + 1)))
+            end
+            ARGP = _argp_add(ARGP, 1)
+            @goto next_instruction
+        end
+        _argp_void!(ld, ARGP)                       # setVar(*ARGP)
     end
     # First try the simple case.
     if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
@@ -1895,16 +1943,18 @@ function PL_next_solution_guarded(
     @goto unify_backtrack
 
     # PORT: pl-vmi.c H_FIRSTVAR
-    # DIVERGES: in write mode a fresh cell variable goes into the builder cell (a term, until L1c) and
-    # its reference into the slot; in read mode an argument slot's word is copied (`*ARGP`, L1b C6a)
-    # and a caller's child is stored as its word (`_slot_store!`: a cell variable its reference).
+    # DIVERGES: in read mode an argument slot's word is copied (`*ARGP`, L1b C6a), a global cell's
+    # word or a reference to it taken (`needsRef(*ARGP) ? makeRefG(ARGP) : *ARGP`, L1c), and a term's
+    # child stored as its word (`_slot_store!`: a cell variable its reference).
     @label H_FIRSTVAR
     hfv_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     PC += 1
     if UMODE == uwrite
-        _argp_store_var!(ld, ARGP, _slot_new_var!(ld, hfv_k + 1))   # setVar(*ARGP); makeRefG
+        _argp_fresh_var!(ld, ARGP, hfv_k + 1)       # setVar(*ARGP); varFrame = makeRefG(ARGP)
     elseif ARGP.form == ARGP_SLOT
         _slot_copy!(ld, hfv_k + 1, ARGP.pos + 1)            # varFrame(FR, *PC++) = *ARGP
+    elseif ARGP.form == ARGP_GLOBAL
+        _slot_from_cell!(ld, hfv_k + 1, ARGP.pos)
     else
         _slot_store!(ld, hfv_k + 1, _argp_raw(ld, ARGP))
     end
@@ -1912,43 +1962,56 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c H_FUNCTOR
-    # DIVERGES: the entry records the builders open (decision 2, Q3).
     @label H_FUNCTOR
-    pushArgumentStack(
-        ld, argstack_entry{T}(_argp_add(ARGP, 1), UMODE == uwrite, ld.nbframes)
-    )
+    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), UMODE == uwrite))
     @goto H_RFUNCTOR
 
     # PORT: pl-vmi.c H_RFUNCTOR
-    # DIVERGES: on an unbound argument under `occurs_check=false` a BUILDER is opened (decision 2, Q3)
-    # and the argument is bound when it closes; under `true`/`error` the compound of fresh variables
-    # is built and bound at once and READ (decision 3) — the same bindings, failures and error terms.
-    # A bound argument matches by Q2's rule (user, 2026-10-04): `f/k` a compound of k+1 children
-    # whose head is `f`, or whose head is not a symbol and unifies with `f`; `$expr/n` (literal 0)
-    # any compound of n children, read from its head.
+    # DIVERGES: decided on the WORDS (L1c): an unbound cell gets the compound of fresh arguments laid
+    # out at `gTop` and bound to it (`bindConst`), then write mode; a compound with the operand's
+    # functor is read in place (`argTermP`). The TERM path (Q2, user 2026-10-04; and a value with no
+    # word form): `f/k` matches a compound of k+1 children whose head is `f`, or whose head is not a
+    # symbol and unifies with `f`; `$expr/n` (literal 0) any compound of n children, read from its
+    # head — a stack compound crossing `$expr` read through the cold export; a KEYED variable is bound
+    # to a new stack compound through it.
     @label H_RFUNCTOR
     if UMODE == uwrite
         @goto B_RFUNCTOR
     end
     hf_f = PCc[PC]
     PC += 1
-    hf_lit = functor_literal(hf_f)
+    hf_fw = functor_operand_word(hf_f)
     hf_ar = functor_arity(hf_f)
-    hf_p = _argp_deref(ld, ARGP)
-    if kind(hf_p) === VAR                           # canBind(*p)
-        hf_n = hf_lit == 0 ? hf_ar : hf_ar + 1
-        hf_head = hf_lit == 0 ? ph : PCl[hf_lit]
-        if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
-            ARGP = _bopen!(ld, hf_n, hf_head, hf_lit != 0, 0, -1, hf_p)
-            UMODE = uwrite
-        else
-            hf_t = _fresh_compound(ld, hf_head, hf_lit != 0, hf_n)
-            Trail!(ld, var_key(hf_p), hf_t)         # bindConst(p, c)
-            ARGP = argp_t{T}(ARGP_CURSOR, hf_lit == 0 ? 1 : 2, hf_t)
+    hf_d, hf_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
+    if hf_d == DREF_CELL                            # canBind(*p)
+        hf_q = _alloc_compound!(ld, hf_fw, hf_ar)
+        _bind_const!(ld, Int(hf_w), consPtr(hf_q, TAG_COMPOUND | STG_GLOBAL))
+        ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)
+        UMODE = uwrite
+        @goto next_instruction
+    elseif hf_d == DREF_WORD
+        _is_gcompound(hf_w) || @goto unify_backtrack           # an atom
+        hf_q = valPtr(hf_w)
+        if ld.gstack[hf_q] == hf_fw                 # hasFunctor(*p, f)
+            ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)        # ARGP = argTermP(*p, 0)
+            @goto next_instruction
         end
+        (
+            functor_literal(hf_f) == 0 ||
+            nameFunctor(ld.functors, ld.gstack[hf_q]) == ld.atom_dexpr
+        ) ||
+            @goto unify_backtrack
+    end
+    hf_lit = functor_literal(hf_f)
+    hf_p = _argp_deref(ld, ARGP)
+    if kind(hf_p) === VAR                           # a keyed variable
+        hf_q = _alloc_compound!(ld, hf_fw, hf_ar)
+        Trail!(ld, var_key(hf_p), _compound_term(ld, hf_q))   # bindConst(p, c)
+        ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)
+        UMODE = uwrite
         @goto next_instruction
     end
-    if kind(hf_p) === EXPR                          # hasFunctor(*p, f)
+    if kind(hf_p) === EXPR                          # hasFunctor(*p, f), on the term (Q2)
         if hf_lit == 0
             if nchildren(hf_p) == hf_ar
                 ARGP = argp_t{T}(ARGP_CURSOR, 1, hf_p)
@@ -1972,16 +2035,31 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c H_LIST
     @label H_LIST
-    pushArgumentStack(
-        ld, argstack_entry{T}(_argp_add(ARGP, 1), UMODE == uwrite, ld.nbframes)
-    )
+    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), UMODE == uwrite))
     @goto H_RLIST
 
     # PORT: pl-vmi.c H_RLIST
-    # DIVERGES: as `H_RFUNCTOR` for `'[|]'/2`, a `$expr/3` included (Q2; user, 2026-10-05).
+    # DIVERGES: as `H_RFUNCTOR` for `'[|]'/2` (`FUNCTOR_dot2`), a `$expr/3` included on the term path
+    # (Q2; user, 2026-10-05).
     @label H_RLIST
     if UMODE == uwrite
         @goto B_RLIST
+    end
+    hl_d, hl_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
+    if hl_d == DREF_CELL                            # case TAG_VAR
+        hl_q = _alloc_compound!(ld, dot_f, 2)
+        _bind_const!(ld, Int(hl_w), consPtr(hl_q, TAG_COMPOUND | STG_GLOBAL))
+        ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)
+        UMODE = uwrite
+        @goto next_instruction
+    elseif hl_d == DREF_WORD
+        _is_gcompound(hl_w) || @goto unify_backtrack           # an atom
+        hl_q = valPtr(hl_w)
+        if ld.gstack[hl_q] == dot_f                 # valueTerm(w)->definition == FUNCTOR_dot2
+            ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)        # ARGP = argTermP(w, 0)
+            @goto next_instruction
+        end
+        nameFunctor(ld.functors, ld.gstack[hl_q]) == ld.atom_dexpr || @goto unify_backtrack
     end
     hl_p = _argp_deref(ld, ARGP)
     if kind(hl_p) === EXPR
@@ -1994,63 +2072,75 @@ function PL_next_solution_guarded(
             @goto next_instruction
         end
         @goto unify_backtrack
-    elseif kind(hl_p) === VAR
-        if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
-            ARGP = _bopen!(ld, 3, gd.atom_dot, true, 0, -1, hl_p)
-            UMODE = uwrite
-        else
-            hl_t = _fresh_compound(ld, gd.atom_dot, true, 3)
-            Trail!(ld, var_key(hl_p), hl_t)
-            ARGP = argp_t{T}(ARGP_CURSOR, 2, hl_t)
-        end
+    elseif kind(hl_p) === VAR                       # a keyed variable
+        hl_q = _alloc_compound!(ld, dot_f, 2)
+        Trail!(ld, var_key(hl_p), _compound_term(ld, hl_q))
+        ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)
+        UMODE = uwrite
         @goto next_instruction
     end
     @goto unify_backtrack
 
     # PORT: pl-vmi.c H_POP
-    # DIVERGES: popping the entry also closes the compounds being built since it was pushed
-    # (decision 2, Q3) — upstream filled them in place.
     @label H_POP
     hp_e = ld.astack[ld.aTop]                       # ARGP = *--aTop
     ld.aTop -= 1
     ARGP = hp_e.argp
     UMODE = hp_e.uwrite ? uwrite : uread
-    while ld.nbframes > hp_e.builders
-        _bclose!(ld)
-    end
     @goto next_instruction
 
     # PORT: pl-vmi.c H_LIST_FF
-    # DIVERGES: a cell is a term (see `H_FIRSTVAR`); a `$expr/3` matches as a list cell (Q2).
+    # DIVERGES: on the WORDS (L1c), as `H_RLIST`; a `$expr/3` matches as a list cell on the term path
+    # (Q2), and a keyed variable is bound through the cold export.
     @label H_LIST_FF
     hff_a = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     hff_b = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if UMODE == uwrite
-        hff_k = allocGlobalCells!(ld, 2)
-        hff_x = _cell_var(ld, hff_k)
-        hff_y = _cell_var(ld, hff_k + 1)
-        setSlotValue!(ld, hff_a + 1, hff_x)
-        setSlotValue!(ld, hff_b + 1, hff_y)
-        _argp_store!(ld, ARGP, mk_expr(T, T[gd.atom_dot, hff_x, hff_y]))   # *p = c
-    else
-        hff_p = _argp_deref(ld, ARGP)
-        if is_pair(hff_p) ||
-            (
-            _is_expr3(hff_p) &&
-            unify_simple_ptrs(ld, deRef(ld, child(hff_p, 1)), gd.atom_dot) == BOOLEX_TRUE
-        )
-            setSlotValue!(ld, hff_a + 1, child(hff_p, 2))
-            setSlotValue!(ld, hff_b + 1, child(hff_p, 3))
-        elseif kind(hff_p) === VAR
-            hff_k = allocGlobalCells!(ld, 2)
-            hff_x = _cell_var(ld, hff_k)
-            hff_y = _cell_var(ld, hff_k + 1)
-            setSlotValue!(ld, hff_a + 1, hff_x)
-            setSlotValue!(ld, hff_b + 1, hff_y)
-            Trail!(ld, var_key(hff_p), mk_expr(T, T[gd.atom_dot, hff_x, hff_y]))   # bindConst
+        hff_q = _alloc_compound!(ld, dot_f, 2)      # write:
+        ld.slots[hff_a + 1] = makeRefG(hff_q + 1)   # varFrame(FR, *PC++) = makeRefG(ap)
+        ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
+        hff_c = consPtr(hff_q, TAG_COMPOUND | STG_GLOBAL)
+        if ARGP.form == ARGP_GLOBAL                 # *p = c
+            ld.gstack[ARGP.pos] = hff_c
         else
-            @goto unify_backtrack
+            ld.slots[ARGP.pos + 1] = hff_c
+        end
+    else
+        hff_d, hff_w = _argp_deref_word(ld, ARGP)   # deRef2(ARGP, p)
+        if hff_d == DREF_WORD && _is_gcompound(hff_w) && ld.gstack[valPtr(hff_w)] == dot_f
+            hff_q = valPtr(hff_w)                   # isList(*p): p = argTermP(*p, 0)
+            _slot_from_cell!(ld, hff_a + 1, hff_q + 1)
+            _slot_from_cell!(ld, hff_b + 1, hff_q + 2)
+        elseif hff_d == DREF_CELL                   # canBind(*p)
+            hff_q = _alloc_compound!(ld, dot_f, 2)
+            ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
+            ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
+            _bind_const!(ld, Int(hff_w), consPtr(hff_q, TAG_COMPOUND | STG_GLOBAL))
+        elseif hff_d == DREF_WORD &&
+            !(
+            _is_gcompound(hff_w) &&
+            nameFunctor(ld.functors, ld.gstack[valPtr(hff_w)]) == ld.atom_dexpr
+        )
+            @goto unify_backtrack                   # an atom, or another functor
+        else                                        # the term path
+            hff_p = _argp_deref(ld, ARGP)
+            if is_pair(hff_p) ||
+                (
+                _is_expr3(hff_p) &&
+                unify_simple_ptrs(ld, deRef(ld, child(hff_p, 1)), gd.atom_dot) ==
+                BOOLEX_TRUE
+            )
+                setSlotValue!(ld, hff_a + 1, child(hff_p, 2))
+                setSlotValue!(ld, hff_b + 1, child(hff_p, 3))
+            elseif kind(hff_p) === VAR              # a keyed variable
+                hff_q = _alloc_compound!(ld, dot_f, 2)
+                ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
+                ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
+                Trail!(ld, var_key(hff_p), _compound_term(ld, hff_q))   # bindConst
+            else
+                @goto unify_backtrack
+            end
         end
     end
     ARGP = _argp_add(ARGP, 1)
@@ -2058,12 +2148,14 @@ function PL_next_solution_guarded(
 
     # ── body instructions: a body's arguments, and the head's write mode (pl-vmi.c) ─────────────
     # PORT: pl-vmi.c B_ATOM
-    # DIVERGES: the operand as `H_ATOM`'s; an argument slot gets the atom WORD (L1b C6b), a builder
-    # cell the literal (it holds terms until L1c), as does an opaque literal (no word).
+    # DIVERGES: the operand as `H_ATOM`'s; a slot or a global cell gets the atom WORD (L1b C6b, L1c);
+    # an opaque literal (no word) its term.
     @label B_ATOM
     hc_w = atom_operand_word(PCc[PC])
     if hc_w != 0 && ARGP.form == ARGP_SLOT
         ld.slots[ARGP.pos + 1] = hc_w               # *ARGP++ = code2atom(*PC++)
+    elseif hc_w != 0 && ARGP.form == ARGP_GLOBAL
+        ld.gstack[ARGP.pos] = hc_w
     else
         _argp_store!(ld, ARGP, PCl[atom_literal(PCc[PC])])
     end
@@ -2079,10 +2171,12 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c B_NIL
-    # DIVERGES: as `B_ATOM`: an argument slot gets the word, a builder cell the term.
+    # DIVERGES: as `B_ATOM`: a slot or a global cell gets the word.
     @label B_NIL
     if ARGP.form == ARGP_SLOT
         ld.slots[ARGP.pos + 1] = nil_w              # *ARGP++ = ATOM_nil
+    elseif ARGP.form == ARGP_GLOBAL
+        ld.gstack[ARGP.pos] = nil_w
     else
         _argp_store!(ld, ARGP, gd.atom_nil)
     end
@@ -2112,13 +2206,16 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c B_ARGVAR
-    # DIVERGES: the variable's value, dereferenced, into the builder cell. A keyed variable is its own
-    # reference and no cell is bound to point at another (decision 2), so the test that chooses the
-    # direction of the link (`ARGP < k`) and the trail-space check disappear.
+    # DIVERGES: on the WORDS into a global cell (L1c: `_cell_link!`); a keyed variable is its own
+    # reference and no cell lies in a frame (decision 2), so the test that chooses the direction of
+    # the link (`ARGP < k`) and the trail-space check disappear.
     @label B_ARGVAR
-    _argp_store!(
-        ld, ARGP, deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
-    )
+    bav_i = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1
+    if ARGP.form == ARGP_GLOBAL
+        _cell_link!(ld, ARGP.pos, bav_i)
+    else
+        _argp_store!(ld, ARGP, deRef(ld, slotValue(ld, bav_i)))
+    end
     PC += 1
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -2146,160 +2243,141 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c bvar_cont
     # DIVERGES: a helper label, its argument `bv_voffset`. No `globaliseVar`: a keyed variable lives in
-    # no cell (decision 2), so the slot's term is stored as is (`linkValI`). Into an argument slot it
-    # moves WORDS (`_slot_link!`, L1b C6a); into a builder cell, a term.
+    # no cell (decision 2). It moves WORDS: into an argument slot (`_slot_link!`, L1b C6a), into a
+    # global cell (`_cell_link!`, L1c).
     @label bvar_cont
     if ARGP.form == ARGP_SLOT
         _slot_link!(ld, ARGP.pos + 1, varFrameP(ld.frames[FR].base, bv_voffset) + 1)
+    elseif ARGP.form == ARGP_GLOBAL
+        _cell_link!(ld, ARGP.pos, varFrameP(ld.frames[FR].base, bv_voffset) + 1)
     else
-        _argp_store!(
-            ld, ARGP,
-            linkValI(ld, slotValue(ld, varFrameP(ld.frames[FR].base, bv_voffset) + 1))
-        )
+        error("bvar_cont: read mode never writes into the caller's term")
     end
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_ARGFIRSTVAR
-    # DIVERGES: a fresh cell variable: its term into the builder cell (until L1c), its reference into
-    # the slot (`setVar` + `makeRefG`).
+    # DIVERGES: in a slot (a frame argument) a fresh cell, referenced from both slots; in a global cell
+    # (L1c) the cell itself, as upstream (`setVar(*ARGP); varFrame = makeRefG(ARGP)`).
     @label B_ARGFIRSTVAR
-    _argp_store_var!(   # setVar(*ARGP); varFrame(FR, *PC++) = makeRefG(ARGP++)
-        ld, ARGP, _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
-    )
+    _argp_fresh_var!(ld, ARGP, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
     PC += 1
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_FIRSTVAR
     # DIVERGES: the global stack grows on demand, so no `ENSURE_GLOBAL_SPACE`; the cell's reference
-    # into the slot and the argument as words (L1b C6a).
+    # into the slot and where ARGP points, as words (L1b C6a, L1c).
     @label B_FIRSTVAR
     bfv_p = _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)  # *k = w
     PC += 1
-    _argp_store_var!(ld, ARGP, bfv_p)               # *ARGP++ = w
+    if ARGP.form == ARGP_GLOBAL                     # *ARGP++ = w
+        ld.gstack[ARGP.pos] = makeRefG(bfv_p)
+    else
+        ld.slots[ARGP.pos + 1] = makeRefG(bfv_p)
+    end
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_VOID
-    # DIVERGES: a fresh GLOBAL cell, where upstream leaves the argument an unbound local cell: a local
-    # cell read as a term needs a variable naming it, which arrives when the stamp falls (L1f).
+    # DIVERGES: in a slot, a fresh GLOBAL cell referenced, where upstream leaves the argument an
+    # unbound local cell: a local cell read as a term needs a variable naming it, which arrives when
+    # the stamp falls (L1f). A global cell is set unbound, as upstream (L1c).
     @label B_VOID
-    _argp_store_var!(ld, ARGP, allocGlobalCells!(ld, 1))  # setVar(*ARGP++)
+    _argp_void!(ld, ARGP)                           # setVar(*ARGP++)
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_FUNCTOR
-    # DIVERGES: the entry records the builders open (decision 2, Q3); no mode bit, as upstream.
     @label B_FUNCTOR
-    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), false, ld.nbframes))
+    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), false))
     @goto B_RFUNCTOR
 
     # PORT: pl-vmi.c B_RFUNCTOR
-    # DIVERGES: the compound is built in a builder (decision 2, Q3), and goes into the current builder
-    # cell — inside a compound — or into the frame slot `ARGP` points at — a body argument (since V4b) —
-    # when it is closed: upstream puts the pointer there at once and fills the cells in place.
+    # DIVERGES: the compound laid out on the global stack in one call (`_alloc_compound!`: the functor
+    # word and `setVar` arguments at `gTop`); its word goes where ARGP points — a frame slot (a body
+    # argument) or a global cell (inside a compound) — as upstream's (L1c).
     @label B_RFUNCTOR
     bf_f = PCc[PC]
     PC += 1
-    bf_lit = functor_literal(bf_f)
-    bf_ar = functor_arity(bf_f)
-    @assert ARGP.form != ARGP_CURSOR "B_RFUNCTOR: a body argument is written, never read"
-    ARGP = _bopen!(
-        ld, bf_lit == 0 ? bf_ar : bf_ar + 1, bf_lit == 0 ? ph : PCl[bf_lit], bf_lit != 0,
-        ARGP.form == ARGP_BUILD ? ARGP.pos : 0, ARGP.form == ARGP_SLOT ? ARGP.pos : -1, ph
-    )
+    bf_q = _alloc_compound!(ld, functor_operand_word(bf_f), functor_arity(bf_f))
+    bf_c = consPtr(bf_q, TAG_COMPOUND | STG_GLOBAL)     # consPtr(gTop, TAG_COMPOUND|STG_GLOBAL)
+    if ARGP.form == ARGP_SLOT                       # *ARGP = …
+        ld.slots[ARGP.pos + 1] = bf_c
+    elseif ARGP.form == ARGP_GLOBAL
+        ld.gstack[ARGP.pos] = bf_c
+    else
+        error("B_RFUNCTOR: a body argument is written, never read")
+    end
+    ARGP = argp_t{T}(ARGP_GLOBAL, bf_q + 1, ph)     # ARGP = gTop; *ARGP++ = f
     @goto next_instruction
 
     # PORT: pl-vmi.c B_LIST
-    # DIVERGES: as `B_FUNCTOR`.
     @label B_LIST
-    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), false, ld.nbframes))
+    pushArgumentStack(ld, argstack_entry{T}(_argp_add(ARGP, 1), false))
     @goto B_RLIST
 
     # PORT: pl-vmi.c B_RLIST
-    # DIVERGES: as `B_RFUNCTOR`, for a list cell.
+    # DIVERGES: as `B_RFUNCTOR`, for `FUNCTOR_dot2`.
     @label B_RLIST
-    @assert ARGP.form != ARGP_CURSOR "B_RLIST: a body argument is written, never read"
-    ARGP = _bopen!(
-        ld, 3, gd.atom_dot, true, ARGP.form == ARGP_BUILD ? ARGP.pos : 0,
-        ARGP.form == ARGP_SLOT ? ARGP.pos : -1, ph
-    )
+    bl_q = _alloc_compound!(ld, dot_f, 2)
+    bl_c = consPtr(bl_q, TAG_COMPOUND | STG_GLOBAL)
+    if ARGP.form == ARGP_SLOT
+        ld.slots[ARGP.pos + 1] = bl_c
+    elseif ARGP.form == ARGP_GLOBAL
+        ld.gstack[ARGP.pos] = bl_c
+    else
+        error("B_RLIST: a body argument is written, never read")
+    end
+    ARGP = argp_t{T}(ARGP_GLOBAL, bl_q + 1, ph)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_POP
-    # DIVERGES: popping the entry also closes the compounds built since it was pushed (decision 2, Q3)
-    # — the outermost into its frame slot. `UMODE` is untouched, as upstream.
     @label B_POP
     bp_e = ld.astack[ld.aTop]                       # ARGP = *--aTop
     ld.aTop -= 1
     ARGP = bp_e.argp
-    while ld.nbframes > bp_e.builders
-        _bclose!(ld)
-    end
     @goto next_instruction
 
     # ── unification and comparison in the body (pl-vmi.c, O_COMPILE_IS), V9a ─────────────────────
     # PORT: pl-vmi.c B_UNIFY_FIRSTVAR
-    # DIVERGES: the slot gets a fresh variable (decision 2); see `unify_var_cont` for the term.
+    # DIVERGES: the slot gets a fresh CELL variable (no unbound slot: decision 2), referenced.
     @label B_UNIFY_FIRSTVAR
-    bu_var = _cell_var(ld, allocGlobalCells!(ld, 1))
     ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
     PC += 1
-    setSlotValue!(ld, ARGP.pos + 1, bu_var)                 # setVar(*ARGP): needed for GC
-    bu_first = true
+    ld.slots[ARGP.pos + 1] = makeRefG(allocGlobalCells!(ld, 1))   # setVar(*ARGP): needed for GC
     @goto unify_var_cont
 
     # PORT: pl-vmi.c B_UNIFY_VAR
     @label B_UNIFY_VAR
     ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
     PC += 1
-    bu_first = false
     @goto unify_var_cont
 
     # PORT: pl-vmi.c unify_var_cont
-    # DIVERGES: a helper label; `bu_first` says which instruction came. No `globaliseVar`: a keyed
-    # variable lives in no cell (decision 2).
-    # * The slow path (`occurs_check` true or error) writes the two arguments of `=/2` above `lTop`,
-    #   the second a fresh variable. After `B_UNIFY_VAR` the head code then runs in READ mode over
-    #   that fresh variable, where upstream sets write mode: it builds the term as a head argument is
-    #   built under `true`/`error` (a fresh compound, bound and read; decision 3), so the VM never
-    #   writes a head in write mode under those flags (user, 2026-10-06: 2a).
-    # * The fast path after `B_UNIFY_FIRSTVAR` builds the term into one HOLDER cell of the builder
-    #   (`bu_hold`), and `B_UNIFY_EXIT` binds the slot's fresh variable to it. Upstream points the
-    #   slot at the compound at once; the kernel builds a term when it closes (decision 2). A use of
-    #   the variable inside the term reads the fresh variable, so `X = f(X)` is cyclic, as upstream's
-    #   (user, 2026-10-06: 3a); the binding is trailed where upstream writes the slot.
+    # DIVERGES: a helper label. No `globaliseVar`: a slot's variable is a cell already, and a keyed
+    # variable lives in no cell (decision 2). The slow path (`occurs_check` true or error) writes the
+    # two arguments of `=/2` above `lTop`, the slot's word copied (`*ARGP++ = *k`) and the second a
+    # fresh variable, then the head code runs in WRITE mode, as upstream's (L1c: the read-mode
+    # detour of decision 3 is retired with the builder). The fast path runs the head code in read
+    # mode on the slot: on its fresh variable `H_RFUNCTOR` binds it to the compound it lays out on
+    # the global stack, as upstream binds the frame cell — so `X = f(X)` is cyclic, as upstream's.
     @label unify_var_cont
     SLOW_UNIFY = _slow_unify(ld)
     if SLOW_UNIFY
-        uvc_k = slotValue(ld, ARGP.pos + 1)              # Word k = ARGP
+        uvc_k = ARGP.pos + 1                        # Word k = ARGP
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, uvc_k)               # *ARGP++ = *k
+        _slot_copy!(ld, ARGP.pos + 1, uvc_k)        # *ARGP++ = *k
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, _cell_var(ld, allocGlobalCells!(ld, 1)))   # setVar(*ARGP)
-        UMODE = bu_first ? uwrite : uread           # must write for GC to work (see above)
-        bu_hold = 0
+        _argp_void!(ld, ARGP)                       # setVar(*ARGP)
+        UMODE = uwrite                              # must write for GC to work
         @goto next_instruction
-    end
-    if bu_first
-        bu_hold = ld.bTop + 1
-        if bu_hold > length(ld.bcells)
-            resize!(ld.bcells, max(bu_hold, 2 * length(ld.bcells)))
-        end
-        ld.bcells[bu_hold] = bu_var
-        ld.bTop = bu_hold
-        ARGP = argp_t{T}(ARGP_BUILD, bu_hold, ph)
-    else
-        bu_hold = 0
     end
     UMODE = uread                                   # needed?
     @goto next_instruction
 
     # PORT: pl-vmi.c B_UNIFY_EXIT
-    # DIVERGES: after `B_UNIFY_FIRSTVAR` the fast path binds the slot's fresh variable to the term
-    # in the holder (see `unify_var_cont`); the new frame of the slow path is the record pushed at
-    # `lTop`, as `I_CALL`'s.
+    # DIVERGES: the new frame of the slow path is the record pushed at `lTop`, as `I_CALL`'s.
     # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
     @label B_UNIFY_EXIT
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
@@ -2308,12 +2386,6 @@ function PL_next_solution_guarded(
         DEF = gd.procedures_equals2.definition
         setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
         @goto normal_call
-    end
-    if bu_hold != 0
-        bue_t = ld.bcells[bu_hold]
-        ld.bTop = bu_hold - 1
-        bu_hold = 0
-        Trail!(ld, var_key(bu_var), bue_t)
     end
     @goto next_instruction
 
@@ -2352,9 +2424,9 @@ function PL_next_solution_guarded(
     if _slow_unify(ld)
         setSlotValue!(ld, bufv_f + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, slotValue(ld, bufv_f + 1))
+        _slot_copy!(ld, ARGP.pos + 1, bufv_f + 1)
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, slotValue(ld, bufv_v + 1))
+        _slot_copy!(ld, ARGP.pos + 1, bufv_v + 1)
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
@@ -2370,9 +2442,9 @@ function PL_next_solution_guarded(
     PC += 2
     if _slow_unify(ld)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, slotValue(ld, buvv_1 + 1))
+        _slot_copy!(ld, ARGP.pos + 1, buvv_1 + 1)
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, slotValue(ld, buvv_2 + 1))
+        _slot_copy!(ld, ARGP.pos + 1, buvv_2 + 1)
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
@@ -2400,7 +2472,7 @@ function PL_next_solution_guarded(
     if _slow_unify(ld)
         setSlotValue!(ld, bufc_f + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, slotValue(ld, bufc_f + 1))
+        _slot_copy!(ld, ARGP.pos + 1, bufc_f + 1)
         ARGP = _argp_add(ARGP, 1)
         _argp_store!(ld, ARGP, bufc_c)
         ARGP = _argp_add(ARGP, 1)
@@ -2419,7 +2491,7 @@ function PL_next_solution_guarded(
     PC += 2
     if _slow_unify(ld)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, slotValue(ld, buvc_k + 1))
+        _slot_copy!(ld, ARGP.pos + 1, buvc_k + 1)
         ARGP = _argp_add(ARGP, 1)
         _argp_store!(ld, ARGP, buvc_c)
         ARGP = _argp_add(ARGP, 1)
@@ -2679,8 +2751,8 @@ function PL_next_solution_guarded(
         end
     end
     for mc_i in 1:mc_arity                          # the arguments of the goal
-        setSlotValue!(
-            ld, argFrameP(mc_nb, mc_i - 1) + 1, linkValI(ld, child(mc_goal, mc_i + 1))
+        setSlotValue!(      # linkValI(argTermP(goal, i)): a cell variable as its reference (L1c)
+            ld, argFrameP(mc_nb, mc_i - 1) + 1, child(mc_goal, mc_i + 1)
         )
     end
     mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
@@ -2918,15 +2990,14 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c L_VAR
-    # DIVERGES: the value, dereferenced: a keyed variable is its own reference, so the chain is
-    # followed to its end and an unbound variable is copied as itself (decision 2).
+    # DIVERGES: on the WORDS (L1c, `_slot_link!`): the references followed while their cells are
+    # bound, an unbound cell as a reference to it, an atom or a compound as its word (`*v1 = w`); a
+    # value with no word form dereferenced, a keyed variable being its own reference (decision 2).
     @label L_VAR
-    setSlotValue!(
+    _slot_link!(
         ld,
         varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
-        deRef(
-            ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1)
-        )
+        varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1
     )
     PC += 2
     @goto next_instruction
