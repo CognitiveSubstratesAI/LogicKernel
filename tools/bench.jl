@@ -39,6 +39,56 @@
 #
 # Profile is not a dependency: it comes from the global environment (see
 # tools/repl.jl). swipl comes from PATH; without it the report has no upstream column.
+
+# ── THE START GATE (user, 2026-10-15): quiet by mechanism, not by discipline ────────────────────
+# A timed run REFUSES to start, with its reason, when the 1-minute load average is above
+# BENCH_MAX_LOAD or any other julia process is alive — the VS Code language server, a warm daemon,
+# a test run. MEASURED that morning: C3's baseline ran beside the language server's indexing and
+# swipl's own nreverse doubled (IQR 45 µs on a 68 µs median). Checked HERE, before anything loads,
+# so the bench's own start-up is not its load; both checks go into the raw file's header. The
+# diagnostic reports (--descend, --code, --flame) time nothing and are not gated.
+"The highest 1-minute load average a timed run starts under."
+const BENCH_MAX_LOAD = 0.5
+
+"The other julia processes, `pid command line` each (this one excluded)."
+function _other_julias()::Vector{String}
+    out = String[]
+    for d in readdir("/proc")
+        pid = tryparse(Int, d)
+        (pid === nothing || pid == getpid()) && continue
+        comm, cmd = try
+            (
+                String(strip(read("/proc/$d/comm", String))),
+                strip(replace(read("/proc/$d/cmdline", String), '\0' => ' '))
+            )
+        catch
+            continue                                    # it exited meanwhile
+        end
+        startswith(comm, "julia") && push!(out, "$pid $(first(cmd, 100))")
+    end
+    return out
+end
+
+"The start gate's readings: the load average and the other julia processes (none, or it refused)."
+const START_GATE =
+    let timing = !any(a -> occursin(r"^--(descend|code|flame)(=|$)", a), ARGS)
+        load = Sys.loadavg()[1]
+        julias = _other_julias()
+        why = String[]
+        timing && load > BENCH_MAX_LOAD &&
+            push!(
+                why,
+                "the 1-minute load average is $(round(load; digits=2)) > $BENCH_MAX_LOAD"
+            )
+        timing && !isempty(julias) &&
+            push!(why, "other julia processes are running: " * join(julias, "; "))
+        isempty(why) || error(
+            "tools/bench.jl: REFUSED — " * join(why, "; ") *
+            ". Stop them (the VS Code Julia extension too) and let the load fall, then rerun."
+        )
+        (; load, julias)
+    end
+
 using LogicKernel, Profile, Printf, Serialization, InteractiveUtils, Dates
 using LogicKernel:
     is_variant_ptr,
@@ -1386,6 +1436,11 @@ function main(args)
             "$(round(Sys.total_physical_memory() / 2^30; digits=1)) GiB")
         println(io, "# commit: $sha$(dirty ? " (+ uncommitted changes)" : "")")
         println(io, "# date: $(Dates.format(now_utc, "yyyy-mm-dd HH:MM:SS")) UTC")
+        println(
+            io, "# start gate: 1-minute load average $(round(START_GATE.load; digits=2)) ",
+            "(≤ $BENCH_MAX_LOAD), other julia processes: ",
+            isempty(START_GATE.julias) ? "none" : join(START_GATE.julias, "; ")
+        )
         println(
             io, "# $(swv); julia $(VERSION); $runs runs per side, interleaved; quiet=$quiet"
         )
