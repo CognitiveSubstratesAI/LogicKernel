@@ -195,7 +195,12 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # which holds every bound value until its kind has a word form (atoms and small integers: stage C3;
 # floats, big numbers, strings: C4; compounds: L1c). Each entry is pinned by a BOX, a word of its own
 # on the global stack (`vbox`), so when `Undo` lowers `gTop` the table is truncated with it: an
-# entry never outlives the stack it shadows. `trail` is `stacks.trail` (its length is `tTop`) and holds the keys of
+# entry never outlives the stack it shadows. Since stage C3 an atom and a small integer are their
+# own words (`TAG_ATOM`, `consInt`), off the table. An engine's atom words name atoms in its OWN
+# atom table (`atoms`), DIVERGES from upstream's one `GD->atoms` while nothing outside the engine
+# holds a word (clauses and records are values) — 255 test lines make an engine with no database —
+# until clause code carries words; `atom_words` and `atom_values` cache the symbol ↔ atom
+# conversion both ways, so neither direction looks text up twice. `trail` is `stacks.trail` (its length is `tTop`) and holds the keys of
 # both kinds. A cyclic link or
 # a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
 # overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
@@ -256,6 +261,9 @@ mutable struct PL_local_data{T}
     gTop::Int                                                   # stacks.global.top
     vtable::Vector{T}                                           # (the value table, L1b: see above)
     vbox::Vector{Int}                                           # … each entry's box on the stack
+    atoms::atoms_t                                              # (the engine's atom table, L1b C3)
+    atom_words::Dict{UInt64, UInt64}                            # … a symbol's sym_key → its atom
+    atom_values::Vector{Union{Nothing, T}}                      # … an atom's index → its symbol
     mark_bar::Int                                               # mark_bar
     stamp_next::UInt64                                          # (the engine's reserved stamps:
     stamp_end::UInt64                                           #  stamp_next until stamp_end)
@@ -335,6 +343,7 @@ function PL_local_data{T}() where {T}
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[],
         UInt64[], UInt64[], 0, T[], Int[],
+        do_init_atoms!(atoms_t()), Dict{UInt64, UInt64}(), Union{Nothing, T}[],
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,

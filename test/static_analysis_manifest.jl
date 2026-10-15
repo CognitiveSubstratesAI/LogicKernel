@@ -128,6 +128,13 @@ _manifest_per_type(T) = (
     (LK._cell_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._truncate_vtable!, Tuple{LK.PL_local_data{T}}, true),
     (LK._is_box, Tuple{LK.PL_local_data{T}, Int}, true),
+    # the atom words (L1b stage C3): the write fills the caches; the read allocates nothing (a miss
+    # only builds its error, inside the throw)
+    (LK._atom_word!, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK._atom_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._atom_value_error, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK._atom_values_hold!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.setSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
@@ -1804,7 +1811,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.consPtr, Tuple{Int, UInt64}, true), (LK.makeRefG, Tuple{Int}, true),
     (LK.makeRefLok, Tuple{Int}, true), (LK.mkIndHdr, Tuple{Int, UInt64}, true),
     (LK.mkPadHdr, Tuple{Int}, true), (LK.mkBlobHdr, Tuple{Int, Int, UInt64}, true),
-    (LK.mpz_size_stack, Tuple{Int32}, true), (LK.mpq_size_stack, Tuple{Int32}, true)
+    (LK.mpz_size_stack, Tuple{Int32}, true), (LK.mpq_size_stack, Tuple{Int32}, true),
+    (LK.AtomNotRepresentableError, Tuple{Vector{UInt32}}, false)
 )
 
 """

@@ -860,8 +860,11 @@ graph LR
     pl_inline --> pl_atom
     pl_inline --> pl_funct
     pl_inline --> pl_global
+    pl_inline --> pl_ressymbol
     pl_inline --> pl_copyterm
     pl_inline --> pl_alloc
+    pl_inline --> pl_fli
+    pl_inline --> os_pl_text
     pl_prims --> term_interface
     pl_prims --> default_term
     pl_prims --> pl_incl
