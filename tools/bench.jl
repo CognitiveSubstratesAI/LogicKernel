@@ -141,7 +141,7 @@ const Q_ALL, Q_ONE = _v(), gnd_term(BT, 500)
 function _vm_query(ld::PL_local_data{BT}, a1::BT)::Int
     fid = LogicKernel.PL_open_foreign_frame(ld)
     args = LogicKernel.PL_new_term_refs(ld, 2)
-    LK.putSlotValue!(ld, args + 1, a1)                                         # term reference args + 0
+    LogicKernel.putSlotValue!(ld, args + 1, a1)                                         # term reference args + 0
     qid = LogicKernel.PL_open_query(
         CP_GD, ld, nothing, LogicKernel.PL_Q_NORMAL, CP_PROC, args
     )
@@ -664,7 +664,7 @@ const RD_PROC = LogicKernel.isCurrentProcedure(
 function _vm_read()::Int
     fid = LogicKernel.PL_open_foreign_frame(NR_LD)
     a = LogicKernel.PL_new_term_refs(NR_LD, 2)
-    LK.putSlotValue!(NR_LD, a + 2, _a(Symbol(RD_TEXT)))
+    LogicKernel.putSlotValue!(NR_LD, a + 2, _a(Symbol(RD_TEXT)))
     qid = LogicKernel.PL_open_query(
         NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, RD_PROC, a
     )
@@ -681,12 +681,12 @@ end
 const WR_TERM = let
     fid = LogicKernel.PL_open_foreign_frame(NR_LD)
     a = LogicKernel.PL_new_term_refs(NR_LD, 2)
-    LK.putSlotValue!(NR_LD, a + 2, _a(Symbol(RD_TEXT)))
+    LogicKernel.putSlotValue!(NR_LD, a + 2, _a(Symbol(RD_TEXT)))
     qid = LogicKernel.PL_open_query(
         NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, RD_PROC, a
     )
     @assert LogicKernel.PL_next_solution(NR_GD, NR_LD, qid) == LogicKernel.PL_S_TRUE
-    t = LogicKernel.resolve_term(NR_LD, LK.slotValue(NR_LD, a + 1))
+    t = LogicKernel.resolve_term(NR_LD, LogicKernel.slotValue(NR_LD, a + 1))
     LogicKernel.PL_close_query(NR_LD, qid)
     LogicKernel.PL_close_foreign_frame(NR_LD, fid)
     t
@@ -695,7 +695,7 @@ const WR_PROLOG = "wr_term((" * chop(RD_TEXT) * ")).\n"
 function _vm_write()::Int
     fid = LogicKernel.PL_open_foreign_frame(NR_LD)
     a = LogicKernel.PL_new_term_refs(NR_LD, 2)
-    LK.putSlotValue!(NR_LD, a + 1, WR_TERM)
+    LogicKernel.putSlotValue!(NR_LD, a + 1, WR_TERM)
     qid = LogicKernel.PL_open_query(
         NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, RD_PROC, a
     )
