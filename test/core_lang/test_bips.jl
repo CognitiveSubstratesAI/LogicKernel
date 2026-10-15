@@ -28,7 +28,7 @@ _border(a, b) = (:<, :(=), :>)[compareStandard(a, b) + 2]
 function _bcompare_formal(o::_BT, x::_BT, y::_BT)
     LK = LogicKernel
     gd = LK.PL_global_data{_BT}()
-    ld = LK.PL_local_data{_BT}()
+    ld = LK.PL_local_data{_BT}(gd)
     p = LK.isCurrentProcedure(sym_key(_ba(:compare)), 3, LK.MODULE_system(gd))
     a = LK.PL_new_term_refs(ld, 3)
     pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)

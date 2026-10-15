@@ -118,7 +118,7 @@ end
     sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)
     "Strip the term `t` with module `m` given: `(ok, module, plain, the pending formal)`."
     function strip(t, m=0)
-        ld = LK.PL_local_data{_MP}()
+        ld = LK.PL_local_data{_MP}(gd)
         r = LK.PL_new_term_refs(ld, 2)
         LK.putSlotValue!(ld, r + 1, t)
         ok, mod = LK.PL_strip_module_ex(gd, ld, r, m, r + 1)
@@ -150,7 +150,7 @@ end
     end
     @test err isa LK.NotPortedError{_MP} && err.step == "R2"
     # a cyclic chain X = user:X: stripModuleName gives up after 100 levels
-    ld = LK.PL_local_data{_MP}()
+    ld = LK.PL_local_data{_MP}(gd)
     X = _mpv()
     @test LK.pl_unify!(ld, X, _mpf(":", _mps(:user), X))
     ok, _, _ = LK.stripModuleName(ld, X)

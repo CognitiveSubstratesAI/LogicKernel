@@ -35,7 +35,7 @@ const _TW_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 # The database every query of this file runs in.
 const _TW_GD = LK.PL_global_data{_TW}()
-const _TW_LD = LK.PL_local_data{_TW}()
+const _TW_LD = LK.PL_local_data{_TW}(_TW_GD)
 
 """
 Run the predicate `name` on `args` through the query API: `(rc, answers)` — the resolved
@@ -292,7 +292,8 @@ if _TW_SWIPL !== nothing
     ]
     for (k, (ops, texts)) in enumerate(zip(_tw_opsets, _tw_optexts))
         @testset "user operators, set $k: read, then written five ways, as swipl" begin
-            gd, ld = LK.PL_global_data{_TW}(), LK.PL_local_data{_TW}()
+            gd = LK.PL_global_data{_TW}()
+            ld = LK.PL_local_data{_TW}(gd)
             for (p, t, n) in ops
                 name = n == "[]" ? mk_nil(_TW) : _tws(n)
                 @test _tw_call(
@@ -453,7 +454,7 @@ end
     @test rc === :true && lk_value(ans[2]) == "\"a\0b\""
 
     # a cyclic term: X = f(X) with the occurs check off (the flag's default)
-    ld = LK.PL_local_data{_TW}()
+    ld = LK.PL_local_data{_TW}(_TW_GD)
     x = _tw_var()
     @test LK.unify_ptrs(ld, x, _twf("f", x))
     @test _tw_write(x, _TW_WRITEQ; ld=ld) == "NOTPORTED"
@@ -466,7 +467,8 @@ end
     @test _tw_write(_twf("h", _tws("a"), _twf("k", y)), _TW_PRINT; ld=ld) == "NOTPORTED"
 
     # a cyclic exception ball (V5d keeps its cycle): written, it is refused the same way
-    gd2, ld2 = LK.PL_global_data{_TW}(), LK.PL_local_data{_TW}()
+    gd2 = LK.PL_global_data{_TW}()
+    ld2 = LK.PL_local_data{_TW}(gd2)
     b = _tw_var()
     th = LK.isCurrentProcedure(sym_key(_tws("throw")), 1, LK.MODULE_system(gd2))
     fid = LK.PL_open_foreign_frame(ld2)
@@ -485,7 +487,8 @@ end
 
     # user:portray/1 defined: print/1 would call it (the meta-call, V9) — refused; writeq/1 is not
     # affected, and with portray/1 undefined print/1 writes as swipl (the differential above)
-    gd3, ld3 = LK.PL_global_data{_TW}(), LK.PL_local_data{_TW}()
+    gd3 = LK.PL_global_data{_TW}()
+    ld3 = LK.PL_local_data{_TW}(gd3)
     @test _tw_write(_twf("f", _tws("a")), _TW_PRINT; gd=gd3, ld=ld3) == "f(a)"
     @test _tw_call("assertz", _TW[_twf("portray", _tw_var())]; gd=gd3, ld=ld3)[1] === :true
     @test _tw_write(_twf("f", _tws("a")), _TW_PRINT; gd=gd3, ld=ld3) == "NOTPORTED"

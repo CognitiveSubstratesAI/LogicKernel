@@ -113,7 +113,7 @@ _manifest_per_type(T) = (
     (LK.nextTermAgendaLR!, Tuple{LK.term_agendaLR{T}}, true),
     (LK.pushWorkAgendaLR!, Tuple{LK.term_agendaLR{T}, Int, T, T, Int}, false),
     # bindings (src/pl-inline.jl) and unification (src/pl-prims.jl)
-    (LK.PL_local_data{T}, Tuple{}, false),
+    (LK.PL_local_data{T}, Tuple{LK.PL_global_data{T}}, false),
     (LK.deRef, Tuple{LK.PL_local_data{T}, T}, true),
     (LK.Trail!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
     (LK.Mark, Tuple{LK.PL_local_data{T}}, true),

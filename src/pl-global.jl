@@ -201,11 +201,11 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # floats, big numbers, strings: C4; compounds: L1c). Each entry is pinned by a BOX, a word of its own
 # on the global stack (`vbox`), so when `Undo` lowers `gTop` the table is truncated with it: an
 # entry never outlives the stack it shadows. Since stage C3 an atom and a small integer are their
-# own words (`TAG_ATOM`, `consInt`), off the table. An engine's atom words name atoms in its OWN
-# atom table (`atoms`), DIVERGES from upstream's one `GD->atoms` while nothing outside the engine
-# holds a word (clauses and records are values) — 255 test lines make an engine with no database —
-# until clause code carries words; `atom_words` and `atom_values` cache the symbol ↔ atom
-# conversion both ways, so neither direction looks text up twice. `trail` is `stacks.trail` (its
+# own words (`TAG_ATOM`, `consInt`), off the table. An engine's atom words name atoms in its
+# DATABASE's table (`atoms` is `GD->atoms`, the database the engine is made for: since L1b, before
+# C6b, every engine has one — two engines on one database share their atom words, as clause code
+# carrying words needs); `atom_words` and `atom_values` are the engine's caches of the symbol ↔
+# atom conversion both ways, so neither direction looks text up twice. `trail` is `stacks.trail` (its
 # length is `tTop`), entries of both kinds of variable (above). A cyclic link or
 # a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
 # overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
@@ -251,7 +251,7 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # Since V9g-b: `bags`, upstream's `bags` (a `findall_state`: the stack of findall/3's bags, the
 # innermost last — src/pl-bag.jl).
 """
-    PL_local_data{T}()
+    PL_local_data{T}(gd)
 
 The thread-local state (pl-global.h `struct PL_local_data`): the predicates ongoing enumerations
 reference, at the generation each started in — so clause GC keeps what they can still see — and
@@ -259,7 +259,7 @@ the state of unification: the bindings, the trail that undoes them back to a [`m
 `occurs_check` flag, and the records the unifier keeps while it walks; and the local stack — its
 cells, its frames, choice points and foreign frames, and the registers that point into it. A new
 one has upstream's initial local stack, emptied as `emptyStacks` leaves it: one foreign frame at
-its base.
+its base. It is made for the database `gd`: its atom words name atoms in `gd.atoms` (`GD->atoms`).
 """
 mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
@@ -272,7 +272,7 @@ mutable struct PL_local_data{T}
     gTop::Int                                                   # stacks.global.top
     vtable::Vector{T}                                           # (the value table, L1b: see above)
     vbox::Vector{Int}                                           # … each entry's box on the stack
-    atoms::atoms_t                                              # (the engine's atom table, L1b C3)
+    atoms::atoms_t                                              # GD->atoms: its database's (L1b C3)
     atom_words::Dict{UInt64, UInt64}                            # … a symbol's sym_key → its atom
     atom_values::Vector{Union{Nothing, T}}                      # … an atom's index → its symbol
     mark_bar::Int                                               # mark_bar
@@ -350,12 +350,12 @@ mutable struct PL_local_data{T}
     prolog_flag_determinism_error::Symbol                       # the `determinism_error` flag
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
 end
-function PL_local_data{T}() where {T}
+function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
         UInt64[], UInt64[], T[], 0, T[], Int[],
-        do_init_atoms!(atoms_t()), Dict{UInt64, UInt64}(), Union{Nothing, T}[],
+        gd.atoms, Dict{UInt64, UInt64}(), Union{Nothing, T}[],   # GD->atoms: the database's
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,

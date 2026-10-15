@@ -27,7 +27,7 @@ _fw_var() = mk_var(_FW, LK.fresh_var_keys!(1))
 const _FW_SWIPL = Sys.which("swipl")
 const _FW_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _FW_GD = LK.PL_global_data{_FW}()
-const _FW_LD = LK.PL_local_data{_FW}()
+const _FW_LD = LK.PL_local_data{_FW}(_FW_GD)
 
 "Run `name` on `args` through the query API: `(rc, answers)`."
 function _fw_call(name::String, args::Vector{_FW})

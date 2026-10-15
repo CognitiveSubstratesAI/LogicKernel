@@ -17,7 +17,8 @@
 #   gc_1       attributed variables (freeze/2) — the kernel has none.
 using Test, LogicKernel
 using LogicKernel:
-    PL_local_data, pl_unify!, pl_can_compare, unifiable, resolve_term, Mark, Undo!
+    PL_local_data, PL_global_data, pl_unify!, pl_can_compare, unifiable, resolve_term, Mark,
+    Undo!
 
 # TERM TYPES PER CHUNK: ALL — the term layer: src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -35,7 +36,7 @@ _uid(a, b) = compareStandard(a, b) == 0                     # ==/2
     # blam([]).  blam([L|L]) :- blam(L).   blam(X), length(X, 2): the successful derivation binds
     # X = [L|L], L = [L2|L2], L2 = [] — so X == [[[]], []].
     @testset "blam" begin
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         X, L, L2 = _uv(1), _uv(2), _uv(3)
         @test pl_unify!(ld, X, _ucons(L, L))
         @test pl_unify!(ld, L, _ucons(L2, L2))
@@ -46,14 +47,14 @@ _uid(a, b) = compareStandard(a, b) == 0                     # ==/2
     # PORT: test_unify.pl unify_self
     # p/2 runs U=U, V=V (Bug#436): unifying a variable with itself binds nothing.
     @testset "unify_self" begin
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         U, V = _uv(1), _uv(2)
         @test pl_unify!(ld, U, U) && pl_unify!(ld, V, V)
         @test isempty(ld.trail) && lk_no_bindings(ld)
     end
     # PORT: test_unify.pl unify_arity_0
     @testset "unify_arity_0" begin                           # A = f(), X == f()
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         X = _uv(1)
         @test pl_unify!(ld, X, _uc(:f))
         @test _uid(resolve_term(ld, X), _uc(:f))
@@ -63,7 +64,7 @@ _uid(a, b) = compareStandard(a, b) == 0                     # ==/2
     end
     # PORT: test_unify.pl cycle_1
     @testset "cycle_1" begin                                 # Kuniaki Mukai
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         X, Y = _uv(1), _uv(2)
         @test pl_unify!(ld, X, _uc(:f, Y))                  # X = f(Y),
         @test pl_unify!(ld, Y, _uc(:f, X))                  # Y = f(X),
@@ -71,7 +72,7 @@ _uid(a, b) = compareStandard(a, b) == 0                     # ==/2
     end
     # PORT: test_unify.pl cycle_2
     @testset "cycle_2" begin                                 # Kuniaki Mukai
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         X, Y = _uv(1), _uv(2)
         @test pl_unify!(ld, X, _uc(:f, X))                  # X = f(X),
         @test pl_unify!(ld, Y, _uc(:f, Y))                  # Y = f(Y),
@@ -82,15 +83,15 @@ end
 @testset "can_compare" begin
     # PORT: test_unify.pl ground
     @testset "ground" begin
-        @test pl_can_compare(PL_local_data{_UT}(), _us(:a), _us(:b))   # ?=(a,b)
+        @test pl_can_compare(PL_local_data{_UT}(PL_global_data{_UT}()), _us(:a), _us(:b))   # ?=(a,b)
     end
     # PORT: test_unify.pl ground
     @testset "ground" begin
-        @test pl_can_compare(PL_local_data{_UT}(), _us(:a), _us(:a))   # ?=(a,a)
+        @test pl_can_compare(PL_local_data{_UT}(PL_global_data{_UT}()), _us(:a), _us(:a))   # ?=(a,a)
     end
     # PORT: test_unify.pl ground
     @testset "ground" begin                                  # fail
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         @test !pl_can_compare(ld, _us(:a), _uv(1))                     # ?=(a,X)
         @test isempty(ld.trail) && lk_no_bindings(ld)                # nothing left bound
     end
@@ -99,7 +100,7 @@ end
 @testset "unifiable" begin
     # PORT: test_unify.pl unifiable_1
     @testset "unifiable_1" begin                             # S == [X=1]
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         X = _uv(1)
         S = unifiable(ld, X, _ug(1))
         @test S !== nothing && length(S) == 1
@@ -107,7 +108,7 @@ end
     end
     # PORT: test_unify.pl unifiable_2
     @testset "unifiable_2" begin                             # S == [Z=X, Y=X]
-        ld = PL_local_data{_UT}()
+        ld = PL_local_data{_UT}(PL_global_data{_UT}())
         X, Y, Z = _uv(1), _uv(2), _uv(3)                    # created in that order, as upstream's
         S = unifiable(ld, _uc(:a, X, X), _uc(:a, Y, Z))
         @test S !== nothing && length(S) == 2

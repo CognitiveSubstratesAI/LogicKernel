@@ -291,7 +291,7 @@ end
 
 @testset "positions: the position built-ins as queries, pinned to libswipl's" begin
     gd = PL_global_data{_BT}()
-    ld = PL_local_data{_BT}()
+    ld = PL_local_data{_BT}(gd)
     for (name, pin) in ((:prolog_current_frame, 31), (:prolog_current_choice, 21))
         fid = LKB.PL_open_foreign_frame(ld)
         a = LKB.PL_new_term_refs(ld, 1)
@@ -312,7 +312,7 @@ end
 # 265-266), except a type error expecting `variable` — is tested on `PL_error` itself.
 @testset "PL_error: an unbound culprit is an instantiation error, as upstream's rule" begin
     function formal_of(f)
-        ld = PL_local_data{_BT}()
+        ld = PL_local_data{_BT}(PL_global_data{_BT}())
         t = LKB.PL_new_term_ref(ld)                         # holds a fresh, unbound variable
         @test f(ld, t) == false
         ball = LKB.resolve_term(ld, LogicKernel.slotValue(ld, ld.exception_term + 1))
@@ -331,7 +331,7 @@ end
 
 @testset "a built-in's foreign frame leaves the stacks as they were" begin
     gd = PL_global_data{_BT}()
-    ld = PL_local_data{_BT}()
+    ld = PL_local_data{_BT}(gd)
     base = (ld.lTop, ld.nframes, ld.nchoices, ld.nfliframes, ld.nqueries, length(ld.trail))
     p = _bproc(gd, :compare, 3)
     for _ in 1:10_000
@@ -348,7 +348,7 @@ if _BSWIPL !== nothing
     @testset "the first users through the query API == live swipl, every occurs_check mode" begin
         goals = _bgoals(Xoshiro(20261006), 600)
         gd = PL_global_data{_BT}()
-        ld = PL_local_data{_BT}()
+        ld = PL_local_data{_BT}(gd)
         bad = String[]
         tally = Dict{String, Int}()
         qualified = 0
@@ -377,7 +377,7 @@ if _BSWIPL !== nothing
     @testset "the first users from a clause body (I_CALL, I_DEPART) == the query's outcome" begin
         rng = Xoshiro(20261007)
         db = PL_global_data{_BT}()
-        ld = PL_local_data{_BT}()
+        ld = PL_local_data{_BT}(db)
         user = LKB.MODULE_user(db)
         z = LKB.lookupProcedure(_bs(:z), 0, user)
         LKB.assertDefinition!(

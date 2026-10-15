@@ -174,7 +174,7 @@ end
 
 @testset "op/3 through the query API, every outcome as swipl's" begin
     gd = LK.PL_global_data{_OP}()
-    ld = LK.PL_local_data{_OP}()
+    ld = LK.PL_local_data{_OP}(gd)
     ours = [_oprun(gd, ld, g...) for (g, _, _) in _OP_GOALS]
     pinned = [w for (_, _, w) in _OP_GOALS]
     bad = [(i, ours[i], pinned[i]) for i in eachindex(ours) if ours[i] != pinned[i]]
@@ -212,7 +212,7 @@ end
 
 @testset "op(0, xfx, +) in user hides system's infix + (test_op.pl `inherit`, without current_op/3)" begin
     gd = LK.PL_global_data{_OP}()
-    ld = LK.PL_local_data{_OP}()
+    ld = LK.PL_local_data{_OP}(gd)
     @test _oprun(gd, ld, _opg(0), _ops(:xfx), _ops("+")) == "ok"
     user = LK.MODULE_user(gd)
     @test !LK.currentOperator(gd, user, _ops("+"), LK.OP_INFIX)[1]

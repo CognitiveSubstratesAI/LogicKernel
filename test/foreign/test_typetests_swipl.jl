@@ -56,7 +56,7 @@ const _TT_VALUES = (
 
 function _ttdb()
     gd = LKT.PL_global_data{_TT}()
-    return (gd, LKT.PL_local_data{_TT}(), LKT.MODULE_user(gd))
+    return (gd, LKT.PL_local_data{_TT}(gd), LKT.MODULE_user(gd))
 end
 
 "Run `proc` on `args` once: true, false, or the error's formal functor name (`existence_error`)."
@@ -202,7 +202,7 @@ end
     @test _ttrow(gd, ld, user, "expr", ex, :inline) == ".T.......T."
     O = lk_term_type(Union{Int64, Bool})
     ogd = LKT.PL_global_data{O}()
-    old = LKT.PL_local_data{O}()
+    old = LKT.PL_local_data{O}(ogd)
     v = lk_gnd(O, true)                                             # NUM_OTHER
     row = map(_TT_TESTS) do t
         p = LKT.isCurrentProcedure(sym_key(lk_sym(O, t)), 1, LKT.MODULE_system(ogd))

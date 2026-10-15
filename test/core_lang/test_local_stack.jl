@@ -23,7 +23,7 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _L = lk_term_type(Union{Int64, Float64, String})
 "The database the clauses of this file are compiled in (its global data)."
 const _LGD = LK.PL_global_data{_L}()
-const _LLD = LK.PL_local_data{_L}()          # the compiler reads its flags
+const _LLD = LK.PL_local_data{_L}(_LGD)          # the compiler reads its flags
 _ls(n) = lk_sym(_L, Symbol(n))
 _lf(f, xs::_L...) = mk_expr(_L, _L[_ls(f); collect(_L, xs)])
 _lv(k::Integer) = mk_var(_L, UInt64(k))
@@ -103,7 +103,7 @@ const _L_CHOICES = [
 
 "The callee's frame above the caller's, by the primitives: the caller's clause selected, then a call."
 function _l_frame_diff(caller::LK.Clause{_L})::Int
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     fr = LK.pushFrame!(ld, ld.lTop)                         # the caller's frame (normal_call)
     base = ld.frames[fr].base
     ld.lTop = LK.argFrameP(base, Int(caller.variables))     # TRUST_CLAUSE (vmi:159)
@@ -113,7 +113,7 @@ end
 
 "The callee's choice point above the caller's frame: `S_STATIC` selects its first clause, then `newChoice`."
 function _l_choice_diff(caller::LK.Clause{_L}, first::LK.Clause{_L})::Int
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     fr = LK.pushFrame!(ld, ld.lTop)
     base = ld.frames[fr].base
     ld.lTop = LK.argFrameP(base, Int(caller.variables))
@@ -202,7 +202,7 @@ const _L_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 end
 
 @testset "a new local data: emptyStacks leaves one foreign frame at the base" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     # allocStacks (since V5d): LOCAL_INITIAL positions, the spare reserved above `max`
     @test ld.lMax == LK.LOCAL_INITIAL - LK.LOCAL_SPARE
     @test ld.local_spare == ld.local_def_spare == LK.LOCAL_SPARE
@@ -231,7 +231,7 @@ end
 end
 
 @testset "newChoice: at lTop, linked to BFR, with a mark" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     fr = LK.pushFrame!(ld, ld.lTop)
     ld.lTop = LK.argFrameP(ld.frames[fr].base, 3)
     top = ld.lTop
@@ -254,7 +254,7 @@ end
 end
 
 @testset "a reused choice-point record carries nothing of the previous enumeration" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     fr = LK.pushFrame!(ld, ld.lTop)
     ld.lTop = LK.argFrameP(ld.frames[fr].base, 1)
     ch = LK.newChoice(ld, LK.CHP_CLAUSE, fr)
@@ -271,7 +271,7 @@ end
 end
 
 @testset "foreign frames: open, close, rewind, discard" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     top = ld.lTop
     fid = LK.PL_open_foreign_frame(ld)
     @test fid == top && ld.lTop == fid + LK.SIZEOF_FLIFRAME
@@ -322,7 +322,7 @@ end
 end
 
 @testset "term references" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     base = ld.fliframes[ld.fli_context].base
     nrefs(ld) = ld.fliframes[ld.fli_context].size
     n0 = nrefs(ld)                                          # the engine's permanent ones
@@ -354,7 +354,7 @@ end
 end
 
 @testset "every lowering of lTop drops the records above it; a dropped record stays readable" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     def = LK.lookupProcedure(_ls("p"), 0, LK.MODULE_user(_LGD)).definition
     a = LK.pushFrame!(ld, ld.lTop)                          # frame A, then its clause's slots
     fa = ld.frames[a]
@@ -398,7 +398,7 @@ end
 end
 
 @testset "a frame being filled above lTop is never dropped (asserted)" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     nfr = LK.pushFrame!(ld, ld.lTop)                        # normal_call: NFR = lTop
     @test ld.frames[nfr].base == ld.lTop
     @test _lasserts(() -> LK.lowerLTop!(ld, ld.lTop), "being filled above lTop")
@@ -413,12 +413,12 @@ end
 end
 
 @testset "a missed drop is caught at the next push" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     fr = LK.pushFrame!(ld, ld.lTop)
     ld.lTop = LK.argFrameP(ld.frames[fr].base, 1)
     ld.lTop = ld.frames[fr].base                            # `lTop = FR` WITHOUT the drop
     @test _lasserts(() -> LK.pushFrame!(ld, ld.lTop), "pushFrame!: a live frame")
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     fr = LK.pushFrame!(ld, ld.lTop)
     ld.lTop = LK.argFrameP(ld.frames[fr].base, 1)
     ch = LK.newChoice(ld, LK.CHP_CLAUSE, fr)
@@ -427,7 +427,7 @@ end
     @test _lasserts(
         () -> LK.newChoice(ld, LK.CHP_CLAUSE, fr), "pushChoice!: a live choice point"
     )
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     fid = LK.PL_open_foreign_frame(ld)
     ld.lTop = fid                                           # a close that forgot its records
     @test _lasserts(
@@ -436,7 +436,7 @@ end
 end
 
 @testset "copyFrameArguments: the last call's arguments into the frame below" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     to = ld.lTop
     from = LK.argFrameP(to, 5)                              # the arguments pushed above lTop
     xs = [_ls("a"), _lf("f", _lv(1)), lk_gnd(_L, 3)]
@@ -455,7 +455,7 @@ end
 end
 
 @testset "frame flags and fields" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     p, n = ld.frames[LK.pushFrame!(ld, ld.lTop)], ld.frames[2]
     p.level = UInt32(7)
     p.flags = LK.FR_MAGIC | LK.FR_DET | LK.FR_CONTEXT | LK.FR_INBOX | LK.FR_HIDE_CHILDS
@@ -476,7 +476,7 @@ end
 end
 
 @testset "growing the local stack; the limit; the spare (since V5d)" begin
-    ld = LK.PL_local_data{_L}()
+    ld = LK.PL_local_data{_L}(_LGD)
     region(ld) = ld.lMax + ld.local_spare
     @test LK.hasLocalSpace(ld, ld.lMax - ld.lTop) &&
         !LK.hasLocalSpace(ld, ld.lMax - ld.lTop + 1)
@@ -510,7 +510,7 @@ end
     @test LK.raiseStackOverflow(ld, LK.BOOLEX_FALSE) == false
     # exception.processing: set by PL_error and PL_raise_exception, cleared by the recovery; while
     # it is set, growLocalSpace takes the spare before growing (pl-gc.c growLocalSpace)
-    ld3 = LK.PL_local_data{_L}()
+    ld3 = LK.PL_local_data{_L}(_LGD)
     @test !ld3.exception_processing
     LK.PL_error(ld3, LK.ERR_INSTANTIATION)
     @test ld3.exception_processing
@@ -537,7 +537,7 @@ end
     @test LK.growLocalSpace(ld3, 20, 0) == LK.BOOLEX_TRUE && ld3.local_spare == 0
     # PL_error sets exception.processing BEFORE it opens its foreign frame (pl-error.c:138), so near
     # the limit the frame takes the spare and the error raised is the one asked for
-    ld4 = LK.PL_local_data{_L}()
+    ld4 = LK.PL_local_data{_L}(_LGD)
     ld4.stacks_limit = ld4.lMax + ld4.local_spare
     ld4.lTop = ld4.lMax - 2
     LK.PL_error(ld4, LK.ERR_INSTANTIATION)
@@ -546,7 +546,7 @@ end
         child(LK.slotValue(ld4, ld4.exception_term + 1), 2), _ls("instantiation_error")
     )
     # has_emergency_space takes what is lacking from the spare, and no more
-    ld2 = LK.PL_local_data{_L}()
+    ld2 = LK.PL_local_data{_L}(_LGD)
     ld2.lTop = ld2.lMax - 2
     @test LK.has_emergency_space(ld2, 10) && ld2.local_spare == LK.LOCAL_SPARE - 8 &&
         ld2.lMax == ld2.lTop + 10
@@ -565,7 +565,7 @@ end
 # A PERFORMANCE property, so the REFERENCE type's only (the second implementation boxes by design).
 LK_TERM_IMPL == "reference" &&
     @testset "warm, the primitives allocate nothing: growth is the only allocating path" begin
-        ld = LK.PL_local_data{_L}()
+        ld = LK.PL_local_data{_L}(_LGD)
         @test LK.ensureLocalSpace(ld, 50_000)               # the pools grow with the stack
         cycle!(ld) = begin
             fr = LK.pushFrame!(ld, ld.lTop)

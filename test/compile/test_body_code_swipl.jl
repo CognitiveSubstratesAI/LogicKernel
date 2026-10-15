@@ -27,7 +27,7 @@ using Random
 const _B = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 "The database the clauses of this file are compiled in (its global data)."
 const _BGD = LK.PL_global_data{_B}()
-const _BLD = LK.PL_local_data{_B}()          # the compiler reads its flags
+const _BLD = LK.PL_local_data{_B}(_BGD)          # the compiler reads its flags
 _bs(n) = lk_sym(_B, Symbol(n))
 _be(f, xs::AbstractVector) = mk_expr(_B, _B[_bs(f); xs])
 _bf(f, xs::_B...) = _be(f, collect(_B, xs))
@@ -851,7 +851,7 @@ end
     # under `optimise` the fall-back cells compile to I_TRUE/I_FAIL (`always`), a first
     # occurrence's followed by its C_VAR (c:4691-4697; since V9a): every cell, compared whole with
     # swipl's code under the flag
-    ld = LK.PL_local_data{_B}()
+    ld = LK.PL_local_data{_B}(_BGD)
     ld.prolog_flag_optimise = true
     ours_o = [_bc_kernel(_bclause(h, b; ld=ld)) for (_, _, h, b) in cells]
     @test any(c -> any(startswith("i_true"), c), ours_o)
@@ -935,7 +935,7 @@ const _BC_ARITH_CELLS = [
         @test (got !== nothing && any(startswith("a_add_fc"), got)) == refused
     end
     # under `optimise` upstream compiles arithmetic inline (compileArith, memo Q-AR3): refused
-    ld = LK.PL_local_data{_B}()
+    ld = LK.PL_local_data{_B}(_BGD)
     ld.prolog_flag_optimise = true
     @test_throws LK.NotPortedError _bclause(
         _bf("po_ar", _bv(1)), _bf("<", _bv(1), _bg(3)); ld=ld
@@ -1142,7 +1142,7 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
     end
     # under `optimise` ==/\== on a void, or on a first occurrence, compile to I_TRUE/I_FAIL after
     # the skipped variables' C_VAR (since V9a), compared whole with swipl's under the flag
-    ld = LK.PL_local_data{_B}()
+    ld = LK.PL_local_data{_B}(_BGD)
     ld.prolog_flag_optimise = true
     opt = [
         (_bs("po_eq1"), _bf("==", _bv(1), _bs("a"))),
@@ -1154,7 +1154,7 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
     ours_o = [_bc_kernel(_bclause(h, b; ld=ld)) for (h, b) in opt]
     @test any(startswith("i_fail"), ours_o[1]) && any(startswith("i_true"), ours_o[2])
     # without `portable_vmi` every tagged integer is a portable constant
-    ld2 = LK.PL_local_data{_B}()
+    ld2 = LK.PL_local_data{_B}(_BGD)
     ld2.prolog_flag_portable_vmi = false
     @test any(
         startswith("b_eq_vc"),
@@ -1259,7 +1259,7 @@ end
     @test any(startswith("b_unify"), ours[named("var = var: no move")]) ||
         any(startswith("i_true"), ours[named("var = var: no move")])
     # optimise_unify false: what swipl compiles under the flag false (V9a's code)
-    ldf = LK.PL_local_data{_B}()
+    ldf = LK.PL_local_data{_B}(_BGD)
     ldf.prolog_flag_optimise_unify = false
     oursf = [_bc_kernel(_bclause(h, b; ld=ldf)) for (_, h, b) in _BC_MOVE_CELLS]
     @test any(startswith("b_unify"), oursf[named("compound")])
@@ -1518,7 +1518,7 @@ end
 
 "`cl` decompiled (`decompile!`): its head and body, with fresh variables."
 function _bdecompile(cl::LK.Clause{_B}, head::_B)::Tuple{_B, _B}
-    ld = LK.PL_local_data{_B}()
+    ld = LK.PL_local_data{_B}(_BGD)
     name, ar = _bfunctor(head)
     fresh() = mk_var(_B, LK.fresh_var_keys!(1))
     h = ar == 0 ? name : mk_expr(_B, _B[name; [fresh() for _ in 1:ar]])
@@ -1634,7 +1634,7 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
     end
     # the decompiler (`decompile!`, `decompileBodyNoShift!`): compiled with `optimise_unify` false,
     # so no unification is moved into a head (those clauses are refused until V9d's last step)
-    ldf = LK.PL_local_data{_B}()
+    ldf = LK.PL_local_data{_B}(_BGD)
     ldf.prolog_flag_optimise_unify = false
     v2g = _BcGen(Xoshiro(20261005), UInt64(90_000))
     plain = [_bcclause(v2g, 2000 + k) for k in 1:200]           # V2's bodies: plain goals and `!`
@@ -1692,7 +1692,7 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         # a fact's body is `true`; an instantiated body or head that does not match fails
         fact = _bclause(_bf("df", _bs("a")), nothing)
         @test _bc_text(_bdecompile(fact, _bf("df", _bv(1)))...) == "':-'(df(a),true)"
-        ld = LK.PL_local_data{_B}()
+        ld = LK.PL_local_data{_B}(_BGD)
         d1 = dclauses[1]
         @test LK.decompile!(ld, d1, _bs("d1"), _bf(";", _bs("a"), _bv(9001)))
         @test !LK.decompile!(ld, d1, _bs("d1"), _bf(";", _bs("b"), _bv(9002)))
@@ -1711,7 +1711,7 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
             cl = LK.compileClause(gd, ldf, h, b, pr, user)
             LK.assertDefinition!(gd, pr.definition, cl, LK.CL_END)
         end
-        ld = LK.PL_local_data{_B}()
+        ld = LK.PL_local_data{_B}(gd)
         function answers(head, body)
             out = String[]
             LK.pl_clause!(
@@ -1942,7 +1942,7 @@ const _BC_ITE_DECOMPILED = Dict{String, String}(
         @test isempty(missing_)
         @test count(c -> count(startswith("c_if"), c) >= 3, rours) > 50      # nested
     end
-    ldf = LK.PL_local_data{_B}()
+    ldf = LK.PL_local_data{_B}(_BGD)
     ldf.prolog_flag_optimise_unify = false
     dcases = [[(h, b) for (_, h, b) in _BC_ITE_CELLS]; random]
     dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
@@ -2133,7 +2133,7 @@ const _BC_NOT_DECOMPILED = Dict{String, String}(
             c -> any(i -> c[i] == "c_fail" && !startswith(c[i + 1], "c_jmp"),
                 1:(length(c) - 1)), rours)
     end
-    ldf = LK.PL_local_data{_B}()
+    ldf = LK.PL_local_data{_B}(_BGD)
     ldf.prolog_flag_optimise_unify = false
     dcases = [[(h, b) for (_, h, b) in _BC_NOT_CELLS]; random]
     dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
@@ -2944,7 +2944,7 @@ end
     # with PL_error (since V9c): compileClause answers `nothing`, the error pending in its local data
     "The error compiling `pr :- body` raises, in a local data of its own; `nothing` if none."
     function clause_error(body)
-        ld = LK.PL_local_data{_B}()
+        ld = LK.PL_local_data{_B}(_BGD)
         user = LK.MODULE_user(_BGD)
         cl = LK.compileClause(_BGD, ld, p, body, LK.lookupProcedure(p, 0, user), user)
         (cl === nothing && ld.exception_term != 0) || return nothing
@@ -2991,7 +2991,8 @@ end
     po = LK.lookupProcedure(lk_sym(O, :po), 0, user)
     v = lk_gnd(O, true)
     cl = LK.compileClause(
-        gd, LK.PL_local_data{O}(), lk_sym(O, :po), mk_expr(O, O[lk_sym(O, :q), v]), po, user
+        gd, LK.PL_local_data{O}(gd), lk_sym(O, :po), mk_expr(O, O[lk_sym(O, :q), v]), po,
+        user
     )
     i = findfirst(==(LK.L_ATOM), cl.codes)
     j = findfirst(==(LK.B_ATOM), cl.codes)
@@ -3054,7 +3055,7 @@ end
     @test any(c -> any(startswith("i_call1"), c), ours) &&
         any(c -> any(startswith("i_calln"), c), ours)
     # a void variable is no goal
-    let ld = LK.PL_local_data{_B}(), user = LK.MODULE_user(_BGD), h = _bf("mv0", _bv(1))
+    let ld = LK.PL_local_data{_B}(_BGD), user = LK.MODULE_user(_BGD), h = _bf("mv0", _bv(1))
         @test LK.compileClause(
             _BGD, ld, h, _bv(2), LK.lookupProcedure(_bs("mv0"), 1, user), user
         ) ===

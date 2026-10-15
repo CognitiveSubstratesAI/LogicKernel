@@ -25,8 +25,10 @@ _xv() = mk_var(_X, LK.fresh_var_keys!(1))
 `throw(Ball)` through the query API in a database of its own: `(rc, ball)` — the return code and
 the term `PL_exception` holds when the query ends (unresolved: it may be cyclic).
 """
-function _xthrow(ball::_X; ld::LK.PL_local_data{_X}=LK.PL_local_data{_X}())
-    gd = LK.PL_global_data{_X}()
+function _xthrow(
+    ball::_X; gd::LK.PL_global_data{_X}=LK.PL_global_data{_X}(),
+    ld::LK.PL_local_data{_X}=LK.PL_local_data{_X}(gd)
+)
     th = LK.isCurrentProcedure(sym_key(_xs("throw")), 1, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
@@ -62,11 +64,12 @@ end
     end
     # PORT: test_exception.pl cyclic
     @testset "cyclic" begin                         # sto(rational_trees), Ball = hello(Ball)
-        ld = LK.PL_local_data{_X}()
+        gd = LK.PL_global_data{_X}()
+        ld = LK.PL_local_data{_X}(gd)
         B = _xv()
         m = LK.Mark(ld)
         @test LK.pl_unify!(ld, B, _xf("hello", B))   # under the default occurs_check, false
-        rc, ball = _xthrow(B; ld=ld)
+        rc, ball = _xthrow(B; gd=gd, ld=ld)
         @test rc == LK.PL_S_EXCEPTION
         @test LK.compareStandard(ld, ball::_X, B, true) == 0           # throws(Ball): ==
         LK.Undo!(ld, m)                             # the setup's binding undone…

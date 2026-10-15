@@ -22,7 +22,7 @@ struct IxDB{T}
     gd::LK.PL_global_data{T}
     ld::LK.PL_local_data{T}
 end
-IxDB{T}() where {T} = IxDB{T}(LK.PL_global_data{T}(), LK.PL_local_data{T}())
+IxDB{T}() where {T} = (gd=LK.PL_global_data{T}(); IxDB{T}(gd, LK.PL_local_data{T}(gd)))
 
 """
 A predicate under test, in database `db`: its procedure and that procedure's definition; `virgin`

@@ -59,7 +59,9 @@ end
 
 "A database of its own, with the operators `ops` declared by op/3 (a name `[]` is SWI-7's `[]`)."
 function _rt_db(ops)
-    db = (LK.PL_global_data{_RT}(), LK.PL_local_data{_RT}())
+    db = let gd = LK.PL_global_data{_RT}()
+        (gd, LK.PL_local_data{_RT}(gd))
+    end
     for (p, t, n) in ops
         name = n == "[]" ? mk_nil(_RT) : _rts(n)
         _rt_call(db, "op", _RT[lk_gnd(_RT, p), _rts(t), name])[1] === :true ||

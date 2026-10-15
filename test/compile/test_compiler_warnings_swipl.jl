@@ -379,7 +379,8 @@ if _CW_SWIPL !== nothing
         isempty(err) || println(stderr, "  swipl wrote to stderr:\n", first(err, 2000))
         @test isempty(err)
 
-        gd, ld = LK.PL_global_data{_CW}(), LK.PL_local_data{_CW}()
+        gd = LK.PL_global_data{_CW}()
+        ld = LK.PL_local_data{_CW}(gd)
         diverging = 0
         kinds = Dict{String, Int}()
         for pass in 1:2
@@ -424,7 +425,8 @@ if _CW_SWIPL !== nothing
     end
 
     @testset "no warnings without a caller that asks, and none are left behind" begin
-        gd, ld = LK.PL_global_data{_CW}(), LK.PL_local_data{_CW}()
+        gd = LK.PL_global_data{_CW}()
+        ld = LK.PL_local_data{_CW}(gd)
         user = LK.MODULE_user(gd)
         x = lk_var(_CW, UInt64(1))
         y = lk_var(_CW, UInt64(2))

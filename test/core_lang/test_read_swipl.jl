@@ -20,7 +20,7 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _RD = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _rds(x) = lk_sym(_RD, Symbol(x))
 const _RD_GD = LK.PL_global_data{_RD}()
-const _RD_LD = LK.PL_local_data{_RD}()
+const _RD_LD = LK.PL_local_data{_RD}(_RD_GD)
 
 "A number term as the differential compares it: `i…`, `q…r…`, a float's bits `F…`, a NaN's sign and payload."
 function _rd_num(t::_RD)::String

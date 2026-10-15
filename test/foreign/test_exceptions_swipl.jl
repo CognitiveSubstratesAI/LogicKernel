@@ -211,7 +211,7 @@ const _ESWIPL = Sys.which("swipl")
 const _ESWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "the exception classes, as written (the resource class as fixed in 85d0cc2)" begin
-    ld = LKE.PL_local_data{_E}()
+    ld = LKE.PL_local_data{_E}(LKE.PL_global_data{_E}())
     cls(i) = LKE.classify_exception_p(ld, _EBALLS[i][2])
     @test cls(5) == LKE.EXCEPT_ERROR
     @test cls(6) == LKE.EXCEPT_ERROR                    # error(resource_error,_): the bare atom
@@ -230,7 +230,7 @@ const _ESWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 end
 
 @testset "a raise replaces a pending ball of a lower or equal class only" begin
-    ld = LKE.PL_local_data{_E}()
+    ld = LKE.PL_local_data{_E}(LKE.PL_global_data{_E}())
     @test _eraise(ld, 5, 1) == 1                        # error(type_error(a,b),c) kept over foo
     @test _eraise(ld, 1, 5) == 2                        # foo replaced by the error
     @test _eraise(ld, 1, 2) == 2                        # foo, f(x): one class, the new one wins
@@ -258,7 +258,7 @@ if _ESWIPL !== nothing
         end
         bad = String[]
         urgent = Dict{Tuple{Int, Int}, Int}()
-        ld = LKE.PL_local_data{_E}()
+        ld = LKE.PL_local_data{_E}(LKE.PL_global_data{_E}())
         for l in eachline(IOBuffer(text))
             i, j, r = parse.(Int, split(l))
             urgent[(i, j)] = r

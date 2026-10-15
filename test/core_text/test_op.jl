@@ -46,7 +46,7 @@ function _ot_call(gd, ld, name::String, args::Vector{_OT})
 end
 
 # the test module's operators: every type at every priority from 100 to 1200
-const _OT_DB = let gd = LK.PL_global_data{_OT}(), ld = LK.PL_local_data{_OT}()
+const _OT_DB = let gd = LK.PL_global_data{_OT}(), ld = LK.PL_local_data{_OT}(gd)
     for t in ("xf", "yf", "fx", "fy", "xfx", "xfy", "yfx"), p in 100:100:1200
         rc, _ = _ot_call(gd, ld, "op", _OT[lk_gnd(_OT, p), _ots(t), _ots("$t$p")])
         rc === :true || error("op($p, $t, $t$p) failed")

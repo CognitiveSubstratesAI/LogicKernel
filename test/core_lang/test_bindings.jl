@@ -4,7 +4,8 @@
 # live differential against swipl is test_unify_swipl.jl.
 using Test, LogicKernel
 using LogicKernel:
-    PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, OCCURS_CHECK_FALSE
+    PL_local_data, PL_global_data, pl_unify!, Mark, Undo!, deRef, resolve_term,
+    OCCURS_CHECK_FALSE
 
 # TERM TYPES PER CHUNK: ALL — the term layer: src/pl-inline.jl, src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -32,7 +33,7 @@ end
 _btree(d::Int, leaf) = d == 0 ? leaf() : _bc(:f, _btree(d - 1, leaf), _btree(d - 1, leaf))
 
 @testset "the trail: Mark and Undo!" begin
-    ld = PL_local_data{_BT}()
+    ld = PL_local_data{_BT}(PL_global_data{_BT}())
     X, Y, Z = _bv(1), _bv(2), _bv(3)
     m0 = Mark(ld)
     @test pl_unify!(ld, X, _bs(:a))
@@ -60,7 +61,7 @@ _btree(d::Int, leaf) = d == 0 ? leaf() : _bc(:f, _btree(d - 1, leaf), _btree(d -
 end
 
 @testset "DIVERGES: two variables — the larger var_key is bound to the smaller" begin
-    ld = PL_local_data{_BT}()
+    ld = PL_local_data{_BT}(PL_global_data{_BT}())
     @test pl_unify!(ld, _bv(5), _bv(3))
     @test haskey(ld.bindings, UInt64(5)) && !haskey(ld.bindings, UInt64(3))
     @test pl_unify!(ld, _bv(7), _bv(9))
@@ -70,7 +71,7 @@ end
 end
 
 @testset "DIVERGES: compounds without a symbol head unify child by child" begin
-    ld = PL_local_data{_BT}()
+    ld = PL_local_data{_BT}(PL_global_data{_BT}())
     X = _bv(1)
     @test _battempt!(ld, _be(X, _bs(:a)), _bc(:f, _bs(:a)))          # (X a) = f(a): X = f
     @test _battempt!(ld, _be(_bc(:g), _bs(:a)), _be(_bc(:g), _bs(:a)))   # compound heads
@@ -83,7 +84,7 @@ end
 end
 
 @testset "resolve_term" begin
-    ld = PL_local_data{_BT}()
+    ld = PL_local_data{_BT}(PL_global_data{_BT}())
     X, Y, Z = _bv(1), _bv(2), _bv(3)
     big = _btree(4, () -> _bs(:a))                          # ground: shared, never rebuilt
     @test pl_unify!(ld, X, _bc(:h, Y, big, Z)) && pl_unify!(ld, Y, _bg(1))
@@ -106,7 +107,7 @@ end
 # every value by design and is a correctness vehicle (test/core_lang/alt_term.jl).
 LK_TERM_IMPL == "reference" &&
     @testset "a warm attempt allocates nothing, but for periodic rehashes" begin
-        ld = PL_local_data{_BT}()
+        ld = PL_local_data{_BT}(PL_global_data{_BT}())
         g1, g2 = _btree(10, () -> _bs(:a)), _btree(10, () -> _bs(:a))
         v1, v2 = _btree(10, _bfresh), _btree(10, _bfresh)
         for (a, b) in ((g1, g2), (v1, g1), (v1, v2))

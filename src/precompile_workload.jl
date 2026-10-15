@@ -30,7 +30,8 @@ function _precompile_workload()::Nothing
     t2 = mk_expr(T, T[f, y, b, l, half])
     compareStandard(t1, t2)
     compareStandard(t1, t2, true)
-    ld = PL_local_data{T}()
+    gd = PL_global_data{T}()
+    ld = PL_local_data{T}(gd)
     m = Mark(ld)
     pl_unify!(ld, t1, t2)
     Undo!(ld, m)
@@ -42,7 +43,6 @@ function _precompile_workload()::Nothing
     pl_term_hash(mk_expr(T, T[f, a, one]))
     number_kind(one) === NUM_INTEGER && int64_value(one)
     number_kind(half) === NUM_FLOAT && float_value(half)
-    gd = PL_global_data{T}()
     user = MODULE_user(gd)
     proc = lookupProcedure(mk_sym(T, :p), 2, user)
     def = proc.definition

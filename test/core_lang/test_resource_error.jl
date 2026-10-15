@@ -51,7 +51,7 @@ end
 
 @testset "resource_error" begin
     gd = LK.PL_global_data{_RE}()
-    ld = LK.PL_local_data{_RE}()
+    ld = LK.PL_local_data{_RE}(gd)
     ld.stacks_limit = 1_000_000 ÷ 8                 # small_stacks: set_prolog_flag(stack_limit, 1e6)
     _readd!(gd, ld, _res("choice"))                 # choice.
     _readd!(gd, ld, _res("choice"))                 # choice.

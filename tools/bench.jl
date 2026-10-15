@@ -74,7 +74,7 @@ const DEPTH = 12
 const CELLS = 2^(DEPTH + 1) - 1                     # cells per tree: compounds + leaves
 const G1, G2 = _tree(DEPTH, () -> _a(:a)), _tree(DEPTH, () -> _a(:a))   # ground
 const V1, V2 = _tree(DEPTH, _v), _tree(DEPTH, _v)                       # 2^DEPTH variables each
-const LD = PL_local_data{BT}()                                          # the unify cases' bindings
+const LD = PL_local_data{BT}(PL_global_data{BT}())                                          # the unify cases' bindings
 
 "One attempt, as a search makes it: mark, unify, undo — swipl's `forall/2` undoes the same way."
 function _attempt(unify, a::BT, b::BT)::Bool
@@ -98,7 +98,7 @@ const SMALL_A, SMALL_B = mk_expr(BT, BT[_a(:f), _v()]), mk_expr(BT, BT[_a(:f), _
 
 # a dynamic predicate cp/2 of 1000 facts cp(I, a), for clause/2 — Prolog `cp/2` below
 const CP_GD = PL_global_data{BT}()
-const CP_LD = PL_local_data{BT}()                             # the compiler reads its flags
+const CP_LD = PL_local_data{BT}(CP_GD)                             # the compiler reads its flags
 const CP_USER = MODULE_user(CP_GD)
 const CP_PROC = lookupProcedure(_a(:cp), 2, CP_USER)
 const CP_DEF = CP_PROC.definition
@@ -123,7 +123,7 @@ const APP_PROC = lookupProcedure(_a(:app), 3, CP_USER)
 # the whole rule (V2): head, I_ENTER, the body's last call with its LCO block, I_EXIT
 
 # the local stack (V3): `n` frames, each with a choice point, pushed and then popped by one lowering
-const ST_LD = PL_local_data{BT}()
+const ST_LD = PL_local_data{BT}(CP_GD)
 LogicKernel.ensureLocalSpace(ST_LD, 1 << 16)                               # grown once, up front
 function _stack_frames(ld::PL_local_data{BT}, n::Int)::Nothing
     base = ld.lTop
@@ -139,7 +139,7 @@ end
 
 # a query through the VM (V4a), as a foreign caller makes it — open, every answer, close: all of
 # cp(X, Y) over the 1000 facts, and cp(500, Y), narrowed by the first-argument index
-const Q_LD = PL_local_data{BT}()
+const Q_LD = PL_local_data{BT}(CP_GD)
 const Q_ALL, Q_ONE = _v(), gnd_term(BT, 500)
 function _vm_query(ld::PL_local_data{BT}, a1::BT)::Int
     fid = LogicKernel.PL_open_foreign_frame(ld)
@@ -160,7 +160,7 @@ end
 # nreverse (V4b): bench/programs/nreverse.pl's clauses in a database of their own, run through the
 # query API — open, the one deterministic answer, close; swipl runs the same file's `nreverse`
 const NR_GD = PL_global_data{BT}()
-const NR_LD = PL_local_data{BT}()
+const NR_LD = PL_local_data{BT}(NR_GD)
 const NR_USER = MODULE_user(NR_GD)
 _nrf(f::Symbol, xs::BT...) = mk_expr(BT, BT[_a(f), xs...])
 _nrcons(h::BT, t::BT) = mk_expr(BT, BT[_a(Symbol("[|]")), h, t])
@@ -200,7 +200,8 @@ end
 # independent of the writer. The hand-built databases remain, as that oracle.
 "Load the bench program `name`.pl into a database of its own: `(gd, ld)`."
 function _load_program(name::String)
-    gd, ld = PL_global_data{BT}(), PL_local_data{BT}()
+    gd = PL_global_data{BT}()
+    ld = PL_local_data{BT}(gd)
     st, ball, msgs = LogicKernel.load_file!(
         gd, ld, joinpath(@__DIR__, "..", "bench", "programs", name * ".pl")
     )
@@ -291,7 +292,7 @@ end
 # nreverse.pl both define `top/0`), run through the query API as `top` — ops8, log10, divide10;
 # swipl runs the same file's three goals (its `top` line left out of the shared program text)
 const DR_GD = PL_global_data{BT}()
-const DR_LD = PL_local_data{BT}()
+const DR_LD = PL_local_data{BT}(DR_GD)
 const DR_USER = MODULE_user(DR_GD)
 function _dr_add!(head::BT, body::Union{Nothing, BT})
     name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
@@ -360,7 +361,7 @@ const DERIVE_PROLOG = replace(DERIVE_PL, "top:-ops8,log10,divide10." => "")
 # qsort (V7): bench/programs/qsort.pl's clauses in a database of their own (its `top/0` too), run
 # as `qsort`; swipl runs the same file's `qsort`
 const QS_GD = PL_global_data{BT}()
-const QS_LD = PL_local_data{BT}()
+const QS_LD = PL_local_data{BT}(QS_GD)
 const QS_USER = MODULE_user(QS_GD)
 function _qs_add!(head::BT, body::Union{Nothing, BT})
     name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
@@ -418,7 +419,7 @@ const QSORT_PROLOG = replace(QSORT_PL, "top:-qsort." => "")
 # poly_10 (V8): bench/programs/poly_10.pl's clauses in a database of their own (its `top/0` too),
 # run as `poly_10`; swipl runs the same file's `poly_10` — A_ADD_FC (`M is N-1`), `>>`, `<<`
 const PY_GD = PL_global_data{BT}()
-const PY_LD = PL_local_data{BT}()
+const PY_LD = PL_local_data{BT}(PY_GD)
 const PY_USER = MODULE_user(PY_GD)
 function _py_add!(head::BT, body::Union{Nothing, BT})
     name, n = kind(head) === SYM ? (head, 0) : (child(head, 1), nchildren(head) - 1)
@@ -801,7 +802,7 @@ using LogicKernel, InteractiveUtils
 const LK = LogicKernel
 const T = DefaultTerm
 t_load = @elapsed begin
-    gd = LK.PL_global_data{T}(); ld = LK.PL_local_data{T}()
+    gd = LK.PL_global_data{T}(); ld = LK.PL_local_data{T}(gd)
     user = LK.MODULE_user(gd)
     proc = LK.lookupProcedure(sym_term(T, :p), 1, user)
     LK.setDynamicDefinition!(proc.definition, true)

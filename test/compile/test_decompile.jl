@@ -23,7 +23,7 @@ const _D = lk_term_type(
 )
 "The database the fresh predicates of this file are compiled in (its global data)."
 const _DGD = LK.PL_global_data{_D}()
-const _DLD = LK.PL_local_data{_D}()          # the compiler reads its flags
+const _DLD = LK.PL_local_data{_D}(_DGD)          # the compiler reads its flags
 _ds(n) = lk_sym(_D, Symbol(n))
 _dg(v) = lk_gnd(_D, v)
 _de(f, xs::_D...) = mk_expr(_D, _D[_ds(f), xs...])
@@ -42,7 +42,7 @@ function _ddecompile(head::_D)::_D
     cl = _dclause(head)
     n = nchildren(head) - 1
     goal = mk_expr(_D, _D[child(head, 1); [_dv(900_000 + i) for i in 1:n]])
-    ld = LK.PL_local_data{_D}()
+    ld = LK.PL_local_data{_D}(_DGD)
     LK.decompileHead!(ld, cl, goal) || error("decompileHead! failed on a fresh goal")
     return LK.resolve_term(ld, goal)
 end

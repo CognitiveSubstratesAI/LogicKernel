@@ -38,7 +38,7 @@ const _WF_SWIPL = Sys.which("swipl")
 const _WF_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 const _WF_GD = LK.PL_global_data{_WF}()
-const _WF_LD = LK.PL_local_data{_WF}()
+const _WF_LD = LK.PL_local_data{_WF}(_WF_GD)
 
 "Run predicate `name` on `args`: `(rc, ball)` — `:true`, `:false`, `:exception` (and its ball), or `:notported`."
 function _wf_call(name::String, args::Vector{_WF}; gd=_WF_GD, ld=_WF_LD)
@@ -505,7 +505,7 @@ end
 
 @testset "the host: standard streams, replaced, a write error, bindings undone" begin
     # a new local data has no stream until one is asked for; then stdin/stdout/stderr
-    ld = LK.PL_local_data{_WF}()
+    ld = LK.PL_local_data{_WF}(_WF_GD)
     @test !ld.IO_initialised && all(isnothing, ld.IO_streams)
     LK._initIO(ld)
     @test ld.IO_initialised && LK.Scurout(ld) === LK.Suser_output(ld)

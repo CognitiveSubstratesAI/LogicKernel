@@ -150,7 +150,7 @@ end
 # (not on `alt_interned`, which interns every ground compound: a copy IS the original there)
 if LK_TERM_IMPL != "alt_interned"
     @testset "copy_term shares ground compounds; duplicate_term copies every one" begin
-        ld = LK.PL_local_data{_R}()
+        ld = LK.PL_local_data{_R}(LK.PL_global_data{_R}())
         ground = _rf("f", _rg(1), _rf("g", _rs("a")))
         open_ = _rf("f", _rv(1), _rf("g", _rs("a")))
         share, dup = LK.cp_options(true), LK.cp_options(false)
@@ -169,7 +169,7 @@ if LK_TERM_IMPL != "alt_interned"
     # The built-ins' own choice of options, by identity again: `copy_term/2` hands back a ground argument
     # as it is, `duplicate_term/2` copies it (called as the dispatch calls them, on term references).
     @testset "the built-ins: copy_term/2 shares a ground argument, duplicate_term/2 does not" begin
-        ld = LK.PL_local_data{_R}()
+        ld = LK.PL_local_data{_R}(LK.PL_global_data{_R}())
         ctx = LK.foreign_context{_R}(0, UInt(0), nothing)
         ground = _rf("f", _rg(1), _rf("g", _rs("a")))
         for (i, (fn, shared)) in enumerate((

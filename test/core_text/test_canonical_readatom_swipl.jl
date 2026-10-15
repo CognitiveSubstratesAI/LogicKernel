@@ -32,7 +32,7 @@ _cr_var() = mk_var(_CR, LK.fresh_var_keys!(1))
 const _CR_SWIPL = Sys.which("swipl")
 const _CR_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _CR_GD = LK.PL_global_data{_CR}()
-const _CR_LD = LK.PL_local_data{_CR}()
+const _CR_LD = LK.PL_local_data{_CR}(_CR_GD)
 
 "Run `name` on `args`: `(rc, answers, ball)` — `:true`, `:false`, `:exception`, `:notported`."
 function _cr_call(name::String, args::Vector{_CR})

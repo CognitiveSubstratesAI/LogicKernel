@@ -46,7 +46,7 @@ const _SO_LIMIT_BYTES = 1_000_000
 "A database holding the program, and a local data of its own under the limit."
 function _sodb()
     gd = LK.PL_global_data{_SO}()
-    ld = LK.PL_local_data{_SO}()
+    ld = LK.PL_local_data{_SO}(gd)
     user = LK.MODULE_user(gd)
     for (_, h, b) in _SO_PROGRAM
         name, ar = kind(h) === SYM ? (h, 0) : (child(h, 1), nchildren(h) - 1)
@@ -175,6 +175,6 @@ end
     @test refused isa ErrorException && occursin("unusable", refused.msg)
     @test ld.query == 0 && ld.nqueries == 0
     # the database is not broken: a fresh local data runs on it
-    ld2 = LK.PL_local_data{_SO}()
+    ld2 = LK.PL_local_data{_SO}(gd)
     @test _sorun(gd, ld2, "z", nothing)[1] == LK.PL_S_LAST
 end

@@ -22,7 +22,7 @@
 # required — never a silent pass.
 using Test, LogicKernel, Random
 using LogicKernel:
-    PL_local_data,
+    PL_local_data, PL_global_data,
     pl_unify!,
     Mark,
     Undo!,
@@ -461,7 +461,7 @@ other way (`compare_std` must then take `compare_descend`'s answer, as swipl doe
 family in 1300 — so they are searched for: `want` of them, from at most `cap` families.
 """
 function _zdescend_cases(rng, want::Int, cap::Int)
-    ld = PL_local_data{_ZT}()
+    ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
     cases = Tuple{Vector{_ZT}, Int, Int}[]
     tries = 0
     while length(cases) < want && tries < cap
@@ -492,7 +492,7 @@ end
 
 "The kernel's `compare/3` order (`<`, `=`, `>`) of each case's pair, through `compareStandard`."
 function _zdescend_kernel(cases)::Vector{Char}
-    ld = PL_local_data{_ZT}()
+    ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
     out = Char[]
     for (ts, i, j) in cases
         m = Mark(ld)
@@ -538,7 +538,7 @@ if _ZSWIPL !== nothing
     @testset "=/2 == live swipl =/2 in every occurs_check mode" begin
         pairs, kinds = _zpairs(Xoshiro(20261003), 2000)
         theirs = _zswipl(pairs)
-        ld = PL_local_data{_ZT}()
+        ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
         bad = String[]
         tally = Dict{Tuple{String, String}, Int}()
         cmpt = Dict(:cyclic_eq => 0, :cyclic_variant_not_eq => 0, :cyclic_ordered => 0)
@@ -589,7 +589,7 @@ if _ZSWIPL !== nothing
     @testset "ground rational trees: ==, =@= and compare/3 under bindings == live swipl" begin
         rng = Xoshiro(20261005)
         cases = [(_zrt(rng, 3), _zrt(rng, 3), _zrt(rng, 3)) for _ in 1:1500]
-        ld = PL_local_data{_ZT}()
+        ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
         ours = _zrt_kernel(ld, cases)
         theirs = _zrt_swipl(cases)
         bad = [
@@ -639,7 +639,7 @@ end
 # swipl 10.1.16 raises from both (probed: `X \= f(X)` gives `error(occurs_check(X, f(X)), _)`).
 @testset "S10: \\= and ?= under occurs_check=error fail with the error pending" begin
     for f in (LogicKernel.pl_not_unify, LogicKernel.pl_can_compare)
-        ld = PL_local_data{_ZT}()
+        ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
         ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
         X = _zv(1)
         @test f(ld, X, _zc(:f, X)) === false

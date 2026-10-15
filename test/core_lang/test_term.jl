@@ -127,7 +127,7 @@ end
 # The units' RATIONAL-TREE tests (`sto(rational_trees)`), ported once `=@=` could see bindings (V5a,
 # `is_variant_ptr(ld, …)`): each goal `A = T` is a unification (`occurs_check=false`), and `=@=`
 # compares under the bindings; a failing conjunction is `false`. Each case runs in its own mark.
-const _TLD = LogicKernel.PL_local_data{_TT}()
+const _TLD = LogicKernel.PL_local_data{_TT}(LogicKernel.PL_global_data{_TT}())
 _tu(a::_TT, b::_TT) = LogicKernel.pl_unify!(_TLD, a, b)
 _tvr(a::_TT, b::_TT) = LogicKernel.is_variant_ptr(_TLD, a, b)
 function _tcase(f)

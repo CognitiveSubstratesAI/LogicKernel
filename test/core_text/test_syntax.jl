@@ -24,7 +24,8 @@ _syi(i) = lk_gnd(_SY, i)
 
 "A database of its own, with the operators `ops` (`(priority, type, name)`) declared by op/3."
 function _sy_db(ops)
-    gd, ld = LK.PL_global_data{_SY}(), LK.PL_local_data{_SY}()
+    gd = LK.PL_global_data{_SY}()
+    ld = LK.PL_local_data{_SY}(gd)
     for (p, t, n) in ops
         rc, _ = _sy_call(gd, ld, "op", _SY[_syi(p), _sys(t), _sys(n)])
         rc === :true || error("op($p, $t, $n) failed")

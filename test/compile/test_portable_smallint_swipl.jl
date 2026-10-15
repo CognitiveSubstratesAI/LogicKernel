@@ -3,10 +3,11 @@
 # the term interface gives a number's SEMANTIC kind and value; whether an integer becomes an inline
 # operand (H_SMALLINT, A_ADD_FC) is upstream's own `is_portable_smallint`, separately.
 using Test, LogicKernel
-using LogicKernel: is_portable_smallint, PLMINTAGGEDINT, PLMAXTAGGEDINT, PL_local_data
+using LogicKernel:
+    is_portable_smallint, PLMINTAGGEDINT, PLMAXTAGGEDINT, PL_local_data, PL_global_data
 
 @testset "is_portable_smallint (pl-comp.c)" begin
-    ld = PL_local_data{DefaultTerm}()
+    ld = PL_local_data{DefaultTerm}(PL_global_data{DefaultTerm}())
     @test ld.prolog_flag_portable_vmi                  # swipl's default, checked live below
     i32lo, i32hi = Int64(typemin(Int32)), Int64(typemax(Int32))
     # portable_vmi = true: tagged AND within int32, so the code runs on 32-bit VMs too
@@ -38,7 +39,8 @@ if _PSWIPL !== nothing
         lo, hi, pv = split(strip(out))
         @test parse(Int64, lo) == PLMINTAGGEDINT
         @test parse(Int64, hi) == PLMAXTAGGEDINT
-        @test pv == "true" && PL_local_data{DefaultTerm}().prolog_flag_portable_vmi
+        @test pv == "true" &&
+            PL_local_data{DefaultTerm}(PL_global_data{DefaultTerm}()).prolog_flag_portable_vmi
     end
 elseif _PSWIPL_REQUIRED
     error(

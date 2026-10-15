@@ -19,7 +19,7 @@
 #                         full — the kernel has no global stack (G1).
 using Test, LogicKernel
 using LogicKernel:
-    PL_local_data,
+    PL_local_data, PL_global_data,
     pl_unify!,
     pl_unify_with_occurs_check!,
     pl_can_compare,
@@ -43,7 +43,7 @@ _oball(e, var, term) =
 
 "Local data with the `occurs_check` flag set."
 function _old(flag)
-    ld = PL_local_data{_OT}()
+    ld = PL_local_data{_OT}(PL_global_data{_OT}())
     ld.prolog_flag_occurs_check = flag
     return ld
 end
@@ -67,11 +67,15 @@ end
     # PORT: test_occurs_check.pl simple_1
     @testset "simple_1" begin                    # \+ unify_with_occurs_check(A, list(A))
         A = _ov(1)
-        @test !pl_unify_with_occurs_check!(PL_local_data{_OT}(), A, _oc(:list, A))
+        @test !pl_unify_with_occurs_check!(
+            PL_local_data{_OT}(PL_global_data{_OT}()), A, _oc(:list, A)
+        )
     end
     # PORT: test_occurs_check.pl simple_2
     @testset "simple_2" begin                    # unify_with_occurs_check(_A, _B)
-        @test pl_unify_with_occurs_check!(PL_local_data{_OT}(), _ov(1), _ov(2))
+        @test pl_unify_with_occurs_check!(
+            PL_local_data{_OT}(PL_global_data{_OT}()), _ov(1), _ov(2)
+        )
     end
 end
 

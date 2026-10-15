@@ -34,7 +34,7 @@ _tw_var(k::UInt64) = mk_var(_TW, k)
 end
 
 @testset "Trail!: a cell's entry names its position, a keyed variable's its key" begin
-    ld = LK.PL_local_data{_TW}()
+    ld = LK.PL_local_data{_TW}(LK.PL_global_data{_TW}())
     old = LK.allocGlobalVars!(ld, 1)
     m = LK.Mark(ld)
     LK.Trail!(ld, old, _tw_sym(:a))                        # older than the mark: trailed
@@ -52,7 +52,7 @@ end
 end
 
 @testset "a planted value entry: Undo! restores the old value; the trail and gTop return to the mark" begin
-    ld = LK.PL_local_data{_TW}()
+    ld = LK.PL_local_data{_TW}(LK.PL_global_data{_TW}())
     x = LK.allocGlobalVars!(ld, 1)
     y = LK.allocGlobalVars!(ld, 1)
     LK.Trail!(ld, x, _tw_sym(:old))                         # x's value before the assignment
@@ -77,7 +77,7 @@ end
 end
 
 @testset "_trail_truncate! drops entries without undoing them, trail_keys in step" begin
-    ld = LK.PL_local_data{_TW}()
+    ld = LK.PL_local_data{_TW}(LK.PL_global_data{_TW}())
     n = length(ld.trail)
     LK.Trail!(ld, UInt64(7), _tw_sym(:a))
     LK.Trail!(ld, UInt64(8), _tw_sym(:b))

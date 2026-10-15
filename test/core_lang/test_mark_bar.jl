@@ -17,7 +17,7 @@ _mb_sym(n) = lk_sym(_MB, Symbol(n))
 _mb_var(k::UInt64) = mk_var(_MB, k)
 
 @testset "mark_bar: Mark sets it, DiscardMark restores it" begin
-    ld = LK.PL_local_data{_MB}()
+    ld = LK.PL_local_data{_MB}(LK.PL_global_data{_MB}())
     # emptyStacks sets LD->mark_bar = gTop BEFORE it makes the exception term references, which
     # upstream puts on the local stack and L1a on the global one — so they lie above the bar
     @test ld.mark_bar == 0 && ld.gTop == 4          # exception_bin, _printed, _tmp, _pending
@@ -39,7 +39,7 @@ _mb_var(k::UInt64) = mk_var(_MB, k)
 end
 
 @testset "Trail: a cell newer than the mark goes untrailed; an older one and a keyed variable do not" begin
-    ld = LK.PL_local_data{_MB}()
+    ld = LK.PL_local_data{_MB}(LK.PL_global_data{_MB}())
     old = LK.allocGlobalVars!(ld, 1)
     m = LK.Mark(ld)
     new = LK.allocGlobalVars!(ld, 1)
@@ -69,7 +69,7 @@ end
 end
 
 @testset "one allocation's keys are consecutive, and keys order by allocation" begin
-    ld = LK.PL_local_data{_MB}()
+    ld = LK.PL_local_data{_MB}(LK.PL_global_data{_MB}())
     k = LK.allocGlobalVars!(ld, 4)
     @test all(LK._cell_pos(ld, k + UInt64(i)) == LK._cell_pos(ld, k) + i for i in 0:3)
     k2 = LK.allocGlobalVars!(ld, 1)
@@ -86,7 +86,7 @@ end
 end
 
 @testset "the trail's readers see every binding: unifiable over fresh cells" begin
-    ld = LK.PL_local_data{_MB}()
+    ld = LK.PL_local_data{_MB}(LK.PL_global_data{_MB}())
     m = LK.Mark(ld)                                     # a choice point's mark: the bar at gTop
     k = LK.allocGlobalVars!(ld, 2)                      # both newer than the bar
     X, Y = _mb_var(k), _mb_var(k + UInt64(1))

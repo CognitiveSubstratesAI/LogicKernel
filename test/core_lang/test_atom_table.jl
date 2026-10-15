@@ -200,7 +200,7 @@ end
 @testset "PL_get_text: a wide code list is UTF-8 and NOT canonical; its atom is the wide text's" begin
     T = LK.DefaultTerm
     gd = LK.PL_global_data{T}()
-    ld = LK.PL_local_data{T}()
+    ld = LK.PL_local_data{T}(gd)
     cons(h, t) = mk_expr(T, T[mk_sym(T, Symbol("[|]")), h, t])
     codes = foldr(cons, [mk_gnd(T, Int64(c)) for c in (0x61, 0x101)]; init=mk_nil(T))
     fid = LK.PL_open_foreign_frame(ld)

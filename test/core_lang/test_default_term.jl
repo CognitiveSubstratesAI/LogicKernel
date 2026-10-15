@@ -25,7 +25,7 @@ _e(xs::_TT...) = mk_expr(_TT, _TT[xs...])
         # a workload over those leaves: built into compounds, compared, hashed, unified
         t = _e(_s(:f), leaves...)
         @test compareStandard(t, _e(_s(:f), leaves...)) == 0 && hash(t) == hash(t)
-        ld = LogicKernel.PL_local_data{_TT}()
+        ld = LogicKernel.PL_local_data{_TT}(LogicKernel.PL_global_data{_TT}())
         @test LogicKernel.pl_unify!(ld, leaves[1], _e(_s(:g), leaves[2], _g(3)))
         @test isempty(e) && all(l -> nchildren(l) == 0, leaves)
     end

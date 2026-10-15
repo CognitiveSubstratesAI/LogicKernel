@@ -48,7 +48,7 @@ end
 
 @testset "io" begin
     gd = _TIO_LK.PL_global_data{_TIO}()
-    ld = _TIO_LK.PL_local_data{_TIO}()
+    ld = _TIO_LK.PL_local_data{_TIO}(gd)
     # condition(\+ protocolling(_)): no protocol stream is open
     @test ld.IO_streams[_TIO_LK.SNO_PROTOCOL + 1] === nothing
     # PORT: test_io.pl no_protocol_out

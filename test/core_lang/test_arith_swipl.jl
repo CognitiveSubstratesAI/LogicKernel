@@ -31,7 +31,7 @@ _akey = Ref(UInt64(100))
 _av() = (_akey[] += 1; lk_var(_A, _akey[]))
 
 const _AGD = LKA.PL_global_data{_A}()
-const _ALD = LKA.PL_local_data{_A}()
+const _ALD = LKA.PL_local_data{_A}(_AGD)
 
 "Run the system predicate `name/n` on `args`: (rc, the first argument resolved, or the ball)."
 function _arun(name, args::Vector{_A}; gd=_AGD, ld=_ALD)
@@ -202,7 +202,7 @@ end
 # a ball keeps its cycles (src/pl-fli.jl `copy_exception!`; user, 2026-10-07), which ends Q-AR8's
 # placeholder. The ball is read under the bindings, where its cycle lives.
 @testset "cyclic: T = T+1, X is T — type_error(expression, T), the real culprit (Q-AR8, since V5d)" begin
-    ld = LKA.PL_local_data{_A}()
+    ld = LKA.PL_local_data{_A}(_AGD)
     T1 = _av()
     LKA.Trail!(ld, var_key(T1), _af(:+, T1, _ag(1)))                             # T = T+1
     p = LKA.isCurrentProcedure(sym_key(_as(:is)), 2, LKA.MODULE_system(_AGD))
@@ -278,7 +278,8 @@ end
 # evaluates `N` (`evalExpression`) and adds (`ar_add_si`); its error names the CLAUSE's predicate,
 # `p/2`, where the call of is/2 names `is/2`.
 @testset "A_ADD_FC: the fast path, the slow path's values, and its error's context (V8)" begin
-    gd, ld = LKA.PL_global_data{_A}(), LKA.PL_local_data{_A}()
+    gd = LKA.PL_global_data{_A}()
+    ld = LKA.PL_local_data{_A}(gd)
     user = LKA.MODULE_user(gd)
     N, M, R, X = _av(), _av(), _av(), _av()
     for (h, b) in
@@ -311,7 +312,8 @@ end
 @testset "the interim (Q-AR1), [Atom] (Q-AR7, since R1) and the kernel-only terms (Q-AR5), pinned" begin
     # Q-AR1: DefaultTerm holds no BigInt: a big result raises, loudly — never a wrong value
     D = DefaultTerm
-    dgd, dld = LKA.PL_global_data{D}(), LKA.PL_local_data{D}()
+    dgd = LKA.PL_global_data{D}()
+    dld = LKA.PL_local_data{D}(dgd)
     p = LKA.isCurrentProcedure(sym_key(mk_sym(D, :is)), 2, LKA.MODULE_system(dgd))
     fid = LKA.PL_open_foreign_frame(dld)
     a = LKA.PL_new_term_refs(dld, 2)
@@ -337,7 +339,8 @@ end
     end
     # Q-AR5: a value of no SWI type is not evaluable; `$expr/n` is evaluated, then not evaluable
     O = lk_term_type(Union{Int64, Bool})
-    ogd, old = LKA.PL_global_data{O}(), LKA.PL_local_data{O}()
+    ogd = LKA.PL_global_data{O}()
+    old = LKA.PL_local_data{O}(ogd)
     po = LKA.isCurrentProcedure(sym_key(lk_sym(O, :is)), 2, LKA.MODULE_system(ogd))
     fid = LKA.PL_open_foreign_frame(old)
     a = LKA.PL_new_term_refs(old, 2)

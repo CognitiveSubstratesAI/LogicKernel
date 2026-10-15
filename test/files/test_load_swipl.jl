@@ -81,7 +81,8 @@ end
 
 "Load `path` with the kernel: the lines the swipl driver prints for the same file."
 function _tl_kernel(path::String, preds::Vector{Tuple{String, Int}})::Vector{String}
-    gd, ld = LK.PL_global_data{_TL}(), LK.PL_local_data{_TL}()
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
     st, ball, msgs = LK.load_file!(gd, ld, path)
     out = [st === :ok ? "ok" : "exc " * _tl_enc(_tl_normalise(ball::_TL))]
     for (k, m) in msgs
@@ -294,7 +295,8 @@ if _TL_SWIPL !== nothing
             ("poly_10", "test_poly", "test_poly(P)")
         ]
         for (p, _, goal) in goals
-            gd, ld = LK.PL_global_data{_TL}(), LK.PL_local_data{_TL}()
+            gd = LK.PL_global_data{_TL}()
+            ld = LK.PL_local_data{_TL}(gd)
             st, _, msgs = LK.load_file!(gd, ld, prog(p))
             @test st === :ok && isempty(msgs)
             # the goal, read by the kernel and run through the query API
@@ -363,7 +365,8 @@ end
     mktempdir() do d
         path = joinpath(d, "src.pl")
         write(path, "a(1).\n\na(2) :-\n    true.\nb.\n")
-        gd, ld = LK.PL_global_data{_TL}(), LK.PL_local_data{_TL}()
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
         st, _, msgs = LK.load_file!(gd, ld, path)
         @test st === :ok && isempty(msgs)
         sf = gd.files_array[1]
@@ -389,7 +392,8 @@ end
     notported(text) = mktempdir() do d
         path = joinpath(d, "r.pl")
         write(path, text)
-        gd, ld = LK.PL_global_data{_TL}(), LK.PL_local_data{_TL}()
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
         try
             LK.load_file!(gd, ld, path)
             false
@@ -419,7 +423,8 @@ end
     mktempdir() do d
         path = joinpath(d, "twice.pl")
         write(path, "a.\n")
-        gd, ld = LK.PL_global_data{_TL}(), LK.PL_local_data{_TL}()
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
         @test LK.load_file!(gd, ld, path)[1] === :ok
         @test_throws LK.NotPortedError LK.load_file!(gd, ld, path)
     end
@@ -430,7 +435,8 @@ end
         p1, p2 = joinpath(d, "one.pl"), joinpath(d, "two.pl")
         write(p1, "s(1).\n")
         write(p2, "s(2).\n")
-        gd, ld = LK.PL_global_data{_TL}(), LK.PL_local_data{_TL}()
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
         @test LK.load_file!(gd, ld, p1)[1] === :ok
         @test_throws LK.NotPortedError LK.load_file!(gd, ld, p2)
         @test ld.messages[end][1] === :warning &&

@@ -1346,6 +1346,8 @@ function PL_open_query(
     flags::UInt32,
     proc::Procedure{T}, args::Int
 )::Int where {T}
+    # an engine runs queries on the database it was made for: its atom words name GD->atoms (L1b)
+    @assert ld.atoms === gd.atoms "PL_open_query: the engine was made for another database (PL_local_data{T}(gd))"
     env = ld.environment_frame
     @assert env == 0 || ld.fliframes[ld.fli_context].base > ld.frames[env].base
     @assert ld.lTop >=

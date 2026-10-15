@@ -76,7 +76,7 @@ end
 
 # The database every read of this file runs in (`op/3` adds to its `user` module).
 const _TR_GD = LK.PL_global_data{_TR}()
-const _TR_LD = LK.PL_local_data{_TR}()
+const _TR_LD = LK.PL_local_data{_TR}(_TR_GD)
 
 """
 Run the predicate `name` on `args` through the query API: `(rc, answers)` where `answers` are the
@@ -282,7 +282,8 @@ if _TR_SWIPL !== nothing
         ops = [(200, "xfx", "++"), (200, "xf", "++"), (300, "fy", "pre"),
             (300, "xfy", "pre"),
             (650, "xfx", "@@"), (650, "fx", "@@"), (100, "yf", "[]"), (100, "yf", "{}")]
-        gd, ld = LK.PL_global_data{_TR}(), LK.PL_local_data{_TR}()
+        gd = LK.PL_global_data{_TR}()
+        ld = LK.PL_local_data{_TR}(gd)
         for (p, t, n) in ops
             name = n == "[]" ? mk_nil(_TR) : _trs(n)
             @test _tr_call("op", _TR[lk_gnd(_TR, p), _trs(t), name]; gd=gd, ld=ld)[1] ===
@@ -314,7 +315,8 @@ if _TR_SWIPL !== nothing
         # the block's term-stack entry is left a value when `finish_block_op` takes it, so the
         # entry `_` reuses next must be reset (alloc_term's PL_put_variable)
         ops2 = [(200, "fy", "[]"), (200, "fy", "{}")]
-        gd2, ld2 = LK.PL_global_data{_TR}(), LK.PL_local_data{_TR}()
+        gd2 = LK.PL_global_data{_TR}()
+        ld2 = LK.PL_local_data{_TR}(gd2)
         for (p, t, n) in ops2
             name = n == "[]" ? mk_nil(_TR) : _trs(n)
             @test _tr_call("op", _TR[lk_gnd(_TR, p), _trs(t), name]; gd=gd2, ld=ld2)[1] ===

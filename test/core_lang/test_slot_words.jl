@@ -22,7 +22,7 @@ _sw_sym(n) = lk_sym(_SW, Symbol(n))
 _sw_f(x) = mk_expr(_SW, _SW[_sw_sym(:f), x])
 "Three fresh term references' slots on a new engine."
 function _sw_engine()
-    ld = LK.PL_local_data{_SW}()
+    ld = LK.PL_local_data{_SW}(LK.PL_global_data{_SW}())
     r = LK.PL_new_term_refs(ld, 3)
     return ld, r + 1, r + 2, r + 3                              # term reference t is slot t + 1
 end

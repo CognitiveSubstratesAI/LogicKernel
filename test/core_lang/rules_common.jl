@@ -22,7 +22,7 @@ struct _RDB
 end
 function _RDB()
     gd = LK.PL_global_data{_R}()
-    return _RDB(gd, LK.PL_local_data{_R}(), LK.MODULE_user(gd))
+    return _RDB(gd, LK.PL_local_data{_R}(gd), LK.MODULE_user(gd))
 end
 _rfunctor(t::_R) = kind(t) === SYM ? (t, 0) : (child(t, 1), nchildren(t) - 1)
 _rproc(db::_RDB, t::_R) = LK.lookupProcedure(_rfunctor(t)..., db.user)

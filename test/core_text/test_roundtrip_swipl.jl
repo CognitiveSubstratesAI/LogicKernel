@@ -28,7 +28,7 @@ _rt_var() = mk_var(_RT, LK.fresh_var_keys!(1))
 const _RT_SWIPL = Sys.which("swipl")
 const _RT_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _RT_GD = LK.PL_global_data{_RT}()
-const _RT_LD = LK.PL_local_data{_RT}()
+const _RT_LD = LK.PL_local_data{_RT}(_RT_GD)
 
 "The encoding of `t`: variables by first occurrence, atoms by codes (the read differential's)."
 function _rt_enc(t::_RT, seen::Vector{UInt64}=UInt64[])::String

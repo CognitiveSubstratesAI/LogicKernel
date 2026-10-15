@@ -144,7 +144,7 @@ end
 function _boot_catch3!(gd::PL_global_data{T})::Nothing where {T}
     proc = gd.procedures_catch3
     def = proc.definition
-    ld = PL_local_data{T}()
+    ld = PL_local_data{T}(gd)
     k = fresh_var_keys!(3)
     head = mk_expr(
         T, T[mk_sym(T, :catch), mk_var(T, k), mk_var(T, k + 1), mk_var(T, k + 2)]
@@ -170,7 +170,7 @@ end
 # (init.pl:381-383: no module transparency until R2), `noprofile/1`.
 "Define the cleanup family and `call/1` in the `system` module of `gd` as boot/init.pl defines them."
 function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
-    ld = PL_local_data{T}()
+    ld = PL_local_data{T}(gd)
     k = fresh_var_keys!(4)
     v = T[mk_var(T, k), mk_var(T, k + 1), mk_var(T, k + 2), mk_var(T, k + 3)]
     cleanup = mk_sym(T, Symbol("\$call_cleanup"))
@@ -273,7 +273,7 @@ end
 # an `Int64` gets `'$append'/3` only — length/2's clauses contain integers.
 "Define length/2, `'\$length3'/3` and `'\$append'/3` in the `system` module of `gd` as boot/init.pl defines them."
 function _boot_lists!(gd::PL_global_data{T})::Nothing where {T}
-    ld = PL_local_data{T}()
+    ld = PL_local_data{T}(gd)
     v = _boot_vars(T, 8)
     List, Length, Length0, Tail = v[1], v[2], v[3], v[4]
     Extra, Anon, N1, H = v[5], v[6], v[7], v[8]
@@ -421,7 +421,7 @@ end
 # src/pl-bag.jl).
 "Define findall/3,4, bagof/3 and setof/3 in the `system` module of `gd` as boot/bags.pl defines them."
 function _boot_bags!(gd::PL_global_data{T})::Nothing where {T}
-    ld = PL_local_data{T}()
+    ld = PL_local_data{T}(gd)
     k = fresh_var_keys!(4)
     Templ, Goal, List, Tail = mk_var(T, k),
     mk_var(T, k + 1), mk_var(T, k + 2),

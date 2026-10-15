@@ -177,7 +177,7 @@ struct _ADB
 end
 function _ADB()
     gd = LK.PL_global_data{_A}()
-    return _ADB(gd, LK.PL_local_data{_A}(), LK.MODULE_user(gd))
+    return _ADB(gd, LK.PL_local_data{_A}(gd), LK.MODULE_user(gd))
 end
 _aproc(db::_ADB, t::_A) = LK.lookupProcedure(_afunctor(t)..., db.user)
 
@@ -372,7 +372,7 @@ end
         (_af(":", _ag(1), _as("x")), _af("type_error", _as("atom"), _ag(1))),
         (_ag(1), _af("type_error", _as("callable"), _ag(1)))        # nothing to strip
     )
-        ld = LK.PL_local_data{_A}()
+        ld = LK.PL_local_data{_A}(LK.PL_global_data{_A}())
         t = LK.PL_new_term_refs(ld, 1)
         LK.putSlotValue!(ld, t + 1, culprit)
         @test !LK.PL_error(ld, LK.ERR_TYPE, _as("callable"), t)
