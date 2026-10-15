@@ -61,7 +61,9 @@ function _hcode_of(codes::Vector{UInt64}, literals::Vector{T})::Vector{String} w
             i = LK.functor_literal(w)
             f = i == 0 ? "\$expr" : String(lk_name(literals[i]))
             push!(out, "$name($(_hF(f, LK.functor_arity(w))))")
-        elseif op in (LK.H_ATOM, LK.H_SMALLINT, LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
+        elseif op == LK.H_ATOM                                  # the packed operand (L1b C6b)
+            push!(out, "$name($(_hlit(literals[LK.atom_literal(codes[pc.pc + 1])])))")
+        elseif op in (LK.H_SMALLINT, LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
             push!(out, "$name($(_hlit(literals[codes[pc.pc + 1]])))")
         else
             push!(out, name)

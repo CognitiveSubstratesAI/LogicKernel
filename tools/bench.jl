@@ -802,7 +802,8 @@ const CASES = [
     (
         "rule head + analysis",
         () -> LogicKernel._compile_clause_head!(
-            CP_GD, LogicKernel.compileInfo{BT}(3, CP_USER, APP_PROC), APP_HEAD, APP_BODY
+            CP_GD, LogicKernel.compileInfo{BT}(CP_GD, 3, CP_USER, APP_PROC), APP_HEAD,
+            APP_BODY
         ),
         ""
     ),

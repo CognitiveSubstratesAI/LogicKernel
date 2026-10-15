@@ -973,6 +973,7 @@ graph LR
     pl_wam --> default_term
     pl_wam --> pl_incl
     pl_wam --> SWI_Prolog
+    pl_wam --> pl_atom
     pl_wam --> pl_vmi
     pl_wam --> pl_index
     pl_wam --> pl_funct

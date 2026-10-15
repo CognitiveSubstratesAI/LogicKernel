@@ -227,52 +227,48 @@ struct AtomNotRepresentableError <: Exception
     codes::Vector{UInt32}
 end
 
-# ORIGINAL: a symbol's atom in the engine's table (L1b stage C3; src/pl-global.jl `atoms`): through
-# the `sym_key` cache, else its text — `textToAtom` for a text atom (canonical: one atom per text),
-# `lookupBlob(…, reserved_symbol)` for a reserved symbol (`[]` is not the text atom `'[]'`).
-"The atom word of the symbol `v` in the engine's atom table."
+# ORIGINAL: a symbol's atom in a database's table (L1b stage C3; src/pl-global.jl `atoms`) — by its
+# text: `textToAtom` for a text atom (canonical: one atom per text), `lookupBlob(…,
+# reserved_symbol)` for a reserved symbol (`[]` is not the text atom `'[]'`) — its symbol recorded
+# in the database's store (`atom_symbols`, L1b C6b), so every engine on that database reads the
+# word back. The compiler's entry (an atom operand's word, C6b); an engine goes through its cache.
+"The atom word of the symbol `v` in the atom table `atoms`, its symbol recorded in `syms`."
+function _atom_word!(atoms::atoms_t, syms::atom_symbols{T}, v::T)::word where {T}
+    s = sym_text(v)
+    bytes = Vector{UInt8}(codeunits(s))
+    w = if is_reserved_symbol(v)
+        first(lookupBlob(atoms, bytes, length(bytes), reserved_symbol))
+    else
+        textToAtom(atoms, PL_chars_t(bytes, length(s), ENC_UTF8, false))
+    end
+    i = indexAtom(w)
+    atomSymbol(syms, i) === nothing && setAtomSymbol!(syms, i, v)
+    return w
+end
+
+# ORIGINAL: per-engine cache of GD's lookupAtom (`atom_words`, sym_key → atom word) — a CACHE, not a
+# second table (user, 2026-10-15): upstream goes straight to the `GD->atoms` hash table. Correct by
+# construction, one atom per text: a miss falls through to the database's table and finds the atom
+# any engine made, never a second one. Kept while no profile shows it mattering.
+"The atom word of the symbol `v` in the engine's atom table (its database's)."
 function _atom_word!(ld::PL_local_data{T}, v::T)::word where {T}
     k = sym_key(v)
     w = get(ld.atom_words, k, word(0))
     w != 0 && return w
-    s = sym_text(v)
-    bytes = Vector{UInt8}(codeunits(s))
-    w = if is_reserved_symbol(v)
-        first(lookupBlob(ld.atoms, bytes, length(bytes), reserved_symbol))
-    else
-        textToAtom(ld.atoms, PL_chars_t(bytes, length(s), ENC_UTF8, false))
-    end
+    w = _atom_word!(ld.atoms, ld.atom_symbols, v)
     ld.atom_words[k] = w
-    i = indexAtom(w)
-    _atom_values_hold!(ld, i)
-    ld.atom_values[i] = v
     return w
 end
 
-# ORIGINAL: the symbol cache grows to hold index `i`, its new entries empty.
-"Grow `atom_values` to hold index `i`."
-function _atom_values_hold!(ld::PL_local_data, i::Int)::Nothing
-    n = length(ld.atom_values)
-    i <= n && return nothing
-    resize!(ld.atom_values, max(i, 2 * n))
-    for j in (n + 1):length(ld.atom_values)
-        ld.atom_values[j] = nothing
-    end
-    return nothing
-end
-
-# ORIGINAL: an atom word's interface symbol (L1b stage C3), from the per-index cache. Every atom word
-# that reaches a cell comes from `_atom_word!`, which fills the cache, so a miss is an error: an atom
-# holding the character 0 (planted: no binding can make one yet — it raises
-# `AtomNotRepresentableError`), or a broken invariant. The miss builds its error inside the `throw`,
-# so the read itself allocates nothing (`deRef` stays allocation-free).
+# ORIGINAL: an atom word's interface symbol (L1b stage C3), from the DATABASE's store (C6b). Every
+# atom word that reaches a cell or a clause's code comes from `_atom_word!`, which records the
+# symbol, so a miss is an error: an atom holding the character 0 (planted: no binding can make one
+# yet — it raises `AtomNotRepresentableError`), or a broken invariant. The miss builds its error
+# inside the `throw`, so the read itself allocates nothing (`deRef` stays allocation-free).
 "The interface symbol of the atom word `w`."
 function _atom_value(ld::PL_local_data{T}, w::word)::T where {T}
-    i = indexAtom(w)
-    if i <= length(ld.atom_values)
-        v = ld.atom_values[i]
-        v === nothing || return v
-    end
+    v = atomSymbol(ld.atom_symbols, indexAtom(w))
+    v === nothing || return v
     throw(_atom_value_error(ld, w))
 end
 
@@ -287,7 +283,7 @@ end
     end
     any(iszero, codes) && return AtomNotRepresentableError(codes)
     return ErrorException(
-        "atom word $(repr(w)) has no cached symbol: every atom word in a cell comes from _atom_word!"
+        "atom word $(repr(w)) has no recorded symbol: every atom word in a cell or a clause comes from _atom_word!"
     )
 end
 

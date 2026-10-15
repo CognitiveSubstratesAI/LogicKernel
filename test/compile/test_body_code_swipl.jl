@@ -75,6 +75,8 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
         else
             _hlit(lits[w])
         end
+    elseif k == LK.CA1_DATA && (op == LK.H_ATOM || op == LK.B_ATOM || op == LK.L_ATOM)
+        return _hlit(lits[LK.atom_literal(w)])                          # packed (L1b C6b)
     elseif k in (LK.CA1_DATA, LK.CA1_FLOAT, LK.CA1_MPZ, LK.CA1_MPQ, LK.CA1_STRING)
         return _hlit(lits[w])
     elseif k == LK.CA1_FUNC
@@ -1293,7 +1295,7 @@ end
     e1g = LK.PL_global_data{_B}()
     e1u = LK.MODULE_user(e1g)
     e1p = LK.lookupProcedure(_bs("c18"), 2, e1u)
-    ci = LK.compileInfo{_B}(2, e1u, e1p)
+    ci = LK.compileInfo{_B}(e1g, 2, e1u, e1p)
     ci.head_unify = true
     LK._compile_clause_head!(
         e1g, ci, _bf("c18", _bv(1), _bv(2)), _bconj(_bv(2), _bf("=", _bv(1), _bs("a")))
@@ -1302,7 +1304,7 @@ end
     # …and upstream's own case (tests/core_lang/test_moved_ubody.pl `var_goal`, added with the
     # fix): var_goal(X) :- G = var(X), G, X = a — `X = a` stays behind the call of G
     vgp = LK.lookupProcedure(_bs("var_goal"), 1, e1u)
-    vgci = LK.compileInfo{_B}(1, e1u, vgp)
+    vgci = LK.compileInfo{_B}(e1g, 1, e1u, vgp)
     vgci.head_unify = true
     LK._compile_clause_head!(
         e1g,
@@ -1315,7 +1317,7 @@ end
     # itself refuses to assert this clause — type_error(callable, _) — so only the kernel's
     # analysis is pinned)
     fgp = LK.lookupProcedure(_bs("c19"), 1, e1u)
-    fgci = LK.compileInfo{_B}(1, e1u, fgp)
+    fgci = LK.compileInfo{_B}(e1g, 1, e1u, fgp)
     fgci.head_unify = true
     LK._compile_clause_head!(
         e1g, fgci, _bf("c19", _bv(1)), _bconj(_bv(2), _bf("=", _bv(1), _bs("a")))
@@ -1326,7 +1328,7 @@ end
     # the code starts with I_ENTER (a move would start it with H_ATOM)
     function headop(name, body)
         hp = LK.lookupProcedure(_bs(name), 1, e1u)
-        hci = LK.compileInfo{_B}(1, e1u, hp)
+        hci = LK.compileInfo{_B}(e1g, 1, e1u, hp)
         hci.head_unify = true
         LK._compile_clause_head!(e1g, hci, _bf(name, _bv(1)), body)
         return LK.codeTable(hci.codes[1]).name
@@ -2997,7 +2999,8 @@ end
     i = findfirst(==(LK.L_ATOM), cl.codes)
     j = findfirst(==(LK.B_ATOM), cl.codes)
     @test i !== nothing && j !== nothing && cl.codes[i + 2] == cl.codes[j + 1]
-    @test cl.literals[cl.codes[j + 1]] === v
+    @test cl.literals[LK.atom_literal(cl.codes[j + 1])] === v
+    @test LK.atom_operand_word(cl.codes[j + 1]) == 0        # an opaque literal: no atom word
 end
 
 @testset "clause/2 and retract/1 answer for the body `true`: facts only" begin

@@ -2229,6 +2229,46 @@ atoms_t() = atoms_t(
     0, 0, 0, 0, 0, blob_registration[], 0, 0, false, false, 0
 )
 
+# ORIGINAL: the interface symbol of each atom (L1b stage C6b; user, 2026-10-15), held by the
+# DATABASE beside its atom table and shared by every engine made for it — no upstream counterpart: SWI's atom
+# record IS its name, and every engine reads that one record. The atom table is not parametric in
+# the term type, so the symbols are a store of their own, in the atom array's layout: 64 blocks,
+# block `idx` holding the `2^idx` atoms from index `2^idx`, allocated whole and never moved (as
+# `allocateAtomBlock`), so a reader in another engine never meets a reallocation (a `push!` could
+# move a vector under it). An entry is filled when its atom gets its first word from a symbol
+# (`_atom_word!`), the one place a symbol becomes an atom word.
+"The interface symbol of each atom of one database's table, in the atom array's block layout (L1b C6b)."
+struct atom_symbols{T}
+    blocks::Vector{Union{Nothing, Vector{Union{Nothing, T}}}}   # as atom_array.blocks: 64 blocks
+end
+
+"An empty symbol store: no block allocated."
+atom_symbols{T}() where {T} =
+    atom_symbols{T}(Union{Nothing, Vector{Union{Nothing, T}}}[nothing for _ in 1:64])
+
+# ORIGINAL: the symbol of the atom at `index`, read as `fetchAtomArray` reads the atom.
+"The interface symbol of the atom at `index` in `s`, or `nothing` (none recorded)."
+@inline function atomSymbol(s::atom_symbols{T}, index::Int)::Union{Nothing, T} where {T}
+    idx = MSB(index)
+    b = s.blocks[idx + 1]
+    b === nothing && return nothing
+    return b[index - (1 << idx) + 1]
+end
+
+# ORIGINAL: record the symbol of the atom at `index`, its block allocated whole first if it is not
+# yet (as `allocateAtomBlock`).
+"Record `v` as the interface symbol of the atom at `index` in `s`."
+function setAtomSymbol!(s::atom_symbols{T}, index::Int, v::T)::Nothing where {T}
+    idx = MSB(index)
+    b = s.blocks[idx + 1]
+    if b === nothing
+        b = Union{Nothing, T}[nothing for _ in 1:(1 << idx)]
+        s.blocks[idx + 1] = b
+    end
+    b[index - (1 << idx) + 1] = v
+    return nothing
+end
+
 # ORIGINAL: `type->registered` of upstream, read off the database's registrations.
 "The registration of blob type `type` in `atoms`, or `nothing`."
 function _blob_registration(

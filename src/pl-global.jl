@@ -60,11 +60,15 @@ mutable struct PL_global_data{T}
     files_no_hole_before::Int                                   # files.no_hole_before
     const stream_filenames::IdDict{IOSTREAM, T}                 # (pl-file.c's stream context)
     const atoms::atoms_t                                        # atoms: the atom table (L1b A)
+    const atom_symbols::atom_symbols{T}                         # (each atom's symbol, L1b C6b)
     const functors::functors_t                                  # functors: the table (L1b B)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
-# pl-funct.c's `functorDefTable` (src/pl-funct.jl), built after it. `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
+# pl-funct.c's `functorDefTable` (src/pl-funct.jl), built after it. `atom_symbols` has no upstream
+# field: each atom's interface symbol, which upstream's atom record holds as its name
+# (src/pl-atom.jl `atom_symbols`, L1b C6b), shared by every engine made for the database.
+# `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
 # `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
 # per database. The module table (`tables.modules`, since V5c a vector: src/pl-modul.jl) holds the
 # `system` and `user` modules, created with the database as upstream's initModules creates them at
@@ -122,6 +126,7 @@ function PL_global_data{T}() where {T}
         1,                                      # files.no_hole_before = 1
         IdDict{IOSTREAM, T}(),
         do_init_atoms!(atoms_t()),              # initAtoms (setup: before everything here)
+        atom_symbols{T}(),                      # (the atoms' symbols: filled as words are made)
         initFunctors!(functors_t())             # initFunctors (after the atoms, as upstream's)
     )
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
@@ -204,8 +209,11 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # own words (`TAG_ATOM`, `consInt`), off the table. An engine's atom words name atoms in its
 # DATABASE's table (`atoms` is `GD->atoms`, the database the engine is made for: since L1b, before
 # C6b, every engine has one — two engines on one database share their atom words, as clause code
-# carrying words needs); `atom_words` and `atom_values` are the engine's caches of the symbol ↔
-# atom conversion both ways, so neither direction looks text up twice. `trail` is `stacks.trail` (its
+# carrying words needs). An atom word's symbol is read from the DATABASE's store (`atom_symbols`,
+# the same object as `GD`'s; since L1b C6b — user, 2026-10-15: no per-engine cache, as every SWI engine
+# reads the one atom record); `atom_words` is the engine's cache of the other direction, a symbol's
+# atom word, so a symbol's text is looked up once per engine (correct whatever it holds: one atom
+# per text, so a miss finds the same word in the table). `trail` is `stacks.trail` (its
 # length is `tTop`), entries of both kinds of variable (above). A cyclic link or
 # a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
 # overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
@@ -273,8 +281,8 @@ mutable struct PL_local_data{T}
     vtable::Vector{T}                                           # (the value table, L1b: see above)
     vbox::Vector{Int}                                           # … each entry's box on the stack
     atoms::atoms_t                                              # GD->atoms: its database's (L1b C3)
-    atom_words::Dict{UInt64, UInt64}                            # … a symbol's sym_key → its atom
-    atom_values::Vector{Union{Nothing, T}}                      # … an atom's index → its symbol
+    atom_words::Dict{UInt64, UInt64}                            # (a CACHE of GD's lookupAtom)
+    atom_symbols::atom_symbols{T}                               # GD's: an atom's symbol (C6b)
     mark_bar::Int                                               # mark_bar
     stamp_next::UInt64                                          # (the engine's reserved stamps:
     stamp_end::UInt64                                           #  stamp_next until stamp_end)
@@ -355,7 +363,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
         UInt64[], UInt64[], T[], 0, T[], Int[],
-        gd.atoms, Dict{UInt64, UInt64}(), Union{Nothing, T}[],   # GD->atoms: the database's
+        gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,

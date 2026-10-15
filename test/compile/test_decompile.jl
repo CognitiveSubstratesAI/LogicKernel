@@ -96,7 +96,9 @@ function _dliteral_refs(cl::LK.Clause{_D})::Vector{Int}
         w = pc.pc < length(cl.codes) ? cl.codes[pc.pc + 1] : UInt64(0)
         if c == LK.H_FUNCTOR || c == LK.H_RFUNCTOR
             LK.functor_literal(w) == 0 || push!(refs, LK.functor_literal(w))
-        elseif c in (LK.H_ATOM, LK.H_SMALLINT, LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
+        elseif c == LK.H_ATOM
+            push!(refs, LK.atom_literal(w))                     # the packed operand (L1b C6b)
+        elseif c in (LK.H_SMALLINT, LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
             push!(refs, Int(w))
         end
         pc = LK.stepPC(pc)

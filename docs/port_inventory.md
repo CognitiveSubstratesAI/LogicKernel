@@ -140,7 +140,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-umap.c` | code | `8609e216cab9` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `8609e216cab9` | `src/pl-variant.jl` | 17 | 7 |
 | swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-vmi.jl` | 130 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 145 | 94 |
+| swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 146 | 97 |
 | swipl-devel `src/pl-wam.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 42 | 34 |
 | swipl-devel `src/pl-write.c` | code | `8609e216cab9` | `src/pl-write.jl` | 112 | 45 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `8609e216cab9` | `test/core_lang/test_bips.jl` | 10 | 1 |
@@ -246,7 +246,7 @@ checkout is pulled.
 | swipl-devel `src/pl-trace.c` | `8609e216cab9` | 5 | 77 | 2 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `8609e216cab9` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `8609e216cab9` | 10 | 17 | 4 | src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `8609e216cab9` | 130 | 240 | 70 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `8609e216cab9` | 130 | 240 | 73 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `8609e216cab9` | 38 | 96 | 32 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `8609e216cab9` | 81 | 111 | 41 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `8609e216cab9` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
@@ -264,7 +264,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8609e216cab9` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8609e216cab9` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8609e216cab9` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1089** | **4361** | **576** | |
+| **total** | | **1089** | **4361** | **579** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

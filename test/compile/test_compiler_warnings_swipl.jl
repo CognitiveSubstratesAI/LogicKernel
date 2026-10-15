@@ -259,7 +259,7 @@ function _cwkernel(gd, ld, c::_CwClause, style::Int)::String
     proc = LK.lookupProcedure(name, ar, user)
     out = String[]
     if c.control                                    # the analysis alone (bodies with `;`: V9)
-        ci = LK.compileInfo{_CW}(ar, user, proc)
+        ci = LK.compileInfo{_CW}(gd, ar, user, proc)
         ci.styleCheck = style
         ci.warning_list = 1                         # any term reference: warnings are wanted
         ci.variable_names = _cwbindings(c)
@@ -433,7 +433,7 @@ if _CW_SWIPL !== nothing
         head = _cwe("nw", [x])
         body = _cwe("==", [x, y])
         proc = LK.lookupProcedure(_cws("nw"), 1, user)
-        ci = LK.compileInfo{_CW}(1, user, proc)                 # warning_list 0
+        ci = LK.compileInfo{_CW}(gd, 1, user, proc)                 # warning_list 0
         ci.styleCheck = _CW_DEFAULT
         @test LK.compiler_warning(ci, :eq_singleton, _CW[x, y])
         @test ci.warnings === nothing
@@ -451,7 +451,7 @@ if _CW_SWIPL !== nothing
         @test is_nil(LK.slotValue(ld, w + 1))
         LK.PL_discard_foreign_frame(ld, fid)
         # an undefined warning is an error, and an argument count that is not the declaration's
-        ci2 = LK.compileInfo{_CW}(1, user, proc)
+        ci2 = LK.compileInfo{_CW}(gd, 1, user, proc)
         ci2.warning_list = 1
         @test_throws ErrorException LK.compiler_warning(ci2, :no_such_warning, _CW[x])
         @test_throws AssertionError LK.compiler_warning(ci2, :multiton, _CW[x, y])

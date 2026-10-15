@@ -995,6 +995,49 @@ end
 # `ARGP + n`.
 _argp_add(a::argp_t{T}, n::Int) where {T} = argp_t{T}(a.form, a.pos + n, a.term)
 
+# h_const's outcomes on the words (`_h_const_word!`): matched or bound, failed, or undecided.
+"`_h_const_word!`: the slot's word is the constant, or a cell it reaches was bound to it."
+const H_CONST_MATCH = Int8(1)
+"`_h_const_word!`: the slot's word reaches another constant (`CLAUSE_FAILED`)."
+const H_CONST_FAIL = Int8(0)
+"`_h_const_word!`: the slot's word reaches a value with no word form yet: decide on terms."
+const H_CONST_TERMS = Int8(-1)
+
+# PORT: pl-vmi.c h_const as _h_const_word!
+# (its test and binding, on the words)
+# DIVERGES, transitional (L1b stage C6b): decided on the WORDS when argument slot `i` holds its word
+# form — a reference to a cell, followed through the cells it is bound to (`deRef`), or an atom
+# word: `*k == c` matches; an unbound cell is bound (`bindConst`, pl-attvar.h `varBindConst`:
+# `*p = c`, trailed when `p < mark_bar` — `<=` here, `gTop` being the last cell in use, as
+# `Trail!` trails a cell); any other atom word fails. A value-table word (a value with no word form
+# yet, a keyed variable among them) and a `SLOT_VALUE` slot are UNDECIDED: the VM decides on terms,
+# as before C6b, until L1d (unification over cells) gives them words.
+"h_const on slot `i`'s words for the atom word `c`: `H_CONST_MATCH`, `H_CONST_FAIL` or `H_CONST_TERMS`."
+@inline function _h_const_word!(ld::PL_local_data, i::Int, c::word)::Int8
+    w = ld.slots[i]
+    if isRef(w)
+        p = unRef(w)
+        while true
+            k = ld.gstack[p]
+            k == c && return H_CONST_MATCH                          # *k == c
+            if isVar(k)                                             # canBind(*k)
+                p <= ld.mark_bar && push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))
+                ld.gstack[p] = c                                    # bindConst(k, c)
+                return H_CONST_MATCH
+            elseif isRef(k)
+                p = unRef(k)
+            elseif isAtomW(k)
+                return H_CONST_FAIL
+            else
+                return H_CONST_TERMS                                # a value-table word
+            end
+        end
+    end
+    w == c && return H_CONST_MATCH
+    isAtomW(w) && return H_CONST_FAIL
+    return H_CONST_TERMS                                            # SLOT_VALUE
+end
+
 # The argument stack's height, and the builder's, back to what query `q` saved (`aTop = QF->aSave`):
 # the builder is reset wherever upstream resets the argument stack (user, 2026-10-05).
 function _reset_argument_stack!(ld::PL_local_data{T}, q::queryFrame{T})::Nothing where {T}
@@ -1348,6 +1391,7 @@ function PL_open_query(
 )::Int where {T}
     # an engine runs queries on the database it was made for: its atom words name GD->atoms (L1b)
     @assert ld.atoms === gd.atoms "PL_open_query: the engine was made for another database (PL_local_data{T}(gd))"
+    @assert ld.atom_symbols === gd.atom_symbols "PL_open_query: the engine reads another database's atom symbols"
     env = ld.environment_frame
     @assert env == 0 || ld.fliframes[ld.fli_context].base > ld.frames[env].base
     @assert ld.lTop >=
@@ -1637,6 +1681,8 @@ function PL_next_solution_guarded(
     thiscode::code = code(0)
     # the helpers' arguments (upstream's `helper_args`)
     hc_c::T = ph                                    # h_const's constant
+    hc_w::word = word(0)                            # … as an atom word (0: none; L1b C6b)
+    nil_w::word = _atom_word!(ld, gd.atom_nil)      # ATOM_nil, the word of `[]` (L1b C6b)
     tc_cref::ClauseRef{T} = gd.clauses_top_cref     # TRUST_CLAUSE's clause
     bv_voffset::Int = 0                             # bvar_cont's voffset
     fexitdet_rc::foreign_t = FTRUE                  # I_FEXITDET's rc
@@ -1708,30 +1754,45 @@ function PL_next_solution_guarded(
 
     # ── head instructions (pl-vmi.c) ──────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c H_ATOM
-    # DIVERGES: the operand indexes the clause's literal table (since V1 L2); no atom GC, so no
-    # `pushVolatileAtom`.
+    # DIVERGES: the operand is packed (`atom_operand`, L1b C6b): the literal, and its atom word —
+    # upstream's whole operand (`code2atom(*PC++)`); no atom GC, so no `pushVolatileAtom`.
     @label H_ATOM
     if UMODE == uwrite
         @goto B_ATOM
     end
-    hc_c = PCl[PCc[PC]]
+    hc_c = PCl[atom_literal(PCc[PC])]
+    hc_w = atom_operand_word(PCc[PC])
     PC += 1
     @goto h_const
 
     # PORT: pl-vmi.c H_SMALLINT
+    # DIVERGES: no word (`consInt(i)`) until L1d — a small integer in a cell is still a value-table
+    # entry, so its compare is on terms (L1b C6b, user-approved).
     @label H_SMALLINT
     if UMODE == uwrite
         @goto B_SMALLINT
     end
     hc_c = PCl[PCc[PC]]
+    hc_w = word(0)
     PC += 1
     @goto h_const
 
     # PORT: pl-vmi.c h_const
-    # DIVERGES: `unify_simple_ptrs` decides, which has h_const's three outcomes for a constant — the same
-    # constant (SWI's identity: `sym_key`, `gnd_equal`), an unbound variable (bound, trailed), anything
-    # else; there is no global stack to grow.
+    # DIVERGES: an atom constant against an argument slot is decided on the words when they can
+    # decide it (`_h_const_word!`, L1b C6b); otherwise `unify_simple_ptrs` decides, which has
+    # h_const's three outcomes for a constant — the same constant (SWI's identity: `sym_key`,
+    # `gnd_equal`), an unbound variable (bound, trailed), anything else; there is no global stack to
+    # grow.
     @label h_const
+    if hc_w != 0 && ARGP.form == ARGP_SLOT
+        hc_r = _h_const_word!(ld, ARGP.pos + 1, hc_w)
+        if hc_r == H_CONST_MATCH
+            ARGP = _argp_add(ARGP, 1)
+            @goto next_instruction
+        elseif hc_r == H_CONST_FAIL
+            @goto unify_backtrack                   # CLAUSE_FAILED
+        end
+    end
     if unify_simple_ptrs(ld, _argp_deref(ld, ARGP), hc_c) == BOOLEX_TRUE
         ARGP = _argp_add(ARGP, 1)
         @goto next_instruction
@@ -1739,16 +1800,14 @@ function PL_next_solution_guarded(
     @goto unify_backtrack                           # CLAUSE_FAILED
 
     # PORT: pl-vmi.c H_NIL
-    # DIVERGES: as `h_const`, with the database's `[]`.
+    # DIVERGES: `h_const` with the database's `[]` and its word (upstream repeats h_const's body).
     @label H_NIL
     if UMODE == uwrite
         @goto B_NIL
     end
-    if unify_simple_ptrs(ld, _argp_deref(ld, ARGP), gd.atom_nil) == BOOLEX_TRUE
-        ARGP = _argp_add(ARGP, 1)
-        @goto next_instruction
-    end
-    @goto unify_backtrack
+    hc_c = gd.atom_nil
+    hc_w = nil_w                                    # c = ATOM_nil
+    @goto h_const
 
     # PORT: pl-vmi.c H_FLOAT
     # DIVERGES: the operand is one word, the literal's index (since V1 L2); identity and binding as `h_const`
@@ -1999,8 +2058,15 @@ function PL_next_solution_guarded(
 
     # ── body instructions: a body's arguments, and the head's write mode (pl-vmi.c) ─────────────
     # PORT: pl-vmi.c B_ATOM
+    # DIVERGES: the operand as `H_ATOM`'s; an argument slot gets the atom WORD (L1b C6b), a builder
+    # cell the literal (it holds terms until L1c), as does an opaque literal (no word).
     @label B_ATOM
-    _argp_store!(ld, ARGP, PCl[PCc[PC]])            # *ARGP++ = code2atom(*PC++)
+    hc_w = atom_operand_word(PCc[PC])
+    if hc_w != 0 && ARGP.form == ARGP_SLOT
+        ld.slots[ARGP.pos + 1] = hc_w               # *ARGP++ = code2atom(*PC++)
+    else
+        _argp_store!(ld, ARGP, PCl[atom_literal(PCc[PC])])
+    end
     PC += 1
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -2013,8 +2079,13 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c B_NIL
+    # DIVERGES: as `B_ATOM`: an argument slot gets the word, a builder cell the term.
     @label B_NIL
-    _argp_store!(ld, ARGP, gd.atom_nil)
+    if ARGP.form == ARGP_SLOT
+        ld.slots[ARGP.pos + 1] = nil_w              # *ARGP++ = ATOM_nil
+    else
+        _argp_store!(ld, ARGP, gd.atom_nil)
+    end
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
@@ -2871,15 +2942,24 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c L_ATOM
-    # DIVERGES: the operand indexes the literal table (since V1 L2); no atom GC, so no `pushVolatileAtom`.
+    # DIVERGES: the operand is `B_ATOM`'s (`atom_operand`, L1b C6b): the slot gets the atom word, or
+    # an opaque literal its term; no atom GC, so no `pushVolatileAtom`.
     @label L_ATOM
-    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, PCl[PCc[PC + 1]])
+    hc_w = atom_operand_word(PCc[PC + 1])
+    if hc_w != 0
+        ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = hc_w
+    else
+        setSlotValue!(
+            ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
+            PCl[atom_literal(PCc[PC + 1])]
+        )
+    end
     PC += 2
     @goto next_instruction
 
     # PORT: pl-vmi.c L_NIL
     @label L_NIL
-    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, gd.atom_nil)
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = nil_w   # the word (L1b C6b)
     PC += 1
     @goto next_instruction
 

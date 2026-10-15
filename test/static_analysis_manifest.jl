@@ -137,7 +137,12 @@ _manifest_per_type(T) = (
     (LK._atom_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._atom_value_error, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
-    (LK._atom_values_hold!, Tuple{LK.PL_local_data{T}, Int}, false),
+    # the atoms' symbols, the DATABASE's (L1b stage C6b): the read allocates nothing; a record may
+    # allocate its block; the compiler's word for a literal looks its text up
+    (LK._atom_word!, Tuple{LK.atoms_t, LK.atom_symbols{T}, T}, false),
+    (LK.atom_symbols{T}, Tuple{}, false),
+    (LK.atomSymbol, Tuple{LK.atom_symbols{T}, Int}, true),
+    (LK.setAtomSymbol!, Tuple{LK.atom_symbols{T}, Int, T}, false),
     (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, true),
     # the slot words (L1b stage C5/C6a): reads, stores and moves allocate nothing; a fresh cell may
     # grow the global stack
@@ -287,7 +292,7 @@ function _manifest_index(T)
         (LK._comp_shape, Tuple{T}, true), (LK._gnd_code, Tuple{T, Int}, true),
         (LK.isFirstVarP, Tuple{CInfo, T}, true),
         (LK.compileListFF!, Tuple{CInfo, T}, false),
-        (LK.compileInfo{T}, Tuple{Int, MOD, PR}, false),
+        (LK.compileInfo{T}, Tuple{GD, Int, MOD, PR}, false),
         (LK.pushBranchVar!, Tuple{CInfo, LK.VarDef}, false),
         (LK.compiler_warning, Tuple{CInfo, Symbol, Vector{T}}, false),
         (LK.push_compiler_warnings, Tuple{LD, CInfo}, false),
@@ -965,6 +970,7 @@ function _manifest_index(T)
         (LK._argp_raw, Tuple{LD, ARGP}, true), (LK._argp_deref, Tuple{LD, ARGP}, true),
         (LK._argp_store!, Tuple{LD, ARGP, T}, true), (LK._argp_add, Tuple{ARGP, Int}, true),
         (LK._argp_store_var!, Tuple{LD, ARGP, Int}, true),
+        (LK._h_const_word!, Tuple{LD, Int, UInt64}, false),     # a binding may grow the trail
         (LK._reset_argument_stack!, Tuple{LD, LK.queryFrame{T}}, true),
         (LK._bopen!, Tuple{LD, Int, T, Bool, Int, Int, T}, false),
         (LK._bclose!, Tuple{LD}, false),
@@ -1419,6 +1425,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.initVMIMerge, Tuple{UInt64}, true),
     (LK.functor_operand, Tuple{UInt64, Int}, false),
     (LK.functor_literal, Tuple{UInt64}, true), (LK.functor_arity, Tuple{UInt64}, true),
+    (LK.atom_operand, Tuple{UInt64, UInt64}, false),
+    (LK.atom_literal, Tuple{UInt64}, true), (LK.atom_operand_word, Tuple{UInt64}, true),
     (LK.VAROFFSET, Tuple{Int}, true), (LK.VARNUM, Tuple{UInt64}, true),
     (LK.sizeofClause, Tuple{Int}, true),
     (LK.argFrameP, Tuple{Int, Int}, true), (LK.varFrameP, Tuple{Int, Int}, true),

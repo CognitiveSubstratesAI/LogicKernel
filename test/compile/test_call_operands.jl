@@ -81,7 +81,7 @@ end
     gd = LK.PL_global_data{_O}()
     user = LK.MODULE_user(gd)
     pr = LK.lookupProcedure(_os(:r), 1, user)
-    ci = LK.compileInfo{_O}(1, user, pr)
+    ci = LK.compileInfo{_O}(gd, 1, user, pr)
     @test ci.module_ === user && ci.procedure === pr && isempty(ci.procedures)
     pa = LK.lookupBodyProcedure(gd, _of(:a, _ov(1)), user)
     pb = LK.lookupBodyProcedure(gd, _os(:b), user)
@@ -94,8 +94,9 @@ end
 end
 
 @testset "Output_3!, Output_an!, Output_n!: the instruction, then every operand word" begin
-    user = LK.MODULE_user(LK.PL_global_data{_O}())
-    ci = LK.compileInfo{_O}(0, user, LK.lookupProcedure(_os(:o), 0, user))
+    ogd = LK.PL_global_data{_O}()
+    user = LK.MODULE_user(ogd)
+    ci = LK.compileInfo{_O}(ogd, 0, user, LK.lookupProcedure(_os(:o), 0, user))
     c, x, y, z = LK.I_ENTER, LK.code(11), LK.code(12), LK.code(13)
     LK.Output_3!(ci, c, x, y, z)
     @test ci.codes == [c, x, y, z]

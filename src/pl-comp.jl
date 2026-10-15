@@ -261,19 +261,23 @@ mutable struct compileInfo{T}
     argvar::Int                                             # islocal current pseudo var
     local_ld::Union{Nothing, PL_local_data{T}}              # (islocal: the frame's local data)
     local_base::Int                                         # (islocal: the frame, lTop)
+    const gd::PL_global_data{T}                             # (GD: its atom table, L1b C6b)
 end
 
 """
 A fresh compilation, into module `m`, of a clause of procedure `proc`, whose predicate has `arity`
 arguments (pl-comp.c `compileClause`).
 """
-compileInfo{T}(arity::Int, m::module_t{T}, proc::Procedure{T}) where {T} =
+compileInfo{T}(
+    gd::PL_global_data{T}, arity::Int, m::module_t{T}, proc::Procedure{T}
+) where {T} =
     compileInfo{T}(
         m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
         0, false, UInt32(0), 0, 0, Dict{Int, T}(),              # head_unify: compileClause's
         0, 0, 0, nothing, nothing,                              # no style checks, no warnings
-        false, false, 0, 0, nothing, 0                          # not a goal clause
+        false, false, 0, 0, nothing, 0,                         # not a goal clause
+        gd
     )
 
 # PORT: pl-comp.c pushBranchVar
@@ -1176,6 +1180,27 @@ functor_literal(op::code)::Int = Int(op >> 32)
 "The arity an `H_FUNCTOR` operand holds (V1 L2)."
 functor_arity(op::code)::Int = Int(op & _OPERAND_HALF)
 
+# DIVERGES (L1b stage C6b; user, 2026-10-15: approved): upstream's `H_ATOM`/`B_ATOM` operand IS the
+# atom word (`code2atom(*PC++)`). Here ONE packed operand, as `functor_operand`'s: the literal (its
+# exact term, for decompiling and the index keys) and the index of its atom in the DATABASE's table
+# (`GD->atoms`) — so the VM compares and stores the word with no lookup. Index 0: no word, the
+# opaque literal of a grounded value SWI has no type for (NUM_OTHER), compared as a term.
+# `L_ATOM` carries `B_ATOM`'s operand as is (`lco!`).
+"The `H_ATOM`/`B_ATOM`/`L_ATOM` operand naming literal `i` and the atom word `w` (0: none) (L1b C6b)."
+function atom_operand(i::code, w::word)::code
+    a = w == 0 ? 0 : indexAtom(w)
+    (i <= _OPERAND_HALF && code(a) <= _OPERAND_HALF) ||
+        throw(ArgumentError("atom_operand: literal $i or atom index $a beyond 32 bits"))
+    return (i << 32) | code(a)
+end
+"The literal index an `H_ATOM`/`B_ATOM`/`L_ATOM` operand names (L1b C6b)."
+atom_literal(op::code)::Int = Int(op >> 32)
+"The atom word an `H_ATOM`/`B_ATOM`/`L_ATOM` operand holds, or 0: an opaque literal (L1b C6b)."
+@inline function atom_operand_word(op::code)::word
+    a = op & _OPERAND_HALF
+    return a == 0 ? word(0) : (a << LMASK_BITS) | TAG_ATOM
+end
+
 # From pl-comp.c compileArgument (`TAG_INTEGER`, `TAG_FLOAT`, `TAG_STRING`): the instruction of a
 # grounded value, in a head or a body, each choice keyed as upstream keys it (`A_BODY` for SMALLINT
 # and FLOAT, `A_HEAD` for MPZ, MPQ and STRING). A number by its SEMANTIC kind (Q1); an integer by its
@@ -1315,14 +1340,20 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
         if is_nil(arg)                                         # isNil(*arg): SWI-7's reserved []
             Output_0!(ci, (where_ & A_BODY) != 0 ? B_NIL : H_NIL)
         else
-            Output_1!(ci, (where_ & A_BODY) != 0 ? B_ATOM : H_ATOM, addLiteral!(ci, arg))
+            lit = addLiteral!(ci, arg)
+            Output_1!(                                         # code2atom(*arg)
+                ci, (where_ & A_BODY) != 0 ? B_ATOM : H_ATOM,
+                atom_operand(lit, _atom_word!(ci.gd.atoms, ci.gd.atom_symbols, arg))
+            )
         end
         @goto resume
     elseif k === GND
         if ci.islocal && isString(arg) && (where_ & A_NOARGVAR) == 0
             @goto argvar
         end
-        Output_1!(ci, _gnd_code(arg, where_), addLiteral!(ci, arg))
+        gc = _gnd_code(arg, where_)
+        gl = addLiteral!(ci, arg)
+        Output_1!(ci, gc, gc == H_ATOM || gc == B_ATOM ? atom_operand(gl, word(0)) : gl)
         @goto resume
     end
     # a compound
@@ -1431,8 +1462,9 @@ end
 # PORT: pl-comp.c lco
 # DIVERGES: positions in the code vector (1-based) instead of pointers, so no FIX_BUFFER_SHIFT; the
 # departing call's operand is an index into the clause's procedure table, and `I_LCALL` carries the
-# same index, as `L_ATOM`/`L_SMALLINT` carry the `B_*` instruction's literal index (since V1: upstream
-# copies the operand word too); no `B_SMALLINTW` (64-bit words) and no `PL_register_atom`.
+# same index, as `L_ATOM`/`L_SMALLINT` carry the `B_*` instruction's operand (since V1: upstream
+# copies the operand word too; `B_ATOM`'s is the packed `atom_operand`, L1b C6b); no `B_SMALLINTW`
+# (64-bit words) and no `PL_register_atom`.
 """
 Last-call optimisation (pl-comp.c) of the goal whose argument code starts at code position `pc0`
 and ends with `I_DEPART`: unless an argument cannot move into place — an instruction without
@@ -2597,7 +2629,7 @@ function compileClause(
     proc::Procedure{T}, m::module_t{T}, warnings::term_t
 )::Union{Nothing, Clause{T}} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
-    ci = compileInfo{T}(def.arity, m, proc)
+    ci = compileInfo{T}(gd, def.arity, m, proc)
     ci.styleCheck = ld.debugstatus_styleCheck                  # (debugstatus.styleCheck)
     ci.warning_list = warnings
     ci.warnings = nothing
@@ -2699,7 +2731,7 @@ function compileGoalClause(
     proc = gd.procedures_dcall1
     def = proc.definition
     body = localGoal(gd, ld, goal)
-    ci = compileInfo{T}(0, m, proc)
+    ci = compileInfo{T}(gd, 0, m, proc)
     ci.islocal = true
     ci.subclausearg = false
     ci.argvars = 1
@@ -3145,8 +3177,9 @@ function decompile_head!(
             continue
         elseif c == H_NIL
             v = mk_nil(T)
-        elseif c == H_ATOM || c == H_SMALLINT || c == H_MPZ || c == H_MPQ || c == H_FLOAT ||
-            c == H_STRING
+        elseif c == H_ATOM
+            v = PC.literals[atom_literal(PC.codes[PC.pc + 1])]  # the literal, exactly
+        elseif c == H_SMALLINT || c == H_MPZ || c == H_MPQ || c == H_FLOAT || c == H_STRING
             v = PC.literals[PC.codes[PC.pc + 1]]                # the literal, exactly
         elseif c == H_FIRSTVAR || c == H_VAR
             v = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
@@ -3396,9 +3429,13 @@ function decompileBodyNoShift!(
         end
         if op == I_NOP || op == I_CHP
             continue
-        elseif op == B_ATOM || op == B_SMALLINT || op == B_FLOAT || op == B_MPZ ||
-            op == B_MPQ || op == B_STRING || op == H_ATOM || op == H_SMALLINT ||
-            op == H_FLOAT || op == H_MPZ || op == H_MPQ || op == H_STRING
+        elseif op == B_ATOM || op == H_ATOM
+            _dpush!(di, lits[atom_literal(codes[di.pc])])
+            di.pc += 1
+        elseif op == B_SMALLINT || op == B_FLOAT || op == B_MPZ || op == B_MPQ ||
+            op == B_STRING || op == H_SMALLINT || op == H_FLOAT || op == H_MPZ ||
+            op == H_MPQ ||
+            op == H_STRING
             _dpush!(di, lits[codes[di.pc]])
             di.pc += 1
         elseif op == B_NIL || op == H_NIL
@@ -3964,9 +4001,10 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
             i = functor_literal(op)
             i == 0 && return word(0)                            # `$expr/n`: a wildcard
             return _functor_word(_functor_name(PC.literals[i]), functor_arity(op))
-        elseif c == H_ATOM || c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ ||
-            c == H_STRING
-            return indexOfWord(PC.literals[PC.codes[PC.pc]])   # code2atom/consInt/murmur_key/…
+        elseif c == H_ATOM
+            return indexOfWord(PC.literals[atom_literal(PC.codes[PC.pc])])   # code2atom(*PC)
+        elseif c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ || c == H_STRING
+            return indexOfWord(PC.literals[PC.codes[PC.pc]])   # consInt/murmur_key/…
         elseif c == H_NIL
             return ATOM_nil                                     # *key = ATOM_nil
         elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST
@@ -4002,7 +4040,9 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
             i = functor_literal(op)
             i == 0 && return (false, word(0))                   # `$expr/n`: no functor
             return (true, _functor_word(_functor_name(PC.literals[i]), functor_arity(op)))
-        elseif c == H_ATOM || c == H_SMALLINT
+        elseif c == H_ATOM
+            return (true, indexOfWord(PC.literals[atom_literal(PC.codes[PC.pc])]))
+        elseif c == H_SMALLINT
             return (true, indexOfWord(PC.literals[PC.codes[PC.pc]]))
         elseif c == H_NIL
             return (true, ATOM_nil)
