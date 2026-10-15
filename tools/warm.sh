@@ -689,6 +689,58 @@ _branch_gate_files() {
     } | grep -vxF "${LOGICKERNEL_BRANCH_GATE_CI_ONLY-test/test_static_analysis.jl}" | sort -u
 }
 
+# THE BRANCH-GATE'S TIME BUDGET (user, 2026-10-14 night): the helper rule (above) made C2's gate
+# 69 files on three term types — 48 min on the W530 per commit, while CI runs the same suite in
+# parallel in less, and `main` moves only on CI's green anyway: a long local gate added delay, not
+# safety. So the selection is estimated from the LAST RECORDED time of each file (`_file_time`,
+# kept in .warm/file_times.tsv by every warm file run; a file with none counts
+# LOGICKERNEL_BRANCH_GATE_DEFAULT_S, 60), and when the estimate exceeds the budget
+# (LOGICKERNEL_BRANCH_GATE_BUDGET_S, 600 s) the gate runs the fast check, the tree-wide gates and
+# the DIRECTLY changed test files only, and says what it left to CI. CI's full run stays the gate
+# for main.
+_times_file() { echo "${LOGICKERNEL_FILE_TIMES:-$DIR/file_times.tsv}"; }
+# _record_file_time FILE SECONDS — the file's last time, replacing its older one
+_record_file_time() {
+    local tf
+    tf="$(_times_file)"
+    mkdir -p "$(dirname "$tf")"
+    { grep -vF "$(printf '%s\t' "$1")" "$tf" 2> /dev/null; printf '%s\t%s\n' "$1" "$2"; } > "$tf.new" &&
+        mv "$tf.new" "$tf"
+}
+# _file_time FILE — its last recorded seconds, or the default
+_file_time() {
+    local t
+    t=$(awk -F '\t' -v f="$1" '$1 == f { s = $2 } END { if (s != "") print s }' "$(_times_file)" 2> /dev/null)
+    echo "${t:-${LOGICKERNEL_BRANCH_GATE_DEFAULT_S:-60}}"
+}
+# _branch_gate_direct — the tree-wide gates and the test files changed since HEAD or new
+_branch_gate_direct() {
+    {
+        printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
+        (cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; }) |
+            grep -E '^test/(.*/)?test_[^/]*\.jl$'
+    } | grep -vxF "${LOGICKERNEL_BRANCH_GATE_CI_ONLY-test/test_static_analysis.jl}" | sort -u
+}
+# _branch_gate_plan — the files this branch-gate runs, one per line (stdout); the estimate, and what
+# an over-budget selection leaves to CI, on stderr
+_branch_gate_plan() {
+    local all direct est=0 n budget f left
+    all=$(_branch_gate_files)
+    budget="${LOGICKERNEL_BRANCH_GATE_BUDGET_S:-600}"
+    for f in $all; do est=$(( est + $(_file_time "$f") )); done
+    n=$(printf '%s\n' $all | grep -c .)
+    if [ "$est" -le "$budget" ]; then
+        echo "branch-gate: $n file(s), estimate ${est}s within the ${budget}s budget: all of them" >&2
+        printf '%s\n' $all
+        return 0
+    fi
+    direct=$(_branch_gate_direct)
+    left=$(printf '%s\n' $all | grep -vxF -f <(printf '%s\n' $direct) | grep -c .)
+    echo "branch-gate: over budget — $n file(s), estimate ${est}s > ${budget}s: the directly changed test files and the tree-wide gates only; over budget: $left files left to CI" >&2
+    printf '%s\n' $all | grep -vxF -f <(printf '%s\n' $direct) | sed 's/^/  left to CI: /' >&2
+    printf '%s\n' $direct
+}
+
 # _branch_gate — THE BRANCH-GATE (user, approved 2026-10-14): commits are made off `main`, and a
 # branch commit's evidence is the fast check (`check`: format, port_check, manifest) plus the
 # tree-wide gates and every test file changed since HEAD, each on EVERY term type (`_file` with no
@@ -701,12 +753,15 @@ _branch_gate() {
     t0=$(date +%s)
     _ci_gate "$ROOT" 0 || { echo "branch-gate: FAIL — the previous push's CI (tools/ci_status.sh)"; return 1; }
     _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest) in $(( $(date +%s) - t0 ))s"; return 1; }
-    files=$(_branch_gate_files)
+    files=$(_branch_gate_plan)                          # within the time budget (above)
+    local f0
     for f in $files; do
         [ -f "$ROOT/$f" ] || continue
         echo "branch-gate: $f"
         log="$DIR/branch_gate_$(basename "$f" .jl).log"
+        f0=$(date +%s)
         _file "$f" > "$log" 2>&1 || { rc=1; echo "branch-gate: FAILED — $log"; }
+        _record_file_time "$f" "$(( $(date +%s) - f0 ))"
         grep -E "\.jl \[|\.jl  *\||Test Failed|Error During" "$log"
     done
     echo "branch-gate: $([ "$rc" -eq 0 ] && echo PASS || echo FAIL) in $(( $(date +%s) - t0 ))s"
@@ -755,7 +810,16 @@ case "$cmd" in
     status) if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"; else echo "warm lane: not running"; exit 3; fi ;;
     send) _send "${1:-}" ;;
     branch-gate-files) _branch_gate_files ;;     # the files a branch-gate would run (no daemon)
-    file) [ $# -ge 1 ] || { echo "usage: tools/warm.sh file PATH [impl]" >&2; exit 2; }; _file "$@" ;;
+    branch-gate-plan) _branch_gate_plan ;;       # … within its time budget (no daemon)
+    file)
+        [ $# -ge 1 ] || { echo "usage: tools/warm.sh file PATH [impl]" >&2; exit 2; }
+        _fl_t0=$(date +%s)
+        _file "$@"
+        _fl_rc=$?
+        # a whole-file run (every term type) is the branch-gate's estimate (`_file_time`)
+        [ $# -eq 1 ] && _record_file_time "${1#"$ROOT"/}" "$(( $(date +%s) - _fl_t0 ))"
+        (exit "$_fl_rc")
+        ;;
     bench) _bench "$@" ;;
     check)
         _running || _start > /dev/null || exit 1

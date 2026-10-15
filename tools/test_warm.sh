@@ -10,6 +10,7 @@
 #   tools/test_warm.sh cap      # the task-ceiling cases alone (no daemon)
 #   tools/test_warm.sh guard    # the daemon guard alone: one daemon at a time, the idle exit, the budget
 #   tools/test_warm.sh bgfiles  # the branch-gate's file selection alone (no daemon)
+#   tools/test_warm.sh bgbudget # the branch-gate's time budget alone (no daemon)
 #   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
@@ -209,6 +210,39 @@ _bgfiles_cases() {
     has "…which the gate leaves to CI (JET, Aqua, AllocCheck)" "$T/bg3" '^test/test_static_analysis.jl$' 0
 }
 
+# THE BRANCH-GATE'S TIME BUDGET (user, 2026-10-14 night): the selection is estimated from each
+# file's last recorded time; within the budget it runs in full, over it the gate keeps the tree-wide
+# gates and the directly changed test files and logs how many it left to CI. A planted helper
+# change makes the selection large (as `_bgfiles_cases`); the times are planted (LOGICKERNEL_FILE_TIMES).
+_bgbudget_cases() {
+    local rc_f="$ROOT/test/core_lang/rules_common.jl" full nfull ndirect
+    cp "$rc_f" "$T/rules_common.jl.bak"
+    echo "# bgbudget probe" >> "$rc_f"
+    : > "$T/times"
+    "$W" branch-gate-files > "$T/bb_all" 2>&1
+    nfull=$(grep -c . "$T/bb_all")
+    LOGICKERNEL_FILE_TIMES="$T/times" LOGICKERNEL_BRANCH_GATE_DEFAULT_S=1 LOGICKERNEL_BRANCH_GATE_BUDGET_S=100000 \
+        "$W" branch-gate-plan > "$T/bb_in" 2> "$T/bb_in_err"
+    check "bgbudget: under budget, the plan is produced" 0 $?
+    cmp -s "$T/bb_all" "$T/bb_in"; check "bgbudget: …and runs the whole selection ($nfull files)" 0 $?
+    has "…saying it is within the budget" "$T/bb_in_err" "within the 100000s budget: all of them" 1
+    LOGICKERNEL_FILE_TIMES="$T/times" LOGICKERNEL_BRANCH_GATE_DEFAULT_S=60 LOGICKERNEL_BRANCH_GATE_BUDGET_S=10 \
+        "$W" branch-gate-plan > "$T/bb_over" 2> "$T/bb_over_err"
+    check "bgbudget: over budget, the plan is produced" 0 $?
+    has "bgbudget: …the tree-wide gates kept" "$T/bb_over" '^test/test_type_discipline.jl$' 1
+    has "…a helper's unchanged dependent trimmed" "$T/bb_over" '^test/core_lang/test_rules_swipl.jl$' 0
+    ndirect=$(grep -c . "$T/bb_over")
+    has "…and the count left to CI logged ($((nfull - ndirect)))" "$T/bb_over_err" \
+        "over budget: $((nfull - ndirect)) files left to CI" 1
+    has "…naming each" "$T/bb_over_err" "left to CI: test/core_lang/test_rules_swipl.jl" 1
+    # the estimate reads the RECORDED time: one planted record makes an otherwise small plan exceed it
+    printf 'test/core_lang/test_rules_swipl.jl\t5000\n' > "$T/times"
+    LOGICKERNEL_FILE_TIMES="$T/times" LOGICKERNEL_BRANCH_GATE_DEFAULT_S=1 LOGICKERNEL_BRANCH_GATE_BUDGET_S=1000 \
+        "$W" branch-gate-plan > "$T/bb_rec" 2> "$T/bb_rec_err"
+    has "bgbudget: a recorded 5000 s puts the plan over a 1000 s budget" "$T/bb_rec_err" "over budget" 1
+    cp "$T/rules_common.jl.bak" "$rc_f"
+}
+
 # THE DAEMON GUARD (user, 2026-10-14, after the machine stalled with four daemons up, three idle for
 # hours in other worktrees): `start` REFUSES while another checkout's daemon runs and names it; a
 # daemon EXITS after LOGICKERNEL_WARM_IDLE_S with no request; every daemon and capped run sits in ONE
@@ -364,6 +398,13 @@ if [ "${1:-}" = bgfiles ]; then                      # the branch-gate's file se
     _bgfiles_cases
     echo "test_warm (bgfiles): $pass passed, $fail failed"
     [ "$fail" -eq 0 ]; exit $?
+fi
+if [ "${1:-}" = bgbudget ]; then                     # the branch-gate's time budget alone (no daemon)
+    trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; rm -rf "$T"' EXIT
+    _bgbudget_cases
+    echo "test_warm (bgbudget): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]
+    exit
 fi
 if [ "${1:-}" = guard ]; then                        # the daemon guard alone: one daemon, idle exit, budget
     _guard_cases
@@ -602,6 +643,7 @@ check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
 _guard_cases
 _cap_cases
 _bgfiles_cases
+_bgbudget_cases
 
 echo "test_warm: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
