@@ -311,7 +311,7 @@ end
 
 # ORIGINAL: what a variable is bound to, for the few readers that look a binding up by key.
 "The value variable `key` is bound to, or `nothing` (unbound): its cell, or the store."
-function _binding(ld::PL_local_data{T}, key::UInt64)::Union{Nothing, T} where {T}
+@inline function _binding(ld::PL_local_data{T}, key::UInt64)::Union{Nothing, T} where {T}
     p = _cell_pos(ld, key)
     return p != 0 ? _cell_value(ld, ld.gstack[p]) : get(ld.bindings, key, nothing)
 end
@@ -445,9 +445,7 @@ putSlotValue!(ld::PL_local_data{T}, i::Int, v::T) where {T} =
 "`t` with its variable bindings followed: an unbound variable, or a non-variable (pl-data.h)."
 function deRef(ld::PL_local_data{T}, t::T)::T where {T}
     while kind(t) === VAR
-        k = var_key(t)
-        p = _cell_pos(ld, k)
-        b = p != 0 ? _cell_value(ld, ld.gstack[p]) : get(ld.bindings, k, nothing)
+        b = _binding(ld, var_key(t))           # its cell, or the store (one place knows which)
         b === nothing && return t
         t = b
     end
