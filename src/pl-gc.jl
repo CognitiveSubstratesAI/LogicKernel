@@ -77,7 +77,12 @@ const EMERGENCY_LIMIT = (1024 * 1024) ÷ 8
 
 "Make the cells and the record pools of the local stack hold `size` positions."
 function _resize_local!(ld::PL_local_data{T}, size::Int)::Nothing where {T}
-    length(ld.slots) < size && resize!(ld.slots, size)  # never read before they are written
+    n = length(ld.slots)
+    if n < size                                     # never read before they are written: the
+        resize!(ld.slots, size)                     # words start as 0, which `slotValue` refuses
+        resize!(ld.slot_values, size)
+        fill!(view(ld.slots, (n + 1):size), word(0))
+    end
     _grow_pool!(ld, ld.frames, cld(size, SIZEOF_LOCALFRAME))
     _grow_pool!(ld, ld.choices, cld(size, SIZEOF_CHOICE))
     _grow_pool!(ld, ld.fliframes, cld(size, SIZEOF_FLIFRAME))
@@ -172,7 +177,7 @@ end
 
 "Make the cell at offset `n` of the frame at `base` a variable (`setVar(varFrame(fr, n))`)."
 function _setVar!(ld::PL_local_data{T}, base::Int, n::Int)::Nothing where {T}
-    setSlotValue!(ld, varFrameP(base, n) + 1, mk_var(T, allocGlobalVars!(ld, 1)))
+    _slot_new_var!(ld, varFrameP(base, n) + 1)
     return nothing
 end
 

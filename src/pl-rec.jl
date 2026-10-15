@@ -74,7 +74,7 @@ end
 function _rec_var(ld::PL_local_data{T}, vars::Dict{UInt64, T}, key::UInt64)::T where {T}
     w = get(vars, key, nothing)
     w === nothing || return w
-    v = mk_var(T, allocGlobalVars!(ld, 1))
+    v = _cell_var(ld, allocGlobalCells!(ld, 1))
     vars[key] = v
     return v
 end

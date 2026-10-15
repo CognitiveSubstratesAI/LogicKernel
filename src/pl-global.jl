@@ -212,7 +212,11 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # `var_occurs_in`'s `visited`). The agendas and the `visited` stack are scratch upstream keeps on
 # the C stack; kept here, and emptied entry by entry, a warm unification allocates nothing.
 # `stacks.local` is the cells `slots` and the pools of frame, choice-point and foreign-frame records
-# (src/pl-incl.jl § the local stack); its `top` and `max` and LD's `environment`, `choicepoints` and
+# (src/pl-incl.jl § the local stack; since L1b stage C5 a cell is a WORD — src/pl-inline.jl
+# `slotValue`: a reference to a global cell, an atom, or `SLOT_VALUE`, the value in the cell's own
+# entry of `slot_values`, transitional — a reference reads back as the cell's variable term, made
+# ONCE when the cell is allocated and kept in `gvars` beside its key, as building one allocates;
+# transitional with `gkey`, gone when the stamp falls); its `top` and `max` and LD's `environment`, `choicepoints` and
 # `foreign_environment` are named by the macros upstream's code reads them through — `lTop`, `lMax`,
 # `environment_frame`, `BFR` and `fli_context` — and the last three are pool indices (0 = NULL).
 # `stacks.limit` is the local stack's alone, in positions: there is no global or trail stack to
@@ -264,6 +268,7 @@ mutable struct PL_local_data{T}
     trail_keys::Vector{UInt64}                                  # … the keyed variables' keys
     gstack::Vector{UInt64}                                      # stacks.global: its WORDS (L1b C2)
     gkey::Vector{UInt64}                                        # … the key of each cell's variable
+    gvars::Vector{T}                                            # … and its variable term (L1b C5)
     gTop::Int                                                   # stacks.global.top
     vtable::Vector{T}                                           # (the value table, L1b: see above)
     vbox::Vector{Int}                                           # … each entry's box on the stack
@@ -290,7 +295,8 @@ mutable struct PL_local_data{T}
     compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
     occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
-    slots::Vector{T}                                            # stacks.local: the cells
+    slots::Vector{word}                                         # stacks.local: the cells' WORDS
+    slot_values::Vector{T}                                      # … a SLOT_VALUE cell's value (C5)
     lTop::Int                                                   # stacks.local.top
     lMax::Int                                                   # stacks.local.max
     stacks_limit::Int                                           # stacks.limit
@@ -348,7 +354,7 @@ function PL_local_data{T}() where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
-        UInt64[], UInt64[], 0, T[], Int[],
+        UInt64[], UInt64[], T[], 0, T[], Int[],
         do_init_atoms!(atoms_t()), Dict{UInt64, UInt64}(), Union{Nothing, T}[],
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
@@ -375,7 +381,7 @@ function PL_local_data{T}() where {T}
             _TOP_POSITION,
             false
         ),
-        T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, localFrame{T}[], 0, choice{T}[], 0,
+        word[], T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, localFrame{T}[], 0, choice{T}[], 0,
         fliFrame[],
         0,
         0, 0,

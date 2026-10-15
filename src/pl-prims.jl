@@ -648,7 +648,7 @@ function do_number_vars(
             q === nothing && break
         end
         if kind(q) === VAR                          # canBind(*p)
-            arg = mk_var(T, allocGlobalVars!(ld, 1))     # the argument cell, rewritable
+            arg = _cell_var(ld, allocGlobalCells!(ld, 1))     # the argument cell, rewritable
             if options.singletons != 0
                 Trail!(ld, var_key(arg), mk_sym(T, :_))             # a[1] = ATOM_anonvar
             else

@@ -951,7 +951,6 @@ graph LR
     pl_thread --> pl_global
     pl_thread --> pl_inline
     pl_thread --> pl_proc
-    pl_gc --> term_interface
     pl_gc --> default_term
     pl_gc --> pl_incl
     pl_gc --> pl_vmi

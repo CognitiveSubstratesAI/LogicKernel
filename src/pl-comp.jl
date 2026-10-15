@@ -2815,7 +2815,7 @@ function get_head_and_body_clause(
         ok, m = PL_strip_module_ex(gd, ld, head, m, head)
         ok || return (false, m)
     else
-        setSlotValue!(ld, head + 1, slotValue(ld, clause + 1))               # PL_put_term(head, clause): facts
+        _slot_link!(ld, head + 1, clause + 1)                               # PL_put_term(head, clause): facts
         setSlotValue!(ld, body + 1, mk_sym(T, Symbol("true")))          # PL_put_atom(body, ATOM_true)
     end
     return (true, m)
@@ -3191,7 +3191,7 @@ function decompile_head!(
             while true                                          # the R chain, then the pushed one
                 f = pop!(fs)
                 while length(f.kids) < f.need
-                    push!(f.kids, mk_var(T, allocGlobalVars!(ld, 1)))
+                    push!(f.kids, _cell_var(ld, allocGlobalCells!(ld, 1)))
                 end
                 v = mk_expr(T, f.kids)
                 f.pushed && break
@@ -3296,7 +3296,7 @@ function _decompile_void(
     argn::Int
 )::T where {T}
     (frames === nothing || isempty(frames)) && return mk_var(T, base + UInt64(argn))   # FIRSTVAR
-    return mk_var(T, allocGlobalVars!(ld, 1))
+    return _cell_var(ld, allocGlobalCells!(ld, 1))
 end
 
 # ── decompiling a clause: head and body (pl-comp.c), V9d ────────────────────────────────────────
@@ -3315,9 +3315,9 @@ mutable struct decompileInfo{T}
     const base::UInt64                          # (variables: slot i's variable is key base + i)
     const argp::Vector{T}                       # argp: the decompilation stack
     const frames::Vector{DecompileFrame{T}}     # (the compounds being built)
-    # variables, when the clause runs in a frame (`decompile_body_range`): the local stack's slots
-    # and the frame's position — slot i's term is the frame's own; `nothing`: fresh variables
-    const variables::Union{Nothing, Tuple{Vector{T}, Int}}
+    # variables, when the clause runs in a frame (`decompile_body_range`): the frame's position on
+    # the local stack — slot i's term is the frame's own; `nothing`: fresh variables
+    const variables::Union{Nothing, Int}
 end
 
 decompileInfo{T}(
@@ -3329,7 +3329,7 @@ decompileInfo{T}(
 function _dvar(di::decompileInfo{T}, index::code)::T where {T}
     v = di.variables
     v === nothing && return mk_var(T, di.base + (index - VAROFFSET(0)))
-    return v[1][varFrameP(v[2], Int(index)) + 1]            # the running frame's own cell
+    return slotValue(di.ld, varFrameP(v, Int(index)) + 1)  # the running frame's own cell
 end
 
 "Push `v`: an argument of the compound being built, or the next value on the decompilation stack (`*ARGP++ = v`)."
@@ -3446,10 +3446,10 @@ function decompileBodyNoShift!(
             build_term!(di, mk_sym(T, op == B_EQ_VV ? Symbol("==") : Symbol("\\==")), 2)
             pushed += 1
         elseif op == B_VOID || op == H_VOID
-            _dpush!(di, mk_var(T, allocGlobalVars!(di.ld, 1)))          # setVar(*ARGP++)
+            _dpush!(di, _cell_var(di.ld, allocGlobalCells!(di.ld, 1)))          # setVar(*ARGP++)
         elseif op == H_VOID_N
             for _ in 1:Int(codes[di.pc])
-                _dpush!(di, mk_var(T, allocGlobalVars!(di.ld, 1)))
+                _dpush!(di, _cell_var(di.ld, allocGlobalCells!(di.ld, 1)))
             end
             di.pc += 1
         elseif op == B_FUNCTOR || op == B_RFUNCTOR || op == H_FUNCTOR || op == H_RFUNCTOR
@@ -3481,7 +3481,7 @@ function decompileBodyNoShift!(
             while true                                          # the R chain, then the pushed one
                 f = pop!(di.frames)
                 while length(f.kids) < f.need
-                    push!(f.kids, mk_var(T, allocGlobalVars!(di.ld, 1)))
+                    push!(f.kids, _cell_var(di.ld, allocGlobalCells!(di.ld, 1)))
                 end
                 v = mk_expr(T, f.kids)
                 f.pushed && break
@@ -3696,7 +3696,7 @@ Decompile the body code of `clause` from `start` up to the instruction `end_` in
 function decompile_body_range(
     ld::PL_local_data{T}, goal::term_t, fr::Int, clause::Clause{T}, start::Int, end_::code
 )::Bool where {T}
-    variables = clause.prolog_vars != 0 ? (ld.slots, ld.frames[fr].base) : nothing
+    variables = clause.prolog_vars != 0 ? ld.frames[fr].base : nothing
     di = decompileInfo{T}(ld, clause, start, UInt64(0), T[], DecompileFrame{T}[], variables)
     return decompileBody!(ld, di, slotValue(ld, goal + 1), end_, 0)
 end
@@ -3781,7 +3781,7 @@ function det_goal_error(
                                     mk_sym(T, :det), mk_sym(T, found), mk_sym(T, :goal)
                                 ]
                             ),
-                            mk_var(T, allocGlobalVars!(ld, 1))
+                            _cell_var(ld, allocGlobalCells!(ld, 1))
                         ]
                     )
                 )

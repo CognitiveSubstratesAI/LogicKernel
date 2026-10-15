@@ -700,10 +700,15 @@ end
 # key — and is GONE by L1f. Its sites — code lines of src/ that name it — may only fall: above the
 # ceiling fails and names them, below it fails until the ceiling is lowered. Once docs/
 # port_inventory.md marks L1f DONE, any site fails. Comments do not count; the kernel's own tree only.
-const STAMP_SITES_MAX = 29
+# RAISED 29 → 34 (user, 2026-10-15, L1b C5): the faithful slot words — every live cell variable a
+# reference word (`_slot_store!`'s `_cell_pos`), read back through `gvars` (the cell's variable term,
+# made once: building one allocates) — measured on nreverse/qsort, where 18–30% of slot reads were
+# variables that would otherwise stay terms. BACK TO ≤ 29 BY L1d (unification over cells: the
+# readers take words, and `gvars` goes).
+const STAMP_SITES_MAX = 34
 
 "The names of the stamp machinery; a code line of src/ naming one is a stamp site."
-const STAMP_NAMES = r"\b(CELL_KEY_TAG|CELL_POS_MASK|CELL_STAMP_MASK|CELL_STAMP_BLOCK|_CELL_STAMP_COUNTER|stamp_next|stamp_end|gkey|_cell_pos|_reserveStamps!)(?![A-Za-z0-9_!])"
+const STAMP_NAMES = r"\b(CELL_KEY_TAG|CELL_POS_MASK|CELL_STAMP_MASK|CELL_STAMP_BLOCK|_CELL_STAMP_COUNTER|stamp_next|stamp_end|gkey|gvars|_cell_pos|_reserveStamps!)(?![A-Za-z0-9_!])"
 
 "The stamp sites in the code (not the comments) of `src/`, as `file:line`."
 function stamp_sites(root::AbstractString)::Vector{String}

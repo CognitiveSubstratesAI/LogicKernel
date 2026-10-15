@@ -139,6 +139,16 @@ _manifest_per_type(T) = (
     (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
     (LK._atom_values_hold!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, true),
+    # the slot words (L1b stage C5/C6a): reads, stores and moves allocate nothing; a fresh cell may
+    # grow the global stack
+    (LK._slot_atom, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, true),
+    (LK._slot_copy!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK._slot_new_var!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._cell_key, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK._cell_var, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.allocGlobalCells!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.setSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T, LK.PutVarMap}, false),
@@ -954,6 +964,7 @@ function _manifest_index(T)
         (LK.setLTop!, Tuple{LD, Int}, true),
         (LK._argp_raw, Tuple{LD, ARGP}, true), (LK._argp_deref, Tuple{LD, ARGP}, true),
         (LK._argp_store!, Tuple{LD, ARGP, T}, true), (LK._argp_add, Tuple{ARGP, Int}, true),
+        (LK._argp_store_var!, Tuple{LD, ARGP, Int}, true),
         (LK._reset_argument_stack!, Tuple{LD, LK.queryFrame{T}}, true),
         (LK._bopen!, Tuple{LD, Int, T, Bool, Int, Int, T}, false),
         (LK._bclose!, Tuple{LD}, false),
@@ -1787,6 +1798,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.fetchFunctorArray, Tuple{LK.functors_t, Int}, true),
     # the words of the stacks (L1b stage C1: pl-data.h, pl-inline.h's consPtr/valPtr, pl-gmp.h's
     # size words) — pure bit operations: none allocates
+    (LK._slot_word_error, Tuple{UInt64}, false),  # (builds its error: the slot words' bad case)
     (LK.tag, Tuple{UInt64}, true),
     (LK.storage, Tuple{UInt64}, true),
     (LK.valInt, Tuple{UInt64}, true),

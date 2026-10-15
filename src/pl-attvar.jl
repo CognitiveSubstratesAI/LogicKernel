@@ -50,7 +50,7 @@ end
 # DIVERGES: `p` is a position on the local stack, where upstream's is a pointer.
 "Make the ball saved at position `p` the pending exception again (pl-attvar.c)."
 function restore_exception(ld::PL_local_data{T}, p::Int)::Nothing where {T}
-    setSlotValue!(ld, ld.exception_bin + 1, slotValue(ld, p + 1))
+    _slot_copy!(ld, ld.exception_bin + 1, p + 1)
     ld.exception_term = ld.exception_bin
     return nothing
 end

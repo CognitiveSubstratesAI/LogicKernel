@@ -451,7 +451,7 @@ end
     LK.copyFrameArguments(ld, from, to, 3)
     @test all(i -> LK.slotValue(ld, LK.argFrameP(to, i - 1) + 1) === ys[i], 1:3)
     LK.copyFrameArguments(ld, from, to + 100, 0)            # argc 0: nothing
-    @test !isassigned(ld.slots, LK.argFrameP(to + 100, 0) + 1)
+    @test ld.slots[LK.argFrameP(to + 100, 0) + 1] == 0      # never written (the word 0, L1b C5)
 end
 
 @testset "frame flags and fields" begin

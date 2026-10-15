@@ -111,13 +111,14 @@ function f_pushArgumentStack(ld::PL_local_data{T}, e::argstack_entry{T})::Nothin
     return nothing
 end
 
-# PORT: pl-alloc.c allocGlobal as allocGlobalVars!
+# PORT: pl-alloc.c allocGlobal as allocGlobalCells!
 # DIVERGES: allocates `n` cell VARIABLES (L1a): each cell unbound (`setVar`), its key recorded;
-# returns the first key, the others follow it (`k + i`). One stamp per allocation (src/pl-global.jl
-# `CELL_KEY_TAG`). Growth is `_growGlobalStack!`'s, the only allocating path; no garbage collection
-# (`ensureGlobalSpace`'s `ALLOW_GC`) until pl-gc.c's collector is ported, after L1.
-"Allocate `n` fresh variables on the global stack; the key of the first (pl-alloc.c `allocGlobal`)."
-function allocGlobalVars!(ld::PL_local_data, n::Int)::UInt64
+# returns the first cell's position, the others follow it (upstream returns its address). One stamp
+# per allocation (src/pl-global.jl `CELL_KEY_TAG`). Growth is `_growGlobalStack!`'s, the only
+# allocating path; no garbage collection (`ensureGlobalSpace`'s `ALLOW_GC`) until pl-gc.c's
+# collector is ported, after L1.
+"Allocate `n` fresh variables on the global stack; the position of the first (pl-alloc.c `allocGlobal`)."
+function allocGlobalCells!(ld::PL_local_data{T}, n::Int)::Int where {T}
     ld.stamp_next == ld.stamp_end && _reserveStamps!(ld)
     stamp = ld.stamp_next & CELL_STAMP_MASK
     ld.stamp_next += UInt64(1)
@@ -128,10 +129,17 @@ function allocGlobalVars!(ld::PL_local_data, n::Int)::UInt64
     for i in 0:(n - 1)
         ld.gstack[p + i] = word(0)    # setVar()
         ld.gkey[p + i] = k + UInt64(i)
+        ld.gvars[p + i] = mk_var(T, k + UInt64(i))     # its variable term, once (L1b C5)
     end
     ld.gTop = top
-    return k
+    return p
 end
+
+# ORIGINAL: `allocGlobalCells!` for the callers that build a variable term: the first cell's KEY,
+# the others following it (`k + i`).
+"Allocate `n` fresh variables on the global stack; the key of the first."
+allocGlobalVars!(ld::PL_local_data, n::Int)::UInt64 =
+    _cell_key(ld, allocGlobalCells!(ld, n))
 
 # ORIGINAL: a block of stamps from the process-wide counter (src/pl-global.jl).
 "Reserve the engine's next block of stamps."
@@ -152,5 +160,6 @@ end
     n = min(n, Int(CELL_POS_MASK))
     resize!(ld.gstack, n)
     resize!(ld.gkey, n)
+    resize!(ld.gvars, n)
     return nothing
 end

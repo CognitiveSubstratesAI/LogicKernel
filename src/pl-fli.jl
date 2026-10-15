@@ -36,9 +36,9 @@ function PL_new_term_refs(ld::PL_local_data{T}, n::Int)::Int where {T}
     t = ld.lTop
     r = t                                       # consTermRef(t)
 
-    k = allocGlobalVars!(ld, n)
+    p = allocGlobalCells!(ld, n)
     for i in 0:(n - 1)
-        setSlotValue!(ld, t + 1, mk_var(T, k + UInt64(i)))   # setVar(*t++)
+        ld.slots[t + 1] = makeRefG(p + i)       # setVar(*t++): a global cell's reference (L1b C5)
         t += 1
     end
     ld.lTop = t
@@ -54,7 +54,7 @@ end
 function new_term_ref(ld::PL_local_data{T})::Int where {T}
     t = ld.lTop
     r = t                                       # consTermRef(t)
-    setSlotValue!(ld, t + 1, mk_var(T, allocGlobalVars!(ld, 1)))  # setVar(*t++)
+    _slot_new_var!(ld, t + 1)                   # setVar(*t++)
     t += 1
 
     ld.lTop = t
@@ -102,7 +102,7 @@ function PL_copy_term_ref(ld::PL_local_data{T}, from::Int)::Int where {T}
 
     t = ld.lTop
     r = t                                       # consTermRef(t)
-    setSlotValue!(ld, t + 1, linkValI(ld, slotValue(ld, from + 1)))   # *t = linkValI(valHandleP(from))
+    _slot_link!(ld, t + 1, from + 1)                # *t = linkValI(valHandleP(from))
     ld.lTop = t + 1
     fr = ld.fli_context
     ld.fliframes[fr].size += 1
@@ -141,8 +141,8 @@ function PL_unify_list(
     p = deRef(ld, slotValue(ld, l + 1))
 
     if canBind(p)
-        k = allocGlobalVars!(ld, 2)
-        a1, a2 = mk_var(T, k), mk_var(T, k + 1)
+        k = allocGlobalCells!(ld, 2)
+        a1, a2 = _cell_var(ld, k), _cell_var(ld, k + 1)
         c = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), a1, a2])
         setSlotValue!(ld, h + 1, a1)                            # setHandle(h, makeRefG(a))
         setSlotValue!(ld, t + 1, a2)
@@ -191,11 +191,11 @@ function PL_unify_functor(
 
     if canBind(p)
         if arity != 0
-            k = allocGlobalVars!(ld, arity)
+            k = allocGlobalCells!(ld, arity)
             a = Vector{T}(undef, 1 + arity)
             a[1] = name
             for i in 1:arity
-                a[i + 1] = mk_var(T, k + UInt64(i - 1))    # setVar(a[i])
+                a[i + 1] = _cell_var(ld, k + i - 1)    # setVar(a[i])
             end
 
             Trail!(ld, var_key(p), mk_expr(T, a))       # bindConst(p, to)

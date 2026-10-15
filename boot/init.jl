@@ -61,17 +61,23 @@ function load_file!(
             t = PL_new_term_ref(ld)
             bindings = PL_new_term_ref(ld)
             options = PL_new_term_ref(ld)                       # [variable_names(Bindings)]
-            ld.slots[options + 1] = mk_expr(
-                T,
-                T[
-                    mk_sym(T, LIST_CONS_NAME),
-                    mk_expr(T, T[mk_sym(T, :variable_names), ld.slots[bindings + 1]]),
-                    mk_nil(T)
-                ]
+            setSlotValue!(
+                ld,
+                options + 1,
+                mk_expr(
+                    T,
+                    T[
+                        mk_sym(T, LIST_CONS_NAME),
+                        mk_expr(
+                            T, T[mk_sym(T, :variable_names), slotValue(ld, bindings + 1)]
+                        ),
+                        mk_nil(T)
+                    ]
+                )
             )
             ok = read_clause(gd, ld, s, t, options)
             ld.variable_names = bindings                        # b_setval('$variable_names', …)
-            w = deRef(ld, ld.slots[t + 1])
+            w = deRef(ld, slotValue(ld, t + 1))
             if !ok || (kind(w) === SYM && sym_key(w) == sym_key(mk_sym(T, :end_of_file)))
                 ld.variable_names = 0
                 PL_discard_foreign_frame(ld, fid)
@@ -134,7 +140,7 @@ _init_is(ld::PL_local_data{T}, w::T, name::Symbol, arity::Int) where {T} =
 function compile_term!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, file::T
 )::Tuple{Symbol, Union{Nothing, T}} where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     user = MODULE_user(gd)
     for (n, a) in ((:term_expansion, 2), (:term_expansion, 4), (:goal_expansion, 2),
         (:goal_expansion, 4))
@@ -151,7 +157,7 @@ function compile_term!(
         return (:exception, _init_error(T, mk_sym(T, :instantiation_error)))
     elseif _init_is(ld, w, Symbol("?-"), 1) || _init_is(ld, w, Symbol(":-"), 1)
         g = PL_new_term_ref(ld)
-        ld.slots[g + 1] = child(w, 2)
+        setSlotValue!(ld, g + 1, child(w, 2))
         return execute_directive!(gd, ld, g)
     end
     return store_clause!(gd, ld, t, file)
@@ -171,7 +177,7 @@ _init_error(::Type{T}, formal::T) where {T} =
 function store_clause!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, file::T
 )::Tuple{Symbol, Union{Nothing, T}} where {T}
-    w = deRef(ld, ld.slots[t + 1])
+    w = deRef(ld, slotValue(ld, t + 1))
     if _init_is(ld, w, Symbol(","), 2)
         printMessage(ld, :error, mk_sym(T, :cannot_redefine_comma))
         return (:ok, nothing)                           # fail
@@ -179,9 +185,9 @@ function store_clause!(
     _init_is(ld, w, Symbol("=>"), 2) &&
         throw(NotPortedError{T}(w, "an SSU clause (=>)", "SSU is not ported"))
     a = PL_new_term_refs(ld, 3)
-    ld.slots[a + 1] = w
-    ld.slots[a + 2] = file
-    ld.slots[a + 3] = mk_sym(T, :-)
+    setSlotValue!(ld, a + 1, w)
+    setSlotValue!(ld, a + 2, file)
+    setSlotValue!(ld, a + 3, mk_sym(T, :-))
     proc = isCurrentProcedure(
         sym_key(mk_sym(T, Symbol("\$record_clause"))), 3, MODULE_system(gd)
     )::Procedure{T}
@@ -209,7 +215,7 @@ function _init_call(
     out = if rc == PL_S_TRUE || rc == PL_S_LAST
         (:succeeded, nothing)
     elseif rc == PL_S_EXCEPTION
-        (:exception, resolve_term(ld, ld.slots[PL_exception(ld, qid) + 1]))
+        (:exception, resolve_term(ld, slotValue(ld, PL_exception(ld, qid) + 1)))
     else
         (:failed, nothing)
     end
@@ -236,7 +242,7 @@ end
 function execute_directive!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, g::term_t
 )::Tuple{Symbol, Union{Nothing, T}} where {T}
-    w = deRef(ld, ld.slots[g + 1])
+    w = deRef(ld, slotValue(ld, g + 1))
     user = MODULE_user(gd)
     if kind(w) === VAR                                  # '$execute_directive'(Var, …)
         return (:exception, _init_error(T, mk_sym(T, :instantiation_error)))
@@ -322,13 +328,13 @@ function _init_solve(
     fid = PL_open_foreign_frame(ld)
     a = PL_new_term_refs(ld, max(arity, 1))
     for k in 1:arity
-        ld.slots[a + k] = child(goal, k + 1)
+        setSlotValue!(ld, a + k, child(goal, k + 1))
     end
     qid = PL_open_query(gd, ld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
     while true
         rc = PL_next_solution(gd, ld, qid)
         if rc == PL_S_EXCEPTION
-            b = resolve_term(ld, ld.slots[PL_exception(ld, qid) + 1])
+            b = resolve_term(ld, slotValue(ld, PL_exception(ld, qid) + 1))
             PL_close_query(ld, qid)
             PL_discard_foreign_frame(ld, fid)
             return (:exception, b)
@@ -414,9 +420,9 @@ function set_pattr!(
         return nothing
     end
     a = PL_new_term_refs(ld, 3)
-    ld.slots[a + 1] = mk_expr(T, T[mk_sym(T, :(:)), m.atom, head])
-    ld.slots[a + 2] = attr
-    ld.slots[a + 3] = mk_sym(T, Symbol("true"))
+    setSlotValue!(ld, a + 1, mk_expr(T, T[mk_sym(T, :(:)), m.atom, head]))
+    setSlotValue!(ld, a + 2, attr)
+    setSlotValue!(ld, a + 3, mk_sym(T, Symbol("true")))
     proc = isCurrentProcedure(
         sym_key(mk_sym(T, Symbol("\$set_predicate_attribute"))), 3, MODULE_system(gd)
     )::Procedure{T}

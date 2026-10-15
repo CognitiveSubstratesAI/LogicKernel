@@ -54,11 +54,11 @@ function pl_dlength2_va(
                 )
             end
 
-            k = allocGlobalVars!(ld, len)
+            k = allocGlobalCells!(ld, len)
             dot = mk_sym(T, LIST_CONS_NAME)
             l = mk_nil(T)                               # p[-1] = ATOM_nil
             for i in len:-1:1
-                l = mk_expr(T, T[dot, mk_var(T, k + UInt64(i - 1)), l])
+                l = mk_expr(T, T[dot, _cell_var(ld, k + i - 1), l])
             end
             setSlotValue!(ld, list + 1, l)
 

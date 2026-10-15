@@ -292,7 +292,7 @@ _rit(a::_R, b::_R) = _rf("->", a, b)
 
 _rnot(a::_R) = _rf("\\+", a)
 
-const _R_SENTINEL = _rs(Symbol("\$lk_sentinel"))
+const _R_SENTINEL = ~UInt64(0)  # a word no slot holds (the slots are words since L1b C5)
 
 """
 The highest local-stack position written while `goal` finds its first answer, relative to the query
@@ -320,7 +320,7 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
         ball = ex == 0 ? "none" : string(LK.slotValue(ld, ex + 1))
         error("_rhighwater: $(_rsrc(goal)) returned $rc, ball $ball (growth past lMax?)")
     end
-    high = findlast(t -> t !== _R_SENTINEL, ld.slots) - 1           # a position: slots[p + 1]
+    high = findlast(w -> w != _R_SENTINEL, ld.slots) - 1            # a position: slots[p + 1]
     tr, st = length(ld.trail), lk_bound_count(ld)
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)

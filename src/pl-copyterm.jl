@@ -142,7 +142,7 @@ function _cp_visit!(
     end
     kt = kind(t)
     if kt === VAR                                       # unbound: one fresh variable per variable
-        w = get!(() -> mk_var(T, allocGlobalVars!(ld, 1)), st.vars, var_key(t))
+        w = get!(() -> _cell_var(ld, allocGlobalCells!(ld, 1)), st.vars, var_key(t))
         return _cp_chain_done!(st, chain, w)
     elseif kt !== EXPR
         return _cp_chain_done!(st, chain, t)

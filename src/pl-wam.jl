@@ -204,7 +204,7 @@ function copyFrameArguments(
     ARGE = ARGS + argc
     ARGD = argFrameP(to, 0)
     while ARGS < ARGE                           # now copy them
-        setSlotValue!(ld, ARGD + 1, slotValue(ld, ARGS + 1))
+        _slot_copy!(ld, ARGD + 1, ARGS + 1)          # *ARGD++ = *ARGS++ (words, L1b C6a)
         ARGD += 1
         ARGS += 1
     end
@@ -482,7 +482,7 @@ function determinism_error(
                                 mk_sym(T, found), mk_sym(T, decl)
                             ]
                         ),
-                        mk_var(T, allocGlobalVars!(ld, 1))
+                        _cell_var(ld, allocGlobalCells!(ld, 1))
                     ]
                 )
             )
@@ -978,6 +978,20 @@ function _argp_store!(ld::PL_local_data{T}, a::argp_t{T}, t::T)::Nothing where {
     return nothing
 end
 
+# Write a reference to the fresh cell variable at global position `p` where `ARGP` points
+# (upstream's `setVar(*ARGP)` of a global cell): its word into a slot, its term into a builder
+# cell, which holds terms until L1c.
+function _argp_store_var!(ld::PL_local_data{T}, a::argp_t{T}, p::Int)::Nothing where {T}
+    if a.form == ARGP_SLOT
+        ld.slots[a.pos + 1] = makeRefG(p)
+    elseif a.form == ARGP_BUILD
+        ld.bcells[a.pos] = _cell_var(ld, p)
+    else
+        error("_argp_store_var!: read mode never writes into the caller's term")
+    end
+    return nothing
+end
+
 # `ARGP + n`.
 _argp_add(a::argp_t{T}, n::Int) where {T} = argp_t{T}(a.form, a.pos + n, a.term)
 
@@ -1008,9 +1022,9 @@ function _bopen!(
         ld.bcells[start] = head
     end
     first = hashead ? start + 1 : start
-    k = allocGlobalVars!(ld, need - first + 1)
+    k = allocGlobalCells!(ld, need - first + 1)
     for i in first:need                         # setVar(*ap++)
-        ld.bcells[i] = mk_var(T, k + UInt64(i - first))
+        ld.bcells[i] = _cell_var(ld, k + i - first)
     end
     ld.bTop = need
     nb = ld.nbframes + 1
@@ -1048,7 +1062,7 @@ function _fresh_compound(
     ld::PL_local_data{T}, head::T, hashead::Bool, n::Int
 )::T where {T}
     nv = hashead ? n - 1 : n
-    k = allocGlobalVars!(ld, nv)
+    k = allocGlobalCells!(ld, nv)
     kids = Vector{T}(undef, n)
     i = 1
     if hashead
@@ -1056,7 +1070,7 @@ function _fresh_compound(
         i = 2
     end
     for j in 0:(nv - 1)
-        kids[i + j] = mk_var(T, k + UInt64(j))
+        kids[i + j] = _cell_var(ld, k + j)
     end
     return mk_expr(T, kids)
 end
@@ -1261,10 +1275,10 @@ function resumeAfterException(
 )::Nothing where {T}
     if clear
         ld.exception_term = 0
-        k = allocGlobalVars!(ld, 3)
-        setSlotValue!(ld, ld.exception_bin + 1, mk_var(T, k))                  # setVar(*valTermRef(…))
-        setSlotValue!(ld, ld.exception_printed + 1, mk_var(T, k + UInt64(1)))
-        setSlotValue!(ld, ld.exception_pending + 1, mk_var(T, k + UInt64(2)))
+        k = allocGlobalCells!(ld, 3)
+        setSlotValue!(ld, ld.exception_bin + 1, _cell_var(ld, k))                  # setVar(*valTermRef(…))
+        setSlotValue!(ld, ld.exception_printed + 1, _cell_var(ld, k + 1))
+        setSlotValue!(ld, ld.exception_pending + 1, _cell_var(ld, k + 2))
     end
     trimStacks!(ld, outofstack)                     # !considerGarbageCollect(NULL)
     ld.exception_processing = false
@@ -1448,7 +1462,7 @@ end
 function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     q = ld.queries[qf]
     if q.exception != 0 && ld.exception_term == 0
-        setSlotValue!(ld, ld.exception_printed + 1, mk_var(T, allocGlobalVars!(ld, 1)))
+        setSlotValue!(ld, ld.exception_printed + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))
     end
 
     DiscardMark(ld, ld.choices[q.choice].mark)
@@ -1820,17 +1834,18 @@ function PL_next_solution_guarded(
     @goto unify_backtrack
 
     # PORT: pl-vmi.c H_FIRSTVAR
-    # DIVERGES: a cell is a term: in write mode a fresh variable goes into both the cell and the slot;
-    # in read mode the slot holds the caller's child as it is (upstream's reference to the cell).
+    # DIVERGES: in write mode a fresh cell variable goes into the builder cell (a term, until L1c) and
+    # its reference into the slot; in read mode an argument slot's word is copied (`*ARGP`, L1b C6a)
+    # and a caller's child is stored as its word (`_slot_store!`: a cell variable its reference).
     @label H_FIRSTVAR
     hfv_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     PC += 1
     if UMODE == uwrite
-        hfv_v = mk_var(T, allocGlobalVars!(ld, 1))      # setVar(*ARGP)
-        _argp_store!(ld, ARGP, hfv_v)
-        setSlotValue!(ld, hfv_k + 1, hfv_v)                 # varFrame(FR, *PC++) = makeRefG(ARGP)
+        _argp_store_var!(ld, ARGP, _slot_new_var!(ld, hfv_k + 1))   # setVar(*ARGP); makeRefG
+    elseif ARGP.form == ARGP_SLOT
+        _slot_copy!(ld, hfv_k + 1, ARGP.pos + 1)            # varFrame(FR, *PC++) = *ARGP
     else
-        setSlotValue!(ld, hfv_k + 1, _argp_raw(ld, ARGP))
+        _slot_store!(ld, hfv_k + 1, _argp_raw(ld, ARGP))
     end
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -1951,9 +1966,9 @@ function PL_next_solution_guarded(
     hff_b = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if UMODE == uwrite
-        hff_k = allocGlobalVars!(ld, 2)
-        hff_x = mk_var(T, hff_k)
-        hff_y = mk_var(T, hff_k + UInt64(1))
+        hff_k = allocGlobalCells!(ld, 2)
+        hff_x = _cell_var(ld, hff_k)
+        hff_y = _cell_var(ld, hff_k + 1)
         setSlotValue!(ld, hff_a + 1, hff_x)
         setSlotValue!(ld, hff_b + 1, hff_y)
         _argp_store!(ld, ARGP, mk_expr(T, T[gd.atom_dot, hff_x, hff_y]))   # *p = c
@@ -1967,9 +1982,9 @@ function PL_next_solution_guarded(
             setSlotValue!(ld, hff_a + 1, child(hff_p, 2))
             setSlotValue!(ld, hff_b + 1, child(hff_p, 3))
         elseif kind(hff_p) === VAR
-            hff_k = allocGlobalVars!(ld, 2)
-            hff_x = mk_var(T, hff_k)
-            hff_y = mk_var(T, hff_k + UInt64(1))
+            hff_k = allocGlobalCells!(ld, 2)
+            hff_x = _cell_var(ld, hff_k)
+            hff_y = _cell_var(ld, hff_k + 1)
             setSlotValue!(ld, hff_a + 1, hff_x)
             setSlotValue!(ld, hff_b + 1, hff_y)
             Trail!(ld, var_key(hff_p), mk_expr(T, T[gd.atom_dot, hff_x, hff_y]))   # bindConst
@@ -2058,38 +2073,46 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c bvar_cont
     # DIVERGES: a helper label, its argument `bv_voffset`. No `globaliseVar`: a keyed variable lives in
-    # no cell (decision 2), so the slot's term is stored as is (`linkValI`).
+    # no cell (decision 2), so the slot's term is stored as is (`linkValI`). Into an argument slot it
+    # moves WORDS (`_slot_link!`, L1b C6a); into a builder cell, a term.
     @label bvar_cont
-    _argp_store!(
-        ld, ARGP, linkValI(ld, slotValue(ld, varFrameP(ld.frames[FR].base, bv_voffset) + 1))
-    )
+    if ARGP.form == ARGP_SLOT
+        _slot_link!(ld, ARGP.pos + 1, varFrameP(ld.frames[FR].base, bv_voffset) + 1)
+    else
+        _argp_store!(
+            ld, ARGP,
+            linkValI(ld, slotValue(ld, varFrameP(ld.frames[FR].base, bv_voffset) + 1))
+        )
+    end
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_ARGFIRSTVAR
-    # DIVERGES: a fresh variable into the builder cell and the slot (`setVar` + `makeRefG`).
+    # DIVERGES: a fresh cell variable: its term into the builder cell (until L1c), its reference into
+    # the slot (`setVar` + `makeRefG`).
     @label B_ARGFIRSTVAR
-    baf_v = mk_var(T, allocGlobalVars!(ld, 1))
-    _argp_store!(ld, ARGP, baf_v)                   # setVar(*ARGP)
-    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, baf_v)   # varFrame(FR, *PC++)
+    _argp_store_var!(   # setVar(*ARGP); varFrame(FR, *PC++) = makeRefG(ARGP++)
+        ld, ARGP, _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
+    )
     PC += 1
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_FIRSTVAR
-    # DIVERGES: a fresh variable into the slot and the argument; no global stack, so no
-    # `ENSURE_GLOBAL_SPACE`.
+    # DIVERGES: the global stack grows on demand, so no `ENSURE_GLOBAL_SPACE`; the cell's reference
+    # into the slot and the argument as words (L1b C6a).
     @label B_FIRSTVAR
-    bfv_v = mk_var(T, allocGlobalVars!(ld, 1))
-    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, bfv_v)   # *k = w
+    bfv_p = _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)  # *k = w
     PC += 1
-    _argp_store!(ld, ARGP, bfv_v)                   # *ARGP++ = w
+    _argp_store_var!(ld, ARGP, bfv_p)               # *ARGP++ = w
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_VOID
+    # DIVERGES: a fresh GLOBAL cell, where upstream leaves the argument an unbound local cell: a local
+    # cell read as a term needs a variable naming it, which arrives when the stamp falls (L1f).
     @label B_VOID
-    _argp_store!(ld, ARGP, mk_var(T, allocGlobalVars!(ld, 1)))  # setVar(*ARGP++)
+    _argp_store_var!(ld, ARGP, allocGlobalCells!(ld, 1))  # setVar(*ARGP++)
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
 
@@ -2147,7 +2170,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_UNIFY_FIRSTVAR
     # DIVERGES: the slot gets a fresh variable (decision 2); see `unify_var_cont` for the term.
     @label B_UNIFY_FIRSTVAR
-    bu_var = mk_var(T, allocGlobalVars!(ld, 1))
+    bu_var = _cell_var(ld, allocGlobalCells!(ld, 1))
     ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
     PC += 1
     setSlotValue!(ld, ARGP.pos + 1, bu_var)                 # setVar(*ARGP): needed for GC
@@ -2181,7 +2204,7 @@ function PL_next_solution_guarded(
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, uvc_k)               # *ARGP++ = *k
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, mk_var(T, allocGlobalVars!(ld, 1)))   # setVar(*ARGP)
+        _argp_store!(ld, ARGP, _cell_var(ld, allocGlobalCells!(ld, 1)))   # setVar(*ARGP)
         UMODE = bu_first ? uwrite : uread           # must write for GC to work (see above)
         bu_hold = 0
         @goto next_instruction
@@ -2227,10 +2250,10 @@ function PL_next_solution_guarded(
     buff_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     buff_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
-    buff_v = mk_var(T, allocGlobalVars!(ld, 1))
+    buff_v = _cell_var(ld, allocGlobalCells!(ld, 1))
     setSlotValue!(ld, buff_1 + 1, buff_v)                   # *v1 = makeRefG(v)
     if _slow_unify(ld)
-        buff_w = mk_var(T, allocGlobalVars!(ld, 1))
+        buff_w = _cell_var(ld, allocGlobalCells!(ld, 1))
         setSlotValue!(ld, buff_2 + 1, buff_w)               # *v2 = makeRefG(v)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, buff_v)
@@ -2254,7 +2277,7 @@ function PL_next_solution_guarded(
     bufv_v = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if _slow_unify(ld)
-        setSlotValue!(ld, bufv_f + 1, mk_var(T, allocGlobalVars!(ld, 1)))   # globaliseFirstVar(f)
+        setSlotValue!(ld, bufv_f + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, slotValue(ld, bufv_f + 1))
         ARGP = _argp_add(ARGP, 1)
@@ -2262,7 +2285,7 @@ function PL_next_solution_guarded(
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
-    setSlotValue!(ld, bufv_f + 1, linkValI(ld, slotValue(ld, bufv_v + 1)))   # *f = linkValI(v)
+    _slot_link!(ld, bufv_f + 1, bufv_v + 1)          # *f = linkValI(v)
     @goto next_instruction
 
     # PORT: pl-vmi.c B_UNIFY_VV
@@ -2302,7 +2325,7 @@ function PL_next_solution_guarded(
     bufc_c = PCl[PCc[PC + 1]]
     PC += 2
     if _slow_unify(ld)
-        setSlotValue!(ld, bufc_f + 1, mk_var(T, allocGlobalVars!(ld, 1)))   # globaliseFirstVar(f)
+        setSlotValue!(ld, bufc_f + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))   # globaliseFirstVar(f)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _argp_store!(ld, ARGP, slotValue(ld, bufc_f + 1))
         ARGP = _argp_add(ARGP, 1)
@@ -2634,7 +2657,7 @@ function PL_next_solution_guarded(
         @LOAD_REGISTERS(QID)
         @goto b_throw                               # THROW_EXCEPTION
     end
-    setSlotValue!(ld, argFrameP(ld.lTop, 0) + 1, linkValI(ld, slotValue(ld, icatch_p + 1)))   # = B_VAR0
+    _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, icatch_p + 1)    # = B_VAR0
     @goto I_CALL1
 
     # PORT: pl-vmi.c I_EXITCATCH
@@ -2685,7 +2708,7 @@ function PL_next_solution_guarded(
         @LOAD_REGISTERS(QID)
         @goto b_throw                               # THROW_EXCEPTION
     end
-    setSlotValue!(ld, argFrameP(ld.lTop, 0) + 1, linkValI(ld, slotValue(ld, icc_p + 1)))     # = B_VAR1
+    _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, icc_p + 1)       # = B_VAR1
     @goto I_CALL1
 
     # PORT: pl-vmi.c I_EXITCLEANUP
@@ -2840,9 +2863,7 @@ function PL_next_solution_guarded(
     setSlotValue!(
         ld,
         varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
-        mk_var(
-            T, allocGlobalVars!(ld, 1)
-        )
+        _cell_var(ld, allocGlobalCells!(ld, 1))
     )               # setVar(*varFrameP(FR, *PC++))
     PC += 1
     @goto next_instruction
@@ -2926,15 +2947,10 @@ function PL_next_solution_guarded(
 
     # ── C_VAR, fail/0 and true/0 (pl-vmi.c), V9a ──────────────────────────────────────────────────
     # PORT: pl-vmi.c C_VAR
-    # DIVERGES: a fresh variable into the slot (decision 2).
+    # DIVERGES: a fresh GLOBAL cell's reference into the slot, where upstream leaves the slot an
+    # unbound local cell (see `B_VOID`).
     @label C_VAR
-    setSlotValue!(
-        ld,
-        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
-        mk_var(
-            T, allocGlobalVars!(ld, 1)
-        )
-    )
+    _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
     PC += 1
     @goto next_instruction
 
@@ -3231,9 +3247,9 @@ function PL_next_solution_guarded(
     cvn_vp = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     cvn_count = Int(PCc[PC + 1])
     PC += 2
-    cvn_key = allocGlobalVars!(ld, cvn_count)
+    cvn_p = allocGlobalCells!(ld, cvn_count)
     for cvn_i in 0:(cvn_count - 1)
-        setSlotValue!(ld, cvn_vp + cvn_i + 1, mk_var(T, cvn_key + UInt64(cvn_i)))
+        ld.slots[cvn_vp + cvn_i + 1] = makeRefG(cvn_p + cvn_i)   # one block, as before C6a
     end
     @goto next_instruction
 

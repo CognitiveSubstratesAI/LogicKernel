@@ -179,6 +179,17 @@ a KEYED variable (a caller's, a counter's, another engine's, or a cell's whose p
     return (1 <= p <= ld.gTop && ld.gkey[p] == key && !_is_box(ld, p)) ? p : 0
 end
 
+# ORIGINAL: the key of the cell variable at a position (L1a: `gkey`), for the readers that build
+# its variable term from a word (`slotValue`, the trail's readers).
+"The key of the cell variable at global position `p`."
+@inline _cell_key(ld::PL_local_data, p::Int)::UInt64 = ld.gkey[p]
+
+# ORIGINAL: the variable TERM of the cell at a position (L1b stage C5): made once, when the cell is
+# allocated (`allocGlobalCells!`), since building one allocates — so a slot's reference reads back
+# with no allocation (`slotValue`). Transitional, with `gkey`.
+"The variable term of the cell at global position `p`."
+@inline _cell_var(ld::PL_local_data{T}, p::Int) where {T} = ld.gvars[p]::T
+
 # ORIGINAL: a value table's box (L1b stage C2) holds the word of its own entry, whose box is here —
 # so a retained key at a position a box now occupies names no cell (a cell's word names an entry
 # boxed elsewhere, or is 0).
@@ -350,7 +361,7 @@ _trail_pos(e::word)::Int = Int(e >> 3)
 "The key of the variable address entry `e` names."
 function _trail_key(ld::PL_local_data, e::word)::UInt64
     _trail_stack(e) == TRAIL_KEYED && return ld.trail_keys[_trail_pos(e)]
-    return ld.gkey[_trail_pos(e)]
+    return _cell_key(ld, _trail_pos(e))
 end
 
 # ORIGINAL: `setVar(*tt->address)` for an address entry: a cell to 0, a keyed variable out of the
@@ -383,14 +394,80 @@ end
 # docs/research/logickernel-step-memos/L1_plan/l1_plan.md in the workspace). `i` is the slot's
 # 1-based position on the local stack: term reference `t` is position `t + 1`.
 
-# ORIGINAL: the slot read (L1b commit 1a: the value as stored; then built from the cells).
+# ORIGINAL: THE SLOT WORDS (L1b stage C5; the workspace's L1_plan/stageC_design.md). A slot holds one
+# of three words: `makeRefG(p)`, a reference to the cell variable at global position `p` (every
+# live cell variable, whether the VM made it or it arrived as a term); an atom
+# word, when one arrives as a word (copied from a cell); or `SLOT_VALUE`, whose value is the slot's
+# OWN entry of `slot_values` — a value with no word form yet (a compound until L1c; a float, big
+# integer or string until L1d; a small integer until C6b; a keyed variable until the stamp falls),
+# or a symbol that arrived as a term (converting it would cost a lookup per store). DIVERGES,
+# transitional: the side entry is the slot's own, so a copy of a `SLOT_VALUE` word copies the value
+# too (`_slot_copy!`) and no word names another slot's entry. The word 0 is a slot never written.
+"The slot word whose value is the slot's own entry of `slot_values` (L1b stage C5)."
+const SLOT_VALUE = TAG_COMPOUND | STG_LOCAL
+
+# ORIGINAL: the slot read (L1b stage C5: built from the slot's word; allocation-free — a variable
+# term is a struct with no box, and an atom's symbol is cached).
 "The value slot `i` holds (the term reference `t` is slot `t + 1`)."
-@inline slotValue(ld::PL_local_data{T}, i::Int) where {T} = ld.slots[i]::T
+@inline function slotValue(ld::PL_local_data{T}, i::Int)::T where {T}
+    w = ld.slots[i]
+    w == SLOT_VALUE && return ld.slot_values[i]
+    isRef(w) && return _cell_var(ld, unRef(w))
+    return _slot_atom(ld, w)
+end
+
+# ORIGINAL: the rest of `slotValue`, out of line: an atom word, or a slot never written.
+"The symbol of the atom word `w` a slot holds; a slot never written (the word 0) is an error."
+function _slot_atom(ld::PL_local_data{T}, w::word)::T where {T}
+    isAtomW(w) && return _atom_value(ld, w)
+    throw(_slot_word_error(w))
+end
+
+# ORIGINAL: the error of a slot word that is none of the three forms.
+"The internal error of a slot holding `w`, none of the slot words (0: never written)."
+@noinline _slot_word_error(w::word)::Exception = ErrorException(
+    "slot word $(repr(w)): a slot read before it was written, or a word that is no slot word"
+)
+
+# ORIGINAL: a term's slot word (L1b stage C5): a LIVE cell variable is its reference, anything else
+# the slot's own side entry. `_cell_pos` is the one place that knows a cell from a keyed variable.
+"Store the term `v` in slot `i` as its word."
+@inline function _slot_store!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
+    if kind(v) === VAR
+        p = _cell_pos(ld, var_key(v))
+        if p != 0
+            ld.slots[i] = makeRefG(p)
+            return nothing
+        end
+    end
+    ld.slot_values[i] = v
+    ld.slots[i] = SLOT_VALUE
+    return nothing
+end
+
+# ORIGINAL: a slot's word into another slot (L1b stage C5) — upstream's `*to = *from` between frame
+# cells — the side entry with it.
+"Copy slot `from`'s word to slot `to` (and its side entry, for `SLOT_VALUE`)."
+@inline function _slot_copy!(ld::PL_local_data, to::Int, from::Int)::Nothing
+    w = ld.slots[from]
+    w == SLOT_VALUE && (ld.slot_values[to] = ld.slot_values[from])
+    ld.slots[to] = w
+    return nothing
+end
+
+# ORIGINAL: a fresh cell variable referenced from slot `i` (L1b stage C5) — upstream's `setVar` of a
+# new global cell and its `makeRefG` into the frame — with no term built.
+"Allocate a fresh cell variable and store its reference in slot `i`; returns its position."
+@inline function _slot_new_var!(ld::PL_local_data, i::Int)::Int
+    p = allocGlobalCells!(ld, 1)
+    ld.slots[i] = makeRefG(p)
+    return p
+end
 
 # ORIGINAL: the ENGINE's slot write — its own value, variable identity kept (upstream `setHandle`).
 "Store the engine's value `v` in slot `i`; returns `v`, as the assignment it replaces did."
 @inline function setSlotValue!(ld::PL_local_data{T}, i::Int, v::T)::T where {T}
-    ld.slots[i] = v
+    _slot_store!(ld, i, v)
     return v
 end
 
@@ -433,7 +510,7 @@ function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::T whe
     for (k, w) in vars
         vm.cells[k] = var_key(w)
     end
-    ld.slots[i] = c
+    _slot_store!(ld, i, c)
     return c
 end
 putSlotValue!(ld::PL_local_data{T}, i::Int, v::T) where {T} =
@@ -458,6 +535,40 @@ end
 "The value to store for the term `t` refers to: `t` dereferenced (pl-inline.h)."
 function linkValI(ld::PL_local_data{T}, t::T)::T where {T}
     return deRef(ld, t)
+end
+
+# PORT: pl-inline.h linkValI as _slot_link!
+# DIVERGES: from slot to slot on the WORDS (L1b stage C6a): a reference is followed through the
+# cells it is bound to; an unbound cell gives its reference, an atom its word, and anything else
+# (a value-table word, a `SLOT_VALUE`) its value into `to`'s side entry — a keyed variable
+# dereferenced first, as `linkValI` on terms does.
+"Store in slot `to` what slot `from` refers to, dereferenced (pl-inline.h `*to = linkValI(from)`)."
+function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T}
+    w = ld.slots[from]
+    if isRef(w)
+        p = unRef(w)
+        while true
+            c = ld.gstack[p]
+            if isVar(c)                         # unbound: a reference to its cell
+                ld.slots[to] = makeRefG(p)
+                return nothing
+            elseif isRef(c)
+                p = unRef(c)
+            elseif isAtomW(c)
+                ld.slots[to] = c
+                return nothing
+            else
+                _slot_store!(ld, to, deRef(ld, ld.vtable[valPtr(c)]))
+                return nothing
+            end
+        end
+    elseif w == SLOT_VALUE
+        _slot_store!(ld, to, deRef(ld, ld.slot_values[from]))
+    else
+        isAtomW(w) || throw(_slot_word_error(w))
+        ld.slots[to] = w
+    end
+    return nothing
 end
 
 # PORT: pl-inline.h Trail
