@@ -1346,6 +1346,20 @@ function getProcDefinedDefinition(
     return def
 end
 
+# ORIGINAL: upstream's `setVar(*valTermRef(t))` for the exception term references (pl-wam.c
+# resumeAfterException, restore_after_query): the reference's PERMANENT cell (src/pl-setup.jl
+# `emptyStacks!`) unbound again, and the slot pointing at it — it held the ball as a value. A
+# fresh cell allocated here (until 2026-10-15) died with the next `Undo!` while the slot kept
+# pointing at its position; the next query laid a compound there and `classify_exception`
+# read a functor cell as a value word (test/db/test_db.jl, test_catch_swipl.jl: BoundsError).
+"Make exception term reference `t` an unbound variable again: its permanent cell, `exception_cells + off`."
+@inline function _reset_exception_slot!(ld::PL_local_data, t::Int, off::Int)::Nothing
+    c = ld.exception_cells + off
+    ld.gstack[c] = word(0)                          # setVar(*p)
+    ld.slots[t + 1] = makeRefG(c)
+    return nothing
+end
+
 # PORT: pl-wam.c resumeAfterException
 # DIVERGES: `outofstack` is a flag (the local stack is the only one that overflows); there is no
 # stack garbage collector to consult (`considerGarbageCollect`, the `gced_size`s; G1), so the stacks
@@ -1363,10 +1377,9 @@ function resumeAfterException(
 )::Nothing where {T}
     if clear
         ld.exception_term = 0
-        k = allocGlobalCells!(ld, 3)
-        setSlotValue!(ld, ld.exception_bin + 1, _cell_var(ld, k))                  # setVar(*valTermRef(…))
-        setSlotValue!(ld, ld.exception_printed + 1, _cell_var(ld, k + 1))
-        setSlotValue!(ld, ld.exception_pending + 1, _cell_var(ld, k + 2))
+        _reset_exception_slot!(ld, ld.exception_bin, 0)         # setVar(*valTermRef(LD->exception.bin))
+        _reset_exception_slot!(ld, ld.exception_printed, 1)     # setVar(*valTermRef(LD->exception.printed))
+        _reset_exception_slot!(ld, ld.exception_pending, 3)     # setVar(*valTermRef(LD->exception.pending))
     end
     trimStacks!(ld, outofstack)                     # !considerGarbageCollect(NULL)
     ld.exception_processing = false
@@ -1551,7 +1564,7 @@ end
 function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     q = ld.queries[qf]
     if q.exception != 0 && ld.exception_term == 0
-        setSlotValue!(ld, ld.exception_printed + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))
+        _reset_exception_slot!(ld, ld.exception_printed, 1)     # setVar(*valTermRef(LD->exception.printed))
     end
 
     DiscardMark(ld, ld.choices[q.choice].mark)

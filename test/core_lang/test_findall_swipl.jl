@@ -228,16 +228,25 @@ end
     g = LK.PL_new_term_ref(ld)
     LK.putSlotValue!(ld, g + 1, _rf("g", _rg(1)))
     rg = LK.compileTermToHeap(ld, g)
-    @test rg.ground && rg.term === LK.slotValue(ld, g + 1)
+    # KNOWN DIFFERENCE, pinned (L1c, 2026-10-15): the slot's compound is cells, read as an export
+    # whose arguments are its cells' variables — `is_ground` on it is false, so the record is a
+    # copy, not the term, and `ground` is not set (upstream's ground test is on the cells: L1f,
+    # the record over cells). The copy is the term's value.
+    @test !rg.ground && lk_eq(LK.resolve_term(ld, rg.term), _rf("g", _rg(1)))
     LK.Undo!(ld, m)
     @test length(ld.trail) == m.trailtop            # recording left nothing on the trail
     a, b = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
     @test LK.copyRecordToGlobal(ld, a, r) && LK.copyRecordToGlobal(ld, b, r)
-    ta, tb = LK.slotValue(ld, a + 1), LK.slotValue(ld, b + 1)
+    ta, tb = LK.resolve_term(ld, LK.slotValue(ld, a + 1)),
+    LK.resolve_term(ld, LK.slotValue(ld, b + 1))
     @test _rcanonical(ta) == "f(A,g(1),A)" && _rcanonical(tb) == "f(A,g(1),A)"
     @test var_key(child(ta, 2)) != var_key(child(tb, 2))        # fresh each time
     @test var_key(child(ta, 2)) != var_key(X)                   # … and not the original's
-    @test child(ta, 3) === child(tb, 3)                         # the ground subterm is shared
+    # each copy is laid out in its own cells (L1c), as upstream's copyRecordToGlobal lays out
+    # every copy on the global stack: the ground subterm is NOT shared between two copies (the
+    # sharing pinned before L1c was an artifact of compounds as values)
+    @test LK._is_gcompound(ld.slots[a + 1]) && LK._is_gcompound(ld.slots[b + 1]) &&
+        ld.slots[a + 1] != ld.slots[b + 1]
     # a rational tree: its cyclic reference is kept in the record, not on the trail
     C = _rv(3)
     LK.Trail!(ld, var_key(C), _rf("c", C, X))

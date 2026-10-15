@@ -114,5 +114,14 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.exception_printed = PL_new_term_ref(ld)
     ld.exception_tmp = PL_new_term_ref(ld)                     # LD->exception.tmp
     ld.exception_pending = PL_new_term_ref(ld)                 # LD->exception.pending
+    # the three the kernel RESETS (`setVar(*valTermRef(…))`, pl-wam.c resumeAfterException and
+    # restore_after_query): their cells, made here below every mark the engine will take, are
+    # PERMANENT — a reset makes the slot reference its cell again, unbound (`_reset_exception_slot!`).
+    # Until 2026-10-15 a reset allocated a FRESH cell, which the next `Undo!` freed with the slot
+    # still pointing at it; the next query laid a compound over the position and
+    # `classify_exception` read its functor cell as a value word (test_db.jl's BoundsError).
+    ld.exception_cells = unRef(ld.slots[ld.exception_bin + 1])
+    @assert unRef(ld.slots[ld.exception_printed + 1]) == ld.exception_cells + 1
+    @assert unRef(ld.slots[ld.exception_pending + 1]) == ld.exception_cells + 3
     return nothing
 end

@@ -36,11 +36,16 @@ end
     @test var_key(LK.slotValue(ld, a)) == k
     @test LK.slotValue(ld, a) === LK._cell_var(ld, LK._cell_pos(ld, k))   # the kept term
     for x in (_sw_sym(:foo), LK.mk_nil(_SW), lk_gnd(_SW, Int64(7)), lk_gnd(_SW, 2.5),
-        _sw_f(v), lk_var(_SW, UInt64(42)))                      # the last: a KEYED variable
+        lk_var(_SW, UInt64(42)))                                # the last: a KEYED variable
         LK.setSlotValue!(ld, b, x)
         @test ld.slots[b] == LK.SLOT_VALUE
         @test LK.slotValue(ld, b) === x
     end
+    # a compound is copied onto the global stack (L1c, the cold import): a compound WORD, read
+    # back through the cold export (its argument the cell's variable, bound to v's cell)
+    LK.setSlotValue!(ld, b, _sw_f(v))
+    @test LK._is_gcompound(ld.slots[b])
+    @test lk_eq(LK.resolve_term(ld, LK.slotValue(ld, b)), _sw_f(v))
 end
 
 @testset "a fresh cell from a slot builds no term and no value-table entry" begin
@@ -55,7 +60,7 @@ end
 
 @testset "a copied SLOT_VALUE carries its value" begin
     ld, a, b, _ = _sw_engine()
-    x = _sw_f(_sw_sym(:x))
+    x = lk_gnd(_SW, 2.5)                                        # (a compound would be cells since L1c)
     LK.setSlotValue!(ld, b, _sw_sym(:stale))                    # b's side entry holds another value
     LK.setSlotValue!(ld, a, x)
     LK._slot_copy!(ld, b, a)
@@ -87,9 +92,10 @@ end
     @test LK.isAtomW(ld.slots[b]) && lk_eq(LK.slotValue(ld, b), _sw_sym(:bar))
     ld2, c, d, _ = _sw_engine()
     k3 = LK._cell_key(ld2, LK._slot_new_var!(ld2, c))
-    LK.Trail!(ld2, k3, _sw_f(_sw_sym(:y)))                      # a value-table value
+    LK.Trail!(ld2, k3, _sw_f(_sw_sym(:y)))                      # a compound: cells (L1c), its word
     LK._slot_link!(ld2, d, c)
-    @test ld2.slots[d] == LK.SLOT_VALUE && lk_eq(LK.slotValue(ld2, d), _sw_f(_sw_sym(:y)))
+    @test LK._is_gcompound(ld2.slots[d]) &&
+        lk_eq(LK.resolve_term(ld2, LK.slotValue(ld2, d)), _sw_f(_sw_sym(:y)))
     kv = UInt64(42)                                             # a keyed variable, bound
     LK.setSlotValue!(ld2, c, lk_var(_SW, kv))
     LK.Trail!(ld2, kv, lk_gnd(_SW, Int64(3)))

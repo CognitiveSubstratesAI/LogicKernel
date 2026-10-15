@@ -181,10 +181,29 @@ end
 @testset "a database holds its own functor table" begin
     gd1 = LK.PL_global_data{LK.DefaultTerm}()
     gd2 = LK.PL_global_data{LK.DefaultTerm}()
-    @test gd1.functors !== gd2.functors && gd1.functors.highest == 334
+    @test gd1.functors !== gd2.functors
+    # the INVARIANT, not the total (user, 2026-10-15: the total moves whenever a boot clause adds a
+    # functor — 335 since L1c, `findall_loop/4` registered through its functor-word operand when the
+    # boot clauses are compiled at creation): the 333 built-ins at indices 1..333 as generated from
+    # the pin, and every later functor resolving to its own name/arity
+    for g in (gd1, gd2)
+        @test g.functors.highest >= 334
+        for (k, (a, arity)) in enumerate(LK._BUILTIN_FUNCTORS)
+            fd = LK.fetchFunctorArray(g.functors, k)
+            @test fd.name == _ft_atom_word(a) && fd.arity == arity &&
+                LK.indexFunctor(fd.functor) == k
+        end
+        for k in 334:(g.functors.highest - 1)
+            fd = LK.fetchFunctorArray(g.functors, k)
+            @test LK.indexFunctor(fd.functor) == k
+            @test LK.lookupFunctorDef(g.functors, fd.name, fd.arity) == fd.functor   # found, not made
+            @test LK.isCurrentFunctor(g.functors, fd.name, fd.arity) == fd.functor
+        end
+    end
+    h = gd1.functors.highest
     a = LK.lookupAtom(gd1.atoms, Vector{UInt8}(codeunits("only_in_one")))
     w = LK.lookupFunctorDef(gd1.functors, a, 1)
     @test LK.isCurrentFunctor(gd2.functors, a, 1) == 0                    # gd2 has not got it
-    @test gd2.functors.highest == 334
+    @test gd2.functors.highest == h && gd1.functors.highest == h + 1
     @test LK.lookupFunctorDef(gd1.functors, a, 1) == w
 end

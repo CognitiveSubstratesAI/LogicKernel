@@ -150,6 +150,8 @@ _manifest_per_type(T) = (
         false
     ),
     (LK._truncate_gterms!, Tuple{LK.PL_local_data{T}}, true),   # on every Undo!: in place
+    (LK._export_pos, Tuple{LK.PL_local_data{T}, T}, false),      # the reverse map's lookup (L1c): an IdDict `get` is a runtime call; on the cold import path
+    (LK._purge_gterm_of!, Tuple{LK.PL_local_data{T}}, false),    # … its rebuild, on the cold path
     (LK._slot_store_value!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK._alloc_compound!, Tuple{LK.PL_local_data{T}, UInt64, Int}, false),
     (LK._compound_term, Tuple{LK.PL_local_data{T}, Int}, false),
@@ -1008,6 +1010,7 @@ function _manifest_index(T)
         ),
         (LK._load_registers!, Tuple{LD, Int}, true),
         (LK.resumeAfterException, Tuple{LD, Bool, Bool}, false),
+        (LK._reset_exception_slot!, Tuple{LD, Int, Int}, true),
         # V9f — catch/3: the catcher search and catch/3's exit position (src/pl-wam.jl)
         (LK.findCatcher, Tuple{GD, LD, Int, Int, Int, Int}, false),
         (LK.findCatchExit, Tuple{GD}, false),

@@ -35,12 +35,21 @@ end
     t1 = LK._compound_term(ld, p)
     @test LK._compound_term(ld, p) === t1                       # the same term: identity kept
     @test ld.gterms[p] === t1 && p in view(ld.gterm_pos, 1:(ld.ngterm))
+    # the reverse map (TRANSITIONAL with the memo): a cell bound to the export through the TERM
+    # unifier takes the compound's own word — no copy, no import counted
+    c = LK.allocGlobalCells!(ld, 1)
+    i0 = ld.cold_imports
+    @test LK.do_unify(ld, LK._cell_var(ld, c), t1) == LK.BOOLEX_TRUE
+    @test ld.gstack[c] == w && ld.cold_imports == i0
     LK.Undo!(ld, m)                                             # backtrack below p
     @test ld.gterms[p] === nothing && !(p in view(ld.gterm_pos, 1:(ld.ngterm)))   # went with gTop
+    @test LK._export_pos(ld, t1) == 0                           # the reverse map's entry is dead with it
     q, _ = _cc_layout!(ld, :g, 1)                               # a DIFFERENT compound at p
     @test q == p
     t2 = LK._compound_term(ld, q)
     @test t2 !== t1                                             # a NEW term, never the old one
+    # the stale export stored now is a COPY (an import, counted) — never p's word
+    @test LK._compound_word!(ld, t1) != w && ld.cold_imports == i0 + 1
     @test sym_key(child(t2, 1)) == sym_key(_cc_s(:g)) && nchildren(t2) == 2
     LK.DiscardMark(ld, m)
 end

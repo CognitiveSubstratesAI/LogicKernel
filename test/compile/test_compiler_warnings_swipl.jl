@@ -290,22 +290,26 @@ function _cwkernel(gd, ld, c::_CwClause, style::Int)::String
         enames = Dict{UInt64, String}()
         b = LK.deRef(ld, LK.slotValue(ld, vn + 1))
         while is_pair(b)
-            nv = child(b, 2)
-            enames[var_key(LK.deRef(ld, child(nv, 3)))] = sym_text(child(nv, 2))
+            nv = LK.deRef(ld, child(b, 2))                  # L1c: a slot's list is cells, one level per deRef
+            enames[var_key(LK.deRef(ld, child(nv, 3)))] = sym_text(
+                LK.deRef(ld, child(nv, 2))
+            )
             b = LK.deRef(ld, child(b, 3))
         end
         ld.variable_names = vn
         ld.debugstatus_styleCheck = style
         try
+            # the head and body as the engine's terms, resolved (L1c: a slot's compound is cells,
+            # its export one level deep) — the clause compiler takes terms
             cl = LK.compileClause(
-                gd, ld, LK.slotValue(ld, hb + 1), LK.slotValue(ld, hb + 2), proc, user,
-                warnings
+                gd, ld, LK.resolve_term(ld, LK.slotValue(ld, hb + 1)),
+                LK.resolve_term(ld, LK.slotValue(ld, hb + 2)), proc, user, warnings
             )
             cl === nothing && error("compileClause failed for " * _cwtext(c.head, c.names))
             l = LK.deRef(ld, LK.slotValue(ld, warnings + 1))
             while is_pair(l)
                 push!(out, _cwtext(LK.resolve_term(ld, child(l, 2)), enames))
-                l = child(l, 3)
+                l = LK.deRef(ld, child(l, 3))                # L1c: the tail is a cell's variable
             end
             is_nil(l) || error("the warnings are not a list")
         finally
@@ -442,7 +446,7 @@ if _CW_SWIPL !== nothing
         fid = LK.PL_open_foreign_frame(ld)
         w = LK.PL_new_term_ref(ld)
         @test LK.compileClause(gd, ld, head, body, proc, user, w) !== nothing
-        l = LK.slotValue(ld, w + 1)
+        l = LK.resolve_term(ld, LK.slotValue(ld, w + 1))   # L1c: a slot's compound is cells
         @test is_pair(l) && sym_text(child(child(l, 2), 1)) == "eq_singleton" &&
             is_nil(child(l, 3))
         # a clause with nothing to warn about: `[]`

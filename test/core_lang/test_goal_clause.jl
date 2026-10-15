@@ -34,7 +34,8 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
     base = ld.lTop
     cl = LK.compileGoalClause(gd, ld, goal, db.user, base)
     @test cl !== nothing && (cl.flags & LK.GOAL_CLAUSE) != 0
-    cell(i) = LK.slotValue(ld, LK.varFrameP(base, Int(LK.VAROFFSET(i))) + 1)
+    cell(i) =
+        LK.resolve_term(ld, LK.slotValue(ld, LK.varFrameP(base, Int(LK.VAROFFSET(i))) + 1))   # L1c: cells, read resolved
     @test LK.compareStandard(cell(1), _rf("f", _rg(1)), true) == 0      # argvar 1 (c:2035, 3181)
     @test LK.compareStandard(cell(2), _rg("s"), true) == 0              # argvar 2: a string (c:3065)
     @test LK.compareStandard(cell(3), _rf("f", _rg(3)), true) == 0      # argvar 3 (c:3189)

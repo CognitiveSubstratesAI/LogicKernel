@@ -297,6 +297,7 @@ mutable struct PL_local_data{T}
     gvars::Vector{T}                                            # … and its variable term (L1b C5)
     gterms::Vector{Union{Nothing, T}}                           # … a compound's export (L1c)
     gterm_pos::Vector{Int}                                      # … the positions holding one
+    gterm_of::IdDict{T, Int}                                    # … export → its position: TRANSITIONAL (L1d), with the memo
     ngterm::Int                                                 # … in use: gterm_pos[1:ngterm]
     gTop::Int                                                   # stacks.global.top
     vtable::Vector{T}                                           # (the value table, L1b: see above)
@@ -356,6 +357,7 @@ mutable struct PL_local_data{T}
     exception_printed::Int                                      # exception.printed
     exception_tmp::Int                                          # exception.tmp
     exception_pending::Int                                      # exception.pending
+    exception_cells::Int                                        # (bin's PERMANENT cell; printed's +1, pending's +3: L1c)
     exception_processing::Bool                                  # exception.processing
     outofstack::Bool                                            # outofstack (the local stack)
     unusable::Bool                                              # (after a second overflow)
@@ -384,7 +386,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
-        UInt64[], UInt64[], T[], Union{Nothing, T}[], Int[], 0, 0, T[], Int[],
+        UInt64[], UInt64[], T[], Union{Nothing, T}[], Int[], IdDict{T, Int}(), 0, 0, T[],
+        Int[],
         gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
         gd.functors, gd.atom_dexpr, gd.functor_dot2,             # GD->functors (L1c)
         0, 0,                                   # no compound exported or imported yet
@@ -420,7 +423,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0, Code{T}(code[], T[], 0),
         queryFrame{T}[], 0, 0,
         Vector{argstack_entry{T}}(undef, 64), 0,
-        0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,
         nothing,                                # GD: set by PL_open_query

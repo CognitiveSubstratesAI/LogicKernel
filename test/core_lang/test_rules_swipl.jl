@@ -1854,13 +1854,13 @@ end
         #    1  the caller's `R`, bound to the result's first cell
         #   3n  the output list built in place — functor, head (the input's value-table word,
         #       shared) and tail (bound to the next cell)
-        #    3  the last tail bound to a COPY of `[x]`'s first cell (functor + two references): the
-        #       cold import, as `concatenate([], L, L)`'s `H_VAR` unifies on terms — a reference to
-        #       `[x]` itself (−3) once `do_unify` works on cells: L1c SUB-COMMIT 4 CHANGES THIS
-        #       PIN TO `6n + 4` (deliberately — the copy gone is the point of that step)
+        #    0  the last tail bound to `[x]` ITSELF: `concatenate([], L, L)`'s `H_VAR` unifies on terms
+        #       until sub-commit 4, but a term that is the EXPORT of a live compound stores as that
+        #       compound's own word (`_compound_word!`'s reverse map, 2026-10-15) — before it, a COPY
+        #       of `[x]`'s first cell (functor + two references) by the cold import made the pin `6n + 7`
         # (MEASURED: an argument move that copied its compound — `L_VAR` through the term boundary —
         # made it ~9 per element, a copy per call)
-        @test marks[n][3] == 6n + 7
+        @test marks[n][3] == 6n + 4
     end
     # …and the check can fail: without the last-call optimisation the mark grows with the list
     # (lists short enough for the region below the spare, which the tripwire keeps fixed: V5d)

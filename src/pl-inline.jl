@@ -365,6 +365,13 @@ function _compound_term(ld::PL_local_data{T}, p::Int)::T where {T}
     # TRANSITIONAL (L1c; user, 2026-10-15: approved): the export memo — REMOVED when the term-level
     # cycle detectors work on the cells (L1d: do_unify, compare, the occurs check; L1f: copy_term).
     ld.gterms[p] = t
+    # TRANSITIONAL (L1d; user, 2026-10-15): the reverse map — a store of this export is ITS word
+    # (`_compound_word!`). It follows the memo: an entry is live only while `gterms[p] === t`
+    # (`_export_pos`), so the truncation (`Undo!`'s hot path) deletes nothing — `delete!` on an
+    # IdDict allocates (AllocCheck: `jl_eqtable_pop`) — and the dead entries are purged here, on
+    # the cold path, once they outnumber the live memo
+    ld.gterm_of[t] = p
+    length(ld.gterm_of) > 2 * ld.ngterm + 64 && _purge_gterm_of!(ld)
     n = ld.ngterm + 1
     n > length(ld.gterm_pos) ? push!(ld.gterm_pos, p) : (ld.gterm_pos[n] = p)
     ld.ngterm = n
@@ -372,10 +379,31 @@ function _compound_term(ld::PL_local_data{T}, p::Int)::T where {T}
     return t
 end
 
+# ORIGINAL: the reverse map's lookup (L1c; TRANSITIONAL with the memo): the position whose live
+# export `t` is — `gterms[p] === t` — or 0 for any other term (a stale export: its position was
+# truncated, or holds another compound now).
+"The global position of the compound whose LIVE export is `t`, or 0."
+@inline function _export_pos(ld::PL_local_data{T}, t::T)::Int where {T}
+    p = get(ld.gterm_of, t, 0)
+    return (p != 0 && p <= ld.gTop && ld.gterms[p] === t) ? p : 0
+end
+
+# ORIGINAL: the reverse map rebuilt from the live memo entries (L1c; TRANSITIONAL with the memo) —
+# called from the cold export when the dead entries outnumber the live ones, never from `Undo!`.
+"Drop the reverse map's dead entries: rebuild it from the live memo."
+@noinline function _purge_gterm_of!(ld::PL_local_data{T})::Nothing where {T}
+    empty!(ld.gterm_of)
+    for i in 1:(ld.ngterm)
+        p = ld.gterm_pos[i]
+        ld.gterm_of[ld.gterms[p]::T] = p
+    end
+    return nothing
+end
+
 # ORIGINAL: the export memo follows the global stack down (L1c), as the value table does: every
 # entry at a position above `gTop` goes. TRANSITIONAL, with the memo.
 "Drop the exports of the compounds above `gTop` (in place: `Undo!` allocates nothing)."
-function _truncate_gterms!(ld::PL_local_data)::Nothing
+function _truncate_gterms!(ld::PL_local_data{T})::Nothing where {T}
     n = ld.ngterm
     n == 0 && return nothing
     top = ld.gTop
@@ -386,7 +414,7 @@ function _truncate_gterms!(ld::PL_local_data)::Nothing
             j += 1
             ld.gterm_pos[j] = p
         else
-            ld.gterms[p] = nothing
+            ld.gterms[p] = nothing                  # (its reverse-map entry: stale, see `_export_pos`)
         end
     end
     ld.ngterm = j
@@ -402,6 +430,11 @@ end
 # string, a keyed variable) a value-table word.
 "Copy the compound term `t` onto the global stack; its compound word (the cold import, counted)."
 function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
+    # the export of a compound still on the stack: ITS word, no copy — upstream shares the pointer
+    # (`*ARGP = *k`, `Trail(t1, w2)`); a copy made the error term of the occurs check reference
+    # cells the check's Undo had freed (test_catch_swipl.jl t24: `occurs_check(_, g(_))`, 2026-10-15)
+    p = _export_pos(ld, t)
+    p != 0 && return consPtr(p, TAG_COMPOUND | STG_GLOBAL)
     ld.cold_imports += 1
     todo = Tuple{T, Int}[]
     root = _import_layout!(ld, t, todo)

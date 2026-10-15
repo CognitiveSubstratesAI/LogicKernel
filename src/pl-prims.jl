@@ -658,8 +658,13 @@ function do_number_vars(
                 n += 1
             end
             a = mk_expr(T, T[options.functor, arg])
-            made[a] = nothing
             Trail!(ld, var_key(q), a)               # bindConst(p, v)
+            # the mark is on the term the engine HANDS BACK for the binding: since L1c a cell
+            # variable's binding copies `a` onto the global stack, and reading it exports a
+            # term of its own (one level deep, memoized per position) — `a` itself is never
+            # seen again; a keyed variable's binding is `a` as stored (upstream: the mark bit
+            # on the functor cell it wrote). TRANSITIONAL: numberVars over cells (L1d/L1e).
+            made[deRef(ld, q)] = nothing
         elseif kind(q) === EXPR                     # isTerm(*p)
             h = child(q, 1)
             if nchildren(q) == 2 && kind(h) === SYM && sym_key(h) == fkey

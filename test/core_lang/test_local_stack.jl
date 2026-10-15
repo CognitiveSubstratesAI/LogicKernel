@@ -342,7 +342,7 @@ end
     LK.Trail!(ld, var_key(LK.slotValue(ld, r + 1)), _lf("f", _ls("a")))
     c = LK.PL_copy_term_ref(ld, r)
     @test c == r + 5 && nrefs(ld) == n0 + 6 &&
-        lk_eq(LK.slotValue(ld, c + 1), _lf("f", _ls("a")))
+        lk_eq(LK.resolve_term(ld, LK.slotValue(ld, c + 1)), _lf("f", _ls("a")))   # L1c: cells
     @test LK.PL_put_term(ld, t, r + 1)
     @test LK.slotValue(ld, t + 1) === LK.slotValue(ld, r + 2)                 # an unbound variable: itself
 
