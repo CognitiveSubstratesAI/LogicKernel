@@ -139,13 +139,13 @@ _manifest_per_type(T) = (
     (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
     # compounds on the global stack (L1c): the layout grows the stack; the two cold adapters allocate
     (LK._var_ref_word, Tuple{LK.PL_local_data{T}, T}, true),
-    (LK.pl_query_answers, Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, T}, false),
+    (LK.query_answers, Tuple{LK.PL_local_data{T}, T}, false),
     # (its `limit=` keyword method: the Julia-facing form, covered as itself)
     (
         Core.kwcall,
         Tuple{
-            NamedTuple{(:limit,), Tuple{Int}}, typeof(LK.pl_query_answers),
-            LK.PL_global_data{T}, LK.PL_local_data{T}, T
+            NamedTuple{(:limit,), Tuple{Int}}, typeof(LK.query_answers),
+            LK.PL_local_data{T}, T
         },
         false
     ),

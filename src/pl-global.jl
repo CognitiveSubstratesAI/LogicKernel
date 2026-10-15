@@ -364,7 +364,7 @@ mutable struct PL_local_data{T}
     fast_condition::Int                                         # fast_condition (0: NULL; an index)
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's term but in a cursor)
-    GD::Union{Nothing, PL_global_data{T}}                       # (the running query's database)
+    GD::Union{Nothing, PL_global_data{T}}                       # (the database the engine is made for; L1c)
     read_source::source_location{T}                             # read_source: file, line, …
     debugstatus_styleCheck::Int                                 # _debugstatus.styleCheck
     modules_source::Int                                         # modules.source (an index)
@@ -426,7 +426,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0, 0, 0, 0, 0, 0,
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,
-        nothing,                                # GD: set by PL_open_query
+        gd,                                     # GD: the engine's database (PL_open_query sets it again)
         source_location{T}(nothing, IOPOS()),
         SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK,  # pl-init.c:1663
         2,                                      # modules.source: user (the module table's 2nd)

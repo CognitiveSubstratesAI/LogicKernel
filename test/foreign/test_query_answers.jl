@@ -1,8 +1,13 @@
-# ORIGINAL: the Julia-facing query helper `pl_query_answers` (L1c; user, 2026-10-15) — answers copied out, the foreign frame DISCARDED, so a host running many queries leaves the engine's stacks as it found them (no collector until G1); upstream has no counterpart (embedding code discards its frames itself).
+# ORIGINAL: the Julia-facing query helper `query_answers` (L1c; user, 2026-10-15; PROVISIONAL until R2's
+# public API) — answers copied out as a vector, the foreign frame DISCARDED, so a host running many
+# queries leaves the engine's stacks as it found them (no collector until G1); upstream has no
+# counterpart (embedding code discards its frames itself).
 # test/foreign/test_query_answers.jl — on every term type:
 #   * the answers, each the goal with its bindings resolved, and the order and determinism swipl's
-#     (`_rswipl`);
-#   * an uncaught exception comes back as its ball, resolved;
+#     (`_rswipl`); `limit`;
+#   * an uncaught exception is thrown as a `PrologException` carrying its ball, resolved — and the
+#     stacks are back at their baseline after it (the frame discarded on that path too);
+#   * the engine carries its database from birth (`GD`), which the helper reads;
 #   * 10^4 repeated queries whose argument is a compound (copied onto the global stack by its put)
 #     leave `gTop`, the trail and `lTop` at their baseline after EACH — the check that fails if the
 #     helper closed its frame instead of discarding it (mutation-proved 2026-10-15).
@@ -18,14 +23,15 @@ _qa_clauses() = Tuple{_R, Union{Nothing, _R}}[
     (_rf("qa_q", _rf("f", _rv(1)), _rf("g", _rv(1), _rv(1))), nothing)
 ]
 
-@testset "pl_query_answers: the answers, copied out, as swipl's" begin
+@testset "query_answers: the answers, copied out, as swipl's" begin
     db = _rdb(_qa_clauses())
+    @test db.ld.GD === db.gd                    # an engine carries the database it is made for
     goals = _R[_rf("qa_p", _rv(9)), _rf("qa_q", _rf("f", _rg(Int64(1))), _rv(9)),
         _rf("qa_q", _rf("h", _rv(8)), _rv(9))]
     ours = String[]
     for g in goals
-        ans, ex = LK.pl_query_answers(db.gd, db.ld, g)
-        @test ex === nothing
+        ans = LK.query_answers(db.ld, g)
+        @test ans isa Vector{_R}
         append!(ours, _rcanonical.(ans))
         push!(ours, "end")
     end
@@ -35,20 +41,31 @@ _qa_clauses() = Tuple{_R, Union{Nothing, _R}}[
             replace(l, r" (det|nondet)$" => "") for l in _rswipl(_qa_clauses(), goals)
         ] == ours
     end
-    ans, _ = LK.pl_query_answers(db.gd, db.ld, _rf("qa_p", _rv(9)); limit=1)
-    @test _rcanonical.(ans) == ["qa_p(a)"]
+    @test _rcanonical.(LK.query_answers(db.ld, _rf("qa_p", _rv(9)); limit=1)) == ["qa_p(a)"]
+    @test _rcanonical.(LK.query_answers(db.ld, _rf("qa_p", _rv(9)); limit=nothing)) ==
+        ["qa_p(a)", "qa_p(b)"]
+    @test isempty(LK.query_answers(db.ld, _rf("qa_p", _rv(9)); limit=0))
+    @test_throws ArgumentError LK.query_answers(db.ld, _rg(Int64(1)))
 end
 
-@testset "pl_query_answers: an uncaught exception comes back as its ball" begin
+@testset "query_answers: an uncaught exception is thrown with its ball" begin
     db = _rdb(_qa_clauses())
-    ans, ex = LK.pl_query_answers(db.gd, db.ld, _rf("qa_undefined", _rv(1)))
-    @test isempty(ans) && ex !== nothing
+    ld = db.ld
+    base = (ld.gTop, length(ld.trail), ld.lTop)
+    ex = try
+        LK.query_answers(ld, _rf("qa_undefined", _rv(1)))
+        nothing
+    catch e
+        e
+    end
+    @test ex isa LK.PrologException{_R}
     # the formal part — the context term is the caller's frame, as before L1c (not this helper's)
-    @test _rcanonical(ex) |>
+    @test _rcanonical(ex.ball) |>
         startswith("error(existence_error(procedure,/(qa_undefined,1)),")
+    @test (ld.gTop, length(ld.trail), ld.lTop) == base    # the frame discarded on this path too
 end
 
-@testset "pl_query_answers: 10^4 queries leave the stacks at their baseline" begin
+@testset "query_answers: 10^4 queries leave the stacks at their baseline" begin
     db = _rdb(_qa_clauses())
     ld = db.ld
     g = _rf("qa_q", _rf("f", _rf("k", _rg(Int64(7)), _rs("z"))), _rv(9))
@@ -56,8 +73,8 @@ end
     imports0 = ld.cold_imports
     ok = true
     for _ in 1:(10 ^ 4)
-        ans, ex = LK.pl_query_answers(db.gd, ld, g)
-        ok &= length(ans) == 1 && ex === nothing
+        ans = LK.query_answers(ld, g)
+        ok &= length(ans) == 1
         ok &= (ld.gTop, length(ld.trail), ld.lTop) == base
         ok || break
     end

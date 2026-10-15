@@ -64,9 +64,11 @@ stack, as SWI-Prolog does, and — as in SWI — closing a foreign frame (`PL_cl
 KEEPS what was built in it; the kernel has no garbage collector for its stacks yet (G1). So a host
 that runs many queries must DISCARD each query's foreign frame once it has copied its answers out
 (`PL_discard_foreign_frame`, or `PL_rewind_foreign_frame` to reuse it), exactly as embedding code
-does with libswipl — or the global stack grows without bound. `LogicKernel.pl_query_answers(gd,
-ld, goal)` does this for you: it returns the answers (each the goal with its bindings resolved, a
-term of its own) and the uncaught exception's ball, and leaves the stacks as it found them.
+does with libswipl — or the global stack grows without bound. `LogicKernel.query_answers(db,
+goal; limit=nothing)` does this for you: `db` is the engine (`PL_local_data{T}(gd)`, which carries
+its database); it returns the answers as a vector (each the goal with its bindings resolved, a term
+of its own), throws an uncaught Prolog exception as a `PrologException` carrying its ball, and
+leaves the stacks as it found them. PROVISIONAL: the public Julia API is designed with R2.
 
 ## Layout — a mirror of swipl-devel
 

@@ -621,58 +621,78 @@ function call_term(
     end
 end
 
-# ORIGINAL: the Julia-facing query helper (L1c; user, 2026-10-15). Since L1c a put copies its term
-# onto the global stack and closing a foreign frame keeps global data, as upstream's
-# `PL_close_foreign_frame` does — with no collector until G1, a host that ran many queries through
-# open/close would grow the stack without bound. So this helper copies every answer OUT (resolved:
-# an interface term, no cell of the engine's in it) and then DISCARDS its foreign frame
-# (upstream's `PL_discard_foreign_frame`, as embedding code does with libswipl): `gTop`, the trail
-# and the local stack are back where they were. A host using the FLI itself must open and discard
-# frames the same way (README: "Memory at the boundary").
+# ORIGINAL: the Julia-facing query helper (L1c; user, 2026-10-15). PROVISIONAL (user, 2026-10-15):
+# the public Julia API — a lazy iterator, bindings by variable name, the exception's form — is
+# designed with R2; until then this is the one entry point a host has, and its shape may change. It
+# carries no `pl_` prefix: `pl_`/`PL_` names are ports of upstream functions, and this has no
+# counterpart (embedding code discards its frames itself).
+# Since L1c a put copies its term onto the global stack and closing a foreign frame keeps global
+# data, as upstream's `PL_close_foreign_frame` does — with no collector until G1, a host that ran
+# many queries through open/close would grow the stack without bound. So this helper copies every
+# answer OUT (resolved: an interface term, no cell of the engine's in it) and then DISCARDS its
+# foreign frame (upstream's `PL_discard_foreign_frame`, as embedding code does with libswipl):
+# `gTop`, the trail and the local stack are back where they were. A host using the FLI itself must
+# open and discard frames the same way (README: "Memory at the boundary").
 """
-    pl_query_answers(gd, ld, goal; limit = typemax(Int)) -> (answers, exception)
+    PrologException(ball)
 
-Run `goal` (a symbol or a compound) in `user` and return its answers — each `goal` with its
-bindings resolved, a term of its own — at most `limit`, and the uncaught exception's ball (resolved)
-or `nothing`. The engine's stacks are left as they were found.
+An uncaught Prolog exception, thrown to the Julia caller of [`query_answers`](@ref): `ball` is the
+exception term, resolved (a term of its own). PROVISIONAL with `query_answers` (R2 designs the form).
 """
-function pl_query_answers(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T; limit::Int=typemax(Int)
-)::Tuple{Vector{T}, Union{Nothing, T}} where {T}
+struct PrologException{T} <: Exception
+    ball::T
+end
+
+"""
+    query_answers(db, goal; limit=nothing) -> Vector
+
+Run `goal` (an atom or a compound) in `user` on the engine `db` and return its answers — each `goal`
+with its bindings resolved, a term of its own — at most `limit` of them (`nothing`: all). An
+uncaught Prolog exception is thrown as a [`PrologException`](@ref) carrying its ball. The engine's
+stacks are left as they were found. PROVISIONAL (user, 2026-10-15): the public API comes with R2.
+
+`db` is an ENGINE (`PL_local_data`), made for its database (`PL_local_data{T}(gd)`), which it
+carries as `GD` — an engine is the one object a host holds.
+"""
+function query_answers(
+    db::PL_local_data{T}, goal::T; limit::Union{Nothing, Int}=nothing
+)::Vector{T} where {T}
     k = kind(goal)
     (k === SYM || (k === EXPR && nchildren(goal) >= 1 && kind(child(goal, 1)) === SYM)) ||
-        throw(ArgumentError("pl_query_answers: the goal must be an atom or a compound"))
+        throw(ArgumentError("query_answers: the goal must be an atom or a compound"))
+    gd = db.GD::PL_global_data{T}                   # the engine's database (set when it was made)
     name = k === SYM ? goal : child(goal, 1)
     arity = k === SYM ? 0 : nchildren(goal) - 1
-    fid = PL_open_foreign_frame(ld)
-    a = PL_new_term_refs(ld, max(arity, 1))
+    fid = PL_open_foreign_frame(db)
+    a = PL_new_term_refs(db, max(arity, 1))
     vm = PutVarMap()                                # the goal's variables shared across its arguments
     for i in 1:arity
-        putSlotValue!(ld, a + i, child(goal, i + 1), vm)
+        putSlotValue!(db, a + i, child(goal, i + 1), vm)
     end
     proc = resolveProcedure(gd, name, arity, MODULE_user(gd))
-    qid = PL_open_query(gd, ld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
+    qid = PL_open_query(gd, db, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
     answers = T[]
-    ex = nothing
-    while length(answers) < limit
-        rc = PL_next_solution(gd, ld, qid)
+    while limit === nothing || length(answers) < limit
+        rc = PL_next_solution(gd, db, qid)
         if rc == PL_S_TRUE || rc == PL_S_LAST
             kids = T[name]
             for i in 1:arity
-                push!(kids, slotValue(ld, a + i))
+                push!(kids, slotValue(db, a + i))
             end
-            push!(answers, resolve_term(ld, arity == 0 ? name : mk_expr(T, kids)))
+            push!(answers, resolve_term(db, arity == 0 ? name : mk_expr(T, kids)))
             rc == PL_S_LAST && break
         elseif rc == PL_S_EXCEPTION
-            ex = resolve_term(ld, slotValue(ld, PL_exception(ld, qid) + 1))
-            break
+            ball = resolve_term(db, slotValue(db, PL_exception(db, qid) + 1))
+            PL_close_query(db, qid)
+            PL_discard_foreign_frame(db, fid)       # as below: nothing of the query stays
+            throw(PrologException{T}(ball))     # {T}: a leaf may be a concrete subtype of T
         else
             break
         end
     end
-    PL_close_query(ld, qid)
-    PL_discard_foreign_frame(ld, fid)               # not closed: nothing of the query stays
-    return (answers, ex)
+    PL_close_query(db, qid)
+    PL_discard_foreign_frame(db, fid)               # not closed: nothing of the query stays
+    return answers
 end
 
 # PORT: pl-wam.c callCleanupHandler
@@ -3646,10 +3666,37 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c S_LIST
     # DIVERGES: the operands index `codes_crefs`; a `$expr/3` argument goes to `S_STATIC` as an unbound
-    # one does — it can unify with a list-cell clause child by child (Q2; user, 2026-10-05).
+    # one does — it can unify with a list-cell clause child by child (Q2; user, 2026-10-05). Decided
+    # on the WORDS (L1c): `isList(*k)` is the functor word `FUNCTOR_dot2`, `isNil(*k)` the word of
+    # `[]`; only a value with no word form (a keyed variable's binding) is read as a term.
     @label S_LIST
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
-    sl_k = deRef(ld, slotValue(ld, ARGP.pos + Int(PCc[PC]) + 1))     # deRef2(ARGP+PC[0], k)
+    sl_d, sl_w = _argp_deref_word(ld, _argp_add(ARGP, Int(PCc[PC])))   # deRef2(ARGP+PC[0], k)
+    if sl_d == DREF_CELL                            # canBind(*k)
+        PCc = DEF.code_data.staticp                 # PC = SUPERVISOR(staticp) + 1
+        PC = 2
+        @goto S_STATIC
+    elseif sl_d == DREF_WORD
+        if _is_gcompound(sl_w)
+            sl_f = ld.gstack[valPtr(sl_w)]
+            if sl_f == dot_f                        # isList(*k)
+                tc_cref = DEF.codes_crefs[Int(PCc[PC + 2])]
+                PC += 3
+                @goto TRUST_CLAUSE
+            elseif nameFunctor(ld.functors, sl_f) == ld.atom_dexpr &&
+                arityFunctor(ld.functors, sl_f) == 3                # a `$expr/3` (Q2)
+                PCc = DEF.code_data.staticp
+                PC = 2
+                @goto S_STATIC
+            end
+        elseif sl_w == nil_w                        # isNil(*k)
+            tc_cref = DEF.codes_crefs[Int(PCc[PC + 1])]
+            PC += 3
+            @goto TRUST_CLAUSE
+        end
+        @goto deep_backtrack                        # FRAME_FAILED
+    end
+    sl_k = _argp_deref(ld, _argp_add(ARGP, Int(PCc[PC])))   # (a value with no word form)
     if is_pair(sl_k)
         tc_cref = DEF.codes_crefs[Int(PCc[PC + 2])]
     elseif is_nil(sl_k)
