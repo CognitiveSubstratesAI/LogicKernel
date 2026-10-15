@@ -349,6 +349,9 @@ function _compound_term(ld::PL_local_data{T}, p::Int)::T where {T}
     m = ld.gterms[p]
     m === nothing || return m
     f = ld.gstack[p]
+    while isRef(f)              # linked by a running do_unify_cells (pl-prims.c linkTermsCyclic):
+        f = ld.gstack[unRef(f)]  # the compound it is being unified with has the functor word
+    end
     n = arityFunctor(ld.functors, f)
     name = nameFunctor(ld.functors, f)
     expr = name == ld.atom_dexpr

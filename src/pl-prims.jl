@@ -1029,6 +1029,266 @@ function can_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     end
 end
 
+# ── unification on the CELLS (L1c sub-commit 4: the hot half of L1d) ─────────────────────────────
+# Upstream's `Word` pointer is a LOCATION here: a global position (`loc > 0`), or a local-stack slot
+# (`loc = -i` for slot `i`; term reference `t` is slot `t + 1`). A slot is never an unbound variable
+# — it holds a reference to a cell, an atom or compound word, or its side value — so dereferencing
+# ends in a global cell or a value, and only GLOBAL cells are ever bound: upstream's local stack lies
+# above its global stack and a variable binds the younger to the older, so a local cell points at a
+# global one and never the reverse (user, 2026-10-15; test_unify_cells.jl pins it). What has no word
+# form yet is the BOUNDARY — a slot's side value (`SLOT_VALUE`: the exception's ball, a value with
+# no word), a value-table entry that is a KEYED variable (gone with the stamp, L1f) — and a pair
+# with such a side is unified on TERMS (`do_unify`), each side converted: a cell its variable, an
+# atom its symbol, a compound its cold export (COUNTED in `cold_exports`), so the stamp machinery
+# stays in `_var_ref_word`/`_cell_pos` until L1f. The term-level `do_unify` stays for the cold
+# callers (built-ins, the FLI) until L1e; `unify_with_occurs_check` stays on terms (its own L1d step).
+"`_deref_loc`: an unbound cell, at the position returned."
+const DU_CELL = 0x01
+"`_deref_loc`: an atom or a compound word, returned."
+const DU_WORD = 0x02
+"`_deref_loc`: a value-table word (returned) whose entry is a VALUE, in the cell at the position."
+const DU_VALUE = 0x03
+"`_deref_loc`: the boundary — a slot's side value (the position is `-slot`), or a keyed variable's value-table word."
+const DU_TERM = 0x04
+
+# ORIGINAL: upstream's `deRef` (pl-data.h) on a LOCATION (above); the result says what was found,
+# as the word tests on `*p` do after upstream's `deRef`.
+"Location `loc` dereferenced: `(kind, word, position)`, see `DU_*` (pl-data.h `deRef`)."
+@inline function _deref_loc(
+    ld::PL_local_data{T}, loc::Int
+)::Tuple{UInt8, word, Int} where {T}
+    if loc < 0
+        w = ld.slots[-loc]
+        if !isRef(w)
+            w == SLOT_VALUE && return (DU_TERM, word(0), loc)
+            (isAtomW(w) || _is_gcompound(w)) && return (DU_WORD, w, 0)
+            throw(_slot_word_error(w))
+        end
+        p = unRef(w)
+    else
+        p = loc
+    end
+    while true
+        c = ld.gstack[p]
+        isVar(c) && return (DU_CELL, word(0), p)
+        if isRef(c)
+            p = unRef(c)
+        elseif isAtomW(c) || _is_gcompound(c)
+            return (DU_WORD, c, p)
+        else                                        # a value-table word
+            kind(ld.vtable[valPtr(c)]) === VAR && return (DU_TERM, c, p)
+            return (DU_VALUE, c, p)
+        end
+    end
+end
+
+# ORIGINAL: the boundary's conversion (above): what a dereferenced location holds, as a TERM.
+"The term at a dereferenced location (a compound through the counted cold export)."
+function _loc_term(ld::PL_local_data{T}, k::UInt8, w::word, p::Int)::T where {T}
+    k == DU_CELL && return _cell_var(ld, p)
+    if k == DU_TERM
+        p < 0 && return ld.slot_values[-p]
+        return ld.vtable[valPtr(w)]
+    end
+    k == DU_VALUE && return ld.vtable[valPtr(w)]
+    isAtomW(w) && return _atom_value(ld, w)
+    return _compound_term(ld, valPtr(w))
+end
+
+# ORIGINAL: `ARGP` as a location for `do_unify_cells`: a slot or a global cell; 0 for a read-mode
+# cursor into a TERM (the term path).
+"The location `ARGP` points at, or 0 when it points into a term."
+@inline _argp_loc(a::argp_t)::Int =
+    a.form == ARGP_SLOT ? -(a.pos + 1) : (a.form == ARGP_GLOBAL ? a.pos : 0)
+
+# PORT: pl-prims.c unify_simple_ptrs as unify_simple_cells
+# DIVERGES: on dereferenced locations. Two unbound cells: the HIGHER position is bound to the
+# lower's reference (upstream: by address, "always point downwards"; no variable lives on the local
+# stack, so no fresh global variable for two local ones). A value-table word is upstream's indirect:
+# shared by binding, two compared by the term type's `gnd_equal` (`equalIndirect`: SWI's identity in
+# the reference type, `1 = 1.0` fails). The boundary (`DU_TERM` on either side) is unified on terms.
+# No attributed variables.
+"Unify two dereferenced locations when neither is a compound; `DO_COMPOUND` when both are (pl-prims.c)."
+function unify_simple_cells(
+    ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int
+)::boolex_t where {T}
+    if k1 == DU_TERM || k2 == DU_TERM                # the boundary: on terms
+        return do_unify(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2))
+    end
+    if k1 == DU_CELL
+        if k2 == DU_CELL
+            p1 == p2 && return BOOLEX_TRUE          # t1 == t2
+            if p1 > p2                              # SWAPW(t1, t2)
+                p1, p2 = p2, p1
+            end
+            _bind_const!(ld, p2, makeRefG(p1))      # Trail(t2, makeRefG(t1)): always point downwards
+            return BOOLEX_TRUE
+        end
+        _bind_const!(ld, p1, w2)                    # Trail(t1, w2)
+        return BOOLEX_TRUE
+    end
+    if k2 == DU_CELL
+        _bind_const!(ld, p2, w1)                    # Trail(t2, w1)
+        return BOOLEX_TRUE
+    end
+    w1 == w2 && return BOOLEX_TRUE
+    k1 == k2 || return BOOLEX_FALSE                 # tagex(w1) != tagex(w2)
+    if k1 == DU_VALUE                               # isIndirect(w1): equalIndirect(w1, w2)
+        return if gnd_equal(ld.vtable[valPtr(w1)], ld.vtable[valPtr(w2)])
+            BOOLEX_TRUE
+        else
+            BOOLEX_FALSE
+        end
+    end
+    (_is_gcompound(w1) && _is_gcompound(w2)) && return DO_COMPOUND   # tag(w1) == TAG_COMPOUND
+    return BOOLEX_FALSE                             # two atoms, or an atom and a compound
+end
+
+# PORT: pl-prims.c linkTermsCyclic as _link_cells!
+# DIVERGES: the functor word is SAVED beside the position: Q2's `$expr/n` unifies with `f/k`
+# (different functor words), so `exitCyclic`'s `*p = *unRef(*p)` would give it the other's.
+"Link compound `p1` to compound `p2` for the cycle check: its functor cell a reference (pl-prims.c)."
+function _link_cells!(ld::PL_local_data, p1::Int, p2::Int)::Nothing
+    push!(ld.cycle_cells, p1)                       # pushSegStack(&LD->cycle.lstack, p1, Word)
+    push!(ld.cycle_saved, ld.gstack[p1])
+    ld.gstack[p1] = makeRefG(p2)                    # *p1 = makeRefG(p2)
+    return nothing
+end
+
+# PORT: pl-prims.c exitCyclic as _exit_cycles!
+"Restore every linked functor cell, the last link first (pl-prims.c)."
+function _exit_cycles!(ld::PL_local_data)::Nothing
+    while !isempty(ld.cycle_cells)
+        ld.gstack[pop!(ld.cycle_cells)] = pop!(ld.cycle_saved)   # *p = *unRef(*p)
+    end
+    return nothing
+end
+
+"Compound `p` with its cycle links followed (`do_unify`: `while ( isRef(f1->definition) ) f1 = unRef(…)`)."
+@inline function _cycle_root(ld::PL_local_data, p::Int)::Int
+    while true
+        c = ld.gstack[p]
+        isRef(c) || return p
+        p = unRef(c)
+    end
+end
+
+# DIVERGES: upstream's `f1->definition != f2->definition` on the functor WORDS, plus Q2 (user,
+# 2026-10-04): `$expr/n` (a compound whose head is not a symbol; src/pl-ressymbol.jl) unifies with
+# ANY compound of n children, child by child, heads included — against `f/k` (k + 1 == n) the head
+# pair is the first argument cell against `f`'s atom word, decided at once, then the k argument
+# pairs; against another `$expr/n` every argument pair.
+"""
+The functor test of `do_unify_cells`: push the argument pairs of the compounds at `p1` and `p2`
+(Q2's head pair unified at once); false when they cannot unify.
+"""
+function _push_compound_pair!(
+    ld::PL_local_data{T}, a::cell_agendaLR, p1::Int, p2::Int
+)::Bool where {T}
+    f1 = ld.gstack[p1]
+    f2 = ld.gstack[p2]
+    if f1 == f2                                     # f1->definition == f2->definition
+        n = arityFunctor(ld.functors, f1)
+        n == 0 && return true
+        return pushWorkCellAgendaLR!(a, n, p1, p2, 1)
+    end
+    n1 = arityFunctor(ld.functors, f1)
+    n2 = arityFunctor(ld.functors, f2)
+    e1 = nameFunctor(ld.functors, f1) == ld.atom_dexpr
+    e2 = nameFunctor(ld.functors, f2) == ld.atom_dexpr
+    if e1 && !e2                                    # (X a…) = f(…): X = f, then the arguments
+        n1 == n2 + 1 || return false
+        k, w, p = _deref_loc(ld, p1 + 1)
+        unify_simple_cells(ld, k, w, p, DU_WORD, nameFunctor(ld.functors, f2), 0) ==
+        BOOLEX_TRUE || return false
+        n2 == 0 && return true
+        return pushWorkCellAgendaLR!(a, n2, p1 + 1, p2, 1)
+    elseif e2 && !e1
+        n2 == n1 + 1 || return false
+        k, w, p = _deref_loc(ld, p2 + 1)
+        unify_simple_cells(ld, DU_WORD, nameFunctor(ld.functors, f1), 0, k, w, p) ==
+        BOOLEX_TRUE || return false
+        n1 == 0 && return true
+        return pushWorkCellAgendaLR!(a, n1, p1, p2 + 1, 1)
+    end
+    return false                                    # two `$expr` of different arity, or f/n ≠ g/m
+end
+
+# PORT: pl-prims.c do_unify as do_unify_cells
+# DIVERGES: on locations (above); the agenda holds pairs of global positions (`cell_agendaLR`); a
+# cycle link overwrites the compound's functor cell with a reference to the other's, as upstream's,
+# the word saved beside it (`_link_cells!`, Q2). Both compounds are linked on EVERY pair, as
+# upstream links every pair (the term-level `do_unify` links only pairs reached through a binding —
+# its DIVERGES; on cells a link is one word write).
+"""
+    do_unify_cells(ld, l1, l2) -> boolex_t
+
+Unify the terms at locations `l1` and `l2` (pl-prims.c `do_unify`): bind cells, trailed below the
+mark bar; walk compounds argument by argument with the cell agenda; link compound pairs so that
+rational trees terminate. Does NOT undo on failure.
+"""
+function do_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int)::boolex_t where {T}
+    k1, w1, p1 = _deref_loc(ld, l1)                 # deRef(t1)
+    k2, w2, p2 = _deref_loc(ld, l2)                 # deRef(t2)
+    rc = unify_simple_cells(ld, k1, w1, p1, k2, w2, p2)
+    rc != DO_COMPOUND && return rc
+    rc = BOOLEX_TRUE
+
+    f1 = valPtr(w1)                                 # Functor f1 = valueTerm(*t1)
+    f2 = valPtr(w2)
+    agenda = ld.ucell_agenda
+    initCellAgendaLR!(agenda, 0, 0, 0, 1)
+    @assert isempty(ld.cycle_cells)                 # initCyclic()
+    if !_push_compound_pair!(ld, agenda, f1, f2)    # f1->definition != f2->definition
+        clearCellAgendaLR!(agenda)
+        _exit_cycles!(ld)
+        return BOOLEX_FALSE
+    end
+    _link_cells!(ld, f1, f2)                        # linkTermsCyclic(f1, f2)
+
+    while true
+        found, a1, a2 = nextCellAgendaLR!(agenda)
+        found || break
+        k1, w1, p1 = _deref_loc(ld, a1)
+        k2, w2, p2 = _deref_loc(ld, a2)
+        rc = unify_simple_cells(ld, k1, w1, p1, k2, w2, p2)
+        rc == BOOLEX_TRUE && continue
+        rc == BOOLEX_FALSE && break                 # (no overflow codes to break on)
+        rc = BOOLEX_TRUE
+
+        f1 = _cycle_root(ld, valPtr(w1))            # O_CYCLIC: the links followed
+        f2 = _cycle_root(ld, valPtr(w2))
+        f1 == f2 && continue
+
+        if !_push_compound_pair!(ld, agenda, f1, f2)
+            rc = BOOLEX_FALSE
+            break
+        end
+        _link_cells!(ld, f1, f2)
+    end
+
+    clearCellAgendaLR!(agenda)
+    _exit_cycles!(ld)
+    return rc
+end
+
+# PORT: pl-prims.c raw_unify_ptrs as raw_unify_cells
+# DIVERGES: under `true`/`error` the occurs check runs on TERMS (its own L1d step): each location
+# converted at the boundary.
+"Unify two locations under the local data's `occurs_check` flag (pl-prims.c)."
+function raw_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int)::boolex_t where {T}
+    ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return do_unify_cells(ld, l1, l2)
+    k1, w1, p1 = _deref_loc(ld, l1)
+    k2, w2, p2 = _deref_loc(ld, l2)
+    return raw_unify_ptrs(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2))
+end
+
+# PORT: pl-prims.c unify_ptrs as unify_ptrs_cells
+# DIVERGES: as `unify_ptrs`: no `flags`, no overflow retry.
+"Unify two locations (pl-prims.c `unify_ptrs`): `true` or `false`; does not undo on failure."
+unify_ptrs_cells(ld::PL_local_data{T}, l1::Int, l2::Int) where {T} =
+    raw_unify_cells(ld, l1, l2) == BOOLEX_TRUE
+
 # ── occurs check ─────────────────────────────────────────────────────────────────────────────────
 "Upstream's `v == t` (the same cell): the same variable when `v` is one, else the same compound."
 _same_cell(v, t)::Bool =

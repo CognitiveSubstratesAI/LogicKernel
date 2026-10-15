@@ -327,6 +327,9 @@ mutable struct PL_local_data{T}
     occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
     occurs_marked::IdDict{T, Nothing}                           # its FIRST_MASK marks
     unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
+    ucell_agenda::cell_agendaLR                                 # do_unify_cells' (L1c-4)
+    cycle_cells::Vector{Int}                                    # … its cycle.lstack: linked functor cells
+    cycle_saved::Vector{word}                                   # … their functor words (Q2: restored as saved)
     compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
     occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
@@ -402,6 +405,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
+        cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), Int[], word[],   # do_unify_cells (L1c-4)
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
         # idle until a search resets it (`_index_context!`): any predicate will do

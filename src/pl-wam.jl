@@ -1951,9 +1951,15 @@ function PL_next_solution_guarded(
         end
         _argp_void!(ld, ARGP)                       # setVar(*ARGP)
     end
-    # First try the simple case.
+    # First try the simple case — on the CELLS (L1c sub-commit 4): the variable's slot against
+    # ARGP's location; a read-mode cursor into a TERM (a keyed variable's binding) on terms.
     if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
-        hv_rc = do_unify(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
+        hv_loc = _argp_loc(ARGP)
+        hv_rc = if hv_loc != 0
+            do_unify_cells(ld, -(hv_k + 1), hv_loc)
+        else
+            do_unify(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
+        end
         if hv_rc == BOOLEX_TRUE
             ARGP = _argp_add(ARGP, 1)
             @goto next_instruction
@@ -2482,7 +2488,7 @@ function PL_next_solution_guarded(
         @goto debug_equals2
     end
     @SAVE_REGISTERS(QID)
-    buvv_rc = unify_ptrs(ld, slotValue(ld, buvv_1 + 1), slotValue(ld, buvv_2 + 1))
+    buvv_rc = unify_ptrs_cells(ld, -(buvv_1 + 1), -(buvv_2 + 1))   # on the cells (L1c-4)
     @LOAD_REGISTERS(QID)
     buvv_rc && @goto next_instruction
     ld.exception_term != 0 && @goto b_throw         # THROW_EXCEPTION

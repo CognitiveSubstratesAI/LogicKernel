@@ -209,3 +209,67 @@ function pushWorkAgendaLR!(
     a.work = aNodeLR{T}(left, right, location, amount)
     return true
 end
+
+# ── the LR agenda on CELLS (L1c sub-commit 4: do_unify over the global stack) ─────────────────────
+# PORT: pl-termwalk.c term_agendaLR as cell_agendaLR
+# DIVERGES: the two terms are global POSITIONS (the functor cell of each compound; an argument pair
+# is `left + i`, `right + i`), so the walk reads cells, not terms. Reused by the local data: one
+# allocation-free walk after the first.
+"The two-term agenda over the argument cells of two compounds (pl-termwalk.c `term_agendaLR`)."
+mutable struct cell_agendaLR
+    left::Int                       # current work: the left compound's base position
+    right::Int                      # … the right one's
+    location::Int                   # the next pair's offset from the bases
+    size::Int                       # pairs still to walk
+    stack::Vector{NTuple{4, Int}}   # the work pushed aside: (left, right, location, size)
+end
+
+# PORT: pl-termwalk.c initTermAgendaLR as initCellAgendaLR!
+"Start walking `count` argument pairs of the compounds at `left` and `right`, from offset `location` (pl-termwalk.c)."
+function initCellAgendaLR!(
+    a::cell_agendaLR, count::Int, left::Int, right::Int, location::Int
+)::Nothing
+    empty!(a.stack)
+    a.left = left
+    a.right = right
+    a.location = location
+    a.size = count
+    return nothing
+end
+
+# PORT: pl-termwalk.c clearTermAgendaLR as clearCellAgendaLR!
+"Drop what is left of the walk (pl-termwalk.c)."
+function clearCellAgendaLR!(a::cell_agendaLR)::Nothing
+    empty!(a.stack)
+    a.size = 0
+    return nothing
+end
+
+# PORT: pl-termwalk.c nextTermAgendaLR as nextCellAgendaLR!
+# DIVERGES: returns `(found, left, right)` — two POSITIONS — as `nextTermAgendaLR!` does.
+"The next pair of argument cells: `(true, p1, p2)`, or `(false, 0, 0)` when done (pl-termwalk.c)."
+function nextCellAgendaLR!(a::cell_agendaLR)::Tuple{Bool, Int, Int}
+    if a.size == 0
+        isempty(a.stack) && return (false, 0, 0)
+        a.left, a.right, a.location, a.size = pop!(a.stack)
+    end
+    i = a.location
+    a.location += 1
+    a.size -= 1
+    return (true, a.left + i, a.right + i)
+end
+
+# PORT: pl-termwalk.c pushWorkAgendaLR as pushWorkCellAgendaLR!
+"Walk `amount` argument pairs of the compounds at `left` and `right` from offset `location` next (pl-termwalk.c)."
+function pushWorkCellAgendaLR!(
+    a::cell_agendaLR, amount::Int, left::Int, right::Int, location::Int
+)::Bool
+    if a.size > 0
+        push!(a.stack, (a.left, a.right, a.location, a.size))
+    end
+    a.left = left
+    a.right = right
+    a.location = location
+    a.size = amount
+    return true
+end

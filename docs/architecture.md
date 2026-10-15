@@ -582,7 +582,7 @@ fixed it or a public issue exists.
 |---|---|---|
 | `src/LogicKernel.jl` | the module entry file: the include order (the code graph below follows it) and the exports (ORIGINAL) | — |
 | `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation; `sym_text`, an atom's text, added in R1a, as decided since Q-AR7) | — |
-| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out; since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1`; since R1c `atom_number/2` (a float's text since R1e's floats); since R1e's write/1 family `skip_list` and `lengthList`; since R1e's canonical `numberVars`, `do_number_vars` (`nv_options`) | `src/pl-prims.c`, `src/pl-incl.h` |
+| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out; since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1`; since R1c `atom_number/2` (a float's text since R1e's floats); since R1e's write/1 family `skip_list` and `lengthList`; since R1e's canonical `numberVars`, `do_number_vars` (`nv_options`); since L1c sub-commit 4 UNIFICATION ON THE CELLS — `do_unify_cells` (pl-prims.c `do_unify` on locations: a global position or a slot; `_deref_loc`, `unify_simple_cells`, the cycle links on the functor cells `_link_cells!`/`_exit_cycles!`, Q2's head pair in `_push_compound_pair!`, the boundary to terms `_loc_term`), `raw_unify_cells`, `unify_ptrs_cells` — the hot callers `H_VAR`, `B_UNIFY_VV` and `PL_unify` | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
@@ -655,7 +655,8 @@ fixed it or a public issue exists.
 | `test/core_lang/test_expr_functor.jl` | Q2's own tests: `$expr/n`'s standard order, its head code, the index keeping it a wildcard (top level and among same-functor clauses), unification and `=@=` child by child | — |
 | `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
 | `test/compile/test_portable_smallint_swipl.jl` | `is_portable_smallint` under `portable_vmi`, and the tagged-integer range against a live swipl's flags | — |
-| `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses | `src/pl-termwalk.c` |
+| `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses; since L1c sub-commit 4 the two-term agenda on global POSITIONS (`cell_agendaLR`: `do_unify_cells` walks argument cells) | `src/pl-termwalk.c` |
+| `test/core_lang/test_unify_cells.jl` | L1c sub-commit 4: `do_unify_cells` — the binding direction (only global cells are bound, the higher to the lower, both argument orders, no global → local reference, the slots untouched), the simple cases and compounds against swipl through the head and body paths, the partial-binding contract, rational trees with every functor cell restored, Q2 (kernel-only), the keyed-variable boundary, the zero-export meter of a head unification | — |
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
 | `test/core_lang/test_occurs_check.jl` | SWI's own occurs-check units in all three modes but the attributed-variable ones | `tests/core_lang/test_occurs_check.pl` |
 | `test/core_lang/test_module_path.jl` | V5c's units: the module table (`system`, `user` and its super, other names refused until R2), a definition's module index, `autoImport` and `trapUndefined`, `unify_definition`'s qualification, `PL_strip_module_ex` | — |
@@ -883,6 +884,7 @@ graph LR
     pl_prims --> pl_alloc
     pl_prims --> pl_wam
     pl_prims --> pl_fli
+    pl_prims --> pl_attvar
     pl_prims --> pl_error
     pl_prims --> pl_gmp
     pl_prims --> pl_arith

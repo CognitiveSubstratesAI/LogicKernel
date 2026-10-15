@@ -598,10 +598,11 @@ PL_is_number(ld::PL_local_data{T}, t::term_t) where {T} =
 
 # PORT: pl-fli.c PL_unify
 # DIVERGES: no `ALLOW_GC|ALLOW_SHIFT`: the kernel's `unify_ptrs` takes no flags, as the binding store
-# and the trail cannot overflow during a unification (its DIVERGES).
+# and the trail cannot overflow during a unification (its DIVERGES). On the CELLS since L1c
+# sub-commit 4: the two slots are locations (`unify_ptrs_cells`), as upstream's `valTermRef`s.
 "Unify the terms `t1` and `t2` reference (pl-fli.c `PL_unify`); does not undo on failure."
 PL_unify(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
-    unify_ptrs(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1))
+    unify_ptrs_cells(ld, -(t1 + 1), -(t2 + 1))
 
 # PORT: pl-fli.c PL_unify_atomic
 # DIVERGES: `w` is an atomic TERM (no words); "the same word" and `equalIndirect` are the standard

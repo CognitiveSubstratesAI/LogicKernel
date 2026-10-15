@@ -187,6 +187,26 @@ _manifest_per_type(T) = (
     (LK._unify_functor, Tuple{T, T}, true),
     (LK.unify_simple_ptrs, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.do_unify, Tuple{LK.PL_local_data{T}, T, T}, false),
+    # unification on the cells (L1c sub-commit 4): the deref and the walk allocate nothing; the
+    # boundary (a term) and the agenda's growth do
+    (LK._deref_loc, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK._loc_term, Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int}, false),
+    (
+        LK.unify_simple_cells,
+        Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int, UInt8, UInt64, Int},
+        false
+    ),
+    (LK._link_cells!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK._exit_cycles!, Tuple{LK.PL_local_data{T}}, true),
+    (LK._cycle_root, Tuple{LK.PL_local_data{T}, Int}, true),
+    (
+        LK._push_compound_pair!,
+        Tuple{LK.PL_local_data{T}, LK.cell_agendaLR, Int, Int},
+        false
+    ),
+    (LK.do_unify_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.raw_unify_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.unify_ptrs_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.raw_unify_ptrs, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.unify_ptrs, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.can_unify, Tuple{LK.PL_local_data{T}, T, T}, false),
@@ -993,6 +1013,7 @@ function _manifest_index(T)
         # (L1c: a store may copy a compound onto the stack — the cold import allocates)
         (LK._argp_store!, Tuple{LD, ARGP, T}, false),
         (LK._argp_add, Tuple{ARGP, Int}, true),
+        (LK._argp_loc, Tuple{ARGP}, true),                      # do_unify_cells' location (L1c-4)
         (LK._argp_fresh_var!, Tuple{LD, ARGP, Int}, false),
         (LK._argp_void!, Tuple{LD, ARGP}, false),
         (LK._bind_const!, Tuple{LD, Int, UInt64}, false),       # a binding may grow the trail
@@ -1844,6 +1865,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.EXBIT, Tuple{UInt64}, true),
     (LK.isIndirect, Tuple{UInt64}, true),
     (LK.isVar, Tuple{UInt64}, true),
+    # the cell agenda of do_unify_cells (L1c-4): the push may grow its stack
+    (LK.initCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, true),
+    (LK.clearCellAgendaLR!, Tuple{LK.cell_agendaLR}, true),
+    (LK.nextCellAgendaLR!, Tuple{LK.cell_agendaLR}, true),
+    (LK.pushWorkCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, false),
     (LK.isAtomW, Tuple{UInt64}, true),
     (LK.isRationalW, Tuple{UInt64}, true),
     (LK.isFloatW, Tuple{UInt64}, true),
