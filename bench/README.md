@@ -1,8 +1,10 @@
 # `bench/` — benchmark programs
 
 Logic programs with known answers, timed. The first planned use is the indexing scaling curve
-against PeTTa (same program, same answers). Report three stable runs from one process, never one.
+against PeTTa (same program, same answers).
 
 The per-PRIMITIVE report is `tools/bench.jl` (BenchmarkTools and Profile from the global env): each
-ported primitive against swipl on the same terms, three runs from one process, then a flat
-profile of the worst ratio. It is run for every chunk; a new primitive gets a case there.
+ported primitive against swipl on the same terms — ≥ 30 runs per side (`--runs=N`), swipl and
+LogicKernel interleaved run by run, median and IQR (user, 2026-10-15) — then a flat profile of the
+worst ratio. The raw numbers of every run go to `tools/bench_results/` (one file per run, machine,
+commit and date in its header). It is run for every chunk; a new primitive gets a case there.

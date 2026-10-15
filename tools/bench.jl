@@ -27,16 +27,19 @@
 # `@descend LogicKernel.<function>(…)` — the report here is the same view, printed once per function.
 #
 # A STANDING STEP for every chunk, beside the JET/Aqua/AllocCheck gates (user, 2026-10-03) — a
-# report, not a pass/fail gate: a new primitive gets a case here, with its swipl goal. It follows
-# the workspace's measurement rules: THREE runs from ONE process, the minimum reported and the
-# spread shown; every number beside its upstream pair, in µs; profile before attributing a cost.
+# report, not a pass/fail gate: a new primitive gets a case here, with its swipl goal. THE METHOD
+# (user, 2026-10-15): ≥ 30 runs per side (`--runs=N`, default 30), swipl and LogicKernel
+# INTERLEAVED run by run (`interleaved_times`), the MEDIAN and IQR reported, no other heavy job; the
+# raw numbers of every run in tools/bench_results/<UTC time>_<commit>.tsv (user, 2026-10-15: kernel-own
+# `tools/`, since `bench/` mirrors swipl-devel), machine, commit and date in its header. Every number beside its
+# upstream pair, in µs; profile before attributing a cost.
 # Both sides measure ONE statistic (user, 2026-10-05): N calls per run (N doubled until a run takes
 # RUN_S), a full collection before each run and every collection during it counted, WALL time per
 # call, the minimum of three runs; the machine's idle CPU is recorded before and after the runs.
 #
 # Profile is not a dependency: it comes from the global environment (see
 # tools/repl.jl). swipl comes from PATH; without it the report has no upstream column.
-using LogicKernel, Profile, Printf, Serialization, InteractiveUtils
+using LogicKernel, Profile, Printf, Serialization, InteractiveUtils, Dates
 using LogicKernel:
     is_variant_ptr,
     pl_variant_sha1,
@@ -789,53 +792,6 @@ const CASES = [
 # short — measured 2026-10-05, a single collection doubled a run).
 const RUN_S = 0.5
 
-# ── swipl: three timed runs of each goal, after calibrating the loop to ≥ RUN_S ─────────────────
-function swipl_times(cases)::Dict{String, Tuple{NTuple{3, Float64}, Int}}
-    out = Dict{String, Tuple{NTuple{3, Float64}, Int}}()
-    Sys.which("swipl") === nothing && return out
-    prog = IOBuffer()
-    print(prog, PROLOG_FIXTURES)
-    print(
-        prog,
-        """
-        run_s(Goal, N, T) :-
-            get_time(T0), forall(between(1, N, _), Goal), get_time(T1), T is T1 - T0.
-        time_s(Goal, N, T) :-
-            garbage_collect, run_s(Goal, N, T).
-        calib(Goal, N0, N) :-
-            run_s(Goal, N0, T), ( T >= $RUN_S -> N = N0 ; N1 is N0 * 2, calib(Goal, N1, N) ).
-        bench(Name, Goal) :-
-            calib(Goal, 1, N),
-            time_s(Goal, N, T1), time_s(Goal, N, T2), time_s(Goal, N, T3),
-            U1 is T1 / N * 1.0e6, U2 is T2 / N * 1.0e6, U3 is T3 / N * 1.0e6,
-            format("~w\\t~6f\\t~6f\\t~6f\\t~d~n", [Name, U1, U2, U3, N]).
-        main :-
-            fixtures(G1, G2, V1, V2),
-        """
-    )
-    timed = [(name, goal) for (name, _, goal) in cases if !isempty(goal)]
-    isempty(timed) && return out
-    for (i, (name, goal)) in enumerate(timed)
-        sep = i == length(timed) ? ".\n" : ",\n"
-        print(prog, "    bench('", name, "', (", goal, "))", sep)
-    end
-    print(prog, ":- initialization((main, halt)).\n")
-    text = mktempdir() do d
-        f = joinpath(d, "bench.pl")
-        write(f, String(take!(prog)))
-        read(`swipl -q $f`, String)
-    end
-    for l in eachline(IOBuffer(text))
-        p = split(l, '\t')
-        length(p) == 5 || error("tools/bench.jl: unexpected swipl output: $l")
-        out[p[1]] = (
-            (parse(Float64, p[2]), parse(Float64, p[3]), parse(Float64, p[4])),
-            parse(Int, p[5])
-        )
-    end
-    return out
-end
-
 # ── the run loop in a FRESH process: first-call latency, compile time, dispatch (V4a) ───────────
 # One very large function (decision 1): what a fresh process pays at its first query — after the
 # precompile workload compiled it for DefaultTerm — and what compiling it costs for a term type the
@@ -961,10 +917,10 @@ function quiet_check(seconds::Float64=3.0)
         load=Sys.loadavg()[1])
 end
 
-# ── Julia: THE SAME STATISTIC AS swipl_times (user, 2026-10-05) ──────────────────────────────────
+# ── one timed run: THE SAME STATISTIC AS swipl's `time_s` (user, 2026-10-05) ──────────────────────
 # N calls per run, N doubled from 1 until a run takes at least RUN_S of wall time (calibration runs
-# collect nothing first); then three runs, each after a full collection, every collection DURING a
-# run counted; wall time per call; the minimum of the three is the number.
+# collect nothing first); each timed run after a full collection, every collection DURING it
+# counted; wall time per call.
 function _wall_per_call(f, n::Int, collect::Bool)::Float64
     collect && GC.gc()
     t0 = time_ns()
@@ -973,14 +929,85 @@ function _wall_per_call(f, n::Int, collect::Bool)::Float64
     end
     return (time_ns() - t0) / n / 1e3                   # µs per call
 end
-function julia_times(f)
-    f()
-    n = 1
-    while _wall_per_call(f, n, false) * n < RUN_S * 1e6   # µs
-        n *= 2
+# ── THE METHOD SINCE 2026-10-15 (user): ≥ 30 runs per benchmark, swipl and LogicKernel INTERLEAVED
+# run by run, median and IQR, no other heavy job; the raw numbers in tools/bench_results/. MEASURED the
+# night before: swipl's own nreverse moved 19.7 ↔ 30.9 µs between two sessions, because the old
+# method ran all of one side, then all of the other, three runs each — a ratio of two moments.
+# Here swipl is a SERVER read over a pipe: each LogicKernel run is followed at once by one swipl run
+# of the same case, both after a full collection, both counting the collections during the run.
+"Runs per benchmark (each side), unless `--runs=N` says otherwise."
+const RUNS_DEFAULT = 30
+
+"swipl as a server for `cases` (numbered by position): `calib(I)` → calls per run, `run(I, N)` → µs per call."
+function swipl_server(cases)::Union{Nothing, Base.Process}
+    Sys.which("swipl") === nothing && return nothing
+    prog = IOBuffer()
+    print(prog, PROLOG_FIXTURES)
+    print(
+        prog,
+        """
+        run_s(Goal, N, T) :-
+            get_time(T0), forall(between(1, N, _), Goal), get_time(T1), T is T1 - T0.
+        time_s(Goal, N, T) :-
+            garbage_collect, run_s(Goal, N, T).
+        calib(Goal, N0, N) :-
+            run_s(Goal, N0, T), ( T >= $RUN_S -> N = N0 ; N1 is N0 * 2, calib(Goal, N1, N) ).
+        serve :-
+            read_term(user_input, T, []),
+            (   T == end_of_file -> true
+            ;   T = calib(I) -> case(I, G), calib(G, 1, N), format("~d~n", [N]), flush_output, serve
+            ;   T = run(I, N) -> case(I, G), time_s(G, N, S), U is S / N * 1.0e6,
+                format("~6f~n", [U]), flush_output, serve
+            ).
+        """
+    )
+    for (i, (_, _, goal)) in enumerate(cases)
+        isempty(goal) && continue
+        print(prog, "case($i, Goal) :- fixtures(G1, G2, V1, V2), Goal = (", goal, ").\n")
     end
-    ts = ntuple(_ -> _wall_per_call(f, n, true), 3)
-    return ts, n, (@allocations f()), (@allocated f())
+    print(prog, ":- initialization((serve, halt)).\n")
+    d = mktempdir()
+    f = joinpath(d, "bench_server.pl")
+    write(f, String(take!(prog)))
+    return open(pipeline(`swipl -q $f`; stderr=devnull), "r+")
+end
+
+"Ask the swipl server `q` and read its one-line answer."
+function _ask(p::Base.Process, q::AbstractString)::String
+    println(p, q)
+    flush(p)
+    return readline(p)
+end
+
+"Median and interquartile range of `xs` (linear interpolation, as `Statistics.quantile`)."
+function _median_iqr(xs::Vector{Float64})::Tuple{Float64, Float64}
+    v = sort(xs)
+    q(t) = (h=(length(v) - 1) * t + 1; lo=floor(Int, h); hi=min(lo + 1, length(v));
+        v[lo] + (h - lo) * (v[hi] - v[lo]))
+    return q(0.5), q(0.75) - q(0.25)
+end
+
+"""
+Interleaved timings: per case, both sides calibrated, then `runs` pairs — one LogicKernel run, one
+swipl run — each a full collection then N calls. Returns per case (lk runs, swipl runs, N lk, N sw).
+"""
+function interleaved_times(cases, runs::Int, p::Union{Nothing, Base.Process})
+    out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}, Int, Int}}()
+    for (i, (name, f, goal)) in enumerate(cases)
+        f()
+        n = 1
+        while _wall_per_call(f, n, false) * n < RUN_S * 1e6
+            n *= 2
+        end
+        nsw = (p === nothing || isempty(goal)) ? 0 : parse(Int, _ask(p, "calib($i)."))
+        lk, sw = Float64[], Float64[]
+        for _ in 1:runs
+            push!(lk, _wall_per_call(f, n, true))
+            nsw > 0 && push!(sw, parse(Float64, _ask(p, "run($i, $nsw).")))
+        end
+        out[name] = (lk, sw, n, nsw)
+    end
+    return out
 end
 
 # ── the diagnostic reports: Cthulhu's descent, a flame graph, the run loop's code ────────────────
@@ -1306,16 +1333,17 @@ function main(args)
     isempty(cases) && error("tools/bench.jl: no case matches $(filt)")
     k = findfirst(a -> startswith(a, "--profile="), args)
     prof = k === nothing ? "" : String(split(args[k], '='; limit=2)[2])
-    sw = swipl_times(cases)
-    swv = isempty(sw) ? "no swipl on PATH" : strip(read(`swipl --version`, String))
-    println("LogicKernel bench — julia $(VERSION), pid $(getpid()), $swv")
-    # the machine's idle CPU BEFORE and AFTER the Julia runs; a ratio is quoted only if both are quiet
+    kr = findfirst(a -> startswith(a, "--runs="), args)
+    runs = kr === nothing ? RUNS_DEFAULT : parse(Int, split(args[kr], '='; limit=2)[2])
+    sp = swipl_server(cases)
+    swv = sp === nothing ? "no swipl on PATH" : strip(read(`swipl --version`, String))
+    println(
+        "LogicKernel bench — julia $(VERSION), pid $(getpid()), $swv; $runs runs per side, interleaved"
+    )
+    # the machine's idle CPU BEFORE and AFTER the runs; a ratio is quoted only if both are quiet
     qc = quiet_check()
-    rows = Tuple{String, NTuple{3, Float64}, Int, Int, Int}[]
-    for (name, f, _) in cases
-        jt, n, allocs, bytes = julia_times(f)
-        push!(rows, (name, jt, n, allocs, bytes))
-    end
+    tm = interleaved_times(cases, runs, sp)
+    sp === nothing || close(sp)
     qa = quiet_check()
     quiet = qc.quiet && qa.quiet
     for (when, q) in (("before", qc), ("after", qa))
@@ -1330,26 +1358,69 @@ function main(args)
         quiet ? "QUIET before and after: ratios quoted" : "NOT QUIET: no ratio is quoted"
     )
     @printf("fixtures: f/2 trees of %d cells\n", CELLS)
+    # the raw numbers: one row per run, both sides (tools/bench_results/, the user's rule, 2026-10-15)
+    sha = try
+        strip(read(`git -C $(dirname(@__DIR__)) rev-parse --short HEAD`, String))
+    catch
+        "nogit"
+    end
+    dirty = try
+        !isempty(
+            read(
+                `git -C $(dirname(@__DIR__)) status --porcelain --untracked-files=no`,
+                String
+            )
+        )
+    catch
+        false
+    end
+    now_utc = Dates.now(Dates.UTC)
+    resdir = joinpath(@__DIR__, "bench_results")
+    mkpath(resdir)
+    stamp = Dates.format(now_utc, "yyyy-mm-ddTHHMMSS") * "Z"
+    raw = joinpath(resdir, "$(stamp)_$(sha).tsv")
+    open(raw, "w") do io
+        println(io,
+            "# machine: $(gethostname()); $(Sys.CPU_NAME), $(Sys.CPU_THREADS) threads, ",
+            "$(round(Sys.total_physical_memory() / 2^30; digits=1)) GiB")
+        println(io, "# commit: $sha$(dirty ? " (+ uncommitted changes)" : "")")
+        println(io, "# date: $(Dates.format(now_utc, "yyyy-mm-dd HH:MM:SS")) UTC")
+        println(
+            io, "# $(swv); julia $(VERSION); $runs runs per side, interleaved; quiet=$quiet"
+        )
+        println(io, "case\tside\trun\tus_per_call\tcalls_per_run")
+        for (name, _, _) in cases
+            lk, sw, n, nsw = tm[name]
+            for (r, t) in enumerate(lk)
+                @printf(io, "%s\tLogicKernel\t%d\t%.6f\t%d\n", name, r, t, n)
+            end
+            for (r, t) in enumerate(sw)
+                @printf(io, "%s\tswipl\t%d\t%.6f\t%d\n", name, r, t, nsw)
+            end
+        end
+    end
+    println("raw numbers: ", raw)
     @printf(
-        "%-22s %-26s %-26s %8s %16s %8s %9s\n", "case", "LogicKernel µs (3 runs)",
-        "swipl µs (3 runs)", "LK/swipl", "calls/run LK sw", "allocs", "bytes"
+        "%-26s %22s %22s %9s %16s %8s %9s\n", "case", "LogicKernel µs med (IQR)",
+        "swipl µs med (IQR)", "LK/swipl", "calls/run LK sw", "allocs", "bytes"
     )
     ratios = Dict{String, Float64}()
-    for (name, jt, n, allocs, bytes) in rows
-        sn = get(sw, name, nothing)
-        js = join((@sprintf("%.2f", t) for t in jt), " ")
-        ss = sn === nothing ? "—" : join((@sprintf("%.2f", t) for t in sn[1]), " ")
-        r = sn === nothing || !quiet ? NaN : minimum(jt) / minimum(sn[1])
-        ratios[name] = r
-        ns = sn === nothing ? "$n —" : "$n $(sn[2])"
-        @printf("%-22s %-26s %-26s %8.2f %16s %8d %9d", name, js, ss, r, ns, allocs, bytes)
-        spread = maximum(jt) / minimum(jt)
-        spread > 1.15 && @printf("   ⚠ LK runs spread %.0f%%", (spread - 1) * 100)
-        if sn !== nothing
-            sspread = maximum(sn[1]) / minimum(sn[1])
-            sspread > 1.15 && @printf("   ⚠ swipl runs spread %.0f%%", (sspread - 1) * 100)
+    for (name, f, _) in cases
+        lk, sw, n, nsw = tm[name]
+        lm, li = _median_iqr(lk)
+        allocs, bytes = (@allocations f()), (@allocated f())
+        if isempty(sw)
+            ratios[name] = NaN
+            @printf("%-26s %12.2f (%7.2f) %22s %9s %16s %8d %9d\n", name, lm, li, "—", "—",
+                "$n —", allocs, bytes)
+        else
+            sm, si = _median_iqr(sw)
+            r = quiet ? lm / sm : NaN
+            ratios[name] = r
+            @printf("%-26s %12.2f (%7.2f) %12.2f (%7.2f) %9.2f %16s %8d %9d\n", name, lm,
+                li,
+                sm, si, r, "$n $nsw", allocs, bytes)
         end
-        println()
     end
     "--no-compile" in args || run_loop_report()
     "--no-profile" in args && return nothing
