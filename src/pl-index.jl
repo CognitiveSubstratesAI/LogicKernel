@@ -164,15 +164,18 @@ argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
 # PORT: pl-index.c indexOfWord as _index_key_loc
 # DIVERGES: on the WORD a dereferenced location holds (L1c sub-commit 5), giving `indexOfWord`'s key
 # of the term it stands for — so the frame and cell argv key exactly as the term argv does: an
-# unbound cell 0; an atom word its symbol's key (`_atom_value`, the database's store: no lookup
-# allocates); a compound word `FUNCTOR_dot2` for `[|]/2`, 0 for `$expr/n` (Q2: a wildcard), else
+# unbound cell 0; an atom word its symbol's key, recorded with the symbol in the database's store
+# (`atomIndexKey`, L1c-6: no term read, no lookup); a compound word `FUNCTOR_dot2` for `[|]/2`, 0 for `$expr/n` (Q2: a wildcard), else
 # `_functor_word` of its name's symbol and its arity; a value-table word its value's key. Only the
 # BOUNDARY (a slot's side value or a keyed variable — until L1e/L1f) reads a term.
 "The index key of the term at a dereferenced location (`indexOfWord` on the words)."
 function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: this file loads before pl-global.jl)
     k == DU_CELL && return word(0)
     if k == DU_WORD
-        isAtomW(w) && return indexOfWord(_atom_value(ld, w))
+        if isAtomW(w)                                       # the key recorded with its symbol (L1c-6)
+            ak = atomIndexKey(ld.atom_symbols, indexAtom(w))
+            return ak != 0 ? ak : indexOfWord(_atom_value(ld, w))
+        end
         f = ld.gstack[valPtr(w)]
         f == ld.functor_dot2 && return FUNCTOR_dot2         # `[H|T]`: as `argKey` keys `H_LIST*`
         name = nameFunctor(ld.functors, f)

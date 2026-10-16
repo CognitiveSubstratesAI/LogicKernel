@@ -1758,7 +1758,7 @@ function PL_next_solution_guarded(
     # the helpers' arguments (upstream's `helper_args`)
     hc_c::T = ph                                    # h_const's constant
     hc_w::word = word(0)                            # … as an atom word (0: none; L1b C6b)
-    nil_w::word = _atom_word!(ld, gd.atom_nil)      # ATOM_nil, the word of `[]` (L1b C6b)
+    nil_w::word = ld.atom_nil_w                     # ATOM_nil, the word of `[]` (L1b C6b; a field since L1c-6)
     tc_cref::ClauseRef{T} = gd.clauses_top_cref     # TRUST_CLAUSE's clause
     bv_voffset::Int = 0                             # bvar_cont's voffset
     fexitdet_rc::foreign_t = FTRUE                  # I_FEXITDET's rc
@@ -2434,19 +2434,17 @@ function PL_next_solution_guarded(
     buff_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     buff_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
-    buff_v = _cell_var(ld, allocGlobalCells!(ld, 1))
-    setSlotValue!(ld, buff_1 + 1, buff_v)                   # *v1 = makeRefG(v)
+    buff_v = _slot_new_var!(ld, buff_1 + 1)                # *v1 = makeRefG(v): a WORD (L1c-6)
     if _slow_unify(ld)
-        buff_w = _cell_var(ld, allocGlobalCells!(ld, 1))
-        setSlotValue!(ld, buff_2 + 1, buff_w)               # *v2 = makeRefG(v)
+        buff_w = _slot_new_var!(ld, buff_2 + 1)            # *v2 = makeRefG(v)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-        _argp_store!(ld, ARGP, buff_v)
+        ld.slots[ARGP.pos + 1] = makeRefG(buff_v)
         ARGP = _argp_add(ARGP, 1)
-        _argp_store!(ld, ARGP, buff_w)
+        ld.slots[ARGP.pos + 1] = makeRefG(buff_w)
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
     end
-    setSlotValue!(ld, buff_2 + 1, buff_v)                   # *v2 = *v1
+    ld.slots[buff_2 + 1] = ld.slots[buff_1 + 1]             # *v2 = *v1
     @goto next_instruction
 
     # PORT: pl-vmi.c B_UNIFY_VF
@@ -2461,7 +2459,7 @@ function PL_next_solution_guarded(
     bufv_v = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if _slow_unify(ld)
-        setSlotValue!(ld, bufv_f + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))   # globaliseFirstVar(f)
+        _slot_new_var!(ld, bufv_f + 1)                      # globaliseFirstVar(f): a WORD (L1c-6)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _slot_copy!(ld, ARGP.pos + 1, bufv_f + 1)
         ARGP = _argp_add(ARGP, 1)
@@ -2509,7 +2507,7 @@ function PL_next_solution_guarded(
     bufc_c = PCl[PCc[PC + 1]]
     PC += 2
     if _slow_unify(ld)
-        setSlotValue!(ld, bufc_f + 1, _cell_var(ld, allocGlobalCells!(ld, 1)))   # globaliseFirstVar(f)
+        _slot_new_var!(ld, bufc_f + 1)                      # globaliseFirstVar(f): a WORD (L1c-6)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _slot_copy!(ld, ARGP.pos + 1, bufc_f + 1)
         ARGP = _argp_add(ARGP, 1)
@@ -3043,11 +3041,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c L_VOID
     @label L_VOID
-    setSlotValue!(
-        ld,
-        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
-        _cell_var(ld, allocGlobalCells!(ld, 1))
-    )               # setVar(*varFrameP(FR, *PC++))
+    _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)   # setVar(*varFrameP(FR, *PC++)): a WORD (L1c-6)
     PC += 1
     @goto next_instruction
 

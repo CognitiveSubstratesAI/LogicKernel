@@ -33,6 +33,10 @@ _kw_s(n) = lk_sym(_R, Symbol(n))
     end
     @test LK.atomSymbol(s, 5) === nothing                       # its block exists, the entry not
     @test LK.atomSymbol(s, 5000) === nothing                    # no block at all
+    for i in idxs                                               # each symbol's index key beside it (L1c-6)
+        @test LK.atomIndexKey(s, i) == LK.indexOfWord(_kw_s("s$i"))
+    end
+    @test LK.atomIndexKey(s, 5) == 0 && LK.atomIndexKey(s, 5000) == 0   # none recorded
     b = s.blocks[LK.MSB(1000) + 1]
     @test length(b) == 1 << LK.MSB(1000)                        # 512 entries: 512..1023
     LK.setAtomSymbol!(s, 1001, _kw_s("s1001"))
@@ -41,6 +45,16 @@ _kw_s(n) = lk_sym(_R, Symbol(n))
     gd = LK.PL_global_data{_R}()
     i = gd.atoms.highest - 1
     @test length(something(gd.atoms.array[LK.MSB(i) + 1])) == 1 << LK.MSB(i)
+end
+
+# L1c-6 (user, 2026-10-16: an alternative-type allocation that grew with n): the VM's `[]` word is
+# the database's, made once, and the index keys it as `[]` from the store — no term read
+@testset "ATOM_nil's word is the database's, keyed as [] without a term" begin
+    gd = LK.PL_global_data{_R}()
+    ld = LK.PL_local_data{_R}(gd)
+    @test ld.atom_nil_w == gd.atom_nil_w == LK._atom_word!(ld, gd.atom_nil)
+    @test LK.atomIndexKey(gd.atom_symbols, LK.indexAtom(gd.atom_nil_w)) == LK.ATOM_nil
+    @test LK._index_key_loc(ld, LK.DU_WORD, gd.atom_nil_w, 0) == LK.indexOfWord(gd.atom_nil)
 end
 
 @testset "an atom made through engine A's compiler reads back in engine B: no miss" begin

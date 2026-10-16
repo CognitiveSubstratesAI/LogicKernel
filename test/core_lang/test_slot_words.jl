@@ -2,7 +2,7 @@
 # test/core_lang/test_slot_words.jl — white-box, on every term type:
 #   * a live cell variable is stored as its reference (`makeRefG`), whether the VM made it for the
 #     slot (`_slot_new_var!`: the variable instructions) or it arrived as a term, and reads back as
-#     the cell's variable term (`gvars`, made once with the cell); anything else — a symbol, a number,
+#     the cell's variable term (made on demand by `_cell_var` since L1c-6); anything else — a symbol, a number,
 #     a compound, a KEYED variable — is `SLOT_VALUE`, its value in the slot's own entry of
 #     `slot_values`, read back unchanged;
 #   * a fresh cell from a slot builds no term of its own and adds no value-table entry;
@@ -34,7 +34,8 @@ end
     LK.setSlotValue!(ld, a, v)
     @test ld.slots[a] == LK.makeRefG(LK._cell_pos(ld, k))
     @test var_key(LK.slotValue(ld, a)) == k
-    @test LK.slotValue(ld, a) === LK._cell_var(ld, LK._cell_pos(ld, k))   # the kept term
+    # the cell's variable term is made on demand (L1c-6: no kept term); a variable is its KEY
+    @test var_key(LK.slotValue(ld, a)) == var_key(LK._cell_var(ld, LK._cell_pos(ld, k)))
     for x in (_sw_sym(:foo), LK.mk_nil(_SW), lk_gnd(_SW, Int64(7)), lk_gnd(_SW, 2.5),
         lk_var(_SW, UInt64(42)))                                # the last: a KEYED variable
         LK.setSlotValue!(ld, b, x)

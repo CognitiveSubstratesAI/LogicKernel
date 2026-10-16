@@ -128,8 +128,7 @@ function allocGlobalCells!(ld::PL_local_data{T}, n::Int)::Int where {T}
     k = CELL_KEY_TAG | (stamp << 28) | UInt64(p)
     for i in 0:(n - 1)
         ld.gstack[p + i] = word(0)    # setVar()
-        ld.gkey[p + i] = k + UInt64(i)
-        ld.gvars[p + i] = mk_var(T, k + UInt64(i))     # its variable term, once (L1b C5)
+        ld.gkey[p + i] = k + UInt64(i)                 # (its variable term: on demand, `_cell_var`)
     end
     ld.gTop = top
     return p
@@ -160,7 +159,6 @@ end
     n = min(n, Int(CELL_POS_MASK))
     resize!(ld.gstack, n)
     resize!(ld.gkey, n)
-    resize!(ld.gvars, n)
     old = length(ld.gterms)
     resize!(ld.gterms, n)
     fill!(view(ld.gterms, (old + 1):n), nothing)     # (a new position holds no export: L1c)

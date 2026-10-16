@@ -656,6 +656,8 @@ fixed it or a public issue exists.
 | `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
 | `test/compile/test_portable_smallint_swipl.jl` | `is_portable_smallint` under `portable_vmi`, and the tagged-integer range against a live swipl's flags | — |
 | `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses; since L1c sub-commit 4 the two-term agenda on global POSITIONS (`cell_agendaLR`: `do_unify_cells` walks argument cells) | `src/pl-termwalk.c` |
+| `test/core_lang/test_zero_exports.jl` | the L1c plan's condition 3: one call of swipl's benchmark programs nreverse and qsort (bench/programs) leaves the three counters of the term boundary unchanged — `cold_exports`, `cold_imports`, `cold_vars`; the first call's traffic and the export memo's entry count reported | — |
+| `test/core_lang/test_var_identity.jl` | L1c sub-commit 6: a variable is its KEY — two reads of one cell (two terms since `_cell_var` builds on demand) act as one variable in the term-level unifier, the standard order, copy_term, the occurs check, the writer's names, numbervars and the variable collectors of term_variables/2 and bagof/setof | — |
 | `test/core_lang/test_index_words.jl` | L1c sub-commit 5: first-argument indexing from WORDS — the key read on a word equals `indexOfWord` of the term for every word form (atoms, `[]` vs `'[]'`, compounds, `[|]/2`, the `$expr` wildcard, value-table values), unbound cells and reference chains, the keyed-variable boundary; the deep descent through a compound's argument cells (`argv_cells`); a deep-indexed call makes no cold export, its answers swipl's | — |
 | `test/core_lang/test_unify_cells.jl` | L1c sub-commit 4: `do_unify_cells` — the binding direction (only global cells are bound, the higher to the lower, both argument orders, no global → local reference, the slots untouched), the simple cases and compounds against swipl through the head and body paths, the partial-binding contract, rational trees with every functor cell restored, Q2 (kernel-only), the keyed-variable boundary, the zero-export meter of a head unification | — |
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
@@ -801,6 +803,7 @@ graph LR
     pl_atom --> pl_hash
     pl_atom --> pl_incl
     pl_atom --> SWI_Prolog
+    pl_atom --> pl_index
     pl_atom --> pl_inline
     pl_atom --> pl_ressymbol
     pl_termwalk --> term_interface
@@ -815,6 +818,7 @@ graph LR
     pl_index --> default_term
     pl_index --> pl_hash
     pl_index --> pl_incl
+    pl_index --> pl_atom
     pl_index --> pl_vmi
     pl_index --> pl_inline
     pl_index --> pl_prims

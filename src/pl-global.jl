@@ -64,6 +64,7 @@ mutable struct PL_global_data{T}
     const functors::functors_t                                  # functors: the table (L1b B)
     const atom_dexpr::UInt64                                    # (`$expr`, a reserved atom: L1c)
     const functor_dot2::UInt64                                  # FUNCTOR_dot2: '[|]'/2's word
+    const atom_nil_w::UInt64                                    # ATOM_nil's WORD (L1c-6)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -109,6 +110,7 @@ function PL_global_data{T}() where {T}
     functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
+    nilw = _atom_word!(atoms, syms, mk_nil(T))  # ATOM_nil's word, once (L1c-6)
     gd = PL_global_data{T}(
         gen_t(0),
         Dict{Definition{T}, dirty_def_info{T}}(),
@@ -136,7 +138,8 @@ function PL_global_data{T}() where {T}
         syms,
         functors,
         dexpr,
-        dot2
+        dot2,
+        nilw
     )
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
@@ -237,8 +240,9 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # (src/pl-incl.jl § the local stack; since L1b stage C5 a cell is a WORD — src/pl-inline.jl
 # `slotValue`: a reference to a global cell, an atom, or `SLOT_VALUE`, the value in the cell's own
 # entry of `slot_values`, transitional — a reference reads back as the cell's variable term, made
-# ONCE when the cell is allocated and kept in `gvars` beside its key, as building one allocates;
-# transitional with `gkey`, gone when the stamp falls); its `top` and `max` and LD's `environment`, `choicepoints` and
+# ON DEMAND from its key by the one counted adapter `_cell_var` (`cold_vars`; L1c sub-commit 6 —
+# until then kept per cell in `gvars`), transitional with `gkey`, gone when the stamp falls); its
+# `top` and `max` and LD's `environment`, `choicepoints` and
 # `foreign_environment` are named by the macros upstream's code reads them through — `lTop`, `lMax`,
 # `environment_frame`, `BFR` and `fli_context` — and the last three are pool indices (0 = NULL).
 # `stacks.limit` is the local stack's alone, in positions: there is no global or trail stack to
@@ -294,7 +298,6 @@ mutable struct PL_local_data{T}
     trail_keys::Vector{UInt64}                                  # … the keyed variables' keys
     gstack::Vector{UInt64}                                      # stacks.global: its WORDS (L1b C2)
     gkey::Vector{UInt64}                                        # … the key of each cell's variable
-    gvars::Vector{T}                                            # … and its variable term (L1b C5)
     gterms::Vector{Union{Nothing, T}}                           # … a compound's export (L1c)
     gterm_pos::Vector{Int}                                      # … the positions holding one
     gterm_of::IdDict{T, Int}                                    # … export → its position: TRANSITIONAL (L1d), with the memo
@@ -308,8 +311,10 @@ mutable struct PL_local_data{T}
     functors::functors_t                                        # GD->functors: its database's
     atom_dexpr::UInt64                                          # GD's `$expr` (L1c)
     functor_dot2::UInt64                                        # GD's FUNCTOR_dot2 (L1c)
+    atom_nil_w::UInt64                                          # GD's ATOM_nil word (L1c-6)
     cold_exports::Int                                           # (compounds read as terms, L1c)
     cold_imports::Int                                           # (terms copied onto the stack)
+    cold_vars::Int                                              # (cell variables read as terms, L1c-6)
     mark_bar::Int                                               # mark_bar
     stamp_next::UInt64                                          # (the engine's reserved stamps:
     stamp_end::UInt64                                           #  stamp_next until stamp_end)
@@ -389,11 +394,11 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
-        UInt64[], UInt64[], T[], Union{Nothing, T}[], Int[], IdDict{T, Int}(), 0, 0, T[],
+        UInt64[], UInt64[], Union{Nothing, T}[], Int[], IdDict{T, Int}(), 0, 0, T[],
         Int[],
         gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
-        gd.functors, gd.atom_dexpr, gd.functor_dot2,             # GD->functors (L1c)
-        0, 0,                                   # no compound exported or imported yet
+        gd.functors, gd.atom_dexpr, gd.functor_dot2, gd.atom_nil_w,   # GD->functors (L1c); ATOM_nil (L1c-6)
+        0, 0, 0,                                # no compound exported or imported, no variable read yet
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,

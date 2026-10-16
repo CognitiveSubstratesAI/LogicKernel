@@ -184,11 +184,19 @@ end
 "The key of the cell variable at global position `p`."
 @inline _cell_key(ld::PL_local_data, p::Int)::UInt64 = ld.gkey[p]
 
-# ORIGINAL: the variable TERM of the cell at a position (L1b stage C5): made once, when the cell is
-# allocated (`allocGlobalCells!`), since building one allocates — so a slot's reference reads back
-# with no allocation (`slotValue`). Transitional, with `gkey`.
-"The variable term of the cell at global position `p`."
-@inline _cell_var(ld::PL_local_data{T}, p::Int) where {T} = ld.gvars[p]::T
+# ORIGINAL — THE COUNTED ADAPTER FOR VARIABLES (L1c sub-commit 6; the L1c plan's condition 3): the
+# variable TERM of the cell at a position, made ON DEMAND from the cell's key, for a reader that
+# does not work on words (the FLI, the built-ins, the writer, the term-level algorithms). COUNTED
+# in `cold_vars` on every call: the zero-export test asserts the VM's hot path never asks (nreverse
+# and qsort, test/core_lang/test_zero_exports.jl). Until sub-commit 6 the term was made per cell at
+# allocation (`gvars`), whether any reader wanted it or not — 1606 of nreverse's 1621 allocations.
+# A variable is its KEY, never its Julia object (src/term_interface.jl): two reads are one variable
+# (test/core_lang/test_var_identity.jl). Transitional, with `gkey` (the stamp falls at L1f).
+"The variable term of the cell at global position `p` (the counted adapter)."
+@inline function _cell_var(ld::PL_local_data{T}, p::Int)::T where {T}
+    ld.cold_vars += 1
+    return mk_var(T, ld.gkey[p])
+end
 
 # ORIGINAL: a value table's box (L1b stage C2) holds the word of its own entry, whose box is here —
 # so a retained key at a position a box now occupies names no cell (a cell's word names an entry

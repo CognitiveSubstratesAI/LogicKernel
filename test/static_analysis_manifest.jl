@@ -163,6 +163,7 @@ _manifest_per_type(T) = (
     (LK._atom_word!, Tuple{LK.atoms_t, LK.atom_symbols{T}, T}, false),
     (LK.atom_symbols{T}, Tuple{}, false),
     (LK.atomSymbol, Tuple{LK.atom_symbols{T}, Int}, true),
+    (LK.atomIndexKey, Tuple{LK.atom_symbols{T}, Int}, true),     # the atom's index key (L1c-6)
     (LK.setAtomSymbol!, Tuple{LK.atom_symbols{T}, Int, T}, false),
     (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, false),   # L1c: the cold export
     # the slot words (L1b stage C5/C6a): reads, stores and moves allocate nothing; a fresh cell may
@@ -173,7 +174,7 @@ _manifest_per_type(T) = (
     (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, false),  # L1c: the cold import
     (LK._slot_new_var!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK._cell_key, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK._cell_var, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK._cell_var, Tuple{LK.PL_local_data{T}, Int}, false),   # L1c-6: the counted adapter builds the term
     (LK.allocGlobalCells!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.setSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
@@ -1986,10 +1987,16 @@ const L1C_ALLOC_EXEMPT = [
     # hot path (nreverse/qsort: measured) — but the frame and cell forms still REACH the boundary
     # statically (a slot's side value, a keyed variable's binding: `_loc_term`), which AllocCheck
     # sees; they go with the keyed variables (L1f). Moved L1c-5 → L1f, logged (unattended rule)
-    (LK.argv_at, "L1f"), (LK.indexKeyFromArgv, "L1f"), (LK.is_satifies_index, "L1f")
+    (LK.argv_at, "L1f"), (LK.indexKeyFromArgv, "L1f"), (LK.is_satifies_index, "L1f"),
+    # the counted adapter for variables (L1c sub-commit 6, 2026-10-16): a cell's variable term is
+    # BUILT per read instead of kept per cell (`gvars`, built at allocation whether wanted or not:
+    # 1516 of nreverse's 1516 allocations per call); the hot path never calls it (the zero-export
+    # test), the cold readers do until they take words (L1e) and the stamp falls (L1f)
+    (LK._cell_var, "L1f")
 ]
-"The ratchet: L1c's exemptions may only fall (measured 25, 2026-10-15)."
-const L1C_ALLOC_EXEMPT_MAX = 25
+"The ratchet: L1c's exemptions may only fall (measured 25, 2026-10-15; 26 on 2026-10-16: `_cell_var`, the
+migration of the eager per-cell variable term to the counted on-demand adapter — logged)."
+const L1C_ALLOC_EXEMPT_MAX = 26
 
 const DISPATCH_EXEMPT = (
     (

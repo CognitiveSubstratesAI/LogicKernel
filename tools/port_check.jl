@@ -705,7 +705,10 @@ end
 # made once: building one allocates) — measured on nreverse/qsort, where 18–30% of slot reads were
 # variables that would otherwise stay terms. BACK TO ≤ 29 BY L1d (unification over cells: the
 # readers take words, and `gvars` goes).
-const STAMP_SITES_MAX = 34
+# LOWERED 34 → 31 (2026-10-16, L1c sub-commit 6): `gvars` went — a cell's variable term is made on
+# demand by the counted adapter `_cell_var` from its key; its three sites (the field, its allocation,
+# its growth) left the count. Still above 29: L1d.
+const STAMP_SITES_MAX = 31
 
 "The names of the stamp machinery; a code line of src/ naming one is a stamp site."
 const STAMP_NAMES = r"\b(CELL_KEY_TAG|CELL_POS_MASK|CELL_STAMP_MASK|CELL_STAMP_BLOCK|_CELL_STAMP_COUNTER|stamp_next|stamp_end|gkey|gvars|_cell_pos|_reserveStamps!)(?![A-Za-z0-9_!])"
