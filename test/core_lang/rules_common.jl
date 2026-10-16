@@ -78,12 +78,20 @@ function _ratom_text(t::_R)::String
     return lk_atom_text(t)
 end
 
+# A STRING is written quoted, as `write_canonical/1` writes one (`"s"`), and read back as a string by
+# swipl 10's reader (double_quotes = string): unquoted, swipl read the ATOM `s`, and a differential on
+# the standard order of a string against an atom compared `s` with `s` (2026-10-16, L1d step 1:
+# `compare(X, "s", s)` is `<` to swipl 10.1.18 — TAG_STRING 4 before TAG_ATOM 5 — and was `=` here).
 "`t` as `write_canonical/1` writes it, each variable by `var(t)`."
 function _rwrite(t::_R, var)::String
     k = kind(t)
     k === VAR && return var(t)
     k === SYM && return _ratom_text(t)
-    k === GND && return string(lk_value(t))
+    if k === GND
+        v = lk_value(t)
+        v isa String || return string(v)
+        return "\"" * replace(v, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n") * "\""
+    end
     if is_pair(t)
         elems = String[]
         while is_pair(t)

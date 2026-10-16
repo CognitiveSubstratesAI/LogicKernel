@@ -2548,8 +2548,7 @@ function PL_next_solution_guarded(
     beq_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     beq_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
-    if compareStandard(ld, slotValue(ld, beq_1 + 1), slotValue(ld, beq_2 + 1), true) ==
-        CMP_EQUAL
+    if compareStandard_cells(ld, -(beq_1 + 1), -(beq_2 + 1), true) == CMP_EQUAL   # cells (L1d)
         @goto next_instruction
     end
     @FASTCOND_FAILED
@@ -2559,10 +2558,10 @@ function PL_next_solution_guarded(
     # (`compare_primitives` in equality mode, as `PL_unify_atomic`).
     # NOT PORTED: the `vmi_builtin=false` branch.
     @label B_EQ_VC
-    beqc_v = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    beqc_v = -(varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)   # the slot's location (L1d)
     beqc_c = PCl[PCc[PC + 1]]
     PC += 2
-    if compare_primitives(beqc_v, beqc_c, CMP_MODE_EQUAL) == CMP_EQUAL
+    if _identical_atomic(ld, beqc_v, beqc_c)
         @goto next_instruction
     end
     @FASTCOND_FAILED
@@ -2573,8 +2572,7 @@ function PL_next_solution_guarded(
     bneq_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     bneq_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
-    if compareStandard(ld, slotValue(ld, bneq_1 + 1), slotValue(ld, bneq_2 + 1), true) ==
-        CMP_EQUAL
+    if compareStandard_cells(ld, -(bneq_1 + 1), -(bneq_2 + 1), true) == CMP_EQUAL   # cells (L1d)
         @FASTCOND_FAILED
     end
     @goto next_instruction
@@ -2582,10 +2580,10 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_NEQ_VC
     # DIVERGES: as `B_EQ_VC`'s.
     @label B_NEQ_VC
-    bneqc_v = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    bneqc_v = -(varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)  # the slot's location (L1d)
     bneqc_c = PCl[PCc[PC + 1]]
     PC += 2
-    if compare_primitives(bneqc_v, bneqc_c, CMP_MODE_EQUAL) != CMP_EQUAL
+    if !_identical_atomic(ld, bneqc_v, bneqc_c)
         @goto next_instruction
     end
     @FASTCOND_FAILED

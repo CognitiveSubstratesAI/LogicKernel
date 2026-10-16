@@ -6,7 +6,9 @@
 #   * `cold_exports` — a compound on the stack read as a term (`_compound_term`),
 #   * `cold_imports` — a term copied onto the stack (`_compound_word!`; the deep index's boundary
 #     descent included, sub-commit 5),
-#   * `cold_vars` — a cell's variable read as a term (`_cell_var`, sub-commit 6).
+#   * `cold_vars` — a cell's variable read as a term (`_cell_var`, sub-commit 6),
+#   * `cold_pairs` — a pair the cell compare decides as terms (the boundary, L1d step 1);
+# and a small program that compares (==, \==, compare/3 over lists on the stack) does the same.
 # The first call builds the predicates' indexes and supervisors; the asserted call is the second (and
 # the first's counts are reported). The export memo's entry count over the run is reported too
 # (condition 3 of the memo's approval: how much cold traffic exists).
@@ -59,7 +61,7 @@ function _zt_allocated(gd, ld, proc)::Int
     return @allocated _zt_call(gd, ld, proc)
 end
 
-_zt_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars)
+_zt_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
 
 @testset "nreverse and qsort make no cold export, import or variable read" begin
     for name in (:nreverse, :qsort)
@@ -105,4 +107,25 @@ const _ZT_ALLOC_PIN = Dict(
         a == pin || @info "$name: a warm call allocates" LK_TERM_IMPL a pin
         @test a == pin
     end
+end
+
+# eq_loop(N): N times build two equal lists and a third, and compare them (==, \==, compare/3)
+const _ZT_EQ = """
+eq_loop(0) :- !.
+eq_loop(N) :- L1 = [1,2,f(a),3], L2 = [1,2,f(a),3], L3 = [1,2,f(b),3],
+    L1 == L2, L1 \\== L3, compare(O, L1, L3), O == (<), N1 is N - 1, eq_loop(N1).
+eq_top :- eq_loop(50).
+"""
+
+@testset "a comparing program makes no cold export, import, variable read or boundary pair" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "eq_loop.pl")
+    write(f, _ZT_EQ)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    @test _zt_run(gd, ld, :eq_top) == LK.PL_S_TRUE
+    c1 = _zt_counts(ld)
+    @test _zt_run(gd, ld, :eq_top) == LK.PL_S_TRUE
+    @test _zt_counts(ld) == c1
 end

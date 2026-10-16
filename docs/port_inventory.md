@@ -123,7 +123,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-list.c` | code | `8609e216cab9` | `src/pl-list.jl` | 14 | 8 |
 | swipl-devel `src/pl-modul.c` | code | `8609e216cab9` | `src/pl-modul.jl` | 7 | 6 |
 | swipl-devel `src/pl-op.c` | code | `8609e216cab9` | `src/pl-op.jl` | 16 | 13 |
-| swipl-devel `src/pl-prims.c` | code | `8609e216cab9` | `src/pl-prims.jl` | 87 | 47 |
+| swipl-devel `src/pl-prims.c` | code | `8609e216cab9` | `src/pl-prims.jl` | 98 | 53 |
 | swipl-devel `src/pl-pro.c` | code | `8609e216cab9` | `src/pl-pro.jl` | 3 | 3 |
 | swipl-devel `src/pl-proc.c` | code | `8609e216cab9` | `src/pl-proc.jl` | 46 | 31 |
 | swipl-devel `src/pl-proc.h` | code | `8609e216cab9` | `src/pl-proc.jl` | 1 | 0 |

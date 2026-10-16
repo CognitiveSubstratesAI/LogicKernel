@@ -213,6 +213,20 @@ _manifest_per_type(T) = (
     (LK.do_unify_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.raw_unify_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.unify_ptrs_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    # the standard order on cells (L1d step 1): the boundary (a term) may allocate
+    (LK._loc_atomic, Tuple{LK.PL_local_data{T}, UInt8, UInt64}, false),
+    (
+        LK.compare_primitives_cells,
+        Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int, UInt8, UInt64, Int, Int},
+        false
+    ),
+    (LK.compare_functors_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.do_compare_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.compare_fast_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.compare_descend_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.compare_std_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.compareStandard_cells, Tuple{LK.PL_local_data{T}, Int, Int, Bool}, false),
+    (LK._identical_atomic, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.raw_unify_ptrs, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.unify_ptrs, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.can_unify, Tuple{LK.PL_local_data{T}, T, T}, false),
@@ -1198,6 +1212,7 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_unify2_va, LK.pl_not_unify2_va, LK.pl_unify_with_occurs_check2_va,
                 LK.pl_equal2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
+                LK.pl_std_lt2_va, LK.pl_std_leq2_va, LK.pl_std_gt2_va, LK.pl_std_geq2_va,   # (L1d-1)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
@@ -1517,6 +1532,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.clean_index_key, Tuple{UInt64}, true), (LK.hashIndex, Tuple{UInt64, UInt32}, true),
     (LK._functor_word, Tuple{UInt64, Int}, true),
     # the reserved index keys, by construction (the divergence audit, S05)
+    (LK._loc_rank, Tuple{UInt8, UInt64}, true),   # the order's tag rank of a location (L1d-1): no T
     (LK._unreserved, Tuple{UInt64}, true), (LK._atom_key, Tuple{UInt64}, true),
     (LK._functor_key, Tuple{UInt64, Int}, true), (LK._gnd_index_key, Tuple{UInt64}, true),
     (LK.join_multi_arg_keys, Tuple{NTuple{4, UInt64}, Int}, true),
