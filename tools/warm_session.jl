@@ -69,6 +69,17 @@ include(joinpath(@__DIR__, "swipl_pin.jl"))
 let why = swipl_pin_refusal(ROOT)
     why === nothing || error("warm lane: REFUSED to start — ", why)
 end
+# THE DAEMON SERVES ITS OWN CHECKOUT (user, 2026-10-16): one daemon per checkout by construction (the
+# unit is named by a hash of ROOT; requests go through ROOT/.warm) — but which LogicKernel `using`
+# loaded is the environment's choice: a Manifest path to another checkout would serve one tree's
+# requests with another tree's src/, and every verdict would be for code it never named. Refused.
+let loaded = pkgdir(LogicKernel)
+    loaded !== nothing && realpath(loaded) == realpath(ROOT) || error(
+        "warm lane: REFUSED to start — LogicKernel was loaded from ", repr(loaded),
+        ", not from this checkout ", repr(ROOT),
+        " (the environment's Manifest points elsewhere)"
+    )
+end
 cd(ROOT)
 # The second term implementation is loaded once per process into `Main` (test/term_under_test.jl);
 # tracked here, so an edit to it reloads like an edit to src/. A STRUCT change in it needs a restart.

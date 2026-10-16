@@ -12,12 +12,18 @@
 #   tools/test_warm.sh bgfiles  # the branch-gate's file selection alone (no daemon)
 #   tools/test_warm.sh bgbudget # the branch-gate's time budget alone (no daemon)
 #   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
+#   tools/test_warm.sh refuse   # the pkgdir assertion's refusal alone (no daemon)
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
 # load and present the result as fresh; run a file on fewer implementations than the suite does.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
+# (user, 2026-10-16) every preflight here STUBS the full static-analysis file (warm.sh's test seam):
+# these cases check the preflight's logic, and the file is 25–28 min on a cold daemon, ~2 min warm —
+# the suite must finish in minutes either way. The fast pre-check stays real; the full file is the
+# pre-push step (`warm.sh file test/test_static_analysis.jl reference`).
+export LOGICKERNEL_PREFLIGHT_STUB_STATIC=1
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
 trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
@@ -386,6 +392,36 @@ cp "$T/term_interface.jl.bak" "$ti"
 cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored" 0 $?
 }
 
+# (user, 2026-10-16) the daemon REFUSES to start when LogicKernel loads from ANOTHER checkout
+# (warm_session.jl's pkgdir assertion — a Manifest path elsewhere would serve this tree's requests
+# with that tree's src/): a second root — this tree's tools/, a Project.toml of its own, its
+# Manifest's LogicKernel entry pointing at $ROOT — refuses by the assertion's own verdict, and the
+# client exits non-zero as soon as the unit dies (the fixture pays two loads: the precompile check
+# and the daemon's own, ~40 s; the bound is on the client's detection, not on Julia). A mutation
+# target: the comparison made always-true leaves a daemon up, and the case fails.
+_refuse_cases() {
+    mkdir -p "$T/root2/tools"
+    cp "$ROOT"/tools/*.sh "$ROOT"/tools/*.jl "$ROOT/tools/SWIPL_VERSION" "$T/root2/tools/"
+    ln -s "$ROOT/packages" "$T/root2/packages"       # the swipl pin's plunit check runs first (line 70)
+    printf '[deps]\nLogicKernel = "%s"\n' "$(sed -n 's/^uuid = "\(.*\)"$/\1/p' "$ROOT/Project.toml")" > "$T/root2/Project.toml"
+    sed "s|^path = \"\\.\"\$|path = \"$ROOT\"|" "$ROOT/Manifest.toml" > "$T/root2/Manifest.toml"
+    grep -q "^path = \"$ROOT\"\$" "$T/root2/Manifest.toml"; check "refuse: the fixture's Manifest points LogicKernel at this checkout" 0 $?
+    local s; s=$(date +%s)
+    "$T/root2/tools/warm.sh" start > "$T/r2" 2>&1; check "start REFUSES a LogicKernel loaded from another checkout" 1 $?
+    [ $(( $(date +%s) - s )) -lt 120 ]; check "…and the client fails fast (under 120 s, two loads included)" 0 $?
+    has "…by the assertion's own verdict" "$T/root2/.warm/session.log" "REFUSED to start — LogicKernel was loaded from" 1
+    has "…which the client shows" "$T/r2" "REFUSED to start" 1
+    echo 'println("x")' > "$T/s2.jl"
+    "$T/root2/tools/warm.sh" send "$T/s2.jl" > /dev/null 2>&1; check "…and starts no daemon" 3 $?
+    "$T/root2/tools/warm.sh" stop > /dev/null 2>&1            # a mutant that started one: no daemon left behind
+    rm -rf "$T/root2"
+}
+
+if [ "${1:-}" = refuse ]; then                       # the pkgdir assertion's refusal alone (no daemon)
+    _refuse_cases
+    echo "test_warm (refuse): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]; exit $?
+fi
 if [ "${1:-}" = stale ]; then                        # the stale-daemon recovery cases alone
     "$W" stop > /dev/null 2>&1
     "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
@@ -458,6 +494,8 @@ chmod +x "$T/fakebin/swipl"
 PATH="$T/fakebin:$PATH" "$W" start > /dev/null 2>&1; check "start REFUSES a swipl that is not the pin" 1 $?
 "$W" send "$T/s.jl" > /dev/null 2>&1; check "…and starts no daemon" 3 $?
 
+_refuse_cases                                        # the pkgdir assertion (user, 2026-10-16)
+
 "$W" start || { echo "test_warm: the lane did not start"; exit 1; }
 
 # preflight: a port_check violation (a src file with no header) fails it FAST, before the slow gate;
@@ -468,8 +506,10 @@ s=$(date +%s)
 LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight FAILS on a port_check violation" 1 $?
 rm -f "$probe_src"
 [ $(( $(date +%s) - s )) -lt 120 ]; check "…before the slow gate (fail fast)" 0 $?
-LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; check "preflight passes on the tree as it is" 0 $?
-has "…having run the static-analysis gate" "$T/pf" "test_static_analysis.jl" 1
+LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf" 2>&1; _pf_rc=$?; check "preflight passes on the tree as it is" 0 $_pf_rc
+[ "$_pf_rc" -eq 0 ] || { echo "       the preflight said:"; tail -15 "$T/pf" | sed 's/^/       | /'; }
+has "…reaching the static-analysis gate (stubbed here: the tooling seam)" "$T/pf" "test_static_analysis.jl STUBBED" 1
+has "…after a REAL fast static pre-check" "$T/pf" "fast static pre-check clean" 1
 # the preflight runs the CURRENT tools/port_check.jl: an edit to the checker made after an earlier
 # preflight (above) loaded it is seen — the checker's inventory end marker, renamed in place, makes
 # it report the inventory section missing — and FAILS the next preflight BY THAT VERDICT (a daemon
@@ -639,6 +679,32 @@ _bt=$(awk '/<<JL$/{f=1; next} /^JL$/{f=0} f && /`/{n++} END{print n+0}' "$ROOT/t
 check "no backtick inside an unquoted <<JL heredoc of tools/warm.sh (found $_bt)" 0 "$_bt"
 _bt_fixture=$(printf 'cat > f <<JL\n# a `name` here\nJL\n' | awk '/<<JL$/{f=1; next} /^JL$/{f=0} f && /`/{n++} END{print n+0}')
 check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
+
+# (user, 2026-10-16) an alternative type asked for a file that is not term-generic is REFUSED, never
+# silently run on the reference type
+"$W" file test/test_lint_globals.jl alt > "$T/ng" 2>&1; check "file: alt on a non-generic file is refused" 2 $?
+has "…saying why" "$T/ng" "is not term-generic" 1
+
+# (user, 2026-10-16) `inventory` rewrites the generated blocks IN THE DAEMON and runs port_check after:
+# on a tree whose inventory is current it exits 0, says so, and changes no generated file
+_inv_before=$(cat docs/port_inventory.md docs/architecture.md | md5sum)
+"$W" inventory > "$T/inv" 2>&1; check "inventory: exits 0 on a current tree" 0 $?
+has "…runs port_check after the rewrite" "$T/inv" "inventory: port_check clean" 1
+[ "$(cat docs/port_inventory.md docs/architecture.md | md5sum)" = "$_inv_before" ]; check "…and changes no generated file" 0 $?
+
+# (user, 2026-10-16) `fmt` formats the changed .jl files IN PLACE (write mode): an untracked file
+# written unformatted comes back Blue-formatted, and a second run rewrites nothing
+_fm_probe="$ROOT/tools/zz_fmt_probe.jl"
+printf 'f(x)=x+1\n' > "$_fm_probe"
+"$W" fmt > "$T/fmt" 2>&1; check "fmt: exits 0" 0 $?
+# (measured 2026-10-16: JuliaFormatter 2.14.0 keeps the source's spacing around `+`, cold and warm, under
+# every style — `x+1` stays; a hand-written `x + 1` here failed two runs identically. Expected = measured.)
+[ "$(cat "$_fm_probe")" = 'f(x) = x+1' ]; _fm_rc=$?; check "…and rewrote the changed file in place" 0 $_fm_rc
+[ "$_fm_rc" -eq 0 ] || echo "       probe now: '$(cat "$_fm_probe")'; fmt said: $(tr '\n' '|' < "$T/fmt")"
+has "…naming it" "$T/fmt" "fmt: formatted tools/zz_fmt_probe.jl" 1
+"$W" fmt > "$T/fmt2" 2>&1; check "fmt: a second run exits 0" 0 $?
+has "…and rewrites nothing" "$T/fmt2" "fmt: 0 file(s) rewritten" 1
+rm -f "$_fm_probe"
 
 _guard_cases
 _cap_cases

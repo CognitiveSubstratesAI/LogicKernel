@@ -34,6 +34,31 @@ const LK_TERM_GATE_LOGIC = [
 "Whether a test file's `text` is term-generic: it includes test/term_under_test.jl."
 lk_term_generic(text::AbstractString)::Bool = occursin(LK_TERM_GENERIC_RX, text)
 
+"Any include of test/term_under_test.jl, in whatever form (`LK_TERM_GENERIC_RX` is the one that counts)."
+const LK_TERM_ANY_INCLUDE_RX = r"^\s*include\(.*term_under_test\.jl"m
+
+"""
+    lk_term_include_check(path, text)
+
+Throw when a test file includes test/term_under_test.jl other than in the term-generic form
+(`LK_TERM_GENERIC_RX`: `include(joinpath(@__DIR__, "..", "term_under_test.jl"))`, a file one level
+below test/). Such a file reads `LK_TERM_IMPL` but is no unit of the alternative implementations: it
+would run on the reference type ONLY, silently, while Evidence reports three types (user,
+2026-10-16: a probe placed directly in test/ did exactly that in the warm lane).
+"""
+function lk_term_include_check(path::AbstractString, text::AbstractString)::Nothing
+    if occursin(LK_TERM_ANY_INCLUDE_RX, text) && !lk_term_generic(text)
+        error(
+            "$path includes test/term_under_test.jl, but not as " *
+            "`include(joinpath(@__DIR__, \"..\", \"term_under_test.jl\"))` from a directory one level " *
+            "below test/ — so it would run on the reference type ONLY, silently, never on the " *
+            "alternative implementations (test/term_scope.jl). Move it into a test/ subdirectory " *
+            "and use that include."
+        )
+    end
+    return nothing
+end
+
 """
     lk_term_scope(path, text) -> (scope, sources)
 
@@ -73,6 +98,7 @@ function lk_term_scopes(testdir::AbstractString)
     out = Dict{String, Tuple{Symbol, Vector{String}}}()
     for f in lk_test_files(testdir)
         text = read(f, String)
+        lk_term_include_check(f, text)                  # no silent reference-only file
         lk_term_generic(text) && (out[f] = lk_term_scope(f, text))
     end
     return out
