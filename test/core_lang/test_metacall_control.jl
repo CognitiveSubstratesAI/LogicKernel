@@ -185,14 +185,10 @@ end
     ours = [_rmcc_formal(db, g) for g in goals]
     @test all(!=("no_error"), ours)
     if _R_SWIPL
-        driver =
-            "t(G) :- catch((r(G) -> true ; true), error(F, _), (write_canonical(F), nl)), " *
-            "flush_output.\nmain :- " * join(("t(" * _rsrc(g) * ")" for g in goals), ", ") *
-            ".\n"
-        theirs = _rswipl(clauses, (); main_text=driver)
+        # `r/1` prints an uncaught error as `exception(F) det` (rules_common.jl, L1d step 2): the formals
         theirs = [
-            l for
-            l in theirs if !endswith(l, " det") && !endswith(l, " nondet") && l != "end"
+            l[(length("exception(") + 1):(end - length(") det"))] for
+            l in _rswipl(clauses, goals) if startswith(l, "exception(")
         ]
         @test ours == theirs
         ours == theirs || @info "errors differ" ours theirs
@@ -301,7 +297,9 @@ end
     ours = Int[]
     for n in names
         ans = _rcall(db, _rf(n, _rv(80)))
-        @test length(ans) == 1
+        # the FIRST answer (swipl's main takes one); a goal with an alternative (`fr(F1) ; true`)
+        # then throws an instantiation error on backtracking, a second line since L1d step 2
+        @test !isempty(ans) && !startswith(first(ans[1]), "exception(")
         m = match(r"\((-?\d+)\)", first(ans[1]))
         push!(ours, parse(Int, m[1]))
     end

@@ -134,21 +134,11 @@ end
     ours = [_rmc_formal(db, g) for g in goals]
     @test ours[1] == "instantiation_error" && ours[5] == "type_error(callable,1)"
     if _R_SWIPL
-        main = join(
-            (
-                "t($(_rsrc(g)))" for g in goals
-            ), ", "
-        )
-        driver = """
-        t(G) :- catch((r(G) -> true ; true), error(F, _), (write_canonical(F), nl)), flush_output.
-        t(_).
-        main :- $main.
-        """
-        theirs = _rswipl(clauses, (); main_text=driver)
-        # r/1 prints the answers; only the error formals are compared
+        # `r/1` prints an uncaught error as `exception(F) det` (rules_common.jl, L1d step 2): only the
+        # error formals are compared
         theirs = [
-            l for
-            l in theirs if !endswith(l, " det") && !endswith(l, " nondet") && l != "end"
+            l[(length("exception(") + 1):(end - length(") det"))] for
+            l in _rswipl(clauses, goals) if startswith(l, "exception(")
         ]
         @test ours == theirs
         ours == theirs || @info "errors differ" ours theirs

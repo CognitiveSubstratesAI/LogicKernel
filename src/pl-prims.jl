@@ -1292,14 +1292,11 @@ function do_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int)::boolex_t where 
 end
 
 # PORT: pl-prims.c raw_unify_ptrs as raw_unify_cells
-# DIVERGES: under `true`/`error` the occurs check runs on TERMS (its own L1d step): each location
-# converted at the boundary.
 "Unify two locations under the local data's `occurs_check` flag (pl-prims.c)."
 function raw_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int)::boolex_t where {T}
-    ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return do_unify_cells(ld, l1, l2)
-    k1, w1, p1 = _deref_loc(ld, l1)
-    k2, w2, p2 = _deref_loc(ld, l2)
-    return raw_unify_ptrs(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2))
+    flag = ld.prolog_flag_occurs_check
+    flag == OCCURS_CHECK_FALSE && return do_unify_cells(ld, l1, l2)
+    return unify_with_occurs_check_cells(ld, l1, l2, flag)   # on the cells since L1d step 2
 end
 
 # PORT: pl-prims.c unify_ptrs as unify_ptrs_cells
@@ -1545,6 +1542,159 @@ function _identical_atomic(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
                CMP_EQUAL
     k == DU_WORD && _is_gcompound(w) && return false
     return compare_primitives(_loc_atomic(ld, k, w), c, CMP_MODE_EQUAL) == CMP_EQUAL
+end
+
+# ── the occurs check on CELLS (L1d step 2; the workspace's L1_plan/stageL1d_design.md) ──────────
+# PORT: pl-prims.c var_occurs_in as var_occurs_in_cells
+# DIVERGES: `v` is a global POSITION (the variable's cell, or — asked by the trail walk — the cell
+# holding a binding's value), `t` a location; a visited compound gets FIRST_MASK on its functor cell
+# exactly as upstream (bit 6, which the functor's index and arity ignore), the positions stacked to
+# clear it (`occurs_cells`, upstream's `visited` segstack); the walk is the cell agenda on one side.
+# A pair at the BOUNDARY (a slot's side value, a keyed variable's binding) is checked on terms
+# (`var_occurs_in`), counted in `cold_pairs`. No MEMORY_OVERFLOW.
+# FIRST_MASK is bit 6, free in every word (see `is_acyclic_cells`); no cycle link may be in place
+# while it is set — asserted: the trail walk runs after `do_unify_cells` exited its links.
+"Whether the cell at position `v` occurs in the term at location `t` (pl-prims.c `var_occurs_in`)."
+function var_occurs_in_cells(ld::PL_local_data{T}, v::Int, t::Int)::Bool where {T}
+    @assert isempty(ld.cycle_cells) "var_occurs_in_cells: a cycle link is in place (exitCyclic first)"
+    k, w, p = _deref_loc(ld, t)                         # deRef(t)
+    unified = false
+    if p == v && p != 0                                 # v == t
+        (k == DU_WORD && _is_gcompound(w)) || return false
+        unified = true                                  # goto unified
+    end
+    compound = false
+    rc = false
+    agenda = ld.ocell_agenda
+    visited = ld.occurs_cells
+    while true
+        if !unified && p == v && p != 0                 # v == t
+            rc = true
+            break
+        end
+        unified = false
+        if k == DU_TERM                                 # the boundary (counted)
+            ld.cold_pairs += 1
+            vt =
+                isVar(ld.gstack[v]) ? _cell_var(ld, v) : _loc_term(ld, _deref_loc(ld, v)...)
+            if var_occurs_in(ld, vt, _loc_term(ld, k, w, p))
+                rc = true
+                break
+            end
+        elseif k == DU_WORD && _is_gcompound(w)         # isTerm(*t)
+            q = valPtr(w)
+            arity = arityFunctor(ld.functors, ld.gstack[q])
+            if !compound
+                compound = true
+                ld.gstack[q] |= FIRST_MASK              # f->definition |= FIRST_MASK
+                push!(visited, q)
+                initCellAgendaLR!(agenda, arity, q, q, 1)
+            elseif (ld.gstack[q] & FIRST_MASK) == 0
+                ld.gstack[q] |= FIRST_MASK
+                push!(visited, q)
+                pushWorkCellAgendaLR!(agenda, arity, q, q, 1)
+            end
+        end
+        compound || break
+        found, a, _ = nextCellAgendaLR!(agenda)         # t = nextTermAgenda(&agenda)
+        found || break
+        k, w, p = _deref_loc(ld, a)
+    end
+    if compound                                         # out:
+        while !isempty(visited)
+            q = pop!(visited)
+            ld.gstack[q] &= ~FIRST_MASK                 # f->definition &= ~FIRST_MASK
+        end
+        clearCellAgendaLR!(agenda)
+    end
+    return rc
+end
+
+# PORT: pl-prims.c unify_with_occurs_check as unify_with_occurs_check_cells
+# DIVERGES: on locations; no `onStack(global, …)` test (every variable is a global cell); the trail
+# walk reads global positions (a KEYED variable's entry — until L1f — is checked on terms, counted);
+# the failure's error term is read before `Undo!` (upstream copies `*p2` to a fresh cell first): the
+# term-level `failed_unify_with_occurs_check` builds the ball from the exports (an error path: cold).
+# No attributed variables (the wakeup entries of the trail).
+"""
+    unify_with_occurs_check_cells(ld, l1, l2, mode) -> boolex_t
+
+Unify the terms at locations `l1`, `l2` with the occurs check in `mode` (pl-prims.c): a variable
+against a term containing it fails or raises; two non-variables are unified and every binding made
+is then checked for a cycle.
+"""
+function unify_with_occurs_check_cells(
+    ld::PL_local_data{T}, l1::Int, l2::Int, mode::occurs_check_t
+)::boolex_t where {T}
+    k1, w1, p1 = _deref_loc(ld, l1)
+    k2, w2, p2 = _deref_loc(ld, l2)
+    if k1 == DU_TERM || k2 == DU_TERM                   # the boundary (counted)
+        ld.cold_pairs += 1
+        return unify_with_occurs_check!(
+            ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode
+        )
+    end
+    if k1 == DU_CELL                                    # canBind(*t1)
+        if var_occurs_in_cells(ld, p1, l2)
+            return failed_unify_with_occurs_check(
+                ld, _cell_var(ld, p1), _loc_term(ld, k2, w2, p2), mode
+            )
+        end
+        return do_unify_cells(ld, l1, l2)
+    end
+    if k2 == DU_CELL                                    # canBind(*t2)
+        if var_occurs_in_cells(ld, p2, l1)
+            return failed_unify_with_occurs_check(
+                ld, _loc_term(ld, k1, w1, p1), _cell_var(ld, p2), mode
+            )
+        end
+        return do_unify_cells(ld, l1, l2)
+    end
+
+    m = Mark(ld)
+    ld.mark_bar = NO_MARK_BAR                           # see also unify_all_trail_ptrs()
+    rc = do_unify_cells(ld, l1, l2)
+    DiscardMark(ld, m)
+    if rc == BOOLEX_TRUE
+        tt = length(ld.trail)
+        mt = m.trailtop
+        while tt > mt                                   # while(--tt >= mt)
+            e = ld.trail[tt]                            # Word p = tt->address
+            if isTrailVal(e)                            # assignment of an attvar (L1b D: the branch)
+                tt -= 1
+                e = ld.trail[tt]
+            end
+            occurs, kp = if _trail_stack(e) == TRAIL_KEYED   # a keyed variable (counted)
+                ld.cold_pairs += 1
+                key = _trail_key(ld, e)
+                pv = deRef(ld, something(_binding(ld, key)))
+                (var_occurs_in(ld, pv, pv), 0)
+            else
+                pos = _trail_pos(e)
+                kq, wq, q = _deref_loc(ld, pos)         # deRef2(p, p2)
+                (var_occurs_in_cells(ld, q, q), pos)
+            end
+            if occurs
+                if mode == OCCURS_CHECK_ERROR
+                    if kp != 0                          # *t = *p2 — read before the Undo (see above)
+                        kq, wq, q = _deref_loc(ld, kp)
+                        val = _loc_term(ld, kq, wq, q)
+                        Undo!(ld, m)
+                        failed_unify_with_occurs_check(ld, _cell_var(ld, kp), val, mode)
+                    else
+                        key = _trail_key(ld, e)
+                        val = deRef(ld, something(_binding(ld, key)))
+                        Undo!(ld, m)
+                        failed_unify_with_occurs_check(ld, mk_var(T, key), val, mode)
+                    end
+                end
+                rc = BOOLEX_FALSE
+                break
+            end
+            tt -= 1
+        end
+    end
+    return rc
 end
 
 # ── occurs check ─────────────────────────────────────────────────────────────────────────────────

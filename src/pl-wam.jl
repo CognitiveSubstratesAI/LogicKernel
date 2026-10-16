@@ -1970,7 +1970,12 @@ function PL_next_solution_guarded(
     end
 
     @SAVE_REGISTERS(QID)
-    hv_ok = unify_ptrs(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
+    hv_loc = _argp_loc(ARGP)                    # on the cells (L1d step 2); a read-mode cursor
+    hv_ok = if hv_loc != 0                      # into a term stays on terms
+        unify_ptrs_cells(ld, -(hv_k + 1), hv_loc)
+    else
+        unify_ptrs(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
+    end
     @LOAD_REGISTERS(QID)
     if hv_ok
         ARGP = _argp_add(ARGP, 1)
