@@ -212,7 +212,12 @@ _rcall_logged(db::_RDB)::Vector{String} =
     if LK.isCurrentProcedure(sym_key(_rs("logged")), 1, db.user) === nothing
         String[]
     else
-        [a for (a, _) in _rcall(db, _rf("logs", _rv(91)))]
+        # nothing logged yet: `logged/1` is not asserted, and its existence error is a LINE since an
+        # uncaught error is one (rules_common.jl `_rcall`, L1d step 2) — not a log entry
+        [
+            a for (a, _) in _rcall(db, _rf("logs", _rv(91))) if
+            a != "exception(existence_error(procedure,/(logged,1)))"
+        ]
     end
 
 # White box: a query CUT while its goal has choice points left runs the handler (pl-wam.c

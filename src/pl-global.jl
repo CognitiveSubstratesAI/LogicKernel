@@ -335,6 +335,8 @@ mutable struct PL_local_data{T}
     unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
     ucell_agenda::cell_agendaLR                                 # do_unify_cells' (L1c-4)
     ccell_agenda::cell_agendaLR                                 # compare's on cells (L1d)
+    ocell_agenda::cell_agendaLR                                 # var_occurs_in_cells' (L1d)
+    occurs_cells::Vector{Int}                                   # … its visited functor cells (FIRST_MASK)
     cycle_cells::Vector{Int}                                    # … its cycle.lstack: linked functor cells
     cycle_saved::Vector{word}                                   # … their functor words (Q2: restored as saved)
     compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
@@ -413,7 +415,9 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),               # do_unify_cells (L1c-4)
-        cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), Int[], word[],   # compare on cells (L1d)
+        cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),               # compare on cells (L1d)
+        cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), Int[],        # the occurs check on cells (L1d)
+        Int[], word[],                                             # (the cycle links' cells and words)
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
         # idle until a search resets it (`_index_context!`): any predicate will do

@@ -227,6 +227,13 @@ _manifest_per_type(T) = (
     (LK.compare_std_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.compareStandard_cells, Tuple{LK.PL_local_data{T}, Int, Int, Bool}, false),
     (LK._identical_atomic, Tuple{LK.PL_local_data{T}, Int, T}, false),
+    # the occurs check on cells (L1d step 2): the visited stack may grow; the boundary allocates
+    (LK.var_occurs_in_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (
+        LK.unify_with_occurs_check_cells,
+        Tuple{LK.PL_local_data{T}, Int, Int, LK.occurs_check_t},
+        false
+    ),
     (LK.raw_unify_ptrs, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.unify_ptrs, Tuple{LK.PL_local_data{T}, T, T}, false),
     (LK.can_unify, Tuple{LK.PL_local_data{T}, T, T}, false),

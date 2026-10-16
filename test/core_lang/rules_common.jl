@@ -52,6 +52,7 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
         gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, goal), args
     )
     out = Tuple{String, Bool}[]
+    rc = LK.PL_S_FALSE                                           # the last status (read after the loop)
     while true
         rc = LK.PL_next_solution(gd, ld, qid)
         (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
@@ -63,6 +64,20 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
         # the answer through the argument handles, never the caller's variables (L1b boundary,
         # user 2026-10-14: a put copies, variable identity is the handle)
         push!(out, (_ranswer(ld, _rhandles_goal(ld, goal, args, n)), rc == LK.PL_S_LAST))
+    end
+    if rc == LK.PL_S_EXCEPTION                                   # the uncaught ball: a line (see rx/1)
+        ball = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+        formal =
+            if (
+                kind(ball) === EXPR && nchildren(ball) == 3 &&
+                kind(child(ball, 1)) === SYM &&
+                _ratom_text(child(ball, 1)) == "error"
+            )
+                child(ball, 2)
+            else
+                ball
+            end
+        push!(out, ("exception(" * _rcanonical(formal) * ")", true))
     end
     LK.PL_close_query(ld, qid)
     LK.PL_discard_foreign_frame(ld, fid)     # answers copied out: nothing stays (L1c)
@@ -159,10 +174,17 @@ end
 const _R_DRIVER = raw"""
 :- style_check(-singleton).
 :- style_check(-no_effect).
-r(G) :- ( call_cleanup(G, Det = true), ( Det == true -> D = det ; D = nondet ),
+r(G) :- ( catch(call_cleanup(G, Det = true), E, (rx(E), fail)),
+          ( Det == true -> D = det ; D = nondet ),
           ( cyclic_term(G) -> write(cyclic) ; write_canonical(G) ), write(' '), write(D), nl,
           fail ; true ), write(end), nl.
+rx(error(F, _)) :- !, write_canonical(exception(F)), write(' det'), nl.
+rx(E) :- write_canonical(exception(E)), write(' det'), nl.
 """
+# An UNCAUGHT exception is a line too, on both sides (2026-10-16, L1d step 2: with occurs_check=error the
+# uncaught `X = f(X)` escaped `r/1`, swipl died before its first line, and the kernel's answer loop
+# dropped the ball and read as a failure — "end" against nothing): `exception(F) det`, `F` the formal
+# of `error(F, _)` (the context is not compared), else the ball itself.
 
 const _R_SWIPL = Sys.which("swipl") !== nothing
 const _R_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
