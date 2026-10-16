@@ -122,16 +122,23 @@ end
 
 """
     argv_frame(ld, base)
+    argv_cells(ld, p)
     argv_term(ld, t)
 
-The arguments a clause search keys on — upstream's `Word argv` (pl-index.c) — in its two forms: the
-frame's argument slots from position `base` (the VM's `ARGP = argFrameP(FR, 0)`), or the arguments
-of the compound `t`, its children 2.. (a deep index's descent, and the callers that hold a goal
-term). Built per call; neither allocates.
+The arguments a clause search keys on — upstream's `Word argv` (pl-index.c) — in three forms: the
+frame's argument slots from position `base` (the VM's `ARGP = argFrameP(FR, 0)`); since L1c
+sub-commit 5 the argument CELLS of the compound at global position `p` (a deep index's descent from
+the first two, upstream's `argTermP(*argv, 0)`); or the arguments of the compound TERM `t`, its
+children 2.. (the callers that hold a goal term: retract/1, clause/2 — until L1e). Built per call;
+none allocates.
 """
 struct argv_frame{L}
     ld::L
     base::Int
+end
+struct argv_cells{L}
+    ld::L
+    p::Int
 end
 struct argv_term{L, T}
     ld::L
@@ -141,13 +148,61 @@ end
 """
     argv_at(argv, i) -> term
 
-Argument `i` (0-based, as upstream's `argv[i]`) of a call, DEREFERENCED: upstream's readers of
-`argv` — `indexOfWord`, `canIndex`, `is_var`, the deep descent's `deRef` — follow references, so a
-bound argument keys by its value. (A frame slot almost always holds a variable bound to the
-argument, so without this no argument would narrow the search.)
+Argument `i` (0-based, as upstream's `argv[i]`) of a call whose arguments are a TERM, DEREFERENCED:
+upstream's readers of `argv` — `indexOfWord`, `canIndex`, `is_var`, the deep descent's `deRef` —
+follow references, so a bound argument keys by its value. The frame and cell forms are read on the
+WORDS (`_argv_key`, `_argv_is_var`; L1c sub-commit 5).
 """
-argv_at(v::argv_frame, i::Int) = deRef(v.ld, slotValue(v.ld, v.base + i + 1))
 argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
+
+# ORIGINAL: argument `i` of a frame or cell argv as a LOCATION for `_deref_loc` (src/pl-prims.jl):
+# a slot (`-i`) or a global position (L1c sub-commit 5).
+"The location of argument `i` (0-based) of `argv`."
+@inline _argv_loc(v::argv_frame, i::Int)::Int = -(v.base + i + 1)
+@inline _argv_loc(v::argv_cells, i::Int)::Int = v.p + 1 + i
+
+# PORT: pl-index.c indexOfWord as _index_key_loc
+# DIVERGES: on the WORD a dereferenced location holds (L1c sub-commit 5), giving `indexOfWord`'s key
+# of the term it stands for — so the frame and cell argv key exactly as the term argv does: an
+# unbound cell 0; an atom word its symbol's key (`_atom_value`, the database's store: no lookup
+# allocates); a compound word `FUNCTOR_dot2` for `[|]/2`, 0 for `$expr/n` (Q2: a wildcard), else
+# `_functor_word` of its name's symbol and its arity; a value-table word its value's key. Only the
+# BOUNDARY (a slot's side value or a keyed variable — until L1e/L1f) reads a term.
+"The index key of the term at a dereferenced location (`indexOfWord` on the words)."
+function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: this file loads before pl-global.jl)
+    k == DU_CELL && return word(0)
+    if k == DU_WORD
+        isAtomW(w) && return indexOfWord(_atom_value(ld, w))
+        f = ld.gstack[valPtr(w)]
+        f == ld.functor_dot2 && return FUNCTOR_dot2         # `[H|T]`: as `argKey` keys `H_LIST*`
+        name = nameFunctor(ld.functors, f)
+        name == ld.atom_dexpr && return word(0)             # `$expr/n`, a wildcard
+        return _functor_word(
+            _functor_name(_atom_value(ld, name)), arityFunctor(ld.functors, f)
+        )
+    end
+    k == DU_VALUE && return indexOfWord(ld.vtable[valPtr(w)])
+    return indexOfWord(deRef(ld, _loc_term(ld, k, w, p)))  # the boundary (L1e/L1f)
+end
+
+# ORIGINAL: `indexOfWord(argv_at(argv, i))` for every argv form (L1c sub-commit 5).
+"The index key of argument `i` (0-based) of `argv`."
+_argv_key(v::argv_term, i::Int)::word = indexOfWord(argv_at(v, i))
+function _argv_key(v::Union{argv_frame, argv_cells}, i::Int)::word
+    k, w, p = _deref_loc(v.ld, _argv_loc(v, i))
+    return _index_key_loc(v.ld, k, w, p)
+end
+
+# ORIGINAL: `is_var(argv_at(argv, i))` for every argv form (L1c sub-commit 5): an unbound cell, or a
+# keyed variable at the boundary.
+"Whether argument `i` (0-based) of `argv` is an unbound variable."
+_argv_is_var(v::argv_term, i::Int)::Bool = is_var(argv_at(v, i))
+function _argv_is_var(v::Union{argv_frame, argv_cells}, i::Int)::Bool
+    k, w, p = _deref_loc(v.ld, _argv_loc(v, i))
+    k == DU_CELL && return true
+    k == DU_TERM || return false
+    return is_var(deRef(v.ld, _loc_term(v.ld, k, w, p)))    # the boundary (L1e/L1f)
+end
 
 # PORT: pl-index.c canIndex
 # DIVERGES: upstream: any non-variable. Upstream also guarantees that `indexOfWord` is non-zero for
@@ -333,12 +388,10 @@ function nextClauseFromList!(
             cl = cref.clauses::ClauseList{T}
             if isFunctor(cref.key) && ctx.depth < MAXINDEXDEPTH
                 an = Int(ci.args[1]) - 1
-                at = argv_at(argv, an)
-                argc = nchildren(at) - 1
                 ctx.position = Base.setindex(ctx.position, an % iarg_t, ctx.depth + 1)
                 ctx.depth += 1
                 ctx.position = Base.setindex(ctx.position, END_INDEX_POS, ctx.depth + 1)
-                return first_clause_guarded!(argv_term(argv.ld, at), argc, cl, ctx)
+                return _descend_first_clause!(argv, an, cl, ctx)
             end
             chp.key = 0                         # See (*)
             chp.cref = cl.first_clause
@@ -393,16 +446,49 @@ function join_multi_arg_keys(key::NTuple{MAX_MULTI_INDEX, word}, len::Int)::word
     return clean_index_key(k)
 end
 
+# ORIGINAL: the deep descent of `nextClauseFromList` (pl-index.c: `argv = argTermP(*argv, 0)` of the
+# indexed argument, its arity the new `argc`), per argv form (L1c sub-commit 5): a compound WORD
+# descends into its argument CELLS. A compound at the BOUNDARY (a slot's side value — the ball —, a
+# keyed variable's binding; until L1e/L1f) is put onto the stack first (`_compound_word!`, the
+# counted cold import; a live export is its own word) — so the frame and cell forms never descend
+# into a TERM argv: a mixed recursion frame → term made inference widen the search's types (JET,
+# 2026-10-16: runtime dispatch in `first_clause_guarded!`). A term argv's child descends as a term.
+# The copy exists to be READ: the search reads keys by argument POSITION, level by level (the deep
+# walk is `first_clause_guarded!` again, over an argv), and nothing unifies or binds it — the VM
+# unifies the frame's own argument with the clause chosen. Its cells reference the original's live
+# variables (`_compound_word!`), never fresh ones. Cold: test_index_words.jl counts the import, and
+# the nreverse/qsort zero-import test (sub-commit 6) covers indexing.
+"Search `cl` with the arguments of argument `an` (a compound) of `argv`: the deep index's descent."
+function _descend_first_clause!(
+    argv::Union{argv_frame, argv_cells}, an::Int, cl::ClauseList{T}, ctx::index_context{T}
+)::Union{Nothing, ClauseRef{T}} where {T}
+    ld = argv.ld
+    k, w, p = _deref_loc(ld, _argv_loc(argv, an))
+    if !(k == DU_WORD && _is_gcompound(w))
+        w = _compound_word!(ld, deRef(ld, _loc_term(ld, k, w, p)))   # the boundary (L1e/L1f)
+    end
+    q = valPtr(w)
+    return first_clause_guarded!(
+        argv_cells(ld, q), arityFunctor(ld.functors, ld.gstack[q]), cl, ctx
+    )
+end
+function _descend_first_clause!(
+    argv::argv_term, an::Int, cl::ClauseList{T}, ctx::index_context{T}
+)::Union{Nothing, ClauseRef{T}} where {T}
+    at = argv_at(argv, an)
+    return first_clause_guarded!(argv_term(argv.ld, at), nchildren(at) - 1, cl, ctx)
+end
+
 # PORT: pl-index.c indexKeyFromArgv
 "The key of the call `argv` for index `ci`; 0 when an indexed argument is unbound (pl-index.c)."
 function indexKeyFromArgv(ci::ClauseIndex{T}, argv::A)::word where {T, A}
     if ci.args[2] == 0
-        return indexOfWord(argv_at(argv, Int(ci.args[1]) - 1))
+        return _argv_key(argv, Int(ci.args[1]) - 1)
     else
         key = (word(0), word(0), word(0), word(0))
         harg = 0
         while harg < MAX_MULTI_INDEX && ci.args[harg + 1] != 0          # bounded: see below
-            k = indexOfWord(argv_at(argv, Int(ci.args[harg + 1]) - 1))
+            k = _argv_key(argv, Int(ci.args[harg + 1]) - 1)
             k == 0 && return word(0)
             key = Base.setindex(key, k, harg + 1)
             harg += 1
@@ -422,12 +508,12 @@ is_var(t)::Bool = kind(t) === VAR
 "Quick test whether a not-yet-realised index can be used for the call `argv` (pl-index.c)."
 function is_satifies_index(ci::ClauseIndex{T}, argv::A)::Bool where {T, A}
     a0 = ci.args[1]
-    if a0 == 0 || is_var(argv_at(argv, Int(a0) - 1))
+    if a0 == 0 || _argv_is_var(argv, Int(a0) - 1)
         return false                    # DEAD_INDEX and var first arg
     end
     i = 2
     while i <= MAX_MULTI_INDEX && (a0 = ci.args[i]) != 0
-        if is_var(argv_at(argv, Int(a0) - 1))
+        if _argv_is_var(argv, Int(a0) - 1)
             return false
         end
         i += 1
@@ -512,7 +598,7 @@ function first_clause_guarded!(
         return nothing
     end
     pindex = Int(clist.primary_index)
-    pkey = indexOfWord(argv_at(argv, pindex))
+    pkey = _argv_key(argv, pindex)
     # Fast path (#1386): at the outermost call, if the primary-index argument is bound and the
     # predicate is small, try the primary index before probing candidate hash indexes.
     if pkey != 0 && ctx.depth == 0 &&
@@ -2061,7 +2147,7 @@ function bestHash!(
     instantiated = Vector{iarg_t}(undef, ac)
     ninstantiated = 0
     for i in 0:(ac - 1)
-        if canIndex(argv_at(av, i))
+        if _argv_key(av, i) != 0                    # canIndex(argv[i]), on the words (L1c-5)
             ninstantiated += 1
             instantiated[ninstantiated] = i % iarg_t
         end

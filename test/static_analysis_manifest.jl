@@ -307,6 +307,7 @@ function _manifest_index(T)
     PR, MOD = LK.Procedure{T}, LK.module_t{T}
     PCd = LK.Code{T}
     AT, AF = LK.argv_term{LK.PL_local_data{T}, T}, LK.argv_frame{LK.PL_local_data{T}}
+    AC = LK.argv_cells{LK.PL_local_data{T}}                   # a compound's argument cells (L1c-5)
     ARGP, ASE = LK.argp_t{T}, LK.argstack_entry{T}
     VIEW = typeof(view(UInt8[], 1:0))
     return (
@@ -448,29 +449,48 @@ function _manifest_index(T)
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
         (LK.nextClauseFromList!, Tuple{CI, AT, CTX}, false),
         (LK.nextClauseFromList!, Tuple{CI, AF, CTX}, false),
+        (LK.nextClauseFromList!, Tuple{CI, AC, CTX}, false),
         (LK.nextClauseFromBucket!, Tuple{CI, AT, CTX}, false),
         (LK.nextClauseFromBucket!, Tuple{CI, AF, CTX}, false),
+        (LK.nextClauseFromBucket!, Tuple{CI, AC, CTX}, false),
         (LK.setClauseChoice!, Tuple{CR, CTX}, true),
         (LK.setClauseChoice!, Tuple{Nothing, CTX}, true),
-        (LK.indexKeyFromArgv, Tuple{CI, AT}, false),   # L1c: the cold export (words: L1d/L1e)
-        (LK.indexKeyFromArgv, Tuple{CI, AF}, false),   # L1c: the cold export (words: L1d/L1e)
+        # (L1c-5: on the words; the boundary — a slot's side value, a keyed variable — until L1f)
+        (LK.indexKeyFromArgv, Tuple{CI, AT}, false),
+        (LK.indexKeyFromArgv, Tuple{CI, AF}, false),
+        (LK.indexKeyFromArgv, Tuple{CI, AC}, false),
         (LK.is_var, Tuple{T}, true),
-        (LK.is_satifies_index, Tuple{CI, AT}, false),   # L1c: the cold export (words: L1d/L1e)
-        (LK.is_satifies_index, Tuple{CI, AF}, false),   # L1c: the cold export (words: L1d/L1e)
+        (LK.is_satifies_index, Tuple{CI, AT}, false),
+        (LK.is_satifies_index, Tuple{CI, AF}, false),
+        (LK.is_satifies_index, Tuple{CI, AC}, false),
         (LK.existing_hash, Tuple{CIP, AT}, false),
         (LK.existing_hash, Tuple{CIP, AF}, false),
+        (LK.existing_hash, Tuple{CIP, AC}, false),
         (LK.createIndex!, Tuple{AT, Int, CL, CI, CTX}, false),
         (LK.createIndex!, Tuple{AT, Int, CL, Nothing, CTX}, false),
         (LK.createIndex!, Tuple{AF, Int, CL, CI, CTX}, false),
         (LK.createIndex!, Tuple{AF, Int, CL, Nothing, CTX}, false),
+        (LK.createIndex!, Tuple{AC, Int, CL, CI, CTX}, false),
+        (LK.createIndex!, Tuple{AC, Int, CL, Nothing, CTX}, false),
         (LK.first_clause_guarded!, Tuple{AT, Int, CL, CTX}, false),
         (LK.first_clause_guarded!, Tuple{AF, Int, CL, CTX}, false),
+        (LK.first_clause_guarded!, Tuple{AC, Int, CL, CTX}, false),
         (LK.firstClause!, Tuple{LD, AT, UInt64, D, CH}, false),
         (LK.firstClause!, Tuple{LD, AF, UInt64, D, CH}, false),
         (LK.nextClause!, Tuple{LD, CH, AT, UInt64, D}, true),
         (LK.nextClause!, Tuple{LD, CH, AF, UInt64, D}, true),
-        # (L1c: the cold export until indexing reads words, L1c sub-commit 5)
-        (LK.argv_at, Tuple{AT, Int}, false), (LK.argv_at, Tuple{AF, Int}, false),
+        # the term argv's reader (its `deRef` may meet the cold export: L1f); the frame and cell
+        # forms read the WORDS since L1c-5 — their key and var tests reach the boundary until L1f
+        (LK.argv_at, Tuple{AT, Int}, false),
+        (LK._argv_loc, Tuple{AF, Int}, true), (LK._argv_loc, Tuple{AC, Int}, true),
+        (LK._index_key_loc, Tuple{LD, UInt8, UInt64, Int}, false),
+        (LK._argv_key, Tuple{AT, Int}, false), (LK._argv_key, Tuple{AF, Int}, false),
+        (LK._argv_key, Tuple{AC, Int}, false),
+        (LK._argv_is_var, Tuple{AT, Int}, false), (LK._argv_is_var, Tuple{AF, Int}, false),
+        (LK._argv_is_var, Tuple{AC, Int}, false),
+        (LK._descend_first_clause!, Tuple{AT, Int, CL, CTX}, false),
+        (LK._descend_first_clause!, Tuple{AF, Int, CL, CTX}, false),
+        (LK._descend_first_clause!, Tuple{AC, Int, CL, CTX}, false),
         (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH}, true),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
@@ -515,6 +535,8 @@ function _manifest_index(T)
         (LK.bestHash!, Tuple{AT, Int, CL, CI, HH, CTX}, false),
         (LK.bestHash!, Tuple{AF, Int, CL, Nothing, HH, CTX}, false),
         (LK.bestHash!, Tuple{AF, Int, CL, CI, HH, CTX}, false),
+        (LK.bestHash!, Tuple{AC, Int, CL, Nothing, HH, CTX}, false),
+        (LK.bestHash!, Tuple{AC, Int, CL, CI, HH, CTX}, false),
         (
             LK.find_multi_argument_hash!,
             Tuple{Int, CL, Vector{UInt8}, Int, Nothing, HH, CTX},
@@ -1960,8 +1982,11 @@ const L1C_ALLOC_EXEMPT = [
     (LK.PL_is_variable, "L1e"),
     # the term agenda of unification and comparison: over cells at L1d
     (LK.nextTermAgenda!, "L1d"),
-    # first-argument indexing: from words at L1c sub-commit 5
-    (LK.argv_at, "L1c-5"), (LK.indexKeyFromArgv, "L1c-5"), (LK.is_satifies_index, "L1c-5")
+    # first-argument indexing: on the WORDS since L1c sub-commit 5 (2026-10-16) — no export in the
+    # hot path (nreverse/qsort: measured) — but the frame and cell forms still REACH the boundary
+    # statically (a slot's side value, a keyed variable's binding: `_loc_term`), which AllocCheck
+    # sees; they go with the keyed variables (L1f). Moved L1c-5 → L1f, logged (unattended rule)
+    (LK.argv_at, "L1f"), (LK.indexKeyFromArgv, "L1f"), (LK.is_satifies_index, "L1f")
 ]
 "The ratchet: L1c's exemptions may only fall (measured 25, 2026-10-15)."
 const L1C_ALLOC_EXEMPT_MAX = 25

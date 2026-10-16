@@ -656,6 +656,7 @@ fixed it or a public issue exists.
 | `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
 | `test/compile/test_portable_smallint_swipl.jl` | `is_portable_smallint` under `portable_vmi`, and the tagged-integer range against a live swipl's flags | — |
 | `src/pl-termwalk.jl` | the term agendas: the pre-order walk the variant digests use, the plain one `var_occurs_in` uses, the two-term one `do_unify` uses; since L1c sub-commit 4 the two-term agenda on global POSITIONS (`cell_agendaLR`: `do_unify_cells` walks argument cells) | `src/pl-termwalk.c` |
+| `test/core_lang/test_index_words.jl` | L1c sub-commit 5: first-argument indexing from WORDS — the key read on a word equals `indexOfWord` of the term for every word form (atoms, `[]` vs `'[]'`, compounds, `[|]/2`, the `$expr` wildcard, value-table values), unbound cells and reference chains, the keyed-variable boundary; the deep descent through a compound's argument cells (`argv_cells`); a deep-indexed call makes no cold export, its answers swipl's | — |
 | `test/core_lang/test_unify_cells.jl` | L1c sub-commit 4: `do_unify_cells` — the binding direction (only global cells are bound, the higher to the lower, both argument orders, no global → local reference, the slots untouched), the simple cases and compounds against swipl through the head and body paths, the partial-binding contract, rational trees with every functor cell restored, Q2 (kernel-only), the keyed-variable boundary, the zero-export meter of a head unification | — |
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
 | `test/core_lang/test_occurs_check.jl` | SWI's own occurs-check units in all three modes but the attributed-variable ones | `tests/core_lang/test_occurs_check.pl` |
@@ -816,6 +817,7 @@ graph LR
     pl_index --> pl_incl
     pl_index --> pl_vmi
     pl_index --> pl_inline
+    pl_index --> pl_prims
     pl_index --> pl_ressymbol
     pl_index --> pl_comp
     pl_index --> pl_wam

@@ -116,7 +116,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-vmi.jl` | 22 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-write.jl` | 2 | 1 |
-| swipl-devel `src/pl-index.c` | code | `8609e216cab9` | `src/pl-index.jl` | 110 | 33 |
+| swipl-devel `src/pl-index.c` | code | `8609e216cab9` | `src/pl-index.jl` | 111 | 34 |
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-gmp.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-inline.jl` | 18 | 15 |
