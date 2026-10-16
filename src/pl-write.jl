@@ -2112,7 +2112,7 @@ function pl_write_canonical2(
         options = nv_options{T}(
             mk_sym(T, Symbol("\$VAR")),              # FUNCTOR_isovar1
             0, AV_SKIP,
-            is_acyclic(ld, slotValue(ld, term + 1)) ? 1 : 0,   # PL_is_acyclic(term)
+            is_acyclic_cells(ld, -(term + 1)) ? 1 : 0,   # PL_is_acyclic(term), on the cells (L1d)
             false
         )
 

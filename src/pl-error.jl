@@ -225,7 +225,7 @@ function rewrite_callable(ld::PL_local_data{T}, expected::T, actual::term_t)::T 
             setSlotValue!(ld, actual + 1, child(t, 3))                      # _PL_get_arg(2, actual, a)
         end
         loops += 1
-        if loops > 100 && !is_acyclic(ld, slotValue(ld, actual + 1))
+        if loops > 100 && !is_acyclic_cells(ld, -(actual + 1))    # on the cells (L1d step 3)
             break
         end
     end

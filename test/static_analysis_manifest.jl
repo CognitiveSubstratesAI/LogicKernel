@@ -229,6 +229,10 @@ _manifest_per_type(T) = (
     (LK._identical_atomic, Tuple{LK.PL_local_data{T}, Int, T}, false),
     # the occurs check on cells (L1d step 2): the visited stack may grow; the boundary allocates
     (LK.var_occurs_in_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    # is_acyclic on cells (L1d step 3): the chains' stack may grow; the boundary allocates
+    (LK.ph_acyclic_mark_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.ph_acyclic_unmark_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.is_acyclic_cells, Tuple{LK.PL_local_data{T}, Int}, false),
     (
         LK.unify_with_occurs_check_cells,
         Tuple{LK.PL_local_data{T}, Int, Int, LK.occurs_check_t},

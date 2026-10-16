@@ -1305,6 +1305,147 @@ end
 unify_ptrs_cells(ld::PL_local_data{T}, l1::Int, l2::Int) where {T} =
     raw_unify_cells(ld, l1, l2) == BOOLEX_TRUE
 
+# ── is_acyclic on CELLS (L1d step 3; the workspace's L1_plan/stageL1d_design.md) ─────────────────
+# THE BITS (user, 2026-10-16: name them): a word is tag (bits 0-2, TAG_MASK) | storage (bits 3-4,
+# STG_MASK) | MARK_MASK (bit 5) | FIRST_MASK (bit 6) | payload from bit LMASK_BITS = 7. A functor word
+# keeps its arity at bits 7-11 (F_ARITY_BITS) and its index above; a cycle link (`_link_cells!`) is a
+# reference word, its position also from bit 7. So ACYCLIC_TEMP_MASK = FIRST_MASK (bit 6) and
+# ACYCLIC_PERM_MASK = MARK_MASK (bit 5) are free in every word: `arityFunctor`/`indexFunctor` shift
+# past them, `isFunctor`/`tagex` read bits 0-4, `isRef`/`tag` bits 0-2. THE ORDER (upstream: do_compare
+# exits its links before compare_std calls is_acyclic): no cycle link may be in place while the marks
+# are — a linked functor cell holds a reference, not its functor; asserted at the entry.
+"ACYCLIC_TEMP_MASK (pl-prims.c): a functor cell whose term chain is being walked (= FIRST_MASK)."
+const ACYCLIC_TEMP_MASK = FIRST_MASK
+"ACYCLIC_PERM_MASK (pl-prims.c): a functor cell known to start no cycle (= MARK_MASK)."
+const ACYCLIC_PERM_MASK = MARK_MASK
+"`ph_acyclic_mark_cells`: the walk met the boundary (a term): decide on terms."
+const ACYCLIC_BOUNDARY = 2
+
+# PORT: pl-prims.c ph_acyclic_mark as ph_acyclic_mark_cells
+# DIVERGES: positions for upstream's `Functor`s — a chain's `head` and `tail` are the compounds'
+# positions, `p` the location of the argument to resume (0: NULL); the chains' segstack is
+# `ld.acyclic_chains`, reused. A compound of no arguments ends a chain (upstream reads its
+# `arguments - 1`). An argument at the BOUNDARY (a keyed variable's binding) stops the walk with
+# `ACYCLIC_BOUNDARY` — the caller decides on terms. No MEMORY_OVERFLOW.
+"""
+    ph_acyclic_mark_cells(ld, top) -> Int
+
+Whether the compound at global position `top` is acyclic (pl-prims.c `ph_acyclic_mark`): `1` yes,
+`0` no, `ACYCLIC_BOUNDARY` met a term. Leaves marks on the functor cells for `ph_acyclic_unmark_cells`.
+"""
+function ph_acyclic_mark_cells(ld::PL_local_data{T}, top::Int)::Int where {T}
+    stack = ld.acyclic_chains                               # agenda.stack
+    empty!(stack)
+    work = (top, top, 0)                                    # agenda.work: (head, tail, p)
+    head = top
+    tail = top
+    pv = 0
+    while true
+        f = ld.gstack[tail]
+        if (f & ACYCLIC_TEMP_MASK) != 0                     # is_acyclic_temp(&tail->definition)
+            if (f & ACYCLIC_PERM_MASK) == 0
+                empty!(stack)
+                return 0
+            end
+            @goto end_of_chain
+        end
+        ld.gstack[tail] = f | ACYCLIC_TEMP_MASK             # set_acyclic_temp
+        arity = arityFunctor(ld.functors, f)
+        if arity > 1
+            new_workspace = false
+            iter = tail                                     # iter = tail: `tail` moves on below, `iter` not
+            for i in arity:-1:2
+                k, w, _ = _deref_loc(ld, iter + i - 1)      # p = iter->arguments + i - 2; deRef(p)
+                k == DU_TERM && return ACYCLIC_BOUNDARY
+                if k == DU_WORD && _is_gcompound(w)         # isTerm(*p)
+                    push!(stack, work)
+                    if !new_workspace
+                        work = (head, tail, iter + arity)   # agenda.work.p = iter->arguments + arity-1
+                        head = tail = valPtr(w)
+                        new_workspace = true
+                    else
+                        work = (valPtr(w), valPtr(w), 0)
+                    end
+                end
+            end
+            new_workspace && continue
+        end
+        arity == 0 && @goto end_of_chain
+        pv = tail + arity                                   # p = tail->arguments + arity-1
+        @label process_p
+        k, w, _ = _deref_loc(ld, pv)
+        k == DU_TERM && return ACYCLIC_BOUNDARY
+        if k == DU_WORD && _is_gcompound(w)
+            tail = valPtr(w)
+            continue
+        end
+        @label end_of_chain
+        head == top && return 1
+        iter = head
+        while iter != tail                                  # set_acyclic_perm along the chain
+            g = ld.gstack[iter]
+            ld.gstack[iter] = g | ACYCLIC_PERM_MASK
+            _, wi, _ = _deref_loc(ld, iter + arityFunctor(ld.functors, g))
+            iter = valPtr(wi)
+        end
+        ld.gstack[tail] |= ACYCLIC_PERM_MASK
+        head, tail, p = work
+        @assert !isempty(stack) "ph_acyclic_mark_cells: the agenda ran out"
+        work = pop!(stack)
+        if p != 0
+            pv = p
+            @goto process_p
+        end
+    end
+end
+
+# PORT: pl-prims.c ph_acyclic_unmark as ph_acyclic_unmark_cells
+# DIVERGES: the cell agenda on one side (`acell_agenda`), from the compound at `top`.
+"Clear both acyclic marks from every marked compound reachable from `top` (pl-prims.c)."
+function ph_acyclic_unmark_cells(ld::PL_local_data{T}, top::Int)::Nothing where {T}
+    f = ld.gstack[top]
+    (f & ACYCLIC_TEMP_MASK) == 0 && return nothing
+    ld.gstack[top] = f & ~(ACYCLIC_TEMP_MASK | ACYCLIC_PERM_MASK)      # clear_acyclic_both
+    a = ld.acell_agenda
+    initCellAgendaLR!(a, arityFunctor(ld.functors, f), top, top, 1)
+    while true
+        found, l, _ = nextCellAgendaLR!(a)
+        found || break
+        k, w, _ = _deref_loc(ld, l)
+        (k == DU_WORD && _is_gcompound(w)) || continue
+        q = valPtr(w)
+        g = ld.gstack[q]
+        (g & ACYCLIC_TEMP_MASK) == 0 && continue
+        ld.gstack[q] = g & ~(ACYCLIC_TEMP_MASK | ACYCLIC_PERM_MASK)
+        pushWorkCellAgendaLR!(a, arityFunctor(ld.functors, g), q, q, 1)
+    end
+    clearCellAgendaLR!(a)
+    return nothing
+end
+
+# PORT: pl-prims.c is_acyclic as is_acyclic_cells
+# DIVERGES: on a location; the boundary (a slot's side value, a keyed variable's binding, met at the
+# top or inside the walk) is decided by the term-level `is_acyclic` on the export, counted in
+# `cold_pairs`. No MEMORY_OVERFLOW.
+"Whether the term at location `l` is acyclic (pl-prims.c `is_acyclic`)."
+function is_acyclic_cells(ld::PL_local_data{T}, l::Int)::Bool where {T}
+    k, w, p = _deref_loc(ld, l)
+    if k == DU_TERM
+        ld.cold_pairs += 1
+        return is_acyclic(ld, _loc_term(ld, k, w, p))
+    end
+    (k == DU_WORD && _is_gcompound(w)) || return true
+    @assert isempty(ld.cycle_cells) "is_acyclic_cells: a cycle link is in place (exitCyclic first)"
+    q = valPtr(w)
+    rc = ph_acyclic_mark_cells(ld, q)
+    ph_acyclic_unmark_cells(ld, q)
+    if rc == ACYCLIC_BOUNDARY
+        ld.cold_pairs += 1
+        return is_acyclic(ld, _loc_term(ld, k, w, p))
+    end
+    return rc == 1
+end
+
 # ── the standard order on CELLS (L1d step 1; the workspace's L1_plan/stageL1d_design.md §3) ──────
 # Locations as `do_unify_cells`'s (a global position, or `-i` for slot `i`). The order is the term
 # compare's, so a sort or a `==` gives the same answer on either path: variables by KEY (`gkey`;
@@ -1500,18 +1641,15 @@ function compare_descend_cells(
 end
 
 # PORT: pl-prims.c compare_std as compare_std_cells
-# DIVERGES: (1) TRANSITIONAL (L1d step 3 adds the guard): upstream descends only when NOT both terms
-# are acyclic (`is_acyclic(p1) && is_acyclic(p2)`) — a SHORTCUT: `compare_descend` orders acyclic
-# terms correctly too, more slowly. Until step 3 ports `is_acyclic` on cells, the descent runs
-# whenever a link was followed (shared subterms set `linked` too, not only cycles), the mode orders
-# and the terms differ. (2) NOT PORTED, as the term path's `compare_std`: the `incomparable` flag's
+# DIVERGES: NOT PORTED, as the term path's `compare_std`: the `incomparable` flag's
 # `error` value (`raiseIncomparable`: its ball holds the cyclic pair, which `PL_raise_exception`'s
 # copy cannot resolve) — an incomparable pair keeps the fast result, as swipl's default
 # `incomparable=arbitrary` does; CMP_MODE_PARTIAL not ported either.
 "The standard order of the terms at locations `l1`, `l2` in `mode` (pl-prims.c `compare_std`)."
 function compare_std_cells(ld::PL_local_data{T}, l1::Int, l2::Int, mode::Int)::Int where {T}
     rc, linked = compare_fast_cells(ld, l1, l2, mode)
-    if linked && mode != CMP_MODE_EQUAL && rc != CMP_EQUAL   # (TRANSITIONAL: no is_acyclic guard)
+    if linked && mode != CMP_MODE_EQUAL && rc != CMP_EQUAL &&
+        !(is_acyclic_cells(ld, l1) && is_acyclic_cells(ld, l2))   # upstream's shortcut (L1d step 3)
         rc2, _, _ = compare_descend_cells(ld, l1, l2, mode)
         rc2 != CMP_INCOMPARABLE && (rc = rc2)              # else keep the fast result
     end
