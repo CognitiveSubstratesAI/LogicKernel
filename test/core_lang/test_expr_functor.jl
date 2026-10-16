@@ -215,13 +215,13 @@ end
             op = cl.codes[2]
             @test LK.functor_literal(op) != 0
             @test lk_eq(cl.literals[LK.functor_literal(op)], child(t, 1))
-            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(t) != 0
+            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(_QLD, t) != 0
         end
         for t in expr_heads
             cl = _qclause(_qf(:p, t))
             @test LK.decode(LK.Code(cl, 1)) == LK.H_FUNCTOR
             @test LK.functor_literal(cl.codes[2]) == 0
-            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(t) == 0   # a wildcard
+            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(_QLD, t) == 0   # a wildcard
         end
     end
 

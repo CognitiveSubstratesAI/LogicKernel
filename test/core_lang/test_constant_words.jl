@@ -33,10 +33,6 @@ _kw_s(n) = lk_sym(_R, Symbol(n))
     end
     @test LK.atomSymbol(s, 5) === nothing                       # its block exists, the entry not
     @test LK.atomSymbol(s, 5000) === nothing                    # no block at all
-    for i in idxs                                               # each symbol's index key beside it (L1c-6)
-        @test LK.atomIndexKey(s, i) == LK.indexOfWord(_kw_s("s$i"))
-    end
-    @test LK.atomIndexKey(s, 5) == 0 && LK.atomIndexKey(s, 5000) == 0   # none recorded
     b = s.blocks[LK.MSB(1000) + 1]
     @test length(b) == 1 << LK.MSB(1000)                        # 512 entries: 512..1023
     LK.setAtomSymbol!(s, 1001, _kw_s("s1001"))
@@ -53,8 +49,9 @@ end
     gd = LK.PL_global_data{_R}()
     ld = LK.PL_local_data{_R}(gd)
     @test ld.atom_nil_w == gd.atom_nil_w == LK._atom_word!(ld, gd.atom_nil)
-    @test LK.atomIndexKey(gd.atom_symbols, LK.indexAtom(gd.atom_nil_w)) == LK.ATOM_nil
-    @test LK._index_key_loc(ld, LK.DU_WORD, gd.atom_nil_w, 0) == LK.indexOfWord(gd.atom_nil)
+    @test gd.atom_nil_w == LK.ATOM_nil                          # the built-in word IS the key (L1d-4)
+    @test LK._index_key_loc(ld, LK.DU_WORD, gd.atom_nil_w, 0) ==
+        LK.indexOfWord(ld, gd.atom_nil)
 end
 
 @testset "an atom made through engine A's compiler reads back in engine B: no miss" begin
@@ -153,11 +150,18 @@ end
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH
     @test ld.gstack[p2] == wa && ld.gstack[p1] == LK.makeRefG(p2)
     @test LK._h_const_word!(ld, s, wb) == LK.H_CONST_FAIL
-    # bound through the value table (a number, until L1d): undecided on the words
+    # bound through the value table (a float: an indirect, as upstream's): undecided on the words; a
+    # small INTEGER is a tagged word since L1d step 4 — decided on the words, against an atom word or
+    # against its own tagged word (`*k == c`)
     ld2, u, v, _, wa2, _ = _kw_engine()
     k = LK._cell_key(ld2, LK._slot_new_var!(ld2, u))
-    LK.Trail!(ld2, k, _rg(Int64(7)))
+    LK.Trail!(ld2, k, _rg(7.0))
     @test LK._h_const_word!(ld2, u, wa2) == LK.H_CONST_TERMS
+    ld3, u3, _, _, wa3, _ = _kw_engine()
+    k3 = LK._cell_key(ld3, LK._slot_new_var!(ld3, u3))
+    LK.Trail!(ld3, k3, _rg(Int64(7)))
+    @test LK._h_const_word!(ld3, u3, wa3) == LK.H_CONST_FAIL
+    @test LK._h_const_word!(ld3, u3, LK.consInt(7)) == LK.H_CONST_MATCH
     # a cell bound to a cell variable holds a REFERENCE (L1c: upstream's `makeRefG`): followed, the
     # unbound cell at its end bound
     k2 = LK._cell_key(ld2, LK._slot_new_var!(ld2, v))

@@ -162,35 +162,32 @@ argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
 @inline _argv_loc(v::argv_cells, i::Int)::Int = v.p + 1 + i
 
 # PORT: pl-index.c indexOfWord as _index_key_loc
-# DIVERGES: on the WORD a dereferenced location holds (L1c sub-commit 5), giving `indexOfWord`'s key
-# of the term it stands for — so the frame and cell argv key exactly as the term argv does: an
-# unbound cell 0; an atom word its symbol's key, recorded with the symbol in the database's store
-# (`atomIndexKey`, L1c-6: no term read, no lookup); a compound word `FUNCTOR_dot2` for `[|]/2`, 0 for `$expr/n` (Q2: a wildcard), else
-# `_functor_word` of its name's symbol and its arity; a value-table word its value's key. Only the
-# BOUNDARY (a slot's side value or a keyed variable — until L1e/L1f) reads a term.
-"The index key of the term at a dereferenced location (`indexOfWord` on the words)."
+# (L1d step 4; user, 2026-10-16: ported faithfully — the key IS the word: `case TAG_ATOM: break;`, an
+# inline TAG_INTEGER the word, TAG_COMPOUND its functor word `*valPtr(w)`; no table, no name hash)
+# DIVERGES: on a dereferenced LOCATION; `$expr/n` (Q2, kernel-only) keys 0, a wildcard; a value-table
+# word (upstream's indirect: a float, a string, a big integer or a rational) its value's key
+# (`_value_index_key`, the role `murmur_key`/`bignum_index` play upstream); a tagged integer its word
+# only where the term type keys integers apart from every other value (`ld.int_word_keys`), else its
+# value's key. Only the BOUNDARY (a slot's side value or a keyed variable — until L1e/L1f) reads a term.
+"The index key of the term at a dereferenced location (pl-index.c `indexOfWord`, on the words)."
 function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: this file loads before pl-global.jl)
-    k == DU_CELL && return word(0)
+    k == DU_CELL && return word(0)                          # TAG_VAR: 0
     if k == DU_WORD
-        if isAtomW(w)                                       # the key recorded with its symbol (L1c-6)
-            ak = atomIndexKey(ld.atom_symbols, indexAtom(w))
-            return ak != 0 ? ak : indexOfWord(_atom_value(ld, w))
-        end
-        f = ld.gstack[valPtr(w)]
-        f == ld.functor_dot2 && return FUNCTOR_dot2         # `[H|T]`: as `argKey` keys `H_LIST*`
-        name = nameFunctor(ld.functors, f)
-        name == ld.atom_dexpr && return word(0)             # `$expr/n`, a wildcard
-        return _functor_word(
-            _functor_name(_atom_value(ld, name)), arityFunctor(ld.functors, f)
-        )
+        isAtomW(w) && return w                              # TAG_ATOM: break — the atom_t
+        f = ld.gstack[valPtr(w)]                            # TAG_COMPOUND: w = *valPtr(w)
+        nameFunctor(ld.functors, f) == ld.atom_dexpr && return word(0)   # `$expr/n`, a wildcard
+        return f
     end
-    k == DU_VALUE && return indexOfWord(ld.vtable[valPtr(w)])
-    return indexOfWord(deRef(ld, _loc_term(ld, k, w, p)))  # the boundary (L1e/L1f)
+    if k == DU_VALUE
+        (isTaggedIntW(w) && ld.int_word_keys) && return w  # TAG_INTEGER, STG_INLINE: break
+        return _value_index_key(_value_term(ld, w))        # an indirect: murmur_key/bignum_index
+    end
+    return indexOfWord(ld, deRef(ld, _loc_term(ld, k, w, p)))  # the boundary (L1e/L1f)
 end
 
 # ORIGINAL: `indexOfWord(argv_at(argv, i))` for every argv form (L1c sub-commit 5).
 "The index key of argument `i` (0-based) of `argv`."
-_argv_key(v::argv_term, i::Int)::word = indexOfWord(argv_at(v, i))
+_argv_key(v::argv_term, i::Int)::word = indexOfWord(v.ld, argv_at(v, i))
 function _argv_key(v::Union{argv_frame, argv_cells}, i::Int)::word
     k, w, p = _deref_loc(v.ld, _argv_loc(v, i))
     return _index_key_loc(v.ld, k, w, p)
@@ -212,78 +209,69 @@ end
 # every non-variable; here a grounded value without a `gnd_key`, and a compound whose head is not
 # a symbol, are non-variables whose key is 0. They count as NOT indexable, so the guarantee every
 # caller relies on (`assert(chp->key)` after `createIndex`) holds.
-"True when `t` can select clauses through an index (pl-index.c)."
-canIndex(t)::Bool = indexOfWord(t) != 0
+"True when term `t` can select clauses through an index (pl-index.c)."
+canIndex(ld, t)::Bool = indexOfWord(ld, t) != 0
 
-# DIVERGES (the divergence audit, S05; user, 2026-10-06): upstream's atom and functor handles are
-# unique, so `listSupervisor` can take the keys `ATOM_nil` and `FUNCTOR_dot2` as identity. Here a
-# key is a HASH — an atom's, a grounded value's, a functor's — so one that comes out equal to either
-# reserved word is moved off it, BY CONSTRUCTION. Flipping the lowest bit of a functor's number
-# field keeps every tag bit, and a functor's arity. The two words then stand for `[]` and the list
-# cell alone. Every other use of key equality only narrows an index: on a collision it gives more
-# candidates, which unification rejects.
+# DIVERGES (the divergence audit, S05; user, 2026-10-06; narrowed in L1d step 4): `listSupervisor`
+# takes the keys `ATOM_nil` and `FUNCTOR_dot2` as identity. Since L1d step 4 an atom's and a
+# functor's key is its WORD, a handle that cannot collide — but a VALUE's key is a HASH
+# (`_value_index_key`), so one that comes out equal to either reserved word is moved off it, BY
+# CONSTRUCTION. Flipping the lowest bit of a functor's number field keeps every tag bit, and a
+# functor's arity. Every other use of key equality only narrows an index: on a collision it gives
+# more candidates, which unification rejects.
 "A hashed key moved off the reserved words `ATOM_nil` and `FUNCTOR_dot2` (see above)."
 function _unreserved(w::word)::word
     (w == ATOM_nil || w == FUNCTOR_dot2) || return w
     return w ⊻ (word(1) << (LMASK_BITS + F_ARITY_BITS))
 end
 
-"The index key of an atom whose name hashes to `h`: never a reserved word."
-_atom_key(h::UInt64)::word = _unreserved(MK_ATOM(h))
-
-"The functor word of a functor whose name and arity hash to `h`: never a reserved word."
-_functor_key(h::UInt64, arity::Int)::word =
-    _unreserved(MK_FUNCTOR(h, UInt64(arity) & F_ARITY_MASK))
-
 "The index key of a grounded value whose `gnd_key` is `g`: never 0, a functor or a reserved word."
 _gnd_index_key(g::word)::word = _unreserved(clean_index_key(g))
 
-"The functor word of a compound named by `name` (see `_functor_name`) with `arity` arguments."
-_functor_word(name::UInt64, arity::Int)::word =
-    _functor_key(UInt64(hash(UInt64(arity), name)), arity)
-
-# DIVERGES: upstream names a functor by its atom HANDLE, so `[](a)` and `'[]'(a)` are two functors
-# (`[]` is a reserved symbol, `'[]'` a text atom — swipl 10.1.16: `[](a) \== '[]'(a)`). `sym_hash`
-# is a TEXT hash, so `[]` takes its own name, `ATOM_nil`, as it does as an atom key.
-"The name a functor word takes for the symbol head `h`: `ATOM_nil` for `[]`, else its `sym_hash`."
-_functor_name(h)::UInt64 = is_nil(h) ? UInt64(ATOM_nil) : sym_hash(h)
+# PORT: pl-index.c indexOfWord as _value_index_key
+# (its INDIRECT cases: TAG_STRING and TAG_FLOAT through `murmur_key`, a big integer through `bignum_index`)
+# DIVERGES: the term type's `gnd_key` (a key that follows its `gnd_equal`, src/term_interface.jl)
+# cleaned, in place of a hash of the indirect's words; 0, a WILDCARD, when the term type gives no
+# key (CLAUDE.md: a key follows equality, or there is none).
+"The index key of the grounded value `t` (an indirect upstream): its `gnd_key` cleaned, or 0."
+function _value_index_key(t)::word
+    g = gnd_key(t)
+    g === nothing && return word(0)
+    return _gnd_index_key(g)
+end
 
 # PORT: pl-index.c indexOfWord
-# DIVERGES: reads the term interface rather than a tagged cell, and there are no reference cells to
-# follow. VAR → 0, as upstream. SYM → its atom word (`MK_ATOM` of its `sym_hash`, the same in every
-# process — SWI's atom numbers are fixed for a given program too; never a reserved word,
-# `_unreserved`), and SWI-7's `[]` → `ATOM_nil`, as
-# `argKey` keys `H_NIL`: `sym_hash` is a TEXT hash, so without it `[]` and the atom `'[]'` would
-# share a key that upstream's two atom handles never share. GND → its
-# `gnd_key` through `clean_index_key` — the role murmur_key plays upstream for strings and floats,
-# a key that follows the term type's `gnd_equal` (src/term_interface.jl) — and 0, a wildcard, when
-# there is no key. A list cell (`is_pair`) → `FUNCTOR_dot2`, as `argKey` keys `H_LIST*`. EXPR with
-# a symbol head → a functor word (`MK_FUNCTOR`) of the name (`_functor_name`) and arity. EXPR with
-# any other head — the functor `$expr/n` (Q2, src/pl-ressymbol.jl) → 0, a wildcard: it unifies child
-# by child with compounds of other functors.
+# (on a TERM — the cell path is `_index_key_loc`, above)
+# TRANSITIONAL (user, 2026-10-16): a goal argument that is still a term — `argv_term`, the boundary's
+# `_loc_term` — keys as its WORD would (`_index_key_loc`), so a clause selected from either path is the
+# same: a symbol its atom word (`_atom_word!`: the engine's cache, then the database's table — `[]` is
+# `ATOM_nil`), an integer in the tagged range its tagged word (where `ld.int_word_keys`), any other value
+# `_value_index_key`, a list cell `FUNCTOR_dot2`, a compound with a symbol head its functor word
+# (`lookupFunctorDef`), `$expr/n` 0. REMOVED when the last term-level caller of indexing moves to cells
+# within L1d (upstream has only the word path).
 """
-    indexOfWord(t) -> word
+    indexOfWord(ld, t) -> word
 
-The index key of term `t`: 0 when `t` cannot select clauses, a non-zero word otherwise. A functor
-key satisfies `isFunctor`; no other key does.
+The index key of term `t` in engine `ld`: 0 when `t` cannot select clauses, else the word its cell
+would hold (an atom, a small integer), its functor word, or a value's key. A functor key satisfies
+`isFunctor`; no other key does.
 """
-function indexOfWord(t)::word
+function indexOfWord(ld, t)::word
     k = kind(t)
-    if k === VAR
-        return word(0)
-    elseif k === SYM
-        is_nil(t) && return ATOM_nil                    # `[]`: as `argKey` keys `H_NIL`
-        return _atom_key(sym_hash(t))
-    elseif k === GND
-        g = gnd_key(t)
-        g === nothing && return word(0)
-        return _gnd_index_key(g)
+    k === VAR && return word(0)                             # TAG_VAR: 0
+    k === SYM && return _atom_word!(ld, t)                  # TAG_ATOM: the atom_t
+    if k === GND
+        if ld.int_word_keys
+            w = _term_int_word(ld, t)                       # an inline TAG_INTEGER: the word
+            w != 0 && return w
+        end
+        return _value_index_key(t)
     end
-    nchildren(t) >= 1 || return word(0)                 # `()`: `$expr/0`, a wildcard
-    is_pair(t) && return FUNCTOR_dot2                   # `[H|T]`: as `argKey` keys `H_LIST*`
+    nchildren(t) >= 1 || return word(0)                     # `()`: `$expr/0`, a wildcard
+    is_pair(t) && return FUNCTOR_dot2                       # `[H|T]`: as `argKey` keys `H_LIST*`
     h = child(t, 1)
-    kind(h) === SYM || return word(0)                   # `$expr/n`, a wildcard
-    return _functor_word(_functor_name(h), nchildren(t) - 1)
+    kind(h) === SYM || return word(0)                       # `$expr/n`, a wildcard
+    return lookupFunctorDef(ld.functors, _atom_word!(ld, h), nchildren(t) - 1)
 end
 
 # PORT: pl-index.c next_clause_unindexed

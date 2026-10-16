@@ -63,7 +63,12 @@ function _hcode_of(codes::Vector{UInt64}, literals::Vector{T})::Vector{String} w
             push!(out, "$name($(_hF(f, LK.functor_arity(w))))")
         elseif op == LK.H_ATOM                                  # the packed operand (L1b C6b)
             push!(out, "$name($(_hlit(literals[LK.atom_literal(codes[pc.pc + 1])])))")
-        elseif op in (LK.H_SMALLINT, LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
+        elseif op == LK.H_SMALLINT                             # the operand IS the tagged word (L1d step 4)
+            push!(
+                out,
+                "$name($(_hlit(mk_gnd(eltype(literals), LK.valInt(codes[pc.pc + 1])))))"
+            )
+        elseif op in (LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
             push!(out, "$name($(_hlit(literals[codes[pc.pc + 1]])))")
         else
             push!(out, name)

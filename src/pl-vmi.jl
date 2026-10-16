@@ -29,12 +29,13 @@
 # `I_YIELD` (after V9). `I_CUT` is declared and compiled (a clause-level `!`, user
 # 2026-10-05) and, since V6a, executed.
 #
-# OPERANDS: every literal operand (`*_ATOM`, `*_SMALLINT`, `*_FLOAT`, `*_MPZ`, `*_MPQ`, `*_STRING`)
+# OPERANDS: every literal operand (`*_ATOM`, `*_FLOAT`, `*_MPZ`, `*_MPQ`, `*_STRING`)
 # is ONE word, the index of the literal in the clause's literal table (V1 L2), where upstream
 # carries the value itself (an atom, an integer, CODES_PER_DOUBLE words, a VM_DYNARGC block); a
 # functor operand is `functor_operand` (L2); a procedure operand (`CA1_LPROC`) the index of the
 # procedure in the clause's procedure table (V1); a clause-reference operand (`CA1_CLAUSEREF`, the
-# supervisors') the index of the clause reference in the definition's `codes_crefs` (V4a). The
+# supervisors') the index of the clause reference in the definition's `codes_crefs` (V4a); a
+# `*_SMALLINT` operand is the tagged word itself, as upstream's (L1d step 4). The
 # `argtype` column keeps upstream's kinds, so a
 # reader decodes each operand by its kind as upstream does — a literal kind through the table.
 

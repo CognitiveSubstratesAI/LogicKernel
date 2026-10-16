@@ -104,6 +104,10 @@ function _rwrite(t::_R, var)::String
     k === SYM && return _ratom_text(t)
     if k === GND
         v = lk_value(t)
+        # a float as the kernel's writer writes it (pl-write.c `format_float`, `~h`: the shortest digits
+        # that read back, fixed form within the exponent window) — swipl's text; Julia's `string` is not
+        # (`2.0^56`: `7.205759403792794e16` against swipl's `72057594037927940.0`, 2026-10-17)
+        v isa Float64 && return LK.format_float(v, 3, 'e')
         v isa String || return string(v)
         return "\"" * replace(v, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n") * "\""
     end

@@ -62,14 +62,18 @@ end
     @test lk_eq(LK.deRef(ld, _aw_var(y)), _aw_sym("é"))
 end
 
-@testset "other values, small integers included, still go to the value table" begin
+@testset "other values go to the value table; a small integer is its own word (L1d step 4)" begin
     ld = LK.PL_local_data{_AW}(LK.PL_global_data{_AW}())
-    x = LK.allocGlobalVars!(ld, 1)
+    x, y = LK.allocGlobalVars!(ld, 1), LK.allocGlobalVars!(ld, 1)
     n0 = length(ld.vtable)
-    LK.Trail!(ld, x, lk_gnd(_AW, Int64(7)))
+    LK.Trail!(ld, x, lk_gnd(_AW, 7.5))                          # a float: an indirect, the value table
     w = _aw_word(ld, x)
     @test LK.tagex(w) == (LK.TAG_COMPOUND | LK.STG_RESERVED) && length(ld.vtable) == n0 + 1
-    @test lk_eq(LK.deRef(ld, _aw_var(x)), lk_gnd(_AW, Int64(7)))
+    @test lk_eq(LK.deRef(ld, _aw_var(x)), lk_gnd(_AW, 7.5))
+    LK.Trail!(ld, y, lk_gnd(_AW, Int64(7)))                     # a small integer: its tagged word
+    wy = _aw_word(ld, y)
+    @test wy == LK.consInt(7) && length(ld.vtable) == n0 + 1    # no value-table entry
+    @test lk_eq(LK.deRef(ld, _aw_var(y)), lk_gnd(_AW, Int64(7)))
 end
 
 @testset "an atom holding the character 0 raises AtomNotRepresentableError on its read" begin

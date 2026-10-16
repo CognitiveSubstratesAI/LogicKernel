@@ -1046,7 +1046,7 @@ end
 const DU_CELL = 0x01
 "`_deref_loc`: an atom or a compound word, returned."
 const DU_WORD = 0x02
-"`_deref_loc`: a value-table word (returned) whose entry is a VALUE, in the cell at the position."
+"`_deref_loc`: a VALUE word (returned): a value-table word whose entry is a value, in the cell at the position, or a tagged integer (L1d step 4; in a slot, position 0)."
 const DU_VALUE = 0x03
 "`_deref_loc`: the boundary — a slot's side value (the position is `-slot`), or a keyed variable's value-table word."
 const DU_TERM = 0x04
@@ -1062,6 +1062,7 @@ const DU_TERM = 0x04
         if !isRef(w)
             w == SLOT_VALUE && return (DU_TERM, word(0), loc)
             (isAtomW(w) || _is_gcompound(w)) && return (DU_WORD, w, 0)
+            isTaggedIntW(w) && return (DU_VALUE, w, 0)                  # L1d step 4
             throw(_slot_word_error(w))
         end
         p = unRef(w)
@@ -1075,6 +1076,8 @@ const DU_TERM = 0x04
             p = unRef(c)
         elseif isAtomW(c) || _is_gcompound(c)
             return (DU_WORD, c, p)
+        elseif isTaggedIntW(c)                      # a small integer (L1d step 4)
+            return (DU_VALUE, c, p)
         else                                        # a value-table word
             kind(ld.vtable[valPtr(c)]) === VAR && return (DU_TERM, c, p)
             return (DU_VALUE, c, p)
@@ -1109,7 +1112,7 @@ function _loc_term(ld::PL_local_data{T}, k::UInt8, w::word, p::Int)::T where {T}
         p < 0 && return ld.slot_values[-p]
         return ld.vtable[valPtr(w)]
     end
-    k == DU_VALUE && return ld.vtable[valPtr(w)]
+    k == DU_VALUE && return _value_term(ld, w)
     isAtomW(w) && return _atom_value(ld, w)
     return _compound_term(ld, valPtr(w))
 end
@@ -1152,8 +1155,12 @@ function unify_simple_cells(
     end
     w1 == w2 && return BOOLEX_TRUE
     k1 == k2 || return BOOLEX_FALSE                 # tagex(w1) != tagex(w2)
-    if k1 == DU_VALUE                               # isIndirect(w1): equalIndirect(w1, w2)
-        return if gnd_equal(ld.vtable[valPtr(w1)], ld.vtable[valPtr(w2)])
+    if k1 == DU_VALUE
+        # two small integers that are not the same word are two values (L1d step 4: upstream's
+        # `tagex(w1) != tagex(w2)` for a tagged pair with `w1 != w2`); else equalIndirect, by the
+        # term type's `gnd_equal` (a tagged integer against an indirect number: its term)
+        (isTaggedIntW(w1) && isTaggedIntW(w2)) && return BOOLEX_FALSE
+        return if gnd_equal(_value_term(ld, w1), _value_term(ld, w2))
             BOOLEX_TRUE
         else
             BOOLEX_FALSE
@@ -1463,7 +1470,7 @@ const CMP_TERMS = -5
 "The atomic TERM a dereferenced atomic location holds (an atom's symbol, a stored value): no export."
 @inline function _loc_atomic(ld::PL_local_data{T}, k::UInt8, w::word)::T where {T}
     # (the long form: `@inline f(…)::T where {T} = …` left `::T` at top level — did not load, 2026-10-16)
-    return k == DU_VALUE ? ld.vtable[valPtr(w)] : _atom_value(ld, w)
+    return k == DU_VALUE ? _value_term(ld, w) : _atom_value(ld, w)   # a tagged word too (L1d-4)
 end
 
 # PORT: pl-prims.c compare_primitives as compare_primitives_cells
@@ -1490,6 +1497,10 @@ function compare_primitives_cells(
         return r1 < r2 ? CMP_LESS : CMP_GREATER
     end
     r1 == 2 && return CMP_COMPOUND
+    if isTaggedIntW(w1) && isTaggedIntW(w2)          # two small integers (L1d step 4): by value, as
+        mode == CMP_MODE_EQUAL && return CMP_NOTEQ   # compare_primitives' TAG_INTEGER/STG_INLINE
+        return valInt(w1) < valInt(w2) ? CMP_LESS : CMP_GREATER     # branch (w1 != w2 here)
+    end
     return compare_primitives(_loc_atomic(ld, k1, w1), _loc_atomic(ld, k2, w2), mode)
 end
 

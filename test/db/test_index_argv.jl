@@ -49,9 +49,10 @@ end
     LK.Trail!(ld, var_key(X), _ag(7))                       # X = 7, then call p(X, Y)
     for argv in _a_views(ld, X, Y)
         # both views key the argument by its value, 7, and see no variable there
-        @test LK._argv_key(argv, 0) == LK.indexOfWord(_ag(7)) && !LK._argv_is_var(argv, 0)
+        @test LK._argv_key(argv, 0) == LK.indexOfWord(ld, _ag(7)) &&
+            !LK._argv_is_var(argv, 0)
         c, more = _a_first(p, argv)
-        @test c !== nothing && c.key == LK.indexOfWord(_ag(7))  # the clause p(7, a) …
+        @test c !== nothing && c.key == LK.indexOfWord(ld, _ag(7))  # the clause p(7, a) …
         @test !more                                             # … and no clause choice left
     end
     @test only(ix_call(p, mk_expr(_A, _A[_as(:p), X, Y]))) |> last  # det, through ix_call too
@@ -60,7 +61,7 @@ end
     LK.Trail!(ld, var_key(Z), X)
     for argv in _a_views(ld, Z, Y)
         c, more = _a_first(p, argv)
-        @test c !== nothing && c.key == LK.indexOfWord(_ag(7)) && !more
+        @test c !== nothing && c.key == LK.indexOfWord(ld, _ag(7)) && !more
     end
     # unbound: every clause is a candidate, and a clause choice remains
     W = mk_var(_A, UInt64(4))
@@ -70,45 +71,37 @@ end
     end
 end
 
-# ── a hashed key is never a reserved word (the divergence audit, S05; user, 2026-10-06) ──────────
-# `listSupervisor` takes `ATOM_nil` and `FUNCTOR_dot2` as identity, so a hashed key equal to either
-# is moved off it (`_unreserved`, src/pl-index.jl). The colliding hashes are FED IN: to the key
-# constructors, and through `indexOfWord` by a test-only symbol and grounded value whose interface
-# hashes are exactly the reserved words' numbers.
-struct _IxCollidingSym end
+# ── a VALUE's hashed key is never a reserved word (the divergence audit, S05; user, 2026-10-06;
+# narrowed in L1d step 4) ─────────────────────────────────────────────────────────────────────────
+# `listSupervisor` takes `ATOM_nil` and `FUNCTOR_dot2` as identity. Since L1d step 4 an atom's and a
+# functor's key is its WORD — a handle that cannot collide: `[]` IS `ATOM_nil` and `'[|]'/2` IS
+# `FUNCTOR_dot2`, the built-in words of every database — but a value's key is a HASH
+# (`_value_index_key`), so one equal to either reserved word is moved off it (`_unreserved`). The
+# colliding hash is FED IN through a test-only grounded value whose `gnd_key` is the reserved number.
 struct _IxCollidingGnd end
-LogicKernel.kind(::_IxCollidingSym) = SYM
-LogicKernel.is_nil(::_IxCollidingSym) = false
-LogicKernel.sym_hash(::_IxCollidingSym) = UInt64(0x0052_4553_5652_4544)   # ATOM_nil's number
 LogicKernel.kind(::_IxCollidingGnd) = GND
 LogicKernel.gnd_key(::_IxCollidingGnd) = UInt64(LK.ATOM_nil)
 
-@testset "a hashed key is never a reserved word (the divergence audit, S05)" begin
-    n_nil = UInt64(0x0052_4553_5652_4544)
-    @test LK.MK_ATOM(n_nil) == LK.ATOM_nil                         # the colliding hash
-    a = LK._atom_key(n_nil)
-    @test a != LK.ATOM_nil && a != LK.FUNCTOR_dot2 && !LK.isFunctor(a)
-    @test a & 0x7f == LK.ATOM_nil & 0x7f                            # the tag is kept
-    @test LK.indexOfWord(_IxCollidingSym()) == a                    # end to end
-    n_dot = UInt64(0x0004_c495_354e_4f43)
-    @test LK.MK_FUNCTOR(n_dot, UInt64(2)) == LK.FUNCTOR_dot2         # the colliding hash
-    f = LK._functor_key(n_dot, 2)
-    @test f != LK.FUNCTOR_dot2 && LK.isFunctor(f)
-    @test (f >> LK.LMASK_BITS) & LK.F_ARITY_MASK == 2               # the arity is kept
+@testset "a value's hashed key is never a reserved word (S05); an atom's key is its word (L1d-4)" begin
     g = LK._gnd_index_key(UInt64(LK.ATOM_nil))                      # a grounded key that hashed so
     @test g != LK.ATOM_nil && g != 0 && !LK.isFunctor(g)
-    @test LK.indexOfWord(_IxCollidingGnd()) == g                    # end to end
+    @test LK._value_index_key(_IxCollidingGnd()) == g               # end to end: both key sides' function
     for w in (LK.MK_ATOM(UInt64(12345)), LK.MK_FUNCTOR(UInt64(999), UInt64(3)), LK.word(17))
         @test LK._unreserved(w) == w                                # every other key is unchanged
     end
-    # a functor's own hash cannot be steered to collide (Julia's `hash` mixes its seed, probed), so
-    # that path is checked by STRUCTURE: the functor word goes through the guarded constructor
-    ci = code_lowered(LK._functor_word, (UInt64, Int))[1]
-    @test any(x -> x isa GlobalRef && x.name === :_functor_key, ci.code)   # the callee, lowered
-    # the real `[]` and list cell keep the reserved words
-    @test LK.indexOfWord(mk_nil(_A)) == LK.ATOM_nil
+    # the reserved words ARE the database's built-in words, the same in every database
+    gd = LK.PL_global_data{_A}()
+    ld = LK.PL_local_data{_A}(gd)
+    @test gd.atom_nil_w == LK.ATOM_nil && gd.functor_dot2 == LK.FUNCTOR_dot2
+    gd2 = LK.PL_global_data{_A}()
+    @test gd2.atom_nil_w == gd.atom_nil_w && gd2.functor_dot2 == gd.functor_dot2
+    @test LK.indexOfWord(ld, mk_nil(_A)) == LK.ATOM_nil
     @test LK.indexOfWord(
-        mk_expr(_A, _A[mk_sym(_A, Symbol("[|]")), mk_gnd(_A, 1), mk_nil(_A)])
-    ) ==
-        LK.FUNCTOR_dot2
+        ld, mk_expr(_A, _A[mk_sym(_A, Symbol("[|]")), mk_gnd(_A, 1), mk_nil(_A)])
+    ) == LK.FUNCTOR_dot2
+    # `[]` (a reserved symbol) and the text atom `'[]'` are two atoms, two words (swipl 10.1.16:
+    # `[](a) \== '[]'(a)`): their keys, and their functors' keys, differ by construction
+    @test LK.indexOfWord(ld, mk_sym(_A, Symbol("[]"))) != LK.ATOM_nil
+    @test LK.indexOfWord(ld, mk_expr(_A, _A[mk_nil(_A), _as(:a)])) !=
+        LK.indexOfWord(ld, mk_expr(_A, _A[mk_sym(_A, Symbol("[]")), _as(:a)]))
 end

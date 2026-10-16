@@ -2237,30 +2237,16 @@ atoms_t() = atoms_t(
 # `allocateAtomBlock`), so a reader in another engine never meets a reallocation (a `push!` could
 # move a vector under it). An entry is filled when its atom gets its first word from a symbol
 # (`_atom_word!`), the one place a symbol becomes an atom word.
-# Beside each symbol, its INDEX KEY (`indexOfWord` of the symbol, L1c-6): computed once, when the
-# symbol is recorded, so the clause index keys an atom WORD with no term read — on a term type whose
-# symbols dispatch at run time, `indexOfWord` on the symbol boxed its result per call (qsort's
-# `[]`, user 2026-10-16: an alternative-type allocation that grew with n). 0: no key recorded.
+# (L1c-6 kept each symbol's INDEX KEY beside it; since L1d step 4 an atom's key IS its word —
+# pl-index.c `indexOfWord`, `case TAG_ATOM: break;` — so no key is stored: the symbols alone.)
 "The interface symbol of each atom of one database's table, in the atom array's block layout (L1b C6b)."
 struct atom_symbols{T}
     blocks::Vector{Union{Nothing, Vector{Union{Nothing, T}}}}   # as atom_array.blocks: 64 blocks
-    keys::Vector{Union{Nothing, Vector{UInt64}}}               # … each symbol's index key (L1c-6)
 end
 
 "An empty symbol store: no block allocated."
-atom_symbols{T}() where {T} = atom_symbols{T}(
-    Union{Nothing, Vector{Union{Nothing, T}}}[nothing for _ in 1:64],
-    Union{Nothing, Vector{UInt64}}[nothing for _ in 1:64]
-)
-
-# ORIGINAL: the index key of the atom at `index` (L1c-6), read as `atomSymbol` reads its symbol.
-"The index key (`indexOfWord` of its symbol) of the atom at `index` in `s`, or 0 (none recorded)."
-@inline function atomIndexKey(s::atom_symbols, index::Int)::UInt64
-    idx = MSB(index)
-    b = s.keys[idx + 1]
-    b === nothing && return UInt64(0)
-    return b[index - (1 << idx) + 1]
-end
+atom_symbols{T}() where {T} =
+    atom_symbols{T}(Union{Nothing, Vector{Union{Nothing, T}}}[nothing for _ in 1:64])
 
 # ORIGINAL: the symbol of the atom at `index`, read as `fetchAtomArray` reads the atom.
 "The interface symbol of the atom at `index` in `s`, or `nothing` (none recorded)."
@@ -2273,7 +2259,7 @@ end
 
 # ORIGINAL: record the symbol of the atom at `index`, its block allocated whole first if it is not
 # yet (as `allocateAtomBlock`).
-"Record `v` as the interface symbol of the atom at `index` in `s`, and its index key."
+"Record `v` as the interface symbol of the atom at `index` in `s`."
 function setAtomSymbol!(s::atom_symbols{T}, index::Int, v::T)::Nothing where {T}
     idx = MSB(index)
     b = s.blocks[idx + 1]
@@ -2281,13 +2267,7 @@ function setAtomSymbol!(s::atom_symbols{T}, index::Int, v::T)::Nothing where {T}
         b = Union{Nothing, T}[nothing for _ in 1:(1 << idx)]
         s.blocks[idx + 1] = b
     end
-    k = s.keys[idx + 1]
-    if k === nothing                                # (narrowed: JET's report_package, 2026-10-16)
-        k = zeros(UInt64, 1 << idx)
-        s.keys[idx + 1] = k
-    end
-    k[index - (1 << idx) + 1] = indexOfWord(v)      # before the symbol: a reader
-    b[index - (1 << idx) + 1] = v                   # that sees it sees the key
+    b[index - (1 << idx) + 1] = v
     return nothing
 end
 

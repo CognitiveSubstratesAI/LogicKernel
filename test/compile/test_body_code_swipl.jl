@@ -72,6 +72,10 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
             string(Int(w))
         elseif op == LK.I_CALLN                                          # swipl writes the count as `i:N`
             "i:" * string(Int(w))
+        elseif op == LK.H_SMALLINT || op == LK.B_SMALLINT || op == LK.L_SMALLINT
+            _hlit(lk_gnd(_B, LK.valInt(w)))                             # the tagged word itself (L1d step 4)
+        elseif op == LK.A_ADD_FC
+            _hlit(lk_gnd(_B, reinterpret(Int64, w)))                    # the integer itself (L1d step 4)
         else
             _hlit(lits[w])
         end

@@ -304,11 +304,64 @@ end
     return p == 0 ? word(0) : makeRefG(p)
 end
 
+# ── tagged small integers (L1d step 4; the workspace's L1_plan/stageL1d_design.md §3b) ────────────
+# PORT: pl-data.h consInt as _tagged_int_word
+# (`TAG_INTEGER|STG_INLINE`, for the cells: the word of an integer in the tagged range)
+# DIVERGES: an integer in the TAGGED range (`PLMINTAGGEDINT..PLMAXTAGGEDINT`, pl-incl.h) is its own
+# word, IN the cell, as upstream's — no value-table entry; a bigger integer, a rational, a float or a
+# string stays a value-table word (upstream's indirects, `STG_GLOBAL`). Only for a term type that
+# can hold an `Int64` (`_holds_payload`, a compile-time constant): the word reads back as
+# `mk_gnd(T, valInt(w))` — an `Int64` payload whatever integer type the term was made with (Prolog
+# sees one integer type; representation only: an `Int32` payload in range reads back as `Int64`).
+"The tagged-integer word of `v` when it is an integer in the tagged range (and `T` holds `Int64`), else 0."
+@inline function _tagged_int_word(::Type{T}, v::T)::word where {T}
+    _holds_payload(T, Int64) || return word(0)
+    (number_kind(v) === NUM_INTEGER && integer_is_int64(v)) || return word(0)
+    i = int64_value(v)
+    return PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT ? consInt(i) : word(0)
+end
+
+# ORIGINAL: the tagged word of a TERM `t` in engine `ld`'s term type, or 0 (the index's term path).
+"The tagged-integer word of term `t` (`_tagged_int_word` in `ld`'s term type), or 0."
+@inline _term_int_word(ld::PL_local_data{T}, t::T) where {T} = _tagged_int_word(T, t)
+
+# ORIGINAL (L1d step 4): whether term type `T` can key a small integer by its WORD (`indexOfWord`'s
+# `TAG_INTEGER: break`). A key must follow the term type's equality (CLAUDE.md): the word keys an
+# integer by its value alone, which is right only when `T` keys integers at all and keys them APART
+# from floats (a type whose `gnd_equal` made `1` and `1.0` one value would key them alike, and the
+# word would split them into two buckets — a dropped answer). Both shipped term types qualify (SWI's
+# identity: `1 \== 1.0`); a type that does not keeps its own keys (`_value_index_key`). Computed once
+# per engine (`int_word_keys`).
+"Whether term type `T` keys a small integer by its tagged word (see above)."
+function _int_word_keys(::Type{T})::Bool where {T}
+    _holds_payload(T, Int64) || return false
+    k0 = gnd_key(mk_gnd(T, Int64(0)))
+    k0 === nothing && return false
+    _holds_payload(T, Float64) || return true
+    return k0 != gnd_key(mk_gnd(T, 0.0))
+end
+
+# ORIGINAL: a GROUNDED value's word (L1d step 4): a small integer tagged, anything else a value-table
+# entry (`_vword!`).
+"The word of the grounded value `v`: a tagged integer, or a new value-table entry."
+@inline function _gnd_word!(ld::PL_local_data{T}, v::T)::word where {T}
+    w = _tagged_int_word(T, v)
+    return w != 0 ? w : _vword!(ld, v)
+end
+
+# ORIGINAL: the VALUE a `DU_VALUE` word stands for (L1d step 4): a tagged integer's term (made: an
+# `Int64` payload), or a value-table entry (stored). The readers that can decide on the word itself
+# (unification, compare, the index, arithmetic, the VM's constants) never ask.
+"The value term of `w`: a tagged integer (`mk_gnd(T, valInt(w))`) or a value-table entry."
+@inline function _value_term(ld::PL_local_data{T}, w::word)::T where {T}
+    isTaggedIntW(w) && return mk_gnd(T, valInt(w))
+    return ld.vtable[valPtr(w)]
+end
+
 # ORIGINAL: a value's word on the global stack (L1b C3): an atom its own word, a compound a copy on
 # the stack (L1c: `_compound_word!`, the cold import), a live cell variable a reference to its cell
-# (L1c: upstream's `makeRefG`), anything else (for now) a value-table entry
-# (`_vword!`) — small integers too, since building a term back from `consInt` would allocate on
-# every read until the instructions read words (L1d).
+# (L1c: upstream's `makeRefG`), a small integer its tagged word (L1d step 4: `consInt`), anything
+# else a value-table entry (`_vword!`).
 "The word that holds `v` in a cell."
 @inline function _word_of!(ld::PL_local_data{T}, v::T)::word where {T}
     k = kind(v)
@@ -317,8 +370,9 @@ end
     if k === VAR                                    # a live cell variable: its reference (L1c)
         r = _var_ref_word(ld, v)
         r != 0 && return r
+        return _vword!(ld, v)                       # a keyed variable (until the stamp falls)
     end
-    return _vword!(ld, v)
+    return _gnd_word!(ld, v)
 end
 
 # ── compounds on the global stack (L1c; the workspace's L1_plan/stageL1c_design.md) ─────────────
@@ -463,7 +517,7 @@ function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
                 r = _var_ref_word(ld, c)
                 r != 0 ? r : _vword!(ld, c)
             else
-                _vword!(ld, c)
+                _gnd_word!(ld, c)                   # a small integer tagged (L1d step 4)
             end
             ld.gstack[p + i] = w
         end
@@ -490,14 +544,15 @@ end
 
 # ORIGINAL: the value a cell's word holds (L1b stage C2): unbound (0), an atom (C3), a reference —
 # the variable of the cell it points at, which `deRef` follows on (L1c) — a compound on the stack,
-# as a term through the cold export (L1c), or a value-table entry.
+# as a term through the cold export (L1c), a tagged integer its term (L1d step 4), or a value-table
+# entry.
 "The value word `w` of a bound cell names, or `nothing` for an unbound cell (the word 0)."
 @inline function _cell_value(ld::PL_local_data{T}, w::word)::Union{Nothing, T} where {T}
     isVar(w) && return nothing
     isAtomW(w) && return _atom_value(ld, w)
     isRef(w) && return _cell_var(ld, unRef(w))
     _is_gcompound(w) && return _compound_term(ld, valPtr(w))
-    return ld.vtable[valPtr(w)]
+    return _value_term(ld, w)
 end
 
 # ORIGINAL: the value table follows the global stack down (L1b stage C2): every entry whose box lies
@@ -586,13 +641,14 @@ end
 # 1-based position on the local stack: term reference `t` is position `t + 1`.
 
 # ORIGINAL: THE SLOT WORDS (L1b stage C5; the workspace's L1_plan/stageC_design.md). A slot holds one
-# of four words: `makeRefG(p)`, a reference to the cell variable at global position `p` (every
+# of five words: `makeRefG(p)`, a reference to the cell variable at global position `p` (every
 # live cell variable, whether the VM made it or it arrived as a term); an atom
 # word, when one arrives as a word (copied from a cell); a COMPOUND word, a compound on the global
-# stack (L1c: built there by the VM, or a term copied there by the cold import); or `SLOT_VALUE`,
+# stack (L1c: built there by the VM, or a term copied there by the cold import); a TAGGED INTEGER
+# (L1d step 4: `consInt`, from a cell or a `*_SMALLINT` operand); or `SLOT_VALUE`,
 # whose value is the slot's OWN entry of `slot_values` — a value with no word form yet (a float, big
-# integer, string or small integer until L1d; a keyed variable until the stamp falls), or a symbol
-# that arrived as a term (converting it would cost a lookup per store). DIVERGES,
+# integer or string; a small integer that arrived as a term; a keyed variable until the stamp falls),
+# or a symbol that arrived as a term (converting it would cost a lookup per store). DIVERGES,
 # transitional: the side entry is the slot's own, so a copy of a `SLOT_VALUE` word copies the value
 # too (`_slot_copy!`) and no word names another slot's entry. The word 0 is a slot never written.
 "The slot word whose value is the slot's own entry of `slot_values` (L1b stage C5)."
@@ -610,9 +666,10 @@ const SLOT_VALUE = TAG_COMPOUND | STG_LOCAL
 end
 
 # ORIGINAL: the rest of `slotValue`, out of line: an atom word, or a slot never written.
-"The symbol of the atom word `w` a slot holds; a slot never written (the word 0) is an error."
+"The symbol of the atom word `w` a slot holds, or a tagged integer's term (L1d step 4); a slot never written (the word 0) is an error."
 function _slot_atom(ld::PL_local_data{T}, w::word)::T where {T}
     isAtomW(w) && return _atom_value(ld, w)
+    isTaggedIntW(w) && return mk_gnd(T, valInt(w))
     throw(_slot_word_error(w))
 end
 
@@ -784,7 +841,7 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
                 return nothing
             elseif isRef(c)
                 p = unRef(c)
-            elseif isAtomW(c) || _is_gcompound(c)   # an atom or a compound: its word (L1c)
+            elseif isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)   # an atom, a compound or a small integer: its word (L1c, L1d step 4)
                 ld.slots[to] = c
                 return nothing
             else
@@ -795,7 +852,7 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
     elseif w == SLOT_VALUE                          # a value stays a value (L1c: the ball)
         _boundary_slot_link_value!(ld, to, ld.slot_values[from])
     else
-        (isAtomW(w) || _is_gcompound(w)) || throw(_slot_word_error(w))
+        (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) || throw(_slot_word_error(w))
         ld.slots[to] = w
     end
     return nothing
@@ -827,7 +884,7 @@ function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
     elseif w == SLOT_VALUE
         ld.gstack[p] = _word_of!(ld, deRef(ld, ld.slot_values[i]))
     else
-        (isAtomW(w) || _is_gcompound(w)) || throw(_slot_word_error(w))
+        (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) || throw(_slot_word_error(w))
         ld.gstack[p] = w
     end
     return nothing

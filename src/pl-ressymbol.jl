@@ -64,12 +64,12 @@ const TEXT_ATOM_RANK = 1
 const OTHER_BLOB_RANK = -1
 
 # PORT: pl-ressymbol.c ATOM_nil
-# DIVERGES: upstream's `ATOM_nil` is the handle of `[]` in the atom table, and `argKey` keys `H_NIL`
-# with it; the kernel has no atom table, so `[]`'s index key is a fixed atom word of its own —
-# distinct from every hashed key — the text atom `'[]'`'s among them — by construction (`_unreserved`,
-# src/pl-index.jl; the divergence audit, S05).
-"The index key of `[]`: what `argKey` reads from `H_NIL` and `indexOfWord` gives `[]`."
-const ATOM_nil = MK_ATOM(UInt64(0x0052_4553_5652_4544))      # "RESERVED", within the atom-number bits
+# (the handle itself is generated into pl-atom.ih from src/ATOMS; pl-ressymbol.c uses it)
+# (L1d step 4) the handle of `[]` in the atom table: a built-in atom, registered in a fixed order in
+# every database (`registerBuiltinAtoms`), so one word names it everywhere — `PL_global_data` asserts
+# it is the database's. `argKey` keys `H_NIL` with it and `indexOfWord` gives it for `[]`, as upstream.
+"The atom word of `[]` (pl-atom.ih `ATOM_nil`): the same in every database."
+const ATOM_nil = builtin_atom("nil")
 
 # ── `$expr/n` (Q2) ──────────────────────────────────────────────────────────────────────────────
 # DIVERGES: SWI has no compound whose head is not an atom; the term interface has them — MeTTa's

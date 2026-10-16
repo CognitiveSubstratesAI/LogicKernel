@@ -42,8 +42,8 @@ const _IW_VALUES = _R[
     av = LK.argv_frame(ld, t)
     for (i, v) in enumerate(_IW_VALUES)
         @test LK._argv_key(av, i - 1) ==
-            LK.indexOfWord(LK.resolve_term(ld, LK.slotValue(ld, t + i)))
-        @test LK._argv_key(av, i - 1) == LK.indexOfWord(v)
+            LK.indexOfWord(ld, LK.resolve_term(ld, LK.slotValue(ld, t + i)))
+        @test LK._argv_key(av, i - 1) == LK.indexOfWord(ld, v)
         @test !LK._argv_is_var(av, i - 1)
     end
     # [] and '[]' key apart (a reserved symbol and a text atom), as the term keys do
@@ -60,14 +60,14 @@ end
     @test LK.do_unify_cells(ld, -(t + 1), -(t + 2)) == LK.BOOLEX_TRUE
     @test LK._argv_is_var(av, 1)
     @test LK.do_unify_cells(ld, -(t + 1), -(t + 3)) == LK.BOOLEX_TRUE
-    @test LK._argv_key(av, 1) == LK.indexOfWord(_rs("x")) && !LK._argv_is_var(av, 1)
+    @test LK._argv_key(av, 1) == LK.indexOfWord(ld, _rs("x")) && !LK._argv_is_var(av, 1)
     # the boundary: a keyed variable in a slot's side value, unbound then bound
     kv = lk_var(_R, UInt64(4711))
     LK.setSlotValue!(ld, t + 1, kv)
     @test LK._argv_is_var(av, 0) && LK._argv_key(av, 0) == 0
     LK.Trail!(ld, var_key(kv), _rf("f", _rs("a")))
     @test !LK._argv_is_var(av, 0) &&
-        LK._argv_key(av, 0) == LK.indexOfWord(_rf("f", _rs("a")))
+        LK._argv_key(av, 0) == LK.indexOfWord(ld, _rf("f", _rs("a")))
 end
 
 @testset "the deep descent reads a compound's argument cells" begin
@@ -77,13 +77,13 @@ end
     @test LK._is_gcompound(w)
     ac = LK.argv_cells(ld, LK.valPtr(w))
     for i in 0:2
-        @test LK._argv_key(ac, i) == LK.indexOfWord(child(v, i + 2))
+        @test LK._argv_key(ac, i) == LK.indexOfWord(ld, child(v, i + 2))
         @test !LK._argv_is_var(ac, i)
     end
     # one level further: the cells of `g(a)`
     k, gw, _ = LK._deref_loc(ld, LK._argv_loc(ac, 0))
     @test k == LK.DU_WORD && LK._is_gcompound(gw)
-    @test LK._argv_key(LK.argv_cells(ld, LK.valPtr(gw)), 0) == LK.indexOfWord(_rs("a"))
+    @test LK._argv_key(LK.argv_cells(ld, LK.valPtr(gw)), 0) == LK.indexOfWord(ld, _rs("a"))
 end
 
 # a predicate whose first argument is a compound, selected through the second-level index
@@ -142,7 +142,7 @@ end
     LK.setSlotValue!(ld, t + 1, kv)
     LK.Trail!(ld, var_key(kv), _rf("f", _rs("b")))
     LK.putSlotValue!(ld, t + 2, _rv(9))
-    @test LK._argv_key(LK.argv_frame(ld, t), 0) == LK.indexOfWord(_rf("f", _rs("b")))
+    @test LK._argv_key(LK.argv_frame(ld, t), 0) == LK.indexOfWord(ld, _rf("f", _rs("b")))
     i0 = ld.cold_imports
     qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS,
         _rproc(db, _rf("iw_p", _rv(1), _rv(2))), t)

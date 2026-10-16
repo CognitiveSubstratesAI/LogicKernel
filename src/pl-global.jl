@@ -111,6 +111,10 @@ function PL_global_data{T}() where {T}
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
     nilw = _atom_word!(atoms, syms, mk_nil(T))  # ATOM_nil's word, once (L1c-6)
+    # (L1d step 4) the index's fixed keys ARE the database's words — built-ins registered in a fixed
+    # order (`registerBuiltinAtoms`, `registerBuiltinFunctors`), as upstream's generated handles
+    dot2 == FUNCTOR_dot2 || error("FUNCTOR_dot2 is not this database's '[|]'/2 word")
+    nilw == ATOM_nil || error("ATOM_nil is not this database's [] word")
     gd = PL_global_data{T}(
         gen_t(0),
         Dict{Definition{T}, dirty_def_info{T}}(),
@@ -222,8 +226,9 @@ const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 # which holds every bound value until its kind has a word form (atoms and small integers: stage C3;
 # floats, big numbers, strings: C4; compounds: L1c). Each entry is pinned by a BOX, a word of its own
 # on the global stack (`vbox`), so when `Undo` lowers `gTop` the table is truncated with it: an
-# entry never outlives the stack it shadows. Since stage C3 an atom and a small integer are their
-# own words (`TAG_ATOM`, `consInt`), off the table. An engine's atom words name atoms in its
+# entry never outlives the stack it shadows. Since stage C3 an atom is its own word (`TAG_ATOM`),
+# and since L1d step 4 a small integer (`consInt`, `TAG_INTEGER|STG_INLINE`; until then it stayed a
+# table entry), off the table. An engine's atom words name atoms in its
 # DATABASE's table (`atoms` is `GD->atoms`, the database the engine is made for: since L1b, before
 # C6b, every engine has one — two engines on one database share their atom words, as clause code
 # carrying words needs). An atom word's symbol is read from the DATABASE's store (`atom_symbols`,
@@ -312,6 +317,7 @@ mutable struct PL_local_data{T}
     atom_dexpr::UInt64                                          # GD's `$expr` (L1c)
     functor_dot2::UInt64                                        # GD's FUNCTOR_dot2 (L1c)
     atom_nil_w::UInt64                                          # GD's ATOM_nil word (L1c-6)
+    int_word_keys::Bool                                         # (a small integer keys by its word: L1d step 4)
     cold_exports::Int                                           # (compounds read as terms, L1c)
     cold_imports::Int                                           # (terms copied onto the stack)
     cold_vars::Int                                              # (cell variables read as terms, L1c-6)
@@ -404,6 +410,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         Int[],
         gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
         gd.functors, gd.atom_dexpr, gd.functor_dot2, gd.atom_nil_w,   # GD->functors (L1c); ATOM_nil (L1c-6)
+        _int_word_keys(T),                      # int_word_keys (L1d step 4)
         0, 0, 0, 0,                             # no export, import, variable read or boundary pair yet
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet

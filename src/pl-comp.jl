@@ -1038,15 +1038,15 @@ struct ca_frame{T}
 end
 
 # PORT: pl-comp.c FUNCTOR_dot2
-# DIVERGES: upstream's `FUNCTOR_dot2` is the handle of SWI-7's list constructor `'[|]'/2` in the
-# functor table (generated from src/ATOMS; pl-comp.c uses it); the kernel has none, so it is a fixed
-# functor word of its own — what `argKey` reads from `H_LIST`/`H_RLIST`/`H_LIST_FF` and `indexOfWord`
-# gives every list cell (`is_pair`), distinct from the key of any other `name/2` but by chance, as
-# any two keys (user, 2026-10-04). `listSupervisor` takes this key and `ATOM_nil` as IDENTITY, so a
-# hashed key equal to either is excluded by construction (`_unreserved`, src/pl-index.jl; the
-# divergence audit, S05).
-"The key of a list cell `'[|]'/2`: what `argKey` reads from `H_LIST*` and `indexOfWord` gives `[H|T]`."
-const FUNCTOR_dot2 = MK_FUNCTOR(UInt64(0x0004_c495_354e_4f43), UInt64(2))   # "LISTCONS"-ish, arity 2
+# (the handle itself is generated into pl-funct.ih from src/ATOMS; pl-comp.c uses it)
+# (L1d step 4) the handle of SWI-7's list constructor `'[|]'/2` in the functor table: a built-in
+# functor, registered in a fixed order in every database (`registerBuiltinFunctors`), so one word
+# names it everywhere — `PL_global_data` asserts it is the database's. What `argKey` reads from
+# `H_LIST`/`H_RLIST`/`H_LIST_FF` and `indexOfWord` gives every list cell (`is_pair`), as upstream;
+# `listSupervisor` takes it and `ATOM_nil` as identity (a value's hashed key is kept off both:
+# `_unreserved`, src/pl-index.jl).
+"The functor word of `'[|]'/2` (pl-funct.ih `FUNCTOR_dot2`): the same in every database."
+const FUNCTOR_dot2 = builtin_functor("dot", 2)
 
 # PORT: pl-comp.c compileListFF
 """
@@ -1070,7 +1070,10 @@ end
 # (`H_SMALLINT`), or the number or text itself, inline in the code (`H_MPZ`, `H_MPQ`, `H_FLOAT`,
 # `H_STRING`). The kernel has no atom or functor table and its terms are not cells, so a clause keeps
 # the terms themselves in a per-clause LITERAL TABLE and the operand is the (1-based) index of one:
-#   * `H_ATOM`, `H_SMALLINT`, `H_MPZ`, `H_MPQ`, `H_FLOAT`, `H_STRING` — `literals[op]` is the very
+#   * `H_SMALLINT`/`B_SMALLINT`/`L_SMALLINT` — since L1d step 4 the operand IS the tagged word, as
+#     upstream's (`consInt`): no literal; it decompiles to `mk_gnd(T, valInt(op))`, an `Int64`, and is
+#     emitted only for a term type that holds one (`_holds_payload`; else `H_MPZ` with a literal);
+#   * `H_ATOM`, `H_MPZ`, `H_MPQ`, `H_FLOAT`, `H_STRING` — `literals[op]` is the very
 #     term the clause held there, so decompiling restores its exact kind (`1` and `1.0`, `[]` and
 #     `'[]'` never collapse) and the VM compares by identity (`sym_key`, `gnd_equal`);
 #   * `H_FUNCTOR`, `H_RFUNCTOR` — ONE packed operand, `functor_operand(i, arity)`: the literal that
@@ -1239,7 +1242,8 @@ function _gnd_code(t, where_::Int)::code
     body = (where_ & A_BODY) != 0
     head = (where_ & A_HEAD) != 0
     if nk === NUM_INTEGER
-        if integer_is_int64(t) && PLMINTAGGEDINT <= int64_value(t) <= PLMAXTAGGEDINT
+        if _holds_payload(typeof(t), Int64) && integer_is_int64(t) &&
+            PLMINTAGGEDINT <= int64_value(t) <= PLMAXTAGGEDINT
             return body ? B_SMALLINT : H_SMALLINT              # storage(*arg) == STG_INLINE
         end
         return head ? H_MPZ : B_MPZ
@@ -1377,6 +1381,10 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
             @goto argvar
         end
         gc = _gnd_code(arg, where_)
+        if gc == H_SMALLINT || gc == B_SMALLINT    # the operand IS the word (L1d step 4: `consInt`)
+            Output_1!(ci, gc, consInt(int64_value(arg)))
+            @goto resume
+        end
         gl = addLiteral!(ci, arg)
         Output_1!(ci, gc, gc == H_ATOM || gc == B_ATOM ? atom_operand(gl, word(0)) : gl)
         @goto resume
@@ -2027,7 +2035,7 @@ function compileSimpleAddition(
                     isFirstVarSet!(ci.used_var, rvar)
                     Output_3!(
                         ci, A_ADD_FC, VAROFFSET(rvar), VAROFFSET(vi),
-                        addLiteral!(ci, mk_gnd(T, i))
+                        reinterpret(code, i)                   # the integer itself (L1d step 4)
                     )
                     return true
                 end
@@ -3209,7 +3217,9 @@ function decompile_head!(
             v = mk_nil(T)
         elseif c == H_ATOM
             v = PC.literals[atom_literal(PC.codes[PC.pc + 1])]  # the literal, exactly
-        elseif c == H_SMALLINT || c == H_MPZ || c == H_MPQ || c == H_FLOAT || c == H_STRING
+        elseif c == H_SMALLINT
+            v = mk_gnd(T, valInt(PC.codes[PC.pc + 1]))         # the tagged word's integer (L1d step 4)
+        elseif c == H_MPZ || c == H_MPQ || c == H_FLOAT || c == H_STRING
             v = PC.literals[PC.codes[PC.pc + 1]]                # the literal, exactly
         elseif c == H_FIRSTVAR || c == H_VAR
             v = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
@@ -3462,8 +3472,11 @@ function decompileBodyNoShift!(
         elseif op == B_ATOM || op == H_ATOM
             _dpush!(di, lits[atom_literal(codes[di.pc])])
             di.pc += 1
-        elseif op == B_SMALLINT || op == B_FLOAT || op == B_MPZ || op == B_MPQ ||
-            op == B_STRING || op == H_SMALLINT || op == H_FLOAT || op == H_MPZ ||
+        elseif op == B_SMALLINT || op == H_SMALLINT
+            _dpush!(di, mk_gnd(T, valInt(codes[di.pc])))      # the tagged word's integer (L1d step 4)
+            di.pc += 1
+        elseif op == B_FLOAT || op == B_MPZ || op == B_MPQ ||
+            op == B_STRING || op == H_FLOAT || op == H_MPZ ||
             op == H_MPQ ||
             op == H_STRING
             _dpush!(di, lits[codes[di.pc]])
@@ -3561,7 +3574,7 @@ function decompileBodyNoShift!(
         elseif op == A_ADD_FC
             push!(di.argp, _dvar(di, codes[di.pc]))             # rvar
             push!(di.argp, _dvar(di, codes[di.pc + 1]))         # ivar
-            push!(di.argp, lits[codes[di.pc + 2]])              # consInt(add)
+            push!(di.argp, mk_gnd(T, reinterpret(Int64, codes[di.pc + 2])))   # the integer operand (L1d step 4)
             di.pc += 3
             build_term!(di, mk_sym(T, Symbol("+")), 2)          # create B+<n>
             build_term!(di, mk_sym(T, :is), 2)
@@ -4006,13 +4019,32 @@ function skipArgs(PC::Code{T}, skip::Int, in_hvoid::Int)::Tuple{Code{T}, Int} wh
     end
 end
 
+# ORIGINAL (L1d step 4): the key of an `H_ATOM` at `PC` — upstream's `code2atom(*PC)`, the atom WORD
+# the packed operand carries (`atom_operand_word`); an opaque literal (no word: a value SWI has no
+# type for) its value's key.
+"The index key of the `H_ATOM` operand at `PC`: its atom word, or an opaque literal's value key."
+function _code_atom_key(PC::Code{T})::word where {T}
+    op = PC.codes[PC.pc]
+    w = atom_operand_word(op)
+    return w != 0 ? w : _value_index_key(PC.literals[atom_literal(op)])
+end
+
+# ORIGINAL (L1d step 4): the key of an `H_SMALLINT` at `PC` — its operand, the tagged word, where the
+# term type keys integers by their word (`_int_word_keys`, as the engine's `int_word_keys`); else the
+# value's key of the integer it holds, as the call side gives it.
+"The index key of the `H_SMALLINT` operand at `PC`: the tagged word, or the integer's value key."
+function _code_smallint_key(PC::Code{T})::word where {T}
+    op = PC.codes[PC.pc]
+    return _int_word_keys(T) ? op : _value_index_key(mk_gnd(T, valInt(op)))
+end
+
 # PORT: pl-comp.c argKey
 # DIVERGES: returns the key — 0 where upstream returns false — instead of a flag and an
-# out-parameter. The key of a literal instruction is `indexOfWord` of its literal (since V1 L2), where
-# upstream reads the atom (`code2atom`) or computes one (`consInt`, `murmur_key`, `bignum_index`):
-# so a grounded value without a key is not indexable, as `indexOfWord` makes it. An `H_FUNCTOR` is
-# keyed by its head symbol's literal and its arity, as `indexOfWord` keys the compound — and `$expr/n`
-# (literal 0, Q2, src/pl-ressymbol.jl) is a wildcard.
+# out-parameter. Since L1d step 4 the keys are upstream's: `H_ATOM` its atom word (`code2atom`),
+# `H_SMALLINT` its tagged word, `H_FUNCTOR` its functor word, `H_NIL` `ATOM_nil`, `H_LIST*`
+# `FUNCTOR_dot2`; a float, string, big integer or rational literal its value's key
+# (`_value_index_key`, the role `murmur_key`/`bignum_index` play) — so a grounded value without a key is
+# not indexable. `$expr/n` (literal 0, Q2, src/pl-ressymbol.jl) is a wildcard.
 """
     argKey(PC, skip) -> word
 
@@ -4030,11 +4062,13 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
             op = PC.codes[PC.pc]                                # code2functor(*PC)
             i = functor_literal(op)
             i == 0 && return word(0)                            # `$expr/n`: a wildcard
-            return _functor_word(_functor_name(PC.literals[i]), functor_arity(op))
+            return functor_operand_word(op)                     # the functor word (L1d step 4)
         elseif c == H_ATOM
-            return indexOfWord(PC.literals[atom_literal(PC.codes[PC.pc])])   # code2atom(*PC)
-        elseif c == H_SMALLINT || c == H_FLOAT || c == H_MPZ || c == H_MPQ || c == H_STRING
-            return indexOfWord(PC.literals[PC.codes[PC.pc]])   # consInt/murmur_key/…
+            return _code_atom_key(PC)                           # code2atom(*PC)
+        elseif c == H_SMALLINT
+            return _code_smallint_key(PC)                       # *key = (word)*PC
+        elseif c == H_FLOAT || c == H_MPZ || c == H_MPQ || c == H_STRING
+            return _value_index_key(PC.literals[PC.codes[PC.pc]])   # murmur_key/bignum_index
         elseif c == H_NIL
             return ATOM_nil                                     # *key = ATOM_nil
         elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST
@@ -4069,11 +4103,11 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
             op = PC.codes[PC.pc]                                # code2functor(*PC)
             i = functor_literal(op)
             i == 0 && return (false, word(0))                   # `$expr/n`: no functor
-            return (true, _functor_word(_functor_name(PC.literals[i]), functor_arity(op)))
+            return (true, functor_operand_word(op))             # the functor word (L1d step 4)
         elseif c == H_ATOM
-            return (true, indexOfWord(PC.literals[atom_literal(PC.codes[PC.pc])]))
-        elseif c == H_SMALLINT
-            return (true, indexOfWord(PC.literals[PC.codes[PC.pc]]))
+            return (true, _code_atom_key(PC))
+        elseif c == H_SMALLINT                              # (L1d step 4: the operand is the word)
+            return (true, _code_smallint_key(PC))
         elseif c == H_NIL
             return (true, ATOM_nil)
         elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST

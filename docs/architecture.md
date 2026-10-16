@@ -806,7 +806,6 @@ graph LR
     pl_atom --> pl_hash
     pl_atom --> pl_incl
     pl_atom --> SWI_Prolog
-    pl_atom --> pl_index
     pl_atom --> pl_inline
     pl_atom --> pl_ressymbol
     pl_termwalk --> term_interface
@@ -821,8 +820,8 @@ graph LR
     pl_index --> default_term
     pl_index --> pl_hash
     pl_index --> pl_incl
-    pl_index --> pl_atom
     pl_index --> pl_vmi
+    pl_index --> pl_funct
     pl_index --> pl_inline
     pl_index --> pl_prims
     pl_index --> pl_ressymbol
@@ -850,6 +849,7 @@ graph LR
     pl_global --> pl_modul
     pl_global --> pl_inline
     pl_global --> pl_ressymbol
+    pl_global --> pl_comp
     pl_global --> pl_wam
     pl_global --> pl_arith
     pl_global --> os_pl_text
@@ -878,6 +878,7 @@ graph LR
     pl_inline --> pl_copyterm
     pl_inline --> pl_alloc
     pl_inline --> pl_fli
+    pl_inline --> pl_gmp
     pl_inline --> os_pl_text
     pl_prims --> term_interface
     pl_prims --> default_term
@@ -923,6 +924,7 @@ graph LR
     pl_comp --> pl_wam
     pl_comp --> pl_fli
     pl_comp --> pl_error
+    pl_comp --> pl_gmp
     pl_comp --> pl_arith
     pl_comp --> os_pl_text
     pl_comp --> pl_proc

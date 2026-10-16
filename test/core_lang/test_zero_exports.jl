@@ -88,14 +88,15 @@ end
 #     30 × 48 = 1440, qsort 50 × 48 = 2400;
 #   * qsort's `X =< Y` arguments: each integer copied into a slot re-boxed into `slot_values`
 #     (`_slot_link!` → `_slot_store!`, 16) — 500 × 16 = 8000; 2400 + 8000 = 10400.
-# All of it is a small integer on the value table: L1d step 4 (tagged integer words) removes it and
-# moves these two numbers to 0. Constant per call: nothing (the `[]` word and its index key came off
-# the term path in L1c-6).
-"The bytes one warm call of `name` allocates, pinned per term type (above)."
+# All of it was a small integer on the value table: L1d step 4 (tagged integer words) removed it —
+# MEASURED 2026-10-17 on step 4's tree: alt and alt_interned 0 / 0 bytes per warm call, as the reference
+# type (Profile.Allocs: no LogicKernel site left). Constant per call: nothing (the `[]` word and its
+# index key came off the term path in L1c-6).
+"The bytes one warm call of `name` allocates, pinned per term type (above): zero on every type since L1d step 4."
 const _ZT_ALLOC_PIN = Dict(
     "reference" => Dict(:nreverse => 0, :qsort => 0),
-    "alt" => Dict(:nreverse => 1440, :qsort => 10400),
-    "alt_interned" => Dict(:nreverse => 1440, :qsort => 10400)
+    "alt" => Dict(:nreverse => 0, :qsort => 0),
+    "alt_interned" => Dict(:nreverse => 0, :qsort => 0)
 )
 @testset "a warm call of nreverse and qsort allocates exactly its pin (@allocated)" begin
     for name in (:nreverse, :qsort)

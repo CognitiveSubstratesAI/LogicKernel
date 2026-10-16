@@ -98,7 +98,7 @@ function _dliteral_refs(cl::LK.Clause{_D})::Vector{Int}
             LK.functor_literal(w) == 0 || push!(refs, LK.functor_literal(w))
         elseif c == LK.H_ATOM
             push!(refs, LK.atom_literal(w))                     # the packed operand (L1b C6b)
-        elseif c in (LK.H_SMALLINT, LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)
+        elseif c in (LK.H_MPZ, LK.H_MPQ, LK.H_FLOAT, LK.H_STRING)   # (H_SMALLINT: the word itself, L1d step 4)
             push!(refs, Int(w))
         end
         pc = LK.stepPC(pc)
@@ -138,12 +138,13 @@ end
                 @test ok
             end
         end
-        # the literal table holds the very terms, in code order
+        # the literal table holds the very terms, in code order — a small integer is NOT one since L1d
+        # step 4: its tagged word is the `H_SMALLINT` operand itself (`consInt`, as upstream)
         h = _de(:p, _dg(1), _de(:g, _dg(1.0)))
         cl = _dclause(h)
-        @test length(cl.literals) == 3                            # 1, g, 1.0
-        @test cl.literals[1] === child(h, 2) && cl.literals[3] === child(child(h, 3), 2)
-        @test lk_eq(cl.literals[2], _ds(:g))
+        @test length(cl.literals) == 2                            # g, 1.0 (1: its tagged word)
+        @test lk_eq(cl.literals[1], _ds(:g)) && cl.literals[2] === child(child(h, 3), 2)
+        @test cl.codes[2] == LK.consInt(1)                        # H_SMALLINT's operand: the word
     end
 
     @testset "a random head comes back as a variant of itself" begin
@@ -177,7 +178,7 @@ end
             cl = _dclause(h)
             @test sort(_dliteral_refs(cl)) == 1:length(cl.literals)   # no orphan, none twice
             for i in 0:(nchildren(h) - 2)
-                @test LK.argKey(LK.Code(cl, 1), i) == LK.indexOfWord(child(h, i + 2))
+                @test LK.argKey(LK.Code(cl, 1), i) == LK.indexOfWord(_DLD, child(h, i + 2))
             end
         end
     end
@@ -189,8 +190,8 @@ end
         @test [cl.codes[1], cl.codes[3]] == [LK.H_ATOM, LK.H_ATOM]
         @test lk_value(cl.literals[1]) === true                   # the value itself
         @test lk_value(cl.literals[2]) == [1.0, 2.0]
-        @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(t)
-        @test LK.argKey(LK.Code(cl, 1), 1) == LK.indexOfWord(v)
+        @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(_DLD, t)
+        @test LK.argKey(LK.Code(cl, 1), 1) == LK.indexOfWord(_DLD, v)
         # matched by `gnd_equal`: `true` is not `1`, `[1.0]` not `1.0` — indexed or not
         pr = ix_pred(_D, :o, 1)
         for x in (_dg(true), _dg(false), _dg([1.0]), _dg(1), _dg(1.0))

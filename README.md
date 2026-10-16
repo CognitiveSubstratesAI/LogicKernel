@@ -70,6 +70,14 @@ its database); it returns the answers as a vector (each the goal with its bindin
 of its own), throws an uncaught Prolog exception as a `PrologException` carrying its ball, and
 leaves the stacks as it found them. PROVISIONAL: the public Julia API is designed with R2.
 
+**Small integers come back as `Int64`** (L1d step 4, 2026-10-16). An integer in SWI-Prolog's tagged
+range (-2^56 .. 2^56-1, `PLMINTAGGEDINT`..`PLMAXTAGGEDINT`) is stored in the engine as a tagged word,
+as in SWI, and read back as `mk_gnd(T, x::Int64)` — whatever integer type it was put with. A term
+type whose payload holds an `Int32`, a `UInt8` or a small `BigInt` gets an `Int64` back for such a
+value; Prolog sees no difference (it has one integer type, and every comparison, unification, hash
+and index key is by value). An integer outside the tagged range keeps the value it was put with.
+Only term types that can hold an `Int64` store integers tagged (`_holds_payload(T, Int64)`).
+
 ## Layout — a mirror of swipl-devel
 
 A port lives at upstream's own path and keeps upstream's names: swipl-devel `src/pl-prims.c` →

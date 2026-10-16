@@ -1086,7 +1086,8 @@ end
 _argp_add(a::argp_t{T}, n::Int) where {T} = argp_t{T}(a.form, a.pos + n, a.term)
 
 # `deRef2(ARGP, p)` on the WORDS (L1c): where ARGP's value lives — `DREF_CELL`: an unbound cell, its
-# position in the second word; `DREF_WORD`: an atom or a compound, its word; `DREF_TERM`: a value
+# position in the second word; `DREF_WORD`: an atom, a compound or (L1d step 4) a small integer, its
+# word — every reader of it tests for a compound first; `DREF_TERM`: a value
 # with no word form (a value-table word, a `SLOT_VALUE`, a cursor's child), decided on terms.
 "`_argp_deref_word`: an unbound cell at the position returned."
 const DREF_CELL = 0x01
@@ -1103,7 +1104,7 @@ const DREF_TERM = 0x03
     if a.form == ARGP_SLOT
         w = ld.slots[a.pos + 1]
         if !isRef(w)
-            (isAtomW(w) || _is_gcompound(w)) && return (DREF_WORD, w)
+            (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) && return (DREF_WORD, w)
             return (DREF_TERM, word(0))
         end
         p = unRef(w)
@@ -1117,7 +1118,7 @@ const DREF_TERM = 0x03
         isVar(c) && return (DREF_CELL, word(p))
         if isRef(c)
             p = unRef(c)
-        elseif isAtomW(c) || _is_gcompound(c)
+        elseif isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)
             return (DREF_WORD, c)
         else
             return (DREF_TERM, word(0))
@@ -1126,12 +1127,14 @@ const DREF_TERM = 0x03
 end
 
 # ORIGINAL: upstream's `varFrame(FR, n) = (needsRef(*p) ? makeRefG(p) : *p)` (pl-vmi.c H_LIST_FF) for
-# slot `i` and global cell `p` (L1c): the cell's own word when it is an atom, a compound or a
-# reference; else a reference to the cell (an unbound cell, or a value-table word: no slot holds one).
+# slot `i` and global cell `p` (L1c): the cell's own word when it is an atom, a compound, a small
+# integer (L1d step 4) or a reference; else a reference to the cell (an unbound cell, or a value-table
+# word: no slot holds one).
 "Slot `i` takes global cell `p`'s word, or a reference to the cell (pl-vmi.c H_LIST_FF)."
 @inline function _slot_from_cell!(ld::PL_local_data, i::Int, p::Int)::Nothing
     c = ld.gstack[p]
-    ld.slots[i] = (isRef(c) || isAtomW(c) || _is_gcompound(c)) ? c : makeRefG(p)
+    ld.slots[i] =
+        (isRef(c) || isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)) ? c : makeRefG(p)
     return nothing
 end
 
@@ -1152,29 +1155,37 @@ const H_CONST_TERMS = Int8(-1)
 # `Trail!` trails a cell); any other atom word, and a compound (L1c), fails. A value-table word (a value with no word form
 # yet, a keyed variable among them) and a `SLOT_VALUE` slot are UNDECIDED: the VM decides on terms,
 # as before C6b, until L1d (unification over cells) gives them words.
-"h_const on slot `i`'s words for the atom word `c`: `H_CONST_MATCH`, `H_CONST_FAIL` or `H_CONST_TERMS`."
+"h_const on slot `i`'s words for the constant word `c` (an atom or, L1d step 4, a tagged integer): `H_CONST_MATCH`, `H_CONST_FAIL` or `H_CONST_TERMS`."
 @inline function _h_const_word!(ld::PL_local_data, i::Int, c::word)::Int8
     w = ld.slots[i]
-    if isRef(w)
-        p = unRef(w)
-        while true
-            k = ld.gstack[p]
-            k == c && return H_CONST_MATCH                          # *k == c
-            if isVar(k)                                             # canBind(*k)
-                _bind_const!(ld, p, c)                              # bindConst(k, c)
-                return H_CONST_MATCH
-            elseif isRef(k)
-                p = unRef(k)
-            elseif isAtomW(k) || _is_gcompound(k)
-                return H_CONST_FAIL
-            else
-                return H_CONST_TERMS                                # a value-table word
-            end
+    isRef(w) && return _h_const_cell!(ld, unRef(w), c)
+    w == c && return H_CONST_MATCH
+    (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) && return H_CONST_FAIL
+    return H_CONST_TERMS                                            # SLOT_VALUE
+end
+
+# PORT: pl-vmi.c h_const as _h_const_cell!
+# (its test and binding from global cell `p`: `deRef(ARGP)` through the cells)
+# DIVERGES: as `_h_const_word!`; since L1d step 4 a constant is an atom word OR a tagged integer
+# (`H_SMALLINT`'s operand), so a tagged word that is not `c` fails as an atom does (two different
+# small integers, or a small integer and an atom, never unify); also the VM's read-mode cursor into
+# a compound on the stack (`ARGP_GLOBAL`), which went through terms before.
+"h_const from global cell `p` for the constant word `c`: `H_CONST_MATCH`, `H_CONST_FAIL` or `H_CONST_TERMS`."
+@inline function _h_const_cell!(ld::PL_local_data, p::Int, c::word)::Int8
+    while true
+        k = ld.gstack[p]
+        k == c && return H_CONST_MATCH                              # *k == c
+        if isVar(k)                                                 # canBind(*k)
+            _bind_const!(ld, p, c)                                  # bindConst(k, c)
+            return H_CONST_MATCH
+        elseif isRef(k)
+            p = unRef(k)
+        elseif isAtomW(k) || _is_gcompound(k) || isTaggedIntW(k)
+            return H_CONST_FAIL
+        else
+            return H_CONST_TERMS                                    # a value-table word
         end
     end
-    w == c && return H_CONST_MATCH
-    (isAtomW(w) || _is_gcompound(w)) && return H_CONST_FAIL
-    return H_CONST_TERMS                                            # SLOT_VALUE
 end
 
 # The argument stack's height back to what query `q` saved (`aTop = QF->aSave`).
@@ -1840,14 +1851,12 @@ function PL_next_solution_guarded(
     @goto h_const
 
     # PORT: pl-vmi.c H_SMALLINT
-    # DIVERGES: no word (`consInt(i)`) until L1d — a small integer in a cell is still a value-table
-    # entry, so its compare is on terms (L1b C6b, user-approved).
+    # (L1d step 4) the operand IS the tagged word (`consInt`), as upstream's: h_const on the words.
     @label H_SMALLINT
     if UMODE == uwrite
         @goto B_SMALLINT
     end
-    hc_c = PCl[PCc[PC]]
-    hc_w = word(0)
+    hc_w = PCc[PC]                                  # c = (word)*PC++
     PC += 1
     @goto h_const
 
@@ -1858,8 +1867,12 @@ function PL_next_solution_guarded(
     # `gnd_equal`), an unbound variable (bound, trailed), anything else; there is no global stack to
     # grow.
     @label h_const
-    if hc_w != 0 && ARGP.form == ARGP_SLOT
-        hc_r = _h_const_word!(ld, ARGP.pos + 1, hc_w)
+    if hc_w != 0 && ARGP.form != ARGP_CURSOR
+        hc_r = if ARGP.form == ARGP_SLOT
+            _h_const_word!(ld, ARGP.pos + 1, hc_w)
+        else                                        # a cell of a compound on the stack (L1d step 4)
+            _h_const_cell!(ld, ARGP.pos, hc_w)
+        end
         if hc_r == H_CONST_MATCH
             ARGP = _argp_add(ARGP, 1)
             @goto next_instruction
@@ -1867,6 +1880,7 @@ function PL_next_solution_guarded(
             @goto unify_backtrack                   # CLAUSE_FAILED
         end
     end
+    isTaggedIntW(hc_w) && (hc_c = mk_gnd(T, valInt(hc_w)))     # H_SMALLINT's term, made only here (L1d step 4)
     if unify_simple_ptrs(ld, _argp_deref(ld, ARGP), hc_c) == BOOLEX_TRUE
         ARGP = _argp_add(ARGP, 1)
         @goto next_instruction
@@ -2034,7 +2048,7 @@ function PL_next_solution_guarded(
         UMODE = uwrite
         @goto next_instruction
     elseif hf_d == DREF_WORD
-        _is_gcompound(hf_w) || @goto unify_backtrack           # an atom
+        _is_gcompound(hf_w) || @goto unify_backtrack           # an atom or a small integer
         hf_q = valPtr(hf_w)
         if ld.gstack[hf_q] == hf_fw                 # hasFunctor(*p, f)
             ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)        # ARGP = argTermP(*p, 0)
@@ -2097,7 +2111,7 @@ function PL_next_solution_guarded(
         UMODE = uwrite
         @goto next_instruction
     elseif hl_d == DREF_WORD
-        _is_gcompound(hl_w) || @goto unify_backtrack           # an atom
+        _is_gcompound(hl_w) || @goto unify_backtrack           # an atom or a small integer
         hl_q = valPtr(hl_w)
         if ld.gstack[hl_q] == dot_f                 # valueTerm(w)->definition == FUNCTOR_dot2
             ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)        # ARGP = argTermP(w, 0)
@@ -2166,7 +2180,7 @@ function PL_next_solution_guarded(
             _is_gcompound(hff_w) &&
             nameFunctor(ld.functors, ld.gstack[valPtr(hff_w)]) == ld.atom_dexpr
         )
-            @goto unify_backtrack                   # an atom, or another functor
+            @goto unify_backtrack                   # an atom, a small integer, or another functor
         else                                        # the term path
             hff_p = _argp_deref(ld, ARGP)
             if is_pair(hff_p) ||
@@ -2208,8 +2222,16 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c B_SMALLINT
+    # (L1d step 4) the operand IS the tagged word: `*ARGP++ = (word)*PC++`, a slot or a global cell.
     @label B_SMALLINT
-    _argp_store!(ld, ARGP, PCl[PCc[PC]])
+    hc_w = PCc[PC]
+    if ARGP.form == ARGP_SLOT
+        ld.slots[ARGP.pos + 1] = hc_w
+    elseif ARGP.form == ARGP_GLOBAL
+        ld.gstack[ARGP.pos] = hc_w
+    else
+        error("B_SMALLINT: a body argument is written, never read")
+    end
     PC += 1
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -3073,9 +3095,9 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c L_SMALLINT
-    # DIVERGES: the operand indexes the literal table (since V1 L2).
+    # (L1d step 4) the operand IS the tagged word, as `B_SMALLINT`'s: the slot gets it.
     @label L_SMALLINT
-    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, PCl[PCc[PC + 1]])
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = PCc[PC + 1]
     PC += 2
     @goto next_instruction
 
@@ -3511,16 +3533,29 @@ function PL_next_solution_guarded(
 
     # ── arithmetic compiled inline (pl-vmi.c), V8 ─────────────────────────────────────────────────
     # PORT: pl-vmi.c A_ADD_FC
-    # DIVERGES: the integer operand is a literal (src/pl-vmi.jl). The fast path's test is an `Int64`
-    # in the TAGGED range, as upstream's `isTaggedInt`, so `v + add` cannot overflow; the sum is
-    # one `Int64` value (`put_int64`'s overflow branch cannot be taken). Writing the result's slot
-    # is not a binding (decision 2), as upstream's `*rp = w`. NOT PORTED: the `vmi_builtin=false`
-    # branch, which calls `is/2` (only the debugger and coverage clear the flag).
+    # DIVERGES: since L1d step 4 the integer operand is the integer itself, as upstream's
+    # `(intptr_t)*PC++`, and `B` is read on the WORDS: a tagged `*np` (`isTaggedInt`) gives
+    # `r = valInt(*np) + add`, stored as `consInt(r)` when tagged, else as the `Int64` term (the
+    # sum of a 57-bit and a portable small integer cannot overflow 64 bits). An in-range integer that
+    # arrived as a term (a `SLOT_VALUE`) takes the term test after it, as before. Writing the
+    # result's slot is not a binding (decision 2), as upstream's `*rp = w`. NOT PORTED: the
+    # `vmi_builtin=false` branch, which calls `is/2` (only the debugger and coverage clear the flag).
     @label A_ADD_FC
     af_rp = varFrameP(ld.frames[FR].base, Int(PCc[PC]))                 # A =
-    af_np = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1))  # B +
-    af_add = int64_value(PCl[PCc[PC + 2]])                              # <int>
+    af_vi = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1         # B +
+    af_add = reinterpret(Int64, PCc[PC + 2])                            # <int>: (intptr_t)*PC++
     PC += 3
+    af_k, af_vw, _ = _deref_loc(ld, -af_vi)                             # deRef2(varFrameP(FR, *PC++), np)
+    if af_k == DU_VALUE && isTaggedIntW(af_vw)                          # isTaggedInt(*np)
+        af_r = valInt(af_vw) + af_add
+        if PLMINTAGGEDINT <= af_r <= PLMAXTAGGEDINT
+            ld.slots[af_rp + 1] = consInt(af_r)                         # *rp = consInt(r)
+        else
+            setSlotValue!(ld, af_rp + 1, mk_gnd(T, af_r))               # put_int64(&w, r, 0)
+        end
+        @goto next_instruction
+    end
+    af_np = deRef(ld, slotValue(ld, af_vi))
     if number_kind(af_np) === NUM_INTEGER && integer_is_int64(af_np) &&
         PLMINTAGGEDINT <= int64_value(af_np) <= PLMAXTAGGEDINT          # isTaggedInt(*np)
         setSlotValue!(ld, af_rp + 1, mk_gnd(T, int64_value(af_np) + af_add))    # *rp = consInt(r)

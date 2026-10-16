@@ -658,10 +658,17 @@ function _ar_type_error(ld::PL_local_data{T}, expected::Symbol, p::T)::Bool wher
 end
 
 # PORT: pl-arith.c valueExpression
-# DIVERGES: the fast paths are an `Int64` integer and a float (upstream's: a tagged integer and a
-# float); `EXCEPTION_GUARDED` has nothing to guard — no `longjmp`.
+# DIVERGES: the first fast path is upstream's, on the WORD (L1d step 4): `expr` dereferenced to a
+# tagged integer gives `valInt`, no term read; then an `Int64` integer and a float on the term (a
+# value that arrived as a term, an indirect); `EXCEPTION_GUARDED` has nothing to guard — no `longjmp`.
 "Evaluate the expression `expr` refers to into `n` (pl-arith.c): the fast paths, else `evalExpression`."
 function valueExpression(ld::PL_local_data{T}, expr::term_t, n::number)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(expr + 1))                   # deRef(p)
+    if k == DU_VALUE && isTaggedIntW(w)                     # (TAG_INTEGER|STG_INLINE)
+        n.i = valInt(w)
+        n.type = V_INTEGER
+        return true
+    end
     p = deRef(ld, slotValue(ld, expr + 1))
     nk = number_kind(p)
     if nk === NUM_INTEGER && integer_is_int64(p)            # (TAG_INTEGER|STG_INLINE)

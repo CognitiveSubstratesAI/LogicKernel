@@ -30,7 +30,7 @@ _manifest_per_type(T) = (
     (is_reserved_symbol, Tuple{T}, true), (is_nil, Tuple{T}, true),
     (sym_text, Tuple{T}, false), (LK.charCode, Tuple{T}, false),     # R1a: an atom's text
     (is_pair, Tuple{T}, true),
-    (LK.isReservedSymbol, Tuple{T}, true), (LK._functor_name, Tuple{T}, true),
+    (LK.isReservedSymbol, Tuple{T}, true), (LK._value_index_key, Tuple{T}, true),  # a value's key (L1d step 4)
     (number_kind, Tuple{T}, true), (integer_is_int64, Tuple{T}, true),
     (int64_value, Tuple{T}, false), (bigint_value, Tuple{T}, false),
     (rational_value, Tuple{T}, false), (float_value, Tuple{T}, false),
@@ -137,6 +137,12 @@ _manifest_per_type(T) = (
     (LK._atom_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._atom_value_error, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
+    # tagged small integers (L1d step 4): the word of an integer, a value's word, a value word's term
+    (LK._tagged_int_word, Tuple{Type{T}, T}, true),
+    (LK._term_int_word, Tuple{LK.PL_local_data{T}, T}, true),
+    (LK._int_word_keys, Tuple{Type{T}}, true),             # two value terms, never on the heap
+    (LK._gnd_word!, Tuple{LK.PL_local_data{T}, T}, false),  # a value-table entry may grow the table
+    (LK._value_term, Tuple{LK.PL_local_data{T}, UInt64}, false),   # a tagged integer's term is MADE (L1d-4)
     # compounds on the global stack (L1c): the layout grows the stack; the two cold adapters allocate
     (LK._var_ref_word, Tuple{LK.PL_local_data{T}, T}, true),
     (LK.query_answers, Tuple{LK.PL_local_data{T}, T}, false),
@@ -163,12 +169,11 @@ _manifest_per_type(T) = (
     (LK._atom_word!, Tuple{LK.atoms_t, LK.atom_symbols{T}, T}, false),
     (LK.atom_symbols{T}, Tuple{}, false),
     (LK.atomSymbol, Tuple{LK.atom_symbols{T}, Int}, true),
-    (LK.atomIndexKey, Tuple{LK.atom_symbols{T}, Int}, true),     # the atom's index key (L1c-6)
     (LK.setAtomSymbol!, Tuple{LK.atom_symbols{T}, Int, T}, false),
     (LK.slotValue, Tuple{LK.PL_local_data{T}, Int}, false),   # L1c: the cold export
     # the slot words (L1b stage C5/C6a): reads, stores and moves allocate nothing; a fresh cell may
     # grow the global stack
-    (LK._slot_atom, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._slot_atom, Tuple{LK.PL_local_data{T}, UInt64}, false),    # a tagged integer's term is MADE (L1d-4)
     (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1c: the cold import
     (LK._slot_copy!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
     (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, false),  # L1c: the cold import
@@ -474,7 +479,9 @@ function _manifest_index(T)
         (LK.STATIC_RELOADING, Tuple{D}, true), (LK.cref_matches, Tuple{CR, UInt64}, true),
         (LK.is_clean_predicate, Tuple{D}, true), (LK.visibleClause, Tuple{C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{C, UInt64}, true),
-        (LK.canIndex, Tuple{T}, true), (LK.indexOfWord, Tuple{T}, true),
+        # the term path's keys (L1d step 4, TRANSITIONAL): an atom's word may be made, a functor's looked up
+        (LK.canIndex, Tuple{LK.PL_local_data{T}, T}, false),
+        (LK.indexOfWord, Tuple{LK.PL_local_data{T}, T}, false),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
@@ -1023,6 +1030,8 @@ function _manifest_index(T)
         (LK.mode_arg_is_unbound, Tuple{D, Int}, true),
         # the supervisors (src/pl-supervisor.jl): selecting one builds its code, so allocates
         (LK.arg1Key, Tuple{PCd}, true),
+        (LK._code_atom_key, Tuple{PCd}, true),
+        (LK._code_smallint_key, Tuple{PCd}, true),
         (LK._shared_supervisor, Tuple{LK.PL_code_data, Vector{LK.code}}, true),
         (LK.freeSupervisor, Tuple{D, Vector{LK.code}, Bool}, true),
         (LK.freeCodesDefinition!, Tuple{D, Bool}, true),
@@ -1074,6 +1083,7 @@ function _manifest_index(T)
         (LK._cell_link!, Tuple{LD, Int, Int}, false),
         (LK._slot_from_cell!, Tuple{LD, Int, Int}, true),
         (LK._h_const_word!, Tuple{LD, Int, UInt64}, false),     # a binding may grow the trail
+        (LK._h_const_cell!, Tuple{LD, Int, UInt64}, false),     # … from a global cell (L1d step 4)
         (LK._reset_argument_stack!, Tuple{LD, LK.queryFrame{T}}, true),
         (LK._slow_unify, Tuple{LD}, true),
         (LK._is_expr3, Tuple{T}, true),
@@ -1485,7 +1495,7 @@ _index_entry_points(T) = (
         true
     ),
     (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
-    (LK.indexOfWord, Tuple{T}, true)
+    (LK.indexOfWord, Tuple{LK.PL_local_data{T}, T}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
@@ -1541,11 +1551,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isFirstVar, Tuple{BitVector, Int}, true),
     (LK.MSB, Tuple{Int}, true), (LK.MSB, Tuple{UInt32}, true),
     (LK.clean_index_key, Tuple{UInt64}, true), (LK.hashIndex, Tuple{UInt64, UInt32}, true),
-    (LK._functor_word, Tuple{UInt64, Int}, true),
-    # the reserved index keys, by construction (the divergence audit, S05)
     (LK._loc_rank, Tuple{UInt8, UInt64}, true),   # the order's tag rank of a location (L1d-1): no T
-    (LK._unreserved, Tuple{UInt64}, true), (LK._atom_key, Tuple{UInt64}, true),
-    (LK._functor_key, Tuple{UInt64, Int}, true), (LK._gnd_index_key, Tuple{UInt64}, true),
+    # a value's hashed key kept off the reserved words (the divergence audit, S05; L1d step 4: values only)
+    (LK._unreserved, Tuple{UInt64}, true), (LK._gnd_index_key, Tuple{UInt64}, true),
     (LK.join_multi_arg_keys, Tuple{NTuple{4, UInt64}, Int}, true),
     (LK.consider_better_index, Tuple{Float32, UInt32}, true),
     (LK.cmp_iarg, Tuple{UInt8, UInt8}, true),
@@ -2041,12 +2049,18 @@ const L1C_ALLOC_EXEMPT = [
     # with the keyed variables and the stamp (L1f). Joined the one ratchet 2026-10-16 (L1d batch 1)
     (LK._boundary_is_var, "L1f", :boundary),
     (LK._boundary_slot_link!, "L1f", :boundary),
-    (LK._boundary_slot_link_value!, "L1f", :boundary)
+    (LK._boundary_slot_link_value!, "L1f", :boundary),
+    # a tagged integer's TERM, made where a reader asks for a term (L1d step 4: the integer is its own
+    # word, no value-table entry to hand back) — the cold export of a number; the hot readers
+    # (unification, compare, the index, arithmetic, the VM's constants) decide on the word
+    (LK._value_term, "L1f", :cold), (LK._slot_atom, "L1f", :cold)
 ]
 "The ratchet: L1c's exemptions may only fall (measured 25, 2026-10-15; 26 on 2026-10-16: `_cell_var`, the
 migration of the eager per-cell variable term to the counted on-demand adapter — logged; 29 on
-2026-10-16, L1d batch 1: the three `:boundary` frames the call-path test kept in its own list before)."
-const L1C_ALLOC_EXEMPT_MAX = 29
+2026-10-16, L1d batch 1: the three `:boundary` frames the call-path test kept in its own list before); 31 on
+2026-10-17, L1d step 4: `_value_term` and `_slot_atom` MAKE a tagged integer's term — measured by the full
+static-analysis file, logged)."
+const L1C_ALLOC_EXEMPT_MAX = 31
 
 const DISPATCH_EXEMPT = (
     (
