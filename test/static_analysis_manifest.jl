@@ -1991,40 +1991,58 @@ const DISPATCH_MANIFEST = _manifest_entries(_DISPATCH_MANIFEST_TUPLE)
 # through the transitional term boundary (the cold export or import). Each names the step at which
 # it is allocation-free again; the list may only SHRINK (`L1C_ALLOC_EXEMPT_MAX`, measured 25), and
 # test/static_analysis_body.jl checks that each listed function is marked allocating. A NEW
-# exemption joins this list, with its step — never silently.
+# exemption joins this list, with its step — never silently. Each entry carries its KIND (L1d
+# batch 1, 2026-10-16): `:cold`, a reader or writer that reaches the term boundary off the VM's
+# call path (the cold export or import); `:boundary`, a frame the call path itself allocates
+# under, which the call-path test filters by THIS tag — no second hand-kept name list.
 "The steps that return an L1c exemption to allocation-free."
 const L1C_STEPS = ("L1c-5", "L1d", "L1e", "L1f")
-"L1c's allocation exemptions: (function, the step at which it is allocation-free again)."
+"The kinds of an L1c exemption: off the call path, or a frame the call path allocates under."
+const L1C_EXEMPT_KINDS = (:cold, :boundary)
+"L1c's allocation exemptions: (function, the step at which it is allocation-free again, its kind)."
 const L1C_ALLOC_EXEMPT = [
     # the term reads that reach a compound's cold export: until no reader takes a term (L1f, with
     # copy_term over cells and the keyed variables gone)
-    (LK.deRef, "L1f"), (LK._binding, "L1f"), (LK._cell_value, "L1f"),
-    (LK.slotValue, "L1f"), (LK.linkValI, "L1f"), (LK._argp_raw, "L1f"),
-    (LK._argp_deref, "L1f"),
+    (LK.deRef, "L1f", :cold), (LK._binding, "L1f", :cold), (LK._cell_value, "L1f", :cold),
+    (LK.slotValue, "L1f", :cold), (LK.linkValI, "L1f", :cold), (LK._argp_raw, "L1f", :cold),
+    (LK._argp_deref, "L1f", :cold),
     # the term writes that reach the cold import: until the FLI and the built-ins write cells (L1e)
-    (LK._slot_store!, "L1e"), (LK._slot_link!, "L1e"), (LK._argp_store!, "L1e"),
-    (LK.PL_put_term, "L1e"),
+    (LK._slot_store!, "L1e", :cold), (LK._slot_link!, "L1e", :cold),
+    (LK._argp_store!, "L1e", :cold),
+    (LK.PL_put_term, "L1e", :cold),
     # the FLI type checks on a compound: words at L1e
-    (LK.PL_is_integer, "L1e"), (LK.PL_is_float, "L1e"), (LK.PL_is_rational, "L1e"),
-    (LK.PL_is_compound, "L1e"), (LK.PL_is_callable, "L1e"), (LK.PL_is_string, "L1e"),
-    (LK.PL_is_atom, "L1e"), (LK.PL_is_atomic, "L1e"), (LK.PL_is_number, "L1e"),
-    (LK.PL_is_variable, "L1e"),
+    (LK.PL_is_integer, "L1e", :cold), (LK.PL_is_float, "L1e", :cold),
+    (LK.PL_is_rational, "L1e", :cold),
+    (LK.PL_is_compound, "L1e", :cold), (LK.PL_is_callable, "L1e", :cold),
+    (LK.PL_is_string, "L1e", :cold),
+    (LK.PL_is_atom, "L1e", :cold), (LK.PL_is_atomic, "L1e", :cold),
+    (LK.PL_is_number, "L1e", :cold),
+    (LK.PL_is_variable, "L1e", :cold),
     # the term agenda of unification and comparison: over cells at L1d
-    (LK.nextTermAgenda!, "L1d"),
+    (LK.nextTermAgenda!, "L1d", :cold),
     # first-argument indexing: on the WORDS since L1c sub-commit 5 (2026-10-16) — no export in the
     # hot path (nreverse/qsort: measured) — but the frame and cell forms still REACH the boundary
     # statically (a slot's side value, a keyed variable's binding: `_loc_term`), which AllocCheck
     # sees; they go with the keyed variables (L1f). Moved L1c-5 → L1f, logged (unattended rule)
-    (LK.argv_at, "L1f"), (LK.indexKeyFromArgv, "L1f"), (LK.is_satifies_index, "L1f"),
+    (LK.argv_at, "L1f", :cold), (LK.indexKeyFromArgv, "L1f", :cold),
+    (LK.is_satifies_index, "L1f", :cold),
     # the counted adapter for variables (L1c sub-commit 6, 2026-10-16): a cell's variable term is
     # BUILT per read instead of kept per cell (`gvars`, built at allocation whether wanted or not:
     # 1516 of nreverse's 1516 allocations per call); the hot path never calls it (the zero-export
     # test), the cold readers do until they take words (L1e) and the stamp falls (L1f)
-    (LK._cell_var, "L1f")
+    (LK._cell_var, "L1f", :cold),
+    # the BOUNDARY's term reads out of line (L1c-6 fix, 5ebcb5d): a keyed variable or a value with no
+    # word yet, read as a term from the call path's own instructions — the call-path test exempts
+    # these frames BY THIS TAG (`:boundary`), the hot path's zero is test_zero_exports.jl's; they go
+    # with the keyed variables and the stamp (L1f). Joined the one ratchet 2026-10-16 (L1d batch 1)
+    (LK._boundary_is_var, "L1f", :boundary),
+    (LK._boundary_slot_link!, "L1f", :boundary),
+    (LK._boundary_slot_link_value!, "L1f", :boundary)
 ]
 "The ratchet: L1c's exemptions may only fall (measured 25, 2026-10-15; 26 on 2026-10-16: `_cell_var`, the
-migration of the eager per-cell variable term to the counted on-demand adapter — logged)."
-const L1C_ALLOC_EXEMPT_MAX = 26
+migration of the eager per-cell variable term to the counted on-demand adapter — logged; 29 on
+2026-10-16, L1d batch 1: the three `:boundary` frames the call-path test kept in its own list before)."
+const L1C_ALLOC_EXEMPT_MAX = 29
 
 const DISPATCH_EXEMPT = (
     (

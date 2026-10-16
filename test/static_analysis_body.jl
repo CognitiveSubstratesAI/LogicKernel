@@ -125,12 +125,14 @@ end
         # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
         # sites are not the call path's; every other site in the spans still is
         # L1c-6 (2026-10-16): the BOUNDARY's term reads — a keyed variable or a value with no word yet,
-        # TRANSITIONAL until the stamp falls (L1f), as the L1c AllocCheck exemptions (`_cell_var`,
-        # `deRef`: L1C_ALLOC_EXEMPT) — are out of line under these names; the run time's zero on the
-        # hot path is test/core_lang/test_zero_exports.jl's (cold_exports/imports/vars unchanged)
-        _boundary_frames = (
-            :_boundary_is_var, :_boundary_slot_link!, :_boundary_slot_link_value!
+        # TRANSITIONAL until the stamp falls (L1f) — are out of line under the frames the ratchet
+        # tags `:boundary` (L1C_ALLOC_EXEMPT, static_analysis_manifest.jl: one list, L1d batch 1);
+        # the run time's zero on the hot path is test/core_lang/test_zero_exports.jl's
+        # (cold_exports/imports/vars unchanged)
+        _boundary_frames = Tuple(
+            nameof(f) for (f, _, kind) in L1C_ALLOC_EXEMPT if kind === :boundary
         )
+        @test !isempty(_boundary_frames)            # the tag selects (3 frames, 2026-10-16)
         cold(a) = any(
             fr -> fr.func === :getProcDefinedDefinition || fr.func in _boundary_frames,
             a.backtrace
@@ -153,8 +155,9 @@ end
         # L1c's allocation exemptions: a ratchet, each naming its step (static_analysis_manifest.jl)
         @test length(L1C_ALLOC_EXEMPT) <= L1C_ALLOC_EXEMPT_MAX
         @test length(unique(first.(L1C_ALLOC_EXEMPT))) == length(L1C_ALLOC_EXEMPT)
-        for (f, step) in L1C_ALLOC_EXEMPT
+        for (f, step, kind) in L1C_ALLOC_EXEMPT
             @test step in L1C_STEPS
+            @test kind in L1C_EXEMPT_KINDS
             es = [e for e in DISPATCH_MANIFEST if e[1] === f]
             @test !isempty(es) && all(e -> !e[3], es)   # listed ⇒ marked allocating
         end
