@@ -44,6 +44,22 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         )
     end
 
+    # user, 2026-10-16: a file that includes term_under_test.jl in another form would run on the
+    # reference type only, silently — it stops the suite instead
+    @testset "an include of term_under_test.jl in another form stops the suite" begin
+        inc = "include(joinpath(@__DIR__, \"..\", \"term_under_test.jl\"))\n"
+        flat = "include(joinpath(@__DIR__, \"term_under_test.jl\"))\n"        # a file directly in test/
+        deep = "include(joinpath(@__DIR__, \"..\", \"..\", \"term_under_test.jl\"))\n"
+        @test lk_term_include_check("f", inc) === nothing
+        @test lk_term_include_check("f", "include(\"x.jl\")\n") === nothing
+        @test_throws ErrorException lk_term_include_check("f", flat)
+        @test_throws ErrorException lk_term_include_check("f", deep)
+        mktempdir() do d                                   # … and the scan of a tree uses it
+            write(joinpath(d, "test_flat.jl"), flat)
+            @test_throws ErrorException lk_term_scopes(d)
+        end
+    end
+
     @testset "the term types: a trigger or a milestone runs all, anything else a chunk" begin
         triggers = lk_term_triggers(_GS_ROOT)
         @test all(in(triggers), LK_TERM_LAYER) && all(in(triggers), LK_TERM_GATE_LOGIC)
@@ -740,6 +756,20 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 @test push_(badc, "refs/heads/gate/x") == 0
                 @test push_(gs_commit(noreply, noreply), "refs/heads/gate/x") == 0   # new, on top
                 @test push_("e"^40, "refs/heads/gate/x") == 1               # unknown: fails closed
+            end
+            # 4. A wip/ BRANCH NEVER PUSHES (user, 2026-10-16): its commits carry no evidence
+            @testset "a wip/ branch never pushes" begin
+                @test push_(sha, "refs/heads/wip/l1d") == 1                # to a wip/ name
+                wip_push(local_ref, remote_ref) = exitof(
+                    pipeline(
+                        IOBuffer("$local_ref $sha $remote_ref $("0" ^ 40)\n"),
+                        Cmd(`bash $hook origin https://x`; dir=repo)
+                    ),
+                    "LOGICKERNEL_CI_FIXTURE" => fx,
+                    "LOGICKERNEL_PUSH_LOCAL_EVIDENCE" => nothing
+                )
+                @test wip_push("refs/heads/wip/l1d", "refs/heads/gate/x") == 1   # FROM a wip/ branch
+                @test wip_push("refs/heads/gate/x", "refs/heads/gate/x") == 0    # the control
             end
         end
         rm(gs_dir; recursive=true)

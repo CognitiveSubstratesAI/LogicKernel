@@ -16,6 +16,10 @@
 #   tools/warm.sh bench [bench.jl args]    # tools/bench.jl in the daemon: no JIT in the timings
 #   tools/warm.sh check                    # the formatter and port_check alone (seconds): after an
 #                                          # edit to a header, a marker or the inventory
+#   tools/warm.sh fmt                      # the formatter in WRITE mode on the changed .jl files, WARM —
+#                                          # run before check/branch-gate
+#   tools/warm.sh inventory                # port_check.jl --write-inventory, WARM: the generated blocks
+#                                          # rewritten, then port_check (no cold julia)
 #   tools/warm.sh preflight                # WARM: what a full run would fail on, BEFORE one (exit 0/1);
 #                                          # a stale daemon (a deleted method it kept) is restarted
 #                                          # and the preflight rerun once
@@ -303,6 +307,11 @@ _file() {
     if grep -qE '^include\(joinpath\(@__DIR__, "\.\.", "term_under_test\.jl"\)\)' "$f"; then
         impls='("reference", "alt", "alt_interned")'
         [ -n "$impl" ] && impls="(\"$impl\",)"
+    elif [ -n "$impl" ] && [ "$impl" != reference ]; then
+        # (user, 2026-10-16) a non-generic file has ONE run, on the reference type: an alternative
+        # type asked for it was dropped without a word — the run claimed a type it never used
+        echo "warm lane: $f is not term-generic (it does not include ../term_under_test.jl as test/term_scope.jl reads it): a '$impl' run is impossible — it would run on the reference type only (exit 2)" >&2
+        return 2
     fi
     local snippet="$DIR/file_snippet.jl" out="$DIR/file_out.$$" rc
     cat > "$snippet" <<JL
@@ -566,8 +575,16 @@ _preflight_once() {
     fi
     echo "preflight: the static-analysis gate"
     local log="$DIR/preflight_test_static_analysis.log"
-    _file test/test_static_analysis.jl > "$log" 2>&1 || { rc=1; PF_SA_FAIL=1; echo "preflight: FAILED — $log"; }
-    grep -E "\.jl \[|\.jl  *\||Test Failed|Error During|NOT CHECKED|allocates:" "$log"
+    if [ "${LOGICKERNEL_PREFLIGHT_STUB_STATIC:-}" = 1 ]; then       # TEST SEAM (tools/test_warm.sh)
+        # (user, 2026-10-16) the tooling tests check the preflight's LOGIC, not JET's verdict on the
+        # engine: the full file is 25–28 min on a daemon started cold, ~2 min warm — the same case
+        # passed or failed on the daemon's warmth, and ran past the send's 1800 s that afternoon.
+        # The fast pre-check above stays real; the full file is the pre-push step. No marker (below).
+        echo "preflight: test/test_static_analysis.jl STUBBED (LOGICKERNEL_PREFLIGHT_STUB_STATIC: the tooling tests only) — no evidence"
+    else
+        _file test/test_static_analysis.jl > "$log" 2>&1 || { rc=1; PF_SA_FAIL=1; echo "preflight: FAILED — $log"; }
+        grep -E "\.jl \[|\.jl  *\||Test Failed|Error During|NOT CHECKED|allocates:" "$log"
+    fi
     # The TREE-WIDE gates run on every preflight, changed or not: they check src/, so a src edit can
     # fail them while their own file is unchanged (V4a, MEASURED: an `@inbounds` in pl-inline.jl
     # passed the preflight and failed test_type_discipline.jl in the cold evidence run).
@@ -684,8 +701,10 @@ _branch_gate_files() {
         printf '%s\n' "$changed" | grep -E '^test/(.*/)?test_[^/]*\.jl$'
         for h in $helpers; do
             re=$(basename "$h" | sed 's/\./\\./g')
-            (cd "$ROOT" && grep -rlE --include='test_*.jl' "include\(.*[\"/]$re\"" test 2> /dev/null)
-        done
+            (cd "$ROOT" && grep -rlE --include='test_*.jl' "include\(.*[\"/]$re\"" test 2> /dev/null) ||
+                [ $? -eq 1 ]        # no includer is fine; grep's 2 (a bad pattern, a missing file) still fails
+        done                        # (under pipefail the LAST grep's status was the list's: exit 1 for a helper
+                                    # no test file includes — user, 2026-10-16)
     } | grep -vxF "${LOGICKERNEL_BRANCH_GATE_CI_ONLY-test/test_static_analysis.jl}" | sort -u
 }
 
@@ -829,6 +848,51 @@ case "$cmd" in
         echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest) in $(( $(date +%s) - _ck_t0 ))s"
         (exit "$_ck_rc")
         ;;
+    fmt)
+        # (user, 2026-10-16) the formatter in WRITE mode on the CHANGED files, in the warm daemon — run it
+        # before `check`/`branch-gate`, so the check never fails on format (three such failures that
+        # day, each a hand-wrapped line and a lost cycle). Changed = tracked .jl files differing from
+        # HEAD (added, copied, modified, renamed) and untracked ones, as `check` would find them.
+        _fm_files=$(
+            {
+                git -C "$ROOT" diff --name-only --diff-filter=ACMR HEAD -- '*.jl'
+                git -C "$ROOT" ls-files --others --exclude-standard -- '*.jl'
+            } | sort -u
+        )
+        if [ -z "$_fm_files" ]; then
+            echo "fmt: no changed .jl file"
+            exit 0
+        fi
+        _running || _start > /dev/null || exit 1
+        {
+            echo 'using JuliaFormatter'
+            echo 'let n = 0'
+            while IFS= read -r _fm_f; do
+                printf '    format(raw"%s/%s") || (n += 1; println("fmt: formatted %s"))\n' "$ROOT" "$_fm_f" "$_fm_f"
+            done <<< "$_fm_files"
+            echo '    println("fmt: ", n, " file(s) rewritten; every changed file is Blue-clean")'
+            echo 'end'
+        } > "$DIR/fmt_snippet.jl"
+        _send "$DIR/fmt_snippet.jl"
+        ;;
+    inventory)
+        # (user, 2026-10-16) `port_check.jl --write-inventory` in the WARM daemon: the generated blocks
+        # (docs/port_inventory.md, the coverage and the code graph in docs/architecture.md) rewritten,
+        # then port_check run — the current checker in a fresh module, as `check` loads it. A cold
+        # `julia tools/port_check.jl --write-inventory` needed the workspace hook's cold-start marker.
+        _running || _start > /dev/null || exit 1
+        cat > "$DIR/inventory_snippet.jl" <<JL
+let pc = Module(:WarmInventory)
+    Base.include(pc, raw"$ROOT/tools/port_check.jl")
+    println("inventory: wrote ", Base.invokelatest(() -> pc.write_inventory(raw"$ROOT")))
+    r = Base.invokelatest(() -> pc.port_check(raw"$ROOT"))
+    foreach(x -> println("  ", x), r.violations)
+    isempty(r.violations) || error("inventory: port_check found violations after the rewrite")
+    println("inventory: port_check clean (", length(r.files), " files)")
+end
+JL
+        _send "$DIR/inventory_snippet.jl"
+        ;;
     preflight)
         # A PASSED PREFLIGHT IS EVIDENCE FOR A BRANCH COMMIT (user, 2026-10-13: the gate is CI's —
         # commit on a branch after the local preflight, push it as gate/<name>, evidence.yml judges
@@ -840,8 +904,11 @@ case "$cmd" in
         command -v start_marker >/dev/null 2>&1 && _pf_fp="$(start_marker "$ROOT")"
         _preflight
         _pf_rc=$?
-        command -v write_marker >/dev/null 2>&1 &&
-            write_marker "$ROOT" "$_pf_rc" "preflight (warm, the chunk's term types: evidence for a BRANCH commit, never for main)" "$_pf_fp"
+        # a preflight whose static-analysis step was STUBBED (the tooling tests' seam) is no evidence
+        if [ "${LOGICKERNEL_PREFLIGHT_STUB_STATIC:-}" != 1 ]; then
+            command -v write_marker >/dev/null 2>&1 &&
+                write_marker "$ROOT" "$_pf_rc" "preflight (warm, the chunk's term types: evidence for a BRANCH commit, never for main)" "$_pf_fp"
+        fi
         (exit "$_pf_rc")
         ;;
     branch-gate)
