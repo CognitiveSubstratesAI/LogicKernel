@@ -1,10 +1,11 @@
 # ORIGINAL: the clause index's argument view (V4a); upstream exercises it only through its VM.
 # test/db/test_index_argv.jl — upstream's index readers (`indexOfWord`, `canIndex`, `is_var`)
 # FOLLOW REFERENCES, so a BOUND argument keys by its value and narrows the search. The kernel's
-# `argv_at` dereferences through the bindings for both views of the arguments — `argv_frame`, a
-# frame's argument slots (what the VM passes, where a slot almost always holds a variable bound to
-# the argument), and `argv_term`, a goal's arguments. Without the dereference no bound argument
-# would narrow, and the determinism the VM reports would differ from swipl's. TERM-GENERIC.
+# key reader `_argv_key` dereferences through the bindings for both views of the arguments —
+# `argv_frame`, a frame's argument slots (what the VM passes, where a slot almost always holds a
+# variable bound to the argument; read on the WORDS since L1c sub-commit 5), and `argv_term`, a goal's
+# arguments (`argv_at`). Without the dereference no bound argument would narrow, and the determinism
+# the VM reports would differ from swipl's. TERM-GENERIC.
 using Test, LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -47,7 +48,8 @@ end
     X, Y = mk_var(_A, UInt64(1)), mk_var(_A, UInt64(2))
     LK.Trail!(ld, var_key(X), _ag(7))                       # X = 7, then call p(X, Y)
     for argv in _a_views(ld, X, Y)
-        @test LK.argv_at(argv, 0) === LK.deRef(ld, X) && lk_eq(LK.argv_at(argv, 0), _ag(7))
+        # both views key the argument by its value, 7, and see no variable there
+        @test LK._argv_key(argv, 0) == LK.indexOfWord(_ag(7)) && !LK._argv_is_var(argv, 0)
         c, more = _a_first(p, argv)
         @test c !== nothing && c.key == LK.indexOfWord(_ag(7))  # the clause p(7, a) …
         @test !more                                             # … and no clause choice left
