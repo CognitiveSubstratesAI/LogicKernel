@@ -665,6 +665,25 @@ end
     return nothing
 end
 
+# ORIGINAL (L1c-6): `_slot_link!`'s two TERM branches, out of line — a value-table entry (a value with
+# no word yet, a keyed variable) and a slot's side value, each dereferenced as a term: the BOUNDARY,
+# TRANSITIONAL until the stamp falls (L1f). `@noinline`, so the VM's word path carries no term read
+# (the call path's AllocCheck exempts exactly these, by name: test/static_analysis_body.jl).
+"Store the value-table entry `t`, dereferenced, in slot `to` (`_slot_link!`'s boundary)."
+@noinline function _boundary_slot_link!(
+    ld::PL_local_data{T}, to::Int, t::T
+)::Nothing where {T}
+    _slot_store!(ld, to, deRef(ld, t))
+    return nothing
+end
+"Store slot side value `t`, dereferenced, in slot `to` as a value (`_slot_link!`'s boundary)."
+@noinline function _boundary_slot_link_value!(
+    ld::PL_local_data{T}, to::Int, t::T
+)::Nothing where {T}
+    _slot_store_value!(ld, to, deRef(ld, t))
+    return nothing
+end
+
 # ORIGINAL: a fresh cell variable referenced from slot `i` (L1b stage C5) — upstream's `setVar` of a
 # new global cell and its `makeRefG` into the frame — with no term built.
 "Allocate a fresh cell variable and store its reference in slot `i`; returns its position."
@@ -769,12 +788,12 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
                 ld.slots[to] = c
                 return nothing
             else
-                _slot_store!(ld, to, deRef(ld, ld.vtable[valPtr(c)]))
+                _boundary_slot_link!(ld, to, ld.vtable[valPtr(c)])   # a value-table entry
                 return nothing
             end
         end
     elseif w == SLOT_VALUE                          # a value stays a value (L1c: the ball)
-        _slot_store_value!(ld, to, deRef(ld, ld.slot_values[from]))
+        _boundary_slot_link_value!(ld, to, ld.slot_values[from])
     else
         (isAtomW(w) || _is_gcompound(w)) || throw(_slot_word_error(w))
         ld.slots[to] = w

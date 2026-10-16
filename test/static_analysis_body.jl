@@ -124,7 +124,17 @@ end
         # `autoImport`, which may create a procedure, or `S_UNDEF`'s supervisor) runs once per
         # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
         # sites are not the call path's; every other site in the spans still is
-        cold(a) = any(fr -> fr.func === :getProcDefinedDefinition, a.backtrace)
+        # L1c-6 (2026-10-16): the BOUNDARY's term reads — a keyed variable or a value with no word yet,
+        # TRANSITIONAL until the stamp falls (L1f), as the L1c AllocCheck exemptions (`_cell_var`,
+        # `deRef`: L1C_ALLOC_EXEMPT) — are out of line under these names; the run time's zero on the
+        # hot path is test/core_lang/test_zero_exports.jl's (cold_exports/imports/vars unchanged)
+        _boundary_frames = (
+            :_boundary_is_var, :_boundary_slot_link!, :_boundary_slot_link_value!
+        )
+        cold(a) = any(
+            fr -> fr.func === :getProcDefinedDefinition || fr.func in _boundary_frames,
+            a.backtrace
+        )
         @test any(cold, allocs)                     # the exemption matches real sites
         attributed = Int[]
         for a in allocs

@@ -172,6 +172,9 @@ _manifest_per_type(T) = (
     (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1c: the cold import
     (LK._slot_copy!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
     (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, false),  # L1c: the cold import
+    # L1c-6: the boundary's term reads out of line (the VM's word path carries none)
+    (LK._boundary_slot_link!, Tuple{LK.PL_local_data{T}, Int, T}, false),
+    (LK._boundary_slot_link_value!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK._slot_new_var!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK._cell_key, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK._cell_var, Tuple{LK.PL_local_data{T}, Int}, false),   # L1c-6: the counted adapter builds the term
@@ -191,6 +194,8 @@ _manifest_per_type(T) = (
     # unification on the cells (L1c sub-commit 4): the deref and the walk allocate nothing; the
     # boundary (a term) and the agenda's growth do
     (LK._deref_loc, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK._slot_is_var, Tuple{LK.PL_local_data{T}, Int}, false),     # I_VAR/I_NONVAR on the words (L1c-6)
+    (LK._boundary_is_var, Tuple{LK.PL_local_data{T}, UInt64, Int}, false),
     (LK._loc_term, Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int}, false),
     (
         LK.unify_simple_cells,

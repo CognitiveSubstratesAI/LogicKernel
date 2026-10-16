@@ -2280,10 +2280,14 @@ function setAtomSymbol!(s::atom_symbols{T}, index::Int, v::T)::Nothing where {T}
     if b === nothing
         b = Union{Nothing, T}[nothing for _ in 1:(1 << idx)]
         s.blocks[idx + 1] = b
-        s.keys[idx + 1] = zeros(UInt64, 1 << idx)
     end
-    s.keys[idx + 1][index - (1 << idx) + 1] = indexOfWord(v)    # before the symbol: a reader
-    b[index - (1 << idx) + 1] = v                               # that sees it sees the key
+    k = s.keys[idx + 1]
+    if k === nothing                                # (narrowed: JET's report_package, 2026-10-16)
+        k = zeros(UInt64, 1 << idx)
+        s.keys[idx + 1] = k
+    end
+    k[index - (1 << idx) + 1] = indexOfWord(v)      # before the symbol: a reader
+    b[index - (1 << idx) + 1] = v                   # that sees it sees the key
     return nothing
 end
 

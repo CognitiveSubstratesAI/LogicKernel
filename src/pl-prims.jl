@@ -1082,6 +1082,25 @@ const DU_TERM = 0x04
     end
 end
 
+# ORIGINAL (L1c-6): `deRef2(p, k); canBind(*k)` for slot `i` on the WORDS — an unbound cell is a
+# variable, any other word is not; only the BOUNDARY (a slot's side value, a keyed variable's
+# value-table word) is decided on its term, `@noinline` so the hot test carries no term path.
+"Whether slot `i`, dereferenced, is an unbound variable (pl-vmi.c I_VAR's test, on the words)."
+@inline function _slot_is_var(ld::PL_local_data{T}, i::Int)::Bool where {T}
+    k, w, p = _deref_loc(ld, -i)
+    k == DU_CELL && return true
+    k == DU_TERM || return false
+    return _boundary_is_var(ld, w, p)
+end
+
+# ORIGINAL (L1c-6): the boundary's `canBind` — a slot's side value or a keyed variable's entry, as a
+# term (TRANSITIONAL: the stamp falls at L1f, and with it the keyed variables).
+"Whether the boundary location (`DU_TERM`: word `w`, position `p`) holds an unbound variable."
+@noinline function _boundary_is_var(ld::PL_local_data{T}, w::word, p::Int)::Bool where {T}
+    t = p < 0 ? ld.slot_values[-p] : ld.vtable[valPtr(w)]
+    return canBind(deRef(ld, t))
+end
+
 # ORIGINAL: the boundary's conversion (above): what a dereferenced location holds, as a TERM.
 "The term at a dereferenced location (a compound through the counted cold export)."
 function _loc_term(ld::PL_local_data{T}, k::UInt8, w::word, p::Int)::T where {T}

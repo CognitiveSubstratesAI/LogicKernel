@@ -2252,8 +2252,10 @@ function PL_next_solution_guarded(
     bav_i = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1
     if ARGP.form == ARGP_GLOBAL
         _cell_link!(ld, ARGP.pos, bav_i)
+    elseif ARGP.form == ARGP_SLOT                   # *ARGP = linkValI(k), slot to slot on the WORDS (L1c-6)
+        _slot_link!(ld, ARGP.pos + 1, bav_i)
     else
-        _argp_store!(ld, ARGP, deRef(ld, slotValue(ld, bav_i)))
+        error("B_ARGVAR: a body argument is written, never read")
     end
     PC += 1
     ARGP = _argp_add(ARGP, 1)
@@ -3452,19 +3454,20 @@ function PL_next_solution_guarded(
 
     # ── the type tests (pl-vmi.c), V6b ────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_VAR
-    # DIVERGES: NOT PORTED: the `vmi_builtin=false` branch (`debug_pred1`; see `TYPE_TEST`).
+    # DIVERGES: NOT PORTED: the `vmi_builtin=false` branch (`debug_pred1`; see `TYPE_TEST`). On the WORDS
+    # (L1c-6: `deRef2(varFrameP(FR, *PC++), p); canBind(*p)`, `_slot_is_var`).
     @label I_VAR
-    tt_p = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    tt_v = _slot_is_var(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
     PC += 1
-    canBind(tt_p) && @goto next_instruction
+    tt_v && @goto next_instruction
     @FASTCOND_FAILED
 
     # PORT: pl-vmi.c I_NONVAR
     # DIVERGES: as `I_VAR`'s.
     @label I_NONVAR
-    tt_p = deRef(ld, slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
+    tt_v = _slot_is_var(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
     PC += 1
-    !canBind(tt_p) && @goto next_instruction
+    !tt_v && @goto next_instruction
     @FASTCOND_FAILED
 
     # PORT: pl-vmi.c I_INTEGER
