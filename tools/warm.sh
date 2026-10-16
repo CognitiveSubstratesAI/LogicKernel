@@ -362,7 +362,9 @@ JL
 _verdict_in() { [ -s "$1" ] && grep -qE "$2" "$1"; }
 
 _bench() {
-    local snippet="$DIR/bench_snippet.jl" args=""
+    # --ungated: the daemon is a julia process tools/bench.sh's start gate would refuse; the
+    # report says UNGATED in its header (a warm run is for iteration, tools/bench.sh for numbers)
+    local snippet="$DIR/bench_snippet.jl" args="\"--ungated\", "
     for a in "$@"; do args+="\"$a\", "; done
     cat > "$snippet" <<JL
 let m = Core.eval(Main, Expr(:module, true, gensym(:LKBench), Expr(:block)))

@@ -2,12 +2,14 @@
 # tools/bench.jl — the per-chunk PERFORMANCE REPORT: each ported primitive against swipl, on the
 # same terms, then a profile of the worst.
 #
-#   julia --project=. tools/bench.jl                     # every case
-#   julia --project=. tools/bench.jl variant             # the cases whose name contains "variant"
-#   julia --project=. tools/bench.jl --profile=NAME      # profile case NAME (default: worst ratio)
-#   julia --project=. tools/bench.jl --no-profile
-#   julia --project=. tools/bench.jl --note=TEXT         # a line for the raw file's header (how to read it)
-#   julia --project=. tools/bench.jl --no-compile        # without the run loop's fresh-process report
+#   tools/bench.sh                                       # every case, behind the start gate (below)
+#   tools/bench.sh variant                               # the cases whose name contains "variant"
+#   tools/bench.sh --profile=NAME                        # profile case NAME (default: worst ratio)
+#   tools/bench.sh --no-profile
+#   tools/bench.sh --note=TEXT                           # a line for the raw file's header (how to read it)
+#   tools/bench.sh --no-compile                          # without the run loop's fresh-process report
+#   tools/bench.sh --runs=N                              # samples per side (default 30)
+#   julia --project=. tools/bench.jl --ungated …         # without the gate: the header says UNGATED
 #
 # THREE DIAGNOSTIC REPORTS (user, 2026-10-13), each instead of the timing run; their full output goes
 # to .warm/bench/ (ignored by git), a summary to the terminal:
@@ -29,27 +31,31 @@
 #
 # A STANDING STEP for every chunk, beside the JET/Aqua/AllocCheck gates (user, 2026-10-03) — a
 # report, not a pass/fail gate: a new primitive gets a case here, with its swipl goal. THE METHOD
-# (user, 2026-10-15): ≥ 30 runs per side (`--runs=N`, default 30), swipl and LogicKernel
-# INTERLEAVED run by run (`interleaved_times`), the MEDIAN and IQR reported, no other heavy job; the
-# raw numbers of every run in tools/bench_results/<UTC time>_<commit>.tsv (user, 2026-10-15: kernel-own
-# `tools/`, since `bench/` mirrors swipl-devel), machine, commit and date in its header. Every number beside its
-# upstream pair, in µs; profile before attributing a cost.
-# Both sides measure ONE statistic (user, 2026-10-05): N calls per run (N doubled until a run takes
-# RUN_S), a full collection before each run and every collection during it counted, WALL time per
-# call, the minimum of three runs; the machine's idle CPU is recorded before and after the runs.
+# (user, 2026-10-15): in ONE process per tree, per benchmark 5 warm-up samples then 30 timed ones
+# per side (`--runs=N`), LogicKernel and a persistent swipl ALTERNATING IN BATCHES of 5
+# (`sampled_times`); per sample wall µs, GC µs and allocations per call; median and IQR, and the
+# GC-excluded median and IQR; a batch during which other processes used the CPUs is repeated. The
+# raw numbers of every sample in tools/bench_results/<UTC time>_<commit>.tsv (user, 2026-10-15:
+# kernel-own `tools/`, since `bench/` mirrors swipl-devel), machine, commit, date, the start gate's
+# sample and the batches' CPU shares in its header. Every number beside its upstream pair, in µs;
+# profile before attributing a cost. ON THIS MACHINE (a VM sharing its CPU; user, 2026-10-15)
+# ALLOCATIONS DECIDE: timing differences under ~20% between two trees cannot be resolved here. To
+# compare two TREES: alternate their processes in batches and normalise each by its own swipl.
+# Both sides measure ONE statistic (user, 2026-10-05): N calls per sample (N doubled until a sample
+# takes SAMPLE_S), every collection during it counted, WALL time per call; the machine's idle CPU
+# is recorded before and after the runs.
 #
 # Profile is not a dependency: it comes from the global environment (see
 # tools/repl.jl). swipl comes from PATH; without it the report has no upstream column.
 
 # ── THE START GATE (user, 2026-10-15): quiet by mechanism, not by discipline ────────────────────
-# A timed run REFUSES to start, with its reason, when the 1-minute load average is above
-# BENCH_MAX_LOAD or any other julia process is alive — the VS Code language server, a warm daemon,
-# a test run. MEASURED that morning: C3's baseline ran beside the language server's indexing and
-# swipl's own nreverse doubled (IQR 45 µs on a 68 µs median). Checked HERE, before anything loads,
-# so the bench's own start-up is not its load; both checks go into the raw file's header. The
-# diagnostic reports (--descend, --code, --flame) time nothing and are not gated.
-"The highest 1-minute load average a timed run starts under."
-const BENCH_MAX_LOAD = 0.5
+# Quietness is measured BEFORE julia starts, by tools/bench.sh: no julia process, and the CPUs ≥ 90 %
+# idle over a 10 s sample of /proc/stat — its sample arrives in BENCH_GATE_SAMPLE and goes into the
+# raw file's header. A gate in here could not do it: the 1-minute load average lags and this
+# process's own start-up is in it (MEASURED 2026-10-15: 0.42 before julia, 0.54 here — the bench
+# refused itself). So here only the PROCESS check: a timed run refuses while another julia process
+# lives, and without the wrapper's sample (run tools/bench.sh) unless `--ungated` — which the header
+# then says. The diagnostic reports (--descend, --code, --flame) time nothing and are not gated.
 
 "The other julia processes, `pid command line` each (this one excluded)."
 function _other_julias()::Vector{String}
@@ -70,24 +76,25 @@ function _other_julias()::Vector{String}
     return out
 end
 
-"The start gate's readings: the load average and the other julia processes (none, or it refused)."
+"The start gate's readings: the wrapper's quiet sample, the other julia processes (none, or it refused)."
 const START_GATE =
     let timing = !any(a -> occursin(r"^--(descend|code|flame)(=|$)", a), ARGS)
-        load = Sys.loadavg()[1]
+        ungated = "--ungated" in ARGS
+        sample = get(ENV, "BENCH_GATE_SAMPLE", "")
         julias = _other_julias()
         why = String[]
-        timing && load > BENCH_MAX_LOAD &&
+        timing && !ungated && isempty(sample) &&
             push!(
                 why,
-                "the 1-minute load average is $(round(load; digits=2)) > $BENCH_MAX_LOAD"
+                "no quiet sample: run the timed report through tools/bench.sh (or pass --ungated)"
             )
         timing && !isempty(julias) &&
             push!(why, "other julia processes are running: " * join(julias, "; "))
         isempty(why) || error(
             "tools/bench.jl: REFUSED — " * join(why, "; ") *
-            ". Stop them (the VS Code Julia extension too) and let the load fall, then rerun."
+            ". Stop them (the VS Code Julia extension too) and rerun through tools/bench.sh."
         )
-        (; load, julias)
+        (; sample=isempty(sample) ? (ungated ? "UNGATED (--ungated)" : "") : sample, julias)
     end
 
 using LogicKernel, Profile, Printf, Serialization, InteractiveUtils, Dates
@@ -869,10 +876,6 @@ const CASES = [
     ("attempt + finally", () -> _attempt_finally(pl_unify!, SMALL_A, SMALL_B), "")
 ]
 
-# A run's length: long enough that one collection inside it is a small share of it (0.1 s was too
-# short — measured 2026-10-05, a single collection doubled a run).
-const RUN_S = 0.5
-
 # ── the run loop in a FRESH process: first-call latency, compile time, dispatch (V4a) ───────────
 # One very large function (decision 1): what a fresh process pays at its first query — after the
 # precompile workload compiled it for DefaultTerm — and what compiling it costs for a term type the
@@ -998,30 +1001,72 @@ function quiet_check(seconds::Float64=3.0)
         load=Sys.loadavg()[1])
 end
 
-# ── one timed run: THE SAME STATISTIC AS swipl's `time_s` (user, 2026-10-05) ──────────────────────
-# N calls per run, N doubled from 1 until a run takes at least RUN_S of wall time (calibration runs
-# collect nothing first); each timed run after a full collection, every collection DURING it
-# counted; wall time per call.
-function _wall_per_call(f, n::Int, collect::Bool)::Float64
-    collect && GC.gc()
+# ── THE SAMPLING METHOD (user, 2026-10-15; it replaces that morning's run-by-run interleave) ─────
+# Per benchmark, in this ONE process: N (calls per sample) doubled from 1 until a sample takes
+# SAMPLE_S; WARMUP samples per side discarded; then RUNS samples per side, LogicKernel and swipl
+# ALTERNATING IN BATCHES of BATCH, so a drift of the machine hits both. swipl is one persistent
+# process PER BENCHMARK (`swipl_server`), warmed and sampled the same way (`garbage_collect` before
+# each of its samples). A full collection before each LogicKernel batch; every collection DURING a
+# sample counted. Per LogicKernel sample: wall µs, GC µs (`Base.gc_time_ns`, the collector's clock)
+# and allocations per call (`Base.gc_num`); per swipl sample: wall µs. A batch is CONTAMINATED when
+# processes other than this one and its swipl used more than CONTAMINATION of the CPUs during it
+# (/proc/stat and /proc/<pid>/stat): it is discarded and repeated, at most MAX_REPEATS times, then
+# kept — the header counts both. Until 2026-10-15 a run was 0.5 s, one run per side in turn, and the
+# whole report took an hour; a sample is now SAMPLE_S.
+# A sample's length. MEASURED 2026-10-05: at 0.1 s a single collection could double a run, so runs
+# were 0.5 s; since 2026-10-15 every sample records its own GC time, so a collection inside one is
+# SEEN, and the GC-excluded median and IQR read through it — 0.1 s keeps the whole report minutes.
+"A sample's least wall time, in seconds (N doubled until a sample of N calls takes it)."
+const SAMPLE_S = 0.1
+"Samples per side, per benchmark, discarded before the timed ones."
+const WARMUP = 5
+"Samples per batch; the two sides alternate batch by batch."
+const BATCH = 5
+"How often a contaminated batch is repeated before it is kept anyway."
+const MAX_REPEATS = 3
+"The share of all CPUs other processes may use during a batch before it counts as contaminated."
+const CONTAMINATION = 0.05
+"A sample is FLAGGED in the summary when its GC time exceeds this share of its wall time."
+const GC_FLAG = 0.10
+"Samples per side, per benchmark, unless `--runs=N` says otherwise."
+const RUNS_DEFAULT = 30
+
+"One LogicKernel sample of `n` calls of `f`: (wall µs, GC µs, allocations), each per call."
+function _lk_sample(f, n::Int)::NTuple{3, Float64}
+    g0 = Base.gc_num()
+    gt0 = Base.gc_time_ns()
     t0 = time_ns()
     for _ in 1:n
         f()
     end
-    return (time_ns() - t0) / n / 1e3                   # µs per call
+    t = time_ns() - t0
+    gt = Base.gc_time_ns() - gt0
+    a = Base.gc_alloc_count(Base.GC_Diff(Base.gc_num(), g0))
+    return (t / n / 1e3, gt / n / 1e3, a / n)
 end
-# ── THE METHOD SINCE 2026-10-15 (user): ≥ 30 runs per benchmark, swipl and LogicKernel INTERLEAVED
-# run by run, median and IQR, no other heavy job; the raw numbers in tools/bench_results/. MEASURED the
-# night before: swipl's own nreverse moved 19.7 ↔ 30.9 µs between two sessions, because the old
-# method ran all of one side, then all of the other, three runs each — a ratio of two moments.
-# Here swipl is a SERVER read over a pipe: each LogicKernel run is followed at once by one swipl run
-# of the same case, both after a full collection, both counting the collections during the run.
-"Runs per benchmark (each side), unless `--runs=N` says otherwise."
-const RUNS_DEFAULT = 30
 
-"swipl as a server for `cases` (numbered by position): `calib(I)` → calls per run, `run(I, N)` → µs per call."
-function swipl_server(cases)::Union{Nothing, Base.Process}
-    Sys.which("swipl") === nothing && return nothing
+"Process `pid`'s CPU ticks so far (0 once it has exited)."
+function _proc_ticks(pid::Integer)::Int
+    return try
+        _stat_ticks(read("/proc/$pid/stat", String))
+    catch
+        0
+    end
+end
+
+"A CPU mark: all CPUs' total and idle jiffies, and the ticks of the processes `pids`."
+_cpu_mark(pids::Vector{Int})::NTuple{3, Int} = (_cpu_jiffies()..., sum(_proc_ticks, pids))
+
+"The share of all CPUs that processes OTHER than the marked ones used between marks `m0` and `m1`."
+function _other_share(m0::NTuple{3, Int}, m1::NTuple{3, Int})::Float64
+    tot = max(1, m1[1] - m0[1])
+    busy = tot - (m1[2] - m0[2]) - (m1[3] - m0[3])
+    return max(0, busy) / tot
+end
+
+"swipl as a server for ONE benchmark's `goal`: `calib.` → calls per sample, `run(N).` → µs per call."
+function swipl_server(goal::AbstractString)::Union{Nothing, Base.Process}
+    (isempty(goal) || Sys.which("swipl") === nothing) && return nothing
     prog = IOBuffer()
     print(prog, PROLOG_FIXTURES)
     print(
@@ -1032,21 +1077,18 @@ function swipl_server(cases)::Union{Nothing, Base.Process}
         time_s(Goal, N, T) :-
             garbage_collect, run_s(Goal, N, T).
         calib(Goal, N0, N) :-
-            run_s(Goal, N0, T), ( T >= $RUN_S -> N = N0 ; N1 is N0 * 2, calib(Goal, N1, N) ).
+            run_s(Goal, N0, T), ( T >= $SAMPLE_S -> N = N0 ; N1 is N0 * 2, calib(Goal, N1, N) ).
         serve :-
             read_term(user_input, T, []),
             (   T == end_of_file -> true
-            ;   T = calib(I) -> case(I, G), calib(G, 1, N), format("~d~n", [N]), flush_output, serve
-            ;   T = run(I, N) -> case(I, G), time_s(G, N, S), U is S / N * 1.0e6,
+            ;   T == calib -> case(G), calib(G, 1, N), format("~d~n", [N]), flush_output, serve
+            ;   T = run(N) -> case(G), time_s(G, N, S), U is S / N * 1.0e6,
                 format("~6f~n", [U]), flush_output, serve
             ).
+        case(Goal) :- fixtures(G1, G2, V1, V2), Goal = ($goal).
+        :- initialization((serve, halt)).
         """
     )
-    for (i, (_, _, goal)) in enumerate(cases)
-        isempty(goal) && continue
-        print(prog, "case($i, Goal) :- fixtures(G1, G2, V1, V2), Goal = (", goal, ").\n")
-    end
-    print(prog, ":- initialization((serve, halt)).\n")
     d = mktempdir()
     f = joinpath(d, "bench_server.pl")
     write(f, String(take!(prog)))
@@ -1068,25 +1110,70 @@ function _median_iqr(xs::Vector{Float64})::Tuple{Float64, Float64}
     return q(0.5), q(0.75) - q(0.25)
 end
 
+"One benchmark's samples: LogicKernel's (wall, GC, allocations per call), swipl's wall, N each, and its batches."
+struct case_samples
+    lk::Vector{NTuple{3, Float64}}
+    sw::Vector{Float64}
+    n::Int
+    nsw::Int
+    shares::Vector{Float64}         # the other processes' CPU share in each KEPT batch
+    repeats::Int                    # contaminated batches discarded and repeated
+    kept_contaminated::Int          # contaminated batches kept after MAX_REPEATS
+end
+
 """
-Interleaved timings: per case, both sides calibrated, then `runs` pairs — one LogicKernel run, one
-swipl run — each a full collection then N calls. Returns per case (lk runs, swipl runs, N lk, N sw).
+Per case: calibrate both sides, `WARMUP` samples each discarded, then `runs` samples per side in
+alternating batches of `BATCH`, each contaminated batch repeated (see above).
 """
-function interleaved_times(cases, runs::Int, p::Union{Nothing, Base.Process})
-    out = Dict{String, Tuple{Vector{Float64}, Vector{Float64}, Int, Int}}()
-    for (i, (name, f, goal)) in enumerate(cases)
+function sampled_times(cases, runs::Int)::Dict{String, case_samples}
+    out = Dict{String, case_samples}()
+    for (name, f, goal) in cases
+        p = swipl_server(goal)
         f()
         n = 1
-        while _wall_per_call(f, n, false) * n < RUN_S * 1e6
+        while first(_lk_sample(f, n)) * n < SAMPLE_S * 1e6
             n *= 2
         end
-        nsw = (p === nothing || isempty(goal)) ? 0 : parse(Int, _ask(p, "calib($i)."))
-        lk, sw = Float64[], Float64[]
-        for _ in 1:runs
-            push!(lk, _wall_per_call(f, n, true))
-            nsw > 0 && push!(sw, parse(Float64, _ask(p, "run($i, $nsw).")))
+        nsw = p === nothing ? 0 : parse(Int, _ask(p, "calib."))
+        for _ in 1:WARMUP
+            _lk_sample(f, n)
+            nsw > 0 && _ask(p, "run($nsw).")
         end
-        out[name] = (lk, sw, n, nsw)
+        pids = p === nothing ? [getpid()] : [getpid(), Int(getpid(p))]
+        lk, sw, shares = NTuple{3, Float64}[], Float64[], Float64[]
+        repeats, kept = 0, 0
+        while length(lk) < runs || (nsw > 0 && length(sw) < runs)
+            for swside in (false, true)
+                k = if swside
+                    (nsw > 0 ? min(BATCH, runs - length(sw)) : 0)
+                else
+                    min(BATCH, runs - length(lk))
+                end
+                k > 0 || continue
+                for attempt in 0:MAX_REPEATS
+                    swside || GC.gc()
+                    m0 = _cpu_mark(pids)
+                    bl = swside ? NTuple{3, Float64}[] : [_lk_sample(f, n) for _ in 1:k]
+                    bs = if swside
+                        [parse(Float64, _ask(p, "run($nsw).")) for _ in 1:k]
+                    else
+                        Float64[]
+                    end
+                    sh = _other_share(m0, _cpu_mark(pids))
+                    if sh > CONTAMINATION && attempt < MAX_REPEATS
+                        repeats += 1
+                        continue
+                    end
+                    sh > CONTAMINATION && (kept += 1)
+                    push!(shares, sh)
+                    append!(lk, bl)
+                    append!(sw, bs)
+                    break
+                end
+            end
+        end
+        p === nothing || close(p)
+        out[name] = case_samples(lk, sw, n, nsw, shares, repeats, kept)
     end
     return out
 end
@@ -1418,15 +1505,19 @@ function main(args)
     note = kn === nothing ? "" : String(split(args[kn], '='; limit=2)[2])
     kr = findfirst(a -> startswith(a, "--runs="), args)
     runs = kr === nothing ? RUNS_DEFAULT : parse(Int, split(args[kr], '='; limit=2)[2])
-    sp = swipl_server(cases)
-    swv = sp === nothing ? "no swipl on PATH" : strip(read(`swipl --version`, String))
-    println(
-        "LogicKernel bench — julia $(VERSION), pid $(getpid()), $swv; $runs runs per side, interleaved"
-    )
+    swv = if Sys.which("swipl") === nothing
+        "no swipl on PATH"
+    else
+        strip(read(`swipl --version`, String))
+    end
+    method =
+        "warm-up $WARMUP, $runs samples per side in alternating batches of $BATCH, " *
+        "a sample ≥ $(SAMPLE_S) s, a batch repeated when others use > " *
+        "$(round(Int, 100 * CONTAMINATION))% of the CPUs (≤ $MAX_REPEATS times)"
+    println("LogicKernel bench — julia $(VERSION), pid $(getpid()), $swv; $method")
     # the machine's idle CPU BEFORE and AFTER the runs; a ratio is quoted only if both are quiet
     qc = quiet_check()
-    tm = interleaved_times(cases, runs, sp)
-    sp === nothing || close(sp)
+    tm = sampled_times(cases, runs)
     qa = quiet_check()
     quiet = qc.quiet && qa.quiet
     for (when, q) in (("before", qc), ("after", qa))
@@ -1470,46 +1561,74 @@ function main(args)
         println(io, "# date: $(Dates.format(now_utc, "yyyy-mm-dd HH:MM:SS")) UTC")
         isempty(note) || println(io, "# note: ", note)
         println(
-            io, "# start gate: 1-minute load average $(round(START_GATE.load; digits=2)) ",
-            "(≤ $BENCH_MAX_LOAD), other julia processes: ",
+            io, "# start gate: $(START_GATE.sample); other julia processes: ",
             isempty(START_GATE.julias) ? "none" : join(START_GATE.julias, "; ")
         )
-        println(
-            io, "# $(swv); julia $(VERSION); $runs runs per side, interleaved; quiet=$quiet"
+        println(io, "# $(swv); julia $(VERSION); $method; quiet=$quiet")
+        for (when, q) in (("before", qc), ("after", qa))
+            @printf(io, "# idle %s the runs: %.3f over 3 s\n", when, q.idle)
+        end
+        allsh = reduce(vcat, (tm[c[1]].shares for c in cases); init=Float64[])
+        @printf(
+            io,
+            "# batches kept: %d, other processes' CPU share median %.3f max %.3f; contaminated batches repeated: %d, kept after %d repeats: %d\n",
+            length(allsh), isempty(allsh) ? NaN : _median_iqr(allsh)[1],
+            isempty(allsh) ? NaN : maximum(allsh), sum(tm[c[1]].repeats for c in cases),
+            MAX_REPEATS, sum(tm[c[1]].kept_contaminated for c in cases)
         )
-        println(io, "case\tside\trun\tus_per_call\tcalls_per_run")
+        println(
+            io,
+            "case\tside\tsample\tus_per_call\tgc_us_per_call\tallocs_per_call\tcalls_per_sample"
+        )
         for (name, _, _) in cases
-            lk, sw, n, nsw = tm[name]
-            for (r, t) in enumerate(lk)
-                @printf(io, "%s\tLogicKernel\t%d\t%.6f\t%d\n", name, r, t, n)
+            cs = tm[name]
+            for (r, (t, g, a)) in enumerate(cs.lk)
+                @printf(
+                    io,
+                    "%s\tLogicKernel\t%d\t%.6f\t%.6f\t%.3f\t%d\n",
+                    name,
+                    r,
+                    t,
+                    g,
+                    a,
+                    cs.n
+                )
             end
-            for (r, t) in enumerate(sw)
-                @printf(io, "%s\tswipl\t%d\t%.6f\t%d\n", name, r, t, nsw)
+            for (r, t) in enumerate(cs.sw)
+                @printf(io, "%s\tswipl\t%d\t%.6f\t\t\t%d\n", name, r, t, cs.nsw)
             end
         end
     end
     println("raw numbers: ", raw)
+    # per case: LogicKernel's wall time, its GC time and the GC-excluded time (wall − GC, sample by
+    # sample), swipl's wall time — each median (IQR), µs per call — the ratio, and allocations per
+    # call (the median over the samples: exact, the primary signal on a noisy machine); `GC>10%`
+    # counts the samples whose GC time exceeded GC_FLAG of their wall time (user, 2026-10-15: flagged,
+    # so a sample a collection dominated is seen, not averaged in)
     @printf(
-        "%-26s %22s %22s %9s %16s %8s %9s\n", "case", "LogicKernel µs med (IQR)",
-        "swipl µs med (IQR)", "LK/swipl", "calls/run LK sw", "allocs", "bytes"
+        "%-26s %20s %18s %20s %20s %9s %9s %9s %7s\n", "case", "LK µs med (IQR)",
+        "LK GC µs med (IQR)", "LK wall−GC med (IQR)", "swipl µs med (IQR)", "LK/swipl",
+        "allocs", "bytes", "GC>10%"
     )
     ratios = Dict{String, Float64}()
     for (name, f, _) in cases
-        lk, sw, n, nsw = tm[name]
-        lm, li = _median_iqr(lk)
-        allocs, bytes = (@allocations f()), (@allocated f())
-        if isempty(sw)
-            ratios[name] = NaN
-            @printf("%-26s %12.2f (%7.2f) %22s %9s %16s %8d %9d\n", name, lm, li, "—", "—",
-                "$n —", allocs, bytes)
-        else
-            sm, si = _median_iqr(sw)
-            r = quiet ? lm / sm : NaN
-            ratios[name] = r
-            @printf("%-26s %12.2f (%7.2f) %12.2f (%7.2f) %9.2f %16s %8d %9d\n", name, lm,
-                li,
-                sm, si, r, "$n $nsw", allocs, bytes)
-        end
+        cs = tm[name]
+        wall = [x[1] for x in cs.lk]
+        gc = [x[2] for x in cs.lk]
+        lm, li = _median_iqr(wall)
+        gm, gi = _median_iqr(gc)
+        xm, xi = _median_iqr(wall .- gc)
+        am = _median_iqr([x[3] for x in cs.lk])[1]
+        nflag = count(x -> x[2] > GC_FLAG * x[1], cs.lk)
+        bytes = @allocated f()
+        sm, si = isempty(cs.sw) ? (NaN, NaN) : _median_iqr(cs.sw)
+        r = (quiet && !isempty(cs.sw)) ? lm / sm : NaN
+        ratios[name] = r
+        @printf(
+            "%-26s %10.2f (%7.2f) %8.2f (%7.2f) %10.2f (%7.2f) %10.2f (%7.2f) %9.2f %9.1f %9d %7s\n",
+            name, lm, li, gm, gi, xm, xi, sm, si, r, am, bytes,
+            nflag == 0 ? "" : "$nflag/$(length(cs.lk))"
+        )
     end
     "--no-compile" in args || run_loop_report()
     "--no-profile" in args && return nothing
