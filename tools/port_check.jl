@@ -715,7 +715,12 @@ end
 # LOWERED 34 → 31 (2026-10-16, L1c sub-commit 6): `gvars` went — a cell's variable term is made on
 # demand by the counted adapter `_cell_var` from its key; its three sites (the field, its allocation,
 # its growth) left the count. Still above 29: L1d.
-const STAMP_SITES_MAX = 31
+# RAISED 31 → 32 (2026-10-16, L1d step 1): the standard order on cells orders two UNBOUND cells by
+# KEY (`ld.gkey`, pl-prims.jl `compare_primitives_cells`, DIVERGES (1)) — the term compare's order,
+# so `==`, compare/3 and sort agree on either path; upstream orders them by address. The site goes
+# when the variables' order follows the address, with the stamp (L1f). L1d's own readers (the
+# walks, copy_term, the writer) are expected to LOWER the count again; measured at each step.
+const STAMP_SITES_MAX = 32
 
 "The names of the stamp machinery; a code line of src/ naming one is a stamp site."
 const STAMP_NAMES = r"\b(CELL_KEY_TAG|CELL_POS_MASK|CELL_STAMP_MASK|CELL_STAMP_BLOCK|_CELL_STAMP_COUNTER|stamp_next|stamp_end|gkey|gvars|_cell_pos|_reserveStamps!)(?![A-Za-z0-9_!])"

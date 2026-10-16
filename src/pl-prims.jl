@@ -1308,6 +1308,245 @@ end
 unify_ptrs_cells(ld::PL_local_data{T}, l1::Int, l2::Int) where {T} =
     raw_unify_cells(ld, l1, l2) == BOOLEX_TRUE
 
+# ── the standard order on CELLS (L1d step 1; the workspace's L1_plan/stageL1d_design.md §3) ──────
+# Locations as `do_unify_cells`'s (a global position, or `-i` for slot `i`). The order is the term
+# compare's, so a sort or a `==` gives the same answer on either path: variables by KEY (`gkey`;
+# upstream by address — a key's stamp and position follow allocation as an address does), atomic
+# values by the term type's ladder (`compare_primitives` on the stored value or the atom's symbol —
+# no export), compounds by arity, then `$expr/n` before symbol functors (Q2), then name, then the
+# arguments left to right. The BOUNDARY (a slot's side value, a keyed variable) compares as terms.
+"`compare_primitives_cells`: the pair is decided on TERMS (the boundary)."
+const CMP_TERMS = -5
+
+"The tag rank of a dereferenced location: unbound cell 0, atomic 1, compound 2 (`_tag_rank`)."
+@inline _loc_rank(k::UInt8, w::word)::Int =
+    k == DU_CELL ? 0 : ((k == DU_WORD && _is_gcompound(w)) ? 2 : 1)
+
+"The atomic TERM a dereferenced atomic location holds (an atom's symbol, a stored value): no export."
+@inline function _loc_atomic(ld::PL_local_data{T}, k::UInt8, w::word)::T where {T}
+    # (the long form: `@inline f(…)::T where {T} = …` left `::T` at top level — did not load, 2026-10-16)
+    return k == DU_VALUE ? ld.vtable[valPtr(w)] : _atom_value(ld, w)
+end
+
+# PORT: pl-prims.c compare_primitives as compare_primitives_cells
+# DIVERGES: (1) two unbound cells are ordered by KEY (`gkey`), where upstream orders them by
+# ADDRESS (`SCALAR_TO_CMP(p1, p2)`) — the term compare's order (`var_key`), so `==`, compare/3 and
+# sort agree on either path; a key never moves (upstream's addresses move with GC and shifts, and
+# SWI defines no order between two variables beyond consistency within a call). (2) On two
+# dereferenced locations; no CMP_MODE_PARTIAL (not ported); `CMP_TERMS` at the boundary.
+"One step of the cell walk (pl-prims.c `compare_primitives`): decided, `CMP_COMPOUND`, or `CMP_TERMS`."
+function compare_primitives_cells(
+    ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int,
+    mode::Int
+)::Int where {T}
+    (k1 == DU_TERM || k2 == DU_TERM) && return CMP_TERMS
+    if k1 == DU_CELL && k2 == DU_CELL
+        p1 == p2 && return CMP_EQUAL                         # w1 == w2: the same cell
+        mode == CMP_MODE_EQUAL && return CMP_NOTEQ
+        return ld.gkey[p1] < ld.gkey[p2] ? CMP_LESS : CMP_GREATER
+    end
+    k1 != DU_CELL && k1 == k2 && w1 == w2 && return CMP_EQUAL   # the same word
+    r1, r2 = _loc_rank(k1, w1), _loc_rank(k2, w2)
+    if r1 != r2
+        mode == CMP_MODE_EQUAL && return CMP_NOTEQ
+        return r1 < r2 ? CMP_LESS : CMP_GREATER
+    end
+    r1 == 2 && return CMP_COMPOUND
+    return compare_primitives(_loc_atomic(ld, k1, w1), _loc_atomic(ld, k2, w2), mode)
+end
+
+# PORT: pl-prims.c compare_functors as compare_functors_cells
+# DIVERGES: on the functor WORDS of the compounds at `q1`, `q2`: arity first, then `$expr/n` before a
+# symbol functor (Q2, as `compare_functors` on terms), then the names' symbols by `compare_primitives`
+# (the atom ladder: `compareAtoms`). `CMP_EQUAL`: the same functor — the arguments decide.
+"Two compounds on the stack by functor (pl-prims.c `compare_functors`)."
+function compare_functors_cells(
+    ld::PL_local_data{T}, q1::Int, q2::Int, mode::Int
+)::Int where {T}
+    f1, f2 = ld.gstack[q1], ld.gstack[q2]
+    f1 == f2 && return CMP_EQUAL
+    mode == CMP_MODE_EQUAL && return CMP_NOTEQ
+    a1, a2 = arityFunctor(ld.functors, f1), arityFunctor(ld.functors, f2)
+    a1 == a2 || return a1 < a2 ? CMP_LESS : CMP_GREATER
+    n1, n2 = nameFunctor(ld.functors, f1), nameFunctor(ld.functors, f2)
+    e1, e2 = n1 == ld.atom_dexpr, n2 == ld.atom_dexpr
+    e1 != e2 && return e1 ? CMP_LESS : CMP_GREATER       # `$expr/n` first
+    return compare_primitives(_atom_value(ld, n1), _atom_value(ld, n2), CMP_MODE_ORDER)
+end
+
+# PORT: pl-prims.c do_compare as do_compare_cells
+# DIVERGES: the cell agenda on positions; EVERY compound pair linked (`_link_cells!`, the functor
+# word saved and restored by `_exit_cycles!`), as upstream — the term version links only pairs reached
+# through a binding; returns `(rc, linked)`; a pair at the boundary is compared as terms.
+"""
+    do_compare_cells(ld, q1, q2, mode) -> (Int, Bool)
+
+Compare the arguments of two compounds on the stack with one functor (pl-prims.c `do_compare`),
+linking compound pairs so that rational trees terminate; `linked` when a link was followed.
+"""
+function do_compare_cells(
+    ld::PL_local_data{T}, q1::Int, q2::Int, mode::Int
+)::Tuple{Int, Bool} where {T}
+    linked = false
+    agenda = ld.ccell_agenda
+    initCellAgendaLR!(agenda, arityFunctor(ld.functors, ld.gstack[q1]), q1, q2, 1)   # goto compound
+    _link_cells!(ld, q1, q2)
+    rc = CMP_EQUAL
+    while true
+        found, a1, a2 = nextCellAgendaLR!(agenda)
+        found || break
+        k1, w1, p1 = _deref_loc(ld, a1)
+        k2, w2, p2 = _deref_loc(ld, a2)
+        rc = compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, mode)
+        if rc == CMP_TERMS                               # the boundary: this pair as terms
+            ld.cold_pairs += 1                           # (counted: the zero-export test)
+            rc = compare_std(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode)
+        end
+        if rc != CMP_COMPOUND
+            rc == CMP_EQUAL && continue
+            break
+        end
+        c1, c2 = valPtr(w1), valPtr(w2)
+        if isRef(ld.gstack[c1]) || isRef(ld.gstack[c2])   # O_CYCLIC
+            linked = true
+            c1, c2 = _cycle_root(ld, c1), _cycle_root(ld, c2)
+            if c1 == c2
+                rc = CMP_EQUAL
+                continue
+            end
+        end
+        rc = compare_functors_cells(ld, c1, c2, mode)
+        rc == CMP_EQUAL || break
+        pushWorkCellAgendaLR!(agenda, arityFunctor(ld.functors, ld.gstack[c1]), c1, c2, 1)
+        _link_cells!(ld, c1, c2)
+    end
+    clearCellAgendaLR!(agenda)
+    return (rc, linked)
+end
+
+# PORT: pl-prims.c compare_fast as compare_fast_cells
+"One walk over the terms at locations `l1`, `l2` (pl-prims.c `compare_fast`): `(rc, linked)`."
+function compare_fast_cells(
+    ld::PL_local_data{T}, l1::Int, l2::Int, mode::Int
+)::Tuple{Int, Bool} where {T}
+    k1, w1, p1 = _deref_loc(ld, l1)
+    k2, w2, p2 = _deref_loc(ld, l2)
+    rc = compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, mode)
+    if rc == CMP_TERMS                                   # the boundary (counted)
+        ld.cold_pairs += 1
+        return (
+            compare_std(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode),
+            false
+        )
+    end
+    rc == CMP_COMPOUND || return (rc, false)
+    q1, q2 = valPtr(w1), valPtr(w2)
+    rc = compare_functors_cells(ld, q1, q2, mode)          # f1->definition != f2->definition
+    rc == CMP_EQUAL || return (rc, false)
+    @assert isempty(ld.cycle_cells)                        # initCyclic()
+    rc, linked = do_compare_cells(ld, q1, q2, mode)
+    _exit_cycles!(ld)                                      # exitCyclic()
+    return (rc, linked)
+end
+
+# PORT: pl-prims.c compare_descend as compare_descend_cells
+# DIVERGES: on locations; the pair Brent's algorithm remembers is the two compounds' POSITIONS
+# (upstream: the `Functor` cells); returns `(rc, l1, l2)` where upstream writes `*c1`, `*c2`; a pair
+# at the boundary is decided as terms (counted). A `$expr/0` pair (no argument to descend into)
+# is equal. No `CMP_ERROR` from the argument tests (no memory overflow).
+"""
+    compare_descend_cells(ld, l1, l2, mode) -> (Int, Int, Int)
+
+The slow but sound order of the terms at locations `l1`, `l2` (pl-prims.c `compare_descend`): at
+each compound skip the leading arguments that are equal (`==`, decidable for rational trees) and
+descend into the first pair that is not, until a pair decides — or the descent cycles (Brent's
+algorithm on the compound pairs): `CMP_INCOMPARABLE`, with the locations where it cycles.
+"""
+function compare_descend_cells(
+    ld::PL_local_data{T}, l1::Int, l2::Int, mode::Int
+)::Tuple{Int, Int, Int} where {T}
+    s1, s2 = 0, 0                                         # Functor s1 = NULL, s2 = NULL
+    power, steps = 1, 0
+    while true
+        k1, w1, p1 = _deref_loc(ld, l1)
+        k2, w2, p2 = _deref_loc(ld, l2)
+        rc = compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, mode)
+        if rc == CMP_TERMS                                # the boundary (counted)
+            ld.cold_pairs += 1
+            return (
+                compare_std(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode),
+                l1,
+                l2
+            )
+        end
+        rc == CMP_COMPOUND || return (rc, l1, l2)
+        f1, f2 = valPtr(w1), valPtr(w2)
+        rc = compare_functors_cells(ld, f1, f2, mode)      # f1->definition != f2->definition
+        rc == CMP_EQUAL || return (rc, l1, l2)
+        f1 == s1 && f2 == s2 && return (CMP_INCOMPARABLE, l1, l2)
+        steps += 1
+        if steps == power
+            s1, s2 = f1, f2
+            power *= 2
+            steps = 0
+        end
+        arity = arityFunctor(ld.functors, ld.gstack[f1])
+        arity == 0 && return (CMP_EQUAL, l1, l2)          # (`$expr/0`: nothing to descend into)
+        i = 0                                             # the pair differs, so the last
+        while i + 1 < arity                               # argument need not be tested
+            rc, _ = compare_fast_cells(ld, f1 + 1 + i, f2 + 1 + i, CMP_MODE_EQUAL)
+            rc == CMP_EQUAL || break
+            i += 1
+        end
+        l1, l2 = f1 + 1 + i, f2 + 1 + i                   # p1 = &f1->arguments[i]
+    end
+end
+
+# PORT: pl-prims.c compare_std as compare_std_cells
+# DIVERGES: (1) TRANSITIONAL (L1d step 3 adds the guard): upstream descends only when NOT both terms
+# are acyclic (`is_acyclic(p1) && is_acyclic(p2)`) — a SHORTCUT: `compare_descend` orders acyclic
+# terms correctly too, more slowly. Until step 3 ports `is_acyclic` on cells, the descent runs
+# whenever a link was followed (shared subterms set `linked` too, not only cycles), the mode orders
+# and the terms differ. (2) NOT PORTED, as the term path's `compare_std`: the `incomparable` flag's
+# `error` value (`raiseIncomparable`: its ball holds the cyclic pair, which `PL_raise_exception`'s
+# copy cannot resolve) — an incomparable pair keeps the fast result, as swipl's default
+# `incomparable=arbitrary` does; CMP_MODE_PARTIAL not ported either.
+"The standard order of the terms at locations `l1`, `l2` in `mode` (pl-prims.c `compare_std`)."
+function compare_std_cells(ld::PL_local_data{T}, l1::Int, l2::Int, mode::Int)::Int where {T}
+    rc, linked = compare_fast_cells(ld, l1, l2, mode)
+    if linked && mode != CMP_MODE_EQUAL && rc != CMP_EQUAL   # (TRANSITIONAL: no is_acyclic guard)
+        rc2, _, _ = compare_descend_cells(ld, l1, l2, mode)
+        rc2 != CMP_INCOMPARABLE && (rc = rc2)              # else keep the fast result
+    end
+    return rc
+end
+
+# PORT: pl-prims.c compareStandard as compareStandard_cells
+"""
+    compareStandard_cells(ld, l1, l2, eq::Bool) -> Int
+
+The standard order of the terms at locations `l1`, `l2` (pl-prims.c `compareStandard`): `-1`, `0`,
+`1`; with `eq` `0` or `CMP_NOTEQ`. The term-level `compareStandard(ld, t1, t2, eq)` stays for the
+callers that hold terms (the sort family, until L1d step 7).
+"""
+compareStandard_cells(ld::PL_local_data{T}, l1::Int, l2::Int, eq::Bool) where {T} =
+    compare_std_cells(ld, l1, l2, eq ? CMP_MODE_EQUAL : CMP_MODE_ORDER)
+
+# ORIGINAL: pl-vmi.c B_EQ_VC's `*v1 == c` on a location: the atomic constant `c` (a clause literal,
+# a term) against what the location holds — an unbound cell or a compound is never identical to it;
+# an atom word or a stored value by `compare_primitives` in equality mode (SWI's identity); the
+# boundary as a term.
+"Whether the location `l` holds a term identical to the atomic term `c` (pl-vmi.c B_EQ_VC)."
+function _identical_atomic(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
+    k, w, p = _deref_loc(ld, l)
+    k == DU_CELL && return false
+    k == DU_TERM &&
+        return compare_primitives(deRef(ld, _loc_term(ld, k, w, p)), c, CMP_MODE_EQUAL) ==
+               CMP_EQUAL
+    k == DU_WORD && _is_gcompound(w) && return false
+    return compare_primitives(_loc_atomic(ld, k, w), c, CMP_MODE_EQUAL) == CMP_EQUAL
+end
+
 # ── occurs check ─────────────────────────────────────────────────────────────────────────────────
 "Upstream's `v == t` (the same cell): the same variable when `v` is one, else the same compound."
 _same_cell(v, t)::Bool =
@@ -1851,10 +2090,12 @@ end
 function pl_equal2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    A1 = PL__t0
-    p1 = slotValue(ld, A1 + 1)                               # Word p1 = valTermRef(A1)
-    p2 = slotValue(ld, A1 + 2)                               # Word p2 = p1+1
-    return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FTRUE : FFALSE
+    A1 = PL__t0                                              # on the cells (L1d step 1):
+    return if compareStandard_cells(ld, -(A1 + 1), -(A1 + 2), true) == CMP_EQUAL
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-prims.c nonequal as pl_nonequal2_va
@@ -1864,10 +2105,12 @@ end
 function pl_nonequal2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    A1 = PL__t0
-    p1 = slotValue(ld, A1 + 1)                               # Word p1 = valTermRef(A1)
-    p2 = slotValue(ld, A1 + 2)                               # Word p2 = p1+1
-    return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FFALSE : FTRUE
+    A1 = PL__t0                                              # on the cells (L1d step 1):
+    return if compareStandard_cells(ld, -(A1 + 1), -(A1 + 2), true) == CMP_EQUAL
+        FFALSE
+    else
+        FTRUE
+    end
 end
 
 # PORT: pl-prims.c compare as pl_compare3_va
@@ -1879,27 +2122,38 @@ function pl_compare3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    d = deRef(ld, slotValue(ld, A1 + 1))                     # Word d = valTermRef(A1); deRef(d)
-    p1 = slotValue(ld, A2 + 1)                               # Word p1 = valTermRef(A2)
-    p2 = slotValue(ld, A2 + 2)                               # Word p2 = p1+1
-    given = kind(d) !== VAR                             # canBind(*d) ⇒ a = 0
-    smaller = false
+    # the order's argument on the WORDS (L1d step 1): `Word d = valTermRef(A1); deRef(d)` — an unbound
+    # CELL takes the answer's atom word (`PL_unify_atom(A1, a)`: `bindConst` on the cell, no term
+    # read); only the BOUNDARY (a slot's side value, a keyed variable: DU_TERM) reads a term, counted
+    k, w, dp = _deref_loc(ld, -(A1 + 1))
+    p1, p2 = -(A2 + 1), -(A2 + 2)                            # Word p1 = valTermRef(A2); p2 = p1+1 (cells, L1d)
+    given = k != DU_CELL                                     # canBind(*d) ⇒ a = 0
+    kk = UInt64(0)
     if given
-        if kind(d) === SYM                              # isAtom(*d)
-            k = sym_key(d)
-            if k == sym_key(mk_sym(T, :(=)))            # ATOM_equals
-                return compareStandard(ld, p1, p2, true) == CMP_EQUAL ? FTRUE : FFALSE
-            end
-            smaller = k == sym_key(mk_sym(T, :<))       # ATOM_smaller
-            if !smaller && k != sym_key(mk_sym(T, :>))  # ATOM_larger
-                return PL_error(ld, ERR_DOMAIN, mk_sym(T, :order), A1) ? FTRUE : FFALSE
-            end
-        else
+        if k == DU_TERM                                      # the boundary: the term, as before
+            d = deRef(ld, slotValue(ld, A1 + 1))
+            given = kind(d) !== VAR
+            given && kind(d) !== SYM &&
+                return PL_type_error(ld, "atom", A1) ? FTRUE : FFALSE
+            given && (kk = sym_key(d))
+        elseif k == DU_WORD && isAtomW(w)                    # isAtom(*d)
+            kk = sym_key(_atom_value(ld, w))
+        else                                                 # a compound word, a value
             return PL_type_error(ld, "atom", A1) ? FTRUE : FFALSE
         end
     end
-    val = compareStandard(ld, p1, p2, false)
-    if given                                            # diff is given
+    smaller = false
+    if given
+        if kk == sym_key(mk_sym(T, :(=)))                    # ATOM_equals
+            return compareStandard_cells(ld, p1, p2, true) == CMP_EQUAL ? FTRUE : FFALSE
+        end
+        smaller = kk == sym_key(mk_sym(T, :<))               # ATOM_smaller
+        if !smaller && kk != sym_key(mk_sym(T, :>))          # ATOM_larger
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :order), A1) ? FTRUE : FFALSE
+        end
+    end
+    val = compareStandard_cells(ld, p1, p2, false)
+    if given                                                 # diff is given
         return (smaller ? val < 0 : val > 0) ? FTRUE : FFALSE
     end
     a = if val < 0
@@ -1909,7 +2163,47 @@ function pl_compare3_va(
     else
         :(=)
     end              # unify diff
-    return PL_unify_atom(ld, A1, mk_sym(T, a)) ? FTRUE : FFALSE
+    k == DU_TERM && return PL_unify_atom(ld, A1, mk_sym(T, a)) ? FTRUE : FFALSE   # the boundary
+    _bind_const!(ld, dp, _atom_word!(ld, mk_sym(T, a)))      # PL_unify_atom(A1, a) on the cell
+    return FTRUE
+end
+
+# PORT: pl-prims.c std_lt as pl_std_lt2_va
+# (PRED_IMPL("@<", 2, std_lt, 0)) — on the CELLS (L1d step 1)
+# DIVERGES: no `CMP_ERROR` (see `pl_equal2_va`); the three below likewise.
+"`@</2` (pl-prims.c `std_lt`): the first argument before the second in the standard order."
+function pl_std_lt2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    p1, p2 = -(PL__t0 + 1), -(PL__t0 + 2)                    # Word p1 = valTermRef(A1); p2 = p1+1
+    return compareStandard_cells(ld, p1, p2, false) < 0 ? FTRUE : FFALSE   # rc < 0
+end
+
+# PORT: pl-prims.c std_leq as pl_std_leq2_va
+"`@=</2` (pl-prims.c `std_leq`): the first argument not after the second in the standard order."
+function pl_std_leq2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    p1, p2 = -(PL__t0 + 1), -(PL__t0 + 2)
+    return compareStandard_cells(ld, p1, p2, false) <= 0 ? FTRUE : FFALSE  # rc <= 0
+end
+
+# PORT: pl-prims.c std_gt as pl_std_gt2_va
+"`@>/2` (pl-prims.c `std_gt`): the first argument after the second in the standard order."
+function pl_std_gt2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    p1, p2 = -(PL__t0 + 1), -(PL__t0 + 2)
+    return compareStandard_cells(ld, p1, p2, false) > 0 ? FTRUE : FFALSE   # rc > 0
+end
+
+# PORT: pl-prims.c std_geq as pl_std_geq2_va
+"`@>=/2` (pl-prims.c `std_geq`): the first argument not before the second in the standard order."
+function pl_std_geq2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    p1, p2 = -(PL__t0 + 1), -(PL__t0 + 2)
+    return compareStandard_cells(ld, p1, p2, false) >= 0 ? FTRUE : FFALSE  # rc >= 0
 end
 
 # PORT: pl-prims.c can_compare as pl_can_compare2_va
@@ -2496,6 +2790,10 @@ const PL_predicates_from_prims = (
     PL_extension("\\==", 2, pl_nonequal2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("compare", 3, pl_compare3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("?=", 2, pl_can_compare2_va, PL_FA_VARARGS),
+    PL_extension("@<", 2, pl_std_lt2_va, PL_FA_ISO | PL_FA_VARARGS),       # (L1d step 1)
+    PL_extension("@=<", 2, pl_std_leq2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("@>", 2, pl_std_gt2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("@>=", 2, pl_std_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("functor", 3, pl_functor3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),

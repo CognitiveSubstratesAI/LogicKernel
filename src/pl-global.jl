@@ -315,6 +315,7 @@ mutable struct PL_local_data{T}
     cold_exports::Int                                           # (compounds read as terms, L1c)
     cold_imports::Int                                           # (terms copied onto the stack)
     cold_vars::Int                                              # (cell variables read as terms, L1c-6)
+    cold_pairs::Int                                             # (cell pairs decided as terms: the boundary, L1d)
     mark_bar::Int                                               # mark_bar
     stamp_next::UInt64                                          # (the engine's reserved stamps:
     stamp_end::UInt64                                           #  stamp_next until stamp_end)
@@ -333,6 +334,7 @@ mutable struct PL_local_data{T}
     occurs_marked::IdDict{T, Nothing}                           # its FIRST_MASK marks
     unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
     ucell_agenda::cell_agendaLR                                 # do_unify_cells' (L1c-4)
+    ccell_agenda::cell_agendaLR                                 # compare's on cells (L1d)
     cycle_cells::Vector{Int}                                    # … its cycle.lstack: linked functor cells
     cycle_saved::Vector{word}                                   # … their functor words (Q2: restored as saved)
     compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
@@ -398,7 +400,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         Int[],
         gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
         gd.functors, gd.atom_dexpr, gd.functor_dot2, gd.atom_nil_w,   # GD->functors (L1c); ATOM_nil (L1c-6)
-        0, 0, 0,                                # no compound exported or imported, no variable read yet
+        0, 0, 0, 0,                             # no export, import, variable read or boundary pair yet
         0,                                      # mark_bar: gTop, set by emptyStacks!
         UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,
@@ -410,7 +412,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
-        cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), Int[], word[],   # do_unify_cells (L1c-4)
+        cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),               # do_unify_cells (L1c-4)
+        cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), Int[], word[],   # compare on cells (L1d)
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
         # idle until a search resets it (`_index_context!`): any predicate will do

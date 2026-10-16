@@ -638,7 +638,7 @@ end
 # PORT: pl-fli.c PL_compare
 "The standard order of the terms `t1` and `t2` reference: -1, 0 or 1 (pl-fli.c `PL_compare`)."
 PL_compare(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
-    compareStandard(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1), false)
+    compareStandard_cells(ld, -(t1 + 1), -(t2 + 1), false)    # on the cells (L1d step 1)
 
 # PORT: pl-fli.c PL_clear_exception
 "Drop the pending exception, if any (pl-fli.c `PL_clear_exception`)."
