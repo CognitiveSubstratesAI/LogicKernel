@@ -13,6 +13,7 @@
 #   tools/test_warm.sh bgbudget # the branch-gate's time budget alone (no daemon)
 #   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
 #   tools/test_warm.sh refuse   # the pkgdir assertion's refusal alone (no daemon)
+#   tools/test_warm.sh inventory # the upstream forwarding and the `inventory` cases alone
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
 # load and present the result as fresh; run a file on fewer implementations than the suite does.
@@ -424,6 +425,32 @@ _refuse_cases() {
     rm -rf "$T/root2"
 }
 
+# (2026-10-17) the daemon sees the UPSTREAM CHECKOUTS its caller names (`LOGICKERNEL_UPSTREAM_<REPO>`):
+# a unit gets only what it is passed, and CI's daemon saw none — `inventory` failed there on the
+# coverage block ("needs every upstream checkout the headers name") while every local run passed.
+# The probe variable is set on the start; the daemon must read it back. Then the inventory cases.
+_inventory_cases() {
+    "$W" stop > /dev/null 2>&1
+    LOGICKERNEL_UPSTREAM_TESTPROBE=forwarded "$W" start > /dev/null ||
+        { check "upstream: the lane starts" 0 1; return; }
+    echo 'println("upstream probe: ", get(ENV, "LOGICKERNEL_UPSTREAM_TESTPROBE", "absent"))' > "$T/up.jl"
+    "$W" send "$T/up.jl" > "$T/up" 2>&1; check "upstream: the probe snippet runs" 0 $?
+    has "upstream: the daemon sees the caller's LOGICKERNEL_UPSTREAM_* variables" "$T/up" "upstream probe: forwarded" 1
+# (user, 2026-10-16) `inventory` rewrites the generated blocks IN THE DAEMON and runs port_check after:
+# on a tree whose inventory is current it exits 0, says so, and changes no generated file
+    _inv_before=$(cat docs/port_inventory.md docs/architecture.md | md5sum)
+    "$W" inventory > "$T/inv" 2>&1; _inv_rc=$?; check "inventory: exits 0 on a current tree" 0 $_inv_rc
+    [ "$_inv_rc" -eq 0 ] || { echo "       inventory said:"; grep -vE '^\s+@|^Stacktrace|^\s*\[' "$T/inv" | tail -6 | sed 's/^/       | /'; }
+    has "…runs port_check after the rewrite" "$T/inv" "inventory: port_check clean" 1
+    [ "$(cat docs/port_inventory.md docs/architecture.md | md5sum)" = "$_inv_before" ]; check "…and changes no generated file" 0 $?
+}
+
+if [ "${1:-}" = inventory ]; then                    # the upstream forwarding + the inventory cases alone
+    _inventory_cases
+    "$W" stop > /dev/null 2>&1
+    echo "test_warm (inventory): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]; exit $?
+fi
 if [ "${1:-}" = refuse ]; then                       # the pkgdir assertion's refusal alone (no daemon)
     _refuse_cases
     echo "test_warm (refuse): $pass passed, $fail failed"
@@ -692,12 +719,7 @@ check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
 "$W" file test/test_lint_globals.jl alt > "$T/ng" 2>&1; check "file: alt on a non-generic file is refused" 2 $?
 has "…saying why" "$T/ng" "is not term-generic" 1
 
-# (user, 2026-10-16) `inventory` rewrites the generated blocks IN THE DAEMON and runs port_check after:
-# on a tree whose inventory is current it exits 0, says so, and changes no generated file
-_inv_before=$(cat docs/port_inventory.md docs/architecture.md | md5sum)
-"$W" inventory > "$T/inv" 2>&1; check "inventory: exits 0 on a current tree" 0 $?
-has "…runs port_check after the rewrite" "$T/inv" "inventory: port_check clean" 1
-[ "$(cat docs/port_inventory.md docs/architecture.md | md5sum)" = "$_inv_before" ]; check "…and changes no generated file" 0 $?
+_inventory_cases
 
 # (user, 2026-10-16) `fmt` formats the changed .jl files IN PLACE (write mode): an untracked file
 # written unformatted comes back Blue-formatted, and a second run rewrites nothing

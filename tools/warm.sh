@@ -125,6 +125,14 @@ _start() {
         copy_env=(-E "JULIA_DEPOT_PATH=$LOGICKERNEL_WARM_DEPOT:$HOME/.julia:"
             -E LOGICKERNEL_WARM_NO_STALE_LOAD=1)
     fi
+    # The UPSTREAM CHECKOUTS port_check reads (`LOGICKERNEL_UPSTREAM_<REPO>`, tools/port_check.jl) reach the
+    # daemon too (2026-10-17): a unit gets only what is passed, so CI's daemon saw NO checkout — `inventory`
+    # failed there ("the coverage block needs every upstream checkout the headers name") while every local
+    # run passed — and a local daemon read ~/dev-zone's swipl-devel instead of the one the caller named.
+    local _uv
+    for _uv in $(compgen -e | grep '^LOGICKERNEL_UPSTREAM_' || :); do
+        copy_env+=(-E "$_uv=${!_uv}")
+    done
     # shellcheck disable=SC2086                          # $slice: empty without user systemd
     systemd-run --user --unit="$UNIT" --collect --quiet $slice -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-8G}" \
         -p MemorySwapMax=0 --working-directory="$ROOT" -E "PATH=$PATH" "${copy_env[@]}" \
