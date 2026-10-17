@@ -102,6 +102,13 @@ function default_upstream_dirs()::Dict{String, String}
         env = "LOGICKERNEL_UPSTREAM_" * uppercase(replace(r, "-" => "_"))
         d[r] = get(ENV, env, joinpath(homedir(), "dev-zone", get(_DEFAULT_CHECKOUT, r, r)))
     end
+    # swipl-bench IS swipl-devel's `bench/` submodule: with no LOGICKERNEL_UPSTREAM_SWIPL_BENCH, it follows
+    # the swipl-devel checkout the caller named (2026-10-17: CI names only swipl-devel — its pin, submodules
+    # checked out — and bench resolved to the runner's absent ~/dev-zone; `inventory` threw on it)
+    if !haskey(ENV, "LOGICKERNEL_UPSTREAM_SWIPL_BENCH") &&
+        haskey(ENV, "LOGICKERNEL_UPSTREAM_SWIPL_DEVEL")
+        d["swipl-bench"] = joinpath(d["swipl-devel"], "bench")
+    end
     return d
 end
 
