@@ -36,11 +36,17 @@ end
     @test var_key(LK.slotValue(ld, a)) == k
     # the cell's variable term is made on demand (L1c-6: no kept term); a variable is its KEY
     @test var_key(LK.slotValue(ld, a)) == var_key(LK._cell_var(ld, LK._cell_pos(ld, k)))
-    for x in (_sw_sym(:foo), LK.mk_nil(_SW), lk_gnd(_SW, Int64(7)), lk_gnd(_SW, 2.5),
-        lk_var(_SW, UInt64(42)))                                # the last: a KEYED variable
+    # since L1e e1 a slot holds any word: a symbol its atom word, a small integer its tagged word, a
+    # float a value-table word (these references lie above the engine's base foreign frame); only a
+    # KEYED variable stays the slot's own side entry (test_slot_indirects.jl: the older-reference rule)
+    for (x, form) in (
+        (_sw_sym(:foo), LK.isAtomW), (LK.mk_nil(_SW), LK.isAtomW),
+        (lk_gnd(_SW, Int64(7)), LK.isTaggedIntW), (lk_gnd(_SW, 2.5), LK._is_vword),
+        (lk_var(_SW, UInt64(42)), ==(LK.SLOT_VALUE))
+    )
         LK.setSlotValue!(ld, b, x)
-        @test ld.slots[b] == LK.SLOT_VALUE
-        @test LK.slotValue(ld, b) === x
+        @test form(ld.slots[b])
+        @test lk_eq(LK.slotValue(ld, b), x)
     end
     # a compound is copied onto the global stack (L1c, the cold import): a compound WORD, read
     # back through the cold export (its argument the cell's variable, bound to v's cell)
@@ -61,7 +67,7 @@ end
 
 @testset "a copied SLOT_VALUE carries its value" begin
     ld, a, b, _ = _sw_engine()
-    x = lk_gnd(_SW, 2.5)                                        # (a compound would be cells since L1c)
+    x = lk_var(_SW, UInt64(77))     # a keyed variable: the one SLOT_VALUE left (L1e e1; a number is a word)
     LK.setSlotValue!(ld, b, _sw_sym(:stale))                    # b's side entry holds another value
     LK.setSlotValue!(ld, a, x)
     LK._slot_copy!(ld, b, a)
@@ -101,7 +107,7 @@ end
     LK.setSlotValue!(ld2, c, lk_var(_SW, kv))
     LK.Trail!(ld2, kv, lk_gnd(_SW, Int64(3)))
     LK._slot_link!(ld2, d, c)
-    @test ld2.slots[d] == LK.SLOT_VALUE &&
+    @test LK.isTaggedIntW(ld2.slots[d]) &&                     # its value's word (L1e e1)
         lk_eq(LK.slotValue(ld2, d), lk_gnd(_SW, Int64(3)))
     LK.setSlotValue!(ld2, c, lk_var(_SW, UInt64(43)))           # … and unbound: itself
     LK._slot_link!(ld2, d, c)

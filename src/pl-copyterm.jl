@@ -224,7 +224,7 @@ end
 # ORIGINAL: whether the word `c` at location `l` is the boundary (a slot's side value, or a
 # value-table word holding a keyed variable).
 @inline function _cp_boundary(ld::PL_local_data{T}, l::Int, c::word)::Bool where {T}
-    l < 0 && return c == SLOT_VALUE
+    l < 0 && c == SLOT_VALUE && return true                  # (a slot's value-table word: below, L1e e1)
     (isVar(c) || isRef(c) || isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)) &&
         return false
     return kind(ld.vtable[valPtr(c)]) === VAR

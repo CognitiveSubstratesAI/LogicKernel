@@ -1321,6 +1321,10 @@ const DU_TERM = 0x04
             w == SLOT_VALUE && return (DU_TERM, word(0), loc)
             (isAtomW(w) || _is_gcompound(w)) && return (DU_WORD, w, 0)
             isTaggedIntW(w) && return (DU_VALUE, w, 0)                  # L1d step 4
+            if _is_vword(w)                                             # L1e e1: a value-table word
+                kind(ld.vtable[valPtr(w)]) === VAR && return (DU_TERM, w, 0)   # (a keyed variable)
+                return (DU_VALUE, w, 0)
+            end
             throw(_slot_word_error(w))
         end
         p = unRef(w)

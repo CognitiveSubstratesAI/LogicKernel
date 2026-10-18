@@ -144,7 +144,7 @@ ar_loop(N) :- A is N * 2 + 1, B is A - N, B > 0, C is (A + B) * (A - B), C >= 0,
 ar_top :- ar_loop(50).
 """
 
-@testset "an arithmetic program makes no cold export, import or variable read (its boundary pairs pinned)" begin
+@testset "an arithmetic program makes no cold export, import, variable read or boundary pair" begin
     gd = LK.PL_global_data{_ZT}()
     ld = LK.PL_local_data{_ZT}(gd)
     f = joinpath(mktempdir(), "ar_loop.pl")
@@ -154,12 +154,11 @@ ar_top :- ar_loop(50).
     @test _zt_run(gd, ld, :ar_top) == LK.PL_S_TRUE
     c1 = _zt_counts(ld)
     @test _zt_run(gd, ld, :ar_top) == LK.PL_S_TRUE
-    # no export, import or variable read; the boundary pairs PINNED (measured 2026-10-18): a FLOAT passed
-    # as a call's own argument (`D > A - 1000`, `E =:= D + D`: 2 per iteration × 50) reaches the slot as a
-    # side value — a slot holds no value-table word (`_slot_link!`'s value-table branch, the L1b slot
-    # layout) — so arithmetic decides it on its term, counted. TRANSITIONAL: it falls when a slot holds an
-    # indirect's word (upstream's `*to = linkValI(from)`), L1e/L1f.
-    @test _zt_counts(ld) .- c1 == (0, 0, 0, 100)
-    _zt_counts(ld) .- c1 == (0, 0, 0, 100) ||
+    # no export, import or variable read, and no boundary pair: since L1e e1 a FLOAT passed as a call's own
+    # argument (`D > A - 1000`, `E =:= D + D`) reaches the slot as its value-table word (`_slot_link!`,
+    # upstream's `*to = linkValI(from)`), so arithmetic reads the word (the L1d pin was 100: 2 per
+    # iteration × 50, each decided on its term)
+    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
+    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
         @info "ar_top: the second call's boundary traffic" _zt_counts(ld) .- c1
 end

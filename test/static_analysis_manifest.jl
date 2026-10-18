@@ -175,6 +175,7 @@ _manifest_per_type(T) = (
     # grow the global stack
     (LK._slot_atom, Tuple{LK.PL_local_data{T}, UInt64}, false),    # a tagged integer's term is MADE (L1d-4)
     (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1c: the cold import
+    (LK._slot_older_than_fli, Tuple{LK.PL_local_data{T}, Int}, true),   # L1e e1
     (LK._slot_copy!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
     (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, false),  # L1c: the cold import
     # L1c-6: the boundary's term reads out of line (the VM's word path carries none)
@@ -2051,6 +2052,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isStringW, Tuple{UInt64}, true),
     (LK.isTermW, Tuple{UInt64}, true),
     (LK.isTaggedIntW, Tuple{UInt64}, true),
+    (LK._is_vword, Tuple{UInt64}, true),                            # L1e e1: a value-table word
     (LK.isConst, Tuple{UInt64}, true),
     (LK.isRef, Tuple{UInt64}, true),
     (LK.isAttVar, Tuple{UInt64}, true),

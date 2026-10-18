@@ -209,6 +209,10 @@ end
     return i <= length(ld.vbox) && ld.vbox[i] == p
 end
 
+# ORIGINAL: a value-table word (`_vword!`): `TAG_COMPOUND|STG_RESERVED`, the entry's index its payload.
+"Whether `w` is a value-table word (upstream: an indirect's word)."
+@inline _is_vword(w::word)::Bool = tagex(w) == (TAG_COMPOUND | STG_RESERVED)
+
 # ORIGINAL: the value table (L1b stage C2; src/pl-global.jl): a value with no word form yet, held
 # by entry, pinned by a box word on the global stack so `Undo!` truncates the table with `gTop`.
 "The word of a new value-table entry holding `v`; its box is the next word of the global stack."
@@ -676,6 +680,7 @@ end
 function _slot_atom(ld::PL_local_data{T}, w::word)::T where {T}
     isAtomW(w) && return _atom_value(ld, w)
     isTaggedIntW(w) && return mk_gnd(T, valInt(w))
+    _is_vword(w) && return ld.vtable[valPtr(w)]     # a value-table word (L1e e1)
     throw(_slot_word_error(w))
 end
 
@@ -685,17 +690,43 @@ end
     "slot word $(repr(w)): a slot read before it was written, or a word that is no slot word"
 )
 
+# ORIGINAL (L1e e1; the workspace's L1_plan/stageL1e_design.md §1): whether slot `i` is OLDER than the
+# innermost foreign frame — a term reference made before `PL_open_foreign_frame`. A value-table entry made
+# now is dropped by that frame's rewind (`_truncate_vtable!` with `gTop`) while the slot lives on, so such a
+# slot keeps its own side value (`SLOT_VALUE`): its read stays defined, where upstream's is not (PL_put_float
+# writes the reference untrailed, and the float's cells are freed by the rewind). The VM's own frames need
+# no test: no VM writer overwrites a slot still live below a choice point (test_slot_words.jl, the review of
+# 2026-10-15), as upstream's compiler guarantees for its frames. Pinned: test_slot_indirects.jl's probe.
+"Whether slot `i` lies below the innermost foreign frame (it can outlive a value-table entry made now)."
+@inline function _slot_older_than_fli(ld::PL_local_data, i::Int)::Bool
+    c = ld.fli_context
+    return c != 0 && i <= ld.fliframes[c].base
+end
+
 # ORIGINAL: a term's slot word (L1b stage C5): a LIVE cell variable is its reference, anything else
 # the slot's own side entry. `_var_ref_word` is the one place that knows a cell from a keyed variable.
 "Store the term `v` in slot `i` as its word."
 @inline function _slot_store!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
-    if kind(v) === EXPR                                         # a copy on the stack (L1c)
+    k = kind(v)
+    if k === EXPR                                               # a copy on the stack (L1c)
         ld.slots[i] = _compound_word!(ld, v)
         return nothing
-    elseif kind(v) === VAR
+    elseif k === VAR
         r = _var_ref_word(ld, v)
         if r != 0
             ld.slots[i] = r
+            return nothing
+        end
+    elseif k === SYM                                            # its atom word (L1e e1)
+        ld.slots[i] = _atom_word!(ld, v)
+        return nothing
+    elseif k === GND                                            # L1e e1: a tagged integer, or an
+        w = _tagged_int_word(T, v)                              # indirect's word unless the slot
+        if w == 0 && !_slot_older_than_fli(ld, i)               # outlives the entry (see below)
+            w = _vword!(ld, v)
+        end
+        if w != 0
+            ld.slots[i] = w
             return nothing
         end
     end
@@ -850,13 +881,22 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
             elseif isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)   # an atom, a compound or a small integer: its word (L1c, L1d step 4)
                 ld.slots[to] = c
                 return nothing
-            else
-                _boundary_slot_link!(ld, to, ld.vtable[valPtr(c)])   # a value-table entry
+            elseif kind(ld.vtable[valPtr(c)]) !== VAR && !_slot_older_than_fli(ld, to)
+                ld.slots[to] = c                    # an indirect's word, shared (L1e e1)
                 return nothing
+            else
+                _boundary_slot_link!(ld, to, ld.vtable[valPtr(c)])   # a keyed variable, or a slot
+                return nothing                                       # the entry cannot outlive
             end
         end
     elseif w == SLOT_VALUE                          # a value stays a value (L1c: the ball)
         _boundary_slot_link_value!(ld, to, ld.slot_values[from])
+    elseif _is_vword(w)                             # a value-table word (L1e e1): as from a cell
+        if kind(ld.vtable[valPtr(w)]) !== VAR && !_slot_older_than_fli(ld, to)
+            ld.slots[to] = w
+        else
+            _boundary_slot_link!(ld, to, ld.vtable[valPtr(w)])
+        end
     else
         (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) || throw(_slot_word_error(w))
         ld.slots[to] = w
@@ -889,8 +929,11 @@ function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
         end
     elseif w == SLOT_VALUE
         ld.gstack[p] = _word_of!(ld, deRef(ld, ld.slot_values[i]))
-    else
-        (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) || throw(_slot_word_error(w))
+    elseif _is_vword(w) && kind(ld.vtable[valPtr(w)]) === VAR   # a keyed variable: as a binding
+        ld.gstack[p] = _word_of!(ld, deRef(ld, ld.vtable[valPtr(w)]))
+    else                                            # an atom, a compound, a small integer or (L1e
+        (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w) || _is_vword(w)) ||   # e1) a value-table
+            throw(_slot_word_error(w))                                           # word: shared
         ld.gstack[p] = w
     end
     return nothing
