@@ -709,6 +709,22 @@ function PL_get_list_ex(
     return PL_error(ld, ERR_TYPE, mk_sym(T, :list), l)
 end
 
+# PORT: pl-error.c PL_unify_list_ex
+"Unify `l` with a list cell, its head and tail into `h` and `t`; `[]` fails, anything else is `type_error(list, l)` (pl-error.c)."
+function PL_unify_list_ex(ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t)::Bool where {T}
+    PL_unify_list(ld, l, h, t) && return true
+    PL_get_nil(ld, l) && return false
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :list), l)
+end
+
+# PORT: pl-error.c PL_unify_nil_ex
+"Unify `l` with `[]`; a list cell fails, anything else is `type_error(list, l)` (pl-error.c)."
+function PL_unify_nil_ex(ld::PL_local_data{T}, l::term_t)::Bool where {T}
+    PL_unify_nil(ld, l) && return true
+    PL_is_list(ld, l) && return false
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :list), l)
+end
+
 # PORT: pl-error.c PL_get_nil_ex
 "Whether term reference `l` holds `[]`; on a non-list, false after raising `type_error(list, L)` (pl-error.c)."
 function PL_get_nil_ex(ld::PL_local_data{T}, l::term_t)::Bool where {T}

@@ -742,6 +742,8 @@ function _manifest_index(T)
         (LK.PL_get_integer_ex, Tuple{LD, Int}, false),
         (LK.PL_get_list_ex, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_get_nil_ex, Tuple{LD, Int}, false),
+        (LK.PL_unify_list_ex, Tuple{LD, Int, Int, Int}, false),   # L1e e4 (=..)
+        (LK.PL_unify_nil_ex, Tuple{LD, Int}, false),
         (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, T, T, Int}, false),
         # R1c — the scanner (src/pl-read.jl), atom_number/2 (pl-prims.jl): over the term type
         (LK.SkipSymbol, Tuple{Vector{UInt8}, Int64, LK.read_data{T}}, false),
@@ -1243,7 +1245,7 @@ function _manifest_index(T)
                 LK.pl_sort2_va, LK.pl_msort2_va, LK.pl_keysort2_va, LK.pl_ground1_va,
                 LK.pl_functor3_va, LK.pl_numbervars4_va, LK.pl_term_variables2_va,
                 LK.pl_term_variables3_va,
-                LK.pl_free_variable_set3_va, LK.pl_skip_list3_va
+                LK.pl_free_variable_set3_va, LK.pl_skip_list3_va, LK.pl_univ2_va
             )
         ]...,
         (LK._boot_term, Tuple{Symbol, Vector{T}}, false),

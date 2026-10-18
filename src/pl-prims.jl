@@ -3052,6 +3052,87 @@ function pl_functor3_va(
     return FFALSE
 end
 
+# PORT: pl-prims.c univ as pl_univ2_va
+# (PRED_IMPL("=..", 2, univ, PL_FA_ISO)) — on the CELLS from the start (L1e e4, audit D-0020): the compound
+# laid out at gTop from the list's words (`needsRef(*h) ? makeRefG(h) : *h`), the other direction through the
+# FLI writers on cells (e3). DIVERGES: a compound whose head is no symbol (the kernel's `$expr/n`, Q2) gives
+# the list of ALL its children, the head first (it has no functor name; swipl has no such term); a list
+# element at the boundary (DU_TERM) is stored as its term's word, counted in `cold_pairs`.
+"`Term =.. List` (pl-prims.c `univ`): `List` is `[Name|Args]` of the compound `Term`, or `[Term]` of an atomic."
+function pl_univ2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    t, list = PL__t0, PL__t0 + 1
+    if PL_is_variable(ld, t)
+        tail = PL_copy_term_ref(ld, list)
+        head = PL_new_term_ref(ld)
+        if !PL_get_list(ld, tail, head, tail)
+            PL_get_nil(ld, tail) &&
+                return PL_error(ld, ERR_DOMAIN, mk_sym(T, :non_empty_list), tail) ? FTRUE : FFALSE
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :list), tail) ? FTRUE : FFALSE
+        end
+        if PL_get_nil(ld, tail)                             # A =.. [H]
+            PL_is_atomic(ld, head) ||
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :atomic), head) ? FTRUE : FFALSE
+            return PL_unify(ld, t, head) ? FTRUE : FFALSE
+        end
+        name = PL_get_atom_ex(ld, head)
+        name === nothing && return FFALSE
+        arity = lengthList(ld, tail, false)
+        if arity < 0
+            arity == -1 && return PL_error(ld, ERR_TYPE, mk_sym(T, :list), list) ? FTRUE : FFALSE
+            return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+        end
+        p = _alloc_compound!(ld, lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity), arity)
+        ld.slots[head + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)   # *valTermRef(head) = consPtr(p, …)
+        k, w, _ = _deref_loc(ld, -(tail + 1))               # Word l = valTermRef(tail); deRef(l)
+        i = 0
+        while _is_list_word(ld, k, w)                       # while(isList(*l))
+            i += 1
+            hk, hw, hp = _deref_loc(ld, valPtr(w) + 1)      # Word h = HeadList(l); deRef(h)
+            ld.gstack[p + i] = if hk == DU_CELL             # *p++ = needsRef(*h) ? makeRefG(h) : *h
+                makeRefG(hp)
+            elseif hk == DU_TERM
+                ld.cold_pairs += 1
+                _word_of!(ld, deRef(ld, _loc_term(ld, hk, hw, hp)))
+            else
+                hw
+            end
+            k, w, _ = _deref_loc(ld, valPtr(w) + 2)         # l = TailList(l); deRef(l)
+        end
+        return PL_unify(ld, t, head) ? FTRUE : FFALSE
+    end
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # p = valTermRef(t); deRef(p)
+    if k == DU_WORD && _is_gcompound(w)                     # isTerm(*p)
+        f = ld.gstack[valPtr(w)]
+        n = arityFunctor(ld.functors, f)
+        n == 0 && return PL_domain_error(ld, "compound_non_zero_arity", t) ? FTRUE : FFALSE
+        head = PL_new_term_ref(ld)
+        l = PL_new_term_ref(ld)
+        PL_unify_list_ex(ld, list, head, l) || return FFALSE
+        nm = nameFunctor(ld.functors, f)
+        if nm != ld.atom_dexpr                              # PL_unify_atom(head, fd->name)
+            PL_unify_atom(ld, head, _atom_value(ld, nm)) || return FFALSE
+        else                                                # `$expr/n`: its first child is the head
+            PL_unify_arg(ld, 1, t, head) || return FFALSE
+            PL_unify_list_ex(ld, l, head, l) || n == 1 || return FFALSE
+        end
+        for a in (nm == ld.atom_dexpr ? 2 : 1):n
+            (PL_unify_list_ex(ld, l, head, l) && PL_unify_arg(ld, a, t, head)) || return FFALSE
+        end
+        return PL_unify_nil_ex(ld, l) ? FTRUE : FFALSE
+    elseif k == DU_TERM                                     # the boundary: decide its kind on the term
+        ld.cold_pairs += 1
+    end
+    if PL_is_atomic(ld, t)                                  # 3 =.. X, 3.4 =.. X, "foo" =.. X
+        head = PL_new_term_ref(ld)
+        l = PL_new_term_ref(ld)
+        PL_unify_list_ex(ld, list, head, l) && PL_unify(ld, head, t) && PL_unify_nil_ex(ld, l) &&
+            return FTRUE
+    end
+    return FFALSE
+end
+
 # PORT: pl-prims.c term_variables_loop
 # DIVERGES: the variables are pushed on `vars` (upstream: term references); a visited variable is
 # its key in `visitedv`, a visited compound an entry in `visitedf` (upstream: marks on the cells).
@@ -3673,6 +3754,7 @@ const PL_predicates_from_prims = (
     PL_extension("@>", 2, pl_std_gt2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("@>=", 2, pl_std_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("functor", 3, pl_functor3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("=..", 2, pl_univ2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("numbervars", 4, pl_numbervars4_va, PL_FA_VARARGS),     # (L1d step 7a, D-0016)
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
