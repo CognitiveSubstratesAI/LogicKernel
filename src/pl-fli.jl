@@ -111,33 +111,41 @@ function PL_copy_term_ref(ld::PL_local_data{T}, from::Int)::Int where {T}
 end
 
 # PORT: pl-fli.c PL_cons_list
-# DIVERGES: no global space to ensure, so it cannot fail; the cell is a compound of the
-# dereferenced head and tail (`bindConsVal`).
+# DIVERGES: no global space to ensure, so it cannot fail; on the CELLS (L1e e3): three cells at gTop,
+# `bindConsVal` as `_cell_link!` (linkValI from the head's and tail's slots).
 "Make term reference `l` hold the list cell of the terms `head` and `tail` reference (pl-fli.c)."
 function PL_cons_list(
     ld::PL_local_data{T}, l::term_t, head::term_t, tail::term_t
 )::Bool where {T}
-    setSlotValue!(
-        ld,
-        l + 1,
-        mk_expr(
-            T,
-            T[
-                mk_sym(T, LIST_CONS_NAME), linkValI(ld, slotValue(ld, head + 1)),
-                linkValI(ld, slotValue(ld, tail + 1))
-            ]
-        )
-    )
-
+    a = _alloc_compound!(ld, ld.functor_dot2, 2)            # a = allocGlobal(3); a[0] = FUNCTOR_dot2
+    _cell_link!(ld, a + 1, head + 1)                        # bindConsVal(&a[1], valHandleP(head))
+    _cell_link!(ld, a + 2, tail + 1)                        # bindConsVal(&a[2], valHandleP(tail))
+    ld.slots[l + 1] = consPtr(a, TAG_COMPOUND | STG_GLOBAL) # setHandle(l, consPtr(a, …))
     return true
 end
 
 # PORT: pl-fli.c PL_unify_list
-# DIVERGES: no global space to ensure. An unbound list is bound to a cell of two fresh variables.
+# DIVERGES: no global space to ensure; on the CELLS (L1e e3): an unbound cell bound (`bindConst`) to a new
+# `'[|]'/2` compound at gTop, `h`/`t` its argument cells' references; a list word's arguments linked
+# (`linkValI`); the boundary (DU_TERM) on terms, counted.
 "Unify term reference `l` with a list cell, putting its head and tail into `h` and `t` (pl-fli.c)."
 function PL_unify_list(
     ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t
 )::Bool where {T}
+    k, w, q = _deref_loc(ld, -(l + 1))                      # p = valHandleP(l); deRef(p)
+    if k == DU_CELL                                         # canBind(*p)
+        a = _alloc_compound!(ld, ld.functor_dot2, 2)        # a[0] = FUNCTOR_dot2; setVar(a[1]), (a[2])
+        ld.slots[h + 1] = makeRefG(a + 1)                   # setHandle(h, makeRefG(&a[1]))
+        ld.slots[t + 1] = makeRefG(a + 2)                   # setHandle(t, makeRefG(&a[2]))
+        _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, c)
+        return true
+    elseif _is_list_word(ld, k, w)                          # isList(*p)
+        _slot_link_loc!(ld, h + 1, _deref_loc(ld, valPtr(w) + 1))    # setHandle(h, linkValI(a))
+        _slot_link_loc!(ld, t + 1, _deref_loc(ld, valPtr(w) + 2))    # setHandle(t, linkValI(a+1))
+        return true
+    end
+    k == DU_TERM || return false
+    ld.cold_pairs += 1                                      # the boundary: on terms
     p = deRef(ld, slotValue(ld, l + 1))
 
     if canBind(p)
@@ -196,6 +204,23 @@ end
 function PL_unify_functor(
     ld::PL_local_data{T}, t::term_t, name::T, arity::Int
 )::Bool where {T}
+    k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p) (L1e e3)
+    if k != DU_TERM
+        nw = _atom_word!(ld, name)                          # nameFunctor(f)
+        if k == DU_CELL                                     # canBind(*p)
+            if arity == 0
+                _bind_const!(ld, q, nw)                     # bindConst(p, name)
+            else                                            # *a = f; setVar(*++a)…
+                a = _alloc_compound!(ld, lookupFunctorDef(ld.functors, nw, arity), arity)
+                _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, to)
+            end
+            return true
+        end
+        arity == 0 && return k == DU_WORD && w == nw        # *p == nameFunctor(f)
+        return k == DU_WORD && _is_gcompound(w) &&          # hasFunctor(*p, f)
+               ld.gstack[valPtr(w)] == lookupFunctorDef(ld.functors, nw, arity)
+    end
+    ld.cold_pairs += 1                                      # the boundary: on terms
     p = deRef(ld, slotValue(ld, t + 1))
 
     if canBind(p)
@@ -228,6 +253,14 @@ end
 function PL_unify_arg(
     ld::PL_local_data{T}, index::Int, t::term_t, a::term_t
 )::Bool where {T}
+    k, x, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t) (L1e e3: the cells)
+    if k == DU_WORD && _is_gcompound(x)                     # isTerm(w)
+        q = valPtr(x)
+        0 < index <= arityFunctor(ld.functors, ld.gstack[q]) || return false   # index <= arity
+        return unify_ptrs_cells(ld, q + index, -(a + 1))    # unify_ptrs(argTermP(w, index-1), valHandleP(arg))
+    end
+    k == DU_TERM || return false
+    ld.cold_pairs += 1                                      # the boundary: on terms
     w = deRef(ld, slotValue(ld, t + 1))
 
     if isTerm(w)
@@ -929,6 +962,16 @@ PL_unify(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
 # order's identity of two atomic terms (`compare_primitives` in equality mode) — `1` is not `1.0`.
 "Unify the term `t` references with the atomic term `w` (pl-fli.c `PL_unify_atomic`)."
 function PL_unify_atomic(ld::PL_local_data{T}, t::term_t, w::T)::Bool where {T}
+    k, c, q = _deref_loc(ld, -(t + 1))                      # deRef2(valHandleP(t), p) (L1e e3: the cells)
+    if k == DU_CELL                                         # canBind(*p)
+        _bind_const!(ld, q, _word_of!(ld, w))               # bindConst(p, w): the word made only here
+        return true
+    elseif k == DU_WORD                                     # *p == w: an atom's word, never a compound's
+        return isAtomW(c) && kind(w) === SYM && c == _atom_word!(ld, w)
+    elseif k == DU_VALUE                                    # *p == w || equalIndirect(w, *p)
+        return compare_primitives(_value_term(ld, c), w, CMP_MODE_EQUAL) == CMP_EQUAL
+    end
+    ld.cold_pairs += 1                                      # the boundary: on terms
     p = deRef(ld, slotValue(ld, t + 1))
     if kind(p) === VAR                                  # canBind(*p)
         Trail!(ld, var_key(p), w)                       # bindConst(p, w)
@@ -942,10 +985,10 @@ end
 PL_unify_atom(ld::PL_local_data{T}, t::term_t, a::T) where {T} = PL_unify_atomic(ld, t, a)
 
 # PORT: pl-fli.c PL_unify_integer
-# DIVERGES: every `Int` is one grounded value — no `consInt` range and no `unify_int64_ex`.
+# (upstream: `unify_int64_ex(t, i, false)` — on the cells since L1d step 7a; L1e e3 drops the term detour)
 "Unify the term `t` references with the integer `i` (pl-fli.c `PL_unify_integer`)."
 PL_unify_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
-    PL_unify_atomic(ld, t, mk_gnd(T, i))
+    unify_int64_ex(ld, t, i, false)
 
 # PORT: pl-fli.c unify_int64_ex
 # DIVERGES: on the WORDS (`valHandleP(t)`, `_deref_loc`, L1d step 7a): an integer past the tagged range
@@ -981,7 +1024,8 @@ PL_unify_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
     unify_int64_ex(ld, t, i, false)
 
 # PORT: pl-fli.h PL_put_intptr
-# DIVERGES: `PL_put_int64`'s work, inline: the reference holds the integer.
+# DIVERGES: `PL_put_int64`'s work, inline: the reference holds the integer — its word since L1e e1 (a tagged
+# integer, or a value-table word under `_slot_store!`'s older-slot rule).
 "Make term reference `t` hold the integer `i` (pl-fli.h `PL_put_intptr`)."
 function PL_put_intptr(ld::PL_local_data{T}, t::term_t, i::Int)::Bool where {T}
     setSlotValue!(ld, t + 1, mk_gnd(T, i))
