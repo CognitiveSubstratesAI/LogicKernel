@@ -307,6 +307,27 @@ function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} wh
     return nothing
 end
 
+# PORT: pl-fli.c PL_get_long
+# DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS
+# (`valHandle(t)`, `_deref_loc`, L1d step 7a): a tagged integer its value (a `long` is 64 bits: in
+# range), a value-table integer that fits `Int64` (`get_int64`) its value; the boundary (a slot's side
+# value, a keyed variable) read as its term, counted in `cold_pairs`.
+"The C `long` term reference `t` holds — an integer in `Int64`'s range — or `nothing` (pl-fli.c)."
+function PL_get_long(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))
+    if k == DU_VALUE
+        isTaggedIntW(w) && return Int(valInt(w))           # isTaggedInt(w)
+        v = ld.vtable[valPtr(w)]
+    elseif k == DU_TERM
+        ld.cold_pairs += 1
+        v = deRef(ld, _loc_term(ld, k, w, p))
+    else
+        return nothing
+    end
+    (isInteger(v) && integer_is_int64(v)) && return Int(int64_value(v))   # get_int64(w, &i64)
+    return nothing
+end
+
 # PORT: pl-fli.c atom_to_bool
 # DIVERGES: `nothing` for neither, where upstream returns -1.
 "The Boolean atom `a` names — `true`/`on` or `false`/`off` — or `nothing` (pl-fli.c)."
@@ -626,6 +647,39 @@ PL_unify_atom(ld::PL_local_data{T}, t::term_t, a::T) where {T} = PL_unify_atomic
 "Unify the term `t` references with the integer `i` (pl-fli.c `PL_unify_integer`)."
 PL_unify_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
     PL_unify_atomic(ld, t, mk_gnd(T, i))
+
+# PORT: pl-fli.c unify_int64_ex
+# DIVERGES: on the WORDS (`valHandleP(t)`, `_deref_loc`, L1d step 7a): an integer past the tagged range
+# (or in a term type holding no `Int64`) is a value-table word (`put_int64`: upstream's indirect); the
+# boundary (a slot's side value, a keyed variable) unified on its term (`PL_unify_atomic`), counted in
+# `cold_pairs`.
+"Unify the term `t` references with the integer `i`; with `ex`, a non-integer is a type error (pl-fli.c)."
+function unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int, ex::Bool)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))
+    if k == DU_CELL                                         # canBind(*p)
+        if PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT && _holds_payload(T, Int64)
+            _bind_const!(ld, p, consInt(i))                 # valInt(w) == i: bindConst(p, w)
+        else
+            _bind_const!(ld, p, _gnd_word!(ld, mk_gnd(T, i)))   # put_int64(&w, i); bindConst
+        end
+        return true
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return PL_unify_atomic(ld, t, mk_gnd(T, i))
+    elseif k == DU_VALUE
+        isTaggedIntW(w) && return valInt(w) == i            # w == *p && valInt(w) == i
+        v = ld.vtable[valPtr(w)]
+        (isInteger(v) && integer_is_int64(v)) && return int64_value(v) == i   # get_int64
+        isInteger(v) && return false
+    end
+    ex && return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)   # !isInteger(*p)
+    return false
+end
+
+# PORT: pl-fli.c PL_unify_int64
+"Unify the term `t` references with the integer `i` (pl-fli.c `PL_unify_int64`)."
+PL_unify_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
+    unify_int64_ex(ld, t, i, false)
 
 # PORT: pl-fli.h PL_put_intptr
 # DIVERGES: `PL_put_int64`'s work, inline: the reference holds the integer.

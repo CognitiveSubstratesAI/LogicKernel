@@ -1014,6 +1014,18 @@ function _manifest_index(T)
         (LK.nv_options{T}, Tuple{T, Int64, LK.av_action, Int64, Bool}, false),
         (LK.do_number_vars, Tuple{LD, T, LK.nv_options{T}, Int64}, false),
         (LK.numberVars, Tuple{LD, Int64, LK.nv_options{T}, Int64}, false),
+        # L1d step 7a — numberVars on the cells; numbervars/4 (pl-prims.c) and numbervars/3 (boot/syspred.pl)
+        (LK.numberVars_terms, Tuple{LD, Int64, LK.nv_options{T}, Int64}, false),
+        (
+            LK.do_number_vars_cells,
+            Tuple{LD, Int64, LK.nv_options{T}, Int64, Int64, UInt64, UInt64, UInt64}, false
+        ),
+        (LK.PL_get_long, Tuple{LD, Int64}, false),
+        (LK.PL_get_long_ex, Tuple{LD, Int64}, false),
+        (LK.PL_get_intptr_ex, Tuple{LD, Int64}, false),
+        (LK.unify_int64_ex, Tuple{LD, Int64, Int64, Bool}, false),
+        (LK.PL_unify_int64, Tuple{LD, Int64, Int64}, false),
+        (LK._boot_syspred!, Tuple{GD}, false),
         (LK.pl_write_canonical2, Tuple{LD, Int64, Int64}, false),
         (LK.pl_write_canonical, Tuple{LD, Int64}, false),
         (LK.setDoubleQuotes, Tuple{LD, T, UInt32}, false),
@@ -1192,7 +1204,8 @@ function _manifest_index(T)
                 LK.pl_add_findall_bag2_va, LK.pl_collect_findall_bag2_va,
                 LK.pl_destroy_findall_bag0_va, LK.pl_is_list1_va, LK.pl_dlength2_va,
                 LK.pl_sort2_va, LK.pl_msort2_va, LK.pl_keysort2_va, LK.pl_ground1_va,
-                LK.pl_functor3_va, LK.pl_term_variables2_va, LK.pl_term_variables3_va,
+                LK.pl_functor3_va, LK.pl_numbervars4_va, LK.pl_term_variables2_va,
+                LK.pl_term_variables3_va,
                 LK.pl_free_variable_set3_va, LK.pl_skip_list3_va
             )
         ]...,

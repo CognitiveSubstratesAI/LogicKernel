@@ -900,6 +900,8 @@ graph LR
     pl_prims --> pl_error
     pl_prims --> pl_gmp
     pl_prims --> pl_arith
+    pl_prims --> os_pl_option
+    pl_prims --> os_pl_text
     pl_prims --> pl_write
     pl_prims --> pl_read
     pl_ressymbol --> term_interface
@@ -1030,7 +1032,9 @@ graph LR
     pl_fli --> pl_gc
     pl_fli --> pl_alloc
     pl_fli --> pl_wam
+    pl_fli --> pl_attvar
     pl_fli --> pl_error
+    pl_fli --> pl_gmp
     pl_fli --> pl_arith
     pl_fli --> os_pl_text
     pl_fli --> pl_write

@@ -596,6 +596,30 @@ function PL_get_integer_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int}
     return nothing
 end
 
+# PORT: pl-error.c PL_get_long_ex
+# DIVERGES: returns the value, or `nothing` with the error raised (see `PL_get_long`).
+"""
+The C `long` term reference `t` holds, or `nothing` after raising `representation_error(long)` (an
+integer out of range) or `type_error(integer, T)` (pl-error.c).
+"""
+function PL_get_long_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    i = PL_get_long(ld, t)
+    i === nothing || return i
+    if PL_is_integer(ld, t)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :long))
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return nothing
+end
+
+# PORT: pl-error.c PL_get_intptr_ex
+# DIVERGES: the branch of a 64-bit platform whose `long` is a pointer's size (`SIZEOF_LONG ==
+# SIZEOF_VOIDP`: Linux, macOS): `PL_get_long_ex`, so its error is `representation_error(long)`, as
+# swipl 10.1.18 on x86_64-linux raises it.
+"The C `intptr_t` term reference `t` holds, or `nothing` with the error raised (pl-error.c)."
+PL_get_intptr_ex(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long_ex(ld, t)
+
 # PORT: pl-error.c PL_get_size_ex
 # DIVERGES: returns the value, or `nothing` with the error raised (or none: upstream's plain
 # `false`). An integer beyond `Int64` is beyond `size_t` or negative.

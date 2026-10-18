@@ -715,12 +715,14 @@ function do_number_vars(
     return n                                        # anything else
 end
 
-# PORT: pl-prims.c numberVars
+# PORT: pl-prims.c numberVars as numberVars_terms
+# TRANSITIONAL (L1d step 7a, until L1f): numberVars on TERMS — the boundary's path (`numberVars` below
+# redoes the numbering here when its cell walk meets a slot's side value or a keyed variable).
 # DIVERGES: the marks of a walk (`made`, `visited`) are the local data's scratch, cleared here
 # (upstream: `initvisited`/`unvisit`, the global-stack mark); the error for `CONTAINS_ATTVAR` is
 # kept for the shape (no attributed variables); no signals, no stack growth (`makeMoreStackSpace`).
-"Number the variables of term reference `t` from `n`: the next number, or `NV_ERROR` with the error raised (pl-prims.c)."
-function numberVars(
+"Number the variables of term reference `t` from `n` ON TERMS: the next number, or `NV_ERROR` with the error raised (pl-prims.c `numberVars`)."
+function numberVars_terms(
     ld::PL_local_data{T}, t::term_t, options::nv_options{T}, n::Int
 )::Int where {T}
     if !(PLMINTAGGEDINT <= n <= PLMAXTAGGEDINT)     # inTaggedNumRange(n)
@@ -765,6 +767,229 @@ function numberVars(
             return NV_ERROR
         end
     end
+end
+
+# ── numbervars on the CELLS (L1d step 7a; the workspace's L1_plan/stageL1d_design.md §3g) ─────────
+# Upstream's walk on locations: a variable cell is bound (`bindConst`, trailed) to a `'$VAR'(N)` laid
+# out at gTop, its argument a WORD — so the singletons passes rewrite the ones made "ourselves" (above
+# the mark's globaltop: upstream's address test) in place, untrailed, as upstream; a visited compound
+# is MARKed on its functor cell (`visitedWord_cells`, on `ld.cycle_vstack`), cleared by `unvisit_cells`.
+# THE BOUNDARY (a slot's side value, a keyed variable — `DU_TERM` — anywhere in the walk): unvisit,
+# Undo to the mark, and the whole numbering redone on terms (`numberVars_terms`), counted in
+# `cold_pairs`. TRANSITIONAL until L1f.
+
+# ORIGINAL: `do_number_vars_cells`' code for the boundary (no upstream counterpart: upstream has none).
+"`do_number_vars_cells`: the walk met the boundary (a slot's side value, a keyed variable)."
+const NV_BOUNDARY = -14
+
+# PORT: pl-prims.c do_number_vars as do_number_vars_cells
+# DIVERGES: on locations (`_deref_loc`'s), the one-sided cell agenda (`ld.walk_agenda`); `gtop` is the
+# mark's `globaltop` (upstream passes the mark; positions, so "at or above the old top" is `> gtop`);
+# `fw` the functor word of `options.functor/1` and `anon`/`var` the atom words of `_` and `var`
+# (upstream: `options->functor`, `ATOM_anonvar`, `ATOM_var`). `numbered_check` reads a tagged integer
+# (a value-table integer is past the tagged range: upstream's "cannot be bigger"). The boundary
+# returns `NV_BOUNDARY`. NOT PORTED: attributed variables (no cell holds one: `on_attvar` is never
+# read), NV_EINTR (no signals), the global-stack overflow (`hasGlobalSpace`: the stack grows).
+"Number the variables of the term at location `l` from `n` on the cells: the next number, or a code below 0 (pl-prims.c `do_number_vars`)."
+function do_number_vars_cells(
+    ld::PL_local_data{T}, l::Int, options::nv_options{T}, n::Int, gtop::Int, fw::word,
+    anon::word, var::word
+)::Int where {T}
+    a = ld.walk_agenda
+    start = n
+
+    initCellAgenda!(a, 1, l)                                # initTermAgenda(&agenda, 1, p)
+    while true
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
+        if k == DU_CELL                                     # canBind(*p)
+            if options.singletons != 0
+                arg = anon                                  # a[1] = ATOM_anonvar
+            else
+                v = n + options.offset
+                if !(PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT) # valInt(a[1]) != v
+                    n = REPRESENTATION_ERROR
+                    break                                   # goto out
+                end
+                arg = consInt(v)                            # a[1] = consInt(v)
+                n += 1
+            end
+            c = _alloc_compound!(ld, fw, 1)                 # a = gTop; a[0] = functor; gTop += 2
+            ld.gstack[c + 1] = arg
+            _bind_const!(ld, p, consPtr(c, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, v)
+        elseif k == DU_TERM                                 # the boundary
+            n = NV_BOUNDARY
+            break
+        elseif k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
+            c = valPtr(w)
+            if ld.gstack[c] == fw                           # f->definition == options->functor
+                if c > gtop                                 # new one we created ourselves
+                    if options.singletons != 0
+                        ap = c + 1                          # Word p = &f->arguments[0]
+                        if options.singletons == 1
+                            if ld.gstack[ap] == anon
+                                v = n + options.offset
+                                if !(PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT)
+                                    n = REPRESENTATION_ERROR
+                                    break
+                                end
+                                ld.gstack[ap] = var         # *p = ATOM_var
+                                n += 1
+                            end
+                        else
+                            if ld.gstack[ap] == var
+                                ld.gstack[ap] = consInt(n + options.offset)   # *p = consInt(v)
+                                n += 1
+                            end
+                        end
+                    end
+                    continue
+                else
+                    ka, wa, _ = _deref_loc(ld, c + 1)       # deRef(p)
+                    if options.numbered_check && ka == DU_VALUE && isTaggedIntW(wa)
+                        if valInt(wa) >= start
+                            n = ALREADY_NUMBERED
+                            break
+                        end
+                    end
+                    if ka == DU_TERM
+                        n = NV_BOUNDARY
+                        break
+                    end
+                    (ka == DU_CELL || (ka == DU_WORD && _is_gcompound(wa))) ||
+                        continue                            # number '$VAR'(_) only
+                end
+            end
+
+            # do_number:
+            options.singletons == 0 && visitedWord_cells(ld, c) && continue    # visited(f)
+            pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+        end
+    end
+
+    clearCellAgenda!(a)                                     # out:
+    return n
+end
+
+# PORT: pl-prims.c numberVars
+# DIVERGES: on the CELLS (L1d step 7a, `do_number_vars_cells`); the functor word of `options.functor/1`
+# looked up here (upstream's caller passes `PL_new_functor(name, 1)`); the boundary — `NV_BOUNDARY` —
+# unvisits, undoes to the mark and numbers on terms (`numberVars_terms`), counted in `cold_pairs`.
+# The error for `CONTAINS_ATTVAR` is kept for the shape (no attributed variables); no signals
+# (`NV_EINTR`), no stack growth (`makeMoreStackSpace`: the stack grows on demand).
+"Number the variables of term reference `t` from `n`: the next number, or `NV_ERROR` with the error raised (pl-prims.c)."
+function numberVars(
+    ld::PL_local_data{T}, t::term_t, options::nv_options{T}, n::Int
+)::Int where {T}
+    if !(PLMINTAGGEDINT <= n <= PLMAXTAGGEDINT)     # inTaggedNumRange(n)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :tagged_integer))
+        return NV_ERROR
+    end
+
+    options.offset = n
+    fw = lookupFunctorDef(ld.functors, _atom_word!(ld, options.functor), 1)
+    anon = _atom_word!(ld, mk_sym(T, :_))           # ATOM_anonvar
+    var = _atom_word!(ld, mk_sym(T, :var))          # ATOM_var
+
+    m = Mark(ld)
+    # initvisited(): `ld.cycle_vstack` is empty between walks
+    rc = do_number_vars_cells(ld, -(t + 1), options, 0, m.globaltop, fw, anon, var)
+    unvisit_cells(ld)                               # unvisit()
+    if rc == NV_BOUNDARY
+        Undo!(ld, m)
+        DiscardMark(ld, m)
+        ld.cold_pairs += 1
+        return numberVars_terms(ld, t, options, n)
+    end
+    if rc >= 0                                      # all ok
+        DiscardMark(ld, m)
+        if options.singletons != 0
+            options.singletons = 2
+            rc2 = do_number_vars_cells(ld, -(t + 1), options, 0, m.globaltop, fw, anon, var)
+            unvisit_cells(ld)
+            @assert rc == rc2
+        end
+        return rc + options.offset
+    else
+        if rc == CONTAINS_ATTVAR
+            DiscardMark(ld, m)
+            PL_error(ld, ERR_TYPE, mk_sym(T, :free_of_attvar), t)
+            return NV_ERROR
+        elseif rc == ALREADY_NUMBERED
+            DiscardMark(ld, m)
+            PL_error(
+                ld, "", 0, "already numbered", ERR_PERMISSION, mk_sym(T, :numbervars),
+                mk_sym(T, :term), t
+            )
+            return NV_ERROR
+        else
+            @assert rc == REPRESENTATION_ERROR
+            DiscardMark(ld, m)
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :tagged_integer))
+            return NV_ERROR
+        end
+    end
+end
+
+# PORT: pl-prims.c numbervar_options
+"The options of numbervars/4 (pl-prims.c `numbervar_options`)."
+const numbervar_options = (
+    PL_option_t(:attvar, OPT_ATOM),
+    PL_option_t(:functor_name, OPT_ATOM),
+    PL_option_t(:singletons, OPT_BOOL)
+)
+
+# PORT: pl-prims.c numbervars as pl_numbervars4_va
+# DIVERGES: the options' values are returned by `PL_scan_options` (see there), the defaults applied
+# to `nothing`; the functor is its name (`nv_options`); `PL_is_acyclic` on the cells (L1d step 3).
+# numbervars/4 only: numbervars(+Term, +Functor, +Start, -End) — the comment's older form — is not
+# this predicate's (upstream's A2 is always Start).
+"numbervars(+Term, +Start, -End, +Options): number Term's variables from Start, End the next number (pl-prims.c)."
+function pl_numbervars4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    name = mk_sym(T, Symbol("\$VAR"))             # ATOM_isovar
+    av = mk_sym(T, :error)                          # ATOM_error
+    singletons = false
+
+    t = PL_copy_term_ref(ld, A1)
+
+    n = PL_get_intptr_ex(ld, A2)
+    n === nothing && return FFALSE
+    endt = A3
+    options = A4
+
+    vals = PL_scan_options(ld, options, 0, "numbervar_option", numbervar_options)
+    vals === nothing && return FFALSE
+    vals[1] === nothing || (av = vals[1]::T)
+    vals[2] === nothing || (name = vals[2]::T)
+    vals[3] === nothing || (singletons = vals[3]::Bool)
+
+    on_attvar = if sym_key(av) == sym_key(mk_sym(T, :error))
+        AV_ERROR
+    elseif sym_key(av) == sym_key(mk_sym(T, :skip))
+        AV_SKIP
+    elseif sym_key(av) == sym_key(mk_sym(T, :bind))
+        AV_BIND
+    else
+        return if PL_error(ld, ERR_DOMAIN, mk_sym(T, :numbervar_option), options)
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+
+    if singletons                                   # Hack
+        is_acyclic_cells(ld, -(A1 + 1)) || (singletons = false)
+    end
+
+    opts = nv_options{T}(name, 0, on_attvar, singletons ? 1 : 0, false)  # numbered_check = false
+    n = numberVars(ld, t, opts, n)
+    n != NV_ERROR && return PL_unify_int64(ld, endt, n) ? FTRUE : FFALSE
+
+    return FFALSE
 end
 
 # PORT: pl-prims.c is_acyclic
@@ -3411,6 +3636,7 @@ const PL_predicates_from_prims = (
     PL_extension("@>", 2, pl_std_gt2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("@>=", 2, pl_std_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("functor", 3, pl_functor3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("numbervars", 4, pl_numbervars4_va, PL_FA_VARARGS),     # (L1d step 7a, D-0016)
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
     PL_extension("\$free_variable_set", 3, pl_free_variable_set3_va, PL_FA_VARARGS),

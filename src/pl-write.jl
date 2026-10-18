@@ -1007,7 +1007,9 @@ end
 # term is made by `bind_varnames` (or write_canonical's numbering) and is reached only through a
 # variable bound since the frame opened: the last variable of `t0`'s chain is trailed above the
 # frame's trail mark. A `'$VAR'` written in the term itself, or reached through an older binding,
-# is older.
+# is older. TRANSITIONAL (L1d step 7a): only for a `'$VAR'` that is no compound on the stack (the
+# boundary: a keyed variable's binding) — `writeNumberVar` compares an export's position with the
+# frame's mark, as upstream; 7b reads the word and drops this.
 function _numbervars_newer(ld::PL_local_data{T}, t0::T)::Bool where {T}
     fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
     top = ld.fliframes[fr].mark.trailtop
@@ -1031,8 +1033,9 @@ end
 
 # PORT: pl-write.c writeNumberVar
 # DIVERGES: the term itself, dereferenced, and `t0`, the term before (for `numbervars_frame`: an
-# OLDER `'$VAR'` term is not a variable name when `numbervars` is off — `_numbervars_newer` decides
-# "older" by how the term is reached, where upstream compares its address with the frame's mark);
+# OLDER `'$VAR'` term is not a variable name when `numbervars` is off — upstream compares its address
+# with the frame's mark: so does ours for a compound on the stack (its export's position, L1d step
+# 7a); for a term that is none, `_numbervars_newer` decides by how the term is reached);
 # no var_prefix (`out_var_prefix` is 0). The atom `quoted(false)` writes is written with the
 # write's options, its flag cleared and restored, where upstream writes it with a copy (`o2`) — so
 # `truncated` is restored too.
@@ -1043,8 +1046,19 @@ function writeNumberVar(t::T, options::write_options{T}, t0::T)::Int where {T}
     (nchildren(t) == 2 && _is_text_atom_key(child(t, 1), options.k_isovar)) || return 0
 
     if ld.var_names_numbervars_frame != 0
-        if !_ison(options, PL_WRT_NUMBERVARS) && !_numbervars_newer(ld, t0)
-            return 0                                # older $VAR term
+        if !_ison(options, PL_WRT_NUMBERVARS)
+            # upstream's test where the term is a compound on the stack (an export: L1d step 7a) —
+            # `fr->mark.globaltop > f`, positions: at or below the frame's globaltop is older; a
+            # term that is none (the boundary) is decided by how it is reached (`_numbervars_newer`,
+            # TRANSITIONAL: 7b reads the word)
+            f = _export_pos(ld, t)
+            older = if f != 0
+                fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
+                ld.fliframes[fr].mark.globaltop >= f
+            else
+                !_numbervars_newer(ld, t0)
+            end
+            older && return 0                       # older $VAR term
         end
     end
 

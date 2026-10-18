@@ -70,10 +70,15 @@ const _FOREIGN_VA = (
 const _FOREIGN_DET = foreigns
 
 "A registration table's entries as `(name, arity, flags)` — what `registerBuiltins!` reads of them."
-_extension_sigs(table::Tuple)::Vector{Tuple{String, Int, UInt8}} =       # (a tuple map: static)
-    collect(
-        Tuple{String, Int, UInt8}, map(e -> (e.predicate_name, e.arity, e.flags), table)
-    )
+# (generated, unrolled per entry: static; a `map` over a tuple of 32 or more entries — Base's `Any32`
+# method — runs a loop with a dynamic call per entry, measured on pl-prims' table at 32, L1d step 7a)
+@generated function _extension_sigs(table::Tuple)::Vector{Tuple{String, Int, UInt8}}
+    ex = [
+        :((table[$i].predicate_name, table[$i].arity, table[$i].flags))
+        for i in 1:fieldcount(table)
+    ]
+    return :(Tuple{String, Int, UInt8}[$(ex...)])
+end
 
 # PORT: pl-ext.c builtin_pred_flags
 "The predicate flags of a built-in registered with `regflags` (`PL_FA_*`) (pl-ext.c)."
@@ -131,6 +136,7 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     _boot_cleanup!(gd)
     _boot_lists!(gd)
     _boot_bags!(gd)
+    _boot_syspred!(gd)
     return nothing
 end
 
@@ -359,6 +365,25 @@ function _boot_lists!(gd::PL_global_data{T})::Nothing where {T}
             ]
         ),
         P_LOCKED
+    )
+    return nothing
+end
+
+# DIVERGES (no upstream function; as `_boot_catch3!`): boot/syspred.pl's numbervars/3
+# (syspred.pl:1502-1511; L1d step 7a, audit D-0016), compiled when the database is created:
+#     :- '$iso'((numbervars/3)).
+#     numbervars(Term, From, To) :-
+#         numbervars(Term, From, To, []).
+# R2 loads boot/syspred.pl, which defines it the same way. boot code is system code (`P_LOCKED`);
+# numbervars/3 is ISO (`'$iso'`).
+"Define numbervars/3 in the `system` module of `gd` as boot/syspred.pl defines it."
+function _boot_syspred!(gd::PL_global_data{T})::Nothing where {T}
+    ld = PL_local_data{T}(gd)
+    v = _boot_vars(T, 3)
+    Term, From, To = v[1], v[2], v[3]
+    _boot_clause!(
+        gd, ld, :numbervars, T[Term, From, To],
+        _boot_term(:numbervars, T[Term, From, To, mk_nil(T)]), P_ISO | P_LOCKED
     )
     return nothing
 end
