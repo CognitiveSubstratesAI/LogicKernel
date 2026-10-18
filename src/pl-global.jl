@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ 8609e216cab9
 # UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-variant.c @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -209,7 +210,8 @@ const CELL_STAMP_BLOCK = UInt64(1024)
 # `_KERNEL_VAR_COUNTER` is: a monotonic source of fresh ids carries no behaviour between callers
 const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 
-# PORT: pl-variant.c node as vt_node (the `_cells` entries of src/pl-variant.jl)
+# PORT: pl-variant.c node as vt_node
+# (the `_cells` entries of src/pl-variant.jl use it and `vt_pairs`, as fields of the local data)
 # DIVERGES: `bp` a LOCATION (src/pl-prims.jl `_deref_loc`: a global position, `-i` for slot `i`).
 "A numbered variable or compound of one `=@=` walk on cells (pl-variant.c `node`)."
 struct vt_node

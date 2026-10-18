@@ -104,6 +104,16 @@ struct List_Record{T}
     key::Vector{T}
 end
 
+# PORT: pl-list.c List_Record as List_Record_cells
+# DIVERGES: as `List_Record`, on the CELLS (L1d step 9): `term[i]` and `key[i]` are the dereferenced
+# GLOBAL positions of the item and its key (upstream: pointers to those cells).
+"The records of a sort on cells: record `i` is `next[i]`, the item at `term[i]`, its key at `key[i]`."
+struct List_Record_cells
+    next::Vector{Int}
+    term::Vector{Int}
+    key::Vector{Int}
+end
+
 # The `compare(c, x, y)` macro of pl-list.c: the order of two records' keys, reversed for a
 # descending sort. Upstream's returns from `nat_sort` on `CMP_ERROR`/`CMP_INCOMPARABLE`; the
 # kernel's standard order returns neither.
@@ -111,6 +121,13 @@ function _sort_compare(
     ld::PL_local_data{T}, L::List_Record{T}, x::Int, y::Int, order::sort_order
 )::Int where {T}
     c = compareStandard(ld, L.key[x], L.key[y], false)  # COMPARE_KEY(&(x)->item, &(y)->item)
+    order == SORT_DESC && (c = -c)
+    return c
+end
+function _sort_compare(
+    ld::PL_local_data{T}, L::List_Record_cells, x::Int, y::Int, order::sort_order
+)::Int where {T}
+    c = compareStandard_cells(ld, L.key[x], L.key[y], false)    # COMPARE_KEY, on the cells
     order == SORT_DESC && (c = -c)
     return c
 end
@@ -127,7 +144,8 @@ merge sort, stable); drop a record whose key equals an earlier one's when `remov
 first record of the sorted chain, 0 for none.
 """
 function nat_sort(
-    ld::PL_local_data{T}, L::List_Record{T}, data::Int, remove_dups::Bool,
+    ld::PL_local_data{T}, L::Union{List_Record{T}, List_Record_cells}, data::Int,
+    remove_dups::Bool,
     order::sort_order
 )::Int where {T}
     stack = Vector{Int}(undef, 64)              # enough for biggest machine
@@ -355,11 +373,133 @@ function put_sort_list(
     return nothing
 end
 
+# ── on the CELLS (L1d step 9; the workspace's L1_plan/stageL1d_design.md §3i) ─────────────────────
+# The records hold the items' and keys' positions and are compared by the standard order on cells;
+# the sorted list is laid out as fresh cells at gTop (upstream rewrites the records, which it laid
+# at gTop, in place): a representation-only DIVERGES. The BOUNDARY (`DU_TERM` as an item, a key's
+# compound or a tail: a keyed variable's binding, a slot's side value) sorts on terms
+# (`_pl_nat_sort_terms`, TRANSITIONAL until L1f), counted in `cold_pairs`.
+
+# PORT: pl-list.c prolog_list_to_sort_list as prolog_list_to_sort_list_cells
+# DIVERGES: as `prolog_list_to_sort_list`, on the cells; `nothing` at the boundary (nothing raised).
+"The list term reference `t` holds as sort records on cells (pl-list.c), or `nothing` at the boundary."
+function prolog_list_to_sort_list_cells(
+    ld::PL_local_data{T}, t::term_t, remove_dups::Bool, pair::Bool
+)::Union{Nothing, Tuple{list_sort, Union{Nothing, List_Record_cells}}} where {T}
+    len, tk, tw, _ = skip_list_cells(ld, -(t + 1))
+    tk == DU_TERM && return nothing
+    tnil = tk == DU_WORD && tw == ld.atom_nil_w
+    tlist = _is_list_word(ld, tk, tw)
+    if !(tnil ||                                        # proper list
+         (tlist && remove_dups))                        # sort/2 on cyclic list
+        if tk == DU_CELL
+            PL_error(ld, ERR_INSTANTIATION)
+        else
+            PL_error(ld, ERR_TYPE, mk_sym(T, :list), t)
+        end
+        return (SORT_ERR, nothing)
+    end
+    len == 0 && return (SORT_NIL, nothing)
+    len == 1 && !pair && !tlist && return (SORT_NOSORT, nothing)
+    L = List_Record_cells(
+        Vector{Int}(undef, len + 1), Vector{Int}(undef, len), Vector{Int}(undef, len)
+    )
+    minus2 =
+        pair ? lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :-)), 2) : word(0)
+    _, lw, _ = _deref_loc(ld, -(t + 1))
+    for p in 1:len
+        k, w, ip = _deref_loc(ld, valPtr(lw) + 1)      # HeadList(l); deRef
+        k == DU_TERM && return nothing
+        kp = ip                                         # extract_key
+        if pair
+            if k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == minus2
+                kk, _, kp = _deref_loc(ld, valPtr(w) + 1)   # argTermP(*p1, 0); deRef(p1)
+                kk == DU_TERM && return nothing
+            else
+                err_t = PL_new_term_ref(ld)             # pushWordAsTermRef(p1)
+                ld.slots[err_t + 1] = makeRefG(ip)
+                PL_error(ld, "keysort", 2, "", ERR_TYPE, mk_sym(T, :pair), err_t)
+                PL_reset_term_refs(ld, err_t)           # popTermRef()
+                return (SORT_ERR, nothing)
+            end
+        end
+        L.term[p] = ip
+        L.key[p] = kp
+        _, lw, _ = _deref_loc(ld, valPtr(lw) + 2)      # TailList(l); deRef
+        L.next[p] = p < len ? p + 1 : 0
+    end
+    L.next[len + 1] = 0                                 # (the header)
+    return (SORT_SORT, L)
+end
+
+# PORT: pl-list.c put_sort_list as put_sort_list_cells
+# DIVERGES: a fresh run of `'[|]'/2` cells at gTop (see the section header); the head as `linkVal`:
+# a reference for a variable, else the item's word.
+"Make term reference `l` hold the list of the items of the records chained from `sl`, as cells (pl-list.c)."
+function put_sort_list_cells(
+    ld::PL_local_data{T}, l::term_t, L::List_Record_cells, sl::Int
+)::Nothing where {T}
+    n = 0
+    s = sl
+    while s != 0
+        n += 1
+        s = L.next[s]
+    end
+    base = allocGlobalCells!(ld, 3 * n)
+    b = base
+    while true
+        nx = L.next[sl]
+        ip = L.term[sl]
+        c = ld.gstack[ip]
+        ld.gstack[b + 1] = isVar(c) ? makeRefG(ip) : c  # needsRef(*item) ? makeRefG(item) : *item
+        ld.gstack[b] = ld.functor_dot2
+        if nx != 0
+            ld.gstack[b + 2] = consPtr(b + 3, TAG_COMPOUND | STG_GLOBAL)
+            sl = nx
+            b += 3
+        else
+            ld.gstack[b + 2] = ld.atom_nil_w
+            break
+        end
+    end
+    ld.gstack[unRef(ld.slots[l + 1])] = consPtr(base, TAG_COMPOUND | STG_GLOBAL)   # *valTermRef(l)
+    return nothing
+end
+
 # PORT: pl-list.c pl_nat_sort
-# DIVERGES: no local space to ensure, no `gTop` to reset; a comparison raises nothing (see
-# `_sort_compare`). NOT PORTED: `argc`/`argv` (sort/4).
+# DIVERGES: on the cells (above); at the boundary the term sort, counted. NOT PORTED: `argc`/`argv`
+# (sort/4).
 "Unify `out` with the list `in_` sorted (pl-list.c `pl_nat_sort`): by its keys when `pair`, without duplicates when `remove_dups`."
 function pl_nat_sort(
+    ld::PL_local_data{T}, in_::term_t, out::term_t, remove_dups::Bool, order::sort_order,
+    pair::Bool
+)::Bool where {T}
+    r = prolog_list_to_sort_list_cells(ld, in_, remove_dups, pair)
+    if r === nothing
+        ld.cold_pairs += 1
+        return _pl_nat_sort_terms(ld, in_, out, remove_dups, order, pair)
+    end
+    what, L = r
+    if what == SORT_ERR
+        return false
+    elseif what == SORT_NIL
+        return PL_unify_nil(ld, out)
+    elseif what == SORT_NOSORT
+        return PL_unify(ld, in_, out)
+    end
+    tmp = new_term_ref(ld)                              # a fresh global cell, referenced
+    recs = L::List_Record_cells
+    l = nat_sort(ld, recs, 1, remove_dups, order)
+    put_sort_list_cells(ld, tmp, recs, l)
+    return PL_unify(ld, out, tmp)
+end
+
+# PORT: pl-list.c pl_nat_sort as _pl_nat_sort_terms
+# DIVERGES: no local space to ensure, no `gTop` to reset; a comparison raises nothing (see
+# `_sort_compare`). NOT PORTED: `argc`/`argv` (sort/4). TRANSITIONAL (L1d step 9): the boundary's
+# sort on terms, until L1f.
+"`pl_nat_sort` on terms: the boundary's (see the cell section above)."
+function _pl_nat_sort_terms(
     ld::PL_local_data{T}, in_::term_t, out::term_t, remove_dups::Bool, order::sort_order,
     pair::Bool
 )::Bool where {T}

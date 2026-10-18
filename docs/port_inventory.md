@@ -120,10 +120,10 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-gmp.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8609e216cab9` | `src/pl-inline.jl` | 18 | 15 |
-| swipl-devel `src/pl-list.c` | code | `8609e216cab9` | `src/pl-list.jl` | 14 | 8 |
+| swipl-devel `src/pl-list.c` | code | `8609e216cab9` | `src/pl-list.jl` | 18 | 12 |
 | swipl-devel `src/pl-modul.c` | code | `8609e216cab9` | `src/pl-modul.jl` | 7 | 6 |
 | swipl-devel `src/pl-op.c` | code | `8609e216cab9` | `src/pl-op.jl` | 16 | 13 |
-| swipl-devel `src/pl-prims.c` | code | `8609e216cab9` | `src/pl-prims.jl` | 118 | 67 |
+| swipl-devel `src/pl-prims.c` | code | `8609e216cab9` | `src/pl-prims.jl` | 119 | 68 |
 | swipl-devel `src/pl-pro.c` | code | `8609e216cab9` | `src/pl-pro.jl` | 3 | 3 |
 | swipl-devel `src/pl-proc.c` | code | `8609e216cab9` | `src/pl-proc.jl` | 46 | 31 |
 | swipl-devel `src/pl-proc.h` | code | `8609e216cab9` | `src/pl-proc.jl` | 1 | 0 |
@@ -139,7 +139,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-thread.c` | code | `8609e216cab9` | `src/pl-thread.jl` | 4 | 2 |
 | swipl-devel `src/pl-trace.c` | code | `8609e216cab9` | `src/pl-trace.jl` | 5 | 2 |
 | swipl-devel `src/pl-umap.c` | code | `8609e216cab9` | `src/pl-umap.jl` | 6 | 3 |
-| swipl-devel `src/pl-variant.c` | code | `8609e216cab9` | `src/pl-variant.jl` | 17 | 7 |
+| swipl-devel `src/pl-variant.c` | code | `8609e216cab9` | `src/pl-global.jl` | 2 | 2 |
+| swipl-devel `src/pl-variant.c` | code | `8609e216cab9` | `src/pl-variant.jl` | 24 | 11 |
 | swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-vmi.jl` | 130 | 0 |
 | swipl-devel `src/pl-vmi.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 147 | 92 |
 | swipl-devel `src/pl-wam.c` | code | `8609e216cab9` | `src/pl-wam.jl` | 42 | 34 |
@@ -247,7 +248,7 @@ checkout is pulled.
 | swipl-devel `src/pl-thread.c` | `8609e216cab9` | 4 | 267 | 2 | src/pl-thread.jl |
 | swipl-devel `src/pl-trace.c` | `8609e216cab9` | 5 | 77 | 2 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `8609e216cab9` | 4 | 8 | 3 | src/pl-umap.jl |
-| swipl-devel `src/pl-variant.c` | `8609e216cab9` | 10 | 17 | 4 | src/pl-variant.jl |
+| swipl-devel `src/pl-variant.c` | `8609e216cab9` | 10 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `8609e216cab9` | 130 | 240 | 67 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `8609e216cab9` | 38 | 96 | 32 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `8609e216cab9` | 81 | 111 | 41 | src/pl-write.jl |
@@ -266,7 +267,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8609e216cab9` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8609e216cab9` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8609e216cab9` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1108** | **4363** | **599** | |
+| **total** | | **1108** | **4363** | **600** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

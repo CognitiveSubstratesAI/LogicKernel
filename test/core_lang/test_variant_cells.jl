@@ -34,18 +34,24 @@ _vt_clauses() = Tuple{_R, Union{Nothing, _R}}[
     # cyclic terms
     _vc("cyc1", _rf("=", _rv(1), _rf("f", _rv(1))), _rf("=", _rv(2), _rf("f", _rv(2))),
         _rf("=@=", _rv(1), _rv(2))),
-    _vc("cyc2", _rf("=", _rv(1), _rf("f", _rv(1), _rv(2))), _rf("=", _rv(2), _rf("f", _rv(2), _rv(1))),
-        _rf("=", _rv(3), _rf("f", _rv(3), _rv(4))), _rf("=", _rv(4), _rf("f", _rv(4), _rv(3))),
+    _vc("cyc2", _rf("=", _rv(1), _rf("f", _rv(1), _rv(2))),
+        _rf("=", _rv(2), _rf("f", _rv(2), _rv(1))),
+        _rf("=", _rv(3), _rf("f", _rv(3), _rv(4))),
+        _rf("=", _rv(4), _rf("f", _rv(4), _rv(3))),
         _rf("=@=", _rv(1), _rv(3))),
-    _vc("cyc3", _rf("=", _rv(1), _rf("f", _rv(1), _rs("a"))), _rf("=", _rv(2), _rf("f", _rv(2), _rs("b"))),
+    _vc("cyc3", _rf("=", _rv(1), _rf("f", _rv(1), _rs("a"))),
+        _rf("=", _rv(2), _rf("f", _rv(2), _rs("b"))),
         _rf("=@=", _rv(1), _rv(2))),
-    _vc("cyc4", _rf("=", _rv(1), _rf("f", _rf("f", _rv(1)))), _rf("=", _rv(2), _rf("f", _rv(2))),
+    _vc("cyc4", _rf("=", _rv(1), _rf("f", _rf("f", _rv(1)))),
+        _rf("=", _rv(2), _rf("f", _rv(2))),
         _rf("=@=", _rv(1), _rv(2))),
-    _vc("cyc5", _rf("=", _rv(1), _rf("f", _rv(1), _rv(3))), _rf("=", _rv(2), _rf("f", _rv(2), _rv(4))),
+    _vc("cyc5", _rf("=", _rv(1), _rf("f", _rv(1), _rv(3))),
+        _rf("=", _rv(2), _rf("f", _rv(2), _rv(4))),
         _rf("=@=", _rv(1), _rv(2))),
     _vc("cyc6", _rf("=", _rv(1), _rf("f", _rv(1), _rv(3), _rv(3))),
         _rf("=", _rv(2), _rf("f", _rv(2), _rv(4), _rv(5))), _rf("=@=", _rv(1), _rv(2))),
-    _vc("cyc7", _rf("=", _rv(1), _rf("f", _rv(1), _rv(3))), _rf("=", _rv(2), _rf("f", _rv(2), _rv(3))),
+    _vc("cyc7", _rf("=", _rv(1), _rf("f", _rv(1), _rv(3))),
+        _rf("=", _rv(2), _rf("f", _rv(2), _rv(3))),
         _rf("=@=", _rf("p", _rv(1), _rv(4)), _rf("p", _rv(2), _rv(3)))),
     # a left cycle met twice against two right cycles: isomorphic on a cycle, which terminates only
     # through Root's union (the first partner's cell and the second's become one class)
@@ -55,7 +61,11 @@ _vt_clauses() = Tuple{_R, Union{Nothing, _R}}[
     # a long list, and one whose elements are fresh variables on one side and one variable on the other
     _vc("long1", _rf("length", _rv(1), _ki(2000)), _rf("length", _rv(2), _ki(2000)),
         _rf("=@=", _rv(1), _rv(2))),
-    _vc("long2", _rf("length", _rv(1), _ki(3)), _rf("=@=", _rv(1), _rlist(_rv(4), _rv(4), _rv(4))))
+    _vc(
+        "long2",
+        _rf("length", _rv(1), _ki(3)),
+        _rf("=@=", _rv(1), _rlist(_rv(4), _rv(4), _rv(4)))
+    )
 ]
 
 @testset "=@= on cells, as swipl" begin
@@ -64,24 +74,28 @@ _vt_clauses() = Tuple{_R, Union{Nothing, _R}}[
     R = _rv(60)
     goals = _R[
         _rf("v", _rf("f", A, B), _rf("f", C, D)), _rf("v", _rf("f", A, A), _rf("f", C, D)),
-        _rf("v", _rf("f", A, B), _rf("f", C, C)), _rf("v", _rf("f", A, B, A), _rf("f", C, D, C)),
+        _rf("v", _rf("f", A, B), _rf("f", C, C)),
+        _rf("v", _rf("f", A, B, A), _rf("f", C, D, C)),
         _rf("v", _rf("f", A, _rf("g", B), A), _rf("f", C, _rf("g", C), C)),
         _rf("v", _rf("f", A, B), _rf("f", B, A)), _rf("v", _rf("f", A, B), _rf("f", A, B)),
         _rf("v", A, B), _rf("v", A, A), _rf("v", _rf("f", A), A), _rf("v", A, _rs("a")),
         _rf("v", _ki(1), _vf(1)), _rf("v", _ki(1), _ki(1)), _rf("v", _vf(2.5), _vf(2.5)),
         _rf("v", _rs("a"), _rs("a")), _rf("v", _rs("a"), _rs("b")),
-        _rf("v", _rf("f", _rs("a")), _rf("g", _rs("a"))), _rf("v", _rf("f", _rs("a")), _rf("f", _rs("a"), B)),
+        _rf("v", _rf("f", _rs("a")), _rf("g", _rs("a"))),
+        _rf("v", _rf("f", _rs("a")), _rf("f", _rs("a"), B)),
         _rf("v", _rlist(A, B, _ki(3)), _rlist(C, D, _ki(3))),
         _rf("v", _rlist(A, B, _ki(3)), _rlist(C, D, _vf(3))),
         _rf("sh1", R), _rf("sh2", R), _rf("sh3", R),
-        _rf("cyc1", R), _rf("cyc2", R), _rf("cyc3", R), _rf("cyc4", R), _rf("cyc5", R), _rf("cyc6", R),
+        _rf("cyc1", R), _rf("cyc2", R), _rf("cyc3", R), _rf("cyc4", R), _rf("cyc5", R),
+        _rf("cyc6", R),
         _rf("cyc7", R), _rf("cyc8", R), _rf("long1", R), _rf("long2", R)
     ]
     ours = _rlines(db, goals)
     # the kernel's side alone (also without swipl: Pkg.test)
     @test count(==("end"), ours) == length(goals)
     @test !any(l -> startswith(l, "exception("), ours)
-    @test "v(f(_,_),f(_,_)) det" in ours && "cyc1(ok) det" in ours && "cyc8(ok) det" in ours && "sh2(ok) det" in ours
+    @test "v(f(_,_),f(_,_)) det" in ours && "cyc1(ok) det" in ours &&
+        "cyc8(ok) det" in ours && "sh2(ok) det" in ours
     @test !("sh1(ok) det" in ours) && !("cyc3(ok) det" in ours) && !("cyc6(ok) det" in ours)
     if _R_SWIPL
         theirs = _rswipl(_vt_clauses(), goals)
@@ -112,7 +126,8 @@ function _vt_engine(vs::Vector{_R}; pvm=LK.PutVarMap())
 end
 _vt_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
 "Nothing left numbered: the side vector all zero, the node and work stacks empty."
-_vt_clean(ld) = all(iszero, ld.vt_ids) && isempty(ld.vt_nodes) && isempty(ld.vt_agenda.stack)
+_vt_clean(ld) =
+    all(iszero, ld.vt_ids) && isempty(ld.vt_nodes) && isempty(ld.vt_agenda.stack)
 _vt_check(ld, t, i, j) = LK.is_variant_ptr_cells(ld, -(t + i), -(t + j))
 
 @testset "white-box: the side vector is cleared after every check" begin
@@ -146,8 +161,22 @@ end
     X, Y, U, W = _rv(1), _rv(2), _rv(3), _rv(4)
     ld, t = _vt_engine(
         _R[
-            _rf("f", X, _rlist((_ki(i) for i in 1:50)...), _rf("g", Y, X), _rs("a"), _vf(1.5)),
-            _rf("f", U, _rlist((_ki(i) for i in 1:50)...), _rf("g", W, U), _rs("a"), _vf(1.5))
+            _rf(
+                "f",
+                X,
+                _rlist((_ki(i) for i in 1:50)...),
+                _rf("g", Y, X),
+                _rs("a"),
+                _vf(1.5)
+            ),
+            _rf(
+                "f",
+                U,
+                _rlist((_ki(i) for i in 1:50)...),
+                _rf("g", W, U),
+                _rs("a"),
+                _vf(1.5)
+            )
         ]
     )
     c0 = _vt_counts(ld)

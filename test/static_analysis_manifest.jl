@@ -263,6 +263,27 @@ _manifest_per_type(T) = (
     (LK.exitCyclicCopy_cells, Tuple{LK.PL_local_data{T}}, false),
     (LK.copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.do_copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
+    # =@= on cells (L1d step 8a): the side vector, the node buffer and the agenda grow
+    (LK._vt_id, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK._vt_id!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.vt_node_id, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK.vt_root, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.vt_push_args!, Tuple{LK.vt_pairs, Int, Int, Int}, false),
+    (LK.vt_next_arg!, Tuple{LK.vt_pairs}, false),
+    (LK._vt_loc, Tuple{Int, Int}, true),
+    (
+        LK._vt_same_atomic,
+        Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int, UInt8, UInt64, Int},
+        false
+    ),
+    (LK.isomorphic_cells, Tuple{LK.PL_local_data{T}, LK.vt_pairs, Int, Int}, false),
+    (LK.variant_cells, Tuple{LK.PL_local_data{T}, LK.vt_pairs}, false),
+    (LK.is_variant_ptr_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (
+        LK._vt_on_terms,
+        Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int, UInt8, UInt64, Int},
+        false
+    ),
     (
         LK.unify_with_occurs_check_cells,
         Tuple{LK.PL_local_data{T}, Int, Int, LK.occurs_check_t},
@@ -1185,6 +1206,14 @@ function _manifest_index(T)
         (LK.prolog_list_to_sort_list, Tuple{LD, Int, Bool, Bool}, false),
         (LK.put_sort_list, Tuple{LD, Int, LK.List_Record{T}, Int}, false),
         (LK.pl_nat_sort, Tuple{LD, Int, Int, Bool, LK.sort_order, Bool}, false),
+        # the sort family on cells (L1d step 9)
+        (LK.skip_list_cells, Tuple{LD, Int}, false),
+        (LK._is_list_word, Tuple{LD, UInt8, UInt64}, true),
+        (LK._sort_compare, Tuple{LD, LK.List_Record_cells, Int, Int, LK.sort_order}, false),
+        (LK.nat_sort, Tuple{LD, LK.List_Record_cells, Int, Bool, LK.sort_order}, false),
+        (LK.prolog_list_to_sort_list_cells, Tuple{LD, Int, Bool, Bool}, false),
+        (LK.put_sort_list_cells, Tuple{LD, Int, LK.List_Record_cells, Int}, false),
+        (LK._pl_nat_sort_terms, Tuple{LD, Int, Int, Bool, LK.sort_order, Bool}, false),
         (LK.ph_ground, Tuple{LD, T}, false),
         (LK.ground, Tuple{LD, T}, false),
         (

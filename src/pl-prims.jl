@@ -568,6 +568,39 @@ function skip_list(ld::PL_local_data{T}, l::T)::Tuple{Int, T} where {T}
     end
 end
 
+# PORT: pl-prims.c skip_list as skip_list_cells
+# DIVERGES: on a LOCATION (L1d step 9); returns the tail dereferenced, `(length, kind, word, pos)` as
+# `_deref_loc` gives it (`pos` the location itself for a word in a slot), where upstream writes
+# `*tailp`; Brent's cycle check compares the cells' positions, as upstream's pointers.
+"The length of the list at location `l` and its dereferenced tail (pl-prims.c `skip_list`)."
+function skip_list_cells(
+    ld::PL_local_data{T}, l::Int
+)::Tuple{Int, UInt8, word, Int} where {T}
+    k, w, p = _deref_loc(ld, l)
+    p = p > 0 ? p : l
+    _is_list_word(ld, k, w) || return (0, k, w, p)
+    length = 0
+    checkCell = currentCell = p
+    lam = 0
+    power = 1
+    while true
+        k, w, currentCell = _deref_loc(ld, valPtr(w) + 2)      # TailList(currentCell); deRef
+        length += 1
+        (!_is_list_word(ld, k, w) || checkCell == currentCell) && break
+        lam += 1
+        if power == lam
+            checkCell = currentCell
+            power *= 2
+            lam = 0
+        end
+    end
+    return (length, k, w, currentCell)
+end
+
+# ORIGINAL: pl-data.h `isList(w)` on a dereferenced location's `(kind, word)`: a `'[|]'/2` compound.
+@inline _is_list_word(ld::PL_local_data, k::UInt8, w::word)::Bool =
+    k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == ld.functor_dot2
+
 # PORT: pl-prims.c lengthList
 "The length of the list term reference `list` holds; -1 if it is not one, -2 if partial (pl-prims.c)."
 function lengthList(ld::PL_local_data{T}, list::term_t, errors::Bool)::Int where {T}

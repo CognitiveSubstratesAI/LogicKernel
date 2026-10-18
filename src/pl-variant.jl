@@ -367,7 +367,8 @@ end
 const VT_BOUNDARY = -1
 
 # ORIGINAL: the node number of global position `p` (0: unnumbered).
-@inline _vt_id(ld::PL_local_data, p::Int)::Int = p <= length(ld.vt_ids) ? Int(ld.vt_ids[p]) : 0
+@inline _vt_id(ld::PL_local_data, p::Int)::Int =
+    p <= length(ld.vt_ids) ? Int(ld.vt_ids[p]) : 0
 
 # ORIGINAL: record node `n` for global position `p`, growing the side vector (new entries 0).
 function _vt_id!(ld::PL_local_data, p::Int, n::Int)::Nothing
@@ -381,8 +382,8 @@ function _vt_id!(ld::PL_local_data, p::Int, n::Int)::Nothing
     return nothing
 end
 
-# PORT: pl-variant.c var_id and term_id as vt_node_id
-# DIVERGES: one function for both (the side vector holds either kind's number); `loc` the dereferenced
+# PORT: pl-variant.c term_id as vt_node_id
+# DIVERGES: one function for `term_id` and `var_id` (the side vector holds either kind's number); `loc` the dereferenced
 # location, `w` its word; a slot's node is not recorded (see the section header).
 "The node number of the cell at location `loc` holding word `w`, numbering it if new (pl-variant.c `var_id`/`term_id`)."
 function vt_node_id(ld::PL_local_data, loc::Int, w::word)::Int
@@ -433,7 +434,9 @@ end
 
 # ORIGINAL: the atomic case of `variant`/`isomorphic` — `wl == wr`, an atom, an inline integer,
 # `equalIndirect` — as the standard order's equality on cells (SWI's identity: `1` and `1.0` differ).
-@inline _vt_same_atomic(ld::PL_local_data, k1, w1, p1, k2, w2, p2)::Bool =
+@inline _vt_same_atomic(
+    ld::PL_local_data, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int
+)::Bool =
     compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, CMP_MODE_EQUAL) == CMP_EQUAL
 
 # PORT: pl-variant.c isomorphic as isomorphic_cells
