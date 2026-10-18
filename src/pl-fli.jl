@@ -681,19 +681,47 @@ function PL_is_integer(ld::PL_local_data{T}, t::term_t)::Bool where {T}
 end
 
 # PORT: pl-fli.c PL_is_float
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1e e2): a value-table word whose entry is a float
+# (upstream's indirect, `isFloat(w)`); the boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a float (pl-fli.c)."
-PL_is_float(ld::PL_local_data{T}, t::term_t) where {T} =
-    isFloat(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_float(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_VALUE                                        # isFloat(w)
+        return !isTaggedIntW(w) && isFloat(ld.vtable[valPtr(w)])
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return isFloat(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c PL_is_rational
+# DIVERGES: on the WORDS (L1e e2): a tagged integer, or a value-table word whose entry is an integer or a
+# rational (`isRational(w)`); the boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a rational number, an integer included (pl-fli.c)."
-PL_is_rational(ld::PL_local_data{T}, t::term_t) where {T} =
-    isRational(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_rational(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_VALUE                                        # isRational(w)
+        return isTaggedIntW(w) || isRational(ld.vtable[valPtr(w)])
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return isRational(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c PL_is_compound
+# DIVERGES: on the WORDS (L1e e2): a compound word (`isTerm(w)`); the boundary read as its term, counted.
 "Whether term reference `t` holds a compound term (pl-fli.c)."
-PL_is_compound(ld::PL_local_data{T}, t::term_t) where {T} =
-    isTerm(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_compound(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k == DU_WORD && return _is_gcompound(w)                 # isTerm(w)
+    if k == DU_TERM                                         # the boundary: on the term
+        ld.cold_pairs += 1
+        return isTerm(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c isCallable
 # DIVERGES: no closure blobs. A compound with a non-symbol head (`$expr/n`, the kernel's) is not
@@ -708,9 +736,24 @@ function isCallable(t)::Bool
 end
 
 # PORT: pl-fli.c PL_is_callable
+# DIVERGES: on the WORDS (L1e e2): a text atom's word, or a compound word whose functor is named by a text
+# atom or `[]` (`isCallable`: no closure blobs; a `$expr/n` functor is not callable, as on terms); the
+# boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a callable term (pl-fli.c)."
-PL_is_callable(ld::PL_local_data{T}, t::term_t) where {T} =
-    isCallable(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_callable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD
+        isAtomW(w) && return isTextAtom(_atom_value(ld, w))
+        name = nameFunctor(ld.functors, ld.gstack[valPtr(w)])   # a compound: its functor's name
+        name == ld.atom_dexpr && return false
+        h = _atom_value(ld, name)
+        return !is_reserved_symbol(h) || is_nil(h)          # PL_BLOB_TEXT || ATOM_nil
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return isCallable(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c PL_is_string
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
@@ -744,9 +787,19 @@ function PL_is_atom(ld::PL_local_data{T}, t::term_t)::Bool where {T}
 end
 
 # PORT: pl-fli.h PL_is_atomic
+# DIVERGES: on the WORDS (L1e e2): an atom word or a value word (`isAtomic(w)`: neither a variable nor a
+# compound); the boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds an atomic term (pl-fli.h)."
-PL_is_atomic(ld::PL_local_data{T}, t::term_t) where {T} =
-    isAtomic(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_atomic(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k == DU_VALUE && return true
+    k == DU_WORD && return isAtomW(w)
+    if k == DU_TERM                                         # the boundary: on the term
+        ld.cold_pairs += 1
+        return isAtomic(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.h PL_is_number
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
