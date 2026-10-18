@@ -209,6 +209,29 @@ const CELL_STAMP_BLOCK = UInt64(1024)
 # `_KERNEL_VAR_COUNTER` is: a monotonic source of fresh ids carries no behaviour between callers
 const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 
+# PORT: pl-variant.c node as vt_node (the `_cells` entries of src/pl-variant.jl)
+# DIVERGES: `bp` a LOCATION (src/pl-prims.jl `_deref_loc`: a global position, `-i` for slot `i`).
+"A numbered variable or compound of one `=@=` walk on cells (pl-variant.c `node`)."
+struct vt_node
+    bp::Int                         # the location of the cell it numbers
+    orig::word                      # the cell's word (upstream: saved, as the cell is overwritten)
+    a::Int                          # variant at left (`node_variant`)
+    b::Int                          # link to an isomorphic node (`node_isom`)
+end
+
+# PORT: pl-variant.c argPairs as vt_pairs
+# DIVERGES: on LOCATIONS: `left`/`right` the next argument pair's, 0 for the sentinel `isomorphic`
+# pushes (upstream's NULL); the work pushed aside on `stack` as `(left, right, arg, arity)`. Reused by
+# the local data: one allocation-free walk after the first.
+"The agenda of argument pairs of one `=@=` walk on cells (pl-variant.c `argPairs`)."
+mutable struct vt_pairs
+    left::Int                       # current work: the left argument's location
+    right::Int                      # … the right one's
+    arg::Int                        # the next argument (0-based)
+    arity::Int                      # the number of arguments
+    stack::Vector{NTuple{4, Int}}
+end
+
 # PORT: pl-global.h PL_local_data
 # DIVERGES: `index_ctx` is scratch upstream declares on the C stack in each firstClause/nextClause.
 # `bindings` has no field upstream — SWI binds a variable by overwriting its cell on the
@@ -356,6 +379,9 @@ mutable struct PL_local_data{T}
     cp_lstack::Vector{Int}                                      # … the cells it forwarded (TrailCyclic)
     cp_stack::Vector{Int}                                       # … mark_for_copy's segstack
     cp_agenda::cell_agendaLR                                    # … copy_term's agenda (term_agendaLRD)
+    vt_ids::Vector{Int32}                                       # =@='s node numbers, by position (L1d step 8a)
+    vt_nodes::Vector{vt_node}                                   # … its node buffer (VARIANT_BUFFER)
+    vt_agenda::vt_pairs                                         # … its argPairs
     compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
     occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
@@ -439,6 +465,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         Int[], word[],                                             # (the cycle links' cells and words)
         cell_agenda(0, 0, NTuple{2, Int}[]), Bool[], Int[],      # the walks on cells (L1d step 5)
         UInt8[], Int[], Int[], cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),   # copy_term on cells (L1d step 6)
+        Int32[], vt_node[], vt_pairs(0, 0, 0, 0, NTuple{4, Int}[]),        # =@= on cells (L1d step 8a)
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
         # idle until a search resets it (`_index_context!`): any predicate will do
