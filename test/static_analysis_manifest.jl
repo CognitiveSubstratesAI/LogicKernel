@@ -268,9 +268,6 @@ _manifest_per_type(T) = (
     (LK._vt_id!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.vt_node_id, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
     (LK.vt_root, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.vt_push_args!, Tuple{LK.vt_pairs, Int, Int, Int}, false),
-    (LK.vt_next_arg!, Tuple{LK.vt_pairs}, false),
-    (LK._vt_loc, Tuple{Int, Int}, true),
     (
         LK._vt_same_atomic,
         Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int, UInt8, UInt64, Int},
@@ -1390,9 +1387,36 @@ function _manifest_index(T)
         (LK.mul64, Tuple{Int64, Int64}, true),
         (LK.ar_u_minus, Tuple{LK.number, LK.number}, false),
         (LK.ar_u_plus, Tuple{LK.number, LK.number}, true),
+        # arith-a (arith_funcs_design.md §2): division, sign and order, integer, bitwise, rounding
+        (LK.sign_f, Tuple{Float64}, true),
+        (LK.check_zero_div, Tuple{LD, Int, LK.number, String, Int}, false),
+        (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code}, false),
+        (LK.mod_int64, Tuple{Int64, Int64}, true),
+        (LK.i64_gcd, Tuple{Int64, Int64}, true),
+        (LK.is_min_zero, Tuple{LK.number}, true),
+        (LK.ar_signbit, Tuple{LK.number}, false),
+        (LK.ar_sign, Tuple{LK.number, LK.number}, false),
+        (LK.ar_copysign, Tuple{LK.number, LK.number, LK.number}, false),
+        (LK.ar_abs, Tuple{LK.number, LK.number}, false),
+        (LK.ar_integer, Tuple{LK.number, LK.number}, false),
+        (LK.same_positive_ints, Tuple{LD, String, LK.number, LK.number}, false),
+        (LK.mustBePositive, Tuple{LD, String, Int, LK.number}, false),
+        [
+            (f, Tuple{LD, LK.number, LK.number, LK.number}, false) for f in (
+                LK.ar_divide, LK.ar_mod, LK.ar_rem, LK.ar_tdiv, LK.ar_div, LK.ar_max,
+                LK.ar_min,
+                LK.ar_gcd, LK.ar_disjunct, LK.ar_conjunct, LK.ar_xor
+            )
+        ]...,
+        [
+            (f, Tuple{LD, LK.number, LK.number}, false) for f in (
+                LK.ar_negation, LK.ar_msb, LK.ar_float, LK.ar_floor, LK.ar_ceil,
+                LK.ar_float_fractional_part, LK.ar_float_integer_part, LK.ar_truncate
+            )
+        ]...,
         (LK.isCurrentArithFunction, Tuple{Type{T}, UInt64, Int}, false),
         (LK._ar_call2, Tuple{LD, Int, LK.number, LK.number, LK.number}, false),
-        (LK._ar_call1, Tuple{Int, LK.number, LK.number}, false),
+        (LK._ar_call1, Tuple{LD, Int, LK.number, LK.number}, false),
         (LK.arithChar, Tuple{LD, T}, false),
         (LK.getCharExpression, Tuple{LD, T, LK.number}, false),
         (LK._len_not_one, Tuple{LD, T}, false),
@@ -2011,6 +2035,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.initCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, true),
     (LK.clearCellAgendaLR!, Tuple{LK.cell_agendaLR}, true),
     (LK.nextCellAgendaLR!, Tuple{LK.cell_agendaLR}, true),
+    # =@= on cells' agenda (L1d step 8a): no term type
+    (LK.vt_push_args!, Tuple{LK.vt_pairs, Int, Int, Int}, false),
+    (LK.vt_next_arg!, Tuple{LK.vt_pairs}, false),
+    (LK._vt_loc, Tuple{Int, Int}, true),
     (LK.pushWorkCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, false),
     # the one-sided cell agenda of the walks (L1d step 5): the push may grow its stack
     (LK.initCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, true),

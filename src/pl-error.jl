@@ -52,6 +52,9 @@
     ERR_STREAM_OP                   # atom_t action, term_t obj
     ERR_DETERMINISM                 # Definition def, atom_t expected, atom_t found, atom_t decl
     ERR_DET_GOAL                    # term_t goal, atom_t expected, atom_t found
+    ERR_DIV_BY_ZERO                 # void
+    ERR_AR_DOMAIN                   # atom_t domain, Number value
+    ERR_EVALUATION                  # atom_t what
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -160,10 +163,11 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code)::Bool where {T}
 end
 
 """
-    PL_error(ld, pred, arity, msg, ERR_AR_TYPE, expected, num::number) -> false
+    PL_error(ld, pred, arity, msg, ERR_AR_TYPE | ERR_AR_DOMAIN, expected, num::number) -> false
 
-Raise `error(type_error(Expected, Num), context(pred/arity, …))` for the number `num` an arithmetic
-function cannot take (pl-error.c `ERR_AR_TYPE`).
+Raise `error(type_error(Expected, Num), context(pred/arity, …))`, or for `ERR_AR_DOMAIN`
+`error(domain_error(Domain, Num), …)`, for the number `num` an arithmetic function cannot take
+(pl-error.c `ERR_AR_TYPE`, `ERR_AR_DOMAIN`).
 """
 function PL_error(
     ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
@@ -172,9 +176,40 @@ function PL_error(
     h = _PL_error_open(ld)
     h === nothing && return false
     caller, fid, except, formal, swi = h
-    @assert id == ERR_AR_TYPE
+    @assert id == ERR_AR_TYPE || id == ERR_AR_DOMAIN
     actual = put_number(T, num)                                     # _PL_put_number(actual, num)
-    setSlotValue!(ld, formal + 1, mk_expr(T, T[mk_sym(T, :type_error), expected, actual]))
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T,
+            T[
+                mk_sym(T, id == ERR_AR_TYPE ? :type_error : :domain_error),
+                expected,
+                actual
+            ]
+        )
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+"""
+    PL_error(ld, pred, arity, msg, ERR_DIV_BY_ZERO) -> false
+
+Raise `error(evaluation_error(zero_divisor), context(pred/arity, …))` (pl-error.c).
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_DIV_BY_ZERO
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(T, T[mk_sym(T, :evaluation_error), mk_sym(T, :zero_divisor)])
+    )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
@@ -375,10 +410,10 @@ PL_error(ld::PL_local_data{T}, id::PL_error_code, what::T) where {T} =
     PL_error(ld, "", 0, "", id, what)
 
 """
-    PL_error(ld, pred, arity, msg, ERR_REPRESENTATION, what) -> false
+    PL_error(ld, pred, arity, msg, ERR_REPRESENTATION | ERR_EVALUATION, what) -> false
 
 As the form without them, with upstream's leading `pred`, `arity` and `msg` (empty: not given): the
-context holds `msg` as an atom (pl-error.c).
+context holds `msg` as an atom (pl-error.c). `ERR_EVALUATION` raises `evaluation_error(What)`.
 """
 function PL_error(
     ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code, what::T
@@ -386,8 +421,20 @@ function PL_error(
     h = _PL_error_open(ld)
     h === nothing && return false
     caller, fid, except, formal, swi = h
-    @assert id == ERR_REPRESENTATION
-    setSlotValue!(ld, formal + 1, mk_expr(T, T[mk_sym(T, :representation_error), what]))
+    @assert id == ERR_REPRESENTATION || id == ERR_EVALUATION
+    setSlotValue!(
+        ld,
+        formal + 1,
+        mk_expr(
+            T,
+            T[
+                mk_sym(
+                    T, id == ERR_REPRESENTATION ? :representation_error : :evaluation_error
+                ),
+                what
+            ]
+        )
+    )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 

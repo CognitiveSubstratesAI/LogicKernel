@@ -73,7 +73,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-utf8.c` | code | `8609e216cab9` | `src/os/pl-utf8.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-utf8.h` | code | `8609e216cab9` | `src/os/pl-utf8.jl` | 19 | 0 |
 | swipl-devel `src/pl-alloc.c` | code | `8609e216cab9` | `src/pl-alloc.jl` | 7 | 7 |
-| swipl-devel `src/pl-arith.c` | code | `8609e216cab9` | `src/pl-arith.jl` | 43 | 10 |
+| swipl-devel `src/pl-arith.c` | code | `8609e216cab9` | `src/pl-arith.jl` | 74 | 16 |
 | swipl-devel `src/pl-arith.h` | code | `8609e216cab9` | `src/pl-arith.jl` | 5 | 1 |
 | swipl-devel `src/pl-atom.c` | code | `8609e216cab9` | `src/pl-atom.jl` | 11 | 6 |
 | swipl-devel `src/pl-attvar.c` | code | `8609e216cab9` | `src/pl-attvar.jl` | 3 | 3 |
@@ -104,7 +104,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-gmp.h` | code | `8609e216cab9` | `src/pl-incl.jl` | 4 | 0 |
 | swipl-devel `src/pl-hash.c` | code | `8609e216cab9` | `src/pl-hash.jl` | 1 | 1 |
 | swipl-devel `src/pl-hash.h` | code | `8609e216cab9` | `src/pl-hash.jl` | 1 | 0 |
-| swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-arith.jl` | 8 | 0 |
+| swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-arith.jl` | 10 | 0 |
 | swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-atom.jl` | 12 | 3 |
 | swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-comp.jl` | 5 | 2 |
 | swipl-devel `src/pl-incl.h` | code | `8609e216cab9` | `src/pl-funct.jl` | 7 | 1 |
@@ -201,7 +201,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-utf8.c` | `8609e216cab9` | 4 | 9 | 2 | src/os/pl-utf8.jl |
 | swipl-devel `src/os/pl-utf8.h` | `8609e216cab9` | 4 | 11 | 0 | src/os/pl-utf8.jl |
 | swipl-devel `src/pl-alloc.c` | `8609e216cab9` | 7 | 73 | 7 | src/pl-alloc.jl |
-| swipl-devel `src/pl-arith.c` | `8609e216cab9` | 31 | 166 | 9 | src/pl-arith.jl |
+| swipl-devel `src/pl-arith.c` | `8609e216cab9` | 59 | 166 | 15 | src/pl-arith.jl |
 | swipl-devel `src/pl-arith.h` | `8609e216cab9` | 0 | 8 | 0 | src/pl-arith.jl |
 | swipl-devel `src/pl-atom.c` | `8609e216cab9` | 10 | 78 | 6 | src/pl-atom.jl |
 | swipl-devel `src/pl-attvar.c` | `8609e216cab9` | 3 | 42 | 3 | src/pl-attvar.jl |
@@ -267,7 +267,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8609e216cab9` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8609e216cab9` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8609e216cab9` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1108** | **4363** | **600** | |
+| **total** | | **1136** | **4363** | **606** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

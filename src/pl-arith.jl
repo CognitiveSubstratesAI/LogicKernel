@@ -10,8 +10,10 @@
 #
 # SWI-Prolog's arithmetic (pl-arith.c), V6c: evaluating an expression (`valueExpression`,
 # `evalExpression`) into a `number` (src/pl-incl.jl; the number core is src/pl-gmp.jl), the
-# functions the programs reach (`+`, `-`, `*`, unary `-` and `+`), comparing (`compareNumbers`), and
-# the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2`.
+# functions the programs reach (`+ - *`, unary `-` and `+`, and arith-a's: `/ // mod rem div`,
+# `abs sign min max copysign`, `gcd msb`, `/\ \/ xor \`, `integer round truncate float floor ceil
+# ceiling float_integer_part float_fractional_part`; arith_funcs_design.md), comparing
+# (`compareNumbers`), and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2`.
 #
 # DIVERGES (file-wide):
 #   * The functions are the PORTED entries of upstream's table (`ar_funcdefs`), found by their
@@ -458,10 +460,688 @@ ar_shift_left(ld::PL_local_data, n1::number, n2::number, r::number)::Bool =
 ar_shift_right(ld::PL_local_data, n1::number, n2::number, r::number)::Bool =
     ar_shift(ld, n1, n2, r, 1)
 
+# ── arith-a: division, sign and order, integer, bitwise, rounding and conversion (pl-arith.c) ─────
+# The flags `ar_divide` reads (`truePrologFlag`): `iso` and `prefer_rationals`, both false in the
+# kernel (nothing sets a flag; see the file header). The branches they guard are ported as upstream's,
+# on these constants.
+# PORT: pl-incl.h PLFLAG_ISO
+"The `iso` Prolog flag (pl-incl.h `PLFLAG_ISO`): false, as its default."
+const PLFLAG_ISO = false
+# PORT: pl-incl.h PLFLAG_RATIONAL
+"The `prefer_rationals` Prolog flag (pl-incl.h `PLFLAG_RATIONAL`): false, as its default."
+const PLFLAG_RATIONAL = false
+
+# PORT: pl-arith.c sign_f
+"The sign of the double `f` (pl-arith.c): -1, 0 or 1; a NaN is 0."
+sign_f(f::Float64)::Int =
+    if f < 0
+        -1
+    elseif f > 0
+        1
+    else
+        0
+    end
+
+# PORT: pl-arith.c check_zero_div
+"A division by zero (pl-arith.c): a NaN or an infinity if the float flags say so, else `evaluation_error(zero_divisor)`."
+function check_zero_div(
+    ld::PL_local_data, sign_n::Int, r::number, func::String, arity::Int
+)::Bool
+    if sign_n == 0
+        if (ld.arith_f_flags & FLT_UNDEFINED) != 0
+            r.type = V_FLOAT
+            r.f = const_nan
+            return true
+        end
+    elseif (ld.arith_f_flags & FLT_ZERO_DIV) != 0
+        r.type = V_FLOAT
+        r.f = copysign(Inf, sign_n)                         # const_inf
+        return true
+    end
+    return PL_error(ld, func, arity, "", ERR_DIV_BY_ZERO)
+end
+
+# PORT: pl-arith.c ar_divide
+# DIVERGES: `n1 % n2` of `INT64_MIN` and -1 is undefined in C (a trap on x86); the pin's build
+# answers 2^63 as a big integer (probed: `X is -9223372036854775808 / -1`), which is what the
+# kernel gives. Julia's `rem` is 0 there, so `n1 % n2 == 0` holds, and the quotient is made a `V_MPZ`.
+"`//2` (pl-arith.c `ar_divide`): `r = n1 / n2`: an integer when it divides, else a float."
+function ar_divide(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    if n2.type === V_FLOAT && isinf(n2.f)                   # X/inf
+        if n1.type === V_FLOAT                              # float --> signed 0.0 or NaN
+            r.type = V_FLOAT
+            r.f = isfinite(n1.f) ? 0.0 * sign_f(n1.f) * sign_f(n2.f) : const_nan
+            return check_float(ld, r)
+        else                                                # non-float --> 0
+            r.type = V_INTEGER
+            r.i = 0
+            return true
+        end
+    end
+    if !PLFLAG_ISO
+        same_type_numbers(ld, n1, n2) || return false
+        t = n1.type
+        if t === V_INTEGER
+            n2.i == 0 && return check_zero_div(ld, ar_sign_i(n1), r, "/", 2)
+            if n1.i % n2.i == 0
+                if n2.i == -1 && n1.i == typemin(Int64)     # INT64_MIN / -1: see DIVERGES
+                    r.type = V_MPZ
+                    r.mpz = -BigInt(n1.i)
+                    return true
+                end
+                r.i = n1.i ÷ n2.i
+                r.type = V_INTEGER
+                return true
+            end
+            if PLFLAG_RATIONAL
+                promoteToMPZNumber(n1)
+                promoteToMPZNumber(n2)
+                return ar_rdiv_mpz(n1, n2, r)
+            end
+        elseif t === V_MPZ
+            iszero(n2.mpz) && return check_zero_div(ld, ar_sign_i(n1), r, "/", 2)
+            if rem(n1.mpz, n2.mpz) == 0                     # mpz_divisible_p
+                r.type = V_MPZ
+                r.mpz = div(n1.mpz, n2.mpz)                 # mpz_divexact
+                return true
+            end
+            PLFLAG_RATIONAL && return ar_rdiv_mpz(n1, n2, r)
+        elseif t === V_MPQ
+            iszero(numerator(n2.mpq)) && return check_zero_div(ld, ar_sign_i(n1), r, "/", 2)
+            r.type = V_MPQ
+            r.mpq = n1.mpq / n2.mpq                         # mpq_div
+            return check_mpq(r)
+        end                                                 # V_FLOAT: break
+    end
+    # TBD: How to handle Q?
+    (promoteToFloatNumber(ld, n1) && promoteToFloatNumber(ld, n2)) || return false
+    # separate zero-div case from general overflow, Note: sign_f(nan)=0
+    if n2.f == 0.0 && sign_f(n1.f) != 0
+        return check_zero_div(ld, signbit(n1.f) == signbit(n2.f) ? 1 : -1, r, "/", 2)
+    end
+    r.f = n1.f / n2.f
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c mod as mod_int64
+"`x mod y` of two `int64_t` (pl-arith.c `mod`): the sign of `y`; `y` is not 0."
+function mod_int64(x::Int64, y::Int64)::Int64
+    r = x % y
+    if r != 0 && (r < 0) != (y < 0)
+        r += y
+    end
+    return r
+end
+
+# PORT: pl-arith.c ar_mod
+"`mod/2` (pl-arith.c `ar_mod`): `r = n1 mod n2`, the sign of `n2`."
+function ar_mod(ld::PL_local_data{T}, n1::number, n2::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "mod", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, "mod", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    same_type_numbers(ld, n1, n2) || return false
+    if n1.type === V_INTEGER
+        n2.i == 0 && return PL_error(ld, "mod", 2, "", ERR_DIV_BY_ZERO)
+        if n2.i != -1 || n1.i != typemin(Int64)             # INT64_MIN
+            r.i = mod_int64(n1.i, n2.i)
+        else
+            r.i = 0
+        end
+        r.type = V_INTEGER
+    else                                                    # V_MPZ
+        iszero(n2.mpz) && return PL_error(ld, "mod", 2, "", ERR_DIV_BY_ZERO)
+        r.type = V_MPZ
+        r.mpz = mod(n1.mpz, n2.mpz)                         # mpz_fdiv_r
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_rem
+"`rem/2` (pl-arith.c `ar_rem`): `r = n1 rem n2`, the sign of `n1`."
+function ar_rem(ld::PL_local_data{T}, n1::number, n2::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "rem", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, "rem", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    same_type_numbers(ld, n1, n2) || return false
+    if n1.type === V_INTEGER
+        n2.i == 0 && return PL_error(ld, "rem", 2, "", ERR_DIV_BY_ZERO)
+        if n2.i != -1 || n1.i != typemin(Int64)             # INT64_MIN
+            r.i = n1.i % n2.i
+        else
+            r.i = 0
+        end
+        r.type = V_INTEGER
+    else                                                    # V_MPZ
+        iszero(n2.mpz) && return PL_error(ld, "rem", 2, "", ERR_DIV_BY_ZERO)
+        r.type = V_MPZ
+        r.mpz = rem(n1.mpz, n2.mpz)                         # mpz_tdiv_r
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_tdiv
+# DIVERGES: C99's `(-3 / 2) == -1` is true, so upstream's `mpz_fdiv_q` branch is dead and only
+# `mpz_tdiv_q` (Julia's `div` on a `BigInt`) is written.
+"`///2` (pl-arith.c `ar_tdiv`): integer division, truncating toward zero."
+function ar_tdiv(ld::PL_local_data{T}, n1::number, n2::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "//", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, "//", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    if n1.type === V_INTEGER && n2.type === V_INTEGER
+        n2.i == 0 && return PL_error(ld, "//", 2, "", ERR_DIV_BY_ZERO)
+        if !(n2.i == -1 && n1.i == typemin(Int64))          # PLMININT
+            r.i = n1.i ÷ n2.i
+            r.type = V_INTEGER
+            return true
+        end
+    end
+    promoteToMPZNumber(n1)
+    promoteToMPZNumber(n2)
+    iszero(n2.mpz) && return PL_error(ld, "//", 2, "", ERR_DIV_BY_ZERO)
+    r.type = V_MPZ
+    r.mpz = div(n1.mpz, n2.mpz)                             # mpz_tdiv_q
+    return true
+end
+
+# PORT: pl-arith.c ar_div
+"`div/2` (pl-arith.c `ar_div`): integer division, rounding toward negative infinity."
+function ar_div(ld::PL_local_data{T}, n1::number, n2::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "div", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, "div", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    if n1.type === V_INTEGER && n2.type === V_INTEGER
+        n2.i == 0 && return PL_error(ld, "div", 2, "", ERR_DIV_BY_ZERO)
+        if !(n2.i == -1 && n1.i == typemin(Int64))          # PLMININT
+            r.i = n1.i ÷ n2.i
+            if (n1.i > 0) != (n2.i > 0) && n1.i % n2.i != 0
+                r.i -= 1
+            end
+            r.type = V_INTEGER
+            return true
+        end
+    end
+    promoteToMPZNumber(n1)
+    promoteToMPZNumber(n2)
+    iszero(n2.mpz) && return PL_error(ld, "div", 2, "", ERR_DIV_BY_ZERO)
+    r.type = V_MPZ
+    r.mpz = fld(n1.mpz, n2.mpz)                             # mpz_fdiv_q
+    return true
+end
+
+# PORT: pl-arith.c ar_signbit
+"The sign bit of `n` (pl-arith.c): -1 if it is set (a negative number, `-0.0`), else 1."
+function ar_signbit(n::number)::Int
+    t = n.type
+    t === V_INTEGER && return n.i < 0 ? -1 : 1
+    t === V_MPZ && return sign(cmp(n.mpz, 0)) < 0 ? -1 : 1  # mpz_sgn
+    t === V_MPQ && return sign(cmp(numerator(n.mpq), 0)) < 0 ? -1 : 1  # mpq_sgn
+    return signbit(n.f) ? -1 : 1                            # V_FLOAT
+end
+
+# PORT: pl-arith.c ar_sign
+"`sign/1` (pl-arith.c `ar_sign`): -1, 0 or 1 of the argument's type; a NaN stays one."
+function ar_sign(n1::number, r::number)::Bool
+    if n1.type === V_FLOAT
+        r.f = isnan(n1.f) ? const_nan : (
+            if n1.f < 0
+                -1.0
+            elseif n1.f > 0.0
+                1.0
+            else
+                0.0
+            end
+        )
+        r.type = V_FLOAT
+    else
+        r.i = ar_sign_i(n1)
+        r.type = V_INTEGER
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_copysign
+"`copysign/2` (pl-arith.c `ar_copysign`): the magnitude of `n1` with the sign of `n2`."
+function ar_copysign(n1::number, n2::number, r::number)::Bool
+    if n1.type === V_FLOAT && n2.type === V_FLOAT
+        if isnan(n1.f)
+            r.f = const_nan
+        else
+            r.f = copysign(n1.f, n2.f)
+        end
+        r.type = V_FLOAT
+    else
+        if ar_signbit(n1) != ar_signbit(n2)
+            return ar_u_minus(n1, r)
+        else
+            cpNumber(r, n1)
+        end
+    end
+    return true
+end
+
+# PORT: pl-arith.c is_min_zero
+"Whether `n` is the float -0.0 (pl-arith.c)."
+is_min_zero(n::number)::Bool = n.type === V_FLOAT && n.f == 0.0 && signbit(n.f)
+
+# PORT: pl-arith.c ar_max
+"`max/2` (pl-arith.c `ar_max`): a NaN argument gives a NaN, and -0.0 < 0.0."
+function ar_max(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    diff = cmpNumbers(ld, n1, n2)
+    if diff == CMP_NOTEQ                                    # one or both nan
+        r.f = const_nan
+        r.type = V_FLOAT
+    elseif diff == CMPEX_EQUAL
+        if is_min_zero(n1)
+            cpNumber(r, n2)
+        elseif is_min_zero(n2)
+            cpNumber(r, n1)
+        else
+            make_same_type_numbers(ld, n1, n2) || return false
+            cpNumber(r, n1)
+        end
+    elseif diff > 0
+        cpNumber(r, n1)
+    else
+        cpNumber(r, n2)
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_min
+"`min/2` (pl-arith.c `ar_min`): a NaN argument gives a NaN, and -0.0 < 0.0."
+function ar_min(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    diff = cmpNumbers(ld, n1, n2)
+    if diff == CMP_NOTEQ                                    # if one or both nan's
+        r.f = const_nan
+        r.type = V_FLOAT
+    elseif diff == CMPEX_EQUAL
+        if is_min_zero(n1)
+            cpNumber(r, n1)
+        elseif is_min_zero(n2)
+            cpNumber(r, n2)
+        else
+            make_same_type_numbers(ld, n1, n2) || return false
+            cpNumber(r, n1)
+        end
+    elseif diff < 0
+        cpNumber(r, n1)
+    else
+        cpNumber(r, n2)
+    end
+    return true
+end
+
+# PORT: pl-arith.c same_positive_ints
+"The integer arguments of `gcd/2` made absolute and of one type (pl-arith.c): a type error, or false after raising."
+function same_positive_ints(
+    ld::PL_local_data{T}, fname::String, n1::number, n2::number
+)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, fname, 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, fname, 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    same_type_numbers(ld, n1, n2) || return false
+    if n1.type === V_INTEGER
+        a = n1.i
+        b = n2.i
+        promote = false
+        if a < 0
+            a = -a                                          # -(uint64_t)a: wraps for INT64_MIN
+            promote = a < 0
+        end
+        if !promote && b < 0
+            b = -b
+            promote = b < 0
+        end
+        if promote
+            promoteToMPZNumber(n1)
+            promoteToMPZNumber(n2)
+            return true                                     # goto case_gmp: the GMP functions ignore the sign
+        end
+        n1.i = a
+        n2.i = b
+    end                                                     # V_MPZ: nothing to make absolute
+    return true
+end
+
+# PORT: pl-arith.c i64_gcd
+"The greatest common divisor of two non-negative `int64_t` (pl-arith.c)."
+function i64_gcd(a::Int64, b::Int64)::Int64
+    a == 0 && return b
+    b == 0 && return a
+    while b != 0
+        t = b
+        b = a % b
+        a = t
+    end
+    return a
+end
+
+# PORT: pl-arith.c ar_gcd
+"`gcd/2` (pl-arith.c `ar_gcd`): the greatest common divisor of two integers."
+function ar_gcd(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    same_positive_ints(ld, "gcd", n1, n2) || return false
+    if n1.type === V_INTEGER
+        r.type = V_INTEGER
+        r.i = i64_gcd(n1.i, n2.i)
+    else                                                    # V_MPZ
+        r.type = V_MPZ
+        r.mpz = gcd(n1.mpz, n2.mpz)                         # mpz_gcd
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_disjunct
+"`\\//2` (pl-arith.c `ar_disjunct`, BINAIRY_INT_FUNCTION): bitwise or."
+function ar_disjunct(
+    ld::PL_local_data{T}, n1::number, n2::number, r::number
+)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "\\/", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, "\\/", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    same_type_numbers(ld, n1, n2) || return false
+    if n1.type === V_INTEGER
+        r.i = n1.i | n2.i
+        r.type = V_INTEGER
+    else                                                    # V_MPZ
+        r.type = V_MPZ
+        r.mpz = n1.mpz | n2.mpz                             # mpz_ior
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_conjunct
+"`/\\/2` (pl-arith.c `ar_conjunct`, BINAIRY_INT_FUNCTION): bitwise and."
+function ar_conjunct(
+    ld::PL_local_data{T}, n1::number, n2::number, r::number
+)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "/\\", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, "/\\", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    same_type_numbers(ld, n1, n2) || return false
+    if n1.type === V_INTEGER
+        r.i = n1.i & n2.i
+        r.type = V_INTEGER
+    else                                                    # V_MPZ
+        r.type = V_MPZ
+        r.mpz = n1.mpz & n2.mpz                             # mpz_and
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_xor
+"`xor/2` (pl-arith.c `ar_xor`, BINAIRY_INT_FUNCTION): bitwise exclusive or."
+function ar_xor(ld::PL_local_data{T}, n1::number, n2::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "xor", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    toIntegerNumber(ld, n2, 0) ||
+        return PL_error(ld, "xor", 2, "", ERR_AR_TYPE, mk_sym(T, :integer), n2)
+    same_type_numbers(ld, n1, n2) || return false
+    if n1.type === V_INTEGER
+        r.i = xor(n1.i, n2.i)
+        r.type = V_INTEGER
+    else                                                    # V_MPZ
+        r.type = V_MPZ
+        r.mpz = xor(n1.mpz, n2.mpz)                         # mpz_xor
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_negation
+"`\\/1` (pl-arith.c `ar_negation`): bitwise negation."
+function ar_negation(ld::PL_local_data{T}, n1::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "\\", 1, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    if n1.type === V_INTEGER
+        r.i = ~n1.i
+        r.type = V_INTEGER
+    else                                                    # V_MPZ
+        r.type = V_MPZ
+        r.mpz = ~n1.mpz                                     # mpz_com
+    end
+    return true
+end
+
+# PORT: pl-arith.c mustBePositive
+"`domain_error(not_less_than_one, N)` for the function `f/a` (pl-arith.c)."
+function mustBePositive(ld::PL_local_data{T}, f::String, a::Int, n::number)::Bool where {T}
+    return PL_error(ld, f, a, "", ERR_AR_DOMAIN, mk_sym(T, :not_less_than_one), n)
+end
+
+# PORT: pl-arith.c ar_msb
+"`msb/1` (pl-arith.c `ar_msb`): the index of the most significant bit of a positive integer."
+function ar_msb(ld::PL_local_data{T}, n1::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, 0) ||
+        return PL_error(ld, "msb", 1, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    if n1.type === V_INTEGER
+        n1.i <= 0 && return mustBePositive(ld, "msb", 1, n1)
+        r.i = MSB64(n1.i)
+        r.type = V_INTEGER
+        return true
+    end
+    ar_sign_i(n1) <= 0 && return mustBePositive(ld, "msb", 1, n1)    # V_MPZ: mpz_sgn
+    r.i = ndigits(n1.mpz; base=2) - 1                       # mpz_sizeinbase(…, 2) - 1
+    r.type = V_INTEGER
+    return true
+end
+
+# PORT: pl-arith.c ar_abs
+"`abs/1` (pl-arith.c `ar_abs`): the absolute value; that of the most negative integer is a bigint."
+function ar_abs(n1::number, r::number)::Bool
+    t = n1.type
+    if t === V_INTEGER
+        if n1.i == typemin(Int64)                           # PLMININT
+            promoteToMPZNumber(n1)
+            r.type = V_MPZ
+            t = V_MPZ                                       # FALLTHROUGH
+        else
+            r.i = abs(n1.i)                                 # llabs
+            r.type = V_INTEGER
+            return true
+        end
+    end
+    if t === V_MPZ
+        r.type = V_MPZ
+        r.mpz = abs(n1.mpz)                                 # mpz_abs
+    elseif t === V_MPQ
+        r.type = V_MPQ
+        r.mpq = abs(n1.mpq)                                 # mpq_abs
+    else                                                    # V_FLOAT
+        if signbit(n1.f)
+            r.f = -n1.f
+        else
+            r.f = n1.f
+        end
+        r.type = V_FLOAT
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_integer
+# DIVERGES: `lround` of the doubles up to and including 2^63 (the test is against `(float)PLMAXINT`,
+# which is 2^63): the double 2^63 is out of range, glibc on x86-64 answers `LONG_MIN`, which the
+# sign check below turns into `PLMAXINT` (probed: `integer(9223372036854775808.0)` is
+# 9223372036854775807). Julia's `round(Int64, …)` throws there, so the rounded double is converted
+# in range and 2^63 is given `typemin`. `mpq_t`s and `mpz_set_q` (truncation toward zero) are
+# `Rational`s and `div` on the parts.
+"`integer/1` and `round/1` (pl-arith.c `ar_integer`): round to the nearest integer, halves away from zero."
+function ar_integer(n1::number, r::number)::Bool
+    t = n1.type
+    if t === V_INTEGER || t === V_MPZ
+        cpNumber(r, n1)
+        return true
+    elseif t === V_MPQ
+        half = Rational{BigInt}(1, 2)
+        q = ar_sign_i(n1) > 0 ? n1.mpq + half : n1.mpq - half
+        r.type = V_MPZ
+        r.mpz = div(numerator(q), denominator(q))           # mpz_set_q
+        return true
+    end
+    f = n1.f                                                # V_FLOAT
+    if isnan(f) || isinf(f)
+        cpNumber(r, n1)
+        return true
+    end
+    if f <= Float64(Float32(typemax(Int64))) && f >= Float64(Float32(typemin(Int64)))
+        rf = round(f, RoundNearestTiesAway)                 # lround
+        r.i = rf >= 9.223372036854775808e18 ? typemin(Int64) : trunc(Int64, rf)
+        if f > 0 && r.i < 0
+            r.i = typemax(Int64)                            # PLMAXINT
+        elseif f < 0 && r.i > 0
+            r.i = typemin(Int64)                            # PLMININT
+        end
+        r.type = V_INTEGER
+        return true
+    end
+    r.type = V_MPZ
+    r.mpz = BigInt(f)                                       # mpz_init_set_d
+    return true
+end
+
+# PORT: pl-arith.c ar_float
+"`float/1` (pl-arith.c `ar_float`): the argument as a float."
+function ar_float(ld::PL_local_data, n1::number, r::number)::Bool
+    cpNumber(r, n1)
+    return promoteToFloatNumber(ld, r)
+end
+
+# PORT: pl-arith.c ar_floor
+# DIVERGES: only the `HAVE_FLOOR` branch is written (the pin's build has it), and
+# `mpz_set_q` is `div` on the parts, truncating.
+"`floor/1` (pl-arith.c `ar_floor`): the largest integer not above the argument."
+function ar_floor(ld::PL_local_data{T}, n1::number, r::number)::Bool where {T}
+    t = n1.type
+    if t === V_INTEGER || t === V_MPZ
+        cpNumber(r, n1)
+        return true
+    elseif t === V_MPQ
+        r.type = V_MPZ
+        r.mpz = div(numerator(n1.mpq), denominator(n1.mpq)) # mpz_set_q
+        if ar_sign_i(n1) < 0 && denominator(n1.mpq) != 1
+            r.mpz = r.mpz - 1                               # mpz_sub_ui
+        end
+        return true
+    end
+    if isnan(n1.f) || isinf(n1.f)                           # V_FLOAT
+        cpNumber(r, n1)
+        return true
+    end
+    r.type = V_FLOAT
+    r.f = floor(n1.f)
+    if !toIntegerNumber(ld, r, TOINT_CONVERT_FLOAT | TOINT_TRUNCATE)
+        return PL_error(ld, "floor", 1, "", ERR_EVALUATION, mk_sym(T, :int_overflow))
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_ceil
+# DIVERGES: as `ar_floor`: the `HAVE_CEIL` branch only.
+"`ceiling/1` and `ceil/1` (pl-arith.c `ar_ceil`): the smallest integer not below the argument."
+function ar_ceil(ld::PL_local_data{T}, n1::number, r::number)::Bool where {T}
+    t = n1.type
+    if t === V_INTEGER || t === V_MPZ
+        cpNumber(r, n1)
+        return true
+    elseif t === V_MPQ
+        r.type = V_MPZ
+        r.mpz = div(numerator(n1.mpq), denominator(n1.mpq)) # mpz_set_q
+        if ar_sign_i(n1) > 0 && denominator(n1.mpq) != 1
+            r.mpz = r.mpz + 1                               # mpz_add_ui
+        end
+        return true
+    end
+    if isnan(n1.f) || isinf(n1.f)                           # V_FLOAT
+        cpNumber(r, n1)
+        return true
+    end
+    r.type = V_FLOAT
+    r.f = ceil(n1.f)
+    if !toIntegerNumber(ld, r, TOINT_CONVERT_FLOAT | TOINT_TRUNCATE)
+        return PL_error(ld, "ceil", 1, "", ERR_EVALUATION, mk_sym(T, :int_overflow))
+    end
+    return true
+end
+
+# PORT: pl-arith.c ar_float_fractional_part
+# DIVERGES: C's `modf` and `copysign(modf(...), f)` (for -0.0) as Julia's `modf`, whose
+# fractional part is `x - trunc(x)` and whose infinity case is 0.0: `copysign` restores the sign.
+"`float_fractional_part/1` (pl-arith.c): `X - truncate(X)`, a rational for a rational."
+function ar_float_fractional_part(ld::PL_local_data, n1::number, r::number)::Bool
+    t = n1.type
+    if t === V_INTEGER || t === V_MPZ
+        r.i = 0
+        r.type = V_INTEGER
+        return true
+    elseif t === V_MPQ
+        r.type = V_MPQ
+        ip = div(numerator(n1.mpq), denominator(n1.mpq))    # mpz_tdiv_q
+        r.mpq = n1.mpq - Rational{BigInt}(ip, BigInt(1))    # mpq_sub
+        return true
+    end
+    r.f = copysign(modf(n1.f)[1], n1.f)                     # V_FLOAT
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_float_integer_part
+"`float_integer_part/1` (pl-arith.c): `truncate(X)`, a float for a float."
+function ar_float_integer_part(ld::PL_local_data, n1::number, r::number)::Bool
+    t = n1.type
+    if t === V_INTEGER || t === V_MPZ
+        cpNumber(r, n1)
+        return true
+    elseif t === V_MPQ
+        r.type = V_MPZ
+        r.mpz = div(numerator(n1.mpq), denominator(n1.mpq)) # mpz_tdiv_q
+        return true
+    end
+    r.f = modf(n1.f)[2]                                     # V_FLOAT
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_truncate
+"`truncate/1` (pl-arith.c `ar_truncate`): the integer part, toward zero."
+function ar_truncate(ld::PL_local_data, n1::number, r::number)::Bool
+    t = n1.type
+    if t === V_MPQ
+        return ar_sign_i(n1) >= 0 ? ar_floor(ld, n1, r) : ar_ceil(ld, n1, r)
+    elseif t === V_FLOAT
+        if isnan(n1.f) || isinf(n1.f)
+            cpNumber(r, n1)
+            return true
+        end
+        return n1.f >= 0.0 ? ar_floor(ld, n1, r) : ar_ceil(ld, n1, r)
+    end
+    cpNumber(r, n1)
+    return true
+end
+
 # PORT: pl-arith.c ar_funcdefs
 # DIVERGES: the entries ported so far, in upstream's order, `(name, arity)`; see the file header.
+# `integer` and `round` share `ar_integer`, `ceil` and `ceiling` share `ar_ceil`, as upstream's.
 "pl-arith.c's `ar_funcdefs[]`: the arithmetic functions, the ported entries."
-const ar_funcdefs = ((:+, 2), (:-, 2), (:*, 2), (:-, 1), (:+, 1), (:>>, 2), (:<<, 2))
+const ar_funcdefs = (
+    (:+, 2), (:-, 2), (:*, 2), (:/, 2), (:-, 1), (:+, 1), (:abs, 1), (:max, 2), (:min, 2),
+    (:mod, 2), (:rem, 2), (:div, 2), (:(//), 2), (:gcd, 2), (:sign, 1),
+    (Symbol("/\\"), 2), (Symbol("\\/"), 2), (:>>, 2), (:<<, 2), (:xor, 2),
+    (Symbol("\\"), 1),
+    (:integer, 1), (:round, 1), (:truncate, 1), (:float, 1), (:floor, 1), (:ceil, 1),
+    (:ceiling, 1), (:float_fractional_part, 1), (:float_integer_part, 1), (:copysign, 2),
+    (:msb, 1)
+)
+
+# The names of `ar_funcdefs` that are not Julia syntax, as symbols compared in `_ar_call2`/`_ar_call1`.
+const _AR_AND = Symbol("/\\")
+const _AR_OR = Symbol("\\/")
+const _AR_NEG = Symbol("\\")
 
 # PORT: pl-arith.c isCurrentArithFunction
 # DIVERGES: the function is `ar_funcdefs`' entry for the name's key and the arity, 0 for none —
@@ -475,17 +1155,43 @@ function isCurrentArithFunction(::Type{T}, name::UInt64, arity::Int)::Int where 
     return 0
 end
 
-# The call of `ar_funcdefs` entry `k` (upstream's `(*(ArithF2)f)(a0, a1, n)` and arity 1).
+# The call of `ar_funcdefs` entry `k` (upstream's `(*(ArithF2)f)(a0, a1, n)` and arity 1), by the
+# entry's name.
 function _ar_call2(ld::PL_local_data, k::Int, a0::number, a1::number, r::number)::Bool
-    k == 1 && return pl_ar_add(ld, a0, a1, r)
-    k == 2 && return ar_minus(ld, a0, a1, r)
-    k == 6 && return ar_shift_right(ld, a0, a1, r)
-    k == 7 && return ar_shift_left(ld, a0, a1, r)
-    return ar_mul(ld, a0, a1, r)                            # k == 3
+    f = ar_funcdefs[k][1]
+    f === :+ && return pl_ar_add(ld, a0, a1, r)
+    f === :- && return ar_minus(ld, a0, a1, r)
+    f === :* && return ar_mul(ld, a0, a1, r)
+    f === :/ && return ar_divide(ld, a0, a1, r)
+    f === :max && return ar_max(ld, a0, a1, r)
+    f === :min && return ar_min(ld, a0, a1, r)
+    f === :mod && return ar_mod(ld, a0, a1, r)
+    f === :rem && return ar_rem(ld, a0, a1, r)
+    f === :div && return ar_div(ld, a0, a1, r)
+    f === :(//) && return ar_tdiv(ld, a0, a1, r)
+    f === :gcd && return ar_gcd(ld, a0, a1, r)
+    f === _AR_AND && return ar_conjunct(ld, a0, a1, r)
+    f === _AR_OR && return ar_disjunct(ld, a0, a1, r)
+    f === :>> && return ar_shift_right(ld, a0, a1, r)
+    f === :<< && return ar_shift_left(ld, a0, a1, r)
+    f === :xor && return ar_xor(ld, a0, a1, r)
+    return ar_copysign(a0, a1, r)                           # :copysign
 end
-function _ar_call1(k::Int, a0::number, r::number)::Bool
-    k == 4 && return ar_u_minus(a0, r)
-    return ar_u_plus(a0, r)                                 # k == 5
+function _ar_call1(ld::PL_local_data, k::Int, a0::number, r::number)::Bool
+    f = ar_funcdefs[k][1]
+    f === :- && return ar_u_minus(a0, r)
+    f === :+ && return ar_u_plus(a0, r)
+    f === :abs && return ar_abs(a0, r)
+    f === :sign && return ar_sign(a0, r)
+    f === _AR_NEG && return ar_negation(ld, a0, r)
+    (f === :integer || f === :round) && return ar_integer(a0, r)
+    f === :truncate && return ar_truncate(ld, a0, r)
+    f === :float && return ar_float(ld, a0, r)
+    f === :floor && return ar_floor(ld, a0, r)
+    (f === :ceil || f === :ceiling) && return ar_ceil(ld, a0, r)
+    f === :float_fractional_part && return ar_float_fractional_part(ld, a0, r)
+    f === :float_integer_part && return ar_float_integer_part(ld, a0, r)
+    return ar_msb(ld, a0, r)                                # :msb
 end
 
 # ── characters (pl-arith.c) ──────────────────────────────────────────────────────────────────────
@@ -674,7 +1380,7 @@ function _evalExpression_term(
     top = ld.arith_top
     a0 = ld.arith_numbers[top]                              # a[0], the first argument
     if arity == 1
-        _ar_call1(f, a0, n_tmp) || @goto error
+        _ar_call1(ld, f, a0, n_tmp) || @goto error
         cpNumber(a0, n_tmp)                                 # *a0 = *n
     else                                                    # arity 2: no arity-3 function is ported
         a1 = ld.arith_numbers[top - 1]
@@ -816,7 +1522,7 @@ function evalExpression_cells(
     top = ld.arith_top
     a0 = ld.arith_numbers[top]                              # a[0], the first argument
     if arity == 1
-        _ar_call1(fi, a0, n_tmp) || @goto error
+        _ar_call1(ld, fi, a0, n_tmp) || @goto error
         cpNumber(a0, n_tmp)                                 # *a0 = *n
     else                                                    # arity 2: no arity-3 function is ported
         a1 = ld.arith_numbers[top - 1]
