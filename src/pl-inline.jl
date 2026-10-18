@@ -440,6 +440,7 @@ function _compound_term(ld::PL_local_data{T}, p::Int)::T where {T}
     n = ld.ngterm + 1
     n > length(ld.gterm_pos) ? push!(ld.gterm_pos, p) : (ld.gterm_pos[n] = p)
     ld.ngterm = n
+    p > ld.gterm_top && (ld.gterm_top = p)
     Threads.atomic_add!(_COLD_EXPORT_TERMS, 1)
     return t
 end
@@ -466,23 +467,28 @@ end
 end
 
 # ORIGINAL: the export memo follows the global stack down (L1c), as the value table does: every
-# entry at a position above `gTop` goes. TRANSITIONAL, with the memo.
+# entry at a position above `gTop` goes. TRANSITIONAL, with the memo. O(1) on every `Undo!` that
+# frees no export (the audit's D-0010: the scan cost every backtrack O(memo) — poly_10 2.6× slower):
+# `gterm_top`, the highest position holding one, is at or below `gTop`; only a truncation below it
+# scans, and leaves it the highest survivor.
 "Drop the exports of the compounds above `gTop` (in place: `Undo!` allocates nothing)."
 function _truncate_gterms!(ld::PL_local_data{T})::Nothing where {T}
-    n = ld.ngterm
-    n == 0 && return nothing
     top = ld.gTop
+    ld.gterm_top <= top && return nothing
     j = 0
-    for i in 1:n                                    # positions in no order: compacted in place
+    hi = 0
+    for i in 1:(ld.ngterm)                          # positions in no order: compacted in place
         p = ld.gterm_pos[i]
         if p <= top
             j += 1
             ld.gterm_pos[j] = p
+            p > hi && (hi = p)
         else
             ld.gterms[p] = nothing                  # (its reverse-map entry: stale, see `_export_pos`)
         end
     end
     ld.ngterm = j
+    ld.gterm_top = hi
     return nothing
 end
 

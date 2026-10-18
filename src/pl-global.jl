@@ -307,6 +307,7 @@ mutable struct PL_local_data{T}
     gterm_pos::Vector{Int}                                      # … the positions holding one
     gterm_of::IdDict{T, Int}                                    # … export → its position: TRANSITIONAL (L1d), with the memo
     ngterm::Int                                                 # … in use: gterm_pos[1:ngterm]
+    gterm_top::Int                                              # … the highest of them (0: none)
     gTop::Int                                                   # stacks.global.top
     vtable::Vector{T}                                           # (the value table, L1b: see above)
     vbox::Vector{Int}                                           # … each entry's box on the stack
@@ -406,7 +407,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
     ld = PL_local_data{T}(
         definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
-        UInt64[], UInt64[], Union{Nothing, T}[], Int[], IdDict{T, Int}(), 0, 0, T[],
+        UInt64[], UInt64[], Union{Nothing, T}[], Int[], IdDict{T, Int}(), 0, 0, 0, T[],
         Int[],
         gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
         gd.functors, gd.atom_dexpr, gd.functor_dot2, gd.atom_nil_w,   # GD->functors (L1c); ATOM_nil (L1c-6)

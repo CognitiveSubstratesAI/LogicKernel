@@ -32,6 +32,10 @@ export LOGICKERNEL_PREFLIGHT_STUB_STATIC=1
 # changes); the gate's default is the merge base with origin/main (`_gate_base`), which on a branch of
 # committed steps names more — `_gatebase_cases` checks that side
 export LOGICKERNEL_GATE_BASE=HEAD
+# (2026-10-18) the preflight's CI check reads GitHub's verdict on origin/main — another commit's state,
+# not this tree's: with main red, every preflight case here failed on it (886e761's own CI, the fix for
+# that red main — a deadlock). The check itself is covered hermetically (test/test_gate_split.jl's stubs)
+export LOGICKERNEL_CI_CHECK=off
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
 trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
@@ -182,12 +186,31 @@ cp "$T/manifest.bak" "$man"
 fast_case "fast pre-check, JET" "$rc" "FAIL (fast static pre-check)"
 has "…the JET report names the planted function" "$ROOT/.warm/preflight_static_fast.log" "$jet" 1
 # (2026-10-18, tooling 2) the BRANCH-GATE runs the same pre-check as its step 0, in the warm daemon: the same
-# planted JET defect stops it there, before any test file (the CI check off: this case is about step 0)
+# planted JET defect stops it there, before any test file (the CI check off: this case is about step 0).
+# A branch-gate on main or a detached HEAD refuses itself (exit 2) — and CI checks a push to main out ON
+# main (2026-10-18: 0c4d9fa red on its main push, green on its gate push) — so off a branch it runs on a
+# scratch branch at HEAD, and the checkout goes back to where it was
+bg_head=$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2> /dev/null)
+bg_sha=$(git -C "$ROOT" rev-parse HEAD)
+bg_scratch=""
+case "$bg_head" in
+    "" | main | master)
+        bg_scratch="test-warm-bg-$$"
+        git -C "$ROOT" switch -q -c "$bg_scratch"
+        ;;
+esac
 printf '\n%s(x::Int) = %s_undefined(x)\n' "$jet" "$jet" >> "$ti"
 plant_exempt "$jet" "Tuple{Int}"
 LOGICKERNEL_CI_CHECK=off "$W" branch-gate > "$T/bgf" 2>&1; rc=$?
 cp "$T/term_interface.jl.bak" "$ti"
 cp "$T/manifest.bak" "$man"
+if [ -n "$bg_scratch" ]; then
+    if [ -n "$bg_head" ]; then git -C "$ROOT" switch -q "$bg_head"; else git -C "$ROOT" switch -q --detach "$bg_sha"; fi
+    git -C "$ROOT" branch -q -D "$bg_scratch"
+    [ "$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2> /dev/null)" = "$bg_head" ] &&
+        [ "$(git -C "$ROOT" rev-parse HEAD)" = "$bg_sha" ]
+    check "…the checkout is back where it was (main or detached HEAD)" 0 $?
+fi
 check "branch-gate step 0, JET: the gate FAILS" 1 "$rc"
 has "…at the fast pre-check" "$T/bgf" "branch-gate: FAIL (fast static pre-check)" 1
 has "…before any test file" "$T/bgf" "^branch-gate: test/" 0

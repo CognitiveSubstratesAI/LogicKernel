@@ -54,6 +54,43 @@ end
     LK.DiscardMark(ld, m)
 end
 
+# the high-water mark (the audit's D-0010): `gterm_top` is the highest position holding an export,
+# so an `Undo!` that frees none is O(1) — and one that frees some leaves it the highest survivor
+@testset "the export memo's high-water mark: Undo! scans only below it" begin
+    ld, s = _cc_engine()
+    m0 = LK.Mark(ld)
+    pa, _ = _cc_layout!(ld, :a, 1)
+    LK._compound_term(ld, pa)
+    @test ld.gterm_top == pa
+    m1 = LK.Mark(ld)
+    pb, _ = _cc_layout!(ld, :b, 1)
+    LK._compound_term(ld, pb)
+    pc, _ = _cc_layout!(ld, :c, 1)
+    tc = LK._compound_term(ld, pc)
+    @test pa < pb < pc && ld.gterm_top == pc && ld.ngterm == 3
+    m2 = LK.Mark(ld)
+    LK.allocGlobalCells!(ld, 2)                                 # cells, no export, above pc
+    LK.Undo!(ld, m2)                                            # frees no export: memo untouched
+    LK.DiscardMark(ld, m2)
+    @test ld.gterm_top == pc && ld.ngterm == 3 && ld.gterms[pc] === tc
+    LK.Undo!(ld, m1)                                            # below pb: b and c go, a stays
+    LK.DiscardMark(ld, m1)
+    @test ld.gterms[pb] === nothing && ld.gterms[pc] === nothing &&
+        ld.gterms[pa] !== nothing
+    @test ld.ngterm == 1 && ld.gterm_top == pa                  # the highest survivor
+    m3 = LK.Mark(ld)
+    pd, _ = _cc_layout!(ld, :d, 2)                              # reuses pb's cells
+    @test pd == pb
+    LK._compound_term(ld, pd)
+    @test ld.gterm_top == pd
+    LK.Undo!(ld, m3)
+    LK.DiscardMark(ld, m3)
+    @test ld.gterms[pd] === nothing && ld.gterm_top == pa && ld.ngterm == 1
+    LK.Undo!(ld, m0)                                            # everything: the memo is empty
+    LK.DiscardMark(ld, m0)
+    @test ld.ngterm == 0 && ld.gterm_top == 0 && ld.gterms[pa] === nothing
+end
+
 @testset "the export is one level deep: its arguments are the cells' variables" begin
     ld, s = _cc_engine()
     p, w = _cc_layout!(ld, :f, 1)
