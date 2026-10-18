@@ -335,6 +335,7 @@ mutable struct PL_local_data{T}
     arith_numbers::Vector{number}                               # (the numbers' C stack, pooled)
     arith_top::Int                                              # (how many of them are in use)
     arith_frames::Vector{Tuple{T, Int}}                         # evalExpression's term_stack
+    arith_cells::Vector{Int}                                    # evalExpression_cells' term_stack (L1d)
     cycle_lstack::Vector{T}                                     # cycle.lstack: linked compounds
     cycle_links::IdDict{T, T}                                   # the links themselves
     occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
@@ -420,7 +421,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         false,                                  # optimise: off without -O (pl-prologflag.c:2394)
         true,                                   # optimise_unify: on (pl-prologflag.c:2395)
         UInt32(0x0081),                         # FLT_ROUND_NEAREST|FLT_UNDERFLOW (initArith)
-        number[], 0, Tuple{T, Int}[],
+        number[], 0, Tuple{T, Int}[], Int[],
         T[],
         IdDict{T, T}(), T[], IdDict{T, Nothing}(),
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),

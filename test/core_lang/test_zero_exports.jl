@@ -63,8 +63,8 @@ end
 
 _zt_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
 
-@testset "nreverse and qsort make no cold export, import or variable read" begin
-    for name in (:nreverse, :qsort)
+@testset "nreverse, qsort and poly_10 make no cold export, import or variable read" begin
+    for name in (:nreverse, :qsort, :poly_10)
         gd, ld = _zt_load(String(name))
         c0 = _zt_counts(ld)
         @test _zt_run(gd, ld, name) == LK.PL_S_TRUE         # the first call: indexes, supervisors
@@ -92,14 +92,16 @@ end
 # MEASURED 2026-10-17 on step 4's tree: alt and alt_interned 0 / 0 bytes per warm call, as the reference
 # type (Profile.Allocs: no LogicKernel site left). Constant per call: nothing (the `[]` word and its
 # index key came off the term path in L1c-6).
+# poly_10 joined the pins with arithmetic on cells (L1d §3e, MEASURED 2026-10-18): 0 bytes on every type,
+# where its is/2 exported each expression and read each variable as a term before (100412 allocations).
 "The bytes one warm call of `name` allocates, pinned per term type (above): zero on every type since L1d step 4."
 const _ZT_ALLOC_PIN = Dict(
-    "reference" => Dict(:nreverse => 0, :qsort => 0),
-    "alt" => Dict(:nreverse => 0, :qsort => 0),
-    "alt_interned" => Dict(:nreverse => 0, :qsort => 0)
+    "reference" => Dict(:nreverse => 0, :qsort => 0, :poly_10 => 0),
+    "alt" => Dict(:nreverse => 0, :qsort => 0, :poly_10 => 0),
+    "alt_interned" => Dict(:nreverse => 0, :qsort => 0, :poly_10 => 0)
 )
-@testset "a warm call of nreverse and qsort allocates exactly its pin (@allocated)" begin
-    for name in (:nreverse, :qsort)
+@testset "a warm call of nreverse, qsort and poly_10 allocates exactly its pin (@allocated)" begin
+    for name in (:nreverse, :qsort, :poly_10)
         gd, ld = _zt_load(String(name))
         proc = LK.lookupProcedure(lk_sym(_ZT, name), 0, LK.MODULE_user(gd))
         @test _zt_call(gd, ld, proc) == LK.PL_S_TRUE
@@ -129,4 +131,35 @@ eq_top :- eq_loop(50).
     c1 = _zt_counts(ld)
     @test _zt_run(gd, ld, :eq_top) == LK.PL_S_TRUE
     @test _zt_counts(ld) == c1
+end
+
+# ar_loop(N): N times evaluate expressions over values bound on the cells — is/2 (a tagged integer, a
+# float past it, `[X]`), the comparisons and A_ADD_FC (`N1 is N - 1`) — L1d, arithmetic on cells (the
+# workspace's L1_plan/stageL1d_design.md §3e): before it, every `is/2` exported its expression and read
+# each variable as a term (poly_10: 19080 exports and 28615 variable reads per warm call).
+const _ZT_AR = """
+ar_loop(0) :- !.
+ar_loop(N) :- A is N * 2 + 1, B is A - N, B > 0, C is (A + B) * (A - B), C >= 0,
+    D is [97] + 1.5, D > A - 1000, E is D * 2, E =:= D + D, N1 is N - 1, ar_loop(N1).
+ar_top :- ar_loop(50).
+"""
+
+@testset "an arithmetic program makes no cold export, import or variable read (its boundary pairs pinned)" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "ar_loop.pl")
+    write(f, _ZT_AR)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    @test _zt_run(gd, ld, :ar_top) == LK.PL_S_TRUE
+    c1 = _zt_counts(ld)
+    @test _zt_run(gd, ld, :ar_top) == LK.PL_S_TRUE
+    # no export, import or variable read; the boundary pairs PINNED (measured 2026-10-18): a FLOAT passed
+    # as a call's own argument (`D > A - 1000`, `E =:= D + D`: 2 per iteration × 50) reaches the slot as a
+    # side value — a slot holds no value-table word (`_slot_link!`'s value-table branch, the L1b slot
+    # layout) — so arithmetic decides it on its term, counted. TRANSITIONAL: it falls when a slot holds an
+    # indirect's word (upstream's `*to = linkValI(from)`), L1e/L1f.
+    @test _zt_counts(ld) .- c1 == (0, 0, 0, 100)
+    _zt_counts(ld) .- c1 == (0, 0, 0, 100) ||
+        @info "ar_top: the second call's boundary traffic" _zt_counts(ld) .- c1
 end

@@ -1059,6 +1059,7 @@ graph LR
     pl_gmp --> pl_global
     pl_gmp --> pl_inline
     pl_gmp --> pl_prims
+    pl_gmp --> pl_attvar
     pl_gmp --> pl_error
     pl_gmp --> pl_arith
     pl_arith --> term_interface

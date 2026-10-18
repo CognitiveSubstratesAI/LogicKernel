@@ -113,9 +113,49 @@ function put_number(::Type{T}, n::number)::T where {T}
 end
 
 # PORT: pl-gmp.c PL_unify_number
+# DIVERGES: on the WORDS (L1d; the workspace's L1_plan/stageL1d_design.md §3e): `t` dereferenced
+# with `_deref_loc`; an unbound cell is bound to `consInt` when the integer fits a tagged word
+# (`varBindConst`), else to `put_number`'s value as a value-table word (upstream's indirect,
+# `bindConst`) — trailed on the CELL (`_bind_const!`, the word trail), no variable term read; a tagged
+# integer is compared by `valInt`, a value-table word by its stored number, an atom or a compound
+# fails. The boundary (a slot's side value, a keyed variable) is decided on its term
+# (`_unify_number_term`), counted in `cold_pairs`. No attributed variable lives in a cell yet, so
+# `bindConst`'s wakeup has nothing to do here (the keyed variables take the term path).
 "Unify term reference `t` with the number `n` (pl-gmp.c): bind a variable, else compare by value."
 function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
-    p = deRef(ld, slotValue(ld, t + 1))
+    k, w, p = _deref_loc(ld, -(t + 1))                      # deRef(p)
+    if k == DU_CELL                                         # isVar(*p)
+        if n.type === V_INTEGER && PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT &&
+            _holds_payload(T, Int64)                        # valInt(w=consInt(i)) == i
+            _bind_const!(ld, p, consInt(n.i))               # varBindConst(p, w)
+        else
+            c = _gnd_word!(ld, put_number(T, n))            # put_number(&w, n)
+            _bind_const!(ld, p, c)                          # bindConst(p, w)
+        end
+        return true
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return _unify_number_term(ld, deRef(ld, _loc_term(ld, k, w, p)), n)
+    elseif k == DU_WORD                                     # an atom or a compound: no number
+        return false
+    end
+    isTaggedIntW(w) || return _unify_number_term(ld, ld.vtable[valPtr(w)], n)
+    nt = n.type
+    nt === V_INTEGER && return valInt(w) == n.i             # isTaggedInt(*p)
+    (nt === V_MPZ || nt === V_MPQ) || return false          # V_FLOAT: isFloat(*p) is false
+    n2 = _number_alloc!(ld)                                 # FALLTHROUGH: isInteger(*p)
+    n2.i = valInt(w)                                        # get_integer(*p, &n2)
+    n2.type = V_INTEGER
+    rc = cmpNumbers(ld, n, n2) == CMPEX_EQUAL
+    _number_free!(ld, 1)                                    # clearNumber(&n2)
+    return rc
+end
+
+# PORT: pl-gmp.c PL_unify_number as _unify_number_term
+# TRANSITIONAL (L1d §3e, until L1f): PL_unify_number on a dereferenced TERM `p` — the boundary of the
+# word version (a keyed variable is bound through its key) and a value-table entry's stored value.
+"Unify the dereferenced term `p` with the number `n` (pl-gmp.c): bind a variable, else compare by value."
+function _unify_number_term(ld::PL_local_data{T}, p::T, n::number)::Bool where {T}
     if canBind(p)                                           # isVar(*p) && …: varBindConst
         Trail!(ld, var_key(p), put_number(T, n))            # bindConst(p, w)
         return true

@@ -3555,11 +3555,13 @@ function PL_next_solution_guarded(
         end
         @goto next_instruction
     end
-    af_np = deRef(ld, slotValue(ld, af_vi))
-    if number_kind(af_np) === NUM_INTEGER && integer_is_int64(af_np) &&
-        PLMINTAGGEDINT <= int64_value(af_np) <= PLMAXTAGGEDINT          # isTaggedInt(*np)
-        setSlotValue!(ld, af_rp + 1, mk_gnd(T, int64_value(af_np) + af_add))    # *rp = consInt(r)
-        @goto next_instruction
+    if af_k == DU_TERM                                                  # the boundary: a value as a term
+        af_np = deRef(ld, slotValue(ld, af_vi))
+        if number_kind(af_np) === NUM_INTEGER && integer_is_int64(af_np) &&
+            PLMINTAGGEDINT <= int64_value(af_np) <= PLMAXTAGGEDINT      # isTaggedInt(*np)
+            setSlotValue!(ld, af_rp + 1, mk_gnd(T, int64_value(af_np) + af_add))    # *rp = consInt(r)
+            @goto next_instruction
+        end
     end
     @SAVE_REGISTERS(QID)
     af_rc = false
@@ -3567,9 +3569,9 @@ function PL_next_solution_guarded(
     af_fid = PL_open_foreign_frame(ld)                  # Still needed?
     if af_fid != 0
         af_t = new_term_ref(ld)                         # pushWordAsTermRef(np)
-        setSlotValue!(ld, af_t + 1, af_np)
+        _slot_copy!(ld, af_t + 1, af_vi)                # (its word: dereferenced by the walk)
         af_n = _number_alloc!(ld)
-        af_rc = evalExpression(ld, af_t, af_n)
+        af_rc = evalExpression_cells(ld, af_t, af_n)
         if af_rc                                        # ensureWritableNumber: numbers are values
             af_rc = ar_add_si(ld, af_n, af_add)
             af_rc && (af_w = put_number(T, af_n))
