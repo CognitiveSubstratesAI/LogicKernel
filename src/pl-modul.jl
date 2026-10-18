@@ -140,6 +140,53 @@ function stripModule(
     return (ok, rc, m)
 end
 
+# PORT: pl-modul.c stripModuleName as stripModuleName_cells
+# DIVERGES: on a LOCATION (L1e e2; src/pl-prims.jl `_deref_loc`): returns `(ok, (kind, word, position), name)`
+# — the plain term dereferenced, as `_deref_loc` gives it, and the innermost module's atom WORD (0: none);
+# the 100-step cyclic check is `is_acyclic_cells`. A module at the boundary (`DU_TERM`) returns the plain
+# term as `(DU_TERM, 0, 0)`: the caller strips the whole term on terms (`stripModule`), counted.
+"Strip `Module:` qualifiers off the term at location `l` while each `Module` is a text atom (pl-modul.c)."
+function stripModuleName_cells(
+    ld::PL_local_data{T}, l::Int
+)::Tuple{Bool, Tuple{UInt8, word, Int}, word} where {T}
+    depth = 100
+    colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+    k, w, p = _deref_loc(ld, l)                             # deRef(term)
+    nm = word(0)
+    while k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == colon2   # hasFunctor(*term, FUNCTOR_colon2)
+        mk, mw, _ = _deref_loc(ld, valPtr(w) + 1)           # mp = argTermP(*term, 0); deRef(mp)
+        mk == DU_TERM && return (true, (DU_TERM, word(0), 0), word(0))  # the boundary: strip on terms
+        (mk == DU_WORD && isAtomW(mw) && isTextAtom(_atom_value(ld, mw))) || break   # isTextAtom(*mp)
+        nm = mw
+        q = valPtr(w) + 2                                   # term = argTermP(*term, 1); deRef(term)
+        k, w, p = _deref_loc(ld, q)
+        p = p > 0 ? p : q
+        depth -= 1
+        if depth == 0 && !is_acyclic_cells(ld, p)
+            t = new_term_ref(ld)                            # pushWordAsTermRef(term)
+            ld.slots[t + 1] = makeRefG(p)
+            PL_error(ld, ERR_TYPE, mk_sym(T, :acyclic_term), t)
+            return (false, (k, w, p), nm)
+        end
+    end
+    return (true, (k, w, p), nm)
+end
+
+# PORT: pl-modul.c stripModule as stripModule_cells
+# DIVERGES: on a location, as `stripModuleName_cells`; the module an index into `gd`'s table, the context
+# module `user` when none (see `stripModule`). NOT PORTED: `SM_NOCREATE`.
+"The plain term under the qualifiers at location `l` (`(kind, word, position)`) and the module it names (pl-modul.c)."
+function stripModule_cells(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, l::Int
+)::Tuple{Bool, Tuple{UInt8, word, Int}, Int} where {T}
+    ok, rc, nm = stripModuleName_cells(ld, l)
+    m = MODULE_user(gd).index                       # (environment_frame ? contextModule(…) : user)
+    if ok && nm != 0
+        m = lookupModule(gd, _atom_value(ld, nm)).index
+    end
+    return (ok, rc, m)
+end
+
 # PORT: pl-modul.c inheritUnknown
 # DIVERGES: the super modules are indices into the database's module table.
 "The `unknown` bits of module `m` or, if it sets none, of its first super module that does (pl-modul.c)."

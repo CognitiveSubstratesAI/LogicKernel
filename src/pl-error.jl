@@ -676,7 +676,10 @@ The size term reference `t` holds — a non-negative integer — or `nothing` af
 (pl-error.c).
 """
 function PL_get_size_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    p = deRef(ld, slotValue(ld, t + 1))
+    k, x, q = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t) (L1e e2: the words)
+    k == DU_VALUE && isTaggedIntW(x) && valInt(x) >= 0 && return Int(valInt(x))   # a tagged size
+    k == DU_TERM && (ld.cold_pairs += 1)                    # the boundary: on the term
+    p = deRef(ld, _loc_term(ld, k, x, q))                   # (an atom's symbol, a value's entry: no export)
     if isInteger(p)
         if integer_is_int64(p)
             v = int64_value(p)

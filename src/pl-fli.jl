@@ -545,6 +545,35 @@ function PL_is_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     return is_pair(w2) || is_nil(w2)
 end
 
+# ORIGINAL (L1e e2): pl-data.h `hasFunctor(w, FUNCTOR_colon2)` on a dereferenced location's word.
+"Whether `(k, w)` from `_deref_loc` is a `:/2` compound word."
+@inline function _is_colon2_word(ld::PL_local_data{T}, k::UInt8, w::word)::Bool where {T}
+    k == DU_WORD && _is_gcompound(w) || return false
+    return ld.gstack[valPtr(w)] ==
+           lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+end
+
+# ORIGINAL (L1e e2): upstream's `setHandle(h, linkValI(p))` for slot `i` from a dereferenced location
+# `(k, w, p)`: an unbound cell its reference (`makeRefG(p)`), any other word itself — but a value-table word
+# into a slot older than the innermost foreign frame as its value (e1's rule, `_slot_store!`); the boundary
+# (`DU_TERM`) as its term, counted in `cold_pairs`.
+"Store in slot `i` what the dereferenced location `(k, w, p)` holds (`setHandle(h, linkValI(p))`)."
+function _slot_link_loc!(
+    ld::PL_local_data{T}, i::Int, (k, w, p)::Tuple{UInt8, word, Int}
+)::Nothing where {T}
+    if k == DU_CELL
+        ld.slots[i] = makeRefG(p)
+    elseif k == DU_TERM
+        ld.cold_pairs += 1
+        _slot_store!(ld, i, deRef(ld, _loc_term(ld, k, w, p)))
+    elseif _is_vword(w) && _slot_older_than_fli(ld, i)
+        _slot_store!(ld, i, ld.vtable[valPtr(w)])
+    else
+        ld.slots[i] = w
+    end
+    return nothing
+end
+
 # PORT: pl-fli.c PL_strip_module_flags as PL_strip_module
 # DIVERGES: as `PL_strip_module_ex` — the module an index into `gd`'s table, passed in and returned
 # (0 for upstream's NULL), an unqualified term getting `user` when none is given; no `flags`
@@ -558,6 +587,22 @@ module they name (pl-fli.c): unlike `PL_strip_module_ex`, a qualifier that is no
 function PL_strip_module(
     gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
 )::Tuple{Bool, Int} where {T}
+    k, w, q = _deref_loc(ld, -(raw + 1))                    # p = valTermRef(raw); deRef(p)
+    if k != DU_TERM
+        if _is_colon2_word(ld, k, w)                        # hasFunctor(*p, FUNCTOR_colon2)
+            ok, rc, m2 = stripModule_cells(gd, ld, -(raw + 1))
+            if rc[1] != DU_TERM
+                ok || return (false, m2)
+                _slot_link_loc!(ld, plain + 1, rc)          # setHandle(plain, linkValI(p))
+                return (true, m2)
+            end
+        else
+            m == 0 && (m = MODULE_user(gd).index)           # (environment_frame ? contextModule(…) : user)
+            raw != plain && _slot_link_loc!(ld, plain + 1, (k, w, q))   # needsRef(*p) ? makeRefG(p) : *p
+            return (true, m)
+        end
+    end
+    ld.cold_pairs += 1                                      # the boundary: on terms
     p = deRef(ld, slotValue(ld, raw + 1))
     if _hasFunctor(p, mk_sym(T, :(:)), 2)
         ok, p, m = stripModule(gd, ld, p)
@@ -600,6 +645,27 @@ an atom raises `type_error(module, M)`, or `instantiation_error` when it is a va
 function PL_strip_module_ex(
     gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
 )::Tuple{Bool, Int} where {T}
+    k, w, q = _deref_loc(ld, -(raw + 1))                    # p = valTermRef(raw); deRef(p)
+    if k != DU_TERM
+        if _is_colon2_word(ld, k, w)                        # hasFunctor(*p, FUNCTOR_colon2)
+            ok, rc, m2 = stripModule_cells(gd, ld, -(raw + 1))
+            if rc[1] != DU_TERM
+                ok || return (false, m2)
+                if _is_colon2_word(ld, rc[1], rc[2])        # hasFunctor(*p, FUNCTOR_colon2)
+                    a1 = _deref_loc(ld, valPtr(rc[2]) + 1)  # Word a1 = argTermP(*p, 0); deRef(a1)
+                    _slot_link_loc!(ld, plain + 1, a1)      # setHandle(plain, linkValI(a1))
+                    return (PL_type_error(ld, "module", plain), m2)
+                end
+                _slot_link_loc!(ld, plain + 1, rc)          # setHandle(plain, linkValI(p))
+                return (true, m2)
+            end
+        else
+            m == 0 && (m = MODULE_user(gd).index)           # (environment_frame ? contextModule(…) : user)
+            _slot_link_loc!(ld, plain + 1, (k, w, q))       # setHandle(plain, linkValG(p))
+            return (true, m)
+        end
+    end
+    ld.cold_pairs += 1                                      # the boundary: on terms
     p = deRef(ld, slotValue(ld, raw + 1))
     if _hasFunctor(p, mk_sym(T, :(:)), 2)
         ok, p, m = stripModule(gd, ld, p)

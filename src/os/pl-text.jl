@@ -39,7 +39,9 @@ it holds none of them, raising the error under `CVT_EXCEPTION`.
 function PL_get_text(
     ld::PL_local_data{T}, l::term_t, flags::UInt32
 )::Union{Nothing, PL_chars_t} where {T}
-    w = deRef(ld, slotValue(ld, l + 1))
+    k, x, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l) (L1e e2: the words —
+    k == DU_TERM && (ld.cold_pairs += 1)                    # an atom's symbol and a value's entry with no
+    w = deRef(ld, _loc_term(ld, k, x, p))                   # export; a compound or variable as its term)
 
     if (flags & CVT_ATOM) != 0 && isAtom(w)
         is_nil(w) && (flags & CVT_LIST) != 0 && @goto case_list

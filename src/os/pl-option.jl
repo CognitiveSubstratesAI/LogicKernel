@@ -90,7 +90,7 @@ function PL_scan_options(
         implicit_true = false
 
         if count == 1000
-            if !is_acyclic(ld, slotValue(ld, list + 1))
+            if !is_acyclic_cells(ld, -(list + 1))          # on the cells (L1e e2)
                 PL_error(ld, ERR_TYPE, mk_sym(T, :list), options)
                 return nothing
             end

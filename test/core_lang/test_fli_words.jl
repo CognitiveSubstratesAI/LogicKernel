@@ -167,3 +167,122 @@ end
         @test false
     end
 end
+
+# ── e2c: PL_strip_module / PL_strip_module_ex on words ─────────────────────────────────────────
+@testset "e2c: module qualifiers stripped on the words (call/N, assertz), as swipl" begin
+    R = _rv(1)
+    um(g) = _rf(":", _rs("user"), g)
+    cl = Tuple{_R, Union{Nothing, _R}}[
+        # a user predicate: `user:` resolves to user itself (a SYSTEM predicate through `user:` needs module
+        # inheritance — `call(user:atom_length(abc, N))` is existence_error here, 3 in swipl: before e2c too,
+        # not ported until R2; reported to the audit, A-0024)
+        (_rf("smp", _fw_k(3)), nothing),
+        (_rf("smc", R), _rf("call", um(_rf("smp", R)))),
+        (_rf("smn", R), _rf("call", um(um(_rf("smp", R))))),
+        (_rf("sma", R), _rconj(_rf("assertz", um(_rf("smf", _fw_k(7)))), _rf("smf", R))),
+        (
+            _rf("smb", R),
+            _rf("catch", _rf("assertz", _rf(":", _rf("f", _rs("x")), _rs("smg"))),
+                _rf("error", R, _rv(2)), _rs("true"))
+        ),
+        (
+            _rf("smv", R),
+            _rf("catch", _rf("call", _rf(":", _rv(3), _rs("true"))),
+                _rf("error", R, _rv(2)), _rs("true"))
+        )
+    ]
+    goals = _R[_rf(n, _rv(60)) for n in ("smc", "smn", "sma", "smb", "smv")]
+    ours = _rlines(_rdb(cl), goals)
+    @test count(==("end"), ours) == length(goals)
+    @test "smc(3) det" in ours && "sma(7) det" in ours
+    if _R_SWIPL
+        theirs = _rswipl(cl, goals)
+        @test ours == theirs
+        ours == theirs || @info "e2c differential" ours theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
+@testset "e2c: PL_strip_module(_ex) on a term on the stack, no cold traffic" begin
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    gd, ld = db.gd, db.ld
+    LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, 3)
+    pvm = LK.PutVarMap()
+    LK.putSlotValue!(
+        ld, t + 1, _rf(":", _rs("user"), _rf(":", _rs("system"), _rf("g", _rv(5)))), pvm
+    )
+    LK.putSlotValue!(ld, t + 2, _rf("h", _rs("a")), pvm)
+    c0 = _fw_counts(ld)
+    ok, m = LK.PL_strip_module(gd, ld, t, 0, t + 2)
+    @test ok && m == LK.MODULE_system(gd).index
+    @test LK.PL_is_compound(ld, t + 2)
+    ok, m = LK.PL_strip_module_ex(gd, ld, t + 1, 0, t + 1)
+    @test ok && m == LK.MODULE_user(gd).index
+    @test _fw_counts(ld) == c0
+end
+
+# ── e2c: PL_get_text, PL_get_size_ex, PL_scan_options on words ────────────────────────────────
+@testset "e2c: text, size and options through their built-ins, as swipl" begin
+    N, E = _rv(1), _rv(2)
+    cl = Tuple{_R, Union{Nothing, _R}}[
+        (
+            _rf("al", _rv(3), N),
+            # read_term_from_atom/3 reads its text through PL_get_text (atom, string or code list)
+            _rf(
+                "catch", _rf("read_term_from_atom", _rv(3), N, _rnil()),
+                _rf("error", N, _rv(4)),
+                _rs("true")
+            )
+        ),
+        (
+            _rf("fu", _rv(3), N),
+            _rf("catch",
+                _rconj(_rf("functor", _rv(5), _rs("f"), _rv(3)), _rf("=", N, _rv(5))),
+                _rf("error", N, _rv(4)), _rs("true"))
+        ),
+        (
+            _rf("nv", E),
+            _rf(
+                "numbervars",
+                _rf("g", _rv(6), _rv(7), _rv(6)),
+                _fw_k(0),
+                E,
+                _rlist(_rf("singletons", _rs("true")))
+            )
+        )
+    ]
+    goals = _R[
+        _rf("al", _rs("f(a, b)"), _rv(60)), _rf("al", _rg("g(X, X)"), _rv(60)),
+        _rf("al", _rlist(_fw_k(104), _fw_k(40), _fw_k(49), _fw_k(41)), _rv(60)),
+        _rf("al", _fw_k(1234), _rv(60)),
+        _rf("al", _rg(2.5), _rv(60)), _rf("al", _rf("f", _rs("x")), _rv(60)),
+        _rf("al", _rv(61), _rv(60)),
+        _rf("fu", _fw_k(2), _rv(60)), _rf("fu", _fw_k(-1), _rv(60)),
+        _rf("fu", _rs("a"), _rv(60)),
+        _rf("nv", _rv(60))
+    ]
+    ours = _rlines(_rdb(cl), goals)
+    @test count(==("end"), ours) == length(goals)
+    @test !any(l -> occursin("existence_error", l), ours)   # every built-in here is ported
+    if _R_SWIPL
+        theirs = _rswipl(cl, goals)
+        @test ours == theirs
+        ours == theirs || @info "e2c text differential" ours theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
+@testset "e2c: PL_get_text and PL_get_size_ex on values on the stack, no cold traffic" begin
+    ld, t = _fw_engine(_R[_rs("abc"), _rg("strng"), _fw_k(42), _rg(1.5)])
+    c0 = _fw_counts(ld)
+    cvt = LK.CVT_ATOM | LK.CVT_STRING | LK.CVT_NUMBER
+    @test String(LK.PL_get_text(ld, t, cvt).text[1:3]) == "abc"
+    @test LK.PL_get_text(ld, t + 1, cvt) !== nothing
+    @test String(copy(LK.PL_get_text(ld, t + 2, cvt).text)) == "42"
+    @test LK.PL_get_text(ld, t + 3, cvt) !== nothing
+    @test LK.PL_get_size_ex(ld, t + 2) == 42
+    @test _fw_counts(ld) == c0
+end
