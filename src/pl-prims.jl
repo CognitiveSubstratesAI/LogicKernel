@@ -2490,6 +2490,25 @@ function pl_unify2_va(
     return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
 end
 
+# PORT: pl-prims.c can_unify as can_unify_cells
+# DIVERGES: on LOCATIONS (L1e e4): `unify_ptrs_cells`; no `foreignWakeup` (no attributed variables).
+"Whether the terms at locations `l1`, `l2` can be unified, without doing so (pl-prims.c `can_unify`); `ex` gets an exception."
+function can_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int, ex::term_t)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        handle_exception = ex == 0
+        ex == 0 && (ex = PL_new_term_ref(ld))
+        if unify_ptrs_cells(ld, l1, l2)                     # && foreignWakeup(ex)
+            PL_discard_foreign_frame(ld, fid)
+            return true
+        end
+        ld.exception_term != 0 && PL_is_variable(ld, ex) && PL_put_term(ld, ex, ld.exception_term)
+        !handle_exception && !PL_is_variable(ld, ex) && PL_clear_exception(ld)
+        PL_discard_foreign_frame(ld, fid)
+    end
+    return false
+end
+
 # PORT: pl-prims.c not_unify as pl_not_unify2_va
 # (PRED_IMPL("\\=", 2, not_unify, 0))
 # DIVERGES: the quick tests on words are the kernel's atomic identity (`compare_primitives`):
@@ -2500,6 +2519,23 @@ function pl_not_unify2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
+    k1, w1, _ = _deref_loc(ld, -(A1 + 1))                    # deRef(p1); w1 = *p1 (L1e e4: the cells)
+    k2, w2, _ = _deref_loc(ld, -(A1 + 2))                    # deRef(p2); w2 = *p2
+    if k1 != DU_TERM && k2 != DU_TERM
+        if k1 == DU_CELL || k2 == DU_CELL                   # isVar(w1) || isVar(w2)
+            ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return FFALSE   # can unify
+        elseif k1 == k2 && w1 == w2                         # w1 == w2
+            return FFALSE
+        elseif !(k1 == DU_WORD && _is_gcompound(w1) && k2 == DU_WORD && _is_gcompound(w2))
+            return compare_primitives_cells(ld, k1, w1, 0, k2, w2, 0, CMP_MODE_EQUAL) == CMP_EQUAL ?
+                   FFALSE : FTRUE                           # tag(w1) != tag(w2), the atomic cases
+        end
+        ex = PL_new_term_ref(ld)                            # full_check:
+        can_unify_cells(ld, -(A1 + 1), -(A1 + 2), ex) && return FFALSE
+        PL_is_variable(ld, ex) || return PL_raise_exception(ld, ex) ? FTRUE : FFALSE
+        return FTRUE
+    end
+    ld.cold_pairs += 1                                      # the boundary: on terms
     p1 = deRef(ld, slotValue(ld, A1 + 1))                    # Word p1 = valTermRef(A1)
     p2 = deRef(ld, slotValue(ld, A1 + 2))                    # Word p2 = p1+1
     if kind(p1) === VAR || kind(p2) === VAR
@@ -3007,9 +3043,13 @@ function pl_functor3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
-    p = deRef(ld, slotValue(ld, A1 + 1))
+    k, w, q = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p) (L1e e4: the words)
+    k == DU_TERM && (ld.cold_pairs += 1)                # the boundary: its kind on the term
+    isterm = k == DU_WORD ? _is_gcompound(w) : k == DU_TERM && isTerm(deRef(ld, _loc_term(ld, k, w, q)))
+    isatomic = k == DU_VALUE || (k == DU_WORD && isAtomW(w)) ||
+               (k == DU_TERM && isAtomic(deRef(ld, _loc_term(ld, k, w, q))))
 
-    if isTerm(p)
+    if isterm                                           # isTerm(*p)
         na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
 
         if na[2] == 0
@@ -3022,7 +3062,7 @@ function pl_functor3_va(
             FFALSE
         end
     end
-    if isAtomic(p)
+    if isatomic                                         # isAtomic(*p)
         return (PL_unify(ld, A2, A1) && PL_unify_integer(ld, A3, 0)) ? FTRUE : FFALSE
     end
     if !PL_is_atomic(ld, A2)

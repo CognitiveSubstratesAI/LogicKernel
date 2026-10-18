@@ -1306,6 +1306,7 @@ function _manifest_index(T)
         (LK.PL_unify_choice, Tuple{LD, Int, Int}, false),
         (LK.pl_prolog_current_frame, Tuple{LD, Int}, false),
         (LK.can_unify, Tuple{LD, T, T, Int}, false),
+        (LK.can_unify_cells, Tuple{LD, Int, Int, Int}, false),   # L1e e4 (\\=)
         (LK.unifiable, Tuple{LD, Int, Int, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
