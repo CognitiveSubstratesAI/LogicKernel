@@ -117,3 +117,53 @@ end
     ld2, t2 = _fw_engine(_R[mk_expr(_R, _R[_rv(9), _rs("a")])])
     @test _fw_all(ld2, t2) == (false, false, false, true, false)
 end
+
+# ── e2b: the getters on words ──────────────────────────────────────────────────────────────────
+# PL_get_integer / PL_get_stdbool / PL_is_list / PL_skip_list are C-interface contracts no Prolog goal asks
+# swipl directly, so their expected values are written from pl-fli.c at the pin (PL_get_integer: a TAGGED
+# integer in `int` range only; PL_get_stdbool: true/on/false/off/1/0; PL_is_list: a list cell or `[]`;
+# PL_skip_list: PL_LIST / PL_PARTIAL_LIST / PL_CYCLIC_TERM / PL_NOT_A_LIST) — and term_variables/3, the
+# built-in that calls PL_skip_list, is compared with swipl below.
+@testset "e2b: the getters on values on the stack, no cold traffic" begin
+    ld, t = _fw_engine(
+        _R[
+            _fw_k(42), _fw_k(Int64(2)^40), _rs("on"), _rs("false"), _fw_k(1), _fw_k(2),
+            _rlist(_fw_k(1), _fw_k(2)), _rnil(), _rcons(_fw_k(1), _rv(3)),
+            _rf("f", _rs("a")), _rg(2.5)
+        ]
+    )
+    c0 = _fw_counts(ld)
+    @test LK.PL_get_integer(ld, t) == 42
+    @test LK.PL_get_integer(ld, t + 1) === nothing           # outside `int`
+    @test LK.PL_get_integer(ld, t + 10) === nothing          # a float
+    @test LK.PL_get_stdbool(ld, t + 2) === true && LK.PL_get_stdbool(ld, t + 3) === false
+    @test LK.PL_get_stdbool(ld, t + 4) === true && LK.PL_get_stdbool(ld, t + 5) === nothing
+    @test LK.PL_get_stdbool(ld, t + 9) === nothing
+    @test LK.PL_is_list(ld, t + 6) && LK.PL_is_list(ld, t + 7) && LK.PL_is_list(ld, t + 8)
+    @test !LK.PL_is_list(ld, t + 9) && !LK.PL_is_list(ld, t)
+    @test LK.PL_skip_list(ld, t + 6) == (LK.PL_LIST, 2)
+    @test LK.PL_skip_list(ld, t + 7) == (LK.PL_LIST, 0)
+    @test LK.PL_skip_list(ld, t + 8) == (LK.PL_PARTIAL_LIST, 1)
+    @test LK.PL_skip_list(ld, t + 9)[1] == LK.PL_NOT_A_LIST
+    @test _fw_counts(ld) == c0
+end
+
+@testset "e2b: PL_skip_list's caller term_variables/3, as swipl" begin
+    A, B, L, T = _rv(1), _rv(2), _rv(3), _rv(4)
+    cl = Tuple{_R, Union{Nothing, _R}}[
+        (_rf("tv", _rv(5), L), _rf("term_variables", _rv(5), L, _rlist(_rs("z")))),
+        (_rf("tvp", _rv(5), L, T), _rf("term_variables", _rv(5), L, T))
+    ]
+    goals = _R[
+        _rf("tv", _rf("f", A, B, A), _rv(60)), _rf("tv", _rs("g"), _rv(60)),
+        _rf("tvp", _rf("h", A, _rf("k", B)), _rv(60), _rv(61)),
+        _rf("tv", _rf("f", A), _rlist(_rv(62))), _rf("tv", _rf("f", A), _rs("notalist"))
+    ]
+    ours = _rlines(_rdb(cl), goals)
+    @test count(==("end"), ours) == length(goals)
+    if _R_SWIPL
+        @test ours == _rswipl(cl, goals)
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end

@@ -163,10 +163,19 @@ end
 PL_unify_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_unify_atom(ld, l, mk_nil(T))
 
 # PORT: pl-fli.c PL_skip_list
-# DIVERGES: returns `(type, length)` where upstream writes the length through `len`. NOT PORTED:
-# `tail` (upstream unifies it with the list's tail): no caller here passes one.
+# DIVERGES: returns `(type, length)` where upstream writes the length through `len`; on the WORDS (L1e e2:
+# `skip_list_cells`, L1d step 9); a tail at the boundary — the whole list then walked on terms, counted in
+# `cold_pairs`. NOT PORTED: `tail` (upstream unifies it with the list's tail): no caller here passes one.
 "The type of the list term reference `list` holds — `PL_LIST`, `PL_PARTIAL_LIST`, `PL_CYCLIC_TERM`, `PL_NOT_A_LIST` — and its cells (pl-fli.c)."
 function PL_skip_list(ld::PL_local_data{T}, list::term_t)::Tuple{Int, Int} where {T}
+    length, k, w, _ = skip_list_cells(ld, -(list + 1))
+    if k != DU_TERM
+        k == DU_WORD && w == ld.atom_nil_w && return (PL_LIST, length)    # isNil(*tail)
+        k == DU_CELL && return (PL_PARTIAL_LIST, length)                  # canBind(*tail)
+        _is_list_word(ld, k, w) && return (PL_CYCLIC_TERM, length)        # isList(*tail)
+        return (PL_NOT_A_LIST, length)
+    end
+    ld.cold_pairs += 1                                      # the boundary: on terms
     length, t = skip_list(ld, slotValue(ld, list + 1))
 
     if is_nil(t)
@@ -304,10 +313,19 @@ function PL_get_atom(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where {
 end
 
 # PORT: pl-fli.c PL_get_integer
-# DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`.
+# DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS (L1e e2):
+# a tagged integer's value (`valInt(w)`); the boundary read as its term, counted in `cold_pairs`.
 "The C `int` term reference `t` holds — a tagged integer in `int`'s range — or `nothing` (pl-fli.c)."
 function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_VALUE && isTaggedIntW(w)                     # isTaggedInt(w)
+        val = valInt(w)
+        (val > typemax(Int32) || val < typemin(Int32)) && return nothing
+        return Int(val)
+    end
+    k == DU_TERM || return nothing
+    ld.cold_pairs += 1                                      # the boundary: on the term
+    w = deRef(ld, _loc_term(ld, k, w, p))
     if isTaggedInt(w)
         val = int64_value(w)
         (val > typemax(Int32) || val < typemin(Int32)) && return nothing
@@ -352,7 +370,16 @@ end
 # DIVERGES: returns the Boolean, or `nothing`, where upstream writes it through `b`.
 "The Boolean term reference `t` holds — `true`/`on`, `false`/`off`, `1` or `0` — or `nothing` (pl-fli.c)."
 function PL_get_stdbool(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Bool} where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
+    k, x, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t) (L1e e2: the words)
+    k == DU_WORD && isAtomW(x) && return atom_to_bool(ld, _atom_value(ld, x))   # isAtom(w)
+    if k == DU_VALUE                                        # w == consInt(0) / consInt(1)
+        isTaggedIntW(x) && valInt(x) == 0 && return false
+        isTaggedIntW(x) && valInt(x) == 1 && return true
+        return nothing
+    end
+    k == DU_TERM || return nothing
+    ld.cold_pairs += 1                                      # the boundary: on the term
+    w = deRef(ld, _loc_term(ld, k, x, p))
     kind(w) === SYM && return atom_to_bool(ld, w)           # isAtom(w)
     if isInteger(w)
         isTaggedInt(w) && int64_value(w) == 0 && return false   # w == consInt(0)
@@ -506,10 +533,16 @@ function PL_get_nil(ld::PL_local_data{T}, l::term_t)::Bool where {T}
 end
 
 # PORT: pl-fli.c PL_is_list
+# DIVERGES: on the WORDS (L1e e2): a `'[|]'/2` compound word or ATOM_nil (`isList(w) || isNil(w)`); the
+# boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a list cell or `[]` (pl-fli.c)."
 function PL_is_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
-    return is_pair(w) || is_nil(w)
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k == DU_WORD && return w == ld.atom_nil_w || _is_list_word(ld, k, w)
+    k == DU_TERM || return false
+    ld.cold_pairs += 1                                      # the boundary: on the term
+    w2 = deRef(ld, _loc_term(ld, k, w, p))
+    return is_pair(w2) || is_nil(w2)
 end
 
 # PORT: pl-fli.c PL_strip_module_flags as PL_strip_module
