@@ -2732,7 +2732,7 @@ function pl_ground1_va(
 )::foreign_t where {T}
     A1 = PL__t0
 
-    return ground(ld, slotValue(ld, A1 + 1)) === nothing ? FTRUE : FFALSE
+    return ground_cells(ld, -(A1 + 1)) == 0 ? FTRUE : FFALSE    # ground(valTermRef(A1)) == NULL
 end
 
 # PORT: pl-prims.c functor as pl_functor3_va
@@ -2867,14 +2867,13 @@ function term_variables(
         type == PL_LIST && (maxcount = len)
     end
 
-    count, v = term_variables_to_termv(ld, t, maxcount)
+    count, v0 = term_variables_to_termv_cells(ld, t, maxcount)  # on the cells (L1d step 5)
     if count > maxcount
         return false
     end
 
     for i in 1:count
-        if !PL_unify_list(ld, list, head, list) ||
-            !unify_ptrs(ld, slotValue(ld, head + 1), v[i])
+        if !PL_unify_list(ld, list, head, list) || !PL_unify(ld, head, v0 + i - 1)
             return false
         end
     end
@@ -3005,15 +3004,333 @@ function free_variables_loop(
     return (goal, mname)
 end
 
+# ── the walks on CELLS (L1d step 5; the workspace's L1_plan/stageL1d_design.md §3d) ──────────────
+# Locations as `_deref_loc`'s. A compound is marked on its FUNCTOR cell (MARK_MASK, as upstream); a
+# variable cell — upstream marks the cell itself (`visitedWord`), which ours cannot: a marked variable
+# cell is no `isVar` (`w == 0`) and `_deref_loc` would read it as a value-table word — in the side
+# vector `ld.tv_seen` by position (a representation-only DIVERGES: behaviour identical). Both go on
+# `ld.cycle_vstack` (upstream's `LD->cycle.vstack`), cleared by `unvisit_cells`.
+
+# PORT: pl-prims.c FUNCTOR_hat2
+# (the handle itself is generated into pl-funct.ih from src/ATOMS; free_variables_loop uses it)
+"The functor word of `^/2` (pl-funct.ih `FUNCTOR_hat2`): the same in every database."
+const FUNCTOR_hat2 = builtin_functor("hat", 2)
+# PORT: pl-prims.c FUNCTOR_colon2
+# (the handle itself is generated into pl-funct.ih from src/ATOMS; free_variables_loop uses it)
+"The functor word of `:/2` (pl-funct.ih `FUNCTOR_colon2`): the same in every database."
+const FUNCTOR_colon2 = builtin_functor("colon", 2)
+
+# PORT: pl-prims.c ph_visitedWord as ph_visited_cells
+# (`ph_visited(f, ph)` on the functor cell at global position `c`)
+"Whether the compound at global position `c` was visited in this phase (`mark`: marking), marking or unmarking it if not (pl-prims.c)."
+@inline function ph_visited_cells(ld::PL_local_data, c::Int, mark::Bool)::Bool
+    f = ld.gstack[c]
+    if mark                                                 # ph_mark
+        (f & MARK_MASK) != 0 && return true
+        ld.gstack[c] = f | MARK_MASK
+    else                                                    # ph_unmark
+        (f & MARK_MASK) == 0 && return true
+        ld.gstack[c] = f & ~MARK_MASK
+    end
+    return false
+end
+
+"`ground_cells`/`ph_ground_cells`: a variable lies in the boundary (a keyed variable's binding)."
+const GROUND_BOUNDARY = -1
+
+# PORT: pl-prims.c ph_ground as ph_ground_cells
+# DIVERGES: on locations, the one-sided cell agenda (`ld.walk_agenda`); returns the first unbound
+# cell's POSITION (upstream: its address), 0 for none. The boundary (`DU_TERM`) is decided by the
+# term-level `ground` on its term, counted in `cold_pairs`: a variable there gives `GROUND_BOUNDARY`
+# in both phases, so they stop at the same compound (upstream's `assert(rc1 == rc2)`).
+"The first unbound cell of the term at location `l` in phase `mark`, 0 if none, `GROUND_BOUNDARY` (pl-prims.c)."
+function ph_ground_cells(ld::PL_local_data{T}, l::Int, mark::Bool)::Int where {T}
+    a = ld.walk_agenda
+    initCellAgenda!(a, 1, l)
+    while true
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
+        if k == DU_CELL                                     # canBind(*p)
+            clearCellAgenda!(a)
+            return p
+        elseif k == DU_TERM                                 # the boundary: on the term
+            ld.cold_pairs += 1
+            if ground(ld, _loc_term(ld, k, w, p)) !== nothing
+                clearCellAgenda!(a)
+                return GROUND_BOUNDARY
+            end
+        elseif k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
+            c = valPtr(w)
+            if !ph_visited_cells(ld, c, mark)
+                pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+            end
+        end
+    end
+    return 0
+end
+
+# PORT: pl-prims.c ground as ground_cells
+# DIVERGES: on a location; returns a POSITION, 0 or `GROUND_BOUNDARY` (see `ph_ground_cells`).
+"The first unbound cell of the term at location `l`: its position, 0 when ground, `GROUND_BOUNDARY` (pl-prims.c `ground`)."
+function ground_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
+    k, w, p = _deref_loc(ld, l)                             # deRef(p)
+    k == DU_CELL && return p                                # canBind(*p)
+    if k == DU_TERM
+        ld.cold_pairs += 1
+        return ground(ld, _loc_term(ld, k, w, p)) === nothing ? 0 : GROUND_BOUNDARY
+    end
+    (k == DU_WORD && _is_gcompound(w)) || return 0          # !isTerm(*p)
+    rc1 = ph_ground_cells(ld, l, true)                      # mark functors
+    rc2 = ph_ground_cells(ld, l, false)                     # unmark the very same functors
+    @assert rc1 == rc2
+    return rc1
+end
+
+# PORT: pl-prims.c visitedWord as visitedWord_cells
+# DIVERGES: a FUNCTOR cell is marked in place (`set_marked`); a VARIABLE cell in `ld.tv_seen` (see the
+# section header). Both pushed on `ld.cycle_vstack`.
+"Whether the functor or variable cell at global position `p` was visited; marks it if not (pl-prims.c)."
+@inline function visitedWord_cells(ld::PL_local_data, p::Int)::Bool
+    w = ld.gstack[p]
+    if isVar(w)
+        s = ld.tv_seen
+        p > length(s) && _grow_tv_seen!(ld, p)
+        s[p] && return true                                 # is_marked(p)
+        s[p] = true                                         # set_marked(p)
+    else
+        (w & MARK_MASK) != 0 && return true
+        ld.gstack[p] = w | MARK_MASK
+    end
+    push!(ld.cycle_vstack, p)                               # pushSegStack(&LD->cycle.vstack, p)
+    return false
+end
+
+# ORIGINAL: the side vector grows to cover position `p` (new entries false); it never shrinks.
+"Grow `ld.tv_seen` to cover global position `p`."
+@noinline function _grow_tv_seen!(ld::PL_local_data, p::Int)::Nothing
+    s = ld.tv_seen
+    n = length(s)
+    resize!(s, max(p, 2 * n, 64))
+    fill!(view(s, (n + 1):length(s)), false)
+    return nothing
+end
+
+# PORT: pl-prims.c unvisit_and_unfirst as unvisit_cells
+# DIVERGES: a variable cell's mark is its side-vector entry (see the section header).
+"Clear every mark `visitedWord_cells` left (pl-prims.c `unvisit_and_unfirst`)."
+function unvisit_cells(ld::PL_local_data)::Nothing
+    v = ld.cycle_vstack
+    while !isempty(v)
+        p = pop!(v)                                         # popSegStack(&LD->cycle.vstack, &p)
+        w = ld.gstack[p]
+        if isVar(w)
+            ld.tv_seen[p] = false
+        else
+            ld.gstack[p] = w & ~(MARK_MASK | FIRST_MASK)    # clear_both(p)
+        end
+    end
+    return nothing
+end
+
+# ORIGINAL: upstream's `v = PL_new_term_ref_noshift(); *valTermRef(v) = w` — a term reference holding
+# the word `w` (a reference to a cell), with no fresh cell made for it (ours: `new_term_ref` binds a
+# fresh global cell, which the store would overwrite).
+"A new term reference holding the slot word `w`; 0 when the local stack has no room."
+function _new_term_ref_word!(ld::PL_local_data, w::word)::Int
+    ensureLocalSpace(ld, 1) || return 0
+    t = ld.lTop
+    ld.slots[t + 1] = w
+    ld.lTop = t + 1
+    ld.fliframes[ld.fli_context].size += 1
+    return t
+end
+
+"`term_variables_loop_cells`/`free_variables_loop_cells`: the walk met the boundary; redo it on terms."
+const TV_BOUNDARY = -1
+
+# PORT: pl-prims.c term_variables_loop as term_variables_loop_cells
+# DIVERGES: on locations; each variable's term reference holds `makeRefG(p)` as upstream's (no
+# export). The boundary stops the walk with `TV_BOUNDARY` — the caller redoes it on terms (a
+# variable met through a keyed binding and through a cell must be one variable). NOT PORTED: as
+# `term_variables_loop` (no `flags`, no signals, no `TV_NOSPACE`).
+"The unbound variables the agenda `a` walks, each once, depth-first, as new term references; their count, `maxcount + 1` as soon as there are more, or `TV_BOUNDARY` (pl-prims.c)."
+function term_variables_loop_cells(
+    ld::PL_local_data{T}, a::cell_agenda, maxcount::Int
+)::Int where {T}
+    count = 0
+    while true
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
+        if k == DU_CELL                                     # canBind(w)
+            visitedWord_cells(ld, p) && continue
+            count += 1
+            count > maxcount && return count
+            _new_term_ref_word!(ld, makeRefG(p))            # *valTermRef(v) = makeRefG(p)
+        elseif k == DU_TERM
+            return TV_BOUNDARY
+        elseif k == DU_WORD && _is_gcompound(w)             # isTerm(w)
+            c = valPtr(w)
+            visitedWord_cells(ld, c) && continue            # visited(f)
+            pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+        end
+    end
+    return count
+end
+
+# PORT: pl-prims.c term_variables_to_termv as term_variables_to_termv_cells
+# DIVERGES: returns `(count, v0)` where upstream writes `*vp`; the boundary (see
+# `term_variables_loop_cells`) redoes the walk with the term-level `term_variables_to_termv`, its
+# variables stored in new term references (counted in `cold_pairs`).
+"The unbound variables of the term `t` references, depth-first, as term references from `v0`: `(count, v0)`, `count` = `maxcount + 1` if there are more (pl-prims.c)."
+function term_variables_to_termv_cells(
+    ld::PL_local_data{T}, t::term_t, maxcount::Int
+)::Tuple{Int, Int} where {T}
+    v0 = PL_new_term_refs(ld, 0)
+    a = ld.walk_agenda
+    initCellAgenda!(a, 1, -(t + 1))                         # initTermAgenda(&agenda, 1, valTermRef(t))
+    count = term_variables_loop_cells(ld, a, maxcount)
+    clearCellAgenda!(a)
+    unvisit_cells(ld)                                       # unvisit_and_unfirst()
+    if count == TV_BOUNDARY
+        PL_reset_term_refs(ld, v0)
+        ld.cold_pairs += 1
+        count, vs = term_variables_to_termv(ld, t, maxcount)
+        for v in vs
+            setSlotValue!(ld, new_term_ref(ld) + 1, v)
+        end
+    end
+    return (count, v0)
+end
+
+"`free_variables_loop_cells`' agenda entry for upstream's `&mark` (no location is it)."
+const FV_MARK = typemin(Int)
+
+# PORT: pl-prims.c free_variables_loop as free_variables_loop_cells
+# DIVERGES: on locations; returns `(n, mname)` — `mname` the module's atom WORD, 0 for none — and
+# stores the goal's word in term reference `goal` (upstream: `*valTermRef(goal) = *t`; a value-table
+# value is referenced by its cell, which a slot holds); each free variable a new term reference
+# holding `makeRefG(p)`. `&mark` is `FV_MARK`. The goal after `Module:` is dereferenced, as the term
+# version's (upstream defect, register Q4). The boundary stops the walk with `TV_BOUNDARY` — the
+# caller redoes it on terms.
+"The free variables of the `Template^Goal` at location `l` (ISO 7.1.1.4; pl-prims.c), as new term references: `(n, module word)`, the goal in `goal`; `n` = `TV_BOUNDARY` at the boundary."
+function free_variables_loop_cells(
+    ld::PL_local_data{T}, l::Int, goal::term_t
+)::Tuple{Int, word} where {T}
+    a = ld.walk_agenda
+    in_goal = false
+    existential = false                                     # true when processing left of ^
+    n = 0
+    mname = word(0)
+    initCellAgenda!(a, 1, l)
+    while true
+        t = nextCellAgendaNoDeRef!(a)
+        t == 0 && break
+        if t == FV_MARK                                     # t == &mark
+            existential = false
+            continue
+        end
+        k, w, p = _deref_loc(ld, t)                         # nextTermAgenda: deRef(t)
+        @label again
+        if k == DU_CELL                                     # canBind(*t)
+            if !visitedWord_cells(ld, p) && !existential
+                _new_term_ref_word!(ld, makeRefG(p))        # *valTermRef(v) = makeRefG(t)
+                n += 1
+            end
+            continue
+        end
+        if k == DU_TERM
+            clearCellAgenda!(a)
+            return (TV_BOUNDARY, word(0))
+        end
+        if k == DU_WORD && _is_gcompound(w)                 # isTerm(*t)
+            c = valPtr(w)
+            fd = ld.gstack[c]                               # modified by visited
+            if visitedWord_cells(ld, c)                     # visited(f)
+                if !in_goal && !existential
+                    ld.slots[goal + 1] = w                  # *valTermRef(goal) = *t
+                    in_goal = true
+                end
+                continue
+            end
+            if !in_goal
+                if fd == FUNCTOR_hat2 && !existential
+                    pushWorkCellAgenda!(a, 1, c + 2)        # &f->arguments[1]
+                    pushWorkCellAgenda!(a, 1, FV_MARK)      # &mark
+                    pushWorkCellAgenda!(a, 1, c + 1)        # &f->arguments[0]
+                    existential = true
+                    continue
+                end
+                if fd == FUNCTOR_colon2 && !existential
+                    k1, w1, _ = _deref_loc(ld, c + 1)       # deRef2(&f->arguments[0], a1)
+                    (k1 == DU_WORD && isAtomW(w1)) && (mname = w1)
+                    k, w, p = _deref_loc(ld, c + 2)         # t = &f->arguments[1] (see DIVERGES)
+                    @goto again
+                elseif !existential
+                    ld.slots[goal + 1] = w                  # *valTermRef(goal) = *t
+                    in_goal = true
+                end
+            end
+            pushWorkCellAgenda!(a, arityFunctor(ld.functors, fd), c + 1)
+            continue
+        elseif !in_goal && !existential                     # non-term goal (atom or invalid)
+            # needsRef(*t) ? makeRefG(t) : *t — a value-table word is held through its cell
+            ld.slots[goal + 1] = (k == DU_VALUE && !isTaggedIntW(w)) ? makeRefG(p) : w
+            in_goal = true
+        end
+    end
+    clearCellAgenda!(a)
+    return (n, mname)
+end
+
 # PORT: pl-prims.c free_variable_set as pl_free_variable_set3_va
 # (PRED_IMPL("$free_variable_set", 3, free_variable_set, 0))
-# DIVERGES: the free variables come back in a vector (upstream: term references), so there is no
-# retry for local space; `PL_cons_functor(goal, FUNCTOR_colon2, m, goal)` is written out.
+# DIVERGES: on the CELLS (L1d step 5): `free_variables_loop_cells` leaves the free variables in term
+# references from `v0`, as upstream's; `PL_cons_functor(goal, FUNCTOR_colon2, m, goal)` is the
+# compound laid out on the stack. No retry for local space (the local stack grows on demand). The
+# boundary (`TV_BOUNDARY`) redoes it all on terms (`_free_variable_set_term`), counted in `cold_pairs`.
 "`'\$free_variable_set'(+Template^GoalIn, -GoalOut, -VarTemplate)`: `GoalOut` is `GoalIn` without its `^`, `VarTemplate` is `v(V1, …)` of its free variables (pl-prims.c)."
 function pl_free_variable_set3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    goal = PL_new_term_ref(ld)
+    v0 = PL_new_term_refs(ld, 0)
+    n, mname = free_variables_loop_cells(ld, -(A1 + 1), goal)
+    unvisit_cells(ld)                                       # unvisit()
+    if n == TV_BOUNDARY
+        PL_reset_term_refs(ld, goal)
+        ld.cold_pairs += 1
+        return _free_variable_set_term(ld, A1, A2, A3)
+    end
+
+    if PL_unify_functor(ld, A3, mk_sym(T, :v), n)
+        for i in 1:n
+            PL_unify_arg(ld, i, A3, v0 + i - 1) || return FFALSE
+        end
+
+        if mname != 0                                       # PL_put_atom(m, mname);
+            q = _alloc_compound!(ld, FUNCTOR_colon2, 2)     # PL_cons_functor(goal, FUNCTOR_colon2, m, goal)
+            ld.gstack[q + 1] = mname
+            _cell_link!(ld, q + 2, goal + 1)
+            ld.slots[goal + 1] = consPtr(q, TAG_COMPOUND | STG_GLOBAL)
+        end
+
+        return PL_unify(ld, A2, goal) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-prims.c free_variable_set as _free_variable_set_term
+# TRANSITIONAL (L1d step 5, until L1f): `'$free_variable_set'/3` on TERMS — the boundary of the cells
+# version. The free variables come back in a vector (upstream: term references), so there is no
+# retry for local space; `PL_cons_functor(goal, FUNCTOR_colon2, m, goal)` is written out.
+"`'\$free_variable_set'/3` on terms (pl-prims.c), for the boundary of `pl_free_variable_set3_va`."
+function _free_variable_set_term(
+    ld::PL_local_data{T}, A1::term_t, A2::term_t, A3::term_t
+)::foreign_t where {T}
     goal = PL_new_term_ref(ld)
     vars = T[]
 

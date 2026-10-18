@@ -238,6 +238,18 @@ _manifest_per_type(T) = (
     (LK.ph_acyclic_mark_cells, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.ph_acyclic_unmark_cells, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.is_acyclic_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    # the walks on cells (L1d step 5): the visited stack, the side vector and the term references may
+    # grow; the boundary allocates
+    (LK.ph_visited_cells, Tuple{LK.PL_local_data{T}, Int, Bool}, true),
+    (LK.ph_ground_cells, Tuple{LK.PL_local_data{T}, Int, Bool}, false),
+    (LK.ground_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.visitedWord_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._grow_tv_seen!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.unvisit_cells, Tuple{LK.PL_local_data{T}}, true),
+    (LK._new_term_ref_word!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK.term_variables_loop_cells, Tuple{LK.PL_local_data{T}, LK.cell_agenda, Int}, false),
+    (LK.term_variables_to_termv_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.free_variables_loop_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (
         LK.unify_with_occurs_check_cells,
         Tuple{LK.PL_local_data{T}, Int, Int, LK.occurs_check_t},
@@ -1153,6 +1165,7 @@ function _manifest_index(T)
         (LK.term_variables_to_termv, Tuple{LD, Int, Int}, false),
         (LK.term_variables, Tuple{LD, Int, Int, Int}, false),
         (LK.free_variables_loop, Tuple{LD, T, Vector{T}}, false),
+        (LK._free_variable_set_term, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_cons_list, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_unify_list, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_unify_nil, Tuple{LD, Int}, false),
@@ -1939,6 +1952,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.clearCellAgendaLR!, Tuple{LK.cell_agendaLR}, true),
     (LK.nextCellAgendaLR!, Tuple{LK.cell_agendaLR}, true),
     (LK.pushWorkCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, false),
+    # the one-sided cell agenda of the walks (L1d step 5): the push may grow its stack
+    (LK.initCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, true),
+    (LK.clearCellAgenda!, Tuple{LK.cell_agenda}, true),
+    (LK.nextCellAgendaNoDeRef!, Tuple{LK.cell_agenda}, true),
+    (LK.pushWorkCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, false),
     (LK.isAtomW, Tuple{UInt64}, true),
     (LK.isRationalW, Tuple{UInt64}, true),
     (LK.isFloatW, Tuple{UInt64}, true),

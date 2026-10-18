@@ -273,3 +273,56 @@ function pushWorkCellAgendaLR!(
     a.size = amount
     return true
 end
+
+# PORT: pl-termwalk.c term_agenda as cell_agenda
+# DIVERGES: `work` is a LOCATION (`_deref_loc`'s: a global position, or `-i` for slot `i` — a slot
+# only as the one-cell start) and a count, advanced one cell per argument; the segstack a vector,
+# reused (L1d step 5). Location 0 is upstream's NULL.
+"A one-sided cell agenda (pl-termwalk.c `term_agenda` on locations)."
+mutable struct cell_agenda
+    loc::Int                            # work.location
+    size::Int                           # work.size
+    const stack::Vector{NTuple{2, Int}} # stack
+end
+
+# PORT: pl-termwalk.c initTermAgenda as initCellAgenda!
+# DIVERGES: re-initialises an existing agenda, as `initTermAgenda!` does.
+"Start agenda `a` at `size` cells from location `loc` (pl-termwalk.c)."
+function initCellAgenda!(a::cell_agenda, size::Int, loc::Int)::Nothing
+    empty!(a.stack)
+    a.loc = loc
+    a.size = size
+    return nothing
+end
+
+# PORT: pl-termwalk.c clearTermAgenda as clearCellAgenda!
+"Discard agenda `a`'s pending work (pl-termwalk.c)."
+function clearCellAgenda!(a::cell_agenda)::Nothing
+    empty!(a.stack)
+    a.size = 0
+    return nothing
+end
+
+# PORT: pl-termwalk.c nextTermAgendaNoDeRef as nextCellAgendaNoDeRef!
+"The next location of agenda `a`, not dereferenced; 0 when it is done (pl-termwalk.c)."
+@inline function nextCellAgendaNoDeRef!(a::cell_agenda)::Int
+    if a.size == 0
+        isempty(a.stack) && return 0
+        a.loc, a.size = pop!(a.stack)
+    end
+    a.size -= 1
+    l = a.loc
+    a.loc = l + 1
+    return l
+end
+
+# PORT: pl-termwalk.c pushWorkAgenda as pushWorkCellAgenda!
+"Walk the `amount` cells from global position `start` next, keeping the current work (pl-termwalk.c)."
+@inline function pushWorkCellAgenda!(a::cell_agenda, amount::Int, start::Int)::Nothing
+    if amount > 0
+        a.size > 0 && push!(a.stack, (a.loc, a.size))
+        a.loc = start
+        a.size = amount
+    end
+    return nothing
+end

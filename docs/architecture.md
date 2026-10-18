@@ -886,11 +886,13 @@ graph LR
     pl_prims --> SWI_Prolog
     pl_prims --> pl_atom
     pl_prims --> pl_termwalk
+    pl_prims --> pl_funct
     pl_prims --> pl_global
     pl_prims --> pl_inline
     pl_prims --> pl_ressymbol
     pl_prims --> pl_comp
     pl_prims --> pl_variant
+    pl_prims --> pl_gc
     pl_prims --> pl_alloc
     pl_prims --> pl_wam
     pl_prims --> pl_fli
