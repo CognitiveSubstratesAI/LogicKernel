@@ -103,6 +103,7 @@ export LOGICKERNEL_REQUIRE_SWIPL=1
 # shellcheck source=/dev/null
 . "$ROOT/tools/lib_evidence.sh"
 _check_swipl_pin "$ROOT" run_tests.sh || exit 1
+_check_julia_ci "$ROOT" run_tests.sh             # local Julia vs CI's resolved version: a WARN (D-0026)
 # 🔴 THE ORACLE'S ANSWERS ARE CACHED (user, 2026-10-12): while the pin is fixed swipl's answer to a
 # program does not change, so a `swipl` SHIM (tools/oracle_cache/swipl) answers from a cache keyed by
 # the program, the pinned commit and the binary, and runs the real one on a miss or any doubt. The pin

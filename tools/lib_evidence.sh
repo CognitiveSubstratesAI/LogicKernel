@@ -61,6 +61,47 @@ _oracle_env() {
 # run folds this file into its own (tools/run_tests.sh `_finish`).
 _oracle_pool_stats() { printf '%s/.warm/pool/oracle_stats' "$1"; }
 
+# _check_julia_ci ROOT WHO — WARN (never refuse, audit D-0026) when the `julia` on THIS PATH is not the
+# version CI resolves its setup-julia `version:` to (.github/workflows/*.yml: the literal specs — the
+# evidence and mutation runs' '1.13'; CI.yml's matrix, 'min' and '1', is CI's own range). setup-julia resolves a spec like '1.13' to the newest 1.13.x
+# release, so a patch release moves CI and not this machine: batch 3, 2026-10-18 — Julia 1.13.2 (CI) clamps
+# Float64(::BigInt, RoundToZero) to floatmax where 1.13.1 (local) gave Inf, and a local gate passed rows CI
+# failed. The release list: julialang's public versions.json (curl, 10 s, nothing sent), else juliaup's own
+# version db. Both sides non-empty, or it says it could not decide. Returns 0 always.
+_check_julia_ci() {
+    local spec have want db
+    spec=$(grep -hE '^\s+version:\s' "$1"/.github/workflows/*.yml 2>/dev/null |
+        grep -v '\${{' | sed -E "s/^\s+version:\s*['\"]?([^'\" #]+).*/\1/" | grep -vx min | sort -u)
+    if [ -z "$spec" ] || [ "$(printf '%s\n' "$spec" | wc -l)" -ne 1 ]; then
+        echo "$2: WARN: CI's Julia version spec is not one value (.github/workflows/*.yml: '${spec//$'\n'/ }') — local vs CI not checked" >&2
+        return 0
+    fi
+    have=$(julia --version 2>/dev/null | sed -E 's/^julia version //')
+    want=$(curl -s -m 10 https://julialang-s3.julialang.org/bin/versions.json 2>/dev/null | python3 -I -c '
+import json, sys
+spec = sys.argv[1]
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+vs = [v for v, e in d.items() if e.get("stable") and (v == spec or v.startswith(spec + "."))]
+key = lambda v: tuple(int(x) for x in v.split("."))
+print(max(vs, key=key) if vs else "")' "$spec")
+    if [ -z "$want" ]; then
+        db=$(ls "$HOME"/.julia/juliaup/versiondb-*.json 2>/dev/null | head -1)
+        [ -n "$db" ] && want=$(python3 -I -c '
+import json, sys
+c = json.load(open(sys.argv[1])).get("AvailableChannels", {}).get(sys.argv[2], {})
+print(c.get("Version", "").split("+")[0])' "$db" "$spec")
+    fi
+    if [ -z "$have" ] || [ -z "$want" ]; then
+        echo "$2: WARN: could not decide local Julia (${have:-none}) vs CI's '$spec' (${want:-unresolved}) — check by hand" >&2
+    elif [ "$have" != "$want" ]; then
+        echo "$2: WARN: local Julia is $have but CI resolves '$spec' to $want — a local pass is not CI's (juliaup add $want; juliaup default $want, between gates)" >&2
+    fi
+    return 0
+}
+
 # _check_swipl_pin ROOT WHO — 0 when the `swipl` on THIS PATH is THE ORACLE (tools/SWIPL_VERSION):
 # its `--version` is the pinned version AND its `version_git` flag names the pinned commit — a
 # build of exactly the commit the ports cite (tools/build_oracle.sh; user, 2026-10-11). A release

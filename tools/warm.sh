@@ -912,6 +912,7 @@ case "$cmd" in
     check)
         _running || _start > /dev/null || exit 1
         _ck_t0=$(date +%s)
+        _check_julia_ci "$ROOT" check                   # a WARN only (tools/lib_evidence.sh, audit D-0026)
         _checks_fresh
         _ck_rc=$?
         echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest) in $(( $(date +%s) - _ck_t0 ))s"
