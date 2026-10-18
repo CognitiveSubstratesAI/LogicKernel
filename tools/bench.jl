@@ -1055,7 +1055,8 @@ function _proc_ticks(pid::Integer)::Int
 end
 
 "A CPU mark: all CPUs' total and idle jiffies, and the ticks of the processes `pids`."
-_cpu_mark(pids::Vector{Int})::NTuple{3, Int} = (_cpu_jiffies()..., sum(_proc_ticks, pids))
+_cpu_mark(pids::AbstractVector{<:Integer})::NTuple{3, Int} =
+    (_cpu_jiffies()..., sum(_proc_ticks, pids))
 
 "The share of all CPUs that processes OTHER than the marked ones used between marks `m0` and `m1`."
 function _other_share(m0::NTuple{3, Int}, m1::NTuple{3, Int})::Float64
@@ -1139,7 +1140,7 @@ function sampled_times(cases, runs::Int)::Dict{String, case_samples}
             _lk_sample(f, n)
             nsw > 0 && _ask(p, "run($nsw).")
         end
-        pids = p === nothing ? [getpid()] : [getpid(), Int(getpid(p))]
+        pids = p === nothing ? [Int(getpid())] : [Int(getpid()), Int(getpid(p))]   # Int: getpid() is Int32
         lk, sw, shares = NTuple{3, Float64}[], Float64[], Float64[]
         repeats, kept = 0, 0
         while length(lk) < runs || (nsw > 0 && length(sw) < runs)
