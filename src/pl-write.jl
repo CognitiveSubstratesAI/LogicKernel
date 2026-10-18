@@ -410,50 +410,50 @@ end
 const WF_SUB = 2
 
 # PORT: pl-write.c wsub
-# DIVERGES: the subterm itself, where upstream holds a term reference (see `wframe`).
 "The subterm `writeTerm` writes next (pl-write.c)."
-mutable struct wsub{T}
-    t::T
+mutable struct wsub
+    t::term_t
     prec::Int
     flags::Int
 end
 
 # PORT: pl-write.c wframe
-# DIVERGES: a level holds its terms themselves (`t`, `arg`, the list's `list` and `head`), where
-# upstream holds term references in a foreign frame of the level (`fid`), which it closes when the
-# level is done: no garbage collector moves a kernel term, so nothing needs the references. A
-# compound whose head is no symbol (the kernel's `$expr/n`) is written as `'$expr'` with every child
-# an argument: `off` is where the arguments start among its children (1: after a symbol head; 0).
-# NOT PORTED: the dict fields (`u.dict`: the kernel has no dicts).
+# DIVERGES: the union's members are fields (`bclose`, `list`, `head`, `parens`); the functor is the
+# atom's symbol (upstream: an `atom_t`). Since L1d step 7b the level holds TERM REFERENCES, as
+# upstream (`t`, `arg`, the list's `list` and `head`), in a foreign frame of the level (`fid`),
+# which `writeTerm` closes when the level is done. NOT PORTED: the dict fields (`u.dict`: the kernel
+# has no dicts).
 "A level of `writeTerm`: what remains to be written when its subterm is done (pl-write.c)."
 mutable struct wframe{T}
+    fid::Int                        # foreign frame of the level
     depth::Int                      # options->depth to restore
-    t::T                            # the term being written
-    arg::T                          # work reference of the level
+    t::term_t                       # the term being written
+    arg::term_t                     # work reference of the level
     functor::T
     arity::Int
-    off::Int                        # (the children before the first argument)
     n::Int                          # argument or pair index
     op_pri::Int
     op_type::UInt8
     kind::wf_kind
     embrace::Bool                   # emit the closing brace
     bclose::Int                     # WF_BRACKET: closing bracket
-    list::T                         # WF_LIST_*, WF_DOT_*: remainder of the list
-    head::T
+    list::term_t                    # WF_LIST_*, WF_DOT_*: remainder of the list
+    head::term_t
     parens::Int                     # WF_DOT_*: parens to close
 end
 
 wframe{T}(z::T) where {T} =
-    wframe{T}(0, z, z, z, 0, 1, 0, 0, 0x00, WF_LEAF, false, 0, z, z, 0)
+    wframe{T}(0, 0, 0, 0, z, 0, 0, 0, 0x00, WF_LEAF, false, 0, 0, 0, 0)
 
 # PORT: pl-write.c write_options
 # DIVERGES: the writer's database (`gd`: the operator table, `user:portray/1`) and local data (`ld`:
 # a term is dereferenced through its bindings) are fields, where upstream reaches them through
 # `GET_LD`; `integer_format` and `float_format` are texts and `spacing` a Symbol (`:standard`,
 # `:next_argument`), where upstream holds atoms. The text atoms the writer compares a functor with
-# (upstream's `ATOM_*`) are their keys, made once per write (`k_*`); `writeTerm`'s stack (upstream's
-# segstack, a local of each call) is a field, so a write allocates it once. NOT PORTED:
+# (upstream's `ATOM_*`) are their keys, made once per write (`k_*`), and `FUNCTOR_isovar1`'s
+# functor word (`isovar_fw`, L1d step 7b: `writeNumberVar` compares the functor cell with it);
+# `writeTerm`'s stack (upstream's segstack, a local of each call) is a field, so a write
+# allocates it once. NOT PORTED:
 # `portray_goal`, `write_options` and `prec_opt` (write_term/2,3's `portray_goal` option: refused,
 # calling Prolog needs V9's meta-call).
 "The options of a write (pl-write.c)."
@@ -471,7 +471,7 @@ mutable struct write_options{T}
     gd::PL_global_data{T}
     ld::PL_local_data{T}
     frames::Vector{wframe{T}}       # (writeTerm's stack)
-    sub::wsub{T}                    # (writeTerm's subterm)
+    sub::wsub                       # (writeTerm's subterm)
     k_curl::UInt64                  # ATOM_curl, '{}'
     k_dot::UInt64                   # ATOM_dot, '[|]'
     k_comma::UInt64                 # ATOM_comma
@@ -480,6 +480,7 @@ mutable struct write_options{T}
     k_fdot::UInt64                  # '.'
     k_divide::UInt64                # ATOM_divide
     k_isovar::UInt64                # FUNCTOR_isovar1's name, '$VAR'
+    isovar_fw::UInt64               # FUNCTOR_isovar1, '$VAR'/1's functor word
 end
 
 # PORT: pl-write.c WRITE_OPTIONS_DEFAULTS as write_options
@@ -489,14 +490,14 @@ end
 function write_options(
     gd::PL_global_data{T}, ld::PL_local_data{T}, out::IOSTREAM
 )::write_options{T} where {T}
-    z = mk_nil(T)
     return write_options{T}(
         0, 0, 0, -1, false, "~d", "~h", :standard, MODULE_user(gd), out, gd, ld,
-        wframe{T}[], wsub{T}(z, 0, 0),
+        wframe{T}[], wsub(0, 0, 0),
         sym_key(mk_sym(T, Symbol("{}"))), sym_key(mk_sym(T, Symbol("[|]"))),
         sym_key(mk_sym(T, Symbol(","))), sym_key(mk_sym(T, Symbol("|"))),
         sym_key(mk_sym(T, Symbol("-"))), sym_key(mk_sym(T, Symbol("."))),
-        sym_key(mk_sym(T, Symbol("/"))), sym_key(mk_sym(T, Symbol("\$VAR")))
+        sym_key(mk_sym(T, Symbol("/"))), sym_key(mk_sym(T, Symbol("\$VAR"))),
+        lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, Symbol("\$VAR"))), 1)
     )
 end
 
@@ -899,11 +900,24 @@ function writeAtom(a::T, options::write_options{T})::Int where {T}
     end
 end
 
+# ORIGINAL: the VALUE a number's or a string's term reference holds, read once on its word (L1d step
+# 7b) — where upstream's `PL_get_number` and `PL_get_text` read the indirect: a value word's value
+# (`_value_term`: a tagged integer's term, or the value-table entry); the boundary (a slot's side
+# value, a keyed variable's binding) read as its term, counted in `cold_pairs`.
+"The number or string term reference `t` holds, as a term (the value read on its word)."
+function _wr_value(ld::PL_local_data{T}, t::term_t)::T where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k == DU_VALUE && return _value_term(ld, w)
+    k == DU_TERM && (ld.cold_pairs += 1)                    # the boundary: on the term
+    return deRef(ld, _loc_term(ld, k, w, p))
+end
+
 # PORT: pl-write.c writeString
-# DIVERGES: the string's text (`string_value`), where upstream asks `PL_get_text`.
-"Write the string `t`: quoted with `\"` (`` ` `` for `back_quotes(string)`) when `quoted(true)` (pl-write.c)."
-function writeString(t::T, options::write_options{T})::Bool where {T}
-    txt = string_value(t)
+# DIVERGES: the string's text (`string_value` of its value, `_wr_value`), where upstream asks
+# `PL_get_text`.
+"Write the string term reference `t` holds: quoted with `\"` (`` ` `` for `back_quotes(string)`) when `quoted(true)` (pl-write.c)."
+function writeString(t::term_t, options::write_options{T})::Bool where {T}
+    txt = string_value(_wr_value(options.ld, t))
     wide = _is_ucs_text(txt)
 
     if _ison(options, PL_WRT_QUOTED)
@@ -944,9 +958,11 @@ end
 # DIVERGES: a number is written as `do_format` writes it with the default formats: an integer's
 # decimal digits (`~d`), a float's `format_float(f, 3, 'e')` (`~h`, since R1e's floats); another
 # format — write_term/2,3's `integer_format` and `float_format` options, since R1e's write/1
-# family — is refused (`NotPortedError`: `do_format`, format/2's, is not ported).
-"Write the number `t` (pl-write.c): an integer, or a rational as `NrD` (`N/D` for `RAT_NATURAL`)."
-function writeNumber(t::T, options::write_options{T})::Bool where {T}
+# family — is refused (`NotPortedError`: `do_format`, format/2's, is not ported). The number is
+# its value read on the word (`_wr_value`), where upstream asks `PL_get_number`.
+"Write the number term reference `t0` holds (pl-write.c): an integer, or a rational as `NrD` (`N/D` for `RAT_NATURAL`)."
+function writeNumber(t0::term_t, options::write_options{T})::Bool where {T}
+    t = _wr_value(options.ld, t0)                   # PL_get_number(t, &n)
     k = number_kind(t)
     if k === NUM_INTEGER
         options.integer_format == "~d" || throw(
@@ -981,25 +997,38 @@ function writeNumber(t::T, options::write_options{T})::Bool where {T}
 end
 
 # PORT: pl-write.c varName
-# DIVERGES: `_` and the variable's key, where upstream's number is the variable's stack offset
-# (`var_name_ptr`): the same shape, and no test compares the number (user, 2026-10-07).
-"The name a variable is written by: `_<number>` (pl-write.c)."
-varName(t)::String = "_" * string(var_key(t))
+# DIVERGES: `var_name_ptr` on the location (L1d step 7b): `_` and the variable's KEY — an unbound
+# cell's key (`gkey`, the key its variable term has), the boundary's keyed variable its key, read
+# as its term and counted in `cold_pairs` — where upstream's number is the variable's stack offset
+# (`(p - gBase)*2`): the same shape, and no test compares the number (user, 2026-10-07).
+"The name the unbound variable term reference `t` holds is written by: `_<number>` (pl-write.c)."
+function varName(ld::PL_local_data{T}, t::term_t)::String where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
+    k == DU_CELL && return "_" * string(_cell_key(ld, p))
+    ld.cold_pairs += 1                                      # the boundary: on the term
+    return "_" * string(var_key(deRef(ld, _loc_term(ld, k, w, p))))
+end
 
 # PORT: pl-write.c writePrimitive
-# DIVERGES: the term itself, dereferenced; no attributed variables (`writeAttVar`). A grounded
-# value SWI has no type for (`NUM_OTHER`, kernel-only) has no text: refused (`NotPortedError`).
-"Write the variable, atom, number or string `t` (pl-write.c)."
-function writePrimitive(t::T, options::write_options{T})::Bool where {T}
-    kind(t) === VAR && return PutVarName(varName(t), options)
+# DIVERGES: no attributed variables (`writeAttVar`). A grounded value SWI has no type for
+# (`NUM_OTHER`, kernel-only) has no text: refused (`NotPortedError`).
+"Write the variable, atom, number or string term reference `t` holds (pl-write.c)."
+function writePrimitive(t::term_t, options::write_options{T})::Bool where {T}
+    ld = options.ld
+    PL_is_variable(ld, t) && return PutVarName(varName(ld, t), options)
 
-    kind(t) === SYM && return writeAtom(t, options) != 0
+    a = PL_get_atom(ld, t)
+    a === nothing || return writeAtom(a, options) != 0
 
-    isNumber(t) && return writeNumber(t, options)
+    PL_is_number(ld, t) && return writeNumber(t, options)   # beware of automatic conversion
 
-    isString(t) && return writeString(t, options)
+    PL_is_string(ld, t) && return writeString(t, options)
 
-    throw(NotPortedError{T}(t, "writing a grounded value SWI has no type for", "never"))
+    throw(
+        NotPortedError{T}(
+            _wr_value(ld, t), "writing a grounded value SWI has no type for", "never"
+        )
+    )
 end
 
 # Whether the `'$VAR'` term `t0` reaches — `t0` before it is dereferenced — was made since the
@@ -1007,9 +1036,9 @@ end
 # term is made by `bind_varnames` (or write_canonical's numbering) and is reached only through a
 # variable bound since the frame opened: the last variable of `t0`'s chain is trailed above the
 # frame's trail mark. A `'$VAR'` written in the term itself, or reached through an older binding,
-# is older. TRANSITIONAL (L1d step 7a): only for a `'$VAR'` that is no compound on the stack (the
-# boundary: a keyed variable's binding) — `writeNumberVar` compares an export's position with the
-# frame's mark, as upstream; 7b reads the word and drops this.
+# is older. TRANSITIONAL (L1d step 7b): only for a `'$VAR'` that is no compound on the stack (the
+# boundary: a slot's side value, a keyed variable's binding) — `writeNumberVar` compares the functor
+# cell's position with the frame's mark, as upstream; this goes with the keyed variables (L1f).
 function _numbervars_newer(ld::PL_local_data{T}, t0::T)::Bool where {T}
     fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
     top = ld.fliframes[fr].mark.trailtop
@@ -1032,37 +1061,51 @@ function _numbervars_newer(ld::PL_local_data{T}, t0::T)::Bool where {T}
 end
 
 # PORT: pl-write.c writeNumberVar
-# DIVERGES: the term itself, dereferenced, and `t0`, the term before (for `numbervars_frame`: an
-# OLDER `'$VAR'` term is not a variable name when `numbervars` is off — upstream compares its address
-# with the frame's mark: so does ours for a compound on the stack (its export's position, L1d step
-# 7a); for a term that is none, `_numbervars_newer` decides by how the term is reached);
-# no var_prefix (`out_var_prefix` is 0). The atom `quoted(false)` writes is written with the
+# DIVERGES: on the WORDS (L1d step 7b): the functor cell's position compared with the frame's mark
+# as `fr->mark.globaltop >= f` — upstream's `fr->mark.globaltop > f` on addresses (an exclusive top)
+# is ours on positions (gTop is the LAST used cell, inclusive); the argument's value read on its
+# word (an atom's symbol, a value's term: `_loc_term`, no export). THE BOUNDARY (a slot's side
+# value, a keyed variable's binding — `DU_TERM`) is read as its term, counted in `cold_pairs`, its
+# '$VAR' older unless `_numbervars_newer` finds it bound since the frame opened (TRANSITIONAL, L1f).
+# No var_prefix (`out_var_prefix` is 0). The atom `quoted(false)` writes is written with the
 # write's options, its flag cleared and restored, where upstream writes it with a copy (`o2`) — so
 # `truncated` is restored too.
-"Write `'\$VAR'(N)` as a variable name: 1 (written), 0 (not such a term), -1 (error) (pl-write.c)."
-function writeNumberVar(t::T, options::write_options{T}, t0::T)::Int where {T}
+"Write `'\$VAR'(N)` term reference `t` holds as a variable name: 1 (written), 0 (not such a term), -1 (error) (pl-write.c)."
+function writeNumberVar(t::term_t, options::write_options{T})::Int where {T}
     ld = options.ld
-    kind(t) === EXPR || return 0
-    (nchildren(t) == 2 && _is_text_atom_key(child(t, 1), options.k_isovar)) || return 0
+    k, w, q = _deref_loc(ld, -(t + 1))              # Word p = valTermRef(t); deRef(p)
 
-    if ld.var_names_numbervars_frame != 0
-        if !_ison(options, PL_WRT_NUMBERVARS)
-            # upstream's test where the term is a compound on the stack (an export: L1d step 7a) —
-            # `fr->mark.globaltop > f`, positions: at or below the frame's globaltop is older; a
-            # term that is none (the boundary) is decided by how it is reached (`_numbervars_newer`,
-            # TRANSITIONAL: 7b reads the word)
-            f = _export_pos(ld, t)
-            older = if f != 0
-                fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
-                ld.fliframes[fr].mark.globaltop >= f
-            else
-                !_numbervars_newer(ld, t0)
-            end
-            older && return 0                       # older $VAR term
+    if k == DU_TERM                                 # the boundary: on the term (TRANSITIONAL)
+        ld.cold_pairs += 1
+        v = deRef(ld, _loc_term(ld, k, w, q))
+        kind(v) === EXPR || return 0
+        (nchildren(v) == 2 && _is_text_atom_key(child(v, 1), options.k_isovar)) || return 0
+        if ld.var_names_numbervars_frame != 0 && !_ison(options, PL_WRT_NUMBERVARS) &&
+            !_numbervars_newer(ld, slotValue(ld, t + 1))
+            return 0                                # older $VAR term
         end
+        p = deRef(ld, child(v, 2))
+    else
+        (k == DU_WORD && _is_gcompound(w)) || return 0  # if ( !isTerm(*p) ) return false
+        f = valPtr(w)                               # f = valueTerm(*p)
+
+        ld.gstack[f] == options.isovar_fw || return 0   # f->definition != FUNCTOR_isovar1
+
+        if ld.var_names_numbervars_frame != 0
+            fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
+
+            if !_ison(options, PL_WRT_NUMBERVARS) && ld.fliframes[fr].mark.globaltop >= f
+                return 0                            # older $VAR term
+            end
+        end
+
+        k, w, q = _deref_loc(ld, f + 1)             # p = &f->arguments[0]; deRef(p)
+        k == DU_CELL && return 0
+        (k == DU_WORD && _is_gcompound(w)) && return 0
+        k == DU_TERM && (ld.cold_pairs += 1)        # the boundary: on the term
+        p = deRef(ld, _loc_term(ld, k, w, q))       # an atom's symbol, a value's term
     end
 
-    p = deRef(ld, child(t, 2))
     if isTaggedInt(p)
         n = int64_value(p)
         buf = if n < 0
@@ -1102,31 +1145,34 @@ end
 # writer needs the meta-call (V9): so where upstream would call `user:portray/1` — it is DEFINED —
 # the kernel refuses (`NotPortedError`; user, 2026-10-07, decision 3a); where it is not, upstream
 # returns false at once, and so does the kernel.
-"Call `user:portray/1` on `arg`: 1 (it wrote it), 0 (not defined, or it failed), -1 (error) (pl-write.c)."
-function callPortray(arg::T, prec::Int, options::write_options{T})::Int where {T}
+"Call `user:portray/1` on term reference `arg`: 1 (it wrote it), 0 (not defined, or it failed), -1 (error) (pl-write.c)."
+function callPortray(arg::term_t, prec::Int, options::write_options{T})::Int where {T}
     gd = options.gd
     proc = isCurrentProcedure(sym_key(mk_sym(T, :portray)), 1, MODULE_user(gd))
     (proc === nothing || !_impl_any_defined(proc.definition)) && return 0
 
     throw(
         NotPortedError{T}(
-            arg, "print/1 and portray(true) with user:portray/1 defined (calling Prolog)",
+            deRef(options.ld, slotValue(options.ld, arg + 1)),
+            "print/1 and portray(true) with user:portray/1 defined (calling Prolog)",
             "V9 (the meta-call)"
         )
     )
 end
 
 # PORT: pl-write.c isBlockOp
-# DIVERGES: the term itself, dereferenced; returns only the verdict (upstream also leaves the first
-# argument in `arg`, which its callers then overwrite).
-"Is `t`, named `functor`, a block operator term: `[](List, …)` or `{}({…}, …)` (pl-write.c)?"
-function isBlockOp(t::T, functor::T, options::write_options{T})::Bool where {T}
+# DIVERGES: the write options, for the local data and the atoms' keys (upstream: `GET_LD`, `ATOM_*`).
+"Is term reference `t`, named `functor`, a block operator term: `[](List, …)` or `{}({…}, …)`, its first argument left in `arg` (pl-write.c)?"
+function isBlockOp(
+    t::term_t, arg::term_t, functor::T, options::write_options{T}
+)::Bool where {T}
+    ld = options.ld
     if is_nil(functor) || _is_text_atom_key(functor, options.k_curl)
-        arg = deRef(options.ld, child(t, 2))
-        if (is_nil(functor) && is_pair(arg)) ||
+        _PL_get_arg(ld, 1, t, arg)
+        if (is_nil(functor) && PL_is_pair(ld, arg)) ||
             (
-            _is_text_atom_key(functor, options.k_curl) && kind(arg) === EXPR &&
-            nchildren(arg) == 2 && _is_text_atom_key(child(arg, 1), options.k_curl)
+            _is_text_atom_key(functor, options.k_curl) &&
+            PL_is_functor(ld, arg, mk_sym(T, Symbol("{}")), 1)
         )
             return true
         end
@@ -1137,9 +1183,9 @@ end
 # ── write a subterm (pl-write.c) ────────────────────────────────────────────────────────────────
 
 # PORT: pl-write.c sub_term
-"Ask `writeTerm` to write `t` next and resume the level `f` as `kind` after it: `WF_SUB` (pl-write.c)."
+"Ask `writeTerm` to write term reference `t` next and resume the level `f` as `kind` after it: `WF_SUB` (pl-write.c)."
 function sub_term(
-    f::wframe{T}, kind::wf_kind, sub::wsub{T}, t::T, prec::Int, flags::Int
+    f::wframe{T}, kind::wf_kind, sub::wsub, t::term_t, prec::Int, flags::Int
 )::Int where {T}
     f.kind = kind
     sub.t = t
@@ -1149,20 +1195,17 @@ function sub_term(
     return WF_SUB
 end
 
-# The argument `i` of the compound a level writes: the child after the head, or the child itself
-# for a compound with no symbol head (`$expr/n`, see `wframe`).
-_wr_arg(f::wframe{T}, i::Int) where {T} = child(f.t, i + f.off)
-
 # ── lists (pl-write.c) ──────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-write.c writeDotListHead
 "Write `'[|]'(` (`.(` for `dotlists(true)`) and ask for the head of the list cell (pl-write.c)."
 function writeDotListHead(
-    options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
-    l = deRef(options.ld, f.list)                   # PL_get_list(l, head, l)
-    f.head = child(l, 2)
-    f.list = child(l, 3)
+    head = f.head
+    l = f.list
+
+    PL_get_list(options.ld, l, head, l)
     if _ison(options, PL_WRT_DOTLISTS)
         PutToken(".", options.out, options.flags) != 0 || return 0
     else
@@ -1171,24 +1214,27 @@ function writeDotListHead(
 
     Putc(Int('('), options.out) || return 0
 
-    return sub_term(f, WF_DOT_HEAD, sub, f.head, 999, W_COMPOUND_ARG)
+    return sub_term(f, WF_DOT_HEAD, sub, head, 999, W_COMPOUND_ARG)
 end
 
 # PORT: pl-write.c writeListStart
-"Start the list `list`: `[` and its first element, or the dotted notation (pl-write.c)."
+"Start the list term reference `list` holds: `[` and its first element, or the dotted notation (pl-write.c)."
 function writeListStart(
-    list::T, options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    list::term_t, options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
-    f.list = list
+    ld = options.ld
+    head = PL_new_term_ref(ld)
+    l = PL_copy_term_ref(ld, list)
+
+    f.head = head
+    f.list = l
     f.parens = 0
 
     if (options.flags & (PL_WRT_DOTLISTS | PL_WRT_NO_LISTS)) == 0
         Putc(Int('['), options.out) || return 0
-        l = deRef(options.ld, f.list)               # PL_get_list(l, head, l)
-        f.head = child(l, 2)
-        f.list = child(l, 3)
+        PL_get_list(ld, l, head, l)
 
-        return sub_term(f, WF_LIST_ELEM, sub, f.head, 999, W_LIST_ARG)
+        return sub_term(f, WF_LIST_ELEM, sub, head, 999, W_LIST_ARG)
     end
 
     return writeDotListHead(options, f, sub)
@@ -1197,11 +1243,13 @@ end
 # PORT: pl-write.c writeListElemDone
 "After a list element: `]`, `|Tail`, or `,` and the next element (pl-write.c)."
 function writeListElemDone(
-    options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
-    l = deRef(options.ld, f.list)
+    ld = options.ld
+    head = f.head
+    l = f.list
 
-    is_nil(l) && return Putc(Int(']'), options.out) ? 1 : 0
+    PL_get_nil(ld, l) && return Putc(Int(']'), options.out) ? 1 : 0
 
     options.depth += 1
     if options.depth >= options.max_depth && options.max_depth != 0
@@ -1216,18 +1264,16 @@ function writeListElemDone(
         end
     end
 
-    if !is_pair(l)
+    if !PL_is_functor(ld, l, mk_sym(T, LIST_CONS_NAME), 2)     # FUNCTOR_dot2
         Putc(Int('|'), options.out) || return 0
 
-        # the tail before it is dereferenced (writeTerm2 does): `_numbervars_newer` reads its chain
-        return sub_term(f, WF_LIST_TAIL, sub, f.list, 999, W_LIST_TAIL)
+        return sub_term(f, WF_LIST_TAIL, sub, l, 999, W_LIST_TAIL)
     end
 
     PutComma(options) || return 0
-    f.head = child(l, 2)
-    f.list = child(l, 3)
+    PL_get_list(ld, l, head, l)
 
-    return sub_term(f, WF_LIST_ELEM, sub, f.head, 999, W_LIST_ARG)
+    return sub_term(f, WF_LIST_ELEM, sub, head, 999, W_LIST_ARG)
 end
 
 # PORT: pl-write.c writeCloseParens
@@ -1246,14 +1292,15 @@ end
 # PORT: pl-write.c writeDotHeadDone
 "After the head of a dotted list cell: `,` and the tail (pl-write.c)."
 function writeDotHeadDone(
-    options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
-    l = deRef(options.ld, f.list)
+    ld = options.ld
+    l = f.list
 
     PutComma(options) || return 0
     f.parens += 1
 
-    if is_nil(l)
+    if PL_get_nil(ld, l)
         PutToken("[]", options.out, options.flags) != 0 || return 0
 
         return writeCloseParens(options, f) ? 1 : 0
@@ -1267,7 +1314,9 @@ function writeDotHeadDone(
         return writeCloseParens(options, f) ? 1 : 0
     end
 
-    is_pair(l) || return sub_term(f, WF_DOT_TAIL, sub, f.list, 999, W_COMPOUND_ARG)
+    if !PL_is_functor(ld, l, mk_sym(T, LIST_CONS_NAME), 2)     # FUNCTOR_dot2
+        return sub_term(f, WF_DOT_TAIL, sub, l, 999, W_COMPOUND_ARG)
+    end
 
     return writeDotListHead(options, f, sub)
 end
@@ -1277,7 +1326,7 @@ end
 # PORT: pl-write.c writePrefixArg
 "Ask for the argument of a prefix operator (pl-write.c)."
 function writePrefixArg(
-    options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
     # +/-(Number) : avoid parsing as number
     options.out.lastc |= C_PREFIX_OP
@@ -1285,7 +1334,7 @@ function writePrefixArg(
         options.out.lastc |= C_PREFIX_SIGN
     end
 
-    f.arg = _wr_arg(f, f.arity)
+    _PL_get_arg(options.ld, f.arity, f.t, f.arg)
 
     return sub_term(
         f, WF_PREFIX_ARG, sub, f.arg, f.op_type == OP_FX ? f.op_pri - 1 : f.op_pri,
@@ -1296,18 +1345,17 @@ end
 # PORT: pl-write.c writePostfixOp
 "After the argument of a postfix operator: the operator, or ask for its block (pl-write.c)."
 function writePostfixOp(
-    options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
+    ld = options.ld
     if f.arity == 1
         writeAtom(f.functor, options) != 0 || return 0
     else
-        if _is_text_atom_key(f.functor, options.k_curl)
-            a = deRef(options.ld, f.arg)
-            if isTextAtom(a) || kind(a) === VAR      # PL_is_atom || PL_is_variable
-                Putc(Int(' '), options.out) || return 0
-            end
+        if _is_text_atom_key(f.functor, options.k_curl) &&
+            (PL_is_atom(ld, f.arg) || PL_is_variable(ld, f.arg))
+            Putc(Int(' '), options.out) || return 0
         end
-        f.arg = _wr_arg(f, 1)
+        _PL_get_arg(ld, 1, f.t, f.arg)
 
         return sub_term(f, WF_POSTFIX_BLOCK, sub, f.arg, 1200, W_BLOCK_OP)
     end
@@ -1318,9 +1366,9 @@ end
 # PORT: pl-write.c writeInfixArg2
 "Ask for the right argument of an infix operator (pl-write.c)."
 function writeInfixArg2(
-    options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
-    f.arg = _wr_arg(f, f.arity)
+    _PL_get_arg(options.ld, f.arity, f.t, f.arg)
 
     return sub_term(
         f, WF_INFIX_ARG2, sub, f.arg,
@@ -1330,7 +1378,8 @@ end
 
 # PORT: pl-write.c writeInfixOp
 "After the left argument of an infix operator: the operator, or ask for its block (pl-write.c)."
-function writeInfixOp(options::write_options{T}, f::wframe{T}, sub::wsub{T})::Int where {T}
+function writeInfixOp(options::write_options{T}, f::wframe{T}, sub::wsub)::Int where {T}
+    ld = options.ld
     out = options.out
 
     if f.arity == 2
@@ -1342,9 +1391,9 @@ function writeInfixOp(options::write_options{T}, f::wframe{T}, sub::wsub{T})::In
             PutToken(".", out, options.flags) != 0 || return 0
         elseif _is_text_atom_key(f.functor, options.k_divide) &&
             _ison(options, PL_WRT_RAT_NATURAL) &&
-            isInteger(deRef(options.ld, f.arg)) &&
-            (f.arg=_wr_arg(f, 1); true) &&
-            isNumber(deRef(options.ld, f.arg))
+            PL_is_integer(ld, f.arg) &&
+            _PL_get_arg(ld, 1, f.t, f.arg) &&
+            PL_is_number(ld, f.arg)
             PutString(" / ", out) || return 0
         else
             rc = writeAtom(f.functor, options)
@@ -1355,7 +1404,7 @@ function writeInfixOp(options::write_options{T}, f::wframe{T}, sub::wsub{T})::In
         end
         out.lastc |= C_INFIX_OP
     else                                            # block operator
-        f.arg = _wr_arg(f, 1)
+        _PL_get_arg(ld, 1, f.t, f.arg)
 
         return sub_term(f, WF_INFIX_BLOCK, sub, f.arg, 1200, W_BLOCK_OP)
     end
@@ -1367,11 +1416,11 @@ end
 
 # PORT: pl-write.c writeCanonArg
 "The next argument of `f(...)`, after a comma, or the closing `)` (pl-write.c)."
-function writeCanonArg(options::write_options{T}, f::wframe{T}, sub::wsub{T})::Int where {T}
+function writeCanonArg(options::write_options{T}, f::wframe{T}, sub::wsub)::Int where {T}
     f.n >= f.arity && return Putc(Int(')'), options.out) ? 1 : 0
 
     f.n > 0 && !PutComma(options) && return 0
-    f.arg = _wr_arg(f, f.n + 1)
+    _PL_get_arg(options.ld, f.n + 1, f.t, f.arg)
     f.n += 1
 
     return sub_term(f, WF_CANON_ARG, sub, f.arg, 999, W_COMPOUND_ARG)
@@ -1380,32 +1429,32 @@ end
 # ── write a term (pl-write.c) ───────────────────────────────────────────────────────────────────
 
 # PORT: pl-write.c writeTerm2
-# DIVERGES: the term itself, dereferenced (see `wframe`). An atom that is an operator, written
-# between parentheses as an operator's argument, returns false if a write fails, where upstream
-# goes on to write it as a compound of no arguments into the failed stream (false all the same).
-# A compound with no symbol head (`$expr/n`) is written `'$expr'(Child, …)`. NOT PORTED: dicts
-# (the kernel has none).
+# DIVERGES: an atom that is an operator, written between parentheses as an operator's argument,
+# returns false if a write fails, where upstream goes on to write it as a compound of no arguments
+# into the failed stream (false all the same). A compound with no symbol head (`$expr/n`) is
+# written `'$expr'(Child, …)` (`PL_get_name_arity`'s DIVERGES). NOT PORTED: dicts (the kernel has
+# none).
 """
-Write `t` at priority `prec` completely (1; 0 on error), or up to its first subterm, filling `f`
-and `sub` (`WF_SUB`) (pl-write.c).
+Write the term term reference `t` holds at priority `prec` completely (1; 0 on error), or up to
+its first subterm, filling `f` and `sub` (`WF_SUB`) (pl-write.c).
 """
 function writeTerm2(
-    t::T, prec::Int, options::write_options{T}, flags::Int, f::wframe{T}, sub::wsub{T}
+    t::term_t, prec::Int, options::write_options{T}, flags::Int, f::wframe{T}, sub::wsub
 )::Int where {T}
+    ld = options.ld
     out = options.out
-    t0 = t
-    t = deRef(options.ld, t)
 
-    if kind(t) !== VAR && _ison(options, PL_WRT_PORTRAY)
+    if !PL_is_variable(ld, t) && _ison(options, PL_WRT_PORTRAY)
         rc = callPortray(t, prec, options)
         rc == 1 && return 1
         rc == 0 || return 0                         # error
     end
 
-    if kind(t) === SYM                              # PL_get_atom(t, &a)
-        if (flags & W_OP_ARG) != 0 && priorityOperator(options.gd, options.m, t) > 0
+    a = PL_get_atom(ld, t)
+    if a !== nothing
+        if (flags & W_OP_ARG) != 0 && priorityOperator(options.gd, options.m, a) > 0
             return if (
-                PutOpenBrace(options) != 0 && writeAtom(t, options) != 0 &&
+                PutOpenBrace(options) != 0 && writeAtom(a, options) != 0 &&
                 PutCloseBrace(out)
             )
                 1
@@ -1413,21 +1462,16 @@ function writeTerm2(
                 0
             end
         else
-            return writeAtom(t, options) != 0 ? 1 : 0
+            return writeAtom(a, options) != 0 ? 1 : 0
         end
     end
 
-    kind(t) === EXPR || return writePrimitive(t, options) ? 1 : 0   # !PL_get_name_arity
-
-    h = child(t, 1)
-    if kind(h) === SYM
-        functor, arity, off = h, nchildren(t) - 1, 1
-    else
-        functor, arity, off = mk_sym(T, Symbol("\$expr")), nchildren(t), 0
-    end
+    na = PL_get_name_arity(ld, t)
+    na === nothing && return writePrimitive(t, options) ? 1 : 0
+    functor, arity = na
 
     if _ison(options, PL_WRT_NUMBERVARS | PL_WRT_VARNAMES)
-        rc = writeNumberVar(t, options, t0)
+        rc = writeNumberVar(t, options)
         rc == -1 && return 0
         rc == 1 && return 1
     end
@@ -1435,28 +1479,33 @@ function writeTerm2(
     f.t = t
     f.functor = functor
     f.arity = arity
-    f.off = off
     f.n = 0
     f.embrace = false
 
     # handle {a,b,c}
     if !_ison(options, PL_WRT_BRACETERMS) && _is_text_atom_key(functor, options.k_curl) &&
         arity == 1
-        arg = _wr_arg(f, 1)
-        PutToken("{", out, options.flags) != 0 || return 0
+        arg = PL_new_term_ref(ld)
+        if arg != 0 && _PL_get_arg(ld, 1, t, arg) && PutToken("{", out, options.flags) != 0
+            return sub_term(f, WF_BRACE, sub, arg, 1200, W_TOP)
+        end
 
-        return sub_term(f, WF_BRACE, sub, arg, 1200, W_TOP)
+        return 0
     end
 
     # handle Unicode <open>X<close>
     if !_ison(options, PL_WRT_BRACETERMS) && arity == 1
         found, bopen, bclose = bracketPairAtom(functor)
         if found
-            arg = _wr_arg(f, 1)
-            (PutOpenToken(bopen, out, options.flags) != 0 && Putc(bopen, out)) || return 0
-            f.bclose = bclose
+            arg = PL_new_term_ref(ld)
+            if arg != 0 && _PL_get_arg(ld, 1, t, arg) &&
+                PutOpenToken(bopen, out, options.flags) != 0 && Putc(bopen, out)
+                f.bclose = bclose
 
-            return sub_term(f, WF_BRACKET, sub, arg, 1200, W_TOP)
+                return sub_term(f, WF_BRACKET, sub, arg, 1200, W_TOP)
+            end
+
+            return 0
         end
     end
 
@@ -1470,12 +1519,16 @@ function writeTerm2(
         _is_text_atom_key(functor, options.k_comma) && arity == 2 &&
         _ison(options, PL_WRT_INFIX_COMMA)
     )
-        if arity == 1 || (arity == 2 && isBlockOp(t, functor, options))
+        arg = PL_new_term_ref(ld)
+        arg == 0 && return 0
+
+        if arity == 1 || (arity == 2 && isBlockOp(t, arg, functor, options))
             # op <term>
             found, op_type, op_pri = currentOperator(
                 options.gd, options.m, functor, OP_PREFIX
             )
             if found
+                f.arg = PL_new_term_ref(ld)
                 f.op_type = op_type
                 f.op_pri = Int(op_pri)
                 f.embrace = op_pri > prec
@@ -1484,7 +1537,7 @@ function writeTerm2(
                 if arity == 1
                     writeAtom(functor, options) != 0 || return 0
                 else
-                    f.arg = _wr_arg(f, 1)
+                    _PL_get_arg(ld, 1, t, f.arg)
 
                     return sub_term(f, WF_PREFIX_BLOCK, sub, f.arg, 1200, W_BLOCK_OP)
                 end
@@ -1497,12 +1550,13 @@ function writeTerm2(
                 options.gd, options.m, functor, OP_POSTFIX
             )
             if found
+                f.arg = PL_new_term_ref(ld)
                 f.op_type = op_type
                 f.op_pri = Int(op_pri)
                 f.embrace = op_pri > prec
 
                 f.embrace && PutOpenBrace(options) == 0 && return 0
-                f.arg = _wr_arg(f, arity)
+                _PL_get_arg(ld, arity, t, f.arg)
 
                 return sub_term(
                     f, WF_POSTFIX_ARG, sub, f.arg,
@@ -1510,21 +1564,22 @@ function writeTerm2(
                     W_POSTFIX_ARG
                 )
             end
-        elseif arity == 2 || (arity == 3 && isBlockOp(t, functor, options))
+        elseif arity == 2 || (arity == 3 && isBlockOp(t, arg, functor, options))
             # <term> op <term>
             found, op_type, op_pri = currentOperator(
                 options.gd, options.m, functor, OP_INFIX
             )
             if found
+                f.arg = arg
                 f.op_type = op_type
                 f.op_pri = Int(op_pri)
                 f.embrace = op_pri > prec
 
                 f.embrace && PutOpenBrace(options) == 0 && return 0
-                f.arg = _wr_arg(f, arity - 1)
+                _PL_get_arg(ld, arity - 1, t, arg)
 
                 return sub_term(
-                    f, WF_INFIX_ARG1, sub, f.arg,
+                    f, WF_INFIX_ARG1, sub, arg,
                     op_type == OP_XFX || op_type == OP_XFY ? f.op_pri - 1 : f.op_pri,
                     W_INFIX_ARG1
                 )
@@ -1533,6 +1588,8 @@ function writeTerm2(
     end
 
     # functor(<args> ...)
+    f.arg = PL_new_term_ref(ld)
+
     (writeAtom(functor, options) != 0 && Putc(Int('('), out)) || return 0
 
     return writeCanonArg(options, f, sub)
@@ -1541,7 +1598,7 @@ end
 # PORT: pl-write.c writeTermResume
 "Continue the level `f` after its subterm is written; as `writeTerm2` returns (pl-write.c)."
 function writeTermResume(
-    options::write_options{T}, f::wframe{T}, sub::wsub{T}
+    options::write_options{T}, f::wframe{T}, sub::wsub
 )::Int where {T}
     out = options.out
     k = f.kind
@@ -1567,10 +1624,13 @@ end
 
 # PORT: pl-write.c writeTerm
 # DIVERGES: the stack is the options' frame pool, a level's frame reused once it is popped (upstream
-# pushes a copy of a local frame onto a segstack); no foreign frames (see `wframe`), no
+# pushes a copy of a local frame onto a segstack, which cannot fail here: no `PL_no_memory`); no
 # `discard_wframe` (it frees a dict's order: no dicts); no signals (`PL_handle_signals`).
-"Write `t` at priority `prec`, depth by depth on an explicit stack — no recursion (pl-write.c)."
-function writeTerm(t::T, prec::Int, options::write_options{T}, flags::Int)::Bool where {T}
+"Write the term term reference `t` holds at priority `prec`, depth by depth on an explicit stack — no recursion (pl-write.c)."
+function writeTerm(
+    t::term_t, prec::Int, options::write_options{T}, flags::Int
+)::Bool where {T}
+    ld = options.ld
     frames = options.frames
     sub = options.sub
     sp = 0                                          # the levels pushed: frames[1:sp]
@@ -1582,6 +1642,11 @@ function writeTerm(t::T, prec::Int, options::write_options{T}, flags::Int)::Bool
     frame = frames[sp + 1]
     frame.kind = WF_LEAF
     frame.depth = options.depth
+    frame.fid = PL_open_foreign_frame(ld)
+    if frame.fid == 0
+        rc = 0
+        @goto unwind
+    end
 
     options.depth += 1
     if options.depth > options.max_depth && options.max_depth != 0
@@ -1601,6 +1666,7 @@ function writeTerm(t::T, prec::Int, options::write_options{T}, flags::Int)::Bool
     end
 
     options.depth = frame.depth                     # the level is complete
+    PL_close_foreign_frame(ld, frame.fid)
     rc == 0 && @goto unwind
 
     while true                                      # resume the enclosing levels
@@ -1617,6 +1683,7 @@ function writeTerm(t::T, prec::Int, options::write_options{T}, flags::Int)::Bool
         end
 
         options.depth = fp.depth
+        PL_close_foreign_frame(ld, fp.fid)
         sp -= 1                                     # popSegStack(&stack, &frame, wframe)
         rc == 0 && @goto unwind
     end
@@ -1624,6 +1691,7 @@ function writeTerm(t::T, prec::Int, options::write_options{T}, flags::Int)::Bool
     @label unwind
     while sp > 0
         options.depth = frames[sp].depth
+        PL_close_foreign_frame(ld, frames[sp].fid)
         sp -= 1
     end
 
@@ -1635,11 +1703,11 @@ end
 # PORT: pl-write.c writeTopTerm
 # DIVERGES: a cyclic term — upstream writes `@(Template, Substitutions)` from `PL_factorize_term` —
 # is refused (`NotPortedError`; user, 2026-10-07, decision 4a), checked first, so no write walks a
-# cycle; `cycles(false)`'s domain error as upstream. No stream lock (`Slock`).
+# cycle; `cycles(false)`'s domain error as upstream. `PL_is_acyclic` on the cells (L1d step 3).
+# No stream lock (`Slock`).
 "Write the term `term` references at priority `prec` (pl-write.c)."
 function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool where {T}
     ld = options.ld
-    t = slotValue(ld, term + 1)
 
     if _ison(options, PL_WRT_PARTIAL) && prec != 999 && prec != 1200
         wflags = W_OP_ARG
@@ -1648,8 +1716,8 @@ function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool 
     end
 
     if ((options.flags & PL_WRT_NO_CYCLES) == 0 && options.max_depth != 0) ||
-        is_acyclic(ld, t)
-        rc = writeTerm(t, prec, options, wflags)
+        is_acyclic_cells(ld, -(term + 1))
+        rc = writeTerm(term, prec, options, wflags)
     else
         if _ison(options, PL_WRT_NO_CYCLES)
             return PL_error(ld, ERR_DOMAIN, mk_sym(T, :cyclic_term), term)
@@ -1657,7 +1725,7 @@ function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool 
 
         throw(
             NotPortedError{T}(
-                deRef(ld, t),
+                deRef(ld, slotValue(ld, term + 1)),
                 "writing a cyclic term (PL_factorize_term: @(Template, Substitutions))",
                 "refused (R1e decision 4a)"
             )

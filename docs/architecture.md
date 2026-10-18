@@ -1234,6 +1234,7 @@ graph LR
     pl_write --> pl_incl
     pl_write --> SWI_Prolog
     pl_write --> pl_atom
+    pl_write --> pl_funct
     pl_write --> pl_global
     pl_write --> pl_modul
     pl_write --> pl_inline

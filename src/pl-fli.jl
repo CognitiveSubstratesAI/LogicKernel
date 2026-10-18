@@ -286,11 +286,20 @@ function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class 
 end
 
 # PORT: pl-fli.c PL_get_atom
-# DIVERGES: returns the atom, or `nothing`, where upstream writes it through `a` and returns a Bool.
+# DIVERGES: returns the atom, or `nothing`, where upstream writes it through `a` and returns a Bool;
+# on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): an atom word its symbol (`_atom_value`); the boundary (a slot's side value, a
+# keyed variable) read as its term, counted in `cold_pairs`.
 "The atom term reference `t` holds — a text atom or a reserved symbol such as `[]` — or `nothing` (pl-fli.c)."
 function PL_get_atom(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
-    kind(w) === SYM && return w                             # isAtom(w)
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD
+        isAtomW(w) && return _atom_value(ld, w)             # isAtom(w)
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        v = deRef(ld, _loc_term(ld, k, w, p))
+        kind(v) === SYM && return v
+    end
     return nothing
 end
 
@@ -361,54 +370,140 @@ PL_get_bool(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_stdbool(ld, t)
 # PORT: pl-fli.c PL_get_name_arity_sz as PL_get_name_arity
 # DIVERGES: returns `(name, arity)`, or `nothing`, where upstream writes them through pointers; a
 # compound whose head is no symbol (the kernel's `$expr/n`) is named `$expr`, its arity the number
-# of its children, as the writer writes it.
+# of its children, as the writer writes it. On the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b —
+# the FLI readers the writer calls, L1e done early): a compound word's functor from the functor table
+# (`valueFunctor(functorTerm(w))`), the reserved `$expr` named as above; an atom word's symbol; the
+# boundary read as its term, counted in `cold_pairs`.
 "The name and arity of the compound or the text atom term reference `t` holds, or `nothing` (pl-fli.c)."
 function PL_get_name_arity(
     ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, Tuple{T, Int}} where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
-    if isTerm(w)
-        h = child(w, 1)
-        kind(h) === SYM && return (h, nchildren(w) - 1)
-        return (mk_sym(T, Symbol("\$expr")), nchildren(w))
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD
+        if _is_gcompound(w)                                 # isTerm(w)
+            f = ld.gstack[valPtr(w)]                        # functorTerm(w)
+            name = nameFunctor(ld.functors, f)
+            arity = arityFunctor(ld.functors, f)
+            name == ld.atom_dexpr && return (mk_sym(T, Symbol("\$expr")), arity)
+            return (_atom_value(ld, name), arity)
+        end
+        a = _atom_value(ld, w)
+        isTextAtom(a) && return (a, 0)                      # isTextAtom(w)
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        v = deRef(ld, _loc_term(ld, k, w, p))
+        if isTerm(v)
+            h = child(v, 1)
+            kind(h) === SYM && return (h, nchildren(v) - 1)
+            return (mk_sym(T, Symbol("\$expr")), nchildren(v))
+        end
+        isTextAtom(v) && return (v, 0)
     end
-    isTextAtom(w) && return (w, 0)
     return nothing
 end
 
 # PORT: pl-fli.c _PL_get_arg_sz as _PL_get_arg
 # DIVERGES: a compound whose head is no symbol (`$expr/n`) has every child as an argument (see
 # `PL_get_name_arity`), so its argument `index` is child `index`; else child `index + 1`.
+# On the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): a compound word's argument cell into `a` as `linkValI` reads it
+# (`_slot_from_cell!`: the cell's word, or a reference to it — an unbound cell, or a value-table word,
+# which upstream copies as its indirect and a slot does not hold); on the cells a `$expr/n` compound
+# has every child as an argument already. The boundary read as its term, counted in `cold_pairs`.
 "Put argument `index` (from 1) of the compound term reference `t` holds into `a` (pl-fli.c)."
 function _PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bool where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
-    off = kind(child(w, 1)) === SYM ? 1 : 0
-    setSlotValue!(ld, a + 1, child(w, index + off))                 # linkValI(&f->arguments[index-1])
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD && _is_gcompound(w)
+        _slot_from_cell!(ld, a + 1, valPtr(w) + index)      # setHandle(a, linkValI(&f->arguments[index-1]))
+        return true
+    end
+    k == DU_TERM && (ld.cold_pairs += 1)                    # the boundary: on the term
+    v = deRef(ld, _loc_term(ld, k, w, p))
+    off = kind(child(v, 1)) === SYM ? 1 : 0
+    setSlotValue!(ld, a + 1, child(v, index + off))                 # linkValI(&f->arguments[index-1])
     return true
 end
 
 # PORT: pl-fli.h PL_is_functor
-# DIVERGES: the functor is a name and an arity (upstream: a `functor_t`).
+# DIVERGES: the functor is a name and an arity (upstream: a `functor_t`); on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): a
+# compound word's functor compared by arity and name (`hasFunctor`) — a `$expr/n` compound has no
+# symbol head, so it is no `name/arity` (as `_hasFunctor` on its term); the boundary read as its
+# term, counted in `cold_pairs`.
 "Whether term reference `t` holds a compound `name/arity` (pl-fli.h)."
-PL_is_functor(ld::PL_local_data{T}, t::term_t, name::T, arity::Int) where {T} =
-    _hasFunctor(deRef(ld, slotValue(ld, t + 1)), name, arity)
+function PL_is_functor(ld::PL_local_data{T}, t::term_t, name::T, arity::Int)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD
+        _is_gcompound(w) || return false                    # hasFunctor(w, f)
+        f = ld.gstack[valPtr(w)]
+        arityFunctor(ld.functors, f) == arity || return false
+        n = nameFunctor(ld.functors, f)
+        n == ld.atom_dexpr && return false
+        return sym_key(_atom_value(ld, n)) == sym_key(name)
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return _hasFunctor(deRef(ld, _loc_term(ld, k, w, p)), name, arity)
+    end
+    return false
+end
+
+# PORT: pl-fli.c PL_is_pair
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): a compound word whose functor is `'[|]'/2` (`FUNCTOR_dot2`); the
+# boundary read as its term, counted in `cold_pairs`.
+"Whether term reference `t` holds a list cell (pl-fli.c)."
+function PL_is_pair(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD
+        return _is_gcompound(w) && ld.gstack[valPtr(w)] == ld.functor_dot2   # isList(w)
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return is_pair(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c PL_get_list
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): a list cell's head and tail cells into `h` and `t` as `linkValI` reads
+# them (`_slot_from_cell!`) — the cell's position read first, so `PL_get_list(l, h, l)` holds; the
+# boundary read as its term, counted in `cold_pairs`.
 "Put the head and the tail of the list cell term reference `l` holds into `h` and `t` (pl-fli.c); false if it holds none."
 function PL_get_list(ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t)::Bool where {T}
-    w = deRef(ld, slotValue(ld, l + 1))
-    if is_pair(w)                                           # isList(w)
-        setSlotValue!(ld, h + 1, child(w, 2))                       # linkValI(a++)
-        setSlotValue!(ld, t + 1, child(w, 3))
-        return true
+    k, w, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
+    if k == DU_WORD
+        if _is_gcompound(w) && ld.gstack[valPtr(w)] == ld.functor_dot2   # isList(w)
+            a = valPtr(w) + 1                               # Word a = argTermP(w, 0)
+            _slot_from_cell!(ld, h + 1, a)                  # setHandle(h, linkValI(a++))
+            _slot_from_cell!(ld, t + 1, a + 1)              # setHandle(t, linkValI(a))
+            return true
+        end
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        v = deRef(ld, _loc_term(ld, k, w, p))
+        if is_pair(v)                                       # isList(w)
+            setSlotValue!(ld, h + 1, child(v, 2))                   # linkValI(a++)
+            setSlotValue!(ld, t + 1, child(v, 3))
+            return true
+        end
     end
     return false
 end
 
 # PORT: pl-fli.c PL_get_nil
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): the `[]` word (`ATOM_nil`); the boundary read as its term, counted in
+# `cold_pairs`.
 "Whether term reference `l` holds `[]` (pl-fli.c)."
-PL_get_nil(ld::PL_local_data{T}, l::term_t) where {T} =
-    is_nil(deRef(ld, slotValue(ld, l + 1)))
+function PL_get_nil(ld::PL_local_data{T}, l::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
+    k == DU_WORD && return w == ld.atom_nil_w               # isNil(w)
+    if k == DU_TERM                                         # the boundary: on the term
+        ld.cold_pairs += 1
+        return is_nil(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c PL_is_list
 "Whether term reference `t` holds a list cell or `[]` (pl-fli.c)."
@@ -553,17 +648,37 @@ end
 # ── the subset built-ins use (V5a2) ──────────────────────────────────────────────────────────────
 
 # PORT: pl-fli.h PL_is_variable
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): an unbound cell; the boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds an unbound variable (pl-fli.h; `canBind`: no attributed variables)."
-PL_is_variable(ld::PL_local_data{T}, t::term_t) where {T} =
-    kind(deRef(ld, slotValue(ld, t + 1))) === VAR
+function PL_is_variable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k == DU_CELL && return true                             # canBind(w)
+    if k == DU_TERM                                         # the boundary: on the term
+        ld.cold_pairs += 1
+        return kind(deRef(ld, _loc_term(ld, k, w, p))) === VAR
+    end
+    return false
+end
 
 # The type tests on a term reference (V6b): `valHandle(t)` is the slot dereferenced through the
 # bindings; each then asks pl-data.h's test (src/pl-incl.jl).
 
 # PORT: pl-fli.c PL_is_integer
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): a tagged integer, or a value-table word whose entry is an integer
+# (upstream's indirect); the boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds an integer (pl-fli.c)."
-PL_is_integer(ld::PL_local_data{T}, t::term_t) where {T} =
-    isInteger(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_integer(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_VALUE                                        # isInteger(w)
+        return isTaggedIntW(w) || isInteger(ld.vtable[valPtr(w)])
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return isInteger(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c PL_is_float
 "Whether term reference `t` holds a float (pl-fli.c)."
@@ -598,14 +713,35 @@ PL_is_callable(ld::PL_local_data{T}, t::term_t) where {T} =
     isCallable(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.c PL_is_string
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): a value-table word whose entry is a string (upstream's indirect); the
+# boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a string (pl-fli.c)."
-PL_is_string(ld::PL_local_data{T}, t::term_t) where {T} =
-    isString(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_string(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_VALUE                                        # isString(w)
+        return !isTaggedIntW(w) && isString(ld.vtable[valPtr(w)])
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return isString(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.h PL_is_atom
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): an atom word whose symbol is text (`isTextAtom`); the boundary read as
+# its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a text atom — not `[]` (pl-fli.h)."
-PL_is_atom(ld::PL_local_data{T}, t::term_t) where {T} =
-    isTextAtom(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_atom(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k == DU_WORD && return isAtomW(w) && isTextAtom(_atom_value(ld, w))   # isTextAtom(w)
+    if k == DU_TERM                                         # the boundary: on the term
+        ld.cold_pairs += 1
+        return isTextAtom(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.h PL_is_atomic
 "Whether term reference `t` holds an atomic term (pl-fli.h)."
@@ -613,9 +749,20 @@ PL_is_atomic(ld::PL_local_data{T}, t::term_t) where {T} =
     isAtomic(deRef(ld, slotValue(ld, t + 1)))
 
 # PORT: pl-fli.h PL_is_number
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
+# done early): a tagged integer, or a value-table word whose entry is a number
+# (upstream's indirect); the boundary read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a number (pl-fli.h)."
-PL_is_number(ld::PL_local_data{T}, t::term_t) where {T} =
-    isNumber(deRef(ld, slotValue(ld, t + 1)))
+function PL_is_number(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_VALUE                                        # isNumber(w)
+        return isTaggedIntW(w) || isNumber(ld.vtable[valPtr(w)])
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        return isNumber(deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    return false
+end
 
 # PORT: pl-fli.c PL_unify
 # DIVERGES: no `ALLOW_GC|ALLOW_SHIFT`: the kernel's `unify_ptrs` takes no flags, as the binding store

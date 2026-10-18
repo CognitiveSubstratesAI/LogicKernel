@@ -390,6 +390,7 @@ function _nv_older_case(before::Bool)
     gt = ld.fliframes[fr].mark.globaltop
     out = IOBuffer()
     LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, out)
+    e0 = ld.cold_exports
     # PL_write_term with PL_WRT_VARNAMES (writeTerm2 calls writeNumberVar only under NUMBERVARS or
     # VARNAMES) and numbervars off: it opens no frame of its own (write_term/2's variable_names would)
     @test LK.PL_write_term(
@@ -397,7 +398,9 @@ function _nv_older_case(before::Bool)
         LK.PL_WRT_QUOTED | LK.PL_WRT_VARNAMES
     )
     LK.Sflush(LK.Suser_output(ld))
-    @test LK._export_pos(ld, LK.slotValue(ld, t + 1)) == c   # the writer compared this export
+    # 2026-10-18 L1d 7b: the writer on term references — it compared the functor cell's position
+    # itself (the word), no export made
+    @test ld.cold_exports == e0
     LK.END_NUMBERVARS(ld, true, savedf)
     return String(take!(out)), c - gt
 end
@@ -423,8 +426,9 @@ wc_top :- wc_loop(50).
 
 # the write_canonical loop's traffic per call (see the testset): MEASURED 2026-10-18 on 7a's tree — per
 # iteration 18 exports and 17 variable reads, all the WRITER's (the numbering makes none: nv_loop), no
-# import, no boundary pair. TRANSITIONAL until 7b.
-const _NV_WC_METER_PIN = (900, 0, 850, 0)
+# import, no boundary pair: (900, 0, 850, 0).
+# 2026-10-18 L1d 7b: the writer on term references — none left.
+const _NV_WC_METER_PIN = (0, 0, 0, 0)
 
 "Run `name/0` once through the query API; the return code."
 function _nv_meter_run(db::_RDB, name::Symbol)::Int

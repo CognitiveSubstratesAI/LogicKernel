@@ -54,8 +54,13 @@ end
     @test var_key(child(c, 2)) != var_key(r1)
     # the occurs check: R1 occurs in g(R2)
     @test LK.var_occurs_in(ld, r1, _rf("g", r2))
-    # the writer's name
-    @test LK.varName(r1) == LK.varName(r2)
+    # the writer's name (L1d step 7b: varName reads a term reference's location — each read put in its own)
+    t1 = LK.PL_new_term_ref(ld)
+    LK.setSlotValue!(ld, t1 + 1, r1)
+    t2 = LK.PL_new_term_ref(ld)
+    LK.setSlotValue!(ld, t2 + 1, r2)
+    @test LK.varName(ld, t1) == LK.varName(ld, t2)
+    @test LK.varName(ld, t1) == "_" * string(var_key(r1))
 end
 
 @testset "numbervars and the variable collectors see one variable" begin
