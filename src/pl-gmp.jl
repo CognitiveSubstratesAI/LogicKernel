@@ -281,7 +281,14 @@ maxBigIntSize(ld::PL_local_data)::UInt64 = min(UInt64(ld.stacks_limit) * 8, MPZ_
 # GMP's `mpz_get_d` truncates; `mpz_tstbit` reads two's complement — Julia's `>>` on a BigInt is
 # arithmetic, so `isodd(a >> i)` is that bit. `mpz_sizeinbase(a, 2)` is `ndigits(a; base=2)`,
 # `mpz_scan1(a, 0)` `trailing_zeros(a)`.
-_mpz_get_d(a::BigInt)::Float64 = Float64(a, RoundToZero)
+# `mpz_get_d` truncates; past the double range (more than 1024 bits) it returns ±Inf (GMP on IEEE), which
+# `mpz_to_double`'s overflow check (`isinf(d)`) relies on. The kernel DECIDES that range itself and only then
+# converts (exact truncation within range, public API) — `Float64(a, RoundToZero)` alone gives ±Inf on Julia
+# 1.13.1 and ±floatmax on 1.13.2 (JuliaLang/julia#63525; batch 3's CI, audits D-0025/D-0026).
+function _mpz_get_d(a::BigInt)::Float64
+    ndigits(a; base=2) > 1024 && return signbit(a) ? -Inf : Inf    # exponent too big: ±Inf
+    return Float64(a, RoundToZero)
+end
 _mpz_tstbit(a::BigInt, i::Integer)::Bool = isodd(a >> i)
 # `sa - mpz_scan1(a, 0)` in upstream's `size_t`: for 0, `mpz_scan1` is ULONG_MAX and the difference
 # WRAPS to 2 (`sa` is 1) — so a 0 takes the "representable on 53 bits" path, and gives 0.0. Julia's

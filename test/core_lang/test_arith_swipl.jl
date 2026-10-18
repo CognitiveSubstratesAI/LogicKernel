@@ -375,6 +375,9 @@ end
 # overflow, patched to PLMAXINT); `max(1r3, 0.25)` is 1r3, not promoted (cmpNumbers compares a float
 # against a rational without converting the other); `cot`, `acot`, `log/2` and `max_tagged_integer`
 # are no functions at the pin.
+# DBL_MAX as a big integer, and half its unit in the last place (the rounding midpoint above it)
+const _A_DBLMAX = (big(2)^53 - 1) * big(2)^971
+const _A_HALFULP = big(2)^970
 const _A_ARITHA_CASES = Any[
     # division: / — an integer when it divides, else a float (iso and prefer_rationals false)
     (:/, 7, 2), (:/, 6, 3), (:/, -7, 2), (:/, 0, 5), (:/, 1, 0), (:/, 0, 0), (:/, 1.0, 0),
@@ -505,7 +508,21 @@ const _A_ARITHA_CASES = Any[
     (:cot, 1.0), (:acot, 1.0), (:log, 2, 8), :max_tagged_integer,
     (:ceiling, (:/, 7, 2)), (:truncate, (:/, -7, 2)), (:integer, (:/, 5, 2)),
     # every leaf kind: a one-character string and [Code]
-    (:abs, "a"), (:mod, "a", 7)
+    (:abs, "a"), (:mod, "a", 7),
+    # the big integer → double boundary (audit D-0025): DBL_MAX exactly, one above it, the last below
+    # the rounding midpoint, the midpoint itself (ties to even: overflows), their negatives, 2^1024, 2^1023 —
+    # overflow decided by the kernel (src/pl-gmp.jl `_mpz_get_d`), not by the installed Julia's conversion
+    (:float, _A_DBLMAX), (:float, _A_DBLMAX + 1), (:float, _A_DBLMAX + _A_HALFULP - 1),
+    (:float, _A_DBLMAX + _A_HALFULP), (:float, -_A_DBLMAX),
+    (:float, -(_A_DBLMAX + _A_HALFULP)),
+    (:float, big(2)^1024), (:float, big(2)^1023),
+    # one row per other conversion site (audit D-0026): `/` on big integers (mpz_fdiv), a rational to a
+    # double (mpq_to_double), a float compared with a big integer (cmpFloatNumbers: under the 1.13.2 clamp
+    # DBL_MAX and 10^400 compare equal and max/2 keeps the float)
+    (:/, big(10)^400, 3), (:/, -big(10)^400, 3), (:/, big(10)^400, big(10)^399),
+    (:float, big(10)^400 // 3),
+    (:max, floatmax(Float64), big(10)^400), (:min, -floatmax(Float64), -big(10)^400),
+    (:max, big(10)^400, floatmax(Float64))
 ]
 
 "The kernel term of a case tree (see `_A_ARITHA_CASES`)."
@@ -875,7 +892,22 @@ const _A_ARITHA_EXPECT = String[
     "ok:i-3",  # truncate(/(-7,2))
     "ok:i3",  # integer(/(5,2))
     "ok:i97",  # abs("a")
-    "ok:i6"  # mod("a",7)
+    "ok:i6",  # mod("a",7)
+    "ok:F7fefffffffffffff",  # float(DBL_MAX)
+    "ok:F7fefffffffffffff",  # float(DBL_MAX+1)
+    "ok:F7fefffffffffffff",  # float(DBL_MAX+2^970-1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # float(DBL_MAX+2^970)
+    "ok:Fffefffffffffffff",  # float(-DBL_MAX)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # float(-(DBL_MAX+2^970))
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # float(2^1024)
+    "ok:F7fe0000000000000",  # float(2^1023)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # /(10^400,3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # /(-10^400,3)
+    "ok:i10",  # /(10^400,10^399)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # float(10^400r3)
+    "ok:i" * string(big(10) ^ 400),  # max(DBL_MAX,10^400)
+    "ok:i" * string(-big(10) ^ 400),  # min(-DBL_MAX,-10^400)
+    "ok:i" * string(big(10) ^ 400)  # max(10^400,DBL_MAX)
 ]
 
 "`X is E` for a case tree: the outcome string, a Julia exception included (it would be a defect)."
