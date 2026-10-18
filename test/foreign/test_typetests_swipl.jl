@@ -152,7 +152,9 @@ end
     end
 end
 
-const _TT_SWIPL = Sys.which("swipl")
+const _TT_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _TT_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 if _TT_SWIPL !== nothing

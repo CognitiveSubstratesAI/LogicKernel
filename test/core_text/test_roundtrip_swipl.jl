@@ -25,7 +25,9 @@ const _RT = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}}
 _rts(x) = lk_sym(_RT, Symbol(x))
 _rt_var() = mk_var(_RT, LK.fresh_var_keys!(1))
 
-const _RT_SWIPL = Sys.which("swipl")
+const _RT_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _RT_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _RT_GD = LK.PL_global_data{_RT}()
 const _RT_LD = LK.PL_local_data{_RT}(_RT_GD)

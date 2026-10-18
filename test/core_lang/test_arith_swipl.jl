@@ -410,7 +410,9 @@ function _aexpr(rng, depth::Int)::Tuple{_A, String}
     return (_af(op[1], first.(args)...), string(op[1], "(", join(last.(args), ","), ")"))
 end
 
-const _A_SWIPL = Sys.which("swipl")
+const _A_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _A_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 const _A_DRIVER = raw"""

@@ -8,12 +8,27 @@
 # and runs of spaces left out — so a comment or a re-indentation changes nothing, and a field, its
 # type, the supertype, `mutable`, a parameter or an inner constructor does. Two structs of one name
 # (two files) hash together.
+# TOP-LEVEL CONSTS too (2026-10-17), as `const:<name>`: Revise does not re-evaluate a changed `const` (MEASURED:
+# a daemon that loaded the old cache and was Revised missed new `PL_extension` entries in a const table, so
+# `@<` was no built-in to it and a differential failed on that alone). The definition from its `const` line
+# to the line where its brackets balance, comments and runs of spaces left out; a NEW const restarts
+# nothing (Revise defines new top-level code).
 import hashlib
 import os
 import re
 import sys
 
 RX = re.compile(r"^(\s*)(?:@[\w.]+\s+)*(?:mutable\s+)?struct\s+([A-Za-z_][A-Za-z0-9_]*)")
+CX = re.compile(r"^const\s+([A-Za-z_][A-Za-z0-9_!]*)\b")
+
+
+def _code(line):
+    """The line without its comment and with runs of spaces collapsed."""
+    return re.sub(r"\s+", " ", re.sub(r"#.*$", "", line)).strip()
+
+
+def _depth(text):
+    return sum(text.count(c) for c in "([{") - sum(text.count(c) for c in ")]}")
 
 
 def snapshot(src):
@@ -27,6 +42,21 @@ def snapshot(src):
                 lines = fh.read().split("\n")
             i = 0
             while i < len(lines):
+                c = CX.match(lines[i])
+                if c:
+                    body, j, depth = [], i, 0
+                    while j < len(lines):
+                        code = _code(lines[j])
+                        body.append(code)
+                        depth += _depth(code)
+                        if depth <= 0 and not re.search(r"(=|,|\(|\[|\{|\|\||&&|\*|\+)$", code):
+                            break
+                        j += 1
+                    key = "const:" + c.group(1)
+                    text = out.get(key, "") + "\n".join(b for b in body if b)
+                    out[key] = hashlib.sha1(text.encode()).hexdigest()[:16]
+                    i = j + 1
+                    continue
                 m = RX.match(lines[i])
                 if m:
                     indent, name = m.group(1), m.group(2)

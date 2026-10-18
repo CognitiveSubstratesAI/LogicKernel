@@ -266,7 +266,7 @@ function _bswipl(goals, mode::String)::Tuple{Vector{String}, Int}
     return res, qualified
 end
 
-const _BSWIPL = Sys.which("swipl")
+const _BSWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _BSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "registered as upstream registers them" begin

@@ -30,9 +30,36 @@ end
 
     @testset "JET: zero runtime dispatch on every manifest entry" begin
         for (f, tt, _) in DISPATCH_MANIFEST
+            haskey(JET_ANALYSED_THROUGH, (f, tt)) && continue   # inside a caller's analysis (the manifest)
             JET.test_opt(f, tt; target_modules=(LogicKernel,))
         end
         @test length(DISPATCH_MANIFEST) == length(unique(DISPATCH_MANIFEST))   # no duplicate entries
+        # the dedup's claim, both halves: each skipped entry and its caller are manifest entries, the caller
+        # itself analysed; and the caller REACHES it — query_answers' body calls PL_next_solution, which
+        # calls PL_next_solution_guarded (their lowered code), so the skip loses no coverage
+        calls(f, tt, name) = any(
+            x -> x isa GlobalRef && x.name === name, first(code_lowered(f, tt)).code
+        )
+        for ((f, tt), (cf, ctt)) in JET_ANALYSED_THROUGH
+            @test any(e -> e[1] === f && e[2] == tt, DISPATCH_MANIFEST)
+            @test any(e -> e[1] === cf && e[2] == ctt, DISPATCH_MANIFEST)
+            @test !haskey(JET_ANALYSED_THROUGH, (cf, ctt))
+        end
+        qa = Base.bodyfunction(
+            which(LK.query_answers, Tuple{LK.PL_local_data{LK.DefaultTerm}, LK.DefaultTerm})
+        )
+        @test any(
+            m -> any(
+                x -> x isa GlobalRef && x.name === :PL_next_solution,
+                Base.uncompressed_ast(m).code
+            ),
+            methods(qa)
+        )
+        @test calls(
+            LK.PL_next_solution,
+            Tuple{LK.PL_global_data{LK.DefaultTerm}, LK.PL_local_data{LK.DefaultTerm}, Int},
+            :PL_next_solution_guarded
+        )
     end
 
     @testset "the manifest covers every method LogicKernel defines" begin

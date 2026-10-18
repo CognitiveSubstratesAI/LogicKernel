@@ -531,7 +531,7 @@ function _zdescend_swipl(cases)::Vector{Char}
     return res
 end
 
-const _ZSWIPL = Sys.which("swipl")
+const _ZSWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _ZSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 if _ZSWIPL !== nothing

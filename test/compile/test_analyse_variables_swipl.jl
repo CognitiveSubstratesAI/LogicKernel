@@ -246,7 +246,9 @@ _va_agrees(o, t::_VaSwipl, framed::Bool)::Bool =
     o[1] == t.head && o[2] == t.slots &&
     (!framed || o[3] == t.frame - length(t.choice))
 
-const _VA_SWIPL_BIN = Sys.which("swipl")
+const _VA_SWIPL_BIN = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "variable analysis of clauses with a body vs swipl" begin

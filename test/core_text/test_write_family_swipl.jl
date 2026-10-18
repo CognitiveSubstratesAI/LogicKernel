@@ -34,7 +34,9 @@ const _WF = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}}
 _wfs(x) = lk_sym(_WF, Symbol(x))
 _wf_var() = mk_var(_WF, LK.fresh_var_keys!(1))
 
-const _WF_SWIPL = Sys.which("swipl")
+const _WF_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _WF_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 const _WF_GD = LK.PL_global_data{_WF}()

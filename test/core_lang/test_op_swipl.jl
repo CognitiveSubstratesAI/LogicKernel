@@ -78,7 +78,9 @@ function _opvisible(gd)::Vector{String}
     return sort!(out)
 end
 
-const _OP_SWIPL = Sys.which("swipl")
+const _OP_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _OP_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 # the op/3 goals: (P, T, N) as both systems take them, and swipl 10.1.16's outcome (probed

@@ -27,7 +27,7 @@ using LogicKernel:
         !is_portable_smallint(ld, typemin(Int64))
 end
 
-const _PSWIPL = Sys.which("swipl")
+const _PSWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _PSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 if _PSWIPL !== nothing

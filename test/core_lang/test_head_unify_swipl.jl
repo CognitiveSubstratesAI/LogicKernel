@@ -314,7 +314,7 @@ function _hinstructions(cl::LK.Clause{_HT})::Set{UInt64}
     return s
 end
 
-const _HSWIPL = Sys.which("swipl")
+const _HSWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _HHEAD_INSTRUCTIONS = (
     LK.H_ATOM, LK.H_SMALLINT, LK.H_NIL, LK.H_FLOAT, LK.H_MPZ, LK.H_MPQ, LK.H_STRING,

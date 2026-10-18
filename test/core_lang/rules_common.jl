@@ -190,7 +190,8 @@ rx(E) :- write_canonical(exception(E)), write(' det'), nl.
 # dropped the ball and read as a failure — "end" against nothing): `exception(F) det`, `F` the formal
 # of `error(F, _)` (the context is not compared), else the ball itself.
 
-const _R_SWIPL = Sys.which("swipl") !== nothing
+const _R_SWIPL =
+    (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")) !== nothing
 const _R_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 _R_SWIPL || !_R_SWIPL_REQUIRED ||
     error(

@@ -10,6 +10,9 @@
 #   tools/test_warm.sh cap      # the task-ceiling cases alone (no daemon)
 #   tools/test_warm.sh guard    # the daemon guard alone: one daemon at a time, the idle exit, the budget
 #   tools/test_warm.sh bgfiles  # the branch-gate's file selection alone (no daemon)
+#   tools/test_warm.sh gatebase # the gate base: committed changes selected (no daemon)
+#   tools/test_warm.sh srcmap   # the source-to-test map: a changed src definition selects its tests (no daemon)
+#   tools/test_warm.sh noswipl  # the no-swipl pass: CI's Pkg.test condition, the inert guard on
 #   tools/test_warm.sh bgbudget # the branch-gate's time budget alone (no daemon)
 #   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
 #   tools/test_warm.sh refuse   # the pkgdir assertion's refusal alone (no daemon)
@@ -25,6 +28,10 @@ W="$ROOT/tools/warm.sh"
 # the suite must finish in minutes either way. The fast pre-check stays real; the full file is the
 # pre-push step (`warm.sh file test/test_static_analysis.jl reference`).
 export LOGICKERNEL_PREFLIGHT_STUB_STATIC=1
+# (2026-10-17) the selection cases below were written for a gate base of HEAD (the working tree's own
+# changes); the gate's default is the merge base with origin/main (`_gate_base`), which on a branch of
+# committed steps names more — `_gatebase_cases` checks that side
+export LOGICKERNEL_GATE_BASE=HEAD
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
 trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
@@ -116,6 +123,20 @@ _struct_cases() {
     sendok; [ "$(pid)" != "$p4" ]; check "…changed before the FIRST snippet — RESTARTED" 0 $?
     rm -f "$probe"
     sendok; check "…and removed again" 0 $?
+    # (2026-10-17) a top-level CONST is in the snapshot too: Revise does not re-evaluate a changed one (a
+    # daemon missed new entries of the `PL_extension` table, and `@<` was no built-in to it)
+    cprobe="$ROOT/src/_const_probe_$$.jl"
+    pc0=$(pid)
+    printf 'const WARM_CONST_PROBE = (\n    1,\n    2\n)\n' > "$cprobe"
+    sendok; [ "$(pid)" = "$pc0" ]; check "consts: a NEW const — KEPT" 0 $?
+    printf 'const WARM_CONST_PROBE = (\n    1,\n    2,\n    3\n)\n' > "$cprobe"
+    sendok; [ "$(pid)" != "$pc0" ]; check "consts: its VALUE changed (an entry added) — RESTARTED" 0 $?
+    has "…naming it" "$T/se" "struct changed: const:WARM_CONST_PROBE$" 1
+    pc1=$(pid)
+    printf '# a table\nconst WARM_CONST_PROBE = (\n    1,    # one\n    2,\n\n    3\n)\n' > "$cprobe"
+    sendok; [ "$(pid)" = "$pc1" ]; check "consts: a comment, a blank line, spacing — KEPT" 0 $?
+    rm -f "$cprobe"
+    sendok; [ "$(pid)" != "$pc1" ]; check "consts: REMOVED — RESTARTED" 0 $?
 }
 _fast_cases() {
     local ti="$ROOT/src/term_interface.jl" man="$ROOT/test/static_analysis_manifest.jl" rc s
@@ -160,6 +181,17 @@ cp "$T/term_interface.jl.bak" "$ti"
 cp "$T/manifest.bak" "$man"
 fast_case "fast pre-check, JET" "$rc" "FAIL (fast static pre-check)"
 has "…the JET report names the planted function" "$ROOT/.warm/preflight_static_fast.log" "$jet" 1
+# (2026-10-18, tooling 2) the BRANCH-GATE runs the same pre-check as its step 0, in the warm daemon: the same
+# planted JET defect stops it there, before any test file (the CI check off: this case is about step 0)
+printf '\n%s(x::Int) = %s_undefined(x)\n' "$jet" "$jet" >> "$ti"
+plant_exempt "$jet" "Tuple{Int}"
+LOGICKERNEL_CI_CHECK=off "$W" branch-gate > "$T/bgf" 2>&1; rc=$?
+cp "$T/term_interface.jl.bak" "$ti"
+cp "$T/manifest.bak" "$man"
+check "branch-gate step 0, JET: the gate FAILS" 1 "$rc"
+has "…at the fast pre-check" "$T/bgf" "branch-gate: FAIL (fast static pre-check)" 1
+has "…before any test file" "$T/bgf" "^branch-gate: test/" 0
+has "…the JET report names the planted function" "$ROOT/.warm/branch_gate_static_fast.log" "$jet" 1
 amb="_preflight_probe_amb_$$"
 printf '\n%s(::Int, ::Any) = 1\n%s(::Any, ::Int) = 2\n' "$amb" "$amb" >> "$ti"
 plant_exempt "$amb" "Tuple{Int, Any}" "Tuple{Any, Int}"
@@ -464,6 +496,98 @@ if [ "${1:-}" = stale ]; then                        # the stale-daemon recovery
     [ "$fail" -eq 0 ]
     exit
 fi
+# _probe_commit TREE MESSAGE — a commit object of TREE for the selection cases, with an identity of its own: a
+# CI runner has none (2026-10-18: `commit-tree` failed there, "empty ident name", the base came out EMPTY and
+# the gate fell back to its default base — one case red, the other green for the wrong reason)
+_probe_commit() {
+    GIT_AUTHOR_NAME="test_warm probe" GIT_AUTHOR_EMAIL="probe@test-warm.invalid" \
+        GIT_COMMITTER_NAME="test_warm probe" GIT_COMMITTER_EMAIL="probe@test-warm.invalid" \
+        git -C "$ROOT" commit-tree "$1" -m "$2"
+}
+# (2026-10-17) THE GATE BASE: a gate branch of COMMITTED steps runs what its commits changed. A synthetic
+# base commit — HEAD's tree with ONE test file's blob replaced (no history needed: a CI checkout at depth 1
+# has none) — brings that file into the selection; HEAD as the base leaves it out (both sides)
+_gatebase_cases() {
+    local f=test/core_lang/test_sort.jl idx="$T/gb.idx" blob tree base
+    git -C "$ROOT" diff --quiet HEAD -- "$f" || { check "gatebase: $f must be unchanged in this tree" 0 1; return; }
+    blob=$(printf '# a different blob\n' | git -C "$ROOT" hash-object -w --stdin)
+    GIT_INDEX_FILE="$idx" git -C "$ROOT" read-tree HEAD
+    GIT_INDEX_FILE="$idx" git -C "$ROOT" update-index --cacheinfo "100644,$blob,$f"
+    tree=$(GIT_INDEX_FILE="$idx" git -C "$ROOT" write-tree)
+    base=$(_probe_commit "$tree" "gatebase probe")
+    rm -f "$idx"
+    [ -n "$base" ]; check "gatebase: the synthetic base commit is made" 0 $?
+    [ -n "$base" ] || return
+    LOGICKERNEL_GATE_BASE="$base" "$W" branch-gate-files > "$T/gb1" 2>&1; check "gatebase: the list is produced" 0 $?
+    has "gatebase: a file a commit changed is selected" "$T/gb1" "^$f\$" 1
+    LOGICKERNEL_GATE_BASE=HEAD "$W" branch-gate-files > "$T/gb0" 2>&1
+    has "…and not with HEAD as the base" "$T/gb0" "^$f\$" 0
+    has "…the tree-wide gates in both" "$T/gb0" '^test/test_type_discipline.jl$' 1
+}
+
+# (2026-10-17, audit D-0001) THE NO-SWIPL PASS: LOGICKERNEL_NO_SWIPL=1 runs a file as CI's Pkg.test does —
+# every test file's swipl check yields nothing, swipl is not required, the inert-testset guard is on. A testset
+# asserting only inside its swipl branch FAILS that pass by the guard's verdict, and passes a normal run.
+_noswipl_cases() {
+    local probe="$ROOT/test/core_lang/test_zz_noswipl_probe_$$.jl"
+    cat > "$probe" <<'JLP'
+using Test
+const _NSP_SWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
+@testset "a differential that asserts only beside swipl" begin
+    if _NSP_SWIPL !== nothing
+        @test 1 + 1 == 2
+    end
+end
+JLP
+    "$W" file "$probe" > "$T/ns1" 2>&1; check "noswipl: the probe passes a normal run" 0 $?
+    LOGICKERNEL_NO_SWIPL=1 "$W" file "$probe" > "$T/ns2" 2>&1; check "noswipl: …and FAILS the no-swipl pass" 1 $?
+    has "…by the inert-testset guard" "$T/ns2" "INERT TESTSETS" 1
+    has "…saying it ran without swipl" "$T/ns2" "WITHOUT swipl (LOGICKERNEL_NO_SWIPL=1)" 1
+    rm -f "$probe"
+    LOGICKERNEL_NO_SWIPL=1 "$W" file test/core_lang/test_compare_cells.jl > "$T/ns3" 2>&1
+    check "noswipl: a file that asserts on the kernel side too passes it" 0 $?
+}
+
+if [ "${1:-}" = noswipl ]; then                      # the no-swipl pass alone
+    "$W" start > /dev/null || { echo "test_warm: the lane did not start"; exit 1; }
+    _noswipl_cases
+    echo "test_warm (noswipl): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]; exit $?
+fi
+# (2026-10-18) THE SOURCE-TO-TEST MAP: a src definition the diff since the gate base touches selects the test files
+# that NAME it. A synthetic base — HEAD's tree with src/pl-prims.jl's `compareStandard_cells` definition line
+# altered — must select test_compare_cells.jl (it names the function), and HEAD as the base must not
+_srcmap_cases() {
+    local src=src/pl-prims.jl f=test/core_lang/test_compare_cells.jl idx="$T/sm.idx" blob tree base
+    git -C "$ROOT" diff --quiet HEAD -- "$src" "$f" || { check "srcmap: $src and $f must be unchanged in this tree" 0 1; return; }
+    [ "$(git -C "$ROOT" show "HEAD:$src" | grep -c '^compareStandard_cells(')" = 1 ] ||
+        { check "srcmap: the definition anchor is there once" 0 1; return; }
+    blob=$(git -C "$ROOT" show "HEAD:$src" | sed 's/^compareStandard_cells(\(.*\)$/compareStandard_cells(\1   # an older text/' |
+        git -C "$ROOT" hash-object -w --stdin)
+    GIT_INDEX_FILE="$idx" git -C "$ROOT" read-tree HEAD
+    GIT_INDEX_FILE="$idx" git -C "$ROOT" update-index --cacheinfo "100644,$blob,$src"
+    tree=$(GIT_INDEX_FILE="$idx" git -C "$ROOT" write-tree)
+    base=$(_probe_commit "$tree" "srcmap probe")
+    rm -f "$idx"
+    [ -n "$base" ]; check "srcmap: the synthetic base commit is made" 0 $?
+    [ -n "$base" ] || return
+    LOGICKERNEL_GATE_BASE="$base" "$W" branch-gate-files > "$T/sm1" 2>&1; check "srcmap: the list is produced" 0 $?
+    has "srcmap: a test naming a changed src definition is selected" "$T/sm1" "^$f\$" 1
+    has "…and it is not itself changed" "$T/sm1" "^$src\$" 0
+    LOGICKERNEL_GATE_BASE=HEAD "$W" branch-gate-files > "$T/sm0" 2>&1
+    has "…not with HEAD as the base" "$T/sm0" "^$f\$" 0
+}
+
+if [ "${1:-}" = srcmap ]; then                       # the source-to-test map alone (no daemon)
+    _srcmap_cases
+    echo "test_warm (srcmap): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]; exit $?
+fi
+if [ "${1:-}" = gatebase ]; then                     # the gate base's selection alone (no daemon)
+    _gatebase_cases
+    echo "test_warm (gatebase): $pass passed, $fail failed"
+    [ "$fail" -eq 0 ]; exit $?
+fi
 if [ "${1:-}" = bgfiles ]; then                      # the branch-gate's file selection alone (no daemon)
     _bgfiles_cases
     echo "test_warm (bgfiles): $pass passed, $fail failed"
@@ -702,6 +826,7 @@ for fault in format-empty format-cut; do
 done
 
 _rss_cases
+_noswipl_cases
 echo 'println("ok")' > "$T/ok.jl"
 _struct_cases
 
@@ -738,6 +863,8 @@ rm -f "$_fm_probe"
 _guard_cases
 _cap_cases
 _bgfiles_cases
+_gatebase_cases
+_srcmap_cases
 _bgbudget_cases
 
 echo "test_warm: $pass passed, $fail failed"

@@ -29,7 +29,9 @@ const _CR = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}}
 _crs(x) = lk_sym(_CR, Symbol(x))
 _cr_var() = mk_var(_CR, LK.fresh_var_keys!(1))
 
-const _CR_SWIPL = Sys.which("swipl")
+const _CR_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _CR_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _CR_GD = LK.PL_global_data{_CR}()
 const _CR_LD = LK.PL_local_data{_CR}(_CR_GD)

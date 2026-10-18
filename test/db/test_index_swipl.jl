@@ -514,7 +514,7 @@ function _xline_diff(a::Vector{String}, b::Vector{String})::Vector{String}
     return out
 end
 
-const _XSWIPL = Sys.which("swipl")
+const _XSWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _XSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _XSEED = 20261002
 

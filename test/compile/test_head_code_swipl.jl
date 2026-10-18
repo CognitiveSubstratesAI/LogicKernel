@@ -177,7 +177,7 @@ function _hswipl(heads::Vector{String}, names::Vector{String})::Vector{Vector{St
     end
 end
 
-const _HSWIPL = Sys.which("swipl")
+const _HSWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "head code vs swipl vm_list" begin

@@ -70,7 +70,9 @@ main :-
     print(L1), nl, print(L2), nl, print(L3), nl.
 """
 
-const _UV_SWIPL = Sys.which("swipl")
+const _UV_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _UV_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "logical update view under clause GC" begin

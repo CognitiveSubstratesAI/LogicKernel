@@ -30,7 +30,9 @@ _tw_var() = mk_var(_TW, LK.fresh_var_keys!(1))
 _tw_int(n::Integer) =
     typemin(Int64) <= n <= typemax(Int64) ? lk_gnd(_TW, Int64(n)) : lk_gnd(_TW, BigInt(n))
 
-const _TW_SWIPL = Sys.which("swipl")
+const _TW_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _TW_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 # The database every query of this file runs in.

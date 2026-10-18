@@ -1,0 +1,1750 @@
+# machine: juliaagi; ivybridge, 4 threads, 23.7 GiB
+# commit: 418e601
+# date: 2026-10-18 01:06:03 UTC
+# note: tree 418e601 = main 34d07fa (L1d steps 1-4) + the bench pid fix; the first timing bench after step 4 (audit D-0008 item 3)
+# start gate: cpu idle 0.968 over 10s (≥ 0.90), no julia process, 2026-10-18T00:54:33Z; other julia processes: none
+# SWI-Prolog version 10.1.18 for x86_64-linux; julia 1.13.1; warm-up 5, 30 samples per side in alternating batches of 5, a sample ≥ 0.1 s, a batch repeated when others use > 5% of the CPUs (≤ 3 times); quiet=true
+# idle before the runs: 0.993 over 3 s
+# idle after the runs: 0.995 over 3 s
+# batches kept: 348, other processes' CPU share median 0.008 max 0.047; contaminated batches repeated: 6, kept after 3 repeats: 0
+case	side	sample	us_per_call	gc_us_per_call	allocs_per_call	calls_per_sample
+compare ground	LogicKernel	1	193.898912	0.000000	4.000	1024
+compare ground	LogicKernel	2	222.737231	0.000000	4.000	1024
+compare ground	LogicKernel	3	246.932085	0.000000	4.000	1024
+compare ground	LogicKernel	4	231.133219	0.000000	4.000	1024
+compare ground	LogicKernel	5	215.695423	0.000000	4.000	1024
+compare ground	LogicKernel	6	197.520700	0.000000	4.000	1024
+compare ground	LogicKernel	7	208.043438	0.000000	4.000	1024
+compare ground	LogicKernel	8	210.286575	0.000000	4.000	1024
+compare ground	LogicKernel	9	200.775631	0.000000	4.000	1024
+compare ground	LogicKernel	10	199.121261	0.000000	4.000	1024
+compare ground	LogicKernel	11	198.921934	0.000000	4.000	1024
+compare ground	LogicKernel	12	209.403194	0.000000	4.000	1024
+compare ground	LogicKernel	13	195.607951	0.000000	4.000	1024
+compare ground	LogicKernel	14	239.416070	0.000000	4.000	1024
+compare ground	LogicKernel	15	230.830225	0.000000	4.000	1024
+compare ground	LogicKernel	16	202.297762	0.000000	4.000	1024
+compare ground	LogicKernel	17	195.631805	0.000000	4.000	1024
+compare ground	LogicKernel	18	198.087618	0.000000	4.000	1024
+compare ground	LogicKernel	19	195.414156	0.000000	4.000	1024
+compare ground	LogicKernel	20	226.226935	0.000000	4.000	1024
+compare ground	LogicKernel	21	252.007733	0.000000	4.000	1024
+compare ground	LogicKernel	22	195.862614	0.000000	4.000	1024
+compare ground	LogicKernel	23	199.559521	0.000000	4.000	1024
+compare ground	LogicKernel	24	194.772495	0.000000	4.000	1024
+compare ground	LogicKernel	25	198.110392	0.000000	4.000	1024
+compare ground	LogicKernel	26	199.206189	0.000000	4.000	1024
+compare ground	LogicKernel	27	198.197433	0.000000	4.000	1024
+compare ground	LogicKernel	28	193.645770	0.000000	4.000	1024
+compare ground	LogicKernel	29	210.013560	0.000000	4.000	1024
+compare ground	LogicKernel	30	195.770756	0.000000	4.000	1024
+compare ground	swipl	1	145.712867			1024
+compare ground	swipl	2	138.971955			1024
+compare ground	swipl	3	137.931434			1024
+compare ground	swipl	4	140.617369			1024
+compare ground	swipl	5	135.774026			1024
+compare ground	swipl	6	134.556089			1024
+compare ground	swipl	7	140.889315			1024
+compare ground	swipl	8	134.059228			1024
+compare ground	swipl	9	132.975634			1024
+compare ground	swipl	10	141.390832			1024
+compare ground	swipl	11	138.801755			1024
+compare ground	swipl	12	138.887437			1024
+compare ground	swipl	13	146.553386			1024
+compare ground	swipl	14	134.962145			1024
+compare ground	swipl	15	133.806141			1024
+compare ground	swipl	16	152.352033			1024
+compare ground	swipl	17	146.843726			1024
+compare ground	swipl	18	150.268432			1024
+compare ground	swipl	19	135.882059			1024
+compare ground	swipl	20	140.934950			1024
+compare ground	swipl	21	138.831791			1024
+compare ground	swipl	22	134.574249			1024
+compare ground	swipl	23	133.027090			1024
+compare ground	swipl	24	135.755865			1024
+compare ground	swipl	25	134.564936			1024
+compare ground	swipl	26	143.481651			1024
+compare ground	swipl	27	136.893708			1024
+compare ground	swipl	28	135.409180			1024
+compare ground	swipl	29	134.341884			1024
+compare ground	swipl	30	136.487419			1024
+=@= ground	LogicKernel	1	199.134740	0.000000	7.000	1024
+=@= ground	LogicKernel	2	173.045244	0.000000	7.000	1024
+=@= ground	LogicKernel	3	167.020510	0.000000	7.000	1024
+=@= ground	LogicKernel	4	175.287496	0.000000	7.000	1024
+=@= ground	LogicKernel	5	185.801770	0.000000	7.000	1024
+=@= ground	LogicKernel	6	168.991598	0.000000	7.000	1024
+=@= ground	LogicKernel	7	167.826993	0.000000	7.000	1024
+=@= ground	LogicKernel	8	192.910619	0.000000	7.000	1024
+=@= ground	LogicKernel	9	176.864594	0.000000	7.000	1024
+=@= ground	LogicKernel	10	166.801884	0.000000	7.000	1024
+=@= ground	LogicKernel	11	174.908578	0.000000	7.000	1024
+=@= ground	LogicKernel	12	170.848010	0.000000	7.000	1024
+=@= ground	LogicKernel	13	176.007065	0.000000	7.000	1024
+=@= ground	LogicKernel	14	165.400891	0.000000	7.000	1024
+=@= ground	LogicKernel	15	171.014686	0.000000	7.000	1024
+=@= ground	LogicKernel	16	168.723164	0.000000	7.000	1024
+=@= ground	LogicKernel	17	169.869134	0.000000	7.000	1024
+=@= ground	LogicKernel	18	173.763055	0.000000	7.000	1024
+=@= ground	LogicKernel	19	172.742730	0.000000	7.000	1024
+=@= ground	LogicKernel	20	171.051063	0.000000	7.000	1024
+=@= ground	LogicKernel	21	166.948506	0.000000	7.000	1024
+=@= ground	LogicKernel	22	207.450429	0.000000	7.000	1024
+=@= ground	LogicKernel	23	173.870304	0.000000	7.000	1024
+=@= ground	LogicKernel	24	168.571738	0.000000	7.000	1024
+=@= ground	LogicKernel	25	170.932812	0.000000	7.000	1024
+=@= ground	LogicKernel	26	168.842318	0.000000	7.000	1024
+=@= ground	LogicKernel	27	171.807664	0.000000	7.000	1024
+=@= ground	LogicKernel	28	169.163036	0.000000	7.000	1024
+=@= ground	LogicKernel	29	171.148920	0.000000	7.000	1024
+=@= ground	LogicKernel	30	166.643141	0.000000	7.000	1024
+=@= ground	swipl	1	859.213993			128
+=@= ground	swipl	2	891.337171			128
+=@= ground	swipl	3	908.652321			128
+=@= ground	swipl	4	862.995163			128
+=@= ground	swipl	5	856.351107			128
+=@= ground	swipl	6	943.031162			128
+=@= ground	swipl	7	855.999067			128
+=@= ground	swipl	8	846.782699			128
+=@= ground	swipl	9	847.520307			128
+=@= ground	swipl	10	879.326835			128
+=@= ground	swipl	11	889.973715			128
+=@= ground	swipl	12	863.464549			128
+=@= ground	swipl	13	868.784264			128
+=@= ground	swipl	14	851.660967			128
+=@= ground	swipl	15	893.609598			128
+=@= ground	swipl	16	856.457278			128
+=@= ground	swipl	17	856.947154			128
+=@= ground	swipl	18	850.778073			128
+=@= ground	swipl	19	881.897286			128
+=@= ground	swipl	20	898.042694			128
+=@= ground	swipl	21	861.044973			128
+=@= ground	swipl	22	859.560445			128
+=@= ground	swipl	23	866.616145			128
+=@= ground	swipl	24	859.819353			128
+=@= ground	swipl	25	856.749713			128
+=@= ground	swipl	26	852.441415			128
+=@= ground	swipl	27	912.748277			128
+=@= ground	swipl	28	900.462270			128
+=@= ground	swipl	29	898.873433			128
+=@= ground	swipl	30	868.353993			128
+=@= vars	LogicKernel	1	1143.981070	73.491438	63.000	128
+=@= vars	LogicKernel	2	681.798188	78.857797	63.000	128
+=@= vars	LogicKernel	3	666.347266	39.547906	63.000	128
+=@= vars	LogicKernel	4	799.352992	94.616984	63.000	128
+=@= vars	LogicKernel	5	773.239422	85.990445	63.000	128
+=@= vars	LogicKernel	6	1410.099227	24.875375	63.000	128
+=@= vars	LogicKernel	7	689.031430	0.000000	63.000	128
+=@= vars	LogicKernel	8	800.216219	112.895969	63.000	128
+=@= vars	LogicKernel	9	805.940109	52.470773	63.000	128
+=@= vars	LogicKernel	10	711.245953	89.366734	63.000	128
+=@= vars	LogicKernel	11	1033.185133	21.138078	63.000	128
+=@= vars	LogicKernel	12	625.872852	0.000000	63.000	128
+=@= vars	LogicKernel	13	868.513359	22.871539	63.000	128
+=@= vars	LogicKernel	14	709.378555	107.901195	63.000	128
+=@= vars	LogicKernel	15	738.124227	82.168250	63.000	128
+=@= vars	LogicKernel	16	1000.497055	20.484875	63.000	128
+=@= vars	LogicKernel	17	608.046086	0.000000	63.000	128
+=@= vars	LogicKernel	18	1008.268039	23.212148	63.000	128
+=@= vars	LogicKernel	19	900.410219	166.730906	63.000	128
+=@= vars	LogicKernel	20	792.325492	43.834727	63.000	128
+=@= vars	LogicKernel	21	1013.457469	21.696687	63.000	128
+=@= vars	LogicKernel	22	751.615008	0.000000	63.000	128
+=@= vars	LogicKernel	23	1165.890250	130.940891	63.000	128
+=@= vars	LogicKernel	24	1027.070047	85.539859	63.000	128
+=@= vars	LogicKernel	25	710.730461	61.182625	63.000	128
+=@= vars	LogicKernel	26	1275.251094	21.933328	63.000	128
+=@= vars	LogicKernel	27	855.458609	0.000000	63.000	128
+=@= vars	LogicKernel	28	1314.911586	27.133180	63.000	128
+=@= vars	LogicKernel	29	860.243391	106.486828	63.000	128
+=@= vars	LogicKernel	30	827.376141	78.629297	63.000	128
+=@= vars	swipl	1	1587.130129			64
+=@= vars	swipl	2	1608.386636			64
+=@= vars	swipl	3	1574.616879			64
+=@= vars	swipl	4	1620.240510			64
+=@= vars	swipl	5	1646.488905			64
+=@= vars	swipl	6	1581.814140			64
+=@= vars	swipl	7	1606.557518			64
+=@= vars	swipl	8	1603.059471			64
+=@= vars	swipl	9	1576.770097			64
+=@= vars	swipl	10	1593.049616			64
+=@= vars	swipl	11	1594.036818			64
+=@= vars	swipl	12	1592.058688			64
+=@= vars	swipl	13	1583.293080			64
+=@= vars	swipl	14	1591.898501			64
+=@= vars	swipl	15	1628.253609			64
+=@= vars	swipl	16	1604.273915			64
+=@= vars	swipl	17	1595.258713			64
+=@= vars	swipl	18	1623.228192			64
+=@= vars	swipl	19	1605.007797			64
+=@= vars	swipl	20	1576.393843			64
+=@= vars	swipl	21	1635.722816			64
+=@= vars	swipl	22	1563.094556			64
+=@= vars	swipl	23	1695.111394			64
+=@= vars	swipl	24	1843.892038			64
+=@= vars	swipl	25	1768.961549			64
+=@= vars	swipl	26	1624.479890			64
+=@= vars	swipl	27	1673.296094			64
+=@= vars	swipl	28	1665.335149			64
+=@= vars	swipl	29	1774.713397			64
+=@= vars	swipl	30	1740.947366			64
+term_hash ground	LogicKernel	1	323.527090	47.421793	4108.000	512
+term_hash ground	LogicKernel	2	505.811596	101.483891	4108.000	512
+term_hash ground	LogicKernel	3	258.695695	20.893266	4108.000	512
+term_hash ground	LogicKernel	4	300.097629	50.103805	4108.000	512
+term_hash ground	LogicKernel	5	309.285666	39.194682	4108.000	512
+term_hash ground	LogicKernel	6	308.222332	30.194533	4108.000	512
+term_hash ground	LogicKernel	7	481.913926	84.071822	4108.000	512
+term_hash ground	LogicKernel	8	354.358791	43.317129	4108.000	512
+term_hash ground	LogicKernel	9	281.273180	39.398465	4108.000	512
+term_hash ground	LogicKernel	10	297.795867	49.360223	4108.000	512
+term_hash ground	LogicKernel	11	297.482020	29.820639	4108.000	512
+term_hash ground	LogicKernel	12	457.008686	78.993643	4108.000	512
+term_hash ground	LogicKernel	13	279.875586	38.516344	4108.000	512
+term_hash ground	LogicKernel	14	269.333311	37.772648	4108.000	512
+term_hash ground	LogicKernel	15	295.140631	49.777479	4108.000	512
+term_hash ground	LogicKernel	16	309.541164	29.804471	4108.000	512
+term_hash ground	LogicKernel	17	463.293691	82.927625	4108.000	512
+term_hash ground	LogicKernel	18	290.904812	40.217621	4108.000	512
+term_hash ground	LogicKernel	19	300.641473	39.891084	4108.000	512
+term_hash ground	LogicKernel	20	283.017494	48.053572	4108.000	512
+term_hash ground	LogicKernel	21	298.163455	31.487504	4108.000	512
+term_hash ground	LogicKernel	22	487.061842	90.587115	4108.000	512
+term_hash ground	LogicKernel	23	300.318826	42.231689	4108.000	512
+term_hash ground	LogicKernel	24	277.505990	43.615660	4108.000	512
+term_hash ground	LogicKernel	25	276.445746	37.887512	4108.000	512
+term_hash ground	LogicKernel	26	297.396459	29.683949	4108.000	512
+term_hash ground	LogicKernel	27	499.472359	101.708670	4108.000	512
+term_hash ground	LogicKernel	28	298.672643	42.760521	4108.000	512
+term_hash ground	LogicKernel	29	259.686018	30.043031	4108.000	512
+term_hash ground	LogicKernel	30	294.638119	48.214436	4108.000	512
+term_hash ground	swipl	1	598.669983			256
+term_hash ground	swipl	2	564.537011			256
+term_hash ground	swipl	3	596.509315			256
+term_hash ground	swipl	4	541.385263			256
+term_hash ground	swipl	5	567.776151			256
+term_hash ground	swipl	6	623.807311			256
+term_hash ground	swipl	7	562.790781			256
+term_hash ground	swipl	8	559.381209			256
+term_hash ground	swipl	9	585.372560			256
+term_hash ground	swipl	10	528.672710			256
+term_hash ground	swipl	11	523.352996			256
+term_hash ground	swipl	12	539.773144			256
+term_hash ground	swipl	13	539.811328			256
+term_hash ground	swipl	14	541.031361			256
+term_hash ground	swipl	15	532.797538			256
+term_hash ground	swipl	16	529.244542			256
+term_hash ground	swipl	17	533.844344			256
+term_hash ground	swipl	18	556.169078			256
+term_hash ground	swipl	19	522.741117			256
+term_hash ground	swipl	20	534.047373			256
+term_hash ground	swipl	21	547.491945			256
+term_hash ground	swipl	22	529.749319			256
+term_hash ground	swipl	23	527.519733			256
+term_hash ground	swipl	24	530.957244			256
+term_hash ground	swipl	25	565.229915			256
+term_hash ground	swipl	26	542.143360			256
+term_hash ground	swipl	27	525.948592			256
+term_hash ground	swipl	28	556.578860			256
+term_hash ground	swipl	29	542.433932			256
+term_hash ground	swipl	30	534.147955			256
+variant_sha1 ground	LogicKernel	1	828.877875	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	2	842.215523	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	3	882.271320	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	4	839.339062	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	5	858.884664	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	6	867.839477	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	7	847.553234	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	8	839.375461	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	9	855.679867	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	10	836.156914	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	11	841.446156	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	12	827.276133	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	13	845.865422	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	14	838.083500	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	15	925.581398	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	16	936.551742	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	17	837.281375	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	18	835.863039	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	19	829.028891	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	20	837.507922	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	21	833.835031	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	22	866.857609	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	23	841.204211	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	24	871.060961	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	25	860.895977	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	26	840.411102	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	27	834.498234	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	28	1010.350602	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	29	846.546898	0.000000	23.000	128
+variant_sha1 ground	LogicKernel	30	828.394078	0.000000	23.000	128
+variant_sha1 ground	swipl	1	551.148318			256
+variant_sha1 ground	swipl	2	551.776960			256
+variant_sha1 ground	swipl	3	546.116382			256
+variant_sha1 ground	swipl	4	540.001318			256
+variant_sha1 ground	swipl	5	567.437150			256
+variant_sha1 ground	swipl	6	544.037670			256
+variant_sha1 ground	swipl	7	547.003932			256
+variant_sha1 ground	swipl	8	560.082495			256
+variant_sha1 ground	swipl	9	535.839237			256
+variant_sha1 ground	swipl	10	544.052571			256
+variant_sha1 ground	swipl	11	540.142879			256
+variant_sha1 ground	swipl	12	548.373908			256
+variant_sha1 ground	swipl	13	549.091026			256
+variant_sha1 ground	swipl	14	547.650270			256
+variant_sha1 ground	swipl	15	538.790599			256
+variant_sha1 ground	swipl	16	592.703931			256
+variant_sha1 ground	swipl	17	552.123412			256
+variant_sha1 ground	swipl	18	545.606017			256
+variant_sha1 ground	swipl	19	555.996783			256
+variant_sha1 ground	swipl	20	544.013456			256
+variant_sha1 ground	swipl	21	571.618788			256
+variant_sha1 ground	swipl	22	553.983264			256
+variant_sha1 ground	swipl	23	594.875775			256
+variant_sha1 ground	swipl	24	545.755029			256
+variant_sha1 ground	swipl	25	563.667156			256
+variant_sha1 ground	swipl	26	548.293814			256
+variant_sha1 ground	swipl	27	585.850328			256
+variant_sha1 ground	swipl	28	548.831187			256
+variant_sha1 ground	swipl	29	542.968512			256
+variant_sha1 ground	swipl	30	558.369793			256
+variant_sha1 vars	LogicKernel	1	998.353336	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	2	1249.223023	87.624234	51.000	128
+variant_sha1 vars	LogicKernel	3	903.328484	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	4	947.766773	76.659320	51.000	128
+variant_sha1 vars	LogicKernel	5	871.059313	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	6	980.947914	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	7	1190.983531	21.836031	51.000	128
+variant_sha1 vars	LogicKernel	8	880.649727	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	9	1031.507898	87.079070	51.000	128
+variant_sha1 vars	LogicKernel	10	998.867094	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	11	979.401070	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	12	1165.305906	21.527398	51.000	128
+variant_sha1 vars	LogicKernel	13	888.792219	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	14	928.130797	22.086078	51.000	128
+variant_sha1 vars	LogicKernel	15	886.604805	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	16	1014.192180	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	17	1196.957984	21.110727	51.000	128
+variant_sha1 vars	LogicKernel	18	880.391164	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	19	898.064594	21.225508	51.000	128
+variant_sha1 vars	LogicKernel	20	937.059461	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	21	1071.801398	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	22	1186.731844	22.168523	51.000	128
+variant_sha1 vars	LogicKernel	23	966.101547	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	24	1049.922781	21.163102	51.000	128
+variant_sha1 vars	LogicKernel	25	905.930828	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	26	1010.774727	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	27	1175.203055	21.444594	51.000	128
+variant_sha1 vars	LogicKernel	28	947.350133	0.000000	51.000	128
+variant_sha1 vars	LogicKernel	29	915.984055	21.717531	51.000	128
+variant_sha1 vars	LogicKernel	30	1058.088344	0.000000	51.000	128
+variant_sha1 vars	swipl	1	511.356629			256
+variant_sha1 vars	swipl	2	528.087839			256
+variant_sha1 vars	swipl	3	513.521023			256
+variant_sha1 vars	swipl	4	512.832776			256
+variant_sha1 vars	swipl	5	525.975600			256
+variant_sha1 vars	swipl	6	502.243638			256
+variant_sha1 vars	swipl	7	519.572757			256
+variant_sha1 vars	swipl	8	562.641770			256
+variant_sha1 vars	swipl	9	509.982929			256
+variant_sha1 vars	swipl	10	509.504229			256
+variant_sha1 vars	swipl	11	504.689291			256
+variant_sha1 vars	swipl	12	508.517027			256
+variant_sha1 vars	swipl	13	537.327491			256
+variant_sha1 vars	swipl	14	508.522615			256
+variant_sha1 vars	swipl	15	509.358943			256
+variant_sha1 vars	swipl	16	500.187278			256
+variant_sha1 vars	swipl	17	513.841398			256
+variant_sha1 vars	swipl	18	512.760133			256
+variant_sha1 vars	swipl	19	511.919148			256
+variant_sha1 vars	swipl	20	526.068732			256
+variant_sha1 vars	swipl	21	503.896736			256
+variant_sha1 vars	swipl	22	511.726364			256
+variant_sha1 vars	swipl	23	517.103821			256
+variant_sha1 vars	swipl	24	522.829592			256
+variant_sha1 vars	swipl	25	509.886071			256
+variant_sha1 vars	swipl	26	519.626774			256
+variant_sha1 vars	swipl	27	507.256947			256
+variant_sha1 vars	swipl	28	509.932637			256
+variant_sha1 vars	swipl	29	545.460731			256
+variant_sha1 vars	swipl	30	506.918877			256
+variant_hash ground	LogicKernel	1	722.270977	0.000000	18.000	256
+variant_hash ground	LogicKernel	2	655.089738	0.000000	18.000	256
+variant_hash ground	LogicKernel	3	651.976422	0.000000	18.000	256
+variant_hash ground	LogicKernel	4	673.567270	0.000000	18.000	256
+variant_hash ground	LogicKernel	5	642.517441	0.000000	18.000	256
+variant_hash ground	LogicKernel	6	645.561211	0.000000	18.000	256
+variant_hash ground	LogicKernel	7	675.698680	0.000000	18.000	256
+variant_hash ground	LogicKernel	8	630.536504	0.000000	18.000	256
+variant_hash ground	LogicKernel	9	675.069406	0.000000	18.000	256
+variant_hash ground	LogicKernel	10	642.125031	0.000000	18.000	256
+variant_hash ground	LogicKernel	11	638.133070	0.000000	18.000	256
+variant_hash ground	LogicKernel	12	643.408891	0.000000	18.000	256
+variant_hash ground	LogicKernel	13	627.120160	0.000000	18.000	256
+variant_hash ground	LogicKernel	14	631.396754	0.000000	18.000	256
+variant_hash ground	LogicKernel	15	662.221266	0.000000	18.000	256
+variant_hash ground	LogicKernel	16	640.221418	0.000000	18.000	256
+variant_hash ground	LogicKernel	17	635.776301	0.000000	18.000	256
+variant_hash ground	LogicKernel	18	650.516434	0.000000	18.000	256
+variant_hash ground	LogicKernel	19	639.485012	0.000000	18.000	256
+variant_hash ground	LogicKernel	20	637.221363	0.000000	18.000	256
+variant_hash ground	LogicKernel	21	649.045352	0.000000	18.000	256
+variant_hash ground	LogicKernel	22	630.886344	0.000000	18.000	256
+variant_hash ground	LogicKernel	23	891.341582	0.000000	18.000	256
+variant_hash ground	LogicKernel	24	648.118516	0.000000	18.000	256
+variant_hash ground	LogicKernel	25	633.371785	0.000000	18.000	256
+variant_hash ground	LogicKernel	26	655.427289	0.000000	18.000	256
+variant_hash ground	LogicKernel	27	664.269926	0.000000	18.000	256
+variant_hash ground	LogicKernel	28	635.682969	0.000000	18.000	256
+variant_hash ground	LogicKernel	29	656.011762	0.000000	18.000	256
+variant_hash ground	LogicKernel	30	644.847988	0.000000	18.000	256
+variant_hash ground	swipl	1	396.634452			512
+variant_hash ground	swipl	2	370.189548			512
+variant_hash ground	swipl	3	357.225072			512
+variant_hash ground	swipl	4	363.088213			512
+variant_hash ground	swipl	5	357.735436			512
+variant_hash ground	swipl	6	353.725627			512
+variant_hash ground	swipl	7	362.904742			512
+variant_hash ground	swipl	8	352.116767			512
+variant_hash ground	swipl	9	358.531717			512
+variant_hash ground	swipl	10	364.582986			512
+variant_hash ground	swipl	11	356.151722			512
+variant_hash ground	swipl	12	355.873723			512
+variant_hash ground	swipl	13	365.464482			512
+variant_hash ground	swipl	14	368.972775			512
+variant_hash ground	swipl	15	358.011574			512
+variant_hash ground	swipl	16	373.857561			512
+variant_hash ground	swipl	17	353.506766			512
+variant_hash ground	swipl	18	354.533084			512
+variant_hash ground	swipl	19	365.603250			512
+variant_hash ground	swipl	20	357.190147			512
+variant_hash ground	swipl	21	367.491506			512
+variant_hash ground	swipl	22	402.138103			512
+variant_hash ground	swipl	23	352.621544			512
+variant_hash ground	swipl	24	359.638594			512
+variant_hash ground	swipl	25	360.196922			512
+variant_hash ground	swipl	26	360.293780			512
+variant_hash ground	swipl	27	360.207167			512
+variant_hash ground	swipl	28	353.647862			512
+variant_hash ground	swipl	29	384.555198			512
+variant_hash ground	swipl	30	360.099133			512
+variant_hash vars	LogicKernel	1	906.999820	0.000000	46.000	128
+variant_hash vars	LogicKernel	2	1044.136117	79.471023	46.000	128
+variant_hash vars	LogicKernel	3	728.508953	0.000000	46.000	128
+variant_hash vars	LogicKernel	4	774.923148	87.231453	46.000	128
+variant_hash vars	LogicKernel	5	780.669656	72.878812	46.000	128
+variant_hash vars	LogicKernel	6	849.828523	0.000000	46.000	128
+variant_hash vars	LogicKernel	7	988.099031	21.316836	46.000	128
+variant_hash vars	LogicKernel	8	691.237398	0.000000	46.000	128
+variant_hash vars	LogicKernel	9	818.547977	84.584164	46.000	128
+variant_hash vars	LogicKernel	10	895.229070	18.457937	46.000	128
+variant_hash vars	LogicKernel	11	805.990422	0.000000	46.000	128
+variant_hash vars	LogicKernel	12	1006.386742	21.796688	46.000	128
+variant_hash vars	LogicKernel	13	717.639781	0.000000	46.000	128
+variant_hash vars	LogicKernel	14	796.757828	82.419648	46.000	128
+variant_hash vars	LogicKernel	15	935.759461	19.596406	46.000	128
+variant_hash vars	LogicKernel	16	839.509258	0.000000	46.000	128
+variant_hash vars	LogicKernel	17	991.167812	22.772367	46.000	128
+variant_hash vars	LogicKernel	18	727.787961	0.000000	46.000	128
+variant_hash vars	LogicKernel	19	758.937742	30.428969	46.000	128
+variant_hash vars	LogicKernel	20	760.019500	50.048219	46.000	128
+variant_hash vars	LogicKernel	21	830.323766	0.000000	46.000	128
+variant_hash vars	LogicKernel	22	1022.119594	21.698961	46.000	128
+variant_hash vars	LogicKernel	23	706.781750	0.000000	46.000	128
+variant_hash vars	LogicKernel	24	745.644883	26.158641	46.000	128
+variant_hash vars	LogicKernel	25	695.357406	0.000000	46.000	128
+variant_hash vars	LogicKernel	26	817.686930	0.000000	46.000	128
+variant_hash vars	LogicKernel	27	1018.944203	23.933109	46.000	128
+variant_hash vars	LogicKernel	28	727.756781	0.000000	46.000	128
+variant_hash vars	LogicKernel	29	716.984320	0.000000	46.000	128
+variant_hash vars	LogicKernel	30	745.372602	21.740391	46.000	128
+variant_hash vars	swipl	1	339.779072			512
+variant_hash vars	swipl	2	340.432860			512
+variant_hash vars	swipl	3	356.048811			512
+variant_hash vars	swipl	4	336.803962			512
+variant_hash vars	swipl	5	335.162971			512
+variant_hash vars	swipl	6	341.732986			512
+variant_hash vars	swipl	7	333.410688			512
+variant_hash vars	swipl	8	338.555314			512
+variant_hash vars	swipl	9	336.900819			512
+variant_hash vars	swipl	10	337.277539			512
+variant_hash vars	swipl	11	339.355785			512
+variant_hash vars	swipl	12	332.422554			512
+variant_hash vars	swipl	13	357.618555			512
+variant_hash vars	swipl	14	335.209537			512
+variant_hash vars	swipl	15	333.128031			512
+variant_hash vars	swipl	16	344.289001			512
+variant_hash vars	swipl	17	340.396073			512
+variant_hash vars	swipl	18	332.830939			512
+variant_hash vars	swipl	19	330.568291			512
+variant_hash vars	swipl	20	340.745784			512
+variant_hash vars	swipl	21	331.833493			512
+variant_hash vars	swipl	22	333.829317			512
+variant_hash vars	swipl	23	334.450509			512
+variant_hash vars	swipl	24	333.360396			512
+variant_hash vars	swipl	25	349.645969			512
+variant_hash vars	swipl	26	338.548329			512
+variant_hash vars	swipl	27	346.797518			512
+variant_hash vars	swipl	28	332.567375			512
+variant_hash vars	swipl	29	342.096202			512
+variant_hash vars	swipl	30	337.888487			512
+= ground	LogicKernel	1	202.566166	0.000000	0.000	512
+= ground	LogicKernel	2	209.266596	0.000000	0.000	512
+= ground	LogicKernel	3	201.563436	0.000000	0.000	512
+= ground	LogicKernel	4	219.250000	0.000000	0.000	512
+= ground	LogicKernel	5	202.093730	0.000000	0.000	512
+= ground	LogicKernel	6	212.463555	0.000000	0.000	512
+= ground	LogicKernel	7	200.345789	0.000000	0.000	512
+= ground	LogicKernel	8	206.428729	0.000000	0.000	512
+= ground	LogicKernel	9	203.913250	0.000000	0.000	512
+= ground	LogicKernel	10	209.760295	0.000000	0.000	512
+= ground	LogicKernel	11	214.275080	0.000000	0.000	512
+= ground	LogicKernel	12	203.295322	0.000000	0.000	512
+= ground	LogicKernel	13	202.493852	0.000000	0.000	512
+= ground	LogicKernel	14	197.442916	0.000000	0.000	512
+= ground	LogicKernel	15	202.999609	0.000000	0.000	512
+= ground	LogicKernel	16	198.690125	0.000000	0.000	512
+= ground	LogicKernel	17	199.828047	0.000000	0.000	512
+= ground	LogicKernel	18	201.096596	0.000000	0.000	512
+= ground	LogicKernel	19	243.628219	0.000000	0.000	512
+= ground	LogicKernel	20	202.539473	0.000000	0.000	512
+= ground	LogicKernel	21	211.763670	0.000000	0.000	512
+= ground	LogicKernel	22	207.891334	0.000000	0.000	512
+= ground	LogicKernel	23	203.536994	0.000000	0.000	512
+= ground	LogicKernel	24	217.351687	0.000000	0.000	512
+= ground	LogicKernel	25	206.288381	0.000000	0.000	512
+= ground	LogicKernel	26	219.773330	0.000000	0.000	512
+= ground	LogicKernel	27	217.011877	0.000000	0.000	512
+= ground	LogicKernel	28	202.813793	0.000000	0.000	512
+= ground	LogicKernel	29	201.731449	0.000000	0.000	512
+= ground	LogicKernel	30	201.850129	0.000000	0.000	512
+= ground	swipl	1	133.570051			1024
+= ground	swipl	2	133.393100			1024
+= ground	swipl	3	134.091359			1024
+= ground	swipl	4	132.145360			1024
+= ground	swipl	5	132.523943			1024
+= ground	swipl	6	133.739086			1024
+= ground	swipl	7	133.469934			1024
+= ground	swipl	8	133.260852			1024
+= ground	swipl	9	137.677183			1024
+= ground	swipl	10	133.832917			1024
+= ground	swipl	11	132.279238			1024
+= ground	swipl	12	133.643858			1024
+= ground	swipl	13	132.041983			1024
+= ground	swipl	14	134.006143			1024
+= ground	swipl	15	133.427326			1024
+= ground	swipl	16	134.906033			1024
+= ground	swipl	17	135.130715			1024
+= ground	swipl	18	141.838333			1024
+= ground	swipl	19	133.970054			1024
+= ground	swipl	20	133.806840			1024
+= ground	swipl	21	133.350957			1024
+= ground	swipl	22	132.210786			1024
+= ground	swipl	23	131.798908			1024
+= ground	swipl	24	140.572432			1024
+= ground	swipl	25	135.557959			1024
+= ground	swipl	26	136.564020			1024
+= ground	swipl	27	132.589834			1024
+= ground	swipl	28	132.286921			1024
+= ground	swipl	29	134.880189			1024
+= ground	swipl	30	133.426161			1024
+= bind vars	LogicKernel	1	473.047211	0.000000	0.000	256
+= bind vars	LogicKernel	2	468.418988	0.000000	0.000	256
+= bind vars	LogicKernel	3	471.887801	0.000000	0.000	256
+= bind vars	LogicKernel	4	471.904152	0.000000	0.000	256
+= bind vars	LogicKernel	5	492.873086	0.000000	0.000	256
+= bind vars	LogicKernel	6	457.566430	0.000000	0.000	256
+= bind vars	LogicKernel	7	465.508391	0.000000	0.000	256
+= bind vars	LogicKernel	8	495.935883	0.000000	0.000	256
+= bind vars	LogicKernel	9	497.906723	0.000000	0.000	256
+= bind vars	LogicKernel	10	455.788500	0.000000	0.000	256
+= bind vars	LogicKernel	11	530.901652	0.000000	0.000	256
+= bind vars	LogicKernel	12	469.021484	0.000000	0.000	256
+= bind vars	LogicKernel	13	463.901707	0.000000	0.000	256
+= bind vars	LogicKernel	14	472.127066	0.000000	0.000	256
+= bind vars	LogicKernel	15	497.215426	0.000000	0.000	256
+= bind vars	LogicKernel	16	486.596574	0.000000	0.000	256
+= bind vars	LogicKernel	17	471.552344	0.000000	0.000	256
+= bind vars	LogicKernel	18	464.049793	0.000000	0.000	256
+= bind vars	LogicKernel	19	500.392160	0.000000	0.000	256
+= bind vars	LogicKernel	20	501.523410	0.000000	0.000	256
+= bind vars	LogicKernel	21	491.542180	0.000000	0.000	256
+= bind vars	LogicKernel	22	483.388918	0.000000	0.000	256
+= bind vars	LogicKernel	23	451.153656	0.000000	0.000	256
+= bind vars	LogicKernel	24	471.395262	0.000000	0.000	256
+= bind vars	LogicKernel	25	452.446070	0.000000	0.000	256
+= bind vars	LogicKernel	26	466.679695	0.000000	0.000	256
+= bind vars	LogicKernel	27	474.109578	0.000000	0.000	256
+= bind vars	LogicKernel	28	458.042980	0.000000	0.000	256
+= bind vars	LogicKernel	29	456.045719	0.000000	0.000	256
+= bind vars	LogicKernel	30	504.678363	0.000000	0.000	256
+= bind vars	swipl	1	135.717914			1024
+= bind vars	swipl	2	136.650400			1024
+= bind vars	swipl	3	132.080633			1024
+= bind vars	swipl	4	135.353534			1024
+= bind vars	swipl	5	130.649656			1024
+= bind vars	swipl	6	134.322559			1024
+= bind vars	swipl	7	131.537439			1024
+= bind vars	swipl	8	134.469476			1024
+= bind vars	swipl	9	131.761190			1024
+= bind vars	swipl	10	135.104172			1024
+= bind vars	swipl	11	131.137902			1024
+= bind vars	swipl	12	135.127222			1024
+= bind vars	swipl	13	136.171002			1024
+= bind vars	swipl	14	132.595189			1024
+= bind vars	swipl	15	132.255023			1024
+= bind vars	swipl	16	133.248279			1024
+= bind vars	swipl	17	134.170754			1024
+= bind vars	swipl	18	131.878071			1024
+= bind vars	swipl	19	135.330716			1024
+= bind vars	swipl	20	133.142807			1024
+= bind vars	swipl	21	135.280890			1024
+= bind vars	swipl	22	132.337911			1024
+= bind vars	swipl	23	149.576226			1024
+= bind vars	swipl	24	137.315365			1024
+= bind vars	swipl	25	133.373309			1024
+= bind vars	swipl	26	135.324663			1024
+= bind vars	swipl	27	131.772365			1024
+= bind vars	swipl	28	133.128837			1024
+= bind vars	swipl	29	133.284368			1024
+= bind vars	swipl	30	137.733994			1024
+= var-var	LogicKernel	1	538.838867	0.000000	0.000	256
+= var-var	LogicKernel	2	522.698199	0.000000	0.000	256
+= var-var	LogicKernel	3	504.437043	0.000000	0.000	256
+= var-var	LogicKernel	4	499.684359	0.000000	0.000	256
+= var-var	LogicKernel	5	504.023848	0.000000	0.000	256
+= var-var	LogicKernel	6	521.555797	0.000000	0.000	256
+= var-var	LogicKernel	7	538.335051	0.000000	0.000	256
+= var-var	LogicKernel	8	504.474660	0.000000	0.000	256
+= var-var	LogicKernel	9	508.480512	0.000000	0.000	256
+= var-var	LogicKernel	10	534.613316	0.000000	0.000	256
+= var-var	LogicKernel	11	535.499660	0.000000	0.000	256
+= var-var	LogicKernel	12	554.157551	0.000000	0.000	256
+= var-var	LogicKernel	13	512.912379	0.000000	0.000	256
+= var-var	LogicKernel	14	509.781086	0.000000	0.000	256
+= var-var	LogicKernel	15	508.767590	0.000000	0.000	256
+= var-var	LogicKernel	16	516.478090	0.000000	0.000	256
+= var-var	LogicKernel	17	536.223562	0.000000	0.000	256
+= var-var	LogicKernel	18	509.033324	0.000000	0.000	256
+= var-var	LogicKernel	19	533.169855	0.000000	0.000	256
+= var-var	LogicKernel	20	501.883797	0.000000	0.000	256
+= var-var	LogicKernel	21	679.536738	0.000000	0.000	256
+= var-var	LogicKernel	22	588.690762	0.000000	0.000	256
+= var-var	LogicKernel	23	501.389910	0.000000	0.000	256
+= var-var	LogicKernel	24	505.455285	0.000000	0.000	256
+= var-var	LogicKernel	25	561.763543	0.000000	0.000	256
+= var-var	LogicKernel	26	547.620488	0.000000	0.000	256
+= var-var	LogicKernel	27	545.155316	0.000000	0.000	256
+= var-var	LogicKernel	28	503.258824	0.000000	0.000	256
+= var-var	LogicKernel	29	534.377410	0.000000	0.000	256
+= var-var	LogicKernel	30	535.297910	0.000000	0.000	256
+= var-var	swipl	1	138.008269			1024
+= var-var	swipl	2	138.519099			1024
+= var-var	swipl	3	138.103031			1024
+= var-var	swipl	4	138.064846			1024
+= var-var	swipl	5	136.676477			1024
+= var-var	swipl	6	138.252974			1024
+= var-var	swipl	7	139.307696			1024
+= var-var	swipl	8	136.607792			1024
+= var-var	swipl	9	137.104187			1024
+= var-var	swipl	10	137.079507			1024
+= var-var	swipl	11	141.469529			1024
+= var-var	swipl	12	138.421077			1024
+= var-var	swipl	13	139.145646			1024
+= var-var	swipl	14	138.248550			1024
+= var-var	swipl	15	136.023620			1024
+= var-var	swipl	16	140.008517			1024
+= var-var	swipl	17	137.076247			1024
+= var-var	swipl	18	135.993585			1024
+= var-var	swipl	19	143.228797			1024
+= var-var	swipl	20	135.259004			1024
+= var-var	swipl	21	144.702615			1024
+= var-var	swipl	22	144.828111			1024
+= var-var	swipl	23	142.497476			1024
+= var-var	swipl	24	140.901888			1024
+= var-var	swipl	25	144.633930			1024
+= var-var	swipl	26	137.734925			1024
+= var-var	swipl	27	138.569856			1024
+= var-var	swipl	28	139.507931			1024
+= var-var	swipl	29	137.389405			1024
+= var-var	swipl	30	136.510935			1024
+occurs-check bind vars	LogicKernel	1	688.343281	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	2	642.885145	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	3	684.489637	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	4	692.105371	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	5	657.838555	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	6	649.076906	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	7	675.693070	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	8	644.215398	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	9	710.617367	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	10	666.111719	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	11	644.675020	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	12	649.088988	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	13	663.943148	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	14	643.459453	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	15	679.331867	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	16	675.790355	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	17	636.496758	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	18	637.393266	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	19	684.120980	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	20	646.412648	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	21	701.332719	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	22	673.953988	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	23	671.720488	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	24	654.392383	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	25	670.439531	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	26	648.102883	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	27	678.249633	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	28	677.028523	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	29	651.600312	0.000000	0.000	256
+occurs-check bind vars	LogicKernel	30	671.658352	0.000000	0.000	256
+occurs-check bind vars	swipl	1	159.618910			1024
+occurs-check bind vars	swipl	2	207.736623			1024
+occurs-check bind vars	swipl	3	163.501594			1024
+occurs-check bind vars	swipl	4	161.145581			1024
+occurs-check bind vars	swipl	5	158.974668			1024
+occurs-check bind vars	swipl	6	161.201926			1024
+occurs-check bind vars	swipl	7	158.925075			1024
+occurs-check bind vars	swipl	8	163.458288			1024
+occurs-check bind vars	swipl	9	158.800511			1024
+occurs-check bind vars	swipl	10	160.004012			1024
+occurs-check bind vars	swipl	11	170.555664			1024
+occurs-check bind vars	swipl	12	161.946286			1024
+occurs-check bind vars	swipl	13	159.838703			1024
+occurs-check bind vars	swipl	14	160.146272			1024
+occurs-check bind vars	swipl	15	160.936499			1024
+occurs-check bind vars	swipl	16	161.312753			1024
+occurs-check bind vars	swipl	17	161.969569			1024
+occurs-check bind vars	swipl	18	157.672912			1024
+occurs-check bind vars	swipl	19	157.677103			1024
+occurs-check bind vars	swipl	20	162.277371			1024
+occurs-check bind vars	swipl	21	159.897143			1024
+occurs-check bind vars	swipl	22	161.906006			1024
+occurs-check bind vars	swipl	23	161.386328			1024
+occurs-check bind vars	swipl	24	158.356968			1024
+occurs-check bind vars	swipl	25	158.889918			1024
+occurs-check bind vars	swipl	26	167.934457			1024
+occurs-check bind vars	swipl	27	159.996096			1024
+occurs-check bind vars	swipl	28	159.306219			1024
+occurs-check bind vars	swipl	29	162.143493			1024
+occurs-check bind vars	swipl	30	159.478979			1024
+clause/2 1000 facts	LogicKernel	1	264.730107	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	2	273.141578	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	3	289.726814	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	4	349.077439	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	5	374.884654	77.364857	1493.000	512
+clause/2 1000 facts	LogicKernel	6	268.815107	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	7	268.858920	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	8	285.126465	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	9	354.810205	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	10	367.447203	65.097361	1493.000	512
+clause/2 1000 facts	LogicKernel	11	280.172973	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	12	269.529289	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	13	284.750018	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	14	347.179916	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	15	365.322385	61.921891	1493.000	512
+clause/2 1000 facts	LogicKernel	16	270.468443	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	17	282.351838	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	18	290.710418	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	19	354.457709	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	20	364.646568	62.362119	1493.000	512
+clause/2 1000 facts	LogicKernel	21	268.079785	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	22	289.972945	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	23	285.182104	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	24	338.984371	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	25	407.328172	63.975553	1493.000	512
+clause/2 1000 facts	LogicKernel	26	268.731637	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	27	266.674895	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	28	314.140324	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	29	347.216742	0.000000	1493.000	512
+clause/2 1000 facts	LogicKernel	30	356.261133	62.894186	1493.000	512
+clause/2 1000 facts	swipl	1	2541.961614			512
+clause/2 1000 facts	swipl	2	2945.733722			512
+clause/2 1000 facts	swipl	3	3280.736040			512
+clause/2 1000 facts	swipl	4	3662.684001			512
+clause/2 1000 facts	swipl	5	4035.770427			512
+clause/2 1000 facts	swipl	6	4426.396452			512
+clause/2 1000 facts	swipl	7	4751.123488			512
+clause/2 1000 facts	swipl	8	5103.243515			512
+clause/2 1000 facts	swipl	9	5487.838760			512
+clause/2 1000 facts	swipl	10	5843.961611			512
+clause/2 1000 facts	swipl	11	6251.973566			512
+clause/2 1000 facts	swipl	12	6657.234859			512
+clause/2 1000 facts	swipl	13	7018.740755			512
+clause/2 1000 facts	swipl	14	7338.035852			512
+clause/2 1000 facts	swipl	15	7795.006502			512
+clause/2 1000 facts	swipl	16	8136.994205			512
+clause/2 1000 facts	swipl	17	8530.370425			512
+clause/2 1000 facts	swipl	18	8775.170427			512
+clause/2 1000 facts	swipl	19	9278.798010			512
+clause/2 1000 facts	swipl	20	9628.077969			512
+clause/2 1000 facts	swipl	21	10436.733253			512
+clause/2 1000 facts	swipl	22	10581.529699			512
+clause/2 1000 facts	swipl	23	10724.885855			512
+clause/2 1000 facts	swipl	24	11349.771172			512
+clause/2 1000 facts	swipl	25	11484.843679			512
+clause/2 1000 facts	swipl	26	11991.353706			512
+clause/2 1000 facts	swipl	27	12295.295950			512
+clause/2 1000 facts	swipl	28	12576.422188			512
+clause/2 1000 facts	swipl	29	13025.329914			512
+clause/2 1000 facts	swipl	30	13364.396524			512
+compileClause fact	LogicKernel	1	1.590308	0.349149	28.000	131072
+compileClause fact	LogicKernel	2	1.416336	0.348552	28.000	131072
+compileClause fact	LogicKernel	3	1.005396	0.243885	28.000	131072
+compileClause fact	LogicKernel	4	1.071907	0.290512	28.000	131072
+compileClause fact	LogicKernel	5	1.082440	0.303927	28.000	131072
+compileClause fact	LogicKernel	6	1.826755	0.301220	28.000	131072
+compileClause fact	LogicKernel	7	1.933397	0.476362	28.000	131072
+compileClause fact	LogicKernel	8	0.977367	0.207742	28.000	131072
+compileClause fact	LogicKernel	9	1.020808	0.243806	28.000	131072
+compileClause fact	LogicKernel	10	1.005058	0.239025	28.000	131072
+compileClause fact	LogicKernel	11	1.539757	0.299407	28.000	131072
+compileClause fact	LogicKernel	12	2.079066	0.461937	28.000	131072
+compileClause fact	LogicKernel	13	1.419865	0.377202	28.000	131072
+compileClause fact	LogicKernel	14	1.018729	0.231812	28.000	131072
+compileClause fact	LogicKernel	15	1.004954	0.230778	28.000	131072
+compileClause fact	LogicKernel	16	1.527269	0.307423	28.000	131072
+compileClause fact	LogicKernel	17	2.322513	0.534165	28.000	131072
+compileClause fact	LogicKernel	18	1.501516	0.343183	28.000	131072
+compileClause fact	LogicKernel	19	1.003195	0.253198	28.000	131072
+compileClause fact	LogicKernel	20	0.995084	0.245135	28.000	131072
+compileClause fact	LogicKernel	21	1.573865	0.297886	28.000	131072
+compileClause fact	LogicKernel	22	2.406413	0.563177	28.000	131072
+compileClause fact	LogicKernel	23	1.676768	0.348720	28.000	131072
+compileClause fact	LogicKernel	24	0.950314	0.197733	28.000	131072
+compileClause fact	LogicKernel	25	1.116206	0.299527	28.000	131072
+compileClause fact	LogicKernel	26	1.521528	0.292690	28.000	131072
+compileClause fact	LogicKernel	27	2.771591	0.931082	28.000	131072
+compileClause fact	LogicKernel	28	1.536443	0.351318	28.000	131072
+compileClause fact	LogicKernel	29	0.976762	0.206074	28.000	131072
+compileClause fact	LogicKernel	30	1.026333	0.258769	28.000	131072
+rule head + analysis	LogicKernel	1	1.862975	0.000000	34.000	32768
+rule head + analysis	LogicKernel	2	4.079867	1.307354	34.000	32768
+rule head + analysis	LogicKernel	3	3.321677	0.000000	34.000	32768
+rule head + analysis	LogicKernel	4	6.507462	2.450947	34.000	32768
+rule head + analysis	LogicKernel	5	2.036974	0.000000	34.000	32768
+rule head + analysis	LogicKernel	6	1.819249	0.000000	34.000	32768
+rule head + analysis	LogicKernel	7	3.924421	1.116091	34.000	32768
+rule head + analysis	LogicKernel	8	3.164131	0.000000	34.000	32768
+rule head + analysis	LogicKernel	9	5.095619	1.845116	34.000	32768
+rule head + analysis	LogicKernel	10	3.707144	0.952764	34.000	32768
+rule head + analysis	LogicKernel	11	1.760743	0.000000	34.000	32768
+rule head + analysis	LogicKernel	12	3.900078	1.079467	34.000	32768
+rule head + analysis	LogicKernel	13	3.368568	0.000000	34.000	32768
+rule head + analysis	LogicKernel	14	4.601413	1.722773	34.000	32768
+rule head + analysis	LogicKernel	15	3.401369	0.769922	34.000	32768
+rule head + analysis	LogicKernel	16	1.863495	0.000000	34.000	32768
+rule head + analysis	LogicKernel	17	3.844458	1.079324	34.000	32768
+rule head + analysis	LogicKernel	18	3.085622	0.000000	34.000	32768
+rule head + analysis	LogicKernel	19	5.099232	1.891555	34.000	32768
+rule head + analysis	LogicKernel	20	3.575635	0.871105	34.000	32768
+rule head + analysis	LogicKernel	21	1.791877	0.000000	34.000	32768
+rule head + analysis	LogicKernel	22	4.028348	1.270183	34.000	32768
+rule head + analysis	LogicKernel	23	3.093654	0.000000	34.000	32768
+rule head + analysis	LogicKernel	24	4.919661	1.850845	34.000	32768
+rule head + analysis	LogicKernel	25	3.367262	0.790900	34.000	32768
+rule head + analysis	LogicKernel	26	1.746688	0.000000	34.000	32768
+rule head + analysis	LogicKernel	27	3.912191	1.108509	34.000	32768
+rule head + analysis	LogicKernel	28	3.078610	0.000000	34.000	32768
+rule head + analysis	LogicKernel	29	4.699809	1.779429	34.000	32768
+rule head + analysis	LogicKernel	30	3.450755	0.827890	34.000	32768
+compileClause rule	LogicKernel	1	2.480930	0.000000	40.000	32768
+compileClause rule	LogicKernel	2	5.168612	1.412973	40.000	32768
+compileClause rule	LogicKernel	3	4.265435	0.000000	40.000	32768
+compileClause rule	LogicKernel	4	6.807916	2.441634	40.000	32768
+compileClause rule	LogicKernel	5	3.763788	0.000000	40.000	32768
+compileClause rule	LogicKernel	6	2.512013	0.000000	40.000	32768
+compileClause rule	LogicKernel	7	4.772713	1.117011	40.000	32768
+compileClause rule	LogicKernel	8	4.352709	0.000000	40.000	32768
+compileClause rule	LogicKernel	9	5.250467	1.857944	40.000	32768
+compileClause rule	LogicKernel	10	4.174166	0.837762	40.000	32768
+compileClause rule	LogicKernel	11	2.545406	0.000000	40.000	32768
+compileClause rule	LogicKernel	12	4.625877	1.124451	40.000	32768
+compileClause rule	LogicKernel	13	4.443769	0.000000	40.000	32768
+compileClause rule	LogicKernel	14	4.878891	1.637073	40.000	32768
+compileClause rule	LogicKernel	15	3.851353	0.763774	40.000	32768
+compileClause rule	LogicKernel	16	2.504372	0.000000	40.000	32768
+compileClause rule	LogicKernel	17	4.612226	1.118580	40.000	32768
+compileClause rule	LogicKernel	18	4.303132	0.000000	40.000	32768
+compileClause rule	LogicKernel	19	4.601495	1.636301	40.000	32768
+compileClause rule	LogicKernel	20	4.028172	0.778776	40.000	32768
+compileClause rule	LogicKernel	21	2.628199	0.000000	40.000	32768
+compileClause rule	LogicKernel	22	4.599222	1.091304	40.000	32768
+compileClause rule	LogicKernel	23	4.274563	0.000000	40.000	32768
+compileClause rule	LogicKernel	24	5.088990	1.755450	40.000	32768
+compileClause rule	LogicKernel	25	3.979663	0.773027	40.000	32768
+compileClause rule	LogicKernel	26	2.523051	0.000000	40.000	32768
+compileClause rule	LogicKernel	27	4.719048	1.163311	40.000	32768
+compileClause rule	LogicKernel	28	4.301918	0.000000	40.000	32768
+compileClause rule	LogicKernel	29	4.591925	1.646410	40.000	32768
+compileClause rule	LogicKernel	30	3.806602	0.731892	40.000	32768
+query cp(X,Y) 1000	LogicKernel	1	568.410152	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	2	612.430742	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	3	597.581945	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	4	558.394516	0.000000	18.023	256
+query cp(X,Y) 1000	LogicKernel	5	571.342633	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	6	582.877090	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	7	570.214379	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	8	560.115809	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	9	606.518656	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	10	572.004117	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	11	582.648859	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	12	577.155695	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	13	585.603832	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	14	619.318449	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	15	587.500199	0.000000	18.023	256
+query cp(X,Y) 1000	LogicKernel	16	582.645652	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	17	571.127059	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	18	573.902430	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	19	571.540250	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	20	571.787695	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	21	577.785512	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	22	572.262559	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	23	560.586301	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	24	567.233426	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	25	579.377633	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	26	582.609418	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	27	574.838230	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	28	566.585836	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	29	561.286773	0.000000	18.000	256
+query cp(X,Y) 1000	LogicKernel	30	577.774492	0.000000	18.000	256
+query cp(X,Y) 1000	swipl	1	945.944805			1024
+query cp(X,Y) 1000	swipl	2	1087.655313			1024
+query cp(X,Y) 1000	swipl	3	1243.203878			1024
+query cp(X,Y) 1000	swipl	4	1415.849663			1024
+query cp(X,Y) 1000	swipl	5	1502.266387			1024
+query cp(X,Y) 1000	swipl	6	1732.524950			1024
+query cp(X,Y) 1000	swipl	7	1820.856938			1024
+query cp(X,Y) 1000	swipl	8	1925.855875			1024
+query cp(X,Y) 1000	swipl	9	2037.994564			1024
+query cp(X,Y) 1000	swipl	10	2230.396727			1024
+query cp(X,Y) 1000	swipl	11	2353.471937			1024
+query cp(X,Y) 1000	swipl	12	2460.847842			1024
+query cp(X,Y) 1000	swipl	13	2593.017882			1024
+query cp(X,Y) 1000	swipl	14	2724.102000			1024
+query cp(X,Y) 1000	swipl	15	2929.051174			1024
+query cp(X,Y) 1000	swipl	16	3000.875935			1024
+query cp(X,Y) 1000	swipl	17	3171.959426			1024
+query cp(X,Y) 1000	swipl	18	3319.794079			1024
+query cp(X,Y) 1000	swipl	19	3418.324050			1024
+query cp(X,Y) 1000	swipl	20	3573.535010			1024
+query cp(X,Y) 1000	swipl	21	3958.853194			1024
+query cp(X,Y) 1000	swipl	22	3859.433345			1024
+query cp(X,Y) 1000	swipl	23	4158.950411			1024
+query cp(X,Y) 1000	swipl	24	4465.198843			1024
+query cp(X,Y) 1000	swipl	25	4317.768849			1024
+query cp(X,Y) 1000	swipl	26	4428.670742			1024
+query cp(X,Y) 1000	swipl	27	4729.334265			1024
+query cp(X,Y) 1000	swipl	28	5239.476217			1024
+query cp(X,Y) 1000	swipl	29	5457.626656			1024
+query cp(X,Y) 1000	swipl	30	5076.595815			1024
+query cp(500,Y)	LogicKernel	1	2.368343	0.188192	9.000	65536
+query cp(500,Y)	LogicKernel	2	1.749937	0.230052	9.000	65536
+query cp(500,Y)	LogicKernel	3	1.493966	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	4	1.984867	0.417362	9.000	65536
+query cp(500,Y)	LogicKernel	5	1.549572	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	6	1.556250	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	7	1.592787	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	8	2.035441	0.191638	9.000	65536
+query cp(500,Y)	LogicKernel	9	3.158342	0.186858	9.000	65536
+query cp(500,Y)	LogicKernel	10	1.986170	0.470372	9.000	65536
+query cp(500,Y)	LogicKernel	11	1.544469	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	12	1.704423	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	13	2.253118	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	14	2.745143	0.557892	9.000	65536
+query cp(500,Y)	LogicKernel	15	1.675819	0.065693	9.000	65536
+query cp(500,Y)	LogicKernel	16	1.564012	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	17	1.748937	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	18	2.334542	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	19	2.259089	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	20	2.244036	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	21	1.517258	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	22	1.590305	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	23	2.256201	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	24	2.281073	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	25	5.440829	0.828308	9.000	65536
+query cp(500,Y)	LogicKernel	26	1.531779	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	27	1.535438	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	28	2.313112	0.000000	9.000	65536
+query cp(500,Y)	LogicKernel	29	2.876554	0.571269	9.000	65536
+query cp(500,Y)	LogicKernel	30	1.531957	0.000000	9.000	65536
+query cp(500,Y)	swipl	1	1.409054			262144
+query cp(500,Y)	swipl	2	1.533745			262144
+query cp(500,Y)	swipl	3	1.663220			262144
+query cp(500,Y)	swipl	4	1.821257			262144
+query cp(500,Y)	swipl	5	1.965609			262144
+query cp(500,Y)	swipl	6	2.144367			262144
+query cp(500,Y)	swipl	7	2.246512			262144
+query cp(500,Y)	swipl	8	2.490928			262144
+query cp(500,Y)	swipl	9	2.585442			262144
+query cp(500,Y)	swipl	10	2.696446			262144
+query cp(500,Y)	swipl	11	3.650461			262144
+query cp(500,Y)	swipl	12	3.860427			262144
+query cp(500,Y)	swipl	13	3.904148			262144
+query cp(500,Y)	swipl	14	4.071552			262144
+query cp(500,Y)	swipl	15	4.233984			262144
+query cp(500,Y)	swipl	16	4.455546			262144
+query cp(500,Y)	swipl	17	4.513909			262144
+query cp(500,Y)	swipl	18	4.863564			262144
+query cp(500,Y)	swipl	19	4.819456			262144
+query cp(500,Y)	swipl	20	5.061373			262144
+query cp(500,Y)	swipl	21	5.187899			262144
+query cp(500,Y)	swipl	22	5.346918			262144
+query cp(500,Y)	swipl	23	5.504936			262144
+query cp(500,Y)	swipl	24	5.635108			262144
+query cp(500,Y)	swipl	25	6.179203			262144
+query cp(500,Y)	swipl	26	6.251143			262144
+query cp(500,Y)	swipl	27	6.402973			262144
+query cp(500,Y)	swipl	28	6.322969			262144
+query cp(500,Y)	swipl	29	6.512942			262144
+query cp(500,Y)	swipl	30	6.758237			262144
+nreverse	LogicKernel	1	544.464406	0.000000	0.000	256
+nreverse	LogicKernel	2	545.962254	0.000000	0.000	256
+nreverse	LogicKernel	3	541.396227	0.000000	0.000	256
+nreverse	LogicKernel	4	541.192523	0.000000	0.000	256
+nreverse	LogicKernel	5	561.607234	0.000000	0.000	256
+nreverse	LogicKernel	6	542.790594	0.000000	0.000	256
+nreverse	LogicKernel	7	557.702168	0.000000	0.000	256
+nreverse	LogicKernel	8	566.373750	0.000000	0.000	256
+nreverse	LogicKernel	9	545.021348	0.000000	0.000	256
+nreverse	LogicKernel	10	543.419676	0.000000	0.000	256
+nreverse	LogicKernel	11	665.663566	0.000000	0.000	256
+nreverse	LogicKernel	12	637.335906	0.000000	0.000	256
+nreverse	LogicKernel	13	733.317973	0.000000	0.000	256
+nreverse	LogicKernel	14	664.743957	0.000000	0.000	256
+nreverse	LogicKernel	15	554.030594	0.000000	0.000	256
+nreverse	LogicKernel	16	539.120215	0.000000	0.000	256
+nreverse	LogicKernel	17	590.921125	0.000000	0.000	256
+nreverse	LogicKernel	18	540.333172	0.000000	0.000	256
+nreverse	LogicKernel	19	534.796203	0.000000	0.000	256
+nreverse	LogicKernel	20	581.395246	0.000000	0.000	256
+nreverse	LogicKernel	21	564.585348	0.000000	0.000	256
+nreverse	LogicKernel	22	566.117813	0.000000	0.000	256
+nreverse	LogicKernel	23	539.345438	0.000000	0.000	256
+nreverse	LogicKernel	24	548.757582	0.000000	0.000	256
+nreverse	LogicKernel	25	557.100445	0.000000	0.000	256
+nreverse	LogicKernel	26	587.159613	0.000000	0.000	256
+nreverse	LogicKernel	27	541.018539	0.000000	0.000	256
+nreverse	LogicKernel	28	534.536152	0.000000	0.000	256
+nreverse	LogicKernel	29	547.975641	0.000000	0.000	256
+nreverse	LogicKernel	30	554.051320	0.000000	0.000	256
+nreverse	swipl	1	17.758255			8192
+nreverse	swipl	2	18.467719			8192
+nreverse	swipl	3	18.103048			8192
+nreverse	swipl	4	17.870654			8192
+nreverse	swipl	5	17.980172			8192
+nreverse	swipl	6	18.252846			8192
+nreverse	swipl	7	17.922866			8192
+nreverse	swipl	8	20.318548			8192
+nreverse	swipl	9	17.670420			8192
+nreverse	swipl	10	17.875864			8192
+nreverse	swipl	11	19.098283			8192
+nreverse	swipl	12	18.206687			8192
+nreverse	swipl	13	18.184044			8192
+nreverse	swipl	14	18.199527			8192
+nreverse	swipl	15	18.531864			8192
+nreverse	swipl	16	18.109567			8192
+nreverse	swipl	17	17.929851			8192
+nreverse	swipl	18	17.888902			8192
+nreverse	swipl	19	18.962543			8192
+nreverse	swipl	20	17.978018			8192
+nreverse	swipl	21	18.041232			8192
+nreverse	swipl	22	18.434075			8192
+nreverse	swipl	23	18.228078			8192
+nreverse	swipl	24	18.143328			8192
+nreverse	swipl	25	17.931598			8192
+nreverse	swipl	26	17.995946			8192
+nreverse	swipl	27	18.303486			8192
+nreverse	swipl	28	18.892984			8192
+nreverse	swipl	29	18.063554			8192
+nreverse	swipl	30	18.061692			8192
+compare/3 ×1000, body	LogicKernel	1	1647.336750	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	2	1578.737734	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	3	1589.755266	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	4	1585.747437	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	5	1625.625719	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	6	1615.602297	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	7	1833.604891	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	8	1574.966406	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	9	1604.634391	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	10	1603.724062	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	11	1579.965531	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	12	1739.737312	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	13	1634.638875	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	14	1579.922547	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	15	1578.887781	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	16	1588.217781	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	17	1585.170219	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	18	1621.304109	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	19	1614.596812	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	20	1611.711984	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	21	1783.849172	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	22	1595.747141	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	23	1626.164516	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	24	1765.720422	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	25	1607.241953	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	26	1604.379047	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	27	1566.544766	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	28	1614.746281	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	29	1623.669828	0.000000	1000.000	64
+compare/3 ×1000, body	LogicKernel	30	1642.880922	0.000000	1000.000	64
+compare/3 ×1000, body	swipl	1	73.477044			2048
+compare/3 ×1000, body	swipl	2	72.704861			2048
+compare/3 ×1000, body	swipl	3	72.095660			2048
+compare/3 ×1000, body	swipl	4	72.606490			2048
+compare/3 ×1000, body	swipl	5	72.248047			2048
+compare/3 ×1000, body	swipl	6	76.217926			2048
+compare/3 ×1000, body	swipl	7	71.534188			2048
+compare/3 ×1000, body	swipl	8	71.071321			2048
+compare/3 ×1000, body	swipl	9	72.893105			2048
+compare/3 ×1000, body	swipl	10	72.306488			2048
+compare/3 ×1000, body	swipl	11	72.312891			2048
+compare/3 ×1000, body	swipl	12	77.334116			2048
+compare/3 ×1000, body	swipl	13	72.383089			2048
+compare/3 ×1000, body	swipl	14	71.469112			2048
+compare/3 ×1000, body	swipl	15	73.973904			2048
+compare/3 ×1000, body	swipl	16	73.947245			2048
+compare/3 ×1000, body	swipl	17	80.493628			2048
+compare/3 ×1000, body	swipl	18	71.520335			2048
+compare/3 ×1000, body	swipl	19	71.675400			2048
+compare/3 ×1000, body	swipl	20	85.218460			2048
+compare/3 ×1000, body	swipl	21	72.059687			2048
+compare/3 ×1000, body	swipl	22	76.102791			2048
+compare/3 ×1000, body	swipl	23	71.676448			2048
+compare/3 ×1000, body	swipl	24	71.434304			2048
+compare/3 ×1000, body	swipl	25	74.529089			2048
+compare/3 ×1000, body	swipl	26	71.529415			2048
+compare/3 ×1000, body	swipl	27	72.135008			2048
+compare/3 ×1000, body	swipl	28	72.392635			2048
+compare/3 ×1000, body	swipl	29	71.048737			2048
+compare/3 ×1000, body	swipl	30	70.520677			2048
+unify inline ×1000, body	LogicKernel	1	2312.412453	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	2	2300.932688	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	3	2452.293516	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	4	2294.567531	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	5	2310.822094	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	6	2311.484000	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	7	2402.350812	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	8	2263.141266	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	9	2326.704641	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	10	2320.934719	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	11	2313.381719	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	12	2287.265609	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	13	2292.279000	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	14	2274.852578	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	15	2354.764187	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	16	2400.657766	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	17	2290.103625	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	18	2286.449453	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	19	2400.899812	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	20	2257.975359	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	21	2332.571172	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	22	2264.742172	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	23	2387.121906	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	24	2277.259141	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	25	2290.951672	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	26	2284.863656	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	27	2275.767703	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	28	2409.321359	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	29	2300.855844	0.000000	1489.000	64
+unify inline ×1000, body	LogicKernel	30	2304.978813	0.000000	1489.000	64
+unify inline ×1000, body	swipl	1	71.729301			2048
+unify inline ×1000, body	swipl	2	67.760819			2048
+unify inline ×1000, body	swipl	3	68.155583			2048
+unify inline ×1000, body	swipl	4	69.003901			2048
+unify inline ×1000, body	swipl	5	69.295173			2048
+unify inline ×1000, body	swipl	6	72.321738			2048
+unify inline ×1000, body	swipl	7	69.116708			2048
+unify inline ×1000, body	swipl	8	68.452558			2048
+unify inline ×1000, body	swipl	9	70.384238			2048
+unify inline ×1000, body	swipl	10	68.529742			2048
+unify inline ×1000, body	swipl	11	70.111011			2048
+unify inline ×1000, body	swipl	12	70.902519			2048
+unify inline ×1000, body	swipl	13	78.231329			2048
+unify inline ×1000, body	swipl	14	78.174635			2048
+unify inline ×1000, body	swipl	15	68.569672			2048
+unify inline ×1000, body	swipl	16	70.220791			2048
+unify inline ×1000, body	swipl	17	67.856861			2048
+unify inline ×1000, body	swipl	18	70.193666			2048
+unify inline ×1000, body	swipl	19	69.950009			2048
+unify inline ×1000, body	swipl	20	68.837544			2048
+unify inline ×1000, body	swipl	21	69.261296			2048
+unify inline ×1000, body	swipl	22	68.882131			2048
+unify inline ×1000, body	swipl	23	67.577465			2048
+unify inline ×1000, body	swipl	24	68.261521			2048
+unify inline ×1000, body	swipl	25	70.498558			2048
+unify inline ×1000, body	swipl	26	70.450711			2048
+unify inline ×1000, body	swipl	27	68.088877			2048
+unify inline ×1000, body	swipl	28	68.655005			2048
+unify inline ×1000, body	swipl	29	68.409019			2048
+unify inline ×1000, body	swipl	30	69.298665			2048
+findall/3 ×1000	LogicKernel	1	2100.995937	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	2	2056.235250	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	3	2291.911187	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	4	3079.615172	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	5	3262.113500	786.320875	13460.000	64
+findall/3 ×1000	LogicKernel	6	2142.845844	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	7	2182.785922	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	8	2475.655797	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	9	2867.766500	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	10	3323.454281	673.984703	13460.000	64
+findall/3 ×1000	LogicKernel	11	2236.313109	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	12	2133.824906	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	13	2290.343172	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	14	2952.776406	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	15	3526.709953	689.327328	13460.000	64
+findall/3 ×1000	LogicKernel	16	2135.486328	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	17	2065.945219	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	18	2350.625156	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	19	2869.624594	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	20	3363.979109	754.815828	13460.000	64
+findall/3 ×1000	LogicKernel	21	2183.469437	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	22	2138.698203	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	23	2662.501516	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	24	2747.806406	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	25	3535.917172	745.746125	13460.000	64
+findall/3 ×1000	LogicKernel	26	2122.652078	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	27	2325.479781	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	28	3033.743656	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	29	3556.104672	0.000000	13460.000	64
+findall/3 ×1000	LogicKernel	30	3973.189797	786.832562	13460.000	64
+findall/3 ×1000	swipl	1	134.637346			1024
+findall/3 ×1000	swipl	2	129.934633			1024
+findall/3 ×1000	swipl	3	131.634530			1024
+findall/3 ×1000	swipl	4	132.909976			1024
+findall/3 ×1000	swipl	5	132.182613			1024
+findall/3 ×1000	swipl	6	149.331056			1024
+findall/3 ×1000	swipl	7	130.515080			1024
+findall/3 ×1000	swipl	8	134.186586			1024
+findall/3 ×1000	swipl	9	135.158887			1024
+findall/3 ×1000	swipl	10	130.909262			1024
+findall/3 ×1000	swipl	11	132.450135			1024
+findall/3 ×1000	swipl	12	131.726963			1024
+findall/3 ×1000	swipl	13	134.891365			1024
+findall/3 ×1000	swipl	14	129.867578			1024
+findall/3 ×1000	swipl	15	131.372595			1024
+findall/3 ×1000	swipl	16	137.281138			1024
+findall/3 ×1000	swipl	17	132.349320			1024
+findall/3 ×1000	swipl	18	131.361187			1024
+findall/3 ×1000	swipl	19	130.786095			1024
+findall/3 ×1000	swipl	20	139.183365			1024
+findall/3 ×1000	swipl	21	132.071553			1024
+findall/3 ×1000	swipl	22	130.738597			1024
+findall/3 ×1000	swipl	23	131.159555			1024
+findall/3 ×1000	swipl	24	140.094897			1024
+findall/3 ×1000	swipl	25	130.948145			1024
+findall/3 ×1000	swipl	26	158.317154			1024
+findall/3 ×1000	swipl	27	135.366572			1024
+findall/3 ×1000	swipl	28	130.485510			1024
+findall/3 ×1000	swipl	29	130.148837			1024
+findall/3 ×1000	swipl	30	141.578261			1024
+findall/3 + sort/2 ×1000	LogicKernel	1	3447.848391	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	2	4222.507141	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	3	5586.014828	1198.445406	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	4	3157.034719	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	5	3742.499125	420.118141	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	6	3036.759500	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	7	4102.320563	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	8	4908.327500	922.476234	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	9	3145.712516	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	10	3767.952781	310.198719	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	11	3020.598531	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	12	4086.067859	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	13	5129.268328	1001.815891	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	14	3129.222219	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	15	3679.629031	317.261234	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	16	3003.421688	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	17	3987.193297	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	18	5168.348844	1008.990797	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	19	3119.059484	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	20	3788.298641	353.788172	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	21	3028.108234	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	22	4075.415437	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	23	5334.190438	1045.340344	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	24	3080.690266	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	25	3811.916984	357.564531	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	26	3409.389891	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	27	4198.050078	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	28	5451.108187	1070.477406	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	29	3191.554875	0.000000	26908.000	64
+findall/3 + sort/2 ×1000	LogicKernel	30	4007.151547	376.851203	26908.000	64
+findall/3 + sort/2 ×1000	swipl	1	240.589026			512
+findall/3 + sort/2 ×1000	swipl	2	238.494948			512
+findall/3 + sort/2 ×1000	swipl	3	234.657433			512
+findall/3 + sort/2 ×1000	swipl	4	236.460008			512
+findall/3 + sort/2 ×1000	swipl	5	262.226909			512
+findall/3 + sort/2 ×1000	swipl	6	248.309225			512
+findall/3 + sort/2 ×1000	swipl	7	240.696128			512
+findall/3 + sort/2 ×1000	swipl	8	234.352425			512
+findall/3 + sort/2 ×1000	swipl	9	234.573148			512
+findall/3 + sort/2 ×1000	swipl	10	236.921478			512
+findall/3 + sort/2 ×1000	swipl	11	237.548258			512
+findall/3 + sort/2 ×1000	swipl	12	241.667498			512
+findall/3 + sort/2 ×1000	swipl	13	238.454435			512
+findall/3 + sort/2 ×1000	swipl	14	234.829262			512
+findall/3 + sort/2 ×1000	swipl	15	232.481398			512
+findall/3 + sort/2 ×1000	swipl	16	237.954780			512
+findall/3 + sort/2 ×1000	swipl	17	240.048859			512
+findall/3 + sort/2 ×1000	swipl	18	235.489104			512
+findall/3 + sort/2 ×1000	swipl	19	237.199012			512
+findall/3 + sort/2 ×1000	swipl	20	228.994526			512
+findall/3 + sort/2 ×1000	swipl	21	245.752279			512
+findall/3 + sort/2 ×1000	swipl	22	243.302900			512
+findall/3 + sort/2 ×1000	swipl	23	234.234147			512
+findall/3 + sort/2 ×1000	swipl	24	237.947330			512
+findall/3 + sort/2 ×1000	swipl	25	232.414342			512
+findall/3 + sort/2 ×1000	swipl	26	236.151274			512
+findall/3 + sort/2 ×1000	swipl	27	253.309030			512
+findall/3 + sort/2 ×1000	swipl	28	235.015061			512
+findall/3 + sort/2 ×1000	swipl	29	231.998973			512
+findall/3 + sort/2 ×1000	swipl	30	239.428598			512
+bagof/3 ×1000, 3 bags	LogicKernel	1	16094.288500	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	2	14744.924625	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	3	15746.428000	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	4	21242.397375	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	5	21616.290125	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	6	15298.185375	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	7	15030.541500	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	8	15304.007500	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	9	21251.431250	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	10	21651.917125	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	11	14746.975750	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	12	15437.665625	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	13	14847.617750	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	14	20522.794375	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	15	21652.120875	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	16	15321.158125	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	17	15543.972500	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	18	15311.077875	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	19	20412.089500	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	20	20969.024500	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	21	14841.588000	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	22	15520.816125	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	23	15582.887375	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	24	21673.878500	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	25	21213.423000	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	26	17850.348125	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	27	21320.265000	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	28	21848.028125	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	29	25969.081000	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	LogicKernel	30	21719.196250	0.000000	88507.000	8
+bagof/3 ×1000, 3 bags	swipl	1	823.702663			128
+bagof/3 ×1000, 3 bags	swipl	2	866.189599			128
+bagof/3 ×1000, 3 bags	swipl	3	821.802765			128
+bagof/3 ×1000, 3 bags	swipl	4	846.784562			128
+bagof/3 ×1000, 3 bags	swipl	5	835.319981			128
+bagof/3 ×1000, 3 bags	swipl	6	841.179863			128
+bagof/3 ×1000, 3 bags	swipl	7	843.897462			128
+bagof/3 ×1000, 3 bags	swipl	8	854.054466			128
+bagof/3 ×1000, 3 bags	swipl	9	846.493989			128
+bagof/3 ×1000, 3 bags	swipl	10	834.852457			128
+bagof/3 ×1000, 3 bags	swipl	11	843.169168			128
+bagof/3 ×1000, 3 bags	swipl	12	829.765573			128
+bagof/3 ×1000, 3 bags	swipl	13	839.278102			128
+bagof/3 ×1000, 3 bags	swipl	14	826.638192			128
+bagof/3 ×1000, 3 bags	swipl	15	869.171694			128
+bagof/3 ×1000, 3 bags	swipl	16	859.024003			128
+bagof/3 ×1000, 3 bags	swipl	17	825.660303			128
+bagof/3 ×1000, 3 bags	swipl	18	833.090395			128
+bagof/3 ×1000, 3 bags	swipl	19	882.849097			128
+bagof/3 ×1000, 3 bags	swipl	20	841.338187			128
+bagof/3 ×1000, 3 bags	swipl	21	991.476700			128
+bagof/3 ×1000, 3 bags	swipl	22	861.329958			128
+bagof/3 ×1000, 3 bags	swipl	23	842.349604			128
+bagof/3 ×1000, 3 bags	swipl	24	837.326050			128
+bagof/3 ×1000, 3 bags	swipl	25	852.899626			128
+bagof/3 ×1000, 3 bags	swipl	26	978.322700			128
+bagof/3 ×1000, 3 bags	swipl	27	865.345821			128
+bagof/3 ×1000, 3 bags	swipl	28	948.060304			128
+bagof/3 ×1000, 3 bags	swipl	29	897.929072			128
+bagof/3 ×1000, 3 bags	swipl	30	1017.838717			128
+derive	LogicKernel	1	120.654166	0.000000	20.151	1024
+derive	LogicKernel	2	115.905724	0.000000	20.151	1024
+derive	LogicKernel	3	121.407932	0.000000	20.151	1024
+derive	LogicKernel	4	116.225407	0.000000	20.151	1024
+derive	LogicKernel	5	135.098411	0.000000	20.151	1024
+derive	LogicKernel	6	108.494549	0.000000	20.151	1024
+derive	LogicKernel	7	107.751817	0.000000	20.152	1024
+derive	LogicKernel	8	107.582880	0.000000	20.151	1024
+derive	LogicKernel	9	108.612358	0.000000	20.151	1024
+derive	LogicKernel	10	112.258696	0.000000	20.151	1024
+derive	LogicKernel	11	108.183465	0.000000	20.151	1024
+derive	LogicKernel	12	110.934787	0.000000	20.151	1024
+derive	LogicKernel	13	113.714051	0.000000	20.151	1024
+derive	LogicKernel	14	108.980216	0.000000	20.152	1024
+derive	LogicKernel	15	109.889455	0.000000	20.153	1024
+derive	LogicKernel	16	114.554404	0.000000	20.151	1024
+derive	LogicKernel	17	106.940310	0.000000	20.151	1024
+derive	LogicKernel	18	99.622424	0.000000	20.151	1024
+derive	LogicKernel	19	102.724726	0.000000	20.153	1024
+derive	LogicKernel	20	111.006074	0.000000	20.151	1024
+derive	LogicKernel	21	101.805361	0.000000	20.151	1024
+derive	LogicKernel	22	99.647243	0.000000	20.151	1024
+derive	LogicKernel	23	101.324142	0.000000	20.151	1024
+derive	LogicKernel	24	102.704872	0.000000	20.153	1024
+derive	LogicKernel	25	103.260728	0.000000	20.153	1024
+derive	LogicKernel	26	102.162466	0.000000	20.151	1024
+derive	LogicKernel	27	115.679176	0.000000	20.149	1024
+derive	LogicKernel	28	101.954179	0.000000	20.153	1024
+derive	LogicKernel	29	109.774441	0.000000	20.153	1024
+derive	LogicKernel	30	114.270367	0.000000	20.151	1024
+derive	swipl	1	7.714130			16384
+derive	swipl	2	8.241681			16384
+derive	swipl	3	7.752853			16384
+derive	swipl	4	7.431940			16384
+derive	swipl	5	7.481183			16384
+derive	swipl	6	6.499438			16384
+derive	swipl	7	6.232003			16384
+derive	swipl	8	6.622067			16384
+derive	swipl	9	6.849194			16384
+derive	swipl	10	6.764603			16384
+derive	swipl	11	6.950111			16384
+derive	swipl	12	6.898685			16384
+derive	swipl	13	6.571630			16384
+derive	swipl	14	7.097216			16384
+derive	swipl	15	6.743896			16384
+derive	swipl	16	6.626447			16384
+derive	swipl	17	6.297996			16384
+derive	swipl	18	6.215705			16384
+derive	swipl	19	7.046780			16384
+derive	swipl	20	6.724906			16384
+derive	swipl	21	6.116068			16384
+derive	swipl	22	6.977090			16384
+derive	swipl	23	10.570133			16384
+derive	swipl	24	6.880146			16384
+derive	swipl	25	6.971866			16384
+derive	swipl	26	6.309390			16384
+derive	swipl	27	6.438990			16384
+derive	swipl	28	6.352042			16384
+derive	swipl	29	6.499075			16384
+derive	swipl	30	7.554030			16384
+qsort	LogicKernel	1	1008.926492	0.000000	0.000	128
+qsort	LogicKernel	2	890.846367	0.000000	0.000	128
+qsort	LogicKernel	3	988.216734	0.000000	0.000	128
+qsort	LogicKernel	4	971.878898	0.000000	0.000	128
+qsort	LogicKernel	5	987.308063	0.000000	0.000	128
+qsort	LogicKernel	6	959.969539	0.000000	0.000	128
+qsort	LogicKernel	7	991.482805	0.000000	0.000	128
+qsort	LogicKernel	8	938.594594	0.000000	0.000	128
+qsort	LogicKernel	9	950.281609	0.000000	0.000	128
+qsort	LogicKernel	10	970.994141	0.000000	0.000	128
+qsort	LogicKernel	11	1039.274586	0.000000	0.000	128
+qsort	LogicKernel	12	953.251914	0.000000	0.000	128
+qsort	LogicKernel	13	912.526375	0.000000	0.000	128
+qsort	LogicKernel	14	892.921898	0.000000	0.000	128
+qsort	LogicKernel	15	1002.586516	0.000000	0.000	128
+qsort	LogicKernel	16	906.935242	0.000000	0.000	128
+qsort	LogicKernel	17	990.553945	0.000000	0.000	128
+qsort	LogicKernel	18	990.383797	0.000000	0.000	128
+qsort	LogicKernel	19	961.152383	0.000000	0.000	128
+qsort	LogicKernel	20	952.957945	0.000000	0.000	128
+qsort	LogicKernel	21	926.611297	0.000000	0.000	128
+qsort	LogicKernel	22	959.587133	0.000000	0.000	128
+qsort	LogicKernel	23	928.006898	0.000000	0.000	128
+qsort	LogicKernel	24	988.484563	0.000000	0.000	128
+qsort	LogicKernel	25	981.042289	0.000000	0.000	128
+qsort	LogicKernel	26	904.839633	0.000000	0.000	128
+qsort	LogicKernel	27	968.899422	0.000000	0.000	128
+qsort	LogicKernel	28	965.838273	0.000000	0.000	128
+qsort	LogicKernel	29	1019.233148	0.000000	0.000	128
+qsort	LogicKernel	30	1103.410430	0.000000	0.000	128
+qsort	swipl	1	43.302192			2048
+qsort	swipl	2	43.099513			2048
+qsort	swipl	3	48.318179			2048
+qsort	swipl	4	43.609063			2048
+qsort	swipl	5	44.966349			2048
+qsort	swipl	6	42.191707			2048
+qsort	swipl	7	45.058201			2048
+qsort	swipl	8	47.801179			2048
+qsort	swipl	9	44.686021			2048
+qsort	swipl	10	43.683685			2048
+qsort	swipl	11	41.982508			2048
+qsort	swipl	12	46.793954			2048
+qsort	swipl	13	48.761023			2048
+qsort	swipl	14	47.986861			2048
+qsort	swipl	15	47.054258			2048
+qsort	swipl	16	43.291715			2048
+qsort	swipl	17	49.860682			2048
+qsort	swipl	18	46.976376			2048
+qsort	swipl	19	41.154912			2048
+qsort	swipl	20	41.746534			2048
+qsort	swipl	21	46.425033			2048
+qsort	swipl	22	46.784058			2048
+qsort	swipl	23	43.118023			2048
+qsort	swipl	24	42.795669			2048
+qsort	swipl	25	47.631678			2048
+qsort	swipl	26	44.049812			2048
+qsort	swipl	27	41.391817			2048
+qsort	swipl	28	46.698377			2048
+qsort	swipl	29	41.656080			2048
+qsort	swipl	30	43.230481			2048
+poly_10	LogicKernel	1	188332.555000	0.000000	100412.000	1
+poly_10	LogicKernel	2	212495.344000	0.000000	100412.000	1
+poly_10	LogicKernel	3	191212.578000	0.000000	100412.000	1
+poly_10	LogicKernel	4	194334.111000	0.000000	100412.000	1
+poly_10	LogicKernel	5	193302.106000	0.000000	100412.000	1
+poly_10	LogicKernel	6	218059.127000	0.000000	100412.000	1
+poly_10	LogicKernel	7	187617.995000	0.000000	100412.000	1
+poly_10	LogicKernel	8	183902.868000	0.000000	100412.000	1
+poly_10	LogicKernel	9	181989.441000	0.000000	100412.000	1
+poly_10	LogicKernel	10	183899.032000	0.000000	100412.000	1
+poly_10	LogicKernel	11	181905.804000	0.000000	100412.000	1
+poly_10	LogicKernel	12	182698.039000	0.000000	100412.000	1
+poly_10	LogicKernel	13	183148.240000	0.000000	100412.000	1
+poly_10	LogicKernel	14	182228.039000	0.000000	100412.000	1
+poly_10	LogicKernel	15	178988.660000	0.000000	100412.000	1
+poly_10	LogicKernel	16	184845.690000	0.000000	100412.000	1
+poly_10	LogicKernel	17	182455.139000	0.000000	100412.000	1
+poly_10	LogicKernel	18	222864.116000	0.000000	100412.000	1
+poly_10	LogicKernel	19	184057.626000	0.000000	100412.000	1
+poly_10	LogicKernel	20	196788.357000	0.000000	100412.000	1
+poly_10	LogicKernel	21	181081.490000	0.000000	100412.000	1
+poly_10	LogicKernel	22	185263.003000	0.000000	100412.000	1
+poly_10	LogicKernel	23	181348.378000	0.000000	100412.000	1
+poly_10	LogicKernel	24	183528.226000	0.000000	100412.000	1
+poly_10	LogicKernel	25	198290.316000	0.000000	100412.000	1
+poly_10	LogicKernel	26	177697.276000	0.000000	100412.000	1
+poly_10	LogicKernel	27	179052.995000	0.000000	100412.000	1
+poly_10	LogicKernel	28	184245.669000	0.000000	100412.000	1
+poly_10	LogicKernel	29	179379.516000	0.000000	100412.000	1
+poly_10	LogicKernel	30	183850.920000	0.000000	100412.000	1
+poly_10	swipl	1	4808.589816			32
+poly_10	swipl	2	4636.302590			32
+poly_10	swipl	3	4850.454628			32
+poly_10	swipl	4	4553.802311			32
+poly_10	swipl	5	4235.908389			32
+poly_10	swipl	6	4106.290638			32
+poly_10	swipl	7	5119.569600			32
+poly_10	swipl	8	5587.726831			32
+poly_10	swipl	9	5172.044039			32
+poly_10	swipl	10	4754.975438			32
+poly_10	swipl	11	4700.310528			32
+poly_10	swipl	12	4814.326763			32
+poly_10	swipl	13	4718.802869			32
+poly_10	swipl	14	4809.036851			32
+poly_10	swipl	15	4790.417850			32
+poly_10	swipl	16	5321.495235			32
+poly_10	swipl	17	7121.324539			32
+poly_10	swipl	18	4752.054811			32
+poly_10	swipl	19	4908.278584			32
+poly_10	swipl	20	4962.839186			32
+poly_10	swipl	21	4661.984742			32
+poly_10	swipl	22	4677.005112			32
+poly_10	swipl	23	4804.946482			32
+poly_10	swipl	24	4702.553153			32
+poly_10	swipl	25	4767.477512			32
+poly_10	swipl	26	4764.683545			32
+poly_10	swipl	27	4707.306623			32
+poly_10	swipl	28	4744.492471			32
+poly_10	swipl	29	4820.749164			32
+poly_10	swipl	30	4781.834781			32
+term_to_atom clause	LogicKernel	1	40.676338	0.000000	369.001	4096
+term_to_atom clause	LogicKernel	2	44.113822	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	3	62.460846	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	4	75.344298	20.835140	369.000	4096
+term_to_atom clause	LogicKernel	5	39.289196	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	6	39.843194	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	7	44.763687	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	8	61.528185	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	9	87.550823	22.022192	369.001	4096
+term_to_atom clause	LogicKernel	10	39.055337	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	11	39.613627	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	12	44.015159	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	13	62.515209	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	14	88.607778	21.942934	369.000	4096
+term_to_atom clause	LogicKernel	15	42.687718	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	16	42.683766	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	17	45.746953	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	18	61.536727	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	19	93.810932	22.736548	369.000	4096
+term_to_atom clause	LogicKernel	20	41.074786	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	21	39.931491	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	22	44.367960	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	23	61.713143	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	24	91.372849	22.515257	369.000	4096
+term_to_atom clause	LogicKernel	25	44.142520	0.000000	369.001	4096
+term_to_atom clause	LogicKernel	26	39.569316	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	27	46.126388	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	28	62.594550	0.000000	369.000	4096
+term_to_atom clause	LogicKernel	29	89.922621	22.427781	369.000	4096
+term_to_atom clause	LogicKernel	30	40.398365	0.000000	369.000	4096
+term_to_atom clause	swipl	1	12.405973			8192
+term_to_atom clause	swipl	2	12.447796			8192
+term_to_atom clause	swipl	3	12.444274			8192
+term_to_atom clause	swipl	4	12.333272			8192
+term_to_atom clause	swipl	5	12.599834			8192
+term_to_atom clause	swipl	6	12.123346			8192
+term_to_atom clause	swipl	7	15.501835			8192
+term_to_atom clause	swipl	8	12.762961			8192
+term_to_atom clause	swipl	9	12.313161			8192
+term_to_atom clause	swipl	10	12.822100			8192
+term_to_atom clause	swipl	11	12.806617			8192
+term_to_atom clause	swipl	12	12.321601			8192
+term_to_atom clause	swipl	13	12.304430			8192
+term_to_atom clause	swipl	14	12.715958			8192
+term_to_atom clause	swipl	15	12.603909			8192
+term_to_atom clause	swipl	16	12.636418			8192
+term_to_atom clause	swipl	17	12.325996			8192
+term_to_atom clause	swipl	18	12.274337			8192
+term_to_atom clause	swipl	19	12.601085			8192
+term_to_atom clause	swipl	20	12.794801			8192
+term_to_atom clause	swipl	21	12.236851			8192
+term_to_atom clause	swipl	22	12.508128			8192
+term_to_atom clause	swipl	23	12.297125			8192
+term_to_atom clause	swipl	24	12.361677			8192
+term_to_atom clause	swipl	25	12.177014			8192
+term_to_atom clause	swipl	26	13.088138			8192
+term_to_atom clause	swipl	27	12.731529			8192
+term_to_atom clause	swipl	28	12.550794			8192
+term_to_atom clause	swipl	29	13.390381			8192
+term_to_atom clause	swipl	30	12.487581			8192
+term_to_atom write clause	LogicKernel	1	690.331679	0.000000	601.235	1024
+term_to_atom write clause	LogicKernel	2	1532.613160	0.000000	601.229	1024
+term_to_atom write clause	LogicKernel	3	606.302126	0.000000	601.221	1024
+term_to_atom write clause	LogicKernel	4	659.297418	0.000000	601.212	1024
+term_to_atom write clause	LogicKernel	5	769.509342	0.000000	601.211	1024
+term_to_atom write clause	LogicKernel	6	790.948959	0.000000	601.197	1024
+term_to_atom write clause	LogicKernel	7	868.514226	0.000000	601.203	1024
+term_to_atom write clause	LogicKernel	8	994.485090	0.000000	649.226	1024
+term_to_atom write clause	LogicKernel	9	1195.744689	0.000000	601.223	1024
+term_to_atom write clause	LogicKernel	10	1632.390843	0.000000	601.199	1024
+term_to_atom write clause	LogicKernel	11	3402.195617	0.000000	601.210	1024
+term_to_atom write clause	LogicKernel	12	1148.673081	0.000000	601.208	1024
+term_to_atom write clause	LogicKernel	13	1123.183906	0.000000	601.209	1024
+term_to_atom write clause	LogicKernel	14	1208.920368	0.000000	601.213	1024
+term_to_atom write clause	LogicKernel	15	1284.681899	0.000000	601.210	1024
+term_to_atom write clause	LogicKernel	16	1306.607369	0.000000	601.213	1024
+term_to_atom write clause	LogicKernel	17	1376.752374	0.000000	601.193	1024
+term_to_atom write clause	LogicKernel	18	1430.835348	0.000000	601.200	1024
+term_to_atom write clause	LogicKernel	19	1545.793507	0.000000	601.198	1024
+term_to_atom write clause	LogicKernel	20	1622.981095	0.000000	601.209	1024
+term_to_atom write clause	LogicKernel	21	1635.444738	0.000000	601.217	1024
+term_to_atom write clause	LogicKernel	22	1734.119247	0.000000	601.237	1024
+term_to_atom write clause	LogicKernel	23	1803.239982	0.000000	601.223	1024
+term_to_atom write clause	LogicKernel	24	1932.612123	0.000000	697.188	1024
+term_to_atom write clause	LogicKernel	25	2130.532611	0.000000	601.204	1024
+term_to_atom write clause	LogicKernel	26	2354.836787	0.000000	601.201	1024
+term_to_atom write clause	LogicKernel	27	2730.645355	0.000000	601.220	1024
+term_to_atom write clause	LogicKernel	28	3759.895338	0.000000	601.184	1024
+term_to_atom write clause	LogicKernel	29	7671.737918	0.000000	601.196	1024
+term_to_atom write clause	LogicKernel	30	2068.787345	0.000000	601.204	1024
+term_to_atom write clause	swipl	1	16.040634			8192
+term_to_atom write clause	swipl	2	16.135571			8192
+term_to_atom write clause	swipl	3	16.075268			8192
+term_to_atom write clause	swipl	4	15.913451			8192
+term_to_atom write clause	swipl	5	15.865226			8192
+term_to_atom write clause	swipl	6	15.522004			8192
+term_to_atom write clause	swipl	7	16.042264			8192
+term_to_atom write clause	swipl	8	15.875732			8192
+term_to_atom write clause	swipl	9	16.156147			8192
+term_to_atom write clause	swipl	10	15.954574			8192
+term_to_atom write clause	swipl	11	16.162143			8192
+term_to_atom write clause	swipl	12	15.604164			8192
+term_to_atom write clause	swipl	13	15.806843			8192
+term_to_atom write clause	swipl	14	15.918340			8192
+term_to_atom write clause	swipl	15	15.603902			8192
+term_to_atom write clause	swipl	16	15.861122			8192
+term_to_atom write clause	swipl	17	15.685393			8192
+term_to_atom write clause	swipl	18	15.854865			8192
+term_to_atom write clause	swipl	19	15.824306			8192
+term_to_atom write clause	swipl	20	15.991245			8192
+term_to_atom write clause	swipl	21	15.746860			8192
+term_to_atom write clause	swipl	22	15.788246			8192
+term_to_atom write clause	swipl	23	15.705038			8192
+term_to_atom write clause	swipl	24	16.046601			8192
+term_to_atom write clause	swipl	25	16.139296			8192
+term_to_atom write clause	swipl	26	16.281410			8192
+term_to_atom write clause	swipl	27	17.043640			8192
+term_to_atom write clause	swipl	28	16.075617			8192
+term_to_atom write clause	swipl	29	15.681493			8192
+term_to_atom write clause	swipl	30	15.904399			8192
+1000 frames + choice points	LogicKernel	1	19.984519	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	2	19.894697	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	3	20.139635	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	4	20.525633	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	5	19.915044	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	6	19.683549	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	7	20.803087	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	8	19.810722	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	9	19.626393	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	10	20.286854	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	11	20.017460	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	12	19.740778	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	13	19.897213	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	14	20.129070	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	15	19.930058	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	16	19.570996	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	17	19.930355	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	18	20.179911	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	19	19.516634	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	20	20.536066	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	21	19.404408	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	22	19.701053	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	23	20.162559	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	24	20.291342	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	25	19.678442	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	26	19.824978	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	27	20.046060	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	28	20.032794	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	29	19.864919	0.000000	0.000	8192
+1000 frames + choice points	LogicKernel	30	19.975006	0.000000	0.000	8192
+attempt f(X)=f(a)	LogicKernel	1	0.102454	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	2	0.112681	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	3	0.105325	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	4	0.101035	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	5	0.103701	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	6	0.103853	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	7	0.108364	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	8	0.102448	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	9	0.100616	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	10	0.101896	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	11	0.103561	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	12	0.127271	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	13	0.118706	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	14	0.105276	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	15	0.105103	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	16	0.102868	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	17	0.104766	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	18	0.101660	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	19	0.105470	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	20	0.101051	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	21	0.102542	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	22	0.105412	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	23	0.104873	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	24	0.101367	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	25	0.102787	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	26	0.107013	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	27	0.102942	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	28	0.104519	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	29	0.102770	0.000000	0.000	1048576
+attempt f(X)=f(a)	LogicKernel	30	0.100942	0.000000	0.000	1048576
+attempt + finally	LogicKernel	1	0.120300	0.000000	0.000	1048576
+attempt + finally	LogicKernel	2	0.122235	0.000000	0.000	1048576
+attempt + finally	LogicKernel	3	0.121587	0.000000	0.000	1048576
+attempt + finally	LogicKernel	4	0.119843	0.000000	0.000	1048576
+attempt + finally	LogicKernel	5	0.122212	0.000000	0.000	1048576
+attempt + finally	LogicKernel	6	0.120843	0.000000	0.000	1048576
+attempt + finally	LogicKernel	7	0.122031	0.000000	0.000	1048576
+attempt + finally	LogicKernel	8	0.122863	0.000000	0.000	1048576
+attempt + finally	LogicKernel	9	0.121715	0.000000	0.000	1048576
+attempt + finally	LogicKernel	10	0.121108	0.000000	0.000	1048576
+attempt + finally	LogicKernel	11	0.144725	0.000000	0.000	1048576
+attempt + finally	LogicKernel	12	0.135351	0.000000	0.000	1048576
+attempt + finally	LogicKernel	13	0.122097	0.000000	0.000	1048576
+attempt + finally	LogicKernel	14	0.121531	0.000000	0.000	1048576
+attempt + finally	LogicKernel	15	0.127813	0.000000	0.000	1048576
+attempt + finally	LogicKernel	16	0.119736	0.000000	0.000	1048576
+attempt + finally	LogicKernel	17	0.120837	0.000000	0.000	1048576
+attempt + finally	LogicKernel	18	0.119001	0.000000	0.000	1048576
+attempt + finally	LogicKernel	19	0.124780	0.000000	0.000	1048576
+attempt + finally	LogicKernel	20	0.118550	0.000000	0.000	1048576
+attempt + finally	LogicKernel	21	0.119785	0.000000	0.000	1048576
+attempt + finally	LogicKernel	22	0.121156	0.000000	0.000	1048576
+attempt + finally	LogicKernel	23	0.119975	0.000000	0.000	1048576
+attempt + finally	LogicKernel	24	0.120969	0.000000	0.000	1048576
+attempt + finally	LogicKernel	25	0.120670	0.000000	0.000	1048576
+attempt + finally	LogicKernel	26	0.120206	0.000000	0.000	1048576
+attempt + finally	LogicKernel	27	0.123472	0.000000	0.000	1048576
+attempt + finally	LogicKernel	28	0.124850	0.000000	0.000	1048576
+attempt + finally	LogicKernel	29	0.120171	0.000000	0.000	1048576
+attempt + finally	LogicKernel	30	0.121882	0.000000	0.000	1048576

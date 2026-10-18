@@ -133,7 +133,9 @@ mates :- forall((between(1, 0x10FFFF, C), \+ surrogate(C), code_type(C, paren(M)
 :- initialization((classes(Ts), maplist(class, Ts), widths, mates, halt)).
 """
 
-const _UM_SWIPL = Sys.which("swipl")
+const _UM_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _UM_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 if _UM_SWIPL !== nothing

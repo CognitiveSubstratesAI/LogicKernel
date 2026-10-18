@@ -204,7 +204,7 @@ function _swipl_variant(pairs)::Vector{Bool}
     return ans
 end
 
-const _VSWIPL = Sys.which("swipl")
+const _VSWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _VSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 if _VSWIPL !== nothing

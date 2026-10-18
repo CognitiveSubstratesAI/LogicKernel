@@ -123,7 +123,7 @@ function _extract(file::String, prefix::String, suffix::String)::String
     return replace(src[(last(i) + 1):(first(j) - 1)], r"\s+" => "")
 end
 
-const _SWIPL = Sys.which("swipl")
+const _SWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "standalone consumer" begin

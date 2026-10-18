@@ -216,7 +216,9 @@ function _bc_text(head::_B, body::Union{Nothing, _B})::String
     return ix_text(cl, ix_var_counts(cl))
 end
 
-const _BC_SWIPL_BIN = Sys.which("swipl")
+const _BC_SWIPL_BIN = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _BC_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 # ── pinned clauses ───────────────────────────────────────────────────────────────────────────────

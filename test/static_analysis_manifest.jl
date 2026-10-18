@@ -1994,6 +1994,23 @@ end
 
 const DISPATCH_MANIFEST = _manifest_entries(_DISPATCH_MANIFEST_TUPLE)
 
+# JET DEDUP (2026-10-18, tooling 2): an entry whose analysis ANOTHER entry's analysis already contains is not
+# analysed a second time by the JET loop (it stays in the manifest: the coverage, the allocation flags and the
+# call-path test are unchanged). MEASURED that night: 4 of 2166 entries took 1122 of the loop's 1142 s — each
+# analyses the run loop: `query_answers` on the three term types (the only path to the loop on the two
+# alternative types) and the reference type's `PL_next_solution_guarded`, which `query_answers`' analysis
+# reaches again (query_answers → PL_next_solution → PL_next_solution_guarded, checked structurally in
+# test/static_analysis_body.jl). Saves ~337 s a run.
+"Manifest entries JET analyses through a caller entry: `(f, tt) => (caller, caller_tt)`."
+const JET_ANALYSED_THROUGH = Dict(
+    (
+        LK.PL_next_solution_guarded,
+        Tuple{
+            LK.PL_global_data{LK.DefaultTerm}, LK.PL_local_data{LK.DefaultTerm}, Int, Bool
+        }
+    ) => (LK.query_answers, Tuple{LK.PL_local_data{LK.DefaultTerm}, LK.DefaultTerm})
+)
+
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
 # cached bit; `Term` overrides it, so no reference type reaches it. (`Tuple{Int}` names the fallback
 # method by a non-term argument type — it is the method `which` selects.) Its body is

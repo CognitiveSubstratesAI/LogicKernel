@@ -207,7 +207,7 @@ function _eraise(ld, i::Int, j::Int)::Int
     return r
 end
 
-const _ESWIPL = Sys.which("swipl")
+const _ESWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _ESWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "the exception classes, as written (the resource class as fixed in 85d0cc2)" begin

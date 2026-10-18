@@ -80,7 +80,7 @@ function _swipl_compare_matrix(srcs)::Matrix{Int}
     return m
 end
 
-const _SWIPL = Sys.which("swipl")
+const _SWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
 const _SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 if _SWIPL !== nothing

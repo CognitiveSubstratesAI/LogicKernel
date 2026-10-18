@@ -27,7 +27,9 @@ const _CW = lk_term_type(Union{Int64, Float64})
 _cws(n) = lk_sym(_CW, Symbol(n))
 _cwe(f, xs::AbstractVector) = mk_expr(_CW, _CW[_cws(f); xs])
 
-const _CW_SWIPL = Sys.which("swipl")
+const _CW_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _CW_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 # The names a clause's variables are drawn from: properly named, `_Name` (anonymous by its name: a

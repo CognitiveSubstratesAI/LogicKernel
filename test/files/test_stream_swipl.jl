@@ -147,7 +147,9 @@ end
     @test_throws LK.NotPortedError LK.Sputcode(Int('a'), s)    # UTF-8 only (user, 2026-10-07)
 end
 
-const _ST_SWIPL = Sys.which("swipl")
+const _ST_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _ST_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 if _ST_SWIPL !== nothing

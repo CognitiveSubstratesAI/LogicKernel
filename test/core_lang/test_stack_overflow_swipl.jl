@@ -80,7 +80,9 @@ end
 "A context's kind, as the swipl side writes it: `dict(Tag)`, `atom(Name)` or `other`."
 _sokind(c::_SO) = kind(c) === SYM ? "atom($(lk_name(c)))" : "other"
 
-const _SO_SWIPL = Sys.which("swipl")
+const _SO_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _SO_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 "swipl's outcome of each goal under the limit: `formal | context kind`, one line each."

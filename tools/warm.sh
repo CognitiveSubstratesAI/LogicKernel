@@ -202,7 +202,8 @@ _rss_gate() {
 # the one for the new — src/pl-op.jl's `defOperator!`, whose signature holds the type inside a
 # `Union`, which Revise did not re-evaluate — and every call failed as AMBIGUOUS (`MethodError`).
 # It was found by running the tests and reading the error, twice. So before a snippet is sent, the
-# struct definitions of src/ are compared with the ones the daemon started from: a definition that
+# struct definitions of src/ — and its top-level CONSTS (2026-10-17: Revise does not re-evaluate a changed
+# `const`; `const:<name>` in the snapshot) — are compared with the ones the daemon started from: a definition that
 # CHANGED or went away restarts the daemon, the reason printed — "struct changed: <name>[,<name>…]"
 # — and written to .warm/restart.log. A NEW struct restarts nothing (no method can be stale for
 # it); nor does a comment or a blank inside one.
@@ -322,6 +323,19 @@ _file() {
         return 2
     fi
     local snippet="$DIR/file_snippet.jl" out="$DIR/file_out.$$" rc
+    # (2026-10-17, audit D-0001) LOGICKERNEL_NO_SWIPL=1: the file runs as CI's Pkg.test runs it, without swipl
+    # (every test file's swipl check yields nothing then), swipl not required, and with the suite's
+    # inert-testset guard — a testset that asserts only inside its swipl branch asserts NOTHING there, and
+    # stopped Pkg.test twice that night while every warm run passed
+    local swenv='"LOGICKERNEL_REQUIRE_SWIPL" => "1"' inert=""
+    if [ "${LOGICKERNEL_NO_SWIPL:-}" = 1 ]; then
+        swenv='"LOGICKERNEL_NO_SWIPL" => "1", "LOGICKERNEL_REQUIRE_SWIPL" => nothing'
+        inert="let g = Module(:WarmInertGuard)
+        Base.include(g, raw\"$ROOT/test/inert_testset_guard.jl\")
+        Base.invokelatest(g.assert_no_inert_testsets, ts)
+    end"
+        echo "warm lane: $f WITHOUT swipl (LOGICKERNEL_NO_SWIPL=1), the inert-testset guard on" >&2
+    fi
     cat > "$snippet" <<JL
 let f = raw"$f", ts = Test.DefaultTestSet("warm: " * basename(f); verbose=true)
     Test.@with_testset ts begin
@@ -329,12 +343,13 @@ let f = raw"$f", ts = Test.DefaultTestSet("warm: " * basename(f); verbose=true)
             label = isempty(impl) ? basename(f) : "\$(basename(f)) [\$impl]"
             @testset "\$label" begin
                 m = Core.eval(Main, Expr(:module, true, gensym(:LKWarm), Expr(:block)))
-                env = ["LOGICKERNEL_REQUIRE_SWIPL" => "1"]
+                env = Pair{String, Any}[$swenv]
                 isempty(impl) || push!(env, "LOGICKERNEL_TERM" => impl)
                 withenv(() -> Base.include(m, f), env...)
             end
         end
     end
+    $inert
     Test.finish(ts)                          # throws on any failure or error: the verdict
 end
 JL
@@ -600,8 +615,7 @@ _preflight_once() {
     # passed the preflight and failed test_type_discipline.jl in the cold evidence run).
     files=$( {
         printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
-        cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } |
-            grep -E '^test/(.*/)?test_[^/]*\.jl$'
+        _changed_files | grep -E '^test/(.*/)?test_[^/]*\.jl$'
     } | sort -u)
     for f in $files; do
         [ -f "$ROOT/$f" ] && [ "$f" != test/test_static_analysis.jl ] || continue
@@ -690,9 +704,43 @@ _preflight() {
 # (test_static_analysis.jl: JET, Aqua, AllocCheck), which every manifest change would bring in
 # through static_analysis_body.jl: CI's full run judges it, as below
 # (LOGICKERNEL_BRANCH_GATE_CI_ONLY replaces that exclusion: tools/test_warm.sh bgfiles).
+# _gate_base — the commit a gate's file selection diffs against (2026-10-17): the MERGE BASE with origin/main,
+# so a gate branch made of COMMITTED steps runs what its commits changed. Before, the selection was the
+# working tree against HEAD — on a branch of committed steps nothing differed, and the gate ran the
+# tree-wide files only (batch 1 and 2 of L1d: three stale pins unrun, found by CI or by hand). HEAD where
+# there is no origin/main (a CI checkout at depth 1); LOGICKERNEL_GATE_BASE names one outright (the tests).
+_gate_base() {
+    if [ -n "${LOGICKERNEL_GATE_BASE:-}" ]; then
+        echo "$LOGICKERNEL_GATE_BASE"
+        return
+    fi
+    git -C "$ROOT" merge-base origin/main HEAD 2> /dev/null || echo HEAD
+}
+# _changed_files — the files a gate treats as changed: tracked ones differing from the base (committed or
+# not) and untracked ones
+_changed_files() {
+    (cd "$ROOT" && { git diff --name-only "$(_gate_base)"; git ls-files -o --exclude-standard; }) | sort -u
+}
+# _src_named_tests — THE SOURCE-TO-TEST MAP (2026-10-18; tooling 2): the test files that NAME a function whose
+# top-level definition the src/ diff since the gate base adds, changes or removes. L1d's batches broke tests
+# that had not changed themselves (the allocation pins, test_atom_words' value-table case, an inert ladder):
+# a src edit selected none of them. A definition line is a top-level `function NAME(`, `@inline function
+# NAME(` or `NAME(...) … =` line; a name shorter than 4 characters is skipped; at most 40 files.
+_src_named_tests() {
+    local base names n
+    base="$(_gate_base)"
+    names=$(cd "$ROOT" && git diff -U0 "$base" -- src 2> /dev/null |
+        sed -nE 's/^[-+]((@inline|@noinline) +)?(function +)?([A-Za-z_][A-Za-z0-9_!]*)(\{[^}]*\})?\(.*/\4/p' |
+        grep -vxE 'function|end|if|for|while|let|begin|return|const|struct|mutable|module|using|import|export' |
+        awk 'length($0) >= 4' | sort -u)
+    [ -n "$names" ] || return 0
+    for n in $names; do
+        (cd "$ROOT" && grep -rlwF --include='test_*.jl' -- "$n" test 2> /dev/null) || :
+    done | sort -u | head -40
+}
 _branch_gate_files() {
     local changed helpers more h re f
-    changed=$(cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; } | sort -u)
+    changed=$(_changed_files)
     helpers=$(printf '%s\n' "$changed" | grep -E '^test/(.*/)?[^/]*\.jl$' | grep -vE '(^|/)test_[^/]*\.jl$')
     while :; do                                         # helpers that include a changed helper
         more=""
@@ -709,6 +757,7 @@ _branch_gate_files() {
     {
         printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
         printf '%s\n' "$changed" | grep -E '^test/(.*/)?test_[^/]*\.jl$'
+        _src_named_tests                                # the source-to-test map (above)
         for h in $helpers; do
             re=$(basename "$h" | sed 's/\./\\./g')
             (cd "$ROOT" && grep -rlE --include='test_*.jl' "include\(.*[\"/]$re\"" test 2> /dev/null) ||
@@ -742,12 +791,11 @@ _file_time() {
     t=$(awk -F '\t' -v f="$1" '$1 == f { s = $2 } END { if (s != "") print s }' "$(_times_file)" 2> /dev/null)
     echo "${t:-${LOGICKERNEL_BRANCH_GATE_DEFAULT_S:-60}}"
 }
-# _branch_gate_direct — the tree-wide gates and the test files changed since HEAD or new
+# _branch_gate_direct — the tree-wide gates and the test files changed since the gate base (`_gate_base`) or new
 _branch_gate_direct() {
     {
         printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
-        (cd "$ROOT" && { git diff --name-only HEAD; git ls-files -o --exclude-standard; }) |
-            grep -E '^test/(.*/)?test_[^/]*\.jl$'
+        _changed_files | grep -E '^test/(.*/)?test_[^/]*\.jl$'
     } | grep -vxF "${LOGICKERNEL_BRANCH_GATE_CI_ONLY-test/test_static_analysis.jl}" | sort -u
 }
 # _branch_gate_plan — the files this branch-gate runs, one per line (stdout); the estimate, and what
@@ -782,6 +830,17 @@ _branch_gate() {
     t0=$(date +%s)
     _ci_gate "$ROOT" 0 || { echo "branch-gate: FAIL — the previous push's CI (tools/ci_status.sh)"; return 1; }
     _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest) in $(( $(date +%s) - t0 ))s"; return 1; }
+    # STEP 0, GATE PARITY (2026-10-18; tooling 2): the fast static pre-check — Aqua, JET's report_package — IN
+    # THE WARM DAEMON, as the preflight runs it, before any test file: a JET error or an ambiguity stops the
+    # gate in seconds. MEASURED 2026-10-18: 142 s the first run of a daemon (JET compiles once), 8 s after; a
+    # fresh process paid 732 s — never run it cold here (user, 2026-10-17)
+    echo "branch-gate: the fast static pre-check (Aqua, JET report_package)"
+    log="$DIR/branch_gate_static_fast.log"
+    _file test/static_analysis_fast.jl > "$log" 2>&1 || {
+        grep -E "Test Failed|Error During|JET-test failed|Aqua|ambigu|no matching method|possible error" "$log" | head -20
+        echo "branch-gate: FAIL (fast static pre-check) in $(( $(date +%s) - t0 ))s — $log"
+        return 1
+    }
     files=$(_branch_gate_plan)                          # within the time budget (above)
     local f0
     for f in $files; do

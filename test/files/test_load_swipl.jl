@@ -21,7 +21,9 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _TL = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _tls(x) = lk_sym(_TL, Symbol(x))
 
-const _TL_SWIPL = Sys.which("swipl")
+const _TL_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _TL_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 # The differential's encoding of a term (the read differential's): `V<n>` the n-th variable by first
