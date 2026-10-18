@@ -944,8 +944,10 @@ graph LR
     pl_copyterm --> default_term
     pl_copyterm --> pl_incl
     pl_copyterm --> SWI_Prolog
+    pl_copyterm --> pl_termwalk
     pl_copyterm --> pl_global
     pl_copyterm --> pl_inline
+    pl_copyterm --> pl_prims
     pl_copyterm --> pl_alloc
     pl_copyterm --> pl_fli
     pl_copyterm --> pl_arith

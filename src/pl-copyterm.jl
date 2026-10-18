@@ -179,15 +179,329 @@ function _cp_finish!(ld::PL_local_data{T}, st::_cp_state{T}, f::_cp_frame{T})::T
     return out
 end
 
+# ── copying on the CELLS (L1d step 6; the workspace's L1_plan/stageL1d_design.md §3f) ───────────
+# Upstream's three passes on locations: mark (`mark_for_copy`, `mark_for_duplicate`), copy
+# (`copy_term`, its originals forwarded and trailed on `ld.cp_lstack`), restore (`exitCyclicCopy`),
+# unmark (`cp_unmark`). A FUNCTOR cell carries its marks in place (MARK|FIRST, as upstream); a
+# VARIABLE cell's marks, and VAR_MARK on a copy's cell, live in the side vector `ld.cp_vmarks` by
+# position — upstream writes them into the variable cell, which ours cannot (a marked variable cell
+# is no `isVar`, and `_deref_loc` would read it as a value-table word): a representation-only
+# DIVERGES, behaviour identical. The term walk above (`copy_term`) stays for the callers holding a
+# TERM (`putSlotValue!`, the records, the exception's ball) and for the BOUNDARY: a keyed variable's
+# binding or a slot's side value met while marking — the whole copy is then redone on terms,
+# counted in `cold_pairs`. TRANSITIONAL until L1f.
+
+# PORT: pl-copyterm.c BOTH_MASK
+"The two copy marks (pl-copyterm.c `BOTH_MASK`): MARK (visited) and FIRST."
+const BOTH_MASK = MARK_MASK | FIRST_MASK
+# The side vector's bits: MARK and FIRST of a variable cell, and VAR_MARK on a copy's cell.
+const _CPV_MARK = 0x01
+const _CPV_FIRST = 0x02
+const _CPV_BOTH = 0x03
+const _CPV_VARMARK = 0x04
+"`mark_for_copy_cells`: the walk met the boundary (a keyed variable, a slot's side value)."
+const CP_BOUNDARY = -1
+
+# ORIGINAL: the side vector's entry of global position `p` (0 beyond its end).
+@inline _cp_vm(ld::PL_local_data, p::Int)::UInt8 =
+    p <= length(ld.cp_vmarks) ? ld.cp_vmarks[p] : 0x00
+
+# ORIGINAL: set the side vector's entry of global position `p`, growing it (new entries 0).
+function _cp_vm!(ld::PL_local_data, p::Int, v::UInt8)::Nothing
+    s = ld.cp_vmarks
+    n = length(s)
+    if p > n
+        resize!(s, max(p, 2 * n, 64))
+        fill!(view(s, (n + 1):length(s)), 0x00)
+    end
+    s[p] = v
+    return nothing
+end
+
+# ORIGINAL: the word at location `l` (a global position, or `-i` for slot `i`), not dereferenced.
+@inline _cp_word(ld::PL_local_data, l::Int)::word = l > 0 ? ld.gstack[l] : ld.slots[-l]
+
+# ORIGINAL: whether the word `c` at location `l` is the boundary (a slot's side value, or a
+# value-table word holding a keyed variable).
+@inline function _cp_boundary(ld::PL_local_data{T}, l::Int, c::word)::Bool where {T}
+    l < 0 && return c == SLOT_VALUE
+    (isVar(c) || isRef(c) || isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)) &&
+        return false
+    return kind(ld.vtable[valPtr(c)]) === VAR
+end
+
+# PORT: pl-copyterm.c can_share as can_share_cells
+"Whether the argument cell at global position `p` can be shared by a copy (pl-copyterm.c)."
+function can_share_cells(ld::PL_local_data, p::Int)::Bool
+    c = ld.gstack[p]
+    while isRef(c)                                          # TAG_REFERENCE
+        p = unRef(c)
+        c = ld.gstack[p]
+    end
+    isVar(c) && return false                                # TAG_VAR: no COPY_MARKED
+    _is_gcompound(c) && return (ld.gstack[valPtr(c)] & BOTH_MASK) == FIRST_MASK   # is_ground
+    return true
+end
+
+# PORT: pl-copyterm.c update_ground as update_ground_cells
+"Mark the compound whose word is at location `l` ground when every argument can be shared (pl-copyterm.c)."
+function update_ground_cells(ld::PL_local_data, l::Int)::Nothing
+    q = valPtr(_cp_word(ld, l))
+    f = ld.gstack[q]
+    for a in (q + arityFunctor(ld.functors, f)):-1:(q + 1)
+        can_share_cells(ld, a) || return nothing
+    end
+    ld.gstack[q] = (f & ~MARK_MASK) | FIRST_MASK            # set_ground
+    return nothing
+end
+
+# PORT: pl-copyterm.c mark_for_copy as mark_for_copy_cells
+# DIVERGES: on locations, the stack `ld.cp_stack` of `(loc << 1) | walk_ref`; no attributed variable
+# (MC_WALK_COPY, `must_copy_attvar`, `unshare_attvar`), no COPY_MARKED. As upstream, a compound is
+# dispatched again after `update_ground` (its functor visited once → shared). Returns 1, or
+# `CP_BOUNDARY`.
+"Mark the term at location `start` for `copy_term` (pl-copyterm.c `mark_for_copy`): 1, or `CP_BOUNDARY`."
+function mark_for_copy_cells(ld::PL_local_data{T}, start::Int)::Int where {T}
+    stack = ld.cp_stack
+    base = length(stack)
+    p = start
+    wr = false                                              # mode & MC_WALK_REF
+    while true
+        c = _cp_word(ld, p)                                 # switch(tag(*p))
+        if _cp_boundary(ld, p, c)
+            resize!(stack, base)
+            return CP_BOUNDARY
+        elseif isRef(c)                                     # TAG_REFERENCE
+            push!(stack, (p << 1) | Int(wr))
+            wr = true
+            p = unRef(c)                                    # deRef(p)
+            while isRef(ld.gstack[p])
+                p = unRef(ld.gstack[p])
+            end
+            continue
+        elseif isVar(c)                                     # TAG_VAR
+            m = _cp_vm(ld, p)
+            if (m & _CPV_BOTH) == 0                         # virgin && COPY_ALWAYS
+                _cp_vm!(ld, p, m | _CPV_MARK)
+            elseif (m & _CPV_BOTH) == _CPV_MARK             # visited_once
+                _cp_vm!(ld, p, m | _CPV_BOTH)
+            elseif (m & _CPV_BOTH) == _CPV_FIRST            # must_copy
+                _cp_vm!(ld, p, (m & ~_CPV_BOTH) | _CPV_MARK)
+            end
+        elseif _is_gcompound(c)                             # TAG_COMPOUND
+            q = valPtr(c)
+            f = ld.gstack[q]
+            arity = arityFunctor(ld.functors, f)
+            if (f & BOTH_MASK) == 0                         # virgin(t->definition)
+                ld.gstack[q] = f | MARK_MASK
+                if arity >= 1
+                    push!(stack, (p << 1) | Int(wr))
+                    wr = false
+                    p = q + arity                           # last argument
+                    continue
+                end
+            elseif (f & BOTH_MASK) == MARK_MASK             # visited_once
+                ld.gstack[q] = f | BOTH_MASK                # set_shared
+            end
+        end
+        if p == start                                       # after a leaf
+            resize!(stack, base)
+            return 1
+        end
+        while wr
+            e = pop!(stack)
+            p, wr = e >> 1, (e & 1) != 0
+            if p == start
+                resize!(stack, base)
+                return 1
+            end
+        end
+        p -= 1
+        if isFunctor(ld.gstack[p])                          # functor (compound)
+            e = pop!(stack)
+            p, wr = e >> 1, (e & 1) != 0
+            update_ground_cells(ld, p)
+        end
+    end
+end
+
+# PORT: pl-copyterm.c mark_for_duplicate as mark_for_duplicate_cells
+# DIVERGES: on locations, the one-sided cell agenda; no `nshare` (duplicate_term/2 shares nothing).
+"Mark the term at location `l` for `duplicate_term` (pl-copyterm.c `mark_for_duplicate`): 1, or `CP_BOUNDARY`."
+function mark_for_duplicate_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
+    a = ld.walk_agenda
+    initCellAgenda!(a, 1, l)
+    while true
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
+        if k == DU_TERM
+            clearCellAgenda!(a)
+            return CP_BOUNDARY
+        elseif k == DU_CELL                                 # TAG_VAR
+            m = _cp_vm(ld, p)
+            if (m & _CPV_BOTH) == 0
+                _cp_vm!(ld, p, m | _CPV_MARK)
+            elseif (m & _CPV_BOTH) == _CPV_MARK
+                _cp_vm!(ld, p, m | _CPV_BOTH)
+            end
+        elseif k == DU_WORD && _is_gcompound(w)             # TAG_COMPOUND
+            c = valPtr(w)
+            f = ld.gstack[c]
+            if (f & BOTH_MASK) == 0
+                ld.gstack[c] = f | MARK_MASK
+                pushWorkCellAgenda!(a, arityFunctor(ld.functors, f), c + 1)
+            elseif (f & BOTH_MASK) == MARK_MASK
+                ld.gstack[c] = f | BOTH_MASK
+            end
+        end
+    end
+    return 1
+end
+
+# PORT: pl-copyterm.c cp_unmark as cp_unmark_cells
+# DIVERGES: a variable cell's marks are its side-vector bits (see the section header); the boundary
+# (`DU_TERM`) holds no mark.
+"Clear the copy marks of the term at location `l` (pl-copyterm.c `cp_unmark`)."
+function cp_unmark_cells(ld::PL_local_data{T}, l::Int)::Nothing where {T}
+    a = ld.walk_agenda
+    initCellAgenda!(a, 1, l)
+    while true
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)
+        if k == DU_CELL                                     # TAG_VAR: *p &= ~BOTH_MASK
+            m = _cp_vm(ld, p)
+            m & _CPV_BOTH != 0 && _cp_vm!(ld, p, m & ~_CPV_BOTH)
+        elseif k == DU_WORD && _is_gcompound(w)             # TAG_COMPOUND
+            c = valPtr(w)
+            f = ld.gstack[c]
+            if (f & BOTH_MASK) != 0                         # visited(f->definition)
+                ld.gstack[c] = f & ~BOTH_MASK
+                pushWorkCellAgenda!(a, arityFunctor(ld.functors, f), c + 1)
+            end
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-copyterm.c exitCyclicCopy as exitCyclicCopy_cells
+# DIVERGES: VAR_MARK is the side vector's bit on the copy's cell (the cell itself stays 0); the
+# forwarded cells are on `ld.cp_lstack` (upstream: `LD->cycle.lstack`); no attributed variable.
+"Restore every original cell the copy forwarded (pl-copyterm.c `exitCyclicCopy`)."
+function exitCyclicCopy_cells(ld::PL_local_data)::Nothing
+    s = ld.cp_lstack
+    while !isempty(s)
+        p = pop!(s)
+        p2 = unRef(ld.gstack[p])
+        m = _cp_vm(ld, p2)
+        if isVar(ld.gstack[p2]) && (m & _CPV_VARMARK) != 0  # sharing variables
+            _cp_vm!(ld, p2, m & ~_CPV_VARMARK)              # setVar(*p2)
+            ld.gstack[p] = word(0)                          # setVar(*p)
+        else
+            ld.gstack[p] = ld.gstack[p2] | MARK_MASK        # cyclic terms
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-copyterm.c copy_term as copy_term_cells
+# DIVERGES: on locations, the two-sided cell agenda (upstream's term_agendaLRD; no COPY_ABSTRACT, so
+# no depth); `to` is always a global position; a copy's cell holding VAR_MARK is an unbound cell
+# with the side-vector bit. No attributed variable, no COPY_MARKED. The stack grows on demand.
+"Copy the marked term at location `from` into the unbound global cell `to` (pl-copyterm.c `copy_term`)."
+function copy_term_cells(ld::PL_local_data{T}, from::Int, to::Int)::Nothing where {T}
+    a = ld.cp_agenda
+    initCellAgendaLR!(a, 1, from, to, 0)
+    while true
+        found, f, t = nextCellAgendaLR!(a)
+        found || break
+        while true                                          # again:
+            c = _cp_word(ld, f)
+            if isRef(c)                                     # TAG_REFERENCE
+                p2 = unRef(c)
+                if isVar(ld.gstack[p2]) && (_cp_vm(ld, p2) & _CPV_VARMARK) != 0
+                    ld.gstack[t] = makeRefG(p2)             # a reference to a copied variable
+                    break
+                end
+                f = p2                                      # a normal reference
+                continue
+            elseif isVar(c)                                 # TAG_VAR
+                ld.gstack[t] = word(0)
+                if (_cp_vm(ld, f) & _CPV_BOTH) == _CPV_BOTH # shared(*from)
+                    _cp_vm!(ld, t, _cp_vm(ld, t) | _CPV_VARMARK)   # *to = VAR_MARK
+                    ld.gstack[f] = makeRefG(t)              # *from = makeRefG(to)
+                    push!(ld.cp_lstack, f)                  # TrailCyclic(from)
+                end
+            elseif _is_gcompound(c)                         # TAG_COMPOUND
+                ff = valPtr(c)
+                fd = ld.gstack[ff]
+                if isRef(fd)                                # copied already (forwarded)
+                    ld.gstack[t] = consPtr(unRef(fd), TAG_COMPOUND | STG_GLOBAL)
+                elseif (fd & BOTH_MASK) == FIRST_MASK       # is_ground: shared
+                    ld.gstack[t] = c
+                else
+                    arity = arityFunctor(ld.functors, fd)
+                    ft = allocGlobalCells!(ld, arity + 1)
+                    ld.gstack[ft] = fd & ~BOTH_MASK
+                    if (fd & BOTH_MASK) == BOTH_MASK        # shared: forward the original
+                        ld.gstack[ff] = makeRefG(ft)
+                        push!(ld.cp_lstack, ff)             # TrailCyclic(&ff->definition)
+                    end
+                    ld.gstack[t] = consPtr(ft, TAG_COMPOUND | STG_GLOBAL)
+                    pushWorkCellAgendaLR!(a, arity, ff, ft, 1)
+                end
+            else                                            # an atomic word (an indirect shared)
+                ld.gstack[t] = c
+            end
+            break
+        end
+    end
+    clearCellAgendaLR!(a)
+    return nothing
+end
+
+# PORT: pl-copyterm.c do_copy_term as do_copy_term_cells
+# DIVERGES: `from` a location (dereferenced here), `to` an unbound global cell; returns false at the
+# BOUNDARY, after unmarking — the caller redoes the copy on terms.
+"Copy the term at location `from` into the unbound global cell `to` (pl-copyterm.c `do_copy_term`); false at the boundary."
+function do_copy_term_cells(
+    ld::PL_local_data{T}, from::Int, to::Int, options::cp_options
+)::Bool where {T}
+    k, w, p = _deref_loc(ld, from)
+    k == DU_CELL && return true                             # TAG_VAR: `to` stays a fresh variable
+    k == DU_TERM && return false
+    if !(k == DU_WORD && _is_gcompound(w))                  # an atomic: *to = *from
+        ld.gstack[to] = w                                   # (an indirect's word: shared)
+        return true
+    end
+    src = p > 0 ? p : from                                  # the location holding the compound's word
+    rc = options.share ? mark_for_copy_cells(ld, src) : mark_for_duplicate_cells(ld, src)
+    if rc != 1
+        cp_unmark_cells(ld, src)
+        return false
+    end
+    copy_term_cells(ld, src, to)                            # initCyclicCopy: nothing to do
+    exitCyclicCopy_cells(ld)
+    cp_unmark_cells(ld, src)
+    return true
+end
+
 # ── the built-ins ───────────────────────────────────────────────────────────────────────────────
 # PORT: pl-copyterm.c copy_term_refs
-# DIVERGES: values, no global stack: nothing to allocate, so no retry (see the file header).
+# DIVERGES: on the CELLS (L1d step 6): a fresh global cell, the new reference its `makeRefG`, as
+# upstream; no retry loop (the stack grows on demand); no `vars` (copy_term/4). The boundary (see the
+# section above) copies on terms, counted in `cold_pairs`.
 "Put a copy of the term `from` references into a new term reference, and return it (pl-copyterm.c)."
 function copy_term_refs(
     ld::PL_local_data{T}, from::term_t, options::cp_options
 )::term_t where {T}
-    copy = new_term_ref(ld)
-    setSlotValue!(ld, copy + 1, copy_term(ld, slotValue(ld, from + 1), options))
+    copy = new_term_ref(ld)                                 # dest = allocGlobal(1); setVar(*dest)
+    dest = unRef(ld.slots[copy + 1])                        # *valTermRef(to) = makeRefG(dest)
+    if !do_copy_term_cells(ld, -(from + 1), dest, options)
+        ld.cold_pairs += 1
+        setSlotValue!(ld, copy + 1, copy_term(ld, slotValue(ld, from + 1), options))
+    end
     return copy
 end
 

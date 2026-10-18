@@ -352,6 +352,10 @@ mutable struct PL_local_data{T}
     walk_agenda::cell_agenda                                    # the walks on cells' agenda (L1d step 5)
     tv_seen::Vector{Bool}                                       # … a variable cell's visited mark, by position
     cycle_vstack::Vector{Int}                                   # cycle.vstack: the cells visitedWord marked
+    cp_vmarks::Vector{UInt8}                                    # copy_term's variable-cell marks, by position (L1d step 6)
+    cp_lstack::Vector{Int}                                      # … the cells it forwarded (TrailCyclic)
+    cp_stack::Vector{Int}                                       # … mark_for_copy's segstack
+    cp_agenda::cell_agendaLR                                    # … copy_term's agenda (term_agendaLRD)
     compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
     occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
@@ -434,6 +438,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), NTuple{3, Int}[],   # is_acyclic on cells (L1d)
         Int[], word[],                                             # (the cycle links' cells and words)
         cell_agenda(0, 0, NTuple{2, Int}[]), Bool[], Int[],      # the walks on cells (L1d step 5)
+        UInt8[], Int[], Int[], cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),   # copy_term on cells (L1d step 6)
         term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
         term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
         # idle until a search resets it (`_index_context!`): any predicate will do

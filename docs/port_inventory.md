@@ -84,7 +84,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-codetable.c` | code | `8609e216cab9` | `src/pl-vmi.jl` | 1 | 1 |
 | swipl-devel `src/pl-comp.c` | code | `8609e216cab9` | `src/pl-comp.jl` | 123 | 70 |
 | swipl-devel `src/pl-comp.h` | code | `8609e216cab9` | `src/pl-comp.jl` | 1 | 0 |
-| swipl-devel `src/pl-copyterm.c` | code | `8609e216cab9` | `src/pl-copyterm.jl` | 7 | 3 |
+| swipl-devel `src/pl-copyterm.c` | code | `8609e216cab9` | `src/pl-copyterm.jl` | 16 | 9 |
 | swipl-devel `src/pl-data.h` | code | `8609e216cab9` | `src/pl-incl.jl` | 77 | 8 |
 | swipl-devel `src/pl-data.h` | code | `8609e216cab9` | `src/pl-inline.jl` | 5 | 2 |
 | swipl-devel `src/pl-error.c` | code | `8609e216cab9` | `src/pl-error.jl` | 13 | 7 |
@@ -210,7 +210,7 @@ checkout is pulled.
 | swipl-devel `src/pl-codetable.c` | `8609e216cab9` | 0 | 0 | 0 | src/pl-vmi.jl |
 | swipl-devel `src/pl-comp.c` | `8609e216cab9` | 76 | 167 | 58 | src/pl-comp.jl |
 | swipl-devel `src/pl-comp.h` | `8609e216cab9` | 1 | 6 | 0 | src/pl-comp.jl |
-| swipl-devel `src/pl-copyterm.c` | `8609e216cab9` | 5 | 32 | 3 | src/pl-copyterm.jl |
+| swipl-devel `src/pl-copyterm.c` | `8609e216cab9` | 12 | 32 | 8 | src/pl-copyterm.jl |
 | swipl-devel `src/pl-data.h` | `8609e216cab9` | 2 | 2 | 0 | src/pl-incl.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-error.c` | `8609e216cab9` | 13 | 41 | 7 | src/pl-error.jl |
 | swipl-devel `src/pl-error.h` | `8609e216cab9` | 0 | 0 | 0 | src/pl-error.jl |
@@ -266,7 +266,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8609e216cab9` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8609e216cab9` | 15 | 19 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8609e216cab9` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1094** | **4363** | **581** | |
+| **total** | | **1101** | **4363** | **586** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
