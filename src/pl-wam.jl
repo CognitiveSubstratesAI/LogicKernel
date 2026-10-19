@@ -187,6 +187,30 @@ function newChoice(ld::PL_local_data{T}, type::choice_type, fr::Int)::Int where 
     return ch
 end
 
+# ── the overwrite points: never below the newest choice point ───────────────────────────────────
+# ORIGINAL (L1e e1's assertion; audit D-0029, narrowed in D-0031): a slot has ONE side entry and
+# nothing restores a slot word, so no VM writer may OVERWRITE a slot still live below a choice point
+# (test_slot_words.jl, the review of 2026-10-15). Asserted where a frame's ARGUMENT slots are written
+# over: last-call reuse (`I_DEPART`; `L_NOLCO`, whose L_* instructions then write the arguments into
+# the frame itself — not in the review's list, found by its second reuse test) and the next frame of a call — `normal_call`, and
+# `i_metacall_common` (call/N, and through it catch/3, setup_call_cleanup/3, findall/3), whose
+# `\$dcall1` path does not pass `normal_call`. The body's argument writers (B_*) fill the region the
+# next frame takes at `lTop`, so `normal_call`'s check covers them. NOT asserted, with the reason:
+# * the first-variable writers (H_FIRSTVAR, B_FIRSTVAR, B_ARGFIRSTVAR, B_UNIFY_FIRSTVAR, C_VAR/C_VAR_N,
+#   the A_* results) and a retried clause's variable slots — legal into a frame older than the
+#   newest choice point (C_VAR's invariant: such a slot is written again before it is read after
+#   backtracking);
+# * the FLI's writers (PL_put_*, `new_term_ref`) — e1's own rule (`_slot_older_than_fli`);
+# * the exception references (`_reset_exception_slot!`) — permanent cells below every frame.
+"Assert that the frame at position `pos`, whose argument slots `site` writes over, is not below the newest choice point."
+@inline function _assert_frame_above_choice(
+    ld::PL_local_data, pos::Int, site::Symbol
+)::Nothing
+    b = ld.BFR
+    @assert b == 0 || ld.choices[b].base <= pos "$site: a frame's slots written over below the newest choice point (frame $pos < choice $(ld.choices[b].base))"
+    return nothing
+end
+
 # ── last-call arguments ─────────────────────────────────────────────────────────────────────────
 # PORT: pl-wam.c copyFrameArguments
 # DIVERGES: the frames are given by their base positions: upstream's caller passes `lTop` cast to a
@@ -2680,6 +2704,7 @@ function PL_next_solution_guarded(
     nc_f.clause = nothing                           # for save atom-gc
     FR = NFR
     ld.environment_frame = FR                       # open the frame
+    _assert_frame_above_choice(ld, nc_f.base, :normal_call)     # (L1e e1 assertion)
 
     if !hasLocalSpace(ld, LOCAL_MARGIN)
         setLTop!(ld, argFrameP(nc_f.base, DEF.arity))
@@ -2733,6 +2758,7 @@ function PL_next_solution_guarded(
         (id_def.impl_clauses.first_clause !== nothing || (id_def.flags & PROC_DEFINED) != 0)
         id_f = ld.frames[FR]
         @assert (id_f.flags & FR_WATCHED) == 0
+        _assert_frame_above_choice(ld, id_f.base, :I_DEPART)   # (L1e e1 assertion) its arguments
         dropUnlinkedChoices!(ld, id_f.base)         # (the region above the frame is reused)
         @assert _is_newest_live_frame(ld, FR) "I_DEPART: last-call reuse of a frame that is not the newest live record"
         id_f.clause = nothing                       # for save atom-gc
@@ -2782,6 +2808,7 @@ function PL_next_solution_guarded(
     # `S_VIRGIN` traps it, as for `I_CALL`).
     @label i_metacall_common
     mc_nb = ld.frames[NFR].base
+    _assert_frame_above_choice(ld, mc_nb, :i_metacall_common)  # (L1e e1 assertion)
     mc_ok, mc_goal, mc_mi = stripModule(gd, ld, slotValue(ld, argFrameP(mc_nb, 0) + 1))
     mc_ok || @goto b_throw                          # THROW_EXCEPTION
     mc_arity = 0
@@ -3091,6 +3118,7 @@ function PL_next_solution_guarded(
     PC += 1
     if (ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) &&
         ld.prolog_flag_last_call
+        _assert_frame_above_choice(ld, ld.frames[FR].base, :L_NOLCO)   # (L1e e1 assertion) L_* write its arguments
         dropUnlinkedChoices!(ld, ld.frames[FR].base)    # (the region above the frame is reused)
         @assert _is_newest_live_frame(ld, FR) "L_NOLCO: last-call reuse of a frame that is not the newest live record"
         @goto next_instruction

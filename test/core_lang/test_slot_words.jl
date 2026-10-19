@@ -152,6 +152,10 @@ function _sw_choice_clauses()
         (_rf("s", Z, X, R), eq(R, pair(Z, X))),
         # the last call while q/2's choice point is newer than the frame: no reuse of X's slot
         (_rf("sv_lco", X, R), _rconj(q(X, Z), _rf("s", Z, X, R))),
+        # the same through the L_NOLCO block (the arguments stay in place: the block is compiled) — no reuse
+        # (L1e e1 assertion, audit D-0031: L_NOLCO's reuse is an overwrite point the review did not name)
+        (_rf("s2", X, R, Z), eq(R, pair(Z, X))),
+        (_rf("sv_nolco", X, R), _rconj(q(X, Z), _rf("s2", X, R, Z))),
         # a retried clause: the first writes a variable slot and fails, the second reads X
         (_rf("sv_retry", X, R),
             _rconj(eq(Y, _rf("g", X)), q(Y, Z), eq(Z, _rs("never")), eq(R, _rg(1)))),
@@ -182,7 +186,10 @@ end
     A, B = _rf("f", _rg(1)), _rf("h", _rs("c"))
     goals = _R[
         _rf(n, A, _rv(100)) for
-        n in ("sv_lco", "sv_retry", "sv_or", "sv_call", "sv_catch", "sv_scc", "sv_findall")
+        n in (
+            "sv_lco", "sv_nolco", "sv_retry", "sv_or", "sv_call", "sv_catch", "sv_scc",
+            "sv_findall"
+        )
     ]
     push!(goals, _rf("sv_head", _rcons(A, B), _rv(100)))
     ours = _rlines(_rdb(clauses), goals)

@@ -348,6 +348,7 @@ _manifest_per_type(T) = (
     (LK.lowerLTop!, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.newChoice, Tuple{LK.PL_local_data{T}, LK.choice_type, Int}, true),
     (LK.copyFrameArguments, Tuple{LK.PL_local_data{T}, Int, Int, Int}, true),
+    (LK._assert_frame_above_choice, Tuple{LK.PL_local_data{T}, Int, Symbol}, true),  # L1e e1 assertion
     (LK.open_foreign_frame, Tuple{LK.PL_local_data{T}}, true),
     (LK.PL_close_foreign_frame, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.PL_open_foreign_frame, Tuple{LK.PL_local_data{T}}, false),
