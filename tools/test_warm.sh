@@ -278,6 +278,10 @@ _bgfiles_cases() {
 # change makes the selection large (as `_bgfiles_cases`); the times are planted (LOGICKERNEL_FILE_TIMES).
 _bgbudget_cases() {
     local rc_f="$ROOT/test/core_lang/rules_common.jl" full nfull ndirect
+    # the selection against HEAD, so the planted line is the ONLY change: against merge-base(origin/main) a branch
+    # that itself edits test_rules_swipl.jl keeps it as a DIRECT change, and "an unchanged dependent trimmed" cannot
+    # hold — the case would then test the branch, not the trimming
+    local -x LOGICKERNEL_GATE_BASE=HEAD
     cp "$rc_f" "$T/rules_common.jl.bak"
     echo "# bgbudget probe" >> "$rc_f"
     : > "$T/times"
