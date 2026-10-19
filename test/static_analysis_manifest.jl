@@ -82,6 +82,7 @@ _manifest_per_type(T) = (
     (LK._cp_finish!, Tuple{LK.PL_local_data{T}, LK._cp_state{T}, LK._cp_frame{T}}, false),
     (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
     (LK.allocGlobalNoShift, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_same_term, Tuple{LK.PL_local_data{T}, Int, Int}, false),       # L1f f1c
     (LK.makeMoreStackSpace, Tuple{LK.PL_local_data{T}, LK.boolex_t, Int}, false),
     # L1f f1b — the global and trail spares (D-0042), copy_exception's emergency space
     (LK.enableSpareStack_global!, Tuple{LK.PL_local_data{T}, Bool}, true),
@@ -1344,7 +1345,7 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_unify2_va, LK.pl_not_unify2_va, LK.pl_unify_with_occurs_check2_va,
-                LK.pl_equal2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
+                LK.pl_equal2_va, LK.pl_same_term2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
                 LK.pl_std_lt2_va, LK.pl_std_leq2_va, LK.pl_std_gt2_va, LK.pl_std_geq2_va,   # (L1d-1)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,

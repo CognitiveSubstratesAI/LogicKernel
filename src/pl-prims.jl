@@ -2722,6 +2722,41 @@ function pl_nonequal2_va(
     end
 end
 
+# PORT: pl-prims.c PL_same_term
+# DIVERGES (L1f f1c): on the words (`_deref_loc`): an unbound cell is the same term only as the same cell;
+# equal words; two value-table words (upstream: two indirects) by `equalIndirect` — the term type's
+# `gnd_equal` on their values (SWI's identity: `1` and `1.0` differ). The BOUNDARY (a keyed variable, a
+# slot's side value) is compared on its term — a variable by its key, a value by `===` — counted in
+# `cold_pairs`: TRANSITIONAL until L1f f3.
+"Whether term references `t1` and `t2` hold the same term — the same variable or compound, or equal atomic values (pl-prims.c)."
+function PL_same_term(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where {T}
+    k1, w1, p1 = _deref_loc(ld, -(t1 + 1))                  # deRef(t1)
+    k2, w2, p2 = _deref_loc(ld, -(t2 + 1))                  # deRef(t2)
+    if k1 == DU_TERM || k2 == DU_TERM                       # (the boundary: on terms)
+        ld.cold_pairs += 1
+        a = deRef(ld, _loc_term(ld, k1, w1, p1))
+        b = deRef(ld, _loc_term(ld, k2, w2, p2))
+        kind(a) === VAR && return kind(b) === VAR && var_key(a) == var_key(b)
+        return a === b
+    end
+    k1 == DU_CELL && return k2 == DU_CELL && p1 == p2       # isVar(*t1): t1 == t2
+    w1 == w2 && return true                                 # *t1 == *t2
+    if _is_vword(w1) && _is_vword(w2)                       # isIndirect(*t1) && isIndirect(*t2)
+        return gnd_equal(_value_term(ld, w1), _value_term(ld, w2))   # equalIndirect
+    end
+    return false
+end
+
+# PORT: pl-prims.c same_term as pl_same_term2_va
+# (PRED_IMPL("same_term", 2, same_term, 0))
+"`same_term(@T1, @T2)`: `T1` and `T2` are the same term — the same variable or compound, or equal atomic values."
+function pl_same_term2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return PL_same_term(ld, A1, A2) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c compare as pl_compare3_va
 # (PRED_IMPL("compare", 3, compare, PL_FA_ISO))
 # DIVERGES: no `CMP_ERROR` (see `pl_equal2_va`). An atom is any symbol, `[]` included (`isAtom`:
@@ -3943,6 +3978,7 @@ const PL_predicates_from_prims = (
     PL_extension("callable", 1, pl_callable1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("==", 2, pl_equal2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("\\==", 2, pl_nonequal2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("same_term", 2, pl_same_term2_va, PL_FA_VARARGS),       # (L1f f1c)
     PL_extension("compare", 3, pl_compare3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("?=", 2, pl_can_compare2_va, PL_FA_VARARGS),
     PL_extension("@<", 2, pl_std_lt2_va, PL_FA_ISO | PL_FA_VARARGS),       # (L1d step 1)
