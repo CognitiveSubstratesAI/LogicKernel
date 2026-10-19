@@ -1343,6 +1343,7 @@ function _manifest_index(T)
         (LK.PL_error, Tuple{LD, LK.PL_error_code, D, Union{Nothing, D}}, false),
         (LK._hasFunctor, Tuple{T, T, Int}, true),
         (LK.classify_exception_p, Tuple{LD, T}, false),
+        (LK.classify_exception_cells, Tuple{LD, UInt8, UInt64}, false),   # e5b
         (LK.classify_exception, Tuple{LD, Int}, false),
         (LK.getUnknownModule, Tuple{GD, MOD}, true),
         # V6c — arithmetic (src/pl-gmp.jl, pl-arith.jl, pl-error.jl), over DefaultTerm only, as V4a's:

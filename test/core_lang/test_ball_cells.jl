@@ -165,3 +165,34 @@ end
     @test ld.query == 0 && ld.exception_term == 0
     @test_throws ErrorException LK._release_frozen!(ld, m, true)
 end
+
+# ── e5b: classify_exception on the words, against the term path, every class ───────────────────
+@testset "e5b: classify_exception on the words agrees with classify_exception_p; no cold traffic" begin
+    balls = _R[
+        _rs("a"), _rs("time_limit_exceeded"),
+        _rf("error", _rf("type_error", _rs("x"), _rs("y")), _rv(1)),
+        _rf("error", _rf("resource_error", _rs("memory")), _rv(2)),
+        _rf("error", _rs("plain"), _rv(3)),
+        _rf("time_limit_exceeded", _bl_k(1)), _rf("unwind", _rs("abort")),
+        _rf("unwind", _rf("halt", _bl_k(0))), _rf("unwind", _rf("thread_exit", _rs("x"))),
+        _rf("unwind", _rs("foo")), _rf("f", _rs("x")), _bl_k(42), _rv(4)
+    ]
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, length(balls))
+    pvm = LK.PutVarMap()
+    for (i, b) in enumerate(balls)
+        LK.putSlotValue!(ld, t + i, b, pvm)
+    end
+    c0 = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+    got = [LK.classify_exception(ld, t + i - 1) for i in eachindex(balls)]
+    @test (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs) == c0
+    want = [LK.classify_exception_p(ld, LK.slotValue(ld, t + i)) for i in eachindex(balls)]
+    @test got == want
+    @test got == [LK.EXCEPT_OTHER, LK.EXCEPT_TIMEOUT, LK.EXCEPT_ERROR, LK.EXCEPT_RESOURCE,
+        LK.EXCEPT_ERROR,
+        LK.EXCEPT_TIMEOUT, LK.EXCEPT_ABORT, LK.EXCEPT_HALT, LK.EXCEPT_THREAD_EXIT,
+        LK.EXCEPT_UNWIND,
+        LK.EXCEPT_OTHER, LK.EXCEPT_OTHER, LK.EXCEPT_NONE]
+end

@@ -324,7 +324,55 @@ end
 "The class of the ball term reference `exception` holds, `EXCEPT_NONE` for none (pl-fli.h)."
 function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class where {T}
     exception == 0 && return EXCEPT_NONE
-    return classify_exception_p(ld, slotValue(ld, exception + 1))
+    k, w, p = _deref_loc(ld, -(exception + 1))      # valTermRef(exception); deRef (L1e e5: the words)
+    k == DU_TERM || return classify_exception_cells(ld, k, w)
+    ld.cold_pairs += 1                              # the boundary: on the term
+    return classify_exception_p(ld, _loc_term(ld, k, w, p))
+end
+
+# PORT: pl-fli.c classify_exception_p as classify_exception_cells
+# DIVERGES: on a dereferenced location's `(kind, word)` (L1e e5), the functors compared as words; an argument
+# at the boundary read as its term (`classify_exception_p`), counted.
+"The class of the exception the dereferenced `(k, w)` holds (pl-fli.c `classify_exception_p`)."
+function classify_exception_cells(
+    ld::PL_local_data{T}, k::UInt8, w::word
+)::except_class where {T}
+    k == DU_CELL && return EXCEPT_NONE                                  # isVar(*p)
+    _aw(n::Symbol) = _atom_word!(ld, mk_sym(T, n))
+    _fw(n::Symbol, a::Int) = lookupFunctorDef(ld.functors, _aw(n), a)
+    if k == DU_WORD && isAtomW(w)                                       # isTextAtom(*p)
+        w == _aw(:time_limit_exceeded) && return EXCEPT_TIMEOUT
+    elseif k == DU_WORD && _is_gcompound(w)
+        q = valPtr(w)
+        f = ld.gstack[q]
+        if f == _fw(:error, 2)                                          # hasFunctor(*p, FUNCTOR_error2)
+            ka, wa, pa = _deref_loc(ld, q + 1)                          # p = argTermP(*p, 0); deRef(p)
+            if ka == DU_TERM
+                ld.cold_pairs += 1
+                return classify_exception_p(ld, _loc_term(ld, k, w, 0))
+            end
+            ka == DU_WORD && _is_gcompound(wa) &&
+                ld.gstack[valPtr(wa)] == _fw(:resource_error, 1) &&
+                return EXCEPT_RESOURCE
+            return EXCEPT_ERROR
+        elseif f == _fw(:time_limit_exceeded, 1)
+            return EXCEPT_TIMEOUT
+        elseif f == _fw(:unwind, 1)
+            ka, wa, pa = _deref_loc(ld, q + 1)
+            if ka == DU_TERM
+                ld.cold_pairs += 1
+                return classify_exception_p(ld, _loc_term(ld, k, w, 0))
+            end
+            ka == DU_WORD && isAtomW(wa) && wa == _aw(:abort) && return EXCEPT_ABORT
+            if ka == DU_WORD && _is_gcompound(wa)
+                fa = ld.gstack[valPtr(wa)]
+                fa == _fw(:halt, 1) && return EXCEPT_HALT
+                fa == _fw(:thread_exit, 1) && return EXCEPT_THREAD_EXIT
+            end
+            return EXCEPT_UNWIND
+        end
+    end
+    return EXCEPT_OTHER
 end
 
 # PORT: pl-fli.c PL_get_atom
