@@ -145,10 +145,17 @@ if [ "$TARGET" = "test/runtests.jl" ]; then
     # root, without writing — with the SAME JuliaFormatter version CI pins, read from CI.yml so the two
     # cannot drift. MEASURED 2026-10-03: 6a818f4 passed this runner and turned CI red on two long
     # lines, because only CI checked formatting.
+    # CI.yml pins it in more than one job (Format, tooling since 3764dcd): the DISTINCT pins, which must
+    # be one (MEASURED 2026-10-19: both lines reached VersionNumber as "2.14.0\n2.14.0" and the full run
+    # died before its first test).
     FMT_PIN=$(grep -oE 'name="JuliaFormatter", version="[0-9]+\.[0-9]+\.[0-9]+"' .github/workflows/CI.yml \
-        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+        | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
     if [ -z "$FMT_PIN" ]; then
         echo "run_tests.sh: no JuliaFormatter version pinned in .github/workflows/CI.yml — cannot check formatting as CI does" >&2
+        exit 1
+    fi
+    if [ "$(printf '%s\n' "$FMT_PIN" | wc -l)" -ne 1 ]; then
+        echo "run_tests.sh: .github/workflows/CI.yml pins JuliaFormatter at more than one version: $(echo $FMT_PIN)" >&2
         exit 1
     fi
     FMT_JL=$(cat <<'JL'
