@@ -60,7 +60,8 @@ tctx(C) :- catch(length(_, 1000000), error(_, C), true).
 const _SL_GOALS = (
     "tlen_big", "tlen_ok", "tfun_big", "tfun_ok", "tuniv_big", "tuniv_ok", "tbag_big",
     "tbag_list", "tbag_ans", "tbag_ans_last", "tinline", "tbag_ok",
-    "tcopy_big", "tcopy_nop", "tcopy_in", "tmk_big", "tmk_ok", "thandler", "tint_big", "tint_ok"
+    "tcopy_big", "tcopy_nop", "tcopy_in", "tmk_big", "tmk_ok", "thandler", "tint_big",
+    "tint_ok"
 )
 
 "A database holding `_SL_PROG`, its limit `_SL_LIMIT`."
@@ -163,7 +164,10 @@ end
     LK.PL_open_foreign_frame(ld)                       # is trailed, so the trail term is not 0
     @test LK.PL_unify_atom(ld, t, lk_sym(_R, :a))
     @test length(ld.trail) >= 1                        # (the guard: the trail counts in this row)
-    used = (ld.lMax + ld.local_spare) + ld.gTop + length(ld.trail)
+    used = LK._stacks_in_use(ld, 0)                    # (the three stacks with their spares, f1b)
+    @test used ==
+        (ld.lMax + ld.local_spare) + (ld.gTop + ld.global_spare) +
+          (length(ld.trail) + ld.trail_spare)
     ld.stacks_limit = used + 10
     @test LK.ensureGlobalSpace(ld, 10)                 # the three stacks exactly at the limit
     @test !ld.exception_processing
@@ -189,7 +193,8 @@ end
 # '$add_findall_bag'/1, probed 2026-10-19); `'$collect_findall_bag'` ensures ALL of it before the first
 # answer is copied (`ensureGlobalSpace(bag->gsize + solutions*3)`): no answer laid past the limit.
 _sl_ctx() = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
-_sl_bag!(ld) = push!(ld.bags, LK.findall_bag{_R}(LK.FINDALL_MAGIC, false, 0, 0, 0, LK.record{_R}[]))
+_sl_bag!(ld) =
+    push!(ld.bags, LK.findall_bag{_R}(LK.FINDALL_MAGIC, false, 0, 0, 0, LK.record{_R}[]))
 
 @testset "f1a: the answers' limit at '\$add_findall_bag' — exact" begin
     db = _sl_db()
@@ -214,7 +219,9 @@ _sl_bag!(ld) = push!(ld.bags, LK.findall_bag{_R}(LK.FINDALL_MAGIC, false, 0, 0, 
     ld.stacks_limit = 5 * 100
     _sl_bag!(ld)
     t = LK.PL_new_term_ref(ld)
-    p = LK._alloc_compound!(ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 1), 1)
+    p = LK._alloc_compound!(
+        ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 1), 1
+    )
     ld.gstack[p + 1] = LK._atom_word!(ld, _rs("a"))
     ld.slots[t + 1] = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
     n = 0
@@ -232,7 +239,9 @@ end
         LK.PL_open_foreign_frame(ld)
         _sl_bag!(ld)
         t = LK.PL_new_term_ref(ld)
-        p = LK._alloc_compound!(ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 2000), 2000)
+        p = LK._alloc_compound!(
+            ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 2000), 2000
+        )
         ld.slots[t + 1] = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
         for _ in 1:5
             LK.add_findall_bag(ld, t, 0)
@@ -240,10 +249,12 @@ end
         @test !ld.exception_processing && ld.bags[end].gsize == 5 * 2001
         a = LK.PL_new_term_refs(ld, 2)
         ld.slots[a + 2] = ld.atom_nil_w
-        # the two term references collect makes, then room for exactly 5*2001 + 5*3 cells (or one fewer)
+        # the cell of collect's `answer` reference (PL_copy_term_ref takes none), then room for exactly
+        # 5*2001 + 5*3 cells (or one fewer)
         g0 = ld.gTop
-        probe = LK.PL_new_term_refs(ld, 2)
+        probe = LK.PL_new_term_ref(ld)
         refcells = ld.gTop - g0
+        g0 = ld.gTop
         ld.stacks_limit = LK._stacks_in_use(ld, 0) + refcells + 5 * 2001 + 5 * 3 + extra
         g1 = ld.gTop
         rc = LK.pl_collect_findall_bag2_va(ld, a, 2, _sl_ctx())
@@ -251,7 +262,8 @@ end
             @test rc == LK.FFALSE && ld.exception_processing
             @test ld.gTop - g1 <= refcells                  # no answer laid (the overshoot is 0)
         else
-            @test rc == LK.FTRUE && !ld.exception_processing && isempty(ld.bags[end].answers)
+            @test rc == LK.FTRUE && !ld.exception_processing &&
+                isempty(ld.bags[end].answers)
             @test ld.gTop <= ld.stacks_limit
         end
     end
@@ -267,7 +279,11 @@ end
         p = LK.allocGlobalCells!(ld, 30)                    # [_,…,_]: ten list cells, unbound heads
         for i in 0:9
             ld.gstack[p + 3i] = ld.functor_dot2
-            ld.gstack[p + 3i + 2] = i < 9 ? LK.consPtr(p + 3i + 3, LK.TAG_COMPOUND | LK.STG_GLOBAL) : ld.atom_nil_w
+            ld.gstack[p + 3i + 2] = if i < 9
+                LK.consPtr(p + 3i + 3, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+            else
+                ld.atom_nil_w
+            end
         end
         ld.slots[t + 1] = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
         c = LK.PL_new_term_ref(ld)
@@ -304,7 +320,8 @@ end
     # a raise 10 cells from the limit: both released, and reserved again by the clear (trimStacks)
     ld.stacks_limit = LK._stacks_in_use(ld, 0) + 10
     @test !LK.ensureGlobalSpace(ld, 11)
-    @test ld.global_spare == 0 && ld.trail_spare == 0 && ld.exception_processing
+    # the global spare released (room 10 < 512); the trail's then has 522 words of room (>= 256): kept
+    @test ld.global_spare == 0 && ld.trail_spare == 256 && ld.exception_processing
     LK.PL_clear_exception(ld)
     @test ld.global_spare == 512 && ld.trail_spare == 256 && !ld.exception_processing
 end
@@ -318,7 +335,11 @@ function _sl_ball(ld, name, n)
     p = LK.allocGlobalCells!(ld, 3 * n)
     for i in 0:(n - 1)
         ld.gstack[p + 3i] = ld.functor_dot2
-        ld.gstack[p + 3i + 2] = i < n - 1 ? LK.consPtr(p + 3i + 3, LK.TAG_COMPOUND | LK.STG_GLOBAL) : ld.atom_nil_w
+        ld.gstack[p + 3i + 2] = if i < n - 1
+            LK.consPtr(p + 3i + 3, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+        else
+            ld.atom_nil_w
+        end
     end
     b = LK.allocGlobalCells!(ld, 3)
     ld.gstack[b] = LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs(name)), 2)
@@ -331,22 +352,33 @@ _sl_bin(ld, bin) = _rcanonical(LK.resolve_term(ld, LK.slotValue(ld, bin + 1)))
 
 @testset "f1b: copy_exception!'s fallbacks — the context dropped, the global overflow, abort" begin
     # the copy fits: the ball itself
-    db = _sl_db(); ld = db.ld; LK.PL_open_foreign_frame(ld)
+    db = _sl_db()
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
     ex, bin = _sl_ball(ld, "error", 3), LK.PL_new_term_ref(ld)
-    @test LK.copy_exception!(ld, ex, bin) && _sl_bin(ld, bin) == "error(a,'[|]'(_,'[|]'(_,'[|]'(_,[]))))"
+    @test LK.copy_exception!(ld, ex, bin) &&
+        _sl_bin(ld, bin) == "error(a,[_,_,_])"
     # (1) error(F, Big) that does not fit: error(F, _)
-    db = _sl_db(); ld = db.ld; LK.PL_open_foreign_frame(ld)
+    db = _sl_db()
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
     ex, bin = _sl_ball(ld, "error", 100), LK.PL_new_term_ref(ld)
     ld.stacks_limit = LK._stacks_in_use(ld, 0) + 10
-    @test LK.copy_exception!(ld, ex, bin) && _sl_bin(ld, bin) == "error(a,_)" && ld.exception_processing
+    @test LK.copy_exception!(ld, ex, bin) && _sl_bin(ld, bin) == "error(a,_)" &&
+        ld.exception_processing
     # (2) a ball that is no error/2: error(resource_error(stack), global) in the spare (2 cells of it)
-    db = _sl_db(); ld = db.ld; LK.PL_open_foreign_frame(ld)
+    db = _sl_db()
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
     ex, bin = _sl_ball(ld, "big", 100), LK.PL_new_term_ref(ld)
     ld.stacks_limit = LK._stacks_in_use(ld, 0) + 3
     @test LK.copy_exception!(ld, ex, bin)
-    @test _sl_bin(ld, bin) == "error(resource_error(stack),global)" && ld.global_spare == 512 - 2
+    @test _sl_bin(ld, bin) == "error(resource_error(stack),global)" &&
+        ld.global_spare == 512 - 2
     # (3) no spare left: abort
-    db = _sl_db(); ld = db.ld; LK.PL_open_foreign_frame(ld)
+    db = _sl_db()
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
     ex, bin = _sl_ball(ld, "big", 100), LK.PL_new_term_ref(ld)
     ld.global_spare = 0
     ld.stacks_limit = LK._stacks_in_use(ld, 0) + 3

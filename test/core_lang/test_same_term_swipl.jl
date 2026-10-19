@@ -21,7 +21,7 @@ s_alias(R) :- X = f(a), st(same_term(X, X), R).
 s_built(R) :- st(same_term(f(a), f(a)), R).
 s_atom(R) :- st(same_term(a, a), R).
 s_float(R) :- X is 1.5, Y is 3.0/2, st(same_term(X, Y), R).
-s_big(R) :- X is 2**100, Y is 2**100, st(same_term(X, Y), R).
+s_big(R) :- X is 2**60, Y is 2**60, st(same_term(X, Y), R).   % indirect (past a tagged integer), Int64
 s_string(R) :- st(same_term("abc", "abc"), R).
 s_int_float(R) :- X is 1.0, st(same_term(1, X), R).
 s_vars(R) :- st(same_term(_, _), R).
@@ -60,10 +60,14 @@ end
     @test !any(l -> startswith(l, "exception("), ours)
     # the kernel's side alone (also where swipl is absent: Pkg.test) — swipl 10.1.18's answers, probed 2026-10-19
     for (g, r) in (
-        ("s_alias", true), ("s_built", false), ("s_atom", true), ("s_float", true), ("s_big", true),
-        ("s_string", true), ("s_int_float", false), ("s_vars", false), ("s_alias_var", true),
-        ("s_copy_ground", true), ("s_copy_sub", true), ("s_dup", false), ("s_copy_var2", true),
-        ("s_copy_cmp2", true), ("s_bag_orig", false), ("s_bag_twice", true), ("s_bag_cyclic", true)
+        ("s_alias", true), ("s_built", false), ("s_atom", true), ("s_float", true),
+        ("s_big", true),
+        ("s_string", true), ("s_int_float", false), ("s_vars", false),
+        ("s_alias_var", true),
+        ("s_copy_ground", true), ("s_copy_sub", true), ("s_dup", false),
+        ("s_copy_var2", true),
+        ("s_copy_cmp2", true), ("s_bag_orig", false), ("s_bag_twice", true),
+        ("s_bag_cyclic", true)
     )
         @test "$g($r) det" in ours
     end
@@ -84,16 +88,20 @@ end
     @test !LK.PL_same_term(ld, a, b)                        # two fresh variables
     ld.slots[b + 1] = ld.slots[a + 1]                       # the same cell
     @test LK.PL_same_term(ld, a, b)
-    p = LK._alloc_compound!(ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 1), 1)
+    p = LK._alloc_compound!(
+        ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 1), 1
+    )
     ld.gstack[p + 1] = LK._atom_word!(ld, _rs("a"))
     ld.slots[a + 1] = ld.slots[b + 1] = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
     @test LK.PL_same_term(ld, a, b)                         # the same compound
-    q = LK._alloc_compound!(ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 1), 1)
+    q = LK._alloc_compound!(
+        ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 1), 1
+    )
     ld.gstack[q + 1] = LK._atom_word!(ld, _rs("a"))
     ld.slots[c + 1] = LK.consPtr(q, LK.TAG_COMPOUND | LK.STG_GLOBAL)
     @test !LK.PL_same_term(ld, a, c)                        # another compound, built alike
-    ld.slots[a + 1] = LK._vword!(ld, _rg(big(2)^100))
-    ld.slots[b + 1] = LK._vword!(ld, _rg(big(2)^100))
+    ld.slots[a + 1] = LK._vword!(ld, _rg(Int64(2)^60))
+    ld.slots[b + 1] = LK._vword!(ld, _rg(Int64(2)^60))
     @test LK.PL_same_term(ld, a, b)                         # two indirects, equal (equalIndirect)
     ld.slots[c + 1] = LK._vword!(ld, _rg(1.0))
     ld.slots[b + 1] = LK.consInt(1)

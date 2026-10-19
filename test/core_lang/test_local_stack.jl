@@ -499,7 +499,9 @@ end
     ld.lTop = ld.lMax - 10
     @test !LK.ensureLocalSpace(ld, 20)
     ball = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1))
-    @test lk_eq(ball, _lf("error", _lf("resource_error", _ls("stack")), _ls("local")))
+    @test lk_eq(
+        ball, _lf("error", _lf("resource_error", _ls("stack")), _ls("stack_overflow"))
+    )   # (D-0040)
     @test ld.outofstack && ld.exception_processing
     @test ld.local_spare == 0 && ld.lMax == region(ld)                 # the spare enabled
     # while the exception is processed the limit stretches by 1 MiB (grow_stacks' error condition)
@@ -520,6 +522,9 @@ end
     @test !ld3.exception_processing && ld3.local_spare == LK.LOCAL_SPARE
     ld3.lTop = ld3.lMax - 10
     @test LK.growLocalSpace(ld3, 20, 0) == LK.LOCAL_OVERFLOW         # no growth, no spare
+    # room for copy_exception!'s foreign frame (L1f f1b, as upstream's): near the top the frame itself takes
+    # the spare while processing — what is tested below is the ball's class alone
+    ld3.lTop = ld3.lMax - 100
     b = LK.PL_new_term_ref(ld3)
     # a ball classify_exception ranks EXCEPT_RESOURCE enables the spare: error(resource_error(_), _)
     # (since upstream's fix 85d0cc2; the bare atom `resource_error`, the class until then, does not)
@@ -548,12 +553,12 @@ end
         child(LK.resolve_term(ld4, LK.slotValue(ld4, ld4.exception_term + 1)), 2),
         _ls("instantiation_error")
     )
-    # has_emergency_space takes what is lacking from the spare, and no more
+    # has_emergency_space_local takes what is lacking from the spare, and no more
     ld2 = LK.PL_local_data{_L}(_LGD)
     ld2.lTop = ld2.lMax - 2
-    @test LK.has_emergency_space(ld2, 10) && ld2.local_spare == LK.LOCAL_SPARE - 8 &&
+    @test LK.has_emergency_space_local(ld2, 10) && ld2.local_spare == LK.LOCAL_SPARE - 8 &&
         ld2.lMax == ld2.lTop + 10
-    @test !LK.has_emergency_space(ld2, 10 + ld2.local_spare)
+    @test !LK.has_emergency_space_local(ld2, 10 + ld2.local_spare)
     # trim_stack reserves the spare only within the free room
     ld2.lTop = ld2.lMax - 3
     LK.trim_stack!(ld2)

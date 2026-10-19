@@ -799,7 +799,6 @@ graph LR
     pl_incl --> default_term
     pl_incl --> pl_atom
     pl_incl --> pl_inline
-    pl_incl --> pl_prims
     pl_incl --> pl_arith
     pl_incl --> pl_op
     pl_atom --> default_term
@@ -952,7 +951,9 @@ graph LR
     pl_copyterm --> pl_global
     pl_copyterm --> pl_inline
     pl_copyterm --> pl_prims
+    pl_copyterm --> pl_gc
     pl_copyterm --> pl_alloc
+    pl_copyterm --> pl_wam
     pl_copyterm --> pl_fli
     pl_copyterm --> pl_arith
     pl_copyterm --> pl_read
@@ -960,12 +961,16 @@ graph LR
     pl_rec --> default_term
     pl_rec --> pl_incl
     pl_rec --> SWI_Prolog
+    pl_rec --> pl_termwalk
     pl_rec --> pl_global
     pl_rec --> pl_inline
     pl_rec --> pl_prims
     pl_rec --> pl_variant
     pl_rec --> pl_copyterm
     pl_rec --> pl_alloc
+    pl_rec --> pl_fli
+    pl_rec --> pl_arith
+    pl_rec --> os_pl_text
     pl_termhash --> term_interface
     pl_termhash --> default_term
     pl_termhash --> pl_hash
@@ -1143,6 +1148,7 @@ graph LR
     pl_setup --> pl_global
     pl_setup --> pl_inline
     pl_setup --> pl_gc
+    pl_setup --> pl_alloc
     pl_setup --> pl_wam
     pl_setup --> pl_fli
     pl_proc --> term_interface

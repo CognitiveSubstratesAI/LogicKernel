@@ -89,7 +89,7 @@ _manifest_per_type(T) = (
     (LK.enableSpareStack_trail!, Tuple{LK.PL_local_data{T}, Bool}, true),
     (LK.trim_stack_global!, Tuple{LK.PL_local_data{T}}, true),
     (LK.trim_stack_trail!, Tuple{LK.PL_local_data{T}}, true),
-    (LK.has_emergency_space, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.has_emergency_space_global, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK._cp_atomic, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.do_compare, Tuple{LK.PL_local_data{T}, T, T, Bool, Int}, false),
     (LK.compare_fast, Tuple{LK.PL_local_data{T}, T, T, Int}, false),
@@ -339,7 +339,7 @@ _manifest_per_type(T) = (
     (LK.push_overflow_context, Tuple{Type{T}, Symbol}, false),
     (LK.enableSpareStack!, Tuple{LK.PL_local_data{T}, Bool}, true),
     (LK.enableSpareStacks!, Tuple{LK.PL_local_data{T}}, true),
-    (LK.has_emergency_space, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.has_emergency_space_local, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.trim_stack!, Tuple{LK.PL_local_data{T}}, true),
     (LK.trimStacks!, Tuple{LK.PL_local_data{T}, Bool}, true),
     (LK.init_stack!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
@@ -1345,7 +1345,8 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_unify2_va, LK.pl_not_unify2_va, LK.pl_unify_with_occurs_check2_va,
-                LK.pl_equal2_va, LK.pl_same_term2_va, LK.pl_compare3_va, LK.pl_can_compare2_va,
+                LK.pl_equal2_va, LK.pl_same_term2_va, LK.pl_compare3_va,
+                LK.pl_can_compare2_va,
                 LK.pl_std_lt2_va, LK.pl_std_leq2_va, LK.pl_std_gt2_va, LK.pl_std_geq2_va,   # (L1d-1)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_prolog_current_choice1_va,

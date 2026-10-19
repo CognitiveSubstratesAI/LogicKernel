@@ -71,7 +71,9 @@ function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     while size < want
         size *= 2
     end
-    limit = ld.stacks_limit - (ld.gTop + length(ld.trail))  # one limit over the three stacks (L1f f2)
+    limit =
+        ld.stacks_limit -                       # one limit over the three stacks (L1f f2), with
+        (ld.gTop + ld.global_spare + length(ld.trail) + ld.trail_spare)   # their spares (f1b)
     if size > limit && ld.exception_processing      # in error condition: raising limit with 1Mb
         limit = max(limit, want + EMERGENCY_LIMIT)
     end

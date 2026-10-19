@@ -781,13 +781,13 @@ function PL_strip_module_ex(
     return (true, m)
 end
 
-# PORT: pl-fli.c has_emergency_space
-# DIVERGES: the local stack's, in positions.
+# PORT: pl-fli.c has_emergency_space as has_emergency_space_local
+# DIVERGES: the local stack's (upstream: of the stack passed), in positions.
 """
 Whether `needed` positions fit above `lTop` — taking what is lacking from the local stack's spare
 (pl-fli.c).
 """
-function has_emergency_space(ld::PL_local_data{T}, needed::Int)::Bool where {T}
+function has_emergency_space_local(ld::PL_local_data{T}, needed::Int)::Bool where {T}
     lacking = ld.lTop + needed - ld.lMax
     lacking <= 0 && return true
     if lacking < ld.local_spare
@@ -798,11 +798,11 @@ function has_emergency_space(ld::PL_local_data{T}, needed::Int)::Bool where {T}
     return false
 end
 
-# PORT: pl-fli.c has_emergency_space
-# DIVERGES (L1f f1b): the global stack's (its only caller here): `lacking` is what `n` more cells take past
+# PORT: pl-fli.c has_emergency_space as has_emergency_space_global
+# DIVERGES (L1f f1b): the global stack's (copy_exception's caller): `lacking` is what `n` more cells take past
 # the limit (`_stacks_in_use`), taken from the spare (upstream: `s->max` raised by it).
 "Whether `n` more global cells fit, using the global stack's spare if needed (pl-fli.c `has_emergency_space`)."
-function has_emergency_space(ld::PL_local_data, n::Int)::Bool
+function has_emergency_space_global(ld::PL_local_data, n::Int)::Bool
     lacking = _stacks_in_use(ld, n) - ld.stacks_limit
     lacking <= 0 && return true
     if lacking < ld.global_spare
@@ -835,7 +835,9 @@ function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool wh
     elseif rc == CP_BOUNDARY
         ld.cold_pairs += 1                      # the boundary (a keyed variable, a side value): on terms,
         tt = length(ld.trail)                   # the copy a value as before e5 (TRANSITIONAL until L1f)
-        _slot_store_value!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))
+        _slot_store_value!(
+            ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false))
+        )
         _trail_truncate!(ld, tt)                # frozen: the copy's own bindings keep no trail entry
         PL_close_foreign_frame(ld, fid)
         return true
@@ -848,18 +850,22 @@ function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool wh
         f = PL_new_term_ref(ld)
         if _PL_get_arg(ld, 1, ex, arg) && copy_term_refs(ld, arg, f, cp_options(false))
             p = allocGlobalCells!(ld, 3)        # PL_cons_functor_v(bin, FUNCTOR_error2, av)
-            ld.gstack[p] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)
+            ld.gstack[p] = lookupFunctorDef(
+                ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2
+            )
             ld.gstack[p + 1] = ld.slots[f + 1]  # av+0: the formal's copy; av+1 a fresh variable
             ld.slots[bin + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
             PL_close_foreign_frame(ld, fid)     # (WARNING: Removed error context …: not printed)
             return true
         end
-    elseif has_emergency_space(ld, 5)
+    elseif has_emergency_space_global(ld, 5)
         p = allocGlobalCells!(ld, 5)            # (WARNING: cannot raise exception …: not printed)
         ld.gstack[p] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)
         ld.gstack[p + 1] = consPtr(p + 3, TAG_COMPOUND | STG_GLOBAL)
         ld.gstack[p + 2] = _atom_word!(ld, mk_sym(T, :global))
-        ld.gstack[p + 3] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :resource_error)), 1)
+        ld.gstack[p + 3] = lookupFunctorDef(
+            ld.functors, _atom_word!(ld, mk_sym(T, :resource_error)), 1
+        )
         ld.gstack[p + 4] = _atom_word!(ld, mk_sym(T, :stack))
         ld.slots[bin + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
         PL_close_foreign_frame(ld, fid)

@@ -65,15 +65,17 @@ end
 
 # PORT: pl-setup.c trim_stack as trim_stack_global!
 # DIVERGES (L1f f1b): the global stack's spare is a reserve in the one limit (`_stacks_in_use`), so its
-# free room is what the limit leaves (`stacks_limit - _stacks_in_use`).
+# free room is what the limit leaves (`stacks_limit - _stacks_in_use`), and the spare is reserved only as far
+# as that room allows — NOTHING when there is none, where upstream's `room > 0 && room < reduce` reserves it
+# all and lets `max` fall below `top` (its stacks are sized apart, and a local stack grown in an error is
+# shrunk again by trimStacks' GROW_TRIM; the kernel's never shrinks, so a full reserve past the limit would
+# refuse every allocation after a local overflow — test_stack_overflow_swipl.jl's next query).
 "Reserve the global stack's spare again, as far as the room under the limit allows (pl-setup.c)."
 function trim_stack_global!(ld::PL_local_data)::Nothing
     if ld.global_spare < ld.global_def_spare
         reduce = ld.global_def_spare - ld.global_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
-        end
+        reduce = max(0, min(reduce, room))                  # (see above: never past the limit)
         ld.global_spare += reduce                           # s->max -= reduce; s->spare += reduce
     end
     return nothing
@@ -86,9 +88,7 @@ function trim_stack_trail!(ld::PL_local_data)::Nothing
     if ld.trail_spare < ld.trail_def_spare
         reduce = ld.trail_def_spare - ld.trail_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
-        end
+        reduce = max(0, min(reduce, room))                  # (see above: never past the limit)
         ld.trail_spare += reduce
     end
     return nothing

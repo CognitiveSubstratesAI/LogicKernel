@@ -4165,7 +4165,7 @@ function PL_next_solution_guarded(
         ld.lTop = bt_low
     end
 
-    if has_emergency_space(ld, SIZEOF_LOCALFRAME)
+    if has_emergency_space_local(ld, SIZEOF_LOCALFRAME)
         bt_fid = open_foreign_frame(ld)
     else                                            # fatal
         ld.outofstack = true

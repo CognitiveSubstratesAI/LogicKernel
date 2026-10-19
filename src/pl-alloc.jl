@@ -140,7 +140,8 @@ end
 # and do not count.
 "The words the three stacks take once `g` more global cells are laid out (pl-gc.c `grow_stacks`' sum)."
 @inline _stacks_in_use(ld::PL_local_data, g::Int)::Int =
-    (ld.lMax + ld.local_spare) + (ld.gTop + g + ld.global_spare) + (length(ld.trail) + ld.trail_spare)
+    (ld.lMax + ld.local_spare) + (ld.gTop + g + ld.global_spare) +
+    (length(ld.trail) + ld.trail_spare)
 
 # PORT: pl-gc.h ensureGlobalSpace
 # DIVERGES (L1f f2, audit D-0029 D1 (a), D3 (a), D-0036): no garbage collection to try (`ALLOW_GC`) and

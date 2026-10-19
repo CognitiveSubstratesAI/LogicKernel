@@ -275,23 +275,33 @@ _rec_out(ld, out) = _rcanonical(LK.resolve_term(ld, LK.slotValue(ld, out + 1)))
     @test ld.gstack[ph + 1] == 0                                        # restoreVars
     # a list: 3 cells per cell
     pl = _rec_cons!(ld, _rec_aw(ld, "a"),
-        _rec_gw(_rec_cons!(ld, _rec_aw(ld, "b"), _rec_gw(_rec_cons!(ld, _rec_aw(ld, "c"), ld.atom_nil_w)))))
+        _rec_gw(
+            _rec_cons!(
+                ld,
+                _rec_aw(ld, "b"),
+                _rec_gw(_rec_cons!(ld, _rec_aw(ld, "c"), ld.atom_nil_w))
+            )
+        ))
     r, used, out = _rec_round(ld, _rec_gw(pl))
-    @test r.gsize == 9 && used == 9 && r.nvars == 0 && _rec_out(ld, out) == "'[|]'(a,'[|]'(b,'[|]'(c,[])))"
+    @test r.gsize == 9 && used == 9 && r.nvars == 0 &&
+        _rec_out(ld, out) == "[a,b,c]"
     # a cyclic list C = [a|C]: one cell, its tail the copy itself
     pc = _rec_cons!(ld, _rec_aw(ld, "a"), 0)
     ld.gstack[pc + 2] = _rec_gw(pc)
     r, used, out = _rec_round(ld, _rec_gw(pc))
     q = LK.valPtr(ld.slots[out + 1])
-    @test r.gsize == 3 && used == 3 && ld.gstack[q + 2] == _rec_gw(q) && ld.gstack[pc] == ld.functor_dot2
+    @test r.gsize == 3 && used == 3 && ld.gstack[q + 2] == _rec_gw(q) &&
+        ld.gstack[pc] == ld.functor_dot2
     # f(X, Y, X): two variables, X's second occurrence a reference to its first cell
     pf = _rec_lay!(ld, "f", 0, 0, 0)
     ld.gstack[pf + 3] = LK.makeRefG(pf + 1)
     r, used, out = _rec_round(ld, _rec_gw(pf))
     q = LK.valPtr(ld.slots[out + 1])
     @test r.gsize == 4 && used == 4 && r.nvars == 2
-    @test ld.gstack[q + 1] == 0 && ld.gstack[q + 2] == 0 && ld.gstack[q + 3] == LK.makeRefG(q + 1)
-    @test ld.gstack[pf + 1] == 0 && ld.gstack[pf + 2] == 0 && ld.gstack[pf + 3] == LK.makeRefG(pf + 1)
+    @test ld.gstack[q + 1] == 0 && ld.gstack[q + 2] == 0 &&
+        ld.gstack[q + 3] == LK.makeRefG(q + 1)
+    @test ld.gstack[pf + 1] == 0 && ld.gstack[pf + 2] == 0 &&
+        ld.gstack[pf + 3] == LK.makeRefG(pf + 1)
     # f(g(X), X): X met first in g/1 (laid above f/2's cells), then in f/2's second cell — the
     # variable moves to the LOWER cell (copy_record's "wrong way"), g/1's argument references it
     pgx = _rec_lay!(ld, "g", 0)

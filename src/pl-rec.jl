@@ -79,7 +79,8 @@ end
 
 # PORT: pl-rec.c addOpCode
 "Add opcode `code` (pl-rec.c)."
-@inline addOpCode(info::compile_info, code::UInt8)::Nothing = (push!(info.code, code); nothing)
+@inline addOpCode(info::compile_info, code::UInt8)::Nothing =
+    (push!(info.code, code); nothing)
 
 # PORT: pl-rec.c addSizeInt
 # DIVERGES: `addUintBuffer` inlined. 7 bits per byte, most significant first, every byte but the
