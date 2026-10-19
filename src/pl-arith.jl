@@ -1697,8 +1697,11 @@ _libm_acosh(x::Float64)::Float64 = ccall((:acosh, LIBM), Float64, (Float64,), x)
 _libm_atanh(x::Float64)::Float64 = ccall((:atanh, LIBM), Float64, (Float64,), x)
 "`erf(x)` of the C library (pl-arith.c `cr_erf`, FE_TONEAREST)."
 _libm_erf(x::Float64)::Float64 = ccall((:erf, LIBM), Float64, (Float64,), x)
-"`erfc(x)` of the C library (pl-arith.c `cr_erfc`, FE_TONEAREST)."
-_libm_erfc(x::Float64)::Float64 = ccall((:erfc, LIBM), Float64, (Float64,), x)
+# PORT: pl-arith.c cr_erfc as _libm_erfc
+# The build without CORE-MATH, the pin's: `return 1.0 - cr_erf(in)` — not the C library's erfc, so a large
+# argument loses its low bits and erfc(6.0) is 0.0, as swipl's (the oracle's rows).
+"`erfc(x)` as upstream computes it without CORE-MATH (pl-arith.c `cr_erfc`): `1.0 - erf(x)`."
+_libm_erfc(x::Float64)::Float64 = 1.0 - _libm_erf(x)
 "`log10(x)` of the C library (pl-arith.c `cr_log10`, FE_TONEAREST)."
 _libm_log10(x::Float64)::Float64 = ccall((:log10, LIBM), Float64, (Float64,), x)
 # `lgamma` keeps the sign in the global `signgam`, which nothing reads here

@@ -2981,9 +2981,9 @@ end
     isctx = _aenc(_af(:(:), _as(:system), _af(:/, _as(:is), _ag(2))))
     ev(f, n) = _aenc(_af(:type_error, _as(:evaluable), _af(:/, _as(f), _ag(n))))
     @test _aoutcome_of((:roundtoward, 2.5, 3)) ==
-          "err:" * ev(:roundtoward, 2) * "@" * isctx * "@_"
+        "err:" * ev(:roundtoward, 2) * "@" * isctx * "@_"
     @test _aoutcome_of((:roundtoward, 2.5, :to_nearest)) ==
-          "err:" * ev(:to_nearest, 0) * "@" * isctx * "@_"
+        "err:" * ev(:to_nearest, 0) * "@" * isctx * "@_"
 end
 
 # ── the live differential ────────────────────────────────────────────────────────────────────────
