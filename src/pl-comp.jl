@@ -212,6 +212,27 @@ struct cutInfo
     instruction::code       # Instruction to use: C_CUT/C_LCUT
 end
 
+# ── the compiler's view of a clause on the cells (L1f f3a, audit D-0044) ─────────────────────────────
+# ORIGINAL: upstream's compiler reads the clause's CELLS (`Word`s); the kernel's takes VALUES (the L1 design
+# keeps the compiler on values; compiling from cells is a later step). `export_cells` makes that value
+# straight from the cells — not through the cold export (`gterms`) nor a cell's stamp-keyed variable
+# (`_cell_var`), the machinery f3 removes. ONE `cell_export` per clause: the same unbound cell is the same
+# variable across head, body and `$variable_names`, each a fresh kernel key (`fresh_var_keys!`: no stamp,
+# no cell, no binding); `cells` maps it back, so what the compiler hands back to Prolog (its warnings,
+# whose variables `$variable_names` names) is the clause's own cells (`import_cells!`). A compound met
+# twice is exported once (`done`); a value has no identity, so a CYCLE has no value — the callers test
+# `is_acyclic_cells` first (representation_error(cyclic_term), as upstream's analysis raises), and the
+# export throws on one. The BOUNDARY (a keyed variable, a slot's side value) is read through its term —
+# TRANSITIONAL until f3 removes it, counted in `cold_pairs`.
+"One clause's export from the cells (L1f f3a): its variables both ways, its compounds once."
+struct cell_export{T}
+    vars::Dict{Int, T}                  # an unbound cell's position → its variable
+    cells::Dict{UInt64, Int}            # … the variable's key → the cell's position
+    done::Dict{Int, T}                  # a compound's functor position → its value
+end
+cell_export{T}() where {T} =
+    cell_export{T}(Dict{Int, T}(), Dict{UInt64, Int}(), Dict{Int, T}())
+
 # PORT: pl-comp.c compileInfo
 # DIVERGES: the fields the head compiler, the variable analysis and the call operands use;
 # `vardefs` is upstream's LD->comp.vardefs keyed by `var_key`, `mstate_candidates`/
@@ -231,6 +252,7 @@ end
 # the frame size: the Prolog variables, then one slot per condition (`allocChoiceVar!`). `module_` is
 # upstream's `module`, a Julia keyword.
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
+
 mutable struct compileInfo{T}
     const module_::module_t{T}                              # module: module to compile into
     const procedure::Procedure{T}                           # Procedure it belongs to
@@ -255,6 +277,7 @@ mutable struct compileInfo{T}
     warning_list::term_t                                    # see compiler_warning()
     warnings::Union{Nothing, Vector{c_warning{T}}}
     variable_names::Union{Nothing, T}                       # ($variable_names, resolved)
+    cell_export::Union{Nothing, cell_export{T}}             # (L1f f3a: the clause's export, or none)
     islocal::Bool                                           # Temporary local clause
     subclausearg::Bool                                      # processing subclausearg
     argvars::Int                                            # islocal argument pseudo vars
@@ -275,7 +298,7 @@ compileInfo{T}(
         m, proc, arity, code[], Dict{UInt64, VarDef}(), falses(0), nothing, 0, T[],
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
         0, false, UInt32(0), 0, 0, Dict{Int, T}(),              # head_unify: compileClause's
-        0, 0, 0, nothing, nothing,                              # no style checks, no warnings
+        0, 0, 0, nothing, nothing, nothing,                     # no style checks, no warnings, no export
         false, false, 0, 0, nothing, 0,                         # not a goal clause
         gd
     )
@@ -318,6 +341,102 @@ function compiler_warning(ci::compileInfo{T}, name::Symbol, argv::Vector{T})::Bo
     return true
 end
 
+# ORIGINAL (L1f f3a): the variable of unbound cell `p`, made on first sight (see `cell_export`).
+function _export_var!(ex::cell_export{T}, p::Int)::T where {T}
+    v = get(ex.vars, p, nothing)
+    v === nothing || return v
+    v = mk_var(T, fresh_var_keys!(1))
+    ex.vars[p] = v
+    ex.cells[var_key(v)] = p
+    return v
+end
+
+# ORIGINAL (L1f f3a): a dereferenced location's value when it is not a compound to walk: `nothing` for one.
+function _export_leaf!(
+    ld::PL_local_data{T}, ex::cell_export{T}, (k, w, p)::Tuple{UInt8, word, Int}
+)::Union{Nothing, T} where {T}
+    k == DU_CELL && return _export_var!(ex, p)
+    k == DU_VALUE && return _value_term(ld, w)
+    if k == DU_TERM                                         # (the boundary: TRANSITIONAL)
+        ld.cold_pairs += 1
+        return resolve_term(ld, deRef(ld, _loc_term(ld, k, w, p)))
+    end
+    isAtomW(w) && return _atom_value(ld, w)
+    return get(ex.done, valPtr(w), nothing)                 # a compound: exported already, or nothing
+end
+
+# ORIGINAL (L1f f3a): see `cell_export`.
+"""
+    export_cells(ld, ex, loc) -> T
+
+The value of the term at location `loc` (a global position, or `-i` for slot `i`), read off the cells: its
+unbound cells `ex`'s variables, its compounds built once. Throws an `ArgumentError` on a cycle.
+"""
+function export_cells(ld::PL_local_data{T}, ex::cell_export{T}, loc::Int)::T where {T}
+    d = _deref_loc(ld, loc)
+    v = _export_leaf!(ld, ex, d)
+    v === nothing || return v
+    stack = Tuple{Int, Vector{T}}[]                         # (functor position, children so far)
+    on_path = Set{Int}()                                    # the compounds being exported
+    q = valPtr(d[2])
+    while true
+        if q != 0                                           # start compound q
+            q in on_path && throw(ArgumentError("export_cells: a cyclic term has no value"))
+            push!(on_path, q)
+            name = nameFunctor(ld.functors, ld.gstack[q])
+            push!(stack, (q, name == ld.atom_dexpr ? T[] : T[_atom_value(ld, name)]))
+            q = 0
+        end
+        f, kids = stack[end]
+        fd = ld.gstack[f]
+        n = arityFunctor(ld.functors, fd)
+        i = length(kids) - (nameFunctor(ld.functors, fd) == ld.atom_dexpr ? 0 : 1) + 1
+        if i > n
+            pop!(stack)
+            delete!(on_path, f)
+            r = mk_expr(T, kids)
+            ex.done[f] = r
+            isempty(stack) && return r
+            push!(stack[end][2], r)
+            continue
+        end
+        da = _deref_loc(ld, f + i)
+        a = _export_leaf!(ld, ex, da)
+        if a === nothing
+            q = valPtr(da[2])                               # a compound not exported yet
+        else
+            push!(kids, a)
+        end
+    end
+end
+
+# ORIGINAL (L1f f3a): the reverse of `export_cells` for what the compiler hands back (its warnings): `t`
+# laid on the cells as the cold import lays a term (`_compound_word!`), but a variable `ex` made is its
+# own cell again (`makeRefG`); anything else as `_word_of!` writes it.
+"The word of the value `t` on the cells, `ex`'s variables back to their cells (L1f f3a)."
+function import_cells!(ld::PL_local_data{T}, ex::cell_export{T}, t::T)::word where {T}
+    if kind(t) === VAR
+        p = get(ex.cells, var_key(t), 0)
+        return p != 0 ? makeRefG(p) : _word_of!(ld, t)
+    end
+    kind(t) === EXPR || return _word_of!(ld, t)
+    todo = Tuple{T, Int}[]
+    root = _import_layout!(ld, t, todo)
+    while !isempty(todo)
+        u, p = pop!(todo)
+        off = _import_offset(u)
+        for i in 1:(nchildren(u) - off)
+            c = child(u, i + off)
+            ld.gstack[p + i] = if kind(c) === EXPR
+                _import_layout!(ld, c, todo)
+            else
+                import_cells!(ld, ex, c)
+            end
+        end
+    end
+    return root
+end
+
 # PORT: pl-comp.c push_compiler_warnings
 # DIVERGES: the list is built from the terms (see `c_warning`) and put into the term reference; the
 # warnings are in the order raised already, where upstream walks a newest-first chain and conses
@@ -335,7 +454,12 @@ function push_compiler_warnings(ld::PL_local_data{T}, ci::compileInfo{T})::Bool 
         end
         ci.warnings = nothing                                   # free_compiler_warnings(ci)
     end
-    setSlotValue!(ld, ci.warning_list + 1, l)
+    ex = ci.cell_export
+    if ex === nothing
+        setSlotValue!(ld, ci.warning_list + 1, l)
+    else                                                        # (L1f f3a: the clause's own cells)
+        ld.slots[ci.warning_list + 1] = import_cells!(ld, ex, l)
+    end
     return true
 end
 
@@ -2664,15 +2788,21 @@ compiler's warnings for the clause (`[]`: none).
 """
 function compileClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
-    proc::Procedure{T}, m::module_t{T}, warnings::term_t
+    proc::Procedure{T}, m::module_t{T}, warnings::term_t;
+    ex::Union{Nothing, cell_export{T}}=nothing
 )::Union{Nothing, Clause{T}} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
     ci = compileInfo{T}(gd, def.arity, m, proc)
     ci.styleCheck = ld.debugstatus_styleCheck                  # (debugstatus.styleCheck)
     ci.warning_list = warnings
     ci.warnings = nothing
+    ci.cell_export = ex
     if warnings != 0 && ld.variable_names != 0                 # (gvar_value(ATOM_dvariable_names))
-        ci.variable_names = resolve_term(ld, slotValue(ld, ld.variable_names + 1))   # TRANSITIONAL (D-0041)
+        ci.variable_names = if ex === nothing                  # (a caller with terms: resolved)
+            resolve_term(ld, slotValue(ld, ld.variable_names + 1))
+        else                                                    # (L1f f3a: the clause's export)
+            export_cells(ld, ex, -(ld.variable_names + 1))
+        end
     end
     # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
     ci.head_unify = (def.flags & P_DYNAMIC) == 0 && ld.prolog_flag_optimise_unify
@@ -2903,8 +3033,9 @@ end
 # DIVERGES: returns the clause or `nothing`, upstream's NULL, the error raised; the database `gd` is
 # an argument (upstream: GD); a module is an index into its table — `module_` 0 is upstream's NULL:
 # the source module (`LD->modules.source`) when loading (`loc`), else `user` (`PL_strip_module_ex`).
-# The clause is checked for cycles and RESOLVED through the bindings before it is compiled
-# (`is_acyclic`, `resolve_term`), because `compileClause` takes terms without bindings:
+# The clause is checked for cycles (`is_acyclic_cells`) and EXPORTED off its cells before it is
+# compiled (`export_cells`, L1f f3a: one variable map for head, body and `$variable_names`, no stamp,
+# no export memo), because `compileClause` takes values without bindings:
 # `representation_error(cyclic_term)` is raised here, where upstream's analysis raises it (after the
 # procedure is looked up). A clause the static procedure's error rejects is left to Julia's garbage
 # collector (upstream: `freeClause`). The consult path (`loc`, since R1f) is upstream's for a FIRST
@@ -2964,18 +3095,14 @@ function assert_term!(
             "no tabling, threads"
         )
     )
-    h = deRef(ld, slotValue(ld, head + 1))
-    b = deRef(ld, slotValue(ld, body + 1))
-    if !is_acyclic(ld, h) || !is_acyclic(ld, b)                 # CYCLIC_HEAD, CYCLIC_BODY
+    if !is_acyclic_cells(ld, -(head + 1)) || !is_acyclic_cells(ld, -(body + 1))   # CYCLIC_HEAD, CYCLIC_BODY
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
         return nothing
     end
-    # TRANSITIONAL (audit D-0041): the clause is compiled from TERMS, resolved off the cells (cold exports);
-    # upstream compiles from the cells (`Word`s) — compileClause on cells is its own step (f3 or L1g)
-    clause = compileClause(
-        gd, ld, resolve_term(ld, h), resolve_term(ld, b), proc, gd.modules[module_],
-        warnings
-    )
+    ex = cell_export{T}()                                       # (L1f f3a: off the cells, one map)
+    h = export_cells(ld, ex, -(head + 1))
+    b = export_cells(ld, ex, -(body + 1))
+    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings; ex=ex)
     clause === nothing && return nothing
     def = proc.definition                                       # getProcDefinition(proc)
 

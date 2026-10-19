@@ -525,6 +525,20 @@ function _manifest_index(T)
         (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD}, false),
         (LK.compileClause, Tuple{GD, LD, T, Nothing, PR, MOD, Int}, false),
         (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD, Int}, false),
+        # L1f f3a — the clause off its cells (assert_term!'s path: the `ex=` keyword method)
+        (
+            Core.kwcall,
+            Tuple{
+                NamedTuple{(:ex,), Tuple{LK.cell_export{T}}}, typeof(LK.compileClause),
+                GD, LD, T, T, PR, MOD, Int
+            },
+            false
+        ),
+        (LK.cell_export{T}, Tuple{}, false),
+        (LK._export_var!, Tuple{LK.cell_export{T}, Int}, false),
+        (LK._export_leaf!, Tuple{LD, LK.cell_export{T}, Tuple{UInt8, UInt64, Int}}, false),
+        (LK.export_cells, Tuple{LD, LK.cell_export{T}, Int}, false),
+        (LK.import_cells!, Tuple{LD, LK.cell_export{T}, T}, false),
         (LK.localGoal, Tuple{GD, LD, T}, false),
         (LK.compileGoalClause, Tuple{GD, LD, T, MOD, Int}, false),
         # src/pl-funct.jl — the control functors the global data holds
