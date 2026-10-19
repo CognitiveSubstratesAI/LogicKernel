@@ -125,7 +125,7 @@ past `MAXARITY`, or the name is no callable atom: then `type_error(callable, Hea
 function get_head_functor(
     ld::PL_local_data{T}, head::term_t, how::Int
 )::Tuple{T, Int} where {T}
-    t = deRef(ld, slotValue(ld, head + 1))
+    t = _handle_term(ld, head)                          # (L1e e4: through the words)
     if kind(t) === EXPR && nchildren(t) >= 1                    # PL_get_functor(head, fdef)
         name, arity = child(t, 1), nchildren(t) - 1
     elseif kind(t) === SYM                                      # isCallableAtom || isReservedSymbol
@@ -1056,7 +1056,7 @@ end
 # `false`, `on`, `off` — then 0 or 1; else `type_error(bool, T)` (`PL_get_bool_ex`).
 "`true`/`on`/1 → 1, `false`/`off`/0 → 0; else `nothing` with `type_error(bool, T)` (pl-proc.c)."
 function get_bool_or_int_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
+    w = _handle_term(ld, t)                             # (L1e e4: through the words)
     if isTextAtom(w)
         k = sym_key(w)
         (k == sym_key(mk_sym(T, Symbol("true"))) || k == sym_key(mk_sym(T, :on))) &&
@@ -1090,7 +1090,7 @@ function get_procedure(
     head = PL_new_term_ref(ld)
     ok, m = PL_strip_module(gd, ld, descr, 0, head)
     ok || return nothing
-    h = deRef(ld, slotValue(ld, head + 1))
+    h = _handle_term(ld, head)                          # (L1e e4: through the words)
     if _hasFunctor(h, mk_sym(T, :/), 2)                 # Name/Arity
         a = PL_new_term_ref(ld)
         setSlotValue!(ld, a + 1, child(h, 2))

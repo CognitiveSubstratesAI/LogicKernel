@@ -2536,7 +2536,7 @@ function pl_not_unify2_va(
             return FFALSE
         elseif !(k1 == DU_WORD && _is_gcompound(w1) && k2 == DU_WORD && _is_gcompound(w2))
             return if compare_primitives_cells(ld, k1, w1, 0, k2, w2, 0, CMP_MODE_EQUAL) ==
-                      CMP_EQUAL
+                CMP_EQUAL
                 FFALSE                           # tag(w1) != tag(w2), the atomic cases
             else
                 FTRUE                           # tag(w1) != tag(w2), the atomic cases
@@ -2924,7 +2924,7 @@ function pl_atom_number2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    p1 = deRef(ld, slotValue(ld, A1 + 1))
+    p1 = _handle_term(ld, A1)                       # (L1e e4: through the words)
     text = if isTextAtom(p1)
         sym_text(p1)
     elseif isString(p1)
@@ -2948,7 +2948,7 @@ function pl_atom_number2_va(
         end
         return FFALSE
     end
-    p2 = deRef(ld, slotValue(ld, A2 + 1))
+    p2 = _handle_term(ld, A2)
     if isNumber(p2)                                 # PL_get_nchars(A2, …, CVT_NUMBER)
         if isFloat(p2)                              # PL_get_nchars: format_float(…, 3, 'e')
             return if PL_unify_atom(
@@ -3779,6 +3779,15 @@ function pl_skip_list3_va(
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
 
+    len, k, _, tp = skip_list_cells(ld, -(A2 + 1))         # skip_list(valTermRef(A2), &tail) (L1e e4)
+    if k != DU_TERM
+        return if (unify_ptrs_cells(ld, -(A3 + 1), tp) && PL_unify_integer(ld, A1, len))
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+    ld.cold_pairs += 1                                      # the boundary: on terms
     len, tail = skip_list(ld, slotValue(ld, A2 + 1))
     if unify_ptrs(ld, slotValue(ld, A3 + 1), tail) && PL_unify_integer(ld, A1, len)
         return FTRUE

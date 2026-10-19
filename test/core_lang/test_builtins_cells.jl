@@ -55,7 +55,8 @@ function _bc_clauses()
                 R
             )
         ),
-        (_rf("len", A, R), _bc_catch(_rf("length", A, R), R))
+        (_rf("len", A, R), _bc_catch(_rf("length", A, R), R)),
+        (_rf("lenn", A, R), _bc_catch(_rf("length", R, A), R))
     ]
 end
 
@@ -75,7 +76,10 @@ const _BC_GOALS = let X = _rv(50), Y = _rv(51), R = _rv(60)
         _rf("fu", _rg(1.5), R), _rf("fu", _rlist(_rs("a")), R), _rf("fu", X, R),
         _rf("len", _rlist(_rs("a"), _rs("b")), R), _rf("len", _rlist(), R),
         _rf("len", _rcons(_rs("a"), _rs("b")), R),
-        _rf("len", _rs("a"), R)
+        _rf("len", _rs("a"), R),
+        # '$length'/2 through length/2 with an unbound list: the list laid out at gTop (L1e e4)
+        _rf("lenn", _bc_k(3), R), _rf("lenn", _bc_k(0), R), _rf("lenn", _bc_k(-1), R),
+        _rf("lenn", _rs("a"), R)
     ]
 end
 
@@ -133,5 +137,19 @@ _bc_ctx() = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
     @test LK.pl_not_unify2_va(ld, t, 2, _bc_ctx()) == LK.FFALSE          # f(X, b) \= f(a, Y): unifiable
     @test LK.pl_not_unify2_va(ld, t + 2, 2, _bc_ctx()) == LK.FTRUE       # a \= 2.5
     @test LK.pl_functor3_va(ld, t + 4, 3, _bc_ctx()) == LK.FTRUE         # functor(g(x, y), N, A)
+    @test _bc_counts(ld) == c0
+end
+
+@testset "the meter: '\$length'/2, '\$skip_list'/3 and atom_number/2 on the stack make no cold traffic" begin
+    ld, t = _bc_engine(
+        _R[_rv(1), _bc_k(4), _rv(2), _rlist(_rs("a"), _rs("b")), _rv(3), _rs("12"), _rv(4)]
+    )
+    c0 = _bc_counts(ld)
+    @test LK.pl_dlength2_va(ld, t, 2, _bc_ctx()) == LK.FTRUE             # '$length'(L, 4)
+    @test LK.PL_skip_list(ld, t)[2] == 4
+    @test LK.pl_skip_list3_va(ld, t + 2, 3, _bc_ctx()) == LK.FTRUE       # '$skip_list'(N, [a,b], T)
+    @test LK.PL_get_integer(ld, t + 2) == 2
+    @test LK.pl_atom_number2_va(ld, t + 5, 2, _bc_ctx()) == LK.FTRUE     # atom_number('12', N)
+    @test LK.PL_get_integer(ld, t + 6) == 12
     @test _bc_counts(ld) == c0
 end

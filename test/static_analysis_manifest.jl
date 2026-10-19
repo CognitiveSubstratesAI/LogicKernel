@@ -687,6 +687,7 @@ function _manifest_index(T)
         (LK.stripModule_cells, Tuple{GD, LD, Int}, false),
         (LK._random_u64, Tuple{LD}, false), (LK._mpz_urandomm, Tuple{LD, BigInt}, false),   # arith-b
         (LK._is_colon2_word, Tuple{LD, UInt8, UInt64}, false),
+        (LK._handle_term, Tuple{LD, Int}, false),                   # L1e e4
         (LK._slot_link_loc!, Tuple{LD, Int, Tuple{UInt8, UInt64, Int}}, false),
         (LK.PL_strip_module_ex, Tuple{GD, LD, Int, Int, Int}, false),
         (LK._impl_any_defined, Tuple{D}, true),

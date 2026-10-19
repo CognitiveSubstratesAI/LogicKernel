@@ -38,7 +38,7 @@ function pl_dlength2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    p = deRef(ld, slotValue(ld, A2 + 1))
+    p = _handle_term(ld, A2)                            # (L1e e4: through the words)
 
     if isInteger(p) && integer_is_int64(p)              # PL_get_intptr(A2, &len)
         len = Int(int64_value(p))
@@ -54,13 +54,14 @@ function pl_dlength2_va(
                 )
             end
 
-            k = allocGlobalCells!(ld, len)
-            dot = mk_sym(T, LIST_CONS_NAME)
-            l = mk_nil(T)                               # p[-1] = ATOM_nil
-            for i in len:-1:1
-                l = mk_expr(T, T[dot, _cell_var(ld, k + i - 1), l])
+            p0 = allocGlobalCells!(ld, 3 * len)         # p = allocGlobal(len*3) (L1e e4: on the cells)
+            ld.slots[list + 1] = consPtr(p0, TAG_COMPOUND | STG_GLOBAL)   # setHandle(list, consPtr(p, …))
+            for i in 0:(len - 1)
+                q = p0 + 3 * i
+                ld.gstack[q] = ld.functor_dot2          # p[0] = FUNCTOR_dot2; setVar(p[1])
+                ld.gstack[q + 2] = consPtr(q + 3, TAG_COMPOUND | STG_GLOBAL)   # p[2] = consPtr(&p[3], …)
             end
-            setSlotValue!(ld, list + 1, l)
+            ld.gstack[p0 + 3 * len - 1] = ld.atom_nil_w     # p[-1] = ATOM_nil
 
             return PL_unify(ld, A1, list) ? FTRUE : FFALSE
         elseif len == 0

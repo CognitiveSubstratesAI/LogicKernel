@@ -711,7 +711,9 @@ end
 
 # PORT: pl-error.c PL_unify_list_ex
 "Unify `l` with a list cell, its head and tail into `h` and `t`; `[]` fails, anything else is `type_error(list, l)` (pl-error.c)."
-function PL_unify_list_ex(ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t)::Bool where {T}
+function PL_unify_list_ex(
+    ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t
+)::Bool where {T}
     PL_unify_list(ld, l, h, t) && return true
     PL_get_nil(ld, l) && return false
     return PL_error(ld, ERR_TYPE, mk_sym(T, :list), l)

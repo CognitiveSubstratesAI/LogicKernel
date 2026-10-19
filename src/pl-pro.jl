@@ -33,7 +33,7 @@ function callProlog(
     g = PL_new_term_ref(ld)
     ok, m = PL_strip_module(gd, ld, goal, module_, g)
     ok || return false
-    p = deRef(ld, slotValue(ld, g + 1))
+    p = _handle_term(ld, g)                             # (L1e e4: through the words)
     if !(kind(p) === SYM) && !(isTerm(p) && kind(child(p, 1)) === SYM)     # PL_get_functor
         PL_type_error(ld, "callable", goal)
 

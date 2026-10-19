@@ -27,9 +27,23 @@ function _fu_clauses()
         (_rf("tv3", T, L, R), _rf("term_variables", T, L, R)),
         (_rf("cmp", A, N, O), _rf("compare", O, A, N)),
         (_rf("an", A, N), _fu_catch(_rf("atom_number", A, N), N)),
-        (_rf("fa", L), _rf("findall", _rv(7), _ror(_rf("=", _rv(7), _rs("a")), _ror(_rf("=", _rv(7), _fu_k(2)), _rf("=", _rv(7), _rf("g", _rv(8))))), L)),
+        (
+            _rf("fa", L),
+            _rf(
+                "findall",
+                _rv(7),
+                _ror(
+                    _rf("=", _rv(7), _rs("a")),
+                    _ror(_rf("=", _rv(7), _fu_k(2)), _rf("=", _rv(7), _rf("g", _rv(8))))
+                ),
+                L
+            )
+        ),
         (_rf("sk", L, N, R), _rf("\$skip_list", N, L, R)),
-        (_rf("bt", T), _ror(_rconj(_rf("functor", T, _rs("f"), _fu_k(2)), _rs("fail")), _rs("true")))
+        (
+            _rf("bt", T),
+            _ror(_rconj(_rf("functor", T, _rs("f"), _fu_k(2)), _rs("fail")), _rs("true"))
+        )
     ]
 end
 
@@ -37,17 +51,25 @@ end
     db = _rdb(_fu_clauses())
     X, Y, Z, V = _rv(50), _rv(51), _rv(52), _rv(53)
     goals = _R[
-        _rf("fn", _rs("f"), _fu_k(3), V), _rf("fn", _rs("a"), _fu_k(0), V), _rf("fn", _fu_k(7), _fu_k(0), V),
-        _rf("fn", _rg(1.5), _fu_k(0), V), _rf("fn", _rs("f"), _fu_k(-1), V), _rf("fn", _rf("g", _rs("x")), _fu_k(1), V),
-        _rf("fd", _rf("f", _rs("a"), X), Y, Z), _rf("fd", _rs("atom"), Y, Z), _rf("fd", _fu_k(12), Y, Z),
-        _rf("fd", _rf("f", _rs("a"), X), _rs("f"), _fu_k(2)), _rf("fd", _rf("f", _rs("a"), X), _rs("g"), _fu_k(2)),
+        _rf("fn", _rs("f"), _fu_k(3), V), _rf("fn", _rs("a"), _fu_k(0), V),
+        _rf("fn", _fu_k(7), _fu_k(0), V),
+        _rf("fn", _rg(1.5), _fu_k(0), V), _rf("fn", _rs("f"), _fu_k(-1), V),
+        _rf("fn", _rf("g", _rs("x")), _fu_k(1), V),
+        _rf("fd", _rf("f", _rs("a"), X), Y, Z), _rf("fd", _rs("atom"), Y, Z),
+        _rf("fd", _fu_k(12), Y, Z),
+        _rf("fd", _rf("f", _rs("a"), X), _rs("f"), _fu_k(2)),
+        _rf("fd", _rf("f", _rs("a"), X), _rs("g"), _fu_k(2)),
         _rf("tv", _rf("f", X, _rf("g", Y, X), Z), V), _rf("tv", _rs("a"), V),
-        _rf("tv", _rf("f", X, Y), _rlist(_rv(54), _rv(55))), _rf("tv", _rf("f", X, Y), _rcons(_rv(54), _rv(55))),
+        _rf("tv", _rf("f", X, Y), _rlist(_rv(54), _rv(55))),
+        _rf("tv", _rf("f", X, Y), _rcons(_rv(54), _rv(55))),
         _rf("tv", _rf("f", X), _rlist()), _rf("tv3", _rf("f", X, Y), V, _rlist(_rs("z"))),
-        _rf("cmp", _fu_k(1), _fu_k(2), V), _rf("cmp", _rs("b"), _rs("a"), V), _rf("cmp", _rs("a"), _rs("a"), _rs("=")),
+        _rf("cmp", _fu_k(1), _fu_k(2), V), _rf("cmp", _rs("b"), _rs("a"), V),
+        _rf("cmp", _rs("a"), _rs("a"), _rs("=")),
         _rf("cmp", _rs("a"), _rs("a"), _rs("<")),
-        _rf("an", _rs("12"), V), _rf("an", _rs("1.5e3"), V), _rf("an", _rs("x1"), V), _rf("an", _rs("12"), _fu_k(12)),
-        _rf("fa", V), _rf("sk", _rlist(_rs("a"), _rs("b")), V, _rv(56)), _rf("sk", _rcons(_rs("a"), _rv(57)), V, _rv(56)),
+        _rf("an", _rs("12"), V), _rf("an", _rs("1.5e3"), V), _rf("an", _rs("x1"), V),
+        _rf("an", _rs("12"), _fu_k(12)),
+        _rf("fa", V), _rf("sk", _rlist(_rs("a"), _rs("b")), V, _rv(56)),
+        _rf("sk", _rcons(_rs("a"), _rv(57)), V, _rv(56)),
         _rf("bt", V)
     ]
     ours = _rlines(db, goals)
@@ -100,7 +122,18 @@ _fu_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
 end
 
 @testset "the meter: the writers on terms on the stack make no cold traffic" begin
-    ld, t = _fu_engine(_R[_rv(1), _rv(2), _rv(3), _rf("f", _rs("a"), _rv(4)), _rv(5), _rs("x"), _rv(6), _rv(7)])
+    ld, t = _fu_engine(
+        _R[
+            _rv(1),
+            _rv(2),
+            _rv(3),
+            _rf("f", _rs("a"), _rv(4)),
+            _rv(5),
+            _rs("x"),
+            _rv(6),
+            _rv(7)
+        ]
+    )
     c0 = _fu_counts(ld)
     @test LK.PL_unify_functor(ld, t, _rs("g"), 2)            # binds
     @test LK.PL_unify_functor(ld, t, _rs("g"), 2)            # checks

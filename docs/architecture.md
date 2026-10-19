@@ -1192,7 +1192,6 @@ graph LR
     pl_pro --> pl_incl
     pl_pro --> SWI_Prolog
     pl_pro --> pl_global
-    pl_pro --> pl_inline
     pl_pro --> pl_comp
     pl_pro --> pl_wam
     pl_pro --> pl_fli
