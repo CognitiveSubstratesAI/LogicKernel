@@ -191,12 +191,12 @@ var_table() = var_table(variable[], 0, Int[])
 # `TS_VALUE` a plain value, `TS_UNBOUND` an unbound cell (`setVar`), else a variable record's index.
 "The terms the parser has read and not yet built into their parent (pl-read.c)."
 mutable struct term_stack{T}
-    terms::Vector{T}                # Term handles
+    words::Vector{word}             # Term handles: each entry's WORD (L1e e6: upstream's *valTermRef(h))
     vars::Vector{Int}               # what each entry is (see above)
     allocated::Int                  # #valid terms allocated
     top::Int                        # #valid terms on the stack
 end
-term_stack{T}() where {T} = term_stack{T}(T[], Int[], 0, 0)
+term_stack{T}() where {T} = term_stack{T}(word[], Int[], 0, 0)
 
 "A term-stack entry that holds a plain value (`term_stack.vars`)."
 const TS_VALUE = -1
@@ -2264,7 +2264,7 @@ end
 "Empty the term stack (pl-read.c)."
 function init_term_stack(rd::read_data)::Nothing
     ts = rd.term_stack
-    empty!(ts.terms)
+    empty!(ts.words)
     empty!(ts.vars)
     ts.allocated = 0
     ts.top = 0
@@ -2281,7 +2281,7 @@ function alloc_term(rd::read_data{T})::Int where {T}
         ts.top += 1
         ts.vars[ts.top] = TS_UNBOUND                # PL_put_variable(t)
     else
-        push!(ts.terms, mk_nil(T))                  # t = PL_new_term_ref(): its value is unread
+        push!(ts.words, word(0))                    # t = PL_new_term_ref(): its value is unread
         push!(ts.vars, TS_UNBOUND)
         ts.allocated += 1
         ts.top = ts.allocated
@@ -2304,11 +2304,20 @@ function truncate_term_stack(top::Int, rd::read_data)::Nothing
 end
 
 # PORT: pl-read.c setHandle as _setHandle!
-# DIVERGES: the entry `h` of the term stack holds the plain value `w` (see `term_stack`).
+# DIVERGES: the entry `h` of the term stack holds the WORD of the term `w` (L1e e6: an atom's word, a
+# value's tagged or value-table word — no export; a compound, only an operator's block, copied onto the
+# global stack, counted as the cold import).
 "Make term-stack entry `h` hold the term `w` (pl-read.c)."
 function _setHandle!(h::Int, w::T, rd::read_data{T})::Nothing where {T}
+    _setHandle_w!(h, _word_of!(rd.ld, w), rd)
+    return nothing
+end
+
+# PORT: pl-read.c setHandle as _setHandle_w!
+"Make term-stack entry `h` hold the word `w` (pl-read.c `setHandle(h, w)`)."
+function _setHandle_w!(h::Int, w::word, rd::read_data)::Nothing
     ts = rd.term_stack
-    ts.terms[h] = w
+    ts.words[h] = w
     ts.vars[h] = TS_VALUE
     return nothing
 end
@@ -2317,7 +2326,7 @@ end
 # a fresh variable; never a variable record's (those are read with `readValHandle`).
 function _ts_term(h::Int, rd::read_data{T})::T where {T}
     ts = rd.term_stack
-    ts.vars[h] == TS_VALUE && return ts.terms[h]
+    ts.vars[h] == TS_VALUE && return something(_cell_value(rd.ld, ts.words[h]))   # (L1e e6: a word)
     @assert ts.vars[h] == TS_UNBOUND
     return _cell_var(rd.ld, allocGlobalCells!(rd.ld, 1))
 end
@@ -2325,61 +2334,64 @@ end
 # ── term building (pl-read.c) ───────────────────────────────────────────────────────────────────
 
 # PORT: pl-read.c readValHandle
-# DIVERGES: returns the term to place, where upstream writes it to `argp`. A variable record's
-# FIRST placement makes its variable — a new term reference, whose fresh key IS the variable — so
-# the variables are made in the order upstream gives them their cells, and the kernel's order of
-# variables (`var_key`) is swipl's (by address); a later placement reuses it. An unbound cell is a
-# fresh variable, as upstream's copied unbound word is a new variable in its new cell.
-"The term to place for term-stack entry `term`, which is cleared (pl-read.c)."
-function readValHandle(term::Int, rd::read_data{T})::T where {T}
+# (L1e e6: as upstream, into the global cell `argp`) A variable record's FIRST placement leaves `argp`
+# unbound and makes the variable's term reference reference it (`makeRefG(argp)`), so a variable IS its
+# first cell, as upstream's — the variables' order (by position) is swipl's; a later placement copies
+# that reference. An unbound entry places a fresh variable; a plain value its word.
+"Place term-stack entry `term` into global cell `argp`, and clear the entry (pl-read.c)."
+function readValHandle!(term::Int, argp::Int, rd::read_data{T})::Nothing where {T}
     ts = rd.term_stack
     ld = rd.ld
     tag = ts.vars[term]
-    w = if tag >= 0                                 # var = varInfo(w)
+    if tag >= 0                                     # var = varInfo(w)
         var = var_from_index(tag, rd)
         if var.variable == 0                        # new variable
             var.variable = PL_new_term_ref(ld)
             @assert var.variable != 0
+            ld.gstack[argp] = word(0)               # setVar(*argp)
+            ld.slots[var.variable + 1] = makeRefG(argp)   # *valTermRef(var->variable) = makeRefG(argp)
+        else                                        # reference to existing var
+            ld.gstack[argp] = ld.slots[var.variable + 1]
         end
-        slotValue(ld, var.variable + 1)                  # (or) reference to existing var
     elseif tag == TS_UNBOUND
-        _cell_var(rd.ld, allocGlobalCells!(rd.ld, 1))               # setVar(*argp)
+        ld.gstack[argp] = word(0)                   # *argp = w: an unbound word, a new variable
     else
-        ts.terms[term]                              # plain value
+        ld.gstack[argp] = ts.words[term]            # plain value
     end
     ts.vars[term] = TS_UNBOUND                      # setVar(*valTermRef(term))
-    return w
+    return nothing
+end
+
+# ORIGINAL (L1e e6): an entry's value as a word for a slot or a cell's link: the entry placed in a fresh
+# cell (`readValHandle!`), then that cell's linkValI word (a reference for an unbound cell).
+function _ts_link_word!(term::Int, rd::read_data)::word
+    c = allocGlobalCells!(rd.ld, 1)
+    readValHandle!(term, c, rd)
+    w = rd.ld.gstack[c]
+    return isVar(w) ? makeRefG(c) : w
 end
 
 # PORT: pl-read.c build_term
-# DIVERGES: the compound is made by `mk_expr` over its name and its arguments (there is no global
-# stack to run out of: `ensureGlobalSpace` and `ensureSpaceForTermRefs` cannot fail); `arity` 0 is
-# SWI-7's `f()`, a compound with no arguments.
+# DIVERGES: no global stack to run out of (`ensureGlobalSpace`, `ensureSpaceForTermRefs` cannot fail);
+# `arity` 0 is SWI-7's `f()`, a compound with no arguments. On the CELLS (L1e e6): laid out at gTop.
 "Replace the top `arity` terms of the term stack by `atom` applied to them (pl-read.c)."
 function build_term(atom::T, arity::Int, rd::read_data{T})::Bool where {T}
+    ld = rd.ld
+    functor = lookupFunctorDef(ld.functors, _atom_word!(ld, atom), arity)
+    argp = _alloc_compound!(ld, functor, arity)     # argp = gTop; gTop += 1+arity; *argp++ = functor
+    w = consPtr(argp, TAG_COMPOUND | STG_GLOBAL)
     if arity > 0
         argv = term_av(-arity, rd)
-        kids = Vector{T}(undef, arity + 1)
-        kids[1] = atom                              # *argp++ = functor
         for k in 0:(arity - 1)
-            kids[k + 2] = readValHandle(argv + k, rd)
+            readValHandle!(argv + k, argp + 1 + k, rd)
         end
-        _setHandle!(argv, mk_expr(T, kids), rd)
+        _setHandle_w!(argv, w, rd)
         truncate_term_stack(argv + 1, rd)
     else
         t = alloc_term(rd)
-        _setHandle!(t, mk_expr(T, T[atom]), rd)
+        _setHandle_w!(t, w, rd)
     end
     return true
-end
-
-# The list `[e1, …, en | tail]` of `elements` (upstream builds it cell by cell, `FUNCTOR_dot2`).
-function _read_list_term(elements::Vector{T}, tail::T)::T where {T}
-    l = tail
-    for k in length(elements):-1:1
-        l = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), elements[k], l])
-    end
-    return l
 end
 
 # ── the operator queues (pl-read.c) ─────────────────────────────────────────────────────────────
@@ -2460,7 +2472,7 @@ function build_op_term(op::op_entry{T}, rd::read_data{T})::Bool where {T}
         av = term_av(-(arity + 1), rd)
         ts = rd.term_stack
         for i in arity:-1:1                         # av[i] = av[i-1]
-            ts.terms[av + i] = ts.terms[av + i - 1]
+            ts.words[av + i] = ts.words[av + i - 1]
             ts.vars[av + i] = ts.vars[av + i - 1]
         end
         @assert term == av + arity
@@ -2532,10 +2544,9 @@ end
 
 # PORT: pl-read.c pframe
 # DIVERGES: no positions (`positions`, `pin`, the members' `pv`: refused, R1's decision); the
-# union's members are fields. A LIST keeps its elements (`list_elements`) and is built when it ends,
-# where upstream extends it cell by cell through a reference to its tail (`tail`); each element is
-# made a value (`readValHandle`) where upstream places it, so the variables' order holds, and the
-# list's own entry on the term stack (`list_term`) is where upstream's first cell goes. Blobs, dicts
+# union's members are fields. A LIST is extended cell by cell as upstream (L1e e6), its tail kept as
+# `list_term` (the term-stack entry, until the first element) and then `list_tail` (the global cell of
+# the tail) — upstream's `tail` references the entry first, which no global cell may do here. Blobs, dicts
 # and quasi-quotations are refused (R1's decision): their members are absent.
 "A suspended level of `complex_term` (pl-read.c): its arguments, queue state and construct."
 mutable struct pframe{T}
@@ -2549,8 +2560,8 @@ mutable struct pframe{T}
     red_side::reduce_side           # AF_POSTFIX_OP: reduce_side
     compound_functor::Union{Nothing, T}     # u.compound.functor
     compound_arity::Int                     # u.compound.arity
-    list_term::Int                          # u.list.tail: the list's term-stack entry
-    list_elements::Vector{T}                # (the elements read so far)
+    list_term::Int                          # u.list.tail: the list's term-stack entry…
+    list_tail::Int                          # …until the first element: then the global cell of the tail
     bracket_functor::Union{Nothing, T}      # u.bracket.functor: ATOM_curl or 0
     bracket_open::Int                       # paired: open and close
     bracket_close::Int
@@ -2995,7 +3006,7 @@ function complex_term(
         pframe{T}(
             stop, copy_cterm_state(cstate), copy_op_entry(in_op), maxpri, red_op, kind,
             after,
-            red_side, nothing, 0, 0, T[], nothing, 0, 0, ""
+            red_side, nothing, 0, 0, 0, nothing, 0, 0, ""
         )
     )
     rc = start_pframe(stack[end], token, req, rd)
@@ -3102,7 +3113,7 @@ function read_list_start(
 )::Int where {T}
     term = alloc_term(rd)
     f.list_term = term                              # PL_put_term(tail, term)
-    empty!(f.list_elements)
+    f.list_tail = 0                                 # (the tail is the entry itself)
     return read_list_elem(f, req, rd)
 end
 
@@ -3113,16 +3124,21 @@ end
 function read_list_resume_elem(
     f::pframe{T}, req::ct_request, rd::read_data{T}
 )::Int where {T}
+    ld = rd.ld
+    argp = _alloc_compound!(ld, ld.functor_dot2, 2)     # argp = gTop; gTop += 3; *argp++ = FUNCTOR_dot2
+    cw = consPtr(argp, TAG_COMPOUND | STG_GLOBAL)       # *unRef(*valTermRef(tail)) = consPtr(argp, …)
+    f.list_tail == 0 ? _setHandle_w!(f.list_term, cw, rd) : (ld.gstack[f.list_tail] = cw)
     tmp = term_av(-1, rd)
-    push!(f.list_elements, readValHandle(tmp, rd))
+    readValHandle!(tmp, argp + 1, rd)
     truncate_term_stack(tmp, rd)
+    f.list_tail = argp + 2                              # setHandle(tail, makeRefG(argp))
 
     tk = get_token(false, rd)
     tk === nothing && return 0
 
     c = tk.character
     if c == Int(']')
-        _setHandle!(f.list_term, _read_list_term(f.list_elements, mk_nil(T)), rd)
+        ld.gstack[f.list_tail] = ld.atom_nil_w          # PL_unify_nil(tail): its fresh cell
         return 1
     elseif c == Int('|')
         f.kind = PF_LIST_TAIL
@@ -3139,14 +3155,13 @@ end
 "Take the tail just read and end the list at its `]` (pl-read.c): `,` or `|` there is `list_rest`."
 function read_list_resume_tail(f::pframe{T}, rd::read_data{T})::Int where {T}
     tmp = term_av(-1, rd)
-    tail = readValHandle(tmp, rd)
+    readValHandle!(tmp, f.list_tail, rd)            # argp = unRef(*valTermRef(tail))
     truncate_term_stack(tmp, rd)
     tk = get_token(false, rd)                       # discard ']'
     tk === nothing && return 0
     if tk.character == Int(',') || tk.character == Int('|')
         return Int(syntaxError("list_rest", rd))
     end
-    _setHandle!(f.list_term, _read_list_term(f.list_elements, tail), rd)
     return 1
 end
 
@@ -3375,33 +3390,40 @@ end
 isAnonVarName(n::Vector{UInt8})::Bool = isAnonVarNameN(n, 1, length(n))
 
 # PORT: pl-read.c bind_variable_names
-# DIVERGES: the list `[Name = Var, …]` is made and unified once, where upstream unifies it cell by
-# cell; a failure fails the read either way.
+# (L1e e6: cell by cell through the FLI, as upstream — its writers are on the cells since e3)
 "Unify the `variable_names` term with `[Name = Var, …]` of the named variables read (pl-read.c)."
 function bind_variable_names(rd::read_data{T})::Bool where {T}
     ld = rd.ld
-    pairs = T[]
-    for var in rd.vt.var_buffer
+    list = PL_copy_term_ref(ld, rd.varnames)
+    head = PL_new_term_ref(ld)
+    a = PL_new_term_ref(ld)
+    for var in rd.vt.var_buffer                     # FOR_VARS(var)
         if !isAnonVarName(var.name)
-            push!(
-                pairs,
-                mk_expr(
-                    T,
-                    T[mk_sym(T, :(=)), _atom_from_text(T, String(copy(var.name))),
-                        slotValue(ld, var.variable + 1)]
-                )
-            )
+            (
+                PL_unify_list(ld, list, head, list) &&
+                PL_unify_functor(ld, head, mk_sym(T, :(=)), 2) &&
+                _PL_get_arg(ld, 1, head, a) &&
+                PL_unify_atom(ld, a, _atom_from_text(T, String(copy(var.name)))) &&   # PL_unify_text
+                _PL_get_arg(ld, 2, head, a) &&
+                PL_unify(ld, a, var.variable)
+            ) || return false
         end
     end
-    return unify_ptrs(ld, slotValue(ld, rd.varnames + 1), _read_list_term(pairs, mk_nil(T)))
+    return PL_unify_nil(ld, list)
 end
 
 # PORT: pl-read.c bind_variables
+# (L1e e6: cell by cell through the FLI, as upstream)
 "Unify the `variables` term with the list of the variables read (pl-read.c)."
 function bind_variables(rd::read_data{T})::Bool where {T}
     ld = rd.ld
-    vars = T[slotValue(ld, var.variable + 1) for var in rd.vt.var_buffer]    # FOR_VARS(var)
-    return unify_ptrs(ld, slotValue(ld, rd.variables + 1), _read_list_term(vars, mk_nil(T)))
+    list = PL_copy_term_ref(ld, rd.variables)
+    head = PL_new_term_ref(ld)
+    for var in rd.vt.var_buffer                     # FOR_VARS(var)
+        (PL_unify_list(ld, list, head, list) && PL_unify(ld, head, var.variable)) ||
+            return false
+    end
+    return PL_unify_nil(ld, list)
 end
 
 # PORT: pl-read.c read_term
@@ -3433,7 +3455,7 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
     @assert rd.term_stack.top == 1
     result = term_av(-1, rd)
     if rd.term_stack.vars[result] >= 0              # reading a single variable
-        _setHandle!(result, readValHandle(result, rd), rd)
+        _setHandle_w!(result, _ts_link_word!(result, rd), rd)
     end
 
     tk = get_token(false, rd)
@@ -3443,7 +3465,13 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
         @goto out
     end
 
-    rc = unify_ptrs(ld, slotValue(ld, term + 1), _ts_term(result, rd))    # PL_unify(term, result[0])
+    r0 = PL_new_term_ref(ld)                        # result[0], as a term reference (L1e e6)
+    ld.slots[r0 + 1] = if rd.term_stack.vars[result] == TS_VALUE
+        rd.term_stack.words[result]
+    else
+        _ts_link_word!(result, rd)   # (an unbound entry: a fresh variable)
+    end   # (an unbound entry: a fresh variable)
+    rc = PL_unify(ld, term, r0)                     # PL_unify(term, result[0])
 
     truncate_term_stack(result, rd)
     rc || @goto out
@@ -3585,23 +3613,23 @@ end
 "Report the singletons (and, with `MULTITON_CHECK`, the multitons) of the term read (pl-read.c)."
 function check_singletons(term::term_t, rd::read_data{T})::Bool where {T}
     ld = rd.ld
-    if rd.singles != _SINGLES_REPORT                # returns <name> = var bindings
-        pairs = T[]
+    if rd.singles != _SINGLES_REPORT                # returns <name> = var bindings (L1e e6: on cells)
+        list = PL_copy_term_ref(ld, rd.singles)
+        head = PL_new_term_ref(ld)
+        a = PL_new_term_ref(ld)
         for var in rd.vt.var_buffer                 # FOR_VARS(var)
             if is_singleton(var, LIST_SINGLETONS, rd)
-                push!(
-                    pairs,
-                    mk_expr(
-                        T,
-                        T[mk_sym(T, :(=)), _atom_from_text(T, String(copy(var.name))),
-                            slotValue(ld, var.variable + 1)]
-                    )
-                )
+                (
+                    PL_unify_list(ld, list, head, list) &&
+                    PL_unify_functor(ld, head, mk_sym(T, :(=)), 2) &&   # PL_unify_term(head, FUNCTOR_equals2,
+                    _PL_get_arg(ld, 1, head, a) &&                       #   PL_UTF8_CHARS, var->name,
+                    PL_unify_atom(ld, a, _atom_from_text(T, String(copy(var.name)))) &&
+                    _PL_get_arg(ld, 2, head, a) &&                       #   PL_TERM, var->variable)
+                    PL_unify(ld, a, var.variable)
+                ) || return false
             end
         end
-        return unify_ptrs(
-            ld, slotValue(ld, rd.singles + 1), _read_list_term(pairs, mk_nil(T))
-        )
+        return PL_unify_nil(ld, list)
     end
     singletons = String[]                           # just report
     for var in rd.vt.var_buffer                     # FOR_VARS(var): singletons

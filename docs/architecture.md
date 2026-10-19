@@ -1266,10 +1266,10 @@ graph LR
     pl_read --> SWI_Prolog
     pl_read --> pl_atom
     pl_read --> pl_index
+    pl_read --> pl_funct
     pl_read --> pl_global
     pl_read --> pl_modul
     pl_read --> pl_inline
-    pl_read --> pl_prims
     pl_read --> pl_comp
     pl_read --> pl_alloc
     pl_read --> pl_wam

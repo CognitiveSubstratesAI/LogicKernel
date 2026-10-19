@@ -836,10 +836,11 @@ function _manifest_index(T)
         (LK.term_av, Tuple{Int64, LK.read_data{T}}, true),
         (LK.truncate_term_stack, Tuple{Int64, LK.read_data{T}}, true),
         (LK._setHandle!, Tuple{Int64, T, LK.read_data{T}}, false),
+        (LK._setHandle_w!, Tuple{Int64, UInt64, LK.read_data{T}}, false),   # L1e e6
         (LK._ts_term, Tuple{Int64, LK.read_data{T}}, false),
-        (LK.readValHandle, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.readValHandle!, Tuple{Int64, Int64, LK.read_data{T}}, false),   # L1e e6: into a cell
+        (LK._ts_link_word!, Tuple{Int64, LK.read_data{T}}, false),
         (LK.build_term, Tuple{T, Int64, LK.read_data{T}}, false),
-        (LK._read_list_term, Tuple{Vector{T}, T}, false),
         (LK.queue_side_op, Tuple{LK.op_entry{T}, LK.read_data{T}}, false),
         (LK.side_op, Tuple{Int64, LK.read_data{T}}, false),
         (LK.pop_side_op, Tuple{LK.read_data{T}}, false),
