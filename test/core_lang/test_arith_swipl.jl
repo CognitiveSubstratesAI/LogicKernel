@@ -1582,6 +1582,1410 @@ end
     @test lk_value(_ais(_af(:+, _as(:cputime), _ag(1)))) >= 1.0
 end
 
+# ── arith-c: the last functions of pl-arith.c's table added by arith_funcs_design.md §2 (rationals,
+# the order of reals, bits, the remaining float functions and `powm/3`), pinned to swipl's own answers.
+# Same format as `_A_ARITHA_CASES`: pasted from the oracle (the pin's build, 10.1.18) and re-run through
+# swipl by the live testset at the end of this file. Known surprises, pinned like the rest:
+# `rational(-0.0)` is the integer 0; `rationalize(0.1)` is 1r10 (continued fractions, `mpq_set_double`)
+# where `rational(0.1)` is the exact 3602879701896397r36028797018963968; `cmpr/2`, `maxr/2` and `minr/2`
+# compare the mathematical values (`cmpr(1r3, 0.3333333333333333)` is 1) and prefer the rational of two
+# equal values (`maxr(1, 1.0)` is the integer 1, `minr(1r2, 0.5)` the rational), a NaN gives the other
+# argument in `maxr/2` and `minr/2`, an error in `cmpr/2`; `lcm/2` and `getbit/2` accept big integers
+# of any size (a bit past `LONG_MAX` is 0, and `getbit(-5, 2^70)` is 0, not an error, the bit being
+# checked before the sign of I); `getbit/2`'s errors are named `bit/2`; `lgamma(X)` for `X =< 0` is
+# `float_overflow`; `nexttoward(inf, inf)` is `float_overflow`; `acosh(0.5)` and `atanh(2)` are
+# `undefined`, `atanh(1)` is `float_overflow`; `tanh(nan)` is `undefined`; `rdiv/2`'s zero divisor
+# is named `(/)/2`, its type error `rdiv/2`.
+# NOT in this table: `random_float/0` (not reproducible: its own testset), `powm/3` with a float
+# argument (a known difference, below), and `roundtoward/2` (NOT PORTED, below).
+const _A_ARITHC_CASES = Any[
+    # rational/1
+    (:rational, 0), (:rational, 5), (:rational, -3), (:rational, typemin(Int64)),
+    (:rational, typemax(Int64)), (:rational, big(2)^70), (:rational, -big(2)^70),
+    (:rational, 0.5), (:rational, 0.1), (:rational, -0.0), (:rational, 0.0),
+    (:rational, 2.0), (:rational, -2.5), (:rational, 1.0e22),
+    (:rational, 9.5367431640625e-7), (:rational, 3.5), (:rational, 3 // big(4)),
+    (:rational, -7 // big(4)), (:rational, big(2)^70 // big(3)), (:rational, Inf),
+    (:rational, -Inf), (:rational, NaN), (:rational, nothing), (:rational, :a),
+    (:rational, (:+, 1, 1 // big(2))), (:+, (:rational, 0.25), (:rational, 0.5)),
+    (:rational, (:rational, 0.75)),
+    # numerator/1
+    (:numerator, 5), (:numerator, 0), (:numerator, -3), (:numerator, big(2)^70),
+    (:numerator, typemin(Int64)), (:numerator, 3 // big(4)), (:numerator, -7 // big(4)),
+    (:numerator, big(2)^70 // big(3)), (:numerator, 1 // big(2)^70),
+    (:numerator, 3 // big(2)), (:numerator, 0.5), (:numerator, 2.0), (:numerator, -0.0),
+    (:numerator, Inf), (:numerator, NaN), (:numerator, nothing), (:numerator, :a),
+    (:numerator, (:rdiv, 6, 4)), (:numerator, (:rational, 0.1)),
+    (:+, (:numerator, 3 // big(4)), 1),
+    # denominator/1
+    (:denominator, 5), (:denominator, 0), (:denominator, -3), (:denominator, big(2)^70),
+    (:denominator, typemin(Int64)), (:denominator, 3 // big(4)),
+    (:denominator, -7 // big(4)), (:denominator, big(2)^70 // big(3)),
+    (:denominator, 1 // big(2)^70), (:denominator, 3 // big(2)), (:denominator, 0.5),
+    (:denominator, 2.0), (:denominator, -0.0), (:denominator, Inf), (:denominator, NaN),
+    (:denominator, nothing), (:denominator, :a), (:denominator, (:rdiv, 6, 4)),
+    (:denominator, (:rational, 0.1)), (:+, (:denominator, 3 // big(4)), 1),
+    # rationalize/1
+    (:rationalize, 0.1), (:rationalize, 0.25), (:rationalize, 3.14159),
+    (:rationalize, -0.5), (:rationalize, 0.0), (:rationalize, -0.0), (:rationalize, 2.0),
+    (:rationalize, -2.0), (:rationalize, 1.0e22), (:rationalize, 1.0e-5),
+    (:rationalize, 0.3333333333333333), (:rationalize, 1.0000000000000002),
+    (:rationalize, 123456.789), (:rationalize, -1.0e-5),
+    (:rationalize, 0.7071067811865476), (:rationalize, Inf), (:rationalize, -Inf),
+    (:rationalize, NaN), (:rationalize, 0), (:rationalize, 7), (:rationalize, -7),
+    (:rationalize, typemin(Int64)), (:rationalize, big(2)^70),
+    (:rationalize, 3 // big(4)), (:rationalize, big(2)^70 // big(3)),
+    (:rationalize, nothing), (:rationalize, :a), (:rationalize, (:/, 1, 3.0)),
+    (:+, (:rationalize, 0.1), (:rationalize, 0.2)), (:rational, (:rationalize, 0.1)),
+    # rdiv/2
+    (:rdiv, 1, 3), (:rdiv, 4, 2), (:rdiv, 6, -4), (:rdiv, -6, 4), (:rdiv, 0, 5),
+    (:rdiv, 5, 5), (:rdiv, 1, 0), (:rdiv, 0, 0), (:rdiv, -1, 0), (:rdiv, big(2)^70, 0),
+    (:rdiv, 3 // big(4), 1 // big(2)), (:rdiv, 1 // big(3), 0), (:rdiv, 1 // big(3), 2),
+    (:rdiv, 2, 3 // big(4)), (:rdiv, big(2)^70, 3), (:rdiv, big(2)^70, big(2)^70),
+    (:rdiv, -big(2)^70, big(2)^70), (:rdiv, 3, big(2)^70), (:rdiv, typemin(Int64), -1),
+    (:rdiv, typemin(Int64), 3), (:rdiv, 1 // big(2), 1 // big(2)),
+    (:rdiv, big(2)^70 // big(3), 1 // big(2)^70), (:rdiv, 1 // big(3), -1 // big(3)),
+    (:rdiv, 1.5, 2), (:rdiv, 2, 1.5), (:rdiv, 1.5, 1.5), (:rdiv, 1, 0.0), (:rdiv, 0.0, 1),
+    (:rdiv, Inf, 1), (:rdiv, 1, NaN), (:rdiv, nothing, 1), (:rdiv, 1, nothing),
+    (:rdiv, :a, 1), (:rdiv, 1, :a), (:rdiv, (:+, 1, 2), (:*, 2, 3)),
+    (:+, (:rdiv, 1, 3), (:rdiv, 2, 3)),
+    # cmpr/2
+    (:cmpr, 1, 2), (:cmpr, 2, 1), (:cmpr, 1, 1), (:cmpr, 0, 0), (:cmpr, -1, 1),
+    (:cmpr, 1, 1.0), (:cmpr, 1, 2.0), (:cmpr, 2, 1.0), (:cmpr, 1.0, 1), (:cmpr, 1.5, 1),
+    (:cmpr, 1, 1.5), (:cmpr, -5, -5.5), (:cmpr, -5.5, -5), (:cmpr, 3 // big(4), 0.75),
+    (:cmpr, 0.75, 3 // big(4)), (:cmpr, 1 // big(3), 0.3333333333333333),
+    (:cmpr, 0.3333333333333333, 1 // big(3)), (:cmpr, 1 // big(3), 1 // big(2)),
+    (:cmpr, 1 // big(2), 1 // big(3)), (:cmpr, 1 // big(3), 1 // big(3)),
+    (:cmpr, 9007199254740993, 9007199254740992.0),
+    (:cmpr, 9007199254740992.0, 9007199254740993),
+    (:cmpr, typemax(Int64), 9.223372036854776e18),
+    (:cmpr, typemin(Int64), -9.223372036854776e18),
+    (:cmpr, typemax(Int64), 9.223372036854775e18), (:cmpr, -4294967297, -4294967297.0),
+    (:cmpr, 4294967297, 4294967297.0), (:cmpr, 1099511627779, 1099511627779.5),
+    (:cmpr, -1099511627779, -1099511627779.5), (:cmpr, 4294967296, 4294967296.5),
+    (:cmpr, big(2)^70, 1.0e21), (:cmpr, big(2)^70, 1.1805916207174113e21),
+    (:cmpr, -big(2)^70, -1.1805916207174113e21), (:cmpr, big(10)^400, 1.0e308),
+    (:cmpr, -big(10)^400, -Inf), (:cmpr, big(10)^400, Inf), (:cmpr, Inf, big(10)^400),
+    (:cmpr, Inf, Inf), (:cmpr, -Inf, Inf), (:cmpr, Inf, -Inf), (:cmpr, -0.0, 0.0),
+    (:cmpr, 0.0, -0.0), (:cmpr, 0.0, 0), (:cmpr, -0.0, 0),
+    (:cmpr, big(2)^70, big"1180591620717411303425"),
+    (:cmpr, big"1180591620717411303425", big(2)^70), (:cmpr, big(2)^70, big(2)^70),
+    (:cmpr, big(2)^70, 5), (:cmpr, 5, big(2)^70), (:cmpr, -big(2)^70, 5),
+    (:cmpr, typemin(Int64), typemax(Int64)), (:cmpr, typemax(Int64), typemin(Int64)),
+    (:cmpr, typemax(Int64), big(2)^70), (:cmpr, typemin(Int64), -big(2)^70),
+    (:cmpr, big(2)^70 // big(3), big(2)^70), (:cmpr, big(2)^70, big(2)^70 // big(3)),
+    (:cmpr, big(2)^70 // big(3), 1.0e20), (:cmpr, 1.0e21, big(2)^70 // big(3)),
+    (:cmpr, 1 // big(3), 0), (:cmpr, 0, 1 // big(3)), (:cmpr, -1 // big(3), 0),
+    (:cmpr, 1 // big(3), -5), (:cmpr, -5, 1 // big(3)), (:cmpr, 7 // big(2), 3),
+    (:cmpr, 7 // big(2), 4), (:cmpr, 3, 7 // big(2)), (:cmpr, 7 // big(2), Inf),
+    (:cmpr, -Inf, 7 // big(2)), (:cmpr, 7 // big(2), NaN), (:cmpr, NaN, 1),
+    (:cmpr, 1, NaN), (:cmpr, NaN, NaN), (:cmpr, NaN, Inf), (:cmpr, NaN, big(2)^70),
+    (:cmpr, 1 // big(2), NaN), (:cmpr, nothing, 1), (:cmpr, 1, nothing), (:cmpr, :a, 1),
+    (:+, (:cmpr, 1, 2), 10), (:cmpr, (:+, 1, 1), (:*, 1, 2)),
+    # maxr/2
+    (:maxr, 1, 2), (:maxr, 2, 1), (:maxr, 1, 1), (:maxr, 1, 1.0), (:maxr, 1.0, 1),
+    (:maxr, 1.0, 1.0), (:maxr, 1.5, 2), (:maxr, 2, 1.5), (:maxr, -1, -2),
+    (:maxr, -0.0, 0.0), (:maxr, 0.0, -0.0), (:maxr, -0.0, -0.0), (:maxr, 0.0, 0.0),
+    (:maxr, -0.0, 0), (:maxr, 0, -0.0), (:maxr, 0.0, 0), (:maxr, 0, 0.0), (:maxr, NaN, 1),
+    (:maxr, 1, NaN), (:maxr, NaN, NaN), (:maxr, NaN, 1.5), (:maxr, 1.5, NaN),
+    (:maxr, NaN, 1 // big(3)), (:maxr, 1 // big(3), NaN), (:maxr, NaN, big(2)^70),
+    (:maxr, big(2)^70, NaN), (:maxr, 1 // big(3), 0.3333333333333333),
+    (:maxr, 0.3333333333333333, 1 // big(3)), (:maxr, 1 // big(2), 0.5),
+    (:maxr, 0.5, 1 // big(2)), (:maxr, 3 // big(2), 1.5), (:maxr, 1.5, 3 // big(2)),
+    (:maxr, 1 // big(3), 1 // big(2)), (:maxr, 1 // big(2), 1 // big(3)),
+    (:maxr, Inf, big(2)^70), (:maxr, big(2)^70, Inf), (:maxr, -Inf, typemin(Int64)),
+    (:maxr, typemin(Int64), -Inf), (:maxr, Inf, Inf), (:maxr, -Inf, Inf),
+    (:maxr, big(2)^70, big"1180591620717411303425"), (:maxr, big(2)^70, 1.0e21),
+    (:maxr, 1.0e21, big(2)^70), (:maxr, 9007199254740993, 9007199254740992.0),
+    (:maxr, 9007199254740992.0, 9007199254740993),
+    (:maxr, big(2)^70, big(2)^70 // big(3)), (:maxr, nothing, 1), (:maxr, 1, nothing),
+    (:maxr, :a, 1), (:maxr, 1, :a), (:maxr, (:+, 1, 2), (:*, 1, 3)),
+    (:+, (:maxr, 1, 2), (:maxr, 3, 4)),
+    # minr/2
+    (:minr, 1, 2), (:minr, 2, 1), (:minr, 1, 1), (:minr, 1, 1.0), (:minr, 1.0, 1),
+    (:minr, 1.0, 1.0), (:minr, 1.5, 2), (:minr, 2, 1.5), (:minr, -1, -2),
+    (:minr, -0.0, 0.0), (:minr, 0.0, -0.0), (:minr, -0.0, -0.0), (:minr, 0.0, 0.0),
+    (:minr, -0.0, 0), (:minr, 0, -0.0), (:minr, 0.0, 0), (:minr, 0, 0.0), (:minr, NaN, 1),
+    (:minr, 1, NaN), (:minr, NaN, NaN), (:minr, NaN, 1.5), (:minr, 1.5, NaN),
+    (:minr, NaN, 1 // big(3)), (:minr, 1 // big(3), NaN), (:minr, NaN, big(2)^70),
+    (:minr, big(2)^70, NaN), (:minr, 1 // big(3), 0.3333333333333333),
+    (:minr, 0.3333333333333333, 1 // big(3)), (:minr, 1 // big(2), 0.5),
+    (:minr, 0.5, 1 // big(2)), (:minr, 3 // big(2), 1.5), (:minr, 1.5, 3 // big(2)),
+    (:minr, 1 // big(3), 1 // big(2)), (:minr, 1 // big(2), 1 // big(3)),
+    (:minr, Inf, big(2)^70), (:minr, big(2)^70, Inf), (:minr, -Inf, typemin(Int64)),
+    (:minr, typemin(Int64), -Inf), (:minr, Inf, Inf), (:minr, -Inf, Inf),
+    (:minr, big(2)^70, big"1180591620717411303425"), (:minr, big(2)^70, 1.0e21),
+    (:minr, 1.0e21, big(2)^70), (:minr, 9007199254740993, 9007199254740992.0),
+    (:minr, 9007199254740992.0, 9007199254740993),
+    (:minr, big(2)^70, big(2)^70 // big(3)), (:minr, nothing, 1), (:minr, 1, nothing),
+    (:minr, :a, 1), (:minr, 1, :a), (:minr, (:+, 1, 2), (:*, 1, 3)),
+    (:+, (:minr, 1, 2), (:minr, 3, 4)),
+    # lcm/2
+    (:lcm, 4, 6), (:lcm, 6, 4), (:lcm, 0, 5), (:lcm, 5, 0), (:lcm, 0, 0), (:lcm, -4, 6),
+    (:lcm, 4, -6), (:lcm, -4, -6), (:lcm, 7, 13), (:lcm, 12, 12), (:lcm, 1, 1),
+    (:lcm, 1, 0), (:lcm, typemax(Int64), typemax(Int64)), (:lcm, typemax(Int64), 2),
+    (:lcm, 2, typemax(Int64)), (:lcm, typemax(Int64), 9223372036854775806),
+    (:lcm, typemin(Int64), 1), (:lcm, 1, typemin(Int64)),
+    (:lcm, typemin(Int64), typemin(Int64)), (:lcm, typemin(Int64), 2),
+    (:lcm, typemin(Int64), -1), (:lcm, 4611686018427387904, 3),
+    (:lcm, 4611686018427387904, 4611686018427387904), (:lcm, 3037000500, 3037000500),
+    (:lcm, 3037000499, 3037000499), (:lcm, 4294967296, 4294967297), (:lcm, big(2)^70, 6),
+    (:lcm, 6, big(2)^70), (:lcm, -big(2)^70, 6), (:lcm, 6, -big(2)^70),
+    (:lcm, big(2)^70, 0), (:lcm, 0, big(2)^70), (:lcm, big(2)^70, big(2)^70),
+    (:lcm, big(2)^70, big"1180591620717411303425"), (:lcm, big(10)^30, big(10)^20),
+    (:lcm, -big(10)^30, big(10)^20), (:lcm, 2.5, 3), (:lcm, 3, 2.5), (:lcm, 2.0, 3),
+    (:lcm, 3, 2.0), (:lcm, 1 // big(2), 3), (:lcm, 3, 1 // big(2)), (:lcm, NaN, 3),
+    (:lcm, Inf, 3), (:lcm, nothing, 1), (:lcm, 1, nothing), (:lcm, :a, 1), (:lcm, 1, :a),
+    (:+, (:lcm, 4, 6), (:gcd, 4, 6)), (:lcm, (:+, 2, 2), (:*, 2, 3)),
+    # nexttoward/2
+    (:nexttoward, 1.0, 2), (:nexttoward, 1.0, 0), (:nexttoward, 1.0, 2.0),
+    (:nexttoward, 1.0, 0.5), (:nexttoward, 1, 2), (:nexttoward, 1, 0),
+    (:nexttoward, 1, 1), (:nexttoward, 1.0, 1.0), (:nexttoward, 0.0, 1),
+    (:nexttoward, 0.0, -1), (:nexttoward, -0.0, 1), (:nexttoward, -0.0, -1),
+    (:nexttoward, 0.0, 0.0), (:nexttoward, -0.0, 0.0), (:nexttoward, 0.0, -0.0),
+    (:nexttoward, 5.0e-324, 0), (:nexttoward, 5.0e-324, 1), (:nexttoward, -5.0e-324, 0),
+    (:nexttoward, -5.0e-324, -1), (:nexttoward, 2.2250738585072014e-308, 0),
+    (:nexttoward, 2.2250738585072014e-308, 1), (:nexttoward, 1.7976931348623157e308, 0),
+    (:nexttoward, 1.7976931348623157e308, Inf),
+    (:nexttoward, 1.7976931348623157e308, 1.7976931348623157e308),
+    (:nexttoward, -1.7976931348623157e308, -Inf), (:nexttoward, Inf, 0),
+    (:nexttoward, -Inf, 0), (:nexttoward, Inf, Inf), (:nexttoward, -Inf, -Inf),
+    (:nexttoward, Inf, -Inf), (:nexttoward, NaN, 1), (:nexttoward, 1, NaN),
+    (:nexttoward, NaN, NaN), (:nexttoward, big(2)^70, Inf), (:nexttoward, big(2)^70, 0),
+    (:nexttoward, 1 // big(3), 1), (:nexttoward, 1 // big(3), 0),
+    (:nexttoward, 1, 1 // big(3)), (:nexttoward, 0.1, 0.2), (:nexttoward, 0.2, 0.1),
+    (:nexttoward, -1.0, 0), (:nexttoward, -1.0, -2), (:nexttoward, 2.0, 3),
+    (:nexttoward, 1.0e300, Inf), (:nexttoward, nothing, 1), (:nexttoward, 1, nothing),
+    (:nexttoward, :a, 1), (:nexttoward, 1, :a), (:nexttoward, big(10)^400, 1),
+    (:nexttoward, 1, big(10)^400), (:-, (:nexttoward, 1, 2), 1),
+    (:nexttoward, (:+, 0.5, 0.5), (:*, 2, 2)),
+    # sinh/1
+    (:sinh, 0), (:sinh, 1), (:sinh, -1), (:sinh, 5), (:sinh, 0.5), (:sinh, -0.5),
+    (:sinh, 2.5), (:sinh, -0.0), (:sinh, 1.0e-320), (:sinh, 710.0), (:sinh, -710.0),
+    (:sinh, 1.0e300), (:sinh, typemin(Int64)), (:sinh, big(2)^70), (:sinh, big(10)^30),
+    (:sinh, 1 // big(3)), (:sinh, Inf), (:sinh, -Inf), (:sinh, NaN), (:sinh, nothing),
+    (:sinh, :a), (:sinh, (:+, 0.25, 0.25)), (:+, (:sinh, 0.5), (:sinh, 0.25)),
+    # cosh/1
+    (:cosh, 0), (:cosh, 1), (:cosh, -1), (:cosh, 5), (:cosh, 0.5), (:cosh, -0.5),
+    (:cosh, 2.5), (:cosh, -0.0), (:cosh, 1.0e-320), (:cosh, 710.0), (:cosh, -710.0),
+    (:cosh, 1.0e300), (:cosh, typemin(Int64)), (:cosh, big(2)^70), (:cosh, big(10)^30),
+    (:cosh, 1 // big(3)), (:cosh, Inf), (:cosh, -Inf), (:cosh, NaN), (:cosh, nothing),
+    (:cosh, :a), (:cosh, (:+, 0.25, 0.25)), (:+, (:cosh, 0.5), (:cosh, 0.25)),
+    # tanh/1
+    (:tanh, 0), (:tanh, 1), (:tanh, -1), (:tanh, 5), (:tanh, 0.5), (:tanh, -0.5),
+    (:tanh, 2.5), (:tanh, -0.0), (:tanh, 1.0e-320), (:tanh, 710.0), (:tanh, -710.0),
+    (:tanh, 1.0e300), (:tanh, typemin(Int64)), (:tanh, big(2)^70), (:tanh, big(10)^30),
+    (:tanh, 1 // big(3)), (:tanh, Inf), (:tanh, -Inf), (:tanh, NaN), (:tanh, nothing),
+    (:tanh, :a), (:tanh, 1000), (:tanh, -1000), (:tanh, 0.1), (:tanh, (:+, 0.25, 0.25)),
+    (:+, (:tanh, 0.5), (:tanh, 0.25)),
+    # asinh/1
+    (:asinh, 0), (:asinh, 1), (:asinh, -1), (:asinh, 5), (:asinh, 0.5), (:asinh, -0.5),
+    (:asinh, 2.5), (:asinh, -0.0), (:asinh, 1.0e-320), (:asinh, 710.0), (:asinh, -710.0),
+    (:asinh, 1.0e300), (:asinh, typemin(Int64)), (:asinh, big(2)^70),
+    (:asinh, big(10)^30), (:asinh, 1 // big(3)), (:asinh, Inf), (:asinh, -Inf),
+    (:asinh, NaN), (:asinh, nothing), (:asinh, :a), (:asinh, -1.0e300), (:asinh, 1.0e-10),
+    (:asinh, (:+, 0.25, 0.25)), (:+, (:asinh, 0.5), (:asinh, 0.25)),
+    # acosh/1
+    (:acosh, 0), (:acosh, 1), (:acosh, -1), (:acosh, 5), (:acosh, 0.5), (:acosh, -0.5),
+    (:acosh, 2.5), (:acosh, -0.0), (:acosh, 1.0e-320), (:acosh, 710.0), (:acosh, -710.0),
+    (:acosh, 1.0e300), (:acosh, typemin(Int64)), (:acosh, big(2)^70),
+    (:acosh, big(10)^30), (:acosh, 1 // big(3)), (:acosh, Inf), (:acosh, -Inf),
+    (:acosh, NaN), (:acosh, nothing), (:acosh, :a), (:acosh, 1.0), (:acosh, 1.5),
+    (:acosh, (:+, 0.25, 0.25)), (:+, (:acosh, 0.5), (:acosh, 0.25)),
+    # atanh/1
+    (:atanh, 0), (:atanh, 1), (:atanh, -1), (:atanh, 5), (:atanh, 0.5), (:atanh, -0.5),
+    (:atanh, 2.5), (:atanh, -0.0), (:atanh, 1.0e-320), (:atanh, 710.0), (:atanh, -710.0),
+    (:atanh, 1.0e300), (:atanh, typemin(Int64)), (:atanh, big(2)^70),
+    (:atanh, big(10)^30), (:atanh, 1 // big(3)), (:atanh, Inf), (:atanh, -Inf),
+    (:atanh, NaN), (:atanh, nothing), (:atanh, :a), (:atanh, 0.9999999999999999),
+    (:atanh, 2), (:atanh, -2), (:atanh, 1.0), (:atanh, -1.0), (:atanh, 1 // big(2)),
+    (:atanh, 3 // big(2)), (:atanh, (:+, 0.25, 0.25)),
+    (:+, (:atanh, 0.5), (:atanh, 0.25)),
+    # lgamma/1
+    (:lgamma, 0), (:lgamma, 1), (:lgamma, 2), (:lgamma, 3), (:lgamma, 5), (:lgamma, 100),
+    (:lgamma, 171), (:lgamma, 0.5), (:lgamma, 1.5), (:lgamma, 2.5), (:lgamma, -0.5),
+    (:lgamma, -1.5), (:lgamma, -1), (:lgamma, -2), (:lgamma, -1.0), (:lgamma, 0.0),
+    (:lgamma, -0.0), (:lgamma, 1.0e-300), (:lgamma, 5.0e-324), (:lgamma, 10000000000.0),
+    (:lgamma, 1.0e300), (:lgamma, 1.0e305), (:lgamma, 1.0e308),
+    (:lgamma, 1.7976931348623157e308), (:lgamma, big(2)^70), (:lgamma, big(10)^30),
+    (:lgamma, big(10)^400), (:lgamma, -big(2)^70), (:lgamma, 1 // big(2)),
+    (:lgamma, -3 // big(2)), (:lgamma, big(2)^70 // big(3)), (:lgamma, Inf),
+    (:lgamma, -Inf), (:lgamma, NaN), (:lgamma, nothing), (:lgamma, :a),
+    (:lgamma, typemin(Int64)), (:lgamma, typemax(Int64)), (:lgamma, 3.5), (:lgamma, -2.5),
+    (:lgamma, (:+, 1, 2)), (:+, (:lgamma, 3), (:lgamma, 4)),
+    # erf/1
+    (:erf, 0), (:erf, 1), (:erf, -1), (:erf, 5), (:erf, 0.5), (:erf, -0.5), (:erf, 2.5),
+    (:erf, -0.0), (:erf, 1.0e-320), (:erf, 710.0), (:erf, -710.0), (:erf, 1.0e300),
+    (:erf, typemin(Int64)), (:erf, big(2)^70), (:erf, big(10)^30), (:erf, 1 // big(3)),
+    (:erf, Inf), (:erf, -Inf), (:erf, NaN), (:erf, nothing), (:erf, :a), (:erf, 3.0),
+    (:erf, 6.0), (:erf, (:+, 0.25, 0.25)), (:+, (:erf, 0.5), (:erf, 0.25)),
+    # erfc/1
+    (:erfc, 0), (:erfc, 1), (:erfc, -1), (:erfc, 5), (:erfc, 0.5), (:erfc, -0.5),
+    (:erfc, 2.5), (:erfc, -0.0), (:erfc, 1.0e-320), (:erfc, 710.0), (:erfc, -710.0),
+    (:erfc, 1.0e300), (:erfc, typemin(Int64)), (:erfc, big(2)^70), (:erfc, big(10)^30),
+    (:erfc, 1 // big(3)), (:erfc, Inf), (:erfc, -Inf), (:erfc, NaN), (:erfc, nothing),
+    (:erfc, :a), (:erfc, 3.0), (:erfc, 6.0), (:erfc, 26.0), (:erfc, 27.0), (:erfc, 26.55),
+    (:erfc, 30.0), (:erfc, -30.0), (:erfc, (:+, 0.25, 0.25)),
+    (:+, (:erfc, 0.5), (:erfc, 0.25)),
+    # log10/1
+    (:log10, 1), (:log10, 10), (:log10, 100), (:log10, 1000), (:log10, 2), (:log10, 5),
+    (:log10, 0), (:log10, -1), (:log10, 0.001), (:log10, 0.5), (:log10, 1.0e300),
+    (:log10, 1.0e-300), (:log10, 5.0e-324), (:log10, 1.0e-320), (:log10, 0.0),
+    (:log10, -0.0), (:log10, -0.5), (:log10, 1.0), (:log10, 10.0), (:log10, 1.0e22),
+    (:log10, 3.0), (:log10, typemax(Int64)), (:log10, typemin(Int64)),
+    (:log10, big(2)^70), (:log10, big(10)^30), (:log10, big(10)^400),
+    (:log10, big(10)^308), (:log10, -big(2)^70), (:log10, 1 // big(2)),
+    (:log10, 1 // big(3)), (:log10, big(2)^70 // big(3)), (:log10, Inf), (:log10, -Inf),
+    (:log10, NaN), (:log10, nothing), (:log10, :a), (:log10, (:*, 10, 10)),
+    (:+, (:log10, 100), (:log10, 1000)), (:floor, (:log10, 999)),
+    # constants
+    :epsilon, (:epsilon,), :inf, (:inf,), :nan, (:nan,), (:+, :epsilon, 1), (:-, :inf),
+    (:-, :nan), (:max, :inf, 1), (:min, :inf, 1), (:max, :nan, 1), (:min, 1, :nan),
+    (:+, :inf, 1), (:+, :nan, 1), (:+, 1, (:*, 2, :epsilon)), (:*, :epsilon, :epsilon),
+    (:float, :inf), (:sign, :inf), (:sign, (:-, :inf)), (:abs, (:-, :inf)),
+    (:integer, :inf), (:integer, :nan), (:truncate, :inf), (:floor, :nan),
+    (:cmpr, :inf, big(2)^70), (:cmpr, 1, :nan), (:maxr, :nan, 2), (:minr, :inf, 3),
+    (:epsilon, 1), (:inf, 1), (:nan, 1, 2), (:inf, 1, 2), (:copysign, :inf, -1),
+    (:copysign, 1, (:-, :inf)), (:nexttoward, :inf, 0), (:+, 1.0, 0.0),
+    # lsb/1
+    (:lsb, 1), (:lsb, 2), (:lsb, 3), (:lsb, 4), (:lsb, 12), (:lsb, 255), (:lsb, 256),
+    (:lsb, 2147483648), (:lsb, 4294967296), (:lsb, 6442450944), (:lsb, 1099511627776),
+    (:lsb, 4611686018427387904), (:lsb, typemax(Int64)), (:lsb, 6917529027641081856),
+    (:lsb, big(2)^64), (:lsb, big(2)^70), (:lsb, big"3802951800684688204490109616128"),
+    (:lsb, big"1199038364791120855040"), (:lsb, big(2)^200),
+    (:lsb, big"1606938044258990275541962092342430253122431223184289538506752"),
+    (:lsb, big(10)^30), (:lsb, 0), (:lsb, -1), (:lsb, -2), (:lsb, typemin(Int64)),
+    (:lsb, -big(2)^70), (:lsb, 0.0), (:lsb, 2.0), (:lsb, 2.5), (:lsb, 1 // big(2)),
+    (:lsb, 8 // big(3)), (:lsb, NaN), (:lsb, Inf), (:lsb, nothing), (:lsb, :a),
+    (:lsb, (:*, 3, 8)), (:+, (:lsb, 8), (:msb, 8)),
+    # popcount/1
+    (:popcount, 0), (:popcount, 1), (:popcount, 2), (:popcount, 3), (:popcount, 7),
+    (:popcount, 8), (:popcount, 255), (:popcount, 256), (:popcount, 1023),
+    (:popcount, 4294967296), (:popcount, 4294967295), (:popcount, 4611686018427387904),
+    (:popcount, typemax(Int64)), (:popcount, big"18446744073709551615"),
+    (:popcount, big(2)^64), (:popcount, big"1180591620717411303423"),
+    (:popcount, big(2)^70), (:popcount, big"1199038364791120855040"),
+    (:popcount, big(10)^30),
+    (:popcount, big"1606938044258990275541962092341162602522202993782792835301375"),
+    (:popcount, -1), (:popcount, -2), (:popcount, typemin(Int64)),
+    (:popcount, -big(2)^70), (:popcount, 0.0), (:popcount, 2.0), (:popcount, 2.5),
+    (:popcount, 1 // big(2)), (:popcount, 3 // big(4)), (:popcount, NaN),
+    (:popcount, Inf), (:popcount, nothing), (:popcount, :a),
+    (:popcount, (:-, (:<<, 1, 10), 1)), (:+, (:popcount, 255), (:popcount, 3)),
+    # getbit/2
+    (:getbit, 5, 0), (:getbit, 5, 1), (:getbit, 5, 2), (:getbit, 5, 3), (:getbit, 0, 0),
+    (:getbit, 1, 0), (:getbit, 1, 1), (:getbit, typemax(Int64), 0),
+    (:getbit, typemax(Int64), 62), (:getbit, typemax(Int64), 63),
+    (:getbit, typemax(Int64), 64), (:getbit, 5, 63), (:getbit, 5, 64), (:getbit, 5, 65),
+    (:getbit, 5, 1000), (:getbit, 5, 1000000), (:getbit, 5, big(2)^70),
+    (:getbit, 5, big(2)^63), (:getbit, 5, typemax(Int64)),
+    (:getbit, 5, 9223372036854775806), (:getbit, big(2)^70, 70), (:getbit, big(2)^70, 69),
+    (:getbit, big(2)^70, 71), (:getbit, big(2)^70, 0), (:getbit, big(2)^70, 1000000),
+    (:getbit, big(2)^70, typemax(Int64)), (:getbit, big(2)^70, big(2)^63),
+    (:getbit, big(2)^70, big(2)^70), (:getbit, big"1180591620717411303425", 0),
+    (:getbit, big"1180591620717411303425", 1), (:getbit, big"18446744073709551615", 63),
+    (:getbit, big"18446744073709551615", 64), (:getbit, big(2)^64, 64),
+    (:getbit, big(2)^64, 63), (:getbit, big(10)^30, 0), (:getbit, big(10)^30, 30),
+    (:getbit, -1, 0), (:getbit, -big(2)^70, 0), (:getbit, 5, -1),
+    (:getbit, 5, -big(2)^70), (:getbit, -1, -1), (:getbit, -big(2)^70, -1),
+    (:getbit, -5, big(2)^70), (:getbit, 2.5, 1), (:getbit, 5, 1.5), (:getbit, 2.0, 1),
+    (:getbit, 5, 1.0), (:getbit, 1 // big(2), 1), (:getbit, 5, 1 // big(2)),
+    (:getbit, NaN, 1), (:getbit, 1, NaN), (:getbit, nothing, 1), (:getbit, 1, nothing),
+    (:getbit, :a, 1), (:getbit, 1, :a), (:getbit, nothing, nothing),
+    (:getbit, (:+, 2, 3), (:-, 3, 1)), (:+, (:getbit, 5, 0), (:getbit, 5, 1)),
+    # powm/3
+    (:powm, 2, 10, 1000), (:powm, 2, 10, 1024), (:powm, 2, 10, 1025), (:powm, 2, 0, 5),
+    (:powm, 0, 0, 5), (:powm, 0, 0, 1), (:powm, 0, 5, 7), (:powm, 3, 100, 1),
+    (:powm, 3, 100, 2), (:powm, 2, 3, 5), (:powm, 5, 3, 7), (:powm, 2, 100, 1000000007),
+    (:powm, 2, 100, 2305843009213693951), (:powm, 123456789, 987654321, 1000000007),
+    (:powm, typemax(Int64), typemax(Int64), typemax(Int64)),
+    (:powm, typemax(Int64), 2, typemax(Int64)),
+    (:powm, typemax(Int64), 2, 4611686018427387904), (:powm, big(2)^70, 3, 1000),
+    (:powm, big(2)^70, big(2)^70, 97), (:powm, 2, big(2)^70, 97),
+    (:powm, 2, 3, big"1180591620717411303425"),
+    (:powm, big(2)^70, 3, big"1180591620717411303425"),
+    (:powm, big(10)^30, big(10)^30, 1000000007), (:powm, 2, 3, big(2)^63),
+    (:powm, 2, 3, big(2)^64), (:powm, -2, 3, 5), (:powm, 2, -3, 5), (:powm, 2, 3, 0),
+    (:powm, 2, 3, -5), (:powm, -2, -3, 0), (:powm, -big(2)^70, 3, 5),
+    (:powm, 2, -big(2)^70, 5), (:powm, 2, 3, -big(2)^70), (:powm, 0, 0, 0),
+    (:powm, -1, 0, 1), (:powm, 1, -1, 1), (:powm, 2, 3, -1), (:powm, nothing, 3, 5),
+    (:powm, 2, nothing, 5), (:powm, 2, 3, nothing), (:powm, :a, 3, 5), (:powm, 2, :a, 5),
+    (:powm, 2, 3, :a), (:powm, nothing, nothing, nothing),
+    (:powm, (:+, 1, 1), (:*, 5, 2), (:+, 500, 500)), (:+, (:powm, 2, 10, 1000), 1),
+    # eval/1
+    (:eval, 1), (:eval, 0), (:eval, -1), (:eval, typemin(Int64)), (:eval, big(2)^70),
+    (:eval, 1.5), (:eval, -0.0), (:eval, Inf), (:eval, NaN), (:eval, 1 // big(3)),
+    (:eval, nothing), (:eval, :a), (:eval, (:+, 1, 2)), (:eval, (:eval, 3)),
+    (:+, (:eval, 1), 2), (:eval, (:max, 1, 2.0)), (:eval, (:/, 1, 3)),
+    (:eval, (:rdiv, 1, 3)), (:eval, :pi), (:eval, :inf), (:eval, (:foo, 1)),
+    (:eval, 1, 2), (:eval, :foo), (:eval, (:rational, 0.5)),
+    # nested
+    (:+, (:lcm, 4, 6), (:powm, 2, 10, 1000)), (:denominator, (:rationalize, 0.25)),
+    (:maxr, (:rationalize, 0.1), 0.1), (:minr, (:rationalize, 0.1), 0.1),
+    (:cmpr, (:rational, 0.1), 0.1), (:cmpr, (:rationalize, 0.1), 0.1),
+    (:lsb, (:lcm, 6, 10)), (:popcount, (:lcm, 6, 10)), (:getbit, (:lcm, 4, 6), (:lsb, 8)),
+    (:sinh, (:log10, 1)), (:erf, (:tanh, 0)), (:rational, (:sinh, 0)),
+    (:log10, (:powm, 2, 10, 1000)), (:lgamma, (:lcm, 2, 3)),
+    (:rdiv, (:+, (:rational, 0.5), (:rational, 0.5)), 3),
+    (:numerator, (:+, (:rational, 0.5), (:rational, 0.5))),
+    (:denominator, (:+, (:rational, 0.5), (:rational, 0.5))), (:*, 2, (:rdiv, 1, 3)),
+    (:+, (:rdiv, 1, 3), 0.5), (:rdiv, (:rdiv, 1, 2), (:rdiv, 1, 3)),
+    (:abs, (:rdiv, -1, 3))
+]
+
+const _A_ARITHC_EXPECT = String[
+    "ok:i0",  # rational(0)
+    "ok:i5",  # rational(5)
+    "ok:i-3",  # rational(-3)
+    "ok:i-9223372036854775808",  # rational(INT64_MIN)
+    "ok:i9223372036854775807",  # rational(INT64_MAX)
+    "ok:i1180591620717411303424",  # rational(2^70)
+    "ok:i-1180591620717411303424",  # rational(-2^70)
+    "ok:q1r2",  # rational(0.5)
+    "ok:q3602879701896397r36028797018963968",  # rational(0.1)
+    "ok:i0",  # rational(-0.0)
+    "ok:i0",  # rational(0.0)
+    "ok:i2",  # rational(2.0)
+    "ok:q-5r2",  # rational(-2.5)
+    "ok:i10000000000000000000000",  # rational(1.0e22)
+    "ok:q1r1048576",  # rational(9.5367431640625e-7)
+    "ok:q7r2",  # rational(3.5)
+    "ok:q3r4",  # rational(3r4)
+    "ok:q-7r4",  # rational(-7r4)
+    "ok:q1180591620717411303424r3",  # rational(2^70r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[114, 97, 116, 105, 111, 110, 97, 108, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rational(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[114, 97, 116, 105, 111, 110, 97, 108, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rational(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rational(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rational(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rational(a)
+    "ok:q3r2",  # rational(+(1,1r2))
+    "ok:q3r4",  # +(rational(0.25),rational(0.5))
+    "ok:q3r4",  # rational(rational(0.75))
+    "ok:i5",  # numerator(5)
+    "ok:i0",  # numerator(0)
+    "ok:i-3",  # numerator(-3)
+    "ok:i1180591620717411303424",  # numerator(2^70)
+    "ok:i-9223372036854775808",  # numerator(INT64_MIN)
+    "ok:i3",  # numerator(3r4)
+    "ok:i-7",  # numerator(-7r4)
+    "ok:i1180591620717411303424",  # numerator(2^70r3)
+    "ok:i1",  # numerator(1r2^70)
+    "ok:i3",  # numerator(3r2)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F3fe0000000000000)@ca[47]/2(a[110, 117, 109, 101, 114, 97, 116, 111, 114],i1)@_",  # numerator(0.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F4000000000000000)@ca[47]/2(a[110, 117, 109, 101, 114, 97, 116, 111, 114],i1)@_",  # numerator(2.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F8000000000000000)@ca[47]/2(a[110, 117, 109, 101, 114, 97, 116, 111, 114],i1)@_",  # numerator(-0.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F7ff0000000000000)@ca[47]/2(a[110, 117, 109, 101, 114, 97, 116, 111, 114],i1)@_",  # numerator(1.0Inf)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F7ff8000000000000)@ca[47]/2(a[110, 117, 109, 101, 114, 97, 116, 111, 114],i1)@_",  # numerator(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # numerator(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # numerator(a)
+    "ok:i3",  # numerator(rdiv(6,4))
+    "ok:i3602879701896397",  # numerator(rational(0.1))
+    "ok:i4",  # +(numerator(3r4),1)
+    "ok:i1",  # denominator(5)
+    "ok:i1",  # denominator(0)
+    "ok:i1",  # denominator(-3)
+    "ok:i1",  # denominator(2^70)
+    "ok:i1",  # denominator(INT64_MIN)
+    "ok:i4",  # denominator(3r4)
+    "ok:i4",  # denominator(-7r4)
+    "ok:i3",  # denominator(2^70r3)
+    "ok:i1180591620717411303424",  # denominator(1r2^70)
+    "ok:i2",  # denominator(3r2)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F3fe0000000000000)@ca[47]/2(a[100, 101, 110, 111, 109, 105, 110, 97, 116, 111, 114],i1)@_",  # denominator(0.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F4000000000000000)@ca[47]/2(a[100, 101, 110, 111, 109, 105, 110, 97, 116, 111, 114],i1)@_",  # denominator(2.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F8000000000000000)@ca[47]/2(a[100, 101, 110, 111, 109, 105, 110, 97, 116, 111, 114],i1)@_",  # denominator(-0.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F7ff0000000000000)@ca[47]/2(a[100, 101, 110, 111, 109, 105, 110, 97, 116, 111, 114],i1)@_",  # denominator(1.0Inf)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F7ff8000000000000)@ca[47]/2(a[100, 101, 110, 111, 109, 105, 110, 97, 116, 111, 114],i1)@_",  # denominator(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # denominator(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # denominator(a)
+    "ok:i2",  # denominator(rdiv(6,4))
+    "ok:i36028797018963968",  # denominator(rational(0.1))
+    "ok:i5",  # +(denominator(3r4),1)
+    "ok:q1r10",  # rationalize(0.1)
+    "ok:q1r4",  # rationalize(0.25)
+    "ok:q314159r100000",  # rationalize(3.14159)
+    "ok:q-1r2",  # rationalize(-0.5)
+    "ok:i0",  # rationalize(0.0)
+    "ok:i0",  # rationalize(-0.0)
+    "ok:i2",  # rationalize(2.0)
+    "ok:i-2",  # rationalize(-2.0)
+    "ok:i10000000000000000000000",  # rationalize(1.0e22)
+    "ok:q1r100000",  # rationalize(1.0e-5)
+    "ok:q1r3",  # rationalize(0.3333333333333333)
+    "ok:q4503599627370497r4503599627370496",  # rationalize(1.0000000000000002)
+    "ok:q123456789r1000",  # rationalize(123456.789)
+    "ok:q-1r100000",  # rationalize(-1.0e-5)
+    "ok:q170450288r241053109",  # rationalize(0.7071067811865476)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[114, 97, 116, 105, 111, 110, 97, 108, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rationalize(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[114, 97, 116, 105, 111, 110, 97, 108, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rationalize(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rationalize(1.5NaN)
+    "ok:i0",  # rationalize(0)
+    "ok:i7",  # rationalize(7)
+    "ok:i-7",  # rationalize(-7)
+    "ok:i-9223372036854775808",  # rationalize(INT64_MIN)
+    "ok:i1180591620717411303424",  # rationalize(2^70)
+    "ok:q3r4",  # rationalize(3r4)
+    "ok:q1180591620717411303424r3",  # rationalize(2^70r3)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rationalize(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rationalize(a)
+    "ok:q1r3",  # rationalize(/(1,3.0))
+    "ok:q3r10",  # +(rationalize(0.1),rationalize(0.2))
+    "ok:q1r10",  # rational(rationalize(0.1))
+    "ok:q1r3",  # rdiv(1,3)
+    "ok:i2",  # rdiv(4,2)
+    "ok:q-3r2",  # rdiv(6,-4)
+    "ok:q-3r2",  # rdiv(-6,4)
+    "ok:i0",  # rdiv(0,5)
+    "ok:i1",  # rdiv(5,5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[122, 101, 114, 111, 95, 100, 105, 118, 105, 115, 111, 114])@ca[47]/2(a[47],i2)@_",  # rdiv(1,0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[122, 101, 114, 111, 95, 100, 105, 118, 105, 115, 111, 114])@ca[47]/2(a[47],i2)@_",  # rdiv(0,0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[122, 101, 114, 111, 95, 100, 105, 118, 105, 115, 111, 114])@ca[47]/2(a[47],i2)@_",  # rdiv(-1,0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[122, 101, 114, 111, 95, 100, 105, 118, 105, 115, 111, 114])@ca[47]/2(a[47],i2)@_",  # rdiv(2^70,0)
+    "ok:q3r2",  # rdiv(3r4,1r2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[122, 101, 114, 111, 95, 100, 105, 118, 105, 115, 111, 114])@ca[47]/2(a[47],i2)@_",  # rdiv(1r3,0)
+    "ok:q1r6",  # rdiv(1r3,2)
+    "ok:q8r3",  # rdiv(2,3r4)
+    "ok:q1180591620717411303424r3",  # rdiv(2^70,3)
+    "ok:i1",  # rdiv(2^70,2^70)
+    "ok:i-1",  # rdiv(-2^70,2^70)
+    "ok:q3r1180591620717411303424",  # rdiv(3,2^70)
+    "ok:i9223372036854775808",  # rdiv(INT64_MIN,-1)
+    "ok:q-9223372036854775808r3",  # rdiv(INT64_MIN,3)
+    "ok:i1",  # rdiv(1r2,1r2)
+    "ok:q1393796574908163946345982392040522594123776r3",  # rdiv(2^70r3,1r2^70)
+    "ok:i-1",  # rdiv(1r3,-1r3)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F3ff8000000000000)@ca[47]/2(a[114, 100, 105, 118],i2)@_",  # rdiv(1.5,2)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F3ff8000000000000)@ca[47]/2(a[114, 100, 105, 118],i2)@_",  # rdiv(2,1.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F3ff8000000000000)@ca[47]/2(a[114, 100, 105, 118],i2)@_",  # rdiv(1.5,1.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F0)@ca[47]/2(a[114, 100, 105, 118],i2)@_",  # rdiv(1,0.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[114, 97, 116, 105, 111, 110, 97, 108],F0)@ca[47]/2(a[114, 100, 105, 118],i2)@_",  # rdiv(0.0,1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rdiv(1.0Inf,1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rdiv(1,1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rdiv(_,1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rdiv(1,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rdiv(a,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # rdiv(1,a)
+    "ok:q1r2",  # rdiv(+(1,2),*(2,3))
+    "ok:i1",  # +(rdiv(1,3),rdiv(2,3))
+    "ok:i-1",  # cmpr(1,2)
+    "ok:i1",  # cmpr(2,1)
+    "ok:i0",  # cmpr(1,1)
+    "ok:i0",  # cmpr(0,0)
+    "ok:i-1",  # cmpr(-1,1)
+    "ok:i0",  # cmpr(1,1.0)
+    "ok:i-1",  # cmpr(1,2.0)
+    "ok:i1",  # cmpr(2,1.0)
+    "ok:i0",  # cmpr(1.0,1)
+    "ok:i1",  # cmpr(1.5,1)
+    "ok:i-1",  # cmpr(1,1.5)
+    "ok:i1",  # cmpr(-5,-5.5)
+    "ok:i-1",  # cmpr(-5.5,-5)
+    "ok:i0",  # cmpr(3r4,0.75)
+    "ok:i0",  # cmpr(0.75,3r4)
+    "ok:i1",  # cmpr(1r3,0.3333333333333333)
+    "ok:i-1",  # cmpr(0.3333333333333333,1r3)
+    "ok:i-1",  # cmpr(1r3,1r2)
+    "ok:i1",  # cmpr(1r2,1r3)
+    "ok:i0",  # cmpr(1r3,1r3)
+    "ok:i1",  # cmpr(9007199254740993,9007199254740992.0)
+    "ok:i-1",  # cmpr(9007199254740992.0,9007199254740993)
+    "ok:i-1",  # cmpr(INT64_MAX,9.223372036854776e18)
+    "ok:i0",  # cmpr(INT64_MIN,-9.223372036854776e18)
+    "ok:i1",  # cmpr(INT64_MAX,9.223372036854775e18)
+    "ok:i0",  # cmpr(-4294967297,-4294967297.0)
+    "ok:i0",  # cmpr(4294967297,4294967297.0)
+    "ok:i-1",  # cmpr(1099511627779,1099511627779.5)
+    "ok:i1",  # cmpr(-1099511627779,-1099511627779.5)
+    "ok:i-1",  # cmpr(4294967296,4294967296.5)
+    "ok:i1",  # cmpr(2^70,1.0e21)
+    "ok:i0",  # cmpr(2^70,1.1805916207174113e21)
+    "ok:i0",  # cmpr(-2^70,-1.1805916207174113e21)
+    "ok:i1",  # cmpr(10^400,1.0e308)
+    "ok:i1",  # cmpr(-10^400,-1.0Inf)
+    "ok:i-1",  # cmpr(10^400,1.0Inf)
+    "ok:i1",  # cmpr(1.0Inf,10^400)
+    "ok:i0",  # cmpr(1.0Inf,1.0Inf)
+    "ok:i-1",  # cmpr(-1.0Inf,1.0Inf)
+    "ok:i1",  # cmpr(1.0Inf,-1.0Inf)
+    "ok:i0",  # cmpr(-0.0,0.0)
+    "ok:i0",  # cmpr(0.0,-0.0)
+    "ok:i0",  # cmpr(0.0,0)
+    "ok:i0",  # cmpr(-0.0,0)
+    "ok:i-1",  # cmpr(2^70,1180591620717411303425)
+    "ok:i1",  # cmpr(1180591620717411303425,2^70)
+    "ok:i0",  # cmpr(2^70,2^70)
+    "ok:i1",  # cmpr(2^70,5)
+    "ok:i-1",  # cmpr(5,2^70)
+    "ok:i-1",  # cmpr(-2^70,5)
+    "ok:i-1",  # cmpr(INT64_MIN,INT64_MAX)
+    "ok:i1",  # cmpr(INT64_MAX,INT64_MIN)
+    "ok:i-1",  # cmpr(INT64_MAX,2^70)
+    "ok:i1",  # cmpr(INT64_MIN,-2^70)
+    "ok:i-1",  # cmpr(2^70r3,2^70)
+    "ok:i1",  # cmpr(2^70,2^70r3)
+    "ok:i1",  # cmpr(2^70r3,1.0e20)
+    "ok:i1",  # cmpr(1.0e21,2^70r3)
+    "ok:i1",  # cmpr(1r3,0)
+    "ok:i-1",  # cmpr(0,1r3)
+    "ok:i-1",  # cmpr(-1r3,0)
+    "ok:i1",  # cmpr(1r3,-5)
+    "ok:i-1",  # cmpr(-5,1r3)
+    "ok:i1",  # cmpr(7r2,3)
+    "ok:i-1",  # cmpr(7r2,4)
+    "ok:i-1",  # cmpr(3,7r2)
+    "ok:i-1",  # cmpr(7r2,1.0Inf)
+    "ok:i-1",  # cmpr(-1.0Inf,7r2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(7r2,1.5NaN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1.5NaN,1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1,1.5NaN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1.5NaN,1.5NaN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1.5NaN,1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1.5NaN,2^70)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1r2,1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(_,1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(a,1)
+    "ok:i9",  # +(cmpr(1,2),10)
+    "ok:i0",  # cmpr(+(1,1),*(1,2))
+    "ok:i2",  # maxr(1,2)
+    "ok:i2",  # maxr(2,1)
+    "ok:i1",  # maxr(1,1)
+    "ok:i1",  # maxr(1,1.0)
+    "ok:i1",  # maxr(1.0,1)
+    "ok:F3ff0000000000000",  # maxr(1.0,1.0)
+    "ok:i2",  # maxr(1.5,2)
+    "ok:i2",  # maxr(2,1.5)
+    "ok:i-1",  # maxr(-1,-2)
+    "ok:F0",  # maxr(-0.0,0.0)
+    "ok:F0",  # maxr(0.0,-0.0)
+    "ok:F8000000000000000",  # maxr(-0.0,-0.0)
+    "ok:F0",  # maxr(0.0,0.0)
+    "ok:i0",  # maxr(-0.0,0)
+    "ok:i0",  # maxr(0,-0.0)
+    "ok:i0",  # maxr(0.0,0)
+    "ok:i0",  # maxr(0,0.0)
+    "ok:i1",  # maxr(1.5NaN,1)
+    "ok:i1",  # maxr(1,1.5NaN)
+    "ok:F7ff8000000000000",  # maxr(1.5NaN,1.5NaN)
+    "ok:F3ff8000000000000",  # maxr(1.5NaN,1.5)
+    "ok:F3ff8000000000000",  # maxr(1.5,1.5NaN)
+    "ok:q1r3",  # maxr(1.5NaN,1r3)
+    "ok:q1r3",  # maxr(1r3,1.5NaN)
+    "ok:i1180591620717411303424",  # maxr(1.5NaN,2^70)
+    "ok:i1180591620717411303424",  # maxr(2^70,1.5NaN)
+    "ok:q1r3",  # maxr(1r3,0.3333333333333333)
+    "ok:q1r3",  # maxr(0.3333333333333333,1r3)
+    "ok:q1r2",  # maxr(1r2,0.5)
+    "ok:q1r2",  # maxr(0.5,1r2)
+    "ok:q3r2",  # maxr(3r2,1.5)
+    "ok:q3r2",  # maxr(1.5,3r2)
+    "ok:q1r2",  # maxr(1r3,1r2)
+    "ok:q1r2",  # maxr(1r2,1r3)
+    "ok:F7ff0000000000000",  # maxr(1.0Inf,2^70)
+    "ok:F7ff0000000000000",  # maxr(2^70,1.0Inf)
+    "ok:i-9223372036854775808",  # maxr(-1.0Inf,INT64_MIN)
+    "ok:i-9223372036854775808",  # maxr(INT64_MIN,-1.0Inf)
+    "ok:F7ff0000000000000",  # maxr(1.0Inf,1.0Inf)
+    "ok:F7ff0000000000000",  # maxr(-1.0Inf,1.0Inf)
+    "ok:i1180591620717411303425",  # maxr(2^70,1180591620717411303425)
+    "ok:i1180591620717411303424",  # maxr(2^70,1.0e21)
+    "ok:i1180591620717411303424",  # maxr(1.0e21,2^70)
+    "ok:i9007199254740993",  # maxr(9007199254740993,9007199254740992.0)
+    "ok:i9007199254740993",  # maxr(9007199254740992.0,9007199254740993)
+    "ok:i1180591620717411303424",  # maxr(2^70,2^70r3)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # maxr(_,1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # maxr(1,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # maxr(a,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # maxr(1,a)
+    "ok:i3",  # maxr(+(1,2),*(1,3))
+    "ok:i6",  # +(maxr(1,2),maxr(3,4))
+    "ok:i1",  # minr(1,2)
+    "ok:i1",  # minr(2,1)
+    "ok:i1",  # minr(1,1)
+    "ok:i1",  # minr(1,1.0)
+    "ok:i1",  # minr(1.0,1)
+    "ok:F3ff0000000000000",  # minr(1.0,1.0)
+    "ok:F3ff8000000000000",  # minr(1.5,2)
+    "ok:F3ff8000000000000",  # minr(2,1.5)
+    "ok:i-2",  # minr(-1,-2)
+    "ok:F8000000000000000",  # minr(-0.0,0.0)
+    "ok:F8000000000000000",  # minr(0.0,-0.0)
+    "ok:F8000000000000000",  # minr(-0.0,-0.0)
+    "ok:F0",  # minr(0.0,0.0)
+    "ok:i0",  # minr(-0.0,0)
+    "ok:i0",  # minr(0,-0.0)
+    "ok:i0",  # minr(0.0,0)
+    "ok:i0",  # minr(0,0.0)
+    "ok:i1",  # minr(1.5NaN,1)
+    "ok:i1",  # minr(1,1.5NaN)
+    "ok:F7ff8000000000000",  # minr(1.5NaN,1.5NaN)
+    "ok:F3ff8000000000000",  # minr(1.5NaN,1.5)
+    "ok:F3ff8000000000000",  # minr(1.5,1.5NaN)
+    "ok:q1r3",  # minr(1.5NaN,1r3)
+    "ok:q1r3",  # minr(1r3,1.5NaN)
+    "ok:i1180591620717411303424",  # minr(1.5NaN,2^70)
+    "ok:i1180591620717411303424",  # minr(2^70,1.5NaN)
+    "ok:F3fd5555555555555",  # minr(1r3,0.3333333333333333)
+    "ok:F3fd5555555555555",  # minr(0.3333333333333333,1r3)
+    "ok:q1r2",  # minr(1r2,0.5)
+    "ok:q1r2",  # minr(0.5,1r2)
+    "ok:q3r2",  # minr(3r2,1.5)
+    "ok:q3r2",  # minr(1.5,3r2)
+    "ok:q1r3",  # minr(1r3,1r2)
+    "ok:q1r3",  # minr(1r2,1r3)
+    "ok:i1180591620717411303424",  # minr(1.0Inf,2^70)
+    "ok:i1180591620717411303424",  # minr(2^70,1.0Inf)
+    "ok:Ffff0000000000000",  # minr(-1.0Inf,INT64_MIN)
+    "ok:Ffff0000000000000",  # minr(INT64_MIN,-1.0Inf)
+    "ok:F7ff0000000000000",  # minr(1.0Inf,1.0Inf)
+    "ok:Ffff0000000000000",  # minr(-1.0Inf,1.0Inf)
+    "ok:i1180591620717411303424",  # minr(2^70,1180591620717411303425)
+    "ok:F444b1ae4d6e2ef50",  # minr(2^70,1.0e21)
+    "ok:F444b1ae4d6e2ef50",  # minr(1.0e21,2^70)
+    "ok:F4340000000000000",  # minr(9007199254740993,9007199254740992.0)
+    "ok:F4340000000000000",  # minr(9007199254740992.0,9007199254740993)
+    "ok:q1180591620717411303424r3",  # minr(2^70,2^70r3)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # minr(_,1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # minr(1,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # minr(a,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # minr(1,a)
+    "ok:i3",  # minr(+(1,2),*(1,3))
+    "ok:i4",  # +(minr(1,2),minr(3,4))
+    "ok:i12",  # lcm(4,6)
+    "ok:i12",  # lcm(6,4)
+    "ok:i0",  # lcm(0,5)
+    "ok:i0",  # lcm(5,0)
+    "ok:i0",  # lcm(0,0)
+    "ok:i12",  # lcm(-4,6)
+    "ok:i12",  # lcm(4,-6)
+    "ok:i12",  # lcm(-4,-6)
+    "ok:i91",  # lcm(7,13)
+    "ok:i12",  # lcm(12,12)
+    "ok:i1",  # lcm(1,1)
+    "ok:i0",  # lcm(1,0)
+    "ok:i9223372036854775807",  # lcm(INT64_MAX,INT64_MAX)
+    "ok:i18446744073709551614",  # lcm(INT64_MAX,2)
+    "ok:i18446744073709551614",  # lcm(2,INT64_MAX)
+    "ok:i85070591730234615838173535747377725442",  # lcm(INT64_MAX,9223372036854775806)
+    "ok:i9223372036854775808",  # lcm(INT64_MIN,1)
+    "ok:i9223372036854775808",  # lcm(1,INT64_MIN)
+    "ok:i9223372036854775808",  # lcm(INT64_MIN,INT64_MIN)
+    "ok:i9223372036854775808",  # lcm(INT64_MIN,2)
+    "ok:i9223372036854775808",  # lcm(INT64_MIN,-1)
+    "ok:i13835058055282163712",  # lcm(4611686018427387904,3)
+    "ok:i4611686018427387904",  # lcm(4611686018427387904,4611686018427387904)
+    "ok:i3037000500",  # lcm(3037000500,3037000500)
+    "ok:i3037000499",  # lcm(3037000499,3037000499)
+    "ok:i18446744078004518912",  # lcm(4294967296,4294967297)
+    "ok:i3541774862152233910272",  # lcm(2^70,6)
+    "ok:i3541774862152233910272",  # lcm(6,2^70)
+    "ok:i3541774862152233910272",  # lcm(-2^70,6)
+    "ok:i3541774862152233910272",  # lcm(6,-2^70)
+    "ok:i0",  # lcm(2^70,0)
+    "ok:i0",  # lcm(0,2^70)
+    "ok:i1180591620717411303424",  # lcm(2^70,2^70)
+    "ok:i1393796574908163946347162983661240005427200",  # lcm(2^70,1180591620717411303425)
+    "ok:i1000000000000000000000000000000",  # lcm(10^30,10^20)
+    "ok:i1000000000000000000000000000000",  # lcm(-10^30,10^20)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4004000000000000)@ca[47]/2(a[108, 99, 109],i2)@_",  # lcm(2.5,3)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4004000000000000)@ca[47]/2(a[108, 99, 109],i2)@_",  # lcm(3,2.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4000000000000000)@ca[47]/2(a[108, 99, 109],i2)@_",  # lcm(2.0,3)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4000000000000000)@ca[47]/2(a[108, 99, 109],i2)@_",  # lcm(3,2.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q1r2)@ca[47]/2(a[108, 99, 109],i2)@_",  # lcm(1r2,3)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q1r2)@ca[47]/2(a[108, 99, 109],i2)@_",  # lcm(3,1r2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lcm(1.5NaN,3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lcm(1.0Inf,3)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lcm(_,1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lcm(1,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lcm(a,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lcm(1,a)
+    "ok:i14",  # +(lcm(4,6),gcd(4,6))
+    "ok:i12",  # lcm(+(2,2),*(2,3))
+    "ok:F3ff0000000000001",  # nexttoward(1.0,2)
+    "ok:F3fefffffffffffff",  # nexttoward(1.0,0)
+    "ok:F3ff0000000000001",  # nexttoward(1.0,2.0)
+    "ok:F3fefffffffffffff",  # nexttoward(1.0,0.5)
+    "ok:F3ff0000000000001",  # nexttoward(1,2)
+    "ok:F3fefffffffffffff",  # nexttoward(1,0)
+    "ok:F3ff0000000000000",  # nexttoward(1,1)
+    "ok:F3ff0000000000000",  # nexttoward(1.0,1.0)
+    "ok:F1",  # nexttoward(0.0,1)
+    "ok:F8000000000000001",  # nexttoward(0.0,-1)
+    "ok:F1",  # nexttoward(-0.0,1)
+    "ok:F8000000000000001",  # nexttoward(-0.0,-1)
+    "ok:F0",  # nexttoward(0.0,0.0)
+    "ok:F0",  # nexttoward(-0.0,0.0)
+    "ok:F8000000000000000",  # nexttoward(0.0,-0.0)
+    "ok:F0",  # nexttoward(5.0e-324,0)
+    "ok:F2",  # nexttoward(5.0e-324,1)
+    "ok:F8000000000000000",  # nexttoward(-5.0e-324,0)
+    "ok:F8000000000000002",  # nexttoward(-5.0e-324,-1)
+    "ok:Ffffffffffffff",  # nexttoward(2.2250738585072014e-308,0)
+    "ok:F10000000000001",  # nexttoward(2.2250738585072014e-308,1)
+    "ok:F7feffffffffffffe",  # nexttoward(1.7976931348623157e308,0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1.7976931348623157e308,1.0Inf)
+    "ok:F7fefffffffffffff",  # nexttoward(1.7976931348623157e308,1.7976931348623157e308)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(-1.7976931348623157e308,-1.0Inf)
+    "ok:F7fefffffffffffff",  # nexttoward(1.0Inf,0)
+    "ok:Fffefffffffffffff",  # nexttoward(-1.0Inf,0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1.0Inf,1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(-1.0Inf,-1.0Inf)
+    "ok:F7fefffffffffffff",  # nexttoward(1.0Inf,-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1.5NaN,1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1,1.5NaN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1.5NaN,1.5NaN)
+    "ok:F4450000000000001",  # nexttoward(2^70,1.0Inf)
+    "ok:F444fffffffffffff",  # nexttoward(2^70,0)
+    "ok:F3fd5555555555556",  # nexttoward(1r3,1)
+    "ok:F3fd5555555555554",  # nexttoward(1r3,0)
+    "ok:F3fefffffffffffff",  # nexttoward(1,1r3)
+    "ok:F3fb999999999999b",  # nexttoward(0.1,0.2)
+    "ok:F3fc9999999999999",  # nexttoward(0.2,0.1)
+    "ok:Fbfefffffffffffff",  # nexttoward(-1.0,0)
+    "ok:Fbff0000000000001",  # nexttoward(-1.0,-2)
+    "ok:F4000000000000001",  # nexttoward(2.0,3)
+    "ok:F7e37e43c8800759d",  # nexttoward(1.0e300,1.0Inf)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(_,1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(a,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1,a)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(10^400,1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nexttoward(1,10^400)
+    "ok:F3cb0000000000000",  # -(nexttoward(1,2),1)
+    "ok:F3ff0000000000001",  # nexttoward(+(0.5,0.5),*(2,2))
+    "ok:F0",  # sinh(0)
+    "ok:F3ff2cd9fc44eb982",  # sinh(1)
+    "ok:Fbff2cd9fc44eb982",  # sinh(-1)
+    "ok:F40528d0166f07374",  # sinh(5)
+    "ok:F3fe0acd00fe63b97",  # sinh(0.5)
+    "ok:Fbfe0acd00fe63b97",  # sinh(-0.5)
+    "ok:F40183368cdb0b6d3",  # sinh(2.5)
+    "ok:F8000000000000000",  # sinh(-0.0)
+    "ok:F7e8",  # sinh(1.0e-320)
+    "ok:F7fe3e21a464507fa",  # sinh(710.0)
+    "ok:Fffe3e21a464507fa",  # sinh(-710.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(1.0e300)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(INT64_MIN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(2^70)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(10^30)
+    "ok:F3fd5bb0851452b81",  # sinh(1r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # sinh(a)
+    "ok:F3fe0acd00fe63b97",  # sinh(+(0.25,0.25))
+    "ok:F3fe8c2367cce7c18",  # +(sinh(0.5),sinh(0.25))
+    "ok:F3ff0000000000000",  # cosh(0)
+    "ok:F3ff8b07551d9f550",  # cosh(1)
+    "ok:F3ff8b07551d9f550",  # cosh(-1)
+    "ok:F40528d6fcbeff3aa",  # cosh(5)
+    "ok:F3ff20ac1862ae8d0",  # cosh(0.5)
+    "ok:F3ff20ac1862ae8d0",  # cosh(-0.5)
+    "ok:F40188776e4b30aa3",  # cosh(2.5)
+    "ok:F3ff0000000000000",  # cosh(-0.0)
+    "ok:F3ff0000000000000",  # cosh(1.0e-320)
+    "ok:F7fe3e21a464507fa",  # cosh(710.0)
+    "ok:F7fe3e21a464507fa",  # cosh(-710.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(1.0e300)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(INT64_MIN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(2^70)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(10^30)
+    "ok:F3ff0e5ab9d68e233",  # cosh(1r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cosh(a)
+    "ok:F3ff20ac1862ae8d0",  # cosh(+(0.25,0.25))
+    "ok:F400145b645faa50b",  # +(cosh(0.5),cosh(0.25))
+    "ok:F0",  # tanh(0)
+    "ok:F3fe85efab514f394",  # tanh(1)
+    "ok:Fbfe85efab514f394",  # tanh(-1)
+    "ok:F3fefff419668df11",  # tanh(5)
+    "ok:F3fdd9353d7568af3",  # tanh(0.5)
+    "ok:Fbfdd9353d7568af3",  # tanh(-0.5)
+    "ok:F3fef9258260a71c2",  # tanh(2.5)
+    "ok:F8000000000000000",  # tanh(-0.0)
+    "ok:F7e8",  # tanh(1.0e-320)
+    "ok:F3ff0000000000000",  # tanh(710.0)
+    "ok:Fbff0000000000000",  # tanh(-710.0)
+    "ok:F3ff0000000000000",  # tanh(1.0e300)
+    "ok:Fbff0000000000000",  # tanh(INT64_MIN)
+    "ok:F3ff0000000000000",  # tanh(2^70)
+    "ok:F3ff0000000000000",  # tanh(10^30)
+    "ok:F3fd493aa293c8802",  # tanh(1r3)
+    "ok:F3ff0000000000000",  # tanh(1.0Inf)
+    "ok:Fbff0000000000000",  # tanh(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # tanh(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # tanh(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # tanh(a)
+    "ok:F3ff0000000000000",  # tanh(1000)
+    "ok:Fbff0000000000000",  # tanh(-1000)
+    "ok:F3fb983d7795f413a",  # tanh(0.1)
+    "ok:F3fdd9353d7568af3",  # tanh(+(0.25,0.25))
+    "ok:F3fe6a0099551cc9b",  # +(tanh(0.5),tanh(0.25))
+    "ok:F0",  # asinh(0)
+    "ok:F3fec34366179d427",  # asinh(1)
+    "ok:Fbfec34366179d427",  # asinh(-1)
+    "ok:F40027fdfac4e4380",  # asinh(5)
+    "ok:F3fdecc2caec5160a",  # asinh(0.5)
+    "ok:Fbfdecc2caec5160a",  # asinh(-0.5)
+    "ok:F3ffa5b0f0be9dcf6",  # asinh(2.5)
+    "ok:F8000000000000000",  # asinh(-0.0)
+    "ok:F7e8",  # asinh(1.0e-320)
+    "ok:F401d089d5326d8df",  # asinh(710.0)
+    "ok:Fc01d089d5326d8df",  # asinh(-710.0)
+    "ok:F40859bbfd8b83e43",  # asinh(1.0e300)
+    "ok:Fc0462e42fefa39ef",  # asinh(INT64_MIN)
+    "ok:F40489b5252dd9846",  # asinh(2^70)
+    "ok:F4051715325f7f438",  # asinh(10^30)
+    "ok:F3fd4f4f17995b748",  # asinh(1r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # asinh(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # asinh(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # asinh(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # asinh(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # asinh(a)
+    "ok:Fc0859bbfd8b83e43",  # asinh(-1.0e300)
+    "ok:F3ddb7cdfd9d7bdbb",  # asinh(1.0e-10)
+    "ok:F3fdecc2caec5160a",  # asinh(+(0.25,0.25))
+    "ok:F3fe7515520490493",  # +(asinh(0.5),asinh(0.25))
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(0)
+    "ok:F0",  # acosh(1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(-1)
+    "ok:F400256e66a48a3b6",  # acosh(5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(0.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(-0.5)
+    "ok:F3ff9119c13a31bb0",  # acosh(2.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(-0.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(1.0e-320)
+    "ok:F401d089d1096b506",  # acosh(710.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(-710.0)
+    "ok:F40859bbfd8b83e43",  # acosh(1.0e300)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(INT64_MIN)
+    "ok:F40489b5252dd9846",  # acosh(2^70)
+    "ok:F4051715325f7f438",  # acosh(10^30)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(1r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(a)
+    "ok:F0",  # acosh(1.0)
+    "ok:F3feecc2caec5160a",  # acosh(1.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # acosh(+(0.25,0.25))
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # +(acosh(0.5),acosh(0.25))
+    "ok:F0",  # atanh(0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(-1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(5)
+    "ok:F3fe193ea7aad030a",  # atanh(0.5)
+    "ok:Fbfe193ea7aad030a",  # atanh(-0.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(2.5)
+    "ok:F8000000000000000",  # atanh(-0.0)
+    "ok:F7e8",  # atanh(1.0e-320)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(710.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(-710.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(1.0e300)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(INT64_MIN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(2^70)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(10^30)
+    "ok:F3fd62e42fefa39ef",  # atanh(1r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(a)
+    "ok:F4032b708872320e2",  # atanh(0.9999999999999999)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(-2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(1.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(-1.0)
+    "ok:F3fe193ea7aad030a",  # atanh(1r2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # atanh(3r2)
+    "ok:F3fe193ea7aad030a",  # atanh(+(0.25,0.25))
+    "ok:F3fe9c041f7ed8d33",  # +(atanh(0.5),atanh(0.25))
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(0)
+    "ok:F0",  # lgamma(1)
+    "ok:F0",  # lgamma(2)
+    "ok:F3fe62e42fefa39ef",  # lgamma(3)
+    "ok:F40096ca77c922cf9",  # lgamma(5)
+    "ok:F40767225b4879463",  # lgamma(100)
+    "ok:F40861495a1a8a1d5",  # lgamma(171)
+    "ok:F3fe250d048e7a1bd",  # lgamma(0.5)
+    "ok:Fbfbeeb95b094c191",  # lgamma(1.5)
+    "ok:F3fd2383e809a67e8",  # lgamma(2.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-0.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-1.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-1.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(0.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-0.0)
+    "ok:F4085963447f87fb5",  # lgamma(1.0e-300)
+    "ok:F40874385446d71c3",  # lgamma(5.0e-324)
+    "ok:F4249a43710f467c1",  # lgamma(10000000000.0)
+    "ok:F7ed017f38e7a1ab5",  # lgamma(1.0e300)
+    "ok:F7fd8f7797fbe814f",  # lgamma(1.0e305)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(1.0e308)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(1.7976931348623157e308)
+    "ok:F44a7c29946e1af5e",  # lgamma(2^70)
+    "ok:F468ada137e8ad860",  # lgamma(10^30)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(10^400)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-2^70)
+    "ok:F3fe250d048e7a1bd",  # lgamma(1r2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-3r2)
+    "ok:F448ef2a29965b45c",  # lgamma(2^70r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(a)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(INT64_MIN)
+    "ok:F44355589f2fe5107",  # lgamma(INT64_MAX)
+    "ok:F3ff3373018970a36",  # lgamma(3.5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lgamma(-2.5)
+    "ok:F3fe62e42fefa39ef",  # lgamma(+(1,2))
+    "ok:F4003e116bcd39e7d",  # +(lgamma(3),lgamma(4))
+    "ok:F0",  # erf(0)
+    "ok:F3feaf767a741088b",  # erf(1)
+    "ok:Fbfeaf767a741088b",  # erf(-1)
+    "ok:F3fefffffffffc9e8",  # erf(5)
+    "ok:F3fe0a7ef5c18edd2",  # erf(0.5)
+    "ok:Fbfe0a7ef5c18edd2",  # erf(-0.5)
+    "ok:F3feffcaa8f4c9bea",  # erf(2.5)
+    "ok:F8000000000000000",  # erf(-0.0)
+    "ok:F8ec",  # erf(1.0e-320)
+    "ok:F3ff0000000000000",  # erf(710.0)
+    "ok:Fbff0000000000000",  # erf(-710.0)
+    "ok:F3ff0000000000000",  # erf(1.0e300)
+    "ok:Fbff0000000000000",  # erf(INT64_MIN)
+    "ok:F3ff0000000000000",  # erf(2^70)
+    "ok:F3ff0000000000000",  # erf(10^30)
+    "ok:F3fd735a06cff72fc",  # erf(1r3)
+    "ok:F3ff0000000000000",  # erf(1.0Inf)
+    "ok:Fbff0000000000000",  # erf(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # erf(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # erf(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # erf(a)
+    "ok:F3fefffd1ac4135f9",  # erf(3.0)
+    "ok:F3ff0000000000000",  # erf(6.0)
+    "ok:F3fe0a7ef5c18edd2",  # erf(+(0.25,0.25))
+    "ok:F3fe97f99cd3258d6",  # +(erf(0.5),erf(0.25))
+    "ok:F3ff0000000000000",  # erfc(0)
+    "ok:F3fc4226162fbddd4",  # erfc(1)
+    "ok:F3ffd7bb3d3a08446",  # erfc(-1)
+    "ok:F3d7b0c0000000000",  # erfc(5)
+    "ok:F3fdeb02147ce245c",  # erfc(0.5)
+    "ok:F3ff853f7ae0c76e9",  # erfc(-0.5)
+    "ok:F3f3aab859b20b000",  # erfc(2.5)
+    "ok:F3ff0000000000000",  # erfc(-0.0)
+    "ok:F3ff0000000000000",  # erfc(1.0e-320)
+    "ok:F0",  # erfc(710.0)
+    "ok:F4000000000000000",  # erfc(-710.0)
+    "ok:F0",  # erfc(1.0e300)
+    "ok:F4000000000000000",  # erfc(INT64_MIN)
+    "ok:F0",  # erfc(2^70)
+    "ok:F0",  # erfc(10^30)
+    "ok:F3fe4652fc9804682",  # erfc(1r3)
+    "ok:F0",  # erfc(1.0Inf)
+    "ok:F4000000000000000",  # erfc(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # erfc(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # erfc(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # erfc(a)
+    "ok:F3ef729df65038000",  # erfc(3.0)
+    "ok:F0",  # erfc(6.0)
+    "ok:F0",  # erfc(26.0)
+    "ok:F0",  # erfc(27.0)
+    "ok:F0",  # erfc(26.55)
+    "ok:F0",  # erfc(30.0)
+    "ok:F4000000000000000",  # erfc(-30.0)
+    "ok:F3fdeb02147ce245c",  # erfc(+(0.25,0.25))
+    "ok:F3ff340331966d395",  # +(erfc(0.5),erfc(0.25))
+    "ok:F0",  # log10(1)
+    "ok:F3ff0000000000000",  # log10(10)
+    "ok:F4000000000000000",  # log10(100)
+    "ok:F4008000000000000",  # log10(1000)
+    "ok:F3fd34413509f79ff",  # log10(2)
+    "ok:F3fe65df657b04301",  # log10(5)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(-1)
+    "ok:Fc008000000000000",  # log10(0.001)
+    "ok:Fbfd34413509f79ff",  # log10(0.5)
+    "ok:F4072c00000000000",  # log10(1.0e300)
+    "ok:Fc072c00000000000",  # log10(1.0e-300)
+    "ok:Fc07434e6420f4374",  # log10(5.0e-324)
+    "ok:Fc07400000511df19",  # log10(1.0e-320)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(0.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(-0.0)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(-0.5)
+    "ok:F0",  # log10(1.0)
+    "ok:F3ff0000000000000",  # log10(10.0)
+    "ok:F4036000000000000",  # log10(1.0e22)
+    "ok:F3fde8927964fd5fd",  # log10(3.0)
+    "ok:F4032f703035cfc17",  # log10(INT64_MAX)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(INT64_MIN)
+    "ok:F40351275202e6d6f",  # log10(2^70)
+    "ok:F403e000000000000",  # log10(10^30)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(10^400)
+    "ok:F4073400000000000",  # log10(10^308)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(-2^70)
+    "ok:Fbfd34413509f79ff",  # log10(1r2)
+    "ok:Fbfde8927964fd5fe",  # log10(1r3)
+    "ok:F4034985081d52e17",  # log10(2^70r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(-1.0Inf)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # log10(a)
+    "ok:F4000000000000000",  # log10(*(10,10))
+    "ok:F4014000000000000",  # +(log10(100),log10(1000))
+    "ok:i2",  # floor(log10(999))
+    "ok:F3cb0000000000000",  # epsilon
+    "ok:F3cb0000000000000",  # epsilon()
+    "ok:F7ff0000000000000",  # inf
+    "ok:F7ff0000000000000",  # inf()
+    "ok:F7ff8000000000000",  # nan
+    "ok:F7ff8000000000000",  # nan()
+    "ok:F3ff0000000000001",  # +(epsilon,1)
+    "ok:Ffff0000000000000",  # -(inf)
+    "ok:F7ff8000000000000",  # -(nan)
+    "ok:F7ff0000000000000",  # max(inf,1)
+    "ok:i1",  # min(inf,1)
+    "ok:F7ff8000000000000",  # max(nan,1)
+    "ok:F7ff8000000000000",  # min(1,nan)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # +(inf,1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # +(nan,1)
+    "ok:F3ff0000000000002",  # +(1,*(2,epsilon))
+    "ok:F3970000000000000",  # *(epsilon,epsilon)
+    "ok:F7ff0000000000000",  # float(inf)
+    "ok:F3ff0000000000000",  # sign(inf)
+    "ok:Fbff0000000000000",  # sign(-(inf))
+    "ok:F7ff0000000000000",  # abs(-(inf))
+    "ok:F7ff0000000000000",  # integer(inf)
+    "ok:F7ff8000000000000",  # integer(nan)
+    "ok:F7ff0000000000000",  # truncate(inf)
+    "ok:F7ff8000000000000",  # floor(nan)
+    "ok:i1",  # cmpr(inf,2^70)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # cmpr(1,nan)
+    "ok:i2",  # maxr(nan,2)
+    "ok:i3",  # minr(inf,3)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[101, 112, 115, 105, 108, 111, 110],i1))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # epsilon(1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[105, 110, 102],i1))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # inf(1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[110, 97, 110],i2))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # nan(1,2)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[105, 110, 102],i2))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # inf(1,2)
+    "ok:Ffff0000000000000",  # copysign(inf,-1)
+    "ok:i-1",  # copysign(1,-(inf))
+    "ok:F7fefffffffffffff",  # nexttoward(inf,0)
+    "ok:F3ff0000000000000",  # +(1.0,0.0)
+    "ok:i0",  # lsb(1)
+    "ok:i1",  # lsb(2)
+    "ok:i0",  # lsb(3)
+    "ok:i2",  # lsb(4)
+    "ok:i2",  # lsb(12)
+    "ok:i0",  # lsb(255)
+    "ok:i8",  # lsb(256)
+    "ok:i31",  # lsb(2147483648)
+    "ok:i32",  # lsb(4294967296)
+    "ok:i31",  # lsb(6442450944)
+    "ok:i40",  # lsb(1099511627776)
+    "ok:i62",  # lsb(4611686018427387904)
+    "ok:i0",  # lsb(INT64_MAX)
+    "ok:i61",  # lsb(6917529027641081856)
+    "ok:i64",  # lsb(2^64)
+    "ok:i70",  # lsb(2^70)
+    "ok:i100",  # lsb(3802951800…)
+    "ok:i64",  # lsb(1199038364791120855040)
+    "ok:i200",  # lsb(2^200)
+    "ok:i100",  # lsb(1606938044…)
+    "ok:i30",  # lsb(10^30)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i0)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(0)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i-1)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(-1)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i-2)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(-2)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i-9223372036854775808)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(INT64_MIN)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i-1180591620717411303424)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(-2^70)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F0)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(0.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4000000000000000)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(2.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4004000000000000)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(2.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q1r2)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(1r2)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q8r3)@ca[47]/2(a[108, 115, 98],i1)@_",  # lsb(8r3)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lsb(1.5NaN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lsb(1.0Inf)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lsb(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # lsb(a)
+    "ok:i3",  # lsb(*(3,8))
+    "ok:i6",  # +(lsb(8),msb(8))
+    "ok:i0",  # popcount(0)
+    "ok:i1",  # popcount(1)
+    "ok:i1",  # popcount(2)
+    "ok:i2",  # popcount(3)
+    "ok:i3",  # popcount(7)
+    "ok:i1",  # popcount(8)
+    "ok:i8",  # popcount(255)
+    "ok:i1",  # popcount(256)
+    "ok:i10",  # popcount(1023)
+    "ok:i1",  # popcount(4294967296)
+    "ok:i32",  # popcount(4294967295)
+    "ok:i1",  # popcount(4611686018427387904)
+    "ok:i63",  # popcount(INT64_MAX)
+    "ok:i64",  # popcount(18446744073709551615)
+    "ok:i1",  # popcount(2^64)
+    "ok:i70",  # popcount(1180591620717411303423)
+    "ok:i1",  # popcount(2^70)
+    "ok:i2",  # popcount(1199038364791120855040)
+    "ok:i37",  # popcount(10^30)
+    "ok:i200",  # popcount(1606938044…)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(-1)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-2)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(-2)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-9223372036854775808)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(INT64_MIN)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1180591620717411303424)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(-2^70)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F0)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(0.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4000000000000000)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(2.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4004000000000000)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(2.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q1r2)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(1r2)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q3r4)@ca[47]/2(a[112, 111, 112, 99, 111, 117, 110, 116],i1)@_",  # popcount(3r4)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # popcount(1.5NaN)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[102, 108, 111, 97, 116, 95, 111, 118, 101, 114, 102, 108, 111, 119])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # popcount(1.0Inf)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # popcount(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # popcount(a)
+    "ok:i10",  # popcount(-(<<(1,10),1))
+    "ok:i10",  # +(popcount(255),popcount(3))
+    "ok:i1",  # getbit(5,0)
+    "ok:i0",  # getbit(5,1)
+    "ok:i1",  # getbit(5,2)
+    "ok:i0",  # getbit(5,3)
+    "ok:i0",  # getbit(0,0)
+    "ok:i1",  # getbit(1,0)
+    "ok:i0",  # getbit(1,1)
+    "ok:i1",  # getbit(INT64_MAX,0)
+    "ok:i1",  # getbit(INT64_MAX,62)
+    "ok:i0",  # getbit(INT64_MAX,63)
+    "ok:i0",  # getbit(INT64_MAX,64)
+    "ok:i0",  # getbit(5,63)
+    "ok:i0",  # getbit(5,64)
+    "ok:i0",  # getbit(5,65)
+    "ok:i0",  # getbit(5,1000)
+    "ok:i0",  # getbit(5,1000000)
+    "ok:i0",  # getbit(5,2^70)
+    "ok:i0",  # getbit(5,2^63)
+    "ok:i0",  # getbit(5,INT64_MAX)
+    "ok:i0",  # getbit(5,9223372036854775806)
+    "ok:i1",  # getbit(2^70,70)
+    "ok:i0",  # getbit(2^70,69)
+    "ok:i0",  # getbit(2^70,71)
+    "ok:i0",  # getbit(2^70,0)
+    "ok:i0",  # getbit(2^70,1000000)
+    "ok:i0",  # getbit(2^70,INT64_MAX)
+    "ok:i0",  # getbit(2^70,2^63)
+    "ok:i0",  # getbit(2^70,2^70)
+    "ok:i1",  # getbit(1180591620717411303425,0)
+    "ok:i0",  # getbit(1180591620717411303425,1)
+    "ok:i1",  # getbit(18446744073709551615,63)
+    "ok:i0",  # getbit(18446744073709551615,64)
+    "ok:i1",  # getbit(2^64,64)
+    "ok:i0",  # getbit(2^64,63)
+    "ok:i0",  # getbit(10^30,0)
+    "ok:i1",  # getbit(10^30,30)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(-1,0)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1180591620717411303424)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(-2^70,0)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(5,-1)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1180591620717411303424)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(5,-2^70)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(-1,-1)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(-2^70,-1)
+    "ok:i0",  # getbit(-5,2^70)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4004000000000000)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(2.5,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F3ff8000000000000)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(5,1.5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4000000000000000)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(2.0,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F3ff0000000000000)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(5,1.0)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q1r2)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(1r2,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],q1r2)@ca[47]/2(a[98, 105, 116],i2)@_",  # getbit(5,1r2)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # getbit(1.5NaN,1)
+    "err:ca[101, 118, 97, 108, 117, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]/1(a[117, 110, 100, 101, 102, 105, 110, 101, 100])@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # getbit(1,1.5NaN)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # getbit(_,1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # getbit(1,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # getbit(a,1)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # getbit(1,a)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # getbit(_,_)
+    "ok:i1",  # getbit(+(2,3),-(3,1))
+    "ok:i1",  # +(getbit(5,0),getbit(5,1))
+    "ok:i24",  # powm(2,10,1000)
+    "ok:i0",  # powm(2,10,1024)
+    "ok:i1024",  # powm(2,10,1025)
+    "ok:i1",  # powm(2,0,5)
+    "ok:i1",  # powm(0,0,5)
+    "ok:i0",  # powm(0,0,1)
+    "ok:i0",  # powm(0,5,7)
+    "ok:i0",  # powm(3,100,1)
+    "ok:i1",  # powm(3,100,2)
+    "ok:i3",  # powm(2,3,5)
+    "ok:i6",  # powm(5,3,7)
+    "ok:i976371285",  # powm(2,100,1000000007)
+    "ok:i549755813888",  # powm(2,100,2305843009213693951)
+    "ok:i652541198",  # powm(123456789,987654321,1000000007)
+    "ok:i0",  # powm(INT64_MAX,INT64_MAX,INT64_MAX)
+    "ok:i0",  # powm(INT64_MAX,2,INT64_MAX)
+    "ok:i1",  # powm(INT64_MAX,2,4611686018427387904)
+    "ok:i24",  # powm(2^70,3,1000)
+    "ok:i61",  # powm(2^70,2^70,97)
+    "ok:i61",  # powm(2,2^70,97)
+    "ok:i8",  # powm(2,3,1180591620717411303425)
+    "ok:i1180591620717411303424",  # powm(2^70,3,1180591620717411303425)
+    "ok:i806875036",  # powm(10^30,10^30,1000000007)
+    "ok:i8",  # powm(2,3,2^63)
+    "ok:i8",  # powm(2,3,2^64)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-2)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(-2,3,5)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-3)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,-3,5)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i0)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,3,0)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i-5)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,3,-5)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-2)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(-2,-3,0)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1180591620717411303424)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(-2^70,3,5)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1180591620717411303424)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,-2^70,5)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i-1180591620717411303424)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,3,-2^70)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i0)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(0,0,0)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(-1,0,1)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 122, 101, 114, 111],i-1)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(1,-1,1)
+    "err:ca[100, 111, 109, 97, 105, 110, 95, 101, 114, 114, 111, 114]/2(a[110, 111, 116, 95, 108, 101, 115, 115, 95, 116, 104, 97, 110, 95, 111, 110, 101],i-1)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,3,-1)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(_,3,5)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(2,_,5)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(2,3,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(a,3,5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(2,a,5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(2,3,a)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(_,_,_)
+    "ok:i24",  # powm(+(1,1),*(5,2),+(500,500))
+    "ok:i25",  # +(powm(2,10,1000),1)
+    "ok:i1",  # eval(1)
+    "ok:i0",  # eval(0)
+    "ok:i-1",  # eval(-1)
+    "ok:i-9223372036854775808",  # eval(INT64_MIN)
+    "ok:i1180591620717411303424",  # eval(2^70)
+    "ok:F3ff8000000000000",  # eval(1.5)
+    "ok:F8000000000000000",  # eval(-0.0)
+    "ok:F7ff0000000000000",  # eval(1.0Inf)
+    "ok:F7ff8000000000000",  # eval(1.5NaN)
+    "ok:q1r3",  # eval(1r3)
+    "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # eval(_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # eval(a)
+    "ok:i3",  # eval(+(1,2))
+    "ok:i3",  # eval(eval(3))
+    "ok:i3",  # +(eval(1),2)
+    "ok:F4000000000000000",  # eval(max(1,2.0))
+    "ok:F3fd5555555555555",  # eval(/(1,3))
+    "ok:q1r3",  # eval(rdiv(1,3))
+    "ok:F400921fb54442d18",  # eval(pi)
+    "ok:F7ff0000000000000",  # eval(inf)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[102, 111, 111],i1))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # eval(foo(1))
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[101, 118, 97, 108],i2))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # eval(1,2)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[102, 111, 111],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # eval(foo)
+    "ok:q1r2",  # eval(rational(0.5))
+    "ok:i36",  # +(lcm(4,6),powm(2,10,1000))
+    "ok:i4",  # denominator(rationalize(0.25))
+    "ok:F3fb999999999999a",  # maxr(rationalize(0.1),0.1)
+    "ok:q1r10",  # minr(rationalize(0.1),0.1)
+    "ok:i0",  # cmpr(rational(0.1),0.1)
+    "ok:i-1",  # cmpr(rationalize(0.1),0.1)
+    "ok:i1",  # lsb(lcm(6,10))
+    "ok:i4",  # popcount(lcm(6,10))
+    "ok:i1",  # getbit(lcm(4,6),lsb(8))
+    "ok:F0",  # sinh(log10(1))
+    "ok:F0",  # erf(tanh(0))
+    "ok:i0",  # rational(sinh(0))
+    "ok:F3ff61558620b90fe",  # log10(powm(2,10,1000))
+    "ok:F401326643c4479c9",  # lgamma(lcm(2,3))
+    "ok:q1r3",  # rdiv(+(rational(0.5),rational(0.5)),3)
+    "ok:i1",  # numerator(+(rational(0.5),rational(0.5)))
+    "ok:i1",  # denominator(+(rational(0.5),rational(0.5)))
+    "ok:q2r3",  # *(2,rdiv(1,3))
+    "ok:F3feaaaaaaaaaaaaa",  # +(rdiv(1,3),0.5)
+    "ok:q3r2",  # rdiv(rdiv(1,2),rdiv(1,3))
+    "ok:q1r3"  # abs(rdiv(-1,3))
+]
+
+const _A_ARITHC_FUNCS = (
+    :rational, :numerator, :denominator, :rationalize, :rdiv, :cmpr, :maxr, :minr, :lcm,
+    :nexttoward, :sinh, :cosh, :tanh, :asinh, :acosh, :atanh, :lgamma, :erf, :erfc, :log10,
+    :lsb, :popcount, :getbit, :powm, :eval
+)
+
+@testset "arith-c: the 28 functions of pl-arith.c's table added — swipl's answers (pinned)" begin
+    @test length(_A_ARITHC_CASES) == length(_A_ARITHC_EXPECT)
+    got = [_aoutcome_of(c) for c in _A_ARITHC_CASES]
+    bad = [k for k in eachindex(got) if got[k] != _A_ARITHC_EXPECT[k]]
+    for k in bad[1:min(end, 8)]
+        src = _asrc(_A_ARITHC_CASES[k])
+        println(stderr, "  arith-c DIVERGES: ", src, "\n    kernel ", got[k])
+        println(stderr, "    swipl  ", _A_ARITHC_EXPECT[k])
+    end
+    @test isempty(bad)
+    # the guard has teeth: every function has a case that succeeds and one that raises (the rows that
+    # kill the mutants — lcm via gcd, popcount/lsb swapped, sinh/cosh swapped, rdiv truncating,
+    # nexttoward's direction, cmpr's sign — are among them), the constants are cases, as atoms and as
+    # compounds with no arguments, and every family reaches the type it returns
+    head(c) = c isa Tuple ? c[1] : nothing
+    for f in _A_ARITHC_FUNCS
+        ks = [k for k in eachindex(_A_ARITHC_CASES) if head(_A_ARITHC_CASES[k]) === f]
+        @test any(k -> startswith(_A_ARITHC_EXPECT[k], "ok:"), ks)
+        @test any(k -> startswith(_A_ARITHC_EXPECT[k], "err:"), ks)
+    end
+    for c in (:epsilon, (:epsilon,), :inf, (:inf,), :nan, (:nan,))
+        k = findfirst(==(c), _A_ARITHC_CASES)
+        @test k !== nothing && startswith(_A_ARITHC_EXPECT[k], "ok:F")
+    end
+    @test count(startswith("ok:F"), _A_ARITHC_EXPECT) > 250 &&
+        count(startswith("ok:i"), _A_ARITHC_EXPECT) > 300 &&
+        count(startswith("ok:q"), _A_ARITHC_EXPECT) > 50 &&
+        count(startswith("err:"), _A_ARITHC_EXPECT) > 200
+end
+
+# random_float/0: swipl's generator is not reproducible (no set_random/1 yet), so only the range, the
+# spread, the 53-bit fraction and the two forms (an atom, and a compound with no arguments) are checked.
+@testset "arith-c: random_float/0 — in (0.0, 1.0), spread, a 53-bit fraction" begin
+    draw(k) = [lk_value(_ais(_as(:random_float))) for _ in 1:k]
+    d = draw(400)
+    @test all(v -> v isa Float64 && 0.0 < v < 1.0, d)
+    @test length(Set(d)) > 395
+    @test 0.4 < sum(d) / length(d) < 0.6
+    @test count(<(0.5), d) in 150:250
+    @test count(v -> (v * 2.0^53) % 2.0 == 1.0, d) > 100       # the lowest of 53 bits is used
+    @test all(
+        v -> 0.0 < v < 1.0, [lk_value(_ais(_af(:random_float))) for _ in 1:50]
+    )
+    @test all(
+        v -> 1.0 < v < 2.0,
+        [lk_value(_ais(_af(:+, _as(:random_float), _ag(1)))) for _ in 1:50]
+    )
+end
+
+# powm/3 with a float argument — a KNOWN DIFFERENCE (internal record Q5), pinned to the kernel's answer;
+# the live testset at the end of this file pins swipl's. Checklist: when the two agree, move these rows to
+# `_A_ARITHC_CASES`.
+@testset "arith-c: powm/3 with a float argument — the kernel raises (known difference)" begin
+    for (c, culprit) in (
+        ((:powm, 2.0, 3, 5), 2.0), ((:powm, 2, 3.0, 5), 3.0), ((:powm, 2, 3, 5.0), 5.0)
+    )
+        @test _aoutcome_of(c) ==
+            "err:" * _aenc(_af(:type_error, _as(:integer), _ag(culprit))) * "@" *
+              _aenc(_af(:/, _as(:powm), _ag(3))) * "@_"
+        @test _ALD.query == 0
+    end
+end
+
+# roundtoward/2 is NOT PORTED: the kernel has no rounding mode but to nearest, so a call is not
+# evaluable (swipl evaluates it, `X is roundtoward(2.5, to_nearest)` is 2.5, and sets the hardware mode
+# for its first argument). The arguments are evaluated first, the last one first: an atom mode is
+# `to_nearest/0`, not evaluable, a number reaches the function itself. A KNOWN DIFFERENCE, pinned to
+# the kernel's answer; the live testset at the end of this file pins swipl's. Checklist: when the
+# rounding modes land (a subsystem of its own), port `ar_roundtoward` and `set_roundtoward` and move
+# these rows to `_A_ARITHC_CASES`.
+@testset "arith-c: roundtoward/2 is not evaluable (NOT PORTED, known difference)" begin
+    isctx = _aenc(_af(:(:), _as(:system), _af(:/, _as(:is), _ag(2))))
+    ev(f, n) = _aenc(_af(:type_error, _as(:evaluable), _af(:/, _as(f), _ag(n))))
+    @test _aoutcome_of((:roundtoward, 2.5, 3)) ==
+          "err:" * ev(:roundtoward, 2) * "@" * isctx * "@_"
+    @test _aoutcome_of((:roundtoward, 2.5, :to_nearest)) ==
+          "err:" * ev(:to_nearest, 0) * "@" * isctx * "@_"
+end
+
 # ── the live differential ────────────────────────────────────────────────────────────────────────
 const _A_LEAVES = Any[
     0, 1, -1, 2, 3, -7, 100, 2 ^ 53 + 1, 2 ^ 56 - 1, 2 ^ 56, -2 ^ 56, 2 ^ 62,
@@ -1591,7 +2995,7 @@ const _A_LEAVES = Any[
     1.0e-300, 1 // big(3), -5 // big(7), big(2) ^ 70 // 3, "a", "z"
 ]
 const _A_BAD = ("var", "atom", "nil", "unknown", "ab", "code")    # planted, rarely
-# the functions the generator draws: + - * and unary - + (V6c), then arith-a's and arith-b's
+# the functions the generator draws: + - * and unary - + (V6c), then arith-a's, arith-b's and arith-c's
 const _A_OPS = (
     (:+, 2), (:-, 2), (:*, 2), (:-, 1), (:+, 1), (:/, 2), (:(//), 2), (:mod, 2), (:rem, 2),
     (:div, 2), (:min, 2), (:max, 2), (:copysign, 2), (:gcd, 2), (Symbol("/\\"), 2),
@@ -1601,7 +3005,13 @@ const _A_OPS = (
     # arith-b's (`**` and `^` are drawn below, with a small exponent)
     (:sqrt, 1), (:exp, 1), (:log, 1), (:sin, 1), (:cos, 1), (:tan, 1), (:asin, 1),
     (:acos, 1),
-    (:atan, 1), (:atan, 2), (:atan2, 2)
+    (:atan, 1), (:atan, 2), (:atan2, 2),
+    # arith-c's (`random_float`, `powm` and the constants are not drawn: `powm/3` with a float is a
+    # known difference, the others are not reproducible or have no argument)
+    (:rational, 1), (:numerator, 1), (:denominator, 1), (:rationalize, 1), (:rdiv, 2),
+    (:cmpr, 2), (:maxr, 2), (:minr, 2), (:lcm, 2), (:nexttoward, 2), (:sinh, 1), (:cosh, 1),
+    (:tanh, 1), (:asinh, 1), (:acosh, 1), (:atanh, 1), (:lgamma, 1), (:erf, 1), (:erfc, 1),
+    (:log10, 1), (:lsb, 1), (:popcount, 1), (:getbit, 2), (:eval, 1)
 )
 
 "A random expression and its swipl source text."
@@ -1804,5 +3214,45 @@ if _A_SWIPL !== nothing
         for k in (n + 1):length(theirs)
             @test startswith(theirs[k], "err:" * _aenc(_af(:resource_error, _as(:stack))))
         end
+    end
+end
+
+# ── arith-c's pinned table == live swipl; and swipl's side of the known differences ──────────────
+if _A_SWIPL !== nothing
+    @testset "arith-c: the pinned answers == live swipl" begin
+        prog = IOBuffer()
+        print(prog, _A_DRIVER)
+        print(prog, "run :- ")
+        for c in _A_ARITHC_CASES
+            print(prog, "is_(", _asrc(c), "), ")
+        end
+        println(prog, "true.\n:- initialization((run, halt)).")
+        text = mktempdir() do d
+            f = joinpath(d, "a.pl")
+            write(f, String(take!(prog)))
+            read(`swipl -q $f`, String)
+        end
+        theirs = [_afloat_bits(String(l)) for l in split(strip(text), '\n')]
+        @test theirs == _A_ARITHC_EXPECT
+    end
+    @testset "arith-c: swipl's side of powm/3 with a float and of roundtoward/2" begin
+        prog = IOBuffer()
+        print(prog, _A_DRIVER)
+        print(prog, "run :- ")
+        for c in ((:powm, 2.0, 3, 5), (:powm, 2, 3.0, 5), (:powm, 2, 3, 5.0),
+            (:roundtoward, 2.5, :to_nearest), (:roundtoward, 2.5, 3))
+            print(prog, "is_(", _asrc(c), "), ")
+        end
+        println(prog, "true.\n:- initialization((run, halt)).")
+        text = mktempdir() do d
+            f = joinpath(d, "a.pl")
+            write(f, String(take!(prog)))
+            read(pipeline(`swipl -q $f`; stderr=devnull), String)    # (internal record Q5)
+        end
+        theirs = [_afloat_bits(String(l)) for l in split(strip(text), '\n')]
+        # (internal record Q5)
+        @test theirs[1:3] == fill("ok:i3", 3)
+        # evaluated: the first argument, the mode set for it; a number is not a mode (a type error)
+        @test theirs[4] == "ok:F4004000000000000" && startswith(theirs[5], "err:")
     end
 end

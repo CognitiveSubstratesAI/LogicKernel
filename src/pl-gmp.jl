@@ -364,6 +364,35 @@ end
 "`q` as the nearest double (pl-gmp.c)."
 mpq_to_double(q::Rational{BigInt})::Float64 = mpz_fdiv(numerator(q), denominator(q))
 
+# PORT: pl-gmp.c mpq_set_double
+# DIVERGES: returns the rational (`Rational{BigInt}` is by value) where upstream writes `r`; the
+# continued fraction is run on `BigInt`s, `mpz_fdiv_qr` (floor) as `fldmod`; `mpq_set_d` is the exact
+# `Rational{BigInt}(f)` (as in `promoteToMPQNumber`). `f` is finite (the callers check).
+"The nice rational of the finite float `f` (pl-gmp.c `mpq_set_double`): continued fractions until it converts back to `f`."
+function mpq_set_double(f::Float64)::Rational{BigInt}
+    m = BigInt(1)                                           # (m,n) = (1,0)
+    n = BigInt(0)
+    p = BigInt(0)                                           # (p,q) = (0,1)
+    q = BigInt(1)
+    r = Rational{BigInt}(f)                                 # mpq_set_d
+    v = numerator(r)                                        # (v,w) == (r.num, r.den)
+    w = denominator(r)
+    fp = reinterpret(UInt64, f)
+    while true
+        d, u = fldmod(v, w)                                 # mpz_fdiv_qr
+        p += d * m                                          # mpz_addmul
+        q += d * n
+        rp = mpz_fdiv(p, q)
+        if reinterpret(UInt64, rp) == fp || iszero(u)       # terminating conditions
+            return p // q                                   # final answer, p & q are co-prime
+        end
+        v = w
+        w = u
+        m, p = p, m                                         # mpz_swap
+        n, q = q, n
+    end
+end
+
 # ── comparison (pl-gmp.c) ────────────────────────────────────────────────────────────────────────
 # PORT: pl-gmp.c cmpFloatNumbers
 # DIVERGES: the bit-pattern test first, as upstream's (its reason, the x87 extended register, does
@@ -419,6 +448,117 @@ function cmpNumbers(ld::PL_local_data, n1::number, n2::number)::Int
     gt = n1.f > n2.f
     !lt && !gt && return CMP_NOTEQ                          # either is NaN
     return Int(gt) - Int(lt)
+end
+
+# cmpReals() compares two real numbers of any type and is mathematically correct: floats and 64 bit
+# integers without extended arithmetic, the rest by the bignum library's compare. Upstream's large 4x4
+# switch calls a targeted function per pair; a negated result is right for every pair but those with a
+# float (-CMP_NOTEQ is wrong).
+# PORT: pl-gmp.c cmp_i_i
+"Compare two `int64_t` (pl-gmp.c): -1, 0 or 1."
+cmp_i_i(i1::Int64, i2::Int64)::Int = Int(i1 > i2) - Int(i1 < i2)     # SCALAR_TO_CMP
+
+# PORT: pl-gmp.c cmp_f_f
+"Compare two doubles (pl-gmp.c): -1, 0 or 1, `CMP_NOTEQ` if either is a NaN."
+function cmp_f_f(d1::Float64, d2::Float64)::Int
+    (isnan(d1) || isnan(d2)) && return CMP_NOTEQ
+    return Int(d1 > d2) - Int(d1 < d2)                      # SCALAR_TO_CMP
+end
+
+# PORT: pl-gmp.c cmp_i_f
+# See https://stackoverflow.com/questions/58734034/ : the integer as the sum of two doubles, each exact.
+"Compare an `int64_t` with a double, exactly (pl-gmp.c): -1, 0 or 1, `CMP_NOTEQ` for a NaN."
+function cmp_i_f(i1::Int64, d2::Float64)::Int
+    isnan(d2) && return CMP_NOTEQ
+    if i1 >= 0
+        d1_lo = Float64(i1 & Int64(0x00000000FFFFFFFF))     # TOD(i1 & 0x00000000FFFFFFFF)
+        d1_hi = Float64(i1 & Int64(-4294967296))            # TOD(i1 & 0xFFFFFFFF00000000)
+    else
+        d1_lo = Float64(i1 | Int64(-4294967296))            # TOD(i1 | 0xFFFFFFFF00000000)
+        d1_hi = Float64(i1 | Int64(0x00000000FFFFFFFF)) + 1.0
+    end
+    x = d2 - d1_hi
+    return Int(d1_lo > x) - Int(d1_lo < x)                  # SCALAR_TO_CMP(d1_lo, d2-d1_hi)
+end
+
+# PORT: pl-gmp.c cmp_z_z
+"Compare two big integers (pl-gmp.c): -1, 0 or 1."
+cmp_z_z(z1::BigInt, z2::BigInt)::Int = Int(sign(cmp(z1, z2)))        # mpz_cmp
+
+# PORT: pl-gmp.c cmp_q_q
+"Compare two rationals (pl-gmp.c): -1, 0 or 1."
+cmp_q_q(q1::Rational{BigInt}, q2::Rational{BigInt})::Int =
+    Int(sign(cmp(q1, q2)))                                  # mpq_cmp
+
+# PORT: pl-gmp.c cmp_z_i
+"Compare a big integer with an `int64_t` (pl-gmp.c): -1, 0 or 1."
+cmp_z_i(z1::BigInt, i2::Int64)::Int = Int(sign(cmp(z1, i2)))         # mpz_cmp_si
+
+# PORT: pl-gmp.c cmp_q_i
+# `mpq_cmp_si(q1, i2, 1)` is a cross multiplication, written out (a denominator is > 0).
+"Compare a rational with an `int64_t` (pl-gmp.c): -1, 0 or 1."
+cmp_q_i(q1::Rational{BigInt}, i2::Int64)::Int =
+    Int(sign(cmp(numerator(q1), BigInt(i2) * denominator(q1))))
+
+# PORT: pl-gmp.c cmp_z_f
+"Compare a big integer with a double (pl-gmp.c): exact, an infinity compares correctly; NaN is `CMP_NOTEQ`."
+function cmp_z_f(z1::BigInt, d2::Float64)::Int
+    isnan(d2) && return CMP_NOTEQ
+    return Int(z1 > d2) - Int(z1 < d2)                      # mpz_cmp_d handles infinities
+end
+
+# PORT: pl-gmp.c cmp_f_q
+"Compare a double with a rational (pl-gmp.c): the double is made an exact rational first."
+function cmp_f_q(d1::Float64, q2::Rational{BigInt})::Int
+    isnan(d1) && return CMP_NOTEQ
+    d1 == Inf && return CMPEX_GREATER
+    d1 == -Inf && return CMPEX_LESS
+    return cmp_q_q(Rational{BigInt}(d1), q2)                # mpq_set_d: exact
+end
+
+# PORT: pl-gmp.c cmp_q_z
+# `mpq_cmp_z(q1, z2)`: a cross multiplication, written out (a denominator is > 0).
+"Compare a rational with a big integer (pl-gmp.c): -1, 0 or 1."
+cmp_q_z(q1::Rational{BigInt}, z2::BigInt)::Int =
+    Int(sign(cmp(numerator(q1), z2 * denominator(q1))))
+
+# PORT: pl-gmp.c cmpReals
+"Compare two real numbers of any type, mathematically correctly (pl-gmp.c): `CMP_NOTEQ` if a NaN is involved."
+function cmpReals(n1::number, n2::number)::Int
+    t1 = n1.type
+    t2 = n2.type
+    if t1 === V_INTEGER
+        t2 === V_INTEGER && return cmp_i_i(n1.i, n2.i)
+        t2 === V_FLOAT && return cmp_i_f(n1.i, n2.f)
+        t2 === V_MPZ && return -cmp_z_i(n2.mpz, n1.i)
+        t2 === V_MPQ && return -cmp_q_i(n2.mpq, n1.i)
+    elseif t1 === V_FLOAT
+        if t2 === V_INTEGER
+            rc = cmp_i_f(n2.i, n1.f)
+            return rc == CMP_NOTEQ ? rc : -rc
+        elseif t2 === V_FLOAT
+            return cmp_f_f(n1.f, n2.f)
+        elseif t2 === V_MPZ
+            rc = cmp_z_f(n2.mpz, n1.f)
+            return rc == CMP_NOTEQ ? rc : -rc
+        elseif t2 === V_MPQ
+            return cmp_f_q(n1.f, n2.mpq)
+        end
+    elseif t1 === V_MPZ
+        t2 === V_INTEGER && return cmp_z_i(n1.mpz, n2.i)
+        t2 === V_FLOAT && return cmp_z_f(n1.mpz, n2.f)
+        t2 === V_MPZ && return cmp_z_z(n1.mpz, n2.mpz)
+        t2 === V_MPQ && return -cmp_q_z(n2.mpq, n1.mpz)
+    elseif t1 === V_MPQ
+        t2 === V_INTEGER && return cmp_q_i(n1.mpq, n2.i)
+        if t2 === V_FLOAT
+            rc = cmp_f_q(n2.f, n1.mpq)
+            return rc == CMP_NOTEQ ? rc : -rc
+        end
+        t2 === V_MPZ && return cmp_q_z(n1.mpq, n2.mpz)
+        t2 === V_MPQ && return cmp_q_q(n1.mpq, n2.mpq)
+    end
+    return CMP_NOTEQ                                        # unrecognized type?, treat as nan
 end
 
 # ── big integers to machine integers, and the integer root (pl-gmp.c, GMP) ───────────────────────

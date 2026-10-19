@@ -1454,9 +1454,31 @@ function _manifest_index(T)
         (LK._ar_pow_maybe_real_mpq, Tuple{LD, LK.number, LK.number, LK.number}, false),
         (LK._ar_pow_doreal, Tuple{LD, LK.number, LK.number, Int, LK.number}, false),
         (LK._ar_pow_mpq_int, Tuple{LD, LK.number, UInt64, Int, LK.number}, false),
+        # arith-c: rationals, the order of reals, bits, the remaining float functions, powm/3
+        [
+            (f, Tuple{LD, LK.number, LK.number}, false) for f in (
+                LK.ar_sinh, LK.ar_cosh, LK.ar_tanh, LK.ar_asinh, LK.ar_acosh, LK.ar_atanh,
+                LK.ar_erf, LK.ar_erfc, LK.ar_log10, LK.ar_lgamma, LK.ar_rational,
+                LK.ar_numerator, LK.ar_denominator, LK.ar_rationalize, LK.ar_lsb,
+                LK.ar_popcount
+            )
+        ]...,
+        [
+            (f, Tuple{LD, LK.number, LK.number, LK.number}, false) for
+            f in (LK.ar_nexttoward, LK.ar_rdiv, LK.ar_cmpr, LK.ar_lcm, LK.ar_getbit)
+        ]...,
+        (LK.ar_powm, Tuple{LD, LK.number, LK.number, LK.number, LK.number}, false),
+        (LK.ar_random_float, Tuple{LD, LK.number}, false),
+        (LK.notLessThanZero, Tuple{LD, String, Int, LK.number}, false),
         (LK.isCurrentArithFunction, Tuple{Type{T}, UInt64, Int}, false),
         (LK._ar_call2, Tuple{LD, Int, LK.number, LK.number, LK.number}, false),
         (LK._ar_call1, Tuple{LD, Int, LK.number, LK.number}, false),
+        (LK._ar_call0, Tuple{LD, Int, LK.number}, false),
+        (
+            LK._ar_call3,
+            Tuple{LD, Int, LK.number, LK.number, LK.number, LK.number},
+            false
+        ),
         (LK.arithChar, Tuple{LD, T}, false),
         (LK.getCharExpression, Tuple{LD, T, LK.number}, false),
         (LK._len_not_one, Tuple{LD, T}, false),
@@ -1863,7 +1885,32 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._libm_pow, Tuple{Float64, Float64}, true),
     (LK.ar_pi, Tuple{LK.number}, true), (LK.ar_e, Tuple{LK.number}, true),
     (LK.ar_cputime, Tuple{LK.number}, false), (LK.CpuTime, Tuple{}, false),
-    (LK._ar_call0, Tuple{Int, LK.number}, false),
+    # arith-c (arith_funcs_design.md §2): the C library's other functions, maxr/minr, eval, the
+    # constants, the bit helpers, and the number layer's cmpReals and mpq_set_double
+    [
+        (f, Tuple{Float64}, true) for f in (
+            LK._libm_sinh, LK._libm_cosh, LK._libm_tanh, LK._libm_asinh, LK._libm_acosh,
+            LK._libm_atanh, LK._libm_erf, LK._libm_erfc, LK._libm_log10, LK._libm_lgamma
+        )
+    ]...,
+    [
+        (f, Tuple{LK.number, LK.number, LK.number}, false) for f in (LK.ar_maxr, LK.ar_minr)
+    ]...,
+    (LK.ar_eval, Tuple{LK.number, LK.number}, true),
+    [(f, Tuple{LK.number}, true) for f in (LK.ar_epsilon, LK.ar_inf, LK.ar_nan)]...,
+    (LK.ratNumber, Tuple{LK.number}, true),
+    (LK.lsb64, Tuple{Int64}, true), (LK.my_popcount64, Tuple{Int64}, true),
+    (LK.mpq_set_double, Tuple{Float64}, false),
+    (LK.cmp_i_i, Tuple{Int64, Int64}, true), (LK.cmp_f_f, Tuple{Float64, Float64}, true),
+    (LK.cmp_i_f, Tuple{Int64, Float64}, true),
+    (LK.cmp_z_z, Tuple{BigInt, BigInt}, false),
+    (LK.cmp_q_q, Tuple{Rational{BigInt}, Rational{BigInt}}, false),
+    (LK.cmp_z_i, Tuple{BigInt, Int64}, false),
+    (LK.cmp_q_i, Tuple{Rational{BigInt}, Int64}, false),
+    (LK.cmp_z_f, Tuple{BigInt, Float64}, false),
+    (LK.cmp_f_q, Tuple{Float64, Rational{BigInt}}, false),
+    (LK.cmp_q_z, Tuple{Rational{BigInt}, BigInt}, false),
+    (LK.cmpReals, Tuple{LK.number, LK.number}, false),
     (LK.intNumber, Tuple{LK.number}, true), (LK.ar_even, Tuple{LK.number}, false),
     (LK.ar_smallint, Tuple{LK.number}, false), (LK.pow64, Tuple{Int64, Int64}, true),
     (LK.mpz_to_int64, Tuple{BigInt}, false), (LK.mpz_to_uint64, Tuple{BigInt}, false),
