@@ -33,14 +33,13 @@ _uv_clauses() = Tuple{_R, Union{Nothing, _R}}[
 @testset "=../2 on cells, as swipl" begin
     db = _rdb(_uv_clauses())
     X, L, E = _rv(50), _rv(51), _rv(52)
-    # (no `X =.. ['.', h, t]`: the WRITER prints '.'(h,t) and the atom '.' unquoted — pl-write.jl compares
-    # the functor with the text atom `.` where upstream's ATOM_dot is SWI-7's '[|]'; its own step, batch 5)
     goals = _R[
         _rf("u", _rf("f", _rs("a"), _uv_k(1), _rg(2.5)), L, E), _rf("u", _rs("atom"), L, E),
         _rf("u", _uv_k(42), L, E), _rf("u", _rg(1.5), L, E), _rf("u", _rg("str"), L, E),
         _rf("u", _rlist(_rs("a"), _rs("b")), L, E),
         _rf("u", X, _rlist(_rs("g"), _rs("x"), _uv_k(3)), E),
         _rf("u", X, _rlist(_rs("a")), E), _rf("u", X, _rlist(_uv_k(5)), E),
+        _rf("u", X, _rlist(_rs("."), _rs("h"), _rs("t")), E),
         _rf("u", _rf("f", _rs("a")), _rlist(_rs("f"), _rs("a")), E),
         _rf("u", _rf("f", _rs("a")), _rlist(_rs("g"), _rs("a")), E),
         _rf("u", X, L, E), _rf("u", X, _rcons(_rs("f"), _rv(53)), E),

@@ -88,7 +88,11 @@ end
 "An atom as `write_canonical/1` writes it: a name made only of symbol characters, and the solo atoms `;` and `!`, bare."
 function _ratom_text(t::_R)::String
     n = String(lk_name(t))
-    !is_nil(t) && !isempty(n) && all(in("#\$&*+-./:<=>?@^~\\"), n) && return n
+    # a symbol atom unquoted — but not `.` alone (AT_FULLSTOP) nor one starting `/*`: pl-write.c `atomType`
+    # quotes both, as swipl writes `'.'` (2026-10-19: the harness wrote `.`, a differential of =../2 caught it)
+    !is_nil(t) && !isempty(n) && n != "." && !startswith(n, "/*") &&
+        all(in("#\$&*+-./:<=>?@^~\\"), n) &&
+        return n
     !is_nil(t) && (n == ";" || n == "!") && return n             # solo characters (swipl 10.1.17)
     return lk_atom_text(t)
 end
