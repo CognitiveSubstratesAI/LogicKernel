@@ -134,7 +134,7 @@ function pl_collect_findall_bag2_va(
         while !isempty(bag.answers)                 # (rp=topOfSegStack(&bag->answers))
             r = bag.answers[end]
             copyRecordToGlobal(ld, answer, r)
-            if ld.gTop > ld.stacks_limit && !ld.exception_processing   # (L1f f2) see above
+            if _stacks_in_use(ld, 0) > ld.stacks_limit && !ld.exception_processing   # (L1f f2) see above
                 raiseStackOverflow(ld, GLOBAL_OVERFLOW)
                 return FFALSE
             end

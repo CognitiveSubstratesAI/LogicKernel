@@ -44,7 +44,8 @@ end
 # DIVERGES: grows the local stack only — there is no global, trail or argument stack of fixed
 # size — and moves nothing: positions are offsets and records are indices, so upstream's work here,
 # shifting the stacks and relocating every pointer into them, does not exist. The size doubles until
-# the request fits with the spare above it (`include_spare_stack`), within `stacks_limit`; while an
+# the request fits with the spare above it (`include_spare_stack`), within what `stacks_limit` leaves
+# after the global stack and the trail (`tsize + gsize + lsize`, since L1f f2: audit D-0036); while an
 # exception is processed the limit is raised to the need plus 1 MiB (`grow_stacks`' error condition,
 # in positions; since V5d). Past the limit nothing grows, and the caller's re-check reports the
 # overflow, as upstream's does when `grow_stacks` refuses. After growing, the spare is reserved again
@@ -58,7 +59,7 @@ function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     while size < want
         size *= 2
     end
-    limit = ld.stacks_limit
+    limit = ld.stacks_limit - (ld.gTop + length(ld.trail))  # one limit over the three stacks (L1f f2)
     if size > limit && ld.exception_processing      # in error condition: raising limit with 1Mb
         limit = max(limit, want + EMERGENCY_LIMIT)
     end

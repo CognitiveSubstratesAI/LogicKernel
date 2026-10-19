@@ -111,14 +111,24 @@ function raiseStackOverflow(ld::PL_local_data{T}, overflow::boolex_t)::Bool wher
     return false
 end
 
+# ORIGINAL (L1f f2, audit D-0036; pl-gc.c grow_stacks: `tsize + gsize + lsize > LD->stacks.limit`): what
+# the ONE limit over the three stacks is measured against. DIVERGES: in words; the local stack by its size
+# (`lMax` and its spare, as `growStacks!` grows it), the global stack by its use (`gTop`: it grows cell by
+# cell on demand), the trail by its entries; the record pools (frames, choices) are Julia objects and do not
+# count.
+"The words the three stacks take once `g` more global cells are laid out (pl-gc.c `grow_stacks`' sum)."
+@inline _stacks_in_use(ld::PL_local_data, g::Int)::Int =
+    (ld.lMax + ld.local_spare) + (ld.gTop + g) + length(ld.trail)
+
 # PORT: pl-gc.h ensureGlobalSpace
-# DIVERGES (L1f f2, audit D-0029 D1 (a), D3 (a)): no garbage collection to try (`ALLOW_GC`) and nothing
-# to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: `n` more cells
-# above `gTop` within `stacks_limit`, else the overflow is raised (`resource_error(stack)`); while an
-# exception is processed the limit is not applied (upstream's spare stacks), so the handler can run.
+# DIVERGES (L1f f2, audit D-0029 D1 (a), D3 (a), D-0036): no garbage collection to try (`ALLOW_GC`) and
+# nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
+# stacks with `n` more cells within `stacks_limit` (`_stacks_in_use`), else the overflow is raised
+# (`resource_error(stack)`); while an exception is processed the limit is not applied (upstream's spare
+# stacks), so the handler can run.
 "Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`)."
 function ensureGlobalSpace(ld::PL_local_data, n::Int)::Bool
-    (ld.gTop + n <= ld.stacks_limit || ld.exception_processing) && return true
+    (_stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing) && return true
     return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
 end
 

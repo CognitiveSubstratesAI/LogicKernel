@@ -108,7 +108,7 @@ end
         ["thandler(-(resource_error(stack),1000)) det", "end"]
     @test ld.gTop <= ld.stacks_limit && !ld.exception_processing && !ld.outofstack
     LK.PL_open_foreign_frame(ld)
-    room = ld.stacks_limit - ld.gTop
+    room = ld.stacks_limit - LK._stacks_in_use(ld, 0)   # (D-0036: the three stacks)
     @test LK.ensureGlobalSpace(ld, room)                   # exactly at the limit: room
     @test !ld.exception_processing
     @test !LK.ensureGlobalSpace(ld, room + 1)              # one cell over: the overflow
@@ -129,7 +129,7 @@ function _sl_head_call(db::_RDB, goal::Symbol, n::Int, room::Int)
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, n)
     lim = ld.stacks_limit
-    ld.stacks_limit = ld.gTop + room
+    ld.stacks_limit = LK._stacks_in_use(ld, 0) + room   # (D-0036: the three stacks)
     g0 = ld.gTop
     qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, proc, a)
     rc = LK.PL_next_solution(gd, ld, qid)
@@ -149,4 +149,34 @@ end
         @test _sl_head_call(db, g, n, 3) == (LK.PL_S_LAST, 3)       # room for its 3 cells
         @test _sl_head_call(db, g, n, 2) == (LK.PL_S_EXCEPTION, 0)  # one cell short: raised, nothing laid
     end
+end
+
+# ── D-0036: ONE limit over the three stacks (pl-gc.c grow_stacks: `tsize + gsize + lsize > limit`) ──────
+# The local stack by its size, the global by its use, the trail by its entries (`_stacks_in_use`). Each row
+# fails under the old per-stack checks: the global alone against the whole limit, the local alone likewise.
+@testset "D-0036: one limit over the local stack, the global stack and the trail" begin
+    db = _sl_db()
+    ld = db.ld
+    t = LK.PL_new_term_ref(ld)                         # a cell older than the frame below: its binding
+    LK.PL_open_foreign_frame(ld)                       # is trailed, so the trail term is not 0
+    @test LK.PL_unify_atom(ld, t, lk_sym(_R, :a))
+    @test length(ld.trail) >= 1                        # (the guard: the trail counts in this row)
+    used = (ld.lMax + ld.local_spare) + ld.gTop + length(ld.trail)
+    ld.stacks_limit = used + 10
+    @test LK.ensureGlobalSpace(ld, 10)                 # the three stacks exactly at the limit
+    @test !ld.exception_processing
+    @test !LK.ensureGlobalSpace(ld, 11)                # one cell over the SUM (the global alone: far below)
+    r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
+    @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
+
+    db2 = _sl_db()                                     # the local stack's share: what the others leave
+    ld2 = db2.ld
+    LK.PL_open_foreign_frame(ld2)
+    LK.allocGlobalCells!(ld2, 50_000)                  # a global stack well above the local stack's size
+    size0 = ld2.lMax + ld2.local_spare
+    want = ld2.lTop + size0 + ld2.local_def_spare      # growStacks!: the request and the spare above it
+    ld2.stacks_limit = want + ld2.gTop + length(ld2.trail) - 1   # the local stack's share: 1 short
+    @test want <= ld2.stacks_limit                     # (alone it would fit: the old check let it grow)
+    @test !LK.ensureLocalSpace(ld2, size0)
+    @test ld2.lMax + ld2.local_spare == size0          # nothing grew
 end

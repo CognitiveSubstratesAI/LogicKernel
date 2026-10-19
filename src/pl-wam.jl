@@ -1333,7 +1333,7 @@ end
 macro ENSURE_GLOBAL_SPACE(n)
     return esc(
         quote
-            if ld.gTop + $n > ld.stacks_limit && !ld.exception_processing
+            if _stacks_in_use(ld, $n) > ld.stacks_limit && !ld.exception_processing
                 @SAVE_REGISTERS(QID)
                 raiseStackOverflow(ld, GLOBAL_OVERFLOW)
                 @LOAD_REGISTERS(QID)
@@ -2729,7 +2729,10 @@ function PL_next_solution_guarded(
     # H_VOID/H_FIRSTVAR in write mode; upstream's live on the local stack) and the built-ins whose own
     # `ensureGlobalSpace` is not ported (copy_term/2 …). The H_/B_ instructions that lay out terms check
     # as upstream's (`@ENSURE_GLOBAL_SPACE`). No limit while an exception is processed (spare stacks).
-    if ld.gTop > ld.stacks_limit && !ld.exception_processing
+    # THE OVERSHOOT (audit D-0033): this check fires AFTER the fact, so the stacks can pass the limit by
+    # one built-in's layout or one clause's 1-cell allocations before the error — bounded, not zero
+    # (on the divergence list).
+    if _stacks_in_use(ld, 0) > ld.stacks_limit && !ld.exception_processing
         raiseStackOverflow(ld, GLOBAL_OVERFLOW)
         @goto b_throw                               # THROW_EXCEPTION
     end

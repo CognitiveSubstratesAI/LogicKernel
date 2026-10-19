@@ -322,6 +322,7 @@ _manifest_per_type(T) = (
     (LK.growLocalSpace, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.ensureLocalSpace, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.ensureGlobalSpace, Tuple{LK.PL_local_data{T}, Int}, false),  # L1f f2: the global limit
+    (LK._stacks_in_use, Tuple{LK.PL_local_data{T}, Int}, true),  # L1f f2: one limit, three stacks
     (LK.raiseStackOverflow, Tuple{LK.PL_local_data{T}, LK.boolex_t}, false),
     # V5d: the overflow raised, the spare enabled and reserved again; the ball copied, its cycles kept
     (LK.outOfStack!, Tuple{LK.PL_local_data{T}, LK.stack_overflow_action}, false),
