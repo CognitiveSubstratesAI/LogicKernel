@@ -2672,7 +2672,7 @@ function compileClause(
     ci.warning_list = warnings
     ci.warnings = nothing
     if warnings != 0 && ld.variable_names != 0                 # (gvar_value(ATOM_dvariable_names))
-        ci.variable_names = resolve_term(ld, slotValue(ld, ld.variable_names + 1))
+        ci.variable_names = resolve_term(ld, slotValue(ld, ld.variable_names + 1))   # TRANSITIONAL (D-0041)
     end
     # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
     ci.head_unify = (def.flags & P_DYNAMIC) == 0 && ld.prolog_flag_optimise_unify
@@ -2970,6 +2970,8 @@ function assert_term!(
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
         return nothing
     end
+    # TRANSITIONAL (audit D-0041): the clause is compiled from TERMS, resolved off the cells (cold exports);
+    # upstream compiles from the cells (`Word`s) — compileClause on cells is its own step (f3 or L1g)
     clause = compileClause(
         gd, ld, resolve_term(ld, h), resolve_term(ld, b), proc, gd.modules[module_],
         warnings

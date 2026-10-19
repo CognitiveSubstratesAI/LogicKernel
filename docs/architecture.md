@@ -2718,11 +2718,15 @@ pl-ext.jl, pl-fli.jl). Ported from pl-copyterm.c's attribute-free path, upstream
   term, not the identity of its cells. A compound met both directly and through the variable bound
   to it is copied twice; at the entry of a cycle the copy is the cycle unrolled by one compound
   (`[a|R]`, `R = [a|R]`). swipl copies one cell: `X = [a|X], copy_term(f(X), f(Y)), Y = [_|T],
-  same_term(Y, T)` is true there. No answer differs — the kernel has no `same_term/2` and does not
-  factorise a cyclic term. **L1 checklist:** with SWI's cells the copy marks cells as upstream's
-  does; `same_term/2` on a copy and its tail joins the differential then.
+  same_term(Y, T)` is true there. CLOSED on the cells (L1d step 6: the copy marks cells as
+  upstream's does) and observable since L1f f1c (`same_term/2`, test/core_lang/test_same_term_swipl.jl:
+  a compound met twice in a copy, and in a findall/3 answer, is one compound, as swipl's); the term walk
+  stays for the BOUNDARY only (TRANSITIONAL, L1f).
+* **L1f f1b:** the copy's compounds are `allocGlobalNoShift`'s and `copy_term_refs` is upstream's loop
+  (`makeMoreStackSpace`): a copy that passes the limit raises `resource_error(stack)` INSIDE copy_term/2
+  (row `tcopy_in`, test_stack_limit.jl).
 * **NOT PORTED:** attributed variables (`COPY_ATTRS`), `copy_term/4`, `copy_term_nat/4`,
-  `size_abstract_term/3`, the fast heap terms, the stack-space retry loop.
+  `size_abstract_term/3`, the fast heap terms.
 * **Gates — against the oracle, all three term types:** test/core_lang/test_copyterm_swipl.jl — 49
   answers (renaming, variables shared among a term's arguments, bound variables, atomic arguments,
   a copy that fails to unify, cyclic copies `X = f(X)`, `X = f(X, Y)`, a mutual cycle, a
@@ -2856,7 +2860,9 @@ and the four of boot/init.pl they call are compiled at database creation until R
   NONDETERMINISTIC foreign predicate yet); `sort/4`, `'$memberchk'/3`; the recorded database; the
   GLOBAL STACK's overflow — upstream raises a resource error for a findall/3 whose answers, a
   `'$length'/2` whose list or a functor/3 whose term does not fit the stacks: the two built-ins
-  refuse such a size (`NotPortedError`), findall/3 has no limit (L1 checklist).
+  refuse such a size (`NotPortedError`). SINCE L1f f1a findall/3 is upstream's: the records are
+  pl-rec.c's byte code with `gsize`, `'$add_findall_bag'` raises at `gsize + solutions*3` past the limit
+  and `'$collect_findall_bag'` ensures all of it first (D-0032's DIVERGES closed).
 * **Gates — against the oracle, all three term types:** test/core_lang/test_findall_swipl.jl (39
   cases: the answers in order, fresh and shared variables, nesting, findall/4, a bound list, a cut,
   a ball and three errors out of the goal — the bag is closed every time — a rational tree, the

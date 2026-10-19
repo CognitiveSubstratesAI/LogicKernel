@@ -352,3 +352,25 @@ _sl_bin(ld, bin) = _rcanonical(LK.resolve_term(ld, LK.slotValue(ld, bin + 1)))
     ld.stacks_limit = LK._stacks_in_use(ld, 0) + 3
     @test LK.copy_exception!(ld, ex, bin) && _sl_bin(ld, bin) == "abort"
 end
+
+# ── KNOWN DIFFERENCE, pinned white-box (audit D-0033/D-0034; L1 checklist, group (D) beside the term-reference
+# cell): a void argument passed on is a GLOBAL cell here — a slot is never an unbound variable (L1c) — where
+# swipl's L_VOID sets a LOCAL frame cell. So a long deterministic recursion passing `_` lays one global cell
+# per call and meets the limit:
+#   kernel:       tlv(resource_error(stack))
+#   swipl 10.1.18: tlv(ok)   (stack_limit 1048576, probed 2026-10-19)
+# It goes when the boundary falls (f3/G1: the global stack collected, or a slot that can be unbound).
+const _SL_LV = """
+lv(0, _) :- !.
+lv(N, _) :- N1 is N - 1, lv(N1, _).
+tlv(R) :- catch(lv(200000, _), error(E, _), true), ( var(E) -> R = ok ; R = E ).
+"""
+@testset "KNOWN DIFFERENCE (D-0034): void arguments are global cells — a long recursion meets the limit" begin
+    db = _RDB()
+    f = joinpath(mktempdir(), "lv.pl")
+    write(f, _SL_LV)
+    st, _, _ = LK.load_file!(db.gd, db.ld, f)
+    @assert st === :ok
+    db.ld.stacks_limit = _SL_LIMIT
+    @test _rlines(db, _R[_rf("tlv", _rv(60))]) == ["tlv(resource_error(stack)) det", "end"]
+end
