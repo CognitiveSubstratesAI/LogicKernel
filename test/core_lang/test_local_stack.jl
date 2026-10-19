@@ -498,7 +498,7 @@ end
     ld.stacks_limit = region(ld)
     ld.lTop = ld.lMax - 10
     @test !LK.ensureLocalSpace(ld, 20)
-    ball = LK.slotValue(ld, ld.exception_term + 1)
+    ball = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1))
     @test lk_eq(ball, _lf("error", _lf("resource_error", _ls("stack")), _ls("local")))
     @test ld.outofstack && ld.exception_processing
     @test ld.local_spare == 0 && ld.lMax == region(ld)                 # the spare enabled
@@ -545,7 +545,8 @@ end
     LK.PL_error(ld4, LK.ERR_INSTANTIATION)
     @test ld4.exception_term != 0 && ld4.local_spare == 0
     @test lk_eq(
-        child(LK.slotValue(ld4, ld4.exception_term + 1), 2), _ls("instantiation_error")
+        child(LK.resolve_term(ld4, LK.slotValue(ld4, ld4.exception_term + 1)), 2),
+        _ls("instantiation_error")
     )
     # has_emergency_space takes what is lacking from the spare, and no more
     ld2 = LK.PL_local_data{_L}(_LGD)

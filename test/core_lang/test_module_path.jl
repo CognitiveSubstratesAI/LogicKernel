@@ -126,7 +126,7 @@ end
             if ld.exception_term == 0
                 nothing
             else
-                child(LK.slotValue(ld, ld.exception_term + 1), 2)
+                child(LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1)), 2)
             end
         return (ok, mod, LK.slotValue(ld, r + 2), formal)
     end
@@ -155,6 +155,8 @@ end
     @test LK.pl_unify!(ld, X, _mpf(":", _mps(:user), X))
     ok, _, _ = LK.stripModuleName(ld, X)
     @test !ok &&
-        lk_name(child(child(LK.slotValue(ld, ld.exception_term + 1), 2), 2)) ===
+        lk_name(
+        child(child(LK.deRef(ld, LK.slotValue(ld, ld.exception_term + 1)), 2), 2)
+    ) ===   # deRef: the ball holds a cyclic culprit
           :acyclic_term
 end

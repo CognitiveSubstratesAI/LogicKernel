@@ -138,7 +138,12 @@ end
         if ld.exception_term == 0
             nothing
         else
-            lk_name(child(child(LK.slotValue(ld, ld.exception_term + 1), 2), 1))
+            lk_name(
+                child(
+                    child(LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1)), 2),
+                    1
+                )
+            )
         end
     ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
     answers = 0
@@ -153,7 +158,10 @@ end
     @test length(seen) == 1                                             # q(a, f(a)) answers
     @test pending() === :occurs_check                                   # q(Y, Y)'s error stays
     PL_clear_exception(ld)
-    @test isempty(ld.trail) && lk_no_bindings(ld) && isempty(ld.predicate_references)
+    # the balls stay frozen below the bar (no query closes here: L1e e5a, upstream until GC) — anything
+    # else bound would be a leak (audit D-0036)
+    @test isempty(ld.trail) && lk_no_bindings_unfrozen(ld) &&
+        isempty(ld.predicate_references)
     ld.prolog_flag_occurs_check = OCCURS_CHECK_FALSE
     @test length(ix_clause(p, _cve(:q, _cvv(3), _cvv(4)))) == 2         # nothing was retracted
 end

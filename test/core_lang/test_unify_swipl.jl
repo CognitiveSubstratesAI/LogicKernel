@@ -565,7 +565,9 @@ if _ZSWIPL !== nothing
         end
         foreach(b -> println(stderr, "  DIVERGES: ", b), first(bad, 20))
         @test isempty(bad)
-        @test isempty(ld.trail) && lk_no_bindings(ld)     # every attempt undone
+        # every attempt undone; the error mode's balls stay frozen below the bar (no query closes here:
+        # L1e e5a, upstream until GC) — anything else bound would be a leak (audit D-0036)
+        @test isempty(ld.trail) && lk_no_bindings_unfrozen(ld)
         # the data exercised every outcome the modes can give
         @test get(tally, ("false", "ok"), 0) >= 300 &&
             get(tally, ("false", "fail"), 0) >= 150
@@ -644,11 +646,34 @@ end
         X = _zv(1)
         @test f(ld, X, _zc(:f, X)) === false
         @test ld.exception_term != 0
-        ball = LogicKernel.slotValue(ld, ld.exception_term + 1)
+        # the ball on the cells (L1e e5a): read through its reference
+        ball = resolve_term(ld, LogicKernel.slotValue(ld, ld.exception_term + 1))
         @test lk_name(child(ball, 1)) == :error
         @test lk_name(child(child(ball, 2), 1)) == :occurs_check
-        @test isempty(ld.trail) && lk_no_bindings(ld)
+        @test ld.frozen_bar > 0                          # (the guard: the ball's cells are frozen)
+        @test isempty(ld.trail) && lk_no_bindings_unfrozen(ld)   # nothing bound but the ball (D-0036)
         PL_clear_exception(ld)
         @test ld.exception_term == 0
     end
+end
+
+# can_unify with a term reference (pl-prims.c): the error MOVED into it and cleared. A pin, on a ball made on
+# the cells (L1e e5a): `PL_put_term` stores the dereferenced compound word in `ex`, so can_unify's read of
+# `ex` sees the ball (probed 2026-10-19: a suspected e5a defect there was not one).
+@testset "can_unify(…, ex): the error moved into ex and cleared" begin
+    ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
+    ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
+    LogicKernel.PL_open_foreign_frame(ld)
+    a = LogicKernel.PL_new_term_refs(ld, 2)              # X and f(X) on the CELLS (one PutVarMap: one X),
+    pvm = LogicKernel.PutVarMap()                         # so the ball is copied on the cells and `ex`
+    X = _zv(1)                                            # holds a reference to it (a keyed X would take
+    LogicKernel.putSlotValue!(ld, a + 1, X, pvm)          # the boundary's value copy, where the old read
+    LogicKernel.putSlotValue!(ld, a + 2, _zc(:f, X), pvm) # happened to work)
+    t1, t2 = LogicKernel.slotValue(ld, a + 1), LogicKernel.slotValue(ld, a + 2)
+    ex = LogicKernel.PL_new_term_ref(ld)
+    @test !LogicKernel.can_unify(ld, t1, t2, ex)
+    @test !LogicKernel.PL_is_variable(ld, ex)           # the ball is in ex
+    @test ld.exception_term == 0                         # and no longer pending
+    r = resolve_term(ld, LogicKernel.slotValue(ld, ex + 1))
+    @test lk_name(child(r, 1)) == :error && lk_name(child(child(r, 2), 1)) == :occurs_check
 end

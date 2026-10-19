@@ -94,5 +94,15 @@ lk_bound_count(ld)::Int =
         1:(ld.gTop)
     )
 lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
+# The same, OUTSIDE the frozen region (L1e e5a; audit D-0036): a ball raised outside any query keeps its
+# cells below `frozen_bar` until the outermost query's close (upstream: until GC — pl-gvar.c resets the bar
+# only at the thread's end). Those cells are the ball, not a leak; a binding above the bar, or in the store, is.
+lk_bound_count_unfrozen(ld)::Int =
+    length(ld.bindings) +
+    count(
+        p -> ld.gkey[p] != 0 && ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p),
+        (ld.frozen_bar + 1):(ld.gTop)
+    )
+lk_no_bindings_unfrozen(ld)::Bool = lk_bound_count_unfrozen(ld) == 0
 lk_eq(a::AbstractVector, b::AbstractVector)::Bool =
     length(a) == length(b) && all(((x, y),) -> lk_eq(x, y), zip(a, b))

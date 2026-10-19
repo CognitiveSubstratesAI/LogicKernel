@@ -38,7 +38,19 @@ function _xthrow(
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     ex = LK.PL_exception(ld, qid)
-    caught = ex == 0 ? nothing : LK.slotValue(ld, ex + 1)
+    # the ball on the cells (L1e e5a): read through its reference — resolved, or only dereferenced when it is
+    # a rational tree (the cyclic ball below: resolve_term refuses one)
+    caught = if ex == 0
+        nothing
+    else
+        t = LK.slotValue(ld, ex + 1)
+        try
+            LK.resolve_term(ld, t)
+        catch e
+            e isa ArgumentError || rethrow()
+            LK.deRef(ld, t)
+        end
+    end
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
     return (rc, caught)
