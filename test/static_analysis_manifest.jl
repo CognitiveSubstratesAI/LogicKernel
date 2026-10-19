@@ -1308,6 +1308,10 @@ function _manifest_index(T)
         (LK.pl_prolog_current_frame, Tuple{LD, Int}, false),
         (LK.can_unify, Tuple{LD, T, T, Int}, false),
         (LK.can_unify_cells, Tuple{LD, Int, Int, Int}, false),   # L1e e4 (\\=)
+        (LK.unifiable_occurs_check_cells, Tuple{LD, Int, Int}, false),   # L1e e4 (unifiable/3)
+        (LK.unify_all_trail_ptrs_cells, Tuple{LD, Int, Int}, false),
+        (LK._unifiable_single!, Tuple{LD, Int, Int, Int}, false),
+        (LK.unifiable_cells, Tuple{LD, Int, Int, Int}, false),
         (LK.unifiable, Tuple{LD, Int, Int, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (

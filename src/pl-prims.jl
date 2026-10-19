@@ -2894,14 +2894,142 @@ function unifiable(
     return PL_unify_atom(ld, subst, nil)
 end
 
+# ── unifiable/3 on the CELLS (L1e e4; the workspace's L1_plan/stageL1e_design.md §4) ──────────────
+# PORT: pl-prims.c unifiable_occurs_check as unifiable_occurs_check_cells
+# DIVERGES: on term references, the variable's cell and the term's location (`var_occurs_in_cells`, L1d
+# step 2); the error's ball is built on terms (`failed_unify_with_occurs_check`: a cold path).
+"Whether binding the variable `t1` references to the term `t2` references passes the occurs check (pl-prims.c)."
+function unifiable_occurs_check_cells(
+    ld::PL_local_data{T}, t1::term_t, t2::term_t
+)::Bool where {T}
+    flag = ld.prolog_flag_occurs_check
+    flag == OCCURS_CHECK_FALSE && return true
+    k, _, p = _deref_loc(ld, -(t1 + 1))
+    k == DU_CELL ||
+        return unifiable_occurs_check(ld, _handle_term(ld, t1), _handle_term(ld, t2))
+    var_occurs_in_cells(ld, p, -(t2 + 1)) || return true
+    return failed_unify_with_occurs_check(
+        ld, _handle_term(ld, t1), _handle_term(ld, t2), flag
+    ) ==
+           BOOLEX_TRUE
+end
+
+# PORT: pl-prims.c unify_all_trail_ptrs as unify_all_trail_ptrs_cells
+# DIVERGES: on locations (`raw_unify_cells`); as `unify_all_trail_ptrs`: every assignment trailed
+# (`mark_bar` off), no overflow retry.
+"Unify the terms at locations `l1`, `l2`, every binding on the trail above the returned mark; undone on plain failure (pl-prims.c)."
+function unify_all_trail_ptrs_cells(
+    ld::PL_local_data{T}, l1::Int, l2::Int
+)::Tuple{Bool, mark} where {T}
+    m = Mark(ld)
+    ld.mark_bar = NO_MARK_BAR                       # every assignment trailed
+    if raw_unify_cells(ld, l1, l2) == BOOLEX_TRUE   # the caller discards the mark
+        return (true, m)
+    end
+    ld.exception_term == 0 && Undo!(ld, m)          # check for occurs error
+    DiscardMark(ld, m)
+    return (false, m)
+end
+
+# ORIGINAL: `[T1 = T2]` laid out at gTop from two term references (upstream: PL_unify_term with
+# FUNCTOR_dot2, FUNCTOR_equals2, PL_TERM t1, PL_TERM t2, ATOM_nil), unified with `subst`.
+function _unifiable_single!(
+    ld::PL_local_data{T}, t1::term_t, t2::term_t, subst::term_t
+)::Bool where {T}
+    p = allocGlobalCells!(ld, 6)
+    ld.gstack[p] = ld.functor_dot2
+    ld.gstack[p + 1] = consPtr(p + 3, TAG_COMPOUND | STG_GLOBAL)
+    ld.gstack[p + 2] = ld.atom_nil_w
+    ld.gstack[p + 3] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(=))), 2)
+    _cell_link!(ld, p + 4, t1 + 1)                  # PL_TERM, t1
+    _cell_link!(ld, p + 5, t2 + 1)                  # PL_TERM, t2
+    r = PL_new_term_ref(ld)
+    ld.slots[r + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+    return PL_unify(ld, r, subst)
+end
+
+# PORT: pl-prims.c unifiable as unifiable_cells
+# DIVERGES: on the cells (L1e e4): the substitution list laid out at gTop from the trail, newest binding first,
+# 6 cells per binding as upstream (`[V = Value|…]`: `gp[4] = makeRefG(p)`, `gp[5] = *p`, `setVar(*p)`); exactly
+# the cells it uses are allocated (upstream allocates `(tt-mt)*6+1` and lowers gTop). A trail entry of a KEYED
+# variable (the boundary, until L1f) — the whole substitution built on terms (`unifiable(ld, t1, t2, subst)`),
+# counted. No attributed variables (the attvar wakeup restore), no overflow retry.
+"`unifiable(T1, T2, Subst)` on the cells (pl-prims.c `unifiable`)."
+function unifiable_cells(
+    ld::PL_local_data{T}, t1::term_t, t2::term_t, subst::term_t
+)::Bool where {T}
+    if PL_is_variable(ld, t1)
+        PL_compare(ld, t1, t2) == CMP_EQUAL && return PL_unify_atom(ld, subst, mk_nil(T))
+        unifiable_occurs_check_cells(ld, t1, t2) || return false
+        return _unifiable_single!(ld, t1, t2, subst)
+    end
+    if PL_is_variable(ld, t2)
+        unifiable_occurs_check_cells(ld, t2, t1) || return false
+        return _unifiable_single!(ld, t2, t1, subst)
+    end
+    ok, m = unify_all_trail_ptrs_cells(ld, -(t1 + 1), -(t2 + 1))
+    ok || return false
+    tt, mt = length(ld.trail), m.trailtop
+    if tt <= mt                                               # no binding: DiscardMark(m); []
+        DiscardMark(ld, m)
+        return PL_unify_atom(ld, subst, mk_nil(T))
+    end
+    for i in (mt + 1):tt                                      # a keyed variable: the boundary, on terms
+        e = ld.trail[i]
+        if !isTrailVal(e) && _trail_stack(e) == TRAIL_KEYED
+            Undo!(ld, m)
+            DiscardMark(ld, m)
+            ld.cold_pairs += 1
+            return unifiable(ld, t1, t2, subst)
+        end
+    end
+    DiscardMark(ld, m)
+    n = 0                                                     # the bindings: a value entry and its
+    i = tt                                                    # cell count once
+    while i > mt
+        isTrailVal(ld.trail[i]) && (i -= 1)
+        n += 1
+        i -= 1
+    end
+    list = allocGlobalCells!(ld, 6 * n + 1)                   # tail = list = gTop; gp = list+1
+    ld.gstack[list] = ld.atom_nil_w                           # *list = ATOM_nil
+    tail, gp = list, list + 1
+    eq2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(=))), 2)
+    while length(ld.trail) > mt                               # while(--tt >= mt)
+        e = pop!(ld.trail)
+        ld.gstack[tail] = consPtr(gp, TAG_COMPOUND | STG_GLOBAL)   # *tail = consPtr(&gp[0], …)
+        ld.gstack[gp] = ld.functor_dot2
+        ld.gstack[gp + 1] = consPtr(gp + 3, TAG_COMPOUND | STG_GLOBAL)
+        ld.gstack[gp + 2] = ld.atom_nil_w
+        tail = gp + 2
+        ld.gstack[gp + 3] = eq2
+        if isTrailVal(e)                                      # an assignment: the cell below it
+            a = pop!(ld.trail)
+            p2 = _trail_pos(a)
+            ld.gstack[gp + 4] = makeRefG(p2)                  # gp[4] = makeRefG(p2)
+            ld.gstack[gp + 5] = ld.gstack[p2]                 # gp[5] = *p2
+            ld.gstack[p2] = ld.gstack[trailValP(e)]           # *tt->address = trailVal(p)
+        else
+            p = _trail_pos(e)
+            ld.gstack[gp + 5] = ld.gstack[p]                  # gp[5] = *p
+            ld.gstack[gp + 4] = makeRefG(p)                   # gp[4] = makeRefG(p)
+            ld.gstack[p] = word(0)                            # setVar(*p)
+        end
+        gp += 6
+    end
+    r = PL_new_term_ref(ld)                                   # pushWordAsTermRef(list)
+    ld.slots[r + 1] = ld.gstack[list]
+    return PL_unify(ld, r, subst)
+end
+
 # PORT: pl-prims.c unifiable as pl_unifiable3_va
-# (PRED_IMPL("unifiable", 3, unifiable, 0))
+# (PRED_IMPL("unifiable", 3, unifiable, 0)) — on the cells since L1e e4 (`unifiable_cells`)
 "`unifiable/3` (pl-prims.c)."
 function pl_unifiable3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
-    return unifiable(ld, A1, A2, A3) ? FTRUE : FFALSE
+    return unifiable_cells(ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
 # The decimal text of an integer or rational number record (upstream's format for `CVT_NUMBER`:
