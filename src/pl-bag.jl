@@ -13,10 +13,8 @@
 # thread (`LD->bags`), so a findall/3 inside the goal of another opens a bag above it.
 #
 # NOT PORTED: `'$suspend_findall_bag'/0` — a NONDETERMINISTIC foreign predicate (the kernel has
-# none yet), findnsols/4,5's; the memory pool (`mem_pool`, `alloc_record`: Julia's GC); the
-# answer-size limit of `add_findall_bag` (`gsize + solutions*3 > globalStackLimit`: no global
-# stack — a findall/3 over a goal that never ends exhausts the process's memory); `cleanup_bags`
-# (a thread's end); atom GC (`markAtomsFindall`, the mutex).
+# none yet), findnsols/4,5's; the memory pool (`mem_pool`, `alloc_record`: Julia's GC);
+# `cleanup_bags` (a thread's end); atom GC (`markAtomsFindall`, the mutex).
 
 # PORT: pl-bag.c FINDALL_MAGIC
 "The `magic` of a live bag (pl-bag.c)."
@@ -30,7 +28,7 @@ const FINDALL_MAGIC = 0x37ac78fe
 function pl_new_findall_bag0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    bag = findall_bag{T}(FINDALL_MAGIC, false, 0, 0, record{T}[])
+    bag = findall_bag{T}(FINDALL_MAGIC, false, 0, 0, 0, record{T}[])
     push!(ld.bags, bag)                             # LD->bags->bags = bag
 
     return FTRUE
@@ -51,8 +49,9 @@ function current_bag(ld::PL_local_data{T})::Union{Nothing, findall_bag{T}} where
 end
 
 # PORT: pl-bag.c add_findall_bag
-# DIVERGES: `count` 0 is "no count", as upstream's. NOT PORTED: the answer-size limit (see the
-# file header); `PL_no_memory` (nothing here allocates fallibly).
+# DIVERGES: `count` 0 is "no count", as upstream's; `globalStackLimit()` is `stacks_limit`, in words
+# (upstream: bytes, divided by the word size). NOT PORTED: `PL_no_memory` (nothing here allocates
+# fallibly).
 "Record the term `term` references in the current bag; unify `count` with the answers so far, or fail (pl-bag.c)."
 function add_findall_bag(
     ld::PL_local_data{T}, term::term_t, count::term_t
@@ -74,7 +73,12 @@ function add_findall_bag(
 
     r = compileTermToHeap(ld, term)
     push!(bag.answers, r)                           # pushRecordSegStack(&bag->answers, r)
+    bag.gsize += r.gsize
     bag.solutions += 1
+
+    if bag.gsize + bag.solutions * 3 > ld.stacks_limit
+        return outOfStack!(ld, STACK_OVERFLOW_RAISE, :global) ? FTRUE : FFALSE
+    end
 
     if count != 0
         return if PL_unify_integer(ld, count, bag.solutions + bag.suspended_solutions)
@@ -111,12 +115,9 @@ end
 
 # PORT: pl-bag.c collect_findall_bag as pl_collect_findall_bag2_va
 # (PRED_IMPL("$collect_findall_bag", 2, collect_findall_bag, 0))
-# DIVERGES (L1f f2, audit D-0032): upstream ensures `bag->gsize + solutions*3` before the copy; the
-# bag keeps no `gsize` (its records are terms, see `findall_bag`), so the list's cells are ensured
-# before and each answer is checked against the limit AFTER its copy — the overshoot is at most one
-# answer's cells, given back when the error backtracks. The answers are taken from the top — the LAST
-# answer is put back first, so its fresh variables are the oldest, as upstream's. With no current
-# bag upstream dereferences NULL; here it is asserted.
+# DIVERGES: with no current bag upstream dereferences NULL; here it is asserted. The answers are taken
+# from the top — the LAST answer is put back first, so its fresh variables are the oldest, as
+# upstream's.
 "`'\$collect_findall_bag'(-List, +Tail)`: `List` is the current bag's answers, in order, before `Tail` (pl-bag.c)."
 function pl_collect_findall_bag2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -129,15 +130,11 @@ function pl_collect_findall_bag2_va(
         list = PL_copy_term_ref(ld, A2)
         answer = PL_new_term_ref(ld)
 
-        ensureGlobalSpace(ld, bag.solutions * 3) || return FFALSE   # (L1f f2) see above
+        ensureGlobalSpace(ld, bag.gsize + bag.solutions * 3) || return FFALSE   # ensureGlobalSpace(space)
 
         while !isempty(bag.answers)                 # (rp=topOfSegStack(&bag->answers))
             r = bag.answers[end]
             copyRecordToGlobal(ld, answer, r)
-            if _stacks_in_use(ld, 0) > ld.stacks_limit && !ld.exception_processing   # (L1f f2) see above
-                raiseStackOverflow(ld, GLOBAL_OVERFLOW)
-                return FFALSE
-            end
             PL_cons_list(ld, list, answer, list)
             pop!(bag.answers)                       # popTopOfSegStack(&bag->answers)
         end

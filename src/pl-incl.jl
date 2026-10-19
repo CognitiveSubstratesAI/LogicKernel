@@ -1479,30 +1479,33 @@ end
 
 # ── recorded terms (pl-incl.h) and the bags of findall/3 (pl-bag.c), since V9g-b ─────────────────
 # PORT: pl-incl.h record
-# DIVERGES: the record IS a term (decision 2: a term is an immutable value), not upstream's byte
-# code of one in `buffer`: `term`, every bound variable replaced by its value and the variables
-# renamed to keys of the record's own; `cycles`, the cyclic references of a rational tree
-# (upstream's `PL_REC_CYCLE`) — a placeholder variable's key and the compound it stands for —
-# `nothing` when there is none; `ground`, upstream's `nvars == 0`. NOT KEPT: `size`, `gsize` (no
-# global stack to size), `flags` and `references` (their readers — the recorded database, erase,
+# DIVERGES: the code a vector (upstream: the bytes after the struct); `values`, the indirects the code
+# names (`PL_REC_VALUE`, src/pl-rec.jl); `term` and `cycles`, TRANSITIONAL (F1-Q5, L1f f1d): the
+# record on terms of a term holding the boundary (`nothing` otherwise) — its copy and its cyclic
+# references (a placeholder variable's key and the compound it stands for). NOT KEPT: `size` (the
+# vector's), `flags` and `references` (their readers — the recorded database, erase,
 # `PL_duplicate_record` — are not ported).
 "A term stored outside the stacks (pl-incl.h `struct record`): see `compileTermToHeap`."
 struct record{T}
-    term::T                                             # (buffer: the term itself)
-    cycles::Union{Nothing, Vector{Tuple{UInt64, T}}}    # (PL_REC_CYCLE: placeholder → compound)
-    ground::Bool                                        # nvars == 0
+    gsize::Int                                          # Global stack size
+    nvars::Int                                          # # variables in the term
+    code::Vector{UInt8}                                 # (the code)
+    values::Vector{T}                                   # (the indirects)
+    term::Union{Nothing, T}                             # (TRANSITIONAL: the boundary)
+    cycles::Union{Nothing, Vector{Tuple{UInt64, T}}}    # (TRANSITIONAL: placeholder → compound)
 end
 
 # PORT: pl-bag.c findall_bag
 # DIVERGES: the bags are a vector (the local data's `bags`, upstream's `bag_stack`), so a bag's
 # `parent` is the element below it; `answers` is a vector of records (upstream's segmented stack).
-# NOT KEPT: `records` (the memory pool the records are allocated from: Julia's GC), `gsize` (no
-# global stack), `answer_buf` (the segmented stack's first segment).
+# NOT KEPT: `records` (the memory pool the records are allocated from: Julia's GC), `answer_buf` (the
+# segmented stack's first segment).
 "One findall/3 in progress (pl-bag.c `struct findall_bag`): the answers recorded so far."
 mutable struct findall_bag{T}
     magic::Int                          # FINDALL_MAGIC
     suspended::Bool                     # Used for findnsols/4
     suspended_solutions::Int            # Already handed out solutions
     solutions::Int                      # count # solutions
+    gsize::Int                          # required size on stack
     answers::Vector{record{T}}          # list of answers
 end

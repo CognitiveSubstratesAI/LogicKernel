@@ -180,3 +180,77 @@ end
     @test !LK.ensureLocalSpace(ld2, size0)
     @test ld2.lMax + ld2.local_spare == size0          # nothing grew
 end
+
+# ── L1f f1a: findall's two limits, as upstream's pl-bag.c ─────────────────────────────────────────
+# `'$add_findall_bag'` raises once the answers' cells and their list (`gsize + solutions*3`) pass the
+# limit (swipl 10.1.18 at 1 MiB: `findall(x, repeat, _)` raises resource_error(stack) from
+# '$add_findall_bag'/1, probed 2026-10-19); `'$collect_findall_bag'` ensures ALL of it before the first
+# answer is copied (`ensureGlobalSpace(bag->gsize + solutions*3)`): no answer laid past the limit.
+_sl_ctx() = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+_sl_bag!(ld) = push!(ld.bags, LK.findall_bag{_R}(LK.FINDALL_MAGIC, false, 0, 0, 0, LK.record{_R}[]))
+
+@testset "f1a: the answers' limit at '\$add_findall_bag' — exact" begin
+    db = _sl_db()
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
+    ld.stacks_limit = 3 * 43690                         # the 43691st atomic answer is one over
+    _sl_bag!(ld)
+    t = LK.PL_new_term_ref(ld)
+    ld.slots[t + 1] = LK._atom_word!(ld, _rs("x"))
+    n = 0
+    while !ld.exception_processing && n < 50000
+        n += 1
+        @assert LK.add_findall_bag(ld, t, 0) == LK.FFALSE
+    end
+    @test n == 43691 && ld.bags[end].solutions == 43691 && ld.outofstack
+    r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
+    @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
+    # a compound answer counts its cells: f(a) is 2, so 5 words per answer
+    db = _sl_db()
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
+    ld.stacks_limit = 5 * 100
+    _sl_bag!(ld)
+    t = LK.PL_new_term_ref(ld)
+    p = LK._alloc_compound!(ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 1), 1)
+    ld.gstack[p + 1] = LK._atom_word!(ld, _rs("a"))
+    ld.slots[t + 1] = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    n = 0
+    while !ld.exception_processing && n < 1000
+        n += 1
+        LK.add_findall_bag(ld, t, 0)
+    end
+    @test n == 101 && ld.bags[end].gsize == 2 * 101
+end
+
+@testset "f1a: '\$collect_findall_bag' ensures every answer's cells first — none laid past the limit" begin
+    for extra in (-1, 0)
+        db = _sl_db()
+        ld = db.ld
+        LK.PL_open_foreign_frame(ld)
+        _sl_bag!(ld)
+        t = LK.PL_new_term_ref(ld)
+        p = LK._alloc_compound!(ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 2000), 2000)
+        ld.slots[t + 1] = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+        for _ in 1:5
+            LK.add_findall_bag(ld, t, 0)
+        end
+        @test !ld.exception_processing && ld.bags[end].gsize == 5 * 2001
+        a = LK.PL_new_term_refs(ld, 2)
+        ld.slots[a + 2] = ld.atom_nil_w
+        # the two term references collect makes, then room for exactly 5*2001 + 5*3 cells (or one fewer)
+        g0 = ld.gTop
+        probe = LK.PL_new_term_refs(ld, 2)
+        refcells = ld.gTop - g0
+        ld.stacks_limit = LK._stacks_in_use(ld, 0) + refcells + 5 * 2001 + 5 * 3 + extra
+        g1 = ld.gTop
+        rc = LK.pl_collect_findall_bag2_va(ld, a, 2, _sl_ctx())
+        if extra < 0
+            @test rc == LK.FFALSE && ld.exception_processing
+            @test ld.gTop - g1 <= refcells                  # no answer laid (the overshoot is 0)
+        else
+            @test rc == LK.FTRUE && !ld.exception_processing && isempty(ld.bags[end].answers)
+            @test ld.gTop <= ld.stacks_limit
+        end
+    end
+end

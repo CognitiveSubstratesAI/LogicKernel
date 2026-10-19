@@ -7,7 +7,7 @@ const LK = LogicKernel
 include(joinpath(@__DIR__, "rules_common.jl"))
 
 # Every case is a predicate `fN/1`; the differential compares its answers and their determinism.
-const _RFA_N = 39
+const _RFA_N = 41
 function _rfa_clauses()
     X, Y, Z, L, M, E, A, B, C, N = (_rv(i) for i in 1:10)
     O, P, T = _rv(11), _rv(12), _rv(13)
@@ -158,6 +158,20 @@ function _rfa_clauses()
                 fa(_rf("f", _rf("g", _rf("h", X), Y)), T_, L),
                 eq(L, _rlist(_rf("f", _rf("g", _rf("h", A), B)))), _rf("compare", O, A, B)
             )
+        ),
+        (                                   # a cyclic answer (L1f f1a: PL_REC_CYCLE); swipl: yes
+            _rf("f40", O),
+            _rconj(
+                eq(C, _rcons(_rs("a"), C)), fa(C, T_, _rlist(A)),
+                _rf(";", _rf("->", _rf("==", A, C), eq(O, _rs("yes"))), eq(O, _rs("no")))
+            )
+        ),
+        (                                   # X met first inside g/1, then lower in f/3: it lives in
+            _rf("f41", O),                  # the LOWER cell (copy_record's move); swipl: <
+            _rconj(
+                fa(_rf("f", _rf("g", X), X, Y), T_, L),
+                eq(L, _rlist(_rf("f", Z, A, B))), _rf("compare", O, A, B)
+            )
         )
     ]
 end
@@ -209,57 +223,123 @@ end
     end
 end
 
-# White box: the records. An atomic or ground answer is its own record; a record survives the
-# undoing of the bindings it was made under; putting it back twice gives two terms that share no
-# variable.
-@testset "a record survives backtracking, and is put back with fresh variables each time" begin
+# White box: the records (pl-rec.c, L1f f1a). `gsize` is exactly the cells `copyRecordToGlobal` lays
+# out; a compound met twice is recorded once (`PL_REC_CYCLE`) and is ONE compound in the copy, as
+# swipl's (`same_term/2`, probed 2026-10-19: `Z = h(_), findall(g(Z,Z), true, [g(P,Q)]),
+# same_term(P,Q)` true; `C = [a|C], findall(C, true, [D]), D = [_|E], same_term(D,E)` true); the
+# visited marks are restored; a record survives the undoing of the bindings it was made under; each
+# copy has fresh variables. Terms laid out on cells by hand (no `same_term/2` before f1c).
+_rec_fw(ld, name, n) = LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs(name)), n)
+_rec_gw(p) = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+_rec_aw(ld, name) = LK._atom_word!(ld, _rs(name))
+"Lay compound `name/length(args)` out, argument `i` the word `args[i]` (0: unbound); its position."
+function _rec_lay!(ld, name, args...)
+    p = LK._alloc_compound!(ld, _rec_fw(ld, name, length(args)), length(args))
+    for (i, w) in enumerate(args)
+        ld.gstack[p + i] = w
+    end
+    return p
+end
+"A list cell `[h|t]` laid out; its position."
+function _rec_cons!(ld, h, t)
+    p = LK._alloc_compound!(ld, ld.functor_dot2, 2)
+    ld.gstack[p + 1] = h
+    ld.gstack[p + 2] = t
+    return p
+end
+"Record the word `w` from a fresh slot and copy it back: (record, cells laid, the copy's slot)."
+function _rec_round(ld, w)
+    t = LK.PL_new_term_ref(ld)
+    ld.slots[t + 1] = w
+    r = LK.compileTermToHeap(ld, t)
+    out = LK.PL_new_term_ref(ld)
+    g0 = ld.gTop
+    @test LK.copyRecordToGlobal(ld, out, r)
+    return r, ld.gTop - g0, out
+end
+_rec_out(ld, out) = _rcanonical(LK.resolve_term(ld, LK.slotValue(ld, out + 1)))
+
+@testset "records: gsize, sharing, cycles, variables, values, the boundary (L1f f1a)" begin
     db = _RDB()
     ld = db.ld
-    X, Y = _rv(1), _rv(2)
     fid = LK.PL_open_foreign_frame(ld)
-    t = LK.PL_new_term_ref(ld)
-    LK.putSlotValue!(ld, t + 1, _rf("f", X, Y, X))
+    # a compound met twice: recorded once, one compound in the copy (5 cells, not 7)
+    ph = _rec_lay!(ld, "h", 0)
+    pg = _rec_lay!(ld, "g", _rec_gw(ph), _rec_gw(ph))
+    r, used, out = _rec_round(ld, _rec_gw(pg))
+    @test r.gsize == 5 && used == 5 && r.nvars == 1 && r.term === nothing
+    q = LK.valPtr(ld.slots[out + 1])
+    @test ld.gstack[q + 1] == ld.gstack[q + 2] != _rec_gw(ph)          # same_term(P, Q), a new h/1
+    @test ld.gstack[LK.valPtr(ld.gstack[q + 1]) + 1] == 0               # its argument unbound
+    @test ld.gstack[ph] == _rec_fw(ld, "h", 1) && ld.gstack[pg] == _rec_fw(ld, "g", 2)   # unvisit
+    @test ld.gstack[ph + 1] == 0                                        # restoreVars
+    # a list: 3 cells per cell
+    pl = _rec_cons!(ld, _rec_aw(ld, "a"),
+        _rec_gw(_rec_cons!(ld, _rec_aw(ld, "b"), _rec_gw(_rec_cons!(ld, _rec_aw(ld, "c"), ld.atom_nil_w)))))
+    r, used, out = _rec_round(ld, _rec_gw(pl))
+    @test r.gsize == 9 && used == 9 && r.nvars == 0 && _rec_out(ld, out) == "'[|]'(a,'[|]'(b,'[|]'(c,[])))"
+    # a cyclic list C = [a|C]: one cell, its tail the copy itself
+    pc = _rec_cons!(ld, _rec_aw(ld, "a"), 0)
+    ld.gstack[pc + 2] = _rec_gw(pc)
+    r, used, out = _rec_round(ld, _rec_gw(pc))
+    q = LK.valPtr(ld.slots[out + 1])
+    @test r.gsize == 3 && used == 3 && ld.gstack[q + 2] == _rec_gw(q) && ld.gstack[pc] == ld.functor_dot2
+    # f(X, Y, X): two variables, X's second occurrence a reference to its first cell
+    pf = _rec_lay!(ld, "f", 0, 0, 0)
+    ld.gstack[pf + 3] = LK.makeRefG(pf + 1)
+    r, used, out = _rec_round(ld, _rec_gw(pf))
+    q = LK.valPtr(ld.slots[out + 1])
+    @test r.gsize == 4 && used == 4 && r.nvars == 2
+    @test ld.gstack[q + 1] == 0 && ld.gstack[q + 2] == 0 && ld.gstack[q + 3] == LK.makeRefG(q + 1)
+    @test ld.gstack[pf + 1] == 0 && ld.gstack[pf + 2] == 0 && ld.gstack[pf + 3] == LK.makeRefG(pf + 1)
+    # f(g(X), X): X met first in g/1 (laid above f/2's cells), then in f/2's second cell — the
+    # variable moves to the LOWER cell (copy_record's "wrong way"), g/1's argument references it
+    pgx = _rec_lay!(ld, "g", 0)
+    pf = _rec_lay!(ld, "f", _rec_gw(pgx), LK.makeRefG(pgx + 1))
+    r, used, out = _rec_round(ld, _rec_gw(pf))
+    q = LK.valPtr(ld.slots[out + 1])
+    qg = LK.valPtr(ld.gstack[q + 1])
+    @test r.gsize == 5 && used == 5 && r.nvars == 1 && qg > q + 2
+    @test ld.gstack[q + 2] == 0 && ld.gstack[qg + 1] == LK.makeRefG(q + 2)
+    # a value-table word: recorded as its value, put back boxed in the block (2 + 1 cells)
+    pv = _rec_lay!(ld, "f", LK._vword!(ld, _rg(1.5)))
+    r, used, out = _rec_round(ld, _rec_gw(pv))
+    q = LK.valPtr(ld.slots[out + 1])
+    w = ld.gstack[q + 1]
+    @test r.gsize == 3 && used == 3 && length(r.values) == 1
+    @test LK._is_vword(w) && ld.vbox[LK.valPtr(w)] == q + 2 && _rec_out(ld, out) == "f(1.5)"
+    # roots: a value (its box), a variable (its cell), an atom (nothing), a small integer (nothing)
+    r, used, out = _rec_round(ld, LK._vword!(ld, _rg(2.5)))
+    @test r.gsize == 1 && used == 1 && _rec_out(ld, out) == "2.5"
+    pv = LK.allocGlobalCells!(ld, 1)
+    r, used, out = _rec_round(ld, LK.makeRefG(pv))
+    @test r.gsize == 1 && used == 1 && r.nvars == 1
+    @test LK.isRef(ld.slots[out + 1]) && LK.unRef(ld.slots[out + 1]) != pv &&
+        ld.gstack[LK.unRef(ld.slots[out + 1])] == 0
+    r, used, out = _rec_round(ld, _rec_aw(ld, "a"))
+    @test r.gsize == 0 && used == 0 && ld.slots[out + 1] == _rec_aw(ld, "a")
+    r, used, out = _rec_round(ld, LK.consInt(-1234567))
+    @test r.gsize == 0 && used == 0 && ld.slots[out + 1] == LK.consInt(-1234567)
+    # a record survives the undoing of the bindings it was made under; each copy is fresh
+    pb = _rec_lay!(ld, "f", 0, 0)
     m = LK.Mark(ld)
-    # Y bound through the handle: the put copied it to a fresh variable, which is the engine's
-    # (L1b boundary, user 2026-10-14: variable identity = handle; the caller's Y is never bound)
-    LK.Trail!(ld, var_key(child(LK.slotValue(ld, t + 1), 3)), _rf("g", _rg(1)))
+    LK._bind_const!(ld, pb + 2, _rec_aw(ld, "b"))
+    t = LK.PL_new_term_ref(ld)
+    ld.slots[t + 1] = _rec_gw(pb)
     r = LK.compileTermToHeap(ld, t)
-    @test !r.ground && r.cycles === nothing
-    g = LK.PL_new_term_ref(ld)
-    LK.putSlotValue!(ld, g + 1, _rf("g", _rg(1)))
-    rg = LK.compileTermToHeap(ld, g)
-    # KNOWN DIFFERENCE, pinned (L1c, 2026-10-15): the slot's compound is cells, read as an export
-    # whose arguments are its cells' variables — `is_ground` on it is false, so the record is a
-    # copy, not the term, and `ground` is not set (upstream's ground test is on the cells: L1f,
-    # the record over cells). The copy is the term's value.
-    @test !rg.ground && lk_eq(LK.resolve_term(ld, rg.term), _rf("g", _rg(1)))
     LK.Undo!(ld, m)
-    @test length(ld.trail) == m.trailtop            # recording left nothing on the trail
+    @test ld.gstack[pb + 2] == 0                        # the binding undone
     a, b = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
     @test LK.copyRecordToGlobal(ld, a, r) && LK.copyRecordToGlobal(ld, b, r)
-    ta, tb = LK.resolve_term(ld, LK.slotValue(ld, a + 1)),
-    LK.resolve_term(ld, LK.slotValue(ld, b + 1))
-    @test _rcanonical(ta) == "f(A,g(1),A)" && _rcanonical(tb) == "f(A,g(1),A)"
-    @test var_key(child(ta, 2)) != var_key(child(tb, 2))        # fresh each time
-    @test var_key(child(ta, 2)) != var_key(X)                   # … and not the original's
-    # each copy is laid out in its own cells (L1c), as upstream's copyRecordToGlobal lays out
-    # every copy on the global stack: the ground subterm is NOT shared between two copies (the
-    # sharing pinned before L1c was an artifact of compounds as values)
-    @test LK._is_gcompound(ld.slots[a + 1]) && LK._is_gcompound(ld.slots[b + 1]) &&
-        ld.slots[a + 1] != ld.slots[b + 1]
-    # a rational tree: its cyclic reference is kept in the record, not on the trail
-    C = _rv(3)
-    LK.Trail!(ld, var_key(C), _rf("c", C, X))
-    cy = LK.PL_new_term_ref(ld)
-    LK.putSlotValue!(ld, cy + 1, C)
-    n0 = length(ld.trail)
-    rc = LK.compileTermToHeap(ld, cy)
-    @test length(ld.trail) == n0 && rc.cycles !== nothing && length(rc.cycles) == 1
-    out = LK.PL_new_term_ref(ld)
-    @test LK.copyRecordToGlobal(ld, out, rc)
-    # the copy's cyclic reference is a FRESH cell above the foreign frame's bar: bound, and not
-    # trailed (L1a-2, `mark_bar`) — upstream builds the copy in place on the global stack
-    @test length(ld.trail) == n0
+    @test _rec_out(ld, a) == "f(_,b)" && _rec_out(ld, b) == "f(_,b)"
+    @test ld.slots[a + 1] != ld.slots[b + 1]              # two copies, two compounds
+    # THE BOUNDARY (TRANSITIONAL, F1-Q5): a keyed variable's value-table word — recorded on terms,
+    # counted in `cold_pairs`, `gsize` 0
+    pk = _rec_lay!(ld, "f", LK._vword!(ld, _rv(77)))
+    n0 = ld.cold_pairs
+    r, used, out = _rec_round(ld, _rec_gw(pk))
+    @test r.term !== nothing && r.gsize == 0 && ld.cold_pairs == n0 + 1
+    @test startswith(_rec_out(ld, out), "f(")
     LK.PL_close_foreign_frame(ld, fid)
 end
 

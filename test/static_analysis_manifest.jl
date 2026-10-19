@@ -1207,6 +1207,19 @@ function _manifest_index(T)
         # sorts and '$length'/2 (src/pl-list.jl), what bagof/3 and setof/3 call of pl-prims.c, the
         # list and functor unifiers (src/pl-fli.jl), the boot clauses (src/pl-ext.jl)
         (LK.compileTermToHeap, Tuple{LD, Int}, false),
+        # L1f f1a — the record as upstream's byte code (src/pl-rec.jl)
+        (LK.compile_term_to_heap, Tuple{LD, LK.cell_agenda, LK.compile_info{T}}, false),
+        (LK.addOpCode, Tuple{LK.compile_info{T}, UInt8}, false),
+        (LK.addSizeInt, Tuple{LK.compile_info{T}, Int}, false),
+        (LK.addInt64, Tuple{LK.compile_info{T}, Int64}, false),
+        (LK.addWord, Tuple{LK.compile_info{T}, UInt64}, false),
+        (LK.unvisit, Tuple{LD, LK.compile_info{T}}, true),
+        (LK.restoreVars, Tuple{LD, LK.compile_info{T}}, true),
+        (LK.copy_record, Tuple{LD, Int, LK.record{T}, LK.copy_info}, false),
+        (LK._vword_at!, Tuple{LD, T, Int}, false),
+        (LK._rec_put!, Tuple{LD, Int, Int, UInt64}, true),
+        (LK._compileTermToHeap_terms, Tuple{LD, Int}, false),
+        (LK._copyRecordToGlobal_terms, Tuple{LD, Int, LK.record{T}}, false),
         (LK._rec_var, Tuple{LK.PL_local_data{T}, Dict{UInt64, T}, UInt64}, false),
         (LK._rec_block!, Tuple{LK.PL_local_data{T}, Dict{UInt64, T}, T}, false),
         (LK._rec_copy, Tuple{LK.PL_local_data{T}, Dict{UInt64, T}, T}, false),
@@ -2144,6 +2157,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.pushWorkCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, false),
     # the one-sided cell agenda of the walks (L1d step 5): the push may grow its stack
     (LK.initCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, true),
+    # L1f f1a — reading a record's code (src/pl-rec.jl)
+    (LK.fetchSizeInt, Tuple{Vector{UInt8}, LK.copy_info}, true),
+    (LK.fetchInt64, Tuple{Vector{UInt8}, LK.copy_info}, true),
+    (LK.fetchWord, Tuple{Vector{UInt8}, LK.copy_info}, true),
     (LK.clearCellAgenda!, Tuple{LK.cell_agenda}, true),
     (LK.nextCellAgendaNoDeRef!, Tuple{LK.cell_agenda}, true),
     (LK.pushWorkCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, false),
