@@ -118,6 +118,8 @@ _manifest_per_type(T) = (
     (LK.Trail!, Tuple{LK.PL_local_data{T}, UInt64, T}, false),
     (LK.Mark, Tuple{LK.PL_local_data{T}}, true),
     (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, true),
+    (LK.freezeGlobal!, Tuple{LK.PL_local_data{T}}, false),   # e5
+    (LK._release_frozen!, Tuple{LK.PL_local_data{T}, LK.mark, Bool}, false),
     # L1a: cell variables on the global stack (src/pl-inline.jl, src/pl-alloc.jl)
     (LK._cell_pos, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._binding, Tuple{LK.PL_local_data{T}, UInt64}, false),   # L1c: the cold export

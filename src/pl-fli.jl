@@ -745,19 +745,23 @@ function has_emergency_space(ld::PL_local_data{T}, needed::Int)::Bool where {T}
 end
 
 # PORT: pl-fli.c copy_exception as copy_exception!
-# DIVERGES: upstream's `duplicate_term(ex, bin, 0, 0)` is `copy_term` without sharing
-# (src/pl-copyterm.jl): the bindings resolved, each unbound variable a FRESH one — the same for every
-# occurrence —, every compound rebuilt. A CYCLIC ball's copy is a fresh variable bound to the copy of
-# the term; that binding's trail entry is DROPPED here, so no undo removes it and the ball survives
-# the unwind: upstream's `freezeGlobal`, in the kernel's terms (since V5d; user, 2026-10-07).
-# NOT PORTED: the fallbacks for a copy that does not fit the global stack (the context dropped, a
-# global-stack `resource_error`, `abort`): the copy is a value on Julia's heap; and reclaiming a
-# frozen binding: upstream's garbage collector frees a frozen ball once it is unreachable, and the
-# kernel's binding store has no collector until G1.
+# DIVERGES (L1e e5): `duplicate_term(ex, bin)` on the CELLS (`do_copy_term_cells`, share off; L1d step 6)
+# into a fresh global cell that `bin` references, as upstream's copy at gTop; PL_raise_exception then
+# freezes the global stack (`freezeGlobal!`), so no undo frees the ball — released when the outermost
+# query ends (`_release_frozen!`, audit D-0029 option (b): no collector until G1). A ball at the BOUNDARY
+# (a keyed variable, a slot's side value) is copied on terms as a value, as before e5 (its trail entries
+# dropped), counted — TRANSITIONAL until L1f. NOT PORTED: the fallbacks for a copy that does not fit the
+# global stack (the context dropped, a global-stack `resource_error`, `abort`).
 "Copy the ball `ex` references into `bin`, its cycles kept (pl-fli.c)."
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
-    tt = length(ld.trail)
-    _slot_store_value!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))     # duplicate_term()
+    dest = allocGlobalCells!(ld, 1)             # (L1e e5) duplicate_term() onto the cells, `bin` its reference
+    if do_copy_term_cells(ld, -(ex + 1), dest, cp_options(false))
+        ld.slots[bin + 1] = makeRefG(dest)
+        return true
+    end
+    ld.cold_pairs += 1                          # the boundary (a keyed variable, a side value): on terms,
+    tt = length(ld.trail)                       # the copy a value as before e5 (TRANSITIONAL until L1f)
+    _slot_store_value!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))
     _trail_truncate!(ld, tt)                    # frozen: the copy's own bindings keep no trail entry
     return true
 end
@@ -780,6 +784,7 @@ function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T
                 enableSpareStacks!(ld)
             end
             copy_exception!(ld, exception, ld.exception_bin)
+            PL_is_atom(ld, ld.exception_bin) || freezeGlobal!(ld)   # if (!PL_is_atom(exception_bin)) freezeGlobal()
         end
     end
     ld.exception_term = ld.exception_bin

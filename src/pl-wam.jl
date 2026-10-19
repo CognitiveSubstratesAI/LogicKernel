@@ -1636,7 +1636,9 @@ function _end_query(ld::PL_local_data{T}, qid::Int, close::Bool)::Int where {T}
             Undo!(ld, ld.choices[q.choice].mark)
         end
 
+        qm = ld.choices[q.choice].mark          # (read before restore_after_query drops the records)
         restore_after_query(ld, qf)
+        _release_frozen!(ld, qm, close)         # e5 (b): the outermost query's end
         q.magic = QID_CMAGIC                    # disqualify the frame
     end
     return rc

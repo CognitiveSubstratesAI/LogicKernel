@@ -983,10 +983,63 @@ end
 hasLocalSpace(ld::PL_local_data, n::Int)::Bool = f_hasSpace(ld.lTop, ld.lMax, n, 1)
 
 # PORT: pl-incl.h DiscardMark
-# DIVERGES: no `frozen_bar` — the kernel's ball is a value (decision 1).
-"Abandon mark `m` without undoing to it: `mark_bar` back to what `m` replaced (pl-incl.h `DiscardMark`)."
+"Abandon mark `m` without undoing to it: `mark_bar` back to what `m` replaced, not below the frozen bar (pl-incl.h `DiscardMark`)."
 function DiscardMark(ld::PL_local_data, m::mark)::Nothing
-    ld.mark_bar = m.saved_bar
+    ld.mark_bar = max(ld.frozen_bar, m.saved_bar)   # (frozen_bar > saved_bar ? frozen_bar : saved_bar)
+    return nothing
+end
+
+# PORT: pl-gvar.c freezeGlobal as freezeGlobal!
+"Freeze the global stack below `gTop` (pl-gvar.c `freezeGlobal`): no undo frees it, every binding of it trailed."
+function freezeGlobal!(ld::PL_local_data)::Nothing
+    ld.frozen_bar = ld.mark_bar = ld.gTop          # LD->frozen_bar = LD->mark_bar = gTop
+    return nothing
+end
+
+# ORIGINAL (e5; audit D-0029 option (b)): the frozen region released when the OUTERMOST query ends.
+# DIVERGES: upstream keeps `frozen_bar` for the thread's life (pl-gvar.c `destroyGlobalVars`) and its
+# garbage collector frees a frozen ball once nothing references it; the kernel has no collector until G1,
+# so without this every throw would pin the global stack below its ball for the engine's life
+# (evidence/A-0029 in the audit channel). When the outermost query has ended (`ld.query == 0`) with no
+# exception pending, nothing the engine runs can reach the region: the bar is lowered to 0 and, after a
+# CLOSE, `gTop` to the query's own mark `target` — but first every live term reference (the slots below
+# `lTop`) and every open foreign frame's mark is checked to point at or below `target` (raises
+# otherwise). GOES with G1 (the collector). REVISIT when nb_setval/b_setval are ported: upstream freezes
+# for global variables too, and this reset would free a global variable's value.
+"Release the frozen region after the outermost query ended, its mark `m` (`close`: lower `gTop` to `m.globaltop`)."
+function _release_frozen!(ld::PL_local_data, m::mark, close::Bool)::Nothing
+    target = m.globaltop
+    (ld.frozen_bar == 0 || ld.query != 0 || ld.exception_term != 0) && return nothing
+    if close && ld.gTop > target
+        for i in 1:(ld.lTop)                        # live term references: none above `target`
+            w = ld.slots[i]
+            p = if isRef(w)
+                unRef(w)
+            elseif _is_gcompound(w)
+                valPtr(w)
+            elseif _is_vword(w)
+                ld.vbox[valPtr(w)]
+            else
+                0
+            end
+            p > target && error(
+                "_release_frozen!: slot $i references global position $p above the reset target $target"
+            )
+        end
+        for f in 1:(ld.nfliframes)                  # open foreign frames: none above `target`
+            g = ld.fliframes[f].mark.globaltop
+            g > target && error(
+                "_release_frozen!: foreign frame $f's mark $g lies above the reset target $target"
+            )
+        end
+    end
+    ld.frozen_bar = 0
+    ld.mark_bar = m.saved_bar                       # what DiscardMark(m) restores with no frozen bar
+    if close && ld.gTop > target
+        ld.gTop = target                            # what Undo!'s max(frozen_bar, …) kept
+        _truncate_vtable!(ld)
+        _truncate_gterms!(ld)
+    end
     return nothing
 end
 
@@ -1003,9 +1056,8 @@ isRealMark(m::mark)::Bool = m.trailtop != NOT_A_MARK
 # `__do_undo`: newest first, an address entry resets its cell (a keyed variable leaves the store), a
 # value entry steps down to its address entry and restores the old value saved on the global stack
 # (`*tt->address = trailVal(p)`) — nothing pushes one yet (setarg/3, attributed variables). NOT
-# PORTED: `push_undo` and `reclaim_attvars` (no attributed variables), and `frozen_bar` (the
-# kernel's ball is a value, decision 1): `gTop = m.globaltop` (upstream: `max(frozen_bar, …)`,
-# L1e). Marks nest: undoing to a mark above the trail's or the global stack's top is a misuse,
+# PORTED: `push_undo` and `reclaim_attvars` (no attributed variables). Since e5 `frozen_bar` is kept:
+# `gTop = max(frozen_bar, m.globaltop)`. Marks nest: undoing to a mark above the trail's or the global stack's top is a misuse,
 # asserted; so is undoing to a `NoMark`, which upstream never does.
 "Undo every binding made since mark `m`, and free the cells allocated since (pl-incl.h `Undo`)."
 function Undo!(ld::PL_local_data, m::mark)::Nothing
@@ -1021,7 +1073,7 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
             ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]     # *tt->address = trailVal(p)
         end
     end
-    ld.gTop = m.globaltop                       # gTop = (b).globaltop
+    ld.gTop = max(ld.frozen_bar, m.globaltop)   # gTop = (frozen_bar > globaltop ? frozen_bar : globaltop)
     _truncate_vtable!(ld)                       # (the value table follows it: L1b stage C2)
     _truncate_gterms!(ld)                       # (and the export memo: L1c)
     return nothing
