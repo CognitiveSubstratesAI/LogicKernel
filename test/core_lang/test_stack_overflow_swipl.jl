@@ -6,7 +6,8 @@
 #     stack alone) and consulted by swipl under `stack_limit` 1 000 000: the FORMAL identical,
 #     `resource_error(stack)`, and the context compared BY KIND, as decided since Q-B — swipl's a
 #     `stack_overflow{…}` dict, the kernel's the stack's name atom `local` (upstream's own fallback),
-#     an interim until dicts, so this pin fails when the dict is built;
+#     an interim until dicts, so this pin fails when the dict is built (since L1f f2's one limit over the three
+#     stacks, `r(a)`, which lays out a term, meets it at a global site: its atom is `stack_overflow`);
 #   * recovery: after the error the same local data runs the next query, its spare reserved again;
 #   * a SECOND overflow before the first is recovered from: upstream ends the process; the kernel
 #     throws upstream's message and marks the local data unusable — every later query on it is
@@ -123,16 +124,23 @@ end
             "$(lk_name(child(formal, 1)))($(lk_name(child(formal, 2)))) | $(_sokind(ctx))"
         )
     end
-    @test all(==("resource_error(stack) | atom(local)"), ours)    # pinned: the interim
+    # pinned: the interim (the stack's name atom). Since L1f f2 the limit is ONE over the three stacks (audit
+    # D-0036), so a recursion that lays out a term — r(a): r(f(X)) — meets it at a GLOBAL site first, whose
+    # context is `stack_overflow`; swipl's is the stack_overflow{…} dict for every goal (below).
+    want = [
+        "resource_error(stack) | atom(local)", "resource_error(stack) | atom(stack_overflow)",
+        "resource_error(stack) | atom(local)"
+    ]
+    @test ours == want
     if _SO_SWIPL !== nothing
         theirs = _soswipl()
         @test length(theirs) == length(_SO_GOALS)
-        for (o, t) in zip(ours, theirs)
+        for (o, t, w) in zip(ours, theirs, want)
             of, oc = split(o, " | ")
             tf, tc = split(t, " | ")
             @test of == tf                          # the formal, exactly
             # the context by kind (Q-B): the dict, until the kernel builds it
-            @test tc == "dict(stack_overflow)" && oc == "atom(local)"
+            @test tc == "dict(stack_overflow)" && oc == split(w, " | ")[2]
         end
     elseif _SO_SWIPL_REQUIRED
         @test _SO_SWIPL !== nothing                 # LOGICKERNEL_REQUIRE_SWIPL=1
