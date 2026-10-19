@@ -128,13 +128,20 @@ function _kc_arg_word(ld, t, i)
     return LK._deref_loc(ld, LK.valPtr(w) + i)[2]
 end
 
+"`copy_term_refs` into a new term reference (L1f f1b: the caller's `to`, as upstream's); the reference."
+function _kc_copy(ld, t, options)
+    c = LK.PL_new_term_ref(ld)
+    @assert LK.copy_term_refs(ld, t, c, options)
+    return c
+end
+
 @testset "white-box: ground arguments shared by copy_term, copied by duplicate_term; nothing left marked" begin
     X = _rv(1)
     g = _rf("g", _rs("a"), _ki(2))
     ld, t = _kc_engine(_R[_rf("f", g, X, _rf("h", X))])
     gw = _kc_arg_word(ld, t, 1)
     for share in (true, false)
-        c = LK.copy_term_refs(ld, t, LK.cp_options(share))
+        c = _kc_copy(ld, t, LK.cp_options(share))
         @test _kc_clean(ld)
         cw = _kc_arg_word(ld, c, 1)
         @test (cw == gw) == share                           # COPY_SHARE: the very compound
@@ -153,7 +160,7 @@ end
     LK.setSlotValue!(ld, t + 1, _rf("f", kv, _rs("a")))
     LK.Trail!(ld, var_key(kv), _rf("g", _rv(7)))
     p0 = ld.cold_pairs
-    c = LK.copy_term_refs(ld, t, LK.cp_options(true))
+    c = _kc_copy(ld, t, LK.cp_options(true))
     @test ld.cold_pairs > p0
     @test _kc_clean(ld)
     r = LK.resolve_term(ld, LK.slotValue(ld, c + 1))
@@ -166,7 +173,7 @@ end
         _R[_rf("f", X, _rlist((_ki(i) for i in 1:50)...), _rf("g", Y, X), _rs("a"))]
     )
     c0 = _kc_counts(ld)
-    LK.copy_term_refs(ld, t, LK.cp_options(true))
-    LK.copy_term_refs(ld, t, LK.cp_options(false))
+    _kc_copy(ld, t, LK.cp_options(true))
+    _kc_copy(ld, t, LK.cp_options(false))
     @test _kc_counts(ld) == c0
 end

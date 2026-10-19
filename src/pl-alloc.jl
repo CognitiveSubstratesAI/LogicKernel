@@ -24,11 +24,37 @@ function enableSpareStack!(ld::PL_local_data{T}, always::Bool)::Bool where {T}
     return false
 end
 
+# PORT: pl-alloc.c enableSpareStack as enableSpareStack_global!
+# DIVERGES (L1f f1b): the global stack's spare, a reserve in the one limit: enabling it returns it to the
+# room under the limit (`_stacks_in_use`), which is that room (upstream: `roomStackP`).
+"Release the global stack's spare when its room is below the spare's size or `always` (pl-alloc.c); whether it did."
+function enableSpareStack_global!(ld::PL_local_data, always::Bool)::Bool
+    if ld.global_spare != 0 &&
+        (ld.stacks_limit - _stacks_in_use(ld, 0) < ld.global_def_spare || always)
+        ld.global_spare = 0                         # s->max += s->spare; s->spare = 0
+        return true
+    end
+    return false
+end
+
+# PORT: pl-alloc.c enableSpareStack as enableSpareStack_trail!
+# DIVERGES (L1f f1b): as `enableSpareStack_global!`, the trail's.
+"Release the trail's spare when its room is below the spare's size or `always` (pl-alloc.c); whether it did."
+function enableSpareStack_trail!(ld::PL_local_data, always::Bool)::Bool
+    if ld.trail_spare != 0 &&
+        (ld.stacks_limit - _stacks_in_use(ld, 0) < ld.trail_def_spare || always)
+        ld.trail_spare = 0
+        return true
+    end
+    return false
+end
+
 # PORT: pl-alloc.c enableSpareStacks as enableSpareStacks!
-# DIVERGES: the local stack's only: there is no global or trail stack of fixed size.
 "Enable the spare stacks where they are needed (pl-alloc.c)."
 function enableSpareStacks!(ld::PL_local_data{T})::Nothing where {T}
-    enableSpareStack!(ld, false)
+    enableSpareStack!(ld, false)                    # local
+    enableSpareStack_global!(ld, false)
+    enableSpareStack_trail!(ld, false)
     return nothing
 end
 
@@ -109,22 +135,35 @@ end
 # ORIGINAL (L1f f2, audit D-0036; pl-gc.c grow_stacks: `tsize + gsize + lsize > LD->stacks.limit`): what
 # the ONE limit over the three stacks is measured against. DIVERGES: in words; the local stack by its size
 # (`lMax` and its spare, as `growStacks!` grows it), the global stack by its use (`gTop`: it grows cell by
-# cell on demand), the trail by its entries; the record pools (frames, choices) are Julia objects and do not
-# count.
+# cell on demand) and its spare, the trail by its entries and its spare (the spares since L1f f1b, audit
+# D-0042: reserves, released by `enableSpareStacks!`); the record pools (frames, choices) are Julia objects
+# and do not count.
 "The words the three stacks take once `g` more global cells are laid out (pl-gc.c `grow_stacks`' sum)."
 @inline _stacks_in_use(ld::PL_local_data, g::Int)::Int =
-    (ld.lMax + ld.local_spare) + (ld.gTop + g) + length(ld.trail)
+    (ld.lMax + ld.local_spare) + (ld.gTop + g + ld.global_spare) + (length(ld.trail) + ld.trail_spare)
 
 # PORT: pl-gc.h ensureGlobalSpace
 # DIVERGES (L1f f2, audit D-0029 D1 (a), D3 (a), D-0036): no garbage collection to try (`ALLOW_GC`) and
 # nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
 # stacks with `n` more cells within `stacks_limit` (`_stacks_in_use`), else the overflow is raised
-# (`resource_error(stack)`); while an exception is processed the limit is not applied (upstream's spare
-# stacks), so the handler can run.
+# (`resource_error(stack)`). While an exception is processed no request is refused: upstream's
+# `grow_stacks` in its error condition raises the limit to the need plus 1 MiB (pl-gc.c:5371,
+# `EMERGENCY_LIMIT`) for every request, so none fails for the limit (L1f f1b: the audit's D-0042 traced).
+# The handler itself runs after `resumeAfterException` (processing cleared): under the limit again.
 "Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`)."
 function ensureGlobalSpace(ld::PL_local_data, n::Int)::Bool
     (_stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing) && return true
     return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+end
+
+# PORT: pl-alloc.c allocGlobalNoShift
+# DIVERGES (L1f f1b): the stack grows on demand (`allocGlobalCells!`), so "no room without shifting"
+# (`gTop+n > gMax`) is the LIMIT, as `ensureGlobalSpace` tests it; returns the first cell's position, 0
+# for NULL. Raises nothing: the caller passes `GLOBAL_OVERFLOW` up, as upstream's.
+"`n` cells at `gTop` if they fit the limit, else 0 (pl-alloc.c `allocGlobalNoShift`)."
+function allocGlobalNoShift(ld::PL_local_data, n::Int)::Int
+    (_stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing) || return 0
+    return allocGlobalCells!(ld, n)
 end
 
 # PORT: pl-alloc.c f_pushArgumentStack

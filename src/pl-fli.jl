@@ -798,25 +798,75 @@ function has_emergency_space(ld::PL_local_data{T}, needed::Int)::Bool where {T}
     return false
 end
 
+# PORT: pl-fli.c has_emergency_space
+# DIVERGES (L1f f1b): the global stack's (its only caller here): `lacking` is what `n` more cells take past
+# the limit (`_stacks_in_use`), taken from the spare (upstream: `s->max` raised by it).
+"Whether `n` more global cells fit, using the global stack's spare if needed (pl-fli.c `has_emergency_space`)."
+function has_emergency_space(ld::PL_local_data, n::Int)::Bool
+    lacking = _stacks_in_use(ld, n) - ld.stacks_limit
+    lacking <= 0 && return true
+    if lacking < ld.global_spare
+        ld.global_spare -= lacking                  # s->max += lacking; s->spare -= lacking
+        return true
+    end
+    return false
+end
+
 # PORT: pl-fli.c copy_exception as copy_exception!
 # DIVERGES (L1e e5): `duplicate_term(ex, bin)` on the CELLS (`do_copy_term_cells`, share off; L1d step 6)
 # into a fresh global cell that `bin` references, as upstream's copy at gTop; PL_raise_exception then
 # freezes the global stack (`freezeGlobal!`), so no undo frees the ball — released when the outermost
 # query ends (`_release_frozen!`, audit D-0029 option (b): no collector until G1). A ball at the BOUNDARY
 # (a keyed variable, a slot's side value) is copied on terms as a value, as before e5 (its trail entries
-# dropped), counted — TRANSITIONAL until L1f. NOT PORTED: the fallbacks for a copy that does not fit the
-# global stack (the context dropped, a global-stack `resource_error`, `abort`).
+# dropped), counted — TRANSITIONAL until L1f. A copy that does not fit (L1f f1b: `GLOBAL_OVERFLOW`, the
+# frame rewound, nothing raised to clear) takes upstream's three fallbacks in turn: an `error(F, _)` ball
+# without its context, `error(resource_error(stack), global)` in the global spare, `abort`. The kernel
+# prints none of upstream's three warnings (decision 1). A copy fails only before `exception_processing`
+# is set — PL_raise_exception sets it first, as upstream, whose fallbacks need memory exhaustion.
 "Copy the ball `ex` references into `bin`, its cycles kept (pl-fli.c)."
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
     dest = allocGlobalCells!(ld, 1)             # (L1e e5) duplicate_term() onto the cells, `bin` its reference
-    if do_copy_term_cells(ld, -(ex + 1), dest, cp_options(false))
+    rc = do_copy_term_cells(ld, -(ex + 1), dest, cp_options(false))
+    if rc == 1
         ld.slots[bin + 1] = makeRefG(dest)
+        PL_close_foreign_frame(ld, fid)
+        return true
+    elseif rc == CP_BOUNDARY
+        ld.cold_pairs += 1                      # the boundary (a keyed variable, a side value): on terms,
+        tt = length(ld.trail)                   # the copy a value as before e5 (TRANSITIONAL until L1f)
+        _slot_store_value!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))
+        _trail_truncate!(ld, tt)                # frozen: the copy's own bindings keep no trail entry
+        PL_close_foreign_frame(ld, fid)
         return true
     end
-    ld.cold_pairs += 1                          # the boundary (a keyed variable, a side value): on terms,
-    tt = length(ld.trail)                       # the copy a value as before e5 (TRANSITIONAL until L1f)
-    _slot_store_value!(ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false)))
-    _trail_truncate!(ld, tt)                    # frozen: the copy's own bindings keep no trail entry
+    PL_rewind_foreign_frame(ld, fid)
+    PL_clear_exception(ld)
+    ld.exception_processing = true
+    if PL_is_functor(ld, ex, mk_sym(T, :error), 2)
+        arg = PL_new_term_ref(ld)
+        f = PL_new_term_ref(ld)
+        if _PL_get_arg(ld, 1, ex, arg) && copy_term_refs(ld, arg, f, cp_options(false))
+            p = allocGlobalCells!(ld, 3)        # PL_cons_functor_v(bin, FUNCTOR_error2, av)
+            ld.gstack[p] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)
+            ld.gstack[p + 1] = ld.slots[f + 1]  # av+0: the formal's copy; av+1 a fresh variable
+            ld.slots[bin + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+            PL_close_foreign_frame(ld, fid)     # (WARNING: Removed error context …: not printed)
+            return true
+        end
+    elseif has_emergency_space(ld, 5)
+        p = allocGlobalCells!(ld, 5)            # (WARNING: cannot raise exception …: not printed)
+        ld.gstack[p] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)
+        ld.gstack[p + 1] = consPtr(p + 3, TAG_COMPOUND | STG_GLOBAL)
+        ld.gstack[p + 2] = _atom_word!(ld, mk_sym(T, :global))
+        ld.gstack[p + 3] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :resource_error)), 1)
+        ld.gstack[p + 4] = _atom_word!(ld, mk_sym(T, :stack))
+        ld.slots[bin + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+        PL_close_foreign_frame(ld, fid)
+        return true
+    end
+    PL_close_foreign_frame(ld, fid)
+    ld.slots[bin + 1] = _atom_word!(ld, mk_sym(T, :abort))   # PL_put_atom(bin, ATOM_abort)
     return true
 end
 

@@ -13,6 +13,11 @@
 # setup:1631 the local stack's spare: `512*SIZEOF_WORD + LOCAL_MARGIN` bytes, here in positions.
 "The spare of a new local stack, in positions (pl-setup.c `allocStacks`)."
 const LOCAL_SPARE = 512 + LOCAL_MARGIN
+# setup:1630, :1634 the global stack's spare, `512*SIZEOF_WORD`, and the trail's, `256*SIZEOF_WORD`.
+"The spare of a new global stack, in positions (pl-setup.c `allocStacks`)."
+const GLOBAL_SPARE = 512
+"The spare of a new trail, in positions (pl-setup.c `allocStacks`)."
+const TRAIL_SPARE = 256
 
 # PORT: pl-setup.c init_stack as init_stack!
 # DIVERGES: the local stack's, in positions; there is no name (the overflow's context names it,
@@ -30,12 +35,15 @@ function init_stack!(ld::PL_local_data{T}, size::Int, spare::Int)::Nothing where
 end
 
 # PORT: pl-setup.c allocStacks as allocStacks!
-# DIVERGES: the local stack only — there is no global, trail or argument stack of fixed size — and
-# in positions: `minlocal` (4 K words) is `LOCAL_INITIAL`, its spare `LOCAL_SPARE`; nothing is
-# allocated that can fail. `stacks.local.min_free` is not kept (see `init_stack!`).
+# DIVERGES: the local stack's cells — there is no global, trail or argument stack of fixed size (they
+# grow on demand) — and in positions: `minlocal` (4 K words) is `LOCAL_INITIAL`, its spare
+# `LOCAL_SPARE`; the global stack's and the trail's spares are reserves in the one limit (L1f f1b,
+# `_stacks_in_use`); nothing is allocated that can fail. `stacks.local.min_free` is not kept (see `init_stack!`).
 "Allocate the local stack of a new thread (pl-setup.c)."
 function allocStacks!(ld::PL_local_data{T})::Bool where {T}
+    ld.global_spare = ld.global_def_spare = GLOBAL_SPARE    # init_stack(global, …, 512*SIZEOF_WORD)
     init_stack!(ld, LOCAL_INITIAL, LOCAL_SPARE)
+    ld.trail_spare = ld.trail_def_spare = TRAIL_SPARE       # init_stack(trail, …, 256*SIZEOF_WORD)
     return true
 end
 
@@ -55,11 +63,42 @@ function trim_stack!(ld::PL_local_data{T})::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-setup.c trim_stack as trim_stack_global!
+# DIVERGES (L1f f1b): the global stack's spare is a reserve in the one limit (`_stacks_in_use`), so its
+# free room is what the limit leaves (`stacks_limit - _stacks_in_use`).
+"Reserve the global stack's spare again, as far as the room under the limit allows (pl-setup.c)."
+function trim_stack_global!(ld::PL_local_data)::Nothing
+    if ld.global_spare < ld.global_def_spare
+        reduce = ld.global_def_spare - ld.global_spare
+        room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
+        if room > 0 && room < reduce
+            reduce = room
+        end
+        ld.global_spare += reduce                           # s->max -= reduce; s->spare += reduce
+    end
+    return nothing
+end
+
+# PORT: pl-setup.c trim_stack as trim_stack_trail!
+# DIVERGES (L1f f1b): as `trim_stack_global!`, the trail's.
+"Reserve the trail's spare again, as far as the room under the limit allows (pl-setup.c)."
+function trim_stack_trail!(ld::PL_local_data)::Nothing
+    if ld.trail_spare < ld.trail_def_spare
+        reduce = ld.trail_def_spare - ld.trail_spare
+        room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
+        if room > 0 && room < reduce
+            reduce = room
+        end
+        ld.trail_spare += reduce
+    end
+    return nothing
+end
+
 # PORT: pl-setup.c trimStacks as trimStacks!
 # DIVERGES: the stack is never shrunk — `resize` (`growStacks(GROW_TRIM, …)`, which re-reserves the
 # spares as it shrinks) is the local stack's `trim_stack!` here, as without it — and only the local
 # stack has a spare. `lTop` is raised to the query's saved argument pointer while the spare is
-# reserved, as upstream's.
+# reserved, as upstream's. The global stack's and the trail's spares since L1f f1b.
 # NOT PORTED: `trim_stack_requested`: its readers are the stack garbage collector's (pl-gc.c
 # `garbageCollect`), not ported until G1; SECURE_GC's clearing and the debug checks.
 "Reclaim the local stack's spare after an exception (pl-setup.c)."
@@ -73,6 +112,8 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
         end
     end
     trim_stack!(ld)                             # (resize: growStacks(GROW_TRIM) — see above)
+    trim_stack_global!(ld)
+    trim_stack_trail!(ld)
     ld.lTop = lsave
     return nothing
 end

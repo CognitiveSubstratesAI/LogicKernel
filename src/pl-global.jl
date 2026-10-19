@@ -284,8 +284,8 @@ end
 # (`_compound_term`), a term copied onto the stack (`_compound_word!`): no upstream fields, the
 # transitional adapters' meters until the readers and writers work on words. The `exception.*`
 # fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
-# The local stack's `spare` and `def_spare` are `stacks.local`'s, in positions (since V5d); the
-# other stacks have none. `outofstack` is upstream's `LD->outofstack` for the one stack that can
+# The local stack's `spare` and `def_spare` are `stacks.local`'s, in positions (since V5d); the global
+# stack's and the trail's since L1f f1b (audit D-0042): reserves counted in the one limit (`_stacks_in_use`). `outofstack` is upstream's `LD->outofstack` for the one stack that can
 # overflow, the local stack, so a flag. `unusable` has no upstream field: a second overflow of the
 # local stack before the first is recovered from marks the engine broken, where upstream ends the
 # process (`outOfStack`, src/pl-alloc.jl; user, 2026-10-07).
@@ -396,6 +396,10 @@ mutable struct PL_local_data{T}
     stacks_limit::Int                                           # stacks.limit
     local_spare::Int                                            # stacks.local.spare
     local_def_spare::Int                                        # stacks.local.def_spare
+    global_spare::Int                                           # stacks.global.spare (L1f f1b)
+    global_def_spare::Int                                       # stacks.global.def_spare
+    trail_spare::Int                                            # stacks.trail.spare
+    trail_def_spare::Int                                        # stacks.trail.def_spare
     frames::Vector{localFrame{T}}                               # the frame records
     nframes::Int                                                # … live: frames[1:nframes]
     choices::Vector{choice{T}}                                  # the choice-point records
@@ -486,7 +490,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
             _TOP_POSITION,
             false
         ),
-        word[], T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, localFrame{T}[], 0, choice{T}[], 0,
+        word[], T[], 0, 0, STACK_LIMIT_DEFAULT, 0, 0, 0, 0, 0, 0, localFrame{T}[], 0, choice{T}[], 0,
         fliFrame[],
         0,
         0, 0,

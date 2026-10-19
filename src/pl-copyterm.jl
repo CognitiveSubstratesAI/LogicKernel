@@ -35,8 +35,7 @@
 # NOT PORTED: attributed variables (`COPY_ATTRS`, `must_copy_attvar`, `unshare_attvar`: no attributed
 # variables), `copy_term/4`, `copy_term_nat/4` (`COPY_MARKED`, `mark_vars`), `size_abstract_term/3`
 # (`COPY_ABSTRACT`), `duplicate_term`'s `nshare`/`share` (the shared subterms of `duplicate_term/2`
-# are none: `nshare` is 0), the fast heap terms (`$fast_record`, `term_to_fastheap`) and
-# the stack-space retry loop of `copy_term_refs` (no global stack to grow).
+# are none: `nshare` is 0) and the fast heap terms (`$fast_record`, `term_to_fastheap`).
 
 # PORT: pl-copyterm.c cp_options
 "The options of a copy (pl-copyterm.c `cp_options`): the kernel's is the sharing of ground terms (`COPY_SHARE`)."
@@ -408,9 +407,10 @@ end
 # PORT: pl-copyterm.c copy_term as copy_term_cells
 # DIVERGES: on locations, the two-sided cell agenda (upstream's term_agendaLRD; no COPY_ABSTRACT, so
 # no depth); `to` is always a global position; a copy's cell holding VAR_MARK is an unbound cell
-# with the side-vector bit. No attributed variable, no COPY_MARKED. The stack grows on demand.
-"Copy the marked term at location `from` into the unbound global cell `to` (pl-copyterm.c `copy_term`)."
-function copy_term_cells(ld::PL_local_data{T}, from::Int, to::Int)::Nothing where {T}
+# with the side-vector bit. No attributed variable, no COPY_MARKED. A compound's cells are
+# `allocGlobalNoShift`'s: `GLOBAL_OVERFLOW` when they pass the limit (L1f f1b), as upstream's.
+"Copy the marked term at location `from` into the unbound global cell `to` (pl-copyterm.c `copy_term`): `BOOLEX_TRUE` or `GLOBAL_OVERFLOW`."
+function copy_term_cells(ld::PL_local_data{T}, from::Int, to::Int)::boolex_t where {T}
     a = ld.cp_agenda
     initCellAgendaLR!(a, 1, from, to, 0)
     while true
@@ -442,7 +442,11 @@ function copy_term_cells(ld::PL_local_data{T}, from::Int, to::Int)::Nothing wher
                     ld.gstack[t] = c
                 else
                     arity = arityFunctor(ld.functors, fd)
-                    ft = allocGlobalCells!(ld, arity + 1)
+                    ft = allocGlobalNoShift(ld, arity + 1)
+                    if ft == 0                              # rc = GLOBAL_OVERFLOW; goto out
+                        clearCellAgendaLR!(a)
+                        return GLOBAL_OVERFLOW
+                    end
                     ld.gstack[ft] = fd & ~BOTH_MASK
                     if (fd & BOTH_MASK) == BOTH_MASK        # shared: forward the original
                         ld.gstack[ff] = makeRefG(ft)
@@ -458,51 +462,66 @@ function copy_term_cells(ld::PL_local_data{T}, from::Int, to::Int)::Nothing wher
         end
     end
     clearCellAgendaLR!(a)
-    return nothing
+    return BOOLEX_TRUE
 end
 
 # PORT: pl-copyterm.c do_copy_term as do_copy_term_cells
-# DIVERGES: `from` a location (dereferenced here), `to` an unbound global cell; returns false at the
-# BOUNDARY, after unmarking — the caller redoes the copy on terms.
-"Copy the term at location `from` into the unbound global cell `to` (pl-copyterm.c `do_copy_term`); false at the boundary."
+# DIVERGES: `from` a location (dereferenced here), `to` an unbound global cell; returns 1 (true),
+# `Int(GLOBAL_OVERFLOW)` (L1f f1b), or `CP_BOUNDARY`, after unmarking — the caller redoes the copy on
+# terms.
+"Copy the term at location `from` into the unbound global cell `to` (pl-copyterm.c `do_copy_term`): 1, `Int(GLOBAL_OVERFLOW)` or `CP_BOUNDARY`."
 function do_copy_term_cells(
     ld::PL_local_data{T}, from::Int, to::Int, options::cp_options
-)::Bool where {T}
+)::Int where {T}
     k, w, p = _deref_loc(ld, from)
-    k == DU_CELL && return true                             # TAG_VAR: `to` stays a fresh variable
-    k == DU_TERM && return false
+    k == DU_CELL && return 1                                # TAG_VAR: `to` stays a fresh variable
+    k == DU_TERM && return CP_BOUNDARY
     if !(k == DU_WORD && _is_gcompound(w))                  # an atomic: *to = *from
         ld.gstack[to] = w                                   # (an indirect's word: shared)
-        return true
+        return 1
     end
     src = p > 0 ? p : from                                  # the location holding the compound's word
     rc = options.share ? mark_for_copy_cells(ld, src) : mark_for_duplicate_cells(ld, src)
     if rc != 1
         cp_unmark_cells(ld, src)
-        return false
+        return rc
     end
-    copy_term_cells(ld, src, to)                            # initCyclicCopy: nothing to do
+    rc2 = copy_term_cells(ld, src, to)                      # initCyclicCopy: nothing to do
     exitCyclicCopy_cells(ld)
     cp_unmark_cells(ld, src)
-    return true
+    return Int(rc2)
 end
 
 # ── the built-ins ───────────────────────────────────────────────────────────────────────────────
 # PORT: pl-copyterm.c copy_term_refs
-# DIVERGES: on the CELLS (L1d step 6): a fresh global cell, the new reference its `makeRefG`, as
-# upstream; no retry loop (the stack grows on demand); no `vars` (copy_term/4). The boundary (see the
-# section above) copies on terms, counted in `cold_pairs`.
-"Put a copy of the term `from` references into a new term reference, and return it (pl-copyterm.c)."
+# DIVERGES: on the CELLS (L1d step 6): a fresh global cell, `to` its `makeRefG`, as upstream; no `vars`
+# (copy_term/4). The loop is upstream's (L1f f1b): a copy that does not fit is discarded with its
+# foreign frame and `makeMoreStackSpace` asked — which here raises the overflow (see there). The
+# boundary (see the section above) copies on terms, counted in `cold_pairs`.
+"Make term reference `to` hold a copy of the term `from` references; false, the overflow raised, when it does not fit (pl-copyterm.c)."
 function copy_term_refs(
-    ld::PL_local_data{T}, from::term_t, options::cp_options
-)::term_t where {T}
-    copy = new_term_ref(ld)                                 # dest = allocGlobal(1); setVar(*dest)
-    dest = unRef(ld.slots[copy + 1])                        # *valTermRef(to) = makeRefG(dest)
-    if !do_copy_term_cells(ld, -(from + 1), dest, options)
-        ld.cold_pairs += 1
-        setSlotValue!(ld, copy + 1, copy_term(ld, slotValue(ld, from + 1), options))
+    ld::PL_local_data{T}, from::term_t, to::term_t, options::cp_options
+)::Bool where {T}
+    while true
+        fid = PL_open_foreign_frame(ld)
+        ensureGlobalSpace(ld, 1) || (PL_close_foreign_frame(ld, fid); return false)
+        dest = allocGlobalCells!(ld, 1)                     # dest = allocGlobal(1); setVar(*dest)
+        ld.slots[to + 1] = makeRefG(dest)                   # *valTermRef(to) = makeRefG(dest)
+        rc = do_copy_term_cells(ld, -(from + 1), dest, options)
+        if rc == CP_BOUNDARY
+            ld.cold_pairs += 1
+            setSlotValue!(ld, to + 1, copy_term(ld, slotValue(ld, from + 1), options))
+            rc = 1
+        end
+        if rc < 0                                           # no space for copy
+            PL_discard_foreign_frame(ld, fid)
+            _slot_new_var!(ld, to + 1)                      # PL_put_variable(to): gc consistency
+            makeMoreStackSpace(ld, GLOBAL_OVERFLOW, ALLOW_SHIFT) || return false
+        else
+            PL_close_foreign_frame(ld, fid)
+            return true
+        end
     end
-    return copy
 end
 
 # `PL_is_atomic(t)`: the term `t` references is neither a variable nor a compound.
@@ -521,7 +540,8 @@ function pl_copy_term2_va(
     if _cp_atomic(ld, A1)
         return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
     end
-    copy = copy_term_refs(ld, A1, cp_options(true))
+    copy = PL_new_term_ref(ld)
+    copy_term_refs(ld, A1, copy, cp_options(true)) || return FFALSE
     return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
 end
 
@@ -532,7 +552,8 @@ function pl_copy_term_nat2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    copy = copy_term_refs(ld, A1, cp_options(true))        # (upstream has no atomic shortcut here)
+    copy = PL_new_term_ref(ld)                              # (upstream has no atomic shortcut here)
+    copy_term_refs(ld, A1, copy, cp_options(true)) || return FFALSE
     return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
 end
 
@@ -546,7 +567,8 @@ function pl_duplicate_term2_va(
     if _cp_atomic(ld, A1)
         return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
     end
-    copy = copy_term_refs(ld, A1, cp_options(false))
+    copy = PL_new_term_ref(ld)
+    copy_term_refs(ld, A1, copy, cp_options(false)) || return FFALSE
     return PL_unify(ld, copy, A2) ? FTRUE : FFALSE
 end
 

@@ -40,6 +40,18 @@ function markPredicatesInEnvironments!(
     return nothing
 end
 
+# PORT: pl-gc.c makeMoreStackSpace
+# DIVERGES (L1f f1b): no collector (`garbageCollect`, `ALLOW_GC`) and no global or trail stack to grow —
+# they grow on demand, so their callers (`allocGlobalNoShift`) were refused for the LIMIT, which growing
+# cannot pass: the overflow is raised and false returned, as upstream's when `growStacks` fails. Upstream's
+# first case — while an exception is processed, the stack's spare enabled — cannot arise: nothing is refused
+# for the limit while one is processed (`ensureGlobalSpace`). A loop that calls it (`copy_term_refs`)
+# therefore runs its body once more only upstream.
+"Make room after `overflow`, or raise it and return false (pl-gc.c `makeMoreStackSpace`)."
+function makeMoreStackSpace(ld::PL_local_data, overflow::boolex_t, flags::Int)::Bool
+    return raiseStackOverflow(ld, overflow)
+end
+
 # PORT: pl-gc.c growStacks as growStacks!
 # DIVERGES: grows the local stack only — there is no global, trail or argument stack of fixed
 # size — and moves nothing: positions are offsets and records are indices, so upstream's work here,
