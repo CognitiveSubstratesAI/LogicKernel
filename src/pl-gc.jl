@@ -86,6 +86,34 @@ function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-gc.c growStacks as growStacks_trim!
+# DIVERGES (L1f f1b, audit D-0049): upstream's GROW_TRIM request (trimStacks(resize), after an overflow) alone.
+# The global stack and the trail are sized by their use here, so only their spares take part — included
+# (`include_spare_stack`: the spare released) and re-reserved (`reenable_spare_stack`: `trim_stack`). The local
+# stack shrinks to `nextStackSize(s, GROW_TRIM)`: the next size above its use, `min_free` (LOCAL_MARGIN) and
+# its spare, as a power of two of at least SMALLSTACK (4096 positions, LOCAL_INITIAL), never above its size;
+# its cells are kept (`_resize_local!` frees nothing) — `lMax` and the spare are its size in the limit. A local
+# stack with less room than its spare is GROWN by it instead (`include_spare_stack`'s request), `growStacks!`.
+"Shrink the stacks to their use after an overflow, their spares reserved again (pl-gc.c `growStacks(GROW_TRIM, …)`)."
+function growStacks_trim!(ld::PL_local_data)::Nothing
+    ld.global_spare = 0                             # include_spare_stack(global)
+    ld.trail_spare = 0                              # include_spare_stack(trail)
+    size = ld.lMax + ld.local_spare                 # include_spare_stack(local): max += spare
+    ld.lMax = size
+    ld.local_spare = 0
+    if size - ld.lTop < ld.local_def_spare          # roomStackP(s) < s->def_spare: request = def_spare
+        growStacks!(ld, ld.local_def_spare)
+    else
+        n = ld.lTop + LOCAL_MARGIN + ld.local_def_spare     # usedStackP(s) + s->min_free + s->def_spare
+        new = max(2 << MSB64(Int64(n)), LOCAL_INITIAL)      # nextStackSizeAbove(n): SMALLSTACK at least
+        ld.lMax = min(new, size)                    # never above the stack's size
+    end
+    trim_stack_trail!(ld)                           # reenable_spare_stack(trail)
+    trim_stack_global!(ld)                          # … (global)
+    trim_stack!(ld)                                 # … (local)
+    return nothing
+end
+
 # gc:5374 the room an exception being processed may take past the limit: 1 MiB, in positions.
 "How far past `stacks_limit` the local stack grows while an exception is processed (pl-gc.c)."
 const EMERGENCY_LIMIT = (1024 * 1024) ÷ 8

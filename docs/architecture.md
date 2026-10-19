@@ -989,6 +989,7 @@ graph LR
     pl_gc --> pl_thread
     pl_gc --> pl_alloc
     pl_gc --> pl_wam
+    pl_gc --> pl_arith
     pl_gc --> pl_setup
     pl_gc --> pl_proc
     pl_alloc --> term_interface

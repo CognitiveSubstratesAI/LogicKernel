@@ -607,3 +607,25 @@ LK_TERM_IMPL == "reference" &&
         @test ld.nframes == 0 && ld.nchoices == 0 && ld.nfliframes == 1
         @test @allocated(LK.growStacks!(ld, 2 * ld.lMax)) > 0  # growing does allocate
     end
+
+# ── L1f f1b, audit D-0049: trimStacks(resize) → growStacks(GROW_TRIM): the local stack shrinks to its use ─────
+@testset "growStacks_trim!: the local stack back to the next size above its use, the spares reserved" begin
+    ld = LK.PL_local_data{_L}(_LGD)
+    LK.growStacks!(ld, 100_000)                     # grown, as an overflow grows it
+    big = ld.lMax + ld.local_spare
+    @test big > 100_000
+    n = ld.lTop + LK.LOCAL_MARGIN + ld.local_def_spare
+    LK.growStacks_trim!(ld)
+    want = max(2 << LK.MSB64(Int64(n)), LK.LOCAL_INITIAL)    # nextStackSizeAbove(used + min_free + def_spare)
+    @test ld.lMax + ld.local_spare == want < big
+    @test ld.local_spare == ld.local_def_spare && ld.global_spare == ld.global_def_spare &&
+        ld.trail_spare == ld.trail_def_spare
+    # never above the stack's size: a stack already at its use stays
+    LK.growStacks_trim!(ld)
+    @test ld.lMax + ld.local_spare == want
+    # less room than the spare: grown by it instead (include_spare_stack's request)
+    ld.lTop = ld.lMax + ld.local_spare - 10
+    LK.growStacks_trim!(ld)
+    @test ld.lMax - ld.lTop >= 0 && ld.local_spare == ld.local_def_spare &&
+        ld.lMax + ld.local_spare > want
+end

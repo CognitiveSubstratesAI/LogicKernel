@@ -324,6 +324,16 @@ end
     @test ld.global_spare == 0 && ld.trail_spare == 256 && ld.exception_processing
     LK.PL_clear_exception(ld)
     @test ld.global_spare == 512 && ld.trail_spare == 256 && !ld.exception_processing
+    # upstream's trim_stack: a reserve the room cannot hold is kept WHOLE (`room > 0 && room < reduce`) —
+    # room 100 takes 100, no room (past the limit) takes the whole spare back (D-0049: as upstream)
+    ld.global_spare = 0
+    ld.stacks_limit = LK._stacks_in_use(ld, 0) + 100
+    LK.trim_stack_global!(ld)
+    @test ld.global_spare == 100
+    ld.global_spare = 0
+    ld.stacks_limit = LK._stacks_in_use(ld, 0) - 100
+    LK.trim_stack_global!(ld)
+    @test ld.global_spare == 512
 end
 
 # ── L1f f1b: copy_exception!'s three fallbacks (pl-fli.c) — WHITE-BOX: a ball copy fails only before

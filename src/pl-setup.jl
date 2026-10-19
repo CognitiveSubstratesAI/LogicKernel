@@ -65,17 +65,17 @@ end
 
 # PORT: pl-setup.c trim_stack as trim_stack_global!
 # DIVERGES (L1f f1b): the global stack's spare is a reserve in the one limit (`_stacks_in_use`), so its
-# free room is what the limit leaves (`stacks_limit - _stacks_in_use`), and the spare is reserved only as far
-# as that room allows — NOTHING when there is none, where upstream's `room > 0 && room < reduce` reserves it
-# all and lets `max` fall below `top` (its stacks are sized apart, and a local stack grown in an error is
-# shrunk again by trimStacks' GROW_TRIM; the kernel's never shrinks, so a full reserve past the limit would
-# refuse every allocation after a local overflow — test_stack_overflow_swipl.jl's next query).
+# free room is what the limit leaves (`stacks_limit - _stacks_in_use`). As upstream, a reserve the room
+# cannot hold is kept whole (`room > 0 && room < reduce`): after an overflow trimStacks(resize) shrinks the
+# local stack first (`growStacks_trim!`, GROW_TRIM), which gives the room back.
 "Reserve the global stack's spare again, as far as the room under the limit allows (pl-setup.c)."
 function trim_stack_global!(ld::PL_local_data)::Nothing
     if ld.global_spare < ld.global_def_spare
         reduce = ld.global_def_spare - ld.global_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        reduce = max(0, min(reduce, room))                  # (see above: never past the limit)
+        if room > 0 && room < reduce
+            reduce = room
+        end
         ld.global_spare += reduce                           # s->max -= reduce; s->spare += reduce
     end
     return nothing
@@ -88,21 +88,24 @@ function trim_stack_trail!(ld::PL_local_data)::Nothing
     if ld.trail_spare < ld.trail_def_spare
         reduce = ld.trail_def_spare - ld.trail_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        reduce = max(0, min(reduce, room))                  # (see above: never past the limit)
+        if room > 0 && room < reduce
+            reduce = room
+        end
         ld.trail_spare += reduce
     end
     return nothing
 end
 
 # PORT: pl-setup.c trimStacks as trimStacks!
-# DIVERGES: the stack is never shrunk — `resize` (`growStacks(GROW_TRIM, …)`, which re-reserves the
-# spares as it shrinks) is the local stack's `trim_stack!` here, as without it — and only the local
-# stack has a spare. `lTop` is raised to the query's saved argument pointer while the spare is
-# reserved, as upstream's. The global stack's and the trail's spares since L1f f1b.
+# DIVERGES: `resize` is `growStacks_trim!` (upstream's `growStacks(GROW_TRIM, GROW_TRIM, GROW_TRIM)`, since L1f
+# f1b under audit D-0049: the local stack shrunk again after an overflow, the spares re-reserved as it
+# shrinks); without it the three spares are reserved again (`trim_stack!`, `_global!`, `_trail!`). `lTop` is
+# raised to the query's saved argument pointer while the spares are reserved, as upstream's.
 # NOT PORTED: `trim_stack_requested`: its readers are the stack garbage collector's (pl-gc.c
 # `garbageCollect`), not ported until G1; SECURE_GC's clearing and the debug checks.
 "Reclaim the local stack's spare after an exception (pl-setup.c)."
 function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
+    resize && growStacks_trim!(ld)              # growStacks(GROW_TRIM, GROW_TRIM, GROW_TRIM)
     lsave = ld.lTop
     if ld.query != 0                            # saved registers above lTop
         q = ld.queries[ld.query]
@@ -111,9 +114,11 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
             ld.lTop = q.registers_argp.pos
         end
     end
-    trim_stack!(ld)                             # (resize: growStacks(GROW_TRIM) — see above)
-    trim_stack_global!(ld)
-    trim_stack_trail!(ld)
+    if !resize
+        trim_stack!(ld)
+        trim_stack_global!(ld)
+        trim_stack_trail!(ld)
+    end
     ld.lTop = lsave
     return nothing
 end

@@ -151,6 +151,10 @@ end
     @test rc == LK.PL_S_EXCEPTION
     @test !ld.outofstack && !ld.exception_processing && ld.exception_term == 0
     @test ld.local_spare == ld.local_def_spare
+    # trimStacks(resize) shrank the local stack the overflow grew (GROW_TRIM, D-0049): back below half the
+    # limit it hit, the global and trail spares whole
+    @test ld.lMax + ld.local_spare < ld.stacks_limit ÷ 2
+    @test ld.global_spare == ld.global_def_spare && ld.trail_spare == ld.trail_def_spare
     @test _sorun(gd, ld, "z", nothing)[1] == LK.PL_S_LAST
     # and overflows again, cleanly — only when recovered: with `exception.processing` stuck, every
     # overflow stretches the limit by 1 MiB more (grow_stacks' error condition), without end

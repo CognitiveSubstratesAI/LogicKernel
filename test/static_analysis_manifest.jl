@@ -89,6 +89,7 @@ _manifest_per_type(T) = (
     (LK.enableSpareStack_trail!, Tuple{LK.PL_local_data{T}, Bool}, true),
     (LK.trim_stack_global!, Tuple{LK.PL_local_data{T}}, true),
     (LK.trim_stack_trail!, Tuple{LK.PL_local_data{T}}, true),
+    (LK.growStacks_trim!, Tuple{LK.PL_local_data{T}}, false),
     (LK.has_emergency_space_global, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK._cp_atomic, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.do_compare, Tuple{LK.PL_local_data{T}, T, T, Bool, Int}, false),
