@@ -265,8 +265,8 @@ end
     LK.PL_close_foreign_frame(ld, fid0)
 end
 
-# Since V5d the stack limit raises `error(resource_error(stack), local)` (the context as decided
-# since Q-B) and the query ends at its boundary, where it threw a Julia exception before; a Julia
+# Since V5d the stack limit raises `error(resource_error(stack), Ctx)` — Ctx the atom `stack_overflow`
+# since D-0040 (`local` as decided since Q-B before; swipl: a `stack_overflow{…}` dict) — and the query ends at its boundary, where it threw a Julia exception before; a Julia
 # exception's own path stays covered by the refusal testset below.
 @testset "the stack limit: resource_error(stack) at the query boundary; the query recovers" begin
     db, p = _ydb()
@@ -285,7 +285,7 @@ end
     @test ex != 0 &&
         lk_eq(
         LK.slotValue(ld, ex + 1),
-        _yf(:error, _yf(:resource_error, _ys(:stack)), _ys(:local))
+        _yf(:error, _yf(:resource_error, _ys(:stack)), _ys(:stack_overflow))
     )
     @test !ld.outofstack && !ld.exception_processing           # recovered at the boundary
     @test ld.local_spare == ld.local_def_spare                  # the spare reserved again

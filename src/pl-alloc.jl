@@ -33,19 +33,14 @@ function enableSpareStacks!(ld::PL_local_data{T})::Nothing where {T}
 end
 
 # PORT: pl-alloc.c push_overflow_context
-# DIVERGES: its fallback only — the stack's name atom, `local` (`PL_new_atom(stack->name)`), as
-# decided since Q-B, an interim until dicts.
-# NOT PORTED: the `stack_overflow{…}` dict (the stack sizes, the depth, the environments and choice
-# points, the recursion found by `find_non_terminating_recursion` or the top of the stack): the
-# kernel has no dicts.
-"The context of a local-stack overflow's error (pl-alloc.c): the stack's name atom."
-push_overflow_context(::Type{T}) where {T} = mk_sym(T, :local)
-# DIVERGES (L1f f2, audit D-0029 D2 (a)): a GLOBAL-stack overflow's context is the atom `stack_overflow`;
-# swipl's is a dict (`stack_overflow{choicepoints:…, depth:…, globalused:…, stack:[…]}`), which the kernel
-# cannot build — on the divergence list.
-"The context of a global-stack overflow's error: the atom `stack_overflow` (swipl: a dict)."
-push_overflow_context(::Type{T}, stack::Symbol) where {T} =
-    stack === :global ? mk_sym(T, :stack_overflow) : push_overflow_context(T)
+# DIVERGES (L1f f2, audit D-0029 D2 (a); the local stack's since D-0040): the context of an overflow of
+# EITHER stack is the atom `stack_overflow`, the tag of swipl's dict (`stack_overflow{choicepoints:…,
+# depth:…, globalused:…, stack:[…]}`), which the kernel cannot build — on the divergence list.
+# NOT PORTED: the dict itself (the stack sizes, the depth, the environments and choice points, the
+# recursion found by `find_non_terminating_recursion` or the top of the stack): the kernel has no
+# dicts; and the stack's name atom, upstream's fallback when the dict cannot be built.
+"The context of a stack overflow's error: the atom `stack_overflow` (swipl: a dict of that tag)."
+push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_overflow)
 
 # PORT: pl-alloc.c outOfStack as outOfStack!
 # DIVERGES: the local stack's, the only one that overflows here.
@@ -65,7 +60,7 @@ push_overflow_context(::Type{T}, stack::Symbol) where {T} =
 """
     outOfStack!(ld, how) -> false
 
-Raise `error(resource_error(stack), local)` for an overflow of the local stack: enable its spare,
+Raise `error(resource_error(stack), stack_overflow)` for an overflow of the local stack: enable its spare,
 mark the exception processed and the stack out of room (pl-alloc.c). A second overflow before the
 first is recovered from makes `ld` unusable and throws.
 """

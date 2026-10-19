@@ -1826,6 +1826,8 @@ const _A_ARITHC_CASES = Any[
     (:erfc, 1 // big(3)), (:erfc, Inf), (:erfc, -Inf), (:erfc, NaN), (:erfc, nothing),
     (:erfc, :a), (:erfc, 3.0), (:erfc, 6.0), (:erfc, 26.0), (:erfc, 27.0), (:erfc, 26.55),
     (:erfc, 30.0), (:erfc, -30.0), (:erfc, (:+, 0.25, 0.25)),
+    # D-0040: where `1 - erf` and the C library's erfc differ (erfc(10.0): 0.0 against 2.09e-45) — swipl's 0.0
+    (:erfc, 4.0), (:erfc, 10.0),
     (:+, (:erfc, 0.5), (:erfc, 0.25)),
     # log10/1
     (:log10, 1), (:log10, 10), (:log10, 100), (:log10, 1000), (:log10, 2), (:log10, 5),
@@ -2601,6 +2603,8 @@ const _A_ARITHC_EXPECT = String[
     "ok:F0",  # erfc(30.0)
     "ok:F4000000000000000",  # erfc(-30.0)
     "ok:F3fdeb02147ce245c",  # erfc(+(0.25,0.25))
+    "ok:F3e508ddd14000000",  # erfc(4.0) — 1 - erf: the low bits lost (D-0040)
+    "ok:F0",  # erfc(10.0) — swipl's 0.0, the C library's 2.09e-45 (D-0040)
     "ok:F3ff340331966d395",  # +(erfc(0.5),erfc(0.25))
     "ok:F0",  # log10(1)
     "ok:F3ff0000000000000",  # log10(10)

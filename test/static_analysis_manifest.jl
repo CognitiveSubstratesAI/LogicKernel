@@ -327,7 +327,6 @@ _manifest_per_type(T) = (
     # V5d: the overflow raised, the spare enabled and reserved again; the ball copied, its cycles kept
     (LK.outOfStack!, Tuple{LK.PL_local_data{T}, LK.stack_overflow_action}, false),
     (LK.outOfStack!, Tuple{LK.PL_local_data{T}, LK.stack_overflow_action, Symbol}, false),
-    (LK.push_overflow_context, Tuple{Type{T}}, false),
     (LK.push_overflow_context, Tuple{Type{T}, Symbol}, false),
     (LK.enableSpareStack!, Tuple{LK.PL_local_data{T}, Bool}, true),
     (LK.enableSpareStacks!, Tuple{LK.PL_local_data{T}}, true),
