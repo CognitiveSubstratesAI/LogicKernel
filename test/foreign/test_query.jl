@@ -271,11 +271,13 @@ end
 @testset "the stack limit: resource_error(stack) at the query boundary; the query recovers" begin
     db, p = _ydb()
     ld = db.ld
-    ld.stacks_limit = ld.lMax + ld.local_spare                  # no growth past here
     fid = LK.PL_open_foreign_frame(ld)
     LK.PL_new_term_refs(ld, ld.lMax - ld.lTop - (LK.SIZEOF_QUERYFRAME + LK.MAXARITY) - 1)
     a = LK.PL_new_term_ref(ld)
     LK.putSlotValue!(ld, a + 1, _yv(1))
+    # no growth past here: since L1f f2 the limit is ONE over the three stacks (audit D-0036), so it is what
+    # they hold now — `lMax + local_spare` alone is below the global stack's cells and raises a global overflow
+    ld.stacks_limit = LK._stacks_in_use(ld, 0)
     qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL, p[:f].proc, a)
     @test qid != 0
     @test LK.PL_next_solution(db.gd, ld, qid) == LK.PL_S_FALSE  # S_STATIC's space; no EXT_STATUS
