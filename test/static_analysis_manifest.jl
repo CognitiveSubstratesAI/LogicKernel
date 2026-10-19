@@ -342,7 +342,9 @@ _manifest_per_type(T) = (
     (LK.enableSpareStacks!, Tuple{LK.PL_local_data{T}}, true),
     (LK.has_emergency_space_local, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.trim_stack!, Tuple{LK.PL_local_data{T}}, true),
-    (LK.trimStacks!, Tuple{LK.PL_local_data{T}, Bool}, true),
+    # (L1f f1b, D-0049: `resize` → growStacks_trim!, which can GROW the local stack — its record pools — as
+    # upstream's growStacks allocates; on exception recovery only)
+    (LK.trimStacks!, Tuple{LK.PL_local_data{T}, Bool}, false),
     (LK.init_stack!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.allocStacks!, Tuple{LK.PL_local_data{T}}, false),
     (LK._resize_local!, Tuple{LK.PL_local_data{T}, Int}, false),
