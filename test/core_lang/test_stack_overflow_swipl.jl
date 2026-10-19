@@ -128,7 +128,8 @@ end
     # D-0036), so a recursion that lays out a term — r(a): r(f(X)) — meets it at a GLOBAL site first, whose
     # context is `stack_overflow`; swipl's is the stack_overflow{…} dict for every goal (below).
     want = [
-        "resource_error(stack) | atom(local)", "resource_error(stack) | atom(stack_overflow)",
+        "resource_error(stack) | atom(local)",
+        "resource_error(stack) | atom(stack_overflow)",
         "resource_error(stack) | atom(local)"
     ]
     @test ours == want
