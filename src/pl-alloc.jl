@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-alloc.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-gc.h @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -39,6 +40,12 @@ end
 # kernel has no dicts.
 "The context of a local-stack overflow's error (pl-alloc.c): the stack's name atom."
 push_overflow_context(::Type{T}) where {T} = mk_sym(T, :local)
+# DIVERGES (L1f f2, audit D-0029 D2 (a)): a GLOBAL-stack overflow's context is the atom `stack_overflow`;
+# swipl's is a dict (`stack_overflow{choicepoints:…, depth:…, globalused:…, stack:[…]}`), which the kernel
+# cannot build — on the divergence list.
+"The context of a global-stack overflow's error: the atom `stack_overflow` (swipl: a dict)."
+push_overflow_context(::Type{T}, stack::Symbol) where {T} =
+    stack === :global ? mk_sym(T, :stack_overflow) : push_overflow_context(T)
 
 # PORT: pl-alloc.c outOfStack as outOfStack!
 # DIVERGES: the local stack's, the only one that overflows here.
@@ -62,7 +69,9 @@ Raise `error(resource_error(stack), local)` for an overflow of the local stack: 
 mark the exception processed and the stack out of room (pl-alloc.c). A second overflow before the
 first is recovered from makes `ld` unusable and throws.
 """
-function outOfStack!(ld::PL_local_data{T}, how::stack_overflow_action)::Bool where {T}
+function outOfStack!(
+    ld::PL_local_data{T}, how::stack_overflow_action, stack::Symbol=:local
+)::Bool where {T}
     if ld.outofstack                                # LD->outofstack == stack
         ld.unusable = true                          # (see above: no fatalError)
         error("[Thread 1]: failed to recover from local-overflow: Sorry, cannot continue")
@@ -70,7 +79,7 @@ function outOfStack!(ld::PL_local_data{T}, how::stack_overflow_action)::Bool whe
     enableSpareStacks!(ld)
     ld.exception_processing = true
     ld.outofstack = true
-    ctx = push_overflow_context(T)
+    ctx = push_overflow_context(T, stack)
     _slot_store_value!(                             # the ball: a value (decision 1; L1c)
         ld,
         ld.exception_bin + 1,
@@ -95,9 +104,22 @@ end
 function raiseStackOverflow(ld::PL_local_data{T}, overflow::boolex_t)::Bool where {T}
     if overflow == LOCAL_OVERFLOW
         return outOfStack!(ld, STACK_OVERFLOW_RAISE)
+    elseif overflow == GLOBAL_OVERFLOW                  # L1f f2
+        return outOfStack!(ld, STACK_OVERFLOW_RAISE, :global)
     end
     @assert overflow == BOOLEX_FALSE "raiseStackOverflow: not an overflow: $overflow"
     return false
+end
+
+# PORT: pl-gc.h ensureGlobalSpace
+# DIVERGES (L1f f2, audit D-0029 D1 (a), D3 (a)): no garbage collection to try (`ALLOW_GC`) and nothing
+# to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: `n` more cells
+# above `gTop` within `stacks_limit`, else the overflow is raised (`resource_error(stack)`); while an
+# exception is processed the limit is not applied (upstream's spare stacks), so the handler can run.
+"Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`)."
+function ensureGlobalSpace(ld::PL_local_data, n::Int)::Bool
+    (ld.gTop + n <= ld.stacks_limit || ld.exception_processing) && return true
+    return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
 end
 
 # PORT: pl-alloc.c f_pushArgumentStack

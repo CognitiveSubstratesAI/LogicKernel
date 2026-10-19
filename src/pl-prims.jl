@@ -3223,14 +3223,7 @@ function pl_functor3_va(
     end
     name = PL_get_atom_ex(ld, A2)
     if name !== nothing
-        if arity >= ld.stacks_limit                     # !ensureGlobalSpace(1+arity, ALLOW_GC)
-            throw(
-                NotPortedError{T}(
-                    slotValue(ld, A3 + 1),
-                    "a compound larger than the stacks (the global stack's overflow)", "L1"
-                )
-            )
-        end
+        ensureGlobalSpace(ld, 1 + arity) || return FFALSE   # (L1f f2)
         return PL_unify_functor(ld, A1, name, arity) ? FTRUE : FFALSE
     end
 
@@ -3273,6 +3266,7 @@ function pl_univ2_va(
                 return PL_error(ld, ERR_TYPE, mk_sym(T, :list), list) ? FTRUE : FFALSE
             return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
         end
+        ensureGlobalSpace(ld, arity + 1) || return FFALSE  # allocGlobal(arity+1) (L1f f2)
         p = _alloc_compound!(
             ld, lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity), arity
         )

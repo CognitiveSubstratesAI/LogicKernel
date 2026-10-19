@@ -321,10 +321,13 @@ _manifest_per_type(T) = (
     (LK._grow_pool!, Tuple{LK.PL_local_data{T}, Vector{LK.fliFrame}, Int}, false),
     (LK.growLocalSpace, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.ensureLocalSpace, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.ensureGlobalSpace, Tuple{LK.PL_local_data{T}, Int}, false),  # L1f f2: the global limit
     (LK.raiseStackOverflow, Tuple{LK.PL_local_data{T}, LK.boolex_t}, false),
     # V5d: the overflow raised, the spare enabled and reserved again; the ball copied, its cycles kept
     (LK.outOfStack!, Tuple{LK.PL_local_data{T}, LK.stack_overflow_action}, false),
+    (LK.outOfStack!, Tuple{LK.PL_local_data{T}, LK.stack_overflow_action, Symbol}, false),
     (LK.push_overflow_context, Tuple{Type{T}}, false),
+    (LK.push_overflow_context, Tuple{Type{T}, Symbol}, false),
     (LK.enableSpareStack!, Tuple{LK.PL_local_data{T}, Bool}, true),
     (LK.enableSpareStacks!, Tuple{LK.PL_local_data{T}}, true),
     (LK.has_emergency_space, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -2266,6 +2269,9 @@ const DISPATCH_EXEMPT = (
     ),
     (
         (LK.var"@FASTCOND_FAILED", Tuple{LineNumberNode, Module}) => "a macro (pl-vmi.c FASTCOND_FAILED): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
+    ),
+    (
+        (LK.var"@ENSURE_GLOBAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_GLOBAL_SPACE, L1f f2): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
     ),
     (
         (LK.var"@ENSURE_LOCAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_LOCAL_SPACE): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"

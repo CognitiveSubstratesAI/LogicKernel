@@ -45,14 +45,7 @@ function pl_dlength2_va(
         if len > 0
             list = PL_new_term_ref(ld)
 
-            if len > ld.stacks_limit ÷ 3                # !ensureGlobalSpace(len*3, ALLOW_GC)
-                throw(
-                    NotPortedError{T}(
-                        p, "a list longer than the stacks (the global stack's overflow)",
-                        "L1"
-                    )
-                )
-            end
+            ensureGlobalSpace(ld, 3 * len) || return FFALSE    # !ensureGlobalSpace(len*3) (L1f f2)
 
             p0 = allocGlobalCells!(ld, 3 * len)         # p = allocGlobal(len*3) (L1e e4: on the cells)
             ld.slots[list + 1] = consPtr(p0, TAG_COMPOUND | STG_GLOBAL)   # setHandle(list, consPtr(p, …))
@@ -73,12 +66,8 @@ function pl_dlength2_va(
         if bigint_value(p) < 0                          # ar_sign_i(&i) < 0
             return FFALSE
         end
-
-        throw(
-            NotPortedError{T}(
-                p, "a list longer than the stacks (the global stack's overflow)", "L1"
-            )
-        )
+        outOfStack!(ld, STACK_OVERFLOW_RAISE, :global)  # (L1f f2) too long for the stacks
+        return FFALSE
     end
 
     return PL_error(ld, "length", 2, "", ERR_TYPE, mk_sym(T, :integer), A2) ? FTRUE : FFALSE

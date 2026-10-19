@@ -116,18 +116,11 @@ end
 check_mpq(n::number)::Bool = true
 
 # PORT: pl-arith.c int_too_big
-# NOT PORTED: the global stack's resource error (`outOfStack`), until G1, as decided since Q-C: the
-# kernel has no global stack, and G1 accounts the binding store and trail against `stack_limit`.
-# Here a `NotPortedError` — loud: the query closes (decision 1) — never GMP's `abort()`.
-"An integer too big to create (pl-arith.c `int_too_big`): see above."
+# (L1f f2: the global stack's overflow, as upstream — `outOfStack(global, STACK_OVERFLOW_RAISE)`)
+"An integer too big to create (pl-arith.c `int_too_big`): the global stack's resource error; false."
 function int_too_big(ld::PL_local_data{T})::Bool where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :int_too_big),
-            "the resource error of an integer too big (int_too_big)",
-            "G1"
-        )
-    )
+    outOfStack!(ld, STACK_OVERFLOW_RAISE, :global)
+    return false
 end
 
 # PORT: pl-arith.c int_bits_ok

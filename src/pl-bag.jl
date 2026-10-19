@@ -111,9 +111,12 @@ end
 
 # PORT: pl-bag.c collect_findall_bag as pl_collect_findall_bag2_va
 # (PRED_IMPL("$collect_findall_bag", 2, collect_findall_bag, 0))
-# DIVERGES: no global space to ensure. The answers are taken from the top — the LAST answer is
-# put back first, so its fresh variables are the oldest, as upstream's. With no current bag
-# upstream dereferences NULL; here it is asserted.
+# DIVERGES (L1f f2, audit D-0032): upstream ensures `bag->gsize + solutions*3` before the copy; the
+# bag keeps no `gsize` (its records are terms, see `findall_bag`), so the list's cells are ensured
+# before and each answer is checked against the limit AFTER its copy — the overshoot is at most one
+# answer's cells, given back when the error backtracks. The answers are taken from the top — the LAST
+# answer is put back first, so its fresh variables are the oldest, as upstream's. With no current
+# bag upstream dereferences NULL; here it is asserted.
 "`'\$collect_findall_bag'(-List, +Tail)`: `List` is the current bag's answers, in order, before `Tail` (pl-bag.c)."
 function pl_collect_findall_bag2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -126,9 +129,15 @@ function pl_collect_findall_bag2_va(
         list = PL_copy_term_ref(ld, A2)
         answer = PL_new_term_ref(ld)
 
+        ensureGlobalSpace(ld, bag.solutions * 3) || return FFALSE   # (L1f f2) see above
+
         while !isempty(bag.answers)                 # (rp=topOfSegStack(&bag->answers))
             r = bag.answers[end]
             copyRecordToGlobal(ld, answer, r)
+            if ld.gTop > ld.stacks_limit && !ld.exception_processing   # (L1f f2) see above
+                raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+                return FFALSE
+            end
             PL_cons_list(ld, list, answer, list)
             pop!(bag.answers)                       # popTopOfSegStack(&bag->answers)
         end

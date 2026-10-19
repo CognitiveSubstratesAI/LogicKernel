@@ -338,36 +338,42 @@ function classify_exception_cells(
     ld::PL_local_data{T}, k::UInt8, w::word
 )::except_class where {T}
     k == DU_CELL && return EXCEPT_NONE                                  # isVar(*p)
-    _aw(n::Symbol) = _atom_word!(ld, mk_sym(T, n))
-    _fw(n::Symbol, a::Int) = lookupFunctorDef(ld.functors, _aw(n), a)
     if k == DU_WORD && isAtomW(w)                                       # isTextAtom(*p)
-        w == _aw(:time_limit_exceeded) && return EXCEPT_TIMEOUT
+        w == _atom_word!(ld, mk_sym(T, :time_limit_exceeded)) && return EXCEPT_TIMEOUT
     elseif k == DU_WORD && _is_gcompound(w)
         q = valPtr(w)
         f = ld.gstack[q]
-        if f == _fw(:error, 2)                                          # hasFunctor(*p, FUNCTOR_error2)
+        if f == lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)                                          # hasFunctor(*p, FUNCTOR_error2)
             ka, wa, pa = _deref_loc(ld, q + 1)                          # p = argTermP(*p, 0); deRef(p)
             if ka == DU_TERM
                 ld.cold_pairs += 1
                 return classify_exception_p(ld, _loc_term(ld, k, w, 0))
             end
             ka == DU_WORD && _is_gcompound(wa) &&
-                ld.gstack[valPtr(wa)] == _fw(:resource_error, 1) &&
+                ld.gstack[valPtr(wa)] == lookupFunctorDef(
+                    ld.functors, _atom_word!(ld, mk_sym(T, :resource_error)), 1
+                ) &&
                 return EXCEPT_RESOURCE
             return EXCEPT_ERROR
-        elseif f == _fw(:time_limit_exceeded, 1)
+        elseif f == lookupFunctorDef(
+            ld.functors, _atom_word!(ld, mk_sym(T, :time_limit_exceeded)), 1
+        )
             return EXCEPT_TIMEOUT
-        elseif f == _fw(:unwind, 1)
+        elseif f == lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :unwind)), 1)
             ka, wa, pa = _deref_loc(ld, q + 1)
             if ka == DU_TERM
                 ld.cold_pairs += 1
                 return classify_exception_p(ld, _loc_term(ld, k, w, 0))
             end
-            ka == DU_WORD && isAtomW(wa) && wa == _aw(:abort) && return EXCEPT_ABORT
+            ka == DU_WORD && isAtomW(wa) && wa == _atom_word!(ld, mk_sym(T, :abort)) &&
+                return EXCEPT_ABORT
             if ka == DU_WORD && _is_gcompound(wa)
                 fa = ld.gstack[valPtr(wa)]
-                fa == _fw(:halt, 1) && return EXCEPT_HALT
-                fa == _fw(:thread_exit, 1) && return EXCEPT_THREAD_EXIT
+                fa == lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :halt)), 1) &&
+                    return EXCEPT_HALT
+                fa == lookupFunctorDef(
+                    ld.functors, _atom_word!(ld, mk_sym(T, :thread_exit)), 1
+                ) && return EXCEPT_THREAD_EXIT
             end
             return EXCEPT_UNWIND
         end
