@@ -683,6 +683,11 @@ function _manifest_index(T)
         (LK.inheritUnknown, Tuple{GD, MOD}, true),
         (LK.stripModuleName, Tuple{LD, T}, false),
         (LK.stripModule, Tuple{GD, LD, T}, false),
+        (LK.stripModuleName_cells, Tuple{LD, Int}, false),        # L1e e2c: on the cells
+        (LK.stripModule_cells, Tuple{GD, LD, Int}, false),
+        (LK._random_u64, Tuple{LD}, false), (LK._mpz_urandomm, Tuple{LD, BigInt}, false),   # arith-b
+        (LK._is_colon2_word, Tuple{LD, UInt8, UInt64}, false),
+        (LK._slot_link_loc!, Tuple{LD, Int, Tuple{UInt8, UInt64, Int}}, false),
         (LK.PL_strip_module_ex, Tuple{GD, LD, Int, Int, Int}, false),
         (LK._impl_any_defined, Tuple{D}, true),
         (LK.autoImport, Tuple{GD, T, Int, MOD}, false),
@@ -1415,6 +1420,22 @@ function _manifest_index(T)
                 LK.ar_float_fractional_part, LK.ar_float_integer_part, LK.ar_truncate
             )
         ]...,
+        # arith-b: the float functions, ** and ^ with their branches, random/1
+        [
+            (f, Tuple{LD, LK.number, LK.number}, false) for f in (
+                LK.ar_sin, LK.ar_cos, LK.ar_tan, LK.ar_atan, LK.ar_exp, LK.ar_sqrt,
+                LK.ar_asin,
+                LK.ar_acos, LK.ar_log, LK.ar_random
+            )
+        ]...,
+        (LK.ar_atan2, Tuple{LD, LK.number, LK.number, LK.number}, false),
+        (LK.ar_pow, Tuple{LD, LK.number, LK.number, LK.number}, false),
+        (LK.bn_pow_ui, Tuple{LD, BigInt, UInt64}, false),
+        (LK.get_int_exponent, Tuple{LD, LK.number}, false),
+        (LK._ar_pow_doreal_mpq, Tuple{LD, LK.number, LK.number, LK.number}, false),
+        (LK._ar_pow_maybe_real_mpq, Tuple{LD, LK.number, LK.number, LK.number}, false),
+        (LK._ar_pow_doreal, Tuple{LD, LK.number, LK.number, Int, LK.number}, false),
+        (LK._ar_pow_mpq_int, Tuple{LD, LK.number, UInt64, Int, LK.number}, false),
         (LK.isCurrentArithFunction, Tuple{Type{T}, UInt64, Int}, false),
         (LK._ar_call2, Tuple{LD, Int, LK.number, LK.number, LK.number}, false),
         (LK._ar_call1, Tuple{LD, Int, LK.number, LK.number}, false),
@@ -1813,6 +1834,22 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._strtod, Tuple{Vector{UInt8}, Int64}, false),
     (LK.addUTF8Buffer, Tuple{Vector{UInt8}, Int64}, false),
     (LK.ar_rdiv_mpz, Tuple{LK.number, LK.number, LK.number}, false),
+    # arith-b (arith_funcs_design.md §2): the C library's functions, the constants, the integer powers
+    [
+        (f, Tuple{Float64}, true) for f in (
+            LK._libm_sin, LK._libm_cos, LK._libm_tan, LK._libm_asin, LK._libm_acos,
+            LK._libm_atan, LK._libm_exp, LK._libm_log, LK._libm_sqrt
+        )
+    ]...,
+    (LK._libm_atan2, Tuple{Float64, Float64}, true),
+    (LK._libm_pow, Tuple{Float64, Float64}, true),
+    (LK.ar_pi, Tuple{LK.number}, true), (LK.ar_e, Tuple{LK.number}, true),
+    (LK.ar_cputime, Tuple{LK.number}, false), (LK.CpuTime, Tuple{}, false),
+    (LK._ar_call0, Tuple{Int, LK.number}, false),
+    (LK.intNumber, Tuple{LK.number}, true), (LK.ar_even, Tuple{LK.number}, false),
+    (LK.ar_smallint, Tuple{LK.number}, false), (LK.pow64, Tuple{Int64, Int64}, true),
+    (LK.mpz_to_int64, Tuple{BigInt}, false), (LK.mpz_to_uint64, Tuple{BigInt}, false),
+    (LK.mpz_root, Tuple{BigInt, UInt64}, false),
     (LK.backSkipBlanks, Tuple{Vector{UInt8}, Int64, Int64}, false),
     (LK.backSkipUTF8, Tuple{Vector{UInt8}, Int64, Int64}, true),
     (LK.backskip_utf8, Tuple{Vector{UInt8}, Int64}, true),

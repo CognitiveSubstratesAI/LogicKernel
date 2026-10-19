@@ -65,6 +65,12 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "_sha1_memcpy!: upstream's memcpy into `wbuf`'s bytes (4 ns against 15 ns, measured); " *
         "its byte range is CHECKED first, so it cannot write outside `wbuf` or read outside `data`"
     ),
+    "pl-arith.jl ccall" => (
+        12,
+        "the C library's libm (arith-b): sin, cos, tan, asin, acos, atan, atan2, exp, log, sqrt, " *
+        "pow… as swipl calls them (Julia's own differ from glibc in the last digit and throw where " *
+        "C gives a NaN); each passes and returns Float64 values only — no pointer, no buffer"
+    ),
     "pl-read.jl ccall" => (
         1,
         "_strtod (R1c): the C library's strtod, as upstream's ascii_to_double calls it, for its " *

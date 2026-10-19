@@ -2,6 +2,7 @@
 # UPSTREAM: swipl-devel src/pl-arith.h @ 8609e216cab9
 # UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
 # UPSTREAM: swipl-devel src/pl-inline.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/os/pl-os.c @ 8609e216cab9
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -12,7 +13,8 @@
 # `evalExpression`) into a `number` (src/pl-incl.jl; the number core is src/pl-gmp.jl), the
 # functions the programs reach (`+ - *`, unary `-` and `+`, and arith-a's: `/ // mod rem div`,
 # `abs sign min max copysign`, `gcd msb`, `/\ \/ xor \`, `integer round truncate float floor ceil
-# ceiling float_integer_part float_fractional_part`; arith_funcs_design.md), comparing
+# ceiling float_integer_part float_fractional_part`; and arith-b's: `** ^ sqrt exp log sin cos tan asin
+# acos atan atan/2 atan2 pi e random cputime`; arith_funcs_design.md), comparing
 # (`compareNumbers`), and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2`.
 #
 # DIVERGES (file-wide):
@@ -1124,24 +1126,586 @@ function ar_truncate(ld::PL_local_data, n1::number, r::number)::Bool
     return true
 end
 
+# ── arith-b: powers, transcendental functions, constants and system (pl-arith.c) ──────────────────
+# The C library functions, from glibc's libm — the library `swipl` calls (`USE_CRMATH` is off by
+# default, so `cr_sin` & co. are plain libm calls in FE_TONEAREST mode, the only mode the kernel has).
+# Julia's own `sin`, `exp`, `^`, ... are other implementations and differ from glibc's in the last
+# digit for about 1 argument in 100 (measured), and its `sqrt`, `asin`, ... throw where C returns a
+# NaN, so each is called through `ccall`.
+# DIVERGES: the library is named `libm.so.6`, glibc's soname: the kernel runs on Linux (CI: ubuntu).
+"The C math library the evaluable functions call (glibc's soname)."
+const LIBM = "libm.so.6"
+
+# `cr_sin` of pl-arith.c
+"`sin(x)` of the C library (pl-arith.c `cr_sin`, FE_TONEAREST)."
+_libm_sin(x::Float64)::Float64 = ccall((:sin, LIBM), Float64, (Float64,), x)
+# `cr_cos` of pl-arith.c
+"`cos(x)` of the C library (pl-arith.c `cr_cos`, FE_TONEAREST)."
+_libm_cos(x::Float64)::Float64 = ccall((:cos, LIBM), Float64, (Float64,), x)
+# `cr_tan` of pl-arith.c
+"`tan(x)` of the C library (pl-arith.c `cr_tan`, FE_TONEAREST)."
+_libm_tan(x::Float64)::Float64 = ccall((:tan, LIBM), Float64, (Float64,), x)
+# `cr_asin` of pl-arith.c
+"`asin(x)` of the C library (pl-arith.c `cr_asin`, FE_TONEAREST)."
+_libm_asin(x::Float64)::Float64 = ccall((:asin, LIBM), Float64, (Float64,), x)
+# `cr_acos` of pl-arith.c
+"`acos(x)` of the C library (pl-arith.c `cr_acos`, FE_TONEAREST)."
+_libm_acos(x::Float64)::Float64 = ccall((:acos, LIBM), Float64, (Float64,), x)
+# `cr_atan` of pl-arith.c
+"`atan(x)` of the C library (pl-arith.c `cr_atan`, FE_TONEAREST)."
+_libm_atan(x::Float64)::Float64 = ccall((:atan, LIBM), Float64, (Float64,), x)
+# `cr_atan2` of pl-arith.c
+"`atan2(y, x)` of the C library (pl-arith.c `cr_atan2`, FE_TONEAREST)."
+_libm_atan2(y::Float64, x::Float64)::Float64 =
+    ccall((:atan2, LIBM), Float64, (Float64, Float64), y, x)
+# `cr_exp` of pl-arith.c
+"`exp(x)` of the C library (pl-arith.c `cr_exp`, FE_TONEAREST)."
+_libm_exp(x::Float64)::Float64 = ccall((:exp, LIBM), Float64, (Float64,), x)
+# `cr_log` of pl-arith.c
+"`log(x)` of the C library (pl-arith.c `cr_log`, FE_TONEAREST)."
+_libm_log(x::Float64)::Float64 = ccall((:log, LIBM), Float64, (Float64,), x)
+# `cr_pow` of pl-arith.c
+"`pow(b, e)` of the C library (pl-arith.c `cr_pow`, FE_TONEAREST)."
+_libm_pow(b::Float64, e::Float64)::Float64 =
+    ccall((:pow, LIBM), Float64, (Float64, Float64), b, e)
+# `sqrt` is not redefined by `O_ROUND_UP_DOWN`: C's own, correctly rounded by IEEE.
+"`sqrt(x)` of the C library: a NaN for a negative argument (Julia's `sqrt` throws)."
+_libm_sqrt(x::Float64)::Float64 = ccall((:sqrt, LIBM), Float64, (Float64,), x)
+
+# PORT: pl-arith.c ar_sin
+"`sin/1` (pl-arith.c `ar_sin`, UNAIRY_FLOAT_FUNCTION)."
+function ar_sin(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_sin(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_cos
+"`cos/1` (pl-arith.c `ar_cos`, UNAIRY_FLOAT_FUNCTION)."
+function ar_cos(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_cos(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_tan
+"`tan/1` (pl-arith.c `ar_tan`, UNAIRY_FLOAT_FUNCTION)."
+function ar_tan(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_tan(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_atan
+"`atan/1` (pl-arith.c `ar_atan`, UNAIRY_FLOAT_FUNCTION)."
+function ar_atan(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_atan(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_exp
+"`exp/1` (pl-arith.c `ar_exp`, UNAIRY_FLOAT_FUNCTION)."
+function ar_exp(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_exp(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_atan2
+"`atan/2` and `atan2/2` (pl-arith.c `ar_atan2`, BINAIRY_FLOAT_FUNCTION): the angle of the point `(n2, n1)`."
+function ar_atan2(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    (promoteToFloatNumber(ld, n1) && promoteToFloatNumber(ld, n2)) || return false
+    r.f = _libm_atan2(n1.f, n2.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_sqrt
+"`sqrt/1` (pl-arith.c `ar_sqrt`)."
+function ar_sqrt(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_sqrt(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_asin
+"`asin/1` (pl-arith.c `ar_asin`)."
+function ar_asin(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_asin(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_acos
+"`acos/1` (pl-arith.c `ar_acos`)."
+function ar_acos(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_acos(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_log
+"`log/1` (pl-arith.c `ar_log`)."
+function ar_log(ld::PL_local_data, n1::number, r::number)::Bool
+    promoteToFloatNumber(ld, n1) || return false
+    r.f = _libm_log(n1.f)
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# PORT: pl-arith.c ar_pi
+# DIVERGES: round to nearest only, so `fegetround() == FE_UPWARD` never holds.
+"`pi/0` (pl-arith.c `ar_pi`): `M_PI`."
+function ar_pi(r::number)::Bool
+    r.f = Float64(π)                                        # M_PI
+    r.type = V_FLOAT
+    return true
+end
+
+# PORT: pl-arith.c ar_e
+# DIVERGES: round to nearest only, as `ar_pi`.
+"`e/0` (pl-arith.c `ar_e`): `M_E`."
+function ar_e(r::number)::Bool
+    r.f = Float64(ℯ)                                        # M_E
+    r.type = V_FLOAT
+    return true
+end
+
+# PORT: pl-os.c CpuTime
+# DIVERGES: the `CLOCK_PROCESS_CPUTIME_ID` (2) branch of `CpuTime`, the one Linux takes; the spectre
+# jitter (`mitigate_spectre`) is off, its default. 0.0 where `clock_gettime` fails, as upstream.
+"The CPU time the process has used, in seconds (os/pl-os.c `CpuTime(CPU_USER)`)."
+function CpuTime()::Float64
+    ts = Ref((Int64(0), Int64(0)))                          # struct timespec
+    rc = ccall(:clock_gettime, Cint, (Cint, Ptr{Tuple{Int64, Int64}}), 2, ts)
+    rc == 0 || return 0.0
+    sec, nsec = ts[]
+    return Float64(sec) + Float64(nsec) / 1000000000.0      # timespec_to_double
+end
+
+# PORT: pl-arith.c ar_cputime
+"`cputime/0` (pl-arith.c `ar_cputime`): the CPU seconds the process has used."
+function ar_cputime(r::number)::Bool
+    r.f = CpuTime()
+    r.type = V_FLOAT
+    return true
+end
+
+# The random source: upstream seeds a GMP `gmp_randstate_t` (a Mersenne twister, `init_random`) in the
+# LOCAL DATA on first use (`LD->arith.random`); here SplitMix64 on `ld.random_state`, seeded on first use.
+# A seed (`set_random/1`, `random_property/1`) is a later step, so the stream is not comparable to
+# swipl's under any seed: the tests check the range and the errors.
+# DIVERGES: the generator (above).
+
+# `init_random` and `mt_rand_u32` of pl-arith.c, in one
+"The next 64 random bits (`init_random` on first use, then `mt_rand_u32` twice)."
+function _random_u64(ld::PL_local_data)::UInt64
+    if ld.random_state == 0                                 # init_random()
+        ld.random_state =
+            (UInt64(time_ns()) ⊻ (UInt64(Libc.getpid()) << 40) ⊻ 0x853c49e6748fea9b) | 1
+    end
+    z = ld.random_state += 0x9e3779b97f4a7c15
+    z = (z ⊻ (z >> 30)) * 0xbf58476d1ce4e5b9
+    z = (z ⊻ (z >> 27)) * 0x94d049bb133111eb
+    return z ⊻ (z >> 31)
+end
+
+# GMP's `mpz_urandomm` by rejection: `nbits` random bits until the number is below `n`.
+"A random integer in `[0, n)` for `n > 0` (GMP `mpz_urandomm`)."
+function _mpz_urandomm(ld::PL_local_data, n::BigInt)::BigInt
+    nbits = ndigits(n; base=2)
+    nwords = cld(nbits, 32)
+    while true
+        x = BigInt(0)
+        for _ in 1:nwords
+            x = (x << 32) | BigInt(UInt32(_random_u64(ld) >> 32))
+        end
+        x >>= nwords * 32 - nbits
+        x < n && return x
+    end
+end
+
+# PORT: pl-arith.c ar_random
+# DIVERGES: the generator (see `_random_u64`); `V_INTEGER` takes upstream's `O_BF` branch (a mask of
+# `msb(n)+1` bits, redrawn while not below `n`), which answers a small integer, where the GMP branch
+# promotes to `V_MPZ` and answers the same value.
+"`random/1` (pl-arith.c `ar_random`): a random integer in `[0, n)`."
+function ar_random(ld::PL_local_data{T}, n1::number, r::number)::Bool where {T}
+    toIntegerNumber(ld, n1, TOINT_CONVERT_FLOAT) ||
+        return PL_error(ld, "random", 1, "", ERR_AR_TYPE, mk_sym(T, :integer), n1)
+    ar_sign_i(n1) <= 0 && return mustBePositive(ld, "random", 1, n1)
+    if n1.type === V_INTEGER
+        msb = MSB64(n1.i)
+        mask = (UInt64(1) << (msb + 1)) - 1
+        rnd = UInt64(0)
+        while true
+            rnd = _random_u64(ld) >> 32                     # mt_rand_u32
+            if msb > 32
+                rnd |= (_random_u64(ld) >> 32) << 32
+            end
+            rnd &= mask
+            rnd >= UInt64(n1.i) || break
+        end
+        r.type = V_INTEGER
+        r.i = Int64(rnd)
+        return true
+    end
+    r.type = V_MPZ                                          # V_MPZ
+    r.mpz = _mpz_urandomm(ld, n1.mpz)
+    return true
+end
+
+# ── ** and ^ (pl-arith.c ar_pow) ─────────────────────────────────────────────────────────────────
+# PORT: pl-incl.h intNumber
+"Whether `n` is an integer, small or big (pl-arith.h `intNumber`)."
+intNumber(n::number)::Bool = n.type === V_INTEGER || n.type === V_MPZ
+
+# PORT: pl-arith.c ar_even
+"Whether the integer `i` is even (pl-arith.c)."
+ar_even(i::number)::Bool = i.type === V_INTEGER ? i.i % 2 == 0 : iseven(i.mpz)
+
+# PORT: pl-arith.c bn_pow_ui
+# DIVERGES: returns `(status, result)`, where upstream writes `r` and returns the status (0, or -1 on
+# overflow); an exponent above `INT64_MAX` is an overflow here: `mul64` there takes it as a negative
+# `int64_t`, and `mpz_pow_ui` is then asked for a result past GMP's size.
+"`base^exp` of big integers (pl-arith.c `bn_pow_ui`): `(0, base^exp)`, or `(-1, 0)` if it is too big."
+function bn_pow_ui(ld::PL_local_data, base::BigInt, exp::UInt64)::Tuple{Int, BigInt}
+    iszero(base) && return (0, BigInt(0))
+    isone(base) && return (0, BigInt(1))
+    exp == 0 && return (0, BigInt(1))
+    base_bits = ndigits(base; base=2)                       # mpz_sizeinbase(base, 2)
+    exp > UInt64(typemax(Int64)) && return (-1, BigInt(0))
+    r_bits, overflow = mul64(Int64(base_bits), Int64(exp))
+    (overflow || !int_bits_ok(ld, UInt64(r_bits))) && return (-1, BigInt(0))
+    return (0, base^Int(exp))
+end
+
+# PORT: pl-arith.c get_int_exponent
+# DIVERGES: returns `(true, |n|)`; `int_too_big` raises (the interim, see there), so `false` is never
+# returned.
+"The absolute value of the integer exponent `n` (pl-arith.c `get_int_exponent`): `int_too_big` if it is past an `int64_t`."
+function get_int_exponent(ld::PL_local_data, n::number)::Tuple{Bool, UInt64}
+    i = Int64(0)
+    if n.type === V_INTEGER
+        i = n.i
+    else                                                    # V_MPZ
+        fits, v = mpz_to_int64(n.mpz)
+        fits || return (int_too_big(ld), UInt64(0))
+        i = v
+    end
+    if i < 0
+        i = -i
+        i < 0 && return (int_too_big(ld), UInt64(0))        # INT64_MIN
+    end
+    return (true, UInt64(i))                                # FITS_ULONG(i): always on LP64
+end
+
+# PORT: pl-arith.c ar_smallint
+# DIVERGES: returns `(is_small, value)`.
+"Whether the integer `n` is -1, 0 or 1 (pl-arith.c `ar_smallint`), and which."
+function ar_smallint(n::number)::Tuple{Bool, Int}
+    if n.type === V_INTEGER
+        -1 <= n.i <= 1 && return (true, Int(n.i))
+        return (false, 0)
+    end
+    -1 <= n.mpz <= 1 && return (true, Int(n.mpz))           # V_MPZ
+    return (false, 0)
+end
+
+# PORT: pl-arith.c pow64
+# DIVERGES: returns `(ok, m^n)`.
+"`m^n` of `int64_t`s by repeated squaring (pl-arith.c `pow64`): `(false, 0)` on overflow."
+function pow64(m::Int64, n::Int64)::Tuple{Bool, Int64}
+    res = Int64(1)
+    while n != 0
+        if (n & 1) != 0
+            v, overflow = mul64(res, m)
+            overflow && return (false, Int64(0))
+            res = v
+        end
+        n >>= 1
+        if n != 0
+            v, overflow = mul64(m, m)
+            overflow && return (false, Int64(0))
+            m = v
+        end
+    end
+    return (true, res)
+end
+
+# DIVERGES: `LD->arith.rat.max_rational_size_action`, nonzero (`ATOM_error`) by default: an inexact
+# rational power is then computed as a float (`maybe_real_mpq`); zero would raise `int_too_big`.
+"Whether `max_rational_size_action` is set (pl-arith.c): `error`, its default."
+const MAX_RATIONAL_SIZE_ACTION = true
+
+# ar_pow's `doreal_mpq:` — a float base to a rational power (the branch also takes the other bases
+# once `maybe_real_mpq` made them floats): `|n1| ** n2` as floats, negated when `n1` is negative and
+# the numerator of `n2` odd. `n2` is the exponent as given (upstream negates a negative numerator for
+# the root searches and restores it here).
+# DIVERGES: `fegetround()` is always FE_TONEAREST, so `roundMode1` and `roundMode2` are that mode and
+# the `fesetround` calls have nothing to do.
+function _ar_pow_doreal_mpq(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    neg_res = n1.f < 0.0 && isodd(numerator(n2.mpq))        # mpz_get_ui(numer) & 1
+    n1.f = abs(n1.f)
+    promoteToFloatNumber(ld, n2) || return false
+    r.f = _libm_pow(n1.f, n2.f)
+    if neg_res
+        r.f = -r.f
+    end
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# ar_pow's `maybe_real_mpq:` — the rational power is not computed exactly.
+function _ar_pow_maybe_real_mpq(
+    ld::PL_local_data, n1::number, n2::number, r::number
+)::Bool
+    if MAX_RATIONAL_SIZE_ACTION
+        promoteToFloatNumber(ld, n1) || return false        # float overflow
+        return _ar_pow_doreal_mpq(ld, n1, n2, r)
+    end
+    return int_too_big(ld)                                  # stack overflow
+end
+
+# ar_pow's `doreal:` — the general case, as floats.
+function _ar_pow_doreal(
+    ld::PL_local_data, n1::number, n2::number, exp_sign::Int, r::number
+)::Bool
+    # `signbit(n1->value.f)` of upstream reads a float where one is the zero base this matters for
+    zero_div_sign =
+        if (n2.type === V_INTEGER && !ar_even(n2) && n1.type === V_FLOAT && signbit(n1.f))
+            -1
+        else
+            1
+        end
+    (promoteToFloatNumber(ld, n1) && promoteToFloatNumber(ld, n2)) || return false
+    if n1.f == 0.0 && exp_sign == -1
+        return check_zero_div(ld, zero_div_sign, r, "**", 2)
+    end
+    if n1.f == 1.0
+        r.f = 1.0                                           # broken on e.g., mipsel
+    else
+        r.f = _libm_pow(n1.f, n2.f)
+    end
+    r.type = V_FLOAT
+    return check_float(ld, r)
+end
+
+# ar_pow's `int_pow_neg_int:` and the `MPQ ^ int` branch: `n1` (a rational) to the integer power
+# `exp` (an absolute value; `exp_sign` is the exponent's sign), as the numerator's and denominator's
+# powers.
+function _ar_pow_mpq_int(
+    ld::PL_local_data, n1::number, exp::UInt64, exp_sign::Int, r::number
+)::Bool
+    nexp = _number_alloc!(ld)
+    nr = _number_alloc!(ld)
+    nd = _number_alloc!(ld)
+    nrp = _number_alloc!(ld)
+    ndp = _number_alloc!(ld)
+    nexp.type = V_INTEGER
+    nexp.i = Int64(exp)
+    nr.type = V_MPZ
+    nr.mpz = numerator(n1.mpq)
+    nd.type = V_MPZ
+    nd.mpz = denominator(n1.mpq)
+    rc = false
+    if ar_pow(ld, nr, nexp, nrp) && ar_pow(ld, nd, nexp, ndp)
+        pr = nrp.type === V_INTEGER ? BigInt(nrp.i) : nrp.mpz       # mpz_set_num
+        pd = ndp.type === V_INTEGER ? BigInt(ndp.i) : ndp.mpz
+        r.type = V_MPQ
+        r.mpq = exp_sign > 0 ? pr // pd : pd // pr          # mpq_canonicalize
+        rc = check_mpq(r)
+    end
+    _number_free!(ld, 5)
+    return rc
+end
+
+# PORT: pl-arith.c ar_pow
+# DIVERGES: the `gotos` are the helpers `_ar_pow_*`; `n2` is not negated in place for a negative
+# rational exponent (the root searches use its absolute numerator, and `_ar_pow_doreal_mpq` the
+# exponent as given); the rounding modes are FE_TONEAREST only (see there); `prefer_rationals` is the
+# constant `PLFLAG_RATIONAL`. The size checks raise `int_too_big` as everywhere (the interim).
+"`**/2` and `^/2` (pl-arith.c `ar_pow`): `n1` to the power `n2`; an integer for integers, else a float or a rational."
+function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
+    exp_nan = false
+    exp_sign = 0
+    if n2.type === V_FLOAT
+        exp_nan = isnan(n2.f)
+        exp_sign = sign_f(n2.f)
+    else
+        exp_sign = ar_sign_i(n2)
+    end
+    r.type = V_INTEGER                                      # for all special cases
+
+    if exp_sign == 0 && !exp_nan                            # test for X**0
+        r.i = 1
+        return true
+    end
+
+    if intNumber(n1)
+        is_small, n1_val = ar_smallint(n1)
+        if is_small
+            if n1_val == 1                                  # 1**X => 1
+                r.i = 1
+                return true
+            end
+            if n1_val == 0 && !exp_nan                      # n1==0, non-zero(n2)
+                if exp_sign > 0
+                    r.i = 0                                 # positive exp => 0
+                    return true
+                end
+                return check_zero_div(ld, 1, r, "**", 2)    # negative exp => zero_div
+            end
+            if n1_val == -1 && intNumber(n2)                # check n1 == -1
+                r.i = ar_even(n2) ? 1 : -1
+                return true
+            end
+        end
+    end
+
+    if intNumber(n1) && intNumber(n2)
+        ok, exp = get_int_exponent(ld, n2)
+        ok || return false
+        if exp_sign < 0
+            if PLFLAG_RATIONAL
+                promoteToMPQNumber(ld, n1)
+                return _ar_pow_mpq_int(ld, n1, exp, exp_sign, r)    # goto int_pow_neg_int
+            end
+            return _ar_pow_doreal(ld, n1, n2, exp_sign, r)  # goto doreal
+        end
+        op1_bits = 0
+        if n1.type === V_INTEGER
+            v = n1.i
+            if v < 0
+                v = -v
+            end
+            op1_bits = MSB64(v) + 1                         # # bits, as mpz_sizeinbase()
+        else
+            op1_bits = ndigits(n1.mpz; base=2)              # V_MPZ
+        end
+        r_bits, overflow = mul64(Int64(op1_bits), Int64(exp))   # bit estimate for result
+        overflow && return int_too_big(ld)
+        check_int_bits(ld, UInt64(r_bits)) || return false
+        if n1.type === V_INTEGER && r_bits < 63             # try using small integers
+            fits, res = pow64(n1.i, Int64(exp))
+            if fits
+                r.type = V_INTEGER
+                r.i = res
+                return true
+            end
+        end
+        r.type = V_MPZ
+        if n1.type === V_INTEGER
+            r.mpz = BigInt(n1.i)^Int(exp)                   # mpz_ui_pow_ui, or promote and mpz_pow_ui
+        else
+            r.mpz = n1.mpz^Int(exp)                         # mpz_pow_ui
+        end
+        return true
+    end
+
+    if n1.type === V_MPQ && intNumber(n2)
+        if exp_sign == 0
+            r.type = V_INTEGER
+            r.i = 1
+            return true
+        end
+        ok, exp = get_int_exponent(ld, n2)
+        ok || return false
+        return _ar_pow_mpq_int(ld, n1, exp, exp_sign, r)    # MPQ^int
+    end
+
+    if n2.type === V_MPQ                                    # X ^ rat
+        num = exp_sign == -1 ? -numerator(n2.mpq) : numerator(n2.mpq)   # mpz_neg for a negative one
+        status, r_den = mpz_to_uint64(denominator(n2.mpq))
+        status != 0 && return _ar_pow_maybe_real_mpq(ld, n1, n2, r)     # !FITS_ULONG: always fits
+        t = n1.type
+        if t === V_INTEGER || t === V_MPZ
+            base = t === V_INTEGER ? BigInt(n1.i) : n1.mpz
+            r.type = V_MPZ                                  # int ^ rat
+            if base < 0 && iseven(r_den)                    # neg ^ int/even is undefined
+                r.type = V_FLOAT
+                r.f = const_nan
+                return check_float(ld, r)
+            end
+            root, exact = mpz_root(base, r_den)
+            exact || return _ar_pow_maybe_real_mpq(ld, n1, n2, r)       # root inexact
+            status, r_num = mpz_to_uint64(num)
+            status != 0 && return _ar_pow_maybe_real_mpq(ld, n1, n2, r)
+            rc, pw = bn_pow_ui(ld, root, r_num)
+            rc != 0 && return _ar_pow_maybe_real_mpq(ld, n1, n2, r)
+            r.mpz = pw
+            if exp_sign == -1                               # create mpq=1/r->value
+                r.type = V_MPQ
+                r.mpq = BigInt(1) // pw                     # mpq_set_z, mpq_inv
+                return check_mpq(r)
+            end
+            return true
+        elseif t === V_MPQ
+            q = n1.mpq
+            if numerator(q) < 0 && iseven(r_den)            # neg ^ int / even
+                r.type = V_FLOAT
+                r.f = const_nan
+                return check_float(ld, r)
+            end
+            rn, exact_n = mpz_root(numerator(q), r_den)
+            rd, exact_d = exact_n ? mpz_root(denominator(q), r_den) : (BigInt(0), false)
+            exact_n && exact_d || return _ar_pow_maybe_real_mpq(ld, n1, n2, r)
+            status, r_num = mpz_to_uint64(num)
+            status != 0 && return _ar_pow_maybe_real_mpq(ld, n1, n2, r)
+            rc1, pn = bn_pow_ui(ld, rn, r_num)
+            rc1 != 0 && return _ar_pow_maybe_real_mpq(ld, n1, n2, r)
+            rc2, pd = bn_pow_ui(ld, rd, r_num)
+            rc2 != 0 && return _ar_pow_maybe_real_mpq(ld, n1, n2, r)
+            r.type = V_MPQ
+            r.mpq = exp_sign == -1 ? pd // pn : pn // pd    # mpq_inv
+            return check_mpq(r)
+        end
+        if n1.f == 0.0                                      # V_FLOAT: general case of 0.0**X
+            return _ar_pow_doreal(ld, n1, n2, exp_sign, r)
+        end
+        if n1.f < 0 && iseven(r_den)
+            r.f = const_nan                                 # negative base, even denominator
+        else
+            return _ar_pow_doreal_mpq(ld, n1, n2, r)
+        end
+        r.type = V_FLOAT
+        return check_float(ld, r)
+    end
+    return _ar_pow_doreal(ld, n1, n2, exp_sign, r)
+end
+
 # PORT: pl-arith.c ar_funcdefs
 # DIVERGES: the entries ported so far, in upstream's order, `(name, arity)`; see the file header.
-# `integer` and `round` share `ar_integer`, `ceil` and `ceiling` share `ar_ceil`, as upstream's.
+# `integer` and `round` share `ar_integer`, `ceil` and `ceiling` share `ar_ceil`, `atan/2` and
+# `atan2/2` share `ar_atan2` and `^` and `**` share `ar_pow`, as upstream's.
 "pl-arith.c's `ar_funcdefs[]`: the arithmetic functions, the ported entries."
 const ar_funcdefs = (
     (:+, 2), (:-, 2), (:*, 2), (:/, 2), (:-, 1), (:+, 1), (:abs, 1), (:max, 2), (:min, 2),
     (:mod, 2), (:rem, 2), (:div, 2), (:(//), 2), (:gcd, 2), (:sign, 1),
     (Symbol("/\\"), 2), (Symbol("\\/"), 2), (:>>, 2), (:<<, 2), (:xor, 2),
-    (Symbol("\\"), 1),
+    (Symbol("\\"), 1), (:random, 1),
     (:integer, 1), (:round, 1), (:truncate, 1), (:float, 1), (:floor, 1), (:ceil, 1),
     (:ceiling, 1), (:float_fractional_part, 1), (:float_integer_part, 1), (:copysign, 2),
-    (:msb, 1)
+    (:sqrt, 1), (:sin, 1), (:cos, 1), (:tan, 1), (:asin, 1), (:acos, 1), (:atan, 1),
+    (:atan, 2), (:atan2, 2), (:log, 1), (:exp, 1), (:^, 2), (Symbol("**"), 2), (:pi, 0),
+    (:e, 0),
+    (:cputime, 0), (:msb, 1)
 )
 
 # The names of `ar_funcdefs` that are not Julia syntax, as symbols compared in `_ar_call2`/`_ar_call1`.
 const _AR_AND = Symbol("/\\")
 const _AR_OR = Symbol("\\/")
 const _AR_NEG = Symbol("\\")
+const _AR_POW = Symbol("**")
 
 # PORT: pl-arith.c isCurrentArithFunction
 # DIVERGES: the function is `ar_funcdefs`' entry for the name's key and the arity, 0 for none —
@@ -1175,6 +1739,8 @@ function _ar_call2(ld::PL_local_data, k::Int, a0::number, a1::number, r::number)
     f === :>> && return ar_shift_right(ld, a0, a1, r)
     f === :<< && return ar_shift_left(ld, a0, a1, r)
     f === :xor && return ar_xor(ld, a0, a1, r)
+    (f === :^ || f === _AR_POW) && return ar_pow(ld, a0, a1, r)
+    (f === :atan || f === :atan2) && return ar_atan2(ld, a0, a1, r)
     return ar_copysign(a0, a1, r)                           # :copysign
 end
 function _ar_call1(ld::PL_local_data, k::Int, a0::number, r::number)::Bool
@@ -1191,7 +1757,24 @@ function _ar_call1(ld::PL_local_data, k::Int, a0::number, r::number)::Bool
     (f === :ceil || f === :ceiling) && return ar_ceil(ld, a0, r)
     f === :float_fractional_part && return ar_float_fractional_part(ld, a0, r)
     f === :float_integer_part && return ar_float_integer_part(ld, a0, r)
+    f === :random && return ar_random(ld, a0, r)
+    f === :sqrt && return ar_sqrt(ld, a0, r)
+    f === :sin && return ar_sin(ld, a0, r)
+    f === :cos && return ar_cos(ld, a0, r)
+    f === :tan && return ar_tan(ld, a0, r)
+    f === :asin && return ar_asin(ld, a0, r)
+    f === :acos && return ar_acos(ld, a0, r)
+    f === :atan && return ar_atan(ld, a0, r)
+    f === :log && return ar_log(ld, a0, r)
+    f === :exp && return ar_exp(ld, a0, r)
     return ar_msb(ld, a0, r)                                # :msb
+end
+# The call of the arity-0 `ar_funcdefs` entry `k` (upstream's `(*(ArithF0)f)(n)`), by the entry's name.
+function _ar_call0(k::Int, r::number)::Bool
+    f = ar_funcdefs[k][1]
+    f === :pi && return ar_pi(r)
+    f === :e && return ar_e(r)
+    return ar_cputime(r)                                    # :cputime
 end
 
 # ── characters (pl-arith.c) ──────────────────────────────────────────────────────────────────────
@@ -1325,20 +1908,31 @@ function _evalExpression_term(
     elseif k === VAR                                        # TAG_VAR
         PL_error(ld, ERR_INSTANTIATION)
         @goto error
-    elseif k === SYM                                        # TAG_ATOM: no arity-0 function is ported
-        if isTextAtom(p)
-            PL_error(ld, ERR_NOT_EVALUABLE, (p, 0))
+    elseif k === SYM                                        # TAG_ATOM
+        f0 = isCurrentArithFunction(T, sym_key(p), 0)       # lookupFunctorDef(word2atom(*p), 0)
+        if f0 != 0
+            _ar_call0(f0, n) || @goto error
         else
-            _ar_type_error(ld, :evaluable, p)
+            if isTextAtom(p)
+                PL_error(ld, ERR_NOT_EVALUABLE, (p, 0))
+            else
+                _ar_type_error(ld, :evaluable, p)
+            end
+            @goto error
         end
-        @goto error
     else                                                    # TAG_COMPOUND
         arity = nchildren(p) - 1
         if is_pair(p)                                       # FUNCTOR_dot2
             getCharExpression(ld, p, n) || @goto error
-        elseif arity == 0                                   # arity0: no function, not a text atom
-            _ar_type_error(ld, :evaluable, p)
-            @goto error
+        elseif arity == 0                                   # arity0: `pi()`, else not a text atom
+            h0 = child(p, 1)
+            f0 = kind(h0) === SYM ? isCurrentArithFunction(T, sym_key(h0), 0) : 0
+            if f0 != 0
+                _ar_call0(f0, n) || @goto error
+            else
+                _ar_type_error(ld, :evaluable, p)
+                @goto error
+            end
         else
             push!(frames, (p, arity))                       # pushForMark(&term_stack, p, …)
             pushed += 1
@@ -1464,23 +2058,34 @@ function evalExpression_cells(
     elseif k == DU_TERM                                     # the boundary: on the term
         ld.cold_pairs += 1
         _evalExpression_term(ld, deRef(ld, _loc_term(ld, k, w, p)), expr, n) || @goto error
-    elseif isAtomW(w)                                       # TAG_ATOM: no arity-0 function is ported
+    elseif isAtomW(w)                                       # TAG_ATOM
         a = _atom_value(ld, w)
-        if isTextAtom(a)
-            PL_error(ld, ERR_NOT_EVALUABLE, (a, 0))
+        f0 = isCurrentArithFunction(T, sym_key(a), 0)       # lookupFunctorDef(word2atom(*p), 0)
+        if f0 != 0
+            _ar_call0(f0, n) || @goto error
         else
-            _ar_type_error(ld, :evaluable, a)
+            if isTextAtom(a)
+                PL_error(ld, ERR_NOT_EVALUABLE, (a, 0))
+            else
+                _ar_type_error(ld, :evaluable, a)
+            end
+            @goto error
         end
-        @goto error
     else                                                    # TAG_COMPOUND
         c = valPtr(w)
         f = ld.gstack[c]                                    # term->definition
         arity = arityFunctor(ld.functors, f)
         if f == ld.functor_dot2                             # FUNCTOR_dot2
             getCharExpression_cells(ld, c, n) || @goto error
-        elseif arity == 0                                   # arity0: no function, not a text atom
-            _ar_type_error(ld, :evaluable, _compound_term(ld, c))
-            @goto error
+        elseif arity == 0                                   # arity0: `pi()`, else not a text atom
+            h0 = _atom_value(ld, nameFunctor(ld.functors, f))
+            f0 = isCurrentArithFunction(T, sym_key(h0), 0)
+            if f0 != 0
+                _ar_call0(f0, n) || @goto error
+            else
+                _ar_type_error(ld, :evaluable, _compound_term(ld, c))
+                @goto error
+            end
         elseif nameFunctor(ld.functors, f) == ld.atom_dexpr # Q-AR5: on its export, the term walk
             _evalExpression_term(ld, _compound_term(ld, c), expr, n) || @goto error
         else

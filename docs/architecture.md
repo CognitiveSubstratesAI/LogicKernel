@@ -617,7 +617,7 @@ fixed it or a public issue exists.
 | `src/pl-list.jl` | lists (since V9g-b): `is_list/1`, `'$length'/2`, and `sort/2`, `msort/2`, `keysort/2` over `nat_sort` — Richard O'Keefe's bottom-up natural merge sort, ported line for line over records that are indices into three vectors; `sort/4` and `'$memberchk'/3` are not ported | `src/pl-list.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
-| `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan` | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h` |
+| `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan`; since arith-a and arith-b the functions of arith_funcs_design.md §2 (`ar_pow`, the libm functions, `pi`/`e`/`cputime`/`random`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h`, `src/os/pl-os.c` |
 | `src/pl-modul.jl` | the module table and its two modules, `system` and `user` — `user`'s super `system` (`_lookupModule!`, `lookupModule`, `isCurrentModule`; since V5c) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's) | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-op.jl` | the operator tables (since R1b): each module's table, `system`'s holding SWI's defaults (`initOperators!`), defining an operator (`defOperator!`, `op/3`) and looking one up through the supers (`currentOperator`, `priorityOperator`); what `current_op/3` enumerates (`scanVisibleOperators!`) | `src/pl-op.c` |
 | `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused) and `PL_write_term`; since R1e's floats `format_float` (Ryu's digits in pl-write.c's layout), `format_special_float`, `writeNaN`, `writeINF`; since R1e's write/1 family nl/0,1, write_term/2,3 (`pl_write_term3`, `bind_varnames`), write/writeq/writeln/print /1,2 (`do_write2`), since R1e's canonical write_canonical/1,2 | `src/pl-write.c`, `src/pl-incl.h` |
@@ -860,6 +860,7 @@ graph LR
     pl_modul --> term_interface
     pl_modul --> default_term
     pl_modul --> pl_incl
+    pl_modul --> pl_funct
     pl_modul --> pl_global
     pl_modul --> pl_inline
     pl_modul --> pl_prims
@@ -1023,6 +1024,7 @@ graph LR
     pl_fli --> pl_incl
     pl_fli --> SWI_Prolog
     pl_fli --> pl_atom
+    pl_fli --> pl_funct
     pl_fli --> pl_global
     pl_fli --> pl_modul
     pl_fli --> pl_inline
@@ -1117,6 +1119,7 @@ graph LR
     os_pl_text --> pl_atom
     os_pl_text --> pl_global
     os_pl_text --> pl_inline
+    os_pl_text --> pl_prims
     os_pl_text --> pl_comp
     os_pl_text --> pl_fli
     os_pl_text --> pl_error

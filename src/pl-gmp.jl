@@ -420,3 +420,50 @@ function cmpNumbers(ld::PL_local_data, n1::number, n2::number)::Int
     !lt && !gt && return CMP_NOTEQ                          # either is NaN
     return Int(gt) - Int(lt)
 end
+
+# ── big integers to machine integers, and the integer root (pl-gmp.c, GMP) ───────────────────────
+# PORT: pl-gmp.c mpz_to_int64
+# DIVERGES: returns `(fits, value)`, where upstream writes `*i` and returns the flag.
+"The `Int64` an integer `mpz` is, if it fits (pl-gmp.c): `(true, value)`, else `(false, 0)`."
+function mpz_to_int64(mpz::BigInt)::Tuple{Bool, Int64}
+    if typemin(Int64) <= mpz <= typemax(Int64)              # MPZ_MIN_INT64 .. MPZ_MAX_INT64
+        return (true, Int64(mpz))
+    end
+    return (false, Int64(0))
+end
+
+# PORT: pl-gmp.c mpz_to_uint64
+# DIVERGES: returns `(status, value)`, where upstream writes `*i` and returns the status.
+"The `UInt64` an integer `mpz` is (pl-gmp.c): `(0, value)`; `(-1, 0)` if negative, `(1, 0)` if too big."
+function mpz_to_uint64(mpz::BigInt)::Tuple{Int, UInt64}
+    mpz < 0 && return (-1, UInt64(0))
+    mpz <= typemax(UInt64) && return (0, UInt64(mpz))
+    return (1, UInt64(0))
+end
+
+# GMP's `mpz_root(rop, op, n)`: the truncated integer `n`th root of `op`, and whether it is exact. A
+# negative `op` has a root for odd `n` only (the callers check); the root is the negative of its
+# magnitude's. Newton's iteration from a power of two above the root, as GMP's does in effect.
+"The truncated integer `n`th root of `x` (GMP `mpz_root`) and whether `root^n == x`."
+function mpz_root(x::BigInt, n::UInt64)::Tuple{BigInt, Bool}
+    iszero(x) && return (BigInt(0), true)
+    if x < 0
+        r, exact = mpz_root(-x, n)
+        return (-r, exact)
+    end
+    n == 1 && return (x, true)
+    nb = ndigits(x; base=2)                                 # mpz_sizeinbase(x, 2)
+    n >= nb && return (BigInt(1), isone(x))                 # 1 <= x < 2^nb <= 2^n: the root is 1
+    if n == 2
+        s = isqrt(x)                                        # mpz_sqrt
+        return (s, s * s == x)
+    end
+    k = Int(n)
+    y = BigInt(1) << cld(nb, k)                             # >= the root
+    while true
+        t = ((k - 1) * y + x ÷ y^(k - 1)) ÷ k
+        t >= y && break
+        y = t
+    end
+    return (y, y^k == x)
+end
