@@ -2691,22 +2691,23 @@ function PL_next_solution_guarded(
             @goto b_throw                           # THROW_EXCEPTION
         end
     end
-    # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call, beside the local check,
-    # for the cells no check covers — the kernel-only 1-cell allocations (a slot is never an unbound
-    # variable: C_VAR, C_VAR_N, L_VOID, H_VOID/H_FIRSTVAR in write mode; upstream's live on the local
-    # stack) and the built-ins whose own `ensureGlobalSpace` is not ported (copy_term/2 …). The H_/B_
-    # instructions that lay out terms check as upstream's (`@ENSURE_GLOBAL_SPACE`). No limit while an
-    # exception is processed (upstream's spare stacks).
-    if ld.gTop > ld.stacks_limit && !ld.exception_processing
-        raiseStackOverflow(ld, GLOBAL_OVERFLOW)
-        @goto b_throw                               # THROW_EXCEPTION
-    end
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c depart_or_retry_continue
     # DIVERGES: NOT PORTED: the profiler's node, the inference count, and the `LD->alerted` block
     # (signals, undo hooks, depth and inference limits, the debugger).
     @label depart_or_retry_continue
+    # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
+    # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
+    # call; a last call never passes normal_call: row tcopy_nop), for the cells no check covers: the
+    # kernel-only 1-cell allocations (a slot is never an unbound variable: C_VAR, C_VAR_N, L_VOID,
+    # H_VOID/H_FIRSTVAR in write mode; upstream's live on the local stack) and the built-ins whose own
+    # `ensureGlobalSpace` is not ported (copy_term/2 …). The H_/B_ instructions that lay out terms check
+    # as upstream's (`@ENSURE_GLOBAL_SPACE`). No limit while an exception is processed (spare stacks).
+    if ld.gTop > ld.stacks_limit && !ld.exception_processing
+        raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+        @goto b_throw                               # THROW_EXCEPTION
+    end
     setGenerationFrame(gd, ld, FR)
     PCc = DEF.codes
     PCl = gd.no_literals

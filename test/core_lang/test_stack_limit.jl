@@ -4,6 +4,8 @@
 #   * a differential against swipl run with the SAME limit (1 MiB, `stack_limit` set by a directive): length/2,
 #     functor/3, =../2, findall/3 (the answers' cells, and the list's own: 62500 answers, no call after), copy_term/2, a recursion building a list, an integer too big — over the limit and
 #     under it; the FORMAL compared (`resource_error(stack)`), the context not (swipl's is a dict);
+#   * a built-in with no check of its own (copy_term/2), then a call to a clause that lays nothing out: only the
+#     per-call check (normal_call) raises it;
 #   * the handler runs and the stacks are usable after the raise (catch/3, then a list built) — also for a findall
 #     whose ANSWERS alone exceed the limit (audit D-0032);
 #   * a term laid out by a clause body itself, no call in between (B_RLIST: upstream's `ENSURE_GLOBAL_SPACE`, D-0032):
@@ -44,6 +46,8 @@ tinl(L, X) :- length(L, 42000), X = $(_SL_INLINE).
 tinline(R) :- catch(tinl(_, _), error(E, _), true), ( var(E) -> R = none ; R = E ).
 tbag_ok(N) :- findall(T, (btw(1, 2, _), functor(T, f, 2000)), L), length(L, N).
 tcopy_big(N) :- length(L, 25000), copy_term(L, C), length(C, N).
+nop.
+tcopy_nop(ok) :- length(L, 25000), copy_term(L, _), nop.
 tmk_big(N) :- mk(100000, L), length(L, N).
 tmk_ok(N) :- mk(1000, L), length(L, N).
 thandler(E-N) :- catch(length(_, 1000000), error(E, _), true), mk(1000, L), length(L, N).
@@ -55,7 +59,7 @@ tctx(C) :- catch(length(_, 1000000), error(_, C), true).
 const _SL_GOALS = (
     "tlen_big", "tlen_ok", "tfun_big", "tfun_ok", "tuniv_big", "tuniv_ok", "tbag_big",
     "tbag_list", "tbag_ans", "tbag_ans_last", "tinline", "tbag_ok",
-    "tcopy_big", "tmk_big", "tmk_ok", "thandler", "tint_big", "tint_ok"
+    "tcopy_big", "tcopy_nop", "tmk_big", "tmk_ok", "thandler", "tint_big", "tint_ok"
 )
 
 "A database holding `_SL_PROG`, its limit `_SL_LIMIT`."
@@ -75,7 +79,7 @@ end
     ours = _rlines(db, goals)
     @test count(==("end"), ours) == length(goals)
     over = "exception(resource_error(stack)) det"
-    @test count(==(over), ours) == 9                       # every *_big, tbag_list, tbag_ans_last
+    @test count(==(over), ours) == 10                      # every *_big, tbag_list, tbag_ans_last, tcopy_nop
     @test "tbag_ans(-(resource_error(stack),1000)) det" in ours   # D-0032: the answers alone; the handler ran
     @test "tinline(resource_error(stack)) det" in ours     # D-0032: laid out inline, caught INSIDE the catch
     @test "thandler(-(resource_error(stack),1000)) det" in ours
