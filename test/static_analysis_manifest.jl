@@ -1378,7 +1378,8 @@ function _manifest_index(T)
         (LK.cpNumber, Tuple{LK.number, LK.number}, true),
         (LK.check_float, Tuple{LD, LK.number}, false),
         (LK.check_mpq, Tuple{LK.number}, true),
-        (LK.check_int_bits, Tuple{LD, UInt64}, true),
+        # L1f f2: its error path raises the global overflow (int_too_big builds the ball), as check_float's
+        (LK.check_int_bits, Tuple{LD, UInt64}, false),
         # V8 — the integer size checks (GMP aborts where upstream does not check), A_ADD_FC's slow
         # path, the shifts and ERR_AR_TYPE
         (LK.int_too_big, Tuple{LD}, false),
