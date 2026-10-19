@@ -19,24 +19,37 @@ _uv_clauses() = Tuple{_R, Union{Nothing, _R}}[
     (_rf("u", _rv(1), _rv(2), _rv(3)),
         _rf("catch", _rf("=..", _rv(1), _rv(2)), _rf("error", _rv(3), _rv(4)), _rs("true"))),
     # shared variables survive the round trip; partial agreement binds both sides
-    (_rf("rt", _rv(9)), _rconj(_rf("=..", _rf("f", _rv(1), _rv(1), _rv(2)), _rv(3)),
-        _rf("=..", _rv(4), _rv(3)), _rf("=", _rv(9), _rv(4)))),
-    (_rf("pa", _rv(1), _rv(2)), _rf("=..", _rf("f", _rs("a"), _rv(1)), _rlist(_rs("f"), _rv(2), _rs("b"))))
+    (
+        _rf("rt", _rv(9)),
+        _rconj(_rf("=..", _rf("f", _rv(1), _rv(1), _rv(2)), _rv(3)),
+            _rf("=..", _rv(4), _rv(3)), _rf("=", _rv(9), _rv(4)))
+    ),
+    (
+        _rf("pa", _rv(1), _rv(2)),
+        _rf("=..", _rf("f", _rs("a"), _rv(1)), _rlist(_rs("f"), _rv(2), _rs("b")))
+    )
 ]
 
 @testset "=../2 on cells, as swipl" begin
     db = _rdb(_uv_clauses())
     X, L, E = _rv(50), _rv(51), _rv(52)
+    # (no `X =.. ['.', h, t]`: the WRITER prints '.'(h,t) and the atom '.' unquoted — pl-write.jl compares
+    # the functor with the text atom `.` where upstream's ATOM_dot is SWI-7's '[|]'; its own step, batch 5)
     goals = _R[
         _rf("u", _rf("f", _rs("a"), _uv_k(1), _rg(2.5)), L, E), _rf("u", _rs("atom"), L, E),
         _rf("u", _uv_k(42), L, E), _rf("u", _rg(1.5), L, E), _rf("u", _rg("str"), L, E),
-        _rf("u", _rlist(_rs("a"), _rs("b")), L, E), _rf("u", X, _rlist(_rs("g"), _rs("x"), _uv_k(3)), E),
-        _rf("u", X, _rlist(_rs("a")), E), _rf("u", X, _rlist(_uv_k(5)), E), _rf("u", X, _rlist(_rs("."), _rs("h"), _rs("t")), E),
-        _rf("u", _rf("f", _rs("a")), _rlist(_rs("f"), _rs("a")), E), _rf("u", _rf("f", _rs("a")), _rlist(_rs("g"), _rs("a")), E),
-        _rf("u", X, L, E), _rf("u", X, _rcons(_rs("f"), _rv(53)), E), _rf("u", X, _rlist(), E),
+        _rf("u", _rlist(_rs("a"), _rs("b")), L, E),
+        _rf("u", X, _rlist(_rs("g"), _rs("x"), _uv_k(3)), E),
+        _rf("u", X, _rlist(_rs("a")), E), _rf("u", X, _rlist(_uv_k(5)), E),
+        _rf("u", _rf("f", _rs("a")), _rlist(_rs("f"), _rs("a")), E),
+        _rf("u", _rf("f", _rs("a")), _rlist(_rs("g"), _rs("a")), E),
+        _rf("u", X, L, E), _rf("u", X, _rcons(_rs("f"), _rv(53)), E),
+        _rf("u", X, _rlist(), E),
         _rf("u", X, _rs("notalist"), E), _rf("u", X, _rlist(_rf("f", _rs("a"))), E),
-        _rf("u", X, _rlist(_uv_k(1), _rs("a")), E), _rf("u", X, _rlist(_rf("f", _rs("a")), _rs("b")), E),
-        _rf("u", X, _rlist(_rv(54), _rs("a")), E), _rf("u", X, _rcons(_rs("f"), _rcons(_rs("a"), _rs("t"))), E),
+        _rf("u", X, _rlist(_uv_k(1), _rs("a")), E),
+        _rf("u", X, _rlist(_rf("f", _rs("a")), _rs("b")), E),
+        _rf("u", X, _rlist(_rv(54), _rs("a")), E),
+        _rf("u", X, _rcons(_rs("f"), _rcons(_rs("a"), _rs("t"))), E),
         _rf("u", _rf("f", _rs("a")), _rs("bad"), E),
         _rf("rt", _rv(55)), _rf("pa", _rv(56), _rv(57))
     ]
@@ -72,10 +85,18 @@ function _uv_engine(vs::Vector{_R})
     return ld, t
 end
 _uv_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
-_uv_call(ld, t) = LK.pl_univ2_va(ld, t, 2, LK.control_t{_R}())
+_uv_call(ld, t) =
+    LK.pl_univ2_va(ld, t, 2, LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing))
 
 @testset "the meter: =.. on the stack, both directions, makes no cold traffic" begin
-    ld, t = _uv_engine(_R[_rf("f", _rs("a"), _rv(1), _uv_k(3)), _rv(2), _rv(3), _rlist(_rs("g"), _rs("b"), _rv(4))])
+    ld, t = _uv_engine(
+        _R[
+            _rf("f", _rs("a"), _rv(1), _uv_k(3)),
+            _rv(2),
+            _rv(3),
+            _rlist(_rs("g"), _rs("b"), _rv(4))
+        ]
+    )
     c0 = _uv_counts(ld)
     @test _uv_call(ld, t) == LK.FTRUE                          # f(a, _, 3) =.. L
     @test LK.PL_is_list(ld, t + 1)
@@ -88,5 +109,6 @@ end
     ld, t = _uv_engine(_R[mk_expr(_R, _R[_rv(9), _rs("a"), _rs("b")]), _rv(2)])
     @test _uv_call(ld, t) == LK.FTRUE
     r = LK.resolve_term(ld, LK.slotValue(ld, t + 2))
-    @test kind(r) === EXPR && LK.compareStandard(child(r, 3), _rlist(_rs("a"), _rs("b")), true) == LK.CMP_EQUAL
+    @test kind(r) === EXPR &&
+        LK.compareStandard(child(r, 3), _rlist(_rs("a"), _rs("b")), true) == LK.CMP_EQUAL
 end

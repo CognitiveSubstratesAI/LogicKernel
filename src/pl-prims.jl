@@ -604,6 +604,13 @@ end
 # PORT: pl-prims.c lengthList
 "The length of the list term reference `list` holds; -1 if it is not one, -2 if partial (pl-prims.c)."
 function lengthList(ld::PL_local_data{T}, list::term_t, errors::Bool)::Int where {T}
+    length, k, w, _ = skip_list_cells(ld, -(list + 1))     # on the cells (L1e e4); the boundary on terms
+    if k != DU_TERM
+        k == DU_WORD && w == ld.atom_nil_w && return length    # isNil(*tail)
+        errors && PL_error(ld, ERR_TYPE, mk_sym(T, :list), list)
+        return k == DU_CELL ? -2 : -1                       # isVar(*tail) ? -2 : -1
+    end
+    ld.cold_pairs += 1
     length, tail = skip_list(ld, slotValue(ld, list + 1))
 
     is_nil(tail) && return length
@@ -2502,7 +2509,8 @@ function can_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int, ex::term_t)::Bo
             PL_discard_foreign_frame(ld, fid)
             return true
         end
-        ld.exception_term != 0 && PL_is_variable(ld, ex) && PL_put_term(ld, ex, ld.exception_term)
+        ld.exception_term != 0 && PL_is_variable(ld, ex) &&
+            PL_put_term(ld, ex, ld.exception_term)
         !handle_exception && !PL_is_variable(ld, ex) && PL_clear_exception(ld)
         PL_discard_foreign_frame(ld, fid)
     end
@@ -2527,8 +2535,12 @@ function pl_not_unify2_va(
         elseif k1 == k2 && w1 == w2                         # w1 == w2
             return FFALSE
         elseif !(k1 == DU_WORD && _is_gcompound(w1) && k2 == DU_WORD && _is_gcompound(w2))
-            return compare_primitives_cells(ld, k1, w1, 0, k2, w2, 0, CMP_MODE_EQUAL) == CMP_EQUAL ?
-                   FFALSE : FTRUE                           # tag(w1) != tag(w2), the atomic cases
+            return if compare_primitives_cells(ld, k1, w1, 0, k2, w2, 0, CMP_MODE_EQUAL) ==
+                      CMP_EQUAL
+                FFALSE                           # tag(w1) != tag(w2), the atomic cases
+            else
+                FTRUE                           # tag(w1) != tag(w2), the atomic cases
+            end                           # tag(w1) != tag(w2), the atomic cases
         end
         ex = PL_new_term_ref(ld)                            # full_check:
         can_unify_cells(ld, -(A1 + 1), -(A1 + 2), ex) && return FFALSE
@@ -3045,9 +3057,14 @@ function pl_functor3_va(
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
     k, w, q = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p) (L1e e4: the words)
     k == DU_TERM && (ld.cold_pairs += 1)                # the boundary: its kind on the term
-    isterm = k == DU_WORD ? _is_gcompound(w) : k == DU_TERM && isTerm(deRef(ld, _loc_term(ld, k, w, q)))
-    isatomic = k == DU_VALUE || (k == DU_WORD && isAtomW(w)) ||
-               (k == DU_TERM && isAtomic(deRef(ld, _loc_term(ld, k, w, q))))
+    isterm = if k == DU_WORD
+        _is_gcompound(w)
+    else
+        k == DU_TERM && isTerm(deRef(ld, _loc_term(ld, k, w, q)))
+    end
+    isatomic =
+        k == DU_VALUE || (k == DU_WORD && isAtomW(w)) ||
+        (k == DU_TERM && isAtomic(deRef(ld, _loc_term(ld, k, w, q))))
 
     if isterm                                           # isTerm(*p)
         na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
@@ -3108,7 +3125,11 @@ function pl_univ2_va(
         head = PL_new_term_ref(ld)
         if !PL_get_list(ld, tail, head, tail)
             PL_get_nil(ld, tail) &&
-                return PL_error(ld, ERR_DOMAIN, mk_sym(T, :non_empty_list), tail) ? FTRUE : FFALSE
+                return if PL_error(ld, ERR_DOMAIN, mk_sym(T, :non_empty_list), tail)
+                    FTRUE
+                else
+                    FFALSE
+                end
             return PL_error(ld, ERR_TYPE, mk_sym(T, :list), tail) ? FTRUE : FFALSE
         end
         if PL_get_nil(ld, tail)                             # A =.. [H]
@@ -3120,10 +3141,13 @@ function pl_univ2_va(
         name === nothing && return FFALSE
         arity = lengthList(ld, tail, false)
         if arity < 0
-            arity == -1 && return PL_error(ld, ERR_TYPE, mk_sym(T, :list), list) ? FTRUE : FFALSE
+            arity == -1 &&
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :list), list) ? FTRUE : FFALSE
             return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
         end
-        p = _alloc_compound!(ld, lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity), arity)
+        p = _alloc_compound!(
+            ld, lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity), arity
+        )
         ld.slots[head + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)   # *valTermRef(head) = consPtr(p, …)
         k, w, _ = _deref_loc(ld, -(tail + 1))               # Word l = valTermRef(tail); deRef(l)
         i = 0
@@ -3155,10 +3179,10 @@ function pl_univ2_va(
             PL_unify_atom(ld, head, _atom_value(ld, nm)) || return FFALSE
         else                                                # `$expr/n`: its first child is the head
             PL_unify_arg(ld, 1, t, head) || return FFALSE
-            PL_unify_list_ex(ld, l, head, l) || n == 1 || return FFALSE
         end
         for a in (nm == ld.atom_dexpr ? 2 : 1):n
-            (PL_unify_list_ex(ld, l, head, l) && PL_unify_arg(ld, a, t, head)) || return FFALSE
+            (PL_unify_list_ex(ld, l, head, l) && PL_unify_arg(ld, a, t, head)) ||
+                return FFALSE
         end
         return PL_unify_nil_ex(ld, l) ? FTRUE : FFALSE
     elseif k == DU_TERM                                     # the boundary: decide its kind on the term
@@ -3167,7 +3191,8 @@ function pl_univ2_va(
     if PL_is_atomic(ld, t)                                  # 3 =.. X, 3.4 =.. X, "foo" =.. X
         head = PL_new_term_ref(ld)
         l = PL_new_term_ref(ld)
-        PL_unify_list_ex(ld, list, head, l) && PL_unify(ld, head, t) && PL_unify_nil_ex(ld, l) &&
+        PL_unify_list_ex(ld, list, head, l) && PL_unify(ld, head, t) &&
+            PL_unify_nil_ex(ld, l) &&
             return FTRUE
     end
     return FFALSE
