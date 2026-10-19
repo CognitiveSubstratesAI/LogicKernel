@@ -1830,6 +1830,25 @@ end
 end
 
 # ── flatness: the last-call optimisation keeps the stack flat ───────────────────────────────────
+# The tripwire can fire (L1f f2: `lMax` unchanged, no longer a lowered limit): a NON-tail recursion
+# over 20000 elements grows the local stack, and `_rhighwater` refuses it.
+@testset "flatness: the _rhighwater tripwire fires on a growing local stack" begin
+    N, T, M = _rv(1), _rv(2), _rv(3)
+    db = _rdb(
+        Tuple{_R, Union{Nothing, _R}}[
+            (_rf("ntlen", _rnil(), _rg(0)), nothing),
+            (
+                _rf("ntlen", _rcons(_rv(4), T), N),
+                _rconj(_rf("ntlen", T, M), _rf("is", N, _rf("+", M, _rg(1))))
+            )
+        ]
+    )
+    @test_throws ErrorException _rhighwater(db, _rf("ntlen", _rints(1:20000), _rv(5)))
+    db2 = _rdb(_rnreverse_clauses())                                # and stays quiet on a flat one
+    @test _rhighwater(db2, _rf("concatenate", _rints(1:20000), _rlist(_rs(:x)), _rv(1)))[1] >
+        0
+end
+
 @testset "flatness: concatenate on 10^3..10^5 elements reaches one high-water mark" begin
     db = _rdb(_rnreverse_clauses())
     catg(n) = _rf("concatenate", _rints(1:n), _rlist(_rs(:x)), _rv(1))

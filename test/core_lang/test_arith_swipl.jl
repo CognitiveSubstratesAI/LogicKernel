@@ -256,8 +256,8 @@ end
 # ── integer size and shifts too far (V8) — pinned to swipl 10.1.16 (probed) ──────────────────────
 # `1 << 20000` passes int_bits_ok's second bound: over 10000 bits, under the stacks limit. A shift
 # amount beyond `long` is shift_to_far: 0 for a right shift, or for a left one by a negative amount,
-# even of a negative number. A left one is int_too_big; swipl raises resource_error, and the
-# interim is NotPortedError (until G1, as decided since Q-C). `1 << (1 << 40)` fails int_bits_ok.
+# even of a negative number. A left one is int_too_big: resource_error(stack), swipl's and, since L1f
+# f2, the kernel's. `1 << (1 << 40)` fails int_bits_ok.
 # A right shift of a big integer floors (mpz_fdiv_q_2exp).
 @testset "integer size, shifts too far, the floor of a right shift (V8)" begin
     v(e) = lk_value(_ais(e))
@@ -266,8 +266,17 @@ end
     @test v(_af(:>>, _ag(5), _ag(big(2)^70))) == 0
     @test v(_af(:<<, _ag(-5), _ag(-big(2)^70))) == 0
     @test v(_af(:<<, _ag(0), _ag(big(2)^70))) == 0
-    @test_throws LKA.NotPortedError _ais(_af(:<<, _ag(1), _ag(big(2)^70)))
-    @test_throws LKA.NotPortedError _ais(_af(:<<, _ag(1), _ag(1 << 40)))
+    # L1f f2: int_too_big raises the global overflow, as swipl (probed 2026-10-19: resource_error(stack))
+    rerr = _aenc(_af(:resource_error, _as(:stack)))
+    for e in (_af(:<<, _ag(1), _ag(big(2)^70)), _af(:<<, _ag(1), _ag(1 << 40)))
+        msg = try
+            _ais(e)
+            "no error"
+        catch x
+            x isa ArgumentError ? x.msg : "THROW: " * sprint(showerror, x)
+        end
+        @test occursin(rerr, msg)
+    end
     @test _ALD.query == 0                                       # the query is closed
     @test v(_af(:>>, _ag(-big(2)^70), _ag(100))) == -1
     @test v(_af(:>>, _ag(1 - big(2)^70), _ag(7))) == typemin(Int64)
@@ -984,7 +993,7 @@ end
 # float path) and `2 ** 0.0` the integer 1; `log(0)` is a float_overflow, not undefined; `atan2(0, 0)`
 # is 0.0 (glibc); an inexact rational power is a float (`2 ** (1r2)`), an exact one stays a rational
 # (`4r9 ** (1r2)` is 2r3); `sin(pi)` is 1.2246467991473532e-16, not 0. `2 ** (2 ** 64)` is swipl's
-# resource_error and the kernel's NotPortedError (the interim for int_too_big, below).
+# resource_error and, since L1f f2, the kernel's (int_too_big, below).
 # The exponentiation functions are named by `Symbol("**")`: `:**` does not parse.
 const _A_POW2 = Symbol("**")
 const _A_ARITHB_CASES = Any[
@@ -1530,13 +1539,12 @@ const _A_ARITHB_FUNCS = (
         count(startswith("err:"), _A_ARITHB_EXPECT) > 60
 end
 
-# `2 ** (2 ** 64)` and kin: swipl raises resource_error(stack) (`int_too_big`); the kernel's interim
-# is NotPortedError — loud, the query closes — until G1, as for the shifts above. The live testset at
-# the end checks swipl's side of each row.
+# `2 ** (2 ** 64)` and kin: swipl raises resource_error(stack) (`int_too_big`), and since L1f f2 the
+# kernel too (the global stack's overflow). The live testset at the end checks swipl's side of each row.
 const _A_TOOBIG = Any[(_A_POW2, 2, big(2)^70), (_A_POW2, 2, 1 << 62), (:^, 3, -big(2)^70)]
-@testset "arith-b: an exponent too big is NotPortedError (swipl: resource_error), the query is closed" begin
+@testset "arith-b: an exponent too big is resource_error(stack), as swipl's; the query is closed" begin
     for c in _A_TOOBIG
-        @test_throws LKA.NotPortedError _aoutcome_of_raw(c)
+        @test startswith(_aoutcome_of(c), "err:" * _aenc(_af(:resource_error, _as(:stack))))
         @test _ALD.query == 0
     end
 end
@@ -1792,7 +1800,7 @@ if _A_SWIPL !== nothing
         theirs = [_afloat_bits(String(l)) for l in split(strip(text), '\n')]
         n = length(_A_ARITHB_CASES)
         @test theirs[1:n] == _A_ARITHB_EXPECT
-        # an exponent too big: swipl's resource_error, where the kernel stops with NotPortedError
+        # an exponent too big: swipl's resource_error, as the kernel's since L1f f2 (the testset above)
         for k in (n + 1):length(theirs)
             @test startswith(theirs[k], "err:" * _aenc(_af(:resource_error, _as(:stack))))
         end

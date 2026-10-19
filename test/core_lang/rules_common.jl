@@ -335,13 +335,14 @@ const _R_SENTINEL = ~UInt64(0)  # a word no slot holds (the slots are words sinc
 
 """
 The highest local-stack position written while `goal` finds its first answer, relative to the query
-(a sentinel fill: TEST instrumentation, user 2026-10-05), with growth turned into an error (the
-`lMax` tripwire); and the trail and binding store at the answer.
+(a sentinel fill: TEST instrumentation, user 2026-10-05), with growth an error (the `lMax` tripwire:
+`lMax` the same after the answer — since L1f f2 the limit is ONE over the three stacks, so it can no
+longer be lowered to `lMax` to trip on the local stack alone); and the trail and binding store at the
+answer.
 """
 function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
     gd, ld = db.gd, db.ld
-    saved_limit = ld.stacks_limit
-    ld.stacks_limit = ld.lMax                                       # growth would raise
+    lmax0 = ld.lMax                                                 # growth: lMax moves
     _, n = _rfunctor(goal)
     fid = LK.PL_open_foreign_frame(ld)
     args = LK.PL_new_term_refs(ld, n)
@@ -354,15 +355,16 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
         gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, goal), args
     )
     rc = LK.PL_next_solution(gd, ld, qid)
-    if rc != LK.PL_S_LAST                                           # the tripwire: say what tripped
+    if rc != LK.PL_S_LAST || ld.lMax != lmax0                       # the tripwire: say what tripped
         ex = rc == LK.PL_S_EXCEPTION ? LK.PL_exception(ld, qid) : 0
-        ball = ex == 0 ? "none" : string(LK.slotValue(ld, ex + 1))
-        error("_rhighwater: $(_rsrc(goal)) returned $rc, ball $ball (growth past lMax?)")
+        ball = ex == 0 ? "none" : string(LK.resolve_term(ld, LK.slotValue(ld, ex + 1)))
+        error(
+            "_rhighwater: $(_rsrc(goal)) returned $rc, ball $ball, lMax $lmax0 → $(ld.lMax)"
+        )
     end
     high = findlast(w -> w != _R_SENTINEL, ld.slots) - 1            # a position: slots[p + 1]
     tr, st = length(ld.trail), lk_bound_count(ld)
     LK.PL_close_query(ld, qid)
     LK.PL_discard_foreign_frame(ld, fid)     # answers copied out: nothing stays (L1c)
-    ld.stacks_limit = saved_limit
     return (high - qid, tr, st)
 end
