@@ -117,8 +117,11 @@ end
     LK.setSlotValue!(ld, s, _rf("f", _kw_s(:a)))                # a compound: its word (L1c)
     @test LK._is_gcompound(ld.slots[s])
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_FAIL
-    LK.setSlotValue!(ld, s, _rg(Int64(1)))                      # a small integer: SLOT_VALUE
-    @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_TERMS
+    LK.setSlotValue!(ld, s, _rg(Int64(1)))                      # a small integer: its tagged word (L1e e1),
+    @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_FAIL       # another constant: fails, as upstream's h_const
+    LK.setSlotValue!(ld, s, lk_var(_R, UInt64(4242)))           # a keyed variable: still SLOT_VALUE
+    @test ld.slots[s] == LK.SLOT_VALUE
+    @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_TERMS      # undecided on the words: the terms decide
 end
 
 @testset "h_const on the words: a cell, bound, trailed under a mark, undone" begin
