@@ -109,9 +109,10 @@ end
 answers (a `Vector{T}`, each the goal with that solution's bindings substituted, a term of its own;
 an unbound variable comes back as a fresh variable), `limit` (`nothing`: all; `n ≥ 0`: at most `n`,
 `0` running nothing; negative: `ArgumentError`), and `PrologException` (an uncaught Prolog exception,
-its ball as a term). The goal is a term (an atom or a compound with an atom head; anything else is
-an `ArgumentError`); goals as text, bindings by variable name, a lazy iterator and modules come with
-R2 and add to this call, they do not change it. `PL_global_data{T}()`, `PL_local_data{T}(gd)` and
+its ball as a term). The goal is a term (an atom or a compound with an atom head, optionally
+module-qualified `M:G` — taken as SWI-Prolog's `PL_call` takes it: the qualifiers stripped, the
+predicate resolved in `M`; anything else is an `ArgumentError`); goals as text, bindings by variable
+name and a lazy iterator come with R2 and add to this call, they do not change it. `PL_global_data{T}()`, `PL_local_data{T}(gd)` and
 `load_file!(gd, ld, path)` are the CURRENT entry points: the loader is the minimal one (boot/init.pl's
 consult loop, `user` only) and becomes `consult` in R2 — the call stays, its semantics are not
 promised. One engine is not thread-safe: one task at a time. This block runs as a test

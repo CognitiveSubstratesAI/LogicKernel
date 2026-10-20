@@ -58,6 +58,26 @@ _qa_clauses() = Tuple{_R, Union{Nothing, _R}}[
     @test kind(child(a, 2)) === VAR &&
         var_key(child(a, 2)) ∉ (var_key(_rv(9)), var_key(_rv(8)))
     @test _rcanonical(child(a, 3)) == "x"
+    # a MODULE-QUALIFIED goal is taken as SWI-Prolog's PL_call takes it (pl-pro.c callProlog:
+    # PL_strip_module, then the functor): run in its module; each answer the qualified goal, solved
+    qg = mk_expr(_R, _R[_rs(":"), _rs("user"), _rf("qa_p", _rv(9))])
+    qa = LK.query_answers(db.ld, qg)
+    @test length(qa) == 2 &&
+        all(a -> sym_text(child(a, 1)) == ":" && sym_text(child(a, 2)) == "user", qa)
+    @test _rcanonical.(child.(qa, 3)) == ["qa_p(a)", "qa_p(b)"]
+    if _R_SWIPL                                     # swipl: `user:qa_p(X)` answers user:qa_p(a), user:qa_p(b)
+        @test [replace(l, r" (det|nondet)$" => "") for l in _rswipl(_qa_clauses(), [qg])] ==
+            [_rcanonical.(qa); "end"]                     # the driver's per-goal end marker
+    end
+    # …nested qualifiers stripped too (the innermost names the module), and a system predicate
+    # reached from `user` as call/1 reaches it
+    nested = mk_expr(_R, _R[_rs(":"), _rs("system"), qg])
+    @test length(LK.query_answers(db.ld, nested)) == 2
+    @test length(
+        LK.query_answers(
+            db.ld, mk_expr(_R, _R[_rs(":"), _rs("user"), _rf("atom", _rs("a"))])
+        )
+    ) == 1
     # the stable surface is exported (README "Using it from Julia")
     @test all(n -> n in names(LogicKernel), (:query_answers, :PrologException, :load_file!))
 end

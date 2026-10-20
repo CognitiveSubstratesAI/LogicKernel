@@ -671,15 +671,19 @@ end
 """
     query_answers(db, goal; limit=nothing) -> Vector
 
-Run `goal` in module `user` on the engine `db` and return its answers, in Prolog's order. STABLE
-from v0.1.0-pre.1: this signature, the return shape and [`PrologException`](@ref) stay; R2 adds to
-them (bindings by variable name, goals as text, a lazy iterator, modules) without changing this call.
+Run `goal` on the engine `db` and return its answers, in Prolog's order. STABLE from
+v0.1.0-pre.1: this signature, the return shape and [`PrologException`](@ref) stay; R2 adds to them
+(bindings by variable name, goals as text, a lazy iterator) without changing this call.
 
   * `goal` is a TERM of the engine's term type `T` — an atom or a compound whose head is an atom
-    (`p` or `p(X, a)`), built with `mk_sym`/`mk_expr` and the type's variables (`var_term` for the
-    reference type). Text is not read here (R2). Anything else — a variable, a number, a string,
-    a compound with a non-atom head — throws an `ArgumentError` before any query is opened.
-  * Each answer is `goal` with that solution's bindings substituted, resolved: a term of its own,
+    (`p` or `p(X, a)`), optionally module-qualified (`M:G`, run in module `M`; unqualified: `user`),
+    built with `mk_sym`/`mk_expr` and the type's variables (`var_term` for the reference type).
+    The goal is taken as SWI-Prolog's `PL_call` takes it (pl-pro.c `callProlog`): its `Module:`
+    qualifiers stripped (`PL_strip_module`), then the predicate of its functor resolved in that
+    module. Text is not read here (R2). Anything else — a variable, a number, a string, a compound
+    with a non-atom head — throws an `ArgumentError` before any query is opened.
+  * Each answer is `goal` (its `M:` qualifiers included) with that solution's bindings substituted,
+    resolved: a term of its own,
     sharing nothing with the engine. A variable the solution leaves unbound is a fresh variable
     in the answer (not the caller's). The answers carry no names: read a binding by its position
     in the goal (`child(answer, i + 1)` for the `i`-th argument).
@@ -695,29 +699,37 @@ function query_answers(
 )::Vector{T} where {T}
     (limit === nothing || limit >= 0) ||
         throw(ArgumentError("query_answers: limit must be nothing or ≥ 0, got $limit"))
-    k = kind(goal)
-    (k === SYM || (k === EXPR && nchildren(goal) >= 1 && kind(child(goal, 1)) === SYM)) ||
-        throw(ArgumentError("query_answers: the goal must be an atom or a compound"))
     gd = db.GD::PL_global_data{T}                   # the engine's database (set when it was made)
-    name = k === SYM ? goal : child(goal, 1)
-    arity = k === SYM ? 0 : nchildren(goal) - 1
     fid = PL_open_foreign_frame(db)
-    a = PL_new_term_refs(db, max(arity, 1))
-    vm = PutVarMap()                                # the goal's variables shared across its arguments
-    for i in 1:arity
-        putSlotValue!(db, a + i, child(goal, i + 1), vm)
+    t = PL_new_term_ref(db)
+    putSlotValue!(db, t + 1, goal)                  # the goal as ONE term, as PL_call is given it
+    # pl-pro.c callProlog: the module qualifiers stripped, then the functor and the arguments
+    g = PL_new_term_ref(db)
+    ok, m = PL_strip_module(gd, db, t, 0, g)
+    p = _handle_term(db, g)
+    if !ok || !(kind(p) === SYM || (isTerm(p) && kind(child(p, 1)) === SYM))     # PL_get_functor
+        PL_discard_foreign_frame(db, fid)
+        throw(
+            ArgumentError(
+                "query_answers: the goal must be an atom or a compound (Module:Goal too)"
+            )
+        )
     end
-    proc = resolveProcedure(gd, name, arity, MODULE_user(gd))
-    qid = PL_open_query(gd, db, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
+    name = isTerm(p) ? child(p, 1) : p
+    arity = isTerm(p) ? nchildren(p) - 1 : 0
+    a = PL_new_term_refs(db, arity)
+    for n in 0:(arity - 1)
+        _PL_get_arg(db, n + 1, g, a + n)
+    end
+    proc = resolveProcedure(gd, name, arity, gd.modules[m])
+    qid = PL_open_query(
+        gd, db, gd.modules[m], PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a
+    )
     answers = T[]
     while limit === nothing || length(answers) < limit
         rc = PL_next_solution(gd, db, qid)
         if rc == PL_S_TRUE || rc == PL_S_LAST
-            kids = T[name]
-            for i in 1:arity
-                push!(kids, slotValue(db, a + i))
-            end
-            push!(answers, resolve_term(db, arity == 0 ? name : mk_expr(T, kids)))
+            push!(answers, resolve_term(db, slotValue(db, t + 1)))  # the goal, solved
             rc == PL_S_LAST && break
         elseif rc == PL_S_EXCEPTION
             ball = resolve_term(db, slotValue(db, PL_exception(db, qid) + 1))
