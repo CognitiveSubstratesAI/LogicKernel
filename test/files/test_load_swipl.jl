@@ -216,6 +216,12 @@ const _TL_CASES = [
     ("comma, [] and a variable",
         "(a, b).\n[].\nok(1).\nX.\nafter(1).\n",
         [("ok", 1), ("after", 1)]),
+    # `Name/0` whose name is no atom ('$head_name_arity'/3 then '$type_error'(atom, Name)): a
+    # variable is an instantiation error (the kernel said type_error(atom, _) until 2026-10-20), a
+    # number or a compound a type error, and none of them declares a predicate
+    ("dynamic: Name/0 with a variable, a number, a compound",
+        ":- dynamic X/0.\n:- dynamic 3/0.\n:- dynamic f(x)/0.\n",
+        [("f", 1)]),
     ("throw",
         "before(1).\n:- throw(foo).\nafter(1).\n",
         [("before", 1), ("after", 1)]),

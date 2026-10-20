@@ -485,6 +485,8 @@ function _pi_head(ld::PL_local_data{T}, pi::T)::Union{T, Tuple{Symbol, T}} where
         arity = Int(int64_value(a)) + (dcg ? 2 : 0)
         if arity == 0                                   # '$head_name_arity'(-Goal, +Name, 0)
             kind(n) === SYM && return n                 # atom(Name) ; Name == []
+            # '$type_error'(atom, Name): `var(Value) -> throw(error(instantiation_error, _))`
+            kind(n) === VAR && return _pi_error(T, mk_sym(T, :instantiation_error))
             return _pi_error(T, mk_expr(T, T[mk_sym(T, :type_error), mk_sym(T, :atom), n]))
         end
         kind(n) === VAR && return _pi_error(T, mk_sym(T, :instantiation_error))   # compound_name_arity
