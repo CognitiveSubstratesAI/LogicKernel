@@ -902,8 +902,8 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         sa_counts(k) =
             "shard\t$k\t2\nparts\taqua,controls\npart\t$(k == 1 ? "aqua" : "controls")\n" *
             "dispatch\t$(k == 1 ? 3 : 2)\t5\nalloc\t1\t2\n"
-        "The tool's exit over planted files: `edit(files)` changes the good set (name → text)."
-        function verdict(edit=identity; mode=["verdict", "2", "2"], ran=good, suite=all_)
+        "The tool's exit, output and unit_costs.tsv over planted files: `edit(files)` changes the good set."
+        function vrun(edit=identity; mode=["verdict", "2", "2"], ran=good, suite=all_)
             files = Dict{String, String}()
             for (job, r) in ran
                 files["units_$job.tsv"] =
@@ -917,14 +917,22 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             edit(files)
             mktempdir() do d
                 foreach(((n, t),) -> write(joinpath(d, n), t), files)
-                run(
+                out = joinpath(d, "stdout.txt")
+                code = run(
                     pipeline(
                         ignorestatus(`python3 $tool $(mode[1]) $d $(mode[2:end])`);
-                        stdout=devnull, stderr=devnull
+                        stdout=out, stderr=devnull
                     )
                 ).exitcode
+                costs = joinpath(d, "unit_costs.tsv")
+                (
+                    code=code,
+                    out=read(out, String),
+                    costs=isfile(costs) ? read(costs, String) : ""
+                )
             end
         end
+        verdict(args...; kw...) = vrun(args...; kw...).code
         drop(n) = fs -> delete!(fs, n)
         put(n, t) = fs -> (fs[n] = t)
         @test verdict() == 0                                       # the positive control
@@ -1008,6 +1016,56 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             mode=["pkgtest", "1", "2"],
             ran=merge(pk, Dict("julia-1_g2" => ["b.jl", "h.jl"]))
         ) == 1
+        # THE MESSAGE, NOT ONLY THE EXIT (Tooling4's battery, 2026-10-20): a check whose problem is
+        # also raised by another check cannot be told apart by an exit code. Each case below asserts
+        # the problem the check alone names.
+        let r = vrun(; suite=String[], ran=Dict(j => String[] for j in keys(good)))
+            @test r.code == 1 && occursin("the full unit list is EMPTY", r.out)
+        end
+        let r = vrun(drop("units_alt_g2.tsv"))        # a row, but no unit list
+            @test r.code == 1 && occursin("alt_g2: no unit list", r.out)
+        end
+        let r = vrun(
+                put("sa_2.tsv", replace(sa_counts(2), "dispatch\t2\t5" => "dispatch\t0\t5"))
+            )
+            @test r.code == 1 && occursin("sa_2: dispatch analysed NOTHING", r.out)
+        end
+        let r = vrun(
+                put("sa_2.tsv", replace(sa_counts(2), "part\tcontrols" => "part\taqua"))
+            )
+            @test r.code == 1 && occursin("part aqua ran 2 times", r.out)      # twice
+            @test occursin("part controls ran 0 times", r.out)                  # never
+        end
+        let r = vrun(drop("sa_2.tsv"))
+            @test r.code == 1 && occursin("sa_2: no counts", r.out)
+        end
+        let r = vrun(
+                put(
+                    "sa_2.tsv",
+                    replace(sa_counts(2), "parts\taqua,controls" => "parts\tcontrols,aqua")
+                )
+            )
+            @test r.code == 1 && occursin("sa_2: a different list of parts", r.out)
+        end
+        let r = vrun(; mode=["sa", "0"])               # no shard at all: no full count
+            @test r.code == 1 && occursin("a full count is zero or missing", r.out)
+        end
+        let r = vrun(
+                fs -> (
+                    fs["units_alt_g1.tsv"] = replace(
+                        fs["units_alt_g1.tsv"], r"stats\t[^\n]*\n" => ""
+                    )
+                )
+            )
+            @test r.code == 1 && occursin("alt: a slice wrote no AltTerm counts", r.out)
+        end
+        let r = vrun(; suite=filter(!=(sa_l), all_))
+            @test r.code == 1 && occursin("the suite has no $sa_l", r.out)
+        end
+        let r = vrun()          # the unit costs: every file with its seconds, the SA in none
+            @test r.code == 0 && occursin("a.jl\t", r.costs) && occursin("h.jl\t", r.costs)
+            @test !occursin(sa_l, r.costs)
+        end
         @test verdict(; mode=["pkgtest", "min", "2"], ran=pk) == 1  # another version's jobs
     end
     # THE SLICES THEMSELVES (test/ci_slices.jl): a total, deterministic, balanced assignment
