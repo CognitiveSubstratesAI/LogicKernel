@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/db/test_jit.pl @ 8609e216cab9
+# UPSTREAM: swipl-devel tests/db/test_jit.pl @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -301,6 +301,11 @@ end
     ix1386 = ix_pred(_J, :ix1386, 2)
     ix_assertz!(ix1386, _je(:ix1386, _js(:real), _je(:',', _jg(-1.0e16), _jg(1.0e16))))
     ix_assertz!(ix1386, _je(:ix1386, _js(:boolean), _je(:',', _jg(0), _jg(1))))
+    # term_expansion(bintree(Depth), Clauses) / bintree(10)  (8e1bc111): bintree(Parent, Child)
+    bintree = ix_pred(_J, :bintree, 2)
+    for i in 2:(2 ^ 10 - 1)
+        ix_assertz!(bintree, _je(:bintree, _jg(i ÷ 2), _jg(i)))
+    end
 
     # PORT: test_jit.pl x
     @testset "x" begin                              # must use S_LIST
@@ -334,5 +339,16 @@ end
     @testset "ix1386" begin                         # Issue #1386: primary must win over a
         ans = ix_call(ix1386, _je(:ix1386, _js(:real), _je(:',', _jv(), _jv())))
         @test !isempty(ans) && ans[1][2]            # shallow-useless deep list index: Det == true
+    end
+    # PORT: test_jit.pl bintree
+    @testset "bintree" begin                        # arg 1 is a candidate if arg 2 is a better one
+        ans = ix_call(bintree, _je(:bintree, _jg(100), _jv()))
+        @test !isempty(ans) && lk_eq(child(ans[1][1], 3), _jg(200))   # bintree(100, X), !, X == 200
+        indexed = LK.unify_index_pattern(bintree.def)
+        @test indexed !== nothing                   # predicate_property(bintree(_,_), indexed(Indexes))
+        realised = [
+            d.arguments[1] for d in indexed if d.realised && length(d.arguments) == 1
+        ]
+        @test realised == [1]                       # Realised == [1]
     end
 end

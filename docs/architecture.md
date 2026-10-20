@@ -505,6 +505,31 @@ ported files' headers to either.
     without the mark, without `C_VAR`, and each of the six guards of `compileBodyEQ`/`NEQ`. The
     first run caught 4: the `const == Var` and `Var1 == Var2` guards had no case of their shape,
     in upstream's units or here; four cases were added and all eight rerun.
+* **The 2026-10-20 sync-1: `8609e216` → `8e1bc111`** (D-0074, D-0076; version 10.1.18 and the plunit
+  submodule `bdac3ecf` did not move; 16 upstream commits). ONE commit here, no `sync-from:` line. 19 upstream files changed in the range, ONE ported:
+  * **Ported — `pl-index.c` `candidate_indexes` (`8e1bc111`):** the remaining single-argument
+    candidates were merged only inside `if (nassessments >= 2)`, so exactly one poor-but-useful
+    argument (the parent argument of `bintree(Parent, Child)` next to a good child index) was
+    dropped, and calls on it scanned every clause (upstream measured 60× on bintree18). Answers never
+    changed — an index does not change answers. The merge now runs whenever any single-argument
+    candidate remains; the combinations are assessed only when two or more remain. Upstream also
+    frees the assessment keys, which has no equivalent here (garbage collected).
+  * **Upstream's test taken:** `tests/db/test_jit.pl` `bintree` (test/db/test_jit.jl):
+    `bintree(100, X)` answers 200 and the realised single-argument indexes are `[1]`. It FAILS on the
+    code of `8609e216` (checked: the old `candidate_indexes!` returns a different realised set) and
+    passes on the port, on all three term types.
+  * **Header only (no function the kernel has changes):** `pl-rec.c` (`2744a56` `variantRecords`, a
+    `memcpy` where `memcmp` was meant, which corrupted a stored trie value — the function is NOT PORTED, it arrives with the recorded
+    database).
+  * **Not ported files:** `pl-tabling.c`/`.h`, `pl-trie.c`/`.h`, `boot/tabling.pl` (the tabling and
+    trie rewrite; when tabling is ported, port from the new version), `library/prolog_clause.pl`,
+    the build and platform scripts, the tabling/trie tests.
+  * **Not taken on purpose:** the performance-only restructure of pl-vmi.c and pl-wam.c (tail-calling
+    VMI functions, HOT/COLD placement, store-forwarding, non-atomic frame flags, per-thread module
+    cache) lies beyond `8e1bc111` (master has 91 commits past `8609e216` as of 2026-10-20); the full sync waits until L1 is finished, because it collides with
+    the term boundary work.
+  * **Oracle:** a build of `8e1bc111` (`version_git` 10.1.18-22-g8e1bc111); the CI cache key follows
+    the commit, so the first CI run builds it cold.
 * **The build runs capped.** MEASURED 2026-10-11: the recipe's first version made a partial
   clone (`--filter=blob:none`) of a LOCAL repository — an empty promisor clone in which every git
   command fetched what it lacked, and the fetch fetched again: thousands of small processes,

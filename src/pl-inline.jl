@@ -1,7 +1,7 @@
-# UPSTREAM: swipl-devel src/pl-inline.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-data.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-gvar.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-inline.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-data.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-gvar.c @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2024, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam

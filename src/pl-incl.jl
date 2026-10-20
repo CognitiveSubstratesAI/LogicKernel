@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-data.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-global.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-builtin.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-bag.c @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-gmp.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-data.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-global.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-builtin.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-bag.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-gmp.h @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam

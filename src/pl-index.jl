@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-index.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-index.c @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -2349,27 +2349,30 @@ function candidate_indexes!(
     if nhints == max_hints
         return (true, nhints)
     end
-    if nassessments >= 2                # Add least two candidates
-        f = 0
-        t = nassessments
-        ia = (0x00, 0x00, 0x00, 0x00)
-        while true                      # If far too many, take the middle ones
-            l1 = t - f                  # as these are the most promising
-            if l1 < 2
-                return (true, nhints)
-            end
-            l1 -= 1
-            if l1 * l1 > max_hints - nhints
-                if f % 2 == 0
-                    f += 1
-                else
-                    t -= 1
-                end
-            else
-                break
-            end
+    # Assess combinations of two of the remaining arguments. If there are too many, only combine the
+    # middle ones as these are the most promising. We need at least two for a combination.
+    aset = init_assessment_set()
+    alist = hash_assessment[]
+    f = 0
+    t = nassessments
+    while true
+        l1 = t - f
+        if l1 < 2
+            break
         end
-        aset = init_assessment_set()
+        l1 -= 1
+        if l1 * l1 > max_hints - nhints
+            if f % 2 == 0
+                f += 1
+            else
+                t -= 1
+            end
+        else
+            break
+        end
+    end
+    if t - f >= 2
+        ia = (0x00, 0x00, 0x00, 0x00)
         for m in (f + 1):(t - 1)
             ia = Base.setindex(ia, (Int(assessments[m + 1]) + 1) % iarg_t, 2)
             for n in f:(m - 1)
@@ -2378,7 +2381,6 @@ function candidate_indexes!(
             end
         end
         assess_scan_clauses!(clist, ac, aset.assessments, length(aset.assessments), ctx)
-        alist = hash_assessment[]
         for a in aset.assessments
             poor = false
             assess_remove_duplicates!(a, Int(clist.number_of_clauses))
@@ -2395,43 +2397,45 @@ function candidate_indexes!(
         end
         # DIVERGES: a stable sort; upstream's qsort leaves equal speedups in unspecified order.
         sort!(alist; lt=(x, y) -> cmp_assessment(x, y) < 0)
-        # merge single and multiple argument indexes by speedup
-        ap = 1
-        single = 0
-        while nhints < max_hints
-            if single < nassessments
-                si = Int(assessments[single + 1])
-                # skip the primary index
-                if clist.number_of_clauses <= MIN_CLAUSES_FOR_INDEX &&
-                    Int(clist.primary_index) == si
-                    single += 1
-                    continue
-                end
-                ai = args[si + 1]
-                if ap <= length(alist)
-                    if alist[ap].speedup > ai.speedup
-                        nhints += 1
-                        cp_hints_from_assessment!(hints[nhints], alist[ap])
-                        ap += 1
-                    else
-                        nhints += 1
-                        cp_hints_from_arg_info!(hints[nhints], si, ai)
-                        single += 1
-                    end
+    end
+    # Merge the remaining single argument indexes and the combinations by speedup. This must also be
+    # done if there is only one remaining single argument index (8e1bc111).
+    ap = 1
+    single = 0
+    while nhints < max_hints
+        if single < nassessments
+            si = Int(assessments[single + 1])
+            # skip the primary index
+            if clist.number_of_clauses <= MIN_CLAUSES_FOR_INDEX &&
+                Int(clist.primary_index) == si
+                single += 1
+                continue
+            end
+            ai = args[si + 1]
+            if ap <= length(alist)
+                if alist[ap].speedup > ai.speedup
+                    nhints += 1
+                    cp_hints_from_assessment!(hints[nhints], alist[ap])
+                    ap += 1
                 else
                     nhints += 1
                     cp_hints_from_arg_info!(hints[nhints], si, ai)
                     single += 1
                 end
-            elseif ap <= length(alist)
-                nhints += 1
-                cp_hints_from_assessment!(hints[nhints], alist[ap])
-                ap += 1
             else
-                break
+                nhints += 1
+                cp_hints_from_arg_info!(hints[nhints], si, ai)
+                single += 1
             end
+        elseif ap <= length(alist)
+            nhints += 1
+            cp_hints_from_assessment!(hints[nhints], alist[ap])
+            ap += 1
+        else
+            break
         end
     end
+    # free_keys_in_assessment_set(&aset), free_assessment_set(&aset): the keys are garbage collected.
     return (true, nhints)
 end
 

@@ -1,7 +1,7 @@
-# UPSTREAM: swipl-devel src/pl-wam.c @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-vmi.c @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-gc.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-wam.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-vmi.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-gc.c @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-trace.c @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-trace.c @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

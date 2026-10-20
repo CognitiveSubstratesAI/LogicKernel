@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-proc.c @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-proc.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-proc.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-proc.h @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

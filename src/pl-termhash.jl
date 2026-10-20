@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-termhash.c @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-termhash.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-termhash.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-termhash.h @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2023, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

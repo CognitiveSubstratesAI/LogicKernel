@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel tests/core_text/test_syntax.pl @ 8609e216cab9
+# UPSTREAM: swipl-devel tests/core_text/test_syntax.pl @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2024, SWI-Prolog Solutions b.v.
 #

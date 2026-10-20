@@ -99,7 +99,7 @@ https://github.com/SWI-Prolog/packages-plunit
 =====================================================================================================
 
 packages/plunit/ is SWI-Prolog's unit-test package at commit
-bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895 — the commit swipl-devel 8609e216 records as its submodule
+bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895 — the commit swipl-devel 8e1bc111 records as its submodule
 packages/plunit (tools/SWIPL_VERSION) — copied READ-ONLY: every file is upstream's, byte for byte
 (test/test_vendored_plunit.jl holds each to upstream's blob id, tools/plunit_blobs.txt). Each source
 file keeps its own header; their copyright lines (plunit.pl indents with tabs):

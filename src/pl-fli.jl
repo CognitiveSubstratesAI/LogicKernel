@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-fli.c @ 8609e216cab9
-# UPSTREAM: swipl-devel src/pl-fli.h @ 8609e216cab9
+# UPSTREAM: swipl-devel src/pl-fli.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-fli.h @ 8e1bc1110be4
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1996-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
