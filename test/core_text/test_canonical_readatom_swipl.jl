@@ -535,7 +535,9 @@ end
     # `x`: the Julia variable itself is never bound (a guard on it could not fail; the vacuous-guard
     # sweep, 2026-10-20)
     LK.set_standard_stream!(_CR_LD, LK.SNO_USER_OUTPUT, IOBuffer())
-    proc = LK.isCurrentProcedure(sym_key(_crs("write_canonical")), 1, LK.MODULE_system(_CR_GD))
+    proc = LK.isCurrentProcedure(
+        sym_key(_crs("write_canonical")), 1, LK.MODULE_system(_CR_GD)
+    )
     fid = LK.PL_open_foreign_frame(_CR_LD)
     a = LK.PL_new_term_refs(_CR_LD, 1)
     pvm = LK.PutVarMap()

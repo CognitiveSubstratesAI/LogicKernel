@@ -8,7 +8,9 @@
 using Test, LogicKernel
 const LK = LogicKernel
 
-const _RM_SWIPL = (get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl"))
+const _RM_SWIPL = (
+    get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+)
 const _RM_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 "The code of the first ```julia fence after README.md's heading `heading`."
@@ -33,7 +35,8 @@ end
     @test m.err isa PrologException{DefaultTerm}
     ball = m.err.ball                                  # error(existence_error(procedure, no_such/1), _)
     formal = child(ball, 2)
-    @test sym_text(child(ball, 1)) == "error" && sym_text(child(formal, 1)) == "existence_error"
+    @test sym_text(child(ball, 1)) == "error" &&
+        sym_text(child(formal, 1)) == "existence_error"
     @test sym_text(child(formal, 2)) == "procedure"
     pi = child(formal, 3)
     @test sym_text(child(pi, 1)) == "/" && sym_text(child(pi, 2)) == "no_such"

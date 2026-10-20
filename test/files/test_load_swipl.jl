@@ -420,7 +420,9 @@ end
         @test !any(p -> LK.isDefinedProcedure(gd, p), values(LK.MODULE_user(gd).procedures))
         if _TL_SWIPL !== nothing
             g = "consult('$path'), findall(N/A, (current_predicate(user:N/A), N == []), L), print(L), nl"
-            @test chomp(read(pipeline(`$_TL_SWIPL -q -g $g -t halt`; stderr=devnull), String)) == "[]"
+            @test chomp(
+                read(pipeline(`$_TL_SWIPL -q -g $g -t halt`; stderr=devnull), String)
+            ) == "[]"
         else
             @test !_TL_SWIPL_REQUIRED
         end

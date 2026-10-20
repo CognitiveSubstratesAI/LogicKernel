@@ -18,7 +18,8 @@ using Test, LogicKernel
 
 const _SA_CI = get(ENV, "CI", "") == "true"
 const _SA_OPTOUT = get(ENV, "LOGICKERNEL_STATIC_ANALYSIS_OPTOUT", "") == "pkg-test"
-const _SA_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_TOOLS", "") == "1" || (_SA_CI && !_SA_OPTOUT)
+const _SA_REQUIRED =
+    get(ENV, "LOGICKERNEL_REQUIRE_TOOLS", "") == "1" || (_SA_CI && !_SA_OPTOUT)
 const _SA_TOOLS = ("JET", "Aqua", "AllocCheck")
 const _SA_MISSING = [t for t in _SA_TOOLS if Base.find_package(t) === nothing]
 
@@ -26,10 +27,15 @@ if isempty(_SA_MISSING)
     include(joinpath(@__DIR__, "static_analysis_body.jl"))
     _SA_CI && println(
         "::notice title=static analysis::RAN — ",
-        join(["$t $(pkgversion(getfield(@__MODULE__, Symbol(t))))" for t in _SA_TOOLS], ", ")
+        join(
+            ["$t $(pkgversion(getfield(@__MODULE__, Symbol(t))))" for t in _SA_TOOLS],
+            ", "
+        )
     )
 elseif _SA_REQUIRED
-    _SA_CI && println("::error title=static analysis::REQUIRED but missing: $(join(_SA_MISSING, ", "))")
+    _SA_CI && println(
+        "::error title=static analysis::REQUIRED but missing: $(join(_SA_MISSING, ", "))"
+    )
     error(
         "the static analysis gate is required here (LOGICKERNEL_REQUIRE_TOOLS=1, or CI without the " *
         "pkg-test opt-out) but $(join(_SA_MISSING, ", ")) cannot be loaded — it would be skipped. " *

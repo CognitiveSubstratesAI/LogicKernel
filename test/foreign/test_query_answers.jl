@@ -55,7 +55,8 @@ _qa_clauses() = Tuple{_R, Union{Nothing, _R}}[
     @test_throws ArgumentError LK.query_answers(db.ld, mk_expr(_R, _R[_rv(9), _rs("a")]))  # its head a variable
     # a variable the solution leaves unbound comes back as a FRESH variable, not the caller's
     (a,) = LK.query_answers(db.ld, _rf("qa_free", _rv(9), _rv(8)))
-    @test kind(child(a, 2)) === VAR && var_key(child(a, 2)) ∉ (var_key(_rv(9)), var_key(_rv(8)))
+    @test kind(child(a, 2)) === VAR &&
+        var_key(child(a, 2)) ∉ (var_key(_rv(9)), var_key(_rv(8)))
     @test _rcanonical(child(a, 3)) == "x"
     # the stable surface is exported (README "Using it from Julia")
     @test all(n -> n in names(LogicKernel), (:query_answers, :PrologException, :load_file!))

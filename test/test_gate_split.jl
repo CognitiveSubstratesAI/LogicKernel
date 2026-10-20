@@ -986,12 +986,17 @@ MUTANTS = [
     @testset "the CI runner images are pinned, never -latest" begin
         wf = joinpath(_GS_ROOT, ".github", "workflows")
         moving, runs_on = String[], 0
-        for f in filter(endswith(".yml"), readdir(wf; join=true)), (i, l) in enumerate(eachline(f))
+        for f in filter(endswith(".yml"), readdir(wf; join=true)),
+            (i, l) in enumerate(eachline(f))
+
             runs_on += occursin(r"^\s*runs-on:", l)
-            occursin(r"^\s*(runs-on:|-)\s*[\w.-]+-latest\b", l) && push!(moving, "$(basename(f)):$i")
+            occursin(r"^\s*(runs-on:|-)\s*[\w.-]+-latest\b", l) &&
+                push!(moving, "$(basename(f)):$i")
         end
         @test runs_on >= 9 && isempty(moving)
-        action = read(joinpath(_GS_ROOT, ".github", "actions", "oracle", "action.yml"), String)
+        action = read(
+            joinpath(_GS_ROOT, ".github", "actions", "oracle", "action.yml"), String
+        )
         @test occursin(raw"key=${ImageOS:?", action)
     end
     # UNDER CI A MISSING ANALYSIS TOOL IS AN ERROR (test/test_static_analysis.jl's header): the real file
@@ -1003,15 +1008,18 @@ MUTANTS = [
         jl = joinpath(Sys.BINDIR, Base.julia_exename())
         function sa(env...)
             cmd = addenv(
-                `$jl --project=$_GS_ROOT --startup-file=no $f`, "JULIA_LOAD_PATH" => "@:@stdlib",
-                "LOGICKERNEL_REQUIRE_TOOLS" => "", "LOGICKERNEL_STATIC_ANALYSIS_OPTOUT" => "", env...
+                `$jl --project=$_GS_ROOT --startup-file=no $f`,
+                "JULIA_LOAD_PATH" => "@:@stdlib",
+                "LOGICKERNEL_REQUIRE_TOOLS" => "",
+                "LOGICKERNEL_STATIC_ANALYSIS_OPTOUT" => "", env...
             )
             out = IOBuffer()
             p = run(pipeline(ignorestatus(cmd); stdout=out, stderr=out))
             return p.exitcode, String(take!(out))
         end
         rc, out = sa("CI" => "true")
-        @test rc == 1 && occursin("::error title=static analysis::REQUIRED but missing: JET", out)
+        @test rc == 1 &&
+            occursin("::error title=static analysis::REQUIRED but missing: JET", out)
         rc, out = sa("CI" => "true", "LOGICKERNEL_STATIC_ANALYSIS_OPTOUT" => "pkg-test")
         @test rc == 0 && occursin("::warning title=static analysis::SKIPPED", out)
         rc, out = sa("CI" => "")
@@ -1024,7 +1032,8 @@ MUTANTS = [
     @testset "the mutation lane checks swipl-devel out for a whole-suite target" begin
         mut = read(joinpath(_GS_ROOT, ".github", "workflows", "mutation.yml"), String)
         # the checkout and the analysis tools, in the baseline and the mutant job each
-        @test count("'mutate_suite'", mut) == 4 && count("path: .upstream/swipl-devel", mut) == 2
+        @test count("'mutate_suite'", mut) == 4 &&
+            count("path: .upstream/swipl-devel", mut) == 2
         @test occursin("LOGICKERNEL_UPSTREAM_SWIPL_DEVEL:", mut)
         suite = joinpath(_GS_ROOT, "tools", "mutate_suite.sh")
         @test isfile(suite) && (filemode(suite) & 0o111) != 0
