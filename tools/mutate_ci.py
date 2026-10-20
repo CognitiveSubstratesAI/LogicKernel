@@ -12,6 +12,9 @@
 #   mutate_ci.py baseline LIMIT_S TARGET…         the targets on the unmutated tree → baseline.json
 #   mutate_ci.py one MUTANTS.py ID LIMIT_S TARGET…   apply ID, run the targets → <ID>.json, <ID>.log
 #   mutate_ci.py collect MUTANTS.py COUNT [ID…]   the verdict table (stdout, verdicts.md); exit 0/1
+#   mutate_ci.py annotate                         verdicts.md as notice annotations (stdout): a check
+#                                                 run's annotations are readable through the API
+#                                                 without a token, its job summary and logs are not
 #
 # A TARGET is a test file, run in a FRESH process on the reference term type
 # (`julia --project=. <file>`, LOGICKERNEL_TERM=reference) — or `sh:<command>`.
@@ -197,8 +200,32 @@ def collect(argv):
     return 1 if blocked or not base_ok else 0
 
 
+ANNOTATIONS_MAX, ANNOTATION_CHARS = 10, 4000          # GitHub: 10 notices per step; a short message
+
+
+def annotate(argv):
+    """verdicts.md as `::notice` workflow commands, the rows packed in order into at most
+    ANNOTATIONS_MAX messages of at most ANNOTATION_CHARS characters each, numbered "verdicts i/n";
+    a row that does not fit is cut, and every annotation is printed — none dropped."""
+    with open(os.path.join(OUT, "verdicts.md")) as f:
+        rows = [ln[:ANNOTATION_CHARS] for ln in f.read().splitlines() if ln.strip()]
+    parts, cur = [], ""
+    for ln in rows:
+        if cur and len(cur) + 1 + len(ln) > ANNOTATION_CHARS:
+            parts.append(cur)
+            cur = ""
+        cur = ln if not cur else cur + "\n" + ln
+    parts.append(cur)
+    if len(parts) > ANNOTATIONS_MAX:
+        print("mutate_ci: annotate: %d parts, GitHub shows %d" % (len(parts), ANNOTATIONS_MAX), file=sys.stderr)
+    esc = lambda t: t.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    for i, part in enumerate(parts, 1):
+        print("::notice title=verdicts %d/%d::%s" % (i, len(parts), esc(part)))
+    return 0 if len(parts) <= ANNOTATIONS_MAX else 1
+
+
 if __name__ == "__main__":
-    commands = {"plan": plan, "baseline": baseline, "one": one, "collect": collect}
+    commands = {"plan": plan, "baseline": baseline, "one": one, "collect": collect, "annotate": annotate}
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
-        sys.exit("usage: mutate_ci.py plan|baseline|one|collect … (see the header)")
+        sys.exit("usage: mutate_ci.py plan|baseline|one|collect|annotate … (see the header)")
     sys.exit(commands[sys.argv[1]](sys.argv[2:]))

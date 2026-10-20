@@ -147,6 +147,11 @@ jobs:
         run: python3 tools/mutate_ci.py collect "$MUTANTS" "$COUNT" $IDS | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
         env:
           COUNT: ${{ needs.plan.outputs.count }}
+      # The same table as this job's annotations: the summary and the logs need a token to read
+      # through the API, a public repository's check-run annotations do not.
+      - name: The table as annotations
+        if: ${{ !cancelled() }}
+        run: python3 tools/mutate_ci.py annotate
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         if: ${{ !cancelled() }}
         with:

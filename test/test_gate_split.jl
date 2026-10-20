@@ -962,6 +962,17 @@ MUTANTS = [
             @test occursin("blocking: L2, L3", table)
             @test occursin("| L1 | caught |", table) &&
                 occursin("Test Failed at t.jl:3 |", table)
+            # the table as annotations, readable without a token: one workflow command per part,
+            # its newlines and percent signs escaped, every row in it
+            ann = out("annotate")
+            @test sh("annotate") == 0
+            @test count(==('\n'), ann) == 1 &&
+                startswith(ann, "::notice title=verdicts 1/1::")
+            @test occursin("%0A| L1 | caught |", ann) && occursin("%0A| L3 |", ann)
+            write(joinpath(d, "mutation-out", "verdicts.md"), "a 100%\n" * "x"^4000 * "\n")
+            ann = out("annotate")
+            @test occursin("::notice title=verdicts 1/2::a 100%25\n", ann)
+            @test occursin("::notice title=verdicts 2/2::" * "x"^4000 * "\n", ann)
         end
     end
     # the local driver's verdict table and its judge on REAL julia output, both ways
