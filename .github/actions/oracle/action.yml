@@ -9,10 +9,12 @@ description: Restore or build swipl at the pinned commit, put it on PATH, refuse
 runs:
   using: composite
   steps:
-    - name: The oracle's cache key (pinned commit + build flags)
+    # the runner image is in the key (ImageOS, e.g. ubuntu24): a build is restored only onto the image
+    # whose glibc it was built with (CI.yml's note on the pinned image)
+    - name: The oracle's cache key (runner image + pinned commit + build flags)
       id: oracle
       shell: bash
-      run: echo "key=$(tools/build_oracle.sh --key)" >> "$GITHUB_OUTPUT"
+      run: echo "key=${ImageOS:?no ImageOS on this runner}-$(tools/build_oracle.sh --key)" >> "$GITHUB_OUTPUT"
     - name: Restore the oracle
       id: oracle_cache
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4

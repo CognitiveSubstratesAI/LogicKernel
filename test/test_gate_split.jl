@@ -981,4 +981,17 @@ MUTANTS = [
         jl = joinpath(Sys.BINDIR, Base.julia_exename())
         @test success(addenv(`python3 $tool --selftest`, "JULIA" => jl))
     end
+    # THE RUNNER IMAGE IS PINNED (CI.yml's note above `jobs:`): no job, no matrix entry on a moving
+    # `-latest` image; the oracle's cache key names the image. The scan must see every `runs-on`.
+    @testset "the CI runner images are pinned, never -latest" begin
+        wf = joinpath(_GS_ROOT, ".github", "workflows")
+        moving, runs_on = String[], 0
+        for f in filter(endswith(".yml"), readdir(wf; join=true)), (i, l) in enumerate(eachline(f))
+            runs_on += occursin(r"^\s*runs-on:", l)
+            occursin(r"^\s*(runs-on:|-)\s*[\w.-]+-latest\b", l) && push!(moving, "$(basename(f)):$i")
+        end
+        @test runs_on >= 9 && isempty(moving)
+        action = read(joinpath(_GS_ROOT, ".github", "actions", "oracle", "action.yml"), String)
+        @test occursin(raw"key=${ImageOS:?", action)
+    end
 end

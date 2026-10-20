@@ -52,6 +52,12 @@ permissions:
 env:
   JULIA_NUM_THREADS: '4'
   LOGICKERNEL_REQUIRE_SWIPL: '1'      # a missing oracle is an error, never a skipped differential
+  # …and a missing analysis tool too: test/test_static_analysis.jl SKIPS GREEN without JET, Aqua and
+  # AllocCheck, so every mutant of a battery targeting it "survived" a target that ran nothing (Tooling2,
+  # 2026-10-20: four survivors in 1 s against a 1 s baseline; caught locally). The tools are installed
+  # below when the battery's targets name that file; a mutant's own `targets` naming it without them
+  # fails closed (NO VERDICT).
+  LOGICKERNEL_REQUIRE_TOOLS: '1'
   # a push to mutants/<step> has no inputs: the list is tools/mutants/<step>.py, the targets the
   # list's own (the `plan` job's output), the limit the default
   MUTANTS: ${{ inputs.mutants || format('tools/{0}.py', github.ref_name) }}
@@ -62,7 +68,7 @@ jobs:
   # The matrix: one entry per mutant, from the list itself (the same file the local driver reads).
   plan:
     name: Plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
@@ -77,7 +83,7 @@ jobs:
   baseline:
     name: Baseline (unmutated)
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     timeout-minutes: 90
     env:
       TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
@@ -88,6 +94,14 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - name: Install the analysis tools (the targets name test/test_static_analysis.jl)
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') }}
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(name="AllocCheck")])'
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: Run the targets
         run: python3 tools/mutate_ci.py baseline "$LIMIT_S" $TARGETS
@@ -100,7 +114,7 @@ jobs:
   mutant:
     name: ${{ matrix.name }}
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     timeout-minutes: 120
     strategy:
       fail-fast: false                # every mutant gets its verdict
@@ -113,6 +127,14 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - name: Install the analysis tools (the targets name test/test_static_analysis.jl)
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') }}
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(name="AllocCheck")])'
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       # Applies the mutant (its text must occur exactly once: else BADMATCH), runs the targets in
       # fresh processes, writes mutation-out/<name>.json and the log. Exits 0 whatever the verdict:
@@ -132,7 +154,7 @@ jobs:
     name: Verdict table
     needs: [plan, baseline, mutant]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4

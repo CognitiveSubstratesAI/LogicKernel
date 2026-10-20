@@ -20,6 +20,10 @@ concurrency:
 permissions:
   contents: read
 
+# THE RUNNER IMAGE IS PINNED (ubuntu-24.04, never ubuntu-latest; 2026-10-20): the arithmetic calls libm
+# by ccall and its rows are pinned from swipl, and the oracle is built on the runner — a new image (a
+# new glibc, so a new libm) would change both under an unchanged commit. Moving to a newer image is a
+# deliberate step with its own differential run. The same pin in evidence.yml and mutation.yml.
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
@@ -53,7 +57,7 @@ jobs:
                     # version (1.13.0); v3 renamed this 'min-patch' ('min-patch' fails on v2)
           - '1'           # the latest release
         os:
-          - ubuntu-latest
+          - ubuntu-24.04   # pinned, not -latest: see the note above `jobs:`
         arch:
           - x64
     steps:
@@ -155,7 +159,7 @@ jobs:
   analysis:
     name: Static analysis + live swipl differential
     if: ${{ !startsWith(github.ref_name, 'gate/') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # THE ORACLE IS A BUILD OF THE PINNED COMMIT (user, 2026-10-11): tools/SWIPL_VERSION names one
     # swipl-devel commit — the one the ported files cite — and `swipl` here is built from exactly
     # it by tools/build_oracle.sh, the recipe the local oracle is built with. The install is
@@ -210,7 +214,7 @@ jobs:
 
   format:
     name: Format (Blue)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
@@ -241,7 +245,7 @@ jobs:
   # unreliable on a newly pushed branch — and an undecidable diff runs everything (fails closed).
   tooling:
     name: Tooling suites (warm lane, evidence, oracle cache)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: read
