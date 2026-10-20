@@ -547,7 +547,7 @@ end
     )
     rc = LK.PL_next_solution(_CR_GD, _CR_LD, qid)
     @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-    xc = LK._cell_var(_CR_LD, Int(pvm.cells[var_key(x)]))
+    xc = mk_var(_CR, pvm.cells[var_key(x)])   # the put's copy of `x` (PutVarMap: key → its key)
     @test kind(xc) === VAR && kind(LK.deRef(_CR_LD, xc)) === VAR
     LK.PL_close_query(_CR_LD, qid)
     LK.PL_discard_foreign_frame(_CR_LD, fid)
