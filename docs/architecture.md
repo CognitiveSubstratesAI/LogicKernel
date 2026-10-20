@@ -58,12 +58,17 @@ machine can do nothing else meanwhile. So the gate for `main` is CI's:
    the static analysis, the changed test files). The preflight records its pass as evidence for a
    BRANCH commit only; on `main` the commit hook still asks for a full local suite.
 2. **Push the commit as `gate/<name>`.** There `.github/workflows/evidence.yml` runs the whole suite
-   with every gate required, ONE JOB PER TERM TYPE in parallel (`LOGICKERNEL_TERM_ONLY`,
-   test/runtests.jl: the files that are not term-generic — the static analysis among them — go with
-   the reference job; each job asserts the OTHER types built no compound), and
-   `tools/evidence_ci.py` checks that the three jobs ran every unit of the suite exactly once.
-   CI.yml's `test` and `format` jobs run on the gate branch too; its `analysis` job (the same suite
-   in one job) is skipped there and still runs on `main`.
+   with every gate required, SHARDED (D-0059, 2026-10-20; test/ci_slices.jl): per term type
+   (`LOGICKERNEL_TERM_ONLY`; the files that are not term-generic go with the reference type; each job
+   asserts the OTHER types built no compound) in 2 FILE GROUPS (`LOGICKERNEL_FILE_GROUP`, balanced by
+   test/unit_costs.tsv), and the static analysis in 8 SHARDS of its own (`LOGICKERNEL_SA_SHARD`: every
+   8th manifest entry, Aqua and the other one-off gates spread one per shard). `tools/evidence_ci.py`
+   gathers: one job per type under the type's name, and the Verdict table — every unit run exactly once
+   by a job of its own type, the shards' counts summing to the manifest's with none at zero; a dropped
+   job turns it red. CI.yml's `test` (Pkg.test, likewise in 3 file groups, gathered under the name
+   `Julia <version> - <os>` with the coverage ratchet on the merged lcov) and `format` jobs run on the
+   gate branch too; its `analysis` job (the same suite in ONE job, unsliced — the cross-check that a
+   slice hides no order dependence) is skipped there and still runs on `main`.
 3. **Fast-forward `main` to that commit.** `tools/githooks/pre-push` refuses a push to `main` unless
    `tools/ci_status.sh --require "Evidence (three term types)" <sha>` is green for EXACTLY the pushed
    commit: every run completed and succeeded, the evidence workflow among them. A run that is
@@ -93,9 +98,11 @@ Started by PUSHING the commit to the branch `mutants/<step>` — the list is the
 
 Every guard here has planted cases in test/test_gate_split.jl: the push hook (no run found, CI green
 without the evidence run, still running, red, another commit's run, unreadable, deleting `main`, a
-fallback that names another commit), the partition check (a unit run by no job, by two, outside the
-suite; two suites; an empty one; a job that failed or died) and the mutant verdicts (each of the
-eight outcomes, and what blocks).
+fallback that names another commit), the partition check (a unit run by no job, by two, by a job of
+another type, outside the suite; two suites; an empty one; a job that failed, died or was dropped; a
+job run as the wrong slice; a static-analysis shard with no counts, a zero count, counts that do not
+sum, a one-off gate run twice or never), the slices themselves (test/ci_slices.jl: total, independent
+of order, balanced) and the mutant verdicts (each of the eight outcomes, and what blocks).
 
 ## A full run of `tools/run_tests.sh` is the local gate
 
@@ -273,6 +280,10 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
   * No verdict yet passes at a cycle's start. At a full run's end it is waited for (up to
     `LOGICKERNEL_CI_WAIT_S`, 1200 s), and evidence is written only for a green push.
   * `LOGICKERNEL_CI_CHECK=off` skips the check loudly, for a machine without network.
+  * **A cancelled run is superseded** by a LATER green run of the SAME workflow on the SAME ref
+    (MEASURED 2026-10-20: re-pushing the tag v0.1.0-pre.1 cancelled the first tag push's CI, and
+    the gate read the commit red though its re-run was green). Only `cancelled`: a failure stays red
+    however often it is re-run, and a run without a `created_at` is never superseded.
   * **The declared fix (user, 2026-10-11)** is the one way past a red push, for the commit that
     fixes it — until then that commit went in with the whole check switched off (`264a7f2`).
     `LOGICKERNEL_CI_FIX=<sha>` lets a gate cycle pass a RED verdict on exactly that commit, which
@@ -290,7 +301,7 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
   * the declarations, and the parser's refusals;
   * the trigger set and the term types on fixture paths;
   * the units a REFERENCE file runs;
-  * `ci_status.sh` on eight CI fixtures and one unreadable answer;
+  * `ci_status.sh` on fifteen CI fixtures (seven for the superseded cancel) and one unreadable answer;
   * `_ci_gate` at a cycle's start and after a wait;
   * `_check_run`'s term-type check.
 
@@ -711,6 +722,11 @@ fixed it or a public issue exists.
 | `test/compile/code_testlib.jl` | how both code differentials write an instruction, the kernel's and swipl's alike: operands by meaning, literals by value | — |
 | `tools/githooks/commit-msg` | git's commit-msg hook: a commit message must start with a category (`ADDED:` … `UPSTREAM:`); installed with `git config core.hooksPath tools/githooks` | — |
 | `test/test_commit_msg_hook.jl` | the commit-msg hook's contract, both sides (26 cases) | — |
+| `test/test_manifest_entries.jl` | `_manifest_entries` (static_analysis_manifest.jl) unit-tested on a sample: every entry kept, in order, each with its own allocation flag — without the analysis tools, so in every suite (its mutants were caught only by the static analysis's AllocCheck pass, which ran past an hour) | — |
+| `test/ci_slices.jl`, `test/unit_costs.tsv` | CI's slices of one run (D-0059): `LOGICKERNEL_FILE_GROUP=k/G` (test files in G groups balanced by the cost table, longest first) and `LOGICKERNEL_SA_SHARD=k/N` (every N-th manifest entry and one-off gate of the static analysis); the cost table is the Verdict table's `unit-costs` artifact, never hand-edited | — |
+| `tools/evidence_ci.py` | the gather of a run spread over jobs: Evidence's Verdict table and per-type gathers, the static analysis's shards (their counts summing to the manifest's, each non-zero, every one-off gate run once), CI.yml's Pkg.test groups; every unit run exactly once by a job of its type — planted cases in test/test_gate_split.jl | — |
+| `tools/mutate_suite.sh` | the whole suite as ONE mutation target (`sh:tools/mutate_suite.sh`), on the reference type, as Evidence's slices run in parallel processes (2 file groups + 2 static-analysis shards, 3 at a time); exit 1 when a slice failed a test | — |
+| `docs/release-notes/v0.1.0-pre.1.md` | the release notes of v0.1.0-pre.1, byte for byte the annotated tag's message (SHA-256 b50689ee…0f4bd) | — |
 
 ## Code graph — src/, generated (M1)
 

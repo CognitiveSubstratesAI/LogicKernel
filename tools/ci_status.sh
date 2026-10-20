@@ -74,10 +74,23 @@ if not runs:
     print(f"ci_status: {sha[:7]}: no CI run yet")
     sys.exit(3)
 ok = ("success", "neutral", "skipped")
-red = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in ok]
+def superseded(r):
+    # a CANCELLED run is not a verdict when a LATER run of the same workflow on the same ref
+    # succeeded (MEASURED 2026-10-20: the re-pushed tag v0.1.0-pre.1 cancelled the first tag
+    # push'"'"'s CI; the re-run was green). Only `cancelled`: a failure stays red. Both timestamps
+    # must be present, so a run the API gave no `created_at` is never superseded.
+    if r["conclusion"] != "cancelled" or not r.get("created_at"):
+        return False
+    return any(
+        o is not r and o["name"] == r["name"] and o.get("head_branch") == r.get("head_branch")
+        and o["status"] == "completed" and o["conclusion"] == "success"
+        and (o.get("created_at") or "") > r["created_at"]
+        for o in runs
+    )
+red = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in ok and not superseded(r)]
 pending = [r for r in runs if r["status"] != "completed"]
 for r in runs:
-    print("ci_status: %s  %s  %s  %s  %s" % (sha[:7], r["name"], r["status"], r["conclusion"] or "-", r["html_url"]))
+    print("ci_status: %s  %s  %s  %s%s  %s" % (sha[:7], r["name"], r["status"], r["conclusion"] or "-", " (superseded)" if superseded(r) else "", r["html_url"]))
 if red:
     sys.exit(1)
 if pending:

@@ -152,14 +152,65 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
 
     @testset "tools/ci_status.sh and _ci_gate judge the previous push" begin
         sha = "0123456789abcdef0123456789abcdef01234567"
-        run_(name, status, conclusion; s=sha) =
+        run_(name, status, conclusion; s=sha, branch="main", at="") =
             "{\"head_sha\":\"$s\",\"name\":\"$name\",\"status\":\"$status\"," *
             "\"conclusion\":$(conclusion === nothing ? "null" : "\"$conclusion\"")," *
+            "\"head_branch\":\"$branch\",\"created_at\":\"$at\"," *
             "\"html_url\":\"https://x/1\"}"
         fixtures = [
             ("green", "[" * run_("CI", "completed", "success") * "]", 0),
             ("red", "[" * run_("CI", "completed", "failure") * "]", 1),
             ("cancelled", "[" * run_("CI", "completed", "cancelled") * "]", 1),
+            # a CANCELLED run is superseded only by a LATER green run of the SAME workflow on the
+            # SAME ref (MEASURED 2026-10-20: a re-pushed tag cancelled the first tag push's CI)
+            (
+                "cancelled, then re-run green",
+                "[" * run_("CI", "completed", "cancelled"; at="2026-10-20T16:24:21Z") *
+                "," *
+                run_("CI", "completed", "success"; at="2026-10-20T16:41:36Z") * "]",
+                0
+            ),
+            (
+                "cancelled AFTER the green run",
+                "[" * run_("CI", "completed", "cancelled"; at="2026-10-20T17:00:00Z") *
+                "," *
+                run_("CI", "completed", "success"; at="2026-10-20T16:41:36Z") * "]",
+                1
+            ),
+            (
+                "cancelled, a green run of another workflow",
+                "[" * run_("CI", "completed", "cancelled"; at="2026-10-20T16:24:21Z") *
+                "," *
+                run_("Other", "completed", "success"; at="2026-10-20T16:41:36Z") * "]",
+                1
+            ),
+            (
+                "cancelled, a green run on another ref",
+                "[" * run_("CI", "completed", "cancelled"; at="2026-10-20T16:24:21Z") *
+                "," *
+                run_("CI", "completed", "success"; branch="v1", at="2026-10-20T16:41:36Z") *
+                "]",
+                1
+            ),
+            (
+                "failed, then re-run green (a failure is never superseded)",
+                "[" * run_("CI", "completed", "failure"; at="2026-10-20T16:24:21Z") * "," *
+                run_("CI", "completed", "success"; at="2026-10-20T16:41:36Z") * "]",
+                1
+            ),
+            (
+                "cancelled without a timestamp, a green run",
+                "[" * run_("CI", "completed", "cancelled") * "," *
+                run_("CI", "completed", "success"; at="2026-10-20T16:41:36Z") * "]",
+                1
+            ),
+            (
+                "cancelled, a later run still going",
+                "[" * run_("CI", "completed", "cancelled"; at="2026-10-20T16:24:21Z") *
+                "," *
+                run_("CI", "in_progress", nothing; at="2026-10-20T16:41:36Z") * "]",
+                1
+            ),
             ("in progress", "[" * run_("CI", "in_progress", nothing) * "]", 3),
             ("no run", "[]", 3),
             (
@@ -774,67 +825,184 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         end
         rm(gs_dir; recursive=true)
     end
-    # CI's EVIDENCE RUN IS THREE JOBS, ONE PER TERM TYPE (user, 2026-10-13): tools/evidence_ci.py
-    # judges them together. Planted unit lists: a job that skipped a unit, ran another job's, or
-    # died must not read as green.
-    @testset "tools/evidence_ci.py: three green jobs that do not PARTITION the suite are not green" begin
+    # CI'S EVIDENCE RUN IS SPREAD OVER JOBS (user, 2026-10-13; sharded, D-0059 2026-10-20): term type ×
+    # file group, and the static analysis in shards of its own; tools/evidence_ci.py judges them
+    # together. Planted unit lists and counts: a job that skipped a unit, ran another job's, ran as the
+    # wrong slice, analysed nothing or died must not read as green.
+    @testset "tools/evidence_ci.py: green jobs that do not PARTITION the suite are not green" begin
         tool = joinpath(_GS_ROOT, "tools", "evidence_ci.py")
-        all_ = ["a.jl", "g.jl", "g.jl [alt]", "g.jl [alt_interned]"]
-        good = Dict(
-            "reference" => ["a.jl", "g.jl"], "alt" => ["g.jl [alt]"],
-            "alt_interned" => ["g.jl [alt_interned]"]
+        sa_l = "test_static_analysis.jl"
+        impls = Dict(
+            "a.jl" => "reference", "b.jl" => "reference", sa_l => "reference",
+            "g.jl" => "reference", "g.jl [alt]" => "alt",
+            "g.jl [alt_interned]" => "alt_interned", "h.jl" => "reference",
+            "h.jl [alt]" => "alt", "h.jl [alt_interned]" => "alt_interned"
         )
-        "The tool's exit over planted lists; `rows`: term → verdict row, absent = no row."
-        function verdict(ran; alls=Dict(t => all_ for t in keys(ran)), rows=nothing)
-            mktempdir() do d
-                for (t, r) in ran
-                    open(joinpath(d, "units_$t.tsv"), "w") do io
-                        foreach(u -> println(io, "all\t", u), alls[t])
-                        foreach(u -> println(io, "ran\t", u), r)
+        all_ = sort!(collect(keys(impls)))
+        # two file groups per type: {a.jl, g.jl} and {b.jl, h.jl}; two static-analysis shards
+        good = Dict(
+            "reference_g1" => ["a.jl", "g.jl"], "reference_g2" => ["b.jl", "h.jl"],
+            "alt_g1" => ["g.jl [alt]"], "alt_g2" => ["h.jl [alt]"],
+            "alt_interned_g1" => ["g.jl [alt_interned]"],
+            "alt_interned_g2" => ["h.jl [alt_interned]"],
+            "sa_1" => [sa_l], "sa_2" => [sa_l]
+        )
+        slice(job) =
+            if startswith(job, "sa_")
+                "sa_shard\t$(job[end])\t2\treference"
+            elseif startswith(job, "julia-")
+                "file_group\t$(job[end])\t2\t"
+            else
+                "file_group\t$(job[end])\t2\t$(job[1:(end - 3)])"
+            end
+        stats(job) =
+            if startswith(job, "alt_interned")
+                "0\t5\t2"
+            else
+                (
+                    if startswith(job, "alt")
+                        "7\t0\t0"
+                    else
+                        (startswith(job, "julia-") ? "7\t5\t2" : "0\t0\t0")
                     end
-                end
-                for t in ("reference", "alt", "alt_interned")
-                    row = rows === nothing ? "| $t | passed | 1 s |" : get(rows, t, nothing)
-                    row === nothing || write(joinpath(d, "row_$t.md"), row * "\n")
-                end
+                )
+            end
+        sa_counts(k) =
+            "shard\t$k\t2\nparts\taqua,controls\npart\t$(k == 1 ? "aqua" : "controls")\n" *
+            "dispatch\t$(k == 1 ? 3 : 2)\t5\nalloc\t1\t2\n"
+        "The tool's exit over planted files: `edit(files)` changes the good set (name → text)."
+        function verdict(edit=identity; mode=["verdict", "2", "2"], ran=good, suite=all_)
+            files = Dict{String, String}()
+            for (job, r) in ran
+                files["units_$job.tsv"] =
+                    "slice\t$(slice(job))\n" *
+                    join(["all\t$u\t$(impls[u])\n" for u in suite]) *
+                    join(["ran\t$u\t3\t0\t1.5\n" for u in r]) * "stats\t$(stats(job))\n"
+                files["row_$job.md"] = "| $job | passed | 1 s |\n"
+            end
+            any(startswith("sa_"), keys(ran)) &&
+                foreach(k -> files["sa_$k.tsv"] = sa_counts(k), 1:2)
+            edit(files)
+            mktempdir() do d
+                foreach(((n, t),) -> write(joinpath(d, n), t), files)
                 run(
                     pipeline(
-                        ignorestatus(`python3 $tool $d`); stdout=devnull, stderr=devnull
+                        ignorestatus(`python3 $tool $(mode[1]) $d $(mode[2:end])`);
+                        stdout=devnull, stderr=devnull
                     )
                 ).exitcode
             end
         end
-        @test verdict(good) == 0                                    # the positive control
-        @test verdict(merge(good, Dict("alt" => String[]))) == 1    # a unit run by no job
-        @test verdict(merge(good, Dict("alt" => ["g.jl [alt]", "g.jl"]))) == 1      # by two jobs
-        @test verdict(merge(good, Dict("alt" => ["g.jl [alt]", "x.jl"]))) == 1      # not in the suite
+        drop(n) = fs -> delete!(fs, n)
+        put(n, t) = fs -> (fs[n] = t)
+        @test verdict() == 0                                       # the positive control
+        @test verdict(; ran=merge(good, Dict("alt_g2" => String[]))) == 1     # run by no job
+        @test verdict(; ran=merge(good, Dict("alt_g2" => ["h.jl [alt]", "g.jl [alt]"]))) ==
+            1  # by two
+        @test verdict(; ran=merge(good, Dict("alt_g2" => ["h.jl [alt]", "h.jl"]))) == 1  # another type's
+        @test verdict(; ran=merge(good, Dict("reference_g2" => ["b.jl", "h.jl", sa_l]))) ==
+            1 # the SA in a group
+        @test verdict(; ran=merge(good, Dict("sa_2" => [sa_l, "a.jl"]))) == 1  # a shard ran more
+        @test verdict(drop("row_alt_g2.md")) == 1                  # a job died without a row
         @test verdict(
-            good; alls=Dict(
-                "reference" => all_, "alt" => all_[1:3], "alt_interned" => all_
-            )
-        ) == 1                                                     # the jobs enumerated two suites
+            fs -> (delete!(fs, "row_alt_g2.md"); delete!(fs, "units_alt_g2.tsv"))
+        ) == 1 # a DROPPED job
+        @test verdict(put("row_alt_g1.md", "| alt_g1 | **FAILED** | — |\n")) == 1   # a job failed
         @test verdict(
-            Dict(t => String[] for t in keys(good));
-            alls=Dict(
-                t => String[] for t in keys(good)
+            fs -> (
+                fs["units_alt_g1.tsv"] = replace(
+                    fs["units_alt_g1.tsv"], "\t1\t2\talt" => "\t2\t2\talt"
+                )
             )
-        ) == 1                                                     # an EMPTY suite is not a pass
-        @test verdict(delete!(copy(good), "alt")) == 1              # a job left no unit list
+        ) == 1                                                     # ran as the wrong slice
         @test verdict(
-            good;
-            rows=Dict(
-                "reference" => "| reference | passed | 1 s |",
-                "alt" => "| alt | **FAILED** | — |",
-                "alt_interned" => "| alt_interned | passed | 1 s |"
+            fs -> (
+                fs["units_alt_g1.tsv"] = replace(
+                    fs["units_alt_g1.tsv"], "all\th.jl\treference\n" => ""
+                )
             )
-        ) == 1                                                     # a job failed
+        ) == 1                                                     # enumerated a different suite
+        @test verdict(put("units_alt_interned_g2.tsv", "")) == 1  # an empty unit list
+        @test verdict(; suite=String[], ran=Dict(j => String[] for j in keys(good))) == 1 # an EMPTY suite
         @test verdict(
-            good;
-            rows=Dict(
-                "reference" => "| reference | passed | 1 s |",
-                "alt_interned" => "| alt_interned | passed | 1 s |"
+            fs -> foreach(
+                j -> (
+                    fs["units_$j.tsv"] = replace(
+                        fs["units_$j.tsv"], "stats\t0\t5\t2" => "stats\t0\t5\t0"
+                    )
+                ),
+                ("alt_interned_g1", "alt_interned_g2")
             )
-        ) == 1                                                     # a job died without a row
+        ) == 1                                                     # the interned type shared nothing
+        # the static analysis's shards
+        @test verdict(
+            fs -> (
+                delete!(fs, "sa_2.tsv");
+                delete!(fs, "row_sa_2.md");
+                delete!(fs, "units_sa_2.tsv")
+            )
+        ) == 1
+        @test verdict(drop("sa_2.tsv")) == 1                       # a shard wrote no counts
+        @test verdict(
+            put("sa_2.tsv", replace(sa_counts(2), "dispatch\t2\t5" => "dispatch\t0\t5"))
+        ) == 1 # analysed nothing
+        @test verdict(
+            put("sa_2.tsv", replace(sa_counts(2), "dispatch\t2\t5" => "dispatch\t1\t5"))
+        ) == 1 # sum short
+        @test verdict(
+            put("sa_2.tsv", replace(sa_counts(2), "alloc\t1\t2" => "alloc\t1\t3"))
+        ) == 1  # two totals
+        @test verdict(
+            put("sa_2.tsv", replace(sa_counts(2), "part\tcontrols" => "part\taqua"))
+        ) == 1 # a part twice, one never
+        @test verdict(
+            put("sa_2.tsv", replace(sa_counts(2), "shard\t2\t2" => "shard\t1\t2"))
+        ) == 1  # the wrong shard
+        @test verdict(; mode=["verdict", "2", "3"]) == 1           # a shard of three never ran
+        @test verdict(; mode=["verdict", "3", "2"]) == 1           # a group of three never ran
+        # one term type's gather, and the static analysis's alone
+        @test verdict(; mode=["term", "alt", "2"]) == 0
+        @test verdict(drop("units_alt_g2.tsv"); mode=["term", "alt", "2"]) == 1
+        @test verdict(drop("units_reference_g2.tsv"); mode=["term", "alt", "2"]) == 0  # not alt's
+        @test verdict(; mode=["sa", "2"]) == 0
+        @test verdict(drop("sa_1.tsv"); mode=["sa", "2"]) == 1
+        # CI.yml's Pkg.test groups: every type in each, the static analysis in none
+        pk = Dict(
+            "julia-1_g1" => ["a.jl", "g.jl", "g.jl [alt]", "g.jl [alt_interned]"],
+            "julia-1_g2" => ["b.jl", "h.jl", "h.jl [alt]", "h.jl [alt_interned]"]
+        )
+        @test verdict(; mode=["pkgtest", "1", "2"], ran=pk) == 0
+        @test verdict(;
+            mode=["pkgtest", "1", "2"],
+            ran=merge(pk, Dict("julia-1_g2" => ["b.jl", "h.jl"]))
+        ) == 1
+        @test verdict(; mode=["pkgtest", "min", "2"], ran=pk) == 1  # another version's jobs
+    end
+    # THE SLICES THEMSELVES (test/ci_slices.jl): a total, deterministic, balanced assignment
+    @testset "test/ci_slices.jl: the file groups and the slice variable" begin
+        cs = Module(:GSSlices)
+        Base.include(cs, joinpath(_GS_ROOT, "test", "ci_slices.jl"))
+        files = ["f$i.jl" for i in 1:9]
+        costs = Dict("f1.jl" => 90.0, "f2.jl" => 60.0, "f3.jl" => 50.0, "f4.jl" => 40.0,
+            "f5.jl" => 10.0)                                       # f6…f9: the median, 50
+        g = cs.lk_file_groups(files, 3, costs)
+        @test sort!(collect(keys(g))) == sort(files)               # every file, one group
+        @test all(in(1:3), values(g)) && length(unique(values(g))) == 3
+        @test g == cs.lk_file_groups(reverse(files), 3, costs)     # independent of the order
+        load = [sum(get(costs, f, 50.0) for f in files if g[f] == k) for k in 1:3]
+        @test maximum(load) - minimum(load) <= 40                  # LPT: within the smallest job
+        @test cs.lk_file_groups(files, 1, costs) == Dict(f => 1 for f in files)
+        @test cs.lk_file_groups(files, 3, Dict{String, Float64}()) ==
+            cs.lk_file_groups(files, 3, Dict{String, Float64}())
+        @test [count(i -> cs.lk_in_slice(i, (k, 4)), 1:10) for k in 1:4] == [3, 3, 2, 2]
+        sl(v) = withenv(() -> cs.lk_slice("GS_SLICE"), "GS_SLICE" => v)
+        @test sl(nothing) == (1, 1) && sl("") == (1, 1) && sl("3/8") == (3, 8)
+        for bad in ("0/2", "3/2", "2", "a/b", "1/0", " 1/2")
+            @test_throws ErrorException sl(bad)
+        end
+        tbl = cs.lk_unit_costs(joinpath(_GS_ROOT, "test", "unit_costs.tsv"))
+        @test !isempty(tbl) && all(>(0), values(tbl))              # the committed table reads
+        @test all(f -> isfile(joinpath(_GS_ROOT, "test", f)), keys(tbl))   # …and names real files
     end
     # CI's MUTATION BATTERY (user, 2026-10-13): tools/mutate_ci.py gives each mutant the local
     # driver's verdict from its targets' EXIT CODES. Planted targets (`sh:` commands) and a planted

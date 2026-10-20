@@ -1,6 +1,14 @@
 # Dependabot keeps the SHA-pinned actions current (user, 2026-10-14): every third-party action is
-# pinned by commit with its tag in a comment, and Dependabot bumps both together. Weekly, grouped,
-# so the updates arrive as one pull request to go through the gate.
+# pinned by commit with its tag in a comment, and Dependabot bumps both together.
+# MONTHLY AND GROUPED, TAKEN THROUGH THE GATE (D-0068, 2026-10-20): the updates arrive once a month as
+# one pull request, and nobody merges it on GitHub — its commit is cherry-picked onto the next tooling
+# batch's gate/ branch, runs the full chain there (the swipl differential and the static analysis on
+# the main push included), and reaches main by fast-forward; Dependabot then closes its own pull
+# request. A bump that breaks the gate is dropped from the batch, recorded, and its pull request
+# closed with the failure named. A bump of the oracle's action (actions/cache in
+# .github/actions/oracle) or of anything that moves the runner image is gated in a batch of its own:
+# the oracle's cache key and the runner pin (D-0053) depend on it. No ignore rules: they would stop
+# the very updates this file exists for.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -8,7 +16,7 @@ updates:
       - /
       - /.github/actions/oracle
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       actions:
         patterns: ['*']

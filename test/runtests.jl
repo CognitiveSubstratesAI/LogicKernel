@@ -37,6 +37,7 @@ using LogicKernel
 include("inert_testset_guard.jl")
 include("term_under_test.jl")         # LK_TERM_IMPLS — the one list of implementations
 include("term_scope.jl")              # the gate split's declarations (ONE extractor)
+include("ci_slices.jl")               # CI's file groups and static-analysis shards
 
 const LK_TEST_DIR = @__DIR__
 const LK_TEST_FILES = lk_test_files(LK_TEST_DIR)
@@ -87,6 +88,42 @@ isempty(LK_TERM_ONLY) || (!LK_SHARD && isempty(LK_REPLAY) && LK_TERM_TYPES == "a
 lk_term_only(impl)::Bool =
     isempty(LK_TERM_ONLY) || impl == LK_TERM_ONLY ||
     (isempty(impl) && LK_TERM_ONLY == first(LK_TERM_IMPLS))
+# THE CI SLICES (D-0059, 2026-10-20; test/ci_slices.jl): LOGICKERNEL_FILE_GROUP=k/G runs the files of
+# group k — every unit of each, or under LOGICKERNEL_TERM_ONLY that type's — and never the static
+# analysis, which runs in LOGICKERNEL_SA_SHARD=k/N jobs of its own: such a process runs that ONE unit
+# (its k-th slice, test/static_analysis_body.jl). Each job writes the units it ran with their pass
+# counts (LOGICKERNEL_UNITS_OUT), and tools/evidence_ci.py checks that the jobs PARTITION the suite.
+const LK_SA_FILE = joinpath(LK_TEST_DIR, "test_static_analysis.jl")
+const LK_GROUPED = !isempty(get(ENV, "LOGICKERNEL_FILE_GROUP", ""))
+const LK_FILE_GROUP = lk_slice("LOGICKERNEL_FILE_GROUP")
+const LK_SA_ONLY = !isempty(get(ENV, "LOGICKERNEL_SA_SHARD", ""))
+const LK_SLICED = LK_GROUPED || LK_SA_ONLY
+LK_SLICED && (LK_SHARD || !isempty(LK_REPLAY) || LK_TERM_TYPES != "all") &&
+    error(
+        "LOGICKERNEL_FILE_GROUP / LOGICKERNEL_SA_SHARD slice a whole CI run: not with shards, a replay or LOGICKERNEL_TERM_TYPES=chunk"
+    )
+LK_GROUPED && LK_SA_ONLY &&
+    error(
+        "LOGICKERNEL_FILE_GROUP and LOGICKERNEL_SA_SHARD together: a job is one or the other"
+    )
+LK_SA_ONLY && !(LK_TERM_ONLY in ("", first(LK_TERM_IMPLS))) &&
+    error(
+        "LOGICKERNEL_SA_SHARD with LOGICKERNEL_TERM_ONLY=$LK_TERM_ONLY: the static analysis is the reference type's"
+    )
+"Each test file's CI group (all but the static analysis), the same in every job."
+const LK_GROUP_OF = lk_file_groups(
+    [relpath(f, LK_TEST_DIR) for f in LK_TEST_FILES if f != LK_SA_FILE], LK_FILE_GROUP[2],
+    lk_unit_costs(joinpath(LK_TEST_DIR, "unit_costs.tsv"))
+)
+"Whether file `f`'s units are in this process's slice."
+lk_in_slice_file(f)::Bool =
+    if LK_SA_ONLY
+        f == LK_SA_FILE
+    elseif LK_GROUPED
+        f != LK_SA_FILE && LK_GROUP_OF[relpath(f, LK_TEST_DIR)] == LK_FILE_GROUP[1]
+    else
+        true
+    end
 # Costliest first, for the shards' queue: the static-analysis gate (JET, AllocCheck), then the live
 # swipl differentials, then the rest — measured costs replace this order once the [unit] timings exist.
 _lk_cost_rank(label) =
@@ -99,7 +136,7 @@ elseif !isempty(LK_REPLAY)
         [byname[split(l, '\t')[2]] for l in eachline(LK_REPLAY) if !isempty(strip(l))]
     end
 else
-    filter(u -> lk_term_only(u[2]), LK_UNITS)
+    filter(u -> lk_term_only(u[2]) && lk_in_slice_file(u[1]), LK_UNITS)
 end
 "Claim unit `i` of the shards' queue: an atomic `mkdir`, so exactly one shard gets each unit."
 lk_claim(i::Int)::Bool =
@@ -127,6 +164,16 @@ if LK_SHARD
     println("  shard ", LK_SHARD_ID, " of a run with ", length(LK_RUN), " units")
 elseif !isempty(LK_REPLAY)
     println("  REPLAY of ", LK_REPLAY, ": ", length(LK_RUN), " units, in order")
+elseif LK_SLICED
+    println(
+        "  CI slice: ",
+        if LK_SA_ONLY
+            "static analysis shard $(ENV["LOGICKERNEL_SA_SHARD"])"
+        else
+            "file group $(ENV["LOGICKERNEL_FILE_GROUP"])"
+        end,
+        " — ", length(LK_RUN), " of ", length(LK_UNITS), " units"
+    )
 end
 
 # Visibility: what each subsystem folder contributes, zeros included.
@@ -164,6 +211,7 @@ Test.@with_testset LK_TS begin
     # threading"): what one process running the units as threads would pay ONCE, and three cold
     # processes pay three times. Julia's own counter, as `@time` reports it.
     Base.cumulative_compile_timing(true)
+    ran_rows = Tuple{String, Int, Int, Float64}[]      # (label, passed, broken, seconds): UNITS_OUT
     for (i, (f, impl, label)) in enumerate(LK_RUN)
         LK_SHARD && !lk_claim(i) && continue                   # another shard took it
         t0 = time_ns()
@@ -192,6 +240,7 @@ Test.@with_testset LK_TS begin
             "  [unit] ", label, "  ", round(secs; digits=1), " s  (compiling ",
             round(csecs; digits=1), " s)  ", npass, " passed, ", nbroken, " broken"
         )
+        push!(ran_rows, (label, npass, nbroken, secs))
         LK_SHARD && open(
             io -> println(
                 io,
@@ -223,19 +272,47 @@ Test.@with_testset LK_TS begin
     if LK_SHARD
         write(joinpath(LK_SHARD_DIR, "stats_$LK_SHARD_ID"),
             "$(s.compounds_plain) $(s.compounds_interned) $(s.shared)\n")
-    elseif isempty(LK_REPLAY)
+    elseif isempty(LK_REPLAY) && (!LK_SLICED || !isempty(LK_TERM_ONLY))
         # (under LOGICKERNEL_TERM_ONLY each job checks its own type's count — and that the OTHER
-        # types' counts are zero: a job that ran another type's units is caught here)
+        # types' counts are zero: a job that ran another type's units is caught here. A CI SLICE ran
+        # only some files, so it checks only the zeros; tools/evidence_ci.py checks the SUMS of a
+        # type's slices, from the `stats` line below)
         @testset "the second implementation was exercised, plain and sharing" begin
-            @test (s.compounds_plain > 0) == (LK_TERM_ONLY in ("", "alt"))
-            @test (s.compounds_interned > 0) == (LK_TERM_ONLY in ("", "alt_interned"))
-            @test (s.shared > 0) == (LK_TERM_ONLY in ("", "alt_interned"))
+            for (n, mine) in (
+                (s.compounds_plain, LK_TERM_ONLY in ("", "alt")),
+                (s.compounds_interned, LK_TERM_ONLY in ("", "alt_interned")),
+                (s.shared, LK_TERM_ONLY in ("", "alt_interned"))
+            )
+                if !LK_SLICED
+                    @test (n > 0) == mine
+                elseif !mine
+                    @test n == 0
+                end
+            end
         end
     end
+    # THE UNIT LIST (CI, tools/evidence_ci.py): which slice this job is, every unit of the suite with
+    # its implementation, those this job ran with what each asserted, and the second type's counts
     let out = get(ENV, "LOGICKERNEL_UNITS_OUT", "")
         isempty(out) || open(out, "w") do io
-            foreach(u -> println(io, "all\t", u[3]), LK_UNITS)
-            foreach(u -> println(io, "ran\t", u[3]), LK_RUN)
+            kind = LK_SA_ONLY ? "sa_shard" : (LK_GROUPED ? "file_group" : "none")
+            kn = LK_SA_ONLY ? lk_slice("LOGICKERNEL_SA_SHARD") : LK_FILE_GROUP
+            println(io, "slice\t", kind, '\t', kn[1], '\t', kn[2], '\t', LK_TERM_ONLY)
+            for u in LK_UNITS
+                println(io, "all\t", u[3], '\t', isempty(u[2]) ? first(LK_TERM_IMPLS) : u[2])
+            end
+            for (label, np, nb, secs) in ran_rows
+                println(io, "ran\t", label, '\t', np, '\t', nb, '\t', round(secs; digits=1))
+            end
+            println(
+                io,
+                "stats\t",
+                s.compounds_plain,
+                '\t',
+                s.compounds_interned,
+                '\t',
+                s.shared
+            )
         end
     end
 end

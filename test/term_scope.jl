@@ -27,8 +27,8 @@ const LK_TERM_LAYER = [
 
 "The gate's own logic: a change to how the scope is decided runs every file on every type."
 const LK_TERM_GATE_LOGIC = [
-    "test/term_scope.jl", "test/runtests.jl", "tools/term_scope.jl", "tools/worker.jl",
-    "tools/run_tests.sh"
+    "test/term_scope.jl", "test/runtests.jl", "test/ci_slices.jl", "tools/term_scope.jl",
+    "tools/worker.jl", "tools/run_tests.sh"
 ]
 
 "Whether a test file's `text` is term-generic: it includes test/term_under_test.jl."

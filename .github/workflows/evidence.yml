@@ -5,9 +5,14 @@
 # (tools/githooks/pre-push asks tools/ci_status.sh for a green run of THIS workflow, by name, on
 # exactly the pushed commit). Also nightly on `main`, and by hand.
 # Each job runs the units of ONE implementation (LOGICKERNEL_TERM_ONLY, test/runtests.jl); the
-# files that are not term-generic — the static analysis among them — run in the `reference` job.
-# `units` then checks that the three jobs together ran EVERY unit exactly once: a filter that
-# dropped a unit would otherwise read as green.
+# files that are not term-generic run with the reference type.
+# SHARDED (D-0059, 2026-10-20; test/ci_slices.jl): each type's files in FILE_GROUPS groups, one job
+# each, and the static analysis (JET, Aqua, AllocCheck — the costliest unit) in SA_SHARDS jobs of its
+# own. One gather per type keeps the type's name (`reference`, `alt`, `alt_interned`: main's ruleset
+# requires those checks by name), and `units` (Verdict table) checks the whole run: every unit run
+# exactly once, by a job of its own type; the shards' counts summing to the manifest's, each shard's
+# non-zero — a dropped job or a shard that analysed nothing turns it red (tools/evidence_ci.py).
+# The matrices below must list exactly 1..FILE_GROUPS and 1..SA_SHARDS: the gathers expect every one.
 # NO BENCHMARKS HERE (tools/bench.jl stays local, on a quiet machine).
 # 🔴 THE NAME BELOW IS READ BY tools/githooks/pre-push (`EVIDENCE_WORKFLOW`): rename both or neither.
 name: Evidence (three term types)
@@ -27,9 +32,13 @@ permissions:
   contents: read
   actions: write          # julia-actions/cache deletes old caches (its README)
 
+env:
+  FILE_GROUPS: '2'
+  SA_SHARDS: '8'
+
 jobs:
   evidence:
-    name: ${{ matrix.term }}
+    name: ${{ matrix.term }} · files ${{ matrix.group }}/2
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     # a job-level block REPLACES the workflow's: every scope listed (id-token for Codecov's OIDC)
     permissions:
@@ -41,12 +50,14 @@ jobs:
       fail-fast: false
       matrix:
         term: [reference, alt, alt_interned]
+        group: [1, 2]
     env:
       JULIA_NUM_THREADS: '4'
       LOGICKERNEL_REQUIRE_TOOLS: '1'
       LOGICKERNEL_REQUIRE_SWIPL: '1'
       LOGICKERNEL_TERM_ONLY: ${{ matrix.term }}
-      LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_${{ matrix.term }}.tsv
+      LOGICKERNEL_FILE_GROUP: ${{ matrix.group }}/2    # /FILE_GROUPS (a job's env has no `env` context)
+      LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_${{ matrix.term }}_g${{ matrix.group }}.tsv
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -68,35 +79,27 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
-      # The analysis tools, as CI.yml's `analysis` job installs them (JET, LoweredCodeUtils and Aqua
-      # from master, as a set); only the `reference` job analyses, the others need none.
-      - name: Install the analysis tools into the default environment
-        if: matrix.term == 'reference'
-        run: |
-          julia -e 'using Pkg; Pkg.add([
-            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
-            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
-            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
-            PackageSpec(name="AllocCheck")])'
+      # (no analysis tools: the static analysis is in no file group — the `static_analysis` jobs)
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       # COVERAGE PER TERM TYPE (user, 2026-10-14): each type's run is instrumented and uploaded
-      # under its own Codecov flag; Codecov merges the uploads of one commit, so the three flags
-      # land on the SHA `main` is later fast-forwarded to (CI.yml re-files it under main).
-      - name: Run this term type's units with every gate required
+      # under its own Codecov flag; Codecov merges the uploads of one commit — a type's file groups
+      # under one flag — so the three flags land on the SHA `main` is later fast-forwarded to
+      # (CI.yml re-files it under main).
+      - name: Run this term type's units of this file group with every gate required
         env:
-          TERM_TYPE: ${{ matrix.term }}       # through env, never interpolated into the script
+          JOB: ${{ matrix.term }}_g${{ matrix.group }}    # through env, never interpolated into the script
         run: |
           mkdir -p evidence-out
           start=$(date +%s)
           julia --project=. --code-coverage=user test/runtests.jl
-          echo "| $TERM_TYPE | passed | $(( $(date +%s) - start )) s |" >> "evidence-out/row_$TERM_TYPE.md"
+          echo "| $JOB | passed | $(( $(date +%s) - start )) s |" >> "evidence-out/row_$JOB.md"
       - name: Record a failed run
         if: ${{ failure() }}
         env:
-          TERM_TYPE: ${{ matrix.term }}
+          JOB: ${{ matrix.term }}_g${{ matrix.group }}
         run: |
           mkdir -p evidence-out
-          echo "| $TERM_TYPE | **FAILED** | — |" >> "evidence-out/row_$TERM_TYPE.md"
+          echo "| $JOB | **FAILED** | — |" >> "evidence-out/row_$JOB.md"
       - uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38  # v1
         if: ${{ !cancelled() }}
       # A gate branch's upload does not gate the evidence (main's, in CI.yml, does)
@@ -112,12 +115,91 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         if: ${{ !cancelled() }}
         with:
-          name: evidence-${{ matrix.term }}
+          name: evidence-${{ matrix.term }}-g${{ matrix.group }}
           path: evidence-out/
+
+  # THE STATIC ANALYSIS IN SHARDS (D-0059): every SA_SHARDS-th manifest entry from the k-th, and the
+  # k-th of every SA_SHARDS of its one-off gates (Aqua in exactly one), with the tools REQUIRED
+  # (e7f817d's rule per shard: a missing tool is an error, never a skip). No oracle and no upstream
+  # checkout: the analysis needs neither. No coverage: it analyses code, it runs almost none.
+  static_analysis:
+    name: static analysis ${{ matrix.shard }}/8
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    env:
+      JULIA_NUM_THREADS: '4'
+      LOGICKERNEL_REQUIRE_TOOLS: '1'
+      LOGICKERNEL_TERM_ONLY: reference
+      LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/8      # /SA_SHARDS
+      LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_sa_${{ matrix.shard }}.tsv
+      LOGICKERNEL_SA_COUNTS_OUT: ${{ github.workspace }}/evidence-out/sa_${{ matrix.shard }}.tsv
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9  # v2
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      # The analysis tools, as CI.yml's `analysis` job installs them (JET, LoweredCodeUtils and Aqua
+      # from master, as a set)
+      - name: Install the analysis tools into the default environment
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="master"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="master"),
+            PackageSpec(name="AllocCheck")])'
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run this shard of the static analysis
+        env:
+          JOB: sa_${{ matrix.shard }}
+        run: |
+          mkdir -p evidence-out
+          start=$(date +%s)
+          julia --project=. test/runtests.jl
+          echo "| $JOB | passed | $(( $(date +%s) - start )) s |" >> "evidence-out/row_$JOB.md"
+      - name: Record a failed run
+        if: ${{ failure() }}
+        env:
+          JOB: sa_${{ matrix.shard }}
+        run: |
+          mkdir -p evidence-out
+          echo "| $JOB | **FAILED** | — |" >> "evidence-out/row_$JOB.md"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: evidence-sa-${{ matrix.shard }}
+          path: evidence-out/
+
+  # ONE GATHER PER TERM TYPE, under the type's own name (main's ruleset requires `reference`, `alt`
+  # and `alt_interned`): the type's file groups all green, and together every unit of the type
+  term:
+    name: ${{ matrix.term }}
+    needs: evidence
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
+    strategy:
+      fail-fast: false
+      matrix:
+        term: [reference, alt, alt_interned]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          pattern: evidence-${{ matrix.term }}-g*
+          path: evidence-out
+          merge-multiple: true
+      - name: Collect
+        env:
+          TERM_TYPE: ${{ matrix.term }}
+        run: python3 tools/evidence_ci.py term evidence-out "$TERM_TYPE" "$FILE_GROUPS"
 
   units:
     name: Verdict table
-    needs: evidence
+    needs: [evidence, static_analysis]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     steps:
@@ -127,7 +209,15 @@ jobs:
           pattern: evidence-*
           path: evidence-out
           merge-multiple: true
-      # The table (term type · verdict · seconds), and the partition check: the union of the three
-      # unit lists is the full list of units (test/runtests.jl's own enumeration), none twice.
+      # The table (job · verdict · seconds) and THE PARTITION over every job (tools/evidence_ci.py);
+      # each unit's passes (unit_counts.tsv) and the measured file costs (unit_costs.tsv, the
+      # replacement for test/unit_costs.tsv) as the artifact `unit-costs`.
       - name: Collect
-        run: python3 tools/evidence_ci.py evidence-out | tee -a "$GITHUB_STEP_SUMMARY"; exit ${PIPESTATUS[0]}
+        run: python3 tools/evidence_ci.py verdict evidence-out "$FILE_GROUPS" "$SA_SHARDS"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: unit-costs
+          path: |
+            evidence-out/unit_counts.tsv
+            evidence-out/unit_costs.tsv

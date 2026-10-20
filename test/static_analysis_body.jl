@@ -5,6 +5,33 @@ using JET, Aqua, AllocCheck
 
 include(joinpath(@__DIR__, "static_analysis_gates.jl"))
 include(joinpath(@__DIR__, "static_analysis_manifest.jl"))
+include(joinpath(@__DIR__, "ci_slices.jl"))
+
+# THE SHARDS (D-0059, 2026-10-20; test/ci_slices.jl): LOGICKERNEL_SA_SHARD=k/N runs every N-th entry of
+# the per-entry gates (JET's dispatch check, AllocCheck) from the k-th, and the k-th of every N of the
+# one-off gates below (`_SA_PARTS`: Aqua runs in exactly one shard). Unset, it is 1/1: everything. Each
+# shard writes what it analysed to LOGICKERNEL_SA_COUNTS_OUT, counted where the analysis RUNS, and
+# tools/evidence_ci.py checks that the shards' counts sum to the full ones and every part ran once.
+const _SA_SHARD = lk_slice("LOGICKERNEL_SA_SHARD")
+const _SA_PARTS = (
+    "aqua", "jet_package", "dispatch_claims", "coverage", "argstack_push", "leaf_alloc",
+    "call_path", "controls"
+)
+const _SA_RAN = Dict{String, Int}()               # part or per-entry gate → what this shard ran
+"Whether one-off gate `part` runs in this shard (and the record that it did)."
+function _sa_part(part::String)::Bool
+    j = findfirst(==(part), _SA_PARTS)
+    j === nothing && error("static analysis: no such part $(repr(part))")
+    lk_in_slice(j, _SA_SHARD) || return false
+    _SA_RAN[part] = get(_SA_RAN, part, 0) + 1
+    return true
+end
+"The dispatch check's entries: the manifest less those analysed inside a caller (the manifest)."
+const _SA_DISPATCH = [
+    e for e in DISPATCH_MANIFEST if !haskey(JET_ANALYSED_THROUGH, (e[1], e[2]))
+]
+"AllocCheck's entries: those marked allocation-free."
+const _SA_NOALLOC = [e for e in DISPATCH_MANIFEST if e[3]]
 
 # Positive and negative controls: each gate must FAIL on a planted defect before its verdict on
 # LogicKernel means anything. (`Vector{Real}` — abstract element type — dispatches on every use.)
@@ -20,19 +47,29 @@ end
 """
 
 @testset "static analysis" begin
-    @testset "Aqua: ambiguities, unbound args, exports, deps, compat, piracy, tasks, docs" begin
-        Aqua.test_all(LogicKernel; undocumented_names=true)
-    end
-
-    @testset "JET: no errors anywhere in the package (report_package)" begin
-        JET.test_package(LogicKernel; target_modules=(LogicKernel,))
-    end
-
-    @testset "JET: zero runtime dispatch on every manifest entry" begin
-        for (f, tt, _) in DISPATCH_MANIFEST
-            haskey(JET_ANALYSED_THROUGH, (f, tt)) && continue   # inside a caller's analysis (the manifest)
-            JET.test_opt(f, tt; target_modules=(LogicKernel,))
+    _sa_part("aqua") &&
+        @testset "Aqua: ambiguities, unbound args, exports, deps, compat, piracy, tasks, docs" begin
+            Aqua.test_all(LogicKernel; undocumented_names=true)
         end
+
+    _sa_part("jet_package") &&
+        @testset "JET: no errors anywhere in the package (report_package)" begin
+            JET.test_package(LogicKernel; target_modules=(LogicKernel,))
+        end
+
+    @testset "JET: zero runtime dispatch on every manifest entry (this shard's)" begin
+        n = 0
+        for (i, (f, tt, _)) in enumerate(_SA_DISPATCH)
+            lk_in_slice(i, _SA_SHARD) || continue
+            JET.test_opt(f, tt; target_modules=(LogicKernel,))
+            n += 1
+        end
+        _SA_RAN["dispatch"] = n
+        @test n == count(i -> lk_in_slice(i, _SA_SHARD), eachindex(_SA_DISPATCH))
+        @test n > 0                                  # a slice that analyses nothing is no slice
+    end
+
+    _sa_part("dispatch_claims") && @testset "the dispatch check's skips lose nothing" begin
         @test length(DISPATCH_MANIFEST) == length(unique(DISPATCH_MANIFEST))   # no duplicate entries
         # the dedup's claim, both halves: each skipped entry and its caller are manifest entries, the caller
         # itself analysed; and the caller REACHES it — query_answers' body calls PL_next_solution, which
@@ -46,7 +83,10 @@ end
             @test !haskey(JET_ANALYSED_THROUGH, (cf, ctt))
         end
         qa = Base.bodyfunction(
-            which(LK.query_answers, Tuple{LK.PL_local_data{LK.DefaultTerm}, LK.DefaultTerm})
+            which(
+                LK.query_answers,
+                Tuple{LK.PL_local_data{LK.DefaultTerm}, LK.DefaultTerm}
+            )
         )
         @test any(
             m -> any(
@@ -62,44 +102,50 @@ end
         )
     end
 
-    @testset "the manifest covers every method LogicKernel defines" begin
-        r = manifest_uncovered(LogicKernel, DISPATCH_MANIFEST, DISPATCH_EXEMPT)
-        isempty(r.uncovered) ||
-            foreach(u -> println(stderr, "  NOT CHECKED for dispatch: ", u), r.uncovered)
-        isempty(r.stale_exempt) ||
-            foreach(u -> println(stderr, "  stale exemption: ", u), r.stale_exempt)
-        @test isempty(r.uncovered)
-        @test isempty(r.stale_exempt)
-    end
+    _sa_part("coverage") &&
+        @testset "the manifest covers every method LogicKernel defines" begin
+            r = manifest_uncovered(LogicKernel, DISPATCH_MANIFEST, DISPATCH_EXEMPT)
+            isempty(r.uncovered) ||
+                foreach(
+                    u -> println(stderr, "  NOT CHECKED for dispatch: ", u), r.uncovered
+                )
+            isempty(r.stale_exempt) ||
+                foreach(u -> println(stderr, "  stale exemption: ", u), r.stale_exempt)
+            @test isempty(r.uncovered)
+            @test isempty(r.stale_exempt)
+        end
 
-    @testset "AllocCheck: entries marked allocation-free allocate nothing" begin
+    @testset "AllocCheck: entries marked allocation-free allocate nothing (this shard's)" begin
         n = 0
-        for (f, tt, noalloc) in DISPATCH_MANIFEST
-            noalloc || continue
+        for (i, (f, tt, _)) in enumerate(_SA_NOALLOC)
+            lk_in_slice(i, _SA_SHARD) || continue
             n += 1
             allocs = check_allocs(f, tt)
             isempty(allocs) || println(stderr, "  allocates: ", f, tt, " — ", first(allocs))
             @test isempty(allocs)
         end
-        @test n == count(e -> e[3], DISPATCH_MANIFEST)
+        _SA_RAN["alloc"] = n
+        @test n == count(i -> lk_in_slice(i, _SA_SHARD), eachindex(_SA_NOALLOC))
+        @test n > 0
     end
 
     # The one push that grows in place (pl-incl.h `pushArgumentStack`, its `else` is
     # `f_pushArgumentStack`): AllocCheck sees the growth — so this cannot pass by seeing nothing — and
     # every allocation it reports lies inside it (V4a decision 2).
-    @testset "AllocCheck: the argument stack's push allocates only where it grows" begin
-        allocs = check_allocs(
-            LogicKernel.pushArgumentStack,
-            (LogicKernel.PL_local_data{_M2}, LogicKernel.argstack_entry{_M2})
-        )
-        @test !isempty(allocs)
-        @test all(a -> any(f -> f.func === :f_pushArgumentStack, a.backtrace), allocs)
-    end
+    _sa_part("argstack_push") &&
+        @testset "AllocCheck: the argument stack's push allocates only where it grows" begin
+            allocs = check_allocs(
+                LogicKernel.pushArgumentStack,
+                (LogicKernel.PL_local_data{_M2}, LogicKernel.argstack_entry{_M2})
+            )
+            @test !isempty(allocs)
+            @test all(a -> any(f -> f.func === :f_pushArgumentStack, a.backtrace), allocs)
+        end
 
     # A leaf's children are the shared empty vector (`_no_children`; user, 2026-10-05), so no leaf
     # constructor allocates a child vector. Each still allocates the term itself — DefaultTerm is not
     # stored inline, its `value` a Union holding a String — so this cannot pass by seeing nothing.
-    @testset "AllocCheck: a leaf allocates no child vector" begin
+    _sa_part("leaf_alloc") && @testset "AllocCheck: a leaf allocates no child vector" begin
         LK = LogicKernel
         for (f, tt) in (
             (LK.mk_var, (Type{_M2}, UInt64)), (LK.var_term, (Type{_M2}, UInt64)),
@@ -121,119 +167,129 @@ end
     # "multiple call sites" and cannot be attributed to a label. Fresh variables and building
     # compounds allocate by nature, so `B_FIRSTVAR`, `B_VOID`, `L_VOID` and the builders are not
     # in the path; growth (`growLocalSpace`) is reached through shared callees only.
-    @testset "AllocCheck: the call path's labels allocate nothing" begin
-        LK = LogicKernel
-        lines = readlines(joinpath(pkgdir(LogicKernel), "src", "pl-wam.jl"))
-        f0 = findfirst(l -> startswith(l, "function PL_next_solution_guarded("), lines)
-        fend = findnext(==("end"), lines, f0)
-        labels = Tuple{Int, String}[]
-        for i in (f0 + 1):(fend - 1)
-            m = match(r"^\s*@label (\w+)", lines[i])
-            m === nothing || push!(labels, (i, String(m[1])))
-        end
-        function span(n)
-            k = findfirst(x -> x[2] == n, labels)
-            return (labels[k][1], k < length(labels) ? labels[k + 1][1] - 1 : fend)
-        end
-        path = ("I_ENTER", "I_CALL", "normal_call", "depart_or_retry_continue", "I_DEPART",
-            "I_EXIT", "exit_continue", "L_NOLCO", "L_VAR", "L_ATOM", "L_NIL", "L_SMALLINT",
-            "I_LCALL", "I_TCALL", "I_CUT", "B_VAR0", "B_VAR1", "B_VAR2", "B_VAR",
-            "bvar_cont", "B_ARGVAR", "I_VAR", "I_NONVAR", "I_INTEGER", "I_RATIONAL",
-            "I_FLOAT", "I_NUMBER", "I_ATOMIC", "I_ATOM", "I_STRING", "I_COMPOUND",
-            "I_CALLABLE")
-        @test all(n -> any(x -> x[2] == n, labels), path)
-        spans = [span(n) for n in path]
-        allocs = check_allocs(
-            LK.PL_next_solution_guarded,
-            (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)
-        )
-        # V5c: resolving an UNDEFINED predicate (`getProcDefinedDefinition` → `trapUndefined` →
-        # `autoImport`, which may create a procedure, or `S_UNDEF`'s supervisor) runs once per
-        # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
-        # sites are not the call path's; every other site in the spans still is
-        # L1c-6 (2026-10-16): the BOUNDARY's term reads — a keyed variable or a value with no word yet,
-        # TRANSITIONAL until the stamp falls (L1f) — are out of line under the frames the ratchet
-        # tags `:boundary` (L1C_ALLOC_EXEMPT, static_analysis_manifest.jl: one list, L1d batch 1);
-        # the run time's zero on the hot path is test/core_lang/test_zero_exports.jl's
-        # (cold_exports/imports/vars unchanged)
-        _boundary_frames = Tuple(
-            nameof(f) for (f, _, kind) in L1C_ALLOC_EXEMPT if kind === :boundary
-        )
-        @test !isempty(_boundary_frames)            # the tag selects (3 frames, 2026-10-16)
-        cold(a) = any(
-            fr -> fr.func === :getProcDefinedDefinition || fr.func in _boundary_frames,
-            a.backtrace
-        )
-        @test any(cold, allocs)                     # the exemption matches real sites
-        attributed = Int[]
-        for a in allocs
-            cold(a) && continue
-            k = findfirst(fr -> fr.func === :PL_next_solution_guarded, a.backtrace)
-            k === nothing || push!(attributed, a.backtrace[k].line)
-        end
-        @test !isempty(attributed)                  # the attribution sees the loop's own sites
-        inpath = [l for l in attributed if any(s -> s[1] <= l <= s[2], spans)]
-        isempty(inpath) ||
-            println(stderr, "  allocates in the call path, pl-wam.jl lines: ", inpath)
-        @test isempty(inpath)
-        # (`discardChoicesAfter` left this list with V9g: a cut that discards a CLEANUP frame runs
-        # its handler — a goal — so the function is no longer allocation-free as a whole; the
-        # spans above still hold the cut's own sites to "allocates nothing")
-        # L1c's allocation exemptions: a ratchet, each naming its step (static_analysis_manifest.jl)
-        @test length(L1C_ALLOC_EXEMPT) <= L1C_ALLOC_EXEMPT_MAX
-        @test length(unique(first.(L1C_ALLOC_EXEMPT))) == length(L1C_ALLOC_EXEMPT)
-        for (f, step, kind) in L1C_ALLOC_EXEMPT
-            @test step in L1C_STEPS
-            @test kind in L1C_EXEMPT_KINDS
-            es = [e for e in DISPATCH_MANIFEST if e[1] === f]
-            @test !isempty(es) && all(e -> !e[3], es)   # listed ⇒ marked allocating
-        end
-        for c in
-            (LK._call_procedure, LK.pushFrame!, LK.setNextFrameFlags, LK.setFramePredicate,
-            LK.hasLocalSpace, LK.setLTop!, LK.setGenerationFrame, LK._is_newest_live_frame,
-            LK.lcoSetNextFrameFlags, LK.lcoSetNextFrameFlags2, LK.copyFrameArguments,
-            LK.lowerLTop!, LK.tcallSetNextFrameFlags,
-            # (L1c: `deRef`, `linkValI` and `_argp_store!` left this list — they reach the cold
-            # adapters on a compound; the call path moves WORDS (`_slot_link!`, `_slot_copy!`),
-            # its own sites stay checked by the spans above, and nreverse/qsort's zero-export test
-            # guards the hot path)
-            LK._argp_add, LK._save_registers!, LK._load_registers!,
-            LK.canBind, LK.isInteger, LK.isRational, LK.isFloat, LK.isNumber, LK.isAtomic,
-            LK.isTextAtom, LK.isString, LK.isTerm, LK.isCallable)
-            @test any(e -> e[1] === c && e[3], DISPATCH_MANIFEST)
-        end
-        # V5a2: a FOREIGN call's own path allocates nothing — a built-in may (it builds terms), so
-        # every site in the foreign labels' spans must come from inside the built-in it calls
-        # (`_fcall_va`, `_fcall_det`) or from an error path: a bad return value
-        # (`error_foreign_return_code`), or success with an exception still pending, the "false alarm"
-        # (`PL_clear_foreign_exception`, which resets the ball).
-        fpath = ("I_FCALLDETVA", "I_FCALLDET0", "fcall_detn", "helper_I_FEXITDET")
-        @test all(n -> any(x -> x[2] == n, labels), fpath)
-        fspans = [span(n) for n in fpath]
-        inside = (
-            :_fcall_va, :_fcall_det, :error_foreign_return_code, :PL_clear_foreign_exception
-        )
-        stray = [
-            a.backtrace[k].line for a in allocs
-            for k in (findfirst(fr -> fr.func === :PL_next_solution_guarded, a.backtrace),)
-            if k !== nothing && any(s -> s[1] <= a.backtrace[k].line <= s[2], fspans) &&
-                !any(fr -> fr.func in inside, a.backtrace)
-        ]
-        isempty(stray) ||
-            println(
-                stderr,
-                "  a foreign call allocates outside its built-in, pl-wam.jl lines: ",
-                stray
+    _sa_part("call_path") &&
+        @testset "AllocCheck: the call path's labels allocate nothing" begin
+            LK = LogicKernel
+            lines = readlines(joinpath(pkgdir(LogicKernel), "src", "pl-wam.jl"))
+            f0 = findfirst(l -> startswith(l, "function PL_next_solution_guarded("), lines)
+            fend = findnext(==("end"), lines, f0)
+            labels = Tuple{Int, String}[]
+            for i in (f0 + 1):(fend - 1)
+                m = match(r"^\s*@label (\w+)", lines[i])
+                m === nothing || push!(labels, (i, String(m[1])))
+            end
+            function span(n)
+                k = findfirst(x -> x[2] == n, labels)
+                return (labels[k][1], k < length(labels) ? labels[k + 1][1] - 1 : fend)
+            end
+            path = ("I_ENTER", "I_CALL", "normal_call", "depart_or_retry_continue",
+                "I_DEPART",
+                "I_EXIT", "exit_continue", "L_NOLCO", "L_VAR", "L_ATOM", "L_NIL",
+                "L_SMALLINT",
+                "I_LCALL", "I_TCALL", "I_CUT", "B_VAR0", "B_VAR1", "B_VAR2", "B_VAR",
+                "bvar_cont", "B_ARGVAR", "I_VAR", "I_NONVAR", "I_INTEGER", "I_RATIONAL",
+                "I_FLOAT", "I_NUMBER", "I_ATOMIC", "I_ATOM", "I_STRING", "I_COMPOUND",
+                "I_CALLABLE")
+            @test all(n -> any(x -> x[2] == n, labels), path)
+            spans = [span(n) for n in path]
+            allocs = check_allocs(
+                LK.PL_next_solution_guarded,
+                (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)
             )
-        @test isempty(stray)
-        # …and the check sees the built-ins' own allocations, so it cannot pass by seeing nothing
-        @test any(
-            a -> any(fr -> fr.func === :_fcall_va, a.backtrace), allocs
-        )
-        @test any(e -> e[1] === LK.vmi_fopen && e[3], DISPATCH_MANIFEST)
-    end
+            # V5c: resolving an UNDEFINED predicate (`getProcDefinedDefinition` → `trapUndefined` →
+            # `autoImport`, which may create a procedure, or `S_UNDEF`'s supervisor) runs once per
+            # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
+            # sites are not the call path's; every other site in the spans still is
+            # L1c-6 (2026-10-16): the BOUNDARY's term reads — a keyed variable or a value with no word yet,
+            # TRANSITIONAL until the stamp falls (L1f) — are out of line under the frames the ratchet
+            # tags `:boundary` (L1C_ALLOC_EXEMPT, static_analysis_manifest.jl: one list, L1d batch 1);
+            # the run time's zero on the hot path is test/core_lang/test_zero_exports.jl's
+            # (cold_exports/imports/vars unchanged)
+            _boundary_frames = Tuple(
+                nameof(f) for (f, _, kind) in L1C_ALLOC_EXEMPT if kind === :boundary
+            )
+            @test !isempty(_boundary_frames)            # the tag selects (3 frames, 2026-10-16)
+            cold(a) = any(
+                fr ->
+                    fr.func === :getProcDefinedDefinition || fr.func in _boundary_frames,
+                a.backtrace
+            )
+            @test any(cold, allocs)                     # the exemption matches real sites
+            attributed = Int[]
+            for a in allocs
+                cold(a) && continue
+                k = findfirst(fr -> fr.func === :PL_next_solution_guarded, a.backtrace)
+                k === nothing || push!(attributed, a.backtrace[k].line)
+            end
+            @test !isempty(attributed)                  # the attribution sees the loop's own sites
+            inpath = [l for l in attributed if any(s -> s[1] <= l <= s[2], spans)]
+            isempty(inpath) ||
+                println(stderr, "  allocates in the call path, pl-wam.jl lines: ", inpath)
+            @test isempty(inpath)
+            # (`discardChoicesAfter` left this list with V9g: a cut that discards a CLEANUP frame runs
+            # its handler — a goal — so the function is no longer allocation-free as a whole; the
+            # spans above still hold the cut's own sites to "allocates nothing")
+            # L1c's allocation exemptions: a ratchet, each naming its step (static_analysis_manifest.jl)
+            @test length(L1C_ALLOC_EXEMPT) <= L1C_ALLOC_EXEMPT_MAX
+            @test length(unique(first.(L1C_ALLOC_EXEMPT))) == length(L1C_ALLOC_EXEMPT)
+            for (f, step, kind) in L1C_ALLOC_EXEMPT
+                @test step in L1C_STEPS
+                @test kind in L1C_EXEMPT_KINDS
+                es = [e for e in DISPATCH_MANIFEST if e[1] === f]
+                @test !isempty(es) && all(e -> !e[3], es)   # listed ⇒ marked allocating
+            end
+            for c in
+                (LK._call_procedure, LK.pushFrame!, LK.setNextFrameFlags,
+                LK.setFramePredicate,
+                LK.hasLocalSpace, LK.setLTop!, LK.setGenerationFrame,
+                LK._is_newest_live_frame,
+                LK.lcoSetNextFrameFlags, LK.lcoSetNextFrameFlags2, LK.copyFrameArguments,
+                LK.lowerLTop!, LK.tcallSetNextFrameFlags,
+                # (L1c: `deRef`, `linkValI` and `_argp_store!` left this list — they reach the cold
+                # adapters on a compound; the call path moves WORDS (`_slot_link!`, `_slot_copy!`),
+                # its own sites stay checked by the spans above, and nreverse/qsort's zero-export test
+                # guards the hot path)
+                LK._argp_add, LK._save_registers!, LK._load_registers!,
+                LK.canBind, LK.isInteger, LK.isRational, LK.isFloat, LK.isNumber,
+                LK.isAtomic,
+                LK.isTextAtom, LK.isString, LK.isTerm, LK.isCallable)
+                @test any(e -> e[1] === c && e[3], DISPATCH_MANIFEST)
+            end
+            # V5a2: a FOREIGN call's own path allocates nothing — a built-in may (it builds terms), so
+            # every site in the foreign labels' spans must come from inside the built-in it calls
+            # (`_fcall_va`, `_fcall_det`) or from an error path: a bad return value
+            # (`error_foreign_return_code`), or success with an exception still pending, the "false alarm"
+            # (`PL_clear_foreign_exception`, which resets the ball).
+            fpath = ("I_FCALLDETVA", "I_FCALLDET0", "fcall_detn", "helper_I_FEXITDET")
+            @test all(n -> any(x -> x[2] == n, labels), fpath)
+            fspans = [span(n) for n in fpath]
+            inside = (
+                :_fcall_va, :_fcall_det, :error_foreign_return_code,
+                :PL_clear_foreign_exception
+            )
+            stray = [
+                a.backtrace[k].line for a in allocs
+                for
+                k in (findfirst(fr -> fr.func === :PL_next_solution_guarded, a.backtrace),)
+                if
+                k !== nothing && any(s -> s[1] <= a.backtrace[k].line <= s[2], fspans) &&
+                    !any(fr -> fr.func in inside, a.backtrace)
+            ]
+            isempty(stray) ||
+                println(
+                    stderr,
+                    "  a foreign call allocates outside its built-in, pl-wam.jl lines: ",
+                    stray
+                )
+            @test isempty(stray)
+            # …and the check sees the built-ins' own allocations, so it cannot pass by seeing nothing
+            @test any(
+                a -> any(fr -> fr.func === :_fcall_va, a.backtrace), allocs
+            )
+            @test any(e -> e[1] === LK.vmi_fopen && e[3], DISPATCH_MANIFEST)
+        end
 
-    @testset "controls: each gate fails on a planted defect" begin
+    _sa_part("controls") && @testset "controls: each gate fails on a planted defect" begin
         @test !isempty(JET.get_reports(JET.report_opt(_sa_dispatches, (Vector{Real},))))
         @test isempty(JET.get_reports(JET.report_opt(_sa_stable, (Vector{Int},))))
         @test !isempty(check_allocs(_sa_allocates, (Int,)))
@@ -254,5 +310,17 @@ end
         fr = Base.include_string(Module(:SARedefHost), "module SARedef\nf(x::Int) = 1\nend")
         Core.eval(fr, :(f(x::Int) = 2))
         @test length(owned_methods(fr)) == 1 && fr.f(1) == 2
+    end
+end
+
+# What this shard analysed — the per-entry gates' counts beside the full ones, and the parts it ran —
+# for tools/evidence_ci.py's sums (CI); nothing is written without the variable
+let out = get(ENV, "LOGICKERNEL_SA_COUNTS_OUT", "")
+    isempty(out) || open(out, "w") do io
+        println(io, "shard\t", _SA_SHARD[1], '\t', _SA_SHARD[2])
+        println(io, "parts\t", join(_SA_PARTS, ','))
+        foreach(p -> haskey(_SA_RAN, p) && println(io, "part\t", p), _SA_PARTS)
+        println(io, "dispatch\t", get(_SA_RAN, "dispatch", 0), '\t', length(_SA_DISPATCH))
+        println(io, "alloc\t", get(_SA_RAN, "alloc", 0), '\t', length(_SA_NOALLOC))
     end
 end

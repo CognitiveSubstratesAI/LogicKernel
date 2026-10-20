@@ -25,8 +25,13 @@ permissions:
 # new glibc, so a new libm) would change both under an unchanged commit. Moving to a newer image is a
 # deliberate step with its own differential run. The same pin in evidence.yml and mutation.yml.
 jobs:
+  # SHARDED (D-0059, 2026-10-20; test/ci_slices.jl): each version's Pkg.test runs as 3 FILE GROUPS,
+  # one job each (every term type in each; the static analysis in none — Pkg.test has no tools, it
+  # runs in evidence.yml's shards). The gather `pkgtest` below carries the old name, `Julia <version> -
+  # <os>` (main's ruleset requires those checks by name): every group green, every unit run exactly
+  # once (tools/evidence_ci.py pkgtest), and the coverage ratchet on the groups' merged lcov.
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    name: Julia ${{ matrix.version }} · files ${{ matrix.group }}/3
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     # Multi-threaded like the local runner (`JULIA_TEST_THREADS:-4`), so CI and local contend alike.
@@ -41,6 +46,8 @@ jobs:
       LOGICKERNEL_REQUIRE_CHECK_BOUNDS: '1'
       # test/runtests.jl writes JUnit XML here for Codecov Test Analytics (test/junit_report.jl)
       LOGICKERNEL_JUNIT: ${{ github.workspace }}/junit.xml
+      LOGICKERNEL_FILE_GROUP: ${{ matrix.group }}/3
+      LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/pkgtest-out/units_julia-${{ matrix.version }}_g${{ matrix.group }}.tsv
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
       # Pkg.test's isolated environment has no JET/Aqua/AllocCheck: the ONE job allowed to skip the
       # static analysis, and it says so (test/test_static_analysis.jl: under CI a missing tool is an
@@ -64,6 +71,7 @@ jobs:
           - ubuntu-24.04   # pinned, not -latest: see the note above `jobs:`
         arch:
           - x64
+        group: [1, 2, 3]          # 1..3, all of them: the gather expects every group
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       # THE UPSTREAM CHECKOUT (user, 2026-10-14): swipl-devel at the pinned commit, its submodules
@@ -85,9 +93,20 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
       - uses: julia-actions/julia-buildpkg@e3eb439fad4f9aba7da2667e7510e4a46ebc46e1  # v1
-      - uses: julia-actions/julia-runtest@6e050c8013b833b1195105ff2fce9cd802f53271  # v1
+      - run: mkdir -p pkgtest-out
+      - id: runtest
+        uses: julia-actions/julia-runtest@6e050c8013b833b1195105ff2fce9cd802f53271  # v1
         with:
           check_bounds: 'yes'
+      # the verdict row the gather reads (a job that died before writing one is NO VERDICT there)
+      - name: Record this group's verdict
+        if: ${{ !cancelled() }}
+        env:
+          JOB: julia-${{ matrix.version }}_g${{ matrix.group }}
+          OUTCOME: ${{ steps.runtest.outcome }}
+        run: |
+          if [ "$OUTCOME" = success ]; then v=passed; else v='**FAILED**'; fi
+          echo "| $JOB | $v | — |" >> "pkgtest-out/row_$JOB.md"
       # Coverage → Codecov. The repo's CODECOV_TOKEN secret when it exists; GitHub OIDC when it does
       # not (that is what `id-token: write` above is for) — so a missing secret no longer means a
       # silently skipped upload.
@@ -100,11 +119,17 @@ jobs:
       # activated, last upload 19:15:07Z, log "Upload queued for processing complete"). A failed
       # upload now turns CI red instead of hiding behind a green check.
       - uses: julia-actions/julia-processcoverage@03114f09f119417c3242a9fb6e0b722676aedf38  # v1
-      # NO src/ FILE AT 0% (user, 2026-10-14): the known ones are listed, and the list only shrinks
-      # (tools/coverage_zero.py; its own tests run in the `tooling` job). Once per run.
-      - name: No src/ file at 0% coverage (the ratchet)
-        if: matrix.version == '1'
-        run: python3 tools/coverage_zero.py lcov.info tools/coverage_zero_known.txt
+      # this group's coverage, for the ratchet on all groups together (the gather)
+      - name: Keep this group's lcov for the gather
+        if: ${{ !cancelled() }}
+        env:
+          G: ${{ matrix.group }}
+        run: cp lcov.info "pkgtest-out/lcov_g$G.info"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: pkgtest-${{ matrix.version }}-g${{ matrix.group }}
+          path: pkgtest-out/
       # 🔴 THE UPLOADS DO NOT GATE THE JOB (user, 2026-10-05). Coverage is not a correctness gate, and
       # a job that goes red on every push because of an outside outage trains everyone to ignore
       # red — measured: from 2026-10-05 00:07 UTC Codecov's uploader could not download its own
@@ -151,6 +176,42 @@ jobs:
           RES: ${{ steps.upload_results.outcome }}
         run: |
           echo "::warning title=Codecov upload failed::coverage $COV, test results $RES — the tests gate this job; see the upload step's log for Codecov's error"
+
+  pkgtest:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    needs: test
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # (block style, no comment on the key: tools/lib_evidence.sh reads the `version:` lines)
+        version:
+          - 'min'
+          - '1'
+        os:
+          - ubuntu-24.04         # the name main's ruleset requires: `Julia <version> - ubuntu-24.04`
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          pattern: pkgtest-${{ matrix.version }}-g*
+          path: pkgtest-out
+          merge-multiple: true
+      - name: Every group green, every unit run exactly once
+        env:
+          VERSION: ${{ matrix.version }}
+        run: python3 tools/evidence_ci.py pkgtest pkgtest-out "$VERSION" 3
+      # NO src/ FILE AT 0% (user, 2026-10-14): the known ones are listed, and the list only shrinks
+      # (tools/coverage_zero.py; its own tests run in the `tooling` job). Once per run, on the
+      # groups' lcov TOGETHER (a file one group never loads is covered by another's).
+      - name: No src/ file at 0% coverage (the ratchet)
+        if: matrix.version == '1'
+        run: |
+          n=$(ls pkgtest-out/lcov_g*.info | wc -l)
+          [ "$n" -eq 3 ] || { echo "::error::$n of 3 groups' lcov — the ratchet needs all of them"; exit 1; }
+          cat pkgtest-out/lcov_g*.info > lcov-all.info
+          python3 tools/coverage_zero.py lcov-all.info tools/coverage_zero_known.txt
 
   # ── THE PROACTIVE GATES, WITH NOTHING ALLOWED TO SKIP ────────────────────────────────────────────
   # `test` above runs Pkg.test, whose isolated environment has no JET/Aqua/AllocCheck and no swipl,
