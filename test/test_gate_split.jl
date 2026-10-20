@@ -903,7 +903,9 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             "shard\t$k\t2\nparts\taqua,controls\npart\t$(k == 1 ? "aqua" : "controls")\n" *
             "dispatch\t$(k == 1 ? 3 : 2)\t5\nalloc\t1\t2\n"
         "The tool's exit, output and unit_costs.tsv over planted files: `edit(files)` changes the good set."
-        function vrun(edit=identity; mode=["verdict", "2", "2"], ran=good, suite=all_)
+        function vrun(
+            edit=identity; mode=["verdict", "2", "2"], ran=good, suite=all_, ci=nothing
+        )
             files = Dict{String, String}()
             for (job, r) in ran
                 files["units_$job.tsv"] =
@@ -918,12 +920,14 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             mktempdir() do d
                 foreach(((n, t),) -> write(joinpath(d, n), t), files)
                 out = joinpath(d, "stdout.txt")
-                code = run(
-                    pipeline(
-                        ignorestatus(`python3 $tool $(mode[1]) $d $(mode[2:end])`);
-                        stdout=out, stderr=devnull
-                    )
-                ).exitcode
+                code = withenv("GITHUB_ACTIONS" => ci) do
+                    run(
+                        pipeline(
+                            ignorestatus(`python3 $tool $(mode[1]) $d $(mode[2:end])`);
+                            stdout=out, stderr=devnull
+                        )
+                    ).exitcode
+                end
                 costs = joinpath(d, "unit_costs.tsv")
                 (
                     code=code,
@@ -1061,6 +1065,15 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         end
         let r = vrun(; suite=filter(!=(sa_l), all_))
             @test r.code == 1 && occursin("the suite has no $sa_l", r.out)
+        end
+        let r = vrun(; ci="true")   # in CI the costs are also ONE annotation (readable without a token)
+            n = filter(startswith("::notice title=unit-costs::"), split(r.out, '\n'))
+            @test r.code == 0 && length(n) == 1
+            @test occursin("a.jl=1.5;", n[1]) && occursin("h.jl=4.5", n[1])
+            @test !occursin(sa_l, n[1])
+            @test isempty(
+                filter(startswith("::notice title=unit-costs::"), split(vrun().out, '\n'))
+            )
         end
         let r = vrun()          # the unit costs: every file with its seconds, the SA in none
             @test r.code == 0 && occursin("a.jl\t", r.costs) && occursin("h.jl\t", r.costs)

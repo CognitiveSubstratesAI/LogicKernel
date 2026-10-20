@@ -185,6 +185,10 @@ class Gather:
                      "# are balanced by (test/ci_slices.jl). A file missing here counts as the median. Replace it with the\n"
                      "# Verdict table's `unit-costs` artifact (Evidence) when the groups drift apart; never hand-edited.\n")
             io.write("".join("%s\t%.1f\n" % (f, costs[f]) for f in sorted(costs)))
+        # readable WITHOUT a token (an artifact is not): the costs as one annotation, `file=seconds;…`,
+        # the source of test/unit_costs.tsv's next refresh
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print("::notice title=unit-costs::" + ";".join("%s=%.1f" % (f, costs[f]) for f in sorted(costs)))
         return sum(int(c.split("\t")[2]) for c in counts)
 
     def report(self, title, summary):
