@@ -66,7 +66,8 @@ printf '%s' "$J" | python3 -c '
 import json, sys
 sha, require = sys.argv[1], sys.argv[2]
 try:
-    runs = [r for r in json.load(sys.stdin)["workflow_runs"] if r["head_sha"] == sha]
+    allruns = json.load(sys.stdin)["workflow_runs"]
+    runs = [r for r in allruns if r["head_sha"] == sha]
 except Exception:
     print(f"ci_status: {sha[:7]}: the CI answer is unreadable")
     sys.exit(2)
@@ -74,18 +75,23 @@ if not runs:
     print(f"ci_status: {sha[:7]}: no CI run yet")
     sys.exit(3)
 ok = ("success", "neutral", "skipped")
+def wf(r):
+    return r.get("workflow_id") or r["name"]
 def superseded(r):
-    # a CANCELLED run is not a verdict when a LATER run of the same workflow on the same ref
-    # succeeded (MEASURED 2026-10-20: the re-pushed tag v0.1.0-pre.1 cancelled the first tag
-    # push'"'"'s CI; the re-run was green). Only `cancelled`: a failure stays red. Both timestamps
-    # must be present, so a run the API gave no `created_at` is never superseded.
+    # D-0071. A CANCELLED run is not a verdict when a LATER run with the SAME workflow, the SAME
+    # head_sha and the SAME head_branch (ref) completed with `success` (MEASURED 2026-10-20: the
+    # re-pushed tag v0.1.0-pre.1 cancelled the first tag push'"'"'s CI; the re-run was green). Searched
+    # in ALL runs, so a later green commit on another sha never excuses it. Only `cancelled`:
+    # failure, timed_out, startup_failure, action_required and stale stay red, and a run the API
+    # gave no `created_at` is never superseded.
     if r["conclusion"] != "cancelled" or not r.get("created_at"):
         return False
     return any(
-        o is not r and o["name"] == r["name"] and o.get("head_branch") == r.get("head_branch")
+        o is not r and wf(o) == wf(r) and o["head_sha"] == r["head_sha"]
+        and o.get("head_branch") == r.get("head_branch")
         and o["status"] == "completed" and o["conclusion"] == "success"
         and (o.get("created_at") or "") > r["created_at"]
-        for o in runs
+        for o in allruns
     )
 red = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in ok and not superseded(r)]
 pending = [r for r in runs if r["status"] != "completed"]

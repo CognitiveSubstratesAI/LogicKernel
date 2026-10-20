@@ -152,10 +152,10 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
 
     @testset "tools/ci_status.sh and _ci_gate judge the previous push" begin
         sha = "0123456789abcdef0123456789abcdef01234567"
-        run_(name, status, conclusion; s=sha, branch="main", at="") =
+        run_(name, status, conclusion; s=sha, branch="main", at="", wid=name) =
             "{\"head_sha\":\"$s\",\"name\":\"$name\",\"status\":\"$status\"," *
             "\"conclusion\":$(conclusion === nothing ? "null" : "\"$conclusion\"")," *
-            "\"head_branch\":\"$branch\",\"created_at\":\"$at\"," *
+            "\"head_branch\":\"$branch\",\"created_at\":\"$at\",\"workflow_id\":\"$wid\"," *
             "\"html_url\":\"https://x/1\"}"
         fixtures = [
             ("green", "[" * run_("CI", "completed", "success") * "]", 0),
@@ -192,6 +192,38 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 "]",
                 1
             ),
+            (
+                "cancelled, a later green run of ANOTHER commit on the same ref (D-0071 1)",
+                "[" * run_("CI", "completed", "cancelled"; at="2026-10-20T16:24:21Z") *
+                "," *
+                run_("CI", "completed", "success"; s="f" ^ 40, at="2026-10-20T16:41:36Z") *
+                "]",
+                1
+            ),
+            (
+                "cancelled, a later green run of a workflow with the same name but another id",
+                "[" *
+                run_("CI", "completed", "cancelled"; at="2026-10-20T16:24:21Z", wid="1") *
+                "," *
+                run_("CI", "completed", "success"; at="2026-10-20T16:41:36Z", wid="2") *
+                "]",
+                1
+            ),
+            (
+                "cancelled, the later run only 'neutral' (D-0071: success alone supersedes)",
+                "[" * run_("CI", "completed", "cancelled"; at="2026-10-20T16:24:21Z") *
+                "," *
+                run_("CI", "completed", "neutral"; at="2026-10-20T16:41:36Z") * "]",
+                1
+            ),
+            [
+                (
+                    "$c, then re-run green (D-0071 2: only `cancelled` is superseded)",
+                    "[" * run_("CI", "completed", c; at="2026-10-20T16:24:21Z") * "," *
+                    run_("CI", "completed", "success"; at="2026-10-20T16:41:36Z") * "]",
+                    1
+                ) for c in ("timed_out", "startup_failure", "action_required", "stale")
+            ]...,
             (
                 "failed, then re-run green (a failure is never superseded)",
                 "[" * run_("CI", "completed", "failure"; at="2026-10-20T16:24:21Z") * "," *

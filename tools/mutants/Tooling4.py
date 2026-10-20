@@ -14,7 +14,7 @@ SL = "test/ci_slices.jl"
 CS = "tools/ci_status.sh"
 T = ["test/test_gate_split.jl"]
 MUTANTS = [
-    # ── tools/ci_status.sh: the superseded cancel ──
+    # ── tools/ci_status.sh: the superseded cancel (D-0071: each condition shown by a fixture) ──
     dict(id="TS1 a cancelled run is never superseded", file=CS, targets=T,
          old='''    if r["conclusion"] != "cancelled" or not r.get("created_at"):
         return False''',
@@ -22,21 +22,35 @@ MUTANTS = [
     dict(id="TS2 a failure is superseded too", file=CS, targets=T,
          old='''    if r["conclusion"] != "cancelled" or not r.get("created_at"):''',
          new='''    if r["conclusion"] not in ("cancelled", "failure") or not r.get("created_at"):'''),
-    dict(id="TS3 the later run need not be later", file=CS, targets=T,
+    dict(id="TS3 a timed_out run is superseded too", file=CS, targets=T,
+         old='''    if r["conclusion"] != "cancelled" or not r.get("created_at"):''',
+         new='''    if r["conclusion"] not in ("cancelled", "timed_out") or not r.get("created_at"):'''),
+    dict(id="TS4 the later run need not be later", file=CS, targets=T,
          old='''        and (o.get("created_at") or "") > r["created_at"]''',
          new='''        and (o.get("created_at") or "") != r["created_at"]'''),
-    dict(id="TS4 the later run may be another workflow", file=CS, targets=T,
-         old='''        o is not r and o["name"] == r["name"] and o.get("head_branch") == r.get("head_branch")''',
-         new='''        o is not r and o.get("head_branch") == r.get("head_branch")'''),
-    dict(id="TS5 the later run may be on another ref", file=CS, targets=T,
-         old='''o["name"] == r["name"] and o.get("head_branch") == r.get("head_branch")''',
-         new='''o["name"] == r["name"]'''),
-    dict(id="TS6 the later run need not have succeeded", file=CS, targets=T,
-         old='''        and o["status"] == "completed" and o["conclusion"] == "success"''',
-         new='''        and o["status"] == "completed"'''),
-    dict(id="TS7 a cancelled run without a timestamp can be superseded", file=CS, targets=T,
+    dict(id="TS5 the later run may be of another workflow (the match dropped)", file=CS, targets=T,
+         old='''o is not r and wf(o) == wf(r) and o["head_sha"] == r["head_sha"]''',
+         new='''o is not r and o["head_sha"] == r["head_sha"]'''),
+    dict(id="TS6 the later run may be of another commit (the sha match dropped)", file=CS, targets=T,
+         old='''o is not r and wf(o) == wf(r) and o["head_sha"] == r["head_sha"]''',
+         new='''o is not r and wf(o) == wf(r)'''),
+    dict(id="TS7 the later run may be on another ref (the ref match dropped)", file=CS, targets=T,
+         old='''        and o.get("head_branch") == r.get("head_branch")
+''',
+         new='''
+'''),
+    dict(id="TS8 the later run may have ANY conclusion but success", file=CS, targets=T,
+         old='''o["status"] == "completed" and o["conclusion"] == "success"''',
+         new='''o["status"] == "completed" and o["conclusion"] != "success"'''),
+    dict(id="TS9 the later run need not have a conclusion at all", file=CS, targets=T,
+         old='''o["status"] == "completed" and o["conclusion"] == "success"''',
+         new='''o["status"] == "completed"'''),
+    dict(id="TS10 a cancelled run without a timestamp can be superseded", file=CS, targets=T,
          old='''    if r["conclusion"] != "cancelled" or not r.get("created_at"):''',
          new='''    if r["conclusion"] != "cancelled":'''),
+    dict(id="TS11 the workflow is told by name alone, not by id", file=CS, targets=T,
+         old='''    return r.get("workflow_id") or r["name"]''',
+         new='''    return r["name"]'''),
     # ── tools/evidence_ci.py: the partition ──
     dict(id="EV1 the partition does not flag a unit run twice", file=EV, targets=T,
          old='''        if twice:

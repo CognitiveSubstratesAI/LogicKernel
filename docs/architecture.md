@@ -280,10 +280,15 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
   * No verdict yet passes at a cycle's start. At a full run's end it is waited for (up to
     `LOGICKERNEL_CI_WAIT_S`, 1200 s), and evidence is written only for a green push.
   * `LOGICKERNEL_CI_CHECK=off` skips the check loudly, for a machine without network.
-  * **A cancelled run is superseded** by a LATER green run of the SAME workflow on the SAME ref
-    (MEASURED 2026-10-20: re-pushing the tag v0.1.0-pre.1 cancelled the first tag push's CI, and
-    the gate read the commit red though its re-run was green). Only `cancelled`: a failure stays red
-    however often it is re-run, and a run without a `created_at` is never superseded.
+  * **A cancelled run is superseded (D-0071)** — the predicate, exactly: `conclusion == "cancelled"`
+    AND `created_at` present AND some OTHER run `o`, among all the runs the API returned, has the
+    same workflow (`workflow_id`; the name when the API gave none), the same `head_sha`, the same
+    `head_branch`, `status == "completed"`, `conclusion == "success"` and a later `created_at`. So a
+    later green commit never excuses an earlier commit's cancelled run. MEASURED 2026-10-20:
+    re-pushing the tag v0.1.0-pre.1 cancelled the first tag push's CI, and the gate read the commit
+    red though its re-run was green. Only `cancelled`: `failure`, `timed_out`, `startup_failure`,
+    `action_required` and `stale` stay red however often they are re-run. This RELAXES the gate of
+    2026-10-06 (any non-success run was red).
   * **The declared fix (user, 2026-10-11)** is the one way past a red push, for the commit that
     fixes it — until then that commit went in with the whole check switched off (`264a7f2`).
     `LOGICKERNEL_CI_FIX=<sha>` lets a gate cycle pass a RED verdict on exactly that commit, which
@@ -301,7 +306,7 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
   * the declarations, and the parser's refusals;
   * the trigger set and the term types on fixture paths;
   * the units a REFERENCE file runs;
-  * `ci_status.sh` on fifteen CI fixtures (seven for the superseded cancel) and one unreadable answer;
+  * `ci_status.sh` on 22 CI fixtures (14 for the superseded cancel) and one unreadable answer;
   * `_ci_gate` at a cycle's start and after a wait;
   * `_check_run`'s term-type check.
 
