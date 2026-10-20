@@ -22,24 +22,58 @@
 # which no test file can run). The targets must pass on the unmutated tree
 # first (the baseline) and again after the last mutant (the closing baseline: a daemon that
 # degraded mid-run would turn every later mutant red for a reason of its own).
-# THE VERDICT, at the level of the exit code, never of a message: a target exits 1 = caught; every
-# target exits 0 = SURVIVED; a target that runs past the limit = TIMEOUT (its own outcome, never
-# caught — user, 2026-10-12; the daemon is restarted after one), unless the mutant expects a hang;
-# anything else = INVALID. SURVIVED, TIMEOUT and INVALID BLOCK a commit until the mutant is rerun to
-# a verdict: killed by a test, or declared `equivalent` with its reason. The driver exits 0 only when
-# both baselines are green AND no mutant blocks; 1 when a mutant blocks; 2 when the final baseline
-# is not green. Every non-caught mutant is listed, and its output kept beside the mutant list
-# (MUTATE_OUT overrides the directory).
+# THE VERDICT, from the exit code first: a target exits 1 = caught; every target exits 0 = SURVIVED;
+# a target that runs past the limit = TIMEOUT (its own outcome, never caught — user, 2026-10-12; the
+# daemon is restarted after one), unless the mutant expects a hang; anything else = INVALID. AN EXIT 1
+# IS CAUGHT ONLY WHEN A TEST FAILED (D-0050, 2026-10-20; `judge`): the code did not parse or load
+# (NOT_LOADED: ParseError, REVISE FAILED, a LoadError other than "Some tests did not pass") = NO
+# VERDICT (does not load); a test file that exits 1 with no failing test line = NO VERDICT (no
+# failing test). MEASURED 2026-10-19 (A-0035): a mutant that broke parsing was booked killed.
+# SURVIVED, TIMEOUT, INVALID and NO VERDICT BLOCK a commit until the mutant is rerun to a verdict:
+# killed by a test, or declared `equivalent` with its reason. The driver exits 0 only when both
+# baselines are green AND no mutant blocks; 1 when a mutant blocks; 2 when the final baseline is not
+# green. Every non-caught mutant is listed, and its output kept beside the mutant list (MUTATE_OUT
+# overrides the directory); every verdict, with a caught one's first failing test line, goes to
+# verdicts.tsv there.
 # WHILE A MUTANT IS APPLIED, .warm/MUTATION_IN_PROGRESS in the tree names it and
 # .warm/MUTATION_ORIGINAL holds the file as it was (`tools/mutate.sh recover`); SIGTERM restores
 # the file first. MUTATE_LIMIT_S (240) is the limit per target.
 import hashlib
 import os
+import re
 import runpy
 import shutil
 import signal
 import subprocess
 import sys
+import tempfile
+
+# The does-not-load signature: "Some tests did not pass" is the one LoadError a failed test raises;
+# the warm daemon's refusal (tools/warm_session.jl) exits 1 as a failed test does.
+NOT_LOADED = re.compile(r"ParseError|REVISE FAILED|LoadError: (?!Some tests did not pass)")
+FAILED_TEST = re.compile(r"(?:Test Failed|Error During Test) at \S+")
+
+
+def judge(target, rc, out, root):
+    """One target's result: 1 (a test failed), "noload", "notest", or `rc` unchanged — and the
+    line that shows it (a caught one's first failing test line, `root` made relative)."""
+    if rc != 1:
+        return rc, ""
+    lines = out.splitlines()
+
+    def shown(pat):
+        hit = next((ln for ln in lines if pat.search(ln)), None)
+        return hit and hit.replace(root.rstrip("/") + "/", "").strip()[:200]
+
+    why = shown(NOT_LOADED)
+    if why:
+        return "noload", why
+    why = shown(FAILED_TEST)
+    if why:
+        return 1, why
+    if target.startswith("sh:"):                       # a shell target: its exit code is the verdict
+        return 1, next((ln.strip()[:200] for ln in reversed(lines) if ln.strip()), "(exit 1, no output)")
+    return "notest", ""
 
 
 def sync(root, wt):
@@ -100,30 +134,17 @@ def main(argv):
         if rc == -9 or (rc == 2 and cmd[0] != "bash"):  # timed out: the daemon is still busy
             subprocess.run(["tools/warm.sh", "restart"], cwd=tree, capture_output=True)
             return "hang", out
-        return rc, out
+        return judge(target, rc, out, tree)[0], out
 
     def run(tgts):
-        """Every target: 1 if one is red (caught), "hang", another code (invalid), else 0."""
-        rcs, outs = [], []
-        for t in tgts:
-            rc, out = run1(t)
-            rcs.append(rc)
-            outs.append("=== %s: exit %s\n%s" % (t, rc, out))
-            if rc == 1:
-                break                                   # caught: the other targets add nothing
-        out = "\n".join(outs)
-        if 1 in rcs:
-            return 1, out
-        if "hang" in rcs:
-            return "hang", out
-        bad = [r for r in rcs if r != 0]
-        return (bad[0] if bad else 0), out
+        """Every target (`run_targets`), each one in the tree's warm daemon."""
+        return run_targets(tgts, run1, tree)
 
     def keep(name, out):
         with open(os.path.join(out_dir, name), "w") as f:
             f.write(out)
 
-    rc, out = run(targets)
+    rc, out, _ = run(targets)
     print("baseline exit", rc, flush=True)
     if rc != 0:
         keep("baseline.log", out)
@@ -161,7 +182,7 @@ def main(argv):
         with open(p, "w") as f:
             f.write(s.replace(m["old"], m["new"]))
         try:
-            rc, out = run(m.get("targets", targets))
+            rc, out, why = run(m.get("targets", targets))
         finally:
             with open(p, "w") as f:
                 f.write(s)
@@ -171,27 +192,52 @@ def main(argv):
         v = verdict(rc, m)
         if v != "caught":
             keep("mutant_%s.log" % name, out)
-        results.append((m["id"], v))
-        print(m["id"], v, flush=True)
+        results.append((m["id"], v, why))
+        print(m["id"], v, "—", why or "-", flush=True)
 
-    rc, out = run(targets)
+    keep("verdicts.tsv", "".join("%s\t%s\t%s\n" % (mid.split()[0], v, why) for mid, v, why in results))
+    rc, out, _ = run(targets)
     print("final baseline exit", rc, flush=True)
     if rc != 0:
         keep("final_baseline.log", out)
         print("FINAL BASELINE NOT GREEN — the verdicts above prove nothing")
         return 2
-    print("SUMMARY", sum(1 for _, v in results if v.startswith("caught")), "of", len(results), "caught;",
-          sum(1 for _, v in results if blocks(v)), "blocking")
-    for mid, v in results:
+    print("SUMMARY", sum(1 for _, v, _ in results if v.startswith("caught")), "of", len(results), "caught;",
+          sum(1 for _, v, _ in results if blocks(v)), "blocking")
+    for mid, v, _ in results:
         if not v.startswith("caught"):
             print("  ", mid, v)
-    return 1 if any(blocks(v) for _, v in results) else 0
+    return 1 if any(blocks(v) for _, v, _ in results) else 0
+
+
+def run_targets(targets, run1, root):
+    """Every target through `run1` (target → (judged result, output)), stopping at the first that
+    decides: (1 if a test failed, "noload", "notest", "hang", another code, else 0; the log; the
+    deciding line). mutate_ci.py runs its fresh processes through this, too."""
+    rcs, outs, why = [], [], ""
+    for t in targets:
+        rc, out = run1(t)
+        rcs.append(rc)
+        outs.append("=== %s: exit %s\n%s" % (t, rc, out))
+        if rc in (1, "noload", "notest"):
+            why = judge(t, 1, out, root)[1]
+            break                                       # decided: the other targets add nothing
+    log = "\n".join(outs)
+    for decided in (1, "noload", "notest", "hang"):
+        if decided in rcs:
+            return decided, log, why
+    bad = [r for r in rcs if r != 0]
+    return (bad[0] if bad else 0), log, why
 
 
 def verdict(rc, m):
     """A mutant's outcome from its targets' result (`run`: 1, 0, "hang" or another exit code)."""
     if rc == "hang":
         return "caught (hang)" if m.get("expect") == "hang" else "TIMEOUT"
+    if rc == "noload":
+        return "NO VERDICT (does not load)"
+    if rc == "notest":
+        return "NO VERDICT (no failing test)"
     if rc == 1:
         return "CAUGHT BUT DECLARED EQUIVALENT" if m.get("equivalent") else "caught"
     if rc == 0:
@@ -205,17 +251,47 @@ def blocks(v):
 
 
 def selftest():
-    """The verdict table, each row the decision it encodes (run: mutate_drive.py --selftest)."""
+    """The verdict table, each row the decision it encodes, and `judge` on REAL output both ways: a
+    file that does not parse or load is no kill, a failed test is (run: mutate_drive.py --selftest;
+    JULIA overrides the julia on PATH)."""
     plain, hang, eq = {}, {"expect": "hang"}, {"equivalent": "x.jl:1 — never read"}
     table = [((1, plain), "caught", False), ((0, plain), "SURVIVED", True),
              (("hang", plain), "TIMEOUT", True), (("hang", hang), "caught (hang)", False),
              ((5, plain), "INVALID(5)", True), ((0, eq), "EQUIVALENT (declared)", False),
-             ((1, eq), "CAUGHT BUT DECLARED EQUIVALENT", True)]
+             ((1, eq), "CAUGHT BUT DECLARED EQUIVALENT", True),
+             (("noload", plain), "NO VERDICT (does not load)", True),
+             (("noload", eq), "NO VERDICT (does not load)", True),
+             (("noload", hang), "NO VERDICT (does not load)", True),
+             (("notest", plain), "NO VERDICT (no failing test)", True)]
     for (rc, m), want, blocking in table:
         got = verdict(rc, m)
         assert got == want, (rc, m, got, want)
         assert blocks(got) == blocking, (got, blocks(got), blocking)
-    print("mutate_drive selftest: %d rows ok" % len(table))
+    # the warm daemon's refusal: the signature must name what tools/warm_session.jl prints
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "warm_session.jl")) as f:
+        assert '"REVISE FAILED' in f.read(), "warm_session.jl no longer prints REVISE FAILED"
+    assert judge("t.jl", 1, "x\nREVISE FAILED — refusing to run this snippet:\n", "/r")[0] == "noload"
+    assert judge("t.jl", 0, "LoadError: ParseError", "/r") == (0, "")       # exit 0: nothing to judge
+    assert judge("sh:false", 1, "", "/r") == (1, "(exit 1, no output)")
+    # real julia: each file's judged result, and the line kept (a caught one's names the test)
+    test = "using Test\n@testset \"t\" begin\n    @test %s\nend\n"
+    files = {"parse": (test % "1 == (1", "noload", "ParseError"),
+             "load": ("using Test\nnot_defined_anywhere()\n" + test % "true", "noload", "UndefVarError"),
+             "fail": (test % "1 == 2", 1, "Test Failed at fail.jl:3"),
+             "throws": (test % "not_defined_anywhere() == 1", 1, "Error During Test at throws.jl:3"),
+             "exit": ("exit(1)\n", "notest", ""),
+             "pass": (test % "1 == 1", 0, "")}
+    julia = os.environ.get("JULIA") or shutil.which("julia")
+    assert julia, "selftest: no julia (set JULIA)"
+    with tempfile.TemporaryDirectory() as d:
+        for name, (code, want, line) in files.items():
+            with open(os.path.join(d, name + ".jl"), "w") as f:
+                f.write(code)
+            r = subprocess.run([julia, "--startup-file=no", name + ".jl"], cwd=d,
+                               capture_output=True, text=True, timeout=300)
+            got, why = judge(name + ".jl", r.returncode, r.stdout + r.stderr, d)
+            assert got == want and line in why, (name, r.returncode, got, why, r.stdout + r.stderr)
+    print("mutate_drive selftest: %d verdict rows, %d live files ok" % (len(table), len(files)))
     return 0
 
 

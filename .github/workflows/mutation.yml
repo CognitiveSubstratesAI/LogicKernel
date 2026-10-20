@@ -8,9 +8,11 @@
 #       mutants = tools/mutants/V9f.py
 #       targets = test/core_lang/test_catch_swipl.jl test/compile/test_body_code_swipl.jl
 # THE VERDICT RULES ARE THE LOCAL DRIVER'S (tools/mutate_drive.py), applied by tools/mutate_ci.py:
-# a target exits 1 = caught; every target exits 0 = SURVIVED; past the limit = TIMEOUT; anything
-# else = INVALID; a mutant declared `equivalent` must survive. SURVIVED, TIMEOUT, INVALID, BADMATCH
-# and a caught "equivalent" BLOCK: the `verdicts` job is red. The table is in that job's summary.
+# a target exits 1 = caught — only when a test failed: code that did not parse or load, or a test
+# file with no failing test line, is NO VERDICT (D-0050); every target exits 0 = SURVIVED; past the
+# limit = TIMEOUT; anything else = INVALID; a mutant declared `equivalent` must survive. SURVIVED,
+# TIMEOUT, INVALID, NO VERDICT, BADMATCH and a caught "equivalent" BLOCK: the `verdicts` job is red.
+# The table, with each caught mutant's first failing test line, is in that job's summary.
 # NO BENCHMARKS HERE: shared runners vary; timings stay on the quiet local machine.
 name: Mutation battery
 on:

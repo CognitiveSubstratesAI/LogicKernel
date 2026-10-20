@@ -916,6 +916,58 @@ MUTANTS = [
             @test sh("collect", "m.py", "2", "K4", "K7") == 1
             rm(joinpath(d, "mutation-out", "baseline.json"))
             @test sh("collect", "m.py", "2", "K4", "K7") == 1       # no baseline at all
+            # AN EXIT 1 IS CAUGHT ONLY WHEN A TEST FAILED (D-0050): real julia targets, run as the
+            # job runs them. A mutant that does not load is no kill; a caught one keeps its line.
+            write(joinpath(d, "f.txt"), "alpha\n")
+            write(
+                joinpath(d, "t.jl"),
+                "using Test\n@testset \"t\" begin\n    @test !occursin(\"ALPHA\", read(\"f.txt\", String))\nend\n"
+            )
+            write(
+                joinpath(d, "e.jl"),
+                "exit(occursin(\"ALPHA\", read(\"f.txt\", String)) ? 1 : 0)\n"
+            )
+            write(
+                joinpath(d, "n.py"),
+                """
+MUTANTS = [
+    dict(id="L1 a test fails", file="f.txt", old="alpha", new="ALPHA", targets=["t.jl"]),
+    dict(id="L2 does not load", file="f.txt", old="alpha", new="ALPHA",
+         targets=["sh:grep -q ALPHA f.txt && echo 'ERROR: LoadError: ParseError:' && exit 1; exit 0"]),
+    dict(id="L3 exits 1, no test failed", file="f.txt", old="alpha", new="ALPHA", targets=["e.jl"]),
+]
+"""
+            )
+            want = Dict(
+                "L1" => "caught", "L2" => "NO VERDICT (does not load)",
+                "L3" => "NO VERDICT (no failing test)"
+            )
+            for k in sort!(collect(keys(want)))
+                write(joinpath(d, "f.txt"), "alpha\n")
+                @test sh("one", "n.py", k, "300", "t.jl") == 0
+                rec = read(joinpath(d, "mutation-out", "$k.json"), String)
+                @test occursin("\"verdict\": \"$(want[k])\"", rec)
+            end
+            @test occursin(
+                "\"first_failure\": \"t: Test Failed at t.jl:3\"",
+                read(joinpath(d, "mutation-out", "L1.json"), String)
+            )
+            @test occursin(
+                "ParseError", read(joinpath(d, "mutation-out", "L2.json"), String)
+            )
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test sh("baseline", "300", "t.jl") == 0
+            table = out("collect", "n.py", "3")
+            @test sh("collect", "n.py", "3") == 1
+            @test occursin("blocking: L2, L3", table)
+            @test occursin("| L1 | caught |", table) &&
+                occursin("Test Failed at t.jl:3 |", table)
         end
+    end
+    # the local driver's verdict table and its judge on REAL julia output, both ways
+    @testset "tools/mutate_drive.py --selftest: no kill without a failed test" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_drive.py")
+        jl = joinpath(Sys.BINDIR, Base.julia_exename())
+        @test success(addenv(`python3 $tool --selftest`, "JULIA" => jl))
     end
 end

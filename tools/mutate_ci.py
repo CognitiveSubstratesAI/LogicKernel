@@ -15,11 +15,15 @@
 #
 # A TARGET is a test file, run in a FRESH process on the reference term type
 # (`julia --project=. <file>`, LOGICKERNEL_TERM=reference) — or `sh:<command>`.
-# THE VERDICT, from exit codes only: a target exits 1 = caught; every target exits 0 = SURVIVED; a
+# THE VERDICT, from exit codes first: a target exits 1 = caught; every target exits 0 = SURVIVED; a
 # target past LIMIT_S = TIMEOUT (never "caught", unless the mutant expects a hang); another code =
-# INVALID. A mutant declared `equivalent` must SURVIVE ("EQUIVALENT (declared)"); caught, its claim
-# was wrong ("EQUIVALENT REFUTED"). BLOCKING: SURVIVED, TIMEOUT, INVALID, BADMATCH, EQUIVALENT
-# REFUTED, a missing verdict file, a baseline that is not green.
+# INVALID. An exit 1 is caught only when a test failed — mutate_drive.py's `judge`, the one
+# classifier of both drivers (D-0050): code that did not parse or load = NO VERDICT (does not load);
+# a test file with no failing test line = NO VERDICT (no failing test). A mutant declared
+# `equivalent` must SURVIVE ("EQUIVALENT (declared)"); caught, its claim was wrong ("EQUIVALENT
+# REFUTED"). BLOCKING: SURVIVED, TIMEOUT, INVALID, BADMATCH, EQUIVALENT REFUTED, NO VERDICT (either
+# kind, or a missing verdict file), a baseline that is not green. Every record keeps the deciding
+# line (`first_failure`: a caught one's first failing test line); the table shows it.
 import json
 import os
 import runpy
@@ -27,6 +31,10 @@ import signal
 import subprocess
 import sys
 import time
+
+sys.dont_write_bytecode = True     # no tools/__pycache__: an untracked file voids the evidence marker
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mutate_drive import judge, run_targets as _run_targets  # noqa: E402 — one classifier, two drivers
 
 OUT = "mutation-out"
 BLOCKING = ("SURVIVED", "TIMEOUT", "INVALID", "BADMATCH", "EQUIVALENT REFUTED", "NO VERDICT")
@@ -66,21 +74,11 @@ def run_target(target, limit):
 
 
 def run_targets(targets, limit):
-    """As mutate_drive.py's `run`: 1 if one is red, "hang", another code, else 0 — and the log."""
-    rcs, outs = [], []
-    for t in targets:
+    """mutate_drive.py's `run_targets`, each target in a fresh process: (result, log, line)."""
+    def run1(t):
         rc, out = run_target(t, limit)
-        rcs.append(rc)
-        outs.append("=== %s: exit %s\n%s" % (t, rc, out))
-        if rc == 1:
-            break                                       # caught: the other targets add nothing
-    log = "\n".join(outs)
-    if 1 in rcs:
-        return 1, log
-    if "hang" in rcs:
-        return "hang", log
-    bad = [r for r in rcs if r != 0]
-    return (bad[0] if bad else 0), log
+        return judge(t, rc, out, os.getcwd())[0], out
+    return _run_targets(targets, run1, os.getcwd())
 
 
 def write(name, record, log):
@@ -111,7 +109,7 @@ def baseline(argv):
     if not targets:
         sys.exit("mutate_ci: no target")
     t0 = time.time()
-    rc, log = run_targets(targets, limit)
+    rc, log, _ = run_targets(targets, limit)
     write("baseline", {"name": "baseline", "exit": rc, "seconds": round(time.time() - t0)}, log)
     print("baseline exit", rc)
     return 0 if rc == 0 else 1
@@ -135,9 +133,13 @@ def one(argv):
     with open(m["file"], "w") as f:
         f.write(src.replace(m["old"], m["new"]))
     t0 = time.time()
-    rc, log = run_targets(targets, limit)
+    rc, log, why = run_targets(targets, limit)
     declared = bool(m.get("equivalent"))
-    if rc == 1:
+    if rc == "noload":
+        verdict = "NO VERDICT (does not load)"
+    elif rc == "notest":
+        verdict = "NO VERDICT (no failing test)"
+    elif rc == 1:
         verdict = "EQUIVALENT REFUTED" if declared else "caught"
     elif rc == "hang":
         verdict = "caught (hang)" if m.get("expect") == "hang" else "TIMEOUT"
@@ -145,9 +147,9 @@ def one(argv):
         verdict = "EQUIVALENT (declared)" if declared else "SURVIVED"
     else:
         verdict = "INVALID"
-    record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0))
+    record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why)
     write(name, record, log)
-    print(name, verdict)
+    print(name, verdict, "—", why or "-")
     return 0                                            # the verdict is data: `collect` judges
 
 
@@ -171,17 +173,19 @@ def collect(argv):
         name = m["id"].split()[0]
         r = read(name) or {"verdict": "NO VERDICT", "seconds": 0}
         v = r["verdict"]
-        if v in BLOCKING or not base_ok:
+        if v.startswith(BLOCKING) or not base_ok:
             blocked.append(name)
         what = m["id"][len(name):].strip()
         if m.get("equivalent"):
             what += " — declared equivalent, pending audit: " + m["equivalent"]
-        rows.append("| %s | %s | %s s | %s |" % (name, v, r.get("seconds", 0), what.replace("|", "\\|")))
+        rows.append("| %s | %s | %s s | %s | %s |" % (name, v, r.get("seconds", 0), what.replace("|", "\\|"),
+                                                   (r.get("first_failure") or "").replace("|", "\\|")))
     lines = ["## Mutation battery — %s" % path, "",
              "Baseline (unmutated targets): **%s**%s" % (
                  "green" if base_ok else "NOT GREEN — no verdict below counts",
                  "" if base is None else ", %s s" % base.get("seconds", 0)), "",
-             "| mutant | verdict | time | what it breaks |", "|---|---|---|---|"] + rows + [""]
+             "| mutant | verdict | time | what it breaks | first failing test line |",
+             "|---|---|---|---|---|"] + rows + [""]
     n = len(mutants)
     lines.append("**%d of %d decided; blocking: %s**" % (
         n - len(blocked), n, ", ".join(blocked) if blocked else "none"))
