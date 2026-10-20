@@ -58,6 +58,11 @@ env:
   # below when the battery's targets name that file; a mutant's own `targets` naming it without them
   # fails closed (NO VERDICT).
   LOGICKERNEL_REQUIRE_TOOLS: '1'
+  # A WHOLE-SUITE target (tools/mutate_suite.sh) runs test/test_vendored_plunit.jl, which in CI FAILS
+  # without swipl-devel checked out at the pin (CI.yml's analysis job) — every mutant's verdict would
+  # then stand on a red baseline (MEASURED 2026-10-20: the FullSuite battery, refused by `collect`). The
+  # checkout below is made when the battery's targets name that script.
+  LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
   # a push to mutants/<step> has no inputs: the list is tools/mutants/<step>.py, the targets the
   # list's own (the `plan` job's output), the limit the default
   MUTANTS: ${{ inputs.mutants || format('tools/{0}.py', github.ref_name) }}
@@ -94,6 +99,17 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - name: The pinned swipl-devel commit (a whole-suite target — test/test_vendored_plunit.jl)
+        id: pin
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
+        run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        if: ${{ steps.pin.outputs.commit != '' }}
+        with:
+          repository: SWI-Prolog/swipl-devel
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .upstream/swipl-devel
+          submodules: true
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl)
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') }}
         run: |
@@ -127,6 +143,17 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@d10a6fd8f31b12404a54613ebad242900567f2b9  # v2
+      - name: The pinned swipl-devel commit (a whole-suite target — test/test_vendored_plunit.jl)
+        id: pin
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
+        run: echo "commit=$(sed -n 's/^commit:[[:space:]]*//p' tools/SWIPL_VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        if: ${{ steps.pin.outputs.commit != '' }}
+        with:
+          repository: SWI-Prolog/swipl-devel
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .upstream/swipl-devel
+          submodules: true
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl)
         if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') }}
         run: |

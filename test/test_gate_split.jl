@@ -994,4 +994,14 @@ MUTANTS = [
         action = read(joinpath(_GS_ROOT, ".github", "actions", "oracle", "action.yml"), String)
         @test occursin(raw"key=${ImageOS:?", action)
     end
+    # A WHOLE-SUITE mutation target (tools/mutate_suite.sh) needs swipl-devel at the pin in the lane:
+    # test/test_vendored_plunit.jl fails in CI without it, and the battery's baseline with it
+    @testset "the mutation lane checks swipl-devel out for a whole-suite target" begin
+        mut = read(joinpath(_GS_ROOT, ".github", "workflows", "mutation.yml"), String)
+        @test count("'mutate_suite'", mut) == 2 && count("path: .upstream/swipl-devel", mut) == 2
+        @test occursin("LOGICKERNEL_UPSTREAM_SWIPL_DEVEL:", mut)
+        suite = joinpath(_GS_ROOT, "tools", "mutate_suite.sh")
+        @test isfile(suite) && (filemode(suite) & 0o111) != 0
+        @test occursin("test/runtests.jl", read(suite, String))
+    end
 end
