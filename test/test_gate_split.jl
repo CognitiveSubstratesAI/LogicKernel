@@ -1104,7 +1104,8 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
             @test_throws ErrorException sl(bad)
         end
         tbl = cs.lk_unit_costs(joinpath(_GS_ROOT, "test", "unit_costs.tsv"))
-        @test !isempty(tbl) && all(>(0), values(tbl))              # the committed table reads
+        # (a MEASURED 0.0 is a real cost: test_check_bounds.jl takes under 50 ms)
+        @test !isempty(tbl) && all(>=(0), values(tbl)) && any(>(0), values(tbl))   # it reads
         @test all(f -> isfile(joinpath(_GS_ROOT, "test", f)), keys(tbl))   # …and names real files
     end
     # CI's MUTATION BATTERY (user, 2026-10-13): tools/mutate_ci.py gives each mutant the local
