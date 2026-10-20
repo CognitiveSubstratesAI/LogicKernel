@@ -1,10 +1,11 @@
-# ORIGINAL: the Julia-facing query helper `query_answers` (L1c; user, 2026-10-15; PROVISIONAL until R2's
-# public API) — answers copied out as a vector, the foreign frame DISCARDED, so a host running many
+# ORIGINAL: the Julia-facing query helper `query_answers` (L1c; user, 2026-10-15; STABLE from
+# v0.1.0-pre.1, 2026-10-20: signature, return shape, `PrologException`) — answers copied out as a vector, the foreign frame DISCARDED, so a host running many
 # queries leaves the engine's stacks as it found them (no collector until G1); upstream has no
 # counterpart (embedding code discards its frames itself).
 # test/foreign/test_query_answers.jl — on every term type:
 #   * the answers, each the goal with its bindings resolved, and the order and determinism swipl's
-#     (`_rswipl`); `limit`;
+#     (`_rswipl`); `limit` (`nothing`, `n`, `0` running nothing, negative refused); an unbound variable
+#     comes back fresh; a goal that is not an atom or an atom-headed compound refused; the exports;
 #   * an uncaught exception is thrown as a `PrologException` carrying its ball, resolved — and the
 #     stacks are back at their baseline after it (the frame discarded on that path too);
 #   * the engine carries its database from birth (`GD`), which the helper reads;
@@ -20,7 +21,8 @@ include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 
 _qa_clauses() = Tuple{_R, Union{Nothing, _R}}[
     (_rf("qa_p", _rs("a")), nothing), (_rf("qa_p", _rs("b")), nothing),
-    (_rf("qa_q", _rf("f", _rv(1)), _rf("g", _rv(1), _rv(1))), nothing)
+    (_rf("qa_q", _rf("f", _rv(1)), _rf("g", _rv(1), _rv(1))), nothing),
+    (_rf("qa_free", _rv(1), _rs("x")), nothing)
 ]
 
 @testset "query_answers: the answers, copied out, as swipl's" begin
@@ -45,7 +47,18 @@ _qa_clauses() = Tuple{_R, Union{Nothing, _R}}[
     @test _rcanonical.(LK.query_answers(db.ld, _rf("qa_p", _rv(9)); limit=nothing)) ==
         ["qa_p(a)", "qa_p(b)"]
     @test isempty(LK.query_answers(db.ld, _rf("qa_p", _rv(9)); limit=0))
+    # `limit=0` runs NOTHING: an unknown procedure, which raises when run, is not reached
+    @test isempty(LK.query_answers(db.ld, _rf("qa_undefined", _rv(9)); limit=0))
+    @test_throws ArgumentError LK.query_answers(db.ld, _rf("qa_p", _rv(9)); limit=-1)
     @test_throws ArgumentError LK.query_answers(db.ld, _rg(Int64(1)))
+    @test_throws ArgumentError LK.query_answers(db.ld, _rv(9))                  # a variable goal
+    @test_throws ArgumentError LK.query_answers(db.ld, mk_expr(_R, _R[_rv(9), _rs("a")]))  # its head a variable
+    # a variable the solution leaves unbound comes back as a FRESH variable, not the caller's
+    (a,) = LK.query_answers(db.ld, _rf("qa_free", _rv(9), _rv(8)))
+    @test kind(child(a, 2)) === VAR && var_key(child(a, 2)) ∉ (var_key(_rv(9)), var_key(_rv(8)))
+    @test _rcanonical(child(a, 3)) == "x"
+    # the stable surface is exported (README "Using it from Julia")
+    @test all(n -> n in names(LogicKernel), (:query_answers, :PrologException, :load_file!))
 end
 
 @testset "query_answers: an uncaught exception is thrown with its ball" begin

@@ -645,9 +645,9 @@ function call_term(
     end
 end
 
-# ORIGINAL: the Julia-facing query helper (L1c; user, 2026-10-15). PROVISIONAL (user, 2026-10-15):
-# the public Julia API — a lazy iterator, bindings by variable name, the exception's form — is
-# designed with R2; until then this is the one entry point a host has, and its shape may change. It
+# ORIGINAL: the Julia-facing query helper (L1c; user, 2026-10-15). STABLE FROM v0.1.0-pre.1 (2026-10-20):
+# its signature, its return shape and `PrologException` — what R2 will not change. R2 ADDS to it (a lazy
+# iterator, bindings by variable name, goals as text, modules) without changing this call. It
 # carries no `pl_` prefix: `pl_`/`PL_` names are ports of upstream functions, and this has no
 # counterpart (embedding code discards its frames itself).
 # Since L1c a put copies its term onto the global stack and closing a foreign frame keeps global
@@ -661,7 +661,8 @@ end
     PrologException(ball)
 
 An uncaught Prolog exception, thrown to the Julia caller of [`query_answers`](@ref): `ball` is the
-exception term, resolved (a term of its own). PROVISIONAL with `query_answers` (R2 designs the form).
+exception TERM (not text), resolved — a term of its own, e.g. `error(existence_error(procedure, p/1), _)`
+for an unknown procedure. Stable from v0.1.0-pre.1.
 """
 struct PrologException{T} <: Exception
     ball::T
@@ -670,17 +671,30 @@ end
 """
     query_answers(db, goal; limit=nothing) -> Vector
 
-Run `goal` (an atom or a compound) in `user` on the engine `db` and return its answers — each `goal`
-with its bindings resolved, a term of its own — at most `limit` of them (`nothing`: all). An
-uncaught Prolog exception is thrown as a [`PrologException`](@ref) carrying its ball. The engine's
-stacks are left as they were found. PROVISIONAL (user, 2026-10-15): the public API comes with R2.
+Run `goal` in module `user` on the engine `db` and return its answers, in Prolog's order. STABLE
+from v0.1.0-pre.1: this signature, the return shape and [`PrologException`](@ref) stay; R2 adds to
+them (bindings by variable name, goals as text, a lazy iterator, modules) without changing this call.
 
-`db` is an ENGINE (`PL_local_data`), made for its database (`PL_local_data{T}(gd)`), which it
-carries as `GD` — an engine is the one object a host holds.
+  * `goal` is a TERM of the engine's term type `T` — an atom or a compound whose head is an atom
+    (`p` or `p(X, a)`), built with `mk_sym`/`mk_expr` and the type's variables (`var_term` for the
+    reference type). Text is not read here (R2). Anything else — a variable, a number, a string,
+    a compound with a non-atom head — throws an `ArgumentError` before any query is opened.
+  * Each answer is `goal` with that solution's bindings substituted, resolved: a term of its own,
+    sharing nothing with the engine. A variable the solution leaves unbound is a fresh variable
+    in the answer (not the caller's). The answers carry no names: read a binding by its position
+    in the goal (`child(answer, i + 1)` for the `i`-th argument).
+  * `limit`: `nothing` returns every answer (the goal must terminate); `n ≥ 0` stops after `n`
+    (`0` runs nothing); a negative `limit` throws an `ArgumentError`.
+  * An uncaught Prolog exception is thrown as a `PrologException` carrying the ball as a term.
+  * The engine's stacks are left as they were found, after an exception too.
+  * `db` is an ENGINE (`PL_local_data{T}(gd)`), which carries the database `gd` it was made for —
+    an engine is the one object a host holds. One engine is NOT thread-safe: one task at a time.
 """
 function query_answers(
     db::PL_local_data{T}, goal::T; limit::Union{Nothing, Int}=nothing
 )::Vector{T} where {T}
+    (limit === nothing || limit >= 0) ||
+        throw(ArgumentError("query_answers: limit must be nothing or ≥ 0, got $limit"))
     k = kind(goal)
     (k === SYM || (k === EXPR && nchildren(goal) >= 1 && kind(child(goal, 1)) === SYM)) ||
         throw(ArgumentError("query_answers: the goal must be an atom or a compound"))

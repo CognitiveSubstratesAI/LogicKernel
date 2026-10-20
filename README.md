@@ -64,11 +64,8 @@ stack, as SWI-Prolog does, and — as in SWI — closing a foreign frame (`PL_cl
 KEEPS what was built in it; the kernel has no garbage collector for its stacks yet (G1). So a host
 that runs many queries must DISCARD each query's foreign frame once it has copied its answers out
 (`PL_discard_foreign_frame`, or `PL_rewind_foreign_frame` to reuse it), exactly as embedding code
-does with libswipl — or the global stack grows without bound. `LogicKernel.query_answers(db,
-goal; limit=nothing)` does this for you: `db` is the engine (`PL_local_data{T}(gd)`, which carries
-its database); it returns the answers as a vector (each the goal with its bindings resolved, a term
-of its own), throws an uncaught Prolog exception as a `PrologException` carrying its ball, and
-leaves the stacks as it found them. PROVISIONAL: the public Julia API is designed with R2.
+does with libswipl — or the global stack grows without bound. `query_answers` (below, "Using it
+from Julia") does this for you: it leaves the stacks as it found them.
 
 **Small integers come back as `Int64`** (L1d step 4, 2026-10-16). An integer in SWI-Prolog's tagged
 range (-2^56 .. 2^56-1, `PLMINTAGGEDINT`..`PLMAXTAGGEDINT`) is stored in the engine as a tagged word,
@@ -77,6 +74,48 @@ type whose payload holds an `Int32`, a `UInt8` or a small `BigInt` gets an `Int6
 value; Prolog sees no difference (it has one integer type, and every comparison, unification, hash
 and index key is by value). An integer outside the tagged range keeps the value it was put with.
 Only term types that can hold an `Int64` store integers tagged (`_holds_payload(T, Int64)`).
+
+## Using it from Julia
+
+```julia
+using LogicKernel
+const T = DefaultTerm                          # the reference term type
+s(x) = sym_term(T, x)
+v(k) = var_term(T, UInt64(k))
+f(h, args...) = mk_expr(T, T[s(h), args...])
+
+path = joinpath(mktempdir(), "family.pl")
+write(path, """
+    parent(tom, bob).
+    parent(bob, ann).
+    parent(bob, pat).
+    grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
+    """)
+gd = LogicKernel.PL_global_data{T}()           # a database
+ld = LogicKernel.PL_local_data{T}(gd)          # an engine for it: the object a host holds
+status, ball, messages = load_file!(gd, ld, path)   # (:ok, nothing, []) — consult/1's messages, not printed
+
+answers = query_answers(ld, f(:grandparent, s(:tom), v(1)))
+[sym_text(child(a, 3)) for a in answers]      # ["ann", "pat"]: an answer is the goal, solved
+first = query_answers(ld, f(:grandparent, v(1), v(2)); limit=1)   # the first answer only
+err = try
+    query_answers(ld, f(:no_such, v(1)))
+catch e
+    e                                          # a PrologException: e.ball is error(existence_error(procedure, no_such/1), _)
+end
+```
+
+**What is stable from v0.1.0-pre.1:** `query_answers(ld, goal; limit=nothing)` — its signature, its
+answers (a `Vector{T}`, each the goal with that solution's bindings substituted, a term of its own;
+an unbound variable comes back as a fresh variable), `limit` (`nothing`: all; `n ≥ 0`: at most `n`,
+`0` running nothing; negative: `ArgumentError`), and `PrologException` (an uncaught Prolog exception,
+its ball as a term). The goal is a term (an atom or a compound with an atom head; anything else is
+an `ArgumentError`); goals as text, bindings by variable name, a lazy iterator and modules come with
+R2 and add to this call, they do not change it. `PL_global_data{T}()`, `PL_local_data{T}(gd)` and
+`load_file!(gd, ld, path)` are the CURRENT entry points: the loader is the minimal one (boot/init.pl's
+consult loop, `user` only) and becomes `consult` in R2 — the call stays, its semantics are not
+promised. One engine is not thread-safe: one task at a time. This block runs as a test
+(`test/foreign/test_readme_example.jl`).
 
 ## Layout — a mirror of swipl-devel
 

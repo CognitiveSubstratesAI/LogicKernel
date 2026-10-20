@@ -93,5 +93,8 @@ export compareAtoms, compareStrings, compare_neq_floats, compare_mixed_float_rat
 export compareReservedSymbol
 # the default term type (src/default_term.jl)
 export Term, DefaultTerm, sym_term, gnd_term, var_term, gnd_value_key, sym_name, gnd_value
+# running Prolog from Julia (README "Using it from Julia"): the query, stable from v0.1.0-pre.1
+# (src/pl-wam.jl), and the current loader (boot/init.jl; it becomes consult in R2, the call stays)
+export query_answers, PrologException, load_file!
 
 end # module LogicKernel
