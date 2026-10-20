@@ -264,6 +264,30 @@ const _WC_BLOCK_GOALS = ["b1", "b2"]
     end
 end
 
+# a block operator whose BLOCK is itself an operator term: under brace_terms(false) the block
+# `{x}` is written as `{}` applied by its prefix operator (1100), and an infix block operator's
+# block is written at 999 — so swipl embraces nothing here. A program of its own: its ops change
+# every later `{}` write.
+const _WC_BLOCK2_PROGRAM = raw"""
+:- op(700, xfx, {}).
+:- op(1100, fy, {}).
+b3 :- X = '{}'({x}, a, b), write_term(X, [brace_terms(false)]), nl,
+    write_term(f(X), [brace_terms(false), quoted(true)]), nl,
+    Y = '{}'({x, y}, a, b), write_term(Y, [brace_terms(false)]), nl, writeq(X), nl.
+"""
+
+@testset "a block operator's block as an operator term (brace_terms(false)), as swipl" begin
+    db = _wc_load(_WC_BLOCK2_PROGRAM)
+    ours = _wc_norm(_wc_run(db, "b3"))
+    @test !occursin("existence_error(procedure", ours)
+    if _R_SWIPL
+        theirs = _wc_swipl(_WC_BLOCK2_PROGRAM, ["b3"])
+        @test length(theirs) == 1 && ours == _wc_norm(theirs[1])
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
 # ── a kernel-only term: `$expr/n` (no symbol head; swipl has no such compound) ──────────────────
 "An engine with the values of `vs` put into term references; `(ld, t)` (reference `t + i - 1` is slot `t + i`)."
 function _wc_engine(vs::Vector{_R})

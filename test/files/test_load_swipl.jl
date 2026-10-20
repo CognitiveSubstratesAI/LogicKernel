@@ -222,6 +222,16 @@ const _TL_CASES = [
     ("dynamic: Name/0 with a variable, a number, a compound",
         ":- dynamic X/0.\n:- dynamic 3/0.\n:- dynamic f(x)/0.\n",
         [("f", 1)]),
+    # a directive's conjunction backtracks into its first goal: `m(X)` leaves a choice point, so
+    # `X > 2` failing on X = 1 retries m/1 (the other "directives" all have a deterministic first goal)
+    ("a directive backtracking into an earlier conjunct",
+        "m(1).\nm(2).\nm(3).\n:- m(X), X > 2.\n",
+        [("m", 1)]),
+    # an ISO built-in called by a directive is system's (lookupBodyProcedure), so a later clause for it
+    # is a modify-static error — not a user procedure linked to system's and then redefined
+    ("an ISO built-in called, then defined",
+        ":- atom(a).\natom(b).\n",
+        Tuple{String, Int}[]),
     ("throw",
         "before(1).\n:- throw(foo).\nafter(1).\n",
         [("before", 1), ("after", 1)]),
@@ -393,6 +403,27 @@ end
             c = c.next
         end
         @test lines == [1, 3]
+    end
+end
+
+# `[].` in a file is SKIPPED ('$valid_term'/1: `Term \== []`), never compiled as the fact `[]/0`. The
+# case table cannot see it: `'[]'/0` names the ATOM '[]', not the reserved `[]` (SWI 7+); so the
+# kernel's side reads user's procedures, and swipl's is asked directly.
+@testset "a `[]` term in a file is skipped ('\$valid_term'): no procedure, as swipl" begin
+    mktempdir() do d
+        path = joinpath(d, "nil.pl")
+        write(path, "[].\n")
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
+        st, _, msgs = LK.load_file!(gd, ld, path)
+        @test st === :ok && isempty(msgs)
+        @test !any(p -> LK.isDefinedProcedure(gd, p), values(LK.MODULE_user(gd).procedures))
+        if _TL_SWIPL !== nothing
+            g = "consult('$path'), findall(N/A, (current_predicate(user:N/A), N == []), L), print(L), nl"
+            @test chomp(read(pipeline(`$_TL_SWIPL -q -g $g -t halt`; stderr=devnull), String)) == "[]"
+        else
+            @test !_TL_SWIPL_REQUIRED
+        end
     end
 end
 

@@ -554,7 +554,10 @@ end
     )
     rc = LK.PL_next_solution(_WF_GD, _WF_LD, qid)
     @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-    @test kind(LK.deRef(_WF_LD, x)) === VAR                  # before the query closes
+    # before the query closes — the CELL the put made of `x`: the Julia variable itself is never bound
+    # (a guard on `x` could not fail; the step-battery re-run, 2026-10-20)
+    xc = LK._cell_var(_WF_LD, Int(pvm.cells[var_key(x)]))
+    @test kind(xc) === VAR && kind(LK.deRef(_WF_LD, xc)) === VAR
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_close_foreign_frame(_WF_LD, fid)
 end

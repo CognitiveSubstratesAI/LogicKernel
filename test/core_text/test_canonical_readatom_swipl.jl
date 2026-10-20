@@ -306,6 +306,8 @@ const _CR_GOALS = [
     "read_term_from_atom('f(X) g', T, [])",
     "read_term_from_atom('X', T, [variable_names(V)]), write(V)",
     "read_term_from_atom('_', T, [variables(V), singletons(S)]), write(V-S)",
+    # variables(_) puts `_` in the variable buffer; variable_names(_) must still leave it out
+    "read_term_from_atom('f(_, X, _)', T, [variables(V), variable_names(N)]), write(N)",
     "read_term_from_atom('f(_A, _A, _B)', T, [singletons(warning)])",
     "read_term_from_atom('f(_A, _A)', T, [singletons(S)]), write(S)",
     "write_canonical(f(X, Y, X))", "write_canonical('\$VAR'(1))",
