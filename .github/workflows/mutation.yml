@@ -110,8 +110,8 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
-      - name: Install the analysis tools (the targets name test/test_static_analysis.jl)
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') }}
+      - name: Install the analysis tools (the targets name test/test_static_analysis.jl or the whole suite)
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
           julia -e 'using Pkg; Pkg.add([
             PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),
@@ -154,8 +154,8 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
-      - name: Install the analysis tools (the targets name test/test_static_analysis.jl)
-        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') }}
+      - name: Install the analysis tools (the targets name test/test_static_analysis.jl or the whole suite)
+        if: ${{ contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'test_static_analysis') || contains(format('{0} {1}', inputs.targets, needs.plan.outputs.targets), 'mutate_suite') }}
         run: |
           julia -e 'using Pkg; Pkg.add([
             PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="master"),

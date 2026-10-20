@@ -42,6 +42,10 @@ jobs:
       # test/runtests.jl writes JUnit XML here for Codecov Test Analytics (test/junit_report.jl)
       LOGICKERNEL_JUNIT: ${{ github.workspace }}/junit.xml
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
+      # Pkg.test's isolated environment has no JET/Aqua/AllocCheck: the ONE job allowed to skip the
+      # static analysis, and it says so (test/test_static_analysis.jl: under CI a missing tool is an
+      # error everywhere else; the skip leaves a ::warning annotation). The `analysis` job runs it.
+      LOGICKERNEL_STATIC_ANALYSIS_OPTOUT: 'pkg-test'
     # A job-level `permissions:` block REPLACES the default token scopes, so every scope a step
     # needs is listed: `id-token: write` lets codecov-action authenticate with GitHub OIDC (see the
     # upload step); `actions: write` lets julia-actions/cache delete old caches (its README).

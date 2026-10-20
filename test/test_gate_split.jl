@@ -994,11 +994,37 @@ MUTANTS = [
         action = read(joinpath(_GS_ROOT, ".github", "actions", "oracle", "action.yml"), String)
         @test occursin(raw"key=${ImageOS:?", action)
     end
+    # UNDER CI A MISSING ANALYSIS TOOL IS AN ERROR (test/test_static_analysis.jl's header): the real file
+    # in a fresh process with the global environment off the load path (so JET, Aqua, AllocCheck are
+    # missing) — CI without the opt-out fails with an ::error, the named opt-out skips with a ::warning,
+    # and a local run that is not required skips without an annotation
+    @testset "test_static_analysis.jl: under CI a missing tool fails, the pkg-test opt-out warns" begin
+        f = joinpath(_GS_ROOT, "test", "test_static_analysis.jl")
+        jl = joinpath(Sys.BINDIR, Base.julia_exename())
+        function sa(env...)
+            cmd = addenv(
+                `$jl --project=$_GS_ROOT --startup-file=no $f`, "JULIA_LOAD_PATH" => "@:@stdlib",
+                "LOGICKERNEL_REQUIRE_TOOLS" => "", "LOGICKERNEL_STATIC_ANALYSIS_OPTOUT" => "", env...
+            )
+            out = IOBuffer()
+            p = run(pipeline(ignorestatus(cmd); stdout=out, stderr=out))
+            return p.exitcode, String(take!(out))
+        end
+        rc, out = sa("CI" => "true")
+        @test rc == 1 && occursin("::error title=static analysis::REQUIRED but missing: JET", out)
+        rc, out = sa("CI" => "true", "LOGICKERNEL_STATIC_ANALYSIS_OPTOUT" => "pkg-test")
+        @test rc == 0 && occursin("::warning title=static analysis::SKIPPED", out)
+        rc, out = sa("CI" => "")
+        @test rc == 0 && !occursin("::", out)
+        rc, out = sa("CI" => "", "LOGICKERNEL_REQUIRE_TOOLS" => "1")      # the local requirement as before
+        @test rc == 1 && occursin("is required here", out)
+    end
     # A WHOLE-SUITE mutation target (tools/mutate_suite.sh) needs swipl-devel at the pin in the lane:
     # test/test_vendored_plunit.jl fails in CI without it, and the battery's baseline with it
     @testset "the mutation lane checks swipl-devel out for a whole-suite target" begin
         mut = read(joinpath(_GS_ROOT, ".github", "workflows", "mutation.yml"), String)
-        @test count("'mutate_suite'", mut) == 2 && count("path: .upstream/swipl-devel", mut) == 2
+        # the checkout and the analysis tools, in the baseline and the mutant job each
+        @test count("'mutate_suite'", mut) == 4 && count("path: .upstream/swipl-devel", mut) == 2
         @test occursin("LOGICKERNEL_UPSTREAM_SWIPL_DEVEL:", mut)
         suite = joinpath(_GS_ROOT, "tools", "mutate_suite.sh")
         @test isfile(suite) && (filemode(suite) & 0o111) != 0
