@@ -481,7 +481,9 @@ LK_TERM_IMPL == "reference" &&
     @test kind(LK.deRef(ld, X)) === VAR                              # the caller's never is
     # bindings are followed: an engine variable bound is put as its value
     s4 = LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
-    @test LK.unify_ptrs(ld, x1, _ys(:b)) && kind(child(s4, 2)) === VAR  # bound AFTER the put: a copy
+    # bound AFTER the put: the copy's cell stays unbound (deRef'd — the variable term alone is VAR
+    # whatever its cell holds; the vacuous-guard sweep, 2026-10-20)
+    @test LK.unify_ptrs(ld, x1, _ys(:b)) && kind(LK.deRef(ld, child(s4, 2))) === VAR
     s5 = LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
     @test lk_name(d(child(s5, 2))) === :b                            # bound BEFORE: its value
     # a ground value comes back as the same value (`==`, not `===`): since L1c it is copied onto

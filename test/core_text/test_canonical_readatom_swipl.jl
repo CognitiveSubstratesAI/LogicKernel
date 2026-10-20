@@ -531,7 +531,24 @@ end
     x = _cr_var()
     r, _ = _cr_run("write_canonical", _CR[mk_expr(_CR, _CR[_crs("f"), x, x])])
     @test r == ["f(A,A)", "", "true", ""]
-    @test kind(LK.deRef(_CR_LD, x)) === VAR
+    # …and unbound again INSIDE the query, after write_canonical/1 succeeded — the CELL the put made of
+    # `x`: the Julia variable itself is never bound (a guard on it could not fail; the vacuous-guard
+    # sweep, 2026-10-20)
+    LK.set_standard_stream!(_CR_LD, LK.SNO_USER_OUTPUT, IOBuffer())
+    proc = LK.isCurrentProcedure(sym_key(_crs("write_canonical")), 1, LK.MODULE_system(_CR_GD))
+    fid = LK.PL_open_foreign_frame(_CR_LD)
+    a = LK.PL_new_term_refs(_CR_LD, 1)
+    pvm = LK.PutVarMap()
+    LK.putSlotValue!(_CR_LD, a + 1, mk_expr(_CR, _CR[_crs("f"), x, x]), pvm)
+    qid = LK.PL_open_query(
+        _CR_GD, _CR_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    rc = LK.PL_next_solution(_CR_GD, _CR_LD, qid)
+    @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+    xc = LK._cell_var(_CR_LD, Int(pvm.cells[var_key(x)]))
+    @test kind(xc) === VAR && kind(LK.deRef(_CR_LD, xc)) === VAR
+    LK.PL_close_query(_CR_LD, qid)
+    LK.PL_discard_foreign_frame(_CR_LD, fid)
     @test _CR_LD.var_names_numbervars_frame == 0
     @test isempty(_CR_LD.numbervars_made) && isempty(_CR_LD.numbervars_visited)
 end
