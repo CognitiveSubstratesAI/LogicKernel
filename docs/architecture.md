@@ -102,7 +102,8 @@ fallback that names another commit), the partition check (a unit run by no job, 
 another type, outside the suite; two suites; an empty one; a job that failed, died or was dropped; a
 job run as the wrong slice; a static-analysis shard with no counts, a zero count, counts that do not
 sum, a one-off gate run twice or never), the slices themselves (test/ci_slices.jl: total, independent
-of order, balanced) and the mutant verdicts (each of the eight outcomes, and what blocks).
+of order, balanced), the tooling shards (declared, in CI.yml's matrix, covering every mode of test_warm.sh;
+the gather on a dropped, empty, red, unreadable, skipped and mis-summed shard) and the mutant verdicts (each of the eight outcomes, and what blocks).
 
 ## A full run of `tools/run_tests.sh` is the local gate
 
@@ -753,6 +754,7 @@ fixed it or a public issue exists.
 | `tools/githooks/commit-msg` | git's commit-msg hook: a commit message must start with a category (`ADDED:` … `UPSTREAM:`); installed with `git config core.hooksPath tools/githooks` | — |
 | `test/test_commit_msg_hook.jl` | the commit-msg hook's contract, both sides (26 cases) | — |
 | `test/test_manifest_entries.jl` | `_manifest_entries` (static_analysis_manifest.jl) unit-tested on a sample: every entry kept, in order, each with its own allocation flag — without the analysis tools, so in every suite (its mutants were caught only by the static analysis's AllocCheck pass, which ran past an hour) | — |
+| `tools/test_warm_shards.tsv` | How CI spreads tools/test_warm.sh (D-0059, 2026-10-20): the shards (`tools/test_warm.sh shard NAME` runs that line's modes and sums their totals) and `total`, the whole run's pass count. CI.yml's `tooling` matrix names the same shards; the gather `tooling_gather` (named as main's ruleset requires, `Tooling suites (warm lane, evidence, oracle cache)`) runs `tools/evidence_ci.py warm`: a shard missing, empty or red fails it, and so do passes that do not sum to `total`. test/test_gate_split.jl holds the declaration, the matrix and the script's modes equal. | — |
 | `test/ci_slices.jl`, `test/unit_costs.tsv` | CI's slices of one run (D-0059): `LOGICKERNEL_FILE_GROUP=k/G` (test files in G groups balanced by the cost table, longest first) and `LOGICKERNEL_SA_SHARD=k/N` (every N-th manifest entry and one-off gate of the static analysis); the cost table is the Verdict table's `unit-costs` artifact, never hand-edited | — |
 | `tools/evidence_ci.py` | the gather of a run spread over jobs: Evidence's Verdict table and per-type gathers, the static analysis's shards (their counts summing to the manifest's, each non-zero, every one-off gate run once), CI.yml's Pkg.test groups; every unit run exactly once by a job of its type — planted cases in test/test_gate_split.jl | — |
 | `tools/mutate_suite.sh` | the whole suite as ONE mutation target (`sh:tools/mutate_suite.sh`), on the reference type, as Evidence's slices run in parallel processes (2 file groups + 2 static-analysis shards, 3 at a time); exit 1 when a slice failed a test | — |

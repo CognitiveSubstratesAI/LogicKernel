@@ -1253,6 +1253,82 @@ MUTANTS = [
         jl = joinpath(Sys.BINDIR, Base.julia_exename())
         @test success(addenv(`python3 $tool --selftest`, "JULIA" => jl))
     end
+    # THE TOOLING SHARDS (D-0059, 2026-10-20): tools/test_warm.sh is run as `shard NAME` jobs;
+    # tools/evidence_ci.py `warm` judges what they wrote, and the declaration, the matrix of CI.yml and
+    # the script's own modes must agree — a mode in no shard would be a suite that silently stopped running
+    @testset "the tooling shards: declared, in CI.yml's matrix, covering every mode, and gathered" begin
+        shards_tsv = joinpath(_GS_ROOT, "tools", "test_warm_shards.tsv")
+        rows = [split(l, '\t') for l in eachline(shards_tsv) if !isempty(l) && l[1] != '#']
+        declared = [(String(r[2]), split(r[3])) for r in rows if r[1] == "shard"]
+        total = only([parse(Int, r[2]) for r in rows if r[1] == "total"])
+        names = first.(declared)
+        @test length(names) >= 2 && length(unique(names)) == length(names) && total > 0
+        # the matrix of CI.yml: the shard list under `tooling:`
+        ci = read(joinpath(_GS_ROOT, ".github", "workflows", "CI.yml"), String)
+        m = match(r"\n  tooling:\n.*?\n        shard:\n((?:          - \S+\n)+)"s, ci)
+        @test m !== nothing
+        matrix = if m === nothing
+            String[]
+        else
+            [strip(l)[3:end] for l in split(m[1], '\n') if !isempty(l)]
+        end
+        @test matrix == names
+        # every mode of the script is in exactly one shard (`main` too), and no shard names another
+        script = read(joinpath(_GS_ROOT, "tools", "test_warm.sh"), String)
+        modes = [m[1] for m in eachmatch(r"(?m)^#   tools/test_warm.sh (\w+)\s", script)]
+        expected = sort!(setdiff(unique(modes), ["shard"]))
+        in_shards = sort!(vcat([collect(String, mo) for (_, mo) in declared]...))
+        @test "main" in expected && length(expected) >= 13
+        @test in_shards == expected
+        # the gather, on planted shard results
+        tool = joinpath(_GS_ROOT, "tools", "evidence_ci.py")
+        results = Dict(n => "test_warm (shard $n): 10 passed, 0 failed\n" for n in names)
+        function warm(edit=identity; tot=length(names) * 10)
+            r = copy(results)
+            edit(r)
+            mktempdir() do d
+                foreach(((n, t),) -> write(joinpath(d, "warm_$n.txt"), t), r)
+                decl = joinpath(d, "decl.tsv")
+                write(
+                    decl,
+                    join(["shard\t$n\t$(join(mo, ' '))\n" for (n, mo) in declared]) *
+                    "total\t$tot\n"
+                )
+                out = joinpath(d, "out.txt")
+                code = run(
+                    pipeline(ignorestatus(`python3 $tool warm $d $decl`); stdout=out)
+                ).exitcode
+                (code=code, out=read(out, String))
+            end
+        end
+        r = warm()
+        @test r.code == 0 && occursin("$(length(names)) shards", r.out)         # the control
+        r = warm(x -> delete!(x, names[2]))
+        @test r.code == 1 && occursin("shard $(names[2]): no result", r.out)      # a DROPPED shard
+        r = warm(
+            x -> (x[names[1]] = "test_warm (shard $(names[1])): 10 passed, 1 failed\n")
+        )
+        @test r.code == 1 && occursin("shard $(names[1]): 1 case(s) failed", r.out)
+        r = warm(x -> (x[names[1]] = "test_warm (shard $(names[1])): 0 passed, 0 failed\n"))
+        @test r.code == 1 && occursin("shard $(names[1]) ran no case", r.out)
+        r = warm(x -> (x[names[1]] = "garbage\n"))
+        @test r.code == 1 && occursin("shard $(names[1]): unreadable", r.out)
+        r = warm(
+            x -> (x[names[1]] = "test_warm (shard $(names[2])): 10 passed, 0 failed\n")
+        )
+        @test r.code == 1 && occursin("shard $(names[1]): unreadable", r.out)   # another shard's line
+        r = warm(; tot=length(names) * 10 + 1)
+        @test r.code == 1 && occursin("the whole run passes", r.out)             # the sum is off
+        r = warm(x -> foreach(n -> x[n] = "skipped\n", names))
+        @test r.code == 0 && occursin("every shard skipped", r.out)               # no tooling change
+        r = warm(x -> (x[names[1]] = "skipped\n"))
+        @test r.code == 1 && occursin("were skipped but", r.out)                  # some skipped, some ran
+        # the script's own dispatcher refuses a shard it does not declare
+        sh = joinpath(_GS_ROOT, "tools", "test_warm.sh")
+        @test run(
+            pipeline(ignorestatus(`bash $sh shard nosuch`); stdout=devnull, stderr=devnull)
+        ).exitcode == 2
+    end
     # THE RUNNER IMAGE IS PINNED (CI.yml's note above `jobs:`): no job, no matrix entry on a moving
     # `-latest` image; the oracle's cache key names the image. The scan must see every `runs-on`.
     @testset "the CI runner images are pinned, never -latest" begin

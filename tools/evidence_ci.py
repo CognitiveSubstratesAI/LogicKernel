@@ -9,6 +9,7 @@
 #   evidence_ci.py term DIR TERM GROUPS        one term type's file groups (its job, `reference` …)
 #   evidence_ci.py sa DIR SHARDS               the static analysis's shards alone
 #   evidence_ci.py pkgtest DIR VERSION GROUPS  CI.yml's Pkg.test file groups of one Julia version
+#   evidence_ci.py warm DIR                    CI.yml's tooling shards of tools/test_warm.sh
 #
 # DIR holds what the jobs uploaded (test/runtests.jl's LOGICKERNEL_UNITS_OUT; the static analysis's
 # LOGICKERNEL_SA_COUNTS_OUT; each job's verdict row):
@@ -24,6 +25,7 @@
 # Writes unit_counts.tsv (each unit's passes) and unit_costs.tsv (seconds per file, the replacement
 # for test/unit_costs.tsv) into DIR. Exit 1 on any failure, with every problem named.
 import os
+import re
 import sys
 
 TERMS = ("reference", "alt", "alt_interned")
@@ -277,7 +279,65 @@ def pkgtest(d, version, groups):
     return g.report("Julia %s — Pkg.test, %d file groups" % (version, groups), summary)
 
 
-USAGE = "usage: evidence_ci.py verdict DIR GROUPS SHARDS | term DIR TERM GROUPS | sa DIR SHARDS | pkgtest DIR VERSION GROUPS"
+def warm_declared(path):
+    """tools/test_warm_shards.tsv: ([(shard, modes)], total passes of the whole run)."""
+    shards, total = [], None
+    for line in open(path):
+        f = line.rstrip("\n").split("\t")
+        if f[0] == "shard" and len(f) == 3:
+            shards.append((f[1], f[2].split()))
+        elif f[0] == "total" and len(f) == 2:
+            total = int(f[1])
+    return shards, total
+
+
+def warm(d, declared):
+    """The tooling shards of tools/test_warm.sh: each declared shard wrote its result (or all say
+    `skipped`: no tooling file changed), none failed or ran nothing, and the passes sum to the whole run's."""
+    g = Gather(d)
+    shards, total = warm_declared(declared)
+    if not shards or total is None:
+        g.problems.append("%s declares no shards or no total" % declared)
+    got, skipped, npass = {}, [], 0
+    for name, _ in shards:
+        path = os.path.join(d, "warm_%s.txt" % name)
+        if not os.path.isfile(path):
+            g.rows.append("| %s | **NO VERDICT** | — |" % name)
+            g.problems.append("shard %s: no result (the job died before writing one)" % name)
+            continue
+        last = (open(path).read().strip().splitlines() or [""])[-1]
+        if last.strip() == "skipped":
+            skipped.append(name)
+            g.rows.append("| %s | skipped | — |" % name)
+            continue
+        m = re.match(r"^test_warm \(shard (\S+)\): (\d+) passed, (\d+) failed$", last)
+        if not m or m.group(1) != name:
+            g.rows.append("| %s | **UNREADABLE** | — |" % name)
+            g.problems.append("shard %s: unreadable result %r" % (name, last[:80]))
+            continue
+        p, f = int(m.group(2)), int(m.group(3))
+        got[name] = p
+        npass += p
+        g.rows.append("| %s | %s | %d passed |" % (name, "passed" if f == 0 else "**FAILED**", p))
+        if f:
+            g.problems.append("shard %s: %d case(s) failed" % (name, f))
+        if p == 0:
+            g.problems.append("shard %s ran no case" % name)
+    summary = []
+    if skipped and got:
+        g.problems.append("shards %s were skipped but %s ran" % (", ".join(skipped), ", ".join(sorted(got))))
+    elif skipped:
+        if len(skipped) == len(shards):
+            summary.append("no tooling file changed — every shard skipped")
+    elif got:
+        if len(got) == len(shards) and npass != total:
+            g.problems.append(
+                "the shards passed %d cases, the whole run passes %d (tools/test_warm_shards.tsv `total`)" % (npass, total))
+        summary.append("%d shards, %d cases passed (the whole run: %s)" % (len(got), npass, total))
+    return g.report("Tooling suites — %d shards of tools/test_warm.sh" % len(shards), summary)
+
+
+USAGE = "usage: evidence_ci.py verdict DIR GROUPS SHARDS | term DIR TERM GROUPS | sa DIR SHARDS | pkgtest DIR VERSION GROUPS | warm DIR"
 
 if __name__ == "__main__":
     a = sys.argv[1:]
@@ -290,6 +350,8 @@ if __name__ == "__main__":
             sys.exit(sa(a[1], int(a[2])))
         if a[:1] == ["pkgtest"] and len(a) == 4:
             sys.exit(pkgtest(a[1], a[2], int(a[3])))
+        if a[:1] == ["warm"] and len(a) in (2, 3):
+            sys.exit(warm(a[1], a[2] if len(a) == 3 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "test_warm_shards.tsv")))
     except ValueError:
         pass
     sys.exit(USAGE)

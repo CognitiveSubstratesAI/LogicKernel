@@ -308,10 +308,23 @@ jobs:
   # when it is green too (tools/githooks/pre-push: every run on the SHA completed and green).
   # It always RUNS and decides inside whether the tooling changed — GitHub's `paths:` filter is
   # unreliable on a newly pushed branch — and an undecidable diff runs everything (fails closed).
+  # SHARDED (D-0059, 2026-10-20): tools/test_warm.sh is ~21 min, the longest job of a tooling change. The
+  # matrix below is tools/test_warm_shards.tsv's shard list (test/test_gate_split.jl holds the two equal);
+  # the gather `tooling_gather` carries the old job's name, which main's ruleset requires, and
+  # tools/evidence_ci.py `warm` fails it when a shard is missing, empty or red or the passes do not sum.
   tooling:
-    name: Tooling suites (warm lane, evidence, oracle cache)
+    name: Tooling · ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - main
+          - stale
+          - fast
+          - state
+          - light
     permissions:
       contents: read
       actions: write
@@ -409,15 +422,54 @@ jobs:
           git config --global credential.https://github.com.helper \
             '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
           echo "GH_TOKEN=$GH_TOKEN" >> "$GITHUB_ENV"
+      # the small suites run once, in the `light` shard
       - name: tools/test_coverage_zero.sh
-        if: steps.changed.outputs.run == 'true'
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_coverage_zero.sh
       - name: tools/test_oracle_cache.sh
-        if: steps.changed.outputs.run == 'true'
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_oracle_cache.sh
       - name: tools/test_evidence.sh
-        if: steps.changed.outputs.run == 'true'
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_evidence.sh
-      - name: tools/test_warm.sh
+      - name: tools/test_warm.sh shard
         if: steps.changed.outputs.run == 'true'
-        run: tools/test_warm.sh
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mkdir -p warm-out
+          tools/test_warm.sh shard "$SHARD" 2>&1 | tee "warm-out/log_$SHARD.txt"
+          exit "${PIPESTATUS[0]}"
+      # the result the gather reads: the shard's totals line, or `skipped` when no tooling file changed
+      - name: Record this shard's result
+        if: ${{ !cancelled() }}
+        env:
+          SHARD: ${{ matrix.shard }}
+          CHANGED: ${{ steps.changed.outputs.run }}
+        run: |
+          mkdir -p warm-out
+          if [ "$CHANGED" != true ]; then
+              echo skipped > "warm-out/warm_$SHARD.txt"
+          elif [ -f "warm-out/log_$SHARD.txt" ]; then
+              grep -E '^test_warm \(shard ' "warm-out/log_$SHARD.txt" | tail -1 > "warm-out/warm_$SHARD.txt" || true
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: warm-${{ matrix.shard }}
+          path: warm-out/
+
+  tooling_gather:
+    name: Tooling suites (warm lane, evidence, oracle cache)
+    needs: tooling
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: warm-*
+          path: warm-out
+          merge-multiple: true
+      - name: Every shard ran, none failed, the passes sum to the whole run's
+        run: python3 tools/evidence_ci.py warm warm-out

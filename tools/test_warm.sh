@@ -17,6 +17,13 @@
 #   tools/test_warm.sh stale    # the stale-daemon recovery cases alone
 #   tools/test_warm.sh refuse   # the pkgdir assertion's refusal alone (no daemon)
 #   tools/test_warm.sh inventory # the upstream forwarding and the `inventory` cases alone
+#   tools/test_warm.sh main     # the whole flow EXCEPT the cases that are modes of their own (below)
+#   tools/test_warm.sh shard NAME # one CI shard (tools/test_warm_shards.tsv): its modes in turn, totals summed
+#
+# THE SHARDS (D-0059, 2026-10-20): CI runs the suite as several jobs, one `shard NAME` each. The default
+# run (no argument) is `main` + every other mode in one process, so the shards' passes sum to the default
+# run's by construction; tools/test_warm_shards.tsv declares the shards and that total, and
+# tools/evidence_ci.py `warm` fails a run with a shard missing, empty or red, or the sum off.
 #
 # What a lane must never do, case by case: report a failure as success; run code Revise failed to
 # load and present the result as fresh; run a file on fewer implementations than the suite does.
@@ -36,6 +43,28 @@ export LOGICKERNEL_GATE_BASE=HEAD
 # not this tree's: with main red, every preflight case here failed on it (886e761's own CI, the fix for
 # that red main — a deadlock). The check itself is covered hermetically (test/test_gate_split.jl's stubs)
 export LOGICKERNEL_CI_CHECK=off
+if [ "${1:-}" = shard ]; then                        # one CI shard: its modes in turn, the totals summed
+    name="${2:-}"
+    groups="$(awk -F'\t' -v n="$name" '$1 == "shard" && $2 == n { print $3 }' "$ROOT/tools/test_warm_shards.tsv")"
+    [ -n "$groups" ] || { echo "test_warm: no shard '$name' in tools/test_warm_shards.tsv"; exit 2; }
+    sp=0 sf=0
+    for m in $groups; do
+        out="$("$0" "$m" 2>&1)"; rc=$?
+        printf '%s\n' "$out"
+        line="$(printf '%s\n' "$out" | grep -E '^test_warm( \([a-z]+\))?: [0-9]+ passed, [0-9]+ failed$' | tail -1)"
+        if [ -z "$line" ]; then
+            echo "test_warm (shard $name): mode $m printed no totals (exit $rc)"; sf=$((sf + 1)); continue
+        fi
+        sp=$((sp + $(printf '%s' "$line" | sed -E 's/.*: ([0-9]+) passed, ([0-9]+) failed/\1/')))
+        mf=$(printf '%s' "$line" | sed -E 's/.*: ([0-9]+) passed, ([0-9]+) failed/\2/')
+        sf=$((sf + mf))
+        [ "$rc" -eq 0 ] || [ "$mf" -gt 0 ] || sf=$((sf + 1))
+    done
+    echo "test_warm (shard $name): $sp passed, $sf failed"
+    [ "$sf" -eq 0 ]; exit $?
+fi
+MAIN_ONLY=0; [ "${1:-}" = main ] && MAIN_ONLY=1       # `main`: the cases that are modes of their own are skipped
+_unless_main() { [ "$MAIN_ONLY" = 1 ] || "$@"; }
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
 trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
@@ -679,7 +708,7 @@ chmod +x "$T/fakebin/swipl"
 PATH="$T/fakebin:$PATH" "$W" start > /dev/null 2>&1; check "start REFUSES a swipl that is not the pin" 1 $?
 "$W" send "$T/s.jl" > /dev/null 2>&1; check "…and starts no daemon" 3 $?
 
-_refuse_cases                                        # the pkgdir assertion (user, 2026-10-16)
+_unless_main _refuse_cases                           # the pkgdir assertion (user, 2026-10-16)
 
 "$W" start || { echo "test_warm: the lane did not start"; exit 1; }
 
@@ -719,9 +748,9 @@ rm -f "$probe_test"
 has "…past format and port_check" "$T/pf" "port_check clean" 1
 has "…by that file's own failure" "$T/pf" "planted: Test Failed" 1
 
-_stale_cases
+_unless_main _stale_cases
 
-_fast_cases
+_unless_main _fast_cases
 rm -f "$T/term_interface.jl.bak"
 "$W" restart > /dev/null 2>&1
 
@@ -852,10 +881,10 @@ for fault in format-empty format-cut; do
     [ $(( $(date +%s) - s )) -lt 120 ]; check "…before the slow gate" 0 $?
 done
 
-_rss_cases
-_noswipl_cases
+_unless_main _rss_cases
+_unless_main _noswipl_cases
 echo 'println("ok")' > "$T/ok.jl"
-_struct_cases
+_unless_main _struct_cases
 
 # NO BACKTICK IN AN UNQUOTED HEREDOC (measured 2026-10-14): the snippets tools/warm.sh writes with
 # `<<JL` expand `$ROOT`, so a backtick in their Julia text is COMMAND SUBSTITUTION. A comment naming
@@ -871,7 +900,7 @@ check "…the count sees a planted backtick (the control)" 1 "$_bt_fixture"
 "$W" file test/test_lint_globals.jl alt > "$T/ng" 2>&1; check "file: alt on a non-generic file is refused" 2 $?
 has "…saying why" "$T/ng" "is not term-generic" 1
 
-_inventory_cases
+_unless_main _inventory_cases
 
 # (user, 2026-10-16) `fmt` formats the changed .jl files IN PLACE (write mode): an untracked file
 # written unformatted comes back Blue-formatted, and a second run rewrites nothing
@@ -887,12 +916,13 @@ has "…naming it" "$T/fmt" "fmt: formatted tools/zz_fmt_probe.jl" 1
 has "…and rewrites nothing" "$T/fmt2" "fmt: 0 file(s) rewritten" 1
 rm -f "$_fm_probe"
 
-_guard_cases
-_cap_cases
-_bgfiles_cases
-_gatebase_cases
-_srcmap_cases
-_bgbudget_cases
+_unless_main _guard_cases
+_unless_main _cap_cases
+_unless_main _bgfiles_cases
+_unless_main _gatebase_cases
+_unless_main _srcmap_cases
+_unless_main _bgbudget_cases
 
-echo "test_warm: $pass passed, $fail failed"
+if [ "$MAIN_ONLY" = 1 ]; then echo "test_warm (main): $pass passed, $fail failed"
+else echo "test_warm: $pass passed, $fail failed"; fi
 [ "$fail" -eq 0 ]
