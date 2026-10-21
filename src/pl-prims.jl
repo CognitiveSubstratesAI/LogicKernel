@@ -2418,34 +2418,66 @@ Unbound variables stay; ground subterms are shared, not copied. Raises an `Argum
 cyclic binding.
 """
 function resolve_term(ld::PL_local_data{T}, t::T)::T where {T}
+    return _resolve_term(ld, t, false)
+end
+
+# `cut`: a variable bound to a compound already on the path is kept as the variable (the caller's, if it
+# was imported) instead of raising, and the compounds of that cycle are kept AS THEMSELVES (one level deep,
+# their children cells' variables) so the cycle closes on the same term — the exception ball's cycle
+# (f3b-1, `_slot_compound_term`; test_write_family_swipl.jl: `deRef(child(t, 3)) === t`).
+function _resolve_term(ld::PL_local_data{T}, t::T, cut::Bool)::T where {T}
     t = deRef(ld, t)
+    kind(t) === VAR && return _caller_var(ld, t)
     (kind(t) !== EXPR || is_ground(t)) && return t
     stack = Tuple{T, Vector{T}}[(t, T[])]           # (compound, its children resolved so far)
     on_path = IdDict{T, Nothing}(t => nothing)      # compounds being resolved: a revisit is a cycle
+    cyc = Bool[false]                               # (cut) the frame is on a cycle: kept as the compound itself
     while true
         node, kids = stack[end]
         i = length(kids) + 1
         if i > nchildren(node)
             pop!(stack)
             delete!(on_path, node)
-            r = mk_expr(T, kids)
+            r = pop!(cyc) ? node : mk_expr(T, kids)    # a node on a cycle stays the compound the cycle closes on
             isempty(stack) && return r
             push!(stack[end][2], r)
             continue
         end
-        c = deRef(ld, child(node, i))
+        c0 = child(node, i)
+        c = deRef(ld, c0)
         if kind(c) === EXPR && !is_ground(c)
-            haskey(on_path, c) && throw(
-                ArgumentError(
-                    "resolve_term: a cyclic binding (a rational tree) has no interface term"
+            if haskey(on_path, c)
+                if cut && kind(c0) === VAR
+                    j = something(findlast(f -> f[1] === c, stack))     # the frames from the revisited node down are the cycle
+                    cyc[j:end] .= true
+                    push!(kids, _caller_var(ld, c0))
+                    continue
+                end
+                throw(
+                    ArgumentError(
+                        "resolve_term: a cyclic binding (a rational tree) has no interface term"
+                    )
                 )
-            )
+            end
             on_path[c] = nothing
             push!(stack, (c, T[]))
+            push!(cyc, false)
         else
-            push!(kids, c)
+            push!(kids, kind(c) === VAR ? _caller_var(ld, c) : c)
         end
     end
+end
+
+# ORIGINAL (f3b-1, TRANSITIONAL — with the stamp, f3): an answer leaves the engine with the variable the
+# CALLER passed. A keyed caller variable written into a cell is bound to a fresh cell
+# (`_import_var!`); that cell's variable is the engine's representative, and the term-level readers hand the
+# caller's own variable back, as they did when the writers stored it (a value-table word, a side value).
+"The keyed variable the cell variable `v` was imported for, else `v`."
+@inline function _caller_var(ld::PL_local_data{T}, v::T)::T where {T}
+    isempty(ld.import_origin) && return v
+    k = var_key(v)
+    o = get(ld.import_origin, k, k)
+    return o == k ? v : mk_var(T, o)
 end
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════

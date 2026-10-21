@@ -475,6 +475,12 @@ LK_TERM_IMPL == "reference" &&
         var_key(d(child(s1, 3))) != var_key(d(s2))
     # the map holds each variable's CELL (L1f f3b-1): X's is the one both puts reference (slot a+2 has X)
     @test LK._deref_loc(ld, -(a + 2)) == (LK.DU_CELL, LK.word(0), vm.cells[var_key(X)])
+    # a later COMPOUND through the same map reuses X's cell too (not only a bare variable put): its
+    # argument is the cell slot a+2 holds, and the map's entry is unchanged
+    xcell = vm.cells[var_key(X)]
+    LK.putSlotValue!(ld, a + 3, _yf(:h, X), vm)
+    @test var_key(d(child(LK.slotValue(ld, a + 3), 2))) == var_key(d(s2)) &&
+        vm.cells[var_key(X)] == xcell
     # within one put, a variable met twice is one variable
     LK.putSlotValue!(ld, a + 3, _yf(:g, X, X))
     s3 = LK.slotValue(ld, a + 3)

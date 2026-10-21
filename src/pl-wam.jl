@@ -1692,6 +1692,7 @@ function _end_query(ld::PL_local_data{T}, qid::Int, close::Bool)::Int where {T}
         end
         q = ld.queries[qf]
         @assert q.magic == QID_MAGIC
+        q.exception != 0 && (ld.ball_word = UInt64(0))     # (f3b-1, TRANSITIONAL: goes with the stamp, f3) the query's ball goes with it
         if q.foreign_frame != 0
             PL_close_foreign_frame(ld, q.foreign_frame)
         end
@@ -4303,6 +4304,7 @@ function PL_next_solution_guarded(
     DiscardMark(ld, ld.choices[br_q.choice].mark)
     br_q.foreign_frame = PL_open_foreign_frame(ld)
     br_q.exception = PL_copy_term_ref(ld, ld.exception_term)
+    ld.ball_word = ld.slots[br_q.exception + 1]     # (f3b-1, TRANSITIONAL: goes with the stamp, f3) `slotValue` reads this word whole
 
     @SAVE_REGISTERS(QID)
     resumeAfterException(ld, (br_q.flags & PL_Q_PASS_EXCEPTION) == 0, bt_outofstack)

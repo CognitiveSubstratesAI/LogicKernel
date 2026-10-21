@@ -412,7 +412,9 @@ unbound keyed variable was bound to — or `(0, value)` when `v` is bound to a n
         if b === nothing                            # unbound: bound to a fresh cell, its reference
             p = allocGlobalCells!(ld, 1)
             ld.cold_imports += 1
-            Trail!(ld, var_key(t), mk_var(T, _cell_key(ld, p)))
+            ck = _cell_key(ld, p)
+            ld.import_origin[ck] = var_key(t)       # a reader of the cell returns the variable it was made for (TRANSITIONAL: goes with the stamp, f3)
+            Trail!(ld, var_key(t), mk_var(T, ck))
             return (makeRefG(p), v)
         end
         kind(b) === VAR || return (word(0), b)      # bound to a value: the caller writes it
@@ -688,7 +690,10 @@ end
 function _untrail!(ld::PL_local_data, e::word)::Nothing
     if _trail_stack(e) == TRAIL_KEYED
         @assert _trail_pos(e) == length(ld.trail_keys) "trail_keys out of step with the trail"
-        delete!(ld.bindings, pop!(ld.trail_keys))
+        v = pop!(ld.bindings, pop!(ld.trail_keys))
+        # (f3b-1, TRANSITIONAL: goes with the stamp, f3) an import's binding is gone, its cell with it: the cell's key no longer maps back
+        isempty(ld.import_origin) || kind(v) !== VAR ||
+            delete!(ld.import_origin, var_key(v))
     else
         ld.gstack[_trail_pos(e)] = word(0)  # setVar(*p)
     end
@@ -733,9 +738,38 @@ const SLOT_VALUE = TAG_COMPOUND | STG_LOCAL
 @inline function slotValue(ld::PL_local_data{T}, i::Int)::T where {T}
     w = ld.slots[i]
     w == SLOT_VALUE && return ld.slot_values[i]
-    isRef(w) && return _cell_var(ld, unRef(w))
-    _is_gcompound(w) && return _compound_term(ld, valPtr(w))   # the cold export (L1c)
+    if isRef(w)
+        # (f3b-1) the exception bin holds a reference to the ball's cell: the ball is read whole
+        ld.exception_bin != 0 && w == ld.slots[ld.exception_bin + 1] &&
+            return _slot_ball_term(ld, w)
+        return _cell_var(ld, unRef(w))
+    end
+    _is_gcompound(w) && return _slot_compound_term(ld, w)      # the cold export (L1c)
     return _slot_atom(ld, w)
+end
+
+# ORIGINAL (f3b-1): the cold export of a compound slot. The exception's BALL — the compound the exception
+# bin holds — is exported WHOLE: upstream's ball is `duplicate_term`'s copy, a term of its own that needs no
+# bindings to be read, and until f3b-1 it was a value in the bin's side entry (`SLOT_VALUE`), read as one. Any
+# other compound is exported one level (its children the argument cells' variables), as before. A ball
+# that is cyclic through a variable (a rational tree: V5d keeps it) keeps that VARIABLE at the cycle, to be
+# read under the bindings, where the cycle lives (`_resolve_term`).
+"The exception ball the reference `w` (the exception bin's word) names, whole when its cell holds a compound, else the cell's variable."
+@noinline function _slot_ball_term(ld::PL_local_data{T}, w::word)::T where {T}
+    p = unRef(w)
+    cw = ld.gstack[p]
+    _is_gcompound(cw) || return _cell_var(ld, p)
+    return _resolve_term(ld, _compound_term(ld, valPtr(cw)), true)
+end
+
+"The term of the compound slot word `w`: the exception ball whole, any other compound one level deep."
+@noinline function _slot_compound_term(ld::PL_local_data{T}, w::word)::T where {T}
+    t = _compound_term(ld, valPtr(w))
+    return if (w == ld.ball_word || w == ld.slots[ld.exception_bin + 1])
+        _resolve_term(ld, t, true)
+    else
+        t
+    end
 end
 
 # ORIGINAL: the rest of `slotValue`, out of line: an atom word, or a slot never written.

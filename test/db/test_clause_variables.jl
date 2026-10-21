@@ -61,6 +61,21 @@ end
     @test fresh_var_keys!(1) == b + 4                       # blocks never overlap
 end
 
+# f3b-1 (TRANSITIONAL): a caller's variable written into a cell is bound to it, and an answer hands the
+# CALLER's variable back (`resolve_term`); the cell's key maps back only while that binding stands.
+@testset "an imported cell maps back to the caller's variable only while it is bound" begin
+    db = IxDB{_CV}()
+    p = ix_pred(_CV, :p, 2; dynamic=true, db=db)
+    ix_assertz!(p, _cve(:p, _cvv(1), _cve(:f, _cvv(2), _cvv(1))))
+    seen = Int[]
+    for _ in 1:3
+        a = only(ix_clause(p, _cve(:p, _cvv(7), _cvv(8))))
+        push!(seen, length(db.ld.import_origin))             # (after the sink: undone)
+        @test var_key(child(a, 2)) == 7                      # the caller's variable, not its cell's key
+    end
+    @test seen == [0, 0, 0] && isempty(db.ld.import_origin)  # no import outlives its binding
+end
+
 # A per-database counter would start each database at the same key: `q`'s fresh A in db2 would be
 # p's K from db1, so A = f(K) would be the cycle A = f(A), and resolving the answer would raise.
 @testset "a retained answer moves between databases without colliding" begin

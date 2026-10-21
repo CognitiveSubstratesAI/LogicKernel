@@ -113,10 +113,14 @@ end
         ld = _old(OCCURS_CHECK_ERROR)
         e = _oerr(ld, () -> pl_unify!(ld, _oc(:unify, X, _oc(:f, X)), _oc(:unify, A, A)))
         @test e !== nothing && _oball(e, X, _oc(:f, X))
-        # undone before the error: X and A (keyed) are unbound and the trail is empty; the
-        # cells above hold the ball's compounds (L1c: a compound on the global stack; kept
-        # by PL_close_foreign_frame as upstream's frozen ball is), so not `lk_no_bindings`
-        @test isempty(ld.trail) && isempty(ld.bindings)
+        # undone before the error: X and A are unbound (the occurs-check binding is gone); the cells
+        # above hold the ball's compounds (L1c: a compound on the global stack; kept by
+        # PL_close_foreign_frame as upstream's frozen ball is), so not `lk_no_bindings`. f3b-1: a
+        # keyed variable written into a cell is BOUND to that cell (`_import_var!`), so the trail and
+        # the store hold exactly those imports, every one a variable — never a value
+        @test all(v -> kind(LogicKernel.deRef(ld, v)) === VAR, (X, A))
+        @test all(b -> kind(b) === VAR, values(ld.bindings)) &&
+            length(ld.trail) == length(ld.bindings)
     end
     # PORT: test_occurs_check.pl unifiable
     @testset "unifiable" begin                   # error(occurs_check(X, f(X)))

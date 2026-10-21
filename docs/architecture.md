@@ -931,6 +931,7 @@ graph LR
     pl_inline --> pl_atom
     pl_inline --> pl_funct
     pl_inline --> pl_global
+    pl_inline --> pl_prims
     pl_inline --> pl_ressymbol
     pl_inline --> pl_alloc
     pl_inline --> pl_fli
@@ -1579,6 +1580,14 @@ take precedence over the text above them where they differ. The inventory, the m
     binds.
   * The put never asks whether a variable is a live cell, so it adds no stamp site (the L1 ratchet,
     tools/port_check.jl `STAMP_SITES_MAX`).
+  * **TRANSITIONAL, f3b-1 — both go with the stamp in f3 (audit D-0088):**
+    * `ld.import_origin` (an imported cell's key → the keyed variable `_import_var!` made it for;
+      set there, pruned in `_untrail!` when the import's binding is undone; read by `_caller_var`):
+      an answer leaves the engine with the variable the CALLER passed, as it did when the writers
+      stored it. In SWI there is no caller variable to hand back.
+    * `ld.ball_word` (the word of the ball a query copied, set at the query's copy, cleared in
+      `_end_query`): `slotValue` reads the exception ball whole (`_slot_ball_term`,
+      `_slot_compound_term`), every other compound one level deep.
   * The test helpers that read answers through the caller's goal were adapted in the same commit,
     each with a comment citing this decision. No check was weakened: the answer text and the
     sharing between arguments are compared as before.

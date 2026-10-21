@@ -443,15 +443,23 @@ end
     from = LK.argFrameP(to, 5)                              # the arguments pushed above lTop
     xs = [_ls("a"), _lf("f", _lv(1)), lk_gnd(_L, 3)]
     # the values the puts made (a put copies, its variables fresh: the L1b boundary, user
-    # 2026-10-14) are what the frame below must then hold, the same objects
+    # 2026-10-14) are what the frame below must then hold. f3b-1: a put returns nothing and a
+    # compound is cells — the value is read through its slot (one level deep), and "the same
+    # objects" is what copyFrameArguments does: it copies the argument WORDS
     pvm = LK.PutVarMap()
-    ys = [
-        LK.putSlotValue!(ld, LK.argFrameP(from, i - 1) + 1, x, pvm) for
-        (i, x) in enumerate(xs)
-    ]
+    for (i, x) in enumerate(xs)
+        LK.putSlotValue!(ld, LK.argFrameP(from, i - 1) + 1, x, pvm)
+    end
+    ys = [LK.slotValue(ld, LK.argFrameP(from, i - 1) + 1) for i in 1:3]
     @test lk_eq(ys[1], xs[1]) && lk_eq(ys[3], xs[3]) && kind(child(ys[2], 2)) === VAR
     LK.copyFrameArguments(ld, from, to, 3)
-    @test all(i -> LK.slotValue(ld, LK.argFrameP(to, i - 1) + 1) === ys[i], 1:3)
+    @test all(
+        i ->
+            ld.slots[LK.argFrameP(to, i - 1) + 1] ==
+            ld.slots[LK.argFrameP(from, i - 1) + 1],
+        1:3
+    )
+    @test all(i -> lk_eq(LK.slotValue(ld, LK.argFrameP(to, i - 1) + 1), ys[i]), 1:3)
     LK.copyFrameArguments(ld, from, to + 100, 0)            # argc 0: nothing
     @test ld.slots[LK.argFrameP(to + 100, 0) + 1] == 0      # never written (the word 0, L1b C5)
 end

@@ -199,6 +199,10 @@ _manifest_per_type(T) = (
     (LK._slot_new_var!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK._cell_key, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK._cell_var, Tuple{LK.PL_local_data{T}, Int}, false),   # L1c-6: the counted adapter builds the term
+    (LK._resolve_term, Tuple{LK.PL_local_data{T}, T, Bool}, false),   # f3b-1: the ball whole
+    (LK._slot_compound_term, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK._slot_ball_term, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK._caller_var, Tuple{LK.PL_local_data{T}, T}, false),   # f3b-1: an answer's cell variable → the caller's (builds the term)
     (LK.allocGlobalCells!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.setSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),

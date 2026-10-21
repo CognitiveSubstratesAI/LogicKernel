@@ -118,7 +118,10 @@ end
     r = LK.resolve_term(ld, LK.slotValue(ld, s))
     x = LK.deRef(ld, _rv(7))                                    # the keyed variable: its cell's
     @test kind(x) === VAR && var_key(x) != UInt64(7)
-    @test _rsrc(r) == "f(a,g(1,V$(var_key(x))))"                # the variable IS that cell
+    # the answer carries the CALLER's variable (D-0084 item 2; `resolve_term` maps the cell back through
+    # `import_origin`) while the engine's representative of it is that cell (`x`, `deRef`)
+    @test _rsrc(r) == "f(a,g(1,V7))" && haskey(ld.import_origin, var_key(x))
+    @test ld.import_origin[var_key(x)] == UInt64(7)
     g = LK.valPtr(ld.gstack[LK.valPtr(ld.slots[s]) + 2])        # g(1, X)'s functor cell
     @test LK._deref_loc(ld, g + 2)[1] == LK.DU_CELL             # a cell, no boundary word
 end
