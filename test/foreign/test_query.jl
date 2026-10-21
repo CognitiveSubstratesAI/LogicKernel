@@ -225,6 +225,12 @@ end
     qid, a, fid = _yopen(pr, A, A; flags=LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
     @test _ynext(pr, qid) == LK.PL_S_EXCEPTION
     ex = LK.PL_exception(ld, qid)
+    # (f3b-1, D-0088/D-0090) the bin is cleared (PL_Q_CATCH_EXCEPTION), so the query's own copy is the ball's
+    # only holder: `slotValue` reads it WHOLE through `ld.ball_word`, with no `resolve_term` — the nested
+    # `occurs_check(..)` is a compound, not a cell variable. Kills FB16 (ball_word not recorded).
+    tw = LK.slotValue(ld, ex + 1)
+    @test kind(child(tw, 2)) === EXPR && lk_name(child(child(tw, 2), 1)) === :occurs_check
+    @test ld.exception_term == 0 && ld.ball_word != 0 && ld.ball_word == ld.slots[ex + 1]
     e = LK.resolve_term(ld, LK.slotValue(ld, ex + 1))
     @test lk_name(child(e, 1)) === :error &&
         lk_name(child(child(e, 2), 1)) === :occurs_check
@@ -233,7 +239,34 @@ end
     @test lk_eq(child(ctx, 2), _yf("/", _ys(:oc), _yg(2)))
     @test ld.exception_term == 0                                # PL_Q_CATCH_EXCEPTION: cleared
     @test _ynext(pr, qid) == 0                                  # the query is over
+    stale = ld.ball_word
     @test LK.PL_close_query(ld, qid) == 1
+    # WHITE-BOX, and it depends on the allocation layout (f3b-1, D-0090; kills FB17, ball_word not cleared): the
+    # hazard is a STALE `ball_word` matching a later compound at the REUSED address of the ball, which `slotValue`
+    # would then read whole instead of one level deep. The compound is laid out directly at the old ball's address
+    # (one explicit allocation of the gap, no search); the two guards fail loudly if the layout ever stops
+    # putting it there — then REWRITE this test, never loosen or delete it.
+    gap = LK.valPtr(stale) - ld.gTop - 1                        # gTop is the last used cell: the compound starts at gTop + 1
+    @test gap >= 0                                              # guard 1: the address is free again after the close
+    gap > 0 && LK.allocGlobalCells!(ld, gap)
+    pf = LK._alloc_compound!(
+        ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _ys(:f)), 2), 2
+    )
+    wn = LK.consPtr(pf, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    @test wn == stale                                           # guard 2: the new compound IS at the old ball's address
+    pg = LK._alloc_compound!(
+        ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _ys(:g)), 1), 1
+    )
+    ld.gstack[pg + 1] = LK._atom_word!(ld, _ys(:b))
+    ld.gstack[pf + 1] = LK._atom_word!(ld, _ys(:a))
+    ld.gstack[pf + 2] = LK.consPtr(pg, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    fid2 = LK.PL_open_foreign_frame(ld)
+    nb = LK.PL_new_term_ref(ld)
+    ld.slots[nb + 1] = wn
+    tn = LK.slotValue(ld, nb + 1)
+    @test kind(child(tn, 3)) === VAR                            # one level deep: g(b) is a cell variable, not the compound
+    @test ld.ball_word == 0                                     # and the field itself: the query's ball went with it
+    LK.PL_close_foreign_frame(ld, fid2)
     LK.PL_close_foreign_frame(ld, fid)
     qid, a, fid = _yopen(pr, A, A; flags=LK.PL_Q_PASS_EXCEPTION)
     @test _ynext(pr, qid) == 0                                  # no PL_Q_EXT_STATUS: false

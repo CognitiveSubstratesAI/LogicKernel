@@ -973,6 +973,9 @@ function dbg_discardChoicesAfter(
         if k == DU_TERM && p < 0                             # (c) a slot's side value: with its value
             _slot_copy!(ld, ld.exception_bin + 1, -p)
         else
+            # (f3b-1, audit D-0090) the identity today: every writer of the bin stores a DIRECT word (pl-alloc.jl
+            # `outOfStack!`, pl-fli.jl `PL_raise_exception` via `copy_exception!`, pl-attvar.jl `restore_exception`),
+            # so `w` is the word the bin already holds. RE-CHECK when attributed variables enter the port.
             ld.slots[ld.exception_bin + 1] = w               # *valTermRef(exception_bin) = w
         end
         ld.exception_term = ld.exception_bin

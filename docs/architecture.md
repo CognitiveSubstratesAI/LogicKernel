@@ -1587,7 +1587,13 @@ take precedence over the text above them where they differ. The inventory, the m
       stored it. In SWI there is no caller variable to hand back.
     * `ld.ball_word` (the word of the ball a query copied, set at the query's copy, cleared in
       `_end_query`): `slotValue` reads the exception ball whole (`_slot_ball_term`,
-      `_slot_compound_term`), every other compound one level deep.
+      `_slot_compound_term`), every other compound one level deep. The reader that needs it: a query
+      with the bin cleared (`PL_Q_CATCH_EXCEPTION`) — its copy is then the ball's only holder.
+  * **Equivalent today, re-check trigger (audit D-0090, battery mutant FB7):** the ball's restore in
+    `dbg_discardChoicesAfter` (`ld.slots[ld.exception_bin + 1] = w`, src/pl-wam.jl) is the identity,
+    because every writer of the bin stores a direct word (src/pl-alloc.jl `outOfStack!`, src/pl-fli.jl
+    `PL_raise_exception`, src/pl-attvar.jl `restore_exception`). TRIGGER: attributed variables entering the
+    port — then a bin may hold a reference and the restore does work, and FB7 must be killed by a test.
   * The test helpers that read answers through the caller's goal were adapted in the same commit,
     each with a comment citing this decision. No check was weakened: the answer text and the
     sharing between arguments are compared as before.

@@ -56,6 +56,7 @@ MUTANTS = [
          old='''PL_clear_exception(ld)                          # (f3b-1) with its `setVar`: the ball is cells now''',
          new='''ld.exception_term = 0'''),
     dict(id="FB7 dbg_discardChoicesAfter does not restore the ball", file=WAM, targets=TCS,
+         equivalent="src/pl-alloc.jl:115, src/pl-fli.jl:896, src/pl-attvar.jl:57 — every bin writer stores a direct word, so the restore is the identity (re-check when attributed variables enter the port; D-0090 item 3)",
          old='''ld.slots[ld.exception_bin + 1] = w               # *valTermRef(exception_bin) = w''',
          new='''nothing'''),
     # ── the import of a stale variable ──
@@ -63,7 +64,7 @@ MUTANTS = [
          old='''            ld.cold_imports += 1''',
          new='''            nothing'''),
     dict(id="FB9 the fresh cell of an imported stale variable is not trailed", file=INL, targets=TQ + TCC,
-         old='''Trail!(ld, var_key(t), mk_var(T, _cell_key(ld, p)))''',
+         old='''Trail!(ld, var_key(t), mk_var(T, ck))''',
          new='''nothing'''),
     # ── the exception ball read whole, and the caller's variable handed back (D-0087/D-0088; TRANSITIONAL, f3) ──
     dict(id="FB10 the exception ball is exported one level deep, not resolved whole", file=INL, targets=TWF + TOC,
