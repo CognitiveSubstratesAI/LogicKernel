@@ -1386,6 +1386,169 @@ MUTANTS = [
                 occursin("test_warm (shard lying): 5 passed, 1 failed", r.out)
         end
     end
+    # PARALLEL MUTANT RUNS (D-0077 item 6, 2026-10-21): tools/mutate.sh run-parallel splits a mutant list over
+    # 2-3 worktrees (MUTATE_SHARD=k/n) and merges the verdicts. Proved on `sh:` targets, which the driver runs
+    # in the tree without a daemon: two workers run AT ONCE, each mutant is applied in its own worker's tree
+    # only, the merged verdicts equal a serial run's, a malformed shard and a bad worker count are refused,
+    # and the memory rule refuses a machine without the headroom
+    @testset "tools/mutate.sh run-parallel: shards isolated, verdicts equal a serial run's, memory rule" begin
+        drive = joinpath(_GS_ROOT, "tools", "mutate_drive.py")
+        mutate = joinpath(_GS_ROOT, "tools", "mutate.sh")
+        mktempdir() do d
+            list = joinpath(d, "mutants.py")
+            write(
+                list,
+                """
+MUTANTS = [
+    dict(id="P1 one", file="src/x.txt", old="BASE", new="ONE"),
+    dict(id="P2 two", file="src/x.txt", old="BASE", new="TWO"),
+    dict(id="P3 same", file="src/x.txt", old="BASE", new="BASE", equivalent="x.txt - the same text"),
+    dict(id="P4 unread", file="src/y.txt", old="YYY", new="ZZZ"),
+    dict(id="P5 five", file="src/x.txt", old="BASE", new="FIVE"),
+]
+"""
+            )
+            function tree(name)
+                t = joinpath(d, name)
+                mkpath(joinpath(t, ".warm"))
+                mkpath(joinpath(t, "src"))
+                write(joinpath(t, "src", "x.txt"), "BASE")
+                write(joinpath(t, "src", "y.txt"), "YYY")
+                return t
+            end
+            # the target: record what x.txt holds, hold it for a moment (the workers overlap), pass iff BASE
+            target = "sh:echo \"\$(cat src/x.txt)\" >> seen.log; sleep 0.4; [ \"\$(cat src/x.txt)\" = BASE ]"
+            function driver(t, out; shard="")
+                mkpath(out)
+                cmd = setenv(
+                    `python3 $drive $t $list $target`,
+                    "MUTATE_OUT" => out, "MUTATE_SHARD" => shard,
+                    "PATH" => ENV["PATH"]
+                )
+                return run(pipeline(ignorestatus(cmd); stdout=joinpath(out, "driver.log")))
+            end
+            verdicts(out) = Dict(
+                split(l, '\t')[1] => split(l, '\t')[2] for
+                l in eachline(joinpath(out, "verdicts.tsv"))
+            )
+            # the serial run
+            ts = tree("serial")
+            driver(ts, joinpath(d, "out_serial"))
+            serial = verdicts(joinpath(d, "out_serial"))
+            @test serial == Dict(
+                "P1" => "caught", "P2" => "caught", "P3" => "EQUIVALENT (declared)",
+                "P4" => "SURVIVED", "P5" => "caught"
+            )
+            # the parallel run: two workers, two trees, at once
+            ta, tb = tree("wa"), tree("wb")
+            pa = run(
+                pipeline(
+                    ignorestatus(
+                        setenv(
+                            `python3 $drive $ta $list $target`,
+                            "MUTATE_OUT" => (
+                                mkpath(joinpath(d, "out", "par1"));
+                                joinpath(d, "out", "par1")
+                            ),
+                            "MUTATE_SHARD" => "1/2", "PATH" => ENV["PATH"]
+                        )
+                    );
+                    stdout=devnull
+                ); wait=false
+            )
+            pb = run(
+                pipeline(
+                    ignorestatus(
+                        setenv(
+                            `python3 $drive $tb $list $target`,
+                            "MUTATE_OUT" => (
+                                mkpath(joinpath(d, "out", "par2"));
+                                joinpath(d, "out", "par2")
+                            ),
+                            "MUTATE_SHARD" => "2/2", "PATH" => ENV["PATH"]
+                        )
+                    );
+                    stdout=devnull
+                ); wait=false
+            )
+            wait(pa)
+            wait(pb)
+            seen(t) = Set(readlines(joinpath(t, "seen.log")))
+            # shard 1/2 = P1, P3, P5; shard 2/2 = P2, P4: a tree only ever held ITS mutants' text
+            @test seen(ta) == Set(["BASE", "ONE", "FIVE"])
+            @test seen(tb) == Set(["BASE", "TWO"])
+            @test read(joinpath(ta, "src", "x.txt"), String) == "BASE"             # restored
+            @test read(joinpath(tb, "src", "y.txt"), String) == "YYY"
+            @test !ispath(joinpath(ta, ".warm", "MUTATION_IN_PROGRESS"))
+            @test !ispath(joinpath(tb, ".warm", "MUTATION_IN_PROGRESS"))
+            # the merge: the list's order, a serial run's verdicts
+            out = joinpath(d, "out")
+            m = run(
+                pipeline(
+                    ignorestatus(
+                        `python3 $drive --merge $list $out $(joinpath(out, "par1")) $(joinpath(out, "par2"))`
+                    );
+                    stdout=joinpath(d, "merge.log")
+                )
+            )
+            @test m.exitcode == 1                         # P4 SURVIVED: it blocks, as in the serial run
+            @test verdicts(out) == serial
+            @test first.(split.(readlines(joinpath(out, "verdicts.tsv")), '\t')) ==
+                ["P1", "P2", "P3", "P4", "P5"]
+            # a worker that never finished, and a mutant decided twice, are not a merge
+            mkpath(joinpath(d, "out3"))
+            @test run(
+                pipeline(
+                    ignorestatus(
+                        `python3 $drive --merge $list $(joinpath(d, "out3")) $(joinpath(out, "par1")) $(joinpath(d, "nodir"))`
+                    );
+                    stdout=devnull
+                )
+            ).exitcode == 2
+            @test run(
+                pipeline(
+                    ignorestatus(
+                        `python3 $drive --merge $list $(joinpath(d, "out3")) $(joinpath(out, "par1")) $(joinpath(out, "par1"))`
+                    );
+                    stdout=devnull
+                )
+            ).exitcode == 2
+            # a malformed shard is refused, never read as the whole list
+            for bad in ("0/2", "3/2", "2", "a/b")
+                r = driver(
+                    tree("bad_$(replace(bad, '/' => '_'))"),
+                    joinpath(d, "out_bad");
+                    shard=bad
+                )
+                @test r.exitcode != 0
+            end
+            # mutate.sh: the worker count and the memory rule
+            fixture = tree("main")
+            function par(args...; env...)
+                cmd = setenv(
+                    `bash $mutate run-parallel $args`,
+                    "MUTATE_ROOT" => fixture, "PATH" => ENV["PATH"],
+                    [String(k) => String(v) for (k, v) in env]...
+                )
+                return run(pipeline(ignorestatus(cmd); stdout=devnull, stderr=devnull)).exitcode
+            end
+            @test par("1", list, target) == 2 && par("4", list, target) == 2   # 2 or 3, no other
+            @test par("2", joinpath(d, "nolist.py"), target) == 2
+            @test par(
+                "2", list, target;
+                LOGICKERNEL_MUTANTS_AVAIL_MB="1000", LOGICKERNEL_MUTANTS_TOTAL_MB="8000"
+            ) == 4                                          # 2 x 2500 + 25 % of 8000 = 7000 MB wanted
+            @test par(
+                "3", list, target;
+                LOGICKERNEL_MUTANTS_AVAIL_MB="9499", LOGICKERNEL_MUTANTS_TOTAL_MB="8000"
+            ) == 4                                          # 3 x 2500 + 2000 = 9500: one MB short
+            @test par(
+                "3", list, target;
+                LOGICKERNEL_MUTANTS_AVAIL_MB="9500", LOGICKERNEL_MUTANTS_TOTAL_MB="8000"
+            ) != 4                                          # exactly enough: it goes on (and stops at the
+            # fixture, which is no git repository)
+        end
+    end
     # THE RUNNER IMAGE IS PINNED (CI.yml's note above `jobs:`): no job, no matrix entry on a moving
     # `-latest` image; the oracle's cache key names the image. The scan must see every `runs-on`.
     @testset "the CI runner images are pinned, never -latest" begin

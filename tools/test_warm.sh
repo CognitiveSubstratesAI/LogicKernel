@@ -377,6 +377,18 @@ _guard_cases() {
     has "…its age and rss" "$T/g1" "age [0-9:-]*, rss [0-9.]* GB" 1
     systemctl --user is-active --quiet "$decoy"; check "…the other daemon is NOT stopped" 0 $?
     ! systemctl --user is-active --quiet "$unit"; check "…and this one is not started" 0 $?
+    # PARALLEL MUTANT WORKERS (D-0077 item 6): the opt-in LOGICKERNEL_WARM_SIBLING_MUTANTS=1 excuses only a
+    # daemon that sits in a MUTANT worktree (its .warm/MUTANT_WORKTREE marker), never an ordinary checkout's
+    LOGICKERNEL_WARM_SIBLING_MUTANTS=1 "$W" start > /dev/null 2>&1
+    check "guard: the sibling opt-in does not excuse an ordinary checkout's daemon (exit 6)" 6 $?
+    systemctl --user stop "$decoy" > /dev/null 2>&1
+    mkdir -p "$T/sibling/.warm"; echo "$ROOT" > "$T/sibling/.warm/MUTANT_WORKTREE"
+    systemd-run --user --unit="${decoy}sib" --collect --quiet --working-directory="$T/sibling" sleep 600
+    "$W" start > /dev/null 2>&1; check "guard: a mutant worktree's daemon refuses a start WITHOUT the opt-in (exit 6)" 6 $?
+    LOGICKERNEL_WARM_SIBLING_MUTANTS=1 "$W" start > /dev/null 2>&1
+    check "guard: …and does not refuse a parallel mutant worker WITH it" 0 $?
+    "$W" stop > /dev/null 2>&1
+    systemctl --user stop "${decoy}sib" > /dev/null 2>&1
     systemctl --user stop "$decoy" > /dev/null 2>&1
     "$W" start > /dev/null 2>&1; check "guard: once it is stopped, start succeeds" 0 $?
     "$W" start > /dev/null 2>&1; check "guard: …and THIS checkout's running daemon is not refused" 0 $?

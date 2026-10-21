@@ -80,6 +80,12 @@ _other_daemons() {
         [ "$u" = "$UNIT.service" ] && continue
         pid=$(systemctl --user show "$u" -p MainPID --value 2>/dev/null)
         wd=$(systemctl --user show "$u" -p WorkingDirectory --value 2>/dev/null)
+        # PARALLEL MUTANT WORKERS (D-0077 item 6, 2026-10-21): `tools/mutate.sh run-parallel` starts one
+        # daemon per mutant worktree and sets LOGICKERNEL_WARM_SIBLING_MUTANTS=1 for them, so a daemon
+        # that sits in another MUTANT worktree (its .warm/MUTANT_WORKTREE marker) is not "another
+        # checkout" to them. Only then, and only those: any other checkout's daemon still refuses.
+        [ "${LOGICKERNEL_WARM_SIBLING_MUTANTS:-}" = 1 ] && [ -n "$wd" ] &&
+            [ -f "$wd/.warm/MUTANT_WORKTREE" ] && continue
         age=$(ps -o etime= -p "${pid:-0}" 2>/dev/null | tr -d ' ')
         rss=$(awk '/^VmRSS:/ {printf "%.1f GB", $2 / 1048576}' "/proc/${pid:-0}/status" 2>/dev/null)
         echo "unit $u, pid ${pid:-?}, worktree ${wd:-?}, age ${age:-?}, rss ${rss:-?}"

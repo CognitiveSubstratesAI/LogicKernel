@@ -41,6 +41,7 @@
 import hashlib
 import os
 import re
+import re
 import runpy
 import shutil
 import signal
@@ -152,9 +153,14 @@ def main(argv):
         return 2
 
     results = []
+    shard = parse_shard(os.environ.get("MUTATE_SHARD", ""))
+    nsel = 0
     for m in mutants:
         name = m["id"].split()[0]
         if only and name not in only:
+            continue
+        nsel += 1
+        if not in_shard(nsel, shard):
             continue
         p = os.path.join(tree, m["file"])
         with open(p) as f:
@@ -208,6 +214,50 @@ def main(argv):
         if not v.startswith("caught"):
             print("  ", mid, v)
     return 1 if any(blocks(v) for _, v, _ in results) else 0
+
+
+def parse_shard(text):
+    """`k/n` from MUTATE_SHARD (PARALLEL RUNS, D-0077 item 6): this worker takes every n-th selected mutant,
+    from the k-th. Empty is the whole list, (1, 1); anything else malformed is an error."""
+    if not text:
+        return (1, 1)
+    m = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", text)
+    if not m or int(m.group(1)) > int(m.group(2)):
+        sys.exit("mutate_drive: MUTATE_SHARD=%r: expected k/n with 1 <= k <= n" % text)
+    return (int(m.group(1)), int(m.group(2)))
+
+
+def in_shard(i, shard):
+    """Whether the i-th (1-based) selected mutant belongs to shard (k, n)."""
+    return (i - 1) % shard[1] == shard[0] - 1
+
+
+def merge(mutants_path, out_dir, worker_dirs):
+    """The verdicts of the workers' shards, in the mutant list's order, into OUT_DIR/verdicts.tsv; prints the
+    summary the serial driver prints. Exit code: 1 if any verdict blocks, 2 if a mutant is missing (a worker
+    that died) or listed twice, else 0. Run it on the shards of ONE parallel run."""
+    names = [m["id"].split()[0] for m in runpy.run_path(mutants_path)["MUTANTS"]]
+    seen, rows = {}, []
+    for d in worker_dirs:
+        path = os.path.join(d, "verdicts.tsv")
+        if not os.path.isfile(path):
+            print("merge: no verdicts.tsv in %s — that worker did not finish" % d)
+            return 2
+        for line in open(path):
+            f = line.rstrip("\n").split("\t")
+            if f[0] in seen:
+                print("merge: mutant %s decided by two workers" % f[0])
+                return 2
+            seen[f[0]] = f
+    rows = [seen[n] for n in names if n in seen]
+    with open(os.path.join(out_dir, "verdicts.tsv"), "w") as io:
+        io.write("".join("\t".join(r) + "\n" for r in rows))
+    print("SUMMARY (merged from %d workers)" % len(worker_dirs), sum(1 for r in rows if r[1].startswith("caught")),
+          "of", len(rows), "caught;", sum(1 for r in rows if blocks(r[1])), "blocking")
+    for r in rows:
+        if not r[1].startswith("caught"):
+            print("  ", r[0], r[1])
+    return 1 if any(blocks(r[1]) for r in rows) else 0
 
 
 def run_targets(targets, run1, root):
@@ -300,7 +350,9 @@ if __name__ == "__main__":
         sys.exit(selftest())
     elif len(sys.argv) == 4 and sys.argv[1] == "--sync":
         sync(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) >= 5 and sys.argv[1] == "--merge":
+        sys.exit(merge(sys.argv[2], sys.argv[3], sys.argv[4:]))
     elif len(sys.argv) >= 4:
         sys.exit(main(sys.argv))
     else:
-        sys.exit("usage: mutate_drive.py TREE MUTANTS.py TARGET… [-- ID…]  |  --sync ROOT WORKTREE")
+        sys.exit("usage: mutate_drive.py TREE MUTANTS.py TARGET… [-- ID…]  |  --sync ROOT WORKTREE  |  --merge MUTANTS.py OUTDIR WORKERDIR…")

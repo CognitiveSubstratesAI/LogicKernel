@@ -6,6 +6,7 @@
 #   tools/mutate.sh setup                             # make or refresh the worktree
 #   tools/mutate.sh run MUTANTS.py TARGET… [-- ID…]   # setup, then every mutant against the targets
 #   tools/mutate.sh run-in-tree MUTANTS.py TARGET… [-- ID…]   # the same, in THIS tree (the old lane)
+#   tools/mutate.sh run-parallel N MUTANTS.py TARGET… [-- ID…]   # 2 or 3 workers at once (below)
 #   tools/mutate.sh recover                           # after a killed run: both trees
 #   tools/mutate.sh status
 #   tools/mutate.sh remove                            # when the chunk ends
@@ -32,6 +33,19 @@
 #   SHA-256, the mutant — and removes both after restoring it. In the MAIN tree (`run-in-tree`) the
 #   commit hook refuses every commit while it exists, so a killed driver fails CLOSED.
 #
+# PARALLEL (user, D-0059 item 3 / D-0077 item 6, 2026-10-21): `run-parallel N` makes N mutant worktrees,
+# "$(LOGICKERNEL_MUTANTS_DIR)-1" … "-N", each with its own daemon and depot, and runs the list's mutants
+# round-robin over them (tools/mutate_drive.py, MUTATE_SHARD=k/N): worker k takes every N-th mutant from the
+# k-th. NEVER TWO MUTANTS IN ONE TREE: a mutant is applied in its worker's own worktree only, and each worker
+# holds its own sentinel. The verdicts are merged in the list's order into MUTATE_OUT/verdicts.tsv
+# (`mutate_drive.py --merge`) and are those of a serial run: a mutant's verdict does not depend on the others.
+# Each worker runs its own baseline and final baseline (N times a serial run's two): the price of independence.
+# THE MEMORY RULE: N workers need N x LOGICKERNEL_MUTANTS_WORKER_MB (2500; a daemon peaked at 1.7 GB RSS,
+# measured 2026-10-20) plus 25 % of the machine's memory free (MemAvailable); less is REFUSED (exit 4).
+# The daemons are started one after the other (a start precompiles) and sit beside each other only because
+# of LOGICKERNEL_WARM_SIBLING_MUTANTS=1 (tools/warm.sh `_other_daemons`): a daemon of ANOTHER checkout still
+# refuses a start. The local run is bounded by the machine's 4 cores: 2 or 3, never more.
+#
 # `recover` is the way out of a killed run, in BOTH trees, and the only one: deleting a sentinel by
 # hand is exactly the step that would let a leftover mutation through. For each tree it checks the
 # named file against the SAVED COPY — never against HEAD: mid-chunk the file holds the chunk's own
@@ -49,6 +63,7 @@ MAIN="${MUTATE_ROOT:-$(cd "$TOOLS/.." && pwd)}"
 # shellcheck source=/dev/null
 . "$TOOLS/lib_evidence.sh"
 WT="$(_mutants_dir)"
+WT0="$WT"                                       # the base of the parallel workers' worktrees (-1 … -N)
 
 # _ours — 0 when $WT is a worktree of $MAIN's repository, marked as its mutant worktree
 _ours() {
@@ -129,6 +144,59 @@ _run() {
     _wenv tools/warm.sh locked python3 "$WT/tools/mutate_drive.py" "$WT" "$mutants" "$@"
 }
 
+# _par_dirs N — the worktrees of an N-worker run
+_par_dirs() { local k; for k in $(seq 1 "$1"); do echo "$WT0-$k"; done; }
+
+# _run_parallel N MUTANTS TARGET… [-- ID…]
+_run_parallel() {
+    local n="${1:-}" mutants out k rc=0 avail total per need pids=() rcs=()
+    shift
+    case "$n" in 2 | 3) ;; *) echo "usage: tools/mutate.sh run-parallel N(2|3) MUTANTS.py TARGET… [-- ID…]" >&2; return 2 ;; esac
+    [ $# -ge 2 ] || { echo "usage: tools/mutate.sh run-parallel N MUTANTS.py TARGET… [-- ID…]" >&2; return 2; }
+    [ -f "$1" ] || { echo "mutate: no such mutant list: $1" >&2; return 2; }
+    mutants="$(realpath "$1")"
+    shift
+    if _evidence_running "$MAIN"; then
+        echo "mutate: REFUSED — an evidence run holds the main lane: mutants do not share the machine with it (exit 5)" >&2
+        return 5
+    fi
+    # THE MEMORY RULE (TEST SEAMS: the three LOGICKERNEL_MUTANTS_* numbers)
+    avail="${LOGICKERNEL_MUTANTS_AVAIL_MB:-$(awk '/^MemAvailable:/ { print int($2 / 1024) }' /proc/meminfo)}"
+    total="${LOGICKERNEL_MUTANTS_TOTAL_MB:-$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo)}"
+    per="${LOGICKERNEL_MUTANTS_WORKER_MB:-2500}"
+    need=$((n * per + total / 4))
+    if [ "${avail:-0}" -lt "$need" ]; then
+        echo "mutate: REFUSED — $n workers need ~$need MB free ($n x $per + 25% of $total), $avail MB are available (exit 4)" >&2
+        return 4
+    fi
+    out="${MUTATE_OUT:-$(dirname "$mutants")}"
+    for k in $(seq 1 "$n"); do
+        mkdir -p "$out/par$k"
+        rm -f "$out/par$k/verdicts.tsv"
+        # one after the other: each start precompiles into the worker's own depot
+        (WT="$WT0-$k"; _setup && cd "$WT" && _wenv env LOGICKERNEL_WARM_SIBLING_MUTANTS=1 tools/warm.sh start) || return 1
+    done
+    for k in $(seq 1 "$n"); do
+        (
+            WT="$WT0-$k"
+            cd "$WT" || exit 1
+            MUTATE_SHARD="$k/$n" MUTATE_OUT="$out/par$k" _wenv env LOGICKERNEL_WARM_SIBLING_MUTANTS=1 \
+                tools/warm.sh locked python3 "$WT/tools/mutate_drive.py" "$WT" "$mutants" "$@" > "$out/par$k/driver.log" 2>&1
+        ) &
+        pids+=($!)
+    done
+    for k in $(seq 0 $((n - 1))); do
+        wait "${pids[$k]}"; rcs+=($?)
+    done
+    for k in $(seq 1 "$n"); do echo "--- worker $k (exit ${rcs[$((k - 1))]}):"; tail -n 4 "$out/par$k/driver.log"; done
+    for r in "${rcs[@]}"; do [ "$r" -ge 2 ] && rc=2; done           # a baseline not green, a crash
+    local args=() ; for k in $(seq 1 "$n"); do args+=("$out/par$k"); done
+    python3 "$TOOLS/mutate_drive.py" --merge "$mutants" "$out" "${args[@]}"
+    local mrc=$?
+    [ "$rc" -eq 2 ] && return 2
+    return "$mrc"
+}
+
 _status() {
     local m="no mutation in progress"
     [ -e "$MAIN/.warm/MUTATION_IN_PROGRESS" ] && m="MUTATION IN PROGRESS"
@@ -205,13 +273,23 @@ case "$cmd" in
     setup) _setup ;;
     run) _run "$WT" "$@" ;;
     run-in-tree) _run "$MAIN" "$@" ;;
+    run-parallel) _run_parallel "$@" ;;
     recover)
         rc=0
         _recover "$MAIN" || rc=1
-        if _ours; then _recover "$WT" || rc=1; fi
+        for WT in "$WT0" $(_par_dirs 3); do
+            if _ours; then _recover "$WT" || rc=1; fi
+        done
         exit "$rc"
         ;;
     status) _status ;;
-    remove) _remove ;;
+    remove)
+        rc=0
+        for WT in "$WT0" $(_par_dirs 3); do
+            { [ ! -e "$WT" ] && [ "$WT" != "$WT0" ]; } && continue
+            _remove || rc=1
+        done
+        exit "$rc"
+        ;;
     *) sed -n '2,11p' "$0"; exit 2 ;;
 esac

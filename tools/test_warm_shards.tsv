@@ -5,7 +5,8 @@
 # once; `total` is the default run's pass count, and tools/evidence_ci.py `warm` fails a run in which a
 # shard is missing, ran nothing, failed, or the passes do not sum to it. MEASURED 2026-10-20: 211 passed,
 # 0 failed (the whole run, locally, on a branch); the same run on main passed 212 (one case ran only there —
-# fixed 2026-10-21: every ref now runs 212). A case added or removed changes `total`: update it in the same commit,
+# fixed 2026-10-21: every ref now runs 212); 215 after the three sibling-mutant guard cases (2026-10-21). A case
+# added or removed changes `total`: update it in the same commit,
 # from the gather's own report.
 #   shard<TAB>NAME<TAB>MODES (space-separated: main, rss, structs, fast, stale, refuse, inventory, noswipl,
 #                             guard, cap, bgfiles, gatebase, srcmap, bgbudget)
@@ -15,4 +16,4 @@ shard	stale	stale
 shard	fast	fast
 shard	state	rss structs
 shard	light	noswipl guard cap refuse inventory bgfiles gatebase srcmap bgbudget
-total	212
+total	215
