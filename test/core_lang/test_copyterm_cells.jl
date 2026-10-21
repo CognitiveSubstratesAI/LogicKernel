@@ -157,7 +157,10 @@ end
 @testset "the boundary: a keyed variable's binding, copied on terms, counted" begin
     ld, t = _kc_engine(_R[_rs("x")])
     kv = lk_var(_R, UInt64(4741))
-    LK.setSlotValue!(ld, t + 1, _rf("f", kv, _rs("a")))
+    # f(kv, a), kv a value-table word holding the keyed variable — laid by hand since L1f f3b-1 (a writer
+    # binds a keyed variable to a fresh cell now), as `_word_of!` laid it before
+    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a")))
+    ld.gstack[LK.valPtr(ld.slots[t + 1]) + 1] = lk_boundary_word!(ld, kv)
     LK.Trail!(ld, var_key(kv), _rf("g", _rv(7)))
     p0 = ld.cold_pairs
     c = _kc_copy(ld, t, LK.cp_options(true))

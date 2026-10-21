@@ -123,7 +123,10 @@ _st_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
 @testset "the boundary: a keyed variable's binding as an item, sorted on terms, counted" begin
     ld, t = _st_engine(_R[_rs("x"), _rv(9)])
     kv = lk_var(_R, UInt64(4741))
-    LK.setSlotValue!(ld, t + 1, _rlist(_rs("b"), kv, _rs("a")))
+    # [b, kv, a], kv a value-table word holding the keyed variable (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
+    LK.setSlotValue!(ld, t + 1, _rlist(_rs("b"), _rs("x"), _rs("a")))
+    q2 = LK.valPtr(ld.gstack[LK.valPtr(ld.slots[t + 1]) + 2])     # the second list cell
+    ld.gstack[q2 + 1] = lk_boundary_word!(ld, kv)
     LK.Trail!(ld, var_key(kv), _rs("c"))
     p0 = ld.cold_pairs
     @test LK.pl_nat_sort(ld, t, t + 1, true, LK.SORT_ASC, false)

@@ -205,6 +205,45 @@ function _rct_clauses()
                     _rf("=", R, E)
                 )
             )
+        ),
+        # 31. (L1f f3b-1) the ball unwound through a catch/3 whose catcher does not match, the choice
+        # points of p/1 and q/1 open: dbg_discardChoicesAfter keeps the ball's WORD across each discard
+        # (pl-wam.c), the outer catch/3 gets it (swipl 10.1.18: `t31(-(3,a))`, probed 2026-10-20)
+        (
+            _rf("t31", R),
+            c(
+                _rconj(
+                    _rf("p", X),
+                    c(
+                        _rconj(_rf("q", Y), _rf(">=", X, _rg(3)), th(_rf("in", X, Y))),
+                        _rs("out"),
+                        _rs("true")
+                    )
+                ),
+                _rf("in", _rv(15), _rv(16)),
+                _rf("=", R, _rf("-", _rv(15), _rv(16)))
+            )
+        ),
+        # 32. (L1f f3b-1) a cyclic ball inside a compound keeps its cycle through the unwind (swipl
+        # 10.1.18: `t32(yes)`, probed 2026-10-20)
+        (
+            _rf("t32", R),
+            _rconj(
+                c(
+                    _rconj(_rf("=", X, _rf("f", X, _rs("x"))), th(_rf("g", X))),
+                    _rf("g", Y),
+                    _rs("true")
+                ),
+                _ror(
+                    _rit(
+                        _rconj(
+                            _rf("=", Y, _rf("f", _rv(12), _rs("x"))), _rf("==", _rv(12), Y)
+                        ),
+                        _rf("=", R, _rs("yes"))
+                    ),
+                    _rf("=", R, _rs("no"))
+                )
+            )
         )
     ]
 end
@@ -219,7 +258,7 @@ function _rct_goals()
             _rs("t18"), _rs("t19"), _rs("t20"), _rs("t21"), _rf("t22", X), _rf("t23", X),
             _rf("t24", X),
             _rf("t25", X), _rf("t26", X), _rf("t27", X, Y), _rf("t28", X), _rf("t29", X),
-            _rf("t30", X)]
+            _rf("t30", X), _rf("t31", X), _rf("t32", X)]
     )
     return g
 end

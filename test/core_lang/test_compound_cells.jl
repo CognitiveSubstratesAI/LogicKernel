@@ -48,8 +48,11 @@ end
     @test q == p
     t2 = LK._compound_term(ld, q)
     @test t2 !== t1                                             # a NEW term, never the old one
-    # the stale export stored now is a COPY (an import, counted) — never p's word
-    @test LK._compound_word!(ld, t1) != w && ld.cold_imports == i0 + 1
+    # the stale export stored now is a COPY (an import, counted) — never p's word; both its arguments are the
+    # variables of cells freed with p (the export is one level deep: the first cell held `a`, the second was
+    # unbound), keyed variables now, each bound to a fresh cell (f3b-1: the cold import of a variable,
+    # counted too): the compound and its two variables, 3
+    @test LK._compound_word!(ld, t1) != w && ld.cold_imports == i0 + 3
     @test sym_key(child(t2, 1)) == sym_key(_cc_s(:g)) && nchildren(t2) == 2
     LK.DiscardMark(ld, m)
 end
@@ -110,7 +113,12 @@ end
     t = _rf("f", _cc_s(:a), _rf("g", _rg(Int64(1)), _rv(7)))
     n0 = ld.cold_imports
     LK.setSlotValue!(ld, s, t)
-    @test LK._is_gcompound(ld.slots[s]) && ld.cold_imports == n0 + 1
+    # the compound, and (L1f f3b-1) the keyed variable bound to a fresh cell: two imports, counted
+    @test LK._is_gcompound(ld.slots[s]) && ld.cold_imports == n0 + 2
     r = LK.resolve_term(ld, LK.slotValue(ld, s))
-    @test _rsrc(r) == "f(a,g(1,V7))"                            # the keyed variable kept as itself
+    x = LK.deRef(ld, _rv(7))                                    # the keyed variable: its cell's
+    @test kind(x) === VAR && var_key(x) != UInt64(7)
+    @test _rsrc(r) == "f(a,g(1,V$(var_key(x))))"                # the variable IS that cell
+    g = LK.valPtr(ld.gstack[LK.valPtr(ld.slots[s]) + 2])        # g(1, X)'s functor cell
+    @test LK._deref_loc(ld, g + 2)[1] == LK.DU_CELL             # a cell, no boundary word
 end

@@ -366,18 +366,58 @@ end
 # ORIGINAL: a value's word on the global stack (L1b C3): an atom its own word, a compound a copy on
 # the stack (L1c: `_compound_word!`, the cold import), a live cell variable a reference to its cell
 # (L1c: upstream's `makeRefG`), a small integer its tagged word (L1d step 4: `consInt`), anything
-# else a value-table entry (`_vword!`).
+# else a value-table entry (`_vword!`). A KEYED variable is never a word (f3b-1): bound, its
+# value's word; unbound, bound to a fresh cell whose reference it is (`_import_var!`).
 "The word that holds `v` in a cell."
 @inline function _word_of!(ld::PL_local_data{T}, v::T)::word where {T}
     k = kind(v)
     k === SYM && return _atom_word!(ld, v)
     k === EXPR && return _compound_word!(ld, v)
     if k === VAR                                    # a live cell variable: its reference (L1c)
+        # (c) the live cell's recognition: goes with the stamp (f3), when no reader exports a cell's
+        # variable as a term (f3b-3, f3b-5)
         r = _var_ref_word(ld, v)
         r != 0 && return r
-        return _vword!(ld, v)                       # a keyed variable (until the stamp falls)
+        r, b = _import_var!(ld, v)                  # a keyed variable (f3b-1)
+        r != 0 && return r
+        kind(b) === SYM && return _atom_word!(ld, b)
+        kind(b) === EXPR && return _compound_word!(ld, b)
+        return _gnd_word!(ld, b)
     end
     return _gnd_word!(ld, v)
+end
+
+# ORIGINAL (f3b-1, the F3B group plan's writers): the COLD IMPORT OF A
+# VARIABLE — what a writer stores for a variable term. A live cell variable is its reference (upstream's
+# `makeRefG`); a KEYED one (a caller's, a value variable, a cell's whose position was freed) is followed
+# through its bindings: one bound to a value gives that value, for the caller to write; one bound to a live
+# cell variable gives that cell's reference; an UNBOUND one is BOUND — trailed, `Trail!` — to a fresh cell,
+# whose reference is the word, counted in `cold_imports`. The binding is the variable → cell map: the same
+# keyed variable written twice is one cell, and an undo that unbinds it frees the cell. So no writer makes a
+# keyed variable's value-table word or a slot's side value of one (the boundary has no new source), where
+# until f3b-1 each writer stored the variable itself (`_vword!`, `SLOT_VALUE`). (c): the keyed variable and
+# its store go in f3 — this function with them.
+"""
+    _import_var!(ld, v) -> (word, value)
+
+The word a writer stores for the variable term `v`: `(word, v)` — a cell's reference, the fresh cell an
+unbound keyed variable was bound to — or `(0, value)` when `v` is bound to a non-variable `value`.
+"""
+@noinline function _import_var!(ld::PL_local_data{T}, v::T)::Tuple{word, T} where {T}
+    t = v
+    while true
+        r = _var_ref_word(ld, t)
+        r != 0 && return (r, v)                     # a live cell variable: its reference
+        b = _binding(ld, var_key(t))                # a keyed variable: the store
+        if b === nothing                            # unbound: bound to a fresh cell, its reference
+            p = allocGlobalCells!(ld, 1)
+            ld.cold_imports += 1
+            Trail!(ld, var_key(t), mk_var(T, _cell_key(ld, p)))
+            return (makeRefG(p), v)
+        end
+        kind(b) === VAR || return (word(0), b)      # bound to a value: the caller writes it
+        t = b
+    end
 end
 
 # ── compounds on the global stack (L1c; the workspace's L1_plan/stageL1c_design.md) ─────────────
@@ -502,8 +542,10 @@ end
 # stored in a cell) — so neither the value table nor a `SLOT_VALUE` slot holds a compound. COUNTED in
 # `cold_imports`. ITERATIVE (a long list nests in its last argument): each compound's cells laid out,
 # then its arguments written — an atom its word, a live cell variable a reference to its cell (its
-# identity kept: upstream's `makeRefG`), a nested compound its own copy, anything else (a number, a
-# string, a keyed variable) a value-table word.
+# identity kept: upstream's `makeRefG`), a nested compound its own copy, a number or a string its word
+# (a tagged integer, or a value-table word). A KEYED variable (f3b-1, `_import_var!`): unbound, the
+# fresh cell it is bound to; bound, its value — a compound laid out ONCE per import, by identity, so a
+# cycle through a keyed variable's binding (a rational tree: `B = hello(B)` on terms) closes on the copy.
 "Copy the compound term `t` onto the global stack; its compound word (the cold import, counted)."
 function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
     # the export of a compound still on the stack: ITS word, no copy — upstream shares the pointer
@@ -514,6 +556,7 @@ function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
     ld.cold_imports += 1
     todo = Tuple{T, Int}[]
     root = _import_layout!(ld, t, todo)
+    done = nothing                                  # (f3b-1: the compounds a keyed binding reached)
     while !isempty(todo)
         u, p = pop!(todo)
         off = _import_offset(u)
@@ -525,8 +568,26 @@ function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
             elseif kc === EXPR
                 _import_layout!(ld, c, todo)
             elseif kc === VAR
+                # (c) the live cell's recognition: goes with the stamp (f3), as in `_word_of!`
                 r = _var_ref_word(ld, c)
-                r != 0 ? r : _vword!(ld, c)
+                if r == 0
+                    r, b = _import_var!(ld, c)      # a keyed variable (f3b-1)
+                    if r == 0                       # bound to a value: its word
+                        kb = kind(b)
+                        r = if kb === SYM
+                            _atom_word!(ld, b)
+                        elseif kb === EXPR          # once per import: a cycle closes on its copy
+                            d = done === nothing ? IdDict{T, word}() : done
+                            done === nothing && (d[t] = root)   # (the root: a cycle may close on it)
+                            done = d
+                            wb = get(d, b, word(0))
+                            wb != 0 ? wb : (d[b] = _import_layout!(ld, b, todo))
+                        else
+                            _gnd_word!(ld, b)
+                        end
+                    end
+                end
+                r
             else
                 _gnd_word!(ld, c)                   # a small integer tagged (L1d step 4)
             end
@@ -657,9 +718,10 @@ end
 # word, when one arrives as a word (copied from a cell); a COMPOUND word, a compound on the global
 # stack (L1c: built there by the VM, or a term copied there by the cold import); a TAGGED INTEGER
 # (L1d step 4: `consInt`, from a cell or a `*_SMALLINT` operand); or `SLOT_VALUE`,
-# whose value is the slot's OWN entry of `slot_values` — a value with no word form yet (a float, big
-# integer or string; a small integer that arrived as a term; a keyed variable until the stamp falls),
-# or a symbol that arrived as a term (converting it would cost a lookup per store). DIVERGES,
+# whose value is the slot's OWN entry of `slot_values` — since f3b-1 only in a slot older than the
+# innermost foreign frame (an indirect, a keyed variable: `_slot_store!`) and at the boundary (the term
+# copy of a ball, `copy_exception!`; `_boundary_slot_link_value!`), where until then any value with no
+# word form yet and every keyed variable took one. DIVERGES,
 # transitional: the side entry is the slot's own, so a copy of a `SLOT_VALUE` word copies the value
 # too (`_slot_copy!`) and no word names another slot's entry. The word 0 is a slot never written.
 "The slot word whose value is the slot's own entry of `slot_values` (L1b stage C5)."
@@ -704,8 +766,14 @@ end
     return c != 0 && i <= ld.fliframes[c].base
 end
 
-# ORIGINAL: a term's slot word (L1b stage C5): a LIVE cell variable is its reference, anything else
-# the slot's own side entry. `_var_ref_word` is the one place that knows a cell from a keyed variable.
+# ORIGINAL: a term's slot word (L1b stage C5): a LIVE cell variable is its reference, a compound its
+# copy on the stack, an atom its word, a number its word; a KEYED variable (f3b-1) the fresh cell
+# it is bound to, or its value's word (`_slot_store_var!`). Only a slot OLDER than the innermost
+# foreign frame keeps a side value (`SLOT_VALUE`): an indirect (a float, a big integer, a string) and a
+# keyed variable, whose words that frame's rewind would free while the slot lives on — the read stays
+# defined (L1e e1, audit D-0024: upstream's is not). FINDING for the F3B plan (f3b-1): this side
+# value is no keyed-variable machinery — the indirect's case survives f3's deletion of `SLOT_VALUE`
+# unless D-0024 is decided again (upstream: the reference dangles after the rewind).
 "Store the term `v` in slot `i` as its word."
 @inline function _slot_store!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
     k = kind(v)
@@ -713,11 +781,7 @@ end
         ld.slots[i] = _compound_word!(ld, v)
         return nothing
     elseif k === VAR
-        r = _var_ref_word(ld, v)
-        if r != 0
-            ld.slots[i] = r
-            return nothing
-        end
+        _slot_store_var!(ld, i, v) && return nothing            # (false: a keyed variable, older slot)
     elseif k === SYM                                            # its atom word (L1e e1)
         ld.slots[i] = _atom_word!(ld, v)
         return nothing
@@ -731,9 +795,30 @@ end
             return nothing
         end
     end
-    ld.slot_values[i] = v
+    ld.slot_values[i] = v                                       # older than the foreign frame (above)
     ld.slots[i] = SLOT_VALUE
     return nothing
+end
+
+# ORIGINAL (f3b-1): `_slot_store!`'s variable — a live cell variable its reference, wherever the slot
+# lies; a keyed variable through `_import_var!` (the fresh cell it is bound to, or its value's word) —
+# unless the slot is older than the innermost foreign frame: then false, and the caller keeps the variable
+# as the slot's side value (D-0024's defined read, as for an indirect: the fresh cell would be freed by
+# that frame's rewind while the slot lives on). (c): the keyed variable goes in f3, the branch with it.
+"Store the variable term `v` in slot `i` as its word; false: a keyed variable in a slot older than the innermost foreign frame."
+@inline function _slot_store_var!(ld::PL_local_data{T}, i::Int, v::T)::Bool where {T}
+    # (c) the live cell's recognition: goes with the stamp (f3), as in `_word_of!`
+    r = _var_ref_word(ld, v)
+    if r == 0                                       # a keyed variable (f3b-1)
+        _slot_older_than_fli(ld, i) && return false
+        r, b = _import_var!(ld, v)
+        if r == 0                                   # bound to a value: its word, as any value's
+            _slot_store!(ld, i, b)
+            return true
+        end
+    end
+    ld.slots[i] = r
+    return true
 end
 
 # ORIGINAL: a term stored in slot `i` as a VALUE (L1c): a compound stays a term in the slot's side
@@ -796,49 +881,144 @@ end
 end
 
 # ORIGINAL: the variables one put shares with the puts that pass the same map (L1b): a caller's
-# variable key → the key of its fresh cell. One map is one record's worth of variables — a goal's
-# arguments put slot by slot with one map share them as SWI's record of the goal would.
+# variable key → the POSITION of its cell (f3b-1; the key of its fresh cell until then). One map is
+# one record's worth of variables — a goal's arguments put slot by slot with one map share them as SWI's
+# record of the goal would.
 # It DIVERGES from SWI as a Julia-side convenience with no C counterpart: SWI shares variables
 # between puts only through `term_t` handles (`PL_put_term`), or by putting one compound.
 """
     PutVarMap()
 
 The variables shared by the puts that pass this map (`putSlotValue!`): each caller variable met
-by any of them is ONE fresh variable of the engine. A map is good while its cells live — not across
-backtracking below the puts.
+by any of them is ONE fresh variable of the engine — `cells[var_key(x)]` is its cell's position. A map
+is good while its cells live — not across backtracking below the puts.
 """
 struct PutVarMap
-    cells::Dict{UInt64, UInt64}
+    cells::Dict{UInt64, Int}
 end
-PutVarMap() = PutVarMap(Dict{UInt64, UInt64}())
+PutVarMap() = PutVarMap(Dict{UInt64, Int}())
 
 # ORIGINAL: THE BOUNDARY — a Julia caller's value put into a slot, with SWI's semantics (user,
 # 2026-10-14): the value is COPIED as a record is (`copyRecordToGlobal`) — bindings followed, every
 # unbound variable, a caller's or one of this engine's, a fresh cell, one per variable per `vm` — so
 # separate puts make separate variables, and sharing with a variable already in the engine goes
 # through its handle (`PL_put_term`, `setSlotValue!`), as in SWI's C interface. The put never asks
-# whether a variable is a live cell: no stamp site.
+# whether a variable is a live cell: no stamp site. Since f3b-1 (F1-Q4 (a), audit D-0042) the value
+# is LAID OUT on the cells directly, no term walk (`copy_term`) and no export, in two passes: first a
+# fresh cell for each new variable, in depth-first order of first occurrence — the order the term walk
+# made them in until f3b-1, and the order swipl's reader makes a goal's variables in (the standard order
+# of variables follows it); then each compound's cells at its first visit, depth-first, its variable
+# arguments references to their cells (toward the lower cell, as pl-rec.c `copy_record` keeps them). A
+# compound met again by identity — through a binding: a cycle (`B = hello(B)`), or a subterm shared —
+# is laid out once and referenced again (`copy_record`'s `PL_REC_CYCLE`). A value has no identity, so
+# every compound is copied (a record copies every cell: nothing of the value is shared with the stacks).
 """
-    putSlotValue!(ld, i, v[, vm]) -> the value put
+    putSlotValue!(ld, i, v[, vm])
 
 Put a CALLER's value `v` into slot `i`: a copy with fresh variables, shared with the other puts
 that pass the same `vm` (`PutVarMap`); without `vm`, a put of its own. Variable identity is the
-handle: read an answer through the slot, never through the caller's variable.
+handle: read the value — and an answer — through the slot (`slotValue`), never through the caller's
+variable. (Until f3b-1 it returned the value stored, read back through the cold export.)
 """
-function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::T where {T}
-    vars = Dict{UInt64, T}()
-    for (k, c) in vm.cells
-        vars[k] = mk_var(T, c)
-    end
-    c = copy_term(ld, v, cp_options(true), vars)
-    for (k, w) in vars
-        vm.cells[k] = var_key(w)
-    end
-    _slot_store!(ld, i, c)
-    return kind(c) === EXPR ? slotValue(ld, i) : c  # the value stored (L1c: a compound's export)
+function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::Nothing where {T}
+    t = deRef(ld, v)
+    k = kind(t)
+    if k === EXPR
+        ld.slots[i] = _put_compound!(ld, t, vm)
+    elseif k === VAR                                # one fresh cell per variable per map
+        key = var_key(t)
+        p = get(vm.cells, key, 0)
+        if p == 0
+            p = allocGlobalCells!(ld, 1)
+            vm.cells[key] = p
+        end
+        ld.slots[i] = makeRefG(p)
+    else                                            # an atom or a number: its word (in a slot older
+        _slot_store!(ld, i, t)                      # than the innermost foreign frame an indirect's
+    end                                             # side value, D-0024 — as before f3b-1)
+    return nothing
 end
 putSlotValue!(ld::PL_local_data{T}, i::Int, v::T) where {T} =
     putSlotValue!(ld, i, v, PutVarMap())
+
+# ORIGINAL (f3b-1): `putSlotValue!`'s compound laid out on the cells — see there. ITERATIVE (a long list
+# nests in its last argument): the work stack holds each compound being filled and its next argument, so
+# the arguments are visited depth-first, left to right — the order a record's variables are numbered in
+# (`compile_term_to_heap`); the variables' cells are made first, in that order (`_put_vars!`).
+"Lay the compound `t` (dereferenced) out on the global stack as `putSlotValue!` copies it; its compound word."
+function _put_compound!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::word where {T}
+    _put_vars!(ld, t, vm)                           # the new variables' cells, in order
+    done = IdDict{T, word}()                        # the compounds laid out: met again, referenced
+    stack = Tuple{T, Int, Int}[]                    # (compound, its functor cell, its next argument)
+    root = _put_layout!(ld, t, stack, done)
+    while !isempty(stack)
+        u, p, i = stack[end]
+        off = _import_offset(u)
+        if i > nchildren(u) - off
+            pop!(stack)
+            continue
+        end
+        stack[end] = (u, p, i + 1)
+        c = deRef(ld, child(u, i + off))            # bindings followed
+        kc = kind(c)
+        if kc === EXPR
+            w = get(done, c, word(0))
+            ld.gstack[p + i] = w != 0 ? w : _put_layout!(ld, c, stack, done)
+        elseif kc === VAR                           # its cell, made by `_put_vars!` (or an earlier put)
+            ld.gstack[p + i] = makeRefG(vm.cells[var_key(c)])
+        elseif kc === SYM
+            ld.gstack[p + i] = _atom_word!(ld, c)
+        else
+            ld.gstack[p + i] = _gnd_word!(ld, c)    # a tagged integer, or a value-table word
+        end
+    end
+    return root
+end
+
+# ORIGINAL (f3b-1): one compound of `_put_compound!`: its cells (the arguments unbound), recorded in
+# `done` and pushed to be filled.
+"Lay out the cells of compound `u` for `_put_compound!`; its compound word."
+function _put_layout!(
+    ld::PL_local_data{T}, u::T, stack::Vector{Tuple{T, Int, Int}}, done::IdDict{T, word}
+)::word where {T}
+    off = _import_offset(u)
+    n = nchildren(u) - off
+    name = off == 1 ? _atom_word!(ld, child(u, 1)) : ld.atom_dexpr
+    p = _alloc_compound!(ld, lookupFunctorDef(ld.functors, name, n), n)
+    w = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+    done[u] = w
+    push!(stack, (u, p, 1))
+    return w
+end
+
+# ORIGINAL (f3b-1): `putSlotValue!`'s first pass — a fresh cell for each unbound variable of compound `t`
+# that `vm` does not hold yet, in depth-first order of first occurrence (as `copy_term`'s walk made them
+# until f3b-1); a compound met again by identity is not walked again (a cycle through a binding ends).
+"Give each new unbound variable of the compound `t` (dereferenced) a fresh cell in `vm`, depth-first."
+function _put_vars!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::Nothing where {T}
+    seen = IdDict{T, Nothing}()
+    seen[t] = nothing
+    stack = Tuple{T, Int}[(t, 1)]                   # (compound, its next argument)
+    while !isempty(stack)
+        u, i = stack[end]
+        off = _import_offset(u)
+        if i > nchildren(u) - off
+            pop!(stack)
+            continue
+        end
+        stack[end] = (u, i + 1)
+        c = deRef(ld, child(u, i + off))            # bindings followed
+        kc = kind(c)
+        if kc === VAR
+            key = var_key(c)
+            haskey(vm.cells, key) || (vm.cells[key] = allocGlobalCells!(ld, 1))
+        elseif kc === EXPR && !haskey(seen, c)
+            seen[c] = nothing
+            push!(stack, (c, 1))
+        end
+    end
+    return nothing
+end
 
 # PORT: pl-data.h deRef
 # DIVERGES: follows a cell variable's cell, and a keyed variable's entry in the store, where

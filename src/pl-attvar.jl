@@ -19,7 +19,9 @@
 # list these two functions also save is therefore always empty here.
 
 # PORT: pl-attvar.c saveWakeup
-# DIVERGES: returns the state, or `nothing` for upstream's false (no space for the foreign frame).
+# DIVERGES: returns the state, or `nothing` for upstream's false (no space for the foreign frame). The
+# ball's slot word is copied as upstream copies the cell (f3b-1: `_slot_copy!`, a side value with it;
+# until then the ball was read as a term and stored as a slot's side value).
 # NOT PORTED: the wakeup list (`LD->attvar.head`/`tail`, `WAKEUP_STATE_WAKEUP`): no attributed
 # variables, so the list is always empty.
 """
@@ -40,7 +42,7 @@ function saveWakeup(
         if ld.exception_term != 0
             flags |= WAKEUP_STATE_EXCEPTION
             s = PL_new_term_ref(ld)
-            _slot_store_value!(ld, s + 1, slotValue(ld, ld.exception_term + 1))   # a value (L1c)
+            _slot_copy!(ld, s + 1, ld.exception_term + 1)   # *valTermRef(s) = *valTermRef(exception_term)
             ld.exception_term = 0
         end
         return wakeup_state(fid, outofstack, flags)

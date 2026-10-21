@@ -9,6 +9,8 @@
 #   * `cold_vars` — a cell's variable read as a term (`_cell_var`, sub-commit 6),
 #   * `cold_pairs` — a pair the cell compare decides as terms (the boundary, L1d step 1);
 # and a small program that compares (==, \==, compare/3 over lists on the stack) does the same.
+# Since L1f F3B, one program per group of the plan (the workspace's L1_plan/stageL1f_design.md §3), at the
+# end of the file: f3b-1's put of a caller's goal.
 # The first call builds the predicates' indexes and supervisors; the asserted call is the second (and
 # the first's counts are reported). The export memo's entry count over the run is reported too
 # (condition 3 of the memo's approval: how much cold traffic exists).
@@ -161,4 +163,60 @@ ar_top :- ar_loop(50).
     @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
     _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
         @info "ar_top: the second call's boundary traffic" _zt_counts(ld) .- c1
+end
+
+# ── L1f F3B: one program per group (the workspace's L1_plan/stageL1f_design.md §3, each group's exit check
+# (3): its four counters unchanged over the second call) ────────────────────────────────────────────────
+
+# f3b-1 (writers into words): a CALLER's goal put through `putSlotValue!` — its arguments with one
+# `PutVarMap`, a variable shared between them — is laid on the cells directly (`_put_compound!`, as
+# pl-rec.c `copy_record` lays a record): no term walk (`copy_term` read each fresh variable as a term:
+# `cold_vars`), no import (`_compound_word!`: `cold_imports`), no export (the put returned the stored
+# compound through `slotValue`: `cold_exports`) — each nonzero per call before f3b-1. The answer is not
+# read (a reader: f3b-5); the program on the cells, as nreverse's.
+const _ZT_PUT = """
+pt_rev([X|L0], L) :- pt_rev(L0, L1), pt_cat(L1, [X], L).
+pt_rev([], []).
+pt_cat([X|L1], L2, [X|L3]) :- pt_cat(L1, L2, L3).
+pt_cat([], L, L).
+"""
+
+"One call of `proc` on `args`, each put by `putSlotValue!` with ONE map, its foreign frame discarded."
+function _zt_put_call(gd, ld, proc, args::Vector{_ZT})::Int
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, length(args))
+    vm = LK.PutVarMap()
+    for (i, x) in enumerate(args)
+        LK.putSlotValue!(ld, a + i, x, vm)
+    end
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, proc, a)
+    rc = LK.PL_next_solution(gd, ld, qid)
+    LK.PL_close_query(ld, qid)
+    LK.PL_discard_foreign_frame(ld, fid)
+    return rc
+end
+
+@testset "f3b-1: a goal put by putSlotValue! makes no cold export, import, variable read or boundary pair" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "pt_rev.pl")
+    write(f, _ZT_PUT)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    s(x) = lk_sym(_ZT, Symbol(x))
+    X, Y, R = lk_var(_ZT, UInt64(1)), lk_var(_ZT, UInt64(2)), lk_var(_ZT, UInt64(3))
+    # [1, a, f(X, Y), 2.5, "s", X]: atoms, a small integer, a float, a string, a compound, X twice
+    items = _ZT[
+        lk_gnd(_ZT, Int64(1)), s(:a), mk_expr(_ZT, _ZT[s(:f), X, Y]), lk_gnd(_ZT, 2.5),
+        lk_gnd(_ZT, "s"), X
+    ]
+    lst = foldr((h, t) -> mk_expr(_ZT, _ZT[s("[|]"), h, t]), items; init=LK.mk_nil(_ZT))
+    proc = LK.lookupProcedure(s(:pt_rev), 2, LK.MODULE_user(gd))
+    @test _zt_put_call(gd, ld, proc, _ZT[lst, R]) == LK.PL_S_TRUE      # indexes, supervisors
+    c1, b1 = _zt_counts(ld), length(ld.bindings)
+    @test _zt_put_call(gd, ld, proc, _ZT[lst, R]) == LK.PL_S_TRUE
+    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
+    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
+        @info "f3b-1: the second call's boundary traffic" _zt_counts(ld) .- c1
+    @test length(ld.bindings) == b1                     # no keyed variable bound (the put copies)
 end

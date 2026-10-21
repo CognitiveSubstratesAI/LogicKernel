@@ -93,7 +93,7 @@ _fw_all(ld, t) = (
 @testset "the boundary: a keyed variable's binding, read on terms, counted" begin
     ld, t = _fw_engine(_R[_rs("x")])
     kv = lk_var(_R, UInt64(4741))
-    LK.setSlotValue!(ld, t + 1, kv)
+    lk_side_value!(ld, t + 1, kv)                       # (the boundary: built since L1f f3b-1)
     LK.Trail!(ld, var_key(kv), _rg(1.25))
     p0 = ld.cold_pairs
     @test _fw_all(ld, t) == (true, false, true, false, false)

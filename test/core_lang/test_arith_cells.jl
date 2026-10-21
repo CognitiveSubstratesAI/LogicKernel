@@ -271,23 +271,25 @@ end
 @testset "the boundary: a keyed variable bound to an expression, evaluated on its term, counted" begin
     ld, t = _ac_engine(_R[_rs("x"), _rs("y")])
     kv = lk_var(_R, UInt64(4719))
-    LK.setSlotValue!(ld, t + 1, kv)
+    lk_side_value!(ld, t + 1, kv)                                       # (the boundary: built since L1f f3b-1)
     LK.Trail!(ld, var_key(kv), _aplus(_ai(1), _ai(2)))                 # kv = 1 + 2: a store entry
     r = LK.number()
     p0 = ld.cold_pairs
     @test LK.valueExpression(ld, t, r) && r.i == 3
     @test ld.cold_pairs == p0 + 1                                       # the boundary, COUNTED
     # inside a walk: (kw * 2) on the stack, kw a value-table word holding a keyed variable (stored
-    # unbound — a put would copy a bound one away), bound afterwards in the store
+    # unbound — a put would copy a bound one away), bound afterwards in the store (since L1f f3b-1 a
+    # writer binds a keyed variable to a cell: the word is laid by hand, as `_word_of!` laid it before)
     kw = lk_var(_R, UInt64(4723))
-    LK.setSlotValue!(ld, t + 2, _atimes(kw, _ai(2)))
+    LK.setSlotValue!(ld, t + 2, _atimes(_rs("x"), _ai(2)))
+    ld.gstack[LK.valPtr(ld.slots[t + 2]) + 1] = lk_boundary_word!(ld, kw)
     LK.Trail!(ld, var_key(kw), _aplus(_ai(1), _ai(2)))
     p0 = ld.cold_pairs
     @test LK.valueExpression(ld, t + 1, r) && r.i == 6
     @test ld.cold_pairs == p0 + 1
     # is/2's binding at the boundary: an unbound keyed variable is bound through its key
     ku = lk_var(_R, UInt64(4721))
-    LK.setSlotValue!(ld, t + 1, ku)
+    lk_side_value!(ld, t + 1, ku)
     p0 = ld.cold_pairs
     @test LK.PL_unify_number(ld, t, r)
     @test ld.cold_pairs == p0 + 1

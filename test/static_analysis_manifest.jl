@@ -149,6 +149,8 @@ _manifest_per_type(T) = (
     (LK._atom_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._atom_value_error, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
+    # L1f f3b-1: a keyed variable met by a writer — bound to a fresh cell (the trail, the stack grow)
+    (LK._import_var!, Tuple{LK.PL_local_data{T}, T}, false),
     # tagged small integers (L1d step 4): the word of an integer, a value's word, a value word's term
     (LK._tagged_int_word, Tuple{Type{T}, T}, true),
     (LK._term_int_word, Tuple{LK.PL_local_data{T}, T}, true),
@@ -187,6 +189,7 @@ _manifest_per_type(T) = (
     # grow the global stack
     (LK._slot_atom, Tuple{LK.PL_local_data{T}, UInt64}, false),    # a tagged integer's term is MADE (L1d-4)
     (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1c: the cold import
+    (LK._slot_store_var!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1f f3b-1: a keyed variable's cell
     (LK._slot_older_than_fli, Tuple{LK.PL_local_data{T}, Int}, true),   # L1e e1
     (LK._slot_copy!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
     (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, false),  # L1c: the cold import
@@ -200,6 +203,14 @@ _manifest_per_type(T) = (
     (LK.setSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T}, false),
     (LK.putSlotValue!, Tuple{LK.PL_local_data{T}, Int, T, LK.PutVarMap}, false),
+    # L1f f3b-1: the put laid on the cells (its variables first): the stack, the map and the agendas grow
+    (LK._put_compound!, Tuple{LK.PL_local_data{T}, T, LK.PutVarMap}, false),
+    (
+        LK._put_layout!,
+        Tuple{LK.PL_local_data{T}, T, Vector{Tuple{T, Int, Int}}, IdDict{T, UInt64}},
+        false
+    ),
+    (LK._put_vars!, Tuple{LK.PL_local_data{T}, T, LK.PutVarMap}, false),
     (LK.allocGlobalVars!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK._reserveStamps!, Tuple{LK.PL_local_data{T}}, false),
     (LK._growGlobalStack!, Tuple{LK.PL_local_data{T}, Int}, false),

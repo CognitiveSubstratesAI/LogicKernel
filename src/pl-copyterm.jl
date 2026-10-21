@@ -79,7 +79,8 @@ end
 
 # ORIGINAL: the walk with the caller's map of fresh variables — an unbound variable already in
 # `vars` is copied to its entry, a new one is added to it — so that several copies share their
-# variables, as the arguments of one record do (`putSlotValue!`, src/pl-inline.jl: L1b's boundary).
+# variables, as the arguments of one record do (`putSlotValue!`'s until f3b-1, which lays a
+# caller's value on the cells now: no src caller passes a map since; the term walk goes in f3).
 "`copy_term` with the fresh variables of `vars` (an unbound variable's key → its copy), extended in place."
 function copy_term(
     ld::PL_local_data{T}, from::T, options::cp_options, vars::Dict{UInt64, T}
@@ -186,7 +187,7 @@ end
 # position — upstream writes them into the variable cell, which ours cannot (a marked variable cell
 # is no `isVar`, and `_deref_loc` would read it as a value-table word): a representation-only
 # DIVERGES, behaviour identical. The term walk above (`copy_term`) stays for the callers holding a
-# TERM (`putSlotValue!`, the records, the exception's ball) and for the BOUNDARY: a keyed variable's
+# TERM (the records' and the exception's ball's boundary; `putSlotValue!` until f3b-1) and for the BOUNDARY: a keyed variable's
 # binding or a slot's side value met while marking — the whole copy is then redone on terms,
 # counted in `cold_pairs`. TRANSITIONAL until L1f.
 

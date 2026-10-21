@@ -76,11 +76,14 @@ push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_ove
 #     `PL_open_query` refuses every later query on it — and throws a Julia error with upstream's
 #     message: nothing runs on a state that cannot be trusted, and the host survives (user,
 #     2026-10-07).
-#   * The ball is built as a value into `exception_bin` (upstream: raw global cells, then
-#     `freezeGlobal`): it holds no variable, so undoing bindings cannot change it.
+#   * (f3b-1) The ball is laid as upstream lays it — five global cells at `gTop`,
+#     `error(resource_error(stack), Ctx)`, `exception_bin` its reference, then `freezeGlobal!` — where
+#     until f3b-1 it was a value in `exception_bin`'s side entry (`SLOT_VALUE`). The frozen region is
+#     released when the outermost query ends (`_release_frozen!`, audit D-0029 (b)), as for every ball.
 # NOT PORTED: the backtraces and the low-spare message (the kernel prints nothing, decision 1);
 # `trim_stack_requested` (its readers are the stack garbage collector's, G1); the "no room for
-# exception term" abort (the ball is a value: there is no global stack to run out of); the longjmp
+# exception term" abort (`gTop+5 < gMax`: the global stack grows on demand and the spares are enabled
+# first, so the five cells are always laid); the longjmp
 # of `STACK_OVERFLOW_THROW` — every caller that throws a local-stack overflow sets `LD->outofstack`
 # first, so the fatal branch runs before it, and the other stacks do not overflow here.
 """
@@ -100,20 +103,18 @@ function outOfStack!(
     enableSpareStacks!(ld)
     ld.exception_processing = true
     ld.outofstack = true
-    ctx = push_overflow_context(T, stack)
-    _slot_store_value!(                             # the ball: a value (decision 1; L1c)
-        ld,
-        ld.exception_bin + 1,
-        mk_expr(
-            T,
-            T[
-                mk_sym(T, :error),
-                mk_expr(T, T[mk_sym(T, :resource_error), mk_sym(T, :stack)]),
-                ctx
-            ]
-        )
+    ctx = push_overflow_context(T, stack)           # word ctx = push_overflow_context(s, 6)
+    p = allocGlobalCells!(ld, 5)                    # Word p = gTop; … gTop += 5 (see (*) upstream)
+    ld.gstack[p] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)   # p[0] = FUNCTOR_error2
+    ld.gstack[p + 1] = consPtr(p + 3, TAG_COMPOUND | STG_GLOBAL)  # p[1] = consPtr(&p[3], TAG_COMPOUND|STG_GLOBAL)
+    ld.gstack[p + 2] = _atom_word!(ld, ctx)                       # p[2] = ctx
+    ld.gstack[p + 3] = lookupFunctorDef(                          # p[3] = FUNCTOR_resource_error1
+        ld.functors, _atom_word!(ld, mk_sym(T, :resource_error)), 1
     )
-    ld.exception_term = ld.exception_bin
+    ld.gstack[p + 4] = _atom_word!(ld, mk_sym(T, :stack))         # p[4] = ATOM_stack
+    ld.slots[ld.exception_bin + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)   # *valTermRef(LD->exception.bin) = …
+    freezeGlobal!(ld)                               # freezeGlobal()
+    ld.exception_term = ld.exception_bin            # exception_term = exception_bin
     return false
 end
 

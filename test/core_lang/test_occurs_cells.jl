@@ -117,7 +117,7 @@ end
     LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_refs(ld, 2)
     kv = lk_var(_R, UInt64(4714))
-    LK.setSlotValue!(ld, t + 1, kv)
+    lk_side_value!(ld, t + 1, kv)   # (built by hand since L1f f3b-1: a writer binds a keyed variable to a cell)
     LK.putSlotValue!(ld, t + 2, _rf("f", _rs("a")))
     p0 = ld.cold_pairs
     @test LK.unify_with_occurs_check_cells(ld, -(t + 1), -(t + 2), LK.OCCURS_CHECK_TRUE) ==

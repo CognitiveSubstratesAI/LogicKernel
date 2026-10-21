@@ -63,7 +63,7 @@ end
     @test LK._argv_key(av, 1) == LK.indexOfWord(ld, _rs("x")) && !LK._argv_is_var(av, 1)
     # the boundary: a keyed variable in a slot's side value, unbound then bound
     kv = lk_var(_R, UInt64(4711))
-    LK.setSlotValue!(ld, t + 1, kv)
+    lk_side_value!(ld, t + 1, kv)                       # (built since L1f f3b-1: a writer binds it to a cell)
     @test LK._argv_is_var(av, 0) && LK._argv_key(av, 0) == 0
     LK.Trail!(ld, var_key(kv), _rf("f", _rs("a")))
     @test !LK._argv_is_var(av, 0) &&
@@ -139,7 +139,7 @@ end
     LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_refs(ld, 2)
     kv = lk_var(_R, UInt64(4712))
-    LK.setSlotValue!(ld, t + 1, kv)
+    lk_side_value!(ld, t + 1, kv)                       # (built since L1f f3b-1: a writer binds it to a cell)
     LK.Trail!(ld, var_key(kv), _rf("f", _rs("b")))
     LK.putSlotValue!(ld, t + 2, _rv(9))
     @test LK._argv_key(LK.argv_frame(ld, t), 0) == LK.indexOfWord(ld, _rf("f", _rs("b")))

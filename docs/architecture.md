@@ -932,7 +932,6 @@ graph LR
     pl_inline --> pl_funct
     pl_inline --> pl_global
     pl_inline --> pl_ressymbol
-    pl_inline --> pl_copyterm
     pl_inline --> pl_alloc
     pl_inline --> pl_fli
     pl_inline --> pl_gmp
@@ -1052,6 +1051,7 @@ graph LR
     pl_alloc --> term_interface
     pl_alloc --> default_term
     pl_alloc --> pl_incl
+    pl_alloc --> pl_funct
     pl_alloc --> pl_global
     pl_alloc --> pl_inline
     pl_alloc --> pl_comp
@@ -1561,7 +1561,12 @@ take precedence over the text above them where they differ. The inventory, the m
   * `putSlotValue!(ld, slot, v[, vm])` (`# ORIGINAL`, src/pl-inline.jl) is the boundary. It copies `v`
     as `copyRecordToGlobal` copies a record (pl-rec.c). Bindings are followed, and every unbound
     variable becomes a fresh variable of the engine, a caller's variable or one of the engine's
-    own alike. There is one fresh variable per variable per `PutVarMap`. Ground subterms are shared.
+    own alike. There is one fresh variable per variable per `PutVarMap`. Since L1f f3b-1 the value is
+    laid out on the cells directly (`_put_compound!`: the new variables' cells first, in depth-first
+    order of first occurrence — the order of the term walk it replaced, and of swipl's reader — then
+    the compounds depth-first; a compound met again by identity — a cycle through a binding, a shared
+    subterm — laid once), with no term walk and no export; every compound is copied, and the put
+    returns nothing: the value is read through the slot.
   * Puts that pass the same `vm` share their variables, as the arguments of ONE record do. A
     goal's arguments, put slot by slot before `PL_open_query`, take one map. Without `vm` a put
     has a map of its own, so two separate puts of one caller variable make TWO variables.

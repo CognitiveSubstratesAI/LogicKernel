@@ -556,7 +556,7 @@ end
     @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
     # before the query closes — the CELL the put made of `x`: the Julia variable itself is never bound
     # (a guard on `x` could not fail; the step-battery re-run, 2026-10-20)
-    xc = mk_var(_WF, pvm.cells[var_key(x)])   # the put's copy of `x` (PutVarMap: key → its key)
+    xc = LK._cell_var(_WF_LD, pvm.cells[var_key(x)])  # the put's cell of `x` (a position)
     @test kind(xc) === VAR && kind(LK.deRef(_WF_LD, xc)) === VAR
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_close_foreign_frame(_WF_LD, fid)

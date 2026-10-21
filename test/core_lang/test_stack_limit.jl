@@ -150,7 +150,10 @@ end
     @test LK.load_file!(db.gd, db.ld, f)[1] === :ok
     for (g, n) in ((:hr, 1), (:hf, 1), (:hff, 3))
         @test _sl_head_call(db, g, n, 3) == (LK.PL_S_LAST, 3)       # room for its 3 cells
-        @test _sl_head_call(db, g, n, 2) == (LK.PL_S_EXCEPTION, 0)  # one cell short: raised, nothing laid
+        # one cell short: raised, the head lays nothing — the cells used are the ball's own (f3b-1: five
+        # global cells, `error(resource_error(stack), stack_overflow)`: error/2 is 3, resource_error/1 is 2)
+        # allow-docstring-interp: line 45's `$(_SL_INLINE)` is a Prolog source string built on purpose, not a docstring
+        @test _sl_head_call(db, g, n, 2) == (LK.PL_S_EXCEPTION, 5)
     end
 end
 
@@ -260,7 +263,9 @@ end
         rc = LK.pl_collect_findall_bag2_va(ld, a, 2, _sl_ctx())
         if extra < 0
             @test rc == LK.FFALSE && ld.exception_processing
-            @test ld.gTop - g1 <= refcells                  # no answer laid (the overshoot is 0)
+            # no answer laid (the overshoot is 0): what grew is the reference's cell and the ball's five
+            # (L1f f3b-1: outOfStack! lays error(resource_error(stack), Ctx) on the global stack, as upstream)
+            @test ld.gTop - g1 <= refcells + 5
         else
             @test rc == LK.FTRUE && !ld.exception_processing &&
                 isempty(ld.bags[end].answers)
@@ -293,7 +298,9 @@ end
         if room_less == 0
             @test ok && !ld.exception_processing && ld.gTop - g0 == 31
         else
-            @test !ok && ld.exception_processing && ld.gTop - g0 < 5  # the partial copy discarded (to's fresh cell, the ball's box)
+            # the partial copy discarded (a whole one is 31 cells): what grew is to's fresh cell and the
+            # ball's five (L1f f3b-1: outOfStack! lays the ball on the global stack, as upstream)
+            @test !ok && ld.exception_processing && ld.gTop - g0 < 10
             @test LK._deref_loc(ld, -(c + 1))[1] == LK.DU_CELL     # PL_put_variable(to)
             r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
             @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"

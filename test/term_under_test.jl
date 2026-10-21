@@ -104,5 +104,18 @@ lk_bound_count_unfrozen(ld)::Int =
         (ld.frozen_bar + 1):(ld.gTop)
     )
 lk_no_bindings_unfrozen(ld)::Bool = lk_bound_count_unfrozen(ld) == 0
+
+# THE BOUNDARY as the writers made it until L1f f3b-1 (the workspace's L1_plan/stageL1f_design.md §3): a
+# KEYED variable stored in a slot became the slot's side value (`SLOT_VALUE`), and in a cell a value-table
+# word. Since f3b-1 a writer binds a keyed variable to a fresh cell instead (`_import_var!`), so the tests of
+# the boundary branches — (c) code, deleted with them in f3 — build the boundary explicitly with these.
+"Store `v` in slot `s` as the slot's own side value (`SLOT_VALUE`): the boundary, as `setSlotValue!` stored a keyed variable until L1f f3b-1."
+function lk_side_value!(ld, s::Int, v)
+    ld.slot_values[s] = v
+    ld.slots[s] = LogicKernel.SLOT_VALUE
+    return nothing
+end
+"The value-table word of `v` (a keyed variable's: the boundary in a cell, as `_word_of!` made one until L1f f3b-1)."
+lk_boundary_word!(ld, v) = LogicKernel._vword!(ld, v)
 lk_eq(a::AbstractVector, b::AbstractVector)::Bool =
     length(a) == length(b) && all(((x, y),) -> lk_eq(x, y), zip(a, b))

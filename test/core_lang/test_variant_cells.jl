@@ -149,7 +149,9 @@ end
 @testset "the boundary: a keyed variable's binding, checked on terms, counted" begin
     ld, t = _vt_engine(_R[_rs("x"), _rf("f", _rf("g", _rv(8)), _rs("a"))])
     kv = lk_var(_R, UInt64(4741))
-    LK.setSlotValue!(ld, t + 1, _rf("f", kv, _rs("a")))
+    # f(kv, a), kv a value-table word holding the keyed variable (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
+    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a")))
+    ld.gstack[LK.valPtr(ld.slots[t + 1]) + 1] = lk_boundary_word!(ld, kv)
     LK.Trail!(ld, var_key(kv), _rf("g", _rv(7)))
     p0 = ld.cold_pairs
     @test _vt_check(ld, t, 1, 2)

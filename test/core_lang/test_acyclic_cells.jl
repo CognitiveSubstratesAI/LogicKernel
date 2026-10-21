@@ -75,7 +75,7 @@ end
 @testset "the boundary: a keyed variable bound to a cyclic term, decided on terms, counted" begin
     ld, t = _ac_engine(_R[_rs("x")])
     kv = lk_var(_R, UInt64(4715))
-    LK.setSlotValue!(ld, t + 1, kv)
+    lk_side_value!(ld, t + 1, kv)                                # (the boundary: built since L1f f3b-1)
     LK.Trail!(ld, var_key(kv), _rf("f", kv))                     # kv = f(kv): a cycle in the store
     p0 = ld.cold_pairs
     @test !LK.is_acyclic_cells(ld, -(t + 1))

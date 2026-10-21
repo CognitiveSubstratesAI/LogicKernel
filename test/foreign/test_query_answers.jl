@@ -104,7 +104,6 @@ end
     ld = db.ld
     g = _rf("qa_q", _rf("f", _rf("k", _rg(Int64(7)), _rs("z"))), _rv(9))
     base = (ld.gTop, length(ld.trail), ld.lTop)
-    imports0 = ld.cold_imports
     ok = true
     for _ in 1:(10 ^ 4)
         ans = LK.query_answers(ld, g)
@@ -114,5 +113,14 @@ end
     end
     @test ok
     @test (ld.gTop, length(ld.trail), ld.lTop) == base
-    @test ld.cold_imports - imports0 >= 10^4    # every put copied onto the stack: the leak path ran
+    # the leak path ran: a put copies its value onto the stack — f(k(7, z)) is five cells (f/1 two, k/2
+    # three; 7 a tagged word, z an atom). Since f3b-1 the put lays it on the cells itself, no import counted
+    # (until then `cold_imports - imports0 >= 10^4` was this guard: each put went through the cold import)
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    g1 = ld.gTop
+    LK.putSlotValue!(ld, a + 1, child(g, 2))
+    @test ld.gTop - g1 == 5 && LK._is_gcompound(ld.slots[a + 1])
+    LK.PL_discard_foreign_frame(ld, fid)
+    @test (ld.gTop, length(ld.trail), ld.lTop) == base
 end

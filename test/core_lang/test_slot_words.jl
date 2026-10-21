@@ -2,11 +2,14 @@
 # test/core_lang/test_slot_words.jl — white-box, on every term type:
 #   * a live cell variable is stored as its reference (`makeRefG`), whether the VM made it for the
 #     slot (`_slot_new_var!`: the variable instructions) or it arrived as a term, and reads back as
-#     the cell's variable term (made on demand by `_cell_var` since L1c-6); anything else — a symbol, a number,
-#     a compound, a KEYED variable — is `SLOT_VALUE`, its value in the slot's own entry of
-#     `slot_values`, read back unchanged;
+#     the cell's variable term (made on demand by `_cell_var` since L1c-6); a symbol, a number and a
+#     compound are words since L1e e1/L1c; a KEYED variable (L1f f3b-1) is BOUND to a fresh cell, the
+#     slot its reference, and one bound to a value is that value's word — no slot holds a keyed
+#     variable as its side value but one older than the innermost foreign frame (D-0024), and a
+#     keyed variable written twice is one cell;
 #   * a fresh cell from a slot builds no term of its own and adds no value-table entry;
-#   * a copied `SLOT_VALUE` carries its value: overwriting the source leaves the copy as it was;
+#   * a copied `SLOT_VALUE` (the boundary's: a ball's term copy) carries its value: overwriting the
+#     source leaves the copy as it was;
 #   * `_slot_link!` (`linkValI` on words): an unbound cell gives its reference, a cell bound to an
 #     atom the atom word, a value-table value (a cell bound to a cell variable too, until L1d) and a
 #     side value their value dereferenced, as `linkValI` on terms does;
@@ -37,17 +40,43 @@ end
     # the cell's variable term is made on demand (L1c-6: no kept term); a variable is its KEY
     @test var_key(LK.slotValue(ld, a)) == var_key(LK._cell_var(ld, LK._cell_pos(ld, k)))
     # since L1e e1 a slot holds any word: a symbol its atom word, a small integer its tagged word, a
-    # float a value-table word (these references lie above the engine's base foreign frame); only a
-    # KEYED variable stays the slot's own side entry (test_slot_indirects.jl: the older-reference rule)
+    # float a value-table word (these references lie above the engine's base foreign frame)
+    # (test_slot_indirects.jl: the older-reference rule)
     for (x, form) in (
         (_sw_sym(:foo), LK.isAtomW), (LK.mk_nil(_SW), LK.isAtomW),
-        (lk_gnd(_SW, Int64(7)), LK.isTaggedIntW), (lk_gnd(_SW, 2.5), LK._is_vword),
-        (lk_var(_SW, UInt64(42)), ==(LK.SLOT_VALUE))
+        (lk_gnd(_SW, Int64(7)), LK.isTaggedIntW), (lk_gnd(_SW, 2.5), LK._is_vword)
     )
         LK.setSlotValue!(ld, b, x)
         @test form(ld.slots[b])
         @test lk_eq(LK.slotValue(ld, b), x)
     end
+    # a KEYED variable (L1f f3b-1, `_import_var!`): bound — trailed — to a fresh cell, the slot its
+    # reference, counted as a cold import; the variable reads back as that cell's, and a second store of
+    # it is the same cell (the binding is the variable → cell map), no new import
+    x = lk_var(_SW, UInt64(42))
+    g0, t0, i0 = ld.gTop, length(ld.trail), ld.cold_imports
+    LK.setSlotValue!(ld, b, x)
+    @test LK.isRef(ld.slots[b]) && LK.unRef(ld.slots[b]) == g0 + 1 && ld.gTop == g0 + 1
+    @test length(ld.trail) == t0 + 1 && ld.cold_imports == i0 + 1
+    @test LK._deref_loc(ld, -b) == (LK.DU_CELL, LK.word(0), g0 + 1)   # no boundary word (DU_TERM)
+    @test var_key(LK.slotValue(ld, b)) == var_key(LK.deRef(ld, x))
+    LK.setSlotValue!(ld, a, x)
+    @test ld.slots[a] == ld.slots[b] && ld.cold_imports == i0 + 1
+    # … inside a compound too: f(X) holds the reference, the same cell
+    LK.setSlotValue!(ld, a, _sw_f(x))
+    @test ld.gstack[LK.valPtr(ld.slots[a]) + 1] == ld.slots[b]
+    # a keyed variable bound to a value is that value's word
+    y = lk_var(_SW, UInt64(43))
+    LK.Trail!(ld, UInt64(43), _sw_sym(:bar))
+    LK.setSlotValue!(ld, a, y)
+    @test LK.isAtomW(ld.slots[a]) && lk_eq(LK.slotValue(ld, a), _sw_sym(:bar))
+    # a slot OLDER than the innermost foreign frame keeps a keyed variable as its side value (D-0024:
+    # the fresh cell would die with that frame's rewind while the slot lives on)
+    fid = LK.PL_open_foreign_frame(ld)
+    z = lk_var(_SW, UInt64(44))
+    LK.setSlotValue!(ld, b, z)
+    @test ld.slots[b] == LK.SLOT_VALUE && LK.slotValue(ld, b) === z
+    LK.PL_discard_foreign_frame(ld, fid)
     # a compound is copied onto the global stack (L1c, the cold import): a compound WORD, read
     # back through the cold export (its argument the cell's variable, bound to v's cell)
     LK.setSlotValue!(ld, b, _sw_f(v))
@@ -67,9 +96,10 @@ end
 
 @testset "a copied SLOT_VALUE carries its value" begin
     ld, a, b, _ = _sw_engine()
-    x = lk_var(_SW, UInt64(77))     # a keyed variable: the one SLOT_VALUE left (L1e e1; a number is a word)
-    LK.setSlotValue!(ld, b, _sw_sym(:stale))                    # b's side entry holds another value
-    LK.setSlotValue!(ld, a, x)
+    # a side value since L1f f3b-1: the boundary's — a compound stored as a value (a ball's term copy)
+    x = _sw_f(_sw_sym(:v))
+    LK._slot_store_value!(ld, b, _sw_f(_sw_sym(:stale)))        # b's side entry holds another value
+    LK._slot_store_value!(ld, a, x)
     LK._slot_copy!(ld, b, a)
     LK.setSlotValue!(ld, a, _sw_sym(:other))
     @test ld.slots[b] == LK.SLOT_VALUE && LK.slotValue(ld, b) === x
@@ -104,14 +134,16 @@ end
     @test LK._is_gcompound(ld2.slots[d]) &&
         lk_eq(LK.resolve_term(ld2, LK.slotValue(ld2, d)), _sw_f(_sw_sym(:y)))
     kv = UInt64(42)                                             # a keyed variable, bound
-    LK.setSlotValue!(ld2, c, lk_var(_SW, kv))
     LK.Trail!(ld2, kv, lk_gnd(_SW, Int64(3)))
+    LK.setSlotValue!(ld2, c, lk_var(_SW, kv))                   # (L1f f3b-1: stored as its value's word)
     LK._slot_link!(ld2, d, c)
     @test LK.isTaggedIntW(ld2.slots[d]) &&                     # its value's word (L1e e1)
         lk_eq(LK.slotValue(ld2, d), lk_gnd(_SW, Int64(3)))
-    LK.setSlotValue!(ld2, c, lk_var(_SW, UInt64(43)))           # … and unbound: itself
+    u43 = lk_var(_SW, UInt64(43))
+    LK.setSlotValue!(ld2, c, u43)                               # … and unbound: the cell it is bound to
     LK._slot_link!(ld2, d, c)
-    @test var_key(LK.slotValue(ld2, d)) == UInt64(43)
+    @test LK.isRef(ld2.slots[d]) && ld2.slots[d] == ld2.slots[c]
+    @test var_key(LK.slotValue(ld2, d)) == var_key(LK.deRef(ld2, u43))
 end
 
 @testset "a slot never written is refused on its read" begin

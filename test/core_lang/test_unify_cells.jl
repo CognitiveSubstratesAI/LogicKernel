@@ -238,20 +238,21 @@ end
 @testset "the boundary: a keyed variable on either side is bound on terms" begin
     db, ld, t = _uc_engine(3)
     kv = lk_var(_R, UInt64(4242))                                  # a KEYED variable: no cell
-    LK.setSlotValue!(ld, t + 1, kv)                                # a slot's side value
+    lk_side_value!(ld, t + 1, kv)                                  # a slot's side value (built since L1f f3b-1)
     LK.putSlotValue!(ld, t + 2, _rs("a"))
     @test LK.do_unify_cells(ld, -(t + 1), -(t + 2)) == LK.BOOLEX_TRUE
     @test lk_eq(LK.deRef(ld, kv), _rs("a"))                        # bound in the store
     m = LK.Mark(ld)
-    LK.setSlotValue!(ld, t + 1, lk_var(_R, UInt64(4243)))
+    lk_side_value!(ld, t + 1, lk_var(_R, UInt64(4243)))
     LK.putSlotValue!(ld, t + 3, _rf("f", _rv(1)))
     @test LK.do_unify_cells(ld, -(t + 3), -(t + 1)) == LK.BOOLEX_TRUE   # a compound against a keyed variable
     @test lk_eq(LK.resolve_term(ld, LK.deRef(ld, lk_var(_R, UInt64(4243)))),
         LK.resolve_term(ld, LK.slotValue(ld, t + 3)))
     LK.Undo!(ld, m)
     # a cell bound to a keyed variable: a value-table word; unified with an atom, the keyed variable is bound
+    # (the word laid by hand since L1f f3b-1: `Trail!` → `_word_of!` binds a keyed variable to a fresh cell)
     LK.putSlotValue!(ld, t + 1, _rv(7))
-    LK.Trail!(ld, var_key(LK.slotValue(ld, t + 1)), lk_var(_R, UInt64(4244)))
+    ld.gstack[LK.unRef(ld.slots[t + 1])] = lk_boundary_word!(ld, lk_var(_R, UInt64(4244)))
     LK.putSlotValue!(ld, t + 2, _rs("b"))
     @test LK.do_unify_cells(ld, -(t + 1), -(t + 2)) == LK.BOOLEX_TRUE
     @test lk_eq(LK.deRef(ld, lk_var(_R, UInt64(4244))), _rs("b"))

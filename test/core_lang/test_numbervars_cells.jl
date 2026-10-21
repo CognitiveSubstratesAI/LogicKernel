@@ -360,7 +360,11 @@ end
 @testset "the boundary: a keyed variable in the term, numbered on terms, counted" begin
     ld, t = _nv_engine(_R[_rs("x")])
     kv = lk_var(_R, UInt64(4743))
-    LK.setSlotValue!(ld, t + 1, _rf("f", kv, _rs("a"), kv))
+    # f(kv, a, kv), kv two value-table words holding the keyed variable (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
+    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a"), _rs("x")))
+    q = LK.valPtr(ld.slots[t + 1])
+    ld.gstack[q + 1] = lk_boundary_word!(ld, kv)
+    ld.gstack[q + 3] = lk_boundary_word!(ld, kv)
     p0 = ld.cold_pairs
     @test LK.numberVars(ld, t, _nv_opts(0), 0) == 1
     @test ld.cold_pairs == p0 + 1

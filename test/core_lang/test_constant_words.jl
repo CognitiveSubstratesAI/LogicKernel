@@ -119,9 +119,16 @@ end
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_FAIL
     LK.setSlotValue!(ld, s, _rg(Int64(1)))                      # a small integer: its tagged word (L1e e1),
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_FAIL       # another constant: fails, as upstream's h_const
-    LK.setSlotValue!(ld, s, lk_var(_R, UInt64(4242)))           # a keyed variable: still SLOT_VALUE
+    # a slot's side value (`SLOT_VALUE`: since L1f f3b-1 only the boundary's — the term copy of a ball,
+    # `_slot_store_value!` — or a reference older than the innermost foreign frame): the terms decide
+    LK._slot_store_value!(ld, s, _rf("f", _kw_s(:a)))
     @test ld.slots[s] == LK.SLOT_VALUE
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_TERMS      # undecided on the words: the terms decide
+    # a keyed variable (L1f f3b-1): bound to a fresh cell, the slot its reference — decided on the words
+    LK.setSlotValue!(ld, s, lk_var(_R, UInt64(4242)))
+    @test LK.isRef(ld.slots[s])
+    @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH      # the cell bound (bindConst)
+    @test sym_key(LK.deRef(ld, lk_var(_R, UInt64(4242)))) == sym_key(_kw_s(:a))   # the variable with it
 end
 
 @testset "h_const on the words: a cell, bound, trailed under a mark, undone" begin

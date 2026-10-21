@@ -187,7 +187,9 @@ end
 @testset "the boundary: a keyed variable bound to a term, decided on terms, counted" begin
     ld, t = _wc_engine(_R[_rs("x"), _rs("y")])
     kv = lk_var(_R, UInt64(4731))
-    LK.setSlotValue!(ld, t + 1, _rf("f", kv, _rs("a")))         # f(kv, a): kv a value-table word
+    # f(kv, a): kv a value-table word (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
+    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a")))
+    ld.gstack[LK.valPtr(ld.slots[t + 1]) + 1] = lk_boundary_word!(ld, kv)
     p0 = ld.cold_pairs
     @test LK.ground_cells(ld, -(t + 1)) == LK.GROUND_BOUNDARY     # kv unbound: not ground
     @test ld.cold_pairs > p0
@@ -197,7 +199,10 @@ end
     @test ld.cold_pairs > p0
     @test _wc_clean(ld)
     kw = lk_var(_R, UInt64(4733))
-    LK.setSlotValue!(ld, t + 2, _rf("h", kw, kw))
+    LK.setSlotValue!(ld, t + 2, _rf("h", _rs("x"), _rs("x")))     # h(kw, kw), by hand as above
+    q = LK.valPtr(ld.slots[t + 2])
+    ld.gstack[q + 1] = lk_boundary_word!(ld, kw)
+    ld.gstack[q + 2] = lk_boundary_word!(ld, kw)
     p0 = ld.cold_pairs
     v0 = LK.PL_new_term_refs(ld, 0)
     n, r = LK.term_variables_to_termv_cells(ld, t + 1, typemax(Int))

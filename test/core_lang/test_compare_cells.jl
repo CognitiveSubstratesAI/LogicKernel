@@ -174,7 +174,7 @@ end
 @testset "the boundary: a keyed variable bound to a compound compares as its value" begin
     ld, t = _cc_engine(_R[_rf("f", _rs("a")), _rs("x")])
     kv = lk_var(_R, UInt64(4713))
-    LK.setSlotValue!(ld, t + 2, kv)
+    lk_side_value!(ld, t + 2, kv)                                            # (built since L1f f3b-1)
     LK.Trail!(ld, var_key(kv), _rf("f", _rs("a")))
     p0 = ld.cold_pairs
     @test LK.compareStandard_cells(ld, -(t + 1), -(t + 2), true) == LK.CMP_EQUAL

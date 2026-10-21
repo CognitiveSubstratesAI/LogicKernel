@@ -957,19 +957,24 @@ function discardChoicesAfter(
 end
 
 # PORT: pl-wam.c dbg_discardChoicesAfter
-# DIVERGES: the pending exception's ball lives resolved in `exception_bin` (decision 1), which no
-# `Undo` can change; it is set aside and restored as upstream does, so `exception_term` is clear
-# while the choice points are discarded.
+# DIVERGES: a ball at the BOUNDARY — a slot's side value (`copy_exception!`'s term copy) — is copied with
+# its side value (`_slot_copy!`), TRANSITIONAL until f3. Otherwise on the WORDS, as upstream (f3b-1;
+# until then the ball was read as a term and stored as a side value): `PushVal(w)`/`PopVal(w)` keep the
+# dereferenced word in a local, which no discard can move (the ball lies in the frozen region).
 "`discardChoicesAfter`, keeping a pending exception (pl-wam.c)."
 function dbg_discardChoicesAfter(
     ld::PL_local_data{T}, fr::Int, reason::finished
 )::Nothing where {T}
     if ld.exception_term != 0
-        w = deRef(ld, slotValue(ld, ld.exception_term + 1))
-        @assert kind(w) !== VAR
+        k, w, p = _deref_loc(ld, -(ld.exception_term + 1))   # Word p = valTermRef(exception_term); deRef(p); w = *p
+        @assert k != DU_CELL                                 # assert(!isVar(w))
         ld.exception_term = 0
         discardChoicesAfter(ld, fr, reason)
-        _slot_store_value!(ld, ld.exception_bin + 1, w)          # a value (decision 1)
+        if k == DU_TERM && p < 0                             # (c) a slot's side value: with its value
+            _slot_copy!(ld, ld.exception_bin + 1, -p)
+        else
+            ld.slots[ld.exception_bin + 1] = w               # *valTermRef(exception_bin) = w
+        end
         ld.exception_term = ld.exception_bin
     else
         discardChoicesAfter(ld, fr, reason)
@@ -1796,7 +1801,7 @@ function _abandon_query(ld::PL_local_data{T}, qid::Int)::Nothing where {T}
     end
     q.foreign_frame = 0
     q.flags &= ~PL_Q_DETERMINISTIC
-    ld.exception_term = 0
+    PL_clear_exception(ld)                          # (f3b-1) with its `setVar`: the ball is cells now
     _end_query(ld, qid, true)
     return nothing
 end
