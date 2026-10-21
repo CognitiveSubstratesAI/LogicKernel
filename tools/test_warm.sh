@@ -45,11 +45,13 @@ export LOGICKERNEL_GATE_BASE=HEAD
 export LOGICKERNEL_CI_CHECK=off
 if [ "${1:-}" = shard ]; then                        # one CI shard: its modes in turn, the totals summed
     name="${2:-}"
-    groups="$(awk -F'\t' -v n="$name" '$1 == "shard" && $2 == n { print $3 }' "$ROOT/tools/test_warm_shards.tsv")"
+    # TEST SEAMS (test/test_gate_split.jl): the declaration and the runner of a mode, which are this
+    # script and the repository's tsv unless planted
+    groups="$(awk -F'\t' -v n="$name" '$1 == "shard" && $2 == n { print $3 }' "${LOGICKERNEL_TEST_WARM_SHARDS:-$ROOT/tools/test_warm_shards.tsv}")"
     [ -n "$groups" ] || { echo "test_warm: no shard '$name' in tools/test_warm_shards.tsv"; exit 2; }
     sp=0 sf=0
     for m in $groups; do
-        out="$("$0" "$m" 2>&1)"; rc=$?
+        out="$("${LOGICKERNEL_TEST_WARM_RUNNER:-$0}" "$m" 2>&1)"; rc=$?
         printf '%s\n' "$out"
         line="$(printf '%s\n' "$out" | grep -E '^test_warm( \([a-z]+\))?: [0-9]+ passed, [0-9]+ failed$' | tail -1)"
         if [ -z "$line" ]; then

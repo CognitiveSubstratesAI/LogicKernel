@@ -1328,6 +1328,59 @@ MUTANTS = [
         @test run(
             pipeline(ignorestatus(`bash $sh shard nosuch`); stdout=devnull, stderr=devnull)
         ).exitcode == 2
+        # `main` skips the cases that are modes of their own, every other run keeps them: the
+        # script's two lines, run as they are, and no such case called bare in the default flow
+        flag_line = match(r"(?m)^MAIN_ONLY=0; [^#\n]*", script).match
+        skip_line = match(r"(?m)^_unless_main\(\) \{.*\}$", script).match
+        for (arg, runs) in (("main", false), ("rss", true), ("", true))
+            body = "set -- $arg; $flag_line; $skip_line; _unless_main echo ran"
+            @test occursin("ran", read(`bash -c $body`, String)) == runs
+        end
+        @test isempty(collect(eachmatch(r"(?m)^_[a-z]+_cases\s*(#.*)?$", script)))
+        # …and sums the totals of a shard's modes: a PLANTED runner and declaration (the test seams)
+        mktempdir() do d
+            runner = joinpath(d, "runner.sh")
+            write(
+                runner,
+                "#!/usr/bin/env bash\n" *
+                "case \"\$1\" in\n" *
+                "    alpha) echo \"test_warm (alpha): 3 passed, 0 failed\";;\n" *
+                "    beta) echo \"test_warm: 4 passed, 0 failed\";;\n" *
+                "    red) echo \"test_warm (red): 2 passed, 1 failed\"; exit 1;;\n" *
+                "    mute) echo \"no totals here\"; exit 1;;\n" *
+                "    lying) echo \"test_warm (lying): 5 passed, 0 failed\"; exit 1;;\n" *
+                "esac\n"
+            )
+            chmod(runner, 0o755)
+            decl = joinpath(d, "decl.tsv")
+            write(
+                decl,
+                "shard\tgood\talpha beta\nshard\tred\talpha red\n" *
+                "shard\tmute\talpha mute\nshard\tlying\tlying\n"
+            )
+            function shard(name)
+                out = joinpath(d, "out.txt")
+                code = withenv(
+                    "LOGICKERNEL_TEST_WARM_RUNNER" => runner,
+                    "LOGICKERNEL_TEST_WARM_SHARDS" => decl
+                ) do
+                    run(pipeline(ignorestatus(`bash $sh shard $name`); stdout=out)).exitcode
+                end
+                (code=code, out=read(out, String))
+            end
+            r = shard("good")
+            @test r.code == 0 &&
+                occursin("test_warm (shard good): 7 passed, 0 failed", r.out)
+            r = shard("red")
+            @test r.code == 1 &&
+                occursin("test_warm (shard red): 5 passed, 1 failed", r.out)
+            r = shard("mute")        # a mode that printed no totals is a failure, never a pass
+            @test r.code == 1 && occursin("mode mute printed no totals", r.out)
+            @test occursin("test_warm (shard mute): 3 passed, 1 failed", r.out)
+            r = shard("lying")       # a nonzero exit with no failed case is a failure too
+            @test r.code == 1 &&
+                occursin("test_warm (shard lying): 5 passed, 1 failed", r.out)
+        end
     end
     # THE RUNNER IMAGE IS PINNED (CI.yml's note above `jobs:`): no job, no matrix entry on a moving
     # `-latest` image; the oracle's cache key names the image. The scan must see every `runs-on`.
