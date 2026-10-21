@@ -238,10 +238,13 @@ cp "$T/manifest.bak" "$man"
 if [ -n "$bg_scratch" ]; then
     if [ -n "$bg_head" ]; then git -C "$ROOT" switch -q "$bg_head"; else git -C "$ROOT" switch -q --detach "$bg_sha"; fi
     git -C "$ROOT" branch -q -D "$bg_scratch"
-    [ "$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2> /dev/null)" = "$bg_head" ] &&
-        [ "$(git -C "$ROOT" rev-parse HEAD)" = "$bg_sha" ]
-    check "…the checkout is back where it was (main or detached HEAD)" 0 $?
 fi
+# ALWAYS a case, so the suite has the same number of them on every ref (the sharded gather compares the
+# total — tools/test_warm_shards.tsv; MEASURED 2026-10-21: this check ran only on main or a detached HEAD, a
+# push to main passed 212 cases against 211 on a gate branch)
+[ "$(git -C "$ROOT" symbolic-ref --quiet --short HEAD 2> /dev/null)" = "$bg_head" ] &&
+    [ "$(git -C "$ROOT" rev-parse HEAD)" = "$bg_sha" ]
+check "…the checkout is where it was (back from a scratch branch off main or a detached HEAD, or never left)" 0 $?
 check "branch-gate step 0, JET: the gate FAILS" 1 "$rc"
 has "…at the fast pre-check" "$T/bgf" "branch-gate: FAIL (fast static pre-check)" 1
 has "…before any test file" "$T/bgf" "^branch-gate: test/" 0
