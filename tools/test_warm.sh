@@ -384,7 +384,8 @@ _guard_cases() {
     systemctl --user stop "$decoy" > /dev/null 2>&1
     mkdir -p "$T/sibling/.warm"; echo "$ROOT" > "$T/sibling/.warm/MUTANT_WORKTREE"
     systemd-run --user --unit="${decoy}sib" --collect --quiet --working-directory="$T/sibling" sleep 600
-    "$W" start > /dev/null 2>&1; check "guard: a mutant worktree's daemon refuses a start WITHOUT the opt-in (exit 6)" 6 $?
+    env -u LOGICKERNEL_WARM_SIBLING_MUTANTS "$W" start > /dev/null 2>&1
+    check "guard: a mutant worktree's daemon refuses a start WITHOUT the opt-in (exit 6)" 6 $?
     LOGICKERNEL_WARM_SIBLING_MUTANTS=1 "$W" start > /dev/null 2>&1
     check "guard: …and does not refuse a parallel mutant worker WITH it" 0 $?
     "$W" stop > /dev/null 2>&1

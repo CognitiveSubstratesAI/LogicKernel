@@ -234,8 +234,8 @@ def in_shard(i, shard):
 
 def merge(mutants_path, out_dir, worker_dirs):
     """The verdicts of the workers' shards, in the mutant list's order, into OUT_DIR/verdicts.tsv; prints the
-    summary the serial driver prints. Exit code: 1 if any verdict blocks, 2 if a mutant is missing (a worker
-    that died) or listed twice, else 0. Run it on the shards of ONE parallel run."""
+    summary the serial driver prints. Exit code: 1 if any verdict blocks, 2 if a worker wrote no verdicts (it
+    did not finish) or two workers decided one mutant, else 0. Run it on the shards of ONE parallel run."""
     names = [m["id"].split()[0] for m in runpy.run_path(mutants_path)["MUTANTS"]]
     seen, rows = {}, []
     for d in worker_dirs:
