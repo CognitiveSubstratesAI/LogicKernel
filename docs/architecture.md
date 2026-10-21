@@ -345,6 +345,14 @@ src/pl-fli.jl) and kept the tree and its daemon from anything else for the whole
   once; the targets are whole test files, green before the first mutant and after the last; the
   verdict is the exit code (1 caught, 0 survived, anything else invalid). A chunk keeps only its
   mutant list.
+* **Parallel (D-0077 item 6, 2026-10-21):** `tools/mutate.sh run-parallel N MUTANTS TARGET…` (N = 2 or 3) makes N
+  mutant worktrees, one daemon each (`LOGICKERNEL_WARM_SIBLING_MUTANTS=1` lets those daemons sit beside each
+  other and nothing else), runs the list round-robin over them (`MUTATE_SHARD=k/n` of the driver) and merges the
+  verdicts in the list's order (`mutate_drive.py --merge`). A mutant is applied only in its worker's own tree.
+  The memory rule: N × 2500 MB plus a quarter of the machine free, else exit 4. MEASURED on this 4-core VM: the
+  same four mutants give IDENTICAL verdicts serially and on two workers, in the SAME time (790 s and 777 s) — a
+  target that fills the cores gains nothing; a target that touches machine-wide state (test_warm.sh guard's
+  systemd decoys) is not parallel-safe and must run serially.
 * **The sentinel stays**, in whichever tree the mutant is applied; `tools/mutate.sh recover`
   handles both trees; `run-in-tree` is the old lane, where the commit hook refuses every commit
   while the sentinel exists. `tools/mutate.sh remove` ends it (`git worktree remove`).

@@ -1425,7 +1425,13 @@ MUTANTS = [
                     "MUTATE_OUT" => out, "MUTATE_SHARD" => shard,
                     "PATH" => ENV["PATH"]
                 )
-                return run(pipeline(ignorestatus(cmd); stdout=joinpath(out, "driver.log")))
+                return run(
+                    pipeline(
+                        ignorestatus(cmd);
+                        stdout=joinpath(out, "driver.log"),
+                        stderr=joinpath(out, "driver.err")
+                    )
+                )
             end
             verdicts(out) = Dict(
                 split(l, '\t')[1] => split(l, '\t')[2] for
@@ -1492,6 +1498,16 @@ MUTANTS = [
                 )
             )
             @test m.exitcode == 1                         # P4 SURVIVED: it blocks, as in the serial run
+            # a merge of verdicts none of which blocks (shard 1/2: P1 caught, P3 declared equivalent, P5 caught)
+            nb = run(
+                pipeline(
+                    ignorestatus(
+                        `python3 $drive --merge $list $(mkpath(joinpath(d, "out_nb"))) $(joinpath(out, "par1"))`
+                    );
+                    stdout=devnull
+                )
+            )
+            @test nb.exitcode == 0
             @test verdicts(out) == serial
             @test first.(split.(readlines(joinpath(out, "verdicts.tsv")), '\t')) ==
                 ["P1", "P2", "P3", "P4", "P5"]
@@ -1521,6 +1537,10 @@ MUTANTS = [
                     shard=bad
                 )
                 @test r.exitcode != 0
+                # …by the shard's own refusal: reading it as the whole list would also exit 1 here (P4 survives)
+                @test occursin(
+                    "expected k/n", read(joinpath(d, "out_bad", "driver.err"), String)
+                )
             end
             # mutate.sh: the worker count and the memory rule
             fixture = tree("main")

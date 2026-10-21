@@ -45,6 +45,13 @@
 # The daemons are started one after the other (a start precompiles) and sit beside each other only because
 # of LOGICKERNEL_WARM_SIBLING_MUTANTS=1 (tools/warm.sh `_other_daemons`): a daemon of ANOTHER checkout still
 # refuses a start. The local run is bounded by the machine's 4 cores: 2 or 3, never more.
+# TARGETS MUST BE PARALLEL-SAFE (MEASURED 2026-10-21): a target that touches machine-wide state is not.
+# tools/test_warm.sh guard creates systemd decoy units that another worker's daemon takes for a foreign
+# checkout's: on 3 workers at once one worker's FINAL baseline went red (the verdicts above it prove
+# nothing); run serially, the same three mutants were all caught. And parallel is no faster for a target that
+# already fills the cores: 790 s serial against 777 s on 2 workers (the same 4 mutants of Tooling4 against
+# test_gate_split.jl, identical verdicts); the 3-worker run of tools/mutants/ParmutWarm.py took 551 s against
+# 293 s serial (evidence/A-0054/parallel_proof in the audit channel).
 #
 # `recover` is the way out of a killed run, in BOTH trees, and the only one: deleting a sentinel by
 # hand is exactly the step that would let a leftover mutation through. For each tree it checks the
