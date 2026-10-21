@@ -1283,7 +1283,7 @@ MUTANTS = [
         # the gather, on planted shard results
         tool = joinpath(_GS_ROOT, "tools", "evidence_ci.py")
         results = Dict(n => "test_warm (shard $n): 10 passed, 0 failed\n" for n in names)
-        function warm(edit=identity; tot=length(names) * 10)
+        function warm(edit=identity; tot=length(names) * 10, shards=declared)
             r = copy(results)
             edit(r)
             mktempdir() do d
@@ -1291,7 +1291,7 @@ MUTANTS = [
                 decl = joinpath(d, "decl.tsv")
                 write(
                     decl,
-                    join(["shard\t$n\t$(join(mo, ' '))\n" for (n, mo) in declared]) *
+                    join(["shard\t$n\t$(join(mo, ' '))\n" for (n, mo) in shards]) *
                     "total\t$tot\n"
                 )
                 out = joinpath(d, "out.txt")
@@ -1319,6 +1319,10 @@ MUTANTS = [
         @test r.code == 1 && occursin("shard $(names[1]): unreadable", r.out)   # another shard's line
         r = warm(; tot=length(names) * 10 + 1)
         @test r.code == 1 && occursin("the whole run passes", r.out)             # the sum is off
+        r = warm(; tot=length(names) * 10 - 1)
+        @test r.code == 1 && occursin("the whole run passes", r.out)             # …a surplus too
+        r = warm(; shards=typeof(declared)())     # a declaration without a shard
+        @test r.code == 1 && occursin("declares no shards", r.out)
         r = warm(x -> foreach(n -> x[n] = "skipped\n", names))
         @test r.code == 0 && occursin("every shard skipped", r.out)               # no tooling change
         r = warm(x -> (x[names[1]] = "skipped\n"))
