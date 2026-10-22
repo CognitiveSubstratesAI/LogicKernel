@@ -197,6 +197,31 @@ end
     end
 end
 
+# f3b-3 (localGoal on the cells): a CYCLIC control goal under call/1 is upstream's
+# representation_error(cyclic_term) (pl-comp.c analyseVariables2's CYCLE_CHECK_AT test). Before
+# f3b-3 the kernel's term walk overflowed the Julia stack — no Prolog answer (an existing divergence,
+# D-0110 item 5: measured on the base 42d6205, 2026-10-22).
+@testset "call/1 of a cyclic control goal: representation_error(cyclic_term), as swipl" begin
+    G = _rv(71)
+    clauses = Tuple{_R, Union{Nothing, _R}}[
+        (_rs("g3"), _rconj(_rf("=", G, _rconj(_rs("true"), G)), _rf("call", G)))
+    ]
+    goals = _R[_rs("g3")]
+    db = _rdb(clauses)
+    ours = [_rmcc_formal(db, g) for g in goals]
+    @test ours == ["representation_error(cyclic_term)"]
+    if _R_SWIPL
+        theirs = [
+            l[(length("exception(") + 1):(end - length(") det"))] for
+            l in _rswipl(clauses, goals) if startswith(l, "exception(")
+        ]
+        @test ours == theirs
+        ours == theirs || @info "errors differ" ours theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
 # Where a frame lands inside a meta-called control goal (decision D, user 2026-10-12: equal to
 # swipl's). Upstream builds the goal clause ON THE LOCAL STACK above the frame — pseudo variables,
 # variables, then the clause and its code — so a frame made inside the goal lands above all of that;

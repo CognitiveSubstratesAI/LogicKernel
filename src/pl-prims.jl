@@ -332,6 +332,8 @@ const CMP_INCOMPARABLE = 4
 # tree, so a cycle can only pass through a binding. `bound` says whether the top pair was reached
 # through one. Returns `(rc, linked)` where upstream writes `*linked`; no `CMP_UNDECIDED`
 # (`CMP_MODE_PARTIAL` is not ported) and no `CMP_ERROR` (no memory overflow to report).
+# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings: callers the *_cells
+# CMP_TERMS boundary and the term sort / variant twins; deleted in f3
 """
     do_compare(ld, f1, f2, bound, mode) -> (Int, Bool)
 
@@ -380,6 +382,8 @@ end
 # PORT: pl-prims.c compare_fast
 # DIVERGES: returns `(rc, linked)` where upstream writes `*linked`; no `c1`/`c2` (only
 # `CMP_MODE_PARTIAL` reads them, not ported).
+# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
+# deleted in f3
 """
     compare_fast(ld, t1, t2, mode) -> (Int, Bool)
 
@@ -406,6 +410,8 @@ end
 # through a binding, and a binding's value is one object (upstream: the same `Functor` cells). No
 # `CMP_ERROR` from the argument tests (no memory overflow). The result is returned, a tuple, where
 # upstream writes it through `*c1` and `*c2`.
+# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
+# deleted in f3
 """
     compare_descend(ld, t1, t2, mode) -> (Int, T, T)
 
@@ -464,6 +470,7 @@ end
 # identity maps that live for one call — so there is no `ph_acyclic_unmark`. A compound of no
 # arguments ends a chain (upstream reads its `arguments - 1`, the functor cell, which is no term).
 # No MEMORY_OVERFLOW.
+# TRANSITIONAL (f3b-3, class (c)): term acyclicity; only caller `is_acyclic` on terms; deleted in f3
 """
     ph_acyclic_mark(ld, top) -> Bool
 
@@ -538,6 +545,8 @@ end
 # PORT: pl-prims.c skip_list
 # DIVERGES: the term itself and its tail returned, `(length, tail)`, where upstream writes the tail
 # through `tailp`; two cells are the same cell when `===` (upstream compares the cell words).
+# TRANSITIONAL (f3b-3, class (c)): callers are DU_TERM branches (PL_skip_list, lengthList,
+# skip_list/3) and the term sort twin; deleted in f3
 "Walk the list `l` (Brent's cycle detection): `(cells, tail)`, the tail the first non-list or the cell a cycle returns to (pl-prims.c)."
 function skip_list(ld::PL_local_data{T}, l::T)::Tuple{Int, T} where {T}
     l = deRef(ld, l)
@@ -610,6 +619,7 @@ function lengthList(ld::PL_local_data{T}, list::term_t, errors::Bool)::Int where
         errors && PL_error(ld, ERR_TYPE, mk_sym(T, :list), list)
         return k == DU_CELL ? -2 : -1                       # isVar(*tail) ? -2 : -1
     end
+    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM tail, on terms; deleted in f3
     ld.cold_pairs += 1
     length, tail = skip_list(ld, slotValue(ld, list + 1))
 
@@ -665,6 +675,7 @@ const REPRESENTATION_ERROR = -12
 # is one in `ld.numbervars_made` (the compounds this walk made, cleared by `numberVars`); `visited`
 # is an `IdDict` of the compounds entered (upstream's mark bits). No attributed variables (none in
 # the kernel: `AV_*` is kept for `nv_options`); no signals (`NV_EINTR`); no global-stack overflow.
+# TRANSITIONAL (f3b-3, class (c)): twin — only caller numberVars_terms (NV_BOUNDARY); deleted in f3
 "Number the variables of `p` from `n`: the next number, or a code below 0 (pl-prims.c)."
 function do_number_vars(
     ld::PL_local_data{T}, p::T, options::nv_options{T}, n::Int
@@ -1033,6 +1044,8 @@ function pl_numbervars4_va(
 end
 
 # PORT: pl-prims.c is_acyclic
+# TRANSITIONAL (f3b-3, class (c)): callers is_acyclic_cells' DU_TERM branch, term twins; deleted in
+# f3
 "Whether `p` is acyclic under the bindings in `ld` (pl-prims.c `is_acyclic`)."
 function is_acyclic(ld::PL_local_data{T}, p::T)::Bool where {T}
     p = deRef(ld, p)
@@ -1045,6 +1058,8 @@ end
 # cyclic pair, which `PL_raise_exception` cannot copy (it resolves the ball, and `resolve_term`
 # refuses a cycle). So an incomparable pair keeps the fast result, as swipl's default
 # `incomparable=arbitrary` does; `CMP_MODE_PARTIAL` is not ported either.
+# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
+# deleted in f3
 """
     compare_std(ld, t1, t2, mode) -> Int
 
@@ -1067,6 +1082,8 @@ end
 # PORT: pl-prims.c compareStandard
 # DIVERGES: `eq` is not optional here (no method of three arguments, so none overlaps the method for
 # resolved terms); no `raiseIncomparable` (see `compare_std`).
+# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
+# deleted in f3
 """
     compareStandard(ld, t1, t2, eq::Bool) -> Int
 
@@ -1144,6 +1161,8 @@ end
 # variable for two local ones. (3) No attributed variables. (4) Atomic data: a symbol by `sym_key`
 # (upstream: the same word), a grounded value by the term type's `gnd_equal` (upstream: the same
 # word, or `equalIndirect` on the bits — the reference type's `gnd_equal` is that identity).
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
 Unify two DEREFERENCED terms when neither is compound (pl-prims.c): `BOOLEX_TRUE` (bindings made
 with `Trail!`), `BOOLEX_FALSE`, or `DO_COMPOUND` when both are compounds.
@@ -1203,6 +1222,8 @@ end
 #   or point back at an ancestor, breaks the argument — it must restore linking EVERY pair. Guards:
 #   test_unify.jl's cycle_1/cycle_2, the 398 rational trees of test_unify_swipl.jl, and the mutation
 #   "links not followed", under which cycle_2 does not terminate.
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
     do_unify(ld, t1, t2) -> boolex_t
 
@@ -1262,6 +1283,8 @@ function do_unify(ld::PL_local_data{T}, t1::T, t2::T)::boolex_t where {T}
 end
 
 # PORT: pl-prims.c raw_unify_ptrs
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 "Unify under the local data's `occurs_check` flag (pl-prims.c)."
 function raw_unify_ptrs(ld::PL_local_data{T}, t1::T, t2::T)::boolex_t where {T}
     flag = ld.prolog_flag_occurs_check
@@ -1276,6 +1299,8 @@ end
 # PORT: pl-prims.c unify_ptrs
 # DIVERGES: no `flags` and no overflow retry — stacks cannot overflow; `true` or `false`. An
 # occurs-check error is raised, as upstream's: `false`, with the error pending.
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 "Unify `t1` and `t2` (pl-prims.c `unify_ptrs`): `true` or `false`; does not undo on failure."
 unify_ptrs(ld::PL_local_data{T}, t1::T, t2::T) where {T} =
     raw_unify_ptrs(ld, t1, t2) == BOOLEX_TRUE
@@ -1284,6 +1309,8 @@ unify_ptrs(ld::PL_local_data{T}, t1::T, t2::T) where {T} =
 # DIVERGES: no foreign frame and no wakeup of delayed goals (no attributed variables): a mark, and
 # an undo whatever happens. An occurs-check error stays pending (`ld.exception_term`), where
 # upstream hands it back through `ex`.
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 "Whether `t1` and `t2` can be unified, leaving no binding behind (pl-prims.c)."
 function can_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     m = Mark(ld)
@@ -1956,6 +1983,7 @@ compareStandard_cells(ld::PL_local_data{T}, l1::Int, l2::Int, eq::Bool) where {T
 function _identical_atomic(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
     k, w, p = _deref_loc(ld, l)
     k == DU_CELL && return false
+    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
     k == DU_TERM &&
         return compare_primitives(deRef(ld, _loc_term(ld, k, w, p)), c, CMP_MODE_EQUAL) ==
                CMP_EQUAL
@@ -2047,6 +2075,8 @@ function unify_with_occurs_check_cells(
 )::boolex_t where {T}
     k1, w1, p1 = _deref_loc(ld, l1)
     k2, w2, p2 = _deref_loc(ld, l2)
+    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary (here) and the KEYED trail entries
+    # (below) on terms; deleted in f3
     if k1 == DU_TERM || k2 == DU_TERM                   # the boundary (counted)
         ld.cold_pairs += 1
         return unify_with_occurs_check!(
@@ -2131,6 +2161,8 @@ _same_cell(v, t)::Bool =
 # binding's value) a compound, to find a cycle made through bindings. A visited compound is an entry
 # in `occurs_marked` where upstream sets FIRST_MASK on its functor cell; `occurs_visited` is
 # upstream's `visited` stack, popped to clear the marks.
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 "Whether `v` occurs in `t` under the bindings in `ld` (pl-prims.c)."
 function var_occurs_in(ld::PL_local_data{T}, v::T, t::T)::Bool where {T}
     t = deRef(ld, t)
@@ -2182,6 +2214,8 @@ end
 # PORT: pl-prims.c failed_unify_with_occurs_check
 # NOT PORTED: `blockGC`/`unblockGC` around `PL_error`: they hold off the stack garbage collector
 # (pl-gc.c), which the kernel does not have until G1.
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 "Fail (`OCCURS_CHECK_TRUE`) or raise the occurs-check error, as `Var = Term` (pl-prims.c)."
 function failed_unify_with_occurs_check(
     ld::PL_local_data{T}, t1::T, t2::T, mode::occurs_check_t
@@ -2256,6 +2290,8 @@ function unify_with_occurs_check!(
                 # NOT PORTED: the `attvar` wakeup list's two entries below (src/pl-attvar.jl)
             end
             key = _trail_key(ld, e)
+            # TRANSITIONAL (f3b-3, class (c)): the term occurs check's KEYED binding read; callers
+            # raw_unify_ptrs (family), unify_with_occurs_check_cells' DU_TERM branch; deleted in f3
             p2 = deRef(ld, something(_binding(ld, key)))   # deRef2(p, p2): its value, dereferenced
             if var_occurs_in(ld, p2, p2)
                 if mode == OCCURS_CHECK_ERROR
@@ -2274,6 +2310,8 @@ end
 
 # ── the predicates ───────────────────────────────────────────────────────────────────────────────
 # PORT: pl-prims.c unify as pl_unify
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
     pl_unify!(ld, t1, t2) -> Bool
 
@@ -2285,6 +2323,8 @@ pl_unify!(ld::PL_local_data{T}, t1::T, t2::T) where {T} = unify_ptrs(ld, t1, t2)
 # PORT: pl-prims.c not_unify as pl_not_unify
 # DIVERGES: the quick tests read kinds: two symbols differ by `sym_key` (upstream: different words),
 # two grounded values by `gnd_equal`.
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
     pl_not_unify(ld, t1, t2) -> Bool
 
@@ -2309,6 +2349,8 @@ function pl_not_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
 end
 
 # PORT: pl-prims.c unify_with_occurs_check as pl_unify_with_occurs_check
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
     pl_unify_with_occurs_check!(ld, t1, t2) -> Bool
 
@@ -2325,6 +2367,8 @@ function pl_unify_with_occurs_check!(ld::PL_local_data{T}, t1::T, t2::T)::Bool w
 end
 
 # PORT: pl-prims.c can_compare as pl_can_compare
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
     pl_can_compare(ld, t1, t2) -> Bool
 
@@ -2345,6 +2389,8 @@ function pl_can_compare(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
 end
 
 # PORT: pl-prims.c unifiable_occurs_check
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 "`unifiable/3`'s occurs check when one side is a variable (pl-prims.c)."
 function unifiable_occurs_check(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
     flag = ld.prolog_flag_occurs_check
@@ -2356,6 +2402,8 @@ end
 
 # PORT: pl-prims.c unify_all_trail_ptrs
 # DIVERGES: every binding is trailed anyway (no `mark_bar`), and no overflow retry.
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 "Unify, keeping every binding on the trail above the returned mark; undo on plain failure (pl-prims.c)."
 function unify_all_trail_ptrs(
     ld::PL_local_data{T}, t1::T, t2::T
@@ -2377,6 +2425,8 @@ end
 # DIVERGES: returns the substitution as `var => value` pairs (`nothing` when the terms do not
 # unify) where upstream unifies a Prolog list of `Var = Value`; the comparison of a variable with
 # the other side is identity of the variable (upstream: `PL_compare` equal).
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
     unifiable(ld, t1, t2) -> Union{Nothing, Vector{Pair{T, T}}}
 
@@ -2447,6 +2497,8 @@ end
 # was imported) instead of raising, and the compounds of that cycle are kept AS THEMSELVES (one level deep,
 # their children cells' variables) so the cycle closes on the same term — the exception ball's cycle
 # (f3b-1, `_slot_compound_term`; test_write_family_swipl.jl: `deRef(child(t, 3)) === t`).
+# TRANSITIONAL (f3b-3, class (c)): callers slotValue's ball machinery, `_export_leaf!`'s DU_TERM
+# branch, compileClause without an export, `printMessage(…, ::T)` (boot, f3b-3b); deleted in f3
 function _resolve_term(ld::PL_local_data{T}, t::T, cut::Bool)::T where {T}
     t = deRef(ld, t)
     kind(t) === VAR && return _caller_var(ld, t)
@@ -2513,6 +2565,8 @@ end
 # PORT: pl-prims.c can_unify
 # DIVERGES: `t1`/`t2` are terms (upstream: cells); `ex` is a term reference or 0 (NULL). No
 # `foreignWakeup` (no attributed variables).
+# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
+# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
     can_unify(ld, t1, t2, ex) -> Bool
 
@@ -2601,6 +2655,7 @@ function pl_not_unify2_va(
         PL_is_variable(ld, ex) || return PL_raise_exception(ld, ex) ? FTRUE : FFALSE
         return FTRUE
     end
+    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
     ld.cold_pairs += 1                                      # the boundary: on terms
     p1 = deRef(ld, slotValue(ld, A1 + 1))                    # Word p1 = valTermRef(A1)
     p2 = deRef(ld, slotValue(ld, A1 + 2))                    # Word p2 = p1+1
@@ -2828,6 +2883,7 @@ function pl_compare3_va(
     given = k != DU_CELL                                     # canBind(*d) ⇒ a = 0
     kk = UInt64(0)
     if given
+        # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
         if k == DU_TERM                                      # the boundary: the term, as before
             d = deRef(ld, slotValue(ld, A1 + 1))
             given = kind(d) !== VAR
@@ -2932,6 +2988,8 @@ end
 # DIVERGES: the list is BUILT (`mk_expr`) where upstream writes it onto the global stack, and unified
 # with `subst` directly (upstream: through `pushWordAsTermRef`, a temporary reference that occupies
 # no local-stack position). No attributed variables (`isTrailVal`), no overflow retry.
+# TRANSITIONAL (f3b-3, class (c)): on terms — only caller unifiable_cells' TRAIL_KEYED boundary;
+# deleted in f3
 """
     unifiable(ld, t1, t2, subst) -> Bool
 
@@ -3220,6 +3278,8 @@ end
 
 # PORT: pl-prims.c ground
 # DIVERGES: a compound whose own value holds no variable (`is_ground`) is ground without a walk.
+# TRANSITIONAL (f3b-3, class (c)): term ground — callers ph_ground_cells' / ground_cells' boundary;
+# deleted in f3
 "The first unbound variable of `p` under the bindings in `ld`, or `nothing` when it is ground (pl-prims.c)."
 function ground(ld::PL_local_data{T}, p::T)::Union{Nothing, T} where {T}
     p = deRef(ld, p)
@@ -3256,6 +3316,7 @@ function pl_functor3_va(
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
     k, w, q = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p) (L1e e4: the words)
+    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary (here, below), on terms; deleted in f3
     k == DU_TERM && (ld.cold_pairs += 1)                # the boundary: its kind on the term
     isterm = if k == DU_WORD
         _is_gcompound(w)
@@ -3351,6 +3412,7 @@ function pl_univ2_va(
             ld.gstack[p + i] = if hk == DU_CELL             # *p++ = needsRef(*h) ? makeRefG(h) : *h
                 makeRefG(hp)
             elseif hk == DU_TERM
+                # TRANSITIONAL (f3b-3, class (c)): the DU_TERM head, on terms; deleted in f3
                 ld.cold_pairs += 1
                 _word_of!(ld, deRef(ld, _loc_term(ld, hk, hw, hp)))
             else
@@ -3516,6 +3578,7 @@ end
 # `&mark` is an agenda entry that no term can be (`mark`, held by `markbox`); the walk starts at a
 # compound holding the term. The goal after `Module:` is read as every other argument is
 # (upstream defect, see register Q4).
+# TRANSITIONAL (f3b-3, class (c)): twin — only caller `_free_variable_set_term`; deleted in f3
 """
 The free variables of `Template^Goal` as the ISO standard defines them (7.1.1.4; pl-prims.c): walk
 `t0`, pushing on `vars` every unbound variable met outside the left side of an outermost `^`, and
@@ -3795,6 +3858,7 @@ function term_variables_to_termv_cells(
     count = term_variables_loop_cells(ld, a, maxcount)
     clearCellAgenda!(a)
     unvisit_cells(ld)                                       # unvisit_and_unfirst()
+    # TRANSITIONAL (f3b-3, class (c)): the boundary's term walk; deleted in f3
     if count == TV_BOUNDARY
         PL_reset_term_refs(ld, v0)
         ld.cold_pairs += 1
@@ -3981,6 +4045,7 @@ function pl_skip_list3_va(
             FFALSE
         end
     end
+    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
     ld.cold_pairs += 1                                      # the boundary: on terms
     len, tail = skip_list(ld, slotValue(ld, A2 + 1))
     if unify_ptrs(ld, slotValue(ld, A3 + 1), tail) && PL_unify_integer(ld, A1, len)

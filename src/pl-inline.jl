@@ -624,6 +624,8 @@ end
 @inline function _cell_value(ld::PL_local_data{T}, w::word)::Union{Nothing, T} where {T}
     isVar(w) && return nothing
     isAtomW(w) && return _atom_value(ld, w)
+    # TRANSITIONAL (f3b-3, class (c)): a cell word read as a term (`_cell_var`, `_compound_term`);
+    # its one caller is `_binding` (machinery); deleted in f3
     isRef(w) && return _cell_var(ld, unRef(w))
     _is_gcompound(w) && return _compound_term(ld, valPtr(w))
     return _value_term(ld, w)
@@ -641,6 +643,8 @@ end
 end
 
 # ORIGINAL: what a variable is bound to, for the few readers that look a binding up by key.
+# TRANSITIONAL (f3b-3, class (c)): machinery — the term core's binding by key (`deRef`, the term
+# occurs check, the term copy); deleted in f3
 "The value variable `key` is bound to, or `nothing` (unbound): its cell, or the store."
 @inline function _binding(ld::PL_local_data{T}, key::UInt64)::Union{Nothing, T} where {T}
     p = _cell_pos(ld, key)
@@ -955,6 +959,8 @@ handle: read the value — and an answer — through the slot (`slotValue`), nev
 variable. (Until f3b-1 it returned the value stored, read back through the cold export.)
 """
 function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::Nothing where {T}
+    # TRANSITIONAL (f3b-3, class (c)): the deRef follows a variable bound in the keyed store only;
+    # it is deleted in f3 (`t = v`)
     t = deRef(ld, v)
     k = kind(t)
     if k === EXPR
@@ -993,6 +999,7 @@ function _put_compound!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::word where {
             continue
         end
         stack[end] = (u, p, i + 1)
+        # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef; deleted in f3
         c = deRef(ld, child(u, i + off))            # bindings followed
         kc = kind(c)
         if kc === EXPR
@@ -1041,6 +1048,7 @@ function _put_vars!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::Nothing where {T
             continue
         end
         stack[end] = (u, i + 1)
+        # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef; deleted in f3
         c = deRef(ld, child(u, i + off))            # bindings followed
         kc = kind(c)
         if kc === VAR
@@ -1060,6 +1068,9 @@ end
 "`t` with its variable bindings followed: an unbound variable, or a non-variable (pl-data.h)."
 function deRef(ld::PL_local_data{T}, t::T)::T where {T}
     while kind(t) === VAR
+        # TRANSITIONAL (f3b-3, class (c)): the term core's binding read (word twin `_deref_loc`);
+        # after landing B every caller is a DU_TERM / keyed / cursor branch or a term twin (census
+        # evidence/f3b-3); deleted in f3
         b = _binding(ld, var_key(t))           # its cell, or the store (one place knows which)
         b === nothing && return t
         t = b
@@ -1070,6 +1081,8 @@ end
 # PORT: pl-inline.h linkValI
 # DIVERGES: the dereferenced term. Upstream returns a reference to an unbound variable's cell
 # (`makeRefG(p)`) and the value otherwise; a keyed variable IS its own reference (decision 2).
+# TRANSITIONAL (f3b-3, class (c)): on terms — callers PL_unify_list's DU_TERM branch and
+# `_free_variable_set_term` (twin); deleted in f3
 "The value to store for the term `t` refers to: `t` dereferenced (pl-inline.h)."
 function linkValI(ld::PL_local_data{T}, t::T)::T where {T}
     return deRef(ld, t)
@@ -1143,6 +1156,8 @@ function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
             end
         end
     elseif w == SLOT_VALUE
+        # TRANSITIONAL (f3b-3, class (c)): the side value's and the keyed entry's deRef (this
+        # branch and the next) read terms; deleted in f3
         ld.gstack[p] = _word_of!(ld, deRef(ld, ld.slot_values[i]))
     elseif _is_vword(w) && kind(ld.vtable[valPtr(w)]) === VAR   # a keyed variable: as a binding
         ld.gstack[p] = _word_of!(ld, deRef(ld, ld.vtable[valPtr(w)]))
@@ -1162,6 +1177,8 @@ end
 # is `p <= mark_bar` here.
 "Bind variable `key` to `v`, recording it on the trail where backtracking must undo it (pl-inline.h)."
 function Trail!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
+    # TRANSITIONAL (f3b-3, class (c)): bind by key — a stamped cell (word twin `_bind_const!`) or
+    # TRAIL_KEYED; every caller is a DU_TERM / keyed / twin branch; deleted in f3
     p = _cell_pos(ld, key)
     if p != 0
         # if ( p < LD->mark_bar ) (tTop++)->address = p

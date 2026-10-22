@@ -553,6 +553,11 @@ function _manifest_index(T)
         (LK.import_cells!, Tuple{LD, LK.cell_export{T}, T}, false),
         (LK.localGoal, Tuple{GD, LD, T}, false),
         (LK.compileGoalClause, Tuple{GD, LD, T, MOD, Int}, false),
+        (LK.localGoal, Tuple{GD, LD, LK.compileInfo{T}, Int}, false),               # f3b-3
+        (LK._local_subgoal, Tuple{LD, LK.compileInfo{T}, Int, Int}, false),         # f3b-3
+        (LK._argvar_placeholder, Tuple{LD, UInt64}, false),                         # f3b-3
+        (LK.compileGoalClause, Tuple{GD, LD, Int, MOD, Int}, false),                # f3b-3
+        (LK._compileGoalClause!, Tuple{GD, LD, LK.compileInfo{T}, T, Int, Int}, false),  # f3b-3
         # src/pl-funct.jl — the control functors the global data holds
         (LK.registerControlFunctors, Tuple{Type{T}}, false),
         (LK._subclause_names, Tuple{Type{T}}, false),

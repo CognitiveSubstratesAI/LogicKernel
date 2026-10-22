@@ -83,7 +83,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-bag.c` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-builtin.h` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 5 | 1 |
 | swipl-devel `src/pl-codetable.c` | code | `8e1bc1110be4` | `src/pl-vmi.jl` | 1 | 1 |
-| swipl-devel `src/pl-comp.c` | code | `8e1bc1110be4` | `src/pl-comp.jl` | 136 | 74 |
+| swipl-devel `src/pl-comp.c` | code | `8e1bc1110be4` | `src/pl-comp.jl` | 137 | 74 |
 | swipl-devel `src/pl-comp.h` | code | `8e1bc1110be4` | `src/pl-comp.jl` | 1 | 0 |
 | swipl-devel `src/pl-copyterm.c` | code | `8e1bc1110be4` | `src/pl-copyterm.jl` | 16 | 9 |
 | swipl-devel `src/pl-data.h` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 77 | 8 |

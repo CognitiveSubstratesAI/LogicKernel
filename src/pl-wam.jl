@@ -2995,6 +2995,7 @@ function PL_next_solution_guarded(
     mc_k, mc_w, _ = mc_loc                          # goal = *a
     mc_terms = mc_k == DU_TERM
     mc_goal = ph                                    # (the goal's term: the boundary, a goal clause)
+    mc_gloc = 0                                     # (the goal's location: a goal clause, f3b-3)
     mc_arity = 0
     if mc_terms                                     # the boundary: on terms
         ld.cold_pairs += 1
@@ -3047,9 +3048,9 @@ function PL_next_solution_guarded(
             (valueFunctor(ld.functors, mc_f).flags & CONTROL_F) != 0 ||  # ison(fd, CONTROL_F)
             (sym_key(mc_name) == gd.subclause_names.atom_call && mc_arity > 8)
         )
-            # (c) the goal clause is compiled from the goal's TERM (`compileGoalClause` →
-            # `localGoal`, on terms until f3b-3): the cold export, as before f3b-5b
-            mc_goal = _compound_term(ld, valPtr(mc_w))
+            # the goal clause is compiled from the goal's LOCATION (f3b-3: `localGoal` on the
+            # cells); a goal word held in the slot itself has no position: the slot's location
+            mc_gloc = mc_loc[3] != 0 ? mc_loc[3] : -(argFrameP(mc_nb, 0) + 1)
             @goto i_metacall_clause
         end
     else                                            # a variable, a number, a string, a blob
@@ -3062,13 +3063,23 @@ function PL_next_solution_guarded(
     # DIVERGES: see `i_metacall_common`.
     @label i_metacall_clause
     @assert (ld.frames[FR].flags & FR_INRESET) == 0     # (no reset/3: '$meta_call'/1)
-    if _has_functor(mc_goal, gd.functors_control.at_sign, 2)
+    mc_at = if mc_terms                             # Goal@Module: on the term, or the word (f3b-3)
+        _has_functor(mc_goal, gd.functors_control.at_sign, 2)
+    else
+        mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign
+    end
+    if mc_at
+        mc_terms || (mc_goal = _compound_term(ld, valPtr(mc_w)))   # (the refusal's culprit only)
         setLTop!(ld, argFrameP(mc_nb, 1))           # (a Julia exception unwinds this frame)
         throw(NotPortedError{T}(mc_goal, "call/1 of Goal@Module", "R2"))
     end
     # lTop = NFR (it is); compileClause(&cl, NULL, a, PROCEDURE_dcall1, module, 0, 0)
     mc_cl = try
-        compileGoalClause(gd, ld, mc_goal, gd.modules[mc_mi], mc_nb)
+        if mc_terms                                 # (c) the boundary: the goal's term
+            compileGoalClause(gd, ld, mc_goal, gd.modules[mc_mi], mc_nb)
+        else
+            compileGoalClause(gd, ld, mc_gloc, gd.modules[mc_mi], mc_nb)
+        end
     catch mc_e
         # a construct the compiler refuses by name (`Module:Goal`, …): a Julia
         # exception, which unwinds the frame being filled from below lTop

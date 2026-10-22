@@ -67,6 +67,9 @@ end
 # DIVERGES: see the file header — one bottom-up walk over values; the cyclic copy is a fresh
 # variable bound to the copy; a compound met both directly and through its variable is copied
 # twice (the header's CELL IDENTITY: no answer differs, `same_term/2` would — step L1).
+# TRANSITIONAL (f3b-3, class (c)): the term copy (`_cp_visit!`, `_cp_finish!`): callers
+# copy_term_refs' and copy_exception!'s CP_BOUNDARY and the records' boundary
+# (`_compileTermToHeap_terms`); deleted in f3
 """
     copy_term(ld, from, options) -> T
 
@@ -125,6 +128,8 @@ function _cp_visit!(
     chain = UInt64[]
     while kind(t) === VAR
         k = var_key(t)
+        # TRANSITIONAL (f3b-3, class (c)): a bound variable followed by key, reached only through
+        # CP_BOUNDARY / the records' boundary (census evidence/f3b-3); deleted in f3
         b = _binding(ld, k)
         b === nothing && break
         if haskey(st.done, k)                           # copied already
@@ -142,6 +147,7 @@ function _cp_visit!(
     end
     kt = kind(t)
     if kt === VAR                                       # unbound: one fresh variable per variable
+        # TRANSITIONAL (f3b-3, class (c)): the copy's fresh variable as a cell term; deleted in f3
         w = get!(() -> _cell_var(ld, allocGlobalCells!(ld, 1)), st.vars, var_key(t))
         return _cp_chain_done!(st, chain, w)
     elseif kt !== EXPR
@@ -509,6 +515,7 @@ function copy_term_refs(
         dest = allocGlobalCells!(ld, 1)                     # dest = allocGlobal(1); setVar(*dest)
         ld.slots[to + 1] = makeRefG(dest)                   # *valTermRef(to) = makeRefG(dest)
         rc = do_copy_term_cells(ld, -(from + 1), dest, options)
+        # TRANSITIONAL (f3b-3, class (c)): the boundary's term copy; deleted in f3
         if rc == CP_BOUNDARY
             ld.cold_pairs += 1
             setSlotValue!(ld, to + 1, copy_term(ld, slotValue(ld, from + 1), options))

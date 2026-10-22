@@ -241,7 +241,11 @@ cell_export{T}() where {T} =
 # clause's literal table as it is built (since V1 L2), and `procedures` its procedure table (since V1).
 # `islocal`, `subclausearg`, `argvars`, `argvar` since V9e-2 (a GOAL clause for `call/1` of a control
 # construct): the pseudo variables' cells are written as the clause compiles, into the frame at
-# `local_base` of the local data `local_ld` (upstream writes them at `lTop` through LD). No `clause`
+# `local_base` of the local data `local_ld` (upstream writes them at `lTop` through LD); since f3b-3
+# `local_words` holds, for a goal clause read off the cells (`localGoal`), each compound or string
+# argument's placeholder and its WORD, which its pseudo variable's cell takes (`*k = *arg`) — a
+# list, not an `IdDict`: two arguments of one value are one `===` key (a string compares by content,
+# the interned implementation shares a ground compound), and each keeps its own word. No `clause`
 # (the clause is created after the code), and the fields of subsystems not yet ported:
 # `progress` (interrupts), `colon_context` and `at_context` (modules). Since R1g: `singletons`,
 # `warning_list` (0: the caller wants no warnings) and `warnings` (`nothing` until the first one,
@@ -284,6 +288,7 @@ mutable struct compileInfo{T}
     argvar::Int                                             # islocal current pseudo var
     local_ld::Union{Nothing, PL_local_data{T}}              # (islocal: the frame's local data)
     local_base::Int                                         # (islocal: the frame, lTop)
+    local_words::Union{Nothing, Vector{Pair{T, word}}}      # (islocal on the cells: argvar → *arg)
     const gd::PL_global_data{T}                             # (GD: its atom table, L1b C6b)
 end
 
@@ -299,7 +304,7 @@ compileInfo{T}(
         Procedure{T}[], nothing, cutInfo(0, 0, code(0)),         # ci->cut.var = 0 (c:2068)
         0, false, UInt32(0), 0, 0, Dict{Int, T}(),              # head_unify: compileClause's
         0, 0, 0, nothing, nothing, nothing,                     # no style checks, no warnings, no export
-        false, false, 0, 0, nothing, 0,                         # not a goal clause
+        false, false, 0, 0, nothing, 0, nothing,                # not a goal clause
         gd
     )
 
@@ -730,7 +735,7 @@ const AV_NOT_AFTER = 4
 # PORT: pl-comp.c av_frame
 # DIVERGES: `base`/`off`/`next` stand for `head_next`, a pointer into the arguments; `obv` is
 # whether a branch buffer existed when the frame was pushed (upstream keeps the pointer); no
-# `depth_before_entry` (there is no cycle check, see `analyseVariables2!`).
+# `depth_before_entry` (no cycle check here, see `analyseVariables2!`).
 "A compound whose arguments the analysis is walking (pl-comp.c `av_frame`)."
 struct av_frame{T}
     kind::Int               # AV_ARG_LOOP, AV_SUBCLAUSE_LOOP, AV_SEMI_AFTER_LEFT, …RIGHT, AV_NOT_AFTER
@@ -763,14 +768,15 @@ function in_branch(bvs::Vector{branch_var}, from::Int, to::Int, v::VarDef)::Bool
 end
 
 # PORT: pl-comp.c analyseVariables2
-# DIVERGES: under `islocal` (a goal clause, V9e-2) the goal is the meta-call's term under the
-# bindings, with its control skeleton and its sub-goals' arguments dereferenced first (see
-# `localGoal`), where upstream dereferences each cell as it walks; no cycle,
-# depth or interrupt check — a kernel term is a tree. A compound whose head is not a symbol has every
-# child as an argument (see `compileArgument!`). Past MAX_VARIABLES it throws, where upstream returns
-# `AVARS_MAX` and unwinds its stack and branch buffer: nothing outside `ci` has changed, and
-# `ci` is dropped with the error. The control functors are the global data's (`gd`), where
-# upstream reads `CONTROL_F` from GD's functor table (`valueFunctor`).
+# DIVERGES: under `islocal` (a goal clause, V9e-2) the goal is `localGoal`'s: its control skeleton
+# and its sub-goals read off the cells first, each compound or string argument a placeholder the
+# analysis counts and never enters (f3b-3), where upstream dereferences each cell as it walks; the
+# CYCLE_CHECK_AT test is `localGoal`'s for a goal clause and the callers' (`is_acyclic_cells`) for
+# any other; no depth or interrupt check here — a kernel term is a tree. A compound whose head is
+# not a symbol has every child as an argument (see `compileArgument!`). Past MAX_VARIABLES it
+# throws, where upstream returns `AVARS_MAX` and unwinds its stack and branch buffer: nothing
+# outside `ci` has changed, and `ci` is dropped with the error. The control functors are the global
+# data's (`gd`), where upstream reads `CONTROL_F` from GD's functor table (`valueFunctor`).
 """
 Walk `head` giving each variable a slot — a variable standing as head argument `i` gets slot `i`,
 any other the next slot above the arity — and counting its occurrences (pl-comp.c). With `control`
@@ -1382,19 +1388,46 @@ function _gnd_code(t, where_::Int)::code
 end
 
 # PORT: pl-comp.c link_local_var as link_local_var!
-# DIVERGES: the variable's VALUE goes into the cell (a keyed variable is its own reference, decision
-# 2) where upstream stores `makeRefG(vd->address)`; no LOCAL_OVERFLOW — the cells were made room for
-# before the code is compiled (`compileGoalClause`).
+# DIVERGES: the variable is the goal's export's (`localGoal`), whose cell `_local_cell!` finds,
+# where upstream reads `vd->address`; a goal clause compiled from a TERM stores the variable's value
+# — class (c), TRANSITIONAL (f3). No LOCAL_OVERFLOW: the cells were made room for before the code is
+# compiled (`compileGoalClause`).
 "Link variable `v`, at slot `iv`, into its cell of the goal clause's frame (pl-comp.c)."
 function link_local_var!(ci::compileInfo{T}, v::T, iv::Int)::Bool where {T}
-    _local_cell!(ci, Int(VAROFFSET(iv)), v)
+    _local_cell!(ci, Int(VAROFFSET(iv)), v)                    # *k = makeRefG(vd->address)
     return true
 end
 
-# The cell at variable offset `voffset` of the goal clause's frame (`varFrameP(lTop, voffset)`) := `t`.
+# ORIGINAL (f3b-3): the cell at variable offset `voffset` of the goal clause's frame
+# (`varFrameP(lTop, voffset)`) := what `t` stands for. On the cells (`localGoal`): a variable of the
+# goal's export its cell's reference (link_local_var's `*k = makeRefG(vd->address)`,
+# pl-comp.c:2947), a compound or string argument's placeholder its argument's word
+# (compileArgument's `*k = *arg`, pl-comp.c:3181). Anything else — a goal clause compiled from a
+# TERM, a part of the goal at the boundary (`DU_TERM`) — is stored as its value (`setSlotValue!`):
+# class (c), TRANSITIONAL (f3).
+"Store what `t` stands for (its cell, its word or its value) in the goal clause's cell `voffset`."
 function _local_cell!(ci::compileInfo{T}, voffset::Int, t::T)::Nothing where {T}
     ld = ci.local_ld::PL_local_data{T}
-    setSlotValue!(ld, varFrameP(ci.local_base, voffset) + 1, t)
+    i = varFrameP(ci.local_base, voffset) + 1                  # k = varFrameP(lTop, voffset)
+    ex = ci.cell_export
+    if ex !== nothing && kind(t) === VAR
+        p = get(ex.cells, var_key(t), 0)
+        if p != 0
+            ld.slots[i] = makeRefG(p)                          # *k = makeRefG(vd->address)
+            return nothing
+        end
+    end
+    lw = ci.local_words
+    if lw !== nothing
+        for j in eachindex(lw)
+            if lw[j].first === t
+                ld.slots[i] = lw[j].second                     # *k = *arg
+                deleteat!(lw, j)
+                return nothing
+            end
+        end
+    end
+    setSlotValue!(ld, i, t)                                    # (c) the boundary: its value
     return nothing
 end
 
@@ -1402,8 +1435,7 @@ end
 # DIVERGES: under `islocal` (a goal clause, V9e-2) a compound or string argument is not compiled but
 # stored in the next pseudo variable's cell and loaded by `B_VAR0+n`/`B_VAR` (`argvar`), and a
 # variable is linked into its own cell (`link_local_var`) — the cells of the frame at `ci.local_base`,
-# the value itself where upstream stores a reference to the variable's cell (a keyed variable IS
-# its reference, decision 2). No
+# each written by `_local_cell!` (its word, or the variable's cell reference; f3b-3). No
 # attributed variables, no `CL_HEAD_TERMS`/`argMoveUnify` (the moved head unifications, V9), and no
 # stack-overflow returns. SWI-7's `[]` compiles to `H_NIL`/`B_NIL` (Q1), any other symbol to
 # `H_ATOM`/`B_ATOM`; a grounded value to the SMALLINT/MPZ/MPQ/FLOAT/STRING instruction of its kind
@@ -1517,7 +1549,7 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
     if ci.islocal && (where_ & A_NOARGVAR) == 0
         @label argvar
         av_off = VAROFFSET(ci.argvar)
-        _local_cell!(ci, Int(av_off), arg)                     # a copy! (no attributed variables)
+        _local_cell!(ci, Int(av_off), arg)                     # *k = *arg (no attributed variables)
         if ci.argvar < 3
             Output_0!(ci, B_VAR0 + code(ci.argvar))
         else
@@ -2821,7 +2853,11 @@ function compileClause(
         if rc != BOOLEX_TRUE
             if rc == NOT_CALLABLE
                 b = new_term_ref(ld)                           # pushWordAsTermRef(body)
-                setSlotValue!(ld, b + 1, body::T)
+                if ex === nothing                              # (a caller with terms: white box)
+                    setSlotValue!(ld, b + 1, body::T)          # (c) TRANSITIONAL (f3)
+                else                                           # (f3b-3: the clause's own cells)
+                    ld.slots[b + 1] = import_cells!(ld, ex, body::T)
+                end
                 PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
             elseif rc == MAX_ARITY_OVERFLOW
                 PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
@@ -2860,9 +2896,11 @@ compileClause(
 # construct, recursively, and the arguments of each sub-goal, one level. A compound or string
 # argument then becomes a pseudo variable holding the term as it is (bindings and all), and an
 # unbound variable its own cell: exactly what upstream's walk sees.
+# This method reads a goal TERM (the boundary's: i_metacall_common's `DU_TERM` branch, and a part of
+# the goal at the boundary under the method on the cells below): class (c), TRANSITIONAL (f3).
 "The goal `goal` with its control skeleton and its sub-goals' arguments dereferenced under `ld`."
 function localGoal(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::T where {T}
-    g = deRef(ld, goal)
+    g = deRef(ld, goal)                                         # (c) the term method (above)
     kind(g) === EXPR || return g
     n = nchildren(g)
     kids = Vector{T}(undef, n)
@@ -2873,8 +2911,135 @@ function localGoal(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::T wher
         end
     else
         for i in 1:n
-            kids[i] = deRef(ld, child(g, i))
+            kids[i] = deRef(ld, child(g, i))                    # (c) the term method (above)
         end
+    end
+    return mk_expr(T, kids)
+end
+
+# PORT: pl-comp.c CYCLE_CHECK_AT
+# (the default build's; 1000 under `O_TIGHT_CSTACK`, a debug or sanitizer build: pl-incl.h)
+"The depth at which the variable analysis tests a compound for a cycle (pl-comp.c)."
+const CYCLE_CHECK_AT = 10000
+
+# ORIGINAL (f3b-3): the method above on the CELLS — upstream's islocal walk (pl-comp.c:2031-2043,
+# analyseVariables2's islocal branch :976-1000, compileArgument's `argvar:` :3167-3189) read to the
+# value the kernel's compiler takes, the same depth as above: a control construct (`CONTROL_F` on
+# its functor word) keeps its name and each argument is read again; a sub-goal is read ONE level
+# (`_local_subgoal`). An unbound cell is a variable of the clause's export `ci.cell_export`
+# (`_export_var!`), which `_local_cell!` links back to its cell. No compound is copied and no cell's
+# variable is made (`_cell_var`): the boundary (`DU_TERM`) alone is read as a term, counted in
+# `cold_pairs` — class (c), TRANSITIONAL (f3). The compiler then never meets a cycle: the depth of
+# each compound is counted as analyseVariables2 counts it, and at CYCLE_CHECK_AT the compound is
+# tested (`is_acyclic_cells`), as upstream's analysis tests it (pl-comp.c:966-968).
+"""
+    localGoal(gd, ld, ci, loc) -> T, or nothing
+
+The goal at location `loc` (a global position, or `-i` for slot `i`) as the goal clause's compiler
+takes it, read off the cells: its control skeleton, each sub-goal one level, a compound or string
+argument a placeholder recorded with its word in `ci.local_words`. `nothing` for a cycle (upstream's
+`AVARS_CYCLIC`).
+"""
+function localGoal(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, loc::Int
+)::Union{Nothing, T} where {T}
+    ex = ci.cell_export::cell_export{T}
+    stack = Tuple{Int, Vector{T}}[]         # the control constructs read: (functor, children)
+    l = loc                                 # the goal's location
+    d = _deref_loc(ld, l)
+    while true
+        k, w, p = d
+        g = nothing                         # the goal at `l` (nothing: a control construct, pushed)
+        if k == DU_WORD && _is_gcompound(w)
+            q = valPtr(w)
+            fd = ld.gstack[q]
+            depth = length(stack) + 1       # ++depth
+            depth == CYCLE_CHECK_AT && !is_acyclic_cells(ld, p != 0 ? p : l) &&
+                return nothing
+            if (valueFunctor(ld.functors, fd).flags & CONTROL_F) != 0     # ison(fd, CONTROL_F)
+                push!(stack, (q, T[_atom_value(ld, nameFunctor(ld.functors, fd))]))
+            else
+                g = _local_subgoal(ld, ci, q, depth)
+                g === nothing && return nothing
+            end
+        elseif k == DU_TERM                 # (c) the boundary: on terms, TRANSITIONAL (f3)
+            ld.cold_pairs += 1
+            g = localGoal(gd, ld, _loc_term(ld, k, w, p))
+        elseif k == DU_CELL
+            g = _export_var!(ex, p)         # a variable goal: call/1
+        else
+            g = k == DU_VALUE ? _value_term(ld, w) : _atom_value(ld, w)
+        end
+        while true                          # the next argument of a control construct, or done
+            if g !== nothing
+                isempty(stack) && return g
+                push!(stack[end][2], g)
+            end
+            f, kids = stack[end]
+            i = length(kids)                # its name, then `i - 1` arguments read
+            if i <= arityFunctor(ld.functors, ld.gstack[f])
+                l = f + i
+                d = _deref_loc(ld, l)
+                break
+            end
+            pop!(stack)
+            g = mk_expr(T, kids)
+        end
+    end
+end
+
+# ORIGINAL (f3b-3): `localGoal`'s sub-goal, the compound at functor position `q` at depth `depth`,
+# read ONE level: its name (none for `$expr/n`, whose children are all arguments) and each argument
+# — an unbound cell a variable of the export, an atom its symbol, a number its value, and a compound
+# or a string an ARGVAR: the analysis counts it and never enters it (pl-comp.c:976-985), and its
+# pseudo variable's cell takes its word (`*k = *arg`, :3181), so it is a placeholder of the right
+# kind — the string's value, a compound `name(V1, …, Vn)` of fresh variables that nothing links —
+# recorded with the word in `ci.local_words`. A compound argument at CYCLE_CHECK_AT is tested as the
+# analysis tests it (:966-968). The boundary (`DU_TERM`) is read as a term, counted: class (c),
+# TRANSITIONAL (f3).
+"The sub-goal at functor position `q`, one level off the cells; `nothing` for a cycle."
+function _local_subgoal(
+    ld::PL_local_data{T}, ci::compileInfo{T}, q::Int, depth::Int
+)::Union{Nothing, T} where {T}
+    ex = ci.cell_export::cell_export{T}
+    lw = ci.local_words::Vector{Pair{T, word}}
+    fd = ld.gstack[q]
+    name = nameFunctor(ld.functors, fd)
+    n = arityFunctor(ld.functors, fd)
+    kids = name == ld.atom_dexpr ? T[] : T[_atom_value(ld, name)]
+    for i in 1:n
+        k, w, p = _deref_loc(ld, q + i)
+        if k == DU_CELL
+            a = _export_var!(ex, p)
+        elseif k == DU_VALUE
+            a = _value_term(ld, w)
+            isString(a) && push!(lw, a => w)        # case TAG_STRING: goto argvar (c:3065-3067)
+        elseif k == DU_TERM                         # (c) the boundary: on terms, TRANSITIONAL (f3)
+            ld.cold_pairs += 1
+            a = deRef(ld, _loc_term(ld, k, w, p))   # (c)
+        elseif isAtomW(w)
+            a = _atom_value(ld, w)
+        else                                        # a compound: an argvar
+            depth + 1 == CYCLE_CHECK_AT && !is_acyclic_cells(ld, p) && return nothing
+            a = _argvar_placeholder(ld, w)
+            push!(lw, a => w)
+        end
+        push!(kids, a)
+    end
+    return mk_expr(T, kids)
+end
+
+# ORIGINAL (f3b-3): an argvar's placeholder (see `_local_subgoal`): the compound word `w`'s name and
+# arity, its arguments fresh variables (`fresh_var_keys!`: no cell, never linked).
+"A compound of `w`'s functor whose arguments are fresh variables."
+function _argvar_placeholder(ld::PL_local_data{T}, w::word)::T where {T}
+    fd = ld.gstack[valPtr(w)]
+    name = nameFunctor(ld.functors, fd)
+    n = arityFunctor(ld.functors, fd)
+    kids = name == ld.atom_dexpr ? T[] : T[_atom_value(ld, name)]
+    k = fresh_var_keys!(n)
+    for i in 1:n
+        push!(kids, mk_var(T, k + UInt64(i - 1)))
     end
     return mk_expr(T, kids)
 end
@@ -2887,19 +3052,49 @@ end
 # positions), so `lTop` lands where upstream's does; the cells are made room for after the analysis
 # (`ensureLocalSpace`), where upstream checks the total after compiling and retries on
 # LOCAL_OVERFLOW. Returns `nothing` with the error raised as `compileClause` raises it.
+# Since f3b-3 the goal is read off the cells from its LOCATION `loc` (a global position, or `-i` for
+# slot `i`): `*g = *body` is the location's word, a variable's cell its reference, an argvar's its
+# argument's word, and the NOT_CALLABLE culprit the goal itself (`pushWordAsTermRef(body)`). The
+# method on a goal TERM is the boundary's (i_metacall_common's `DU_TERM` branch): class (c),
+# TRANSITIONAL (f3).
 """
+    compileGoalClause(gd, ld, loc, m, base) -> Clause, or nothing
     compileGoalClause(gd, ld, goal, m, base) -> Clause, or nothing
 
-Compile `goal`, under the bindings in `ld`, to a temporary clause of `'<meta-call>'/1` in module `m` for the
-frame at `base` (= `lTop`), writing its pseudo variables' cells as upstream does (pl-comp.c).
+Compile the goal at location `loc` (or the term `goal`, under the bindings in `ld`) to a temporary
+clause of `'<meta-call>'/1` in module `m` for the frame at `base` (= `lTop`), writing its pseudo
+variables' cells as upstream does (pl-comp.c).
 """
+function compileGoalClause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, loc::Int, m::module_t{T}, base::Int
+)::Union{Nothing, Clause{T}} where {T}
+    ci = compileInfo{T}(gd, 0, m, gd.procedures_dcall1)
+    ci.cell_export = cell_export{T}()
+    ci.local_words = Pair{T, word}[]
+    body = localGoal(gd, ld, ci, loc)
+    if body === nothing                                        # AVARS_CYCLIC: CYCLIC_BODY
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
+        return nothing
+    end
+    return _compileGoalClause!(gd, ld, ci, body, base, loc)
+end
+
 function compileGoalClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T, m::module_t{T}, base::Int
 )::Union{Nothing, Clause{T}} where {T}
-    proc = gd.procedures_dcall1
-    def = proc.definition
-    body = localGoal(gd, ld, goal)
-    ci = compileInfo{T}(gd, 0, m, proc)
+    ci = compileInfo{T}(gd, 0, m, gd.procedures_dcall1)
+    return _compileGoalClause!(gd, ld, ci, localGoal(gd, ld, goal), base, 0)
+end
+
+# ORIGINAL (f3b-3): the two `compileGoalClause` methods' common part, from `localGoal`'s `body`;
+# `loc` is the goal's location, 0 for a goal term (the culprit is then `body`, stored as a value:
+# (c)).
+"Compile the goal clause `body` read by `localGoal` (see `compileGoalClause`)."
+function _compileGoalClause!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, body::T, base::Int,
+    loc::Int
+)::Union{Nothing, Clause{T}} where {T}
+    def = ci.procedure.definition
     ci.islocal = true
     ci.subclausearg = false
     ci.argvars = 1
@@ -2909,16 +3104,29 @@ function compileGoalClause(
     ci.head_unify = false
     nv = analyse_variables!(gd, ci, nothing, body)
     ensureLocalSpace(ld, nv + LOCAL_MARGIN) || return nothing
-    _local_cell!(ci, Int(VAROFFSET(1)), body)                  # *g = *body
+    if loc != 0
+        g = varFrameP(base, Int(VAROFFSET(1))) + 1             # g = varFrameP(lTop, VAROFFSET(1))
+        _slot_link_loc!(ld, g, _deref_loc(ld, loc))            # *g = *body
+    else
+        _local_cell!(ci, Int(VAROFFSET(1)), body)              # (c) *g = *body, a term
+    end
     ci.variables = nv
     initMerge!(ci)
     bi = PC(ci)
     rc = compileBody!(gd, ld, ci, body, I_DEPART)
     if rc != BOOLEX_TRUE
         if rc == NOT_CALLABLE
-            b = new_term_ref(ld)                               # pushWordAsTermRef(body)
-            setSlotValue!(ld, b + 1, body)
-            PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
+            if loc != 0
+                PL_error(                                      # pushWordAsTermRef(body)
+                    ld, ERR_TYPE, mk_sym(T, :callable),
+                    pushWordAsTermRef(ld, _deref_loc(ld, loc))
+                )
+                popTermRef(ld)
+            else                                               # (the goal term)
+                b = new_term_ref(ld)
+                setSlotValue!(ld, b + 1, body)                 # (c) TRANSITIONAL (f3)
+                PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
+            end
         elseif rc == MAX_ARITY_OVERFLOW
             PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
         end
@@ -2930,6 +3138,9 @@ function compileGoalClause(
         flags |= COMMIT_CLAUSE
     end
     @assert ci.argvars == ci.argvar "compileGoalClause: $(ci.argvars) argvars counted, $(ci.argvar) compiled"
+    lw = ci.local_words
+    lw === nothing ||
+        @assert isempty(lw) "compileGoalClause: $(length(lw)) argvars left unstored"
     code_size = length(ci.codes)
     variables = ci.variables + SIZEOF_CREF_CLAUSE + sizeofClause(code_size)  # cl->variables += p-p0
     ensureLocalSpace(ld, variables + LOCAL_MARGIN + SIZEOF_CHOICE) || return nothing
