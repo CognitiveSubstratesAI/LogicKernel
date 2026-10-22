@@ -346,3 +346,39 @@ e_static :- assertz(functor(a, b, c)).
     _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
         @info "f3b-5a: the second raise's boundary traffic" _zt_counts(ld) .- c1
 end
+
+# f3b-5b (the VM's reads on words): catch/throw with a compound ball, call/1 and call/N (both shift
+# directions), the type tests, B_UNIFY_VC, setup_call_cleanup and setup_call_catcher_cleanup (exit and
+# exception) — their goals read off the cells (`stripModule_cells`, `_slot_from_cell!`, the FLI type
+# tests, `_unify_const_loc`, `PL_cons_functor` for the catcher) — make no cold traffic over the second
+# call. Control constructs inside call/1 are left out: their goal clause is compiled from the goal's
+# term (class (c), f3b-3's localGoal).
+const _ZT_VM = """
+m5b :- catch(throw(m5b(1, f(_))), m5b(N, T), true), N == 1, T = f(_),
+       G = m5b_p(A), call(G), A == a, call(m5b_p, B), B == a,
+       call(m5b_q(C), D), C-D == x-y,
+       integer(N), m5b_p(Q), atom(Q), compound(T), callable(G), m5b_f(F), float(F),
+       m5b_vc(V), V == foo,
+       setup_call_cleanup(true, m5b_p(_), true),
+       setup_call_catcher_cleanup(true, m5b_p(_), K, true), K == exit,
+       catch(setup_call_catcher_cleanup(true, throw(oops), _, true), oops, true).
+m5b_p(a).
+m5b_q(x, y).
+m5b_f(1.5).
+m5b_vc(X) :- X = foo.
+"""
+
+@testset "f3b-5b: catch, metacall, type tests and cleanup make no cold export, import, variable read or boundary pair" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "vm.pl")
+    write(f, _ZT_VM)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    @test _zt_run(gd, ld, :m5b) == LK.PL_S_TRUE             # indexes, supervisors
+    c1 = _zt_counts(ld)
+    @test _zt_run(gd, ld, :m5b) == LK.PL_S_TRUE
+    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
+    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
+        @info "f3b-5b: the second call's boundary traffic" _zt_counts(ld) .- c1
+end

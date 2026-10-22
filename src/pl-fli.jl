@@ -777,16 +777,6 @@ function PL_is_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     return is_pair(w2) || is_nil(w2)
 end
 
-# ORIGINAL (L1e e4): `deRef(valHandle(t))` as a TERM read from the words — an atom's symbol and a value's
-# entry with no export, an unbound cell its variable (`_cell_var`), a compound its cold export (counted), the
-# boundary counted in `cold_pairs` — for a built-in whose remaining logic is on terms.
-"The term reference `t`'s value, dereferenced, read through the words (`_deref_loc` + `_loc_term`)."
-function _handle_term(ld::PL_local_data{T}, t::term_t)::T where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))
-    k == DU_TERM && (ld.cold_pairs += 1)
-    return deRef(ld, _loc_term(ld, k, w, p))
-end
-
 # ORIGINAL (L1e e2): pl-data.h `hasFunctor(w, FUNCTOR_colon2)` on a dereferenced location's word.
 "Whether `(k, w)` from `_deref_loc` is a `:/2` compound word."
 @inline function _is_colon2_word(ld::PL_local_data{T}, k::UInt8, w::word)::Bool where {T}

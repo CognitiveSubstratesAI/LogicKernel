@@ -145,7 +145,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-variant.c` | code | `8e1bc1110be4` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `8e1bc1110be4` | `src/pl-variant.jl` | 24 | 11 |
 | swipl-devel `src/pl-vmi.c` | code | `8e1bc1110be4` | `src/pl-vmi.jl` | 130 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 148 | 92 |
+| swipl-devel `src/pl-vmi.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 151 | 96 |
 | swipl-devel `src/pl-wam.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 42 | 34 |
 | swipl-devel `src/pl-write.c` | code | `8e1bc1110be4` | `src/pl-write.jl` | 112 | 44 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `8e1bc1110be4` | `test/core_lang/test_bips.jl` | 10 | 1 |

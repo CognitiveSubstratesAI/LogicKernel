@@ -732,7 +732,6 @@ function _manifest_index(T)
         (LK.stripModule_cells, Tuple{GD, LD, Int}, false),
         (LK._random_u64, Tuple{LD}, false), (LK._mpz_urandomm, Tuple{LD, BigInt}, false),   # arith-b
         (LK._is_colon2_word, Tuple{LD, UInt8, UInt64}, false),
-        (LK._handle_term, Tuple{LD, Int}, false),                   # L1e e4
         (LK._slot_link_loc!, Tuple{LD, Int, Tuple{UInt8, UInt64, Int}}, false),
         (LK.PL_strip_module_ex, Tuple{GD, LD, Int, Int, Int}, false),
         (LK._impl_any_defined, Tuple{D}, true),
@@ -1353,6 +1352,11 @@ function _manifest_index(T)
         (LK._message_term, Tuple{LD, Symbol, Int, Int, Int, Int}, false),
         (LK.PL_put_variable, Tuple{LD, Int}, false),
         (LK.PL_get_functor, Tuple{LD, Int}, false),            # f3b-5a
+        (LK._call_term_boundary, Tuple{GD, LD, Int}, false),                    # f3b-5b (TRANSITIONAL)
+        (LK._mustBeCallable_boundary, Tuple{LD, Int}, false),                   # f3b-5b (TRANSITIONAL)
+        (LK._unify_const_loc, Tuple{LD, Int, T}, false),                        # f3b-5b
+        (LK._unify_const_boundary, Tuple{LD, LK.word, Int, T}, false),          # f3b-5b (TRANSITIONAL)
+        (LK._argp_unify_const, Tuple{LD, LK.argp_t{T}, T}, false),              # f3b-5b
         (LK.PL_get_intptr, Tuple{LD, Int}, false),             # f3b-5a
         (LK.PL_put_atom, Tuple{LD, Int, T}, false),
         (LK.PL_put_nil, Tuple{LD, Int}, false),
@@ -2416,7 +2420,7 @@ const DISPATCH_EXEMPT = (
         (LK.var"@LOAD_REGISTERS", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-wam.c LOAD_REGISTERS): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its work is _load_registers!, which is checked"
     ),
     (
-        (LK.var"@TYPE_TEST", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c TYPE_TEST): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its tests (isInteger … isCallable) are checked"
+        (LK.var"@TYPE_TEST", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c TYPE_TEST): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked, and its tests (PL_is_integer … PL_is_callable, f3b-5b) are checked"
     ),
     (
         (LK.var"@FASTCOND_FAILED", Tuple{LineNumberNode, Module}) => "a macro (pl-vmi.c FASTCOND_FAILED): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
