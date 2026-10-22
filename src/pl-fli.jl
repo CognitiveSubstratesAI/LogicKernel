@@ -583,6 +583,44 @@ function PL_get_stdbool(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Bool} w
     return nothing
 end
 
+# PORT: pl-fli.c PL_get_functor
+# DIVERGES: returns `(name, arity)`, or `nothing`, where upstream writes a `functor_t` (as
+# `PL_get_name_arity`: an atom goal makes no functor-table entry). On the WORDS (`valHandle(t)`,
+# `_deref_loc`): a compound word's functor from the functor table; an atom word (every kernel atom is
+# a callable atom or a reserved symbol) as `name/0`. A compound whose head is no symbol (the kernel's
+# `$expr/n`) has NO functor here — it names no predicate (query_answers, get_head_functor, callProlog
+# refuse it). The boundary is read as its term, counted in `cold_pairs` (f3b-5a).
+"The functor of the term `t` references — `(name, arity)` of a compound or an atom — or `nothing` (pl-fli.c)."
+function PL_get_functor(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Tuple{T, Int}} where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD
+        if _is_gcompound(w)                                 # isTerm(w): *f = functorTerm(w)
+            f = ld.gstack[valPtr(w)]
+            name = nameFunctor(ld.functors, f)
+            name == ld.atom_dexpr && return nothing
+            return (_atom_value(ld, name), arityFunctor(ld.functors, f))
+        end
+        return (_atom_value(ld, w), 0)                      # isCallableAtom(w) || isReservedSymbol(w)
+    elseif k == DU_TERM                                     # the boundary: on the term
+        ld.cold_pairs += 1
+        v = deRef(ld, _loc_term(ld, k, w, p))
+        if isTerm(v)
+            h = child(v, 1)
+            return kind(h) === SYM ? (h, nchildren(v) - 1) : nothing
+        end
+        kind(v) === SYM && return (v, 0)
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_intptr
+# DIVERGES: the branch of a 64-bit platform whose `long` is a pointer's size (`SIZEOF_LONG ==
+# SIZEOF_VOIDP`: Linux, macOS): `PL_get_long`, as `PL_get_intptr_ex`.
+"The `intptr_t` term reference `t` holds, or `nothing` (pl-fli.c)."
+PL_get_intptr(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long(ld, t)
+
 # PORT: pl-fli.c PL_get_bool
 # DIVERGES: as `PL_get_stdbool` (upstream writes an `int`).
 "The Boolean term reference `t` holds, or `nothing` (pl-fli.c)."

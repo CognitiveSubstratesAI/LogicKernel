@@ -61,8 +61,9 @@ end
 
 # PORT: pl-attvar.c restoreWakeup
 # DIVERGES: the saved ball is read at the position above the frame's header (`(Word)(fr+1)`), the
-# frame found by its handle. NOT PORTED: `restore_wakeup` (see `saveWakeup`) and `updateAlerted`
-# (no `LD->alerted`).
+# frame found by its handle; that position is a term reference, so its class is
+# `classify_exception(ld, p)`, on the words (f3b-5a), as `restore_exception` reads it. NOT PORTED:
+# `restore_wakeup` (see `saveWakeup`) and `updateAlerted` (no `LD->alerted`).
 """
     restoreWakeup(ld, state)
 
@@ -81,7 +82,8 @@ function restoreWakeup(ld::PL_local_data{T}, state::wakeup_state)::Nothing where
 
             if (state.flags & WAKEUP_STATE_EXCEPTION) != 0
                 if (state.flags & WAKEUP_KEEP_URGENT_EXCEPTION) != 0
-                    if classify_exception_p(ld, slotValue(ld, p + 1)) >=
+                    @assert p > 0 "restoreWakeup(): no saved ball at $p"   # (0: EXCEPT_NONE)
+                    if classify_exception(ld, p) >=                     # classify_exception_p(p)
                         classify_exception(ld, ld.exception_term)
                         restore_exception(ld, p)
                     end

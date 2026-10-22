@@ -3028,16 +3028,33 @@ end
 
 # ── assert/1, assertz/1, asserta/1 (pl-comp.c) ───────────────────────────────────────────────
 # PORT: pl-comp.c is_neck
-# DIVERGES: the SSU necks `=>/2` and `?=>/2` are refused (`NotPortedError`): SSU is not ported,
-# and taken for facts they would assert other clauses; so no `flags` is set.
+# DIVERGES: the SSU necks `=>/2` and `?=>/2` are refused (`NotPortedError`, its culprit the neck's
+# name): SSU is not ported, and taken for facts they would assert other clauses; so no `flags` is
+# set. On the WORDS (f3b-5a): the compound's functor word compared with the necks' functors; the
+# boundary (TRANSITIONAL, f3) read as its term, counted in `cold_pairs`.
 "Whether term reference `t` holds a rule, `Head :- Body` (pl-comp.c)."
 function is_neck(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    p = deRef(ld, slotValue(ld, t + 1))
-    if isTerm(p)
-        _has_functor(p, sym_key(mk_sym(T, Symbol(":-"))), 2) && return true  # FUNCTOR_prove2
-        if _has_functor(p, sym_key(mk_sym(T, Symbol("=>"))), 2) ||
-            _has_functor(p, sym_key(mk_sym(T, Symbol("?=>"))), 2)
-            throw(NotPortedError{T}(p, "an SSU clause (=>, ?=>)", "SSU"))
+    k, w, p = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
+    (k == DU_TERM || (k == DU_WORD && _is_gcompound(w))) || return false   # isTerm(*p)
+    prove, commit = mk_sym(T, Symbol(":-")), mk_sym(T, Symbol("=>"))
+    choice = mk_sym(T, Symbol("?=>"))
+    if k == DU_WORD                                         # a compound word
+        f = ld.gstack[valPtr(w)]                            # functor_t f = functorTerm(*p)
+        fs = ld.functors
+        f == lookupFunctorDef(fs, _atom_word!(ld, prove), 2) && return true   # FUNCTOR_prove2
+        f == lookupFunctorDef(fs, _atom_word!(ld, commit), 2) &&              # FUNCTOR_ssu_commit2
+            throw(NotPortedError{T}(commit, "an SSU clause (=>, ?=>)", "SSU"))
+        f == lookupFunctorDef(fs, _atom_word!(ld, choice), 2) &&              # FUNCTOR_ssu_choice2
+            throw(NotPortedError{T}(choice, "an SSU clause (=>, ?=>)", "SSU"))
+    else                                                    # the boundary (TRANSITIONAL): its term
+        ld.cold_pairs += 1
+        c = deRef(ld, _loc_term(ld, k, w, p))
+        if isTerm(c)
+            _has_functor(c, sym_key(prove), 2) && return true
+            _has_functor(c, sym_key(commit), 2) &&
+                throw(NotPortedError{T}(commit, "an SSU clause (=>, ?=>)", "SSU"))
+            _has_functor(c, sym_key(choice), 2) &&
+                throw(NotPortedError{T}(choice, "an SSU clause (=>, ?=>)", "SSU"))
         end
     end
     return false
@@ -3058,14 +3075,13 @@ function get_head_and_body_clause(
     m::Int
 )::Tuple{Bool, Int} where {T}
     if is_neck(ld, clause)
-        c = deRef(ld, slotValue(ld, clause + 1))
-        setSlotValue!(ld, head + 1, child(c, 2))                         # _PL_get_arg(1, clause, head)
-        setSlotValue!(ld, body + 1, child(c, 3))                         # _PL_get_arg(2, clause, body)
+        _PL_get_arg(ld, 1, clause, head)                    # _PL_get_arg(1, clause, head)
+        _PL_get_arg(ld, 2, clause, body)                    # _PL_get_arg(2, clause, body)
         ok, m = PL_strip_module_ex(gd, ld, head, m, head)
         ok || return (false, m)
     else
-        _slot_link!(ld, head + 1, clause + 1)                               # PL_put_term(head, clause): facts
-        setSlotValue!(ld, body + 1, mk_sym(T, Symbol("true")))          # PL_put_atom(body, ATOM_true)
+        PL_put_term(ld, head, clause)                       # PL_put_term(head, clause): facts
+        PL_put_atom(ld, body, mk_sym(T, Symbol("true")))    # PL_put_atom(body, ATOM_true)
     end
     return (true, m)
 end
@@ -3256,18 +3272,17 @@ function record_clause(
     a_owner === nothing && return false
 
     a = PL_get_atom(ld, source)
-    w = deRef(ld, slotValue(ld, source + 1))
     if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :-))
         f = ld.read_source.file
         line = ld.read_source.position.lineno
         @assert line != -1 && f !== nothing
         loc = sourceloc{T}(f, line)                             # source_file_name, source_line_no
-    elseif _hasFunctor(w, mk_sym(T, :(:)), 2)                   # file:line
-        arg = PL_new_term_ref(ld)
-        setSlotValue!(ld, arg + 1, child(w, 2))
+    elseif PL_is_functor(ld, source, mk_sym(T, :(:)), 2)       # PL_is_functor(…, FUNCTOR_colon2)
+        arg = PL_new_term_ref(ld)                               # file:line
+        _PL_get_arg(ld, 1, source, arg)                         # _PL_get_arg(1, source, arg)
         file = PL_get_atom_ex(ld, arg)
         file === nothing && return false
-        setSlotValue!(ld, arg + 1, child(w, 3))
+        _PL_get_arg(ld, 2, source, arg)                         # _PL_get_arg(2, source, arg)
         line = PL_get_integer_ex(ld, arg)
         line === nothing && return false
         loc = sourceloc{T}(file, line)

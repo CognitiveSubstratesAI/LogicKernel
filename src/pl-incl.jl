@@ -1473,11 +1473,12 @@ number() = number(V_INTEGER, 0, 0.0, BigInt(0), Rational{BigInt}(0))
 end
 
 # PORT: pl-incl.h CVT_result
-# DIVERGES: the culprit is a term (`nothing`: none yet), where upstream holds its word.
-"A list's text conversion: its status, and the element that stopped it (pl-incl.h)."
-mutable struct CVT_result{T}
+# DIVERGES: the culprit is the global POSITION of the element's cell (0: none yet), where upstream
+# holds its word; a term reference takes it as `linkValI` reads a cell (`_slot_from_cell!`, f3b-5a).
+"A list's text conversion: its status, and the cell of the element that stopped it (pl-incl.h)."
+mutable struct CVT_result
     status::CVT_status
-    culprit::Union{Nothing, T}      # for CVT_nocode/CVT_nochar
+    culprit::Int                    # for CVT_nocode/CVT_nochar
 end
 
 # ── recorded terms (pl-incl.h) and the bags of findall/3 (pl-bag.c), since V9g-b ─────────────────

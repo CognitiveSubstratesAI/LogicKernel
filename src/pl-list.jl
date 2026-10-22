@@ -38,10 +38,9 @@ function pl_dlength2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    p = _handle_term(ld, A2)                            # (L1e e4: through the words)
 
-    if isInteger(p) && integer_is_int64(p)              # PL_get_intptr(A2, &len)
-        len = Int(int64_value(p))
+    len = PL_get_intptr(ld, A2)
+    if len !== nothing                                  # PL_get_intptr(A2, &len)
         if len > 0
             list = PL_new_term_ref(ld)
 
@@ -62,8 +61,15 @@ function pl_dlength2_va(
         else
             return FFALSE
         end
-    elseif isInteger(p)                                 # PL_is_integer(A2)
-        if bigint_value(p) < 0                          # ar_sign_i(&i) < 0
+    elseif PL_is_integer(ld, A2)                        # PL_is_integer(A2)
+        k, w, p = _deref_loc(ld, -(A2 + 1))             # Word p = valTermRef(A2); deRef(p)
+        i = if k == DU_TERM                             # the boundary: on the term
+            ld.cold_pairs += 1
+            deRef(ld, _loc_term(ld, k, w, p))
+        else
+            _value_term(ld, w)                          # get_integer(*p, &i): an indirect
+        end
+        if bigint_value(i) < 0                          # ar_sign_i(&i) < 0
             return FFALSE
         end
         outOfStack!(ld, STACK_OVERFLOW_RAISE, :global)  # (L1f f2) too long for the stacks

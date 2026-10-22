@@ -177,6 +177,11 @@ function _rsl_cases()
             )
         ),
         ("fu18", X, _rf("functor", _rf("foo", a, b), _rs("foo"), _rg(2))),
+        # f3b-5a's gap rows on the arity read (swipl 10.1.18, probed 2026-10-22): a float arity
+        # (`type_error(integer, 1.0)`) and the smallest Int64 (`domain_error(not_less_than_zero,
+        # -9223372036854775808)`); fu13 is the unbound arity, and the big integers are below
+        ("fu19", E, err(_rf("functor", T, _rs("foo"), _rg(1.0)))),
+        ("fu20", E, err(_rf("functor", T, _rs("foo"), _rg(typemin(Int64))))),
         # ── term_variables/2,3 ──
         ("tv1", L, _rf("term_variables", _rf("f", X, _rf("g", Y, X), Z), L)),
         ("tv2", L, _rf("term_variables", _rf("f", a, _rg(1)), L)),
@@ -281,6 +286,145 @@ _rsl_goals() = _R[_rf(name, _rv(50 + i)) for (i, (name, _, _)) in enumerate(_rsl
                 println(stderr, "  line ", k, "\n    kernel ", get(ours, k, "—"),
                     "\n    swipl  ", get(theirs, k, "—"))
             end
+        end
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
+# ── big integers (f3b-5a's gap rows: the arity read of functor/3, the length of '$length'/2) ──
+# `_R` holds no BigInt, so these goals run through a small driver of their own, over a term type
+# that does (the loader's and the readers' payload). A line is `true`, `fails` or
+# `exception(<formal>)`, the formal as write_canonical/1 writes it; swipl prints the same lines.
+const _RB = lk_term_type(Union{Int64, Float64, String, BigInt})
+_rbs(x) = lk_sym(_RB, Symbol(x))
+_rbg(v) = lk_gnd(_RB, v)
+_rbv(k::Integer) = lk_var(_RB, UInt64(k))
+
+"`t` as write_canonical/1 writes it (atoms, numbers, compounds), each variable by `var(t)`."
+function _rb_text(t::_RB, var)::String
+    k = kind(t)
+    k === VAR && return var(t)
+    k === SYM && return lk_atom_text(t)
+    k === GND && return string(lk_value(t))
+    return _rb_text(child(t, 1), var) * "(" *
+           join((_rb_text(child(t, i), var) for i in 2:nchildren(t)), ",") * ")"
+end
+
+"The kernel's line for the built-in `name` called on `args`: `true`, `fails` or `exception(F)`."
+function _rb_kernel(gd, ld, name::String, args::Vector{_RB})::String
+    proc = LK.isCurrentProcedure(sym_key(_rbs(name)), length(args), LK.MODULE_system(gd))
+    proc === nothing && return "no such built-in " * name * "/" * string(length(args))
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, length(args))
+    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does
+    for (i, x) in enumerate(args)
+        LK.putSlotValue!(ld, a + i, x, pvm)
+    end
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+        "true"
+    elseif rc == LK.PL_S_EXCEPTION
+        ball = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+        formal =
+            if kind(ball) === EXPR && nchildren(ball) == 3 &&
+                kind(child(ball, 1)) === SYM &&
+                String(lk_name(child(ball, 1))) == "error"
+                child(ball, 2)
+            else
+                ball
+            end
+        "exception(" * _rb_text(formal, v -> "_") * ")"
+    else
+        "fails"
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return out
+end
+
+# (built-in, arguments, swipl's line, the kernel's line when it differs). swipl 10.1.18's lines
+# are probed 2026-10-22 (`catch((G -> true ; fails), error(F, _), exception(F))`).
+const _RB_CASES = let T = _rbv(1), L = _rbv(2), foo = _rbs("foo")
+    big2(n) = big(2)^n
+    Tuple{String, Vector{_RB}, String, Union{Nothing, String}}[
+        (
+            "functor", _RB[T, foo, _rbg(-big2(64))],
+            "exception(domain_error(not_less_than_zero,-18446744073709551616))", nothing
+        ),
+        (
+            "functor", _RB[T, foo, _rbg(big2(64))],
+            "exception(representation_error(size_t))", nothing
+        ),
+        # KNOWN DIFFERENCE (design decision 5; an R2 checklist item, "functor/3 arity past
+        # Int64"): 2^63 fits `uint64` (pl-error.c `mpz_to_uint64`, case 0), so swipl reads it as
+        # the arity and raises resource_error(stack) when the term does not fit; the kernel's
+        # `PL_get_size_ex` raises representation_error(size_t) for any integer past Int64
+        # (pl-error.jl:690-695). This row pins the kernel's answer, swipl's is above.
+        # The kernel's answer was confirmed by running this row on the base, 42d6205 (2026-10-22).
+        (
+            "functor", _RB[T, foo, _rbg(big2(63))],
+            "exception(resource_error(stack))",
+            "exception(representation_error(size_t))"
+        ),
+        ("\$length", _RB[L, _rbg(-big2(64))], "fails", nothing),
+        (
+            "\$length", _RB[L, _rbg(big2(64))],
+            "exception(resource_error(stack))", nothing
+        ),
+        (
+            "\$length", _RB[L, _rbg(big2(63))],
+            "exception(resource_error(stack))", nothing
+        )
+    ]
+end
+
+"swipl's lines for the built-in calls of `_RB_CASES`."
+function _rb_swipl()::Vector{String}
+    goals = [
+        "rb(" * _rb_text(_rbs(n), v -> "") * "(" *
+        join((_rb_text(x, v -> "V" * string(var_key(v))) for x in args), ",") * "))" for
+        (n, args, _, _) in _RB_CASES
+    ]
+    prog =
+        join(
+            [
+                ":- style_check(-singleton).",
+                "rb(G) :- catch(( G -> R = true ; R = fails ), error(F, _), R = exception(F)),",
+                "         write_canonical(R), nl.",
+                "main :- " * join(goals, ", ") * "."
+            ],
+            "\n"
+        ) * "\n"
+    mktempdir() do d
+        f = joinpath(d, "rb.pl")
+        write(f, prog)
+        out = read(
+            pipeline(
+                ignorestatus(`swipl -q -g main -t halt $f`); stdin=devnull, stderr=devnull
+            ),
+            String
+        )
+        return [String(l) for l in split(strip(out), '\n') if !isempty(l)]
+    end
+end
+
+@testset "functor/3 and '\$length'/2 on big integers: answers equal swipl's (f3b-5a)" begin
+    gd = LK.PL_global_data{_RB}()
+    ld = LK.PL_local_data{_RB}(gd)
+    ours = [_rb_kernel(gd, ld, n, args) for (n, args, _, _) in _RB_CASES]
+    for (i, (_, _, theirs, known)) in enumerate(_RB_CASES)
+        @test ours[i] == something(known, theirs)               # swipl's line, or the pinned one
+    end
+    @test ld.exception_term == 0
+    if _R_SWIPL
+        theirs = _rb_swipl()
+        @test theirs == [t for (_, _, t, _) in _RB_CASES]       # the pinned lines are swipl's
+        for (i, (_, _, _, known)) in enumerate(_RB_CASES)
+            known === nothing && @test ours[i] == get(theirs, i, "—")
         end
     elseif _R_SWIPL_REQUIRED
         @test false

@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "rules_common.jl"))
 # logged item, in order — so the differential compares WHAT ran, WHEN (between which answers), and
 # how often. The four ways a goal finishes — exit, fail, cut, exception — each alone, nested, and
 # with a cleanup goal that itself fails or raises.
-const _RCL_N = 34
+const _RCL_N = 38
 function _rcl_clauses()
     X, Y, Z, C, E = _rv(1), _rv(2), _rv(3), _rv(4), _rv(5)
     T = _rs("true")
@@ -121,6 +121,22 @@ function _rcl_clauses()
                 scc(T, log(_rs("g34")), _rg(1)),
                 _rf("error", _rf("type_error", X, Y), Z),
                 T
+            )
+        ),
+        # ── callProlog's refusals, the whole ball (f3b-5a's gap rows, values from swipl 10.1.18,
+        # 2026-10-22: `type_error(callable, 1)` and `instantiation_error`, both with the context
+        # `system:sig_atomic/1`: the setup goal is run through sig_atomic/1, unqualified) ──
+        (_rf("k35", X), c3(_rf("sig_atomic", _rg(1)), E, eq(X, E))),
+        (_rf("k36", X), c3(_rf("sig_atomic", Y), E, eq(X, E))),
+        (_rf("k37", X), c3(scc(_rg(1), T, T), E, eq(X, E))),
+        # the other order of restoreWakeup: the goal's ERROR beats the cleanup's ball (k19 is the
+        # reverse: the cleanup's error beats the goal's ball)
+        (
+            _rf("k38", X),
+            c3(
+                scc(T, _rf("is", Y, _rf("+", _rs("foo"), _rg(1))), th(_rs("c"))),
+                E,
+                eq(X, E)
             )
         )
     ]

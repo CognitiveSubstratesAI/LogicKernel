@@ -525,12 +525,6 @@ function copy_term_refs(
     end
 end
 
-# `PL_is_atomic(t)`: the term `t` references is neither a variable nor a compound.
-function _cp_atomic(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k = kind(deRef(ld, slotValue(ld, t + 1)))
-    return k !== VAR && k !== EXPR
-end
-
 # PORT: pl-copyterm.c copy_term as pl_copy_term2_va
 # (PRED_IMPL("copy_term", 2, copy_term, 0)); the table's flag is `PL_FA_ISO`.
 "`copy_term(+In, -Out)`: `Out` is `In` with its variables renamed, ground subterms shared."
@@ -538,7 +532,7 @@ function pl_copy_term2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    if _cp_atomic(ld, A1)
+    if PL_is_atomic(ld, A1)                                 # if ( PL_is_atomic(A1) )
         return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
     end
     copy = PL_new_term_ref(ld)
@@ -565,7 +559,7 @@ function pl_duplicate_term2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    if _cp_atomic(ld, A1)
+    if PL_is_atomic(ld, A1)                                 # if ( PL_is_atomic(A1) )
         return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
     end
     copy = PL_new_term_ref(ld)

@@ -33,21 +33,20 @@ function callProlog(
     g = PL_new_term_ref(ld)
     ok, m = PL_strip_module(gd, ld, goal, module_, g)
     ok || return false
-    p = _handle_term(ld, g)                             # (L1e e4: through the words)
-    if !(kind(p) === SYM) && !(isTerm(p) && kind(child(p, 1)) === SYM)     # PL_get_functor
+    fd = PL_get_functor(ld, g)
+    if fd === nothing                                   # !PL_get_functor(g, &fd)
         PL_type_error(ld, "callable", goal)
 
         PL_reset_term_refs(ld, g)
         return false
     end
+    name, arity = fd
 
     # Quick check for sig_atomic(true) resulting from the call_cleanup series
-    if isTextAtom(p) && sym_key(p) == gd.subclause_names.atom_true     # fd == FUNCTOR_true0
+    if arity == 0 && sym_key(name) == gd.subclause_names.atom_true     # fd == FUNCTOR_true0
         return true
     end
 
-    name = isTerm(p) ? child(p, 1) : p
-    arity = isTerm(p) ? nchildren(p) - 1 : 0
     proc = resolveProcedure(gd, name, arity, gd.modules[m])
 
     args = PL_new_term_refs(ld, arity)

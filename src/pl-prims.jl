@@ -2986,16 +2986,26 @@ end
 # ── unifiable/3 on the CELLS (L1e e4; the workspace's L1_plan/stageL1e_design.md §4) ──────────────
 # PORT: pl-prims.c unifiable_occurs_check as unifiable_occurs_check_cells
 # DIVERGES: on term references, the variable's cell and the term's location (`var_occurs_in_cells`, L1d
-# step 2); the error built on the cells (`failed_unify_with_occurs_check_cells`, f3b-4).
+# step 2); the error built on the cells (`failed_unify_with_occurs_check_cells`, f3b-4). Both
+# callers pass a variable (`PL_is_variable`), so `t1` is an unbound cell — or the boundary, a keyed
+# variable (`DU_TERM`): then the check runs on the terms (`unifiable_occurs_check`), counted in
+# `cold_pairs` (TRANSITIONAL: goes with `_loc_term`, f3).
 "Whether binding the variable `t1` references to the term `t2` references passes the occurs check (pl-prims.c)."
 function unifiable_occurs_check_cells(
     ld::PL_local_data{T}, t1::term_t, t2::term_t
 )::Bool where {T}
     flag = ld.prolog_flag_occurs_check
     flag == OCCURS_CHECK_FALSE && return true
-    k, _, p = _deref_loc(ld, -(t1 + 1))
-    k == DU_CELL ||
-        return unifiable_occurs_check(ld, _handle_term(ld, t1), _handle_term(ld, t2))
+    k, w, p = _deref_loc(ld, -(t1 + 1))
+    if k == DU_TERM                                 # the boundary: on the terms (TRANSITIONAL, f3)
+        ld.cold_pairs += 1
+        k2, w2, p2 = _deref_loc(ld, -(t2 + 1))
+        k2 == DU_TERM && (ld.cold_pairs += 1)
+        return unifiable_occurs_check(
+            ld, deRef(ld, _loc_term(ld, k, w, p)), deRef(ld, _loc_term(ld, k2, w2, p2))
+        )
+    end
+    @assert k == DU_CELL                            # PL_is_variable(t1) at both call sites
     var_occurs_in_cells(ld, p, -(t2 + 1)) || return true
     return failed_unify_with_occurs_check_cells(
         ld, (k, word(0), p), _deref_loc(ld, -(t2 + 1)), flag
@@ -3120,18 +3130,10 @@ function pl_unifiable3_va(
     return unifiable_cells(ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
-# The decimal text of an integer or rational number record (upstream's format for `CVT_NUMBER`:
-# `NrD` for a rational).
-function _number_text(n::number)::String
-    n.type === V_INTEGER && return string(n.i)
-    n.type === V_MPZ && return string(n.mpz)
-    return string(numerator(n.mpq), "r", denominator(n.mpq))
-end
-
 # PORT: pl-prims.c atom_number as pl_atom_number2_va
 # (PRED_IMPL("atom_number", 2, atom_number, 0))
-# DIVERGES: an atom's or a string's text is read as its UTF-8 bytes; a float's text is
-# `format_float`'s (since R1e's floats), as `PL_get_nchars(…, CVT_NUMBER)` makes it.
+# DIVERGES: `PL_get_nchars` is `PL_get_text` (no `PL_mb_text`/`PL_save_text`: an atom's or a
+# string's text is already UTF-8, `REP_UTF8`; a number's is ASCII).
 """
 `atom_number/2` (pl-prims.c): the number a text atom or string writes, by `str_number` with no
 flags (so no escapes: `0'\\n` fails); else the atom a number writes; else a type error.
@@ -3140,17 +3142,10 @@ function pl_atom_number2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    p1 = _handle_term(ld, A1)                       # (L1e e4: through the words)
-    text = if isTextAtom(p1)
-        sym_text(p1)
-    elseif isString(p1)
-        string_value(p1)
-    else
-        nothing
-    end
-    if text !== nothing                             # PL_get_nchars(A1, …, CVT_ATOM|CVT_STRING)
-        b = Vector{UInt8}(codeunits(text))
-        push!(b, 0x00)
+    s = PL_get_text(ld, A1, CVT_ATOM | CVT_STRING)
+    if s !== nothing                                # PL_get_nchars(A1, …, REP_UTF8|CVT_ATOM|…)
+        @assert s.encoding === ENC_UTF8             # REP_UTF8: as `PL_get_text` gives it
+        b = UInt8[s.text; 0x00]                     # char *s, EOS-terminated
         n = number()
         rc, q = str_number(ld, b, 1, n, UInt32(0))
         if rc == NUM_OK
@@ -3164,21 +3159,10 @@ function pl_atom_number2_va(
         end
         return FFALSE
     end
-    p2 = _handle_term(ld, A2)
-    if isNumber(p2)                                 # PL_get_nchars(A2, …, CVT_NUMBER)
-        if isFloat(p2)                              # PL_get_nchars: format_float(…, 3, 'e')
-            return if PL_unify_atom(
-                ld, A1, mk_sym(T, Symbol(format_float(float_value(p2), 3, 'e')))
-            )
-                FTRUE
-            else
-                FFALSE
-            end
-        end
-        n = number()
-        get_number(p2, n)
-        return PL_unify_atom(ld, A1, mk_sym(T, Symbol(_number_text(n)))) ? FTRUE : FFALSE
-    end
+    s = PL_get_text(ld, A2, CVT_NUMBER)
+    if s !== nothing                                # PL_get_nchars(A2, &len, &s, CVT_NUMBER)
+        return PL_unify_atom(ld, A1, mk_sym(T, Symbol(String(s.text)))) ? FTRUE : FFALSE
+    end                                             # PL_unify_atom_nchars(A1, len, s)
     if !PL_is_variable(ld, A2)
         return PL_error(ld, ERR_TYPE, mk_sym(T, :number), A2) ? FTRUE : FFALSE
     elseif !PL_is_atom(ld, A1)

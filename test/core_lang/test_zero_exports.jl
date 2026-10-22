@@ -324,3 +324,25 @@ end
         @test ld.tmp_top == 0                               # every temporary handle returned
     end
 end
+
+# f3b-5a (the non-VM readers on words): the static procedure's permission error — assertz/1's clause
+# readers (`is_neck`, `get_head_and_body_clause`, pl-comp.c) read the clause off the cells before
+# PL_error raises — makes no cold traffic. Base (f3b-4, 7f7a46f): (2, 0, 3, 0) a call.
+const _ZT_STATIC = """
+e_static :- assertz(functor(a, b, c)).
+"""
+
+@testset "f3b-5a: assertz of a static procedure raises with no cold export, import, variable read or boundary pair" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "static.pl")
+    write(f, _ZT_STATIC)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    @test _zt_raise(gd, ld, :e_static) == -1
+    c1 = _zt_counts(ld)
+    @test _zt_raise(gd, ld, :e_static) == -1
+    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
+    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
+        @info "f3b-5a: the second raise's boundary traffic" _zt_counts(ld) .- c1
+end

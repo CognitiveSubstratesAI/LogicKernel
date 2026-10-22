@@ -91,7 +91,6 @@ _manifest_per_type(T) = (
     (LK.trim_stack_trail!, Tuple{LK.PL_local_data{T}}, true),
     (LK.growStacks_trim!, Tuple{LK.PL_local_data{T}}, false),
     (LK.has_emergency_space_global, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK._cp_atomic, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.do_compare, Tuple{LK.PL_local_data{T}, T, T, Bool, Int}, false),
     (LK.compare_fast, Tuple{LK.PL_local_data{T}, T, T, Int}, false),
     (LK.compare_descend, Tuple{LK.PL_local_data{T}, T, T, Int}, false),
@@ -886,7 +885,6 @@ function _manifest_index(T)
         (LK.truncate_term_stack, Tuple{Int64, LK.read_data{T}}, true),
         (LK._setHandle!, Tuple{Int64, T, LK.read_data{T}}, false),
         (LK._setHandle_w!, Tuple{Int64, UInt64, LK.read_data{T}}, false),   # L1e e6
-        (LK._ts_term, Tuple{Int64, LK.read_data{T}}, false),
         (LK.readValHandle!, Tuple{Int64, Int64, LK.read_data{T}}, false),   # L1e e6: into a cell
         (LK._ts_link_word!, Tuple{Int64, LK.read_data{T}}, false),
         (LK.build_term, Tuple{T, Int64, LK.read_data{T}}, false),
@@ -897,7 +895,7 @@ function _manifest_index(T)
         (LK.queue_out_op, Tuple{Int64, LK.read_data{T}}, false),
         (LK.out_op, Tuple{Int64, LK.read_data{T}}, true),
         (LK.pop_out_op, Tuple{LK.read_data{T}}, false),
-        (LK.op_name, Tuple{LK.op_entry{T}}, false),
+        (LK.op_name, Tuple{LK.op_entry{T}, LK.read_data{T}}, false),
         (LK.build_op_term, Tuple{LK.op_entry{T}, LK.read_data{T}}, false),
         (LK.copy_cterm_state, Tuple{LK.cterm_state{T}}, false),
         (LK.isOp, Tuple{LK.op_entry{T}, Int64, LK.read_data{T}}, false),
@@ -962,6 +960,10 @@ function _manifest_index(T)
         (LK.unquoted_atom, Tuple{T}, false),
         (LK.PL_get_text, Tuple{LD, Int64, UInt32}, false),
         (LK.codes_or_chars_to_buffer, Tuple{LD, Int64, Bool}, false),
+        (LK._cvt_arg, Tuple{LD, UInt8, LK.word, Int, Bool}, false),             # f3b-5a
+        (LK._cvt_arg_boundary, Tuple{LD, LK.word, Int, Bool}, false),           # f3b-5a (TRANSITIONAL)
+        (LK._codes_or_chars_to_buffer_terms, Tuple{LD, Int, Bool}, false),      # f3b-5a (TRANSITIONAL)
+        (LK._cvt_culprit_cell!, Tuple{LD, T}, false),                           # f3b-5a (TRANSITIONAL)
         # R1e — the writer's core (src/pl-write.jl): quoting, the token layer, atoms, strings,
         # numbers, `'$VAR'`, the term state machine, `PL_write_term`
         (LK.bracketPairAtom, Tuple{T}, false),
@@ -1350,6 +1352,8 @@ function _manifest_index(T)
         (LK._message_term, Tuple{LD, Symbol, Int, Int}, false),
         (LK._message_term, Tuple{LD, Symbol, Int, Int, Int, Int}, false),
         (LK.PL_put_variable, Tuple{LD, Int}, false),
+        (LK.PL_get_functor, Tuple{LD, Int}, false),            # f3b-5a
+        (LK.PL_get_intptr, Tuple{LD, Int}, false),             # f3b-5a
         (LK.PL_put_atom, Tuple{LD, Int, T}, false),
         (LK.PL_put_nil, Tuple{LD, Int}, false),
         (LK.PL_put_int64, Tuple{LD, Int, Int}, false),
@@ -1963,7 +1967,6 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._atoi, Tuple{Vector{UInt8}, Int64}, true),
     (LK._byte, Tuple{Vector{UInt8}, Int64}, true),
     (LK._char_type, Tuple{Int64}, true),
-    (LK._number_text, Tuple{LK.number}, false),
     (LK._same_bytes, Tuple{Vector{UInt8}, Int64, Vector{UInt8}, Int64}, false),
     (LK._strtod, Tuple{Vector{UInt8}, Int64}, false),
     (LK.addUTF8Buffer, Tuple{Vector{UInt8}, Int64}, false),

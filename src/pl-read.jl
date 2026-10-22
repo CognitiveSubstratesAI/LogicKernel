@@ -205,13 +205,14 @@ const TS_UNBOUND = -2
 
 # PORT: pl-read.c op_entry
 # DIVERGES: the operator's name and its block are two fields, where upstream overlays them (`op`,
-# a union `isterm` selects); the block is the term itself (as `term_stack`); copied
-# (`copy_op_entry`) where upstream copies the struct; no term position (`tpos`: positions are
-# refused, R1's decision); `token_start` is an index into the read buffer.
+# a union `isterm` selects); the block is the WORD of the term (0: none), where upstream holds a
+# term reference, because the term stack holds words; copied (`copy_op_entry`) where upstream
+# copies the struct; no term position (`tpos`: positions are refused, R1's decision);
+# `token_start` is an index into the read buffer.
 "An operator the parser met: its name or block, kind, type and priorities (pl-read.c)."
 mutable struct op_entry{T}
     atom::Union{Nothing, T}         # op.atom: Normal operator
-    block::Union{Nothing, T}        # op.block: [...] or {...} operator
+    block::word                     # op.block: [...] or {...} operator (0: none)
     isblock::Bool                   # [...] or {...} operator
     isterm::Bool                    # Union is a term
     kind::Int                       # kind (OP_PREFIX, ...)
@@ -221,7 +222,7 @@ mutable struct op_entry{T}
     op_pri::Int                     # priority of operator
     token_start::Int                # start of the token for message
 end
-op_entry{T}() where {T} = op_entry{T}(nothing, nothing, false, false, 0, 0x00, 0, 0, 0, 0)
+op_entry{T}() where {T} = op_entry{T}(nothing, word(0), false, false, 0, 0x00, 0, 0, 0, 0)
 
 # A copy of `e`: upstream copies the struct by value (`queue_side_op`, a frame's `in_op`).
 copy_op_entry(e::op_entry{T}) where {T} = op_entry{T}(
@@ -2305,8 +2306,8 @@ end
 
 # PORT: pl-read.c setHandle as _setHandle!
 # DIVERGES: the entry `h` of the term stack holds the WORD of the term `w` (L1e e6: an atom's word, a
-# value's tagged or value-table word — no export; a compound, only an operator's block, copied onto the
-# global stack, counted as the cold import).
+# value's tagged or value-table word — no export; no compound reaches it: an operator's block is a
+# word, placed with `_setHandle_w!`).
 "Make term-stack entry `h` hold the term `w` (pl-read.c)."
 function _setHandle!(h::Int, w::T, rd::read_data{T})::Nothing where {T}
     _setHandle_w!(h, _word_of!(rd.ld, w), rd)
@@ -2320,15 +2321,6 @@ function _setHandle_w!(h::Int, w::word, rd::read_data)::Nothing
     ts.words[h] = w
     ts.vars[h] = TS_VALUE
     return nothing
-end
-
-# The term the term-stack entry `h` holds, as upstream's `valTermRef` reads it: an unbound cell is
-# a fresh variable; never a variable record's (those are read with `readValHandle`).
-function _ts_term(h::Int, rd::read_data{T})::T where {T}
-    ts = rd.term_stack
-    ts.vars[h] == TS_VALUE && return something(_cell_value(rd.ld, ts.words[h]))   # (L1e e6: a word)
-    @assert ts.vars[h] == TS_UNBOUND
-    return _cell_var(rd.ld, allocGlobalCells!(rd.ld, 1))
 end
 
 # ── term building (pl-read.c) ───────────────────────────────────────────────────────────────────
@@ -2441,17 +2433,25 @@ function pop_out_op(rd::read_data)::Nothing
 end
 
 # PORT: pl-read.c op_name
+# DIVERGES: the block is a word (see `op_entry`), whose name is read as PL_get_name_arity reads it.
 "The name of the operator `e` (pl-read.c): its atom, or its block's name (`[...]`: `[]`)."
-function op_name(e::op_entry{T})::T where {T}
+function op_name(e::op_entry{T}, rd::read_data{T})::T where {T}
     if !e.isterm
         a = e.atom
         a === nothing && error("read/1: an operator without a name")    # (never: name_token)
         return a
     end
+    ld = rd.ld
     b = e.block
-    b === nothing && error("read/1: a block operator without its block")
+    b == 0 && error("read/1: a block operator without its block")
     # PL_get_name_arity(e->op.block, &name, NULL)
-    name = kind(b) === EXPR ? child(b, 1) : b
+    name = if _is_gcompound(b)                      # isTerm(w)
+        _atom_value(ld, nameFunctor(ld.functors, ld.gstack[valPtr(b)]))  # functorTerm(w)
+    elseif isAtomW(b)                               # isTextAtom(w)
+        _atom_value(ld, b)
+    else
+        error("read/1: a block operator's name")    # assert(0)
+    end
     kind(name) === SYM || error("read/1: a block operator's name")     # assert(0)
     if sym_key(name) == sym_key(mk_sym(T, LIST_CONS_NAME))              # ATOM_dot
         name = mk_nil(T)
@@ -2466,7 +2466,7 @@ function build_op_term(op::op_entry{T}, rd::read_data{T})::Bool where {T}
     arity = op.kind == OP_INFIX ? 2 : 1
     e = out_op(-arity, rd)
     if !op.isblock
-        build_term(op_name(op), arity, rd) || return false
+        build_term(op_name(op, rd), arity, rd) || return false
     else
         term = alloc_term(rd)
         av = term_av(-(arity + 1), rd)
@@ -2477,9 +2477,9 @@ function build_op_term(op::op_entry{T}, rd::read_data{T})::Bool where {T}
         end
         @assert term == av + arity
         b = op.block
-        b === nothing && error("read/1: a block operator without its block")
-        _setHandle!(av, b, rd)                      # av[0] = term; PL_put_term(term, op->op.block)
-        build_term(op_name(op), arity + 1, rd) || return false
+        b == 0 && error("read/1: a block operator without its block")
+        _setHandle_w!(av, b, rd)                    # av[0] = term; PL_put_term(term, op->op.block)
+        build_term(op_name(op, rd), arity + 1, rd) || return false
     end
     q = rd.op.out_queue
     q[e] = out_entry(op.op_pri)                     # e->pri = op->op_pri
@@ -2577,7 +2577,7 @@ const CTR_SUB = 2
 "Is `e`'s name an operator of `kind` (pl-read.c)? Then its type and priorities are set in `e`."
 function isOp(e::op_entry{T}, kind::Int, rd::read_data{T})::Bool where {T}
     gd = rd.gd
-    ok, type, pri16 = currentOperator(gd, gd.modules[rd.module_], op_name(e), kind)
+    ok, type, pri16 = currentOperator(gd, gd.modules[rd.module_], op_name(e, rd), kind)
     ok || return false
     pri = Int(pri16)
     e.type = type
@@ -2632,10 +2632,10 @@ function modify_op(cstate::cterm_state{T}, cpri::Int)::Bool where {T}
             tmp = alloc_term(rd)
             if op.isblock
                 b = op.block
-                b === nothing && error("read/1: a block operator without its block")
-                _setHandle!(tmp, b, rd)             # PL_put_term(tmp, op->op.block)
+                b == 0 && error("read/1: a block operator without its block")
+                _setHandle_w!(tmp, b, rd)           # PL_put_term(tmp, op->op.block)
             else
-                _setHandle!(tmp, op_name(op), rd)   # PL_put_atom(tmp, op->op.atom)
+                _setHandle!(tmp, op_name(op, rd), rd)   # PL_put_atom(tmp, op->op.atom)
             end
             queue_out_op(0, rd)
             cstate.out_n += 1
@@ -2655,7 +2655,7 @@ end
 # (ISO Latin-1 for an atom with no wider character): the two differ for a non-ASCII name only.
 "Raise `operator_clash` at the operator `op` (pl-read.c); false, always."
 function bad_operator(out::Int, op::op_entry{T}, rd::read_data{T})::Bool where {T}
-    opname = sym_text(op_name(op))                  # stringOp(op)
+    opname = sym_text(op_name(op, rd))              # stringOp(op)
     rd.token_start = op.token_start
     if op.kind == OP_INFIX
         if op.left_pri < rd.op.out_queue[out].pri
@@ -2827,11 +2827,18 @@ function prepare_op(
 end
 
 # PORT: pl-read.c finish_block_op
-# DIVERGES: the block is the term itself (see `op_entry`).
+# DIVERGES: the block is the entry's word (see `op_entry`); an unbound entry gives a reference to a
+# fresh global cell, as PL_put_term of an unbound term reference; never a variable record's.
 "Take the block just read off the term stack as the operator `in_op`'s name (pl-read.c)."
 function finish_block_op(in_op::op_entry{T}, rd::read_data{T})::Nothing where {T}
     top = term_av(-1, rd)
-    in_op.block = _ts_term(top, rd)                 # PL_put_term(in_op->op.block, *top)
+    ts = rd.term_stack
+    if ts.vars[top] == TS_VALUE                     # in_op->op.block = PL_new_term_ref()
+        in_op.block = ts.words[top]                 # PL_put_term(in_op->op.block, *top)
+    else
+        @assert ts.vars[top] == TS_UNBOUND
+        in_op.block = makeRefG(allocGlobalCells!(rd.ld, 1))
+    end
     in_op.isterm = true
     truncate_term_stack(top, rd)
     return nothing
@@ -3052,23 +3059,23 @@ function complex_term(
         op = side_op(cstate.side_p, rd)
         term = alloc_term(rd)
         if !op.isblock
-            _setHandle!(term, op_name(op), rd)      # PL_put_atom(term, op->op.atom)
+            _setHandle!(term, op_name(op, rd), rd)  # PL_put_atom(term, op->op.atom)
         else
             b = op.block
-            b === nothing && error("read/1: a block operator without its block")
-            _setHandle!(term, b, rd)                # PL_put_term(term, op->op.block)
+            b == 0 && error("read/1: a block operator without its block")
+            _setHandle_w!(term, b, rd)              # PL_put_term(term, op->op.block)
         end
         PopOp!(cstate)
     elseif cstate.side_n == 1 && !side_op(0, rd).isblock &&
         (
-            sym_key(op_name(side_op(0, rd))) == sym_key(mk_sym(T, Symbol(","))) ||
-            sym_key(op_name(side_op(0, rd))) == sym_key(mk_sym(T, Symbol(";")))
+            sym_key(op_name(side_op(0, rd), rd)) == sym_key(mk_sym(T, Symbol(","))) ||
+            sym_key(op_name(side_op(0, rd), rd)) == sym_key(mk_sym(T, Symbol(";")))
         )
         # (as upstream: the queue's entry 0, then this level's top for the error)
         rd.ld.exception_processing = true
         ex = mk_expr(
             T,
-            T[mk_sym(T, :punct), op_name(side_op(cstate.side_p, rd)),
+            T[mk_sym(T, :punct), op_name(side_op(cstate.side_p, rd), rd),
                 name_token(token, nothing, rd)]
         )
         errorWarning("", ex, rd)

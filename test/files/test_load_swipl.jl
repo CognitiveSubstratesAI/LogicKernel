@@ -258,7 +258,27 @@ const _TL_CASES = [
         "w5 :- X \\== X.\nw6(X) :- var(Y), q(X).\nw7 :- integer(_).\n" *
         "w8(_X, _X, __y, __y, _1, _1).\nq(1).\nw9(X) :- f(X) == Y, atom(Z), q(Z).\n" *
         "w10(X) :- q(X), X == 1.\nw2(X) :- nonvar(Y), q(X).\nw1(_B, _B).\n",
-        [("w1", 2), ("q", 1), ("w10", 1)])
+        [("w1", 2), ("q", 1), ("w10", 1)]),
+    # f3b-5a's gap rows (2026-10-22). The loader always passes `-` as the source of
+    # '$record_clause'/3 (boot/init.jl), so the `File:Line` branch of pl-comp.c record_clause had
+    # no row: an integer is no source location, the file and the line are read as an atom and an
+    # integer, an unbound file is an instantiation error, and a pair succeeds (the clause is
+    # then static, owned by the file `o`). Called as directives, each outcome is a message.
+    ("'\$record_clause'/3 with a File:Line source",
+        ":- '\$record_clause'(rc(1), o, 1).\n:- '\$record_clause'(rc(1), o, f:x).\n" *
+        ":- '\$record_clause'(rc(1), o, _:3).\n:- '\$record_clause'(rc(1), o, f:3).\n",
+        [("rc", 1)]),
+    # … and '$set_predicate_attribute'/3, whose head or indicator (pl-proc.c get_procedure's
+    # Name/Arity) and value (get_bool_or_int_ex) were read only through `:- dynamic` (which
+    # reaches it with `true`, after boot's '$head_name_arity' has refused a bad indicator). The
+    # non-indicator head `1` is a KNOWN DIFFERENCE, below.
+    ("'\$set_predicate_attribute'/3: the value and the indicator read",
+        ":- '\$set_predicate_attribute'(p/1, dynamic, 1).\n" *
+        ":- '\$set_predicate_attribute'(p/1, dynamic, 2).\n" *
+        ":- '\$set_predicate_attribute'(p/1, dynamic, _).\n" *
+        ":- '\$set_predicate_attribute'(p/a, dynamic, true).\n" *
+        ":- '\$set_predicate_attribute'(p/(-1), dynamic, true).\np(1).\n",
+        [("p", 1)])
 ]
 
 if _TL_SWIPL !== nothing
@@ -376,6 +396,60 @@ else
     @info "LOADER DIFFERENTIAL NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI's analysis job."
     @testset "loader differential skipped only where it is not required" begin
         @test !_TL_SWIPL_REQUIRED
+    end
+end
+
+# KNOWN DIFFERENCE, pinned (R2 checklist: "'$set_predicate_attribute'/3 on a head that is no
+# indicator"; f3b-5a's gap row):
+#   swipl 10.1.18 (probed 2026-10-22, `:- '$set_predicate_attribute'(1, dynamic, true).`):
+#     error(type_error(predicate_indicator, 1), context(system:'$set_predicate_attribute'/3, _))
+#     (pl-proc.c get_functor: `1` is neither Name/Arity nor a functor)
+#   kernel: type_error(callable, 1), the rest the same — `get_procedure` (pl-proc.jl) reads a head
+#     that is no `Name/Arity` with `get_head_functor`, whose error is `callable` (pl-proc.c).
+# The kernel's line was confirmed by running this row on the base, 42d6205 (2026-10-22).
+@testset "'\$set_predicate_attribute'(1, ...): predicate_indicator to swipl, callable here" begin
+    line(formal) =
+        "error " * _tl_enc(
+            mk_expr(
+                _TL,
+                _TL[
+                    _tls("error"),
+                    mk_expr(_TL, _TL[_tls("type_error"), _tls(formal), lk_gnd(_TL, 1)]),
+                    mk_expr(
+                        _TL,
+                        _TL[
+                            _tls("context"),
+                            mk_expr(
+                                _TL,
+                                _TL[
+                                    _tls(":"),
+                                    _tls("system"),
+                                    mk_expr(
+                                        _TL,
+                                        _TL[
+                                            _tls("/"),
+                                            _tls("\$set_predicate_attribute"),
+                                            lk_gnd(_TL, 3)
+                                        ]
+                                    )
+                                ]
+                            ),
+                            lk_var(_TL, UInt64(1))
+                        ]
+                    )
+                ]
+            )
+        )
+    mktempdir() do d
+        path = joinpath(d, "attr1.pl")
+        write(path, ":- '\$set_predicate_attribute'(1, dynamic, true).\n")
+        ours = _tl_kernel(path, Tuple{String, Int}[])
+        @test line("callable") in ours
+        if _TL_SWIPL !== nothing
+            @test line("predicate_indicator") in _tl_swipl(path, Tuple{String, Int}[])
+        else
+            @test !_TL_SWIPL_REQUIRED
+        end
     end
 end
 

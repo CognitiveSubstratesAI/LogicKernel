@@ -1144,8 +1144,8 @@ end
 # PORT: pl-write.c callPortray
 # DIVERGES: no `portray_goal` (write_term/2,3 refuses it) and no halt state. Calling Prolog from the
 # writer needs the meta-call (V9): so where upstream would call `user:portray/1` — it is DEFINED —
-# the kernel refuses (`NotPortedError`; user, 2026-10-07, decision 3a); where it is not, upstream
-# returns false at once, and so does the kernel.
+# the kernel refuses (`NotPortedError`, its culprit the atom `portray`: f3b-5a; user, 2026-10-07,
+# decision 3a); where it is not, upstream returns false at once, and so does the kernel.
 "Call `user:portray/1` on term reference `arg`: 1 (it wrote it), 0 (not defined, or it failed), -1 (error) (pl-write.c)."
 function callPortray(arg::term_t, prec::Int, options::write_options{T})::Int where {T}
     gd = options.gd
@@ -1154,7 +1154,7 @@ function callPortray(arg::term_t, prec::Int, options::write_options{T})::Int whe
 
     throw(
         NotPortedError{T}(
-            deRef(options.ld, slotValue(options.ld, arg + 1)),
+            mk_sym(T, :portray),                            # (the refused call's name: no read)
             "print/1 and portray(true) with user:portray/1 defined (calling Prolog)",
             "V9 (the meta-call)"
         )
@@ -1703,9 +1703,9 @@ end
 
 # PORT: pl-write.c writeTopTerm
 # DIVERGES: a cyclic term — upstream writes `@(Template, Substitutions)` from `PL_factorize_term` —
-# is refused (`NotPortedError`; user, 2026-10-07, decision 4a), checked first, so no write walks a
-# cycle; `cycles(false)`'s domain error as upstream. `PL_is_acyclic` on the cells (L1d step 3).
-# No stream lock (`Slock`).
+# is refused (`NotPortedError`, its culprit the atom `cyclic_term`: f3b-5a; user, 2026-10-07,
+# decision 4a), checked first, so no write walks a cycle; `cycles(false)`'s domain error as
+# upstream. `PL_is_acyclic` on the cells (L1d step 3). No stream lock (`Slock`).
 "Write the term `term` references at priority `prec` (pl-write.c)."
 function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool where {T}
     ld = options.ld
@@ -1726,7 +1726,7 @@ function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool 
 
         throw(
             NotPortedError{T}(
-                deRef(ld, slotValue(ld, term + 1)),
+                mk_sym(T, :cyclic_term),                    # (a name: the term has a cycle)
                 "writing a cyclic term (PL_factorize_term: @(Template, Substitutions))",
                 "refused (R1e decision 4a)"
             )
@@ -1918,9 +1918,10 @@ end
 
 # PORT: pl-write.c pl_write_term3
 # DIVERGES: the write options are built once the stream is known (upstream fills them as it goes);
-# `portray_goal` is refused — calling it needs the meta-call (`NotPortedError`, V9); the module's
-# flags are the kernel's (`user`, or the one `module` names, else `user`); no quoted-stream
-# representation flag is lost (`SIO_REPPL`/`SIO_REPPLU` set and restored, as upstream).
+# `portray_goal` is refused — calling it needs the meta-call (`NotPortedError`, V9; its culprit the
+# atom `portray_goal`, f3b-5a); the module's flags are the kernel's (`user`, or the one `module`
+# names, else `user`); no quoted-stream representation flag is lost (`SIO_REPPL`/`SIO_REPPLU` set
+# and restored, as upstream).
 """
 Write the term `term` references to the stream `stream` names (0: the current output) with the
 write_term/2,3 options list `opts` holds (pl-write.c).
@@ -2002,7 +2003,7 @@ function pl_write_term3(
     if gportray != 0
         throw(
             NotPortedError{T}(
-                slotValue(ld, gportray + 1),
+                mk_sym(T, :portray_goal),                   # (the refused option's name)
                 "write_term's portray_goal option (calling Prolog)",
                 "V9 (the meta-call)"
             )

@@ -647,17 +647,31 @@ PL_get_intptr_ex(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long_ex(ld,
 
 # PORT: pl-error.c PL_get_size_ex
 # DIVERGES: returns the value, or `nothing` with the error raised (or none: upstream's plain
-# `false`). An integer beyond `Int64` is beyond `size_t` or negative.
+# `false`). An integer beyond `Int64` is beyond `size_t` or negative. On the WORDS (f3b-5a): a
+# value word's entry read as its value (`_value_term`, upstream's `PL_get_number`), an unbound cell,
+# an atom or a compound word `type_error(integer, T)` (PL_error makes an unbound culprit
+# `instantiation_error`); the boundary (TRANSITIONAL, f3) read as its term, counted in `cold_pairs`.
 """
 The size term reference `t` holds — a non-negative integer — or `nothing` after raising
 `domain_error(not_less_than_zero, T)`, `representation_error(size_t)` or `type_error(integer, T)`
 (pl-error.c).
 """
 function PL_get_size_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    k, x, q = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t) (L1e e2: the words)
-    k == DU_VALUE && isTaggedIntW(x) && valInt(x) >= 0 && return Int(valInt(x))   # a tagged size
-    k == DU_TERM && (ld.cold_pairs += 1)                    # the boundary: on the term
-    p = deRef(ld, _loc_term(ld, k, x, q))                   # (an atom's symbol, a value's entry: no export)
+    k, x, q = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
+    if k == DU_VALUE && isTaggedIntW(x)                     # if ( isTaggedInt(*p) )
+        valInt(x) >= 0 && return Int(valInt(x))             # *i = (size_t)v
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+        return nothing
+    end
+    if k == DU_VALUE
+        p = _value_term(ld, x)                              # PL_get_number(t, &n): no export
+    elseif k == DU_TERM                                     # the boundary (TRANSITIONAL): its term
+        ld.cold_pairs += 1
+        p = deRef(ld, _loc_term(ld, k, x, q))
+    else                                                    # a variable, an atom, a compound
+        PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+        return nothing
+    end
     if isInteger(p)
         if integer_is_int64(p)
             v = int64_value(p)

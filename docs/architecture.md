@@ -960,7 +960,6 @@ graph LR
     pl_prims --> pl_arith
     pl_prims --> os_pl_option
     pl_prims --> os_pl_text
-    pl_prims --> pl_write
     pl_prims --> pl_read
     pl_ressymbol --> term_interface
     pl_ressymbol --> default_term
@@ -1157,6 +1156,8 @@ graph LR
     os_pl_codelist --> SWI_Prolog
     os_pl_codelist --> pl_global
     os_pl_codelist --> pl_inline
+    os_pl_codelist --> pl_prims
+    os_pl_codelist --> pl_alloc
     os_pl_codelist --> pl_fli
     os_pl_option --> term_interface
     os_pl_option --> default_term
@@ -1186,6 +1187,7 @@ graph LR
     os_pl_text --> pl_inline
     os_pl_text --> pl_prims
     os_pl_text --> pl_comp
+    os_pl_text --> pl_wam
     os_pl_text --> pl_fli
     os_pl_text --> pl_error
     os_pl_text --> pl_gmp

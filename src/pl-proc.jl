@@ -110,11 +110,9 @@ function checkModifySystemProc(
 end
 
 # PORT: pl-proc.c get_head_functor
-# DIVERGES: the functor is returned as its parts — the name and the arity, arity -1 for upstream's
-# false — where upstream writes a `functor_t` (there is no functor table). `PL_get_functor` is
-# inlined: a compound's name is its first child, a compound with none has no functor, and every
-# symbol is a callable atom or a reserved symbol (`name/0`). A compound named by a term that is no
-# symbol (`$expr/n`, the kernel's) has a name that is no callable atom.
+# DIVERGES: the functor is returned as its parts — the name and the arity, arity -1 (name `[]`) for
+# upstream's false — where upstream writes a `functor_t` (as `PL_get_functor` gives it). A compound
+# named by a term that is no symbol (`$expr/n`, the kernel's) has no functor (`PL_get_functor`).
 """
     get_head_functor(ld, head, how) -> (name, arity)
 
@@ -125,17 +123,14 @@ past `MAXARITY`, or the name is no callable atom: then `type_error(callable, Hea
 function get_head_functor(
     ld::PL_local_data{T}, head::term_t, how::Int
 )::Tuple{T, Int} where {T}
-    t = _handle_term(ld, head)                          # (L1e e4: through the words)
-    if kind(t) === EXPR && nchildren(t) >= 1                    # PL_get_functor(head, fdef)
-        name, arity = child(t, 1), nchildren(t) - 1
-    elseif kind(t) === SYM                                      # isCallableAtom || isReservedSymbol
-        name, arity = t, 0
-    else
+    fd = PL_get_functor(ld, head)
+    if fd === nothing                                           # !PL_get_functor(head, fdef)
         if (how & GP_TYPE_QUIET) == 0
             PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head)
         end
-        return (t, -1)
+        return (mk_nil(T), -1)
     end
+    name, arity = fd                                            # fd = valueFunctor(*fdef)
     if arity > MAXARITY
         if (how & GP_TYPE_QUIET) == 0
             PL_error(
@@ -143,13 +138,13 @@ function get_head_functor(
                 mk_sym(T, :max_procedure_arity)
             )
         end
-        return (t, -1)
+        return (mk_nil(T), -1)
     end
     if !isCallableAtom(name)
         if (how & GP_TYPE_QUIET) == 0
             PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head)
         end
-        return (t, -1)
+        return (mk_nil(T), -1)
     end
     return (name, arity)
 end
@@ -1052,26 +1047,16 @@ function attribute_mask(ld::PL_local_data{T}, key::T)::UInt64 where {T}
 end
 
 # PORT: pl-proc.c get_bool_or_int_ex
-# DIVERGES: returns the value, or `nothing` with the error raised; `PL_get_bool` inlined — `true`,
-# `false`, `on`, `off` — then 0 or 1; else `type_error(bool, T)` (`PL_get_bool_ex`).
+# DIVERGES: returns the value, or `nothing` with the error raised, where upstream writes it
+# through `val`.
 "`true`/`on`/1 → 1, `false`/`off`/0 → 0; else `nothing` with `type_error(bool, T)` (pl-proc.c)."
 function get_bool_or_int_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    w = _handle_term(ld, t)                             # (L1e e4: through the words)
-    if isTextAtom(w)
-        k = sym_key(w)
-        (k == sym_key(mk_sym(T, Symbol("true"))) || k == sym_key(mk_sym(T, :on))) &&
-            return 1
-        (k == sym_key(mk_sym(T, Symbol("false"))) || k == sym_key(mk_sym(T, :off))) &&
-            return 0
-    end
+    b = PL_get_bool(ld, t)
+    b === nothing || return Int(b)                  # if ( PL_get_bool(t, val) ) return true
     v = PL_get_integer(ld, t)
     v !== nothing && (v & ~1) == 0 && return v      # accept 0 and 1
-    if kind(w) === VAR
-        PL_error(ld, ERR_INSTANTIATION)
-    else
-        PL_error(ld, ERR_TYPE, mk_sym(T, :bool), t)
-    end
-    return nothing
+    b = PL_get_bool_ex(ld, t)                       # generate an error
+    return b === nothing ? nothing : Int(b)
 end
 
 # PORT: pl-proc.c get_procedure
@@ -1090,14 +1075,13 @@ function get_procedure(
     head = PL_new_term_ref(ld)
     ok, m = PL_strip_module(gd, ld, descr, 0, head)
     ok || return nothing
-    h = _handle_term(ld, head)                          # (L1e e4: through the words)
-    if _hasFunctor(h, mk_sym(T, :/), 2)                 # Name/Arity
+    if PL_is_functor(ld, head, mk_sym(T, :/), 2)        # PL_is_functor(head, FUNCTOR_divide2)
         a = PL_new_term_ref(ld)
-        setSlotValue!(ld, a + 1, child(h, 2))
-        name = PL_get_atom_ex(ld, a)
+        _PL_get_arg(ld, 1, head, a)
+        name = PL_get_atom_ex(ld, a)                    # PL_get_atom_ex(a, &name)
         name === nothing && return nothing
-        setSlotValue!(ld, a + 1, child(h, 3))
-        arity = PL_get_integer_ex(ld, a)
+        _PL_get_arg(ld, 2, head, a)
+        arity = PL_get_integer_ex(ld, a)                # get_arity(a, …): PL_get_integer_ex
         arity === nothing && return nothing
         if arity < 0
             PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)

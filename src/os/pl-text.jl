@@ -27,10 +27,14 @@ end
 # PORT: pl-text.c PL_get_text
 # DIVERGES: returns the text, or `nothing` where upstream returns false (the error raised under
 # `CVT_EXCEPTION`, as upstream); an atom's or a string's text is its UTF-8 (see `PL_chars_t`); a
-# float's text is `format_float`'s (since R1e's floats). NOT PORTED,
+# float's text is `format_float`'s (since R1e's floats). On the WORDS (`valHandle(l)`,
+# `_deref_loc`; f3b-5a): the tests on `w` read a leaf — an atom word's symbol, a value word's entry,
+# no export — and a cell or a compound has none (`nothing`: it reaches only the list and the error
+# paths); the boundary (a slot's side value, a keyed variable) is read as its term, counted in
+# `cold_pairs` (TRANSITIONAL: f3). NOT PORTED,
 # as no caller passes them yet: `CVT_VARIABLE` (`varName`), the write conversions (`CVT_WRITE`,
-# `CVT_WRITEQ`, `CVT_WRITE_CANONICAL`: the writer, R1e) — refused where reached — and
-# `CVT_VARNOFAIL`; no buffer rings (`BUF_*`).
+# `CVT_WRITEQ`, `CVT_WRITE_CANONICAL`: the writer, R1e) — refused where reached, the refusal's
+# culprit the atom `write` — and `CVT_VARNOFAIL`; no buffer rings (`BUF_*`).
 """
 The text term reference `l` holds, as `flags` (`CVT_*`) allow it (pl-text.c): an atom, a string,
 an integer or a rational (`CVT_XINTEGER`: hexadecimal), a code or character list; `nothing` when
@@ -39,20 +43,33 @@ it holds none of them, raising the error under `CVT_EXCEPTION`.
 function PL_get_text(
     ld::PL_local_data{T}, l::term_t, flags::UInt32
 )::Union{Nothing, PL_chars_t} where {T}
-    k, x, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l) (L1e e2: the words —
-    k == DU_TERM && (ld.cold_pairs += 1)                    # an atom's symbol and a value's entry with no
-    w = deRef(ld, _loc_term(ld, k, x, p))                   # export; a compound or variable as its term)
+    k, x, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
+    w = if k == DU_WORD                                     # (f3b-5a: the leaf the tests read —
+        isAtomW(x) ? _atom_value(ld, x) : nothing           # an atom's symbol; a compound has none
+    elseif k == DU_VALUE
+        _value_term(ld, x)                                  # a value's entry, no export
+    elseif k == DU_TERM                                     # the boundary: on the term, counted
+        ld.cold_pairs += 1                                  # (TRANSITIONAL: goes in f3)
+        deRef(ld, _loc_term(ld, k, x, p))
+    else
+        nothing                                             # an unbound cell: none)
+    end
+    nil =
+        (k == DU_WORD && x == ld.atom_nil_w) ||          # isNil(w)
+        (k == DU_TERM && w !== nothing && is_nil(w))
 
-    if (flags & CVT_ATOM) != 0 && isAtom(w)
-        is_nil(w) && (flags & CVT_LIST) != 0 && @goto case_list
+    if w !== nothing && (flags & CVT_ATOM) != 0 && isAtom(w)
+        nil && (flags & CVT_LIST) != 0 && @goto case_list
         isTextAtom(w) || @goto maybe_write          # get_atom_text(): a text atom's
         s = sym_text(w)
         return PL_chars_t(Vector{UInt8}(codeunits(s)), length(s), ENC_UTF8, false)
-    elseif (flags & CVT_STRING) != 0 && isString(w)
+    elseif w !== nothing && (flags & CVT_STRING) != 0 && isString(w)
         s = string_value(w)                         # get_string_text()
         return PL_chars_t(Vector{UInt8}(codeunits(s)), length(s), ENC_UTF8, false)
-    elseif ((flags & CVT_RATIONAL) != 0 && isRational(w)) ||
+    elseif w !== nothing && (
+        ((flags & CVT_RATIONAL) != 0 && isRational(w)) ||
         ((flags & CVT_INTEGER) != 0 && isInteger(w))
+    )
         n = number()
         base = (flags & CVT_XINTEGER) == CVT_XINTEGER ? 16 : 10
         get_number(w, n)                            # PL_get_number(l, &n)
@@ -66,7 +83,7 @@ function PL_get_text(
             error("PL_get_text: not an integer or a rational")      # assert(0)
         end
         return PL_chars_t(Vector{UInt8}(codeunits(s)), length(s), ENC_ISO_LATIN_1, true)
-    elseif (flags & CVT_FLOAT) != 0 && isFloat(w)
+    elseif w !== nothing && (flags & CVT_FLOAT) != 0 && isFloat(w)
         s = format_float(float_value(w), 3, 'e')    # format_float(text->buf, …, 3, 'e')
         return PL_chars_t(Vector{UInt8}(codeunits(s)), length(s), ENC_ISO_LATIN_1, true)
     elseif (flags & CVT_LIST) != 0
@@ -86,9 +103,9 @@ function PL_get_text(
                 return nothing
             elseif result.status == CVT_nocode || result.status == CVT_nochar
                 culprit = new_term_ref(ld)
-                c = result.culprit
-                c === nothing && error("PL_get_text: no culprit")   # set with the status
-                setSlotValue!(ld, culprit + 1, c)           # *valTermRef(culprit) = result.culprit
+                c = result.culprit                          # its cell's position (`CVT_result`)
+                c == 0 && error("PL_get_text: no culprit")  # set with the status
+                _slot_from_cell!(ld, culprit + 1, c)        # *valTermRef(culprit) = result.culprit
                 type = result.status == CVT_nocode ? :character_code : :character
                 PL_error(ld, ERR_TYPE, mk_sym(T, type), culprit)
                 return nothing
@@ -100,7 +117,8 @@ function PL_get_text(
         @label case_write
         throw(
             NotPortedError{T}(
-                w, "PL_get_text: CVT_WRITE, CVT_WRITEQ, CVT_WRITE_CANONICAL",
+                mk_sym(T, :write),
+                "PL_get_text: CVT_WRITE, CVT_WRITEQ, CVT_WRITE_CANONICAL",
                 "R1e (the writer)"
             )
         )
@@ -119,7 +137,7 @@ function PL_get_text(
             :string
         elseif (flags & CVT_LIST) != 0
             :text
-        elseif (flags & CVT_ATOM) != 0 && is_nil(w)
+        elseif (flags & CVT_ATOM) != 0 && nil
             :atom                                   # [] \== '[]'
         elseif (flags & CVT_NUMBER) != 0
             :atomic
