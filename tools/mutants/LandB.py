@@ -37,5 +37,11 @@ MUTANTS = [
     dict(id="LB5 _pattr_error's message terms outlive the open query", file=BOOT,
          targets=["test/files/test_load_swipl.jl"],
          old="    PL_discard_foreign_frame(ld, fid)\n    return nothing\nend\n\n# PORT: init.pl $pi_head as _pi_head\n",
-         new="    return nothing\nend\n\n# PORT: init.pl $pi_head as _pi_head\n"),
+         new="    return nothing\nend\n\n# PORT: init.pl $pi_head as _pi_head\n",
+         equivalent="boot/init.jl _pattr_error runs while _init_call's query is open; the frame it opens is "
+                    "above that query's, and _end_query's PL_close_foreign_frame(q.foreign_frame) "
+                    "(src/pl-wam.jl _end_query) lowers lTop below it, which drops its record "
+                    "(lowerLTop!: every lowering drops the records above, asserted and tested in "
+                    "test/core_lang/test_local_stack.jl, V3 decision 3); measured on the 'dynamic' load "
+                    "case: nfliframes, fli_context and lTop identical with and without the discard"),
 ]
