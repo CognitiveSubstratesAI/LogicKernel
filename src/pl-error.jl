@@ -752,13 +752,3 @@ function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::term_t)::Bool
     push!(ld.messages, (severity, export_cells(ld, cell_export{T}(), -(msg + 1))))
     return true
 end
-
-# TRANSITIONAL (f3b-4): boot/init.jl's callers hold the message as a TERM — its directive runner and
-# loader work on terms (outside the F3B sweep, which counts src/) — so it is appended resolved through
-# the bindings, as before f3b-4. Removal condition: boot's directive runner on term references
-# (f3b-5b/f3's census); docs/architecture.md TRANSITIONAL list.
-"Report the message TERM `msg` of severity `severity` (boot's term-level callers; TRANSITIONAL)."
-function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::T)::Bool where {T}
-    push!(ld.messages, (severity, resolve_term(ld, msg)))
-    return true
-end

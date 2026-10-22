@@ -61,29 +61,18 @@ function load_file!(
             t = PL_new_term_ref(ld)
             bindings = PL_new_term_ref(ld)
             options = PL_new_term_ref(ld)                       # [variable_names(Bindings)]
-            setSlotValue!(
-                ld,
-                options + 1,
-                mk_expr(
-                    T,
-                    T[
-                        mk_sym(T, LIST_CONS_NAME),
-                        mk_expr(
-                            T, T[mk_sym(T, :variable_names), slotValue(ld, bindings + 1)]
-                        ),
-                        mk_nil(T)
-                    ]
-                )
-            )
+            vn = PL_new_term_ref(ld)
+            PL_cons_functor(ld, vn, _err_functor(ld, :variable_names, 1), bindings)
+            PL_put_nil(ld, options)
+            PL_cons_list(ld, options, vn, options)
             ok = read_clause(gd, ld, s, t, options)
             ld.variable_names = bindings                        # b_setval('$variable_names', …)
-            w = deRef(ld, slotValue(ld, t + 1))
-            if !ok || (kind(w) === SYM && sym_key(w) == sym_key(mk_sym(T, :end_of_file)))
+            if !ok || _init_is(ld, t, :end_of_file, 0)
                 ld.variable_names = 0
                 PL_discard_foreign_frame(ld, fid)
                 break
             end
-            if !valid_term(ld, w)                               # '$valid_term'(Term): `[]`
+            if !valid_term(ld, t)                               # '$valid_term'(Term): `[]`
                 ld.variable_names = 0
                 PL_discard_foreign_frame(ld, fid)
                 continue
@@ -109,124 +98,158 @@ function load_file!(
     return (status, ball, ld.messages[(n0 + 1):end])
 end
 
+# ORIGINAL (f3b-3b): where a term leaves the loader — the ball `load_file!` returns, a refusal's
+# culprit (`NotPortedError`, `CallableTypeError`) — it is read off the cells once (`export_cells`),
+# as the messages are (`printMessage`).
+"The term `t` references, exported off the cells (the loader's API ball, a refusal's culprit)."
+_init_export(ld::PL_local_data{T}, t::term_t) where {T} =
+    export_cells(ld, cell_export{T}(), -(t + 1))::T
+
 # PORT: init.pl $valid_term as valid_term
-# DIVERGES: the term itself, dereferenced; the message goes to `printMessage`.
+# DIVERGES: the term reference read through the FLI; the message goes to `printMessage`.
 """
-Should the term read be compiled (boot/init.pl)? Not `[]`; a variable is — after its error is
-printed — and `'\$compile_term'` then raises it, ending the load.
+Should the term read into `t` be compiled (boot/init.pl)? Not `[]`; a variable is — after its error
+is printed — and `'\$compile_term'` then raises it, ending the load.
 """
-function valid_term(ld::PL_local_data{T}, w::T)::Bool where {T}
-    if kind(w) === VAR
-        printMessage(ld, :error, _init_error(T, mk_sym(T, :instantiation_error)))
+function valid_term(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    if PL_is_variable(ld, t)
+        printMessage(ld, :error, _init_error(ld, :instantiation_error))
         return true
     end
-    return !is_nil(w)                                   # Term \== []
+    return !PL_get_nil(ld, t)                           # Term \== []
 end
 
-# Is `w` the compound `name/arity` (a symbol head) — or, for arity 0, the atom `name`?
-_init_is(ld::PL_local_data{T}, w::T, name::Symbol, arity::Int) where {T} =
+# Does term reference `t` hold the compound `name/arity` — or, for arity 0, the atom `name`?
+function _init_is(ld::PL_local_data{T}, t::term_t, name::Symbol, arity::Int)::Bool where {T}
     if arity == 0
-        (kind(w) === SYM && sym_key(w) == sym_key(mk_sym(T, name)))
-    else
-        _hasFunctor(w, mk_sym(T, name), arity)
+        a = PL_get_atom(ld, t)
+        return a !== nothing && sym_key(a) == sym_key(mk_sym(T, name))
     end
+    return PL_is_functor(ld, t, mk_sym(T, name), arity)
+end
 
 # PORT: init.pl $compile_term as compile_term!
 # DIVERGES: `'$expanded_term'` is the identity (no `term_expansion`/`goal_expansion` defined — when
 # one is, refused — and a DCG rule `-->` refused: `dcg_translate_rule` is boot/dcg.pl's, R2);
 # `'$source_location'(File, Line):Term` never arises (read_clause makes no layout). Returns
-# `(:ok, nothing)`, or `(:exception, Ball)` for an exception that ends the load.
+# `(:ok, nothing)`, or `(:exception, Ball)` for an exception that ends the load (exported).
 "Compile the term read into `t`: a directive, or a clause stored for the file `file` (boot/init.pl)."
 function compile_term!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, file::T
 )::Tuple{Symbol, Union{Nothing, T}} where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
     user = MODULE_user(gd)
     for (n, a) in ((:term_expansion, 2), (:term_expansion, 4), (:goal_expansion, 2),
         (:goal_expansion, 4))
         p = isCurrentProcedure(sym_key(mk_sym(T, n)), a, user)
         p !== nothing && _impl_any_defined(p.definition) &&
             throw(
-                NotPortedError{T}(w, "term_expansion/goal_expansion (expand_term/2)", "R2")
+                NotPortedError{T}(
+                    _init_export(ld, t), "term_expansion/goal_expansion (expand_term/2)",
+                    "R2"
+                )
             )
     end
-    _init_is(ld, w, Symbol("-->"), 2) &&
-        throw(NotPortedError{T}(w, "a DCG rule (dcg_translate_rule/2)", "R2: boot/dcg.pl"))
+    _init_is(ld, t, Symbol("-->"), 2) &&
+        throw(
+            NotPortedError{T}(
+                _init_export(ld, t), "a DCG rule (dcg_translate_rule/2)", "R2: boot/dcg.pl"
+            )
+        )
 
-    if kind(w) === VAR                                  # '$instantiation_error'(Var)
-        return (:exception, _init_error(T, mk_sym(T, :instantiation_error)))
-    elseif _init_is(ld, w, Symbol("?-"), 1) || _init_is(ld, w, Symbol(":-"), 1)
+    if PL_is_variable(ld, t)                            # '$instantiation_error'(Var)
+        return (:exception, _init_export(ld, _init_error(ld, :instantiation_error)))
+    elseif _init_is(ld, t, Symbol("?-"), 1) || _init_is(ld, t, Symbol(":-"), 1)
         g = PL_new_term_ref(ld)
-        setSlotValue!(ld, g + 1, child(w, 2))
+        _PL_get_arg(ld, 1, t, g)
         return execute_directive!(gd, ld, g)
     end
     return store_clause!(gd, ld, t, file)
 end
 
-# `error(Formal, _)`, as `'$instantiation_error'` and its kin throw it.
-_init_error(::Type{T}, formal::T) where {T} =
-    mk_expr(T, T[mk_sym(T, :error), formal, mk_var(T, fresh_var_keys!(1))])
+# `error(Formal, _)` in a new term reference, as `'$instantiation_error'` and its kin throw it:
+# `Formal` the term `formal` references, or the atom `name` — with arguments, the compound
+# `name(a…)`.
+_init_error(ld::PL_local_data{T}, formal::term_t) where {T} =
+    _message_term(ld, :error, formal, new_term_ref(ld))
+function _init_error(
+    ld::PL_local_data{T}, name::Symbol, a::Vararg{term_t, N}
+)::term_t where {T, N}
+    formal = N == 0 ? _err_atom(ld, mk_sym(T, name)) : _message_term(ld, name, a...)
+    return _init_error(ld, formal)
+end
 
 # PORT: init.pl $store_clause as store_clause!
 # DIVERGES: `'$compile_term'`'s `catch(…, error(_,_), print_message(error, E))` is here; the clause
-# goes to `'$record_clause'/3` through the query API — so an error's context is
-# `'$record_clause'/3`'s, as swipl's — with the source location `-` (the term's own:
-# `LD->read_source`); `'$valid_clause'` holds (no `sandboxed_load`); SSU clauses (`=>`) refused;
-# compilation mode `database` (no QLF).
+# goes to `'$record_clause'/3` through the query API, its term reference shared (`PL_put_term`) —
+# so an error's context is `'$record_clause'/3`'s, as swipl's — with the source location `-` (the
+# term's own: `LD->read_source`); `'$valid_clause'` holds (no `sandboxed_load`); SSU clauses (`=>`)
+# refused; compilation mode `database` (no QLF).
 "Store the clause in `t` for the file `file`; an error becomes an error message (boot/init.pl)."
 function store_clause!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, file::T
 )::Tuple{Symbol, Union{Nothing, T}} where {T}
-    w = deRef(ld, slotValue(ld, t + 1))
-    if _init_is(ld, w, Symbol(","), 2)
-        printMessage(ld, :error, mk_sym(T, :cannot_redefine_comma))
+    if _init_is(ld, t, Symbol(","), 2)
+        printMessage(ld, :error, _err_atom(ld, mk_sym(T, :cannot_redefine_comma)))
         return (:ok, nothing)                           # fail
     end
-    _init_is(ld, w, Symbol("=>"), 2) &&
-        throw(NotPortedError{T}(w, "an SSU clause (=>)", "SSU is not ported"))
+    _init_is(ld, t, Symbol("=>"), 2) &&
+        throw(
+            NotPortedError{T}(
+                _init_export(ld, t), "an SSU clause (=>)", "SSU is not ported"
+            )
+        )
     a = PL_new_term_refs(ld, 3)
-    setSlotValue!(ld, a + 1, w)
-    setSlotValue!(ld, a + 2, file)
-    setSlotValue!(ld, a + 3, mk_sym(T, :-))
+    PL_put_term(ld, a, t)
+    PL_put_atom(ld, a + 1, file)
+    PL_put_atom(ld, a + 2, mk_sym(T, :-))
     proc = isCurrentProcedure(
         sym_key(mk_sym(T, Symbol("\$record_clause"))), 3, MODULE_system(gd)
     )::Procedure{T}
-    rc, ball = _init_call(gd, ld, proc, a)
-    if rc === :exception
-        _is_error_term(ld, ball::T) || return (:exception, ball)
-        printMessage(ld, :error, ball::T)                # '$print_message'(error, E)
-    end
+    ball = _init_call(gd, ld, proc, a, nothing)         # '$print_message'(error, E)
+    ball === nothing || return (:exception, ball)
     return (:ok, nothing)
 end
 
-# Is `b` an `error(_, _)` term — what boot/init.pl's `catch(…, error(_,_), …)` catches?
-_is_error_term(::PL_local_data{T}, b) where {T} =
-    kind(b) === EXPR && nchildren(b) == 3 && kind(child(b, 1)) === SYM &&
-    sym_key(child(b, 1)) == sym_key(mk_sym(T, :error))
+# Does term reference `t` hold an `error(_, _)` term — what boot/init.pl's `catch(…, error(_,_), …)`
+# catches?
+_is_error_term(ld::PL_local_data{T}, t::term_t) where {T} =
+    PL_is_functor(ld, t, mk_sym(T, :error), 2)
 
-# Run `proc` on the arguments at `a` through the query API, once: `(:succeeded | :failed, nothing)` or
-# `(:exception, Ball)` (the ball resolved). Its bindings stay (the query is cut, not closed).
+# boot/init.pl's `catch(…, error(_,_), Handler)` on the ball in `ex` of a query on one built-in (no
+# frames of its own left to unwind): an `error(_, _)` ball handled — printed (`attr` nothing), or as
+# `'$set_pattr'` prints it — and `nothing` returned; any other ball is not caught: it is returned,
+# exported.
+function _init_catch(
+    ld::PL_local_data{T}, ex::term_t, attr::Union{Nothing, T}
+)::Union{Nothing, T} where {T}
+    _is_error_term(ld, ex) || return _init_export(ld, ex)
+    if attr === nothing
+        printMessage(ld, :error, ex)
+    else
+        _pattr_error(ld, ex, attr)
+    end
+    return nothing
+end
+
+# Run `proc` on the arguments at `a` through the query API, once: `nothing`, or the exported ball of
+# an exception that is not `error(_, _)` (one that is goes to `_init_catch`'s handler, `attr`). A
+# solution's bindings stay (the query is cut, not closed).
 function _init_call(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, a::term_t
-)::Tuple{Symbol, Union{Nothing, T}} where {T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, a::term_t,
+    attr::Union{Nothing, T}
+)::Union{Nothing, T} where {T}
     fid = PL_open_foreign_frame(ld)
     qid = PL_open_query(gd, ld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
     rc = PL_next_solution(gd, ld, qid)
-    out = if rc == PL_S_TRUE || rc == PL_S_LAST
-        (:succeeded, nothing)
-    elseif rc == PL_S_EXCEPTION
-        (:exception, resolve_term(ld, slotValue(ld, PL_exception(ld, qid) + 1)))
-    else
-        (:failed, nothing)
-    end
-    if out[1] === :succeeded
+    if rc == PL_S_TRUE || rc == PL_S_LAST
         PL_cut_query(ld, qid)                           # keep the bindings
         PL_close_foreign_frame(ld, fid)
-    else
-        PL_close_query(ld, qid)
-        PL_discard_foreign_frame(ld, fid)
+        return nothing
     end
-    return out
+    ball = rc == PL_S_EXCEPTION ? _init_catch(ld, PL_exception(ld, qid), attr) : nothing
+    PL_close_query(ld, qid)
+    PL_discard_foreign_frame(ld, fid)
+    return ball
 end
 
 # PORT: init.pl $execute_directive_3 as execute_directive!
@@ -242,102 +265,140 @@ end
 function execute_directive!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, g::term_t
 )::Tuple{Symbol, Union{Nothing, T}} where {T}
-    w = deRef(ld, slotValue(ld, g + 1))
     user = MODULE_user(gd)
-    if kind(w) === VAR                                  # '$execute_directive'(Var, …)
-        return (:exception, _init_error(T, mk_sym(T, :instantiation_error)))
+    if PL_is_variable(ld, g)                            # '$execute_directive'(Var, …)
+        return (:exception, _init_export(ld, _init_error(ld, :instantiation_error)))
     end
     for (n, a) in ((:encoding, 1), (:module, 2), (:use_module, 1), (:use_module, 2),
         (:include, 1), (:initialization, 1), (:initialization, 2), (:ensure_loaded, 1),
         (:if, 1), (:elif, 1), (:else, 0), (:endif, 0))     # (conditional compilation: '$source_term')
-        _init_is(ld, w, n, a) &&
-            throw(NotPortedError{T}(w, "the directive $n/$a", "R2 (boot/init.pl)"))
+        _init_is(ld, g, n, a) &&
+            throw(
+                NotPortedError{T}(
+                    _init_export(ld, g), "the directive $n/$a", "R2 (boot/init.pl)"
+                )
+            )
     end
 
-    handled, ball = pattr_directive!(gd, ld, w, user)
+    handled, ball = pattr_directive!(gd, ld, g, user)
     if handled
         return ball === nothing ? (:ok, nothing) : (:exception, ball)
     end
 
-    goals = T[]
-    _init_conjuncts!(goals, ld, w)
+    goals = term_t[]
+    _init_conjuncts!(goals, ld, g)
     r = _init_solve(gd, ld, goals, 1, user)
-    if r[1] === :exception
-        b = r[2]::T
-        _is_error_term(ld, b) || return (:exception, b)    # catch(…, error(_,_), …) only
-        printMessage(ld, :error, b)                     # '$exception_in_directive'(Term): fails
+    r[1] === :exception && return (:exception, r[2]::T)   # catch(…, error(_,_), …) only
+    if r[1] === :caught                                 # '$exception_in_directive'(Term): fails
+        mfid = PL_open_foreign_frame(ld)                # (the message's terms: printMessage's own)
+        b = PL_new_term_ref(ld)                         # the ball, after the unwinding
+        copyRecordToGlobal(ld, b, r[2]::record{T}) && printMessage(ld, :error, b)
+        PL_discard_foreign_frame(ld, mfid)
     end
     if r[1] !== :succeeded
-        printMessage(
-            ld, :warning,
-            mk_expr(
-                T,
-                T[mk_sym(T, :goal_failed), mk_sym(T, :directive),
-                    mk_expr(T, T[mk_sym(T, :(:)), user.atom, w])]
-            )
+        mfid = PL_open_foreign_frame(ld)
+        msg = _message_term(
+            ld, :goal_failed, _err_atom(ld, mk_sym(T, :directive)),
+            _message_term(ld, :(:), _err_atom(ld, user.atom), g)
         )
+        printMessage(ld, :warning, msg)
+        PL_discard_foreign_frame(ld, mfid)
     end
     return (:ok, nothing)
 end
 
-# The conjuncts of `w`: `(A, B)` flattened, left to right.
-function _init_conjuncts!(goals::Vector{T}, ld::PL_local_data{T}, w::T)::Nothing where {T}
-    w = deRef(ld, w)
-    if _init_is(ld, w, Symbol(","), 2)
-        _init_conjuncts!(goals, ld, child(w, 2))
-        _init_conjuncts!(goals, ld, child(w, 3))
+# The conjuncts of the term in `g`: `(A, B)` flattened, left to right, each in a new term reference.
+function _init_conjuncts!(
+    goals::Vector{term_t}, ld::PL_local_data{T}, g::term_t
+)::Nothing where {T}
+    if _init_is(ld, g, Symbol(","), 2)
+        a = PL_new_term_refs(ld, 2)
+        _PL_get_arg(ld, 1, g, a)
+        _PL_get_arg(ld, 2, g, a + 1)
+        _init_conjuncts!(goals, ld, a)
+        _init_conjuncts!(goals, ld, a + 1)
     else
-        push!(goals, w)
+        push!(goals, g)
     end
     return nothing
 end
 
-# Solve `goals[i:end]` in `m`, backtracking into goal i for each later failure: `(:succeeded, nothing)`,
-# `(:failed, nothing)` or `(:exception, Ball)`. A solution's bindings stay (each query is cut).
+# Refuse the goal in `t` (its culprit exported), the foreign frame `fid` discarded first.
+function _init_refuse(
+    ld::PL_local_data{T}, fid::Int, t::term_t, what::String, step::String
+) where {T}
+    c = _init_export(ld, t)
+    PL_discard_foreign_frame(ld, fid)
+    throw(NotPortedError{T}(c, what, step))
+end
+
+# The goal term of functor `name/arity`, its arguments `[]` — what `lookupBodyProcedure` reads of a
+# goal (its functor); the goal's own arguments stay on the cells.
+_init_functor_goal(::Type{T}, name::T, arity::Int) where {T} =
+    arity == 0 ? name : mk_expr(T, T[name, (mk_nil(T) for _ in 1:arity)...])
+
+# Solve `goals[i:end]` in `m`, backtracking into goal i for each later failure:
+# `(:succeeded, nothing)`, `(:failed, nothing)`, `(:caught, Record)` — an `error(_, _)` ball,
+# recorded (`compileTermToHeap`) where its query raised it: the caller prints it once every query is
+# closed, as catch/3 unwinds (cleanup handlers run) before its handler prints — or
+# `(:exception, Ball)` (exported). A solution's bindings stay (each query is cut). The foreign frame
+# is opened first: after an answer of goal i - 1, no term reference may be made outside a new one
+# (fli:535-548).
 function _init_solve(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, goals::Vector{T}, i::Int, m::module_t{T}
-)::Tuple{Symbol, Union{Nothing, T}} where {T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goals::Vector{term_t}, i::Int,
+    m::module_t{T}
+)::Tuple{Symbol, Union{Nothing, T, record{T}}} where {T}
     i > length(goals) && return (:succeeded, nothing)
-    goal = deRef(ld, goals[i])
+    fid = PL_open_foreign_frame(ld)
+    goal = goals[i]
     if _init_is(ld, goal, :(:), 2)                      # Module:Goal
-        mm = deRef(ld, child(goal, 2))
-        (kind(mm) === SYM && sym_key(mm) == sym_key(m.atom)) ||
-            throw(NotPortedError{T}(goal, "a goal in another module", "R2 (modules)"))
-        goal = deRef(ld, child(goal, 3))
+        mm = PL_new_term_refs(ld, 2)
+        _PL_get_arg(ld, 1, goal, mm)
+        ma = PL_get_atom(ld, mm)
+        (ma !== nothing && sym_key(ma) == sym_key(m.atom)) ||
+            _init_refuse(ld, fid, goal, "a goal in another module", "R2 (modules)")
+        _PL_get_arg(ld, 2, goal, mm + 1)
+        goal = mm + 1
     end
     for (n, a) in
         ((Symbol(";"), 2), (Symbol("->"), 2), (Symbol("*->"), 2), (Symbol("\\+"), 1))
         _init_is(ld, goal, n, a) &&
-            throw(
-                NotPortedError{T}(goal, "the control construct $n/$a in a directive", "V9")
-            )
+            _init_refuse(ld, fid, goal, "the control construct $n/$a in a directive", "V9")
     end
-    if kind(goal) === VAR || !(kind(goal) === SYM || kind(goal) === EXPR) ||
-        (kind(goal) === EXPR && kind(child(goal, 1)) !== SYM)
-        throw(NotPortedError{T}(goal, "a goal that needs the meta-call", "V9"))
-    end
-    name, arity = kind(goal) === SYM ? (goal, 0) : (child(goal, 1), nchildren(goal) - 1)
+    fa = PL_get_functor(ld, goal)                       # a variable, a number, a string, `$expr/n`
+    fa === nothing && _init_refuse(ld, fid, goal, "a goal that needs the meta-call", "V9")
+    name, arity = fa::Tuple{T, Int}
     (sym_key(name) == sym_key(mk_sym(T, :call)) && arity >= 1) &&
-        throw(NotPortedError{T}(goal, "call/N in a directive", "V9"))
+        _init_refuse(ld, fid, goal, "call/N in a directive", "V9")
     for c in ("true", "fail", "false", "!")             # compiled control: no procedure
         arity == 0 && sym_key(name) == sym_key(mk_sym(T, Symbol(c))) &&
-            throw(NotPortedError{T}(goal, "the control construct $c in a directive", "V9"))
+            _init_refuse(ld, fid, goal, "the control construct $c in a directive", "V9")
     end
-    proc = lookupBodyProcedure(gd, goal, m)              # as the compiler resolves a call
+    fgoal = _init_functor_goal(T, name, arity)
+    if _body_functor(T, fgoal)[2] < 0                   # not callable (a reserved symbol)
+        c = _init_export(ld, goal)
+        PL_discard_foreign_frame(ld, fid)
+        throw(CallableTypeError{T}(c))
+    end
+    proc = lookupBodyProcedure(gd, fgoal, m)            # as the compiler resolves a call
 
-    fid = PL_open_foreign_frame(ld)
     a = PL_new_term_refs(ld, max(arity, 1))
     for k in 1:arity
-        setSlotValue!(ld, a + k, child(goal, k + 1))
+        _PL_get_arg(ld, k, goal, a + k - 1)
     end
     qid = PL_open_query(gd, ld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
     while true
         rc = PL_next_solution(gd, ld, qid)
         if rc == PL_S_EXCEPTION
-            b = resolve_term(ld, slotValue(ld, PL_exception(ld, qid) + 1))
+            ex = PL_exception(ld, qid)
+            out = if _is_error_term(ld, ex)                 # catch(…, error(_,_), …)
+                (:caught, compileTermToHeap(ld, ex))
+            else
+                (:exception, _init_export(ld, ex))
+            end
             PL_close_query(ld, qid)
             PL_discard_foreign_frame(ld, fid)
-            return (:exception, b)
+            return out
         elseif rc == PL_S_TRUE || rc == PL_S_LAST
             r = _init_solve(gd, ld, goals, i + 1, m)
             if r[1] !== :failed
@@ -363,17 +424,19 @@ end
 # DIVERGES: returns `(handled, ball)`: `handled` when the directive is one of the predicate-attribute
 # declarations, after setting them (`'$set_pattr'` in its `directive` mode: each error printed, the
 # rest set); `ball` an exception that ends the load (a variable spec: `'$set_pattr'`'s first
-# clause raises it, outside the catch), else `nothing`.
+# clause raises it, outside the catch), exported, else `nothing`.
 "Handle `dynamic(Spec)`, `discontiguous(Spec)`, … as directives set them (boot/init.pl)."
 function pattr_directive!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, w::T, m::module_t{T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, g::term_t, m::module_t{T}
 )::Tuple{Bool, Union{Nothing, T}} where {T}
     for (n, attr) in ((:dynamic, :dynamic), (:multifile, :multifile),
         (:module_transparent, :transparent), (:discontiguous, :discontiguous),
         (:volatile, :volatile), (:thread_local, :thread_local), (:noprofile, :noprofile),
         (:public, :public), (:det, :det))
-        if _init_is(ld, w, n, 1)
-            return (true, set_pattr!(gd, ld, child(w, 2), m, mk_sym(T, attr)))
+        if _init_is(ld, g, n, 1)
+            spec = PL_new_term_ref(ld)
+            _PL_get_arg(ld, 1, g, spec)
+            return (true, set_pattr!(gd, ld, spec, m, mk_sym(T, attr)))
         end
     end
     return (false, nothing)
@@ -383,128 +446,133 @@ end
 # DIVERGES: the `directive` mode only, `Attr(true)`; `as(Spec, Options)` refused (its options are
 # tabling's). Each predicate indicator goes to `'$set_predicate_attribute'/3` through the query API
 # (`'$set_pi_attr'`), an error printed as `error(E, context(Name/1, _))`. Returns the exception
-# that ends the load — a variable spec (`'$uninstantiation_error'(X)`) — or `nothing`.
+# that ends the load — a variable spec (`'$uninstantiation_error'(X)`), exported — or `nothing`.
 "Set attribute `attr` of every predicate `spec` names (`PI`, `[PI, …]`, `(PI, PI)`, `M:PI`) (boot/init.pl)."
 function set_pattr!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, spec::T, m::module_t{T}, attr::T
+    gd::PL_global_data{T}, ld::PL_local_data{T}, spec::term_t, m::module_t{T}, attr::T
 )::Union{Nothing, T} where {T}
-    spec = deRef(ld, spec)
-    if kind(spec) === VAR                               # '$uninstantiation_error'(X)
-        return _init_error(T, mk_expr(T, T[mk_sym(T, :uninstantiation_error), spec]))
+    if PL_is_variable(ld, spec)                         # '$uninstantiation_error'(X)
+        return _init_export(ld, _init_error(ld, :uninstantiation_error, spec))
     elseif _init_is(ld, spec, :as, 2)
         throw(
-            NotPortedError{T}(spec, "a predicate declaration's options (as/2)", "tabling")
-        )
-    elseif is_nil(spec)
-        return nothing
-    elseif is_pair(spec)                                # [H|T], ISO
-        b = set_pattr!(gd, ld, child(spec, 2), m, attr)
-        b === nothing || return b
-        return set_pattr!(gd, ld, child(spec, 3), m, attr)
-    elseif _init_is(ld, spec, Symbol(","), 2)           # (A,B), ISO and traditional
-        b = set_pattr!(gd, ld, child(spec, 2), m, attr)
-        b === nothing || return b
-        return set_pattr!(gd, ld, child(spec, 3), m, attr)
-    elseif _init_is(ld, spec, :(:), 2)                  # M:T
-        mm = deRef(ld, child(spec, 2))
-        (kind(mm) === SYM && sym_key(mm) == sym_key(m.atom)) ||
-            throw(
-                NotPortedError{T}(spec, "a declaration for another module", "R2 (modules)")
+            NotPortedError{T}(
+                _init_export(ld, spec), "a predicate declaration's options (as/2)",
+                "tabling"
             )
-        return set_pattr!(gd, ld, child(spec, 3), m, attr)
+        )
+    elseif PL_get_nil(ld, spec)
+        return nothing
+    end
+    ab = PL_new_term_refs(ld, 2)
+    if PL_get_list(ld, spec, ab, ab + 1)                # [H|T], ISO
+        b = set_pattr!(gd, ld, ab, m, attr)
+        b === nothing || return b
+        return set_pattr!(gd, ld, ab + 1, m, attr)
+    elseif _init_is(ld, spec, Symbol(","), 2)           # (A,B), ISO and traditional
+        _PL_get_arg(ld, 1, spec, ab)
+        _PL_get_arg(ld, 2, spec, ab + 1)
+        b = set_pattr!(gd, ld, ab, m, attr)
+        b === nothing || return b
+        return set_pattr!(gd, ld, ab + 1, m, attr)
+    elseif _init_is(ld, spec, :(:), 2)                  # M:T
+        _PL_get_arg(ld, 1, spec, ab)
+        mm = PL_get_atom(ld, ab)
+        (mm !== nothing && sym_key(mm) == sym_key(m.atom)) ||
+            throw(
+                NotPortedError{T}(
+                    _init_export(ld, spec), "a declaration for another module",
+                    "R2 (modules)"
+                )
+            )
+        _PL_get_arg(ld, 2, spec, ab + 1)
+        return set_pattr!(gd, ld, ab + 1, m, attr)
     end
     # '$set_pi_attr'(M:A, Name, Val), in catch(…, error(E, _), print_message(…))
-    head = _pi_head(ld, spec)
-    if head isa Tuple
-        _pattr_error(ld, head[2], attr)
+    head = PL_new_term_ref(ld)
+    err = _pi_head(ld, spec, head)
+    if err !== nothing
+        _pattr_error(ld, err, attr)
         return nothing
     end
     a = PL_new_term_refs(ld, 3)
-    setSlotValue!(ld, a + 1, mk_expr(T, T[mk_sym(T, :(:)), m.atom, head]))
-    setSlotValue!(ld, a + 2, attr)
-    setSlotValue!(ld, a + 3, mk_sym(T, Symbol("true")))
+    PL_cons_functor(ld, a, _err_functor(ld, :(:), 2), _err_atom(ld, m.atom), head)
+    PL_put_atom(ld, a + 1, attr)
+    PL_put_atom(ld, a + 2, mk_sym(T, Symbol("true")))
     proc = isCurrentProcedure(
         sym_key(mk_sym(T, Symbol("\$set_predicate_attribute"))), 3, MODULE_system(gd)
     )::Procedure{T}
-    rc, ball = _init_call(gd, ld, proc, a)
-    if rc === :exception
-        _is_error_term(ld, ball::T) || return ball::T       # not error(_,_): not caught
-        _pattr_error(ld, ball::T, attr)
-    end
-    return nothing
+    return _init_call(gd, ld, proc, a, attr)            # not error(_,_): not caught
 end
 
-# '$set_pattr''s catch: `error(E, _)` printed as `error(E, context(Name/1, _))`.
-function _pattr_error(ld::PL_local_data{T}, ball::T, attr::T)::Nothing where {T}
-    e = child(ball, 2)
-    ctx = mk_expr(
-        T,
-        T[mk_sym(T, :context), mk_expr(T, T[mk_sym(T, :/), attr, mk_gnd(T, 1)]),
-            mk_var(T, fresh_var_keys!(1))]
+# '$set_pattr''s catch: `error(E, _)` in `ex` printed as `error(E, context(Name/1, _))`.
+function _pattr_error(ld::PL_local_data{T}, ex::term_t, attr::T)::Nothing where {T}
+    fid = PL_open_foreign_frame(ld)     # (its terms are printMessage's own: none may outlive the
+    e = new_term_ref(ld)                #  open query whose ball they read — `_release_frozen!`)
+    _PL_get_arg(ld, 1, ex, e)
+    ctx = _message_term(
+        ld, :context, _message_term(ld, :/, _err_atom(ld, attr), _err_int(ld, 1)),
+        new_term_ref(ld)
     )
-    printMessage(ld, :error, mk_expr(T, T[mk_sym(T, :error), e, ctx]))
+    printMessage(ld, :error, _message_term(ld, :error, e, ctx))
+    PL_discard_foreign_frame(ld, fid)
     return nothing
 end
-
-# `(:error, error(Formal, _))`, as `_pi_head` returns an error.
-_pi_error(::Type{T}, formal::T) where {T} = (:error, _init_error(T, formal))
 
 # PORT: init.pl $pi_head as _pi_head
-# DIVERGES: the head of `Name/Arity` or `Name//DCGArity` (two more arguments), built with fresh
-# variables (`'$head_name_arity'`, then `compound_name_arity/3`); an error is returned as
-# `(:error, Ball)`, its formal what swipl raises (its context is replaced by the caller):
+# DIVERGES: the head of `Name/Arity` or `Name//DCGArity` (two more arguments) put into `head`, built
+# with fresh variables (`'$head_name_arity'`, then `compound_name_arity/3`: `PL_unify_functor` on
+# `head`'s fresh variable), and `nothing` returned; an error is returned as a term reference holding
+# `error(Formal, _)`, its formal what swipl raises (its context is replaced by the caller):
 # `instantiation_error` (a variable PI, name or arity), `type_error(atom, Name)` (`Name/0` with a
 # name that is no atom, or a compound's name that is no atom), `type_error(integer, A)`,
 # `domain_error(not_less_than_zero, A)`, `type_error(evaluable, …)` (a `//` arity),
 # `type_error(predicate_indicator, PI)`.
-function _pi_head(ld::PL_local_data{T}, pi::T)::Union{T, Tuple{Symbol, T}} where {T}
-    pi = deRef(ld, pi)
-    kind(pi) === VAR && return _pi_error(T, mk_sym(T, :instantiation_error))
+function _pi_head(
+    ld::PL_local_data{T}, pi::term_t, head::term_t
+)::Union{Nothing, term_t} where {T}
+    PL_is_variable(ld, pi) && return _init_error(ld, :instantiation_error)
     if _init_is(ld, pi, :/, 2) || _init_is(ld, pi, Symbol("//"), 2)
         dcg = _init_is(ld, pi, Symbol("//"), 2)
-        n = deRef(ld, child(pi, 2))
-        a = deRef(ld, child(pi, 3))
-        kind(a) === VAR && return _pi_error(T, mk_sym(T, :instantiation_error))
-        if !(isInteger(a) && integer_is_int64(a))
-            dcg && isNumber(a) && return _pi_error(T, mk_sym(T, :instantiation_error))   # (not reached)
-            dcg && return _pi_error(T,
-                mk_expr(
-                    T,
-                    T[mk_sym(T, :type_error), mk_sym(T, :evaluable),
-                        if kind(a) === SYM
-                            mk_expr(T, T[mk_sym(T, :/), a, mk_gnd(T, 0)])
-                        else
-                            a
-                        end]
+        n = PL_new_term_refs(ld, 2)
+        a = n + 1
+        _PL_get_arg(ld, 1, pi, n)
+        _PL_get_arg(ld, 2, pi, a)
+        PL_is_variable(ld, a) && return _init_error(ld, :instantiation_error)
+        ai = PL_get_long(ld, a)                         # an integer in Int64's range
+        if ai === nothing
+            dcg && PL_is_number(ld, a) && return _init_error(ld, :instantiation_error)   # (not reached)
+            if dcg
+                culprit = if PL_get_atom(ld, a) !== nothing
+                    _message_term(ld, :/, a, _err_int(ld, 0))
+                else
+                    a
+                end
+                return _init_error(
+                    ld, :type_error, _err_atom(ld, mk_sym(T, :evaluable)), culprit
                 )
-            )
-            return _pi_error(
-                T, mk_expr(T, T[mk_sym(T, :type_error), mk_sym(T, :integer), a])
-            )
+            end
+            return _init_error(ld, :type_error, _err_atom(ld, mk_sym(T, :integer)), a)
         end
-        arity = Int(int64_value(a)) + (dcg ? 2 : 0)
+        arity = ai + (dcg ? 2 : 0)
+        name = PL_get_atom(ld, n)
         if arity == 0                                   # '$head_name_arity'(-Goal, +Name, 0)
-            kind(n) === SYM && return n                 # atom(Name) ; Name == []
+            if name !== nothing                         # atom(Name) ; Name == []
+                PL_put_term(ld, head, n)
+                return nothing
+            end
             # '$type_error'(atom, Name): `var(Value) -> throw(error(instantiation_error, _))`
-            kind(n) === VAR && return _pi_error(T, mk_sym(T, :instantiation_error))
-            return _pi_error(T, mk_expr(T, T[mk_sym(T, :type_error), mk_sym(T, :atom), n]))
+            PL_is_variable(ld, n) && return _init_error(ld, :instantiation_error)
+            return _init_error(ld, :type_error, _err_atom(ld, mk_sym(T, :atom)), n)
         end
-        kind(n) === VAR && return _pi_error(T, mk_sym(T, :instantiation_error))   # compound_name_arity
-        kind(n) === SYM ||
-            return _pi_error(T, mk_expr(T, T[mk_sym(T, :type_error), mk_sym(T, :atom), n]))
-        arity < 0 && return _pi_error(T,
-            mk_expr(
-                T,
-                T[
-                    mk_sym(T, :domain_error),
-                    mk_sym(T, :not_less_than_zero),
-                    mk_gnd(T, arity)
-                ]
-            )
+        PL_is_variable(ld, n) && return _init_error(ld, :instantiation_error)   # compound_name_arity
+        name === nothing &&
+            return _init_error(ld, :type_error, _err_atom(ld, mk_sym(T, :atom)), n)
+        arity < 0 && return _init_error(
+            ld, :domain_error, _err_atom(ld, mk_sym(T, :not_less_than_zero)),
+            _err_int(ld, arity)
         )
-        return mk_expr(T, T[n, (mk_var(T, fresh_var_keys!(1)) for _ in 1:arity)...])
+        PL_unify_functor(ld, head, name, arity)         # head: a fresh variable
+        return nothing
     end
-    return _pi_error(
-        T, mk_expr(T, T[mk_sym(T, :type_error), mk_sym(T, :predicate_indicator), pi])
-    )
+    return _init_error(ld, :type_error, _err_atom(ld, mk_sym(T, :predicate_indicator)), pi)
 end

@@ -1380,9 +1380,8 @@ graph LR
     ___boot_init --> SWI_Prolog
     ___boot_init --> pl_atom
     ___boot_init --> pl_global
-    ___boot_init --> pl_inline
-    ___boot_init --> pl_prims
     ___boot_init --> pl_comp
+    ___boot_init --> pl_rec
     ___boot_init --> pl_wam
     ___boot_init --> pl_fli
     ___boot_init --> pl_error
@@ -1591,12 +1590,6 @@ take precedence over the text above them where they differ. The inventory, the m
       `_end_query`): `slotValue` reads the exception ball whole (`_slot_ball_term`,
       `_slot_compound_term`), every other compound one level deep. The reader that needs it: a query
       with the bin cleared (`PL_Q_CATCH_EXCEPTION`) — its copy is then the ball's only holder.
-  * **TRANSITIONAL, f3b-4 — goes with boot's term-level loader (f3b-5b/f3's census):**
-    `printMessage(ld, severity, msg::T)` (src/pl-error.jl), the term method kept for boot/init.jl's
-    callers (its directive runner holds balls and messages as terms; the F3B sweep counts src/ only).
-    Every src/ caller lays its message on the cells into a term reference, and `printMessage(…,
-    msg::term_t)` exports it once (`export_cells`). Removal condition: boot's directive runner on
-    term references.
   * **Equivalent today, re-check trigger (audit D-0090, battery mutant FB7):** the ball's restore in
     `dbg_discardChoicesAfter` (`ld.slots[ld.exception_bin + 1] = w`, src/pl-wam.jl) is the identity,
     because every writer of the bin stores a direct word (src/pl-alloc.jl `outOfStack!`, src/pl-fli.jl
