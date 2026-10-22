@@ -105,6 +105,21 @@ lk_bound_count_unfrozen(ld)::Int =
     )
 lk_no_bindings_unfrozen(ld)::Bool = lk_bound_count_unfrozen(ld) == 0
 
+# THE ANSWER, as a test reads it (f3-2, audit D-0111 Q5): the value a term reference holds, read off the
+# cells once (`export_cells`, f3a's reader) — the one way a test reads an answer, since `slotValue` and
+# `resolve_term` go with the keyed variables in f3. An unbound cell comes back as a variable of the
+# export: sharing WITHIN one read is kept, and `lk_answers` reads several references with ONE export, so
+# a variable shared between them comes back shared. (A caller's own variable is not handed back: the
+# answer's variables are the export's — SWI's interface, where the caller holds term references.)
+"The value term reference `t` holds, read off the cells (one export)."
+lk_answer(ld::LogicKernel.PL_local_data{T}, t::Int) where {T} =
+    LogicKernel.export_cells(ld, LogicKernel.cell_export{T}(), -(t + 1))
+"The values of the term references `ts`, read off the cells with ONE export (shared variables stay shared)."
+function lk_answers(ld::LogicKernel.PL_local_data{T}, ts::Int...)::Vector{T} where {T}
+    ex = LogicKernel.cell_export{T}()
+    return T[LogicKernel.export_cells(ld, ex, -(t + 1)) for t in ts]
+end
+
 # THE BOUNDARY as the writers made it until L1f f3b-1 (the workspace's L1_plan/stageL1f_design.md §3): a
 # KEYED variable stored in a slot became the slot's side value (`SLOT_VALUE`), and in a cell a value-table
 # word. Since f3b-1 a writer binds a keyed variable to a fresh cell instead (`_import_var!`), so the tests of
