@@ -145,7 +145,10 @@ function compile_term_to_heap(
         p == 0 && return true
         if p < 0                                            # the root: a slot
             w = ld.slots[-p]
-            w == SLOT_VALUE && return false                 # (the boundary: a side value)
+            if w == SLOT_VALUE                              # a side value (f3-1): a grounded one
+                kind(ld.slot_values[-p]) === GND || return false   # an indirect (below), any
+                w = _side_word(-p)                          # other the boundary
+            end
         else
             w = ld.gstack[p]
         end
@@ -192,8 +195,8 @@ function compile_term_to_heap(
                 end
                 pushWorkCellAgenda!(a, arity, f + 1)
             end
-        elseif _is_vword(w)                                 # an indirect (see the file header)
-            v = ld.vtable[valPtr(w)]
+        elseif _is_vword(w) || _is_side_word(w)             # an indirect (see the file header)
+            v = _indirect_value(ld, w)
             kind(v) === VAR && return false                 # (the boundary: a keyed variable)
             push!(info.values, v)
             info.size += 1                                  # (its box)

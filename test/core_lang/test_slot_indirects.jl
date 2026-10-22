@@ -14,7 +14,11 @@
 #     it used compounds): floats held in argument and variable slots across a choice point inside the callee,
 #     read after backtracking into it; the answers are swipl's;
 #   * the meter: an arithmetic loop passing floats as call arguments makes no boundary pair (the L1d pin
-#     `(0, 0, 0, 100)` in test_zero_exports.jl falls to 0).
+#     `(0, 0, 0, 100)` in test_zero_exports.jl falls to 0);
+#   * f3-1 (audit D-0110, f3's Q1 (b)): a side value is READ AS A VALUE — `_deref_loc` gives `DU_VALUE` and
+#     its side word, never the boundary — so reading one through the FLI's readers and unifiers, the VM's
+#     tests, the arithmetic walk, the copy and the record makes no boundary pair (`cold_pairs` unchanged),
+#     and a cell bound to one holds a value-table word, never the side word.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -174,4 +178,88 @@ end
     elseif _R_SWIPL_REQUIRED
         @test false
     end
+end
+
+@testset "f3-1 (audit D-0110): a side value is read as a value — no boundary pair through the readers" begin
+    X = _rv(1)
+    db = _rdb(
+        Tuple{_R, Union{Nothing, _R}}[
+            (_rf("si_f1", X), _rconj(_rf("float", X), _rf("=:=", X, _rg(1.5))))
+        ]
+    )
+    ld = db.ld
+    outer = LK.PL_open_foreign_frame(ld)
+    f = LK.PL_new_term_ref(ld)                           # older than `inner`: side values
+    b = LK.PL_new_term_ref(ld)
+    s = LK.PL_new_term_ref(ld)
+    o = LK.PL_new_term_ref(ld)
+    inner = LK.PL_open_foreign_frame(ld)
+    LK.setSlotValue!(ld, f + 1, _rg(1.5))
+    LK.setSlotValue!(ld, b + 1, _rg(Int64(1) << 60))   # past the tagged range: an indirect
+    LK.setSlotValue!(ld, s + 1, _rg("abc"))
+    for t in (f, b, s)
+        @test ld.slots[t + 1] == LK.SLOT_VALUE
+        k, w, p = LK._deref_loc(ld, -(t + 1))
+        @test k == LK.DU_VALUE && LK._is_side_word(w) && LK.valPtr(w) == t + 1 && p == 0
+    end
+    c0 = ld.cold_pairs
+    # the type tests: the FLI's, which are also the VM's (`@TYPE_TEST`: I_FLOAT runs `PL_is_float`, …;
+    # I_VAR/I_NONVAR run `_slot_is_var`)
+    @test LK.PL_is_float(ld, f) && !LK.PL_is_float(ld, b) && !LK.PL_is_float(ld, s)
+    @test LK.PL_is_integer(ld, b) && !LK.PL_is_integer(ld, f)
+    @test LK.PL_is_rational(ld, b) && !LK.PL_is_rational(ld, f)
+    @test LK.PL_is_number(ld, f) && LK.PL_is_number(ld, b) && !LK.PL_is_number(ld, s)
+    @test LK.PL_is_string(ld, s) && !LK.PL_is_string(ld, f)
+    @test all(t -> LK.PL_is_atomic(ld, t), (f, b, s))
+    @test !any(
+        t ->
+            LK.PL_is_variable(ld, t) || LK.PL_is_atom(ld, t) || LK.PL_is_compound(ld, t) ||
+            LK.PL_is_callable(ld, t),
+        (f, b, s)
+    )
+    @test !LK._slot_is_var(ld, f + 1)
+    # the getters
+    @test LK.PL_get_long(ld, b) == 1 << 60 && LK.PL_get_long(ld, f) === nothing
+    @test LK.PL_get_integer(ld, b) === nothing
+    @test LK.PL_get_atom(ld, f) === nothing && LK.PL_get_name_arity(ld, s) === nothing
+    # the unifiers: a constant, an integer, the value itself, another value, a fresh variable
+    @test LK.PL_unify_atomic(ld, f, _rg(1.5)) && !LK.PL_unify_atomic(ld, f, _rg(2.5))
+    @test LK.PL_unify_integer(ld, b, 1 << 60) && !LK.PL_unify_integer(ld, b, 7)
+    @test LK.PL_unify(ld, f, f) && !LK.PL_unify(ld, f, b)
+    v = LK.PL_new_term_ref(ld)
+    @test LK.PL_unify(ld, v, f)
+    kv, wv, _ = LK._deref_loc(ld, -(v + 1))
+    @test kv == LK.DU_VALUE && LK._is_vword(wv)          # the cell holds a value-table word, not the side word
+    @test LK.PL_is_float(ld, v) && LK.PL_compare(ld, v, f) == LK.CMP_EQUAL
+    @test LK.PL_same_term(ld, f, f) && !LK.PL_same_term(ld, f, b)
+    # the VM's constant tests on the slot (H_FLOAT, B_UNIFY_VC: `_unify_const_loc`; B_EQ_VC: `_identical_atomic`)
+    @test LK._unify_const_loc(ld, -(f + 1), _rg(1.5)) &&
+        !LK._unify_const_loc(ld, -(f + 1), _rg(2.5))
+    @test LK._identical_atomic(ld, -(f + 1), _rg(1.5))
+    # the arithmetic: the fast path and the walk
+    n = LK._number_alloc!(ld)
+    @test LK.valueExpression(ld, f, n) && n.type == LK.V_FLOAT && n.f == 1.5
+    @test LK.evalExpression_cells(ld, b, n) && n.type == LK.V_INTEGER && n.i == 1 << 60
+    LK._number_free!(ld, 1)
+    # a link into another reference: the value (into an older one, its side value again)
+    @test first(LK.PL_strip_module_ex(db.gd, ld, f, 0, o))
+    @test ld.slots[o + 1] == LK.SLOT_VALUE && LK.PL_compare(ld, o, f) == LK.CMP_EQUAL
+    # the copy and the record
+    c = LK.PL_new_term_ref(ld)
+    @test LK.copy_term_refs(ld, f, c, LK.cp_options(true))
+    @test LK.PL_is_float(ld, c) && LK.PL_compare(ld, c, f) == LK.CMP_EQUAL
+    r = LK.compileTermToHeap(ld, s)
+    @test r.term === nothing                             # recorded on the words, as its value
+    rr = LK.PL_new_term_ref(ld)
+    @test LK.copyRecordToGlobal(ld, rr, r)
+    @test LK.PL_is_string(ld, rr) && LK.PL_compare(ld, rr, s) == LK.CMP_EQUAL
+    # the VM: a query whose argument is the side value
+    qid = LK.PL_open_query(
+        db.gd, ld, nothing, LK.PL_Q_NORMAL, _rproc(db, _rf("si_f1", X)), f
+    )
+    @test LK.PL_next_solution(db.gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)
+    LK.PL_close_query(ld, qid)
+    @test ld.cold_pairs == c0                            # no boundary pair (D-0110 item 2)
+    LK.PL_discard_foreign_frame(ld, inner)
+    LK.PL_discard_foreign_frame(ld, outer)
 end

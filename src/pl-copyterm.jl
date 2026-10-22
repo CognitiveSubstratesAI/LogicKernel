@@ -484,7 +484,8 @@ function do_copy_term_cells(
     k == DU_CELL && return 1                                # TAG_VAR: `to` stays a fresh variable
     k == DU_TERM && return CP_BOUNDARY
     if !(k == DU_WORD && _is_gcompound(w))                  # an atomic: *to = *from
-        ld.gstack[to] = w                                   # (an indirect's word: shared)
+        nw = _value_word!(ld, w)                            # (an indirect's word: shared; a slot's
+        ld.gstack[to] = nw                                  #  side value its own word, f3-1)
         return 1
     end
     src = p > 0 ? p : from                                  # the location holding the compound's word

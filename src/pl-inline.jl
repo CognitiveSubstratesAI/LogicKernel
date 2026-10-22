@@ -357,10 +357,10 @@ end
 # ORIGINAL: the VALUE a `DU_VALUE` word stands for (L1d step 4): a tagged integer's term (made: an
 # `Int64` payload), or a value-table entry (stored). The readers that can decide on the word itself
 # (unification, compare, the index, arithmetic, the VM's constants) never ask.
-"The value term of `w`: a tagged integer (`mk_gnd(T, valInt(w))`) or a value-table entry."
+"The value term of `w`: a tagged integer (`mk_gnd(T, valInt(w))`), a value-table entry, or a slot's side value (a side word, f3-1)."
 @inline function _value_term(ld::PL_local_data{T}, w::word)::T where {T}
     isTaggedIntW(w) && return mk_gnd(T, valInt(w))
-    return ld.vtable[valPtr(w)]
+    return _indirect_value(ld, w)
 end
 
 # ORIGINAL: a value's word on the global stack (L1b C3): an atom its own word, a compound a copy on
@@ -733,8 +733,42 @@ end
 # word form yet and every keyed variable took one. DIVERGES,
 # transitional: the side entry is the slot's own, so a copy of a `SLOT_VALUE` word copies the value
 # too (`_slot_copy!`) and no word names another slot's entry. The word 0 is a slot never written.
+# Since f3-1 (audit D-0110, f3's Q1 (b)) a side entry that is a grounded value (an indirect) is READ
+# as a value: `_deref_loc` hands it out as its SIDE WORD (`_side_word`, below), `DU_VALUE` — never as
+# the boundary (`DU_TERM`), which keeps only a side entry holding a keyed variable or a ball copied
+# on terms (`copy_exception!`), both gone with the keyed variables in f3.
 "The slot word whose value is the slot's own entry of `slot_values` (L1b stage C5)."
 const SLOT_VALUE = TAG_COMPOUND | STG_LOCAL
+
+# ORIGINAL (f3-1; audit D-0110, f3's Q1 (b)): the SIDE WORD — a slot's grounded side value read as a
+# VALUE word (`DU_VALUE`, `_deref_loc`), so that no reader takes the boundary for it: `SLOT_VALUE`'s
+# tag with the slot's index as its payload (`SLOT_VALUE` itself, payload 0, is only ever the slot's own
+# word). A value reader reads it as it reads a value-table word, through `_indirect_value` (or
+# `_value_term`). It is a READ-ONLY word, never stored: it names the slot's own entry, which a
+# later write of the slot replaces — so a writer stores its value's own word instead
+# (`_value_word!` into a cell: a fresh value-table entry, as `_word_of!` made one on the term path
+# before f3-1), and a slot takes the value as `_slot_store!` stores it (`_slot_link_loc!`). The
+# side value itself is D-0024's (`_slot_store!`): it makes upstream's undefined read defined.
+"The side word of slot `i`: its side value (`slot_values[i]`) read as a value (f3-1)."
+@inline _side_word(i::Int)::word = consPtr(i, SLOT_VALUE)
+
+"Whether `w` is a side word (`_side_word`): a slot's grounded side value read as a value."
+@inline _is_side_word(w::word)::Bool = tagex(w) == SLOT_VALUE
+
+"The stored value an indirect's word names: a value-table entry, or a slot's side value (a side word, f3-1)."
+@inline function _indirect_value(ld::PL_local_data{T}, w::word)::T where {T}
+    _is_side_word(w) && return ld.slot_values[valPtr(w)]
+    return ld.vtable[valPtr(w)]
+end
+
+"The word a cell stores for the value word `w`: `w` itself — a side word its value's own word (f3-1)."
+@inline _value_word!(ld::PL_local_data, w::word)::word =
+    _is_side_word(w) ? _side_value_word!(ld, w) : w
+
+"The word of the side value a side word names: a new value-table entry holding it (`_gnd_word!`), as `_word_of!` makes one."
+@noinline function _side_value_word!(ld::PL_local_data{T}, w::word)::word where {T}
+    return _gnd_word!(ld, ld.slot_values[valPtr(w)])
+end
 
 # ORIGINAL: the slot read (L1b stage C5: built from the slot's word; allocation-free — a variable
 # term is a struct with no box, and an atom's symbol is cached).
@@ -810,8 +844,10 @@ end
 # foreign frame keeps a side value (`SLOT_VALUE`): an indirect (a float, a big integer, a string) and a
 # keyed variable, whose words that frame's rewind would free while the slot lives on — the read stays
 # defined (L1e e1, audit D-0024: upstream's is not). FINDING for the F3B plan (f3b-1): this side
-# value is no keyed-variable machinery — the indirect's case survives f3's deletion of `SLOT_VALUE`
-# unless D-0024 is decided again (upstream: the reference dangles after the rewind).
+# value is no keyed-variable machinery. DECIDED (audit D-0110, f3's Q1 (b)): the indirect's side
+# value STAYS — a divergence for safety (upstream: the reference dangles after the rewind, its read
+# undefined), revisited after L1 in the divergence review — and since f3-1 it is READ as a value
+# (`_side_word`, `DU_VALUE`), never as the boundary; the keyed variable's half goes in f3.
 "Store the term `v` in slot `i` as its word."
 @inline function _slot_store!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
     k = kind(v)

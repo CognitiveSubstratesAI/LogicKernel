@@ -175,6 +175,13 @@ const _KERNEL_VAR_COUNTER = Threads.Atomic{UInt64}(KERNEL_VAR_BASE)
 # carries no behaviour (allowlisted in tools/lint_globals.jl)
 const _COLD_EXPORT_TERMS = Threads.Atomic{Int}(0)
 
+# the number of times a slot's SIDE VALUE was still handed out as the boundary (`DU_TERM`) in this
+# process (f3-1, audit D-0110 item 2: since f3-1 a grounded side value is a value, so only a side
+# entry holding a keyed variable or a ball copied on terms reaches it) — a meter, read by
+# test/runtests.jl after each unit, which asserts it unchanged outside the white-box files that make
+# such entries on purpose; it carries no behaviour (allowlisted in tools/lint_globals.jl)
+const _DU_TERM_SIDE = Threads.Atomic{Int}(0)
+
 """
     fresh_var_keys!(n) -> UInt64
 

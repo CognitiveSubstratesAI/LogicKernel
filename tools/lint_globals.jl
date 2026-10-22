@@ -42,6 +42,11 @@ const LINT_ALLOWLIST = (
         "a monotonic, process-wide METER of the terms L1c's cold export makes (src/pl-global.jl): " *
         "the user asked for its count over the whole suite (2026-10-15); it is only ever added " *
         "to and read by test/runtests.jl — no function's result depends on it. 2026-10-15.",
+    "LogicKernel._DU_TERM_SIDE" =>
+        "a monotonic, process-wide METER of slot side values still handed out as the boundary " *
+        "(src/pl-global.jl, f3-1, audit D-0110 item 2): only ever added to and read by " *
+        "test/runtests.jl, which asserts it unchanged per unit outside the white-box files — no " *
+        "function's result depends on it. 2026-10-22.",
     "LogicKernel.H_LIST_FF_VOIDS" =>
         "upstream's own `static code var[2]` in pl-index.c `skipToTerm`: the two-void dummy code a " *
         "deep index position inside an H_LIST_FF reads (src/pl-index.jl). Read-only — no function " *

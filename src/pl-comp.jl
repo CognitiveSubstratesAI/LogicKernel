@@ -3661,7 +3661,7 @@ function unifyVar(
             _bind_const!(ld, pv, makeRefG(p))                   # Trail(v, makeRefG(var))
         end
     elseif k == DU_CELL                                         # retract called with bounded var
-        _bind_const!(ld, p, wv)                                 # Trail(var, *v)
+        _bind_const!(ld, p, _value_word!(ld, wv))               # Trail(var, *v) (a side word: f3-1)
     else
         error("unifyVar: the location is bound")                # assert(0)
     end

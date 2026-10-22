@@ -156,6 +156,11 @@ _manifest_per_type(T) = (
     (LK._int_word_keys, Tuple{Type{T}}, true),             # two value terms, never on the heap
     (LK._gnd_word!, Tuple{LK.PL_local_data{T}, T}, false),  # a value-table entry may grow the table
     (LK._value_term, Tuple{LK.PL_local_data{T}, UInt64}, false),   # a tagged integer's term is MADE (L1d-4)
+    # f3-1 (audit D-0110): a slot's grounded side value read as a value word (its side word) — the read
+    # allocates nothing; the word a cell stores for it is a new value-table entry
+    (LK._indirect_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
+    (LK._value_word!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK._side_value_word!, Tuple{LK.PL_local_data{T}, UInt64}, false),
     # compounds on the global stack (L1c): the layout grows the stack; the two cold adapters allocate
     (LK._var_ref_word, Tuple{LK.PL_local_data{T}, T}, true),
     (LK.query_answers, Tuple{LK.PL_local_data{T}, T}, false),
@@ -2272,6 +2277,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isTermW, Tuple{UInt64}, true),
     (LK.isTaggedIntW, Tuple{UInt64}, true),
     (LK._is_vword, Tuple{UInt64}, true),                            # L1e e1: a value-table word
+    (LK._is_side_word, Tuple{UInt64}, true),                        # f3-1: a slot's side value as a value
+    (LK._side_word, Tuple{Int}, true),
     (LK.isConst, Tuple{UInt64}, true),
     (LK.isRef, Tuple{UInt64}, true),
     (LK.isAttVar, Tuple{UInt64}, true),

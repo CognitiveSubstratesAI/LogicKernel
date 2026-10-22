@@ -139,7 +139,7 @@ function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where
     elseif k == DU_WORD                                     # an atom or a compound: no number
         return false
     end
-    isTaggedIntW(w) || return _unify_number_term(ld, ld.vtable[valPtr(w)], n)
+    isTaggedIntW(w) || return _unify_number_term(ld, _indirect_value(ld, w), n)
     nt = n.type
     nt === V_INTEGER && return valInt(w) == n.i             # isTaggedInt(*p)
     (nt === V_MPZ || nt === V_MPQ) || return false          # V_FLOAT: isFloat(*p) is false

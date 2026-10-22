@@ -1328,8 +1328,9 @@ end
 # ends in a global cell or a value, and only GLOBAL cells are ever bound: upstream's local stack lies
 # above its global stack and a variable binds the younger to the older, so a local cell points at a
 # global one and never the reverse (user, 2026-10-15; test_unify_cells.jl pins it). What has no word
-# form yet is the BOUNDARY — a slot's side value (`SLOT_VALUE`: the exception's ball, a value with
-# no word), a value-table entry that is a KEYED variable (gone with the stamp, L1f) — and a pair
+# form yet is the BOUNDARY — a slot's side value (`SLOT_VALUE`) holding a keyed variable or a ball
+# copied on terms (since f3-1 a GROUNDED side value is a value, its side word: `_side_word`), a
+# value-table entry that is a KEYED variable (gone with the stamp, L1f) — and a pair
 # with such a side is unified on TERMS (`do_unify`), each side converted: a cell its variable, an
 # atom its symbol, a compound its cold export (COUNTED in `cold_exports`), so the stamp machinery
 # stays in `_var_ref_word`/`_cell_pos` until L1f. The term-level `do_unify` stays for the cold
@@ -1338,9 +1339,9 @@ end
 const DU_CELL = 0x01
 "`_deref_loc`: an atom or a compound word, returned."
 const DU_WORD = 0x02
-"`_deref_loc`: a VALUE word (returned): a value-table word whose entry is a value, in the cell at the position, or a tagged integer (L1d step 4; in a slot, position 0)."
+"`_deref_loc`: a VALUE word (returned): a value-table word whose entry is a value, in the cell at the position, a tagged integer (L1d step 4; in a slot, position 0), or a slot's grounded side value as its side word (`_side_word`, f3-1; position 0)."
 const DU_VALUE = 0x03
-"`_deref_loc`: the boundary — a slot's side value (the position is `-slot`), or a keyed variable's value-table word."
+"`_deref_loc`: the boundary — a keyed variable's value-table word, or a slot's side value that is no grounded value (a keyed variable, a ball copied on terms; the position is `-slot`)."
 const DU_TERM = 0x04
 
 # ORIGINAL: upstream's `deRef` (pl-data.h) on a LOCATION (above); the result says what was found,
@@ -1352,7 +1353,11 @@ const DU_TERM = 0x04
     if loc < 0
         w = ld.slots[-loc]
         if !isRef(w)
-            w == SLOT_VALUE && return (DU_TERM, word(0), loc)
+            if w == SLOT_VALUE                  # a side value: a grounded one a VALUE (f3-1, D-0110)
+                kind(ld.slot_values[-loc]) === GND && return (DU_VALUE, _side_word(-loc), 0)
+                Threads.atomic_add!(_DU_TERM_SIDE, 1)   # (the meter: none outside white box)
+                return (DU_TERM, word(0), loc)  # (a keyed variable, a ball copied on terms: f3)
+            end
             (isAtomW(w) || _is_gcompound(w)) && return (DU_WORD, w, 0)
             isTaggedIntW(w) && return (DU_VALUE, w, 0)                  # L1d step 4
             if _is_vword(w)                                             # L1e e1: a value-table word
@@ -1442,11 +1447,11 @@ function unify_simple_cells(
             _bind_const!(ld, p2, makeRefG(p1))      # Trail(t2, makeRefG(t1)): always point downwards
             return BOOLEX_TRUE
         end
-        _bind_const!(ld, p1, w2)                    # Trail(t1, w2)
+        _bind_const!(ld, p1, _value_word!(ld, w2))  # Trail(t1, w2) (a side word: its value's word, f3-1)
         return BOOLEX_TRUE
     end
     if k2 == DU_CELL
-        _bind_const!(ld, p2, w1)                    # Trail(t2, w1)
+        _bind_const!(ld, p2, _value_word!(ld, w1))  # Trail(t2, w1)
         return BOOLEX_TRUE
     end
     w1 == w2 && return BOOLEX_TRUE
@@ -2836,7 +2841,10 @@ end
 # equal words; two value-table words (upstream: two indirects) by `equalIndirect` — the term type's
 # `gnd_equal` on their values (SWI's identity: `1` and `1.0` differ). The BOUNDARY (a keyed variable, a
 # slot's side value) is compared on its term — a variable by its key, a value by `===` — counted in
-# `cold_pairs`: TRANSITIONAL until L1f f3.
+# `cold_pairs`: TRANSITIONAL until L1f f3. A slot's GROUNDED side value (since f3-1 a value word, its
+# side word) keeps that comparison by `===`, uncounted, so its answer is the one before f3-1; whether
+# it takes `equalIndirect` (`gnd_equal`, a young slot's indirect) instead is left to the audit — it
+# differs for two distinct equal big integers.
 "Whether term references `t1` and `t2` hold the same term — the same variable or compound, or equal atomic values (pl-prims.c)."
 function PL_same_term(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where {T}
     k1, w1, p1 = _deref_loc(ld, -(t1 + 1))                  # deRef(t1)
@@ -2847,6 +2855,10 @@ function PL_same_term(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where 
         b = deRef(ld, _loc_term(ld, k2, w2, p2))
         kind(a) === VAR && return kind(b) === VAR && var_key(a) == var_key(b)
         return a === b
+    end
+    if _is_side_word(w1) || _is_side_word(w2)               # (f3-1) a side value: as on the boundary
+        return k1 == DU_VALUE && k2 == DU_VALUE &&          # before f3-1 — a value by `===` (above)
+               _value_term(ld, w1) === _value_term(ld, w2)
     end
     k1 == DU_CELL && return k2 == DU_CELL && p1 == p2       # isVar(*t1): t1 == t2
     w1 == w2 && return true                                 # *t1 == *t2
@@ -3942,7 +3954,11 @@ function free_variables_loop_cells(
             continue
         elseif !in_goal && !existential                     # non-term goal (atom or invalid)
             # needsRef(*t) ? makeRefG(t) : *t — a value-table word is held through its cell
-            ld.slots[goal + 1] = (k == DU_VALUE && !isTaggedIntW(w)) ? makeRefG(p) : w
+            if _is_side_word(w)                             # (f3-1) a slot's side value: as the
+                _slot_store!(ld, goal + 1, _indirect_value(ld, w))  # term walk stored it
+            else
+                ld.slots[goal + 1] = (k == DU_VALUE && !isTaggedIntW(w)) ? makeRefG(p) : w
+            end
             in_goal = true
         end
     end

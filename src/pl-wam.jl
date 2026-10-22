@@ -1039,7 +1039,8 @@ end
 
 # PORT: pl-wam.c dbg_discardChoicesAfter
 # DIVERGES: a ball at the BOUNDARY — a slot's side value (`copy_exception!`'s term copy) — is copied with
-# its side value (`_slot_copy!`), TRANSITIONAL until f3. Otherwise on the WORDS, as upstream (f3b-1;
+# its side value (`_slot_copy!`), TRANSITIONAL until f3; so is a grounded side value, read as a value
+# since f3-1 (its side word names the slot). Otherwise on the WORDS, as upstream (f3b-1;
 # until then the ball was read as a term and stored as a side value): `PushVal(w)`/`PopVal(w)` keep the
 # dereferenced word in a local, which no discard can move (the ball lies in the frozen region).
 "`discardChoicesAfter`, keeping a pending exception (pl-wam.c)."
@@ -1053,6 +1054,8 @@ function dbg_discardChoicesAfter(
         discardChoicesAfter(ld, fr, reason)
         if k == DU_TERM && p < 0                             # (c) a slot's side value: with its value
             _slot_copy!(ld, ld.exception_bin + 1, -p)
+        elseif _is_side_word(w)                              # (f3-1) a grounded side value, read as a
+            _slot_copy!(ld, ld.exception_bin + 1, valPtr(w)) # value: with its value, as before f3-1
         else
             # (f3b-1, audit D-0090) the identity today: every writer of the bin stores a DIRECT word (pl-alloc.jl
             # `outOfStack!`, pl-fli.jl `PL_raise_exception` via `copy_exception!`, pl-attvar.jl `restore_exception`),
@@ -3857,7 +3860,8 @@ function PL_next_solution_guarded(
     # `(intptr_t)*PC++`, and `B` is read on the WORDS: a tagged `*np` (`isTaggedInt`) gives
     # `r = valInt(*np) + add`, stored as `consInt(r)` when tagged, else as the `Int64` term (the
     # sum of a 57-bit and a portable small integer cannot overflow 64 bits). An in-range integer that
-    # arrived as a term (a `SLOT_VALUE`) takes the term test after it, as before. Writing the
+    # arrived as a term (a keyed variable's binding; a slot's grounded side value is a value word
+    # since f3-1, never an in-range integer) takes the term test after it, as before. Writing the
     # result's slot is not a binding (decision 2), as upstream's `*rp = w`. NOT PORTED: the
     # `vmi_builtin=false` branch, which calls `is/2` (only the debugger and coverage clear the flag).
     @label A_ADD_FC

@@ -538,7 +538,7 @@ function PL_get_long(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where
     k, w, p = _deref_loc(ld, -(t + 1))
     if k == DU_VALUE
         isTaggedIntW(w) && return Int(valInt(w))           # isTaggedInt(w)
-        v = ld.vtable[valPtr(w)]
+        v = _indirect_value(ld, w)
     elseif k == DU_TERM
         ld.cold_pairs += 1
         v = deRef(ld, _loc_term(ld, k, w, p))
@@ -787,7 +787,8 @@ end
 
 # ORIGINAL (L1e e2): upstream's `setHandle(h, linkValI(p))` for slot `i` from a dereferenced location
 # `(k, w, p)`: an unbound cell its reference (`makeRefG(p)`), any other word itself — but a value-table word
-# into a slot older than the innermost foreign frame as its value (e1's rule, `_slot_store!`); the boundary
+# into a slot older than the innermost foreign frame as its value (e1's rule, `_slot_store!`), and a slot's
+# side value read as a value (its side word, f3-1) as its value wherever the slot lies; the boundary
 # (`DU_TERM`) as its term, counted in `cold_pairs`.
 "Store in slot `i` what the dereferenced location `(k, w, p)` holds (`setHandle(h, linkValI(p))`)."
 function _slot_link_loc!(
@@ -798,8 +799,8 @@ function _slot_link_loc!(
     elseif k == DU_TERM
         ld.cold_pairs += 1
         _slot_store!(ld, i, deRef(ld, _loc_term(ld, k, w, p)))
-    elseif _is_vword(w) && _slot_older_than_fli(ld, i)
-        _slot_store!(ld, i, ld.vtable[valPtr(w)])
+    elseif _is_side_word(w) || (_is_vword(w) && _slot_older_than_fli(ld, i))
+        _slot_store!(ld, i, _indirect_value(ld, w))
     else
         ld.slots[i] = w
     end
@@ -1064,7 +1065,7 @@ end
 function PL_is_integer(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isInteger(w)
-        return isTaggedIntW(w) || isInteger(ld.vtable[valPtr(w)])
+        return isTaggedIntW(w) || isInteger(_indirect_value(ld, w))
     elseif k == DU_TERM                                     # the boundary: on the term
         ld.cold_pairs += 1
         return isInteger(deRef(ld, _loc_term(ld, k, w, p)))
@@ -1079,7 +1080,7 @@ end
 function PL_is_float(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isFloat(w)
-        return !isTaggedIntW(w) && isFloat(ld.vtable[valPtr(w)])
+        return !isTaggedIntW(w) && isFloat(_indirect_value(ld, w))
     elseif k == DU_TERM                                     # the boundary: on the term
         ld.cold_pairs += 1
         return isFloat(deRef(ld, _loc_term(ld, k, w, p)))
@@ -1094,7 +1095,7 @@ end
 function PL_is_rational(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isRational(w)
-        return isTaggedIntW(w) || isRational(ld.vtable[valPtr(w)])
+        return isTaggedIntW(w) || isRational(_indirect_value(ld, w))
     elseif k == DU_TERM                                     # the boundary: on the term
         ld.cold_pairs += 1
         return isRational(deRef(ld, _loc_term(ld, k, w, p)))
@@ -1155,7 +1156,7 @@ end
 function PL_is_string(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isString(w)
-        return !isTaggedIntW(w) && isString(ld.vtable[valPtr(w)])
+        return !isTaggedIntW(w) && isString(_indirect_value(ld, w))
     elseif k == DU_TERM                                     # the boundary: on the term
         ld.cold_pairs += 1
         return isString(deRef(ld, _loc_term(ld, k, w, p)))
@@ -1201,7 +1202,7 @@ end
 function PL_is_number(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isNumber(w)
-        return isTaggedIntW(w) || isNumber(ld.vtable[valPtr(w)])
+        return isTaggedIntW(w) || isNumber(_indirect_value(ld, w))
     elseif k == DU_TERM                                     # the boundary: on the term
         ld.cold_pairs += 1
         return isNumber(deRef(ld, _loc_term(ld, k, w, p)))
@@ -1270,7 +1271,7 @@ function unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int, ex::Bool)::Bool
         return PL_unify_atomic(ld, t, mk_gnd(T, i))
     elseif k == DU_VALUE
         isTaggedIntW(w) && return valInt(w) == i            # w == *p && valInt(w) == i
-        v = ld.vtable[valPtr(w)]
+        v = _indirect_value(ld, w)
         (isInteger(v) && integer_is_int64(v)) && return int64_value(v) == i   # get_int64
         isInteger(v) && return false
     end

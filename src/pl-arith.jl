@@ -2619,7 +2619,7 @@ function evalExpression_cells(
             n.i = valInt(w)
             n.type = V_INTEGER
         else                                                # an indirect: the stored value
-            v = ld.vtable[valPtr(w)]
+            v = _indirect_value(ld, w)                      # (a side word's too, f3-1)
             nk = number_kind(v)
             if nk === NUM_INTEGER || nk === NUM_RATIONAL    # TAG_INTEGER
                 get_rational(v, n)
@@ -2769,7 +2769,7 @@ function valueExpression(ld::PL_local_data{T}, expr::term_t, n::number)::Bool wh
             n.type = V_INTEGER
             return true
         end
-        v = ld.vtable[valPtr(w)]
+        v = _indirect_value(ld, w)
         if number_kind(v) === NUM_FLOAT                     # tag(*p) == TAG_FLOAT
             n.f = float_value(v)
             n.type = V_FLOAT
