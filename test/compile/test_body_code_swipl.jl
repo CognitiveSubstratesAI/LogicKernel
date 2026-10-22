@@ -1805,8 +1805,12 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         @test length(cy) == 1 && sign(cy[1][1]) == -1      # compare(<, Y, Z), as swipl (below)
         # their printed names, pinned: the clause-variable cells' positions (`varName`, f3b-2a), Y's
         # first. swipl 10.1.18 prints `_436-_438` for the same `print(A-B)` (its own addresses, also
-        # Y's first) — a known difference in the numbers only (feedback: pin the exact answer)
-        @test cy[1][2:3] == ("_20", "_22")
+        # Y's first) — a known difference in the numbers only (feedback: pin the exact answer).
+        # Landing A (f3b-4) moved them from ("_20", "_22"): emptyStacks makes upstream's TMP_PTR_SIZE
+        # handles (pl-setup.c), 4 more permanent cells (a new local data's gTop 4 -> 8, measured), and
+        # this testset's earlier steps on the same local data allocate 4 more (internal identity,
+        # D-0083; not traced cell by cell). The order against swipl above is unchanged.
+        @test cy[1][2:3] == ("_28", "_30")
         if _BC_SWIPL_BIN !== nothing
             theirs = _bc_swipl([
                 "(assertz((cy :- q(Y, Z), r(Z, Y))), clause(cy, (q(A, B), _)), " *

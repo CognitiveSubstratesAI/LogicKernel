@@ -216,19 +216,23 @@ end
         ld.exception_bin, ld.exception_printed, ld.exception_tmp, ld.exception_pending
     ) ==
         (perm, perm + 1, perm + 2, perm + 3)
-    @test ld.fliframes[1].size == 4 && ld.lTop == perm + 4 && ld.exception_term == 0
+    # then upstream's TMP_PTR_SIZE temporary handles (pl-setup.c:1565, f3b-4; was size 4, lTop perm+4)
+    @test ld.tmp_h == perm + 4 && ld.tmp_top == 0
+    @test ld.fliframes[1].size == 4 + LK.TMP_PTR_SIZE &&
+        ld.lTop == perm + 4 + LK.TMP_PTR_SIZE && ld.exception_term == 0
     @test ld.nframes == 0 && ld.nchoices == 0 && ld.BFR == 0 && ld.environment_frame == 0
     @test length(ld.frames) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_LOCALFRAME)
     @test length(ld.choices) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_CHOICE)
     @test length(ld.fliframes) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_FLIFRAME)
     r = LK.PL_new_term_ref(ld)
-    @test r == perm + 4
+    @test r == perm + 4 + LK.TMP_PTR_SIZE                         # (was perm + 4 before f3b-4)
     LK.Trail!(ld, var_key(LK.slotValue(ld, r + 1)), _ls("a"))
     LK.pushFrame!(ld, ld.lTop)
     ld.lTop += 20
     LK.newChoice(ld, LK.CHP_JUMP, 1)
     LK.emptyStacks!(ld)
-    @test ld.lTop == perm + 4 && ld.nfliframes == 1 && ld.nframes == 0 && ld.nchoices == 0
+    @test ld.lTop == perm + 4 + LK.TMP_PTR_SIZE && ld.nfliframes == 1 && ld.nframes == 0 &&
+        ld.nchoices == 0
     @test ld.BFR == 0 && isempty(ld.trail) && lk_no_bindings(ld)
 end
 
