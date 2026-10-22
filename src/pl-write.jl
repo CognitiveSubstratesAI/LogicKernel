@@ -997,14 +997,15 @@ function writeNumber(t0::term_t, options::write_options{T})::Bool where {T}
 end
 
 # PORT: pl-write.c varName
-# DIVERGES: `var_name_ptr` on the location (L1d step 7b): `_` and the variable's KEY — an unbound
-# cell's key (`gkey`, the key its variable term has), the boundary's keyed variable its key, read
-# as its term and counted in `cold_pairs` — where upstream's number is the variable's stack offset
-# (`(p - gBase)*2`): the same shape, and no test compares the number (user, 2026-10-07).
+# DIVERGES: `var_name_ptr` on the location (L1d step 7b): an unbound cell is named by its POSITION,
+# `(p - gBase)*2` with the first cell at `gBase` (F3B f3b-2 — by its key before); there is no
+# `(p - lBase)*2+1` branch, as only global cells are unbound here (a slot references one). The
+# boundary's keyed variable keeps its key, read as its term and counted in `cold_pairs` (gone with
+# the stamp in f3): a kernel key is >= 2^63, so it never clashes with a position's number.
 "The name the unbound variable term reference `t` holds is written by: `_<number>` (pl-write.c)."
 function varName(ld::PL_local_data{T}, t::term_t)::String where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
-    k == DU_CELL && return "_" * string(_cell_key(ld, p))
+    k == DU_CELL && return "_" * string((p - 1) * 2)        # iref = ((Word)p - (Word)gBase)*2
     ld.cold_pairs += 1                                      # the boundary: on the term
     return "_" * string(var_key(deRef(ld, _loc_term(ld, k, w, p))))
 end

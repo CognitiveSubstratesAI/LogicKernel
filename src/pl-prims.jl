@@ -1743,11 +1743,12 @@ const CMP_TERMS = -5
 end
 
 # PORT: pl-prims.c compare_primitives as compare_primitives_cells
-# DIVERGES: (1) two unbound cells are ordered by KEY (`gkey`), where upstream orders them by
-# ADDRESS (`SCALAR_TO_CMP(p1, p2)`) — the term compare's order (`var_key`), so `==`, compare/3 and
-# sort agree on either path; a key never moves (upstream's addresses move with GC and shifts, and
-# SWI defines no order between two variables beyond consistency within a call). (2) On two
-# dereferenced locations; no CMP_MODE_PARTIAL (not ported); `CMP_TERMS` at the boundary.
+# DIVERGES: (1) two unbound cells are ordered by POSITION, upstream's address order
+# (`SCALAR_TO_CMP(p1, p2)`; F3B f3b-2 — by `gkey` before). The same order as the keys the term
+# compare reads (`var_key`): a live cell's key is its allocation's stamp, then its position, and
+# allocation is LIFO at `gTop + 1`, so of two live cells the higher one is the younger (pl-alloc.jl
+# `allocGlobalCells!`, the only `gkey` writer). (2) On two dereferenced locations; no
+# CMP_MODE_PARTIAL (not ported); `CMP_TERMS` at the boundary.
 "One step of the cell walk (pl-prims.c `compare_primitives`): decided, `CMP_COMPOUND`, or `CMP_TERMS`."
 function compare_primitives_cells(
     ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int,
@@ -1757,7 +1758,7 @@ function compare_primitives_cells(
     if k1 == DU_CELL && k2 == DU_CELL
         p1 == p2 && return CMP_EQUAL                         # w1 == w2: the same cell
         mode == CMP_MODE_EQUAL && return CMP_NOTEQ
-        return ld.gkey[p1] < ld.gkey[p2] ? CMP_LESS : CMP_GREATER
+        return p1 < p2 ? CMP_LESS : CMP_GREATER              # SCALAR_TO_CMP(p1, p2)
     end
     k1 != DU_CELL && k1 == k2 && w1 == w2 && return CMP_EQUAL   # the same word
     r1, r2 = _loc_rank(k1, w1), _loc_rank(k2, w2)

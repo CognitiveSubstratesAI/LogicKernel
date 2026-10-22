@@ -60,7 +60,10 @@ end
     t2 = LK.PL_new_term_ref(ld)
     LK.setSlotValue!(ld, t2 + 1, r2)
     @test LK.varName(ld, t1) == LK.varName(ld, t2)
-    @test LK.varName(ld, t1) == "_" * string(var_key(r1))
+    # the name is the cell's offset from the stack base, doubled (pl-write.c var_name_ptr, F3B f3b-2;
+    # its key before). swipl 8e1bc111, `functor(T,f,2), arg(1,T,A), arg(2,T,B), format('~w ~w',[A,B])`
+    # prints `_420 _428`: the same shape, even for a global cell; its offsets are not this engine's.
+    @test LK.varName(ld, t1) == "_" * string((p - 1) * 2)
 end
 
 @testset "numbervars and the variable collectors see one variable" begin

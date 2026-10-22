@@ -720,7 +720,9 @@ end
 # so `==`, compare/3 and sort agree on either path; upstream orders them by address. The site goes
 # when the variables' order follows the address, with the stamp (L1f). L1d's own readers (the
 # walks, copy_term, the writer) are expected to LOWER the count again; measured at each step.
-const STAMP_SITES_MAX = 32
+# LOWERED 32 → 31 (2026-10-22, F3B f3b-2a): that site is gone — two unbound cells are ordered by
+# position (`SCALAR_TO_CMP(p1, p2)`) and `varName` names a cell by its position.
+const STAMP_SITES_MAX = 31
 
 "The names of the stamp machinery; a code line of src/ naming one is a stamp site."
 const STAMP_NAMES = r"\b(CELL_KEY_TAG|CELL_POS_MASK|CELL_STAMP_MASK|CELL_STAMP_BLOCK|_CELL_STAMP_COUNTER|stamp_next|stamp_end|gkey|gvars|_cell_pos|_reserveStamps!)(?![A-Za-z0-9_!])"

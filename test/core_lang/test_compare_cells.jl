@@ -78,6 +78,84 @@ _cc_clauses() = Tuple{_R, Union{Nothing, _R}}[
                     _rf("==", _rv(5), _rlist(_rv(1), _rv(2)))
                 ),
                 _rf("==", _rv(5), _rlist(_rv(2), _rv(1)))), _rf("=", _rv(9), _rs("ok")))
+    ),
+    # variables NOT made in LIFO clause order, ordered as swipl orders them (by address; F3B f3b-2,
+    # D-0095 item 2) — functor/3 then unified in another order:
+    # functor(T, f, 3), T = f(A, B, C), compare(O1, C, A), msort([C, B, A], L), (L == [A, B, C] -> …)
+    (
+        _rf("vo_functor", _rv(1), _rv(2)),
+        _rconj(_rf("functor", _rv(3), _rs("f"), _rg(Int64(3))),
+            _rf("=", _rv(3), _rf("f", _rv(4), _rv(5), _rv(6))),
+            _rf("compare", _rv(1), _rv(6), _rv(4)),
+            _rf("msort", _rlist(_rv(6), _rv(5), _rv(4)), _rv(7)),
+            _rite(_rf("==", _rv(7), _rlist(_rv(4), _rv(5), _rv(6))),
+                _rf("=", _rv(2), _rs("sorted")), _rf("=", _rv(2), _rs("other"))))
+    ),
+    # after backtracking reuses the cells: functor(P, p, 1), (functor(Q, q, 3), Q \== a, fail ; true),
+    # functor(R, r, 1), P = p(X), R = r(Y), compare(O, Y, X)
+    (
+        _rf("vo_bt", _rv(1)),
+        _rconj(_rf("functor", _rv(2), _rs("p"), _rg(Int64(1))),
+            _ror(
+                _rconj(_rf("functor", _rv(3), _rs("q"), _rg(Int64(3))),
+                    _rf("\\==", _rv(3), _rs("a")), _rs("fail")),
+                _rs("true")
+            ),
+            _rf("functor", _rv(4), _rs("r"), _rg(Int64(1))),
+            _rf("=", _rv(2), _rf("p", _rv(5))), _rf("=", _rv(4), _rf("r", _rv(6))),
+            _rf("compare", _rv(1), _rv(6), _rv(5)))
+    ),
+    # (functor(Q, q, 3), Q = q(Z, Z, Z), fail ; true), functor(R, r, 2), R = r(Y, W),
+    # compare(O, W, Y), var(Z) — the reused cells are the second variable's
+    (
+        _rf("vo_bt2", _rv(1)),
+        _rconj(
+            _ror(
+                _rconj(_rf("functor", _rv(2), _rs("q"), _rg(Int64(3))),
+                    _rf("=", _rv(2), _rf("q", _rv(3), _rv(3), _rv(3))), _rs("fail")),
+                _rs("true")
+            ),
+            _rf("functor", _rv(4), _rs("r"), _rg(Int64(2))),
+            _rf("=", _rv(4), _rf("r", _rv(5), _rv(6))),
+            _rf("compare", _rv(1), _rv(6), _rv(5)), _rf("var", _rv(3)))
+    ),
+    # copy_term/2 copies: copy_term(g(B0, A0, B0), g(D, C, D2)), compare(O1, D, C),
+    # compare(O2, D, D2), var(A0)
+    (
+        _rf("vo_copy", _rv(1), _rv(2)),
+        _rconj(
+            _rf(
+                "copy_term",
+                _rf("g", _rv(3), _rv(4), _rv(3)),
+                _rf("g", _rv(5), _rv(6), _rv(7))
+            ),
+            _rf("compare", _rv(1), _rv(5), _rv(6)),
+            _rf("compare", _rv(2), _rv(5), _rv(7)),
+            _rf("var", _rv(4)))
+    ),
+    # T = f(X, Y), copy_term(h(Y, X, T), h(Y1, X1, T1)), compare(O, Y1, X1), T1 \== a
+    (
+        _rf("vo_copy2", _rv(1)),
+        _rconj(_rf("=", _rv(2), _rf("f", _rv(3), _rv(4))),
+            _rf(
+                "copy_term",
+                _rf("h", _rv(4), _rv(3), _rv(2)),
+                _rf("h", _rv(5), _rv(6), _rv(7))
+            ),
+            _rf("compare", _rv(1), _rv(5), _rv(6)), _rf("\\==", _rv(7), _rs("a")))
+    ),
+    # a nested compound built in the body (the outer first): T = f(g(A), B), compare(O, A, B), T \== a
+    (
+        _rf("vo_nest", _rv(1)),
+        _rconj(_rf("=", _rv(2), _rf("f", _rf("g", _rv(3)), _rv(4))),
+            _rf("compare", _rv(1), _rv(3), _rv(4)), _rf("\\==", _rv(2), _rs("a")))
+    ),
+    # T =.. [f, A, B], functor(T, F, _N), F == f, compare(O, B, A)
+    (
+        _rf("vo_univ", _rv(1)),
+        _rconj(_rf("=..", _rv(2), _rlist(_rs("f"), _rv(3), _rv(4))),
+            _rf("functor", _rv(2), _rv(5), _rv(6)), _rf("==", _rv(5), _rs("f")),
+            _rf("compare", _rv(1), _rv(4), _rv(3)))
     )
 ]
 
@@ -114,12 +192,15 @@ const _CC_PAIRS = [
             _rf("nec_t", _rg(Int64(1))),
             _rf("same_t", _rv(50)), _rf("cyc_eq", _rv(50)), _rf("cyc_cmp", _rv(50)),
             _rf("dag_cmp", _rv(50)), _rf("cyc1529", _rv(50), _rv(51)),
-            _rf("var_consistent", _rv(50))]
+            _rf("var_consistent", _rv(50)), _rf("vo_functor", _rv(50), _rv(51)),
+            _rf("vo_bt", _rv(50)), _rf("vo_bt2", _rv(50)), _rf("vo_copy", _rv(50), _rv(51)),
+            _rf("vo_copy2", _rv(50)), _rf("vo_nest", _rv(50)), _rf("vo_univ", _rv(50))]
     )
     ours = _rlines(db, goals)
     # the kernel's side alone (also where swipl is absent: Pkg.test): every goal ends, none raised
     @test count(==("end"), ours) == length(goals)
     @test !any(l -> startswith(l, "exception("), ours)
+    @test count(l -> startswith(l, "vo_"), ours) == 7       # every variable-order row answers
     if _R_SWIPL
         theirs = _rswipl(_cc_clauses(), goals)
         @test ours == theirs
