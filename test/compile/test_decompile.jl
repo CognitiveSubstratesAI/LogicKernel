@@ -43,8 +43,25 @@ function _ddecompile(head::_D)::_D
     n = nchildren(head) - 1
     goal = mk_expr(_D, _D[child(head, 1); [_dv(900_000 + i) for i in 1:n]])
     ld = LK.PL_local_data{_D}(_DGD)
-    LK.decompileHead!(ld, cl, goal) || error("decompileHead! failed on a fresh goal")
-    return LK.resolve_term(ld, goal)
+    t = LK.PL_new_term_ref(ld)                      # the head in a term reference (f3b-2b)
+    LK.putSlotValue!(ld, t + 1, goal)
+    LK.decompileHead!(ld, cl, t) || error("decompileHead! failed on a fresh goal")
+    return LK.resolve_term(ld, LK.slotValue(ld, t + 1))
+end
+
+# The head decompiler unifies the head's FUNCTOR first (pl-comp.c decompile_head: `PL_unify_functor(head,
+# di->functor)`; since f3b-2b — the term-level port skipped it). swipl cannot be asked: its clause/2 hands
+# the decompiler a head of the predicate it found. A head of another name, or an atom for p/1, fails.
+@testset "the head's functor is unified first" begin
+    cl = _dclause(_de(:p, _dv(1)))
+    ld = LK.PL_local_data{_D}(_DGD)
+    t = LK.PL_new_term_ref(ld)
+    for (h, ok) in ((_de(:p, _dv(2)), true), (_de(:q, _dv(2)), false), (_ds(:p), false))
+        m = LK.Mark(ld)
+        LK.putSlotValue!(ld, t + 1, h)
+        @test LK.decompileHead!(ld, cl, t) == ok
+        LK.Undo!(ld, m)
+    end
 end
 
 "The same literal to SWI: kind, identity (`sym_key`, `gnd_equal`) and number kind."

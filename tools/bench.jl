@@ -168,7 +168,10 @@ for i in 1:1000
         CL_END
     )
 end
-const CP_GOAL = mk_expr(BT, BT[_a(:cp), _v(), _v()])
+const CP_GOAL = let g = LogicKernel.PL_new_term_ref(LD)       # clause/2's head: a term reference (f3b-2)
+    LogicKernel.putSlotValue!(LD, g + 1, mk_expr(BT, BT[_a(:cp), _v(), _v()]))
+    g
+end
 
 # compiling: a fact `cp(7, a)`, and the head and variable analysis of nreverse's rule clause
 # `app([H|T], L, [H|R]) :- app(T, L, R)` (V1 — its body code is V2, so Julia only, no swipl goal)

@@ -64,9 +64,12 @@ function _precompile_workload()::Nothing
         ]
     )
     compileClause(gd, ld, mk_expr(T, T[mk_sym(T, :q), x, y]), body, q, user)
-    goal = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, 7), x])
+    goal = PL_new_term_ref(ld)                  # clause/2, retract/1: the head in a term reference
+    putSlotValue!(ld, goal + 1, mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, 7), x]))
     pl_clause!(gd, ld, def, goal, _ -> true)
-    pl_retract!(gd, ld, def, mk_expr(T, T[mk_sym(T, :p), x, nil]), _ -> false)
+    putSlotValue!(ld, goal + 1, mk_expr(T, T[mk_sym(T, :p), x, nil]))
+    pl_retract!(gd, ld, def, goal, _ -> false)
+    PL_reset_term_refs(ld, goal)
     # the local stack (V3): a frame, a choice point, a foreign frame with term references
     fr = pushFrame!(ld, ld.lTop)
     ld.lTop = argFrameP(ld.frames[fr].base, 2)

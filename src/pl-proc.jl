@@ -744,7 +744,7 @@ it starts in, unify `head` with each clause in turn; retract each that unifies a
 enumeration moves to the current generation.
 """
 function pl_retract!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, sink::S
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::term_t, sink::S
 )::Nothing where {T, S}
     if (def.flags & P_FOREIGN) != 0
         error("retract/1: permission_error(modify, static_procedure)")
@@ -761,7 +761,7 @@ function pl_retract!(
     try
         gen = dref.generation                           # setGenerationFrameVal()
         chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
+        cref = firstClause!(ld, _head_argv(ld, def, head), gen, def, chp)
         first_call = true                               # CTX_CNTRL == FRG_FIRST_CALL
         while cref !== nothing
             clause = cref.clause::Clause{T}
@@ -786,7 +786,7 @@ function pl_retract!(
             finally
                 Undo!(ld, m)                            # PL_rewind_foreign_frame(fid)
             end
-            cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)
+            cref = nextClause!(ld, chp, _head_argv(ld, def, head), gen, def)
         end
     finally
         popped || popPredicateAccess!(ld, def)
@@ -795,15 +795,21 @@ function pl_retract!(
 end
 
 # PORT: pl-proc.c allVars
-"True when every argument of the head `head` is a distinct unbound variable (pl-proc.c)."
-function allVars(head)::Bool
-    seen = Set{UInt64}()
-    for i in 2:nchildren(head)
-        a = child(head, i)
-        if kind(a) !== VAR || var_key(a) in seen
+# DIVERGES: on the cells — distinct unbound argument cells after `_deref_loc`, a set of positions
+# where upstream marks each variable and unmarks them after; a head that is not a compound (an
+# atom) has no argument, so `true`; an argument at the boundary (DU_TERM) is not taken as a variable.
+"True when every argument of the head term reference `head` is a distinct unbound variable (pl-proc.c)."
+function allVars(ld::PL_local_data{T}, head::term_t)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(head + 1))
+    (k == DU_WORD && _is_gcompound(w)) || return true
+    q = valPtr(w)
+    seen = Set{Int}()
+    for i in 1:arityFunctor(ld.functors, ld.gstack[q])
+        ka, _, p = _deref_loc(ld, q + i)
+        if ka != DU_CELL || p in seen
             return false
         end
-        push!(seen, var_key(a))
+        push!(seen, p)
     end
     return true
 end
@@ -820,7 +826,7 @@ starts in whose head unifies with `head` — all of them, without unifying, when
 occurs-check error from a head), which stops it.
 """
 function pl_retractall!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::term_t
 )::Bool where {T}
     if (def.flags & P_FOREIGN) != 0
         error("retractall/1: permission_error(modify, static_procedure)")
@@ -832,7 +838,7 @@ function pl_retractall!(
         def.flags |= P_DYNAMIC                          # setDynamicDefinition(def, true)
         return true                                     # nothing to retract
     end
-    allvars = kind(head) === EXPR ? allVars(head) : true
+    allvars = allVars(ld, head)
     rc = true
     dref = pushPredicateAccessObj!(ld, gd, def)
     try
@@ -851,7 +857,7 @@ function pl_retractall!(
             rc = ld.exception_term == 0                 # ignore plain failures, keep an exception
         else
             chp = ClauseChoice{T}(nothing, word(0))
-            cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
+            cref = firstClause!(ld, _head_argv(ld, def, head), gen, def, chp)
             while cref !== nothing
                 cl = cref.clause::Clause{T}
                 m = Mark(ld)
@@ -870,7 +876,7 @@ function pl_retractall!(
                 end
                 stop && break
                 chp.cref === nothing && break
-                cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)
+                cref = nextClause!(ld, chp, _head_argv(ld, def, head), gen, def)
             end
         end
     finally

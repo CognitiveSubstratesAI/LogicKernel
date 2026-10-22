@@ -985,6 +985,7 @@ graph LR
     pl_comp --> pl_alloc
     pl_comp --> pl_wam
     pl_comp --> pl_fli
+    pl_comp --> pl_attvar
     pl_comp --> pl_error
     pl_comp --> pl_gmp
     pl_comp --> pl_arith
@@ -1218,6 +1219,7 @@ graph LR
     pl_proc --> pl_global
     pl_proc --> pl_modul
     pl_proc --> pl_inline
+    pl_proc --> pl_prims
     pl_proc --> pl_comp
     pl_proc --> pl_thread
     pl_proc --> pl_gc
@@ -1955,12 +1957,32 @@ approved by the user and marked `# DIVERGES` (src/pl-comp.jl § the literal tabl
 * **The decompiler is ported** (pl-comp.c `decompileHead`/`decompile_head`). The clause rebuilds
   its head from the CODE and the table, as upstream, so the clause no longer stores its head term
   or its variables (`head`, `head_vars` and the renaming helpers are gone).
-  * `# DIVERGES`: it builds each argument bottom-up and unifies `head`'s arguments with them, where
-    upstream unifies cell by cell. A compound closes at its `H_POP`, which also closes the `R` chain
-    of its last argument, and gets fresh variables for the voids dropped before it. The functor is
-    not unified, since every caller passes a head of the predicate and `definition` keeps the name's
-    key only.
-  * Variables: one block of fresh kernel keys, one per slot, and one key per nested void.
+  * Since f3b-2b (2026-10-22, audit D-0095 item 4) in upstream's shape: the head is unified TOP-DOWN
+    into the cells of the term reference `head` through argument-pointer pairs (`get_arg_ref!`,
+    `next_arg_ref!`, `_next_arg!`), its functor unified first (`PL_unify_compound`); the body is built
+    bottom-up on WORDS (`makeVarRef`, `build_term!`, `unifyVar`); the clause's variables are term
+    references (`PL_new_term_refs(prolog_vars)`), freed on return; clause/2, retract/1 and
+    retractall/1 take term references and search the index on the head's argument cells
+    (`_head_argv`, `argv_cells`). `# DIVERGES`, Q2: `$expr/n` matches any compound of n children,
+    child by child (`_head_compound!`, as the VM's H_FUNCTOR term path). Until f3b-2b each argument
+    was built bottom-up as a term with fresh kernel keys and the functor was not unified.
+  * **unifyVar's invariant, asserted (audit D-0100):** two unbound sides are global cells (`pv > 0 &&
+    p > 0`: no term reference holds an unbound slot) and the clause variable's cell is the OLDER (`pv <
+    p`). Every location unifyVar binds is a cell this decompilation allocated (`build_term!`'s
+    compound, `_dput_functor!`'s, `decompileBody!`'s `vbody`), after every cell a clause variable can
+    dereference to (its own from `PL_new_term_refs`, or an older one: the caller's head, a running
+    frame's). So upstream's `v < var` always binds the location to the variable. Battery mutant FD10
+    (the compare on the undereferenced locations) is equivalent BECAUSE of it; FD12 (the assert
+    flipped) is caught by the assert firing; FD1 (the direction flipped) by the order row
+    (test_body_code_swipl.jl `cy`, swipl's `<`).
+  * **Equivalent today, re-check triggers (audit D-0100):**
+    * FD2 (`build_term!` ignoring `dir`): every caller passes the default -1 (src/pl-comp.jl
+      decompileBodyNoShift!, decompileBody!). TRIGGER: a caller passing `dir` 1 — upstream's
+      BUILD_TERM_REV (A_ADD, A_MUL, A_FUNC*) entering the port — then FD2 must be killed by a test.
+    * FD8 (`next_arg_ref!` stepping past the last argument): a NEXTARG past the last argument is
+      always followed by the pair's reset before any read (H_POP's `PL_reset_term_refs`, the exit's
+      loop guarded by `argn < arity`, the end of an H_VOID_N run). TRIGGER: a read of the argument
+      pointer after a NEXTARG without that reset — then FD8 must be killed by a test.
 * **Pinned:**
   * the head-code differential compares every literal BY VALUE. swipl's `vm_list` operands are read
     back as terms by swipl itself and written by kind: atoms and strings as code lists, integers

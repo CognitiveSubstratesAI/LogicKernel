@@ -37,8 +37,8 @@ end
 # ── the program ─────────────────────────────────────────────────────────────────────────────────
 """
 A predicate of the generated program: its clauses and the operations on it, in order — `:call`,
-and on a dynamic predicate also `:retract` (the first answer), `:retractall` and `:gc`
-(`garbage_collect_clauses`).
+and on a dynamic predicate also `:retract` (the first answer), `:retractall`, `:gc`
+(`garbage_collect_clauses`) and `:clause` (`clause(G, true)`, every answer; `_xclause` only).
 """
 struct _XPred
     name::Symbol
@@ -295,6 +295,46 @@ function _xlit()::Vector{_XPred}
     ]
 end
 
+"""
+clause/2 and retract/1 through the clause index (f3b-2b, decompiler design obligation 3): their clause
+search reads the ARGUMENT CELLS of the head in its term reference (`_head_argv`, `argv_cells`), where a
+call reads the goal's arguments. 40 keys in the first argument (a hash index) and 40 compounds that
+differ in a deep argument (a deep index), each built by a call first; then clause/2 and retract/1 with
+a bound first argument and with a bound deep argument — the second argument bound too, so an index
+read off the wrong cells finds nothing — and a clause/2 that the index cannot narrow.
+"""
+function _xclause()::Vector{_XPred}
+    D(b) = _xe(:f, _xs(:x), _xs(b))
+    kheads = [_xe(:ck_d, _xs("k$i"), _xg(i)) for i in 1:40]
+    dheads = [_xe(:cd_d, D("b$i"), _xg(i)) for i in 1:40]
+    return [
+        _XPred(
+            :ck_d, 2, true, kheads,
+            [
+                (:call, _xe(:ck_d, _xs(:k3), _xv())),
+                (:clause, _xe(:ck_d, _xs(:k7), _xg(7))),
+                (:clause, _xe(:ck_d, _xs(:k7), _xv())),
+                (:retract, _xe(:ck_d, _xs(:k9), _xg(9))),
+                (:clause, _xe(:ck_d, _xs(:k9), _xv())),
+                (:clause, _xe(:ck_d, _xv(), _xg(12))),
+                (:call, _xe(:ck_d, _xs(:k9), _xv()))
+            ]
+        ),
+        _XPred(
+            :cd_d, 2, true, dheads,
+            [
+                (:call, _xe(:cd_d, D("b3"), _xv())),
+                (:clause, _xe(:cd_d, D("b33"), _xg(33))),
+                (:clause, _xe(:cd_d, D("b33"), _xv())),
+                (:retract, _xe(:cd_d, D("b5"), _xg(5))),
+                (:clause, _xe(:cd_d, D("b5"), _xv())),
+                (:clause, _xe(:cd_d, _xe(:f, _xv(), _xs(:b20)), _xv())),
+                (:call, _xe(:cd_d, D("b5"), _xv()))
+            ]
+        )
+    ]
+end
+
 # ── running it in the kernel ────────────────────────────────────────────────────────────────────
 "One `idx` report line's fields."
 const _XIdx = Tuple{String, Vector{Int}, Vector{Int}, Float32, Bool, Bool, Int}
@@ -347,6 +387,11 @@ function _xrun(preds::Vector{_XPred}; unindexed::Bool=false, vm::Bool=false)
                 push!(lines, "$k $(ix_text(a)) $(det ? "det" : "nondet")")
             end
             push!(lines, "$k end")
+        elseif op === :clause                           # clause(G, true): every answer
+            for a in ix_clause(b, g)
+                push!(lines, "$k clause $(ix_text(a))")
+            end
+            push!(lines, "$k end")
         elseif op === :retract                          # (retract(G) -> … ; …): first answer
             r = ix_retract!(b, g; after=_ -> false)
             push!(lines, "$k retract $(isempty(r) ? "none" : ix_text(r[1]))")
@@ -396,6 +441,12 @@ ret(K, G) :-
         write_term(C, [quoted(true), ignore_ops(true), numbervars(true)]), nl
     ;   format("~w retract none~n", [K])
     ).
+cls(K, G) :-
+    forall(clause(G, true),
+           ( copy_term(G, C), numbervars(C, 0, _, [singletons(true)]),
+             format("~w clause ", [K]),
+             write_term(C, [quoted(true), ignore_ops(true), numbervars(true)]), nl )),
+    format("~w end~n", [K]).
 rall(K, G) :- retractall(G), format("~w retractall~n", [K]).
 gcx(K) :- garbage_collect_clauses, format("~w gc~n", [K]).
 report(P/N) :-
@@ -434,6 +485,8 @@ function _xswipl(preds::Vector{_XPred})
             k += 1
             if op === :call
                 println(io, "    ans($k, ", ix_text(g), "),")
+            elseif op === :clause
+                println(io, "    cls($k, ", ix_text(g), "),")
             elseif op === :retract
                 println(io, "    ret($k, ", ix_text(g), "),")
             elseif op === :retractall
@@ -519,7 +572,7 @@ const _XSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 const _XSEED = 20261002
 
 @testset "clause index vs swipl" begin
-    program = vcat(_xprogram(_XSEED, 60), _xhvoid(), _xnil(), _xlit())
+    program = vcat(_xprogram(_XSEED, 60), _xhvoid(), _xnil(), _xlit(), _xclause())
     ours = _xrun(program)
     oracle = _xrun(program; unindexed=true)
     vmrun = _xrun(program; vm=true)
@@ -546,6 +599,9 @@ const _XSEED = 20261002
         @test count(l -> !endswith(l, " none"), ret) >= 30
         @test count(l -> endswith(l, " retractall"), ours.lines) >= 8
         @test count(l -> endswith(l, " gc"), ours.lines) >= 10
+        # clause/2 on bound arguments answers (`_xclause`: 6 answers; k9's and b5's clause retracted)
+        @test count(l -> occursin(" clause ", l), ours.lines) == 6
+        @test count(l -> occursin(r" retract c[kd]_d\(", l), ours.lines) == 2
         @info "index differential mutations: $(count(l -> !endswith(l, " none"), ret)) of $(length(ret)) retracts removed a clause; $(count(l -> endswith(l, " retractall"), ours.lines)) retractalls; $(count(l -> endswith(l, " gc"), ours.lines)) collections"
     end
 

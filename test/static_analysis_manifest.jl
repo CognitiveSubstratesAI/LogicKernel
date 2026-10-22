@@ -479,28 +479,23 @@ function _manifest_index(T)
         (LK.try_fast_condition!, Tuple{CInfo, Int}, false),
         (LK.in_continuation, Tuple{LD, Int, Int, Int}, true),
         (LK.killFrame, Tuple{LK.localFrame{T}}, true),
-        (LK._dvar, Tuple{LK.decompileInfo{T}, UInt64}, false),
-        (LK._dpush!, Tuple{LK.decompileInfo{T}, T}, false),
+        (LK.makeVarRef, Tuple{UInt64}, true), (LK.isVarRef, Tuple{UInt64}, true),
+        (LK._dvar!, Tuple{LK.decompileInfo{T}, Int, UInt64}, false),
+        (LK._dpush!, Tuple{LK.decompileInfo{T}, UInt64}, false),
+        (LK._dput_functor!, Tuple{LK.decompileInfo{T}, UInt64}, false),
         (LK.build_term!, Tuple{LK.decompileInfo{T}, T, Int, Int}, false),
         (LK.build_term!, Tuple{LK.decompileInfo{T}, T, Int}, false),
         (LK.decompileBodyNoShift!, Tuple{LK.decompileInfo{T}, UInt64, Int}, false),
         (LK._type_test_name, Tuple{UInt64}, false),
-        (LK.decompileBody!, Tuple{LD, LK.decompileInfo{T}, T, UInt64, Int}, false),
-        (LK.decompile!, Tuple{LD, C, T, T}, false),
-        (
-            LK.decompile_head!,
-            Tuple{LD, C, T, UInt64, Union{Nothing, BitVector}, Union{Nothing, Vector{T}}},
-            false
-        ),
+        (LK.decompileBody!, Tuple{LD, LK.decompileInfo{T}, Int, UInt64, Int}, false),
+        (LK.decompile!, Tuple{LD, C, Int, Int}, false),
+        (LK.decompile_head!, Tuple{LD, C, Int, Int, Union{Nothing, BitVector}, Int}, false),
         (LK.add_bvar_access!, Tuple{BitVector, Int, Int}, true),
         (LK._body_start, Tuple{C}, false),
         (LK.mark_bvar_access, Tuple{C}, false),
-        (
-            LK.moved_unifications!,
-            Tuple{LD, C, Int, UInt64, T, BitVector, Vector{T}, Bool},
-            false
-        ),
-        (LK.pl_clause!, Tuple{GD, LD, D, T, T, SNK}, false),
+        (LK.moved_unification, Tuple{LD, Int, Int, Int, Int, Int}, false),
+        (LK.moved_unifications!, Tuple{LD, Int, Int, BitVector, Int, Bool}, false),
+        (LK.pl_clause!, Tuple{GD, LD, D, Int, Int, SNK}, false),
         # V6b — the type tests compiled inline (src/pl-comp.jl, pl-incl.jl, pl-fli.jl)
         (LK.always, Tuple{LD, CInfo, Bool, String, T}, false),
         (LK.alwaysFirstVar, Tuple{LD, CInfo, Bool, String, T, Int}, false),
@@ -710,15 +705,19 @@ function _manifest_index(T)
         (LK.markAccessedPredicates!, Tuple{LD, GD}, false),
         (LK.markPredicatesInEnvironments!, Tuple{LD, GD}, false),
         # clause/2 (src/pl-comp.jl)
-        (LK.pl_clause!, Tuple{GD, LD, D, T, SNK}, false),
-        (LK.decompileHead!, Tuple{LD, C, T}, false),
-        (LK.decompile_head!, Tuple{LD, C, T, UInt64}, false),
-        (
-            LK._decompile_void,
-            Tuple{LK.PL_local_data{T}, Vector{LK.DecompileFrame{T}}, UInt64, Int},
-            false
-        ),
-        (LK._decompile_void, Tuple{LK.PL_local_data{T}, Nothing, UInt64, Int}, false),
+        (LK.pl_clause!, Tuple{GD, LD, D, Int, SNK}, false),
+        (LK._head_argv, Tuple{LD, D, Int}, false),
+        (LK.decompileHead!, Tuple{LD, C, Int}, false),
+        (LK.decompile_head!, Tuple{LD, C, Int, Int}, false),
+        (LK.get_arg_ref!, Tuple{LD, Int, Int}, false),
+        (LK._arg_ref_at!, Tuple{LD, Int, Int}, false),
+        (LK._head_compound!, Tuple{LD, Int, UInt64}, false),
+        (LK.next_arg_ref!, Tuple{LD, Int}, false),
+        (LK.set_bvar_argp!, Tuple{LD, Int}, false),
+        (LK.unifyVar, Tuple{LD, Int, Int, UInt64}, false),
+        (LK.unifyVarGC, Tuple{LD, Int, Int, UInt64}, false),
+        (LK._next_arg!, Tuple{LD, Int, Int, Int, Bool}, false),
+        (LK.PL_unify_compound, Tuple{LD, Int, UInt64}, false),
         # src/pl-proc.jl
         (LK.MODULE_user, Tuple{GD}, true),
         (LK.lookupProcedure, Tuple{T, Int, MOD}, false),
@@ -1141,9 +1140,9 @@ function _manifest_index(T)
         (LK.unregisterDirtyDefinition!, Tuple{GD, D}, false),
         (LK.maybeUnregisterDirtyDefinition!, Tuple{GD, D}, false),
         (LK.pl_garbage_collect_clauses!, Tuple{GD, LD}, false),
-        (LK.pl_retract!, Tuple{GD, LD, D, T, SNK}, false),
-        (LK.allVars, Tuple{T}, false),
-        (LK.pl_retractall!, Tuple{GD, LD, D, T}, false),
+        (LK.pl_retract!, Tuple{GD, LD, D, Int, SNK}, false),
+        (LK.allVars, Tuple{LD, Int}, false),
+        (LK.pl_retractall!, Tuple{GD, LD, D, Int}, false),
         (LK.mode_arg_is_unbound, Tuple{D, Int}, true),
         # the supervisors (src/pl-supervisor.jl): selecting one builds its code, so allocates
         (LK.arg1Key, Tuple{PCd}, true),
@@ -1685,7 +1684,7 @@ _index_entry_points(T) = (
     (
         LK.pl_retract!,
         Tuple{
-            LK.PL_global_data{T}, LK.PL_local_data{T}, LK.Definition{T}, T,
+            LK.PL_global_data{T}, LK.PL_local_data{T}, LK.Definition{T}, Int,
             typeof(_manifest_sink)
         },
         false

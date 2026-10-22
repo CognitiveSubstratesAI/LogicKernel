@@ -1808,7 +1808,10 @@ end
         _rf("c16", _rv(9));
         at=function (qid, k)
             k == 1 || return nothing
-            LK.pl_retract!(db.gd, db.ld, d16, _rf("d16", _rg(2)), _ -> false)    # retract(d16(2))
+            g = LK.PL_new_term_ref(db.ld)                # retract(d16(2)), its head in a term reference
+            LK.putSlotValue!(db.ld, g + 1, _rf("d16", _rg(2)))
+            LK.pl_retract!(db.gd, db.ld, d16, g, _ -> false)
+            LK.PL_reset_term_refs(db.ld, g)
             retracted[] = true
         end
     )

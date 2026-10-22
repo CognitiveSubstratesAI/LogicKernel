@@ -247,6 +247,24 @@ function PL_unify_functor(
     end
 end
 
+# PORT: pl-fli.c PL_unify_compound
+# DIVERGES: `f` is a functor WORD (`$expr/n` too); no global space to ensure. The boundary (DU_TERM)
+# is unified on terms with the compound laid out, counted.
+"Unify term reference `t` with a compound of functor word `f` — binding it to one of fresh arguments, or checking its functor (pl-fli.c)."
+function PL_unify_compound(ld::PL_local_data{T}, t::term_t, f::word)::Bool where {T}
+    k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p)
+    if k == DU_CELL                                         # canBind(*p)
+        a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))  # *a = f; setVar(*++a)…
+        _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, to)
+        return true
+    elseif k == DU_TERM
+        ld.cold_pairs += 1                                  # the boundary: on terms
+        a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))
+        return do_unify(ld, _loc_term(ld, k, w, q), _compound_term(ld, a)) == BOOLEX_TRUE
+    end
+    return k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == f   # hasFunctor(*p, f)
+end
+
 # PORT: pl-fli.c PL_unify_arg_sz as PL_unify_arg
 # DIVERGES: a compound whose head is no symbol has every child as an argument (see `_PL_get_arg`).
 "Unify argument `index` (from 1) of the compound term reference `t` holds with the term `a` references (pl-fli.c)."

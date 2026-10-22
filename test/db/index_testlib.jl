@@ -66,10 +66,31 @@ function ix_answer(
     ld::LK.PL_local_data{T}, goal::T, cl::LK.Clause{T}
 )::Union{Nothing, T} where {T}
     m = LK.Mark(ld)
+    t = LK.PL_new_term_ref(ld)                # the goal in a term reference (f3b-2b)
     try
-        return LK.decompileHead!(ld, cl, goal) ? LK.resolve_term(ld, goal) : nothing
+        LK.setSlotValue!(ld, t + 1, goal)     # the engine's write: the caller's variables handed back
+        LK.decompileHead!(ld, cl, t) || return nothing
+        return LK.resolve_term(ld, LK.slotValue(ld, t + 1))
     finally
         LK.Undo!(ld, m)
+        LK.PL_reset_term_refs(ld, t)
+    end
+end
+
+"""
+`f(t)` with `goal` written into a fresh term reference `t` (f3b-2b: clause/2 and retract/1 take one),
+by the engine's write: an answer read through `t` (`resolve_term`) hands back the caller's variables,
+as the head term did before. The write is undone and `t` freed after.
+"""
+function _ix_with_goal_ref(f, ld::LK.PL_local_data{T}, goal::T) where {T}
+    m = LK.Mark(ld)
+    t = LK.PL_new_term_ref(ld)
+    try
+        LK.setSlotValue!(ld, t + 1, goal)
+        return f(t)
+    finally
+        LK.Undo!(ld, m)
+        LK.PL_reset_term_refs(ld, t)
     end
 end
 
@@ -167,16 +188,20 @@ the instances of the retracted clauses, in order.
 """
 function ix_retract!(p::IxPred{T}, goal::T; after=(_ -> true))::Vector{T} where {T}
     out = T[]
-    LK.pl_retract!(
-        p.db.gd, p.db.ld, p.def, goal,
-        cl -> (push!(out, LK.resolve_term(p.db.ld, goal)); after(out[end]))
-    )
+    ld = p.db.ld
+    _ix_with_goal_ref(ld, goal) do t
+        LK.pl_retract!(
+            p.db.gd, ld, p.def, t,
+            cl ->
+                (push!(out, LK.resolve_term(ld, LK.slotValue(ld, t + 1))); after(out[end]))
+        )
+    end
     return out
 end
 
 "`retractall(Goal)`."
 ix_retractall!(p::IxPred{T}, goal::T) where {T} =
-    LK.pl_retractall!(p.db.gd, p.db.ld, p.def, goal)
+    _ix_with_goal_ref(t -> LK.pl_retractall!(p.db.gd, p.db.ld, p.def, t), p.db.ld, goal)
 
 """
     ix_clause(p, goal; after = (instance -> true)) -> [instance]
@@ -185,10 +210,14 @@ ix_retractall!(p::IxPred{T}, goal::T) where {T} =
 """
 function ix_clause(p::IxPred{T}, goal::T; after=(_ -> true))::Vector{T} where {T}
     out = T[]
-    LK.pl_clause!(
-        p.db.gd, p.db.ld, p.def, goal,
-        cl -> (push!(out, LK.resolve_term(p.db.ld, goal)); after(out[end]))
-    )
+    ld = p.db.ld
+    _ix_with_goal_ref(ld, goal) do t
+        LK.pl_clause!(
+            p.db.gd, ld, p.def, t,
+            cl ->
+                (push!(out, LK.resolve_term(ld, LK.slotValue(ld, t + 1))); after(out[end]))
+        )
+    end
     return out
 end
 

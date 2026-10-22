@@ -111,28 +111,29 @@ end
     foreach(i -> ix_assertz!(p, _cve(:p, _cvg(i))), 1:3)
     X = _cvv(3)
     seen = Int[]
-    LK.pl_clause!(
-        db.gd,
-        db.ld,
-        p.def,
-        _cve(:p, X),
-        cl -> (push!(seen, lk_value(deRef(db.ld, X))); true)
-    )
+    g = LK.PL_new_term_ref(db.ld)                           # the goal in a term reference (f3b-2b)
+    LK.putSlotValue!(db.ld, g + 1, _cve(:p, X))
+    gX() = child(LK.resolve_term(db.ld, LK.slotValue(db.ld, g + 1)), 2)    # X, read through it
+    b0 = lk_bound_count(db.ld)                              # the put's own cells: p(X) laid out
+    LK.pl_clause!(db.gd, db.ld, p.def, g, cl -> (push!(seen, lk_value(gX())); true))
     @test seen == [1, 2, 3]                                 # bound while the sink ran
-    @test kind(deRef(db.ld, X)) === VAR                     # and unbound after
+    @test kind(gX()) === VAR                                # and unbound after
     @test_throws ErrorException LK.pl_clause!(
-        db.gd, db.ld, p.def, _cve(:p, X), cl -> error("the sink fails")
+        db.gd, db.ld, p.def, g, cl -> error("the sink fails")
     )
-    @test isempty(db.ld.trail) && lk_no_bindings(db.ld)   # undone on the way out
+    @test isempty(db.ld.trail) && lk_bound_count(db.ld) == b0     # undone on the way out
     @test isempty(db.ld.predicate_references)               # and the access popped
     @test_throws ErrorException LK.pl_retract!(
-        db.gd, db.ld, p.def, _cve(:p, X), cl -> error("the sink fails")
+        db.gd, db.ld, p.def, g, cl -> error("the sink fails")
     )
     @test isempty(db.ld.trail) && isempty(db.ld.predicate_references)
     @test length(ix_clause(p, _cve(:p, X))) == 2            # the first retract did happen
     ix_assertz!(p, _cve(:p, _cve(:h, _cvg(1))))
-    @test LK.pl_retractall!(db.gd, db.ld, p.def, _cve(:p, _cve(:h, X)))  # unifies, binds X…
-    @test isempty(db.ld.trail) && lk_no_bindings(db.ld)   # …and undoes it per clause
+    LK.putSlotValue!(db.ld, g + 1, _cve(:p, _cve(:h, X)))
+    b0 = lk_bound_count(db.ld)
+    @test LK.pl_retractall!(db.gd, db.ld, p.def, g)         # unifies, binds X…
+    @test isempty(db.ld.trail) && lk_bound_count(db.ld) == b0     # …and undoes it per clause
+    LK.PL_reset_term_refs(db.ld, g)
     @test length(ix_clause(p, _cve(:p, X))) == 2
 end
 
@@ -147,8 +148,9 @@ end
     ix_assertz!(p, _cve(:q, _cvv(1), _cvv(1)))                         # q(Y, Y)
     ix_assertz!(p, _cve(:q, _cvs(:a), _cve(:f, _cvs(:a))))             # q(a, f(a))
     A = _cvv(2)
-    goal = _cve(:q, A, _cve(:f, A))
     ld = db.ld
+    goal = LK.PL_new_term_ref(ld)                           # the goal in a term reference (f3b-2b)
+    LK.putSlotValue!(ld, goal + 1, _cve(:q, A, _cve(:f, A)))
     pending() =
         if ld.exception_term == 0
             nothing
@@ -177,6 +179,7 @@ end
     # else bound would be a leak (audit D-0036)
     @test isempty(ld.trail) && lk_no_bindings_unfrozen(ld) &&
         isempty(ld.predicate_references)
+    LK.PL_reset_term_refs(ld, goal)
     ld.prolog_flag_occurs_check = OCCURS_CHECK_FALSE
     @test length(ix_clause(p, _cve(:q, _cvv(3), _cvv(4)))) == 2         # nothing was retracted
 end

@@ -10,7 +10,7 @@
 #   * `cold_pairs` — a pair the cell compare decides as terms (the boundary, L1d step 1);
 # and a small program that compares (==, \==, compare/3 over lists on the stack) does the same.
 # Since L1f F3B, one program per group of the plan (the workspace's L1_plan/stageL1f_design.md §3), at the
-# end of the file: f3b-1's put of a caller's goal.
+# end of the file: f3b-1's put of a caller's goal; f3b-2's clause/2.
 # The first call builds the predicates' indexes and supervisors; the asserted call is the second (and
 # the first's counts are reported). The export memo's entry count over the run is reported too
 # (condition 3 of the memo's approval: how much cold traffic exists).
@@ -219,4 +219,58 @@ end
     _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
         @info "f3b-1: the second call's boundary traffic" _zt_counts(ld) .- c1
     @test length(ld.bindings) == b1                     # no keyed variable bound (the put copies)
+end
+
+# f3b-2 (the decompiler on the cells): clause/2 — the head and the body put by `putSlotValue!` in term
+# references and each clause decompiled into them (pl-comp.c decompile: the head unified top-down into
+# the cells, the body built on words, a moved unification put back — static `cl_r`: upstream moves only
+# there) — makes no export, import, variable
+# read or boundary pair. Until f3b-2b the clause was rebuilt as terms (keyed variables) and unified by
+# the term unifier. The answer is not read (a reader: f3b-5).
+const _ZT_CLAUSE = """
+:- dynamic cl_f/2.
+cl_f(a, g(1, [x, y])).
+cl_f(b, h("s", 2.5, -7)).
+cl_r(X) :- X = f(a), q(X, Y), r(Y, X).
+cl_r(g(Z)) :- q(Z, W), \\+ r(W), ( W == Z -> true ; s([Z|W]) ).
+"""
+
+"clause(`head`, `body`) on `def`, both put with one map, every answer; the number of answers."
+function _zt_clause_call(gd, ld, def, head::_ZT, body::_ZT)::Int
+    fid = LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, 2)
+    vm = LK.PutVarMap()
+    LK.putSlotValue!(ld, t + 1, head, vm)
+    LK.putSlotValue!(ld, t + 2, body, vm)
+    n = Ref(0)
+    LK.pl_clause!(gd, ld, def, t, t + 1, _ -> (n[] += 1; true))
+    LK.PL_discard_foreign_frame(ld, fid)
+    return n[]
+end
+
+@testset "f3b-2: clause/2 makes no cold export, import, variable read or boundary pair" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "cl.pl")
+    write(f, _ZT_CLAUSE)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    s(x) = lk_sym(_ZT, Symbol(x))
+    A, B, C = lk_var(_ZT, UInt64(1)), lk_var(_ZT, UInt64(2)), lk_var(_ZT, UInt64(3))
+    user = LK.MODULE_user(gd)
+    calls = (
+        (
+            LK.lookupProcedure(s(:cl_f), 2, user).definition,
+            mk_expr(_ZT, _ZT[s(:cl_f), A, B])
+        ),
+        (LK.lookupProcedure(s(:cl_r), 1, user).definition, mk_expr(_ZT, _ZT[s(:cl_r), A]))
+    )
+    @test calls[2][1].impl_clauses.first_clause.clause.flags & LK.CL_HEAD_TERMS != 0  # moved: X = f(a)
+    run() = [_zt_clause_call(gd, ld, def, h, C) for (def, h) in calls]
+    @test run() == [2, 2]                               # indexes, supervisors
+    c1 = _zt_counts(ld)
+    @test run() == [2, 2]
+    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
+    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
+        @info "f3b-2: the second call's boundary traffic" _zt_counts(ld) .- c1
 end

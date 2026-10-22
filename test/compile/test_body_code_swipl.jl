@@ -1524,15 +1524,30 @@ const _BC_DEC_CELLS = let X = _bv(1), Y = _bv(2), Z = _bv(3), T = _bv(4)
     ]
 end
 
+"""
+The terms `xs` written into fresh term references by the engine's write — a caller's variable is one
+cell in all of them, handed back by `resolve_term`; the first one's handle. The decompiler and
+clause/2 take term references (f3b-2b). The caller undoes the write (`Mark`/`Undo!`).
+"""
+function _bput(ld::LK.PL_local_data{_B}, xs::_B...)::Int
+    t = LK.PL_new_term_refs(ld, length(xs))
+    for (i, x) in enumerate(xs)
+        LK.setSlotValue!(ld, t + i, x)                        # term reference t + (i - 1)
+    end
+    return t
+end
+"The value of term reference `t`, read through it."
+_bget(ld::LK.PL_local_data{_B}, t::Int)::_B = LK.resolve_term(ld, LK.slotValue(ld, t + 1))
+
 "`cl` decompiled (`decompile!`): its head and body, with fresh variables."
 function _bdecompile(cl::LK.Clause{_B}, head::_B)::Tuple{_B, _B}
     ld = LK.PL_local_data{_B}(_BGD)
     name, ar = _bfunctor(head)
     fresh() = mk_var(_B, LK.fresh_var_keys!(1))
     h = ar == 0 ? name : mk_expr(_B, _B[name; [fresh() for _ in 1:ar]])
-    b = fresh()
-    LK.decompile!(ld, cl, h, b) || error("_bdecompile: decompile! failed")
-    return (LK.resolve_term(ld, h), LK.resolve_term(ld, b))
+    t = _bput(ld, h, fresh())
+    LK.decompile!(ld, cl, t, t + 1) || error("_bdecompile: decompile! failed")
+    return (_bget(ld, t), _bget(ld, t + 1))
 end
 
 # What `decompile!` rebuilds from each cell's code, variables renamed in order (`_bnorm`): pinned,
@@ -1702,10 +1717,18 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         @test _bc_text(_bdecompile(fact, _bf("df", _bv(1)))...) == "':-'(df(a),true)"
         ld = LK.PL_local_data{_B}(_BGD)
         d1 = dclauses[1]
-        @test LK.decompile!(ld, d1, _bs("d1"), _bf(";", _bs("a"), _bv(9001)))
-        @test !LK.decompile!(ld, d1, _bs("d1"), _bf(";", _bs("b"), _bv(9002)))
-        @test !LK.decompile!(ld, d1, _bs("d1"), _bs("true"))
-        @test !LK.decompile!(ld, fact, _bf("df", _bv(9003)), _bs("a"))
+        function dc(cl, h, b)
+            m = LK.Mark(ld)
+            t = _bput(ld, h, b)
+            r = LK.decompile!(ld, cl, t, t + 1)
+            LK.Undo!(ld, m)
+            LK.PL_reset_term_refs(ld, t)
+            return r
+        end
+        @test dc(d1, _bs("d1"), _bf(";", _bs("a"), _bv(9001)))
+        @test !dc(d1, _bs("d1"), _bf(";", _bs("b"), _bv(9002)))
+        @test !dc(d1, _bs("d1"), _bs("true"))
+        @test !dc(fact, _bf("df", _bv(9003)), _bs("a"))
     end
     @testset "clause/2 with a body (pl_clause!)" begin
         gd = LK.PL_global_data{_B}()
@@ -1722,17 +1745,21 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         ld = LK.PL_local_data{_B}(gd)
         function answers(head, body)
             out = String[]
+            m = LK.Mark(ld)
+            t = _bput(ld, head, body)
             LK.pl_clause!(
                 gd,
                 ld,
                 pr.definition,
-                head,
-                body,
+                t,
+                t + 1,
                 _ -> begin
-                    push!(out, _bc_text(LK.resolve_term(ld, head), LK.resolve_term(ld, body)))
+                    push!(out, _bc_text(_bget(ld, t), _bget(ld, t + 1)))
                     true
                 end
             )
+            LK.Undo!(ld, m)
+            LK.PL_reset_term_refs(ld, t)
             return out
         end
         @test answers(_bf("cz", _bv(1)), _bv(2)) == [
@@ -1744,6 +1771,49 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         @test answers(_bf("cz", _bv(1)), _bf(";", _bv(2), _bv(3))) ==
             ["':-'(cz(V1),';'(q(V1),r(V1,_)))"]
         @test isempty(answers(_bf("cz", _bs("c")), _bs("true")))
+        # the ORDER of two decompiled variables (f3b-2b, decompiler design obligation 1): clause(cy, B)
+        # of `cy :- q(Y, Z), r(Z, Y)` builds q's argument cells and binds each, younger to older
+        # (`unifyVar`, `v < var`), to Y's and Z's clause-variable cells; r's then to the same — so
+        # Y @< Z. swipl agrees (below): its clause variables are local slots, each bound to q's
+        # argument cell, and r's cells to those.
+        py = LK.lookupProcedure(_bs("cy"), 0, user)
+        cyb = _bconj(_bf("q", _bv(1), _bv(2)), _bf("r", _bv(2), _bv(1)))
+        LK.assertDefinition!(
+            gd, py.definition, LK.compileClause(gd, ldf, _bs("cy"), cyb, py, user),
+            LK.CL_END
+        )
+        cy = Tuple{Int, String, String}[]
+        m = LK.Mark(ld)
+        t = _bput(ld, _bs("cy"), _bv(9))                    # cy, B; then Q, Y, Z
+        LK.PL_new_term_refs(ld, 3)
+        LK.pl_clause!(
+            gd, ld, py.definition, t, t + 1,
+            _ -> begin
+                LK._PL_get_arg(ld, 1, t + 1, t + 2)         # B = (Q, _)
+                LK._PL_get_arg(ld, 1, t + 2, t + 3)         # Q = q(Y, Z)
+                LK._PL_get_arg(ld, 2, t + 2, t + 4)
+                push!(
+                    cy,
+                    (LK.PL_compare(ld, t + 3, t + 4), LK.varName(ld, t + 3),
+                        LK.varName(ld, t + 4))
+                )
+                true
+            end
+        )
+        LK.Undo!(ld, m)
+        LK.PL_reset_term_refs(ld, t)
+        @test length(cy) == 1 && sign(cy[1][1]) == -1      # compare(<, Y, Z), as swipl (below)
+        # their printed names, pinned: the clause-variable cells' positions (`varName`, f3b-2a), Y's
+        # first. swipl 10.1.18 prints `_436-_438` for the same `print(A-B)` (its own addresses, also
+        # Y's first) — a known difference in the numbers only (feedback: pin the exact answer)
+        @test cy[1][2:3] == ("_20", "_22")
+        if _BC_SWIPL_BIN !== nothing
+            theirs = _bc_swipl([
+                "(assertz((cy :- q(Y, Z), r(Z, Y))), clause(cy, (q(A, B), _)), " *
+                "compare(O, A, B), writeln(O))"
+            ])
+            @test theirs == [["<"]]
+        end
     end
     if _BC_SWIPL_BIN !== nothing
         @testset "the decompiled clauses are variants of swipl's clause/2" begin

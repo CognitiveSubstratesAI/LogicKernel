@@ -3270,70 +3270,190 @@ const PL_predicates_from_comp = (
 
 # ── decompiling the head (pl-comp.c) ────────────────────────────────────────────────────────────
 # PORT: pl-comp.c decompileHead
-# DIVERGES: the clause's variables are one block of fresh kernel variable keys, slot `i` the key
-# `base + i`, where upstream allocates `prolog_vars` term references (`di.variables`).
+# DIVERGES: every term reference it makes is freed on return (upstream frees `di.variables` and
+# what follows them only when it returns), so a caller's loop over clauses does not grow the local
+# stack.
 """
     decompileHead!(ld, clause, head) -> Bool
 
-Unify `head` with the head `clause`'s code describes, with fresh variables, under the bindings in
-`ld` (pl-comp.c): the bindings stay on the trail for the caller to undo.
+Unify the term `head` references with the head `clause`'s code describes, with fresh variables,
+under the bindings in `ld` (pl-comp.c): the bindings stay on the trail for the caller to undo.
 """
-function decompileHead!(ld::PL_local_data{T}, clause::Clause{T}, head::T)::Bool where {T}
-    nv = Int(clause.variables)
-    base = nv == 0 ? UInt64(0) : allocGlobalVars!(ld, nv)
-    return decompile_head!(ld, clause, head, base)
+function decompileHead!(
+    ld::PL_local_data{T}, clause::Clause{T}, head::term_t
+)::Bool where {T}
+    top = ld.lTop
+    try
+        nv = Int(clause.prolog_vars)
+        variables = nv == 0 ? 0 : PL_new_term_refs(ld, nv)
+        return decompile_head!(ld, clause, head, variables)
+    finally
+        PL_reset_term_refs(ld, top)                             # PL_reset_term_refs(di.variables)
+    end
 end
 
-"A compound the decompiler has opened: its children so far, head symbol first (none for `\$expr/n`)."
-struct DecompileFrame{T}
-    kids::Vector{T}
-    need::Int           # the children it has in all
-    pushed::Bool        # opened by H_FUNCTOR/H_LIST — closed by its own H_POP — not by an R one
+# PORT: pl-comp.c get_arg_ref
+# The `argument pointer' is a pair of term references: the current argument and the last one.
+"Point the pair `argp` at the first and the last argument of the compound `term` references (pl-comp.c)."
+function get_arg_ref!(ld::PL_local_data{T}, term::term_t, argp::term_t)::Nothing where {T}
+    k, w, _ = _deref_loc(ld, -(term + 1))                       # word w = valHandle(term)
+    @assert k == DU_WORD && _is_gcompound(w) "get_arg_ref: not a compound on the global stack"
+    _arg_ref_at!(ld, valPtr(w), argp)                           # Word p = argTermP(w, 0)
+    return nothing
 end
+
+# ORIGINAL: `get_arg_ref`'s body on the compound's position (Q2's fresh compound has no term reference).
+"Point the pair `argp` at the first and the last argument of the compound at global position `p`."
+function _arg_ref_at!(ld::PL_local_data{T}, p::Int, argp::term_t)::Nothing where {T}
+    ar = arityFunctor(ld.functors, ld.gstack[p])
+    if ar > 0
+        ld.slots[argp + 1] = makeRefG(p + 1)                    # points to first argument
+        ld.slots[argp + 2] = makeRefG(p + ar)                   # points to last argument
+    end
+    return nothing
+end
+
+# ORIGINAL: decompile_head's `PL_unify_compound(argp, f)` with Q2 (user, 2026-10-04): where the
+# functors differ and one of them is `$expr`, `$expr/n` matches ANY compound of n children, child by
+# child — as the VM's H_FUNCTOR, H_LIST and H_LIST_FF do on their term path, and the cell unifier's
+# `_push_compound_pair!`. A fresh compound of `f` is unified with the argument there, and the
+# decompiler reads ITS argument cells, each now unified with its counterpart. (Until f3b-2b the head
+# was built as a term and unified by the kernel's term unifier, Q2 included.)
+"""
+Unify the term `argp` references with a compound of functor `f` (`PL_unify_compound`, Q2 included):
+the global position of the compound whose argument cells the head code reads next, or 0.
+"""
+function _head_compound!(ld::PL_local_data{T}, argp::term_t, f::word)::Int where {T}
+    if PL_unify_compound(ld, argp, f)
+        k, w, _ = _deref_loc(ld, -(argp + 1))
+        @assert k == DU_WORD && _is_gcompound(w) "decompile_head: not a compound on the global stack"
+        return valPtr(w)
+    end
+    k, w, _ = _deref_loc(ld, -(argp + 1))
+    (k == DU_WORD && _is_gcompound(w)) || return 0             # an atom, a number: no compound
+    (
+        nameFunctor(ld.functors, f) == ld.atom_dexpr ||
+        nameFunctor(ld.functors, ld.gstack[valPtr(w)]) == ld.atom_dexpr
+    ) || return 0                                               # f/n against g/m
+    a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))
+    tmp = PL_new_term_ref(ld)
+    ld.slots[tmp + 1] = consPtr(a, TAG_COMPOUND | STG_GLOBAL)
+    ok = unify_ptrs_cells(ld, -(tmp + 1), -(argp + 1))          # child by child (Q2)
+    PL_reset_term_refs(ld, tmp)
+    return ok ? a : 0
+end
+
+# PORT: pl-comp.c next_arg_ref
+"Advance the pair `argp` to the next argument, unless it is at the last (pl-comp.c)."
+function next_arg_ref!(ld::PL_local_data{T}, argp::term_t)::Nothing where {T}
+    if ld.slots[argp + 1] != ld.slots[argp + 2]
+        ld.slots[argp + 1] = makeRefG(unRef(ld.slots[argp + 1]) + 1)
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c set_bvar_argp
+"A pair of term references at a fresh global cell, also put in `bv`: where a moved argument's term is written (pl-comp.c)."
+function set_bvar_argp!(ld::PL_local_data{T}, bv::term_t)::term_t where {T}
+    argp = PL_new_term_refs(ld, 2)
+    vp = allocGlobalCells!(ld, 1)                               # setVar(*vp)
+    w = makeRefG(vp)
+    ld.slots[bv + 1] = w                                        # *valTermRef(bv) = w
+    ld.slots[argp + 1] = w                                      # ap[1] = ap[0] = w
+    ld.slots[argp + 2] = w
+    return argp
+end
+
+# PORT: pl-comp.c unifyVar
+# DIVERGES: `var` is a location (a global position, or `-slot`). A term reference holds a global
+# cell's reference (`PL_new_term_refs`) and a frame slot is never an unbound variable (`_bind_const!`),
+# so two unbound sides are two GLOBAL cells, `v < var` their positions: the younger bound to the
+# older, as `unify_simple_cells`. The boundary (`DU_TERM` on either side: a running frame's side
+# value, `decompile_body_range`) is unified on terms there. Asserted (audit D-0100): the clause
+# variable's cell is the OLDER — every location bound is a cell this decompilation allocated.
+"""
+Bind the location `var` to the clause variable `i` (a frame offset) of `variables`, re-creating the
+sharing as the decompiler builds a term (pl-comp.c): two unbound cells, the younger to the older;
+an unbound `var`, to the variable's value.
+"""
+function unifyVar(
+    ld::PL_local_data{T}, var::Int, variables::term_t, i::code
+)::Bool where {T}
+    i -= VAROFFSET(0)
+    kv, wv, pv = _deref_loc(ld, -(variables + Int(i) + 1))     # v = valTermRef(vars+i); deRef(v)
+    k, w, p = _deref_loc(ld, var)                               # deRef(var)
+    if kv == DU_TERM || k == DU_TERM                            # (the boundary: on terms)
+        return unify_simple_cells(ld, k, w, p, kv, wv, pv) == BOOLEX_TRUE
+    end
+    if kv == DU_CELL && k == DU_CELL
+        @assert pv > 0 && p > 0 "unifyVar: an unbound variable outside the global stack"
+        @assert pv < p "unifyVar: the clause variable's cell younger than the one bound"   # (D-0100)
+        if pv < p                                               # v < var
+            _bind_const!(ld, p, makeRefG(pv))                   # Trail(var, makeRefG(v))
+        else
+            _bind_const!(ld, pv, makeRefG(p))                   # Trail(v, makeRefG(var))
+        end
+    elseif k == DU_CELL                                         # retract called with bounded var
+        _bind_const!(ld, p, wv)                                 # Trail(var, *v)
+    else
+        error("unifyVar: the location is bound")                # assert(0)
+    end
+    return true
+end
+
+# PORT: pl-comp.c unifyVarGC
+"Unify the location `var` with the clause variable `i` (a frame offset) of `variables` (pl-comp.c)."
+unifyVarGC(ld::PL_local_data{T}, var::Int, variables::term_t, i::code) where {T} =
+    unify_ptrs_cells(ld, var, -(variables + Int(i - VAROFFSET(0)) + 1))
 
 # PORT: pl-comp.c decompile_head
-# DIVERGES: builds each head argument BOTTOM-UP from the code and unifies it with `head`'s as soon as
-# it is complete (upstream's `NEXTARG`) — upstream unifies cell by cell while it decodes. A compound
-# opened by `H_FUNCTOR`/`H_LIST` closes at its `H_POP`, which also closes the `H_RFUNCTOR`/`H_RLIST`
-# chain of its last argument; a compound closed short of its arity gets fresh variables for the
-# voids the compiler dropped before the `H_POP` (upstream's argument cells are fresh already). The
-# open compounds are a stack allocated at the first one, so a head of atomic arguments allocates
-# nothing here. The functor is not unified: every caller (`pl_clause!`, `retract/1`, `retractall/1`)
-# passes a head of this predicate, and `definition` keeps the name's key only. No `bindings`
-# (clause/3) or goal clauses. `bvar_access` (since V9d) is a BitVector, `nothing` where upstream's
-# is NULL, and `bvar_args` the terms of the moved unifications, by argument. A literal is the
-# very term of the clause's table (since V1 L2), so its kind comes back exactly; a nested void is a fresh
-# variable of its own.
+# DIVERGES: no `bindings` (clause/3's variable names) and no goal clauses; `bvar_access` (since V9d)
+# is a BitVector, `nothing` where upstream's is NULL. The head's first `I_NOP`/`I_CHP` are stepped
+# over in the loop (upstream: one `I_CHP` before it), and the moved-argument test skips them and an
+# argument whose term is being written. A literal is the clause table's term, unified as an atomic
+# (`PL_unify_atomic`: its word made on binding); a compound's functor is the operand's word
+# (`functor_operand_word`), `$expr/n` included.
 """
-    decompile_head!(ld, clause, head, base) -> Bool
-    decompile_head!(ld, clause, head, base, bvar_access, bvar_args) -> Bool
+    decompile_head!(ld, clause, head, variables) -> Bool
+    decompile_head!(ld, clause, head, variables, bvar_access, bvar_args) -> Bool
 
-Rebuild the head arguments of `clause` from its code and literal table — slot `i`'s variable has
-key `base + i` — unifying `head`'s arguments with them in turn (pl-comp.c). With `bvar_access`
-(`mark_bvar_access`): an argument the body reads whose head code is not a void holds a
-unification MOVED into the head — `head`'s argument is unified with the slot's variable, the term
-goes to `bvar_args`, and the bit stays set; every other bit is cleared.
+Unify the term `head` references with the head of `clause`, top-down as its code reads — clause
+variable `i` is term reference `variables + i` (pl-comp.c). With `bvar_access` (`mark_bvar_access`):
+an argument the body reads whose head code is not a void holds a unification MOVED into the head —
+`head`'s argument is unified with the slot's variable, its term is written to `bvar_args + argn`,
+and the bit stays set; every other bit is cleared.
 """
 function decompile_head!(
-    ld::PL_local_data{T}, clause::Clause{T}, head::T, base::UInt64,
-    bvar_access::Union{Nothing, BitVector}, bvar_args::Union{Nothing, Vector{T}}
+    ld::PL_local_data{T}, clause::Clause{T}, head::term_t, variables::term_t,
+    bvar_access::Union{Nothing, BitVector}, bvar_args::term_t
 )::Bool where {T}
-    arity = clause.predicate.arity                              # di->arity
-    arity == 0 && return true                                   # PL_unify_atom(head, name)
-    argn = 0                                                    # the head argument being built
-    frames::Union{Nothing, Vector{DecompileFrame{T}}} = nothing
-    write_bvar = false                                          # this argument's term is moved
+    argp = 0
+    argn = 0
+    pushed = 0
+    write_bvar = false
+    def = clause.predicate
+    arity = def.arity                                           # di->arity
+    if arity > 0
+        f = lookupFunctorDef(ld.functors, _atom_word!(ld, def.name), arity)
+        PL_unify_compound(ld, head, f) || return false
+        argp = PL_new_term_refs(ld, 2)
+        argp == 0 && return false
+        get_arg_ref!(ld, head, argp)
+    else
+        return PL_unify_atom(ld, head, def.name)                # (no instruction: I_EXITFACT)
+    end
+
     PC = Code(clause, 1)
     while true
         c = decode(PC)
-        local v::T
-        if bvar_access !== nothing && !write_bvar &&
-            (frames === nothing || isempty(frames)) &&
-            argn < arity && bvar_access[argn + 1] && c != I_NOP && c != I_CHP
+        if pushed == 0 && bvar_access !== nothing && !write_bvar && argn < arity &&
+            bvar_access[argn + 1] && c != I_NOP && c != I_CHP
             if c != H_VOID && c != H_VOID_N && c != I_ENTER
-                # Found moved var for arg: it is H_VOID; move the output to di->bvar_args
-                pl_unify!(ld, child(head, argn + 2), mk_var(T, base + UInt64(argn))) ||
-                    return false
+                # Found moved var for arg: move the output to di->bvar_args
+                unifyVarGC(ld, -(argp + 1), variables, VAROFFSET(argn)) || return false
+                t2 = set_bvar_argp!(ld, bvar_args + argn)
+                @assert t2 == argp + 2
+                argp = t2
                 write_bvar = true
             else
                 bvar_access[argn + 1] = false
@@ -3343,102 +3463,105 @@ function decompile_head!(
             PC = stepPC(PC)
             continue
         elseif c == H_NIL
-            v = mk_nil(T)
+            PL_unify_nil(ld, argp) || return false
         elseif c == H_ATOM
-            v = PC.literals[atom_literal(PC.codes[PC.pc + 1])]  # the literal, exactly
+            PL_unify_atomic(ld, argp, PC.literals[atom_literal(PC.codes[PC.pc + 1])]) ||
+                return false
         elseif c == H_SMALLINT
-            v = mk_gnd(T, valInt(PC.codes[PC.pc + 1]))         # the tagged word's integer (L1d step 4)
+            PL_unify_atomic(ld, argp, mk_gnd(T, valInt(PC.codes[PC.pc + 1]))) ||
+                return false
         elseif c == H_MPZ || c == H_MPQ || c == H_FLOAT || c == H_STRING
-            v = PC.literals[PC.codes[PC.pc + 1]]                # the literal, exactly
+            PL_unify_atomic(ld, argp, PC.literals[PC.codes[PC.pc + 1]]) || return false
         elseif c == H_FIRSTVAR || c == H_VAR
-            v = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
+            unifyVarGC(ld, -(argp + 1), variables, PC.codes[PC.pc + 1]) || return false
         elseif c == H_VOID
-            v = _decompile_void(ld, frames, base, argn)
+            if pushed == 0                                      # FIRSTVAR in the head
+                unifyVarGC(ld, -(argp + 1), variables, VAROFFSET(argn)) || return false
+            end
         elseif c == H_VOID_N
             for _ in 1:Int(PC.codes[PC.pc + 1])
-                w = _decompile_void(ld, frames, base, argn)
-                if frames === nothing || isempty(frames)
-                    pl_unify!(ld, child(head, argn + 2), w) || return false
+                if pushed == 0                                  # FIRSTVAR in the head
+                    unifyVarGC(ld, -(argp + 1), variables, VAROFFSET(argn)) || return false
                     if bvar_access !== nothing                  # not moved
                         bvar_access[argn + 1] = false
                     end
-                    argn += 1                                   # NEXTARG
-                else
-                    push!(frames[end].kids, w)
                 end
+                argp, argn, write_bvar = _next_arg!(ld, argp, argn, pushed, write_bvar)
             end
             PC = stepPC(PC)
             continue
-        elseif c == H_FUNCTOR || c == H_RFUNCTOR || c == H_LIST || c == H_RLIST
-            pushed = c == H_FUNCTOR || c == H_LIST
-            if frames === nothing
-                frames = DecompileFrame{T}[]
-            end
-            if c == H_LIST || c == H_RLIST
-                push!(frames, DecompileFrame{T}(T[mk_sym(T, LIST_CONS_NAME)], 3, pushed))
-            else
-                op = PC.codes[PC.pc + 1]
-                i = functor_literal(op)
-                kids = i == 0 ? T[] : T[PC.literals[i]]         # `$expr/n`: no head symbol
-                push!(
-                    frames,
-                    DecompileFrame{T}(kids, length(kids) + functor_arity(op), pushed)
-                )
-            end
+        elseif c == H_FUNCTOR || c == H_LIST
+            f = c == H_LIST ? ld.functor_dot2 : functor_operand_word(PC.codes[PC.pc + 1])
+            t2 = PL_new_term_refs(ld, 2)
+            t2 != 0 || return false
+            a = _head_compound!(ld, argp, f)                    # PL_unify_compound(argp, f)
+            a == 0 && return false
+            _arg_ref_at!(ld, a, t2)                             # get_arg_ref(argp, t2)
+            @assert t2 == argp + 2
+            argp = t2
+            pushed += 1
             PC = stepPC(PC)
             continue
-        elseif c == H_POP
-            fs = frames
-            fs === nothing && error("decompile_head: H_POP outside a compound")
-            while true                                          # the R chain, then the pushed one
-                f = pop!(fs)
-                while length(f.kids) < f.need
-                    push!(f.kids, _cell_var(ld, allocGlobalCells!(ld, 1)))
-                end
-                v = mk_expr(T, f.kids)
-                f.pushed && break
-                push!(fs[end].kids, v)
-            end
+        elseif c == H_RFUNCTOR || c == H_RLIST
+            f = c == H_RLIST ? ld.functor_dot2 : functor_operand_word(PC.codes[PC.pc + 1])
+            a = _head_compound!(ld, argp, f)                    # PL_unify_compound(argp, f)
+            a == 0 && return false
+            _arg_ref_at!(ld, a, argp)                           # get_arg_ref(argp, argp)
+            PC = stepPC(PC)
+            continue
+        elseif c == H_POP || c == B_POP
+            PL_reset_term_refs(ld, argp)
+            argp -= 2
+            pushed -= 1
         elseif c == H_LIST_FF
-            x = mk_var(T, base + (PC.codes[PC.pc + 1] - VAROFFSET(0)))
-            y = mk_var(T, base + (PC.codes[PC.pc + 2] - VAROFFSET(0)))
-            v = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), x, y])
-        elseif c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH
-            @assert frames === nothing || isempty(frames)
-            while argn < arity                                  # trailing voids: their slots
+            p = _head_compound!(ld, argp, ld.functor_dot2)      # PL_unify_compound(argp, FUNCTOR_dot2)
+            p == 0 && return false                              # p = argTermP(*p, 0)
+            unifyVarGC(ld, p + 1, variables, PC.codes[PC.pc + 1]) || return false
+            unifyVarGC(ld, p + 2, variables, PC.codes[PC.pc + 2]) || return false
+        elseif c == I_EXITCATCH || c == I_EXITFACT || c == I_EXIT || c == I_ENTER   # fact; H_VOID, H_VOID, I_ENTER
+            @assert argn <= arity
+            @assert pushed == 0
+            while argn < arity
                 if bvar_access !== nothing
                     bvar_access[argn + 1] = false
                 end
-                pl_unify!(ld, child(head, argn + 2), mk_var(T, base + UInt64(argn))) ||
-                    return false
-                argn += 1
+                unifyVarGC(ld, -(argp + 1), variables, VAROFFSET(argn)) || return false
+                argp, argn, write_bvar = _next_arg!(ld, argp, argn, pushed, write_bvar)
             end
+            PL_reset_term_refs(ld, argp)
             return true
         else
             error(
                 "decompile_head: illegal instruction in clause head: $(codeTable(c).name)"
             )
         end
-        if frames === nothing || isempty(frames)
-            if write_bvar
-                bvar_args === nothing &&
-                    error("decompile_head: bvar_access without bvar_args")
-                bvar_args[argn + 1] = v
-                write_bvar = false
-            else
-                pl_unify!(ld, child(head, argn + 2), v) || return false
-            end
-            argn += 1                                           # NEXTARG
-        else
-            push!(frames[end].kids, v)
-        end
+        argp, argn, write_bvar = _next_arg!(ld, argp, argn, pushed, write_bvar)
         PC = stepPC(PC)
     end
 end
 
 decompile_head!(
-    ld::PL_local_data{T}, clause::Clause{T}, head::T, base::UInt64
-) where {T} = decompile_head!(ld, clause, head, base, nothing, nothing)
+    ld::PL_local_data{T}, clause::Clause{T}, head::term_t, variables::term_t
+) where {T} = decompile_head!(ld, clause, head, variables, nothing, 0)
+
+# PORT: pl-comp.c NEXTARG as _next_arg!
+# (and INCARG: decompile_head's two argument-advance macros)
+# DIVERGES: a function of the state it changes, returned.
+"`NEXTARG`: at the top level the next head argument (a moved one's pair dropped); then the next argument cell."
+function _next_arg!(
+    ld::PL_local_data{T}, argp::term_t, argn::Int, pushed::Int, write_bvar::Bool
+)::Tuple{term_t, Int, Bool} where {T}
+    if pushed == 0                                              # INCARG()
+        argn += 1
+        if write_bvar
+            PL_reset_term_refs(ld, argp)
+            argp -= 2
+            write_bvar = false
+        end
+    end
+    next_arg_ref!(ld, argp)
+    return argp, argn, write_bvar
+end
 
 # PORT: pl-comp.c add_bvar_access
 # DIVERGES: returns the new maximum, where upstream updates it through a pointer.
@@ -3492,80 +3615,103 @@ function mark_bvar_access(clause::Clause{T})::Union{Nothing, BitVector} where {T
     return bits
 end
 
-"A void the decompiler meets: in an argument, its slot's variable; in a compound, a fresh one."
-function _decompile_void(
-    ld::PL_local_data{T}, frames::Union{Nothing, Vector{DecompileFrame{T}}}, base::UInt64,
-    argn::Int
-)::T where {T}
-    (frames === nothing || isempty(frames)) && return mk_var(T, base + UInt64(argn))   # FIRSTVAR
-    return _cell_var(ld, allocGlobalCells!(ld, 1))
-end
-
 # ── decompiling a clause: head and body (pl-comp.c), V9d ────────────────────────────────────────
 # PORT: pl-comp.c decompileInfo
-# DIVERGES: `pc` is an index into the clause's code; `variables` is `base` — slot `i`'s variable has
-# key `base + i`, as `decompile_head!`'s — so a variable reference IS the variable (no `makeVarRef`
-# resolved later by `unifyVar`); `argp` is the decompilation stack, a Vector where upstream builds
-# on top of the local stack; `frames` are the compounds being built, upstream's argument stack
-# (see `decompile_head!`). No `nvars`, `arity`, `bindings` (clause/3's variable names) or
-# `bvar_access` (the moved unifications: see `decompile!`).
+# DIVERGES: `pc` is an index into the clause's code. Upstream's ARGP area on the local stack is two
+# homes here: at the top level the vector `argp` (its words), inside a compound under construction
+# the global position `argpos` (0: the vector) — upstream's `ARGP` pointing into the compound; the
+# argument stack `atop` holds the `argpos` a `B_POP` restores (upstream's `aTop`). No `nvars`,
+# `arity`, `bindings` (clause/3's variable names) or `bvar_access`/`bvar_args` (see `decompile!`).
 "The state of one clause decompilation (pl-comp.c `decompileInfo`)."
 mutable struct decompileInfo{T}
     const ld::PL_local_data{T}                  # (upstream's LD: the engine whose cells it makes, L1a)
     const clause::Clause{T}
     pc::Int                                     # pc: pc for decompilation
-    const base::UInt64                          # (variables: slot i's variable is key base + i)
-    const argp::Vector{T}                       # argp: the decompilation stack
-    const frames::Vector{DecompileFrame{T}}     # (the compounds being built)
-    # variables, when the clause runs in a frame (`decompile_body_range`): the frame's position on
-    # the local stack — slot i's term is the frame's own; `nothing`: fresh variables
-    const variables::Union{Nothing, Int}
+    const variables::term_t                     # variables: the clause's variables, as term refs
+    const argp::Vector{word}                    # argp: the decompilation stack (its top level)
+    argpos::Int                                 # (argp inside a compound: a global position; 0: none)
+    const atop::Vector{Int}                     # (the argument stack: argpos to restore)
 end
 
 decompileInfo{T}(
-    ld::PL_local_data{T}, clause::Clause{T}, pc::Int, base::UInt64, argp::Vector{T},
-    frames::Vector{DecompileFrame{T}}
-) where {T} = decompileInfo{T}(ld, clause, pc, base, argp, frames, nothing)
+    ld::PL_local_data{T}, clause::Clause{T}, pc::Int, variables::term_t
+) where {T} =
+    decompileInfo{T}(ld, clause, pc, variables, word[], 0, Int[])
 
-"The variable of the slot at frame offset `index` (upstream's `makeVarRef`, resolved at once)."
-function _dvar(di::decompileInfo{T}, index::code)::T where {T}
-    v = di.variables
-    v === nothing && return mk_var(T, di.base + (index - VAROFFSET(0)))
-    return slotValue(di.ld, varFrameP(v, Int(index)) + 1)  # the running frame's own cell
-end
+# PORT: pl-comp.c makeVarRef
+# A reference word of storage `STG_INLINE`: no live reference has it (`makeRefG`, `makeRefLok`).
+"The decompilation stack's word for clause variable `i` (a frame offset), resolved by `build_term!` (pl-comp.c)."
+makeVarRef(i::code)::word = (word(i) << LMASK_BITS) | TAG_REFERENCE
 
-"Push `v`: an argument of the compound being built, or the next value on the decompilation stack (`*ARGP++ = v`)."
-function _dpush!(di::decompileInfo{T}, v::T)::Nothing where {T}
-    if isempty(di.frames)
-        push!(di.argp, v)
+# PORT: pl-comp.c isVarRef
+"The frame offset a `makeVarRef` word holds, or -1 (pl-comp.c)."
+isVarRef(w::word)::Int =
+    (tag(w) == TAG_REFERENCE && storage(w) == STG_INLINE) ? valPtr(w) : -1
+
+"`*ARGP++ = w`: the next word of the decompilation stack, or of the compound under construction."
+function _dpush!(di::decompileInfo{T}, w::word)::Nothing where {T}
+    if di.argpos == 0
+        push!(di.argp, w)
     else
-        push!(di.frames[end].kids, v)
+        di.ld.gstack[di.argpos] = w
+        di.argpos += 1
     end
     return nothing
 end
 
+# PORT: pl-comp.c var_common as _dvar!
+"Clause variable `index` at ARGP: inside a compound unified at once (`unifyVar`), else its `makeVarRef`."
+function _dvar!(di::decompileInfo{T}, nested::Int, index::code)::Nothing where {T}
+    if nested > 0
+        unifyVar(di.ld, di.argpos, di.variables, index) ||
+            error("Decompiler: unifyVar failed")
+        di.argpos += 1                                          # ARGP++
+    else
+        push!(di.argp, makeVarRef(index))
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c common_bfunctor as _dput_functor!
+"Put a compound of functor word `f` on the global stack at ARGP; its position."
+function _dput_functor!(di::decompileInfo{T}, f::word)::Int where {T}
+    a = _alloc_compound!(di.ld, f, arityFunctor(di.ld.functors, f))
+    _dpush!(di, consPtr(a, TAG_COMPOUND | STG_GLOBAL))          # *ARGP++ = w
+    return a
+end
+
 # PORT: pl-comp.c build_term
-# DIVERGES: the functor is its name and arity; the arguments are terms already (see
-# `decompileInfo`), so nothing is unified here and nothing can overflow.
+# DIVERGES: the functor is its name and arity; nothing can overflow.
 """
-Build `name/arity` from the top `arity` values of the decompilation stack and push it back
-(pl-comp.c): the last value is the last argument, or with `dir` 1 the first.
+Build `name/arity` on the global stack from the top `arity` words of the decompilation stack and
+push it back (pl-comp.c): the last word is the last argument, or with `dir` 1 the first; a
+`makeVarRef` is unified with its cell (`unifyVar`), any other word copied in.
 """
 function build_term!(
     di::decompileInfo{T}, name::T, arity::Int, dir::Int=-1
 )::Nothing where {T}
+    ld = di.ld
+    nw = _atom_word!(ld, name)
     if arity == 0
-        push!(di.argp, name)                                    # *ARGP++ = nameFunctor(f)
+        push!(di.argp, nw)                                      # *ARGP++ = nameFunctor(f)
         return nothing
     end
-    n = length(di.argp)
-    kids = Vector{T}(undef, arity + 1)
-    kids[1] = name
-    for i in 1:arity
-        kids[i + 1] = dir == -1 ? di.argp[n - arity + i] : di.argp[n - i + 1]
+    a = _alloc_compound!(ld, lookupFunctorDef(ld.functors, nw, arity), arity)
+    term = consPtr(a, TAG_COMPOUND | STG_GLOBAL)
+    a = dir == 1 ? a + 1 : a + arity                            # now a points to last argument
+    n = length(di.argp)                                         # ARGP--
+    for j in 0:(arity - 1)
+        w = di.argp[n - j]
+        var = isVarRef(w)
+        if var >= 0
+            unifyVar(ld, a, di.variables, code(var)) || error("build_term: unifyVar failed")
+        else
+            ld.gstack[a] = w                                    # *a = *ARGP
+        end
+        a += dir
     end
     resize!(di.argp, n - arity)
-    push!(di.argp, mk_expr(T, kids))
+    push!(di.argp, term)                                        # *ARGP++ = term
     return nothing
 end
 
@@ -3587,6 +3733,8 @@ function decompileBodyNoShift!(
     di::decompileInfo{T}, end_::code, until::Int
 )::Nothing where {T}
     pushed = 0                                                  # Subclauses pushed on the stack
+    nested = 0                                                  # Nesting level
+    ld = di.ld
     codes = di.clause.codes
     lits = di.clause.literals
     while di.pc != until
@@ -3599,45 +3747,45 @@ function decompileBodyNoShift!(
         if op == I_NOP || op == I_CHP
             continue
         elseif op == B_ATOM || op == H_ATOM
-            _dpush!(di, lits[atom_literal(codes[di.pc])])
+            _dpush!(di, _word_of!(ld, lits[atom_literal(codes[di.pc])]))
             di.pc += 1
         elseif op == B_SMALLINT || op == H_SMALLINT
-            _dpush!(di, mk_gnd(T, valInt(codes[di.pc])))      # the tagged word's integer (L1d step 4)
+            _dpush!(di, _word_of!(ld, mk_gnd(T, valInt(codes[di.pc]))))  # the tagged word's integer (L1d step 4)
             di.pc += 1
         elseif op == B_FLOAT || op == B_MPZ || op == B_MPQ ||
             op == B_STRING || op == H_FLOAT || op == H_MPZ ||
             op == H_MPQ ||
             op == H_STRING
-            _dpush!(di, lits[codes[di.pc]])
+            _dpush!(di, _word_of!(ld, lits[codes[di.pc]]))
             di.pc += 1
         elseif op == B_NIL || op == H_NIL
-            _dpush!(di, mk_nil(T))
+            _dpush!(di, ld.atom_nil_w)
         elseif op == B_ARGVAR || op == B_ARGFIRSTVAR || op == B_FIRSTVAR ||
             op == B_UNIFY_VAR || op == B_UNIFY_FIRSTVAR || op == B_VAR ||
             op == H_FIRSTVAR || op == H_VAR
-            _dpush!(di, _dvar(di, codes[di.pc]))
+            _dvar!(di, nested, codes[di.pc])
             di.pc += 1
         elseif op == B_VAR0
-            _dpush!(di, _dvar(di, VAROFFSET(0)))
+            _dvar!(di, nested, VAROFFSET(0))
         elseif op == B_VAR1
-            _dpush!(di, _dvar(di, VAROFFSET(1)))
+            _dvar!(di, nested, VAROFFSET(1))
         elseif op == B_VAR2
-            _dpush!(di, _dvar(di, VAROFFSET(2)))
+            _dvar!(di, nested, VAROFFSET(2))
         elseif op == B_UNIFY_FF || op == B_UNIFY_FV || op == B_UNIFY_VV
-            _dpush!(di, _dvar(di, codes[di.pc]))
-            _dpush!(di, _dvar(di, codes[di.pc + 1]))
+            push!(di.argp, makeVarRef(codes[di.pc]))
+            push!(di.argp, makeVarRef(codes[di.pc + 1]))
             di.pc += 2
             build_term!(di, mk_sym(T, Symbol("=")), 2)          # b_unify_exit
             pushed += 1
         elseif op == B_UNIFY_VF
-            _dpush!(di, _dvar(di, codes[di.pc + 1]))            # ARGP[0]: the second operand
-            _dpush!(di, _dvar(di, codes[di.pc]))                # ARGP[1]: the first
+            push!(di.argp, makeVarRef(codes[di.pc + 1]))        # ARGP[0]: the second operand
+            push!(di.argp, makeVarRef(codes[di.pc]))            # ARGP[1]: the first
             di.pc += 2
             build_term!(di, mk_sym(T, Symbol("=")), 2)
             pushed += 1
         elseif op == B_UNIFY_FC || op == B_UNIFY_VC || op == B_EQ_VC || op == B_NEQ_VC
-            _dpush!(di, _dvar(di, codes[di.pc]))
-            _dpush!(di, lits[codes[di.pc + 1]])
+            push!(di.argp, makeVarRef(codes[di.pc]))
+            push!(di.argp, _word_of!(ld, lits[codes[di.pc + 1]]))
             di.pc += 2
             f = if op == B_EQ_VC
                 Symbol("==")
@@ -3649,80 +3797,76 @@ function decompileBodyNoShift!(
             build_term!(di, mk_sym(T, f), 2)
             pushed += 1
         elseif op == B_EQ_VV || op == B_NEQ_VV
-            _dpush!(di, _dvar(di, codes[di.pc]))
-            _dpush!(di, _dvar(di, codes[di.pc + 1]))
+            push!(di.argp, makeVarRef(codes[di.pc]))
+            push!(di.argp, makeVarRef(codes[di.pc + 1]))
             di.pc += 2
             build_term!(di, mk_sym(T, op == B_EQ_VV ? Symbol("==") : Symbol("\\==")), 2)
             pushed += 1
         elseif op == B_VOID || op == H_VOID
-            _dpush!(di, _cell_var(di.ld, allocGlobalCells!(di.ld, 1)))          # setVar(*ARGP++)
+            _dpush!(di, word(0))                                # setVar(*ARGP++)
         elseif op == H_VOID_N
             for _ in 1:Int(codes[di.pc])
-                _dpush!(di, _cell_var(di.ld, allocGlobalCells!(di.ld, 1)))
+                _dpush!(di, word(0))
             end
             di.pc += 1
-        elseif op == B_FUNCTOR || op == B_RFUNCTOR || op == H_FUNCTOR || op == H_RFUNCTOR
-            w = codes[di.pc]
-            di.pc += 1
-            i = functor_literal(w)
-            kids = i == 0 ? T[] : T[lits[i]]                    # `$expr/n`: no head symbol
-            push!(
-                di.frames,
-                DecompileFrame{T}(
-                    kids, length(kids) + functor_arity(w),
-                    op == B_FUNCTOR || op == H_FUNCTOR
-                )
-            )
-        elseif op == B_LIST || op == B_RLIST || op == H_LIST || op == H_RLIST
-            push!(
-                di.frames,
-                DecompileFrame{T}(
-                    T[mk_sym(T, LIST_CONS_NAME)], 3, op == B_LIST || op == H_LIST
-                )
-            )
+        elseif op == B_FUNCTOR || op == H_FUNCTOR || op == B_LIST || op == H_LIST
+            f = if op == B_LIST || op == H_LIST
+                ld.functor_dot2
+            else
+                di.pc += 1
+                functor_operand_word(codes[di.pc - 1])
+            end
+            a = _dput_functor!(di, f)
+            push!(di.atop, di.argpos)                           # pushArgumentStack(ARGP)
+            di.argpos = a + 1                                   # ARGP = argTermP(w, 0)
+            nested += 1
         elseif op == H_LIST_FF
-            x = _dvar(di, codes[di.pc])
-            y = _dvar(di, codes[di.pc + 1])
+            v1 = codes[di.pc]
+            v2 = codes[di.pc + 1]
             di.pc += 2
-            _dpush!(di, mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), x, y]))
-        elseif op == B_POP || op == H_POP
-            local v::T
-            while true                                          # the R chain, then the pushed one
-                f = pop!(di.frames)
-                while length(f.kids) < f.need
-                    push!(f.kids, _cell_var(di.ld, allocGlobalCells!(di.ld, 1)))
-                end
-                v = mk_expr(T, f.kids)
-                f.pushed && break
-                push!(di.frames[end].kids, v)
+            p = _dput_functor!(di, ld.functor_dot2)
+            (
+                unifyVar(ld, p + 1, di.variables, v1) &&
+                unifyVar(ld, p + 2, di.variables, v2)
+            ) ||
+                error("Decompiler: unifyVar failed")
+        elseif op == B_RFUNCTOR || op == H_RFUNCTOR || op == B_RLIST || op == H_RLIST
+            f = if op == B_RLIST || op == H_RLIST
+                ld.functor_dot2
+            else
+                di.pc += 1
+                functor_operand_word(codes[di.pc - 1])
             end
-            _dpush!(di, v)
+            di.argpos = _dput_functor!(di, f) + 1               # ARGP = argTermP(w, 0)
+        elseif op == B_POP || op == H_POP
+            di.argpos = pop!(di.atop)                           # ARGP = *--aTop
+            nested -= 1
         elseif op == B_UNIFY_EXIT
             build_term!(di, mk_sym(T, Symbol("=")), 2)
             pushed += 1
         elseif op == A_ADD_FC
-            push!(di.argp, _dvar(di, codes[di.pc]))             # rvar
-            push!(di.argp, _dvar(di, codes[di.pc + 1]))         # ivar
-            push!(di.argp, mk_gnd(T, reinterpret(Int64, codes[di.pc + 2])))   # the integer operand (L1d step 4)
+            push!(di.argp, makeVarRef(codes[di.pc]))            # rvar
+            push!(di.argp, makeVarRef(codes[di.pc + 1]))        # ivar
+            push!(di.argp, _word_of!(ld, mk_gnd(T, reinterpret(Int64, codes[di.pc + 2]))))   # the integer operand (L1d step 4)
             di.pc += 3
             build_term!(di, mk_sym(T, Symbol("+")), 2)          # create B+<n>
             build_term!(di, mk_sym(T, :is), 2)
             pushed += 1
         elseif op == I_FAIL
-            push!(di.argp, mk_sym(T, :fail))
+            push!(di.argp, _atom_word!(ld, mk_sym(T, :fail)))
             pushed += 1
         elseif op == I_TRUE
-            push!(di.argp, mk_sym(T, Symbol("true")))
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("true"))))
             pushed += 1
         elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_RATIONAL ||
             op == I_FLOAT || op == I_NUMBER || op == I_ATOMIC || op == I_ATOM ||
             op == I_STRING || op == I_COMPOUND || op == I_CALLABLE
-            push!(di.argp, _dvar(di, codes[di.pc]))             # common_type_test
+            push!(di.argp, makeVarRef(codes[di.pc]))            # common_type_test
             di.pc += 1
             build_term!(di, mk_sym(T, _type_test_name(op)), 1)
             pushed += 1
         elseif op == I_CUT
-            push!(di.argp, mk_sym(T, Symbol("!")))
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("!"))))
             pushed += 1
         elseif op == I_CALL1 || op == I_CALLN
             n = op == I_CALLN ? Int(codes[di.pc]) : 0           # BUILD_TERM(FUNCTOR_call1) / callN
@@ -3738,7 +3882,7 @@ function decompileBodyNoShift!(
             di.pc += 1
         elseif op == C_LCUTIFTHEN || op == C_LSCUT || op == C_LCUT      # a `!` in a condition
             di.pc += 1
-            push!(di.argp, mk_sym(T, Symbol("!")))
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("!"))))
             pushed += 1
         elseif op == L_NOLCO
             di.pc += Int(codes[di.pc])
@@ -3804,13 +3948,13 @@ function decompileBodyNoShift!(
             build_term!(di, mk_sym(T, op == C_IFTHEN ? Symbol("->") : Symbol("*->")), 2)
             pushed += 1
         elseif op == I_CATCH                                    # (since V9f)
-            push!(di.argp, mk_sym(T, Symbol("\$catch")))
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$catch"))))
             pushed += 1
         elseif op == I_DET                                      # (since V9f)
-            push!(di.argp, mk_sym(T, Symbol("\$")))
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$"))))
             pushed += 1
         elseif op == I_CALLCLEANUP                              # (since V9g)
-            push!(di.argp, mk_sym(T, Symbol("\$call_cleanup")))
+            push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$call_cleanup"))))
             pushed += 1
             if codes[di.pc] == I_EXITCLEANUP
                 di.pc += 1
@@ -3842,62 +3986,83 @@ function _type_test_name(op::code)::Symbol
 end
 
 # PORT: pl-comp.c decompileBody
-# DIVERGES: no foreign frame and no retry after a stack shift (see `decompileBodyNoShift!`).
-"Decompile body code from `di.pc` (see `decompileBodyNoShift!`) and unify `body` with it (pl-comp.c)."
+# DIVERGES: no foreign frame and no retry after a stack shift (see `decompileBodyNoShift!`); the
+# decompilation stack is a vector, so its one word is written into `vbody`'s fresh cell, where
+# upstream's ARGP is `vbody`'s own slot.
+"Decompile body code from `di.pc` (see `decompileBodyNoShift!`) and unify the term `body` references with it (pl-comp.c)."
 function decompileBody!(
-    ld::PL_local_data{T}, di::decompileInfo{T}, body::T, end_::code, until::Int
+    ld::PL_local_data{T}, di::decompileInfo{T}, body::term_t, end_::code, until::Int
 )::Bool where {T}
+    vbody = PL_new_term_ref(ld)
     decompileBodyNoShift!(di, end_, until)
-    @assert length(di.argp) == 1 && isempty(di.frames)
-    return pl_unify!(ld, body, pop!(di.argp))
+    @assert length(di.argp) == 1 && di.argpos == 0 && isempty(di.atop)
+    w = pop!(di.argp)
+    _, _, p = _deref_loc(ld, -(vbody + 1))                      # ARGP = valTermRef(vbody)
+    var = isVarRef(w)
+    if var >= 0
+        unifyVar(ld, p, di.variables, code(var)) || return false
+    else
+        ld.gstack[p] = w
+    end
+    return PL_unify(ld, body, vbody)
 end
 
 # PORT: pl-comp.c decompile
-# DIVERGES: the clause term is its two sides, `head` and `body` — upstream takes `Head :- Body` or a
-# bare head, and for a fact with a body unifies that with `true` first, as here; the functor of the
-# head is not unified (see `decompile_head!`). The body's code starts after `I_ENTER`, found by
-# stepping over the head's instructions, where upstream's head decompiler leaves `di->pc` there. No
-# `bindings`; no `I_CONTEXT` (modules). A clause with `CL_HEAD_TERMS` gets its moved unifications
-# back (`mark_bvar_access`, the head decompiler, `moved_unifications`): they are BUILT here, as
-# `Var = Term` goals before the body's, and unified with `body` in one step — upstream unifies
-# `body` conjunct by conjunct as it goes.
+# DIVERGES: the clause term is its two sides, term references `head` and `body` — upstream takes
+# `Head :- Body` or a bare head, and for a fact with a body unifies that with `true` first, as here;
+# every term reference it makes is freed on return (see `decompileHead!`). The body's code starts
+# after `I_ENTER`, found by stepping over the head's instructions, where upstream's head decompiler
+# leaves `di->pc` there. No `bindings`; no `I_CONTEXT` (modules); no SSU clauses. A clause with
+# `CL_HEAD_TERMS` gets its moved unifications back (`mark_bvar_access`, the head decompiler,
+# `moved_unifications!`).
 """
     decompile!(ld, clause, head, body) -> Bool
 
-Unify `head` and `body` with the clause `clause`'s code describes, with fresh variables, under the
-bindings in `ld` (pl-comp.c): a fact's body is `true`. The bindings stay on the trail for the
-caller to undo.
+Unify the terms `head` and `body` reference with the clause `clause`'s code describes, with fresh
+variables, under the bindings in `ld` (pl-comp.c): a fact's body is `true`. The bindings stay on
+the trail for the caller to undo.
 """
 function decompile!(
-    ld::PL_local_data{T}, clause::Clause{T}, head::T, body::T
+    ld::PL_local_data{T}, clause::Clause{T}, head::term_t, body::term_t
 )::Bool where {T}
-    nv = Int(clause.prolog_vars)
-    base = nv == 0 ? UInt64(0) : allocGlobalVars!(ld, nv)
-    bvar_access = (clause.flags & CL_HEAD_TERMS) != 0 ? mark_bvar_access(clause) : nothing
-    if bvar_access !== nothing                                  # (a rule: a fact moves nothing)
-        bvar_args = Vector{T}(undef, length(bvar_access))
-        decompile_head!(ld, clause, head, base, bvar_access, bvar_args) || return false
+    top = ld.lTop
+    try
+        nv = Int(clause.prolog_vars)
+        variables = nv == 0 ? 0 : PL_new_term_refs(ld, nv)
+        bvar_access =
+            (clause.flags & CL_HEAD_TERMS) != 0 ? mark_bvar_access(clause) : nothing
+        if bvar_access !== nothing                              # (a rule: a fact moves nothing)
+            bvar_args = PL_new_term_refs(ld, findlast(bvar_access)::Int)   # max+1
+            decompile_head!(ld, clause, head, variables, bvar_access, bvar_args) ||
+                return false
+            pc = _body_start(clause)
+            b = PL_copy_term_ref(ld, body)
+            if clause.codes[pc] == I_EXIT
+                return moved_unifications!(ld, b, variables, bvar_access, bvar_args, false)
+            end
+            moved_unifications!(ld, b, variables, bvar_access, bvar_args, true) ||
+                return false
+            di = decompileInfo{T}(ld, clause, pc, variables)
+            return decompileBody!(ld, di, b, I_EXIT, 0)
+        end
+        if (clause.flags & UNIT_CLAUSE) != 0                    # fact; deal with a :- A
+            PL_unify_atom(ld, body, mk_sym(T, Symbol("true"))) || return false
+            return decompile_head!(ld, clause, head, variables)
+        end
+        decompile_head!(ld, clause, head, variables) || return false
         pc = _body_start(clause)
-        return moved_unifications!(
-            ld, clause, pc, base, body, bvar_access, bvar_args, clause.codes[pc] != I_EXIT
-        )
+        if clause.codes[pc] == I_EXIT
+            return PL_unify_atom(ld, body, mk_sym(T, Symbol("true")))
+        end
+        di = decompileInfo{T}(ld, clause, pc, variables)
+        return decompileBody!(ld, di, body, I_EXIT, 0)
+    finally
+        PL_reset_term_refs(ld, top)
     end
-    if (clause.flags & UNIT_CLAUSE) != 0                        # fact; deal with a :- A
-        pl_unify!(ld, body, mk_sym(T, Symbol("true"))) || return false
-        return decompile_head!(ld, clause, head, base)
-    end
-    decompile_head!(ld, clause, head, base) || return false
-    pc = _body_start(clause)
-    if clause.codes[pc] == I_EXIT
-        return pl_unify!(ld, body, mk_sym(T, Symbol("true")))
-    end
-    di = decompileInfo{T}(ld, clause, pc, base, T[], DecompileFrame{T}[])
-    return decompileBody!(ld, di, body, I_EXIT, 0)
 end
 
 # PORT: pl-comp.c decompile_body_range
-# DIVERGES: the frame's variables are the local stack's slots and the frame's position (see
-# `decompileInfo`); `start` is an index into the clause's code.
+# DIVERGES: `start` is an index into the clause's code.
 """
 Decompile the body code of `clause` from `start` up to the instruction `end_` into term reference
 `goal`, with the variables of the running frame `fr` (pl-comp.c).
@@ -3905,9 +4070,9 @@ Decompile the body code of `clause` from `start` up to the instruction `end_` in
 function decompile_body_range(
     ld::PL_local_data{T}, goal::term_t, fr::Int, clause::Clause{T}, start::Int, end_::code
 )::Bool where {T}
-    variables = clause.prolog_vars != 0 ? ld.frames[fr].base : nothing
-    di = decompileInfo{T}(ld, clause, start, UInt64(0), T[], DecompileFrame{T}[], variables)
-    return decompileBody!(ld, di, slotValue(ld, goal + 1), end_, 0)
+    variables = ld.frames[fr].base + Int(VAROFFSET(0))          # consTermRef(argFrameP(fr, 0))
+    di = decompileInfo{T}(ld, clause, start, variables)
+    return decompileBody!(ld, di, goal, end_, 0)
 end
 
 # PORT: pl-comp.c start_of_cdet
@@ -4016,49 +4181,59 @@ function _body_start(clause::Clause{T})::Int where {T}
     return PC.pc + 1
 end
 
+# PORT: pl-comp.c moved_unification
+"Unify `eq` with `Var = Term` for the moved unification of argument `i` (pl-comp.c)."
+function moved_unification(
+    ld::PL_local_data{T}, i::Int, eq::term_t, a::term_t, variables::term_t,
+    bvar_args::term_t
+)::Bool where {T}
+    if PL_unify_functor(ld, eq, mk_sym(T, Symbol("=")), 2)
+        _PL_get_arg(ld, 1, eq, a)
+        PL_unify(ld, a, variables + i) || return false
+        _PL_get_arg(ld, 2, eq, a)
+        PL_unify(ld, a, bvar_args + i) || return false
+        return true
+    end
+    return false
+end
+
 # PORT: pl-comp.c moved_unifications
-# DIVERGES: builds the whole body — each moved unification as `Var = Term` (upstream's
-# `moved_unification`), in argument order, then the body's own goals — and unifies `body` with it
-# once, where upstream unifies `body` with `,/2` conjunct by conjunct and then decompiles the rest
-# into what is left. With nothing to write `body` is left as it is, as upstream (upstream defect,
-# see register Q2).
+# DIVERGES: the arity is the bits' length. With nothing to write `body` is left as it is, as
+# upstream (upstream defect, see register Q2).
 """
-Unify `body` with the moved unifications of the clause — `Var = Term` for each argument whose
-bit `decompile_head!` left set, in order — followed by the body's own goals when it `hasbody`
-(pl-comp.c).
+Unify the term `body` references with the moved unifications of the clause — `Var = Term` for each
+argument whose bit `decompile_head!` left set, in order, conjunct by conjunct — `body` moved to
+the conjunction's rest when the clause `hasbody` (pl-comp.c).
 """
 function moved_unifications!(
-    ld::PL_local_data{T}, clause::Clause{T}, pc::Int, base::UInt64, body::T,
-    bvar_access::BitVector, bvar_args::Vector{T}, hasbody::Bool
+    ld::PL_local_data{T}, body::term_t, variables::term_t, bvar_access::BitVector,
+    bvar_args::term_t, hasbody::Bool
 )::Bool where {T}
-    goals = T[]
+    tmp = PL_new_term_refs(ld, 2)
+    tmp == 0 && return false
+    eq = tmp
+    a = tmp + 1
+    last = 0
     for i in 0:(length(bvar_access) - 1)
-        if bvar_access[i + 1]                                   # moved_unification(i, eq, a, di)
-            push!(
-                goals,
-                mk_expr(
-                    T,
-                    T[
-                        mk_sym(T, Symbol("=")),
-                        mk_var(T, base + UInt64(i)),
-                        bvar_args[i + 1]
-                    ]
-                )
-            )
+        if bvar_access[i + 1]
+            last = i
         end
     end
-    if hasbody
-        di = decompileInfo{T}(ld, clause, pc, base, T[], DecompileFrame{T}[])
-        decompileBodyNoShift!(di, I_EXIT, 0)
-        @assert length(di.argp) == 1 && isempty(di.frames)
-        push!(goals, pop!(di.argp))
+    for i in 0:last
+        if bvar_access[i + 1]
+            if i == last && !hasbody
+                moved_unification(ld, i, body, a, variables, bvar_args) || return false
+                break
+            end
+            if PL_unify_functor(ld, body, mk_sym(T, Symbol(",")), 2)
+                _PL_get_arg(ld, 1, body, eq)
+                moved_unification(ld, i, eq, a, variables, bvar_args) || return false
+                _PL_get_arg(ld, 2, body, body)
+            end
+        end
     end
-    isempty(goals) && return true                               # (see register Q2)
-    full = goals[end]
-    for k in (length(goals) - 1):-1:1
-        full = mk_expr(T, T[mk_sym(T, Symbol(",")), goals[k], full])
-    end
-    return pl_unify!(ld, body, full)
+    PL_reset_term_refs(ld, tmp)
+    return true
 end
 
 # ── reading code (pl-incl.h, pl-comp.h, pl-comp.c) ──────────────────────────────────────────────
@@ -4255,6 +4430,20 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
 end
 
 # ── clause/2 (pl-comp.c) ────────────────────────────────────────────────────────────────────────
+# ORIGINAL: upstream's `argv` for a clause search from a head (pl-proc.c retract, pl-comp.c clause:
+# `argTermP(*p, 0)` of the dereferenced head) — the argument CELLS of the head's compound.
+"The arguments of the head term reference `head` holds, for `firstClause!`/`nextClause!` on `def`."
+function _head_argv(
+    ld::PL_local_data{T}, def::Definition{T}, head::term_t
+)::argv_cells{PL_local_data{T}} where {T}
+    k, w, _ = _deref_loc(ld, -(head + 1))
+    if k == DU_WORD && _is_gcompound(w)
+        return argv_cells(ld, valPtr(w))
+    end
+    def.arity == 0 ||
+        error("clause search: the head of $(def.arity) arguments is no compound")
+    return argv_cells(ld, 0)                                    # an atom: no argument is read
+end
 # PORT: pl-comp.c clause as pl_clause
 # DIVERGES: clause/2 with an unbound clause reference only (no clause/3-4 by reference, no module
 # context or protected predicates), answering for the body `true` — so only facts, as a rule's body is
@@ -4270,14 +4459,14 @@ end
 undo them after each.
 """
 function pl_clause!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, sink::S
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::term_t, sink::S
 )::Nothing where {T, S}
     dref = pushPredicateAccessObj!(ld, gd, def)
     popped = false
     try
         gen = dref.generation                           # setGenerationFrameVal()
         chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
+        cref = firstClause!(ld, _head_argv(ld, def, head), gen, def, chp)
         while cref !== nothing
             clause = cref.clause::Clause{T}
             m = Mark(ld)
@@ -4299,7 +4488,7 @@ function pl_clause!(
             finally
                 Undo!(ld, m)                            # backtracking undoes the answer
             end
-            cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)    # FRG_REDO
+            cref = nextClause!(ld, chp, _head_argv(ld, def, head), gen, def)    # FRG_REDO
         end
     finally
         popped || popPredicateAccess!(ld, def)
@@ -4318,15 +4507,15 @@ with each clause in turn (`decompile!`) and call `sink(clause)` while the bindin
 after each.
 """
 function pl_clause!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::T, body::T,
-    sink::S
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, head::term_t,
+    body::term_t, sink::S
 )::Nothing where {T, S}
     dref = pushPredicateAccessObj!(ld, gd, def)
     popped = false
     try
         gen = dref.generation                           # setGenerationFrameVal()
         chp = ClauseChoice{T}(nothing, word(0))
-        cref = firstClause!(ld, argv_term(ld, head), gen, def, chp)
+        cref = firstClause!(ld, _head_argv(ld, def, head), gen, def, chp)
         while cref !== nothing
             clause = cref.clause::Clause{T}
             m = Mark(ld)
@@ -4347,7 +4536,7 @@ function pl_clause!(
             finally
                 Undo!(ld, m)                            # backtracking undoes the answer
             end
-            cref = nextClause!(ld, chp, argv_term(ld, head), gen, def)    # FRG_REDO
+            cref = nextClause!(ld, chp, _head_argv(ld, def, head), gen, def)    # FRG_REDO
         end
     finally
         popped || popPredicateAccess!(ld, def)
