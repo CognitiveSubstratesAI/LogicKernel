@@ -202,21 +202,30 @@ end
 # f3b-3 the kernel's term walk overflowed the Julia stack — no Prolog answer (an existing divergence,
 # D-0110 item 5: measured on the base 42d6205, 2026-10-22).
 @testset "call/1 of a cyclic control goal: representation_error(cyclic_term), as swipl" begin
-    G = _rv(71)
+    G, E = _rv(71), _rv(72)
+    cyc = _rf("=", G, _rconj(_rs("true"), G))
     clauses = Tuple{_R, Union{Nothing, _R}}[
-        (_rs("g3"), _rconj(_rf("=", G, _rconj(_rs("true"), G)), _rf("call", G)))
+        (_rs("g3"), _rconj(cyc, _rf("call", G))),                         # uncaught: the formal
+        (_rf("g3w", E), _rconj(cyc, _rf("catch", _rf("call", G), E, _rs("true"))))  # the ball
     ]
-    goals = _R[_rs("g3")]
+    goals = _R[_rs("g3"), _rf("g3w", _rv(73))]
     db = _rdb(clauses)
-    ours = [_rmcc_formal(db, g) for g in goals]
-    @test ours == ["representation_error(cyclic_term)"]
+    @test [_rmcc_formal(db, goals[1])] == ["representation_error(cyclic_term)"]
+    ours = String[]
+    for g in goals
+        for (a, det) in _rcall(db, g)
+            push!(ours, a * (det ? " det" : " nondet"))
+        end
+        push!(ours, "end")
+    end
+    # the WHOLE ball, the context included (D-0112 item 1): swipl 10.1.18 at the pin answers
+    # g3w(error(representation_error(cyclic_term),context(system:call/1,_))) (probed 2026-10-22)
+    @test ours[3] ==
+        "g3w(error(representation_error(cyclic_term),context(:(system,/(call,1)),_))) det"
     if _R_SWIPL
-        theirs = [
-            l[(length("exception(") + 1):(end - length(") det"))] for
-            l in _rswipl(clauses, goals) if startswith(l, "exception(")
-        ]
+        theirs = _rswipl(clauses, goals)
         @test ours == theirs
-        ours == theirs || @info "errors differ" ours theirs
+        ours == theirs || @info "G3 differs" ours theirs
     elseif _R_SWIPL_REQUIRED
         @test false
     end
