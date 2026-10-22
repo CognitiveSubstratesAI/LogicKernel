@@ -423,6 +423,9 @@ mutable struct PL_local_data{T}
     exception_tmp::Int                                          # exception.tmp
     exception_pending::Int                                      # exception.pending
     exception_cells::Int                                        # (bin's PERMANENT cell; printed's +1, pending's +3: L1c)
+    tmp_h::Int                                                  # tmp.h: the first of TMP_PTR_SIZE consecutive references
+    tmp_top::Int                                                # tmp.top
+    tmp_cells::Int                                              # (tmp.h[0]'s PERMANENT cell; tmp.h[i]'s +i, as exception_cells)
     exception_processing::Bool                                  # exception.processing
     outofstack::Bool                                            # outofstack (the local stack)
     unusable::Bool                                              # (after a second overflow)
@@ -503,6 +506,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         queryFrame{T}[], 0, 0,
         Vector{argstack_entry{T}}(undef, 64), 0,
         0, 0, 0, 0, 0, 0,
+        0, 0, 0,                                # tmp: set by emptyStacks!
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,
         gd,                                     # GD: the engine's database (PL_open_query sets it again)

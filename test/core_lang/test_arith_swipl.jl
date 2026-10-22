@@ -193,6 +193,17 @@ end
         "@" * _aenc(_af(:(:), _as(:system), _af(:/, _as(:is), _ag(2)))) * "@", out
     )
     @test endswith(out, "@" * _aenc(_as("\"x\" must hold one character")))
+    # f3b-4 gap rows — swipl 10.1.18 at the pin (probed 2026-10-22): `X is [a,b]+0` raises
+    # type_error(character, [a,b]) with the same message (pl-arith.c `len_not_one:`), and
+    # `X is foo()+0` type_error(evaluable, foo()) (the `arity0:` branch)
+    ab = _af("[|]", _as(:a), _af("[|]", _as(:b), mk_nil(_A)))
+    out = at(_af(:+, ab, _ag(0)))
+    @test occursin(_aenc(_af(:type_error, _as(:character), ab)), out)
+    @test endswith(out, "@" * _aenc(_as("\"x\" must hold one character")))
+    foo0 = mk_expr(_A, _A[_as(:foo)])
+    @test occursin(
+        _aenc(_af(:type_error, _as(:evaluable), foo0)), at(_af(:+, foo0, _ag(0)))
+    )
     @test endswith(at(_af(:+, _as(:a), _ag(1))), "@_")
     @test isctx(_af(:*, _ag(1.0e308), _ag(10)))                                 # float_overflow
 end

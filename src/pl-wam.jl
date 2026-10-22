@@ -491,23 +491,19 @@ function determinism_error(
 
         if a === :warning
             gd = _query_gd(ld)
-            pi = unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM)
-            rc = printMessage(
-                ld,
-                :warning,
-                mk_expr(
-                    T,
-                    T[
-                        mk_sym(T, :error),
-                        mk_expr(
-                            T,
-                            T[
-                                mk_sym(T, :determinism_error), pi, mk_sym(T, :det),
-                                mk_sym(T, found), mk_sym(T, decl)
-                            ]
-                        ),
-                        _cell_var(ld, allocGlobalCells!(ld, 1))
-                    ]
+            pi = PL_new_term_ref(ld)
+            unify_definition(
+                gd, ld, MODULE_user(gd), pi, def, 0, GP_NAMEARITY | GP_HIDESYSTEM
+            )
+            rc = printMessage(                      # PL_FUNCTOR, FUNCTOR_error2,
+                ld, :warning,                       #   PL_FUNCTOR, FUNCTOR_determinism_error4,
+                _message_term(                      #     PL_TERM, pi, PL_ATOM ×3,
+                    ld, :error,                     #   PL_VARIABLE
+                    _message_term(
+                        ld, :determinism_error, pi, _err_atom(ld, mk_sym(T, :det)),
+                        _err_atom(ld, mk_sym(T, found)), _err_atom(ld, mk_sym(T, decl))
+                    ),
+                    new_term_ref(ld)
                 )
             )
         else

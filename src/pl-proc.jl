@@ -926,9 +926,16 @@ function overruleImportedProcedure(
     )
 end
 
-# `Name/Arity` of `def`, as `_PL_PREDICATE_INDICATOR` makes it (`unify_definition`, GP_HIDESYSTEM).
-_redefine_indicator(gd::PL_global_data{T}, def::Definition{T}) where {T} =
-    unify_definition(gd, MODULE_user(gd), def, GP_HIDESYSTEM | GP_NAMEARITY)
+# `Name/Arity` of `def` in a new term reference, as `PL_unify_term`'s `_PL_PREDICATE_INDICATOR` makes it
+# (`unify_definition`, GP_HIDESYSTEM; on the cells since f3b-4).
+function _redefine_indicator(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::term_t where {T}
+    t = new_term_ref(ld)
+    unify_definition(gd, ld, MODULE_user(gd), t, def, 0, GP_HIDESYSTEM | GP_NAMEARITY)
+    return t
+end
+
 
 # PORT: pl-proc.c redefineProcedure
 # DIVERGES: the database `gd` is an argument; the warnings go to `printMessage`. No reload context
@@ -947,15 +954,11 @@ function redefineProcedure(
 
     if (def.flags & P_FOREIGN) != 0
         # first call printMessage() so we can provide info about the old definition
-        printMessage(
-            ld, :warning,
-            mk_expr(
-                T,
-                T[
-                    mk_sym(T, :redefined_procedure),
-                    mk_sym(T, :foreign),
-                    _redefine_indicator(gd, def)
-                ]
+        printMessage(                               # PL_FUNCTOR_CHARS, "redefined_procedure", 2,
+            ld, :warning,                           #   PL_CHARS, "foreign", _PL_PREDICATE_INDICATOR
+            _message_term(
+                ld, :redefined_procedure, _err_atom(ld, mk_sym(T, :foreign)),
+                _redefine_indicator(gd, ld, def)
             )
         ) || return false
         throw(
@@ -973,16 +976,11 @@ function redefineProcedure(
             if ((ld.debugstatus_styleCheck & ~suppress) & DISCONTIGUOUS_STYLE) != 0 &&
                 (def.flags & P_DISCONTIGUOUS) == 0 && sf.current_procedure !== nothing
                 cur = (sf.current_procedure::Procedure{T}).definition
-                printMessage(
-                    ld, :warning,
-                    mk_expr(
-                        T,
-                        T[
-                            mk_sym(T, :discontiguous), _redefine_indicator(gd, def),
-                            unify_definition(
-                                gd, MODULE_user(gd), cur, GP_HIDESYSTEM | GP_NAMEARITY
-                            )
-                        ]
+                printMessage(                       # PL_FUNCTOR_CHARS, "discontiguous", 2,
+                    ld, :warning,                   #   _PL_PREDICATE_INDICATOR ×2
+                    _message_term(
+                        ld, :discontiguous, _redefine_indicator(gd, ld, def),
+                        _redefine_indicator(gd, ld, cur)
                     )
                 ) || return false
             end
@@ -990,15 +988,11 @@ function redefineProcedure(
             if (def.flags & P_THREAD_LOCAL) != 0
                 throw(NotPortedError{T}(def.name, "a thread-local predicate", "no threads"))
             end
-            printMessage(
-                ld, :warning,
-                mk_expr(
-                    T,
-                    T[
-                        mk_sym(T, :redefined_procedure),
-                        mk_sym(T, :static),
-                        _redefine_indicator(gd, def)
-                    ]
+            printMessage(                           # PL_FUNCTOR_CHARS, "redefined_procedure", 2,
+                ld, :warning,                       #   PL_CHARS, "static", _PL_PREDICATE_INDICATOR
+                _message_term(
+                    ld, :redefined_procedure, _err_atom(ld, mk_sym(T, :static)),
+                    _redefine_indicator(gd, ld, def)
                 )
             ) || return false
             # again, _after_ the printMessage()

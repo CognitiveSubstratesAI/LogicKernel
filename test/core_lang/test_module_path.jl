@@ -113,6 +113,42 @@ end
     @test lk_eq(LK.unify_definition(gd, sys, z, 0), q(:user, _mps(:z)))
 end
 
+@testset "unify_definition on a term reference (f3b-4): the same references, on the cells" begin
+    gd = LK.PL_global_data{_MP}()
+    ld = LK.PL_local_data{_MP}(gd)
+    sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)
+    ud = LK.lookupProcedure(_mps(:p), 2, user).definition
+    sd = LK.isCurrentProcedure(sym_key(_mps(:compare)), 3, sys).definition
+    z = LK.lookupProcedure(_mps(:z), 0, user).definition
+    pi(n, a) = _mpf("/", _mps(n), lk_gnd(_MP, a))
+    q(m, t) = _mpf(":", _mps(m), t)
+    fid = LK.PL_open_foreign_frame(ld)
+    "unify_definition into a fresh reference (and `thehead`), both read off the cells."
+    function ref(ctx, def, how)
+        t, th = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+        @test LK.unify_definition(gd, ld, ctx, t, def, th, how)
+        rd(r) = LK.export_cells(ld, LK.cell_export{_MP}(), -(r + 1))
+        return rd(t), rd(th)
+    end
+    for (ctx, def, how, want, plain) in (
+        (user, ud, LK.GP_NAMEARITY, pi(:p, 2), pi(:p, 2)),
+        (user, sd, LK.GP_NAMEARITY, q(:system, pi(:compare, 3)), pi(:compare, 3)),
+        (user, sd, LK.GP_NAMEARITY | LK.GP_HIDESYSTEM, pi(:compare, 3), pi(:compare, 3)),
+        (sys, sd, LK.GP_NAMEARITY, pi(:compare, 3), pi(:compare, 3)),
+        (user, ud, LK.GP_NAMEARITY | LK.GP_QUALIFY, q(:user, pi(:p, 2)), pi(:p, 2)),
+        (sys, z, 0, q(:user, _mps(:z)), _mps(:z))
+    )
+        r, th = ref(ctx, def, how)
+        @test lk_eq(r, want)
+        @test lk_eq(th, plain)                              # thehead: the plain reference
+    end
+    h, _ = ref(user, ud, 0)                                 # a head of fresh variables
+    @test lk_name(child(h, 1)) === :p && nchildren(h) == 3 &&
+        kind(child(h, 2)) === VAR && kind(child(h, 3)) === VAR &&
+        var_key(child(h, 2)) != var_key(child(h, 3))
+    LK.PL_discard_foreign_frame(ld, fid)
+end
+
 @testset "PL_strip_module_ex" begin
     gd = LK.PL_global_data{_MP}()
     sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)

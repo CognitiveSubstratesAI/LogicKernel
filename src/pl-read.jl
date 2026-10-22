@@ -3591,20 +3591,32 @@ function is_singleton(var::variable, type::Int, rd::read_data)::Bool
 end
 
 # PORT: pl-read.c singletonWarning
-# DIVERGES: the names are the variables' bytes; the message goes to `printMessage`.
+# DIVERGES: the names are the variables' bytes, each atom unified by `PL_unify_atom` of its text
+# (`PL_unify_chars(h, REP_UTF8|PL_ATOM, …)` is not ported); the message goes to `printMessage`.
 "Report `which(Term, Names)` — `singletons` or `multitons` — as a warning (pl-read.c)."
 function singletonWarning(
     term::term_t, which::String, vars::Vector{String}, rd::read_data{T}
 )::Bool where {T}
     ld = rd.ld
-    names = T[_atom_from_text(T, v) for v in vars]  # PL_unify_chars(h, REP_UTF8|PL_ATOM, …)
-    l = mk_nil(T)
-    for n in reverse(names)
-        l = mk_expr(T, T[mk_sym(T, Symbol("[|]")), n, l])
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        rc = true
+        l = PL_new_term_ref(ld)
+        a = PL_copy_term_ref(ld, l)
+        h = PL_new_term_ref(ld)
+        for v in vars
+            rc = PL_unify_list(ld, a, h, a)
+            rc || break
+            rc = PL_unify_atom(ld, h, _atom_from_text(T, v))
+            rc || break
+        end
+        rc =
+            rc && PL_unify_nil(ld, a) &&
+            printMessage(ld, :warning, _message_term(ld, Symbol(which), term, l))
+        PL_discard_foreign_frame(ld, fid)
+        return rc
     end
-    return printMessage(
-        ld, :warning, mk_expr(T, T[mk_sym(T, Symbol(which)), slotValue(ld, term + 1), l])
-    )
+    return false
 end
 
 # PORT: pl-read.c check_singletons
@@ -3663,7 +3675,7 @@ function reportReadError(rd::read_data{T})::Bool where {T}
     ld = rd.ld
     rd.on_error === :error && return PL_raise_exception(ld, rd.exception)
     if rd.on_error !== :quiet
-        printMessage(ld, :error, slotValue(ld, rd.exception + 1))
+        printMessage(ld, :error, rd.exception)     # printMessage(ATOM_error, PL_TERM, rd->exception)
     end
     PL_clear_exception(ld)
 
@@ -3740,12 +3752,12 @@ function read_clause(
                 (tpos, "term_position"), (rd.subtpos, "subterm_positions"),
                 (opt_comments, "comments"), (varprefix, "var_prefix")
             )
-                if v != 0
+                if v != 0                           # (the culprit leaves the engine: exported once)
+                    c = export_cells(ld, cell_export{T}(), -(v + 1))
                     PL_close_foreign_frame(ld, fid)
                     throw(
                         NotPortedError{T}(
-                            slotValue(ld, v + 1), "read_clause's $what option",
-                            "R2 (term positions)"
+                            c, "read_clause's $what option", "R2 (term positions)"
                         )
                     )
                 end
@@ -3936,9 +3948,11 @@ function read_term_from_stream(
         (tpos, "term_position"), (rd.subtpos, "subterm_positions"), (tcomments, "comments"),
         (varprefix, "var_prefix"), (qq, "quasi_quotations")
     )
-        v != 0 && throw(
+        v != 0 && throw(                            # (the culprit leaves the engine: exported once)
             NotPortedError{T}(
-                slotValue(ld, v + 1), "read_term's $what option", "R2 (term positions)"
+                export_cells(ld, cell_export{T}(), -(v + 1)),
+                "read_term's $what option",
+                "R2 (term positions)"
             )
         )
     end

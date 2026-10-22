@@ -2032,9 +2032,9 @@ end
 # PORT: pl-prims.c unify_with_occurs_check as unify_with_occurs_check_cells
 # DIVERGES: on locations; no `onStack(global, …)` test (every variable is a global cell); the trail
 # walk reads global positions (a KEYED variable's entry — until L1f — is checked on terms, counted);
-# the failure's error term is read before `Undo!` (upstream copies `*p2` to a fresh cell first): the
-# term-level `failed_unify_with_occurs_check` builds the ball from the exports (an error path: cold).
-# No attributed variables (the wakeup entries of the trail).
+# the failure's value is its dereferenced word, read before `Undo!` (upstream copies `*p2` to a fresh
+# cell: see `failed_unify_with_occurs_check_cells`), and the error is built on the cells (f3b-4). No
+# attributed variables (the wakeup entries of the trail).
 """
     unify_with_occurs_check_cells(ld, l1, l2, mode) -> boolex_t
 
@@ -2055,16 +2055,16 @@ function unify_with_occurs_check_cells(
     end
     if k1 == DU_CELL                                    # canBind(*t1)
         if var_occurs_in_cells(ld, p1, l2)
-            return failed_unify_with_occurs_check(
-                ld, _cell_var(ld, p1), _loc_term(ld, k2, w2, p2), mode
+            return failed_unify_with_occurs_check_cells(
+                ld, (k1, w1, p1), (k2, w2, p2), mode
             )
         end
         return do_unify_cells(ld, l1, l2)
     end
     if k2 == DU_CELL                                    # canBind(*t2)
         if var_occurs_in_cells(ld, p2, l1)
-            return failed_unify_with_occurs_check(
-                ld, _loc_term(ld, k1, w1, p1), _cell_var(ld, p2), mode
+            return failed_unify_with_occurs_check_cells(
+                ld, (k1, w1, p1), (k2, w2, p2), mode
             )
         end
         return do_unify_cells(ld, l1, l2)
@@ -2096,10 +2096,11 @@ function unify_with_occurs_check_cells(
             if occurs
                 if mode == OCCURS_CHECK_ERROR
                     if kp != 0                          # *t = *p2 — read before the Undo (see above)
-                        kq, wq, q = _deref_loc(ld, kp)
-                        val = _loc_term(ld, kq, wq, q)
+                        val = _deref_loc(ld, kp)
                         Undo!(ld, m)
-                        failed_unify_with_occurs_check(ld, _cell_var(ld, kp), val, mode)
+                        failed_unify_with_occurs_check_cells(
+                            ld, _deref_loc(ld, kp), val, mode
+                        )
                     else
                         key = _trail_key(ld, e)
                         val = deRef(ld, something(_binding(ld, key)))
@@ -2191,6 +2192,26 @@ function failed_unify_with_occurs_check(
     t1 = deRef(ld, t1)
     t2 = deRef(ld, t2)
     if kind(t2) === VAR                             # try to make Var = Term
+        t1, t2 = t2, t1
+    end
+    return PL_error(ld, ERR_OCCURS_CHECK, t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE
+end
+
+# PORT: pl-prims.c failed_unify_with_occurs_check as failed_unify_with_occurs_check_cells
+# DIVERGES: the two terms are DEREFERENCED locations `(k, w, p)` (`_deref_loc`), where upstream takes
+# `Word`s and dereferences them here; the error built on the cells (`pushWordAsTermRef`, f3b-4). The
+# trail walk's value (`unify_with_occurs_check_cells`) is its word read before the Undo, where upstream
+# copies `*p2` into a fresh global cell above the restored top: here `PL_error`'s term references take
+# fresh global cells, which would overwrite it. NOT PORTED: `blockGC`/`unblockGC` (no stack GC until G1).
+"Fail (`OCCURS_CHECK_TRUE`) or raise the occurs-check error, as `Var = Term`, on the cells (pl-prims.c)."
+function failed_unify_with_occurs_check_cells(
+    ld::PL_local_data{T}, t1::Tuple{UInt8, word, Int}, t2::Tuple{UInt8, word, Int},
+    mode::occurs_check_t
+)::boolex_t where {T}
+    if mode == OCCURS_CHECK_TRUE
+        return BOOLEX_FALSE
+    end
+    if t2[1] == DU_CELL                             # isVar(*t2): try to make Var = Term
         t1, t2 = t2, t1
     end
     return PL_error(ld, ERR_OCCURS_CHECK, t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE
@@ -2965,7 +2986,7 @@ end
 # ── unifiable/3 on the CELLS (L1e e4; the workspace's L1_plan/stageL1e_design.md §4) ──────────────
 # PORT: pl-prims.c unifiable_occurs_check as unifiable_occurs_check_cells
 # DIVERGES: on term references, the variable's cell and the term's location (`var_occurs_in_cells`, L1d
-# step 2); the error's ball is built on terms (`failed_unify_with_occurs_check`: a cold path).
+# step 2); the error built on the cells (`failed_unify_with_occurs_check_cells`, f3b-4).
 "Whether binding the variable `t1` references to the term `t2` references passes the occurs check (pl-prims.c)."
 function unifiable_occurs_check_cells(
     ld::PL_local_data{T}, t1::term_t, t2::term_t
@@ -2976,10 +2997,9 @@ function unifiable_occurs_check_cells(
     k == DU_CELL ||
         return unifiable_occurs_check(ld, _handle_term(ld, t1), _handle_term(ld, t2))
     var_occurs_in_cells(ld, p, -(t2 + 1)) || return true
-    return failed_unify_with_occurs_check(
-        ld, _handle_term(ld, t1), _handle_term(ld, t2), flag
-    ) ==
-           BOOLEX_TRUE
+    return failed_unify_with_occurs_check_cells(
+        ld, (k, word(0), p), _deref_loc(ld, -(t2 + 1)), flag
+    ) == BOOLEX_TRUE
 end
 
 # PORT: pl-prims.c unify_all_trail_ptrs as unify_all_trail_ptrs_cells

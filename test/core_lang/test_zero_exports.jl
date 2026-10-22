@@ -274,3 +274,53 @@ end
     _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
         @info "f3b-2: the second call's boundary traffic" _zt_counts(ld) .- c1
 end
+
+# f3b-4 (error and message terms on the cells): each program raises one family of error at the call
+# level — a type error, an instantiation error, arith's not-evaluable and one-character errors,
+# op/3's protected operator, an undefined procedure, the occurs check under occurs_check=error — and
+# the ball is NOT read (the query's catch, a reader:
+# f3b-5b). Until f3b-4 each raise exported its culprit (`slotValue`, `_loc_term`, `_compound_term`)
+# and built the ball as terms; since f3b-4 the ball is laid on the cells (`PL_cons_functor`,
+# `pushWordAsTermRef`), and PL_raise_exception tests it on the words. Base (42d6205): (1, 0, 2, 0) a
+# raise, at least. (The static procedure's permission error, `assertz(functor(a, b, c))`, goes through
+# assert_term!'s clause readers first: f3b-5a's program.)
+const _ZT_ERRORS = """
+e_type :- functor(_, foo, a).
+e_inst :- functor(_, _, _).
+e_arith :- X is foo + 1, X > 0.
+e_char :- X is [a, b] + 0, X > 0.
+e_op :- op(500, xfx, system:foo).
+e_undef :- no_such_predicate_xyz.
+e_occ :- X = f(X).
+"""
+
+"Run `name/0` once, its exception caught by the query and not read; the return code."
+function _zt_raise(gd, ld, name::Symbol)::Int
+    proc = LK.lookupProcedure(lk_sym(_ZT, name), 0, LK.MODULE_user(gd))
+    fid = LK.PL_open_foreign_frame(ld)
+    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION, proc, 0)
+    rc = LK.PL_next_solution(gd, ld, qid)
+    raised = LK.PL_exception(ld, qid) != 0
+    LK.PL_close_query(ld, qid)
+    LK.PL_discard_foreign_frame(ld, fid)
+    return raised ? -1 : rc
+end
+
+@testset "f3b-4: a raised error makes no cold export, import, variable read or boundary pair" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "errors.pl")
+    write(f, _ZT_ERRORS)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    ld.prolog_flag_occurs_check = LK.OCCURS_CHECK_ERROR
+    for name in (:e_type, :e_inst, :e_arith, :e_char, :e_op, :e_undef, :e_occ)
+        @test _zt_raise(gd, ld, name) == -1                 # raised (indexes, supervisors)
+        c1 = _zt_counts(ld)
+        @test _zt_raise(gd, ld, name) == -1
+        @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
+        _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
+            @info "f3b-4: the second raise's boundary traffic" name _zt_counts(ld) .- c1
+        @test ld.tmp_top == 0                               # every temporary handle returned
+    end
+end

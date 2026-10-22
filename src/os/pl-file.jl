@@ -415,14 +415,11 @@ function reportStreamError(ld::PL_local_data{T}, s::IOSTREAM)::Bool where {T}
 
             return false
         else
-            rc = printMessage(
-                ld, :warning,
-                mk_expr(
-                    T,
-                    T[
-                        mk_sym(T, :io_warning), slotValue(ld, stream + 1),
-                        mk_sym(T, Symbol(something(s.message, "")))
-                    ]
+            rc = printMessage(                      # PL_FUNCTOR_CHARS, "io_warning", 2,
+                ld, :warning,                       #   PL_TERM, stream, PL_CHARS, s->message
+                _message_term(
+                    ld, :io_warning, stream,
+                    _err_atom(ld, mk_sym(T, Symbol(something(s.message, ""))))
                 )
             )
             Sseterr(s, UInt32(0), nothing)

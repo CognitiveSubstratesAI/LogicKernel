@@ -743,6 +743,9 @@ function _manifest_index(T)
         (LK.getProcDefinedDefinition, Tuple{GD, D}, false),
         (LK.unify_functor, Tuple{Type{T}, D, Int}, false),
         (LK.unify_definition, Tuple{GD, MOD, D, Int}, false),
+        # f3b-4 — the definition's reference on term references
+        (LK.unify_functor, Tuple{LD, Int, D, Int}, false),
+        (LK.unify_definition, Tuple{GD, LD, MOD, Int, D, Int, Int}, false),
         # R1b — the operator tables (src/pl-op.jl) and the FLI getters op/3 uses (pl-fli.jl,
         # pl-error.jl)
         (LK.defOperator!, Tuple{GD, LD, MOD, T, UInt8, Int16, Bool}, false),
@@ -1333,6 +1336,41 @@ function _manifest_index(T)
         (LK._check_foreign_environment, Tuple{LD, String}, true),
         (LK.PL_raise_exception, Tuple{LD, Int}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, T, T}, false),
+        (
+            LK.PL_error,
+            Tuple{
+                LD, LK.PL_error_code, Tuple{UInt8, LK.word, Int}, Tuple{UInt8, LK.word, Int}
+            },
+            false
+        ),   # f3b-4
+        # f3b-4 — error and message terms on the cells (src/pl-error.jl, pl-fli.jl, pl-prims.jl)
+        (LK._err_functor, Tuple{LD, Symbol, Int}, false),
+        (LK._err_atom, Tuple{LD, T}, false),
+        (LK._err_int, Tuple{LD, Int}, false),
+        (LK._message_term, Tuple{LD, Symbol, Int, Int}, false),
+        (LK._message_term, Tuple{LD, Symbol, Int, Int, Int, Int}, false),
+        (LK.PL_put_variable, Tuple{LD, Int}, false),
+        (LK.PL_put_atom, Tuple{LD, Int, T}, false),
+        (LK.PL_put_nil, Tuple{LD, Int}, false),
+        (LK.PL_put_int64, Tuple{LD, Int, Int}, false),
+        (LK.PL_put_integer, Tuple{LD, Int, Int}, false),
+        (LK._PL_put_number, Tuple{LD, Int, LK.number}, false),
+        (LK.PL_cons_functor, Tuple{LD, Int, LK.word, Int}, false),
+        (LK.PL_cons_functor, Tuple{LD, Int, LK.word, Int, Int}, false),
+        (LK.PL_cons_functor, Tuple{LD, Int, LK.word, Int, Int, Int}, false),
+        (LK.PL_cons_functor, Tuple{LD, Int, LK.word, Int, Int, Int, Int}, false),
+        (LK.pushWordAsTermRef, Tuple{LD, Tuple{UInt8, LK.word, Int}}, false),
+        (LK.popTermRef, Tuple{LD}, false),
+        (
+            LK.failed_unify_with_occurs_check_cells,
+            Tuple{
+                LD,
+                Tuple{UInt8, LK.word, Int},
+                Tuple{UInt8, LK.word, Int},
+                LK.occurs_check_t
+            },
+            false
+        ),
         # V5a2 — the built-in call path (src/pl-ext.jl, pl-trace.jl, pl-error.jl, pl-fli.jl,
         # pl-supervisor.jl, pl-wam.jl, pl-prims.jl, pl-variant.jl), over DefaultTerm only, as V4a's
         (LK.PL_error, Tuple{LD, LK.PL_error_code}, false),
@@ -1535,6 +1573,7 @@ function _manifest_index(T)
         (LK.arithChar, Tuple{LD, T}, false),
         (LK.getCharExpression, Tuple{LD, T, LK.number}, false),
         (LK._len_not_one, Tuple{LD, T}, false),
+        (LK._len_not_one_cells, Tuple{LD, Tuple{UInt8, LK.word, Int}}, false),
         (LK.evalExpression, Tuple{LD, Int, LK.number}, false),
         # arithmetic on cells (L1d §3e): the term walk kept for the boundary; the error paths export
         (LK._evalExpression_term, Tuple{LD, T, Int, LK.number}, false),
@@ -1542,6 +1581,7 @@ function _manifest_index(T)
         (LK.getCharExpression_cells, Tuple{LD, Int, LK.number}, false),
         (LK.evalExpression_cells, Tuple{LD, Int, LK.number}, false),
         (LK._ar_type_error, Tuple{LD, Symbol, T}, false),
+        (LK._ar_type_error_cells, Tuple{LD, Symbol, Tuple{UInt8, LK.word, Int}}, false),
         (LK.valueExpression, Tuple{LD, Int, LK.number}, false),
         (LK.ar_compare, Tuple{LD, LK.number, LK.number, Int}, false),
         (LK.compareNumbers, Tuple{LD, Int, Int, Int}, false),
@@ -1597,7 +1637,8 @@ function _manifest_index(T)
         (LK.fileNameStream, Tuple{GD, LK.IOSTREAM}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, T}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, Nothing}, false),
-        (LK.printMessage, Tuple{LD, Symbol, T}, false),
+        (LK.printMessage, Tuple{LD, Symbol, Int}, false),
+        (LK.printMessage, Tuple{LD, Symbol, T}, false),   # boot's (TRANSITIONAL, f3b-4)
         (LK.PL_error, Tuple{LD, LK.PL_error_code, T, T, PR}, false),
         (LK.overruleImportedProcedure, Tuple{GD, LD, PR, MOD}, false),
         (LK.redefineProcedure, Tuple{GD, LD, PR, LK.SourceFile{T}, Int}, false),
@@ -1638,7 +1679,7 @@ function _manifest_index(T)
         (LK._pattr_error, Tuple{LD, T, T}, false),
         (LK._pi_head, Tuple{LD, T}, false),
         (LK._pi_error, Tuple{Type{T}, T}, false),
-        (LK._redefine_indicator, Tuple{GD, D}, false),
+        (LK._redefine_indicator, Tuple{GD, LD, D}, false),
         (LK.get_head_and_body_clause, Tuple{GD, LD, Int, Int, Int, Int}, false),
         (LK.is_neck, Tuple{LD, Int}, false),
         (LK._query_gd, Tuple{LD}, false),

@@ -23,8 +23,9 @@
 # `unify_definition` from `user`: a built-in's reads `system:Name/Arity`, as swipl's does (since V5c,
 # as decided since Q-A). The database is the running query's (`ld.GD`): a definition names its module
 # by its index into the database's table.
-# The formal and the context are BUILT (`mk_expr`) where upstream unifies them into fresh term
-# references (`PL_unify_term`), which cannot fail here. Raised with `PL_raise_exception`, never
+# The formal and the context are laid out on the cells into fresh term references — upstream's
+# `PL_unify_term(fresh, PL_FUNCTOR, F, …)` as puts and one `PL_cons_functor` (f3b-4: the same term,
+# and it cannot fail here; `PL_unify_term` is not ported). Raised with `PL_raise_exception`, never
 # thrown (upstream's `do_throw` is set for one code only, `ERR_CLOSED_STREAM`, not ported). Sets
 # `LD->exception.processing`, which lets the local stack use its spare (since V5d).
 
@@ -89,28 +90,55 @@ function _PL_error_close!(
     formal::Int, swi::Int, pred::String, arity::Int, msg::String
 )::Bool where {T}
     if !isempty(pred) || !isempty(msg) || caller !== nothing        # build SWI-Prolog context term
-        msgterm =
-            isempty(msg) ? _cell_var(ld, allocGlobalCells!(ld, 1)) : mk_sym(T, Symbol(msg))
-        predterm = if !isempty(pred)
-            mk_expr(T, T[mk_sym(T, :/), mk_sym(T, Symbol(pred)), mk_gnd(T, arity)])
+        predterm = new_term_ref(ld)
+        msgterm = new_term_ref(ld)                                  # if ( !msgterm ) …
+        if !isempty(pred)
+            PL_cons_functor(                                        # PL_unify_term(predterm, …divide2,
+                ld, predterm, _err_functor(ld, :/, 2),              #   PL_CHARS, pred, PL_INT, arity)
+                _err_atom(ld, mk_sym(T, Symbol(pred))), _err_int(ld, arity)
+            )
         elseif caller !== nothing
             gd = _query_gd(ld)
-            unify_definition(gd, MODULE_user(gd), caller, GP_NAMEARITY)
-        else
-            _cell_var(ld, allocGlobalCells!(ld, 1))                   # PL_new_term_ref(): unbound
+            unify_definition(gd, ld, MODULE_user(gd), predterm, caller, 0, GP_NAMEARITY)
         end
-        setSlotValue!(ld, swi + 1, mk_expr(T, T[mk_sym(T, :context), predterm, msgterm]))
+        isempty(msg) || PL_put_atom(ld, msgterm, mk_sym(T, Symbol(msg)))   # PL_put_chars(msgterm, …)
+        PL_cons_functor(ld, swi, _err_functor(ld, :context, 2), predterm, msgterm)
     end
-    setSlotValue!(
-        ld,
-        except + 1,
-        mk_expr(
-            T, T[mk_sym(T, :error), slotValue(ld, formal + 1), slotValue(ld, swi + 1)]
-        )
-    )
+    PL_cons_functor(ld, except, _err_functor(ld, :error, 2), formal, swi)
     rc = PL_raise_exception(ld, except)
     PL_close_foreign_frame(ld, fid)
     return rc
+end
+
+# ORIGINAL (f3b-4): upstream's predefined `FUNCTOR_<name><arity>` — the functor word of `name/arity`.
+"The functor word of `name/arity` (upstream's `FUNCTOR_…` constants)."
+@inline _err_functor(ld::PL_local_data{T}, name::Symbol, arity::Int) where {T} =
+    lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, name)), arity)
+
+# ORIGINAL (f3b-4): `PL_unify_term`'s `PL_ATOM, a` argument — a new term reference holding the atom.
+"A new term reference holding the atom `a` (a `PL_unify_term` argument)."
+function _err_atom(ld::PL_local_data{T}, a::T)::term_t where {T}
+    r = new_term_ref(ld)
+    PL_put_atom(ld, r, a)
+    return r
+end
+
+# ORIGINAL (f3b-4): `PL_unify_term`'s `PL_INT, i` argument — a new term reference holding the integer.
+"A new term reference holding the integer `i` (a `PL_unify_term` argument)."
+function _err_int(ld::PL_local_data{T}, i::Int)::term_t where {T}
+    r = new_term_ref(ld)
+    PL_put_int64(ld, r, i)
+    return r
+end
+
+# ORIGINAL (f3b-4): `PL_unify_term`'s `PL_FUNCTOR_CHARS, name, N, …` into a new term reference.
+"A new term reference holding the compound `name(a…)` of the terms the references `a…` hold."
+function _message_term(
+    ld::PL_local_data{T}, name::Symbol, a::Vararg{term_t, N}
+)::term_t where {T, N}
+    t = new_term_ref(ld)
+    PL_cons_functor(ld, t, _err_functor(ld, name, N), a...)
+    return t
 end
 
 # PORT: pl-error.c PL_error
@@ -130,6 +158,29 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code, p1::T, p2::T)::Bool w
 end
 
 """
+    PL_error(ld, ERR_OCCURS_CHECK, var::loc, term::loc) -> false
+
+As the form on terms, the two terms DEREFERENCED locations `(k, w, p)` (upstream's `Word`s), the
+error built on the cells through `pushWordAsTermRef` (pl-error.c; f3b-4).
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, p1::Tuple{UInt8, word, Int},
+    p2::Tuple{UInt8, word, Int}
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_OCCURS_CHECK
+    PL_cons_functor(                                    # PL_unify_term(formal, …occurs_check2,
+        ld, formal, _err_functor(ld, :occurs_check, 2),
+        pushWordAsTermRef(ld, p1), pushWordAsTermRef(ld, p2)
+    )
+    popTermRef(ld)
+    popTermRef(ld)
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
     PL_error(ld, ERR_INSTANTIATION | ERR_AR_UNDEF | ERR_AR_OVERFLOW | ERR_AR_UNDERFLOW |
              ERR_AR_RAT_OVERFLOW) -> false
 
@@ -142,7 +193,7 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code)::Bool where {T}
     h === nothing && return false
     caller, fid, except, formal, swi = h
     if id == ERR_INSTANTIATION
-        setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))      # err_instantiation:
+        PL_put_atom(ld, formal, mk_sym(T, :instantiation_error))    # err_instantiation:
     else                                                            # evaluation_error(formal, …)
         what = if id == ERR_AR_UNDEF
             :undefined
@@ -155,8 +206,9 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code)::Bool where {T}
         end
         @assert id == ERR_AR_UNDEF || id == ERR_AR_OVERFLOW || id == ERR_AR_UNDERFLOW ||
             id == ERR_AR_RAT_OVERFLOW
-        setSlotValue!(
-            ld, formal + 1, mk_expr(T, T[mk_sym(T, :evaluation_error), mk_sym(T, what)])
+        PL_cons_functor(                                # evaluation_error(formal, which)
+            ld, formal, _err_functor(ld, :evaluation_error, 1),
+            _err_atom(ld, mk_sym(T, what))
         )
     end
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
@@ -177,18 +229,11 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_AR_TYPE || id == ERR_AR_DOMAIN
-    actual = put_number(T, num)                                     # _PL_put_number(actual, num)
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T,
-            T[
-                mk_sym(T, id == ERR_AR_TYPE ? :type_error : :domain_error),
-                expected,
-                actual
-            ]
-        )
+    actual = new_term_ref(ld)
+    _PL_put_number(ld, actual, num)                                 # _PL_put_number(actual, num)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, id == ERR_AR_TYPE ? :type_error : :domain_error, 2),
+        _err_atom(ld, expected), actual
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
@@ -205,10 +250,9 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_DIV_BY_ZERO
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(T, T[mk_sym(T, :evaluation_error), mk_sym(T, :zero_divisor)])
+    PL_cons_functor(                                    # evaluation_error(formal, ATOM_zero_divisor)
+        ld, formal, _err_functor(ld, :evaluation_error, 1),
+        _err_atom(ld, mk_sym(T, :zero_divisor))
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
@@ -223,11 +267,13 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code, f::Tuple{T, Int})::Bo
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_NOT_EVALUABLE
-    actual = mk_expr(T, T[mk_sym(T, :/), f[1], mk_gnd(T, f[2])])   # put_name_arity(actual, f)
-    setSlotValue!(
-        ld, formal + 1, mk_expr(
-            T, T[mk_sym(T, :type_error), mk_sym(T, :evaluable), actual]
-        )
+    actual = new_term_ref(ld)                                       # put_name_arity(actual, f)
+    PL_cons_functor(
+        ld, actual, _err_functor(ld, :/, 2), _err_atom(ld, f[1]), _err_int(ld, f[2])
+    )
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :type_error, 2), _err_atom(ld, mk_sym(T, :evaluable)),
+        actual
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -243,21 +289,20 @@ while each `M` is an atom; at one that is not, the culprit becomes `M` and the e
 `atom` (pl-error.c). Gives up after 100 levels on a cyclic culprit.
 """
 function rewrite_callable(ld::PL_local_data{T}, expected::T, actual::term_t)::T where {T}
+    a = 0
     loops = 0
-    colon = sym_key(mk_sym(T, :(:)))
-    while true
-        t = deRef(ld, slotValue(ld, actual + 1))
-        # PL_is_functor(actual, FUNCTOR_colon2)
-        (
-            kind(t) === EXPR && nchildren(t) == 3 && kind(child(t, 1)) === SYM &&
-            sym_key(child(t, 1)) == colon
-        ) || break
-        a = deRef(ld, child(t, 2))                                  # _PL_get_arg(1, actual, a)
-        if !isTextAtom(a)                                           # !PL_is_atom(a)
-            setSlotValue!(ld, actual + 1, a)                                # PL_put_term(actual, a)
+    colon = mk_sym(T, :(:))
+    while PL_is_functor(ld, actual, colon, 2)                       # PL_is_functor(actual, FUNCTOR_colon2)
+        if a == 0
+            a = PL_new_term_ref(ld)
+        end
+        _PL_get_arg(ld, 1, actual, a)
+        if !PL_is_atom(ld, a)
+            PL_put_term(ld, actual, a)
             return mk_sym(T, :atom)                                 # *expected = ATOM_atom
         else
-            setSlotValue!(ld, actual + 1, child(t, 3))                      # _PL_get_arg(2, actual, a)
+            _PL_get_arg(ld, 2, actual, a)
+            PL_put_term(ld, actual, a)
         end
         loops += 1
         if loops > 100 && !is_acyclic_cells(ld, -(actual + 1))    # on the cells (L1d step 3)
@@ -297,41 +342,27 @@ function PL_error(
     var = PL_is_variable(ld, actual)
     if id == ERR_TYPE
         if var && !(kind(a) === SYM && sym_key(a) == sym_key(mk_sym(T, :variable)))
-            setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))  # goto err_instantiation
+            PL_put_atom(ld, formal, mk_sym(T, :instantiation_error))    # goto err_instantiation
         else
-            setSlotValue!(
-                ld,
-                formal + 1,
-                mk_expr(
-                    T, T[mk_sym(T, :type_error), a, slotValue(ld, actual + 1)]
-                )
+            PL_cons_functor(
+                ld, formal, _err_functor(ld, :type_error, 2), _err_atom(ld, a), actual
             )
         end
     elseif id == ERR_EXISTENCE                      # (since R1e's write/1 family: streams)
-        setSlotValue!(
-            ld,
-            formal + 1,
-            mk_expr(
-                T, T[mk_sym(T, :existence_error), a, slotValue(ld, actual + 1)]
-            )
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :existence_error, 2), _err_atom(ld, a), actual
         )
     elseif id == ERR_STREAM_OP                      # (since R1e's write/1 family)
-        setSlotValue!(
-            ld,
-            formal + 1,
-            mk_expr(T, T[mk_sym(T, :io_error), a, slotValue(ld, actual + 1)])
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :io_error, 2), _err_atom(ld, a), actual
         )
     else
         @assert id == ERR_DOMAIN
         if var
-            setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))  # goto err_instantiation
+            PL_put_atom(ld, formal, mk_sym(T, :instantiation_error))    # goto err_instantiation
         else
-            setSlotValue!(
-                ld,
-                formal + 1,
-                mk_expr(
-                    T, T[mk_sym(T, :domain_error), a, slotValue(ld, actual + 1)]
-                )
+            PL_cons_functor(
+                ld, formal, _err_functor(ld, :domain_error, 2), _err_atom(ld, a), actual
             )
         end
     end
@@ -352,19 +383,11 @@ function PL_error(
     caller, fid, except, formal, swi = h
     @assert id == ERR_CHARS_TYPE
     if PL_is_variable(ld, actual) && expected != "variable"
-        setSlotValue!(ld, formal + 1, mk_sym(T, :instantiation_error))      # goto err_instantiation
+        PL_put_atom(ld, formal, mk_sym(T, :instantiation_error))        # goto err_instantiation
     else
-        setSlotValue!(
-            ld,
-            formal + 1,
-            mk_expr(
-                T,
-                T[
-                    mk_sym(T, :type_error),
-                    mk_sym(T, Symbol(expected)),
-                    slotValue(ld, actual + 1)
-                ]
-            )
+        PL_cons_functor(                                # PL_FUNCTOR, FUNCTOR_type_error2,
+            ld, formal, _err_functor(ld, :type_error, 2),   # PL_CHARS, expected, PL_TERM, actual
+            _err_atom(ld, mk_sym(T, Symbol(expected))), actual
         )
     end
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
@@ -389,14 +412,10 @@ function PL_error(
         caller = clr
     end
     gd = _query_gd(ld)
-    setSlotValue!(ld, pred + 1, unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY))
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T,
-            T[mk_sym(T, :existence_error), mk_sym(T, :procedure), slotValue(ld, pred + 1)]
-        )
+    unify_definition(gd, ld, MODULE_user(gd), pred, def, 0, GP_NAMEARITY)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :existence_error, 2),
+        _err_atom(ld, mk_sym(T, :procedure)), pred
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -422,18 +441,12 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_REPRESENTATION || id == ERR_EVALUATION
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T,
-            T[
-                mk_sym(
-                    T, id == ERR_REPRESENTATION ? :representation_error : :evaluation_error
-                ),
-                what
-            ]
-        )
+    PL_cons_functor(
+        ld, formal,
+        _err_functor(
+            ld, id == ERR_REPRESENTATION ? :representation_error : :evaluation_error, 1
+        ),
+        _err_atom(ld, what)
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
@@ -454,24 +467,11 @@ function PL_error(
     def = proc.definition                                           # goto modify_static
     pred = new_term_ref(ld)
     gd = _query_gd(ld)
-    setSlotValue!(
-        ld,
-        pred + 1,
-        unify_definition(
-            gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM
-        )
-    )
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T,
-            T[
-                mk_sym(T, :permission_error), mk_sym(T, :modify),
-                mk_sym(T, :static_procedure),
-                slotValue(ld, pred + 1)
-            ]
-        )
+    unify_definition(gd, ld, MODULE_user(gd), pred, def, 0, GP_NAMEARITY | GP_HIDESYSTEM)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :permission_error, 3),
+        _err_atom(ld, mk_sym(T, :modify)),
+        _err_atom(ld, mk_sym(T, :static_procedure)), pred
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -491,19 +491,12 @@ function PL_error(
     @assert id == ERR_PERMISSION_PROC
     pi = new_term_ref(ld)
     gd = _query_gd(ld)
-    setSlotValue!(
-        ld,
-        pi + 1,
-        unify_definition(                       # PL_unify_predicate(pi, pred, …)
-            gd, MODULE_user(gd), proc.definition, GP_NAMEARITY | GP_HIDESYSTEM
-        )
+    unify_definition(                           # PL_unify_predicate(pi, pred, …)
+        gd, ld, MODULE_user(gd), pi, proc.definition, 0, GP_NAMEARITY | GP_HIDESYSTEM
     )
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T, T[mk_sym(T, :permission_error), op, type, slotValue(ld, pi + 1)]
-        )
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :permission_error, 3), _err_atom(ld, op),
+        _err_atom(ld, type), pi
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -521,12 +514,9 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_PERMISSION
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T, T[mk_sym(T, :permission_error), action, type, slotValue(ld, obj + 1)]
-        )
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :permission_error, 3), _err_atom(ld, action),
+        _err_atom(ld, type), obj
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
@@ -546,13 +536,11 @@ function PL_error(
     caller, fid, except, formal, swi = h
     @assert id == ERR_DETERMINISM
     gd = _query_gd(ld)
-    pi = unify_definition(gd, MODULE_user(gd), def, GP_NAMEARITY | GP_HIDESYSTEM)
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T, T[mk_sym(T, :determinism_error), pi, expected, found, decl]
-        )
+    pi = new_term_ref(ld)
+    unify_definition(gd, ld, MODULE_user(gd), pi, def, 0, GP_NAMEARITY | GP_HIDESYSTEM)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :determinism_error, 4), pi, _err_atom(ld, expected),
+        _err_atom(ld, found), _err_atom(ld, decl)
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -570,19 +558,9 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_DET_GOAL
-    setSlotValue!(
-        ld,
-        formal + 1,
-        mk_expr(
-            T,
-            T[
-                mk_sym(T, :determinism_error),
-                slotValue(ld, goal + 1),
-                expected,
-                found,
-                mk_sym(T, :goal)
-            ]
-        )
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :determinism_error, 4), goal, _err_atom(ld, expected),
+        _err_atom(ld, found), _err_atom(ld, mk_sym(T, :goal))
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
@@ -749,11 +727,23 @@ PL_domain_error(ld::PL_local_data{T}, expected::String, actual::term_t) where {T
 # ── printing messages (pl-error.c), since R1f ───────────────────────────────────────────────────
 
 # PORT: pl-error.c printMessage
-# DIVERGES: the message is a built term, where upstream builds it from `PL_unify_term` arguments; it
-# is not printed — print_message/2 is boot/messages.pl's (R2) — but appended, resolved through the
-# bindings, to the local data's `messages` as `(severity, message)`, which the loader returns. So
-# it never fails and never raises: no recursion guard, no wakeup state to save.
-"Report the message `msg` of severity `severity` (`:warning`, `:error`, …) (pl-error.c)."
+# DIVERGES: the message is a term reference holding it, laid out on the cells by the caller, where
+# upstream builds it from `PL_unify_term` arguments into `av+1` (f3b-4); it is not printed —
+# print_message/2 is boot/messages.pl's (R2) — but appended to the local data's `messages` as
+# `(severity, message)`, which the loader returns: EXPORTED off the cells once (`export_cells`), the one
+# place a message leaves the engine. So it never fails and never raises: no recursion guard, no
+# wakeup state to save.
+"Report the message term reference `msg` holds, of severity `severity` (`:warning`, `:error`, …) (pl-error.c)."
+function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::term_t)::Bool where {T}
+    push!(ld.messages, (severity, export_cells(ld, cell_export{T}(), -(msg + 1))))
+    return true
+end
+
+# TRANSITIONAL (f3b-4): boot/init.jl's callers hold the message as a TERM — its directive runner and
+# loader work on terms (outside the F3B sweep, which counts src/) — so it is appended resolved through
+# the bindings, as before f3b-4. Removal condition: boot's directive runner on term references
+# (f3b-5b/f3's census); docs/architecture.md TRANSITIONAL list.
+"Report the message TERM `msg` of severity `severity` (boot's term-level callers; TRANSITIONAL)."
 function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::T)::Bool where {T}
     push!(ld.messages, (severity, resolve_term(ld, msg)))
     return true

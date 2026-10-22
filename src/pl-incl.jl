@@ -91,6 +91,9 @@ const GP_QUALIFY = Int(0x1000)
 # PORT: pl-incl.h GP_TYPE_QUIET
 "`get_head_functor` flag: fail without raising on a culprit of the wrong type (pl-incl.h)."
 const GP_TYPE_QUIET = Int(0x400)
+# PORT: pl-incl.h TMP_PTR_SIZE
+"The number of temporary handles `pushWordAsTermRef` hands out (pl-incl.h)."
+const TMP_PTR_SIZE = 4
 # PORT: pl-incl.h CL_ERASED
 "Clause flag: the clause was erased (pl-incl.h)."
 const CL_ERASED = UInt32(0x0001)

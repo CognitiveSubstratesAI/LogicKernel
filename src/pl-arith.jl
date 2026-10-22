@@ -2370,10 +2370,23 @@ function _len_not_one(ld::PL_local_data{T}, p::T)::Bool where {T}
     return false
 end
 
+# getCharExpression's `len_not_one:` on the cells (f3b-4): `PL_error(NULL, 0, "\"x\" must hold one
+# character", ERR_TYPE, ATOM_character, pushWordAsTermRef(p)); popTermRef()`.
+function _len_not_one_cells(
+    ld::PL_local_data{T}, loc::Tuple{UInt8, word, Int}
+)::Bool where {T}
+    PL_error(
+        ld, "", 0, "\"x\" must hold one character", ERR_TYPE, mk_sym(T, :character),
+        pushWordAsTermRef(ld, loc)
+    )
+    popTermRef(ld)
+    return false
+end
+
 # PORT: pl-arith.c arithChar as arithChar_cells
 # DIVERGES: on a LOCATION (`_deref_loc`, the workspace's L1_plan/stageL1d_design.md §3e): a tagged
 # integer by `valInt`, an atom word by its symbol's `charCode` — no term read; the culprit of the
-# type error is exported only on that error path (`_loc_term`, counted). The boundary (a slot's side
+# type error is its word (`pushWordAsTermRef`, f3b-4). The boundary (a slot's side
 # value, a keyed variable) is decided by the term-level `arithChar`, counted in `cold_pairs`.
 "The character code location `l` stands for in `[X]` (pl-arith.c `arithChar`); -1 after raising."
 function arithChar_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
@@ -2388,20 +2401,21 @@ function arithChar_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
         ld.cold_pairs += 1
         return arithChar(ld, _loc_term(ld, k, w, p))
     end
-    _ar_type_error(ld, :character, _loc_term(ld, k, w, p))  # ERR_TYPE, ATOM_character
+    _ar_type_error_cells(ld, :character, (k, w, p))         # ERR_TYPE, ATOM_character
     return -1                                               # EOF
 end
 
 # PORT: pl-arith.c getCharExpression as getCharExpression_cells
 # DIVERGES: the `TAG_COMPOUND` branch on the CELLS of the `'[|]'/2` compound at global position `c`
-# (its arguments at `c + 1`, `c + 2`); the list is exported only for `len_not_one`'s error. A string
+# (its arguments at `c + 1`, `c + 2`); `len_not_one`'s culprit is the list's word (f3b-4). A string
 # is a value-table entry: the term-level `getCharExpression` reads it (no export).
 "`[X]` at global position `c` as its character code in `r` (pl-arith.c); false after raising."
 function getCharExpression_cells(ld::PL_local_data{T}, c::Int, r::number)::Bool where {T}
     chr = arithChar_cells(ld, c + 1)                        # argTermP(w, 0)
     chr == -1 && return false
     k, w, _ = _deref_loc(ld, c + 2)                         # argTermP(w, 1)
-    (k == DU_WORD && w == ld.atom_nil_w) || return _len_not_one(ld, _compound_term(ld, c))  # isNil(*a)
+    (k == DU_WORD && w == ld.atom_nil_w) ||                 # isNil(*a)
+        return _len_not_one_cells(ld, (DU_WORD, consPtr(c, TAG_COMPOUND | STG_GLOBAL), 0))
     r.i = Int64(chr)
     r.type = V_INTEGER
     return true
@@ -2410,7 +2424,7 @@ end
 # ── evaluation (pl-arith.c) ──────────────────────────────────────────────────────────────────────
 # PORT: pl-arith.c evalExpression
 # TRANSITIONAL (L1d, the workspace's L1_plan/stageL1d_design.md §3e): the TERM walk, kept for the
-# boundary of `evalExpression_cells` (a slot's side value, a keyed variable, a `$expr/n` compound)
+# boundary of `evalExpression_cells` (a slot's side value, a keyed variable)
 # and a caller holding a term; it goes when the stamp does (L1f).
 "Evaluate the expression term reference `expr` refers to, as a TERM, into `result` (pl-arith.c); false after raising."
 evalExpression(ld::PL_local_data{T}, expr::term_t, result::number) where {T} =
@@ -2559,6 +2573,16 @@ function _ar_type_error(ld::PL_local_data{T}, expected::Symbol, p::T)::Bool wher
     return PL_error(ld, ERR_TYPE, mk_sym(T, expected), a)
 end
 
+# The same on the cells (f3b-4): the culprit is the dereferenced location `(k, w, p)`;
+# `pushWordAsTermRef(p)` … `popTermRef()` as upstream.
+function _ar_type_error_cells(
+    ld::PL_local_data{T}, expected::Symbol, loc::Tuple{UInt8, word, Int}
+)::Bool where {T}
+    rc = PL_error(ld, ERR_TYPE, mk_sym(T, expected), pushWordAsTermRef(ld, loc))
+    popTermRef(ld)
+    return rc
+end
+
 # PORT: pl-arith.c evalExpression as evalExpression_cells
 # DIVERGES (L1d; the workspace's L1_plan/stageL1d_design.md §3e): upstream's WORD walk on LOCATIONS
 # (`_deref_loc`'s: a global position, or `-i` for slot `i`) — `term_stack` holds them with the
@@ -2570,8 +2594,10 @@ end
 # an error's culprit. Not ported: `roundtoward/2` and signals; the ported functions only
 # (`isCurrentArithFunction`, by the name's key). THE BOUNDARY — a slot's side value or a keyed
 # variable (`DU_TERM`) — is evaluated by the term walk (`_evalExpression_term`), counted in
-# `cold_pairs`; a kernel-only `$expr/n` compound (Q-AR5) too, on its (counted) export: the term walk
-# evaluates its arguments and then raises `'$expr'/n`, as before. TRANSITIONAL until L1f.
+# `cold_pairs`, TRANSITIONAL until L1f. A kernel-only `$expr/n` compound (Q-AR5) is evaluated as the
+# term walk evaluates it — its arguments after the head (argument 1), the last first, each on the
+# cells, then `'$expr'/(n-1)` is not evaluable (f3b-4: no export). An error's culprit is its word
+# (`pushWordAsTermRef`, f3b-4).
 "Evaluate the expression `expr` refers to into `result` on the CELLS (pl-arith.c `evalExpression`); false after raising."
 function evalExpression_cells(
     ld::PL_local_data{T}, expr::term_t, result::number
@@ -2603,7 +2629,7 @@ function evalExpression_cells(
             elseif nk === NUM_STRING                        # TAG_STRING
                 getCharExpression(ld, v, n) || @goto error
             else                                            # NUM_OTHER: a non-text blob (Q-AR5)
-                _ar_type_error(ld, :evaluable, v)
+                _ar_type_error_cells(ld, :evaluable, (k, w, p))
                 @goto error
             end
         end
@@ -2622,7 +2648,7 @@ function evalExpression_cells(
             if isTextAtom(a)
                 PL_error(ld, ERR_NOT_EVALUABLE, (a, 0))
             else
-                _ar_type_error(ld, :evaluable, a)
+                _ar_type_error_cells(ld, :evaluable, (k, w, p))
             end
             @goto error
         end
@@ -2638,11 +2664,17 @@ function evalExpression_cells(
             if f0 != 0
                 _ar_call0(ld, f0, n) || @goto error
             else
-                _ar_type_error(ld, :evaluable, _compound_term(ld, c))
+                _ar_type_error_cells(ld, :evaluable, (k, w, p))
                 @goto error
             end
-        elseif nameFunctor(ld.functors, f) == ld.atom_dexpr # Q-AR5: on its export, the term walk
-            _evalExpression_term(ld, _compound_term(ld, c), expr, n) || @goto error
+        elseif nameFunctor(ld.functors, f) == ld.atom_dexpr # Q-AR5 (kernel-only): as the term walk,
+            a = PL_new_term_ref(ld)                         # its arguments after the head (argument
+            for i in arity:-1:2                             # 1), the last first, then not evaluable
+                _slot_link_loc!(ld, a + 1, _deref_loc(ld, c + i))
+                evalExpression_cells(ld, a, _number_alloc!(ld)) || @goto error
+            end
+            PL_error(ld, ERR_NOT_EVALUABLE, (mk_sym(T, Symbol("\$expr")), arity - 1))
+            @goto error
         else
             push!(stack, (p << 1) | Int(walk_ref))          # pushForMark(&term_stack, p, walk_ref)
             pushed += 1

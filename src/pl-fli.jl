@@ -301,6 +301,95 @@ function PL_put_term(ld::PL_local_data{T}, t1::Int, t2::Int)::Bool where {T}
     return true
 end
 
+# PORT: pl-fli.h PL_put_variable
+# DIVERGES: a slot holds no unbound word, so its fresh variable is a global cell (as `new_term_ref`'s).
+"Make term reference `t` hold a fresh variable (pl-fli.h)."
+function PL_put_variable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    _slot_new_var!(ld, t + 1)                       # setVar(*valTermRef(t))
+    return true
+end
+
+# PORT: pl-fli.h PL_put_atom
+"Make term reference `t` hold the atom `a` (pl-fli.h)."
+function PL_put_atom(ld::PL_local_data{T}, t::term_t, a::T)::Bool where {T}
+    ld.slots[t + 1] = _atom_word!(ld, a)            # setHandle(t, a)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_nil
+"Make term reference `l` hold `[]` (pl-fli.c)."
+PL_put_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_put_atom(ld, l, mk_nil(T))
+
+# PORT: pl-fli.h PL_put_int64
+# DIVERGES: the integer's word as `PL_put_intptr` lays it (a tagged integer, or a value-table word
+# under `_slot_store!`'s older-slot rule); it cannot fail (no `put_int64` allocation to refuse).
+"Make term reference `t` hold the integer `i` (pl-fli.h)."
+PL_put_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_intptr(ld, t, i)
+
+# PORT: pl-fli.c PL_put_integer
+"Make term reference `t` hold the integer `i` (pl-fli.c)."
+PL_put_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_int64(ld, t, i)
+
+# PORT: pl-fli.c _PL_put_number
+# DIVERGES: the number is a `number` record; its word as `_slot_store!` lays a number (tagged, or
+# a value-table word), so it cannot fail.
+"Make term reference `t` hold the number `n` (pl-fli.c)."
+function _PL_put_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
+    setSlotValue!(ld, t + 1, put_number(T, n))      # setHandle(t, consInt(…)) / put_number(&w, n)
+    return true
+end
+
+# PORT: pl-fli.c PL_cons_functor
+# DIVERGES: the arguments are a typed `Vararg` of term references (upstream's `va_list`, read by
+# `cons_functorv`), the functor a functor WORD; no global space to ensure, so it cannot fail. Each
+# argument is laid in by `_cell_link!` (`bindConsVal`), a slot's side value through its word (f3b-1).
+"Make term reference `h` hold a new compound of functor word `fd` whose arguments are the terms `a…` reference (pl-fli.c)."
+function PL_cons_functor(
+    ld::PL_local_data{T}, h::term_t, fd::word, a::Vararg{term_t, N}
+)::Bool where {T, N}
+    @assert arityFunctor(ld.functors, fd) == N                  # size_t arity = arityFunctor(fd)
+    if N == 0
+        ld.slots[h + 1] = nameFunctor(ld.functors, fd)          # setHandle(h, nameFunctor(fd))
+        return true
+    end
+    p = _alloc_compound!(ld, fd, N)                             # a = t = gTop; gTop += 1+arity; *a = fd
+    for i in 1:N
+        _cell_link!(ld, p + i, a[i] + 1)                        # bindConsVal(++a, valHandleP(r))
+    end
+    ld.slots[h + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)     # setHandle(h, consPtr(t, …))
+    return true
+end
+
+# PORT: pl-fli.c pushWordAsTermRef
+# DIVERGES: the word is a DEREFERENCED location `(k, w, p)` (`_deref_loc`), where upstream passes a
+# `Word` — a slot's own word has no global position here; `linkValNoG(p)` is `_slot_link_loc!`. The
+# handles are TMP_PTR_SIZE consecutive references from `ld.tmp_h`, made by `emptyStacks!`.
+"A temporary term reference holding the location `(k, w, p)`; release it with `popTermRef` (pl-fli.c)."
+function pushWordAsTermRef(
+    ld::PL_local_data{T}, loc::Tuple{UInt8, word, Int}
+)::term_t where {T}
+    i = ld.tmp_top                                  # int i = LD->tmp.top++
+    ld.tmp_top += 1
+    t = ld.tmp_h + i                                # term_t t = LD->tmp.h[i]
+    @assert i < TMP_PTR_SIZE
+    _slot_link_loc!(ld, t + 1, loc)                 # setHandle(t, linkValNoG(p))
+    return t
+end
+
+# PORT: pl-fli.c popTermRef
+# DIVERGES: `setVar` of the handle makes it reference its PERMANENT cell again, unbound (as
+# `_reset_exception_slot!`): a fresh cell would be freed by the next `Undo!` under the handle.
+"Release the last temporary term reference `pushWordAsTermRef` handed out (pl-fli.c)."
+function popTermRef(ld::PL_local_data{T})::Nothing where {T}
+    ld.tmp_top -= 1                                 # int i = --LD->tmp.top
+    i = ld.tmp_top
+    @assert i >= 0
+    c = ld.tmp_cells + i
+    ld.gstack[c] = word(0)                          # setVar(*valTermRef(LD->tmp.h[i]))
+    ld.slots[ld.tmp_h + i + 1] = makeRefG(c)
+    return nothing
+end
+
 # (untyped: an implementation's leaves may be of different concrete types under one term type)
 "`p` is a compound `name/arity` (`hasFunctor`): a symbol head named `name` and `arity` arguments."
 _hasFunctor(p, name, arity::Int) =
@@ -900,7 +989,7 @@ end
 "Make the term `exception` references the pending exception, unless a more urgent one is pending; false (pl-fli.c)."
 function PL_raise_exception(ld::PL_local_data{T}, exception::Int)::Bool where {T}
     @assert exception < ld.lTop                             # valTermRef(exception) < lTop
-    kind(deRef(ld, slotValue(ld, exception + 1))) === VAR &&
+    PL_is_variable(ld, exception) &&                        # if ( PL_is_variable(exception) )
         error("Cannot throw variable exception")            # fatalError()
 
     ld.exception_processing = true                          # LD->exception.processing = true

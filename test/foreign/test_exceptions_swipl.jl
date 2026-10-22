@@ -292,3 +292,81 @@ else
         @test !_ESWIPL_REQUIRED
     end
 end
+
+# ── f3b-4: error and message terms laid out on the cells (white box) ────────────────────────────
+# ERR_PERMISSION_PROC has no Prolog route at the pin: swipl 10.1.18 redefines a called system
+# predicate locally without an error (probed 2026-10-22: `:- between(1,2,_). between(a,b,c).` loads
+# clean), and the kernel raises it only from overruleImportedProcedure. Its shape is pinned from the
+# source (pl-error.c 356-366): permission_error(Op, Type, Name/Arity), a system predicate unqualified
+# (GP_HIDESYSTEM).
+@testset "f3b-4: ERR_PERMISSION_PROC's ball, the predicate indicator on the cells" begin
+    gd = LKE.PL_global_data{_E}()
+    ld = LKE.PL_local_data{_E}(gd)
+    proc = LKE.isCurrentProcedure(sym_key(_es(:compare)), 3, LKE.MODULE_system(gd))
+    fid = LKE.PL_open_foreign_frame(ld)
+    @test !LKE.PL_error(
+        ld, LKE.ERR_PERMISSION_PROC, _es(:redefine), _es(:built_in_procedure), proc
+    )
+    @test ld.exception_term != 0
+    ball = LKE.resolve_term(ld, LKE.slotValue(ld, ld.exception_term + 1))
+    @test lk_eq(
+        child(ball, 2),
+        _ef(:permission_error, _es(:redefine), _es(:built_in_procedure),
+            _ef(:/, _es(:compare), _eg(3)))
+    )
+    @test ld.tmp_top == 0
+    LKE.PL_clear_exception(ld)
+    LKE.PL_discard_foreign_frame(ld, fid)
+end
+
+# reportStreamError's warning branch (pl-file.c 1391: io_warning(Stream, Message), then the error
+# state cleared): no Prolog-level trigger at the pin without a failing device, so pinned from the
+# source; the message leaves the engine through printMessage's one export.
+@testset "f3b-4: reportStreamError reports io_warning(Stream, Message) and clears the state" begin
+    gd = LKE.PL_global_data{_E}()
+    ld = LKE.PL_local_data{_E}(gd)
+    s = LKE.set_standard_stream!(ld, LKE.SNO_USER_ERROR, IOBuffer())   # the host's user_error
+    fid = LKE.PL_open_foreign_frame(ld)
+    LKE.Sseterr(s, LKE.SIO_WARN, "a warning")
+    n = length(ld.messages)
+    @test LKE.reportStreamError(ld, s)
+    @test length(ld.messages) == n + 1
+    sev, m = ld.messages[end]
+    @test sev === :warning
+    @test lk_eq(m, _ef(:io_warning, _es(:user_error), _es(Symbol("a warning"))))
+    @test (s.flags & LKE.SIO_WARN) == 0                     # Sseterr(s, 0, NULL)
+    LKE.PL_discard_foreign_frame(ld, fid)
+end
+
+# pushWordAsTermRef/popTermRef (pl-fli.c 404-419): every error built from a word culprit hands its
+# temporary handles back — the ring's top is 0 again and each handle references its PERMANENT cell,
+# unbound (a handle left bound, or a fresh cell, would be freed under it by the next Undo!).
+@testset "f3b-4: the temporary handles are all returned after word-culprit errors" begin
+    gd = LKE.PL_global_data{_E}()
+    ld = LKE.PL_local_data{_E}(gd)
+    fid = LKE.PL_open_foreign_frame(ld)
+    v = LKE.PL_new_term_ref(ld)                             # X = f(X) under occurs_check=error
+    t = LKE.PL_new_term_ref(ld)
+    a = LKE.PL_new_term_ref(ld)
+    LKE.PL_cons_functor(ld, t, LKE._err_functor(ld, :f, 1), v)
+    k, _, p = LKE._deref_loc(ld, -(v + 1))
+    @test LKE.failed_unify_with_occurs_check_cells(
+        ld, (k, LKE.word(0), p), LKE._deref_loc(ld, -(t + 1)), LKE.OCCURS_CHECK_ERROR
+    ) == LKE.BOOLEX_FALSE
+    ball = LKE.resolve_term(ld, LKE.slotValue(ld, ld.exception_term + 1))
+    f = child(child(ball, 2), 3)                            # occurs_check(X, f(X)): X is f's own
+    @test lk_name(child(child(ball, 2), 1)) === :occurs_check &&
+        kind(child(f, 2)) === VAR &&
+        var_key(child(f, 2)) == var_key(child(child(ball, 2), 2))
+    LKE.PL_clear_exception(ld)
+    LKE.PL_put_atom(ld, a, _es(:ab))                        # [ab]: type_error(character, ab)
+    @test LKE.arithChar_cells(ld, -(a + 1)) == -1
+    @test ld.tmp_top == 0
+    for i in 0:(LKE.TMP_PTR_SIZE - 1)
+        w = ld.slots[ld.tmp_h + i + 1]
+        @test LKE.isRef(w) && LKE.unRef(w) == ld.tmp_cells + i &&
+            ld.gstack[ld.tmp_cells + i] == LKE.word(0)
+    end
+    LKE.PL_clear_exception(ld)
+    LKE.PL_discard_foreign_frame(ld, fid)
+end

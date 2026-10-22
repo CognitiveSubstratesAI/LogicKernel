@@ -153,14 +153,9 @@ function PL_scan_options(
                 PL_error(ld, ERR_DOMAIN, mk_sym(T, Symbol(opttype)), head)
                 return nothing
             end
-            msg = mk_expr(
-                T,
-                T[
-                    mk_sym(T, :unknown_option),
-                    mk_sym(T, Symbol(opttype)),
-                    slotValue(ld, head + 1)
-                ]
-            )
+            msg = _message_term(                    # PL_FUNCTOR, FUNCTOR_unknown_option2,
+                ld, :unknown_option, _err_atom(ld, mk_sym(T, Symbol(opttype))), head
+            )                                       #   PL_CHARS, opttype, PL_TERM, head
             printMessage(ld, :warning, msg) || return nothing
         end
     end

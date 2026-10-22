@@ -198,13 +198,9 @@ function pl_op3_va(
     ok || return FFALSE
     if m == MODULE_system(gd).index
         t = new_term_ref(ld)
-        setSlotValue!(
-            ld,
-            t + 1,
-            mk_expr(
-                T, T[mk_sym(T, :(:)), gd.modules[m].atom, slotValue(ld, name + 1)]
-            )
-        )
+        a = new_term_ref(ld)
+        PL_put_atom(ld, a, gd.modules[m].atom)             # PL_put_atom(a, m->name)
+        PL_cons_functor(ld, t, _err_functor(ld, :(:), 2), a, name)  # (t, FUNCTOR_colon2, a, name)
         PL_error(
             ld, "", 0, "system operators are protected", ERR_PERMISSION,
             mk_sym(T, :redefine),

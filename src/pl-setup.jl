@@ -169,5 +169,8 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.exception_cells = unRef(ld.slots[ld.exception_bin + 1])
     @assert unRef(ld.slots[ld.exception_printed + 1]) == ld.exception_cells + 1
     @assert unRef(ld.slots[ld.exception_pending + 1]) == ld.exception_cells + 3
+    ld.tmp_h = PL_new_term_refs(ld, TMP_PTR_SIZE)              # for(i…) LD->tmp.h[i] = PL_new_term_ref()
+    ld.tmp_top = 0                                             # LD->tmp.top = 0
+    ld.tmp_cells = unRef(ld.slots[ld.tmp_h + 1])               # (PERMANENT, as the exception's: popTermRef)
     return nothing
 end

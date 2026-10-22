@@ -2977,6 +2977,55 @@ function unify_definition(
     return mk_expr(T, T[mk_sym(T, :(:)), m.atom, unify_functor(T, def, how)])
 end
 
+# PORT: pl-comp.c unify_functor
+# DIVERGES: the functor is the definition's name and arity; `PL_unify_term(t, …divide2, PL_ATOM,
+# PL_INT)` written out as `PL_unify_functor` and its two arguments (f3b-4).
+"Unify term reference `t` with `Name/Arity` of `def` (`GP_NAMEARITY` in `how`), else with its head (pl-comp.c)."
+function unify_functor(
+    ld::PL_local_data{T}, t::term_t, def::Definition{T}, how::Int
+)::Bool where {T}
+    if (how & GP_NAMEARITY) != 0
+        PL_unify_functor(ld, t, mk_sym(T, :/), 2) || return false
+        a = PL_new_term_ref(ld)
+        return _PL_get_arg(ld, 1, t, a) && PL_unify_atom(ld, a, def.name) &&
+               _PL_get_arg(ld, 2, t, a) && PL_unify_integer(ld, a, def.arity)
+    end
+    return PL_unify_functor(ld, t, def.name, def.arity)
+end
+
+# PORT: pl-comp.c unify_definition
+# DIVERGES: the unbound-head branch only, on term references (f3b-4); the database `gd` is an
+# argument (a module is an index into its table). NOT PORTED: the bound-head branch (clause/3 by
+# reference, predicate_property/2: not ported) — a bound `head` is refused by an assertion.
+"""
+    unify_definition(gd, ld, ctx, head, def, thehead, how) -> Bool
+
+Unify the unbound term reference `head` with the Prolog reference of `def` as seen from module
+`ctx` (pl-comp.c), as the term method; `thehead` (when not 0) gets the plain head.
+"""
+function unify_definition(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ctx::module_t{T}, head::term_t,
+    def::Definition{T}, thehead::term_t, how::Int
+)::Bool where {T}
+    @assert PL_is_variable(ld, head)                    # if ( PL_is_variable(head) )
+    m = gd.modules[def.module_]
+    if (how & GP_QUALIFY) == 0 &&
+        (m.index == ctx.index || ((how & GP_HIDESYSTEM) != 0 && (m.flags & M_SYSTEM) != 0))
+        unify_functor(ld, head, def, how) || return false
+        thehead != 0 && PL_put_term(ld, thehead, head)
+    else
+        tmp = PL_new_term_ref(ld)
+        (
+            PL_unify_functor(ld, head, mk_sym(T, :(:)), 2) &&
+            _PL_get_arg(ld, 1, head, tmp) &&
+            PL_unify_atom(ld, tmp, m.atom) && _PL_get_arg(ld, 2, head, tmp) &&
+            unify_functor(ld, tmp, def, how)
+        ) || return false
+        thehead != 0 && PL_put_term(ld, thehead, tmp)
+    end
+    return true
+end
+
 # ── assert/1, assertz/1, asserta/1 (pl-comp.c) ───────────────────────────────────────────────
 # PORT: pl-comp.c is_neck
 # DIVERGES: the SSU necks `=>/2` and `?=>/2` are refused (`NotPortedError`): SSU is not ported,
@@ -3141,17 +3190,9 @@ function assert_term!(
         if warnings != 0 && !PL_get_nil(ld, warnings)
             fid = PL_open_foreign_frame(ld)
             cl = PL_new_term_ref(ld)                            # PL_put_clref(cl, clause): unbound
-            rc = printMessage(
-                ld, :warning,
-                mk_expr(
-                    T,
-                    T[
-                        mk_sym(T, :compiler_warnings),
-                        slotValue(ld, cl + 1),
-                        slotValue(ld, warnings + 1)
-                    ]
-                )
-            )
+            rc = printMessage(                      # PL_FUNCTOR_CHARS, "compiler_warnings", 2,
+                ld, :warning, _message_term(ld, :compiler_warnings, cl, warnings)
+            )                                       #   PL_TERM, cl, PL_TERM, warnings
             PL_discard_foreign_frame(ld, fid)
             rc || return nothing
         end
@@ -4141,22 +4182,17 @@ function det_goal_error(
         rc = decompile_body_range(ld, goal, fr, cl, pc_det + 3, C_DETTRUE)
         if rc
             if a === :warning
-                rc = printMessage(
-                    ld,
-                    :warning,
-                    mk_expr(
-                        T,
-                        T[
-                            mk_sym(T, :error),
-                            mk_expr(
-                                T,
-                                T[
-                                    mk_sym(T, :determinism_error), slotValue(ld, goal + 1),
-                                    mk_sym(T, :det), mk_sym(T, found), mk_sym(T, :goal)
-                                ]
-                            ),
-                            _cell_var(ld, allocGlobalCells!(ld, 1))
-                        ]
+                rc = printMessage(                  # PL_FUNCTOR, FUNCTOR_error2,
+                    ld, :warning,                   #   PL_FUNCTOR, FUNCTOR_determinism_error4,
+                    _message_term(                  #     PL_TERM, goal, PL_ATOM ×3,
+                        ld, :error,                 #   PL_VARIABLE
+                        _message_term(
+                            ld, :determinism_error, goal, _err_atom(ld, mk_sym(T, :det)),
+                            _err_atom(ld, mk_sym(T, found)), _err_atom(
+                                ld, mk_sym(T, :goal)
+                            )
+                        ),
+                        new_term_ref(ld)
                     )
                 )
             else
