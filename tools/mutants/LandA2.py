@@ -1,5 +1,5 @@
 # ORIGINAL: landing A's mutant list — no swipl-devel counterpart.
-# tools/mutants/LandA.py — the mutation battery of landing A (f3b-4 + f3b-5a + f3b-5b; D-0107 item 3: one small
+# tools/mutants/LandA2.py — the mutation battery of landing A (f3b-4 + f3b-5a + f3b-5b; D-0107 item 3: one small
 # battery per landing, its NEW invariants and CHANGED behaviour only): error and message terms laid on the cells
 # (PL_cons_functor, pushWordAsTermRef on LD->tmp), the readers on words, the VM's reads on words. Run once, in CI,
 # alongside the gate's CI + Evidence (D-0105 item 2; .github/workflows/mutation.yml). Format: tools/mutate_drive.py's.
