@@ -269,8 +269,7 @@ end
 # by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`
 # flag), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and three
 # flags as swipl 10.1.16 has them: `unknown_option` (`ignore`), `write_attributes` (`ignore`),
-# `character_escapes_unicode` (`true`). Since write_canonical: `numbervars_visited` and
-# `numbervars_made`, `numberVars`' scratch (upstream's visited marks and global-stack mark).
+# `character_escapes_unicode` (`true`).
 # Since V9f: `prolog_flag_determinism_error`, the `determinism_error` flag — `:error` (the default),
 # `:warning` or `:silent` — which upstream reads from the flag table (`PL_current_prolog_flag`).
 # Since V9g-b: `bags`, upstream's `bags` (a `findall_state`: the stack of findall/3's bags, the
@@ -386,8 +385,6 @@ mutable struct PL_local_data{T}
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
     prolog_flag_character_escapes_unicode::Bool                 # PLFLAG_CHARESCAPE_UNICODE
-    numbervars_visited::IdDict{T, Nothing}                      # (numberVars' visited marks)
-    numbervars_made::IdDict{T, Nothing}                         # (the '$VAR's a numberVars made)
     variable_names::Int                                         # (gvar `$variable_names`: a term_t)
     prolog_flag_determinism_error::Symbol                       # the `determinism_error` flag
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
@@ -454,7 +451,6 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
         true,                                   # character_escapes_unicode: true
-        IdDict{T, Nothing}(), IdDict{T, Nothing}(),
         0,                                      # $variable_names: no such global variable
         :error,                                 # determinism_error: error (os/pl-prologflag.c:2708)
         findall_bag{T}[]                        # bags: none (pl-bag.c: `LD->bags` is NULL)

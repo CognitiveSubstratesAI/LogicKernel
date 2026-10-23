@@ -1593,22 +1593,17 @@ end
 
 # PORT: pl-prims.c PL_same_term
 # DIVERGES (since L1f f1c): on the words (`_deref_loc`): an unbound cell is the same term only as the same cell;
-# equal words; two value-table words (upstream: two indirects) by `equalIndirect` — the term type's
-# `gnd_equal` on their values (SWI's identity: `1` and `1.0` differ). A slot's side value (since
-# f3-1 a value word, its side word) is compared by `===` on its value, the answer it had on terms
-# before f3-1; whether it takes `equalIndirect` (`gnd_equal`, a young slot's indirect) instead is
-# left to the audit — it differs for two distinct equal big integers.
+# equal words; two indirects — value-table words or a slot's side words (f3-1) — by `equalIndirect`:
+# the term type's `gnd_equal` on their values (SWI's identity: `1` and `1.0` differ), so two equal big
+# integers are the same term wherever they are held, as swipl's (audit D-0117 (a)).
 "Whether term references `t1` and `t2` hold the same term — the same variable or compound, or equal atomic values (pl-prims.c)."
 function PL_same_term(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where {T}
     k1, w1, p1 = _deref_loc(ld, -(t1 + 1))                  # deRef(t1)
     k2, w2, p2 = _deref_loc(ld, -(t2 + 1))                  # deRef(t2)
-    if _is_side_word(w1) || _is_side_word(w2)               # (f3-1) a side value: by `===` (above)
-        return k1 == DU_VALUE && k2 == DU_VALUE &&
-               _value_term(ld, w1) === _value_term(ld, w2)
-    end
     k1 == DU_CELL && return k2 == DU_CELL && p1 == p2       # isVar(*t1): t1 == t2
     w1 == w2 && return true                                 # *t1 == *t2
-    if _is_vword(w1) && _is_vword(w2)                       # isIndirect(*t1) && isIndirect(*t2)
+    if (_is_vword(w1) || _is_side_word(w1)) &&              # isIndirect(*t1) &&
+        (_is_vword(w2) || _is_side_word(w2))                 # isIndirect(*t2)
         return gnd_equal(_value_term(ld, w1), _value_term(ld, w2))   # equalIndirect
     end
     return false
@@ -2299,8 +2294,8 @@ const FV_MARK = typemin(Int)
 
 # PORT: pl-prims.c free_variables_loop as free_variables_loop_cells
 # DIVERGES: on locations; returns `(n, mname)` — `mname` the module's atom WORD, 0 for none — and
-# stores the goal's word in term reference `goal` (upstream: `*valTermRef(goal) = *t`; a value-table
-# value is referenced by its cell, which a slot holds); each free variable a new term reference
+# stores the goal's word in term reference `goal` (upstream: `*valTermRef(goal) = *t`; a slot's side
+# word, which is never stored, as its value, `_slot_store!`); each free variable a new term reference
 # holding `makeRefG(p)`. `&mark` is `FV_MARK`. The goal after `Module:` is dereferenced, as the term
 # version's did (upstream defect, register Q4).
 "The free variables of the `Template^Goal` at location `l` (ISO 7.1.1.4; pl-prims.c), as new term references: `(n, module word)`, the goal in `goal`."
@@ -2360,11 +2355,12 @@ function free_variables_loop_cells(
             pushWorkCellAgenda!(a, arityFunctor(ld.functors, fd), c + 1)
             continue
         elseif !in_goal && !existential                     # non-term goal (atom or invalid)
-            # needsRef(*t) ? makeRefG(t) : *t — a value-table word is held through its cell
+            # needsRef(*t) ? makeRefG(t) : *t — `*t`: canBind (above) took every bindable word, so a
+            # value word is the value (audit D-0117 (b): at a slot's root it has no cell to reference)
             if _is_side_word(w)                             # (f3-1) a slot's side value: its
                 _slot_store!(ld, goal + 1, _indirect_value(ld, w))  # value stored again
             else
-                ld.slots[goal + 1] = (k == DU_VALUE && !isTaggedIntW(w)) ? makeRefG(p) : w
+                ld.slots[goal + 1] = w                      # *valTermRef(goal) = *t
             end
             in_goal = true
         end

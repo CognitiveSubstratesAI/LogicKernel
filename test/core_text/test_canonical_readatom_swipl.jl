@@ -541,5 +541,4 @@ end
     LK.PL_close_query(_CR_LD, qid)
     LK.PL_discard_foreign_frame(_CR_LD, fid)
     @test _CR_LD.var_names_numbervars_frame == 0
-    @test isempty(_CR_LD.numbervars_made) && isempty(_CR_LD.numbervars_visited)
 end

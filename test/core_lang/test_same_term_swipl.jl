@@ -7,7 +7,9 @@
 #     a ground subterm (COPY_SHARE), duplicate_term/2 not; a variable and a compound met twice in a copy
 #     (one copy each); findall/3's answer against the original, a compound met twice in an answer, a cyclic
 #     answer (records as upstream's byte code, L1f f1a);
-#   * PL_same_term from Julia on the same terms.
+#   * PL_same_term from Julia on the same terms;
+#   * on a term type with big integers: `2**70` twice against swipl, and PL_same_term on slots' side values
+#     and value-table words (equalIndirect, audit D-0117 (a)).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -106,4 +108,64 @@ end
     ld.slots[c + 1] = LK._vword!(ld, _rg(1.0))
     ld.slots[b + 1] = LK.consInt(1)
     @test !LK.PL_same_term(ld, c, b)                        # 1.0 and 1
+end
+
+# audit D-0117 (a): two indirects are the same term when `equalIndirect` says so (pl-prims.c:2423 at
+# 8e1bc111) — a value-table word or a slot's side value alike. Before 2026-10-23 a side value took
+# `===`, so two side values of one big integer were NOT the same term (`BigInt`s are distinct objects).
+# On a term type with big integers (the file's own has none until plan step T1).
+const _STB = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
+const _ST_BIG_PROG = """
+st(G, R) :- ( G -> R = true ; R = false ).
+s_big70(R) :- X is 2**70, Y is 2**70, st(same_term(X, Y), R).
+"""
+
+@testset "same_term/2 on two big integers 2**70, as swipl (audit D-0117 (a))" begin
+    gd = LK.PL_global_data{_STB}()
+    ld = LK.PL_local_data{_STB}(gd)
+    f = joinpath(mktempdir(), "stb.pl")
+    write(f, _ST_BIG_PROG)
+    st, _, _ = LK.load_file!(gd, ld, f)
+    @test st === :ok
+    ans = LK.query_answers(
+        ld, mk_expr(_STB, _STB[lk_sym(_STB, :s_big70), mk_var(_STB, UInt64(1))])
+    )
+    @test length(ans) == 1 && sym_text(child(ans[1], 2)) == "true"   # swipl 10.1.18: true, probed 2026-10-23
+    if _R_SWIPL
+        @test _rswipl(
+            Tuple{_R, Union{Nothing, _R}}[], _R[_rf("s_big70", _rv(1))]; extra=_ST_BIG_PROG
+        ) ==
+            ["s_big70(true) det", "end"]
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
+@testset "PL_same_term on side values and value-table words (audit D-0117 (a))" begin
+    gd = LK.PL_global_data{_STB}()
+    ld = LK.PL_local_data{_STB}(gd)
+    g(v) = lk_gnd(_STB, v)
+    LK.PL_open_foreign_frame(ld)
+    x, y, z, u, s1, s2, i1 = (LK.PL_new_term_ref(ld) for _ in 1:7)  # older than `inner`: side values
+    inner = LK.PL_open_foreign_frame(ld)
+    LK.setSlotValue!(ld, x + 1, g(big(2)^70))
+    LK.setSlotValue!(ld, y + 1, g(big(2)^70))
+    LK.setSlotValue!(ld, u + 1, g(big(2)^70 + 1))
+    LK.setSlotValue!(ld, s1 + 1, g("abc"))
+    LK.setSlotValue!(ld, i1 + 1, g(1.0))
+    for t in (x, y, u, s1, i1)
+        @test LK._is_side_word(LK._deref_loc(ld, -(t + 1))[2])
+    end
+    w = LK.PL_new_term_ref(ld)                              # young: value-table words
+    ld.slots[z + 1] = LK._vword!(ld, g(big(2)^70))
+    ld.slots[s2 + 1] = LK._vword!(ld, g("abc"))
+    ld.slots[w + 1] = LK.consInt(1)
+    @test LK.PL_same_term(ld, x, y)                         # two side values, one big integer
+    @test LK.PL_same_term(ld, x, z) && LK.PL_same_term(ld, z, x)   # a side value, a value-table word
+    @test LK.PL_same_term(ld, s1, s2)                       # one string
+    @test LK.PL_same_term(ld, x, x)                         # the same side word
+    @test !LK.PL_same_term(ld, x, u)                        # 2**70 and 2**70+1
+    @test !LK.PL_same_term(ld, i1, w) && !LK.PL_same_term(ld, w, i1)   # 1.0 and 1 (SWI's identity)
+    @test !LK.PL_same_term(ld, x, s1)
+    LK.PL_discard_foreign_frame(ld, inner)
 end

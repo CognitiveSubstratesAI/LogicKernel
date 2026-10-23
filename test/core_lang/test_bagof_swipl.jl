@@ -117,6 +117,7 @@ function _rbg_cases()
         ("e1", E, err(bag(X, G, L))),
         ("e2", E, err(bag(X, _rg(1), L))),
         ("e3", E, err(set(X, hat(Y, G), L))),
+        ("e4", E, err(bag(X, _rg(1.5), L))),    # a float goal: its word at the call's slot (audit D-0117 (b))
         (
             "g1", pair(K, N),
             _rconj(
@@ -180,7 +181,12 @@ function _rbg_cases()
             "v20",
             pair(G, V),
             _rconj(eq(Y, _rf("h", Z)), fvs(hat(X, _rf("foo", X, Y)), G, V))
-        )
+        ),
+        # the root a value at the call's slot, no cell behind it (audit D-0117 (b); a Julia
+        # BoundsError before 2026-10-23): swipl's goal is the value itself
+        ("v21", pair(G, V), fvs(_rg(1.5), G, V)),
+        ("v22", pair(G, V), fvs(_rg("abc"), G, V)),
+        ("v23", pair(G, V), fvs(_rg(Int64(1) << 62), G, V))                # past the tagged range
     ]
     return cases
 end

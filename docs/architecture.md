@@ -2148,7 +2148,9 @@ src/pl-write.jl, src/pl-read.jl, src/os/pl-prologflag.jl, pl-ext.jl, pl-global.j
 * **DIVERGES:** a `'$VAR'` compound `numberVars` makes holds a FRESH VARIABLE as its argument, bound
   through the trail and rebound in the singletons passes (`_` → `var` → the number) — upstream
   writes the argument cell in place; "a compound this walk made" is `ld.numbervars_made` (upstream:
-  above the mark's global top), the visited marks `ld.numbervars_visited` (an IdDict); no attributed
+  above the mark's global top), the visited marks `ld.numbervars_visited` (an IdDict) — since L1d step
+  7a on the cells as upstream (the mark's global top; the functor-cell marks), the two fields deleted
+  2026-10-23 (audit D-0115); no attributed
   variables, no signals, no stack growth. `read_term_from_stream` REFUSES (`NotPortedError`) the
   options it cannot honour: `term_position`, `subterm_positions`, `comments`, `var_prefix`,
   `quasi_quotations` (term positions: R2), `unicode_atoms` (the NFC hook), `blob` (no blobs);

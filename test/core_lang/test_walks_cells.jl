@@ -8,6 +8,8 @@
 #     term_variables/2,3 and bagof/setof's free variables (`^`, a `Module:` goal) over atoms, flat
 #     and nested compounds, SHARED sub-terms reached through a binding (a DAG), cyclic terms, a long
 #     list, a proper-list second argument too short; the variables' ORDER (depth-first, left to right);
+#   * white-box: free_variables_loop_cells at a slot holding a value — the goal is the value, as upstream
+#     (audit D-0117 (b));
 #   * white-box: after every call no functor cell carries MARK_MASK, the side vector is all false and
 #     the visited stack is empty — a second call on the same term answers the same;
 #   * the meter: the walk over a term on the stack makes no cold import (until L1f f3 also no cold export
@@ -182,6 +184,34 @@ _wc_clean(ld) =
         @test all(k -> LK._deref_loc(ld, k)[1] == LK.DU_CELL, ks) && length(unique(ks)) == 3
         LK.PL_reset_term_refs(ld, v0)
     end
+end
+
+# audit D-0117 (b): upstream's `free_variables_loop` makes a term reference only of a bindable word
+# (`canBind`, pl-prims.c:3977); a value at the ROOT is the goal itself (`*valTermRef(goal) = *t`). A
+# slot holds a value word with no cell behind it (`_deref_loc`: position 0), which was referenced as
+# `makeRefG(0)` before 2026-10-23 (a BoundsError when read); a side value is stored as its value.
+@testset "white-box: free_variables_loop_cells at a slot holding a value (audit D-0117 (b))" begin
+    vals = _R[_rg(1.5), _rg("abc"), _wi(7), _rg(Int64(1) << 62)]
+    ld, t = _wc_engine(vals)
+    o = LK.PL_new_term_ref(ld)                              # older than `inner`: a side value
+    inner = LK.PL_open_foreign_frame(ld)
+    LK.setSlotValue!(ld, o + 1, _rg(2.5))
+    @test ld.slots[o + 1] == LK.SLOT_VALUE
+    for (s, v) in Iterators.flatten((
+        ((t + i - 1, vals[i]) for i in eachindex(vals)), ((o, _rg(2.5)),)
+    ))
+        k0, w0, p0 = LK._deref_loc(ld, -(s + 1))
+        @test k0 == LK.DU_VALUE && p0 == 0                  # a value, no cell behind it
+        goal = LK.PL_new_term_ref(ld)
+        n, m = LK.free_variables_loop_cells(ld, -(s + 1), goal)
+        LK.unvisit_cells(ld)
+        @test n == 0 && m == 0
+        kg, wg, _ = LK._deref_loc(ld, -(goal + 1))
+        @test kg == LK.DU_VALUE && LK.gnd_equal(LK._value_term(ld, wg), v)
+        LK._is_side_word(w0) || @test ld.slots[goal + 1] == w0   # *valTermRef(goal) = *t
+        @test _wc_clean(ld)
+    end
+    LK.PL_discard_foreign_frame(ld, inner)
 end
 
 @testset "the meter: the walks over a term on the stack make no cold export, import or variable read" begin
