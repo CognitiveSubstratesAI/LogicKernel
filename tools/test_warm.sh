@@ -381,6 +381,21 @@ _guard_cases() {
     # daemon that sits in a MUTANT worktree (its .warm/MUTANT_WORKTREE marker), never an ordinary checkout's
     LOGICKERNEL_WARM_SIBLING_MUTANTS=1 "$W" start > /dev/null 2>&1
     check "guard: the sibling opt-in does not excuse an ordinary checkout's daemon (exit 6)" 6 $?
+    # A SECOND DAEMON (audit D-0114): LOGICKERNEL_WARM_SECOND=1 lets this checkout's daemon start beside
+    # ONE other, only with LOGICKERNEL_WARM_SECOND_MIN_GB available, in a slice of its own (lk-warm2.slice)
+    LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_SECOND_MIN_GB=100000 "$W" start > "$T/g2" 2>&1
+    check "second: refused without the memory it needs (exit 6)" 6 $?
+    has "…saying how much it needs" "$T/g2" "needs 100000 GB available" 1
+    systemd-run --user --unit="${decoy}two" --collect --quiet --working-directory="$T" sleep 600
+    LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_SECOND_MIN_GB=0 "$W" start > "$T/g3" 2>&1
+    check "second: refused beside TWO other daemons, never a third (exit 6)" 6 $?
+    systemctl --user stop "${decoy}two" > /dev/null 2>&1
+    LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_SECOND_MIN_GB=0 "$W" start > "$T/g4" 2>&1
+    check "second: starts beside ONE other daemon with the memory there" 0 $?
+    has "…saying so, naming the other" "$T/g4" "SECOND daemon (D-0114)" 1
+    [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
+    check "second: …in its own slice, lk-warm2.slice, so pressure kills it before the first lane" 0 $?
+    "$W" stop > /dev/null 2>&1
     systemctl --user stop "$decoy" > /dev/null 2>&1
     mkdir -p "$T/sibling/.warm"; echo "$ROOT" > "$T/sibling/.warm/MUTANT_WORKTREE"
     systemd-run --user --unit="${decoy}sib" --collect --quiet --working-directory="$T/sibling" sleep 600

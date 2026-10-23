@@ -5,6 +5,8 @@
 #   tools/warm.sh start | stop | restart | status          # status prints the daemon's memory too;
 #                                                          # start exits 6 while ANOTHER checkout's
 #                                                          # daemon runs, naming it (user, 2026-10-14);
+#                                                          # LOGICKERNEL_WARM_SECOND=1: a SECOND daemon
+#                                                          # beside one other (audit D-0114, below);
 #                                                          # a daemon exits after LOGICKERNEL_WARM_IDLE_S
 #                                                          # (3600) with no request; all of them share
 #                                                          # lk-warm.slice (tools/lib_evidence.sh)
@@ -92,10 +94,41 @@ _other_daemons() {
     done
 }
 
+# A SECOND DAEMON (audit D-0114, 2026-10-23): with LOGICKERNEL_WARM_SECOND=1, `start` may run this
+# checkout's daemon beside ONE other checkout's — never a third, never two on one tree (the unit is
+# per checkout) — and only while MemAvailable is at least LOGICKERNEL_WARM_SECOND_MIN_GB (8). The
+# second daemon gets a slice of its own beside `lk-warm.slice` (lk-warm2.slice, MemoryMax
+# LOGICKERNEL_WARM_SECOND_MEM_MAX, 6G), so when memory runs short the SECOND lane is the one the
+# kernel kills, never the first (D-0114 item 1: the landing closest to main keeps its daemon). A
+# timeout while both run is rerun once alone before it counts (D-0114 item 3).
+# _second_ok OTHERS — whether a second daemon may start beside OTHERS (one line each); says why not
+_second_ok() {
+    local n avail_kb min_gb="${LOGICKERNEL_WARM_SECOND_MIN_GB:-8}"
+    n=$(printf '%s\n' "$1" | grep -c .)
+    if [ "$n" -gt 1 ]; then
+        echo "warm lane: REFUSED — LOGICKERNEL_WARM_SECOND allows ONE other daemon, $n are running" >&2
+        return 1
+    fi
+    avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+    if [ "${avail_kb:-0}" -lt $((min_gb * 1048576)) ]; then
+        echo "warm lane: REFUSED — a second daemon needs ${min_gb} GB available, $((${avail_kb:-0} / 1048576)) GB are (D-0114)" >&2
+        return 1
+    fi
+    return 0
+}
+
 _start() {
     if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"))"; return 0; fi
     local others
     others="$(_other_daemons)"
+    if [ -n "$others" ] && [ "${LOGICKERNEL_WARM_SECOND:-}" = 1 ]; then
+        _second_ok "$others" || return 6
+        export LOGICKERNEL_SLICE=lk-warm2.slice
+        export LOGICKERNEL_SLICE_MEM_MAX="${LOGICKERNEL_WARM_SECOND_MEM_MAX:-6G}"
+        echo "warm lane: SECOND daemon (D-0114) beside:"
+        printf '%s\n' "$others" | sed 's/^/  /'
+        others=""
+    fi
     if [ -n "$others" ]; then
         {
             echo "warm lane: REFUSED — another checkout's warm daemon is running (one at a time, user 2026-10-14):"
