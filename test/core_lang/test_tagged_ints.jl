@@ -54,6 +54,7 @@ end
     p.virgin = false
     ld = p.db.ld
     for (i, v) in enumerate(_TI_VALUES)
+        key_put = ix_key(ld, _rg(v))                        # the value put by the FLI, keyed on its word
         # the call's first argument: a global cell holding the integer's WORD, referenced from the
         # frame's first argument slot, as the VM leaves it after `L = [V], L = [X]`
         q = LK.allocGlobalCells!(ld, 1)
@@ -66,7 +67,7 @@ end
         argv = LK.argv_frame(ld, base)
         key_call = LK._argv_key(argv, 0)
         @test !LK._argv_is_var(argv, 0)
-        @test key_call == LK.indexOfWord(ld, _rg(v))            # the term's key: the clause's function
+        @test key_call == key_put                           # the put value's key: the clause's function
         chp = LK.ClauseChoice{_R}(nothing, LK.word(0))
         c = LK.firstClause!(ld, argv, LK.global_generation(p.db.gd), p.def, chp)
         @test c !== nothing && c.key == key_call            # the key at assert == the key at call

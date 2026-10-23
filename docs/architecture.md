@@ -702,7 +702,7 @@ fixed it or a public issue exists.
 | `test/db/test_procedures.jl` | V1's predicate table: one procedure per functor and database, `[]` apart from `'[]'`, `:- dynamic`, defined = a `PROC_DEFINED` flag or a clause visible now | — |
 | `test/compile/test_body_code_swipl.jl` | V2's differential: whole-clause code (operands by kind, the LCO label) identical to swipl's on pinned clauses, 400 random rule clauses, and nreverse and qsort as swipl consults them; V2's refusals and swipl's `type_error(callable, Body)` (raised with `PL_error` since V9c); clause/2 and retract/1 on rules | — |
 | `test/compile/test_call_operands.jl` | V1's call operands: `lookupBodyProcedure` (the database's procedure; non-callable goals refused as swipl refuses them, `$expr/n` too), the clause's procedure table, `Output_3`/`Output_n` | — |
-| `test/compile/test_decompile.jl` | V1 L2's own tests: each literal decompiled exactly, kind included; random heads back as variants; the table referenced once per literal and `argKey == indexOfWord`; `NUM_OTHER` as an opaque literal | — |
+| `test/compile/test_decompile.jl` | V1 L2's own tests: each literal decompiled exactly, kind included; random heads back as variants; the table referenced once per literal and `argKey` equal to the argument's key on the words (`ix_key`; the term `indexOfWord` until 2026-10-23); `NUM_OTHER` as an opaque literal | — |
 | `test/core_lang/test_expr_functor.jl` | Q2's own tests: `$expr/n`'s standard order, its head code, the index keeping it a wildcard (top level and among same-functor clauses), unification and `=@=` child by child | — |
 | `test/core_lang/test_sort.jl` | SWI's own `reserved` unit: `[]` sorts before text atoms | `tests/core_lang/test_sort.pl` |
 | `test/compile/test_portable_smallint_swipl.jl` | `is_portable_smallint` under `portable_vmi`, and the tagged-integer range against a live swipl's flags | — |
@@ -712,7 +712,7 @@ fixed it or a public issue exists.
 | `test/core_lang/test_compare_cells.jl` | L1d step 1: the standard order on CELLS (`compareStandard_cells`) — compare/3, ==, \==, @< and the VM's B_EQ/B_NEQ forms over a corpus of pairs against swipl; rational trees equal and ordered with every functor cell restored; Q2's `$expr/n` first (kernel-only); the keyed-variable boundary; `==` on two lists makes no cold export | — |
 | `test/core_lang/test_zero_exports.jl` | the L1c plan's condition 3: one call of swipl's benchmark programs nreverse and qsort (bench/programs) leaves the three counters of the term boundary unchanged — `cold_exports`, `cold_imports`, `cold_vars`; the first call's traffic and the export memo's entry count reported | — |
 | `test/core_lang/test_var_identity.jl` | L1c sub-commit 6: a variable is its KEY — two reads of one cell (two terms since `_cell_var` builds on demand) act as one variable in the term-level unifier, the standard order, copy_term, the occurs check, the writer's names, numbervars and the variable collectors of term_variables/2 and bagof/setof | — |
-| `test/core_lang/test_index_words.jl` | L1c sub-commit 5: first-argument indexing from WORDS — the key read on a word equals `indexOfWord` of the term for every word form (atoms, `[]` vs `'[]'`, compounds, `[|]/2`, the `$expr` wildcard, value-table values), unbound cells and reference chains, the keyed-variable boundary; the deep descent through a compound's argument cells (`argv_cells`); a deep-indexed call makes no cold export, its answers swipl's | — |
+| `test/core_lang/test_index_words.jl` | L1c sub-commit 5: first-argument indexing from WORDS — the key read on a word equals the compiler's `argKey` of the same term (and, for atoms, functors, lists and tagged integers, the word itself; the term `indexOfWord` until 2026-10-23) for every word form (atoms, `[]` vs `'[]'`, compounds, `[|]/2`, the `$expr` wildcard, value-table values), unbound cells and reference chains, the keyed-variable boundary; the deep descent through a compound's argument cells (`argv_cells`); a deep-indexed call makes no cold export, its answers swipl's | — |
 | `test/core_lang/test_unify_cells.jl` | L1c sub-commit 4: `do_unify_cells` — the binding direction (only global cells are bound, the higher to the lower, both argument orders, no global → local reference, the slots untouched), the simple cases and compounds against swipl through the head and body paths, the partial-binding contract, rational trees with every functor cell restored, Q2 (kernel-only), the keyed-variable boundary, the zero-export meter of a head unification | — |
 | `test/core_lang/test_unify.jl` | SWI's own `unify`, `can_compare` and `unifiable` units (rational trees included) but unify_fv and gc_1 | `tests/core_lang/test_unify.pl` |
 | `test/core_lang/test_occurs_check.jl` | SWI's own occurs-check units in all three modes but the attributed-variable ones | `tests/core_lang/test_occurs_check.pl` |
@@ -876,7 +876,6 @@ graph LR
     pl_index --> pl_hash
     pl_index --> pl_incl
     pl_index --> pl_vmi
-    pl_index --> pl_funct
     pl_index --> pl_inline
     pl_index --> pl_prims
     pl_index --> pl_ressymbol
@@ -1935,6 +1934,8 @@ approved by the user and marked `# DIVERGES` (src/pl-comp.jl § the literal tabl
     OPAQUE literal, matched by `gnd_equal` (`# DIVERGES`; SWI's nearest case, a blob, is an atom).
 * **Index keys are derived from the literal** (`argKey` → `indexOfWord`), so the indexes are the
   ones the kernel had: `argKey` and `indexOfWord` agree on every argument, pinned over random heads.
+  (Since 2026-10-23 the call side is keyed only on the words — the term `indexOfWord` and `argv_term`
+  were deleted — and the pin compares `argKey` with the argument's key on the words, `ix_key`.)
 * **Q2's marking bit is retired** (user, 2026-10-04): `expr_functor`, `isExprFunctor`,
   `EXPR_FUNCTOR_MASK` and `FIRST_MASK` (added only for it) are gone. `$expr/n` is still a WILDCARD
   in the index on all three implementations: the index mutation proof, re-pointed, keys literal 0
@@ -1979,7 +1980,8 @@ approved by the user and marked `# DIVERGES` (src/pl-comp.jl § the literal tabl
       `1r3`/`1/3`, `true`/`1`, `[1.0]`/`1.0`, `""`/`''`;
     * 500 random heads come back as variants (`=@=`), with voids, shared variables, lists,
       `$expr/n` and every kind of literal;
-    * every literal is referenced exactly once, and `argKey == indexOfWord` at every argument;
+    * every literal is referenced exactly once, and `argKey == indexOfWord` at every argument (since
+      2026-10-23 the key on the words, `ix_key`);
     * `NUM_OTHER` gets its own tests: the opaque literal, its key, and `true`/`1` and `[1.0]`/`1.0`
       kept apart by the index;
   * test_expr_functor.jl: the bit's testset is replaced by literal 0 against every symbol head's own
@@ -4216,7 +4218,8 @@ return codes, the positions and the closed handle; the open questions went to th
   `B_SMALLINT`, `B_NIL`, `B_FLOAT`, `B_MPZ`, `B_MPQ`, `B_STRING`, `B_RFUNCTOR`, `B_RLIST`);
   **`argv_at` not dereferencing was a real defect** — a bound argument reached the index as the
   variable it was bound through, so it narrowed nothing. Fixed: one argument view per source (the
-  frame's slots, a call term), both dereferencing (pl-index.jl `argv_frame`, `argv_term`), with a
+  frame's slots, a call term), both dereferencing (pl-index.jl `argv_frame`, `argv_term` — the latter
+  deleted 2026-10-23 with the term path: a goal is put on the cells, `argv_cells`), with a
   test where a bound argument must narrow (test_index_argv.jl) and the determinism differential
   confirming it.
 * **Decided by the user (2026-10-05):**

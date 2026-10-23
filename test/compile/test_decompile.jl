@@ -9,7 +9,8 @@
 #   * a random head comes back as a VARIANT of itself (`=@=`): voids, shared variables, lists,
 #     `$expr/n` and every kind of literal;
 #   * the code reads its table consistently: every literal operand indexes it, each literal once,
-#     and `argKey` gives every argument the key `indexOfWord` gives the term;
+#     and `argKey` gives every argument the key the term has on the words (`ix_key`: put into a term
+#     reference, pl-index.c `indexOfWord`; until 2026-10-23 the term `indexOfWord`, deleted);
 #   * a grounded value SWI has no type for (NUM_OTHER) is an OPAQUE literal: `H_ATOM`, its literal
 #     the value itself, matched by `gnd_equal` (DIVERGES — SWI has no such case; src/pl-comp.jl § the
 #     literal table).
@@ -187,7 +188,7 @@ end
         @test nexpr > 0                                           # `$expr/n` arguments were drawn
     end
 
-    @testset "the code reads its table: each literal once, argKey == indexOfWord" begin
+    @testset "the code reads its table: each literal once, argKey == the key on the words" begin
         rng = Xoshiro(4)
         for k in 1:300
             shared = [_dv(20_000 * k + j) for j in 1:3]
@@ -195,7 +196,7 @@ end
             cl = _dclause(h)
             @test sort(_dliteral_refs(cl)) == 1:length(cl.literals)   # no orphan, none twice
             for i in 0:(nchildren(h) - 2)
-                @test LK.argKey(LK.Code(cl, 1), i) == LK.indexOfWord(_DLD, child(h, i + 2))
+                @test LK.argKey(LK.Code(cl, 1), i) == ix_key(_DLD, child(h, i + 2))
             end
         end
     end
@@ -207,8 +208,8 @@ end
         @test [cl.codes[1], cl.codes[3]] == [LK.H_ATOM, LK.H_ATOM]
         @test lk_value(cl.literals[1]) === true                   # the value itself
         @test lk_value(cl.literals[2]) == [1.0, 2.0]
-        @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(_DLD, t)
-        @test LK.argKey(LK.Code(cl, 1), 1) == LK.indexOfWord(_DLD, v)
+        @test LK.argKey(LK.Code(cl, 1), 0) == ix_key(_DLD, t)
+        @test LK.argKey(LK.Code(cl, 1), 1) == ix_key(_DLD, v)
         # matched by `gnd_equal`: `true` is not `1`, `[1.0]` not `1.0` — indexed or not
         pr = ix_pred(_D, :o, 1)
         for x in (_dg(true), _dg(false), _dg([1.0]), _dg(1), _dg(1.0))

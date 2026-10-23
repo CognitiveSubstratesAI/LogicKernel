@@ -111,7 +111,6 @@ _manifest_per_type(T) = (
     (LK._write_var_word!, Tuple{LK.PL_local_data{T}, LK.PutVarMap, UInt64}, false),
     # tagged small integers (L1d step 4): the word of an integer, a value's word, a value word's term
     (LK._tagged_int_word, Tuple{Type{T}, T}, true),
-    (LK._term_int_word, Tuple{LK.PL_local_data{T}, T}, true),
     (LK._int_word_keys, Tuple{Type{T}}, true),             # two value terms, never on the heap
     (LK._gnd_word!, Tuple{LK.PL_local_data{T}, T}, false),  # a value-table entry may grow the table
     (LK._value_term, Tuple{LK.PL_local_data{T}, UInt64}, false),   # a tagged integer's term is MADE (L1d-4)
@@ -325,7 +324,7 @@ function _manifest_index(T)
     CInfo, HA, HH = LK.compileInfo{T}, LK.hash_assessment, LK.hash_hints
     PR, MOD = LK.Procedure{T}, LK.module_t{T}
     PCd = LK.Code{T}
-    AT, AF = LK.argv_term{LK.PL_local_data{T}, T}, LK.argv_frame{LK.PL_local_data{T}}
+    AF = LK.argv_frame{LK.PL_local_data{T}}
     AC = LK.argv_cells{LK.PL_local_data{T}}                   # a compound's argument cells (L1c-5)
     ARGP, ASE = LK.argp_t{T}, LK.argstack_entry{T}
     VIEW = typeof(view(UInt8[], 1:0))
@@ -474,54 +473,38 @@ function _manifest_index(T)
         (LK.STATIC_RELOADING, Tuple{D}, true), (LK.cref_matches, Tuple{CR, UInt64}, true),
         (LK.is_clean_predicate, Tuple{D}, true), (LK.visibleClause, Tuple{C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{C, UInt64}, true),
-        # the term path's keys (L1d step 4, TRANSITIONAL): an atom's word may be made, a functor's looked up
-        (LK.canIndex, Tuple{LK.PL_local_data{T}, T}, false),
-        (LK.indexOfWord, Tuple{LK.PL_local_data{T}, T}, false),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
-        (LK.nextClauseFromList!, Tuple{CI, AT, CTX}, false),
         (LK.nextClauseFromList!, Tuple{CI, AF, CTX}, false),
         (LK.nextClauseFromList!, Tuple{CI, AC, CTX}, false),
-        (LK.nextClauseFromBucket!, Tuple{CI, AT, CTX}, false),
         (LK.nextClauseFromBucket!, Tuple{CI, AF, CTX}, false),
         (LK.nextClauseFromBucket!, Tuple{CI, AC, CTX}, false),
         (LK.setClauseChoice!, Tuple{CR, CTX}, true),
         (LK.setClauseChoice!, Tuple{Nothing, CTX}, true),
         # (L1c-5: on the words; the boundary — a slot's side value, a keyed variable — until L1f)
-        (LK.indexKeyFromArgv, Tuple{CI, AT}, false),
         (LK.indexKeyFromArgv, Tuple{CI, AF}, false),
         (LK.indexKeyFromArgv, Tuple{CI, AC}, false),
-        (LK.is_var, Tuple{T}, true),
-        (LK.is_satifies_index, Tuple{CI, AT}, false),
         (LK.is_satifies_index, Tuple{CI, AF}, false),
         (LK.is_satifies_index, Tuple{CI, AC}, false),
-        (LK.existing_hash, Tuple{CIP, AT}, false),
         (LK.existing_hash, Tuple{CIP, AF}, false),
         (LK.existing_hash, Tuple{CIP, AC}, false),
-        (LK.createIndex!, Tuple{AT, Int, CL, CI, CTX}, false),
-        (LK.createIndex!, Tuple{AT, Int, CL, Nothing, CTX}, false),
         (LK.createIndex!, Tuple{AF, Int, CL, CI, CTX}, false),
         (LK.createIndex!, Tuple{AF, Int, CL, Nothing, CTX}, false),
         (LK.createIndex!, Tuple{AC, Int, CL, CI, CTX}, false),
         (LK.createIndex!, Tuple{AC, Int, CL, Nothing, CTX}, false),
-        (LK.first_clause_guarded!, Tuple{AT, Int, CL, CTX}, false),
         (LK.first_clause_guarded!, Tuple{AF, Int, CL, CTX}, false),
         (LK.first_clause_guarded!, Tuple{AC, Int, CL, CTX}, false),
-        (LK.firstClause!, Tuple{LD, AT, UInt64, D, CH}, false),
         (LK.firstClause!, Tuple{LD, AF, UInt64, D, CH}, false),
-        (LK.nextClause!, Tuple{LD, CH, AT, UInt64, D}, true),
         (LK.nextClause!, Tuple{LD, CH, AF, UInt64, D}, true),
-        # the term argv's reader (a child read since L1f f3-3); the frame and cell
-        # forms read the WORDS since L1c-5 — their key and var tests reach the boundary until L1f
-        (LK.argv_at, Tuple{AT, Int}, false),
+        # the frame and cell argv forms read the WORDS since L1c-5 (the term form, `argv_term`, and its
+        # reader `argv_at` were deleted with the term `indexOfWord`, 2026-10-23)
         (LK._argv_loc, Tuple{AF, Int}, true), (LK._argv_loc, Tuple{AC, Int}, true),
         (LK._index_key_loc, Tuple{LD, UInt8, UInt64, Int}, false),
-        (LK._argv_key, Tuple{AT, Int}, false), (LK._argv_key, Tuple{AF, Int}, false),
+        (LK._argv_key, Tuple{AF, Int}, false),
         (LK._argv_key, Tuple{AC, Int}, false),
-        (LK._argv_is_var, Tuple{AT, Int}, false), (LK._argv_is_var, Tuple{AF, Int}, false),
+        (LK._argv_is_var, Tuple{AF, Int}, false),
         (LK._argv_is_var, Tuple{AC, Int}, false),
-        (LK._descend_first_clause!, Tuple{AT, Int, CL, CTX}, false),
         (LK._descend_first_clause!, Tuple{AF, Int, CL, CTX}, false),
         (LK._descend_first_clause!, Tuple{AC, Int, CL, CTX}, false),
         (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH}, true),
@@ -564,8 +547,6 @@ function _manifest_index(T)
         (LK.ensure_arg_info!, Tuple{CL, Int}, false),
         (LK.better_index, Tuple{CI, Float32, Float32}, true),
         (LK.better_index, Tuple{Nothing, Float32, Float32}, true),
-        (LK.bestHash!, Tuple{AT, Int, CL, Nothing, HH, CTX}, false),
-        (LK.bestHash!, Tuple{AT, Int, CL, CI, HH, CTX}, false),
         (LK.bestHash!, Tuple{AF, Int, CL, Nothing, HH, CTX}, false),
         (LK.bestHash!, Tuple{AF, Int, CL, CI, HH, CTX}, false),
         (LK.bestHash!, Tuple{AC, Int, CL, Nothing, HH, CTX}, false),
@@ -1620,7 +1601,7 @@ _index_entry_points(T) = (
     (
         LK.firstClause!,
         Tuple{
-            LK.PL_local_data{T}, LK.argv_term{LK.PL_local_data{T}, T}, UInt64,
+            LK.PL_local_data{T}, LK.argv_frame{LK.PL_local_data{T}}, UInt64,
             LK.Definition{T},
             LK.ClauseChoice{T}
         },
@@ -1630,13 +1611,12 @@ _index_entry_points(T) = (
         LK.nextClause!,
         Tuple{
             LK.PL_local_data{T}, LK.ClauseChoice{T},
-            LK.argv_term{LK.PL_local_data{T}, T}, UInt64,
+            LK.argv_frame{LK.PL_local_data{T}}, UInt64,
             LK.Definition{T}
         },
         true
     ),
-    (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
-    (LK.indexOfWord, Tuple{LK.PL_local_data{T}, T}, false)
+    (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
@@ -2243,7 +2223,7 @@ const L1C_ALLOC_EXEMPT = [
     # hot path (nreverse/qsort: measured) — but the frame and cell forms still REACH the boundary
     # statically (a slot's side value, a keyed variable's binding: `_loc_term`), which AllocCheck
     # sees; they go with the keyed variables (L1f). Moved L1c-5 → L1f, logged (unattended rule)
-    (LK.argv_at, "L1f", :cold), (LK.indexKeyFromArgv, "L1f", :cold),
+    (LK.indexKeyFromArgv, "L1f", :cold),
     (LK.is_satifies_index, "L1f", :cold),
     # a tagged integer's TERM, made where a reader asks for a term (L1d step 4: the integer is its own
     # word, no value-table entry to hand back) — the cold export of a number; the hot readers
@@ -2256,8 +2236,9 @@ migration of the eager per-cell variable term to the counted on-demand adapter �
 2026-10-17, L1d step 4: `_value_term` and `_slot_atom` MAKE a tagged integer's term — measured by the full
 static-analysis file, logged); 21 on 2026-10-23, L1f f3-3: `_binding`, `slotValue`, `_cell_var`, `_cell_value`,
 `linkValI`, `_argp_raw`, `_argp_deref` and the three `:boundary` frames deleted with the keyed variables; 18
-the same day: `deRef`, `nextTermAgenda!` and `_slot_atom` deleted with the term twins)."
-const L1C_ALLOC_EXEMPT_MAX = 18
+the same day: `deRef`, `nextTermAgenda!` and `_slot_atom` deleted with the term twins; 17 the same day:
+`argv_at` deleted with the term path of the index, `argv_term`)."
+const L1C_ALLOC_EXEMPT_MAX = 17
 
 const DISPATCH_EXEMPT = (
     (

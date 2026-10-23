@@ -50,8 +50,7 @@ end
     ld = LK.PL_local_data{_R}(gd)
     @test ld.atom_nil_w == gd.atom_nil_w == LK._atom_word!(ld, gd.atom_nil)
     @test gd.atom_nil_w == LK.ATOM_nil                          # the built-in word IS the key (L1d-4)
-    @test LK._index_key_loc(ld, LK.DU_WORD, gd.atom_nil_w, 0) ==
-        LK.indexOfWord(ld, gd.atom_nil)
+    @test LK._index_key_loc(ld, LK.DU_WORD, gd.atom_nil_w, 0) == LK.ATOM_nil   # `[]`'s key, by its word
 end
 
 @testset "an atom made through engine A's compiler reads back in engine B: no miss" begin

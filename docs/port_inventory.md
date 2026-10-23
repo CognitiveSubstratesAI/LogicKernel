@@ -119,7 +119,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-vmi.jl` | 22 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-write.jl` | 2 | 1 |
-| swipl-devel `src/pl-index.c` | code | `8e1bc1110be4` | `src/pl-index.jl` | 112 | 34 |
+| swipl-devel `src/pl-index.c` | code | `8e1bc1110be4` | `src/pl-index.jl` | 110 | 33 |
 | swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-gmp.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-inline.jl` | 16 | 13 |
@@ -232,7 +232,7 @@ checkout is pulled.
 | swipl-devel `src/pl-hash.c` | `8e1bc1110be4` | 1 | 3 | 1 | src/pl-hash.jl |
 | swipl-devel `src/pl-hash.h` | `8e1bc1110be4` | 0 | 0 | 0 | src/pl-hash.jl |
 | swipl-devel `src/pl-incl.h` | `8e1bc1110be4` | 1 | 9 | 0 | src/pl-arith.jl, src/pl-atom.jl, src/pl-comp.jl, src/pl-funct.jl, src/pl-global.jl, src/pl-incl.jl, src/pl-inline.jl, src/pl-modul.jl, src/pl-prims.jl, src/pl-vmi.jl, src/pl-wam.jl, src/pl-write.jl |
-| swipl-devel `src/pl-index.c` | `8e1bc1110be4` | 91 | 125 | 29 | src/pl-index.jl |
+| swipl-devel `src/pl-index.c` | `8e1bc1110be4` | 90 | 125 | 28 | src/pl-index.jl |
 | swipl-devel `src/pl-inline.h` | `8e1bc1110be4` | 17 | 52 | 12 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-list.c` | `8e1bc1110be4` | 9 | 13 | 5 | src/pl-list.jl |
 | swipl-devel `src/pl-modul.c` | `8e1bc1110be4` | 7 | 70 | 6 | src/pl-modul.jl |
@@ -272,7 +272,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8e1bc1110be4` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8e1bc1110be4` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8e1bc1110be4` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1220** | **4472** | **639** | |
+| **total** | | **1219** | **4472** | **638** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

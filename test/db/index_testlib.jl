@@ -96,11 +96,56 @@ function _ix_with_goal_ref(f, ld::LK.PL_local_data{T}, goal::T) where {T}
 end
 
 """
+    ix_with_argv(f, ld, goal)
+
+`f(argv)` where `argv` views the arguments of `goal` ON THE CELLS: the goal is put into a fresh term
+reference (the FLI put, a copy on the global stack), dereferenced to its compound word, and its
+argument cells are the search's argv (`argv_cells`, as a deep index's `argTermP(*argv, 0)`). An atom
+goal has no argument cells to read. The put is undone and the reference freed after. (Until
+2026-10-23 a search read the goal TERM's children, `argv_term`, deleted with the term path.)
+"""
+function ix_with_argv(f, ld::LK.PL_local_data{T}, goal::T) where {T}
+    m = LK.Mark(ld)
+    t = LK.PL_new_term_ref(ld)
+    try
+        LK.putSlotValue!(ld, t + 1, goal)
+        k, w, _ = LK._deref_loc(ld, -(t + 1))
+        p = (k == LK.DU_WORD && LK._is_gcompound(w)) ? LK.valPtr(w) : 0   # an atom: no arguments
+        return f(LK.argv_cells(ld, p))
+    finally
+        LK.Undo!(ld, m)
+        LK.PL_reset_term_refs(ld, t)
+    end
+end
+
+"""
+    ix_key(ld, t) -> word
+
+The index key of the term `t` as a call's argument holds it: `t` put into a fresh term reference
+(the FLI put) and keyed on its WORD (`_argv_key`, pl-index.c `indexOfWord`). The put is undone and
+the reference freed after. (Until 2026-10-23 the kernel also keyed a TERM, the term `indexOfWord`,
+deleted with the term path; a test that cross-checked the two now checks the word key against the
+compiler's `argKey`, audit D-0121 / design Q1.)
+"""
+function ix_key(ld::LK.PL_local_data{T}, t::T)::LK.word where {T}
+    m = LK.Mark(ld)
+    r = LK.PL_new_term_ref(ld)
+    try
+        LK.putSlotValue!(ld, r + 1, t)
+        return LK._argv_key(LK.argv_frame(ld, r), 0)
+    finally
+        LK.Undo!(ld, m)
+        LK.PL_reset_term_refs(ld, r)
+    end
+end
+
+"""
     ix_call(p, goal) -> [(answer, det)]
 
 Call `goal` as SWI's VM does: `firstClause!`, then `nextClause!` while a clause choice remains,
 unifying each candidate. `det` is true when no clause choice is left after the answer — SWI's
-`call_cleanup(G, Det=true)` for a fact.
+`call_cleanup(G, Det=true)` for a fact. The search reads the goal's arguments on the cells
+(`ix_with_argv`).
 """
 function ix_call(p::IxPred{T}, goal::T)::Vector{Tuple{T, Bool}} where {T}
     if p.virgin                               # setDefaultSupervisor()
@@ -114,14 +159,16 @@ function ix_call(p::IxPred{T}, goal::T)::Vector{Tuple{T, Bool}} where {T}
     gen = dref.generation
     chp = LK.ClauseChoice{T}(nothing, LK.word(0))
     out = Tuple{T, Bool}[]
-    c = LK.firstClause!(p.db.ld, LK.argv_term(p.db.ld, goal), gen, p.def, chp)
-    while c !== nothing
-        a = ix_answer(p.db.ld, goal, c.clause::LK.Clause{T})
-        if a !== nothing
-            push!(out, (a, chp.cref === nothing))
+    ix_with_argv(p.db.ld, goal) do argv
+        c = LK.firstClause!(p.db.ld, argv, gen, p.def, chp)
+        while c !== nothing
+            a = ix_answer(p.db.ld, goal, c.clause::LK.Clause{T})
+            if a !== nothing
+                push!(out, (a, chp.cref === nothing))
+            end
+            chp.cref === nothing && break
+            c = LK.nextClause!(p.db.ld, chp, argv, gen, p.def)
         end
-        chp.cref === nothing && break
-        c = LK.nextClause!(p.db.ld, chp, LK.argv_term(p.db.ld, goal), gen, p.def)
     end
     LK.popPredicateAccess!(p.db.ld, p.def)
     return out

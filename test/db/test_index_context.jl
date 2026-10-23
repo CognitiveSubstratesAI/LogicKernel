@@ -22,13 +22,11 @@ _ice(f, xs...) = mk_expr(_IC, _IC[_ics(f), xs...])
     db.ld.index_ctx.active = true
     chp = LK.ClauseChoice{_IC}(nothing, LK.word(0))
     gen = LK.global_generation(db.gd)
-    @test_throws AssertionError LK.firstClause!(
-        db.ld, LK.argv_term(db.ld, goal), gen, p.def, chp
-    )
-    @test_throws AssertionError LK.nextClause!(
-        db.ld, chp, LK.argv_term(db.ld, goal), gen, p.def
-    )
-    db.ld.index_ctx.active = false
-    @test LK.firstClause!(db.ld, LK.argv_term(db.ld, goal), gen, p.def, chp) !== nothing   # free again: works
+    ix_with_argv(db.ld, goal) do argv                       # the goal's arguments on the cells
+        @test_throws AssertionError LK.firstClause!(db.ld, argv, gen, p.def, chp)
+        @test_throws AssertionError LK.nextClause!(db.ld, chp, argv, gen, p.def)
+        db.ld.index_ctx.active = false
+        @test LK.firstClause!(db.ld, argv, gen, p.def, chp) !== nothing   # free again: works
+    end
     @test !db.ld.index_ctx.active                           # and is released on return
 end

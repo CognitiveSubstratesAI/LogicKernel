@@ -286,10 +286,6 @@ end
     return PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT ? consInt(i) : word(0)
 end
 
-# ORIGINAL: the tagged word of a TERM `t` in engine `ld`'s term type, or 0 (the index's term path).
-"The tagged-integer word of term `t` (`_tagged_int_word` in `ld`'s term type), or 0."
-@inline _term_int_word(ld::PL_local_data{T}, t::T) where {T} = _tagged_int_word(T, t)
-
 # ORIGINAL (L1d step 4): whether term type `T` can key a small integer by its WORD (`indexOfWord`'s
 # `TAG_INTEGER: break`). A key must follow the term type's equality (CLAUDE.md): the word keys an
 # integer by its value alone, which is right only when `T` keys integers at all and keys them APART

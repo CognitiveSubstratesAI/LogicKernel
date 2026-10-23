@@ -33,9 +33,9 @@
 #
 # REPRESENTATION (each a DIVERGES at the function it touches):
 #   * `argv` — SWI passes a call's arguments as a `Word` vector; here it is a VIEW of them
-#     (`argv_frame`: the frame's argument slots; `argv_term`: a compound's arguments, its children
-#     2..), read DEREFERENCED as upstream's readers follow references (`argv_at`). A deep index
-#     descends into an argument compound by switching to its `argv_term`.
+#     (`argv_frame`: the frame's argument slots; `argv_cells`: a compound's argument cells on the
+#     global stack), read DEREFERENCED on the words as upstream's readers follow references. A deep
+#     index descends into an argument compound through its argument cells (`argTermP(*argv, 0)`).
 #   * A clause's keys are read from its head CODE (src/pl-comp.jl), exactly as upstream reads
 #     them (`skipArgs`'s H_VOID_N defect: upstream defect, fixed in 0728e8c).
 #   * Keys are words in SWI's layout (`indexOfWord`).
@@ -123,14 +123,14 @@ end
 """
     argv_frame(ld, base)
     argv_cells(ld, p)
-    argv_term(ld, t)
 
-The arguments a clause search keys on — upstream's `Word argv` (pl-index.c) — in three forms: the
+The arguments a clause search keys on — upstream's `Word argv` (pl-index.c) — in two forms: the
 frame's argument slots from position `base` (the VM's `ARGP = argFrameP(FR, 0)`); since L1c
 sub-commit 5 the argument CELLS of the compound at global position `p` (a deep index's descent from
-the first two, upstream's `argTermP(*argv, 0)`); or the arguments of the compound TERM `t`, its
-children 2.. (the callers that hold a goal term: retract/1, clause/2 — until L1e). Built per call;
-none allocates.
+the first, upstream's `argTermP(*argv, 0)`; also a goal put on the global stack). Both are read on
+the WORDS (`_argv_key`, `_argv_is_var`). Built per call; neither allocates. (The third form, a goal
+TERM's children — `argv_term` — was deleted with the term `indexOfWord` once no caller held a goal
+term, 2026-10-23.)
 """
 struct argv_frame{L}
     ld::L
@@ -140,19 +140,6 @@ struct argv_cells{L}
     ld::L
     p::Int
 end
-struct argv_term{L, T}
-    ld::L
-    t::T
-end
-
-"""
-    argv_at(argv, i) -> term
-
-Argument `i` (0-based, as upstream's `argv[i]`) of a call whose arguments are a TERM (a term has no
-bindings to follow). The frame and cell forms are read on the WORDS (`_argv_key`, `_argv_is_var`;
-L1c sub-commit 5).
-"""
-argv_at(v::argv_term, i::Int) = child(v.t, i + 2)
 
 # ORIGINAL: argument `i` of a frame or cell argv as a LOCATION for `_deref_loc` (src/pl-prims.jl):
 # a slot (`-i`) or a global position (L1c sub-commit 5).
@@ -184,29 +171,22 @@ function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: 
     error("_index_key_loc: no location kind $k")           # (unreachable: three kinds)
 end
 
-# ORIGINAL: `indexOfWord(argv_at(argv, i))` for every argv form (L1c sub-commit 5).
+# ORIGINAL: `indexOfWord(argv[i])` for both argv forms, on the words (L1c sub-commit 5).
 "The index key of argument `i` (0-based) of `argv`."
-_argv_key(v::argv_term, i::Int)::word = indexOfWord(v.ld, argv_at(v, i))
 function _argv_key(v::Union{argv_frame, argv_cells}, i::Int)::word
     k, w, p = _deref_loc(v.ld, _argv_loc(v, i))
     return _index_key_loc(v.ld, k, w, p)
 end
 
-# ORIGINAL: `is_var(argv_at(argv, i))` for every argv form (L1c sub-commit 5): an unbound cell.
-"Whether argument `i` (0-based) of `argv` is an unbound variable."
-_argv_is_var(v::argv_term, i::Int)::Bool = is_var(argv_at(v, i))
+# PORT: pl-index.c is_var as _argv_is_var
+# DIVERGES: takes an argv view and a position (`is_var(&argv[i])`); the location is dereferenced on
+# the words (`_deref_loc`, L1c sub-commit 5) and an unbound cell is a variable. (The term `is_var`
+# went with the term path, 2026-10-23.)
+"Whether argument `i` (0-based) of `argv` is an unbound variable (pl-index.c `is_var`)."
 function _argv_is_var(v::Union{argv_frame, argv_cells}, i::Int)::Bool
     k, _, _ = _deref_loc(v.ld, _argv_loc(v, i))
     return k == DU_CELL
 end
-
-# PORT: pl-index.c canIndex
-# DIVERGES: upstream: any non-variable. Upstream also guarantees that `indexOfWord` is non-zero for
-# every non-variable; here a grounded value without a `gnd_key`, and a compound whose head is not
-# a symbol, are non-variables whose key is 0. They count as NOT indexable, so the guarantee every
-# caller relies on (`assert(chp->key)` after `createIndex`) holds.
-"True when term `t` can select clauses through an index (pl-index.c)."
-canIndex(ld, t)::Bool = indexOfWord(ld, t) != 0
 
 # DIVERGES (the divergence audit, S05; user, 2026-10-06; narrowed in L1d step 4): `listSupervisor`
 # takes the keys `ATOM_nil` and `FUNCTOR_dot2` as identity. Since L1d step 4 an atom's and a
@@ -234,40 +214,6 @@ function _value_index_key(t)::word
     g = gnd_key(t)
     g === nothing && return word(0)
     return _gnd_index_key(g)
-end
-
-# PORT: pl-index.c indexOfWord
-# (on a TERM — the cell path is `_index_key_loc`, above)
-# TRANSITIONAL (user, 2026-10-16): a goal argument that is still a term — `argv_term` — keys as its
-# WORD would (`_index_key_loc`), so a clause selected from either path is the
-# same: a symbol its atom word (`_atom_word!`: the engine's cache, then the database's table — `[]` is
-# `ATOM_nil`), an integer in the tagged range its tagged word (where `ld.int_word_keys`), any other value
-# `_value_index_key`, a list cell `FUNCTOR_dot2`, a compound with a symbol head its functor word
-# (`lookupFunctorDef`), `$expr/n` 0. REMOVED when the last term-level caller of indexing moves to cells
-# within L1d (upstream has only the word path).
-"""
-    indexOfWord(ld, t) -> word
-
-The index key of term `t` in engine `ld`: 0 when `t` cannot select clauses, else the word its cell
-would hold (an atom, a small integer), its functor word, or a value's key. A functor key satisfies
-`isFunctor`; no other key does.
-"""
-function indexOfWord(ld, t)::word
-    k = kind(t)
-    k === VAR && return word(0)                             # TAG_VAR: 0
-    k === SYM && return _atom_word!(ld, t)                  # TAG_ATOM: the atom_t
-    if k === GND
-        if ld.int_word_keys
-            w = _term_int_word(ld, t)                       # an inline TAG_INTEGER: the word
-            w != 0 && return w
-        end
-        return _value_index_key(t)
-    end
-    nchildren(t) >= 1 || return word(0)                     # `()`: `$expr/0`, a wildcard
-    is_pair(t) && return FUNCTOR_dot2                       # `[H|T]`: as `argKey` keys `H_LIST*`
-    h = child(t, 1)
-    kind(h) === SYM || return word(0)                       # `$expr/n`, a wildcard
-    return lookupFunctorDef(ld.functors, _atom_word!(ld, h), nchildren(t) - 1)
 end
 
 # PORT: pl-index.c next_clause_unindexed
@@ -357,8 +303,6 @@ function next_clause_primary_index!(
 end
 
 # PORT: pl-index.c nextClauseFromList
-# DIVERGES: descends into the call's argument compound through its `argv_term` (its children 2..
-# are the arguments) rather than into a `Functor` cell.
 """
 The next clause from a list index: the clause list of the matching key — descending into a deeper
 index when the key is a functor — or, when no list has the key, the list of variable clauses
@@ -434,13 +378,11 @@ function join_multi_arg_keys(key::NTuple{MAX_MULTI_INDEX, word}, len::Int)::word
 end
 
 # ORIGINAL: the deep descent of `nextClauseFromList` (pl-index.c: `argv = argTermP(*argv, 0)` of the
-# indexed argument, its arity the new `argc`), per argv form (L1c sub-commit 5): a compound WORD
-# descends into its argument CELLS — so the frame and cell forms never descend into a TERM argv: a
-# mixed recursion frame → term made inference widen the search's types (JET, 2026-10-16: runtime
-# dispatch in `first_clause_guarded!`). A term argv's child descends as a term. The search reads keys
-# by argument POSITION, level by level (the deep walk is `first_clause_guarded!` again, over an
-# argv), and nothing unifies or binds them — the VM unifies the frame's own argument with the clause
-# chosen.
+# indexed argument, its arity the new `argc`), for both argv forms (L1c sub-commit 5): a compound
+# WORD descends into its argument CELLS (`argv_cells`). The search reads keys by argument POSITION,
+# level by level (the deep walk is `first_clause_guarded!` again, over an argv), and nothing unifies
+# or binds them — the VM unifies the frame's own argument with the clause chosen. (The term argv's
+# descent, a term's child as a term, went with `argv_term`, 2026-10-23.)
 "Search `cl` with the arguments of argument `an` (a compound) of `argv`: the deep index's descent."
 function _descend_first_clause!(
     argv::Union{argv_frame, argv_cells}, an::Int, cl::ClauseList{T}, ctx::index_context{T}
@@ -451,12 +393,6 @@ function _descend_first_clause!(
     return first_clause_guarded!(
         argv_cells(ld, q), arityFunctor(ld.functors, ld.gstack[q]), cl, ctx
     )
-end
-function _descend_first_clause!(
-    argv::argv_term, an::Int, cl::ClauseList{T}, ctx::index_context{T}
-)::Union{Nothing, ClauseRef{T}} where {T}
-    at = argv_at(argv, an)
-    return first_clause_guarded!(argv_term(argv.ld, at), nchildren(at) - 1, cl, ctx)
 end
 
 # PORT: pl-index.c indexKeyFromArgv
@@ -478,11 +414,6 @@ function indexKeyFromArgv(ci::ClauseIndex{T}, argv::A)::word where {T, A}
 end
 # (Upstream's loops over `args` stop at the first 0 without a bound; all MAX_MULTI_INDEX slots in
 # use would read past the array. The bound changes nothing for the at most two arguments in use.)
-
-# PORT: pl-index.c is_var
-# DIVERGES: a term-interface variable; there are no reference chains to follow.
-"True when the argument `t` is an unbound variable (pl-index.c)."
-is_var(t)::Bool = kind(t) === VAR
 
 # PORT: pl-index.c is_satifies_index
 "Quick test whether a not-yet-realised index can be used for the call `argv` (pl-index.c)."
@@ -700,7 +631,7 @@ end
     firstClause!(ld, argv, generation, def, chp) -> Union{Nothing, ClauseRef}
 
 The first clause of `def` that may match the call whose arguments `argv` views (`argv_frame` or
-`argv_term`), visible in `generation`; `chp` records where `nextClause!` resumes (pl-index.c).
+`argv_cells`), visible in `generation`; `chp` records where `nextClause!` resumes (pl-index.c).
 """
 function firstClause!(
     ld, argv::A, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T}
@@ -2110,6 +2041,11 @@ function cp_hints_from_assessment!(hints::hash_hints, a::hash_assessment)::Nothi
 end
 
 # PORT: pl-index.c bestHash
+# DIVERGES: upstream's `canIndex(av[i])` is any non-variable, and upstream guarantees that
+# `indexOfWord` is non-zero for every non-variable. Here a grounded value without a `gnd_key`, and
+# a `$expr/n` compound, are non-variables whose key is 0: the test is the key (`_argv_key != 0`), so
+# they count as NOT indexable and the guarantee every caller relies on (`assert(chp->key)` after
+# `createIndex`) holds. (Moved here from the term `canIndex`, deleted with the term path, 2026-10-23.)
 """
 Find the best argument(s) to hash the clauses of `clist` on for the call `av`: assess the
 instantiated arguments not assessed before, pick the best single one, and try two-argument indexes

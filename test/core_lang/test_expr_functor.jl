@@ -15,7 +15,8 @@
 #     the same way in BOTH directions, pinned below as expected failures until it exists (user,
 #     2026-10-04);
 #   * `$expr/n` names no literal and every symbol head names its own (V1 L2 — Q2's marking bit is
-#     retired, user 2026-10-04), so `argKey` and `indexOfWord` agree on every argument.
+#     retired, user 2026-10-04), so `argKey` and the key of the same term on the words (`ix_key`,
+#     pl-index.c `indexOfWord`) agree on every argument.
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 # TERM TYPES PER CHUNK: ALL — the term layer: src/default_term.jl, src/pl-prims.jl
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -218,7 +219,7 @@ end
         @test !LK.is_variant_ptr(_qe(X, a), _qf(:f, a))
     end
 
-    @testset "\$expr/n names no literal; argKey agrees with indexOfWord" begin
+    @testset "\$expr/n names no literal; argKey agrees with the key on the words" begin
         # V1 L2 retired Q2's marking bit (user, 2026-10-04): what marks `$expr/n` now is literal 0
         # in its packed `H_FUNCTOR` operand, which no symbol-headed compound has. Both sides
         # non-empty: symbol heads, `[]` as a head, and `$expr/n` of several arities.
@@ -229,13 +230,13 @@ end
             op = cl.codes[2]
             @test LK.functor_literal(op) != 0
             @test lk_eq(cl.literals[LK.functor_literal(op)], child(t, 1))
-            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(_QLD, t) != 0
+            @test LK.argKey(LK.Code(cl, 1), 0) == ix_key(_QLD, t) != 0
         end
         for t in expr_heads
             cl = _qclause(_qf(:p, t))
             @test LK.decode(LK.Code(cl, 1)) == LK.H_FUNCTOR
             @test LK.functor_literal(cl.codes[2]) == 0
-            @test LK.argKey(LK.Code(cl, 1), 0) == LK.indexOfWord(_QLD, t) == 0   # a wildcard
+            @test LK.argKey(LK.Code(cl, 1), 0) == ix_key(_QLD, t) == 0   # a wildcard
         end
     end
 
