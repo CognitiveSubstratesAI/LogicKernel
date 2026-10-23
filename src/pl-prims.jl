@@ -1014,6 +1014,252 @@ function is_acyclic_cells(ld::PL_local_data{T}, l::Int)::Bool where {T}
     return rc == 1
 end
 
+# ── FACTORIZE (pl-prims.c), since group F (D-0123): the writer's `@(Template, Substitutions)` ──
+# Factorizing a term based on its internal sharing, on the CELLS as upstream's four passes
+# (pl-prims.c:1256-1276): `scan_shared` marks every compound it visits (MARK_MASK on the functor
+# cell) and FIRST_MASK on those met twice, listing `Var = Term` for each; `reverse_factor_pointers`
+# puts a shared compound's functor word into its `Var` and a reference to it into the functor cell;
+# `link_shared` links every location of a shared compound into a reference chain (assignments
+# trailed: `TrailAssignment!`); `restore_shared_functors` puts the functor words back and makes the
+# end of each chain a real variable. MARK_MASK and FIRST_MASK are bits 5 and 6, free in every word
+# (see `is_acyclic_cells`). A location is `_deref_loc`'s (a global position, or `-i` for slot `i`:
+# only the walk's start, a fresh wrapper, is a slot). The agenda is a fresh `cell_agenda` per pass.
+
+# ORIGINAL: upstream's `deRef(p)` returning the LOCATION it ends at (a slot that holds no reference
+# stays the slot), where `_deref_loc` returns the word too and 0 for a slot's own word.
+"The location `l` dereferences to: the last reference followed, or `l` itself."
+@inline function _fz_deref(ld::PL_local_data, l::Int)::Int
+    if l < 0
+        w = ld.slots[-l]
+        isRef(w) || return l
+        l = unRef(w)
+    end
+    while true
+        c = ld.gstack[l]
+        isRef(c) || return l
+        l = unRef(c)
+    end
+end
+
+# ORIGINAL: `*p` of a location (a slot's word, or a global cell's).
+"The word at location `l`."
+@inline _fz_word(ld::PL_local_data, l::Int)::word = l < 0 ? ld.slots[-l] : ld.gstack[l]
+
+# PORT: pl-prims.c scan_shared
+# DIVERGES: `t` and `vart` are locations; returns `(rc, count)`, where upstream sets `*count`.
+"""
+    scan_shared(ld, t, vart) -> (boolex_t, count)
+
+Mark the compounds of the term at location `t` (pl-prims.c): MARK_MASK on each, FIRST_MASK on one
+met twice, for which a `[Var = Term|…]` cell is appended at location `vart`. The count is the
+places that must be shared; `GLOBAL_OVERFLOW` when the list's cells do not fit.
+"""
+function scan_shared(
+    ld::PL_local_data{T}, t::Int, vart::Int
+)::Tuple{boolex_t, Int} where {T}
+    agenda = cell_agenda(0, 0, NTuple{2, Int}[])
+    shared = 0
+    equals2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(=))), 2)
+
+    initCellAgenda!(agenda, 1, t)                           # initTermAgenda(&agenda, 1, t)
+    while true
+        l = nextCellAgendaNoDeRef!(agenda)                  # p = nextTermAgenda(&agenda)
+        l == 0 && break
+        p = _fz_deref(ld, l)
+        w = _fz_word(ld, p)
+        if _is_gcompound(w)                                 # isTerm(*p)
+            q = valPtr(w)                                   # Functor f = valueTerm(*p)
+            d = ld.gstack[q]                                # Word d = &f->definition
+
+            if (d & MARK_MASK) != 0                         # is_marked(d)
+                if (d & FIRST_MASK) == 0                    # !is_first(d)
+                    v = allocGlobalNoShift(ld, 6)
+                    v == 0 && return (GLOBAL_OVERFLOW, shared)
+
+                    ld.gstack[v] = ld.functor_dot2          # v[0] = FUNCTOR_dot2
+                    ld.gstack[v + 1] = consPtr(v + 3, TAG_COMPOUND | STG_GLOBAL)
+                    ld.gstack[v + 2] = ld.atom_nil_w        # v[2] = ATOM_nil
+                    ld.gstack[v + 3] = equals2              # v[3] = FUNCTOR_equals2
+                    ld.gstack[v + 4] = word(0)              # v[4] = 0: for now
+                    ld.gstack[v + 5] = consPtr(q, TAG_COMPOUND | STG_GLOBAL)
+
+                    c = consPtr(v, TAG_COMPOUND | STG_GLOBAL)
+                    if vart < 0                             # *vart = consPtr(&v[0], …)
+                        ld.slots[-vart] = c
+                    else
+                        ld.gstack[vart] = c
+                    end
+                    vart = v + 2
+
+                    ld.gstack[q] = d | FIRST_MASK           # set_first(d)
+                    shared += 1                             # this is already the second one
+                end
+                shared += 1
+            else
+                arity = arityFunctor(ld.functors, d)
+
+                pushWorkCellAgenda!(agenda, arity, q + 1)   # pushWorkAgenda(&agenda, arity, f->arguments)
+                ld.gstack[q] = d | MARK_MASK                # set_marked(d)
+            end
+        end
+    end
+    clearCellAgenda!(agenda)
+
+    return (BOOLEX_TRUE, shared)
+end
+
+# PORT: pl-prims.c unscan_shared
+# DIVERGES: `t` is a location.
+"Clear the marks `scan_shared` left on the term at location `t` (pl-prims.c): needed to restore if we run out of stack."
+function unscan_shared(ld::PL_local_data{T}, t::Int)::Nothing where {T}
+    agenda = cell_agenda(0, 0, NTuple{2, Int}[])
+
+    initCellAgenda!(agenda, 1, t)
+    while true
+        l = nextCellAgendaNoDeRef!(agenda)
+        l == 0 && break
+        w = _fz_word(ld, _fz_deref(ld, l))
+        if _is_gcompound(w)
+            q = valPtr(w)
+            d = ld.gstack[q]
+
+            if (d & MARK_MASK) != 0
+                ld.gstack[q] = d & ~(MARK_MASK | FIRST_MASK)   # clear_marked(d); clear_first(d)
+                arity = arityFunctor(ld.functors, d)
+                pushWorkCellAgenda!(agenda, arity, q + 1)
+            end
+        end
+    end
+    clearCellAgenda!(agenda)
+    return nothing
+end
+
+# PORT: pl-prims.c reverse_factor_pointers
+# DIVERGES: `vars` is a location.
+"For each `Var = Term` of the list at location `vars`: Term's functor word into Var, a marked reference to Var into Term's functor cell (pl-prims.c)."
+function reverse_factor_pointers(ld::PL_local_data{T}, vars::Int)::Nothing where {T}
+    while _fz_word(ld, vars) != ld.atom_nil_w
+        v = valPtr(_fz_word(ld, vars))                      # Word v = (Word)valueTerm(*vars)
+        t = valPtr(ld.gstack[v + 5])                        # Functor t = valueTerm(v[5])
+
+        ld.gstack[v + 4] = ld.gstack[t] & ~(MARK_MASK | FIRST_MASK)    # v[4] is the variable
+        ld.gstack[t] = makeRefG(v + 4) | MARK_MASK | FIRST_MASK
+
+        vars = v + 2
+    end
+    return nothing
+end
+
+# PORT: pl-prims.c restore_shared_functors
+# DIVERGES: `vars` is a location.
+"For each `Var = Term` of the list at location `vars`: Term's functor word back from the end of Var's chain, which becomes a variable (pl-prims.c)."
+function restore_shared_functors(ld::PL_local_data{T}, vars::Int)::Nothing where {T}
+    while _fz_word(ld, vars) != ld.atom_nil_w
+        v = valPtr(_fz_word(ld, vars))
+        t = valPtr(ld.gstack[v + 5])
+        p = _fz_deref(ld, v + 4)                            # Word p = &v[4]; deRef(p)
+
+        ld.gstack[t] = ld.gstack[p]                         # t->definition = *p
+        ld.gstack[p] = word(0)                              # setVar(*p)
+
+        vars = v + 2
+    end
+    return nothing
+end
+
+# PORT: pl-prims.c link_shared
+# DIVERGES: `t` is a location; a location of a shared compound is a global position (only the
+# walk's start, never shared, is a slot), asserted.
+"Link every location of a shared compound of the term at location `t` into its reference chain, and unmark the others (pl-prims.c)."
+function link_shared(ld::PL_local_data{T}, t::Int)::Nothing where {T}
+    agenda = cell_agenda(0, 0, NTuple{2, Int}[])
+
+    initCellAgenda!(agenda, 1, t)
+    while true
+        l = nextCellAgendaNoDeRef!(agenda)
+        l == 0 && break
+        p = _fz_deref(ld, l)
+        w = _fz_word(ld, p)
+        if _is_gcompound(w)
+            q = valPtr(w)
+            d = ld.gstack[q]
+
+            if isRef(d)                                     # shared term
+                v = _fz_deref(ld, unRef(d & ~(FIRST_MASK | MARK_MASK)))   # v = unRef(…); deRef(v)
+
+                if (d & MARK_MASK) != 0                     # is_marked(d)
+                    arity = arityFunctor(ld.functors, ld.gstack[v])   # arityFunctor(*v)
+                    pushWorkCellAgenda!(agenda, arity, q + 1)
+                end
+
+                @assert p > 0 "link_shared: a shared compound's location is a slot"
+                if v < p
+                    TrailAssignment!(ld, p)
+                    ld.gstack[p] = makeRefG(v)              # *p = makeRefG(v)
+                else
+                    TrailAssignment!(ld, p)
+                    ld.gstack[p] = ld.gstack[v]             # *p = *v
+                    ld.gstack[v] = makeRefG(p)              # *v = makeRefG(p)
+                end
+            elseif (d & MARK_MASK) != 0                     # is_marked(d)
+                fun = d & ~(FIRST_MASK | MARK_MASK)
+
+                ld.gstack[q] = d & ~MARK_MASK               # clear_marked(d)
+                arity = arityFunctor(ld.functors, fun)
+                pushWorkCellAgenda!(agenda, arity, q + 1)
+            end
+        end
+    end
+    clearCellAgenda!(agenda)
+    return nothing
+end
+
+# PORT: pl-prims.c PL_factorize_term
+# DIVERGES: the local data is an argument (upstream: `GET_LD`); the wrapper `'var'(Term)` is made
+# with `PL_unify_functor` and `PL_unify_arg` (upstream's `PL_unify_term`). No garbage collector or
+# stack shift to make room (`makeMoreStackSpace`): a global overflow — the list's cells, or the cells
+# `TrailAssignment!` saves old values in (`ensureGlobalSpace`) — is raised after the marks are
+# cleared and the frame discarded, and the call fails; the trail grows on demand (no
+# TRAIL_OVERFLOW). No `checkStacks` (`CHK_SECURE` is `O_DEBUG` only).
+"""
+    PL_factorize_term(ld, term, template, factors) -> Bool
+
+Unify `template` with the term `term` references, every subterm it shares replaced by a variable,
+and `factors` with the list of `Var = Subterm` for those (pl-prims.c): a cyclic term becomes the
+acyclic `Template` and `Substitutions` of `@(Template, Substitutions)`.
+"""
+function PL_factorize_term(
+    ld::PL_local_data{T}, term::term_t, template::term_t, factors::term_t
+)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return false
+    wrapped = PL_new_term_ref(ld)
+    vars = PL_new_term_ref(ld)
+    (
+        PL_unify_functor(ld, wrapped, mk_sym(T, :var), 1) &&    # PL_FUNCTOR, FUNCTOR_var1,
+        PL_unify_arg(ld, 1, wrapped, term)                      # PL_TERM, term
+    ) || return false
+
+    PL_put_nil(ld, vars)
+    t = -(wrapped + 1)                                          # t = valTermRef(wrapped)
+
+    rc, count = scan_shared(ld, t, -(vars + 1))
+    if rc != BOOLEX_TRUE || !ensureGlobalSpace(ld, count)       # tTop + 2*count > tMax; gTop + count > gMax
+        unscan_shared(ld, t)
+        PL_discard_foreign_frame(ld, fid)
+        rc != BOOLEX_TRUE && raiseStackOverflow(ld, rc)         # makeMoreStackSpace(rc, …): no GC
+        return false
+    end
+
+    reverse_factor_pointers(ld, -(vars + 1))
+    link_shared(ld, t)
+    restore_shared_functors(ld, -(vars + 1))
+    PL_close_foreign_frame(ld, fid)
+
+    _PL_get_arg(ld, 1, wrapped, wrapped)
+    return PL_unify(ld, template, wrapped) && PL_unify(ld, factors, vars)
+end
+
 # ── the standard order on CELLS (L1d step 1; the workspace's L1_plan/stageL1d_design.md §3) ──────
 # Locations as `do_unify_cells`'s (a global position, or `-i` for slot `i`). The order is the term
 # compare's, so a sort or a `==` gives the same answer on either path: variables by POSITION
@@ -1280,6 +1526,15 @@ function var_occurs_in_cells(ld::PL_local_data{T}, v::Int, t::Int)::Bool where {
         clearCellAgendaLR!(agenda)
     end
     return rc
+end
+
+# PORT: pl-prims.c PL_var_occurs_in
+# DIVERGES: the local data is an argument; no overflow code to raise (`var_occurs_in_cells` returns a
+# Bool: no MEMORY_OVERFLOW). Since group F (D-0123): the writer's `reunify_acyclic_substitutions`.
+"Whether the variable term reference `var` holds occurs in the term `value` references (pl-prims.c)."
+function PL_var_occurs_in(ld::PL_local_data{T}, var::term_t, value::term_t)::Bool where {T}
+    _, _, v = _deref_loc(ld, -(var + 1))                # Word v = valTermRef(var); deRef(v)
+    return var_occurs_in_cells(ld, v, -(value + 1))
 end
 
 # PORT: pl-prims.c unify_with_occurs_check as unify_with_occurs_check_cells

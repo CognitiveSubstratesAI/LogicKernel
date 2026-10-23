@@ -17,8 +17,8 @@
 #     write_canonical, names to writeq/print), the bindings undone after the write;
 #   * white-box: numberVars binds each variable cell to a `'$VAR'` laid out above the mark, trailed (Undo
 #     frees it and unbinds the cell); no MARK left on a functor cell, `ld.cycle_vstack` empty; write_canonical
-#     leaves the global stack, the trail and the variables as it found them; a cyclic term refused as today
-#     (decision 4a), nothing left marked or bound; writeNumberVar's older test at the frame mark's globaltop
+#     leaves the global stack, the trail and the variables as it found them; a cyclic term written
+#     factorised (group F, D-0123; until then refused, decision 4a), nothing left marked or bound; writeNumberVar's older test at the frame mark's globaltop
 #     (a '$VAR' AT it older, one above it newer — the `>=` on positions);
 #   * the meter: a numbervars/3 loop and a write_canonical loop make no cold import (until L1f f3 also no
 #     cold export, variable read or boundary pair, and the boundary — a keyed variable in the term,
@@ -345,14 +345,29 @@ end
     @test _nv_clean(ld) && ld.var_names_numbervars_frame == 0
 end
 
-@testset "a cyclic term: write_canonical refuses it as today; nothing left marked or bound" begin
+@testset "a cyclic term: write_canonical writes it factorised; nothing left marked or bound" begin
+    # Since group F (D-0123: `PL_factorize_term`). Until then refused (decision 4a):
+    #   `@test_throws LK.NotPortedError LK.pl_write_canonical(ld, t)` (the old expectation)
+    # swipl 10.1.18: `X = f(X, Y), write_canonical(X)` writes `@(_408,[=(_408,f(_408,A))])`
+    # (probed 2026-10-23; the same goal is compared live in test_canonical_readatom_swipl.jl)
     Y = _rv(2)
     ld, t = _nv_engine(_R[_rf("f", _rs("x"), Y)])
     c = _nv_pos(ld, t)
-    ld.gstack[c + 1] = LK.consPtr(c, LK.TAG_COMPOUND | LK.STG_GLOBAL)   # X = f(X, Y)
+    cyc = LK.consPtr(c, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    ld.gstack[c + 1] = cyc                                   # X = f(X, Y)
     out = IOBuffer()
     LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, out)
-    @test_throws LK.NotPortedError LK.pl_write_canonical(ld, t)
+    g0, tr0 = ld.gTop, length(ld.trail)
+    @test LK.pl_write_canonical(ld, t) == LK.FTRUE
+    LK.Sflush(LK.Suser_output(ld))
+    @test match(r"^@\((_G?[0-9]+),\[=\(\1,f\(\1,A\)\)\]\)$", String(take!(out))) !== nothing
+    # the factorisation undone: the cycle back in its cell (TrailAssignment!'s value entry), the
+    # stacks as found, no FIRST_MASK either (scan_shared's), Y unbound
+    @test ld.gstack[c + 1] == cyc
+    @test ld.gTop == g0 && length(ld.trail) == tr0
+    @test !any(
+        p -> LK.isFunctor(ld.gstack[p]) && (ld.gstack[p] & LK.FIRST_MASK) != 0, 1:(ld.gTop)
+    )
     @test LK._deref_loc(ld, c + 2)[1] == LK.DU_CELL
     @test _nv_clean(ld) && ld.var_names_numbervars_frame == 0
 end

@@ -14,14 +14,15 @@
 # token layer that keeps tokens apart (`needSpace`, `PutOpenToken`, `PutToken`), atoms, strings,
 # integers and rationals, `'$VAR'` terms, and `writeTerm2`'s state machine over an explicit stack —
 # operators, lists, `{}`, Unicode bracket pairs, canonical compounds — and `PL_write_term`, which
-# `term_to_atom/2` and `term_string/2` write with (src/pl-read.jl). REFUSED (`NotPortedError`): a
-# cyclic term (decision 4a). Since group F (D-0123) `user:portray/1`, when it is defined, is called
-# as upstream calls it (`callPortray`, through `PL_call_predicate`; until then refused, decision
-# 3a). Since R1e's floats,
-# `format_float` (`~h`). Since R1e's write/1 family (the end of this file): write/1,2, writeq/1,2,
-# writeln/1,2, print/1,2, write_term/2,3 and their options, nl/0,1, over the standard streams
-# (src/os/pl-file.jl). NOT PORTED, the rest of R1e: write_canonical/1,2 (`numberVars`); never:
-# attributed variables, dicts, blobs other than the reserved symbols.
+# `term_to_atom/2` and `term_string/2` write with (src/pl-read.jl). Since group F (D-0123), what
+# R1e refused (`NotPortedError`) is written as upstream writes it: a cyclic term, factorised to
+# `@(Template, Substitutions)` (`writeTopTerm`, `reunify_acyclic_substitutions`; src/pl-prims.jl
+# `PL_factorize_term`; decision 4a), `user:portray/1` when it is defined (`callPortray`, through
+# `PL_call_predicate`; decision 3a) and write_term's `portray_goal` (`put_write_options`).
+# Since R1e's floats, `format_float` (`~h`). Since R1e's write/1 family (the end of this file):
+# write/1,2, writeq/1,2, writeln/1,2, print/1,2, write_term/2,3 and their options, nl/0,1, over
+# the standard streams (src/os/pl-file.jl); since R1e's canonical write_canonical/1,2
+# (`numberVars`). Never: attributed variables, dicts, blobs other than the reserved symbols.
 
 # PORT: pl-write.c NaN_value
 # DIVERGES: the exponent field is replaced on the bits (`reinterpret`), where upstream writes it
@@ -1746,11 +1747,58 @@ end
 
 # ── cycles and the top level (pl-write.c) ───────────────────────────────────────────────────────
 
+# PORT: pl-write.c reunify_acyclic_substitutions
+# DIVERGES: `'$VAR'(N)` is made with `PL_unify_functor` and `PL_unify_integer` on its argument
+# (upstream's `PL_unify_term`); `PL_var_occurs_in` raises no overflow (src/pl-prims.jl).
+"""
+Of the `Var = Value` list `substitutions` holds, put those whose `Var` occurs in its `Value` (a
+cycle) into the list `cycles` — `Var` numbered `'\$VAR'(-1)`, `'\$VAR'(-2)`… under numbervars,
+written `S_1`, `S_2`… — and unify the others, so they are written in place (pl-write.c).
+"""
+function reunify_acyclic_substitutions(
+    substitutions::term_t, cycles::term_t, options::write_options{T}
+)::Bool where {T}
+    ld = options.ld
+    count = 0
+
+    s_tail = PL_copy_term_ref(ld, substitutions)
+    c_tail = PL_copy_term_ref(ld, cycles)
+    s_head = PL_new_term_ref(ld)
+    c_head = PL_new_term_ref(ld)
+    var = PL_new_term_ref(ld)
+    value = PL_new_term_ref(ld)
+    n = PL_new_term_ref(ld)
+
+    while PL_get_list(ld, s_tail, s_head, s_tail)
+        _PL_get_arg(ld, 1, s_head, var)
+        _PL_get_arg(ld, 2, s_head, value)
+
+        if PL_var_occurs_in(ld, var, value)
+            if (options.flags & PL_WRT_NUMBERVARS) != 0
+                count -= 1
+                (
+                    PL_unify_functor(ld, var, mk_sym(T, Symbol("\$VAR")), 1) &&  # FUNCTOR_isovar1
+                    _PL_get_arg(ld, 1, var, n) && PL_unify_integer(ld, n, count)  # PL_INTPTR, --count
+                ) || return false
+            end
+
+            (PL_unify_list(ld, c_tail, c_head, c_tail) && PL_unify(ld, c_head, s_head)) ||
+                return false
+        elseif PL_exception(ld, 0) == 0
+            PL_unify(ld, var, value) || return false
+        else
+            return false
+        end
+    end
+
+    return PL_unify_nil(ld, c_tail)
+end
+
 # PORT: pl-write.c writeTopTerm
-# DIVERGES: a cyclic term — upstream writes `@(Template, Substitutions)` from `PL_factorize_term` —
-# is refused (`NotPortedError`, its culprit the atom `cyclic_term`: f3b-5a; user, 2026-10-07,
-# decision 4a), checked first, so no write walks a cycle; `cycles(false)`'s domain error as
-# upstream. `PL_is_acyclic` on the cells (L1d step 3). No stream lock (`Slock`).
+# DIVERGES: `PL_is_acyclic` on the cells (L1d step 3); `@(Template, Substitutions)` made with
+# `PL_unify_functor` and `PL_unify_arg` (upstream's `PL_unify_term`). No stream lock (`Slock`).
+# Since group F (D-0123) a cyclic term is written as upstream writes it, factorised
+# (`PL_factorize_term`, src/pl-prims.jl); until then refused (`NotPortedError`, decision 4a).
 "Write the term `term` references at priority `prec` (pl-write.c)."
 function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool where {T}
     ld = options.ld
@@ -1769,13 +1817,21 @@ function writeTopTerm(term::term_t, prec::Int, options::write_options{T})::Bool 
             return PL_error(ld, ERR_DOMAIN, mk_sym(T, :cyclic_term), term)
         end
 
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :cyclic_term),                    # (a name: the term has a cycle)
-                "writing a cyclic term (PL_factorize_term: @(Template, Substitutions))",
-                "refused (R1e decision 4a)"
-            )
-        )
+        fid = PL_open_foreign_frame(ld)
+        fid == 0 && return false
+        template = PL_new_term_ref(ld)
+        substitutions = PL_new_term_ref(ld)
+        cycles = PL_new_term_ref(ld)
+        at_term = PL_new_term_ref(ld)
+        (
+            PL_factorize_term(ld, term, template, substitutions) &&
+            reunify_acyclic_substitutions(substitutions, cycles, options) &&
+            PL_unify_functor(ld, at_term, mk_sym(T, Symbol("@")), 2) &&   # FUNCTOR_at_sign2
+            PL_unify_arg(ld, 1, at_term, template) &&
+            PL_unify_arg(ld, 2, at_term, cycles)
+        ) || return false
+        rc = writeTerm(at_term, prec, options, wflags)
+        PL_discard_foreign_frame(ld, fid)
     end
 
     return rc
@@ -2231,8 +2287,9 @@ function pl_print2(ld::PL_local_data{T}, stream::term_t, term::term_t)::foreign_
 end
 
 # PORT: pl-write.c pl_write_canonical2
-# DIVERGES: `singletons` is `PL_is_acyclic`'s verdict as upstream (a cyclic term is then refused
-# by `writeTopTerm`, decision 4a); the numbering is undone with the numbervars frame.
+# DIVERGES: `singletons` is `PL_is_acyclic`'s verdict as upstream (a cyclic term is then written
+# factorised by `writeTopTerm` since group F, D-0123; until then refused, decision 4a); the
+# numbering is undone with the numbervars frame.
 "write_canonical/2: the term `term` references, variables numbered, quoted, operators ignored (pl-write.c)."
 function pl_write_canonical2(
     ld::PL_local_data{T}, stream::term_t, term::term_t

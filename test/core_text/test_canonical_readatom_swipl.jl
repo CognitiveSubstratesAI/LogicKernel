@@ -20,9 +20,10 @@
 #   * EXCLUDED BY NAME AND COUNTED: a syntax error whose culprit text holds a CUT UTF-8 byte
 #     (`«x`: upstream names the quote's first byte, `string("Â", 0)`; the kernel does the same, and
 #     its writer cannot write that string).
+#   * CYCLIC TERMS WRITTEN (group F, D-0123: `PL_factorize_term`; until then write_canonical of a
+#     cyclic term was refused, decision 4a): 27 goals — three shapes and more, every writer.
 #   * THE REFUSALS, explicit: term_position, subterm_positions, comments, var_prefix,
-#     quasi_quotations (term positions: R2), unicode_atoms, blob — each `NotPortedError`;
-#     write_canonical of a cyclic term (decision 4a; swipl factorises it: `@(T, Bindings)`).
+#     quasi_quotations (term positions: R2), unicode_atoms, blob — each `NotPortedError`.
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -353,7 +354,38 @@ const _CR_CYCLES_GOALS = [
     "read_term_from_atom('X', T, [cycles(true)]), var(T)",
     "read_term_from_atom('@(X,[X=a])', T, [cycles(true), variable_names(V)]), write(T-V)",
     "read_term_from_atom('@(X,[X=f(X)])', T, [cycles(maybe)])",
-    "read_term_from_atom('@(X,[X=f(X)])', f(T), [cycles(true)])"
+    "read_term_from_atom('@(X,[X=f(X)])', f(T), [cycles(true)])",
+    # …and the cyclic terms read, WRITTEN (since group F's cyclic write, D-0123)
+    "read_term_from_atom('@(X,[X=f(X)])', T, [cycles(true)]), write(T)",
+    "read_term_from_atom('@(X,[X=f(Y),Y=g(X)])', T, [cycles(true)]), print(T)",
+    "read_term_from_atom('@(X,[X=[a|X]])', T, [cycles(true)]), write_canonical(T)",
+    "read_term_from_atom('@(X,[X=f(X)])', T, [cycles(true), variable_names(V)]), write(V)"
+]
+
+# Writing a CYCLIC term (group F, D-0123: upstream's `writeTopTerm` with `PL_factorize_term` and
+# `reunify_acyclic_substitutions`; until then refused, decision 4a): `@(Template, Substitutions)` —
+# a self-loop, a list cycle, a shared cyclic subterm, a cycle through two terms, an acyclic shared
+# subterm put back in place, two cycles, a cycle with a free variable — by write/1, print/1,
+# writeq/1, write_canonical/1, write_term/2 (no numbervars, quoted, max_depth, cycles(false)'s
+# error), term_to_atom/2 and print/2 to user_error; the term is unchanged after the write.
+const _CR_CYCLIC_WRITE_GOALS = [
+    "X = f(X), write(X)", "X = f(X), print(X)", "X = f(X), writeq(X)",
+    "X = f(X), write_canonical(X)",
+    "X = [a|X], write(X)", "X = [a|X], writeq(X)", "X = [a|X], print(X)",
+    "X = [a|X], write_canonical(X)",
+    "X = f(X), Y = g(X, X), write(Y)", "X = f(X), Y = g(X, X), write_canonical(Y)",
+    "X = f(Y), Y = g(X), write(h(X, Y))",
+    "Y = [a|Z], Z = [b|Y], print(h(a, k(Y)))",
+    "X = f(X, Y), Y = g(a), Z = h(Y, Y, X), write(Z)",
+    "X = f(X), Y = f(Y), write(X-Y)", "X = f(X, V), writeq(X-V)",
+    "X = f(X, Y), write_canonical(X)", "X = f(X, 'A'), writeq(X)",
+    "X = '\$VAR'(X), print(X)",
+    "X = f(X), write_term(X, [])", "X = f(X), write_term(X, [cycles(true), quoted(true)])",
+    "X = f(X), write_term(X, [max_depth(3)])",
+    "X = f(X), catch(write_term(X, [cycles(false)]), error(E, _), true), E = domain_error(D, _), write(D)",
+    "X = f(X), term_to_atom(X, A), write(A)", "X = f(X), term_to_atom(g(X), A), write(A)",
+    "X = f(X), print(user_error, X)", "X = f(X), write_canonical(user_error, X)",
+    "X = f(X), write(X), write(' '), X = f(Z), Z == X, write(ok)"
 ]
 
 "The kernel's results of the hand goals (a `,` goal: run as read)."
@@ -521,6 +553,17 @@ if _CR_SWIPL !== nothing
         @test startswith(ours[14][3], "ex:error(type_error(equal,a),context(")
     end
 
+    @testset "writing a cyclic term, as swipl (group F, D-0123: PL_factorize_term)" begin
+        ours = _cr_goals(_CR_CYCLIC_WRITE_GOALS)
+        theirs = _cr_swipl(["gl(" * _cr_codes(g) * ")" for g in _CR_CYCLIC_WRITE_GOALS])
+        @test _cr_compare(_CR_CYCLIC_WRITE_GOALS, ours, theirs) == 0
+        # the goals reach what they are for: the factorised text, the error, the term unchanged
+        @test ours[1][1] == "@(S_1,[S_1=f(S_1)])" && ours[1][3] == "true"
+        @test ours[22][1] == "cyclic_term"
+        @test ours[end][1] == "@(S_1,[S_1=f(S_1)]) ok"
+        @test all(r -> r[3] == "true", ours)
+    end
+
     @testset "the hand goals, as swipl" begin
         ours = _cr_goals(_CR_GOALS)
         theirs = _cr_swipl(["gl(" * _cr_codes(g) * ")" for g in _CR_GOALS])
@@ -541,7 +584,7 @@ else
     end
 end
 
-@testset "the refusals: read options the kernel cannot honour; a cyclic term's canonical text" begin
+@testset "the refusals: read options the kernel cannot honour" begin
     for o in
         ("term_position(_)", "subterm_positions(_)", "comments(_)", "var_prefix(true)",
         "quasi_quotations(_)", "unicode_atoms(nfc)", "blob(x)")
@@ -551,10 +594,9 @@ end
         )
         @test r[3] == "NOTPORTED"
     end
-    # X = f(X) bound by =/2 on the cells, in the same conjunction (L1f f3: until then a keyed
-    # variable bound in the store, then put)
-    r = _cr_run_goal(_cr_read("X = f(X), write_canonical(X)")::_CR)
-    @test r[3] == "NOTPORTED"
+    # (a cyclic term's canonical text was refused here until group F, D-0123 — `X = f(X),
+    # write_canonical(X)` gave `r[3] == "NOTPORTED"`; it is written as swipl writes it since, and
+    # compared with swipl in "writing a cyclic term, as swipl")
 end
 
 @testset "numberVars: the bindings are undone after write_canonical; the frame is restored" begin

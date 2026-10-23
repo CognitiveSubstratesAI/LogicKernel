@@ -202,6 +202,17 @@ _manifest_per_type(T) = (
     (LK.ph_acyclic_mark_cells, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.ph_acyclic_unmark_cells, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.is_acyclic_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    # factorize on cells (group F, D-0123: the cyclic write): the agendas and the stacks may grow
+    (LK._fz_deref, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK._fz_word, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.scan_shared, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.unscan_shared, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.reverse_factor_pointers, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.restore_shared_functors, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.link_shared, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_factorize_term, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.PL_var_occurs_in, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.TrailAssignment!, Tuple{LK.PL_local_data{T}, Int}, false),
     # the walks on cells (L1d step 5): the visited stack, the side vector and the term references may
     # grow; the boundary allocates
     (LK.ph_visited_cells, Tuple{LK.PL_local_data{T}, Int, Bool}, true),
@@ -908,6 +919,7 @@ function _manifest_index(T)
         (LK.writeTermResume, Tuple{LK.write_options{T}, LK.wframe{T}, LK.wsub}, false),
         (LK.writeTerm, Tuple{Int64, Int64, LK.write_options{T}, Int64}, false),
         (LK.writeTopTerm, Tuple{Int64, Int64, LK.write_options{T}}, false),
+        (LK.reunify_acyclic_substitutions, Tuple{Int64, Int64, LK.write_options{T}}, false),
         (LK.PL_write_term, Tuple{GD, LD, LK.IOSTREAM, Int64, Int64, Int64}, false),
         # R1e — the write/1 family: the predicates (src/pl-write.jl), the standard streams
         # (src/os/pl-file.jl), option lists (src/os/pl-option.jl), and their FLI helpers

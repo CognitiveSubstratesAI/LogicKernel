@@ -11,10 +11,11 @@
 #     texts name their variables `_V0`, `_V1`… by first occurrence before they are compared;
 #   * THE OPERATOR TABLE: swipl's boot files add `$` (boot/topvars.pl, R2; the kernel has pl-op.c's
 #     table, `.` and `:=` included); the driver removes it, so both sides write with one table;
-#   * THE REFUSALS: a float (R1e's floats), a cyclic term (`X = f(X)`, and a cyclic exception
-#     ball), an atom holding the character 0 — each an explicit `NotPortedError`, never a wrong
-#     text, a hang or a stack overflow; user:portray/1 defined is CALLED since group F (D-0123:
-#     upstream's `callPortray`; until then refused, decision 3a), compared with swipl;
+#   * THE REFUSALS: a float (R1e's floats), an atom holding the character 0 — each an explicit
+#     `NotPortedError`, never a wrong text, a hang or a stack overflow. Since group F (D-0123),
+#     compared with swipl instead of refused: a cyclic term (`X = f(X)`, a cycle through two
+#     lists, and a cyclic exception ball: `PL_factorize_term`, decision 4a) and user:portray/1
+#     defined (upstream's `callPortray`, decision 3a);
 #   * DEPTH: a term 100,000 levels deep and a list of 100,000 elements, written without recursion;
 #   * upstream's units for its two writer fixes (docs/upstream_reports.md #11, #12; swipl-devel
 #     tests/core_text/test_write.pl `quote_non_ascii`, `op_4`, `bracket_1..3`), pinned here.
@@ -467,10 +468,29 @@ end
     @test _tw_call("term_to_atom", _TW[s0, _tw_var()])[1] === :notported
     rc, ans = _tw_call("term_string", _TW[s0, _tw_var()])
     @test rc === :true && lk_value(ans[2]) == "\"a\0b\""
+end
 
-    # a cyclic term: X = f(X) with the occurs check off (the flag's default) — bound on the cells,
-    # through term references laid with one PutVarMap (L1f f3: until then keyed variables bound in
-    # the store, by the term `unify_ptrs`)
+"Run `name` (term_to_atom/2, term_string/2) on the two term references from `a` as laid on the cells: the text it gives, or `fails`."
+function _tw_call_text(name::String, a::Int; gd=_TW_GD, ld=_TW_LD)::String
+    proc = LK.isCurrentProcedure(sym_key(_tws(name)), 2, LK.MODULE_system(gd))
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+        t = lk_answer(ld, a + 1)                    # the text only: the term is cyclic
+        kind(t) === SYM ? sym_text(t) : String(lk_value(t))
+    else
+        "fails"
+    end
+    LK.PL_close_query(ld, qid)
+    return out
+end
+
+@testset "a cyclic term is written @(Template, Substitutions), as swipl (group F, D-0123)" begin
+    # Until group F refused (decision 4a): each text below was "NOTPORTED" (the write) or
+    # `:notported` (term_to_atom/2, term_string/2). X = f(X) with the occurs check off (the flag's
+    # default) — bound on the cells, through term references laid with one PutVarMap (L1f f3)
     ld = LK.PL_local_data{_TW}(_TW_GD)
     fid = LK.PL_open_foreign_frame(ld)
     x, y, z = _tw_var(), _tw_var(), _tw_var()
@@ -486,15 +506,20 @@ end
         LK.putSlotValue!(ld, r + i + 1, t, pvm)
     end
     @test LK.PL_unify(ld, r, r + 1)                   # X = f(X)
-    @test _tw_write_ref(r, _TW_WRITEQ; ld=ld) == "NOTPORTED"
-    @test _tw_call_refs("term_to_atom", r + 2, 2; ld=ld)[1] === :notported   # term_to_atom(g(X), A)
-    @test _tw_call_refs("term_string", r + 4, 2; ld=ld)[1] === :notported    # term_string(X, S)
+    ours1 = [
+        _tw_write_ref(r, _TW_WRITEQ; ld=ld),
+        _tw_call_text("term_to_atom", r + 2; ld=ld),  # term_to_atom(g(X), A)
+        _tw_call_text("term_string", r + 4; ld=ld)    # term_string(X, S)
+    ]
+    # the write changes nothing: X is still cyclic, and written the same way again
+    @test !LK.is_acyclic_cells(ld, -(r + 1))
+    @test _tw_write_ref(r, _TW_WRITEQ; ld=ld) == ours1[1]
     # …deep inside a term, and a cycle through two terms: Y = [a|Z], Z = [b|Y]
     @test LK.PL_unify(ld, q, q + 1) && LK.PL_unify(ld, q + 2, q + 3)
-    @test _tw_write_ref(q + 4, _TW_PRINT; ld=ld) == "NOTPORTED"
+    ours2 = [_tw_write_ref(q + 4, _TW_PRINT; ld=ld)]
     LK.PL_close_foreign_frame(ld, fid)
 
-    # a cyclic exception ball (V5d keeps its cycle): written, it is refused the same way
+    # a cyclic exception ball (V5d keeps its cycle): written the same way
     gd2 = LK.PL_global_data{_TW}()
     ld2 = LK.PL_local_data{_TW}(gd2)
     b = _tw_var()
@@ -512,10 +537,28 @@ end
     ex = LK.PL_exception(ld2, qid)
     # the ball read on the cells (L1f f3: until then a term export of the ball, cycle frames kept)
     @test ex != 0 && !LK.is_acyclic_cells(ld2, -(ex + 1))
-    @test _tw_write_ref(ex, _TW_WRITEQ; gd=gd2, ld=ld2) == "NOTPORTED"
+    ours3 = [_tw_write_ref(ex, _TW_WRITEQ; gd=gd2, ld=ld2)]
     LK.PL_close_query(ld2, qid)
     LK.PL_close_foreign_frame(ld2, fid)
 
+    ours = [[_tw_norm(t) for t in o] for o in (ours1, ours2, ours3)]
+    @test ours[1][1] == "@(S_1,[S_1=f(S_1)])"            # not vacuous: the factorised text
+    if _TW_SWIPL !== nothing
+        theirs = _tw_swipl(
+            ["c1", "c2", "c3"];
+            prelude="c1 :- X = f(X), out(writeq(X)), write(' '), " *
+                    "out((term_to_atom(g(X), A), write(A))), write(' '), " *
+                    "out((term_string(X, S), write(S))), nl.\n" *
+                    "c2 :- Y = [a|Z], Z = [b|Y], out(print(h(a, k(Y)))), nl.\n" *
+                    "c3 :- B = error(e(B), _), catch(throw(B), E, true), out(writeq(E)), nl.\n"
+        )
+        theirs = [[_tw_norm(t) for t in l] for l in theirs]
+        @test ours == theirs
+        ours == theirs ||
+            println(stderr, "  cyclic: kernel $(repr(ours)) swipl $(repr(theirs))")
+    elseif _TW_SWIPL_REQUIRED
+        @test false
+    end
 end
 
 @testset "user:portray/1 defined: print/1's flags call it, as swipl (group F, D-0123: callPortray)" begin

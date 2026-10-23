@@ -160,6 +160,27 @@ function lowerLTop!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-wam.c TrailAssignment as TrailAssignment!
+# DIVERGES: `p` is a global POSITION (the kernel assigns no local cell this way), 1-based with `gTop`
+# the last cell in use, so upstream's `p < LD->mark_bar` is `p <= ld.mark_bar` (as `_bind_const!`);
+# no `p >= lBase` test (no local cell). The old value is saved in a cell allocated at `gTop`
+# (`allocGlobalCells!`): the caller ensured the room (`ensureGlobalSpace`), as upstream's assert
+# says. A value entry (`tagTrailPtr`) above its address entry, which `Undo!` restores. Since group F
+# (D-0123): `link_shared` (src/pl-prims.jl).
+"Trail the assignment of the cell at global position `p`: its old value saved, restored on undo (pl-wam.c)."
+function TrailAssignment!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
+    @assert (ld.gstack[p] & (MARK_MASK | FIRST_MASK)) == 0
+
+    if p <= ld.mark_bar
+        old = allocGlobalCells!(ld, 1)              # Word old = gTop; gTop++
+
+        ld.gstack[old] = ld.gstack[p]               # save the old value on the global
+        push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))   # (tTop++)->address = p
+        push!(ld.trail, tagTrailPtr(old))           # (tTop++)->address = tagTrailPtr(old)
+    end
+    return nothing
+end
+
 # ── choice points ────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-wam.c newChoice
 # DIVERGES: returns the choice point's index. Its `value.clause` is RESET (no clause, key 0), where
