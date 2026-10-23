@@ -186,7 +186,7 @@ function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
     setup = mk_expr(
         T, T[mk_sym(T, Symbol(",")), mk_expr(T, T[mk_sym(T, :sig_atomic), v[1]]), cleanup]
     )
-    _boot_clause!(gd, ld, :setup_call_catcher_cleanup, v, setup, P_LOCKED)
+    _boot_clause!(gd, ld, :setup_call_catcher_cleanup, v[1:4], setup, P_LOCKED)
     _boot_clause!(gd, ld, :setup_call_cleanup, v[1:3], setup, P_LOCKED)
     _boot_clause!(gd, ld, :call_cleanup, v[1:2], cleanup, P_LOCKED)
     _boot_clause!(gd, ld, :call, v[1:1], v[1], P_ISO | P_LOCKED)
