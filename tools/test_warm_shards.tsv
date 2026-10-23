@@ -8,12 +8,16 @@
 # fixed 2026-10-21: every ref now runs 212); 215 after the three sibling-mutant guard cases (2026-10-21). A case
 # added or removed changes `total`: update it in the same commit,
 # from the gather's own report.
+# BALANCE (re-measured 2026-10-22 on main-push run 39802795515, the `tools/test_warm.sh shard` step alone): main 324 s,
+# stale 334, fast 330, state 180, light 176 (+ 14 for tools/test_evidence.sh) — the job times (509-644 s) differ by the
+# setup, 176-320 s, not by the shards. The three one-mode shards cannot be cut further by mode; `state` (rss structs)
+# and `light` were merged into `light` (~370 s: one runner and its ~190 s setup fewer, under the 644 s of `main`). The
+# gather's ::notice lists the passes per shard; a shard's seconds are in the job's step list (the jobs API).
 #   shard<TAB>NAME<TAB>MODES (space-separated: main, rss, structs, fast, stale, refuse, inventory, noswipl,
 #                             guard, cap, bgfiles, gatebase, srcmap, bgbudget)
 #   The CI matrix of .github/workflows/CI.yml names exactly these shards (test/test_gate_split.jl).
 shard	main	main
 shard	stale	stale
 shard	fast	fast
-shard	state	rss structs
-shard	light	noswipl guard cap refuse inventory bgfiles gatebase srcmap bgbudget
+shard	light	noswipl guard cap refuse inventory bgfiles gatebase srcmap bgbudget rss structs
 total	221

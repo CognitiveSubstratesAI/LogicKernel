@@ -13,6 +13,9 @@
 # THE GROUPS are balanced by test/unit_costs.tsv (seconds per file, all term types; the Verdict
 # table's artifact `unit-costs` is the measured replacement): the costliest file first, each into the
 # group with the least cost so far; a file with no cost counts as the median.
+# CI.yml's Pkg.test jobs balance by THEIR OWN table, test/pkgtest_costs.tsv (LOGICKERNEL_COSTS_TABLE; measured under
+# coverage, tools/pkgtest_costs.py turns the pkgtest gather's `unit-costs` notice into it): Evidence's costs, no
+# coverage, left the `Julia 1` groups at 1004 / 483 / 559 s (A-0054). `lk_costs_path` names the table to read.
 
 "`(k, n)` from `\"k/n\"` in `ENV[name]`, `(1, 1)` when it is unset or empty; anything else is an error."
 function lk_slice(name::AbstractString)::Tuple{Int, Int}
@@ -37,6 +40,22 @@ function lk_unit_costs(path::AbstractString)::Dict{String, Float64}
         costs[f] = parse(Float64, s)
     end
     return costs
+end
+
+"""
+The cost table of this run: `unit_costs.tsv` in `test_dir`, or the table `ENV["LOGICKERNEL_COSTS_TABLE"]` names
+(a bare `name.tsv` file of `test_dir`). A named table that is malformed or missing is an error, never a silent
+fall back to the other table: the groups of one run's jobs must all come from the same costs.
+"""
+function lk_costs_path(test_dir::AbstractString)::String
+    name = get(ENV, "LOGICKERNEL_COSTS_TABLE", "")
+    isempty(name) && return joinpath(test_dir, "unit_costs.tsv")
+    occursin(r"^[A-Za-z0-9_]+\.tsv$", name) ||
+        error("LOGICKERNEL_COSTS_TABLE=$(repr(name)): expected a bare file name `name.tsv`")
+    path = joinpath(test_dir, name)
+    isfile(path) ||
+        error("LOGICKERNEL_COSTS_TABLE=$(repr(name)): no such file in $test_dir")
+    return path
 end
 
 """

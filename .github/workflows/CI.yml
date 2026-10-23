@@ -48,6 +48,9 @@ jobs:
       LOGICKERNEL_JUNIT: ${{ github.workspace }}/junit.xml
       LOGICKERNEL_FILE_GROUP: ${{ matrix.group }}/3
       LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/pkgtest-out/units_julia-${{ matrix.version }}_g${{ matrix.group }}.tsv
+      # the groups are balanced by Pkg.test's OWN costs (measured under coverage; tools/pkgtest_costs.py
+      # refreshes test/pkgtest_costs.tsv from the pkgtest gather's `unit-costs` notice), not Evidence's
+      LOGICKERNEL_COSTS_TABLE: pkgtest_costs.tsv
       LOGICKERNEL_UPSTREAM_SWIPL_DEVEL: ${{ github.workspace }}/.upstream/swipl-devel
       # Pkg.test's isolated environment has no JET/Aqua/AllocCheck: the ONE job allowed to skip the
       # static analysis, and it says so (test/test_static_analysis.jl: under CI a missing tool is an
@@ -323,7 +326,6 @@ jobs:
           - main
           - stale
           - fast
-          - state
           - light
     permissions:
       contents: read

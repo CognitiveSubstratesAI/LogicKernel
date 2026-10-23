@@ -113,7 +113,7 @@ LK_SA_ONLY && !(LK_TERM_ONLY in ("", first(LK_TERM_IMPLS))) &&
 "Each test file's CI group (all but the static analysis), the same in every job."
 const LK_GROUP_OF = lk_file_groups(
     [relpath(f, LK_TEST_DIR) for f in LK_TEST_FILES if f != LK_SA_FILE], LK_FILE_GROUP[2],
-    lk_unit_costs(joinpath(LK_TEST_DIR, "unit_costs.tsv"))
+    lk_unit_costs(lk_costs_path(LK_TEST_DIR))   # CI.yml's Pkg.test jobs name their own table
 )
 "Whether file `f`'s units are in this process's slice."
 lk_in_slice_file(f)::Bool =

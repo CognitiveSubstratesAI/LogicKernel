@@ -188,7 +188,8 @@ class Gather:
                      "# Verdict table's `unit-costs` artifact (Evidence) when the groups drift apart; never hand-edited.\n")
             io.write("".join("%s\t%.1f\n" % (f, costs[f]) for f in sorted(costs)))
         # readable WITHOUT a token (an artifact is not): the costs as one annotation, `file=seconds;…`,
-        # the source of test/unit_costs.tsv's next refresh
+        # the source of test/unit_costs.tsv's next refresh; the PKG.TEST gather prints the same notice with the
+        # costs measured under coverage: tools/pkgtest_costs.py turns it into test/pkgtest_costs.tsv
         if os.environ.get("GITHUB_ACTIONS") == "true":
             print("::notice title=unit-costs::" + ";".join("%s=%.1f" % (f, costs[f]) for f in sorted(costs)))
         return sum(int(c.split("\t")[2]) for c in counts)
@@ -333,7 +334,10 @@ def warm(d, declared):
         if len(got) == len(shards) and npass != total:
             g.problems.append(
                 "the shards passed %d cases, the whole run passes %d (tools/test_warm_shards.tsv `total`)" % (npass, total))
-        summary.append("%d shards, %d cases passed (the whole run: %s)" % (len(got), npass, total))
+        # PER-SHARD COUNTS (D-0091 item 4): the annotation shows how the cases spread over the shards
+        # (declared order), readable without a token; with the job times it is the balance, re-measured
+        per = ", ".join("%s=%d" % (name, got[name]) for name, _ in shards if name in got)
+        summary.append("%d shards, %d cases passed (%s; the whole run: %s)" % (len(got), npass, per, total))
     return g.report("Tooling suites — %d shards of tools/test_warm.sh" % len(shards), summary)
 
 

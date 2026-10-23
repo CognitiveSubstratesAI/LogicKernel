@@ -1108,6 +1108,154 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
         @test !isempty(tbl) && all(>=(0), values(tbl)) && any(>(0), values(tbl))   # it reads
         @test all(f -> isfile(joinpath(_GS_ROOT, "test", f)), keys(tbl))   # …and names real files
     end
+    # THE PKG.TEST COST TABLE (D-0091 item 3): the pkgtest gather's `unit-costs` annotation becomes
+    # test/pkgtest_costs.tsv, which balances CI.yml's `test` groups (Evidence's costs, measured without
+    # coverage, left the `Julia 1` groups at 1004 / 483 / 559 s). The table is validated before it is
+    # written, the API is read from planted answers, and the python balance equals ci_slices.jl's.
+    @testset "tools/pkgtest_costs.py: the notice becomes the table the Pkg.test groups are balanced by" begin
+        tool = joinpath(_GS_ROOT, "tools", "pkgtest_costs.py")
+        pk(args...; stdin=devnull, env=Pair{String, Any}[]) = mktempdir() do d
+            out = joinpath(d, "out.txt")
+            code = withenv(env...) do
+                run(
+                    pipeline(
+                        ignorestatus(`python3 $tool $args`); stdin=stdin, stdout=out,
+                        stderr=devnull
+                    )
+                ).exitcode
+            end
+            (code=code, out=read(out, String))
+        end
+        parse_(text; extra=String[]) = mktempdir() do d
+            f = joinpath(d, "notice.txt")
+            write(f, text)
+            o = joinpath(d, "table.tsv")
+            res = pk("parse", f, o, extra...)          # (not `r`: the closure would assign the testset's)
+            (code=res.code, msg=res.out, table=isfile(o) ? read(o, String) : "")
+        end
+        good = "b/test_b.jl=2.5;a.jl=10.0;c.jl=0.0"
+        r = parse_("::notice title=unit-costs::$good\n", extra=["--source", "SRC-TEXT"])
+        @test r.code == 0 && occursin("wrote", r.msg) && occursin("(3 entries)", r.msg)
+        rows = [l for l in split(r.table, '\n') if !isempty(l) && l[1] != '#']
+        @test rows == ["a.jl\t10.0", "b/test_b.jl\t2.5", "c.jl\t0.0"]     # sorted, one decimal
+        @test occursin("# Measured: SRC-TEXT", r.table) &&
+            occursin("Pkg.test WITH COVERAGE", r.table)
+        let alone = parse_(good)                                         # the message alone
+            @test alone.code == 0 &&
+                filter(!startswith("#"), split(alone.table, '\n')) ==
+                  filter(!startswith("#"), split(r.table, '\n'))
+        end
+        # a half-read or wrong annotation is refused, each for its own reason
+        for (text, why) in (
+            ("::notice title=other::$good", "not unit-costs"),
+            ("", "empty"),
+            ("a.jl=1.0;a.jl=2.0", "listed twice"),
+            ("a.jl=fast", "not a number"),
+            ("a.jl=-1.0", "non-negative"),
+            ("a.jl=NaN", "non-negative"),
+            ("a.jl=Infinity", "non-negative"),
+            ("a.jl=1.0;", "not a file=seconds"),
+            ("a.jl=1.0;b.jl", "not a file=seconds"),
+            ("a.jl=1.0;b.txt=2.0", "not a test file name"),
+            ("a.jl=1.0;test_static_analysis.jl=900.0", "static analysis"),
+            ("a.jl=1.0;core_lang/test_static_analysis.jl=900.0", "static analysis")
+        )
+            r = parse_(text)
+            @test r.code == 1 && occursin(why, r.msg) && r.table == ""
+        end
+        @test pk("parse").code == 2 && pk("nonsense").code == 2 && pk().code == 2
+        mktempdir() do d                                                 # …or from stdin
+            f = joinpath(d, "in.txt")
+            write(f, "::notice title=unit-costs::a.jl=1.5")
+            r = pk("parse", "-"; stdin=f)
+            @test r.code == 0 && occursin("a.jl\t1.5\n", r.out)
+        end
+        # `fetch` from planted API answers (LOGICKERNEL_GH_FIXTURE): the gather job of the Julia version
+        job(id, name, conclusion) = """{"id": $id, "name": "$name", "conclusion": "$conclusion", "head_sha": "0123456789abcdef"}"""
+        ann(title, msg) = """{"title": "$title", "message": "$msg"}"""
+        function fetch_(jobs, anns; args=["fetch", "777"])
+            mktempdir() do d
+                write(joinpath(d, "jobs.json"), """{"jobs": [$(join(jobs, ","))]}""")
+                write(joinpath(d, "annotations.json"), "[$(join(anns, ","))]")
+                o = joinpath(d, "table.tsv")
+                res = pk(args..., o; env=["LOGICKERNEL_GH_FIXTURE" => d])   # (not `r`: see parse_)
+                (code=res.code, msg=res.out, table=isfile(o) ? read(o, String) : "")
+            end
+        end
+        jobs = [
+            job(11, "Julia 1 - ubuntu-24.04", "success"),
+            job(12, "Julia min - ubuntu-24.04", "success"),
+            job(13, "Julia 1 · files 1/3", "success")
+        ]
+        anns = [
+            ann("unit-costs", good), ann("Julia 1 — Pkg.test, 3 file groups", "3 units")
+        ]
+        r = fetch_(jobs, anns)
+        @test r.code == 0 && occursin("(3 entries)", r.msg)
+        @test occursin(
+            "# Measured: run 777 (0123456), Julia 1 - ubuntu-24.04, job 11", r.table
+        )
+        r = fetch_(jobs, anns; args=["fetch", "777", "--version", "min"])
+        @test r.code == 0 && occursin("job 12", r.table)
+        r = fetch_(jobs, anns; args=["fetch", "777", "--version", "2"])    # no such gather job
+        @test r.code == 1 && occursin("0 job(s) named", r.msg)
+        r = fetch_([job(11, "Julia 1 - ubuntu-24.04", "failure")], anns)   # a red gather: no measurement
+        @test r.code == 1 && occursin("not success", r.msg) && r.table == ""
+        r = fetch_(jobs, [ann("Other", "x")])                                # no notice at all
+        @test r.code == 1 && occursin("0 unit-costs annotation(s)", r.msg)
+        r = fetch_(jobs, [ann("unit-costs", good), ann("unit-costs", good)])  # ambiguous
+        @test r.code == 1 && occursin("2 unit-costs annotation(s)", r.msg)
+        r = fetch_(jobs, [ann("unit-costs", "a.jl=oops")])                   # an invalid notice
+        @test r.code == 1 && occursin("not a number", r.msg) && r.table == ""
+        r = fetch_(jobs, anns; args=["fetch", "--job", "11"])
+        @test r.code == 0 && occursin("# Measured: job 11", r.table)
+        # `balance` gives ci_slices.jl's loads: the python and the julia assignment, on the committed table
+        cs = Module(:GSPkgSlices)
+        Base.include(cs, joinpath(_GS_ROOT, "test", "ci_slices.jl"))
+        tbl = joinpath(_GS_ROOT, "test", "pkgtest_costs.tsv")
+        costs = cs.lk_unit_costs(tbl)
+        @test !isempty(costs) && all(>=(0), values(costs)) && any(>(0), values(costs))
+        @test all(f -> isfile(joinpath(_GS_ROOT, "test", f)), keys(costs))
+        files = sort!(collect(keys(costs)))
+        g = cs.lk_file_groups(files, 3, costs)
+        load = [sum(costs[f] for f in files if g[f] == k) for k in 1:3]
+        r = pk("balance", tbl, "3")
+        want = join(["  group $k: $(round(load[k]; digits=1)) s" for k in 1:3], "\n")
+        @test r.code == 0 && occursin(want, r.out)          # the python assignment IS the julia one
+        # …and it is balanced (the point of the table): no group over 3 % above the mean
+        @test maximum(load) <= 1.03 * sum(load) / 3
+        # a planted table: files with no cost count as the median; --tests reads the directory's files
+        mktempdir() do d
+            mkpath(joinpath(d, "sub"))
+            for f in (
+                "test_a.jl",
+                "test_b.jl",
+                "sub/test_c.jl",
+                "test_static_analysis.jl",
+                "helper.jl"
+            )
+                write(joinpath(d, f), "")
+            end
+            write(joinpath(d, "t.tsv"), "# c\ntest_a.jl\t10.0\ntest_b.jl\t30.0\n")
+            r = pk("balance", joinpath(d, "t.tsv"), "2", "--tests", d)
+            # test_c.jl has no cost: the median of {10, 30} (the lower one, 10) → loads 30 | 10 + 10
+            @test r.code == 0 && occursin("3 files over 2 groups (1 without a cost", r.out)
+            @test occursin("group 1: 30.0 s", r.out) && occursin("group 2: 20.0 s", r.out)
+            @test pk("balance", joinpath(d, "t.tsv"), "0").code == 2
+            @test pk(
+                "balance", joinpath(d, "t.tsv"), "2", "--tests", joinpath(d, "sub", "x")
+            ).code == 1
+        end
+        # test/ci_slices.jl `lk_costs_path`: the named table, never a silent fall back to the other
+        td = joinpath(_GS_ROOT, "test")
+        cp_(v) = withenv(() -> cs.lk_costs_path(td), "LOGICKERNEL_COSTS_TABLE" => v)
+        @test cp_(nothing) == joinpath(td, "unit_costs.tsv") &&
+            cp_("") == joinpath(td, "unit_costs.tsv")
+        @test cp_("pkgtest_costs.tsv") == tbl
+        for bad in ("../unit_costs.tsv", "sub/x.tsv", "unit_costs", "nosuch.tsv", "x.tsv ")
+            @test_throws ErrorException cp_(bad)
+        end
+    end
     # CI's MUTATION BATTERY (user, 2026-10-13): tools/mutate_ci.py gives each mutant the local
     # driver's verdict from its targets' EXIT CODES. Planted targets (`sh:` commands) and a planted
     # list, in a directory of their own.
@@ -1283,7 +1431,7 @@ MUTANTS = [
         # the gather, on planted shard results
         tool = joinpath(_GS_ROOT, "tools", "evidence_ci.py")
         results = Dict(n => "test_warm (shard $n): 10 passed, 0 failed\n" for n in names)
-        function warm(edit=identity; tot=length(names) * 10, shards=declared)
+        function warm(edit=identity; tot=length(names) * 10, shards=declared, ci=nothing)
             r = copy(results)
             edit(r)
             mktempdir() do d
@@ -1295,14 +1443,32 @@ MUTANTS = [
                     "total\t$tot\n"
                 )
                 out = joinpath(d, "out.txt")
-                code = run(
-                    pipeline(ignorestatus(`python3 $tool warm $d $decl`); stdout=out)
-                ).exitcode
+                code = withenv("GITHUB_ACTIONS" => ci) do
+                    run(
+                        pipeline(ignorestatus(`python3 $tool warm $d $decl`); stdout=out)
+                    ).exitcode
+                end
                 (code=code, out=read(out, String))
             end
         end
         r = warm()
         @test r.code == 0 && occursin("$(length(names)) shards", r.out)         # the control
+        # PER-SHARD COUNTS (D-0091 item 4): each shard's passes, in the declared order, in the report and
+        # in the annotation (readable without a token); distinct counts, so a swapped pair shows
+        let counts = Dict(n => 10 + i for (i, n) in enumerate(names))
+            r = warm(
+                x -> foreach(
+                    n -> x[n] = "test_warm (shard $n): $(counts[n]) passed, 0 failed\n",
+                    names
+                );
+                tot=sum(values(counts)), ci="true"
+            )
+            want = join(["$n=$(counts[n])" for n in names], ", ")
+            total = sum(values(counts))
+            @test r.code == 0 && occursin("($want; the whole run: $total)", r.out)
+            notice = filter(startswith("::notice title=Tooling suites"), split(r.out, '\n'))
+            @test length(notice) == 1 && occursin(want, notice[1])
+        end
         r = warm(x -> delete!(x, names[2]))
         @test r.code == 1 && occursin("shard $(names[2]): no result", r.out)      # a DROPPED shard
         r = warm(
