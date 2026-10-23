@@ -13,7 +13,7 @@
 # exception is pending, so an error that unification raises (the occurs check under
 # `occurs_check = error`) is raised, and becomes the ball.
 #
-# NOT PORTED: the rest of pl-attvar.c, after L1 (SWI's term layout) — attributed variables
+# NOT PORTED: the rest of pl-attvar.c, the AV step (since L1, SWI's term layout) — attributed variables
 # themselves (`put_attr/3`, `get_attr/3`, `del_attr/2`, the wakeup list and `foreignWakeup`,
 # `freeze/2`'s support, `copy_term/3`'s attribute goals) and `wakeup_state_exception`. The wakeup
 # list these two functions also save is therefore always empty here.

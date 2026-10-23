@@ -25,7 +25,7 @@
 #
 # NOT PORTED: atom GC (`collectAtoms`, `pl_garbage_collect_atoms`, `markAtom`, `unmarkAtoms`,
 # `destroyAtom`, `invalidateAtom`, `considerAGC`, `AGC_wanted`, `register_atom`/`unregister_atom`,
-# `bump_atom_references`, the type statistics `add_type_live`/…) — with pl-gc.c after L1 (§2c):
+# `bump_atom_references`, the type statistics `add_type_live`/…) — with pl-gc.c, the GC step (since L1; §2c):
 # `references` is ported and set as upstream sets it, and nothing frees an atom; blob types other
 # than text (`PL_unify_blob`, dead blobs, `PL_find_blob_type`, `PL_unregister_blob_type`); atom
 # tracking (`track_atom/2`, O_DEBUG_ATOMGC); `pl_atom_hashstat`, `checkAtoms_src`,

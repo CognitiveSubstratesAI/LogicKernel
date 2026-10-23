@@ -183,7 +183,7 @@ end
 # DIVERGES: allocates `n` cell VARIABLES (L1a): each cell unbound (`setVar`); returns the first
 # cell's position, the others follow it (upstream returns its address). Growth is
 # `_growGlobalStack!`'s, the only allocating path; no garbage collection (`ensureGlobalSpace`'s
-# `ALLOW_GC`) until pl-gc.c's collector is ported, after L1.
+# `ALLOW_GC`) until pl-gc.c's collector is ported (the GC step, since L1).
 "Allocate `n` fresh variables on the global stack; the position of the first (pl-alloc.c `allocGlobal`)."
 function allocGlobalCells!(ld::PL_local_data{T}, n::Int)::Int where {T}
     p = ld.gTop + 1

@@ -214,7 +214,7 @@ end
 # entry names a cell by position and stack, `(pos << 3) | (stack << 1)`; a value entry
 # `tagTrailPtr(gpos)` names the old value saved at global position `gpos`, above its address entry. Since L1b stage C2 the global stack holds WORDS (pl-data.h): an unbound
 # cell is 0 (`setVar`), a bound one a value-table word, `consPtr(i, TAG_COMPOUND|STG_RESERVED)`,
-# naming entry `i` of `vtable` — the VALUE TABLE, transitional (the workspace's L1 plan §5 L1b),
+# naming entry `i` of `vtable` — the VALUE TABLE, transitional (the workspace's L1_plan §5 L1b),
 # which holds every bound value until its kind has a word form (atoms and small integers: stage C3;
 # floats, big numbers, strings: C4; compounds: L1c). Each entry is pinned by a BOX, a word of its own
 # on the global stack (`vbox`), so when `Undo` lowers `gTop` the table is truncated with it: an
