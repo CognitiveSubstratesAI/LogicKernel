@@ -274,6 +274,12 @@ end
     @test v(_af(:>>, _ag(5), _ag(big(2)^70))) == 0
     @test v(_af(:<<, _ag(-5), _ag(-big(2)^70))) == 0
     @test v(_af(:<<, _ag(0), _ag(big(2)^70))) == 0
+    # a left shift by LONG_MIN is a right shift by the unsigned 2^63 (swipl 10.1.18: 0, and -1 for a negative base)
+    @test v(_af(:<<, _ag(1), _ag(typemin(Int64)))) == 0
+    @test v(_af(:<<, _ag(-1), _ag(typemin(Int64)))) == -1
+    @test v(_af(:<<, _ag(big(2)^63), _ag(typemin(Int64)))) == 0
+    @test v(_af(:<<, _ag(-big(2)^63 - 1), _ag(typemin(Int64)))) == -1
+    @test v(_af(:>>, _ag(0), _ag(typemin(Int64)))) == 0
     # L1f f2: int_too_big raises the global overflow, as swipl (probed 2026-10-19: resource_error(stack))
     rerr = _aenc(_af(:resource_error, _as(:stack)))
     for e in (_af(:<<, _ag(1), _ag(big(2)^70)), _af(:<<, _ag(1), _ag(1 << 40)))
@@ -1549,7 +1555,20 @@ end
 
 # `2 ** (2 ** 64)` and kin: swipl raises resource_error(stack) (`int_too_big`), and since L1f f2 the
 # kernel too (the global stack's overflow). The live testset at the end checks swipl's side of each row.
-const _A_TOOBIG = Any[(_A_POW2, 2, big(2)^70), (_A_POW2, 2, 1 << 62), (:^, 3, -big(2)^70)]
+# Group F's fuzzer found the shifts (2026-10-23): a negative amount, negated, is read as UNSIGNED by upstream
+# (`-LONG_MIN` stays `LONG_MIN`): `1 >> -9223372036854775808` threw a Julia InexactError out of the query; swipl
+# 10.1.18's answer is this resource_error for every row below (live in the testset at the end).
+const _A_TOOBIG = Any[
+    (_A_POW2, 2, big(2)^70),
+    (_A_POW2, 2, 1 << 62),
+    (:^, 3, -big(2)^70),
+    (:>>, 1, typemin(Int64)),
+    (:>>, 7, -typemax(Int64)),
+    (:>>, -1, typemin(Int64)),
+    (:>>, big(2)^63, typemin(Int64)),
+    (:>>, 7, -big(2)^63 - 1),
+    (:<<, 1, typemax(Int64))
+]
 @testset "arith-b: an exponent too big is resource_error(stack), as swipl's; the query is closed" begin
     for c in _A_TOOBIG
         @test startswith(_aoutcome_of(c), "err:" * _aenc(_af(:resource_error, _as(:stack))))

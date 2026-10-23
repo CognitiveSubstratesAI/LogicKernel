@@ -385,7 +385,11 @@ MSB64(i::Int64)::Int = 63 - leading_zeros(i)
 
 # PORT: pl-arith.c ar_shift
 # DIVERGES: upstream's `V_INTEGER` branch checks the amount against `LONG_MIN`/`LONG_MAX`; the
-# kernel takes LP64's `long`, an `Int64`, where that check can never fire, and drops it. Otherwise as
+# kernel takes LP64's `long`, an `Int64`, where that check can never fire, and drops it. A negative
+# amount is negated as C does (`-LONG_MIN` stays `LONG_MIN`: two's complement wraps) and then READ AS
+# UNSIGNED where upstream's `size_t`/`uint64_t`/`mp_bitcnt_t` arithmetic does (`reinterpret`, not
+# `UInt64(shift)`, which throws an InexactError for a negative: `1 >> -9223372036854775808` — group F's
+# fuzzer, 2026-10-23; swipl answers resource_error(stack)). Otherwise as
 # upstream, `O_BIGNUM_PRECHECK_ALLOCATIONS` on (pl-arith.c:84): a left shift's size is checked
 # before GMP is asked. Julia's `BigInt` needs no `mpz_init`/`mpz_clear`.
 "`n1 << n2` (`dir` -1) or `n1 >> n2` (`dir` 1) (pl-arith.c `ar_shift`)."
@@ -415,7 +419,7 @@ function ar_shift(
     end
     if n1.type === V_INTEGER
         if dir < 0                                          # shift left (<<)
-            bits = UInt64(shift) + UInt64(
+            bits = reinterpret(UInt64, shift) + UInt64(
                 if n1.i >= 0
                     MSB64(n1.i)
                 elseif n1.i == typemin(Int64)
@@ -430,7 +434,8 @@ function ar_shift(
             end
             r.i = reinterpret(Int64, reinterpret(UInt64, n1.i) << shift)
         else                                                # shift right (>>)
-            r.i = shift >= 64 ? (n1.i >= 0 ? 0 : -1) : n1.i >> shift
+            r.i =                                           # `shift >= sizeof(int64_t)*8`: unsigned
+                reinterpret(UInt64, shift) >= 64 ? (n1.i >= 0 ? 0 : -1) : n1.i >> shift
         end
         r.type = V_INTEGER
         return true
@@ -438,11 +443,11 @@ function ar_shift(
     @label mpz
     r.type = V_MPZ
     if dir < 0                                              # shift left (<<)
-        msb = UInt64(ndigits(n1.mpz; base=2)) + UInt64(shift)
+        msb = UInt64(ndigits(n1.mpz; base=2)) + reinterpret(UInt64, shift)
         check_int_bits(ld, msb) || return false
         r.mpz = n1.mpz << shift                             # mpz_mul_2exp
     else
-        r.mpz = n1.mpz >> shift                             # mpz_fdiv_q_2exp: floor
+        r.mpz = n1.mpz >> reinterpret(UInt64, shift)        # mpz_fdiv_q_2exp: floor (a `mp_bitcnt_t`)
     end
     return true
 end
