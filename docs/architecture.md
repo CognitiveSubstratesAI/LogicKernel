@@ -723,7 +723,7 @@ fixed it or a public issue exists.
 | `test/files/test_load_swipl.jl` | R1f's loader gate: 13 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`; the compiler's warnings among them since R1g), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
-| `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; since group F (D-0123) 20 print/1 goals with a user portray/1, each on a database of its own; a standard alias with no stream pinned (internal record #13); portray_goal refused; the host's streams, a write error, the variable_names bindings undone | — |
+| `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; since group F (D-0123) 20 print/1 goals with a user portray/1, each on a database of its own; a standard alias with no stream pinned (internal record #13); portray_goal refused until group F (D-0123), then 20 goals and 6 error goals compared with swipl; the host's streams, a write error, the variable_names bindings undone | — |
 | `test/core_text/test_canonical_readatom_swipl.jl` | R1e's last gate: write_canonical/1,2 on 400 corpus lines + 1,000 random terms, literally as swipl (variables numbered both sides) and read back; read_term_from_atom/3 on every corpus text × 15 option lists (term, options after, verdict, messages) and 49 hand goals; the refusals; two named exclusions (a cut-UTF-8 ball, a NUL string) | — |
 | `test/core_text/text_corpora_testlib.jl` | the reader's and the writer's hand corpora and the random-term generator, shared by their differentials and the round trip (R1f) | — |
 | `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations); a float's text read back (since R1e's floats); `$` not an operator (pinned); `unquoted_atom` | — |
@@ -2216,8 +2216,11 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
   An oddity, ported AS IS: write_term's
   `back_quotes(symbol_char)` never sets `PL_WRT_BACKQUOTE_IS_SYMBOL` — upstream tests the module's
   WHOLE flag word against 0, not its `BQ_*` bits — and swipl agrees (no effect, probed).
-* **Refused, explicitly (`NotPortedError`):** write_term's `portray_goal` (calling Prolog: V9).
-  write_canonical/1,2 and read_term_from_atom/3 followed in the next commit ("R1e (canonical,
+* **Refused, explicitly (`NotPortedError`):** write_term's `portray_goal` (calling Prolog: V9) —
+  until group F (D-0123), which ports it as upstream: `put_write_options` (the options without
+  `priority/1`, then `priority(P)`), `PL_qualify` (pl-fli.c), `callPortray` calling `call/3` with
+  the goal, the subterm and the options, `P` bound to the subterm's priority; `call/2..8` defined
+  as boot/init.pl's (src/pl-ext.jl `_boot_cleanup!`). write_canonical/1,2 and read_term_from_atom/3 followed in the next commit ("R1e (canonical,
   read_term_from_atom)", above).
 * **Gates:** test/core_text/test_write_family_swipl.jl (new): 250 hand-corpus terms and 1,000 random
   terms, each written by 40 calls — write/1, writeq/1, print/1, writeln/1, the /2 forms to
@@ -2228,7 +2231,8 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
   user_error, the verdict (the exception term, context included); swipl's run rebinds the two
   aliases and the current output to files per call, as the host gives the kernel a buffer per
   call; non-vacuity asserted (texts on both streams). Plus the pin of #13's three goals, a cyclic option list
-  (`type_error(list, L)` after 1,000 items, as swipl), the `portray_goal` refusal, the host
+  (`type_error(list, L)` after 1,000 items, as swipl), the `portray_goal` refusal (since group F,
+  D-0123: 20 portray_goal goals and 6 error goals, compared with swipl), the host
   interface, a write error, the bindings undone. All three term types.
 * **Mutation-proved — 46 of 46 caught at verdict level, targeted** (the workspace's
   R1e_writefamily_mutation/): every stream error and alias, the error stream's buffering, current

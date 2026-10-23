@@ -163,22 +163,25 @@ function _boot_catch3!(gd::PL_global_data{T})::Nothing where {T}
 end
 
 # DIVERGES (no upstream function; as `_boot_catch3!`): boot/init.pl's cleanup family
-# (init.pl:676-685) and its `call/1` (init.pl:501-502), compiled when the database is created:
+# (init.pl:676-685) and its `call/1..8` (init.pl:501-516), compiled when the database is created:
 #     setup_call_catcher_cleanup(Setup, _Goal, _Catcher, _Cleanup) :- sig_atomic(Setup), '$call_cleanup'.
 #     setup_call_cleanup(Setup, _Goal, _Cleanup) :- sig_atomic(Setup), '$call_cleanup'.
 #     call_cleanup(_Goal, _Cleanup) :- '$call_cleanup'.
 #     call(Goal) :- Goal.
+#     call(Goal, A) :- call(Goal, A).        … to call/8
 # `'$call_cleanup'` compiles to `I_CALLCLEANUP I_EXITCLEANUP` (pl-comp.c), which read the frame's
 # arguments by the predicate's arity; `call/1` is what the cleanup handler calls a goal through
-# that is a control construct (`call1`, pl-wam.c). R2 loads boot/init.pl, which defines all four
-# the same way — and `call/2..8` beside them. boot code is system code (`P_LOCKED`); `call/1` is
-# ISO (init.pl:388, `'$iso'`). NOT PORTED: the meta-predicate declarations
-# (init.pl:381-383: no module transparency until R2), `noprofile/1`.
-"Define the cleanup family and `call/1` in the `system` module of `gd` as boot/init.pl defines them."
+# that is a control construct (`call1`, pl-wam.c); `call/3` is what write_term's `portray_goal` is
+# called through (`callPortray`, pl-write.c; since group F, D-0123, with `call/2..8` beside it, as
+# init.pl defines them — each body compiles to `I_CALLN`). R2 loads boot/init.pl, which defines
+# them all the same way. boot code is system code (`P_LOCKED`); `call/1..8` are ISO (init.pl:388
+# and 493-499, `'$iso'`). NOT PORTED: the meta-predicate declarations (init.pl:360-386: no module
+# transparency until R2), `noprofile/1`.
+"Define the cleanup family and `call/1..8` in the `system` module of `gd` as boot/init.pl defines them."
 function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
     ld = PL_local_data{T}(gd)
-    k = fresh_var_keys!(4)
-    v = T[mk_var(T, k), mk_var(T, k + 1), mk_var(T, k + 2), mk_var(T, k + 3)]
+    k = fresh_var_keys!(8)
+    v = T[mk_var(T, k + i) for i in 0:7]
     cleanup = mk_sym(T, Symbol("\$call_cleanup"))
     setup = mk_expr(
         T, T[mk_sym(T, Symbol(",")), mk_expr(T, T[mk_sym(T, :sig_atomic), v[1]]), cleanup]
@@ -187,6 +190,9 @@ function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
     _boot_clause!(gd, ld, :setup_call_cleanup, v[1:3], setup, P_LOCKED)
     _boot_clause!(gd, ld, :call_cleanup, v[1:2], cleanup, P_LOCKED)
     _boot_clause!(gd, ld, :call, v[1:1], v[1], P_ISO | P_LOCKED)
+    for n in 2:8                                    # call(Goal, A, …) :- call(Goal, A, …).
+        _boot_clause!(gd, ld, :call, v[1:n], _boot_term(:call, v[1:n]), P_ISO | P_LOCKED)
+    end
     return nothing
 end
 

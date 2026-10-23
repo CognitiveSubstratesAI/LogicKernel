@@ -236,16 +236,29 @@ end
     end
 end
 
-@testset "meta-call: call/8 meta-called as a term resolves a procedure (boot/init.pl's, R2)" begin
+@testset "meta-call: call/8 meta-called as a term resolves boot/init.pl's call/8, as swipl" begin
     # since V9e-2 the control constructs and call/9 run in a goal clause (test_metacall_control.jl);
-    # call/8 is no control: it resolves the PROCEDURE `call/8`, which boot/init.pl defines (R2) — none
-    # here. KNOWN DIFFERENCE until R2, pinned exactly (user, 2026-10-13):
-    #   kernel: existence_error(procedure, call/8)
+    # call/8 is no control: it resolves the PROCEDURE `call/8`, which boot/init.pl defines. Since
+    # group F (D-0123: write_term's portray_goal calls call/3) the kernel defines call/2..8 as
+    # init.pl does (src/pl-ext.jl `_boot_cleanup!`), so the R2 checklist's flip is done here: until
+    # then a KNOWN DIFFERENCE pinned exactly (user, 2026-10-13) —
+    #   kernel: existence_error(procedure, call/8)        (the old expectation)
     #   swipl 10.1.17: existence_error(procedure, nop/7) — its call/8 runs nop/7 (probed)
-    # R2 checklist: "boot/init.pl defines call/8; flip this test to the oracle differential".
-    db = _rdb(_rmc_clauses())
-    @test _rmc_formal(db, _rf("v", _rf("call", (_rs("nop") for _ in 1:8)...))) ==
-        "existence_error(procedure,/(call,8))"
+    clauses = _rmc_clauses()
+    goals = _R[_rf("v", _rf("call", (_rs("nop") for _ in 1:8)...))]
+    db = _rdb(clauses)
+    ours = [_rmc_formal(db, g) for g in goals]
+    @test ours[1] != "existence_error(procedure,/(call,8))"      # call/8 is a procedure now
+    if _R_SWIPL
+        theirs = [
+            l[(length("exception(") + 1):(end - length(") det"))] for
+            l in _rswipl(clauses, goals) if startswith(l, "exception(")
+        ]
+        @test ours == theirs
+        ours == theirs || @info "call/8 differs" ours theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
 end
 
 @testset "meta-call: a reserved symbol is no goal" begin

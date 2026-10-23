@@ -1020,6 +1020,23 @@ function PL_clear_foreign_exception(ld::PL_local_data{T}, fr::Int)::Nothing wher
     return nothing
 end
 
+# PORT: pl-fli.c PL_qualify
+# DIVERGES: the database and local data are arguments; the module is an index into `gd`'s table
+# (`PL_strip_module`'s); no `valid_term_t` checks (`O_DEBUG` only).
+"Put `Module:Plain` into `qualified`: the term in `raw` stripped of its qualifiers and the module they name, or the context module, `user` (pl-fli.c)."
+function PL_qualify(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, qualified::term_t
+)::Bool where {T}
+    mname = PL_new_term_ref(ld)
+    ok, m = PL_strip_module(gd, ld, raw, 0, qualified)
+    ok || return false
+
+    PL_put_atom(ld, mname, gd.modules[m].atom)          # setHandle(mname, m->name)
+
+    colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+    return PL_cons_functor(ld, qualified, colon2, mname, qualified)   # FUNCTOR_colon2
+end
+
 # PORT: pl-fli.c PL_call_predicate
 # DIVERGES: the database and local data are arguments, the context module a module or `nothing`
 # (NULL); no `valid_term_t` checks of the arguments (`O_DEBUG` only).

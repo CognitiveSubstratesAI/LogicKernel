@@ -919,6 +919,8 @@ function _manifest_index(T)
         (LK.END_NUMBERVARS, Tuple{LD, Bool, Int64}, false),
         (LK.bind_varnames, Tuple{LD, Int64}, false),
         (LK.pl_write_term3, Tuple{LD, Int64, Int64, Int64}, false),
+        (LK.put_write_options, Tuple{LD, Int64}, false),    # group F (D-0123): portray_goal
+        (LK.PL_qualify, Tuple{GD, LD, Int64, Int64}, false),
         (LK.pl_write_term2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_write_term3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.do_write2, Tuple{LD, Int64, Int64, Int64, Bool}, false),

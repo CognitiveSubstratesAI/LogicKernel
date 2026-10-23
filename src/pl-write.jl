@@ -455,9 +455,8 @@ wframe{T}(z::T) where {T} =
 # (upstream's `ATOM_*`) are their keys, made once per write (`k_*`), and `FUNCTOR_isovar1`'s
 # functor word (`isovar_fw`, L1d step 7b: `writeNumberVar` compares the functor cell with it);
 # `writeTerm`'s stack (upstream's segstack, a local of each call) is a field, so a write
-# allocates it once. NOT PORTED:
-# `portray_goal`, `write_options` and `prec_opt` (write_term/2,3's `portray_goal` option: refused,
-# calling Prolog needs V9's meta-call).
+# allocates it once. `portray_goal`, `write_options` and `prec_opt` are term references, 0 for
+# none (since group F, D-0123: write_term/2,3's `portray_goal` option, called by `callPortray`).
 "The options of a write (pl-write.c)."
 mutable struct write_options{T}
     flags::Int                      # PL_WRT_* flags
@@ -470,6 +469,9 @@ mutable struct write_options{T}
     spacing::Symbol                 # Where to insert spaces
     m::module_t{T}                  # Module for operators (upstream's `module`, a keyword here)
     out::IOSTREAM                   # stream to write to
+    portray_goal::term_t            # call/2 activated portray hook
+    write_options::term_t           # original write options
+    prec_opt::term_t                # term in write options with prec
     gd::PL_global_data{T}
     ld::PL_local_data{T}
     frames::Vector{wframe{T}}       # (writeTerm's stack)
@@ -492,7 +494,7 @@ function write_options(
     gd::PL_global_data{T}, ld::PL_local_data{T}, out::IOSTREAM
 )::write_options{T} where {T}
     return write_options{T}(
-        0, 0, 0, -1, false, "~d", "~h", :standard, MODULE_user(gd), out, gd, ld,
+        0, 0, 0, -1, false, "~d", "~h", :standard, MODULE_user(gd), out, 0, 0, 0, gd, ld,
         wframe{T}[], wsub(0, 0, 0),
         sym_key(mk_sym(T, Symbol("{}"))), sym_key(mk_sym(T, Symbol("[|]"))),
         sym_key(mk_sym(T, Symbol(","))), sym_key(mk_sym(T, Symbol("|"))),
@@ -1096,6 +1098,49 @@ end
 "Max recursion in portray (pl-incl.h)."
 const MAX_PORTRAY_NESTING = 100
 
+# PORT: pl-write.c put_write_options
+# DIVERGES: returns `(rc, write_options, prec_opt)` — the new list and its `priority/1`'s argument —
+# where upstream sets them in the options: pl_write_term3 builds the options once the stream is
+# known (see there), so it keeps them until then.
+"""
+    put_write_options(ld, opts_in) -> (ok, newlist, precopt)
+
+The write options list `opts_in` holds without its `priority/1` items and with one `priority(P)`
+added at its end, `P` a fresh variable (`precopt`), for `portray_goal`'s call (pl-write.c).
+"""
+function put_write_options(
+    ld::PL_local_data{T}, opts_in::term_t
+)::Tuple{Bool, term_t, term_t} where {T}
+    newlist = PL_new_term_ref(ld)
+    precopt = PL_new_term_ref(ld)
+    fid = PL_open_foreign_frame(ld)
+    head = PL_new_term_ref(ld)
+    tail = PL_copy_term_ref(ld, opts_in)
+    newhead = PL_new_term_ref(ld)
+    newtail = PL_copy_term_ref(ld, newlist)
+    rc = true
+
+    while rc && PL_get_list(ld, tail, head, tail)
+        if !PL_is_functor(ld, head, mk_sym(T, :priority), 1)
+            rc = (
+                PL_unify_list(ld, newtail, newhead, newtail) && PL_unify(ld, newhead, head)
+            )
+        end
+    end
+
+    if rc
+        rc = (
+            PL_unify_list(ld, newtail, head, newtail) &&
+            PL_unify_functor(ld, head, mk_sym(T, :priority), 1) &&
+            _PL_get_arg(ld, 1, head, precopt) &&
+            PL_unify_nil(ld, newtail)
+        )
+    end
+
+    PL_close_foreign_frame(ld, fid)
+    return (rc, rc ? newlist : 0, rc ? precopt : 0)
+end
+
 # PORT: pl-write.c enterPortray
 "Enter a portray call: false after raising `resource_error(portray_nesting)` past `MAX_PORTRAY_NESTING` (pl-write.c)."
 function enterPortray(ld::PL_local_data{T})::Bool where {T}
@@ -1115,14 +1160,18 @@ end
 
 # PORT: pl-write.c callPortray
 # DIVERGES: no halt state (`GD->halt.cleaning`: the kernel has no halt, so no callback is ever
-# refused for it); the procedure is looked up in `user` at each call — `lookupProcedure`, as
-# `_PL_predicate` does the first time — where upstream caches it in `GD->procedures`. `Scurout` is
-# the current-output slot of the standard streams (src/os/pl-file.jl).
-"Call `user:portray/1` on term reference `arg`: 1 (it wrote it), 0 (not defined, or it failed), -1 (error) (pl-write.c)."
+# refused for it); the procedures are looked up in `user` at each call — `lookupProcedure`, as
+# `_PL_predicate` does the first time — where upstream caches them in `GD->procedures`. `Scurout`
+# is the current-output slot of the standard streams (src/os/pl-file.jl).
+"Call `user:portray/1`, or the `portray_goal` through `call/3`, on term reference `arg`: 1 (it wrote it), 0 (not defined, or it failed), -1 (error) (pl-write.c)."
 function callPortray(arg::term_t, prec::Int, options::write_options{T})::Int where {T}
     gd = options.gd
-    pred = lookupProcedure(mk_sym(T, :portray), 1, MODULE_user(gd))    # _PL_predicate("portray", 1, "user", …)
-    _impl_any_defined(pred.definition) || return 0
+    if options.portray_goal != 0
+        pred = lookupProcedure(mk_sym(T, :call), 3, MODULE_user(gd))   # _PL_predicate("call", 3, "user", …)
+    else
+        pred = lookupProcedure(mk_sym(T, :portray), 1, MODULE_user(gd))    # _PL_predicate("portray", 1, "user", …)
+        _impl_any_defined(pred.definition) || return 0
+    end
 
     ld = options.ld
     old = Scurout(ld)
@@ -1131,7 +1180,16 @@ function callPortray(arg::term_t, prec::Int, options::write_options{T})::Int whe
     wstate = saveWakeup(ld, true)
     wstate === nothing && return -1
     ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = options.out    # Scurout = options->out
-    av = arg
+    if options.portray_goal != 0
+        av = PL_new_term_refs(ld, 3)
+
+        PL_put_term(ld, av + 0, options.portray_goal)
+        PL_put_term(ld, av + 1, arg)
+        PL_unify_integer(ld, options.prec_opt, prec)
+        PL_put_term(ld, av + 2, options.write_options)
+    else
+        av = arg
+    end
     rval =
         if PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av)
             1
@@ -1904,9 +1962,9 @@ function bind_varnames(ld::PL_local_data{T}, names::term_t)::Bool where {T}
 end
 
 # PORT: pl-write.c pl_write_term3
-# DIVERGES: the write options are built once the stream is known (upstream fills them as it goes);
-# `portray_goal` is refused — calling it needs the meta-call (`NotPortedError`, V9; its culprit the
-# atom `portray_goal`, f3b-5a); the module's flags are the kernel's (`user`, or the one `module`
+# DIVERGES: the write options are built once the stream is known (upstream fills them as it goes):
+# `portray_goal`'s goal, its options list and priority variable are kept until then (since group F,
+# D-0123; until then refused: calling Prolog needed V9); the module's flags are the kernel's (`user`, or the one `module`
 # names, else `user`); no quoted-stream representation flag is lost (`SIO_REPPL`/`SIO_REPPLU` set
 # and restored, as upstream).
 """
@@ -1987,14 +2045,13 @@ function pl_write_term3(
         flags |= PL_WRT_CHARESCAPES_UNICODE
     end
     (m.flags & RAT_NATURAL) != 0 && (flags |= PL_WRT_RAT_NATURAL)
+    pg_options, pg_prec = 0, 0
     if gportray != 0
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :portray_goal),                   # (the refused option's name)
-                "write_term's portray_goal option (calling Prolog)",
-                "V9 (the meta-call)"
-            )
-        )
+        ok, pg_options, pg_prec = put_write_options(ld, opts)
+        (ok && PL_qualify(gd, ld, gportray, gportray)) || return false
+        if (flags & PL_WRT_BLOB_PORTRAY) == 0       # isoff(&options, PL_WRT_BLOB_PORTRAY)
+            portray = true
+        end
     end
     if numbervars == -1
         numbervars = portray ? 1 : 0
@@ -2047,6 +2104,9 @@ function pl_write_term3(
         options.integer_format = integer_format
         options.float_format = float_format
         options.m = m
+        options.portray_goal = gportray                 # options.portray_goal = gportray
+        options.write_options = pg_options
+        options.prec_opt = pg_prec
 
         partial || PutOpenToken(EOF, s, options.flags) # reset this
         if (options.flags & PL_WRT_QUOTED) != 0 && (s.flags & (SIO_REPPL | SIO_REPPLU)) == 0

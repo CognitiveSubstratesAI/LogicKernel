@@ -19,7 +19,9 @@
 #   * PORTRAY (group F, D-0123: upstream's `callPortray`; until then refused, decision 3a): print/1
 #     and portray(true) with a user portray/1 — 20 goals, each on a database of its own, compared
 #     with swipl on the same three things;
-#   * THE REFUSALS, explicit: write_term's `portray_goal` (calling Prolog, V9);
+#   * PORTRAY_GOAL (group F, D-0123: upstream's `call(G, Term, Options)`; until then refused,
+#     NotPortedError): write_term's option — 20 goals on a database of their own and 6 error goals,
+#     compared with swipl the same way;
 #   * THE HOST: the streams opened over stdin/stdout/stderr when first asked for; one replaced
 #     (`set_standard_stream!`) — current output follows; a write error on a stream (a closed
 #     buffer) is `io_error(write, Alias)`; the `variable_names` bindings are undone after the write.
@@ -316,6 +318,33 @@ const _WF_PORTRAY_GOALS = [
     "print(f(a))"
 ]
 
+# write_term/2,3's `portray_goal(G)` (group F, D-0123: upstream calls `call(G, Term, Options)`, the
+# options without `priority/1` plus `priority(P)` bound to the subterm's priority; until then
+# refused, NotPortedError): G succeeds, fails, writes partly, raises; `portray`, `numbervars` and
+# `blobs` with it; a qualified G, an extra argument; the stream of write_term/3.
+const _WF_PORTRAY_GOAL_GOALS = [
+    "assertz((pg(x, _) :- write(px))), write_term(f(x, y), [portray_goal(pg)])",
+    "assertz((pg(T, O) :- T == x, write(O))), write_term(f(x), [portray_goal(pg), quoted(true)])",
+    "assertz((pg(T, O) :- T == x, write(O))), write_term(f(x), [quoted(true), priority(999), portray_goal(pg)])",
+    "assertz((pg(T, P) :- T == x, write(P))), write_term(f(x) + x, [portray_goal(pg)])",
+    "assertz((pg(_, _) :- fail)), write_term(f(x, 'A'), [portray_goal(pg)])",
+    "assertz((pg(_, _) :- write(p), fail)), write_term(f(x), [portray_goal(pg)])",
+    "assertz((pg(_, _) :- throw(oops))), catch(write_term(f(x), [portray_goal(pg)]), B, true), write(caught(B))",
+    "assertz((pg(_, _) :- throw(oops))), write_term(f(x), [portray_goal(pg)])",
+    "assertz((pg(T, _) :- T == x, write(px))), write_term(f(_, x), [portray_goal(pg)])",
+    "assertz((pg(T, _) :- T == x, write(px))), write_term(f('\$VAR'(1), x), [portray_goal(pg)])",
+    "assertz((pg(T, _) :- T == x, write(px))), write_term(f('\$VAR'(1), x), [portray_goal(pg), numbervars(false)])",
+    "assertz((pg(T, _) :- T == x, write(px))), write_term(f(x), [portray_goal(user:pg)])",
+    "assertz((pg(T, _) :- T == x, write(px))), write_term(f(x), [portray_goal(pg), portray(false)])",
+    "assertz((pg(T, _) :- T == x, write(px))), write_term(f(x), [portray_goal(pg), blobs(portray)])",
+    "assertz((pg(T, _, Z) :- T == x, write(Z))), write_term(f(x), [portray_goal(pg(zz))])",
+    "assertz((pg(Z, T, _) :- T == x, write(Z))), write_term(f(x), [portray_goal(pg(zz))])",
+    "assertz((pg(T, _) :- T == x, write(px))), write_term(user_error, f(x), [portray_goal(pg)])",
+    "assertz((pg(T, _) :- T == x, write(user_output, px))), write_term(user_error, f(x), [portray_goal(pg)])",
+    "assertz((pg(f(Y), _) :- Y = b, write(fb))), T = f(_), write_term(T, [portray_goal(pg)]), write(' '), write(T)",
+    "assertz((portray(_) :- write(no))), assertz((pg(T, _) :- T == x, write(px))), write_term(f(x), [portray_goal(pg)])"
+]
+
 "The kernel's results of the hand goals."
 function _wf_goal_results(goals::Vector{String})::Vector{Vector{String}}
     res = Vector{String}[]
@@ -512,6 +541,18 @@ if _WF_SWIPL !== nothing
         @test startswith(ours[18][3], "ex:error(resource_error(portray_nesting)")
         @test count(r -> r[3] == "true", ours) >= 16
     end
+
+    @testset "write_term's portray_goal option, as swipl (group F, D-0123: call/3)" begin
+        ours = [_wf_run_fresh(g) for g in _WF_PORTRAY_GOAL_GOALS]
+        theirs = _wf_swipl(["glc(" * _wf_codes(g) * ")" for g in _WF_PORTRAY_GOAL_GOALS])
+        @test _wf_compare(_WF_PORTRAY_GOAL_GOALS, ours, theirs) == 0
+        # the goals reach what they are for: the goal's text, its options list, a raise
+        @test ours[1][1] == "f(px,y)"
+        @test ours[4][1] ==
+            "f([portray_goal(pg),priority(999)])+[portray_goal(pg),priority(499)]"
+        @test ours[8][3] == "ex:oops"
+        @test count(r -> r[3] == "true", ours) >= 18
+    end
 elseif _WF_SWIPL_REQUIRED
     error(
         "LOGICKERNEL_REQUIRE_SWIPL=1 but `swipl` is not on PATH — the write family differential would be skipped"
@@ -582,9 +623,27 @@ end
     LK.PL_discard_foreign_frame(_WF_LD, fid)
 end
 
-@testset "the refusals: write_term's portray_goal (calling Prolog, V9)" begin
-    r = _wf_goal_results(["write_term(a, [portray_goal(foo)])"])[1]
-    @test r == ["", "", "NOTPORTED"]
+# write_term's portray_goal with a goal that is no procedure: the errors call/3 raises (group F,
+# D-0123). Until then the option was refused: `r == ["", "", "NOTPORTED"]` for the first goal.
+const _WF_PORTRAY_GOAL_ERRORS = [
+    "write_term(a, [portray_goal(foo)])", "write_term(f(x), [portray_goal(_)])",
+    "write_term(f(x), [portray_goal(1)])", "write_term(f(x), [portray_goal(nosuch)])",
+    "write_term(f(x), [portray_goal(user:nosuch)])",
+    "write_term(user_error, f(x), [portray_goal(foo(1))])"
+]
+
+@testset "write_term's portray_goal: a goal that is no procedure raises call/3's error, as swipl" begin
+    ours = _wf_goal_results(_WF_PORTRAY_GOAL_ERRORS)
+    @test startswith(
+        ours[1][3], "ex:error(existence_error(procedure,foo/2),context(system:call/3,"
+    )
+    @test all(r -> startswith(r[3], "ex:error("), ours)
+    if _WF_SWIPL !== nothing
+        theirs = _wf_swipl(["gl(" * _wf_codes(g) * ")" for g in _WF_PORTRAY_GOAL_ERRORS])
+        @test _wf_compare(_WF_PORTRAY_GOAL_ERRORS, ours, theirs) == 0
+    elseif _WF_SWIPL_REQUIRED
+        @test false
+    end
 end
 
 @testset "the host: standard streams, replaced, a write error, bindings undone" begin
