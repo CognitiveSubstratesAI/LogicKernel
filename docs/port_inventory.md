@@ -88,10 +88,10 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-copyterm.c` | code | `8e1bc1110be4` | `src/pl-copyterm.jl` | 15 | 8 |
 | swipl-devel `src/pl-data.h` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 77 | 8 |
 | swipl-devel `src/pl-data.h` | code | `8e1bc1110be4` | `src/pl-inline.jl` | 4 | 1 |
-| swipl-devel `src/pl-error.c` | code | `8e1bc1110be4` | `src/pl-error.jl` | 17 | 9 |
+| swipl-devel `src/pl-error.c` | code | `8e1bc1110be4` | `src/pl-error.jl` | 18 | 10 |
 | swipl-devel `src/pl-error.h` | code | `8e1bc1110be4` | `src/pl-error.jl` | 1 | 1 |
 | swipl-devel `src/pl-ext.c` | code | `8e1bc1110be4` | `src/pl-ext.jl` | 5 | 3 |
-| swipl-devel `src/pl-fli.c` | code | `8e1bc1110be4` | `src/pl-fli.jl` | 59 | 49 |
+| swipl-devel `src/pl-fli.c` | code | `8e1bc1110be4` | `src/pl-fli.jl` | 61 | 51 |
 | swipl-devel `src/pl-fli.h` | code | `8e1bc1110be4` | `src/pl-fli.jl` | 10 | 8 |
 | swipl-devel `src/pl-funct.c` | code | `8e1bc1110be4` | `src/pl-funct.jl` | 12 | 9 |
 | swipl-devel `src/pl-gc.c` | code | `8e1bc1110be4` | `src/pl-gc.jl` | 6 | 4 |
@@ -118,7 +118,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-prims.jl` | 6 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-vmi.jl` | 22 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 1 | 1 |
-| swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-write.jl` | 2 | 1 |
+| swipl-devel `src/pl-incl.h` | code | `8e1bc1110be4` | `src/pl-write.jl` | 3 | 1 |
 | swipl-devel `src/pl-index.c` | code | `8e1bc1110be4` | `src/pl-index.jl` | 110 | 33 |
 | swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-gmp.jl` | 1 | 0 |
@@ -126,11 +126,11 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-list.c` | code | `8e1bc1110be4` | `src/pl-list.jl` | 13 | 7 |
 | swipl-devel `src/pl-modul.c` | code | `8e1bc1110be4` | `src/pl-modul.jl` | 7 | 6 |
 | swipl-devel `src/pl-op.c` | code | `8e1bc1110be4` | `src/pl-op.jl` | 16 | 13 |
-| swipl-devel `src/pl-prims.c` | code | `8e1bc1110be4` | `src/pl-prims.jl` | 91 | 45 |
+| swipl-devel `src/pl-prims.c` | code | `8e1bc1110be4` | `src/pl-prims.jl` | 98 | 52 |
 | swipl-devel `src/pl-pro.c` | code | `8e1bc1110be4` | `src/pl-pro.jl` | 3 | 3 |
 | swipl-devel `src/pl-proc.c` | code | `8e1bc1110be4` | `src/pl-proc.jl` | 46 | 32 |
 | swipl-devel `src/pl-proc.h` | code | `8e1bc1110be4` | `src/pl-proc.jl` | 1 | 0 |
-| swipl-devel `src/pl-read.c` | code | `8e1bc1110be4` | `src/pl-read.jl` | 184 | 76 |
+| swipl-devel `src/pl-read.c` | code | `8e1bc1110be4` | `src/pl-read.jl` | 185 | 77 |
 | swipl-devel `src/pl-rec.c` | code | `8e1bc1110be4` | `src/pl-rec.jl` | 16 | 10 |
 | swipl-devel `src/pl-ressymbol.c` | code | `8e1bc1110be4` | `src/pl-ressymbol.jl` | 6 | 4 |
 | swipl-devel `src/pl-setup.c` | code | `8e1bc1110be4` | `src/pl-setup.jl` | 7 | 5 |
@@ -146,8 +146,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-variant.c` | code | `8e1bc1110be4` | `src/pl-variant.jl` | 16 | 6 |
 | swipl-devel `src/pl-vmi.c` | code | `8e1bc1110be4` | `src/pl-vmi.jl` | 130 | 0 |
 | swipl-devel `src/pl-vmi.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 151 | 96 |
-| swipl-devel `src/pl-wam.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 42 | 34 |
-| swipl-devel `src/pl-write.c` | code | `8e1bc1110be4` | `src/pl-write.jl` | 112 | 44 |
+| swipl-devel `src/pl-wam.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 43 | 35 |
+| swipl-devel `src/pl-write.c` | code | `8e1bc1110be4` | `src/pl-write.jl` | 116 | 46 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `8e1bc1110be4` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `8e1bc1110be4` | `test/core_lang/test_exception.jl` | 4 | 0 |
 | swipl-devel `tests/core_lang/test_hash.pl` | code | `8e1bc1110be4` | `test/core_lang/test_hash.jl` | 19 | 1 |
@@ -217,10 +217,10 @@ checkout is pulled.
 | swipl-devel `src/pl-comp.h` | `8e1bc1110be4` | 1 | 6 | 0 | src/pl-comp.jl |
 | swipl-devel `src/pl-copyterm.c` | `8e1bc1110be4` | 12 | 32 | 8 | src/pl-copyterm.jl |
 | swipl-devel `src/pl-data.h` | `8e1bc1110be4` | 2 | 2 | 0 | src/pl-incl.jl, src/pl-inline.jl |
-| swipl-devel `src/pl-error.c` | `8e1bc1110be4` | 17 | 41 | 9 | src/pl-error.jl |
+| swipl-devel `src/pl-error.c` | `8e1bc1110be4` | 18 | 41 | 10 | src/pl-error.jl |
 | swipl-devel `src/pl-error.h` | `8e1bc1110be4` | 0 | 0 | 0 | src/pl-error.jl |
 | swipl-devel `src/pl-ext.c` | `8e1bc1110be4` | 4 | 10 | 2 | src/pl-ext.jl |
-| swipl-devel `src/pl-fli.c` | `8e1bc1110be4` | 55 | 286 | 47 | src/pl-fli.jl |
+| swipl-devel `src/pl-fli.c` | `8e1bc1110be4` | 57 | 286 | 49 | src/pl-fli.jl |
 | swipl-devel `src/pl-fli.h` | `8e1bc1110be4` | 10 | 15 | 8 | src/pl-fli.jl |
 | swipl-devel `src/pl-funct.c` | `8e1bc1110be4` | 10 | 17 | 7 | src/pl-funct.jl |
 | swipl-devel `src/pl-gc.c` | `8e1bc1110be4` | 6 | 166 | 5 | src/pl-gc.jl, src/pl-wam.jl |
@@ -237,11 +237,11 @@ checkout is pulled.
 | swipl-devel `src/pl-list.c` | `8e1bc1110be4` | 9 | 13 | 5 | src/pl-list.jl |
 | swipl-devel `src/pl-modul.c` | `8e1bc1110be4` | 7 | 70 | 6 | src/pl-modul.jl |
 | swipl-devel `src/pl-op.c` | `8e1bc1110be4` | 14 | 21 | 13 | src/pl-op.jl |
-| swipl-devel `src/pl-prims.c` | `8e1bc1110be4` | 62 | 188 | 36 | src/pl-prims.jl |
+| swipl-devel `src/pl-prims.c` | `8e1bc1110be4` | 69 | 188 | 43 | src/pl-prims.jl |
 | swipl-devel `src/pl-pro.c` | `8e1bc1110be4` | 3 | 33 | 3 | src/pl-pro.jl |
 | swipl-devel `src/pl-proc.c` | `8e1bc1110be4` | 44 | 126 | 31 | src/pl-proc.jl |
 | swipl-devel `src/pl-proc.h` | `8e1bc1110be4` | 1 | 2 | 0 | src/pl-proc.jl |
-| swipl-devel `src/pl-read.c` | `8e1bc1110be4` | 133 | 209 | 63 | src/pl-read.jl |
+| swipl-devel `src/pl-read.c` | `8e1bc1110be4` | 134 | 209 | 64 | src/pl-read.jl |
 | swipl-devel `src/pl-rec.c` | `8e1bc1110be4` | 13 | 76 | 7 | src/pl-rec.jl |
 | swipl-devel `src/pl-ressymbol.c` | `8e1bc1110be4` | 3 | 7 | 2 | src/pl-ressymbol.jl |
 | swipl-devel `src/pl-setup.c` | `8e1bc1110be4` | 5 | 62 | 5 | src/pl-setup.jl |
@@ -255,8 +255,8 @@ checkout is pulled.
 | swipl-devel `src/pl-umap.c` | `8e1bc1110be4` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `8e1bc1110be4` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `8e1bc1110be4` | 130 | 240 | 67 | src/pl-vmi.jl, src/pl-wam.jl |
-| swipl-devel `src/pl-wam.c` | `8e1bc1110be4` | 38 | 96 | 32 | src/pl-wam.jl |
-| swipl-devel `src/pl-write.c` | `8e1bc1110be4` | 81 | 111 | 41 | src/pl-write.jl |
+| swipl-devel `src/pl-wam.c` | `8e1bc1110be4` | 39 | 96 | 33 | src/pl-wam.jl |
+| swipl-devel `src/pl-write.c` | `8e1bc1110be4` | 85 | 111 | 43 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `8e1bc1110be4` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_exception.pl` | `8e1bc1110be4` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
 | swipl-devel `tests/core_lang/test_hash.pl` | `8e1bc1110be4` | 1 | 4 | 0 | test/core_lang/test_hash.jl |
@@ -272,7 +272,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8e1bc1110be4` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8e1bc1110be4` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8e1bc1110be4` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1219** | **4472** | **638** | |
+| **total** | | **1235** | **4472** | **652** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
