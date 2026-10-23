@@ -56,7 +56,7 @@ function _oerr(ld, f)
     rc = f()
     ld.exception_term == 0 && return nothing
     @test rc === false || rc === nothing            # it failed, the error pending
-    ball = LogicKernel.slotValue(ld, ld.exception_term + 1)
+    ball = lk_answer(ld, ld.exception_term)
     lk_name(child(ball, 1)) == :error || return nothing
     formal = child(ball, 2)
     lk_name(child(formal, 1)) == :occurs_check || return nothing

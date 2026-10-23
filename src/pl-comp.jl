@@ -417,25 +417,46 @@ end
 
 # ORIGINAL (L1f f3a): the reverse of `export_cells` for what the compiler hands back (its warnings): `t`
 # laid on the cells as the cold import lays a term (`_compound_word!`), but a variable `ex` made is its
-# own cell again (`makeRefG`); anything else as `_word_of!` writes it.
+# own cell again (`makeRefG`); anything else as `_word_of!` writes it — any other variable (f3-2,
+# audit D-0111, f3's Q3) its binding followed, unbound ONE FRESH CELL per variable for this write
+# (a write-local map, `_write_var_word!`), where until f3-2 `_word_of!` bound a keyed one to a fresh
+# cell (`_import_var!`) that a later write of it shared.
 "The word of the value `t` on the cells, `ex`'s variables back to their cells (L1f f3a)."
 function import_cells!(ld::PL_local_data{T}, ex::cell_export{T}, t::T)::word where {T}
     if kind(t) === VAR
         p = get(ex.cells, var_key(t), 0)
-        return p != 0 ? makeRefG(p) : _word_of!(ld, t)
+        return p != 0 ? makeRefG(p) : _word_of!(ld, t)  # (a variable alone: a write of its own)
     end
     kind(t) === EXPR || return _word_of!(ld, t)
     todo = Tuple{T, Int}[]
     root = _import_layout!(ld, t, todo)
+    vm = nothing                                        # (f3-2: this write's other variables, Q3)
     while !isempty(todo)
         u, p = pop!(todo)
         off = _import_offset(u)
         for i in 1:(nchildren(u) - off)
             c = child(u, i + off)
-            ld.gstack[p + i] = if kind(c) === EXPR
+            kc = kind(c)
+            ld.gstack[p + i] = if kc === EXPR
                 _import_layout!(ld, c, todo)
+            elseif kc === VAR
+                q = get(ex.cells, var_key(c), 0)
+                if q != 0                               # a variable `ex` made: its own cell
+                    makeRefG(q)
+                else
+                    # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef, it follows
+                    # a variable term's binding — deleted in f3 (`b = c`)
+                    b = deRef(ld, c)
+                    if kind(b) === VAR                  # one fresh cell per variable per write
+                        m = vm === nothing ? PutVarMap() : vm
+                        vm = m
+                        _write_var_word!(ld, m, var_key(b))
+                    else
+                        _word_of!(ld, b)
+                    end
+                end
             else
-                import_cells!(ld, ex, c)
+                _word_of!(ld, c)
             end
         end
     end

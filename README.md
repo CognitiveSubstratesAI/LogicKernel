@@ -55,9 +55,10 @@ value put into the engine (`putSlotValue!`) is COPIED, as SWI-Prolog copies a re
 stacks: every unbound variable in it becomes a fresh variable of the engine. Two separate puts of
 the same Julia variable therefore make two variables; puts that should share their variables — a
 goal's arguments, put slot by slot — pass one `PutVarMap()`, as one SWI record would. An answer is
-read through the term references (`slotValue` of the argument slots, then `resolve_term`), never
-through the caller's variables, which the engine does not bind. Sharing with a variable already in
-the engine goes through its handle, as `PL_put_term(t2, t1)` does in SWI's C interface.
+read through the term references, never through the caller's variables, which the engine does not
+bind: `query_answers` (below, "Using it from Julia") reads them for you, each answer a term of its
+own. Sharing with a variable already in the engine goes through its handle, as `PL_put_term(t2, t1)`
+does in SWI's C interface.
 
 **Memory at the boundary** (L1c, 2026-10-15). A put copies its term onto the engine's global
 stack, as SWI-Prolog does, and — as in SWI — closing a foreign frame (`PL_close_foreign_frame`)

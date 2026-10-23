@@ -334,7 +334,7 @@ end
     n0 = nrefs(ld)                                          # the engine's permanent ones
     r = LK.PL_new_term_refs(ld, 3)
     @test r == LK.SIZEOF_FLIFRAME + n0 && ld.lTop == r + 3
-    vs = [LK.slotValue(ld, r + 1 + i) for i in 0:2]
+    vs = lk_answers(ld, r, r + 1, r + 2)                   # one export: three distinct cells
     @test all(v -> kind(v) === VAR, vs) && length(unique(var_key.(vs))) == 3
     @test all(v -> var_key(v) >= KERNEL_VAR_BASE, vs)       # the kernel's own variables
     @test nrefs(ld) == n0 + 3 && ld.lTop == LK.refFliP(base, nrefs(ld))   # O_CHECK_TERM_REFS
@@ -348,9 +348,10 @@ end
     LK.Trail!(ld, var_key(LK.slotValue(ld, r + 1)), _lf("f", _ls("a")))
     c = LK.PL_copy_term_ref(ld, r)
     @test c == r + 5 && nrefs(ld) == n0 + 6 &&
-        lk_eq(LK.resolve_term(ld, LK.slotValue(ld, c + 1)), _lf("f", _ls("a")))   # L1c: cells
+        lk_eq(lk_answer(ld, c), _lf("f", _ls("a")))                              # L1c: cells
     @test LK.PL_put_term(ld, t, r + 1)
-    @test LK.slotValue(ld, t + 1) === LK.slotValue(ld, r + 2)                 # an unbound variable: itself
+    vt, vr = lk_answers(ld, t, r + 1)                   # ONE export: one cell, one variable
+    @test vt === vr                                     # an unbound variable: itself
 
     # reset: lTop back to `r`, the count recomputed
     LK.PL_reset_term_refs(ld, r + 1)
@@ -454,7 +455,8 @@ end
     for (i, x) in enumerate(xs)
         LK.putSlotValue!(ld, LK.argFrameP(from, i - 1) + 1, x, pvm)
     end
-    ys = [LK.slotValue(ld, LK.argFrameP(from, i - 1) + 1) for i in 1:3]
+    fr = [LK.argFrameP(from, i - 1) for i in 1:3]           # the arguments' term references
+    ys = lk_answers(ld, fr...)
     @test lk_eq(ys[1], xs[1]) && lk_eq(ys[3], xs[3]) && kind(child(ys[2], 2)) === VAR
     LK.copyFrameArguments(ld, from, to, 3)
     @test all(
@@ -463,7 +465,10 @@ end
             ld.slots[LK.argFrameP(from, i - 1) + 1],
         1:3
     )
-    @test all(i -> lk_eq(LK.slotValue(ld, LK.argFrameP(to, i - 1) + 1), ys[i]), 1:3)
+    # both frames read with ONE export (`lk_answers`): f(_)'s variable is one cell, one variable
+    zs = lk_answers(ld, fr..., (LK.argFrameP(to, i - 1) for i in 1:3)...)
+    @test all(i -> lk_eq(zs[3 + i], zs[i]), 1:3) && lk_eq(zs[1], ys[1]) &&
+        lk_eq(zs[3], ys[3])
     LK.copyFrameArguments(ld, from, to + 100, 0)            # argc 0: nothing
     @test ld.slots[LK.argFrameP(to + 100, 0) + 1] == 0      # never written (the word 0, L1b C5)
 end
@@ -510,7 +515,7 @@ end
     ld.stacks_limit = region(ld)
     ld.lTop = ld.lMax - 10
     @test !LK.ensureLocalSpace(ld, 20)
-    ball = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1))
+    ball = lk_answer(ld, ld.exception_term)
     @test lk_eq(
         ball, _lf("error", _lf("resource_error", _ls("stack")), _ls("stack_overflow"))
     )   # (D-0040)
@@ -562,7 +567,7 @@ end
     LK.PL_error(ld4, LK.ERR_INSTANTIATION)
     @test ld4.exception_term != 0 && ld4.local_spare == 0
     @test lk_eq(
-        child(LK.resolve_term(ld4, LK.slotValue(ld4, ld4.exception_term + 1)), 2),
+        child(lk_answer(ld4, ld4.exception_term), 2),
         _ls("instantiation_error")
     )
     # has_emergency_space_local takes what is lacking from the spare, and no more

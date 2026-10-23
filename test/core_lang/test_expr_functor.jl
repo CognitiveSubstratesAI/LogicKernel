@@ -155,7 +155,10 @@ end
         for g in (_qf(:p, _qf(:f, a)), _qf(:p, _qe(Y, a)), _qf(:p, _qe(_qf(:g, b), a)))
             got, want = first.(ix_call(pr, g)), first.(ix_call_unindexed(pr, g))
             @test !isempty(want)
-            @test lk_eq(got, want)
+            # f3-2 (audit D-0111 Q3/Q5): was `lk_eq(got, want)` — the caller's Y is no longer handed
+            # back (import_origin), so each call's answer carries its own fresh variable: the two
+            # calls agree up to variable renaming (=@=), answer by answer
+            @test length(got) == length(want) && all(LK.is_variant_ptr.(got, want))
         end
         @test lk_eq(first.(ix_call(pr, _qf(:p, _qf(:f, a)))), _Q[_qf(:p, _qf(:f, a))])
     end
@@ -286,5 +289,34 @@ end
         @test ps.def.codes[1] == LK.S_LIST                # the supervisor the call installed
         gs2 = _qf(:sl, _qf(:g, _qs(:h), _qs(:t)), _qv(39))
         @test isempty(_qvm_call(ps, gs2)) && isempty(ix_call(ps, gs2))
+
+        # ALIASING on the cross-match (f3-2): a clause variable met twice inside ONE head
+        # unification stays ONE variable, in both directions and on the list instructions. Kernel-only
+        # terms (`$expr/n`): no swipl counterpart, so hand-written — the unifier's own answer, the
+        # same on the term path (before f3-2, through the keyed variables) and on the cells (after).
+        # The two occurrences are children 2 and 3 of the matched compound however it is exported
+        # (`f(U, V)` or `$expr` with the head as child 1).
+        U, V, W = _qv(41), _qv(42), _qv(43)
+        same(t, i, j) =
+            kind(child(t, i)) === VAR && var_key(child(t, i)) == var_key(child(t, j))
+        pa = ix_pred(_Q, :va, 1)                          # head (X Y Y) against f(U, V): U == V
+        ix_assertz!(pa, _qf(:va, _qe(X, Y, Y)))
+        ra = _qvm_call(pa, _qf(:va, _qf(:f, U, V)))
+        @test ra !== nothing && length(ra) == 1 && same(child(ra[1], 2), 2, 3)
+        pb = ix_pred(_Q, :vb, 1)                          # head f(Y, Y) against (Z U V): U == V
+        ix_assertz!(pb, _qf(:vb, _qf(:f, Y, Y)))
+        rb = _qvm_call(pb, _qf(:vb, _qe(Z, U, V)))
+        @test rb !== nothing && length(rb) == 1 && same(child(rb[1], 2), 2, 3)
+        pl3 = ix_pred(_Q, :vl3, 1)                        # head [Y|Y] against (Z U V): U == V
+        ix_assertz!(pl3, _qf(:vl3, _qf("[|]", Y, Y)))
+        rl3 = _qvm_call(pl3, _qf(:vl3, _qe(Z, U, V)))
+        @test rl3 !== nothing && length(rl3) == 1 && same(child(rl3[1], 2), 2, 3)
+        rf = _qvm_call(pf, _qf(:vlf, _qe(Z, U, W), _qv(44)))   # vlf([H|T], f(H, T)), unbound
+        @test rf !== nothing && length(rf) == 1
+        if rf !== nothing && length(rf) == 1
+            e, f = child(rf[1], 2), child(rf[1], 3)      # (Z U W) and f(H, T): U is H, W is T
+            @test kind(child(e, 2)) === VAR && var_key(child(e, 2)) == var_key(child(f, 2))
+            @test kind(child(e, 3)) === VAR && var_key(child(e, 3)) == var_key(child(f, 3))
+        end
     end
 end

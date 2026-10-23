@@ -188,7 +188,7 @@ if LK_TERM_IMPL != "alt_interned"
             c2 = LK.unRef(ld.slots[t0 + 2])
             @test LK._is_gcompound(ld.gstack[c2])
             @test (ld.gstack[c2] == ld.slots[t0 + 1]) == shared
-            out = LK.resolve_term(ld, LK.slotValue(ld, t0 + 2))
+            out = lk_answer(ld, t0 + 1)
             @test LK.compareStandard(out, ground, true) == 0
             LK.PL_close_foreign_frame(ld, fid)
         end

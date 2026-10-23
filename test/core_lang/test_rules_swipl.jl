@@ -1557,7 +1557,7 @@ end
     qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS,
         _rproc(db2, _rf("ag", _rv(100))), a)
     @test LK.PL_next_solution(gd, ld, qid) == LK.PL_S_EXCEPTION
-    ball = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+    ball = lk_answer(ld, LK.PL_exception(ld, qid))
     formal = child(ball, 2)
     @test lk_name(child(formal, 1)) === :existence_error
     @test lk_name(child(formal, 2)) === :procedure

@@ -1141,7 +1141,9 @@ end
 #   * ARGP_GLOBAL — a position on the global stack (`pos`), since L1c: an argument cell of a compound
 #     there — written in write mode, read in read mode (`argTermP`) — as upstream's.
 # `term` is meaningful for a cursor only; the other forms carry any term there. Since L1c a cursor is
-# only ever into a compound that is a TERM (a keyed variable's binding, until the stamp falls).
+# only ever into a compound that is a TERM (a keyed variable's binding, until the stamp falls);
+# since f3-2 never into a stack compound's live export (`_argp_cursor` asserts it: the `$expr`
+# cross-match reads the cells), so it goes with the keyed variables (f3).
 "The VM's argument pointer (upstream's `Word ARGP`): a slot, a cell of the global stack, or a cursor into a term."
 struct argp_t{T}
     form::UInt8

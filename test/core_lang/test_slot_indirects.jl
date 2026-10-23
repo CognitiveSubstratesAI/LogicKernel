@@ -45,10 +45,10 @@ _sw_same(a, b) = LK.compareStandard(a, b, true) == LK.CMP_EQUAL
         LK.setSlotValue!(ld, t + 1, v)
         LK.PL_rewind_foreign_frame(ld, inner)
         LK.PL_close_foreign_frame(ld, inner)
-        r = LK.slotValue(ld, t + 1)
+        r = lk_answer(ld, t)
         u = LK.PL_new_term_ref(ld)                       # values made after the rewind reuse the room
         LK.setSlotValue!(ld, u + 1, _rg(99.25))
-        r2 = LK.slotValue(ld, t + 1)
+        r2 = lk_answer(ld, t)
         @test _sw_same(r, v)
         @test _sw_same(r2, v)
         LK.PL_discard_foreign_frame(ld, outer)
@@ -67,8 +67,8 @@ end
     @test ld.slots[young + 1] != LK.SLOT_VALUE           # a value-table word
     @test !LK.isRef(ld.slots[young + 1]) && !LK.isAtomW(ld.slots[young + 1])
     @test ld.slots[old + 1] == LK.SLOT_VALUE             # older than `inner`: its own side value
-    @test _sw_same(LK.slotValue(ld, young + 1), _rg(2.5))
-    @test _sw_same(LK.slotValue(ld, old + 1), _rg(3.5))
+    @test _sw_same(lk_answer(ld, young), _rg(2.5))
+    @test _sw_same(lk_answer(ld, old), _rg(3.5))
     k, w, _ = LK._deref_loc(ld, -(young + 1))
     @test k == LK.DU_VALUE && w == ld.slots[young + 1]
     # a small integer is its tagged word and an atom its atom word, wherever the reference lies
@@ -93,7 +93,7 @@ end
     LK._slot_link!(ld, b + 1, a + 1)                     # *to = linkValI(from): the indirect shared
     @test ld.slots[b + 1] == w
     @test length(ld.vtable) == n
-    @test _sw_same(LK.slotValue(ld, b + 1), _rg(4.75))
+    @test _sw_same(lk_answer(ld, b), _rg(4.75))
     LK.PL_discard_foreign_frame(ld, fr)
 end
 

@@ -46,9 +46,9 @@ function _rt_call(db, name::String, args::Vector{_RT})
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        (:true, [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)])
+        (:true, lk_answers(ld, (a:(a + length(args) - 1))...))
     elseif rc == LK.PL_S_EXCEPTION
-        (:exception, [LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))])
+        (:exception, [lk_answer(ld, LK.PL_exception(ld, qid))])
     else
         (:false, _RT[])
     end

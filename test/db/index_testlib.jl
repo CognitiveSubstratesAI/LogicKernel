@@ -12,8 +12,9 @@
 #
 # Unification is the KERNEL's (src/pl-prims.jl, since 2026-10-03): a candidate clause is unified with
 # the goal by `decompileHead!` (a fresh copy of its head) under the database's local data, the answer
-# is copied out with `resolve_term`, and the bindings are undone — what retract/1, clause/2 and a
-# call do. (Until then the harness carried its own unifier.)
+# is read off the cells (`lk_answer`, f3-2: its unbound variables are the export's, not the
+# caller's), and the bindings are undone — what retract/1, clause/2 and a call do. (Until then the
+# harness carried its own unifier.)
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -68,9 +69,9 @@ function ix_answer(
     m = LK.Mark(ld)
     t = LK.PL_new_term_ref(ld)                # the goal in a term reference (f3b-2b)
     try
-        LK.setSlotValue!(ld, t + 1, goal)     # the engine's write: the caller's variables handed back
+        LK.setSlotValue!(ld, t + 1, goal)     # the engine's write
         LK.decompileHead!(ld, cl, t) || return nothing
-        return LK.resolve_term(ld, LK.slotValue(ld, t + 1))
+        return lk_answer(ld, t)               # read off the cells: one export (f3-2)
     finally
         LK.Undo!(ld, m)
         LK.PL_reset_term_refs(ld, t)
@@ -79,8 +80,8 @@ end
 
 """
 `f(t)` with `goal` written into a fresh term reference `t` (f3b-2b: clause/2 and retract/1 take one),
-by the engine's write: an answer read through `t` (`resolve_term`) hands back the caller's variables,
-as the head term did before. The write is undone and `t` freed after.
+by the engine's write; an answer is read through `t` off the cells (`lk_answer`, f3-2: its unbound
+variables are the export's, not the caller's). The write is undone and `t` freed after.
 """
 function _ix_with_goal_ref(f, ld::LK.PL_local_data{T}, goal::T) where {T}
     m = LK.Mark(ld)
@@ -151,13 +152,14 @@ function vm_call(
         rc = LK.PL_next_solution(gd, ld, qid)
         (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
         # the answer through the argument handles, never the caller's variables (L1b boundary,
-        # user 2026-10-14: a put copies, variable identity is the handle)
+        # user 2026-10-14: a put copies, variable identity is the handle), read off the cells with
+        # ONE export, so a variable shared between arguments stays shared (f3-2)
         ag = if ar == 0
             goal
         else
-            mk_expr(T, T[child(goal, 1); [LK.slotValue(ld, args + i) for i in 1:ar]])
+            mk_expr(T, T[child(goal, 1); lk_answers(ld, (args + i - 1 for i in 1:ar)...)])
         end
-        push!(out, (LK.resolve_term(ld, ag), rc == LK.PL_S_LAST))
+        push!(out, (ag, rc == LK.PL_S_LAST))
     end
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
@@ -192,8 +194,7 @@ function ix_retract!(p::IxPred{T}, goal::T; after=(_ -> true))::Vector{T} where 
     _ix_with_goal_ref(ld, goal) do t
         LK.pl_retract!(
             p.db.gd, ld, p.def, t,
-            cl ->
-                (push!(out, LK.resolve_term(ld, LK.slotValue(ld, t + 1))); after(out[end]))
+            cl -> (push!(out, lk_answer(ld, t)); after(out[end]))
         )
     end
     return out
@@ -214,8 +215,7 @@ function ix_clause(p::IxPred{T}, goal::T; after=(_ -> true))::Vector{T} where {T
     _ix_with_goal_ref(ld, goal) do t
         LK.pl_clause!(
             p.db.gd, ld, p.def, t,
-            cl ->
-                (push!(out, LK.resolve_term(ld, LK.slotValue(ld, t + 1))); after(out[end]))
+            cl -> (push!(out, lk_answer(ld, t)); after(out[end]))
         )
     end
     return out

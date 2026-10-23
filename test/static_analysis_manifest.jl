@@ -148,6 +148,10 @@ _manifest_per_type(T) = (
     (LK._atom_value, Tuple{LK.PL_local_data{T}, UInt64}, true),
     (LK._atom_value_error, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._word_of!, Tuple{LK.PL_local_data{T}, T}, false),
+    # f3-2 (audit D-0111, f3's Q3): a writer's variable — a fresh cell per variable per write (the
+    # stack may grow; the write-local map is a Dict)
+    (LK._var_word!, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK._write_var_word!, Tuple{LK.PL_local_data{T}, LK.PutVarMap, UInt64}, false),
     # L1f f3b-1: a keyed variable met by a writer — bound to a fresh cell (the trail, the stack grow)
     (LK._import_var!, Tuple{LK.PL_local_data{T}, T}, false),
     # tagged small integers (L1d step 4): the word of an integer, a value's word, a value word's term
@@ -193,7 +197,7 @@ _manifest_per_type(T) = (
     # grow the global stack
     (LK._slot_atom, Tuple{LK.PL_local_data{T}, UInt64}, false),    # a tagged integer's term is MADE (L1d-4)
     (LK._slot_store!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1c: the cold import
-    (LK._slot_store_var!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # L1f f3b-1: a keyed variable's cell
+    (LK._slot_store_var!, Tuple{LK.PL_local_data{T}, Int, T}, false),   # f3-2: a fresh cell
     (LK._slot_older_than_fli, Tuple{LK.PL_local_data{T}, Int}, true),   # L1e e1
     (LK._slot_copy!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
     (LK._slot_link!, Tuple{LK.PL_local_data{T}, Int, Int}, false),  # L1c: the cold import
@@ -1205,6 +1209,8 @@ function _manifest_index(T)
         # (L1c: a store may copy a compound onto the stack — the cold import allocates)
         (LK._argp_store!, Tuple{LD, ARGP, T}, false),
         (LK._argp_add, Tuple{ARGP, Int}, true),
+        (LK._argp_cursor, Tuple{LD, Int, T}, false),            # f3-2: never over an export
+        (LK._hlistff_cross!, Tuple{LD, GD, Int, Int, Int}, false),  # f3-2: `$expr/3` on its cells
         (LK._argp_loc, Tuple{ARGP}, true),                      # do_unify_cells' location (L1c-4)
         (LK._argp_fresh_var!, Tuple{LD, ARGP, Int}, false),
         (LK._argp_void!, Tuple{LD, ARGP}, false),

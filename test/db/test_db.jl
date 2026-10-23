@@ -40,7 +40,7 @@ function _dassert(db::IxDB{_D}, name::String, arg::_D)
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     ball = if rc == LK.PL_S_EXCEPTION
-        LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+        lk_answer(ld, LK.PL_exception(ld, qid))
     else
         nothing
     end

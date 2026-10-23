@@ -115,11 +115,7 @@ function _tl_kernel(path::String, preds::Vector{Tuple{String, Int}})::Vector{Str
                 else
                     mk_expr(
                         _TL,
-                        _TL[
-                            _tls(name),
-                            (LK.resolve_term(ld, LK.slotValue(ld, a + i)) for
-                             i in 1:arity)...
-                        ]
+                        _TL[_tls(name), lk_answers(ld, (a:(a + arity - 1))...)...]
                     )
                 end
                 push!(sols, _tl_enc(g))
@@ -348,7 +344,7 @@ if _TL_SWIPL !== nothing
             LK.putSlotValue!(ld, a + 2, _tls(goal), pvm)
             q = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, t2a, a)
             @test LK.PL_next_solution(gd, ld, q) != LK.PL_S_FALSE
-            g = LK.resolve_term(ld, LK.slotValue(ld, a + 1))
+            g = lk_answer(ld, a)
             LK.PL_close_query(ld, q)
             proc = LK.isCurrentProcedure(
                 child(g, 1) |> sym_key, nchildren(g) - 1, LK.MODULE_user(gd)
@@ -366,11 +362,7 @@ if _TL_SWIPL !== nothing
                 _tl_enc(
                     mk_expr(
                         _TL,
-                        _TL[
-                            child(g, 1),
-                            (LK.resolve_term(ld, LK.slotValue(ld, b + i - 1)) for
-                             i in 2:nchildren(g))...
-                        ]
+                        _TL[child(g, 1), lk_answers(ld, (b:(b + nchildren(g) - 2))...)...]
                     )
                 )
             end

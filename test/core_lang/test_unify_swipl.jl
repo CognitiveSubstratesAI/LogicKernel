@@ -647,7 +647,7 @@ end
         @test f(ld, X, _zc(:f, X)) === false
         @test ld.exception_term != 0
         # the ball on the cells (L1e e5a): read through its reference
-        ball = resolve_term(ld, LogicKernel.slotValue(ld, ld.exception_term + 1))
+        ball = lk_answer(ld, ld.exception_term)
         @test lk_name(child(ball, 1)) == :error
         @test lk_name(child(child(ball, 2), 1)) == :occurs_check
         @test ld.frozen_bar > 0                          # (the guard: the ball's cells are frozen)
@@ -674,6 +674,6 @@ end
     @test !LogicKernel.can_unify(ld, t1, t2, ex)
     @test !LogicKernel.PL_is_variable(ld, ex)           # the ball is in ex
     @test ld.exception_term == 0                         # and no longer pending
-    r = resolve_term(ld, LogicKernel.slotValue(ld, ex + 1))
+    r = lk_answer(ld, ex)
     @test lk_name(child(r, 1)) == :error && lk_name(child(child(r, 2), 1)) == :occurs_check
 end

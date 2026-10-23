@@ -161,9 +161,7 @@ function _rmcc_formal(db::_RDB, goal::_R)::String
     rc = LK.PL_next_solution(gd, ld, qid)
     out = "no_error"
     if rc == LK.PL_S_EXCEPTION
-        out = _rcanonical(
-            child(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)), 2)
-        )
+        out = _rcanonical(child(lk_answer(ld, LK.PL_exception(ld, qid)), 2))
     end
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)

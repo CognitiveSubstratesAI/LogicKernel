@@ -71,8 +71,7 @@ _uc_no_local_ref(ld) =
         c = LK.unRef(ld2.slots[t2 + 1])
         args = order == 1 ? (-(t2 + 1), -(t2 + 2)) : (-(t2 + 2), -(t2 + 1))
         @test LK.do_unify_cells(ld2, args...) == LK.BOOLEX_TRUE
-        @test LK.isAtomW(ld2.gstack[c]) &&
-            lk_eq(LK.resolve_term(ld2, LK.slotValue(ld2, t2 + 1)), _rs("a"))
+        @test LK.isAtomW(ld2.gstack[c]) && lk_eq(lk_answer(ld2, t2), _rs("a"))
         LK.putSlotValue!(ld2, t2 + 1, _rv(2))
         c = LK.unRef(ld2.slots[t2 + 1])
         args = order == 1 ? (-(t2 + 1), -(t2 + 3)) : (-(t2 + 3), -(t2 + 1))
@@ -165,7 +164,7 @@ end
     p = LK.valPtr(ld.slots[t + 1])
     k, w, _ = LK._deref_loc(ld, p + 1)
     @test k == LK.DU_WORD && LK.isAtomW(w) &&
-        lk_eq(LK.resolve_term(ld, LK.slotValue(ld, t + 1)), _rf("f", _rs("a"), _rs("b")))
+        lk_eq(lk_answer(ld, t), _rf("f", _rs("a"), _rs("b")))
     # different functors, different arities: false, nothing bound
     db2, ld2, t2 = _uc_engine(3)
     LK.putSlotValue!(ld2, t2 + 1, _rf("f", _rv(1)))
@@ -219,7 +218,7 @@ end
         LK.putSlotValue!(ld, t + 2, _rf("f", _rs("a")))                # f(a)
         args = order == 1 ? (-(t + 1), -(t + 2)) : (-(t + 2), -(t + 1))
         @test LK.do_unify_cells(ld, args...) == LK.BOOLEX_TRUE
-        r = LK.resolve_term(ld, LK.slotValue(ld, t + 1))
+        r = lk_answer(ld, t)
         @test kind(r) === EXPR && lk_eq(child(r, 1), _rs("f")) &&
             lk_eq(child(r, 2), _rs("a"))
         @test isempty(ld.cycle_cells) && _uc_no_local_ref(ld)
@@ -231,7 +230,7 @@ end
     LK.putSlotValue!(ld, t + 3, _rlist(_rs("a"), _rs("b")))            # [a, b] = '[|]'(a, [b])
     LK.putSlotValue!(ld, t + 1, mk_expr(_R, _R[_rv(2), _rs("a"), _rv(3)]))   # (Y a Z): a $expr/3
     @test LK.do_unify_cells(ld, -(t + 1), -(t + 3)) == LK.BOOLEX_TRUE
-    r = LK.resolve_term(ld, LK.slotValue(ld, t + 1))
+    r = lk_answer(ld, t)
     @test lk_eq(child(r, 1), _rs("[|]")) && lk_eq(child(r, 3), _rlist(_rs("b")))
 end
 

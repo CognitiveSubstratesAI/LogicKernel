@@ -149,7 +149,7 @@ end
     gbin = ld.gTop
     LK.Undo!(ld, m)
     @test ld.gTop == gbin                            # max(frozen_bar, m.globaltop): the ball stays
-    r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
+    r = lk_answer(ld, ld.exception_bin)
     @test kind(r) === EXPR && nchildren(r) == 3
     LK.DiscardMark(ld, m)
     @test ld.mark_bar >= ld.frozen_bar
@@ -188,7 +188,10 @@ end
     c0 = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
     got = [LK.classify_exception(ld, t + i - 1) for i in eachindex(balls)]
     @test (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs) == c0
-    want = [LK.classify_exception_p(ld, LK.slotValue(ld, t + i)) for i in eachindex(balls)]
+    want = [
+        LK.classify_exception_p(ld, b) for
+        b in lk_answers(ld, (t:(t + length(balls) - 1))...)
+    ]
     @test got == want
     @test got == [LK.EXCEPT_OTHER, LK.EXCEPT_TIMEOUT, LK.EXCEPT_ERROR, LK.EXCEPT_RESOURCE,
         LK.EXCEPT_ERROR,

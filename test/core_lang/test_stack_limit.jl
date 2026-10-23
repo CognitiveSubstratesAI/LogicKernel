@@ -116,7 +116,7 @@ end
     @test !ld.exception_processing
     @test !LK.ensureGlobalSpace(ld, room + 1)              # one cell over: the overflow
     @test ld.exception_processing && ld.outofstack
-    r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
+    r = lk_answer(ld, ld.exception_bin)
     @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
     @test LK.ensureGlobalSpace(ld, room + 1_000_000)       # processing: the handler's own cells
 end
@@ -175,7 +175,7 @@ end
     @test LK.ensureGlobalSpace(ld, 10)                 # the three stacks exactly at the limit
     @test !ld.exception_processing
     @test !LK.ensureGlobalSpace(ld, 11)                # one cell over the SUM (the global alone: far below)
-    r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
+    r = lk_answer(ld, ld.exception_bin)
     @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
 
     db2 = _sl_db()                                     # the local stack's share: what the others leave
@@ -213,7 +213,7 @@ _sl_bag!(ld) =
         @assert LK.add_findall_bag(ld, t, 0) == LK.FFALSE
     end
     @test n == 43691 && ld.bags[end].solutions == 43691 && ld.outofstack
-    r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
+    r = lk_answer(ld, ld.exception_bin)
     @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
     # a compound answer counts its cells: f(a) is 2, so 5 words per answer
     db = _sl_db()
@@ -302,7 +302,7 @@ end
             # ball's five (L1f f3b-1: outOfStack! lays the ball on the global stack, as upstream)
             @test !ok && ld.exception_processing && ld.gTop - g0 < 10
             @test LK._deref_loc(ld, -(c + 1))[1] == LK.DU_CELL     # PL_put_variable(to)
-            r = LK.resolve_term(ld, LK.slotValue(ld, ld.exception_bin + 1))
+            r = lk_answer(ld, ld.exception_bin)
             @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
         end
     end
@@ -365,7 +365,7 @@ function _sl_ball(ld, name, n)
     ld.slots[t + 1] = LK.consPtr(b, LK.TAG_COMPOUND | LK.STG_GLOBAL)
     return t
 end
-_sl_bin(ld, bin) = _rcanonical(LK.resolve_term(ld, LK.slotValue(ld, bin + 1)))
+_sl_bin(ld, bin) = _rcanonical(lk_answer(ld, bin))
 
 @testset "f1b: copy_exception!'s fallbacks — the context dropped, the global overflow, abort" begin
     # the copy fits: the ball itself

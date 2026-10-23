@@ -42,7 +42,7 @@ const _IW_VALUES = _R[
     av = LK.argv_frame(ld, t)
     for (i, v) in enumerate(_IW_VALUES)
         @test LK._argv_key(av, i - 1) ==
-            LK.indexOfWord(ld, LK.resolve_term(ld, LK.slotValue(ld, t + i)))
+            LK.indexOfWord(ld, lk_answer(ld, t + i - 1))
         @test LK._argv_key(av, i - 1) == LK.indexOfWord(ld, v)
         @test !LK._argv_is_var(av, i - 1)
     end
@@ -150,7 +150,7 @@ end
     while true
         rc = LK.PL_next_solution(db.gd, ld, qid)
         (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
-        push!(out, _rcanonical(LK.resolve_term(ld, LK.slotValue(ld, t + 2))))
+        push!(out, _rcanonical(lk_answer(ld, t + 1)))
         rc == LK.PL_S_LAST && break
     end
     @test out == ["two", "five"]

@@ -60,7 +60,7 @@ function _wf_call(name::String, args::Vector{_WF}; gd=_WF_GD, ld=_WF_LD)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
             (:true, nothing)
         elseif rc == LK.PL_S_EXCEPTION
-            (:exception, LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)))
+            (:exception, lk_answer(ld, LK.PL_exception(ld, qid)))
         else
             (:false, nothing)
         end
@@ -87,7 +87,7 @@ function _wf_read(text::String)::Union{Nothing, _WF}
     )
     rc = LK.PL_next_solution(_WF_GD, _WF_LD, qid)
     t = if (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST)
-        LK.resolve_term(_WF_LD, LK.slotValue(_WF_LD, a + 1))
+        lk_answer(_WF_LD, a)
     else
         nothing
     end
@@ -109,7 +109,7 @@ function _wf_text(t::_WF)::String
     )
     rc = LK.PL_next_solution(_WF_GD, _WF_LD, qid)
     @assert rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-    s = sym_text(LK.resolve_term(_WF_LD, LK.slotValue(_WF_LD, a + 2)))
+    s = sym_text(lk_answer(_WF_LD, a + 1))
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_close_foreign_frame(_WF_LD, fid)
     return s

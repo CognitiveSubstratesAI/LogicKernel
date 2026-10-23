@@ -57,7 +57,7 @@ function _oprun(gd, ld, p::_OP, t::_OP, n::_OP)::String
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
         "ok"
     elseif rc == LK.PL_S_EXCEPTION
-        "err " * _opwrite(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)))
+        "err " * _opwrite(lk_answer(ld, LK.PL_exception(ld, qid)))
     else
         "failed"
     end

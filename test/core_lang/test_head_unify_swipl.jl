@@ -215,11 +215,11 @@ function _hvm(p::IxPred{_HT}, goal::_HT, mode)::String
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
             a = try
                 # through the argument handles, never the caller's variables (L1b boundary,
-                # user 2026-10-14: a put copies, variable identity is the handle)
+                # user 2026-10-14: a put copies, variable identity is the handle), ONE export
                 ag = mk_expr(
-                    _HT, _HT[child(goal, 1); [LK.slotValue(ld, args + i) for i in 1:ar]]
+                    _HT, _HT[child(goal, 1); lk_answers(ld, (args:(args + ar - 1))...)]
                 )
-                _hcanonical(LK.resolve_term(ld, ag))
+                _hcanonical(ag)
             catch e
                 e isa ArgumentError || rethrow()
                 "cyclic"
@@ -228,7 +228,7 @@ function _hvm(p::IxPred{_HT}, goal::_HT, mode)::String
         else
             if rc == LK.PL_S_EXCEPTION
                 ex = LK.PL_exception(ld, qid)
-                out = "err " * _hcanonical(LK.resolve_term(ld, LK.slotValue(ld, ex + 1)))
+                out = "err " * _hcanonical(lk_answer(ld, ex))
             end
             break
         end

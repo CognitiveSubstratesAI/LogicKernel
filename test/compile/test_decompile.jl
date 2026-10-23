@@ -46,7 +46,7 @@ function _ddecompile(head::_D)::_D
     t = LK.PL_new_term_ref(ld)                      # the head in a term reference (f3b-2b)
     LK.putSlotValue!(ld, t + 1, goal)
     LK.decompileHead!(ld, cl, t) || error("decompileHead! failed on a fresh goal")
-    return LK.resolve_term(ld, LK.slotValue(ld, t + 1))
+    return lk_answer(ld, t)
 end
 
 # The head decompiler unifies the head's FUNCTOR first (pl-comp.c decompile_head: `PL_unify_functor(head,

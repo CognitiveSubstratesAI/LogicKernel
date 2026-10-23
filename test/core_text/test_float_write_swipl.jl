@@ -46,7 +46,7 @@ function _fw_call(name::String, args::Vector{_FW})
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)]
+        lk_answers(ld, (a:(a + length(args) - 1))...)
     else
         _FW[]
     end

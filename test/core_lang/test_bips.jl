@@ -40,7 +40,7 @@ function _bcompare_formal(o::_BT, x::_BT, y::_BT)
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     f = if rc == LK.PL_S_EXCEPTION
-        child(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)), 2)
+        child(lk_answer(ld, LK.PL_exception(ld, qid)), 2)
     else
         nothing
     end

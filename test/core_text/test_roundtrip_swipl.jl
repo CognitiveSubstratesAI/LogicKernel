@@ -69,7 +69,7 @@ function _rt_call(name::String, args::Vector{_RT})
     out = try
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            (:ok, [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)])
+            (:ok, lk_answers(ld, (a:(a + length(args) - 1))...))
         elseif rc == LK.PL_S_EXCEPTION
             (:error, _RT[])
         else

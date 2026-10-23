@@ -1526,8 +1526,8 @@ end
 
 """
 The terms `xs` written into fresh term references by the engine's write — a caller's variable is one
-cell in all of them, handed back by `resolve_term`; the first one's handle. The decompiler and
-clause/2 take term references (f3b-2b). The caller undoes the write (`Mark`/`Undo!`).
+cell in all of them, read back by ONE `lk_answers`; the first one's handle. The decompiler
+and clause/2 take term references (f3b-2b). The caller undoes the write (`Mark`/`Undo!`).
 """
 function _bput(ld::LK.PL_local_data{_B}, xs::_B...)::Int
     t = LK.PL_new_term_refs(ld, length(xs))
@@ -1536,9 +1536,6 @@ function _bput(ld::LK.PL_local_data{_B}, xs::_B...)::Int
     end
     return t
 end
-"The value of term reference `t`, read through it."
-_bget(ld::LK.PL_local_data{_B}, t::Int)::_B = LK.resolve_term(ld, LK.slotValue(ld, t + 1))
-
 "`cl` decompiled (`decompile!`): its head and body, with fresh variables."
 function _bdecompile(cl::LK.Clause{_B}, head::_B)::Tuple{_B, _B}
     ld = LK.PL_local_data{_B}(_BGD)
@@ -1547,7 +1544,8 @@ function _bdecompile(cl::LK.Clause{_B}, head::_B)::Tuple{_B, _B}
     h = ar == 0 ? name : mk_expr(_B, _B[name; [fresh() for _ in 1:ar]])
     t = _bput(ld, h, fresh())
     LK.decompile!(ld, cl, t, t + 1) || error("_bdecompile: decompile! failed")
-    return (_bget(ld, t), _bget(ld, t + 1))
+    dh, db = lk_answers(ld, t, t + 1)                     # one read: shared variables
+    return (dh, db)
 end
 
 # What `decompile!` rebuilds from each cell's code, variables renamed in order (`_bnorm`): pinned,
@@ -1754,7 +1752,7 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
                 t,
                 t + 1,
                 _ -> begin
-                    push!(out, _bc_text(_bget(ld, t), _bget(ld, t + 1)))
+                    push!(out, _bc_text(lk_answers(ld, t, t + 1)...))
                     true
                 end
             )
@@ -1762,14 +1760,19 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
             LK.PL_reset_term_refs(ld, t)
             return out
         end
-        @test answers(_bf("cz", _bv(1)), _bv(2)) == [
-            "':-'(cz(a),true)", "':-'(cz(V1),';'(q(V1),r(V1,_)))", "':-'(cz(b),','(s,'!'))"
+        # f3-2 (audit D-0111 Q3/Q5): was `"':-'(cz(V1),';'(q(V1),r(V1,_)))"` (the caller's V1
+        # handed back by f3b-1's TRANSITIONAL import_origin) — an answer's variable is now a fresh
+        # one, so the check is the property: ONE variable, shared by head and body (`_bnorm`: A)
+        @test _bnorm.(answers(_bf("cz", _bv(1)), _bv(2))) == [
+            "':-'(cz(a),true)", "':-'(cz(A),';'(q(A),r(A,_)))", "':-'(cz(b),','(s,'!'))"
         ]
         @test answers(_bf("cz", _bs("b")), _bv(2)) ==           # the head's binding reaches the body
             ["':-'(cz(b),';'(q(b),r(b,_)))", "':-'(cz(b),','(s,'!'))"]
         @test answers(_bf("cz", _bv(1)), _bs("true")) == ["':-'(cz(a),true)"]
-        @test answers(_bf("cz", _bv(1)), _bf(";", _bv(2), _bv(3))) ==
-            ["':-'(cz(V1),';'(q(V1),r(V1,_)))"]
+        # f3-2 (audit D-0111 Q3/Q5): was `["':-'(cz(V1),';'(q(V1),r(V1,_)))"]` — as above, the
+        # caller's V1 is no longer handed back; one fresh variable shared by head and body
+        @test _bnorm.(answers(_bf("cz", _bv(1)), _bf(";", _bv(2), _bv(3)))) ==
+            ["':-'(cz(A),';'(q(A),r(A,_)))"]
         @test isempty(answers(_bf("cz", _bs("c")), _bs("true")))
         # the ORDER of two decompiled variables (f3b-2b, decompiler design obligation 1): clause(cy, B)
         # of `cy :- q(Y, Z), r(Z, Y)` builds q's argument cells and binds each, younger to older
@@ -3030,7 +3033,7 @@ end
         user = LK.MODULE_user(_BGD)
         cl = LK.compileClause(_BGD, ld, p, body, LK.lookupProcedure(p, 0, user), user)
         (cl === nothing && ld.exception_term != 0) || return nothing
-        return LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1))
+        return lk_answer(ld, ld.exception_term)
     end
     for body in (
         _bconj(_bs("q"), _bv(1)),                               # p :- q, _

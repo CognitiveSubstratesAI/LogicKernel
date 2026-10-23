@@ -65,9 +65,9 @@ function _erun(db, name::Symbol, arg::_E, flags::UInt32)
     LKE.PL_reset_term_refs(ld, t)
     tref = t - qid
     ex = LKE.PL_exception(ld, qid)
-    ball = ex == 0 ? nothing : LKE.resolve_term(ld, LogicKernel.slotValue(ld, ex + 1))
+    ball = ex == 0 ? nothing : lk_answer(ld, ex)
     before = ld.exception_term != 0
-    after_arg = LKE.resolve_term(ld, LogicKernel.slotValue(ld, a + 1))
+    after_arg = lk_answer(ld, a)
     rc2 = rc == LKE.PL_S_EXCEPTION || rc == 0 ? LKE.PL_next_solution(db.gd, ld, qid) : -9
     LKE.PL_close_query(ld, qid)
     after = ld.exception_term != 0
@@ -194,7 +194,7 @@ function _eraise(ld, i::Int, j::Int)::Int
     LKE.PL_raise_exception(ld, a)
     LKE.PL_raise_exception(ld, a + 1)
     @assert ld.exception_term == ld.exception_bin
-    pending = LKE.resolve_term(ld, LogicKernel.slotValue(ld, ld.exception_bin + 1))
+    pending = lk_answer(ld, ld.exception_bin)
     r = if _eeq(pending, _EBALLS[j][2])
         2
     elseif _eeq(pending, _EBALLS[i][2])
@@ -308,7 +308,7 @@ end
         ld, LKE.ERR_PERMISSION_PROC, _es(:redefine), _es(:built_in_procedure), proc
     )
     @test ld.exception_term != 0
-    ball = LKE.resolve_term(ld, LKE.slotValue(ld, ld.exception_term + 1))
+    ball = lk_answer(ld, ld.exception_term)
     @test lk_eq(
         child(ball, 2),
         _ef(:permission_error, _es(:redefine), _es(:built_in_procedure),
@@ -353,7 +353,7 @@ end
     @test LKE.failed_unify_with_occurs_check_cells(
         ld, (k, LKE.word(0), p), LKE._deref_loc(ld, -(t + 1)), LKE.OCCURS_CHECK_ERROR
     ) == LKE.BOOLEX_FALSE
-    ball = LKE.resolve_term(ld, LKE.slotValue(ld, ld.exception_term + 1))
+    ball = lk_answer(ld, ld.exception_term)
     f = child(child(ball, 2), 3)                            # occurs_check(X, f(X)): X is f's own
     @test lk_name(child(child(ball, 2), 1)) === :occurs_check &&
         kind(child(f, 2)) === VAR &&

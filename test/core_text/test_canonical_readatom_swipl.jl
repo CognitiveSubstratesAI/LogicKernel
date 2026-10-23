@@ -53,16 +53,12 @@ function _cr_call(name::String, args::Vector{_CR})
     out = try
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            (
-                :true,
-                [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)],
-                nothing
-            )
+            (:true, lk_answers(ld, (a:(a + length(args) - 1))...), nothing)
         elseif rc == LK.PL_S_EXCEPTION
             (
                 :exception,
                 _CR[],
-                LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+                lk_answer(ld, LK.PL_exception(ld, qid))
             )
         else
             (:false, _CR[], nothing)
@@ -376,12 +372,7 @@ function _cr_run_goal(t::_CR)
             break
         end
         if rc == LK.PL_S_EXCEPTION
-            verdict =
-                "ex:" * _cr_text(
-                    LK.resolve_term(
-                        _CR_LD, LK.slotValue(_CR_LD, LK.PL_exception(_CR_LD, qid) + 1)
-                    )
-                )
+            verdict = "ex:" * _cr_text(lk_answer(_CR_LD, LK.PL_exception(_CR_LD, qid)))
             LK.PL_close_query(_CR_LD, qid)
             break
         elseif rc != LK.PL_S_TRUE && rc != LK.PL_S_LAST

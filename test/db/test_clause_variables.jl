@@ -10,7 +10,7 @@
 #   * a sink sees the bindings and they are gone after it — also when it throws.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 using LogicKernel:
-    PL_local_data, pl_unify!, Mark, Undo!, deRef, resolve_term, fresh_var_keys!,
+    PL_local_data, pl_unify!, Mark, Undo!, deRef, fresh_var_keys!,
     PL_clear_exception, OCCURS_CHECK_FALSE, OCCURS_CHECK_ERROR
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
@@ -43,19 +43,26 @@ end
         p = ix_pred(_CV, :p, 2; dynamic=true, db=db)
         ix_assertz!(p, _cve(:p, _cvv(1), _cve(:f, _cvv(2), _cvv(1))))    # p(X, f(Y, X))
         for _ in 1:500
-            # p(X7, X8) = p(Xk, f(Yk, Xk)): Xk has the larger key, so it is bound to the CALLER's
-            # X7 (a clause variable meeting a caller's becomes the caller's); Yk survives
+            # p(X7, X8) = p(Xk, f(Yk, Xk)): X7's cell and Xk are one variable; Yk survives
             a = only(ix_clause(p, _cve(:p, _cvv(7), _cvv(8))))
-            @test compareStandard(child(a, 2), _cvv(7)) == 0 &&
-                compareStandard(child(child(a, 3), 3), _cvv(7)) == 0
+            # f3-2 (audit D-0111 Q3/Q5): was `compareStandard(child(a, 2), _cvv(7)) == 0 &&
+            # compareStandard(child(child(a, 3), 3), _cvv(7)) == 0` — the caller's X7 is no longer
+            # handed back (f3b-1's TRANSITIONAL import_origin): the answer's X is the read's own
+            # variable, one variable at both places, not X7
+            @test kind(child(a, 2)) === VAR &&
+                compareStandard(child(a, 2), child(child(a, 3), 3)) == 0 &&
+                compareStandard(child(a, 2), _cvv(7)) != 0
             for k in _cvkernel(a)
                 push!(seen, k)
                 n += 1
             end
         end
     end
-    @test n == 3 * 500                                      # Y, once per answer
-    @test length(seen) == n                                 # a new key every attempt, every database
+    # f3-2 (audit D-0111 Q3/Q5): was `n == 3 * 500` (Y, once per answer) and `length(seen) == n` —
+    # X is a fresh kernel key now too (not the caller's X7): X twice and Y once per answer, two
+    # distinct keys per answer
+    @test n == 3 * 3 * 500                                  # X, X and Y, per answer
+    @test length(seen) == 2 * 3 * 500                       # a new key every attempt and database
     @test all(>=(KERNEL_VAR_BASE), seen)
     b = fresh_var_keys!(4)
     @test fresh_var_keys!(1) == b + 4                       # blocks never overlap
@@ -71,7 +78,10 @@ end
     for _ in 1:3
         a = only(ix_clause(p, _cve(:p, _cvv(7), _cvv(8))))
         push!(seen, length(db.ld.import_origin))             # (after the sink: undone)
-        @test var_key(child(a, 2)) == 7                      # the caller's variable, not its cell's key
+        # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3. Was
+        # `var_key(child(a, 2)) == 7` — no import_origin entry is made, so the answer's variable is
+        # the read's own (a kernel key), not the caller's
+        @test var_key(child(a, 2)) != 7 && var_key(child(a, 2)) >= KERNEL_VAR_BASE
     end
     @test seen == [0, 0, 0] && isempty(db.ld.import_origin)  # no import outlives its binding
 end
@@ -89,8 +99,12 @@ end
         K = only(_cvkernel(ans))
         fK = child(ans, 2)
         r = only(ix_clause(q2, _cve(:q, fK, _cvv(9))))      # clause(q(f(K), W)): A = f(K), W = g
-        @test compareStandard(r, _cve(:q, fK, _cvs(:g))) == 0   # no cycle: A was never K
-        @test only(_cvkernel(r)) == K                       # K itself carried through, unbound
+        # f3-2 (audit D-0111 Q3/Q5): was `compareStandard(r, _cve(:q, fK, _cvs(:g))) == 0` and
+        # `only(_cvkernel(r)) == K` (K itself carried through) — db2's write gives K a fresh cell
+        # and the answer reads it as a fresh kernel variable: q(f(_), g) up to renaming (no cycle:
+        # A was never K), its one unbound variable a new key, not K
+        @test LK.is_variant_ptr(r, _cve(:q, fK, _cvs(:g)))
+        @test only(_cvkernel(r)) != K
     end
     @test isempty(db1.ld.trail) && isempty(db2.ld.trail)
 end
@@ -113,7 +127,7 @@ end
     seen = Int[]
     g = LK.PL_new_term_ref(db.ld)                           # the goal in a term reference (f3b-2b)
     LK.putSlotValue!(db.ld, g + 1, _cve(:p, X))
-    gX() = child(LK.resolve_term(db.ld, LK.slotValue(db.ld, g + 1)), 2)    # X, read through it
+    gX() = child(lk_answer(db.ld, g), 2)                   # X, read through it (off the cells)
     b0 = lk_bound_count(db.ld)                              # the put's own cells: p(X) laid out
     LK.pl_clause!(db.gd, db.ld, p.def, g, cl -> (push!(seen, lk_value(gX())); true))
     @test seen == [1, 2, 3]                                 # bound while the sink ran
@@ -155,12 +169,7 @@ end
         if ld.exception_term == 0
             nothing
         else
-            lk_name(
-                child(
-                    child(LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1)), 2),
-                    1
-                )
-            )
+            lk_name(child(child(lk_answer(ld, ld.exception_term), 2), 1))
         end
     ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
     answers = 0

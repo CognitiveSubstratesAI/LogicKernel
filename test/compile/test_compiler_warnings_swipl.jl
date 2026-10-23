@@ -287,31 +287,30 @@ function _cwkernel(gd, ld, c::_CwClause, style::Int)::String
         LK.putSlotValue!(ld, hb + 1, c.head, pvm)
         LK.putSlotValue!(ld, hb + 2, c.body, pvm)
         LK.putSlotValue!(ld, vn + 1, _cwbindings(c), pvm)
-        # …and a warning's variables are named through that handle too: the engine's variables,
-        # read off the `Name = Var` pairs the put made
+        # …and the clause is read off the cells with ONE export, as assert_term! reads it (the cell
+        # path, `ex`; f3-2, audit D-0111 Q3: a term written to the cells gets fresh variables per
+        # write, so the compiler takes the clause's own export, never two resolved terms): head, body
+        # and the `Name = Var` pairs share the export's variables, and the warnings the compiler
+        # leaves (`import_cells!` back to the clause's cells) are read back through the same export,
+        # so a warning's variable is the clause's and its name the read's
+        ex = LK.cell_export{_CW}()
+        h, bd = LK.export_cells(ld, ex, -(hb + 1)), LK.export_cells(ld, ex, -(hb + 2))
         enames = Dict{UInt64, String}()
-        b = LK.deRef(ld, LK.slotValue(ld, vn + 1))
+        b = LK.export_cells(ld, ex, -(vn + 1))
         while is_pair(b)
-            nv = LK.deRef(ld, child(b, 2))                  # L1c: a slot's list is cells, one level per deRef
-            enames[var_key(LK.deRef(ld, child(nv, 3)))] = sym_text(
-                LK.deRef(ld, child(nv, 2))
-            )
-            b = LK.deRef(ld, child(b, 3))
+            nv = child(b, 2)
+            enames[var_key(child(nv, 3))] = sym_text(child(nv, 2))
+            b = child(b, 3)
         end
         ld.variable_names = vn
         ld.debugstatus_styleCheck = style
         try
-            # the head and body as the engine's terms, resolved (L1c: a slot's compound is cells,
-            # its export one level deep) — the clause compiler takes terms
-            cl = LK.compileClause(
-                gd, ld, LK.resolve_term(ld, LK.slotValue(ld, hb + 1)),
-                LK.resolve_term(ld, LK.slotValue(ld, hb + 2)), proc, user, warnings
-            )
+            cl = LK.compileClause(gd, ld, h, bd, proc, user, warnings; ex=ex)
             cl === nothing && error("compileClause failed for " * _cwtext(c.head, c.names))
-            l = LK.deRef(ld, LK.slotValue(ld, warnings + 1))
+            l = LK.export_cells(ld, ex, -(warnings + 1))
             while is_pair(l)
-                push!(out, _cwtext(LK.resolve_term(ld, child(l, 2)), enames))
-                l = LK.deRef(ld, child(l, 3))                # L1c: the tail is a cell's variable
+                push!(out, _cwtext(child(l, 2), enames))
+                l = child(l, 3)
             end
             is_nil(l) || error("the warnings are not a list")
         finally
@@ -448,13 +447,13 @@ if _CW_SWIPL !== nothing
         fid = LK.PL_open_foreign_frame(ld)
         w = LK.PL_new_term_ref(ld)
         @test LK.compileClause(gd, ld, head, body, proc, user, w) !== nothing
-        l = LK.resolve_term(ld, LK.slotValue(ld, w + 1))   # L1c: a slot's compound is cells
+        l = lk_answer(ld, w)                        # L1c: a slot's compound is cells
         @test is_pair(l) && sym_text(child(child(l, 2), 1)) == "eq_singleton" &&
             is_nil(child(l, 3))
         # a clause with nothing to warn about: `[]`
         @test LK.compileClause(gd, ld, _cwe("nw", [x]), _cwe("g1", [x]), proc, user, w) !==
             nothing
-        @test is_nil(LK.slotValue(ld, w + 1))
+        @test is_nil(lk_answer(ld, w))
         LK.PL_discard_foreign_frame(ld, fid)
         # an undefined warning is an error, and an argument count that is not the declaration's
         ci2 = LK.compileInfo{_CW}(gd, 1, user, proc)

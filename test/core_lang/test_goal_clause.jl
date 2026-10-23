@@ -41,7 +41,10 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
     @test LK.compareStandard(cell(3), _rf("f", _rg(3)), true) == 0      # argvar 3 (c:3189)
     vars = [cell(i) for i in 4:5]                       # offsets argvars + n = 4, 5 (c:1365, 2947)
     @test all(v -> kind(v) === VAR, vars)
-    @test Set(var_key.(vars)) == Set(var_key.((X, Y)))
+    # f3-2 (audit D-0111 Q3/Q5): was `Set(var_key.(vars)) == Set(var_key.((X, Y)))` — the caller's
+    # X and Y are no longer handed back (f3b-1's TRANSITIONAL import_origin); the two offsets hold
+    # two DISTINCT variables, one per goal variable
+    @test var_key(vars[1]) != var_key(vars[2])
     # at the FIRST answer inside the call the goal frame is live: its program pointer is the CALLER's
     # code, just past the I_CALL1 that made it (MV5: a stale pointer loops on the return, so the query
     # is closed at that answer — nothing returns through the goal frame here)

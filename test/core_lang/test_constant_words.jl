@@ -128,7 +128,12 @@ end
     LK.setSlotValue!(ld, s, lk_var(_R, UInt64(4242)))
     @test LK.isRef(ld.slots[s])
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH      # the cell bound (bindConst)
-    @test sym_key(LK.deRef(ld, lk_var(_R, UInt64(4242)))) == sym_key(_kw_s(:a))   # the variable with it
+    # f3-2 (audit D-0111 Q3/Q5): was `sym_key(LK.deRef(ld, lk_var(_R, UInt64(4242)))) ==
+    # sym_key(_kw_s(:a))` — the write gives the keyed variable a FRESH cell (a write-local map, no
+    # keyed side binding), so the binding is read through the term reference; the variable stays
+    # free
+    @test sym_key(lk_answer(ld, s - 1)) == sym_key(_kw_s(:a))
+    @test kind(LK.deRef(ld, lk_var(_R, UInt64(4242)))) === VAR
 end
 
 @testset "h_const on the words: a cell, bound, trailed under a mark, undone" begin
@@ -138,7 +143,7 @@ end
     n0 = length(ld.trail)
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH      # bindConst(k, c)
     @test ld.gstack[p] == wa && length(ld.trail) == n0 + 1
-    @test sym_key(LK.deRef(ld, LK.slotValue(ld, s))) == sym_key(_kw_s(:a))
+    @test sym_key(lk_answer(ld, s - 1)) == sym_key(_kw_s(:a))           # term reference s - 1
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH      # *k == c, nothing trailed
     @test length(ld.trail) == n0 + 1
     @test LK._h_const_word!(ld, s, wb) == LK.H_CONST_FAIL
@@ -179,7 +184,11 @@ end
     LK.Trail!(ld2, k2, mk_var(_R, LK._cell_key(ld2, pw)))
     @test LK.isRef(ld2.gstack[LK._cell_pos(ld2, k2)])
     @test LK._h_const_word!(ld2, v, wa2) == LK.H_CONST_MATCH
-    @test ld2.gstack[pw] == wa2
+    # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3. Was
+    # `ld2.gstack[pw] == wa2` — the written key of pw's cell is a FRESH cell now (not pw's), so the
+    # chain ends there: that cell is bound, pw stays unbound
+    @test ld2.gstack[pw] == 0
+    @test ld2.gstack[LK.valPtr(ld2.gstack[LK._cell_pos(ld2, k2)])] == wa2
 end
 
 @testset "the constant instructions answer as swipl" begin

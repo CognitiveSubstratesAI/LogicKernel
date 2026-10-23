@@ -116,12 +116,30 @@ end
     # the compound, and (L1f f3b-1) the keyed variable bound to a fresh cell: two imports, counted
     @test LK._is_gcompound(ld.slots[s]) && ld.cold_imports == n0 + 2
     r = LK.resolve_term(ld, LK.slotValue(ld, s))
-    x = LK.deRef(ld, _rv(7))                                    # the keyed variable: its cell's
-    @test kind(x) === VAR && var_key(x) != UInt64(7)
-    # the answer carries the CALLER's variable (D-0084 item 2; `resolve_term` maps the cell back through
-    # `import_origin`) while the engine's representative of it is that cell (`x`, `deRef`)
-    @test _rsrc(r) == "f(a,g(1,V7))" && haskey(ld.import_origin, var_key(x))
-    @test ld.import_origin[var_key(x)] == UInt64(7)
+    x = LK.deRef(ld, _rv(7))                                    # the keyed variable
+    # f3-2 (audit D-0111 Q3, D-0083): was `var_key(x) != UInt64(7)` (the keyed variable bound to its
+    # fresh cell) — the write gives the variable a fresh cell of its own (a write-local map) and the
+    # caller's keyed variable stays unbound
+    @test kind(x) === VAR && var_key(x) == UInt64(7)
+    # f3-2 (Q3): was `_rsrc(r) == "f(a,g(1,V7))" && haskey(ld.import_origin, var_key(x))` and
+    # `ld.import_origin[var_key(x)] == UInt64(7)` (the CALLER's variable handed back, D-0084 item 2) —
+    # no import_origin entry is made: the answer's variable is the cell's, a kernel key
+    v = child(child(r, 3), 3)
+    @test occursin(r"^f\(a,g\(1,V\d+\)\)$", _rsrc(r)) && kind(v) === VAR
+    @test var_key(v) >= KERNEL_VAR_BASE && isempty(ld.import_origin)
     g = LK.valPtr(ld.gstack[LK.valPtr(ld.slots[s]) + 2])        # g(1, X)'s functor cell
     @test LK._deref_loc(ld, g + 2)[1] == LK.DU_CELL             # a cell, no boundary word
+end
+
+# f3-2 (audit D-0111 Q3): the import maps a term's variables per WRITE (`_write_var_word!`'s write-local
+# map), so one variable met twice in one write — nested too — is ONE cell, and two writes are two
+@testset "the import: one variable twice in one write is one cell" begin
+    ld, s = _cc_engine()
+    LK.setSlotValue!(ld, s, _rf("h", _rv(8), _rf("k", _rv(8))))
+    t2 = LK.PL_new_term_ref(ld)
+    LK.setSlotValue!(ld, t2 + 1, _rf("h", _rv(8), _rf("k", _rv(8))))
+    r1, r2 = lk_answers(ld, s - 1, t2)                          # one export: shared stays shared
+    x1 = child(r1, 2)
+    @test kind(x1) === VAR && var_key(child(child(r1, 3), 2)) == var_key(x1)
+    @test var_key(child(r2, 2)) == var_key(child(child(r2, 3), 2)) != var_key(x1)
 end

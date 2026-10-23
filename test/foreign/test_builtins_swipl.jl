@@ -186,7 +186,7 @@ function _bcall(gd, ld, proc, args::Vector{_BT})::String
     )
     rc = LKB.PL_next_solution(gd, ld, qid)
     out = if rc == LKB.PL_S_EXCEPTION
-        ball = LKB.resolve_term(ld, LogicKernel.slotValue(ld, LKB.PL_exception(ld, qid) + 1))
+        ball = lk_answer(ld, LKB.PL_exception(ld, qid))
         formal = child(ball, 2)
         ctx = child(ball, 3)
         pi = kind(ctx) === EXPR ? child(ctx, 2) : _bs(:none)
@@ -195,10 +195,8 @@ function _bcall(gd, ld, proc, args::Vector{_BT})::String
         "false"
     else
         try                                     # a rational tree has no interface term: `cyclic`
-            res = _BT[
-                LKB.resolve_term(ld, LogicKernel.slotValue(ld, a + k)) for
-                k in eachindex(args)
-            ]
+            # one export for all the arguments: a variable shared between them stays shared
+            res = lk_answers(ld, (a + k - 1 for k in eachindex(args))...)
             "true(" * _bcanonical(_bc(:x, res...))[3:(end - 1)] * ")"
         catch e
             e isa ArgumentError || rethrow()
@@ -299,7 +297,7 @@ end
             gd, ld, nothing, LKB.PL_Q_NORMAL | LKB.PL_Q_EXT_STATUS, _bproc(gd, name, 1), a
         )
         rc = LKB.PL_next_solution(gd, ld, qid)
-        v = LKB.deRef(ld, LogicKernel.slotValue(ld, a + 1))
+        v = lk_answer(ld, a)
         @test rc == LKB.PL_S_LAST                               # libswipl: rc=2
         @test kind(v) === GND && lk_value(v) - (a + 1) == pin   # V − qpos (qposd.c)
         LKB.PL_close_query(ld, qid)
@@ -315,7 +313,7 @@ end
         ld = PL_local_data{_BT}(PL_global_data{_BT}())
         t = LKB.PL_new_term_ref(ld)                         # holds a fresh, unbound variable
         @test f(ld, t) == false
-        ball = LKB.resolve_term(ld, LogicKernel.slotValue(ld, ld.exception_term + 1))
+        ball = lk_answer(ld, ld.exception_term)
         return _bcanonical(child(ball, 2))
     end
     @test formal_of((ld, t) -> LKB.PL_error(ld, LKB.ERR_DOMAIN, _bs(:order), t)) ==

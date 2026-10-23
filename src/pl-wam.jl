@@ -1170,13 +1170,13 @@ end
 
 # ── the argument pointer and the argument stack ────────────────────────────────────────────────
 # What `ARGP` points at, as a TERM (upstream's `*ARGP`), for the readers left on terms: a read-mode
-# cursor's child, as is (the term path: a keyed variable's binding, a `$expr` compound — Q2); a
+# cursor's child, as is (the term path: a compound at the boundary, `_argp_cursor`); a
 # slot or a global cell through its location, dereferenced (`deRef2(ARGP, p)` on the WORDS,
 # f3b-5b): a value word is its value (`_value_term`: no export), the BOUNDARY (`DU_TERM`) its term,
 # counted in `cold_pairs` (TRANSITIONAL, f3). The direct callers pass a cursor only (H_VAR's and
 # H_FIRSTVAR's term paths); through `_argp_deref` the word paths reach it with what they left
-# undecided — a value word, the boundary, or (class (c), with the Q2 term paths of
-# H_RFUNCTOR/H_RLIST/H_LIST_FF and the list switch, f3) a `$expr` compound, through `_loc_term`.
+# undecided — a value word or the boundary (since f3-2 a stack `$expr` compound is decided on its
+# cells by H_RFUNCTOR/H_RLIST/H_LIST_FF, never exported here).
 function _argp_raw(ld::PL_local_data{T}, a::argp_t{T})::T where {T}
     l = _argp_loc(a)
     l == 0 && return child(a.term, a.pos)           # a read-mode cursor into a term
@@ -1275,6 +1275,35 @@ end
 
 # `ARGP + n`.
 _argp_add(a::argp_t{T}, n::Int) where {T} = argp_t{T}(a.form, a.pos + n, a.term)
+
+# ORIGINAL (f3-2): a read-mode cursor at child `pos` of the compound TERM `t` — only for a compound
+# at the boundary that is NO stack compound (class (c), TRANSITIONAL: goes with the keyed variables,
+# f3). A stack compound's live export is read on its cells instead (`H_RFUNCTOR_cross`,
+# `H_RLIST_cross`, `_hlistff_cross!`), where a clause variable met twice is the caller's one cell: a
+# cursor over it would hand the term arms (`_argp_raw`) live cell variables, which since f3-2 (Q3) a
+# write no longer keeps as their cells.
+"A read-mode cursor at child `pos` of `t`, a compound that is no stack compound's live export (asserted)."
+@noinline function _argp_cursor(ld::PL_local_data{T}, pos::Int, t::T)::argp_t{T} where {T}
+    @assert _export_pos(ld, t) == 0 "a cursor over a stack compound: read its cells (f3-2)"
+    return argp_t{T}(ARGP_CURSOR, pos, t)
+end
+
+# ORIGINAL (f3-2; Q2): H_LIST_FF's `'[|]'/2` against a stack `$expr/3` at `q`, on its CELLS: its
+# head cell bound to or compared with `'[|]'` (`_unify_const_loc`), then slots `a` and `b` take its
+# two argument cells as H_LIST_FF takes a list cell's (`_slot_from_cell!`) — so `H` and `T` are the
+# caller's cells. False: no match (another functor, or a head that is no `'[|]'`).
+"H_LIST_FF's `\$expr/3` cross-match on the cells of the compound at `q`; whether it matched."
+function _hlistff_cross!(
+    ld::PL_local_data{T}, gd::PL_global_data{T}, q::Int, a::Int, b::Int
+)::Bool where {T}
+    f = ld.gstack[q]
+    (nameFunctor(ld.functors, f) == ld.atom_dexpr && arityFunctor(ld.functors, f) == 3) ||
+        return false
+    _unify_const_loc(ld, q + 1, gd.atom_dot) || return false    # bound, or bindConst
+    _slot_from_cell!(ld, a, q + 2)
+    _slot_from_cell!(ld, b, q + 3)
+    return true
+end
 
 # `deRef2(ARGP, p)` on the WORDS (L1c): where ARGP's value lives — `DREF_CELL`: an unbound cell, its
 # position in the second word; `DREF_WORD`: an atom, a compound or (L1d step 4) a small integer, its
@@ -2185,12 +2214,14 @@ function PL_next_solution_guarded(
         _argp_void!(ld, ARGP)                       # setVar(*ARGP)
     end
     # First try the simple case — on the CELLS (L1c sub-commit 4): the variable's slot against
-    # ARGP's location; a read-mode cursor into a TERM (a keyed variable's binding) on terms.
+    # ARGP's location; a read-mode cursor into a TERM on terms — TRANSITIONAL (f3-2, class (c)): a
+    # cursor is only ever into a compound at the boundary that is no stack compound (`_argp_cursor`:
+    # a stack compound is read on its cells, `H_RFUNCTOR_cross`), deleted with it in f3.
     if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
         hv_loc = _argp_loc(ARGP)
         hv_rc = if hv_loc != 0
             do_unify_cells(ld, -(hv_k + 1), hv_loc)
-        else
+        else                                        # (c) the cursor (above)
             do_unify(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
         end
         if hv_rc == BOOLEX_TRUE
@@ -2206,7 +2237,7 @@ function PL_next_solution_guarded(
     hv_loc = _argp_loc(ARGP)                    # on the cells (L1d step 2); a read-mode cursor
     hv_ok = if hv_loc != 0                      # into a term stays on terms
         unify_ptrs_cells(ld, -(hv_k + 1), hv_loc)
-    else
+    else                                        # (c) the cursor, TRANSITIONAL (f3-2, above)
         unify_ptrs(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
     end
     @LOAD_REGISTERS(QID)
@@ -2221,8 +2252,9 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c H_FIRSTVAR
     # DIVERGES: in read mode an argument slot's word is copied (`*ARGP`, L1b C6a), a global cell's
-    # word or a reference to it taken (`needsRef(*ARGP) ? makeRefG(ARGP) : *ARGP`, L1c), and a term's
-    # child stored as its word (`_slot_store!`: a cell variable its reference).
+    # word or a reference to it taken (`needsRef(*ARGP) ? makeRefG(ARGP) : *ARGP`, L1c), and a
+    # cursor's child stored as its value (`_slot_store!`) — TRANSITIONAL (f3-2, class (c)): a cursor
+    # is only ever into a compound at the boundary that is no stack compound (`_argp_cursor`).
     @label H_FIRSTVAR
     hfv_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     PC += 1
@@ -2232,7 +2264,7 @@ function PL_next_solution_guarded(
         _slot_copy!(ld, hfv_k + 1, ARGP.pos + 1)            # varFrame(FR, *PC++) = *ARGP
     elseif ARGP.form == ARGP_GLOBAL
         _slot_from_cell!(ld, hfv_k + 1, ARGP.pos)
-    else
+    else                                            # (c) the cursor (above)
         _slot_store!(ld, hfv_k + 1, _argp_raw(ld, ARGP))
     end
     ARGP = _argp_add(ARGP, 1)
@@ -2244,13 +2276,21 @@ function PL_next_solution_guarded(
     @goto H_RFUNCTOR
 
     # PORT: pl-vmi.c H_RFUNCTOR
-    # DIVERGES: decided on the WORDS (L1c): an unbound cell gets the compound of fresh arguments laid
-    # out at `gTop` and bound to it (`bindConst`), then write mode; a compound with the operand's
-    # functor is read in place (`argTermP`). The TERM path (Q2, user 2026-10-04; and a value with no
-    # word form): `f/k` matches a compound of k+1 children whose head is `f`, or whose head is not a
-    # symbol and unifies with `f`; `$expr/n` (literal 0) any compound of n children, read from its
-    # head — a stack compound crossing `$expr` read through the cold export; a KEYED variable is bound
-    # to a new stack compound through it.
+    # DIVERGES: decided on the WORDS (L1c): an unbound cell gets the compound of fresh arguments
+    # laid out at `gTop` and bound to it (`bindConst`), then write mode; a compound with the
+    # operand's functor is read in place (`argTermP`). The `$expr` CROSS-MATCH (Q2, user 2026-10-04)
+    # — `f/k` matches a compound of k+1 children whose head is `f`, or whose head is not a symbol
+    # and unifies with `f`; `$expr/n` (literal 0) any compound of n children, read from its head —
+    # is decided on the CELLS too when the compound is on the global stack (f3-2,
+    # `H_RFUNCTOR_cross`), so a clause variable met twice is ONE variable, the caller's cell: `f/k`
+    # against `$expr/(k+1)` binds or compares the head cell and reads the arguments in place
+    # (`argTermP(*p, 1)`); `$expr/n` against `g/(n-1)` reads a block of n cells laid at `gTop` —
+    # `g`'s atom word, then a reference to each argument cell — so every cell ARGP reads is bound
+    # already and every binding goes to the caller's cells. Until f3-2 that compound was read
+    # through its cold export, a cursor whose children aliased their cells only through the writers'
+    # live-cell recognition (`_var_ref_word`). A KEYED variable is bound to a new stack compound
+    # through the cold export; a compound at the boundary that is no stack compound is read with a
+    # cursor (class (c), TRANSITIONAL: goes with the keyed variables, f3).
     @label H_RFUNCTOR
     if UMODE == uwrite
         @goto B_RFUNCTOR
@@ -2259,6 +2299,7 @@ function PL_next_solution_guarded(
     PC += 1
     hf_fw = functor_operand_word(hf_f)
     hf_ar = functor_arity(hf_f)
+    hf_lit = functor_literal(hf_f)
     hf_d, hf_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
     if hf_d == DREF_CELL                            # canBind(*p)
         @ENSURE_GLOBAL_SPACE(1 + hf_ar)             # (L1f f2)
@@ -2274,13 +2315,8 @@ function PL_next_solution_guarded(
             ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)        # ARGP = argTermP(*p, 0)
             @goto next_instruction
         end
-        (
-            functor_literal(hf_f) == 0 ||
-            nameFunctor(ld.functors, ld.gstack[hf_q]) == ld.atom_dexpr
-        ) ||
-            @goto unify_backtrack
+        @goto H_RFUNCTOR_cross                      # (Q2) on the cells
     end
-    hf_lit = functor_literal(hf_f)
     hf_p = _argp_deref(ld, ARGP)
     if kind(hf_p) === VAR                           # a keyed variable
         @ENSURE_GLOBAL_SPACE(1 + hf_ar)             # (L1f f2)
@@ -2290,27 +2326,60 @@ function PL_next_solution_guarded(
         UMODE = uwrite
         @goto next_instruction
     end
-    if kind(hf_p) === EXPR                          # hasFunctor(*p, f), on the term (Q2)
+    if kind(hf_p) === EXPR
+        hf_q = _export_pos(ld, hf_p)                # a stack compound's live export: its cells
+        if hf_q != 0
+            if ld.gstack[hf_q] == hf_fw             # hasFunctor(*p, f)
+                ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)    # ARGP = argTermP(*p, 0)
+                @goto next_instruction
+            end
+            @goto H_RFUNCTOR_cross
+        end
+        # TRANSITIONAL (f3-2, class (c)): a compound at the boundary that is no stack compound, read
+        # with a cursor (Q2); goes with the keyed variables (f3)
         if hf_lit == 0
             if nchildren(hf_p) == hf_ar
-                ARGP = argp_t{T}(ARGP_CURSOR, 1, hf_p)
+                ARGP = _argp_cursor(ld, 1, hf_p)
                 @goto next_instruction
             end
         elseif nchildren(hf_p) == hf_ar + 1
             hf_h = deRef(ld, child(hf_p, 1))
             if kind(hf_h) === SYM
                 if sym_key(hf_h) == sym_key(PCl[hf_lit])
-                    ARGP = argp_t{T}(ARGP_CURSOR, 2, hf_p)      # ARGP = argTermP(*p, 0)
+                    ARGP = _argp_cursor(ld, 2, hf_p)            # ARGP = argTermP(*p, 0)
                     @goto next_instruction
                 end
             elseif kind(child(hf_p, 1)) !== SYM &&
                 unify_simple_ptrs(ld, hf_h, PCl[hf_lit]) == BOOLEX_TRUE
-                ARGP = argp_t{T}(ARGP_CURSOR, 2, hf_p)
+                ARGP = _argp_cursor(ld, 2, hf_p)
                 @goto next_instruction
             end
         end
     end
     @goto unify_backtrack
+
+    # ORIGINAL (f3-2; Q2): H_RFUNCTOR's `$expr` cross-match on the CELLS of the compound at `hf_q`
+    # (functor word ≠ the operand's) — see H_RFUNCTOR. Kernel-only: SWI has no `$expr`.
+    @label H_RFUNCTOR_cross
+    hf_cf = ld.gstack[hf_q]
+    hf_cn = nameFunctor(ld.functors, hf_cf)
+    hf_ca = arityFunctor(ld.functors, hf_cf)
+    if hf_lit != 0                                  # f/k against `$expr/(k+1)`: its head is f
+        (hf_cn == ld.atom_dexpr && hf_ca == hf_ar + 1) || @goto unify_backtrack
+        _unify_const_loc(ld, hf_q + 1, PCl[hf_lit]) || @goto unify_backtrack   # bound, or bindConst
+        ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 2, ph) # argTermP(*p, 1)
+        @goto next_instruction
+    end
+    (hf_cn != ld.atom_dexpr && hf_ca + 1 == hf_ar) || @goto unify_backtrack   # `$expr/n`, g/(n-1)
+    @ENSURE_GLOBAL_SPACE(hf_ar)                     # (L1f f2)
+    hf_s = allocGlobalCells!(ld, hf_ar)             # the children of g(…), head included:
+    ld.gstack[hf_s] = hf_cn                         # g's atom word,
+    for hf_i in 1:hf_ca                             # then a reference to each argument cell (a
+        ld.gstack[hf_s + hf_i] = makeRefG(hf_q + hf_i)  # bound cell: none ARGP could bind itself)
+        @assert isRef(ld.gstack[hf_s + hf_i]) && unRef(ld.gstack[hf_s + hf_i]) < hf_s
+    end
+    ARGP = argp_t{T}(ARGP_GLOBAL, hf_s, ph)
+    @goto next_instruction
 
     # PORT: pl-vmi.c H_LIST
     @label H_LIST
@@ -2318,8 +2387,10 @@ function PL_next_solution_guarded(
     @goto H_RLIST
 
     # PORT: pl-vmi.c H_RLIST
-    # DIVERGES: as `H_RFUNCTOR` for `'[|]'/2` (`FUNCTOR_dot2`), a `$expr/3` included on the term path
-    # (Q2; user, 2026-10-05).
+    # DIVERGES: as `H_RFUNCTOR` for `'[|]'/2` (`FUNCTOR_dot2`), a `$expr/3` included (Q2; user,
+    # 2026-10-05) — on the CELLS when it is a stack compound (f3-2, `H_RLIST_cross`: its head cell
+    # bound to or compared with `'[|]'`, its arguments read in place), with a cursor only for a
+    # compound at the boundary that is no stack compound (class (c), TRANSITIONAL: f3).
     @label H_RLIST
     if UMODE == uwrite
         @goto B_RLIST
@@ -2339,16 +2410,26 @@ function PL_next_solution_guarded(
             ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)        # ARGP = argTermP(w, 0)
             @goto next_instruction
         end
-        nameFunctor(ld.functors, ld.gstack[hl_q]) == ld.atom_dexpr || @goto unify_backtrack
+        @goto H_RLIST_cross                         # (Q2) on the cells
     end
     hl_p = _argp_deref(ld, ARGP)
     if kind(hl_p) === EXPR
+        hl_q = _export_pos(ld, hl_p)                # a stack compound's live export: its cells
+        if hl_q != 0
+            if ld.gstack[hl_q] == dot_f
+                ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)    # ARGP = argTermP(w, 0)
+                @goto next_instruction
+            end
+            @goto H_RLIST_cross
+        end
+        # TRANSITIONAL (f3-2, class (c)): a compound at the boundary that is no stack compound, read
+        # with a cursor (Q2); goes with the keyed variables (f3)
         if is_pair(hl_p) ||
             (
             _is_expr3(hl_p) &&
             unify_simple_ptrs(ld, deRef(ld, child(hl_p, 1)), gd.atom_dot) == BOOLEX_TRUE
         )
-            ARGP = argp_t{T}(ARGP_CURSOR, 2, hl_p)  # ARGP = argTermP(w, 0)
+            ARGP = _argp_cursor(ld, 2, hl_p)        # ARGP = argTermP(w, 0)
             @goto next_instruction
         end
         @goto unify_backtrack
@@ -2361,6 +2442,18 @@ function PL_next_solution_guarded(
         @goto next_instruction
     end
     @goto unify_backtrack
+
+    # ORIGINAL (f3-2; Q2): H_RLIST's `'[|]'/2` against a stack `$expr/3` at `hl_q`, on its CELLS:
+    # its head cell bound to or compared with `'[|]'`, its two arguments read in place.
+    @label H_RLIST_cross
+    hl_cf = ld.gstack[hl_q]
+    (
+        nameFunctor(ld.functors, hl_cf) == ld.atom_dexpr &&
+        arityFunctor(ld.functors, hl_cf) == 3
+    ) || @goto unify_backtrack
+    _unify_const_loc(ld, hl_q + 1, gd.atom_dot) || @goto unify_backtrack    # bound, or bindConst
+    ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 2, ph)     # argTermP(w, 1)
+    @goto next_instruction
 
     # PORT: pl-vmi.c H_POP
     @label H_POP
@@ -2406,14 +2499,28 @@ function PL_next_solution_guarded(
             nameFunctor(ld.functors, ld.gstack[valPtr(hff_w)]) == ld.atom_dexpr
         )
             @goto unify_backtrack                   # an atom, a small integer, or another functor
+        elseif hff_d == DREF_WORD                   # a stack `$expr` (Q2): on its cells (f3-2)
+            _hlistff_cross!(ld, gd, valPtr(hff_w), hff_a + 1, hff_b + 1) ||
+                @goto unify_backtrack
         else                                        # the term path
             hff_p = _argp_deref(ld, ARGP)
-            if is_pair(hff_p) ||
+            hff_q = kind(hff_p) === EXPR ? _export_pos(ld, hff_p) : 0
+            if hff_q != 0                           # a stack compound's live export: its cells
+                if ld.gstack[hff_q] == dot_f
+                    _slot_from_cell!(ld, hff_a + 1, hff_q + 1)
+                    _slot_from_cell!(ld, hff_b + 1, hff_q + 2)
+                else
+                    _hlistff_cross!(ld, gd, hff_q, hff_a + 1, hff_b + 1) ||
+                        @goto unify_backtrack
+                end
+            elseif is_pair(hff_p) ||
                 (
                 _is_expr3(hff_p) &&
                 unify_simple_ptrs(ld, deRef(ld, child(hff_p, 1)), gd.atom_dot) ==
                 BOOLEX_TRUE
             )
+                # TRANSITIONAL (f3-2, class (c)): a compound at the boundary that is no stack
+                # compound, its children written as values; goes with the keyed variables (f3)
                 setSlotValue!(ld, hff_a + 1, child(hff_p, 2))
                 setSlotValue!(ld, hff_b + 1, child(hff_p, 3))
             elseif kind(hff_p) === VAR              # a keyed variable

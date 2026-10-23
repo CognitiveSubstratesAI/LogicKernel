@@ -257,7 +257,7 @@ function _rec_round(ld, w)
     @test LK.copyRecordToGlobal(ld, out, r)
     return r, ld.gTop - g0, out
 end
-_rec_out(ld, out) = _rcanonical(LK.resolve_term(ld, LK.slotValue(ld, out + 1)))
+_rec_out(ld, out) = _rcanonical(lk_answer(ld, out))
 
 @testset "records: gsize, sharing, cycles, variables, values, the boundary (L1f f1a)" begin
     db = _RDB()

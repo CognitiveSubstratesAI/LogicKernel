@@ -25,7 +25,7 @@ _xv() = mk_var(_X, LK.fresh_var_keys!(1))
 
 """
 `throw(Ball)` through the query API in a database of its own: `(rc, ball)` — the return code and
-the term `PL_exception` holds when the query ends (unresolved: it may be cyclic).
+the term `PL_exception` holds when the query ends, read off the cells (an acyclic ball).
 """
 function _xthrow(
     ball::_X; gd::LK.PL_global_data{_X}=LK.PL_global_data{_X}(),
@@ -40,19 +40,9 @@ function _xthrow(
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     ex = LK.PL_exception(ld, qid)
-    # the ball on the cells (L1e e5a): read through its reference — resolved, or only dereferenced when it is
-    # a rational tree (the cyclic ball below: resolve_term refuses one)
-    caught = if ex == 0
-        nothing
-    else
-        t = LK.slotValue(ld, ex + 1)
-        try
-            LK.resolve_term(ld, t)
-        catch e
-            e isa ArgumentError || rethrow()
-            LK.deRef(ld, t)
-        end
-    end
+    # the ball on the cells (L1e e5a): read off them through its reference (`lk_answer`, f3-2) —
+    # every ball thrown here is acyclic; the cyclic ball below is read in its own testset
+    caught = ex == 0 ? nothing : lk_answer(ld, ex)
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
     return (rc, caught)

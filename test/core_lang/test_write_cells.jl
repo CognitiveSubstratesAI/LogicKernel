@@ -140,7 +140,7 @@ function _wc_run(db::_RDB, name::String)::String
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
             ""
         elseif rc == LK.PL_S_EXCEPTION
-            ball = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+            ball = lk_answer(ld, LK.PL_exception(ld, qid))
             f =
                 if (
                     kind(ball) === EXPR && nchildren(ball) == 3 &&
@@ -353,10 +353,15 @@ end
     for (i, v) in enumerate((v1, v2, v3))
         LK._slot_store_value!(ld, t + i, v)            # the side value: no word
     end
+    # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3. Was
+    # `== cells[i + 1]` for all three — on the boundary path the side value's keyed variable kv, met
+    # three times, is now three variables (each occurrence a write of its own, a fresh cell), where
+    # the put on the cells keeps it one: `g(_V2)`, `[_V3|_V4]` for `g(_V1)`, `[_V1|_V2]`
+    boundary = ["f(_V1,B,\"s\",1.5,a,g(_V2),[_V3|_V4])", cells[2], cells[3]]
     for i in 0:2
         @test ld.slots[t + i + 1] == LK.SLOT_VALUE
         p0 = ld.cold_pairs
-        @test _wc_norm(_wc_write(ld, t + i, flags)) == cells[i + 1]
+        @test _wc_norm(_wc_write(ld, t + i, flags)) == boundary[i + 1]
         @test ld.cold_pairs > p0                        # the boundary, counted
     end
 end

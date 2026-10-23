@@ -328,7 +328,7 @@ function _rb_kernel(gd, ld, name::String, args::Vector{_RB})::String
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
         "true"
     elseif rc == LK.PL_S_EXCEPTION
-        ball = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+        ball = lk_answer(ld, LK.PL_exception(ld, qid))
         formal =
             if kind(ball) === EXPR && nchildren(ball) == 3 &&
                 kind(child(ball, 1)) === SYM &&

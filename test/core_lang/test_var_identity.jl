@@ -59,11 +59,22 @@ end
     LK.setSlotValue!(ld, t1 + 1, r1)
     t2 = LK.PL_new_term_ref(ld)
     LK.setSlotValue!(ld, t2 + 1, r2)
-    @test LK.varName(ld, t1) == LK.varName(ld, t2)
+    # f3-2 (audit D-0111 Q3/Q5): was `LK.varName(ld, t1) == LK.varName(ld, t2)` — two SEPARATE
+    # writes of one variable term are two variables now (each a fresh cell: separate puts, SWI's
+    # semantics), so their names differ; the two reads keep one name inside ONE write (below)
+    @test LK.varName(ld, t1) != LK.varName(ld, t2)
+    tf = LK.PL_new_term_ref(ld)
+    LK.setSlotValue!(ld, tf + 1, _rf("f", r1, r2))              # one write: one cell for both reads
+    a1, a2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    @test LK._PL_get_arg(ld, 1, tf, a1) && LK._PL_get_arg(ld, 2, tf, a2)
+    @test LK.varName(ld, a1) == LK.varName(ld, a2)
     # the name is the cell's offset from the stack base, doubled (pl-write.c var_name_ptr, F3B f3b-2;
     # its key before). swipl 8e1bc111, `functor(T,f,2), arg(1,T,A), arg(2,T,B), format('~w ~w',[A,B])`
     # prints `_420 _428`: the same shape, even for a global cell; its offsets are not this engine's.
-    @test LK.varName(ld, t1) == "_" * string((p - 1) * 2)
+    # f3-2 (Q3): was `LK.varName(ld, t1) == "_" * string((p - 1) * 2)` — t1's variable is the
+    # write's own fresh cell, not p: its offset names it
+    q = LK.unRef(ld.slots[t1 + 1])
+    @test q != p && LK.varName(ld, t1) == "_" * string((q - 1) * 2)
 end
 
 @testset "numbervars and the variable collectors see one variable" begin
@@ -72,7 +83,11 @@ end
     LK.setSlotValue!(ld, t + 1, _rf("f", r1, r2))
     # term_variables/2's collector
     n, vars = LK.term_variables_to_termv(ld, t, typemax(Int))
-    @test n == 1 && length(vars) == 1 && var_key(vars[1]) == var_key(r1)
+    # f3-2 (audit D-0111 Q3/Q5): was `n == 1 && length(vars) == 1 && var_key(vars[1]) ==
+    # var_key(r1)` — the write gives the two reads ONE fresh cell (a write-local map), not r1's: the
+    # collector sees one variable, the write's own
+    @test n == 1 && length(vars) == 1 && kind(vars[1]) === VAR &&
+        var_key(vars[1]) != var_key(r1)
     # bagof/setof's free-variable collector
     fv = _R[]
     LK.free_variables_loop(ld, _rf("f", r1, r2), fv)

@@ -67,7 +67,7 @@ function _yopen(p::IxPred{_Y}, args::_Y...; flags=LK.PL_Q_NORMAL | LK.PL_Q_EXT_S
     return qid, a, fid
 end
 _ynext(p, qid) = LK.PL_next_solution(p.db.gd, p.db.ld, qid)
-_yval(p, a) = LK.resolve_term(p.db.ld, LK.slotValue(p.db.ld, a + 1))
+_yval(p, a) = lk_answer(p.db.ld, a)                             # term reference a: slot a + 1
 
 @testset "answers, determinism and the return codes" begin
     db, p = _ydb()
@@ -231,7 +231,7 @@ end
     tw = LK.slotValue(ld, ex + 1)
     @test kind(child(tw, 2)) === EXPR && lk_name(child(child(tw, 2), 1)) === :occurs_check
     @test ld.exception_term == 0 && ld.ball_word != 0 && ld.ball_word == ld.slots[ex + 1]
-    e = LK.resolve_term(ld, LK.slotValue(ld, ex + 1))
+    e = lk_answer(ld, ex)
     @test lk_name(child(e, 1)) === :error &&
         lk_name(child(child(e, 2), 1)) === :occurs_check
     ctx = child(e, 3)
@@ -291,8 +291,7 @@ end
     @test LK.PL_next_solution_guarded(db.gd, ld, qid, true) == LK.PL_S_EXCEPTION
     # (a variant: the ball is a copy with fresh variables, copy_exception — since V9f)
     @test LK.is_variant_ptr(
-        LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)),
-        _yf(:error, _ys(:boom), _yv(2)))
+        lk_answer(ld, LK.PL_exception(ld, qid)), _yf(:error, _ys(:boom), _yv(2)))
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
     LK.PL_close_foreign_frame(ld, fid0)
@@ -319,7 +318,7 @@ end
     # deep, so it is read resolved, as the occurs-check ball above is)
     @test ex != 0 &&
         lk_eq(
-        LK.resolve_term(ld, LK.slotValue(ld, ex + 1)),
+        lk_answer(ld, ex),
         _yf(:error, _yf(:resource_error, _ys(:stack)), _ys(:stack_overflow))
     )
     @test !ld.outofstack && !ld.exception_processing           # recovered at the boundary
@@ -501,29 +500,26 @@ LK_TERM_IMPL == "reference" &&
     vm = LK.PutVarMap()
     @test LK.putSlotValue!(ld, a + 1, _yf(:g, X, Y), vm) === nothing
     LK.putSlotValue!(ld, a + 2, X, vm)
-    s1, s2 = LK.slotValue(ld, a + 1), LK.slotValue(ld, a + 2)
-    # (since L1c a compound's children are its argument cells' variables: compared dereferenced)
-    d(t) = LK.deRef(ld, t)
-    @test var_key(d(child(s1, 2))) == var_key(d(s2)) &&
-        var_key(d(child(s1, 3))) != var_key(d(s2))
+    s1, s2 = lk_answers(ld, a, a + 1)          # ONE read of both slots: shared ones stay shared
+    @test var_key(child(s1, 2)) == var_key(s2) && var_key(child(s1, 3)) != var_key(s2)
     # the map holds each variable's CELL (L1f f3b-1): X's is the one both puts reference (slot a+2 has X)
     @test LK._deref_loc(ld, -(a + 2)) == (LK.DU_CELL, LK.word(0), vm.cells[var_key(X)])
     # a later COMPOUND through the same map reuses X's cell too (not only a bare variable put): its
     # argument is the cell slot a+2 holds, and the map's entry is unchanged
     xcell = vm.cells[var_key(X)]
     LK.putSlotValue!(ld, a + 3, _yf(:h, X), vm)
-    @test var_key(d(child(LK.slotValue(ld, a + 3), 2))) == var_key(d(s2)) &&
-        vm.cells[var_key(X)] == xcell
+    s3, s2 = lk_answers(ld, a + 2, a + 1)
+    @test var_key(child(s3, 2)) == var_key(s2) && vm.cells[var_key(X)] == xcell
     # within one put, a variable met twice is one variable
     LK.putSlotValue!(ld, a + 3, _yf(:g, X, X))
-    s3 = LK.slotValue(ld, a + 3)
-    @test var_key(d(child(s3, 2))) == var_key(d(child(s3, 3))) &&
-        var_key(d(child(s3, 2))) != var_key(d(s2))
+    s3, s2 = lk_answers(ld, a + 2, a + 1)
+    @test var_key(child(s3, 2)) == var_key(child(s3, 3)) &&
+        var_key(child(s3, 2)) != var_key(s2)
     # sharing with a variable already in the engine goes through its handle (PL_put_term)
     @test LK.PL_put_term(ld, a + 2, a + 1)                         # term refs: slot a+3 ← slot a+2
     @test LK.unify_ptrs(ld, LK.slotValue(ld, a + 3), _ys(:z))
-    @test lk_name(LK.deRef(ld, LK.slotValue(ld, a + 2))) === :z
-    @test lk_name(LK.deRef(ld, child(s1, 2))) === :z               # the map's variable is bound
+    @test lk_name(lk_answer(ld, a + 1)) === :z
+    @test lk_name(child(lk_answer(ld, a), 2)) === :z               # the map's variable is bound
     @test kind(LK.deRef(ld, X)) === VAR                              # the caller's never is
     # bindings are followed: an engine variable bound is put as its value
     LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
@@ -532,19 +528,19 @@ LK_TERM_IMPL == "reference" &&
     # whatever its cell holds; the vacuous-guard sweep, 2026-10-20)
     @test LK.unify_ptrs(ld, x1, _ys(:b)) && kind(LK.deRef(ld, child(s4, 2))) === VAR
     LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
-    @test lk_name(d(child(LK.slotValue(ld, a + 3), 2))) === :b       # bound BEFORE: its value
+    @test lk_name(child(lk_answer(ld, a + 2), 2)) === :b             # bound BEFORE: its value
     # a ground value comes back as the same value (`==`, not `===`): since L1c it is copied onto
     # the global stack, as `copyRecordToGlobal` copies it, and only the value is observable — read
-    # through the slot, its arguments its cells' variables, compared resolved
+    # through the slot, off the cells
     gt = _yf(:g, _ys(:a), _yf(:h, _yg(1)))
     LK.putSlotValue!(ld, a + 3, gt)
-    @test lk_eq(LK.resolve_term(ld, LK.slotValue(ld, a + 3)), gt)
+    @test lk_eq(lk_answer(ld, a + 2), gt)
     LK.PL_close_foreign_frame(ld, fid)
     # a query: f(X) answers a, b, c through the handle; the caller's X is never bound
     qid, h, fid2 = _yopen(p[:f], X)
     got = Symbol[]
     while LK.PL_next_solution(db.gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)
-        push!(got, lk_name(LK.deRef(ld, LK.slotValue(ld, h + 1))))
+        push!(got, lk_name(lk_answer(ld, h)))
         @test kind(LK.deRef(ld, X)) === VAR
     end
     @test got == [:a, :b, :c]

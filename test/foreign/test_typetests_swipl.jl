@@ -72,7 +72,7 @@ function _ttrun(gd, ld, proc, args::Vector{_TT})::String
     )
     rc = LKT.PL_next_solution(gd, ld, qid)
     out = if rc == LKT.PL_S_EXCEPTION
-        ball = LKT.resolve_term(ld, LogicKernel.slotValue(ld, LKT.PL_exception(ld, qid) + 1))
+        ball = lk_answer(ld, LKT.PL_exception(ld, qid))
         String(lk_name(child(child(ball, 2), 1)))
     else
         rc == LKT.PL_S_FALSE ? "false" : "true"

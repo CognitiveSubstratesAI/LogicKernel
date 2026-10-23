@@ -2551,6 +2551,9 @@ end
 # CALLER passed. A keyed caller variable written into a cell is bound to a fresh cell
 # (`_import_var!`); that cell's variable is the engine's representative, and the term-level readers hand the
 # caller's own variable back, as they did when the writers stored it (a value-table word, a side value).
+# Since f3-2 (audit D-0111, f3's Q3) no writer imports a keyed variable — a write gives a variable
+# a fresh cell of its own (`_var_word!`) — so `import_origin` stays empty and `v` comes back;
+# deleted in f3.
 "The keyed variable the cell variable `v` was imported for, else `v`."
 @inline function _caller_var(ld::PL_local_data{T}, v::T)::T where {T}
     isempty(ld.import_origin) && return v

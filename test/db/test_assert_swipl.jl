@@ -204,8 +204,7 @@ function _arun(db::_ADB, goal::_A)::String
     out = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
         "ok"
     elseif rc == LK.PL_S_EXCEPTION
-        "err " *
-        _acanonical(LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)))
+        "err " * _acanonical(lk_answer(ld, LK.PL_exception(ld, qid)))
     else
         "failed"
     end
@@ -379,9 +378,7 @@ end
         LK.putSlotValue!(ld, t + 1, culprit)
         @test !LK.PL_error(ld, LK.ERR_TYPE, _as("callable"), t)
         @test ld.exception_term != 0 &&
-            lk_eq(
-            child(LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1)), 2), want
-        )
+            lk_eq(child(lk_answer(ld, ld.exception_term), 2), want)
     end
     # a compound named by a number (`$expr/n`, the kernel's): its name is no callable atom
     db = _aload([(_as("r"), _af("assertz", mk_expr(_A, _A[_ag(1), _as("a")])))])

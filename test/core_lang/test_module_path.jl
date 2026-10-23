@@ -162,9 +162,9 @@ end
             if ld.exception_term == 0
                 nothing
             else
-                child(LK.resolve_term(ld, LK.slotValue(ld, ld.exception_term + 1)), 2)
+                child(lk_answer(ld, ld.exception_term), 2)
             end
-        return (ok, mod, LK.slotValue(ld, r + 2), formal)
+        return (ok, mod, lk_answer(ld, r + 1), formal)
     end
     ok, m, plain, _ = strip(_mpf(":", _mps(:user), _mps(:foo)))
     @test ok && m == user.index && lk_eq(plain, _mps(:foo))

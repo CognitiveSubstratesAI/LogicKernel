@@ -47,9 +47,9 @@ function _arun(name, args::Vector{_A}; gd=_AGD, ld=_ALD)
     )
     rc = LKA.PL_next_solution(gd, ld, qid)
     out = if rc == LKA.PL_S_EXCEPTION
-        LKA.resolve_term(ld, LogicKernel.slotValue(ld, LKA.PL_exception(ld, qid) + 1))
+        lk_answer(ld, LKA.PL_exception(ld, qid))
     else
-        LKA.resolve_term(ld, LogicKernel.slotValue(ld, a + 1))
+        lk_answer(ld, a)
     end
     LKA.PL_close_query(ld, qid)
     LKA.PL_close_foreign_frame(ld, fid)
@@ -69,18 +69,9 @@ function _arun_proc(gd, ld, p, args::Vector{_A})
     )
     rc = LKA.PL_next_solution(gd, ld, qid)
     out = if rc == LKA.PL_S_EXCEPTION
-        LKA.resolve_term(ld, LogicKernel.slotValue(ld, LKA.PL_exception(ld, qid) + 1))
-    else
-        mk_expr(
-            _A,
-            _A[
-                _as(:goal);
-                [
-                    LKA.resolve_term(ld, LogicKernel.slotValue(ld, a + k)) for
-                    k in eachindex(args)
-                ]
-            ]
-        )
+        lk_answer(ld, LKA.PL_exception(ld, qid))
+    else                                                # the arguments read with ONE export
+        mk_expr(_A, _A[_as(:goal); lk_answers(ld, (a:(a + length(args) - 1))...)])
     end
     LKA.PL_close_query(ld, qid)
     LKA.PL_close_foreign_frame(ld, fid)
@@ -371,7 +362,7 @@ end
         ogd, old, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, po, a
     )
     @test LKA.PL_next_solution(ogd, old, qid) == LKA.PL_S_EXCEPTION
-    ball = LKA.resolve_term(old, LogicKernel.slotValue(old, LKA.PL_exception(old, qid) + 1))
+    ball = lk_answer(old, LKA.PL_exception(old, qid))
     @test lk_name(child(child(ball, 2), 2)) == :evaluable
     LKA.PL_close_query(old, qid)
     LKA.PL_close_foreign_frame(old, fid)

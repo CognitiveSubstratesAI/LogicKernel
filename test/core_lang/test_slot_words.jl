@@ -31,14 +31,21 @@ function _sw_engine()
 end
 
 @testset "a live cell variable is its reference; anything else the slot's own side entry" begin
+    # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3
     ld, a, b, _ = _sw_engine()
     k = LK.allocGlobalVars!(ld, 1)
     v = mk_var(_SW, k)                                          # a cell variable, as a term
+    ga = ld.gTop
     LK.setSlotValue!(ld, a, v)
-    @test ld.slots[a] == LK.makeRefG(LK._cell_pos(ld, k))
-    @test var_key(LK.slotValue(ld, a)) == k
+    # f3-2 (audit D-0111 Q3): was `ld.slots[a] == LK.makeRefG(LK._cell_pos(ld, k))` and
+    # `var_key(LK.slotValue(ld, a)) == k` — a write gives the variable a FRESH cell of its own
+    # (`_slot_store_var!`), not k's cell: the slot references the next cell, read back as its
+    # variable
+    @test ld.slots[a] == LK.makeRefG(ga + 1) && ga + 1 != LK._cell_pos(ld, k)
+    @test var_key(LK.slotValue(ld, a)) == LK._cell_key(ld, ga + 1) != k
     # the cell's variable term is made on demand (L1c-6: no kept term); a variable is its KEY
-    @test var_key(LK.slotValue(ld, a)) == var_key(LK._cell_var(ld, LK._cell_pos(ld, k)))
+    # f3-2 (Q3): was `… == var_key(LK._cell_var(ld, LK._cell_pos(ld, k)))` — the slot's own cell now
+    @test var_key(LK.slotValue(ld, a)) == var_key(LK._cell_var(ld, LK.unRef(ld.slots[a])))
     # since L1e e1 a slot holds any word: a symbol its atom word, a small integer its tagged word, a
     # float a value-table word (these references lie above the engine's base foreign frame)
     # (test_slot_indirects.jl: the older-reference rule)
@@ -57,14 +64,25 @@ end
     g0, t0, i0 = ld.gTop, length(ld.trail), ld.cold_imports
     LK.setSlotValue!(ld, b, x)
     @test LK.isRef(ld.slots[b]) && LK.unRef(ld.slots[b]) == g0 + 1 && ld.gTop == g0 + 1
-    @test length(ld.trail) == t0 + 1 && ld.cold_imports == i0 + 1
+    # f3-2 (Q3): was `length(ld.trail) == t0 + 1 && ld.cold_imports == i0 + 1` — the keyed
+    # variable is no longer BOUND to its fresh cell (`_import_var!`'s Trail!): nothing trailed, one
+    # cell counted
+    @test length(ld.trail) == t0 && ld.cold_imports == i0 + 1
     @test LK._deref_loc(ld, -b) == (LK.DU_CELL, LK.word(0), g0 + 1)   # no boundary word (DU_TERM)
-    @test var_key(LK.slotValue(ld, b)) == var_key(LK.deRef(ld, x))
+    # f3-2 (Q3): was `var_key(LK.slotValue(ld, b)) == var_key(LK.deRef(ld, x))` — the slot reads the
+    # fresh cell's variable, and x stays unbound (no binding to the cell)
+    @test var_key(LK.slotValue(ld, b)) == LK._cell_key(ld, g0 + 1)
+    @test kind(LK.deRef(ld, x)) === VAR && var_key(LK.deRef(ld, x)) == UInt64(42)
     LK.setSlotValue!(ld, a, x)
-    @test ld.slots[a] == ld.slots[b] && ld.cold_imports == i0 + 1
-    # … inside a compound too: f(X) holds the reference, the same cell
+    # f3-2 (Q3): was `ld.slots[a] == ld.slots[b] && ld.cold_imports == i0 + 1` — a second write of x
+    # is a SEPARATE variable: another fresh cell, another import
+    @test ld.slots[a] == LK.makeRefG(g0 + 2) != ld.slots[b] && ld.cold_imports == i0 + 2
+    # … inside a compound too: f(X) holds a reference
     LK.setSlotValue!(ld, a, _sw_f(x))
-    @test ld.gstack[LK.valPtr(ld.slots[a]) + 1] == ld.slots[b]
+    # f3-2 (Q3): was `ld.gstack[LK.valPtr(ld.slots[a]) + 1] == ld.slots[b]` — the compound's write
+    # gives x a fresh cell of its own (a write-local map), not b's cell
+    wx = ld.gstack[LK.valPtr(ld.slots[a]) + 1]
+    @test LK.isRef(wx) && wx != ld.slots[b] && LK.isVar(ld.gstack[LK.unRef(wx)])
     # a keyed variable bound to a value is that value's word
     y = lk_var(_SW, UInt64(43))
     LK.Trail!(ld, UInt64(43), _sw_sym(:bar))
@@ -75,13 +93,18 @@ end
     fid = LK.PL_open_foreign_frame(ld)
     z = lk_var(_SW, UInt64(44))
     LK.setSlotValue!(ld, b, z)
-    @test ld.slots[b] == LK.SLOT_VALUE && LK.slotValue(ld, b) === z
+    # f3-2 (Q3): was `ld.slots[b] == LK.SLOT_VALUE && LK.slotValue(ld, b) === z` — the keyed
+    # variable's side value is gone: a variable gets a fresh cell wherever the slot lies
+    @test LK.isRef(ld.slots[b]) && LK.isVar(ld.gstack[LK.unRef(ld.slots[b])])
     LK.PL_discard_foreign_frame(ld, fid)
     # a compound is copied onto the global stack (L1c, the cold import): a compound WORD, read
     # back through the cold export (its argument the cell's variable, bound to v's cell)
     LK.setSlotValue!(ld, b, _sw_f(v))
     @test LK._is_gcompound(ld.slots[b])
-    @test lk_eq(LK.resolve_term(ld, LK.slotValue(ld, b)), _sw_f(v))
+    # f3-2 (Q3): was `lk_eq(LK.resolve_term(ld, LK.slotValue(ld, b)), _sw_f(v))` — the argument is
+    # a fresh cell's variable now, not v's: f(_) up to renaming, and not v
+    rb = LK.resolve_term(ld, LK.slotValue(ld, b))
+    @test LK.is_variant_ptr(rb, _sw_f(v)) && var_key(child(rb, 2)) != k
 end
 
 @testset "a fresh cell from a slot builds no term and no value-table entry" begin
@@ -109,6 +132,7 @@ end
 end
 
 @testset "_slot_link! follows the words as linkValI follows the terms" begin
+    # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3
     ld, a, b, c = _sw_engine()
     k1 = LK._cell_key(ld, LK._slot_new_var!(ld, a))
     LK._slot_link!(ld, b, a)                                    # unbound: its reference
@@ -118,11 +142,18 @@ end
     # L1d's unification over cells): the link dereferences it to the unbound cell, its reference
     LK.Trail!(ld, k1, mk_var(_SW, k2))
     LK._slot_link!(ld, b, a)
-    @test ld.slots[b] == LK.makeRefG(LK._cell_pos(ld, k2))
-    @test var_key(LK.slotValue(ld, b)) == k2
+    # f3-2 (Q3): was `ld.slots[b] == LK.makeRefG(LK._cell_pos(ld, k2))` and
+    # `var_key(LK.slotValue(ld, b)) == k2` — the Trail!'s write gives mk_var(k2) a FRESH cell, so
+    # k1's cell references that cell, not k2's: the link reaches it
+    @test ld.slots[b] == ld.gstack[LK._cell_pos(ld, k1)] !=
+        LK.makeRefG(LK._cell_pos(ld, k2))
+    @test var_key(LK.slotValue(ld, b)) == LK._cell_key(ld, LK.unRef(ld.slots[b])) != k2
     LK.Trail!(ld, k2, _sw_sym(:foo))                            # … and that one to an atom
     LK._slot_link!(ld, b, a)
-    @test lk_eq(LK.slotValue(ld, b), _sw_sym(:foo))
+    # f3-2 (Q3): was `lk_eq(LK.slotValue(ld, b), _sw_sym(:foo))` — k2's cell is not on a's chain any
+    # more, so binding it leaves the link at the unbound fresh cell
+    @test kind(LK.slotValue(ld, b)) === VAR &&
+        ld.slots[b] == ld.gstack[LK._cell_pos(ld, k1)]
     k4 = LK._cell_key(ld, LK._slot_new_var!(ld, c))             # a cell bound to an atom directly
     LK.Trail!(ld, k4, _sw_sym(:bar))
     LK._slot_link!(ld, b, c)
@@ -143,7 +174,10 @@ end
     LK.setSlotValue!(ld2, c, u43)                               # … and unbound: the cell it is bound to
     LK._slot_link!(ld2, d, c)
     @test LK.isRef(ld2.slots[d]) && ld2.slots[d] == ld2.slots[c]
-    @test var_key(LK.slotValue(ld2, d)) == var_key(LK.deRef(ld2, u43))
+    # f3-2 (Q3): was `var_key(LK.slotValue(ld2, d)) == var_key(LK.deRef(ld2, u43))` — the slot holds
+    # a fresh cell's variable and u43 stays unbound (no binding to the cell)
+    @test var_key(LK.slotValue(ld2, d)) == LK._cell_key(ld2, LK.unRef(ld2.slots[c]))
+    @test kind(LK.deRef(ld2, u43)) === VAR && var_key(LK.deRef(ld2, u43)) == UInt64(43)
 end
 
 @testset "a slot never written is refused on its read" begin

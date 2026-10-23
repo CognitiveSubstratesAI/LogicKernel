@@ -107,7 +107,7 @@ end
 @testset "white-box: a `\$expr/n` compound (a variable head) gives all its children, the head first" begin
     ld, t = _uv_engine(_R[mk_expr(_R, _R[_rv(9), _rs("a"), _rs("b")]), _rv(2)])
     @test _uv_call(ld, t) == LK.FTRUE
-    r = LK.resolve_term(ld, LK.slotValue(ld, t + 2))
+    r = lk_answer(ld, t + 1)
     @test kind(r) === EXPR &&
         LK.compareStandard(child(r, 3), _rlist(_rs("a"), _rs("b")), true) == LK.CMP_EQUAL
 end

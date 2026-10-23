@@ -101,7 +101,7 @@ function _rmc_formal_term(db::_RDB, goal::_R)::Union{Nothing, _R}
     )
     rc = LK.PL_next_solution(gd, ld, qid)
     out = if rc == LK.PL_S_EXCEPTION
-        e = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+        e = lk_answer(ld, LK.PL_exception(ld, qid))
         child(e, 2)
     else
         nothing

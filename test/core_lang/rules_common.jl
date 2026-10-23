@@ -63,10 +63,10 @@ function _rcall(db::_RDB, goal::_R; at=(qid, k) -> nothing)::Vector{Tuple{String
         at(qid, length(out) + 1)
         # the answer through the argument handles, never the caller's variables (L1b boundary,
         # user 2026-10-14: a put copies, variable identity is the handle)
-        push!(out, (_ranswer(ld, _rhandles_goal(ld, goal, args, n)), rc == LK.PL_S_LAST))
+        push!(out, (_ranswer(ld, goal, args, n), rc == LK.PL_S_LAST))
     end
     if rc == LK.PL_S_EXCEPTION                                   # the uncaught ball: a line (see rx/1)
-        ball = LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))
+        ball = lk_answer(ld, LK.PL_exception(ld, qid))
         formal =
             if (
                 kind(ball) === EXPR && nchildren(ball) == 3 &&
@@ -150,19 +150,22 @@ function _rcanonical(t::_R)::String
     return _rwrite(t, u -> get(names, var_key(u), "_"))
 end
 
-"`goal` rebuilt from its `n` argument handles at `args` (the answer is read through them)."
+"""
+`goal` rebuilt from its `n` argument handles at `args`: the answer is read through them, with ONE
+export (`lk_answers`), so a variable shared between arguments stays shared.
+"""
 function _rhandles_goal(ld::LK.PL_local_data{_R}, goal::_R, args::Int, n::Int)::_R
     n == 0 && return goal
-    return mk_expr(_R, _R[child(goal, 1); [LK.slotValue(ld, args + i) for i in 1:n]])
+    return mk_expr(_R, _R[child(goal, 1); lk_answers(ld, (args:(args + n - 1))...)])
 end
 
 """
 The goal's answer as written: `cyclic` for a rational tree — without the occurs check a body can bind
-`X = f(X)`; swipl's `cyclic_term/1` and the kernel's `resolve_term` refusal must then agree.
+`X = f(X)`; swipl's `cyclic_term/1` and the cell reader's refusal (`export_cells`) must then agree.
 """
-function _ranswer(ld::LK.PL_local_data{_R}, goal::_R)::String
+function _ranswer(ld::LK.PL_local_data{_R}, goal::_R, args::Int, n::Int)::String
     t = try
-        LK.resolve_term(ld, goal)
+        _rhandles_goal(ld, goal, args, n)
     catch e
         e isa ArgumentError && occursin("cyclic", e.msg) && return "cyclic"
         rethrow()
@@ -357,7 +360,7 @@ function _rhighwater(db::_RDB, goal::_R)::Tuple{Int, Int, Int}
     rc = LK.PL_next_solution(gd, ld, qid)
     if rc != LK.PL_S_LAST || ld.lMax != lmax0                       # the tripwire: say what tripped
         ex = rc == LK.PL_S_EXCEPTION ? LK.PL_exception(ld, qid) : 0
-        ball = ex == 0 ? "none" : string(LK.resolve_term(ld, LK.slotValue(ld, ex + 1)))
+        ball = ex == 0 ? "none" : string(lk_answer(ld, ex))
         error(
             "_rhighwater: $(_rsrc(goal)) returned $rc, ball $ball, lMax $lmax0 → $(ld.lMax)"
         )
