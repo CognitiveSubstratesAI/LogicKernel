@@ -28,6 +28,8 @@
 #    have yet — `git log <sha> --not --remotes=<remote>` — has an author or committer email other
 #    than $NOREPLY_EMAIL. Commits already on the remote (any branch) pass, so main can move
 #    over commits a gate branch already carried. An unreadable range is a refusal.
+#    The remote is the one git names; a push by URL is read as the configured remote with that URL
+#    (below, 2026-10-23).
 #
 # 4. A wip/ BRANCH NEVER PUSHES (user, 2026-10-16). The workspace's commit hook lets a commit on a
 #    `wip/*` branch through WITHOUT test evidence (a step's work in progress, kept as commits so a fix
@@ -94,6 +96,21 @@ _identity_check() {
 }
 
 remote_name="${1:-origin}"
+# A push by URL (`git push https://…`) hands the URL as $1, and `--remotes=<URL>` matches no ref: every
+# commit would count as new (measured 2026-10-23, the v0.1.0-pre.2 tag push: 140 old commits listed).
+# So a $1 that names no configured remote but equals one's fetch or push URL — credentials stripped on
+# both sides — is read as that remote's name; anything else stays as given (fail closed, as before).
+_strip_cred() { printf '%s' "$1" | sed -E 's|://[^@/]*@|://|'; }
+if ! git -C "$top" remote | grep -qxF -- "$remote_name"; then
+    want="$(_strip_cred "$remote_name")"
+    for r in $(git -C "$top" remote); do
+        if [ "$(_strip_cred "$(git -C "$top" remote get-url "$r")")" = "$want" ] ||
+            [ "$(_strip_cred "$(git -C "$top" remote get-url --push "$r")")" = "$want" ]; then
+            remote_name="$r"
+            break
+        fi
+    done
+fi
 rc=0
 while read -r _local_ref local_sha remote_ref _remote_sha; do
     case "$_local_ref $remote_ref" in

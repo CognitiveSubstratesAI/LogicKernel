@@ -839,6 +839,27 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 @test push_(badc, "refs/heads/gate/x") == 0
                 @test push_(gs_commit(noreply, noreply), "refs/heads/gate/x") == 0   # new, on top
                 @test push_("e"^40, "refs/heads/gate/x") == 1               # unknown: fails closed
+                # a push BY URL (git hands the URL as $1) reads the remote configured with that
+                # URL (the v0.1.0-pre.2 tag push, 2026-10-23: `--remotes=<URL>` matched nothing)
+                run(`git -C $repo remote add up https://tok@example.invalid/lk.git`)
+                run(`git -C $repo update-ref refs/remotes/up/gate/old $badc`)
+                ontop = gs_commit(noreply, noreply)
+                by(url, s) = exitof(
+                    pipeline(
+                        IOBuffer("refs/tags/t $s refs/tags/t $("0" ^ 40)\n"),
+                        Cmd(`bash $hook $url $url`; dir=repo)
+                    ),
+                    "LOGICKERNEL_CI_FIXTURE" => fx,
+                    "LOGICKERNEL_PUSH_LOCAL_EVIDENCE" => nothing
+                )
+                @test by("https://example.invalid/lk.git", ontop) == 0       # mapped, credential stripped
+                @test by("up", ontop) == 0                                   # by its name
+                @test by("https://example.invalid/other.git", ontop) == 1    # no such remote: all new
+                @test by(
+                    "https://example.invalid/lk.git",
+                    gs_commit("someone@gmail.example", noreply)
+                ) ==
+                    1                                                        # a new bad commit still refused
             end
             # 4. A wip/ BRANCH NEVER PUSHES (user, 2026-10-16): its commits carry no evidence
             @testset "a wip/ branch never pushes" begin
