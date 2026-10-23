@@ -119,21 +119,19 @@ end
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_FAIL
     LK.setSlotValue!(ld, s, _rg(Int64(1)))                      # a small integer: its tagged word (L1e e1),
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_FAIL       # another constant: fails, as upstream's h_const
-    # a slot's side value (`SLOT_VALUE`: since L1f f3b-1 only the boundary's — the term copy of a ball,
-    # `_slot_store_value!` — or a reference older than the innermost foreign frame): the terms decide
-    LK._slot_store_value!(ld, s, _rf("f", _kw_s(:a)))
+    # a slot's side value (`SLOT_VALUE`: since f3 only a grounded value, read as its side word — f3-1,
+    # Q1 (b); until f3-3 also the term copy of a ball, `_slot_store_value!`): the terms decide
+    lk_side_value!(ld, s, _rg(7.0))
     @test ld.slots[s] == LK.SLOT_VALUE
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_TERMS      # undecided on the words: the terms decide
-    # a keyed variable (L1f f3b-1): bound to a fresh cell, the slot its reference — decided on the words
+    # a variable term (f3-2, Q3): a fresh cell, the slot its reference — decided on the words
     LK.setSlotValue!(ld, s, lk_var(_R, UInt64(4242)))
     @test LK.isRef(ld.slots[s])
     @test LK._h_const_word!(ld, s, wa) == LK.H_CONST_MATCH      # the cell bound (bindConst)
     # f3-2 (audit D-0111 Q3/Q5): was `sym_key(LK.deRef(ld, lk_var(_R, UInt64(4242)))) ==
-    # sym_key(_kw_s(:a))` — the write gives the keyed variable a FRESH cell (a write-local map, no
-    # keyed side binding), so the binding is read through the term reference; the variable stays
-    # free
+    # sym_key(_kw_s(:a))` — the write gives the variable a FRESH cell (a write-local map), so the
+    # binding is read through the term reference
     @test sym_key(lk_answer(ld, s - 1)) == sym_key(_kw_s(:a))
-    @test kind(LK.deRef(ld, lk_var(_R, UInt64(4242)))) === VAR
 end
 
 @testset "h_const on the words: a cell, bound, trailed under a mark, undone" begin
@@ -169,26 +167,22 @@ end
     # small INTEGER is a tagged word since L1d step 4 — decided on the words, against an atom word or
     # against its own tagged word (`*k == c`)
     ld2, u, v, _, wa2, _ = _kw_engine()
-    k = LK._cell_key(ld2, LK._slot_new_var!(ld2, u))
-    LK.Trail!(ld2, k, _rg(7.0))
+    LK._bind_const!(ld2, LK._slot_new_var!(ld2, u), LK._word_of!(ld2, _rg(7.0)))
     @test LK._h_const_word!(ld2, u, wa2) == LK.H_CONST_TERMS
     ld3, u3, _, _, wa3, _ = _kw_engine()
-    k3 = LK._cell_key(ld3, LK._slot_new_var!(ld3, u3))
-    LK.Trail!(ld3, k3, _rg(Int64(7)))
+    LK._bind_const!(ld3, LK._slot_new_var!(ld3, u3), LK._word_of!(ld3, _rg(Int64(7))))
     @test LK._h_const_word!(ld3, u3, wa3) == LK.H_CONST_FAIL
     @test LK._h_const_word!(ld3, u3, LK.consInt(7)) == LK.H_CONST_MATCH
     # a cell bound to a cell variable holds a REFERENCE (L1c: upstream's `makeRefG`): followed, the
     # unbound cell at its end bound
-    k2 = LK._cell_key(ld2, LK._slot_new_var!(ld2, v))
+    p2 = LK._slot_new_var!(ld2, v)
     pw = LK._slot_new_var!(ld2, u)
-    LK.Trail!(ld2, k2, mk_var(_R, LK._cell_key(ld2, pw)))
-    @test LK.isRef(ld2.gstack[LK._cell_pos(ld2, k2)])
+    LK._bind_const!(ld2, p2, LK.makeRefG(pw))                    # bound to pw's cell: its reference
+    @test LK.isRef(ld2.gstack[p2])
     @test LK._h_const_word!(ld2, v, wa2) == LK.H_CONST_MATCH
-    # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3. Was
-    # `ld2.gstack[pw] == wa2` — the written key of pw's cell is a FRESH cell now (not pw's), so the
-    # chain ends there: that cell is bound, pw stays unbound
-    @test ld2.gstack[pw] == 0
-    @test ld2.gstack[LK.valPtr(ld2.gstack[LK._cell_pos(ld2, k2)])] == wa2
+    # f3-3: bound on the cells (until f3-3 by key, `Trail!`; f3-2's interim pin `ld2.gstack[pw] == 0`
+    # read a write-local fresh cell), so the chain ends at pw again, as before f3-2
+    @test ld2.gstack[pw] == wa2 && ld2.gstack[p2] == LK.makeRefG(pw)
 end
 
 @testset "the constant instructions answer as swipl" begin

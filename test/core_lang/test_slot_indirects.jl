@@ -13,12 +13,12 @@
 #   * the VM side (the review of 2026-10-15 in test_slot_words.jl, with FLOATS — value-table words now — where
 #     it used compounds): floats held in argument and variable slots across a choice point inside the callee,
 #     read after backtracking into it; the answers are swipl's;
-#   * the meter: an arithmetic loop passing floats as call arguments makes no boundary pair (the L1d pin
-#     `(0, 0, 0, 100)` in test_zero_exports.jl falls to 0);
+#   * the meter: an arithmetic loop passing floats as call arguments makes no cold import (until f3 also
+#     no boundary pair: the L1d pin `(0, 0, 0, 100)` in test_zero_exports.jl fell to 0);
 #   * f3-1 (audit D-0110, f3's Q1 (b)): a side value is READ AS A VALUE — `_deref_loc` gives `DU_VALUE` and
-#     its side word, never the boundary — so reading one through the FLI's readers and unifiers, the VM's
-#     tests, the arithmetic walk, the copy and the record makes no boundary pair (`cold_pairs` unchanged),
-#     and a cell bound to one holds a value-table word, never the side word.
+#     its side word, never the boundary — read through the FLI's readers and unifiers, the VM's tests, the
+#     arithmetic walk, the copy and the record (until f3 also pinned as no boundary pair, `cold_pairs`
+#     unchanged), and a cell bound to one holds a value-table word, never the side word.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -120,10 +120,9 @@ sw_top :- sw_loop(40).
         return rc
     end
     @test q() == LK.PL_S_TRUE
-    c1 = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+    c1 = ld.cold_imports              # (the export/variable/pair meters went with the keyed variables, f3)
     @test q() == LK.PL_S_TRUE
-    @test (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs) .- c1 ==
-        (0, 0, 0, 0)
+    @test ld.cold_imports == c1
 end
 
 "`test_slot_words.jl`'s choice-point programs with FLOATS in the slots (value-table words since e1)."
@@ -202,7 +201,6 @@ end
         k, w, p = LK._deref_loc(ld, -(t + 1))
         @test k == LK.DU_VALUE && LK._is_side_word(w) && LK.valPtr(w) == t + 1 && p == 0
     end
-    c0 = ld.cold_pairs
     # the type tests: the FLI's, which are also the VM's (`@TYPE_TEST`: I_FLOAT runs `PL_is_float`, …;
     # I_VAR/I_NONVAR run `_slot_is_var`)
     @test LK.PL_is_float(ld, f) && !LK.PL_is_float(ld, b) && !LK.PL_is_float(ld, s)
@@ -249,7 +247,6 @@ end
     @test LK.copy_term_refs(ld, f, c, LK.cp_options(true))
     @test LK.PL_is_float(ld, c) && LK.PL_compare(ld, c, f) == LK.CMP_EQUAL
     r = LK.compileTermToHeap(ld, s)
-    @test r.term === nothing                             # recorded on the words, as its value
     rr = LK.PL_new_term_ref(ld)
     @test LK.copyRecordToGlobal(ld, rr, r)
     @test LK.PL_is_string(ld, rr) && LK.PL_compare(ld, rr, s) == LK.CMP_EQUAL
@@ -259,7 +256,6 @@ end
     )
     @test LK.PL_next_solution(db.gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)
     LK.PL_close_query(ld, qid)
-    @test ld.cold_pairs == c0                            # no boundary pair (D-0110 item 2)
     LK.PL_discard_foreign_frame(ld, inner)
     LK.PL_discard_foreign_frame(ld, outer)
 end

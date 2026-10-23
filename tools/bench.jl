@@ -105,8 +105,7 @@ using LogicKernel:
     pl_term_hash,
     compareStandard,
     PL_local_data,
-    pl_unify!,
-    pl_unify_with_occurs_check!,
+    PL_unify,
     Mark,
     Undo!,
     PL_global_data,
@@ -132,10 +131,10 @@ const DEPTH = 12
 const CELLS = 2^(DEPTH + 1) - 1                     # cells per tree: compounds + leaves
 const G1, G2 = _tree(DEPTH, () -> _a(:a)), _tree(DEPTH, () -> _a(:a))   # ground
 const V1, V2 = _tree(DEPTH, _v), _tree(DEPTH, _v)                       # 2^DEPTH variables each
-const LD = PL_local_data{BT}(PL_global_data{BT}())                                          # the unify cases' bindings
+const LD = PL_local_data{BT}(PL_global_data{BT}())                                          # the unify cases' engine
 
 "One attempt, as a search makes it: mark, unify, undo — swipl's `forall/2` undoes the same way."
-function _attempt(unify, a::BT, b::BT)::Bool
+function _attempt(unify, a::Int, b::Int)::Bool
     m = Mark(LD)
     r = unify(LD, a, b)
     Undo!(LD, m)
@@ -143,7 +142,7 @@ function _attempt(unify, a::BT, b::BT)::Bool
 end
 
 "The same attempt with the undo in a `finally`, as the clause enumerations make it."
-function _attempt_finally(unify, a::BT, b::BT)::Bool
+function _attempt_finally(unify, a::Int, b::Int)::Bool
     m = Mark(LD)
     try
         return unify(LD, a, b)
@@ -153,6 +152,27 @@ function _attempt_finally(unify, a::BT, b::BT)::Bool
 end
 
 const SMALL_A, SMALL_B = mk_expr(BT, BT[_a(:f), _v()]), mk_expr(BT, BT[_a(:f), _a(:a)])
+
+# the unify cases' terms on the CELLS (L1f f3: no term-level unification): each fixture put once
+# into its own term reference of LD — separate puts are separate variables, as swipl's G1 … V2 are
+const U_REFS = let r = LogicKernel.PL_new_term_refs(LD, 6)
+    for (i, t) in enumerate((G1, G2, V1, V2, SMALL_A, SMALL_B))
+        LogicKernel.putSlotValue!(LD, r + i, t)                    # term reference r + i - 1
+    end
+    r
+end
+const RG1, RG2, RV1, RV2, RSMALL_A, RSMALL_B = (U_REFS + i for i in 0:5)
+
+"`unify_with_occurs_check/2` on two term references: `=` with the `occurs_check` flag `true`."
+function _unify_occurs_check(ld::PL_local_data{BT}, a::Int, b::Int)::Bool
+    old = ld.prolog_flag_occurs_check
+    ld.prolog_flag_occurs_check = LogicKernel.OCCURS_CHECK_TRUE
+    try
+        return PL_unify(ld, a, b)
+    finally
+        ld.prolog_flag_occurs_check = old
+    end
+end
 
 # a dynamic predicate cp/2 of 1000 facts cp(I, a), for clause/2 — Prolog `cp/2` below
 const CP_GD = PL_global_data{BT}()
@@ -779,7 +799,7 @@ const WR_TERM = let
         NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, RD_PROC, a
     )
     @assert LogicKernel.PL_next_solution(NR_GD, NR_LD, qid) == LogicKernel.PL_S_TRUE
-    t = LogicKernel.resolve_term(NR_LD, LogicKernel.slotValue(NR_LD, a + 1))
+    t = LogicKernel.export_cells(NR_LD, LogicKernel.cell_export{BT}(), -(a + 1))  # off the cells
     LogicKernel.PL_close_query(NR_LD, qid)
     LogicKernel.PL_close_foreign_frame(NR_LD, fid)
     t
@@ -822,12 +842,12 @@ const CASES = [
     ("variant_sha1 vars", () -> pl_variant_sha1(V1), "variant_sha1(V1, _)"),
     ("variant_hash ground", () -> pl_variant_hash(G1), "variant_hash(G1, _)"),
     ("variant_hash vars", () -> pl_variant_hash(V1), "variant_hash(V1, _)"),
-    ("= ground", () -> _attempt(pl_unify!, G1, G2), "G1 = G2"),
-    ("= bind vars", () -> _attempt(pl_unify!, V1, G1), "V1 = G1"),
-    ("= var-var", () -> _attempt(pl_unify!, V1, V2), "V1 = V2"),
+    ("= ground", () -> _attempt(PL_unify, RG1, RG2), "G1 = G2"),
+    ("= bind vars", () -> _attempt(PL_unify, RV1, RG1), "V1 = G1"),
+    ("= var-var", () -> _attempt(PL_unify, RV1, RV2), "V1 = V2"),
     (
         "occurs-check bind vars",
-        () -> _attempt(pl_unify_with_occurs_check!, V1, G1),
+        () -> _attempt(_unify_occurs_check, RV1, RG1),
         "unify_with_occurs_check(V1, G1)"
     ),
     (
@@ -875,8 +895,8 @@ const CASES = [
     # Julia only (no swipl goal): the local stack's primitives
     ("1000 frames + choice points", () -> _stack_frames(ST_LD, 1000), ""),
     # Julia only (no swipl goal): what the `finally` around each enumeration step costs
-    ("attempt f(X)=f(a)", () -> _attempt(pl_unify!, SMALL_A, SMALL_B), ""),
-    ("attempt + finally", () -> _attempt_finally(pl_unify!, SMALL_A, SMALL_B), "")
+    ("attempt f(X)=f(a)", () -> _attempt(PL_unify, RSMALL_A, RSMALL_B), ""),
+    ("attempt + finally", () -> _attempt_finally(PL_unify, RSMALL_A, RSMALL_B), "")
 ]
 
 # ── the run loop in a FRESH process: first-call latency, compile time, dispatch (V4a) ───────────
@@ -1192,9 +1212,10 @@ const HOT = [
         LogicKernel.PL_next_solution_guarded,
         Tuple{PL_global_data{BT}, PL_local_data{BT}, Int, Bool}
     ),
-    "deRef" => (LogicKernel.deRef, Tuple{PL_local_data{BT}, BT}),
-    "do_unify" => (LogicKernel.do_unify, Tuple{PL_local_data{BT}, BT, BT}),
-    "compare" => (compareStandard, Tuple{PL_local_data{BT}, BT, BT, Bool}),
+    "deRef" => (LogicKernel._deref_loc, Tuple{PL_local_data{BT}, Int}),     # on the cells (L1f f3)
+    "do_unify" => (LogicKernel.do_unify_cells, Tuple{PL_local_data{BT}, Int, Int}),
+    "compare" =>
+        (LogicKernel.compareStandard_cells, Tuple{PL_local_data{BT}, Int, Int, Bool}),
     "newChoice" =>
         (LogicKernel.newChoice, Tuple{PL_local_data{BT}, LogicKernel.choice_type, Int}),
     "discardFrame" => (LogicKernel.discardFrame, Tuple{PL_local_data{BT}, Int})

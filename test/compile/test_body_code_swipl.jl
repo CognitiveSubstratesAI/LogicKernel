@@ -1531,8 +1531,9 @@ and clause/2 take term references (f3b-2b). The caller undoes the write (`Mark`/
 """
 function _bput(ld::LK.PL_local_data{_B}, xs::_B...)::Int
     t = LK.PL_new_term_refs(ld, length(xs))
+    pvm = LK.PutVarMap()                                      # one record: shared variables, one cell (Q3)
     for (i, x) in enumerate(xs)
-        LK.setSlotValue!(ld, t + i, x)                        # term reference t + (i - 1)
+        LK.putSlotValue!(ld, t + i, x, pvm)                   # term reference t + (i - 1)
     end
     return t
 end

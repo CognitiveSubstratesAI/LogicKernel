@@ -1,11 +1,11 @@
 # ORIGINAL: the clause index's argument view (V4a); upstream exercises it only through its VM.
 # test/db/test_index_argv.jl — upstream's index readers (`indexOfWord`, `canIndex`, `is_var`)
 # FOLLOW REFERENCES, so a BOUND argument keys by its value and narrows the search. The kernel's
-# key reader `_argv_key` dereferences through the bindings for both views of the arguments —
-# `argv_frame`, a frame's argument slots (what the VM passes, where a slot almost always holds a
-# variable bound to the argument; read on the WORDS since L1c sub-commit 5), and `argv_term`, a goal's
-# arguments (`argv_at`). Without the dereference no bound argument would narrow, and the determinism
-# the VM reports would differ from swipl's. TERM-GENERIC.
+# key reader `_argv_key` dereferences the cells of `argv_frame`, a frame's argument slots (what the
+# VM passes, where a slot almost always holds a variable bound to the argument; read on the WORDS
+# since L1c sub-commit 5); `argv_term`, a goal's arguments (`argv_at`), holds its values itself
+# since L1f f3 (no binding store beside the terms). Without the dereference no bound argument would
+# narrow, and the determinism the VM reports would differ from swipl's. TERM-GENERIC.
 using Test, LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -26,13 +26,10 @@ function _a_pred()
     return p
 end
 
-"The views of the call `p(a1, a2)`: the goal's arguments, and the same two in a frame's slots."
-function _a_views(ld, a1, a2)
-    base = LK.argFrameP(ld.lTop, 0)
-    pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
-    LK.putSlotValue!(ld, base + 1, a1, pvm)
-    LK.putSlotValue!(ld, base + 2, a2, pvm)
-    return (LK.argv_term(ld, mk_expr(_A, _A[_as(:p), a1, a2])), LK.argv_frame(ld, base))
+"The frame view of a call whose two arguments are fresh variables, held by two new term references."
+function _a_frame(ld)
+    r = LK.PL_new_term_refs(ld, 2)                          # the argument slots: fresh cells
+    return r, LK.argv_frame(ld, r)                          # argument i is term reference r + i
 end
 
 "The first candidate and whether a clause choice is left, as `S_STATIC` asks `firstClause`."
@@ -45,9 +42,13 @@ end
 @testset "a bound argument narrows the index: the arguments are read dereferenced" begin
     p = _a_pred()
     ld = p.db.ld
-    X, Y = mk_var(_A, UInt64(1)), mk_var(_A, UInt64(2))
-    LK.Trail!(ld, var_key(X), _ag(7))                       # X = 7, then call p(X, Y)
-    for argv in _a_views(ld, X, Y)
+    Y = mk_var(_A, UInt64(2))
+    # (L1f f3: the variables bound are the engine's cells, bound through their term references — until
+    # f3 a caller's keyed variable bound in the store, put into the slots and read through the store)
+    x, fv = _a_frame(ld)
+    @test LK.PL_unify_integer(ld, x, 7)                     # X = 7, then call p(X, Y)
+    # the goal term holds the value itself (since f3 no store to dereference through)
+    for argv in (LK.argv_term(ld, mk_expr(_A, _A[_as(:p), _ag(7), Y])), fv)
         # both views key the argument by its value, 7, and see no variable there
         @test LK._argv_key(argv, 0) == LK.indexOfWord(ld, _ag(7)) &&
             !LK._argv_is_var(argv, 0)
@@ -55,17 +56,16 @@ end
         @test c !== nothing && c.key == LK.indexOfWord(ld, _ag(7))  # the clause p(7, a) …
         @test !more                                             # … and no clause choice left
     end
-    @test only(ix_call(p, mk_expr(_A, _A[_as(:p), X, Y]))) |> last  # det, through ix_call too
-    # a chain of bindings is followed to its end: Z = X = 7
-    Z = mk_var(_A, UInt64(3))
-    LK.Trail!(ld, var_key(Z), X)
-    for argv in _a_views(ld, Z, Y)
-        c, more = _a_first(p, argv)
-        @test c !== nothing && c.key == LK.indexOfWord(ld, _ag(7)) && !more
-    end
+    @test only(ix_call(p, mk_expr(_A, _A[_as(:p), _ag(7), Y]))) |> last  # det, through ix_call too
+    # a chain of bindings is followed to its end: Z = X1 (the younger cell, Z's, points to X1's), then X1 = 7
+    x1 = LK.PL_new_term_ref(ld)
+    z, fz = _a_frame(ld)
+    @test LK.PL_unify(ld, z, x1) && LK.PL_unify_integer(ld, x1, 7)
+    c, more = _a_first(p, fz)
+    @test c !== nothing && c.key == LK.indexOfWord(ld, _ag(7)) && !more
     # unbound: every clause is a candidate, and a clause choice remains
-    W = mk_var(_A, UInt64(4))
-    for argv in _a_views(ld, W, Y)
+    for argv in (LK.argv_term(ld, mk_expr(_A, _A[_as(:p), mk_var(_A, UInt64(4)), Y])),
+        last(_a_frame(ld)))
         c, more = _a_first(p, argv)
         @test c !== nothing && more
     end

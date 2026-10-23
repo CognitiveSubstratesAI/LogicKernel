@@ -22,11 +22,18 @@ _e(xs::_TT...) = mk_expr(_TT, _TT[xs...])
         )
         @test all(l -> getfield(l, :children) === e, leaves)
         @test LogicKernel._no_children(Term{Float64}) !== e          # its own per term type
-        # a workload over those leaves: built into compounds, compared, hashed, unified
+        # a workload over those leaves: built into compounds, compared, hashed, put on the cells,
+        # unified there and read back (f3-3: until then unified on terms, `pl_unify!`)
         t = _e(_s(:f), leaves...)
         @test compareStandard(t, _e(_s(:f), leaves...)) == 0 && hash(t) == hash(t)
         ld = LogicKernel.PL_local_data{_TT}(LogicKernel.PL_global_data{_TT}())
-        @test LogicKernel.pl_unify!(ld, leaves[1], _e(_s(:g), leaves[2], _g(3)))
+        r = LogicKernel.PL_new_term_refs(ld, 2)
+        LogicKernel.putSlotValue!(ld, r + 1, leaves[1])
+        LogicKernel.putSlotValue!(ld, r + 2, _e(_s(:g), leaves[2], _g(3)))
+        @test LogicKernel.do_unify_cells(ld, -(r + 1), -(r + 2)) == LogicKernel.BOOLEX_TRUE
+        @test nchildren(
+            LogicKernel.export_cells(ld, LogicKernel.cell_export{_TT}(), -(r + 1))
+        ) == 3
         @test isempty(e) && all(l -> nchildren(l) == 0, leaves)
     end
 

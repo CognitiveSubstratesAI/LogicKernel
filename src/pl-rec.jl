@@ -31,10 +31,6 @@
 # when it is met, and a variable lives in the lowest of the cells that hold it (`copy_record`'s
 # "right direction"), so the standard order of two fresh variables is the order of those cells.
 #
-# TRANSITIONAL (F1-Q5, L1f f1d). The BOUNDARY — a keyed variable's value-table word, a slot's side
-# value — has no cell form: a term holding one is recorded on TERMS, by `copy_term`'s walk
-# (src/pl-copyterm.jl, its cyclic copies kept in the record), `gsize` 0; counted in `cold_pairs`.
-#
 # NOT PORTED: the rest of pl-rec.c — the recorded database (`recorda/3`, `recorded/3`, `erase/1`,
 # `instance/2`, the keys and their lists), external records (`PL_record_external`, the
 # `PL_TYPE_EXT_*` opcodes), `PL_record`, `PL_duplicate_record`, `variantRecords`, `term_complexity`,
@@ -134,9 +130,9 @@ end
 
 # PORT: pl-rec.c compile_term_to_heap
 # DIVERGES: on locations (`ld.walk_agenda`, dereferenced here); the cases of the kernel's words (see
-# the file header); false at the BOUNDARY (TRANSITIONAL) where upstream fails only for an external
-# record's blob. No attributed variable.
-"Compile the term of agenda `a` into `info` (pl-rec.c `compile_term_to_heap`); false at the boundary."
+# the file header); always true (upstream fails only for an external record's blob: not ported). No
+# attributed variable.
+"Compile the term of agenda `a` into `info` (pl-rec.c `compile_term_to_heap`)."
 function compile_term_to_heap(
     ld::PL_local_data{T}, a::cell_agenda, info::compile_info{T}
 )::Bool where {T}
@@ -145,10 +141,7 @@ function compile_term_to_heap(
         p == 0 && return true
         if p < 0                                            # the root: a slot
             w = ld.slots[-p]
-            if w == SLOT_VALUE                              # a side value (f3-1): a grounded one
-                kind(ld.slot_values[-p]) === GND || return false   # an indirect (below), any
-                w = _side_word(-p)                          # other the boundary
-            end
+            w == SLOT_VALUE && (w = _side_word(-p))         # a side value (f3-1): an indirect
         else
             w = ld.gstack[p]
         end
@@ -196,9 +189,7 @@ function compile_term_to_heap(
                 pushWorkCellAgenda!(a, arity, f + 1)
             end
         elseif _is_vword(w) || _is_side_word(w)             # an indirect (see the file header)
-            v = _indirect_value(ld, w)
-            kind(v) === VAR && return false                 # (the boundary: a keyed variable)
-            push!(info.values, v)
+            push!(info.values, _indirect_value(ld, w))
             info.size += 1                                  # (its box)
             addOpCode(info, PL_REC_VALUE)
             addSizeInt(info, length(info.values))
@@ -231,9 +222,9 @@ function restoreVars(ld::PL_local_data, info::compile_info)::Nothing
 end
 
 # PORT: pl-rec.c compileTermToHeap_ex as compileTermToHeap
-# DIVERGES: the record is the code with `gsize`, `nvars` and the indirects (see the file header); the
-# boundary is recorded on terms (TRANSITIONAL). NOT PORTED: `allocate` and `ctx` (the caller's
-# allocator) and `flags` (`R_NOLOCK`, `R_DUPLICATE`, `R_EXTERNAL`).
+# DIVERGES: the record is the code with `gsize`, `nvars` and the indirects (see the file header). NOT
+# PORTED: `allocate` and `ctx` (the caller's allocator) and `flags` (`R_NOLOCK`, `R_DUPLICATE`,
+# `R_EXTERNAL`).
 """
     compileTermToHeap(ld, t) -> record
 
@@ -248,12 +239,9 @@ function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
     clearCellAgenda!(a)
     restoreVars(ld, info)
     unvisit(ld, info)
-    if !rc                                                  # (TRANSITIONAL: the boundary)
-        ld.cold_pairs += 1
-        return _compileTermToHeap_terms(ld, t)
-    end
+    @assert rc                                              # (no external record: see above)
     info.code[1] == PL_TYPE_VARIABLE && (info.size += 1)    # (a root variable: its cell)
-    return record{T}(info.size, info.nvars, info.code, info.values, nothing, nothing)
+    return record{T}(info.size, info.nvars, info.code, info.values)
 end
 
 # PORT: pl-rec.c copy_info
@@ -406,8 +394,7 @@ end
 
 # PORT: pl-rec.c copyRecordToGlobal
 # DIVERGES: the block is `allocGlobalCells!`'s (it grows the stack on demand: `ensureGlobalSpace` is
-# the limit's check, see src/pl-alloc.jl); no `flags` (`ALLOW_GC`: no collector). A record on terms
-# (the boundary) is put back on terms (TRANSITIONAL).
+# the limit's check, see src/pl-alloc.jl); no `flags` (`ALLOW_GC`: no collector).
 """
     copyRecordToGlobal(ld, copy, r) -> Bool
 
@@ -417,106 +404,10 @@ overflow raised, when its cells do not fit.
 function copyRecordToGlobal(
     ld::PL_local_data{T}, copy::term_t, r::record{T}
 )::Bool where {T}
-    r.term === nothing || return _copyRecordToGlobal_terms(ld, copy, r)
     ensureGlobalSpace(ld, r.gsize) || return false
     gbase = r.gsize > 0 ? allocGlobalCells!(ld, r.gsize) : ld.gTop + 1   # gTop += r->gsize
     b = copy_info(1, zeros(Int, r.nvars), gbase, gbase)     # init_copy_vars
     copy_record(ld, copy + 1, r, b)
     @assert b.gstore == ld.gTop + 1                         # assert(b.gstore == gTop)
-    return true
-end
-
-# ── the boundary on terms (TRANSITIONAL, F1-Q5: L1f f1d) ─────────────────────────────────────────
-# ORIGINAL (TRANSITIONAL): the record of a term holding the boundary — the term's copy (`copy_term`,
-# ground subterms shared: a value cannot change), the bindings its cyclic copies made taken off the
-# trail into the record.
-"The record on terms of the term `t` references (the boundary: see the file header)."
-function _compileTermToHeap_terms(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
-    p = deRef(ld, slotValue(ld, t + 1))
-    m = Mark(ld)
-    ld.mark_bar = NO_MARK_BAR       # the harvest below reads the copy's bindings off the trail
-    c = copy_term(ld, p, cp_options(true))
-    if length(ld.trail) == m.trailtop
-        DiscardMark(ld, m)
-        return record{T}(0, 0, UInt8[], T[], c, nothing)
-    end
-    cycles = Tuple{UInt64, T}[]                     # the cyclic copies: w = r, and r holds w
-    for i in (m.trailtop + 1):length(ld.trail)
-        e = ld.trail[i]
-        isTrailVal(e) && continue                   # a value entry names no variable (L1b D)
-        key = _trail_key(ld, e)
-        push!(cycles, (key, deRef(ld, mk_var(T, key))))
-    end
-    Undo!(ld, m)
-    DiscardMark(ld, m)
-    return record{T}(0, 0, UInt8[], T[], c, cycles)
-end
-
-# The fresh variable of the record's variable `key`, made when first asked for.
-function _rec_var(ld::PL_local_data{T}, vars::Dict{UInt64, T}, key::UInt64)::T where {T}
-    w = get(vars, key, nothing)
-    w === nothing || return w
-    v = _cell_var(ld, allocGlobalCells!(ld, 1))
-    vars[key] = v
-    return v
-end
-
-# Give the variable arguments of compound `t` their fresh variables, in argument order.
-function _rec_block!(ld::PL_local_data{T}, vars::Dict{UInt64, T}, t::T)::Nothing where {T}
-    for i in 1:nchildren(t)
-        c = child(t, i)
-        kind(c) === VAR && _rec_var(ld, vars, var_key(c))
-    end
-    return nothing
-end
-
-# ORIGINAL (TRANSITIONAL): `copy_record` on terms — the term rebuilt with its variables renamed by
-# `vars` (a compound's variables made when it is met, its arguments then in order); a ground
-# subterm shared, not rebuilt.
-"The record's term `t` with its variables renamed by `vars`, fresh ones made as they are met."
-function _rec_copy(ld::PL_local_data{T}, vars::Dict{UInt64, T}, t::T)::T where {T}
-    k = kind(t)
-    k === VAR && return _rec_var(ld, vars, var_key(t))
-    (k !== EXPR || is_ground(t)) && return t
-    _rec_block!(ld, vars, t)
-    stack = Tuple{T, Vector{T}}[(t, T[])]           # (compound, its arguments copied so far)
-    while true
-        node, kids = stack[end]
-        i = length(kids) + 1
-        if i > nchildren(node)
-            pop!(stack)
-            r = mk_expr(T, kids)
-            isempty(stack) && return r
-            push!(stack[end][2], r)
-            continue
-        end
-        c = child(node, i)
-        kc = kind(c)
-        if kc === VAR
-            push!(kids, _rec_var(ld, vars, var_key(c)))
-        elseif kc === EXPR && !is_ground(c)
-            _rec_block!(ld, vars, c)
-            push!(stack, (c, T[]))
-        else
-            push!(kids, c)
-        end
-    end
-end
-
-# ORIGINAL (TRANSITIONAL): `copyRecordToGlobal` of a record on terms — a cyclic reference a fresh
-# variable bound (trailed) to the copy of its compound, as `copy_term`'s (src/pl-copyterm.jl).
-"Make term reference `copy` hold the term of record `r` on terms, its variables fresh."
-function _copyRecordToGlobal_terms(
-    ld::PL_local_data{T}, copy::term_t, r::record{T}
-)::Bool where {T}
-    vars = Dict{UInt64, T}()
-    setSlotValue!(ld, copy + 1, _rec_copy(ld, vars, r.term::T))
-    cycles = r.cycles
-    if cycles !== nothing
-        for (key, v) in cycles
-            w = _rec_var(ld, vars, key)
-            Trail!(ld, var_key(w), _rec_copy(ld, vars, v))
-        end
-    end
     return true
 end

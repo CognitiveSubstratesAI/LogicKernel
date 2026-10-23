@@ -86,65 +86,10 @@ end
 lookupModule(gd::PL_global_data{T}, name::T) where {T} =
     _lookupModule!(gd.modules, gd.code_data, name)
 
-# PORT: pl-modul.c stripModuleName
-# DIVERGES: returns `(ok, plain, name)` — `name` the last module's name, `nothing` when none — where
-# upstream returns the plain term (NULL on a cyclic term) and writes the name through `name`.
-"""
-    stripModuleName(ld, term) -> (ok, plain, name)
-
-Strip the `Module:` qualifiers off `term` while each `Module` is a text atom: the term left and the
-innermost module name (pl-modul.c). On a cyclic chain, `type_error(acyclic_term, …)` and `ok` false.
-"""
-function stripModuleName(
-    ld::PL_local_data{T}, term::T
-)::Tuple{Bool, T, Union{Nothing, T}} where {T}
-    depth = 100
-    term = deRef(ld, term)
-    nm::Union{Nothing, T} = nothing
-    while _hasFunctor(term, mk_sym(T, :(:)), 2)
-        mp = deRef(ld, child(term, 2))
-        isTextAtom(mp) || break
-        nm = mp
-        term = deRef(ld, child(term, 3))
-        depth -= 1
-        if depth == 0 && !is_acyclic(ld, term)
-            t = new_term_ref(ld)                    # pushWordAsTermRef(term)
-            setSlotValue!(ld, t + 1, term)
-            PL_error(ld, ERR_TYPE, mk_sym(T, :acyclic_term), t)
-            return (false, term, nm)
-        end
-    end
-    return (true, term, nm)
-end
-
-# PORT: pl-modul.c stripModule
-# DIVERGES: returns `(ok, plain, module)`, the module as its index into `gd`'s table. A term with no
-# qualifier gets the context module, which is `user`: every clause is `user`'s until R2's `module/2`
-# (`contextModule` reads frames' context modules, not ported). `lookupModule` refuses a module other
-# than `system` and `user` (`NotPortedError`, until R2).
-# NOT PORTED: `SM_NOCREATE` (`flags`): its callers are not ported.
-"""
-    stripModule(gd, ld, term) -> (ok, plain, module)
-
-The plain term under `term`'s module qualifiers, and the module it names — the context module,
-`user`, when none (pl-modul.c).
-"""
-function stripModule(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, term::T
-)::Tuple{Bool, T, Int} where {T}
-    ok, rc, mname = stripModuleName(ld, term)
-    m = MODULE_user(gd).index                       # (environment_frame ? contextModule(…) : user)
-    if ok && mname !== nothing
-        m = lookupModule(gd, mname).index
-    end
-    return (ok, rc, m)
-end
-
 # PORT: pl-modul.c stripModuleName as stripModuleName_cells
 # DIVERGES: on a LOCATION (L1e e2; src/pl-prims.jl `_deref_loc`): returns `(ok, (kind, word, position), name)`
 # — the plain term dereferenced, as `_deref_loc` gives it, and the innermost module's atom WORD (0: none);
-# the 100-step cyclic check is `is_acyclic_cells`. A module at the boundary (`DU_TERM`) returns the plain
-# term as `(DU_TERM, 0, 0)`: the caller strips the whole term on terms (`stripModule`), counted.
+# the 100-step cyclic check is `is_acyclic_cells`.
 "Strip `Module:` qualifiers off the term at location `l` while each `Module` is a text atom (pl-modul.c)."
 function stripModuleName_cells(
     ld::PL_local_data{T}, l::Int
@@ -155,7 +100,6 @@ function stripModuleName_cells(
     nm = word(0)
     while k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == colon2   # hasFunctor(*term, FUNCTOR_colon2)
         mk, mw, _ = _deref_loc(ld, valPtr(w) + 1)           # mp = argTermP(*term, 0); deRef(mp)
-        mk == DU_TERM && return (true, (DU_TERM, word(0), 0), word(0))  # the boundary: strip on terms
         (mk == DU_WORD && isAtomW(mw) && isTextAtom(_atom_value(ld, mw))) || break   # isTextAtom(*mp)
         nm = mw
         q = valPtr(w) + 2                                   # term = argTermP(*term, 1); deRef(term)
@@ -173,8 +117,11 @@ function stripModuleName_cells(
 end
 
 # PORT: pl-modul.c stripModule as stripModule_cells
-# DIVERGES: on a location, as `stripModuleName_cells`; the module an index into `gd`'s table, the context
-# module `user` when none (see `stripModule`). NOT PORTED: `SM_NOCREATE`.
+# DIVERGES: on a location, as `stripModuleName_cells`; returns `(ok, plain, module)`, the module as its
+# index into `gd`'s table. A term with no qualifier gets the context module, which is `user`: every
+# clause is `user`'s until R2's `module/2` (`contextModule` reads frames' context modules, not
+# ported). `lookupModule` refuses a module other than `system` and `user` (`NotPortedError`, until
+# R2). NOT PORTED: `SM_NOCREATE` (`flags`): its callers are not ported.
 "The plain term under the qualifiers at location `l` (`(kind, word, position)`) and the module it names (pl-modul.c)."
 function stripModule_cells(
     gd::PL_global_data{T}, ld::PL_local_data{T}, l::Int

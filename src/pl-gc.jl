@@ -41,7 +41,7 @@ function markPredicatesInEnvironments!(
 end
 
 # PORT: pl-gc.c makeMoreStackSpace
-# DIVERGES (L1f f1b): no collector (`garbageCollect`, `ALLOW_GC`) and no global or trail stack to grow —
+# DIVERGES (since L1f f1b): no collector (`garbageCollect`, `ALLOW_GC`) and no global or trail stack to grow —
 # they grow on demand, so their callers (`allocGlobalNoShift`) were refused for the LIMIT, which growing
 # cannot pass: the overflow is raised and false returned, as upstream's when `growStacks` fails. Upstream's
 # first case — while an exception is processed, the stack's spare enabled — cannot arise: nothing is refused
@@ -87,7 +87,7 @@ function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
 end
 
 # PORT: pl-gc.c growStacks as growStacks_trim!
-# DIVERGES (L1f f1b, audit D-0049): upstream's GROW_TRIM request (trimStacks(resize), after an overflow) alone.
+# DIVERGES (since L1f f1b, audit D-0049): upstream's GROW_TRIM request (trimStacks(resize), after an overflow) alone.
 # The global stack and the trail are sized by their use here, so only their spares take part — included
 # (`include_spare_stack`: the spare released) and re-reserved (`reenable_spare_stack`: `trim_stack`). The local
 # stack shrinks to `nextStackSize(s, GROW_TRIM)`: the next size above its use, `min_free` (LOCAL_MARGIN) and
@@ -122,7 +122,7 @@ const EMERGENCY_LIMIT = (1024 * 1024) ÷ 8
 function _resize_local!(ld::PL_local_data{T}, size::Int)::Nothing where {T}
     n = length(ld.slots)
     if n < size                                     # never read before they are written: the
-        resize!(ld.slots, size)                     # words start as 0, which `slotValue` refuses
+        resize!(ld.slots, size)                     # words start as 0, which the readers refuse
         resize!(ld.slot_values, size)
         fill!(view(ld.slots, (n + 1):size), word(0))
     end

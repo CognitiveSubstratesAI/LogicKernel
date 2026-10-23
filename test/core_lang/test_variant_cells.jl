@@ -7,8 +7,7 @@
 #     shared subterms through a binding, cyclic terms (one cycle, two mutually recursive, with variables),
 #     SWI's numeric identity (`1 =@= 1.0` fails), a long list;
 #   * white-box: after every check the side vector is all zero and the node and work stacks empty;
-#   * the boundary: a keyed variable's binding is checked on terms, COUNTED, with the right answer;
-#   * the meter: `=@=` on two terms on the stack makes no cold export, import or variable read.
+#   * the meter: `=@=` on two terms on the stack makes no cold import.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -124,7 +123,7 @@ function _vt_engine(vs::Vector{_R}; pvm=LK.PutVarMap())
     end
     return ld, t
 end
-_vt_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_vt_counts(ld) = ld.cold_imports        # (the export/variable/pair meters went with the keyed variables, f3)
 "Nothing left numbered: the side vector all zero, the node and work stacks empty."
 _vt_clean(ld) =
     all(iszero, ld.vt_ids) && isempty(ld.vt_nodes) && isempty(ld.vt_agenda.stack)
@@ -143,19 +142,6 @@ _vt_check(ld, t, i, j) = LK.is_variant_ptr_cells(ld, -(t + i), -(t + j))
     @test !_vt_check(ld, t, 1, 3)
     @test _vt_clean(ld)
     @test _vt_check(ld, t, 2, 1)                     # a second check sees no stale number
-    @test _vt_clean(ld)
-end
-
-@testset "the boundary: a keyed variable's binding, checked on terms, counted" begin
-    ld, t = _vt_engine(_R[_rs("x"), _rf("f", _rf("g", _rv(8)), _rs("a"))])
-    kv = lk_var(_R, UInt64(4741))
-    # f(kv, a), kv a value-table word holding the keyed variable (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
-    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a")))
-    ld.gstack[LK.valPtr(ld.slots[t + 1]) + 1] = lk_boundary_word!(ld, kv)
-    LK.Trail!(ld, var_key(kv), _rf("g", _rv(7)))
-    p0 = ld.cold_pairs
-    @test _vt_check(ld, t, 1, 2)
-    @test ld.cold_pairs > p0
     @test _vt_clean(ld)
 end
 

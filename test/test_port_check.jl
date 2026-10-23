@@ -760,7 +760,7 @@ end
 @testset "the L1 ratchet: direct ld.bindings sites" begin
     root = joinpath(@__DIR__, "..")
     real = bindings_direct_sites(root)
-    @test length(real) == BINDINGS_DIRECT_MAX > 0                   # both sides non-empty
+    @test length(real) == BINDINGS_DIRECT_MAX == 0                  # L1f f3: the store is gone (the fixture below is the non-empty side)
     @test bindings_verdict(real, BINDINGS_DIRECT_MAX) === nothing
     mktempdir() do d
         mkpath(joinpath(d, "src", "os"))
@@ -792,9 +792,9 @@ end
 @testset "the stamp ratchet: transitional cell-key sites, zero at L1f" begin
     root = joinpath(@__DIR__, "..")
     real = stamp_sites(root)
-    @test length(real) == STAMP_SITES_MAX > 0                       # both sides non-empty
+    @test length(real) == STAMP_SITES_MAX == 0                      # L1f f3: zero (the fixture below is the non-empty side)
     inv = read(joinpath(root, "docs", "port_inventory.md"), String)
-    @test !l1f_done(inv)                                            # L1f is not done yet
+    @test l1f_done(inv)                                             # L1f is DONE (2026-10-23)
     @test stamp_verdict(real, STAMP_SITES_MAX, l1f_done(inv)) === nothing
     mktempdir() do d
         mkpath(joinpath(d, "src", "os"))

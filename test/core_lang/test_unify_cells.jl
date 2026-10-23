@@ -15,11 +15,11 @@
 #     fails, and every functor cell holds its functor word again afterwards (`exitCyclic`);
 #   * Q2 (user, 2026-10-04; kernel-only, swipl cannot read `(X a)`): `(X a) = f(a)` binds `X = f` in
 #     both orders, `(X a) = f(a, b)` fails, a `$expr/3` against a list cell;
-#   * the boundary: a KEYED variable (a value with no word form, until the stamp falls) on either
-#     side is bound on terms;
 #   * the meter (condition 3 of the L1c plan): a head unification of a list against a slot makes NO
-#     cold export — `cold_exports` unchanged across the call (the flatness pin of test_rules_swipl.jl
-#     moves from `6n + 7` to `6n + 4` with this step).
+#     cold export — the slot references the list itself (until L1f f3 also `cold_exports` unchanged
+#     across the call; the flatness pin of test_rules_swipl.jl moved from `6n + 7` to `6n + 4` with
+#     this step). The boundary testset (a KEYED variable on either side, bound on terms) went with the
+#     keyed variables in f3.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -234,29 +234,6 @@ end
     @test lk_eq(child(r, 1), _rs("[|]")) && lk_eq(child(r, 3), _rlist(_rs("b")))
 end
 
-@testset "the boundary: a keyed variable on either side is bound on terms" begin
-    db, ld, t = _uc_engine(3)
-    kv = lk_var(_R, UInt64(4242))                                  # a KEYED variable: no cell
-    lk_side_value!(ld, t + 1, kv)                                  # a slot's side value (built since L1f f3b-1)
-    LK.putSlotValue!(ld, t + 2, _rs("a"))
-    @test LK.do_unify_cells(ld, -(t + 1), -(t + 2)) == LK.BOOLEX_TRUE
-    @test lk_eq(LK.deRef(ld, kv), _rs("a"))                        # bound in the store
-    m = LK.Mark(ld)
-    lk_side_value!(ld, t + 1, lk_var(_R, UInt64(4243)))
-    LK.putSlotValue!(ld, t + 3, _rf("f", _rv(1)))
-    @test LK.do_unify_cells(ld, -(t + 3), -(t + 1)) == LK.BOOLEX_TRUE   # a compound against a keyed variable
-    @test lk_eq(LK.resolve_term(ld, LK.deRef(ld, lk_var(_R, UInt64(4243)))),
-        LK.resolve_term(ld, LK.slotValue(ld, t + 3)))
-    LK.Undo!(ld, m)
-    # a cell bound to a keyed variable: a value-table word; unified with an atom, the keyed variable is bound
-    # (the word laid by hand since L1f f3b-1: `Trail!` → `_word_of!` binds a keyed variable to a fresh cell)
-    LK.putSlotValue!(ld, t + 1, _rv(7))
-    ld.gstack[LK.unRef(ld.slots[t + 1])] = lk_boundary_word!(ld, lk_var(_R, UInt64(4244)))
-    LK.putSlotValue!(ld, t + 2, _rs("b"))
-    @test LK.do_unify_cells(ld, -(t + 1), -(t + 2)) == LK.BOOLEX_TRUE
-    @test lk_eq(LK.deRef(ld, lk_var(_R, UInt64(4244))), _rs("b"))
-end
-
 @testset "the meter: a head unification of a list makes no cold export" begin
     db = _rdb(_uc_clauses())
     ld = db.ld
@@ -265,13 +242,11 @@ end
     args = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, args + 1, child(goal, 2))
     LK.putSlotValue!(ld, args + 2, child(goal, 3))
-    e0 = ld.cold_exports
     qid = LK.PL_open_query(
         db.gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS, _rproc(db, goal), args
     )
     rc = LK.PL_next_solution(db.gd, ld, qid)
     @test rc == LK.PL_S_LAST
-    @test ld.cold_exports == e0                                    # H_VAR unified on the cells
     @test ld.slots[args + 2] == ld.slots[args + 1] ||              # R references the list itself …
         (
         LK.isRef(ld.slots[args + 2]) &&

@@ -27,14 +27,23 @@ _dall(p::IxPred{_D}, name::Symbol) = _de(name, (_dv() for _ in 1:(p.def.arity)).
 """
 The built-in `name`/1 (`assert`, `assertz`, `asserta`) of database `db` called on `arg` through the
 query API: `(rc, ball)` — the return code, and the error term raised (`PL_exception`), resolved, or
-`nothing`.
+`nothing`. With `bind = X => T`, `X = T` is unified on the cells first, `X` shared with `arg`.
 """
-function _dassert(db::IxDB{_D}, name::String, arg::_D)
+function _dassert(
+    db::IxDB{_D}, name::String, arg::_D; bind::Union{Nothing, Pair}=nothing
+)
     gd, ld = db.gd, db.ld
     proc = LK.isCurrentProcedure(sym_key(_ds(name)), 1, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 1)
-    LK.putSlotValue!(ld, a + 1, arg)
+    pvm = LK.PutVarMap()                    # one record: `arg` and the binding share their variables
+    LK.putSlotValue!(ld, a + 1, arg, pvm)
+    if bind !== nothing
+        b = LK.PL_new_term_refs(ld, 2)
+        LK.putSlotValue!(ld, b + 1, first(bind), pvm)
+        LK.putSlotValue!(ld, b + 2, last(bind), pvm)
+        @test LK.PL_unify(ld, b, b + 1)
+    end
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
@@ -61,12 +70,13 @@ _derror(r, formal::_D) =
     cyclic = _de(:representation_error, _ds(:cyclic_term))
     maxarity = _de(:representation_error, _ds(:max_procedure_arity))
     "`X = Term(X)` under the default `occurs_check` (sto(rational_trees)), then `assert(Clause(X))`."
+    # (L1f f3: `X = Term(X)` bound on the cells — until then a keyed variable bound in the store by
+    # the term `pl_unify!`)
     function cyclic_assert(term, clause)
         X = _dv()
         m = LK.Mark(db.ld)
         try
-            @test LK.pl_unify!(db.ld, X, term(X))
-            return _dassert(db, "assert", clause(X))
+            return _dassert(db, "assert", clause(X); bind=X => term(X))
         finally
             LK.Undo!(db.ld, m)
         end

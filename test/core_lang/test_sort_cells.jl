@@ -7,8 +7,8 @@
 #     duplicates, keysort's stability, variables (the standard order of variables: by age), a variable item
 #     in the result (the head a reference: binding it binds the original), a cyclic list under sort/2, and
 #     the errors — a partial list, a non-list, a non-pair element;
-#   * the boundary: a keyed variable's binding as an item, sorted on terms, counted;
-#   * the meter: sorting a list on the stack makes no cold export, import or variable read.
+#   * the meter: sorting a list on the stack makes no cold import (until L1f f3 also no cold export or
+#     variable read, and the boundary — a keyed variable's binding as an item, sorted on terms, counted).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -118,22 +118,7 @@ function _st_engine(vs::Vector{_R}; pvm=LK.PutVarMap())
     end
     return ld, t
 end
-_st_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
-
-@testset "the boundary: a keyed variable's binding as an item, sorted on terms, counted" begin
-    ld, t = _st_engine(_R[_rs("x"), _rv(9)])
-    kv = lk_var(_R, UInt64(4741))
-    # [b, kv, a], kv a value-table word holding the keyed variable (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
-    LK.setSlotValue!(ld, t + 1, _rlist(_rs("b"), _rs("x"), _rs("a")))
-    q2 = LK.valPtr(ld.gstack[LK.valPtr(ld.slots[t + 1]) + 2])     # the second list cell
-    ld.gstack[q2 + 1] = lk_boundary_word!(ld, kv)
-    LK.Trail!(ld, var_key(kv), _rs("c"))
-    p0 = ld.cold_pairs
-    @test LK.pl_nat_sort(ld, t, t + 1, true, LK.SORT_ASC, false)
-    @test ld.cold_pairs > p0
-    r = LK.resolve_term(ld, LK.slotValue(ld, t + 2))
-    @test LK.compareStandard(r, _rlist(_rs("a"), _rs("b"), _rs("c")), true) == LK.CMP_EQUAL
-end
+_st_counts(ld) = ld.cold_imports        # (the export/variable/pair meters went with the keyed variables, f3)
 
 @testset "the meter: sorting a list on the stack makes no cold export, import or variable read" begin
     X, Y = _rv(1), _rv(2)

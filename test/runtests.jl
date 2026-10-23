@@ -211,19 +211,9 @@ Test.@with_testset LK_TS begin
     # threading"): what one process running the units as threads would pay ONCE, and three cold
     # processes pay three times. Julia's own counter, as `@time` reports it.
     Base.cumulative_compile_timing(true)
-    # the white-box files that build a slot side entry holding a keyed variable on purpose (f3-1's
-    # meter is exempt there; each goes with the keyed variables in f3)
-    LK_SIDE_BOUNDARY_WHITE_BOX = Set([
-        "core_lang/test_acyclic_cells.jl", "core_lang/test_arith_cells.jl",
-        "core_lang/test_compare_cells.jl", "core_lang/test_constant_words.jl",
-        "core_lang/test_fli_words.jl", "core_lang/test_index_words.jl",
-        "core_lang/test_occurs_cells.jl", "core_lang/test_slot_words.jl",
-        "core_lang/test_unify_cells.jl", "core_lang/test_write_cells.jl"
-    ])
     ran_rows = Tuple{String, Int, Int, Float64}[]      # (label, passed, broken, seconds): UNITS_OUT
     for (i, (f, impl, label)) in enumerate(LK_RUN)
         LK_SHARD && !lk_claim(i) && continue                   # another shard took it
-        side0 = LogicKernel._DU_TERM_SIDE[]                    # f3-1: the side-boundary meter
         t0 = time_ns()
         c0 = Base.cumulative_compile_time_ns()[1]
         uts = @testset "$label" begin
@@ -239,13 +229,6 @@ Test.@with_testset LK_TS begin
             # The leaves' ONE shared empty child vector (src/default_term.jl `_no_children`; user,
             # 2026-10-05) is still empty: every unit is a workload for "nothing pushes to it".
             @test isempty(LogicKernel._no_children(LogicKernel.DefaultTerm))
-            # f3-1 (audit D-0110 item 2): since f3-1 a slot's GROUNDED side value is read as a
-            # value, so no unit hands a side value out as the boundary (`DU_TERM`) — except the
-            # white-box files that build a side entry holding a keyed variable on purpose
-            # (`lk_side_value!`, `_slot_store_value!`); a reader that still took the boundary for a
-            # grounded side value fails here, in the unit that reached it
-            relpath(f, LK_TEST_DIR) in LK_SIDE_BOUNDARY_WHITE_BOX ||
-                @test LogicKernel._DU_TERM_SIDE[] == side0
         end
         secs = (time_ns() - t0) / 1e9
         csecs = (Base.cumulative_compile_time_ns()[1] - c0) / 1e9
@@ -283,9 +266,6 @@ Test.@with_testset LK_TS begin
     # units, so it writes its counts and the coordinator checks their SUM.
     s = Main.LKAltTerm.alt_stats()
     println("  AltTerm: ", s)            # how much sharing the [alt_interned] runs exercised
-    # L1c's cold traffic over the run (user, 2026-10-15): the compound terms the export memo made —
-    # every one a compound read as a term by a reader not yet on words (a shard reports its own)
-    println("  L1c cold export: ", LogicKernel._COLD_EXPORT_TERMS[], " compound terms made")
     if LK_SHARD
         write(joinpath(LK_SHARD_DIR, "stats_$LK_SHARD_ID"),
             "$(s.compounds_plain) $(s.compounds_interned) $(s.shared)\n")

@@ -15,9 +15,11 @@
 #     program); a fresh variable's name differs between the systems (`_` and a number), so each is renamed by
 #     its first occurrence on both sides before the texts are compared;
 #   * kernel-only cases: a `$expr/n` compound (no symbol head — swipl has no such term), its text pinned; the
-#     boundary (a slot's side value, a keyed variable), written as the same term on the cells, counted;
+#     terms the boundary testset wrote (`'$VAR'` arguments, a shared variable) written on the cells, pinned
+#     (until L1f f3 also the boundary itself: a slot's side value and a keyed variable, counted);
 #   * the meter: writeq of an operator term, a list and a nested compound in a loop to a null stream — the
-#     cold exports, imports, variable reads and boundary pairs PINNED: none since 7b phase 2.
+#     cold imports PINNED: none (until L1f f3 also the exports, variable reads and boundary pairs: none
+#     since 7b phase 2).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -331,13 +333,12 @@ const _WC_EXPR_PIN = (
     @test _wc_write(ld, t, 0) == _WC_EXPR_PIN[3]
 end
 
-# ── the boundary: a slot's side value and a keyed variable (kernel-only, TRANSITIONAL until L1f) ──
-# A term reference whose slot holds a SIDE VALUE (`SLOT_VALUE`: the exception's ball, a value with no word)
-# and a KEYED variable (no cell): the writer's word path meets `DU_TERM` and reads it as its term, counted in
-# `cold_pairs` (varName, writePrimitive's value, writeNumberVar's root and argument, the FLI readers). The
-# text is the same term's put on the cells (`putSlotValue!`), compared whole (the variable names renamed).
-# 2026-10-18 L1d 7b: the writer on term references — the boundary case (mutant: its fallback skipped).
-@testset "the boundary: a side value and a keyed variable, written as on the cells, counted" begin
+# ── the terms of the boundary case, on the cells (kernel-only) ───────────────────────────────────
+# Until L1f f3 a term reference whose slot held a SIDE VALUE (a value with no word) or a KEYED variable (no
+# cell) was written through `DU_TERM`, as its term, counted in `cold_pairs`, and compared with the same term
+# put on the cells; the boundary went with the keyed variables, the cells' text stays pinned (the variable
+# names renamed).
+@testset "the boundary's terms, written on the cells" begin
     kv = lk_var(_R, UInt64(4743))
     v1 = _rf(
         "f", kv, _rf("\$VAR", _rg(1)), _rg("s"), _rg(1.5), _rs("a"), _rf("g", kv),
@@ -349,21 +350,6 @@ end
     ld, t = _wc_engine(_R[v1, v2, v3])                  # on the cells
     cells = [_wc_norm(_wc_write(ld, t + i, flags)) for i in 0:2]
     @test cells == ["f(_V1,B,\"s\",1.5,a,g(_V1),[_V1|_V2])", "B", "Foo"]
-    ld, t = _wc_engine(_R[_rs("x"), _rs("x"), _rs("x")])
-    for (i, v) in enumerate((v1, v2, v3))
-        LK._slot_store_value!(ld, t + i, v)            # the side value: no word
-    end
-    # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3. Was
-    # `== cells[i + 1]` for all three — on the boundary path the side value's keyed variable kv, met
-    # three times, is now three variables (each occurrence a write of its own, a fresh cell), where
-    # the put on the cells keeps it one: `g(_V2)`, `[_V3|_V4]` for `g(_V1)`, `[_V1|_V2]`
-    boundary = ["f(_V1,B,\"s\",1.5,a,g(_V2),[_V3|_V4])", cells[2], cells[3]]
-    for i in 0:2
-        @test ld.slots[t + i + 1] == LK.SLOT_VALUE
-        p0 = ld.cold_pairs
-        @test _wc_norm(_wc_write(ld, t + i, flags)) == boundary[i + 1]
-        @test ld.cold_pairs > p0                        # the boundary, counted
-    end
 end
 
 # ── the meter ───────────────────────────────────────────────────────────────────────────────────
@@ -378,7 +364,7 @@ ne_loop(0) :- !.
 ne_loop(N) :- writeq(f(g(h(a), [b]), k(1, l(m)))), N1 is N - 1, ne_loop(N1).
 ne_top :- ne_loop(50).
 """
-_wc_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_wc_counts(ld) = ld.cold_imports        # (the export/variable/pair meters went with the keyed variables, f3)
 
 "Run `name/0` once through the query API; the return code."
 function _wc_meter_run(db::_RDB, name::Symbol)::Int
@@ -391,16 +377,9 @@ function _wc_meter_run(db::_RDB, name::Symbol)::Int
     return rc
 end
 
-# the second call's traffic per loop (exports, imports, variable reads, boundary pairs), 50 iterations:
-# MEASURED 2026-10-18 on 7a's tree — all the WRITER's (it read the term as terms: each compound a cold
-# export): op_top (500, 0, 500, 0), li_top (350, 0, 400, 0), ne_top (600, 0, 500, 0).
-# 2026-10-18 L1d 7b: the writer on term references — none left.
-const _WC_METER_PIN = Dict(
-    :op_top => (0, 0, 0, 0),
-    :li_top => (0, 0, 0, 0),
-    :ne_top => (0, 0, 0, 0)
-)
-
+# the second call's imports per loop, 50 iterations: none (until L1f f3 the pin was the four meters'
+# `(0, 0, 0, 0)` per loop — the writer on term references since L1d 7b; MEASURED on 7a's tree: op_top
+# (500, 0, 500, 0), li_top (350, 0, 400, 0), ne_top (600, 0, 500, 0)).
 @testset "the meter: writeq of an operator term, a list, a nested compound (no boundary traffic)" begin
     db = _wc_load(_WC_METER)
     LK.set_standard_stream!(db.ld, LK.SNO_USER_OUTPUT, IOBuffer())  # the null stream
@@ -408,8 +387,6 @@ const _WC_METER_PIN = Dict(
         @test _wc_meter_run(db, name) == LK.PL_S_TRUE
         c1 = _wc_counts(db.ld)
         @test _wc_meter_run(db, name) == LK.PL_S_TRUE
-        d = _wc_counts(db.ld) .- c1
-        @info "$name: the second call's boundary traffic (exports, imports, variable reads, pairs)" d
-        @test d == _WC_METER_PIN[name]
+        @test _wc_counts(db.ld) == c1
     end
 end

@@ -479,7 +479,6 @@ mutable struct write_options{T}
     k_minus::UInt64                 # ATOM_minus
     k_fdot::UInt64                  # '.'
     k_divide::UInt64                # ATOM_divide
-    k_isovar::UInt64                # FUNCTOR_isovar1's name, '$VAR'
     isovar_fw::UInt64               # FUNCTOR_isovar1, '$VAR'/1's functor word
 end
 
@@ -496,7 +495,7 @@ function write_options(
         sym_key(mk_sym(T, Symbol("{}"))), sym_key(mk_sym(T, Symbol("[|]"))),
         sym_key(mk_sym(T, Symbol(","))), sym_key(mk_sym(T, Symbol("|"))),
         sym_key(mk_sym(T, Symbol("-"))), sym_key(mk_sym(T, Symbol("."))),
-        sym_key(mk_sym(T, Symbol("/"))), sym_key(mk_sym(T, Symbol("\$VAR"))),
+        sym_key(mk_sym(T, Symbol("/"))),
         lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, Symbol("\$VAR"))), 1)
     )
 end
@@ -902,14 +901,12 @@ end
 
 # ORIGINAL: the VALUE a number's or a string's term reference holds, read once on its word (L1d step
 # 7b) — where upstream's `PL_get_number` and `PL_get_text` read the indirect: a value word's value
-# (`_value_term`: a tagged integer's term, or the value-table entry); the boundary (a slot's side
-# value, a keyed variable's binding) read as its term, counted in `cold_pairs`.
+# (`_value_term`: a tagged integer's term, or the value-table entry, a slot's side value too).
 "The number or string term reference `t` holds, as a term (the value read on its word)."
 function _wr_value(ld::PL_local_data{T}, t::term_t)::T where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     k == DU_VALUE && return _value_term(ld, w)
-    k == DU_TERM && (ld.cold_pairs += 1)                    # the boundary: on the term
-    return deRef(ld, _loc_term(ld, k, w, p))
+    throw(_slot_word_error(w))
 end
 
 # PORT: pl-write.c writeString
@@ -999,15 +996,12 @@ end
 # PORT: pl-write.c varName
 # DIVERGES: `var_name_ptr` on the location (L1d step 7b): an unbound cell is named by its POSITION,
 # `(p - gBase)*2` with the first cell at `gBase` (F3B f3b-2 — by its key before); there is no
-# `(p - lBase)*2+1` branch, as only global cells are unbound here (a slot references one). The
-# boundary's keyed variable keeps its key, read as its term and counted in `cold_pairs` (gone with
-# the stamp in f3): a kernel key is >= 2^63, so it never clashes with a position's number.
+# `(p - lBase)*2+1` branch, as only global cells are unbound here (a slot references one).
 "The name the unbound variable term reference `t` holds is written by: `_<number>` (pl-write.c)."
 function varName(ld::PL_local_data{T}, t::term_t)::String where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
+    k, _, p = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
     k == DU_CELL && return "_" * string((p - 1) * 2)        # iref = ((Word)p - (Word)gBase)*2
-    ld.cold_pairs += 1                                      # the boundary: on the term
-    return "_" * string(var_key(deRef(ld, _loc_term(ld, k, w, p))))
+    error("varName: not an unbound variable")
 end
 
 # PORT: pl-write.c writePrimitive
@@ -1032,80 +1026,35 @@ function writePrimitive(t::term_t, options::write_options{T})::Bool where {T}
     )
 end
 
-# Whether the `'$VAR'` term `t0` reaches — `t0` before it is dereferenced — was made since the
-# numbervars frame opened (upstream: the compound lies above the frame's global-stack mark). Such a
-# term is made by `bind_varnames` (or write_canonical's numbering) and is reached only through a
-# variable bound since the frame opened: the last variable of `t0`'s chain is trailed above the
-# frame's trail mark. A `'$VAR'` written in the term itself, or reached through an older binding,
-# is older. TRANSITIONAL (L1d step 7b): only for a `'$VAR'` that is no compound on the stack (the
-# boundary: a slot's side value, a keyed variable's binding) — `writeNumberVar` compares the functor
-# cell's position with the frame's mark, as upstream; this goes with the keyed variables (L1f).
-function _numbervars_newer(ld::PL_local_data{T}, t0::T)::Bool where {T}
-    fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
-    top = ld.fliframes[fr].mark.trailtop
-    bound = false
-    last = UInt64(0)
-    while kind(t0) === VAR
-        v = _binding(ld, var_key(t0))
-        v === nothing && break
-        bound = true
-        last = var_key(t0)
-        t0 = v
-    end
-    bound || return false
-    for i in (top + 1):length(ld.trail)
-        e = ld.trail[i]
-        isTrailVal(e) && continue                   # a value entry names no variable (L1b D)
-        _trail_key(ld, e) == last && return true
-    end
-    return false
-end
-
 # PORT: pl-write.c writeNumberVar
 # DIVERGES: on the WORDS (L1d step 7b): the functor cell's position compared with the frame's mark
 # as `fr->mark.globaltop >= f` — upstream's `fr->mark.globaltop > f` on addresses (an exclusive top)
 # is ours on positions (gTop is the LAST used cell, inclusive); the argument's value read on its
-# word (an atom's symbol, a value's term: `_loc_term`, no export). THE BOUNDARY (a slot's side
-# value, a keyed variable's binding — `DU_TERM`) is read as its term, counted in `cold_pairs`, its
-# '$VAR' older unless `_numbervars_newer` finds it bound since the frame opened (TRANSITIONAL, L1f).
-# No var_prefix (`out_var_prefix` is 0). The atom `quoted(false)` writes is written with the
-# write's options, its flag cleared and restored, where upstream writes it with a copy (`o2`) — so
-# `truncated` is restored too.
+# word (an atom's symbol, a value's term: no export). No var_prefix (`out_var_prefix` is 0). The
+# atom `quoted(false)` writes is written with the write's options, its flag cleared and restored,
+# where upstream writes it with a copy (`o2`) — so `truncated` is restored too.
 "Write `'\$VAR'(N)` term reference `t` holds as a variable name: 1 (written), 0 (not such a term), -1 (error) (pl-write.c)."
 function writeNumberVar(t::term_t, options::write_options{T})::Int where {T}
     ld = options.ld
-    k, w, q = _deref_loc(ld, -(t + 1))              # Word p = valTermRef(t); deRef(p)
+    k, w, _ = _deref_loc(ld, -(t + 1))              # Word p = valTermRef(t); deRef(p)
 
-    if k == DU_TERM                                 # the boundary: on the term (TRANSITIONAL)
-        ld.cold_pairs += 1
-        v = deRef(ld, _loc_term(ld, k, w, q))
-        kind(v) === EXPR || return 0
-        (nchildren(v) == 2 && _is_text_atom_key(child(v, 1), options.k_isovar)) || return 0
-        if ld.var_names_numbervars_frame != 0 && !_ison(options, PL_WRT_NUMBERVARS) &&
-            !_numbervars_newer(ld, slotValue(ld, t + 1))
+    (k == DU_WORD && _is_gcompound(w)) || return 0  # if ( !isTerm(*p) ) return false
+    f = valPtr(w)                                   # f = valueTerm(*p)
+
+    ld.gstack[f] == options.isovar_fw || return 0   # f->definition != FUNCTOR_isovar1
+
+    if ld.var_names_numbervars_frame != 0
+        fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
+
+        if !_ison(options, PL_WRT_NUMBERVARS) && ld.fliframes[fr].mark.globaltop >= f
             return 0                                # older $VAR term
         end
-        p = deRef(ld, child(v, 2))
-    else
-        (k == DU_WORD && _is_gcompound(w)) || return 0  # if ( !isTerm(*p) ) return false
-        f = valPtr(w)                               # f = valueTerm(*p)
-
-        ld.gstack[f] == options.isovar_fw || return 0   # f->definition != FUNCTOR_isovar1
-
-        if ld.var_names_numbervars_frame != 0
-            fr = fliFrameOfFid(ld, ld.var_names_numbervars_frame)
-
-            if !_ison(options, PL_WRT_NUMBERVARS) && ld.fliframes[fr].mark.globaltop >= f
-                return 0                            # older $VAR term
-            end
-        end
-
-        k, w, q = _deref_loc(ld, f + 1)             # p = &f->arguments[0]; deRef(p)
-        k == DU_CELL && return 0
-        (k == DU_WORD && _is_gcompound(w)) && return 0
-        k == DU_TERM && (ld.cold_pairs += 1)        # the boundary: on the term
-        p = deRef(ld, _loc_term(ld, k, w, q))       # an atom's symbol, a value's term
     end
+
+    k, w, _ = _deref_loc(ld, f + 1)                 # p = &f->arguments[0]; deRef(p)
+    k == DU_CELL && return 0
+    (k == DU_WORD && _is_gcompound(w)) && return 0
+    p = k == DU_VALUE ? _value_term(ld, w) : _atom_value(ld, w)   # an atom's symbol, a value's term
 
     if isTaggedInt(p)
         n = int64_value(p)

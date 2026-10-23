@@ -85,34 +85,6 @@ end
     @test LK.getProcDefinedDefinition(gd, u.definition) === u.definition
 end
 
-@testset "unify_definition: qualified unless it is the context's, or hidden as a system's" begin
-    gd = LK.PL_global_data{_MP}()
-    sys, user = LK.MODULE_system(gd), LK.MODULE_user(gd)
-    ud = LK.lookupProcedure(_mps(:p), 2, user).definition
-    sd = LK.isCurrentProcedure(sym_key(_mps(:compare)), 3, sys).definition
-    pi(n, a) = _mpf("/", _mps(n), lk_gnd(_MP, a))
-    q(m, t) = _mpf(":", _mps(m), t)
-    @test lk_eq(LK.unify_definition(gd, user, ud, LK.GP_NAMEARITY), pi(:p, 2))
-    @test lk_eq(
-        LK.unify_definition(gd, user, sd, LK.GP_NAMEARITY), q(:system, pi(:compare, 3))
-    )
-    @test lk_eq(
-        LK.unify_definition(gd, user, sd, LK.GP_NAMEARITY | LK.GP_HIDESYSTEM),
-        pi(:compare, 3)
-    )
-    @test lk_eq(LK.unify_definition(gd, sys, sd, LK.GP_NAMEARITY), pi(:compare, 3))
-    @test lk_eq(
-        LK.unify_definition(gd, user, ud, LK.GP_NAMEARITY | LK.GP_QUALIFY),
-        q(:user, pi(:p, 2))
-    )
-    h = LK.unify_definition(gd, user, ud, 0)                         # a head of fresh variables
-    @test lk_name(child(h, 1)) === :p && nchildren(h) == 3 &&
-        kind(child(h, 2)) === VAR && kind(child(h, 3)) === VAR &&
-        var_key(child(h, 2)) != var_key(child(h, 3))
-    z = LK.lookupProcedure(_mps(:z), 0, user).definition
-    @test lk_eq(LK.unify_definition(gd, sys, z, 0), q(:user, _mps(:z)))
-end
-
 @testset "unify_definition on a term reference (f3b-4): the same references, on the cells" begin
     gd = LK.PL_global_data{_MP}()
     ld = LK.PL_local_data{_MP}(gd)
@@ -185,14 +157,19 @@ end
         e
     end
     @test err isa LK.NotPortedError{_MP} && err.step == "R2"
-    # a cyclic chain X = user:X: stripModuleName gives up after 100 levels
+    # a cyclic chain X = user:X (on the cells since L1f f3: the term-level `pl_unify!` and
+    # `stripModuleName` before): stripModuleName gives up after 100 levels
     ld = LK.PL_local_data{_MP}(gd)
     X = _mpv()
-    @test LK.pl_unify!(ld, X, _mpf(":", _mps(:user), X))
-    ok, _, _ = LK.stripModuleName(ld, X)
-    @test !ok &&
-        lk_name(
-        child(child(LK.deRef(ld, LK.slotValue(ld, ld.exception_term + 1)), 2), 2)
-    ) ===   # deRef: the ball holds a cyclic culprit
-          :acyclic_term
+    r = LK.PL_new_term_refs(ld, 2)
+    pvm = LK.PutVarMap()
+    LK.putSlotValue!(ld, r + 1, X, pvm)
+    LK.putSlotValue!(ld, r + 2, _mpf(":", _mps(:user), X), pvm)
+    @test LK.PL_unify(ld, r, r + 1)
+    ok, _, _ = LK.stripModuleName_cells(ld, -(r + 1))
+    # the ball holds a cyclic culprit: read through the FLI, no export
+    f, a = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    @test !ok && LK._PL_get_arg(ld, 1, ld.exception_term, f) &&
+        LK._PL_get_arg(ld, 1, f, a) &&
+        lk_name(LK.PL_get_atom(ld, a)) === :acyclic_term
 end

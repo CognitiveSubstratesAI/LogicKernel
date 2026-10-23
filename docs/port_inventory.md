@@ -74,7 +74,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-utf8.c` | code | `8e1bc1110be4` | `src/os/pl-utf8.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-utf8.h` | code | `8e1bc1110be4` | `src/os/pl-utf8.jl` | 19 | 0 |
 | swipl-devel `src/pl-alloc.c` | code | `8e1bc1110be4` | `src/pl-alloc.jl` | 10 | 5 |
-| swipl-devel `src/pl-arith.c` | code | `8e1bc1110be4` | `src/pl-arith.jl` | 127 | 32 |
+| swipl-devel `src/pl-arith.c` | code | `8e1bc1110be4` | `src/pl-arith.jl` | 124 | 32 |
 | swipl-devel `src/pl-arith.h` | code | `8e1bc1110be4` | `src/pl-arith.jl` | 5 | 1 |
 | swipl-devel `src/pl-atom.c` | code | `8e1bc1110be4` | `src/pl-atom.jl` | 11 | 6 |
 | swipl-devel `src/pl-attvar.c` | code | `8e1bc1110be4` | `src/pl-attvar.jl` | 3 | 3 |
@@ -83,15 +83,15 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-bag.c` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-builtin.h` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 5 | 1 |
 | swipl-devel `src/pl-codetable.c` | code | `8e1bc1110be4` | `src/pl-vmi.jl` | 1 | 1 |
-| swipl-devel `src/pl-comp.c` | code | `8e1bc1110be4` | `src/pl-comp.jl` | 137 | 74 |
+| swipl-devel `src/pl-comp.c` | code | `8e1bc1110be4` | `src/pl-comp.jl` | 135 | 72 |
 | swipl-devel `src/pl-comp.h` | code | `8e1bc1110be4` | `src/pl-comp.jl` | 1 | 0 |
-| swipl-devel `src/pl-copyterm.c` | code | `8e1bc1110be4` | `src/pl-copyterm.jl` | 16 | 9 |
+| swipl-devel `src/pl-copyterm.c` | code | `8e1bc1110be4` | `src/pl-copyterm.jl` | 15 | 8 |
 | swipl-devel `src/pl-data.h` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 77 | 8 |
-| swipl-devel `src/pl-data.h` | code | `8e1bc1110be4` | `src/pl-inline.jl` | 5 | 2 |
+| swipl-devel `src/pl-data.h` | code | `8e1bc1110be4` | `src/pl-inline.jl` | 4 | 1 |
 | swipl-devel `src/pl-error.c` | code | `8e1bc1110be4` | `src/pl-error.jl` | 17 | 9 |
 | swipl-devel `src/pl-error.h` | code | `8e1bc1110be4` | `src/pl-error.jl` | 1 | 1 |
 | swipl-devel `src/pl-ext.c` | code | `8e1bc1110be4` | `src/pl-ext.jl` | 5 | 3 |
-| swipl-devel `src/pl-fli.c` | code | `8e1bc1110be4` | `src/pl-fli.jl` | 60 | 49 |
+| swipl-devel `src/pl-fli.c` | code | `8e1bc1110be4` | `src/pl-fli.jl` | 59 | 49 |
 | swipl-devel `src/pl-fli.h` | code | `8e1bc1110be4` | `src/pl-fli.jl` | 10 | 8 |
 | swipl-devel `src/pl-funct.c` | code | `8e1bc1110be4` | `src/pl-funct.jl` | 12 | 9 |
 | swipl-devel `src/pl-gc.c` | code | `8e1bc1110be4` | `src/pl-gc.jl` | 6 | 4 |
@@ -101,7 +101,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-global.h` | code | `8e1bc1110be4` | `src/os/pl-file.jl` | 5 | 0 |
 | swipl-devel `src/pl-global.h` | code | `8e1bc1110be4` | `src/pl-global.jl` | 3 | 3 |
 | swipl-devel `src/pl-global.h` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 1 | 1 |
-| swipl-devel `src/pl-gmp.c` | code | `8e1bc1110be4` | `src/pl-gmp.jl` | 29 | 7 |
+| swipl-devel `src/pl-gmp.c` | code | `8e1bc1110be4` | `src/pl-gmp.jl` | 29 | 8 |
 | swipl-devel `src/pl-gmp.h` | code | `8e1bc1110be4` | `src/pl-gmp.jl` | 4 | 2 |
 | swipl-devel `src/pl-gmp.h` | code | `8e1bc1110be4` | `src/pl-incl.jl` | 4 | 0 |
 | swipl-devel `src/pl-gvar.c` | code | `8e1bc1110be4` | `src/pl-inline.jl` | 1 | 1 |
@@ -122,11 +122,11 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-index.c` | code | `8e1bc1110be4` | `src/pl-index.jl` | 112 | 34 |
 | swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-gmp.jl` | 1 | 0 |
-| swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-inline.jl` | 18 | 15 |
-| swipl-devel `src/pl-list.c` | code | `8e1bc1110be4` | `src/pl-list.jl` | 18 | 12 |
-| swipl-devel `src/pl-modul.c` | code | `8e1bc1110be4` | `src/pl-modul.jl` | 9 | 8 |
+| swipl-devel `src/pl-inline.h` | code | `8e1bc1110be4` | `src/pl-inline.jl` | 16 | 13 |
+| swipl-devel `src/pl-list.c` | code | `8e1bc1110be4` | `src/pl-list.jl` | 13 | 7 |
+| swipl-devel `src/pl-modul.c` | code | `8e1bc1110be4` | `src/pl-modul.jl` | 7 | 6 |
 | swipl-devel `src/pl-op.c` | code | `8e1bc1110be4` | `src/pl-op.jl` | 16 | 13 |
-| swipl-devel `src/pl-prims.c` | code | `8e1bc1110be4` | `src/pl-prims.jl` | 127 | 73 |
+| swipl-devel `src/pl-prims.c` | code | `8e1bc1110be4` | `src/pl-prims.jl` | 91 | 45 |
 | swipl-devel `src/pl-pro.c` | code | `8e1bc1110be4` | `src/pl-pro.jl` | 3 | 3 |
 | swipl-devel `src/pl-proc.c` | code | `8e1bc1110be4` | `src/pl-proc.jl` | 46 | 32 |
 | swipl-devel `src/pl-proc.h` | code | `8e1bc1110be4` | `src/pl-proc.jl` | 1 | 0 |
@@ -138,12 +138,12 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-supervisor.c` | code | `8e1bc1110be4` | `src/pl-supervisor.jl` | 17 | 9 |
 | swipl-devel `src/pl-termhash.c` | code | `8e1bc1110be4` | `src/pl-termhash.jl` | 35 | 7 |
 | swipl-devel `src/pl-termhash.h` | code | `8e1bc1110be4` | `src/pl-termhash.jl` | 3 | 1 |
-| swipl-devel `src/pl-termwalk.c` | code | `8e1bc1110be4` | `src/pl-termwalk.jl` | 28 | 9 |
+| swipl-devel `src/pl-termwalk.c` | code | `8e1bc1110be4` | `src/pl-termwalk.jl` | 15 | 5 |
 | swipl-devel `src/pl-thread.c` | code | `8e1bc1110be4` | `src/pl-thread.jl` | 4 | 2 |
 | swipl-devel `src/pl-trace.c` | code | `8e1bc1110be4` | `src/pl-trace.jl` | 5 | 2 |
 | swipl-devel `src/pl-umap.c` | code | `8e1bc1110be4` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `8e1bc1110be4` | `src/pl-global.jl` | 2 | 2 |
-| swipl-devel `src/pl-variant.c` | code | `8e1bc1110be4` | `src/pl-variant.jl` | 24 | 11 |
+| swipl-devel `src/pl-variant.c` | code | `8e1bc1110be4` | `src/pl-variant.jl` | 16 | 6 |
 | swipl-devel `src/pl-vmi.c` | code | `8e1bc1110be4` | `src/pl-vmi.jl` | 130 | 0 |
 | swipl-devel `src/pl-vmi.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 151 | 96 |
 | swipl-devel `src/pl-wam.c` | code | `8e1bc1110be4` | `src/pl-wam.jl` | 42 | 34 |
@@ -205,7 +205,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-utf8.c` | `8e1bc1110be4` | 4 | 9 | 2 | src/os/pl-utf8.jl |
 | swipl-devel `src/os/pl-utf8.h` | `8e1bc1110be4` | 4 | 11 | 0 | src/os/pl-utf8.jl |
 | swipl-devel `src/pl-alloc.c` | `8e1bc1110be4` | 8 | 73 | 5 | src/pl-alloc.jl |
-| swipl-devel `src/pl-arith.c` | `8e1bc1110be4` | 97 | 166 | 31 | src/pl-arith.jl |
+| swipl-devel `src/pl-arith.c` | `8e1bc1110be4` | 97 | 166 | 30 | src/pl-arith.jl |
 | swipl-devel `src/pl-arith.h` | `8e1bc1110be4` | 0 | 8 | 0 | src/pl-arith.jl |
 | swipl-devel `src/pl-atom.c` | `8e1bc1110be4` | 10 | 78 | 6 | src/pl-atom.jl |
 | swipl-devel `src/pl-attvar.c` | `8e1bc1110be4` | 3 | 42 | 3 | src/pl-attvar.jl |
@@ -233,11 +233,11 @@ checkout is pulled.
 | swipl-devel `src/pl-hash.h` | `8e1bc1110be4` | 0 | 0 | 0 | src/pl-hash.jl |
 | swipl-devel `src/pl-incl.h` | `8e1bc1110be4` | 1 | 9 | 0 | src/pl-arith.jl, src/pl-atom.jl, src/pl-comp.jl, src/pl-funct.jl, src/pl-global.jl, src/pl-incl.jl, src/pl-inline.jl, src/pl-modul.jl, src/pl-prims.jl, src/pl-vmi.jl, src/pl-wam.jl, src/pl-write.jl |
 | swipl-devel `src/pl-index.c` | `8e1bc1110be4` | 91 | 125 | 29 | src/pl-index.jl |
-| swipl-devel `src/pl-inline.h` | `8e1bc1110be4` | 18 | 52 | 13 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
-| swipl-devel `src/pl-list.c` | `8e1bc1110be4` | 10 | 13 | 6 | src/pl-list.jl |
+| swipl-devel `src/pl-inline.h` | `8e1bc1110be4` | 17 | 52 | 12 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
+| swipl-devel `src/pl-list.c` | `8e1bc1110be4` | 9 | 13 | 5 | src/pl-list.jl |
 | swipl-devel `src/pl-modul.c` | `8e1bc1110be4` | 7 | 70 | 6 | src/pl-modul.jl |
 | swipl-devel `src/pl-op.c` | `8e1bc1110be4` | 14 | 21 | 13 | src/pl-op.jl |
-| swipl-devel `src/pl-prims.c` | `8e1bc1110be4` | 62 | 188 | 38 | src/pl-prims.jl |
+| swipl-devel `src/pl-prims.c` | `8e1bc1110be4` | 62 | 188 | 36 | src/pl-prims.jl |
 | swipl-devel `src/pl-pro.c` | `8e1bc1110be4` | 3 | 33 | 3 | src/pl-pro.jl |
 | swipl-devel `src/pl-proc.c` | `8e1bc1110be4` | 44 | 126 | 31 | src/pl-proc.jl |
 | swipl-devel `src/pl-proc.h` | `8e1bc1110be4` | 1 | 2 | 0 | src/pl-proc.jl |
@@ -249,11 +249,11 @@ checkout is pulled.
 | swipl-devel `src/pl-supervisor.c` | `8e1bc1110be4` | 16 | 28 | 9 | src/pl-supervisor.jl |
 | swipl-devel `src/pl-termhash.c` | `8e1bc1110be4` | 11 | 16 | 2 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `8e1bc1110be4` | 0 | 0 | 0 | src/pl-termhash.jl |
-| swipl-devel `src/pl-termwalk.c` | `8e1bc1110be4` | 12 | 28 | 5 | src/pl-termwalk.jl |
+| swipl-devel `src/pl-termwalk.c` | `8e1bc1110be4` | 11 | 28 | 3 | src/pl-termwalk.jl |
 | swipl-devel `src/pl-thread.c` | `8e1bc1110be4` | 4 | 267 | 2 | src/pl-thread.jl |
 | swipl-devel `src/pl-trace.c` | `8e1bc1110be4` | 5 | 77 | 2 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `8e1bc1110be4` | 4 | 8 | 3 | src/pl-umap.jl |
-| swipl-devel `src/pl-variant.c` | `8e1bc1110be4` | 10 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
+| swipl-devel `src/pl-variant.c` | `8e1bc1110be4` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `8e1bc1110be4` | 130 | 240 | 67 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `8e1bc1110be4` | 38 | 96 | 32 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `8e1bc1110be4` | 81 | 111 | 41 | src/pl-write.jl |
@@ -272,7 +272,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `8e1bc1110be4` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `8e1bc1110be4` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `8e1bc1110be4` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1224** | **4472** | **646** | |
+| **total** | | **1220** | **4472** | **639** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
@@ -707,6 +707,7 @@ AllocCheck on the entries named, no `Any`, and `tools/bench.jl`.
 | **V9** after the milestones | the predicate-access stack's depth limit (`pushPredicateAccessObj`: `representation_error(predicate references)` past 2^20 − 1000, NULL to callers that handle it; NOT PORTED until clause enumeration moves onto the VM — the divergence audit, S33; user, 2026-10-06); the meta-call through a variable goal: when it compiles, upstream defect #6 (E1, a variable goal does not stop `optimise_unify`'s move) decides answers, ported AS IS (user, 2026-10-06); `decompile`'s gaps after a moved unification, upstream defect #7 (E2), ported AS IS and pinned with the decompiler (user, 2026-10-06); `I_TRUE`/`I_FAIL`, control constructs `C_*` (3l), `catch/3` and the meta-call `I_CALL1`/`I_CALLN`, the inline `B_UNIFY_*`/`B_EQ_*`/`B_ARG_*` (`O_COMPILE_IS` is on by default, pl-incl.h:235, so upstream compiles `=` and `==` inline and merges a leading `X = …` into the head), NON-deterministic built-ins (`I_FOPENNDET`/`I_FCALLNDET*`/`I_FEXITNDET`/`I_FREDO`) — `clause/2` (pl-comp.c:7450) and `retract/1` (pl-proc.c:3109) move onto the VM as the non-deterministic `PRED_IMPL`s they are upstream, with `decompile` (c:5876-7104) replacing the interim `decompileHead!` copy; then 3n (tries) and 3o (continuations, tabling) | each with its SWI test units and a live differential, as above. **Split into separate steps with their own gates when reached** (user) **Split (user, 2026-10-06, the head-unification chunk):** **V9a** — ✅ DONE (architecture.md § "V9a") — unification and comparison inline in a body, executing: the `B_UNIFY_*`, `B_EQ_*`, `B_NEQ_*` family, `C_VAR`, `I_TRUE`, `I_FAIL`, the goals `true` and `fail`, and `optimise`'s `always`; **V9b** — ✅ DONE (architecture.md § "V9b") — the unifications moved to the head (`optimise_unify`, upstream's default), with `CL_HEAD_TERMS`; E1 ported as is (report #6); **V9c** — ✅ DONE (architecture.md § "V9c") — assert/1, assertz/1, asserta/1: `assert_term`'s assertz path in upstream's sequence (the first assertz into a fresh predicate compiles as static code), registered from `BeginPredDefs(comp)`, `compileClause`'s errors raised with `PL_error` (user, 2026-10-06, Q8 (a)); assert/1 from a clause waits for V5c's `autoImport`; **V9d** — IN PROGRESS: the control constructs, ONE PER GATE (user, 2026-10-11): `;` built 2026-10-12, `->` built 2026-10-12 (the conditionals: `C_IFTHENELSE`, `C_IFTHEN`, `C_CUT`, the fast condition; a `!` in a condition compiles and is run with the cut's step), `\+` built 2026-10-12 (`C_NOT`, `C_FAIL`), the cut inside a condition or a negation built 2026-10-12 (`C_LCUT`, `C_LCUTIFTHEN` run); the decompiler's moved unifications built 2026-10-12 (`mark_bvar_access`, `moved_unifications`: clause/2 under the default flags); `*->` built 2026-10-12 (`C_SOFTIF`/`C_SOFTCUT`/`C_SOFTIFTHEN`/`C_SCUT`/`C_LSCUT`; the pool invariant restated — live records plus the records `C_SOFTCUT` unlinked whose stack region is in use, reclaimed by `dropUnlinkedChoices!`) (architecture.md § "V9d": `compileBody`'s disjunction frames, `C_OR`/`C_JMP`/`C_VAR_N`, backtracking into `CHP_JUMP`, and the BODY DECOMPILER with clause/2 over rule bodies); V9e-1 built 2026-10-12 (architecture.md § "V9e-1": a variable goal `I_CALL1`, `call/N` `I_CALL1`/`I_CALLN`, `i_metacall_common`, `mcall_cont`, `visibleProcedure`/`resolveProcedure`; closures refused); V9e-2 built 2026-10-13 (architecture.md § "V9e-2": control constructs and call/N, N > 8, under `call/1` through the temporary goal clause — `compileGoalClause`, islocal analysis and `argvar`/`link_local_var`, frame positions equal swipl's; `Goal@Module` refused for R2) — **V9e DONE**; V9f-a built 2026-10-13 (architecture.md § "V9f-a": `catch/3` — `$catch` as `I_CATCH I_EXITCATCH`, boot/init.pl's clause compiled at database creation until R2 loads it, `findCatcher`/`findCatchExit`, `b_throw`'s catcher branches, backtracking into `CHP_CATCH`, `true/0`/`fail/0`/`$fail/0` as predicates; answers, determinism and frame positions equal swipl's); V9f-b built 2026-10-13 (architecture.md § "V9f-b": `$/1` as `C_DET … C_DETTRUE C_JMP C_DETFALSE`, `$/0` as `I_DET`, `det_goal_error`, `determinism_error`, the `determinism_error` flag; answers, balls and reported warnings equal swipl's); V9f CLOSED 2026-10-13 (its battery in CI: 40 caught, 4 recorded equivalent); V9g-a built 2026-10-13 (architecture.md § "V9g-a": the cleanup family — `I_CALLCLEANUP`, `I_EXITCLEANUP`, `callCleanupHandler`, `frameFinished` at exit, fail, cut and exception, `call_term`, pl-pro.c's `callProlog` and `sig_atomic/1`; boot/init.pl's three clauses and `call/1` compiled at database creation until R2; equal to swipl on all four ways out, nesting, a raising cleanup goal); V9g-b built 2026-10-13 (architecture.md § "V9g-b": the bags — findall/3,4, bagof/3, setof/3 over pl-bag.c's bag, pl-rec.c's records, pl-list.c's `nat_sort` with sort/2, msort/2, keysort/2, pl-prims.c's `'$free_variable_set'/3`, term_variables/2,3, functor/3, ground/1, and length/2; boot/bags.pl's clauses compiled at database creation until R2; equal to swipl on 222 cases); V9g CLOSED 2026-10-14 (its battery in CI, 66 mutants: 62 caught, 4 recorded equivalent — architecture.md § "V9g's MUTATION BATTERY") — **V9 DONE**. |
 | **R2** after L1 and attributed variables (user, 2026-10-14; it was "after V9", 2026-10-05) | modules, full consult and term expansion (`pl-srcfile.c`, `pl-modul.c`, `boot/init.pl`, `boot/syspred.pl`); from V9f-b: `det/1` (`P_DET`), `$/1` and `$/0` as predicates, `set_prolog_flag(determinism_error, …)`, the mirror of tests/core_lang/test_det_decl.pl; from V9g-a: boot/init.pl replaces `_boot_cleanup!` (the cleanup family's clauses and `call/1`; `call/2..8` come with it), the meta-predicate declarations `setup_call_cleanup(0,0,0)` … — with them `mustBeCallable` takes only `Module:Goal` and the culprit of its type error is qualified (pinned in test_cleanup_swipl.jl) — `contextModule(fr)` for the handler's goal, the mirror of tests/core_lang/test_call_cleanup.pl; from V9g-b: boot/bags.pl in its module `'$bags'` replaces `_boot_bags!` and `_boot_bagof!`, boot/init.pl's length/2 and `'$append'/3` replace `_boot_lists!` — the private predicates of `'$bags'` leave `system`, the `system:` qualification of findall/4's two goals goes (the meta-predicate declarations do it), the error context names `'$bags':findall_loop/4` (pinned in test_findall_swipl.jl); findnsols/4,5 with `'$suspend_findall_bag'/0` (the first nondeterministic foreign predicate); `sort/4`; the mirror of tests/core_lang/test_bags.pl | SWI's test files run UNMODIFIED, with `plunit` (a module) |
 | **L1** SWI's term layout — 🔜 **NEXT** (user, 2026-10-14; NOT built): after V9, BEFORE attributed variables and R2 (the order was R2 → L1, 2026-10-13), then tabling and GC; the design document first, then the implementation; the bench after every L1 step on a quiet machine | pl-data.h: tagged words, global/local/trail stacks, bindings in the cell, conditional trailing, `mark_bar`; the run time (VM bodies, unification, FLI, prims) moves onto cells, the compiler, reader and database stay on values behind a conversion boundary; `copy_term` marks cells as upstream's does (a compound met twice is copied once: src/pl-copyterm.jl's DIVERGES goes, `same_term/2` on a cyclic copy and its tail joins the differential); design document written during V9f/V9g (assessment: the workspace's term-layout assessment, 2026-10-13). from V9g-b: a record becomes upstream's byte code or a cell copy, and the GLOBAL STACK's overflow becomes a resource error — findall/3's answer limit (`add_findall_bag`), `'$length'/2`'s list and functor/3's term, the last two refused today (`NotPortedError`). UNTIL THEN (rule, effective 2026-10-13): no new direct `ld.bindings` site — `tools/port_check.jl` ratchets the count (`BINDINGS_DIRECT_MAX`) | every differential green at each migration step |
+| **L1f** the keyed variables deleted — ✅ **DONE 2026-10-23** (f3, one landing: f3-1 a slot's grounded side value read as its side word, f3-2 the writers map variables per write and the tests read answers off the cells, f3-3 the deletion, f3-4 the ratchets) | the binding store (`PL_local_data.bindings`), `trail_keys`/`TRAIL_KEYED`, the cell keys and the stamp (`gkey`, `CELL_KEY_TAG`/`CELL_POS_MASK`/`CELL_STAMP_*`), the export memo (`gterms`…), `import_origin`, `ball_word`, the meters but `cold_imports`, every `DU_TERM` branch, the VM's cursor (`ARGP_CURSOR`) and the term twins with no live caller (plan Q6) — deleted; `SLOT_VALUE` stays as a slot's grounded side value (DU_VALUE, Q1 (b)); `STAMP_SITES_MAX` and `BINDINGS_DIRECT_MAX` at 0 | every swipl differential unchanged on the three term types; the full suite and Evidence in CI; the landing's small battery |
 | **G1** — ✅ **REPLACED 2026-10-13** (user): "port `pl-gc.c` faithfully after L1" | was: its design includes the LIMIT, as decided since Q-C: the binding store and trail accounted against `stack_limit`, so a runaway term build ends in a catchable `resource_error`, not an OS or memory-ceiling kill; a **binding-store collector**, the analogue of `pl-gc.c`'s marking from frames and choice points. It decides between trailing every binding (today) and `mark_bar`-style elision by key age (kernel keys come from a monotonic counter, so a choice point can record the counter at creation); both need the collector to reclaim entries. **Note for its marking (user, 2026-10-12): FRAME SLOTS CAN HOLD CHOICE REFERENCES AS INTEGERS** — since V9d a condition's slot (past the clause's `prolog_vars`, counted in `variables`) holds the POSITION of a choice point as an integer term (negated once a soft-cut has run), where upstream holds a local-stack offset the collector never sees (`C_IFTHEN`'s comment: "not reserved in clause->variables, so the garbage collector won't see it"); the collector must mark from the `prolog_vars` slots only, and anything that moves choice points must rewrite these | designed and reviewed before a long-running consumer; V4b (c) measures the growth it removes |
 | **T1** big numbers in the reference term type — whenever the machine is idle, never beside a tracked bench (user, 2026-10-06) | as decided since Q-AR1: in a worktree, `DefaultTerm`'s payload as (b) the direct five types (`Int64`, `Float64`, `String`, `BigInt`, `Rational{BigInt}`) and as (a) a `BigNum` wrapper; take (b) unless its static gate shows run-time dispatch that (a) avoids; the two-argument number barrier planned in from the start; then the change, and the big-result interim removed | the static gate and the bench on both; the interim's pinning test becomes a differential |
 

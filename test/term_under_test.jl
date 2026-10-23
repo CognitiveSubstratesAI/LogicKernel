@@ -82,26 +82,20 @@ which is the reference type's own convenience — `AltTerm`'s throws.
 """
 lk_eq(a, b)::Bool = compareStandard(a, b, true) == 0
 
-# The variables bound in an engine (L1a): a KEYED variable's entry in the store plus every CELL
-# variable whose cell is bound — so "nothing left bound" sees both kinds (src/pl-global.jl). Since
-# L1b stage C2 a cell is a word, 0 when unbound; a value table's box is not a variable, though its
-# position may still hold the key of a cell freed there before (`gkey` is not cleared: the stamp
-# ratchet), so a box is told apart as `_cell_pos` tells it (`_is_box`).
+# The variables bound in an engine: every global cell up to `gTop` that is not 0 (since L1b stage C2 a
+# cell is a word, 0 when unbound) — a variable's binding, and the cells of every compound laid out — but
+# a value table's box, which is not a variable (`_is_box`). Until f3-3 also the keyed variables' entries
+# in the binding store, and a cell was told by its key (`gkey`); every position up to `gTop` that is not a
+# box is a cell (`allocGlobalCells!`), so the count is the same.
 lk_bound_count(ld)::Int =
-    length(ld.bindings) +
-    count(
-        p -> ld.gkey[p] != 0 && ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p),
-        1:(ld.gTop)
-    )
+    count(p -> ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p), 1:(ld.gTop))
 lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
 # The same, OUTSIDE the frozen region (L1e e5a; audit D-0036): a ball raised outside any query keeps its
 # cells below `frozen_bar` until the outermost query's close (upstream: until GC — pl-gvar.c resets the bar
-# only at the thread's end). Those cells are the ball, not a leak; a binding above the bar, or in the store, is.
+# only at the thread's end). Those cells are the ball, not a leak; a binding above the bar is.
 lk_bound_count_unfrozen(ld)::Int =
-    length(ld.bindings) +
     count(
-        p -> ld.gkey[p] != 0 && ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p),
-        (ld.frozen_bar + 1):(ld.gTop)
+        p -> ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p), (ld.frozen_bar + 1):(ld.gTop)
     )
 lk_no_bindings_unfrozen(ld)::Bool = lk_bound_count_unfrozen(ld) == 0
 
@@ -120,17 +114,14 @@ function lk_answers(ld::LogicKernel.PL_local_data{T}, ts::Int...)::Vector{T} whe
     return T[LogicKernel.export_cells(ld, ex, -(t + 1)) for t in ts]
 end
 
-# THE BOUNDARY as the writers made it until L1f f3b-1 (the workspace's L1_plan/stageL1f_design.md §3): a
-# KEYED variable stored in a slot became the slot's side value (`SLOT_VALUE`), and in a cell a value-table
-# word. Since f3b-1 a writer binds a keyed variable to a fresh cell instead (`_import_var!`), so the tests of
-# the boundary branches — (c) code, deleted with them in f3 — build the boundary explicitly with these.
-"Store `v` in slot `s` as the slot's own side value (`SLOT_VALUE`): the boundary, as `setSlotValue!` stored a keyed variable until L1f f3b-1."
+# A slot's side value (`SLOT_VALUE`; f3-1, Q1 (b)): since f3 only a grounded value, read as its side word.
+# (Until f3-3 the tests of the boundary also stored a KEYED variable here, and `lk_boundary_word!` laid a
+# keyed variable's value-table word in a cell; both went with the keyed variables.)
+"Store `v` in slot `s` as the slot's own side value (`SLOT_VALUE`): a grounded value since f3."
 function lk_side_value!(ld, s::Int, v)
     ld.slot_values[s] = v
     ld.slots[s] = LogicKernel.SLOT_VALUE
     return nothing
 end
-"The value-table word of `v` (a keyed variable's: the boundary in a cell, as `_word_of!` made one until L1f f3b-1)."
-lk_boundary_word!(ld, v) = LogicKernel._vword!(ld, v)
 lk_eq(a::AbstractVector, b::AbstractVector)::Bool =
     length(a) == length(b) && all(((x, y),) -> lk_eq(x, y), zip(a, b))

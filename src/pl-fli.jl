@@ -92,8 +92,8 @@ end
 
 # PORT: pl-fli.c PL_copy_term_ref
 # DIVERGES: no `globalizeTermRef`. Upstream moves an unbound variable out of a local cell, which
-# nothing may point into; a keyed variable lives in no cell (decision 2). `CHK_SECURE` is
-# `O_DEBUG` only.
+# nothing may point into; a slot holds no unbound word, its variable is a global cell already.
+# `CHK_SECURE` is `O_DEBUG` only.
 "A new term reference to the term `from` references; or 0 (pl-fli.c)."
 function PL_copy_term_ref(ld::PL_local_data{T}, from::Int)::Int where {T}
     if !ensureLocalSpace(ld, 1)
@@ -127,7 +127,7 @@ end
 # PORT: pl-fli.c PL_unify_list
 # DIVERGES: no global space to ensure; on the CELLS (L1e e3): an unbound cell bound (`bindConst`) to a new
 # `'[|]'/2` compound at gTop, `h`/`t` its argument cells' references; a list word's arguments linked
-# (`linkValI`); the boundary (DU_TERM) on terms, counted.
+# (`linkValI`).
 "Unify term reference `l` with a list cell, putting its head and tail into `h` and `t` (pl-fli.c)."
 function PL_unify_list(
     ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t
@@ -144,26 +144,7 @@ function PL_unify_list(
         _slot_link_loc!(ld, t + 1, _deref_loc(ld, valPtr(w) + 2))    # setHandle(t, linkValI(a+1))
         return true
     end
-    k == DU_TERM || return false
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    p = deRef(ld, slotValue(ld, l + 1))
-
-    if canBind(p)
-        k = allocGlobalCells!(ld, 2)
-        a1, a2 = _cell_var(ld, k), _cell_var(ld, k + 1)
-        c = mk_expr(T, T[mk_sym(T, LIST_CONS_NAME), a1, a2])
-        setSlotValue!(ld, h + 1, a1)                            # setHandle(h, makeRefG(a))
-        setSlotValue!(ld, t + 1, a2)
-
-        Trail!(ld, var_key(p), c)                       # bindConst(p, c)
-    elseif is_pair(p)                                   # isList(*p)
-        setSlotValue!(ld, h + 1, linkValI(ld, child(p, 2)))
-        setSlotValue!(ld, t + 1, linkValI(ld, child(p, 3)))
-    else
-        return false
-    end
-
-    return true
+    return false
 end
 
 # PORT: pl-fli.c PL_unify_nil
@@ -172,29 +153,15 @@ PL_unify_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_unify_atom(ld, l, m
 
 # PORT: pl-fli.c PL_skip_list
 # DIVERGES: returns `(type, length)` where upstream writes the length through `len`; on the WORDS (L1e e2:
-# `skip_list_cells`, L1d step 9); a tail at the boundary — the whole list then walked on terms, counted in
-# `cold_pairs`. NOT PORTED: `tail` (upstream unifies it with the list's tail): no caller here passes one.
+# `skip_list_cells`, L1d step 9). NOT PORTED: `tail` (upstream unifies it with the list's tail): no
+# caller here passes one.
 "The type of the list term reference `list` holds — `PL_LIST`, `PL_PARTIAL_LIST`, `PL_CYCLIC_TERM`, `PL_NOT_A_LIST` — and its cells (pl-fli.c)."
 function PL_skip_list(ld::PL_local_data{T}, list::term_t)::Tuple{Int, Int} where {T}
     length, k, w, _ = skip_list_cells(ld, -(list + 1))
-    if k != DU_TERM
-        k == DU_WORD && w == ld.atom_nil_w && return (PL_LIST, length)    # isNil(*tail)
-        k == DU_CELL && return (PL_PARTIAL_LIST, length)                  # canBind(*tail)
-        _is_list_word(ld, k, w) && return (PL_CYCLIC_TERM, length)        # isList(*tail)
-        return (PL_NOT_A_LIST, length)
-    end
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    length, t = skip_list(ld, slotValue(ld, list + 1))
-
-    if is_nil(t)
-        return (PL_LIST, length)
-    elseif kind(t) === VAR
-        return (PL_PARTIAL_LIST, length)
-    elseif is_pair(t)
-        return (PL_CYCLIC_TERM, length)
-    else
-        return (PL_NOT_A_LIST, length)
-    end
+    k == DU_WORD && w == ld.atom_nil_w && return (PL_LIST, length)    # isNil(*tail)
+    k == DU_CELL && return (PL_PARTIAL_LIST, length)                  # canBind(*tail)
+    _is_list_word(ld, k, w) && return (PL_CYCLIC_TERM, length)        # isList(*tail)
+    return (PL_NOT_A_LIST, length)
 end
 
 # PORT: pl-fli.c PL_unify_functor
@@ -205,51 +172,23 @@ function PL_unify_functor(
     ld::PL_local_data{T}, t::term_t, name::T, arity::Int
 )::Bool where {T}
     k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p) (L1e e3)
-    if k != DU_TERM
-        nw = _atom_word!(ld, name)                          # nameFunctor(f)
-        if k == DU_CELL                                     # canBind(*p)
-            if arity == 0
-                _bind_const!(ld, q, nw)                     # bindConst(p, name)
-            else                                            # *a = f; setVar(*++a)…
-                a = _alloc_compound!(ld, lookupFunctorDef(ld.functors, nw, arity), arity)
-                _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, to)
-            end
-            return true
+    nw = _atom_word!(ld, name)                              # nameFunctor(f)
+    if k == DU_CELL                                         # canBind(*p)
+        if arity == 0
+            _bind_const!(ld, q, nw)                         # bindConst(p, name)
+        else                                                # *a = f; setVar(*++a)…
+            a = _alloc_compound!(ld, lookupFunctorDef(ld.functors, nw, arity), arity)
+            _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, to)
         end
-        arity == 0 && return k == DU_WORD && w == nw        # *p == nameFunctor(f)
-        return k == DU_WORD && _is_gcompound(w) &&          # hasFunctor(*p, f)
-               ld.gstack[valPtr(w)] == lookupFunctorDef(ld.functors, nw, arity)
+        return true
     end
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    p = deRef(ld, slotValue(ld, t + 1))
-
-    if canBind(p)
-        if arity != 0
-            k = allocGlobalCells!(ld, arity)
-            a = Vector{T}(undef, 1 + arity)
-            a[1] = name
-            for i in 1:arity
-                a[i + 1] = _cell_var(ld, k + i - 1)    # setVar(a[i])
-            end
-
-            Trail!(ld, var_key(p), mk_expr(T, a))       # bindConst(p, to)
-            return true
-        else
-            Trail!(ld, var_key(p), name)                # bindConst(p, name)
-            return true
-        end
-    else
-        if arity != 0
-            return _hasFunctor(p, name, arity)
-        else
-            return kind(p) === SYM && sym_key(p) == sym_key(name)
-        end
-    end
+    arity == 0 && return k == DU_WORD && w == nw            # *p == nameFunctor(f)
+    return k == DU_WORD && _is_gcompound(w) &&              # hasFunctor(*p, f)
+           ld.gstack[valPtr(w)] == lookupFunctorDef(ld.functors, nw, arity)
 end
 
 # PORT: pl-fli.c PL_unify_compound
-# DIVERGES: `f` is a functor WORD (`$expr/n` too); no global space to ensure. The boundary (DU_TERM)
-# is unified on terms with the compound laid out, counted.
+# DIVERGES: `f` is a functor WORD (`$expr/n` too); no global space to ensure.
 "Unify term reference `t` with a compound of functor word `f` — binding it to one of fresh arguments, or checking its functor (pl-fli.c)."
 function PL_unify_compound(ld::PL_local_data{T}, t::term_t, f::word)::Bool where {T}
     k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p)
@@ -257,10 +196,6 @@ function PL_unify_compound(ld::PL_local_data{T}, t::term_t, f::word)::Bool where
         a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))  # *a = f; setVar(*++a)…
         _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, to)
         return true
-    elseif k == DU_TERM
-        ld.cold_pairs += 1                                  # the boundary: on terms
-        a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))
-        return do_unify(ld, _loc_term(ld, k, w, q), _compound_term(ld, a)) == BOOLEX_TRUE
     end
     return k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == f   # hasFunctor(*p, f)
 end
@@ -277,17 +212,6 @@ function PL_unify_arg(
         0 < index <= arityFunctor(ld.functors, ld.gstack[q]) || return false   # index <= arity
         return unify_ptrs_cells(ld, q + index, -(a + 1))    # unify_ptrs(argTermP(w, index-1), valHandleP(arg))
     end
-    k == DU_TERM || return false
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    w = deRef(ld, slotValue(ld, t + 1))
-
-    if isTerm(w)
-        off, arity = _comp_shape(w)
-        if index > 0 && index <= arity
-            return unify_ptrs(ld, child(w, off + index - 1), slotValue(ld, a + 1))
-        end
-    end
-
     return false
 end
 
@@ -396,50 +320,19 @@ _hasFunctor(p, name, arity::Int) =
     kind(p) === EXPR && nchildren(p) == arity + 1 && kind(child(p, 1)) === SYM &&
     sym_key(child(p, 1)) == sym_key(name)
 
-# PORT: pl-fli.c classify_exception_p
-# `error(resource_error(_), _)` is `EXCEPT_RESOURCE` since upstream's fix 85d0cc2
-# (SWI-Prolog/swipl-devel#1535, docs/upstream_reports.md #5); until it the test was for the ATOM
-# `resource_error`, which nothing raises, and the stack overflow's error ranked as an ordinary one.
-"The class of the ball `p` (pl-fli.c `classify_exception_p`)."
-function classify_exception_p(ld::PL_local_data{T}, p::T)::except_class where {T}
-    p = deRef(ld, p)
-    if kind(p) === VAR
-        return EXCEPT_NONE
-    elseif kind(p) === SYM
-        sym_key(p) == sym_key(mk_sym(T, :time_limit_exceeded)) && return EXCEPT_TIMEOUT
-    elseif _hasFunctor(p, mk_sym(T, :error), 2)
-        a = deRef(ld, child(p, 2))                          # p = argTermP(*p, 0)
-        _hasFunctor(a, mk_sym(T, :resource_error), 1) && return EXCEPT_RESOURCE
-        return EXCEPT_ERROR
-    elseif _hasFunctor(p, mk_sym(T, :time_limit_exceeded), 1)
-        return EXCEPT_TIMEOUT
-    elseif _hasFunctor(p, mk_sym(T, :unwind), 1)
-        a = deRef(ld, child(p, 2))
-        if kind(a) === SYM
-            sym_key(a) == sym_key(mk_sym(T, :abort)) && return EXCEPT_ABORT
-        elseif _hasFunctor(a, mk_sym(T, :halt), 1)
-            return EXCEPT_HALT
-        elseif _hasFunctor(a, mk_sym(T, :thread_exit), 1)
-            return EXCEPT_THREAD_EXIT
-        end
-        return EXCEPT_UNWIND
-    end
-    return EXCEPT_OTHER
-end
-
 # PORT: pl-fli.h classify_exception
 "The class of the ball term reference `exception` holds, `EXCEPT_NONE` for none (pl-fli.h)."
 function classify_exception(ld::PL_local_data{T}, exception::Int)::except_class where {T}
     exception == 0 && return EXCEPT_NONE
-    k, w, p = _deref_loc(ld, -(exception + 1))      # valTermRef(exception); deRef (L1e e5: the words)
-    k == DU_TERM || return classify_exception_cells(ld, k, w)
-    ld.cold_pairs += 1                              # the boundary: on the term
-    return classify_exception_p(ld, _loc_term(ld, k, w, p))
+    k, w, _ = _deref_loc(ld, -(exception + 1))      # valTermRef(exception); deRef (L1e e5: the words)
+    return classify_exception_cells(ld, k, w)
 end
 
 # PORT: pl-fli.c classify_exception_p as classify_exception_cells
-# DIVERGES: on a dereferenced location's `(kind, word)` (L1e e5), the functors compared as words; an argument
-# at the boundary read as its term (`classify_exception_p`), counted.
+# DIVERGES: on a dereferenced location's `(kind, word)` (L1e e5), the functors compared as words.
+# `error(resource_error(_), _)` is `EXCEPT_RESOURCE` since upstream's fix 85d0cc2
+# (SWI-Prolog/swipl-devel#1535, docs/upstream_reports.md #5); until it the test was for the ATOM
+# `resource_error`, which nothing raises, and the stack overflow's error ranked as an ordinary one.
 "The class of the exception the dereferenced `(k, w)` holds (pl-fli.c `classify_exception_p`)."
 function classify_exception_cells(
     ld::PL_local_data{T}, k::UInt8, w::word
@@ -451,11 +344,7 @@ function classify_exception_cells(
         q = valPtr(w)
         f = ld.gstack[q]
         if f == lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)                                          # hasFunctor(*p, FUNCTOR_error2)
-            ka, wa, pa = _deref_loc(ld, q + 1)                          # p = argTermP(*p, 0); deRef(p)
-            if ka == DU_TERM
-                ld.cold_pairs += 1
-                return classify_exception_p(ld, _loc_term(ld, k, w, 0))
-            end
+            ka, wa, _ = _deref_loc(ld, q + 1)                          # p = argTermP(*p, 0); deRef(p)
             ka == DU_WORD && _is_gcompound(wa) &&
                 ld.gstack[valPtr(wa)] == lookupFunctorDef(
                     ld.functors, _atom_word!(ld, mk_sym(T, :resource_error)), 1
@@ -467,11 +356,7 @@ function classify_exception_cells(
         )
             return EXCEPT_TIMEOUT
         elseif f == lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :unwind)), 1)
-            ka, wa, pa = _deref_loc(ld, q + 1)
-            if ka == DU_TERM
-                ld.cold_pairs += 1
-                return classify_exception_p(ld, _loc_term(ld, k, w, 0))
-            end
+            ka, wa, _ = _deref_loc(ld, q + 1)
             ka == DU_WORD && isAtomW(wa) && wa == _atom_word!(ld, mk_sym(T, :abort)) &&
                 return EXCEPT_ABORT
             if ka == DU_WORD && _is_gcompound(wa)
@@ -491,37 +376,24 @@ end
 # PORT: pl-fli.c PL_get_atom
 # DIVERGES: returns the atom, or `nothing`, where upstream writes it through `a` and returns a Bool;
 # on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): an atom word its symbol (`_atom_value`); the boundary (a slot's side value, a
-# keyed variable) read as its term, counted in `cold_pairs`.
+# done early): an atom word its symbol (`_atom_value`).
 "The atom term reference `t` holds — a text atom or a reserved symbol such as `[]` — or `nothing` (pl-fli.c)."
 function PL_get_atom(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_WORD
         isAtomW(w) && return _atom_value(ld, w)             # isAtom(w)
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        v = deRef(ld, _loc_term(ld, k, w, p))
-        kind(v) === SYM && return v
     end
     return nothing
 end
 
 # PORT: pl-fli.c PL_get_integer
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS (L1e e2):
-# a tagged integer's value (`valInt(w)`); the boundary read as its term, counted in `cold_pairs`.
+# a tagged integer's value (`valInt(w)`).
 "The C `int` term reference `t` holds — a tagged integer in `int`'s range — or `nothing` (pl-fli.c)."
 function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE && isTaggedIntW(w)                     # isTaggedInt(w)
         val = valInt(w)
-        (val > typemax(Int32) || val < typemin(Int32)) && return nothing
-        return Int(val)
-    end
-    k == DU_TERM || return nothing
-    ld.cold_pairs += 1                                      # the boundary: on the term
-    w = deRef(ld, _loc_term(ld, k, w, p))
-    if isTaggedInt(w)
-        val = int64_value(w)
         (val > typemax(Int32) || val < typemin(Int32)) && return nothing
         return Int(val)
     end
@@ -531,20 +403,13 @@ end
 # PORT: pl-fli.c PL_get_long
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS
 # (`valHandle(t)`, `_deref_loc`, L1d step 7a): a tagged integer its value (a `long` is 64 bits: in
-# range), a value-table integer that fits `Int64` (`get_int64`) its value; the boundary (a slot's side
-# value, a keyed variable) read as its term, counted in `cold_pairs`.
+# range), a value-table integer that fits `Int64` (`get_int64`) its value (a slot's side value too).
 "The C `long` term reference `t` holds — an integer in `Int64`'s range — or `nothing` (pl-fli.c)."
 function PL_get_long(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))
-    if k == DU_VALUE
-        isTaggedIntW(w) && return Int(valInt(w))           # isTaggedInt(w)
-        v = _indirect_value(ld, w)
-    elseif k == DU_TERM
-        ld.cold_pairs += 1
-        v = deRef(ld, _loc_term(ld, k, w, p))
-    else
-        return nothing
-    end
+    k, w, _ = _deref_loc(ld, -(t + 1))
+    k == DU_VALUE || return nothing
+    isTaggedIntW(w) && return Int(valInt(w))                # isTaggedInt(w)
+    v = _indirect_value(ld, w)
     (isInteger(v) && integer_is_int64(v)) && return Int(int64_value(v))   # get_int64(w, &i64)
     return nothing
 end
@@ -564,21 +429,11 @@ end
 # DIVERGES: returns the Boolean, or `nothing`, where upstream writes it through `b`.
 "The Boolean term reference `t` holds — `true`/`on`, `false`/`off`, `1` or `0` — or `nothing` (pl-fli.c)."
 function PL_get_stdbool(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Bool} where {T}
-    k, x, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t) (L1e e2: the words)
+    k, x, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t) (L1e e2: the words)
     k == DU_WORD && isAtomW(x) && return atom_to_bool(ld, _atom_value(ld, x))   # isAtom(w)
     if k == DU_VALUE                                        # w == consInt(0) / consInt(1)
         isTaggedIntW(x) && valInt(x) == 0 && return false
         isTaggedIntW(x) && valInt(x) == 1 && return true
-        return nothing
-    end
-    k == DU_TERM || return nothing
-    ld.cold_pairs += 1                                      # the boundary: on the term
-    w = deRef(ld, _loc_term(ld, k, x, p))
-    kind(w) === SYM && return atom_to_bool(ld, w)           # isAtom(w)
-    if isInteger(w)
-        isTaggedInt(w) && int64_value(w) == 0 && return false   # w == consInt(0)
-        isTaggedInt(w) && int64_value(w) == 1 && return true
-        return nothing
     end
     return nothing
 end
@@ -589,12 +444,12 @@ end
 # `_deref_loc`): a compound word's functor from the functor table; an atom word (every kernel atom is
 # a callable atom or a reserved symbol) as `name/0`. A compound whose head is no symbol (the kernel's
 # `$expr/n`) has NO functor here — it names no predicate (query_answers, get_head_functor, callProlog
-# refuse it). The boundary is read as its term, counted in `cold_pairs` (f3b-5a).
+# refuse it).
 "The functor of the term `t` references — `(name, arity)` of a compound or an atom — or `nothing` (pl-fli.c)."
 function PL_get_functor(
     ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, Tuple{T, Int}} where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_WORD
         if _is_gcompound(w)                                 # isTerm(w): *f = functorTerm(w)
             f = ld.gstack[valPtr(w)]
@@ -603,14 +458,6 @@ function PL_get_functor(
             return (_atom_value(ld, name), arityFunctor(ld.functors, f))
         end
         return (_atom_value(ld, w), 0)                      # isCallableAtom(w) || isReservedSymbol(w)
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        v = deRef(ld, _loc_term(ld, k, w, p))
-        if isTerm(v)
-            h = child(v, 1)
-            return kind(h) === SYM ? (h, nchildren(v) - 1) : nothing
-        end
-        kind(v) === SYM && return (v, 0)
     end
     return nothing
 end
@@ -631,13 +478,12 @@ PL_get_bool(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_stdbool(ld, t)
 # compound whose head is no symbol (the kernel's `$expr/n`) is named `$expr`, its arity the number
 # of its children, as the writer writes it. On the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b —
 # the FLI readers the writer calls, L1e done early): a compound word's functor from the functor table
-# (`valueFunctor(functorTerm(w))`), the reserved `$expr` named as above; an atom word's symbol; the
-# boundary read as its term, counted in `cold_pairs`.
+# (`valueFunctor(functorTerm(w))`), the reserved `$expr` named as above; an atom word's symbol.
 "The name and arity of the compound or the text atom term reference `t` holds, or `nothing` (pl-fli.c)."
 function PL_get_name_arity(
     ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, Tuple{T, Int}} where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_WORD
         if _is_gcompound(w)                                 # isTerm(w)
             f = ld.gstack[valPtr(w)]                        # functorTerm(w)
@@ -648,15 +494,6 @@ function PL_get_name_arity(
         end
         a = _atom_value(ld, w)
         isTextAtom(a) && return (a, 0)                      # isTextAtom(w)
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        v = deRef(ld, _loc_term(ld, k, w, p))
-        if isTerm(v)
-            h = child(v, 1)
-            kind(h) === SYM && return (h, nchildren(v) - 1)
-            return (mk_sym(T, Symbol("\$expr")), nchildren(v))
-        end
-        isTextAtom(v) && return (v, 0)
     end
     return nothing
 end
@@ -668,30 +505,25 @@ end
 # done early): a compound word's argument cell into `a` as `linkValI` reads it
 # (`_slot_from_cell!`: the cell's word, or a reference to it — an unbound cell, or a value-table word,
 # which upstream copies as its indirect and a slot does not hold); on the cells a `$expr/n` compound
-# has every child as an argument already. The boundary read as its term, counted in `cold_pairs`.
+# has every child as an argument already. Not a compound: false (upstream's `PL_get_arg`).
 "Put argument `index` (from 1) of the compound term reference `t` holds into `a` (pl-fli.c)."
 function _PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_WORD && _is_gcompound(w)
         _slot_from_cell!(ld, a + 1, valPtr(w) + index)      # setHandle(a, linkValI(&f->arguments[index-1]))
         return true
     end
-    k == DU_TERM && (ld.cold_pairs += 1)                    # the boundary: on the term
-    v = deRef(ld, _loc_term(ld, k, w, p))
-    off = kind(child(v, 1)) === SYM ? 1 : 0
-    setSlotValue!(ld, a + 1, child(v, index + off))                 # linkValI(&f->arguments[index-1])
-    return true
+    return false
 end
 
 # PORT: pl-fli.h PL_is_functor
-# DIVERGES: the functor is a name and an arity (upstream: a `functor_t`); on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): a
+# DIVERGES: the functor is a name and an arity (upstream: a `functor_t`); on the WORDS
+# (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e done early): a
 # compound word's functor compared by arity and name (`hasFunctor`) — a `$expr/n` compound has no
-# symbol head, so it is no `name/arity` (as `_hasFunctor` on its term); the boundary read as its
-# term, counted in `cold_pairs`.
+# symbol head, so it is no `name/arity`.
 "Whether term reference `t` holds a compound `name/arity` (pl-fli.h)."
 function PL_is_functor(ld::PL_local_data{T}, t::term_t, name::T, arity::Int)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_WORD
         _is_gcompound(w) || return false                    # hasFunctor(w, f)
         f = ld.gstack[valPtr(w)]
@@ -699,25 +531,18 @@ function PL_is_functor(ld::PL_local_data{T}, t::term_t, name::T, arity::Int)::Bo
         n = nameFunctor(ld.functors, f)
         n == ld.atom_dexpr && return false
         return sym_key(_atom_value(ld, n)) == sym_key(name)
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return _hasFunctor(deRef(ld, _loc_term(ld, k, w, p)), name, arity)
     end
     return false
 end
 
 # PORT: pl-fli.c PL_is_pair
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): a compound word whose functor is `'[|]'/2` (`FUNCTOR_dot2`); the
-# boundary read as its term, counted in `cold_pairs`.
+# done early): a compound word whose functor is `'[|]'/2` (`FUNCTOR_dot2`).
 "Whether term reference `t` holds a list cell (pl-fli.c)."
 function PL_is_pair(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_WORD
         return _is_gcompound(w) && ld.gstack[valPtr(w)] == ld.functor_dot2   # isList(w)
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return is_pair(deRef(ld, _loc_term(ld, k, w, p)))
     end
     return false
 end
@@ -725,24 +550,15 @@ end
 # PORT: pl-fli.c PL_get_list
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
 # done early): a list cell's head and tail cells into `h` and `t` as `linkValI` reads
-# them (`_slot_from_cell!`) — the cell's position read first, so `PL_get_list(l, h, l)` holds; the
-# boundary read as its term, counted in `cold_pairs`.
+# them (`_slot_from_cell!`) — the cell's position read first, so `PL_get_list(l, h, l)` holds.
 "Put the head and the tail of the list cell term reference `l` holds into `h` and `t` (pl-fli.c); false if it holds none."
 function PL_get_list(ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
+    k, w, _ = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
     if k == DU_WORD
         if _is_gcompound(w) && ld.gstack[valPtr(w)] == ld.functor_dot2   # isList(w)
             a = valPtr(w) + 1                               # Word a = argTermP(w, 0)
             _slot_from_cell!(ld, h + 1, a)                  # setHandle(h, linkValI(a++))
             _slot_from_cell!(ld, t + 1, a + 1)              # setHandle(t, linkValI(a))
-            return true
-        end
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        v = deRef(ld, _loc_term(ld, k, w, p))
-        if is_pair(v)                                       # isList(w)
-            setSlotValue!(ld, h + 1, child(v, 2))                   # linkValI(a++)
-            setSlotValue!(ld, t + 1, child(v, 3))
             return true
         end
     end
@@ -751,30 +567,20 @@ end
 
 # PORT: pl-fli.c PL_get_nil
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): the `[]` word (`ATOM_nil`); the boundary read as its term, counted in
-# `cold_pairs`.
+# done early): the `[]` word (`ATOM_nil`).
 "Whether term reference `l` holds `[]` (pl-fli.c)."
 function PL_get_nil(ld::PL_local_data{T}, l::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
+    k, w, _ = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
     k == DU_WORD && return w == ld.atom_nil_w               # isNil(w)
-    if k == DU_TERM                                         # the boundary: on the term
-        ld.cold_pairs += 1
-        return is_nil(deRef(ld, _loc_term(ld, k, w, p)))
-    end
     return false
 end
 
 # PORT: pl-fli.c PL_is_list
-# DIVERGES: on the WORDS (L1e e2): a `'[|]'/2` compound word or ATOM_nil (`isList(w) || isNil(w)`); the
-# boundary read as its term, counted in `cold_pairs`.
+# DIVERGES: on the WORDS (L1e e2): a `'[|]'/2` compound word or ATOM_nil (`isList(w) || isNil(w)`).
 "Whether term reference `t` holds a list cell or `[]` (pl-fli.c)."
 function PL_is_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
-    k == DU_WORD && return w == ld.atom_nil_w || _is_list_word(ld, k, w)
-    k == DU_TERM || return false
-    ld.cold_pairs += 1                                      # the boundary: on the term
-    w2 = deRef(ld, _loc_term(ld, k, w, p))
-    return is_pair(w2) || is_nil(w2)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    return k == DU_WORD && (w == ld.atom_nil_w || _is_list_word(ld, k, w))
 end
 
 # ORIGINAL (L1e e2): pl-data.h `hasFunctor(w, FUNCTOR_colon2)` on a dereferenced location's word.
@@ -788,17 +594,13 @@ end
 # ORIGINAL (L1e e2): upstream's `setHandle(h, linkValI(p))` for slot `i` from a dereferenced location
 # `(k, w, p)`: an unbound cell its reference (`makeRefG(p)`), any other word itself — but a value-table word
 # into a slot older than the innermost foreign frame as its value (e1's rule, `_slot_store!`), and a slot's
-# side value read as a value (its side word, f3-1) as its value wherever the slot lies; the boundary
-# (`DU_TERM`) as its term, counted in `cold_pairs`.
+# side value read as a value (its side word, f3-1) as its value wherever the slot lies.
 "Store in slot `i` what the dereferenced location `(k, w, p)` holds (`setHandle(h, linkValI(p))`)."
 function _slot_link_loc!(
     ld::PL_local_data{T}, i::Int, (k, w, p)::Tuple{UInt8, word, Int}
 )::Nothing where {T}
     if k == DU_CELL
         ld.slots[i] = makeRefG(p)
-    elseif k == DU_TERM
-        ld.cold_pairs += 1
-        _slot_store!(ld, i, deRef(ld, _loc_term(ld, k, w, p)))
     elseif _is_side_word(w) || (_is_vword(w) && _slot_older_than_fli(ld, i))
         _slot_store!(ld, i, _indirect_value(ld, w))
     else
@@ -821,32 +623,14 @@ function PL_strip_module(
     gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
 )::Tuple{Bool, Int} where {T}
     k, w, q = _deref_loc(ld, -(raw + 1))                    # p = valTermRef(raw); deRef(p)
-    if k != DU_TERM
-        if _is_colon2_word(ld, k, w)                        # hasFunctor(*p, FUNCTOR_colon2)
-            ok, rc, m2 = stripModule_cells(gd, ld, -(raw + 1))
-            if rc[1] != DU_TERM
-                ok || return (false, m2)
-                _slot_link_loc!(ld, plain + 1, rc)          # setHandle(plain, linkValI(p))
-                return (true, m2)
-            end
-        else
-            m == 0 && (m = MODULE_user(gd).index)           # (environment_frame ? contextModule(…) : user)
-            raw != plain && _slot_link_loc!(ld, plain + 1, (k, w, q))   # needsRef(*p) ? makeRefG(p) : *p
-            return (true, m)
-        end
+    if _is_colon2_word(ld, k, w)                            # hasFunctor(*p, FUNCTOR_colon2)
+        ok, rc, m2 = stripModule_cells(gd, ld, -(raw + 1))
+        ok || return (false, m2)
+        _slot_link_loc!(ld, plain + 1, rc)                  # setHandle(plain, linkValI(p))
+        return (true, m2)
     end
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    p = deRef(ld, slotValue(ld, raw + 1))
-    if _hasFunctor(p, mk_sym(T, :(:)), 2)
-        ok, p, m = stripModule(gd, ld, p)
-        ok || return (false, m)
-        setSlotValue!(ld, plain + 1, p)                             # setHandle(plain, linkValI(p))
-    else
-        if m == 0
-            m = MODULE_user(gd).index               # (environment_frame ? contextModule(…) : user)
-        end
-        setSlotValue!(ld, plain + 1, p)
-    end
+    m == 0 && (m = MODULE_user(gd).index)       # (environment_frame ? contextModule(…) : user)
+    raw != plain && _slot_link_loc!(ld, plain + 1, (k, w, q))   # needsRef(*p) ? makeRefG(p) : *p
     return (true, m)
 end
 
@@ -867,7 +651,7 @@ end
 # PORT: pl-fli.c PL_strip_module_ex
 # DIVERGES: the module is an INDEX into `gd`'s table (0 for upstream's NULL), passed in and returned
 # with the result; with none given, an unqualified term gets the context module, `user` (see
-# `stripModule`). No `globalizeTermRef` (a keyed variable lives in no cell, decision 2).
+# `stripModule`). No `globalizeTermRef` (a slot's variable is a global cell already).
 """
     PL_strip_module_ex(gd, ld, raw, m, plain) -> (ok, m)
 
@@ -879,41 +663,19 @@ function PL_strip_module_ex(
     gd::PL_global_data{T}, ld::PL_local_data{T}, raw::term_t, m::Int, plain::term_t
 )::Tuple{Bool, Int} where {T}
     k, w, q = _deref_loc(ld, -(raw + 1))                    # p = valTermRef(raw); deRef(p)
-    if k != DU_TERM
-        if _is_colon2_word(ld, k, w)                        # hasFunctor(*p, FUNCTOR_colon2)
-            ok, rc, m2 = stripModule_cells(gd, ld, -(raw + 1))
-            if rc[1] != DU_TERM
-                ok || return (false, m2)
-                if _is_colon2_word(ld, rc[1], rc[2])        # hasFunctor(*p, FUNCTOR_colon2)
-                    a1 = _deref_loc(ld, valPtr(rc[2]) + 1)  # Word a1 = argTermP(*p, 0); deRef(a1)
-                    _slot_link_loc!(ld, plain + 1, a1)      # setHandle(plain, linkValI(a1))
-                    return (PL_type_error(ld, "module", plain), m2)
-                end
-                _slot_link_loc!(ld, plain + 1, rc)          # setHandle(plain, linkValI(p))
-                return (true, m2)
-            end
-        else
-            m == 0 && (m = MODULE_user(gd).index)           # (environment_frame ? contextModule(…) : user)
-            _slot_link_loc!(ld, plain + 1, (k, w, q))       # setHandle(plain, linkValG(p))
-            return (true, m)
+    if _is_colon2_word(ld, k, w)                            # hasFunctor(*p, FUNCTOR_colon2)
+        ok, rc, m2 = stripModule_cells(gd, ld, -(raw + 1))
+        ok || return (false, m2)
+        if _is_colon2_word(ld, rc[1], rc[2])                # hasFunctor(*p, FUNCTOR_colon2)
+            a1 = _deref_loc(ld, valPtr(rc[2]) + 1)          # Word a1 = argTermP(*p, 0); deRef(a1)
+            _slot_link_loc!(ld, plain + 1, a1)              # setHandle(plain, linkValI(a1))
+            return (PL_type_error(ld, "module", plain), m2)
         end
+        _slot_link_loc!(ld, plain + 1, rc)                  # setHandle(plain, linkValI(p))
+        return (true, m2)
     end
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    p = deRef(ld, slotValue(ld, raw + 1))
-    if _hasFunctor(p, mk_sym(T, :(:)), 2)
-        ok, p, m = stripModule(gd, ld, p)
-        ok || return (false, m)
-        if _hasFunctor(p, mk_sym(T, :(:)), 2)
-            setSlotValue!(ld, plain + 1, deRef(ld, child(p, 2)))    # Word a1 = argTermP(*p, 0)
-            return (PL_type_error(ld, "module", plain), m)
-        end
-        setSlotValue!(ld, plain + 1, p)
-    else
-        if m == 0
-            m = MODULE_user(gd).index               # (environment_frame ? contextModule(…) : user)
-        end
-        setSlotValue!(ld, plain + 1, p)                     # linkValG(p)
-    end
+    m == 0 && (m = MODULE_user(gd).index)       # (environment_frame ? contextModule(…) : user)
+    _slot_link_loc!(ld, plain + 1, (k, w, q))               # setHandle(plain, linkValG(p))
     return (true, m)
 end
 
@@ -935,7 +697,7 @@ function has_emergency_space_local(ld::PL_local_data{T}, needed::Int)::Bool wher
 end
 
 # PORT: pl-fli.c has_emergency_space as has_emergency_space_global
-# DIVERGES (L1f f1b): the global stack's (copy_exception's caller): `lacking` is what `n` more cells take past
+# DIVERGES (since L1f f1b): the global stack's (copy_exception's caller): `lacking` is what `n` more cells take past
 # the limit (`_stacks_in_use`), taken from the spare (upstream: `s->max` raised by it).
 "Whether `n` more global cells fit, using the global stack's spare if needed (pl-fli.c `has_emergency_space`)."
 function has_emergency_space_global(ld::PL_local_data, n::Int)::Bool
@@ -952,13 +714,12 @@ end
 # DIVERGES (L1e e5): `duplicate_term(ex, bin)` on the CELLS (`do_copy_term_cells`, share off; L1d step 6)
 # into a fresh global cell that `bin` references, as upstream's copy at gTop; PL_raise_exception then
 # freezes the global stack (`freezeGlobal!`), so no undo frees the ball — released when the outermost
-# query ends (`_release_frozen!`, audit D-0029 option (b): no collector until G1). A ball at the BOUNDARY
-# (a keyed variable, a slot's side value) is copied on terms as a value, as before e5 (its trail entries
-# dropped), counted — TRANSITIONAL until L1f. A copy that does not fit (L1f f1b: `GLOBAL_OVERFLOW`, the
-# frame rewound, nothing raised to clear) takes upstream's three fallbacks in turn: an `error(F, _)` ball
-# without its context, `error(resource_error(stack), global)` in the global spare, `abort`. The kernel
-# prints none of upstream's three warnings (decision 1). A copy fails only before `exception_processing`
-# is set — PL_raise_exception sets it first, as upstream, whose fallbacks need memory exhaustion.
+# query ends (`_release_frozen!`, audit D-0029 option (b): no collector until G1). A copy that does
+# not fit (since L1f f1b: `GLOBAL_OVERFLOW`, the frame rewound, nothing raised to clear) takes upstream's
+# three fallbacks in turn: an `error(F, _)` ball without its context, `error(resource_error(stack),
+# global)` in the global spare, `abort`. The kernel prints none of upstream's three warnings
+# (decision 1). A copy fails only before `exception_processing` is set — PL_raise_exception sets it
+# first, as upstream, whose fallbacks need memory exhaustion.
 "Copy the ball `ex` references into `bin`, its cycles kept (pl-fli.c)."
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
     fid = PL_open_foreign_frame(ld)
@@ -966,15 +727,6 @@ function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool wh
     rc = do_copy_term_cells(ld, -(ex + 1), dest, cp_options(false))
     if rc == 1
         ld.slots[bin + 1] = makeRefG(dest)
-        PL_close_foreign_frame(ld, fid)
-        return true
-    elseif rc == CP_BOUNDARY
-        ld.cold_pairs += 1                      # the boundary (a keyed variable, a side value): on terms,
-        tt = length(ld.trail)                   # the copy a value as before e5 (TRANSITIONAL until L1f)
-        _slot_store_value!(
-            ld, bin + 1, copy_term(ld, slotValue(ld, ex + 1), cp_options(false))
-        )
-        _trail_truncate!(ld, tt)                # frozen: the copy's own bindings keep no trail entry
         PL_close_foreign_frame(ld, fid)
         return true
     end
@@ -1042,16 +794,11 @@ end
 
 # PORT: pl-fli.h PL_is_variable
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): an unbound cell; the boundary read as its term, counted in `cold_pairs`.
+# done early): an unbound cell.
 "Whether term reference `t` holds an unbound variable (pl-fli.h; `canBind`: no attributed variables)."
 function PL_is_variable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
-    k == DU_CELL && return true                             # canBind(w)
-    if k == DU_TERM                                         # the boundary: on the term
-        ld.cold_pairs += 1
-        return kind(deRef(ld, _loc_term(ld, k, w, p))) === VAR
-    end
-    return false
+    k, _, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    return k == DU_CELL                                     # canBind(w)
 end
 
 # The type tests on a term reference (V6b): `valHandle(t)` is the slot dereferenced through the
@@ -1060,59 +807,46 @@ end
 # PORT: pl-fli.c PL_is_integer
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
 # done early): a tagged integer, or a value-table word whose entry is an integer
-# (upstream's indirect); the boundary read as its term, counted in `cold_pairs`.
+# (upstream's indirect).
 "Whether term reference `t` holds an integer (pl-fli.c)."
 function PL_is_integer(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isInteger(w)
         return isTaggedIntW(w) || isInteger(_indirect_value(ld, w))
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return isInteger(deRef(ld, _loc_term(ld, k, w, p)))
     end
     return false
 end
 
 # PORT: pl-fli.c PL_is_float
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1e e2): a value-table word whose entry is a float
-# (upstream's indirect, `isFloat(w)`); the boundary read as its term, counted in `cold_pairs`.
+# (upstream's indirect, `isFloat(w)`).
 "Whether term reference `t` holds a float (pl-fli.c)."
 function PL_is_float(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isFloat(w)
         return !isTaggedIntW(w) && isFloat(_indirect_value(ld, w))
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return isFloat(deRef(ld, _loc_term(ld, k, w, p)))
     end
     return false
 end
 
 # PORT: pl-fli.c PL_is_rational
 # DIVERGES: on the WORDS (L1e e2): a tagged integer, or a value-table word whose entry is an integer or a
-# rational (`isRational(w)`); the boundary read as its term, counted in `cold_pairs`.
+# rational (`isRational(w)`).
 "Whether term reference `t` holds a rational number, an integer included (pl-fli.c)."
 function PL_is_rational(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isRational(w)
         return isTaggedIntW(w) || isRational(_indirect_value(ld, w))
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return isRational(deRef(ld, _loc_term(ld, k, w, p)))
     end
     return false
 end
 
 # PORT: pl-fli.c PL_is_compound
-# DIVERGES: on the WORDS (L1e e2): a compound word (`isTerm(w)`); the boundary read as its term, counted.
+# DIVERGES: on the WORDS (L1e e2): a compound word (`isTerm(w)`).
 "Whether term reference `t` holds a compound term (pl-fli.c)."
 function PL_is_compound(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     k == DU_WORD && return _is_gcompound(w)                 # isTerm(w)
-    if k == DU_TERM                                         # the boundary: on the term
-        ld.cold_pairs += 1
-        return isTerm(deRef(ld, _loc_term(ld, k, w, p)))
-    end
     return false
 end
 
@@ -1130,82 +864,62 @@ end
 
 # PORT: pl-fli.c PL_is_callable
 # DIVERGES: on the WORDS (L1e e2): a text atom's word, or a compound word whose functor is named by a text
-# atom or `[]` (`isCallable`: no closure blobs; a `$expr/n` functor is not callable, as on terms); the
-# boundary read as its term, counted in `cold_pairs`.
+# atom or `[]` (`isCallable`: no closure blobs; a `$expr/n` functor is not callable, as on terms).
 "Whether term reference `t` holds a callable term (pl-fli.c)."
 function PL_is_callable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_WORD
         isAtomW(w) && return isTextAtom(_atom_value(ld, w))
         name = nameFunctor(ld.functors, ld.gstack[valPtr(w)])   # a compound: its functor's name
         name == ld.atom_dexpr && return false
         h = _atom_value(ld, name)
         return !is_reserved_symbol(h) || is_nil(h)          # PL_BLOB_TEXT || ATOM_nil
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return isCallable(deRef(ld, _loc_term(ld, k, w, p)))
     end
     return false
 end
 
 # PORT: pl-fli.c PL_is_string
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): a value-table word whose entry is a string (upstream's indirect); the
-# boundary read as its term, counted in `cold_pairs`.
+# done early): a value-table word whose entry is a string (upstream's indirect).
 "Whether term reference `t` holds a string (pl-fli.c)."
 function PL_is_string(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isString(w)
         return !isTaggedIntW(w) && isString(_indirect_value(ld, w))
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return isString(deRef(ld, _loc_term(ld, k, w, p)))
     end
     return false
 end
 
 # PORT: pl-fli.h PL_is_atom
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): an atom word whose symbol is text (`isTextAtom`); the boundary read as
-# its term, counted in `cold_pairs`.
+# done early): an atom word whose symbol is text (`isTextAtom`).
 "Whether term reference `t` holds a text atom — not `[]` (pl-fli.h)."
 function PL_is_atom(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     k == DU_WORD && return isAtomW(w) && isTextAtom(_atom_value(ld, w))   # isTextAtom(w)
-    if k == DU_TERM                                         # the boundary: on the term
-        ld.cold_pairs += 1
-        return isTextAtom(deRef(ld, _loc_term(ld, k, w, p)))
-    end
     return false
 end
 
 # PORT: pl-fli.h PL_is_atomic
 # DIVERGES: on the WORDS (L1e e2): an atom word or a value word (`isAtomic(w)`: neither a variable nor a
-# compound); the boundary read as its term, counted in `cold_pairs`.
+# compound).
 "Whether term reference `t` holds an atomic term (pl-fli.h)."
 function PL_is_atomic(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     k == DU_VALUE && return true
     k == DU_WORD && return isAtomW(w)
-    if k == DU_TERM                                         # the boundary: on the term
-        ld.cold_pairs += 1
-        return isAtomic(deRef(ld, _loc_term(ld, k, w, p)))
-    end
     return false
 end
 
 # PORT: pl-fli.h PL_is_number
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
 # done early): a tagged integer, or a value-table word whose entry is a number
-# (upstream's indirect); the boundary read as its term, counted in `cold_pairs`.
+# (upstream's indirect).
 "Whether term reference `t` holds a number (pl-fli.h)."
 function PL_is_number(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
     if k == DU_VALUE                                        # isNumber(w)
         return isTaggedIntW(w) || isNumber(_indirect_value(ld, w))
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return isNumber(deRef(ld, _loc_term(ld, k, w, p)))
     end
     return false
 end
@@ -1232,13 +946,7 @@ function PL_unify_atomic(ld::PL_local_data{T}, t::term_t, w::T)::Bool where {T}
     elseif k == DU_VALUE                                    # *p == w || equalIndirect(w, *p)
         return compare_primitives(_value_term(ld, c), w, CMP_MODE_EQUAL) == CMP_EQUAL
     end
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    p = deRef(ld, slotValue(ld, t + 1))
-    if kind(p) === VAR                                  # canBind(*p)
-        Trail!(ld, var_key(p), w)                       # bindConst(p, w)
-        return true
-    end
-    return compare_primitives(p, w, CMP_MODE_EQUAL) == CMP_EQUAL
+    return false
 end
 
 # PORT: pl-fli.c PL_unify_atom
@@ -1253,9 +961,7 @@ PL_unify_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
 
 # PORT: pl-fli.c unify_int64_ex
 # DIVERGES: on the WORDS (`valHandleP(t)`, `_deref_loc`, L1d step 7a): an integer past the tagged range
-# (or in a term type holding no `Int64`) is a value-table word (`put_int64`: upstream's indirect); the
-# boundary (a slot's side value, a keyed variable) unified on its term (`PL_unify_atomic`), counted in
-# `cold_pairs`.
+# (or in a term type holding no `Int64`) is a value-table word (`put_int64`: upstream's indirect).
 "Unify the term `t` references with the integer `i`; with `ex`, a non-integer is a type error (pl-fli.c)."
 function unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int, ex::Bool)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))
@@ -1266,9 +972,6 @@ function unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int, ex::Bool)::Bool
             _bind_const!(ld, p, _gnd_word!(ld, mk_gnd(T, i)))   # put_int64(&w, i); bindConst
         end
         return true
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return PL_unify_atomic(ld, t, mk_gnd(T, i))
     elseif k == DU_VALUE
         isTaggedIntW(w) && return valInt(w) == i            # w == *p && valInt(w) == i
         v = _indirect_value(ld, w)

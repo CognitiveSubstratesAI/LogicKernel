@@ -31,15 +31,17 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
     goal = _rconj(
         _rf("p", X), _rf("g5", _rf("f", _rg(1)), _rg("s"), _rf("f", _rg(3)), Y, _rs("a"))
     )
-    base = ld.lTop
-    cl = LK.compileGoalClause(gd, ld, goal, db.user, base)
+    g0 = LK.PL_new_term_ref(ld)                         # f3-3: the goal from its location (slot g0+1)
+    LK.putSlotValue!(ld, g0 + 1, goal)
+    base = ld.lTop                                      # above the goal's reference
+    cl = LK.compileGoalClause(gd, ld, -(g0 + 1), db.user, base)
     @test cl !== nothing && (cl.flags & LK.GOAL_CLAUSE) != 0
-    cell(i) =
-        LK.resolve_term(ld, LK.slotValue(ld, LK.varFrameP(base, Int(LK.VAROFFSET(i))) + 1))   # L1c: cells, read resolved
+    fv(i) = LK.varFrameP(base, Int(LK.VAROFFSET(i)))   # pseudo variable i's position (a term reference's)
+    cell(i) = lk_answer(ld, fv(i))                      # L1c: cells, read off them (f3-3: one export)
     @test LK.compareStandard(cell(1), _rf("f", _rg(1)), true) == 0      # argvar 1 (c:2035, 3181)
     @test LK.compareStandard(cell(2), _rg("s"), true) == 0              # argvar 2: a string (c:3065)
     @test LK.compareStandard(cell(3), _rf("f", _rg(3)), true) == 0      # argvar 3 (c:3189)
-    vars = [cell(i) for i in 4:5]                       # offsets argvars + n = 4, 5 (c:1365, 2947)
+    vars = lk_answers(ld, fv(4), fv(5))                 # offsets argvars + n = 4, 5 (c:1365, 2947); one export
     @test all(v -> kind(v) === VAR, vars)
     # f3-2 (audit D-0111 Q3/Q5): was `Set(var_key.(vars)) == Set(var_key.((X, Y)))` — the caller's
     # X and Y are no longer handed back (f3b-1's TRANSITIONAL import_origin); the two offsets hold

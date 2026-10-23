@@ -37,7 +37,7 @@ end
 # PORT: pl-setup.c allocStacks as allocStacks!
 # DIVERGES: the local stack's cells — there is no global, trail or argument stack of fixed size (they
 # grow on demand) — and in positions: `minlocal` (4 K words) is `LOCAL_INITIAL`, its spare
-# `LOCAL_SPARE`; the global stack's and the trail's spares are reserves in the one limit (L1f f1b,
+# `LOCAL_SPARE`; the global stack's and the trail's spares are reserves in the one limit (since L1f f1b,
 # `_stacks_in_use`); nothing is allocated that can fail. `stacks.local.min_free` is not kept (see `init_stack!`).
 "Allocate the local stack of a new thread (pl-setup.c)."
 function allocStacks!(ld::PL_local_data{T})::Bool where {T}
@@ -64,7 +64,7 @@ function trim_stack!(ld::PL_local_data{T})::Nothing where {T}
 end
 
 # PORT: pl-setup.c trim_stack as trim_stack_global!
-# DIVERGES (L1f f1b): the global stack's spare is a reserve in the one limit (`_stacks_in_use`), so its
+# DIVERGES (since L1f f1b): the global stack's spare is a reserve in the one limit (`_stacks_in_use`), so its
 # free room is what the limit leaves (`stacks_limit - _stacks_in_use`). As upstream, a reserve the room
 # cannot hold is kept whole (`room > 0 && room < reduce`): after an overflow trimStacks(resize) shrinks the
 # local stack first (`growStacks_trim!`, GROW_TRIM), which gives the room back.
@@ -82,7 +82,7 @@ function trim_stack_global!(ld::PL_local_data)::Nothing
 end
 
 # PORT: pl-setup.c trim_stack as trim_stack_trail!
-# DIVERGES (L1f f1b): as `trim_stack_global!`, the trail's.
+# DIVERGES (since L1f f1b): as `trim_stack_global!`, the trail's.
 "Reserve the trail's spare again, as far as the room under the limit allows (pl-setup.c)."
 function trim_stack_trail!(ld::PL_local_data)::Nothing
     if ld.trail_spare < ld.trail_def_spare
@@ -124,7 +124,7 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
 end
 
 # PORT: pl-setup.c emptyStacks as emptyStacks!
-# DIVERGES: the argument stack is emptied, and the trail's bindings go with the trail (`bindings`).
+# DIVERGES: the argument stack is emptied.
 # `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`, and no
 # `lTop && gTop` guard (the stacks always exist). Of the
 # engine's permanent term references upstream allocates in the base foreign frame, the exception's
@@ -147,11 +147,8 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.query = 0                                # LD->query = NULL;
     ld.aTop = 0                                 # emptyStack((Stack)&LD->stacks.argument);
     empty!(ld.trail)                            # emptyStack((Stack)&LD->stacks.trail);
-    empty!(ld.trail_keys)
-    empty!(ld.bindings)
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
     _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)
-    _truncate_gterms!(ld)                       # (and the export memo: L1c)
     ld.mark_bar = ld.gTop                       # LD->mark_bar = gTop;
 
     PL_open_foreign_frame(ld)

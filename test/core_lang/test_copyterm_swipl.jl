@@ -144,29 +144,12 @@ end
     end
 end
 
-# Sharing, which a query cannot see (a term is a value): `copy_term/2` shares a GROUND subterm and
-# rebuilds one with a variable; `duplicate_term/2` copies every compound — pl-copyterm.c's
-# `COPY_SHARE` against its absence. Read through the walk itself, by identity.
+# Sharing, which a query cannot see: `copy_term/2` shares a GROUND argument, `duplicate_term/2` copies
+# every compound — pl-copyterm.c's `COPY_SHARE` against its absence. (f3-3: the term-level copy's own
+# testset went with the keyed bindings; the walk's sharing on the cells is test_copyterm_cells.jl's.)
 # (not on `alt_interned`, which interns every ground compound: a copy IS the original there)
 if LK_TERM_IMPL != "alt_interned"
-    @testset "copy_term shares ground compounds; duplicate_term copies every one" begin
-        ld = LK.PL_local_data{_R}(LK.PL_global_data{_R}())
-        ground = _rf("f", _rg(1), _rf("g", _rs("a")))
-        open_ = _rf("f", _rv(1), _rf("g", _rs("a")))
-        share, dup = LK.cp_options(true), LK.cp_options(false)
-        @test LK.copy_term(ld, ground, share) === ground
-        @test LK.copy_term(ld, ground, dup) !== ground
-        @test LK.compareStandard(LK.copy_term(ld, ground, dup), ground, true) == 0
-        c = LK.copy_term(ld, open_, share)
-        @test c !== open_ && child(c, 3) === child(open_, 3)        # the ground part is shared
-        @test var_key(child(c, 2)) != var_key(child(open_, 2))      # the variable is renamed
-        # a bound variable is seen through: the copy holds its value, and the compound is rebuilt
-        ld.bindings[UInt64(5)] = _rg(7)
-        b = LK.copy_term(ld, _rf("f", _rv(5)), share)
-        @test child(b, 2) === _rg(7)
-    end
-
-    # The built-ins' own choice of options, by identity again: `copy_term/2` hands back a ground argument
+    # The built-ins' own choice of options, by identity: `copy_term/2` hands back a ground argument
     # as it is, `duplicate_term/2` copies it (called as the dispatch calls them, on term references).
     @testset "the built-ins: copy_term/2 shares a ground argument, duplicate_term/2 does not" begin
         ld = LK.PL_local_data{_R}(LK.PL_global_data{_R}())

@@ -118,9 +118,8 @@ end
 # (`varBindConst`), else to `put_number`'s value as a value-table word (upstream's indirect,
 # `bindConst`) — trailed on the CELL (`_bind_const!`, the word trail), no variable term read; a tagged
 # integer is compared by `valInt`, a value-table word by its stored number, an atom or a compound
-# fails. The boundary (a slot's side value, a keyed variable) is decided on its term
-# (`_unify_number_term`), counted in `cold_pairs`. No attributed variable lives in a cell yet, so
-# `bindConst`'s wakeup has nothing to do here (the keyed variables take the term path).
+# fails. No attributed variable lives in a cell yet, so `bindConst`'s wakeup has nothing to do
+# here.
 "Unify term reference `t` with the number `n` (pl-gmp.c): bind a variable, else compare by value."
 function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # deRef(p)
@@ -133,9 +132,6 @@ function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where
             _bind_const!(ld, p, c)                          # bindConst(p, w)
         end
         return true
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        return _unify_number_term(ld, deRef(ld, _loc_term(ld, k, w, p)), n)
     elseif k == DU_WORD                                     # an atom or a compound: no number
         return false
     end
@@ -152,14 +148,10 @@ function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where
 end
 
 # PORT: pl-gmp.c PL_unify_number as _unify_number_term
-# TRANSITIONAL (L1d §3e, until L1f): PL_unify_number on a dereferenced TERM `p` — the boundary of the
-# word version (a keyed variable is bound through its key) and a value-table entry's stored value.
-"Unify the dereferenced term `p` with the number `n` (pl-gmp.c): bind a variable, else compare by value."
+# DIVERGES: PL_unify_number's indirect branch, on a value-table word's stored value `p` (an atomic
+# term, `_indirect_value`): compared by value.
+"Compare the stored value `p` of a value-table word with the number `n` (pl-gmp.c)."
 function _unify_number_term(ld::PL_local_data{T}, p::T, n::number)::Bool where {T}
-    if canBind(p)                                           # isVar(*p) && …: varBindConst
-        Trail!(ld, var_key(p), put_number(T, n))            # bindConst(p, w)
-        return true
-    end
     nt = n.type
     if nt === V_INTEGER || nt === V_MPZ
         if nt === V_INTEGER && integer_is_int64(p) && number_kind(p) === NUM_INTEGER

@@ -44,20 +44,27 @@ Run the predicate `name` on `args` through the query API: `(rc, answers)` — th
 arguments after a success, the ball (resolved) after an exception, or `:notported`.
 """
 function _tw_call(name::String, args::Vector{_TW}; gd=_TW_GD, ld=_TW_LD)
-    proc = LK.isCurrentProcedure(sym_key(_tws(name)), length(args), LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
     pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     for (i, x) in enumerate(args)
         LK.putSlotValue!(ld, a + i, x, pvm)
     end
+    out = _tw_call_refs(name, a, length(args); gd=gd, ld=ld)
+    LK.PL_close_foreign_frame(ld, fid)
+    return out
+end
+
+"`_tw_call` on the `n` term references from `a`, holding the arguments as the caller laid them on the cells."
+function _tw_call_refs(name::String, a::Int, n::Int; gd=_TW_GD, ld=_TW_LD)
+    proc = LK.isCurrentProcedure(sym_key(_tws(name)), n, LK.MODULE_system(gd))
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     out = try
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            (:true, lk_answers(ld, (a:(a + length(args) - 1))...))
+            (:true, lk_answers(ld, (a:(a + n - 1))...))
         elseif rc == LK.PL_S_EXCEPTION
             (:exception, [lk_answer(ld, LK.PL_exception(ld, qid))])
         else
@@ -68,7 +75,6 @@ function _tw_call(name::String, args::Vector{_TW}; gd=_TW_GD, ld=_TW_LD)
         (:notported, _TW[])
     end
     out[1] === :notported || LK.PL_close_query(ld, qid)
-    LK.PL_close_foreign_frame(ld, fid)
     return out
 end
 
@@ -77,6 +83,13 @@ function _tw_write(t::_TW, flags::Int; gd=_TW_GD, ld=_TW_LD)::String
     fid = LK.PL_open_foreign_frame(ld)
     r = LK.PL_new_term_refs(ld, 1)
     LK.putSlotValue!(ld, r + 1, t)
+    out = _tw_write_ref(r, flags; gd=gd, ld=ld)
+    LK.PL_close_foreign_frame(ld, fid)
+    return out
+end
+
+"`_tw_write` of the term that term reference `r` holds (laid on the cells: a cyclic one too)."
+function _tw_write_ref(r::Int, flags::Int; gd=_TW_GD, ld=_TW_LD)::String
     bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
     sizep = Ref(0)
     s = LK.Sopenmem(bufp, sizep, "w")
@@ -87,7 +100,6 @@ function _tw_write(t::_TW, flags::Int; gd=_TW_GD, ld=_TW_LD)::String
         :notported
     end
     LK.Sclose(s)
-    LK.PL_close_foreign_frame(ld, fid)
     res === :notported && return "NOTPORTED"
     res === :fails && return "fails"
     b = bufp[]
@@ -455,18 +467,31 @@ end
     rc, ans = _tw_call("term_string", _TW[s0, _tw_var()])
     @test rc === :true && lk_value(ans[2]) == "\"a\0b\""
 
-    # a cyclic term: X = f(X) with the occurs check off (the flag's default)
+    # a cyclic term: X = f(X) with the occurs check off (the flag's default) — bound on the cells,
+    # through term references laid with one PutVarMap (L1f f3: until then keyed variables bound in
+    # the store, by the term `unify_ptrs`)
     ld = LK.PL_local_data{_TW}(_TW_GD)
-    x = _tw_var()
-    @test LK.unify_ptrs(ld, x, _twf("f", x))
-    @test _tw_write(x, _TW_WRITEQ; ld=ld) == "NOTPORTED"
-    @test _tw_call("term_to_atom", _TW[_twf("g", x), _tw_var()]; ld=ld)[1] === :notported
-    @test _tw_call("term_string", _TW[x, _tw_var()]; ld=ld)[1] === :notported
-    # …deep inside a term, and a cycle through two terms
-    y, z = _tw_var(), _tw_var()
-    @test LK.unify_ptrs(ld, y, _twf("[|]", _tws("a"), z))
-    @test LK.unify_ptrs(ld, z, _twf("[|]", _tws("b"), y))
-    @test _tw_write(_twf("h", _tws("a"), _twf("k", y)), _TW_PRINT; ld=ld) == "NOTPORTED"
+    fid = LK.PL_open_foreign_frame(ld)
+    x, y, z = _tw_var(), _tw_var(), _tw_var()
+    # X, f(X), g(X), A, X, S; then Y, [a|Z], Z, [b|Y], h(a, k(Y)) — all made before the first query
+    r = LK.PL_new_term_refs(ld, 11)
+    q = r + 6
+    pvm = LK.PutVarMap()
+    for (i, t) in (
+        (0, x), (1, _twf("f", x)), (2, _twf("g", x)), (4, x),
+        (6, y), (7, _twf("[|]", _tws("a"), z)), (8, z), (9, _twf("[|]", _tws("b"), y)),
+        (10, _twf("h", _tws("a"), _twf("k", y)))
+    )
+        LK.putSlotValue!(ld, r + i + 1, t, pvm)
+    end
+    @test LK.PL_unify(ld, r, r + 1)                   # X = f(X)
+    @test _tw_write_ref(r, _TW_WRITEQ; ld=ld) == "NOTPORTED"
+    @test _tw_call_refs("term_to_atom", r + 2, 2; ld=ld)[1] === :notported   # term_to_atom(g(X), A)
+    @test _tw_call_refs("term_string", r + 4, 2; ld=ld)[1] === :notported    # term_string(X, S)
+    # …deep inside a term, and a cycle through two terms: Y = [a|Z], Z = [b|Y]
+    @test LK.PL_unify(ld, q, q + 1) && LK.PL_unify(ld, q + 2, q + 3)
+    @test _tw_write_ref(q + 4, _TW_PRINT; ld=ld) == "NOTPORTED"
+    LK.PL_close_foreign_frame(ld, fid)
 
     # a cyclic exception ball (V5d keeps its cycle): written, it is refused the same way
     gd2 = LK.PL_global_data{_TW}()
@@ -474,16 +499,19 @@ end
     b = _tw_var()
     th = LK.isCurrentProcedure(sym_key(_tws("throw")), 1, LK.MODULE_system(gd2))
     fid = LK.PL_open_foreign_frame(ld2)
-    a = LK.PL_new_term_refs(ld2, 1)
-    @test LK.unify_ptrs(ld2, b, _twf("error", _twf("e", b), _tw_var()))
-    LK.putSlotValue!(ld2, a + 1, b)
+    a = LK.PL_new_term_refs(ld2, 2)                   # B, error(e(B), _): B = error(e(B), _) on the cells
+    pvm2 = LK.PutVarMap()
+    LK.putSlotValue!(ld2, a + 1, b, pvm2)
+    LK.putSlotValue!(ld2, a + 2, _twf("error", _twf("e", b), _tw_var()), pvm2)
+    @test LK.PL_unify(ld2, a, a + 1)
     qid = LK.PL_open_query(
         gd2, ld2, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, th, a
     )
     @test LK.PL_next_solution(gd2, ld2, qid) == LK.PL_S_EXCEPTION
     ex = LK.PL_exception(ld2, qid)
-    @test ex != 0 && !LK.is_acyclic(ld2, LK.slotValue(ld2, ex + 1))
-    @test _tw_write(LK.slotValue(ld2, ex + 1), _TW_WRITEQ; gd=gd2, ld=ld2) == "NOTPORTED"
+    # the ball read on the cells (L1f f3: until then a term export of the ball, cycle frames kept)
+    @test ex != 0 && !LK.is_acyclic_cells(ld2, -(ex + 1))
+    @test _tw_write_ref(ex, _TW_WRITEQ; gd=gd2, ld=ld2) == "NOTPORTED"
     LK.PL_close_query(ld2, qid)
     LK.PL_close_foreign_frame(ld2, fid)
 

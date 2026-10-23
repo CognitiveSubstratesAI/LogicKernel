@@ -9,7 +9,8 @@
 #
 # The rational-tree cases (`sto(rational_trees)`: cyclic ×4, cycle, ground, sharing_cycles,
 # cycle_with_prefix) build their trees by unification and compare under the bindings — ported in V5a,
-# when `=@=` came to take `ld` (testset "variant: rational trees").
+# when `=@=` came to take `ld`; on the CELLS since L1f f3 (`PL_unify`, `is_variant_ptr_cells`; testset
+# "variant: rational trees").
 #
 # NOT PORTED from this unit, and why:
 #   attvar ×2           attributed variables do not exist in the kernel.
@@ -124,18 +125,31 @@ end
     end
 end
 
-# The units' RATIONAL-TREE tests (`sto(rational_trees)`), ported once `=@=` could see bindings (V5a,
-# `is_variant_ptr(ld, …)`): each goal `A = T` is a unification (`occurs_check=false`), and `=@=`
-# compares under the bindings; a failing conjunction is `false`. Each case runs in its own mark.
+# The units' RATIONAL-TREE tests (`sto(rational_trees)`), ported once `=@=` could see bindings (V5a):
+# each goal `A = T` is a unification (`occurs_check=false`), and `=@=` compares under the bindings; a
+# failing conjunction is `false`. Since L1f f3 on the CELLS (the term-level `pl_unify!` and
+# `is_variant_ptr(ld, …)` before): each side is put into a term reference with the case's ONE variable
+# map, so a variable is one cell throughout the case. Each case runs in its own foreign frame.
 const _TLD = LogicKernel.PL_local_data{_TT}(LogicKernel.PL_global_data{_TT}())
-_tu(a::_TT, b::_TT) = LogicKernel.pl_unify!(_TLD, a, b)
-_tvr(a::_TT, b::_TT) = LogicKernel.is_variant_ptr(_TLD, a, b)
+const _TPVM = Ref(LogicKernel.PutVarMap())                 # the case's variable map
+"Each of `ts` put into a fresh term reference with the case's variable map; the first reference."
+function _tput(ts::_TT...)::Int
+    t = LogicKernel.PL_new_term_refs(_TLD, length(ts))
+    for (i, x) in enumerate(ts)
+        LogicKernel.putSlotValue!(_TLD, t + i, x, _TPVM[])
+    end
+    return t
+end
+_tu(a::_TT, b::_TT) = (t=_tput(a, b); LogicKernel.PL_unify(_TLD, t, t + 1))
+_tvr(a::_TT, b::_TT) =
+    (t=_tput(a, b); LogicKernel.is_variant_ptr_cells(_TLD, -(t + 1), -(t + 2)))
 function _tcase(f)
-    m = LogicKernel.Mark(_TLD)
+    fid = LogicKernel.PL_open_foreign_frame(_TLD)
+    _TPVM[] = LogicKernel.PutVarMap()
     try
         return f()
     finally
-        LogicKernel.Undo!(_TLD, m)
+        LogicKernel.PL_discard_foreign_frame(_TLD, fid)
     end
 end
 _tnil() = mk_nil(_TT)

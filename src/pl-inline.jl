@@ -9,8 +9,8 @@
 #
 # SWI-Prolog's inline helpers the clause store uses: the bit scan behind bucket counts, the
 # cleaning of hashed index keys, clause visibility in a generation, and the database generation —
-# and the binding primitives the unifier (src/pl-prims.jl) is built on: `Trail` (pl-inline.h),
-# `Mark` and `Undo` (pl-incl.h macros) and `deRef` (a pl-data.h macro). They take the local data
+# and the binding primitives the unifier (src/pl-prims.jl) is built on: the trail's entries, `Mark`
+# and `Undo` (pl-incl.h macros) and `deRef` (a pl-data.h macro). They take the local data
 # explicitly, so they are defined here, after it (src/pl-global.jl), rather than in pl-incl.jl.
 # Transactions are not ported: where upstream asks "inside a transaction on a P_TRANSACT
 # predicate?", the answer here is always no.
@@ -168,40 +168,9 @@ function pushArgumentStack(ld::PL_local_data{T}, e::argstack_entry{T})::Nothing 
     return nothing
 end
 
-# ── bindings: deRef, Trail, Mark, Undo ───────────────────────────────────────────────────────────
-# ORIGINAL: the two kinds of variable (L1a; src/pl-global.jl `CELL_KEY_TAG`).
-"""
-The position of the live cell variable `key` names on this engine's global stack, or 0: the key of
-a KEYED variable (a caller's, a counter's, another engine's, or a cell's whose position was reused).
-"""
-@inline function _cell_pos(ld::PL_local_data, key::UInt64)::Int
-    (key & CELL_KEY_TAG) == CELL_KEY_TAG || return 0
-    p = Int(key & CELL_POS_MASK)
-    return (1 <= p <= ld.gTop && ld.gkey[p] == key && !_is_box(ld, p)) ? p : 0
-end
-
-# ORIGINAL: the key of the cell variable at a position (L1a: `gkey`), for the readers that build
-# its variable term from a word (`slotValue`, the trail's readers).
-"The key of the cell variable at global position `p`."
-@inline _cell_key(ld::PL_local_data, p::Int)::UInt64 = ld.gkey[p]
-
-# ORIGINAL — THE COUNTED ADAPTER FOR VARIABLES (L1c sub-commit 6; the L1c plan's condition 3): the
-# variable TERM of the cell at a position, made ON DEMAND from the cell's key, for a reader that
-# does not work on words (the FLI, the built-ins, the writer, the term-level algorithms). COUNTED
-# in `cold_vars` on every call: the zero-export test asserts the VM's hot path never asks (nreverse
-# and qsort, test/core_lang/test_zero_exports.jl). Until sub-commit 6 the term was made per cell at
-# allocation (`gvars`), whether any reader wanted it or not — 1606 of nreverse's 1621 allocations.
-# A variable is its KEY, never its Julia object (src/term_interface.jl): two reads are one variable
-# (test/core_lang/test_var_identity.jl). Transitional, with `gkey` (the stamp falls at L1f).
-"The variable term of the cell at global position `p` (the counted adapter)."
-@inline function _cell_var(ld::PL_local_data{T}, p::Int)::T where {T}
-    ld.cold_vars += 1
-    return mk_var(T, ld.gkey[p])
-end
-
 # ORIGINAL: a value table's box (L1b stage C2) holds the word of its own entry, whose box is here —
-# so a retained key at a position a box now occupies names no cell (a cell's word names an entry
-# boxed elsewhere, or is 0).
+# so a position a box occupies holds no variable (a cell's word names an entry boxed elsewhere, or
+# is 0).
 "Whether position `p` of the global stack is a value-table box."
 @inline function _is_box(ld::PL_local_data, p::Int)::Bool
     w = ld.gstack[p]
@@ -223,7 +192,7 @@ end
     push!(ld.vtable, v)
     push!(ld.vbox, p)
     w = consPtr(length(ld.vtable), TAG_COMPOUND | STG_RESERVED)
-    ld.gstack[p] = w                  # the box: the entry's own word (`_cell_pos` tells it apart)
+    ld.gstack[p] = w                  # the box: the entry's own word (`_is_box` tells it apart)
     ld.gTop = p
     return w
 end
@@ -300,16 +269,6 @@ end
     )
 end
 
-# ORIGINAL: the ONE place that tells a live cell variable from a keyed one (L1c). Since f3-2 (audit
-# D-0111, f3's Q3) no writer reads it — a writer gives every variable a fresh cell per write
-# (`_var_word!`, `_write_var_word!`); its last caller is `_import_var!`. (c): deleted in f3.
-"The reference word of `v`'s cell when `v` is a live cell variable (`makeRefG`), else 0."
-@inline function _var_ref_word(ld::PL_local_data{T}, v::T)::word where {T}
-    kind(v) === VAR || return word(0)
-    p = _cell_pos(ld, var_key(v))
-    return p == 0 ? word(0) : makeRefG(p)
-end
-
 # ── tagged small integers (L1d step 4; the workspace's L1_plan/stageL1d_design.md §3b) ────────────
 # PORT: pl-data.h consInt as _tagged_int_word
 # (`TAG_INTEGER|STG_INLINE`, for the cells: the word of an integer in the tagged range)
@@ -377,63 +336,15 @@ end
     return _gnd_word!(ld, v)
 end
 
-# ORIGINAL (f3-2; audit D-0111, f3's Q3): `_word_of!`'s variable, a WRITE OF ITS OWN — its binding
-# followed; unbound, ONE FRESH CELL, whose reference is the word. The put semantics settled
+# ORIGINAL (f3-2; audit D-0111, f3's Q3): `_word_of!`'s variable, a WRITE OF ITS OWN — ONE FRESH
+# CELL, whose reference is the word (a term has no bindings since f3). The put semantics settled
 # 2026-10-14 (`putSlotValue!`): separate writes are separate variables, and sharing with a variable
-# already in the engine goes through its term reference, as in SWI's C interface. Until f3-2 a live
-# cell variable was its own cell's reference (`_var_ref_word`) and a keyed one was bound to a fresh
-# cell (`_import_var!`, trailed, recorded in `import_origin`), so two writes of one variable term
-# shared a cell. The fresh cell is counted in `cold_imports`, as `_import_var!` counted its cell.
-"The word a write of its own stores for the variable term `v`: its binding's word, or a fresh cell's reference."
+# already in the engine goes through its term reference, as in SWI's C interface. Until f3-2 two
+# writes of one variable term shared a cell. The fresh cell is counted in `cold_imports`.
+"The word a write of its own stores for the variable term `v`: a fresh cell's reference."
 @noinline function _var_word!(ld::PL_local_data{T}, v::T)::word where {T}
-    # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef, it follows a variable term's
-    # binding — deleted in f3 (`t = v`)
-    t = deRef(ld, v)
-    k = kind(t)
-    if k === VAR                                    # one fresh cell per variable per write
-        ld.cold_imports += 1
-        return makeRefG(allocGlobalCells!(ld, 1))
-    end
-    k === SYM && return _atom_word!(ld, t)
-    k === EXPR && return _compound_word!(ld, t)
-    return _gnd_word!(ld, t)
-end
-
-# ORIGINAL (f3b-1, the F3B group plan's writers): the COLD IMPORT OF A
-# VARIABLE — what a writer stored for a variable term until f3-2 (audit D-0111, f3's Q3: since then
-# no writer calls it, each write gives a variable a fresh cell of its own: `_var_word!`).
-# A live cell variable is its reference (upstream's
-# `makeRefG`); a KEYED one (a caller's, a value variable, a cell's whose position was freed) is followed
-# through its bindings: one bound to a value gives that value, for the caller to write; one bound to a live
-# cell variable gives that cell's reference; an UNBOUND one is BOUND — trailed, `Trail!` — to a fresh cell,
-# whose reference is the word, counted in `cold_imports`. The binding is the variable → cell map: the same
-# keyed variable written twice is one cell, and an undo that unbinds it frees the cell. So no writer makes a
-# keyed variable's value-table word or a slot's side value of one (the boundary has no new source), where
-# until f3b-1 each writer stored the variable itself (`_vword!`, `SLOT_VALUE`). (c): the keyed variable and
-# its store go in f3 — this function with them.
-"""
-    _import_var!(ld, v) -> (word, value)
-
-The word a writer stores for the variable term `v`: `(word, v)` — a cell's reference, the fresh cell an
-unbound keyed variable was bound to — or `(0, value)` when `v` is bound to a non-variable `value`.
-"""
-@noinline function _import_var!(ld::PL_local_data{T}, v::T)::Tuple{word, T} where {T}
-    t = v
-    while true
-        r = _var_ref_word(ld, t)
-        r != 0 && return (r, v)                     # a live cell variable: its reference
-        b = _binding(ld, var_key(t))                # a keyed variable: the store
-        if b === nothing                            # unbound: bound to a fresh cell, its reference
-            p = allocGlobalCells!(ld, 1)
-            ld.cold_imports += 1
-            ck = _cell_key(ld, p)
-            ld.import_origin[ck] = var_key(t)       # a reader of the cell returns the variable it was made for (TRANSITIONAL: goes with the stamp, f3)
-            Trail!(ld, var_key(t), mk_var(T, ck))
-            return (makeRefG(p), v)
-        end
-        kind(b) === VAR || return (word(0), b)      # bound to a value: the caller writes it
-        t = b
-    end
+    ld.cold_imports += 1                            # one fresh cell per variable per write
+    return makeRefG(allocGlobalCells!(ld, 1))
 end
 
 # ── compounds on the global stack (L1c; the workspace's L1_plan/stageL1c_design.md) ─────────────
@@ -452,131 +363,20 @@ end
     return p
 end
 
-# ORIGINAL — THE COLD EXPORT (L1c; user, 2026-10-15): the compound at global position `p` as an
-# interface TERM, for a reader that does not work on words yet (the FLI, the built-ins, the writer).
-# COUNTED in `cold_exports` — every call. ONE term per compound, kept in `gterms[p]` until `gTop`
-# falls below it (`_truncate_gterms!`, beside the value table's truncation): the term-level
-# algorithms that are not over
-# cells yet (`do_unify`'s cycle links, the occurs check's marks, compare, copy_term, the writer)
-# recognise a compound they revisit by its term's IDENTITY — a fresh term per read would make a
-# cyclic structure (`X = f(X), Y = f(Y), X = Y`) never terminate. Transitional: it goes when those
-# readers work on the cells (L1d, L1f) — see the workspace's L1_plan/stageL1c_design.md.
-# ONE LEVEL DEEP and IMMUTABLE: the head symbol (none for `$expr`), then per argument THE CELL'S
-# VARIABLE TERM, which the reader dereferences (`deRef`: the cell's word now — an atom, a value, a
-# reference, again this export for a compound). So the term stays right as the cells are bound and
-# undone (a memoized `f(a)` would outlive the `Undo` of its argument's binding), a cyclic structure
-# never loops it, and a variable keeps its identity (its key).
-"The compound at global position `p` as a term (the cold export, counted)."
-function _compound_term(ld::PL_local_data{T}, p::Int)::T where {T}
-    ld.cold_exports += 1
-    m = ld.gterms[p]
-    m === nothing || return m
-    f = ld.gstack[p]
-    while isRef(f)              # linked by a running do_unify_cells (pl-prims.c linkTermsCyclic):
-        f = ld.gstack[unRef(f)]  # the compound it is being unified with has the functor word
-    end
-    n = arityFunctor(ld.functors, f)
-    name = nameFunctor(ld.functors, f)
-    expr = name == ld.atom_dexpr
-    kids = Vector{T}(undef, expr ? n : n + 1)
-    k = 0
-    if !expr
-        kids[1] = _atom_value(ld, name)
-        k = 1
-    end
-    for i in 1:n
-        kids[k + i] = _cell_var(ld, p + i)
-    end
-    t = mk_expr(T, kids)
-    # TRANSITIONAL (L1c; user, 2026-10-15: approved): the export memo — REMOVED when the term-level
-    # cycle detectors work on the cells (L1d: do_unify, compare, the occurs check; L1f: copy_term).
-    ld.gterms[p] = t
-    # TRANSITIONAL (L1d; user, 2026-10-15): the reverse map — a store of this export is ITS word
-    # (`_compound_word!`). It follows the memo: an entry is live only while `gterms[p] === t`
-    # (`_export_pos`), so the truncation (`Undo!`'s hot path) deletes nothing — `delete!` on an
-    # IdDict allocates (AllocCheck: `jl_eqtable_pop`) — and the dead entries are purged here, on
-    # the cold path, once they outnumber the live memo
-    ld.gterm_of[t] = p
-    length(ld.gterm_of) > 2 * ld.ngterm + 64 && _purge_gterm_of!(ld)
-    n = ld.ngterm + 1
-    n > length(ld.gterm_pos) ? push!(ld.gterm_pos, p) : (ld.gterm_pos[n] = p)
-    ld.ngterm = n
-    p > ld.gterm_top && (ld.gterm_top = p)
-    Threads.atomic_add!(_COLD_EXPORT_TERMS, 1)
-    return t
-end
-
-# ORIGINAL: the reverse map's lookup (L1c; TRANSITIONAL with the memo): the position whose live
-# export `t` is — `gterms[p] === t` — or 0 for any other term (a stale export: its position was
-# truncated, or holds another compound now).
-"The global position of the compound whose LIVE export is `t`, or 0."
-@inline function _export_pos(ld::PL_local_data{T}, t::T)::Int where {T}
-    p = get(ld.gterm_of, t, 0)
-    return (p != 0 && p <= ld.gTop && ld.gterms[p] === t) ? p : 0
-end
-
-# ORIGINAL: the reverse map rebuilt from the live memo entries (L1c; TRANSITIONAL with the memo) —
-# called from the cold export when the dead entries outnumber the live ones, never from `Undo!`.
-"Drop the reverse map's dead entries: rebuild it from the live memo."
-@noinline function _purge_gterm_of!(ld::PL_local_data{T})::Nothing where {T}
-    empty!(ld.gterm_of)
-    for i in 1:(ld.ngterm)
-        p = ld.gterm_pos[i]
-        ld.gterm_of[ld.gterms[p]::T] = p
-    end
-    return nothing
-end
-
-# ORIGINAL: the export memo follows the global stack down (L1c), as the value table does: every
-# entry at a position above `gTop` goes. TRANSITIONAL, with the memo. O(1) on every `Undo!` that
-# frees no export (the audit's D-0010: the scan cost every backtrack O(memo) — poly_10 2.6× slower):
-# `gterm_top`, the highest position holding one, is at or below `gTop`; only a truncation below it
-# scans, and leaves it the highest survivor.
-"Drop the exports of the compounds above `gTop` (in place: `Undo!` allocates nothing)."
-function _truncate_gterms!(ld::PL_local_data{T})::Nothing where {T}
-    top = ld.gTop
-    ld.gterm_top <= top && return nothing
-    j = 0
-    hi = 0
-    for i in 1:(ld.ngterm)                          # positions in no order: compacted in place
-        p = ld.gterm_pos[i]
-        if p <= top
-            j += 1
-            ld.gterm_pos[j] = p
-            p > hi && (hi = p)
-        else
-            ld.gterms[p] = nothing                  # (its reverse-map entry: stale, see `_export_pos`)
-        end
-    end
-    ld.ngterm = j
-    ld.gterm_top = hi
-    return nothing
-end
-
 # ORIGINAL — THE COLD IMPORT (L1c): a compound TERM copied onto the global stack, for a writer that
-# does not work on words yet (a built-in's result, a query's argument, a keyed variable's binding
-# stored in a cell) — so neither the value table nor a `SLOT_VALUE` slot holds a compound. COUNTED
-# in `cold_imports`. ITERATIVE (a long list nests in its last argument): each compound's cells laid
-# out, then its arguments written — an atom its word, a nested compound its own copy, a number or a
-# string its word (a tagged integer, or a value-table word), a VARIABLE (f3-2, audit D-0111, f3's
-# Q3) its binding followed: unbound, ONE FRESH CELL per variable per import — a write-local map, as
-# a put's (`PutVarMap`), so the variable's occurrences in this term share the cell and a separate
-# write of the same variable term is a separate variable (`_var_word!`); bound to a compound on the
-# stack, that compound's word (its export's, as at the root); bound to another compound, it laid out
-# ONCE per import, by identity, so a cycle through a binding (a rational tree: `B = hello(B)` on
-# terms) closes on the copy. Until f3-2 a live cell variable was its cell's reference
-# (`_var_ref_word`) and a keyed one bound to a fresh cell (`_import_var!`), shared across writes.
+# does not work on words yet (a built-in's result, a query's argument) — so neither the value table
+# nor a `SLOT_VALUE` slot holds a compound. COUNTED in `cold_imports`. ITERATIVE (a long list nests
+# in its last argument): each compound's cells laid out, then its arguments written — an atom its
+# word, a nested compound its own copy, a number or a string its word (a tagged integer, or a
+# value-table word), a VARIABLE (f3-2, audit D-0111, f3's Q3) ONE FRESH CELL per variable per import
+# — a write-local map, as a put's (`PutVarMap`), so the variable's occurrences in this term share the
+# cell and a separate write of the same variable term is a separate variable (`_var_word!`). A term
+# has no bindings since f3: nothing is followed, and no term names a compound on the stack.
 "Copy the compound term `t` onto the global stack; its compound word (the cold import, counted)."
 function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
-    # the export of a compound still on the stack: ITS word, no copy — upstream shares the pointer
-    # (`*ARGP = *k`, `Trail(t1, w2)`); a copy made the error term of the occurs check reference
-    # cells the check's Undo had freed (test_catch_swipl.jl t24: `occurs_check(_, g(_))`, 2026-10-15)
-    p = _export_pos(ld, t)
-    p != 0 && return consPtr(p, TAG_COMPOUND | STG_GLOBAL)
     ld.cold_imports += 1
     todo = Tuple{T, Int}[]
     root = _import_layout!(ld, t, todo)
-    done = nothing                                  # (f3b-1: the compounds a binding reached)
     vm = nothing                                    # (f3-2: this write's variables, Q3)
     while !isempty(todo)
         u, p = pop!(todo)
@@ -588,31 +388,10 @@ function _compound_word!(ld::PL_local_data{T}, t::T)::word where {T}
                 _atom_word!(ld, c)
             elseif kc === EXPR
                 _import_layout!(ld, c, todo)
-            elseif kc === VAR
-                # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef, it follows a
-                # variable term's binding — deleted in f3 (`b = c`)
-                b = deRef(ld, c)
-                kb = kind(b)
-                if kb === VAR                       # one fresh cell per variable per write (Q3)
-                    m = vm === nothing ? PutVarMap() : vm
-                    vm = m
-                    _write_var_word!(ld, m, var_key(b))
-                elseif kb === SYM
-                    _atom_word!(ld, b)
-                elseif kb === EXPR
-                    q = _export_pos(ld, b)          # on the stack: its word, as at the root
-                    if q != 0
-                        consPtr(q, TAG_COMPOUND | STG_GLOBAL)
-                    else                            # once per import: a cycle closes on its copy
-                        d = done === nothing ? IdDict{T, word}() : done
-                        done === nothing && (d[t] = root)   # (the root: a cycle may close on it)
-                        done = d
-                        wb = get(d, b, word(0))
-                        wb != 0 ? wb : (d[b] = _import_layout!(ld, b, todo))
-                    end
-                else
-                    _gnd_word!(ld, b)
-                end
+            elseif kc === VAR                       # one fresh cell per variable per write (Q3)
+                m = vm === nothing ? PutVarMap() : vm
+                vm = m
+                _write_var_word!(ld, m, var_key(c))
             else
                 _gnd_word!(ld, c)                   # a small integer tagged (L1d step 4)
             end
@@ -639,21 +418,6 @@ function _import_layout!(
     return consPtr(p, TAG_COMPOUND | STG_GLOBAL)
 end
 
-# ORIGINAL: the value a cell's word holds (L1b stage C2): unbound (0), an atom (C3), a reference —
-# the variable of the cell it points at, which `deRef` follows on (L1c) — a compound on the stack,
-# as a term through the cold export (L1c), a tagged integer its term (L1d step 4), or a value-table
-# entry.
-"The value word `w` of a bound cell names, or `nothing` for an unbound cell (the word 0)."
-@inline function _cell_value(ld::PL_local_data{T}, w::word)::Union{Nothing, T} where {T}
-    isVar(w) && return nothing
-    isAtomW(w) && return _atom_value(ld, w)
-    # TRANSITIONAL (f3b-3, class (c)): a cell word read as a term (`_cell_var`, `_compound_term`);
-    # its one caller is `_binding` (machinery); deleted in f3
-    isRef(w) && return _cell_var(ld, unRef(w))
-    _is_gcompound(w) && return _compound_term(ld, valPtr(w))
-    return _value_term(ld, w)
-end
-
 # ORIGINAL: the value table follows the global stack down (L1b stage C2): every entry whose box lies
 # above `gTop` is gone with it.
 "Drop the value-table entries whose boxes lie above `gTop`."
@@ -665,33 +429,10 @@ end
     return nothing
 end
 
-# ORIGINAL: what a variable is bound to, for the few readers that look a binding up by key.
-# TRANSITIONAL (f3b-3, class (c)): machinery — the term core's binding by key (`deRef`, the term
-# occurs check, the term copy); deleted in f3
-"The value variable `key` is bound to, or `nothing` (unbound): its cell, or the store."
-@inline function _binding(ld::PL_local_data{T}, key::UInt64)::Union{Nothing, T} where {T}
-    p = _cell_pos(ld, key)
-    return p != 0 ? _cell_value(ld, ld.gstack[p]) : get(ld.bindings, key, nothing)
-end
-
-# ORIGINAL: bind without a trail entry — the callers that restore the binding themselves.
-"Bind variable `key` to `v` WITHOUT trailing it: its cell, or the store."
-function _set_binding!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
-    p = _cell_pos(ld, key)
-    if p != 0
-        ld.gstack[p] = _word_of!(ld, v)  # *p = v
-    else
-        ld.bindings[key] = v
-    end
-    return nothing
-end
-
 # ── the trail's entries (L1b stage D; src/pl-global.jl) ─────────────────────────────────────────
 # ORIGINAL: the address entry's stack codes: upstream's address says which stack itself.
 "Trail stack code: a cell of the global stack."
 const TRAIL_GLOBAL = 0
-"Trail stack code: a KEYED variable — entry `pos` of `trail_keys` (until the stamp falls)."
-const TRAIL_KEYED = 2
 
 # ORIGINAL: an address entry, `(pos << 3) | (stack << 1) | TAG_TRAILADDR`.
 "The address entry naming position `p` of stack code `stack`."
@@ -702,39 +443,18 @@ _trail_stack(e::word)::Int = Int((e >> 1) & 0x3)
 "The position address entry `e` names."
 _trail_pos(e::word)::Int = Int(e >> 3)
 
-# ORIGINAL: the variable an address entry names, for the readers that build it (unifiable/3, the
-# occurs check, records, the writer): a cell's key from the position it names, a keyed one's from
-# `trail_keys`.
-"The key of the variable address entry `e` names."
-function _trail_key(ld::PL_local_data, e::word)::UInt64
-    _trail_stack(e) == TRAIL_KEYED && return ld.trail_keys[_trail_pos(e)]
-    return _cell_key(ld, _trail_pos(e))
-end
-
-# ORIGINAL: `setVar(*tt->address)` for an address entry: a cell to 0, a keyed variable out of the
-# store (and its key off `trail_keys`, which the entries above it have left).
+# ORIGINAL: `setVar(*tt->address)` for an address entry: its cell to 0.
 "Reset the variable address entry `e` names, as the newest entry popped."
 function _untrail!(ld::PL_local_data, e::word)::Nothing
-    if _trail_stack(e) == TRAIL_KEYED
-        @assert _trail_pos(e) == length(ld.trail_keys) "trail_keys out of step with the trail"
-        v = pop!(ld.bindings, pop!(ld.trail_keys))
-        # (f3b-1, TRANSITIONAL: goes with the stamp, f3) an import's binding is gone, its cell with it: the cell's key no longer maps back
-        isempty(ld.import_origin) || kind(v) !== VAR ||
-            delete!(ld.import_origin, var_key(v))
-    else
-        ld.gstack[_trail_pos(e)] = word(0)  # setVar(*p)
-    end
+    ld.gstack[_trail_pos(e)] = word(0)  # setVar(*p)
     return nothing
 end
 
 # ORIGINAL: drop the entries above `n` WITHOUT undoing them (a frozen ball's bindings,
-# `copy_exception!`), `trail_keys` kept in step.
+# `copy_exception!`).
 "Truncate the trail to `n` entries, leaving their bindings in place."
 function _trail_truncate!(ld::PL_local_data, n::Int)::Nothing
-    while length(ld.trail) > n
-        e = pop!(ld.trail)
-        !isTrailVal(e) && _trail_stack(e) == TRAIL_KEYED && pop!(ld.trail_keys)
-    end
+    length(ld.trail) > n && resize!(ld.trail, n)
     return nothing
 end
 
@@ -750,24 +470,18 @@ end
 # word, when one arrives as a word (copied from a cell); a COMPOUND word, a compound on the global
 # stack (L1c: built there by the VM, or a term copied there by the cold import); a TAGGED INTEGER
 # (L1d step 4: `consInt`, from a cell or a `*_SMALLINT` operand); or `SLOT_VALUE`,
-# whose value is the slot's OWN entry of `slot_values` — since f3b-1 only in a slot older than the
-# innermost foreign frame (an indirect: `_slot_store!`; until f3-2 a keyed variable too) and at the
-# boundary (the term copy of a ball, `copy_exception!`; `_boundary_slot_link_value!`), where until
-# then any value with no
-# word form yet and every keyed variable took one. DIVERGES,
-# transitional: the side entry is the slot's own, so a copy of a `SLOT_VALUE` word copies the value
-# too (`_slot_copy!`) and no word names another slot's entry. The word 0 is a slot never written.
-# Since f3-1 (audit D-0110, f3's Q1 (b)) a side entry that is a grounded value (an indirect) is READ
-# as a value: `_deref_loc` hands it out as its SIDE WORD (`_side_word`, below), `DU_VALUE` — never as
-# the boundary (`DU_TERM`), which keeps only a side entry holding a keyed variable or a ball copied
-# on terms (`copy_exception!`), both gone with the keyed variables in f3.
+# whose value is the slot's OWN entry of `slot_values` — since f3 only an indirect (a float, a big
+# integer, a string) in a slot older than the innermost foreign frame (`_slot_store!`, audit D-0024).
+# DIVERGES: the side entry is the slot's own, so a copy of a `SLOT_VALUE` word copies the value too
+# (`_slot_copy!`) and no word names another slot's entry. The word 0 is a slot never written. Since
+# f3-1 (audit D-0110, f3's Q1 (b)) the side entry is READ as a value: `_deref_loc` hands it out as its
+# SIDE WORD (`_side_word`, below), `DU_VALUE`.
 "The slot word whose value is the slot's own entry of `slot_values` (L1b stage C5)."
 const SLOT_VALUE = TAG_COMPOUND | STG_LOCAL
 
 # ORIGINAL (f3-1; audit D-0110, f3's Q1 (b)): the SIDE WORD — a slot's grounded side value read as a
-# VALUE word (`DU_VALUE`, `_deref_loc`), so that no reader takes the boundary for it: `SLOT_VALUE`'s
-# tag with the slot's index as its payload (`SLOT_VALUE` itself, payload 0, is only ever the slot's own
-# word). A value reader reads it as it reads a value-table word, through `_indirect_value` (or
+# VALUE word (`DU_VALUE`, `_deref_loc`): `SLOT_VALUE`'s tag with the slot's index as its payload
+# (`SLOT_VALUE` itself, payload 0, is only ever the slot's own word). A value reader reads it as it reads a value-table word, through `_indirect_value` (or
 # `_value_term`). It is a READ-ONLY word, never stored: it names the slot's own entry, which a
 # later write of the slot replaces — so a writer stores its value's own word instead
 # (`_value_word!` into a cell: a fresh value-table entry, as `_word_of!` made one on the term path
@@ -794,56 +508,7 @@ end
     return _gnd_word!(ld, ld.slot_values[valPtr(w)])
 end
 
-# ORIGINAL: the slot read (L1b stage C5: built from the slot's word; allocation-free — a variable
-# term is a struct with no box, and an atom's symbol is cached).
-"The value slot `i` holds (the term reference `t` is slot `t + 1`)."
-@inline function slotValue(ld::PL_local_data{T}, i::Int)::T where {T}
-    w = ld.slots[i]
-    w == SLOT_VALUE && return ld.slot_values[i]
-    if isRef(w)
-        # (f3b-1) the exception bin holds a reference to the ball's cell: the ball is read whole
-        ld.exception_bin != 0 && w == ld.slots[ld.exception_bin + 1] &&
-            return _slot_ball_term(ld, w)
-        return _cell_var(ld, unRef(w))
-    end
-    _is_gcompound(w) && return _slot_compound_term(ld, w)      # the cold export (L1c)
-    return _slot_atom(ld, w)
-end
-
-# ORIGINAL (f3b-1): the cold export of a compound slot. The exception's BALL — the compound the exception
-# bin holds — is exported WHOLE: upstream's ball is `duplicate_term`'s copy, a term of its own that needs no
-# bindings to be read, and until f3b-1 it was a value in the bin's side entry (`SLOT_VALUE`), read as one. Any
-# other compound is exported one level (its children the argument cells' variables), as before. A ball
-# that is cyclic through a variable (a rational tree: V5d keeps it) keeps that VARIABLE at the cycle, to be
-# read under the bindings, where the cycle lives (`_resolve_term`).
-"The exception ball the reference `w` (the exception bin's word) names, whole when its cell holds a compound, else the cell's variable."
-@noinline function _slot_ball_term(ld::PL_local_data{T}, w::word)::T where {T}
-    p = unRef(w)
-    cw = ld.gstack[p]
-    _is_gcompound(cw) || return _cell_var(ld, p)
-    return _resolve_term(ld, _compound_term(ld, valPtr(cw)), true)
-end
-
-"The term of the compound slot word `w`: the exception ball whole, any other compound one level deep."
-@noinline function _slot_compound_term(ld::PL_local_data{T}, w::word)::T where {T}
-    t = _compound_term(ld, valPtr(w))
-    return if (w == ld.ball_word || w == ld.slots[ld.exception_bin + 1])
-        _resolve_term(ld, t, true)
-    else
-        t
-    end
-end
-
-# ORIGINAL: the rest of `slotValue`, out of line: an atom word, or a slot never written.
-"The symbol of the atom word `w` a slot holds, or a tagged integer's term (L1d step 4); a slot never written (the word 0) is an error."
-function _slot_atom(ld::PL_local_data{T}, w::word)::T where {T}
-    isAtomW(w) && return _atom_value(ld, w)
-    isTaggedIntW(w) && return mk_gnd(T, valInt(w))
-    _is_vword(w) && return ld.vtable[valPtr(w)]     # a value-table word (L1e e1)
-    throw(_slot_word_error(w))
-end
-
-# ORIGINAL: the error of a slot word that is none of the three forms.
+# ORIGINAL: the error of a slot word that is none of the slot words (`_deref_loc`).
 "The internal error of a slot holding `w`, none of the slot words (0: never written)."
 @noinline _slot_word_error(w::word)::Exception = ErrorException(
     "slot word $(repr(w)): a slot read before it was written, or a word that is no slot word"
@@ -863,22 +528,22 @@ end
 end
 
 # ORIGINAL: a term's slot word (L1b stage C5): a compound its copy on the stack, an atom its word, a
-# number its word, a variable a fresh cell's reference or its binding's word (`_slot_store_var!`: a
-# write of its own, f3-2). Only a slot OLDER than the innermost foreign frame keeps a side value
+# number its word, a variable a fresh cell's reference (`_slot_store_var!`: a write of its own,
+# f3-2). Only a slot OLDER than the innermost foreign frame keeps a side value
 # (`SLOT_VALUE`): an indirect (a float, a big integer, a string), whose word that frame's rewind
 # would free while the slot lives on — the read stays defined (L1e e1, audit D-0024: upstream's is
 # not). DECIDED (audit D-0110, f3's Q1 (b)): the indirect's side value STAYS — a divergence for
 # safety (upstream: the reference dangles after the rewind, its read undefined), revisited after L1
-# in the divergence review — and since f3-1 it is READ as a value (`_side_word`, `DU_VALUE`), never
-# as the boundary. The keyed variable's side value (f3b-1) went in f3-2 (audit D-0111, f3's Q3): a
-# variable gets a fresh cell wherever the slot lies, as `PL_put_variable` gives it one.
+# in the divergence review — and since f3-1 it is READ as a value (`_side_word`, `DU_VALUE`). A
+# variable gets a fresh cell wherever the slot lies (f3-2, audit D-0111, f3's Q3), as
+# `PL_put_variable` gives it one.
 "Store the term `v` in slot `i` as its word."
 @inline function _slot_store!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
     k = kind(v)
     if k === EXPR                                               # a copy on the stack (L1c)
         ld.slots[i] = _compound_word!(ld, v)
         return nothing
-    elseif k === VAR                                            # a fresh cell, or its binding
+    elseif k === VAR                                            # a fresh cell
         return _slot_store_var!(ld, i, v)
     elseif k === SYM                                            # its atom word (L1e e1)
         ld.slots[i] = _atom_word!(ld, v)
@@ -899,36 +564,14 @@ end
 end
 
 # ORIGINAL (f3-2; audit D-0111, f3's Q3): `_slot_store!`'s variable, a WRITE OF ITS OWN (as
-# `_var_word!`) — its binding followed, stored as any value is; unbound, ONE FRESH CELL referenced
-# from the slot (`_slot_new_var!`, counted in `cold_imports`), wherever the slot lies, as
-# `PL_put_variable` does. Separate writes are separate variables: sharing goes through a term
-# reference (`PL_put_term`). Until f3-2 a live cell variable was its cell's reference
-# (`_var_ref_word`); a keyed one was bound to a fresh cell (`_import_var!`), or, in a slot older
-# than the innermost foreign frame, kept as the slot's side value (`SLOT_VALUE`, a keyed variable in
-# a slot: the boundary).
-"Store the variable term `v` in slot `i`: its binding's value, or a fresh cell's reference."
+# `_var_word!`): ONE FRESH CELL referenced from the slot (`_slot_new_var!`, counted in
+# `cold_imports`), wherever the slot lies, as `PL_put_variable` does. Separate writes are separate
+# variables: sharing goes through a term reference (`PL_put_term`).
+"Store the variable term `v` in slot `i`: a fresh cell's reference."
 @noinline function _slot_store_var!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
-    # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef, it follows a variable term's
-    # binding — deleted in f3 (`t = v`)
-    t = deRef(ld, v)
-    kind(t) === VAR || return _slot_store!(ld, i, t)
     ld.cold_imports += 1                            # one fresh cell per variable per write
     _slot_new_var!(ld, i)
     return nothing
-end
-
-# ORIGINAL: a term stored in slot `i` as a VALUE (L1c): a compound stays a term in the slot's side
-# entry (`SLOT_VALUE`) instead of being copied onto the global stack — for the exception's ball,
-# which the kernel keeps as a value outside the stacks (decision 1: upstream's `freezeGlobal`), so
-# the `Undo` of the unwinding cannot free its cells; anything else as `_slot_store!`.
-"Store the term `v` in slot `i`, a compound as a value (`SLOT_VALUE`), not copied onto the stack."
-@inline function _slot_store_value!(ld::PL_local_data{T}, i::Int, v::T)::Nothing where {T}
-    if kind(v) === EXPR
-        ld.slot_values[i] = v
-        ld.slots[i] = SLOT_VALUE
-        return nothing
-    end
-    return _slot_store!(ld, i, v)
 end
 
 # ORIGINAL: a slot's word into another slot (L1b stage C5) — upstream's `*to = *from` between frame
@@ -938,25 +581,6 @@ end
     w = ld.slots[from]
     w == SLOT_VALUE && (ld.slot_values[to] = ld.slot_values[from])
     ld.slots[to] = w
-    return nothing
-end
-
-# ORIGINAL (L1c-6): `_slot_link!`'s two TERM branches, out of line — a value-table entry (a value with
-# no word yet, a keyed variable) and a slot's side value, each dereferenced as a term: the BOUNDARY,
-# TRANSITIONAL until the stamp falls (L1f). `@noinline`, so the VM's word path carries no term read
-# (the call path's AllocCheck exempts exactly these, by name: test/static_analysis_body.jl).
-"Store the value-table entry `t`, dereferenced, in slot `to` (`_slot_link!`'s boundary)."
-@noinline function _boundary_slot_link!(
-    ld::PL_local_data{T}, to::Int, t::T
-)::Nothing where {T}
-    _slot_store!(ld, to, deRef(ld, t))
-    return nothing
-end
-"Store slot side value `t`, dereferenced, in slot `to` as a value (`_slot_link!`'s boundary)."
-@noinline function _boundary_slot_link_value!(
-    ld::PL_local_data{T}, to::Int, t::T
-)::Nothing where {T}
-    _slot_store_value!(ld, to, deRef(ld, t))
     return nothing
 end
 
@@ -998,8 +622,7 @@ PutVarMap() = PutVarMap(Dict{UInt64, Int}())
 
 # ORIGINAL (f3-2; audit D-0111, f3's Q3): a writer's write-local variable map (`_compound_word!`,
 # `import_cells!`) — the put's map (`PutVarMap`) for a write of a term: the unbound variable `key`'s
-# cell in `vm`, a fresh one on its first sight (counted in `cold_imports`, as `_import_var!` counted
-# the cell it made until f3-2).
+# cell in `vm`, a fresh one on its first sight (counted in `cold_imports`).
 "The reference word of the cell that write-local map `vm` gives the unbound variable `key` (a fresh cell on first sight)."
 function _write_var_word!(ld::PL_local_data, vm::PutVarMap, key::UInt64)::word
     p = get(vm.cells, key, 0)
@@ -1012,36 +635,33 @@ function _write_var_word!(ld::PL_local_data, vm::PutVarMap, key::UInt64)::word
 end
 
 # ORIGINAL: THE BOUNDARY — a Julia caller's value put into a slot, with SWI's semantics (user,
-# 2026-10-14): the value is COPIED as a record is (`copyRecordToGlobal`) — bindings followed, every
-# unbound variable, a caller's or one of this engine's, a fresh cell, one per variable per `vm` — so
-# separate puts make separate variables, and sharing with a variable already in the engine goes
-# through its handle (`PL_put_term`, `setSlotValue!`), as in SWI's C interface. The put never asks
-# whether a variable is a live cell: no stamp site. Since f3b-1 (F1-Q4 (a), audit D-0042) the value
+# 2026-10-14): the value is COPIED as a record is (`copyRecordToGlobal`) — every variable a fresh
+# cell, one per variable per `vm` — so separate puts make separate variables, and sharing with a
+# variable already in the engine goes through its handle (`PL_put_term`, `setSlotValue!`), as in
+# SWI's C interface. Since f3b-1 (F1-Q4 (a), audit D-0042) the value
 # is LAID OUT on the cells directly, no term walk (`copy_term`) and no export, in two passes: first a
 # fresh cell for each new variable, in depth-first order of first occurrence — the order the term walk
 # made them in until f3b-1, and the order swipl's reader makes a goal's variables in (the standard order
 # of variables follows it); then each compound's cells at its first visit, depth-first, its variable
 # arguments references to their cells (toward the lower cell, as pl-rec.c `copy_record` keeps them). A
-# compound met again by identity — through a binding: a cycle (`B = hello(B)`), or a subterm shared —
-# is laid out once and referenced again (`copy_record`'s `PL_REC_CYCLE`). A value has no identity, so
-# every compound is copied (a record copies every cell: nothing of the value is shared with the stacks).
+# compound met again by identity (a subterm shared) is laid out once and referenced again
+# (`copy_record`'s `PL_REC_CYCLE`). A value has no identity, so every compound is copied (a record
+# copies every cell: nothing of the value is shared with the stacks).
 """
     putSlotValue!(ld, i, v[, vm])
 
 Put a CALLER's value `v` into slot `i`: a copy with fresh variables, shared with the other puts
 that pass the same `vm` (`PutVarMap`); without `vm`, a put of its own. Variable identity is the
-handle: read the value — and an answer — through the slot (`slotValue`), never through the caller's
-variable. (Until f3b-1 it returned the value stored, read back through the cold export.)
+handle: read the value — and an answer — through the slot (`export_cells`, `query_answers`), never
+through the caller's variable. (Until f3b-1 it returned the value stored, read back through the cold
+export.)
 """
 function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::Nothing where {T}
-    # TRANSITIONAL (f3b-3, class (c)): the deRef follows a variable bound in the keyed store only;
-    # it is deleted in f3 (`t = v`)
-    t = deRef(ld, v)
-    k = kind(t)
+    k = kind(v)
     if k === EXPR
-        ld.slots[i] = _put_compound!(ld, t, vm)
+        ld.slots[i] = _put_compound!(ld, v, vm)
     elseif k === VAR                                # one fresh cell per variable per map
-        key = var_key(t)
+        key = var_key(v)
         p = get(vm.cells, key, 0)
         if p == 0
             p = allocGlobalCells!(ld, 1)
@@ -1049,7 +669,7 @@ function putSlotValue!(ld::PL_local_data{T}, i::Int, v::T, vm::PutVarMap)::Nothi
         end
         ld.slots[i] = makeRefG(p)
     else                                            # an atom or a number: its word (in a slot older
-        _slot_store!(ld, i, t)                      # than the innermost foreign frame an indirect's
+        _slot_store!(ld, i, v)                      # than the innermost foreign frame an indirect's
     end                                             # side value, D-0024 — as before f3b-1)
     return nothing
 end
@@ -1060,7 +680,7 @@ putSlotValue!(ld::PL_local_data{T}, i::Int, v::T) where {T} =
 # nests in its last argument): the work stack holds each compound being filled and its next argument, so
 # the arguments are visited depth-first, left to right — the order a record's variables are numbered in
 # (`compile_term_to_heap`); the variables' cells are made first, in that order (`_put_vars!`).
-"Lay the compound `t` (dereferenced) out on the global stack as `putSlotValue!` copies it; its compound word."
+"Lay the compound `t` out on the global stack as `putSlotValue!` copies it; its compound word."
 function _put_compound!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::word where {T}
     _put_vars!(ld, t, vm)                           # the new variables' cells, in order
     done = IdDict{T, word}()                        # the compounds laid out: met again, referenced
@@ -1074,8 +694,7 @@ function _put_compound!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::word where {
             continue
         end
         stack[end] = (u, p, i + 1)
-        # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef; deleted in f3
-        c = deRef(ld, child(u, i + off))            # bindings followed
+        c = child(u, i + off)
         kc = kind(c)
         if kc === EXPR
             w = get(done, c, word(0))
@@ -1109,8 +728,8 @@ end
 
 # ORIGINAL (f3b-1): `putSlotValue!`'s first pass — a fresh cell for each unbound variable of compound `t`
 # that `vm` does not hold yet, in depth-first order of first occurrence (as `copy_term`'s walk made them
-# until f3b-1); a compound met again by identity is not walked again (a cycle through a binding ends).
-"Give each new unbound variable of the compound `t` (dereferenced) a fresh cell in `vm`, depth-first."
+# until f3b-1); a compound met again by identity (a subterm shared) is not walked again.
+"Give each new variable of the compound `t` a fresh cell in `vm`, depth-first."
 function _put_vars!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::Nothing where {T}
     seen = IdDict{T, Nothing}()
     seen[t] = nothing
@@ -1123,8 +742,7 @@ function _put_vars!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::Nothing where {T
             continue
         end
         stack[end] = (u, i + 1)
-        # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef; deleted in f3
-        c = deRef(ld, child(u, i + off))            # bindings followed
+        c = child(u, i + off)
         kc = kind(c)
         if kc === VAR
             key = var_key(c)
@@ -1137,38 +755,12 @@ function _put_vars!(ld::PL_local_data{T}, t::T, vm::PutVarMap)::Nothing where {T
     return nothing
 end
 
-# PORT: pl-data.h deRef
-# DIVERGES: follows a cell variable's cell, and a keyed variable's entry in the store, where
-# upstream follows reference cells.
-"`t` with its variable bindings followed: an unbound variable, or a non-variable (pl-data.h)."
-function deRef(ld::PL_local_data{T}, t::T)::T where {T}
-    while kind(t) === VAR
-        # TRANSITIONAL (f3b-3, class (c)): the term core's binding read (word twin `_deref_loc`);
-        # after landing B every caller is a DU_TERM / keyed / cursor branch or a term twin (census
-        # evidence/f3b-3); deleted in f3
-        b = _binding(ld, var_key(t))           # its cell, or the store (one place knows which)
-        b === nothing && return t
-        t = b
-    end
-    return t
-end
-
-# PORT: pl-inline.h linkValI
-# DIVERGES: the dereferenced term. Upstream returns a reference to an unbound variable's cell
-# (`makeRefG(p)`) and the value otherwise; a keyed variable IS its own reference (decision 2).
-# TRANSITIONAL (f3b-3, class (c)): on terms — callers PL_unify_list's DU_TERM branch and
-# `_free_variable_set_term` (twin); deleted in f3
-"The value to store for the term `t` refers to: `t` dereferenced (pl-inline.h)."
-function linkValI(ld::PL_local_data{T}, t::T)::T where {T}
-    return deRef(ld, t)
-end
-
 # PORT: pl-inline.h linkValI as _slot_link!
 # DIVERGES: from slot to slot on the WORDS (L1b stage C6a): a reference is followed through the
-# cells it is bound to; an unbound cell gives its reference, an atom or a compound (L1c) its word,
-# and anything else
-# (a value-table word, a `SLOT_VALUE`) its value into `to`'s side entry — a keyed variable
-# dereferenced first, as `linkValI` on terms does.
+# cells it is bound to; an unbound cell gives its reference, an atom, a compound (L1c) or a small
+# integer its word, and an indirect (a value-table word, a `SLOT_VALUE`) its word, shared — or, into
+# a slot older than the innermost foreign frame, its value into `to`'s side entry (`_slot_store!`,
+# audit D-0024).
 "Store in slot `to` what slot `from` refers to, dereferenced (pl-inline.h `*to = linkValI(from)`)."
 function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T}
     w = ld.slots[from]
@@ -1184,21 +776,21 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
             elseif isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)   # an atom, a compound or a small integer: its word (L1c, L1d step 4)
                 ld.slots[to] = c
                 return nothing
-            elseif kind(ld.vtable[valPtr(c)]) !== VAR && !_slot_older_than_fli(ld, to)
+            elseif !_slot_older_than_fli(ld, to)
                 ld.slots[to] = c                    # an indirect's word, shared (L1e e1)
                 return nothing
             else
-                _boundary_slot_link!(ld, to, ld.vtable[valPtr(c)])   # a keyed variable, or a slot
-                return nothing                                       # the entry cannot outlive
+                _slot_store!(ld, to, ld.vtable[valPtr(c)])   # into a slot the entry cannot outlive
+                return nothing
             end
         end
-    elseif w == SLOT_VALUE                          # a value stays a value (L1c: the ball)
-        _boundary_slot_link_value!(ld, to, ld.slot_values[from])
+    elseif w == SLOT_VALUE                          # a side value: an indirect (D-0024)
+        _slot_store!(ld, to, ld.slot_values[from])
     elseif _is_vword(w)                             # a value-table word (L1e e1): as from a cell
-        if kind(ld.vtable[valPtr(w)]) !== VAR && !_slot_older_than_fli(ld, to)
+        if !_slot_older_than_fli(ld, to)
             ld.slots[to] = w
         else
-            _boundary_slot_link!(ld, to, ld.vtable[valPtr(w)])
+            _slot_store!(ld, to, ld.vtable[valPtr(w)])
         end
     else
         (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) || throw(_slot_word_error(w))
@@ -1212,7 +804,7 @@ end
 # a reference followed through the cells; an unbound cell gives its reference (upstream's
 # `makeRefG(k)`), an atom, a compound or a value-table word its word (`*ARGP = *k`: an entry shared,
 # as upstream shares an indirect; the entry's box lies below every cell that can reach it); a slot's
-# side value dereferenced, as its word.
+# side value (an indirect, audit D-0024) as its value's own word.
 "Store in global cell `p` what slot `i` refers to, dereferenced (`*ARGP = linkValI(k)`)."
 function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
     w = ld.slots[i]
@@ -1231,38 +823,11 @@ function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
             end
         end
     elseif w == SLOT_VALUE
-        # TRANSITIONAL (f3b-3, class (c)): the side value's and the keyed entry's deRef (this
-        # branch and the next) read terms; deleted in f3
-        ld.gstack[p] = _word_of!(ld, deRef(ld, ld.slot_values[i]))
-    elseif _is_vword(w) && kind(ld.vtable[valPtr(w)]) === VAR   # a keyed variable: as a binding
-        ld.gstack[p] = _word_of!(ld, deRef(ld, ld.vtable[valPtr(w)]))
+        ld.gstack[p] = _word_of!(ld, ld.slot_values[i])
     else                                            # an atom, a compound, a small integer or (L1e
         (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w) || _is_vword(w)) ||   # e1) a value-table
             throw(_slot_word_error(w))                                           # word: shared
         ld.gstack[p] = w
-    end
-    return nothing
-end
-
-# PORT: pl-inline.h Trail
-# DIVERGES: a cell variable is trailed as upstream trails a global cell — only below
-# `LD->mark_bar`; a KEYED variable (src/pl-global.jl) has no age, and is always trailed, as
-# upstream always trails a local-stack cell (`p >= lBase`). Positions are 1-based and `gTop` is the
-# LAST cell in use (upstream's `gTop` points at the first free word), so upstream's `p < mark_bar`
-# is `p <= mark_bar` here.
-"Bind variable `key` to `v`, recording it on the trail where backtracking must undo it (pl-inline.h)."
-function Trail!(ld::PL_local_data{T}, key::UInt64, v::T)::Nothing where {T}
-    # TRANSITIONAL (f3b-3, class (c)): bind by key — a stamped cell (word twin `_bind_const!`) or
-    # TRAIL_KEYED; every caller is a DU_TERM / keyed / twin branch; deleted in f3
-    p = _cell_pos(ld, key)
-    if p != 0
-        # if ( p < LD->mark_bar ) (tTop++)->address = p
-        p <= ld.mark_bar && push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))
-        ld.gstack[p] = _word_of!(ld, v)  # *p = v
-    else
-        push!(ld.trail_keys, key)               # (tTop++)->address = p: a keyed variable's entry
-        push!(ld.trail, _trail_addr(length(ld.trail_keys), TRAIL_KEYED))
-        ld.bindings[key] = v                    # *p = v
     end
     return nothing
 end
@@ -1345,7 +910,6 @@ function _release_frozen!(ld::PL_local_data, m::mark, close::Bool)::Nothing
     if close && ld.gTop > target
         ld.gTop = target                            # what Undo!'s max(frozen_bar, …) kept
         _truncate_vtable!(ld)
-        _truncate_gterms!(ld)
     end
     return nothing
 end
@@ -1360,8 +924,7 @@ isRealMark(m::mark)::Bool = m.trailtop != NOT_A_MARK
 
 # PORT: pl-incl.h Undo
 # DIVERGES: since L1b stage D the body of upstream's `Undo` WITH O_DESTRUCTIVE_ASSIGNMENT, pl-wam.c's
-# `__do_undo`: newest first, an address entry resets its cell (a keyed variable leaves the store), a
-# value entry steps down to its address entry and restores the old value saved on the global stack
+# `__do_undo`: newest first, an address entry resets its cell, a value entry steps down to its address entry and restores the old value saved on the global stack
 # (`*tt->address = trailVal(p)`) — nothing pushes one yet (setarg/3, attributed variables). NOT
 # PORTED: `push_undo` and `reclaim_attvars` (no attributed variables). Since e5 `frozen_bar` is kept:
 # `gTop = max(frozen_bar, m.globaltop)`. Marks nest: undoing to a mark above the trail's or the global stack's top is a misuse,
@@ -1382,6 +945,5 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
     end
     ld.gTop = max(ld.frozen_bar, m.globaltop)   # gTop = (frozen_bar > globaltop ? frozen_bar : globaltop)
     _truncate_vtable!(ld)                       # (the value table follows it: L1b stage C2)
-    _truncate_gterms!(ld)                       # (and the export memo: L1c)
     return nothing
 end

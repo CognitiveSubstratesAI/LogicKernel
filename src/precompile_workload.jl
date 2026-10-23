@@ -32,11 +32,18 @@ function _precompile_workload()::Nothing
     compareStandard(t1, t2, true)
     gd = PL_global_data{T}()
     ld = PL_local_data{T}(gd)
+    u = PL_new_term_refs(ld, 2)                 # unification on the cells: `=`, then under the
+    vm = PutVarMap()                            # `occurs_check` flag (unify_with_occurs_check/2)
+    putSlotValue!(ld, u + 1, t1, vm)
+    putSlotValue!(ld, u + 2, t2, vm)
     m = Mark(ld)
-    pl_unify!(ld, t1, t2)
+    PL_unify(ld, u, u + 1)
     Undo!(ld, m)
-    pl_unify_with_occurs_check!(ld, t1, t2)
+    ld.prolog_flag_occurs_check = OCCURS_CHECK_TRUE
+    PL_unify(ld, u, u + 1)
+    ld.prolog_flag_occurs_check = OCCURS_CHECK_FALSE
     Undo!(ld, m)
+    PL_reset_term_refs(ld, u)
     is_variant_ptr(t1, t2)
     pl_variant_sha1(t1)
     pl_variant_hash(t1)

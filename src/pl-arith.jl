@@ -2327,39 +2327,18 @@ function _ar_call3(
 end
 
 # ── characters (pl-arith.c) ──────────────────────────────────────────────────────────────────────
-# PORT: pl-arith.c arithChar
-"The character code `p` stands for in `[X]` (pl-arith.c): a code point, or a one-character atom's code; -1 after raising."
-function arithChar(ld::PL_local_data{T}, p::T)::Int where {T}
-    p = deRef(ld, p)
-    if number_kind(p) === NUM_INTEGER && integer_is_int64(p)    # isTaggedInt(*p)
-        chr = int64_value(p)
-        0 <= chr <= 0x10ffff && return Int(chr)             # VALID_CODE_POINT(chr)
-    elseif kind(p) === SYM                                  # isAtom(*p)
-        chr = charCode(p)
-        chr >= 0 && return chr
-    end
-    _ar_type_error(ld, :character, p)                       # ERR_TYPE, ATOM_character
-    return -1                                               # EOF
-end
-
 # PORT: pl-arith.c getCharExpression
-"A one-character string, or `[X]`, as its character code in `r` (pl-arith.c); false after raising."
+# DIVERGES: the `TAG_STRING` branch, on a value-table string's stored value `p` (its one caller,
+# `evalExpression_cells`); the `TAG_COMPOUND` branch, `[X]`, is `getCharExpression_cells`.
+"A one-character string as its character code in `r` (pl-arith.c); false after raising."
 function getCharExpression(ld::PL_local_data{T}, p::T, r::number)::Bool where {T}
-    if isString(p)                                          # TAG_STRING
-        s = string_value(p)
-        if length(s) == 1
-            r.i = Int64(s[1])
-            r.type = V_INTEGER
-            return true
-        end
-        return _len_not_one(ld, p)
+    s = string_value(p)                                     # TAG_STRING
+    if length(s) == 1
+        r.i = Int64(s[1])
+        r.type = V_INTEGER
+        return true
     end
-    chr = arithChar(ld, child(p, 2))                        # TAG_COMPOUND: argTermP(w, 0)
-    chr == -1 && return false
-    is_nil(deRef(ld, child(p, 3))) || return _len_not_one(ld, p)   # argTermP(w, 1)
-    r.i = Int64(chr)
-    r.type = V_INTEGER
-    return true
+    return _len_not_one(ld, p)
 end
 
 # getCharExpression's `len_not_one:`.
@@ -2386,8 +2365,7 @@ end
 # PORT: pl-arith.c arithChar as arithChar_cells
 # DIVERGES: on a LOCATION (`_deref_loc`, the workspace's L1_plan/stageL1d_design.md §3e): a tagged
 # integer by `valInt`, an atom word by its symbol's `charCode` — no term read; the culprit of the
-# type error is its word (`pushWordAsTermRef`, f3b-4). The boundary (a slot's side
-# value, a keyed variable) is decided by the term-level `arithChar`, counted in `cold_pairs`.
+# type error is its word (`pushWordAsTermRef`, f3b-4).
 "The character code location `l` stands for in `[X]` (pl-arith.c `arithChar`); -1 after raising."
 function arithChar_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
     k, w, p = _deref_loc(ld, l)                             # deRef(p)
@@ -2397,9 +2375,6 @@ function arithChar_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
     elseif k == DU_WORD && isAtomW(w)                       # isAtom(*p)
         chr = charCode(_atom_value(ld, w))
         chr >= 0 && return chr
-    elseif k == DU_TERM
-        ld.cold_pairs += 1
-        return arithChar(ld, _loc_term(ld, k, w, p))
     end
     _ar_type_error_cells(ld, :character, (k, w, p))         # ERR_TYPE, ATOM_character
     return -1                                               # EOF
@@ -2421,160 +2396,8 @@ function getCharExpression_cells(ld::PL_local_data{T}, c::Int, r::number)::Bool 
     return true
 end
 
-# ── evaluation (pl-arith.c) ──────────────────────────────────────────────────────────────────────
-# PORT: pl-arith.c evalExpression
-# TRANSITIONAL (L1d, the workspace's L1_plan/stageL1d_design.md §3e): the TERM walk, kept for the
-# boundary of `evalExpression_cells` (a slot's side value, a keyed variable)
-# and a caller holding a term; it goes when the stamp does (L1f).
-"Evaluate the expression term reference `expr` refers to, as a TERM, into `result` (pl-arith.c); false after raising."
-evalExpression(ld::PL_local_data{T}, expr::term_t, result::number) where {T} =
-    _evalExpression_term(ld, deRef(ld, slotValue(ld, expr + 1)), expr, result)
-
-# PORT: pl-arith.c evalExpression as _evalExpression_term
-# DIVERGES: an AGENDA of compounds and the argument being evaluated (`ld.arith_frames`) where
-# upstream walks the argument cells by address (`*--p` back to the functor word) — in upstream's
-# order, LAST argument first, which decides which error a bad expression raises; every child is
-# dereferenced through the bindings. The evaluated arguments are on the pooled stack, the FIRST
-# argument on top (upstream's `topsOfSegStack`), and a function's result replaces them. No signals
-# and no `TAG_REFERENCE` walk (no cells); `roundtoward/2` is not ported. Kernel-only terms (Q-AR5,
-# `# DIVERGES`): a grounded value of no SWI type takes the non-text-atom branch,
-# `type_error(evaluable, V)`; a compound whose head is not a symbol (`$expr/n`) evaluates its
-# arguments and then is not evaluable, `'$expr'/n`. The walk starts at the dereferenced term `start`;
-# `expr` is the reference the cyclic-term error names.
-"Evaluate the dereferenced term `start` (of reference `expr`) into `result` (pl-arith.c); false after raising."
-function _evalExpression_term(
-    ld::PL_local_data{T}, start::T, expr::term_t, result::number
-)::Bool where {T}
-    frames = ld.arith_frames
-    fbase = length(frames)
-    mark = ld.arith_top
-    n_tmp = _number_alloc!(ld)                              # number n_tmp
-    n = result                                              # number *n = result
-    pushed = 0
-    known_acyclic = false
-    p = start
-    @label next_term
-    k = kind(p)
-    if k === GND
-        nk = number_kind(p)
-        if nk === NUM_INTEGER || nk === NUM_RATIONAL        # TAG_INTEGER
-            get_rational(p, n)
-        elseif nk === NUM_FLOAT                             # TAG_FLOAT
-            n.f = float_value(p)
-            n.type = V_FLOAT
-        elseif nk === NUM_STRING                            # TAG_STRING
-            getCharExpression(ld, p, n) || @goto error
-        else                                                # NUM_OTHER: a non-text blob (Q-AR5)
-            _ar_type_error(ld, :evaluable, p)
-            @goto error
-        end
-    elseif k === VAR                                        # TAG_VAR
-        PL_error(ld, ERR_INSTANTIATION)
-        @goto error
-    elseif k === SYM                                        # TAG_ATOM
-        f0 = isCurrentArithFunction(T, sym_key(p), 0)       # lookupFunctorDef(word2atom(*p), 0)
-        if f0 != 0
-            _ar_call0(ld, f0, n) || @goto error
-        else
-            if isTextAtom(p)
-                PL_error(ld, ERR_NOT_EVALUABLE, (p, 0))
-            else
-                _ar_type_error(ld, :evaluable, p)
-            end
-            @goto error
-        end
-    else                                                    # TAG_COMPOUND
-        arity = nchildren(p) - 1
-        if is_pair(p)                                       # FUNCTOR_dot2
-            getCharExpression(ld, p, n) || @goto error
-        elseif arity == 0                                   # arity0: `pi()`, else not a text atom
-            h0 = child(p, 1)
-            f0 = kind(h0) === SYM ? isCurrentArithFunction(T, sym_key(h0), 0) : 0
-            if f0 != 0
-                _ar_call0(ld, f0, n) || @goto error
-            else
-                _ar_type_error(ld, :evaluable, p)
-                @goto error
-            end
-        else
-            push!(frames, (p, arity))                       # pushForMark(&term_stack, p, …)
-            pushed += 1
-            if pushed % 1024 == 0 && pushed > 1000 && !known_acyclic
-                if is_acyclic(ld, start)
-                    known_acyclic = true
-                else
-                    PL_error(
-                        ld, "", 0, "cyclic term", ERR_TYPE, mk_sym(T, :expression), expr
-                    )
-                    @goto error
-                end
-            end
-            p = deRef(ld, child(p, arity + 1))              # p = &term->arguments[arity-1]
-            n = n_tmp
-            @goto next_term
-        end
-    end
-    length(frames) == fbase && @goto done                   # p == start: a leaf
-    cpNumber(_number_alloc!(ld), n_tmp)                     # pushSegStack(&arg_stack, n_tmp)
-    @label next_arg
-    c, i = frames[end]
-    if i > 1                                                # *--p: the previous argument
-        frames[end] = (c, i - 1)
-        p = deRef(ld, child(c, i))
-        @goto next_term
-    end
-    arity = nchildren(c) - 1                                # *--p: the functor — apply it
-    h = child(c, 1)
-    f = kind(h) === SYM ? isCurrentArithFunction(T, sym_key(h), arity) : 0
-    if f == 0
-        PL_error(
-            ld,
-            ERR_NOT_EVALUABLE,
-            (kind(h) === SYM ? h : mk_sym(T, Symbol("\$expr")), arity)
-        )
-        @goto error
-    end
-    top = ld.arith_top
-    a0 = ld.arith_numbers[top]                              # a[0], the first argument
-    if arity == 1
-        _ar_call1(ld, f, a0, n_tmp) || @goto error
-        cpNumber(a0, n_tmp)                                 # *a0 = *n
-    elseif arity == 2
-        a1 = ld.arith_numbers[top - 1]
-        _ar_call2(ld, f, a0, a1, n_tmp) || @goto error
-        ld.arith_top = top - 1                              # popTopOfSegStack
-        cpNumber(a1, n_tmp)                                 # *n1 = *n
-    else                                                    # arity 3: powm/3
-        a1 = ld.arith_numbers[top - 1]
-        a2 = ld.arith_numbers[top - 2]
-        _ar_call3(ld, f, a0, a1, a2, n_tmp) || @goto error
-        ld.arith_top = top - 2                              # popTopOfSegStack, twice
-        cpNumber(a2, n_tmp)                                 # *n2 = *n
-    end
-    pop!(frames)                                            # popForMark(&term_stack, &p, …)
-    if length(frames) == fbase                              # p == start
-        cpNumber(result, n_tmp)                             # *result = *n
-        @goto done
-    end
-    @goto next_arg
-    @label done
-    ld.arith_top = mark
-    return true
-    @label error
-    resize!(frames, fbase)                                  # clearSegStack(&term_stack)
-    ld.arith_top = mark                                     # popSegStack(&arg_stack, …)
-    return false
-end
-
-# `PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_<expected>, pushWordAsTermRef(p))`.
-function _ar_type_error(ld::PL_local_data{T}, expected::Symbol, p::T)::Bool where {T}
-    a = new_term_ref(ld)
-    setSlotValue!(ld, a + 1, p)
-    return PL_error(ld, ERR_TYPE, mk_sym(T, expected), a)
-end
-
-# The same on the cells (f3b-4): the culprit is the dereferenced location `(k, w, p)`;
-# `pushWordAsTermRef(p)` … `popTermRef()` as upstream.
+# `PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_<expected>, pushWordAsTermRef(p))` on the cells (f3b-4):
+# the culprit is the dereferenced location `(k, w, p)`; `popTermRef()` as upstream.
 function _ar_type_error_cells(
     ld::PL_local_data{T}, expected::Symbol, loc::Tuple{UInt8, word, Int}
 )::Bool where {T}
@@ -2592,12 +2415,10 @@ end
 # leaf is read on its word: a tagged integer by `valInt`, a value-table word by its stored number (a
 # string through `getCharExpression`), an atom by its symbol — no export; an export is made only for
 # an error's culprit. Not ported: `roundtoward/2` and signals; the ported functions only
-# (`isCurrentArithFunction`, by the name's key). THE BOUNDARY — a slot's side value or a keyed
-# variable (`DU_TERM`) — is evaluated by the term walk (`_evalExpression_term`), counted in
-# `cold_pairs`, TRANSITIONAL until L1f. A kernel-only `$expr/n` compound (Q-AR5) is evaluated as the
-# term walk evaluates it — its arguments after the head (argument 1), the last first, each on the
-# cells, then `'$expr'/(n-1)` is not evaluable (f3b-4: no export). An error's culprit is its word
-# (`pushWordAsTermRef`, f3b-4).
+# (`isCurrentArithFunction`, by the name's key). A kernel-only `$expr/n` compound (Q-AR5) is
+# evaluated as the term walk evaluates it — its arguments after the head (argument 1), the last
+# first, each on the cells, then `'$expr'/(n-1)` is not evaluable (f3b-4: no export). An error's
+# culprit is its word (`pushWordAsTermRef`, f3b-4).
 "Evaluate the expression `expr` refers to into `result` on the CELLS (pl-arith.c `evalExpression`); false after raising."
 function evalExpression_cells(
     ld::PL_local_data{T}, expr::term_t, result::number
@@ -2636,9 +2457,6 @@ function evalExpression_cells(
     elseif k == DU_CELL                                     # TAG_VAR
         PL_error(ld, ERR_INSTANTIATION)
         @goto error
-    elseif k == DU_TERM                                     # the boundary: on the term
-        ld.cold_pairs += 1
-        _evalExpression_term(ld, deRef(ld, _loc_term(ld, k, w, p)), expr, n) || @goto error
     elseif isAtomW(w)                                       # TAG_ATOM
         a = _atom_value(ld, w)
         f0 = isCurrentArithFunction(T, sym_key(a), 0)       # lookupFunctorDef(word2atom(*p), 0)

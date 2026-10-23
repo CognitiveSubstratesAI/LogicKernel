@@ -632,7 +632,7 @@ fixed it or a public issue exists.
 |---|---|---|
 | `src/LogicKernel.jl` | the module entry file: the include order (the code graph below follows it) and the exports (ORIGINAL) | — |
 | `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation; `sym_text`, an atom's text, added in R1a, as decided since Q-AR7) | — |
-| `src/pl-prims.jl` | the standard order of terms: `compareStandard` and its chain — for resolved terms, and under bindings (`ld`, V5a1) with upstream's cyclic machinery (`linkTermsCyclic` in `do_compare`, `compare_descend`, `is_acyclic`); UNIFICATION — `do_unify` (pair agenda, cyclic links), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3`, and `resolve_term` to copy an answer out; since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1`; since R1c `atom_number/2` (a float's text since R1e's floats); since R1e's write/1 family `skip_list` and `lengthList`; since R1e's canonical `numberVars`, `do_number_vars` (`nv_options`); since L1c sub-commit 4 UNIFICATION ON THE CELLS — `do_unify_cells` (pl-prims.c `do_unify` on locations: a global position or a slot; `_deref_loc`, `unify_simple_cells`, the cycle links on the functor cells `_link_cells!`/`_exit_cycles!`, Q2's head pair in `_push_compound_pair!`, the boundary to terms `_loc_term`), `raw_unify_cells`, `unify_ptrs_cells` — the hot callers `H_VAR`, `B_UNIFY_VV` and `PL_unify` | `src/pl-prims.c`, `src/pl-incl.h` |
+| `src/pl-prims.jl` | the standard order of terms: `compareStandard` for values, and on the cells (`compareStandard_cells`, `compare_descend_cells`, `is_acyclic_cells`; the term chain under bindings went in L1f f3); UNIFICATION — on the cells (`do_unify_cells`), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3` (answers are read off the cells by `export_cells`, src/pl-comp.jl, since L1f f3); since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1`; since R1c `atom_number/2` (a float's text since R1e's floats); since R1e's write/1 family `skip_list` and `lengthList`; since R1e's canonical `numberVars`, `do_number_vars` (`nv_options`); since L1c sub-commit 4 UNIFICATION ON THE CELLS — `do_unify_cells` (pl-prims.c `do_unify` on locations: a global position or a slot; `_deref_loc`, `unify_simple_cells`, the cycle links on the functor cells `_link_cells!`/`_exit_cycles!`, Q2's head pair in `_push_compound_pair!`, the boundary to terms `_loc_term`), `raw_unify_cells`, `unify_ptrs_cells` — the hot callers `H_VAR`, `B_UNIFY_VV` and `PL_unify` | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |
 | `test/core_lang/test_compare_swipl.jl` | live differential: `compare/3` on every pair vs `swipl` | — |
@@ -691,7 +691,7 @@ fixed it or a public issue exists.
 | `test/foreign/test_query.jl` | V4a's query API: answers, return codes and determinism; the supervisors; positions identical to swipl's; nested queries; cut against close; a closed `qid`; exceptions caught and passed; the stack limit's `resource_error` at the boundary (since V5d); clause GC under a running query; warm allocation | — |
 | `test/foreign/test_query_answers.jl` | L1c's Julia-facing helper `query_answers(db, goal; limit=nothing)` (stable from v0.1.0-pre.1 — signature, return shape, `PrologException`; exported; `db` the engine, which carries its database): the answers as swipl's (`_rswipl`), `limit`, `limit=0` running nothing and a negative `limit` refused, an unbound variable returned fresh, a goal that is not an atom or atom-headed compound refused, an uncaught exception thrown as `PrologException` with the frame discarded, 10^4 queries leaving `gTop`/trail/`lTop` at baseline (the frame DISCARDED, mutation-proved) | — |
 | `test/foreign/test_readme_example.jl` | the README's "Using it from Julia" block, read from README.md as published and run in a module of its own: each claim in its comments (the load's `(:ok, nothing, [])`, the answers, `limit=1`, the exception's ball) and the answers against swipl's for the same file and goal | — |
-| `test/core_lang/test_compound_cells.jl` | L1c white-box: the cold export memo (TRANSITIONAL until L1d/L1f) — one term per compound, tied to the stack (a different compound at the same position after `Undo!` exports a NEW term), one level deep; the cold import copies a term onto the stack | — |
+| `test/core_lang/test_compound_cells.jl` | L1c white-box: the cold import copies a term onto the stack (one variable twice in one write is one cell, two writes are two: L1f f3-2's write-local map); the export memo it pinned went in L1f f3 | — |
 | `test/core_lang/test_head_unify_swipl.jl` | V4a's differential: head unification of random and pinned fact queries identical to swipl under `occurs_check` false, true and error (the error term included), every head instruction exercised in each mode; since V9a the same for body unification (22 cases, every instruction of the family; the cyclic `X = f(X)` pinned) | — |
 | `test/db/test_index_argv.jl` | a bound argument narrows the index through both argument views (frame and term), dereferenced | — |
 | `test/core_lang/test_local_stack.jl` | V3's tests: positions identical to swipl's (frame and choice-point placement, pinned and live), the record discipline, foreign frames and term references, growth, and that the primitives allocate nothing warm | — |
@@ -736,7 +736,7 @@ fixed it or a public issue exists.
 | `test/core_lang/test_resource_error.jl` | SWI's own `local` unit (test_resource_error.pl): the local stack's overflow under upstream's small limit (since V5d) | `tests/core_lang/test_resource_error.pl` |
 | `test/core_lang/test_stack_overflow_swipl.jl` | V5d's differential: three overflowing programs, the formal identical to swipl's and the context by kind (Q-B); recovery and the spare; a second overflow making the local data unusable, later queries refused | — |
 | `test/rational/test_ieee754.jl` | SWI's identity and standard-order assertions on IEEE floats (`0.0 \== -0.0`, `nan == nan`, the order of NaN, ±Inf, ±0.0) | `tests/rational/test_ieee754.pl` |
-| `test/core_lang/test_bindings.jl` | the trail (`Mark`/`Undo!`, marks nest), the unifier's divergences, `resolve_term`, and that a warm attempt allocates nothing (on the reference type) | — |
+| `test/core_lang/test_bindings.jl` | the trail on the cells (`Mark`/`Undo!`, marks nest, a failed unification's partial bindings undone); the keyed store's testsets went in L1f f3 | — |
 | `test/core_lang/test_unify_swipl.jl` | live differential: `=/2` on 1500 hard random pairs in each `occurs_check` mode, outcomes and bindings identical to swipl's | — |
 | `src/pl-termhash.jl` | `term_hash/2`, `variant_sha1/2`, `variant_hash/2`; Gladman's SHA-1 and the incremental MurmurHash — atoms hash by `sym_hash` and grounded values by `gnd_key`, so the digests are reproducible across processes but are not SWI's values | `src/pl-termhash.c`, `src/pl-termhash.h` |
 | `test/core_lang/test_term.jl` | SWI's own `variant` (`=@=`) tests but the rational-tree and attvar ones | `tests/core_lang/test_term.pl` |
@@ -866,7 +866,6 @@ graph LR
     pl_atom --> pl_ressymbol
     pl_termwalk --> term_interface
     pl_termwalk --> default_term
-    pl_termwalk --> pl_inline
     pl_termwalk --> pl_comp
     pl_vmi --> pl_incl
     pl_vmi --> pl_wam
@@ -931,7 +930,6 @@ graph LR
     pl_inline --> pl_atom
     pl_inline --> pl_funct
     pl_inline --> pl_global
-    pl_inline --> pl_prims
     pl_inline --> pl_ressymbol
     pl_inline --> pl_alloc
     pl_inline --> pl_fli
@@ -949,7 +947,6 @@ graph LR
     pl_prims --> pl_inline
     pl_prims --> pl_ressymbol
     pl_prims --> pl_comp
-    pl_prims --> pl_variant
     pl_prims --> pl_gc
     pl_prims --> pl_alloc
     pl_prims --> pl_wam
@@ -1000,7 +997,6 @@ graph LR
     pl_variant --> pl_inline
     pl_variant --> pl_prims
     pl_variant --> pl_comp
-    pl_copyterm --> term_interface
     pl_copyterm --> default_term
     pl_copyterm --> pl_incl
     pl_copyterm --> SWI_Prolog
@@ -1012,9 +1008,6 @@ graph LR
     pl_copyterm --> pl_alloc
     pl_copyterm --> pl_wam
     pl_copyterm --> pl_fli
-    pl_copyterm --> pl_arith
-    pl_copyterm --> pl_read
-    pl_rec --> term_interface
     pl_rec --> default_term
     pl_rec --> pl_incl
     pl_rec --> SWI_Prolog
@@ -1022,8 +1015,6 @@ graph LR
     pl_rec --> pl_global
     pl_rec --> pl_inline
     pl_rec --> pl_prims
-    pl_rec --> pl_variant
-    pl_rec --> pl_copyterm
     pl_rec --> pl_alloc
     pl_rec --> pl_fli
     pl_rec --> pl_arith
@@ -1094,7 +1085,6 @@ graph LR
     pl_fli --> pl_modul
     pl_fli --> pl_inline
     pl_fli --> pl_prims
-    pl_fli --> pl_comp
     pl_fli --> pl_copyterm
     pl_fli --> pl_gc
     pl_fli --> pl_alloc
@@ -1143,7 +1133,6 @@ graph LR
     pl_arith --> pl_global
     pl_arith --> pl_inline
     pl_arith --> pl_prims
-    pl_arith --> pl_comp
     pl_arith --> pl_alloc
     pl_arith --> pl_fli
     pl_arith --> pl_error
@@ -1157,7 +1146,6 @@ graph LR
     os_pl_codelist --> pl_global
     os_pl_codelist --> pl_inline
     os_pl_codelist --> pl_prims
-    os_pl_codelist --> pl_alloc
     os_pl_codelist --> pl_fli
     os_pl_option --> term_interface
     os_pl_option --> default_term
@@ -1576,20 +1564,18 @@ take precedence over the text above them where they differ. The inventory, the m
   * Sharing with a variable already in the engine goes through its handle, as in SWI's C
     interface: `PL_put_term(t2, t1)` is `setSlotValue!`, the ENGINE's write, which keeps variable
     identity.
-  * An answer is read through the term references: `slotValue` of the argument slots, then
-    `resolve_term`. It is never read through the caller's variables, which the engine no longer
-    binds.
+  * An answer is read through the term references, off the cells: `export_cells` of the argument
+    references, ONE export per answer so a variable shared between arguments stays shared (L1f f3-2;
+    `slotValue`/`resolve_term` went in f3). It is never read through the caller's variables, which the
+    engine no longer binds.
   * The put never asks whether a variable is a live cell, so it adds no stamp site (the L1 ratchet,
     tools/port_check.jl `STAMP_SITES_MAX`).
-  * **TRANSITIONAL, f3b-1 — both go with the stamp in f3 (audit D-0088):**
-    * `ld.import_origin` (an imported cell's key → the keyed variable `_import_var!` made it for;
-      set there, pruned in `_untrail!` when the import's binding is undone; read by `_caller_var`):
-      an answer leaves the engine with the variable the CALLER passed, as it did when the writers
-      stored it. In SWI there is no caller variable to hand back.
-    * `ld.ball_word` (the word of the ball a query copied, set at the query's copy, cleared in
-      `_end_query`): `slotValue` reads the exception ball whole (`_slot_ball_term`,
-      `_slot_compound_term`), every other compound one level deep. The reader that needs it: a query
-      with the bin cleared (`PL_Q_CATCH_EXCEPTION`) — its copy is then the ball's only holder.
+  * **DELETED with the stamp in f3 (2026-10-23, audit D-0088):** f3b-1's TRANSITIONAL pair,
+    `ld.import_origin` (an imported cell's key → the caller's keyed variable, so an answer left the engine
+    with the variable the caller passed) and `ld.ball_word` (the word of the ball a query copied, so
+    `slotValue` read the exception ball whole). An answer's variables are now the export's — in SWI there
+    is no caller variable to hand back — and the ball is read off the cells like any other term
+    (`export_cells`; a cyclic ball is checked with `is_acyclic_cells` and compared on the cells).
   * **Equivalent today, re-check trigger (audit D-0090, battery mutant FB7):** the ball's restore in
     `dbg_discardChoicesAfter` (`ld.slots[ld.exception_bin + 1] = w`, src/pl-wam.jl) is the identity,
     because every writer of the bin stores a direct word (src/pl-alloc.jl `outOfStack!`, src/pl-fli.jl
@@ -1615,12 +1601,12 @@ take precedence over the text above them where they differ. The inventory, the m
   * Any other Julia exception (a bug, an interrupt) restores the query to closed and is rethrown, never
     swallowed.
   * The ball must survive `Undo`. Upstream freezes the global stack under it (`freezeGlobal`,
-    pl-fli.c:4757; `frozen_bar`, wam:1569). Here the ball is resolved through the bindings when it is
-    raised (`resolve_term`), so it no longer depends on the binding store.
+    pl-fli.c:4757; `frozen_bar`, wam:1569). Here too the ball lives on the cells, kept below
+    `frozen_bar` (L1e e5) and read off them (`export_cells`) since L1f f3.
 * **`# ORIGINAL` conveniences on top, nothing more:**
   * a sink — `f(ld)` is called for each answer while its bindings are live; returning `false` cuts the
     query;
-  * a do-block iterator that yields RESOLVED answers (`resolve_term`) and closes the query however the
+  * a do-block iterator that yields answers read off the cells (`export_cells`, one export per answer) and closes the query however the
     block exits. A plain Julia iterator cannot know when it is abandoned.
 * **The existing sink-based `retract/1`, `retractall/1` and `clause/2`** stay as they are until V9. There
   they become what they are upstream: non-deterministic foreign predicates.
@@ -2826,7 +2812,7 @@ pl-ext.jl, pl-fli.jl). Ported from pl-copyterm.c's attribute-free path, upstream
   same_term(Y, T)` is true there. CLOSED on the cells (L1d step 6: the copy marks cells as
   upstream's does) and observable since L1f f1c (`same_term/2`, test/core_lang/test_same_term_swipl.jl:
   a compound met twice in a copy, and in a findall/3 answer, is one compound, as swipl's); the term walk
-  stays for the BOUNDARY only (TRANSITIONAL, L1f).
+  went with the boundary in L1f f3 (the term `copy_term` had no live caller left: plan Q6).
 * **L1f f1b:** the copy's compounds are `allocGlobalNoShift`'s and `copy_term_refs` is upstream's loop
   (`makeMoreStackSpace`): a copy that passes the limit raises `resource_error(stack)` INSIDE copy_term/2
   (row `tcopy_in`, test_stack_limit.jl).

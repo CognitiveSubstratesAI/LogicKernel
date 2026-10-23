@@ -4,12 +4,12 @@
 # — white-box, on every term type:
 #   * the KEY on the words equals `indexOfWord` of the term the word stands for, for every word form a
 #     frame argument can hold: an atom (text and reserved `[]`), a compound (symbol head, `[|]/2`, a
-#     `$expr/n` wildcard), a value-table value (integer, float, string), an unbound cell (0), and the
-#     boundary (a keyed variable bound, and unbound); a reference chain is followed;
+#     `$expr/n` wildcard), a value-table value (integer, float, string) and an unbound cell (0); a
+#     reference chain is followed;
 #   * `_argv_is_var` on the same forms;
 #   * the deep descent reads the ARGUMENT CELLS of a compound word (`argv_cells`): their keys equal the
 #     term's children's;
-#   * the meter: a call selected through a deep (second-level) index makes NO cold export, and its
+#   * the meter: a call selected through a deep (second-level) index makes NO cold import, and its
 #     answers are swipl's.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -52,7 +52,7 @@ const _IW_VALUES = _R[
     @test LK._argv_key(av, 10) == 0
 end
 
-@testset "an unbound cell, a reference chain, and the boundary (keyed variables)" begin
+@testset "an unbound cell and a reference chain" begin
     ld, t = _iw_engine(_R[_rv(1), _rv(2), _rs("x")])
     av = LK.argv_frame(ld, t)
     @test LK._argv_key(av, 0) == 0 && LK._argv_is_var(av, 0)
@@ -61,13 +61,6 @@ end
     @test LK._argv_is_var(av, 1)
     @test LK.do_unify_cells(ld, -(t + 1), -(t + 3)) == LK.BOOLEX_TRUE
     @test LK._argv_key(av, 1) == LK.indexOfWord(ld, _rs("x")) && !LK._argv_is_var(av, 1)
-    # the boundary: a keyed variable in a slot's side value, unbound then bound
-    kv = lk_var(_R, UInt64(4711))
-    lk_side_value!(ld, t + 1, kv)                       # (built since L1f f3b-1: a writer binds it to a cell)
-    @test LK._argv_is_var(av, 0) && LK._argv_key(av, 0) == 0
-    LK.Trail!(ld, var_key(kv), _rf("f", _rs("a")))
-    @test !LK._argv_is_var(av, 0) &&
-        LK._argv_key(av, 0) == LK.indexOfWord(ld, _rf("f", _rs("a")))
 end
 
 @testset "the deep descent reads a compound's argument cells" begin
@@ -95,7 +88,7 @@ _iw_clauses() = Tuple{_R, Union{Nothing, _R}}[
     (_rf("iw_p", _rf("f", _rs("b")), _rs("five")), nothing)
 ]
 
-@testset "the meter: a deep-indexed call makes no cold export, its answers swipl's" begin
+@testset "the meter: a deep-indexed call makes no cold import, its answers swipl's" begin
     db = _rdb(_iw_clauses())
     ld = db.ld
     goals = _R[_rf("iw_p", _rf("f", _rs("b")), _rv(9)),
@@ -114,7 +107,7 @@ _iw_clauses() = Tuple{_R, Union{Nothing, _R}}[
     a = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, a + 1, _rf("f", _rs("b")))
     LK.putSlotValue!(ld, a + 2, _rv(9))
-    e3, i3 = ld.cold_exports, ld.cold_imports
+    i3 = ld.cold_imports
     qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS,
         _rproc(db, goals[1]), a)
     n = 0
@@ -125,37 +118,7 @@ _iw_clauses() = Tuple{_R, Union{Nothing, _R}}[
         rc == LK.PL_S_LAST && break
     end
     @test n == 2
-    @test ld.cold_exports == e3                         # the index read words: no export…
-    @test ld.cold_imports == i3                         # …and no import (the boundary is cold)
+    @test ld.cold_imports == i3                         # the index read words: no import
     LK.PL_close_query(ld, qid)
     LK.PL_discard_foreign_frame(ld, fid)
-end
-
-@testset "a compound at the boundary descends through a counted import onto the stack" begin
-    # a keyed variable bound to a compound TERM: the descent puts it onto the stack (the cold import,
-    # counted) and walks its cells — the frame form never descends into a term argv
-    db = _rdb(_iw_clauses())
-    ld = db.ld
-    LK.PL_open_foreign_frame(ld)
-    t = LK.PL_new_term_refs(ld, 2)
-    kv = lk_var(_R, UInt64(4712))
-    lk_side_value!(ld, t + 1, kv)                       # (built since L1f f3b-1: a writer binds it to a cell)
-    LK.Trail!(ld, var_key(kv), _rf("f", _rs("b")))
-    LK.putSlotValue!(ld, t + 2, _rv(9))
-    @test LK._argv_key(LK.argv_frame(ld, t), 0) == LK.indexOfWord(ld, _rf("f", _rs("b")))
-    i0 = ld.cold_imports
-    qid = LK.PL_open_query(db.gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS,
-        _rproc(db, _rf("iw_p", _rv(1), _rv(2))), t)
-    out = String[]
-    while true
-        rc = LK.PL_next_solution(db.gd, ld, qid)
-        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
-        push!(out, _rcanonical(lk_answer(ld, t + 1)))
-        rc == LK.PL_S_LAST && break
-    end
-    @test out == ["two", "five"]
-    @test ld.cold_imports > i0                          # the descent imported: COUNTED, cold
-    @test LK.deRef(ld, kv) === _rf("f", _rs("b")) ||        # the frame's own argument untouched:
-        lk_eq(LK.resolve_term(ld, LK.deRef(ld, kv)), _rf("f", _rs("b")))   # the copy was only read
-    LK.PL_close_query(ld, qid)
 end

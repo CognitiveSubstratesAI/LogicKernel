@@ -13,8 +13,7 @@
 #     beyond consistency; ours is by key, a DIVERGES) — only consistency: `X == X`, antisymmetry, and
 #     compare/3 agreeing with msort/2 on the same variables (in Prolog, so swipl checks it too);
 #   * Q2 (kernel-only, pinned): `$expr/n` before a symbol functor of the same arity;
-#   * the boundary: a keyed variable bound to a compound compares as its value;
-#   * the meter: `==` between two lists on the stack makes no cold export.
+#   * the meter: `==` between two lists on the stack makes no cold import.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -252,23 +251,11 @@ end
     @test LK.compareStandard(e, _rf("f", _rs("a"), _rs("b"))) == LK.CMP_LESS      # the term order agrees
 end
 
-@testset "the boundary: a keyed variable bound to a compound compares as its value" begin
-    ld, t = _cc_engine(_R[_rf("f", _rs("a")), _rs("x")])
-    kv = lk_var(_R, UInt64(4713))
-    lk_side_value!(ld, t + 2, kv)                                            # (built since L1f f3b-1)
-    LK.Trail!(ld, var_key(kv), _rf("f", _rs("a")))
-    p0 = ld.cold_pairs
-    @test LK.compareStandard_cells(ld, -(t + 1), -(t + 2), true) == LK.CMP_EQUAL
-    @test ld.cold_pairs == p0 + 1                                            # the boundary, COUNTED
-    LK.Trail!(ld, var_key(kv), _rf("f", _rs("b")))                            # (rebound: a store entry)
-    @test LK.compareStandard_cells(ld, -(t + 1), -(t + 2), false) == LK.CMP_LESS
-end
-
-@testset "the meter: == between two lists on the stack makes no cold export" begin
+@testset "the meter: == between two lists on the stack makes no cold import" begin
     l = _rlist((_rg(Int64(i)) for i in 1:20)...)
     ld, t = _cc_engine(_R[l, l])
-    c0 = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+    c0 = ld.cold_imports                       # (f3-3: the export/variable/pair meters went with the boundary)
     @test LK.compareStandard_cells(ld, -(t + 1), -(t + 2), true) == LK.CMP_EQUAL
     @test LK.compareStandard_cells(ld, -(t + 1), -(t + 2), false) == LK.CMP_EQUAL
-    @test (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs) == c0
+    @test ld.cold_imports == c0
 end

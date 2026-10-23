@@ -65,16 +65,22 @@ end
 _tr_codes(s::String)::String =
     "[" * join([isvalid(c) ? Int(c) : Int(codeunit(string(c), 1)) for c in s], ",") * "]"
 
-"The standard order of `t`'s variables as the driver's `ord/1` writes it: `|[i…]`, each by first occurrence."
-function _tr_order(ld, t::_TR)::String
+"""
+The standard order of the variables of `t` — an answer read off the cells with the export `ex`,
+while they still hold it — as a permutation of their first occurrences: compared on their CELLS
+(`ex.cells` maps each back; L1f f3: until then on the kernel's keys, which held the cell's
+position), as swipl orders unbound variables by address.
+"""
+function _tr_perm(ld, ex, t::_TR)::Vector{Int}
     vs = UInt64[]
     _tr_enc(t, vs)                                  # first-occurrence order
-    vars = [mk_var(_TR, k) for k in vs]                 # the kernel's own keys
-    p = sortperm(
-        1:length(vars); lt=(a, b) -> LK.compareStandard(ld, vars[a], vars[b], false) < 0
+    ps = [ex.cells[k] for k in vs]                  # each variable's cell (a global position)
+    return sortperm(
+        1:length(ps); lt=(a, b) -> LK.compareStandard_cells(ld, ps[a], ps[b], false) < 0
     )
-    return "|[" * join(p .- 1, ",") * "]"
 end
+"The variables' order as the driver's `ord/1` writes it: `|[i…]`, each by first occurrence."
+_tr_order(p::Vector{Int})::String = "|[" * join(p .- 1, ",") * "]"
 
 # The database every read of this file runs in (`op/3` adds to its `user` module).
 const _TR_GD = LK.PL_global_data{_TR}()
@@ -83,9 +89,10 @@ const _TR_LD = LK.PL_local_data{_TR}(_TR_GD)
 """
 Run the predicate `name` on `args` through the query API: `(rc, answers)` where `answers` are the
 resolved arguments after a success, the ball (resolved) after an exception — or the
-`NotPortedError` the kernel raised.
+`NotPortedError` the kernel raised. With `order = i`, `(rc, answers, perm)`: `perm` the standard
+order of argument `i`'s variables after a success (`_tr_perm`, read before the query closes).
 """
-function _tr_call(name::String, args::Vector{_TR}; gd=_TR_GD, ld=_TR_LD)
+function _tr_call(name::String, args::Vector{_TR}; gd=_TR_GD, ld=_TR_LD, order::Int=0)
     proc = LK.isCurrentProcedure(sym_key(_trs(name)), length(args), LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, length(args))
@@ -96,12 +103,16 @@ function _tr_call(name::String, args::Vector{_TR}; gd=_TR_GD, ld=_TR_LD)
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
+    perm = Int[]
     out = try
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            (:true, [LK.resolve_term(ld, LK.slotValue(ld, a + i)) for i in 1:length(args)])
+            ex = LK.cell_export{_TR}()                  # ONE export: shared variables stay shared
+            ans = _TR[LK.export_cells(ld, ex, -(a + i)) for i in 1:length(args)]
+            order > 0 && (perm = _tr_perm(ld, ex, ans[order]))
+            (:true, ans)
         elseif rc == LK.PL_S_EXCEPTION
-            (:exception, [LK.resolve_term(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1))])
+            (:exception, [lk_answer(ld, LK.PL_exception(ld, qid))])
         else
             (:false, _TR[])
         end
@@ -111,15 +122,17 @@ function _tr_call(name::String, args::Vector{_TR}; gd=_TR_GD, ld=_TR_LD)
     end
     out[1] === :notported || LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
-    return out
+    return order > 0 ? (out..., perm) : out
 end
 
 _tr_var() = mk_var(_TR, LK.fresh_var_keys!(1))
 
 "`term_to_atom(T, Text)` as the driver's `rd/1` reports it: the term and its variables' order, `fails`, `err <ball>`, or `NOTPORTED`."
 function _tr_read(text::String; gd=_TR_GD, ld=_TR_LD)::String
-    rc, ans = _tr_call("term_to_atom", _TR[_tr_var(), _trs(text)]; gd=gd, ld=ld)
-    rc === :true && return _tr_enc(ans[1]) * _tr_order(ld, ans[1])
+    rc, ans, perm = _tr_call(
+        "term_to_atom", _TR[_tr_var(), _trs(text)]; gd=gd, ld=ld, order=1
+    )
+    rc === :true && return _tr_enc(ans[1]) * _tr_order(perm)
     rc === :exception && return "err " * _tr_enc(ans[1])
     rc === :notported && return "NOTPORTED"
     return "fails"
@@ -218,12 +231,15 @@ end
 @testset "the variables' order: where readValHandle places them, as swipl's (by address)" begin
     # probed (swipl 10.1.16): term_to_atom(T, 'f(A,g(B),_,h(_C))'), T = f(A,g(B),V,h(C)):
     # A @> B, A @< V, V @> C, B @< C — B and C live in g and h, which are built before f
-    rc, ans = _tr_call("term_to_atom", _TR[_tr_var(), _trs("f(A,g(B),_,h(_C))")])
-    @test rc === :true
-    t = ans[1]
-    A, B, V, C = child(t, 2), child(child(t, 3), 2), child(t, 4), child(child(t, 5), 2)
-    cmp(x, y) = LK.compareStandard(_TR_LD, x, y, false)
-    @test cmp(A, B) > 0 && cmp(A, V) < 0 && cmp(V, C) > 0 && cmp(B, C) < 0
+    # (compared on the answer's CELLS, before the query closes — L1f f3: until then on the terms' keys)
+    rc, ans, perm = _tr_call(
+        "term_to_atom", _TR[_tr_var(), _trs("f(A,g(B),_,h(_C))")]; order=1
+    )
+    @test rc === :true && length(perm) == 4
+    rk = invperm(perm)                              # each variable's rank, by first occurrence
+    A, B, V, C = 1, 2, 3, 4                         # f(A, g(B), V, h(C))
+    vcmp(x, y) = Base.cmp(rk[x], rk[y])
+    @test vcmp(A, B) > 0 && vcmp(A, V) < 0 && vcmp(V, C) > 0 && vcmp(B, C) < 0
 end
 
 @testset "unquoted_atom: may a text atom be written bare (pl-write.c, the parser's TK_QNAME rule)" begin

@@ -11,8 +11,7 @@
 #   * white-box: under copy_term a GROUND argument is SHARED (the copy's argument word is the original's),
 #     under duplicate_term it is not; after every copy no functor cell carries MARK/FIRST, the side vector
 #     is all zero, every forwarded cell holds its own word again, `ld.cp_lstack` is empty;
-#   * the boundary: a keyed variable's binding is copied on terms, COUNTED;
-#   * the meter: a copy of a term on the stack makes no cold export, import or variable read.
+#   * the meter: a copy of a term on the stack makes no cold import.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -113,7 +112,7 @@ function _kc_engine(vs::Vector{_R}; pvm=LK.PutVarMap())
     end
     return ld, t
 end
-_kc_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_kc_counts(ld) = ld.cold_imports            # (f3-3: the export/variable/pair meters went with the boundary)
 "No functor cell marked, the side vector all zero, no forwarded cell left, the cycle stack empty."
 _kc_clean(ld) =
     !any(
@@ -154,23 +153,7 @@ end
     end
 end
 
-@testset "the boundary: a keyed variable's binding, copied on terms, counted" begin
-    ld, t = _kc_engine(_R[_rs("x")])
-    kv = lk_var(_R, UInt64(4741))
-    # f(kv, a), kv a value-table word holding the keyed variable — laid by hand since L1f f3b-1 (a writer
-    # binds a keyed variable to a fresh cell now), as `_word_of!` laid it before
-    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a")))
-    ld.gstack[LK.valPtr(ld.slots[t + 1]) + 1] = lk_boundary_word!(ld, kv)
-    LK.Trail!(ld, var_key(kv), _rf("g", _rv(7)))
-    p0 = ld.cold_pairs
-    c = _kc_copy(ld, t, LK.cp_options(true))
-    @test ld.cold_pairs > p0
-    @test _kc_clean(ld)
-    r = LK.resolve_term(ld, LK.slotValue(ld, c + 1))
-    @test kind(r) === EXPR && nchildren(r) == 3
-end
-
-@testset "the meter: a copy of a term on the stack makes no cold export, import or variable read" begin
+@testset "the meter: a copy of a term on the stack makes no cold import" begin
     X, Y = _rv(1), _rv(2)
     ld, t = _kc_engine(
         _R[_rf("f", X, _rlist((_ki(i) for i in 1:50)...), _rf("g", Y, X), _rs("a"))]

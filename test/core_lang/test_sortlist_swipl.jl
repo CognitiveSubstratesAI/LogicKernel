@@ -441,19 +441,30 @@ end
     for len in 1:40, trial in 1:6
         keys = [rand(rng, 1:8) for _ in 1:len]
         for remove_dups in (false, true), order in (LK.SORT_ASC, LK.SORT_DESC)
-            L = LK.List_Record{_R}(
-                [i < len ? i + 1 : 0 for i in 1:(len + 1)],
-                _R[_rf("e", _rg(keys[i]), _rg(i)) for i in 1:len],
-                _R[_rg(keys[i]) for i in 1:len]
+            # f3-3: the records on cells — item i is argument i of `w(e(K1,1), …)` on the global
+            # stack, its key that item's first argument (global positions, as
+            # prolog_list_to_sort_list_cells lays them)
+            fid = LK.PL_open_foreign_frame(ld)
+            r = LK.PL_new_term_ref(ld)
+            LK.putSlotValue!(
+                ld, r + 1, _rf("w", (_rf("e", _rg(keys[i]), _rg(i)) for i in 1:len)...)
+            )
+            _, ww, _ = LK._deref_loc(ld, -(r + 1))
+            items = [LK._deref_loc(ld, LK.valPtr(ww) + i) for i in 1:len]
+            terms = [ip for (_, _, ip) in items]
+            ks = [LK._deref_loc(ld, LK.valPtr(w) + 1)[3] for (_, w, _) in items]
+            L = LK.List_Record_cells(
+                [i < len ? i + 1 : 0 for i in 1:(len + 1)], copy(terms), copy(ks)
             )
             L.next[len + 1] = 0
             p = LK.nat_sort(ld, L, 1, remove_dups, order)
+            @test L.term == terms && L.key == ks    # nat_sort relinks `next` only: record i is item i
             got = Tuple{Int, Int}[]
             while p != 0
-                t = L.term[p]
-                push!(got, (lk_value(child(t, 2)), lk_value(child(t, 3))))
+                push!(got, (keys[p], p))            # record p's item: e(keys[p], p)
                 p = L.next[p]
             end
+            LK.PL_close_foreign_frame(ld, fid)
             want = sort(
                 collect(zip(keys, 1:len)); by=first, rev=(order == LK.SORT_DESC),
                 alg=MergeSort

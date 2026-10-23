@@ -20,9 +20,9 @@
 #     leaves the global stack, the trail and the variables as it found them; a cyclic term refused as today
 #     (decision 4a), nothing left marked or bound; writeNumberVar's older test at the frame mark's globaltop
 #     (a '$VAR' AT it older, one above it newer — the `>=` on positions);
-#   * the boundary: a keyed variable in the term — numbered on terms, COUNTED in `cold_pairs`;
-#   * the meter: a numbervars/3 loop makes no cold export, import, variable read or boundary pair; a
-#     write_canonical loop's traffic is the WRITER's (it reads terms until step 7b), pinned.
+#   * the meter: a numbervars/3 loop and a write_canonical loop make no cold import (until L1f f3 also no
+#     cold export, variable read or boundary pair, and the boundary — a keyed variable in the term,
+#     numbered on terms, counted in `cold_pairs`: those went with the keyed variables).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -276,7 +276,7 @@ function _nv_engine(vs::Vector{_R}; pvm=LK.PutVarMap())
     end
     return ld, t
 end
-_nv_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_nv_counts(ld) = ld.cold_imports        # (the export/variable/pair meters went with the keyed variables, f3)
 "No functor cell marked, the visited stack empty."
 _nv_clean(ld) =
     !any(
@@ -295,7 +295,7 @@ _nv_opts(singletons) = LK.nv_options{_R}(_rs("\$VAR"), 0, LK.AV_SKIP, singletons
     g0, c0 = ld.gTop, _nv_counts(ld)
     @test LK.numberVars(ld, t, _nv_opts(0), 0) == 3
     @test _nv_clean(ld)
-    @test _nv_counts(ld) == c0                      # no export, import, variable read, boundary
+    @test _nv_counts(ld) == c0                      # no import
     # X (argument 1, and g's argument 2): '$VAR'(0); Y: '$VAR'(1); Z: '$VAR'(2) — left to right
     gp = LK.valPtr(LK._deref_loc(ld, c + 2)[2])
     for (loc, i) in ((c + 1, 0), (gp + 1, 1), (gp + 2, 0), (c + 3, 2))
@@ -357,22 +357,6 @@ end
     @test _nv_clean(ld) && ld.var_names_numbervars_frame == 0
 end
 
-@testset "the boundary: a keyed variable in the term, numbered on terms, counted" begin
-    ld, t = _nv_engine(_R[_rs("x")])
-    kv = lk_var(_R, UInt64(4743))
-    # f(kv, a, kv), kv two value-table words holding the keyed variable (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
-    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a"), _rs("x")))
-    q = LK.valPtr(ld.slots[t + 1])
-    ld.gstack[q + 1] = lk_boundary_word!(ld, kv)
-    ld.gstack[q + 3] = lk_boundary_word!(ld, kv)
-    p0 = ld.cold_pairs
-    @test LK.numberVars(ld, t, _nv_opts(0), 0) == 1
-    @test ld.cold_pairs == p0 + 1
-    @test _nv_clean(ld)
-    r = LK.resolve_term(ld, LK.slotValue(ld, t + 1))
-    @test _rcanonical(r) == "f('\$VAR'(0),a,'\$VAR'(0))"
-end
-
 # writeNumberVar's "older" test, with a numbervars frame open and numbervars off: upstream's
 # `fr->mark.globaltop > f` on addresses (an exclusive top) is ours `mark.globaltop >= f` on positions (gTop
 # is the LAST used cell, inclusive). A '$VAR' whose functor cell is AT the mark's globaltop is older (a
@@ -394,7 +378,6 @@ function _nv_older_case(before::Bool)
     gt = ld.fliframes[fr].mark.globaltop
     out = IOBuffer()
     LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, out)
-    e0 = ld.cold_exports
     # PL_write_term with PL_WRT_VARNAMES (writeTerm2 calls writeNumberVar only under NUMBERVARS or
     # VARNAMES) and numbervars off: it opens no frame of its own (write_term/2's variable_names would)
     @test LK.PL_write_term(
@@ -402,9 +385,6 @@ function _nv_older_case(before::Bool)
         LK.PL_WRT_QUOTED | LK.PL_WRT_VARNAMES
     )
     LK.Sflush(LK.Suser_output(ld))
-    # 2026-10-18 L1d 7b: the writer on term references — it compared the functor cell's position
-    # itself (the word), no export made
-    @test ld.cold_exports == e0
     LK.END_NUMBERVARS(ld, true, savedf)
     return String(take!(out)), c - gt
 end
@@ -428,12 +408,6 @@ wc_loop(N) :- T = f(X, g(Y, X), [Z, a, 1]), write_canonical(T), N1 is N - 1, wc_
 wc_top :- wc_loop(50).
 """
 
-# the write_canonical loop's traffic per call (see the testset): MEASURED 2026-10-18 on 7a's tree — per
-# iteration 18 exports and 17 variable reads, all the WRITER's (the numbering makes none: nv_loop), no
-# import, no boundary pair: (900, 0, 850, 0).
-# 2026-10-18 L1d 7b: the writer on term references — none left.
-const _NV_WC_METER_PIN = (0, 0, 0, 0)
-
 "Run `name/0` once through the query API; the return code."
 function _nv_meter_run(db::_RDB, name::Symbol)::Int
     proc = LK.lookupProcedure(_rs(name), 0, db.user)
@@ -452,16 +426,11 @@ end
     c1 = _nv_counts(db.ld)
     @test _nv_meter_run(db, :nv_top) == LK.PL_S_TRUE
     @test _nv_counts(db.ld) == c1
-    _nv_counts(db.ld) == c1 ||
-        @info "nv_top: the second call's boundary traffic" _nv_counts(db.ld) .- c1
-    # write_canonical: its numbering makes none; what is left is the WRITER's — it reads the term as
-    # terms (each compound a cold export) until step 7b (the writer on term references). PINNED, measured
-    # 2026-10-18 on 7a's tree: per call of the 50-iteration loop. TRANSITIONAL: zero at 7b.
+    # write_canonical: neither its numbering nor its writer imports (until L1f f3 the pin was the four
+    # meters' `(0, 0, 0, 0)` — the writer on term references since L1d 7b; MEASURED (900, 0, 850, 0)
+    # per call on 7a's tree)
     @test _nv_meter_run(db, :wc_top) == LK.PL_S_TRUE
     c2 = _nv_counts(db.ld)
     @test _nv_meter_run(db, :wc_top) == LK.PL_S_TRUE
-    d = _nv_counts(db.ld) .- c2
-    @info "wc_top: the second call's boundary traffic (exports, imports, variable reads, pairs)" d
-    @test d[2] == 0 && d[4] == 0
-    @test d == _NV_WC_METER_PIN
+    @test _nv_counts(db.ld) == c2
 end

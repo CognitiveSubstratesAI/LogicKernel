@@ -202,30 +202,36 @@ end
 # swipl raises `type_error(expression, T)` with the message 'cyclic term' (research probe p8). The
 # kernel detects the cycle as upstream does and raises with the REAL culprit, as upstream: since V5d
 # a ball keeps its cycles (src/pl-fli.jl `copy_exception!`; user, 2026-10-07), which ends Q-AR8's
-# placeholder. The ball is read under the bindings, where its cycle lives.
+# placeholder. The ball is read on its cells, where its cycle lives (f3-3: until then under the
+# keyed bindings): compared with `compareStandard_cells`, never exported.
 @testset "cyclic: T = T+1, X is T — type_error(expression, T), the real culprit (Q-AR8, since V5d)" begin
     ld = LKA.PL_local_data{_A}(_AGD)
     T1 = _av()
-    LKA.Trail!(ld, var_key(T1), _af(:+, T1, _ag(1)))                             # T = T+1
     p = LKA.isCurrentProcedure(sym_key(_as(:is)), 2, LKA.MODULE_system(_AGD))
     fid = LKA.PL_open_foreign_frame(ld)
-    a = LKA.PL_new_term_refs(ld, 2)
+    a = LKA.PL_new_term_refs(ld, 3)
     pvm = LogicKernel.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     LogicKernel.putSlotValue!(ld, a + 1, _av(), pvm)
     LogicKernel.putSlotValue!(ld, a + 2, T1, pvm)
+    LogicKernel.putSlotValue!(ld, a + 3, _af(:+, T1, _ag(1)), pvm)
+    @test LKA.do_unify_cells(ld, -(a + 2), -(a + 3)) == LKA.BOOLEX_TRUE        # T = T+1, on the cells
     qid = LKA.PL_open_query(
         _AGD, ld, nothing, LKA.PL_Q_CATCH_EXCEPTION | LKA.PL_Q_EXT_STATUS, p, a
     )
     @test LKA.PL_next_solution(_AGD, ld, qid) == LKA.PL_S_EXCEPTION
-    ball = LogicKernel.slotValue(ld, LKA.PL_exception(ld, qid) + 1)
-    formal = LKA.deRef(ld, child(ball, 2))
-    @test lk_name(child(formal, 1)) === :type_error &&
-        lk_name(child(formal, 2)) === :expression
-    @test LKA.compareStandard(ld, child(formal, 3), T1, true) == 0              # the culprit: T
-    @test lk_eq(LKA.resolve_term(ld, child(ball, 3)),
+    ex = LKA.PL_exception(ld, qid)
+    r = LKA.PL_new_term_refs(ld, 4)             # the formal, the context, the culprit, the formal's first
+    @test LKA.PL_is_functor(ld, ex, _as(:error), 2)
+    @test LKA._PL_get_arg(ld, 1, ex, r) && LKA._PL_get_arg(ld, 2, ex, r + 1)
+    @test LKA.PL_is_functor(ld, r, _as(:type_error), 2)
+    @test LKA._PL_get_arg(ld, 1, r, r + 3) && LKA._PL_get_arg(ld, 2, r, r + 2)
+    @test lk_name(lk_answer(ld, r + 3)) === :expression
+    @test LKA.compareStandard_cells(ld, -(r + 3), -(a + 2), true) == LKA.CMP_EQUAL   # the culprit: T
+    @test lk_eq(lk_answer(ld, r + 1),
         _af(
             :context, _af(:(:), _as(:system), _af(:/, _as(:is), _ag(2))), _as("cyclic term")
         ))
+    LKA.PL_reset_term_refs(ld, r)               # no reference into the ball when the query closes
     LKA.PL_close_query(ld, qid)
     LKA.PL_close_foreign_frame(ld, fid)
     @test ld.query == 0

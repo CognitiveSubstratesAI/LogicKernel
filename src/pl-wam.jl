@@ -596,9 +596,7 @@ end
 # is `user` until R2 (`stripModule_cells`; `contextModule(fr)` reads frames' context modules, not
 # ported). On the WORDS (f3b-5b): the goal's location stripped (`stripModule_cells`), its atom or
 # compound word tested as upstream's (`CONTROL_F` from the functor table), the arguments linked
-# into the new term references from their cells (`_slot_from_cell!`, `linkValG`). The BOUNDARY
-# (`DU_TERM`: a slot's side value, a keyed variable) is read as a term, counted
-# (`_call_term_boundary`).
+# into the new term references from their cells (`_slot_from_cell!`, `linkValG`).
 """
 Call the goal in term reference `goal` once, from the VM (pl-wam.c): a plain goal directly, in a
 query of its own; a control construct, a goal that is no text atom or `call/N` beyond 8 through
@@ -610,7 +608,6 @@ function call_term(
 )::Bool where {T}
     ok, (k, w, _), mi = stripModule_cells(gd, ld, -(goal + 1))     # p = valTermRef(goal); deRef(p)
     ok || return false                                  # exception in env
-    k == DU_TERM && return _call_term_boundary(gd, ld, goal)
     m = gd.modules[mi]
     av = 0
     if k == DU_WORD && isAtomW(w)                       # isAtom(*p)
@@ -644,54 +641,6 @@ function call_term(
     PL_cut_query(ld, qid)
 
     return rval
-end
-
-# ORIGINAL (f3b-5b, TRANSITIONAL: goes with the keyed variables and the side values, f3):
-# `call_term`'s BOUNDARY — the goal read as a term (`slotValue`, `stripModule`), counted in
-# `cold_pairs`. Class (c).
-"`call_term` for a goal at the boundary (`DU_TERM`), on terms."
-@noinline function _call_term_boundary(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t
-)::Bool where {T}
-    ld.cold_pairs += 1
-    ok, p, mi = stripModule(gd, ld, deRef(ld, slotValue(ld, goal + 1)))
-    if ok
-        p = deRef(ld, p)
-        m = gd.modules[mi]
-        av = 0
-        if isAtom(p)
-            if isTextAtom(p)
-                name = p
-                arity = 0
-            else
-                return call1(gd, ld, goal)
-            end
-        elseif isTerm(p)
-            h = child(p, 1)
-            arity = nchildren(p) - 1
-            if isTextAtom(h) && !_is_control(p, gd.functors_control) &&
-                !(sym_key(h) == gd.subclause_names.atom_call && arity > 8)
-                av = PL_new_term_refs(ld, arity)
-                for i in 1:arity
-                    setSlotValue!(ld, av + i, child(p, i + 1))          # *ap = linkValG(&args[i])
-                end
-                name = h
-            else
-                return call1(gd, ld, goal)
-            end
-        else
-            return PL_type_error(ld, "callable", goal)
-        end
-
-        proc = resolveProcedure(gd, name, arity, m)
-        qid = PL_open_query(gd, ld, m, PL_Q_PASS_EXCEPTION, proc, av)
-        rval = PL_next_solution(gd, ld, qid) != 0
-        PL_cut_query(ld, qid)
-
-        return rval
-    else
-        return false                                    # exception in env
-    end
 end
 
 # ORIGINAL: the Julia-facing query helper (L1c; user, 2026-10-15). STABLE FROM v0.1.0-pre.1 (2026-10-20):
@@ -873,51 +822,24 @@ end
 # transparency until R2), so an UNQUALIFIED term is checked as the goal itself: unbound is an
 # instantiation error, anything but a compound or a text atom `type_error(callable, Term)`. The
 # culprit of that error is then the plain term where upstream's is `Module:Term` (R2).
-# On the WORDS (f3b-5b): `deRef(p)` and the tests on `*p`, `*ap` are `_deref_loc` and word tests;
-# a location at the BOUNDARY (`DU_TERM`) anywhere on the way sends the whole check to the term
-# version, counted (`_mustBeCallable_boundary`): no side effect happens before it.
+# On the WORDS (f3b-5b): `deRef(p)` and the tests on `*p`, `*ap` are `_deref_loc` and word tests.
 "Whether the term reference `call` holds a callable goal, raising the error when not (pl-wam.c)."
 function mustBeCallable(ld::PL_local_data{T}, call::term_t)::Bool where {T}
     k, w, _ = _deref_loc(ld, -(call + 1))                   # Word p = valTermRef(call); deRef(p)
-    k == DU_TERM && return _mustBeCallable_boundary(ld, call)
     k == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)  # isVar(*p)
     ak, aw = k, w
     if _is_colon2_word(ld, k, w)                            # hasFunctor(*p, FUNCTOR_colon2)
         mk, mw, _ = _deref_loc(ld, valPtr(w) + 1)           # ap = argTermP(*p, 0); deRef(ap)
-        mk == DU_TERM && return _mustBeCallable_boundary(ld, call)
         mk == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
         (
             (mk == DU_WORD && isAtomW(mw)) ||               # isAtom(*ap): a blob too
             (mk == DU_VALUE && isAtom(_value_term(ld, mw)))
         ) || return PL_type_error(ld, "callable", call)
         ak, aw, _ = _deref_loc(ld, valPtr(w) + 2)           # ap = argTermP(*p, 1); deRef(ap)
-        ak == DU_TERM && return _mustBeCallable_boundary(ld, call)
         ak == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
     end
     (ak == DU_WORD && (_is_gcompound(aw) || isTextAtom(_atom_value(ld, aw)))) ||
         return PL_type_error(ld, "callable", call)          # isTerm(*ap) || isTextAtom(*ap)
-
-    return true
-end
-
-# ORIGINAL (f3b-5b, TRANSITIONAL: goes with the keyed variables and the side values, f3):
-# `mustBeCallable` at the BOUNDARY — the goal read as a term, counted in `cold_pairs`. Class (c).
-"`mustBeCallable` for a goal with a location at the boundary (`DU_TERM`), on terms."
-@noinline function _mustBeCallable_boundary(
-    ld::PL_local_data{T}, call::term_t
-)::Bool where {T}
-    ld.cold_pairs += 1
-    p = deRef(ld, slotValue(ld, call + 1))
-    kind(p) === VAR && return PL_error(ld, ERR_INSTANTIATION)
-    ap = p
-    if _hasFunctor(p, mk_sym(T, :(:)), 2)
-        mp = deRef(ld, child(p, 2))
-        kind(mp) === VAR && return PL_error(ld, ERR_INSTANTIATION)
-        isAtom(mp) || return PL_type_error(ld, "callable", call)
-        ap = deRef(ld, child(p, 3))
-        kind(ap) === VAR && return PL_error(ld, ERR_INSTANTIATION)
-    end
-    (isTerm(ap) || isTextAtom(ap)) || return PL_type_error(ld, "callable", call)
 
     return true
 end
@@ -1038,9 +960,8 @@ function discardChoicesAfter(
 end
 
 # PORT: pl-wam.c dbg_discardChoicesAfter
-# DIVERGES: a ball at the BOUNDARY — a slot's side value (`copy_exception!`'s term copy) — is copied with
-# its side value (`_slot_copy!`), TRANSITIONAL until f3; so is a grounded side value, read as a value
-# since f3-1 (its side word names the slot). Otherwise on the WORDS, as upstream (f3b-1;
+# DIVERGES: a grounded side value (a value since f3-1, its side word naming the slot) is copied with
+# its side value (`_slot_copy!`). Otherwise on the WORDS, as upstream (f3b-1;
 # until then the ball was read as a term and stored as a side value): `PushVal(w)`/`PopVal(w)` keep the
 # dereferenced word in a local, which no discard can move (the ball lies in the frozen region).
 "`discardChoicesAfter`, keeping a pending exception (pl-wam.c)."
@@ -1048,13 +969,11 @@ function dbg_discardChoicesAfter(
     ld::PL_local_data{T}, fr::Int, reason::finished
 )::Nothing where {T}
     if ld.exception_term != 0
-        k, w, p = _deref_loc(ld, -(ld.exception_term + 1))   # Word p = valTermRef(exception_term); deRef(p); w = *p
+        k, w, _ = _deref_loc(ld, -(ld.exception_term + 1))   # Word p = valTermRef(exception_term); deRef(p); w = *p
         @assert k != DU_CELL                                 # assert(!isVar(w))
         ld.exception_term = 0
         discardChoicesAfter(ld, fr, reason)
-        if k == DU_TERM && p < 0                             # (c) a slot's side value: with its value
-            _slot_copy!(ld, ld.exception_bin + 1, -p)
-        elseif _is_side_word(w)                              # (f3-1) a grounded side value, read as a
+        if _is_side_word(w)                                  # (f3-1) a grounded side value, read as a
             _slot_copy!(ld, ld.exception_bin + 1, valPtr(w)) # value: with its value, as before f3-1
         else
             # (f3b-1, audit D-0090) the identity today: every writer of the bin stores a DIRECT word (pl-alloc.jl
@@ -1169,35 +1088,14 @@ function _call_procedure(ld::PL_local_data{T}, fr::Int, op::code)::Procedure{T} 
 end
 
 # ── the argument pointer and the argument stack ────────────────────────────────────────────────
-# What `ARGP` points at, as a TERM (upstream's `*ARGP`), for the readers left on terms: a read-mode
-# cursor's child, as is (the term path: a compound at the boundary, `_argp_cursor`); a
-# slot or a global cell through its location, dereferenced (`deRef2(ARGP, p)` on the WORDS,
-# f3b-5b): a value word is its value (`_value_term`: no export), the BOUNDARY (`DU_TERM`) its term,
-# counted in `cold_pairs` (TRANSITIONAL, f3). The direct callers pass a cursor only (H_VAR's and
-# H_FIRSTVAR's term paths); through `_argp_deref` the word paths reach it with what they left
-# undecided — a value word or the boundary (since f3-2 a stack `$expr` compound is decided on its
-# cells by H_RFUNCTOR/H_RLIST/H_LIST_FF, never exported here).
-function _argp_raw(ld::PL_local_data{T}, a::argp_t{T})::T where {T}
-    l = _argp_loc(a)
-    l == 0 && return child(a.term, a.pos)           # a read-mode cursor into a term
-    k, w, p = _deref_loc(ld, l)                     # deRef2(ARGP, p)
-    k == DU_VALUE && return _value_term(ld, w)
-    k == DU_TERM && (ld.cold_pairs += 1)            # the boundary: on terms
-    return _loc_term(ld, k, w, p)
-end
-
-# What `ARGP` points at, dereferenced (upstream's `deRef2(ARGP, k)`).
-_argp_deref(ld::PL_local_data{T}, a::argp_t{T}) where {T} = deRef(ld, _argp_raw(ld, a))::T
-
 # PORT: pl-vmi.c h_const as _unify_const_loc
 # (`deRef(k)`; `*k == c`; `canBind(*k)`: `bindConst(k, c)`; else `CLAUSE_FAILED` — also `H_FLOAT`/
 # `H_STRING`'s `equalIndirect` and B_UNIFY_VC's test)
 # DIVERGES: `c` is the constant's TERM (a literal: an atom, a number, a string); on the WORDS of
 # location `l` (f3b-5b): an unbound cell is bound to `c`'s word (`_word_of!`: an atom's word, a
-# tagged integer, a value-table word — what `Trail!` wrote on terms); an atom word or a value word
-# is compared with `c` as `unify_simple_ptrs` compares two constants (SWI's identity: `sym_key`,
-# `gnd_equal`); a compound fails. The BOUNDARY (`DU_TERM`) is decided on terms, counted
-# (`_unify_const_boundary`).
+# tagged integer, a value-table word); an atom word or a value word is compared with `c` as
+# `unify_simple_ptrs` compares two constants (SWI's identity: `sym_key`, `gnd_equal`); a compound
+# fails.
 "Unify location `l` with the constant term `c` (pl-vmi.c `h_const`): `true` or `false`."
 function _unify_const_loc(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
     k, w, p = _deref_loc(ld, l)                     # deRef(k)
@@ -1206,31 +1104,15 @@ function _unify_const_loc(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
         return true
     elseif k == DU_WORD                             # *k == c: an atom's word; a compound fails
         return isAtomW(w) && unify_simple_ptrs(ld, _atom_value(ld, w), c) == BOOLEX_TRUE
-    elseif k == DU_VALUE                            # *k == c, or equalIndirect
-        return unify_simple_ptrs(ld, _value_term(ld, w), c) == BOOLEX_TRUE
     end
-    return _unify_const_boundary(ld, w, p, c)
-end
-
-# ORIGINAL (f3b-5b, TRANSITIONAL: goes with the keyed variables and the side values, f3): the
-# BOUNDARY of `_unify_const_loc` — a slot's side value or a keyed variable read as a term, counted.
-# Class (c).
-"`_unify_const_loc` at the boundary location (`DU_TERM`: word `w`, position `p`), on terms."
-@noinline function _unify_const_boundary(
-    ld::PL_local_data{T}, w::word, p::Int, c::T
-)::Bool where {T}
-    ld.cold_pairs += 1
-    return unify_simple_ptrs(ld, deRef(ld, _loc_term(ld, DU_TERM, w, p)), c) == BOOLEX_TRUE
+    return unify_simple_ptrs(ld, _value_term(ld, w), c) == BOOLEX_TRUE  # *k == c, or equalIndirect
 end
 
 # `h_const`'s test where `ARGP` points (f3b-5b): a slot or a global cell on the words
-# (`_unify_const_loc`); a read-mode cursor into a term on terms (the term path, Q2).
+# (`_unify_const_loc`).
 "Unify what `ARGP` points at with the constant term `c` (pl-vmi.c `h_const`)."
-function _argp_unify_const(ld::PL_local_data{T}, a::argp_t{T}, c::T)::Bool where {T}
-    l = _argp_loc(a)
-    l != 0 && return _unify_const_loc(ld, l, c)
-    return unify_simple_ptrs(ld, deRef(ld, child(a.term, a.pos)), c) == BOOLEX_TRUE
-end
+_argp_unify_const(ld::PL_local_data{T}, a::argp_t{T}, c::T) where {T} =
+    _unify_const_loc(ld, _argp_loc(a), c)::Bool
 
 # Write `t` where `ARGP` points (upstream's `*ARGP = t`): a slot (body mode), or a cell of the global
 # stack (write mode, L1c) as `t`'s word.
@@ -1276,18 +1158,6 @@ end
 # `ARGP + n`.
 _argp_add(a::argp_t{T}, n::Int) where {T} = argp_t{T}(a.form, a.pos + n, a.term)
 
-# ORIGINAL (f3-2): a read-mode cursor at child `pos` of the compound TERM `t` — only for a compound
-# at the boundary that is NO stack compound (class (c), TRANSITIONAL: goes with the keyed variables,
-# f3). A stack compound's live export is read on its cells instead (`H_RFUNCTOR_cross`,
-# `H_RLIST_cross`, `_hlistff_cross!`), where a clause variable met twice is the caller's one cell: a
-# cursor over it would hand the term arms (`_argp_raw`) live cell variables, which since f3-2 (Q3) a
-# write no longer keeps as their cells.
-"A read-mode cursor at child `pos` of `t`, a compound that is no stack compound's live export (asserted)."
-@noinline function _argp_cursor(ld::PL_local_data{T}, pos::Int, t::T)::argp_t{T} where {T}
-    @assert _export_pos(ld, t) == 0 "a cursor over a stack compound: read its cells (f3-2)"
-    return argp_t{T}(ARGP_CURSOR, pos, t)
-end
-
 # ORIGINAL (f3-2; Q2): H_LIST_FF's `'[|]'/2` against a stack `$expr/3` at `q`, on its CELLS: its
 # head cell bound to or compared with `'[|]'` (`_unify_const_loc`), then slots `a` and `b` take its
 # two argument cells as H_LIST_FF takes a list cell's (`_slot_from_cell!`) — so `H` and `T` are the
@@ -1308,12 +1178,12 @@ end
 # `deRef2(ARGP, p)` on the WORDS (L1c): where ARGP's value lives — `DREF_CELL`: an unbound cell, its
 # position in the second word; `DREF_WORD`: an atom, a compound or (L1d step 4) a small integer, its
 # word — every reader of it tests for a compound first; `DREF_TERM`: a value
-# with no word form (a value-table word, a `SLOT_VALUE`, a cursor's child), decided on terms.
+# with no word form (a value-table word, a `SLOT_VALUE`): no compound, no unbound cell.
 "`_argp_deref_word`: an unbound cell at the position returned."
 const DREF_CELL = 0x01
 "`_argp_deref_word`: an atom or a compound, the word returned."
 const DREF_WORD = 0x02
-"`_argp_deref_word`: a value with no word form: decide on terms (`_argp_deref`)."
+"`_argp_deref_word`: a value with no word form (no compound, no unbound cell)."
 const DREF_TERM = 0x03
 
 # ORIGINAL: upstream's `deRef2(ARGP, p)` (pl-data.h) on the words of a slot or a cell (L1c).
@@ -1373,8 +1243,7 @@ const H_CONST_TERMS = Int8(-1)
 # word: `*k == c` matches; an unbound cell is bound (`bindConst`, pl-attvar.h `varBindConst`:
 # `*p = c`, trailed when `p < mark_bar` — `<=` here, `gTop` being the last cell in use, as
 # `Trail!` trails a cell); any other atom word, and a compound (L1c), fails. A value-table word (a value with no word form
-# yet, a keyed variable among them) and a `SLOT_VALUE` slot are UNDECIDED: the VM decides on terms,
-# as before C6b, until L1d (unification over cells) gives them words.
+# yet) and a `SLOT_VALUE` slot are UNDECIDED: the VM decides on their values (`_argp_unify_const`).
 "h_const on slot `i`'s words for the constant word `c` (an atom or, L1d step 4, a tagged integer): `H_CONST_MATCH`, `H_CONST_FAIL` or `H_CONST_TERMS`."
 @inline function _h_const_word!(ld::PL_local_data, i::Int, c::word)::Int8
     w = ld.slots[i]
@@ -1419,11 +1288,6 @@ end
 # value; the kernel sets the flag as a field, so there is no `updateAlerted` to refresh a cache, and
 # `vmi_builtin` is always true (no debugger).
 _slow_unify(ld::PL_local_data)::Bool = ld.prolog_flag_occurs_check != OCCURS_CHECK_FALSE
-
-# Whether `p` is a `$expr/3` — three children, a head that is not a symbol — which unifies with a list
-# cell child by child (Q2; user, 2026-10-05: `[H|T]` and `'[|]'(H,T)` match the same way).
-_is_expr3(p::T) where {T} =
-    kind(p) === EXPR && nchildren(p) == 3 && kind(child(p, 1)) !== SYM
 
 # ── the registers, saved and loaded (condition 3) ────────────────────────────────────────────────
 # Write the run loop's `FR`, `ARGP` and `PC` into query `qid`'s record (`SAVE_REGISTERS`).
@@ -1489,8 +1353,7 @@ end
 # names the predicate of the `vmi_builtin=false` branch (`debug_pred1`), NOT PORTED — only the
 # debugger and coverage clear the flag. On the WORDS (f3b-5b): `test` is the FLI test of the same
 # pl-data.h macro on a term reference (`PL_is_integer` … `PL_is_callable`: `deRef(p); test(*p)` on
-# `_deref_loc`) — the operand's slot `i` is term reference `i - 1`, so `varFrameP(FR, n)` itself;
-# only the boundary (`DU_TERM`) is read as a term inside it, counted in `cold_pairs`.
+# `_deref_loc`) — the operand's slot `i` is term reference `i - 1`, so `varFrameP(FR, n)` itself.
 "The body of a type-test instruction (pl-vmi.c `TYPE_TEST`): `test` the variable at the operand."
 macro TYPE_TEST(test)
     return esc(
@@ -1524,7 +1387,7 @@ macro ENSURE_LOCAL_SPACE(n)
 end
 
 # PORT: pl-vmi.c ENSURE_GLOBAL_SPACE
-# DIVERGES (L1f f2, audit D-0032): in cells; no garbage collection to try and nothing to shift (no
+# DIVERGES (since L1f f2, audit D-0032): in cells; no garbage collection to try and nothing to shift (no
 # `onchange` to rerun: positions are indices), so the check is the LIMIT, as `ensureGlobalSpace`'s —
 # not applied while an exception is processed (upstream's spare stacks). Its failure is
 # `THROW_EXCEPTION` (`@goto b_throw`).
@@ -1706,7 +1569,7 @@ const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 # (decision 1). It records its database in `ld.GD` (since V9c), which a built-in reads where
 # upstream reads its global `GD` (src/pl-global.jl), and refuses a local data that a second stack
 # overflow made unusable (since V5d; `outOfStack!`, src/pl-alloc.jl).
-# NOT PORTED: `globalizeTermRef` (a keyed variable lives in no cell, decision 2), the profiler, the
+# NOT PORTED: `globalizeTermRef` (a slot is never an unbound variable, L1c), the profiler, the
 # debugger state `PL_Q_NODEBUG` saves (all but `FR_HIDE_CHILDS`), the context module of a transparent
 # predicate (`ctx`: every clause is `user`'s until R2's `module/2`), `updateAlerted`.
 """
@@ -1860,7 +1723,6 @@ function _end_query(ld::PL_local_data{T}, qid::Int, close::Bool)::Int where {T}
         end
         q = ld.queries[qf]
         @assert q.magic == QID_MAGIC
-        q.exception != 0 && (ld.ball_word = UInt64(0))     # (f3b-1, TRANSITIONAL: goes with the stamp, f3) the query's ball goes with it
         if q.foreign_frame != 0
             PL_close_foreign_frame(ld, q.foreign_frame)
         end
@@ -2108,11 +1970,11 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c h_const
     # DIVERGES: an atom constant against an argument slot is decided on the words when they can
     # decide it (`_h_const_word!`, L1b C6b); otherwise `_argp_unify_const` decides — on the words
-    # (f3b-5b), a cursor on terms — with h_const's three outcomes for a constant: the same constant
+    # (f3b-5b) — with h_const's three outcomes for a constant: the same constant
     # (SWI's identity: `sym_key`, `gnd_equal`), an unbound variable (bound, trailed), anything else;
     # there is no global stack to grow.
     @label h_const
-    if hc_w != 0 && ARGP.form != ARGP_CURSOR
+    if hc_w != 0
         hc_r = if ARGP.form == ARGP_SLOT
             _h_const_word!(ld, ARGP.pos + 1, hc_w)
         else                                        # a cell of a compound on the stack (L1d step 4)
@@ -2126,7 +1988,7 @@ function PL_next_solution_guarded(
         end
     end
     isTaggedIntW(hc_w) && (hc_c = mk_gnd(T, valInt(hc_w)))     # H_SMALLINT's term, made only here (L1d step 4)
-    if _argp_unify_const(ld, ARGP, hc_c)            # on the words (f3b-5b); a cursor on terms
+    if _argp_unify_const(ld, ARGP, hc_c)            # on the words (f3b-5b)
         ARGP = _argp_add(ARGP, 1)
         @goto next_instruction
     end
@@ -2149,7 +2011,7 @@ function PL_next_solution_guarded(
     if UMODE == uwrite
         @goto B_FLOAT
     end
-    if _argp_unify_const(ld, ARGP, PCl[PCc[PC]])    # on the words (f3b-5b); a cursor on terms
+    if _argp_unify_const(ld, ARGP, PCl[PCc[PC]])    # on the words (f3b-5b)
         PC += 1
         ARGP = _argp_add(ARGP, 1)
         @goto next_instruction
@@ -2171,7 +2033,7 @@ function PL_next_solution_guarded(
     if UMODE == uwrite
         @goto B_STRING
     end
-    if _argp_unify_const(ld, ARGP, PCl[PCc[PC]])    # on the words (f3b-5b); a cursor on terms
+    if _argp_unify_const(ld, ARGP, PCl[PCc[PC]])    # on the words (f3b-5b)
         PC += 1
         ARGP = _argp_add(ARGP, 1)
         @goto next_instruction
@@ -2214,16 +2076,9 @@ function PL_next_solution_guarded(
         _argp_void!(ld, ARGP)                       # setVar(*ARGP)
     end
     # First try the simple case — on the CELLS (L1c sub-commit 4): the variable's slot against
-    # ARGP's location; a read-mode cursor into a TERM on terms — TRANSITIONAL (f3-2, class (c)): a
-    # cursor is only ever into a compound at the boundary that is no stack compound (`_argp_cursor`:
-    # a stack compound is read on its cells, `H_RFUNCTOR_cross`), deleted with it in f3.
+    # ARGP's location.
     if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
-        hv_loc = _argp_loc(ARGP)
-        hv_rc = if hv_loc != 0
-            do_unify_cells(ld, -(hv_k + 1), hv_loc)
-        else                                        # (c) the cursor (above)
-            do_unify(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
-        end
+        hv_rc = do_unify_cells(ld, -(hv_k + 1), _argp_loc(ARGP))
         if hv_rc == BOOLEX_TRUE
             ARGP = _argp_add(ARGP, 1)
             @goto next_instruction
@@ -2234,12 +2089,7 @@ function PL_next_solution_guarded(
     end
 
     @SAVE_REGISTERS(QID)
-    hv_loc = _argp_loc(ARGP)                    # on the cells (L1d step 2); a read-mode cursor
-    hv_ok = if hv_loc != 0                      # into a term stays on terms
-        unify_ptrs_cells(ld, -(hv_k + 1), hv_loc)
-    else                                        # (c) the cursor, TRANSITIONAL (f3-2, above)
-        unify_ptrs(ld, slotValue(ld, hv_k + 1), _argp_raw(ld, ARGP))
-    end
+    hv_ok = unify_ptrs_cells(ld, -(hv_k + 1), _argp_loc(ARGP))   # on the cells (L1d step 2)
     @LOAD_REGISTERS(QID)
     if hv_ok
         ARGP = _argp_add(ARGP, 1)
@@ -2252,9 +2102,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c H_FIRSTVAR
     # DIVERGES: in read mode an argument slot's word is copied (`*ARGP`, L1b C6a), a global cell's
-    # word or a reference to it taken (`needsRef(*ARGP) ? makeRefG(ARGP) : *ARGP`, L1c), and a
-    # cursor's child stored as its value (`_slot_store!`) — TRANSITIONAL (f3-2, class (c)): a cursor
-    # is only ever into a compound at the boundary that is no stack compound (`_argp_cursor`).
+    # word or a reference to it taken (`needsRef(*ARGP) ? makeRefG(ARGP) : *ARGP`, L1c).
     @label H_FIRSTVAR
     hfv_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     PC += 1
@@ -2262,10 +2110,8 @@ function PL_next_solution_guarded(
         _argp_fresh_var!(ld, ARGP, hfv_k + 1)       # setVar(*ARGP); varFrame = makeRefG(ARGP)
     elseif ARGP.form == ARGP_SLOT
         _slot_copy!(ld, hfv_k + 1, ARGP.pos + 1)            # varFrame(FR, *PC++) = *ARGP
-    elseif ARGP.form == ARGP_GLOBAL
+    else
         _slot_from_cell!(ld, hfv_k + 1, ARGP.pos)
-    else                                            # (c) the cursor (above)
-        _slot_store!(ld, hfv_k + 1, _argp_raw(ld, ARGP))
     end
     ARGP = _argp_add(ARGP, 1)
     @goto next_instruction
@@ -2286,11 +2132,8 @@ function PL_next_solution_guarded(
     # against `$expr/(k+1)` binds or compares the head cell and reads the arguments in place
     # (`argTermP(*p, 1)`); `$expr/n` against `g/(n-1)` reads a block of n cells laid at `gTop` —
     # `g`'s atom word, then a reference to each argument cell — so every cell ARGP reads is bound
-    # already and every binding goes to the caller's cells. Until f3-2 that compound was read
-    # through its cold export, a cursor whose children aliased their cells only through the writers'
-    # live-cell recognition (`_var_ref_word`). A KEYED variable is bound to a new stack compound
-    # through the cold export; a compound at the boundary that is no stack compound is read with a
-    # cursor (class (c), TRANSITIONAL: goes with the keyed variables, f3).
+    # already and every binding goes to the caller's cells. A value with no word form (`DREF_TERM`)
+    # is no compound: it fails.
     @label H_RFUNCTOR
     if UMODE == uwrite
         @goto B_RFUNCTOR
@@ -2316,45 +2159,6 @@ function PL_next_solution_guarded(
             @goto next_instruction
         end
         @goto H_RFUNCTOR_cross                      # (Q2) on the cells
-    end
-    hf_p = _argp_deref(ld, ARGP)
-    if kind(hf_p) === VAR                           # a keyed variable
-        @ENSURE_GLOBAL_SPACE(1 + hf_ar)             # (L1f f2)
-        hf_q = _alloc_compound!(ld, hf_fw, hf_ar)
-        Trail!(ld, var_key(hf_p), _compound_term(ld, hf_q))   # bindConst(p, c)
-        ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)
-        UMODE = uwrite
-        @goto next_instruction
-    end
-    if kind(hf_p) === EXPR
-        hf_q = _export_pos(ld, hf_p)                # a stack compound's live export: its cells
-        if hf_q != 0
-            if ld.gstack[hf_q] == hf_fw             # hasFunctor(*p, f)
-                ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)    # ARGP = argTermP(*p, 0)
-                @goto next_instruction
-            end
-            @goto H_RFUNCTOR_cross
-        end
-        # TRANSITIONAL (f3-2, class (c)): a compound at the boundary that is no stack compound, read
-        # with a cursor (Q2); goes with the keyed variables (f3)
-        if hf_lit == 0
-            if nchildren(hf_p) == hf_ar
-                ARGP = _argp_cursor(ld, 1, hf_p)
-                @goto next_instruction
-            end
-        elseif nchildren(hf_p) == hf_ar + 1
-            hf_h = deRef(ld, child(hf_p, 1))
-            if kind(hf_h) === SYM
-                if sym_key(hf_h) == sym_key(PCl[hf_lit])
-                    ARGP = _argp_cursor(ld, 2, hf_p)            # ARGP = argTermP(*p, 0)
-                    @goto next_instruction
-                end
-            elseif kind(child(hf_p, 1)) !== SYM &&
-                unify_simple_ptrs(ld, hf_h, PCl[hf_lit]) == BOOLEX_TRUE
-                ARGP = _argp_cursor(ld, 2, hf_p)
-                @goto next_instruction
-            end
-        end
     end
     @goto unify_backtrack
 
@@ -2388,9 +2192,8 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c H_RLIST
     # DIVERGES: as `H_RFUNCTOR` for `'[|]'/2` (`FUNCTOR_dot2`), a `$expr/3` included (Q2; user,
-    # 2026-10-05) — on the CELLS when it is a stack compound (f3-2, `H_RLIST_cross`: its head cell
-    # bound to or compared with `'[|]'`, its arguments read in place), with a cursor only for a
-    # compound at the boundary that is no stack compound (class (c), TRANSITIONAL: f3).
+    # 2026-10-05) — on the CELLS (f3-2, `H_RLIST_cross`: its head cell bound to or compared with
+    # `'[|]'`, its arguments read in place).
     @label H_RLIST
     if UMODE == uwrite
         @goto B_RLIST
@@ -2411,35 +2214,6 @@ function PL_next_solution_guarded(
             @goto next_instruction
         end
         @goto H_RLIST_cross                         # (Q2) on the cells
-    end
-    hl_p = _argp_deref(ld, ARGP)
-    if kind(hl_p) === EXPR
-        hl_q = _export_pos(ld, hl_p)                # a stack compound's live export: its cells
-        if hl_q != 0
-            if ld.gstack[hl_q] == dot_f
-                ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)    # ARGP = argTermP(w, 0)
-                @goto next_instruction
-            end
-            @goto H_RLIST_cross
-        end
-        # TRANSITIONAL (f3-2, class (c)): a compound at the boundary that is no stack compound, read
-        # with a cursor (Q2); goes with the keyed variables (f3)
-        if is_pair(hl_p) ||
-            (
-            _is_expr3(hl_p) &&
-            unify_simple_ptrs(ld, deRef(ld, child(hl_p, 1)), gd.atom_dot) == BOOLEX_TRUE
-        )
-            ARGP = _argp_cursor(ld, 2, hl_p)        # ARGP = argTermP(w, 0)
-            @goto next_instruction
-        end
-        @goto unify_backtrack
-    elseif kind(hl_p) === VAR                       # a keyed variable
-        @ENSURE_GLOBAL_SPACE(3)                     # (L1f f2)
-        hl_q = _alloc_compound!(ld, dot_f, 2)
-        Trail!(ld, var_key(hl_p), _compound_term(ld, hl_q))
-        ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)
-        UMODE = uwrite
-        @goto next_instruction
     end
     @goto unify_backtrack
 
@@ -2464,8 +2238,8 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c H_LIST_FF
-    # DIVERGES: on the WORDS (L1c), as `H_RLIST`; a `$expr/3` matches as a list cell on the term path
-    # (Q2), and a keyed variable is bound through the cold export.
+    # DIVERGES: on the WORDS (L1c), as `H_RLIST`; a stack `$expr/3` matches as a list cell on its
+    # cells (Q2, f3-2: `_hlistff_cross!`).
     @label H_LIST_FF
     hff_a = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     hff_b = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
@@ -2493,45 +2267,12 @@ function PL_next_solution_guarded(
             ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
             ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
             _bind_const!(ld, Int(hff_w), consPtr(hff_q, TAG_COMPOUND | STG_GLOBAL))
-        elseif hff_d == DREF_WORD &&
-            !(
-            _is_gcompound(hff_w) &&
+        elseif hff_d == DREF_WORD && _is_gcompound(hff_w) &&            # a stack `$expr` (Q2)
             nameFunctor(ld.functors, ld.gstack[valPtr(hff_w)]) == ld.atom_dexpr
-        )
-            @goto unify_backtrack                   # an atom, a small integer, or another functor
-        elseif hff_d == DREF_WORD                   # a stack `$expr` (Q2): on its cells (f3-2)
             _hlistff_cross!(ld, gd, valPtr(hff_w), hff_a + 1, hff_b + 1) ||
                 @goto unify_backtrack
-        else                                        # the term path
-            hff_p = _argp_deref(ld, ARGP)
-            hff_q = kind(hff_p) === EXPR ? _export_pos(ld, hff_p) : 0
-            if hff_q != 0                           # a stack compound's live export: its cells
-                if ld.gstack[hff_q] == dot_f
-                    _slot_from_cell!(ld, hff_a + 1, hff_q + 1)
-                    _slot_from_cell!(ld, hff_b + 1, hff_q + 2)
-                else
-                    _hlistff_cross!(ld, gd, hff_q, hff_a + 1, hff_b + 1) ||
-                        @goto unify_backtrack
-                end
-            elseif is_pair(hff_p) ||
-                (
-                _is_expr3(hff_p) &&
-                unify_simple_ptrs(ld, deRef(ld, child(hff_p, 1)), gd.atom_dot) ==
-                BOOLEX_TRUE
-            )
-                # TRANSITIONAL (f3-2, class (c)): a compound at the boundary that is no stack
-                # compound, its children written as values; goes with the keyed variables (f3)
-                setSlotValue!(ld, hff_a + 1, child(hff_p, 2))
-                setSlotValue!(ld, hff_b + 1, child(hff_p, 3))
-            elseif kind(hff_p) === VAR              # a keyed variable
-                @ENSURE_GLOBAL_SPACE(3)             # (L1f f2)
-                hff_q = _alloc_compound!(ld, dot_f, 2)
-                ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
-                ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
-                Trail!(ld, var_key(hff_p), _compound_term(ld, hff_q))   # bindConst
-            else
-                @goto unify_backtrack
-            end
+        else                                        # an atom, a small integer, another functor
+            @goto unify_backtrack                   # or a value with no word form
         end
     end
     ARGP = _argp_add(ARGP, 1)
@@ -2605,9 +2346,9 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c B_ARGVAR
-    # DIVERGES: on the WORDS into a global cell (L1c: `_cell_link!`); a keyed variable is its own
-    # reference and no cell lies in a frame (decision 2), so the test that chooses the direction of
-    # the link (`ARGP < k`) and the trail-space check disappear.
+    # DIVERGES: on the WORDS into a global cell (L1c: `_cell_link!`); no variable cell lies in a
+    # frame (L1c), so the test that chooses the direction of the link (`ARGP < k`) and the
+    # trail-space check disappear.
     @label B_ARGVAR
     bav_i = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1
     if ARGP.form == ARGP_GLOBAL
@@ -2643,8 +2384,8 @@ function PL_next_solution_guarded(
     @goto bvar_cont
 
     # PORT: pl-vmi.c bvar_cont
-    # DIVERGES: a helper label, its argument `bv_voffset`. No `globaliseVar`: a keyed variable lives in
-    # no cell (decision 2). It moves WORDS: into an argument slot (`_slot_link!`, L1b C6a), into a
+    # DIVERGES: a helper label, its argument `bv_voffset`. No `globaliseVar`: no variable lives in a
+    # frame slot (L1c). It moves WORDS: into an argument slot (`_slot_link!`, L1b C6a), into a
     # global cell (`_cell_link!`, L1c).
     @label bvar_cont
     if ARGP.form == ARGP_SLOT
@@ -2682,8 +2423,8 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c B_VOID
     # DIVERGES: in a slot, a fresh GLOBAL cell referenced, where upstream leaves the argument an
-    # unbound local cell: a local cell read as a term needs a variable naming it, which arrives when
-    # the stamp falls (L1f). A global cell is set unbound, as upstream (L1c).
+    # unbound local cell: no slot is ever an unbound variable (L1c). A global cell is set unbound, as
+    # upstream (L1c).
     @label B_VOID
     _argp_void!(ld, ARGP)                           # setVar(*ARGP++)
     ARGP = _argp_add(ARGP, 1)
@@ -2759,10 +2500,9 @@ function PL_next_solution_guarded(
     @goto unify_var_cont
 
     # PORT: pl-vmi.c unify_var_cont
-    # DIVERGES: a helper label. No `globaliseVar`: a slot's variable is a cell already, and a keyed
-    # variable lives in no cell (decision 2). The slow path (`occurs_check` true or error) writes the
-    # two arguments of `=/2` above `lTop`, the slot's word copied (`*ARGP++ = *k`) and the second a
-    # fresh variable, then the head code runs in WRITE mode, as upstream's (L1c: the read-mode
+    # DIVERGES: a helper label. No `globaliseVar`: a slot's variable is a cell already. The slow
+    # path (`occurs_check` true or error) writes the two arguments of `=/2` above `lTop`, the slot's
+    # word copied (`*ARGP++ = *k`) and the second a fresh variable, then the head code runs in WRITE mode, as upstream's (L1c: the read-mode
     # detour of decision 3 is retired with the builder). The fast path runs the head code in read
     # mode on the slot: on its fresh variable `H_RFUNCTOR` binds it to the compound it lays out on
     # the global stack, as upstream binds the frame cell — so `X = f(X)` is cyclic, as upstream's.
@@ -2888,8 +2628,8 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c B_UNIFY_VC
     # DIVERGES: the constant operand is a literal; on the WORDS (f3b-5b) — an atom or a tagged
-    # integer by its word (`_h_const_word!`), anything else (a blob, a value-table word, the
-    # boundary) by `_unify_const_loc` — with the three outcomes of `*k == c`, `canBind(*k)` and the
+    # integer by its word (`_h_const_word!`), anything else (a blob, a value-table word, a slot's
+    # side value) by `_unify_const_loc` — with the three outcomes of `*k == c`, `canBind(*k)` and the
     # rest, as `h_const`'s (SWI's identity).
     # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
     @label B_UNIFY_VC
@@ -3098,46 +2838,13 @@ function PL_next_solution_guarded(
     mc_nb = ld.frames[NFR].base
     _assert_frame_above_choice(ld, mc_nb, :i_metacall_common)  # (L1e e1 assertion)
     # (f3b-5b) on the WORDS: the goal's location, stripped (`stripModule_cells`), read as upstream's
-    # `goal = *a`; the BOUNDARY (`DU_TERM`: a slot's side value, a keyed variable, a qualifier at
-    # the boundary) strips and reads the goal as a term, counted — class (c), TRANSITIONAL (f3)
+    # `goal = *a`
     mc_ok, mc_loc, mc_mi = stripModule_cells(gd, ld, -(argFrameP(mc_nb, 0) + 1))  # stripModule(a)
     mc_ok || @goto b_throw                          # THROW_EXCEPTION
     mc_k, mc_w, _ = mc_loc                          # goal = *a
-    mc_terms = mc_k == DU_TERM
-    mc_goal = ph                                    # (the goal's term: the boundary, a goal clause)
     mc_gloc = 0                                     # (the goal's location: a goal clause, f3b-3)
     mc_arity = 0
-    if mc_terms                                     # the boundary: on terms
-        ld.cold_pairs += 1
-        mc_ok, mc_goal, mc_mi = stripModule(gd, ld, slotValue(ld, argFrameP(mc_nb, 0) + 1))
-        mc_ok || @goto b_throw                      # THROW_EXCEPTION
-        mc_name = mc_goal
-        mc_kind = kind(mc_goal)
-        if mc_kind === SYM
-            # ison(ap->type, PL_BLOB_TEXT) || goal == ATOM_nil
-            (isTextAtom(mc_goal) || is_nil(mc_goal)) || @goto call_type_error
-        elseif mc_kind === EXPR
-            nchildren(mc_goal) >= 1 || @goto call_type_error
-            mc_name = child(mc_goal, 1)
-            kind(mc_name) === SYM || @goto call_type_error      # `$expr/n`
-            mc_arity = nchildren(mc_goal) - 1
-            if mc_call0 && _has_functor(mc_goal, gd.functors_control.colon, 2)
-                @goto call_type_error
-            end
-            # !isCallableAtom(fd->name): no closures here
-            (isTextAtom(mc_name) || is_nil(mc_name)) || @goto call_type_error
-            mc_arity + mc_callargs > MAXARITY && @goto max_arity_overflow
-            if mc_call0 &&
-                (
-                _is_control(mc_goal, gd.functors_control) ||
-                (sym_key(mc_name) == gd.subclause_names.atom_call && mc_arity > 8)
-            )
-                @goto i_metacall_clause
-            end
-        else
-            @goto call_type_error
-        end
-    elseif mc_k == DU_WORD && isAtomW(mc_w)         # isAtom(goal)
+    if mc_k == DU_WORD && isAtomW(mc_w)             # isAtom(goal)
         mc_name = _atom_value(ld, mc_w)
         # ison(ap->type, PL_BLOB_TEXT) || goal == ATOM_nil
         (isTextAtom(mc_name) || is_nil(mc_name)) || @goto call_type_error
@@ -3173,23 +2880,40 @@ function PL_next_solution_guarded(
     # DIVERGES: see `i_metacall_common`.
     @label i_metacall_clause
     @assert (ld.frames[FR].flags & FR_INRESET) == 0     # (no reset/3: '$meta_call'/1)
-    mc_at = if mc_terms                             # Goal@Module: on the term, or the word (f3b-3)
-        _has_functor(mc_goal, gd.functors_control.at_sign, 2)
-    else
-        mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign
-    end
-    if mc_at
-        mc_terms || (mc_goal = _compound_term(ld, valPtr(mc_w)))   # (the refusal's culprit only)
+    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign     # Goal@Module (f3b-3)
         setLTop!(ld, argFrameP(mc_nb, 1))           # (a Julia exception unwinds this frame)
-        throw(NotPortedError{T}(mc_goal, "call/1 of Goal@Module", "R2"))
+        # the culprit exported off the cells; a CYCLIC goal, which no value holds (`export_cells`
+        # refuses it), is refused all the same, argument by argument (one export): an acyclic one
+        # as it is, a cyclic one its functor over fresh variables — so the culprit still names
+        # the goal and the module (L1f f3)
+        mc_culprit = if is_acyclic_cells(ld, mc_gloc)
+            export_cells(ld, cell_export{T}(), mc_gloc)
+        else
+            mc_ex = cell_export{T}()
+            mc_args = T[mc_name]
+            for mc_i in 1:2
+                mc_a = valPtr(mc_w) + mc_i
+                if is_acyclic_cells(ld, mc_a)
+                    push!(mc_args, export_cells(ld, mc_ex, mc_a))
+                else                                # a cyclic term: a compound
+                    _, mc_aw, _ = _deref_loc(ld, mc_a)
+                    mc_af = ld.gstack[valPtr(mc_aw)]
+                    mc_an = arityFunctor(ld.functors, mc_af)
+                    mc_ak = fresh_var_keys!(mc_an)
+                    mc_ac = T[_atom_value(ld, nameFunctor(ld.functors, mc_af))]
+                    for mc_j in 0:(mc_an - 1)
+                        push!(mc_ac, mk_var(T, mc_ak + mc_j))
+                    end
+                    push!(mc_args, mk_expr(T, mc_ac))
+                end
+            end
+            mk_expr(T, mc_args)
+        end
+        throw(NotPortedError{T}(mc_culprit, "call/1 of Goal@Module", "R2"))
     end
     # lTop = NFR (it is); compileClause(&cl, NULL, a, PROCEDURE_dcall1, module, 0, 0)
     mc_cl = try
-        if mc_terms                                 # (c) the boundary: the goal's term
-            compileGoalClause(gd, ld, mc_goal, gd.modules[mc_mi], mc_nb)
-        else
-            compileGoalClause(gd, ld, mc_gloc, gd.modules[mc_mi], mc_nb)
-        end
+        compileGoalClause(gd, ld, mc_gloc, gd.modules[mc_mi], mc_nb)
     catch mc_e
         # a construct the compiler refuses by name (`Module:Goal`, …): a Julia
         # exception, which unwinds the frame being filled from below lTop
@@ -3219,7 +2943,7 @@ function PL_next_solution_guarded(
     # (the arguments, a helper label: f3b-5b)
     # DIVERGES: the frame's words are moved slot to slot (`_slot_copy!`: a slot never references
     # another, so no `makeRefG(a1+shift)` adjustment); the goal's arguments linked from its cells
-    # (`_slot_from_cell!`, `linkValI(args)`), at the boundary from its term (`setSlotValue!`).
+    # (`_slot_from_cell!`, `linkValI(args)`).
     @label i_metacall_args
     if !mc_call0 && mc_arity != 1
         mc_a1 = argFrameP(mc_nb, 1)                 # pointer to 1-st arg
@@ -3234,16 +2958,8 @@ function PL_next_solution_guarded(
             end
         end
     end
-    if mc_terms
-        for mc_i in 1:mc_arity                      # (c) the boundary: the goal's term
-            setSlotValue!(  # linkValI(argTermP(goal, i)): a cell variable as its reference (L1c)
-                ld, argFrameP(mc_nb, mc_i - 1) + 1, child(mc_goal, mc_i + 1)
-            )
-        end
-    else
-        for mc_i in 1:mc_arity                      # ARGP = argFrameP(NFR, 0)
-            _slot_from_cell!(ld, argFrameP(mc_nb, mc_i - 1) + 1, valPtr(mc_w) + mc_i)  # linkValI
-        end
+    for mc_i in 1:mc_arity                          # ARGP = argFrameP(NFR, 0)
+        _slot_from_cell!(ld, argFrameP(mc_nb, mc_i - 1) + 1, valPtr(mc_w) + mc_i)  # linkValI
     end
     mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
     DEF = mc_proc.definition
@@ -3486,7 +3202,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c L_VAR
     # DIVERGES: on the WORDS (L1c, `_slot_link!`): the references followed while their cells are
     # bound, an unbound cell as a reference to it, an atom or a compound as its word (`*v1 = w`); a
-    # value with no word form dereferenced, a keyed variable being its own reference (decision 2).
+    # value with no word form dereferenced.
     @label L_VAR
     _slot_link!(
         ld,
@@ -3674,9 +3390,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_CUT
     # DIVERGES: the slot holds the choice point's position (above).
     @label C_CUT
-    cc_och = Int(
-        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
-    )
+    cc_och = Int(valInt(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
     PC += 1                                         # cannot be in macro!
     @goto c_cut
 
@@ -3732,9 +3446,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_LCUT
     # DIVERGES: the slot holds the choice point's position (see `C_IFTHENELSE`).
     @label C_LCUT
-    cl_och = Int(
-        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
-    )
+    cl_och = Int(valInt(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
     PC += 1
     @goto c_lcut_cont
 
@@ -3780,7 +3492,7 @@ function PL_next_solution_guarded(
     @label C_SOFTCUT
     sc_slot = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1
     PC += 1
-    sc_ref = Int(int64_value(slotValue(ld, sc_slot)))
+    sc_ref = Int(valInt(ld.slots[sc_slot]))
     if sc_ref > 0
         sc_bfr = ld.BFR
         if ld.choices[sc_bfr].base == sc_ref        # bfr == ch
@@ -3814,9 +3526,7 @@ function PL_next_solution_guarded(
     # DIVERGES: the slot holds a position (see `C_SOFTCUT`); the choice point at it is found on the
     # chain, and its parent's position — 0 for none — is what `c_lcut_cont` cuts back to.
     @label C_LSCUT
-    ls_ref = Int(
-        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
-    )
+    ls_ref = Int(valInt(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
     PC += 1
     if ls_ref < 0
         ls_ref = -ls_ref
@@ -3848,9 +3558,7 @@ function PL_next_solution_guarded(
     # its stack region stays in use (upstream lowers nothing here), is marked `unlinked`, as
     # `C_SOFTCUT`'s: the pools hold live records only (decision 3).
     @label C_DETTRUE
-    cdt_och = Int(
-        int64_value(slotValue(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1))
-    )
+    cdt_och = Int(valInt(ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1]))
     cdt_ch = ld.BFR
     cdt_parent = ld.choices[cdt_ch].parent
     if cdt_parent != 0 && ld.choices[cdt_parent].base == cdt_och    # ch->parent == och
@@ -3966,10 +3674,8 @@ function PL_next_solution_guarded(
     # DIVERGES: since L1d step 4 the integer operand is the integer itself, as upstream's
     # `(intptr_t)*PC++`, and `B` is read on the WORDS: a tagged `*np` (`isTaggedInt`) gives
     # `r = valInt(*np) + add`, stored as `consInt(r)` when tagged, else as the `Int64` term (the
-    # sum of a 57-bit and a portable small integer cannot overflow 64 bits). An in-range integer that
-    # arrived as a term (a keyed variable's binding; a slot's grounded side value is a value word
-    # since f3-1, never an in-range integer) takes the term test after it, as before. Writing the
-    # result's slot is not a binding (decision 2), as upstream's `*rp = w`. NOT PORTED: the
+    # sum of a 57-bit and a portable small integer cannot overflow 64 bits). Writing the result's
+    # slot is not a binding (decision 2), as upstream's `*rp = w`. NOT PORTED: the
     # `vmi_builtin=false` branch, which calls `is/2` (only the debugger and coverage clear the flag).
     @label A_ADD_FC
     af_rp = varFrameP(ld.frames[FR].base, Int(PCc[PC]))                 # A =
@@ -3985,14 +3691,6 @@ function PL_next_solution_guarded(
             setSlotValue!(ld, af_rp + 1, mk_gnd(T, af_r))               # put_int64(&w, r, 0)
         end
         @goto next_instruction
-    end
-    if af_k == DU_TERM                                                  # the boundary: a value as a term
-        af_np = deRef(ld, slotValue(ld, af_vi))
-        if number_kind(af_np) === NUM_INTEGER && integer_is_int64(af_np) &&
-            PLMINTAGGEDINT <= int64_value(af_np) <= PLMAXTAGGEDINT      # isTaggedInt(*np)
-            setSlotValue!(ld, af_rp + 1, mk_gnd(T, int64_value(af_np) + af_add))    # *rp = consInt(r)
-            @goto next_instruction
-        end
     end
     @SAVE_REGISTERS(QID)
     af_rc = false
@@ -4142,7 +3840,7 @@ function PL_next_solution_guarded(
     # DIVERGES: the operands index `codes_crefs`; a `$expr/3` argument goes to `S_STATIC` as an unbound
     # one does — it can unify with a list-cell clause child by child (Q2; user, 2026-10-05). Decided
     # on the WORDS (L1c): `isList(*k)` is the functor word `FUNCTOR_dot2`, `isNil(*k)` the word of
-    # `[]`; only a value with no word form (a keyed variable's binding) is read as a term.
+    # `[]`; a value with no word form is neither: FRAME_FAILED.
     @label S_LIST
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
     sl_d, sl_w = _argp_deref_word(ld, _argp_add(ARGP, Int(PCc[PC])))   # deRef2(ARGP+PC[0], k)
@@ -4170,20 +3868,7 @@ function PL_next_solution_guarded(
         end
         @goto deep_backtrack                        # FRAME_FAILED
     end
-    sl_k = _argp_deref(ld, _argp_add(ARGP, Int(PCc[PC])))   # (a value with no word form)
-    if is_pair(sl_k)
-        tc_cref = DEF.codes_crefs[Int(PCc[PC + 2])]
-    elseif is_nil(sl_k)
-        tc_cref = DEF.codes_crefs[Int(PCc[PC + 1])]
-    elseif kind(sl_k) === VAR || _is_expr3(sl_k)                # canBind(*k)
-        PCc = DEF.code_data.staticp                 # PC = SUPERVISOR(staticp) + 1
-        PC = 2
-        @goto S_STATIC
-    else
-        @goto deep_backtrack                        # FRAME_FAILED
-    end
-    PC += 3
-    @goto TRUST_CLAUSE
+    @goto deep_backtrack                            # (a value with no word form) FRAME_FAILED
 
     # ── deterministic foreign calls (pl-vmi.c; V5a2, decision 5) ─────────────────────────────────
     # PORT: pl-vmi.c I_FCALLDETVA
@@ -4624,7 +4309,6 @@ function PL_next_solution_guarded(
     DiscardMark(ld, ld.choices[br_q.choice].mark)
     br_q.foreign_frame = PL_open_foreign_frame(ld)
     br_q.exception = PL_copy_term_ref(ld, ld.exception_term)
-    ld.ball_word = ld.slots[br_q.exception + 1]     # (f3b-1, TRANSITIONAL: goes with the stamp, f3) `slotValue` reads this word whole
 
     @SAVE_REGISTERS(QID)
     resumeAfterException(ld, (br_q.flags & PL_Q_PASS_EXCEPTION) == 0, bt_outofstack)

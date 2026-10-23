@@ -215,15 +215,13 @@ end
 # ── the compiler's view of a clause on the cells (L1f f3a, audit D-0044) ─────────────────────────────
 # ORIGINAL: upstream's compiler reads the clause's CELLS (`Word`s); the kernel's takes VALUES (the L1 design
 # keeps the compiler on values; compiling from cells is a later step). `export_cells` makes that value
-# straight from the cells — not through the cold export (`gterms`) nor a cell's stamp-keyed variable
-# (`_cell_var`), the machinery f3 removes. ONE `cell_export` per clause: the same unbound cell is the same
+# straight from the cells. ONE `cell_export` per clause: the same unbound cell is the same
 # variable across head, body and `$variable_names`, each a fresh kernel key (`fresh_var_keys!`: no stamp,
 # no cell, no binding); `cells` maps it back, so what the compiler hands back to Prolog (its warnings,
 # whose variables `$variable_names` names) is the clause's own cells (`import_cells!`). A compound met
 # twice is exported once (`done`); a value has no identity, so a CYCLE has no value — the callers test
 # `is_acyclic_cells` first (representation_error(cyclic_term), as upstream's analysis raises), and the
-# export throws on one. The BOUNDARY (a keyed variable, a slot's side value) is read through its term —
-# TRANSITIONAL until f3 removes it, counted in `cold_pairs`.
+# export throws on one.
 "One clause's export from the cells (L1f f3a): its variables both ways, its compounds once."
 struct cell_export{T}
     vars::Dict{Int, T}                  # an unbound cell's position → its variable
@@ -362,10 +360,6 @@ function _export_leaf!(
 )::Union{Nothing, T} where {T}
     k == DU_CELL && return _export_var!(ex, p)
     k == DU_VALUE && return _value_term(ld, w)
-    if k == DU_TERM                                         # (the boundary: TRANSITIONAL)
-        ld.cold_pairs += 1
-        return resolve_term(ld, deRef(ld, _loc_term(ld, k, w, p)))
-    end
     isAtomW(w) && return _atom_value(ld, w)
     return get(ex.done, valPtr(w), nothing)                 # a compound: exported already, or nothing
 end
@@ -443,17 +437,10 @@ function import_cells!(ld::PL_local_data{T}, ex::cell_export{T}, t::T)::word whe
                 q = get(ex.cells, var_key(c), 0)
                 if q != 0                               # a variable `ex` made: its own cell
                     makeRefG(q)
-                else
-                    # TRANSITIONAL (f3b-3, class (c)): as `putSlotValue!`'s deRef, it follows
-                    # a variable term's binding — deleted in f3 (`b = c`)
-                    b = deRef(ld, c)
-                    if kind(b) === VAR                  # one fresh cell per variable per write
-                        m = vm === nothing ? PutVarMap() : vm
-                        vm = m
-                        _write_var_word!(ld, m, var_key(b))
-                    else
-                        _word_of!(ld, b)
-                    end
+                else                                    # one fresh cell per variable per write
+                    m = vm === nothing ? PutVarMap() : vm
+                    vm = m
+                    _write_var_word!(ld, m, var_key(c))
                 end
             else
                 _word_of!(ld, c)
@@ -1410,9 +1397,8 @@ end
 
 # PORT: pl-comp.c link_local_var as link_local_var!
 # DIVERGES: the variable is the goal's export's (`localGoal`), whose cell `_local_cell!` finds,
-# where upstream reads `vd->address`; a goal clause compiled from a TERM stores the variable's value
-# — class (c), TRANSITIONAL (f3). No LOCAL_OVERFLOW: the cells were made room for before the code is
-# compiled (`compileGoalClause`).
+# where upstream reads `vd->address`. No LOCAL_OVERFLOW: the cells were made room for before the code
+# is compiled (`compileGoalClause`).
 "Link variable `v`, at slot `iv`, into its cell of the goal clause's frame (pl-comp.c)."
 function link_local_var!(ci::compileInfo{T}, v::T, iv::Int)::Bool where {T}
     _local_cell!(ci, Int(VAROFFSET(iv)), v)                    # *k = makeRefG(vd->address)
@@ -1423,9 +1409,8 @@ end
 # (`varFrameP(lTop, voffset)`) := what `t` stands for. On the cells (`localGoal`): a variable of the
 # goal's export its cell's reference (link_local_var's `*k = makeRefG(vd->address)`,
 # pl-comp.c:2947), a compound or string argument's placeholder its argument's word
-# (compileArgument's `*k = *arg`, pl-comp.c:3181). Anything else — a goal clause compiled from a
-# TERM, a part of the goal at the boundary (`DU_TERM`) — is stored as its value (`setSlotValue!`):
-# class (c), TRANSITIONAL (f3).
+# (compileArgument's `*k = *arg`, pl-comp.c:3181). Anything else is stored as its value
+# (`setSlotValue!`).
 "Store what `t` stands for (its cell, its word or its value) in the goal clause's cell `voffset`."
 function _local_cell!(ci::compileInfo{T}, voffset::Int, t::T)::Nothing where {T}
     ld = ci.local_ld::PL_local_data{T}
@@ -1448,7 +1433,7 @@ function _local_cell!(ci::compileInfo{T}, voffset::Int, t::T)::Nothing where {T}
             end
         end
     end
-    setSlotValue!(ld, i, t)                                    # (c) the boundary: its value
+    setSlotValue!(ld, i, t)                                    # (anything else: its value)
     return nothing
 end
 
@@ -2851,11 +2836,10 @@ function compileClause(
     ci.warnings = nothing
     ci.cell_export = ex
     if warnings != 0 && ld.variable_names != 0                 # (gvar_value(ATOM_dvariable_names))
-        ci.variable_names = if ex === nothing                  # (a caller with terms: resolved)
-            resolve_term(ld, slotValue(ld, ld.variable_names + 1))
-        else                                                    # (L1f f3a: the clause's export)
-            export_cells(ld, ex, -(ld.variable_names + 1))
-        end
+        ci.variable_names = export_cells(                       # (L1f f3a: the clause's export; a
+            ld, ex === nothing ? cell_export{T}() : ex,         # caller with terms: one of its own)
+            -(ld.variable_names + 1)
+        )
     end
     # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
     ci.head_unify = (def.flags & P_DYNAMIC) == 0 && ld.prolog_flag_optimise_unify
@@ -2875,7 +2859,7 @@ function compileClause(
             if rc == NOT_CALLABLE
                 b = new_term_ref(ld)                           # pushWordAsTermRef(body)
                 if ex === nothing                              # (a caller with terms: white box)
-                    setSlotValue!(ld, b + 1, body::T)          # (c) TRANSITIONAL (f3)
+                    setSlotValue!(ld, b + 1, body::T)
                 else                                           # (f3b-3: the clause's own cells)
                     ld.slots[b + 1] = import_cells!(ld, ex, body::T)
                 end
@@ -2911,46 +2895,24 @@ compileClause(
 
 # ── goal clauses: call/1 of a control construct (pl-comp.c compileClause, head NULL), since V9e-2 ──
 # DIVERGES (no upstream function; upstream dereferences each cell as `analyseVariables2`,
-# `compileBody` and `compileArgument` walk it): the meta-call's goal holds VARIABLES BOUND in the
-# store, which the kernel's compiler — written for clauses without bindings — does not follow. So the
-# parts of the goal the compiler inspects are dereferenced first: the children of each control
-# construct, recursively, and the arguments of each sub-goal, one level. A compound or string
-# argument then becomes a pseudo variable holding the term as it is (bindings and all), and an
-# unbound variable its own cell: exactly what upstream's walk sees.
-# This method reads a goal TERM (the boundary's: i_metacall_common's `DU_TERM` branch, and a part of
-# the goal at the boundary under the method on the cells below): class (c), TRANSITIONAL (f3).
-"The goal `goal` with its control skeleton and its sub-goals' arguments dereferenced under `ld`."
-function localGoal(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T)::T where {T}
-    g = deRef(ld, goal)                                         # (c) the term method (above)
-    kind(g) === EXPR || return g
-    n = nchildren(g)
-    kids = Vector{T}(undef, n)
-    if _is_control(g, gd.functors_control)
-        kids[1] = child(g, 1)
-        for i in 2:n
-            kids[i] = localGoal(gd, ld, child(g, i))
-        end
-    else
-        for i in 1:n
-            kids[i] = deRef(ld, child(g, i))                    # (c) the term method (above)
-        end
-    end
-    return mk_expr(T, kids)
-end
+# `compileBody` and `compileArgument` walk it): the kernel's compiler takes values, so the parts of
+# the meta-call's goal it inspects are read off the cells first (`localGoal`): the children of each
+# control construct, recursively, and the arguments of each sub-goal, one level. A compound or
+# string argument then becomes a pseudo variable holding its word, and an unbound variable its own
+# cell: exactly what upstream's walk sees.
 
 # PORT: pl-comp.c CYCLE_CHECK_AT
 # (the default build's; 1000 under `O_TIGHT_CSTACK`, a debug or sanitizer build: pl-incl.h)
 "The depth at which the variable analysis tests a compound for a cycle (pl-comp.c)."
 const CYCLE_CHECK_AT = 10000
 
-# ORIGINAL (f3b-3): the method above on the CELLS — upstream's islocal walk (pl-comp.c:2031-2043,
+# ORIGINAL (f3b-3): the goal read on the CELLS — upstream's islocal walk (pl-comp.c:2031-2043,
 # analyseVariables2's islocal branch :976-1000, compileArgument's `argvar:` :3167-3189) read to the
-# value the kernel's compiler takes, the same depth as above: a control construct (`CONTROL_F` on
+# value the kernel's compiler takes: a control construct (`CONTROL_F` on
 # its functor word) keeps its name and each argument is read again; a sub-goal is read ONE level
 # (`_local_subgoal`). An unbound cell is a variable of the clause's export `ci.cell_export`
-# (`_export_var!`), which `_local_cell!` links back to its cell. No compound is copied and no cell's
-# variable is made (`_cell_var`): the boundary (`DU_TERM`) alone is read as a term, counted in
-# `cold_pairs` — class (c), TRANSITIONAL (f3). The compiler then never meets a cycle: the depth of
+# (`_export_var!`), which `_local_cell!` links back to its cell. No compound is copied. The compiler
+# then never meets a cycle: the depth of
 # each compound is counted as analyseVariables2 counts it, and at CYCLE_CHECK_AT the compound is
 # tested (`is_acyclic_cells`), as upstream's analysis tests it (pl-comp.c:966-968).
 """
@@ -2983,9 +2945,6 @@ function localGoal(
                 g = _local_subgoal(ld, ci, q, depth)
                 g === nothing && return nothing
             end
-        elseif k == DU_TERM                 # (c) the boundary: on terms, TRANSITIONAL (f3)
-            ld.cold_pairs += 1
-            g = localGoal(gd, ld, _loc_term(ld, k, w, p))
         elseif k == DU_CELL
             g = _export_var!(ex, p)         # a variable goal: call/1
         else
@@ -3016,8 +2975,7 @@ end
 # pseudo variable's cell takes its word (`*k = *arg`, :3181), so it is a placeholder of the right
 # kind — the string's value, a compound `name(V1, …, Vn)` of fresh variables that nothing links —
 # recorded with the word in `ci.local_words`. A compound argument at CYCLE_CHECK_AT is tested as the
-# analysis tests it (:966-968). The boundary (`DU_TERM`) is read as a term, counted: class (c),
-# TRANSITIONAL (f3).
+# analysis tests it (:966-968).
 "The sub-goal at functor position `q`, one level off the cells; `nothing` for a cycle."
 function _local_subgoal(
     ld::PL_local_data{T}, ci::compileInfo{T}, q::Int, depth::Int
@@ -3035,9 +2993,6 @@ function _local_subgoal(
         elseif k == DU_VALUE
             a = _value_term(ld, w)
             isString(a) && push!(lw, a => w)        # case TAG_STRING: goto argvar (c:3065-3067)
-        elseif k == DU_TERM                         # (c) the boundary: on terms, TRANSITIONAL (f3)
-            ld.cold_pairs += 1
-            a = deRef(ld, _loc_term(ld, k, w, p))   # (c)
         elseif isAtomW(w)
             a = _atom_value(ld, w)
         else                                        # a compound: an argvar
@@ -3075,16 +3030,12 @@ end
 # LOCAL_OVERFLOW. Returns `nothing` with the error raised as `compileClause` raises it.
 # Since f3b-3 the goal is read off the cells from its LOCATION `loc` (a global position, or `-i` for
 # slot `i`): `*g = *body` is the location's word, a variable's cell its reference, an argvar's its
-# argument's word, and the NOT_CALLABLE culprit the goal itself (`pushWordAsTermRef(body)`). The
-# method on a goal TERM is the boundary's (i_metacall_common's `DU_TERM` branch): class (c),
-# TRANSITIONAL (f3).
+# argument's word, and the NOT_CALLABLE culprit the goal itself (`pushWordAsTermRef(body)`).
 """
     compileGoalClause(gd, ld, loc, m, base) -> Clause, or nothing
-    compileGoalClause(gd, ld, goal, m, base) -> Clause, or nothing
 
-Compile the goal at location `loc` (or the term `goal`, under the bindings in `ld`) to a temporary
-clause of `'<meta-call>'/1` in module `m` for the frame at `base` (= `lTop`), writing its pseudo
-variables' cells as upstream does (pl-comp.c).
+Compile the goal at location `loc` to a temporary clause of `'<meta-call>'/1` in module `m` for the
+frame at `base` (= `lTop`), writing its pseudo variables' cells as upstream does (pl-comp.c).
 """
 function compileGoalClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, loc::Int, m::module_t{T}, base::Int
@@ -3100,16 +3051,8 @@ function compileGoalClause(
     return _compileGoalClause!(gd, ld, ci, body, base, loc)
 end
 
-function compileGoalClause(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::T, m::module_t{T}, base::Int
-)::Union{Nothing, Clause{T}} where {T}
-    ci = compileInfo{T}(gd, 0, m, gd.procedures_dcall1)
-    return _compileGoalClause!(gd, ld, ci, localGoal(gd, ld, goal), base, 0)
-end
-
-# ORIGINAL (f3b-3): the two `compileGoalClause` methods' common part, from `localGoal`'s `body`;
-# `loc` is the goal's location, 0 for a goal term (the culprit is then `body`, stored as a value:
-# (c)).
+# ORIGINAL (f3b-3): `compileGoalClause`'s compilation, from `localGoal`'s `body`; `loc` is the goal's
+# location.
 "Compile the goal clause `body` read by `localGoal` (see `compileGoalClause`)."
 function _compileGoalClause!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, body::T, base::Int,
@@ -3125,29 +3068,19 @@ function _compileGoalClause!(
     ci.head_unify = false
     nv = analyse_variables!(gd, ci, nothing, body)
     ensureLocalSpace(ld, nv + LOCAL_MARGIN) || return nothing
-    if loc != 0
-        g = varFrameP(base, Int(VAROFFSET(1))) + 1             # g = varFrameP(lTop, VAROFFSET(1))
-        _slot_link_loc!(ld, g, _deref_loc(ld, loc))            # *g = *body
-    else
-        _local_cell!(ci, Int(VAROFFSET(1)), body)              # (c) *g = *body, a term
-    end
+    g = varFrameP(base, Int(VAROFFSET(1))) + 1                 # g = varFrameP(lTop, VAROFFSET(1))
+    _slot_link_loc!(ld, g, _deref_loc(ld, loc))                # *g = *body
     ci.variables = nv
     initMerge!(ci)
     bi = PC(ci)
     rc = compileBody!(gd, ld, ci, body, I_DEPART)
     if rc != BOOLEX_TRUE
         if rc == NOT_CALLABLE
-            if loc != 0
-                PL_error(                                      # pushWordAsTermRef(body)
-                    ld, ERR_TYPE, mk_sym(T, :callable),
-                    pushWordAsTermRef(ld, _deref_loc(ld, loc))
-                )
-                popTermRef(ld)
-            else                                               # (the goal term)
-                b = new_term_ref(ld)
-                setSlotValue!(ld, b + 1, body)                 # (c) TRANSITIONAL (f3)
-                PL_error(ld, ERR_TYPE, mk_sym(T, :callable), b)
-            end
+            PL_error(                                          # pushWordAsTermRef(body)
+                ld, ERR_TYPE, mk_sym(T, :callable),
+                pushWordAsTermRef(ld, _deref_loc(ld, loc))
+            )
+            popTermRef(ld)
         elseif rc == MAX_ARITY_OVERFLOW
             PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
         end
@@ -3171,43 +3104,7 @@ function _compileGoalClause!(
     )
 end
 
-# ── a definition's Prolog reference (pl-comp.c) ─────────────────────────────────────────────────
-# PORT: pl-comp.c unify_functor
-# DIVERGES: the term is BUILT and returned (see `unify_definition`); the functor is the definition's
-# name and arity.
-"`Name/Arity` (with `GP_NAMEARITY` in `how`), else a head of fresh variables, for `def` (pl-comp.c)."
-function unify_functor(::Type{T}, def::Definition{T}, how::Int)::T where {T}
-    if (how & GP_NAMEARITY) != 0
-        return mk_expr(T, T[mk_sym(T, :/), def.name, mk_gnd(T, def.arity)])
-    end
-    def.arity == 0 && return def.name
-    k = fresh_var_keys!(def.arity)
-    return mk_expr(T, T[def.name; [mk_var(T, k + UInt64(i)) for i in 0:(def.arity - 1)]])
-end
 
-# PORT: pl-comp.c unify_definition
-# DIVERGES: the head is always a FRESH reference here, so the term is built and returned — upstream's
-# unbound-head branch; `thehead` (the plain head, for callers that want it) is not returned. The
-# database `gd` is an argument: the definition's module is its index into `gd`'s table (src/pl-incl.jl).
-# NOT PORTED: the bound-head branch, which matches a given `M:Head` against the definition (clause/3
-# by reference, predicate_property/2: not ported).
-"""
-    unify_definition(gd, ctx, def, how) -> T
-
-The Prolog reference of `def` as seen from module `ctx` (pl-comp.c): `Name/Arity` (`GP_NAMEARITY`) or
-its head, qualified `Module:…` unless `def` is `ctx`'s, or a system module's under `GP_HIDESYSTEM`
-(`GP_QUALIFY` always qualifies).
-"""
-function unify_definition(
-    gd::PL_global_data{T}, ctx::module_t{T}, def::Definition{T}, how::Int
-)::T where {T}
-    m = gd.modules[def.module_]
-    if (how & GP_QUALIFY) == 0 &&
-        (m.index == ctx.index || ((how & GP_HIDESYSTEM) != 0 && (m.flags & M_SYSTEM) != 0))
-        return unify_functor(T, def, how)
-    end
-    return mk_expr(T, T[mk_sym(T, :(:)), m.atom, unify_functor(T, def, how)])
-end
 
 # PORT: pl-comp.c unify_functor
 # DIVERGES: the functor is the definition's name and arity; `PL_unify_term(t, …divide2, PL_ATOM,
@@ -3233,7 +3130,7 @@ end
     unify_definition(gd, ld, ctx, head, def, thehead, how) -> Bool
 
 Unify the unbound term reference `head` with the Prolog reference of `def` as seen from module
-`ctx` (pl-comp.c), as the term method; `thehead` (when not 0) gets the plain head.
+`ctx` (pl-comp.c); `thehead` (when not 0) gets the plain head.
 """
 function unify_definition(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ctx::module_t{T}, head::term_t,
@@ -3262,33 +3159,20 @@ end
 # PORT: pl-comp.c is_neck
 # DIVERGES: the SSU necks `=>/2` and `?=>/2` are refused (`NotPortedError`, its culprit the neck's
 # name): SSU is not ported, and taken for facts they would assert other clauses; so no `flags` is
-# set. On the WORDS (f3b-5a): the compound's functor word compared with the necks' functors; the
-# boundary (TRANSITIONAL, f3) read as its term, counted in `cold_pairs`.
+# set. On the WORDS (f3b-5a): the compound's functor word compared with the necks' functors.
 "Whether term reference `t` holds a rule, `Head :- Body` (pl-comp.c)."
 function is_neck(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
-    (k == DU_TERM || (k == DU_WORD && _is_gcompound(w))) || return false   # isTerm(*p)
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
+    (k == DU_WORD && _is_gcompound(w)) || return false      # isTerm(*p)
     prove, commit = mk_sym(T, Symbol(":-")), mk_sym(T, Symbol("=>"))
     choice = mk_sym(T, Symbol("?=>"))
-    if k == DU_WORD                                         # a compound word
-        f = ld.gstack[valPtr(w)]                            # functor_t f = functorTerm(*p)
-        fs = ld.functors
-        f == lookupFunctorDef(fs, _atom_word!(ld, prove), 2) && return true   # FUNCTOR_prove2
-        f == lookupFunctorDef(fs, _atom_word!(ld, commit), 2) &&              # FUNCTOR_ssu_commit2
-            throw(NotPortedError{T}(commit, "an SSU clause (=>, ?=>)", "SSU"))
-        f == lookupFunctorDef(fs, _atom_word!(ld, choice), 2) &&              # FUNCTOR_ssu_choice2
-            throw(NotPortedError{T}(choice, "an SSU clause (=>, ?=>)", "SSU"))
-    else                                                    # the boundary (TRANSITIONAL): its term
-        ld.cold_pairs += 1
-        c = deRef(ld, _loc_term(ld, k, w, p))
-        if isTerm(c)
-            _has_functor(c, sym_key(prove), 2) && return true
-            _has_functor(c, sym_key(commit), 2) &&
-                throw(NotPortedError{T}(commit, "an SSU clause (=>, ?=>)", "SSU"))
-            _has_functor(c, sym_key(choice), 2) &&
-                throw(NotPortedError{T}(choice, "an SSU clause (=>, ?=>)", "SSU"))
-        end
-    end
+    f = ld.gstack[valPtr(w)]                                # functor_t f = functorTerm(*p)
+    fs = ld.functors
+    f == lookupFunctorDef(fs, _atom_word!(ld, prove), 2) && return true   # FUNCTOR_prove2
+    f == lookupFunctorDef(fs, _atom_word!(ld, commit), 2) &&              # FUNCTOR_ssu_commit2
+        throw(NotPortedError{T}(commit, "an SSU clause (=>, ?=>)", "SSU"))
+    f == lookupFunctorDef(fs, _atom_word!(ld, choice), 2) &&              # FUNCTOR_ssu_choice2
+        throw(NotPortedError{T}(choice, "an SSU clause (=>, ?=>)", "SSU"))
     return false
 end
 
@@ -3331,7 +3215,7 @@ end
 # an argument (upstream: GD); a module is an index into its table — `module_` 0 is upstream's NULL:
 # the source module (`LD->modules.source`) when loading (`loc`), else `user` (`PL_strip_module_ex`).
 # The clause is checked for cycles (`is_acyclic_cells`) and EXPORTED off its cells before it is
-# compiled (`export_cells`, L1f f3a: one variable map for head, body and `$variable_names`, no stamp,
+# compiled (`export_cells`, since L1f f3a: one variable map for head, body and `$variable_names`, no stamp,
 # no export memo), because `compileClause` takes values without bindings:
 # `representation_error(cyclic_term)` is raised here, where upstream's analysis raises it (after the
 # procedure is looked up). A clause the static procedure's error rejects is left to Julia's garbage
@@ -3656,8 +3540,7 @@ end
 # DIVERGES: `var` is a location (a global position, or `-slot`). A term reference holds a global
 # cell's reference (`PL_new_term_refs`) and a frame slot is never an unbound variable (`_bind_const!`),
 # so two unbound sides are two GLOBAL cells, `v < var` their positions: the younger bound to the
-# older, as `unify_simple_cells`. The boundary (`DU_TERM` on either side: a running frame's side
-# value, `decompile_body_range`) is unified on terms there. Asserted (audit D-0100): the clause
+# older, as `unify_simple_cells`. Asserted (audit D-0100): the clause
 # variable's cell is the OLDER — every location bound is a cell this decompilation allocated.
 """
 Bind the location `var` to the clause variable `i` (a frame offset) of `variables`, re-creating the
@@ -3670,9 +3553,6 @@ function unifyVar(
     i -= VAROFFSET(0)
     kv, wv, pv = _deref_loc(ld, -(variables + Int(i) + 1))     # v = valTermRef(vars+i); deRef(v)
     k, w, p = _deref_loc(ld, var)                               # deRef(var)
-    if kv == DU_TERM || k == DU_TERM                            # (the boundary: on terms)
-        return unify_simple_cells(ld, k, w, p, kv, wv, pv) == BOOLEX_TRUE
-    end
     if kv == DU_CELL && k == DU_CELL
         @assert pv > 0 && p > 0 "unifyVar: an unbound variable outside the global stack"
         @assert pv < p "unifyVar: the clause variable's cell younger than the one bound"   # (D-0100)
@@ -4732,7 +4612,7 @@ end
 # context or protected predicates), answering for the body `true` — so only facts, as a rule's body is
 # not `true` (rule bodies are V9's `decompile`); the predicate is given. Each
 # answer is a call of `sink(clause)::Bool` (false to cut) with the head's bindings in place in
-# `ld`: a sink keeps what it needs with `resolve_term`, because the bindings are undone when it
+# `ld`: a sink keeps what it needs with `export_cells`, because the bindings are undone when it
 # returns — where SWI's backtracking would undo them.
 """
     pl_clause!(gd, ld, def, head, sink)

@@ -177,10 +177,20 @@ const _EBALLS = (
     ("time_limit_exceeded(1,2)", _ef(:time_limit_exceeded, _eg(1), _eg(2)))
 )
 
+"The class of ball `t`, put into a term reference (f3-3: `classify_exception` on its cells)."
+function _eclass(ld, t)
+    fid = LKE.PL_open_foreign_frame(ld)
+    r = LKE.PL_new_term_ref(ld)
+    LKE.putSlotValue!(ld, r + 1, t)
+    c = LKE.classify_exception(ld, r)
+    LKE.PL_close_foreign_frame(ld, fid)
+    return c
+end
+
 "The kernel's pick of the more urgent of balls `i` and `j`, as `'\$urgent_exception'/3` picks: 1 or 2."
 function _eurgent(ld, i::Int, j::Int)::Int
-    c1 = LKE.classify_exception_p(ld, _EBALLS[i][2])
-    c2 = LKE.classify_exception_p(ld, _EBALLS[j][2])
+    c1 = _eclass(ld, _EBALLS[i][2])
+    c2 = _eclass(ld, _EBALLS[j][2])
     return c2 > c1 ? 2 : 1
 end
 
@@ -212,21 +222,21 @@ const _ESWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 
 @testset "the exception classes, as written (the resource class as fixed in 85d0cc2)" begin
     ld = LKE.PL_local_data{_E}(LKE.PL_global_data{_E}())
-    cls(i) = LKE.classify_exception_p(ld, _EBALLS[i][2])
+    cls(i) = _eclass(ld, _EBALLS[i][2])
     @test cls(5) == LKE.EXCEPT_ERROR
     @test cls(6) == LKE.EXCEPT_ERROR                    # error(resource_error,_): the bare atom
     @test cls(7) == LKE.EXCEPT_RESOURCE                 # error(resource_error(stack),_)
     # the functor is resource_error/1: another arity, or a bound variable's value, by its value
-    @test LKE.classify_exception_p(
+    @test _eclass(
         ld, _ef(:error, _ef(:resource_error, _es(:a), _es(:b)), _es(:c))
     ) == LKE.EXCEPT_ERROR
-    @test LKE.classify_exception_p(ld, _ef(:resource_error, _es(:stack))) ==
+    @test _eclass(ld, _ef(:resource_error, _es(:stack))) ==
         LKE.EXCEPT_OTHER
     @test cls(8) == LKE.EXCEPT_ABORT && cls(9) == LKE.EXCEPT_HALT &&
         cls(11) == LKE.EXCEPT_UNWIND
     @test cls(12) == LKE.EXCEPT_OTHER && cls(13) == LKE.EXCEPT_UNWIND &&
         cls(14) == LKE.EXCEPT_OTHER
-    @test LKE.classify_exception_p(ld, _ev(1)) == LKE.EXCEPT_NONE
+    @test _eclass(ld, _ev(1)) == LKE.EXCEPT_NONE
 end
 
 @testset "a raise replaces a pending ball of a lower or equal class only" begin

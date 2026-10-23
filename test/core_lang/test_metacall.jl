@@ -280,8 +280,9 @@ end
 # `stripModuleName`), X cyclic. Neither side can write a cyclic culprit canonically, so each reports
 # the formal's name, its type argument and whether the culprit is cyclic. `call(1:true)` is the other
 # path — `call_type_error` (`1` is no module): `type_error(atom, 1)`, acyclic.
-# The error a goal raises, read with `deRef` only: name, type argument, and whether the culprit is
-# cyclic — `resolve_term` (which `_rmc_formal_term` uses) refuses a rational tree.
+# The error a goal raises, read on the cells (the FLI: `PL_get_name_arity`, `_PL_get_arg`,
+# `is_acyclic_cells`): name, type argument, and whether the culprit is cyclic — an export (which
+# `_rmc_formal_term` reads) cannot hold a rational tree.
 function _rmc_type_error_shape(db::_RDB, goal::_R)::String
     gd, ld = db.gd, db.ld
     fid = LK.PL_open_foreign_frame(ld)
@@ -293,12 +294,13 @@ function _rmc_type_error_shape(db::_RDB, goal::_R)::String
     rc = LK.PL_next_solution(gd, ld, qid)
     out = "no_error"
     if rc == LK.PL_S_EXCEPTION
-        fd = LK.deRef(
-            ld, child(LK.deRef(ld, LK.slotValue(ld, LK.PL_exception(ld, qid) + 1)), 2)
-        )
+        fd, a1, a2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+        LK._PL_get_arg(ld, 1, LK.PL_exception(ld, qid), fd)      # error(Formal, _)
+        LK._PL_get_arg(ld, 1, fd, a1)
+        LK._PL_get_arg(ld, 2, fd, a2)
         out = string(
-            lk_name(child(fd, 1)), " ", lk_name(LK.deRef(ld, child(fd, 2))), " ",
-            LK.is_acyclic(ld, child(fd, 3)) ? "acyclic" : "cyclic"
+            lk_name(LK.PL_get_name_arity(ld, fd)[1]), " ", lk_name(LK.PL_get_atom(ld, a1)),
+            " ", LK.is_acyclic_cells(ld, -(a2 + 1)) ? "acyclic" : "cyclic"
         )
     end
     LK.PL_close_query(ld, qid)

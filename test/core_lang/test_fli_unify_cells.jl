@@ -6,7 +6,7 @@
 #     list, `$skip_list/3`, and a binding undone by backtracking;
 #   * white-box: a failed comparison of a value makes no value-table entry; a rewound frame leaves the cell
 #     PL_unify_list bound unbound again (the trail);
-#   * the meter: the writers on terms on the stack make no cold export, import, variable read or boundary pair.
+#   * the meter: the writers on terms on the stack make no cold import.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -104,7 +104,7 @@ function _fu_engine(vs::Vector{_R})
     end
     return ld, t
 end
-_fu_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_fu_counts(ld) = ld.cold_imports            # (f3-3: the export/variable/pair meters went with the boundary)
 
 @testset "white-box: a failed value comparison makes no entry; a rewound PL_unify_list leaves the cell unbound" begin
     ld, t = _fu_engine(_R[_rg(2.5), _rv(1), _rv(2), _rv(3)])

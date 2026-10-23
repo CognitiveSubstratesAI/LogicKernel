@@ -5,9 +5,7 @@
 #     atomic/1, compound/1, callable/1): atoms, `[]`, small and big integers, floats, strings, compounds,
 #     lists, variables — passed directly and bound through a clause body (a cell), and a `$expr` compound
 #     is not callable;
-#   * the boundary: a keyed variable's binding read on terms, COUNTED, with the right answer;
-#   * the meter: a loop of these built-ins on values on the stack makes no cold export, import, variable
-#     read or boundary pair.
+#   * the meter: a loop of these built-ins on values on the stack makes no cold import.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -83,22 +81,12 @@ function _fw_engine(vs::Vector{_R})
     end
     return ld, t
 end
-_fw_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_fw_counts(ld) = ld.cold_imports            # (f3-3: the export/variable/pair meters went with the boundary)
 _fw_all(ld, t) = (
     LK.PL_is_float(ld, t), LK.PL_is_rational(ld, t), LK.PL_is_atomic(ld, t),
     LK.PL_is_compound(ld, t),
     LK.PL_is_callable(ld, t)
 )
-
-@testset "the boundary: a keyed variable's binding, read on terms, counted" begin
-    ld, t = _fw_engine(_R[_rs("x")])
-    kv = lk_var(_R, UInt64(4741))
-    lk_side_value!(ld, t + 1, kv)                       # (the boundary: built since L1f f3b-1)
-    LK.Trail!(ld, var_key(kv), _rg(1.25))
-    p0 = ld.cold_pairs
-    @test _fw_all(ld, t) == (true, false, true, false, false)
-    @test ld.cold_pairs > p0
-end
 
 @testset "the meter: the type tests on values on the stack make no cold traffic" begin
     ld, t = _fw_engine(_R[_rs("a"), _fw_k(7), _rg(1.5), _rf("f", _rv(1)), _rnil(), _rv(2)])

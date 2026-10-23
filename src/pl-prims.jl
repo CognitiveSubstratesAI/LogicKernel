@@ -315,267 +315,8 @@ function compareStandard(t1, t2, eq::Bool=false)::Int
     return compare_std(t1, t2, eq ? CMP_MODE_EQUAL : CMP_MODE_ORDER)
 end
 
-# ── the standard order UNDER BINDINGS (V5a) ──────────────────────────────────────────────────────
-# Upstream's chain takes `DECL_LD` and dereferences every pair (prims:1997-2184). A built-in reads
-# its arguments from slots whose variables may be bound (decision 2), and through bindings a term
-# can be a RATIONAL TREE (`occurs_check=false`), so these methods port upstream's cyclic machinery
-# as well: `linkTermsCyclic` in `do_compare`, `compare_descend` (Brent's cycle detection) and
-# `is_acyclic`. The methods above, without `ld`, stay the entry for RESOLVED terms — finite trees,
-# where the fast walk is always the answer.
-
-"`compare_descend` result: no order exists between the two terms (pl-incl.h `CMP_INCOMPARABLE`)."
+"`compare_descend_cells` result: no order exists between the two terms (pl-incl.h `CMP_INCOMPARABLE`)."
 const CMP_INCOMPARABLE = 4
-
-# PORT: pl-prims.c do_compare
-# DIVERGES: only a pair of compounds REACHED THROUGH A BINDING is looked up in and entered into the
-# cyclic links, as `do_unify` does — see there ("WHY IT IS SAFE"): an interface term is a finite
-# tree, so a cycle can only pass through a binding. `bound` says whether the top pair was reached
-# through one. Returns `(rc, linked)` where upstream writes `*linked`; no `CMP_UNDECIDED`
-# (`CMP_MODE_PARTIAL` is not ported) and no `CMP_ERROR` (no memory overflow to report).
-# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings: callers the *_cells
-# CMP_TERMS boundary and the term sort / variant twins; deleted in f3
-"""
-    do_compare(ld, f1, f2, bound, mode) -> (Int, Bool)
-
-Compare the children of two compounds of one shape under the bindings in `ld` (pl-prims.c
-`do_compare`), linking compound pairs so that rational trees terminate; `linked` is true when a
-link was followed — the order found may then be wrong for cyclic terms (`compare_std`).
-"""
-function do_compare(
-    ld::PL_local_data{T}, f1::T, f2::T, bound::Bool, mode::Int
-)::Tuple{Int, Bool} where {T}
-    linked = false
-    agenda = ld.compare_agenda
-    initTermAgendaLR!(agenda, nchildren(f1), f1, f2, 1)     # goto compound
-    bound && linkTermsCyclic!(ld, f1, f2)
-    rc = CMP_EQUAL
-    while true
-        found, l0, r0 = nextTermAgendaLR!(agenda)
-        found || break
-        l = deRef(ld, l0)
-        r = deRef(ld, r0)
-        rc = compare_primitives(l, r, mode)
-        if rc != CMP_COMPOUND
-            rc == CMP_EQUAL && continue
-            break
-        end
-        rc = CMP_EQUAL
-        b = kind(l0) === VAR || kind(r0) === VAR           # reached through a binding
-        if b                                                # O_CYCLIC
-            l1 = _cyclic_deref(ld, l)
-            r1 = _cyclic_deref(ld, r)
-            if l1 !== l || r1 !== r                         # isRef(f1->definition) || …
-                linked = true
-                l, r = l1, r1
-                l === r && continue
-            end
-        end
-        rc = compare_functors(l, r, mode)
-        rc == CMP_EQUAL || break
-        pushWorkAgendaLR!(agenda, nchildren(l), l, r, 1)
-        b && linkTermsCyclic!(ld, l, r)
-    end
-    clearTermAgendaLR!(agenda)
-    return (rc, linked)
-end
-
-# PORT: pl-prims.c compare_fast
-# DIVERGES: returns `(rc, linked)` where upstream writes `*linked`; no `c1`/`c2` (only
-# `CMP_MODE_PARTIAL` reads them, not ported).
-# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
-# deleted in f3
-"""
-    compare_fast(ld, t1, t2, mode) -> (Int, Bool)
-
-One walk over both terms under the bindings in `ld` (pl-prims.c `compare_fast`). The result is
-right for `CMP_MODE_EQUAL`, and for the order when both terms are acyclic; `linked` as `do_compare`.
-"""
-function compare_fast(
-    ld::PL_local_data{T}, t1::T, t2::T, mode::Int
-)::Tuple{Int, Bool} where {T}
-    bound = kind(t1) === VAR || kind(t2) === VAR
-    t1 = deRef(ld, t1)
-    t2 = deRef(ld, t2)
-    rc = compare_primitives(t1, t2, mode)
-    rc == CMP_COMPOUND || return (rc, false)
-    rc = compare_functors(t1, t2, mode)                     # f1->definition != f2->definition
-    rc == CMP_EQUAL || return (rc, false)
-    rc, linked = do_compare(ld, t1, t2, bound, mode)        # initCyclic(): nothing to set
-    exitCyclic!(ld)
-    return (rc, linked)
-end
-
-# PORT: pl-prims.c compare_descend
-# DIVERGES: two compounds are the same pair when they are the same objects (`===`) — a cycle passes
-# through a binding, and a binding's value is one object (upstream: the same `Functor` cells). No
-# `CMP_ERROR` from the argument tests (no memory overflow). The result is returned, a tuple, where
-# upstream writes it through `*c1` and `*c2`.
-# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
-# deleted in f3
-"""
-    compare_descend(ld, t1, t2, mode) -> (Int, T, T)
-
-The slow but sound order of two terms under the bindings in `ld` (pl-prims.c `compare_descend`):
-at each compound skip the leading children that are equal and descend into the first pair that is
-not, until a pair decides — or the descent cycles (Brent's algorithm on the compound pairs), which
-is `CMP_INCOMPARABLE`, with the pair where it cycles.
-"""
-function compare_descend(
-    ld::PL_local_data{T}, p1::T, p2::T, mode::Int
-)::Tuple{Int, T, T} where {T}
-    s1, s2, have_s = p1, p2, false                          # Functor s1 = NULL, s2 = NULL
-    power = 1
-    steps = 0
-    while true
-        p1 = deRef(ld, p1)
-        p2 = deRef(ld, p2)
-        rc = compare_primitives(p1, p2, mode)
-        rc == CMP_COMPOUND || return (rc, p1, p2)
-        rc = compare_functors(p1, p2, mode)
-        rc == CMP_EQUAL || return (rc, p1, p2)
-        if have_s && p1 === s1 && p2 === s2
-            return (CMP_INCOMPARABLE, p1, p2)
-        end
-        steps += 1
-        if steps == power
-            s1, s2, have_s = p1, p2, true
-            power *= 2
-            steps = 0
-        end
-        n = nchildren(p1)
-        i = 1                                   # the pair differs, so the last child need not
-        while i < n                             # be tested; child 1, the head, is compared too
-            rc, _ = compare_fast(ld, child(p1, i), child(p2, i), CMP_MODE_EQUAL)
-            rc == CMP_EQUAL || break
-            i += 1
-        end
-        p1 = child(p1, i)
-        p2 = child(p2, i)
-    end
-end
-
-# PORT: pl-prims.c termChain
-# DIVERGES: `p` (an argument cell, or NULL) is the compound and the child index of the argument —
-# 0 for NULL.
-"A chain of compounds linked by their last argument (pl-prims.c `termChain`)."
-struct termChain{T}
-    head::T
-    tail::T
-    p_term::T           # the compound whose argument `p` is
-    p_arg::Int          # its child index; 0: NULL
-end
-
-# PORT: pl-prims.c ph_acyclic_mark
-# DIVERGES: the marks (`ACYCLIC_TEMP_MASK`, `ACYCLIC_PERM_MASK` on a functor cell) are entries in two
-# identity maps that live for one call — so there is no `ph_acyclic_unmark`. A compound of no
-# arguments ends a chain (upstream reads its `arguments - 1`, the functor cell, which is no term).
-# No MEMORY_OVERFLOW.
-# TRANSITIONAL (f3b-3, class (c)): term acyclicity; only caller `is_acyclic` on terms; deleted in f3
-"""
-    ph_acyclic_mark(ld, top) -> Bool
-
-Whether compound `top` is acyclic under the bindings in `ld` (pl-prims.c `ph_acyclic_mark`): walk
-it as chains of last arguments, marking each compound while its chain is open (temporary) and when
-it is done (permanent); meeting a temporarily marked compound again is a cycle.
-"""
-function ph_acyclic_mark(ld::PL_local_data{T}, top::T)::Bool where {T}
-    temp = IdDict{T, Nothing}()
-    perm = IdDict{T, Nothing}()
-    stack = termChain{T}[]                                  # agenda.stack
-    work = termChain{T}(top, top, top, 0)                   # agenda.work (never read at the top)
-    head = top
-    tail = top
-    pv = top
-    while true
-        if haskey(temp, tail)                               # is_acyclic_temp(&tail->definition)
-            haskey(perm, tail) || return false
-            @goto end_of_chain
-        end
-        temp[tail] = nothing                                # set_acyclic_temp
-        off, arity = _comp_shape(tail)
-        if arity > 1
-            new_workspace = false
-            iter = tail
-            for i in arity:-1:2
-                q = deRef(ld, child(iter, off + i - 2))     # p = iter->arguments + i - 2
-                if kind(q) === EXPR
-                    push!(stack, work)
-                    if !new_workspace
-                        work = termChain{T}(head, tail, iter, off + arity - 1)
-                        head = q
-                        tail = q
-                        new_workspace = true
-                    else
-                        work = termChain{T}(q, q, q, 0)
-                    end
-                end
-            end
-            new_workspace && continue
-        end
-        if arity == 0
-            @goto end_of_chain
-        end
-        pv = deRef(ld, child(tail, off + arity - 1))        # p = tail->arguments + arity-1
-        @label process_p
-        if kind(pv) === EXPR
-            tail = pv
-            continue
-        end
-        @label end_of_chain
-        head === top && return true
-        iter = head
-        while iter !== tail                                 # mark the chain permanent
-            perm[iter] = nothing
-            o, a = _comp_shape(iter)
-            iter = deRef(ld, child(iter, o + a - 1))
-        end
-        perm[tail] = nothing
-        head = work.head
-        tail = work.tail
-        p_term, p_arg = work.p_term, work.p_arg
-        @assert !isempty(stack) "ph_acyclic_mark: the agenda ran out"
-        work = pop!(stack)
-        if p_arg != 0
-            pv = deRef(ld, child(p_term, p_arg))
-            @goto process_p
-        end
-    end
-end
-
-# PORT: pl-prims.c skip_list
-# DIVERGES: the term itself and its tail returned, `(length, tail)`, where upstream writes the tail
-# through `tailp`; two cells are the same cell when `===` (upstream compares the cell words).
-# TRANSITIONAL (f3b-3, class (c)): callers are DU_TERM branches (PL_skip_list, lengthList,
-# skip_list/3) and the term sort twin; deleted in f3
-"Walk the list `l` (Brent's cycle detection): `(cells, tail)`, the tail the first non-list or the cell a cycle returns to (pl-prims.c)."
-function skip_list(ld::PL_local_data{T}, l::T)::Tuple{Int, T} where {T}
-    l = deRef(ld, l)
-
-    if !is_pair(l)
-        return (0, l)
-    else
-        length = 0
-        checkCell = currentCell = l
-        lam = 0
-        power = 1
-
-        while true
-            currentCell = deRef(ld, child(currentCell, 3))      # TailList(currentCell)
-            length += 1
-
-            (!is_pair(currentCell) || checkCell === currentCell) && break
-
-            lam += 1
-            if power == lam
-                checkCell = currentCell
-                power *= 2
-                lam = 0
-            end
-        end
-
-        return (length, currentCell)
-    end
-end
 
 # PORT: pl-prims.c skip_list as skip_list_cells
 # DIVERGES: on a LOCATION (L1d step 9); returns the tail dereferenced, `(length, kind, word, pos)` as
@@ -613,21 +354,10 @@ end
 # PORT: pl-prims.c lengthList
 "The length of the list term reference `list` holds; -1 if it is not one, -2 if partial (pl-prims.c)."
 function lengthList(ld::PL_local_data{T}, list::term_t, errors::Bool)::Int where {T}
-    length, k, w, _ = skip_list_cells(ld, -(list + 1))     # on the cells (L1e e4); the boundary on terms
-    if k != DU_TERM
-        k == DU_WORD && w == ld.atom_nil_w && return length    # isNil(*tail)
-        errors && PL_error(ld, ERR_TYPE, mk_sym(T, :list), list)
-        return k == DU_CELL ? -2 : -1                       # isVar(*tail) ? -2 : -1
-    end
-    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM tail, on terms; deleted in f3
-    ld.cold_pairs += 1
-    length, tail = skip_list(ld, slotValue(ld, list + 1))
-
-    is_nil(tail) && return length
-
+    length, k, w, _ = skip_list_cells(ld, -(list + 1))     # on the cells (L1e e4)
+    k == DU_WORD && w == ld.atom_nil_w && return length    # isNil(*tail)
     errors && PL_error(ld, ERR_TYPE, mk_sym(T, :list), list)
-
-    return kind(tail) === VAR ? -2 : -1
+    return k == DU_CELL ? -2 : -1                       # isVar(*tail) ? -2 : -1
 end
 
 # ── numbervars (pl-prims.c), since R1e's write_canonical ────────────────────────────────────────
@@ -666,181 +396,22 @@ const CONTAINS_ATTVAR = -11
 "`do_number_vars`' code: a number past the tagged range (pl-prims.c)."
 const REPRESENTATION_ERROR = -12
 
-# PORT: pl-prims.c do_number_vars
-# DIVERGES: a variable is bound to a NEW `'$VAR'(A)` compound through the trail (`Trail!`; upstream
-# builds it on the global stack and `bindConst`s), whose argument `A` is a FRESH VARIABLE bound to
-# the number — or, in singletons mode, to `_` — so the compound keeps its identity while its
-# argument is rewritten (upstream writes the argument cell in place: `*p = ATOM_var`, `*p =
-# consInt(v)`); "new one we created ourselves" — a `'$VAR'` compound above the mark's global top —
-# is one in `ld.numbervars_made` (the compounds this walk made, cleared by `numberVars`); `visited`
-# is an `IdDict` of the compounds entered (upstream's mark bits). No attributed variables (none in
-# the kernel: `AV_*` is kept for `nv_options`); no signals (`NV_EINTR`); no global-stack overflow.
-# TRANSITIONAL (f3b-3, class (c)): twin — only caller numberVars_terms (NV_BOUNDARY); deleted in f3
-"Number the variables of `p` from `n`: the next number, or a code below 0 (pl-prims.c)."
-function do_number_vars(
-    ld::PL_local_data{T}, p::T, options::nv_options{T}, n::Int
-)::Int where {T}
-    agenda = ld.occurs_agenda
-    start = n
-    visited = ld.numbervars_visited
-    made = ld.numbervars_made
-    fkey = sym_key(options.functor)
-    k_anon = sym_key(mk_sym(T, :_))                 # ATOM_anonvar
-    k_var = sym_key(mk_sym(T, :var))                # ATOM_var
 
-    initTermAgenda!(agenda, 0, p, 1)                # (initTermAgenda(&agenda, 1, p))
-    first = true
-    while true
-        if first
-            first = false
-            q = deRef(ld, p)
-        else
-            q = nextTermAgenda!(ld, agenda)
-            q === nothing && break
-        end
-        if kind(q) === VAR                          # canBind(*p)
-            arg = _cell_var(ld, allocGlobalCells!(ld, 1))     # the argument cell, rewritable
-            if options.singletons != 0
-                Trail!(ld, var_key(arg), mk_sym(T, :_))             # a[1] = ATOM_anonvar
-            else
-                v = n + options.offset
-                (PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT) || return REPRESENTATION_ERROR
-                Trail!(ld, var_key(arg), mk_gnd(T, Int64(v)))       # a[1] = consInt(v)
-                n += 1
-            end
-            a = mk_expr(T, T[options.functor, arg])
-            Trail!(ld, var_key(q), a)               # bindConst(p, v)
-            # the mark is on the term the engine HANDS BACK for the binding: since L1c a cell
-            # variable's binding copies `a` onto the global stack, and reading it exports a
-            # term of its own (one level deep, memoized per position) — `a` itself is never
-            # seen again; a keyed variable's binding is `a` as stored (upstream: the mark bit
-            # on the functor cell it wrote). TRANSITIONAL: numberVars over cells (L1d/L1e).
-            made[deRef(ld, q)] = nothing
-        elseif kind(q) === EXPR                     # isTerm(*p)
-            h = child(q, 1)
-            if nchildren(q) == 2 && kind(h) === SYM && sym_key(h) == fkey
-                if haskey(made, q)                  # new one we created ourselves
-                    if options.singletons != 0
-                        cell = child(q, 2)          # Word p = &f->arguments[0] (a variable)
-                        cur = deRef(ld, cell)
-                        if options.singletons == 1
-                            if kind(cur) === SYM && sym_key(cur) == k_anon
-                                v = n + options.offset
-                                (PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT) ||
-                                    return REPRESENTATION_ERROR
-                                _set_binding!(ld, var_key(cell), mk_sym(T, :var))   # *p = ATOM_var
-                                n += 1
-                            end
-                        else
-                            if kind(cur) === SYM && sym_key(cur) == k_var
-                                v = n + options.offset
-                                _set_binding!(ld, var_key(cell), mk_gnd(T, Int64(v)))   # *p = consInt(v)
-                                n += 1
-                            end
-                        end
-                    end
-                else
-                    arg = deRef(ld, child(q, 2))
-                    if options.numbered_check && isInteger(arg)
-                        if isTaggedInt(arg) && int64_value(arg) >= start
-                            return ALREADY_NUMBERED
-                        end
-                    end
-                    if kind(arg) === VAR || kind(arg) === EXPR
-                        @goto do_number             # number '$VAR'(_)
-                    end
-                end
-                continue
-            end
-
-            @label do_number
-            if options.singletons == 0
-                haskey(visited, q) && continue      # visited(f)
-                visited[q] = nothing
-            end
-            pushWorkAgenda!(agenda, nchildren(q) - 1, q, 2)
-        end
-    end
-
-    clearTermAgenda!(agenda)                        # out:
-    return n                                        # anything else
-end
-
-# PORT: pl-prims.c numberVars as numberVars_terms
-# TRANSITIONAL (L1d step 7a, until L1f): numberVars on TERMS — the boundary's path (`numberVars` below
-# redoes the numbering here when its cell walk meets a slot's side value or a keyed variable).
-# DIVERGES: the marks of a walk (`made`, `visited`) are the local data's scratch, cleared here
-# (upstream: `initvisited`/`unvisit`, the global-stack mark); the error for `CONTAINS_ATTVAR` is
-# kept for the shape (no attributed variables); no signals, no stack growth (`makeMoreStackSpace`).
-"Number the variables of term reference `t` from `n` ON TERMS: the next number, or `NV_ERROR` with the error raised (pl-prims.c `numberVars`)."
-function numberVars_terms(
-    ld::PL_local_data{T}, t::term_t, options::nv_options{T}, n::Int
-)::Int where {T}
-    if !(PLMINTAGGEDINT <= n <= PLMAXTAGGEDINT)     # inTaggedNumRange(n)
-        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :tagged_integer))
-        return NV_ERROR
-    end
-
-    options.offset = n
-
-    m = Mark(ld)
-    empty!(ld.numbervars_visited)
-    empty!(ld.numbervars_made)
-    rc = do_number_vars(ld, slotValue(ld, t + 1), options, 0)
-    empty!(ld.numbervars_visited)                   # unvisit()
-    if rc >= 0                                      # all ok
-        DiscardMark(ld, m)
-        if options.singletons != 0
-            options.singletons = 2
-            rc2 = do_number_vars(ld, slotValue(ld, t + 1), options, 0)
-            empty!(ld.numbervars_visited)
-            @assert rc == rc2
-        end
-        empty!(ld.numbervars_made)
-        return rc + options.offset
-    else
-        empty!(ld.numbervars_made)
-        if rc == CONTAINS_ATTVAR
-            DiscardMark(ld, m)
-            PL_error(ld, ERR_TYPE, mk_sym(T, :free_of_attvar), t)
-            return NV_ERROR
-        elseif rc == ALREADY_NUMBERED
-            DiscardMark(ld, m)
-            PL_error(
-                ld, "", 0, "already numbered", ERR_PERMISSION, mk_sym(T, :numbervars),
-                mk_sym(T, :term), t
-            )
-            return NV_ERROR
-        else
-            @assert rc == REPRESENTATION_ERROR
-            DiscardMark(ld, m)
-            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :tagged_integer))
-            return NV_ERROR
-        end
-    end
-end
 
 # ── numbervars on the CELLS (L1d step 7a; the workspace's L1_plan/stageL1d_design.md §3g) ─────────
 # Upstream's walk on locations: a variable cell is bound (`bindConst`, trailed) to a `'$VAR'(N)` laid
 # out at gTop, its argument a WORD — so the singletons passes rewrite the ones made "ourselves" (above
 # the mark's globaltop: upstream's address test) in place, untrailed, as upstream; a visited compound
 # is MARKed on its functor cell (`visitedWord_cells`, on `ld.cycle_vstack`), cleared by `unvisit_cells`.
-# THE BOUNDARY (a slot's side value, a keyed variable — `DU_TERM` — anywhere in the walk): unvisit,
-# Undo to the mark, and the whole numbering redone on terms (`numberVars_terms`), counted in
-# `cold_pairs`. TRANSITIONAL until L1f.
-
-# ORIGINAL: `do_number_vars_cells`' code for the boundary (no upstream counterpart: upstream has none).
-"`do_number_vars_cells`: the walk met the boundary (a slot's side value, a keyed variable)."
-const NV_BOUNDARY = -14
 
 # PORT: pl-prims.c do_number_vars as do_number_vars_cells
 # DIVERGES: on locations (`_deref_loc`'s), the one-sided cell agenda (`ld.walk_agenda`); `gtop` is the
 # mark's `globaltop` (upstream passes the mark; positions, so "at or above the old top" is `> gtop`);
 # `fw` the functor word of `options.functor/1` and `anon`/`var` the atom words of `_` and `var`
 # (upstream: `options->functor`, `ATOM_anonvar`, `ATOM_var`). `numbered_check` reads a tagged integer
-# (a value-table integer is past the tagged range: upstream's "cannot be bigger"). The boundary
-# returns `NV_BOUNDARY`. NOT PORTED: attributed variables (no cell holds one: `on_attvar` is never
-# read), NV_EINTR (no signals), the global-stack overflow (`hasGlobalSpace`: the stack grows).
+# (a value-table integer is past the tagged range: upstream's "cannot be bigger"). NOT PORTED:
+# attributed variables (no cell holds one: `on_attvar` is never read), NV_EINTR (no signals), the
+# global-stack overflow (`hasGlobalSpace`: the stack grows).
 "Number the variables of the term at location `l` from `n` on the cells: the next number, or a code below 0 (pl-prims.c `do_number_vars`)."
 function do_number_vars_cells(
     ld::PL_local_data{T}, l::Int, options::nv_options{T}, n::Int, gtop::Int, fw::word,
@@ -869,9 +440,6 @@ function do_number_vars_cells(
             c = _alloc_compound!(ld, fw, 1)                 # a = gTop; a[0] = functor; gTop += 2
             ld.gstack[c + 1] = arg
             _bind_const!(ld, p, consPtr(c, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, v)
-        elseif k == DU_TERM                                 # the boundary
-            n = NV_BOUNDARY
-            break
         elseif k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
             c = valPtr(w)
             if ld.gstack[c] == fw                           # f->definition == options->functor
@@ -904,10 +472,6 @@ function do_number_vars_cells(
                             break
                         end
                     end
-                    if ka == DU_TERM
-                        n = NV_BOUNDARY
-                        break
-                    end
                     (ka == DU_CELL || (ka == DU_WORD && _is_gcompound(wa))) ||
                         continue                            # number '$VAR'(_) only
                 end
@@ -925,10 +489,9 @@ end
 
 # PORT: pl-prims.c numberVars
 # DIVERGES: on the CELLS (L1d step 7a, `do_number_vars_cells`); the functor word of `options.functor/1`
-# looked up here (upstream's caller passes `PL_new_functor(name, 1)`); the boundary — `NV_BOUNDARY` —
-# unvisits, undoes to the mark and numbers on terms (`numberVars_terms`), counted in `cold_pairs`.
-# The error for `CONTAINS_ATTVAR` is kept for the shape (no attributed variables); no signals
-# (`NV_EINTR`), no stack growth (`makeMoreStackSpace`: the stack grows on demand).
+# looked up here (upstream's caller passes `PL_new_functor(name, 1)`). The error for
+# `CONTAINS_ATTVAR` is kept for the shape (no attributed variables); no signals (`NV_EINTR`), no
+# stack growth (`makeMoreStackSpace`: the stack grows on demand).
 "Number the variables of term reference `t` from `n`: the next number, or `NV_ERROR` with the error raised (pl-prims.c)."
 function numberVars(
     ld::PL_local_data{T}, t::term_t, options::nv_options{T}, n::Int
@@ -947,12 +510,6 @@ function numberVars(
     # initvisited(): `ld.cycle_vstack` is empty between walks
     rc = do_number_vars_cells(ld, -(t + 1), options, 0, m.globaltop, fw, anon, var)
     unvisit_cells(ld)                               # unvisit()
-    if rc == NV_BOUNDARY
-        Undo!(ld, m)
-        DiscardMark(ld, m)
-        ld.cold_pairs += 1
-        return numberVars_terms(ld, t, options, n)
-    end
     if rc >= 0                                      # all ok
         DiscardMark(ld, m)
         if options.singletons != 0
@@ -1043,57 +600,6 @@ function pl_numbervars4_va(
     return FFALSE
 end
 
-# PORT: pl-prims.c is_acyclic
-# TRANSITIONAL (f3b-3, class (c)): callers is_acyclic_cells' DU_TERM branch, term twins; deleted in
-# f3
-"Whether `p` is acyclic under the bindings in `ld` (pl-prims.c `is_acyclic`)."
-function is_acyclic(ld::PL_local_data{T}, p::T)::Bool where {T}
-    p = deRef(ld, p)
-    kind(p) === EXPR || return true
-    return ph_acyclic_mark(ld, p)                           # ph_acyclic_unmark: see above
-end
-
-# PORT: pl-prims.c compare_std
-# DIVERGES: NOT PORTED — the `incomparable` flag's `error` value: it raises a ball holding the
-# cyclic pair, which `PL_raise_exception` cannot copy (it resolves the ball, and `resolve_term`
-# refuses a cycle). So an incomparable pair keeps the fast result, as swipl's default
-# `incomparable=arbitrary` does; `CMP_MODE_PARTIAL` is not ported either.
-# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
-# deleted in f3
-"""
-    compare_std(ld, t1, t2, mode) -> Int
-
-The standard-order comparison in `mode` under the bindings in `ld` (pl-prims.c `compare_std`): the
-fast walk, and — when it followed a cyclic link, in an ordering mode, found the terms different,
-and one of them is cyclic — the sound descent instead.
-"""
-function compare_std(ld::PL_local_data{T}, t1::T, t2::T, mode::Int)::Int where {T}
-    rc, linked = compare_fast(ld, t1, t2, mode)
-    if linked && mode != CMP_MODE_EQUAL && rc != CMP_EQUAL &&
-        !(is_acyclic(ld, t1) && is_acyclic(ld, t2))
-        rc2, _, _ = compare_descend(ld, t1, t2, mode)
-        if rc2 != CMP_INCOMPARABLE
-            rc = rc2
-        end                                                 # else keep the fast result
-    end
-    return rc
-end
-
-# PORT: pl-prims.c compareStandard
-# DIVERGES: `eq` is not optional here (no method of three arguments, so none overlaps the method for
-# resolved terms); no `raiseIncomparable` (see `compare_std`).
-# TRANSITIONAL (f3b-3, class (c)): the term standard order under bindings (see `do_compare`);
-# deleted in f3
-"""
-    compareStandard(ld, t1, t2, eq::Bool) -> Int
-
-The standard order of `t1` and `t2` under the bindings in `ld` (pl-prims.c `compareStandard`), as
-[`compareStandard`](@ref) for resolved terms: `-1`, `0` or `1`; with `eq` `0` or `CMP_NOTEQ`.
-"""
-function compareStandard(ld::PL_local_data{T}, t1::T, t2::T, eq::Bool)::Int where {T}
-    return compare_std(ld, t1, t2, eq ? CMP_MODE_EQUAL : CMP_MODE_ORDER)
-end
-
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
 # UNIFICATION (pl-prims.c)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1103,98 +609,27 @@ end
 # compounds, link the first to the second; a compound met again resolves through its link, and a
 # pair that resolves to ONE compound is already being unified — so `X = f(X), Y = f(Y), X = Y`
 # terminates. Links are reset whether the unification succeeds or fails. (`initCyclic` only sets a
-# segstack's unit size upstream; there is nothing to port.)
-
-# PORT: pl-prims.c linkTermsCyclic
-# DIVERGES: upstream overwrites `f1`'s functor cell with a reference to `f2`'s and stacks the cell
-# on `cycle.lstack`; interface terms cannot be written, so the link is an entry in `cycle_links`, an
-# identity map from a compound to its partner, and `f1` is stacked to delete it again.
-"Link compound `f1` to `f2` for the rest of this unification (pl-prims.c)."
-function linkTermsCyclic!(ld::PL_local_data{T}, f1::T, f2::T)::Nothing where {T}
-    ld.cycle_links[f1] = f2                         # *p1 = makeRefG(p2)
-    push!(ld.cycle_lstack, f1)                      # pushSegStack(&LD->cycle.lstack, p1, Word)
-    return nothing
-end
-
-# PORT: pl-prims.c exitCyclic
-"Drop every link, one stacked compound at a time (pl-prims.c)."
-function exitCyclic!(ld::PL_local_data)::Nothing
-    while !isempty(ld.cycle_lstack)
-        delete!(ld.cycle_links, pop!(ld.cycle_lstack))  # *p = *unRef(*p)
-    end
-    return nothing
-end
-
-"Compound `f` with its links followed (`do_unify`: `while ( isRef(f1->definition) ) f1 = unRef(…)`)."
-function _cyclic_deref(ld::PL_local_data{T}, f::T)::T where {T}
-    while true
-        n = get(ld.cycle_links, f, nothing)
-        n === nothing && return f
-        f = n
-    end
-end
-
-# DIVERGES: two compounds with SYMBOL heads unify as SWI's do — the same name and arity, then the
-# arguments. A compound with any other head has the functor `$expr/n` (Q2, src/pl-ressymbol.jl),
-# and it unifies with ANY compound of n children, child by child, heads included — `(X a) = f(a)`
-# binds `X = f` — so the index keys `$expr/n` as a wildcard. A VM must match the same way:
-# `H_FUNCTOR $expr/n` against any compound of n children, `H_FUNCTOR f/k` against a `$expr/(k+1)`.
-"""
-The functor test of `do_unify` (`f1->definition != f2->definition`): `(child index of argument 0,
-arity)` when compounds `f1` and `f2` unify argument by argument, `nothing` when they cannot unify.
-"""
-function _unify_functor(f1, f2)::Union{Nothing, Tuple{Int, Int}}
-    n = nchildren(f1)
-    n == nchildren(f2) || return nothing
-    if n >= 1 && kind(child(f1, 1)) === SYM && kind(child(f2, 1)) === SYM
-        sym_key(child(f1, 1)) == sym_key(child(f2, 1)) || return nothing
-        return (2, n - 1)
-    end
-    return (1, n)
-end
+# segstack's unit size upstream; there is nothing to port.) On the cells: `_link_cells!`,
+# `_exit_cycles!`, `_cycle_root` (below).
 
 # ── unify ────────────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-prims.c unify_simple_ptrs
-# DIVERGES: (1) "the same cell" (`t1 == t2`) is `===`, or two terms of one variable (`var_key`).
-# (2) Two variables: upstream binds the younger cell to the older (by address, "always point
-# downwards"); here the larger `var_key` is bound to the smaller. No local stack, so no fresh global
-# variable for two local ones. (3) No attributed variables. (4) Atomic data: a symbol by `sym_key`
+# DIVERGES: on two CONSTANT terms — since L1f f3 its one caller is the VM's constant test
+# (`_unify_const_loc`: a clause's literal against an atom's or a value word's term), and a term
+# variable can be bound nowhere (the cells are the only store: `unify_simple_cells` binds), so the
+# variable arms are gone. "The same cell" (`t1 == t2`) is `===`; atomic data: a symbol by `sym_key`
 # (upstream: the same word), a grounded value by the term type's `gnd_equal` (upstream: the same
 # word, or `equalIndirect` on the bits — the reference type's `gnd_equal` is that identity).
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
 """
-Unify two DEREFERENCED terms when neither is compound (pl-prims.c): `BOOLEX_TRUE` (bindings made
-with `Trail!`), `BOOLEX_FALSE`, or `DO_COMPOUND` when both are compounds.
+Unify two constant terms (pl-prims.c): `BOOLEX_TRUE` when they are the same constant, else
+`BOOLEX_FALSE`; `DO_COMPOUND` when both are compounds.
 """
 function unify_simple_ptrs(ld::PL_local_data{T}, t1::T, t2::T)::boolex_t where {T}
     if t1 === t2
         return BOOLEX_TRUE
     end
     k1 = kind(t1)
-    k2 = kind(t2)
-    if k1 === VAR
-        if k2 === VAR
-            v1 = var_key(t1)
-            v2 = var_key(t2)
-            if v1 > v2                              # SWAPW(t1, t2)
-                t1, t2 = t2, t1
-                v1, v2 = v2, v1
-            end
-            if v1 < v2                              # always point downwards
-                Trail!(ld, v2, t1)
-                return BOOLEX_TRUE
-            end
-            return BOOLEX_TRUE                      # one variable, two terms
-        end
-        Trail!(ld, var_key(t1), t2)                 # Trail(t1, w2)
-        return BOOLEX_TRUE
-    end
-    if k2 === VAR
-        Trail!(ld, var_key(t2), t1)                 # Trail(t2, w1)
-        return BOOLEX_TRUE
-    end
-    if k1 !== k2                                    # tagex(w1) != tagex(w2)
+    if k1 !== kind(t2)                              # tagex(w1) != tagex(w2)
         return BOOLEX_FALSE
     end
     if k1 === SYM
@@ -1205,144 +640,21 @@ function unify_simple_ptrs(ld::PL_local_data{T}, t1::T, t2::T)::boolex_t where {
     return DO_COMPOUND
 end
 
-# PORT: pl-prims.c do_unify
-# DIVERGES: only a pair of compounds REACHED THROUGH A BINDING (one side was a variable that
-# dereferenced to a compound) is checked against and entered into the cyclic links; upstream links
-# every pair. Upstream's link is one pointer write; here it is an identity-map entry, and linking
-# every pair made `=` 27–38× slower than swipl on 8191-cell trees (measured 2026-10-03, tools/bench.jl:
-# 80% of the samples in the map).
-#   WHY IT IS SAFE: in SWI any compound cell can lie on a cycle — terms live on a mutable heap and a
-#   cell can point back at an ancestor. An interface term cannot: it is an immutable finite tree, so
-#   following children from any compound never returns to it. A cycle can therefore only pass
-#   through a VARIABLE BINDING, and every walk around one reaches its compounds through a binding;
-#   the first time a pair is reached that way it is linked, the second time the link is found — so
-#   unification terminates. Answers are kept: a pair unified twice instead of once unifies the
-#   second time without binding anything.
-#   🔴 THIS DEPENDS ON THE REPRESENTATION. A term type whose compounds can share MUTABLE structure,
-#   or point back at an ancestor, breaks the argument — it must restore linking EVERY pair. Guards:
-#   test_unify.jl's cycle_1/cycle_2, the 398 rational trees of test_unify_swipl.jl, and the mutation
-#   "links not followed", under which cycle_2 does not terminate.
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"""
-    do_unify(ld, t1, t2) -> boolex_t
-
-Unify `t1` and `t2` under the bindings in `ld` (pl-prims.c): bind variables with `Trail!`, walk
-compounds argument by argument with an explicit agenda, and link compound pairs so that rational
-trees terminate. Does NOT undo on failure.
-"""
-function do_unify(ld::PL_local_data{T}, t1::T, t2::T)::boolex_t where {T}
-    bound = kind(t1) === VAR || kind(t2) === VAR    # reached through a binding (see above)
-    t1 = deRef(ld, t1)
-    t2 = deRef(ld, t2)
-
-    rc = unify_simple_ptrs(ld, t1, t2)
-    if rc != DO_COMPOUND
-        return rc
-    end
-    rc = BOOLEX_TRUE
-
-    f = _unify_functor(t1, t2)                      # f1->definition != f2->definition
-    if f === nothing
-        return BOOLEX_FALSE
-    end
-
-    agenda = ld.unify_agenda
-    initTermAgendaLR!(agenda, f[2], t1, t2, f[1])
-    bound && linkTermsCyclic!(ld, t1, t2)
-
-    while true
-        found, l0, r0 = nextTermAgendaLR!(agenda)
-        found || break
-        l = deRef(ld, l0)
-        r = deRef(ld, r0)
-        rc = unify_simple_ptrs(ld, l, r)
-        rc == BOOLEX_TRUE && continue
-        rc == BOOLEX_FALSE && break                 # (no overflow codes to break on)
-        rc = BOOLEX_TRUE
-
-        bound = kind(l0) === VAR || kind(r0) === VAR
-        if bound                                    # O_CYCLIC
-            l = _cyclic_deref(ld, l)
-            r = _cyclic_deref(ld, r)
-            l === r && continue
-        end
-
-        f = _unify_functor(l, r)
-        if f === nothing
-            rc = BOOLEX_FALSE
-            break
-        end
-        pushWorkAgendaLR!(agenda, f[2], l, r, f[1])
-        bound && linkTermsCyclic!(ld, l, r)
-    end
-
-    clearTermAgendaLR!(agenda)
-    exitCyclic!(ld)
-    return rc
-end
-
-# PORT: pl-prims.c raw_unify_ptrs
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"Unify under the local data's `occurs_check` flag (pl-prims.c)."
-function raw_unify_ptrs(ld::PL_local_data{T}, t1::T, t2::T)::boolex_t where {T}
-    flag = ld.prolog_flag_occurs_check
-    if flag == OCCURS_CHECK_FALSE
-        return do_unify(ld, t1, t2)
-    elseif flag == OCCURS_CHECK_TRUE
-        return unify_with_occurs_check!(ld, t1, t2, OCCURS_CHECK_TRUE)
-    end
-    return unify_with_occurs_check!(ld, t1, t2, OCCURS_CHECK_ERROR)
-end
-
-# PORT: pl-prims.c unify_ptrs
-# DIVERGES: no `flags` and no overflow retry — stacks cannot overflow; `true` or `false`. An
-# occurs-check error is raised, as upstream's: `false`, with the error pending.
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"Unify `t1` and `t2` (pl-prims.c `unify_ptrs`): `true` or `false`; does not undo on failure."
-unify_ptrs(ld::PL_local_data{T}, t1::T, t2::T) where {T} =
-    raw_unify_ptrs(ld, t1, t2) == BOOLEX_TRUE
-
-# PORT: pl-prims.c can_unify
-# DIVERGES: no foreign frame and no wakeup of delayed goals (no attributed variables): a mark, and
-# an undo whatever happens. An occurs-check error stays pending (`ld.exception_term`), where
-# upstream hands it back through `ex`.
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"Whether `t1` and `t2` can be unified, leaving no binding behind (pl-prims.c)."
-function can_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
-    m = Mark(ld)
-    try
-        return unify_ptrs(ld, t1, t2)
-    finally
-        Undo!(ld, m)
-    end
-end
-
 # ── unification on the CELLS (L1c sub-commit 4: the hot half of L1d) ─────────────────────────────
 # Upstream's `Word` pointer is a LOCATION here: a global position (`loc > 0`), or a local-stack slot
 # (`loc = -i` for slot `i`; term reference `t` is slot `t + 1`). A slot is never an unbound variable
 # — it holds a reference to a cell, an atom or compound word, or its side value — so dereferencing
 # ends in a global cell or a value, and only GLOBAL cells are ever bound: upstream's local stack lies
 # above its global stack and a variable binds the younger to the older, so a local cell points at a
-# global one and never the reverse (user, 2026-10-15; test_unify_cells.jl pins it). What has no word
-# form yet is the BOUNDARY — a slot's side value (`SLOT_VALUE`) holding a keyed variable or a ball
-# copied on terms (since f3-1 a GROUNDED side value is a value, its side word: `_side_word`), a
-# value-table entry that is a KEYED variable (gone with the stamp, L1f) — and a pair
-# with such a side is unified on TERMS (`do_unify`), each side converted: a cell its variable, an
-# atom its symbol, a compound its cold export (COUNTED in `cold_exports`), so the stamp machinery
-# stays in `_var_ref_word`/`_cell_pos` until L1f. The term-level `do_unify` stays for the cold
-# callers (built-ins, the FLI) until L1e; `unify_with_occurs_check` stays on terms (its own L1d step).
+# global one and never the reverse (user, 2026-10-15; test_unify_cells.jl pins it). A slot's side
+# value (`SLOT_VALUE`, D-0024's indirect) is always ground and reads as a VALUE, its side word
+# (`_side_word`, f3-1); since L1f f3 every location dereferences to a cell or a word.
 "`_deref_loc`: an unbound cell, at the position returned."
 const DU_CELL = 0x01
 "`_deref_loc`: an atom or a compound word, returned."
 const DU_WORD = 0x02
 "`_deref_loc`: a VALUE word (returned): a value-table word whose entry is a value, in the cell at the position, a tagged integer (L1d step 4; in a slot, position 0), or a slot's grounded side value as its side word (`_side_word`, f3-1; position 0)."
 const DU_VALUE = 0x03
-"`_deref_loc`: the boundary — a keyed variable's value-table word, or a slot's side value that is no grounded value (a keyed variable, a ball copied on terms; the position is `-slot`)."
-const DU_TERM = 0x04
 
 # ORIGINAL: upstream's `deRef` (pl-data.h) on a LOCATION (above); the result says what was found,
 # as the word tests on `*p` do after upstream's `deRef`.
@@ -1353,15 +665,10 @@ const DU_TERM = 0x04
     if loc < 0
         w = ld.slots[-loc]
         if !isRef(w)
-            if w == SLOT_VALUE                  # a side value: a grounded one a VALUE (f3-1, D-0110)
-                kind(ld.slot_values[-loc]) === GND && return (DU_VALUE, _side_word(-loc), 0)
-                Threads.atomic_add!(_DU_TERM_SIDE, 1)   # (the meter: none outside white box)
-                return (DU_TERM, word(0), loc)  # (a keyed variable, a ball copied on terms: f3)
-            end
+            w == SLOT_VALUE && return (DU_VALUE, _side_word(-loc), 0)  # a side value (f3-1, D-0110)
             (isAtomW(w) || _is_gcompound(w)) && return (DU_WORD, w, 0)
             isTaggedIntW(w) && return (DU_VALUE, w, 0)                  # L1d step 4
             if _is_vword(w)                                             # L1e e1: a value-table word
-                kind(ld.vtable[valPtr(w)]) === VAR && return (DU_TERM, w, 0)   # (a keyed variable)
                 return (DU_VALUE, w, 0)
             end
             throw(_slot_word_error(w))
@@ -1380,64 +687,33 @@ const DU_TERM = 0x04
         elseif isTaggedIntW(c)                      # a small integer (L1d step 4)
             return (DU_VALUE, c, p)
         else                                        # a value-table word
-            kind(ld.vtable[valPtr(c)]) === VAR && return (DU_TERM, c, p)
             return (DU_VALUE, c, p)
         end
     end
 end
 
 # ORIGINAL (L1c-6): `deRef2(p, k); canBind(*k)` for slot `i` on the WORDS — an unbound cell is a
-# variable, any other word is not; only the BOUNDARY (a slot's side value, a keyed variable's
-# value-table word) is decided on its term, `@noinline` so the hot test carries no term path.
+# variable, any other word is not.
 "Whether slot `i`, dereferenced, is an unbound variable (pl-vmi.c I_VAR's test, on the words)."
 @inline function _slot_is_var(ld::PL_local_data{T}, i::Int)::Bool where {T}
-    k, w, p = _deref_loc(ld, -i)
-    k == DU_CELL && return true
-    k == DU_TERM || return false
-    return _boundary_is_var(ld, w, p)
+    k, _, _ = _deref_loc(ld, -i)
+    return k == DU_CELL
 end
 
-# ORIGINAL (L1c-6): the boundary's `canBind` — a slot's side value or a keyed variable's entry, as a
-# term (TRANSITIONAL: the stamp falls at L1f, and with it the keyed variables).
-"Whether the boundary location (`DU_TERM`: word `w`, position `p`) holds an unbound variable."
-@noinline function _boundary_is_var(ld::PL_local_data{T}, w::word, p::Int)::Bool where {T}
-    t = p < 0 ? ld.slot_values[-p] : ld.vtable[valPtr(w)]
-    return canBind(deRef(ld, t))
-end
-
-# ORIGINAL: the boundary's conversion (above): what a dereferenced location holds, as a TERM.
-"The term at a dereferenced location (a compound through the counted cold export)."
-function _loc_term(ld::PL_local_data{T}, k::UInt8, w::word, p::Int)::T where {T}
-    k == DU_CELL && return _cell_var(ld, p)
-    if k == DU_TERM
-        p < 0 && return ld.slot_values[-p]
-        return ld.vtable[valPtr(w)]
-    end
-    k == DU_VALUE && return _value_term(ld, w)
-    isAtomW(w) && return _atom_value(ld, w)
-    return _compound_term(ld, valPtr(w))
-end
-
-# ORIGINAL: `ARGP` as a location for `do_unify_cells`: a slot or a global cell; 0 for a read-mode
-# cursor into a TERM (the term path).
-"The location `ARGP` points at, or 0 when it points into a term."
-@inline _argp_loc(a::argp_t)::Int =
-    a.form == ARGP_SLOT ? -(a.pos + 1) : (a.form == ARGP_GLOBAL ? a.pos : 0)
+# ORIGINAL: `ARGP` as a location for `do_unify_cells`: a slot or a global cell.
+"The location `ARGP` points at."
+@inline _argp_loc(a::argp_t)::Int = a.form == ARGP_SLOT ? -(a.pos + 1) : a.pos
 
 # PORT: pl-prims.c unify_simple_ptrs as unify_simple_cells
 # DIVERGES: on dereferenced locations. Two unbound cells: the HIGHER position is bound to the
 # lower's reference (upstream: by address, "always point downwards"; no variable lives on the local
 # stack, so no fresh global variable for two local ones). A value-table word is upstream's indirect:
 # shared by binding, two compared by the term type's `gnd_equal` (`equalIndirect`: SWI's identity in
-# the reference type, `1 = 1.0` fails). The boundary (`DU_TERM` on either side) is unified on terms.
-# No attributed variables.
+# the reference type, `1 = 1.0` fails). No attributed variables.
 "Unify two dereferenced locations when neither is a compound; `DO_COMPOUND` when both are (pl-prims.c)."
 function unify_simple_cells(
     ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int
 )::boolex_t where {T}
-    if k1 == DU_TERM || k2 == DU_TERM                # the boundary: on terms
-        return do_unify(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2))
-    end
     if k1 == DU_CELL
         if k2 == DU_CELL
             p1 == p2 && return BOOLEX_TRUE          # t1 == t2
@@ -1545,8 +821,7 @@ end
 # DIVERGES: on locations (above); the agenda holds pairs of global positions (`cell_agendaLR`); a
 # cycle link overwrites the compound's functor cell with a reference to the other's, as upstream's,
 # the word saved beside it (`_link_cells!`, Q2). Both compounds are linked on EVERY pair, as
-# upstream links every pair (the term-level `do_unify` links only pairs reached through a binding —
-# its DIVERGES; on cells a link is one word write).
+# upstream links every pair (a link is one word write).
 """
     do_unify_cells(ld, l1, l2) -> boolex_t
 
@@ -1626,20 +901,17 @@ unify_ptrs_cells(ld::PL_local_data{T}, l1::Int, l2::Int) where {T} =
 const ACYCLIC_TEMP_MASK = FIRST_MASK
 "ACYCLIC_PERM_MASK (pl-prims.c): a functor cell known to start no cycle (= MARK_MASK)."
 const ACYCLIC_PERM_MASK = MARK_MASK
-"`ph_acyclic_mark_cells`: the walk met the boundary (a term): decide on terms."
-const ACYCLIC_BOUNDARY = 2
 
 # PORT: pl-prims.c ph_acyclic_mark as ph_acyclic_mark_cells
 # DIVERGES: positions for upstream's `Functor`s — a chain's `head` and `tail` are the compounds'
 # positions, `p` the location of the argument to resume (0: NULL); the chains' segstack is
 # `ld.acyclic_chains`, reused. A compound of no arguments ends a chain (upstream reads its
-# `arguments - 1`). An argument at the BOUNDARY (a keyed variable's binding) stops the walk with
-# `ACYCLIC_BOUNDARY` — the caller decides on terms. No MEMORY_OVERFLOW.
+# `arguments - 1`). No MEMORY_OVERFLOW.
 """
     ph_acyclic_mark_cells(ld, top) -> Int
 
 Whether the compound at global position `top` is acyclic (pl-prims.c `ph_acyclic_mark`): `1` yes,
-`0` no, `ACYCLIC_BOUNDARY` met a term. Leaves marks on the functor cells for `ph_acyclic_unmark_cells`.
+`0` no. Leaves marks on the functor cells for `ph_acyclic_unmark_cells`.
 """
 function ph_acyclic_mark_cells(ld::PL_local_data{T}, top::Int)::Int where {T}
     stack = ld.acyclic_chains                               # agenda.stack
@@ -1664,7 +936,6 @@ function ph_acyclic_mark_cells(ld::PL_local_data{T}, top::Int)::Int where {T}
             iter = tail                                     # iter = tail: `tail` moves on below, `iter` not
             for i in arity:-1:2
                 k, w, _ = _deref_loc(ld, iter + i - 1)      # p = iter->arguments + i - 2; deRef(p)
-                k == DU_TERM && return ACYCLIC_BOUNDARY
                 if k == DU_WORD && _is_gcompound(w)         # isTerm(*p)
                     push!(stack, work)
                     if !new_workspace
@@ -1682,7 +953,6 @@ function ph_acyclic_mark_cells(ld::PL_local_data{T}, top::Int)::Int where {T}
         pv = tail + arity                                   # p = tail->arguments + arity-1
         @label process_p
         k, w, _ = _deref_loc(ld, pv)
-        k == DU_TERM && return ACYCLIC_BOUNDARY
         if k == DU_WORD && _is_gcompound(w)
             tail = valPtr(w)
             continue
@@ -1732,37 +1002,24 @@ function ph_acyclic_unmark_cells(ld::PL_local_data{T}, top::Int)::Nothing where 
 end
 
 # PORT: pl-prims.c is_acyclic as is_acyclic_cells
-# DIVERGES: on a location; the boundary (a slot's side value, a keyed variable's binding, met at the
-# top or inside the walk) is decided by the term-level `is_acyclic` on the export, counted in
-# `cold_pairs`. No MEMORY_OVERFLOW.
+# DIVERGES: on a location. No MEMORY_OVERFLOW.
 "Whether the term at location `l` is acyclic (pl-prims.c `is_acyclic`)."
 function is_acyclic_cells(ld::PL_local_data{T}, l::Int)::Bool where {T}
-    k, w, p = _deref_loc(ld, l)
-    if k == DU_TERM
-        ld.cold_pairs += 1
-        return is_acyclic(ld, _loc_term(ld, k, w, p))
-    end
+    k, w, _ = _deref_loc(ld, l)
     (k == DU_WORD && _is_gcompound(w)) || return true
     @assert isempty(ld.cycle_cells) "is_acyclic_cells: a cycle link is in place (exitCyclic first)"
     q = valPtr(w)
     rc = ph_acyclic_mark_cells(ld, q)
     ph_acyclic_unmark_cells(ld, q)
-    if rc == ACYCLIC_BOUNDARY
-        ld.cold_pairs += 1
-        return is_acyclic(ld, _loc_term(ld, k, w, p))
-    end
     return rc == 1
 end
 
 # ── the standard order on CELLS (L1d step 1; the workspace's L1_plan/stageL1d_design.md §3) ──────
 # Locations as `do_unify_cells`'s (a global position, or `-i` for slot `i`). The order is the term
-# compare's, so a sort or a `==` gives the same answer on either path: variables by KEY (`gkey`;
-# upstream by address — a key's stamp and position follow allocation as an address does), atomic
-# values by the term type's ladder (`compare_primitives` on the stored value or the atom's symbol —
-# no export), compounds by arity, then `$expr/n` before symbol functors (Q2), then name, then the
-# arguments left to right. The BOUNDARY (a slot's side value, a keyed variable) compares as terms.
-"`compare_primitives_cells`: the pair is decided on TERMS (the boundary)."
-const CMP_TERMS = -5
+# compare's, so a sort or a `==` gives the same answer on either path: variables by POSITION
+# (upstream by address), atomic values by the term type's ladder (`compare_primitives` on the stored
+# value or the atom's symbol — no export), compounds by arity, then `$expr/n` before symbol functors
+# (Q2), then name, then the arguments left to right.
 
 "The tag rank of a dereferenced location: unbound cell 0, atomic 1, compound 2 (`_tag_rank`)."
 @inline _loc_rank(k::UInt8, w::word)::Int =
@@ -1776,17 +1033,14 @@ end
 
 # PORT: pl-prims.c compare_primitives as compare_primitives_cells
 # DIVERGES: (1) two unbound cells are ordered by POSITION, upstream's address order
-# (`SCALAR_TO_CMP(p1, p2)`; F3B f3b-2 — by `gkey` before). The same order as the keys the term
-# compare reads (`var_key`): a live cell's key is its allocation's stamp, then its position, and
-# allocation is LIFO at `gTop + 1`, so of two live cells the higher one is the younger (pl-alloc.jl
-# `allocGlobalCells!`, the only `gkey` writer). (2) On two dereferenced locations; no
-# CMP_MODE_PARTIAL (not ported); `CMP_TERMS` at the boundary.
-"One step of the cell walk (pl-prims.c `compare_primitives`): decided, `CMP_COMPOUND`, or `CMP_TERMS`."
+# (`SCALAR_TO_CMP(p1, p2)`; F3B f3b-2): allocation is LIFO at `gTop + 1`, so of two live cells the
+# higher one is the younger (pl-alloc.jl `allocGlobalCells!`). (2) On two dereferenced locations; no
+# CMP_MODE_PARTIAL (not ported).
+"One step of the cell walk (pl-prims.c `compare_primitives`): decided, or `CMP_COMPOUND`."
 function compare_primitives_cells(
     ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int,
     mode::Int
 )::Int where {T}
-    (k1 == DU_TERM || k2 == DU_TERM) && return CMP_TERMS
     if k1 == DU_CELL && k2 == DU_CELL
         p1 == p2 && return CMP_EQUAL                         # w1 == w2: the same cell
         mode == CMP_MODE_EQUAL && return CMP_NOTEQ
@@ -1828,7 +1082,7 @@ end
 # PORT: pl-prims.c do_compare as do_compare_cells
 # DIVERGES: the cell agenda on positions; EVERY compound pair linked (`_link_cells!`, the functor
 # word saved and restored by `_exit_cycles!`), as upstream — the term version links only pairs reached
-# through a binding; returns `(rc, linked)`; a pair at the boundary is compared as terms.
+# through a binding; returns `(rc, linked)`.
 """
     do_compare_cells(ld, q1, q2, mode) -> (Int, Bool)
 
@@ -1849,10 +1103,6 @@ function do_compare_cells(
         k1, w1, p1 = _deref_loc(ld, a1)
         k2, w2, p2 = _deref_loc(ld, a2)
         rc = compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, mode)
-        if rc == CMP_TERMS                               # the boundary: this pair as terms
-            ld.cold_pairs += 1                           # (counted: the zero-export test)
-            rc = compare_std(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode)
-        end
         if rc != CMP_COMPOUND
             rc == CMP_EQUAL && continue
             break
@@ -1883,13 +1133,6 @@ function compare_fast_cells(
     k1, w1, p1 = _deref_loc(ld, l1)
     k2, w2, p2 = _deref_loc(ld, l2)
     rc = compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, mode)
-    if rc == CMP_TERMS                                   # the boundary (counted)
-        ld.cold_pairs += 1
-        return (
-            compare_std(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode),
-            false
-        )
-    end
     rc == CMP_COMPOUND || return (rc, false)
     q1, q2 = valPtr(w1), valPtr(w2)
     rc = compare_functors_cells(ld, q1, q2, mode)          # f1->definition != f2->definition
@@ -1902,9 +1145,9 @@ end
 
 # PORT: pl-prims.c compare_descend as compare_descend_cells
 # DIVERGES: on locations; the pair Brent's algorithm remembers is the two compounds' POSITIONS
-# (upstream: the `Functor` cells); returns `(rc, l1, l2)` where upstream writes `*c1`, `*c2`; a pair
-# at the boundary is decided as terms (counted). A `$expr/0` pair (no argument to descend into)
-# is equal. No `CMP_ERROR` from the argument tests (no memory overflow).
+# (upstream: the `Functor` cells); returns `(rc, l1, l2)` where upstream writes `*c1`, `*c2`. A
+# `$expr/0` pair (no argument to descend into) is equal. No `CMP_ERROR` from the argument tests (no
+# memory overflow).
 """
     compare_descend_cells(ld, l1, l2, mode) -> (Int, Int, Int)
 
@@ -1922,14 +1165,6 @@ function compare_descend_cells(
         k1, w1, p1 = _deref_loc(ld, l1)
         k2, w2, p2 = _deref_loc(ld, l2)
         rc = compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, mode)
-        if rc == CMP_TERMS                                # the boundary (counted)
-            ld.cold_pairs += 1
-            return (
-                compare_std(ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode),
-                l1,
-                l2
-            )
-        end
         rc == CMP_COMPOUND || return (rc, l1, l2)
         f1, f2 = valPtr(w1), valPtr(w2)
         rc = compare_functors_cells(ld, f1, f2, mode)      # f1->definition != f2->definition
@@ -1954,7 +1189,7 @@ function compare_descend_cells(
 end
 
 # PORT: pl-prims.c compare_std as compare_std_cells
-# DIVERGES: NOT PORTED, as the term path's `compare_std`: the `incomparable` flag's
+# DIVERGES: NOT PORTED: the `incomparable` flag's
 # `error` value (`raiseIncomparable`: its ball holds the cyclic pair, which `PL_raise_exception`'s
 # copy cannot resolve) — an incomparable pair keeps the fast result, as swipl's default
 # `incomparable=arbitrary` does; CMP_MODE_PARTIAL not ported either.
@@ -1974,24 +1209,18 @@ end
     compareStandard_cells(ld, l1, l2, eq::Bool) -> Int
 
 The standard order of the terms at locations `l1`, `l2` (pl-prims.c `compareStandard`): `-1`, `0`,
-`1`; with `eq` `0` or `CMP_NOTEQ`. The term-level `compareStandard(ld, t1, t2, eq)` stays for the
-callers that hold terms (the sort family, until L1d step 7).
+`1`; with `eq` `0` or `CMP_NOTEQ`.
 """
 compareStandard_cells(ld::PL_local_data{T}, l1::Int, l2::Int, eq::Bool) where {T} =
     compare_std_cells(ld, l1, l2, eq ? CMP_MODE_EQUAL : CMP_MODE_ORDER)
 
 # ORIGINAL: pl-vmi.c B_EQ_VC's `*v1 == c` on a location: the atomic constant `c` (a clause literal,
 # a term) against what the location holds — an unbound cell or a compound is never identical to it;
-# an atom word or a stored value by `compare_primitives` in equality mode (SWI's identity); the
-# boundary as a term.
+# an atom word or a stored value by `compare_primitives` in equality mode (SWI's identity).
 "Whether the location `l` holds a term identical to the atomic term `c` (pl-vmi.c B_EQ_VC)."
 function _identical_atomic(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
-    k, w, p = _deref_loc(ld, l)
+    k, w, _ = _deref_loc(ld, l)
     k == DU_CELL && return false
-    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
-    k == DU_TERM &&
-        return compare_primitives(deRef(ld, _loc_term(ld, k, w, p)), c, CMP_MODE_EQUAL) ==
-               CMP_EQUAL
     k == DU_WORD && _is_gcompound(w) && return false
     return compare_primitives(_loc_atomic(ld, k, w), c, CMP_MODE_EQUAL) == CMP_EQUAL
 end
@@ -2002,8 +1231,7 @@ end
 # holding a binding's value), `t` a location; a visited compound gets FIRST_MASK on its functor cell
 # exactly as upstream (bit 6, which the functor's index and arity ignore), the positions stacked to
 # clear it (`occurs_cells`, upstream's `visited` segstack); the walk is the cell agenda on one side.
-# A pair at the BOUNDARY (a slot's side value, a keyed variable's binding) is checked on terms
-# (`var_occurs_in`), counted in `cold_pairs`. No MEMORY_OVERFLOW.
+# No MEMORY_OVERFLOW.
 # FIRST_MASK is bit 6, free in every word (see `is_acyclic_cells`); no cycle link may be in place
 # while it is set — asserted: the trail walk runs after `do_unify_cells` exited its links.
 "Whether the cell at position `v` occurs in the term at location `t` (pl-prims.c `var_occurs_in`)."
@@ -2025,15 +1253,7 @@ function var_occurs_in_cells(ld::PL_local_data{T}, v::Int, t::Int)::Bool where {
             break
         end
         unified = false
-        if k == DU_TERM                                 # the boundary (counted)
-            ld.cold_pairs += 1
-            vt =
-                isVar(ld.gstack[v]) ? _cell_var(ld, v) : _loc_term(ld, _deref_loc(ld, v)...)
-            if var_occurs_in(ld, vt, _loc_term(ld, k, w, p))
-                rc = true
-                break
-            end
-        elseif k == DU_WORD && _is_gcompound(w)         # isTerm(*t)
+        if k == DU_WORD && _is_gcompound(w)             # isTerm(*t)
             q = valPtr(w)
             arity = arityFunctor(ld.functors, ld.gstack[q])
             if !compound
@@ -2064,10 +1284,9 @@ end
 
 # PORT: pl-prims.c unify_with_occurs_check as unify_with_occurs_check_cells
 # DIVERGES: on locations; no `onStack(global, …)` test (every variable is a global cell); the trail
-# walk reads global positions (a KEYED variable's entry — until L1f — is checked on terms, counted);
-# the failure's value is its dereferenced word, read before `Undo!` (upstream copies `*p2` to a fresh
-# cell: see `failed_unify_with_occurs_check_cells`), and the error is built on the cells (f3b-4). No
-# attributed variables (the wakeup entries of the trail).
+# walk reads global positions; the failure's value is its dereferenced word, read before `Undo!`
+# (upstream copies `*p2` to a fresh cell: see `failed_unify_with_occurs_check_cells`), and the error
+# is built on the cells (f3b-4). No attributed variables (the wakeup entries of the trail).
 """
     unify_with_occurs_check_cells(ld, l1, l2, mode) -> boolex_t
 
@@ -2080,14 +1299,6 @@ function unify_with_occurs_check_cells(
 )::boolex_t where {T}
     k1, w1, p1 = _deref_loc(ld, l1)
     k2, w2, p2 = _deref_loc(ld, l2)
-    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary (here) and the KEYED trail entries
-    # (below) on terms; deleted in f3
-    if k1 == DU_TERM || k2 == DU_TERM                   # the boundary (counted)
-        ld.cold_pairs += 1
-        return unify_with_occurs_check!(
-            ld, _loc_term(ld, k1, w1, p1), _loc_term(ld, k2, w2, p2), mode
-        )
-    end
     if k1 == DU_CELL                                    # canBind(*t1)
         if var_occurs_in_cells(ld, p1, l2)
             return failed_unify_with_occurs_check_cells(
@@ -2118,30 +1329,13 @@ function unify_with_occurs_check_cells(
                 tt -= 1
                 e = ld.trail[tt]
             end
-            occurs, kp = if _trail_stack(e) == TRAIL_KEYED   # a keyed variable (counted)
-                ld.cold_pairs += 1
-                key = _trail_key(ld, e)
-                pv = deRef(ld, something(_binding(ld, key)))
-                (var_occurs_in(ld, pv, pv), 0)
-            else
-                pos = _trail_pos(e)
-                kq, wq, q = _deref_loc(ld, pos)         # deRef2(p, p2)
-                (var_occurs_in_cells(ld, q, q), pos)
-            end
-            if occurs
-                if mode == OCCURS_CHECK_ERROR
-                    if kp != 0                          # *t = *p2 — read before the Undo (see above)
-                        val = _deref_loc(ld, kp)
-                        Undo!(ld, m)
-                        failed_unify_with_occurs_check_cells(
-                            ld, _deref_loc(ld, kp), val, mode
-                        )
-                    else
-                        key = _trail_key(ld, e)
-                        val = deRef(ld, something(_binding(ld, key)))
-                        Undo!(ld, m)
-                        failed_unify_with_occurs_check(ld, mk_var(T, key), val, mode)
-                    end
+            pos = _trail_pos(e)
+            _, _, q = _deref_loc(ld, pos)               # deRef2(p, p2)
+            if var_occurs_in_cells(ld, q, q)
+                if mode == OCCURS_CHECK_ERROR           # *t = *p2 — read before the Undo (see above)
+                    val = _deref_loc(ld, pos)
+                    Undo!(ld, m)
+                    failed_unify_with_occurs_check_cells(ld, _deref_loc(ld, pos), val, mode)
                 end
                 rc = BOOLEX_FALSE
                 break
@@ -2153,88 +1347,6 @@ function unify_with_occurs_check_cells(
 end
 
 # ── occurs check ─────────────────────────────────────────────────────────────────────────────────
-"Upstream's `v == t` (the same cell): the same variable when `v` is one, else the same compound."
-_same_cell(v, t)::Bool =
-    if kind(v) === VAR
-        kind(t) === VAR && var_key(t) == var_key(v)
-    else
-        t === v
-    end
-
-# PORT: pl-prims.c var_occurs_in
-# DIVERGES: "the same cell" is `_same_cell` — `v` is a variable, or (asked by the unifier of a
-# binding's value) a compound, to find a cycle made through bindings. A visited compound is an entry
-# in `occurs_marked` where upstream sets FIRST_MASK on its functor cell; `occurs_visited` is
-# upstream's `visited` stack, popped to clear the marks.
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"Whether `v` occurs in `t` under the bindings in `ld` (pl-prims.c)."
-function var_occurs_in(ld::PL_local_data{T}, v::T, t::T)::Bool where {T}
-    t = deRef(ld, t)
-    unified = false                                 # enter at `unified:`, skipping the first test
-    if _same_cell(v, t)
-        kind(t) === EXPR || return false
-        unified = true
-    end
-
-    compound = false
-    rc = false
-    agenda = ld.occurs_agenda
-    visited = ld.occurs_visited
-    marked = ld.occurs_marked
-    while true
-        if !unified && _same_cell(v, t)
-            rc = true
-            break
-        end
-        unified = false
-        if kind(t) === EXPR                         # isTerm(*t)
-            off, arity = _comp_shape(t)
-            if !compound
-                compound = true
-                marked[t] = nothing                 # f->definition |= FIRST_MASK
-                push!(visited, t)
-                initTermAgenda!(agenda, arity, t, off)
-            elseif !haskey(marked, t)
-                marked[t] = nothing
-                push!(visited, t)
-                pushWorkAgenda!(agenda, arity, t, off)
-            end
-        end
-        compound || break
-        n = nextTermAgenda!(ld, agenda)
-        n === nothing && break
-        t = n
-    end
-
-    if compound
-        while !isempty(visited)                     # f->definition &= ~FIRST_MASK
-            delete!(marked, pop!(visited))
-        end
-        clearTermAgenda!(agenda)
-    end
-    return rc
-end
-
-# PORT: pl-prims.c failed_unify_with_occurs_check
-# NOT PORTED: `blockGC`/`unblockGC` around `PL_error`: they hold off the stack garbage collector
-# (pl-gc.c), which the kernel does not have until G1.
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"Fail (`OCCURS_CHECK_TRUE`) or raise the occurs-check error, as `Var = Term` (pl-prims.c)."
-function failed_unify_with_occurs_check(
-    ld::PL_local_data{T}, t1::T, t2::T, mode::occurs_check_t
-)::boolex_t where {T}
-    if mode == OCCURS_CHECK_TRUE
-        return BOOLEX_FALSE
-    end
-    t1 = deRef(ld, t1)
-    t2 = deRef(ld, t2)
-    if kind(t2) === VAR                             # try to make Var = Term
-        t1, t2 = t2, t1
-    end
-    return PL_error(ld, ERR_OCCURS_CHECK, t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE
-end
 
 # PORT: pl-prims.c failed_unify_with_occurs_check as failed_unify_with_occurs_check_cells
 # DIVERGES: the two terms are DEREFERENCED locations `(k, w, p)` (`_deref_loc`), where upstream takes
@@ -2256,352 +1368,13 @@ function failed_unify_with_occurs_check_cells(
     return PL_error(ld, ERR_OCCURS_CHECK, t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE
 end
 
-# PORT: pl-prims.c unify_with_occurs_check
-# DIVERGES: no `onStack(global, …)` test (no local stack) and no attributed-variable trail entries.
-"""
-Unify with the occurs check in `mode` (pl-prims.c): a variable against a term that contains it
-fails or raises; two non-variables are unified and every binding made is then checked for a cycle.
-"""
-function unify_with_occurs_check!(
-    ld::PL_local_data{T}, t1::T, t2::T, mode::occurs_check_t
-)::boolex_t where {T}
-    t1 = deRef(ld, t1)
-    t2 = deRef(ld, t2)
-    if kind(t1) === VAR                             # canBind(*t1)
-        if var_occurs_in(ld, t1, t2)
-            return failed_unify_with_occurs_check(ld, t1, t2, mode)
-        end
-        return do_unify(ld, t1, t2)
-    end
-    if kind(t2) === VAR
-        if var_occurs_in(ld, t2, t1)
-            return failed_unify_with_occurs_check(ld, t1, t2, mode)
-        end
-        return do_unify(ld, t1, t2)
-    end
-
-    m = Mark(ld)
-    ld.mark_bar = NO_MARK_BAR                       # see also unify_all_trail_ptrs()
-    rc = do_unify(ld, t1, t2)
-    DiscardMark(ld, m)
-    if rc == BOOLEX_TRUE
-        tt = length(ld.trail)
-        mt = m.trailtop
-        while tt > mt                               # while(--tt >= mt)
-            e = ld.trail[tt]                        # Word p = tt->address
-            if isTrailVal(e)                        # assignment of an attvar (L1b D: the branch)
-                tt -= 1
-                e = ld.trail[tt]                    # p = (--tt)->address
-                # NOT PORTED: the `attvar` wakeup list's two entries below (src/pl-attvar.jl)
-            end
-            key = _trail_key(ld, e)
-            # TRANSITIONAL (f3b-3, class (c)): the term occurs check's KEYED binding read; callers
-            # raw_unify_ptrs (family), unify_with_occurs_check_cells' DU_TERM branch; deleted in f3
-            p2 = deRef(ld, something(_binding(ld, key)))   # deRef2(p, p2): its value, dereferenced
-            if var_occurs_in(ld, p2, p2)
-                if mode == OCCURS_CHECK_ERROR
-                    t = p2                          # *t = *p2: the value, kept past the undo
-                    Undo!(ld, m)
-                    failed_unify_with_occurs_check(ld, mk_var(T, key), t, mode)
-                end
-                rc = BOOLEX_FALSE
-                break
-            end
-            tt -= 1
-        end
-    end
-    return rc
-end
-
-# ── the predicates ───────────────────────────────────────────────────────────────────────────────
-# PORT: pl-prims.c unify as pl_unify
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"""
-    pl_unify!(ld, t1, t2) -> Bool
-
-`=/2` (pl-prims.c, through `PL_unify`): unify under the `occurs_check` flag. On failure the partial
-bindings stay until the caller undoes to its [`mark`](@ref) — in SWI, backtracking does.
-"""
-pl_unify!(ld::PL_local_data{T}, t1::T, t2::T) where {T} = unify_ptrs(ld, t1, t2)
-
-# PORT: pl-prims.c not_unify as pl_not_unify
-# DIVERGES: the quick tests read kinds: two symbols differ by `sym_key` (upstream: different words),
-# two grounded values by `gnd_equal`.
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"""
-    pl_not_unify(ld, t1, t2) -> Bool
-
-`\\=/2` (pl-prims.c): `t1` and `t2` cannot be unified. Leaves no binding behind. An occurs-check
-error from the full check stays pending, and the result is `false`, as the predicate raises it.
-"""
-function pl_not_unify(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
-    p1 = deRef(ld, t1)
-    p2 = deRef(ld, t2)
-    if kind(p1) === VAR || kind(p2) === VAR
-        ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return false   # can unify
-        return !can_unify(ld, p1, p2) && ld.exception_term == 0   # full_check
-    end
-    p1 === p2 && return false
-    kind(p1) !== kind(p2) && return true
-    if kind(p1) === SYM
-        return sym_key(p1) != sym_key(p2)
-    elseif kind(p1) === GND
-        return !gnd_equal(p1, p2)
-    end
-    return !can_unify(ld, p1, p2) && ld.exception_term == 0       # full_check
-end
-
-# PORT: pl-prims.c unify_with_occurs_check as pl_unify_with_occurs_check
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"""
-    pl_unify_with_occurs_check!(ld, t1, t2) -> Bool
-
-`unify_with_occurs_check/2` (pl-prims.c): `=` with the `occurs_check` flag `true` for its duration.
-"""
-function pl_unify_with_occurs_check!(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
-    old = ld.prolog_flag_occurs_check
-    ld.prolog_flag_occurs_check = OCCURS_CHECK_TRUE
-    try
-        return unify_ptrs(ld, t1, t2)
-    finally
-        ld.prolog_flag_occurs_check = old
-    end
-end
-
-# PORT: pl-prims.c can_compare as pl_can_compare
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"""
-    pl_can_compare(ld, t1, t2) -> Bool
-
-`?=/2` (pl-prims.c): it can be decided now and forever whether `t1` and `t2` are equal — they are
-identical (they unify without binding anything) or they cannot unify. Leaves no binding behind. An
-occurs-check error stays pending, and the result is `false` (upstream: "keep exception").
-"""
-function pl_can_compare(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
-    m = Mark(ld)
-    try
-        if unify_ptrs(ld, t1, t2)
-            return length(ld.trail) == m.trailtop  # fr->mark.trailtop != tTop ⇒ false
-        end
-        return ld.exception_term == 0               # could not unify, unless an error is pending
-    finally
-        Undo!(ld, m)
-    end
-end
-
-# PORT: pl-prims.c unifiable_occurs_check
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"`unifiable/3`'s occurs check when one side is a variable (pl-prims.c)."
-function unifiable_occurs_check(ld::PL_local_data{T}, t1::T, t2::T)::Bool where {T}
-    flag = ld.prolog_flag_occurs_check
-    flag == OCCURS_CHECK_FALSE && return true
-    p1 = deRef(ld, t1)
-    var_occurs_in(ld, p1, t2) || return true
-    return failed_unify_with_occurs_check(ld, p1, t2, flag) == BOOLEX_TRUE
-end
-
-# PORT: pl-prims.c unify_all_trail_ptrs
-# DIVERGES: every binding is trailed anyway (no `mark_bar`), and no overflow retry.
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"Unify, keeping every binding on the trail above the returned mark; undo on plain failure (pl-prims.c)."
-function unify_all_trail_ptrs(
-    ld::PL_local_data{T}, t1::T, t2::T
-)::Tuple{Bool, mark} where {T}
-    m = Mark(ld)
-    ld.mark_bar = NO_MARK_BAR                       # every assignment trailed
-    rc = raw_unify_ptrs(ld, t1, t2)
-    if rc == BOOLEX_TRUE                            # the caller discards the mark
-        return (true, m)
-    end
-    if ld.exception_term == 0                       # check for occurs error
-        Undo!(ld, m)
-    end
-    DiscardMark(ld, m)
-    return (false, m)
-end
-
-# PORT: pl-prims.c unifiable
-# DIVERGES: returns the substitution as `var => value` pairs (`nothing` when the terms do not
-# unify) where upstream unifies a Prolog list of `Var = Value`; the comparison of a variable with
-# the other side is identity of the variable (upstream: `PL_compare` equal).
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"""
-    unifiable(ld, t1, t2) -> Union{Nothing, Vector{Pair{T, T}}}
-
-`unifiable/3` (pl-prims.c): the bindings that would make `t1` and `t2` identical, newest first, read
-off the trail as it is rewound — so nothing stays bound — or `nothing` if they do not unify.
-"""
-function unifiable(
-    ld::PL_local_data{T}, t1::T, t2::T
-)::Union{Nothing, Vector{Pair{T, T}}} where {T}
-    p1 = deRef(ld, t1)
-    p2 = deRef(ld, t2)
-    if kind(p1) === VAR                             # PL_is_variable(t1)
-        if _same_cell(p1, p2)                       # PL_compare(t1, t2) == CMP_EQUAL
-            return Pair{T, T}[]
-        end
-        unifiable_occurs_check(ld, t1, t2) || return nothing
-        return Pair{T, T}[p1 => p2]
-    end
-    if kind(p2) === VAR
-        unifiable_occurs_check(ld, t2, t1) || return nothing
-        return Pair{T, T}[p2 => p1]
-    end
-
-    ok, m = unify_all_trail_ptrs(ld, t1, t2)
-    ok || return nothing
-    DiscardMark(ld, m)
-    list = Pair{T, T}[]
-    while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
-        e = pop!(ld.trail)
-        if isTrailVal(e)                            # an assignment (L1b D): the cell below it
-            a = pop!(ld.trail)                      # p2 = tt[-1].address; then tt--
-            key = _trail_key(ld, a)
-            push!(list, mk_var(T, key) => something(_binding(ld, key)))     # gp[4], gp[5] = *p2
-            ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]  # *tt->address = trailVal(p)
-            # NOT PORTED: the `attvar` wakeup list's restore (src/pl-attvar.jl)
-            continue
-        end
-        key = _trail_key(ld, e)
-        value = something(_binding(ld, key))        # gp[5] = *p
-        push!(list, mk_var(T, key) => value)        # gp[4] = makeRefG(p)
-        _untrail!(ld, e)                            # setVar(*p)
-    end
-    return list
-end
-
-# PORT: pl-prims.c unifiable as pl_unifiable
-"`unifiable/3` (pl-prims.c): see [`unifiable`](@ref)."
-pl_unifiable(ld::PL_local_data{T}, t1::T, t2::T) where {T} = unifiable(ld, t1, t2)
-
-# ── copying an answer out ────────────────────────────────────────────────────────────────────────
-# No upstream counterpart: SWI's bindings ARE the term, so an answer needs no copying. Here a caller
-# that keeps an answer past the next `Undo!` must take a bound term out first.
-# DIVERGES: a cyclic binding (a rational tree, legal under `OCCURS_CHECK_FALSE`) cannot be built as
-# an interface term — the reference type is a tree — so it raises an `ArgumentError`, where SWI
-# hands back the cyclic term.
-"""
-    resolve_term(ld, t) -> T
-
-`t` with every bound variable replaced by its value, recursively: a term that no longer needs `ld`.
-Unbound variables stay; ground subterms are shared, not copied. Raises an `ArgumentError` on a
-cyclic binding.
-"""
-function resolve_term(ld::PL_local_data{T}, t::T)::T where {T}
-    return _resolve_term(ld, t, false)
-end
-
-# `cut`: a variable bound to a compound already on the path is kept as the variable (the caller's, if it
-# was imported) instead of raising, and the compounds of that cycle are kept AS THEMSELVES (one level deep,
-# their children cells' variables) so the cycle closes on the same term — the exception ball's cycle
-# (f3b-1, `_slot_compound_term`; test_write_family_swipl.jl: `deRef(child(t, 3)) === t`).
-# TRANSITIONAL (f3b-3, class (c)): callers slotValue's ball machinery, `_export_leaf!`'s DU_TERM
-# branch, compileClause without an export, `printMessage(…, ::T)` (boot, f3b-3b); deleted in f3
-function _resolve_term(ld::PL_local_data{T}, t::T, cut::Bool)::T where {T}
-    t = deRef(ld, t)
-    kind(t) === VAR && return _caller_var(ld, t)
-    (kind(t) !== EXPR || is_ground(t)) && return t
-    stack = Tuple{T, Vector{T}}[(t, T[])]           # (compound, its children resolved so far)
-    on_path = IdDict{T, Nothing}(t => nothing)      # compounds being resolved: a revisit is a cycle
-    cyc = Bool[false]                               # (cut) the frame is on a cycle: kept as the compound itself
-    while true
-        node, kids = stack[end]
-        i = length(kids) + 1
-        if i > nchildren(node)
-            pop!(stack)
-            delete!(on_path, node)
-            r = pop!(cyc) ? node : mk_expr(T, kids)    # a node on a cycle stays the compound the cycle closes on
-            isempty(stack) && return r
-            push!(stack[end][2], r)
-            continue
-        end
-        c0 = child(node, i)
-        c = deRef(ld, c0)
-        if kind(c) === EXPR && !is_ground(c)
-            if haskey(on_path, c)
-                if cut && kind(c0) === VAR
-                    j = something(findlast(f -> f[1] === c, stack))     # the frames from the revisited node down are the cycle
-                    cyc[j:end] .= true
-                    push!(kids, _caller_var(ld, c0))
-                    continue
-                end
-                throw(
-                    ArgumentError(
-                        "resolve_term: a cyclic binding (a rational tree) has no interface term"
-                    )
-                )
-            end
-            on_path[c] = nothing
-            push!(stack, (c, T[]))
-            push!(cyc, false)
-        else
-            push!(kids, kind(c) === VAR ? _caller_var(ld, c) : c)
-        end
-    end
-end
-
-# ORIGINAL (f3b-1, TRANSITIONAL — with the stamp, f3): an answer leaves the engine with the variable the
-# CALLER passed. A keyed caller variable written into a cell is bound to a fresh cell
-# (`_import_var!`); that cell's variable is the engine's representative, and the term-level readers hand the
-# caller's own variable back, as they did when the writers stored it (a value-table word, a side value).
-# Since f3-2 (audit D-0111, f3's Q3) no writer imports a keyed variable — a write gives a variable
-# a fresh cell of its own (`_var_word!`) — so `import_origin` stays empty and `v` comes back;
-# deleted in f3.
-"The keyed variable the cell variable `v` was imported for, else `v`."
-@inline function _caller_var(ld::PL_local_data{T}, v::T)::T where {T}
-    isempty(ld.import_origin) && return v
-    k = var_key(v)
-    o = get(ld.import_origin, k, k)
-    return o == k ? v : mk_var(T, o)
-end
-
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
 # THE BUILT-INS (V5a2, decision 5) — pl-prims.c's PRED_IMPLs of the predicates ported above, under
 # upstream's C names (`PRED_IMPL(name, arity, fname, flags)` is `pl_<fname><arity>_va`), each a
 # line-for-line port over term references: `A1` is `PL__t0`, `A2` is `PL__t0 + 1`, … — a built-in's
-# handles ARE its frame's argument slots. The functions above, on bare terms, stay the kernel's
-# term-level API.
+# handles ARE its frame's argument slots.
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
 
-# PORT: pl-prims.c can_unify
-# DIVERGES: `t1`/`t2` are terms (upstream: cells); `ex` is a term reference or 0 (NULL). No
-# `foreignWakeup` (no attributed variables).
-# TRANSITIONAL (f3b-3, class (c)): the term unify family, reached only from DU_TERM / cursor
-# branches and twins (f3's TERM-LEVEL TWIN list, census evidence/f3b-3); deleted in f3
-"""
-    can_unify(ld, t1, t2, ex) -> Bool
-
-Whether `t1` and `t2` unify, leaving no binding behind (pl-prims.c `can_unify`); an exception
-raised by the attempt is moved into term reference `ex` and cleared when the caller passes one.
-"""
-function can_unify(ld::PL_local_data{T}, t1::T, t2::T, ex::term_t)::Bool where {T}
-    fid = PL_open_foreign_frame(ld)
-    if fid != 0
-        handle_exception = ex == 0
-        if ex == 0
-            ex = PL_new_term_ref(ld)
-        end
-        if unify_ptrs(ld, t1, t2)                       # && foreignWakeup(ex)
-            PL_discard_foreign_frame(ld, fid)
-            return true
-        end
-        if ld.exception_term != 0 && kind(slotValue(ld, ex + 1)) === VAR
-            PL_put_term(ld, ex, ld.exception_term)
-        end
-        if !handle_exception && kind(slotValue(ld, ex + 1)) !== VAR
-            PL_clear_exception(ld)
-        end
-        PL_discard_foreign_frame(ld, fid)
-    end
-    return false
-end
 
 # PORT: pl-prims.c unify as pl_unify2_va
 # (PRED_IMPL("=", 2, unify, 0))
@@ -2645,42 +1418,21 @@ function pl_not_unify2_va(
     A1 = PL__t0
     k1, w1, _ = _deref_loc(ld, -(A1 + 1))                    # deRef(p1); w1 = *p1 (L1e e4: the cells)
     k2, w2, _ = _deref_loc(ld, -(A1 + 2))                    # deRef(p2); w2 = *p2
-    if k1 != DU_TERM && k2 != DU_TERM
-        if k1 == DU_CELL || k2 == DU_CELL                   # isVar(w1) || isVar(w2)
-            ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return FFALSE   # can unify
-        elseif k1 == k2 && w1 == w2                         # w1 == w2
-            return FFALSE
-        elseif !(k1 == DU_WORD && _is_gcompound(w1) && k2 == DU_WORD && _is_gcompound(w2))
-            return if compare_primitives_cells(ld, k1, w1, 0, k2, w2, 0, CMP_MODE_EQUAL) ==
-                CMP_EQUAL
-                FFALSE                           # tag(w1) != tag(w2), the atomic cases
-            else
-                FTRUE                           # tag(w1) != tag(w2), the atomic cases
-            end                           # tag(w1) != tag(w2), the atomic cases
-        end
-        ex = PL_new_term_ref(ld)                            # full_check:
-        can_unify_cells(ld, -(A1 + 1), -(A1 + 2), ex) && return FFALSE
-        PL_is_variable(ld, ex) || return PL_raise_exception(ld, ex) ? FTRUE : FFALSE
-        return FTRUE
-    end
-    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    p1 = deRef(ld, slotValue(ld, A1 + 1))                    # Word p1 = valTermRef(A1)
-    p2 = deRef(ld, slotValue(ld, A1 + 2))                    # Word p2 = p1+1
-    if kind(p1) === VAR || kind(p2) === VAR
+    if k1 == DU_CELL || k2 == DU_CELL                   # isVar(w1) || isVar(w2)
         ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return FFALSE   # can unify
-        @goto full_check
+    elseif k1 == k2 && w1 == w2                         # w1 == w2
+        return FFALSE
+    elseif !(k1 == DU_WORD && _is_gcompound(w1) && k2 == DU_WORD && _is_gcompound(w2))
+        return if compare_primitives_cells(ld, k1, w1, 0, k2, w2, 0, CMP_MODE_EQUAL) ==
+            CMP_EQUAL
+            FFALSE                           # tag(w1) != tag(w2), the atomic cases
+        else
+            FTRUE                           # tag(w1) != tag(w2), the atomic cases
+        end                           # tag(w1) != tag(w2), the atomic cases
     end
-    p1 === p2 && return FFALSE                          # w1 == w2
-    if kind(p1) !== EXPR || kind(p2) !== EXPR           # tag(w1) != tag(w2), the atomic cases
-        return compare_primitives(p1, p2, CMP_MODE_EQUAL) == CMP_EQUAL ? FFALSE : FTRUE
-    end
-    @label full_check
-    ex = PL_new_term_ref(ld)
-    can_unify(ld, p1, p2, ex) && return FFALSE
-    if !PL_is_variable(ld, ex)
-        return PL_raise_exception(ld, ex) ? FTRUE : FFALSE
-    end
+    ex = PL_new_term_ref(ld)                            # full_check:
+    can_unify_cells(ld, -(A1 + 1), -(A1 + 2), ex) && return FFALSE
+    PL_is_variable(ld, ex) || return PL_raise_exception(ld, ex) ? FTRUE : FFALSE
     return FTRUE
 end
 
@@ -2840,27 +1592,18 @@ function pl_nonequal2_va(
 end
 
 # PORT: pl-prims.c PL_same_term
-# DIVERGES (L1f f1c): on the words (`_deref_loc`): an unbound cell is the same term only as the same cell;
+# DIVERGES (since L1f f1c): on the words (`_deref_loc`): an unbound cell is the same term only as the same cell;
 # equal words; two value-table words (upstream: two indirects) by `equalIndirect` — the term type's
-# `gnd_equal` on their values (SWI's identity: `1` and `1.0` differ). The BOUNDARY (a keyed variable, a
-# slot's side value) is compared on its term — a variable by its key, a value by `===` — counted in
-# `cold_pairs`: TRANSITIONAL until L1f f3. A slot's GROUNDED side value (since f3-1 a value word, its
-# side word) keeps that comparison by `===`, uncounted, so its answer is the one before f3-1; whether
-# it takes `equalIndirect` (`gnd_equal`, a young slot's indirect) instead is left to the audit — it
-# differs for two distinct equal big integers.
+# `gnd_equal` on their values (SWI's identity: `1` and `1.0` differ). A slot's side value (since
+# f3-1 a value word, its side word) is compared by `===` on its value, the answer it had on terms
+# before f3-1; whether it takes `equalIndirect` (`gnd_equal`, a young slot's indirect) instead is
+# left to the audit — it differs for two distinct equal big integers.
 "Whether term references `t1` and `t2` hold the same term — the same variable or compound, or equal atomic values (pl-prims.c)."
 function PL_same_term(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where {T}
     k1, w1, p1 = _deref_loc(ld, -(t1 + 1))                  # deRef(t1)
     k2, w2, p2 = _deref_loc(ld, -(t2 + 1))                  # deRef(t2)
-    if k1 == DU_TERM || k2 == DU_TERM                       # (the boundary: on terms)
-        ld.cold_pairs += 1
-        a = deRef(ld, _loc_term(ld, k1, w1, p1))
-        b = deRef(ld, _loc_term(ld, k2, w2, p2))
-        kind(a) === VAR && return kind(b) === VAR && var_key(a) == var_key(b)
-        return a === b
-    end
-    if _is_side_word(w1) || _is_side_word(w2)               # (f3-1) a side value: as on the boundary
-        return k1 == DU_VALUE && k2 == DU_VALUE &&          # before f3-1 — a value by `===` (above)
+    if _is_side_word(w1) || _is_side_word(w2)               # (f3-1) a side value: by `===` (above)
+        return k1 == DU_VALUE && k2 == DU_VALUE &&
                _value_term(ld, w1) === _value_term(ld, w2)
     end
     k1 == DU_CELL && return k2 == DU_CELL && p1 == p2       # isVar(*t1): t1 == t2
@@ -2892,20 +1635,13 @@ function pl_compare3_va(
     A1, A2 = PL__t0, PL__t0 + 1
     # the order's argument on the WORDS (L1d step 1): `Word d = valTermRef(A1); deRef(d)` — an unbound
     # CELL takes the answer's atom word (`PL_unify_atom(A1, a)`: `bindConst` on the cell, no term
-    # read); only the BOUNDARY (a slot's side value, a keyed variable: DU_TERM) reads a term, counted
+    # read)
     k, w, dp = _deref_loc(ld, -(A1 + 1))
     p1, p2 = -(A2 + 1), -(A2 + 2)                            # Word p1 = valTermRef(A2); p2 = p1+1 (cells, L1d)
     given = k != DU_CELL                                     # canBind(*d) ⇒ a = 0
     kk = UInt64(0)
     if given
-        # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
-        if k == DU_TERM                                      # the boundary: the term, as before
-            d = deRef(ld, slotValue(ld, A1 + 1))
-            given = kind(d) !== VAR
-            given && kind(d) !== SYM &&
-                return PL_type_error(ld, "atom", A1) ? FTRUE : FFALSE
-            given && (kk = sym_key(d))
-        elseif k == DU_WORD && isAtomW(w)                    # isAtom(*d)
+        if k == DU_WORD && isAtomW(w)                       # isAtom(*d)
             kk = sym_key(_atom_value(ld, w))
         else                                                 # a compound word, a value
             return PL_type_error(ld, "atom", A1) ? FTRUE : FFALSE
@@ -2932,7 +1668,6 @@ function pl_compare3_va(
     else
         :(=)
     end              # unify diff
-    k == DU_TERM && return PL_unify_atom(ld, A1, mk_sym(T, a)) ? FTRUE : FFALSE   # the boundary
     _bind_const!(ld, dp, _atom_word!(ld, mk_sym(T, a)))      # PL_unify_atom(A1, a) on the cell
     return FTRUE
 end
@@ -2999,70 +1734,12 @@ function pl_can_compare2_va(
     return rc ? FTRUE : FFALSE
 end
 
-# PORT: pl-prims.c unifiable
-# DIVERGES: the list is BUILT (`mk_expr`) where upstream writes it onto the global stack, and unified
-# with `subst` directly (upstream: through `pushWordAsTermRef`, a temporary reference that occupies
-# no local-stack position). No attributed variables (`isTrailVal`), no overflow retry.
-# TRANSITIONAL (f3b-3, class (c)): on terms — only caller unifiable_cells' TRAIL_KEYED boundary;
-# deleted in f3
-"""
-    unifiable(ld, t1, t2, subst) -> Bool
-
-`unifiable/3` (pl-prims.c) on term references: unify `subst` with the list of `Var = Value` that
-would make `t1` and `t2` identical, newest binding first — nothing stays bound.
-"""
-function unifiable(
-    ld::PL_local_data{T}, t1::term_t, t2::term_t, subst::term_t
-)::Bool where {T}
-    dot, eq, nil = mk_sym(T, Symbol("[|]")), mk_sym(T, :(=)), mk_nil(T)
-    if PL_is_variable(ld, t1)
-        if PL_compare(ld, t1, t2) == CMP_EQUAL
-            return PL_unify_atom(ld, subst, nil)
-        end
-        unifiable_occurs_check(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1)) ||
-            return false
-        b = mk_expr(T, T[eq, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1)])
-        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), slotValue(ld, subst + 1))
-    end
-    if PL_is_variable(ld, t2)
-        unifiable_occurs_check(ld, slotValue(ld, t2 + 1), slotValue(ld, t1 + 1)) ||
-            return false
-        b = mk_expr(T, T[eq, slotValue(ld, t2 + 1), slotValue(ld, t1 + 1)])
-        return unify_ptrs(ld, mk_expr(T, T[dot, b, nil]), slotValue(ld, subst + 1))
-    end
-    ok, m = unify_all_trail_ptrs(ld, slotValue(ld, t1 + 1), slotValue(ld, t2 + 1))
-    ok || return false
-    DiscardMark(ld, m)
-    if length(ld.trail) > m.trailtop                    # tt > mt
-        pairs = T[]
-        while length(ld.trail) > m.trailtop             # while(--tt >= mt), newest first
-            e = pop!(ld.trail)
-            if isTrailVal(e)                            # an assignment (L1b D): the cell below it
-                a = pop!(ld.trail)
-                key = _trail_key(ld, a)
-                push!(
-                    pairs, mk_expr(T, T[eq, mk_var(T, key), something(_binding(ld, key))])
-                )
-                ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]  # *tt->address = trailVal(p)
-                continue                                # NOT PORTED: the `attvar` wakeup restore
-            end
-            key = _trail_key(ld, e)
-            push!(pairs, mk_expr(T, T[eq, mk_var(T, key), something(_binding(ld, key))]))
-            _untrail!(ld, e)                            # setVar(*p)
-        end
-        list = foldr((x, acc) -> mk_expr(T, T[dot, x, acc]), pairs; init=nil)
-        return unify_ptrs(ld, list, slotValue(ld, subst + 1))
-    end
-    return PL_unify_atom(ld, subst, nil)
-end
 
 # ── unifiable/3 on the CELLS (L1e e4; the workspace's L1_plan/stageL1e_design.md §4) ──────────────
 # PORT: pl-prims.c unifiable_occurs_check as unifiable_occurs_check_cells
 # DIVERGES: on term references, the variable's cell and the term's location (`var_occurs_in_cells`, L1d
 # step 2); the error built on the cells (`failed_unify_with_occurs_check_cells`, f3b-4). Both
-# callers pass a variable (`PL_is_variable`), so `t1` is an unbound cell — or the boundary, a keyed
-# variable (`DU_TERM`): then the check runs on the terms (`unifiable_occurs_check`), counted in
-# `cold_pairs` (TRANSITIONAL: goes with `_loc_term`, f3).
+# callers pass a variable (`PL_is_variable`), so `t1` is an unbound cell.
 "Whether binding the variable `t1` references to the term `t2` references passes the occurs check (pl-prims.c)."
 function unifiable_occurs_check_cells(
     ld::PL_local_data{T}, t1::term_t, t2::term_t
@@ -3070,14 +1747,6 @@ function unifiable_occurs_check_cells(
     flag = ld.prolog_flag_occurs_check
     flag == OCCURS_CHECK_FALSE && return true
     k, w, p = _deref_loc(ld, -(t1 + 1))
-    if k == DU_TERM                                 # the boundary: on the terms (TRANSITIONAL, f3)
-        ld.cold_pairs += 1
-        k2, w2, p2 = _deref_loc(ld, -(t2 + 1))
-        k2 == DU_TERM && (ld.cold_pairs += 1)
-        return unifiable_occurs_check(
-            ld, deRef(ld, _loc_term(ld, k, w, p)), deRef(ld, _loc_term(ld, k2, w2, p2))
-        )
-    end
     @assert k == DU_CELL                            # PL_is_variable(t1) at both call sites
     var_occurs_in_cells(ld, p, -(t2 + 1)) || return true
     return failed_unify_with_occurs_check_cells(
@@ -3122,9 +1791,8 @@ end
 # PORT: pl-prims.c unifiable as unifiable_cells
 # DIVERGES: on the cells (L1e e4): the substitution list laid out at gTop from the trail, newest binding first,
 # 6 cells per binding as upstream (`[V = Value|…]`: `gp[4] = makeRefG(p)`, `gp[5] = *p`, `setVar(*p)`); exactly
-# the cells it uses are allocated (upstream allocates `(tt-mt)*6+1` and lowers gTop). A trail entry of a KEYED
-# variable (the boundary, until L1f) — the whole substitution built on terms (`unifiable(ld, t1, t2, subst)`),
-# counted. No attributed variables (the attvar wakeup restore), no overflow retry.
+# the cells it uses are allocated (upstream allocates `(tt-mt)*6+1` and lowers gTop). No attributed
+# variables (the attvar wakeup restore), no overflow retry.
 "`unifiable(T1, T2, Subst)` on the cells (pl-prims.c `unifiable`)."
 function unifiable_cells(
     ld::PL_local_data{T}, t1::term_t, t2::term_t, subst::term_t
@@ -3144,15 +1812,6 @@ function unifiable_cells(
     if tt <= mt                                               # no binding: DiscardMark(m); []
         DiscardMark(ld, m)
         return PL_unify_atom(ld, subst, mk_nil(T))
-    end
-    for i in (mt + 1):tt                                      # a keyed variable: the boundary, on terms
-        e = ld.trail[i]
-        if !isTrailVal(e) && _trail_stack(e) == TRAIL_KEYED
-            Undo!(ld, m)
-            DiscardMark(ld, m)
-            ld.cold_pairs += 1
-            return unifiable(ld, t1, t2, subst)
-        end
     end
     DiscardMark(ld, m)
     n = 0                                                     # the bindings: a value entry and its
@@ -3260,55 +1919,6 @@ end
 # ── ground/1, functor/3, term_variables/2,3, '$free_variable_set'/3, '$skip_list'/3 (pl-prims.c),
 # since V9g-b: what boot/bags.pl's bagof/3 and setof/3 and boot/init.pl's length/2 call ───────────
 
-# PORT: pl-prims.c ph_ground
-# DIVERGES: one walk — a visited compound is an entry in an identity map that lives for the call,
-# where upstream marks its functor cell in one walk and unmarks it in a second (`ph_mark`,
-# `ph_unmark`); the walk starts at the compound's arguments.
-"The first unbound variable of compound `top` under the bindings in `ld`, or `nothing` (pl-prims.c)."
-function ph_ground(ld::PL_local_data{T}, top::T)::Union{Nothing, T} where {T}
-    visited = IdDict{T, Nothing}()
-    agenda = term_agenda{T}(aNode{T}(top, 0, 0), aNode{T}[])
-
-    visited[top] = nothing
-    off, arity = _comp_shape(top)
-    initTermAgenda!(agenda, arity, top, off)
-    while true
-        p = nextTermAgenda!(ld, agenda)
-        p === nothing && break
-        if canBind(p)
-            clearTermAgenda!(agenda)
-            return p
-        end
-        if isTerm(p)
-            if !haskey(visited, p)                      # !ph_visited(f, ph)
-                visited[p] = nothing
-                o, a = _comp_shape(p)
-                pushWorkAgenda!(agenda, a, p, o)
-            end
-        end
-    end
-
-    return nothing
-end
-
-# PORT: pl-prims.c ground
-# DIVERGES: a compound whose own value holds no variable (`is_ground`) is ground without a walk.
-# TRANSITIONAL (f3b-3, class (c)): term ground — callers ph_ground_cells' / ground_cells' boundary;
-# deleted in f3
-"The first unbound variable of `p` under the bindings in `ld`, or `nothing` when it is ground (pl-prims.c)."
-function ground(ld::PL_local_data{T}, p::T)::Union{Nothing, T} where {T}
-    p = deRef(ld, p)
-    if canBind(p)
-        return p
-    end
-    if !isTerm(p)
-        return nothing
-    end
-    is_ground(p) && return nothing
-
-    return ph_ground(ld, p)
-end
-
 # PORT: pl-prims.c ground as pl_ground1_va
 # (PRED_IMPL("ground", 1, ground, PL_FA_ISO))
 "`ground(@Term)`: `Term` holds no unbound variable (pl-prims.c)."
@@ -3330,17 +1940,9 @@ function pl_functor3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
-    k, w, q = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p) (L1e e4: the words)
-    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary (here, below), on terms; deleted in f3
-    k == DU_TERM && (ld.cold_pairs += 1)                # the boundary: its kind on the term
-    isterm = if k == DU_WORD
-        _is_gcompound(w)
-    else
-        k == DU_TERM && isTerm(deRef(ld, _loc_term(ld, k, w, q)))
-    end
-    isatomic =
-        k == DU_VALUE || (k == DU_WORD && isAtomW(w)) ||
-        (k == DU_TERM && isAtomic(deRef(ld, _loc_term(ld, k, w, q))))
+    k, w, _ = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p) (L1e e4: the words)
+    isterm = k == DU_WORD && _is_gcompound(w)
+    isatomic = k == DU_VALUE || (k == DU_WORD && isAtomW(w))
 
     if isterm                                           # isTerm(*p)
         na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
@@ -3382,8 +1984,7 @@ end
 # (PRED_IMPL("=..", 2, univ, PL_FA_ISO)) — on the CELLS from the start (L1e e4, audit D-0020): the compound
 # laid out at gTop from the list's words (`needsRef(*h) ? makeRefG(h) : *h`), the other direction through the
 # FLI writers on cells (e3). DIVERGES: a compound whose head is no symbol (the kernel's `$expr/n`, Q2) gives
-# the list of ALL its children, the head first (it has no functor name; swipl has no such term); a list
-# element at the boundary (DU_TERM) is stored as its term's word, counted in `cold_pairs`.
+# the list of ALL its children, the head first (it has no functor name; swipl has no such term).
 "`Term =.. List` (pl-prims.c `univ`): `List` is `[Name|Args]` of the compound `Term`, or `[Term]` of an atomic."
 function pl_univ2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -3426,10 +2027,6 @@ function pl_univ2_va(
             hk, hw, hp = _deref_loc(ld, valPtr(w) + 1)      # Word h = HeadList(l); deRef(h)
             ld.gstack[p + i] = if hk == DU_CELL             # *p++ = needsRef(*h) ? makeRefG(h) : *h
                 makeRefG(hp)
-            elseif hk == DU_TERM
-                # TRANSITIONAL (f3b-3, class (c)): the DU_TERM head, on terms; deleted in f3
-                ld.cold_pairs += 1
-                _word_of!(ld, deRef(ld, _loc_term(ld, hk, hw, hp)))
             else
                 hw
             end
@@ -3456,8 +2053,6 @@ function pl_univ2_va(
                 return FFALSE
         end
         return PL_unify_nil_ex(ld, l) ? FTRUE : FFALSE
-    elseif k == DU_TERM                                     # the boundary: decide its kind on the term
-        ld.cold_pairs += 1
     end
     if PL_is_atomic(ld, t)                                  # 3 =.. X, 3.4 =.. X, "foo" =.. X
         head = PL_new_term_ref(ld)
@@ -3469,69 +2064,10 @@ function pl_univ2_va(
     return FFALSE
 end
 
-# PORT: pl-prims.c term_variables_loop
-# DIVERGES: the variables are pushed on `vars` (upstream: term references); a visited variable is
-# its key in `visitedv`, a visited compound an entry in `visitedf` (upstream: marks on the cells).
-# NOT PORTED: `flags` (`TV_ATTVAR`, `TV_SINGLETON`, `TV_SHARED`, `TV_ATTS`: term_singletons/2,
-# term_attvars/2 and friends), the signal check, `TV_NOSPACE`/`TV_NOMEM`.
-"Push the unbound variables the agenda walks on `vars`, each once, in depth-first order; their count, or `maxcount + 1` as soon as there are more (pl-prims.c)."
-function term_variables_loop(
-    ld::PL_local_data{T}, agenda::term_agenda{T}, maxcount::Int, vars::Vector{T},
-    visitedv::Set{UInt64}, visitedf::IdDict{T, Nothing}
-)::Int where {T}
-    count = 0
 
-    while true
-        p = nextTermAgenda!(ld, agenda)
-        p === nothing && break
-
-        if canBind(p)
-            k = var_key(p)
-            if k in visitedv                            # visitedWord(p)
-                continue
-            end
-            push!(visitedv, k)
-
-            count += 1
-            if count > maxcount
-                return count
-            end
-            push!(vars, p)                              # *valTermRef(v) = makeRefG(p)
-        elseif isTerm(p)
-            if haskey(visitedf, p)                      # visited(f)
-                continue
-            end
-            visitedf[p] = nothing
-            off, arity = _comp_shape(p)
-            pushWorkAgenda!(agenda, arity, p, off)
-        end
-    end
-
-    return count
-end
-
-# PORT: pl-prims.c term_variables_to_termv
-# DIVERGES: returns `(count, variables)` where upstream leaves the variables in term references
-# from `*vp`; the walk starts at a compound holding the term (an agenda walks arguments).
-"The unbound variables of the term `t` references, in depth-first order, and their count — `maxcount + 1` if there are more (pl-prims.c)."
-function term_variables_to_termv(
-    ld::PL_local_data{T}, t::term_t, maxcount::Int
-)::Tuple{Int, Vector{T}} where {T}
-    root = mk_expr(T, T[slotValue(ld, t + 1)])
-    agenda = term_agenda{T}(aNode{T}(root, 0, 0), aNode{T}[])
-    vars = T[]
-
-    initTermAgenda!(agenda, 1, root, 1)
-    count = term_variables_loop(
-        ld, agenda, maxcount, vars, Set{UInt64}(), IdDict{T, Nothing}()
-    )
-    clearTermAgenda!(agenda)
-
-    return (count, vars)
-end
 
 # PORT: pl-prims.c term_variables
-# DIVERGES: `tail` 0 is "no tail", as upstream's. NOT PORTED: `flags` (see `term_variables_loop`),
+# DIVERGES: `tail` 0 is "no tail", as upstream's. NOT PORTED: `flags` (see `term_variables_loop_cells`),
 # and the retries after `TV_NOSPACE`, `TV_EINTR`, `TV_NOMEM`.
 "Unify `vars` with the list of the unbound variables of `t`, ending in `tail` (0: in `[]`) (pl-prims.c)."
 function term_variables(
@@ -3587,102 +2123,6 @@ function pl_term_variables3_va(
     return term_variables(ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
-# PORT: pl-prims.c free_variables_loop
-# DIVERGES: returns `(goal, module name)` — `nothing` where upstream leaves `goal` unbound or
-# `*mname` 0 — and pushes the free variables on `vars`; the marks are as `term_variables_loop`'s;
-# `&mark` is an agenda entry that no term can be (`mark`, held by `markbox`); the walk starts at a
-# compound holding the term. The goal after `Module:` is read as every other argument is
-# (upstream defect, see register Q4).
-# TRANSITIONAL (f3b-3, class (c)): twin — only caller `_free_variable_set_term`; deleted in f3
-"""
-The free variables of `Template^Goal` as the ISO standard defines them (7.1.1.4; pl-prims.c): walk
-`t0`, pushing on `vars` every unbound variable met outside the left side of an outermost `^`, and
-return the goal without its `^` and `Module:` prefixes, and the last module named.
-"""
-function free_variables_loop(
-    ld::PL_local_data{T}, t0::T, vars::Vector{T}
-)::Tuple{Union{Nothing, T}, Union{Nothing, T}} where {T}
-    in_goal = false
-    existential = false                 # true when processing left of ^
-    mark = mk_expr(T, T[])              # mark that tells us we completed vars
-    markbox = mk_expr(T, T[mark])
-    root = mk_expr(T, T[t0])
-    agenda = term_agenda{T}(aNode{T}(root, 0, 0), aNode{T}[])
-    visitedv = Set{UInt64}()
-    visitedf = IdDict{T, Nothing}()
-    goal::Union{Nothing, T} = nothing
-    mname::Union{Nothing, T} = nothing
-    hat = mk_sym(T, :^)
-    colon = mk_sym(T, :(:))
-
-    initTermAgenda!(agenda, 1, root, 1)
-    while true
-        n = nextTermAgenda!(ld, agenda)
-        n === nothing && break
-        t = n
-        if t === mark
-            existential = false
-            continue
-        end
-
-        @label again
-        if canBind(t)
-            k = var_key(t)
-            if !(k in visitedv)                         # !visitedWord(t) && !existential
-                push!(visitedv, k)
-                existential || push!(vars, t)
-            end
-
-            continue
-        end
-
-        if isTerm(t)
-            off, arity = _comp_shape(t)
-
-            if haskey(visitedf, t)                      # visited(f)
-                if !in_goal && !existential
-                    goal = t
-                    in_goal = true
-                end
-                continue
-            end
-            visitedf[t] = nothing
-
-            if !in_goal
-                if _hasFunctor(t, hat, 2) && existential == false   # fd == FUNCTOR_hat2
-                    pushWorkAgenda!(agenda, 1, t, off + 1)          # &f->arguments[1]
-                    pushWorkAgenda!(agenda, 1, markbox, 1)          # &mark
-                    pushWorkAgenda!(agenda, 1, t, off)              # &f->arguments[0]
-                    existential = true
-                    continue
-                end
-                if _hasFunctor(t, colon, 2) && !existential         # fd == FUNCTOR_colon2
-                    a1 = deRef(ld, child(t, off))
-
-                    if isAtom(a1)
-                        mname = a1
-                    end
-                    t = deRef(ld, child(t, off + 1))    # (see DIVERGES)
-                    @goto again
-                elseif !existential
-                    goal = t
-                    in_goal = true
-                end
-            end
-
-            pushWorkAgenda!(agenda, arity, t, off)
-
-            continue
-        elseif !in_goal && !existential     # non-term goal (atom or invalid)
-            goal = t
-            in_goal = true
-        end
-    end
-
-    clearTermAgenda!(agenda)
-
-    return (goal, mname)
-end
 
 # ── the walks on CELLS (L1d step 5; the workspace's L1_plan/stageL1d_design.md §3d) ──────────────
 # Locations as `_deref_loc`'s. A compound is marked on its FUNCTOR cell (MARK_MASK, as upstream); a
@@ -3715,15 +2155,11 @@ const FUNCTOR_colon2 = builtin_functor("colon", 2)
     return false
 end
 
-"`ground_cells`/`ph_ground_cells`: a variable lies in the boundary (a keyed variable's binding)."
-const GROUND_BOUNDARY = -1
 
 # PORT: pl-prims.c ph_ground as ph_ground_cells
 # DIVERGES: on locations, the one-sided cell agenda (`ld.walk_agenda`); returns the first unbound
-# cell's POSITION (upstream: its address), 0 for none. The boundary (`DU_TERM`) is decided by the
-# term-level `ground` on its term, counted in `cold_pairs`: a variable there gives `GROUND_BOUNDARY`
-# in both phases, so they stop at the same compound (upstream's `assert(rc1 == rc2)`).
-"The first unbound cell of the term at location `l` in phase `mark`, 0 if none, `GROUND_BOUNDARY` (pl-prims.c)."
+# cell's POSITION (upstream: its address), 0 for none.
+"The first unbound cell of the term at location `l` in phase `mark`, 0 if none (pl-prims.c)."
 function ph_ground_cells(ld::PL_local_data{T}, l::Int, mark::Bool)::Int where {T}
     a = ld.walk_agenda
     initCellAgenda!(a, 1, l)
@@ -3734,12 +2170,6 @@ function ph_ground_cells(ld::PL_local_data{T}, l::Int, mark::Bool)::Int where {T
         if k == DU_CELL                                     # canBind(*p)
             clearCellAgenda!(a)
             return p
-        elseif k == DU_TERM                                 # the boundary: on the term
-            ld.cold_pairs += 1
-            if ground(ld, _loc_term(ld, k, w, p)) !== nothing
-                clearCellAgenda!(a)
-                return GROUND_BOUNDARY
-            end
         elseif k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
             c = valPtr(w)
             if !ph_visited_cells(ld, c, mark)
@@ -3751,15 +2181,11 @@ function ph_ground_cells(ld::PL_local_data{T}, l::Int, mark::Bool)::Int where {T
 end
 
 # PORT: pl-prims.c ground as ground_cells
-# DIVERGES: on a location; returns a POSITION, 0 or `GROUND_BOUNDARY` (see `ph_ground_cells`).
-"The first unbound cell of the term at location `l`: its position, 0 when ground, `GROUND_BOUNDARY` (pl-prims.c `ground`)."
+# DIVERGES: on a location; returns a POSITION, 0 when ground (see `ph_ground_cells`).
+"The first unbound cell of the term at location `l`: its position, 0 when ground (pl-prims.c `ground`)."
 function ground_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
     k, w, p = _deref_loc(ld, l)                             # deRef(p)
     k == DU_CELL && return p                                # canBind(*p)
-    if k == DU_TERM
-        ld.cold_pairs += 1
-        return ground(ld, _loc_term(ld, k, w, p)) === nothing ? 0 : GROUND_BOUNDARY
-    end
     (k == DU_WORD && _is_gcompound(w)) || return 0          # !isTerm(*p)
     rc1 = ph_ground_cells(ld, l, true)                      # mark functors
     rc2 = ph_ground_cells(ld, l, false)                     # unmark the very same functors
@@ -3826,15 +2252,11 @@ function _new_term_ref_word!(ld::PL_local_data, w::word)::Int
     return t
 end
 
-"`term_variables_loop_cells`/`free_variables_loop_cells`: the walk met the boundary; redo it on terms."
-const TV_BOUNDARY = -1
 
 # PORT: pl-prims.c term_variables_loop as term_variables_loop_cells
 # DIVERGES: on locations; each variable's term reference holds `makeRefG(p)` as upstream's (no
-# export). The boundary stops the walk with `TV_BOUNDARY` — the caller redoes it on terms (a
-# variable met through a keyed binding and through a cell must be one variable). NOT PORTED: as
-# `term_variables_loop` (no `flags`, no signals, no `TV_NOSPACE`).
-"The unbound variables the agenda `a` walks, each once, depth-first, as new term references; their count, `maxcount + 1` as soon as there are more, or `TV_BOUNDARY` (pl-prims.c)."
+# export). NOT PORTED: `flags`, signals, `TV_NOSPACE`.
+"The unbound variables the agenda `a` walks, each once, depth-first, as new term references; their count, `maxcount + 1` as soon as there are more (pl-prims.c)."
 function term_variables_loop_cells(
     ld::PL_local_data{T}, a::cell_agenda, maxcount::Int
 )::Int where {T}
@@ -3848,8 +2270,6 @@ function term_variables_loop_cells(
             count += 1
             count > maxcount && return count
             _new_term_ref_word!(ld, makeRefG(p))            # *valTermRef(v) = makeRefG(p)
-        elseif k == DU_TERM
-            return TV_BOUNDARY
         elseif k == DU_WORD && _is_gcompound(w)             # isTerm(w)
             c = valPtr(w)
             visitedWord_cells(ld, c) && continue            # visited(f)
@@ -3860,9 +2280,7 @@ function term_variables_loop_cells(
 end
 
 # PORT: pl-prims.c term_variables_to_termv as term_variables_to_termv_cells
-# DIVERGES: returns `(count, v0)` where upstream writes `*vp`; the boundary (see
-# `term_variables_loop_cells`) redoes the walk with the term-level `term_variables_to_termv`, its
-# variables stored in new term references (counted in `cold_pairs`).
+# DIVERGES: returns `(count, v0)` where upstream writes `*vp`.
 "The unbound variables of the term `t` references, depth-first, as term references from `v0`: `(count, v0)`, `count` = `maxcount + 1` if there are more (pl-prims.c)."
 function term_variables_to_termv_cells(
     ld::PL_local_data{T}, t::term_t, maxcount::Int
@@ -3873,15 +2291,6 @@ function term_variables_to_termv_cells(
     count = term_variables_loop_cells(ld, a, maxcount)
     clearCellAgenda!(a)
     unvisit_cells(ld)                                       # unvisit_and_unfirst()
-    # TRANSITIONAL (f3b-3, class (c)): the boundary's term walk; deleted in f3
-    if count == TV_BOUNDARY
-        PL_reset_term_refs(ld, v0)
-        ld.cold_pairs += 1
-        count, vs = term_variables_to_termv(ld, t, maxcount)
-        for v in vs
-            setSlotValue!(ld, new_term_ref(ld) + 1, v)
-        end
-    end
     return (count, v0)
 end
 
@@ -3893,9 +2302,8 @@ const FV_MARK = typemin(Int)
 # stores the goal's word in term reference `goal` (upstream: `*valTermRef(goal) = *t`; a value-table
 # value is referenced by its cell, which a slot holds); each free variable a new term reference
 # holding `makeRefG(p)`. `&mark` is `FV_MARK`. The goal after `Module:` is dereferenced, as the term
-# version's (upstream defect, register Q4). The boundary stops the walk with `TV_BOUNDARY` — the
-# caller redoes it on terms.
-"The free variables of the `Template^Goal` at location `l` (ISO 7.1.1.4; pl-prims.c), as new term references: `(n, module word)`, the goal in `goal`; `n` = `TV_BOUNDARY` at the boundary."
+# version's did (upstream defect, register Q4).
+"The free variables of the `Template^Goal` at location `l` (ISO 7.1.1.4; pl-prims.c), as new term references: `(n, module word)`, the goal in `goal`."
 function free_variables_loop_cells(
     ld::PL_local_data{T}, l::Int, goal::term_t
 )::Tuple{Int, word} where {T}
@@ -3920,10 +2328,6 @@ function free_variables_loop_cells(
                 n += 1
             end
             continue
-        end
-        if k == DU_TERM
-            clearCellAgenda!(a)
-            return (TV_BOUNDARY, word(0))
         end
         if k == DU_WORD && _is_gcompound(w)                 # isTerm(*t)
             c = valPtr(w)
@@ -3957,8 +2361,8 @@ function free_variables_loop_cells(
             continue
         elseif !in_goal && !existential                     # non-term goal (atom or invalid)
             # needsRef(*t) ? makeRefG(t) : *t — a value-table word is held through its cell
-            if _is_side_word(w)                             # (f3-1) a slot's side value: as the
-                _slot_store!(ld, goal + 1, _indirect_value(ld, w))  # term walk stored it
+            if _is_side_word(w)                             # (f3-1) a slot's side value: its
+                _slot_store!(ld, goal + 1, _indirect_value(ld, w))  # value stored again
             else
                 ld.slots[goal + 1] = (k == DU_VALUE && !isTaggedIntW(w)) ? makeRefG(p) : w
             end
@@ -3973,8 +2377,7 @@ end
 # (PRED_IMPL("$free_variable_set", 3, free_variable_set, 0))
 # DIVERGES: on the CELLS (L1d step 5): `free_variables_loop_cells` leaves the free variables in term
 # references from `v0`, as upstream's; `PL_cons_functor(goal, FUNCTOR_colon2, m, goal)` is the
-# compound laid out on the stack. No retry for local space (the local stack grows on demand). The
-# boundary (`TV_BOUNDARY`) redoes it all on terms (`_free_variable_set_term`), counted in `cold_pairs`.
+# compound laid out on the stack. No retry for local space (the local stack grows on demand).
 "`'\$free_variable_set'(+Template^GoalIn, -GoalOut, -VarTemplate)`: `GoalOut` is `GoalIn` without its `^`, `VarTemplate` is `v(V1, …)` of its free variables (pl-prims.c)."
 function pl_free_variable_set3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -3984,11 +2387,6 @@ function pl_free_variable_set3_va(
     v0 = PL_new_term_refs(ld, 0)
     n, mname = free_variables_loop_cells(ld, -(A1 + 1), goal)
     unvisit_cells(ld)                                       # unvisit()
-    if n == TV_BOUNDARY
-        PL_reset_term_refs(ld, goal)
-        ld.cold_pairs += 1
-        return _free_variable_set_term(ld, A1, A2, A3)
-    end
 
     if PL_unify_functor(ld, A3, mk_sym(T, :v), n)
         for i in 1:n
@@ -4008,45 +2406,6 @@ function pl_free_variable_set3_va(
     return FFALSE
 end
 
-# PORT: pl-prims.c free_variable_set as _free_variable_set_term
-# TRANSITIONAL (L1d step 5, until L1f): `'$free_variable_set'/3` on TERMS — the boundary of the cells
-# version. The free variables come back in a vector (upstream: term references), so there is no
-# retry for local space; `PL_cons_functor(goal, FUNCTOR_colon2, m, goal)` is written out.
-"`'\$free_variable_set'/3` on terms (pl-prims.c), for the boundary of `pl_free_variable_set3_va`."
-function _free_variable_set_term(
-    ld::PL_local_data{T}, A1::term_t, A2::term_t, A3::term_t
-)::foreign_t where {T}
-    goal = PL_new_term_ref(ld)
-    vars = T[]
-
-    g, mname = free_variables_loop(ld, slotValue(ld, A1 + 1), vars)
-    g === nothing || (setSlotValue!(ld, goal + 1, g))
-    n = length(vars)
-
-    if PL_unify_functor(ld, A3, mk_sym(T, :v), n)
-        v = PL_new_term_ref(ld)
-        for i in 1:n
-            setSlotValue!(ld, v + 1, vars[i])
-            if !PL_unify_arg(ld, i, A3, v)
-                return FFALSE
-            end
-        end
-
-        if mname !== nothing            # PL_cons_functor(goal, FUNCTOR_colon2, m, goal)
-            setSlotValue!(
-                ld,
-                goal + 1,
-                mk_expr(
-                    T, T[mk_sym(T, :(:)), mname, linkValI(ld, slotValue(ld, goal + 1))]
-                )
-            )
-        end
-
-        return PL_unify(ld, A2, goal) ? FTRUE : FFALSE
-    end
-
-    return FFALSE
-end
 
 # PORT: pl-prims.c skip_list as pl_skip_list3_va
 # (PRED_IMPL("$skip_list", 3, skip_list, 0))
@@ -4056,22 +2415,12 @@ function pl_skip_list3_va(
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
 
-    len, k, _, tp = skip_list_cells(ld, -(A2 + 1))         # skip_list(valTermRef(A2), &tail) (L1e e4)
-    if k != DU_TERM
-        return if (unify_ptrs_cells(ld, -(A3 + 1), tp) && PL_unify_integer(ld, A1, len))
-            FTRUE
-        else
-            FFALSE
-        end
+    len, _, _, tp = skip_list_cells(ld, -(A2 + 1))         # skip_list(valTermRef(A2), &tail) (L1e e4)
+    return if (unify_ptrs_cells(ld, -(A3 + 1), tp) && PL_unify_integer(ld, A1, len))
+        FTRUE
+    else
+        FFALSE
     end
-    # TRANSITIONAL (f3b-3, class (c)): the DU_TERM boundary, on terms; deleted in f3
-    ld.cold_pairs += 1                                      # the boundary: on terms
-    len, tail = skip_list(ld, slotValue(ld, A2 + 1))
-    if unify_ptrs(ld, slotValue(ld, A3 + 1), tail) && PL_unify_integer(ld, A1, len)
-        return FTRUE
-    end
-
-    return FFALSE
 end
 
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims

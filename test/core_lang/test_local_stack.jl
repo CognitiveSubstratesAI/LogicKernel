@@ -37,6 +37,9 @@ function _lclause(head::_L, body::Union{Nothing, _L})::LK.Clause{_L}
     return LK.compileClause(_LGD, _LLD, head, body, proc, user)
 end
 
+"Whether the global cell at `p` is live (at most `gTop`) and bound."
+_lbound(ld, p::Int)::Bool = p <= ld.gTop && ld.gstack[p] != LK.word(0)
+
 "Prolog text of a term built here: variables `V<key>`, symbols by name, `','/2` as written."
 function _ltext(t::_L)::String
     kind(t) === VAR && return "V$(var_key(t))"
@@ -226,7 +229,7 @@ end
     @test length(ld.fliframes) == cld(ld.lMax + ld.local_spare, LK.SIZEOF_FLIFRAME)
     r = LK.PL_new_term_ref(ld)
     @test r == perm + 4 + LK.TMP_PTR_SIZE                         # (was perm + 4 before f3b-4)
-    LK.Trail!(ld, var_key(LK.slotValue(ld, r + 1)), _ls("a"))
+    LK._bind_const!(ld, LK.unRef(ld.slots[r + 1]), LK._atom_word!(ld, _ls("a")))   # its cell bound
     LK.pushFrame!(ld, ld.lTop)
     ld.lTop += 20
     LK.newChoice(ld, LK.CHP_JUMP, 1)
@@ -241,6 +244,7 @@ end
     fr = LK.pushFrame!(ld, ld.lTop)
     ld.lTop = LK.argFrameP(ld.frames[fr].base, 3)
     top = ld.lTop
+    p = LK.allocGlobalCells!(ld, 1)             # a cell older than the choice points, so trailed
     c1 = LK.newChoice(ld, LK.CHP_CLAUSE, fr)
     c = ld.choices[c1]
     @test c.base == top && ld.lTop == top + LK.SIZEOF_CHOICE
@@ -249,7 +253,7 @@ end
     # second `Mark`, whose `saved_bar` is the bar the first one set
     @test c.mark.trailtop == length(ld.trail) && c.mark.globaltop == ld.gTop &&
         ld.mark_bar == ld.gTop
-    LK.Trail!(ld, UInt64(7), _ls("a"))
+    LK._bind_const!(ld, p, LK._atom_word!(ld, _ls("a")))
     c2 = LK.newChoice(ld, LK.CHP_JUMP, fr)
     @test ld.choices[c2].parent == c1 && ld.BFR == c2
     @test ld.choices[c2].mark.trailtop == 1 && ld.choices[c2].base == top + LK.SIZEOF_CHOICE
@@ -292,29 +296,29 @@ end
 
     # close: the bindings are KEPT, the frame and its references are gone
     r = LK.PL_new_term_ref(ld)
-    k = var_key(LK.slotValue(ld, r + 1))
-    LK.Trail!(ld, k, _ls("a"))
+    p = LK.unRef(ld.slots[r + 1])                           # the reference's cell
+    LK._bind_const!(ld, p, LK._atom_word!(ld, _ls("a")))
     LK.PL_close_foreign_frame(ld, fid)
     @test ld.lTop == fid && ld.fli_context == 1 && ld.nfliframes == 1
-    @test LK._binding(ld, k) !== nothing
+    @test _lbound(ld, p)
 
     # rewind: the bindings are UNDONE, the references dropped, the frame stays open
     fid = LK.PL_open_foreign_frame(ld)
     r = LK.PL_new_term_refs(ld, 2)
-    k = var_key(LK.slotValue(ld, r + 1))
-    LK.Trail!(ld, k, _ls("b"))
+    p = LK.unRef(ld.slots[r + 1])
+    LK._bind_const!(ld, p, LK._atom_word!(ld, _ls("b")))
     inner = LK.PL_open_foreign_frame(ld)
     LK.PL_rewind_foreign_frame(ld, fid)
     @test ld.lTop == fid + LK.SIZEOF_FLIFRAME && ld.fliframes[ld.fli_context].base == fid
-    @test ld.fliframes[ld.fli_context].size == 0 && LK._binding(ld, k) === nothing
+    @test ld.fliframes[ld.fli_context].size == 0 && !_lbound(ld, p)
     @test LK.fliFrameOfFid(ld, inner) == 0 && ld.nfliframes == 2      # the inner one dropped
 
     # discard: the bindings are undone and the frame is closed
     r = LK.PL_new_term_ref(ld)
-    k = var_key(LK.slotValue(ld, r + 1))
-    LK.Trail!(ld, k, _ls("c"))
+    p = LK.unRef(ld.slots[r + 1])
+    LK._bind_const!(ld, p, LK._atom_word!(ld, _ls("c")))
     LK.PL_discard_foreign_frame(ld, fid)
-    @test ld.lTop == fid && ld.fli_context == 1 && LK._binding(ld, k) === nothing
+    @test ld.lTop == fid && ld.fli_context == 1 && !_lbound(ld, p)
 
     # a handle that names no open frame is refused
     @test_throws ErrorException LK.PL_close_foreign_frame(ld, 0)
@@ -345,7 +349,7 @@ end
     @test LK.PL_new_term_refs(ld, 0) == ld.lTop && nrefs(ld) == n0 + 5
 
     # copy and put: the new reference holds the term the other one references, dereferenced
-    LK.Trail!(ld, var_key(LK.slotValue(ld, r + 1)), _lf("f", _ls("a")))
+    LK._bind_const!(ld, LK.unRef(ld.slots[r + 1]), LK._word_of!(ld, _lf("f", _ls("a"))))
     c = LK.PL_copy_term_ref(ld, r)
     @test c == r + 5 && nrefs(ld) == n0 + 6 &&
         lk_eq(lk_answer(ld, c), _lf("f", _ls("a")))                              # L1c: cells

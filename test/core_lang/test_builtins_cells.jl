@@ -5,7 +5,7 @@
 #     atomic values, kinds that differ) and the full check through `can_unify_cells` (compounds, a shared
 #     variable, cyclic terms, the occurs check's error);
 #   * functor/3 and length/2 (lengthList) against swipl: compounds, atoms, numbers, partial and improper lists;
-#   * the meter: `\=` and functor/3 on terms on the stack make no cold export, import, variable read or pair.
+#   * the meter: `\=` and functor/3 on terms on the stack make no cold import.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -122,7 +122,7 @@ function _bc_engine(vs::Vector{_R})
     end
     return ld, t
 end
-_bc_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_bc_counts(ld) = ld.cold_imports            # (f3-3: the export/variable/pair meters went with the boundary)
 _bc_ctx() = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
 
 @testset "the meter: \\= and functor/3 on terms on the stack make no cold traffic" begin

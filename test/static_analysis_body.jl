@@ -199,21 +199,9 @@ end
             # V5c: resolving an UNDEFINED predicate (`getProcDefinedDefinition` → `trapUndefined` →
             # `autoImport`, which may create a procedure, or `S_UNDEF`'s supervisor) runs once per
             # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
-            # sites are not the call path's; every other site in the spans still is
-            # L1c-6 (2026-10-16): the BOUNDARY's term reads — a keyed variable or a value with no word yet,
-            # TRANSITIONAL until the stamp falls (L1f) — are out of line under the frames the ratchet
-            # tags `:boundary` (L1C_ALLOC_EXEMPT, static_analysis_manifest.jl: one list, L1d batch 1);
-            # the run time's zero on the hot path is test/core_lang/test_zero_exports.jl's
-            # (cold_exports/imports/vars unchanged)
-            _boundary_frames = Tuple(
-                nameof(f) for (f, _, kind) in L1C_ALLOC_EXEMPT if kind === :boundary
-            )
-            @test !isempty(_boundary_frames)            # the tag selects (3 frames, 2026-10-16)
-            cold(a) = any(
-                fr ->
-                    fr.func === :getProcDefinedDefinition || fr.func in _boundary_frames,
-                a.backtrace
-            )
+            # sites are not the call path's; every other site in the spans still is (the BOUNDARY's
+            # out-of-line frames, exempt here since L1c-6, went with the keyed variables in L1f f3-3)
+            cold(a) = any(fr -> fr.func === :getProcDefinedDefinition, a.backtrace)
             @test any(cold, allocs)                     # the exemption matches real sites
             attributed = Int[]
             for a in allocs

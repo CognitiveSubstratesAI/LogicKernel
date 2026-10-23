@@ -170,18 +170,6 @@ MODULE_system(gd::PL_global_data{T}) where {T} = gd.modules_system
 # on a constant keeps a second binding to the value, which the global-state lint rightly flags
 const _KERNEL_VAR_COUNTER = Threads.Atomic{UInt64}(KERNEL_VAR_BASE)
 
-# the number of compound terms the cold export has made in this process (L1c; user, 2026-10-15:
-# "report the memo's entry count over the whole suite") — a meter, read by test/runtests.jl; it
-# carries no behaviour (allowlisted in tools/lint_globals.jl)
-const _COLD_EXPORT_TERMS = Threads.Atomic{Int}(0)
-
-# the number of times a slot's SIDE VALUE was still handed out as the boundary (`DU_TERM`) in this
-# process (f3-1, audit D-0110 item 2: since f3-1 a grounded side value is a value, so only a side
-# entry holding a keyed variable or a ball copied on terms reaches it) — a meter, read by
-# test/runtests.jl after each unit, which asserts it unchanged outside the white-box files that make
-# such entries on purpose; it carries no behaviour (allowlisted in tools/lint_globals.jl)
-const _DU_TERM_SIDE = Threads.Atomic{Int}(0)
-
 """
     fresh_var_keys!(n) -> UInt64
 
@@ -190,32 +178,9 @@ Reserve `n` kernel variable keys, never issued before in this process: they are
 """
 function fresh_var_keys!(n::Int)::UInt64
     first = Threads.atomic_add!(_KERNEL_VAR_COUNTER, UInt64(n))
-    @assert first >= KERNEL_VAR_BASE && first + UInt64(n) <= CELL_KEY_TAG "kernel variable keys exhausted"
+    @assert first >= KERNEL_VAR_BASE && first + UInt64(n) > first "kernel variable keys exhausted"
     return first
 end
-
-# ── cell variables: the global stack's keys (L1a) ───────────────────────────────────────────────
-# DIVERGES: a variable on the global stack (`allocGlobalVars!`, src/pl-inline.jl) is still an
-# interface variable — a slot holds a term until L1b — so its CELL is named by a key: the cell tag
-# (the top two bits), a STAMP (34 bits) and the position (28 bits). The stamp comes from ONE
-# PROCESS-WIDE counter, reserved by each engine in blocks, so stamps are unique across engines and
-# grow with time; the engine keeps the key of the cell living at each position (`gkey`). A key is
-# this engine's live cell iff its position is at most `gTop` and `gkey` holds it: a key retained
-# after its position was freed and reused, or from another engine, is not — it is a KEYED variable,
-# bound in `bindings` (the workspace's L1 plan, §2). The cells of one allocation have consecutive
-# keys, and keys order by stamp, then position: allocation order, as the counter's keys before L1a.
-# Limits: 2^28 positions; the stamp wraps after 2^34 allocations in one process.
-"The top bits of a cell variable's key (pl-global.jl, L1a): `0b11` above the kernel's keys."
-const CELL_KEY_TAG = UInt64(0b11) << 62
-"The bits of a cell variable's key that hold its position on the global stack."
-const CELL_POS_MASK = (UInt64(1) << 28) - UInt64(1)
-"The bits of a stamp, below the cell tag and above the position."
-const CELL_STAMP_MASK = (UInt64(1) << 34) - UInt64(1)
-"The stamps an engine reserves at a time."
-const CELL_STAMP_BLOCK = UInt64(1024)
-# the next free stamp (see `CELL_KEY_TAG`) — module-level, allowlisted in tools/lint_globals.jl as
-# `_KERNEL_VAR_COUNTER` is: a monotonic source of fresh ids carries no behaviour between callers
-const _CELL_STAMP_COUNTER = Threads.Atomic{UInt64}(1)
 
 # PORT: pl-variant.c node as vt_node
 # (the `_cells` entries of src/pl-variant.jl use it and `vt_pairs`, as fields of the local data)
@@ -243,16 +208,11 @@ end
 
 # PORT: pl-global.h PL_local_data
 # DIVERGES: `index_ctx` is scratch upstream declares on the C stack in each firstClause/nextClause.
-# `bindings` has no field upstream — SWI binds a variable by overwriting its cell on the
-# global stack; interface variables are immutable values, so a binding is an entry keyed by
-# `var_key`. Since L1a it holds only KEYED variables' bindings: a CELL variable's binding is in its
-# cell on `gstack`, the global stack of variables (`gkey`, `gTop`; see `CELL_KEY_TAG`), and
-# `mark_bar` is upstream's. Since L1b stage D the trail holds upstream's ENTRY WORDS (pl-data.h's
-# `TAG_TRAILADDR`/`TAG_TRAILVAL` in bit 0; src/pl-inline.jl `_trail_addr`): an address entry names a
-# cell by position and stack, `(pos << 3) | (stack << 1)`, and while keyed variables live (until
-# the stamp falls) a third stack code names entry `pos` of `trail_keys`, the keyed variable's key (a
-# key is too wide to shift); a value entry `tagTrailPtr(gpos)` names the old value saved at global
-# position `gpos`, above its address entry. Since L1b stage C2 the global stack holds WORDS (pl-data.h): an unbound
+# Since L1f (f3) every variable is a cell on `gstack`, the global stack (`gTop`), bound by overwriting
+# it, as upstream's; `mark_bar` is upstream's. Since L1b stage D the trail holds upstream's ENTRY WORDS
+# (pl-data.h's `TAG_TRAILADDR`/`TAG_TRAILVAL` in bit 0; src/pl-inline.jl `_trail_addr`): an address
+# entry names a cell by position and stack, `(pos << 3) | (stack << 1)`; a value entry
+# `tagTrailPtr(gpos)` names the old value saved at global position `gpos`, above its address entry. Since L1b stage C2 the global stack holds WORDS (pl-data.h): an unbound
 # cell is 0 (`setVar`), a bound one a value-table word, `consPtr(i, TAG_COMPOUND|STG_RESERVED)`,
 # naming entry `i` of `vtable` — the VALUE TABLE, transitional (the workspace's L1 plan §5 L1b),
 # which holds every bound value until its kind has a word form (atoms and small integers: stage C3;
@@ -268,17 +228,16 @@ end
 # reads the one atom record); `atom_words` is the engine's cache of the other direction, a symbol's
 # atom word, so a symbol's text is looked up once per engine (correct whatever it holds: one atom
 # per text, so a miss finds the same word in the table). `trail` is `stacks.trail` (its
-# length is `tTop`), entries of both kinds of variable (above). A cyclic link or
-# a visited mark is an entry in an identity map (`cycle_links`, `occurs_marked`) where upstream
-# overwrites a functor cell; the stacks that restore them are upstream's (`cycle.lstack`,
-# `var_occurs_in`'s `visited`). The agendas and the `visited` stack are scratch upstream keeps on
+# length is `tTop`), its entries (above). A cyclic link or
+# a visited mark overwrites a functor cell, as upstream's; the stacks that restore them are
+# upstream's (`cycle_cells` with the saved words: `cycle.lstack`; `occurs_cells`: `var_occurs_in`'s
+# `visited`). The agendas and the `visited` stacks are scratch upstream keeps on
 # the C stack; kept here, and emptied entry by entry, a warm unification allocates nothing.
 # `stacks.local` is the cells `slots` and the pools of frame, choice-point and foreign-frame records
 # (src/pl-incl.jl § the local stack; since L1b stage C5 a cell is a WORD — src/pl-inline.jl
-# `slotValue`: a reference to a global cell, an atom, or `SLOT_VALUE`, the value in the cell's own
-# entry of `slot_values`, transitional — a reference reads back as the cell's variable term, made
-# ON DEMAND from its key by the one counted adapter `_cell_var` (`cold_vars`; L1c sub-commit 6 —
-# until then kept per cell in `gvars`), transitional with `gkey`, gone when the stamp falls); its
+# `SLOT_VALUE`: a reference to a global cell, an atom, a compound, a tagged integer, a value-table
+# word, or `SLOT_VALUE`, the value in the cell's own entry of `slot_values` — audit D-0024's side
+# value, an indirect in a slot older than the innermost foreign frame); its
 # `top` and `max` and LD's `environment`, `choicepoints` and
 # `foreign_environment` are named by the macros upstream's code reads them through — `lTop`, `lMax`,
 # `environment_frame`, `BFR` and `fli_context` — and the last three are pool indices (0 = NULL).
@@ -286,10 +245,9 @@ end
 # share it with. `query` is a query-frame index (0 = NULL). The argument stack `astack` holds
 # `argstack_entry`s (upstream: `Word*`). Since L1c a compound is built IN PLACE on the global stack,
 # as upstream's (the write-mode builder of decision 2 is gone); `functors` is the database's
-# `GD->functors` (`$expr` and `FUNCTOR_dot2` copied from it), and `cold_exports`/`cold_imports`
-# count the compounds the boundary converts — a compound word read as a term
-# (`_compound_term`), a term copied onto the stack (`_compound_word!`): no upstream fields, the
-# transitional adapters' meters until the readers and writers work on words. The `exception.*`
+# `GD->functors` (`$expr` and `FUNCTOR_dot2` copied from it), and `cold_imports` counts the terms
+# copied onto the stack (`_compound_word!`) and the fresh cells a write gives its variables: no
+# upstream field, the writers' meter. The `exception.*`
 # fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
 # The local stack's `spare` and `def_spare` are `stacks.local`'s, in positions (since V5d); the global
 # stack's and the trail's since L1f f1b (audit D-0042): reserves counted in the one limit (`_stacks_in_use`). `outofstack` is upstream's `LD->outofstack` for the one stack that can
@@ -330,16 +288,8 @@ its base. It is made for the database `gd`: its atom words name atoms in `gd.ato
 """
 mutable struct PL_local_data{T}
     predicate_references::Vector{definition_ref{T}}            # Referenced predicates
-    bindings::Dict{UInt64, T}                                   # var_key → value (see above)
     trail::Vector{UInt64}                                       # stacks.trail: its entries (L1b D)
-    trail_keys::Vector{UInt64}                                  # … the keyed variables' keys
     gstack::Vector{UInt64}                                      # stacks.global: its WORDS (L1b C2)
-    gkey::Vector{UInt64}                                        # … the key of each cell's variable
-    gterms::Vector{Union{Nothing, T}}                           # … a compound's export (L1c)
-    gterm_pos::Vector{Int}                                      # … the positions holding one
-    gterm_of::IdDict{T, Int}                                    # … export → its position: TRANSITIONAL (L1d), with the memo
-    ngterm::Int                                                 # … in use: gterm_pos[1:ngterm]
-    gterm_top::Int                                              # … the highest of them (0: none)
     gTop::Int                                                   # stacks.global.top
     vtable::Vector{T}                                           # (the value table, L1b: see above)
     vbox::Vector{Int}                                           # … each entry's box on the stack
@@ -351,15 +301,8 @@ mutable struct PL_local_data{T}
     functor_dot2::UInt64                                        # GD's FUNCTOR_dot2 (L1c)
     atom_nil_w::UInt64                                          # GD's ATOM_nil word (L1c-6)
     int_word_keys::Bool                                         # (a small integer keys by its word: L1d step 4)
-    cold_exports::Int                                           # (compounds read as terms, L1c)
     cold_imports::Int                                           # (terms copied onto the stack)
-    cold_vars::Int                                              # (cell variables read as terms, L1c-6)
-    cold_pairs::Int                                             # (cell pairs decided as terms: the boundary, L1d)
-    import_origin::Dict{UInt64, UInt64}                         # (TRANSITIONAL, f3b-1: an imported cell's key → the keyed variable it was made for; goes with the stamp in f3)
-    ball_word::UInt64                                           # (TRANSITIONAL, f3b-1: the word of the ball a query copied, while it runs; goes with the stamp in f3)
     mark_bar::Int                                               # mark_bar
-    stamp_next::UInt64                                          # (the engine's reserved stamps:
-    stamp_end::UInt64                                           #  stamp_next until stamp_end)
     prolog_flag_occurs_check::occurs_check_t                    # prolog_flag.occurs_check
     prolog_flag_portable_vmi::Bool                              # truePrologFlag(PLFLAG_PORTABLE_VMI)
     prolog_flag_last_call::Bool                                 # truePrologFlag(PLFLAG_LASTCALL)
@@ -368,13 +311,7 @@ mutable struct PL_local_data{T}
     arith_f_flags::UInt32                                       # arith.f.flags (V6c)
     arith_numbers::Vector{number}                               # (the numbers' C stack, pooled)
     arith_top::Int                                              # (how many of them are in use)
-    arith_frames::Vector{Tuple{T, Int}}                         # evalExpression's term_stack
     arith_cells::Vector{Int}                                    # evalExpression_cells' term_stack (L1d)
-    cycle_lstack::Vector{T}                                     # cycle.lstack: linked compounds
-    cycle_links::IdDict{T, T}                                   # the links themselves
-    occurs_visited::Vector{T}                                   # var_occurs_in's `visited`
-    occurs_marked::IdDict{T, Nothing}                           # its FIRST_MASK marks
-    unify_agenda::term_agendaLR{T}                              # do_unify's `agenda`
     ucell_agenda::cell_agendaLR                                 # do_unify_cells' (L1c-4)
     ccell_agenda::cell_agendaLR                                 # compare's on cells (L1d)
     ocell_agenda::cell_agendaLR                                 # var_occurs_in_cells' (L1d)
@@ -395,8 +332,6 @@ mutable struct PL_local_data{T}
     vt_agenda::vt_pairs                                         # … its argPairs
     random_state::UInt64                                        # LD->arith.random: the generator (0: not seeded; arith-b)
     frozen_bar::Int                                             # LD->frozen_bar: the frozen part of the global stack (0: none; e5)
-    compare_agenda::term_agendaLR{T}                            # compare_fast's `agenda`
-    occurs_agenda::term_agenda{T}                               # var_occurs_in's `agenda`
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
     slots::Vector{word}                                         # stacks.local: the cells' WORDS
     slot_values::Vector{T}                                      # … a SLOT_VALUE cell's value (C5)
@@ -438,7 +373,7 @@ mutable struct PL_local_data{T}
     unusable::Bool                                              # (after a second overflow)
     fast_condition::Int                                         # fast_condition (0: NULL; an index)
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
-    placeholder::T                                              # (argp_t's term but in a cursor)
+    placeholder::T                                              # (argp_t's unread term)
     GD::Union{Nothing, PL_global_data{T}}                       # (the database the engine is made for; L1c)
     read_source::source_location{T}                             # read_source: file, line, …
     debugstatus_styleCheck::Int                                 # _debugstatus.styleCheck
@@ -458,28 +393,21 @@ mutable struct PL_local_data{T}
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
-    e = mk_expr(T, T[])                         # any term: the agendas' idle work nodes
+    e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
     ld = PL_local_data{T}(
-        definition_ref{T}[], Dict{UInt64, T}(), UInt64[], UInt64[],
-        UInt64[], UInt64[], Union{Nothing, T}[], Int[], IdDict{T, Int}(), 0, 0, 0, T[],
-        Int[],
+        definition_ref{T}[], UInt64[],                              # predicate_references, trail
+        UInt64[], 0, T[], Int[],                                    # gstack, gTop, vtable, vbox
         gd.atoms, Dict{UInt64, UInt64}(), gd.atom_symbols,       # GD->atoms: the database's
         gd.functors, gd.atom_dexpr, gd.functor_dot2, gd.atom_nil_w,   # GD->functors (L1c); ATOM_nil (L1c-6)
         _int_word_keys(T),                      # int_word_keys (L1d step 4)
-        0, 0, 0, 0,                             # no export, import, variable read or boundary pair yet
-        Dict{UInt64, UInt64}(),                 # import_origin: no keyed variable imported yet
-        UInt64(0),                              # ball_word: no query holds a ball
+        0,                                      # cold_imports: no import yet
         0,                                      # mark_bar: gTop, set by emptyStacks!
-        UInt64(0), UInt64(0),                   # no stamps reserved yet
         OCCURS_CHECK_FALSE, true,
         true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
         false,                                  # optimise: off without -O (pl-prologflag.c:2394)
         true,                                   # optimise_unify: on (pl-prologflag.c:2395)
         UInt32(0x0081),                         # FLT_ROUND_NEAREST|FLT_UNDERFLOW (initArith)
-        number[], 0, Tuple{T, Int}[], Int[],
-        T[],
-        IdDict{T, T}(), T[], IdDict{T, Nothing}(),
-        term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
+        number[], 0, Int[],
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),               # do_unify_cells (L1c-4)
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),               # compare on cells (L1d)
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), Int[],        # the occurs check on cells (L1d)
@@ -490,8 +418,6 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         Int32[], vt_node[], vt_pairs(0, 0, 0, 0, NTuple{4, Int}[]),        # =@= on cells (L1d step 8a)
         UInt64(0),                                                 # random/1's state (arith-b)
         0,                                                         # frozen_bar (e5)
-        term_agendaLR{T}(aNodeLR{T}(e, e, 0, 0), aNodeLR{T}[]),
-        term_agenda{T}(aNode{T}(e, 0, 0), aNode{T}[]),
         # idle until a search resets it (`_index_context!`): any predicate will do
         index_context{T}(
             gen_t(0),

@@ -10,8 +10,8 @@
 #     list, a proper-list second argument too short; the variables' ORDER (depth-first, left to right);
 #   * white-box: after every call no functor cell carries MARK_MASK, the side vector is all false and
 #     the visited stack is empty — a second call on the same term answers the same;
-#   * the boundary: a keyed variable bound to a term is decided on terms, COUNTED;
-#   * the meter: the walk over a term on the stack makes no cold export, import or variable read.
+#   * the meter: the walk over a term on the stack makes no cold import (until L1f f3 also no cold export
+#     or variable read, and the boundary — a keyed variable bound to a term, decided on terms, counted).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -154,7 +154,7 @@ function _wc_engine(vs::Vector{_R}; pvm=LK.PutVarMap())
     end
     return ld, t
 end
-_wc_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_wc_counts(ld) = ld.cold_imports        # (the export/variable/pair meters went with the keyed variables, f3)
 "No functor cell marked, the side vector all false, the visited stack empty."
 _wc_clean(ld) =
     !any(
@@ -182,33 +182,6 @@ _wc_clean(ld) =
         @test all(k -> LK._deref_loc(ld, k)[1] == LK.DU_CELL, ks) && length(unique(ks)) == 3
         LK.PL_reset_term_refs(ld, v0)
     end
-end
-
-@testset "the boundary: a keyed variable bound to a term, decided on terms, counted" begin
-    ld, t = _wc_engine(_R[_rs("x"), _rs("y")])
-    kv = lk_var(_R, UInt64(4731))
-    # f(kv, a): kv a value-table word (laid by hand since L1f f3b-1: a writer binds a keyed variable to a fresh cell now)
-    LK.setSlotValue!(ld, t + 1, _rf("f", _rs("x"), _rs("a")))
-    ld.gstack[LK.valPtr(ld.slots[t + 1]) + 1] = lk_boundary_word!(ld, kv)
-    p0 = ld.cold_pairs
-    @test LK.ground_cells(ld, -(t + 1)) == LK.GROUND_BOUNDARY     # kv unbound: not ground
-    @test ld.cold_pairs > p0
-    LK.Trail!(ld, var_key(kv), _rf("g", _rs("b")))                # kv = g(b)
-    p0 = ld.cold_pairs
-    @test LK.ground_cells(ld, -(t + 1)) == 0
-    @test ld.cold_pairs > p0
-    @test _wc_clean(ld)
-    kw = lk_var(_R, UInt64(4733))
-    LK.setSlotValue!(ld, t + 2, _rf("h", _rs("x"), _rs("x")))     # h(kw, kw), by hand as above
-    q = LK.valPtr(ld.slots[t + 2])
-    ld.gstack[q + 1] = lk_boundary_word!(ld, kw)
-    ld.gstack[q + 2] = lk_boundary_word!(ld, kw)
-    p0 = ld.cold_pairs
-    v0 = LK.PL_new_term_refs(ld, 0)
-    n, r = LK.term_variables_to_termv_cells(ld, t + 1, typemax(Int))
-    @test n == 1 && ld.cold_pairs == p0 + 1
-    @test _wc_clean(ld)
-    LK.PL_reset_term_refs(ld, v0)
 end
 
 @testset "the meter: the walks over a term on the stack make no cold export, import or variable read" begin

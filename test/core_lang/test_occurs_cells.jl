@@ -7,8 +7,8 @@
 #     against a term containing it (`X = f(X)`), directly and through a head (`p(X, X)` called with
 #     `p(Y, f(Y))`), two compounds whose unification binds a variable into its own value (the trail
 #     walk: `f(X, Y) = f(Y, g(X))`), the error's ball, unify_with_occurs_check/2 under occurs_check=false;
-#   * white-box: after every walk no functor cell carries FIRST_MASK (the marks are cleared);
-#   * the boundary: a keyed variable is checked on terms, COUNTED in `cold_pairs`.
+#   * white-box: after every walk no functor cell carries FIRST_MASK (the marks are cleared)
+#     (until L1f f3 also the boundary: a keyed variable checked on terms, counted in `cold_pairs`).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -109,19 +109,4 @@ end
     @test LK.unify_with_occurs_check_cells(ld, -(t + 1), -(t + 2), LK.OCCURS_CHECK_TRUE) ==
         LK.BOOLEX_FALSE
     @test LK.isVar(ld.gstack[px]) && _oc_no_marks(ld)
-end
-
-@testset "the boundary: a keyed variable is checked on terms, counted" begin
-    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
-    ld = db.ld
-    LK.PL_open_foreign_frame(ld)
-    t = LK.PL_new_term_refs(ld, 2)
-    kv = lk_var(_R, UInt64(4714))
-    lk_side_value!(ld, t + 1, kv)   # (built by hand since L1f f3b-1: a writer binds a keyed variable to a cell)
-    LK.putSlotValue!(ld, t + 2, _rf("f", _rs("a")))
-    p0 = ld.cold_pairs
-    @test LK.unify_with_occurs_check_cells(ld, -(t + 1), -(t + 2), LK.OCCURS_CHECK_TRUE) ==
-        LK.BOOLEX_TRUE
-    @test ld.cold_pairs > p0
-    @test lk_eq(LK.resolve_term(ld, LK.deRef(ld, kv)), _rf("f", _rs("a")))
 end

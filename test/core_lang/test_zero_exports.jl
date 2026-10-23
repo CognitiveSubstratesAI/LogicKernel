@@ -2,18 +2,16 @@
 # hot path falling back to the term boundary fails THIS test, not just an allocation count. Upstream
 # has no counterpart (its VM has no term boundary). test/core_lang/test_zero_exports.jl — on every
 # term type: one call of each of swipl's benchmark programs nreverse and qsort (bench/programs/*.pl,
-# as tools/bench.jl runs them) leaves all three counters of the boundary unchanged:
-#   * `cold_exports` — a compound on the stack read as a term (`_compound_term`),
+# as tools/bench.jl runs them) leaves the boundary's counter unchanged:
 #   * `cold_imports` — a term copied onto the stack (`_compound_word!`; the deep index's boundary
-#     descent included, sub-commit 5),
-#   * `cold_vars` — a cell's variable read as a term (`_cell_var`, sub-commit 6),
-#   * `cold_pairs` — a pair the cell compare decides as terms (the boundary, L1d step 1);
-# and a small program that compares (==, \==, compare/3 over lists on the stack) does the same.
+#     descent included, sub-commit 5);
+# and a small program that compares (==, \==, compare/3 over lists on the stack) does the same. (Until
+# L1f f3 also `cold_exports` — a compound read as a term, `cold_vars` — a cell's variable read as a term,
+# and `cold_pairs` — a pair the cell compare decided as terms: they went with the keyed variables.)
 # Since L1f F3B, one program per group of the plan (the workspace's L1_plan/stageL1f_design.md §3), at the
 # end of the file: f3b-1's put of a caller's goal; f3b-2's clause/2.
 # The first call builds the predicates' indexes and supervisors; the asserted call is the second (and
-# the first's counts are reported). The export memo's entry count over the run is reported too
-# (condition 3 of the memo's approval: how much cold traffic exists).
+# the first's counts are reported).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -63,7 +61,7 @@ function _zt_allocated(gd, ld, proc)::Int
     return @allocated _zt_call(gd, ld, proc)
 end
 
-_zt_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_zt_counts(ld) = ld.cold_imports        # (the export/variable/pair meters went with the keyed variables, f3)
 
 @testset "nreverse, qsort and poly_10 make no cold export, import or variable read" begin
     for name in (:nreverse, :qsort, :poly_10)
@@ -71,13 +69,11 @@ _zt_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
         c0 = _zt_counts(ld)
         @test _zt_run(gd, ld, name) == LK.PL_S_TRUE         # the first call: indexes, supervisors
         c1 = _zt_counts(ld)
-        @info "$name: the first call's boundary traffic (exports, imports, variable reads)" c1 .-
-            c0
+        @info "$name: the first call's boundary traffic (imports)" c1 - c0
         @test _zt_run(gd, ld, name) == LK.PL_S_TRUE
         c2 = _zt_counts(ld)
-        @test c2 == c1                                      # THE CONDITION: zero, all three
-        c2 == c1 || @info "$name: the second call's boundary traffic" c2 .- c1
-        @info "$name: export memo entries after two calls" ld.ngterm
+        @test c2 == c1                                      # THE CONDITION: zero
+        c2 == c1 || @info "$name: the second call's boundary traffic" c2 - c1
     end
 end
 # THE PIN PER TERM TYPE (user, 2026-10-16): the reference type allocates NOTHING. The alternative
@@ -156,17 +152,17 @@ ar_top :- ar_loop(50).
     @test _zt_run(gd, ld, :ar_top) == LK.PL_S_TRUE
     c1 = _zt_counts(ld)
     @test _zt_run(gd, ld, :ar_top) == LK.PL_S_TRUE
-    # no export, import or variable read, and no boundary pair: since L1e e1 a FLOAT passed as a call's own
-    # argument (`D > A - 1000`, `E =:= D + D`) reaches the slot as its value-table word (`_slot_link!`,
-    # upstream's `*to = linkValI(from)`), so arithmetic reads the word (the L1d pin was 100: 2 per
-    # iteration × 50, each decided on its term)
-    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
-    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
-        @info "ar_top: the second call's boundary traffic" _zt_counts(ld) .- c1
+    # no import (until L1f f3 also no export, variable read or boundary pair: since L1e e1 a FLOAT passed
+    # as a call's own argument (`D > A - 1000`, `E =:= D + D`) reaches the slot as its value-table word
+    # (`_slot_link!`, upstream's `*to = linkValI(from)`), so arithmetic reads the word; the L1d pin was
+    # 100 pairs: 2 per iteration × 50, each decided on its term)
+    @test _zt_counts(ld) == c1
+    _zt_counts(ld) == c1 ||
+        @info "ar_top: the second call's boundary traffic" _zt_counts(ld) - c1
 end
 
 # ── L1f F3B: one program per group (the workspace's L1_plan/stageL1f_design.md §3, each group's exit check
-# (3): its four counters unchanged over the second call) ────────────────────────────────────────────────
+# (3): its four counters unchanged over the second call; since L1f f3 the one left, `cold_imports`) ────────────────────────────────────────────────
 
 # f3b-1 (writers into words): a CALLER's goal put through `putSlotValue!` — its arguments with one
 # `PutVarMap`, a variable shared between them — is laid on the cells directly (`_put_compound!`, as
@@ -213,12 +209,11 @@ end
     lst = foldr((h, t) -> mk_expr(_ZT, _ZT[s("[|]"), h, t]), items; init=LK.mk_nil(_ZT))
     proc = LK.lookupProcedure(s(:pt_rev), 2, LK.MODULE_user(gd))
     @test _zt_put_call(gd, ld, proc, _ZT[lst, R]) == LK.PL_S_TRUE      # indexes, supervisors
-    c1, b1 = _zt_counts(ld), length(ld.bindings)
+    c1 = _zt_counts(ld)
     @test _zt_put_call(gd, ld, proc, _ZT[lst, R]) == LK.PL_S_TRUE
-    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
-    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
-        @info "f3b-1: the second call's boundary traffic" _zt_counts(ld) .- c1
-    @test length(ld.bindings) == b1                     # no keyed variable bound (the put copies)
+    @test _zt_counts(ld) == c1
+    _zt_counts(ld) == c1 ||
+        @info "f3b-1: the second call's boundary traffic" _zt_counts(ld) - c1
 end
 
 # f3b-2 (the decompiler on the cells): clause/2 — the head and the body put by `putSlotValue!` in term
@@ -270,9 +265,9 @@ end
     @test run() == [2, 2]                               # indexes, supervisors
     c1 = _zt_counts(ld)
     @test run() == [2, 2]
-    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
-    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
-        @info "f3b-2: the second call's boundary traffic" _zt_counts(ld) .- c1
+    @test _zt_counts(ld) == c1
+    _zt_counts(ld) == c1 ||
+        @info "f3b-2: the second call's boundary traffic" _zt_counts(ld) - c1
 end
 
 # f3b-4 (error and message terms on the cells): each program raises one family of error at the call
@@ -318,9 +313,9 @@ end
         @test _zt_raise(gd, ld, name) == -1                 # raised (indexes, supervisors)
         c1 = _zt_counts(ld)
         @test _zt_raise(gd, ld, name) == -1
-        @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
-        _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
-            @info "f3b-4: the second raise's boundary traffic" name _zt_counts(ld) .- c1
+        @test _zt_counts(ld) == c1
+        _zt_counts(ld) == c1 ||
+            @info "f3b-4: the second raise's boundary traffic" name _zt_counts(ld) - c1
         @test ld.tmp_top == 0                               # every temporary handle returned
     end
 end
@@ -342,9 +337,9 @@ e_static :- assertz(functor(a, b, c)).
     @test _zt_raise(gd, ld, :e_static) == -1
     c1 = _zt_counts(ld)
     @test _zt_raise(gd, ld, :e_static) == -1
-    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
-    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
-        @info "f3b-5a: the second raise's boundary traffic" _zt_counts(ld) .- c1
+    @test _zt_counts(ld) == c1
+    _zt_counts(ld) == c1 ||
+        @info "f3b-5a: the second raise's boundary traffic" _zt_counts(ld) - c1
 end
 
 # f3b-5b (the VM's reads on words): catch/throw with a compound ball, call/1 and call/N (both shift
@@ -378,7 +373,7 @@ m5b_vc(X) :- X = foo.
     @test _zt_run(gd, ld, :m5b) == LK.PL_S_TRUE             # indexes, supervisors
     c1 = _zt_counts(ld)
     @test _zt_run(gd, ld, :m5b) == LK.PL_S_TRUE
-    @test _zt_counts(ld) .- c1 == (0, 0, 0, 0)
-    _zt_counts(ld) .- c1 == (0, 0, 0, 0) ||
-        @info "f3b-5b: the second call's boundary traffic" _zt_counts(ld) .- c1
+    @test _zt_counts(ld) == c1
+    _zt_counts(ld) == c1 ||
+        @info "f3b-5b: the second call's boundary traffic" _zt_counts(ld) - c1
 end

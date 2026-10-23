@@ -36,8 +36,11 @@ _ti_tag(i::Int) = _rs("k$i")
         w = LK._word_of!(ld, _rg(v))
         @test LK.isTaggedIntW(w) == _ti_tagged(v)
         _ti_tagged(v) && @test LK.valInt(w) == v && w == LK.consInt(v)
-        # read back as the same integer (an Int64 payload), in a cell and through the boundary
-        @test gnd_equal(LK._cell_value(ld, w), _rg(v))
+        # read back as the same integer (an Int64 payload), in a cell (f3-3: the word in a term
+        # reference, read off it — `_cell_value` went with the boundary)
+        r = LK.PL_new_term_ref(ld)
+        ld.slots[r + 1] = w
+        @test gnd_equal(lk_answer(ld, r), _rg(v))
     end
 end
 

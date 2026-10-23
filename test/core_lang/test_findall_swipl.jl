@@ -259,7 +259,7 @@ function _rec_round(ld, w)
 end
 _rec_out(ld, out) = _rcanonical(lk_answer(ld, out))
 
-@testset "records: gsize, sharing, cycles, variables, values, the boundary (L1f f1a)" begin
+@testset "records: gsize, sharing, cycles, variables, values (L1f f1a)" begin
     db = _RDB()
     ld = db.ld
     fid = LK.PL_open_foreign_frame(ld)
@@ -267,7 +267,7 @@ _rec_out(ld, out) = _rcanonical(lk_answer(ld, out))
     ph = _rec_lay!(ld, "h", 0)
     pg = _rec_lay!(ld, "g", _rec_gw(ph), _rec_gw(ph))
     r, used, out = _rec_round(ld, _rec_gw(pg))
-    @test r.gsize == 5 && used == 5 && r.nvars == 1 && r.term === nothing
+    @test r.gsize == 5 && used == 5 && r.nvars == 1          # (`record.term` went in L1f f3)
     q = LK.valPtr(ld.slots[out + 1])
     @test ld.gstack[q + 1] == ld.gstack[q + 2] != _rec_gw(ph)          # same_term(P, Q), a new h/1
     @test ld.gstack[LK.valPtr(ld.gstack[q + 1]) + 1] == 0               # its argument unbound
@@ -343,13 +343,6 @@ _rec_out(ld, out) = _rcanonical(lk_answer(ld, out))
     @test LK.copyRecordToGlobal(ld, a, r) && LK.copyRecordToGlobal(ld, b, r)
     @test _rec_out(ld, a) == "f(_,b)" && _rec_out(ld, b) == "f(_,b)"
     @test ld.slots[a + 1] != ld.slots[b + 1]              # two copies, two compounds
-    # THE BOUNDARY (TRANSITIONAL, F1-Q5): a keyed variable's value-table word — recorded on terms,
-    # counted in `cold_pairs`, `gsize` 0
-    pk = _rec_lay!(ld, "f", LK._vword!(ld, _rv(77)))
-    n0 = ld.cold_pairs
-    r, used, out = _rec_round(ld, _rec_gw(pk))
-    @test r.term !== nothing && r.gsize == 0 && ld.cold_pairs == n0 + 1
-    @test startswith(_rec_out(ld, out), "f(")
     LK.PL_close_foreign_frame(ld, fid)
 end
 

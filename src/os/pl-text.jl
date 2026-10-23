@@ -30,11 +30,9 @@ end
 # float's text is `format_float`'s (since R1e's floats). On the WORDS (`valHandle(l)`,
 # `_deref_loc`; f3b-5a): the tests on `w` read a leaf — an atom word's symbol, a value word's entry,
 # no export — and a cell or a compound has none (`nothing`: it reaches only the list and the error
-# paths); the boundary (a slot's side value, a keyed variable) is read as its term, counted in
-# `cold_pairs` (TRANSITIONAL: f3). NOT PORTED,
-# as no caller passes them yet: `CVT_VARIABLE` (`varName`), the write conversions (`CVT_WRITE`,
-# `CVT_WRITEQ`, `CVT_WRITE_CANONICAL`: the writer, R1e) — refused where reached, the refusal's
-# culprit the atom `write` — and `CVT_VARNOFAIL`; no buffer rings (`BUF_*`).
+# paths). NOT PORTED, as no caller passes them yet: `CVT_VARIABLE` (`varName`), the write
+# conversions (`CVT_WRITE`, `CVT_WRITEQ`, `CVT_WRITE_CANONICAL`: the writer, R1e) — refused where
+# reached, the refusal's culprit the atom `write` — and `CVT_VARNOFAIL`; no buffer rings (`BUF_*`).
 """
 The text term reference `l` holds, as `flags` (`CVT_*`) allow it (pl-text.c): an atom, a string,
 an integer or a rational (`CVT_XINTEGER`: hexadecimal), a code or character list; `nothing` when
@@ -43,20 +41,15 @@ it holds none of them, raising the error under `CVT_EXCEPTION`.
 function PL_get_text(
     ld::PL_local_data{T}, l::term_t, flags::UInt32
 )::Union{Nothing, PL_chars_t} where {T}
-    k, x, p = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
+    k, x, _ = _deref_loc(ld, -(l + 1))                      # word w = valHandle(l)
     w = if k == DU_WORD                                     # (f3b-5a: the leaf the tests read —
         isAtomW(x) ? _atom_value(ld, x) : nothing           # an atom's symbol; a compound has none
     elseif k == DU_VALUE
         _value_term(ld, x)                                  # a value's entry, no export
-    elseif k == DU_TERM                                     # the boundary: on the term, counted
-        ld.cold_pairs += 1                                  # (TRANSITIONAL: goes in f3)
-        deRef(ld, _loc_term(ld, k, x, p))
     else
         nothing                                             # an unbound cell: none)
     end
-    nil =
-        (k == DU_WORD && x == ld.atom_nil_w) ||          # isNil(w)
-        (k == DU_TERM && w !== nothing && is_nil(w))
+    nil = k == DU_WORD && x == ld.atom_nil_w                # isNil(w)
 
     if w !== nothing && (flags & CVT_ATOM) != 0 && isAtom(w)
         nil && (flags & CVT_LIST) != 0 && @goto case_list

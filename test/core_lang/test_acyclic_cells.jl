@@ -7,7 +7,6 @@
 #   * cyclic: `X = f(X)`, a cycle through the LAST argument (`L = [a|L]`) and through an inner one
 #     (`X = f(X, a)`), a mutual cycle (`A = f(B), B = g(A)`);
 #   * after every call no functor cell carries either mark (ph_acyclic_unmark_cells cleared them);
-#   * the boundary: a keyed variable bound to a cyclic term is decided on terms, COUNTED;
 #   * the compare guard: a DAG pair (acyclic, linked) orders as swipl's (test_compare_cells.jl's
 #     corpus) — here: the descent's result and the fast result agree on an acyclic pair.
 using Test, LogicKernel
@@ -70,16 +69,6 @@ end
         @test !LK.is_acyclic_cells(ld, -(t + i))
         @test _ac_marks(ld) == 0
     end
-end
-
-@testset "the boundary: a keyed variable bound to a cyclic term, decided on terms, counted" begin
-    ld, t = _ac_engine(_R[_rs("x")])
-    kv = lk_var(_R, UInt64(4715))
-    lk_side_value!(ld, t + 1, kv)                                # (the boundary: built since L1f f3b-1)
-    LK.Trail!(ld, var_key(kv), _rf("f", kv))                     # kv = f(kv): a cycle in the store
-    p0 = ld.cold_pairs
-    @test !LK.is_acyclic_cells(ld, -(t + 1))
-    @test ld.cold_pairs > p0 && _ac_marks(ld) == 0
 end
 
 @testset "after a linked compare and its acyclic test, every functor cell is intact" begin

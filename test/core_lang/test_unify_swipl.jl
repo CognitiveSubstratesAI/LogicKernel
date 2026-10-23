@@ -1,4 +1,4 @@
-# ORIGINAL: a LIVE differential of the kernel's unification (pl_unify!) against swipl's =/2 under all three occurs_check modes; upstream has no such test.
+# ORIGINAL: a LIVE differential of the kernel's unification (`PL_unify` on the cells since L1f f3; the term-level pl_unify! before) against swipl's =/2 under all three occurs_check modes; upstream has no such test.
 # test/core_lang/test_unify_swipl.jl — `=/2` against a LIVE swipl, on random pairs, in every mode.
 #
 # For every pair `A = B` and every `occurs_check` mode (false, true, error) swipl and the kernel
@@ -23,10 +23,7 @@
 using Test, LogicKernel, Random
 using LogicKernel:
     PL_local_data, PL_global_data,
-    pl_unify!,
-    Mark,
-    Undo!,
-    resolve_term,
+    PL_unify,
     PL_clear_exception,
     OCCURS_CHECK_FALSE,
     OCCURS_CHECK_TRUE,
@@ -49,6 +46,20 @@ const _ZRT_ORD_MIN = 1000
 _zs(x::Symbol) = lk_sym(_ZT, x)
 _zc(f::Symbol, xs::_ZT...) = mk_expr(_ZT, _ZT[_zs(f), xs...])
 _zv(k::Int) = mk_var(_ZT, UInt64(k))
+# The kernel side runs on the CELLS (L1f f3): the terms of a case are put into term references with
+# ONE variable map, so a variable shared between them is one cell; term `i` of a put from `t` is at
+# location `_zloc(t, i)`, and every case runs in a foreign frame, discarded after (its bindings undone).
+"Each of `vs` put into a term reference of its own, ONE variable map; the first reference."
+function _zput(ld, vs::_ZT...)::Int
+    t = LogicKernel.PL_new_term_refs(ld, length(vs))
+    pvm = LogicKernel.PutVarMap()
+    for (i, v) in enumerate(vs)
+        LogicKernel.putSlotValue!(ld, t + i, v, pvm)
+    end
+    return t
+end
+_zloc(t::Int, i::Int) = -(t + i)
+_zctx() = LogicKernel.foreign_context{_ZT}(LogicKernel.FRG_FIRST_CALL, UInt(0), nothing)
 
 "A random atomic term: atoms, small and big integers, floats with NaN and the signed zeros, a string."
 function _zatom(rng)::_ZT
@@ -239,35 +250,22 @@ end
 const _ZMODES = ((OCCURS_CHECK_FALSE, "false"), (OCCURS_CHECK_TRUE, "true"),
     (OCCURS_CHECK_ERROR, "error"))
 
-"Whether `t` is ground under the bindings in `ld` — cycle-safe (a compound is visited once)."
-function _zground(ld, t::_ZT)::Bool
-    seen = IdDict{_ZT, Nothing}()
-    todo = _ZT[t]
-    while !isempty(todo)
-        u = LogicKernel.deRef(ld, pop!(todo))
-        kind(u) === VAR && return false
-        kind(u) === EXPR || continue
-        haskey(seen, u) && continue
-        seen[u] = nothing
-        append!(todo, (child(u, i) for i in 1:nchildren(u)))
-    end
-    return true
-end
-
 """
 The comparison signature of the pool after a unification, under its bindings (V5a: the standard
 order and `=@=` UNDER BINDINGS, rational trees included): for each pair `Vi`, `Vj` (i < j) three
 characters — `==` (`e`/`n`), `=@=` (`v`/`n`), and `compare/3`'s order when both are ground, else
-`?` (swipl orders variables by address).
+`?` (swipl orders variables by address). `Vi` is term `i` of the put from `v0`.
 """
-function _zcmpsig(ld)::String
+function _zcmpsig(ld, v0::Int)::String
     io = IOBuffer()
     for i in 1:_ZALL, j in (i + 1):_ZALL
-        x, y = _zv(i), _zv(j)
-        print(io, LogicKernel.compareStandard(ld, x, y, true) == 0 ? 'e' : 'n')
-        print(io, LogicKernel.is_variant_ptr(ld, x, y) ? 'v' : 'n')
-        if _zground(ld, x) && _zground(ld, y)
-            print(io, ("<", "=", ">")[LogicKernel.compareStandard(ld, x, y, false) + 2])
+        x, y = _zloc(v0, i), _zloc(v0, j)
+        print(io, LogicKernel.compareStandard_cells(ld, x, y, true) == 0 ? 'e' : 'n')
+        print(io, LogicKernel.is_variant_ptr_cells(ld, x, y) ? 'v' : 'n')
+        if LogicKernel.ground_cells(ld, x) == 0 && LogicKernel.ground_cells(ld, y) == 0
+            print(
+                io, ("<", "=", ">")[LogicKernel.compareStandard_cells(ld, x, y, false) + 2]
+            )
         else
             print(io, '?')
         end
@@ -277,27 +275,27 @@ end
 
 """
 The kernel's outcome of `a = b` in `mode`: `fail`, `error`, `cyclic` or `ok(A, vs(…))` — the last
-two followed by the pool's comparison signature (`_zcmpsig`); undone after.
+two followed by the pool's comparison signature (`_zcmpsig`); undone after. `cyclic` when the
+left-hand term or a variable of the pool is a rational tree (no export can hold one).
 """
 function _zkernel(ld, a::_ZT, b::_ZT, mode)::String
     ld.prolog_flag_occurs_check = mode
-    m = Mark(ld)
+    fid = LogicKernel.PL_open_foreign_frame(ld)
     try
-        if !pl_unify!(ld, a, b)
+        t = _zput(ld, a, b, (_zv(k) for k in 1:_ZALL)...)    # a, b, V1…V6
+        if !PL_unify(ld, t, t + 1)
             ld.exception_term == 0 && return "fail"
             PL_clear_exception(ld)                  # PL_error never overrules a pending one
             return "error"
         end
-        sig = _zcmpsig(ld)
-        return try
-            vs = mk_expr(_ZT, _ZT[_zs(:vs); [resolve_term(ld, _zv(k)) for k in 1:_ZALL]])
-            _zcanonical(_zc(:ok, resolve_term(ld, a), vs)) * " " * sig
-        catch e
-            e isa ArgumentError || rethrow()
-            "cyclic " * sig
-        end
+        sig = _zcmpsig(ld, t + 2)
+        all(i -> LogicKernel.is_acyclic_cells(ld, _zloc(t, i)), (1, (3:(_ZALL + 2))...)) ||
+            return "cyclic " * sig
+        ans = lk_answers(ld, t, ((t + 2):(t + _ZALL + 1))...)  # ONE export: shared stays shared
+        vs = mk_expr(_ZT, _ZT[_zs(:vs); ans[2:end]])
+        return _zcanonical(_zc(:ok, ans[1], vs)) * " " * sig
     finally
-        Undo!(ld, m)
+        LogicKernel.PL_discard_foreign_frame(ld, fid)
     end
 end
 
@@ -401,19 +399,22 @@ end
 function _zrt_kernel(ld, cases)::Vector{String}
     out = String[]
     for c in cases
-        m = Mark(ld)
+        fid = LogicKernel.PL_open_foreign_frame(ld)
+        t = _zput(ld, _zv(1), _zv(2), _zv(3), c[1], c[2], c[3])
         for k in 1:3
-            pl_unify!(ld, _zv(k), c[k]) || error("_zrt_kernel: V$k = … failed")
+            PL_unify(ld, t + k - 1, t + k + 2) || error("_zrt_kernel: V$k = … failed")
         end
         io = IOBuffer()
         for (i, j) in ((1, 2), (1, 3), (2, 3))
-            x, y = _zv(i), _zv(j)
-            print(io, LogicKernel.compareStandard(ld, x, y, true) == 0 ? 'e' : 'n')
-            print(io, LogicKernel.is_variant_ptr(ld, x, y) ? 'v' : 'n')
-            print(io, ("<", "=", ">")[LogicKernel.compareStandard(ld, x, y, false) + 2])
+            x, y = _zloc(t, i), _zloc(t, j)
+            print(io, LogicKernel.compareStandard_cells(ld, x, y, true) == 0 ? 'e' : 'n')
+            print(io, LogicKernel.is_variant_ptr_cells(ld, x, y) ? 'v' : 'n')
+            print(
+                io, ("<", "=", ">")[LogicKernel.compareStandard_cells(ld, x, y, false) + 2]
+            )
         end
         push!(out, String(take!(io)))
-        Undo!(ld, m)
+        LogicKernel.PL_discard_foreign_frame(ld, fid)
     end
     return out
 end
@@ -468,39 +469,45 @@ function _zdescend_cases(rng, want::Int, cap::Int)
         tries += 1
         nv = rand(rng, 2:4)
         ts = [_zrt(rng, 3, nv) for _ in 1:nv]
-        m = Mark(ld)
+        fid = LogicKernel.PL_open_foreign_frame(ld)
+        t = _zput(ld, (_zv(k) for k in 1:nv)..., ts...)
         for k in 1:nv
-            pl_unify!(ld, _zv(k), ts[k])
+            PL_unify(ld, t + k - 1, t + nv + k - 1)
         end
         for i in 1:nv, j in (i + 1):nv
-            rc, linked = LogicKernel.compare_fast(
-                ld, _zv(i), _zv(j), LogicKernel.CMP_MODE_ORDER
+            rc, linked = LogicKernel.compare_fast_cells(
+                ld, _zloc(t, i), _zloc(t, j), LogicKernel.CMP_MODE_ORDER
             )
             (linked && rc != 0) || continue
-            rc2, _, _ = LogicKernel.compare_descend(
-                ld, _zv(i), _zv(j), LogicKernel.CMP_MODE_ORDER
+            rc2, _, _ = LogicKernel.compare_descend_cells(
+                ld, _zloc(t, i), _zloc(t, j), LogicKernel.CMP_MODE_ORDER
             )
             if rc2 != LogicKernel.CMP_INCOMPARABLE && rc2 != rc
                 push!(cases, (ts, i, j))
                 break
             end
         end
-        Undo!(ld, m)
+        LogicKernel.PL_discard_foreign_frame(ld, fid)
     end
     return cases, tries
 end
 
-"The kernel's `compare/3` order (`<`, `=`, `>`) of each case's pair, through `compareStandard`."
+"The kernel's `compare/3` order (`<`, `=`, `>`) of each case's pair, through `compareStandard_cells`."
 function _zdescend_kernel(cases)::Vector{Char}
     ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
     out = Char[]
     for (ts, i, j) in cases
-        m = Mark(ld)
-        for k in eachindex(ts)
-            pl_unify!(ld, _zv(k), ts[k])
+        fid = LogicKernel.PL_open_foreign_frame(ld)
+        nv = length(ts)
+        t = _zput(ld, (_zv(k) for k in 1:nv)..., ts...)
+        for k in 1:nv
+            PL_unify(ld, t + k - 1, t + nv + k - 1)
         end
-        push!(out, "<=>"[LogicKernel.compareStandard(ld, _zv(i), _zv(j), false) + 2])
-        Undo!(ld, m)
+        push!(
+            out,
+            "<=>"[LogicKernel.compareStandard_cells(ld, _zloc(t, i), _zloc(t, j), false) + 2]
+        )
+        LogicKernel.PL_discard_foreign_frame(ld, fid)
     end
     return out
 end
@@ -636,15 +643,16 @@ else
 end
 
 # S10 (the divergence audit; user, 2026-10-06): the occurs-check error is RAISED where the unifier
-# meets it, as upstream's `failed_unify_with_occurs_check`: `false`, the error pending. The
-# term-level `\=` and `?=` then fail, rather than read the failed unification as "cannot unify";
-# swipl 10.1.16 raises from both (probed: `X \= f(X)` gives `error(occurs_check(X, f(X)), _)`).
+# meets it, as upstream's `failed_unify_with_occurs_check`: `false`, the error pending. `\=` and
+# `?=` (on the cells since L1f f3; the term-level `pl_not_unify`/`pl_can_compare` before) then fail,
+# rather than read the failed unification as "cannot unify"; swipl 10.1.16 raises from both (probed:
+# `X \= f(X)` gives `error(occurs_check(X, f(X)), _)`).
 @testset "S10: \\= and ?= under occurs_check=error fail with the error pending" begin
-    for f in (LogicKernel.pl_not_unify, LogicKernel.pl_can_compare)
+    for f in (LogicKernel.pl_not_unify2_va, LogicKernel.pl_can_compare2_va)
         ld = PL_local_data{_ZT}(PL_global_data{_ZT}())
         ld.prolog_flag_occurs_check = OCCURS_CHECK_ERROR
         X = _zv(1)
-        @test f(ld, X, _zc(:f, X)) === false
+        @test f(ld, _zput(ld, X, _zc(:f, X)), 2, _zctx()) == LogicKernel.FFALSE
         @test ld.exception_term != 0
         # the ball on the cells (L1e e5a): read through its reference
         ball = lk_answer(ld, ld.exception_term)
@@ -669,9 +677,8 @@ end
     X = _zv(1)                                            # holds a reference to it (a keyed X would take
     LogicKernel.putSlotValue!(ld, a + 1, X, pvm)          # the boundary's value copy, where the old read
     LogicKernel.putSlotValue!(ld, a + 2, _zc(:f, X), pvm) # happened to work)
-    t1, t2 = LogicKernel.slotValue(ld, a + 1), LogicKernel.slotValue(ld, a + 2)
     ex = LogicKernel.PL_new_term_ref(ld)
-    @test !LogicKernel.can_unify(ld, t1, t2, ex)
+    @test !LogicKernel.can_unify_cells(ld, -(a + 1), -(a + 2), ex)   # (the term-level can_unify until L1f f3)
     @test !LogicKernel.PL_is_variable(ld, ex)           # the ball is in ex
     @test ld.exception_term == 0                         # and no longer pending
     r = lk_answer(ld, ex)

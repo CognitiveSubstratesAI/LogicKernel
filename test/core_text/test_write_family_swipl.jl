@@ -461,40 +461,51 @@ end
 end
 
 @testset "a cyclic option list is type_error(list, L) after 1,000 items (as swipl, probed)" begin
-    # L = [quoted(true)|L]: built with a binding, as the reader cannot write one
+    # L = [quoted(true)|L]: built with a binding on the cells (L1f f3: until then a keyed variable
+    # bound in the store), as the reader cannot write one
     fid = LK.PL_open_foreign_frame(_WF_LD)
     l = _wf_var()
-    cell = mk_expr(
-        _WF, _WF[_wfs("[|]"), mk_expr(_WF, _WF[_wfs("quoted"), _wfs("true")]), l]
-    )
-    LK.Trail!(_WF_LD, var_key(l), cell)
-    # the ball holds the cyclic list, which no term of the interface can hold: read it through the
-    # bindings, before the query closes
     proc = LK.isCurrentProcedure(sym_key(_wfs("write_term")), 2, LK.MODULE_system(_WF_GD))
     a = LK.PL_new_term_refs(_WF_LD, 2)
     pvm = LK.PutVarMap()  # one PutVarMap: these puts share their variables as one record does (L1b boundary, user 2026-10-14)
     LK.putSlotValue!(_WF_LD, a + 1, _wfs("a"), pvm)
     LK.putSlotValue!(_WF_LD, a + 2, l, pvm)
+    # the ball holds the cyclic list, which no term of the interface can hold: it is read on the
+    # cells, through term references made here, in the caller's frame, before the query
+    r = LK.PL_new_term_refs(_WF_LD, 7)
+    cell, f, h, c, t, h2, t2 = (r + i for i in 0:6)
+    LK.putSlotValue!(
+        _WF_LD, cell + 1,
+        mk_expr(_WF, _WF[_wfs("[|]"), mk_expr(_WF, _WF[_wfs("quoted"), _wfs("true")]), l]),
+        pvm
+    )                                                     # its tail is L's cell (one PutVarMap)
+    @test LK.PL_unify(_WF_LD, a + 1, cell)                # L = [quoted(true)|L]
     qid = LK.PL_open_query(
         _WF_GD, _WF_LD, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     rc = LK.PL_next_solution(_WF_GD, _WF_LD, qid)
     @test rc == LK.PL_S_EXCEPTION
     if rc == LK.PL_S_EXCEPTION
-        ball = LK.deRef(_WF_LD, LK.slotValue(_WF_LD, LK.PL_exception(_WF_LD, qid) + 1))
-        f = LK.deRef(_WF_LD, child(ball, 2))
-        @test kind(f) === EXPR && sym_text(child(f, 1)) == "type_error" &&
-            sym_text(LK.deRef(_WF_LD, child(f, 2))) == "list"
+        ex = LK.PL_exception(_WF_LD, qid)
+        @test LK._PL_get_arg(_WF_LD, 1, ex, f) &&
+            LK.PL_is_functor(_WF_LD, f, _wfs("type_error"), 2)
+        @test LK._PL_get_arg(_WF_LD, 1, f, h) &&
+            (n=LK.PL_get_atom(_WF_LD, h); n !== nothing && sym_text(n) == "list")
         # the culprit is the options list itself, cyclic (swipl: type_error(list, L)); the ball is a
         # copy (`duplicate_term`), so a `[quoted(true)|T]` cell whose tail is a cell that leads back
         # to ITSELF. Not necessarily to `c`: the culprit is the dereferenced cell, the walk meets
-        # it before its variable, and the copy of a cell is not one cell (pl-copyterm.jl, DIVERGES;
-        # swipl: one cell, `same_term/2` on the list and its tail is true — the L1 checklist).
-        c = LK.deRef(_WF_LD, child(f, 3))
-        quoted(x) =
-            is_pair(x) && sym_text(child(LK.deRef(_WF_LD, child(x, 2)), 1)) == "quoted"
-        t = quoted(c) ? LK.deRef(_WF_LD, child(c, 3)) : c
-        @test quoted(c) && quoted(t) && LK.deRef(_WF_LD, child(t, 3)) === t
+        # it before its variable (swipl: one cell, `same_term/2` on the list and its tail is true —
+        # the L1 checklist).
+        @test LK._PL_get_arg(_WF_LD, 2, f, c) && !LK.is_acyclic_cells(_WF_LD, -(c + 1))
+        quoted(x, hx, tx) =
+            LK.PL_get_list(_WF_LD, x, hx, tx) &&
+            LK.PL_is_functor(_WF_LD, hx, _wfs("quoted"), 1)
+        @test quoted(c, h, t) && quoted(t, h2, t2) && LK.PL_same_term(_WF_LD, t2, t)
+    end
+    # no reference into the ball when the query closes (the references are the caller's, made before
+    # the query, so they are overwritten rather than reset)
+    for x in (f, h, c, t, h2, t2)
+        LK.putSlotValue!(_WF_LD, x + 1, _wfs("x"))
     end
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_discard_foreign_frame(_WF_LD, fid)
@@ -556,8 +567,8 @@ end
     @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
     # before the query closes — the CELL the put made of `x`: the Julia variable itself is never bound
     # (a guard on `x` could not fail; the step-battery re-run, 2026-10-20)
-    xc = LK._cell_var(_WF_LD, pvm.cells[var_key(x)])  # the put's cell of `x` (a position)
-    @test kind(xc) === VAR && kind(LK.deRef(_WF_LD, xc)) === VAR
+    xp = pvm.cells[var_key(x)]                        # the put's cell of `x` (a position)
+    @test LK._deref_loc(_WF_LD, xp) == (LK.DU_CELL, LK.word(0), xp)   # unbound: it dereferences to itself
     LK.PL_close_query(_WF_LD, qid)
     LK.PL_close_foreign_frame(_WF_LD, fid)
 end

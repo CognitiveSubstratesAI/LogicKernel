@@ -364,4 +364,24 @@ end
         db = _rdb(_rmcc_clauses())                                      # a refusal abandons the query
         @test_throws LK.NotPortedError _rcall(db, g)
     end
+    # a CYCLIC goal (L1f f3): refused the same way, its culprit still naming the goal's functor and the
+    # module — read argument by argument, the cyclic one as its functor over fresh variables
+    G = _rv(72)
+    db = _rdb(_rmcc_clauses())
+    e = try
+        _rcall(
+            db,
+            _rf(
+                "c",
+                _rf(",", _rf("=", G, _rf("p", G)), _rf("c", _rf("@", G, _rs("user"))))
+            )
+        )
+        nothing
+    catch err
+        err
+    end
+    @test e isa LK.NotPortedError && e.what == "call/1 of Goal@Module"
+    if e isa LK.NotPortedError
+        @test occursin(r"^@\(p\(V\d+\),user\)$", _rsrc(e.culprit))
+    end
 end

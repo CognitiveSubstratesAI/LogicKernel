@@ -674,7 +674,9 @@ found; ports into any other repo were checked for structure only.
 # fails too, so the ceiling is lowered and a removed site cannot be silently re-added. Comments do not
 # count. Both sides are non-empty: a tree with src/pl-inline.jl (where deRef/Trail!/Undo! live — the
 # kernel's own, not a fixture) and no site found counts 0, which is below the ceiling and fails.
-const BINDINGS_DIRECT_MAX = 5
+# LOWERED 5 → 0 (2026-10-23, L1f f3): the binding store is gone (`PL_local_data.bindings` deleted);
+# every binding is a cell's word. The ceiling stays as the guard that none comes back.
+const BINDINGS_DIRECT_MAX = 0
 
 "The direct `ld.bindings` sites in the code (not the comments) of `src/`, as `file:line`."
 function bindings_direct_sites(root::AbstractString)::Vector{String}
@@ -722,7 +724,10 @@ end
 # walks, copy_term, the writer) are expected to LOWER the count again; measured at each step.
 # LOWERED 32 → 31 (2026-10-22, F3B f3b-2a): that site is gone — two unbound cells are ordered by
 # position (`SCALAR_TO_CMP(p1, p2)`) and `varName` names a cell by its position.
-const STAMP_SITES_MAX = 31
+# LOWERED 31 → 0 (2026-10-23, L1f f3): the stamp machinery is deleted (the keyed variables, `gkey`, the
+# CELL_* key constants and the stamp counter); docs/port_inventory.md marks L1f DONE, so STAMP-AT-L1F
+# now fails on any stamp site.
+const STAMP_SITES_MAX = 0
 
 "The names of the stamp machinery; a code line of src/ naming one is a stamp site."
 const STAMP_NAMES = r"\b(CELL_KEY_TAG|CELL_POS_MASK|CELL_STAMP_MASK|CELL_STAMP_BLOCK|_CELL_STAMP_COUNTER|stamp_next|stamp_end|gkey|gvars|_cell_pos|_reserveStamps!)(?![A-Za-z0-9_!])"

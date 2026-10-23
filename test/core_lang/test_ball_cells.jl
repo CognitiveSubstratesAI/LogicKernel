@@ -166,8 +166,8 @@ end
     @test_throws ErrorException LK._release_frozen!(ld, m, true)
 end
 
-# ── e5b: classify_exception on the words, against the term path, every class ───────────────────
-@testset "e5b: classify_exception on the words agrees with classify_exception_p; no cold traffic" begin
+# ── e5b: classify_exception on the words, every class; its answers' round trip agrees ──────────
+@testset "e5b: classify_exception on the words, every class; no cold traffic" begin
     balls = _R[
         _rs("a"), _rs("time_limit_exceeded"),
         _rf("error", _rf("type_error", _rs("x"), _rs("y")), _rv(1)),
@@ -185,13 +185,14 @@ end
     for (i, b) in enumerate(balls)
         LK.putSlotValue!(ld, t + i, b, pvm)
     end
-    c0 = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+    c0 = ld.cold_imports                       # (f3-3: the export/variable/pair meters went with the boundary)
     got = [LK.classify_exception(ld, t + i - 1) for i in eachindex(balls)]
-    @test (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs) == c0
-    want = [
-        LK.classify_exception_p(ld, b) for
-        b in lk_answers(ld, (t:(t + length(balls) - 1))...)
-    ]
+    @test ld.cold_imports == c0
+    r = LK.PL_new_term_ref(ld)                 # f3-3: the term twin classify_exception_p went; each
+    want = map(lk_answers(ld, (t:(t + length(balls) - 1))...)) do b   # answer put back and classified
+        LK.putSlotValue!(ld, r + 1, b)
+        LK.classify_exception(ld, r)
+    end
     @test got == want
     @test got == [LK.EXCEPT_OTHER, LK.EXCEPT_TIMEOUT, LK.EXCEPT_ERROR, LK.EXCEPT_RESOURCE,
         LK.EXCEPT_ERROR,

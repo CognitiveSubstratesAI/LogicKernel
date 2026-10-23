@@ -792,7 +792,7 @@ end
 # PORT: pl-proc.c allVars
 # DIVERGES: on the cells — distinct unbound argument cells after `_deref_loc`, a set of positions
 # where upstream marks each variable and unmarks them after; a head that is not a compound (an
-# atom) has no argument, so `true`; an argument at the boundary (DU_TERM) is not taken as a variable.
+# atom) has no argument, so `true`.
 "True when every argument of the head term reference `head` is a distinct unbound variable (pl-proc.c)."
 function allVars(ld::PL_local_data{T}, head::term_t)::Bool where {T}
     k, w, _ = _deref_loc(ld, -(head + 1))

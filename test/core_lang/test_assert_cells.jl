@@ -1,11 +1,9 @@
 # ORIGINAL: L1f f3a (audit D-0044) — assert_term! compiles a clause EXPORTED OFF ITS CELLS (`export_cells`,
-# src/pl-comp.jl): one variable map for head, body and `$variable_names`, no stamp-keyed variable, no export
-# memo. test/core_lang/test_assert_cells.jl — on every term type:
+# src/pl-comp.jl): one variable map for head, body and `$variable_names`. test/core_lang/test_assert_cells.jl — on every term type:
 #   * a differential against swipl: a variable shared by head and body, a DAG asserted (shared after), a
 #     cyclic clause and a cyclic body (representation_error(cyclic_term)), a long list, indirect values;
-#   * white-box: the export and its reverse create no export-memo entry, no cold export, import or variable
-#     read, no binding and no keyed variable; a variable met in head and body is ONE
-#     variable of the export; the compiler's warnings come back as the clause's OWN cells (`import_cells!`),
+#   * white-box: the export and its reverse make no cold import and put no variable in the value table; a
+#     variable met in head and body is ONE variable of the export; the compiler's warnings come back as the clause's OWN cells (`import_cells!`),
 #     so `$variable_names` names them (the load differential, test_load_swipl.jl, compares the messages);
 #     the export throws on a cycle.
 using Test, LogicKernel
@@ -68,15 +66,10 @@ function _ac_lay!(ld, name, args...)
     end
     return p
 end
-# The meters f3a's own code must leave alone: no export-memo entry, no cold export, import or variable read,
-# no binding, no keyed variable. NOT the stamp counter: every cell allocation still takes a stamp until f3
-# (`allocGlobalCells!`). assert_term!'s readers BEFORE the export (PL_strip_module_ex, get_head_and_body_clause,
-# get_head_functor) still read terms — F3B sites of the D-0045 sweep (evidence/A-0034), converted after f3a.
+# The meters f3a's own code must leave alone: no cold import, no variable in the value table (f3-3: the
+# export memo, the cold export/variable meters and the binding store went with the keyed variables).
 "The meters f3a's code must leave alone."
-_ac_meters(ld) = (
-    count(!isnothing, ld.gterms), ld.cold_exports, ld.cold_imports, ld.cold_vars,
-    length(ld.bindings), count(v -> kind(v) === VAR, ld.vtable)
-)
+_ac_meters(ld) = (ld.cold_imports, count(v -> kind(v) === VAR, ld.vtable))
 
 @testset "white-box: the export — one variable map, nothing of the old machinery, warnings on the cells" begin
     db = _RDB()

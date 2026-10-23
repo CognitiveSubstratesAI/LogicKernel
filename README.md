@@ -19,11 +19,11 @@ listed in [`docs/port_inventory.md`](docs/port_inventory.md); how it is built is
 The version stays **0.x until the term interface has a second implementation** in real use — until
 then the interface is only as general as one implementation makes it. First real work: `src/terms/`.
 
-**Known limits.** Variable bindings live in a store beside the terms, and it shrinks only on
-backtracking: **a long deterministic run grows memory without bound** — nothing reclaims bindings
-yet. SWI-Prolog's own term layout (tagged words on global, local and trail stacks, conditional
-trailing) is planned as step L1, after the module system (R2), followed by a port of its garbage
-collector; until then LogicKernel suits queries and rule reasoning, not long-running loops.
+**Known limits.** Variable bindings live on the engine's stacks, in SWI-Prolog's own term layout
+(tagged words on global, local and trail stacks; step L1), and the global stack shrinks only on
+backtracking: **a long deterministic run grows memory without bound** — the kernel has no garbage
+collector for its stacks yet. A port of SWI-Prolog's collector follows; until then LogicKernel suits
+queries and rule reasoning, not long-running loops.
 
 ## The contract
 

@@ -1133,18 +1133,14 @@ struct wakeup_state
 end
 
 # The VM's argument pointer — upstream's `Word ARGP` register (pl-wam.c), which points at "the
-# next cell" — as ONE concrete immutable value in its three forms (user, 2026-10-05), so the register,
+# next cell" — as ONE concrete immutable value in its two forms (user, 2026-10-05), so the register,
 # the argument stack and a query's saved registers have one type:
 #   * ARGP_SLOT — a position on the local stack (`pos`): a frame's argument slot, or above `lTop`;
-#   * ARGP_CURSOR — child `pos` of the compound `term` (read mode inside a caller's compound, where
-#     upstream points into its arguments);
 #   * ARGP_GLOBAL — a position on the global stack (`pos`), since L1c: an argument cell of a compound
 #     there — written in write mode, read in read mode (`argTermP`) — as upstream's.
-# `term` is meaningful for a cursor only; the other forms carry any term there. Since L1c a cursor is
-# only ever into a compound that is a TERM (a keyed variable's binding, until the stamp falls);
-# since f3-2 never into a stack compound's live export (`_argp_cursor` asserts it: the `$expr`
-# cross-match reads the cells), so it goes with the keyed variables (f3).
-"The VM's argument pointer (upstream's `Word ARGP`): a slot, a cell of the global stack, or a cursor into a term."
+# `term` is read by neither form (any term, `ld.placeholder`): it carried the third form, a read-mode
+# cursor into a TERM, which went with the keyed variables (L1f f3; its form number, 0x01, is unused).
+"The VM's argument pointer (upstream's `Word ARGP`): a slot, or a cell of the global stack."
 struct argp_t{T}
     form::UInt8
     pos::Int
@@ -1152,8 +1148,6 @@ struct argp_t{T}
 end
 "`argp_t` form: a position on the local stack."
 const ARGP_SLOT = 0x00
-"`argp_t` form: child `pos` of the compound `term`."
-const ARGP_CURSOR = 0x01
 "`argp_t` form: cell `pos` of the global stack (L1c)."
 const ARGP_GLOBAL = 0x02
 
@@ -1486,19 +1480,14 @@ end
 # ── recorded terms (pl-incl.h) and the bags of findall/3 (pl-bag.c), since V9g-b ─────────────────
 # PORT: pl-incl.h record
 # DIVERGES: the code a vector (upstream: the bytes after the struct); `values`, the indirects the code
-# names (`PL_REC_VALUE`, src/pl-rec.jl); `term` and `cycles`, TRANSITIONAL (F1-Q5, L1f f1d): the
-# record on terms of a term holding the boundary (`nothing` otherwise) — its copy and its cyclic
-# references (a placeholder variable's key and the compound it stands for). NOT KEPT: `size` (the
-# vector's), `flags` and `references` (their readers — the recorded database, erase,
-# `PL_duplicate_record` — are not ported).
+# names (`PL_REC_VALUE`, src/pl-rec.jl). NOT KEPT: `size` (the vector's), `flags` and `references`
+# (their readers — the recorded database, erase, `PL_duplicate_record` — are not ported).
 "A term stored outside the stacks (pl-incl.h `struct record`): see `compileTermToHeap`."
 struct record{T}
     gsize::Int                                          # Global stack size
     nvars::Int                                          # # variables in the term
     code::Vector{UInt8}                                 # (the code)
     values::Vector{T}                                   # (the indirects)
-    term::Union{Nothing, T}                             # (TRANSITIONAL: the boundary)
-    cycles::Union{Nothing, Vector{Tuple{UInt64, T}}}    # (TRANSITIONAL: placeholder → compound)
 end
 
 # PORT: pl-bag.c findall_bag

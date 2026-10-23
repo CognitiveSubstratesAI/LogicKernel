@@ -374,7 +374,7 @@ function is_ground_walk(t)::Bool
     k === VAR && return false
     k === EXPR || return true
     # an agenda, not recursion: a term can be nested deeper than the Julia stack (R1d: SWI's
-    # read_deep units read 80,000 levels, and `resolve_term` asks `is_ground` of the answer)
+    # read_deep units read 80,000 levels)
     agenda = term_type(t)[t]
     while !isempty(agenda)
         u = pop!(agenda)

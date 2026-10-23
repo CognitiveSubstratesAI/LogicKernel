@@ -25,7 +25,7 @@ function enableSpareStack!(ld::PL_local_data{T}, always::Bool)::Bool where {T}
 end
 
 # PORT: pl-alloc.c enableSpareStack as enableSpareStack_global!
-# DIVERGES (L1f f1b): the global stack's spare, a reserve in the one limit: enabling it returns it to the
+# DIVERGES (since L1f f1b): the global stack's spare, a reserve in the one limit: enabling it returns it to the
 # room under the limit (`_stacks_in_use`), which is that room (upstream: `roomStackP`).
 "Release the global stack's spare when its room is below the spare's size or `always` (pl-alloc.c); whether it did."
 function enableSpareStack_global!(ld::PL_local_data, always::Bool)::Bool
@@ -38,7 +38,7 @@ function enableSpareStack_global!(ld::PL_local_data, always::Bool)::Bool
 end
 
 # PORT: pl-alloc.c enableSpareStack as enableSpareStack_trail!
-# DIVERGES (L1f f1b): as `enableSpareStack_global!`, the trail's.
+# DIVERGES (since L1f f1b): as `enableSpareStack_global!`, the trail's.
 "Release the trail's spare when its room is below the spare's size or `always` (pl-alloc.c); whether it did."
 function enableSpareStack_trail!(ld::PL_local_data, always::Bool)::Bool
     if ld.trail_spare != 0 &&
@@ -59,7 +59,7 @@ function enableSpareStacks!(ld::PL_local_data{T})::Nothing where {T}
 end
 
 # PORT: pl-alloc.c push_overflow_context
-# DIVERGES (L1f f2, audit D-0029 D2 (a); the local stack's since D-0040): the context of an overflow of
+# DIVERGES (since L1f f2, audit D-0029 D2 (a); the local stack's since D-0040): the context of an overflow of
 # EITHER stack is the atom `stack_overflow`, the tag of swipl's dict (`stack_overflow{choicepoints:…,
 # depth:…, globalused:…, stack:[…]}`), which the kernel cannot build — on the divergence list.
 # NOT PORTED: the dict itself (the stack sizes, the depth, the environments and choice points, the
@@ -145,12 +145,12 @@ end
     (length(ld.trail) + ld.trail_spare)
 
 # PORT: pl-gc.h ensureGlobalSpace
-# DIVERGES (L1f f2, audit D-0029 D1 (a), D3 (a), D-0036): no garbage collection to try (`ALLOW_GC`) and
+# DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036): no garbage collection to try (`ALLOW_GC`) and
 # nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
 # stacks with `n` more cells within `stacks_limit` (`_stacks_in_use`), else the overflow is raised
 # (`resource_error(stack)`). While an exception is processed no request is refused: upstream's
 # `grow_stacks` in its error condition raises the limit to the need plus 1 MiB (pl-gc.c:5371,
-# `EMERGENCY_LIMIT`) for every request, so none fails for the limit (L1f f1b: the audit's D-0042 traced).
+# `EMERGENCY_LIMIT`) for every request, so none fails for the limit (since L1f f1b: the audit's D-0042 traced).
 # The handler itself runs after `resumeAfterException` (processing cleared): under the limit again.
 "Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`)."
 function ensureGlobalSpace(ld::PL_local_data, n::Int)::Bool
@@ -159,7 +159,7 @@ function ensureGlobalSpace(ld::PL_local_data, n::Int)::Bool
 end
 
 # PORT: pl-alloc.c allocGlobalNoShift
-# DIVERGES (L1f f1b): the stack grows on demand (`allocGlobalCells!`), so "no room without shifting"
+# DIVERGES (since L1f f1b): the stack grows on demand (`allocGlobalCells!`), so "no room without shifting"
 # (`gTop+n > gMax`) is the LIMIT, as `ensureGlobalSpace` tests it; returns the first cell's position, 0
 # for NULL. Raises nothing: the caller passes `GLOBAL_OVERFLOW` up, as upstream's.
 "`n` cells at `gTop` if they fit the limit, else 0 (pl-alloc.c `allocGlobalNoShift`)."
@@ -180,55 +180,28 @@ function f_pushArgumentStack(ld::PL_local_data{T}, e::argstack_entry{T})::Nothin
 end
 
 # PORT: pl-alloc.c allocGlobal as allocGlobalCells!
-# DIVERGES: allocates `n` cell VARIABLES (L1a): each cell unbound (`setVar`), its key recorded;
-# returns the first cell's position, the others follow it (upstream returns its address). One stamp
-# per allocation (src/pl-global.jl `CELL_KEY_TAG`). Growth is `_growGlobalStack!`'s, the only
-# allocating path; no garbage collection (`ensureGlobalSpace`'s `ALLOW_GC`) until pl-gc.c's
-# collector is ported, after L1.
+# DIVERGES: allocates `n` cell VARIABLES (L1a): each cell unbound (`setVar`); returns the first
+# cell's position, the others follow it (upstream returns its address). Growth is
+# `_growGlobalStack!`'s, the only allocating path; no garbage collection (`ensureGlobalSpace`'s
+# `ALLOW_GC`) until pl-gc.c's collector is ported, after L1.
 "Allocate `n` fresh variables on the global stack; the position of the first (pl-alloc.c `allocGlobal`)."
 function allocGlobalCells!(ld::PL_local_data{T}, n::Int)::Int where {T}
-    ld.stamp_next == ld.stamp_end && _reserveStamps!(ld)
-    stamp = ld.stamp_next & CELL_STAMP_MASK
-    ld.stamp_next += UInt64(1)
     p = ld.gTop + 1
     top = ld.gTop + n
     top > length(ld.gstack) && _growGlobalStack!(ld, top)
-    k = CELL_KEY_TAG | (stamp << 28) | UInt64(p)
     for i in 0:(n - 1)
         ld.gstack[p + i] = word(0)    # setVar()
-        ld.gkey[p + i] = k + UInt64(i)                 # (its variable term: on demand, `_cell_var`)
     end
     ld.gTop = top
     return p
 end
 
-# ORIGINAL: `allocGlobalCells!` for the callers that build a variable term: the first cell's KEY,
-# the others following it (`k + i`).
-"Allocate `n` fresh variables on the global stack; the key of the first."
-allocGlobalVars!(ld::PL_local_data, n::Int)::UInt64 =
-    _cell_key(ld, allocGlobalCells!(ld, n))
-
-# ORIGINAL: a block of stamps from the process-wide counter (src/pl-global.jl).
-"Reserve the engine's next block of stamps."
-@noinline function _reserveStamps!(ld::PL_local_data)::Nothing
-    first = Threads.atomic_add!(_CELL_STAMP_COUNTER, CELL_STAMP_BLOCK)
-    ld.stamp_next = first
-    ld.stamp_end = first + CELL_STAMP_BLOCK
-    return nothing
-end
-
 # ORIGINAL: the global stack's growth (upstream: `growStacks`, pl-gc.c, which shifts the stacks):
-# the two vectors grow to hold position `top`, doubling. No limit until `stack_limit` covers the
-# global stack (after L1), beyond the positions a key can name.
+# the vector grows to hold position `top`, doubling. No cap of its own: `stacks_limit` governs, where
+# the callers check it (`ensureGlobalSpace`, `allocGlobalNoShift`: L1f f2).
 "Grow the global stack to hold at least `top` cells."
 @noinline function _growGlobalStack!(ld::PL_local_data, top::Int)::Nothing
-    top <= Int(CELL_POS_MASK) || error("the global stack is full: $top cells (L1a: 2^28)")
     n = max(top, 2 * length(ld.gstack), 1024)
-    n = min(n, Int(CELL_POS_MASK))
     resize!(ld.gstack, n)
-    resize!(ld.gkey, n)
-    old = length(ld.gterms)
-    resize!(ld.gterms, n)
-    fill!(view(ld.gterms, (old + 1):n), nothing)     # (a new position holds no export: L1c)
     return nothing
 end

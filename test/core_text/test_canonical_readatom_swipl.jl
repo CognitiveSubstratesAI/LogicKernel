@@ -510,12 +510,10 @@ end
         )
         @test r[3] == "NOTPORTED"
     end
-    fid = LK.PL_open_foreign_frame(_CR_LD)
-    x = _cr_var()
-    LK.Trail!(_CR_LD, var_key(x), mk_expr(_CR, _CR[_crs("f"), x]))   # X = f(X)
-    r, _ = _cr_run("write_canonical", _CR[x])
+    # X = f(X) bound by =/2 on the cells, in the same conjunction (L1f f3: until then a keyed
+    # variable bound in the store, then put)
+    r = _cr_run_goal(_cr_read("X = f(X), write_canonical(X)")::_CR)
     @test r[3] == "NOTPORTED"
-    LK.PL_discard_foreign_frame(_CR_LD, fid)
 end
 
 @testset "numberVars: the bindings are undone after write_canonical; the frame is restored" begin
@@ -538,8 +536,8 @@ end
     )
     rc = LK.PL_next_solution(_CR_GD, _CR_LD, qid)
     @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-    xc = LK._cell_var(_CR_LD, pvm.cells[var_key(x)])  # the put's cell of `x` (a position)
-    @test kind(xc) === VAR && kind(LK.deRef(_CR_LD, xc)) === VAR
+    xp = pvm.cells[var_key(x)]                        # the put's cell of `x` (a position)
+    @test LK._deref_loc(_CR_LD, xp) == (LK.DU_CELL, LK.word(0), xp)   # unbound: it dereferences to itself
     LK.PL_close_query(_CR_LD, qid)
     LK.PL_discard_foreign_frame(_CR_LD, fid)
     @test _CR_LD.var_names_numbervars_frame == 0

@@ -6,7 +6,7 @@
 #     of `univ`: instantiation (unbound list, partial list), domain_error(non_empty_list, []), type_error(list),
 #     type_error(atomic) (`X =.. [f(a)]`), type_error(atom) (`X =.. [1, a]`), a compound list element;
 #   * the kernel's `$expr/n` (a variable head, no swipl counterpart): white-box;
-#   * the meter: decomposing and composing on the stack makes no cold export, import, variable read or pair.
+#   * the meter: decomposing and composing on the stack makes no cold import.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -83,7 +83,7 @@ function _uv_engine(vs::Vector{_R})
     end
     return ld, t
 end
-_uv_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+_uv_counts(ld) = ld.cold_imports        # (the export/variable/pair meters went with the keyed variables, f3)
 _uv_call(ld, t) =
     LK.pl_univ2_va(ld, t, 2, LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing))
 

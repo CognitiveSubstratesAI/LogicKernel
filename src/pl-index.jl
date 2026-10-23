@@ -148,12 +148,11 @@ end
 """
     argv_at(argv, i) -> term
 
-Argument `i` (0-based, as upstream's `argv[i]`) of a call whose arguments are a TERM, DEREFERENCED:
-upstream's readers of `argv` — `indexOfWord`, `canIndex`, `is_var`, the deep descent's `deRef` —
-follow references, so a bound argument keys by its value. The frame and cell forms are read on the
-WORDS (`_argv_key`, `_argv_is_var`; L1c sub-commit 5).
+Argument `i` (0-based, as upstream's `argv[i]`) of a call whose arguments are a TERM (a term has no
+bindings to follow). The frame and cell forms are read on the WORDS (`_argv_key`, `_argv_is_var`;
+L1c sub-commit 5).
 """
-argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
+argv_at(v::argv_term, i::Int) = child(v.t, i + 2)
 
 # ORIGINAL: argument `i` of a frame or cell argv as a LOCATION for `_deref_loc` (src/pl-prims.jl):
 # a slot (`-i`) or a global position (L1c sub-commit 5).
@@ -168,7 +167,7 @@ argv_at(v::argv_term, i::Int) = deRef(v.ld, child(v.t, i + 2))
 # word (upstream's indirect: a float, a string, a big integer or a rational) its value's key
 # (`_value_index_key`, the role `murmur_key`/`bignum_index` play upstream); a tagged integer its word
 # only where the term type keys integers apart from every other value (`ld.int_word_keys`), else its
-# value's key. Only the BOUNDARY (a slot's side value or a keyed variable — until L1e/L1f) reads a term.
+# value's key.
 "The index key of the term at a dereferenced location (pl-index.c `indexOfWord`, on the words)."
 function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: this file loads before pl-global.jl)
     k == DU_CELL && return word(0)                          # TAG_VAR: 0
@@ -182,7 +181,7 @@ function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: 
         (isTaggedIntW(w) && ld.int_word_keys) && return w  # TAG_INTEGER, STG_INLINE: break
         return _value_index_key(_value_term(ld, w))        # an indirect: murmur_key/bignum_index
     end
-    return indexOfWord(ld, deRef(ld, _loc_term(ld, k, w, p)))  # the boundary (L1e/L1f)
+    error("_index_key_loc: no location kind $k")           # (unreachable: three kinds)
 end
 
 # ORIGINAL: `indexOfWord(argv_at(argv, i))` for every argv form (L1c sub-commit 5).
@@ -193,15 +192,12 @@ function _argv_key(v::Union{argv_frame, argv_cells}, i::Int)::word
     return _index_key_loc(v.ld, k, w, p)
 end
 
-# ORIGINAL: `is_var(argv_at(argv, i))` for every argv form (L1c sub-commit 5): an unbound cell, or a
-# keyed variable at the boundary.
+# ORIGINAL: `is_var(argv_at(argv, i))` for every argv form (L1c sub-commit 5): an unbound cell.
 "Whether argument `i` (0-based) of `argv` is an unbound variable."
 _argv_is_var(v::argv_term, i::Int)::Bool = is_var(argv_at(v, i))
 function _argv_is_var(v::Union{argv_frame, argv_cells}, i::Int)::Bool
-    k, w, p = _deref_loc(v.ld, _argv_loc(v, i))
-    k == DU_CELL && return true
-    k == DU_TERM || return false
-    return is_var(deRef(v.ld, _loc_term(v.ld, k, w, p)))    # the boundary (L1e/L1f)
+    k, _, _ = _deref_loc(v.ld, _argv_loc(v, i))
+    return k == DU_CELL
 end
 
 # PORT: pl-index.c canIndex
@@ -242,8 +238,8 @@ end
 
 # PORT: pl-index.c indexOfWord
 # (on a TERM — the cell path is `_index_key_loc`, above)
-# TRANSITIONAL (user, 2026-10-16): a goal argument that is still a term — `argv_term`, the boundary's
-# `_loc_term` — keys as its WORD would (`_index_key_loc`), so a clause selected from either path is the
+# TRANSITIONAL (user, 2026-10-16): a goal argument that is still a term — `argv_term` — keys as its
+# WORD would (`_index_key_loc`), so a clause selected from either path is the
 # same: a symbol its atom word (`_atom_word!`: the engine's cache, then the database's table — `[]` is
 # `ATOM_nil`), an integer in the tagged range its tagged word (where `ld.int_word_keys`), any other value
 # `_value_index_key`, a list cell `FUNCTOR_dot2`, a compound with a symbol head its functor word
@@ -439,26 +435,19 @@ end
 
 # ORIGINAL: the deep descent of `nextClauseFromList` (pl-index.c: `argv = argTermP(*argv, 0)` of the
 # indexed argument, its arity the new `argc`), per argv form (L1c sub-commit 5): a compound WORD
-# descends into its argument CELLS. A compound at the BOUNDARY (a slot's side value — the ball —, a
-# keyed variable's binding; until L1e/L1f) is put onto the stack first (`_compound_word!`, the
-# counted cold import; a live export is its own word) — so the frame and cell forms never descend
-# into a TERM argv: a mixed recursion frame → term made inference widen the search's types (JET,
-# 2026-10-16: runtime dispatch in `first_clause_guarded!`). A term argv's child descends as a term.
-# The copy exists to be READ: the search reads keys by argument POSITION, level by level (the deep
-# walk is `first_clause_guarded!` again, over an argv), and nothing unifies or binds it — the VM
-# unifies the frame's own argument with the clause chosen. Its cells reference the original's live
-# variables (`_compound_word!`), never fresh ones. Cold: test_index_words.jl counts the import, and
-# the nreverse/qsort zero-import test (sub-commit 6) covers indexing.
+# descends into its argument CELLS — so the frame and cell forms never descend into a TERM argv: a
+# mixed recursion frame → term made inference widen the search's types (JET, 2026-10-16: runtime
+# dispatch in `first_clause_guarded!`). A term argv's child descends as a term. The search reads keys
+# by argument POSITION, level by level (the deep walk is `first_clause_guarded!` again, over an
+# argv), and nothing unifies or binds them — the VM unifies the frame's own argument with the clause
+# chosen.
 "Search `cl` with the arguments of argument `an` (a compound) of `argv`: the deep index's descent."
 function _descend_first_clause!(
     argv::Union{argv_frame, argv_cells}, an::Int, cl::ClauseList{T}, ctx::index_context{T}
 )::Union{Nothing, ClauseRef{T}} where {T}
     ld = argv.ld
-    k, w, p = _deref_loc(ld, _argv_loc(argv, an))
-    if !(k == DU_WORD && _is_gcompound(w))
-        w = _compound_word!(ld, deRef(ld, _loc_term(ld, k, w, p)))   # the boundary (L1e/L1f)
-    end
-    q = valPtr(w)
+    _, w, _ = _deref_loc(ld, _argv_loc(argv, an))
+    q = valPtr(w)                                           # argv = argTermP(*argv, 0)
     return first_clause_guarded!(
         argv_cells(ld, q), arityFunctor(ld.functors, ld.gstack[q]), cl, ctx
     )

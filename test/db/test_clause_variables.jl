@@ -10,7 +10,7 @@
 #   * a sink sees the bindings and they are gone after it — also when it throws.
 include(joinpath(@__DIR__, "index_testlib.jl"))
 using LogicKernel:
-    PL_local_data, pl_unify!, Mark, Undo!, deRef, fresh_var_keys!,
+    PL_local_data, Mark, Undo!, fresh_var_keys!,
     PL_clear_exception, OCCURS_CHECK_FALSE, OCCURS_CHECK_ERROR
 
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
@@ -66,24 +66,6 @@ end
     @test all(>=(KERNEL_VAR_BASE), seen)
     b = fresh_var_keys!(4)
     @test fresh_var_keys!(1) == b + 4                       # blocks never overlap
-end
-
-# f3b-1 (TRANSITIONAL): a caller's variable written into a cell is bound to it, and an answer hands the
-# CALLER's variable back (`resolve_term`); the cell's key maps back only while that binding stands.
-@testset "an imported cell maps back to the caller's variable only while it is bound" begin
-    db = IxDB{_CV}()
-    p = ix_pred(_CV, :p, 2; dynamic=true, db=db)
-    ix_assertz!(p, _cve(:p, _cvv(1), _cve(:f, _cvv(2), _cvv(1))))
-    seen = Int[]
-    for _ in 1:3
-        a = only(ix_clause(p, _cve(:p, _cvv(7), _cvv(8))))
-        push!(seen, length(db.ld.import_origin))             # (after the sink: undone)
-        # f3-2: the keyed machinery's write sharing is gone (Q3); this testset goes in f3-3. Was
-        # `var_key(child(a, 2)) == 7` — no import_origin entry is made, so the answer's variable is
-        # the read's own (a kernel key), not the caller's
-        @test var_key(child(a, 2)) != 7 && var_key(child(a, 2)) >= KERNEL_VAR_BASE
-    end
-    @test seen == [0, 0, 0] && isempty(db.ld.import_origin)  # no import outlives its binding
 end
 
 # A per-database counter would start each database at the same key: `q`'s fresh A in db2 would be

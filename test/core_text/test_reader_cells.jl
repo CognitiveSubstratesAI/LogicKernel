@@ -27,7 +27,8 @@ function _rc_engine(text::String, opts::_R)
     LK.putSlotValue!(ld, t + 3, opts, pvm)
     return ld, t
 end
-_rc_counts(ld) = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+# (the cold meters but `cold_imports` went with the keyed variables, L1f f3-3)
+_rc_counts(ld) = ld.cold_imports
 
 @testset "white-box: a variable read is its first cell, shared by its occurrences and its name's binding" begin
     ld, t = _rc_engine("f(X, g(X), Y)", _rlist(_rf("variable_names", _rv(2))))

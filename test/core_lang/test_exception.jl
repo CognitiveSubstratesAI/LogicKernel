@@ -85,13 +85,18 @@ end
         @test LK.PL_next_solution(gd, ld, qid) == LK.PL_S_EXCEPTION
         ex = LK.PL_exception(ld, qid)
         @test ex != 0
-        ball = LK.deRef(ld, LK.slotValue(ld, ex + 1))
-        @test lk_name(child(ball, 1)) === :hello
-        # throws(Ball), Ball = hello(Ball): the caught ball keeps its cycle — hello(Ball) == Ball
-        @test LK.compareStandard(ld, ball, _xf("hello", ball), true) == 0
-        @test LK.compareStandard(ld, ball, _xf("hello", _xf("hello", ball)), true) == 0
-        @test LK.compareStandard(ld, ball, _xf("hello", _xs("x")), true) != 0   # (the guard can fail)
-        @test_throws ArgumentError LK.resolve_term(ld, ball)            # a rational tree
+        @test LK.PL_is_functor(ld, ex, _xs("hello"), 1)
+        # throws(Ball), Ball = hello(Ball): the caught ball keeps its cycle — hello(Ball) == Ball, read on
+        # its cells (f3-3: until then under the keyed bindings), never exported
+        a = LK.PL_new_term_refs(ld, 3)                  # Ball's argument, its argument, hello(x)
+        @test LK._PL_get_arg(ld, 1, ex, a) && LK._PL_get_arg(ld, 1, a, a + 1)
+        LK.putSlotValue!(ld, a + 3, _xf("hello", _xs("x")))
+        @test LK.compareStandard_cells(ld, -(ex + 1), -(a + 1), true) == LK.CMP_EQUAL
+        @test LK.compareStandard_cells(ld, -(ex + 1), -(a + 2), true) == LK.CMP_EQUAL
+        @test LK.compareStandard_cells(ld, -(ex + 1), -(a + 3), true) != LK.CMP_EQUAL   # (the guard can fail)
+        @test !LK.is_acyclic_cells(ld, -(ex + 1))                        # a rational tree
+        @test_throws ArgumentError lk_answer(ld, ex)                      # (which no export holds)
+        LK.PL_reset_term_refs(ld, a)                    # no reference into the ball when the query closes
         LK.PL_close_query(ld, qid)
         LK.PL_close_foreign_frame(ld, fid)
     end

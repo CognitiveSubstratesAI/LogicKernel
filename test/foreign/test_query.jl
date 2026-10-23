@@ -225,12 +225,8 @@ end
     qid, a, fid = _yopen(pr, A, A; flags=LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
     @test _ynext(pr, qid) == LK.PL_S_EXCEPTION
     ex = LK.PL_exception(ld, qid)
-    # (f3b-1, D-0088/D-0090) the bin is cleared (PL_Q_CATCH_EXCEPTION), so the query's own copy is the ball's
-    # only holder: `slotValue` reads it WHOLE through `ld.ball_word`, with no `resolve_term` — the nested
-    # `occurs_check(..)` is a compound, not a cell variable. Kills FB16 (ball_word not recorded).
-    tw = LK.slotValue(ld, ex + 1)
-    @test kind(child(tw, 2)) === EXPR && lk_name(child(child(tw, 2), 1)) === :occurs_check
-    @test ld.exception_term == 0 && ld.ball_word != 0 && ld.ball_word == ld.slots[ex + 1]
+    # (the bin is cleared, PL_Q_CATCH_EXCEPTION: the query's own copy is the ball's only holder, read
+    # whole off the cells — f3b-1's `ball_word` and its FB16/FB17 white-box pins went in L1f f3-3)
     e = lk_answer(ld, ex)
     @test lk_name(child(e, 1)) === :error &&
         lk_name(child(child(e, 2), 1)) === :occurs_check
@@ -239,34 +235,7 @@ end
     @test lk_eq(child(ctx, 2), _yf("/", _ys(:oc), _yg(2)))
     @test ld.exception_term == 0                                # PL_Q_CATCH_EXCEPTION: cleared
     @test _ynext(pr, qid) == 0                                  # the query is over
-    stale = ld.ball_word
     @test LK.PL_close_query(ld, qid) == 1
-    # WHITE-BOX, and it depends on the allocation layout (f3b-1, D-0090; kills FB17, ball_word not cleared): the
-    # hazard is a STALE `ball_word` matching a later compound at the REUSED address of the ball, which `slotValue`
-    # would then read whole instead of one level deep. The compound is laid out directly at the old ball's address
-    # (one explicit allocation of the gap, no search); the two guards fail loudly if the layout ever stops
-    # putting it there — then REWRITE this test, never loosen or delete it.
-    gap = LK.valPtr(stale) - ld.gTop - 1                        # gTop is the last used cell: the compound starts at gTop + 1
-    @test gap >= 0                                              # guard 1: the address is free again after the close
-    gap > 0 && LK.allocGlobalCells!(ld, gap)
-    pf = LK._alloc_compound!(
-        ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _ys(:f)), 2), 2
-    )
-    wn = LK.consPtr(pf, LK.TAG_COMPOUND | LK.STG_GLOBAL)
-    @test wn == stale                                           # guard 2: the new compound IS at the old ball's address
-    pg = LK._alloc_compound!(
-        ld, LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _ys(:g)), 1), 1
-    )
-    ld.gstack[pg + 1] = LK._atom_word!(ld, _ys(:b))
-    ld.gstack[pf + 1] = LK._atom_word!(ld, _ys(:a))
-    ld.gstack[pf + 2] = LK.consPtr(pg, LK.TAG_COMPOUND | LK.STG_GLOBAL)
-    fid2 = LK.PL_open_foreign_frame(ld)
-    nb = LK.PL_new_term_ref(ld)
-    ld.slots[nb + 1] = wn
-    tn = LK.slotValue(ld, nb + 1)
-    @test kind(child(tn, 3)) === VAR                            # one level deep: g(b) is a cell variable, not the compound
-    @test ld.ball_word == 0                                     # and the field itself: the query's ball went with it
-    LK.PL_close_foreign_frame(ld, fid2)
     LK.PL_close_foreign_frame(ld, fid)
     qid, a, fid = _yopen(pr, A, A; flags=LK.PL_Q_PASS_EXCEPTION)
     @test _ynext(pr, qid) == 0                                  # no PL_Q_EXT_STATUS: false
@@ -492,9 +461,10 @@ LK_TERM_IMPL == "reference" &&
     # two SEPARATE puts of one caller variable: two variables, neither of them the caller's
     LK.putSlotValue!(ld, a + 1, X)
     LK.putSlotValue!(ld, a + 2, X)
-    x1, x2 = LK.deRef(ld, LK.slotValue(ld, a + 1)), LK.deRef(ld, LK.slotValue(ld, a + 2))
-    @test kind(x1) === VAR && kind(x2) === VAR && var_key(x1) != var_key(x2)
-    @test var_key(x1) != var_key(X) && var_key(x2) != var_key(X)
+    # (read on the cells since L1f f3: until then the slots' live cell variables, as terms)
+    k1, _, p1 = LK._deref_loc(ld, -(a + 1))
+    k2, _, p2 = LK._deref_loc(ld, -(a + 2))
+    @test k1 == LK.DU_CELL && k2 == LK.DU_CELL && p1 != p2
     # ONE map: one variable per caller variable, across the puts that pass it (L1f f3b-1: the put
     # returns nothing — the value is read through its slot, as an answer is)
     vm = LK.PutVarMap()
@@ -517,18 +487,12 @@ LK_TERM_IMPL == "reference" &&
         var_key(child(s3, 2)) != var_key(s2)
     # sharing with a variable already in the engine goes through its handle (PL_put_term)
     @test LK.PL_put_term(ld, a + 2, a + 1)                         # term refs: slot a+3 ← slot a+2
-    @test LK.unify_ptrs(ld, LK.slotValue(ld, a + 3), _ys(:z))
+    @test LK.PL_unify_atom(ld, a + 2, _ys(:z))
     @test lk_name(lk_answer(ld, a + 1)) === :z
     @test lk_name(child(lk_answer(ld, a), 2)) === :z               # the map's variable is bound
-    @test kind(LK.deRef(ld, X)) === VAR                              # the caller's never is
-    # bindings are followed: an engine variable bound is put as its value
-    LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
-    s4 = LK.slotValue(ld, a + 3)
-    # bound AFTER the put: the copy's cell stays unbound (deRef'd — the variable term alone is VAR
-    # whatever its cell holds; the vacuous-guard sweep, 2026-10-20)
-    @test LK.unify_ptrs(ld, x1, _ys(:b)) && kind(LK.deRef(ld, child(s4, 2))) === VAR
-    LK.putSlotValue!(ld, a + 3, _yf(:g, x1))
-    @test lk_name(child(lk_answer(ld, a + 2), 2)) === :b             # bound BEFORE: its value
+    # (L1f f3: the caller's variable is never bound — the engine keeps no binding beside the terms,
+    # so the old `deRef(X)` check could not fail; and no term names a live cell any more, so "an
+    # engine variable put as its value, bound before / after the put" went with `_cell_var`)
     # a ground value comes back as the same value (`==`, not `===`): since L1c it is copied onto
     # the global stack, as `copyRecordToGlobal` copies it, and only the value is observable — read
     # through the slot, off the cells
@@ -540,8 +504,7 @@ LK_TERM_IMPL == "reference" &&
     qid, h, fid2 = _yopen(p[:f], X)
     got = Symbol[]
     while LK.PL_next_solution(db.gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)
-        push!(got, lk_name(lk_answer(ld, h)))
-        @test kind(LK.deRef(ld, X)) === VAR
+        push!(got, lk_name(lk_answer(ld, h)))     # (X itself: no binding store since L1f f3)
     end
     @test got == [:a, :b, :c]
     LK.PL_close_query(ld, qid)

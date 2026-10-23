@@ -189,17 +189,28 @@ end
     end
 
     @testset "unification stays child by child" begin
+        # on the cells (f3-3: until then the term unifier on keyed variables, `pl_unify!`); term
+        # references t … t + 6, put with one variable map so X and Y are one cell each
         ld = LK.PL_local_data{_Q}(_QGD)
+        vs = _Q[
+            _qe(X, a), X, _qf(:f, a), _qf(:f, a, b), _qe(X, a, b), _qe(_qf(:g, b), Y, b), Y
+        ]
+        t = LK.PL_new_term_refs(ld, length(vs))
+        pvm = LK.PutVarMap()
+        for (i, v) in enumerate(vs)
+            LK.putSlotValue!(ld, t + i, v, pvm)
+        end
         m = LK.Mark(ld)
-        @test LK.pl_unify!(ld, _qe(X, a), _qf(:f, a))                       # (X a) = f(a)
-        @test lk_eq(LK.resolve_term(ld, X), _qs(:f))
-        @test lk_eq(LK.resolve_term(ld, _qe(X, a)), _qf(:f, a))             # ⇒ then ==
+        @test LK.do_unify_cells(ld, -(t + 1), -(t + 3)) == LK.BOOLEX_TRUE     # (X a) = f(a)
+        @test lk_eq(lk_answer(ld, t + 1), _qs(:f))
+        @test lk_eq(lk_answer(ld, t), _qf(:f, a))                            # ⇒ then ==
         LK.Undo!(ld, m)
-        @test !LK.pl_unify!(ld, _qe(X, a), _qf(:f, a, b))                   # 2 children, 3
+        @test LK.do_unify_cells(ld, -(t + 1), -(t + 4)) != LK.BOOLEX_TRUE     # 2 children, 3
         LK.Undo!(ld, m)
-        @test LK.pl_unify!(ld, _qe(X, a, b), _qe(_qf(:g, b), Y, b))         # two `$expr/3`
-        @test lk_eq(LK.resolve_term(ld, Y), a)
+        @test LK.do_unify_cells(ld, -(t + 5), -(t + 6)) == LK.BOOLEX_TRUE     # two `$expr/3`
+        @test lk_eq(lk_answer(ld, t + 6), a)
         LK.Undo!(ld, m)
+        LK.DiscardMark(ld, m)
     end
 
     @testset "variant: \$expr/n against \$expr/n only" begin

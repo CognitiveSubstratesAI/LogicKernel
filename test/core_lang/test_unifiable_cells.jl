@@ -5,7 +5,8 @@
 #   * a differential against swipl under each occurs_check mode: a variable against itself, against a term (both
 #     sides), compounds binding several variables (the list's ORDER is swipl's), no binding needed, a failure,
 #     shared variables, a variable bound to a variable, `X` against `f(X)` (each mode's answer);
-#   * the meter: unifiable/3 on terms on the stack makes no cold export, import, variable read or boundary pair.
+#   * the meter: unifiable/3 on terms on the stack makes no cold import (until L1f f3 also no cold export,
+#     variable read or boundary pair: those meters went with the keyed variables).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -93,12 +94,12 @@ end
     LK.putSlotValue!(ld, t + 1, _rf("f", _rv(1), _rs("b"), _rv(2)), pvm)
     LK.putSlotValue!(ld, t + 2, _rf("f", _rs("a"), _rv(3), _rv(3)), pvm)
     LK.putSlotValue!(ld, t + 3, _rv(9), pvm)
-    c0 = (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs)
+    c0 = ld.cold_imports
     @test LK.pl_unifiable3_va(
         ld, t, 3, LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
     ) == LK.FTRUE
     @test LK.PL_skip_list(ld, t + 2) == (LK.PL_LIST, 3)
-    @test (ld.cold_exports, ld.cold_imports, ld.cold_vars, ld.cold_pairs) == c0
+    @test ld.cold_imports == c0
     @test LK._deref_loc(ld, -(t + 1))[1] == LK.DU_WORD     # the terms stay unbound by the call
     @test LK._deref_loc(ld, LK.valPtr(LK._deref_loc(ld, -(t + 1))[2]) + 1)[1] == LK.DU_CELL
 end
