@@ -3433,12 +3433,53 @@ function bind_variables(rd::read_data{T})::Bool where {T}
     return PL_unify_nil(ld, list)
 end
 
+# PORT: pl-read.c instantiate_template
+# DIVERGES: the local data is an argument (upstream: `DECL_LD`); `PL_error`'s message and expected
+# type as its kernel method takes them (an empty predicate: the running frame's).
+"""
+    instantiate_template(ld, term, at_term) -> Bool
+
+Unify `term` with the template of the `@(Template, Substitutions)` term `at_term` holds, then each
+`Var = Value` of the substitutions list: the term `cycles(true)` reads (pl-read.c). Raises
+`type_error(list, S)` or `type_error(equal, E)` ("invalid template") on a malformed list.
+"""
+function instantiate_template(
+    ld::PL_local_data{T}, term::term_t, at_term::term_t
+)::Bool where {T}
+    template = PL_new_term_ref(ld)
+    substitutions = PL_new_term_ref(ld)
+    head = PL_new_term_ref(ld)
+    var = PL_new_term_ref(ld)
+    value = PL_new_term_ref(ld)
+
+    _PL_get_arg(ld, 1, at_term, template)
+    _PL_get_arg(ld, 2, at_term, substitutions)
+    PL_unify(ld, term, template) || return false
+    if !PL_is_list(ld, substitutions)
+        return PL_error(
+            ld, "", 0, "invalid template", ERR_TYPE, mk_sym(T, :list), substitutions
+        )
+    end
+    while PL_get_list(ld, substitutions, head, substitutions)
+        if PL_is_functor(ld, head, mk_sym(T, :(=)), 2)              # FUNCTOR_equals2
+            _PL_get_arg(ld, 1, head, var)
+            _PL_get_arg(ld, 2, head, value)
+            PL_unify(ld, var, value) || return false
+        else
+            return PL_error(
+                ld, "", 0, "invalid template", ERR_TYPE, mk_sym(T, :equal), head
+            )
+        end
+    end
+
+    return true
+end
+
 # PORT: pl-read.c read_term
-# DIVERGES: `cycles(true)` (`instantiate_template`) is NOT PORTED — no `@(Template, Bindings)`
-# is ever read into a cycle (R1e decision 4a refuses cyclic terms; the option is accepted and does
-# nothing, as it does for a text without one); no quasi-quotations to parse
-# (`parse_quasi_quotations`: one is refused before it is collected); no overflow codes
-# (`raiseStackOverflow`).
+# DIVERGES: no quasi-quotations to parse (`parse_quasi_quotations`: one is refused before it is
+# collected); no overflow codes (`raiseStackOverflow`). `cycles(true)` builds the cyclic term from
+# `@(Template, Substitutions)` (`instantiate_template`) since group F (D-0123); until then the
+# option was accepted and did nothing (R1e decision 4a).
 """
 Read one term from the read data's stream and unify it with term reference `term` (pl-read.c):
 the raw text, the term up to the full stop, then the variable names. False on a syntax error,
@@ -3478,7 +3519,11 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
     else
         _ts_link_word!(result, rd)   # (an unbound entry: a fresh variable)
     end   # (an unbound entry: a fresh variable)
-    rc = PL_unify(ld, term, r0)                     # PL_unify(term, result[0])
+    if rd.cycles && PL_is_functor(ld, r0, mk_sym(T, Symbol("@")), 2)  # FUNCTOR_at_sign2
+        rc = instantiate_template(ld, term, r0)
+    else
+        rc = PL_unify(ld, term, r0)                 # PL_unify(term, result[0])
+    end
 
     truncate_term_stack(result, rd)
     rc || @goto out

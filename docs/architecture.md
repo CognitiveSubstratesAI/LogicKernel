@@ -2157,7 +2157,9 @@ src/pl-write.jl, src/pl-read.jl, src/os/pl-prologflag.jl, pl-ext.jl, pl-global.j
   variables, no signals, no stack growth. `read_term_from_stream` REFUSES (`NotPortedError`) the
   options it cannot honour: `term_position`, `subterm_positions`, `comments`, `var_prefix`,
   `quasi_quotations` (term positions: R2), `unicode_atoms` (the NFC hook), `blob` (no blobs);
-  `cycles(true)` is accepted and does nothing (no `@(T, B)` is read into a cycle: decision 4a).
+  `cycles(true)` was accepted and did nothing (no `@(T, B)` was read into a cycle: decision 4a)
+  until group F (D-0123), which ports `instantiate_template`: the template unified with the term,
+  then each `Var = Value` of the list (`type_error(list|equal, …)`, "invalid template", as upstream).
   A reported syntax error and a singleton warning are COLLECTED (`printMessage`), where swipl
   prints them (print_message/2: R2). write_canonical of a CYCLIC term is refused (4a; swipl
   factorises it, `@(_, [=(_, f(_))])`).

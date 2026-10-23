@@ -839,6 +839,7 @@ function _manifest_index(T)
         (LK.resume_pframe, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
         (LK.bind_variable_names, Tuple{LK.read_data{T}}, false),
         (LK.read_term, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.instantiate_template, Tuple{LD, Int64, Int64}, false),  # group F (D-0123): cycles(true)
         (LK.atom_to_term, Tuple{LD, Int64, Int64, Int64, Int64}, false),
         (LK.pl_atom_to_term3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_term_to_atom2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),

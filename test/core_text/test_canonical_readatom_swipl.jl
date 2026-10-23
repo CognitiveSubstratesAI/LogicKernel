@@ -13,6 +13,10 @@
 #     the syntax error) compared as terms, through swipl's message_hook.
 #   * THE HAND GOALS: the text argument's errors, option errors, the end_of_file cases, a second
 #     term ignored, 300 occurrences of one variable, 300 `'$VAR'`s, 300 distinct variables.
+#   * CYCLES(TRUE) (group F, D-0123: upstream's `instantiate_template`; until then the option was
+#     accepted and ignored — a silent misread): `@(Template, Substitutions)` read into the cyclic
+#     term, its shape checked by unification and `==`; the no-cycle templates, the malformed lists'
+#     type errors, a failing substitution, the option's absence and `cycles(false)`.
 #   * EXCLUDED BY NAME AND COUNTED: a syntax error whose culprit text holds a CUT UTF-8 byte
 #     (`«x`: upstream names the quote's first byte, `string("Â", 0)`; the kernel does the same, and
 #     its writer cannot write that string).
@@ -325,6 +329,33 @@ const _CR_GOALS = [
     "write_canonical(f(" * join(["V$k" for k in 1:300], ",") * "))"
 ]
 
+# read_term_from_atom/3 with cycles(true): the template instantiated (group F, D-0123). The cyclic
+# results are checked by their shape — unified with one level and compared with `==` — so these rows
+# need no cyclic write.
+const _CR_CYCLES_GOALS = [
+    "read_term_from_atom('@(X,[X=f(X)])', T, [cycles(true)]), T = f(A), A == T",
+    "read_term_from_atom('@(X,[X=f(X)])', T, [cycles(true)]), T = f(f(f(A))), A == T",
+    "read_term_from_atom('@(X,[X=[a|X]])', T, [cycles(true)]), T = [a, a|R], R == T",
+    "read_term_from_atom('@(X,[X=f(Y),Y=g(X)])', T, [cycles(true)]), T = f(g(Z)), Z == T",
+    "read_term_from_atom('@(h(X,Y),[X=f(X),Y=g(X)])', T, [cycles(true)]), T = h(A, g(B)), A == B, A = f(C), C == A",
+    "read_term_from_atom('@(X,[X=f(X)])', T, []), write(T)",
+    "read_term_from_atom('@(X,[X=f(X)])', T, [cycles(false)]), write(T)",
+    "read_term_from_atom('f(x)', T, [cycles(true)]), write(T)",
+    "read_term_from_atom('@(f(X),[])', T, [cycles(true)]), write(T)",
+    "read_term_from_atom('@(X,[X=a,Y=b])', T, [cycles(true)]), write(T)",
+    "read_term_from_atom('@(X,[X=a|_])', T, [cycles(true)]), write(T)",
+    "read_term_from_atom('@(a,[a=b])', T, [cycles(true)])",
+    "read_term_from_atom('@(X,a)', T, [cycles(true)])",
+    "read_term_from_atom('@(X,[a])', T, [cycles(true)])",
+    "read_term_from_atom('@(X,[X=a,b])', T, [cycles(true)])",
+    "read_term_from_atom('@(a,b,c)', T, [cycles(true)]), write(T)",
+    "read_term_from_atom('@(a)', T, [cycles(true)]), write(T)",
+    "read_term_from_atom('X', T, [cycles(true)]), var(T)",
+    "read_term_from_atom('@(X,[X=a])', T, [cycles(true), variable_names(V)]), write(T-V)",
+    "read_term_from_atom('@(X,[X=f(X)])', T, [cycles(maybe)])",
+    "read_term_from_atom('@(X,[X=f(X)])', f(T), [cycles(true)])"
+]
+
 "The kernel's results of the hand goals (a `,` goal: run as read)."
 function _cr_goals(goals::Vector{String})
     res = Vector{String}[]
@@ -478,6 +509,16 @@ if _CR_SWIPL !== nothing
         @test count(r -> startswith(r[3], "ex:error(syntax_error"), theirs) > 50
         @test count(r -> occursin("warning:singletons", r[4]), theirs) > 10      # (17 measured)
         @test count(r -> occursin("error:error(syntax_error", r[4]), theirs) > 20   # dec10
+    end
+
+    @testset "read_term_from_atom/3 with cycles(true), as swipl (group F, D-0123)" begin
+        ours = _cr_goals(_CR_CYCLES_GOALS)
+        theirs = _cr_swipl(["gl(" * _cr_codes(g) * ")" for g in _CR_CYCLES_GOALS])
+        @test _cr_compare(_CR_CYCLES_GOALS, ours, theirs) == 0
+        # the goals reach what they are for: five cyclic shapes, the two malformed lists
+        @test all(r -> r[3] == "true", ours[1:5])
+        @test startswith(ours[13][3], "ex:error(type_error(list,a),context(")
+        @test startswith(ours[14][3], "ex:error(type_error(equal,a),context(")
     end
 
     @testset "the hand goals, as swipl" begin
