@@ -16,9 +16,9 @@ TARGETS = [
 I = "src/pl-index.jl"
 T = TARGETS
 MUTANTS = [
-    dict(id="LI1 a cell argv reads its arguments one cell early", file=I, targets=T,
-         old='''@inline _argv_loc(v::argv_cells, i::Int)::Int = v.p + 1 + i''',
-         new='''@inline _argv_loc(v::argv_cells, i::Int)::Int = v.p + i'''),
+    dict(id="LI1 the deep descent searches one argument too few", file=I, targets=T,
+         old='''        argv_cells(ld, q), arityFunctor(ld.functors, ld.gstack[q]), cl, ctx''',
+         new='''        argv_cells(ld, q), arityFunctor(ld.functors, ld.gstack[q]) - 1, cl, ctx'''),
     dict(id="LI2 the deep descent starts one cell past the functor", file=I, targets=T,
          old='''    q = valPtr(w)                                           # argv = argTermP(*argv, 0)''',
          new='''    q = valPtr(w) + 1                                           # argv = argTermP(*argv, 0)'''),
