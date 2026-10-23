@@ -723,11 +723,11 @@ fixed it or a public issue exists.
 | `test/files/test_load_swipl.jl` | R1f's loader gate: 13 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`; the compiler's warnings among them since R1g), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
-| `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; a standard alias with no stream pinned (internal record #13); portray_goal refused; the host's streams, a write error, the variable_names bindings undone | — |
+| `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; since group F (D-0123) 20 print/1 goals with a user portray/1, each on a database of its own; a standard alias with no stream pinned (internal record #13); portray_goal refused; the host's streams, a write error, the variable_names bindings undone | — |
 | `test/core_text/test_canonical_readatom_swipl.jl` | R1e's last gate: write_canonical/1,2 on 400 corpus lines + 1,000 random terms, literally as swipl (variables numbered both sides) and read back; read_term_from_atom/3 on every corpus text × 15 option lists (term, options after, verdict, messages) and 49 hand goals; the refusals; two named exclusions (a cut-UTF-8 ball, a NUL string) | — |
 | `test/core_text/text_corpora_testlib.jl` | the reader's and the writer's hand corpora and the random-term generator, shared by their differentials and the round trip (R1f) | — |
 | `test/core_text/test_read_term_swipl.jl` | R1d's parser gate: `term_to_atom/2` against swipl on 270 hand texts, 2,624 random token-soup texts (whole error balls, positions included), 1,500 random operator terms written by swipl's writeq/1, and user operators (infix-and-postfix, prefix-and-infix, block operators as postfix and prefix) — each term exact with its variables' order; the text a term holds and its errors; atom_to_term/3's bindings; the refusals (dicts, quasi-quotations); a float's text read back (since R1e's floats); `$` not an operator (pinned); `unquoted_atom` | — |
-| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream's units for its fixes of #11 and #12 pinned; the refusals (a cyclic term and a cyclic ball, portray/1 defined, an atom with the character 0); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
+| `test/core_text/test_write_swipl.jl` | R1e's writer gate: every term written five ways (term_to_atom/2, term_string/2, writeq/1's, print/1's and write/1's flags) against swipl on 252 hand texts, 3,000 random terms and user operators (postfix, prefix-and-infix, block operators as postfix, prefix and infix); twelve write_term flag sets against `write_term/2` on the corpus and 1,000 random terms; the variable naming; upstream's units for its fixes of #11 and #12 pinned; the refusals (a cyclic term and a cyclic ball, an atom with the character 0); portray/1 defined, called and compared with swipl since group F (D-0123); `$expr`; 100,000-deep terms; its hand corpus and random terms live in text_corpora_testlib.jl since R1f | — |
 | `test/core_text/test_syntax.jl` | SWI's `syntax` and `iso_op_table_6` units (R1d): operators, quoting and escapes, bases, the blob notation's errors | `tests/core_text/test_syntax.pl` |
 | `test/core_text/test_read.jl` | SWI's `read_op` (block operators), `read_numbers` and `read_deep` units (R1d): terms nested 20,000 deep | `tests/core_text/test_read.pl` |
 | `test/core_text/test_op.jl` | SWI's `op_syntax` units (R1d) over 84 user operators | `tests/core_text/test_op.pl` |
@@ -1301,6 +1301,7 @@ graph LR
     pl_write --> pl_comp
     pl_write --> pl_wam
     pl_write --> pl_fli
+    pl_write --> pl_attvar
     pl_write --> pl_error
     pl_write --> pl_arith
     pl_write --> os_pl_option
@@ -2391,8 +2392,11 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   numbervars(true)]`, and `pl_write_term3` adds `PL_WRT_CHARESCAPES_UNICODE` from the
   `character_escapes_unicode` flag (on by default): print/1 writes `'\u0001'` where writeq/1 writes
   `'\x1\'`. The differential runs print/1's flags with it, and with portray/1 undefined the
-  writer never calls Prolog; DEFINED, `callPortray` refuses (`NotPortedError`: the meta-call, V9),
-  never on a variable (upstream does not ask portray/1 about one).
+  writer never calls Prolog; DEFINED, `callPortray` refused (`NotPortedError`: the meta-call, V9)
+  until group F (D-0123), which ports it — `PL_call_predicate` on `user:portray/1`, the nesting
+  limit (`enterPortray`, `resource_error(portray_nesting)`), the current output the write's stream,
+  the bindings undone (`saveWakeup`/`restoreWakeup`) — never on a variable (upstream does not ask
+  portray/1 about one).
 * **Ported AS IS until the 2026-10-11 sync, two upstream defects (docs/upstream_reports.md #11,
   #12; fixed upstream in `765ef01` and `b0eadba`, and the kernel follows the fixes — see "The
   2026-10-11 sync"). As they were:**
@@ -2413,7 +2417,8 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
 * **Refused, explicitly (`NotPortedError`):** a float (`format_float`, R1e's floats — the rest of
   R1e; written since R1e (floats)); a CYCLIC term (decision 4a: `PL_factorize_term`'s `@(Template, Substitutions)`), tested
   first, so no write walks a cycle — `X = f(X)`, a cycle through two lists, a cyclic exception
-  ball (V5d); with `cycles(false)` the domain error, as upstream; user:portray/1 defined (above);
+  ball (V5d); with `cycles(false)` the domain error, as upstream; user:portray/1 defined (above;
+  called since group F, D-0123);
   `blobs(portray)`; an atom holding the character 0 (term_to_atom/2 of a string with one: the
   term interface's atoms cannot hold it; term_string/2 can); a grounded value SWI has no type for.
 * **NOT PORTED (the rest of R1e):** `format_float` and the float differential (since R1e (floats):

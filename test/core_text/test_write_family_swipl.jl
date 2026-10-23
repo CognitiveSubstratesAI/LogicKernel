@@ -16,6 +16,9 @@
 #     partial list, a bad item, a bad value of each type, an unknown option ignored), the
 #     `variable_names` option (its errors; a `'$VAR'` written in the term stays a term), max_depth,
 #     max_text and `truncated`, fullstop and nl, nl/0,1;
+#   * PORTRAY (group F, D-0123: upstream's `callPortray`; until then refused, decision 3a): print/1
+#     and portray(true) with a user portray/1 — 20 goals, each on a database of its own, compared
+#     with swipl on the same three things;
 #   * THE REFUSALS, explicit: write_term's `portray_goal` (calling Prolog, V9);
 #   * THE HOST: the streams opened over stdin/stdout/stderr when first asked for; one replaced
 #     (`set_standard_stream!`) — current output follows; a write error on a stream (a closed
@@ -126,6 +129,33 @@ function _wf_run(name::String, args::Vector{_WF})::Vector{String}
     rc, ball = _wf_call(name, args)
     LK.Sflush(LK.Suser_output(_WF_LD))
     LK.Sflush(LK.Suser_error(_WF_LD))
+    verdict = if rc === :true
+        "true"
+    elseif rc === :false
+        "false"
+    elseif rc === :notported
+        "NOTPORTED"
+    else
+        "ex:" * _wf_text(ball::_WF)
+    end
+    return [String(take!(out)), String(take!(err)), verdict]
+end
+
+"""
+Run the goal text `g` through call/1 on a FRESH database — the user predicates it asserts are its
+own, as swipl's `glc` removes them after it — with user_output and user_error each a fresh buffer:
+`[out, err, verdict]` as `_wf_run`'s. No portray call is left open after it.
+"""
+function _wf_run_fresh(g::String)::Vector{String}
+    gd = LK.PL_global_data{_WF}()
+    ld = LK.PL_local_data{_WF}(gd)
+    out, err = IOBuffer(), IOBuffer()
+    LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, out)
+    LK.set_standard_stream!(ld, LK.SNO_USER_ERROR, err)
+    rc, ball = _wf_call("call", _WF[_wf_read(g)::_WF]; gd=gd, ld=ld)
+    LK.Sflush(LK.Suser_output(ld))
+    LK.Sflush(LK.Suser_error(ld))
+    @test ld.IO_portray_nesting == 0
     verdict = if rc === :true
         "true"
     elseif rc === :false
@@ -258,6 +288,34 @@ const _WF_GOALS = [
     "write_term(a, [variable_names([" * join(fill("'A'=_", 1001), ",") * "|foo])])"
 ]
 
+# print/1 and portray(true) with a user portray/1 (group F, D-0123: upstream's `callPortray`; until
+# then refused, decision 3a): each goal on a database of its own (`_wf_run_fresh`, swipl's `glc`).
+# portray/1 that succeeds, fails, writes partly and fails (the writer goes on), raises (caught and
+# not), binds (undone), nests print/1 (and too deep: resource_error), is never asked about a
+# variable, is asked about `'$VAR'` terms, lists, operator arguments; print/2 to user_error.
+const _WF_PORTRAY_GOALS = [
+    "assertz((portray(foo) :- write(bar))), print(f(foo, [foo, x], 'A b'))",
+    "assertz((portray(foo) :- write(bar))), writeq(f(foo)), write(' '), write_term(f(foo), [portray(true)]), write(' '), write_term(f(foo), [portrayed(true)]), write(' '), write_term(f(foo), [portray(false)])",
+    "assertz((portray(foo) :- write(bar))), print(user_error, g(foo))",
+    "assertz((portray(X) :- X == y, write(yy))), print([x, y, f(y)])",
+    "assertz((portray(_) :- write(partial), fail)), print(f(a))",
+    "assertz((portray(_) :- throw(oops))), catch(print(f(a)), B, true), write(caught(B))",
+    "assertz((portray(_) :- throw(oops))), print(f(a))",
+    "assertz((portray(X) :- integer(X), Y is X * 10, write(Y))), print(f(1, [2, 3], -(4)))",
+    "assertz((portray(f(X)) :- print(g(X)))), print(h(f(f(a))))",
+    "assertz((portray(X) :- var(X), write(var))), print(f(_))",
+    "assertz((portray('\$VAR'(N)) :- write(v(N)))), print(f('\$VAR'(1)))",
+    "assertz((portray(x) :- write(px))), print('\$VAR'(1))",
+    "assertz((portray(X) :- X = [_|_], write(list))), print(f([a, b]))",
+    "assertz((portray(X) :- X == a, write('A'))), print(- a)",
+    "assertz((portray(X) :- X == 1, write(one))), print(1 + a)",
+    "assertz((portray(f(Y)) :- Y = b, write(fb))), T = f(_), print(T), write(' '), write(T)",
+    "assertz(portray(_)), print(f(a))",
+    "assertz((portray(X) :- print(X))), print(a)",
+    "assertz((portray(_) :- fail)), print(f('A', \"s\", [1]))",
+    "print(f(a))"
+]
+
 "The kernel's results of the hand goals."
 function _wf_goal_results(goals::Vector{String})::Vector{Vector{String}}
     res = Vector{String}[]
@@ -305,6 +363,8 @@ wf(Cs, Ops) :- atom_codes(A, Cs),
     ; forall(member(_, Ops), (write('unreadable unreadable unreadable'), nl)) ).
 wfe(Enc, Ops) :- length(Vs, 8), dec(Enc, T, Vs), ops(T, Ops).
 gl(Cs) :- atom_codes(A, Cs), term_to_atom(G, A), cap(G).
+% a goal on a database of its own: the user predicates it asserts are removed after it (group F)
+glc(Cs) :- gl(Cs), forall(member(P, [portray(_), pg(_, _), pg(_, _, _)]), retractall(user:P)).
 """
 
 _wf_codes(s::String)::String = "[" * join(Int.(collect(s)), ",") * "]"
@@ -440,6 +500,17 @@ if _WF_SWIPL !== nothing
         ) >= 3
         @test count(v -> startswith(v, "ex:error(type_error(option"), verdicts) >= 3
         @test count(v -> v == "true", verdicts) >= 30
+    end
+
+    @testset "print/1 with a user portray/1, as swipl (group F, D-0123: callPortray)" begin
+        ours = [_wf_run_fresh(g) for g in _WF_PORTRAY_GOALS]
+        theirs = _wf_swipl(["glc(" * _wf_codes(g) * ")" for g in _WF_PORTRAY_GOALS])
+        @test _wf_compare(_WF_PORTRAY_GOALS, ours, theirs) == 0
+        # the goals reach what they are for: portray/1's text, a raise, the nesting limit
+        @test ours[1][1] == "f(bar,[bar,x],'A b')"
+        @test ours[7][3] == "ex:oops"
+        @test startswith(ours[18][3], "ex:error(resource_error(portray_nesting)")
+        @test count(r -> r[3] == "true", ours) >= 16
     end
 elseif _WF_SWIPL_REQUIRED
     error(

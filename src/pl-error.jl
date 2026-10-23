@@ -56,6 +56,7 @@
     ERR_DIV_BY_ZERO                 # void
     ERR_AR_DOMAIN                   # atom_t domain, Number value
     ERR_EVALUATION                  # atom_t what
+    ERR_RESOURCE                    # atom_t what
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -429,10 +430,11 @@ PL_error(ld::PL_local_data{T}, id::PL_error_code, what::T) where {T} =
     PL_error(ld, "", 0, "", id, what)
 
 """
-    PL_error(ld, pred, arity, msg, ERR_REPRESENTATION | ERR_EVALUATION, what) -> false
+    PL_error(ld, pred, arity, msg, ERR_REPRESENTATION | ERR_EVALUATION | ERR_RESOURCE, what) -> false
 
 As the form without them, with upstream's leading `pred`, `arity` and `msg` (empty: not given): the
-context holds `msg` as an atom (pl-error.c). `ERR_EVALUATION` raises `evaluation_error(What)`.
+context holds `msg` as an atom (pl-error.c). `ERR_EVALUATION` raises `evaluation_error(What)`,
+`ERR_RESOURCE` `resource_error(What)` (since group F, D-0123: `enterPortray`).
 """
 function PL_error(
     ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code, what::T
@@ -440,14 +442,15 @@ function PL_error(
     h = _PL_error_open(ld)
     h === nothing && return false
     caller, fid, except, formal, swi = h
-    @assert id == ERR_REPRESENTATION || id == ERR_EVALUATION
-    PL_cons_functor(
-        ld, formal,
-        _err_functor(
-            ld, id == ERR_REPRESENTATION ? :representation_error : :evaluation_error, 1
-        ),
-        _err_atom(ld, what)
-    )
+    @assert id == ERR_REPRESENTATION || id == ERR_EVALUATION || id == ERR_RESOURCE
+    name = if id == ERR_REPRESENTATION
+        :representation_error
+    elseif id == ERR_EVALUATION
+        :evaluation_error
+    else
+        :resource_error
+    end
+    PL_cons_functor(ld, formal, _err_functor(ld, name, 1), _err_atom(ld, what))
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 
@@ -733,6 +736,12 @@ PL_type_error(ld::PL_local_data{T}, expected::String, actual::term_t) where {T} 
 "Raise `domain_error(Expected, Actual)` (pl-error.c `PL_domain_error`); false."
 PL_domain_error(ld::PL_local_data{T}, expected::String, actual::term_t) where {T} =
     PL_error(ld, ERR_DOMAIN, mk_sym(T, Symbol(expected)), actual)
+
+# PORT: pl-error.c PL_resource_error
+# DIVERGES: the resource's atom is made from its text and not registered (no atom garbage collector).
+"Raise `resource_error(Resource)` (pl-error.c `PL_resource_error`); false."
+PL_resource_error(ld::PL_local_data{T}, resource::String) where {T} =
+    PL_error(ld, "", 0, "", ERR_RESOURCE, mk_sym(T, Symbol(resource)))
 
 # ── printing messages (pl-error.c), since R1f ───────────────────────────────────────────────────
 

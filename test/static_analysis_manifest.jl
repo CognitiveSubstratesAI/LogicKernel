@@ -877,6 +877,8 @@ function _manifest_index(T)
         (LK.writePrimitive, Tuple{Int64, LK.write_options{T}}, false),
         (LK.writeNumberVar, Tuple{Int64, LK.write_options{T}}, false),
         (LK.callPortray, Tuple{Int64, Int64, LK.write_options{T}}, false),
+        (LK.enterPortray, Tuple{LD}, false),             # group F (D-0123): callPortray's nesting
+        (LK.leavePortray, Tuple{LD}, false),
         (LK.isBlockOp, Tuple{Int64, Int64, T, LK.write_options{T}}, false),
         (
             LK.sub_term,
@@ -1122,6 +1124,8 @@ function _manifest_index(T)
         (LK.frameFinished, Tuple{LD, Int, LK.finished}, false),
         (LK.mustBeCallable, Tuple{LD, Int}, false),
         (LK.callProlog, Tuple{GD, LD, Int, Int, UInt32}, false),
+        # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
+        (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK._boot_cleanup!, Tuple{GD}, false),
         (LK._boot_clause!, Tuple{GD, LD, Symbol, Vector{T}, T, UInt64}, false),
@@ -1243,6 +1247,7 @@ function _manifest_index(T)
         (LK._PL_error_close!, Tuple{LD, Union{Nothing, D}, Int, Int, Int, Int}, false),
         (LK.PL_type_error, Tuple{LD, String, Int}, false),
         (LK.PL_domain_error, Tuple{LD, String, Int}, false),
+        (LK.PL_resource_error, Tuple{LD, String}, false),   # group F (D-0123): enterPortray
         (LK.PL_is_variable, Tuple{LD, Int}, false),   # L1c: the cold export (words: L1d/L1e)
         (LK.PL_unify, Tuple{LD, Int, Int}, false),
         (LK.PL_unify_atomic, Tuple{LD, Int, T}, false),

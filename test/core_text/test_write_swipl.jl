@@ -12,8 +12,9 @@
 #   * THE OPERATOR TABLE: swipl's boot files add `$` (boot/topvars.pl, R2; the kernel has pl-op.c's
 #     table, `.` and `:=` included); the driver removes it, so both sides write with one table;
 #   * THE REFUSALS: a float (R1e's floats), a cyclic term (`X = f(X)`, and a cyclic exception
-#     ball), user:portray/1 defined (calling Prolog), an atom holding the character 0 — each an
-#     explicit `NotPortedError`, never a wrong text, a hang or a stack overflow;
+#     ball), an atom holding the character 0 — each an explicit `NotPortedError`, never a wrong
+#     text, a hang or a stack overflow; user:portray/1 defined is CALLED since group F (D-0123:
+#     upstream's `callPortray`; until then refused, decision 3a), compared with swipl;
 #   * DEPTH: a term 100,000 levels deep and a list of 100,000 elements, written without recursion;
 #   * upstream's units for its two writer fixes (docs/upstream_reports.md #11, #12; swipl-devel
 #     tests/core_text/test_write.pl `quote_non_ascii`, `op_4`, `bracket_1..3`), pinned here.
@@ -515,15 +516,38 @@ end
     LK.PL_close_query(ld2, qid)
     LK.PL_close_foreign_frame(ld2, fid)
 
-    # user:portray/1 defined: print/1 would call it (the meta-call, V9) — refused; writeq/1 is not
-    # affected, and with portray/1 undefined print/1 writes as swipl (the differential above)
+end
+
+@testset "user:portray/1 defined: print/1's flags call it, as swipl (group F, D-0123: callPortray)" begin
+    # `portray(_).` — it succeeds and writes nothing: print/1's flags write nothing for a compound,
+    # still a variable's name (portray/1 is never asked about one), and writeq/1's are not affected.
+    # Until group F refused (decision 3a): `_tw_write(f(a), _TW_PRINT) == "NOTPORTED"`.
     gd3 = LK.PL_global_data{_TW}()
     ld3 = LK.PL_local_data{_TW}(gd3)
-    @test _tw_write(_twf("f", _tws("a")), _TW_PRINT; gd=gd3, ld=ld3) == "f(a)"
+    before = _tw_write(_twf("f", _tws("a")), _TW_PRINT; gd=gd3, ld=ld3)
     @test _tw_call("assertz", _TW[_twf("portray", _tw_var())]; gd=gd3, ld=ld3)[1] === :true
-    @test _tw_write(_twf("f", _tws("a")), _TW_PRINT; gd=gd3, ld=ld3) == "NOTPORTED"
-    @test _tw_write(_tw_var(), _TW_PRINT; gd=gd3, ld=ld3) != "NOTPORTED"    # no call on a variable
-    @test _tw_write(_twf("f", _tws("a")), _TW_WRITEQ; gd=gd3, ld=ld3) == "f(a)"
+    ours = [
+        before,
+        _tw_write(_twf("f", _tws("a")), _TW_PRINT; gd=gd3, ld=ld3),
+        _tw_norm(_tw_write(_tw_var(), _TW_PRINT; gd=gd3, ld=ld3)),
+        _tw_write(_twf("f", _tws("a")), _TW_WRITEQ; gd=gd3, ld=ld3)
+    ]
+    @test ld3.IO_portray_nesting == 0
+    if _TW_SWIPL !== nothing
+        theirs = _tw_swipl(
+            ["pp"];
+            prelude="pp :- out(print(f(a))), write(' '), " *
+                    "assertz(portray(_)), out(print(f(a))), write(' '), " *
+                    "out(print(_)), write(' '), out(writeq(f(a))), nl.\n"
+        )[1]
+        theirs[3] = _tw_norm(theirs[3])
+        @test ours == theirs
+        ours == theirs ||
+            println(stderr, "  portray: kernel $(repr(ours)) swipl $(repr(theirs))")
+    elseif _TW_SWIPL_REQUIRED
+        @test false
+    end
+    @test ours[2] == "" && ours[1] == "f(a)"                 # not vacuous: portray/1 was called
 end
 
 @testset "a compound with no symbol head is written '\$expr'(…) (the kernel's \$expr/n)" begin

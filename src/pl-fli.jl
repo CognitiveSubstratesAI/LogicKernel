@@ -1020,6 +1020,32 @@ function PL_clear_foreign_exception(ld::PL_local_data{T}, fr::Int)::Nothing wher
     return nothing
 end
 
+# PORT: pl-fli.c PL_call_predicate
+# DIVERGES: the database and local data are arguments, the context module a module or `nothing`
+# (NULL); no `valid_term_t` checks of the arguments (`O_DEBUG` only).
+"""
+    PL_call_predicate(gd, ld, ctx, flags, pred, h0) -> Bool
+
+Call procedure `pred` once on the term references `h0, h0+1, …` in a query of its own with `flags`,
+keeping the bindings of its answer (pl-fli.c). False when it fails or raises.
+"""
+function PL_call_predicate(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ctx::Union{Nothing, module_t{T}},
+    flags::UInt32, pred::Procedure{T}, h0::term_t
+)::Bool where {T}
+    qid = PL_open_query(gd, ld, ctx, flags, pred, h0)
+    if qid != 0
+        r1 = PL_next_solution(gd, ld, qid)
+        r2 = PL_cut_query(ld, qid)
+
+        rval = r1 != 0 && r2 != 0               # do not inline; we *must* execute PL_cut_query()
+    else
+        rval = false
+    end
+
+    return rval
+end
+
 # PORT: pl-fli.c ucs_atom
 # DIVERGES: flags and name only (`PL_blob_t`, src/SWI-Prolog.jl); NOT PORTED: its hooks
 # (`compareUCSAtom`, `blob_write_usc_atom`, the qlf `saveUCSAtom`/`loadUCSAtom`).

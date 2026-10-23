@@ -15,7 +15,9 @@
 # integers and rationals, `'$VAR'` terms, and `writeTerm2`'s state machine over an explicit stack —
 # operators, lists, `{}`, Unicode bracket pairs, canonical compounds — and `PL_write_term`, which
 # `term_to_atom/2` and `term_string/2` write with (src/pl-read.jl). REFUSED (`NotPortedError`): a
-# cyclic term (decision 4a), `user:portray/1` when it is defined (decision 3a). Since R1e's floats,
+# cyclic term (decision 4a). Since group F (D-0123) `user:portray/1`, when it is defined, is called
+# as upstream calls it (`callPortray`, through `PL_call_predicate`; until then refused, decision
+# 3a). Since R1e's floats,
 # `format_float` (`~h`). Since R1e's write/1 family (the end of this file): write/1,2, writeq/1,2,
 # writeln/1,2, print/1,2, write_term/2,3 and their options, nl/0,1, over the standard streams
 # (src/os/pl-file.jl). NOT PORTED, the rest of R1e: write_canonical/1,2 (`numberVars`); never:
@@ -1090,24 +1092,60 @@ end
 
 # ── portray (pl-write.c) ────────────────────────────────────────────────────────────────────────
 
+# PORT: pl-incl.h MAX_PORTRAY_NESTING
+"Max recursion in portray (pl-incl.h)."
+const MAX_PORTRAY_NESTING = 100
+
+# PORT: pl-write.c enterPortray
+"Enter a portray call: false after raising `resource_error(portray_nesting)` past `MAX_PORTRAY_NESTING` (pl-write.c)."
+function enterPortray(ld::PL_local_data{T})::Bool where {T}
+    if ld.IO_portray_nesting >= MAX_PORTRAY_NESTING
+        return PL_resource_error(ld, "portray_nesting")
+    end
+    ld.IO_portray_nesting += 1
+    return true
+end
+
+# PORT: pl-write.c leavePortray
+"Leave a portray call (pl-write.c)."
+function leavePortray(ld::PL_local_data{T})::Nothing where {T}
+    ld.IO_portray_nesting -= 1
+    return nothing
+end
+
 # PORT: pl-write.c callPortray
-# DIVERGES: no `portray_goal` (write_term/2,3 refuses it) and no halt state. Calling Prolog from the
-# writer needs the meta-call (V9): so where upstream would call `user:portray/1` — it is DEFINED —
-# the kernel refuses (`NotPortedError`, its culprit the atom `portray`: f3b-5a; user, 2026-10-07,
-# decision 3a); where it is not, upstream returns false at once, and so does the kernel.
+# DIVERGES: no halt state (`GD->halt.cleaning`: the kernel has no halt, so no callback is ever
+# refused for it); the procedure is looked up in `user` at each call — `lookupProcedure`, as
+# `_PL_predicate` does the first time — where upstream caches it in `GD->procedures`. `Scurout` is
+# the current-output slot of the standard streams (src/os/pl-file.jl).
 "Call `user:portray/1` on term reference `arg`: 1 (it wrote it), 0 (not defined, or it failed), -1 (error) (pl-write.c)."
 function callPortray(arg::term_t, prec::Int, options::write_options{T})::Int where {T}
     gd = options.gd
-    proc = isCurrentProcedure(sym_key(mk_sym(T, :portray)), 1, MODULE_user(gd))
-    (proc === nothing || !_impl_any_defined(proc.definition)) && return 0
+    pred = lookupProcedure(mk_sym(T, :portray), 1, MODULE_user(gd))    # _PL_predicate("portray", 1, "user", …)
+    _impl_any_defined(pred.definition) || return 0
 
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :portray),                            # (the refused call's name: no read)
-            "print/1 and portray(true) with user:portray/1 defined (calling Prolog)",
-            "V9 (the meta-call)"
-        )
-    )
+    ld = options.ld
+    old = Scurout(ld)
+
+    enterPortray(ld) || return -1
+    wstate = saveWakeup(ld, true)
+    wstate === nothing && return -1
+    ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = options.out    # Scurout = options->out
+    av = arg
+    rval =
+        if PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av)
+            1
+        else
+            0
+        end
+    if rval == 0 && PL_exception(ld, 0) != 0
+        rval = -1
+    end
+    ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = old             # Scurout = old
+    restoreWakeup(ld, wstate)
+    leavePortray(ld)
+
+    return rval
 end
 
 # PORT: pl-write.c isBlockOp
