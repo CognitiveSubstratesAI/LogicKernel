@@ -586,7 +586,7 @@ _pc_codes(vs) = sort!([
             m in f.markers if m.upstream_base == "pl-vmi.c"
         )
         vm = _vm_inventory(text)
-        @test vm !== nothing && vm.rows == 232                  # every VMI() of pl-vmi.c
+        @test vm !== nothing && vm.rows == 233                  # every VMI() of pl-vmi.c
         @test !isempty(ported) && vm.declared == intersect(ported, vm.names)
         @test "h_const" in ported && !("h_const" in vm.names)  # the run loop's helpers are marked
         blanked = replace(
