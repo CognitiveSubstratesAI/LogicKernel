@@ -354,6 +354,7 @@ function _manifest_index(T)
         (LK.addProcedure!, Tuple{CInfo, PR}, false),
         (LK._body_functor, Tuple{Type{T}, T}, true),
         (LK.lookupBodyProcedure, Tuple{GD, T, MOD}, false),
+        (LK.lookupBodyProcedure, Tuple{GD, T, Int, MOD}, false),
         (LK.Code, Tuple{C, Int}, true),
         (LK.decode, Tuple{PCd}, true), (LK.stepPC, Tuple{PCd}, true),
         (LK.skipArgs, Tuple{PCd, Int, Int}, true), (LK.argKey, Tuple{PCd, Int}, true),
@@ -1537,6 +1538,8 @@ function _manifest_index(T)
         (LK.attribute_mask, Tuple{LD, T}, false),
         (LK.get_bool_or_int_ex, Tuple{LD, Int}, false),
         (LK.get_procedure, Tuple{GD, LD, Int, Int}, false),
+        (LK.get_procedure_create, Tuple{GD, LD, Int, Int}, false),
+        (LK.pl_retractall1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (
             LK.pl_set_predicate_attribute3_va,
             Tuple{LD, Int, Int, LK.foreign_context{T}},

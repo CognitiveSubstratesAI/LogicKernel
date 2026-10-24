@@ -128,7 +128,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-op.c` | code | `8e1bc1110be4` | `src/pl-op.jl` | 16 | 13 |
 | swipl-devel `src/pl-prims.c` | code | `8e1bc1110be4` | `src/pl-prims.jl` | 100 | 54 |
 | swipl-devel `src/pl-pro.c` | code | `8e1bc1110be4` | `src/pl-pro.jl` | 3 | 3 |
-| swipl-devel `src/pl-proc.c` | code | `8e1bc1110be4` | `src/pl-proc.jl` | 46 | 32 |
+| swipl-devel `src/pl-proc.c` | code | `8e1bc1110be4` | `src/pl-proc.jl` | 48 | 34 |
 | swipl-devel `src/pl-proc.h` | code | `8e1bc1110be4` | `src/pl-proc.jl` | 1 | 0 |
 | swipl-devel `src/pl-read.c` | code | `8e1bc1110be4` | `src/pl-read.jl` | 185 | 77 |
 | swipl-devel `src/pl-rec.c` | code | `8e1bc1110be4` | `src/pl-rec.jl` | 16 | 10 |

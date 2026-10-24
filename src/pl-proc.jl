@@ -1147,12 +1147,61 @@ function setAttrDefinition(def::Definition{T}, attr::UInt64, val::Bool)::Bool wh
     return true
 end
 
+# PORT: pl-proc.c get_procedure as get_procedure_create
+# (the `GP_CREATE` case, as retractall/1 asks it; the `GP_DEFINE` case above is the other port)
+# DIVERGES: `GP_CREATE` only, as a function of its own (`get_procedure` above refuses it); the term stripped of its
+# module (`PL_strip_module`, which puts the plain head in `h`), its functor from the head (`get_head_functor`: the
+# `callable` type error) and `lookupBodyProcedure` in that module. A qualifier naming no module raises nothing here
+# (the module table has no creation on this path yet).
+"The procedure the head term `descr` (`M:Head`) names, found or created for a body to call (pl-proc.c); `h` holds the plain head."
+function get_procedure_create(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, h::term_t
+)::Union{Nothing, Procedure{T}} where {T}
+    head = PL_new_term_ref(ld)
+    ok, m = PL_strip_module(gd, ld, descr, 0, head)
+    ok || return nothing
+    PL_put_term(ld, h, head)                            # if ( h ) PL_put_term(h, head)
+    name, arity = get_head_functor(ld, head, 0)
+    arity < 0 && return nothing
+    return lookupBodyProcedure(gd, name, arity, gd.modules[m])
+end
+
+# PORT: pl-proc.c retractall as pl_retractall1_va
+# (PRED_IMPL("retractall", 1, retractall, PL_FA_NONDETERMINISTIC|PL_FA_ISO))
+# DIVERGES: registered as a deterministic variadic built-in (the body never leaves a choice point; upstream's
+# NONDETERMINISTIC flag only gives it a foreign frame); the work is `pl_retractall!` below (its permission checks are
+# the ones here, done first with the Prolog error); no update events (`retractall_event`).
+"`retractall(+Head)`: retract every clause whose head unifies with `Head`, creating the predicate dynamic if it is new (pl-proc.c)."
+function pl_retractall1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    head = PL__t0
+    thehead = PL_new_term_ref(ld)
+    proc = get_procedure_create(gd, ld, head, thehead)
+    proc === nothing && return FFALSE
+    def = proc.definition
+    if (def.flags & P_FOREIGN) != 0
+        PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
+        return FFALSE
+    end
+    if (def.flags & P_DYNAMIC) == 0
+        if isDefinedProcedure(gd, proc)
+            PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
+            return FFALSE
+        end
+        return setDynamicDefinition!(def, true) ? FTRUE : FFALSE      # nothing to retract
+    end
+    return pl_retractall!(gd, ld, def, thehead) ? FTRUE : FFALSE
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
 const PL_predicates_from_proc = (
+    PL_extension("retractall", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension(
         "\$set_predicate_attribute", 3, pl_set_predicate_attribute3_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
-    ),
+    )
 )

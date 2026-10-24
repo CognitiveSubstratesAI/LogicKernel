@@ -1294,6 +1294,17 @@ function lookupBodyProcedure(
 )::Procedure{T} where {T}
     name, arity = _body_functor(T, goal)
     arity < 0 && throw(CallableTypeError{T}(goal))
+    return lookupBodyProcedure(gd, name, arity, tm)
+end
+
+"""
+    lookupBodyProcedure(gd, name, arity, tm) -> Procedure{T}
+
+As the form with a goal, for a functor already taken apart (`get_procedure`'s `GP_CREATE`, src/pl-proc.jl).
+"""
+function lookupBodyProcedure(
+    gd::PL_global_data{T}, name::T, arity::Int, tm::module_t{T}
+)::Procedure{T} where {T}
     proc = isCurrentProcedure(sym_key(name), arity, tm)
     if proc !== nothing &&
         (isDefinedProcedure(gd, proc) || (proc.definition.flags & P_REDEFINED) != 0)
