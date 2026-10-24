@@ -12,9 +12,8 @@ T = TARGETS
 P = "src/pl-proc.jl"
 MUTANTS = [
     dict(id="RA1 retractall/1 is not registered", file=P, targets=T,
-         old='''    PL_extension("retractall", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),
-''',
-         new=''''''),
+         old='''    PL_extension("retractall", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),''',
+         new='''    PL_extension("retractall_unregistered", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),'''),
     dict(id="RA2 a static predicate is made dynamic", file=P, targets=T,
          old='''        if isDefinedProcedure(gd, proc)
             PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)''',
