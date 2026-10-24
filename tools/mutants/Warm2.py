@@ -4,6 +4,13 @@
 # locally: tools/mutate.sh run). The format is tools/mutate_drive.py's: `id`, `file`, `old` (must occur EXACTLY once),
 # `new`, optional `equivalent` (a mutant that must SURVIVE, with the code reason) and `targets`. The target is a shell
 # command (`sh:`): tools/test_warm.sh's `guard` mode, judged by its exit code.
+#
+# LOCAL ONLY — do not push a `mutants/Warm2` branch: mutation.yml cannot run this list. (1) A target is ONE word to
+# tools/mutate_ci.py (`sh:tools/test_warm.sh guard` holds a blank: the baseline job splits it and runs `guard` as a test
+# file), and (2) `guard` needs a user systemd manager, which the mutation jobs lack (the tooling job enables lingering for
+# it): with none the guard cases print "skipped" and exit 0, so every mutant would SURVIVE. Run it locally:
+#   MUTATE_LIMIT_S=1200 tools/mutate.sh run tools/mutants/Warm2.py "sh:tools/test_warm.sh guard"
+# 2026-10-24: 5 of 5 caught, baseline green (A-0084).
 TARGETS = ["sh:tools/test_warm.sh guard"]       # also the baseline's (tools/mutate_ci.py reads it from here)
 T = TARGETS
 W = "tools/warm.sh"

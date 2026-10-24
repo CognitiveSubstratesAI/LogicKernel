@@ -25,10 +25,15 @@ grep -q 'plan only — nothing changed' "$T/plan";       check "…saying that i
 
 "$S" --no-such-flag > "$T/bad" 2>&1;                   check "an unknown argument is exit 2, not an install" 2 $?
 
-# a machine with nothing: an empty HOME (no ~/.juliaup, no oracle prefix) and a PATH of the system directories only —
-# there is no julia there, so --check must say so and exit 1
-mkdir "$T/home"
-HOME="$T/home" PATH=/usr/bin:/bin "$S" --check --no-oracle > "$T/empty" 2>&1
+# a machine with nothing: an empty HOME (no ~/.juliaup, no oracle prefix) and a PATH of the system tools WITHOUT julia,
+# juliaup and swipl (a runner image may have one in /usr/bin: the first CI run of this file failed two cases that way) —
+# so --check must say Julia is missing and exit 1
+mkdir "$T/home" "$T/bin"
+for f in /usr/bin/* /bin/*; do
+    case "${f##*/}" in julia | juliaup | swipl) continue ;; esac
+    ln -sf "$f" "$T/bin/${f##*/}" 2> /dev/null
+done
+HOME="$T/home" PATH="$T/bin" "$S" --check --no-oracle > "$T/empty" 2>&1
 check "--check on a machine without Julia exits 1" 1 $?
 grep -q 'Julia 1.13 (juliaup) *missing' "$T/empty";    check "…naming what is missing" 0 $?
 grep -q 'the machine is ready' "$T/empty";             check "…and never saying the machine is ready" 1 $?
