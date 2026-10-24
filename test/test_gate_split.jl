@@ -1823,7 +1823,10 @@ MUTANTS = [
             r = drive_run("limit_set", "", lim(7); env=("MUTATE_LIMIT_S" => "7",))
             @test r.code == 0
             # (d) a deletion that leaves the file unloadable carries the hint; a replacement does not
-            noload = "sh:grep -q BASE src/x.txt || { echo 'ParseError: unexpected )'; exit 1; }"
+            # the signature is built here, never written whole: a failing @test below prints its expression, and the
+            # judge (NOT_LOADED) would read that line as a file that does not load
+            sig = "Parse" * "Error: unexpected )"
+            noload = "sh:grep -q BASE src/x.txt || { echo '$sig'; exit 1; }"
             r = drive_run(
                 "hint",
                 """
@@ -1836,9 +1839,9 @@ MUTANTS = [
                 [
                 ("H1", "NO VERDICT (does not load)"), ("H2", "NO VERDICT (does not load)")
             ]
-            @test occursin("ParseError: unexpected )", r.rows[1][3]) &&
+            @test occursin(sig, r.rows[1][3]) &&
                 occursin("replace the entry, do not delete its line", r.rows[1][3])
-            @test occursin("ParseError: unexpected )", r.rows[2][3]) &&
+            @test occursin(sig, r.rows[2][3]) &&
                 !occursin("do not delete", r.rows[2][3])
             # (b) the leftovers of a merged parallel run
             out = mkpath(joinpath(d, "par_out"))
