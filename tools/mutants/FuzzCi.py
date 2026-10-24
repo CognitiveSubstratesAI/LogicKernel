@@ -23,5 +23,5 @@ MUTANTS = [
          new='''    for seed in FIRST_SEED:(FIRST_SEED + NSEEDS)'''),
     dict(id="FZ4 swipl's answer is not checked for completeness", file=F, targets=T,
          old='''        length(sw) == length(names) + 1 || begin''',
-         new='''        false || begin'''),
+         new='''        true || begin'''),
 ]
