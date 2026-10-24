@@ -611,7 +611,10 @@ end
 # PORT: pl-wam.c call_internal_det_foreign
 # DIVERGES: the function is the definition's dispatch index, called through `_fcall_va` (decision 5);
 # the result is `(used, rc)` where upstream returns `used` and writes `*rc`; the context record is
-# a new `foreign_context` (upstream: one on the C stack). NOT PORTED: the profiler and debugger
+# the current query's (`fndet_context`, pooled), its fields saved before the call and restored after,
+# so a caller holding it — a built-in that ran this cleanup, a nested fast path — reads its own again
+# (upstream: one on the C stack per call); a new one only outside any query. A new record per call
+# was one of the two allocations per findall/3 sync-2 added (D-0140). NOT PORTED: the profiler and debugger
 # tests (`LD->profile.active`, `debugstatus.debugging`: neither exists here) and
 # `LD->statistics.inferences++` (no inference statistics).
 """
@@ -631,9 +634,18 @@ function call_internal_det_foreign(
         (def.flags & (P_NONDET | P_TRANSPARENT)) == 0 &&
         def.module_ == MODULE_system(gd).index &&
         def.impl_foreign_function != 0 &&
-        startswith(sym_text(def.name), '$')
-        ctx = foreign_context{T}(FRG_FIRST_CALL, UInt(0), def)
+        sym_first_byte(def.name) == UInt8('$')       # stringAtom(def->functor->name)[0] == '$'
+        if ld.query == 0
+            ctx = foreign_context{T}(FRG_FIRST_CALL, UInt(0), def)
+            return (true, _fcall_va(def.impl_foreign_function, ld, av, def.arity, ctx))
+        end
+        ctx = ld.queries[ld.query].fndet_context
+        saved = (ctx.control, ctx.context, ctx.predicate)
+        ctx.control = FRG_FIRST_CALL                # context.control = FRG_FIRST_CALL
+        ctx.context = UInt(0)
+        ctx.predicate = def                         # context.predicate = def
         rc = _fcall_va(def.impl_foreign_function, ld, av, def.arity, ctx)
+        ctx.control, ctx.context, ctx.predicate = saved
         return (true, rc)
     end
 

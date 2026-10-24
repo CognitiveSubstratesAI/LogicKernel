@@ -212,6 +212,26 @@ function run_term_conformance(
             @test length(sym_text(mk_sym(T, Symbol("\U0001D11E")))) == 1      # one code point
         end
 
+        # the text's FIRST BYTE in place (D-0140: pl-wam.c `call_internal_det_foreign`'s
+        # `stringAtom(name)[0] == '$'`); the judge is the host name's first code unit, 0x00 for ''
+        @testset "sym_first_byte: the text's first UTF-8 byte; 0x00 for ''" begin
+            for n in (:foo, Symbol(""), Symbol("[]"), Symbol("[|]"), Symbol("a b"),
+                Symbol("\U0001D11E"), Symbol("é"), Symbol("\$new_findall_bag"), Symbol(
+                    "\$"
+                ))
+                s = String(n)
+                want = isempty(s) ? 0x00 : codeunit(s, 1)
+                @test sym_first_byte(mk_sym(T, n))::UInt8 == want
+            end
+            @test sym_first_byte(mk_sym(T, Symbol("\$destroy_findall_bag"))) == UInt8('$')
+            @test sym_first_byte(mk_sym(T, :a)) != UInt8('$')
+            @test sym_first_byte(mk_sym(T, Symbol("é"))) == 0xc3            # UTF-8, not the code point
+            @test sym_first_byte(mk_sym(T, Symbol("\U0001D11E"))) == 0xf0
+            @test sym_first_byte(mk_nil(T)) == UInt8('[') ==
+                sym_first_byte(mk_sym(T, Symbol("[]")))
+            @test sym_first_byte(mk_reserved_symbol(T, :dict)) == UInt8('d')
+        end
+
         # SWI's list cell (pl-fli.c `PL_is_pair`; user, 2026-10-04): a compound whose head is the
         # TEXT atom '[|]' with exactly two arguments — `[H|T]` and '[|]'(H, T) are one term. Not:
         # another arity, a `[]` or `'[]'` head, a reserved '[|]', a non-symbol head (`$expr/n`).

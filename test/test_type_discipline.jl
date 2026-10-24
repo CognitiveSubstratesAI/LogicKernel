@@ -71,6 +71,17 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "log10, lgamma): sin, cos, tan, asin, acos, atan, atan2, exp, log, sqrt, pow… as swipl calls them (Julia's own differ from glibc in the last digit and throw where " *
         "C gives a NaN); each passes and returns Float64 values only — no pointer, no buffer"
     ),
+    "default_term.jl unsafe_convert" => (
+        1,
+        "sym_first_byte (D-0140): the interned Symbol's name pointer (jl_symbol_name), as upstream's " *
+        "stringAtom(a)[0]; a Symbol is never freed and held by GC.@preserve — the +2 allocations per " *
+        "findall/3 the String of sym_text cost (A-0091 item 4)"
+    ),
+    "default_term.jl unsafe_load" => (
+        1,
+        "sym_first_byte: reads byte 1 of that name, which is NUL-terminated, so the empty atom reads 0x00 " *
+        "and the read never passes the name's end"
+    ),
     "pl-read.jl ccall" => (
         1,
         "_strtod (R1c): the C library's strtod, as upstream's ascii_to_double calls it, for its " *

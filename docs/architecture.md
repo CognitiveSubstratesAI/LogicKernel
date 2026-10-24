@@ -527,6 +527,12 @@ ported files' headers to either.
     a setup goal `'$record_clause'(_,_,_)` raised with `context(system:'$record_clause'/3,_)`, now
     `context(system:sig_atomic/1,_)`; as a cleanup goal, now the cleanup predicate's
     (`setup_call_cleanup/3`, `setup_call_catcher_cleanup/4`, `call_cleanup/2`). A plain call did not move.
+    **Its name test without a String (D-0140, after NF1):** upstream reads the name's first byte in place
+    (`stringAtom(def->functor->name)[0] == '$'`); sync-2's `startswith(sym_text(…), '$')` built a
+    `String` per check, +2 allocations per findall/3 and bagof/3 call (their bag's setup and cleanup).
+    The term interface gained `sym_first_byte(t)::UInt8` (0x00 for `''`), read in place on `Term{G}`
+    (AllocCheck), through the decoded text on `AltTerm`, conformance-tested on the three types;
+    test_zero_exports.jl pins the two programs' allocations per call on the reference type.
   * **The run loop's split helpers (`7f98a32f`):** upstream moved the slow paths out of `I_ENTER`,
     `I_EXIT`, `exit_continue`, `normal_call`, `depart_or_retry_continue`, `I_TCALL` and `bvar_cont` into
     nine VMH helpers. The three that hold code the kernel ports are labels here (`normal_call_grow`,
@@ -659,7 +665,7 @@ fixed it or a public issue exists.
 | file | what | upstream |
 |---|---|---|
 | `src/LogicKernel.jl` | the module entry file: the include order (the code graph below follows it) and the exports (ORIGINAL) | — |
-| `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation; `sym_text`, an atom's text, added in R1a, as decided since Q-AR7) | — |
+| `src/term_interface.jl` | the term interface (ORIGINAL — settled 2026-10-02; `term_type` added 2026-10-03, found by the second implementation; `sym_text`, an atom's text, added in R1a, as decided since Q-AR7; `sym_first_byte`, its first byte in place, 2026-10-24, D-0140) | — |
 | `src/pl-prims.jl` | the standard order of terms: `compareStandard` for values, and on the cells (`compareStandard_cells`, `compare_descend_cells`, `is_acyclic_cells`; the term chain under bindings went in L1f f3); UNIFICATION — on the cells (`do_unify_cells`), the `occurs_check` flag's three modes, `=`, `\=`, `unify_with_occurs_check/2`, `?=`, `unifiable/3` (answers are read off the cells by `export_cells`, src/pl-comp.jl, since L1f f3); since V6b1 the type checks (`var/1` … `callable/1`) and `\==/2`; since V5d `throw/1`; since R1c `atom_number/2` (a float's text since R1e's floats); since R1e's write/1 family `skip_list` and `lengthList`; since R1e's canonical `numberVars`, `do_number_vars` (`nv_options`); since L1c sub-commit 4 UNIFICATION ON THE CELLS — `do_unify_cells` (pl-prims.c `do_unify` on locations: a global position or a slot; `_deref_loc`, `unify_simple_cells`, the cycle links on the functor cells `_link_cells!`/`_exit_cycles!`, Q2's head pair in `_push_compound_pair!`, the boundary to terms `_loc_term`), `raw_unify_cells`, `unify_ptrs_cells` — the hot callers `H_VAR`, `B_UNIFY_VV` and `PL_unify`; since group F (D-0123) FACTORIZE on the cells — `scan_shared`, `unscan_shared`, `reverse_factor_pointers`, `link_shared`, `restore_shared_functors`, `PL_factorize_term` — and `PL_var_occurs_in`, the cyclic write's | `src/pl-prims.c`, `src/pl-incl.h` |
 | `src/default_term.jl` | `Term{G}`, the reference implementation (ORIGINAL) | — |
 | `test/core_lang/test_bips.jl` | SWI's own `ground/1`, `compare/3`, `==/2` tests | `tests/core_lang/test_bips.pl` |

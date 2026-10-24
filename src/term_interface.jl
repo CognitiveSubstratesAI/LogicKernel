@@ -237,6 +237,18 @@ and `charCode` need it (R1).
 function sym_text end
 
 """
+    sym_first_byte(t) -> UInt8
+
+The FIRST BYTE of the [`SYM`](@ref) `t`'s text, UTF-8 (pl-atom.c, `stringAtom(a)[0]`): `0x24` for
+`'\$foo'`, `0x5b` for `[]` and `'[]'` alike (their text is one), `0xc3` for `'é'`, and `0x00` for the
+empty atom `''` — the C string's terminator, which upstream reads there. It reads the byte IN PLACE:
+allocation-free on the reference type, where [`sym_text`](@ref) builds a `String` (D-0140, 2026-10-24:
+pl-wam.c `call_internal_det_foreign` tests a predicate name's first byte on every setup and cleanup
+goal, twice per findall/3). Its judge in the conformance suite is the host name's first code unit.
+"""
+function sym_first_byte end
+
+"""
     is_reserved_symbol(t) -> Bool
 
 Whether `t` is a reserved symbol (pl-ressymbol.c `isReservedSymbol`); `false` for every term that

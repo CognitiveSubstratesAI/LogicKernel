@@ -11,6 +11,7 @@
 #   |                                           |   and per ARITY for compounds (`AltExpr{H, N}`)    |
 #   | `sym_key`: the `Symbol`'s address         | `sym_key`: an interned integer id, counting from 0 |
 #   | `sym_hash`: `objectid` of the `Symbol`    | `sym_hash`: FNV-1a of the name's UTF-8 bytes       |
+#   | `sym_first_byte`: read in place           | `sym_first_byte`: through the decoded `String`     |
 #   | a reserved symbol: a flag on the struct   | a reserved symbol: a LEAF TYPE of its own          |
 #   |                                           |   (`AltRSym`), so no kernel site may assume every  |
 #   |                                           |   symbol has one leaf type                         |
@@ -61,8 +62,8 @@ using LogicKernel
 import LogicKernel:
     kind, term_type, nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal,
     atomic_compare, mk_var, mk_expr, mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol,
-    is_nil, is_pair, sym_text, number_kind, integer_is_int64, int64_value, bigint_value,
-    rational_value,
+    is_nil, is_pair, sym_text, sym_first_byte, number_kind, integer_is_int64, int64_value,
+    bigint_value, rational_value,
     float_value, string_value
 
 export AltTerm, alt_sym, alt_gnd, alt_var, alt_name, alt_value, alt_stats
@@ -172,6 +173,11 @@ is_reserved_symbol(::AltRSym) = true
 is_nil(::AltTerm) = false
 is_nil(t::AltRSym) = alt_name(t) === Symbol("[]")
 sym_text(t::Union{AltSym, AltRSym}) = String(alt_name(t))
+# Through the decoded text, not in place (the reference type's way): it allocates, and must agree.
+function sym_first_byte(t::Union{AltSym, AltRSym})::UInt8
+    s = String(alt_name(t))
+    return isempty(s) ? 0x00 : codeunit(s, 1)
+end
 is_pair(::AltTerm) = false
 is_pair(t::AltExpr{H, 3}) where {H} =
     (h=t.kids[1]; h isa AltSym && alt_name(h) === Symbol("[|]"))

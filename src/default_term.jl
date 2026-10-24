@@ -162,6 +162,14 @@ function sym_text(t::Term)::String
     t.kind === SYM || throw(ArgumentError("sym_text: not a symbol"))
     return String(t.name)
 end
+# An interned `Symbol` is never freed and its name is NUL-terminated after the header
+# (`jl_symbol_name`): the byte read in place, `0x00` for `''` (an atom holds no NUL: R1's known gap).
+# Allocation-free: the manifest's AllocCheck entry proves it.
+function sym_first_byte(t::Term)::UInt8
+    t.kind === SYM || throw(ArgumentError("sym_first_byte: not a symbol"))
+    s = t.name
+    return GC.@preserve s unsafe_load(Base.unsafe_convert(Ptr{UInt8}, s))
+end
 is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME
 function is_pair(t::Term)::Bool
     (t.kind === EXPR && length(t.children) == 3) || return false

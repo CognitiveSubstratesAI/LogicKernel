@@ -377,3 +377,53 @@ m5b_vc(X) :- X = foo.
     _zt_counts(ld) == c1 ||
         @info "f3b-5b: the second call's boundary traffic" _zt_counts(ld) - c1
 end
+
+# ── the bags' allocations per call (D-0140, 2026-10-24) ─────────────────────────────────────────────
+# findall/3 closes its bag in a cleanup ('$destroy_findall_bag'/0, through call_term), which takes
+# sync-2's fast path (pl-wam.c `call_internal_det_foreign`) once per call ('$new_findall_bag'/0 is a
+# body goal of cleanup_bag/2, a VM call). That path cost +2 allocations per findall/3 and bagof/3
+# call (A-0091 item 4; the bench, findall 8888 → 8890, bagof 11035 → 11037), MEASURED one each
+# (2026-10-24, 32dc140): its name test built a `String` (`sym_text`; upstream reads the byte in place,
+# as `sym_first_byte` does), and it made a new `foreign_context` per call (now the query's record,
+# fields saved and restored). The programs are tools/bench.jl's "findall/3 ×1000" and "bagof/3 ×1000,
+# 3 bags" (`BAG_PROLOG`, the same clauses), loaded from text. A COUNT (`@allocations`, as the bench's
+# allocs/call), pinned on the REFERENCE type only: the alternative types are correctness vehicles that
+# box every value (test/core_lang/alt_term.jl's header), so on them the call is checked and the count
+# reported. The pins: main c0db435's bench counts before sync-2 — WIP, confirmed by this file's first
+# run before the gate.
+const _ZT_BAGS =
+    join("bn($i).\n" for i in 1000:-1:1) *
+    join("bk($i, $(("a", "b", "c")[i % 3 + 1])).\n" for i in 1000:-1:1) *
+    "fatop :- findall(X, bn(X), _).\n" *
+    "botop :- bagof(X, bk(X, K), _), K == c.\n"
+
+"The allocations (a count) of one WARM call of `proc/0` (two calls first: indexes, supervisors, pools)."
+function _zt_allocations(gd, ld, proc)::Int
+    _zt_call(gd, ld, proc)
+    _zt_call(gd, ld, proc)
+    return @allocations _zt_call(gd, ld, proc)
+end
+
+"The allocations of a warm call of each bag program, pinned on the reference type (above)."
+const _ZT_BAG_PIN = Dict(:fatop => 8888, :botop => 11035)
+
+@testset "a warm call of findall/3 and bagof/3 allocates exactly its pin (@allocations)" begin
+    gd = LK.PL_global_data{_ZT}()
+    ld = LK.PL_local_data{_ZT}(gd)
+    f = joinpath(mktempdir(), "bags.pl")
+    write(f, _ZT_BAGS)
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok && isempty(msgs)
+    for name in (:fatop, :botop)
+        proc = LK.lookupProcedure(lk_sym(_ZT, name), 0, LK.MODULE_user(gd))
+        @test _zt_call(gd, ld, proc) == LK.PL_S_TRUE
+        a = _zt_allocations(gd, ld, proc)
+        if LK_TERM_IMPL == "reference"
+            pin = _ZT_BAG_PIN[name]
+            a == pin || @info "$name: a warm call allocates" a pin
+            @test a == pin
+        else
+            @info "$name: a warm call allocates (not pinned on this type)" LK_TERM_IMPL a
+        end
+    end
+end

@@ -214,6 +214,10 @@ end
         @test ld.frames[c.frame].fctx != 0 &&
             (ld.frames[c.frame].fctx & LK.FRG_REDO_MASK) == LK.REDO_PTR
         @test LK.live_states(ld) == 1
+        # a retry exit trims the local stack to the jump choice (pl-vmi.c I_FEXITNDET, `lTop =
+        # (LocalFrame)(BFR+1)`): the retry's foreign frame is gone, and above the choice lies only the
+        # query's own answer frame (NF1-11: untrimmed, the retry's frame stays — 94, not 88, measured)
+        @test ld.lTop == c.base + LK.SIZEOF_CHOICE + LK.SIZEOF_FLIFRAME
     end
     # the choice point resumes at the I_FREDO word (PC+3 from I_FCALLNDETVA), in the foreign frame
     @test length(jumps) == 2 && all(j -> j[1] == 5, jumps) && jumps[1][2] == jumps[2][2]
@@ -221,5 +225,35 @@ end
     LK.PL_close_foreign_frame(ld, fid)
     @test got == [1, 2, 3]
     @test rcs == [LK.PL_S_TRUE, LK.PL_S_TRUE, LK.PL_S_LAST]      # swipl: the last answer is deterministic
+    @test LK.live_states(ld) == 0
+end
+
+# pl-wam.c discardFrame: `fr->clause = NULL` after the FRG_CUTTED call, so a frame discarded once is not
+# discarded again — a second discardFrame (a later cut or the query's close reaching the same frame)
+# must not call the built-in with FRG_CUTTED on a state it already freed (NF1-10).
+@testset "between/3: a discarded foreign frame loses its context; a second discard is a no-op" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    proc = LK.isCurrentProcedure(sym_key(_tls("between")), 3, LK.MODULE_system(gd))
+    pvm = LK.PutVarMap()
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 3)
+    LK.putSlotValue!(ld, a + 1, mk_gnd(_TL, Int64(1)), pvm)
+    LK.putSlotValue!(ld, a + 2, mk_gnd(_TL, Int64(3)), pvm)
+    LK.putSlotValue!(ld, a + 3, mk_var(_TL, LK.fresh_var_keys!(1)), pvm)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    @test LK.PL_next_solution(gd, ld, qid) == LK.PL_S_TRUE
+    fr = ld.choices[ld.BFR].frame
+    @test ld.frames[fr].fctx != 0 && LK.live_states(ld) == 1
+    LK.discardFrame(ld, fr)
+    @test ld.frames[fr].fctx == 0
+    @test LK.live_states(ld) == 0
+    LK.discardFrame(ld, fr)
+    @test ld.frames[fr].fctx == 0
+    @test LK.live_states(ld) == 0
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
     @test LK.live_states(ld) == 0
 end

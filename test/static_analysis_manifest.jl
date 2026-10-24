@@ -29,6 +29,7 @@ _manifest_per_type(T) = (
     (mk_nil, Tuple{Type{T}}, false),
     (is_reserved_symbol, Tuple{T}, true), (is_nil, Tuple{T}, true),
     (sym_text, Tuple{T}, false), (LK.charCode, Tuple{T}, false),     # R1a: an atom's text
+    (sym_first_byte, Tuple{T}, true),          # its first byte in place (D-0140: the fast path's name test)
     (is_pair, Tuple{T}, true),
     (LK.isReservedSymbol, Tuple{T}, true), (LK._value_index_key, Tuple{T}, true),  # a value's key (L1d step 4)
     (number_kind, Tuple{T}, true), (integer_is_int64, Tuple{T}, true),
