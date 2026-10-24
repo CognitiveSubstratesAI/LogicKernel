@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tools/githooks/pre-push — four refusals.
+# tools/githooks/pre-push — five refusals.
 #
 # 1. A MUTANT WORKTREE never pushes (user, 2026-10-11). tools/mutate.sh builds a second worktree of
 #    this repository in which mutants are applied — deliberately broken code, on a detached HEAD —
@@ -36,6 +36,13 @@
 #    rebases with git's three-way merge instead of text-matched patch scripts) — on the condition that
 #    THIS hook refuses to push it. So any pushed ref whose local or remote side is `refs/heads/wip/*`
 #    is refused: an unevidenced commit leaves the machine only after it is re-made on a gate branch.
+#
+# 5. A mutants/<name> BRANCH TAKES ONLY A COMMIT THAT HAS tools/mutants/<name>.py (user, 2026-10-24).
+#    .github/workflows/mutation.yml takes its mutant list from the branch name (`tools/{ref_name}.py`).
+#    A push to mutants/Sync2b whose commit had no tools/mutants/Sync2b.py failed the workflow's Plan
+#    job, ran no mutant, and left a red run that blocked main's push (tools/ci_status.sh counts every
+#    run of a sha) until it was deleted by hand. So a push whose remote ref is `refs/heads/mutants/<name>`
+#    is refused unless the pushed commit holds that file. A delete (all-zero local sha) is allowed.
 #
 # LOGICKERNEL_CI_FIXTURE (tools/ci_status.sh) lets test/test_gate_split.jl plant each answer.
 NOREPLY_EMAIL="11524260+sivaji1012@users.noreply.github.com"
@@ -118,6 +125,20 @@ while read -r _local_ref local_sha remote_ref _remote_sha; do
             echo "pre-push: REFUSED — $_local_ref → $remote_ref: a wip/ branch holds commits made without test evidence (the commit hook's wip/ exemption); it never leaves this machine — re-make the step on a gate branch" >&2
             rc=1
             continue
+            ;;
+    esac
+    case "$remote_ref" in
+        refs/heads/mutants/*)                                   # 5. its list file must be in the commit
+            case "$local_sha" in
+                *[!0]*)
+                    _mname="${remote_ref#refs/heads/mutants/}"
+                    git -C "$top" cat-file -e "$local_sha:tools/mutants/$_mname.py" 2>/dev/null || {
+                        echo "pre-push: REFUSED — $remote_ref ← ${local_sha:0:7}: the commit has no tools/mutants/$_mname.py, and mutation.yml takes its mutant list from the branch name — the Plan job would fail and leave a red run that blocks main. Name the branch after the list file, or add the file." >&2
+                        rc=1
+                        continue
+                    }
+                    ;;
+            esac
             ;;
     esac
     case "$local_sha" in

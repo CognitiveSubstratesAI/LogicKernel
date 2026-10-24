@@ -875,6 +875,22 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 @test wip_push("refs/heads/wip/l1d", "refs/heads/gate/x") == 1   # FROM a wip/ branch
                 @test wip_push("refs/heads/gate/x", "refs/heads/gate/x") == 0    # the control
             end
+            # 5. A mutants/<name> BRANCH NEEDS tools/mutants/<name>.py IN THE PUSHED COMMIT
+            # (user, 2026-10-24): mutation.yml reads its list from the branch name
+            @testset "a mutants/ branch needs its list file" begin
+                @test push_(sha, "refs/heads/mutants/MutX") == 1           # no list file: refused
+                # the earlier testsets left a refused (non-noreply) commit in HEAD's history: mark
+                # everything so far as already on the remote, so only this rule decides below
+                run(`git -C $repo update-ref refs/remotes/origin/gate/mut HEAD`)
+                mkpath(joinpath(repo, "tools", "mutants"))
+                write(joinpath(repo, "tools", "mutants", "MutX.py"), "MUTANTS = []\n")
+                run(`git -C $repo add tools/mutants/MutX.py`)
+                with_list = gs_commit(noreply, noreply)
+                @test push_(with_list, "refs/heads/mutants/MutX") == 0     # list file present
+                @test push_(with_list, "refs/heads/mutants/MutY") == 1     # another name: refused
+                @test push_(with_list, "refs/heads/gate/MutY") == 0        # not a mutants/ ref
+                @test push_("0" ^ 40, "refs/heads/mutants/MutY") == 0      # a delete is allowed
+            end
         end
         rm(gs_dir; recursive=true)
     end
