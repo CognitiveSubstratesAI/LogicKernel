@@ -1,0 +1,57 @@
+# The nightly differential fuzzer (audit D-0125 stream a, D-0127 item 3): tools/fuzz.jl runs a FIXED range of
+# seeds — each a program of generated goals (unification, comparison, arithmetic, copy_term, findall/bagof/setof,
+# msort, assertz, term inspection) — through the kernel and the pinned swipl and compares every answer. A seed
+# whose answers differ fails the run: the seed is in the job's annotations and the program with both answers in
+# the `fuzz-out` artifact. The range is fixed, so a failure is a REGRESSION of the code, never of the dice; move
+# the range by hand (workflow_dispatch) to hunt. Not a gate: nothing waits for this workflow (the pre-push hook
+# asks for Evidence), so a red night is read the next morning.
+# `fuzz-ci-test/**` branches run it too: how a change to this file is tried before it lands.
+name: Fuzz (nightly, kernel vs swipl)
+on:
+  workflow_dispatch:
+    inputs:
+      first_seed:
+        description: first seed
+        default: '5000'
+      count:
+        description: number of seeds
+        default: '300'
+  push:
+    branches:
+      - 'fuzz-ci-test/**'
+  schedule:
+    - cron: '41 3 * * *'              # nightly, 03:41 UTC (Evidence runs at 02:17)
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write          # julia-actions/cache deletes old caches (its README)
+
+jobs:
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: '4'
+      LOGICKERNEL_REQUIRE_SWIPL: '1'
+      FIRST_SEED: ${{ inputs.first_seed || '5000' }}    # through env, never interpolated into the script
+      COUNT: ${{ inputs.count || '300' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/oracle
+      - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Fuzz the kernel against swipl at the pin
+        run: julia --project=. tools/fuzz.jl "$FIRST_SEED" "$COUNT" fuzz-out 40
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: ${{ failure() }}
+        with:
+          name: fuzz-out
+          path: fuzz-out/
