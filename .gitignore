@@ -16,6 +16,10 @@ test/Manifest.toml
 coverage/
 docs/build/
 
+# Mutation runs' products beside a mutant list: the verdicts, and a parallel run's worker directories (tools/mutate.sh)
+/tools/mutants/verdicts.tsv
+/tools/mutants/par*/
+
 # Benchmark outputs
 bench/results/
 *.log

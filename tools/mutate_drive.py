@@ -37,7 +37,7 @@
 # verdicts.tsv there.
 # WHILE A MUTANT IS APPLIED, .warm/MUTATION_IN_PROGRESS in the tree names it and
 # .warm/MUTATION_ORIGINAL holds the file as it was (`tools/mutate.sh recover`); SIGTERM restores
-# the file first. MUTATE_LIMIT_S (240) is the limit per target.
+# the file first. MUTATE_LIMIT_S (900) is the limit per target.
 import hashlib
 import os
 import re
@@ -48,6 +48,8 @@ import signal
 import subprocess
 import sys
 import tempfile
+
+DEFAULT_LIMIT_S = 900       # MUTATE_LIMIT_S: 240 was too short for a cold daemon on test_arith_swipl.jl (A-0083 item 3)
 
 # The does-not-load signature: "Some tests did not pass" is the one LoadError a failed test raises;
 # the warm daemon's refusal (tools/warm_session.jl) exits 1 as a failed test does.
@@ -116,7 +118,7 @@ def main(argv):
         sys.exit("mutate_drive: no target")
     mutants = runpy.run_path(mutants_path)["MUTANTS"]
     out_dir = os.environ.get("MUTATE_OUT") or os.path.dirname(mutants_path)
-    limit = int(os.environ.get("MUTATE_LIMIT_S", "240"))
+    limit = int(os.environ.get("MUTATE_LIMIT_S", str(DEFAULT_LIMIT_S)))
     impl = os.environ.get("MUTATE_IMPL", "reference")
     sentinel = os.path.join(tree, ".warm", "MUTATION_IN_PROGRESS")
     saved = os.path.join(tree, ".warm", "MUTATION_ORIGINAL")
@@ -167,8 +169,9 @@ def main(argv):
             s = f.read()
         n = s.count(m["old"])
         if n != 1:
-            results.append((m["id"], "BADMATCH(%d)" % n))
-            print(m["id"], "BADMATCH", n, flush=True)
+            why = "`old` occurs %d times in %s" % (n, m["file"])
+            results.append((m["id"], "BADMATCH(%d)" % n, why))     # three fields like every verdict: the
+            print(m["id"], "BADMATCH", n, "—", why, flush=True)    # summary and verdicts.tsv unpack them
             continue
 
         def restore(*_):
@@ -198,6 +201,7 @@ def main(argv):
         v = verdict(rc, m)
         if v != "caught":
             keep("mutant_%s.log" % name, out)
+        why = "; ".join(x for x in (why, noload_hint(m, v)) if x)
         results.append((m["id"], v, why))
         print(m["id"], v, "—", why or "-", flush=True)
 
@@ -293,6 +297,17 @@ def verdict(rc, m):
     if rc == 0:
         return "EQUIVALENT (declared)" if m.get("equivalent") else "SURVIVED"
     return "INVALID(%s)" % rc
+
+
+def noload_hint(m, v):
+    """The hint on a deletion mutant that does not load (A-0084 item 5d): deleting an entry of a multi-line table
+    can leave ONE entry without a trailing comma — the formatter writes none after the last entry — and
+    `(entry)` is a parenthesised expression, no tuple. Replace the entry (rename it) instead of deleting it.
+    "" for every other verdict and for a mutant that replaces text."""
+    if v.startswith("NO VERDICT (does not load") and not m["new"].strip():
+        return ("a deletion that does not load: a one-entry table left without its trailing comma is no tuple"
+                " — replace the entry, do not delete its line")
+    return ""
 
 
 def blocks(v):

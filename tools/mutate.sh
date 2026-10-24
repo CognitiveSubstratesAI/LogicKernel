@@ -200,8 +200,30 @@ _run_parallel() {
     local args=() ; for k in $(seq 1 "$n"); do args+=("$out/par$k"); done
     python3 "$TOOLS/mutate_drive.py" --merge "$mutants" "$out" "${args[@]}"
     local mrc=$?
+    # a merged run takes the worker directories away; one with a worker that did not finish keeps them
+    if [ "$mrc" -le 1 ] && [ "$rc" -ne 2 ]; then _par_cleanup "$out" "$n"; fi
     [ "$rc" -eq 2 ] && return 2
     return "$mrc"
+}
+
+# _par_cleanup OUT N — THE LEFTOVERS of a merged parallel run (A-0084 item 5b): OUT/par1…parN held each worker's
+# verdicts and logs; the merged OUT/verdicts.tsv has the verdicts, and the commit hook refuses untracked files. The
+# logs go up beside the mutant list (mutant_ID.log is unique per mutant; a worker's own are prefixed parK-), the
+# worker's verdicts.tsv is removed, and a directory that still holds anything else is left, with a message.
+# Also the command `par-cleanup OUT N`, which test/test_gate_split.jl runs on a planted run.
+_par_cleanup() {
+    local out="$1" n="$2" k f
+    for k in $(seq 1 "$n"); do
+        for f in "$out/par$k"/*.log; do
+            [ -e "$f" ] || continue
+            case "$(basename "$f")" in
+                mutant_*) mv -f "$f" "$out/" ;;
+                *) mv -f "$f" "$out/par$k-$(basename "$f")" ;;
+            esac
+        done
+        rm -f "$out/par$k/verdicts.tsv"
+        rmdir "$out/par$k" 2> /dev/null || echo "mutate: $out/par$k is not empty — left in place" >&2
+    done
 }
 
 _status() {
@@ -281,6 +303,7 @@ case "$cmd" in
     run) _run "$WT" "$@" ;;
     run-in-tree) _run "$MAIN" "$@" ;;
     run-parallel) _run_parallel "$@" ;;
+    par-cleanup) _par_cleanup "$@" ;;
     recover)
         rc=0
         _recover "$MAIN" || rc=1

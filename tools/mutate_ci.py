@@ -37,7 +37,7 @@ import time
 
 sys.dont_write_bytecode = True     # no tools/__pycache__: an untracked file voids the evidence marker
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mutate_drive import judge, run_targets as _run_targets  # noqa: E402 — one classifier, two drivers
+from mutate_drive import judge, noload_hint, run_targets as _run_targets  # noqa: E402 — one classifier, two drivers
 
 OUT = "mutation-out"
 BLOCKING = ("SURVIVED", "TIMEOUT", "INVALID", "BADMATCH", "EQUIVALENT REFUTED", "NO VERDICT")
@@ -150,6 +150,7 @@ def one(argv):
         verdict = "EQUIVALENT (declared)" if declared else "SURVIVED"
     else:
         verdict = "INVALID"
+    why = "; ".join(x for x in (why, noload_hint(m, verdict)) if x)
     record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why)
     write(name, record, log)
     print(name, verdict, "—", why or "-")

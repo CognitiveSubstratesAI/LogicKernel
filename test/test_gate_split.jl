@@ -1756,6 +1756,121 @@ MUTANTS = [
             # fixture, which is no git repository)
         end
     end
+    # THE MUTATION DRIVER'S FOUR DEFECTS (A-0083 item 3, A-0084 item 5; D-0131, D-0132), each on a tree of its own
+    # (`sh:` targets run in the tree without a daemon): (a) a BADMATCH mutant no longer crashes the end of the run,
+    # (c) the default limit per target is 900 s, (d) a deletion that does not load says why, (b) a merged
+    # parallel run leaves no worker directories
+    @testset "tools/mutate_drive.py, mutate.sh: BADMATCH, the 900 s default, the deletion hint, the parallel leftovers" begin
+        drive = joinpath(_GS_ROOT, "tools", "mutate_drive.py")
+        mutate = joinpath(_GS_ROOT, "tools", "mutate.sh")
+        mktempdir() do d
+            function tree(name)
+                t = joinpath(d, name)
+                mkpath(joinpath(t, ".warm"))
+                mkpath(joinpath(t, "src"))
+                write(joinpath(t, "src", "x.txt"), "BASE")
+                return t
+            end
+            function drive_run(name, mutants, target; env=())
+                t = tree(name)
+                list = joinpath(d, name * ".py")
+                write(list, "MUTANTS = [\n" * mutants * "]\n")
+                out = mkpath(joinpath(d, name * "_out"))
+                cmd = addenv(
+                    `python3 $drive $t $list $target`,
+                    "MUTATE_OUT" => out, "PATH" => ENV["PATH"], env...
+                )
+                r = run(
+                    pipeline(
+                        ignorestatus(cmd);
+                        stdout=joinpath(out, "driver.log"),
+                        stderr=joinpath(out, "driver.err")
+                    )
+                )
+                tsv = joinpath(out, "verdicts.tsv")
+                return (
+                    code=r.exitcode, log=read(joinpath(out, "driver.log"), String),
+                    err=read(joinpath(out, "driver.err"), String),
+                    rows=if isfile(tsv)
+                        [split(l, '\t') for l in eachline(tsv)]
+                    else
+                        Vector{SubString{String}}[]
+                    end
+                )
+            end
+            pass_iff_base = "sh:[ \"\$(cat src/x.txt)\" = BASE ]"
+            # (a) BADMATCH: booked with three fields like every verdict, blocking, and the run ends with its summary
+            r = drive_run(
+                "badmatch",
+                """
+    dict(id="B1 no such text", file="src/x.txt", old="NOWHERE", new="X"),
+    dict(id="B2 real", file="src/x.txt", old="BASE", new="OTHER"),
+""",
+                pass_iff_base
+            )
+            @test !occursin("Traceback", r.err) && !occursin("ValueError", r.err)
+            @test r.code == 1                                  # BADMATCH blocks, and nothing crashed
+            @test occursin("SUMMARY 1 of 2 caught; 1 blocking", r.log)
+            @test [(row[1], row[2]) for row in r.rows] ==
+                [("B1", "BADMATCH(0)"), ("B2", "caught")]
+            @test occursin("`old` occurs 0 times in src/x.txt", r.rows[1][3])
+            # (c) the default limit (WARM_TIMEOUT_S is the limit handed to every target); a set one still wins
+            lim(n) = "sh:[ \"\$WARM_TIMEOUT_S\" = $n ]"
+            r = drive_run("limit_default", "", lim(900); env=("MUTATE_LIMIT_S" => nothing,))
+            @test r.code == 0 && occursin("baseline exit 0", r.log)
+            r = drive_run("limit_240", "", lim(240); env=("MUTATE_LIMIT_S" => nothing,))
+            @test r.code == 2 && occursin("BASELINE NOT GREEN", r.log)    # the guard can fail: 240 is no longer it
+            r = drive_run("limit_set", "", lim(7); env=("MUTATE_LIMIT_S" => "7",))
+            @test r.code == 0
+            # (d) a deletion that leaves the file unloadable carries the hint; a replacement does not
+            noload = "sh:grep -q BASE src/x.txt || { echo 'ParseError: unexpected )'; exit 1; }"
+            r = drive_run(
+                "hint",
+                """
+    dict(id="H1 deleted", file="src/x.txt", old="BASE", new=""),
+    dict(id="H2 replaced", file="src/x.txt", old="BASE", new="("),
+""",
+                noload
+            )
+            @test [(row[1], row[2]) for row in r.rows] ==
+                [
+                ("H1", "NO VERDICT (does not load)"), ("H2", "NO VERDICT (does not load)")
+            ]
+            @test occursin("ParseError: unexpected )", r.rows[1][3]) &&
+                occursin("replace the entry, do not delete its line", r.rows[1][3])
+            @test occursin("ParseError: unexpected )", r.rows[2][3]) &&
+                !occursin("do not delete", r.rows[2][3])
+            # (b) the leftovers of a merged parallel run
+            out = mkpath(joinpath(d, "par_out"))
+            for k in 1:2
+                w = mkpath(joinpath(out, "par$k"))
+                write(joinpath(w, "verdicts.tsv"), "P$k\tcaught\t-\n")
+                write(joinpath(w, "driver.log"), "driver $k\n")
+                write(joinpath(w, "baseline.log"), "baseline $k\n")
+            end
+            write(joinpath(out, "par1", "mutant_P1.log"), "mutant P1\n")
+            write(joinpath(out, "verdicts.tsv"), "P1\tcaught\t-\nP2\tcaught\t-\n")
+            write(joinpath(out, "par2", "notes.txt"), "not ours\n")
+            err = joinpath(d, "par_err.txt")
+            r = run(
+                pipeline(
+                    ignorestatus(`bash $mutate par-cleanup $out 2`); stderr=err,
+                    stdout=devnull
+                )
+            )
+            @test r.exitcode == 0
+            @test !ispath(joinpath(out, "par1"))                                  # emptied and removed
+            @test isdir(joinpath(out, "par2")) &&
+                readdir(joinpath(out, "par2")) == ["notes.txt"]
+            @test occursin("par2 is not empty", read(err, String))                # what is not ours stays, said
+            @test read(joinpath(out, "mutant_P1.log"), String) == "mutant P1\n"
+            @test read(joinpath(out, "par1-driver.log"), String) == "driver 1\n"
+            @test read(joinpath(out, "par2-baseline.log"), String) == "baseline 2\n"
+            @test read(joinpath(out, "verdicts.tsv"), String) ==
+                "P1\tcaught\t-\nP2\tcaught\t-\n"
+            @test !isfile(joinpath(out, "par2", "verdicts.tsv"))
+        end
+    end
     # THE RUNNER IMAGE IS PINNED (CI.yml's note above `jobs:`): no job, no matrix entry on a moving
     # `-latest` image; the oracle's cache key names the image. The scan must see every `runs-on`.
     @testset "the CI runner images are pinned, never -latest" begin
