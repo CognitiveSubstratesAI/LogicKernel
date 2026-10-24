@@ -69,7 +69,7 @@ MUTANTS = [
     dict(id="GF9 a substitutions term that is no list is not an error", file=R, targets=CR,
          old='''    if !PL_is_list(ld, substitutions)''',
          new='''    if false'''),
-    # ── item 2: the cyclic write (pl-prims.c:1254-1488, pl-wam.c:1507, pl-write.c:2684) ──
+    # ── item 2: the cyclic write (pl-prims.c:1254-1488, pl-wam.c:1570, pl-write.c:2684) ──
     # killed by test_canonical_readatom_swipl.jl "writing a cyclic term, as swipl": a compound met
     # three times (`X = f(X), Y = g(X, X)`) is listed twice and its functor cell overwritten
     dict(id="GF10 scan_shared does not mark a shared compound FIRST", file=PR, targets=CR,

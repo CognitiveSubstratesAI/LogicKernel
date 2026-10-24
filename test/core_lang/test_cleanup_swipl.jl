@@ -11,7 +11,7 @@ include(joinpath(@__DIR__, "rules_common.jl"))
 # logged item, in order — so the differential compares WHAT ran, WHEN (between which answers), and
 # how often. The four ways a goal finishes — exit, fail, cut, exception — each alone, nested, and
 # with a cleanup goal that itself fails or raises.
-const _RCL_N = 38
+const _RCL_N = 48
 function _rcl_clauses()
     X, Y, Z, C, E = _rv(1), _rv(2), _rv(3), _rv(4), _rv(5)
     T = _rs("true")
@@ -138,6 +138,40 @@ function _rcl_clauses()
                 E,
                 eq(X, E)
             )
+        ),
+        # ── sync-2 Q3 (D-0126, D-0138): an internal ('$') deterministic foreign goal run as setup
+        # or cleanup has NO frame of its own since 10.1.19 (`call_internal_det_foreign`, pl-wam.c:749,
+        # d4dfa740; called by callProlog under PL_Q_PASS_EXCEPTION, pl-pro.c:529, and by call_term,
+        # pl-wam.c:840), so its error takes the caller's context. CHANGED UPSTREAM between 10.1.18
+        # and 10.1.19, values from the oracle at the pin: k39 10.1.18 context(system:'$record_clause'/3, _),
+        # 10.1.19 context(system:sig_atomic/1, _); k40 10.1.18 context(system:'$record_clause'/3, _),
+        # 10.1.19 context(system:setup_call_cleanup/3, _). k46, a plain call, did not move. ──
+        (_rf("k39", X), c3(scc(_rf("\$record_clause", Y, Z, C), T, T), E, eq(X, E))),
+        (_rf("k40", X), c3(scc(T, T, _rf("\$record_clause", Y, Z, C)), E, eq(X, E))),
+        (
+            _rf("k41", X),
+            c3(sccc(_rf("\$record_clause", Y, Z, C), T, _rv(6), T), E, eq(X, E))
+        ),
+        (
+            _rf("k42", X),
+            c3(sccc(T, T, _rv(6), _rf("\$record_clause", Y, Z, C)), E, eq(X, E))
+        ),
+        (
+            _rf("k43", X),
+            c3(_rf("call_cleanup", T, _rf("\$record_clause", Y, Z, C)), E, eq(X, E))
+        ),
+        (
+            _rf("k44", X),
+            c3(scc(_rf("\$record_clause", _rs("foo"), _rs("bar"), Y), T, T), E, eq(X, E))
+        ),
+        (_rf("k45", X), c3(scc(_rf("\$add_findall_bag", _rs("x")), T, T), E, eq(X, E))),
+        (_rf("k46", X), c3(_rf("\$record_clause", Y, Z, C), E, eq(X, E))),
+        # the fast path's limits: not a '$' name (k47) and a transparent predicate (k48) keep a frame
+        # of their own — their own context, on 10.1.18 and 10.1.19 alike
+        (_rf("k47", X), c3(scc(_rf("retractall", Y), T, T), E, eq(X, E))),
+        (
+            _rf("k48", X),
+            c3(scc(_rf("\$set_predicate_attribute", Y, Z, C), T, T), E, eq(X, E))
         )
     ]
 end

@@ -33,11 +33,16 @@
 # one: pl-index.c's candidate_indexes, a single remaining candidate argument was dropped; pl-rec.c's
 # change is `variantRecords`, not ported; the rest tabling/tries, prolog_clause.pl, build scripts).
 # VERSION (10.1.18) and the plunit submodule (bdac3ecf) did not move.
+# The 2026-10-24 sync-2: 8e1bc111 → cbf4e189 (V10.1.19 + one xpce bump; 79 commits; D-0123, D-0126, D-0137,
+# D-0138): VERSION 10.1.19, plunit bdac3ecf unchanged; call_internal_det_foreign ported (an internal det
+# foreign goal's error takes its caller's context — answers changed upstream, pinned to 10.1.19), the run
+# loop's split helpers, setJumpChoice/moveNumber, the atom table regenerated; the rest header only
+# (docs/architecture.md, the pin's section). Every header is at `commit`; the `sync-from:` line is gone.
 # plunit (user, 2026-10-14): the commit of SWI-Prolog/packages-plunit that `commit` records as its
 # submodule `packages/plunit` — vendored READ-ONLY at packages/plunit (test/test_vendored_plunit.jl
 # holds every file to upstream's blob), and built into the oracle (tools/build_oracle.sh). The pin
 # checks above then also assert that the oracle's library(plunit) IS packages/plunit/plunit.pl, byte
 # for byte (the oracle cache's shim always asks the real swipl where it is).
-version: 10.1.18
-commit: 8e1bc1110be470a7104d543b9053d36531f4bfae
+version: 10.1.19
+commit: cbf4e1896275a07794332fd98ad0dcb11bf51919
 plunit: bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895

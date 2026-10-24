@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-string.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/os/pl-string.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2012, University of Amsterdam
 #

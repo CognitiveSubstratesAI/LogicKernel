@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-supervisor.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-supervisor.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

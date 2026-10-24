@@ -1199,7 +1199,7 @@ end
 # `optimise_unify` (swipl's default) moves a leading `ArgVar = Term` into the head; the cells are the
 # research memo's probes (the workspace's docs/research/v9-inline-unification/, § D). swipl compiles
 # each through `assertz` into a FRESH predicate, which compiles as static code (assert_term compiles
-# before it marks the predicate dynamic, pl-comp.c:4923, 5019-5027), as the kernel's compileClause
+# before it marks the predicate dynamic, pl-comp.c:4932, 5028-5036), as the kernel's compileClause
 # does on a predicate that is not dynamic.
 const _BC_MOVE_CELLS = let X = _bv(1), Y = _bv(2), T = _bv(3), G = _bv(4)
     [
@@ -1663,12 +1663,12 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
     dcases = [
         [(h, b) for (_, h, b) in _BC_OR_CELLS]; [(h, b) for (_, h, b) in _BC_DEC_CELLS]
         random; plain
-        # `\$catch` (since V9f): I_CATCH decompiles to the atom, I_EXITCATCH to nothing (c:6744, c:6918)
+        # `\$catch` (since V9f): I_CATCH decompiles to the atom, I_EXITCATCH to nothing (c:6753, c:6927)
         [
             (_bf("dk1", _bv(1), _bv(2), _bv(3)), _bs("\$catch")),
             (_bs("dk2"), _bconj(_bs("q"), _bs("\$catch"))),
             # `\$call_cleanup` (since V9g): I_CALLCLEANUP decompiles to the atom and takes the
-            # I_EXITCLEANUP after it along (c:6778)
+            # I_EXITCLEANUP after it along (c:6787)
             (
                 _bf("dk3", _bv(1), _bv(2), _bv(3)),
                 _bconj(_bf("sig_atomic", _bv(1)), _bs("\$call_cleanup"))

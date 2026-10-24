@@ -1,8 +1,8 @@
-# UPSTREAM: swipl-devel src/pl-arith.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-arith.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-inline.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/os/pl-os.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-arith.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-arith.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-inline.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-os.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -57,6 +57,27 @@ function cpNumber(to::number, from::number)::Nothing
     to.f = from.f
     to.mpz = from.mpz
     to.mpq = from.mpq
+    return nothing
+end
+
+# PORT: pl-arith.h moveNumber
+# DIVERGES: the "structure copy" is a copy of the fields (`cpNumber`'s), the values shared
+# (immutable): there is no GMP ownership to transfer.
+"""
+Shallow copy of number `from` to `to` (pl-arith.h `moveNumber`): for a small integer or a float only
+its value and type; otherwise the whole number.
+"""
+function moveNumber(to::number, from::number)::Nothing
+    t = from.type
+    if t === V_INTEGER
+        to.i = from.i
+    elseif t === V_FLOAT
+        to.f = from.f
+    else
+        cpNumber(to, from)                      # *to = *from (structure copy)
+        return nothing
+    end
+    to.type = t
     return nothing
 end
 
@@ -2538,23 +2559,23 @@ function evalExpression_cells(
     a0 = ld.arith_numbers[top]                              # a[0], the first argument
     if arity == 1
         _ar_call1(ld, fi, a0, n_tmp) || @goto error
-        cpNumber(a0, n_tmp)                                 # *a0 = *n
+        moveNumber(a0, n_tmp)                               # moveNumber(a0, n)
     elseif arity == 2
         a1 = ld.arith_numbers[top - 1]
         _ar_call2(ld, fi, a0, a1, n_tmp) || @goto error
         ld.arith_top = top - 1                              # popTopOfSegStack
-        cpNumber(a1, n_tmp)                                 # *n1 = *n
+        moveNumber(a1, n_tmp)                               # moveNumber(n1, n)
     else                                                    # arity 3: powm/3
         a1 = ld.arith_numbers[top - 1]
         a2 = ld.arith_numbers[top - 2]
         _ar_call3(ld, fi, a0, a1, a2, n_tmp) || @goto error
         ld.arith_top = top - 2                              # popTopOfSegStack, twice
-        cpNumber(a2, n_tmp)                                 # *n2 = *n
+        moveNumber(a2, n_tmp)                               # moveNumber(n2, n)
     end
     e = pop!(stack)                                         # popForMark(&term_stack, &p, &walk_ref)
     p, walk_ref = e >> 1, (e & 1) != 0
     if p == start
-        cpNumber(result, n_tmp)                             # *result = *n
+        moveNumber(result, n_tmp)                           # moveNumber(result, n)
         @goto done
     end
     if walk_ref

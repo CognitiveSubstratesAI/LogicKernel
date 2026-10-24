@@ -1,10 +1,10 @@
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-data.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-global.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-builtin.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-bag.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-gmp.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-data.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-builtin.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-bag.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gmp.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -108,13 +108,13 @@ const GOAL_CLAUSE = UInt32(0x0008)
 const COMMIT_CLAUSE = UInt32(0x0010)
 # PORT: pl-incl.h sizeofClause
 # DIVERGES: in positions (words), where upstream's is in bytes — `offsetof(struct clause, codes[n])`,
-# 64 bytes of fields on a 64-bit build (pl-incl.h:1457-1474) and one `code` word per VM word. Only a
+# 64 bytes of fields on a 64-bit build (pl-incl.h:1502-1519) and one `code` word per VM word. Only a
 # goal clause's frame reads it (its code lives on the local stack upstream, so it moves `lTop`).
 "The size of a clause of `n` code words, in positions (pl-incl.h)."
 sizeofClause(n::Int)::Int = 8 + n
 # PORT: pl-incl.h SIZEOF_CREF_CLAUSE
 # DIVERGES: in positions: `offsetof(clause_ref, value.clause) + sizeof(Clause)`, 24 bytes on a 64-bit
-# build (pl-incl.h:1522-1534).
+# build (pl-incl.h:1567-1579).
 "The size of a clause reference holding one clause, in positions (pl-incl.h)."
 const SIZEOF_CREF_CLAUSE = 3
 # PORT: pl-incl.h CL_HEAD_TERMS
@@ -938,7 +938,7 @@ const SourceFile{T} = sourceFile{T}
 
 # The sizes of upstream's structs in words, in the default x86_64 Linux build: `O_PROFILE` is on
 # there, so `prof_node` counts although the kernel keeps no profiler, and `O_DEBUG` is off. They are
-# derived from the structs (pl-incl.h:1770-1784, 1824-1836, 1938-1946). swipl 10.1.16 agrees on the
+# derived from the structs (pl-incl.h:1815-1829, 1869-1885, 2036-2044). swipl 10.1.16 agrees on the
 # frame: `p(A) :- …, q(A, _, _)` puts `q`'s frame 8 + 2 positions above `p`'s (`A` and the frame
 # variable; the voids take no slot).
 "`sizeof(struct localFrame)` in words: the positions a frame's header spans."
@@ -1078,8 +1078,9 @@ end
 # DIVERGES: a pool record (see above); `parent` is a choice index and `frame` a frame index.
 # `value.clause` is the choice's OWN `clause_choice`, created with the record and reused with it —
 # where upstream embeds the struct and hands out a pointer to it (user, 2026-10-05). `newChoice`
-# resets it. `value.pc` (since V9d, `C_OR`) is a field of its own, `value_pc`: an index into the
-# code of the frame's clause, where upstream holds an address. The union's `foreign` member
+# resets it. `value.jump.pc` (since V9d, `C_OR`; `value.pc` before 10.1.19) is a field of its own,
+# `value_pc`: an index into the code of the frame's clause, where upstream holds an address; set by
+# `setJumpChoice!`. NOT PORTED: `value.jump.trie_offset` (compiled tries only: tabling). The union's `foreign` member
 # arrives with the non-deterministic built-ins (V9). `prof_node` is not kept (no profiler) but
 # counts in `SIZEOF_CHOICE`. `unlinked` (since V9d, `*->`) marks a record `C_SOFTCUT` took out of
 # the chain: upstream leaves such a choice point's struct on the local stack, unreachable, until

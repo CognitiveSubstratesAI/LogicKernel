@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-gc.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-gc.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-gc.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gc.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -114,7 +114,7 @@ function growStacks_trim!(ld::PL_local_data)::Nothing
     return nothing
 end
 
-# gc:5374 the room an exception being processed may take past the limit: 1 MiB, in positions.
+# gc:5384 the room an exception being processed may take past the limit: 1 MiB, in positions.
 "How far past `stacks_limit` the local stack grows while an exception is processed (pl-gc.c)."
 const EMERGENCY_LIMIT = (1024 * 1024) ÷ 8
 

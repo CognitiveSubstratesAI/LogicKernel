@@ -1,6 +1,6 @@
-# UPSTREAM: swipl-devel src/pl-global.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-variant.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-variant.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -401,9 +401,9 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0,                                      # cold_imports: no import yet
         0,                                      # mark_bar: gTop, set by emptyStacks!
         OCCURS_CHECK_FALSE, true,
-        true,                                   # last_call_optimisation: on (pl-prologflag.c:2400)
-        false,                                  # optimise: off without -O (pl-prologflag.c:2394)
-        true,                                   # optimise_unify: on (pl-prologflag.c:2395)
+        true,                                   # last_call_optimisation: on (pl-prologflag.c:2410)
+        false,                                  # optimise: off without -O (pl-prologflag.c:2404)
+        true,                                   # optimise_unify: on (pl-prologflag.c:2405)
         UInt32(0x0081),                         # FLT_ROUND_NEAREST|FLT_UNDERFLOW (initArith)
         number[], 0, Int[],
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),               # do_unify_cells (L1c-4)

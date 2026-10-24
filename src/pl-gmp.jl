@@ -1,6 +1,6 @@
-# UPSTREAM: swipl-devel src/pl-gmp.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-gmp.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-inline.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-gmp.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gmp.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-inline.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2005-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

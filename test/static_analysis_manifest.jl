@@ -290,6 +290,7 @@ _manifest_per_type(T) = (
     (LK.dropRecords!, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.lowerLTop!, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.newChoice, Tuple{LK.PL_local_data{T}, LK.choice_type, Int}, true),
+    (LK.setJumpChoice!, Tuple{LK.PL_local_data{T}, Int, Int}, true),
     (LK.copyFrameArguments, Tuple{LK.PL_local_data{T}, Int, Int, Int}, true),
     (LK._assert_frame_above_choice, Tuple{LK.PL_local_data{T}, Int, Symbol}, true),  # L1e e1 assertion
     (LK.open_foreign_frame, Tuple{LK.PL_local_data{T}}, true),
@@ -1136,6 +1137,7 @@ function _manifest_index(T)
         (LK.unify_finished, Tuple{LD, Int, LK.finished}, false),
         (LK.call1, Tuple{GD, LD, Int}, false),
         (LK.call_term, Tuple{GD, LD, Int}, false),
+        (LK.call_internal_det_foreign, Tuple{GD, LD, LK.Procedure{T}, Int}, false),
         (LK.callCleanupHandler, Tuple{LD, Int, LK.finished}, false),
         (LK.frameFinished, Tuple{LD, Int, LK.finished}, false),
         (LK.mustBeCallable, Tuple{LD, Int}, false),
@@ -1366,6 +1368,7 @@ function _manifest_index(T)
         (LK._holds_payload, Tuple{Type{T}, Type{BigInt}}, true),
         (LK._number_alloc!, Tuple{LD}, false), (LK._number_free!, Tuple{LD, Int}, true),
         (LK.cpNumber, Tuple{LK.number, LK.number}, true),
+        (LK.moveNumber, Tuple{LK.number, LK.number}, true),
         (LK.check_float, Tuple{LD, LK.number}, false),
         (LK.check_mpq, Tuple{LK.number}, true),
         # L1f f2: its error path raises the global overflow (int_too_big builds the ball), as check_float's

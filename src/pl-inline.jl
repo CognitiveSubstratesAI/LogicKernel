@@ -1,7 +1,7 @@
-# UPSTREAM: swipl-devel src/pl-inline.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-data.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-gvar.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-inline.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-data.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gvar.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2008-2024, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam
@@ -114,7 +114,7 @@ max_generation(def::definition)::gen_t = GEN_MAX
 # DIVERGES: two forms. On a frame (`fr`, an index), upstream's: the frame's `generation` becomes the
 # current global generation. Without one — `retract/1`, which has no frame until V9 makes it a
 # foreign predicate — the generation is returned for the caller to run in. No transactions, so never
-# the transaction's generation (`P_TRANSACT`, inl:733-736).
+# the transaction's generation (`P_TRANSACT`, inl:749-752).
 "The generation a frame of `def` is (re)set to: the current global generation (pl-inline.h)."
 function setGenerationFrame(gd::PL_global_data{T}, def::Definition{T})::gen_t where {T}
     gen = global_generation(gd)

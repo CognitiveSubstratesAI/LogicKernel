@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel boot/init.pl @ 8e1bc1110be4
+# UPSTREAM: swipl-devel boot/init.pl @ cbf4e1896275
 # CLASS: design
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

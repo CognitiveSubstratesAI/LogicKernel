@@ -514,6 +514,34 @@ ported files' headers to either.
     without the mark, without `C_VAR`, and each of the six guards of `compileBodyEQ`/`NEQ`. The
     first run caught 4: the `const == Var` and `Var1 == Var2` guards had no case of their shape,
     in upstream's units or here; four cases were added and all eight rerun.
+* **The 2026-10-24 sync-2: `8e1bc111` → `cbf4e189` (V10.1.19 + one xpce bump)** (D-0123, D-0126,
+  D-0137, D-0138; plunit `bdac3ecf` did not move; 79 upstream commits; 29 ported files changed, 41 markers
+  in 30 functions). Every `# UPSTREAM`
+  header is at `cbf4e1896275`; no `sync-from:` line is left. The oracle is a build of the pin
+  (`version_git` 10.1.19-1-gcbf4e189).
+  * **Ported — `call_internal_det_foreign` (pl-wam.c, `d4dfa740`):** an internal (`system`, `'$'`-named)
+    deterministic variadic foreign predicate called from C runs with no frame of its own, so an error it
+    raises takes the CALLER's context. Upstream calls it from `call_term` (the cleanup goals) and from
+    `callProlog` under `PL_Q_PASS_EXCEPTION` (the setup goals, through `sig_atomic/1`); both are ported.
+    **Changed upstream between 10.1.18 and 10.1.19**, pinned to 10.1.19 (test_cleanup_swipl.jl k39–k48):
+    a setup goal `'$record_clause'(_,_,_)` raised with `context(system:'$record_clause'/3,_)`, now
+    `context(system:sig_atomic/1,_)`; as a cleanup goal, now the cleanup predicate's
+    (`setup_call_cleanup/3`, `setup_call_catcher_cleanup/4`, `call_cleanup/2`). A plain call did not move.
+  * **The run loop's split helpers (`7f98a32f`):** upstream moved the slow paths out of `I_ENTER`,
+    `I_EXIT`, `exit_continue`, `normal_call`, `depart_or_retry_continue`, `I_TCALL` and `bvar_cont` into
+    nine VMH helpers. The three that hold code the kernel ports are labels here (`normal_call_grow`,
+    `exit_det_error`, `exit_watched`); the six that hold only unported code (signals, the profiler,
+    `globaliseVar`, `FR_WATCHED` in `I_TCALL`) are named in their parent's NOT PORTED note.
+  * **Names mirrored (Q1):** `setJumpChoice!` (pl-incl.h, `dd79d15c`: `value.pc` became
+    `value.jump.pc`; `trie_offset` is compiled tries only) at `C_OR`; `moveNumber` (pl-arith.h, a
+    shallow number copy) at `evalExpression`'s four result copies.
+  * **Header only:** the perf refactors (`copyClauseChoice`, `copyWordsScalarUp/Down`, `setLocal`/
+    `clearLocal`, the module cache of `isCurrentModule`), new fields of unported features in
+    `PL_global_data`/`PL_local_data`, and the tabling-only branches (`I_CALLCLEANUP`'s `arity < 5`,
+    `callCleanupHandler`'s arity 5, `CHP_JUMP`'s `TrieOffset`, two new `LOOKUPPROC`s) — each a NOT
+    PORTED note at its site (Q4).
+  * **The atom and functor tables** are regenerated from `src/ATOMS` at the pin (1056 atoms, 336
+    functors); built-in atom indices shift.
 * **The 2026-10-20 sync-1: `8609e216` → `8e1bc111`** (D-0074, D-0076; version 10.1.18 and the plunit
   submodule `bdac3ecf` did not move; 16 upstream commits). ONE commit here, no `sync-from:` line. 19 upstream files changed in the range, ONE ported:
   * **Ported — `pl-index.c` `candidate_indexes` (`8e1bc111`):** the remaining single-argument
@@ -1529,11 +1557,11 @@ take precedence over the text above them where they differ. The inventory, the m
 ### Decision 1 — the boundary is upstream's query API, nested queries included
 
 * **Ported as is, under upstream's names:** `PL_open_query`, `PL_next_solution`, `PL_cut_query`,
-  `PL_close_query`, `PL_exception` (wam:2882-3258).
+  `PL_close_query`, `PL_exception` (wam:2945-3321).
 * **Query setup, as upstream:**
   * a `queryFrame` with a dummy `top_frame`;
   * the real frame, whose return address is the one-instruction clause `I_EXITQUERY` built at start-up
-    (`initVM`, wam:3790);
+    (`initVM`, wam:3950);
   * an embedded `CHP_TOP` choice point holding the query's `Mark`.
 * **Flags kept:** `PL_Q_NORMAL`, `PL_Q_NODEBUG`, `PL_Q_CATCH_EXCEPTION`, `PL_Q_PASS_EXCEPTION`,
   `PL_Q_EXT_STATUS`. **Not ported:** the yield, halt and thread-exit flags.
@@ -1542,9 +1570,9 @@ take precedence over the text above them where they differ. The inventory, the m
 * **`qid_t`:** the position of the query frame on the local stack, checked by a magic field as upstream
   checks it. Upstream mallocs a `{engine, offset}`; this kernel has one engine.
 * **Answers:** an answer is read from the bindings while it is current. Two rules carry over:
-  * calling `PL_next_solution` again after a deterministic last answer undoes it (wam:3653-3659);
+  * calling `PL_next_solution` again after a deterministic last answer undoes it (wam:3813-3819);
   * `PL_cut_query` keeps the bindings and `PL_close_query` undoes them — unless the query ended in an
-    exception it passes on (`qf->exception && PL_Q_PASS_EXCEPTION`, wam:3159). That is the only
+    exception it passes on (`qf->exception && PL_Q_PASS_EXCEPTION`, wam:3222). That is the only
     difference between the two.
 * **Putting a Julia value into a term reference — SWI's semantics (user, 2026-10-14; L1b):
   variable identity = handle; separate puts create new variables.**
@@ -1587,13 +1615,13 @@ take precedence over the text above them where they differ. The inventory, the m
 * **Nested queries, upstream's rules:**
   * queries form a stack (`LD->query`, `qf->parent`);
   * only the innermost query may be advanced, cut or closed — anything else returns `PL_S_NOT_INNER`
-    (wam:3110, 3144, 3650);
-  * a query opens only inside an open foreign frame (asserted, wam:2904-2905), which the CALLER provides —
-    a built-in runs inside its own (`vmi_fopen`), and `callCleanupHandler` opens one (wam:834, 879). A
-    built-in that calls back into Prolog does what `call1`/`call_term` do (wam:737-806): open a query with
+    (wam:3173, 3207, 3810);
+  * a query opens only inside an open foreign frame (asserted, wam:2967-2968), which the CALLER provides —
+    a built-in runs inside its own (`vmi_fopen`), and `callCleanupHandler` opens one (wam:884, 942). A
+    built-in that calls back into Prolog does what `call1`/`call_term` do (wam:778-849): open a query with
     `PL_Q_PASS_EXCEPTION` or `PL_Q_CATCH_EXCEPTION`, take one solution, cut it.
 * **Exceptions crossing Julia (DIVERGES — the only one in this decision):** upstream's `PL_throw` longjmps
-  to a `setjmp` in `PL_next_solution` (wam:3551-3580).
+  to a `setjmp` in `PL_next_solution` (wam:3711-3740).
   * Here, built-ins raise the way most upstream built-ins already do: `PL_raise_exception` plus a `FALSE`
     return.
   * `PL_next_solution` holds the one `try`/`catch` — the `setjmp`'s place. It turns the kernel's own
@@ -1601,7 +1629,7 @@ take precedence over the text above them where they differ. The inventory, the m
   * Any other Julia exception (a bug, an interrupt) restores the query to closed and is rethrown, never
     swallowed.
   * The ball must survive `Undo`. Upstream freezes the global stack under it (`freezeGlobal`,
-    pl-fli.c:4757; `frozen_bar`, wam:1569). Here too the ball lives on the cells, kept below
+    pl-fli.c:4761; `frozen_bar`, wam:1632). Here too the ball lives on the cells, kept below
     `frozen_bar` (L1e e5) and read off them (`export_cells`) since L1f f3.
 * **`# ORIGINAL` conveniences on top, nothing more:**
   * a sink — `f(ld)` is called for each answer while its bindings are live; returning `false` cuts the
@@ -1621,22 +1649,22 @@ to that cell (trailed when the cell is older than the newest choice point). The 
   today;
 * **mutable frame slots:** the local stack's cells, each holding a term.
 
-Writing a slot is not a binding, and upstream does not trail it either (vmi:741-747, 1607-1628).
+Writing a slot is not a binding, and upstream does not trail it either (vmi:741-747, 1620-1641).
 
 | instruction family | upstream (cells) | kernel |
 |---|---|---|
-| frame slots (arguments = slots `0..arity-1`, then clause variables) | words after the frame header, `argFrameP`/`varFrameP` (incl:1192-1202) | positions on the local stack: `slots::Vector{T}`, each a term (an unbound variable is a `VAR` term) |
+| frame slots (arguments = slots `0..arity-1`, then clause variables) | words after the frame header, `argFrameP`/`varFrameP` (incl:1237-1247) | positions on the local stack: `slots::Vector{T}`, each a term (an unbound variable is a `VAR` term) |
 | head, READ mode (`H_ATOM`, `H_SMALLINT`, `H_NIL`, `H_FUNCTOR`, `H_LIST`, …) | `deRef(ARGP)`, compare the cell; descend with `ARGP = argTermP` | `deRef` through the store; compare by IDENTITY (`sym_key`, `gnd_equal`, head + arity); descend with a cursor `(term, child index)` |
-| head, WRITE mode (the caller's argument is unbound) | allocate `f(_,…,_)` on the global stack, bind the argument to it (trailed), then later `H_*` fill the cells in place, untrailed (vmi:782-812). `H_VAR` in write mode COPIES only under `occurs_check=false`; otherwise it unifies the slot with the cell, against the argument ALREADY bound to the partial term (vmi:680-736) | **under `occurs_check=false`, a builder:** later `H_*`/`B_*` write children into a scratch frame, and the closing `H_POP` (or the end of an `R`-chain) builds `mk_expr` and binds the argument (trailed). That is observably the same as binding first: `p(X, f(X))` called as `p(A, A)` gives `A = f(A)` both ways. **Under `true`/`error` it is NOT** — swipl fails `p(A,A)` (`true`), and for `p3(X,Y,f(Y,X))` called as `p3(A,A,A)` raises `occurs_check(_A,f(_A,_B))` (`error`), which a late bind would report as `occurs_check(A,f(A,A))`. So at write-mode entry the builder reads `LD.prolog_flag_occurs_check` as vmi:680 does: under `true`/`error` it takes upstream's order for that compound — `mk_expr` with fresh-variable children, bind the argument (trailed), then `pl_unify!` each `H_VAR` child. The builder state is reset on `CLAUSE_FAILED`, as `unify_backtrack` resets `aTop` (vmi:6467-6469); trailing voids the compiler omits (`f(a,g(_))` ends in `h_rfunctor(g/1) h_pop`) become fresh variables. **For your audit.** |
-| body arguments (`B_ATOM`, `B_SMALLINT`, `B_NIL`, `B_VAR*`, `B_ARGVAR`, `B_FUNCTOR`, `B_LIST`, `B_POP`, …) | `*ARGP++ = cell`, straight into the next frame's argument cells above `lTop` (vmi:1783), or into a compound being built | slot writes above `lTop`; compounds through the same builder |
+| head, WRITE mode (the caller's argument is unbound) | allocate `f(_,…,_)` on the global stack, bind the argument to it (trailed), then later `H_*` fill the cells in place, untrailed (vmi:782-812). `H_VAR` in write mode COPIES only under `occurs_check=false`; otherwise it unifies the slot with the cell, against the argument ALREADY bound to the partial term (vmi:680-736) | **under `occurs_check=false`, a builder:** later `H_*`/`B_*` write children into a scratch frame, and the closing `H_POP` (or the end of an `R`-chain) builds `mk_expr` and binds the argument (trailed). That is observably the same as binding first: `p(X, f(X))` called as `p(A, A)` gives `A = f(A)` both ways. **Under `true`/`error` it is NOT** — swipl fails `p(A,A)` (`true`), and for `p3(X,Y,f(Y,X))` called as `p3(A,A,A)` raises `occurs_check(_A,f(_A,_B))` (`error`), which a late bind would report as `occurs_check(A,f(A,A))`. So at write-mode entry the builder reads `LD.prolog_flag_occurs_check` as vmi:680 does: under `true`/`error` it takes upstream's order for that compound — `mk_expr` with fresh-variable children, bind the argument (trailed), then `pl_unify!` each `H_VAR` child. The builder state is reset on `CLAUSE_FAILED`, as `unify_backtrack` resets `aTop` (vmi:6639-6641); trailing voids the compiler omits (`f(a,g(_))` ends in `h_rfunctor(g/1) h_pop`) become fresh variables. **For your audit.** |
+| body arguments (`B_ATOM`, `B_SMALLINT`, `B_NIL`, `B_VAR*`, `B_ARGVAR`, `B_FUNCTOR`, `B_LIST`, `B_POP`, …) | `*ARGP++ = cell`, straight into the next frame's argument cells above `lTop` (vmi:1796), or into a compound being built | slot writes above `lTop`; compounds through the same builder |
 | first occurrences (`H_FIRSTVAR`, `B_FIRSTVAR`, `B_ARGFIRSTVAR`, `B_VOID`) | `H_FIRSTVAR` in READ mode stores the caller's child in the slot (vmi:755); otherwise a fresh global cell, or `setVar` of a cell, with the slot pointing at it | read mode: the caller's child, stored in the slot; otherwise a fresh variable key (`fresh_var_keys!`) stored in the slot (and in the child being built) |
 | variable reads (`B_VAR`, `B_ARGVAR`, `H_VAR` in write mode) | `linkValI`, `globaliseVar`, and **binding direction chosen by address** (`k > ARGP`, `ARGP < k`; vmi:683, 1050) | `deRef(slot)` copied. **The address rules disappear:** they exist because a global cell may not point into the local stack, and keyed variables live in neither stack |
 | `H_VAR` in read mode, `B_UNIFY_*` | `do_unify`/`unify_ptrs` (pl-prims.c) | `pl_unify!` — already ported |
 | constants (`H_ATOM`, `B_ATOM`, …) | the operand IS the atom or the small integer | the operand indexes a per-clause **literal table** (`Vector{T}`): `B_ATOM` PUTs the term and `H_ATOM` compares by identity. `argKey` derives the index key from the literal (`sym_hash`/`gnd_key`, as today), so the indexes do not change. This replaces today's hash operand, which cannot be decompiled and is not identity — for `H_FUNCTOR`/`B_FUNCTOR` too (`B_FUNCTOR` must construct the head symbol). Only symbols and small integers become `B_ATOM`/`B_SMALLINT` literals: floats, big integers and strings keep `B_FLOAT`/`B_MPZ`/`B_STRING`, which are not `VIF_LCO`, so `lco()` (c:3744) refuses them as upstream does (needs Q1) |
-| LCO (`L_VAR`, `L_*`, `copyFrameArguments`) | raw copies between a frame's own cells (vmi:2415; wam:2410) | slot copies — safe for the same reason as upstream: nothing refers INTO a slot |
-| choice point `Mark` | `{trailtop, globaltop, saved_bar}`; `Undo` resets the trail and `gTop` (wam:1538-1578) | `{trailtop}`; `Undo!` deletes the trailed keys from the store. Julia's GC reclaims what `gTop` would |
+| LCO (`L_VAR`, `L_*`, `copyFrameArguments`) | raw copies between a frame's own cells (vmi:2487; wam:2473) | slot copies — safe for the same reason as upstream: nothing refers INTO a slot |
+| choice point `Mark` | `{trailtop, globaltop, saved_bar}`; `Undo` resets the trail and `gTop` (wam:1601-1641) | `{trailtop}`; `Undo!` deletes the trailed keys from the store. Julia's GC reclaims what `gTop` would |
 | trail elision (`LD->mark_bar`) | a GLOBAL cell newer than the newest choice point is not trailed; a local-stack cell always is (pl-inline.h:536-543) | **not ported — every binding is trailed** (the existing `Trail!` DIVERGES). A key has no age that `Undo` could truncate, so an untrailed binding would leave a stale store entry after backtracking: a leak, not a wrong answer |
-| `term_t` (decision 5) | a word offset into the local stack (incl:2213) | a slot position |
+| `term_t` (decision 5) | a word offset into the local stack (incl:2311) | a slot position |
 
 **Where a flat term store would change this:**
 * write mode would fill cells in place, so no builder;
@@ -1667,24 +1695,24 @@ Gate: test/core_lang/test_firstvar_swipl.jl, against the oracle under default fl
     `predicate`, `generation`, `level`, `flags`; `choice` with `type`, `parent`, `mark`, `frame` and the
     `ClauseChoice` or the jump target).
 * **Every age test upstream makes by address compares `base` positions** (`BFR <= FR`, `fr <= ch`,
-  `FR > catcher`; wam:2040, 2624; vmi:2039, 2174, 2398, 2575, 5127). Frames are reused by LCO and popped
+  `FR > catcher`; wam:2103, 2687; vmi:2070, 2209, 2470, 2658, 5216). Frames are reused by LCO and popped
   by an exit, so this is a stack HEIGHT, not a timestamp — the same as upstream.
 * **Upstream's stack moves, carried over:**
-  * a deterministic exit sets `lTop` to the frame's base and drops the records above it (vmi:2174-2179);
-  * LCO reuses the frame record in place (vmi:2036-2077);
-  * the `memmove` of a `CHP_CLAUSE` choice point to just above the next clause's variables (vmi:6503-6507)
+  * a deterministic exit sets `lTop` to the frame's base and drops the records above it (vmi:2209-2216, 2327-2334);
+  * LCO reuses the frame record in place (vmi:2067-2108);
+  * the `memmove` of a `CHP_CLAUSE` choice point to just above the next clause's variables (vmi:6677-6685)
     becomes an update of its `base`.
 * **Registers and state, as upstream splits them.** `FR`, `NFR`, `ARGP`, `DEF`, `PC` are run-loop
-  locals (wam:3323-3350). `BFR` is NOT a register: it is `LD->choicepoints` (wam:76). `CL` is
-  `FR->clause` (wam:3334). `environment_frame` is written on every call and exit (vmi:1879, 2194),
-  because built-ins and nested queries read it (wam:2953, 2980-2982). The kernel keeps `BFR`,
+  locals (wam:3500-3542). `BFR` is NOT a register: it is `LD->choicepoints` (wam:76). `CL` is
+  `FR->clause` (wam:3511). `environment_frame` is written on every call and exit (vmi:1897, 2296),
+  because built-ins and nested queries read it (wam:3016, 3043-3045). The kernel keeps `BFR`,
   `environment_frame` and `lTop` in `LD` — or syncs them before every foreign call.
 * **FliFrames and query frames are records in the same position space.** FliFrames (`fli_context`,
-  `{size, mark, parent}`) are compared with frames by address (wam:2904, 2968, 3247; pl-fli.c:537-568;
-  vmi:4425, 4503, 5139), and a query's `choice` sits below its `top_frame` and `frame`
-  (pl-incl.h:1911-1916). **Every** assignment that lowers `lTop` drops the records above it, not only a
-  deterministic exit: `I_CUT` (vmi:2591), shallow and deep backtracking (vmi:6490, 6520, 6618),
-  `restore_after_query` (wam:3086).
+  `{size, mark, parent}`) are compared with frames by address (wam:2967, 3031, 3310; pl-fli.c:537-568;
+  vmi:4505, 4583, 5228), and a query's `choice` sits below its `top_frame` and `frame`
+  (pl-incl.h:2009-2014). **Every** assignment that lowers `lTop` drops the records above it, not only a
+  deterministic exit: `I_CUT` (vmi:2674), shallow and deep backtracking (vmi:6664, 6698, 6796),
+  `restore_after_query` (wam:3149).
 * **Allocation:**
   * the stacks are pre-sized at `PL_local_data` creation;
   * `growLocalSpace` (upstream's name) is the ONLY allocating path;
@@ -1692,7 +1720,7 @@ Gate: test/core_lang/test_firstvar_swipl.jl, against the oracle under default fl
     inside it;
   * a warmed run at capacity must allocate nothing on those paths, apart from the compounds the program
     builds;
-  * upstream raises `resource_error` at the stack limit (vmi:1886-1890). That needs V5's exception path;
+  * upstream raises `resource_error` at the stack limit (vmi:1911-1915). That needs V5's exception path;
     until then, a limit on `growLocalSpace` raises a Julia error rather than letting runaway recursion
     exhaust memory.
 
@@ -1703,18 +1731,18 @@ Upstream's own mechanisms, as is:
 * **No choice point when there is no alternative:**
   * `S_TRUSTME` for a single clause, and `S_LIST` for a `[]`/`[_|_]` pair, which dispatches without the
     index;
-  * `S_STATIC` creates `CHP_CLAUSE` only when `firstClause` leaves a candidate (vmi:3362-3381);
-  * shallow backtracking pops the choice point BEFORE the last alternative runs (vmi:6520-6525).
-* **Deterministic exit:** `I_EXIT` with `BFR <= FR` pops the frame (`lTop = FR`, vmi:2174-2179).
+  * `S_STATIC` creates `CHP_CLAUSE` only when `firstClause` leaves a candidate (vmi:3445-3464);
+  * shallow backtracking pops the choice point BEFORE the last alternative runs (vmi:6698-6703).
+* **Deterministic exit:** `I_EXIT` with `BFR <= FR` pops the frame (`lTop = FR`, vmi:2209-2216, 2327-2334).
 * **Last-call frame reuse:**
-  * `I_DEPART`'s LCO (`BFR <= FR`, the `last_call` flag and a defined target, vmi:2039-2042;
+  * `I_DEPART`'s LCO (`BFR <= FR`, the `last_call` flag and a defined target, vmi:2070-2073;
     `copyFrameArguments`);
-  * the compiler's in-place block `L_NOLCO …; I_TCALL | I_LCALL` (vmi:2380-2557; c:3715-3812).
-* **`I_CUT`:** a no-op when `BFR <= FR`, otherwise `discardChoicesAfter` (vmi:2572-2598).
+  * the compiler's in-place block `L_NOLCO …; I_TCALL | I_LCALL` (vmi:2452-2640; c:3715-3812).
+* **`I_CUT`:** a no-op when `BFR <= FR`, otherwise `discardChoicesAfter` (vmi:2655-2681).
 
 Measured above: for the bench's calls (first argument always a bound list), `nreverse` runs on
 `S_TRUSTME` and `S_LIST` alone, so it creates no clause choice point. `S_LIST` falls into `S_STATIC` on an
-unbound argument (vmi:3605-3608): `concatenate(A,B,[1])` is non-deterministic, as in swipl.
+unbound argument (vmi:3685-3688): `concatenate(A,B,[1])` is non-deterministic, as in swipl.
 
 **The gate:**
 * (a) `concatenate/3` on lists of 10³, 10⁴ and 10⁵ elements reaches the same local-stack high-water mark;
@@ -1728,12 +1756,12 @@ unbound argument (vmi:3605-3608): `concatenate(A,B,[1])` is non-deterministic, a
   `pl_<fname><arity>_va(ld, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t)::foreign_t`, where `fname` is
   upstream's C name (`unify`, `variant`, …; `PRED_SHARE` gives `pl_<fname>va_va`, as for `clause/2`) —
   with a `# PORT:` marker. `A1`…`An` are `PL__t0 + i`, and **`term_t` is a slot position, so a
-  built-in's handles ARE its frame's argument slots** (vmi:4319, 4350).
+  built-in's handles ARE its frame's argument slots** (vmi:4399, 4430).
 * **The FLI it needs is ported from pl-fli.c under upstream's names** and works on `(ld, term_t)`:
   `PL_new_term_ref(s)`, `PL_get_*`, `PL_put_*`, `PL_unify_*`. Upstream's built-in bodies (`is/2` at
   pl-arith.c:4772: `valueExpression(A2)`, then `PL_unify_number(A1)`) then port nearly line for line.
 * **Registration as upstream:** `PRED_DEF` tables (`PL_predicates_from_<file>`), `registerBuiltins` at
-  `PL_global_data` creation (pl-ext.c:302-563), and `createForeignSupervisor` giving
+  `PL_global_data` creation (pl-ext.c:302-565), and `createForeignSupervisor` giving
   `I_FCALLDETVA <f>` for a `PRED_DEF` built-in (pl-supervisor.c:143-182). The FRG table
   (pl-ext.c:96-190) is not VARARGS and gets `I_FCALLDET<N>, I_FEXITDET`.
 * **Dispatch (DIVERGES — the reason is invariant 5):** upstream stores a C function pointer in the
@@ -1746,12 +1774,12 @@ unbound argument (vmi:3605-3608): `concatenate(A,B,[1])` is non-deterministic, a
   * User registration (`PL_register_foreign`) is deferred until a consumer needs it, and will need its
     own typed design.
 * **Return protocol, upstream's `I_FEXITDET`:** `TRUE` exits, `FALSE` fails — or throws if an exception
-  is pending — and any other value is a domain error (vmi:4422-4442).
+  is pending — and any other value is a domain error (vmi:4502-4522).
 * **Non-deterministic built-ins** (V9) use upstream's sequence `I_FOPENNDET, I_FCALLNDET*, I_FEXITNDET,
   I_FREDO`:
   * a `CHP_JUMP` choice point and `control_t` with `FRG_FIRST_CALL`/`FRG_REDO`/`FRG_CUTTED`;
   * the redo context kept in the frame's own field rather than overloading `clause` (upstream tags it into
-    `FR->clause`, vmi:4647);
+    `FR->clause`, vmi:4727);
   * `REDO_INT` contexts first. `REDO_PTR` needs a typed context store, designed when the first such
     built-in is ported.
 * **First users:**
@@ -3410,7 +3438,7 @@ with swipl's; the predicates registered from upstream's table, so the differenti
 Prolog clauses through the VM; what is left out marked for R1). Research and plan: the workspace's
 `docs/research/v9-inline-unification/plan_commit4_assert.md`.
 * **Ported:**
-  * `assert_term` (pl-comp.c:4845-5033), the path with `loc` NULL: `get_head_and_body_clause` and
+  * `assert_term` (pl-comp.c:4854-5042), the path with `loc` NULL: `get_head_and_body_clause` and
     `is_neck` (721-747), `get_head_functor` (pl-proc.c:663-697), `isCurrentProcedure`, else
     `checkModifySystemProc` and `isStaticSystemProcedure` (pl-proc.c:466-494) and
     `lookupProcedure`; `compileClause`; then for a predicate that is not dynamic the static
@@ -3475,7 +3503,7 @@ split; the head-unification chunk's third commit; src/pl-comp.jl, pl-incl.jl, pl
 by the user, 2026-10-06 (4a, 5a; identity by position). Research and plan: the workspace's
 `docs/research/v9-inline-unification/` (memo § A, `plan_commit3_moved.md`).
 * **Ported:**
-  * `optimise_unify` (a local-data flag, default true, pl-prologflag.c:2395); `compileClause` sets
+  * `optimise_unify` (a local-data flag, default true, pl-prologflag.c:2405); `compileClause` sets
     `head_unify` on static code under it (pl-comp.c:2017-2022, without SSU).
   * The detection in `analyseVariables2`: a leading `=/2` at a control position is annotated
     (`annotate_unification`, `annotate_unify`, `is_argument_var`, pl-comp.c:750-797); `,` and `true`
@@ -3527,14 +3555,14 @@ its split; the head-unification chunk's second commit; src/pl-vmi.jl, pl-wam.jl,
 pl-funct.jl, pl-global.jl, pl-ext.jl). Decided by the user, 2026-10-06 (1a, 2a, 3a). Research and
 plan: the workspace's `docs/research/v9-inline-unification/`.
 * **Ported:**
-  * 16 instructions (vmi:1146-1516, 2773, 3071, 3091): `B_UNIFY_FIRSTVAR`, `B_UNIFY_VAR`,
+  * 16 instructions (vmi:1159-1529, 2856, 3154, 3174): `B_UNIFY_FIRSTVAR`, `B_UNIFY_VAR`,
     `unify_var_cont`, `B_UNIFY_EXIT`, `B_UNIFY_FF`/`VF`/`FV`/`VV`, `debug_equals2`, `B_UNIFY_FC`/`VC`,
     `B_EQ_VV`/`VC`, `B_NEQ_VV`/`VC`, `C_VAR`, `I_FAIL`, `I_TRUE`.
   * Their emissions, as upstream decides: `compileBodyUnify`, `compileBodyEQ`, `compileBodyNEQ`,
     `skippedVar` (c:4172-4465). `always` and `compileTypeTest` under `optimise` (`I_TRUE`/`I_FAIL`,
     then a first occurrence's `C_VAR`); the goals `true` and `fail` (c:3527-3533).
   * `GD->procedures.equals2`, set where upstream sets it: `setBuiltinPredicateProperties`
-    (`LOOKUPPROC(equals2)` in `system`, pl-ext.c:365), at the end of `initBuildIns`.
+    (`LOOKUPPROC(equals2)` in `system`, pl-ext.c:367), at the end of `initBuildIns`.
 * **The slow path (2a).** Under `occurs_check` `true`/`error` upstream's `LD->slow_unify` holds, and
   every `B_UNIFY_*` writes the two arguments of `=/2` above `lTop` and calls it (`debug_equals2`). An
   error's context is therefore `=/2`, as swipl's (`system:(=)/2` once V5c qualifies contexts). After
@@ -3592,7 +3620,7 @@ src/pl-prims.jl, pl-wam.jl, pl-fli.jl, pl-proc.jl, pl-comp.jl). Research: the wo
   * `retract/1` stops at a pending exception (pl-proc.c:3240-3241); `retractall/1` returns false,
     stopping on a head's error or a failed retract with an exception (pl-proc.c:3341-3370).
   * `clause/2` does NOT stop. Upstream raises the error in `unify_head`, after `decompile`, and
-    checks `exception_term` only when `decompile` fails (pl-comp.c:7393-7426). swipl 10.1.16, probed
+    checks `exception_term` only when `decompile` fails (pl-comp.c:7402-7435). swipl 10.1.16, probed
     with `q(Y, Y). q(a, f(a)).` and `clause(q(A, f(A)), B)` under `error`, answers from the second
     clause and warns that the exception was not cleared.
 * **NOT PORTED:** `blockGC`/`unblockGC` around `PL_error`; they hold off the stack garbage
@@ -3683,7 +3711,7 @@ row V8; src/pl-wam.jl, pl-vmi.jl, pl-comp.jl, pl-arith.jl, pl-gmp.jl, pl-error.j
 `poly_10` runs, and every answer and its determinism are identical to swipl's** (swipl consulting
 bench/programs/poly_10.pl). **All four bench programs now run identically to swipl.**
 * **Ported:**
-  * `A_ADD_FC` (vmi:4004-4083), `M is N-1` compiled inline:
+  * `A_ADD_FC` (vmi:4084-4163), `M is N-1` compiled inline:
     * its fast path is an `Int64` in the tagged range (upstream's `isTaggedInt`), so the sum
       cannot overflow;
     * its slow path evaluates the operand (`evalExpression`) and adds (`ar_add_si`). Its error names
@@ -3891,7 +3919,7 @@ even compile before this step.
   * `rational/1` registered as ISO. This one needed a daemon restart BEFORE its run: the table feeds load-time constants, which Revise does not re-evaluate (V5a2's dispatch-tree lesson, again);
   * `\==` answering as `==`.
 
-  Equivalent: **a failing inline test backtracking deep instead of shallow.** For the frame's own clause choice point, `deep_backtrack`'s `CHP_CLAUSE` branch pops it, takes the next clause and pushes a new one at `argFrameP(FR, variables)` with the same mark after `Undo`. That is the state `shallow_backtrack` reaches by moving it there; upstream's shallow path is the fast path of the deep one for this case (vmi:6480-6553, 6696-).
+  Equivalent: **a failing inline test backtracking deep instead of shallow.** For the frame's own clause choice point, `deep_backtrack`'s `CHP_CLAUSE` branch pops it, takes the next clause and pushes a new one at `argFrameP(FR, variables)` with the same mark after `Undo`. That is the state `shallow_backtrack` reaches by moving it there; upstream's shallow path is the fast path of the deep one for this case (vmi:6652-6731, 6876-).
 * **Not here:** the other inline compilers' decisions — `=/2`, `==/2`, `\==/2`, `arg/3`,
   `$call_continuation/1`, `$shift/1` — still refused whole (V6b2, after V6c); arithmetic and `derive`
   (V6c).
@@ -4097,14 +4125,14 @@ the user.
      cell, `B_POP` closes the builders opened since its entry — the outermost into its slot,
      untrailed (above `lTop`, upstream's "this is above the stack anyway").
   2. **A frame whose call fails before it is filled** — `S_LIST` takes `FRAME_FAILED` before any
-     supervisor raises `lTop` over the frame `normal_call` built above it (vmi:3607-3608) — is
+     supervisor raises `lTop` over the frame `normal_call` built above it (vmi:3687-3688) — is
      dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`): the ONE allowed drop of a
      frame being filled, on the failure path of its own call; `dropRecords!` still refuses every other
      (the user's narrowing of V3's assertion, which was too strict). No position moves. The research
      memo found it by reading; the gate's `p42 :- q42(foo). p42.` with `q42([]). q42([_|_]).` runs it.
   3. **A call operand reaches its procedure through the running clause** (`_call_procedure`,
-     upstream's `CL`, wam:3334).
-  4. **`last_call_optimisation`** is an LD field, on by default (pl-prologflag.c:2400), read at run
+     upstream's `CL`, wam:3511).
+  4. **`last_call_optimisation`** is an LD field, on by default (pl-prologflag.c:2410), read at run
      time by `I_DEPART` and `L_NOLCO` as upstream does (Q-14).
   5. **Last-call reuse ASSERTS that the frame is the newest live record** (`_is_newest_live_frame`)
      at `I_DEPART` and at `L_NOLCO`'s fall-through.
@@ -4226,7 +4254,7 @@ src/pl-index.jl, src/pl-vmi.jl). Plan: two research memos (the head instructions
 the supervisors), every claim cited by line; libswipl probed live through its C query API for the
 return codes, the positions and the closed handle; the open questions went to the user.
 * **Corrections accepted (user, 2026-10-05):** `enterDefinition`/`leaveDefinition` are `(void)0`
-  upstream (pl-incl.h:1302-1303), so entering and leaving a predicate does nothing; `I_EXIT` and
+  upstream (pl-incl.h:1347-1348), so entering and leaving a predicate does nothing; `I_EXIT` and
   `exit_continue` are V4a's, and so are the write-mode body instructions `H_*` jump to (`B_ATOM`,
   `B_SMALLINT`, `B_NIL`, `B_FLOAT`, `B_MPZ`, `B_MPQ`, `B_STRING`, `B_RFUNCTOR`, `B_RLIST`);
   **`argv_at` not dereferencing was a real defect** — a bound argument reached the index as the
@@ -4239,7 +4267,7 @@ return codes, the positions and the closed handle; the open questions went to th
   1. **The run loop: one function with labels — upstream's switch build.** `PL_next_solution_guarded`
      holds pl-vmi.c's instructions and helpers as `@label`s, each under its `# PORT: pl-vmi.c NAME`
      marker, over typed register locals (`FR`, `ARGP`, `PC`, `DEF`, `UMODE`, …). `@goto` cannot
-     leave a `try`, so the split is upstream's (wam:3552-3580): the whole loop inside one `try` in
+     leave a `try`, so the split is upstream's (wam:3712-3740): the whole loop inside one `try` in
      `PL_next_solution`, the handler outside, re-entering through ONE entry — `except = true` for a
      `PrologThrow` (the kernel's `longjmp`), and any other Julia exception closes the query
      (`_abandon_query`) and is rethrown. **The dispatch, MEASURED:** LLVM makes no single jump table
@@ -4375,10 +4403,10 @@ the user.
      and popping — compared as DIFFERENCES, since swipl's base holds its own toplevel frames.
   2. **Decision 3's drop rule, refined four ways** (upstream's actual behaviour):
      * dropping lowers a count; a dropped record stays readable until a push reuses it —
-       `exit_continue` reads `FR->programPointer` and `FR->parent` after `lTop = FR` (vmi:2178-2194);
+       `exit_continue` reads `FR->programPointer` and `FR->parent` after `lTop = FR` (vmi:2214-2224);
      * backtracking drops the records above the resumed choice point BEFORE moving it, because
-       `lTop` can rise over dead records there (vmi:6503-6528, 6712) — V4a's;
-     * nothing drops a frame being filled above `lTop` (`normal_call`, vmi:1869) — ASSERTED;
+       `lTop` can rise over dead records there (vmi:6677-6706, 6894) — V4a's;
+     * nothing drops a frame being filled above `lTop` (`normal_call`, vmi:1887) — ASSERTED;
      * query and foreign-frame handles stay positions, found by walking their chains.
   3. **Clause choice points: a pool per slot.** Each choice-point record owns its `clause_choice`, as
      upstream embeds the struct and passes a pointer to it; `newChoice` resets it; allocation is
@@ -4462,7 +4490,7 @@ src/pl-funct.jl).
     always zero;
   * `COMMIT_CLAUSE` (pl-incl.h) on the clause when its body's first instruction is `I_CUT`
     (c:2165-2167, `OpCode(ci, bi)`);
-  * `I_CUT` declared (pl-vmi.c:2572, `VIF_BREAK`, no operands), numbered after the instructions
+  * `I_CUT` declared (pl-vmi.c:2655, `VIF_BREAK`, no operands), numbered after the instructions
     already declared. Its execution, `discardChoicesAfter`, is V6.
 * **Gate — test/compile/test_body_code_swipl.jl:**
   * all six qsort clauses identical to swipl, partition/4 clause 1 (`X =< Y, !, …`) included;

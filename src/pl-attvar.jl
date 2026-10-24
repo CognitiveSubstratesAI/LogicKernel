@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-attvar.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-attvar.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-attvar.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-attvar.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2004-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

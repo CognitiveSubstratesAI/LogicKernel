@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-ext.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-ext.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -49,7 +49,7 @@ const foreigns = (
     PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO)
 )
 
-# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:499-572: arith, bag, comp, list, prims, variant,
+# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, list, prims, variant,
 # copyterm, trace, pro, read, proc, write, op); and the two dispatch tables. A comment, not a docstring, as for every module-level
 # constant the global-state lint reads.
 const _PRED_TABLES = (
@@ -163,7 +163,7 @@ function _boot_catch3!(gd::PL_global_data{T})::Nothing where {T}
 end
 
 # DIVERGES (no upstream function; as `_boot_catch3!`): boot/init.pl's cleanup family
-# (init.pl:676-685) and its `call/1..8` (init.pl:501-516), compiled when the database is created:
+# (init.pl:689-698) and its `call/1..8` (init.pl:501-516), compiled when the database is created:
 #     setup_call_catcher_cleanup(Setup, _Goal, _Catcher, _Cleanup) :- sig_atomic(Setup), '$call_cleanup'.
 #     setup_call_cleanup(Setup, _Goal, _Cleanup) :- sig_atomic(Setup), '$call_cleanup'.
 #     call_cleanup(_Goal, _Cleanup) :- '$call_cleanup'.
@@ -253,8 +253,8 @@ function _boot_length_error(::Type{T}, formal::T, anon::T)::T where {T}
     return _boot_term(:throw, T[ball])
 end
 
-# DIVERGES (no upstream function; as `_boot_catch3!`): boot/init.pl's length/2 (init.pl:4469-4506)
-# and `'$append'/3` (init.pl:4413-4415), which boot/bags.pl's `alloc_bind_key_list/2` calls,
+# DIVERGES (no upstream function; as `_boot_catch3!`): boot/init.pl's length/2 (init.pl:4482-4519)
+# and `'$append'/3` (init.pl:4426-4428), which boot/bags.pl's `alloc_bind_key_list/2` calls,
 # compiled when the database is created:
 #     length(List, Length) :-
 #         var(Length), !,
@@ -281,7 +281,7 @@ end
 #     '$append'([], L, L).
 #     '$append'([H|T], L, [H|R]) :- '$append'(T, L, R).
 # R2 loads boot/init.pl, which defines them the same way. boot code is system code (`P_LOCKED`);
-# length/2 is ISO (init.pl:4467, `'$iso'`). DIVERGES: a database over a term type that cannot hold
+# length/2 is ISO (init.pl:4480, `'$iso'`). DIVERGES: a database over a term type that cannot hold
 # an `Int64` gets `'$append'/3` only — length/2's clauses contain integers.
 "Define length/2, `'\$length3'/3` and `'\$append'/3` in the `system` module of `gd` as boot/init.pl defines them."
 function _boot_lists!(gd::PL_global_data{T})::Nothing where {T}
@@ -640,7 +640,8 @@ end
 # PORT: pl-ext.c setBuiltinPredicateProperties as setBuiltinPredicateProperties!
 # NOT PORTED: every `LOOKUPPROC` but `equals2`, `dcall1` (the goal clauses' predicate, since
 # V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set) and `catch3` (since V9f) — the
-# procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …), each when
+# procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …; since
+# 10.1.19 `'$tbl_reset'/6` and `call_continuation/1`: tabling and continuations), each when
 # its first reader is ported;
 # `$c_call_prolog/0` is created with the global data (src/pl-global.jl); `heartbeat/0`; `call/1`'s
 # flags and the meta-predicate declarations (no meta-call, V9).

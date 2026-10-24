@@ -1,7 +1,7 @@
-# UPSTREAM: swipl-devel src/pl-wam.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-vmi.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-gc.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-wam.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-vmi.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gc.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -24,22 +24,22 @@
 #
 # THE RECORD DISCIPLINE (decision 3, with the user's refinements of 2026-10-05):
 #   * live records lie below `lTop`, in base order within each pool. The one exception is a frame
-#     being filled ABOVE `lTop`, between `normal_call` and clause selection (vmi:1869);
+#     being filled ABOVE `lTop`, between `normal_call` and clause selection (vmi:1887);
 #   * every assignment that LOWERS `lTop` drops the records at or above the new value
 #     (`lowerLTop!`). Dropping lowers the pool's live count and nothing else: upstream reads a frame
-#     after lowering `lTop` to it (`exit_continue`, vmi:2178-2194), so a dropped record stays
+#     after lowering `lTop` to it (`exit_continue`, vmi:2214-2224), so a dropped record stays
 #     readable until a push reuses it;
 #   * a drop never takes a record at or above the current `lTop`, which would be the frame being
 #     filled. ASSERTED, so a violation fails loudly instead of corrupting a frame;
 #   * backtracking to a choice point drops every record above it before moving it (V4a), because
-#     there `lTop` can RISE over dead records (vmi:6503-6528, 6712).
+#     there `lTop` can RISE over dead records (vmi:6677-6706, 6894).
 
 # ── the records: push, find, drop (the casts upstream makes on positions) ───────────────────────
 """
     pushFrame!(ld, p) -> frame index
 
 The frame record at position `p` — upstream's cast of `p` to a `LocalFrame`, where `normal_call`
-then fills the frame's fields (vmi:1869-1879). The caller writes every field but `base`.
+then fills the frame's fields (vmi:1887-1897). The caller writes every field but `base`.
 """
 function pushFrame!(ld::PL_local_data{T}, p::Int)::Int where {T}
     n = ld.nframes
@@ -117,13 +117,13 @@ end
 
 Drop every record at or above position `p`, of every kind. The records stay readable until a push
 reuses them. Asserts that none of them lies at or above `lTop`: that would be a frame being filled
-above `lTop` (vmi:1869), which nothing may drop.
+above `lTop` (vmi:1887), which nothing may drop.
 """
 function dropRecords!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
     top = ld.lTop
     n = ld.nframes
     while n > 0 && ld.frames[n].base >= p
-        @assert ld.frames[n].base < top "dropRecords!: a frame being filled above lTop (normal_call, vmi:1869) must not be dropped"
+        @assert ld.frames[n].base < top "dropRecords!: a frame being filled above lTop (normal_call, vmi:1887) must not be dropped"
         n -= 1
     end
     ld.nframes = n
@@ -208,6 +208,15 @@ function newChoice(ld::PL_local_data{T}, type::choice_type, fr::Int)::Int where 
     return ch
 end
 
+# PORT: pl-incl.h setJumpChoice as setJumpChoice!
+# DIVERGES: `p` is an index into the code of the frame's clause (see `choice`). NOT PORTED: the
+# `trie_offset` reset (compiled tries only: tabling).
+"Make choice point `ch` a jump to `p` (pl-incl.h `setJumpChoice`)."
+function setJumpChoice!(ld::PL_local_data{T}, ch::Int, p::Int)::Nothing where {T}
+    ld.choices[ch].value_pc = p                 # (ch)->value.jump.pc = (p)
+    return nothing
+end
+
 # ── the overwrite points: never below the newest choice point ───────────────────────────────────
 # ORIGINAL (L1e e1's assertion; audit D-0029, narrowed in D-0031): a slot has ONE side entry and
 # nothing restores a slot word, so no VM writer may OVERWRITE a slot still live below a choice point
@@ -235,7 +244,7 @@ end
 # ── last-call arguments ─────────────────────────────────────────────────────────────────────────
 # PORT: pl-wam.c copyFrameArguments
 # DIVERGES: the frames are given by their base positions: upstream's caller passes `lTop` cast to a
-# frame as `from` (vmi:2069). The long comment above upstream's body describes a reference fix-up
+# frame as `from` (vmi:2100). The long comment above upstream's body describes a reference fix-up
 # pass the body no longer has; the copy is a plain forward copy, safe because `to` is below `from`.
 "Copy the `argc` arguments of the frame at `from` into the frame at `to` (pl-wam.c)."
 function copyFrameArguments(
@@ -559,7 +568,7 @@ is_exception_finish(reason::finished)::Bool =
 "Frame `fr` is left: it no longer runs a clause (pl-wam.c)."
 function leaveFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     ld.frames[fr].clause = nothing
-    # leaveDefinition(fr->predicate): (void)0 upstream (pl-incl.h:1303)
+    # leaveDefinition(fr->predicate): (void)0 upstream (pl-incl.h:1348)
     return nothing
 end
 
@@ -596,6 +605,38 @@ function unify_finished(
         end
         return PL_unify_atom(ld, catcher, mk_sym(T, name))   # PL_unify_atom(catcher, …name)
     end
+end
+
+# PORT: pl-wam.c call_internal_det_foreign
+# DIVERGES: the function is the definition's dispatch index, called through `_fcall_va` (decision 5);
+# the result is `(used, rc)` where upstream returns `used` and writes `*rc`; the context record is
+# a new `foreign_context` (upstream: one on the C stack). NOT PORTED: the profiler and debugger
+# tests (`LD->profile.active`, `debugstatus.debugging`: neither exists here) and
+# `LD->statistics.inferences++` (no inference statistics).
+"""
+    call_internal_det_foreign(gd, ld, proc, av) -> (used, rc)
+
+Call an internal (`system`, `'\$'`-named) deterministic variadic foreign predicate `proc` on the
+arguments `av` directly, without a query (pl-wam.c). It has no frame of its own, so an error it
+raises takes its caller's frame as context — why the path is limited to internal predicates. `used`
+is false when the fast path cannot be used; `rc` is the function's return value.
+"""
+function call_internal_det_foreign(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, av::term_t
+)::Tuple{Bool, foreign_t} where {T}
+    def = proc.definition
+
+    if (def.flags & P_FOREIGN) != 0 && (def.flags & P_VARARG) != 0 &&
+        (def.flags & (P_NONDET | P_TRANSPARENT)) == 0 &&
+        def.module_ == MODULE_system(gd).index &&
+        def.impl_foreign_function != 0 &&
+        startswith(sym_text(def.name), '$')
+        ctx = foreign_context{T}(FRG_FIRST_CALL, UInt(0), def)
+        rc = _fcall_va(def.impl_foreign_function, ld, av, def.arity, ctx)
+        return (true, rc)
+    end
+
+    return (false, FFALSE)
 end
 
 # PORT: pl-wam.c call1
@@ -657,6 +698,8 @@ function call_term(
     end
 
     proc = resolveProcedure(gd, name, arity, m)
+    used, rc = call_internal_det_foreign(gd, ld, proc, av)
+    used && return rc != FFALSE
     qid = PL_open_query(gd, ld, m, PL_Q_PASS_EXCEPTION, proc, av)
     rval = PL_next_solution(gd, ld, qid) != 0
     PL_cut_query(ld, qid)
@@ -766,7 +809,8 @@ end
 
 # PORT: pl-wam.c callCleanupHandler
 # DIVERGES: the frame is an index (it cannot move); the arguments are positions. NOT PORTED:
-# `startCritical`/`endCritical` around the handler (no signals).
+# `startCritical`/`endCritical` around the handler (no signals); the arity-5 case
+# (`tbl_leader_finished()`, the C cleanup of `'$tbl_leader'/5`: tabling).
 """
     callCleanupHandler(ld, fr, reason)
 
@@ -1044,9 +1088,9 @@ function setLTop!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
 end
 
 # A frame `normal_call` built above `lTop` whose own call FAILED before a supervisor raised `lTop`
-# over it: `S_LIST` takes `FRAME_FAILED` first (vmi:3607-3608), as `S_UNDEF`'s `unknown=fail` does
+# over it: `S_LIST` takes `FRAME_FAILED` first (vmi:3687-3688), as `S_UNDEF`'s `unknown=fail` does
 # upstream (not reachable here: no module flags, src/pl-modul.jl). Upstream abandons it —
-# `deep_backtrack` only resets `lTop` (vmi:6712). Here it is dropped
+# `deep_backtrack` only resets `lTop` (vmi:6894). Here it is dropped
 # where `deep_backtrack` leaves it: the ONE drop of a frame being filled that is allowed, on the
 # failure path of its own call (user, 2026-10-05); `dropRecords!` still refuses every other. No
 # position moves.
@@ -1102,7 +1146,7 @@ function _is_newest_live_frame(ld::PL_local_data{T}, fr::Int)::Bool where {T}
 end
 
 # The procedure a call operand names: an index into the RUNNING clause's procedure table (V1), read
-# through `CL` — upstream's `#define CL (FR->clause)` (wam:3334) — where upstream's operand is the
+# through `CL` — upstream's `#define CL (FR->clause)` (wam:3511) — where upstream's operand is the
 # procedure pointer itself (user, 2026-10-05).
 function _call_procedure(ld::PL_local_data{T}, fr::Int, op::code)::Procedure{T} where {T}
     return ((ld.frames[fr].clause::ClauseRef{T}).clause::Clause{T}).procedures[Int(op)]
@@ -1862,7 +1906,7 @@ end
 # DIVERGES: upstream's `switch` build (`!VMCODE_IS_ADDRESS`; user, 2026-10-05), as ONE function: every
 # instruction and helper of pl-vmi.c is a `@label` here, with its `# PORT: pl-vmi.c` marker, in
 # pl-vmi.c's order, and the dispatch is an `if`/`elseif` chain over the dense opcodes. The registers
-# are typed locals (wam:3323-3358): `PC` is three (`PCc`, the code; `PCl`, its literal table; `PC`, the
+# are typed locals (wam:3500-3542): `PC` is three (`PCc`, the code; `PCl`, its literal table; `PC`, the
 # index of the next word); `CL` is `FR`'s `clause`; `BFR`, `environment_frame`, `lTop` and
 # `fli_context` live in `ld`, as upstream's in `LD`. A helper's arguments (`helper_args`) are locals
 # named for the helper. Instructions not ported yet raise `NotPortedError` (their step in
@@ -1882,12 +1926,12 @@ function PL_next_solution_guarded(
     gd::PL_global_data{T}, ld::PL_local_data{T}, qid::Int, except::Bool
 )::Int where {T}
     ph = ld.placeholder
-    # register_file REGISTERS, zeroed (wam:3585)
+    # register_file REGISTERS, zeroed (wam:3745)
     UMODE::unify_mode = uread
     QID::Int = qid
     QF::Int = 0
     FR::Int = 0
-    NFR::Int = 0                                    # the frame a call builds (wam:3336)
+    NFR::Int = 0                                    # the frame a call builds (wam:3513)
     ARGP::argp_t{T} = argp_t{T}(ARGP_SLOT, 0, ph)
     DEF::Definition{T} = gd.procedures_dc_call_prolog0.definition
     PCc::Vector{code} = gd.code_data.exit           # Code PC = NULL
@@ -2406,7 +2450,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c bvar_cont
     # DIVERGES: a helper label, its argument `bv_voffset`. No `globaliseVar`: no variable lives in a
-    # frame slot (L1c). It moves WORDS: into an argument slot (`_slot_link!`, L1b C6a), into a
+    # frame slot (L1c), so NOT PORTED: the `isVar(*p)` test and its helper `bvar_globalise`. It moves WORDS: into an argument slot (`_slot_link!`, L1b C6a), into a
     # global cell (`_cell_link!`, L1c).
     @label bvar_cont
     if ARGP.form == ARGP_SLOT
@@ -2721,8 +2765,8 @@ function PL_next_solution_guarded(
 
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
-    # DIVERGES: NOT PORTED: the `LD->alerted` block (coverage, the debugger's unify port, waking
-    # attributed variables).
+    # DIVERGES: NOT PORTED: the `LD->alerted` test and its helper `i_enter_alerted` (coverage, the
+    # debugger's unify port, waking attributed variables).
     @label I_ENTER
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
     @goto next_instruction
@@ -2740,7 +2784,7 @@ function PL_next_solution_guarded(
     @goto normal_call
 
     # PORT: pl-vmi.c normal_call
-    # DIVERGES: the new frame stays ABOVE `lTop` (vmi:1869) until its supervisor raises `lTop`; one
+    # DIVERGES: the new frame stays ABOVE `lTop` (vmi:1887) until its supervisor raises `lTop`; one
     # whose call fails first is dropped where `deep_backtrack` leaves it (`_drop_unfilled_frame!`).
     @label normal_call
     nc_f = ld.frames[NFR]
@@ -2753,20 +2797,26 @@ function PL_next_solution_guarded(
     _assert_frame_above_choice(ld, nc_f.base, :normal_call)     # (L1e e1 assertion)
 
     if !hasLocalSpace(ld, LOCAL_MARGIN)
-        setLTop!(ld, argFrameP(nc_f.base, DEF.arity))
-        @SAVE_REGISTERS(QID)
-        nc_rc = growLocalSpace(ld, LOCAL_MARGIN, ALLOW_SHIFT)
-        @LOAD_REGISTERS(QID)
-        if nc_rc != BOOLEX_TRUE
-            raiseStackOverflow(ld, nc_rc)
-            @goto b_throw                           # THROW_EXCEPTION
-        end
+        @goto normal_call_grow
+    end
+    @goto depart_or_retry_continue
+
+    # PORT: pl-vmi.c normal_call_grow
+    @label normal_call_grow
+    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+    @SAVE_REGISTERS(QID)
+    ncg_rc = growLocalSpace(ld, LOCAL_MARGIN, ALLOW_SHIFT)
+    @LOAD_REGISTERS(QID)
+    if ncg_rc != BOOLEX_TRUE
+        raiseStackOverflow(ld, ncg_rc)
+        @goto b_throw                               # THROW_EXCEPTION
     end
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c depart_or_retry_continue
-    # DIVERGES: NOT PORTED: the profiler's node, the inference count, and the `LD->alerted` block
-    # (signals, undo hooks, depth and inference limits, the debugger).
+    # DIVERGES: NOT PORTED: the profiler's node, the inference count, and the `LD->alerted` test
+    # with its helper `depart_alerted` (signals, undo hooks, depth and inference limits, the
+    # debugger).
     @label depart_or_retry_continue
     # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
     # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
@@ -3056,6 +3106,8 @@ function PL_next_solution_guarded(
     # ── the cleanup family (pl-vmi.c), V9g ─────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_CALLCLEANUP
     # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`linkValI`), as `I_CATCH`'s.
+    # NOT PORTED: the `arity < 5` exemption from the callable check (`'$tbl_leader'/5` has a C
+    # cleanup: tabling); every cleanup frame here has arity 2..4.
     @label I_CALLCLEANUP
     icc_f = ld.frames[FR]
     icc_arity = (icc_f.predicate::Definition{T}).arity
@@ -3118,24 +3170,20 @@ function PL_next_solution_guarded(
 
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT
-    # DIVERGES: NOT PORTED: the `LD->alerted` block (the debugger's exit port).
+    # DIVERGES: NOT PORTED: the `LD->alerted` test and its helper `i_exit_alerted` (the debugger's
+    # exit port).
     @label I_EXIT
     @goto exit_continue
 
     # PORT: pl-vmi.c exit_continue
     # DIVERGES: lowering `lTop` to the frame drops its record and everything above it (decision 3),
-    # and the record is still read after, as here (since V3). `FR_DET`/`FR_DETGUARD`
-    # (`determinism_error`): since V9f (`$/0` sets the guard; the `det` property's `FR_DET` is still
-    # set by nothing). `leave` (since V9g): a cleanup frame that exits deterministically has run its
-    # handler at `I_EXITCLEANUP` (`FR_CAUGHT`; asserted), so `frameFinished` finds nothing to do —
-    # it reads the dropped record's flags only.
+    # and the record is still read after, as here (since V3). NOT PORTED: the profiler's
+    # `exit_profile`.
     @label exit_continue
     ec_f = ld.frames[FR]
-    ec_leave = 0
     if ld.BFR == 0 || ld.choices[ld.BFR].base <= ec_f.base   # deterministic
         if (ec_f.flags & FR_WATCHED) != 0
-            @assert (ec_f.flags & FR_CAUGHT) != 0 "exit_continue: a cleanup frame exits before its handler ran"
-            ec_leave = FR
+            @goto exit_watched
         end
         ec_f.clause = nothing                       # leaveDefinition() destroys clause
         # leaveDefinition(DEF): (void)0 upstream
@@ -3143,12 +3191,7 @@ function PL_next_solution_guarded(
     else
         ec_f.flags &= ~FR_INBOX
         if (ec_f.flags & (FR_DET | FR_DETGUARD)) != 0
-            @SAVE_REGISTERS(QID)
-            determinism_error(ld, FR, ld.BFR, :nondet)
-            @LOAD_REGISTERS(QID)
-            if ld.exception_term != 0
-                @goto b_throw                       # THROW_EXCEPTION
-            end
+            @goto exit_det_error
         end
     end
 
@@ -3159,13 +3202,54 @@ function PL_next_solution_guarded(
     ld.environment_frame = FR
     DEF = ld.frames[FR].predicate::Definition{T}
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
-    if ec_leave != 0
-        @SAVE_REGISTERS(QID)
-        frameFinished(ld, ec_leave, FINISH_EXIT)
-        @LOAD_REGISTERS(QID)
-        if ld.exception_term != 0
-            @goto b_throw                           # THROW_EXCEPTION
-        end
+    @goto next_instruction
+
+    # PORT: pl-vmi.c exit_det_error
+    # DIVERGES: `FR_DET`/`FR_DETGUARD` (`determinism_error`): since V9f (`$/0` sets the guard; the
+    # `det` property's `FR_DET` is still set by nothing). NOT PORTED: `exit_profile` (the profiler),
+    # so the frame pop goes on to the next instruction.
+    @label exit_det_error
+    @SAVE_REGISTERS(QID)
+    determinism_error(ld, FR, ld.BFR, :nondet)
+    @LOAD_REGISTERS(QID)
+    if ld.exception_term != 0
+        @goto b_throw                               # THROW_EXCEPTION
+    end
+
+    ed_f = ld.frames[FR]
+    PCc = ed_f.programPointer.codes
+    PCl = ed_f.programPointer.literals
+    PC = ed_f.programPointer.pc
+    FR = ed_f.parent
+    ld.environment_frame = FR
+    DEF = ld.frames[FR].predicate::Definition{T}
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+    @goto next_instruction                          # VMH_GOTO(exit_profile)
+
+    # PORT: pl-vmi.c exit_watched
+    # DIVERGES: lowering `lTop` drops the record, which is still read after (see `exit_continue`).
+    # `leave` (since V9g): a cleanup frame that exits deterministically has run its handler at
+    # `I_EXITCLEANUP` (`FR_CAUGHT`; asserted), so `frameFinished` finds nothing to do — it reads the
+    # dropped record's flags only. NOT PORTED: the profiler (`profResumeParent`).
+    @label exit_watched
+    ew_f = ld.frames[FR]
+    @assert (ew_f.flags & FR_CAUGHT) != 0 "exit_watched: a cleanup frame exits before its handler ran"
+    ew_leave = FR                                   # LocalFrame leave = FR
+    ew_f.clause = nothing                           # leaveDefinition() destroys clause
+    # leaveDefinition(DEF): (void)0 upstream
+    lowerLTop!(ld, ew_f.base)                       # lTop = FR
+    PCc = ew_f.programPointer.codes
+    PCl = ew_f.programPointer.literals
+    PC = ew_f.programPointer.pc
+    FR = ew_f.parent
+    ld.environment_frame = FR
+    DEF = ld.frames[FR].predicate::Definition{T}
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+    @SAVE_REGISTERS(QID)
+    frameFinished(ld, ew_leave, FINISH_EXIT)
+    @LOAD_REGISTERS(QID)
+    if ld.exception_term != 0
+        @goto b_throw                               # THROW_EXCEPTION
     end
     @goto next_instruction
 
@@ -3269,7 +3353,7 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c I_LCALL
-    # DIVERGES: the operand as `I_CALL`'s. QUIRK kept: `setFramePredicate` twice (vmi:2499, 2527).
+    # DIVERGES: the operand as `I_CALL`'s. QUIRK kept: `setFramePredicate` twice (vmi:2571, 2599).
     # NOT PORTED: the context module and `P_TRANSPARENT` (every clause is `user`'s until R2's
     # `module/2`), `FR_WATCHED` (asserted absent: see `I_DEPART`), `HIDE_CHILDS`.
     @label I_LCALL
@@ -3292,7 +3376,8 @@ function PL_next_solution_guarded(
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c I_TCALL
-    # DIVERGES: NOT PORTED: `FR_WATCHED` (asserted absent), `HIDE_CHILDS` (see `I_DEPART`).
+    # DIVERGES: NOT PORTED: `FR_WATCHED` (asserted absent) and so its helper `tcall_watched`,
+    # `HIDE_CHILDS` (see `I_DEPART`).
     @label I_TCALL
     @assert (ld.frames[FR].flags & FR_WATCHED) == 0
     tcallSetNextFrameFlags(ld.frames[FR])
@@ -3348,7 +3433,7 @@ function PL_next_solution_guarded(
     PC += 1
     @ENSURE_LOCAL_SPACE(SIZEOF_CHOICE)              # hasLocalSpace(sizeof(struct choice))
     co_ch = newChoice(ld, CHP_JUMP, FR)
-    ld.choices[co_ch].value_pc = PC + co_skip
+    setJumpChoice!(ld, co_ch, PC + co_skip)
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)    # ARGP = argFrameP(lTop, 0)
     @goto next_instruction
 
@@ -3782,11 +3867,11 @@ function PL_next_solution_guarded(
         PL_close_foreign_frame(ld, su_fid)
     end
     @LOAD_REGISTERS(QID)
-    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1302) — "will be left in exception code"
+    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347) — "will be left in exception code"
     @goto b_throw                                   # THROW_EXCEPTION
 
     # PORT: pl-vmi.c S_STATIC
-    # QUIRK, as upstream (vmi:3358): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds
+    # QUIRK, as upstream (vmi:3441): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds
     # `arity` whole frames — `8·arity` positions, not `arity` (probed live: after a failing query of
     # f/1 the next term reference lies at qf+61, of h/2 at qf+69). `chp` is the local data's scratch
     # `clause_choice` where upstream's is on the C stack. With no clause, a frame that must not fail
@@ -3828,7 +3913,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c S_DYNAMIC
     @label S_DYNAMIC
-    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1302)
+    # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347)
     @goto S_STATIC                                  # SEPARATE_VMI1; VMI_GOTO(S_STATIC)
 
     # PORT: pl-vmi.c S_MULTIFILE
@@ -3958,7 +4043,7 @@ function PL_next_solution_guarded(
     @goto b_throw                                   # THROW_EXCEPTION
 
     # PORT: pl-vmi.c I_FEXITDET as helper_I_FEXITDET
-    # DIVERGES: the label is upstream's switch-build helper name (`helper_ ## Name`, wam:3492) — a
+    # DIVERGES: the label is upstream's switch-build helper name (`helper_ ## Name`, wam:3652) — a
     # Julia label cannot share the instruction's; its argument is `fexitdet_rc`.
     @label helper_I_FEXITDET
     @LOAD_REGISTERS(QID)
@@ -4113,6 +4198,7 @@ function PL_next_solution_guarded(
     DEF = ld.frames[FR].predicate::Definition{T}
 
     if db_c.type == CHP_JUMP
+        # NOT PORTED: `*TrieOffset = BFR->value.jump.trie_offset` (compiled tries only: tabling)
         db_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
         PCc = db_jclause.codes
         PCl = db_jclause.literals
@@ -4234,7 +4320,7 @@ function PL_next_solution_guarded(
         bt_fid = 0
     end
     # find the catching frame (since V9f). The rewrite loop runs `exception_hook` only when
-    # `'$exception_hook'/5` has clauses (pl-wam.c:2276): none here, so it is not entered.
+    # `'$exception_hook'/5` has clauses (pl-wam.c:2339): none here, so it is not entered.
     @SAVE_REGISTERS(QID)
     bt_catchfr = findCatcher(gd, ld, bt_fid, FR, ld.BFR, ld.exception_term)
     @LOAD_REGISTERS(QID)

@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-pro.c @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-pro.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2022, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -54,6 +54,15 @@ function callProlog(
         _PL_get_arg(ld, n + 1, g, args + n)
     end
 
+    if (flags & PL_Q_PASS_EXCEPTION) != 0
+        used, rc = call_internal_det_foreign(gd, ld, proc, args)
+        if used
+            rval = rc != FFALSE && ld.exception_term == 0
+            PL_reset_term_refs(ld, g)                   # reset = (ex2 ? ex2 : g): no `ex` here
+            return rval
+        end
+    end
+
     qid = PL_open_query(gd, ld, gd.modules[m], flags, proc, args)
     rval = PL_next_solution(gd, ld, qid) != 0
 
@@ -82,7 +91,7 @@ function pl_sig_atomic1_va(
 end
 
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
-# DIVERGES: the ported entry only (upstream's table has eight, pl-pro.c:1045-1054).
+# DIVERGES: the ported entry only (upstream's table has eight, pl-pro.c:1060-1069).
 "pl-pro.c's registration table (`BeginPredDefs(pro)`): the ported entry."
 const PL_predicates_from_pro = (
     PL_extension(

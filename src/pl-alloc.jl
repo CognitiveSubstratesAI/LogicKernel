@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-alloc.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-gc.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-alloc.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-gc.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -149,7 +149,7 @@ end
 # nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
 # stacks with `n` more cells within `stacks_limit` (`_stacks_in_use`), else the overflow is raised
 # (`resource_error(stack)`). While an exception is processed no request is refused: upstream's
-# `grow_stacks` in its error condition raises the limit to the need plus 1 MiB (pl-gc.c:5371,
+# `grow_stacks` in its error condition raises the limit to the need plus 1 MiB (pl-gc.c:5381,
 # `EMERGENCY_LIMIT`) for every request, so none fails for the limit (since L1f f1b: the audit's D-0042 traced).
 # The handler itself runs after `resumeAfterException` (processing cleared): under the limit again.
 "Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`)."

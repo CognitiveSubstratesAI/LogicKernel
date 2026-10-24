@@ -112,7 +112,7 @@ function _rct_clauses()
         (_rf("t20"), _rf("call", _rs("true"))), (_rf("t21"), _rf("call", _rs("fail"))),
         # the recovery's ball while a choice point of the RECOVERY lies above catch/3's frame (rg/2's
         # clause choice): `fr <= ch` holds, so `FR_CAUGHT` alone keeps the same catch/3 from catching
-        # it again (findCatcher, pl-wam.c:2040-2042) — caught again, rg/2's second clause answers `inner`
+        # it again (findCatcher, pl-wam.c:2103-2105) — caught again, rg/2's second clause answers `inner`
         (_rf("rg", E, _rv(9)), _rconj(_rf("var", E), _rf("=", E, _rg(1)), th(_rf("f", E)))),
         (_rf("rg", E, R), _rconj(_rf("nonvar", E), _rf("=", R, _rs("inner")))),
         (
@@ -134,7 +134,7 @@ function _rct_clauses()
         ),
         # the catcher's unification under the occurs_check flag: `false` binds Y = g(Y) and catches;
         # `error` raises, and THAT error is the ball from there on (findCatcher's "Exception from
-        # PL_unify()", pl-wam.c:2067-2069)
+        # PL_unify()", pl-wam.c:2130-2132)
         (
             _rf("t24", R),
             c(

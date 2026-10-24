@@ -4,7 +4,7 @@
 #     reference at +45 — libswipl's own, probed);
 #   * an EXECUTION DIFFERENTIAL over random rule clauses: every answer and its determinism identical
 #     to swipl's, with the body family covered — each instruction of it compiled in the corpus;
-#   * a frame that fails before it is filled (`S_LIST`, vmi:3607-3608): dropped where `deep_backtrack`
+#   * a frame that fails before it is filled (`S_LIST`, vmi:3687-3688): dropped where `deep_backtrack`
 #     leaves it, and swipl's answers;
 #   * POSITIONS after a deterministic exit (MQ6): seven clauses as swipl's `prolog_current_frame/1`
 #     and `prolog_current_choice/1` differences — the real built-ins, reached from `user` through
@@ -1692,7 +1692,7 @@ const _R_POS = [(:c1, 20, :choice), (:mq6a, 20, :choice), (:mq6b, 20, :choice),
 end
 
 # ── where the next frame lands after a cut (V6a) ────────────────────────────────────────────────
-# `I_CUT` lowers `lTop` to the clause's variables (vmi:2591), so a frame pushed after the cut lands
+# `I_CUT` lowers `lTop` to the clause's variables (vmi:2674), so a frame pushed after the cut lands
 # there, whatever the cut discarded: a callee's choice point (`ccut`), the clause's own clause choice
 # point (`kcut`), a callee frame holding choice points (`cdeep`). `qn/1` keeps its frame (its second
 # clause is a choice point); the distance is its frame from the clause's, read as MQ6 reads it.
@@ -1790,7 +1790,7 @@ end
     @test _rproc(db, _rf("l15", _rnil())).definition.codes[1] == LK.S_LIST
     @test _rfirst_tref(db, _rs("w15")) == (0, 54)
 
-    # The logical update view, per CALL (vmi:1900: every call re-stamps its frame's generation):
+    # The logical update view, per CALL (vmi:1924: every call re-stamps its frame's generation):
     # d16(2) retracted between the two answers, so the second call of d16 does not see it.
     X = _rv(1)
     clauses = [(_rf("m16", _rg(1)), nothing), (_rf("m16", _rg(2)), nothing),

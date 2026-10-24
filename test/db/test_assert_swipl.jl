@@ -333,7 +333,7 @@ proc_of(db::_ADB, name::String) =
     LK.isCurrentProcedure(sym_key(_as(name)), 1, LK.MODULE_system(db.gd)).definition
 
 @testset "assert/1: as assertz/1, through the query API and from a clause (autoImport, V5c)" begin
-    # its procedure in `system`, called directly: it adds at the end, as assertz/1 (pl-comp.c:9198)
+    # its procedure in `system`, called directly: it adds at the end, as assertz/1 (pl-comp.c:9207)
     db = _aload([(_as("r"), _af("assertz", _af("as1", _ag(1))))])
     @test _arun(db, _as("r")) == "ok"
     gd, ld = db.gd, db.ld

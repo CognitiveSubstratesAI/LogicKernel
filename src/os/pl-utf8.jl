@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/os/pl-utf8.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/os/pl-utf8.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/os/pl-utf8.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-utf8.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2021, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

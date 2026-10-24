@@ -22,8 +22,8 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
 # (compileSubClause's loop, c:3588-3592); a variable's offset `n + argvars` (analyse_variables,
 # c:1365, numbered by first occurrence) and its cell linked to it (`link_local_var`: `*k =
 # makeRefG(vd->address)`, c:2947, called at c:3085); pl-vmi.c i_metacall_common's local branch —
-# `NFR->programPointer = PC` (vmi:5494) with PC past `I_CALL1`, an instruction of no operands
-# (`VMI(I_CALL1, VIF_BREAK, 0, ())`, vmi:5343).
+# `NFR->programPointer = PC` (vmi:5583) with PC past `I_CALL1`, an instruction of no operands
+# (`VMI(I_CALL1, VIF_BREAK, 0, ())`, vmi:5432).
 @testset "the goal clause: its cells are written; its frame saves the caller's program pointer" begin
     db = _rdb(_rgc_clauses())
     gd, ld = db.gd, db.ld
@@ -66,7 +66,7 @@ _rgc_clauses() = Tuple{_R, Union{Nothing, _R}}[
         f = ld.frames[i]
         f.predicate === gd.procedures_dcall1.definition || continue
         seen += 1
-        @test f.programPointer.codes === ccl.codes && f.programPointer.pc == k1 + 1   # vmi:5494
+        @test f.programPointer.codes === ccl.codes && f.programPointer.pc == k1 + 1   # vmi:5583
     end
     @test seen == 1
     LK.PL_close_query(ld, qid)

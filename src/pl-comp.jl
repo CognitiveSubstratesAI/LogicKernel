@@ -1,6 +1,6 @@
-# UPSTREAM: swipl-devel src/pl-comp.c @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-comp.h @ 8e1bc1110be4
-# UPSTREAM: swipl-devel src/pl-incl.h @ 8e1bc1110be4
+# UPSTREAM: swipl-devel src/pl-comp.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-comp.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -3438,7 +3438,7 @@ end
 
 # PORT: pl-comp.c BeginPredDefs as PL_predicates_from_comp
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (c:9193-9223); `META` is `PL_FA_TRANSPARENT` (c:9190) and `PRED_DEF` ors in `PL_FA_VARARGS`.
+# (c:9202-9232); `META` is `PL_FA_TRANSPARENT` (c:9199) and `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-comp.c's registration table (`BeginPredDefs(comp)`): the ported entries."
 const PL_predicates_from_comp = (
     PL_extension("\$record_clause", 3, pl_record_clause3_va, PL_FA_VARARGS),

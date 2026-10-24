@@ -110,7 +110,7 @@ function _l_frame_diff(caller::LK.Clause{_L})::Int
     fr = LK.pushFrame!(ld, ld.lTop)                         # the caller's frame (normal_call)
     base = ld.frames[fr].base
     ld.lTop = LK.argFrameP(base, Int(caller.variables))     # TRUST_CLAUSE (vmi:159)
-    nfr = LK.pushFrame!(ld, ld.lTop)                        # NFR = lTop (I_CALL, vmi:1869)
+    nfr = LK.pushFrame!(ld, ld.lTop)                        # NFR = lTop (I_CALL, vmi:1887)
     return ld.frames[nfr].base - base
 end
 
@@ -121,8 +121,8 @@ function _l_choice_diff(caller::LK.Clause{_L}, first::LK.Clause{_L})::Int
     base = ld.frames[fr].base
     ld.lTop = LK.argFrameP(base, Int(caller.variables))
     m = LK.pushFrame!(ld, ld.lTop)
-    ld.lTop = LK.argFrameP(ld.frames[m].base, Int(first.variables))   # vmi:3375
-    ch = LK.newChoice(ld, LK.CHP_CLAUSE, m)                            # vmi:3379
+    ld.lTop = LK.argFrameP(ld.frames[m].base, Int(first.variables))   # vmi:3458
+    ch = LK.newChoice(ld, LK.CHP_CLAUSE, m)                            # vmi:3462
     return ld.choices[ch].base - base
 end
 
@@ -379,7 +379,7 @@ end
     fid = LK.PL_open_foreign_frame(ld)
     @test (ld.nframes, ld.nchoices, ld.nfliframes) == (2, 1, 2)
 
-    # a deterministic exit of A: lTop = FR (vmi:2178) drops A and everything above it …
+    # a deterministic exit of A: lTop = FR (vmi:2214) drops A and everything above it …
     LK.lowerLTop!(ld, fa.base)
     ld.BFR = 0                                              # (its choice point is gone with it)
     @test (ld.nframes, ld.nchoices, ld.nfliframes) == (0, 0, 1)
