@@ -1163,12 +1163,26 @@ function _manifest_index(T)
         (LK.copyRecordToGlobal, Tuple{LD, Int, LK.record{T}}, false),
         (LK.current_bag, Tuple{LD}, true),
         (LK.add_findall_bag, Tuple{LD, Int, Int}, false),
+        (
+            LK.pl_nat_sort,
+            Tuple{LD, Int, Int, Bool, LK.sort_order, Bool, Vector{Union{Int, T}}},
+            false
+        ),
         (LK.pl_nat_sort, Tuple{LD, Int, Int, Bool, LK.sort_order, Bool}, false),
+        # sort/4 (audit D-0127 item 2): the key path, the key argument, the existence_error/3 raiser
+        (LK.extract_key_cells, Tuple{LD, Int, Vector{Union{Int, T}}}, false),
+        (LK.get_key_arg_ex, Tuple{LD, Int, Bool}, false),
+        (LK.PL_existence_error3, Tuple{LD, T, Int, Int}, false),
         # the sort family on cells (L1d step 9)
         (LK.skip_list_cells, Tuple{LD, Int}, false),
         (LK._is_list_word, Tuple{LD, UInt8, UInt64}, true),
         (LK._sort_compare, Tuple{LD, LK.List_Record_cells, Int, Int, LK.sort_order}, false),
         (LK.nat_sort, Tuple{LD, LK.List_Record_cells, Int, Bool, LK.sort_order}, false),
+        (
+            LK.prolog_list_to_sort_list_cells,
+            Tuple{LD, Int, Bool, Bool, Vector{Union{Int, T}}},
+            false
+        ),
         (LK.prolog_list_to_sort_list_cells, Tuple{LD, Int, Bool, Bool}, false),
         (LK.put_sort_list_cells, Tuple{LD, Int, LK.List_Record_cells, Int}, false),
         (LK.term_variables, Tuple{LD, Int, Int, Int}, false),
@@ -1184,7 +1198,8 @@ function _manifest_index(T)
                 LK.pl_new_findall_bag0_va, LK.pl_add_findall_bag1_va,
                 LK.pl_add_findall_bag2_va, LK.pl_collect_findall_bag2_va,
                 LK.pl_destroy_findall_bag0_va, LK.pl_is_list1_va, LK.pl_dlength2_va,
-                LK.pl_sort2_va, LK.pl_msort2_va, LK.pl_keysort2_va, LK.pl_ground1_va,
+                LK.pl_sort2_va, LK.pl_msort2_va, LK.pl_keysort2_va, LK.pl_sort4_va,
+                LK.pl_ground1_va,
                 LK.pl_acyclic_term1_va, LK.pl_cyclic_term1_va, LK.pl_functor3_va,
                 LK.pl_numbervars4_va, LK.pl_term_variables2_va,
                 LK.pl_term_variables3_va,

@@ -86,6 +86,92 @@ function _rsl_cases()
             )
         ),
         ("k8", E, err(_rf("keysort", _rs("foo"), L))),
+        # ── sort/4 (pl-list.c; ported 2026-10-24, audit D-0127 item 2): the order names, keys by argument, error cases ──
+        ("q1", L, _rf("sort", _rg(0), _rs("@>="), _rlist(c, a, b, a), L)),
+        ("q2", L, _rf("sort", _rg(0), _rs("@<"), _rlist(c, a, b, a), L)),
+        ("q3", L, _rf("sort", _rg(0), _rs("@>"), _rlist(c, a, b, a), L)),
+        ("q4", L, _rf("sort", _rg(0), _rs("@=<"), _rlist(c, a, b, a), L)),
+        ("q5", L, _rf("sort", _rg(0), _rs("<"), _rlist(_rg(3), _rg(1), _rg(2), _rg(1)), L)),
+        (
+            "q6",
+            L,
+            _rf("sort", _rg(0), _rs("=<"), _rlist(_rg(3), _rg(1), _rg(2), _rg(1)), L)
+        ),
+        ("q7", L, _rf("sort", _rg(0), _rs(">"), _rlist(_rg(3), _rg(1), _rg(2), _rg(1)), L)),
+        (
+            "q8",
+            L,
+            _rf("sort", _rg(0), _rs(">="), _rlist(_rg(3), _rg(1), _rg(2), _rg(1)), L)
+        ),
+        (
+            "q9", L,
+            _rf(
+                "sort", _rg(1), _rs("@<"),
+                _rlist(_rf("f", _rg(2), a), _rf("f", _rg(1), b), _rf("f", _rg(2), c)), L
+            )
+        ),
+        (
+            "q10", L,
+            _rf(
+                "sort", _rg(1), _rs("@=<"),
+                _rlist(_rf("f", _rg(2), a), _rf("f", _rg(1), b), _rf("f", _rg(2), c)), L
+            )
+        ),
+        (
+            "q11", L,
+            _rf(
+                "sort", _rg(2), _rs("@>="),
+                _rlist(_rf("f", _rg(1), b), _rf("f", _rg(2), a), _rf("f", _rg(3), b)), L
+            )
+        ),
+        (
+            "q12", L,
+            _rf(
+                "sort", _rlist(_rg(1), _rg(1)), _rs("@<"),
+                _rlist(_rf("f", _rf("g", _rg(2)), a), _rf("f", _rf("g", _rg(1)), b)), L
+            )
+        ),
+        (
+            "q13", L,
+            _rf(
+                "sort", _rlist(_rg(2), _rg(1)), _rs("@>"),
+                _rlist(
+                    _rf("f", a, _rf("g", _rg(1), _rg(2))),
+                    _rf("f", b, _rf("g", _rg(2), _rg(1)))
+                ), L
+            )
+        ),
+        ("q14", L, _rf("sort", _rlist(), _rs("@<"), _rlist(a, b), L)),     # an empty key list: the item itself
+        ("q15", L, _rf("sort", _rg(1), _rs("@<"), _rnil(), L)),
+        ("q16", L, _rf("sort", _rg(1), _rs("@<"), _rlist(_rf("f", a)), L)),   # one element: still checked
+        ("q17", E, err(_rf("sort", _rg(3), _rs("@<"), _rlist(_rf("f", a)), L))),
+        ("q18", E, err(_rf("sort", _rg(1), _rs("@<"), _rlist(a), L))),
+        ("q19", E, err(_rf("sort", _rs("foo"), _rs("@<"), _rlist(_rf("f", a)), L))),
+        ("q20", E, err(_rf("sort", _rg(-1), _rs("@<"), _rnil(), L))),
+        ("q21", E, err(_rf("sort", _rs("a"), _rs("foo"), _rnil(), L))),
+        ("q22", E, err(_rf("sort", _rg(1), _rg(5), _rlist(_rf("f", a)), L))),
+        ("q23", E, err(_rf("sort", _rg(1), _rs("@<"), _rs("foo"), L))),
+        ("q24", E, err(_rf("sort", _rg(1), _rs("@<"), X, L))),
+        ("q25", E, err(_rf("sort", X, _rs("@<"), _rnil(), L))),
+        ("q26", E, err(_rf("sort", _rlist(_rg(0)), _rs("@<"), _rlist(_rf("f", a)), L))),
+        ("q27", E, err(_rf("sort", _rs("foo"), _rs("@<"), _rlist(a), L))),
+        ("q28", E, err(_rf("sort", _rg(1), _rs("@<"), _rlist(_rf("f", a), X), L))),
+        (
+            "q29",
+            L,
+            _rf(
+                "sort",
+                _rg(1),
+                _rs("@<"),
+                _rlist(_rf("f", a, _rg(1)), _rf("f", a, _rg(2))),
+                L
+            )
+        ),
+        (
+            "q30",
+            E,
+            err(_rf("sort", _rg(2), _rs("@>="), _rlist(_rf("f", a, b), _rf("g", c)), L))
+        ),
         # ── many elements: the runs and their merges ──
         (
             "n1", _rf("r", N, A, B),

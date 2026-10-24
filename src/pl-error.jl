@@ -111,6 +111,23 @@ function _PL_error_close!(
     return rc
 end
 
+# PORT: pl-error.c PL_error as PL_existence_error3
+# (the `ERR_EXISTENCE3` branch)
+# DIVERGES: a function of its own, not a `PL_error` code (no `ERR_EXISTENCE3` in the enum: one caller, sort/4's key
+# path, src/pl-list.jl) — the branch's `PL_unify_term(formal, existence_error3(type, obj, in))`.
+"Raise `error(existence_error(Type, Obj, In), …)` (pl-error.c `ERR_EXISTENCE3`); `false`."
+function PL_existence_error3(
+    ld::PL_local_data{T}, type::T, obj::term_t, in::term_t
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :existence_error, 3), _err_atom(ld, type), obj, in
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, "", 0, "")
+end
+
 # ORIGINAL (f3b-4): upstream's predefined `FUNCTOR_<name><arity>` — the functor word of `name/arity`.
 "The functor word of `name/arity` (upstream's `FUNCTOR_…` constants)."
 @inline _err_functor(ld::PL_local_data{T}, name::Symbol, arity::Int) where {T} =
