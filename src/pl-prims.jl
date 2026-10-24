@@ -2180,6 +2180,30 @@ function pl_ground1_va(
     return ground_cells(ld, -(A1 + 1)) == 0 ? FTRUE : FFALSE    # ground(valTermRef(A1)) == NULL
 end
 
+# PORT: pl-prims.c acyclic_term as pl_acyclic_term1_va
+# (PRED_IMPL("acyclic_term", 1, acyclic_term, PL_FA_ISO))
+# DIVERGES: `PL_is_acyclic` on the cells (`is_acyclic_cells`); no MEMORY_OVERFLOW.
+"`acyclic_term(@Term)`: `Term` has no cycle (pl-prims.c)."
+function pl_acyclic_term1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+
+    return is_acyclic_cells(ld, -(A1 + 1)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c cyclic_term as pl_cyclic_term1_va
+# (PRED_IMPL("cyclic_term", 1, cyclic_term, 0))
+# DIVERGES: as `acyclic_term/1` above: `is_acyclic_cells`, no MEMORY_OVERFLOW (so no ERR_NOMEM branch).
+"`cyclic_term(@Term)`: `Term` has a cycle (pl-prims.c)."
+function pl_cyclic_term1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+
+    return is_acyclic_cells(ld, -(A1 + 1)) ? FFALSE : FTRUE
+end
+
 # PORT: pl-prims.c functor as pl_functor3_va
 # (PRED_IMPL("functor", 3, functor, 0)); the table's flag is `PL_FA_ISO`.
 # DIVERGES: a compound whose head is no symbol is named `$expr`, its arity the number of its
@@ -2695,6 +2719,8 @@ const PL_predicates_from_prims = (
     PL_extension("atom", 1, pl_atom1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("string", 1, pl_string1_va, PL_FA_VARARGS),
     PL_extension("ground", 1, pl_ground1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("acyclic_term", 1, pl_acyclic_term1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("cyclic_term", 1, pl_cyclic_term1_va, PL_FA_VARARGS),
     PL_extension("compound", 1, pl_compound1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("callable", 1, pl_callable1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("==", 2, pl_equal2_va, PL_FA_ISO | PL_FA_VARARGS),
