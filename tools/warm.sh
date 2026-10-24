@@ -119,10 +119,11 @@ _second_ok() {
 
 _start() {
     if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"))"; return 0; fi
-    local others
+    local others second=0
     others="$(_other_daemons)"
     if [ -n "$others" ] && [ "${LOGICKERNEL_WARM_SECOND:-}" = 1 ]; then
         _second_ok "$others" || return 6
+        second=1
         export LOGICKERNEL_SLICE=lk-warm2.slice
         export LOGICKERNEL_SLICE_MEM_MAX="${LOGICKERNEL_WARM_SECOND_MEM_MAX:-6G}"
         echo "warm lane: SECOND daemon (D-0114) beside:"
@@ -139,6 +140,9 @@ _start() {
     fi
     mkdir -p "$DIR"
     rm -f "$DIR/ready" "$DIR/done" "$DIR/status" "$DIR/in.jl"
+    # remembered for `_restart`: an automatic restart (the struct gate, the rss gate, the manifest check's
+    # leftover restart) must not drop the second-daemon opt-in the start was made with (A-0079 item 5)
+    if [ "$second" = 1 ]; then : > "$DIR/second"; else rm -f "$DIR/second"; fi
     local julia slice
     julia="$(command -v julia)" || { echo "warm lane: no julia on PATH" >&2; return 1; }
     slice="$(_lk_slice)" || return 1                    # the shared budget (tools/lib_evidence.sh)
@@ -195,6 +199,18 @@ _stop() {
     echo "warm lane: stopped"
 }
 
+# _restart — stop the daemon and start it again, AS A SECOND DAEMON when it was one (A-0079 item 5, D-0130
+# item 2): a struct change restarts the daemon by itself, and a plain `_start` there found another checkout's
+# daemon running, without the LOGICKERNEL_WARM_SECOND the user's `start` had carried, and REFUSED — the second
+# lane died at its first changed struct. `.warm/second` (written by `_start`) is the memory; only a deliberate
+# `stop` forgets it, and a plain `start` after a crash never reads it (the guard stays: one at a time).
+_restart() {
+    local second="${LOGICKERNEL_WARM_SECOND:-}"
+    [ -f "$DIR/second" ] && second=1
+    _stop
+    LOGICKERNEL_WARM_SECOND="$second" _start
+}
+
 # THE DAEMON'S MEMORY (user, 2026-10-11). MEASURED that day: after eight runs of the static-analysis
 # gate the daemon held 7.5 GB, and the evidence run that followed got two workers instead of three
 # — its shard count is read from free memory — and took 33 min instead of about 25. So a gate
@@ -228,8 +244,7 @@ _rss_gate() {
     if awk -v kb="$kb" -v max="$max" 'BEGIN { exit !(kb > max * 1048576) }'; then
         echo "warm lane: restarting the daemon — rss $(_gb "$kb") GB > $max GB"
         _rss_log "$1" start "$kb" "restarted (rss $(_gb "$kb") GB > $max GB)"
-        _stop > /dev/null
-        _start > /dev/null || { echo "warm lane: the daemon did not restart" >&2; return 1; }
+        _restart > /dev/null || { echo "warm lane: the daemon did not restart" >&2; return 1; }
     else
         echo "warm lane: daemon rss $(_gb "$kb") GB (limit $max GB)"
         _rss_log "$1" start "$kb" kept
@@ -270,8 +285,7 @@ _struct_gate() {
     fi
     echo "warm lane: restarting the daemon — struct changed: $changed" >&2
     printf '%s\tstruct changed: %s\n' "$(date +%Y-%m-%dT%H:%M:%S)" "$changed" >> "$DIR/restart.log"
-    _stop > /dev/null
-    _start > /dev/null || {
+    _restart > /dev/null || {
         echo "warm lane: the daemon did not restart after a struct change — fix the load error, then tools/warm.sh start" >&2
         return 1
     }
@@ -474,8 +488,7 @@ _checks_fresh() {
     if [ "$rc" -ne 0 ] && grep -q 'A DAEMON LEFTOVER' "$DIR/preflight_format_port_check.log" 2> /dev/null; then
         echo "check: DAEMON LEFTOVERS (old signatures of re-signed functions) — restarting the warm lane once, then checking again"
         echo "$(date -u +%FT%TZ) restart: daemon leftovers found by the manifest check" >> "$DIR/restarts.log"
-        _stop
-        _start > /dev/null || return 1
+        _restart > /dev/null || return 1
         _format_port_check 1
         rc=$?
         [ "$rc" -eq 0 ] || echo "check: still FAILS after a daemon restart — a REAL failure (the method needs its manifest entry)"
@@ -725,8 +738,7 @@ _preflight() {
     if [ "$PF_OTHER_FAIL" = 0 ] && [ "$nfail" -eq 1 ] && [ "$ncov" -eq 1 ] &&
         ! grep -q "stale exemption:" "$log" && ! printf '%s\n' "$cls" | grep -q '^REAL '; then
         echo "preflight: STALE DAEMON — restarting the daemon and rerunning the preflight once"
-        _stop > /dev/null
-        _start > /dev/null || { echo "preflight: the daemon did not restart"; return 1; }
+        _restart > /dev/null || { echo "preflight: the daemon did not restart"; return 1; }
         LOGICKERNEL_PREFLIGHT_RETRY=1 LOGICKERNEL_PREFLIGHT_POOL=0 _preflight
         return $?
     fi
@@ -932,8 +944,8 @@ case "$cmd" in
 esac
 case "$cmd" in
     start) _start ;;
-    stop) _stop ;;
-    restart) _stop; _start ;;
+    stop) _stop; rm -f "$DIR/second" ;;                   # a deliberate stop forgets the second-daemon opt-in
+    restart) _restart ;;
     status) if _running; then echo "warm lane: running (unit $UNIT, pid $(cat "$DIR/ready"), rss $(_gb "$(_daemon_rss_kb)") GB)"; else echo "warm lane: not running"; exit 3; fi ;;
     send) _send "${1:-}" ;;
     branch-gate-files) _branch_gate_files ;;     # the files a branch-gate would run (no daemon)

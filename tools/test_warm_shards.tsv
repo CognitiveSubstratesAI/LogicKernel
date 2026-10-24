@@ -6,7 +6,7 @@
 # shard is missing, ran nothing, failed, or the passes do not sum to it. MEASURED 2026-10-20: 211 passed,
 # 0 failed (the whole run, locally, on a branch); the same run on main passed 212 (one case ran only there —
 # fixed 2026-10-21: every ref now runs 212); 215 after the three sibling-mutant guard cases (2026-10-21). A case
-# added or removed changes `total`: update it in the same commit,
+# added or removed changes `total`: update it in the same commit (228 after the seven second-daemon-restart cases, 2026-10-24),
 # from the gather's own report.
 # BALANCE (re-measured 2026-10-22 on main-push run 39802795515, the `tools/test_warm.sh shard` step alone): main 324 s,
 # stale 334, fast 330, state 180, light 176 (+ 14 for tools/test_evidence.sh) — the job times (509-644 s) differ by the
@@ -20,4 +20,4 @@ shard	main	main
 shard	stale	stale
 shard	fast	fast
 shard	light	noswipl guard cap refuse inventory bgfiles gatebase srcmap bgbudget rss structs
-total	221
+total	228

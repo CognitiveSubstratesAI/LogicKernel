@@ -395,7 +395,25 @@ _guard_cases() {
     has "…saying so, naming the other" "$T/g4" "SECOND daemon (D-0114)" 1
     [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
     check "second: …in its own slice, lk-warm2.slice, so pressure kills it before the first lane" 0 $?
+    # A RESTART KEEPS IT A SECOND DAEMON (A-0079 item 5, D-0130 item 2): the rss gate's automatic restart (planted
+    # size, as _rss_cases) and an explicit `restart`, both WITHOUT LOGICKERNEL_WARM_SECOND, beside the decoy — once
+    # refused, the second lane died at its first changed struct
+    pid2=$(cat "$ROOT/.warm/ready")
+    LOGICKERNEL_WARM_RSS_LOG="$T/rss2.log" LOGICKERNEL_WARM_RSS_FAKE_KB=7864320 LOGICKERNEL_PREFLIGHT_FAULT=format-empty \
+        LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf2" 2>&1
+    [ -f "$ROOT/.warm/ready" ] && [ "$(cat "$ROOT/.warm/ready")" != "$pid2" ]
+    check "second: an automatic restart (the rss gate) restarts it, a new pid, beside the other daemon" 0 $?
+    has "…and is not refused" "$T/pf2" "REFUSED" 0
+    [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
+    check "second: …still in lk-warm2.slice" 0 $?
+    "$W" restart > "$T/g5" 2>&1; check "second: an explicit restart without the opt-in is not refused (exit 0)" 0 $?
+    [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
+    check "second: …and the daemon is still in lk-warm2.slice" 0 $?
     "$W" stop > /dev/null 2>&1
+    [ ! -e "$ROOT/.warm/second" ]; check "second: a deliberate stop forgets it" 0 $?
+    : > "$ROOT/.warm/second"                              # a STALE marker (a crashed second daemon's)…
+    "$W" start > "$T/g6" 2>&1; check "second: …does not excuse a plain start beside another daemon (exit 6)" 6 $?
+    rm -f "$ROOT/.warm/second"
     systemctl --user stop "$decoy" > /dev/null 2>&1
     mkdir -p "$T/sibling/.warm"; echo "$ROOT" > "$T/sibling/.warm/MUTANT_WORKTREE"
     systemd-run --user --unit="${decoy}sib" --collect --quiet --working-directory="$T/sibling" sleep 600
