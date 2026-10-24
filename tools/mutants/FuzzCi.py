@@ -8,7 +8,8 @@
 # A guard is useless three ways (CLAUDE.md): it cannot pass, it cannot fail, or it compares the wrong thing. FZ1 makes the
 # run unable to fail, FZ2 makes the comparison blind to a changed line, FZ3 makes the seed range run another count, FZ4 lets
 # a run with nothing compared pass.
-T = ["sh:tools/test_fuzz.sh"]
+TARGETS = ["sh:tools/test_fuzz.sh"]       # also the baseline's: tools/mutate_ci.py takes the unmutated run's targets from here
+T = TARGETS
 F = "tools/fuzz.jl"
 MUTANTS = [
     dict(id="FZ1 a run with mismatching seeds exits 0", file=F, targets=T,
