@@ -328,3 +328,85 @@ function _scan_term_type!(out::Vector{String}, ex, file::String, line::Int)::Not
     end
     return nothing
 end
+
+# ── the span callees (D-0142, 2026-10-24) ────────────────────────────────────────────────────────
+# AllocCheck reports a site in a callee with SEVERAL call sites once, its static backtrace cut at
+# "multiple call sites" (AllocCheck's static_backtrace.jl), so it carries no frame of the caller: a
+# span check that attributes sites to the caller's lines cannot see an allocation in a non-inlined
+# callee. MEASURED 2026-10-24 (NF1): a planted `string(FR)` in `foreign_redo` left the span checks
+# green; 1449 of the run loop's 1555 sites carried no run-loop frame. These read the CALLER's
+# optimized code instead: every call it does not inline, from a line in a span, off the throw paths.
+
+"The `@label` spans of the function whose body starts at the line `header` in `lines`: label → (first, last line)."
+function label_spans(lines::Vector{String}, header::String)::Dict{String, Tuple{Int, Int}}
+    f0 = findfirst(l -> startswith(l, header), lines)
+    f0 === nothing && error("label_spans: no line starts with $(repr(header))")
+    fend = findnext(==("end"), lines, f0)
+    labels = Tuple{Int, String}[]
+    for i in (f0 + 1):(fend - 1)
+        m = match(r"^\s*@label (\w+)", lines[i])
+        m === nothing || push!(labels, (i, String(m[1])))
+    end
+    return Dict(
+        n => (l, k < length(labels) ? labels[k + 1][1] - 1 : fend)
+        for (k, (l, n)) in enumerate(labels)
+    )
+end
+
+"The blocks of `ir` from which every path ends in `unreachable` (a throw) — those AllocCheck's `ignore_throw` skips."
+function throw_only_blocks(ir)::BitVector
+    blocks = ir.cfg.blocks
+    t = falses(length(blocks))
+    changed = true
+    while changed
+        changed = false
+        for b in eachindex(blocks)
+            t[b] && continue
+            term = ir.stmts[last(blocks[b].stmts)][:stmt]
+            unreachable = term isa Core.ReturnNode && !isdefined(term, :val)
+            if unreachable ||
+                (
+                !(term isa Core.ReturnNode) && !isempty(blocks[b].succs) &&
+                all(s -> t[s], blocks[b].succs)
+            )
+                t[b] = changed = true
+            end
+        end
+    end
+    return t
+end
+
+"""
+    span_callees(f, tt, file, spans) -> Dict{Core.MethodInstance, Vector{Int}}
+
+The method instances `f(::tt...)`'s optimized code calls without inlining (`:invoke`) from a line of
+the file named `file` (its outermost frame: the caller's own line, not an inlined callee's) that lies
+in one of `spans`, off the throw paths — each with the lines it is called from.
+"""
+function span_callees(f, tt, file::String, spans)::Dict{Core.MethodInstance, Vector{Int}}
+    ir, _ = only(Base.code_ircode(f, tt))
+    thr = throw_only_blocks(ir)
+    out = Dict{Core.MethodInstance, Vector{Int}}()
+    for i in 1:length(ir.stmts)
+        st = ir.stmts[i][:stmt]
+        (st isa Expr && st.head === :invoke) || continue
+        thr[Core.Compiler.block_for_inst(ir.cfg, i)] && continue
+        sc = Base.IRShow.buildLineInfoNode(ir.debuginfo, nothing, i)
+        (isempty(sc) || basename(string(sc[1].file)) != file) && continue
+        l = Int(sc[1].line)
+        any(s -> s[1] <= l <= s[2], spans) || continue
+        x = st.args[1]
+        mi = x isa Core.CodeInstance ? x.def : x
+        push!(get!(out, mi, Int[]), l)
+    end
+    return out
+end
+
+"A method instance as a call `(function, argument types)`, or `nothing` when it is not one call (a `Vararg`, an `Any`)."
+function callee_call(mi::Core.MethodInstance)
+    Base.isdispatchtuple(mi.specTypes) || return nothing
+    F = mi.specTypes.parameters[1]
+    f = isdefined(F, :instance) ? F.instance : (F <: Type ? F.parameters[1] : nothing)
+    f === nothing && return nothing
+    return (f, Tuple(mi.specTypes.parameters[2:end]))
+end

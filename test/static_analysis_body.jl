@@ -39,6 +39,67 @@ _sa_dispatches(v::Vector{Real}) = v[1] + 1
 _sa_stable(v::Vector{Int}) = v[1] + 1
 _sa_allocates(n::Int) = zeros(n)
 _sa_no_alloc(x::Int) = x + 1
+# the span checks' fixture (D-0142): `shared` allocates and has two call sites, `quiet` does not
+const _SA_SPAN_FIXTURE = """
+module SASpan
+@noinline shared(x::Int) = length(string(x))
+@noinline quiet(x::Int) = x + 1
+function root(x::Int, k::Int)
+    k == 1 && @goto a
+    k == 2 && @goto b
+    k == 3 && @goto c
+    return quiet(x)
+    @label a
+    return shared(x)
+    @label b
+    return shared(x + 1) + quiet(x)
+    @label c
+    return quiet(x)
+end
+end
+"""
+"""
+The call-site pass (D-0142) over `callees` (`span_callees`): each callee AllocChecked on its own, a
+site a violation unless the callee is in `exempt` (`SPAN_CALLEE_EXEMPT`) — a `:growth` one's sites each under a
+`SPAN_GROWTH_FRAMES` frame, a `:builtin` one called from `fspans` only. One line per violation.
+"""
+function _sa_span_violations(callees, fspans; exempt=SPAN_CALLEE_EXEMPT)::Vector{String}
+    out = String[]
+    for (mi, ls) in callees
+        c = callee_call(mi)
+        if c === nothing
+            push!(out, "$mi (lines $(unique(ls))): not one call, cannot be checked")
+            continue
+        end
+        k = findfirst(e -> e[1] === c[1], exempt)
+        kind = k === nothing ? :none : exempt[k][2]
+        if kind === :builtin
+            all(l -> any(s -> s[1] <= l <= s[2], fspans), ls) ||
+                push!(
+                    out,
+                    "$mi (lines $(unique(ls))): a built-in's dispatch outside the foreign path"
+                )
+            continue
+        end
+        kind in (:cold, :error) && continue
+        bad = [
+            s for s in check_allocs(c...)
+            if kind !== :growth || !any(fr -> fr.func in SPAN_GROWTH_FRAMES, s.backtrace)
+        ]
+        isempty(bad) || push!(
+            out,
+            "$mi (lines $(unique(ls))): $(length(bad)) site(s), first: " *
+            join(
+                [
+                    "$(fr.func)@$(basename(string(fr.file))):$(fr.line)" for
+                    fr in first(bad).backtrace
+                ],
+                " <- "
+            )
+        )
+    end
+    return out
+end
 const _SA_COVERAGE_FIXTURE = """
 module SACoverage
 f(x::Int) = x + 1
@@ -166,22 +227,16 @@ end
     # AllocChecked one by one above — sites in callees shared by several labels are reported as
     # "multiple call sites" and cannot be attributed to a label. Fresh variables and building
     # compounds allocate by nature, so `B_FIRSTVAR`, `B_VOID`, `L_VOID` and the builders are not
-    # in the path; growth (`growLocalSpace`) is reached through shared callees only.
+    # in the path; growth (`growLocalSpace`) is reached through shared callees only. (2) was a LIST,
+    # not the callees the spans really call: since D-0142 (3) the call-site pass reads them from the
+    # optimized code (`span_callees`) and AllocChecks each, minus `SPAN_CALLEE_EXEMPT`.
     _sa_part("call_path") &&
         @testset "AllocCheck: the call path's labels allocate nothing" begin
             LK = LogicKernel
-            lines = readlines(joinpath(pkgdir(LogicKernel), "src", "pl-wam.jl"))
-            f0 = findfirst(l -> startswith(l, "function PL_next_solution_guarded("), lines)
-            fend = findnext(==("end"), lines, f0)
-            labels = Tuple{Int, String}[]
-            for i in (f0 + 1):(fend - 1)
-                m = match(r"^\s*@label (\w+)", lines[i])
-                m === nothing || push!(labels, (i, String(m[1])))
-            end
-            function span(n)
-                k = findfirst(x -> x[2] == n, labels)
-                return (labels[k][1], k < length(labels) ? labels[k + 1][1] - 1 : fend)
-            end
+            spans_of = label_spans(
+                readlines(joinpath(pkgdir(LogicKernel), "src", "pl-wam.jl")),
+                "function PL_next_solution_guarded("
+            )
             path = ("I_ENTER", "I_CALL", "normal_call", "depart_or_retry_continue",
                 "I_DEPART",
                 "I_EXIT", "exit_continue", "L_NOLCO", "L_VAR", "L_ATOM", "L_NIL",
@@ -190,12 +245,10 @@ end
                 "bvar_cont", "B_ARGVAR", "I_VAR", "I_NONVAR", "I_INTEGER", "I_RATIONAL",
                 "I_FLOAT", "I_NUMBER", "I_ATOMIC", "I_ATOM", "I_STRING", "I_COMPOUND",
                 "I_CALLABLE")
-            @test all(n -> any(x -> x[2] == n, labels), path)
-            spans = [span(n) for n in path]
-            allocs = check_allocs(
-                LK.PL_next_solution_guarded,
-                (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)
-            )
+            @test all(n -> haskey(spans_of, n), path)
+            spans = [spans_of[n] for n in path]
+            loop_tt = (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)
+            allocs = check_allocs(LK.PL_next_solution_guarded, loop_tt)
             # V5c: resolving an UNDEFINED predicate (`getProcDefinedDefinition` → `trapUndefined` →
             # `autoImport`, which may create a procedure, or `S_UNDEF`'s supervisor) runs once per
             # predicate, at its first call — the cold path upstream takes from `I_LCALL` too — so its
@@ -249,8 +302,8 @@ end
             # (`error_foreign_return_code`), or success with an exception still pending, the "false alarm"
             # (`PL_clear_foreign_exception`, which resets the ball).
             fpath = ("I_FCALLDETVA", "I_FCALLDET0", "fcall_detn", "helper_I_FEXITDET")
-            @test all(n -> any(x -> x[2] == n, labels), fpath)
-            fspans = [span(n) for n in fpath]
+            @test all(n -> haskey(spans_of, n), fpath)
+            fspans = [spans_of[n] for n in fpath]
             inside = (
                 :_fcall_va, :_fcall_det, :error_foreign_return_code,
                 :PL_clear_foreign_exception
@@ -275,6 +328,25 @@ end
                 a -> any(fr -> fr.func === :_fcall_va, a.backtrace), allocs
             )
             @test any(e -> e[1] === LK.vmi_fopen && e[3], DISPATCH_MANIFEST)
+            # D-0142: the checks above attribute a site to a span by the run loop's frame in its
+            # backtrace, which a callee with several callers does not carry — they are blind to it.
+            # The call-site pass: every callee the spans do not inline, AllocChecked on its own.
+            callees = span_callees(
+                LK.PL_next_solution_guarded, loop_tt, "pl-wam.jl", vcat(spans, fspans)
+            )
+            viol = _sa_span_violations(callees, fspans)
+            foreach(v -> println(stderr, "  a span callee allocates: ", v), viol)
+            @test isempty(viol)
+            seen = [
+                c[1] for c in (callee_call(mi) for mi in keys(callees)) if c !== nothing
+            ]
+            @test all(e -> e[2] in SPAN_CALLEE_KINDS, SPAN_CALLEE_EXEMPT)
+            @test length(unique(first.(SPAN_CALLEE_EXEMPT))) == length(SPAN_CALLEE_EXEMPT)
+            stale = [e[1] for e in SPAN_CALLEE_EXEMPT if !any(f -> f === e[1], seen)]
+            isempty(stale) || println(stderr, "  span exemption no span calls: ", stale)
+            @test isempty(stale)
+            # …and the pass sees the loop's callees and checks some, so it cannot pass by seeing nothing
+            @test length(seen) > count(e -> e[2] !== :growth, SPAN_CALLEE_EXEMPT)
         end
 
     _sa_part("controls") && @testset "controls: each gate fails on a planted defect" begin
@@ -298,6 +370,34 @@ end
         fr = Base.include_string(Module(:SARedefHost), "module SARedef\nf(x::Int) = 1\nend")
         Core.eval(fr, :(f(x::Int) = 2))
         @test length(owned_methods(fr)) == 1 && fr.f(1) == 2
+        # the span checks (D-0142): an allocation in a callee with TWO call sites — the backtrace
+        # attribution sees the site but no frame of the caller; the call-site pass finds it, and a
+        # span calling only an allocation-free callee stays clean
+        fs = Base.include_string(
+            Module(:SASpanHost), _SA_SPAN_FIXTURE, "sa_span_fixture.jl"
+        )
+        sps = label_spans(String.(split(_SA_SPAN_FIXTURE, '\n')), "function root(")
+        a = Base.invokelatest(check_allocs, fs.root, (Int, Int))
+        @test !isempty(a)
+        @test !any(s -> any(fr -> fr.func === :root, s.backtrace), a)    # the old attribution: blind
+        for (lab, bad) in (("a", 1), ("c", 0))
+            cs = Base.invokelatest(
+                span_callees, fs.root, (Int, Int), "sa_span_fixture.jl", [sps[lab]]
+            )
+            @test length(cs) == 1
+            @test length(Base.invokelatest(_sa_span_violations, cs, Tuple{Int, Int}[])) == bad
+        end
+        # an exemption's kind decides: `:growth` still checks the sites (none lies under a growth
+        # frame), `:cold` does not check them
+        ca = Base.invokelatest(
+            span_callees, fs.root, (Int, Int), "sa_span_fixture.jl", [sps["a"]]
+        )
+        for (kind, bad) in ((:growth, 1), (:cold, 0))
+            ex = [(fs.shared, kind, "fixture")]
+            @test length(
+                Base.invokelatest(_sa_span_violations, ca, Tuple{Int, Int}[]; exempt=ex)
+            ) == bad
+        end
     end
 end
 

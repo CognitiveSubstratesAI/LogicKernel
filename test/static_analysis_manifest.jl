@@ -2282,6 +2282,51 @@ the same day: `deRef`, `nextTermAgenda!` and `_slot_atom` deleted with the term 
 `argv_at` deleted with the term path of the index, `argv_term`)."
 const L1C_ALLOC_EXEMPT_MAX = 17
 
+# THE SPAN CALLEES (D-0142, 2026-10-24): the functions the run loop's call-path and foreign-path spans
+# call WITHOUT inlining that may allocate — the call-site pass (test/static_analysis_body.jl) AllocChecks
+# every other callee on its own, since a site in a callee with several callers carries no run-loop frame.
+# Each names its kind:
+#   `:growth`  — CHECKED: every site lies under a frame of `SPAN_GROWTH_FRAMES` (a stack or vector grows)
+#   `:cold`    — off the hot path (not checked): the cold import, an atom's first word in an engine,
+#                the first call of an undefined predicate, a cut that runs a cleanup handler
+#   `:error`   — the loop takes it only to raise or recover (not checked)
+#   `:builtin` — the built-in a foreign call runs (not checked); only from the foreign path's spans
+# Triage of the first run: evidence/alloccheck/2026-10-24.md in the audit channel. A NEW entry joins
+# this list with its kind and reason — never silently; an entry no span calls any more fails the test.
+"The kinds of a span-callee exemption."
+const SPAN_CALLEE_KINDS = (:growth, :cold, :error, :builtin)
+"The frames a `:growth` callee's sites must lie under."
+const SPAN_GROWTH_FRAMES = (:_growend_internal!, :_growGlobalStack!)
+"The span callees that may allocate: (function, kind, reason)."
+const SPAN_CALLEE_EXEMPT = [
+    (Base._growend_internal!, :growth, "a vector push that grows"),
+    (LK._growGlobalStack!, :growth, "the global stack grows"),
+    (LK._slot_store_var!, :growth, "f3-2: a fresh cell, on the global stack"),
+    (
+        LK._atom_word!,
+        :cold,
+        "an atom's first word in an engine (the cache misses, the table is read)"
+    ),
+    (LK._compound_word!, :cold, "the cold import (counted: ld.cold_imports)"),
+    (
+        LK._slot_link!,
+        :cold,
+        "the cold import of a term a slot holds (L1C_ALLOC_EXEMPT, L1e)"
+    ),
+    (LK._cell_link!, :cold, "the cold import of a term a cell holds (as _slot_link!)"),
+    (LK.autoImport, :cold, "V5c: the first call of an undefined predicate"),
+    (
+        LK.discardChoicesAfter,
+        :cold,
+        "V9g: a cut that discards a CLEANUP frame runs its handler"
+    ),
+    (LK.error_foreign_return_code, :error, "a built-in returned a bad value"),
+    (LK.outOfStack!, :error, "a stack overflow raises"),
+    (LK.resumeAfterException, :error, "an exception unwinds the frames"),
+    (LK._fcall_va, :builtin, "V5a2: the built-ins' dispatch tree"),
+    (LK._fcall_det, :builtin, "V5a2: the FRG built-ins' dispatch tree")
+]
+
 const DISPATCH_EXEMPT = (
     (
         (is_ground, Tuple{Int}) => "interface fallback; Term overrides it, and its body is_ground_walk is checked"
