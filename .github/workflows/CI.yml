@@ -437,6 +437,9 @@ jobs:
       - name: tools/test_fuzz.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_fuzz.sh
+      - name: tools/test_setup_machine.sh
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
+        run: tools/test_setup_machine.sh
       - name: tools/test_warm.sh shard
         if: steps.changed.outputs.run == 'true'
         env:

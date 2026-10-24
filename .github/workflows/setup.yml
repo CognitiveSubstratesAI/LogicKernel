@@ -1,0 +1,50 @@
+# The fresh-machine setup script, on a CLEAN machine (audit D-0129 S4, D-0130 item 2): tools/setup_machine.sh in a bare
+# ubuntu:24.04 container — no git, no compiler, no Julia, no swipl, no systemd — and then its own `--check`. The point is
+# that the script is not just CI's steps copied once: it runs from nothing every week, and whenever it changes. Not a
+# gate: nothing waits for this workflow; a red week is read the next morning. `setup-test/**` branches run it too (how a
+# change to the script or this file is tried before it lands); `no_oracle` skips the swipl build (15-30 min) for a quick try.
+name: Setup script (clean container)
+on:
+  workflow_dispatch:
+    inputs:
+      no_oracle:
+        description: skip the oracle build (a quick try)
+        default: 'false'
+  push:
+    branches:
+      - 'setup-test/**'
+  schedule:
+    - cron: '23 4 * * 0'              # weekly, Sunday 04:23 UTC
+
+concurrency:
+  group: setup-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: setup
+    runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
+    container: ubuntu:24.04   # the clean machine: root, and nothing else installed
+    timeout-minutes: 90
+    env:
+      NO_ORACLE: ${{ inputs.no_oracle || 'false' }}    # through env, never interpolated into the script
+    steps:
+      # the checkout action needs git or falls back to the REST API; the script installs git itself, so the checkout
+      # comes first with whatever the image has
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: The plan (nothing changes)
+        run: tools/setup_machine.sh --plan
+      - name: Set the machine up from nothing
+        run: |
+          flags=""
+          [ "$NO_ORACLE" = true ] && flags="--no-oracle"
+          tools/setup_machine.sh $flags
+      - name: Check it
+        run: |
+          export PATH="$HOME/.juliaup/bin:$HOME/swipl-oracle/bin:$PATH"
+          flags=""
+          [ "$NO_ORACLE" = true ] && flags="--no-oracle"
+          tools/setup_machine.sh --check $flags
