@@ -1700,7 +1700,8 @@ Gate: test/core_lang/test_firstvar_swipl.jl, against the oracle under default fl
 * **Upstream's stack moves, carried over:**
   * a deterministic exit sets `lTop` to the frame's base and drops the records above it (vmi:2209-2216, 2327-2334);
   * LCO reuses the frame record in place (vmi:2067-2108);
-  * the `memmove` of a `CHP_CLAUSE` choice point to just above the next clause's variables (vmi:6677-6685)
+  * the move of a `CHP_CLAUSE` choice point to just above the next clause's variables (vmi:6677-6685,
+    `copyWordsScalarUp`/`copyWordsScalarDown`, "not memmove()")
     becomes an update of its `base`.
 * **Registers and state, as upstream splits them.** `FR`, `NFR`, `ARGP`, `DEF`, `PC` are run-loop
   locals (wam:3500-3542). `BFR` is NOT a register: it is `LD->choicepoints` (wam:76). `CL` is

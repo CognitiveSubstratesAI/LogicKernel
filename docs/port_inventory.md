@@ -329,7 +329,7 @@ Built-ins get their foreign supervisor at registration and never pass through `S
 
 ### Instruction inventory
 
-All 232 `VMI()` declarations of `pl-vmi.c`, grouped by family. **needed by**: `N` nreverse · `D` derive ·
+All 233 `VMI()` declarations of `pl-vmi.c`, grouped by family. **needed by**: `N` nreverse · `D` derive ·
 `Q` qsort · `P` poly_10, from the measurement above (instructions in the programs' own code, plus the
 supervisors installed and the built-ins' supervisor code). **kernel**: `declared` = a `# PORT: pl-vmi.c`
 marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes yet).
@@ -343,12 +343,12 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | arithmetic | 27 | `A_ADD_FC` P |
 | exception | 5 | — |
 | foreign (built-ins) | 28 | `I_FCALLDETVA` DQP |
-| supervisor | 15 | `S_VIRGIN` NDQP, `S_STATIC` DQP, `S_TRUSTME` NDQP, `S_LIST` NQP |
+| supervisor | 16 | `S_VIRGIN` NDQP, `S_STATIC` DQP, `S_TRUSTME` NDQP, `S_LIST` NQP |
 | type test | 11 | `I_INTEGER` D |
 | continuation | 5 | — |
 | tabling | 30 | — |
 | debugger | 1 | — |
-| **total** | **232** | **44 used by the four programs** |
+| **total** | **233** | **44 used by the four programs** |
 
 <details><summary><b>head</b> (18)</summary>
 
@@ -392,29 +392,29 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `B_VAR1` | 1094 | — | NDQP | declared |
 | `B_VAR2` | 1099 | — | QP | declared |
 | `B_VAR` | 1104 | CA1_VAR | NDQP | declared |
-| `B_UNIFY_FIRSTVAR` | 1146 | CA1_FVAR |  | declared |
-| `B_UNIFY_VAR` | 1154 | CA1_VAR |  | declared |
-| `B_UNIFY_EXIT` | 1182 | — |  | declared |
-| `B_UNIFY_FF` | 1202 | CA1_FVAR,CA1_FVAR |  | declared |
-| `B_UNIFY_VF` | 1236 | CA1_FVAR,CA1_VAR |  | declared |
-| `B_UNIFY_FV` | 1243 | CA1_FVAR,CA1_VAR |  | declared |
-| `B_UNIFY_VV` | 1266 | CA1_VAR,CA1_VAR |  | declared |
-| `B_UNIFY_FC` | 1315 | CA1_FVAR, CA1_DATA |  | declared |
-| `B_UNIFY_VC` | 1338 | CA1_VAR, CA1_DATA |  | declared |
-| `B_EQ_VV` | 1374 | CA1_VAR,CA1_VAR |  | declared |
-| `B_EQ_VC` | 1416 | CA1_VAR,CA1_DATA |  | declared |
-| `B_NEQ_VV` | 1447 | CA1_VAR,CA1_VAR |  | declared |
-| `B_NEQ_VC` | 1492 | CA1_VAR,CA1_DATA |  | declared |
-| `B_ARG_CF` | 1524 | CA1_INTEGER,CA1_VAR,CA1_FVAR |  |  |
-| `B_ARG_VF` | 1567 | CA1_VAR,CA1_VAR,CA1_FVAR |  |  |
-| `B_ARGFIRSTVAR` | 1599 | CA1_FVAR |  | declared |
-| `B_FIRSTVAR` | 1614 | CA1_FVAR | NQP | declared |
-| `B_VOID` | 1635 | — | NDQP | declared |
-| `B_FUNCTOR` | 1651 | CA1_FUNC | DP | declared |
-| `B_RFUNCTOR` | 1658 | CA1_FUNC | D | declared |
-| `B_LIST` | 1681 | — | NQP | declared |
-| `B_RLIST` | 1688 | — | NQP | declared |
-| `B_POP` | 1706 | — | NDQP | declared |
+| `B_UNIFY_FIRSTVAR` | 1159 | CA1_FVAR |  | declared |
+| `B_UNIFY_VAR` | 1167 | CA1_VAR |  | declared |
+| `B_UNIFY_EXIT` | 1195 | — |  | declared |
+| `B_UNIFY_FF` | 1215 | CA1_FVAR,CA1_FVAR |  | declared |
+| `B_UNIFY_VF` | 1249 | CA1_FVAR,CA1_VAR |  | declared |
+| `B_UNIFY_FV` | 1256 | CA1_FVAR,CA1_VAR |  | declared |
+| `B_UNIFY_VV` | 1279 | CA1_VAR,CA1_VAR |  | declared |
+| `B_UNIFY_FC` | 1328 | CA1_FVAR, CA1_DATA |  | declared |
+| `B_UNIFY_VC` | 1351 | CA1_VAR, CA1_DATA |  | declared |
+| `B_EQ_VV` | 1387 | CA1_VAR,CA1_VAR |  | declared |
+| `B_EQ_VC` | 1429 | CA1_VAR,CA1_DATA |  | declared |
+| `B_NEQ_VV` | 1460 | CA1_VAR,CA1_VAR |  | declared |
+| `B_NEQ_VC` | 1505 | CA1_VAR,CA1_DATA |  | declared |
+| `B_ARG_CF` | 1537 | CA1_INTEGER,CA1_VAR,CA1_FVAR |  |  |
+| `B_ARG_VF` | 1580 | CA1_VAR,CA1_VAR,CA1_FVAR |  |  |
+| `B_ARGFIRSTVAR` | 1612 | CA1_FVAR |  | declared |
+| `B_FIRSTVAR` | 1627 | CA1_FVAR | NQP | declared |
+| `B_VOID` | 1648 | — | NDQP | declared |
+| `B_FUNCTOR` | 1664 | CA1_FUNC | DP | declared |
+| `B_RFUNCTOR` | 1671 | CA1_FUNC | D | declared |
+| `B_LIST` | 1694 | — | NQP | declared |
+| `B_RLIST` | 1701 | — | NQP | declared |
+| `B_POP` | 1719 | — | NDQP | declared |
 
 </details>
 
@@ -423,33 +423,33 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
 | `I_NOP` | 443 | — |  | declared |
-| `I_ENTER` | 1782 | — | NDQP | declared |
-| `I_CONTEXT` | 1817 | CA1_MODULE |  |  |
-| `I_CALL` | 1841 | CA1_LPROC | NDQP | declared |
-| `I_DEPART` | 2036 | CA1_LPROC | NDQP | declared |
-| `I_DEPARTATM` | 2087 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
-| `I_DEPARTM` | 2095 | CA1_MODULE, CA1_PROC |  |  |
-| `I_EXIT` | 2146 | — | NDQP | declared |
-| `I_EXITFACT` | 2222 | — | NDQP | declared |
-| `I_EXITQUERY` | 2288 | — |  | declared |
-| `I_YIELD` | 2338 | — |  |  |
-| `L_NOLCO` | 2395 | CA1_JUMP | NDQP | declared |
-| `L_VAR` | 2415 | CA1_FVAR,CA1_VAR | NDQP | declared |
-| `L_VOID` | 2432 | CA1_FVAR |  | declared |
-| `L_ATOM` | 2440 | CA1_FVAR,CA1_DATA |  | declared |
-| `L_NIL` | 2449 | CA1_FVAR |  | declared |
-| `L_SMALLINT` | 2457 | CA1_FVAR,CA1_INTEGER |  | declared |
-| `L_SMALLINTW` | 2465 | CA1_FVAR,CA1_WORD |  |  |
-| `I_LCALL` | 2492 | CA1_LPROC | NDQP | declared |
-| `I_TCALL` | 2532 | — | NDQP | declared |
-| `I_FAIL` | 3071 | — |  | declared |
-| `I_TRUE` | 3091 | — |  | declared |
-| `I_CALLATM` | 5248 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
-| `I_DEPARTATMV` | 5254 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
-| `I_CALLATMV` | 5287 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
-| `I_CALLM` | 5321 | CA1_MODULE, CA1_PROC |  |  |
-| `I_CALL1` | 5343 | — |  | declared |
-| `I_CALLN` | 5590 | CA1_INTEGER |  | declared |
+| `I_ENTER` | 1795 | — | NDQP | declared |
+| `I_CONTEXT` | 1835 | CA1_MODULE |  |  |
+| `I_CALL` | 1859 | CA1_LPROC | NDQP | declared |
+| `I_DEPART` | 2067 | CA1_LPROC | NDQP | declared |
+| `I_DEPARTATM` | 2118 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
+| `I_DEPARTM` | 2126 | CA1_MODULE, CA1_PROC |  |  |
+| `I_EXIT` | 2177 | — | NDQP | declared |
+| `I_EXITFACT` | 2294 | — | NDQP | declared |
+| `I_EXITQUERY` | 2360 | — |  | declared |
+| `I_YIELD` | 2410 | — |  |  |
+| `L_NOLCO` | 2467 | CA1_JUMP | NDQP | declared |
+| `L_VAR` | 2487 | CA1_FVAR,CA1_VAR | NDQP | declared |
+| `L_VOID` | 2504 | CA1_FVAR |  | declared |
+| `L_ATOM` | 2512 | CA1_FVAR,CA1_DATA |  | declared |
+| `L_NIL` | 2521 | CA1_FVAR |  | declared |
+| `L_SMALLINT` | 2529 | CA1_FVAR,CA1_INTEGER |  | declared |
+| `L_SMALLINTW` | 2537 | CA1_FVAR,CA1_WORD |  |  |
+| `I_LCALL` | 2564 | CA1_LPROC | NDQP | declared |
+| `I_TCALL` | 2604 | — | NDQP | declared |
+| `I_FAIL` | 3154 | — |  | declared |
+| `I_TRUE` | 3174 | — |  | declared |
+| `I_CALLATM` | 5337 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
+| `I_DEPARTATMV` | 5343 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
+| `I_CALLATMV` | 5376 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
+| `I_CALLM` | 5410 | CA1_MODULE, CA1_PROC |  |  |
+| `I_CALL1` | 5432 | — |  | declared |
+| `I_CALLN` | 5679 | CA1_INTEGER |  | declared |
 
 </details>
 
@@ -457,34 +457,34 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `I_CHP` | 1732 | — |  | declared |
-| `I_SSU_CHOICE` | 1739 | — |  |  |
-| `I_SSU_COMMIT` | 1747 | — |  |  |
-| `I_DET` | 2559 | — |  | declared |
-| `I_CUT` | 2572 | — | DQP | declared |
-| `C_JMP` | 2607 | CA1_JUMP |  | declared |
-| `C_OR` | 2621 | CA1_JUMP |  | declared |
-| `C_SOFTIFTHEN` | 2654 | CA1_CHP |  | declared |
-| `C_IFTHEN` | 2660 | CA1_CHP |  | declared |
-| `C_DET` | 2672 | CA1_CHP,CA1_JUMP |  | declared |
-| `C_DETTRUE` | 2678 | CA1_CHP |  | declared |
-| `C_DETFALSE` | 2701 | — |  | declared |
-| `C_NOT` | 2720 | CA1_CHP,CA1_JUMP |  | declared |
-| `C_IFTHENELSE` | 2727 | CA1_CHP,CA1_JUMP |  | declared |
-| `C_FASTCOND` | 2734 | CA1_CHP,CA1_JUMP |  | declared |
-| `C_FASTCUT` | 2755 | CA1_CHP |  | declared |
-| `C_VAR` | 2773 | CA1_FVAR |  | declared |
-| `C_VAR_N` | 2781 | CA1_FVAR,CA1_INTEGER |  | declared |
-| `C_LSCUT` | 2816 | CA1_CHP |  | declared |
-| `C_LCUT` | 2828 | CA1_CHP |  | declared |
-| `I_CUTCHP` | 2852 | — |  |  |
-| `C_SCUT` | 2879 | — |  | declared |
-| `C_LCUTIFTHEN` | 2884 | CA1_CHP |  | declared |
-| `C_CUT` | 2909 | CA1_CHP |  | declared |
-| `C_SOFTIF` | 2990 | CA1_CHP,CA1_JUMP |  | declared |
-| `C_SOFTCUT` | 3011 | CA1_CHP |  | declared |
-| `C_END` | 3050 | — |  | declared |
-| `C_FAIL` | 3060 | — |  | declared |
+| `I_CHP` | 1745 | — |  | declared |
+| `I_SSU_CHOICE` | 1752 | — |  |  |
+| `I_SSU_COMMIT` | 1760 | — |  |  |
+| `I_DET` | 2642 | — |  | declared |
+| `I_CUT` | 2655 | — | DQP | declared |
+| `C_JMP` | 2690 | CA1_JUMP |  | declared |
+| `C_OR` | 2704 | CA1_JUMP |  | declared |
+| `C_SOFTIFTHEN` | 2737 | CA1_CHP |  | declared |
+| `C_IFTHEN` | 2743 | CA1_CHP |  | declared |
+| `C_DET` | 2755 | CA1_CHP,CA1_JUMP |  | declared |
+| `C_DETTRUE` | 2761 | CA1_CHP |  | declared |
+| `C_DETFALSE` | 2784 | — |  | declared |
+| `C_NOT` | 2803 | CA1_CHP,CA1_JUMP |  | declared |
+| `C_IFTHENELSE` | 2810 | CA1_CHP,CA1_JUMP |  | declared |
+| `C_FASTCOND` | 2817 | CA1_CHP,CA1_JUMP |  | declared |
+| `C_FASTCUT` | 2838 | CA1_CHP |  | declared |
+| `C_VAR` | 2856 | CA1_FVAR |  | declared |
+| `C_VAR_N` | 2864 | CA1_FVAR,CA1_INTEGER |  | declared |
+| `C_LSCUT` | 2899 | CA1_CHP |  | declared |
+| `C_LCUT` | 2911 | CA1_CHP |  | declared |
+| `I_CUTCHP` | 2935 | — |  |  |
+| `C_SCUT` | 2962 | — |  | declared |
+| `C_LCUTIFTHEN` | 2967 | CA1_CHP |  | declared |
+| `C_CUT` | 2992 | CA1_CHP |  | declared |
+| `C_SOFTIF` | 3073 | CA1_CHP,CA1_JUMP |  | declared |
+| `C_SOFTCUT` | 3094 | CA1_CHP |  | declared |
+| `C_END` | 3133 | — |  | declared |
+| `C_FAIL` | 3143 | — |  | declared |
 
 </details>
 
@@ -492,33 +492,33 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `A_ENTER` | 3711 | — |  |  |
-| `A_INTEGER` | 3723 | CA1_INTEGER |  |  |
-| `A_INTEGERW` | 3732 | CA1_WORD |  |  |
-| `A_MPZ` | 3752 | CA1_MPZ |  |  |
-| `A_MPQ` | 3768 | CA1_MPQ |  |  |
-| `A_DOUBLE` | 3785 | CA1_FLOAT |  |  |
-| `A_VAR` | 3801 | CA1_VAR |  |  |
-| `A_VAR0` | 3859 | — |  |  |
-| `A_VAR1` | 3864 | — |  |  |
-| `A_VAR2` | 3869 | — |  |  |
-| `A_FUNC0` | 3886 | CA1_AFUNC |  |  |
-| `A_FUNC1` | 3891 | CA1_AFUNC |  |  |
-| `A_FUNC2` | 3896 | CA1_AFUNC |  |  |
-| `A_FUNC` | 3901 | CA1_AFUNC, CA1_INTEGER |  |  |
-| `A_ROUNDTOWARDS_A` | 3919 | CA1_INTEGER |  |  |
-| `A_ROUNDTOWARDS_V` | 3932 | CA1_VAR |  |  |
-| `A_ADD` | 3956 | — |  |  |
-| `A_MUL` | 3979 | — |  |  |
-| `A_ADD_FC` | 4004 | CA1_FVAR, CA1_VAR, CA1_INTEGER | P | declared |
-| `A_LT` | 4121 | — |  |  |
-| `A_LE` | 4135 | — |  |  |
-| `A_GT` | 4140 | — |  |  |
-| `A_GE` | 4145 | — |  |  |
-| `A_EQ` | 4150 | — |  |  |
-| `A_NE` | 4155 | — |  |  |
-| `A_IS` | 4175 | — |  |  |
-| `A_FIRSTVAR_IS` | 4266 | CA1_FVAR |  |  |
+| `A_ENTER` | 3791 | — |  |  |
+| `A_INTEGER` | 3803 | CA1_INTEGER |  |  |
+| `A_INTEGERW` | 3812 | CA1_WORD |  |  |
+| `A_MPZ` | 3832 | CA1_MPZ |  |  |
+| `A_MPQ` | 3848 | CA1_MPQ |  |  |
+| `A_DOUBLE` | 3865 | CA1_FLOAT |  |  |
+| `A_VAR` | 3881 | CA1_VAR |  |  |
+| `A_VAR0` | 3939 | — |  |  |
+| `A_VAR1` | 3944 | — |  |  |
+| `A_VAR2` | 3949 | — |  |  |
+| `A_FUNC0` | 3966 | CA1_AFUNC |  |  |
+| `A_FUNC1` | 3971 | CA1_AFUNC |  |  |
+| `A_FUNC2` | 3976 | CA1_AFUNC |  |  |
+| `A_FUNC` | 3981 | CA1_AFUNC, CA1_INTEGER |  |  |
+| `A_ROUNDTOWARDS_A` | 3999 | CA1_INTEGER |  |  |
+| `A_ROUNDTOWARDS_V` | 4012 | CA1_VAR |  |  |
+| `A_ADD` | 4036 | — |  |  |
+| `A_MUL` | 4059 | — |  |  |
+| `A_ADD_FC` | 4084 | CA1_FVAR, CA1_VAR, CA1_INTEGER | P | declared |
+| `A_LT` | 4201 | — |  |  |
+| `A_LE` | 4215 | — |  |  |
+| `A_GT` | 4220 | — |  |  |
+| `A_GE` | 4225 | — |  |  |
+| `A_EQ` | 4230 | — |  |  |
+| `A_NE` | 4235 | — |  |  |
+| `A_IS` | 4255 | — |  |  |
+| `A_FIRSTVAR_IS` | 4346 | CA1_FVAR |  |  |
 
 </details>
 
@@ -526,11 +526,11 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `I_CALLCLEANUP` | 4735 | — |  | declared |
-| `I_EXITCLEANUP` | 4760 | — |  | declared |
-| `I_CATCH` | 4805 | — |  | declared |
-| `I_EXITCATCH` | 4825 | — |  | declared |
-| `B_THROW` | 4867 | — |  |  |
+| `I_CALLCLEANUP` | 4817 | — |  | declared |
+| `I_EXITCLEANUP` | 4842 | — |  | declared |
+| `I_CATCH` | 4887 | — |  | declared |
+| `I_EXITCATCH` | 4907 | — |  | declared |
+| `B_THROW` | 4949 | — |  |  |
 
 </details>
 
@@ -538,56 +538,57 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `I_FCALLDETVA` | 4316 | CA1_FOREIGN | DQP | declared |
-| `I_FCALLDET0` | 4338 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET1` | 4356 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET2` | 4362 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET3` | 4368 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET4` | 4374 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET5` | 4380 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET6` | 4386 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET7` | 4392 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET8` | 4398 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET9` | 4404 | CA1_FOREIGN |  | declared |
-| `I_FCALLDET10` | 4410 | CA1_FOREIGN |  | declared |
-| `I_FEXITDET` | 4416 | — |  | declared |
-| `I_FOPENNDET` | 4459 | — |  |  |
-| `I_FCALLNDETVA` | 4518 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET0` | 4528 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET1` | 4541 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET2` | 4547 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET3` | 4553 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET4` | 4559 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET5` | 4565 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET6` | 4571 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET7` | 4577 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET8` | 4583 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET9` | 4589 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET10` | 4595 | CA1_FOREIGN |  |  |
-| `I_FEXITNDET` | 4601 | — |  |  |
-| `I_FREDO` | 4676 | — |  |  |
+| `I_FCALLDETVA` | 4396 | CA1_FOREIGN | DQP | declared |
+| `I_FCALLDET0` | 4418 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET1` | 4436 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET2` | 4442 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET3` | 4448 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET4` | 4454 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET5` | 4460 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET6` | 4466 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET7` | 4472 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET8` | 4478 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET9` | 4484 | CA1_FOREIGN |  | declared |
+| `I_FCALLDET10` | 4490 | CA1_FOREIGN |  | declared |
+| `I_FEXITDET` | 4496 | — |  | declared |
+| `I_FOPENNDET` | 4539 | — |  |  |
+| `I_FCALLNDETVA` | 4598 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET0` | 4608 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET1` | 4621 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET2` | 4627 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET3` | 4633 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET4` | 4639 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET5` | 4645 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET6` | 4651 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET7` | 4657 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET8` | 4663 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET9` | 4669 | CA1_FOREIGN |  |  |
+| `I_FCALLNDET10` | 4675 | CA1_FOREIGN |  |  |
+| `I_FEXITNDET` | 4681 | — |  |  |
+| `I_FREDO` | 4756 | — |  |  |
 
 </details>
 
-<details><summary><b>supervisor</b> (15)</summary>
+<details><summary><b>supervisor</b> (16)</summary>
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `S_VIRGIN` | 3244 | — | NDQP | declared |
-| `S_UNDEF` | 3286 | — |  | declared |
-| `S_STATIC` | 3353 | — | DQP | declared |
-| `S_DYNAMIC` | 3403 | — |  | declared |
-| `S_THREAD_LOCAL` | 3416 | — |  |  |
-| `S_INCR_DYNAMIC` | 3439 | — |  |  |
-| `S_WRAP` | 3514 | — |  |  |
-| `S_MULTIFILE` | 3540 | — |  | declared |
-| `S_TRUSTME` | 3554 | CA1_CLAUSEREF | NDQP | declared |
-| `S_CALLWRAPPER` | 3578 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  |  |
-| `S_LIST` | 3594 | CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF | NQP | declared |
-| `S_MQUAL` | 3626 | CA1_VAR |  |  |
-| `S_LMQUAL` | 3641 | CA1_VAR |  |  |
-| `S_SSU_DET` | 3657 | — |  |  |
-| `S_DET` | 3663 | — |  |  |
+| `S_VIRGIN` | 3327 | — | NDQP | declared |
+| `S_UNDEF` | 3369 | — |  | declared |
+| `S_STATIC` | 3436 | — | DQP | declared |
+| `S_DYNAMIC` | 3486 | — |  | declared |
+| `S_THREAD_LOCAL` | 3499 | — |  |  |
+| `S_INCR_DYNAMIC` | 3522 | — |  |  |
+| `S_WRAP` | 3560 | — |  |  |
+| `S_MULTIFILE` | 3586 | — |  | declared |
+| `S_TRUSTME` | 3600 | CA1_CLAUSEREF | NDQP | declared |
+| `S_CALLWRAPPER` | 3624 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  |  |
+| `S_TABLED` | 3644 | CA1_CLAUSEREF,CA1_DATA,CA1_DATA |  |  |
+| `S_LIST` | 3674 | CA1_INTEGER, CA1_CLAUSEREF, CA1_CLAUSEREF | NQP | declared |
+| `S_MQUAL` | 3706 | CA1_VAR |  |  |
+| `S_LMQUAL` | 3721 | CA1_VAR |  |  |
+| `S_SSU_DET` | 3737 | — |  |  |
+| `S_DET` | 3743 | — |  |  |
 
 </details>
 
@@ -595,17 +596,17 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `I_VAR` | 3111 | CA1_VAR |  | declared |
-| `I_NONVAR` | 3146 | CA1_VAR |  | declared |
-| `I_INTEGER` | 3184 | CA1_VAR | D | declared |
-| `I_RATIONAL` | 3189 | CA1_VAR |  | declared |
-| `I_FLOAT` | 3194 | CA1_VAR |  | declared |
-| `I_NUMBER` | 3199 | CA1_VAR |  | declared |
-| `I_ATOMIC` | 3204 | CA1_VAR |  | declared |
-| `I_ATOM` | 3209 | CA1_VAR |  | declared |
-| `I_STRING` | 3214 | CA1_VAR |  | declared |
-| `I_COMPOUND` | 3219 | CA1_VAR |  | declared |
-| `I_CALLABLE` | 3224 | CA1_VAR |  | declared |
+| `I_VAR` | 3194 | CA1_VAR |  | declared |
+| `I_NONVAR` | 3229 | CA1_VAR |  | declared |
+| `I_INTEGER` | 3267 | CA1_VAR | D | declared |
+| `I_RATIONAL` | 3272 | CA1_VAR |  | declared |
+| `I_FLOAT` | 3277 | CA1_VAR |  | declared |
+| `I_NUMBER` | 3282 | CA1_VAR |  | declared |
+| `I_ATOMIC` | 3287 | CA1_VAR |  | declared |
+| `I_ATOM` | 3292 | CA1_VAR |  | declared |
+| `I_STRING` | 3297 | CA1_VAR |  | declared |
+| `I_COMPOUND` | 3302 | CA1_VAR |  | declared |
+| `I_CALLABLE` | 3307 | CA1_VAR |  | declared |
 
 </details>
 
@@ -613,11 +614,11 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `I_RESET` | 5655 | — |  |  |
-| `I_EXITRESET` | 5670 | — |  |  |
-| `I_CALLCONT` | 5693 | CA1_VAR |  |  |
-| `I_SHIFT` | 5728 | CA1_VAR |  |  |
-| `I_SHIFTCP` | 5762 | CA1_VAR |  |  |
+| `I_RESET` | 5754 | — |  |  |
+| `I_EXITRESET` | 5801 | — |  |  |
+| `I_CALLCONT` | 5839 | CA1_VAR |  |  |
+| `I_SHIFT` | 5874 | CA1_VAR |  |  |
+| `I_SHIFTCP` | 5908 | CA1_VAR |  |  |
 
 </details>
 
@@ -625,36 +626,36 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 
 | instruction | pl-vmi.c | operands | needed by | kernel |
 |---|---|---|---|---|
-| `S_TRIE_GEN` | 5785 | — |  |  |
-| `T_TRIE_GEN2` | 5919 | — |  |  |
-| `T_TRIE_GEN3` | 5951 | — |  |  |
-| `T_VALUE` | 5985 | — |  |  |
-| `T_DELAY` | 6010 | CA1_TRIE_NODE |  |  |
-| `T_TRY_FUNCTOR` | 6034 | CA1_JUMP,CA1_FUNC |  |  |
-| `T_FUNCTOR` | 6039 | CA1_FUNC |  |  |
-| `T_POP` | 6096 | — |  |  |
-| `T_POPN` | 6108 | CA1_INTEGER |  |  |
-| `T_TRY_VAR` | 6130 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_VAR` | 6135 | CA1_INTEGER |  |  |
-| `T_TRY_ATTVARA` | 6182 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_ATTVARA` | 6187 | CA1_INTEGER |  |  |
-| `T_TRY_ATTVARZ` | 6277 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_ATTVARZ` | 6282 | CA1_INTEGER |  |  |
-| `T_TRY_ATTVARZT` | 6288 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_ATTVARZT` | 6293 | CA1_INTEGER |  |  |
-| `T_TRY_FLOAT` | 6299 | CA1_JUMP,CA1_FLOAT |  |  |
-| `T_FLOAT` | 6304 | CA1_FLOAT |  |  |
-| `T_TRY_MPZ` | 6347 | CA1_JUMP,CA1_MPZ |  |  |
-| `T_MPZ` | 6352 | CA1_MPZ |  |  |
-| `T_TRY_STRING` | 6358 | CA1_JUMP,CA1_STRING |  |  |
-| `T_STRING` | 6363 | CA1_STRING |  |  |
-| `T_TRY_ATOM` | 6390 | CA1_JUMP,CA1_DATA |  |  |
-| `T_ATOM` | 6396 | CA1_DATA |  |  |
-| `T_TRY_SMALLINT` | 6404 | CA1_JUMP,CA1_INTEGER |  |  |
-| `T_SMALLINT` | 6410 | CA1_INTEGER |  |  |
-| `T_TRY_SMALLINTW` | 6417 | CA1_JUMP,CA1_WORD |  |  |
-| `T_SMALLINTW` | 6423 | CA1_WORD |  |  |
-| `T_CHECKWAKEUP` | 6452 | — |  |  |
+| `S_TRIE_GEN` | 5931 | — |  |  |
+| `T_TRIE_GEN2` | 6101 | — |  |  |
+| `T_TRIE_GEN3` | 6134 | — |  |  |
+| `T_VALUE` | 6169 | — |  |  |
+| `T_DELAY` | 6192 | CA1_TRIE_NODE |  |  |
+| `T_TRY_FUNCTOR` | 6216 | CA1_JUMP,CA1_FUNC |  |  |
+| `T_FUNCTOR` | 6221 | CA1_FUNC |  |  |
+| `T_POP` | 6274 | — |  |  |
+| `T_POPN` | 6284 | CA1_INTEGER |  |  |
+| `T_TRY_VAR` | 6304 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_VAR` | 6309 | CA1_INTEGER |  |  |
+| `T_TRY_ATTVARA` | 6356 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_ATTVARA` | 6361 | CA1_INTEGER |  |  |
+| `T_TRY_ATTVARZ` | 6449 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_ATTVARZ` | 6454 | CA1_INTEGER |  |  |
+| `T_TRY_ATTVARZT` | 6460 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_ATTVARZT` | 6465 | CA1_INTEGER |  |  |
+| `T_TRY_FLOAT` | 6471 | CA1_JUMP,CA1_FLOAT |  |  |
+| `T_FLOAT` | 6476 | CA1_FLOAT |  |  |
+| `T_TRY_MPZ` | 6519 | CA1_JUMP,CA1_MPZ |  |  |
+| `T_MPZ` | 6524 | CA1_MPZ |  |  |
+| `T_TRY_STRING` | 6530 | CA1_JUMP,CA1_STRING |  |  |
+| `T_STRING` | 6535 | CA1_STRING |  |  |
+| `T_TRY_ATOM` | 6562 | CA1_JUMP,CA1_DATA |  |  |
+| `T_ATOM` | 6568 | CA1_DATA |  |  |
+| `T_TRY_SMALLINT` | 6576 | CA1_JUMP,CA1_INTEGER |  |  |
+| `T_SMALLINT` | 6582 | CA1_INTEGER |  |  |
+| `T_TRY_SMALLINTW` | 6589 | CA1_JUMP,CA1_WORD |  |  |
+| `T_SMALLINTW` | 6595 | CA1_WORD |  |  |
+| `T_CHECKWAKEUP` | 6624 | — |  |  |
 
 </details>
 
