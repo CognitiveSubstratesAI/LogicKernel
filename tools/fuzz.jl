@@ -11,8 +11,8 @@
 # OUTDIR/seed_<n>/, the seed and the first lines are printed, and a `::error` annotation names the seed.
 # Exit 2: the oracle is missing or answered nothing (a comparison of nothing with nothing proves nothing).
 #
-# THE GENERATOR AVOIDS what the kernel does not have yet — sort/4, retract/1, retractall/1, acyclic_term/1,
-# library(lists) (A-0082): each is a finding of its own, not a nightly failure; remove an avoidance when the
+# THE GENERATOR AVOIDS what the kernel does not have yet — retract/1, library(lists) (A-0082; sort/4,
+# acyclic_term/1, cyclic_term/1 and retractall/1 came back 2026-10-24): each is a finding of its own, not a nightly failure; remove an avoidance when the
 # predicate is ported. A shift count is small (a huge one is group F's InexactError finding, now ported:
 # test/core_lang/test_arith_swipl.jl `_A_TOOBIG`). FUZZ_INJECT=1 corrupts one kernel line (the run MUST exit 1:
 # tools/test_fuzz.sh).
@@ -194,7 +194,7 @@ function arith(r, d)
 end
 function goal(r)
     t1, t2, t3 = term(r, 3), term(r, 3), term(r, 2)
-    kind = rand(r, 1:20)
+    kind = rand(r, 1:25)
     kind == 1 &&
         return "A = $t1, B = $t2, ( unify_with_occurs_check(A, B) -> R = yes(A,B) ; R = no )"
     kind == 2 && return "unify_with_occurs_check($t1, $t2), R = u($t1,$t2)"
@@ -211,12 +211,19 @@ function goal(r)
     kind == 12 && return "( bagof(X, fz_member(X-Y, [1-a,2-b,3-a,4-Z]), L), R = b(Y,L) )"
     kind == 13 && return "setof(X-Y, fz_member(X-Y, [$t1-1,$t2-2,$t1-1,$t3-0]), L), R = L"
     kind == 14 && return "msort([$t1,$t2,$t3,$t1], L), R = L"
-    kind == 15 && return "msort([$t3,$t1,$t2], L0), fz_rev(L0, [], L), R = L"   # sort/4 is not ported (run 2026-10-23: 804 of 1571 existence_errors)
+    kind == 15 && return "sort(0, @>=, [$t3,$t1,$t2,$t1], L), R = L"
     kind == 16 && return "term_variables(f($t1,$t2,$t3), Vs), length(Vs, N), R = N"
     kind == 17 && return "T = $t1, ( compound(T) -> T =.. L, R = L ; R = atomic_or_var )"
     kind == 18 && return "functor($t1, N, A), R = N/A"
     kind == 19 &&
         return "assertz(q($t1)), assertz(q($t2)), asserta(q($t3)), findall(Q, q(Q), L), R = L"   # retract/1 and retractall/1 are not ported
+    kind == 21 &&
+        return "sort(1, @<, [k($t1, a), k($t2, b), k($t3, c), k($t1, d)], L), R = L"
+    kind == 22 && return "sort(2, @>=, [k(a, $t1), k(b, $t2), k(c, $t3)], L), R = L"
+    kind == 23 && return "T = $t1, ( acyclic_term(T) -> R = y ; R = n )"
+    kind == 24 && return "( cyclic_term($t1) -> R = c ; R = a )"
+    kind == 25 &&
+        return "retractall(q(_)), assertz(q($t1)), assertz(q($t2)), asserta(q($t3)), retractall(q(f(_))), findall(Q, q(Q), L), R = L"
     return "( length(L, N), N >= 2 -> R = L-N ; R = no )"   # once: length/2 enumerates forever
 end
 function program(seed, ncases)
