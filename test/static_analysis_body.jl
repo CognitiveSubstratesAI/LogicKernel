@@ -300,8 +300,13 @@ end
             # every site in the foreign labels' spans must come from inside the built-in it calls
             # (`_fcall_va`, `_fcall_det`) or from an error path: a bad return value
             # (`error_foreign_return_code`), or success with an exception still pending, the "false alarm"
-            # (`PL_clear_foreign_exception`, which resets the ball).
-            fpath = ("I_FCALLDETVA", "I_FCALLDET0", "fcall_detn", "helper_I_FEXITDET")
+            # (`PL_clear_foreign_exception`, which resets the ball). NF1: the non-deterministic call and its
+            # REDO (the jump choice resumes at `I_FREDO`, which re-enters `foreign_redo`) — D-0136 Q2.
+            fpath = (
+                "I_FCALLDETVA", "I_FCALLDET0", "fcall_detn", "helper_I_FEXITDET",
+                "I_FOPENNDET", "foreign_redo", "I_FCALLNDETVA", "helper_I_FEXITNDET",
+                "I_FREDO"
+            )
             @test all(n -> haskey(spans_of, n), fpath)
             fspans = [spans_of[n] for n in fpath]
             inside = (

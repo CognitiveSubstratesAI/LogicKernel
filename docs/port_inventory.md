@@ -74,14 +74,15 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-utf8.c` | code | `cbf4e1896275` | `src/os/pl-utf8.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-utf8.h` | code | `cbf4e1896275` | `src/os/pl-utf8.jl` | 19 | 0 |
 | swipl-devel `src/pl-alloc.c` | code | `cbf4e1896275` | `src/pl-alloc.jl` | 10 | 5 |
-| swipl-devel `src/pl-arith.c` | code | `cbf4e1896275` | `src/pl-arith.jl` | 124 | 32 |
+| swipl-devel `src/pl-arith.c` | code | `cbf4e1896275` | `src/pl-arith.jl` | 125 | 33 |
+| swipl-devel `src/pl-arith.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-arith.h` | code | `cbf4e1896275` | `src/pl-arith.jl` | 6 | 2 |
 | swipl-devel `src/pl-atom.c` | code | `cbf4e1896275` | `src/pl-atom.jl` | 11 | 6 |
 | swipl-devel `src/pl-attvar.c` | code | `cbf4e1896275` | `src/pl-attvar.jl` | 3 | 3 |
 | swipl-devel `src/pl-attvar.h` | code | `cbf4e1896275` | `src/pl-attvar.jl` | 1 | 1 |
 | swipl-devel `src/pl-bag.c` | code | `cbf4e1896275` | `src/pl-bag.jl` | 9 | 6 |
 | swipl-devel `src/pl-bag.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
-| swipl-devel `src/pl-builtin.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 5 | 1 |
+| swipl-devel `src/pl-builtin.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 10 | 1 |
 | swipl-devel `src/pl-codetable.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 1 | 1 |
 | swipl-devel `src/pl-comp.c` | code | `cbf4e1896275` | `src/pl-comp.jl` | 135 | 72 |
 | swipl-devel `src/pl-comp.h` | code | `cbf4e1896275` | `src/pl-comp.jl` | 1 | 0 |
@@ -91,7 +92,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-error.c` | code | `cbf4e1896275` | `src/pl-error.jl` | 19 | 11 |
 | swipl-devel `src/pl-error.h` | code | `cbf4e1896275` | `src/pl-error.jl` | 1 | 1 |
 | swipl-devel `src/pl-ext.c` | code | `cbf4e1896275` | `src/pl-ext.jl` | 5 | 3 |
-| swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/pl-fli.jl` | 61 | 51 |
+| swipl-devel `src/pl-fli.c` | code | `cbf4e1896275` | `src/pl-fli.jl` | 67 | 55 |
 | swipl-devel `src/pl-fli.h` | code | `cbf4e1896275` | `src/pl-fli.jl` | 10 | 8 |
 | swipl-devel `src/pl-funct.c` | code | `cbf4e1896275` | `src/pl-funct.jl` | 12 | 9 |
 | swipl-devel `src/pl-gc.c` | code | `cbf4e1896275` | `src/pl-gc.jl` | 6 | 4 |
@@ -101,7 +102,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-global.h` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 5 | 0 |
 | swipl-devel `src/pl-global.h` | code | `cbf4e1896275` | `src/pl-global.jl` | 3 | 3 |
 | swipl-devel `src/pl-global.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
-| swipl-devel `src/pl-gmp.c` | code | `cbf4e1896275` | `src/pl-gmp.jl` | 29 | 8 |
+| swipl-devel `src/pl-gmp.c` | code | `cbf4e1896275` | `src/pl-gmp.jl` | 30 | 9 |
 | swipl-devel `src/pl-gmp.h` | code | `cbf4e1896275` | `src/pl-gmp.jl` | 4 | 2 |
 | swipl-devel `src/pl-gmp.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 4 | 0 |
 | swipl-devel `src/pl-gvar.c` | code | `cbf4e1896275` | `src/pl-inline.jl` | 1 | 1 |
@@ -144,9 +145,9 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-umap.c` | code | `cbf4e1896275` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 130 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 154 | 98 |
-| swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 44 | 36 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 145 | 0 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 160 | 103 |
+| swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 45 | 37 |
 | swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 116 | 46 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `cbf4e1896275` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `cbf4e1896275` | `test/core_lang/test_exception.jl` | 4 | 0 |
@@ -205,7 +206,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-utf8.c` | `cbf4e1896275` | 4 | 9 | 2 | src/os/pl-utf8.jl |
 | swipl-devel `src/os/pl-utf8.h` | `cbf4e1896275` | 4 | 11 | 0 | src/os/pl-utf8.jl |
 | swipl-devel `src/pl-alloc.c` | `cbf4e1896275` | 8 | 73 | 5 | src/pl-alloc.jl |
-| swipl-devel `src/pl-arith.c` | `cbf4e1896275` | 97 | 166 | 30 | src/pl-arith.jl |
+| swipl-devel `src/pl-arith.c` | `cbf4e1896275` | 98 | 166 | 31 | src/pl-arith.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-arith.h` | `cbf4e1896275` | 1 | 9 | 1 | src/pl-arith.jl |
 | swipl-devel `src/pl-atom.c` | `cbf4e1896275` | 10 | 78 | 6 | src/pl-atom.jl |
 | swipl-devel `src/pl-attvar.c` | `cbf4e1896275` | 3 | 42 | 3 | src/pl-attvar.jl |
@@ -220,13 +221,13 @@ checkout is pulled.
 | swipl-devel `src/pl-error.c` | `cbf4e1896275` | 18 | 41 | 11 | src/pl-error.jl |
 | swipl-devel `src/pl-error.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-error.jl |
 | swipl-devel `src/pl-ext.c` | `cbf4e1896275` | 4 | 10 | 2 | src/pl-ext.jl |
-| swipl-devel `src/pl-fli.c` | `cbf4e1896275` | 57 | 286 | 49 | src/pl-fli.jl |
+| swipl-devel `src/pl-fli.c` | `cbf4e1896275` | 63 | 286 | 53 | src/pl-fli.jl |
 | swipl-devel `src/pl-fli.h` | `cbf4e1896275` | 10 | 15 | 8 | src/pl-fli.jl |
 | swipl-devel `src/pl-funct.c` | `cbf4e1896275` | 10 | 17 | 7 | src/pl-funct.jl |
 | swipl-devel `src/pl-gc.c` | `cbf4e1896275` | 6 | 166 | 5 | src/pl-gc.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `cbf4e1896275` | 1 | 2 | 1 | src/pl-alloc.jl, src/pl-gc.jl |
 | swipl-devel `src/pl-global.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-file.jl, src/pl-global.jl, src/pl-incl.jl |
-| swipl-devel `src/pl-gmp.c` | `cbf4e1896275` | 28 | 81 | 7 | src/pl-gmp.jl |
+| swipl-devel `src/pl-gmp.c` | `cbf4e1896275` | 29 | 81 | 8 | src/pl-gmp.jl |
 | swipl-devel `src/pl-gmp.h` | `cbf4e1896275` | 7 | 9 | 2 | src/pl-gmp.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-gvar.c` | `cbf4e1896275` | 1 | 24 | 1 | src/pl-inline.jl |
 | swipl-devel `src/pl-hash.c` | `cbf4e1896275` | 1 | 3 | 1 | src/pl-hash.jl |
@@ -254,8 +255,8 @@ checkout is pulled.
 | swipl-devel `src/pl-trace.c` | `cbf4e1896275` | 5 | 77 | 2 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 130 | 243 | 67 | src/pl-vmi.jl, src/pl-wam.jl |
-| swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 40 | 98 | 34 | src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 145 | 243 | 71 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 41 | 98 | 35 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `cbf4e1896275` | 85 | 111 | 43 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `cbf4e1896275` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_exception.pl` | `cbf4e1896275` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
@@ -272,7 +273,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1241** | **4479** | **659** | |
+| **total** | | **1265** | **4479** | **670** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
@@ -551,21 +552,21 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `I_FCALLDET9` | 4484 | CA1_FOREIGN |  | declared |
 | `I_FCALLDET10` | 4490 | CA1_FOREIGN |  | declared |
 | `I_FEXITDET` | 4496 | — |  | declared |
-| `I_FOPENNDET` | 4539 | — |  |  |
-| `I_FCALLNDETVA` | 4598 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET0` | 4608 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET1` | 4621 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET2` | 4627 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET3` | 4633 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET4` | 4639 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET5` | 4645 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET6` | 4651 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET7` | 4657 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET8` | 4663 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET9` | 4669 | CA1_FOREIGN |  |  |
-| `I_FCALLNDET10` | 4675 | CA1_FOREIGN |  |  |
-| `I_FEXITNDET` | 4681 | — |  |  |
-| `I_FREDO` | 4756 | — |  |  |
+| `I_FOPENNDET` | 4539 | — |  | declared |
+| `I_FCALLNDETVA` | 4598 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET0` | 4608 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET1` | 4621 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET2` | 4627 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET3` | 4633 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET4` | 4639 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET5` | 4645 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET6` | 4651 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET7` | 4657 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET8` | 4663 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET9` | 4669 | CA1_FOREIGN |  | declared |
+| `I_FCALLNDET10` | 4675 | CA1_FOREIGN |  | declared |
+| `I_FEXITNDET` | 4681 | — |  | declared |
+| `I_FREDO` | 4756 | — |  | declared |
 
 </details>
 

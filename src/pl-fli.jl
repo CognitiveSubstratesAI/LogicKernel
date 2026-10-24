@@ -924,6 +924,17 @@ function PL_is_number(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     return false
 end
 
+# PORT: pl-fli.c PL_is_inf
+# DIVERGES: on the WORDS (as `PL_get_atom`): the atom word is compared with `ATOM_inf`'s and
+# `ATOM_infinite`'s.
+"Whether term reference `t` holds the atom `inf` or `infinite` (pl-fli.c)."
+function PL_is_inf(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # PL_get_atom(t, &a)
+    (k == DU_WORD && isAtomW(w)) || return false
+    return w == _atom_word!(ld, mk_sym(T, :inf)) ||         # a == ATOM_inf
+           w == _atom_word!(ld, mk_sym(T, :infinite))       # a == ATOM_infinite
+end
+
 # PORT: pl-fli.c PL_unify
 # DIVERGES: no `ALLOW_GC|ALLOW_SHIFT`: the kernel's `unify_ptrs` takes no flags, as the binding store
 # and the trail cannot overflow during a unification (its DIVERGES). On the CELLS since L1c
@@ -1019,6 +1030,56 @@ function PL_clear_foreign_exception(ld::PL_local_data{T}, fr::Int)::Nothing wher
     PL_clear_exception(ld)
     return nothing
 end
+
+# ── the return of a non-deterministic foreign predicate (pl-fli.c, pl-builtin.h; NF1) ──────────────
+# PORT: pl-fli.c _PL_retry as PL_retry
+# DIVERGES: returns the value (upstream's macro `PL_retry(n)` is `return _PL_retry(n)`).
+"Succeed, to be called again with `FRG_REDO` and context `v` (pl-fli.c; `ForeignRedoInt`)."
+PL_retry(v::Int)::foreign_t = (reinterpret(UInt, v) << FRG_REDO_BITS) | REDO_INT
+
+# PORT: pl-fli.c _PL_retry_address as PL_retry_address
+# DIVERGES: `i` is the index of a state in its built-in's pool (`foreign_state_pool`), where upstream's
+# is an address — encoded the same way (`ForeignRedoPtr`); an index is never 0, as an address is not.
+"Succeed, to be called again with `FRG_REDO` and the state at pool index `i` (pl-fli.c)."
+function PL_retry_address(i::Int)::foreign_t
+    @assert i >= 1 "PL_retry_address: no state"
+    return UInt(i) << FRG_REDO_BITS             # ForeignRedoPtr(v): (uintptr_t)v|REDO_PTR
+end
+
+# PORT: pl-fli.c PL_foreign_control
+"How a non-deterministic foreign predicate is called: `FRG_FIRST_CALL`, `FRG_REDO` or `FRG_CUTTED` (pl-fli.c)."
+PL_foreign_control(h::control_t)::Int = h.control
+
+# PORT: pl-fli.c PL_foreign_context
+"The integer a `PL_retry` gave (pl-fli.c; `ForeignContextInt`)."
+PL_foreign_context(h::control_t)::Int = reinterpret(Int, h.context)
+
+# PORT: pl-fli.c PL_foreign_context_address
+# DIVERGES: the pool index a `PL_retry_address` gave, where upstream's is the address.
+"The state index a `PL_retry_address` gave (pl-fli.c; `ForeignContextPtr`)."
+PL_foreign_context_address(h::control_t)::Int = Int(h.context >> FRG_REDO_BITS)
+
+# ORIGINAL (NF1, design D3): upstream's `allocForeignState`/`freeForeignState` on a typed pool.
+"A state record of `pool` for a new enumeration: its index (≥ 1); the record keeps its old values."
+function alloc_foreign_state!(pool::foreign_state_pool{S})::Int where {S}
+    pool.live += 1
+    isempty(pool.free) || return pop!(pool.free)
+    push!(pool.states, S())
+    return length(pool.states)
+end
+
+"Give the state at index `i` back to `pool`."
+function free_foreign_state!(pool::foreign_state_pool, i::Int)::Nothing
+    @assert pool.live > 0 && i ∉ pool.free "free_foreign_state!: index $i is not live"
+    push!(pool.free, i)
+    pool.live -= 1
+    return nothing
+end
+
+# ORIGINAL (NF1; audit D-0136 Q8): tests only, not exported — a leaked state (a missing
+# `FRG_CUTTED`, an exception after a redo) shows as a count that does not return to 0.
+"How many states of the non-deterministic built-ins are live in `ld` (a white-box count)."
+live_states(ld::PL_local_data)::Int = ld.between_states.live
 
 # PORT: pl-fli.c PL_qualify
 # DIVERGES: the database and local data are arguments; the module is an index into `gd`'s table

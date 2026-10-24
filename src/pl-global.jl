@@ -274,6 +274,8 @@ end
 # `:warning` or `:silent` — which upstream reads from the flag table (`PL_current_prolog_flag`).
 # Since V9g-b: `bags`, upstream's `bags` (a `findall_state`: the stack of findall/3's bags, the
 # innermost last — src/pl-bag.jl).
+# Since NF1: `between_states`, the pool of between/3's states (`foreign_state_pool`, pl-incl.jl):
+# upstream `malloc`s them (`allocForeignState`).
 """
     PL_local_data{T}(gd)
 
@@ -389,6 +391,7 @@ mutable struct PL_local_data{T}
     variable_names::Int                                         # (gvar `$variable_names`: a term_t)
     prolog_flag_determinism_error::Symbol                       # the `determinism_error` flag
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
+    between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -455,7 +458,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         true,                                   # character_escapes_unicode: true
         0,                                      # $variable_names: no such global variable
         :error,                                 # determinism_error: error (os/pl-prologflag.c:2708)
-        findall_bag{T}[]                        # bags: none (pl-bag.c: `LD->bags` is NULL)
+        findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
+        foreign_state_pool{between_state}()     # between/3's states: none
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

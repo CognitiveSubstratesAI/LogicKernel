@@ -20,7 +20,9 @@
 # inline unification family (`B_UNIFY_FIRSTVAR` … `B_NEQ_VC`, `C_VAR`, `I_FAIL`, `I_TRUE`, in
 # pl-vmi.c's order), then V9d's control constructs (`C_JMP` … `C_LSCUT`), V9e's meta-call
 # (`I_CALL1`, `I_CALLN`), V9f's `I_CATCH`, `I_EXITCATCH`, `I_DET`, `C_DET`, `C_DETTRUE`,
-# `C_DETFALSE` and V9g's `I_CALLCLEANUP`, `I_EXITCLEANUP`.
+# `C_DETFALSE` and V9g's `I_CALLCLEANUP`, `I_EXITCLEANUP`, then NF1's non-deterministic foreign calls
+# (`I_FOPENNDET`, `I_FCALLNDETVA`, `I_FCALLNDET0` … `I_FCALLNDET10` — the eleven consecutive, as the
+# deterministic ones — `I_FEXITNDET`, `I_FREDO`; the `a1, a2, …` ones are refused by name until NF4).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -495,6 +497,51 @@ const I_CALLCLEANUP = code(128)
 # PORT: pl-vmi.c I_EXITCLEANUP
 "The cleanup family's exit: run the cleanup handler if the goal left no choice point (pl-vmi.c)."
 const I_EXITCLEANUP = code(129)
+# PORT: pl-vmi.c I_FOPENNDET
+"A non-deterministic foreign call's first word: the first-call context, then `foreign_redo` (pl-vmi.c)."
+const I_FOPENNDET = code(130)
+# PORT: pl-vmi.c I_FCALLNDETVA
+"Call a non-deterministic foreign predicate with the `t0, ac, ctx` convention; operand: its index (pl-vmi.c)."
+const I_FCALLNDETVA = code(131)
+# PORT: pl-vmi.c I_FCALLNDET0
+"Call a non-deterministic foreign predicate of 0 arguments, `a1, a2, …` convention; operand: its index (pl-vmi.c)."
+const I_FCALLNDET0 = code(132)
+# PORT: pl-vmi.c I_FCALLNDET1
+"As `I_FCALLNDET0`, 1 argument (pl-vmi.c)."
+const I_FCALLNDET1 = code(133)
+# PORT: pl-vmi.c I_FCALLNDET2
+"As `I_FCALLNDET0`, 2 arguments (pl-vmi.c)."
+const I_FCALLNDET2 = code(134)
+# PORT: pl-vmi.c I_FCALLNDET3
+"As `I_FCALLNDET0`, 3 arguments (pl-vmi.c)."
+const I_FCALLNDET3 = code(135)
+# PORT: pl-vmi.c I_FCALLNDET4
+"As `I_FCALLNDET0`, 4 arguments (pl-vmi.c)."
+const I_FCALLNDET4 = code(136)
+# PORT: pl-vmi.c I_FCALLNDET5
+"As `I_FCALLNDET0`, 5 arguments (pl-vmi.c)."
+const I_FCALLNDET5 = code(137)
+# PORT: pl-vmi.c I_FCALLNDET6
+"As `I_FCALLNDET0`, 6 arguments (pl-vmi.c)."
+const I_FCALLNDET6 = code(138)
+# PORT: pl-vmi.c I_FCALLNDET7
+"As `I_FCALLNDET0`, 7 arguments (pl-vmi.c)."
+const I_FCALLNDET7 = code(139)
+# PORT: pl-vmi.c I_FCALLNDET8
+"As `I_FCALLNDET0`, 8 arguments (pl-vmi.c)."
+const I_FCALLNDET8 = code(140)
+# PORT: pl-vmi.c I_FCALLNDET9
+"As `I_FCALLNDET0`, 9 arguments (pl-vmi.c)."
+const I_FCALLNDET9 = code(141)
+# PORT: pl-vmi.c I_FCALLNDET10
+"As `I_FCALLNDET0`, 10 arguments (pl-vmi.c)."
+const I_FCALLNDET10 = code(142)
+# PORT: pl-vmi.c I_FEXITNDET
+"A non-deterministic foreign call's exit: done, failed, or a retry context kept with its choice point (pl-vmi.c)."
+const I_FEXITNDET = code(143)
+# PORT: pl-vmi.c I_FREDO
+"Where a non-deterministic foreign call's choice point resumes: the redo context, then the call again (pl-vmi.c)."
+const I_FREDO = code(144)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -641,7 +688,22 @@ const _CODE_TABLE = (
     code_info(:C_DETTRUE, 0x00, 1, (CA1_CHP, 0x00, 0x00, 0x00)),
     code_info(:C_DETFALSE, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_CALLCLEANUP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:I_EXITCLEANUP, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:I_EXITCLEANUP, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_FOPENNDET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDETVA, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET0, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET1, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET2, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET3, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET4, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET5, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET6, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET7, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET8, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET9, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FCALLNDET10, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
+    code_info(:I_FEXITNDET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_FREDO, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

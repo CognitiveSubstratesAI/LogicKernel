@@ -2751,6 +2751,103 @@ function pl_is2_va(
     return rc ? FTRUE : FFALSE
 end
 
+# PORT: pl-arith.c between as pl_between3_va
+# DIVERGES: the state is a record of the local data's pool (`ld.between_states`, design D3), its
+# index the `REDO_PTR` context (`PL_retry_address`); the first call's numbers are the local data's
+# pooled ones (`_number_alloc!`), where upstream's are C locals. `clearInteger` has nothing to free
+# (a `BigInt` is Julia's GC's).
+# (PRED_IMPL("between", 3, between, PL_FA_NONDETERMINISTIC))
+"`between/3` (pl-arith.c): `N` is `Low`, `Low+1`, … up to `High`, or without end for `inf`."
+function pl_between3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    low, high, n = PL__t0, PL__t0 + 1, PL__t0 + 2
+    rc = true
+
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        l = _number_alloc!(ld)
+        h = _number_alloc!(ld)
+        i = _number_alloc!(ld)
+        hinf = false
+
+        if !PL_get_number(ld, low, l) || !intNumber(l)
+            _number_free!(ld, 3)
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), low) ? FTRUE : FFALSE
+        end
+        if !PL_get_number(ld, high, h) || !intNumber(h)
+            if PL_is_inf(ld, high)
+                h.type = V_INTEGER                      # make clearInteger() safe
+                hinf = true
+            else
+                _number_free!(ld, 3)
+                return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), high) ? FTRUE : FFALSE
+            end
+        end
+
+        # between(+,+,+)
+        if PL_get_number(ld, n, i) && intNumber(i)
+            if hinf
+                rc = cmpNumbers(ld, i, l) >= 0
+            else
+                rc = cmpNumbers(ld, i, l) >= 0 && cmpNumbers(ld, i, h) <= 0
+            end
+            _number_free!(ld, 3)
+            return rc ? FTRUE : FFALSE
+        end
+
+        # between(+,+,-)
+        if !PL_is_variable(ld, n)
+            _number_free!(ld, 3)
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :integer), n) ? FTRUE : FFALSE
+        end
+        if !hinf && cmpNumbers(ld, h, l) < 0
+            _number_free!(ld, 3)
+            return FFALSE
+        end
+
+        if !PL_unify(ld, n, low)
+            _number_free!(ld, 3)
+            return FFALSE
+        end
+        if !hinf && cmpNumbers(ld, l, h) == 0
+            _number_free!(ld, 3)
+            return FTRUE
+        end
+
+        k = alloc_foreign_state!(ld.between_states)    # allocForeignState(sizeof(*state))
+        state = ld.between_states.states[k]
+        cpNumber(state.low, l)
+        cpNumber(state.high, h)
+        state.hinf = hinf
+        _number_free!(ld, 3)
+        return PL_retry_address(k)                      # ForeignRedoPtr(state)
+    elseif ctl == FRG_REDO
+        k = PL_foreign_context_address(PL__ctx)         # state = CTX_PTR
+        state = ld.between_states.states[k]
+
+        if !ar_add_si(ld, state.low, 1) || !PL_unify_number(ld, n, state.low)
+            free_foreign_state!(ld.between_states, k)   # rc = false; goto cleanup
+            return FFALSE
+        end
+        if !state.hinf
+            if state.high.type === V_INTEGER && state.low.type === V_INTEGER
+                if state.low.i == state.high.i
+                    free_foreign_state!(ld.between_states, k)   # goto cleanup
+                    return FTRUE
+                end
+            elseif cmpNumbers(ld, state.low, state.high) == CMPEX_EQUAL
+                free_foreign_state!(ld.between_states, k)       # goto cleanup
+                return FTRUE
+            end
+        end
+        return PL_retry_address(k)                      # ForeignRedoPtr(state)
+    elseif ctl == FRG_CUTTED
+        free_foreign_state!(ld.between_states, PL_foreign_context_address(PL__ctx))
+    end
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-arith.c BeginPredDefs as PL_predicates_from_arith
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (ar:5386-5393); `PRED_DEF` ors in `PL_FA_VARARGS`.
@@ -2762,5 +2859,6 @@ const PL_predicates_from_arith = (
     PL_extension("=<", 2, pl_leq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension(">=", 2, pl_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("=\\=", 2, pl_neq2_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("=:=", 2, pl_eq2_va, PL_FA_ISO | PL_FA_VARARGS)
+    PL_extension("=:=", 2, pl_eq2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("between", 3, pl_between3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS)
 )

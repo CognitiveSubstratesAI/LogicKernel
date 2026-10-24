@@ -1170,7 +1170,9 @@ end
 # (PRED_IMPL("retractall", 1, retractall, PL_FA_NONDETERMINISTIC|PL_FA_ISO))
 # DIVERGES: registered as a deterministic variadic built-in (the body never leaves a choice point; upstream's
 # NONDETERMINISTIC flag only gives it a foreign frame); the work is `pl_retractall!` below (its permission checks are
-# the ones here, done first with the Prolog error); no update events (`retractall_event`).
+# the ones here, done first with the Prolog error); no update events (`retractall_event`). Kept deterministic after
+# NF1 (audit D-0136 Q6: representation only). RE-CHECK: a `prolog_current_frame/1` or `prolog_current_choice/1` row
+# around retractall/1 that differs from swipl ports the NONDETERMINISTIC flag.
 "`retractall(+Head)`: retract every clause whose head unifies with `Head`, creating the predicate dynamic if it is new (pl-proc.c)."
 function pl_retractall1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}

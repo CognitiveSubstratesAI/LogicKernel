@@ -52,6 +52,24 @@ function get_number(w, n::number)::Nothing
     return nothing
 end
 
+# PORT: pl-gmp.c PL_get_number
+# DIVERGES: on the WORDS (`_deref_loc`): a tagged integer's value (`valInt`), or the number a value
+# word's entry holds (`get_number`; upstream's `isRational`/`isFloat` on the indirect).
+"Read the number term reference `t` holds into `n` (pl-gmp.c); false when it holds none."
+function PL_get_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
+    k == DU_VALUE || return false
+    if isTaggedIntW(w)
+        n.i = valInt(w)                                     # get_rational(*p, n): a small integer
+        n.type = V_INTEGER
+        return true
+    end
+    v = _indirect_value(ld, w)
+    isNumber(v) || return false
+    get_number(v, n)
+    return true
+end
+
 # ── writing a term (pl-gmp.c) ────────────────────────────────────────────────────────────────────
 # PORT: pl-gmp.c put_mpz
 # DIVERGES: returns the term (upstream writes it through `at`); see `put_number`.

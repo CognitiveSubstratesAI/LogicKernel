@@ -5,6 +5,7 @@
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-bag.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-gmp.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-arith.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -1051,7 +1052,11 @@ const FR_CLEAR_FLAGS = FR_CLEAR_NEXT | FR_CLEAR_ALWAYS
 # the clause's code and an index into it, as everywhere here. Not kept: `context`, the context
 # module, read only for transparent predicates (`contextModule`; every clause is `user`'s until
 # R2's `module/2`)
-# and `prof_node` (no profiler); both still count in `SIZEOF_LOCALFRAME`.
+# and `prof_node` (no profiler); both still count in `SIZEOF_LOCALFRAME`. `fctx` (NF1) is what
+# upstream keeps in a foreign frame's `clause` word: a non-deterministic foreign call's redo context,
+# encoded as upstream's (`REDO_INT`, `REDO_PTR`; 0 = `FR->clause == NULL`) — a field of its own,
+# because `clause` holds a clause reference (docs/architecture.md, "Non-deterministic built-ins").
+# It shares `clause`'s slot in `SIZEOF_LOCALFRAME`.
 "A frame on the local stack (pl-incl.h `struct localFrame`)."
 mutable struct localFrame{T}
     base::Int                               # its position (upstream: its address)
@@ -1062,6 +1067,7 @@ mutable struct localFrame{T}
     generation::gen_t                       # generation of the database
     level::UInt32                           # recursion level
     flags::UInt32                           # packed long holding:
+    fctx::UInt                              # (a foreign frame's `clause` word: the redo context)
 end
 
 # PORT: pl-incl.h choice_type
@@ -1230,6 +1236,35 @@ end
 # PORT: SWI-Prolog.h control_t
 "The control argument a foreign predicate receives (SWI-Prolog.h `control_t`)."
 const control_t{T} = foreign_context{T}
+
+# PORT: pl-builtin.h FRG_REDO_MASK
+"The low bits of a redo context word that say what it holds (pl-builtin.h)."
+const FRG_REDO_MASK = UInt(0x03)
+# PORT: pl-builtin.h FRG_REDO_BITS
+"How many low bits of a redo context word are its tag (pl-builtin.h)."
+const FRG_REDO_BITS = 2
+# PORT: pl-builtin.h REDO_PTR
+"Redo context tag: the built-in returned an address (pl-builtin.h) — here a state's pool index."
+const REDO_PTR = UInt(0x00)
+# PORT: pl-builtin.h YIELD_PTR
+"Redo context tag: the built-in yielded an address (pl-builtin.h); not ported (decision 1)."
+const YIELD_PTR = UInt(0x01)
+# PORT: pl-builtin.h REDO_INT
+"Redo context tag: the built-in returned an integer (pl-builtin.h)."
+const REDO_INT = UInt(0x02)
+
+# ORIGINAL (NF1, design D3; audit D-0136 Q2) — upstream's `REDO_PTR` is the address of a state the
+# built-in `malloc`s (`allocForeignState`); Julia cannot keep an object in a word. A built-in that keeps
+# a heap state has a typed pool of its own in the local data: its records are made once and reused,
+# so a redo allocates nothing and reads its state with no dynamic dispatch. The redo context word
+# holds the record's index `i ≥ 1` as upstream's encoding holds the address: `i << FRG_REDO_BITS`.
+"The states of one kind of non-deterministic built-in: the records, the free ones, how many are live."
+mutable struct foreign_state_pool{S}
+    states::Vector{S}
+    free::Vector{Int}
+    live::Int
+end
+foreign_state_pool{S}() where {S} = foreign_state_pool{S}(S[], Int[], 0)
 
 # PORT: pl-incl.h queryFrame
 # DIVERGES: a pool record (see above). Its embedded `choice`, `top_frame` and `frame` are records in
@@ -1455,6 +1490,16 @@ mutable struct number
     mpq::Rational{BigInt}           # GMP rational
 end
 number() = number(V_INTEGER, 0, 0.0, BigInt(0), Rational{BigInt}(0))
+
+# PORT: pl-arith.c between_state
+# DIVERGES: a record in the local data's pool (`foreign_state_pool`), where upstream's is `malloc`'d.
+"between/3's state between answers (pl-arith.c `between_state`): the last answer, the bound, `inf`."
+mutable struct between_state
+    low::number
+    high::number
+    hinf::Bool
+end
+between_state() = between_state(number(), number(), false)
 
 # ── text processing (pl-incl.h), R1d ─────────────────────────────────────────────────────────────
 # PORT: pl-incl.h CVT_status

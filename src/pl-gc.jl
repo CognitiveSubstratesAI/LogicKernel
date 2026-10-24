@@ -139,7 +139,12 @@ function _grow_pool!(
     ld::PL_local_data{T}, pool::Vector{localFrame{T}}, n::Int
 )::Nothing where {T}
     while length(pool) < n
-        push!(pool, localFrame{T}(0, ld.null_code, 0, nothing, nothing, gen_t(0), 0x0, 0x0))
+        push!(
+            pool,
+            localFrame{T}(
+                0, ld.null_code, 0, nothing, nothing, gen_t(0), 0x0, 0x0, UInt(0)
+            )
+        )
     end
     return nothing
 end

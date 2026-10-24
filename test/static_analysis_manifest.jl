@@ -1084,7 +1084,10 @@ function _manifest_index(T)
         (LK.pushQuery!, Tuple{LD, Int}, true),
         (LK._grow_pool!, Tuple{LD, Vector{LK.queryFrame{T}}, Int}, false),
         (LK.is_exception_finish, Tuple{LK.finished}, true),
-        (LK.leaveFrame, Tuple{LD, Int}, true), (LK.discardFrame, Tuple{LD, Int}, true),
+        (LK.leaveFrame, Tuple{LD, Int}, true),
+        # (not allocation-free since NF1: a discarded non-deterministic foreign frame calls its built-in with
+        # FRG_CUTTED, through the dispatch tree, which reaches every built-in)
+        (LK.discardFrame, Tuple{LD, Int}, false),
         # (not allocation-free since V9g: a discarded cleanup frame runs its handler, a goal)
         (LK.discardChoicesAfter, Tuple{LD, Int, LK.finished}, false),
         (LK.dbg_discardChoicesAfter, Tuple{LD, Int, LK.finished}, false),
@@ -1484,9 +1487,24 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_is2_va, LK.pl_lt2_va, LK.pl_gt2_va, LK.pl_leq2_va, LK.pl_geq2_va,
-                LK.pl_neq2_va, LK.pl_eq2_va
+                LK.pl_neq2_va, LK.pl_eq2_va, LK.pl_between3_va
             )
         ]...,
+        # NF1 — the non-deterministic foreign calls: the return values, the context, the state pool
+        (LK.PL_get_number, Tuple{LD, Int, LK.number}, false),
+        (LK.PL_is_inf, Tuple{LD, Int}, false),
+        (LK.PL_retry, Tuple{Int}, true), (LK.PL_retry_address, Tuple{Int}, true),
+        (LK.PL_foreign_control, Tuple{LK.foreign_context{T}}, true),
+        (LK.PL_foreign_context, Tuple{LK.foreign_context{T}}, true),
+        (LK.PL_foreign_context_address, Tuple{LK.foreign_context{T}}, true),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.between_state}}, false),
+        (
+            LK.free_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.between_state}, Int},
+            false
+        ),
+        (LK.live_states, Tuple{LD}, true),
+        (LK.discardForeignFrame, Tuple{LD, Int}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, Tuple{T, Int}}, false),
         (
             LK.PL_error,

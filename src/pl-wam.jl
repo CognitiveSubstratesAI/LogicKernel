@@ -568,6 +568,7 @@ is_exception_finish(reason::finished)::Bool =
 "Frame `fr` is left: it no longer runs a clause (pl-wam.c)."
 function leaveFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     ld.frames[fr].clause = nothing
+    ld.frames[fr].fctx = UInt(0)                # (NF1: upstream's same word, see `localFrame`)
     # leaveDefinition(fr->predicate): (void)0 upstream (pl-incl.h:1348)
     return nothing
 end
@@ -925,16 +926,51 @@ function frameFailed(ld::PL_local_data{T}, fr::Int)::Bool where {T}
     return frameFinished(ld, fr, FINISH_FAIL)
 end
 
+# PORT: pl-wam.c discardForeignFrame
+# DIVERGES: the context word is the frame's `fctx` (see `localFrame`); a `REDO_PTR` context is passed
+# as the word, the pool index in its high bits (`PL_foreign_context_address`). The control argument is
+# the current query's `FNDET_CONTEXT` record, where upstream's is a C local: a `FRG_CUTTED` call runs
+# no Prolog, and the next call sets every field again. NOT PORTED: `YIELD_PTR` (decision 1, asserted);
+# the `a1, a2, …` convention's `CALL_FCUTTED` (NF4: no such built-in is registered, asserted).
+"Call the non-deterministic foreign predicate of frame `fr` once more, with `FRG_CUTTED` (pl-wam.c)."
+function discardForeignFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
+    f = ld.frames[fr]
+    def = f.predicate::Definition{T}
+    argc = def.arity
+    func = def.impl_foreign_function
+
+    wcl = f.fctx
+    t = wcl & FRG_REDO_MASK
+    @assert t != YIELD_PTR "discardForeignFrame: a yield context (not ported)"
+    @assert ld.query != 0 "discardForeignFrame: no query"
+    context = ld.queries[ld.query].fndet_context
+    if t == REDO_INT
+        context.context = reinterpret(UInt, reinterpret(Int, wcl) >> FRG_REDO_BITS)   # (intptr_t)wcl >> …
+    else                                            # REDO_PTR
+        context.context = wcl
+    end
+    context.control = FRG_CUTTED
+    context.predicate = def
+
+    fid = PL_open_foreign_frame(ld)
+    @assert (def.flags & P_VARARG) != 0 "discardForeignFrame: the a1, a2, … convention (NF4)"
+    _fcall_va(func, ld, 0, argc, context)           # (*function)(0, argc, &context)
+    PL_close_foreign_frame(ld, fid)
+    return nothing
+end
+
 # PORT: pl-wam.c discardFrame
-# DIVERGES: a foreign frame's `clause` is set only by a NON-deterministic call (V9), so the
-# `discardForeignFrame` branch is asserted unreached.
+# DIVERGES: a foreign frame's redo context is its `fctx` (see `localFrame`), where upstream's is
+# `fr->clause`.
 "Frame `fr` is discarded (pl-wam.c)."
 function discardFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     f = ld.frames[fr]
     def = f.predicate::Definition{T}
     if (def.flags & P_FOREIGN) != 0
-        @assert f.clause === nothing "discardFrame: a non-deterministic foreign frame (V9)"
-        # if ( fr->clause ) discardForeignFrame(fr) — V9
+        if f.fctx != 0
+            discardForeignFrame(ld, fr)
+            f.fctx = UInt(0)                        # fr->clause = NULL
+        end
     else
         f.clause = nothing              # leaveDefinition() may destroy clauses (no more)
         # leaveDefinition(def): (void)0 upstream
@@ -1524,7 +1560,7 @@ const VMI_RUN = (
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
     :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT,
     :I_CALL1, :I_CALLN, :I_CATCH, :I_EXITCATCH, :I_DET, :C_DET, :C_DETTRUE, :C_DETFALSE,
-    :I_CALLCLEANUP, :I_EXITCLEANUP
+    :I_CALLCLEANUP, :I_EXITCLEANUP, :I_FOPENNDET, :I_FCALLNDETVA, :I_FEXITNDET, :I_FREDO
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1727,6 +1763,7 @@ function PL_open_query(
     end
     f.predicate = def
     f.clause = nothing
+    f.fctx = UInt(0)                            # (NF1: upstream's same word, see `localFrame`)
     # create initial choicepoint
     c = ld.choices[ch]
     c.type = CHP_TOP
@@ -1945,6 +1982,8 @@ function PL_next_solution_guarded(
     tc_cref::ClauseRef{T} = gd.clauses_top_cref     # TRUST_CLAUSE's clause
     bv_voffset::Int = 0                             # bvar_cont's voffset
     fexitdet_rc::foreign_t = FTRUE                  # I_FEXITDET's rc
+    fexitndet_rc::foreign_t = FTRUE                 # I_FEXITNDET's rc (NF1)
+    FFR::Int = 0                                    # FFR_ID: foreign_redo's foreign frame (an index)
     SLOW_UNIFY::Bool = false                        # unify_var_cont's copy of LD->slow_unify
     dot_f::word = gd.functor_dot2                   # FUNCTOR_dot2 (L1c)
     bt_outofstack::Bool = false                     # b_throw's outofstack
@@ -2792,6 +2831,7 @@ function PL_next_solution_guarded(
     setFramePredicate(nc_f, DEF)                    # TBD
     nc_f.programPointer = Code{T}(PCc, PCl, PC)     # save PC in child
     nc_f.clause = nothing                           # for save atom-gc
+    nc_f.fctx = UInt(0)                             # (NF1: upstream's same word, see `localFrame`)
     FR = NFR
     ld.environment_frame = FR                       # open the frame
     _assert_frame_above_choice(ld, nc_f.base, :normal_call)     # (L1e e1 assertion)
@@ -4062,6 +4102,108 @@ function PL_next_solution_guarded(
     error_foreign_return_code(ld, fexitdet_rc)
     @goto b_throw                                   # THROW_EXCEPTION
 
+    # ── non-deterministic foreign calls (pl-vmi.c; NF1, docs/architecture.md) ─────────────────────
+    # The supervisor is `I_FOPENNDET, I_FCALLNDETVA f, I_FEXITNDET, I_FREDO` (pl-supervisor.jl). The
+    # code registers' PC is an index into it, with upstream's arithmetic: `PC+3` and `PC -= 4` land on
+    # the same words. A `CHP_JUMP` whose frame is foreign resumes in `DEF.codes` (both backtrack sites).
+    # PORT: pl-vmi.c I_FOPENNDET
+    # DIVERGES: `FNDET_CONTEXT` is the query record's (see `foreign_context`).
+    @label I_FOPENNDET
+    fo_ctx = ld.queries[QueryFromQid(ld, QID)].fndet_context
+    fo_ctx.control = FRG_FIRST_CALL
+    fo_ctx.context = UInt(0)
+    fo_ctx.predicate = DEF
+    @goto foreign_redo
+
+    # PORT: pl-vmi.c foreign_redo
+    # DIVERGES: `FFR_ID` holds the foreign frame's index (`FFR`). `FLI_SET_VALID` is `O_DEBUG` only.
+    # The foreign frame's room is asserted, as `open_foreign_frame`'s.
+    @label foreign_redo
+    ld.environment_frame = FR
+    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))    # lTop = argFrameP(FR, arity)
+    fr_ch = newChoice(ld, CHP_JUMP, FR)
+    setJumpChoice!(ld, fr_ch, PC + 3)
+    FFR = pushFliFrame!(ld, ld.choices[fr_ch].base + SIZEOF_CHOICE)   # ffr = (FliFrame)(ch+1)
+    fr_ffr = ld.fliframes[FFR]
+    @assert fr_ffr.base + SIZEOF_FLIFRAME <= ld.lMax "foreign_redo: past lMax"
+    ld.lTop = fr_ffr.base + SIZEOF_FLIFRAME         # lTop = (LocalFrame)(ffr+1)
+    fr_ffr.size = 0
+    fr_ffr.no_free_before = -1                      # (size_t)-1
+    fr_ffr.mark = NoMark()                          # NoMark(ffr->mark)
+    fr_ffr.parent = ld.fli_context
+    ld.fli_context = FFR
+    @SAVE_REGISTERS(QID)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c I_FCALLNDETVA
+    # DIVERGES: the operand is the built-in's index in the dispatch table, called by `_fcall_va` (as
+    # `I_FCALLDETVA`). `VMH_GOTO(I_FEXITNDET, rc)` is the helper's argument and a jump.
+    @label I_FCALLNDETVA
+    fn_i = Int(PCc[PC])
+    PC += 1
+    fn_h0 = argFrameP(ld.frames[FR].base, 0)        # argFrameP(FR, 0) - (Word)lBase
+    fexitndet_rc = _fcall_va(
+        fn_i, ld, fn_h0, DEF.arity, ld.queries[QueryFromQid(ld, QID)].fndet_context
+    )
+    @goto helper_I_FEXITNDET
+
+    # PORT: pl-vmi.c I_FEXITNDET
+    @label I_FEXITNDET
+    @goto b_throw                                   # THROW_EXCEPTION
+
+    # PORT: pl-vmi.c I_FEXITNDET as helper_I_FEXITNDET
+    # DIVERGES: the label is the switch-build helper's name, as `helper_I_FEXITDET`. A retry context
+    # is stored in the frame's `fctx` (`CL = word2ptr(rc)`). NOT PORTED: the debugger's `CHP_DEBUG`;
+    # `YIELD_PTR` (decision 1: asserted).
+    @label helper_I_FEXITNDET
+    @LOAD_REGISTERS(QID)
+    PC += 3                                         # saved at in I_FOPENNDET
+    @assert PCc[PC] == I_FREDO
+    if fexitndet_rc == FTRUE
+        ld.fli_context = ld.fliframes[FFR].parent
+        if ld.exception_term != 0                   # false alarm
+            PL_clear_foreign_exception(ld, FR)
+        end
+        @assert ld.choices[ld.BFR].value_pc == PC
+        ld.BFR = ld.choices[ld.BFR].parent
+        ld.frames[FR].fctx = UInt(0)                # FR->clause = NULL
+        @goto exit_checking_wakeup
+    elseif fexitndet_rc == FFALSE
+        ld.fli_context = ld.fliframes[FFR].parent
+        ld.frames[FR].fctx = UInt(0)                # FR->clause = NULL
+        ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
+        @assert ld.choices[ld.BFR].value_pc == PC
+        ld.BFR = ld.choices[ld.BFR].parent
+        @goto deep_backtrack                        # FRAME_FAILED
+    end
+    if ld.exception_term != 0                       # false alarm
+        PL_clear_foreign_exception(ld, FR)
+    end
+    ld.frames[FR].fctx = UInt(fexitndet_rc)         # CL = word2ptr(ClauseRef, rc)
+    @assert (UInt(fexitndet_rc) & YIELD_PTR) == 0 "I_FEXITNDET: a yield (not ported)"
+    ld.fli_context = ld.fliframes[FFR].parent
+    setLTop!(ld, ld.choices[ld.BFR].base + SIZEOF_CHOICE)   # lTop = (LocalFrame)(BFR+1)
+    @goto exit_checking_wakeup
+
+    # PORT: pl-vmi.c I_FREDO
+    # DIVERGES: NOT PORTED: signals — `LD->alerted` and `handleSignals` (no signals; the kernel keeps no
+    # `alerted`, as at I_ENTER and I_DEPART). A `REDO_PTR` context is passed as the word, as upstream's.
+    @label I_FREDO
+    @assert (DEF.flags & P_FOREIGN) != 0
+    fd_wcl = ld.frames[FR].fctx
+    fd_ctx = ld.queries[QueryFromQid(ld, QID)].fndet_context
+    if (fd_wcl & FRG_REDO_MASK) == REDO_INT
+        fd_ctx.control = FRG_REDO
+        fd_ctx.context = reinterpret(UInt, reinterpret(Int, fd_wcl) >> FRG_REDO_BITS)
+    elseif (fd_wcl & FRG_REDO_MASK) == REDO_PTR
+        fd_ctx.control = FRG_REDO
+        fd_ctx.context = fd_wcl
+    else
+        @assert false "I_FREDO: a context that is neither REDO_INT nor REDO_PTR"
+    end
+    PC -= 4                                        # Back to I_FCALL*
+    @goto foreign_redo
+
     # ── backtracking (pl-vmi.c) ───────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c unify_backtrack
     # DIVERGES: the builder is reset with the argument stack (Q3).
@@ -4088,10 +4230,17 @@ function PL_next_solution_guarded(
             DiscardMark(ld, sb_c.mark)
             # PC = ch->value.pc: an index into the code of the frame's clause, which the code
             # registers need not hold — a retry (PL_next_solution) arrives here from the query's
-            # own code
-            sb_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
-            PCc = sb_jclause.codes
-            PCl = sb_jclause.literals
+            # own code. A foreign frame's `value.pc` is an index into its supervisor (NF1).
+            sb_def = ld.frames[FR].predicate::Definition{T}
+            if (sb_def.flags & P_FOREIGN) != 0
+                DEF = sb_def
+                PCc = DEF.codes
+                PCl = gd.no_literals
+            else
+                sb_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
+                PCc = sb_jclause.codes
+                PCl = sb_jclause.literals
+            end
             PC = sb_c.value_pc
             ld.BFR = sb_c.parent
             sb_base = sb_c.base
@@ -4199,9 +4348,14 @@ function PL_next_solution_guarded(
 
     if db_c.type == CHP_JUMP
         # NOT PORTED: `*TrieOffset = BFR->value.jump.trie_offset` (compiled tries only: tabling)
-        db_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
-        PCc = db_jclause.codes
-        PCl = db_jclause.literals
+        if (DEF.flags & P_FOREIGN) != 0             # (NF1) an index into the supervisor
+            PCc = DEF.codes
+            PCl = gd.no_literals
+        else
+            db_jclause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
+            PCc = db_jclause.codes
+            PCl = db_jclause.literals
+        end
         PC = db_c.value_pc
         DiscardMark(ld, db_c.mark)
         db_jbase = db_c.base
