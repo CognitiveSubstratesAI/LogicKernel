@@ -5,11 +5,13 @@
 # per decision of current_op_ndet (src/pl-op.jl) that decides an answer: each filter of the first call and the order of its
 # argument checks, the three unifications, the state's three ends (the last answer, the failure, FRG_CUTTED) and the retry, the
 # two wrappers' modules and `inherit`, get_op_module's three steps, the registration flags.
+# NOT equivalent (refuted by 9b187b5's battery, run 40196979036: NF3-7 was caught): the scan's name and type filters. The
+#   unification filters the ANSWERS again, but not the DETERMINISM: an entry the filter would drop stays in the buffer, so the
+#   answer before it is not the last (swipl: `current_op(P, fy, -)` and `current_op(P, yfx, -)` are both deterministic).
+#   Killed by the testset "a name and a type leave one entry" and by '$local_op'/3's `system:mod` row. (The PRIORITY filter
+#   decides answers as well: it runs before the dedup, so a `user` redefinition it drops no longer hides `system`'s — swipl's
+#   quirk, case s04 — see NF3-9.)
 # EQUIVALENT, with the reason:
-#   NF3-E1 the type filter of the scan: the unification of `type` filters again, and the buffer's (name, kind) dedup never joins
-#          two kinds. NF3-E2 the same for the name filter (NF3-1 and NF3-2, which skip a CHECK as well as a filter, are killed by
-#          the error rows). (The PRIORITY filter is NOT redundant: it runs before the dedup, so a
-#          `user` redefinition it drops no longer hides `system`'s — swipl's quirk, case s04 — see NF3-9.)
 #   NF3-E3 the buffer is emptied at the first call (`initBuffer`) AND at every end of the state (`discardBuffer`): either alone
 #          leaves it empty; they are killed only together, which one substitution cannot do. NF3-E4 is the end-of-state one.
 #   NF3-E5 get_op_module's shortcut `(*m)->name == mname`: when it holds, `isCurrentModule` finds the same module.
@@ -40,12 +42,10 @@ MUTANTS = [
          new='''            if false'''),
     dict(id="NF3-7 the scan has no name filter", file=O, targets=T,
          old='''        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)''',
-         new='''        scanVisibleOperators!(gd, m, nothing, p, t, e.buffer, inherit)''',
-         equivalent="NF3-E2: the unification of `name` filters again, and the dedup is per name"),
+         new='''        scanVisibleOperators!(gd, m, nothing, p, t, e.buffer, inherit)'''),
     dict(id="NF3-8 the scan has no type filter", file=O, targets=T,
          old='''        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)''',
-         new='''        scanVisibleOperators!(gd, m, nm, p, 0x00, e.buffer, inherit)''',
-         equivalent="NF3-E1: the unification of `type` filters again, and the dedup is per (name, kind)"),
+         new='''        scanVisibleOperators!(gd, m, nm, p, 0x00, e.buffer, inherit)'''),
     dict(id="NF3-9 the scan has no priority filter", file=O, targets=T,
          old='''        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)''',
          new='''        scanVisibleOperators!(gd, m, nm, 0, t, e.buffer, inherit)'''),

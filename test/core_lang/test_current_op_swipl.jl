@@ -397,3 +397,51 @@ end
     LK.PL_close_foreign_frame(ld, fid)
     @test LK.live_states(ld) == 0
 end
+
+# pl-op.c current_op: the scan filters by name AND kind, so an operator of two kinds (`-` is fy 200 and yfx 500) queried
+# with its name and one type leaves ONE entry in the buffer, and its answer is the last (swipl: deterministic). Without
+# either filter the buffer holds the other kind's entry too, and one of the two queries is not deterministic (NF3-7, NF3-8).
+@testset "current_op/3 queried directly: a name and a type leave one entry; the answer is deterministic, as swipl's" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    proc = LK.isCurrentProcedure(sym_key(_tls("current_op")), 3, LK.MODULE_system(gd))
+    @test proc !== nothing
+    pvm = LK.PutVarMap()
+    got = String[]
+    for (name, type) in (("-", "fy"), ("-", "yfx"), ("+", "fy"), ("+", "yfx"))
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 3)
+        LK.putSlotValue!(ld, a + 1, mk_var(_TL, LK.fresh_var_keys!(1)), pvm)
+        LK.putSlotValue!(ld, a + 2, _tls(type), pvm)
+        LK.putSlotValue!(ld, a + 3, _tls(name), pvm)
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        rc = LK.PL_next_solution(gd, ld, qid)
+        @test rc == LK.PL_S_LAST
+        det = rc == LK.PL_S_LAST ? "det" : "nondet"
+        (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) &&
+            push!(got, "$name $type $(lk_value(lk_answer(ld, a))) $det")
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        @test LK.live_states(ld) == 0
+    end
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "CURRENT_OP DETERMINISM NOT COMPARED: `swipl` is not on PATH here."
+    else
+        want = split(
+            chomp(
+                read(
+                    pipeline(
+                        `swipl -q -g 'forall(member(N-T, [(-)-fy, (-)-yfx, (+)-fy, (+)-yfx]), (findall(P, current_op(P, T, N), [P]), (call_cleanup(current_op(_, T, N), D = det), D == det -> W = det ; W = nondet), format("~w ~w ~w ~w~n", [N, T, P, W])))' -t halt`;
+                        stderr=devnull
+                    ),
+                    String
+                )
+            ),
+            '\n'
+        )
+        @test length(want) == 4 && String.(want) == got
+    end
+end
