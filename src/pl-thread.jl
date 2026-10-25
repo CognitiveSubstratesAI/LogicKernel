@@ -8,7 +8,8 @@
 # PREDICATE REFERENCES — the slice of SWI-Prolog's pl-thread.c that records which predicates an
 # ongoing enumeration (retract/1, clause/2, a call) references and at which generation, so that
 # clause garbage collection keeps every clause those enumerations can still see. The rest of
-# pl-thread.c is threads, which the kernel does not have.
+# pl-thread.c is threads, which the kernel does not have; since Y1 `ThreadCPUTime`, the CPU time of the
+# calling thread, which statistics/2 reads.
 
 # PORT: pl-thread.c cgcActivatePredicate
 "Record that `def` is accessed in generation `gen`, if it is dirty (pl-thread.c)."
@@ -77,4 +78,19 @@ function markAccessedPredicates!(
         cgcActivatePredicate!(gd, dref.predicate, dref.generation)
     end
     return nothing
+end
+
+# PORT: pl-thread.c ThreadCPUTime
+# DIVERGES: the pthread's clock is `CLOCK_THREAD_CPUTIME_ID`, the calling thread's: the kernel runs on
+# the thread that calls it (`pthread_getcpuclockid(info->tid)` upstream); the system time of a
+# thread is 0.0, as upstream's.
+"""
+    ThreadCPUTime(which) -> Float64
+
+The CPU seconds the calling thread has used (pl-thread.c): the user time; the system time is 0.0.
+"""
+function ThreadCPUTime(which::Int)::Float64
+    which == CPU_SYSTEM && return 0.0
+    t = _clock_gettime(CLOCK_THREAD_CPUTIME_ID)
+    return t === nothing ? 0.0 : t
 end

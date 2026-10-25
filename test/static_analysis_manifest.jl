@@ -1687,6 +1687,35 @@ function _manifest_index(T)
         (LK.PL_foreign_control, Tuple{LK.foreign_context{T}}, true),
         (LK.PL_foreign_context, Tuple{LK.foreign_context{T}}, true),
         (LK.PL_foreign_context_address, Tuple{LK.foreign_context{T}}, true),
+        # Y1 — getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1, statistics/2, delete_file/1
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_getenv2_va, LK.pl_setenv2_va, LK.pl_unsetenv1_va, LK.pl_get_time1_va,
+                LK.pl_sleep1_va, LK.pl_statistics2_va, LK.pl_delete_file1_va
+            )
+        ]...,
+        (LK._sys_chars, Tuple{LD, Int}, false),
+        (LK.Setenv, Tuple{LD, String, String}, false),
+        (LK.Unsetenv, Tuple{LD, String}, false),
+        (LK.get_file_name, Tuple{LD, Int, Int}, false),
+        (LK.PL_get_file_name, Tuple{LD, Int, Int}, false),
+        (LK.get_float, Tuple{LD, Int, Bool}, false),
+        (LK.PL_get_float, Tuple{LD, Int}, false),
+        (LK.PL_get_float_ex, Tuple{LD, Int}, false),
+        (LK.PL_unify_float, Tuple{LD, Int, Float64}, false),
+        (LK.pl_statistics_ld, Tuple{LD, Int, Int}, false),
+        (LK.qp_statistics, Tuple{LD, Symbol, Vector{Int64}}, false),
+        (LK.swi_statistics, Tuple{LD, Symbol, LK.number}, false),
+        (LK._used_stack, Tuple{LD, Symbol}, false),
+        (LK._size_stack, Tuple{LD, Symbol}, false),
+        (LK._room_stack, Tuple{LD, Symbol}, false), (LK.programSpace, Tuple{LD}, false),
+        (LK._statistics_database, Tuple{LK.PL_global_data{T}}, false),
+        (
+            LK.PL_error,
+            Tuple{LD, String, Int, String, LK.PL_error_code, T, T, Int, Int},
+            false
+        ),
+        (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, String, Int}, false),
         (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.between_state}}, false),
         (
             LK.free_foreign_state!,
@@ -2130,7 +2159,13 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._libm_atan2, Tuple{Float64, Float64}, true),
     (LK._libm_pow, Tuple{Float64, Float64}, true),
     (LK.ar_pi, Tuple{LK.number}, true), (LK.ar_e, Tuple{LK.number}, true),
-    (LK.ar_cputime, Tuple{LK.number}, false), (LK.CpuTime, Tuple{}, false),
+    (LK.ar_cputime, Tuple{LK.number}, false), (LK.CpuTime, Tuple{Int}, false),
+    # Y1 — the OS layer (src/os/pl-os.jl, src/os/pl-files.jl, src/pl-thread.jl), the text helper, the counters
+    (LK._clock_gettime, Tuple{Cint}, false), (LK.WallTime, Tuple{}, false),
+    (LK.ThreadCPUTime, Tuple{Int}, false), (LK.getenv3, Tuple{String}, false),
+    (LK.Pause, Tuple{Float64}, false), (LK.RemoveFile, Tuple{String}, false),
+    (LK.text_string, Tuple{LK.PL_chars_t}, false), (LK.ld_statistics, Tuple{}, false),
+    (LK._errno_msg, Tuple{String, Int}, false),
     # arith-c (arith_funcs_design.md §2): the C library's other functions, maxr/minr, eval, the
     # constants, the bit helpers, and the number layer's cmpReals and mpq_set_double
     [
@@ -2331,6 +2366,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_trace)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_proc)}, false),   # R1f
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_attvar)}, false),   # AV2
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_files)}, false),  # Y1
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_system)}, false),  # Y1
     # the built-ins' dispatch trees, built when src/pl-ext.jl loads
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._va_leaf)}, false),
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),

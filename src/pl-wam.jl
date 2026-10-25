@@ -720,8 +720,7 @@ end
 # so a caller holding it — a built-in that ran this cleanup, a nested fast path — reads its own again
 # (upstream: one on the C stack per call); a new one only outside any query. A new record per call
 # was one of the two allocations per findall/3 sync-2 added (D-0140). NOT PORTED: the profiler and debugger
-# tests (`LD->profile.active`, `debugstatus.debugging`: neither exists here) and
-# `LD->statistics.inferences++` (no inference statistics).
+# tests (`LD->profile.active`, `debugstatus.debugging`: neither exists here).
 """
     call_internal_det_foreign(gd, ld, proc, av) -> (used, rc)
 
@@ -740,6 +739,7 @@ function call_internal_det_foreign(
         def.module_ == MODULE_system(gd).index &&
         def.impl_foreign_function != 0 &&
         sym_first_byte(def.name) == UInt8('$')       # stringAtom(def->functor->name)[0] == '$'
+        ld.statistics.inferences += 1               # LD->statistics.inferences++ (Y1)
         if ld.query == 0
             ctx = foreign_context{T}(FRG_FIRST_CALL, UInt(0), def)
             return (true, _fcall_va(def.impl_foreign_function, ld, av, def.arity, ctx))
@@ -3041,7 +3041,7 @@ function PL_next_solution_guarded(
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c depart_or_retry_continue
-    # DIVERGES: NOT PORTED: the profiler's node, the inference count, and the `LD->alerted` test
+    # DIVERGES: NOT PORTED: the profiler's node, and the `LD->alerted` test
     # with its helper `depart_alerted` (signals, undo hooks, depth and inference limits, the
     # debugger).
     @label depart_or_retry_continue
@@ -3060,6 +3060,7 @@ function PL_next_solution_guarded(
         @goto b_throw                               # THROW_EXCEPTION
     end
     setGenerationFrame(gd, ld, FR)
+    ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
     PCc = DEF.codes
     PCl = gd.no_literals
     PC = 1
@@ -4549,8 +4550,7 @@ function PL_next_solution_guarded(
     # and the records above it are dropped before `lTop` is set (user, 2026-10-05); `chp` is the local
     # data's scratch `clause_choice`. `CHP_TOP` leaves `lTop` where it is, as upstream:
     # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`),
-    # the `LD->alerted` block, the
-    # inference count. Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
+    # the `LD->alerted` block (the inference count, of its `CHP_JUMP`, since Y1). Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
     # choice point of such a frame (`S_STATIC` with no clause) — the popped record and the dead ones
     # above it are dropped at once, as at `CHP_CATCH`. `CHP_JUMP` (since V9d): the code registers are reloaded from the
     # frame's clause, because `value.pc` is an index into it where upstream's is an address.
@@ -4599,6 +4599,7 @@ function PL_next_solution_guarded(
         dropRecords!(ld, db_jbase)                  # the popped choice point and all above it
         ld.lTop = db_jbase                          # lTop = (LocalFrame)(BFR)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+        ld.statistics.inferences += 1               # LD->statistics.inferences++ (Y1)
         @goto next_instruction
     elseif db_c.type == CHP_CLAUSE                  # try next clause
         db_chp = ld.chp_scratch                     # struct clause_choice chp = BFR->value.clause
@@ -4731,6 +4732,7 @@ function PL_next_solution_guarded(
     while FR != 0 && (bt_catchfr == 0 || ld.frames[FR].base > ld.frames[bt_catchfr].base)
         ld.environment_frame = FR
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
+        ld.statistics.inferences += 1               # box exit, needed for GC (Y1)
 
         @SAVE_REGISTERS(QID)
         dbg_discardChoicesAfter(ld, FR, FINISH_EXTERNAL_EXCEPT_UNDO)
@@ -4764,6 +4766,7 @@ function PL_next_solution_guarded(
     # `'$recover_and_rethrow'/2`, boot/init.pl) is refused by name (R2), its culprit the atom
     # `unwind`. No GC request to honour.
     @label b_throw_resume
+    ld.statistics.inferences += 1                   # box exit, needed for GC (Y1)
     if bt_catchfr != 0
         @assert FR == bt_catchfr
         br_base = ld.frames[FR].base

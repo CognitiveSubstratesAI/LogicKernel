@@ -361,3 +361,28 @@ struct PL_blob_t
     flags::UInt32                   # PL_BLOB_*
     name::String                    # name of the type
 end
+
+# PORT: SWI-Prolog.h PL_FILE_ABSOLUTE
+"`PL_get_file_name` flag: return the absolute path (SWI-Prolog.h)."
+const PL_FILE_ABSOLUTE = 0x01
+# PORT: SWI-Prolog.h PL_FILE_OSPATH
+"`PL_get_file_name` flag: return the path in OS notation (SWI-Prolog.h)."
+const PL_FILE_OSPATH = 0x02
+# PORT: SWI-Prolog.h PL_FILE_SEARCH
+"`PL_get_file_name` flag: use file_search_path (SWI-Prolog.h)."
+const PL_FILE_SEARCH = 0x04
+# PORT: SWI-Prolog.h PL_FILE_EXIST
+"`PL_get_file_name` flag: demand the file to exist (SWI-Prolog.h)."
+const PL_FILE_EXIST = 0x08
+# PORT: SWI-Prolog.h PL_FILE_READ
+"`PL_get_file_name` flag: demand read access (SWI-Prolog.h)."
+const PL_FILE_READ = 0x10
+# PORT: SWI-Prolog.h PL_FILE_WRITE
+"`PL_get_file_name` flag: demand write access (SWI-Prolog.h)."
+const PL_FILE_WRITE = 0x20
+# PORT: SWI-Prolog.h PL_FILE_EXECUTE
+"`PL_get_file_name` flag: demand execute access (SWI-Prolog.h)."
+const PL_FILE_EXECUTE = 0x40
+# PORT: SWI-Prolog.h PL_FILE_NOERRORS
+"`PL_get_file_name` flag: do not raise exceptions (SWI-Prolog.h)."
+const PL_FILE_NOERRORS = 0x80

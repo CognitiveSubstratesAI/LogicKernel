@@ -1040,6 +1040,59 @@ end
 PL_unify_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
     unify_int64_ex(ld, t, i, false)
 
+# PORT: pl-fli.c PL_unify_float
+# DIVERGES: on the WORDS (L1d): an unbound cell is bound to the float as a value-table word
+# (`put_double`: a NaN as the canonical one, `put_number`'s); a value-table word holding a float is compared
+# by `==` (`valFloat(*p) == f`: `0.0` equals `-0.0` here, as upstream's).
+"Unify the term `t` references with the float `f` (pl-fli.c `PL_unify_float`)."
+function PL_unify_float(ld::PL_local_data{T}, t::term_t, f::Float64)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(t + 1))
+    if k == DU_CELL                                         # canBind(*p)
+        isnan(f) && (f = PL_nan())                          # put_double: the canonical NaN
+        _bind_const!(ld, p, _gnd_word!(ld, mk_gnd(T, f)))   # put_double(&w, f); bindConst(p, w)
+        return true
+    elseif k == DU_VALUE
+        isTaggedIntW(w) && return false
+        v = _indirect_value(ld, w)
+        return isFloat(v) && float_value(v) == f            # isFloat(*p) && valFloat(*p) == f
+    end
+    return false
+end
+
+# PORT: pl-fli.c get_float
+# DIVERGES: returns the value, or `nothing`, where upstream writes it through `f` and returns a Bool; the
+# number is read into a `number` (`PL_get_number`), not from the word.
+"""
+The float term reference `t` holds — a float, or a rational (an integer included) promoted to one — or
+`nothing`; with `ex`, a term that is neither raises `type_error(float, T)` first, and a rational too big for a
+float keeps its `float_overflow` (pl-fli.c).
+"""
+function get_float(
+    ld::PL_local_data{T}, t::term_t, ex::Bool
+)::Union{Nothing, Float64} where {T}
+    n = number()
+    if PL_get_number(ld, t, n)
+        n.type === V_FLOAT && return n.f                    # isFloat(w)
+        if promoteToFloatNumber(ld, n)                      # isRational(w): promoteToFloatNumber(&n)
+            return n.f
+        end
+        ex || PL_clear_exception(ld)
+        return nothing
+    end
+    ex && PL_type_error(ld, "float", t)
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_float
+# DIVERGES: returns the value, or `nothing` (see `get_float`).
+"The float term reference `t` holds (a rational is promoted), or `nothing` (pl-fli.c)."
+PL_get_float(ld::PL_local_data{T}, t::term_t) where {T} = get_float(ld, t, false)
+
+# PORT: pl-fli.c PL_get_float_ex
+# DIVERGES: returns the value, or `nothing` after raising (see `get_float`).
+"The float term reference `t` holds (a rational is promoted), or `nothing` after raising `type_error(float, T)` (pl-fli.c)."
+PL_get_float_ex(ld::PL_local_data{T}, t::term_t) where {T} = get_float(ld, t, true)
+
 # PORT: pl-fli.h PL_put_intptr
 # DIVERGES: `PL_put_int64`'s work, inline: the reference holds the integer — its word since L1e e1 (a tagged
 # integer, or a value-table word under `_slot_store!`'s older-slot rule).

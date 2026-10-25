@@ -623,3 +623,15 @@ function PL_unify_text_range(
     (from < 0 || upto < 0) && return false                              # offset > length
     return unify_text_between(ld, term, text, from, upto, type)
 end
+
+# ORIGINAL (Y1): upstream hands a C string to its callers (`PL_get_nchars` with `REP_FN`/`REP_UTF8`); the
+# kernel's callers want a Julia `String`. The text of `txt` in UTF-8: an ISO Latin-1 text recoded.
+"The text `txt` holds as a `String` (UTF-8); an ISO Latin-1 text is recoded, a wide text is refused."
+function text_string(txt::PL_chars_t)::String
+    if txt.encoding === ENC_UTF8
+        return String(copy(txt.text))
+    elseif txt.encoding === ENC_ISO_LATIN_1 || txt.encoding === ENC_OCTET
+        return String(Char[Char(b) for b in txt.text])
+    end
+    throw(ArgumentError("text_string: a text in $(txt.encoding) is not converted"))
+end

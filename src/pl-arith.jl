@@ -1309,22 +1309,11 @@ function ar_e(r::number)::Bool
     return true
 end
 
-# PORT: pl-os.c CpuTime
-# DIVERGES: the `CLOCK_PROCESS_CPUTIME_ID` (2) branch of `CpuTime`, the one Linux takes; the spectre
-# jitter (`mitigate_spectre`) is off, its default. 0.0 where `clock_gettime` fails, as upstream.
-"The CPU time the process has used, in seconds (os/pl-os.c `CpuTime(CPU_USER)`)."
-function CpuTime()::Float64
-    ts = Ref((Int64(0), Int64(0)))                          # struct timespec
-    rc = ccall(:clock_gettime, Cint, (Cint, Ptr{Tuple{Int64, Int64}}), 2, ts)
-    rc == 0 || return 0.0
-    sec, nsec = ts[]
-    return Float64(sec) + Float64(nsec) / 1000000000.0      # timespec_to_double
-end
-
+# `CpuTime` is src/os/pl-os.jl's (pl-os.c), since Y1: it was here, as a `clock_gettime` of its own.
 # PORT: pl-arith.c ar_cputime
 "`cputime/0` (pl-arith.c `ar_cputime`): the CPU seconds the process has used."
 function ar_cputime(r::number)::Bool
-    r.f = CpuTime()
+    r.f = CpuTime(CPU_USER)
     r.type = V_FLOAT
     return true
 end

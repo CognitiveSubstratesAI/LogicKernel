@@ -3246,6 +3246,301 @@ function pl_skip_list3_va(
     end
 end
 
+# ── statistics/2 (pl-prims.c), since Y1 ─────────────────────────────────────────────────────────
+# `statistics(+Key, -Value)`: the keys of C-Prolog and SWI-Prolog (`swi_statistics`, one number), then
+# the Quintus/SICStus ones (`qp_statistics`, a list). The counters are `LD->statistics` (the local
+# data's `statistics`, src/pl-global.jl `ld_statistics`); a counter the kernel has no source for answers
+# what a run with nothing to count answers — 0, as swipl's own at startup: the garbage collectors, the
+# stack shifts, the hash-table statistics, the message counts, the `threads` family of a process with its
+# one thread.
+
+# ORIGINAL (Y1): `usedStack(s)` of pl-incl.h for the kernel's three stacks, in bytes (a position is a word).
+"The bytes in use on the stack `which` (`:global`, `:local` or `:trail`) (pl-incl.h `usedStack`)."
+function _used_stack(ld::PL_local_data{T}, which::Symbol)::Int where {T}
+    n = if which === :global
+        ld.gTop
+    elseif which === :local
+        ld.lTop
+    else
+        length(ld.trail)
+    end
+    return 8 * n
+end
+
+# ORIGINAL (Y1): `sizeStack(s)` of pl-incl.h for the kernel's three stacks, in bytes.
+"The bytes allocated for the stack `which` (`:global`, `:local` or `:trail`) (pl-incl.h `sizeStack`)."
+function _size_stack(ld::PL_local_data{T}, which::Symbol)::Int where {T}
+    n = if which === :global
+        length(ld.gstack)
+    elseif which === :local
+        ld.lMax
+    else
+        length(ld.trail)
+    end
+    return 8 * n
+end
+
+# ORIGINAL (Y1): `roomStack(s)` of pl-incl.h: the kernel's stacks grow up to `stack_limit` together.
+"The bytes the stack `which` may still grow by: the stack limit less what it uses (pl-incl.h `roomStack`)."
+function _room_stack(ld::PL_local_data{T}, which::Symbol)::Int where {T}
+    return max(0, 8 * ld.stacks_limit - _used_stack(ld, which))
+end
+
+# PORT: pl-prims.c programSpace
+# DIVERGES: `heapUsed()` is the C heap in use, which Julia cannot tell: 0, the answer swipl gives when
+# its `malloc` has no statistics (as in the 10.1.19 oracle).
+"The bytes of the C heap that are not stacks: 0 (pl-prims.c)."
+programSpace(ld::PL_local_data{T}) where {T} = 0
+
+# ORIGINAL (Y1): `GD->statistics.codes`, `.clauses`, `.predicates`, `.modules`: upstream increments a
+# counter where it creates one; the kernel counts from the tables when asked.
+"The `(predicates, clauses, codes)` the database `gd` holds: the procedures of every module, their clauses, the VM codes."
+function _statistics_database(gd::PL_global_data{T})::NTuple{3, Int} where {T}
+    predicates = 0
+    clauses = 0
+    codes = 0
+    for m in gd.modules, (_, proc) in m.procedures
+        predicates += 1
+        def = proc.definition
+        clauses += Int(def.impl_clauses.number_of_clauses)
+        cr = def.impl_clauses.first_clause
+        while cr !== nothing
+            c = cr.clause
+            c === nothing || (codes += length(c.codes))
+            cr = cr.next
+        end
+    end
+    return (predicates, clauses, codes)
+end
+
+# PORT: pl-prims.c qp_statistics
+# DIVERGES: the key is its Symbol; the values are written to `v` (four at most) and their number is
+# returned, -1 for an unknown key, as upstream's. `memory`/`core` are `[UsedMemory(), FreeMemory()]`: 0 and
+# -1, what swipl answers without `malloc` statistics. The garbage collectors, the stack shifts and the atom and
+# clause collectors have nothing to report.
+"""
+    qp_statistics(ld, key, v) -> Int
+
+The Quintus/SICStus form of the statistics `key`: the number of values written to `v`, or -1 for a key it
+does not know (pl-prims.c).
+"""
+function qp_statistics(ld::PL_local_data{T}, key::Symbol, v::Vector{Int64})::Int where {T}
+    st = ld.statistics
+    if key === :runtime                         # compatibility: exclude GC-time
+        v[1] = trunc(Int64, st.user_cputime * 1000.0)
+        v[2] = v[1] - st.last_cputime
+        st.last_cputime = v[1]
+        return 2
+    elseif key === :system_time
+        v[1] = trunc(Int64, st.system_cputime * 1000.0)
+        v[2] = v[1] - st.last_systime
+        st.last_systime = v[1]
+        return 2
+    elseif key === :real_time
+        v[1] = trunc(Int64, WallTime())
+        v[2] = v[1] - st.last_real_time
+        st.last_real_time = v[1]
+        return 2
+    elseif key === :walltime
+        wt = WallTime()
+        st.last_walltime == 0.0 && (st.last_walltime = st.start_time)
+        v[1] = trunc(Int64, (wt - st.start_time) * 1000.0)
+        v[2] = trunc(Int64, (wt - st.last_walltime) * 1000.0)
+        st.last_walltime = wt
+        return 2
+    elseif key === :memory || key === :core
+        v[1] = 0                                # UsedMemory()
+        v[2] = -1                               # FreeMemory()
+        return 2
+    elseif key === :stacks
+        v[1] = _used_stack(ld, :global)
+        v[2] = _used_stack(ld, :local)
+        return 2
+    elseif key === :global_stack
+        v[1] = _used_stack(ld, :global)
+        v[2] = _room_stack(ld, :global)
+        return 2
+    elseif key === :local_stack
+        v[1] = _used_stack(ld, :local)
+        v[2] = _room_stack(ld, :local)
+        return 2
+    elseif key === :trail
+        v[1] = _used_stack(ld, :trail)
+        v[2] = _room_stack(ld, :trail)
+        return 2
+    elseif key === :program
+        v[1] = programSpace(ld)
+        v[2] = 0
+        return 2
+    elseif key === :garbage_collection          # collections, gained, ms, after the last
+        v[1] = v[2] = v[3] = v[4] = 0
+        return 4
+    elseif key === :stack_shifts                # global shifts, local shifts, ms
+        v[1] = v[2] = v[3] = 0
+        return 3
+    elseif key === :atoms
+        v[1] = ld.atoms.statistics_atoms        # GD->statistics.atoms
+        v[2] = 0                                # GD->statistics.atom_string_space
+        v[3] = 0
+        return 3
+    elseif key === :atom_garbage_collection || key === :clause_garbage_collection
+        v[1] = v[2] = v[3] = 0                  # count, reclaimed, ms: no collector runs
+        return 3
+    end
+    return -1                                   # unknown key
+end
+
+# PORT: pl-prims.c swi_statistics
+# DIVERGES: the key is its Symbol; the number is written to `v` and the result is 1, or -1 for an unknown key
+# (upstream's `succeed` and -1). `c_stack` is 0 (`CStackSize()` has no answer for a Julia task), `atom_space`
+# and `functor_space` 0 (no byte accounting of the tables), `threads` 1 and `threads_created` 1 (the
+# one thread; upstream's O_PLMT counters give the same at startup), `engines` and `engines_created` 0,
+# `thread_cputime` 0.0, `threads_peak` 0; `table_space_used`, `indexes_created`, `indexes_destroyed`,
+# `warnings` and `errors` 0 (not counted); the garbage collector, atom and clause collector and stack shift
+# counters 0. `predicates`, `clauses`, `modules` and `codes` are counted from the tables
+# (`_statistics_database`), `stack` is the three stacks' sizes, `cputime` and `self_cputime` are
+# `LD->statistics.user_cputime` as `statistics/2` last set it.
+"""
+    swi_statistics(ld, key, v) -> Int
+
+The C-Prolog/SWI-Prolog form of the statistics `key`: one number, written to `v`; 1, or -1 for a key it does
+not know (pl-prims.c).
+"""
+function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where {T}
+    v.type = V_INTEGER                          # most of them
+    st = ld.statistics
+    if key === :self_cputime                    # time
+        v.type = V_FLOAT
+        v.f = st.user_cputime
+    elseif key === :cputime
+        v.type = V_FLOAT
+        v.f = st.user_cputime                   # + SUBTHREAD_TIME() (0: no sub threads)
+    elseif key === :process_cputime
+        v.type = V_FLOAT
+        v.f = st.process_cputime                # GD->statistics.user_cputime
+    elseif key === :self_inferences || key === :inferences     # inferences
+        v.i = st.inferences                     # (+ SUBTHREAD_INFERENCES())
+    elseif key === :stack
+        v.i = _size_stack(ld, :global) + _size_stack(ld, :local) + _size_stack(ld, :trail)
+    elseif key === :stack_limit
+        v.i = 8 * ld.stacks_limit
+    elseif key === :local                       # local stack
+        v.i = _size_stack(ld, :local)
+    elseif key === :localused
+        v.i = _used_stack(ld, :local)
+    elseif key === :trail                       # trail
+        v.i = _size_stack(ld, :trail)
+    elseif key === :trailused
+        v.i = _used_stack(ld, :trail)
+    elseif key === :global                      # global
+        v.i = _size_stack(ld, :global)
+    elseif key === :globalused
+        v.i = _used_stack(ld, :global)
+    elseif key === :c_stack
+        v.i = 0
+    elseif key === :atoms                       # atoms
+        v.i = ld.atoms.statistics_atoms
+    elseif key === :atom_space
+        v.i = 0
+    elseif key === :functors                    # functors
+        v.i = ld.functors.statistics_functors
+    elseif key === :functor_space
+        v.i = 0
+    elseif key === :predicates || key === :clauses || key === :codes
+        preds, clauses, codes = _statistics_database(_query_gd(ld))
+        v.i = if key === :predicates
+            preds
+        elseif key === :clauses
+            clauses
+        else
+            codes
+        end
+    elseif key === :modules
+        v.i = length(_query_gd(ld).modules)
+    elseif key === :epoch || key === :process_epoch
+        v.type = V_FLOAT
+        v.f = st.start_time
+    elseif key === :gctime || key === :agc_time || key === :cgc_time ||
+        key === :shift_time ||
+        key === :thread_cputime
+        v.type = V_FLOAT
+        v.f = 0.0
+    elseif key === :collections || key === :collected || key === :agc ||
+        key === :agc_gained || key === :cgc || key === :cgc_gained ||
+        key === :global_shifts ||
+        key === :local_shifts || key === :trail_shifts || key === :engines ||
+        key === :engines_created || key === :threads_peak || key === :table_space_used ||
+        key === :indexes_created || key === :indexes_destroyed || key === :warnings ||
+        key === :errors
+        v.i = 0
+    elseif key === :heapused                    # heap usage
+        v.i = programSpace(ld)
+    elseif key === :threads || key === :threads_created
+        v.i = 1
+    else
+        return -1                               # unknown key
+    end
+    return 1                                    # succeed
+end
+
+# PORT: pl-prims.c pl_statistics_ld
+# DIVERGES: the local data is the one argument (`PASS_AS_LD(ld)`): there is one thread. The key's atom
+# is read as its text, a Symbol.
+"`statistics/2` for the local data `ld`: unify the value of the key `k` with `value` (pl-prims.c)."
+function pl_statistics_ld(ld::PL_local_data{T}, k::term_t, value::term_t)::Bool where {T}
+    a = PL_get_atom_ex(ld, k)
+    a === nothing && return false
+    key = Symbol(sym_text(a))
+
+    if !PL_is_list(ld, value)
+        result = number()
+        if swi_statistics(ld, key, result) == 1
+            return PL_unify_number(ld, value, result)
+        end
+    end
+
+    v = zeros(Int64, 4)
+    rc = qp_statistics(ld, key, v)
+    if rc >= 0
+        tail = PL_copy_term_ref(ld, value)
+        head = PL_new_term_ref(ld)
+        p = 1
+        while rc > 0                            # for(p = v; rc-- > 0; p++)
+            rc -= 1
+            PL_unify_list(ld, tail, head, tail) || return PL_unify_nil(ld, tail)
+            PL_unify_int64(ld, head, v[p]) || return false
+            p += 1
+        end
+        return PL_unify_nil(ld, tail)
+    end
+
+    return PL_error(ld, "statistics", 2, "", ERR_DOMAIN, mk_sym(T, :statistics_key), k)
+end
+
+# PORT: pl-prims.c statistics as pl_statistics2_va
+# (PRED_IMPL("statistics", 2, statistics, 0))
+# DIVERGES: `ThreadCPUTime`/`CpuTime` are the clocks of src/os/pl-os.jl and src/pl-thread.jl;
+# `GD->statistics.user_cputime` is `LD->statistics.process_cputime`.
+"`statistics(+Key, -Value)`: the runtime statistic `Key`; a list `Value` asks for the Quintus form (pl-prims.c)."
+function pl_statistics2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    a = PL_get_atom(ld, A1)
+    if a !== nothing
+        k = Symbol(sym_text(a))
+        st = ld.statistics
+        k === :process_cputime && (st.process_cputime = CpuTime(CPU_USER))
+        if k === :cputime || k === :runtime
+            st.user_cputime = ThreadCPUTime(CPU_USER)
+        elseif k === :system_time
+            st.system_cputime = ThreadCPUTime(CPU_SYSTEM)
+        end
+    end
+
+    return pl_statistics_ld(ld, A1, A2) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
@@ -3303,6 +3598,7 @@ const PL_predicates_from_prims = (
     PL_extension("number_string", 2, pl_number_string2_va, PL_FA_VARARGS),
     PL_extension("char_code", 2, pl_char_code2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
+    PL_extension("statistics", 2, pl_statistics2_va, PL_FA_VARARGS),
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )

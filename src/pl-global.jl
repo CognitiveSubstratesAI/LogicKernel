@@ -212,6 +212,26 @@ mutable struct vt_pairs
     stack::Vector{NTuple{4, Int}}
 end
 
+# PORT: pl-global.h statistics as ld_statistics
+# DIVERGES: only `PL_local_data.statistics` (the per-thread counters); `GD->statistics` has no struct here:
+# its `user_cputime` (the process's CPU time statistics/2 last read) is `process_cputime`, and its counts
+# of atoms, functors, predicates, clauses, modules and codes are read from the tables (src/pl-prims.jl
+# `swi_statistics`). `errors` and `warnings` are not counted. The field types are upstream's, `uint64_t`
+# as `Int64`. `start_time` is the creation of the local data (`WallTime()`, src/os/pl-os.jl).
+"The counters of `statistics/2` that belong to one thread (pl-global.h `LD->statistics`, Y1)."
+mutable struct ld_statistics
+    inferences::Int64                                           # inferences in this thread
+    last_cputime::Int64                                         # milliseconds last CPU time
+    last_systime::Int64                                         # milliseconds last SYSTEM time
+    last_real_time::Int64                                       # Last Real Time (seconds since Epoch)
+    start_time::Float64                                         # When Thread was started
+    last_walltime::Float64                                      # Last Wall time (m-secs since start)
+    user_cputime::Float64                                       # User saved CPU time
+    system_cputime::Float64                                     # Kernel saved CPU time
+    process_cputime::Float64                                    # GD->statistics.user_cputime
+end
+ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
+
 # PORT: pl-global.h PL_local_data
 # DIVERGES: `index_ctx` is scratch upstream declares on the C stack in each firstClause/nextClause.
 # Since L1f (f3) every variable is a cell on `gstack`, the global stack (`gTop`), bound by overwriting
@@ -419,6 +439,7 @@ mutable struct PL_local_data{T}
     op_enums::foreign_state_pool{op_enum{T}}                    # (current_op/3's and $local_op/3's REDO_PTR states, NF3)
     prolog_flag_mask::UInt64                                    # prolog_flag.mask: the bits truePrologFlag reads (R2 F1a)
     prolog_flag_enums::foreign_state_pool{prolog_flag_enum}     # (current_prolog_flag/2's REDO_PTR states, R2 F1a)
+    statistics::ld_statistics                                   # statistics: inferences, clocks (Y1)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -495,7 +516,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{ClauseChoice{T}}(),  # clause/2's states: none
         foreign_state_pool{op_enum{T}}(),       # current_op/3's states: none
         gd.prolog_flag.mask,                    # prolog_flag.mask: the database's (pl-thread.c copies the creating thread's)
-        foreign_state_pool{prolog_flag_enum}()  # current_prolog_flag/2's states: none
+        foreign_state_pool{prolog_flag_enum}(),  # current_prolog_flag/2's states: none
+        ld_statistics()                         # statistics: no inference yet, started now (Y1)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

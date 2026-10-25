@@ -66,7 +66,7 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "its byte range is CHECKED first, so it cannot write outside `wbuf` or read outside `data`"
     ),
     "pl-arith.jl ccall" => (
-        21,
+        20,
         "the C library's libm (arith-b; arith-c adds sinh, cosh, tanh, asinh, acosh, atanh, erf, " *
         "log10, lgamma): sin, cos, tan, asin, acos, atan, atan2, exp, log, sqrt, pow… as swipl calls them (Julia's own differ from glibc in the last digit and throw where " *
         "C gives a NaN); each passes and returns Float64 values only — no pointer, no buffer"
@@ -81,6 +81,20 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         1,
         "sym_first_byte: reads byte 1 of that name, which is NUL-terminated, so the empty atom reads 0x00 " *
         "and the read never passes the name's end"
+    ),
+    "os/pl-os.jl ccall" => (
+        3,
+        "Y1: pl-os.c's three C-library calls, as upstream makes them: clock_gettime (CpuTime, WallTime, " *
+        "ThreadCPUTime: the nanosecond clocks Julia does not give), setenv and unsetenv (the errno " *
+        "setenv/2 and unsetenv/1 report, EINVAL for an empty name or one with `=`); each is handed " *
+        "Cstring arguments (Julia's conversion refuses a NUL, the callers cut the name at one) or a " *
+        "Ref the call fills with two Int64s, and returns an Int32"
+    ),
+    "os/pl-files.jl ccall" => (
+        1,
+        "Y1: RemoveFile, remove(3) as upstream's pl-files.c calls it (it deletes a file or an empty " *
+        "directory, and the errno delete_file/1 reports); the argument is a Cstring of a name the " *
+        "caller checked for NULs and PATH_MAX, the result an Int32"
     ),
     "pl-read.jl ccall" => (
         1,

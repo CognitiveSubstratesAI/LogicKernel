@@ -57,6 +57,8 @@ include("os/pl-codelist.jl")   # swipl-devel src/os/pl-codelist.c — the text o
 include("os/pl-option.jl")     # swipl-devel src/os/pl-option.c — option lists (PL_scan_options)
 include("os/pl-prologflag.jl") # swipl-devel src/os/pl-prologflag.c — setBackQuotes (write_term's back_quotes)
 include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a term holds; a stream on it
+include("os/pl-os.jl")         # swipl-devel src/os/pl-os.c — the clocks, the environment, Pause (Y1)
+include("os/pl-files.jl")      # swipl-devel src/os/pl-files.c — the file name a term holds, delete_file/1 (Y1)
 include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
@@ -68,6 +70,7 @@ include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findal
 include("pl-list.jl")          # swipl-devel src/pl-list.c — is_list/1, '$length'/2, sort/2, msort/2, keysort/2
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
 include("pl-write.jl")         # swipl-devel src/pl-write.c — the NaN helpers and the quoting rules the reader needs
+include("pl-sys.jl")           # swipl-devel src/pl-sys.c — getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (Y1)
 include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c) and the parser (R1d): read_term, term_to_atom
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("../boot/init.jl")     # swipl-devel boot/init.pl — the minimal loader (R1f): load_file!

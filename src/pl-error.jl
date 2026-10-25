@@ -59,6 +59,8 @@
     ERR_RESOURCE                    # atom_t what
     ERR_UNINSTANTIATION             # int argn, term_t term (AV2: put_attr/3, put_attrs/2)
     ERR_SYNTAX                      # const char *what
+    ERR_FILE_OPERATION              # atom_t action, atom_t type, term_t file (errno: Y1)
+    ERR_SYSCALL                     # const char *op (errno: Y1)
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -815,6 +817,110 @@ PL_domain_error(ld::PL_local_data{T}, expected::String, actual::term_t) where {T
 "Raise `resource_error(Resource)` (pl-error.c `PL_resource_error`); false."
 PL_resource_error(ld::PL_local_data{T}, resource::String) where {T} =
     PL_error(ld, "", 0, "", ERR_RESOURCE, mk_sym(T, Symbol(resource)))
+
+# ── the errno-driven codes (Y1) ─────────────────────────────────────────────────────────────────
+# ORIGINAL (Y1): the Linux `errno` values that `ERR_FILE_OPERATION` and `ERR_SYSCALL` test (errno.h; the
+# kernel runs on Linux, as `LIBM` assumes glibc), kept under errno.h's names.
+const EPERM = 1
+const EAGAIN = 11
+const ENOMEM = 12
+const EACCES = 13
+const ENFILE = 23
+const EMFILE = 24
+const EROFS = 30
+const EPIPE = 32
+const ENAMETOOLONG = 36
+const ENOTEMPTY = 39
+const ELOOP = 40
+
+# ORIGINAL (Y1): `MSG_ERRNO` (pl-error.h) is a sentinel pointer upstream; here a sentinel text that `PL_error`
+# replaces by `strerror(errno)` (pl-error.c: `msg = OsError()`).
+"The `msg` that asks `PL_error` for the text of `errno` (pl-error.h `MSG_ERRNO`)."
+const MSG_ERRNO = "\x01MSG_ERRNO"
+
+# The `msg` of a context: `MSG_ERRNO` is `strerror(errno)` (pl-error.c `msg = OsError()`).
+_errno_msg(msg::String, errno::Int)::String =
+    msg == MSG_ERRNO ? Base.Libc.strerror(errno) : msg
+
+# PORT: pl-error.c PL_error
+# DIVERGES: upstream reads the global `errno` and tests `PLFLAG_FILEERRORS`; here `errno` is an
+# argument. NOT PORTED: the `file_errors` flag (`fail` instead of the error: the flag table, F1) and
+# `EPLEXCEPTION`.
+"""
+    PL_error(ld, pred, arity, msg, ERR_FILE_OPERATION, action, type, file::term_t, errno) -> false
+
+Raise the error a failed operation on a file reports, by `errno` (pl-error.c `ERR_FILE_OPERATION`):
+`permission_error(Action, Type, File)` for `EACCES`, `EPERM`, `EROFS` and `ENOTEMPTY` (`lock` for
+`EAGAIN`), `resource_error(max_files)`, `representation_error(max_path_length |
+max_symbolic_links)`, else `existence_error(Type, File)`. `msg` is the context's second argument:
+`MSG_ERRNO` is `strerror(errno)`.
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
+    action::T, type::T, file::term_t, errno::Int
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_FILE_OPERATION
+    if errno == EAGAIN || errno == EACCES || errno == EPERM || errno == EROFS ||
+        errno == ENOTEMPTY
+        errno == EAGAIN && (action = mk_sym(T, :lock))         # Hack for file-locking
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :permission_error, 3), _err_atom(ld, action),
+            _err_atom(ld, type), file
+        )
+    elseif errno == EMFILE || errno == ENFILE
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :resource_error, 1),
+            _err_atom(ld, mk_sym(T, :max_files))
+        )
+    elseif errno == ELOOP || errno == ENAMETOOLONG
+        repr = errno == ELOOP ? :max_symbolic_links : :max_path_length
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :representation_error, 1),
+            _err_atom(ld, mk_sym(T, repr))
+        )
+    else                                                       # what about the other cases?
+        errno == EPIPE && isempty(msg) && (msg = "Broken pipe")
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :existence_error, 2), _err_atom(ld, type), file
+        )
+    end
+    return _PL_error_close!(
+        ld, caller, fid, except, formal, swi, pred, arity, _errno_msg(msg, errno)
+    )
+end
+
+# PORT: pl-error.c PL_error
+# DIVERGES: upstream reads the global `errno`; here it is an argument.
+"""
+    PL_error(ld, pred, arity, msg, ERR_SYSCALL, op, errno) -> false
+
+Raise `error(system_error, context(…, Msg))` for a system call `op` that failed with `errno`, or
+`resource_error(no_memory)` for `ENOMEM` (pl-error.c `ERR_SYSCALL`). `msg` is the context's second
+argument: `MSG_ERRNO` is `strerror(errno)`, and an empty one is `op`.
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
+    op::String, errno::Int
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_SYSCALL
+    msg = _errno_msg(msg, errno)
+    isempty(msg) && (msg = op)                                  # if ( !msg ) msg = op;
+    if errno == ENOMEM
+        PL_cons_functor(
+            ld, formal, _err_functor(ld, :resource_error, 1),
+            _err_atom(ld, mk_sym(T, :no_memory))
+        )
+    else
+        PL_put_atom(ld, formal, mk_sym(T, :system_error))
+    end
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
 
 # ── printing messages (pl-error.c), since R1f ───────────────────────────────────────────────────
 
