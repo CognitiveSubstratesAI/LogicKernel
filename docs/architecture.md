@@ -2724,7 +2724,8 @@ NEW, pl-fli.jl, pl-error.jl, pl-incl.jl, pl-modul.jl, pl-global.jl, pl-ext.jl). 
 * **DIVERGES:** a module's table is created with it, keyed by the name's `sym_key`, each entry
   upstream's `operator` record as a tuple with its key atom; `MODULE_parse` is `user` (no source
   being loaded until R1f); the table's iteration order is the Dict's, so an enumeration is compared
-  as a set.
+  as a set: its order differs, and with it which answer leaves no choice point (D-0157 item 2). No
+  row asserts the last answer's determinism of a multi-answer enumeration unless the order is pinned.
 * **NOT PORTED:** the thread-local table (no threads). `current_op/3` and `$local_op/3` were not ported
   here (non-deterministic: V9); since NF3 they are (below, "Non-deterministic built-ins"). test_op.pl's
   units need `current_op/3` and the reader (R1d).

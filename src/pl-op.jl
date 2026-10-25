@@ -317,10 +317,11 @@ end
 # exception raised) fails after freeing the state.
 # DIVERGES: hash-table order (pl-table.c); the kernel enumerates in creation order — upstream's operator
 # tables are pl-table.c `TableWP`s enumerated in their hash order (pl-op.c:114, :428-432), the kernel's are
-# Dicts, so a multi-answer enumeration gives upstream's answers as a SET in another order (audit D-0145,
-# D-0149 item 1: one class with '$current_module'/2, module_property's exports, current_prolog_flag/2,
-# nb_current/2). Multi-answer rows compare sorted, single answers exactly. Re-check trigger: pl-table.c
-# ported with atom handles that match.
+# Dicts, so a multi-answer enumeration gives upstream's answers as a SET in another order, and with it
+# which answer leaves no choice point (audit D-0145, D-0149 item 1, D-0157 item 2: one class with
+# '$current_module'/2, module_property's exports, current_prolog_flag/2, nb_current/2). Multi-answer rows
+# compare sorted, single answers exactly; no row asserts the last answer's determinism unless the order is
+# pinned. Re-check trigger: pl-table.c ported with atom handles that match.
 """
     current_op_ndet(ld, m, inherit, prec, type, name, h) -> foreign_t
 
