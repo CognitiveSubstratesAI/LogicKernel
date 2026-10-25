@@ -13,8 +13,9 @@
 #   * the same, pinned (swipl 10.1.16's, probed), for the jobs without swipl;
 #   * assert/1 through the query API, and from a clause through `autoImport` (it is not ISO), its
 #     `user` procedure linked to `system`'s definition (since V5c);
-#   * what the kernel refuses (`NotPortedError`): a module other than `user` and `system` (until R2's
-#     `module/2`), an SSU clause, a variable goal (V9).
+#   * a module other than `user` and `system` is made by the clause that names it (MOD1; was refused with
+#     `NotPortedError`, "R2");
+#   * what the kernel refuses (`NotPortedError`): an SSU clause, a variable goal (V9).
 using Test, LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -122,6 +123,9 @@ const _A_PROGRAM = Tuple{_A, Union{Nothing, _A}}[
     # Module:Clause (since V5c): `user`, a module that is no atom, an unbound one
     (_as("u1"), _af("assertz", _af(":", _as("user"), _as("uf")))),
     (_as("u2"), _af("assertz", _arule(_af(":", _as("user"), _as("uh")), _as("true")))),
+    # a module the clause makes (MOD1; were the refusals "R2" of `what the kernel refuses`)
+    (_as("u3"), _af("assertz", _af(":", _as("mq"), _as("uq")))),
+    (_as("u4"), _af("assertz", _arule(_af(":", _as("mq"), _as("ur")), _as("true")))),
     (_as("e16"), _af("assertz", _af(":", _ag(1), _as("x")))),
     (_as("e17"), _af("assertz", _af(":", _av(5), _as("x")))),
     # test_db.pl's cyclic and arity units, from a clause
@@ -159,7 +163,7 @@ const _A_PINNED_OUTCOMES = [
     "err error(permission_error(modify,static_procedure,/(atom,1)),context(:(system,/(assert,1)),_))",
     "err error(permission_error(modify,static_procedure,/(atom,1)),context(:(system,/(asserta,1)),_))",
     "err error(permission_error(modify,static_procedure,/(assertz,1)),context(:(system,/(assertz,1)),_))",
-    "ok", "ok",
+    "ok", "ok", "ok", "ok",
     "err error(type_error(module,1),context(:(system,/(assertz,1)),_))",
     "err error(instantiation_error,context(:(system,/(assertz,1)),_))",
     "err error(representation_error(cyclic_term),context(:(system,/(assertz,1)),_))",
@@ -389,9 +393,7 @@ end
 @testset "what the kernel refuses (NotPortedError)" begin
     # each in a database of its own: a refusal abandons the query (`_abandon_query`)
     for (goal, step) in (
-        (_af("assertz", _af(":", _as("m"), _as("foo"))), "R2"),        # a module other than
-        (_af("assertz", _arule(_af(":", _as("m"), _as("foo")), _as("true"))), "R2"),  # user, system
-        (_af("assertz", _af("=>", _as("foo"), _as("true"))), "SSU")    # an SSU clause
+        (_af("assertz", _af("=>", _as("foo"), _as("true"))), "SSU"),   # an SSU clause
     )
         db = _aload([(_as("r"), goal)])
         err = try

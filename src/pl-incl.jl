@@ -739,32 +739,68 @@ mutable struct definition{T}
 end
 
 # PORT: pl-incl.h module as module_t
-# DIVERGES: a module's name, its procedure table, its flags and its super modules (since V5c) — no
-# source file, public list, operators, lingering definitions or code size. The database has the
-# `system` and `user` modules (src/pl-modul.jl; user, 2026-10-07). The table is keyed by the FUNCTOR —
-# upstream's `functor_t`, here the name's `sym_key` and the arity. `name` is the name's `sym_key` and
-# `atom` the name itself (upstream's `atom_t` is both); `index` (no upstream field) is the module's
-# position in the database's module table, which a definition holds as its module (see
-# `definition`), and `supers` are the super modules' indices, where upstream holds a list of
-# pointers; the flags are set when the module is created (nothing sets them later: no
-# `set_module/1`, no module-local `unknown` flag). `operators` (since R1b) is the module's operator
-# table, keyed by the name's `sym_key`: each entry is pl-op.c's `operator` record — `type[3]`,
-# `priority[3]`, by `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX` — with its key atom, as a tuple (the
-# record is pl-op.c's, src/pl-op.jl; a tuple needs no struct here); it is created with the module,
-# where upstream allocates it at the first `op/3`. Named `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword and
-# `Module` Core's. `code_data` (no upstream field) is the database's shared supervisors, which a new
-# procedure starts with (`SUPERVISOR(virgin)`).
-"A module (pl-incl.h `struct module`): its name, the procedures defined in it, its flags and supers."
-struct module_t{T}
-    name::UInt64                                                # name of module, as a sym_key
-    atom::T                                                     # name of module, the symbol
-    index::Int                                                  # (its place in the module table)
-    procedures::Dict{Tuple{UInt64, Int}, procedure{definition{T}}}  # predicates of the module
-    code_data::PL_code_data                                     # the database's shared supervisors
+# DIVERGES: a MUTABLE struct with upstream's fields (MOD1; audit D-0149, MQ1: `set_module/1`,
+# `add_import_module/3` and the flags of `set_prolog_flag/2` write a module after it is made). Per field:
+# `name` is the name's `sym_key` and `atom` the name itself (upstream's `atom_t` is both); `index` (no
+# upstream field) is the module's position in the database's module table, which a definition holds as its
+# module (see `definition`: Julia cannot declare two mutually recursive struct types); `class` is an atom;
+# `file` is the source file's INDEX (`sourceFile.index`; 0: none) for the same reason; `procedures` and
+# `public_` (`public` is a contextual keyword of Julia 1.11) are keyed by the FUNCTOR — upstream's
+# `functor_t`, here the name's `sym_key` and the arity — and `public_order` (no upstream field) lists the public table's keys in the order they were added, as
+# `'\$module_property'(M, exports(L))` answers them (upstream's answer follows its hash table: D-0149 item 1);
+# `supers` are the super modules' indices, where upstream holds a list of pointers (the list is changed
+# in place; a module's supers number one or two); `operators` (since R1b) is the module's operator table,
+# keyed by the name's `sym_key`: each entry is pl-op.c's `operator` record — `type[3]`, `priority[3]`, by
+# `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX` — with its key atom, as a tuple (the record is pl-op.c's,
+# src/pl-op.jl); it is created with the module, where upstream allocates it at the first `op/3`;
+# `code_data` (no upstream field) is the database's shared supervisors, which a new procedure starts with
+# (`SUPERVISOR(virgin)`). `line_no` is an `Int` (upstream: `unsigned int`).
+# NOT PORTED: `lingering` (a replaced definition is left to Julia's garbage collector), `mutex` and `wait`
+# (no threads), `hook` (`O_PROLOG_HOOK`). `code_size` is not kept up to date as clauses come and go (that is
+# the hot path of assert and retract, bench H1): `\$module_property/2` computes the kernel's own count
+# (src/pl-modul.jl `sizeof_module`), and `code_limit` stays 0 (`set_module(program_space(N))` refuses
+# N > 0: D-0149 MQ3). Named `module_t` (SWI-Prolog.h's own name for a module): `module` is a Julia keyword
+# and `Module` Core's.
+"A module (pl-incl.h `struct module`): its name, class, file, procedures, exports, supers and flags."
+mutable struct module_t{T}
+    const name::UInt64                                          # name of module, as a sym_key
+    const atom::T                                               # name of module, the symbol
+    const index::Int                                            # (its place in the module table)
+    class::T                                                    # class of the module
+    file::Int                                                   # file from which module is loaded
+    const procedures::Dict{Tuple{UInt64, Int}, procedure{definition{T}}}  # predicates of the module
+    const public_::Dict{Tuple{UInt64, Int}, procedure{definition{T}}}     # public predicates associated
+    const public_order::Vector{Tuple{UInt64, Int}}              # (the public table's keys, in order added)
+    const operators::Dict{UInt64, Tuple{T, NTuple{3, UInt8}, NTuple{3, Int16}}}  # local operator table
+    const supers::Vector{Int}                                   # Import predicates from here
+    code_size::Int                                              # #Bytes used for its procedures
+    code_limit::Int                                             # Limit for code_size
+    level::Int                                                  # Distance to root (root=0)
+    line_no::Int                                                # Source line-number
     flags::UInt32                                               # booleans (M_*, UNKNOWN_*)
-    supers::Vector{Int}                                         # Import predicates from here
-    operators::Dict{UInt64, Tuple{T, NTuple{3, UInt8}, NTuple{3, Int16}}}  # local operator table
+    var_prefix::Int                                             # var_prefix flag char (0: none)
+    references::Int                                             # see acquireModule()
+    last_modified::gen_t                                        # Generation I was last modified
+    const code_data::PL_code_data                               # the database's shared supervisors
 end
+
+# PORT: pl-global.h modules as module_table
+# DIVERGES: upstream's `GD->tables.modules` (a hash table by name, made by pl-modul.c `initModules`) is a
+# `Vector{module_t}` here (a module's `index` is its place; a module is never removed from it: definitions
+# hold the index, and `destroyModule` takes the NAME out of `names`) and the name index, `names`, which is
+# upstream's hash table (D-0149 MQ1/M2). It is an `AbstractVector`, so `gd.modules[i]`, `length(gd.modules)`
+# and iteration are the vector's, and nothing that read the vector changed; the name lookup (src/pl-modul.jl
+# `isCurrentModule`) reads `names`. Enumeration is in creation order, where upstream's follows its hash
+# table (D-0149 item 1).
+"The modules of a database (pl-modul.c `GD->tables.modules`): in creation order, and by name."
+struct module_table{T} <: AbstractVector{module_t{T}}
+    modules::Vector{module_t{T}}                                # (in creation order)
+    names::Dict{UInt64, Int}                                    # name (a sym_key) → the module's index
+end
+module_table{T}() where {T} = module_table{T}(module_t{T}[], Dict{UInt64, Int}())
+Base.size(t::module_table) = size(t.modules)
+Base.IndexStyle(::Type{<:module_table}) = IndexLinear()
+Base.getindex(t::module_table, i::Int) = t.modules[i]
 
 # PORT: pl-incl.h OP_MAXPRIORITY
 "The highest operator priority (pl-incl.h)."
@@ -845,6 +881,9 @@ const RAT_MASK = RAT_NATURAL
 # PORT: pl-incl.h O_RATIONAL_SYNTAX
 "The default rational syntax (pl-incl.h)."
 const O_RATIONAL_SYNTAX = RAT_COMPAT
+# PORT: pl-incl.h M_DESTROYED
+"Module flag: the module was destroyed (`'\$destroy_module'/1`); its name left the table (pl-incl.h)."
+const M_DESTROYED = UInt32(0x00010000)
 # PORT: pl-incl.h M_RDSTRING_TERM
 "Read flag: read/1 and friends demand a term (pl-incl.h)."
 const M_RDSTRING_TERM = UInt32(0x00040000)

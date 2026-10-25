@@ -2,7 +2,8 @@
 # test/core_lang/test_module_path.jl — V5c's units (port_inventory row V5; as decided since Q-A, and
 # by the user, 2026-10-07):
 #   * the module table: `system` (index 1, a system module, `unknown` = error) and `user` (index 2,
-#     its super `system`), a REAL vector R2 will add to; any other name refused until R2;
+#     its super `system`), a REAL vector any other name adds to (MOD1: `lookupModule` creates the module
+#     a name asks for; until then it raised `NotPortedError`, "R2"; test_module_swipl.jl has the rest);
 #   * a definition's module is its index; `getUnknownModule` inherits through the supers;
 #   * `autoImport` links a super's definition into the module's procedure; a defined procedure
 #     keeps its own, a `P_AUTOLOAD` one imports nothing; `trapUndefined` installs `S_UNDEF` when
@@ -12,7 +13,7 @@
 #     `GP_NAMEARITY`;
 #   * `PL_strip_module_ex`: the innermost atom qualifier, a module that is no atom
 #     (`type_error(module, M)`), a variable (`instantiation_error`), a plain term (the given module,
-#     or `user`), a cyclic chain (`type_error(acyclic_term, …)`), and an unknown module refused.
+#     or `user`), a cyclic chain (`type_error(acyclic_term, …)`), and an unknown module created (MOD1).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -37,14 +38,13 @@ _mpv() = mk_var(_MP, LK.fresh_var_keys!(1))
     @test LK.isCurrentModule(gd.modules, _mps(:user)) === user
     @test LK.isCurrentModule(gd.modules, _mps(:nomod)) === nothing
     @test LK.lookupModule(gd, _mps(:system)) === sys                # found, not created
-    err = try
-        LK.lookupModule(gd, _mps(:mm))
-        nothing
-    catch e
-        e
-    end
-    @test err isa LK.NotPortedError{_MP} && err.step == "R2"         # until module/2 (R2)
     @test length(gd.modules) == 2
+    # any other name makes a module, appended (MOD1; was NotPortedError "R2"): the next index, its super `user`
+    mm = LK.lookupModule(gd, _mps(:mm))
+    @test length(gd.modules) == 3 && mm.index == 3 && gd.modules[3] === mm
+    @test mm.supers == [user.index] && lk_name(mm.atom) === :mm
+    @test LK.lookupModule(gd, _mps(:mm)) === mm && length(gd.modules) == 3   # found, not created again
+    @test LK.isCurrentModule(gd.modules, _mps(:mm)) === mm
     # the unknown flag: system's own, inherited by user
     @test LK.getUnknownModule(gd, sys) == LK.UNKNOWN_ERROR
     @test LK.inheritUnknown(gd, user) == LK.UNKNOWN_ERROR
@@ -150,13 +150,12 @@ end
     @test !ok && lk_eq(formal, _mpf("type_error", _mps(:module), lk_gnd(_MP, 1)))
     ok, _, _, formal = strip(_mpf(":", _mpv(), _mps(:x)))
     @test !ok && lk_eq(formal, _mps(:instantiation_error))
-    err = try
-        strip(_mpf(":", _mps(:mm), _mps(:x)))
-        nothing
-    catch e
-        e
-    end
-    @test err isa LK.NotPortedError{_MP} && err.step == "R2"
+    # a qualifier naming no module yet creates it (MOD1; was NotPortedError "R2")
+    @test LK.isCurrentModule(gd.modules, _mps(:mm)) === nothing
+    ok, m, plain, _ = strip(_mpf(":", _mps(:mm), _mps(:x)))
+    @test ok && m == 3 && lk_eq(gd.modules[m].atom, _mps(:mm)) && lk_eq(plain, _mps(:x))
+    @test LK.isCurrentModule(gd.modules, _mps(:mm)) === gd.modules[3] &&
+        length(gd.modules) == 3
     # a cyclic chain X = user:X (on the cells since L1f f3: the term-level `pl_unify!` and
     # `stripModuleName` before): stripModuleName gives up after 100 levels
     ld = LK.PL_local_data{_MP}(gd)

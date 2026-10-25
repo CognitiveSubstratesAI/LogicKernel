@@ -342,6 +342,20 @@ end
 newClauseRef(clause::Clause{T}, key::word) where {T} =
     ClauseRef{T}(nothing, key, clause, nothing)
 
+# PORT: pl-proc.c setLastModifiedPredicate as setLastModifiedPredicate!
+# DIVERGES: only the module's `last_modified` (the definition has no such field), no wakeup of waiting threads, no
+# transaction generations (`gen < GEN_TRANSACTION_BASE` always).
+"Record that a clause of `def` was added or erased at generation `gen`: the module's `last_modified` rises to it (pl-proc.c)."
+function setLastModifiedPredicate!(
+    gd::PL_global_data{T}, def::Definition{T}, gen::gen_t
+)::Nothing where {T}
+    m = gd.modules[def.module_]
+    if m.last_modified < gen
+        m.last_modified = gen
+    end
+    return nothing
+end
+
 # PORT: pl-proc.c assertDefinition
 # DIVERGES: no events, transactions or SSU clauses. A caller that selects clauses outside the VM
 # (clause/2, retract/1, the index tests) runs `reconsiderIndexes!` and `update_primary_index!` itself
@@ -395,6 +409,7 @@ function assertDefinition!(
     gd._generation += 1                                 # PL_LOCK(L_GENERATION)
     clause.generation_created = gd._generation
     clause.generation_erased = max_generation(def)
+    setLastModifiedPredicate!(gd, def, clause.generation_created)     # setLastModifiedPredicate(def, …created, TWF_ASSERT)
     return cref
 end
 
@@ -441,6 +456,7 @@ function retract_clause!(
         def.impl_clauses.number_of_rules -= 0x00000001
     end
     registerDirtyDefinition!(gd, def)
+    setLastModifiedPredicate!(gd, def, clause.generation_erased)      # …, TWF_RETRACT
     return true
 end
 
@@ -1111,8 +1127,8 @@ end
 # PORT: pl-proc.c set_predicate_attribute as pl_set_predicate_attribute3_va
 # (PRED_IMPL("$set_predicate_attribute", 3, set_predicate_attribute, PL_FA_TRANSPARENT))
 # DIVERGES: no tabling attributes (`tbl_is_predicate_attribute`: refused, as is `spy`, which needs
-# `GP_RESOLVE`); `ReadingSource` is `LD->read_source`'s file and line, `MODULE_parse` the source
-# module while reading, else `user`.
+# `GP_RESOLVE`); `ReadingSource` is `LD->read_source`'s file and line (src/pl-modul.jl), `MODULE_parse` the source
+# module while reading, else the typein module.
 "`'\$set_predicate_attribute'(:Head, +Key, +Value)` (pl-proc.c): set a predicate attribute."
 function pl_set_predicate_attribute3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1133,8 +1149,8 @@ function pl_set_predicate_attribute3_va(
     proc === nothing && return FFALSE
     def = proc.definition
 
-    reading = ld.read_source.position.lineno > 0 && ld.read_source.file !== nothing  # ReadingSource
-    mparse = reading ? ld.modules_source : MODULE_user(gd).index                      # MODULE_parse
+    reading = ReadingSource(ld)
+    mparse = MODULE_parse(ld)
     if reading && mparse == def.module_
         sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
         rc = setAttrProcedureSource(sf, proc, att, val == 1)
@@ -1165,8 +1181,8 @@ end
 # (the `GP_CREATE` case, as retractall/1 asks it; the `GP_DEFINE` case above is the other port)
 # DIVERGES: `GP_CREATE` only, as a function of its own (`get_procedure` above refuses it); the term stripped of its
 # module (`PL_strip_module`, which puts the plain head in `h`), its functor from the head (`get_head_functor`: the
-# `callable` type error) and `lookupBodyProcedure` in that module. A qualifier naming no module raises nothing here
-# (the module table has no creation on this path yet).
+# `callable` type error) and `lookupBodyProcedure` in that module. A qualifier naming no module creates it
+# (`PL_strip_module` -> `stripModule_cells`, since MOD1).
 "The procedure the head term `descr` (`M:Head`) names, found or created for a body to call (pl-proc.c); `h` holds the plain head."
 function get_procedure_create(
     gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, h::term_t

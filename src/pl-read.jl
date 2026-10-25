@@ -2237,13 +2237,13 @@ end
 
 # PORT: pl-read.c init_read_data
 # DIVERGES: returns the read data, where upstream initialises a caller's struct; the module is
-# `MODULE_parse` — `user` (`read_clause` sets the source module: `set_module_read_data`); no
+# `MODULE_parse` (the source module while loading, else the typein module; `read_clause` sets the source module: `set_module_read_data`); no
 # character conversion table.
 "Fresh read data for reading from stream `inp` (pl-read.c)."
 function init_read_data(
     gd::PL_global_data{T}, ld::PL_local_data{T}, inp::IOSTREAM
 )::read_data{T} where {T}
-    m = MODULE_user(gd)                             # MODULE_parse
+    m = gd.modules[MODULE_parse(ld)]                # MODULE_parse
     rd = read_data{T}(
         0, 0, 0, 0, token{T}(), false, RD_MAGIC,
         source_location{T}(nothing, IOPOS()), 0, 0,

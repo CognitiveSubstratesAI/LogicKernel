@@ -42,7 +42,7 @@ mutable struct PL_global_data{T}
     procedures_dirty::Dict{Definition{T}, dirty_def_info{T}}    # procedures.dirty
     clauses_cgc_active::Bool                                    # clauses.cgc_active: CGC running
     const functors_control::ControlFunctors                     # functors.array's CONTROL_F
-    const modules::Vector{module_t{T}}                          # tables.modules: the modules
+    const modules::module_table{T}                              # tables.modules: the modules (creation order, by name)
     const modules_user::module_t{T}                             # modules.user: user module
     const modules_system::module_t{T}                           # modules.system: system module
     const subclause_names::SubClauseNames                       # (the ATOM_/FUNCTOR_ tables)
@@ -95,7 +95,7 @@ end
 # loader registers the stream it opens.
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
-    modules = module_t{T}[]                     # initModules: system, then user
+    modules = module_table{T}()                 # initModules: system, then user
     system = _lookupModule!(modules, cd, mk_sym(T, :system))
     user = _lookupModule!(modules, cd, mk_sym(T, :user))
     dc = mk_sym(T, Symbol("\$c_call_prolog"))
@@ -390,6 +390,7 @@ mutable struct PL_local_data{T}
     read_source::source_location{T}                             # read_source: file, line, …
     debugstatus_styleCheck::Int                                 # _debugstatus.styleCheck
     modules_source::Int                                         # modules.source (an index)
+    modules_typein::Int                                         # modules.typein (an index)
     messages::Vector{Tuple{Symbol, T}}                          # (printMessage's messages)
     IO_streams::Vector{Union{Nothing, IOSTREAM}}                # IO.streams[SNO_*]
     IO_initialised::Bool                                        # GD->io_initialised (per LD)
@@ -463,6 +464,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         source_location{T}(nothing, IOPOS()),
         SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK,  # pl-init.c:1663
         2,                                      # modules.source: user (the module table's 2nd)
+        2,                                      # modules.typein: user (the module table's 2nd)
         Tuple{Symbol, T}[],
         Union{Nothing, IOSTREAM}[nothing, nothing, nothing, nothing, nothing, nothing],
         false,                                  # the standard streams: opened when first asked

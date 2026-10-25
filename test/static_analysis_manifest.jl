@@ -339,7 +339,7 @@ function _manifest_index(T)
     CIP = Vector{Union{Nothing, CI}}
     NT4, NT8, NTW = NTuple{4, UInt8}, NTuple{8, UInt8}, NTuple{4, UInt64}
     CInfo, HA, HH = LK.compileInfo{T}, LK.hash_assessment, LK.hash_hints
-    PR, MOD = LK.Procedure{T}, LK.module_t{T}
+    PR, MOD, MT = LK.Procedure{T}, LK.module_t{T}, LK.module_table{T}
     PCd = LK.Code{T}
     AF = LK.argv_frame{LK.PL_local_data{T}}
     AC = LK.argv_cells{LK.PL_local_data{T}}                   # a compound's argument cells (L1c-5)
@@ -631,8 +631,31 @@ function _manifest_index(T)
         (LK.lookupProcedure, Tuple{T, Int, MOD}, false),
         # V5c — the module path (src/pl-modul.jl, pl-proc.jl, pl-wam.jl, pl-comp.jl, pl-fli.jl,
         # pl-supervisor.jl)
-        (LK.isCurrentModule, Tuple{Vector{MOD}, T}, false),
-        (LK._lookupModule!, Tuple{Vector{MOD}, LK.PL_code_data, T}, false),
+        (LK.isCurrentModule, Tuple{MT, T}, false),
+        (LK._lookupModule!, Tuple{MT, LK.PL_code_data, T}, false),
+        # MOD1 — the module table, the super modules, set_module/1, '$module_property'/2 (src/pl-modul.jl)
+        (LK.module_table{T}, Tuple{}, false), (Base.size, Tuple{MT}, false),
+        (Base.getindex, Tuple{MT, Int}, true),
+        (Base.IndexStyle, Tuple{Type{MT}}, false),
+        (LK.ReadingSource, Tuple{LD}, true), (LK.MODULE_parse, Tuple{LD}, true),
+        (LK.cannotSetSuperModule, Tuple{LD, MOD, MOD}, false),
+        (LK.cannotSetSuperModule, Tuple{Nothing, MOD, MOD}, false),
+        (LK.reachableModule, Tuple{MT, MOD, MOD}, false),
+        (LK.isSuperModule, Tuple{MT, MOD, MOD}, false),
+        (LK.updateLevelModule, Tuple{MT, MOD}, false),
+        (LK.addSuperModule_no_lock, Tuple{MT, LD, MOD, MOD, Char}, false),
+        (LK.addSuperModule_no_lock, Tuple{MT, Nothing, MOD, MOD, Char}, false),
+        (LK.addSuperModule, Tuple{MT, LD, MOD, MOD, Char}, false),
+        (LK.delSuperModule, Tuple{MT, MOD, MOD}, false),
+        (LK.clearSupersModule_no_lock, Tuple{MOD}, false),
+        (LK.clearSupersModule, Tuple{MOD}, false),
+        (LK.setSuperModule, Tuple{MT, LD, MOD, MOD}, false),
+        (LK.setSuperModule, Tuple{MT, Nothing, MOD, MOD}, false),
+        (LK.get_module, Tuple{GD, LD, Int, Bool}, false),
+        (LK.set_module, Tuple{GD, LD, MOD, Int}, false),
+        (LK.unify_export_list, Tuple{LD, Int, MOD}, false),
+        (LK.module_code_size, Tuple{MOD}, false), (LK.sizeof_module, Tuple{MOD}, false),
+        (LK.setLastModifiedPredicate!, Tuple{GD, D, UInt64}, false),
         (LK.lookupModule, Tuple{GD, T}, false),
         (LK.inheritUnknown, Tuple{GD, MOD}, true),
         (LK.stripModuleName_cells, Tuple{LD, Int}, false),        # L1e e2c: on the cells
@@ -1212,6 +1235,11 @@ function _manifest_index(T)
                 LK.pl_destroy_findall_bag0_va, LK.pl_is_list1_va, LK.pl_dlength2_va,
                 LK.pl_sort2_va, LK.pl_msort2_va, LK.pl_keysort2_va, LK.pl_sort4_va,
                 LK.pl_ground1_va,
+                LK.pl_add_import_module3_va, LK.pl_delete_import_module2_va,       # MOD1
+                LK.pl_set_module1_va, LK.pl_module_property2_va,
+                LK.pl_current_source_module1_va,
+                LK.pl_set_source_module1_va, LK.pl_current_typein_module1_va,
+                LK.pl_set_typein_module1_va,
                 LK.pl_acyclic_term1_va, LK.pl_cyclic_term1_va, LK.pl_functor3_va,
                 LK.pl_numbervars4_va, LK.pl_term_variables2_va,
                 LK.pl_term_variables3_va,
@@ -2128,6 +2156,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._vmi_dispatch_tree, Tuple{Symbol, Vector{Tuple{UInt64, Symbol}}}, false),
     # the registration tables (V5a2, src/pl-ext.jl), each read as `(name, arity, flags)`
     (LK._extension_sigs, Tuple{typeof(LK.foreigns)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_module)}, false),      # MOD1
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_prims)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_variant)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_trace)}, false),

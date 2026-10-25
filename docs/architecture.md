@@ -702,7 +702,7 @@ fixed it or a public issue exists.
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
 | `src/pl-gmp.jl` | the number core of arithmetic (V6c1): a term read as a `number` and written back (`get_rational`, `put_number`, `PL_unify_number`), the promotions, `cmpNumbers`, the doubles of a big integer or a rational (`mpz_to_double`, `mpz_fdiv`); since V8 the largest big integer (`maxBigIntSize`, `MPZ_MAX_BYTES`); since R1c `clearNumber`, and a stored NaN is the canonical `1.5NaN` (upstream's `put_double`) | `src/pl-gmp.c`, `src/pl-gmp.h`, `src/pl-inline.h` |
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan`; since arith-a and arith-b the functions of arith_funcs_design.md §2 (`ar_pow`, the libm functions, `pi`/`e`/`cputime`/`random`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h`, `src/os/pl-os.c` |
-| `src/pl-modul.jl` | the module table and its two modules, `system` and `user` — `user`'s super `system` (`_lookupModule!`, `lookupModule`, `isCurrentModule`; since V5c) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's) | `src/pl-modul.c`, `src/pl-incl.h` |
+| `src/pl-modul.jl` | the module table (`module_table`, a vector with a name index) and any module of it, created on its first name — `system`, `user`, `$`-modules, classes, flags, the super modules (`_lookupModule!`, `lookupModule`, `isCurrentModule`, `setSuperModule` and its helpers; since V5c, MOD1) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's); since MOD1 `set_module/1`, `'$module_property'/2`, `'$current_source_module'/1`, `'$current_typein_module'/1` and their setters, `add_import_module/3`, `delete_import_module/2`, `ReadingSource`, `MODULE_parse` | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-op.jl` | the operator tables (since R1b): each module's table, `system`'s holding SWI's defaults (`initOperators!`), defining an operator (`defOperator!`, `op/3`) and looking one up through the supers (`currentOperator`, `priorityOperator`); what `current_op/3` enumerates (`scanVisibleOperators!`); since NF3 `current_op/3` and `'$local_op'/3` themselves, upstream's non-deterministic foreign predicates (`current_op_ndet`, `get_op_module`, their states a pool of the local data) | `src/pl-op.c` |
 | `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused; since group F, D-0123, written `@(Template, Substitutions)`) and `PL_write_term`; since group F `callPortray` calls user:portray/1 and write_term's `portray_goal`; since R1e's floats `format_float` (Ryu's digits in pl-write.c's layout), `format_special_float`, `writeNaN`, `writeINF`; since R1e's write/1 family nl/0,1, write_term/2,3 (`pl_write_term3`, `bind_varnames`), write/writeq/writeln/print /1,2 (`do_write2`), since R1e's canonical write_canonical/1,2 | `src/pl-write.c`, `src/pl-incl.h` |
 | `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`); since R1f `read_clause` (the consult's read: singletons reported, a syntax error reported and the next clause read), `check_singletons` and its kin, `reportReadError`, `LD->read_source`; since R1e's canonical `read_term_from_stream` with `read_term_options` (read_term_from_atom/3), `bind_variables`, `check_singletons`' list | `src/pl-read.c` |
@@ -900,6 +900,7 @@ graph LR
     pl_atom --> pl_ressymbol
     pl_termwalk --> term_interface
     pl_termwalk --> default_term
+    pl_termwalk --> pl_incl
     pl_termwalk --> pl_comp
     pl_vmi --> pl_incl
     pl_vmi --> pl_wam
@@ -948,6 +949,8 @@ graph LR
     pl_modul --> term_interface
     pl_modul --> default_term
     pl_modul --> pl_incl
+    pl_modul --> SWI_Prolog
+    pl_modul --> pl_atom
     pl_modul --> pl_funct
     pl_modul --> pl_global
     pl_modul --> pl_inline
@@ -1384,6 +1387,7 @@ graph LR
     pl_ext --> pl_incl
     pl_ext --> SWI_Prolog
     pl_ext --> pl_global
+    pl_ext --> pl_modul
     pl_ext --> pl_prims
     pl_ext --> pl_comp
     pl_ext --> pl_variant
@@ -2768,7 +2772,7 @@ since Q-AR7; src/term_interface.jl, default_term.jl, pl-fli.jl, pl-arith.jl).
 pl-proc.jl, pl-wam.jl, pl-comp.jl, pl-fli.jl, pl-error.jl, pl-global.jl, pl-incl.jl,
 pl-supervisor.jl). As decided since Q-A — upstream's minimum — and by the user, 2026-10-07: (1) a
 definition's module is an INDEX into the database's module VECTOR; (2) `user` and `system` only,
-`system` the super module of `user`, other names refused until R2; (3) `Module:Goal` in a body
+`system` the super module of `user`, other names refused until R2 (MOD1 lifted this: any name creates its module); (3) `Module:Goal` in a body
 refused until V9; (4) MQ6 with the real built-ins. Research: the workspace's
 `docs/research/logickernel-step-memos/V5c_memo.md`.
 * **Ported:**
@@ -4780,6 +4784,28 @@ line-for-line comparable and a missing sync shows as a missing macro.
 **Decision 3, refined when V3 was built (user, 2026-10-05):** upstream's struct widths, so positions
 are swipl's; four refinements of the drop rule; a per-slot `clause_choice` pool; mutable pooled
 records — § "V3 — machine state" below. They take precedence over decision 3's text where they differ.
+
+## MOD1 — the module table, the super modules, `'$module_property'/2`, `set_module/1` (R2, D-0149)
+
+pl-modul.c at the pin, the module record and table of pl-incl.h. Decisions (D-0149 MQ1-MQ9, D-0151 item 7):
+* **`module_t` is mutable** (MQ1; bench H1). Fields as upstream plus `atom`, `index`, `public_order`, `code_data`.
+  `public` is a contextual keyword of Julia 1.11, so the field is `public_`.
+* **`module_table` versus the design's `modules_table` Dict (D-0151 item 7, design M2).** The design kept
+  `gd.modules::Vector` and added a name Dict beside it. MOD1 makes `gd.modules` ONE `module_table{T} <: AbstractVector{module_t{T}}`
+  (the vector in creation order plus a name index `names::Dict{UInt64,Int}`, keyed on `sym_key`). Reason: `gd.modules[i]`,
+  `length`, `sys, user = gd.modules` and the callers `isCurrentModule(gd.modules, name)` (pl-read.jl, pl-write.jl, pl-proc.jl)
+  and `_lookupModule!(modules, cd, name)` keep their form, so no edit in another stream's reader; the table and its index
+  cannot be updated apart from each other. Upstream's table is one hash table by atom (`GD->tables.modules`); this is the same
+  single table, enumerated in creation order (D-0149 item 1 DIVERGES class).
+* **No per-thread lookup cache** (MQ2, representation-only): it returns what the table returns.
+* **`size(_)` and `program_size(_)` answer the kernel's own byte count** (MQ3), computed by walking the module's clauses
+  (no incremental `code_size`, so compileClause/assert/retract stay untouched); compared with swipl by TYPE. `last_modified_generation`
+  is ported: `setLastModifiedPredicate!` (pl-proc.jl) is called from `assertDefinition!` and `retract_clause!`.
+* **`set_module(program_space(N))`**: 0 is stored; N > 0 raises `NotPortedError` naming the accounting (MQ3). Answer differs from swipl.
+* **`ReadingSource(ld)`** is the test the source-file reads already made (line above 0 and a file set); upstream's is `source_line_no >= 0`.
+* The `module` PRED_DEF table is registered between `list` and `prims` (pl-ext.c order); 8 entries.
+* Not in MOD1: `import_module/2`, `'$current_module'/2` (MOD6), `strip_module/3` and the context module (MOD2),
+  export/import (MOD5a), `$declare_module`/`$destroy_module` (MOD5b).
 
 ## Still to come
 
