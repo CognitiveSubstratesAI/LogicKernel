@@ -136,19 +136,18 @@ end
 # (`varBindConst`), else to `put_number`'s value as a value-table word (upstream's indirect,
 # `bindConst`) — trailed on the CELL (`_bind_const!`, the word trail), no variable term read; a tagged
 # integer is compared by `valInt`, a value-table word by its stored number, an atom or a compound
-# fails. No attributed variable lives in a cell yet, so `bindConst`'s wakeup has nothing to do
-# here.
+# fails. An attributed variable (AV1b) skips the `isVar` fast path and takes the `canBind` branch, as
+# upstream: `bindConst`, which refuses it until AV3.
 "Unify term reference `t` with the number `n` (pl-gmp.c): bind a variable, else compare by value."
 function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # deRef(p)
-    if k == DU_CELL                                         # isVar(*p)
-        if n.type === V_INTEGER && PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT &&
-            _holds_payload(T, Int64)                        # valInt(w=consInt(i)) == i
-            _bind_const!(ld, p, consInt(n.i))               # varBindConst(p, w)
-        else
-            c = _gnd_word!(ld, put_number(T, n))            # put_number(&w, n)
-            _bind_const!(ld, p, c)                          # bindConst(p, w)
-        end
+    if k == DU_CELL && n.type === V_INTEGER && PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT &&
+        _holds_payload(T, Int64)                             # isVar(*p) && valInt(consInt(i)) == i
+        _bind_const!(ld, p, consInt(n.i))                   # varBindConst(p, w)
+        return true
+    elseif k == DU_CELL || k == DU_ATTVAR                   # canBind(*p) (AV1b)
+        c = _gnd_word!(ld, put_number(T, n))                # put_number(&w, n)
+        bindConst(ld, p, c)                                 # bindConst(p, w)
         return true
     elseif k == DU_WORD                                     # an atom or a compound: no number
         return false

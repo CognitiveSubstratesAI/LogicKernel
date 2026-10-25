@@ -113,8 +113,11 @@ end
 # `bind_attvar_const`'s false when the global stack cannot grow (no limit on that path here, as
 # `_bind_const!`). Its callers since AV1: the `bindConst` sites whose test admits an attributed variable
 # (`canBind`) — H_RFUNCTOR, H_RLIST, H_LIST_FF (src/pl-wam.jl), `h_const` (`_unify_const_loc`,
-# `_h_const_cell!`) and `PL_unify_atomic`; the other `bindConst` sites still call `_bind_const!` behind
-# an `isVar`-only test until the step that gives them their attributed-variable branch.
+# `_h_const_cell!`) and `PL_unify_atomic`; since AV1b (audit D-0150 item 1) `PL_unify_list`,
+# `PL_unify_functor`, `PL_unify_compound`, `unify_int64_ex` (src/pl-fli.jl), `PL_unify_number`'s `canBind`
+# branch (src/pl-gmp.jl) and compare/3's order (src/pl-prims.jl). The other `bindConst` sites still call
+# `_bind_const!` behind an `isVar`-only test until the step that gives them their attributed-variable
+# branch (the census, evidence/av/av1_census.tsv).
 # NOT PORTED: `bind_attvar_const` (AV3, with `assignAttVar` and the wakeup list): until then an
 # attributed variable reaching it is REFUSED — a `NotPortedError` naming AV3 (audit D-0150 item 3), never a
 # wrong answer; AV2 creates attributed variables, AV3 binds them.

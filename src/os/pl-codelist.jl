@@ -53,7 +53,8 @@ function codes_or_chars_to_buffer(
     elseif lk == DU_WORD && list == ld.atom_nil_w           # isNil(list)
         return (UInt8[], result)
     else
-        result.status = lk == DU_CELL ? CVT_partial : CVT_nolist   # canBind(list)
+        cb = lk == DU_CELL || lk == DU_ATTVAR               # canBind(list) (AV1b)
+        result.status = cb ? CVT_partial : CVT_nolist
         return (nothing, result)
     end
 
@@ -98,7 +99,8 @@ function codes_or_chars_to_buffer(
         end
     end
     if !(lk == DU_WORD && list == ld.atom_nil_w)            # !isNil(list)
-        result.status = lk == DU_CELL ? CVT_partial : CVT_nolist   # canBind(list)
+        cb = lk == DU_CELL || lk == DU_ATTVAR               # canBind(list) (AV1b)
+        result.status = cb ? CVT_partial : CVT_nolist
         return (nothing, result)
     end
 
@@ -107,14 +109,15 @@ function codes_or_chars_to_buffer(
 end
 
 # ORIGINAL (f3b-5a): what codes_or_chars_to_buffer's tests read of an element `*arg` at a
-# dereferenced location — `isTaggedInt` and `valInt`, `charCode` (when `chars`), `canBind` — on the
+# dereferenced location — `isTaggedInt` and `valInt`, `charCode` (when `chars`), `canBind` (an unbound
+# cell or, since AV1b, an attributed variable: no character, no value-table read) — on the
 # words: an atom word's character from its symbol (`_atom_value`: no export), a value-table entry
 # by the term type's `isTaggedInt` (a type with no tagged words holds a small integer there).
 "An element's `(isTaggedInt, valInt, charCode, canBind)` at a dereferenced location."
 @inline function _cvt_arg(
     ld::PL_local_data{T}, k::UInt8, w::word, p::Int, chars::Bool
 )::Tuple{Bool, Int, Int, Bool} where {T}
-    k == DU_CELL && return (false, 0, -1, true)            # canBind(*arg)
+    (k == DU_CELL || k == DU_ATTVAR) && return (false, 0, -1, true)   # canBind(*arg)
     if k == DU_WORD                                         # an atom, or a compound (no character)
         (chars && isAtomW(w)) || return (false, 0, -1, false)
         return (false, 0, charCode(_atom_value(ld, w)), false)

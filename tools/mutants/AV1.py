@@ -110,4 +110,78 @@ MUTANTS = [
     dict(id="AV1-B5 PL_unify_atomic does not bind an attributed variable", file=F, targets=T,
          old='''    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (an attributed variable: AV1)''',
          new='''    if k == DU_CELL                                         # canBind(*p) (an attributed variable: AV1)'''),
+    # ==== AV1b (audit D-0150 item 1): the one-line canBind sites of the census, each its own commit-able block. One mutant
+    # per site (a revert to the pre-AV1b test); killed by test_attvar_words.jl's three "AV1b:" testsets.
+    dict(id="AV1b-F1 PL_unify_list does not bind an attributed variable", file=F, targets=T,
+         old='''    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
+        a = _alloc_compound!(ld, ld.functor_dot2, 2)''',
+         new='''    if k == DU_CELL                                         # canBind(*p) (AV1b)
+        a = _alloc_compound!(ld, ld.functor_dot2, 2)'''),
+    dict(id="AV1b-F2 PL_unify_functor does not bind an attributed variable", file=F, targets=T,
+         old='''    nw = _atom_word!(ld, name)                              # nameFunctor(f)
+    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)''',
+         new='''    nw = _atom_word!(ld, name)                              # nameFunctor(f)
+    if k == DU_CELL                                         # canBind(*p) (AV1b)'''),
+    dict(id="AV1b-F3 PL_unify_compound does not bind an attributed variable", file=F, targets=T,
+         old='''    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
+        a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))''',
+         new='''    if k == DU_CELL                                         # canBind(*p) (AV1b)
+        a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))'''),
+    dict(id="AV1b-F4 PL_is_variable is false for an attributed variable", file=F, targets=T,
+         old='''    return k == DU_CELL || k == DU_ATTVAR                   # canBind(w) (AV1b)''',
+         new='''    return k == DU_CELL                                     # canBind(w) (AV1b)'''),
+    dict(id="AV1b-F5 unify_int64_ex does not bind an attributed variable", file=F, targets=T,
+         old='''    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
+        if PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT''',
+         new='''    if k == DU_CELL                                         # canBind(*p) (AV1b)
+        if PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT'''),
+    dict(id="AV1b-N1 PL_unify_number's canBind branch does not take an attributed variable", file="src/pl-gmp.jl", targets=T,
+         old='''    elseif k == DU_CELL || k == DU_ATTVAR                   # canBind(*p) (AV1b)''',
+         new='''    elseif k == DU_CELL                                     # canBind(*p) (AV1b)'''),
+    dict(id="AV1b-S1 _slot_can_bind (I_VAR/I_NONVAR) is false for an attributed variable", file=P, targets=T,
+         old='''    return k == DU_CELL || k == DU_ATTVAR                   # canBind(*p)''',
+         new='''    return k == DU_CELL                                     # canBind(*p)'''),
+    dict(id="AV1b-S2 _slot_is_var (I_CATCH/I_CALLCLEANUP) takes an attributed variable for isVar", file=P, targets=T,
+         old='''    return k == DU_CELL                                     # isVar(*p)''',
+         new='''    return k == DU_CELL || k == DU_ATTVAR                   # isVar(*p)'''),
+    dict(id="AV1b-S3 I_VAR asks isVar, not canBind (the unsplit test)", file=W, targets=T,
+         old='''    @label I_VAR
+    tt_v = _slot_can_bind(ld,''',
+         new='''    @label I_VAR
+    tt_v = _slot_is_var(ld,'''),
+    dict(id="AV1b-C1 compare/3 takes an attributed variable for a given order", file=P, targets=T,
+         old='''    given = !(k == DU_CELL || k == DU_ATTVAR)                # canBind(*d) ⇒ a = 0 (AV1b)''',
+         new='''    given = k != DU_CELL                                     # canBind(*d) ⇒ a = 0 (AV1b)'''),
+    dict(id="AV1b-G1 ground/1 takes an attributed variable (the root) for ground", file=P, targets=T,
+         old='''    (k == DU_CELL || k == DU_ATTVAR) && return p            # canBind(*p) (AV1b)''',
+         new='''    k == DU_CELL && return p                                # canBind(*p) (AV1b)'''),
+    dict(id="AV1b-G2 ph_ground skips an attributed variable inside a compound", file=P, targets=T,
+         old='''        if k == DU_CELL || k == DU_ATTVAR                   # canBind(*p) (AV1b)
+            clearCellAgenda!(a)''',
+         new='''        if k == DU_CELL                                     # canBind(*p) (AV1b)
+            clearCellAgenda!(a)'''),
+    dict(id="AV1b-L1 codes_or_chars_to_buffer: an attributed variable as the list is no list", file="src/os/pl-codelist.jl", targets=T,
+         old='''        cb = lk == DU_CELL || lk == DU_ATTVAR               # canBind(list) (AV1b)
+        result.status = cb ? CVT_partial : CVT_nolist
+        return (nothing, result)
+    end
+
+    b = UInt8[]''',
+         new='''        cb = lk == DU_CELL                                  # canBind(list) (AV1b)
+        result.status = cb ? CVT_partial : CVT_nolist
+        return (nothing, result)
+    end
+
+    b = UInt8[]'''),
+    dict(id="AV1b-L2 _cvt_arg reads an attributed variable element as a value-table word", file="src/os/pl-codelist.jl", targets=T,
+         old='''    (k == DU_CELL || k == DU_ATTVAR) && return (false, 0, -1, true)   # canBind(*arg)''',
+         new='''    k == DU_CELL && return (false, 0, -1, true)                       # canBind(*arg)'''),
+    dict(id="AV1b-L3 codes_or_chars_to_buffer: an attributed variable as the tail is no list", file="src/os/pl-codelist.jl", targets=T,
+         old='''    if !(lk == DU_WORD && list == ld.atom_nil_w)            # !isNil(list)
+        cb = lk == DU_CELL || lk == DU_ATTVAR               # canBind(list) (AV1b)''',
+         new='''    if !(lk == DU_WORD && list == ld.atom_nil_w)            # !isNil(list)
+        cb = lk == DU_CELL                                  # canBind(list) (AV1b)'''),
+    dict(id="AV1b-E1 evalExpression reads an attributed variable as a compound", file="src/pl-arith.jl", targets=T,
+         old='''    elseif k == DU_ATTVAR                                   # default: (TAG_ATTVAR, AV1b)''',
+         new='''    elseif false                                            # default: (TAG_ATTVAR, AV1b)'''),
 ]

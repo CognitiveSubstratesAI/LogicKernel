@@ -699,12 +699,20 @@ const DU_ATTVAR = 0x04
     end
 end
 
-# ORIGINAL (L1c-6): `deRef2(p, k); canBind(*k)` for slot `i` on the WORDS — an unbound cell is a
-# variable, any other word is not.
-"Whether slot `i`, dereferenced, is an unbound variable (pl-vmi.c I_VAR's test, on the words)."
+# ORIGINAL (L1c-6; SPLIT in AV1b, as upstream's two tests): `deRef(p); canBind(*p)` for slot `i` on the
+# WORDS — I_VAR's and I_NONVAR's test (pl-vmi.c): an unbound cell or an attributed variable is a variable.
+"Whether slot `i`, dereferenced, is unbound or attributed (pl-vmi.c I_VAR's `canBind`, on the words)."
+@inline function _slot_can_bind(ld::PL_local_data{T}, i::Int)::Bool where {T}
+    k, _, _ = _deref_loc(ld, -i)
+    return k == DU_CELL || k == DU_ATTVAR                   # canBind(*p)
+end
+
+# ORIGINAL (L1c-6; SPLIT in AV1b): `deRef(p); isVar(*p)` for slot `i` on the WORDS — I_CATCH's and
+# I_CALLCLEANUP's test (pl-vmi.c): only an unbound cell; an attributed variable is not `isVar`.
+"Whether slot `i`, dereferenced, is an unbound cell (pl-vmi.c I_CATCH's `isVar`, on the words)."
 @inline function _slot_is_var(ld::PL_local_data{T}, i::Int)::Bool where {T}
     k, _, _ = _deref_loc(ld, -i)
-    return k == DU_CELL
+    return k == DU_CELL                                     # isVar(*p)
 end
 
 # ORIGINAL: `ARGP` as a location for `do_unify_cells`: a slot or a global cell.
@@ -1890,12 +1898,12 @@ function pl_compare3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    # the order's argument on the WORDS (L1d step 1): `Word d = valTermRef(A1); deRef(d)` — an unbound
-    # CELL takes the answer's atom word (`PL_unify_atom(A1, a)`: `bindConst` on the cell, no term
-    # read)
+    # the order's argument on the WORDS (L1d step 1): `Word d = valTermRef(A1); deRef(d)` — a cell that
+    # `canBind` (unbound, or since AV1b attributed) takes the answer's atom word (`PL_unify_atom(A1, a)`:
+    # `bindConst` on the cell, no term read)
     k, w, dp = _deref_loc(ld, -(A1 + 1))
     p1, p2 = -(A2 + 1), -(A2 + 2)                            # Word p1 = valTermRef(A2); p2 = p1+1 (cells, L1d)
-    given = k != DU_CELL                                     # canBind(*d) ⇒ a = 0
+    given = !(k == DU_CELL || k == DU_ATTVAR)                # canBind(*d) ⇒ a = 0 (AV1b)
     kk = UInt64(0)
     if given
         if k == DU_WORD && isAtomW(w)                       # isAtom(*d)
@@ -1925,7 +1933,7 @@ function pl_compare3_va(
     else
         :(=)
     end              # unify diff
-    _bind_const!(ld, dp, _atom_word!(ld, mk_sym(T, a)))      # PL_unify_atom(A1, a) on the cell
+    bindConst(ld, dp, _atom_word!(ld, mk_sym(T, a)))         # PL_unify_atom(A1, a) on the cell
     return FTRUE
 end
 
@@ -2438,9 +2446,10 @@ end
 
 
 # PORT: pl-prims.c ph_ground as ph_ground_cells
-# DIVERGES: on locations, the one-sided cell agenda (`ld.walk_agenda`); returns the first unbound
-# cell's POSITION (upstream: its address), 0 for none.
-"The first unbound cell of the term at location `l` in phase `mark`, 0 if none (pl-prims.c)."
+# DIVERGES: on locations, the one-sided cell agenda (`ld.walk_agenda`); returns the first cell that
+# `canBind` — unbound, or (AV1b) an attributed variable — by its POSITION (upstream: its address), 0 for
+# none.
+"The first unbound or attributed cell of the term at location `l` in phase `mark`, 0 if none (pl-prims.c)."
 function ph_ground_cells(ld::PL_local_data{T}, l::Int, mark::Bool)::Int where {T}
     a = ld.walk_agenda
     initCellAgenda!(a, 1, l)
@@ -2448,7 +2457,7 @@ function ph_ground_cells(ld::PL_local_data{T}, l::Int, mark::Bool)::Int where {T
         q = nextCellAgendaNoDeRef!(a)
         q == 0 && break
         k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
-        if k == DU_CELL                                     # canBind(*p)
+        if k == DU_CELL || k == DU_ATTVAR                   # canBind(*p) (AV1b)
             clearCellAgenda!(a)
             return p
         elseif k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
@@ -2463,10 +2472,10 @@ end
 
 # PORT: pl-prims.c ground as ground_cells
 # DIVERGES: on a location; returns a POSITION, 0 when ground (see `ph_ground_cells`).
-"The first unbound cell of the term at location `l`: its position, 0 when ground (pl-prims.c `ground`)."
+"The first unbound or attributed cell of the term at location `l`: its position, 0 when ground (pl-prims.c)."
 function ground_cells(ld::PL_local_data{T}, l::Int)::Int where {T}
     k, w, p = _deref_loc(ld, l)                             # deRef(p)
-    k == DU_CELL && return p                                # canBind(*p)
+    (k == DU_CELL || k == DU_ATTVAR) && return p            # canBind(*p) (AV1b)
     (k == DU_WORD && _is_gcompound(w)) || return 0          # !isTerm(*p)
     rc1 = ph_ground_cells(ld, l, true)                      # mark functors
     rc2 = ph_ground_cells(ld, l, false)                     # unmark the very same functors

@@ -250,6 +250,148 @@ end
     @test ld.gstack[av] == w
 end
 
+# ── AV1b (audit D-0150 item 1): the one-line canBind sites the census marked for AV1 ─────────────────────────
+# Each converted site, on a hand-built attributed variable: a bind reaches `bindConst` and is refused (the
+# NotPortedError naming AV3); a type test answers "variable". Upstream lines at the pin cbf4e189.
+
+"The pending exception's formal term, read on the cells (no export): an atom's name, else `:compound`."
+function _aw_formal(ld)
+    ld.exception_term == 0 && return nothing
+    _, b, _ = LK._deref_loc(ld, -(ld.exception_term + 1))
+    _, f, _ = LK._deref_loc(ld, LK.valPtr(b) + 1)                 # error(Formal, _)
+    return LK.isAtomW(f) ? lk_name(LK._atom_value(ld, f)) : :compound
+end
+
+"The position of the unbound cell at argument `i` of the compound term reference `t` holds."
+function _aw_arg_cell(ld, t, i::Int)::Int
+    _, w, _ = LK._deref_loc(ld, -(t + 1))
+    k, _, p = LK._deref_loc(ld, LK.valPtr(w) + i)
+    @assert k == LK.DU_CELL
+    return p
+end
+
+@testset "AV1b: the FLI's and compare/3's canBind sites bind an attributed variable through bindConst" begin
+    ld, _ = _aw_engine()
+    t, av = _aw_ref_attvar!(ld)
+    w = ld.gstack[av]
+    h, tl = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    @test _aw_not_ported(() -> LK.PL_unify_list(ld, t, h, tl))             # pl-fli.c:3652, :3673
+    @test _aw_not_ported(() -> LK.PL_unify_functor(ld, t, _rs("f"), 2))    # pl-fli.c:3210, :3229
+    @test _aw_not_ported(() -> LK.PL_unify_functor(ld, t, _rs("f"), 0))    # … :3232 (arity 0)
+    f2 = LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 2)
+    @test _aw_not_ported(() -> LK.PL_unify_compound(ld, t, f2))            # pl-fli.c:3175, :3195
+    @test _aw_not_ported(() -> LK.PL_unify_integer(ld, t, 5))              # pl-fli.c:3460, :3462
+    @test _aw_not_ported(() -> LK.unify_int64_ex(ld, t, 5, true))          # … not a type error
+    n = LK.number()
+    n.type = LK.V_INTEGER
+    n.i = 7                                     # a small integer skips the isVar fast path (pl-gmp.c:1507)
+    @test _aw_not_ported(() -> LK.PL_unify_number(ld, t, n))               # pl-gmp.c:1512, :1519
+    n.type = LK.V_FLOAT
+    n.f = 2.5
+    @test _aw_not_ported(() -> LK.PL_unify_number(ld, t, n))
+    @test ld.gstack[av] == w && ld.exception_term == 0                    # never overwritten, no error
+    # compare/3 (pl-prims.c:2199 canBind(*d), :2227 PL_unify_atom): the order is to be bound, not given
+    ctx = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    pvm = LK.PutVarMap()
+    c = LK.PL_new_term_refs(ld, 3)
+    ld.slots[c + 1] = LK.makeRefG(av)
+    LK.putSlotValue!(ld, c + 2, _rs("a"), pvm)
+    LK.putSlotValue!(ld, c + 3, _rs("b"), pvm)
+    @test _aw_not_ported(() -> LK.pl_compare3_va(ld, c, 3, ctx))
+    @test ld.gstack[av] == w && ld.exception_term == 0                    # no type_error(atom, _)
+    # the unbound cell: the same paths still bind it (bindConst → varBindConst)
+    c2 = LK.PL_new_term_refs(ld, 3)
+    LK.putSlotValue!(ld, c2 + 1, _rv(9), pvm)
+    LK.putSlotValue!(ld, c2 + 2, _rs("a"), pvm)
+    LK.putSlotValue!(ld, c2 + 3, _rs("b"), pvm)
+    @test LK.pl_compare3_va(ld, c2, 3, ctx) == LK.FTRUE
+    k2, w2, _ = LK._deref_loc(ld, -(c2 + 1))
+    @test k2 == LK.DU_WORD && w2 == LK._atom_word!(ld, _rs("<"))
+    u = LK.PL_new_term_ref(ld)
+    @test LK.PL_unify_functor(ld, u, _rs("g"), 1) && LK.PL_is_compound(ld, u)
+end
+
+@testset "AV1b: the type tests take an attributed variable for a variable" begin
+    ld, _ = _aw_engine()
+    t, av = _aw_ref_attvar!(ld)
+    u = LK.PL_new_term_ref(ld)                                            # an unbound cell
+    @test LK.PL_is_variable(ld, t) && LK.PL_is_variable(ld, u)             # pl-fli.h:280 canBind(w)
+    # the split slot test: I_VAR/I_NONVAR ask canBind (pl-vmi.c:3204, :3239), I_CATCH/I_CALLCLEANUP isVar
+    # (pl-vmi.c:4896, :4830)
+    @test LK._slot_can_bind(ld, t + 1) && LK._slot_can_bind(ld, u + 1)
+    @test !LK._slot_is_var(ld, t + 1) && LK._slot_is_var(ld, u + 1)
+    # ground/1: the root (pl-prims.c:884) and inside a compound (ph_ground, :862) — the attvar's cell
+    @test LK.ground_cells(ld, -(t + 1)) == av
+    f2 = LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 2)
+    q = LK._alloc_compound!(ld, f2, 2)                                    # f(a, Attvar)
+    ld.gstack[q + 1] = LK._atom_word!(ld, _rs("a"))
+    ld.gstack[q + 2] = LK.word(0)
+    av2 = _aw_attvar!(ld, q + 2)
+    g = LK.allocGlobalCells!(ld, 1)
+    ld.gstack[g] = LK.consPtr(q, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    @test LK.ground_cells(ld, g) == av2
+    @test (ld.gstack[q] & LK.MARK_MASK) == 0                               # unmarked again
+    # codes_or_chars_to_buffer: a partial list, never "no list", never a value-table read
+    pvm = LK.PutVarMap()
+    _, r0 = LK.codes_or_chars_to_buffer(ld, t, false)
+    @test r0.status == LK.CVT_partial                                      # pl-codelist.c:89 canBind(list)
+    l1 = LK.PL_new_term_ref(ld)
+    LK.putSlotValue!(ld, l1 + 1, _rlist(_rv(1)), pvm)                      # [Attvar]
+    a1 = _aw_attvar!(ld, _aw_arg_cell(ld, l1, 1))
+    b1, r1 = LK.codes_or_chars_to_buffer(ld, l1, false)
+    @test b1 === nothing && r1.status == LK.CVT_partial && r1.culprit == a1   # :76 canBind(*arg)
+    l2 = LK.PL_new_term_ref(ld)
+    LK.putSlotValue!(ld, l2 + 1, _rlist(_rg(97), _rv(2)), pvm)             # [0'a, Attvar]
+    _, lw2, _ = LK._deref_loc(ld, -(l2 + 1))
+    _, tw2, _ = LK._deref_loc(ld, LK.valPtr(lw2) + 2)
+    k2, _, p2 = LK._deref_loc(ld, LK.valPtr(tw2) + 1)
+    @test k2 == LK.DU_CELL
+    a2 = _aw_attvar!(ld, p2)
+    b2, r2 = LK.codes_or_chars_to_buffer(ld, l2, false)
+    @test b2 === nothing && r2.status == LK.CVT_partial && r2.culprit == a2   # :120 canBind(*arg)
+    l3 = LK.PL_new_term_ref(ld)
+    LK.putSlotValue!(ld, l3 + 1, _rcons(_rg(97), _rv(3)), pvm)             # [0'a|Attvar]
+    _aw_attvar!(ld, _aw_arg_cell(ld, l3, 2))
+    b3, r3 = LK.codes_or_chars_to_buffer(ld, l3, false)
+    @test b3 === nothing && r3.status == LK.CVT_partial                    # :164 canBind(list)
+    # evalExpression's default (pl-arith.c:1061, ERR_PTR_TYPE): an instantiation error, as swipl answers
+    # `put_attr(X, a, 1), Y is X` and `… Y is X + 1` (probed at 10.1.19)
+    r = LK.number()
+    @test !LK.valueExpression(ld, t, r) && _aw_formal(ld) === :instantiation_error
+    LK.PL_clear_exception(ld)
+    e = LK.PL_new_term_ref(ld)
+    LK.putSlotValue!(ld, e + 1, _rf("+", _rv(4), _rg(1)), pvm)            # Attvar + 1: the walk re-enters
+    _aw_attvar!(ld, _aw_arg_cell(ld, e, 1))
+    @test !LK.valueExpression(ld, e, r) && _aw_formal(ld) === :instantiation_error
+    LK.PL_clear_exception(ld)
+    @test isempty(ld.arith_cells) && ld.arith_top == 0
+end
+
+@testset "AV1b: var/1 and nonvar/1 in a body (I_VAR, I_NONVAR) take an attributed variable for a variable" begin
+    gd = LK.PL_global_data{_R}()
+    ld = LK.PL_local_data{_R}(gd)
+    f = joinpath(mktempdir(), "v.pl")
+    write(f, "v(X) :- var(X).\nnv(X) :- nonvar(X).\n")
+    st, _, _ = LK.load_file!(gd, ld, f)
+    @test st === :ok
+    function call_on_attvar(name::String)
+        proc = LK.isCurrentProcedure(sym_key(_rs(name)), 1, LK.MODULE_user(gd))
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 1)
+        LK.putSlotValue!(ld, a + 1, mk_var(_R, LK.fresh_var_keys!(1)), LK.PutVarMap())
+        _aw_attvar!(ld, LK._deref_loc(ld, -(a + 1))[3])
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        rc = LK.PL_next_solution(gd, ld, qid)
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        return rc
+    end
+    @test call_on_attvar("v") in (LK.PL_S_TRUE, LK.PL_S_LAST)             # pl-vmi.c:3204 canBind
+    @test call_on_attvar("nv") == LK.PL_S_FALSE                            # pl-vmi.c:3239 !canBind
+end
+
 # ── the live differential: the paths AV1 touched answer as swipl ────────────────────────────────────────────
 _codes(s::String) = "[" * join(Int.(collect(s)), ",") * "]"
 function enc(t::_R, seen::Vector{UInt64}=UInt64[])::String

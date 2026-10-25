@@ -125,19 +125,19 @@ function PL_cons_list(
 end
 
 # PORT: pl-fli.c PL_unify_list
-# DIVERGES: no global space to ensure; on the CELLS (L1e e3): an unbound cell bound (`bindConst`) to a new
-# `'[|]'/2` compound at gTop, `h`/`t` its argument cells' references; a list word's arguments linked
-# (`linkValI`).
+# DIVERGES: no global space to ensure; on the CELLS (L1e e3): a cell that `canBind` — unbound, or (AV1b) an
+# attributed variable — bound (`bindConst`) to a new `'[|]'/2` compound at gTop, `h`/`t` its argument
+# cells' references; a list word's arguments linked (`linkValI`).
 "Unify term reference `l` with a list cell, putting its head and tail into `h` and `t` (pl-fli.c)."
 function PL_unify_list(
     ld::PL_local_data{T}, l::term_t, h::term_t, t::term_t
 )::Bool where {T}
     k, w, q = _deref_loc(ld, -(l + 1))                      # p = valHandleP(l); deRef(p)
-    if k == DU_CELL                                         # canBind(*p)
+    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
         a = _alloc_compound!(ld, ld.functor_dot2, 2)        # a[0] = FUNCTOR_dot2; setVar(a[1]), (a[2])
         ld.slots[h + 1] = makeRefG(a + 1)                   # setHandle(h, makeRefG(&a[1]))
         ld.slots[t + 1] = makeRefG(a + 2)                   # setHandle(t, makeRefG(&a[2]))
-        _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, c)
+        bindConst(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))      # bindConst(p, c)
         return true
     elseif _is_list_word(ld, k, w)                          # isList(*p)
         _slot_link_loc!(ld, h + 1, _deref_loc(ld, valPtr(w) + 1))    # setHandle(h, linkValI(a))
@@ -165,20 +165,20 @@ function PL_skip_list(ld::PL_local_data{T}, list::term_t)::Tuple{Int, Int} where
 end
 
 # PORT: pl-fli.c PL_unify_functor
-# DIVERGES: the functor is its name and arity; no global space to ensure. An unbound term is bound
-# to `name` of `arity` fresh variables, their keys in argument order.
+# DIVERGES: the functor is its name and arity; no global space to ensure. A term that `canBind` (unbound,
+# or since AV1b an attributed variable: `bindConst`) is bound to `name` of `arity` fresh variables.
 "Unify term reference `t` with a term `name/arity` — binding it to one of fresh variables, or checking its functor (pl-fli.c)."
 function PL_unify_functor(
     ld::PL_local_data{T}, t::term_t, name::T, arity::Int
 )::Bool where {T}
     k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p) (L1e e3)
     nw = _atom_word!(ld, name)                              # nameFunctor(f)
-    if k == DU_CELL                                         # canBind(*p)
+    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
         if arity == 0
-            _bind_const!(ld, q, nw)                         # bindConst(p, name)
+            bindConst(ld, q, nw)                            # bindConst(p, name)
         else                                                # *a = f; setVar(*++a)…
             a = _alloc_compound!(ld, lookupFunctorDef(ld.functors, nw, arity), arity)
-            _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, to)
+            bindConst(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))      # bindConst(p, to)
         end
         return true
     end
@@ -192,9 +192,9 @@ end
 "Unify term reference `t` with a compound of functor word `f` — binding it to one of fresh arguments, or checking its functor (pl-fli.c)."
 function PL_unify_compound(ld::PL_local_data{T}, t::term_t, f::word)::Bool where {T}
     k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p)
-    if k == DU_CELL                                         # canBind(*p)
+    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
         a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))  # *a = f; setVar(*++a)…
-        _bind_const!(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, to)
+        bindConst(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))      # bindConst(p, to)
         return true
     end
     return k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == f   # hasFunctor(*p, f)
@@ -795,11 +795,11 @@ end
 
 # PORT: pl-fli.h PL_is_variable
 # DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`; L1d step 7b — the FLI readers the writer calls, L1e
-# done early): an unbound cell.
-"Whether term reference `t` holds an unbound variable (pl-fli.h; `canBind`: no attributed variables)."
+# done early): an unbound cell or (AV1b) an attributed variable.
+"Whether term reference `t` holds a variable, unbound or attributed (pl-fli.h; `canBind`)."
 function PL_is_variable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     k, _, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
-    return k == DU_CELL                                     # canBind(w)
+    return k == DU_CELL || k == DU_ATTVAR                   # canBind(w) (AV1b)
 end
 
 # The type tests on a term reference (V6b): `valHandle(t)` is the slot dereferenced through the
@@ -977,11 +977,11 @@ PL_unify_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
 "Unify the term `t` references with the integer `i`; with `ex`, a non-integer is a type error (pl-fli.c)."
 function unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int, ex::Bool)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))
-    if k == DU_CELL                                         # canBind(*p)
+    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
         if PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT && _holds_payload(T, Int64)
-            _bind_const!(ld, p, consInt(i))                 # valInt(w) == i: bindConst(p, w)
+            bindConst(ld, p, consInt(i))                    # valInt(w) == i: bindConst(p, w)
         else
-            _bind_const!(ld, p, _gnd_word!(ld, mk_gnd(T, i)))   # put_int64(&w, i); bindConst
+            bindConst(ld, p, _gnd_word!(ld, mk_gnd(T, i)))  # put_int64(&w, i); bindConst
         end
         return true
     elseif k == DU_VALUE

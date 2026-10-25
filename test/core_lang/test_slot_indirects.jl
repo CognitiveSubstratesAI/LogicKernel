@@ -202,7 +202,7 @@ end
         @test k == LK.DU_VALUE && LK._is_side_word(w) && LK.valPtr(w) == t + 1 && p == 0
     end
     # the type tests: the FLI's, which are also the VM's (`@TYPE_TEST`: I_FLOAT runs `PL_is_float`, …;
-    # I_VAR/I_NONVAR run `_slot_is_var`)
+    # I_VAR/I_NONVAR run `_slot_can_bind`, I_CATCH `_slot_is_var`: AV1b)
     @test LK.PL_is_float(ld, f) && !LK.PL_is_float(ld, b) && !LK.PL_is_float(ld, s)
     @test LK.PL_is_integer(ld, b) && !LK.PL_is_integer(ld, f)
     @test LK.PL_is_rational(ld, b) && !LK.PL_is_rational(ld, f)
@@ -215,7 +215,7 @@ end
             LK.PL_is_callable(ld, t),
         (f, b, s)
     )
-    @test !LK._slot_is_var(ld, f + 1)
+    @test !LK._slot_can_bind(ld, f + 1) && !LK._slot_is_var(ld, f + 1)
     # the getters
     @test LK.PL_get_long(ld, b) == 1 << 60 && LK.PL_get_long(ld, f) === nothing
     @test LK.PL_get_integer(ld, b) === nothing

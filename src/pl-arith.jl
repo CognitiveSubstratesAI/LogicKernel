@@ -2483,6 +2483,11 @@ function evalExpression_cells(
     elseif k == DU_CELL                                     # TAG_VAR
         PL_error(ld, ERR_INSTANTIATION)
         @goto error
+    elseif k == DU_ATTVAR                                   # default: (TAG_ATTVAR, AV1b)
+        # PL_error(…, ERR_PTR_TYPE, ATOM_number, p): ERR_TYPE on the word (pl-error.c),
+        # whose `PL_is_variable(actual)` (canBind) makes it an instantiation error
+        _ar_type_error_cells(ld, :number, (k, w, p))
+        @goto error
     elseif isAtomW(w)                                       # TAG_ATOM
         a = _atom_value(ld, w)
         f0 = isCurrentArithFunction(T, sym_key(a), 0)       # lookupFunctorDef(word2atom(*p), 0)

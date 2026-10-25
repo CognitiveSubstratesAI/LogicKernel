@@ -3162,7 +3162,7 @@ function PL_next_solution_guarded(
     @label I_CATCH
     icatch_p = argFrameP(ld.frames[FR].base, 0)
     newChoice(ld, CHP_CATCH, FR)
-    if _slot_is_var(ld, icatch_p + 1)               # isVar(*p), dereferenced: on the words (f3b-5b)
+    if _slot_is_var(ld, icatch_p + 1)               # isVar(*p): on the words (f3b-5b; AV1b)
         @SAVE_REGISTERS(QID)
         icatch_fid = PL_open_foreign_frame(ld)
         PL_error(ld, ERR_INSTANTIATION)
@@ -3812,9 +3812,10 @@ function PL_next_solution_guarded(
     # ── the type tests (pl-vmi.c), V6b ────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_VAR
     # DIVERGES: NOT PORTED: the `vmi_builtin=false` branch (`debug_pred1`; see `TYPE_TEST`). On the WORDS
-    # (L1c-6: `deRef2(varFrameP(FR, *PC++), p); canBind(*p)`, `_slot_is_var`).
+    # (L1c-6: `deRef2(varFrameP(FR, *PC++), p); canBind(*p)`, `_slot_can_bind`: AV1b, an attributed
+    # variable is a variable).
     @label I_VAR
-    tt_v = _slot_is_var(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
+    tt_v = _slot_can_bind(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
     PC += 1
     tt_v && @goto next_instruction
     @FASTCOND_FAILED
@@ -3822,7 +3823,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_NONVAR
     # DIVERGES: as `I_VAR`'s.
     @label I_NONVAR
-    tt_v = _slot_is_var(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
+    tt_v = _slot_can_bind(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)
     PC += 1
     !tt_v && @goto next_instruction
     @FASTCOND_FAILED

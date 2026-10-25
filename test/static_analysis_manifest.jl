@@ -169,7 +169,8 @@ _manifest_per_type(T) = (
     # unification on the cells (L1c sub-commit 4): the deref and the walk allocate nothing; the
     # boundary (a term) and the agenda's growth do
     (LK._deref_loc, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK._slot_is_var, Tuple{LK.PL_local_data{T}, Int}, false),     # I_VAR/I_NONVAR on the words (L1c-6)
+    (LK._slot_is_var, Tuple{LK.PL_local_data{T}, Int}, false),     # I_CATCH/I_CALLCLEANUP's isVar (L1c-6, AV1b)
+    (LK._slot_can_bind, Tuple{LK.PL_local_data{T}, Int}, false),   # I_VAR/I_NONVAR's canBind (AV1b)
     (
         LK.unify_simple_cells,
         Tuple{LK.PL_local_data{T}, UInt8, UInt64, Int, UInt8, UInt64, Int},
