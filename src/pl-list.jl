@@ -371,7 +371,7 @@ function put_sort_list_cells(
         nx = L.next[sl]
         ip = L.term[sl]
         c = ld.gstack[ip]
-        ld.gstack[b + 1] = isVar(c) ? makeRefG(ip) : c  # needsRef(*item) ? makeRefG(item) : *item
+        ld.gstack[b + 1] = needsRef(c) ? makeRefG(ip) : c   # needsRef(*item) ? makeRefG(item) : *item (AV1)
         ld.gstack[b] = ld.functor_dot2
         if nx != 0
             ld.gstack[b + 2] = consPtr(b + 3, TAG_COMPOUND | STG_GLOBAL)

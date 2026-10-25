@@ -655,9 +655,13 @@ const DU_CELL = 0x01
 const DU_WORD = 0x02
 "`_deref_loc`: a VALUE word (returned): a value-table word whose entry is a value, in the cell at the position, a tagged integer (L1d step 4; in a slot, position 0), or a slot's grounded side value as its side word (`_side_word`, f3-1; position 0)."
 const DU_VALUE = 0x03
+"`_deref_loc`: an ATTRIBUTED VARIABLE (AV1; pl-data.h `TAG_ATTVAR`): its word, in the cell at the position returned — `canBind` but not `isVar` (pl-data.h); every caller decides which of the two it asks, as upstream's word tests do."
+const DU_ATTVAR = 0x04
 
 # ORIGINAL: upstream's `deRef` (pl-data.h) on a LOCATION (above); the result says what was found,
-# as the word tests on `*p` do after upstream's `deRef`.
+# as the word tests on `*p` do after upstream's `deRef`. Since AV1 (audit D-0122 condition 1) the last
+# branch ASSERTS a known kind: an attributed variable is `DU_ATTVAR`, a value-table word `DU_VALUE`, and
+# any other word an internal error — before AV1 every unknown word was read as a value-table word.
 "Location `loc` dereferenced: `(kind, word, position)`, see `DU_*` (pl-data.h `deRef`)."
 @inline function _deref_loc(
     ld::PL_local_data{T}, loc::Int
@@ -686,7 +690,10 @@ const DU_VALUE = 0x03
             return (DU_WORD, c, p)
         elseif isTaggedIntW(c)                      # a small integer (L1d step 4)
             return (DU_VALUE, c, p)
-        else                                        # a value-table word
+        elseif isAttVar(c)                          # an attributed variable (AV1)
+            return (DU_ATTVAR, c, p)
+        else                                        # a value-table word, asserted (AV1)
+            _is_vword(c) || throw(_cell_word_error(p, c))
             return (DU_VALUE, c, p)
         end
     end
@@ -2299,7 +2306,7 @@ function pl_univ2_va(
         while _is_list_word(ld, k, w)                       # while(isList(*l))
             i += 1
             hk, hw, hp = _deref_loc(ld, valPtr(w) + 1)      # Word h = HeadList(l); deRef(h)
-            ld.gstack[p + i] = if hk == DU_CELL             # *p++ = needsRef(*h) ? makeRefG(h) : *h
+            ld.gstack[p + i] = if hk == DU_CELL || hk == DU_ATTVAR   # *p++ = needsRef(*h) ? makeRefG(h) : *h (AV1)
                 makeRefG(hp)
             else
                 hw

@@ -7,8 +7,8 @@
 #
 # PORTED FROM pl-attvar.c, exactly these: `saveWakeup`, `restoreWakeup` and the helper
 # `restore_exception` — the SAVE/RESTORE of the pending exception around foreign code that must run
-# with none pending. From pl-attvar.h, `varBindConst` (L1c: the VM's `bindConst` of a global cell,
-# attributed variables not ported).
+# with none pending. From pl-attvar.h, `varBindConst` (L1c: the VM's `bindConst` of a global cell) and,
+# since AV1, `bindConst` itself (its attributed-variable branch raises until AV3).
 # `findCatcher` (src/pl-wam.jl) is their first caller: while it unifies a ball with the catchers no
 # exception is pending, so an error that unification raises (the occurs check under
 # `occurs_check = error`) is raised, and becomes the ball.
@@ -107,3 +107,33 @@ end
     p <= ld.mark_bar && push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))   # trail_ptr(p)
     return nothing
 end
+
+# PORT: pl-attvar.h bindConst
+# DIVERGES: on a global POSITION (as `_bind_const!`); returns nothing, where upstream returns
+# `bind_attvar_const`'s false when the global stack cannot grow (no limit on that path here, as
+# `_bind_const!`). Its callers since AV1: the `bindConst` sites whose test admits an attributed variable
+# (`canBind`) — H_RFUNCTOR, H_RLIST, H_LIST_FF (src/pl-wam.jl), `h_const` (`_unify_const_loc`,
+# `_h_const_cell!`) and `PL_unify_atomic`; the other `bindConst` sites still call `_bind_const!` behind
+# an `isVar`-only test until the step that gives them their attributed-variable branch.
+# NOT PORTED: `bind_attvar_const` (AV3, with `assignAttVar` and the wakeup list): until then an
+# attributed variable reaching it is REFUSED — a `NotPortedError` naming AV3 (audit D-0150 item 3), never a
+# wrong answer; AV2 creates attributed variables, AV3 binds them.
+"Bind the cell at global position `p` — unbound, or an attributed variable — to word `c` (pl-attvar.h)."
+@inline function bindConst(ld::PL_local_data, p::Int, c::word)::Nothing
+    if isVar(ld.gstack[p])                          # if ( isVar(*p) )
+        _bind_const!(ld, p, c)                      #   return varBindConst(p, c);
+    else
+        throw(_bind_attvar_const_error(p, ld.gstack[p]))   # else return bind_attvar_const(p, c);
+    end
+    return nothing
+end
+
+# ORIGINAL (AV1; audit D-0150 item 3): the refusal `bindConst` raises for an attributed variable until AV3
+# — a `NotPortedError` (src/pl-comp.jl), the kernel's refusal pattern, grep-able by its step.
+"The refusal of binding the attributed variable at global position `p` (word `w`) before AV3."
+@noinline _bind_attvar_const_error(p::Int, w::word)::Exception = NotPortedError{Nothing}(
+    nothing,
+    "bind_attvar_const (pl-attvar.c): bindConst on global cell $p, word $(repr(w)) " *
+    "(an attributed variable)",
+    "AV3"
+)

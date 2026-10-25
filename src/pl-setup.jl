@@ -129,8 +129,11 @@ end
 # `lTop && gTop` guard (the stacks always exist). Of the
 # engine's permanent term references upstream allocates in the base foreign frame, the exception's
 # four are (`exception_bin`, `exception_printed`, `exception.tmp`, `exception.pending`, in
-# upstream's order); the others belong to subsystems not ported (`trim.dummy`, attributed
-# variables, undo hooks, tabling, `LD->tmp.h[]`; nor `destroyGlobalVars`). So later term references
+# upstream's order), then since AV1 `attvar.head` and `attvar.tail`, each with a PERMANENT global cell
+# (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
+# themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
+# stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1), undo
+# hooks, tabling; nor `destroyGlobalVars`). So later term references
 # lie at other absolute positions than in
 # swipl: compare DIFFERENCES between positions with swipl, never absolute ones.
 "Empty the local stack and the trail, then open the base foreign frame (pl-setup.c)."
@@ -166,6 +169,14 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.exception_cells = unRef(ld.slots[ld.exception_bin + 1])
     @assert unRef(ld.slots[ld.exception_printed + 1]) == ld.exception_cells + 1
     @assert unRef(ld.slots[ld.exception_pending + 1]) == ld.exception_cells + 3
+    # the wakeup list's two (AV1; audit D-0122 Q1 (a)): upstream's are cells of the LOCAL stack, assigned
+    # with `TrailAssignment` ("on local stack!", pl-attvar.c); here each slot references a PERMANENT global
+    # cell, as the exception's three, so the list lives in the cell ("empty" = the cell unbound) and every
+    # trail entry stays global — upstream's own TBD (pl-wam.c, `TrailAssignment`'s comment) names the
+    # global stack.
+    ld.attvar_head = PL_new_term_ref(ld)                       # LD->attvar.head
+    ld.attvar_tail = PL_new_term_ref(ld)                       # LD->attvar.tail
+    @assert unRef(ld.slots[ld.attvar_tail + 1]) == unRef(ld.slots[ld.attvar_head + 1]) + 1
     ld.tmp_h = PL_new_term_refs(ld, TMP_PTR_SIZE)              # for(i…) LD->tmp.h[i] = PL_new_term_ref()
     ld.tmp_top = 0                                             # LD->tmp.top = 0
     ld.tmp_cells = unRef(ld.slots[ld.tmp_h + 1])               # (PERMANENT, as the exception's: popTermRef)

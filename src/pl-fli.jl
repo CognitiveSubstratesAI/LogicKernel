@@ -592,14 +592,15 @@ end
 end
 
 # ORIGINAL (L1e e2): upstream's `setHandle(h, linkValI(p))` for slot `i` from a dereferenced location
-# `(k, w, p)`: an unbound cell its reference (`makeRefG(p)`), any other word itself — but a value-table word
+# `(k, w, p)`: a cell that `needsRef` — unbound, or (AV1) an attributed variable — its reference
+# (`makeRefG(p)`), any other word itself — but a value-table word
 # into a slot older than the innermost foreign frame as its value (e1's rule, `_slot_store!`), and a slot's
 # side value read as a value (its side word, f3-1) as its value wherever the slot lies.
 "Store in slot `i` what the dereferenced location `(k, w, p)` holds (`setHandle(h, linkValI(p))`)."
 function _slot_link_loc!(
     ld::PL_local_data{T}, i::Int, (k, w, p)::Tuple{UInt8, word, Int}
 )::Nothing where {T}
-    if k == DU_CELL
+    if k == DU_CELL || k == DU_ATTVAR                   # needsRef(w)
         ld.slots[i] = makeRefG(p)
     elseif _is_side_word(w) || (_is_vword(w) && _slot_older_than_fli(ld, i))
         _slot_store!(ld, i, _indirect_value(ld, w))
@@ -949,8 +950,8 @@ PL_unify(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
 "Unify the term `t` references with the atomic term `w` (pl-fli.c `PL_unify_atomic`)."
 function PL_unify_atomic(ld::PL_local_data{T}, t::term_t, w::T)::Bool where {T}
     k, c, q = _deref_loc(ld, -(t + 1))                      # deRef2(valHandleP(t), p) (L1e e3: the cells)
-    if k == DU_CELL                                         # canBind(*p)
-        _bind_const!(ld, q, _word_of!(ld, w))               # bindConst(p, w): the word made only here
+    if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (an attributed variable: AV1)
+        bindConst(ld, q, _word_of!(ld, w))                  # bindConst(p, w): the word made only here
         return true
     elseif k == DU_WORD                                     # *p == w: an atom's word, never a compound's
         return isAtomW(c) && kind(w) === SYM && c == _atom_word!(ld, w)

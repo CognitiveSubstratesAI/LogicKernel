@@ -79,7 +79,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-arith.h` | code | `cbf4e1896275` | `src/pl-arith.jl` | 6 | 2 |
 | swipl-devel `src/pl-atom.c` | code | `cbf4e1896275` | `src/pl-atom.jl` | 11 | 6 |
 | swipl-devel `src/pl-attvar.c` | code | `cbf4e1896275` | `src/pl-attvar.jl` | 3 | 3 |
-| swipl-devel `src/pl-attvar.h` | code | `cbf4e1896275` | `src/pl-attvar.jl` | 1 | 1 |
+| swipl-devel `src/pl-attvar.h` | code | `cbf4e1896275` | `src/pl-attvar.jl` | 2 | 2 |
 | swipl-devel `src/pl-bag.c` | code | `cbf4e1896275` | `src/pl-bag.jl` | 9 | 6 |
 | swipl-devel `src/pl-bag.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-builtin.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 10 | 1 |
@@ -123,7 +123,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-index.c` | code | `cbf4e1896275` | `src/pl-index.jl` | 110 | 33 |
 | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-gmp.jl` | 1 | 0 |
-| swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 16 | 13 |
+| swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 17 | 14 |
 | swipl-devel `src/pl-list.c` | code | `cbf4e1896275` | `src/pl-list.jl` | 17 | 9 |
 | swipl-devel `src/pl-modul.c` | code | `cbf4e1896275` | `src/pl-modul.jl` | 7 | 6 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
@@ -149,7 +149,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
 | swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 145 | 0 |
 | swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 162 | 105 |
-| swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 45 | 37 |
+| swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 46 | 38 |
 | swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 116 | 46 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `cbf4e1896275` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `cbf4e1896275` | `test/core_lang/test_exception.jl` | 4 | 0 |
@@ -212,7 +212,7 @@ checkout is pulled.
 | swipl-devel `src/pl-arith.h` | `cbf4e1896275` | 1 | 9 | 1 | src/pl-arith.jl |
 | swipl-devel `src/pl-atom.c` | `cbf4e1896275` | 10 | 78 | 6 | src/pl-atom.jl |
 | swipl-devel `src/pl-attvar.c` | `cbf4e1896275` | 3 | 42 | 3 | src/pl-attvar.jl |
-| swipl-devel `src/pl-attvar.h` | `cbf4e1896275` | 1 | 2 | 1 | src/pl-attvar.jl |
+| swipl-devel `src/pl-attvar.h` | `cbf4e1896275` | 2 | 2 | 2 | src/pl-attvar.jl |
 | swipl-devel `src/pl-bag.c` | `cbf4e1896275` | 3 | 15 | 3 | src/pl-bag.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-builtin.h` | `cbf4e1896275` | 0 | 3 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-codetable.c` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-vmi.jl |
@@ -236,7 +236,7 @@ checkout is pulled.
 | swipl-devel `src/pl-hash.h` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-hash.jl |
 | swipl-devel `src/pl-incl.h` | `cbf4e1896275` | 1 | 11 | 0 | src/pl-arith.jl, src/pl-atom.jl, src/pl-comp.jl, src/pl-funct.jl, src/pl-global.jl, src/pl-incl.jl, src/pl-inline.jl, src/pl-modul.jl, src/pl-prims.jl, src/pl-vmi.jl, src/pl-wam.jl, src/pl-write.jl |
 | swipl-devel `src/pl-index.c` | `cbf4e1896275` | 90 | 125 | 28 | src/pl-index.jl |
-| swipl-devel `src/pl-inline.h` | `cbf4e1896275` | 17 | 53 | 12 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
+| swipl-devel `src/pl-inline.h` | `cbf4e1896275` | 18 | 53 | 13 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-list.c` | `cbf4e1896275` | 11 | 13 | 7 | src/pl-list.jl |
 | swipl-devel `src/pl-modul.c` | `cbf4e1896275` | 7 | 70 | 6 | src/pl-modul.jl |
 | swipl-devel `src/pl-op.c` | `cbf4e1896275` | 16 | 21 | 15 | src/pl-incl.jl, src/pl-op.jl |
@@ -258,7 +258,7 @@ checkout is pulled.
 | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 145 | 243 | 72 | src/pl-vmi.jl, src/pl-wam.jl |
-| swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 41 | 98 | 35 | src/pl-wam.jl |
+| swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 42 | 98 | 36 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `cbf4e1896275` | 85 | 111 | 43 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `cbf4e1896275` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_exception.pl` | `cbf4e1896275` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
@@ -275,7 +275,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1274** | **4479** | **679** | |
+| **total** | | **1277** | **4479** | **682** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

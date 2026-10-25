@@ -150,7 +150,8 @@ end
 # PORT: pl-index.c indexOfWord as _index_key_loc
 # (L1d step 4; user, 2026-10-16: ported faithfully — the key IS the word: `case TAG_ATOM: break;`, an
 # inline TAG_INTEGER the word, TAG_COMPOUND its functor word `*valPtr(w)`; no table, no name hash)
-# DIVERGES: on a dereferenced LOCATION; `$expr/n` (Q2, kernel-only) keys 0, a wildcard; a value-table
+# DIVERGES: on a dereferenced LOCATION; an attributed variable (AV1) keys 0 as upstream's TAG_ATTVAR,
+# never its word (a variable: no clause may be excluded); `$expr/n` (Q2, kernel-only) keys 0, a wildcard; a value-table
 # word (upstream's indirect: a float, a string, a big integer or a rational) its value's key
 # (`_value_index_key`, the role `murmur_key`/`bignum_index` play upstream); a tagged integer its word
 # only where the term type keys integers apart from every other value (`ld.int_word_keys`), else its
@@ -158,6 +159,7 @@ end
 "The index key of the term at a dereferenced location (pl-index.c `indexOfWord`, on the words)."
 function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: this file loads before pl-global.jl)
     k == DU_CELL && return word(0)                          # TAG_VAR: 0
+    k == DU_ATTVAR && return word(0)                        # TAG_ATTVAR: 0, a wildcard (AV1)
     if k == DU_WORD
         isAtomW(w) && return w                              # TAG_ATOM: break — the atom_t
         f = ld.gstack[valPtr(w)]                            # TAG_COMPOUND: w = *valPtr(w)
@@ -168,7 +170,7 @@ function _index_key_loc(ld, k::UInt8, w::word, p::Int)::word   # (`ld` untyped: 
         (isTaggedIntW(w) && ld.int_word_keys) && return w  # TAG_INTEGER, STG_INLINE: break
         return _value_index_key(_value_term(ld, w))        # an indirect: murmur_key/bignum_index
     end
-    error("_index_key_loc: no location kind $k")           # (unreachable: three kinds)
+    error("_index_key_loc: no location kind $k")           # (unreachable: four kinds)
 end
 
 # ORIGINAL: `indexOfWord(argv[i])` for both argv forms, on the words (L1c sub-commit 5).
@@ -180,12 +182,13 @@ end
 
 # PORT: pl-index.c is_var as _argv_is_var
 # DIVERGES: takes an argv view and a position (`is_var(&argv[i])`); the location is dereferenced on
-# the words (`_deref_loc`, L1c sub-commit 5) and an unbound cell is a variable. (The term `is_var`
-# went with the term path, 2026-10-23.)
-"Whether argument `i` (0-based) of `argv` is an unbound variable (pl-index.c `is_var`)."
+# the words (`_deref_loc`, L1c sub-commit 5) and an unbound cell is a variable — or, since AV1, an
+# attributed variable (upstream's test is `canBind(*p)`). (The term `is_var` went with the term path,
+# 2026-10-23.)
+"Whether argument `i` (0-based) of `argv` is an unbound variable, attributed or not (pl-index.c `is_var`)."
 function _argv_is_var(v::Union{argv_frame, argv_cells}, i::Int)::Bool
     k, _, _ = _deref_loc(v.ld, _argv_loc(v, i))
-    return k == DU_CELL
+    return k == DU_CELL || k == DU_ATTVAR                  # canBind(*p)
 end
 
 # DIVERGES (the divergence audit, S05; user, 2026-10-06; narrowed in L1d step 4): `listSupervisor`

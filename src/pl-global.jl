@@ -279,6 +279,11 @@ end
 # the pools of retract/1's and clause/2's states, and `retract_ctxbuf`, retract/1's first-call buffer
 # (upstream's `ctxbuf`, on the C stack: no Prolog runs during the call, so one record serves).
 # Since NF3: `op_enums`, the pool of current_op/3's and `$local_op/3`'s states (`op_enum`, pl-incl.jl).
+# Since AV1: three of upstream's `attvar` fields — `head` and `tail`, the wakeup list's term references
+# (`emptyStacks!` makes them, with PERMANENT cells as the exception's: audit D-0122 Q1 (a)), and
+# `attvars`, the chain of attributed variables (`register_attvar`, `reclaim_attvars`) as a global
+# position, 0 for NULL. NOT PORTED: `gc_attvars` (the collector's, G1) and `call_residue_vars_count`
+# (call_residue_vars/2, AV9).
 """
     PL_local_data{T}(gd)
 
@@ -369,6 +374,9 @@ mutable struct PL_local_data{T}
     exception_tmp::Int                                          # exception.tmp
     exception_pending::Int                                      # exception.pending
     exception_cells::Int                                        # (bin's PERMANENT cell; printed's +1, pending's +3: L1c)
+    attvar_head::Int                                            # attvar.head: the wakeup list (AV1; Q1, D-0122)
+    attvar_tail::Int                                            # attvar.tail: its tail
+    attvar_attvars::Int                                         # attvar.attvars: the newest link cell (0: NULL)
     tmp_h::Int                                                  # tmp.h: the first of TMP_PTR_SIZE consecutive references
     tmp_top::Int                                                # tmp.top
     tmp_cells::Int                                              # (tmp.h[0]'s PERMANENT cell; tmp.h[i]'s +i, as exception_cells)
@@ -447,6 +455,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         queryFrame{T}[], 0, 0,
         Vector{argstack_entry{T}}(undef, 64), 0,
         0, 0, 0, 0, 0, 0,
+        0, 0, 0,                                # attvar: head, tail (set by emptyStacks!), attvars: none
         0, 0, 0,                                # tmp: set by emptyStacks!
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,

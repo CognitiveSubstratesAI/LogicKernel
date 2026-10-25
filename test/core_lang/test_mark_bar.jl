@@ -20,9 +20,10 @@ _mb_aw(ld, n) = LK._atom_word!(ld, _mb_sym(n))
     ld = LK.PL_local_data{_MB}(LK.PL_global_data{_MB}())
     # emptyStacks sets LD->mark_bar = gTop BEFORE it makes the exception term references, which
     # upstream puts on the local stack and L1a on the global one — so they lie above the bar
-    # exception_bin, _printed, _tmp, _pending, then upstream's TMP_PTR_SIZE temporary handles
-    # (pl-setup.c; f3b-4 — was gTop == 4, D-0083)
-    @test ld.mark_bar == 0 && ld.gTop == 4 + LK.TMP_PTR_SIZE
+    # exception_bin, _printed, _tmp, _pending, attvar.head, attvar.tail (AV1), then upstream's
+    # TMP_PTR_SIZE temporary handles (pl-setup.c; f3b-4 — was gTop == 4; AV1 — was 4 + TMP_PTR_SIZE,
+    # D-0083)
+    @test ld.mark_bar == 0 && ld.gTop == 6 + LK.TMP_PTR_SIZE
     LK.allocGlobalCells!(ld, 3)
     m = LK.Mark(ld)
     @test ld.mark_bar == ld.gTop == m.globaltop

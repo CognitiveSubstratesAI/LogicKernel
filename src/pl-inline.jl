@@ -510,6 +510,16 @@ end
     "slot word $(repr(w)): a slot read before it was written, or a word that is no slot word"
 )
 
+# ORIGINAL (AV1; audit D-0122 condition 1): the error of a dereferenced global cell holding a word of
+# no known kind — the catch-all readers (`_deref_loc`, `_argp_deref_word`, `_cell_link!`, `_slot_link!`,
+# `_h_const_cell!`) ASSERT that a word they would read as a value-table word is one, where they took
+# any unknown word for one before AV1.
+"The internal error of global cell `p` holding `w`, a word of no kind the readers know."
+@noinline _cell_word_error(p::Int, w::word)::Exception = ErrorException(
+    "global cell $p holds $(repr(w)): no variable, reference, atom, compound, small integer, " *
+    "attributed variable or value-table word"
+)
+
 # ORIGINAL (L1e e1; the workspace's L1_plan/stageL1e_design.md §1): whether slot `i` is OLDER than the
 # innermost foreign frame — a term reference made before `PL_open_foreign_frame`. A value-table entry made
 # now is dropped by that frame's rewind (`_truncate_vtable!` with `gTop`) while the slot lives on, so such a
@@ -753,8 +763,9 @@ end
 
 # PORT: pl-inline.h linkValI as _slot_link!
 # DIVERGES: from slot to slot on the WORDS (L1b stage C6a): a reference is followed through the
-# cells it is bound to; an unbound cell gives its reference, an atom, a compound (L1c) or a small
-# integer its word, and an indirect (a value-table word, a `SLOT_VALUE`) its word, shared — or, into
+# cells it is bound to; a cell that `needsRef` — unbound, or (AV1) an attributed variable — gives its
+# reference, an atom, a compound (L1c) or a small
+# integer its word, and an indirect (a value-table word, asserted since AV1; a `SLOT_VALUE`) its word, shared — or, into
 # a slot older than the innermost foreign frame, its value into `to`'s side entry (`_slot_store!`,
 # audit D-0024).
 "Store in slot `to` what slot `from` refers to, dereferenced (pl-inline.h `*to = linkValI(from)`)."
@@ -764,7 +775,7 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
         p = unRef(w)
         while true
             c = ld.gstack[p]
-            if isVar(c)                         # unbound: a reference to its cell
+            if needsRef(c)                      # unbound or attributed: a reference to its cell
                 ld.slots[to] = makeRefG(p)
                 return nothing
             elseif isRef(c)
@@ -772,6 +783,8 @@ function _slot_link!(ld::PL_local_data{T}, to::Int, from::Int)::Nothing where {T
             elseif isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)   # an atom, a compound or a small integer: its word (L1c, L1d step 4)
                 ld.slots[to] = c
                 return nothing
+            elseif !_is_vword(c)                    # no word of a known kind (AV1)
+                throw(_cell_word_error(p, c))
             elseif !_slot_older_than_fli(ld, to)
                 ld.slots[to] = c                    # an indirect's word, shared (L1e e1)
                 return nothing
@@ -797,8 +810,10 @@ end
 
 # PORT: pl-inline.h linkValI as _cell_link!
 # DIVERGES: from slot `i` into the global cell `p` on the WORDS (L1c), as `_slot_link!` into a slot:
-# a reference followed through the cells; an unbound cell gives its reference (upstream's
-# `makeRefG(k)`), an atom, a compound or a value-table word its word (`*ARGP = *k`: an entry shared,
+# a reference followed through the cells; a cell that `needsRef` — unbound, or (AV1) an attributed
+# variable — gives its reference (upstream's `makeRefG(k)`: H_VAR's and B_ARGVAR's `isAttVar(*k)`
+# branch, `bindConsVal`'s, `bArgVar`'s), an atom, a compound, a small integer or a value-table word
+# (asserted since AV1) its word (`*ARGP = *k`: an entry shared,
 # as upstream shares an indirect; the entry's box lies below every cell that can reach it); a slot's
 # side value (an indirect, audit D-0024) as its value's own word.
 "Store in global cell `p` what slot `i` refers to, dereferenced (`*ARGP = linkValI(k)`)."
@@ -808,12 +823,14 @@ function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
         q = unRef(w)
         while true
             c = ld.gstack[q]
-            if isVar(c)
+            if needsRef(c)                      # unbound or attributed: a reference to its cell
                 ld.gstack[p] = makeRefG(q)
                 return nothing
             elseif isRef(c)
                 q = unRef(c)
             else                                # an atom, a compound, a value: its word
+                (isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c) || _is_vword(c)) ||
+                    throw(_cell_word_error(q, c))   # (a known kind, asserted: AV1)
                 ld.gstack[p] = c                    # (a value-table word shared, as upstream
                 return nothing                      #  copies an indirect's pointer)
             end
@@ -825,6 +842,21 @@ function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
             throw(_slot_word_error(w))                                           # word: shared
         ld.gstack[p] = w
     end
+    return nothing
+end
+
+# PORT: pl-inline.h register_attvar
+# DIVERGES: `gp` is a global POSITION and the chain's head `ld.attvar_attvars` one too, 0 for
+# upstream's NULL (no cell lies at position 0). Its callers, `link_attvar` and `alloc_attvar`
+# (pl-attvar.c), wait for AV2; until then only the white-box tests call it.
+"Make the cell at global position `gp` the newest link of the attributed variables' chain (pl-inline.h)."
+@inline function register_attvar(ld::PL_local_data, gp::Int)::Nothing
+    if ld.attvar_attvars != 0                       # if ( LD->attvar.attvars )
+        ld.gstack[gp] = makeRefG(ld.attvar_attvars) # *gp = makeRefG(LD->attvar.attvars)
+    else
+        ld.gstack[gp] = word(0)                     # setVar(*gp)
+    end
+    ld.attvar_attvars = gp                          # LD->attvar.attvars = gp
     return nothing
 end
 
@@ -904,6 +936,7 @@ function _release_frozen!(ld::PL_local_data, m::mark, close::Bool)::Nothing
     ld.frozen_bar = 0
     ld.mark_bar = m.saved_bar                       # what DiscardMark(m) restores with no frozen bar
     if close && ld.gTop > target
+        reclaim_attvars(ld, target)                 # (the attvar chain with it, as Undo!: AV1)
         ld.gTop = target                            # what Undo!'s max(frozen_bar, …) kept
         _truncate_vtable!(ld)
     end
@@ -921,8 +954,9 @@ isRealMark(m::mark)::Bool = m.trailtop != NOT_A_MARK
 # PORT: pl-incl.h Undo
 # DIVERGES: since L1b stage D the body of upstream's `Undo` WITH O_DESTRUCTIVE_ASSIGNMENT, pl-wam.c's
 # `__do_undo`: newest first, an address entry resets its cell, a value entry steps down to its address entry and restores the old value saved on the global stack
-# (`*tt->address = trailVal(p)`) — nothing pushes one yet (setarg/3, attributed variables). NOT
-# PORTED: `push_undo` and `reclaim_attvars` (no attributed variables). Since e5 `frozen_bar` is kept:
+# (`*tt->address = trailVal(p)`; `TrailAssignment!` pushes them since group F). NOT
+# PORTED: `push_undo` (no undo hooks). Since AV1 the attributed variables' chain is cut back to the
+# new top first (`reclaim_attvars`, src/pl-wam.jl). Since e5 `frozen_bar` is kept:
 # `gTop = max(frozen_bar, m.globaltop)`. Marks nest: undoing to a mark above the trail's or the global stack's top is a misuse,
 # asserted; so is undoing to a `NoMark`, which upstream never does.
 "Undo every binding made since mark `m`, and free the cells allocated since (pl-incl.h `Undo`)."
@@ -939,7 +973,9 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
             ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]     # *tt->address = trailVal(p)
         end
     end
-    ld.gTop = max(ld.frozen_bar, m.globaltop)   # gTop = (frozen_bar > globaltop ? frozen_bar : globaltop)
+    ngtop = max(ld.frozen_bar, m.globaltop)     # Word ngtop = max(LD->frozen_bar, m->globaltop.as_ptr)
+    reclaim_attvars(ld, ngtop)                  # reclaim_attvars(ngtop) (AV1)
+    ld.gTop = ngtop                             # gTop = ngtop
     _truncate_vtable!(ld)                       # (the value table follows it: L1b stage C2)
     return nothing
 end

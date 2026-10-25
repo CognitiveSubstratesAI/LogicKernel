@@ -93,6 +93,9 @@ _manifest_per_type(T) = (
     (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, true),
     (LK.freezeGlobal!, Tuple{LK.PL_local_data{T}}, false),   # e5
     (LK._release_frozen!, Tuple{LK.PL_local_data{T}, LK.mark, Bool}, false),
+    # the attributed variables' chain (AV1): a walk and a store, no growth
+    (LK.register_attvar, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.reclaim_attvars, Tuple{LK.PL_local_data{T}, Int}, true),
     # the trail's entries (L1b stage D)
     (LK._untrail!, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._trail_truncate!, Tuple{LK.PL_local_data{T}, Int}, false),
@@ -1102,6 +1105,7 @@ function _manifest_index(T)
         (LK._argp_fresh_var!, Tuple{LD, ARGP, Int}, false),
         (LK._argp_void!, Tuple{LD, ARGP}, false),
         (LK._bind_const!, Tuple{LD, Int, UInt64}, false),       # a binding may grow the trail
+        (LK.bindConst, Tuple{LD, Int, UInt64}, false),          # … through varBindConst (AV1)
         (LK._argp_deref_word, Tuple{LD, ARGP}, true),
         (LK._cell_link!, Tuple{LD, Int, Int}, false),
         (LK._slot_from_cell!, Tuple{LD, Int, Int}, true),
@@ -2187,6 +2191,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # the words of the stacks (L1b stage C1: pl-data.h, pl-inline.h's consPtr/valPtr, pl-gmp.h's
     # size words) — pure bit operations: none allocates
     (LK._slot_word_error, Tuple{UInt64}, false),  # (builds its error: the slot words' bad case)
+    (LK._cell_word_error, Tuple{Int, UInt64}, false),         # (… a cell's word of no known kind: AV1)
+    (LK._bind_attvar_const_error, Tuple{Int, UInt64}, false), # (… bindConst on an attvar before AV3)
     (LK.tag, Tuple{UInt64}, true),
     (LK.storage, Tuple{UInt64}, true),
     (LK.valInt, Tuple{UInt64}, true),

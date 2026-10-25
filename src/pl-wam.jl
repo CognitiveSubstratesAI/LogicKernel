@@ -181,6 +181,24 @@ function TrailAssignment!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-wam.c reclaim_attvars
+# DIVERGES: positions, 0 for upstream's NULL; `gTop` is the last cell in use, so upstream's
+# `attvars >= after` (a link cell at or above the new first free cell) is `attvars > after` here, as
+# `TrailAssignment!`'s `p <= mark_bar`. Also called by `_release_frozen!` (src/pl-inline.jl), which
+# lowers `gTop` as `Undo!` does.
+"Drop the links of the attributed variables' chain that lie above global position `after` (pl-wam.c)."
+@inline function reclaim_attvars(ld::PL_local_data, after::Int)::Nothing
+    while ld.attvar_attvars > after                 # while ( LD->attvar.attvars >= after )
+        w = ld.gstack[ld.attvar_attvars]            # word w = *LD->attvar.attvars
+        if isVar(w)
+            ld.attvar_attvars = 0                   # LD->attvar.attvars = NULL
+        else
+            ld.attvar_attvars = unRef(w)            # LD->attvar.attvars = unRef(w)
+        end
+    end
+    return nothing
+end
+
 # ── choice points ────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-wam.c newChoice
 # DIVERGES: returns the choice point's index. Its `value.clause` is RESET (no clause, key 0), where
@@ -1215,8 +1233,8 @@ end
 "Unify location `l` with the constant term `c` (pl-vmi.c `h_const`): `true` or `false`."
 function _unify_const_loc(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
     k, w, p = _deref_loc(ld, l)                     # deRef(k)
-    if k == DU_CELL                                 # canBind(*k)
-        _bind_const!(ld, p, _word_of!(ld, c))       # bindConst(k, c)
+    if k == DU_CELL || k == DU_ATTVAR               # canBind(*k) (an attributed variable: AV1)
+        bindConst(ld, p, _word_of!(ld, c))          # bindConst(k, c)
         return true
     elseif k == DU_WORD                             # *k == c: an atom's word; a compound fails
         return isAtomW(w) && unify_simple_ptrs(ld, _atom_value(ld, w), c) == BOOLEX_TRUE
@@ -1301,9 +1319,16 @@ const DREF_CELL = 0x01
 const DREF_WORD = 0x02
 "`_argp_deref_word`: a value with no word form (no compound, no unbound cell)."
 const DREF_TERM = 0x03
+"`_argp_deref_word`: an attributed variable (AV1; pl-data.h `TAG_ATTVAR`), its cell's position in the second word — `canBind`, not `isVar`."
+const DREF_ATTVAR = 0x04
 
-# ORIGINAL: upstream's `deRef2(ARGP, p)` (pl-data.h) on the words of a slot or a cell (L1c).
-"ARGP dereferenced on the words: `(DREF_CELL, position)`, `(DREF_WORD, word)` or `(DREF_TERM, 0)`."
+# ORIGINAL: upstream's `deRef2(ARGP, p)` (pl-data.h) on the words of a slot or a cell (L1c). Since AV1
+# (audit D-0122 condition 1) an attributed variable has its own outcome and a global cell's value with
+# no word form is ASSERTED to be a value-table word, where any unknown word was `DREF_TERM`; a slot's
+# word with no word form is asserted to be `SLOT_VALUE` or a value-table word, as in `_deref_loc`
+# (audit D-0150 item 4: 0, an unwritten slot, is an internal error). (A slot never holds an
+# attributed variable's word: `linkValI` gives a reference to it.)
+"ARGP dereferenced on the words: `(DREF_CELL, position)`, `(DREF_WORD, word)`, `(DREF_ATTVAR, position)` or `(DREF_TERM, 0)`."
 @inline function _argp_deref_word(
     ld::PL_local_data{T}, a::argp_t{T}
 )::Tuple{UInt8, word} where {T}
@@ -1311,6 +1336,7 @@ const DREF_TERM = 0x03
         w = ld.slots[a.pos + 1]
         if !isRef(w)
             (isAtomW(w) || _is_gcompound(w) || isTaggedIntW(w)) && return (DREF_WORD, w)
+            (w == SLOT_VALUE || _is_vword(w)) || throw(_slot_word_error(w))   # asserted (D-0150)
             return (DREF_TERM, word(0))
         end
         p = unRef(w)
@@ -1326,7 +1352,10 @@ const DREF_TERM = 0x03
             p = unRef(c)
         elseif isAtomW(c) || _is_gcompound(c) || isTaggedIntW(c)
             return (DREF_WORD, c)
-        else
+        elseif isAttVar(c)                          # an attributed variable (AV1)
+            return (DREF_ATTVAR, word(p))
+        else                                        # a value-table word, asserted (AV1)
+            _is_vword(c) || throw(_cell_word_error(p, c))
             return (DREF_TERM, word(0))
         end
     end
@@ -1380,15 +1409,16 @@ end
     while true
         k = ld.gstack[p]
         k == c && return H_CONST_MATCH                              # *k == c
-        if isVar(k)                                                 # canBind(*k)
-            _bind_const!(ld, p, c)                                  # bindConst(k, c)
+        if needsRef(k)                                              # canBind(*k) (AV1: or attributed)
+            bindConst(ld, p, c)                                     # bindConst(k, c)
             return H_CONST_MATCH
         elseif isRef(k)
             p = unRef(k)
         elseif isAtomW(k) || _is_gcompound(k) || isTaggedIntW(k)
             return H_CONST_FAIL
-        else
-            return H_CONST_TERMS                                    # a value-table word
+        else                                                        # a value-table word,
+            _is_vword(k) || throw(_cell_word_error(p, k))           # asserted (AV1)
+            return H_CONST_TERMS
         end
     end
 end
@@ -2266,10 +2296,10 @@ function PL_next_solution_guarded(
     hf_ar = functor_arity(hf_f)
     hf_lit = functor_literal(hf_f)
     hf_d, hf_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
-    if hf_d == DREF_CELL                            # canBind(*p)
+    if hf_d == DREF_CELL || hf_d == DREF_ATTVAR     # canBind(*p) (an attributed variable: AV1)
         @ENSURE_GLOBAL_SPACE(1 + hf_ar)             # (L1f f2)
         hf_q = _alloc_compound!(ld, hf_fw, hf_ar)
-        _bind_const!(ld, Int(hf_w), consPtr(hf_q, TAG_COMPOUND | STG_GLOBAL))
+        bindConst(ld, Int(hf_w), consPtr(hf_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)
         UMODE = uwrite
         @goto next_instruction
@@ -2321,10 +2351,10 @@ function PL_next_solution_guarded(
         @goto B_RLIST
     end
     hl_d, hl_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
-    if hl_d == DREF_CELL                            # case TAG_VAR
+    if hl_d == DREF_CELL || hl_d == DREF_ATTVAR     # case TAG_VAR: case TAG_ATTVAR: (AV1)
         @ENSURE_GLOBAL_SPACE(3)                     # (L1f f2)
         hl_q = _alloc_compound!(ld, dot_f, 2)
-        _bind_const!(ld, Int(hl_w), consPtr(hl_q, TAG_COMPOUND | STG_GLOBAL))
+        bindConst(ld, Int(hl_w), consPtr(hl_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)
         UMODE = uwrite
         @goto next_instruction
@@ -2383,12 +2413,12 @@ function PL_next_solution_guarded(
             hff_q = valPtr(hff_w)                   # isList(*p): p = argTermP(*p, 0)
             _slot_from_cell!(ld, hff_a + 1, hff_q + 1)
             _slot_from_cell!(ld, hff_b + 1, hff_q + 2)
-        elseif hff_d == DREF_CELL                   # canBind(*p)
+        elseif hff_d == DREF_CELL || hff_d == DREF_ATTVAR   # canBind(*p) (AV1)
             @ENSURE_GLOBAL_SPACE(3)                 # (L1f f2)
             hff_q = _alloc_compound!(ld, dot_f, 2)
             ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
             ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
-            _bind_const!(ld, Int(hff_w), consPtr(hff_q, TAG_COMPOUND | STG_GLOBAL))
+            bindConst(ld, Int(hff_w), consPtr(hff_q, TAG_COMPOUND | STG_GLOBAL))
         elseif hff_d == DREF_WORD && _is_gcompound(hff_w) &&            # a stack `$expr` (Q2)
             nameFunctor(ld.functors, ld.gstack[valPtr(hff_w)]) == ld.atom_dexpr
             _hlistff_cross!(ld, gd, valPtr(hff_w), hff_a + 1, hff_b + 1) ||
@@ -4008,7 +4038,7 @@ function PL_next_solution_guarded(
     @label S_LIST
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)
     sl_d, sl_w = _argp_deref_word(ld, _argp_add(ARGP, Int(PCc[PC])))   # deRef2(ARGP+PC[0], k)
-    if sl_d == DREF_CELL                            # canBind(*k)
+    if sl_d == DREF_CELL || sl_d == DREF_ATTVAR     # canBind(*k) (an attributed variable: AV1)
         PCc = DEF.code_data.staticp                 # PC = SUPERVISOR(staticp) + 1
         PC = 2
         @goto S_STATIC
