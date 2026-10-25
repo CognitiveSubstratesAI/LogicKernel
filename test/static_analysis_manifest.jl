@@ -1506,6 +1506,30 @@ function _manifest_index(T)
         ),
         (LK.live_states, Tuple{LD}, true),
         (LK.discardForeignFrame, Tuple{LD, Int}, false),
+        # NF2 — retract/1 (src/pl-proc.jl) and clause/2 (src/pl-comp.jl), non-deterministic: their pools,
+        # retract's context helpers, clause's GP_FIND lookup, head unification and protection check
+        (LK.pl_retract1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.alloc_retract_context!, Tuple{LD, LK.retract_context{T}}, false),
+        (LK.free_retract_context!, Tuple{LD, LK.retract_context{T}, Int}, false),
+        (
+            LK.alloc_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.retract_context{T}}},
+            false
+        ),
+        (
+            LK.free_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.retract_context{T}}, Int},
+            false
+        ),
+        (LK.pl_clauseva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.clause_ndet, Tuple{LD, Int, Int, Int, LK.foreign_context{T}}, false),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{CH}}, false),
+        (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{CH}, Int}, false),
+        (LK.get_procedure_find, Tuple{GD, LD, Int}, false),
+        (LK.getDefinitionProc, Tuple{GD, D}, false),
+        (LK.unify_atom_compound, Tuple{LD, Int, Int}, false),
+        (LK.unify_head, Tuple{GD, LD, Int, Int}, false),
+        (LK.protected_predicate, Tuple{GD, LD, D}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, Tuple{T, Int}}, false),
         (
             LK.PL_error,

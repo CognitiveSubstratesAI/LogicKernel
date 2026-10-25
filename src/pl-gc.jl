@@ -15,8 +15,8 @@
 # DIVERGES: walks the live FRAME RECORDS where upstream scans every word of the local stack below
 # `lTop` for a frame (`isFrame`) — the records are the frames. No transactions, so no transaction
 # start to record; the `erased_skipped` statistic is not kept. Then, as upstream, the predicates
-# referenced explicitly (`markAccessedPredicates`): the enumerations outside the VM (clause/2,
-# retract/1) reference theirs with `pushPredicateAccessObj!`.
+# referenced explicitly (`markAccessedPredicates`): clause/2 and retract/1 (foreign predicates since
+# NF2, and their sinks) reference theirs with `pushPredicateAccessObj!`.
 "Record the generations every predicate is being run or accessed in, for clause GC (pl-gc.c)."
 function markPredicatesInEnvironments!(
     ld::PL_local_data{T}, gd::PL_global_data{T}

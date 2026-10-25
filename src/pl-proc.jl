@@ -22,7 +22,9 @@
 # unify a clause with their argument (`decompile`, `decompileHead`), the caller passes that test
 # as a function; their control flow — the enumeration, the generations, the retracting — is
 # upstream's. Answers go to a SINK, the kernel's model of nondeterminism: called per answer, it
-# returns false to cut.
+# returns false to cut. Since NF2, `retract/1` is registered as upstream's NON-DETERMINISTIC foreign
+# predicate (`pl_retract1_va`, its state in a pool, docs/architecture.md "Non-deterministic built-ins");
+# the sink `pl_retract!` stays for its Julia callers until they are re-pointed (audit D-0136 Q3).
 #
 # NOT PORTED: abolish/reload (`removeClausesPredicate`, `resetProcedure`), transactions, update
 # events, the clause GC thread and its trigger (`considerClauseGC`: clause GC runs when
@@ -107,6 +109,18 @@ function checkModifySystemProc(
         return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
     end
     return true
+end
+
+# PORT: pl-proc.c getDefinitionProc
+# DIVERGES: the database `gd` is an argument; the functor is the definition's name key and arity, its module
+# an index into `gd`'s table.
+"The procedure of `def`'s functor in `def`'s module (pl-proc.c); asserted to exist."
+function getDefinitionProc(
+    gd::PL_global_data{T}, def::Definition{T}
+)::Procedure{T} where {T}
+    proc = isCurrentProcedure(def.functor_name, def.arity, gd.modules[def.module_])
+    @assert proc !== nothing "getDefinitionProc: no procedure"
+    return proc
 end
 
 # PORT: pl-proc.c get_head_functor
@@ -1166,6 +1180,212 @@ function get_procedure_create(
     return lookupBodyProcedure(gd, name, arity, gd.modules[m])
 end
 
+# PORT: pl-proc.c get_procedure as get_procedure_find
+# (the `GP_FIND` case, as clause/2 asks it: `get_procedure(head, &proc, 0, GP_FIND)`)
+# DIVERGES: `GP_FIND` without `GP_NAMEARITY`, no `h` and no `GP_EXISTENCE_ERROR`, as a function of its own
+# (`get_procedure` above refuses it). The term is stripped of its qualifiers (`stripModuleName_cells`) and
+# `get_module`'s `GP_FIND` case is inlined: the module a qualifier names if it is current (`isCurrentModule`:
+# none is created), else `user`; no qualifier, the context module, `user` (no `contextModule`). Not found:
+# `nothing` with no error, as upstream's `notfound` without `GP_EXISTENCE_ERROR`.
+"The defined procedure the head term `descr` (`M:Head`) names, as seen from its module, or `nothing` (pl-proc.c)."
+function get_procedure_find(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t
+)::Union{Nothing, Procedure{T}} where {T}
+    head = PL_new_term_ref(ld)
+    ok, loc, mname = stripModuleName_cells(ld, -(descr + 1))  # stripModuleName(valTermRef(descr), &mname)
+    ok || return nothing
+    _slot_link_loc!(ld, head + 1, loc)                  # *valTermRef(head) = linkValNoG(p)
+    m = MODULE_user(gd)                                 # get_module(mname, GP_FIND)
+    if mname != 0
+        cm = isCurrentModule(gd.modules, _atom_value(ld, mname))
+        if cm !== nothing                               # isCurrentModule(mname), else MODULE_user
+            m = cm
+        end
+    end
+    name, arity = get_head_functor(ld, head, GP_FIND)
+    arity < 0 && return nothing
+    return visibleProcedure(gd, name, arity, m)         # GP_FIND: found -> out; else notfound
+end
+
+# ── retract/1, a non-deterministic foreign predicate (pl-proc.c; NF2, docs/architecture.md) ─────────────
+# PORT: pl-proc.c alloc_retract_context as alloc_retract_context!
+# DIVERGES: the heap copy is a record of the local data's pool (`ld.retract_contexts`, design D3) and the
+# result is its index — the `REDO_PTR` context `PL_retry_address` encodes — where upstream's is the address.
+# `*ctx = *ctx0` copies field by field (the record's `chp` is its own).
+"Copy the first call's context `ctx0` into a record of retract/1's pool; the record's index (pl-proc.c)."
+function alloc_retract_context!(
+    ld::PL_local_data{T}, ctx0::retract_context{T}
+)::Int where {T}
+    k = alloc_foreign_state!(ld.retract_contexts)      # allocForeignState(sizeof(*ctx))
+    ctx = ld.retract_contexts.states[k]
+    ctx.def = ctx0.def                                  # *ctx = *ctx0
+    ctx.chp.cref = ctx0.chp.cref
+    ctx.chp.key = ctx0.chp.key
+    ctx.allocated = true
+    return k
+end
+
+# PORT: pl-proc.c free_retract_context as free_retract_context!
+# DIVERGES: the context is its record and its pool index `k` (0 for the first call's buffer, which is not
+# `allocated`). `leaveDefinition` is a no-op upstream (pl-incl.h:1348).
+"Release retract/1's context `ctx` (index `k`): pop its predicate access, free its record if it is one (pl-proc.c)."
+function free_retract_context!(
+    ld::PL_local_data{T}, ctx::retract_context{T}, k::Int
+)::Nothing where {T}
+    popPredicateAccess!(ld, ctx.def::Definition{T})
+    # leaveDefinition(ctx->def): (void)0 upstream
+    if ctx.allocated
+        free_foreign_state!(ld.retract_contexts, k)     # freeForeignState(ctx, sizeof(*ctx))
+    end
+    return nothing
+end
+
+# PORT: pl-proc.c retract as pl_retract1_va
+# (PRED_IMPL("retract", 1, retract, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC|PL_FA_ISO))
+# DIVERGES: the context is a record of `ld.retract_contexts`, its index the `REDO_PTR` context (design D3);
+# `ctxbuf`, upstream's C-stack buffer, is the local data's scratch record `ld.retract_ctxbuf` (no Prolog
+# runs during a call, so it is never in use twice), and `ctx === ctxbuf` is upstream's `ctx == &ctxbuf`.
+# THE CLAUSE TERM IS ITS TWO SIDES (`decompile!`'s convention): upstream builds `cl` — the head when the
+# body is `true`, else `Head :- Body` — and `decompile(clause, cl)`; a bare head matches a FACT only
+# (`decompile` fails a rule against a term that is no `:-/2`, pl-comp.c:6308), so it is
+# `UNIT_CLAUSE && decompileHead!`, and `Head :- Body` is `decompile!(clause, head, body)` (a fact's body
+# unifies with `true`, pl-comp.c:6293-6302); `cl` itself is not built. No SSU clauses (`is_neck` refuses
+# them), so upstream's `CLAUSE_SSU_FLAGS` test compares two zeros and is not written. The functor and its
+# `type_error(callable, Head)` are `get_head_functor`'s (the kernel's `PL_get_functor` takes any word;
+# the callable test is upstream's `PL_get_functor`'s). `argv` is the head's argument cells
+# (`_head_argv`), read where a search reads it. `protectCRef`/`unprotectCRef` are `(void)0` upstream
+# without `O_DEBUG` (pl-proc.c:83-88); no `DEBUG` lines.
+"`retract(+Clause)` (pl-proc.c): retract a clause that unifies with `Clause`, one per answer, on backtracking the next."
+function pl_retract1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    term = PL__t0
+    ctxbuf = ld.retract_ctxbuf
+    pool = ld.retract_contexts
+
+    if PL_foreign_control(PL__ctx) == FRG_CUTTED
+        k = PL_foreign_context_address(PL__ctx)          # ctx = CTX_PTR
+        ctx = pool.states[k]
+        # unprotectCRef(ctx->chp.cref): (void)0
+        free_retract_context!(ld, ctx, k)
+        return FTRUE
+    end
+
+    gd = _query_gd(ld)
+    fr = ld.environment_frame
+    m = 0                                               # Module m = NULL
+    cl = PL_new_term_ref(ld)
+    head = PL_new_term_ref(ld)
+    body = PL_new_term_ref(ld)
+
+    ok, m = PL_strip_module_ex(gd, ld, term, m, cl)
+    ok || return FFALSE
+    ok, m = get_head_and_body_clause(gd, ld, cl, head, body, m)
+    ok || return FFALSE
+    bk, bw, _ = _deref_loc(ld, -(body + 1))
+    # PL_get_atom(body, &b) && b == ATOM_true: `cl` is the head, else `Head :- Body`
+    cl_is_head = bk == DU_WORD && bw == _atom_word!(ld, mk_sym(T, Symbol("true")))
+
+    if PL_foreign_control(PL__ctx) == FRG_FIRST_CALL
+        name, arity = get_head_functor(ld, head, 0)     # PL_get_functor(head, &fd), else ERR_TYPE callable
+        arity < 0 && return FFALSE
+        fd = sym_key(name)
+        proc = isCurrentProcedure(fd, arity, gd.modules[m])
+        if proc === nothing
+            checkModifySystemProc(gd, ld, fd, arity)
+            return FFALSE
+        end
+
+        def = proc.definition                           # getProcDefinition(proc)
+
+        if (def.flags & P_FOREIGN) != 0
+            return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) ? FTRUE : FFALSE
+        end
+        if (def.flags & P_DYNAMIC) == 0
+            if isDefinedProcedure(gd, proc)
+                return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) ? FTRUE : FFALSE
+            end
+            setDynamicDefinition!(def, true)            # implicit
+            return FFALSE                               # no clauses
+        end
+
+        # enterDefinition(def): (void)0 upstream
+        dref = pushPredicateAccessObj!(ld, gd, def)
+        ld.frames[fr].generation = dref.generation      # setGenerationFrameVal(environment_frame, …)
+        ctxbuf.chp.cref = nothing
+        ctxbuf.chp.key = word(0)
+        cref = firstClause!(
+            ld, _head_argv(ld, def, head), generationFrame(ld.frames[fr]), def, ctxbuf.chp
+        )
+        if cref === nothing
+            popPredicateAccess!(ld, def)
+            # leaveDefinition(def): (void)0
+            return FFALSE
+        end
+
+        ctx = ctxbuf
+        ctx.def = def
+        ctx.allocated = false
+        k = 0
+    else
+        k = PL_foreign_context_address(PL__ctx)          # ctx = CTX_PTR
+        ctx = pool.states[k]
+        def = ctx.def::Definition{T}
+        # unprotectCRef(ctx->chp.cref): (void)0
+        cref = nextClause!(
+            ld, ctx.chp, _head_argv(ld, def, head), generationFrame(ld.frames[fr]), def
+        )
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid == 0
+        free_retract_context!(ld, ctx, k)
+        return FFALSE
+    end
+
+    while cref !== nothing
+        clause = cref.clause::Clause{T}
+
+        matched = if cl_is_head                         # decompile(clause, cl, 0)
+            (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
+        else
+            decompile!(ld, clause, head, body)
+        end
+        if matched
+            if retractClauseDefinition!(gd, def, clause, true) ||
+                PL_foreign_control(PL__ctx) != FRG_FIRST_CALL
+                if ctx.chp.cref === nothing             # deterministic last one
+                    free_retract_context!(ld, ctx, k)
+                    PL_close_foreign_frame(ld, fid)
+                    return FTRUE
+                end
+
+                if ctx === ctxbuf                       # non-determinisic; save state
+                    k = alloc_retract_context!(ld, ctx)
+                    ctx = pool.states[k]
+                end
+
+                # protectCRef(ctx->chp.cref): (void)0
+                PL_close_foreign_frame(ld, fid)
+                return PL_retry_address(k)              # ForeignRedoPtr(ctx)
+            else
+                setGenerationFrame(gd, ld, fr)          # the first clause was retracted meanwhile
+            end
+        end
+
+        PL_exception(ld, 0) != 0 && break
+
+        PL_rewind_foreign_frame(ld, fid)
+        cref = nextClause!(
+            ld, ctx.chp, _head_argv(ld, def, head), generationFrame(ld.frames[fr]), def
+        )
+    end
+
+    PL_close_foreign_frame(ld, fid)
+    free_retract_context!(ld, ctx, k)
+    return FFALSE
+end
+
 # PORT: pl-proc.c retractall as pl_retractall1_va
 # (PRED_IMPL("retractall", 1, retractall, PL_FA_NONDETERMINISTIC|PL_FA_ISO))
 # DIVERGES: registered as a deterministic variadic built-in (the body never leaves a choice point; upstream's
@@ -1205,5 +1425,9 @@ const PL_predicates_from_proc = (
     PL_extension(
         "\$set_predicate_attribute", 3, pl_set_predicate_attribute3_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "retract", 1, pl_retract1_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
     )
 )

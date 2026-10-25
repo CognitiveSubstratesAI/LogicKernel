@@ -11,6 +11,7 @@
 ZERO = ["test/core_lang/test_zero_exports.jl"]
 CONF = ["test/core_lang/test_term_interface.jl"]
 CLEAN = ["test/core_lang/test_cleanup_swipl.jl"]
+TARGETS = ZERO + CONF + CLEAN                       # the baseline's targets (mutate_ci.py plan reads TARGETS)
 W = "src/pl-wam.jl"
 D = "src/default_term.jl"
 MUTANTS = [

@@ -275,7 +275,9 @@ end
 # Since V9g-b: `bags`, upstream's `bags` (a `findall_state`: the stack of findall/3's bags, the
 # innermost last — src/pl-bag.jl).
 # Since NF1: `between_states`, the pool of between/3's states (`foreign_state_pool`, pl-incl.jl):
-# upstream `malloc`s them (`allocForeignState`).
+# upstream `malloc`s them (`allocForeignState`). Since NF2: `retract_contexts` and `clause_contexts`,
+# the pools of retract/1's and clause/2's states, and `retract_ctxbuf`, retract/1's first-call buffer
+# (upstream's `ctxbuf`, on the C stack: no Prolog runs during the call, so one record serves).
 """
     PL_local_data{T}(gd)
 
@@ -392,6 +394,9 @@ mutable struct PL_local_data{T}
     prolog_flag_determinism_error::Symbol                       # the `determinism_error` flag
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
+    retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
+    retract_ctxbuf::retract_context{T}                          # (retract/1's C-stack `ctxbuf`)
+    clause_contexts::foreign_state_pool{ClauseChoice{T}}        # (clause/2's REDO_PTR states, NF2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -459,7 +464,10 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0,                                      # $variable_names: no such global variable
         :error,                                 # determinism_error: error (os/pl-prologflag.c:2708)
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
-        foreign_state_pool{between_state}()     # between/3's states: none
+        foreign_state_pool{between_state}(),    # between/3's states: none
+        foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
+        retract_context{T}(),                   # retract/1's first-call buffer
+        foreign_state_pool{ClauseChoice{T}}()   # clause/2's states: none
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

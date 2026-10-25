@@ -6,6 +6,7 @@
 # UPSTREAM: swipl-devel src/pl-bag.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-gmp.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-arith.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-proc.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -74,6 +75,9 @@ const CL_START = 1
 # PORT: pl-incl.h CL_END
 "Insertion point: the end of the clause list — `assertz` (pl-incl.h)."
 const CL_END = 2
+# PORT: pl-incl.h GP_FIND
+"`get_procedure`: find the procedure anywhere — the module, then its super modules (pl-incl.h)."
+const GP_FIND = Int(0)
 # PORT: pl-incl.h GP_DEFINE
 "`get_procedure`: define a procedure (pl-incl.h)."
 const GP_DEFINE = Int(4)
@@ -861,6 +865,8 @@ mutable struct clause_choice{R}
     cref::Union{Nothing, R}     # Next clause reference
     key::word                   # Search key
 end
+# (NF2: a record of clause/2's state pool, `foreign_state_pool`, is made empty)
+clause_choice{R}() where {R} = clause_choice{R}(nothing, word(0))
 
 # ── the pointer typedefs, closed over a term type `T` (pl-incl.h) ───────────────────────────────
 # PORT: pl-incl.h Clause
@@ -1500,6 +1506,18 @@ mutable struct between_state
     hinf::Bool
 end
 between_state() = between_state(number(), number(), false)
+
+# PORT: pl-proc.c retract_context
+# DIVERGES: a record in the local data's pool (`foreign_state_pool`, `ld.retract_contexts`), where upstream's
+# is `malloc`'d (`alloc_retract_context`); the first call's C-stack buffer is the local data's scratch record
+# (`ld.retract_ctxbuf`). `def` is `nothing` only in a record never used.
+"retract/1's state between answers (pl-proc.c `retract_context`): the predicate, where its clause search resumes, whether it is a heap copy."
+mutable struct retract_context{T}
+    def::Union{Nothing, Definition{T}}
+    chp::ClauseChoice{T}
+    allocated::Bool
+end
+retract_context{T}() where {T} = retract_context{T}(nothing, ClauseChoice{T}(), false)
 
 # ── text processing (pl-incl.h), R1d ─────────────────────────────────────────────────────────────
 # PORT: pl-incl.h CVT_status

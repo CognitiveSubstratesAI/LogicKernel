@@ -30,7 +30,10 @@
 #
 # ASSERT (since V9c): `assert_term!`, the path of assert/1, assertz/1 and asserta/1 — the clause's
 # head and body, its predicate, compiled, added — and their registration table
-# (`PL_predicates_from_comp`).
+# (`PL_predicates_from_comp`). Since NF2 clause/2 is registered there too, upstream's NON-DETERMINISTIC
+# foreign predicate (`pl_clauseva_va`, `clause_ndet`, with `unify_head`, `unify_atom_compound` and
+# `protected_predicate`); the sinks `pl_clause!` stay for their Julia callers until they are re-pointed
+# (audit D-0136 Q3).
 #
 # CONTROL CONSTRUCTS (V9d, one per step): the disjunction `;` (and `|`) since 2026-10-12 —
 # `compileBody!`'s frames, with the variable tables it balances (`setVars`, `balanceVars`, `c_var`,
@@ -3166,6 +3169,211 @@ function unify_definition(
     return true
 end
 
+# ── clause/2, a non-deterministic foreign predicate (pl-comp.c; NF2, docs/architecture.md) ────────────────
+# PORT: pl-comp.c unify_atom_compound
+# DIVERGES: on the WORDS (`_deref_loc`): an atom word against a compound word whose functor has that name
+# and arity 0.
+"Unify `t1` and `t2`, an atom also matching the zero-arity compound of its name (pl-comp.c)."
+function unify_atom_compound(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where {T}
+    if !PL_unify(ld, t1, t2)
+        k1, w1, _ = _deref_loc(ld, -(t1 + 1))               # Word p1 = valTermRef(t1); deRef(p1)
+        k2, w2, _ = _deref_loc(ld, -(t2 + 1))               # Word p2 = valTermRef(t2); deRef(p2)
+        if k1 == DU_WORD && isAtomW(w1) && k2 == DU_WORD && _is_gcompound(w2)
+            f = ld.gstack[valPtr(w2)]                       # FunctorDef fd = valueFunctor(functorTerm(*p2))
+            nameFunctor(ld.functors, f) == w1 && arityFunctor(ld.functors, f) == 0 &&
+                return true
+        elseif k2 == DU_WORD && isAtomW(w2) && k1 == DU_WORD && _is_gcompound(w1)
+            f = ld.gstack[valPtr(w1)]
+            nameFunctor(ld.functors, f) == w2 && arityFunctor(ld.functors, f) == 0 &&
+                return true
+        end
+        return false
+    end
+    return true
+end
+
+# PORT: pl-comp.c unify_head
+# DIVERGES: the database `gd` is an argument (`PL_strip_module`'s); the module is an index (0: NULL).
+"Unify the head `h` with the decompiled head `d`, ignoring their module qualifiers if need be (pl-comp.c)."
+function unify_head(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, h::term_t, d::term_t
+)::Bool where {T}
+    if !unify_atom_compound(ld, h, d)
+        h1 = PL_new_term_ref(ld)
+        d1 = PL_new_term_ref(ld)
+        (h1 == 0 || d1 == 0) && return false
+        m = 0                                               # Module m = NULL
+        ok, m = PL_strip_module(gd, ld, h, m, h1)
+        ok || return false
+        ok, m = PL_strip_module(gd, ld, d, m, d1)
+        ok || return false
+        return unify_atom_compound(ld, h1, d1)
+    end
+    return true
+end
+
+# PORT: pl-comp.c protected_predicate
+# DIVERGES: the database `gd` is an argument. NOT PORTED: the `protect_static_code` flag (the flag table,
+# src/os/pl-prologflag.jl) — false, its default, as `setDynamicDefinition!` reads it; `iso` is `PLFLAG_ISO`
+# (false, src/pl-arith.jl). So only a foreign predicate is protected.
+"Whether `def`'s clauses may not be read; if so `permission_error(access, private_procedure, PI)` is raised (pl-comp.c)."
+function protected_predicate(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::Bool where {T}
+    protect_static_code = false                             # truePrologFlag(PLFLAG_PROTECT_STATIC_CODE)
+    if (def.flags & P_FOREIGN) != 0 ||
+        ((def.flags & (P_DYNAMIC | P_CLAUSABLE)) == 0 && (protect_static_code || PLFLAG_ISO))
+        proc = getDefinitionProc(gd, def)
+        PL_error(
+            ld, ERR_PERMISSION_PROC, mk_sym(T, :access), mk_sym(T, :private_procedure), proc
+        )
+        return true
+    end
+    return false
+end
+
+# PORT: pl-comp.c clause as clause_ndet
+# DIVERGES: named `clause_ndet`: `clause` is the kernel's clause struct (pl-incl.jl). The state is a record of
+# `ld.clause_contexts` (a `clause_choice`), its index the `REDO_PTR` context (design D3); `chp_buf`, upstream's
+# C-stack buffer, is the local data's scratch `chp_scratch` (as S_STATIC's; no Prolog runs during the call),
+# and `k == 0` is upstream's `chp == &chp_buf`. THE CLAUSE IS DECOMPILED INTO ITS TWO SIDES: upstream's
+# `decompile(clause, term)` into a fresh `term`, then `get_head_and_body_clause(term, h, b)`, is
+# `decompile!(clause, h, b)` into the fresh `h` and `b` (a fact's body `true`), so `term` is not made. Upstream
+# puts fresh variables into `h` and `b` after a failed attempt (`PL_put_variable`: they point into `term`, which
+# the rewind removes); here they hold variables older than the foreign frame, which the rewind unbinds — and the
+# kernel's `PL_put_variable` makes a global cell, which the rewind would free under them — so it is not done.
+# `h` and `b` are made after the control switch, where upstream makes `term`, `h` and `b` before it: the
+# FRG_CUTTED call (`discardForeignFrame`, its arguments `h0 == 0`) uses none, and makes no global cells here.
+# NOT PORTED: clause/3 and `'$clause'/4` (the clause reference `ref`, `PL_get_clref`/`PL_unify_clref`, and
+# `bindings`): the kernel has no clause references as terms, so only clause/2 is registered and `CTX_ARITY < 3`
+# is asserted; rule/2,3 (`IS_RULE`): not registered, so `flags` is `IS_CLAUSE`.
+"clause/2's enumeration (pl-comp.c `clause()`): unify `head` and `body` with each clause in turn, one per answer."
+function clause_ndet(
+    ld::PL_local_data{T}, head::term_t, body::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pool = ld.clause_contexts
+    fr = ld.environment_frame
+    module_ = 0                                             # Module module = NULL
+    # term_t term, h, b = PL_new_term_ref(): made after the switch below (FRG_CUTTED uses none)
+    rc = false
+
+    @assert PL__ac < 3 "clause/3, '\$clause'/4: not ported (no clause references as terms)"
+    # if ( CTX_ARITY < 3 ) ref = 0; if ( CTX_ARITY < 4 ) bindings = 0
+
+    ctl = PL_foreign_control(PL__ctx)
+    k = 0                                                   # (the state's index: 0 while it is none or chp_buf)
+    if ctl == FRG_FIRST_CALL
+        # if ( ref && !PL_is_variable(ref) ): clause/3 by reference — not ported (above)
+        proc = get_procedure_find(gd, ld, head)             # get_procedure(head, &proc, 0, GP_FIND)
+        proc === nothing && return FFALSE
+        def = proc.definition                               # getProcDefinition(proc)
+        if !isDefinedProcedure(gd, proc) && (def.flags & P_AUTOLOAD) != 0
+            def = trapUndefined(gd, def)
+        end
+
+        protected_predicate(gd, ld, def) && return FFALSE
+        dref = pushPredicateAccessObj!(ld, gd, def)
+
+        chp_null = true                                     # chp = NULL
+        ld.frames[fr].generation = dref.generation          # setGenerationFrameVal(environment_frame, …)
+    elseif ctl == FRG_REDO
+        k = PL_foreign_context_address(PL__ctx)             # chp = CTX_PTR
+        def = ((pool.states[k].cref::ClauseRef{T}).clause::Clause{T}).predicate
+        chp_null = false
+    elseif ctl == FRG_CUTTED
+        k = PL_foreign_context_address(PL__ctx)             # chp = CTX_PTR
+        def = ((pool.states[k].cref::ClauseRef{T}).clause::Clause{T}).predicate
+        popPredicateAccess!(ld, def)
+        free_foreign_state!(pool, k)                        # freeForeignState(chp, sizeof(*chp))
+        return FTRUE
+    else
+        @assert false "clause/2: control $ctl"
+        return FFALSE
+    end
+    h = PL_new_term_ref(ld)                                 # term_t h = PL_new_term_ref()
+    b = PL_new_term_ref(ld)                                 # term_t b = PL_new_term_ref()
+
+    if def.arity > 0
+        ok, module_ = PL_strip_module(gd, ld, head, module_, head)
+        if !ok
+            # upstream returns here without freeing a REDO's `chp` (only a cyclic qualifier fails)
+            popPredicateAccess!(ld, def)
+            return FFALSE
+        end
+        argv = _head_argv(ld, def, head)                    # argTermP(*argv, 0)
+    else
+        argv = argv_cells(ld, 0)                            # argv = NULL
+    end
+
+    if chp_null
+        chp = ld.chp_scratch                                # chp = &chp_buf
+        chp.cref = nothing
+        chp.key = word(0)
+        cref = firstClause!(ld, argv, generationFrame(ld.frames[fr]), def, chp)
+    else
+        chp = pool.states[k]
+        cref = nextClause!(ld, chp, argv, generationFrame(ld.frames[fr]), def)
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0                                             # else goto out
+        while cref !== nothing
+            clause = cref.clause::Clause{T}
+
+            if decompile!(ld, clause, h, b)                 # decompile(clause, term, bindings)
+                # (flags&IS_CLAUSE): get_head_and_body_clause(term, h, b, NULL, &hflags), by decompile!
+                rc2 = unify_head(gd, ld, head, h) && PL_unify(ld, b, body)
+                # if ( rc2 && ref ) rc2 = PL_unify_clref(ref, clause): clause/3, not ported
+
+                if rc2
+                    if chp.cref === nothing
+                        rc = true
+                        break                               # goto out
+                    end
+                    if k == 0                               # chp == &chp_buf
+                        k = alloc_foreign_state!(pool)      # allocForeignState(sizeof(*chp))
+                        heap = pool.states[k]
+                        heap.cref = chp.cref                # *chp = chp_buf
+                        heap.key = chp.key
+                        chp = heap
+                    end
+
+                    PL_close_foreign_frame(ld, fid)
+                    return PL_retry_address(k)              # ForeignRedoPtr(chp)
+                end
+                # PL_put_variable(h); PL_put_variable(b): not needed here (above)
+            elseif ld.exception_term != 0
+                break                                       # goto out
+            end
+
+            PL_rewind_foreign_frame(ld, fid)
+            if def.arity > 0                                # if ( argv ): "argv may be corrupted in GC"
+                argv = _head_argv(ld, def, head)
+            end
+            cref = nextClause!(ld, chp, argv, generationFrame(ld.frames[fr]), def)
+        end
+    end
+
+    # out:
+    fid != 0 && PL_close_foreign_frame(ld, fid)
+    k != 0 && free_foreign_state!(pool, k)                  # if ( chp != &chp_buf ) freeForeignState(chp)
+    popPredicateAccess!(ld, def)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-comp.c clause as pl_clauseva_va
+# (PRED_IMPL("clause", va, clause, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); registered for clause/2 by
+# PRED_SHARE, pl-comp.c:9267)
+# DIVERGES: passes the head and the body only (`A3`, `A4` are clause/3's and `'$clause'/4`'s: not ported).
+"`clause(:Head, ?Body)` (pl-comp.c): `Head :- Body` is a clause of a predicate, one per answer."
+function pl_clauseva_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx)
+end
+
 # ── assert/1, assertz/1, asserta/1 (pl-comp.c) ───────────────────────────────────────────────
 # PORT: pl-comp.c is_neck
 # DIVERGES: the SSU necks `=>/2` and `?=>/2` are refused (`NotPortedError`, its culprit the neck's
@@ -3448,6 +3656,10 @@ const PL_predicates_from_comp = (
     ),
     PL_extension(
         "asserta", 1, pl_asserta1_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(                                   # PRED_SHARE("clause", 2, clause, META|NDET|PL_FA_CREF|PL_FA_ISO)
+        "clause", 2, pl_clauseva_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_ISO | PL_FA_VARARGS
     )
 )
 
