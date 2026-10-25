@@ -45,7 +45,8 @@ MUTANTS = [
          old='''        ld.frames[fr].generation = dref.generation      # setGenerationFrameVal(environment_frame, …)''',
          new='''        nothing                                         # setGenerationFrameVal(environment_frame, …)''',
          equivalent="the frame's generation is the global generation at the call (setGenerationFrame), which "
-                    "pushPredicateAccessObj! reads again before any generation is created (src/pl-proc.jl pl_retract1_va)"),
+                    "pushPredicateAccessObj! reads again before any generation is created (src/pl-proc.jl pl_retract1_va); "
+                    "the assert at src/pl-proc.jl:1315 is the argument (D-0147)"),
     dict(id="NF2-R7 a pending exception does not stop the scan", file=P, targets=TR,
          old='''        PL_exception(ld, 0) != 0 && break''',
          new='''        nothing'''),
@@ -80,7 +81,8 @@ MUTANTS = [
          old='''        ld.frames[fr].generation = dref.generation          # setGenerationFrameVal(environment_frame, …)''',
          new='''        nothing                                             # setGenerationFrameVal(environment_frame, …)''',
          equivalent="as NF2-R6: the frame's generation is the global generation at the call, which "
-                    "pushPredicateAccessObj! reads again before any generation is created (src/pl-comp.jl clause_ndet)"),
+                    "pushPredicateAccessObj! reads again before any generation is created (src/pl-comp.jl clause_ndet); "
+                    "the assert at src/pl-comp.jl:3280 is the argument (D-0147)"),
     dict(id="NF2-C6 a failed attempt is not rewound", file=C, targets=TC,
          old='''            PL_rewind_foreign_frame(ld, fid)''',
          new='''            nothing'''),
@@ -96,4 +98,22 @@ MUTANTS = [
     dict(id="NF2-C10 an atom does not match a zero-arity compound (second arm)", file=C, targets=TC,
          old='''        elseif k2 == DU_WORD && isAtomW(w2) && k1 == DU_WORD && _is_gcompound(w1)''',
          new='''        elseif false'''),
+    # ---- D-0147 / D-0100: the asserted invariant behind NF2-R6 / NF2-C5 (a generation created between the call and the predicate
+    # access makes the assert fire; the test file's calls then raise instead of answering)
+    dict(id="NF2-G1 retract: a generation is created before the predicate access", file=P, targets=TR,
+         old='''        # enterDefinition(def): (void)0 upstream
+        dref = pushPredicateAccessObj!(ld, gd, def)
+''',
+         new='''        # enterDefinition(def): (void)0 upstream
+        next_generation!(gd, def)
+        dref = pushPredicateAccessObj!(ld, gd, def)
+'''),
+    dict(id="NF2-G2 clause: a generation is created before the predicate access", file=C, targets=TC,
+         old='''        dref = pushPredicateAccessObj!(ld, gd, def)
+
+        chp_null = true''',
+         new='''        next_generation!(gd, def)
+        dref = pushPredicateAccessObj!(ld, gd, def)
+
+        chp_null = true'''),
 ]

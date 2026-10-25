@@ -3276,6 +3276,13 @@ function clause_ndet(
         dref = pushPredicateAccessObj!(ld, gd, def)
 
         chp_null = true                                     # chp = NULL
+        # D-0147 / D-0100 (asserted invariant; NF2-C5 equivalent, NF2-G2 breaks it)
+        @assert(
+            dref.generation == generationFrame(ld.frames[fr]),
+            "clause/2: holds while trapUndefined loads nothing (src/pl-proc.jl:305-314: " *
+                "autoImport only); when R2's autoloader lands, remove this assert and kill " *
+                "NF2-C5 with the row 'clause/2 on an autoloadable predicate == swipl'",
+        )
         ld.frames[fr].generation = dref.generation          # setGenerationFrameVal(environment_frame, …)
     elseif ctl == FRG_REDO
         k = PL_foreign_context_address(PL__ctx)             # chp = CTX_PTR
