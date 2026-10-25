@@ -11,10 +11,13 @@
 # upstream's `operator` — `type[3]` and `priority[3]` by kind — kept as a tuple with its key atom
 # (src/pl-incl.jl, `module_t`).
 #
-# NOT PORTED: `current_op/3` and `$local_op/3`, until V9's non-deterministic built-ins: what they
-# enumerate is ported (`scanVisibleOperators!`, the buffer it fills), their FRG iteration is not;
-# the thread-local table (no threads); `copyOperatorSymbol`/`freeOperatorSymbol` (atom reference
-# counts: Julia's garbage collector).
+# Since NF3 `current_op/3` and `$local_op/3` are upstream's NON-DETERMINISTIC foreign predicates: what they
+# enumerate is `scanVisibleOperators!`'s buffer, their `FRG_*` iteration `current_op_ndet`, its state a
+# record of the local data's pool (`ld.op_enums`, src/pl-incl.jl `op_enum`).
+#
+# NOT PORTED: the thread-local table (no threads); `copyOperatorSymbol`/`freeOperatorSymbol` (atom
+# reference counts: Julia's garbage collector); `acquireModule`'s and `releaseModule`'s reference count
+# of a temporary module (`current_op/3` over a Pengine's module: no temporary modules).
 
 # PORT: pl-op.c OP_INHERIT
 "An operator record's type for a kind it does not define: look in the super modules (pl-op.c)."
@@ -302,6 +305,195 @@ function scanVisibleOperators!(
     return nothing
 end
 
+# ── current_op/3 and '$local_op'/3 (pl-op.c; NF3) ───────────────────────────────────────────────
+# PORT: pl-op.c current_op as current_op_ndet
+# DIVERGES: named `current_op_ndet` (the predicate is `pl_current_op3_va`). The state is a record of
+# `ld.op_enums` (`op_enum`, design D3), its index the `REDO_PTR` context (`PL_retry_address`);
+# `nm == NULL_ATOM` is `nothing`; the module is the record; the buffer is emptied (and kept) where
+# upstream `discardBuffer`s. The foreign frame `fid` is CLOSED before every return, where upstream
+# returns with it open for the VM to drop: no frame outlives the call, as in clause/2 (src/pl-comp.jl);
+# closing keeps the bindings, as the VM's drop does. Upstream does not test
+# `PL_open_foreign_frame`'s result; here a frame that cannot be opened (the local stack is full, the
+# exception raised) fails after freeing the state.
+# DIVERGES: hash-table order (pl-table.c); the kernel enumerates in creation order — upstream's operator
+# tables are pl-table.c `TableWP`s enumerated in their hash order (pl-op.c:114, :428-432), the kernel's are
+# Dicts, so a multi-answer enumeration gives upstream's answers as a SET in another order (audit D-0145,
+# D-0149 item 1: one class with '$current_module'/2, module_property's exports, current_prolog_flag/2,
+# nb_current/2). Multi-answer rows compare sorted, single answers exactly. Re-check trigger: pl-table.c
+# ported with atom handles that match.
+"""
+    current_op_ndet(ld, m, inherit, prec, type, name, h) -> foreign_t
+
+The enumeration under `current_op/3` (`inherit`) and `\$local_op/3` (pl-op.c `current_op()`): the first
+call checks the arguments and collects the matching operators of module `m` (and, with `inherit`, its
+supers); each answer unifies the next of them; the state is freed at the last answer, on failure and
+at `FRG_CUTTED`.
+"""
+function current_op_ndet(
+    ld::PL_local_data{T}, m::module_t{T}, inherit::Bool, prec::term_t, type::term_t,
+    name::term_t, h::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pool = ld.op_enums
+    k = 0                                                   # (the state's index)
+
+    ctl = PL_foreign_control(h)
+    if ctl == FRG_FIRST_CALL
+        # atom_t a, nm: NULL_ATOM is any name; int p: 0 is any priority; int t: 0 is any type
+        if PL_is_variable(ld, name)
+            nm = nothing
+        else
+            nm = PL_get_atom_ex(ld, name)
+            nm === nothing && return FFALSE
+        end
+
+        if PL_is_variable(ld, prec)
+            p = 0
+        else
+            pv = PL_get_integer_ex(ld, prec)
+            pv === nothing && return FFALSE
+            p = pv
+            if !(p > 0 && p <= 1200)
+                PL_domain_error(ld, "operator_priority", prec)
+                return FFALSE
+            end
+        end
+
+        t = 0x00
+        if !PL_is_variable(ld, type)
+            a = PL_get_atom_ex(ld, type)
+            a === nothing && return FFALSE
+            t = atomToOperatorType(T, a)
+            if t == 0x00
+                PL_error(ld, ERR_DOMAIN, mk_sym(T, :operator_specifier), type)
+                return FFALSE
+            end
+        end
+
+        k = alloc_foreign_state!(pool)                      # allocHeapOrHalt(sizeof(*e))
+        e = pool.states[k]
+        empty!(e.buffer)                                    # initBuffer(b)
+        e.index = 0
+        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)
+    elseif ctl == FRG_REDO
+        k = PL_foreign_context_address(h)                   # e = ForeignContextPtr(h)
+        e = pool.states[k]
+    elseif ctl == FRG_CUTTED
+        k = PL_foreign_context_address(h)                   # e = ForeignContextPtr(h)
+
+        if k != 0                                           # if ( e )
+            empty!(pool.states[k].buffer)                   # discardBuffer(&e->buffer)
+            free_foreign_state!(pool, k)                    # freeHeap(e, sizeof(*e)): FRG_CUTTED
+        end
+
+        return FTRUE
+    else
+        @assert false "current_op/3: control $ctl"
+        return FFALSE
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid == 0
+        empty!(e.buffer)
+        free_foreign_state!(pool, k)
+        return FFALSE
+    end
+    b = e.buffer
+    mx = length(b)                                          # mx = entriesBuffer(b, opdef)
+    while e.index < mx                                      # for(; e->index++ < mx; match++)
+        match = b[e.index + 1]                              # match = baseBuffer(b, opdef) + e->index
+        e.index += 1
+        match[3] == 0 && continue                           # canceled operator
+
+        if PL_unify_atom(ld, name, match[1]) &&
+            PL_unify_integer(ld, prec, Int(match[3])) &&
+            PL_unify_atom(ld, type, operatorTypeToAtom(T, match[2])::T)
+            if e.index == mx
+                empty!(b)                                   # discardBuffer(&e->buffer)
+                free_foreign_state!(pool, k)                # freeHeap(e, sizeof(*e)): the last answer
+                PL_close_foreign_frame(ld, fid)
+                return FTRUE
+            end
+            PL_close_foreign_frame(ld, fid)
+            return PL_retry_address(k)                      # ForeignRedoPtr(e)
+        end
+
+        PL_rewind_foreign_frame(ld, fid)
+    end
+
+    empty!(b)                                               # discardBuffer(&e->buffer)
+    free_foreign_state!(pool, k)                            # freeHeap(e, sizeof(*e)): no more answers
+    PL_close_foreign_frame(ld, fid)
+    return FFALSE
+end
+
+# PORT: pl-op.c get_op_module
+# DIVERGES: returns `(ok, m)`, where upstream writes `*m` through a pointer; `name` (a fresh term
+# reference) is linked to the stripped term with `_slot_link_loc!` (`*valTermRef(name) = w`, `w =
+# linkValG(p)`); a module is found by `isCurrentModule` in `gd`'s table, which holds `system` and `user`
+# only until R2's `module/2` — any other qualifier gives `user`, as upstream's does for a module that
+# does not exist. NOT PORTED: the reference count of a temporary module (`acquireModule`).
+"The module `A3`'s qualifier names, `m` when it has none or none exists, and its plain term put into `name` (pl-op.c)."
+function get_op_module(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, a3::term_t, name::term_t, m::module_t{T}
+)::Tuple{Bool, module_t{T}} where {T}
+    ok, rc, mname = stripModuleName_cells(ld, -(a3 + 1))     # stripModuleName(valTermRef(a3), &mname)
+    ok || return (false, m)
+    _slot_link_loc!(ld, name + 1, rc)                       # *valTermRef(name) = w
+    if mname != 0
+        msym = _atom_value(ld, mname)
+        m.name == sym_key(msym) && return (true, m)         # if ( *m && (*m)->name == mname )
+        mm = isCurrentModule(gd.modules, msym)             # *m = acquireModule(mname)
+        m = mm === nothing ? MODULE_user(gd) : mm           # else *m = MODULE_user
+    end
+    return (true, m)
+end
+
+# PORT: pl-op.c current_op as pl_current_op3_va
+# (PRED_IMPL("current_op", 3, current_op, PL_FA_NONDETERMINISTIC|PL_FA_TRANSPARENT|PL_FA_ISO))
+# DIVERGES: the module is `MODULE_parse`, which is `user` here (as `op/3`'s). `releaseModule(m)` is not
+# ported (no temporary modules).
+"`current_op(?Precedence, ?Type, ?Name)` (pl-op.c): the operators visible from the module, one per answer."
+function pl_current_op3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    gd = _query_gd(ld)
+    mp = MODULE_user(gd)                                    # MODULE_parse
+    m = mp
+    name = A3
+
+    if PL_foreign_control(PL__ctx) != FRG_CUTTED
+        name = PL_new_term_ref(ld)
+        name == 0 && return FFALSE
+        ok, m = get_op_module(gd, ld, A3, name, m)
+        ok || return FFALSE
+    end
+
+    return current_op_ndet(ld, m, true, A1, A2, name, PL__ctx)        # inherit = true
+end
+
+# PORT: pl-op.c local_op as pl_local_op3_va
+# (PRED_IMPL("$local_op", 3, local_op, PL_FA_NONDETERMINISTIC|PL_FA_TRANSPARENT))
+"`'\$local_op'(?Precedence, ?Type, ?Name)` (pl-op.c): as `current_op/3`, but only the operators the module defines itself."
+function pl_local_op3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    gd = _query_gd(ld)
+    m = MODULE_user(gd)                                     # Module m = MODULE_user
+    name = A3
+
+    if PL_foreign_control(PL__ctx) != FRG_CUTTED
+        name = PL_new_term_ref(ld)
+        name == 0 && return FFALSE
+        ok, m = get_op_module(gd, ld, A3, name, m)
+        ok || return FFALSE
+    end
+
+    return current_op_ndet(ld, m, false, A1, A2, name, PL__ctx)       # inherit = false
+end
+
 # ── initialising the operators (pl-op.c) ────────────────────────────────────────────────────────
 # PORT: pl-op.c operators
 "SWI-Prolog's default operators (pl-op.c `operators[]`): `(name, type, priority)`."
@@ -343,9 +535,16 @@ function initOperators!(gd::PL_global_data{T})::Nothing where {T}
 end
 
 # PORT: pl-op.c BeginPredDefs as PL_predicates_from_op
-# DIVERGES: the entries of the predicates the kernel has ported (`op/3`); `PRED_DEF` ors in
-# `PL_FA_VARARGS`. NOT PORTED: `current_op/3` and `$local_op/3` (non-deterministic: V9).
-"pl-op.c's registration table (`BeginPredDefs(op)`): the ported entries."
+# DIVERGES: all three entries, in upstream's order; `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-op.c's registration table (`BeginPredDefs(op)`)."
 const PL_predicates_from_op = (
     PL_extension("op", 3, pl_op3_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension(
+        "current_op", 3, pl_current_op3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$local_op", 3, pl_local_op3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_TRANSPARENT | PL_FA_VARARGS
+    )
 )

@@ -1080,7 +1080,8 @@ end
 # `FRG_CUTTED`, an exception after a redo) shows as a count that does not return to 0.
 "How many states of the non-deterministic built-ins are live in `ld` (a white-box count)."
 live_states(ld::PL_local_data)::Int =
-    ld.between_states.live + ld.retract_contexts.live + ld.clause_contexts.live
+    ld.between_states.live + ld.retract_contexts.live + ld.clause_contexts.live +
+    ld.op_enums.live
 
 # PORT: pl-fli.c PL_qualify
 # DIVERGES: the database and local data are arguments; the module is an index into `gd`'s table

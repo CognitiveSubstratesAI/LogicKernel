@@ -1530,6 +1530,22 @@ function _manifest_index(T)
         (LK.unify_atom_compound, Tuple{LD, Int, Int}, false),
         (LK.unify_head, Tuple{GD, LD, Int, Int}, false),
         (LK.protected_predicate, Tuple{GD, LD, D}, false),
+        # NF3 — current_op/3 and '$local_op'/3 (src/pl-op.jl), non-deterministic: the enumeration, the module a
+        # qualified name selects, the pool of their states
+        (LK.pl_current_op3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_local_op3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (
+            LK.current_op_ndet,
+            Tuple{LD, MOD, Bool, Int, Int, Int, LK.foreign_context{T}},
+            false
+        ),
+        (LK.get_op_module, Tuple{GD, LD, Int, Int, MOD}, false),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.op_enum{T}}}, false),
+        (
+            LK.free_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.op_enum{T}}, Int},
+            false
+        ),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, Tuple{T, Int}}, false),
         (
             LK.PL_error,

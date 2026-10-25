@@ -7,6 +7,7 @@
 # UPSTREAM: swipl-devel src/pl-gmp.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-arith.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-proc.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-op.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -1518,6 +1519,17 @@ mutable struct retract_context{T}
     allocated::Bool
 end
 retract_context{T}() where {T} = retract_context{T}(nothing, ClauseChoice{T}(), false)
+
+# PORT: pl-op.c op_enum
+# DIVERGES: a record in the local data's pool (`foreign_state_pool`, `ld.op_enums`), where upstream's is
+# `allocHeapOrHalt`'d and its `buffer` an `initBuffer`'d malloc buffer: here a vector of upstream's `opdef`s
+# (`(name, type, priority)`), emptied (not freed) when the state goes back to the pool.
+"current_op/3's and `\$local_op/3`'s state between answers (pl-op.c `op_enum`): the matching operators and the next to try."
+mutable struct op_enum{T}
+    buffer::Vector{Tuple{T, UInt8, Int16}}
+    index::Int
+end
+op_enum{T}() where {T} = op_enum{T}(Tuple{T, UInt8, Int16}[], 0)
 
 # ── text processing (pl-incl.h), R1d ─────────────────────────────────────────────────────────────
 # PORT: pl-incl.h CVT_status

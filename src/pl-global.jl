@@ -278,6 +278,7 @@ end
 # upstream `malloc`s them (`allocForeignState`). Since NF2: `retract_contexts` and `clause_contexts`,
 # the pools of retract/1's and clause/2's states, and `retract_ctxbuf`, retract/1's first-call buffer
 # (upstream's `ctxbuf`, on the C stack: no Prolog runs during the call, so one record serves).
+# Since NF3: `op_enums`, the pool of current_op/3's and `$local_op/3`'s states (`op_enum`, pl-incl.jl).
 """
     PL_local_data{T}(gd)
 
@@ -397,6 +398,7 @@ mutable struct PL_local_data{T}
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
     retract_ctxbuf::retract_context{T}                          # (retract/1's C-stack `ctxbuf`)
     clause_contexts::foreign_state_pool{ClauseChoice{T}}        # (clause/2's REDO_PTR states, NF2)
+    op_enums::foreign_state_pool{op_enum{T}}                    # (current_op/3's and $local_op/3's REDO_PTR states, NF3)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -467,7 +469,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
         retract_context{T}(),                   # retract/1's first-call buffer
-        foreign_state_pool{ClauseChoice{T}}()   # clause/2's states: none
+        foreign_state_pool{ClauseChoice{T}}(),  # clause/2's states: none
+        foreign_state_pool{op_enum{T}}()        # current_op/3's states: none
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
