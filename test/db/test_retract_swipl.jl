@@ -146,7 +146,7 @@ end
 # the program shared by both sides (rows.pl's helpers, with new_rows.pl's u/1 and st/1): q/1, r/1, s/2, d/0 and u/1 dynamic,
 # q(1..3) after `reset`; st/1 STATIC (n04); `left/1` reports what q/1 holds; `callzz1/0` calls the undefined zz1/0 (n11)
 const _PROGRAM = """
-:- dynamic q/1, r/1, s/2, d/0, u/1.
+:- dynamic q/1, r/1, s/2, d/0, u/1, w/1, v/1.
 reset :- retractall(q(_)), retractall(r(_)), retractall(s(_,_)),
          assertz(q(1)), assertz(q(2)), assertz(q(3)).
 left(L) :- findall(X, q(X), L).
@@ -197,6 +197,16 @@ const _RT_CASES = [
     ("n08", "reset, findall(X, ( retract(q(X)), X >= 2, ! ), L), left(Left), R = L-Left"),
     ("n09", "reset, assertz(s(a, c)), retract((s(X, Y) :- true)), R = X-Y"),
     ("n10", "reset, retract(user:q(X)), R = X"),                                                  # three answers, module-qualified
+    # a failed attempt is REWOUND before the next clause (pl-proc.c retract: PL_rewind_foreign_frame) — rows the
+    # index cannot decide: the body fails after the head bound X, and a nested argument fails after X (NF2-R5)
+    (
+        "n12",
+        "retractall(w(_)), assertz((w(1) :- st(a))), assertz((w(2) :- st(b))), retract((w(X) :- st(b))), R = X"
+    ),
+    (
+        "n13",
+        "retractall(v(_)), assertz(v(f(1, c))), assertz(v(f(2, b))), retract(v(f(X, b))), R = X"
+    ),
     # NF2's own row (answered by the live swipl only; not in rows.out or new_rows.out): `zz1/0` exists — `callzz1/0`'s body
     # calls it — but is neither dynamic nor defined, so retract/1 makes it dynamic and fails (pl-proc.c:3168-3173); the
     # call then fails where it would have raised existence_error
