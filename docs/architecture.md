@@ -1828,6 +1828,15 @@ unbound argument (vmi:3685-3688): `concatenate(A,B,[1])` is non-deterministic, a
     `msort`, and no row compares a multi-answer order). Upstream's priority filter drops a `user`
     redefinition before `system`'s operator is hidden by it, so `op(250, yfx, rem)` leaves
     `current_op(400, T, rem)` answering `yfx`: ported as it is (row s04, from swipl).
+  * Since NF4 the `a1, a2, …` convention (pl-ext.c's FRG table, `NDET`): the supervisor `I_FOPENNDET,
+    I_FCALLNDET<arity> f, I_FEXITNDET, I_FREDO` runs; the eleven instructions share one label calling
+    `_fcall_ndet` (src/pl-ext.jl), a third generated tree over `foreigns` whose leaves pass the arity's term
+    references and the context last (FCALL_NDETN); each tree's leaf for an entry of the other kind is a named
+    error. discardForeignFrame's `CALL_FCUTTED` passes every argument as 0 (`h0 == 0`). First user:
+    `repeat/0` (pl-prims.c), an integer retry context (`REDO_INT`, `ForeignRedoInt(2)`) — the first user of
+    I_FREDO's arithmetic decode and of discardForeignFrame's unsigned one (`(uintptr_t)(wcl >>
+    FRG_REDO_BITS)` on a `word`: NF1 had made the latter arithmetic, corrected here). `sub_atom/5` follows as
+    NF4b, after T1 brings pl-text.c's functions.
 * **First users:**
   * the ALREADY-PORTED predicates, registered as upstream registers them (V5): pl-prims.c's table
     (pl-prims.c:6570-6623) and `=@=` (pl-variant.c:544);

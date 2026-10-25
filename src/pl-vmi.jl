@@ -22,7 +22,7 @@
 # (`I_CALL1`, `I_CALLN`), V9f's `I_CATCH`, `I_EXITCATCH`, `I_DET`, `C_DET`, `C_DETTRUE`,
 # `C_DETFALSE` and V9g's `I_CALLCLEANUP`, `I_EXITCLEANUP`, then NF1's non-deterministic foreign calls
 # (`I_FOPENNDET`, `I_FCALLNDETVA`, `I_FCALLNDET0` … `I_FCALLNDET10` — the eleven consecutive, as the
-# deterministic ones — `I_FEXITNDET`, `I_FREDO`; the `a1, a2, …` ones are refused by name until NF4).
+# deterministic ones — `I_FEXITNDET`, `I_FREDO`; the `a1, a2, …` ones run since NF4).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,

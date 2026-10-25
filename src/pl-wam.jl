@@ -942,8 +942,8 @@ end
 # DIVERGES: the context word is the frame's `fctx` (see `localFrame`); a `REDO_PTR` context is passed
 # as the word, the pool index in its high bits (`PL_foreign_context_address`). The control argument is
 # the current query's `FNDET_CONTEXT` record, where upstream's is a C local: a `FRG_CUTTED` call runs
-# no Prolog, and the next call sets every field again. NOT PORTED: `YIELD_PTR` (decision 1, asserted);
-# the `a1, a2, …` convention's `CALL_FCUTTED` (NF4: no such built-in is registered, asserted).
+# no Prolog, and the next call sets every field again. NOT PORTED: `YIELD_PTR` (decision 1, asserted).
+# Since NF4 the `a1, a2, …` convention's `CALL_FCUTTED` runs (`_fcall_ndet` with every argument 0).
 "Call the non-deterministic foreign predicate of frame `fr` once more, with `FRG_CUTTED` (pl-wam.c)."
 function discardForeignFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     f = ld.frames[fr]
@@ -957,7 +957,7 @@ function discardForeignFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     @assert ld.query != 0 "discardForeignFrame: no query"
     context = ld.queries[ld.query].fndet_context
     if t == REDO_INT
-        context.context = reinterpret(UInt, reinterpret(Int, wcl) >> FRG_REDO_BITS)   # (intptr_t)wcl >> …
+        context.context = wcl >> FRG_REDO_BITS      # (uintptr_t)(wcl >> FRG_REDO_BITS): `word`, unsigned
     else                                            # REDO_PTR
         context.context = wcl
     end
@@ -965,8 +965,11 @@ function discardForeignFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     context.predicate = def
 
     fid = PL_open_foreign_frame(ld)
-    @assert (def.flags & P_VARARG) != 0 "discardForeignFrame: the a1, a2, … convention (NF4)"
-    _fcall_va(func, ld, 0, argc, context)           # (*function)(0, argc, &context)
+    if (def.flags & P_VARARG) != 0
+        _fcall_va(func, ld, 0, argc, context)       # (*(FuncN)function)(0, argc, &context)
+    else
+        _fcall_ndet(func, ld, 0, context)           # CALL_FCUTTED(argc, function, &context)
+    end
     PL_close_foreign_frame(ld, fid)
     return nothing
 end
@@ -1572,7 +1575,10 @@ const VMI_RUN = (
     :C_IFTHENELSE, :C_IFTHEN, :C_CUT, :C_FASTCOND, :C_FASTCUT, :C_END, :C_NOT, :C_FAIL,
     :C_LCUT, :C_LCUTIFTHEN, :C_SOFTIF, :C_SOFTCUT, :C_SOFTIFTHEN, :C_SCUT, :C_LSCUT,
     :I_CALL1, :I_CALLN, :I_CATCH, :I_EXITCATCH, :I_DET, :C_DET, :C_DETTRUE, :C_DETFALSE,
-    :I_CALLCLEANUP, :I_EXITCLEANUP, :I_FOPENNDET, :I_FCALLNDETVA, :I_FEXITNDET, :I_FREDO
+    :I_CALLCLEANUP, :I_EXITCLEANUP, :I_FOPENNDET, :I_FCALLNDETVA, :I_FEXITNDET, :I_FREDO,
+    :I_FCALLNDET0, :I_FCALLNDET1, :I_FCALLNDET2, :I_FCALLNDET3, :I_FCALLNDET4,
+    :I_FCALLNDET5,
+    :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -4156,6 +4162,44 @@ function PL_next_solution_guarded(
     fn_h0 = argFrameP(ld.frames[FR].base, 0)        # argFrameP(FR, 0) - (Word)lBase
     fexitndet_rc = _fcall_va(
         fn_i, ld, fn_h0, DEF.arity, ld.queries[QueryFromQid(ld, QID)].fndet_context
+    )
+    @goto helper_I_FEXITNDET
+
+    # PORT: pl-vmi.c I_FCALLNDET0
+    # DIVERGES: as `I_FCALLNDET1`; upstream's `(*f)(&FNDET_CONTEXT)` takes the context only, which is
+    # the leaf of an arity-0 entry (no term reference before the context).
+    @label I_FCALLNDET0
+    @goto fcall_ndetn
+
+    # PORT: pl-vmi.c FCALL_NDETN as I_FCALLNDET1
+    # DIVERGES: one label per instruction (NF4), all calling `_fcall_ndet`, whose leaf for each
+    # non-deterministic FRG built-in passes its arity's term references `h0, h0+1, …` and the context
+    # last (FCALL_NDETN's `__VA_ARGS__, &FNDET_CONTEXT`).
+    @label I_FCALLNDET1
+    @goto fcall_ndetn
+    @label I_FCALLNDET2
+    @goto fcall_ndetn
+    @label I_FCALLNDET3
+    @goto fcall_ndetn
+    @label I_FCALLNDET4
+    @goto fcall_ndetn
+    @label I_FCALLNDET5
+    @goto fcall_ndetn
+    @label I_FCALLNDET6
+    @goto fcall_ndetn
+    @label I_FCALLNDET7
+    @goto fcall_ndetn
+    @label I_FCALLNDET8
+    @goto fcall_ndetn
+    @label I_FCALLNDET9
+    @goto fcall_ndetn
+    @label I_FCALLNDET10
+    @label fcall_ndetn
+    fn_i = Int(PCc[PC])
+    PC += 1
+    fn_h0 = argFrameP(ld.frames[FR].base, 0)        # argFrameP(FR, 0) - (Word)lBase
+    fexitndet_rc = _fcall_ndet(
+        fn_i, ld, fn_h0, ld.queries[QueryFromQid(ld, QID)].fndet_context
     )
     @goto helper_I_FEXITNDET
 

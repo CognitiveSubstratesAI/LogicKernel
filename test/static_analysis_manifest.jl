@@ -1306,6 +1306,8 @@ function _manifest_index(T)
         (LK.pl_true, Tuple{LD}, true), (LK.pl_fail, Tuple{LD}, true),   # V9f: true/0, fail/0, $fail/0
         (LK._fcall_va, Tuple{Int, LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._fcall_det, Tuple{Int, LD, Int}, false),
+        (LK._fcall_ndet, Tuple{Int, LD, Int, LK.foreign_context{T}}, false),   # NF4
+        (LK.pl_repeat, Tuple{LD, LK.foreign_context{T}}, true),               # NF4: repeat/0
         (LK.MODULE_system, Tuple{GD}, true),
         (LK.PL_unify_frame, Tuple{LD, Int, Int}, false),
         (LK.PL_unify_choice, Tuple{LD, Int, Int}, false),
@@ -2129,6 +2131,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._va_leaf)}, false),
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),
     (LK._va_leaf, Tuple{Int}, false), (LK._det_leaf, Tuple{Int}, false),
+    (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._ndet_leaf)}, false),     # NF4
+    (LK._ndet_leaf, Tuple{Int}, false), (LK._frg_ndet, Tuple{Int}, false),
     # the atom table (L1b stage A: src/pl-atom.jl; pl-data.h's indexAtom/atomValue, pl-inline.h's
     # fetchAtomArray, pl-ressymbol.c's initReservedSymbols, pl-fli.c's lookupUCSAtom, pl-text.c)
     (LK.atoms_t, Tuple{}, false),
@@ -2384,6 +2388,9 @@ const SPAN_CALLEE_EXEMPT = [
     (LK.resumeAfterException, :error, "an exception unwinds the frames"),
     (LK._fcall_va, :builtin, "V5a2: the built-ins' dispatch tree"),
     (LK._fcall_det, :builtin, "V5a2: the FRG built-ins' dispatch tree")
+    # NOT `_fcall_ndet` (NF4): with repeat/0 its only non-deterministic entry, every other leaf throws, so
+    # the run loop inlines it and its leaf's built-in (`pl_repeat`) is the span callee, AllocChecked
+    # on its own. The entry comes back when a second one (NF4b's sub_atom/5) keeps the tree a call.
 ]
 
 const DISPATCH_EXEMPT = (
@@ -2425,5 +2432,8 @@ const DISPATCH_EXEMPT = (
     ),
     (
         (LK.var"@_fcall_det_body", Tuple{LineNumberNode, Module}) => "a macro (the FRG built-ins' dispatch tree, V5a2): it builds Exprs at load time; its expansion is _fcall_det, which is checked"
+    ),
+    (
+        (LK.var"@_fcall_ndet_body", Tuple{LineNumberNode, Module}) => "a macro (the non-deterministic FRG built-ins' dispatch tree, NF4): it builds Exprs at load time; its expansion is _fcall_ndet, which is checked"
     )
 )

@@ -305,12 +305,12 @@ end
             fpath = (
                 "I_FCALLDETVA", "I_FCALLDET0", "fcall_detn", "helper_I_FEXITDET",
                 "I_FOPENNDET", "foreign_redo", "I_FCALLNDETVA", "helper_I_FEXITNDET",
-                "I_FREDO"
+                "I_FREDO", "fcall_ndetn"
             )
             @test all(n -> haskey(spans_of, n), fpath)
             fspans = [spans_of[n] for n in fpath]
             inside = (
-                :_fcall_va, :_fcall_det, :error_foreign_return_code,
+                :_fcall_va, :_fcall_det, :_fcall_ndet, :error_foreign_return_code,
                 :PL_clear_foreign_exception
             )
             stray = [

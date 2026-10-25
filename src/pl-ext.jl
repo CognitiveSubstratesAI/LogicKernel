@@ -30,7 +30,8 @@
 # PORT: pl-ext.c foreigns
 # DIVERGES: the ported entries only, in upstream's order (upstream's table has 56, pl-ext.c:98-190);
 # since R1e's write/1 family, write/1,2, writeq/1,2, writeln/1,2, print/1,2 and write_canonical/1,2;
-# since V9f fail/0, true/0 and `$fail/0` (pl-prims.c; `!/0`, pl-pro.c's `pl_metacut`, is not yet).
+# since V9f fail/0, true/0 and `$fail/0` (pl-prims.c; `!/0`, pl-pro.c's `pl_metacut`, is not yet); since NF4
+# repeat/0 (pl-prims.c), the first NDET entry, before fail/0 as upstream's (pl-ext.c:135).
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
     PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
@@ -38,6 +39,7 @@ const foreigns = (
     PL_extension("writeq", 1, pl_writeq, PL_FA_ISO),
     PL_extension("writeln", 1, pl_writeln, 0x00),
     PL_extension("print", 1, pl_print, 0x00),
+    PL_extension("repeat", 0, pl_repeat, PL_FA_NONDETERMINISTIC | PL_FA_ISO),
     PL_extension("fail", 0, pl_fail, PL_FA_ISO),
     PL_extension("true", 0, pl_true, PL_FA_ISO),
     PL_extension("\$fail", 0, pl_fail, PL_FA_NOTRACE),
@@ -675,12 +677,35 @@ end
 "The leaf of `_fcall_va`'s tree for entry `k`: its function, called statically, never inlined."
 _va_leaf(k::Int)::Expr = :(return @noinline _FOREIGN_VA[$k].function_(ld, h0, ac, ctx))
 
+"Whether FRG entry `k` is non-deterministic (`PL_FA_NONDETERMINISTIC`): its function takes the context last."
+_frg_ndet(k::Int)::Bool = (_FOREIGN_DET[k].flags & PL_FA_NONDETERMINISTIC) != 0
+
 "The leaf of `_fcall_det`'s tree for entry `k`: its function, on its arity's term references."
-_det_leaf(k::Int)::Expr = :(
-    return @noinline _FOREIGN_DET[$k].function_(
-        ld, $((:(h0 + $j) for j in 0:(_FOREIGN_DET[k].arity - 1))...)
-    )
-)
+_det_leaf(k::Int)::Expr =
+    if _frg_ndet(k)
+        :(error($("_fcall_det: FRG entry $k is non-deterministic (_fcall_ndet)")))
+    else
+        :(
+            return @noinline _FOREIGN_DET[$k].function_(
+                ld, $((:(h0 + $j) for j in 0:(_FOREIGN_DET[k].arity - 1))...)
+            )
+        )
+    end
+
+# ORIGINAL (NF4): the non-deterministic `a1, a2, …` call, `(*f)(h0, h0+1, …, &FNDET_CONTEXT)` (pl-vmi.c FCALL_NDETN).
+# `h0 == 0` is discardForeignFrame's FRG_CUTTED call, whose arguments are all 0 (pl-wam.c CALL_FCUTTED).
+"The leaf of `_fcall_ndet`'s tree for entry `k`: its function, on its arity's term references and the context."
+_ndet_leaf(k::Int)::Expr =
+    if !_frg_ndet(k)
+        :(error($("_fcall_ndet: FRG entry $k is deterministic (_fcall_det)")))
+    else
+        :(
+            return @noinline _FOREIGN_DET[$k].function_(
+                ld, $((:(h0 == 0 ? 0 : h0 + $j) for j in 0:(_FOREIGN_DET[k].arity - 1))...),
+                ctx
+            )
+        )
+    end
 
 "The tree over `_FOREIGN_VA`."
 macro _fcall_va_body()
@@ -690,6 +715,11 @@ end
 "The tree over `_FOREIGN_DET`."
 macro _fcall_det_body()
     return esc(_foreign_tree(:i, 1, length(_FOREIGN_DET), _det_leaf))
+end
+
+"The tree over `_FOREIGN_DET`'s non-deterministic entries (NF4)."
+macro _fcall_ndet_body()
+    return esc(_foreign_tree(:i, 1, length(_FOREIGN_DET), _ndet_leaf))
 end
 
 "Call `PRED_DEF` built-in `i` with the `t0, ac, ctx` convention — the generated tree."
@@ -704,4 +734,12 @@ end
 function _fcall_det(i::Int, ld::PL_local_data{T}, h0::term_t)::foreign_t where {T}
     @assert 1 <= i <= length(_FOREIGN_DET)
     @_fcall_det_body
+end
+
+"Call non-deterministic FRG built-in `i` on the term references from `h0` (0: all 0) and `ctx` — the generated tree."
+function _fcall_ndet(
+    i::Int, ld::PL_local_data{T}, h0::term_t, ctx::control_t{T}
+)::foreign_t where {T}
+    @assert 1 <= i <= length(_FOREIGN_DET)
+    @_fcall_ndet_body
 end

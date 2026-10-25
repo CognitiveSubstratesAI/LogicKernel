@@ -2744,6 +2744,17 @@ const PL_predicates_from_prims = (
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)
 )
 
+# ── repeat/0 (NF4: the first non-deterministic built-in of the `a1, a2, …` convention) ─────────────
+# PORT: pl-prims.c pl_repeat
+"`repeat/0` (pl-prims.c): succeeds, and again on every backtrack — an integer retry context (`REDO_INT`)."
+function pl_repeat(ld::PL_local_data{T}, h::control_t{T})::foreign_t where {T}
+    c = PL_foreign_control(h)
+    if c == FRG_FIRST_CALL || c == FRG_REDO
+        return PL_retry(2)                          # ForeignRedoInt(2L)
+    end
+    return FTRUE                                    # FRG_CUTTED, default: succeed
+end
+
 # ── fail/0, true/0 (since V9f: a meta-called `true`, as catch/3's recover goal often is) ─────────
 # In a clause body they compile inline (`I_FAIL`, `I_TRUE`, since V9a); called as a TERM —
 # `call(true)`, a variable goal — they resolve these predicates, registered from pl-ext.c's table

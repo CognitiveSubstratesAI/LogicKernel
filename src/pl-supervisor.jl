@@ -266,8 +266,8 @@ const MAX_FLI_ARGS = 10
 # PORT: pl-supervisor.c createForeignSupervisor as createForeignSupervisor!
 # DIVERGES: `f` is the built-in's index in its dispatch table (decision 5; src/pl-ext.jl), where
 # upstream's operand is the function's address (`ptr2code`). Since NF1 the non-deterministic
-# supervisor is built as upstream's; the run loop refuses its `I_FCALLNDET<N>` (the `a1, a2, …`
-# convention) by name until NF4 — `I_FCALLNDETVA` runs.
+# supervisor is built as upstream's; since NF4 its `I_FCALLNDET<N>` (the `a1, a2, …` convention) runs
+# too (`_fcall_ndet`, src/pl-ext.jl).
 "Give foreign predicate `def` its supervisor calling built-in `f` (pl-supervisor.c)."
 function createForeignSupervisor!(def::Definition{T}, f::Int)::Bool where {T}
     @assert (def.flags & P_FOREIGN) != 0
