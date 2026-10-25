@@ -57,6 +57,7 @@
     ERR_AR_DOMAIN                   # atom_t domain, Number value
     ERR_EVALUATION                  # atom_t what
     ERR_RESOURCE                    # atom_t what
+    ERR_UNINSTANTIATION             # int argn, term_t term (AV2: put_attr/3, put_attrs/2)
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -384,6 +385,39 @@ function PL_error(
             )
         end
     end
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+# (AV2) the `ERR_UNINSTANTIATION` branch of pl-error.c `PL_error`
+"""
+    PL_error(ld, pred, arity, msg, ERR_UNINSTANTIATION, argn, bound::term_t) -> false
+
+Raise `error(uninstantiation_error(Bound), context(pred/arity, Msg))` — with no `msg` and `argn > 0`,
+`Msg` is the argument's position, `'1-st argument'` (pl-error.c's `"%d-%s argument"`).
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
+    argn::Int,
+    bound::term_t
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_UNINSTANTIATION
+    if isempty(msg) && argn > 0                         # if ( !msg && argn > 0 )
+        msg = "$argn-" * (
+                  if argn == 1
+                      "st"
+                  elseif argn == 2
+                      "nd"
+                  else
+                      "th"
+                  end
+              ) * " argument"
+    end
+    PL_cons_functor(                                    # PL_FUNCTOR, FUNCTOR_uninstantiation_error1,
+        ld, formal, _err_functor(ld, :uninstantiation_error, 1), bound  #   PL_TERM, bound
+    )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 

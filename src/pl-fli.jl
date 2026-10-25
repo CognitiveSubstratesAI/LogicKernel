@@ -802,6 +802,15 @@ function PL_is_variable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     return k == DU_CELL || k == DU_ATTVAR                   # canBind(w) (AV1b)
 end
 
+# PORT: pl-fli.h PL_is_attvar
+# DIVERGES: on the WORDS (`valHandle(t)`, `_deref_loc`), as `PL_is_variable`; one function for upstream's
+# two (this inline LD form and pl-fli.c's API stub, which only validates `t`).
+"Whether term reference `t` holds an attributed variable (pl-fli.h; `isAttVar`)."
+function PL_is_attvar(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, _, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    return k == DU_ATTVAR                                   # return isAttVar(w)
+end
+
 # The type tests on a term reference (V6b): `valHandle(t)` is the slot dereferenced through the
 # bindings; each then asks pl-data.h's test (src/pl-incl.jl).
 

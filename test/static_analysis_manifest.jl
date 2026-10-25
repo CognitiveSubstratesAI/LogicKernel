@@ -1152,6 +1152,28 @@ function _manifest_index(T)
         (LK.saveWakeup, Tuple{LD, Bool}, false),
         (LK.restore_exception, Tuple{LD, Int}, false),
         (LK.restoreWakeup, Tuple{LD, LK.wakeup_state}, false),
+        # AV2 — the attribute store (src/pl-attvar.jl): the C functions, the FLI and the predicates
+        (LK._functor_att3, Tuple{LD}, false),
+        (LK._link_val_loc!, Tuple{LD, Tuple{UInt8, UInt64, Int}}, false),
+        (LK.PL_get_attr, Tuple{LD, Int, Int}, false),
+        (LK.PL_is_attvar, Tuple{LD, Int}, false),
+        (LK.link_attvar, Tuple{LD}, false),
+        (LK.make_new_attvar, Tuple{LD, Int}, false),
+        (LK.put_new_attvar, Tuple{LD, Int, UInt64, Tuple{UInt8, UInt64, Int}}, false),
+        (LK.find_attr, Tuple{LD, Int, UInt64}, false),
+        (LK.put_att_value, Tuple{LD, Int, UInt64, Tuple{UInt8, UInt64, Int}}, false),
+        (LK.put_attr, Tuple{LD, Int, UInt64, Tuple{UInt8, UInt64, Int}}, false),
+        (LK.get_attr, Tuple{LD, Int, UInt64, Int}, false),
+        (LK.del_attr, Tuple{LD, Int, UInt64}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_attvar1_va, LK.pl_get_attrs2_va, LK.pl_get_attr3_va,
+                LK.pl_put_attr3_va,
+                LK.pl_put_attrs2_va, LK.pl_del_attr2_va, LK.pl_del_attrs1_va,
+                LK.pl_attv_unify2_va
+            )
+        ]...,
+        (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, Int, Int}, false),   # ERR_UNINSTANTIATION
         # V9f — `$/1`, `$/0`: the determinism errors (src/pl-wam.jl, pl-comp.jl, pl-error.jl) and
         # the frame's variables made fresh before its goal is decompiled (src/pl-gc.jl)
         (LK.determinism_error, Tuple{LD, Int, Int, Symbol}, false),
@@ -2161,6 +2183,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_variant)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_trace)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_proc)}, false),   # R1f
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_attvar)}, false),   # AV2
     # the built-ins' dispatch trees, built when src/pl-ext.jl loads
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._va_leaf)}, false),
     (LK._foreign_tree, Tuple{Symbol, Int, Int, typeof(LK._det_leaf)}, false),

@@ -724,7 +724,9 @@ end
 # lower's reference (upstream: by address, "always point downwards"; no variable lives on the local
 # stack, so no fresh global variable for two local ones). A value-table word is upstream's indirect:
 # shared by binding, two compared by the term type's `gnd_equal` (`equalIndirect`: SWI's identity in
-# the reference type, `1 = 1.0` fails). No attributed variables.
+# the reference type, `1 = 1.0` fails). An attributed variable (AV2): a plain variable is bound to a
+# reference to it, as upstream's `makeRefG`; an attributed variable against anything else is
+# `assignAttVar`, NOT PORTED until AV3 — refused by name (`_bind_attvar_const_error`), never an answer.
 "Unify two dereferenced locations when neither is a compound; `DO_COMPOUND` when both are (pl-prims.c)."
 function unify_simple_cells(
     ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int
@@ -738,13 +740,24 @@ function unify_simple_cells(
             _bind_const!(ld, p2, makeRefG(p1))      # Trail(t2, makeRefG(t1)): always point downwards
             return BOOLEX_TRUE
         end
+        if k2 == DU_ATTVAR                          # if ( isAttVar(w2) ) w2 = makeRefG(t2)
+            _bind_const!(ld, p1, makeRefG(p2))      # Trail(t1, w2)
+            return BOOLEX_TRUE
+        end
         _bind_const!(ld, p1, _value_word!(ld, w2))  # Trail(t1, w2) (a side word: its value's word, f3-1)
         return BOOLEX_TRUE
     end
     if k2 == DU_CELL
+        if k1 == DU_ATTVAR                          # if ( isAttVar(w1) ) w1 = makeRefG(t1)
+            _bind_const!(ld, p2, makeRefG(p1))      # Trail(t2, w1)
+            return BOOLEX_TRUE
+        end
         _bind_const!(ld, p2, _value_word!(ld, w1))  # Trail(t2, w1)
         return BOOLEX_TRUE
     end
+    (k1 == DU_ATTVAR && k2 == DU_ATTVAR && p1 == p2) && return BOOLEX_TRUE   # t1 == t2: the same attvar
+    k1 == DU_ATTVAR && throw(_bind_attvar_const_error(p1, w1))   # assignAttVar(t1, t2): AV3
+    k2 == DU_ATTVAR && throw(_bind_attvar_const_error(p2, w2))   # assignAttVar(t2, t1): AV3
     w1 == w2 && return BOOLEX_TRUE
     k1 == k2 || return BOOLEX_FALSE                 # tagex(w1) != tagex(w2)
     if k1 == DU_VALUE
@@ -1556,7 +1569,9 @@ end
 # DIVERGES: on locations; no `onStack(global, …)` test (every variable is a global cell); the trail
 # walk reads global positions; the failure's value is its dereferenced word, read before `Undo!`
 # (upstream copies `*p2` to a fresh cell: see `failed_unify_with_occurs_check_cells`), and the error
-# is built on the cells (f3b-4). No attributed variables (the wakeup entries of the trail).
+# is built on the cells (f3b-4). An attributed variable is `canBind` (since AV2: its occurs test, row
+# av22). NOT PORTED: the trail walk's skip of the wakeup list's two entries (pl-prims.c:720-725) — AV3,
+# which adds them.
 """
     unify_with_occurs_check_cells(ld, l1, l2, mode) -> boolex_t
 
@@ -1569,7 +1584,7 @@ function unify_with_occurs_check_cells(
 )::boolex_t where {T}
     k1, w1, p1 = _deref_loc(ld, l1)
     k2, w2, p2 = _deref_loc(ld, l2)
-    if k1 == DU_CELL                                    # canBind(*t1)
+    if k1 == DU_CELL || k1 == DU_ATTVAR                 # canBind(*t1) (AV2: an attributed variable)
         if var_occurs_in_cells(ld, p1, l2)
             return failed_unify_with_occurs_check_cells(
                 ld, (k1, w1, p1), (k2, w2, p2), mode
@@ -1577,7 +1592,7 @@ function unify_with_occurs_check_cells(
         end
         return do_unify_cells(ld, l1, l2)
     end
-    if k2 == DU_CELL                                    # canBind(*t2)
+    if k2 == DU_CELL || k2 == DU_ATTVAR                 # canBind(*t2) (AV2)
         if var_occurs_in_cells(ld, p2, l1)
             return failed_unify_with_occurs_check_cells(
                 ld, (k1, w1, p1), (k2, w2, p2), mode
@@ -1680,7 +1695,7 @@ end
 # (PRED_IMPL("\\=", 2, not_unify, 0))
 # DIVERGES: the quick tests on words are the kernel's atomic identity (`compare_primitives`):
 # two atomic terms unify exactly when they are identical, as upstream's word and indirect tests
-# decide; a compound on either side goes to the full check. No attributed variables.
+# decide; a compound or an attributed variable on either side goes to the full check.
 "`\\=/2` (pl-prims.c): the arguments cannot unify; an occurs-check error is raised again."
 function pl_not_unify2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1692,6 +1707,7 @@ function pl_not_unify2_va(
         ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE && return FFALSE   # can unify
     elseif k1 == k2 && w1 == w2                         # w1 == w2
         return FFALSE
+    elseif k1 == DU_ATTVAR || k2 == DU_ATTVAR           # isAttVar(w1) || isAttVar(w2): goto full_check
     elseif !(k1 == DU_WORD && _is_gcompound(w1) && k2 == DU_WORD && _is_gcompound(w2))
         return if compare_primitives_cells(ld, k1, w1, 0, k2, w2, 0, CMP_MODE_EQUAL) ==
             CMP_EQUAL
