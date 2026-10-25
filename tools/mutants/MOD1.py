@@ -8,8 +8,12 @@
 # TS is the live differential and the white-box testsets (test/core_lang/test_module_swipl.jl), TP the unit file of
 # the module path (test/core_lang/test_module_path.jl).
 # EQUIVALENT, with the reason: MOD1-S15 (the last super tested by the loop or by the recursion gives one truth value);
-# MOD1-P10 (the only limit that reaches the store is 0, which `code_limit` already is); MOD1-B4 (a foreign
+# MOD1-P17 (the only limit that reaches the store is 0, which `code_limit` already is); MOD1-B4 (a foreign
 # definition has no clauses to count).
+# BOOT-SAFE (5b257b3's battery, run 40212283129): T1, T3 and T4 first broke EVERY module, `system` and `user` included;
+# the precompile workload (src/precompile_workload.jl) builds a database while a fresh CI process precompiles, so the
+# package did not load and no test could run (NO VERDICT (does not load), D-0050). They now break only a module made
+# after boot (index > 2: pl-global.jl makes system, then user), which every module row of TS makes.
 # NOT mutated: the exports loop over `keys(m.public_)` (a Julia Dict iterates in insertion order while nothing is
 # deleted — indistinguishable from `public_order` in a test); the level of a module made by `_lookupModule!` is
 # the same code as `addSuperModule_no_lock`'s (S5).
@@ -22,18 +26,18 @@ M = "src/pl-modul.jl"
 I = "src/pl-incl.jl"
 MUTANTS = [
     # ---- the table and the creation of a module
-    dict(id="MOD1-T1 a lookup never finds a module by name", file=M, targets=TS,
+    dict(id="MOD1-T1 a lookup never finds a module made after boot", file=M, targets=TS,
          old='''    return i == 0 ? nothing : modules.modules[i]''',
-         new='''    return nothing'''),
+         new='''    return i == 0 || i > 2 ? nothing : modules.modules[i]'''),
     dict(id="MOD1-T2 a module is created again on every lookup", file=M, targets=TS,
          old='''    m0 === nothing || return m0''',
          new='''    nothing'''),
-    dict(id="MOD1-T3 a new module is not entered in the name index", file=M, targets=TS + TP,
+    dict(id="MOD1-T3 a module made after boot is not entered in the name index", file=M, targets=TS + TP,
          old='''    modules.names[m.name] = m.index''',
-         new='''    nothing'''),
-    dict(id="MOD1-T4 a new module's index is off by one", file=M, targets=TS,
+         new='''    m.index > 2 || (modules.names[m.name] = m.index)'''),
+    dict(id="MOD1-T4 a module made after boot gets its predecessor's index", file=M, targets=TS,
          old='''        sym_key(name), name, length(modules.modules) + 1, class, 0,''',
-         new='''        sym_key(name), name, length(modules.modules), class, 0,'''),
+         new='''        sym_key(name), name, length(modules.modules) + (length(modules.modules) < 2), class, 0,'''),
     dict(id="MOD1-T5 a module's syntax flags are not set", file=M, targets=TS + TP,
          old='''    flags |= DBLQ_STRING | BQ_CODES | O_RATIONAL_SYNTAX     # !GD->options.traditional''',
          new='''    flags |= O_RATIONAL_SYNTAX     # !GD->options.traditional'''),
