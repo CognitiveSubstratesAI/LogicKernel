@@ -885,8 +885,16 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 mkpath(joinpath(repo, "tools", "mutants"))
                 write(joinpath(repo, "tools", "mutants", "MutX.py"), "MUTANTS = []\n")
                 run(`git -C $repo add tools/mutants/MutX.py`)
+                no_targets = gs_commit(noreply, noreply)
+                @test push_(no_targets, "refs/heads/mutants/MutX") == 1    # no TARGETS: refused
+                run(`git -C $repo update-ref refs/remotes/origin/gate/mut HEAD`)
+                write(
+                    joinpath(repo, "tools", "mutants", "MutX.py"),
+                    "TARGETS = [\"t.jl\"]\nMUTANTS = []\n"
+                )
+                run(`git -C $repo add tools/mutants/MutX.py`)
                 with_list = gs_commit(noreply, noreply)
-                @test push_(with_list, "refs/heads/mutants/MutX") == 0     # list file present
+                @test push_(with_list, "refs/heads/mutants/MutX") == 0     # list file with TARGETS
                 @test push_(with_list, "refs/heads/mutants/MutY") == 1     # another name: refused
                 @test push_(with_list, "refs/heads/gate/MutY") == 0        # not a mutants/ ref
                 @test push_("0" ^ 40, "refs/heads/mutants/MutY") == 0      # a delete is allowed

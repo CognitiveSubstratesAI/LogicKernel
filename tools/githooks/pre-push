@@ -43,6 +43,9 @@
 #    job, ran no mutant, and left a red run that blocked main's push (tools/ci_status.sh counts every
 #    run of a sha) until it was deleted by hand. So a push whose remote ref is `refs/heads/mutants/<name>`
 #    is refused unless the pushed commit holds that file. A delete (all-zero local sha) is allowed.
+#    The file must also define `TARGETS` (2026-10-25): the Plan job hands the list's TARGETS to the
+#    Baseline job of a push-started run, and two lists without it (FindallAlloc, NF2) gave a baseline
+#    with no target — red in 0 s, so no mutant's verdict counted.
 #
 # LOGICKERNEL_CI_FIXTURE (tools/ci_status.sh) lets test/test_gate_split.jl plant each answer.
 NOREPLY_EMAIL="11524260+sivaji1012@users.noreply.github.com"
@@ -134,6 +137,11 @@ while read -r _local_ref local_sha remote_ref _remote_sha; do
                     _mname="${remote_ref#refs/heads/mutants/}"
                     git -C "$top" cat-file -e "$local_sha:tools/mutants/$_mname.py" 2>/dev/null || {
                         echo "pre-push: REFUSED — $remote_ref ← ${local_sha:0:7}: the commit has no tools/mutants/$_mname.py, and mutation.yml takes its mutant list from the branch name — the Plan job would fail and leave a red run that blocks main. Name the branch after the list file, or add the file." >&2
+                        rc=1
+                        continue
+                    }
+                    git -C "$top" show "$local_sha:tools/mutants/$_mname.py" | grep -qE '^TARGETS[[:space:]]*=' || {
+                        echo "pre-push: REFUSED — $remote_ref ← ${local_sha:0:7}: tools/mutants/$_mname.py defines no TARGETS, and mutation.yml's Baseline job of a push-started run takes its targets from it — it would run no target and no verdict would count. Add TARGETS = [the test files]." >&2
                         rc=1
                         continue
                     }

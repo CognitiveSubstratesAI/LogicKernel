@@ -14,6 +14,7 @@
 # not occur exactly once).
 TR = ["test/db/test_retract_swipl.jl"]
 TC = ["test/db/test_clause_swipl.jl"]
+TARGETS = TR + TC                                   # the baseline's targets (mutate_ci.py plan reads TARGETS)
 W = "src/pl-wam.jl"
 P = "src/pl-proc.jl"
 C = "src/pl-comp.jl"
