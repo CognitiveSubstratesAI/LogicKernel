@@ -653,11 +653,15 @@ function pl_del_attrs1_va(
 end
 
 # PORT: pl-attvar.c attv_unify as pl_attv_unify2_va
-# DIVERGES: `ensureStackSpace(0, 0)` is `ensureGlobalSpace(ld, 0)` (one limit over the three stacks,
-# src/pl-alloc.jl); `linkValG` is `linkValI` here (`_link_val_loc!`): no unbound variable lives on the
+# DIVERGES: at the pin cbf4e189 plus upstream's fix d4621369 (the marker line is port_check's strict form).
+# `ensureStackSpace(0, 0)` is `ensureGlobalSpace(ld, 0)` (one limit over the three stacks, src/pl-alloc.jl); `linkValG` is `linkValI` here (`_link_val_loc!`): no unbound variable lives on the
 # local stack (the slot rule), so there is nothing to globalize. `PL_unify` of a plain variable with an
 # attributed one reaches `unify_simple_cells`, whose attributed-variable branches bind with a wakeup
-# (`assignAttVar`, AV3).
+# (`assignAttVar`, AV3). Upstream d4621369 ("'$attv_unify'(X,X) on an attributed variable created a
+# self-reference"): `v == av` returns true before the link, and the link word `w` is computed BEFORE `av` is
+# dereferenced again (`linkValG` "may shift the stacks"). Here `_link_val_loc!` only reads cells and may add a
+# value-table entry (`_side_value_word!`, src/pl-inline.jl): global-stack positions are indices, so `av`
+# cannot be invalidated; the re-dereference is kept in upstream's order all the same.
 "`\$attv_unify/2` (pl-attvar.c): bind an attributed variable to a value WITHOUT a wakeup; otherwise plain unification."
 function pl_attv_unify2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -668,8 +672,12 @@ function pl_attv_unify2_va(
     k, _, av = _deref_loc(ld, -(A1 + 1))                    # Word av = valTermRef(A1); deRef(av)
 
     if k == DU_ATTVAR                                       # if ( isAttVar(*av) )
+        v = _deref_loc(ld, -(A2 + 1))                       #   Word v = valTermRef(A2); deRef(v)
+        v[3] == av && return FTRUE                          #   if ( v == av ) return true: '$attv_unify'(X,X)
+        w = _link_val_loc!(ld, v)                           #   word w = linkValG(v): may shift the stacks
+        _, _, av = _deref_loc(ld, -(A1 + 1))                #   av = valTermRef(A1); deRef(av)
         TrailAssignment!(ld, av)                            #   TrailAssignment(av): $attv_unify
-        ld.gstack[av] = _link_val_loc!(ld, _deref_loc(ld, -(A2 + 1)))   # *av = linkValG(valTermRef(A2))
+        ld.gstack[av] = w                                   #   *av = w
         return FTRUE
     end
     return PL_unify(ld, A1, A2) ? FTRUE : FFALSE            # return PL_unify(A1, A2)

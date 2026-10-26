@@ -420,6 +420,35 @@ const _AS_LIVE = [
     "put_attr(A,a,1), (X = A, fail ; true), (attvar(X) -> R = attvar ; var(X) -> R = var ; R = bound)"   # trailed
 ]
 
+# '$attv_unify'(X, X) — upstream d4621369 (Jan Wielemaker, 2026-10-26): attv_unify bound an attributed variable to
+# itself, a self-reference every later dereference of it looped on. swipl 10.1.19 (the local oracle, pin cbf4e189)
+# HANGS here (upstream register Q10, fixed upstream d4621369), so no row can be compared live; the expectation is
+# upstream's unit test (tests/attvar/test_attvar.pl): `test(attv_unify_self, true) :- put_attr(X, test_attvar,
+# 1), '$attv_unify'(X, X), attvar(X).` Re-compare against the backport oracle / at the sync that brings the fix.
+# WHITE-BOX, so a regression FAILS instead of hanging the suite: the attvar cell's raw word is read BEFORE any
+# dereference, and the dereferences (the unit's `attvar(X)`) run only when that word is intact.
+@testset "\$attv_unify(X, X) on an attributed variable: true, still attributed, no self-reference (upstream d4621369)" begin
+    ld, _ = _as_engine()
+    ctx = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    a = LK.PL_new_term_refs(ld, 2)
+    LK.put_new_attvar(ld, LK.unRef(ld.slots[a + 1]), _as_atom(ld, "a"), _as_int(1))
+    LK.PL_put_term(ld, a + 1, a)                            # A2 is the same variable as A1
+    _, attword, av = LK._deref_loc(ld, -(a + 1))
+    m = LK.Mark(ld)                                         # under a mark, so a binding would be trailed
+    ntrail = length(ld.trail)
+    @test LK.pl_attv_unify2_va(ld, a, 2, ctx) == LK.FTRUE
+    @test ld.gstack[av] == attword                          # the attvar word untouched, no reference to itself
+    @test ld.gstack[av] != LK.makeRefG(av)
+    @test length(ld.trail) == ntrail                                # no binding, so nothing trailed
+    if ld.gstack[av] == attword                             # only now is a dereference safe (it would loop)
+        k, _, p = LK._deref_loc(ld, -(a + 1))
+        @test (k, p) == (LK.DU_ATTVAR, av)                  # attvar(X)
+        @test LK.PL_is_attvar(ld, a) && LK.PL_is_attvar(ld, a + 1)
+        @test LK.get_attr(ld, av + 1, _as_atom(ld, "a"), LK.PL_new_term_ref(ld))   # its attributes intact
+    end
+    LK.Undo!(ld, m)
+end
+
 "The program `tN(R) :- (Goal).` for each goal, written to a fresh file; its path and the names."
 function _as_program(goals::Vector{String})
     names = ["t$(i - 1)" for i in eachindex(goals)]

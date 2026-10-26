@@ -514,6 +514,15 @@ ported files' headers to either.
     without the mark, without `C_VAR`, and each of the six guards of `compileBodyEQ`/`NEQ`. The
     first run caught 4: the `const == Var` and `Var1 == Var2` guards had no case of their shape,
     in upstream's units or here; four cases were added and all eight rerun.
+* **Backport list (upstream fixes newer than the pin `cbf4e189`)** (D-0175 item 2: port upstream's fixes,
+  not our own; each entry names its upstream commit in the `# PORT:` line of the function it fixes):
+  * `c6087acb` (Q6) — pending: LB2.
+  * `1412ce49` (Q8) — pending: Q8 mirror.
+  * `d4621369` (Q10, `pl-attvar.c attv_unify`) — **ported (this step):** `pl_attv_unify2_va` returns before
+    the link when A2 dereferences to the attributed variable itself, and computes the link word before
+    dereferencing A1 again; test/core_lang/test_attvar_store.jl (white-box, the oracle 10.1.19 hangs here),
+    mutants tools/mutants/Q10fix.py.
+  * `7b9d8ba1` (Q11) — pending: AV4.
 * **The 2026-10-24 sync-2: `8e1bc111` → `cbf4e189` (V10.1.19 + one xpce bump)** (D-0123, D-0126,
   D-0137, D-0138; plunit `bdac3ecf` did not move; 79 upstream commits; 29 ported files changed, 41 markers
   in 30 functions). Every `# UPSTREAM`
