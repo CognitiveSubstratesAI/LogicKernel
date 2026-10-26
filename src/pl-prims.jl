@@ -1690,16 +1690,15 @@ function pl_unify2_va(
 end
 
 # PORT: pl-prims.c can_unify as can_unify_cells
-# DIVERGES: on LOCATIONS (L1e e4): `unify_ptrs_cells`. NOT PORTED: `foreignWakeup` (AV4); a wakeup
-# pending after the unification is refused (`_foreign_wakeup_pending_refused`, since AV3).
+# DIVERGES: on LOCATIONS (L1e e4): `unify_ptrs_cells`. Since AV4 the wakeup runs (`foreignWakeup`);
+# from AV3 to AV4 a pending one was refused (a `NotPortedError` naming AV4).
 "Whether the terms at locations `l1`, `l2` can be unified, without doing so (pl-prims.c `can_unify`); `ex` gets an exception."
 function can_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int, ex::term_t)::Bool where {T}
     fid = PL_open_foreign_frame(ld)
     if fid != 0
         handle_exception = ex == 0
         ex == 0 && (ex = PL_new_term_ref(ld))
-        if unify_ptrs_cells(ld, l1, l2)                     # && foreignWakeup(ex): AV4
-            _foreign_wakeup_pending_refused(ld)
+        if unify_ptrs_cells(ld, l1, l2) && foreignWakeup(ld, ex)   # unify_ptrs(…) && foreignWakeup(ex)
             PL_discard_foreign_frame(ld, fid)
             return true
         end
@@ -2065,6 +2064,10 @@ function unify_all_trail_ptrs_cells(
     m = Mark(ld)
     ld.mark_bar = NO_MARK_BAR                       # every assignment trailed
     if raw_unify_cells(ld, l1, l2) == BOOLEX_TRUE   # the caller discards the mark
+        # ORIGINAL (audit D-0162 item 3): the bar is still off when the unification returns — so every
+        # wakeup-list cell `registerWakeup` changed was trailed as an address AND a value entry, which is
+        # why unifiable's restore never takes its address-entry branch (AV3-P7 equivalent, D-0100).
+        @assert ld.mark_bar == NO_MARK_BAR "unify_all_trail_ptrs: the bar was on during the unification"
         return (true, m)
     end
     ld.exception_term == 0 && Undo!(ld, m)          # check for occurs error

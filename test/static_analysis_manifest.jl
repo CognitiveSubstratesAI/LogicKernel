@@ -1205,7 +1205,7 @@ function _manifest_index(T)
         (LK.resumeAfterException, Tuple{LD, Bool, Bool}, false),
         (LK._reset_exception_slot!, Tuple{LD, Int, Int}, true),
         # V9f — catch/3: the catcher search and catch/3's exit position (src/pl-wam.jl)
-        (LK.findCatcher, Tuple{GD, LD, Int, Int, Int, Int}, false),
+        (LK.findCatcher, Tuple{GD, LD, Int, Int, Int}, false),
         (LK.findCatchExit, Tuple{GD}, false),
         # …run with no exception pending (src/pl-attvar.jl)
         (LK.saveWakeup, Tuple{LD, Bool}, false),
@@ -1219,9 +1219,7 @@ function _manifest_index(T)
         (LK.bind_attvar_const, Tuple{LD, Int, UInt64}, false),
         (LK.restore_wakeup, Tuple{LD, Int}, true),
         (LK.updateAlerted, Tuple{LD}, true),
-        (LK._foreign_wakeup_pending, Tuple{LD}, true),           # the bit and the list (no allocation)
-        (LK._foreign_wakeup_pending_refused, Tuple{LD}, false),   # throws the AV4 refusal (a pending wakeup)
-        (LK._foreign_wakeup_error, Tuple{}, false),               # builds the NotPortedError
+        (LK.foreignWakeup, Tuple{LD, Int}, false),               # AV4: runs '$wakeup'/1 in a query of its own
         # AV2 — the attribute store (src/pl-attvar.jl): the C functions, the FLI and the predicates
         (LK._functor_att3, Tuple{LD}, false),
         (LK._link_val_loc!, Tuple{LD, Tuple{UInt8, UInt64, Int}}, false),

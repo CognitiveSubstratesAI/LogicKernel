@@ -522,7 +522,11 @@ ported files' headers to either.
     the link when A2 dereferences to the attributed variable itself, and computes the link word before
     dereferencing A1 again; test/core_lang/test_attvar_store.jl (white-box, the oracle 10.1.19 hangs here),
     mutants tools/mutants/Q10fix.py.
-  * `7b9d8ba1` (Q11) — pending: AV4.
+  * `7b9d8ba1` (Q11, `pl-wam.c findCatcher`, `pl-vmi.c` b_throw call) — **ported (AV4):** each catcher is tried in its own
+    foreign frame (`PL_open_foreign_frame`; 0 is an out-of-stack error), the exception reference `ex2` is made after a
+    successful unify, the frame is closed when the catcher matches and discarded when it does not; the `fid` parameter
+    is dropped. upstream's `failing_catchers` unit (tests/core_lang/test_exception.pl) is the row hk11b in
+    test/core_lang/test_attvar_wakeup.jl; mutant AV4-K4 (tools/mutants/AV4.py).
 * **The 2026-10-24 sync-2: `8e1bc111` → `cbf4e189` (V10.1.19 + one xpce bump)** (D-0123, D-0126,
   D-0137, D-0138; plunit `bdac3ecf` did not move; 79 upstream commits; 29 ported files changed, 41 markers
   in 30 functions). Every `# UPSTREAM`
@@ -1154,7 +1158,6 @@ graph LR
     pl_attvar --> pl_global
     pl_attvar --> pl_inline
     pl_attvar --> pl_prims
-    pl_attvar --> pl_comp
     pl_attvar --> pl_alloc
     pl_attvar --> pl_wam
     pl_attvar --> pl_fli

@@ -8,8 +8,8 @@
 #     the attvar) and undone by `Undo!`; two attributed variables: the NEWER is bound to the older (risk 4); the
 #     same one: nothing; `bind_attvar_const` and `bindConst`; `updateAlerted`'s wakeup bit; `saveWakeup` /
 #     `restoreWakeup` set the list aside and put it back (with a pending exception too: the slot after it);
-#     `can_unify` (`\=/2`'s full check) and `findCatcher` REFUSE a wakeup pending after their unification
-#     (`foreignWakeup` is AV4's) — a NotPortedError naming AV4, never a skipped hook;
+#     `can_unify` (`\=/2`'s full check) and `findCatcher` run a wakeup pending after their unification
+#     (`foreignWakeup`, AV4: test_attvar_wakeup.jl (the AV4 rows at its end)) — until AV4 a NotPortedError naming AV4;
 #   * THE ROWS hk01-hk04, hk06-hk09, hk12, hk15-hk19b, hk21 of evidence/av/rows.tsv (swipl 10.1.18; re-probed
 #     with 10.1.19, the local swipl) and the VM-site rows — one per place the run loop wakes a hook (B_UNIFY_VC,
 #     B_UNIFY_VV, B_UNIFY_EXIT, I_ENTER, a fact's and a foreign predicate's exit) — whose goal is followed by a
@@ -21,7 +21,7 @@
 #   * hk14 (a hook module inheriting from `user`, made by MOD1's `lookupModule`) and two rows beside it, live;
 #     hk14s / hk14t (two attributed variables, both modules `user`) answer for its hooks' order.
 # NOT AV3 ROWS: hk05, hk05b, hk22, hk23 (a module that inherits from `user`: R2; freeze/2: AV7); hk10, hk11, hk13
-# (`\=`, catch/3's catcher: foreignWakeup, AV4 — here only their REFUSAL is asserted); hk20 (numbervars/4's
+# (`\=`, catch/3's catcher: foreignWakeup, AV4 — their rows here, more in test_attvar_wakeup.jl (the AV4 rows at its end)); hk20 (numbervars/4's
 # `attvar(bind)`: pl-prims.jl numberVars reads no attributed variable — AV5).
 # Every expected answer is swipl's: the tables were produced by running the programs under swipl 10.1.19 (the
 # local one) with the driver below, and the rows re-run LIVE when swipl is on PATH. Mutation-tested by
@@ -231,19 +231,10 @@ end
     LK.PL_clear_exception(ld)
 end
 
-@testset "can_unify (\\=/2's full check): a wakeup pending after its unification is REFUSED, by name — AV4" begin
-    ld, _ = _wk_engine()
-    t, av = _wk_attvar!(ld)
-    t2 = LK.PL_new_term_ref(ld)
-    @test LK.PL_unify_integer(ld, t2, 5)
-    err = try
-        LK.can_unify_cells(ld, -(t + 1), -(t2 + 1), 0)
-        nothing
-    catch e
-        e
-    end
-    @test err isa LK.NotPortedError && err.step == "AV4" &&
-        occursin("foreignWakeup", err.what)
+# D-0083 (AV4): until AV4 this asserted the refusal — `err isa LK.NotPortedError && err.step == "AV4"`
+# (`&& occursin("foreignWakeup", err.what)`) for a wakeup pending here; it now runs (foreignWakeup), which
+# needs a query — the pending case is the rows hk10/hk13 below and test_attvar_wakeup.jl (the AV4 rows at its end).
+@testset "can_unify (\\=/2's full check): no wakeup pending — foreignWakeup returns true, no query (AV4)" begin
     # none pending: two plain variables unify, no refusal
     ld, _ = _wk_engine()
     u1, u2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
@@ -911,42 +902,35 @@ end
     end
 end
 
-"The exception `kernel_lines` lets out for the single goal `g` (the kernel refuses by name), or `nothing`."
-function _wk_refusal(g::String)
-    f, names = _wk_program([g])
-    return try
-        kernel_lines(f, names)
-        nothing
-    catch e
-        e
-    end
-end
-
 # hk11 (rows.tsv): swipl answers outer(2) — catch/3's catcher unification wakes the hook (`no`), which fails
-# the catcher's match. findCatcher's wakeup is AV4's (`foreignWakeup`): a pending one is REFUSED.
-@testset "findCatcher: a wakeup pending after the catcher's unification is refused — AV4 (hk11)" begin
-    err = _wk_refusal(
+# the catcher's match. findCatcher's wakeup (`foreignWakeup`) runs it since AV4.
+# D-0083 (AV4): until AV4 this asserted the refusal — `err isa LK.NotPortedError && err.step == "AV4"`.
+@testset "findCatcher: the catcher's wakeup runs and decides the match — AV4 (hk11)" begin
+    f, names = _wk_program([
         "put_attr(X,user,no), catch(catch(throw(2), X, R = inner), E, R = outer(E))"
-    )
-    @test err isa LK.NotPortedError && err.step == "AV4"
+    ])
+    @test kernel_lines(f, names) == ["ok", _wk_line("t0", _ec("outer", _ei(2)))]   # swipl: outer(2)
     # a plain catcher is unaffected
     f, names = _wk_program(["catch(throw(2), Y, R = caught(Y))"])
     @test kernel_lines(f, names) == ["ok", _wk_line("t0", _ec("caught", _ei(2)))]
 end
 
 # hk10 / hk13 (rows.tsv): swipl answers not_unifiable / boom — `\=/2` unifies in can_unify and runs the hooks
-# (`foreignWakeup`, AV4): a pending one is REFUSED. pl_not_unify2_va must send an attributed variable to the
+# (`foreignWakeup`, since AV4). pl_not_unify2_va must send an attributed variable to the
 # full check (pl-prims.c:468-469, `if ( isAttVar(w1) || isAttVar(w2) ) goto full_check;`) — see the
 # report, "pl_not_unify2_va".
-@testset "\\=/2 with an attributed variable: the full check, whose pending wakeup is refused — AV4 (hk10, hk13)" begin
-    for g in (
+@testset "\\=/2 with an attributed variable: the full check runs the hooks — AV4 (hk10, hk13)" begin
+    # D-0083 (AV4): until AV4 this asserted the refusal — `err isa LK.NotPortedError && err.step == "AV4"`
+    # for each of the three goals; swipl 10.1.19's answers below.
+    f, names = _wk_program([
         "put_attr(X,user,no), (X \\= 2 -> R = not_unifiable ; R = unifiable)",           # hk10
-        "put_attr(X,user,yes), (X \\= 2 -> R = not_unifiable ; R = unifiable)",          # a hook that succeeds
+        "put_attr(X,user,yes), (X \\= 2 -> R = not_unifiable ; R = unifiable)",          # hk10y: a hook that succeeds
         "put_attr(X,user,throw(boom)), catch(X \\= 2, R, true)"                          # hk13
-    )
-        err = _wk_refusal(g)
-        @test (g, err isa LK.NotPortedError && err.step == "AV4") == (g, true)
-    end
+    ])
+    @test kernel_lines(f, names) == [
+        "ok", _wk_line("t0", _ea("not_unifiable")), _wk_line("t1", _ea("unifiable")),
+        _wk_line("t2", _ea("boom"))
+    ]
     # the rows without an attributed variable: unchanged
     f, names = _wk_program([
         "(X \\= 2 -> R = yes ; R = no)",
@@ -1001,4 +985,99 @@ const _WK_LOCAL = [
 @testset "an attributed variable as a sub-goal argument of a control construct (call/1, catch/3): an argvar — FIXED" begin
     @test length(_WK_LOCAL) == 7
     _wk_check_rows(_WK_LOCAL, "LOCAL ROWS")
+end
+
+# ── AV4: foreignWakeup (pl-wam.c) at can_unify (\=/2) and findCatcher (catch/3's catcher) ─────────────
+# Rows transcribed from evidence/av/rows.tsv (hk10, hk11, hk13, hk18, hk19 there and above) and probed on
+# swipl 10.1.19 (2026-10-26, ~/code/lk-av4-probes/av4.pl); `_wk_check_rows` re-checks each live. ex04/ex05
+# need freeze/2 (AV7): ex04u/ex05u are their shape with a `user` hook that throws (the same wakeup, the
+# same ball). hk05: a module made by the hook call inherits from `user` (MOD1), so `nomod:attr_unify_hook/2`
+# is user's, whose clauses do not match `1`: false. hk05b's answer names `'$attvar':uhook/3` (R2);
+# hk22/hk23 need freeze/2 (AV7).
+const _WK_AV4_ROWS = [
+    (
+        "hk10y",
+        "put_attr(X,user,yes), (X \\= 2 -> R = not_unifiable ; R = unifiable)",
+        _ea("unifiable")
+    ),
+    (
+        "hk11y",
+        "put_attr(X,user,yes), catch(catch(throw(2), X, R = inner), E, R = outer(E))",
+        _ea("inner")
+    ),
+    ("hk11t",
+        "put_attr(X,user,throw(boom)), catch(catch(throw(2), X, R = inner), E, R = outer(E))",
+        _ec("outer", _ea("boom"))),
+    # the hook runs twice: in findCatcher's foreignWakeup, then at b_throw_resume's unification (the VM)
+    ("hk11l", "put_attr(X,user,log(c)), catch(throw(2), X, true), log(R)",
+        _wk_list(_ec("-", _ea("c"), _ei(2)), _ec("-", _ea("c"), _ei(2)))),
+    # \= leaves no binding: the hook saw 2, X is still attributed
+    ("hk13l",
+        "put_attr(X,user,log(n)), (X \\= 2 -> true ; true), log(L), (attvar(X) -> R = L/attvar ; R = L/bound)",
+        _ec("/", _wk_list(_ec("-", _ea("n"), _ei(2))), _ea("attvar"))),
+    (
+        "hk18",
+        "put_attr(X,user,no), (?=(X,2) -> R = decided ; R = undecided)",
+        _ea("undecided")
+    ),
+    ("hk19c", "put_attr(X,user,log(u)), unifiable(f(X), f(2), U), X = 3, log(L), R = U/L",
+        _ec("/", _wk_list(_ec("=", _ei(3), _ei(2))), _wk_list(_ec("-", _ea("u"), _ei(3))))),
+    ("hk05", "put_attr(X,nomod,1), catch(X = 2, R, true)", nothing),
+    (
+        "ex04u",
+        "put_attr(X,user,throw(inner)), catch((X = 1, R = not_reached), R, true)",
+        _ea("inner")
+    ),
+    ("ex05u",
+        "put_attr(X,user,throw(inner)), catch(catch(X = 1, outer, R = wrong), E, R = caught(E))",
+        _ec("caught", _ea("inner"))),
+    # the hook throws inside findCatcher's foreignWakeup: `ex2`, raised as the new ball
+    ("ex05c",
+        "put_attr(X,user,throw(inner)), catch(catch(throw(b), X, R = wrong), E, R = caught(E))",
+        _ec("caught", _ea("inner"))),
+    # fw_nohook: `a` has no hook of its own; it inherits from `user` (MOD1), whose attr_unify_hook/2 (this file's
+    # fixture, `_wk_program`) has no clause for `1`: the wakeup fails, `X \= 2` succeeds, E stays unbound —
+    # swipl 10.1.19 through this driver. A bare toplevel (no user:attr_unify_hook/2) raises existence_error.
+    # D-0083 (AV4 run 2): the row was `…, E = error(R, _)` expecting
+    # `existence_error(procedure, a:attr_unify_hook/2)` — taken outside the driver (evidence/av/av4_run.md part 2).
+    ("fw_nohook", "put_attr(X,a,1), catch(X \\= 2, E, true), R = E", "V0")
+]
+
+@testset "AV4: foreignWakeup at \\\\=/2 and catch/3's catcher — rows, re-checked on swipl" begin
+    _wk_check_rows(_WK_AV4_ROWS, "AV4 rows")
+end
+
+# hk11b = upstream's `failing_catchers` (swipl-devel 7b9d8ba, tests/core_lang/test_exception.pl:81-84, `R == outer(2)`;
+# its module's hook `attr_unify_hook(no, _) :- fail` is this fixture's `user` one): two attributed catchers whose
+# hooks fail. findCatcher ports upstream's fix 7b9d8ba (each catcher in a foreign frame of its own). Kernel only:
+# the oracle (cbf4e189 = 10.1.19) predates 7b9d8ba and gives no answer; the expected value is upstream's test row
+# (D-0083 (AV4 run 2): until now a known difference, kernel's own `ex2` re-allocation, same answer outer(2)).
+@testset "AV4: hk11b — upstream's failing_catchers (7b9d8ba): two attributed catchers whose hooks fail" begin
+    f, names = _wk_program([
+        "put_attr(X,user,no), put_attr(Y,user,no), catch(catch(catch(throw(2), X, R = inner), Y, R = mid), E, R = outer(E))"
+    ])
+    @test kernel_lines(f, names) == ["ok", _wk_line("t0", _ec("outer", _ei(2)))]
+end
+
+# hk11c = hk11b's discard (findCatcher's PL_discard_foreign_frame of a failed catcher, 7b9d8ba), seen through a binding:
+# catcher 1 `f(B,A)` binds the plain B to 1 before A's hook fails; catcher 2 `f(_,B)` shares B and matches the ball f(1,2)
+# only if that binding was undone with the frame (B = 2). Mutant AV4-K4 (the discard dropped) leaves B = 1: catcher 2
+# fails and the ball goes uncaught. Kernel only (the oracle predates 7b9d8ba); the expected value follows upstream's
+# frame-per-catcher semantics.
+@testset "AV4: hk11c — a failed catcher's bindings are undone with its frame (7b9d8ba)" begin
+    f, names = _wk_program([
+        "put_attr(A,user,no), catch(catch(throw(f(1,2)), f(B,A), R = inner), f(_,B), R = outer(B))"
+    ])
+    @test kernel_lines(f, names) == ["ok", _wk_line("t0", _ec("outer", _ei(2)))]
+end
+
+# foreignWakeup white-box: no wakeup pending (the bit clear, or set over an empty list) — true, no query,
+# the bit cleared; `ex` untouched.
+@testset "AV4: foreignWakeup with nothing pending returns true and clears the bit" begin
+    ld, _ = _wk_engine()
+    ex = LK.PL_new_term_ref(ld)
+    @test LK.foreignWakeup(ld, ex) === true && LK.PL_is_variable(ld, ex)
+    ld.alerted |= LK.ALERT_WAKEUP
+    @test LK.foreignWakeup(ld, ex) === true && (ld.alerted & LK.ALERT_WAKEUP) == 0
+    @test LK.PL_is_variable(ld, ex)
 end

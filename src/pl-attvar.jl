@@ -18,7 +18,10 @@
 # exception is pending, so an error that unification raises (the occurs check under
 # `occurs_check = error`) is raised, and becomes the ball.
 #
-# NOT PORTED: the rest of pl-attvar.c, the steps after the binding (since AV3) — `foreignWakeup` (AV4),
+# Since AV4 pl-wam.c `foreignWakeup` runs the hooks `registerWakeup` queued; it is in src/pl-wam.jl
+# (its upstream file's .jl), as `updateAlerted`.
+#
+# NOT PORTED: the rest of pl-attvar.c, the steps after the binding (since AV3) —
 # `freeze/2`'s support (AV7), `when/2`'s (AV8), call_residue_vars (AV9; so `trail_new_attvar` and
 # `on_attvar_chain`, its CHK_SECURE check, wait for it), `alloc_attvar` (AV6) and
 # `wakeup_state_exception`.
@@ -256,30 +259,6 @@ function bind_attvar_const(ld::PL_local_data, p::Int, c::word)::Bool
     assignAttVar(ld, p, (isTaggedIntW(c) || _is_vword(c) ? DU_VALUE : DU_WORD, c, 0))  # assignAttVar(p, &c)
     return true
 end
-
-# ORIGINAL (AV3; NOT PORTED until AV4: pl-wam.c `foreignWakeup`): the stand-in at foreignWakeup's callers
-# that are ported — `can_unify` (\\=/2, src/pl-prims.jl) and `findCatcher` (catch/3's catcher,
-# src/pl-wam.jl); subsumes_term/2 is not ported. A wakeup PENDING after their unification (the bit set and
-# the list not empty) is REFUSED — a `NotPortedError` naming AV4 — never skipped: skipping would run no
-# hook, a wrong answer (rows hk10, hk11, hk13). With none pending upstream's `foreignWakeup` returns true,
-# and so does this (it leaves a stale bit for the next check point, which clears it).
-"Whether a wakeup is pending: the bit set and the list not empty (what `foreignWakeup` tests first)."
-@inline _foreign_wakeup_pending(ld::PL_local_data)::Bool =
-    (ld.alerted & ALERT_WAKEUP) != 0 && ld.gstack[_attvar_head_cell(ld)] != 0
-
-"Refuse a wakeup pending in a foreign predicate's unification until `foreignWakeup` (AV4) is ported."
-@inline function _foreign_wakeup_pending_refused(ld::PL_local_data)::Nothing
-    _foreign_wakeup_pending(ld) && throw(_foreign_wakeup_error())
-    return nothing
-end
-
-"The refusal of a pending wakeup at a `foreignWakeup` caller before AV4."
-@noinline _foreign_wakeup_error()::Exception = NotPortedError{Nothing}(
-    nothing,
-    "foreignWakeup (pl-wam.c): an attributed variable's wakeup pending in a foreign predicate's " *
-    "unification (\\=/2, catch/3's catcher)",
-    "AV4"
-)
 
 # ── the store (AV2): an attributed variable's attribute list ─────────────────────────────────────
 # The layout (pl-attvar.c's header comment): a LINK cell on the chain (`register_attvar`), the attvar

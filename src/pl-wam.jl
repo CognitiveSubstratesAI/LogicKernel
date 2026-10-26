@@ -393,54 +393,119 @@ function PL_rewind_foreign_frame(ld::PL_local_data{T}, id::Int)::Nothing where {
     return nothing
 end
 
-# PORT: pl-wam.c findCatcher
-# DIVERGES: frames and choice points are records found by index, compared by POSITION (`fr <= ch`:
-# the frame lies below the newest choice point — it is not catch/3's call port); the result is the
-# catching frame's index (0: none) where upstream returns a term reference to it, which GC can move.
-# NOT PORTED: `foreignWakeup` (AV4), so no `ex2`; a wakeup pending after the catcher's unification is
-# refused (`_foreign_wakeup_error`, since AV3) after `restoreWakeup`, so the query is abandoned with
-# its ball pending, as before the search (with the ball set aside `_release_frozen!` would find the
-# ball's term reference live above the query's mark).
+# PORT: pl-wam.c foreignWakeup
+# DIVERGES: the database is the running query's (`_query_gd`); `*valTermRef(LD->attvar.head)` is the
+# head's PERMANENT cell (`_attvar_head_cell`, see `registerWakeup`), `setVar` writes 0 there and in the
+# tail's; `PROCEDURE_dwakeup1` is `gd.procedures_dwakeup1` (`_boot_attvar!`). Since AV4; until then its
+# callers refused a pending wakeup (a `NotPortedError` naming AV4, AV3's stand-in).
 """
-    findCatcher(gd, ld, fid, fr, ch, ex0) -> frame index, or 0
+    foreignWakeup(ld, ex) -> Bool
+
+Run the pending wakeup goals (`'\$wakeup'/1` on the wakeup list) from a foreign predicate, in a query of
+their own whose choice points are cut; true when none is pending or they succeed, false when they fail
+or raise — then `ex` gets the exception (pl-wam.c). Its callers are implicit cuts: `can_unify` (\\=/2) and
+`findCatcher` (catch/3's catcher).
+"""
+function foreignWakeup(ld::PL_local_data{T}, ex::term_t)::Bool where {T}
+    if (ld.alerted & ALERT_WAKEUP) != 0                     # if ( unlikely(LD->alerted & ALERT_WAKEUP) )
+        ld.alerted &= ~ALERT_WAKEUP                         #   LD->alerted &= ~ALERT_WAKEUP
+        h = _attvar_head_cell(ld)
+        if ld.gstack[h] != 0                                #   if ( *valTermRef(LD->attvar.head) )
+            fid = PL_open_foreign_frame(ld)
+            if fid != 0
+                gd = _query_gd(ld)
+                a0 = PL_new_term_ref(ld)
+                rval = false
+                PL_put_term(ld, a0, ld.attvar_head)         # PL_put_term(a0, LD->attvar.head)
+                qid = PL_open_query(
+                    gd, ld, nothing, PL_Q_CATCH_EXCEPTION, gd.procedures_dwakeup1, a0
+                )
+                if qid != 0
+                    ld.gstack[h] = word(0)                  # setVar(*valTermRef(LD->attvar.head))
+                    ld.gstack[h + 1] = word(0)              # setVar(*valTermRef(LD->attvar.tail))
+                    rval = PL_next_solution(gd, ld, qid) != 0
+                    if !rval
+                        t = PL_exception(ld, qid)
+                        t != 0 && PL_put_term(ld, ex, t)
+                    end
+                    PL_cut_query(ld, qid)
+                end
+                PL_close_foreign_frame(ld, fid)
+                return rval
+            end
+            PL_put_term(ld, ex, ld.exception_term)
+            return false
+        end
+    end
+    return true
+end
+
+# PORT: pl-wam.c findCatcher
+# DIVERGES: at the pin cbf4e189 plus upstream's fix 7b9d8ba (the marker line is port_check's strict form).
+# Frames and choice points are records found by index, compared by POSITION (`fr <= ch`: the frame lies
+# below the newest choice point — it is not catch/3's call port); the result is the catching frame's index
+# (0: none) where upstream returns a term reference to it, which GC can move. Since AV4 the catcher's wakeup
+# runs (`foreignWakeup`, `ex2`; AV3 refused a pending one). Upstream 7b9d8ba ("exception with two attributed
+# catchers whose wakeup fails"): each catcher is tried in a foreign frame of its own (`cfid`), discarded on
+# failure, with its own `ex2`; and the choice point is kept as a term reference (`chref`) because the wakeup
+# may shift the local stack. Here a choice point is an index whose `base` no stack shift moves: `chpos` is
+# read once, where upstream re-reads `valTermRef(chref)`.
+"""
+    findCatcher(gd, ld, fr, ch, ex0) -> frame index, or 0
 
 The frame running catch/3, from `fr` upward, that has not caught yet (`FR_CAUGHT`: a ball from its
 recover goal passes on) and whose catcher unifies with the ball `ex0` references; it is marked
 `FR_CAUGHT`. The search runs with NO exception pending (`saveWakeup`), so an error the catcher's
-unification raises is raised — and is the ball from there on; the bindings of the unification are
-undone when the search ends (`restoreWakeup`; `b_throw_resume` unifies again) (pl-wam.c).
+unification raises is raised — and is the ball from there on; each catcher is tried in a foreign frame
+of its own, discarded when it does not catch; the bindings of the catching unification are undone when
+the search ends (`restoreWakeup`; `b_throw_resume` unifies again) (pl-wam.c).
 """
 function findCatcher(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, fid::Int, fr::Int, ch::Int, ex0::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, ch::Int, ex0::Int
 )::Int where {T}
     catch3 = gd.procedures_catch3.definition
     ex = PL_copy_term_ref(ld, ex0)
+    chpos = ch == 0 ? typemax(Int) : ld.choices[ch].base   # term_t chref = consTermRef(ch)
     wstate = saveWakeup(ld, false)
     if wstate === nothing
         ld.outofstack = true
         outOfStack!(ld, STACK_OVERFLOW_THROW)           # throws: see outOfStack!
         return 0                                        # assert(0)
     end
-    chpos = ch == 0 ? typemax(Int) : ld.choices[ch].base
     while fr != 0
         f = ld.frames[fr]
         if f.predicate === catch3 &&
             (f.flags & FR_CAUGHT) == 0 &&               # not thrown from recover
             f.base <= chpos                              # not call-port of catch/3
+            ex2 = 0                                      # term_t ..., ex2 = 0
+            cfid = PL_open_foreign_frame(ld)
+            if cfid == 0
+                ld.outofstack = true
+                outOfStack!(ld, STACK_OVERFLOW_THROW)   # throws: see outOfStack!
+                return 0                                # assert(0)
+            end
+            f = ld.frames[fr]                            # fr = (LocalFrame)valTermRef(tref)
             catcher = argFrameP(f.base, 1)               # consTermRef(argFrameP(fr, 1))
-            if PL_unify(ld, catcher, ex)
-                if _foreign_wakeup_pending(ld)           # rc = foreignWakeup(ex2): AV4
-                    restoreWakeup(ld, wstate)            # first: the ball pending again, the frame gone
-                    throw(_foreign_wakeup_error())
-                end
+            rc = PL_unify(ld, catcher, ex)
+            if rc
+                ex2 = PL_new_term_ref(ld)
+                rc = foreignWakeup(ld, ex2)
+            end
+            f = ld.frames[fr]                            # fr = (LocalFrame)valTermRef(tref)
+            if rc
+                PL_close_foreign_frame(ld, cfid)
                 restoreWakeup(ld, wstate)
                 PL_put_term(ld, ld.exception_term, ex)
                 f.flags |= FR_CAUGHT
                 return fr
+            elseif ex2 != 0 && !PL_is_variable(ld, ex2) # Exception from foreignWakeup()
+                PL_raise_exception(ld, ex2)
+                PL_put_term(ld, ex, ld.exception_term)
             elseif ld.exception_term != 0               # Exception from PL_unify()
                 PL_put_term(ld, ex, ld.exception_term)
             end
-            PL_rewind_foreign_frame(ld, wstate.fid != 0 ? wstate.fid : fid)
+            PL_discard_foreign_frame(ld, cfid)
+            f = ld.frames[fr]                            # fr = (LocalFrame)valTermRef(tref)
         end
         fr = f.parent
     end
@@ -4647,7 +4712,7 @@ function PL_next_solution_guarded(
     # find the catching frame (since V9f). The rewrite loop runs `exception_hook` only when
     # `'$exception_hook'/5` has clauses (pl-wam.c:2339): none here, so it is not entered.
     @SAVE_REGISTERS(QID)
-    bt_catchfr = findCatcher(gd, ld, bt_fid, FR, ld.BFR, ld.exception_term)
+    bt_catchfr = findCatcher(gd, ld, FR, ld.BFR, ld.exception_term)
     @LOAD_REGISTERS(QID)
     PL_close_foreign_frame(ld, bt_fid)
     @goto b_throw_debug

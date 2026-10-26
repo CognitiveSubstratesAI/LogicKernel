@@ -217,15 +217,31 @@ end
     a = LK.PL_new_term_refs(ld, 2)
     LK.put_new_attvar(ld, LK.unRef(ld.slots[a + 1]), _as_atom(ld, "a"), _as_int(1))
     LK.PL_put_integer(ld, a + 1, 2)
-    err = try
-        LK.pl_not_unify2_va(
-            ld, a, 2, LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
-        )
-        nothing
-    catch e
-        e
-    end
-    @test err isa LK.NotPortedError && err.step == "AV4"
+    rc = LK.pl_not_unify2_va(
+        ld, a, 2, LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    )
+    # D-0083 (AV4): until AV4 this asserted `err isa LK.NotPortedError && err.step == "AV4"` (the call threw).
+    # Since AV4 can_unify's foreignWakeup runs `'$wakeup'/1` in a query on this engine's database (`ld.GD`,
+    # `_rdb`'s), which — like a bare swipl toplevel — defines no attr_unify_hook/2: the hook call raises and
+    # \=/2 fails with it pending (pl-prims.c not_unify: `PL_raise_exception(ex)`). swipl 10.1.19, bare:
+    # `put_attr(X,a,1), catch(X \= 2, E, true)` → E = error(existence_error(procedure,a:attr_unify_hook/2),
+    # context('$attvar':uhook/3,_)). KNOWN DIFFERENCE, pinned: the context names `system:uhook/3` — the boot
+    # clauses live in `system` until R2 loads boot/attvar.pl in `'$attvar'` (`_boot_attvar!`'s DIVERGES).
+    # (fw_nohook in test_attvar_wakeup.jl is the same goal under its driver, whose user:attr_unify_hook/2 fails.)
+    @test rc == LK.FFALSE && ld.exception_term != 0
+    ball = lk_answer(ld, ld.exception_term)
+    @test lk_name(child(ball, 1)) == :error
+    formal, ctx = child(ball, 2), child(ball, 3)
+    @test lk_name(child(formal, 1)) == :existence_error &&
+        lk_name(child(formal, 2)) == :procedure
+    q = child(formal, 3)                                    # a:attr_unify_hook/2
+    @test lk_name(child(q, 1)) == :(:) && lk_name(child(q, 2)) == :a
+    pi = child(q, 3)
+    @test lk_name(child(pi, 2)) == :attr_unify_hook && lk_value(child(pi, 3)) == 2
+    cq = child(ctx, 2)                                      # system:uhook/3 (swipl: '$attvar':uhook/3)
+    @test lk_name(child(ctx, 1)) == :context && lk_name(child(cq, 2)) == :system
+    @test lk_name(child(child(cq, 3), 2)) == :uhook && lk_value(child(child(cq, 3), 3)) == 3
+    LK.PL_clear_exception(ld)
 end
 
 # ── the differential harness: test_attvar_words.jl's (AV1), unchanged ─────────────────────────────────────
