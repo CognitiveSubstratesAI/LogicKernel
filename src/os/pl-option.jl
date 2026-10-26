@@ -113,7 +113,7 @@ function PL_scan_options(
                 end
             elseif arity == 1
                 _PL_get_arg(ld, 1, head, val)
-            elseif arity == 0                       # && !truePrologFlag(PLFLAG_ISO)
+            elseif arity == 0 && !truePrologFlag(ld, PLFLAG_ISO)
                 implicit_true = true
             else
                 itemerror = true

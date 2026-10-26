@@ -31,8 +31,10 @@
 #     have nothing to do: Julia's GC frees a `BigInt`, and only `roundtoward/2`, not ported, sets the
 #     rounding mode.
 #   * The flags: `LD->arith.f.flags` at upstream's default (`float_overflow`, `float_zero_div` and
-#     `float_undefined` = error, `float_underflow` = ignore); `prefer_rationals` and `iso` are false,
-#     as their defaults — nothing sets a flag (no `set_prolog_flag/2` yet).
+#     `float_undefined` = error, `float_underflow` = ignore); `prefer_rationals` and `iso` are bits of
+#     the mask (`truePrologFlag`), false, as their defaults. Nothing sets a flag yet (no
+#     `set_prolog_flag/2` until R2 F1b); since R2 F1a `current_prolog_flag/2` reads them (`is_arith_flag`,
+#     `get_arith_flag` below).
 
 # ── the pooled numbers (the kernel's C stack) ────────────────────────────────────────────────────
 # A number from the local data's pool, above those in use; `_number_free!` releases the newest `k`.
@@ -85,6 +87,18 @@ end
 # PORT: pl-arith.h FLT_ROUND_NEAREST
 "Round to nearest (pl-arith.h), the rounding the kernel has."
 const FLT_ROUND_NEAREST = UInt32(0x0001)
+# PORT: pl-arith.h FLT_ROUND_TO_POS
+"Round toward positive infinity (pl-arith.h); the kernel does not round this way, the flag names it."
+const FLT_ROUND_TO_POS = UInt32(0x0002)
+# PORT: pl-arith.h FLT_ROUND_TO_NEG
+"Round toward negative infinity (pl-arith.h); the kernel does not round this way, the flag names it."
+const FLT_ROUND_TO_NEG = UInt32(0x0003)
+# PORT: pl-arith.h FLT_ROUND_TO_ZERO
+"Round toward zero (pl-arith.h); the kernel does not round this way, the flag names it."
+const FLT_ROUND_TO_ZERO = UInt32(0x0004)
+# PORT: pl-arith.h FLT_ROUND_MASK
+"The rounding mode's bits in `arith.f.flags` (pl-arith.h)."
+const FLT_ROUND_MASK = UInt32(0x000f)
 # PORT: pl-arith.h FLT_OVERFLOW
 "`float_overflow=infinity` (pl-arith.h)."
 const FLT_OVERFLOW = UInt32(0x0010)
@@ -484,15 +498,9 @@ ar_shift_right(ld::PL_local_data, n1::number, n2::number, r::number)::Bool =
     ar_shift(ld, n1, n2, r, 1)
 
 # ── arith-a: division, sign and order, integer, bitwise, rounding and conversion (pl-arith.c) ─────
-# The flags `ar_divide` reads (`truePrologFlag`): `iso` and `prefer_rationals`, both false in the
-# kernel (nothing sets a flag; see the file header). The branches they guard are ported as upstream's,
-# on these constants.
-# PORT: pl-incl.h PLFLAG_ISO
-"The `iso` Prolog flag (pl-incl.h `PLFLAG_ISO`): false, as its default."
-const PLFLAG_ISO = false
-# PORT: pl-incl.h PLFLAG_RATIONAL
-"The `prefer_rationals` Prolog flag (pl-incl.h `PLFLAG_RATIONAL`): false, as its default."
-const PLFLAG_RATIONAL = false
+# The flags `ar_divide` and `ar_pow` read are `truePrologFlag(ld, PLFLAG_ISO)` and
+# `truePrologFlag(ld, PLFLAG_RATIONAL)`, bits of the local data's mask (src/pl-incl.jl; since R2
+# F1a — until then both were constants, false, the flags' defaults).
 
 # PORT: pl-arith.c sign_f
 "The sign of the double `f` (pl-arith.c): -1, 0 or 1; a NaN is 0."
@@ -541,7 +549,7 @@ function ar_divide(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
             return true
         end
     end
-    if !PLFLAG_ISO
+    if !truePrologFlag(ld, PLFLAG_ISO)
         same_type_numbers(ld, n1, n2) || return false
         t = n1.type
         if t === V_INTEGER
@@ -556,7 +564,7 @@ function ar_divide(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
                 r.type = V_INTEGER
                 return true
             end
-            if PLFLAG_RATIONAL
+            if truePrologFlag(ld, PLFLAG_RATIONAL)
                 promoteToMPZNumber(n1)
                 promoteToMPZNumber(n2)
                 return ar_rdiv_mpz(n1, n2, r)
@@ -568,7 +576,7 @@ function ar_divide(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
                 r.mpz = div(n1.mpz, n2.mpz)                 # mpz_divexact
                 return true
             end
-            PLFLAG_RATIONAL && return ar_rdiv_mpz(n1, n2, r)
+            truePrologFlag(ld, PLFLAG_RATIONAL) && return ar_rdiv_mpz(n1, n2, r)
         elseif t === V_MPQ
             iszero(numerator(n2.mpq)) && return check_zero_div(ld, ar_sign_i(n1), r, "/", 2)
             r.type = V_MPQ
@@ -1554,7 +1562,7 @@ end
 # DIVERGES: the `gotos` are the helpers `_ar_pow_*`; `n2` is not negated in place for a negative
 # rational exponent (the root searches use its absolute numerator, and `_ar_pow_doreal_mpq` the
 # exponent as given); the rounding modes are FE_TONEAREST only (see there); `prefer_rationals` is the
-# constant `PLFLAG_RATIONAL`. The size checks raise `int_too_big` as everywhere (the interim).
+# mask bit `PLFLAG_RATIONAL` (since R2 F1a; a constant, false, before). The size checks raise `int_too_big` as everywhere (the interim).
 "`**/2` and `^/2` (pl-arith.c `ar_pow`): `n1` to the power `n2`; an integer for integers, else a float or a rational."
 function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
     exp_nan = false
@@ -1597,7 +1605,7 @@ function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
         ok, exp = get_int_exponent(ld, n2)
         ok || return false
         if exp_sign < 0
-            if PLFLAG_RATIONAL
+            if truePrologFlag(ld, PLFLAG_RATIONAL)
                 promoteToMPQNumber(ld, n1)
                 return _ar_pow_mpq_int(ld, n1, exp, exp_sign, r)    # goto int_pow_neg_int
             end
@@ -2851,6 +2859,86 @@ function pl_between3_va(
         free_foreign_state!(ld.between_states, PL_foreign_context_address(PL__ctx))
     end
     return rc ? FTRUE : FFALSE
+end
+
+# ── the arithmetic flags (pl-arith.c; R2 F1a) ───────────────────────────────────────────────────
+# PORT: pl-arith.c initArith
+# DIVERGES: only its Prolog flags (the rest of `initArith` — the function table, the NaN, the signal
+# mask — is done where the kernel has it, or has no counterpart: see the file header); called from
+# `initPrologFlags!`, which runs where `initPrologFlags` runs, so the flags are created in upstream's
+# order within the group (upstream: `initArith` last, after the built-ins). `max_rational_size`,
+# `max_rational_size_action` and `max_integer_size` are the limits `LD->arith.rat`/`LD->gmp` hold; the
+# kernel's are their defaults (unlimited, `error`), which nothing can set before `set_prolog_flag/2`
+# (R2 F1b, which refuses a SET by name).
+"Define the Prolog flags of the arithmetic (pl-arith.c `initArith`)."
+function initArith!(gd::PL_global_data{T})::Nothing where {T}
+    setPrologFlag(gd, "max_rational_size", FT_INTEGER, -1)
+    setPrologFlag(gd, "max_rational_size_action", FT_ATOM, "error")
+    setPrologFlag(gd, "max_integer_size", FT_INTEGER, -1)
+
+    setPrologFlag(gd, "float_overflow", FT_ATOM, "error")
+    setPrologFlag(gd, "float_zero_div", FT_ATOM, "error")
+    setPrologFlag(gd, "float_undefined", FT_ATOM, "error")
+    setPrologFlag(gd, "float_underflow", FT_ATOM, "ignore")
+    setPrologFlag(gd, "float_rounding", FT_ATOM, "to_nearest")
+    setPrologFlag(gd, "float_min", FT_FLOAT | FF_READONLY, floatmin(Float64))
+    setPrologFlag(gd, "float_max", FT_FLOAT | FF_READONLY, floatmax(Float64))
+    setPrologFlag(gd, "float_max_integer", FT_FLOAT | FF_READONLY, 9007199254740992.0)
+    return nothing
+end
+
+# PORT: pl-arith.c is_arith_flag
+# DIVERGES: the key is the atom (`sym_text`), where upstream compares atom handles.
+"Whether the atom `k` names a flag that lives in the arithmetic state (pl-arith.c)."
+function is_arith_flag(k::T)::Bool where {T}
+    name = sym_text(k)
+    return name == "max_rational_size" ||
+           name == "max_rational_size_action" ||
+           name == "max_integer_size" ||
+           name == "float_overflow" ||
+           name == "float_zero_div" ||
+           name == "float_undefined" ||
+           name == "float_underflow" ||
+           name == "float_rounding"
+end
+
+# PORT: pl-arith.c get_arith_flag
+# DIVERGES: returns the Boolean (upstream an int). `max_rational_size` and `max_integer_size` are
+# `(size_t)-1` — unlimited, the only value they have here — so they fall to the end and fail, as upstream's
+# do when unlimited; `max_rational_size_action` is `error`, its only value (`LD->arith.rat`, not ported);
+# `float_rounding` names the mode of `arith_f_flags` (the kernel only has `to_nearest`).
+"Unify `val` with the value of the arithmetic flag `k` (pl-arith.c); false if the flag has no value."
+function get_arith_flag(ld::PL_local_data{T}, val::term_t, k::T)::Bool where {T}
+    name = sym_text(k)
+    if name == "max_rational_size_action"
+        return PL_unify_atom(ld, val, mk_sym(T, :error))
+    end
+    flags = ld.arith_f_flags
+    if name == "float_overflow"
+        a = (flags & FLT_OVERFLOW) != 0 ? :infinity : :error
+    elseif name == "float_zero_div"
+        a = (flags & FLT_ZERO_DIV) != 0 ? :infinity : :error
+    elseif name == "float_undefined"
+        a = (flags & FLT_UNDEFINED) != 0 ? :nan : :error
+    elseif name == "float_underflow"
+        a = (flags & FLT_UNDERFLOW) != 0 ? :ignore : :error
+    elseif name == "float_rounding"
+        mode = flags & FLT_ROUND_MASK
+        if mode == FLT_ROUND_NEAREST
+            a = :to_nearest
+        elseif mode == FLT_ROUND_TO_POS
+            a = :to_positive
+        elseif mode == FLT_ROUND_TO_NEG
+            a = :to_negative
+        elseif mode == FLT_ROUND_TO_ZERO
+            a = :to_zero
+        else
+            return false                    # upstream's `default: return false`
+        end
+    else
+        return false
+    end
+    return PL_unify_atom(ld, val, mk_sym(T, a))
 end
 
 # PORT: pl-arith.c BeginPredDefs as PL_predicates_from_arith

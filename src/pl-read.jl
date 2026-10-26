@@ -681,7 +681,7 @@ up to the full stop. At end of file before a term the text is `end_of_file. `. F
 function raw_read2(rd::read_data)::Bool
     something_read = false
     clearBuffer(rd)                                 # clear input buffer
-    rd.strictness = 0                               # truePrologFlag(PLFLAG_ISO): off
+    rd.strictness = truePrologFlag(rd.ld, PLFLAG_ISO) ? 1 : 0   # _PL_rd->strictness = truePrologFlag(PLFLAG_ISO)
     s = rd._rb.stream
     c = getchr__(rd)
     while true
@@ -907,9 +907,9 @@ function raw_read2(rd::read_data)::Bool
                 c = raw_read_identifier(c, rd)
                 continue                            # goto handle_c
             elseif c == Int('|') && rd._rb.here - 1 >= 1 &&
-                rd._rb.base[rd._rb.here - 1] == UInt8('|')
-                # detect || from {|Syntax||Quotation|}: truePrologFlag(PLFLAG_QUASI_QUOTES) is
-                # on (SWI-7's default)
+                rd._rb.base[rd._rb.here - 1] == UInt8('|') &&
+                truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)
+                # detect || from {|Syntax||Quotation|}
                 raw_read_quasi_quotation(c, rd) || return false
             else
                 addToBuffer(c, rd)
@@ -2021,7 +2021,8 @@ end
 # reference; a variable token's is the variable's index. NOT PORTED: blobs (`<type>(…)`, SWI-7
 # reads them only with the `blobs` read option), the `charset` style check, NFC and non-ASCII atom
 # policies other than accept (S_UATOMS_ACCEPT, SWI-7's default). The `quasi_quotations` flag is
-# ON (SWI-7's default): `{|` is TK_QQ_OPEN and `||` TK_QQ_BAR.
+# `truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)` (since R2 F1a; ON, SWI-7's default, until then without the
+# test): `{|` is TK_QQ_OPEN and `||` TK_QQ_BAR.
 """
 The next token of the raw text (pl-read.c), or `nothing` after a syntax error (recorded inp `rd`).
 `must_be_op`: an operator is expected here, so `-` before a digit is not a sign.
@@ -2141,8 +2142,9 @@ function get_token(must_be_op::Bool, rd::read_data{T})::Union{Nothing, token{T}}
         end
         @goto functor                               # goto symbol
     elseif cls == PU
-        # (O_QUASIQUOTATIONS, truePrologFlag(PLFLAG_QUASI_QUOTES): on)
-        if c == Int('{') && _byte(b, rd.here) == Int('|')
+        # (O_QUASIQUOTATIONS)
+        if c == Int('{') && _byte(b, rd.here) == Int('|') &&
+            truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)
             rd.here += 1
             tok.type = TK_QQ_OPEN
             @goto out
@@ -2158,7 +2160,7 @@ function get_token(must_be_op::Bool, rd::read_data{T})::Union{Nothing, token{T}}
         end
         # case '|', reached from '{' and '[' too (upstream's fallthrough)
         if (c == Int('{') || c == Int('[') || c == Int('|')) &&
-            _byte(b, rd.here) == Int('|')
+            _byte(b, rd.here) == Int('|') && truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)
             rd.here += 1
             tok.type = TK_QQ_BAR
             @goto out
@@ -3495,7 +3497,7 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
     fid = PL_open_foreign_frame(ld)
 
     rd.here = rd.base
-    rd.strictness = 0                               # truePrologFlag(PLFLAG_ISO): off
+    rd.strictness = truePrologFlag(ld, PLFLAG_ISO) ? 1 : 0     # rd->strictness = truePrologFlag(PLFLAG_ISO)
 
     rc2 = complex_term(nothing, OP_MAXPRIORITY + 1, rd)
     rc2 != 1 && @goto out                           # rc = raiseStackOverflow(rc2)

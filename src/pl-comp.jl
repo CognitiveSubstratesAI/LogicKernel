@@ -3214,16 +3214,19 @@ function unify_head(
 end
 
 # PORT: pl-comp.c protected_predicate
-# DIVERGES: the database `gd` is an argument. NOT PORTED: the `protect_static_code` flag (the flag table,
-# src/os/pl-prologflag.jl) — false, its default, as `setDynamicDefinition!` reads it; `iso` is `PLFLAG_ISO`
-# (false, src/pl-arith.jl). So only a foreign predicate is protected.
+# DIVERGES: the database `gd` is an argument. The `protect_static_code` and `iso` flags are bits of the
+# mask (`truePrologFlag`; since R2 F1a, constants, false, before): nothing sets them yet (R2 F1b), so only a
+# foreign predicate is protected.
 "Whether `def`'s clauses may not be read; if so `permission_error(access, private_procedure, PI)` is raised (pl-comp.c)."
 function protected_predicate(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
 )::Bool where {T}
-    protect_static_code = false                             # truePrologFlag(PLFLAG_PROTECT_STATIC_CODE)
+    protect_static_code = truePrologFlag(ld, PLFLAG_PROTECT_STATIC_CODE)
     if (def.flags & P_FOREIGN) != 0 ||
-        ((def.flags & (P_DYNAMIC | P_CLAUSABLE)) == 0 && (protect_static_code || PLFLAG_ISO))
+        (
+        (def.flags & (P_DYNAMIC | P_CLAUSABLE)) == 0 &&
+        (protect_static_code || truePrologFlag(ld, PLFLAG_ISO))
+    )
         proc = getDefinitionProc(gd, def)
         PL_error(
             ld, ERR_PERMISSION_PROC, mk_sym(T, :access), mk_sym(T, :private_procedure), proc
@@ -3537,7 +3540,11 @@ function assert_term!(
             end
             # locks predicates as system predicates in system mode: no system mode here
             if !isDefinedProcedure(gd, proc)
-                def.flags &= ~HIDE_CHILDS                       # truePrologFlag(PLFLAG_DEBUGINFO)
+                if truePrologFlag(ld, PLFLAG_DEBUGINFO)         # (not in system mode)
+                    def.flags &= ~HIDE_CHILDS
+                else
+                    def.flags |= HIDE_CHILDS
+                end
             end
             addProcedureSourceFile(of, proc)
             of.current_procedure = proc

@@ -974,6 +974,27 @@ end
 "Unify the term `t` references with the atom `a` (pl-fli.c `PL_unify_atom`)."
 PL_unify_atom(ld::PL_local_data{T}, t::term_t, a::T) where {T} = PL_unify_atomic(ld, t, a)
 
+# PORT: pl-fli.c PL_unify_bool
+# DIVERGES: on the term reference's atom (`PL_get_atom`), where upstream compares the word with the words of
+# `true`/`on` and `false`/`off`: the same atoms (`atom_to_bool`).
+"Unify the term `t` references with the Boolean `val`: a variable gets `true` or `false`, an atom must say `val` (`true`/`on`, `false`/`off`) (pl-fli.c)."
+function PL_unify_bool(ld::PL_local_data{T}, t::term_t, val::Bool)::Bool where {T}
+    if PL_is_variable(ld, t)                                # canBind(*p): bindConst(p, val ? ATOM_true : ATOM_false)
+        return PL_unify_atom(ld, t, mk_sym(T, val ? Symbol("true") : Symbol("false")))
+    end
+    a = PL_get_atom(ld, t)
+    a === nothing && return false
+    return atom_to_bool(ld, a) === val                      # w == ATOM_true || w == ATOM_on (or false/off)
+end
+
+# PORT: pl-fli.c PL_unify_float
+# DIVERGES: on the standard order's identity of two atomic terms (`PL_unify_atomic`), where upstream reads
+# `isFloat(*p) && valFloat(*p) == f`: they differ for `0.0` against `-0.0` and for a NaN, neither of which
+# a flag holds.
+"Unify the term `t` references with the float `f` (pl-fli.c)."
+PL_unify_float(ld::PL_local_data{T}, t::term_t, f::Float64) where {T} =
+    PL_unify_atomic(ld, t, mk_gnd(T, f))
+
 # PORT: pl-fli.c PL_unify_integer
 # (upstream: `unify_int64_ex(t, i, false)` — on the cells since L1d step 7a; L1e e3 drops the term detour)
 "Unify the term `t` references with the integer `i` (pl-fli.c `PL_unify_integer`)."
@@ -1091,7 +1112,30 @@ end
 "How many states of the non-deterministic built-ins are live in `ld` (a white-box count)."
 live_states(ld::PL_local_data)::Int =
     ld.between_states.live + ld.retract_contexts.live + ld.clause_contexts.live +
-    ld.op_enums.live
+    ld.op_enums.live +
+    ld.prolog_flag_enums.live
+
+# ── the recorded database's C interface (pl-fli.c; F1a) ─────────────────────────────────────────
+# PORT: pl-fli.c PL_record
+# DIVERGES: `compileTermToHeap` takes no `R_DUPLICATE` flag (the kernel's record has no reference count).
+"Record the term `t` references, so that it survives backtracking and the stacks (pl-fli.c)."
+PL_record(ld::PL_local_data{T}, t::term_t) where {T} = compileTermToHeap(ld, t)
+
+# PORT: pl-fli.c PL_recorded
+"Make term reference `t` hold the term of record `r`, its variables fresh; false, the overflow raised, when it does not fit (pl-fli.c)."
+PL_recorded(ld::PL_local_data{T}, r::record{T}, t::term_t) where {T} =
+    copyRecordToGlobal(ld, t, r)
+
+# PORT: pl-fli.c PL_erase
+# DIVERGES: nothing to free — a record is freed by Julia's GC (`freeRecord`, src/pl-rec.jl).
+"Erase the record `r` (pl-fli.c)."
+PL_erase(r::record)::Nothing = nothing
+
+# PORT: pl-fli.c PL_duplicate_record
+# DIVERGES: the record itself, as upstream returns it with its reference count raised: a record is
+# immutable here and freed by Julia's GC, so one value serves every holder.
+"A second reference to the record `r` (pl-fli.c)."
+PL_duplicate_record(r::record) = r
 
 # PORT: pl-fli.c PL_qualify
 # DIVERGES: the database and local data are arguments; the module is an index into `gd`'s table

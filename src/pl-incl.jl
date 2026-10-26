@@ -8,6 +8,8 @@
 # UPSTREAM: swipl-devel src/pl-arith.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-proc.c @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-op.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-prologflag.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-prologflag.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -1625,3 +1627,258 @@ mutable struct findall_bag{T}
     gsize::Int                          # required size on stack
     answers::Vector{record{T}}          # list of answers
 end
+
+# ── the Prolog-flag table (R2 F1a; design evidence/r2/design/flags_rest.md D2, D3) ────────────────
+# The types and constants of the flag table that the data structs of src/pl-global.jl name, so they must
+# be defined before it (the functions are src/os/pl-prologflag.jl's). `FT_*` and `PLFLAG_*` are pl-incl.h's,
+# the `FF_*` flags SWI-Prolog.h's and os/pl-prologflag.h's, `oneof` and `prolog_flag` os/pl-prologflag.h's,
+# `prolog_flag_enum` os/pl-prologflag.c's. THE MASK: upstream's `LD->prolog_flag.mask` is two `unsigned int`s,
+# `flag` the bit `(flag-1)%32` of word `(flag-1)/32`; the kernel's is ONE `UInt64`, bit `flag-1` — the same
+# bits, the same numbers, a single load. The mask of a new local data is the database's
+# (`PL_global_data.prolog_flag.mask`): upstream copies the creating thread's mask to every new thread
+# (pl-thread.c), and the kernel has one database per set of local data.
+
+# ── flag value types (pl-incl.h) ─────────────────────────────────────────────────────────────────
+# PORT: pl-incl.h FT_ATOM
+"Flag type: an atom (pl-incl.h `FT_ATOM`)."
+const FT_ATOM = UInt32(0)
+# PORT: pl-incl.h FT_BOOL
+"Flag type: a Boolean, `true` or `false` (pl-incl.h `FT_BOOL`)."
+const FT_BOOL = UInt32(1)
+# PORT: pl-incl.h FT_INTEGER
+"Flag type: an integer (pl-incl.h `FT_INTEGER`)."
+const FT_INTEGER = UInt32(2)
+# PORT: pl-incl.h FT_FLOAT
+"Flag type: a float (pl-incl.h `FT_FLOAT`)."
+const FT_FLOAT = UInt32(3)
+# PORT: pl-incl.h FT_TERM
+"Flag type: a term, held as a record (pl-incl.h `FT_TERM`)."
+const FT_TERM = UInt32(4)
+# PORT: pl-incl.h FT_INT64
+"Flag type: an integer passed as `int64_t`; `setPrologFlag` stores it as `FT_INTEGER` (pl-incl.h `FT_INT64`)."
+const FT_INT64 = UInt32(5)
+# PORT: pl-incl.h FT_FROM_VALUE
+"Flag type: determined from the value (pl-incl.h `FT_FROM_VALUE`)."
+const FT_FROM_VALUE = UInt32(0x0f)
+# PORT: pl-incl.h FT_MASK
+"The bits of a flag's `flags` that hold its type (pl-incl.h `FT_MASK`)."
+const FT_MASK = UInt32(0x0f)
+
+# ── flag attributes (SWI-Prolog.h, pl-prologflag.h, pl-prologflag.c) ─────────────────────────────
+# PORT: SWI-Prolog.h FF_READONLY
+"Flag attribute: read-only (SWI-Prolog.h `FF_READONLY`)."
+const FF_READONLY = UInt32(0x001000)
+# PORT: SWI-Prolog.h FF_KEEP
+"Flag attribute: keep the flag if it is already set (SWI-Prolog.h `FF_KEEP`)."
+const FF_KEEP = UInt32(0x002000)
+# PORT: SWI-Prolog.h FF_NOCREATE
+"Flag attribute: fail if the flag does not exist (SWI-Prolog.h `FF_NOCREATE`)."
+const FF_NOCREATE = UInt32(0x004000)
+# PORT: SWI-Prolog.h FF_FORCE
+"Flag attribute: force setting, overwriting READONLY (SWI-Prolog.h `FF_FORCE`)."
+const FF_FORCE = UInt32(0x008000)
+# PORT: SWI-Prolog.h FF_LOCAL
+"Flag attribute: force creating only locally (SWI-Prolog.h `FF_LOCAL`)."
+const FF_LOCAL = UInt32(0x010000)
+# PORT: SWI-Prolog.h FF_GLOBAL
+"Flag attribute: force setting globally (SWI-Prolog.h `FF_GLOBAL`)."
+const FF_GLOBAL = UInt32(0x020000)
+# PORT: pl-prologflag.h FF_ISLOCAL
+"Flag attribute: the flag is local (internal) (pl-prologflag.h `FF_ISLOCAL`)."
+const FF_ISLOCAL = UInt32(0x040000)
+# PORT: pl-prologflag.h FF_ISCREATE
+"Flag attribute: called from `create_prolog_flag/3` (pl-prologflag.h `FF_ISCREATE`)."
+const FF_ISCREATE = UInt32(0x080000)
+# PORT: pl-prologflag.h FF_PUSH_ABSENT
+"Flag attribute: a pushed frame whose flag was absent (pl-prologflag.h `FF_PUSH_ABSENT`)."
+const FF_PUSH_ABSENT = UInt32(0x100000)
+# PORT: pl-prologflag.h FF_SHARED
+"Flag attribute: never localised, one value for all threads (pl-prologflag.h `FF_SHARED`)."
+const FF_SHARED = UInt32(0x200000)
+# PORT: pl-prologflag.h FF_MASK
+"All the `FF_*` attributes (pl-prologflag.h `FF_MASK`)."
+const FF_MASK = UInt32(0x3ff000)
+# PORT: pl-prologflag.c FF_WARN_NOT_ACCESSED
+"Flag attribute: warn if the flag is never accessed (pl-prologflag.c `FF_WARN_NOT_ACCESSED`)."
+const FF_WARN_NOT_ACCESSED = UInt32(0x0100)
+# PORT: pl-prologflag.c FF_ACCESSED
+"Flag attribute: the flag has been accessed (pl-prologflag.c `FF_ACCESSED`)."
+const FF_ACCESSED = UInt32(0x0200)
+
+# ── the bits of the mask (pl-incl.h `enum plflag`; the value is the bit number plus one) ─────────
+# PORT: pl-incl.h PLFLAG_CHARESCAPE
+"Mask bit: handle `\\` in quoted atoms (pl-incl.h `PLFLAG_CHARESCAPE`); the flag `character_escapes`."
+const PLFLAG_CHARESCAPE = 1
+# PORT: pl-incl.h PLFLAG_CHARESCAPE_UNICODE
+"Mask bit: write an escape as `\\uXXXX` (pl-incl.h); the flag `character_escapes_unicode`."
+const PLFLAG_CHARESCAPE_UNICODE = 2
+# PORT: pl-incl.h PLFLAG_GC
+"Mask bit: do garbage collection (pl-incl.h); the flag `gc`."
+const PLFLAG_GC = 3
+# PORT: pl-incl.h PLFLAG_TRACE_GC
+"Mask bit: verbose garbage collection (pl-incl.h); the flag `trace_gc`."
+const PLFLAG_TRACE_GC = 4
+# PORT: pl-incl.h PLFLAG_GCTHREAD
+"Mask bit: do atom and clause GC in a thread (pl-incl.h); the flag `gc_thread`."
+const PLFLAG_GCTHREAD = 5
+# PORT: pl-incl.h PLFLAG_TTY_CONTROL
+"Mask bit: allow tty control (pl-incl.h); the flag `tty_control`."
+const PLFLAG_TTY_CONTROL = 6
+# PORT: pl-incl.h PLFLAG_DEBUG_ON_ERROR
+"Mask bit: start the tracer on an error (pl-incl.h); the flag `debug_on_error`."
+const PLFLAG_DEBUG_ON_ERROR = 7
+# PORT: pl-incl.h PLFLAG_REPORT_ERROR
+"Mask bit: print the error message (pl-incl.h); the flag `report_error`."
+const PLFLAG_REPORT_ERROR = 8
+# PORT: pl-incl.h PLFLAG_FILE_CASE
+"Mask bit: file names are case sensitive (pl-incl.h); `file_name_case_handling`."
+const PLFLAG_FILE_CASE = 9
+# PORT: pl-incl.h PLFLAG_FILE_CASE_PRESERVING
+"Mask bit: file names preserve case (pl-incl.h); `file_name_case_handling`."
+const PLFLAG_FILE_CASE_PRESERVING = 10
+# PORT: pl-incl.h PLFLAG_ERROR_AMBIGUOUS_STREAM_PAIR
+"Mask bit: an ambiguous action on a stream pair is an error (pl-incl.h); `error_ambiguous_stream_pair`."
+const PLFLAG_ERROR_AMBIGUOUS_STREAM_PAIR = 11
+# PORT: pl-incl.h ALLOW_VARNAME_FUNCTOR
+"Mask bit: read `Foo(x)` as `'Foo'(x)` (pl-incl.h `ALLOW_VARNAME_FUNCTOR`, the one bit without the `PLFLAG_` prefix); `allow_variable_name_as_functor`."
+const ALLOW_VARNAME_FUNCTOR = 12
+# PORT: pl-incl.h PLFLAG_ISO
+"Mask bit: strict ISO compliance (pl-incl.h); the flag `iso`."
+const PLFLAG_ISO = 13
+# PORT: pl-incl.h PLFLAG_OPTIMISE
+"Mask bit: optimised compilation (pl-incl.h); the flag `optimise`."
+const PLFLAG_OPTIMISE = 14
+# PORT: pl-incl.h PLFLAG_FILEVARS
+"Mask bit: expand `\$var` and `~` in file names (pl-incl.h); `file_name_variables`."
+const PLFLAG_FILEVARS = 15
+# PORT: pl-incl.h PLFLAG_AUTOLOAD
+"Mask bit: do autoloading (pl-incl.h); the flag `autoload` (an atom flag with no index: the bit is set by hand)."
+const PLFLAG_AUTOLOAD = 16
+# PORT: pl-incl.h PLFLAG_CHARCONVERSION
+"Mask bit: do character conversion (pl-incl.h); the flag `char_conversion`."
+const PLFLAG_CHARCONVERSION = 17
+# PORT: pl-incl.h PLFLAG_LASTCALL
+"Mask bit: last-call optimisation (pl-incl.h); the flag `last_call_optimisation`."
+const PLFLAG_LASTCALL = 18
+# PORT: pl-incl.h PLFLAG_VMI_BUILTIN
+"Mask bit: use VMI for simple built-ins (pl-incl.h); the flag `vmi_builtin`."
+const PLFLAG_VMI_BUILTIN = 19
+# PORT: pl-incl.h PLFLAG_PORTABLE_VMI
+"Mask bit: generate portable VMI code (pl-incl.h); the flag `portable_vmi`."
+const PLFLAG_PORTABLE_VMI = 20
+# PORT: pl-incl.h PLFLAG_SIGNALS
+"Mask bit: handle signals (pl-incl.h); the flag `signals`."
+const PLFLAG_SIGNALS = 21
+# PORT: pl-incl.h PLFLAG_DEBUGINFO
+"Mask bit: generate debug info (pl-incl.h); the flag `generate_debug_info`."
+const PLFLAG_DEBUGINFO = 22
+# PORT: pl-incl.h PLFLAG_FILEERRORS
+"Mask bit: Edinburgh file errors (pl-incl.h); the flag `fileerrors`."
+const PLFLAG_FILEERRORS = 23
+# PORT: pl-incl.h PLFLAG_WARN_OVERRIDE_IMPLICIT_IMPORT
+"Mask bit: warn when overriding weak symbols (pl-incl.h); `warn_override_implicit_import`."
+const PLFLAG_WARN_OVERRIDE_IMPLICIT_IMPORT = 24
+# PORT: pl-incl.h PLFLAG_QUASI_QUOTES
+"Mask bit: support quasi quotations (pl-incl.h); the flag `quasi_quotations`."
+const PLFLAG_QUASI_QUOTES = 25
+# PORT: pl-incl.h PLFLAG_DOT_IN_ATOM
+"Mask bit: allow atoms like `a.b.c` (pl-incl.h); the flag `allow_dot_in_atom`."
+const PLFLAG_DOT_IN_ATOM = 26
+# PORT: pl-incl.h PLFLAG_PROTECT_STATIC_CODE
+"Mask bit: deny clause/2 on static code (pl-incl.h); the flag `protect_static_code`."
+const PLFLAG_PROTECT_STATIC_CODE = 27
+# PORT: pl-incl.h PLFLAG_MITIGATE_SPECTRE
+"Mask bit: mitigate spectre attacks (pl-incl.h); the flag `mitigate_spectre`."
+const PLFLAG_MITIGATE_SPECTRE = 28
+# PORT: pl-incl.h PLFLAG_TABLE_INCREMENTAL
+"Mask bit: incremental tabling by default (pl-incl.h); the flag `table_incremental`."
+const PLFLAG_TABLE_INCREMENTAL = 29
+# PORT: pl-incl.h PLFLAG_TABLE_SHARED
+"Mask bit: shared tabling by default (pl-incl.h); the flag `table_shared`."
+const PLFLAG_TABLE_SHARED = 30
+# PORT: pl-incl.h PLFLAG_RATIONAL
+"Mask bit: natural rational numbers (pl-incl.h); the flag `prefer_rationals`."
+const PLFLAG_RATIONAL = 31
+# PORT: pl-incl.h PLFLAG_DEBUG_ON_INTERRUPT
+"Mask bit: debug on Control-C (pl-incl.h); the flag `debug_on_interrupt`."
+const PLFLAG_DEBUG_ON_INTERRUPT = 32
+# PORT: pl-incl.h PLFLAG_OPTIMISE_UNIFY
+"Mask bit: move unifications in clauses (pl-incl.h); the flag `optimise_unify`."
+const PLFLAG_OPTIMISE_UNIFY = 33
+# PORT: pl-incl.h PLFLAG_SHIFT_CHECK
+"Mask bit: check suspicious shifts (pl-incl.h); the flag `shift_check`."
+const PLFLAG_SHIFT_CHECK = 34
+# PORT: pl-incl.h PLFLAG_AGC_CLOSE_STREAMS
+"Mask bit: atom GC may close open streams (pl-incl.h); the flag `agc_close_streams`."
+const PLFLAG_AGC_CLOSE_STREAMS = 35
+# PORT: pl-incl.h PLFLAG_EPILOG
+"Mask bit: swipl-win (pl-incl.h); the flag `epilog`."
+const PLFLAG_EPILOG = 36
+
+# PORT: pl-incl.h prologFlagMask
+# DIVERGES: the mask is one 64-bit word (bit `flag-1`), where upstream's is two `unsigned int`s and the macro
+# gives the bit within word `(flag-1)/32` (pl-incl.h:2939).
+"The mask word with the bit of `flag` set (pl-incl.h `prologFlagMask`; the kernel's mask is one 64-bit word)."
+prologFlagMask(flag::Integer)::UInt64 = UInt64(1) << (flag - 1)
+
+# ── the flag table (pl-prologflag.h, pl-prologflag.c) ────────────────────────────────────────────
+# PORT: pl-prologflag.h oneof as oneof_t
+# DIVERGES: the values are atom symbols; `count` is `length(values)`; no `PL_register_atom` (no atom GC).
+"The values a flag of the form `oneof(List)` may take (pl-prologflag.h `struct oneof`), shared by reference count."
+mutable struct oneof_t{T}
+    values::Vector{T}
+    references::Int
+end
+
+# PORT: pl-prologflag.h prolog_flag
+# DIVERGES: one field per member of upstream's value union (as `number`: a Julia `Union` field would
+# box), so a member not in use keeps a value nobody reads; `t` is a record (`PL_record`), `nothing`
+# for no record. `a` holds an atom's symbol, `true`/`false` for a Boolean.
+"A Prolog flag (pl-prologflag.h `struct _prolog_flag`): its type and attributes, the bit of the mask it owns, its value."
+mutable struct prolog_flag{T}
+    flags::UInt32                                   # Type | Flags
+    index::UInt32                                   # index in LD->prolog_flag.mask (a PLFLAG_*), 0: none
+    a::T                                            # value as atom
+    i::Int64                                        # value as integer
+    f::Float64                                      # value as float
+    t::Union{Nothing, record{T}}                    # value as term
+    oneof::Union{Nothing, oneof_t{T}}               # the values an atom flag may take
+    pushed::Union{Nothing, prolog_flag{T}}          # push_prolog_flag/2 stack
+end
+prolog_flag{T}(flags::UInt32, a::T) where {T} =
+    prolog_flag{T}(flags, UInt32(0), a, Int64(0), 0.0, nothing, nothing, nothing)
+
+# ORIGINAL (design D2): upstream's `GD->prolog_flag.table` is a hash table of atom -> `prolog_flag*` that
+# a `TableEnum` walks; the kernel's is a vector of flags in creation order and a dictionary from the
+# key's ATOM WORD to the slot. An enumeration holds the slot number, so a flag created during one — it
+# lands at the end — is met later and no rehash can disturb the walk (a bare `Dict`'s iteration state
+# does not survive an insert). A flag that is deleted (a popped `FF_PUSH_ABSENT` frame, F2) leaves a
+# `nothing` in its slot, which an enumeration skips; the slot is not reused, so no state ever sees
+# another flag at a number it holds. The key is an atom WORD, whose `==` is identity (CLAUDE.md: an
+# index key follows `==`). `mask` is the mask of the initial thread (`LD->prolog_flag.mask` of the
+# local data `initPrologFlags` ran in), which every new local data copies. Enumeration order differs from
+# upstream's (hash-table order, pl-table.c): the one divergence class of audit D-0149 item 1.
+"The Prolog flags of a database (`GD->prolog_flag`): the flags in creation order, the slot of each key, the initial mask."
+mutable struct prolog_flag_table{T}
+    entries::Vector{Union{Nothing, prolog_flag{T}}}
+    names::Vector{T}                                # the key of each slot (kept when the slot is deleted)
+    slot::Dict{UInt64, Int}                         # atom word -> slot of a live flag
+    mask::UInt64                                    # the mask a new local data starts with
+end
+prolog_flag_table{T}() where {T} =
+    prolog_flag_table{T}(
+        Union{Nothing, prolog_flag{T}}[], T[], Dict{UInt64, Int}(), UInt64(0)
+    )
+
+# PORT: pl-prologflag.c prolog_flag_enum
+# DIVERGES: a record of the local data's pool (`ld.prolog_flag_enums`, a `foreign_state_pool`), its index
+# the `REDO_PTR` context; `table_enum` is `next`, the slot where the walk resumes, and `scope` a Boolean
+# (`is_local`: the scope is `local`); `module` is an index into the database's module table.
+"The state of `current_prolog_flag/2` between answers (pl-prologflag.c `prolog_flag_enum`)."
+mutable struct prolog_flag_enum
+    next::Int                                       # table_enum: the next slot to look at
+    is_local::Bool                                  # scope == ATOM_local
+    explicit_scope::Bool                            # the caller named the scope
+    module_::Int                                    # the module of the key (an index)
+end
+prolog_flag_enum() = prolog_flag_enum(1, false, false, 0)

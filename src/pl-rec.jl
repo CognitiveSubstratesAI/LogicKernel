@@ -5,7 +5,8 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# RECORDED TERMS (pl-rec.c), exactly these: `compileTermToHeap` — a term taken off the stacks, so
+# RECORDED TERMS (pl-rec.c), exactly these (and, since R2 F1a, the C interface over them, pl-fli.c's
+# `PL_record`, `PL_recorded`, `PL_erase` and `PL_duplicate_record`, src/pl-fli.jl): `compileTermToHeap` — a term taken off the stacks, so
 # that it survives backtracking — and `copyRecordToGlobal` — the term put back, its variables
 # fresh. Their first caller is findall/3 (src/pl-bag.jl): an answer is recorded, the goal is
 # backtracked into, and the answers are put back when it has no more.
@@ -33,7 +34,7 @@
 #
 # NOT PORTED: the rest of pl-rec.c — the recorded database (`recorda/3`, `recorded/3`, `erase/1`,
 # `instance/2`, the keys and their lists), external records (`PL_record_external`, the
-# `PL_TYPE_EXT_*` opcodes), `PL_record`, `PL_duplicate_record`, `variantRecords`, `term_complexity`,
+# `PL_TYPE_EXT_*` opcodes), `variantRecords`, `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`),
 # attributed variables (`PL_TYPE_ATTVAR`, `PL_REC_ALLOCVAR`), and `freeRecord` (a record is freed
 # by Julia's GC).

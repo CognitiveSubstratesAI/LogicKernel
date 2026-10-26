@@ -67,12 +67,14 @@ mutable struct PL_global_data{T}
     const atom_dexpr::UInt64                                    # (`$expr`, a reserved atom: L1c)
     const functor_dot2::UInt64                                  # FUNCTOR_dot2: '[|]'/2's word
     const atom_nil_w::UInt64                                    # ATOM_nil's WORD (L1c-6)
+    const prolog_flag::prolog_flag_table{T}                     # prolog_flag: the Prolog flags (R2 F1a)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
 # pl-funct.c's `functorDefTable` (src/pl-funct.jl), built after it. `atom_symbols` has no upstream
 # field: each atom's interface symbol, which upstream's atom record holds as its name
 # (src/pl-atom.jl `atom_symbols`, L1b C6b), shared by every engine made for the database.
+# Since R2 F1a: `prolog_flag`, `GD->prolog_flag` (the table of src/pl-incl.jl, filled by `initPrologFlags!`).
 # `subclause_names` has no upstream field — upstream's compiler reads its `ATOM_*` and
 # `FUNCTOR_*` constants (src/pl-funct.jl); like the control functors, the kernel registers them once
 # per database. The module table (`tables.modules`, since V5c a vector: src/pl-modul.jl) holds the
@@ -146,8 +148,10 @@ function PL_global_data{T}() where {T}
         functors,
         dexpr,
         dot2,
-        nilw
+        nilw,
+        prolog_flag_table{T}()                  # prolog_flag: none yet (initPrologFlags! defines them)
     )
+    initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     return gd
@@ -286,6 +290,8 @@ end
 # `attvars`, the chain of attributed variables (`register_attvar`, `reclaim_attvars`) as a global
 # position, 0 for NULL. NOT PORTED: `gc_attvars` (the collector's, G1) and `call_residue_vars_count`
 # (call_residue_vars/2, AV9).
+# Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
+# the pool of current_prolog_flag/2's states.
 """
     PL_local_data{T}(gd)
 
@@ -411,6 +417,8 @@ mutable struct PL_local_data{T}
     retract_ctxbuf::retract_context{T}                          # (retract/1's C-stack `ctxbuf`)
     clause_contexts::foreign_state_pool{ClauseChoice{T}}        # (clause/2's REDO_PTR states, NF2)
     op_enums::foreign_state_pool{op_enum{T}}                    # (current_op/3's and $local_op/3's REDO_PTR states, NF3)
+    prolog_flag_mask::UInt64                                    # prolog_flag.mask: the bits truePrologFlag reads (R2 F1a)
+    prolog_flag_enums::foreign_state_pool{prolog_flag_enum}     # (current_prolog_flag/2's REDO_PTR states, R2 F1a)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -485,7 +493,9 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
         retract_context{T}(),                   # retract/1's first-call buffer
         foreign_state_pool{ClauseChoice{T}}(),  # clause/2's states: none
-        foreign_state_pool{op_enum{T}}()        # current_op/3's states: none
+        foreign_state_pool{op_enum{T}}(),       # current_op/3's states: none
+        gd.prolog_flag.mask,                    # prolog_flag.mask: the database's (pl-thread.c copies the creating thread's)
+        foreign_state_pool{prolog_flag_enum}()  # current_prolog_flag/2's states: none
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
