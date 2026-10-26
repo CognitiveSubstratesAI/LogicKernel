@@ -17,6 +17,7 @@
 #     condition 4: `==`, `?=`, unifiable/3, compare/3, `=@=`, `\==` never wake, and unifiable/3's and `?=`'s
 #     undone unification leaves no wakeup behind); the occurs-check rows (the trail walk skips an attvar
 #     assignment's wakeup entries); hooks that fail, throw, are undone on backtracking;
+#   * B_UNIFY_VC's second path (AV3-W4): a small integer without a word, on a payload without `Int64`;
 #   * hk14 (a hook module inheriting from `user`, made by MOD1's `lookupModule`) and two rows beside it, live;
 #     hk14s / hk14t (two attributed variables, both modules `user`) answer for its hooks' order.
 # NOT AV3 ROWS: hk05, hk05b, hk22, hk23 (a module that inherits from `user`: R2; freeze/2: AV7); hk10, hk11, hk13
@@ -262,7 +263,7 @@ end
 
 # ── the differential harness: test_attvar_store.jl's (AV2), unchanged ───────────────────────────────────────
 _codes(s::String) = "[" * join(Int.(collect(s)), ",") * "]"
-function enc(t::_R, seen::Vector{UInt64}=UInt64[])::String
+function enc(t::T, seen::Vector{UInt64}=UInt64[])::String where {T}  # any term type (AV3-W4's too)
     k = kind(t)
     if k === VAR
         i = findfirst(==(var_key(t)), seen)
@@ -805,6 +806,79 @@ end
 @testset "the run loop's check points and the non-waking rows: the hooks run where swipl runs them" begin
     @test length(_WK_VM) >= 45
     _wk_check_rows(_WK_VM, "VM ROWS")
+end
+
+# AV3-W4 (AV3's battery, CI run 40257336728): B_UNIFY_VC's second success path — `_unify_const_loc`
+# (src/pl-wam.jl) — binds an attributed variable only for a constant WITHOUT a word. A float or a string never
+# gets there (the compiler emits B_UNIFY_VC for an atom or a small integer only: `is_portable_constant`,
+# src/pl-comp.jl; o_vcf/o_vcs go through B_UNIFY_EXIT) and an atom always has its word: it is a small integer
+# in a term type whose payload holds no `Int64` (`_tagged_int_word` is 0). Such a type reads no integer
+# (`put_number`'s `mk_gnd(T, ::Int64)`), so the program is built as terms and compiled. swipl 10.1.19 runs the
+# same clause from text (its vm_list shows b_unify_vc(1,1) too): R = [c-1, z-zz] — the hook runs at the
+# unification, before the assertz/1 after it (with the check dropped it ran after: [z-zz, c-1]).
+@testset "B_UNIFY_VC wakes an attributed variable bound to a constant without a word (AV3-W4)" begin
+    TB = LK.Term{Union{BigInt, Float64, String}}
+    @test !LK._holds_payload(TB, Int64)
+    gd = LK.PL_global_data{TB}()
+    ld = LK.PL_local_data{TB}(gd)
+    user = LK.MODULE_user(gd)
+    s(x::String) = mk_sym(TB, Symbol(x))
+    c(f::String, xs::TB...) = mk_expr(TB, TB[s(f), xs...])
+    k = LK.fresh_var_keys!(9)
+    v(i::Int) = mk_var(TB, k + UInt64(i))
+    function add!(h::TB, b::TB)
+        pr = LK.lookupProcedure(child(h, 1), nchildren(h) - 1, user)
+        cl = LK.compileClause(gd, ld, h, b, pr, user)
+        LK.assertDefinition!(gd, pr.definition, cl, LK.CL_END)
+        return pr, cl
+    end
+    # the fixture's hook and log/1 on a value that is not a variable; `:- dynamic hooklog/2`
+    LK.setDynamicDefinition!(LK.lookupProcedure(s("hooklog"), 2, user).definition, true)
+    add!(c("attr_unify_hook", c("log", v(0)), v(1)), c("assertz", c("hooklog", v(0), v(1))))
+    add!(
+        c("log", v(2)),
+        c(
+            ",", c("findall", c("-", v(3), v(4)), c("hooklog", v(3), v(4)), v(2)),
+            c("retractall", c("hooklog", v(5), v(6)))
+        )
+    )
+    goal = "put_attr(X,user,log(c)), X = 1, assertz(hooklog(z,zz)), log(R)"
+    X, R = v(7), v(8)
+    one = LK.mk_gnd(TB, big(1))
+    pr, cl = add!(
+        c("t0", R),
+        c(
+            ",", c("put_attr", X, s("user"), c("log", s("c"))),
+            c(
+                ",",
+                c("=", X, one),
+                c(",", c("assertz", c("hooklog", s("z"), s("zz"))), c("log", R))
+            )
+        )
+    )
+    @test :B_UNIFY_VC in [LK.codeTable(o).name for o in _rops(cl)]
+    @test LK.isTaggedInt(one) && LK._tagged_int_word(TB, one) == 0     # a small integer without a word
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(TB, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, pr, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+    ans = enc(LK.export_cells(ld, LK.cell_export{TB}(), -(a + 1)))
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    expected = _wk_list(_ec("-", _ea("c"), _ei(1)), _ec("-", _ea("z"), _ea("zz")))
+    @test ans == expected
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "AV3-W4: the transcription not re-checked — `swipl` is not on PATH here (tools/run_tests.sh and CI have it)."
+        @test true
+    else
+        f, names = _wk_program([goal])
+        @test swipl_lines(f, names) == ["ok", _wk_line(names[1], expected)]   # swipl's own answer
+    end
 end
 
 # hk14 (rows.tsv): a hook module that is not `user` (`b_mod_absent`, made on first use, inheriting from

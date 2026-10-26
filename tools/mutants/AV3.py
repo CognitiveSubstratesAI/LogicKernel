@@ -19,6 +19,13 @@
 #     cell holding a compound or [] whose variable (itself) does not occur in it: no answer changes. (The skip is
 #     upstream's saving; a skip that goes TOO FAR is the mutant P3.);
 #   * `updateAlerted` at `PL_open_query` / `restore_after_query` (src/pl-wam.jl): the same stale-bit argument.
+#   * AV3-P7 (survived run 40257336728) — dropping the address-entry branch (`setVar`) of unifiable's wakeup-cell
+#     restore (src/pl-prims.jl `_unifiable_restore_wakeup_cell!`, `else ld.gstack[_trail_pos(e)] = word(0)`): it is
+#     never taken. unifiable's bindings are made under `unify_all_trail_ptrs_cells`, which sets `mark_bar =
+#     NO_MARK_BAR` (= typemax(Int), src/pl-incl.jl), and every wakeup-list cell is changed by `registerWakeup`
+#     through `TrailAssignment!` (src/pl-attvar.jl), which for `p <= mark_bar` (src/pl-wam.jl) ALWAYS pushes the
+#     address entry AND its value entry — so the entry on top at each restore is a value entry. (Upstream's branch
+#     is dead the same way: TrailAssignment pushes the pair or nothing, pl-wam.c; kept as upstream's.)
 # The `old` strings were written BEFORE `tools/warm.sh fmt`: re-check them after it (mutate_drive.py refuses a string
 # that does not occur exactly once).
 T = ["test/core_lang/test_attvar_wakeup.jl"]
@@ -176,9 +183,6 @@ MUTANTS = [
     dict(id="AV3-P6 unifiable restores the wakeup list's tail only", file=P, targets=T,
          old="            _unifiable_restore_wakeup_cell!(ld)               # restore head of wakeup list\n",
          new=""),
-    dict(id="AV3-P7 unifiable leaves a cleared wakeup cell set (address entry)", file=P, targets=T,
-         old="        ld.gstack[_trail_pos(e)] = word(0)                    # else setVar(*p)\n",
-         new="        nothing\n"),
     dict(id="AV3-P8 unifiable does not give a restored cell its old value (value entry)", file=P, targets=T,
          old="        ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]    #   *tt->address = trailVal(p)\n",
          new="        nothing\n"),
