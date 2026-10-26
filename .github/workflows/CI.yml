@@ -440,6 +440,9 @@ jobs:
       - name: tools/test_fuzz.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_fuzz.sh
+      - name: tools/test_summary.sh
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
+        run: tools/test_summary.sh
       - name: tools/test_setup_machine.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_setup_machine.sh

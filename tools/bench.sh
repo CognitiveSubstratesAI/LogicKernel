@@ -11,8 +11,25 @@
 # bench.jl refuses a timed run without it (unless `--ungated`, which the header then says).
 # The run itself is capped (MemoryMax, TasksMax), as every long job here.
 #   BENCH_GATE_SECONDS (10), BENCH_GATE_MIN_IDLE (0.90) override the gate's window and threshold.
+#   tools/bench.sh --summary [args]  SUMMARY MODE (audit D-0178 item 1): the same run, its whole output in
+#       .warm/summary_bench.log, <= 10 lines printed (verdict, case count, the raw-numbers file, GC-flagged
+#       cases, the top allocations per call, the log's path — tools/summarize_log.sh); the exit status is
+#       the run's own (3 = refused by the start gate).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+_sm_args=() _sm_on=0
+for _sm_a in "$@"; do
+    if [ "$_sm_a" = --summary ]; then _sm_on=1; else _sm_args+=("$_sm_a"); fi
+done
+if [ "$_sm_on" = 1 ]; then
+    mkdir -p "$ROOT/.warm"
+    _sm_log="$ROOT/.warm/summary_bench.log"
+    _sm_t0=$(date +%s)
+    "$0" "${_sm_args[@]}" > "$_sm_log" 2>&1
+    _sm_rc=$?
+    "$ROOT/tools/summarize_log.sh" bench "$_sm_log" "$_sm_rc" "$(( $(date +%s) - _sm_t0 ))"
+    exit "$_sm_rc"
+fi
 SECS="${BENCH_GATE_SECONDS:-10}"
 MIN_IDLE="${BENCH_GATE_MIN_IDLE:-0.90}"
 

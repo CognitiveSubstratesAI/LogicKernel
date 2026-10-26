@@ -23,6 +23,13 @@
 #   tools/warm.sh fmt-pin                  # the JuliaFormatter version CI's Format job pins (`check` compares it)
 #   tools/warm.sh term-scopes              # the declarations alone (tools/term_scopes_check.jl, CI's
 #                                          # Pkg.test check, audit D-0206 4a)
+#   tools/warm.sh static                   # the static-analysis gate (test/test_static_analysis.jl: JET, Aqua,
+#                                          # AllocCheck) WARM, on the reference type
+#   tools/warm.sh check|file|static|branch-gate … --summary
+#                                          # SUMMARY MODE (D-0178): the same run, its full output in
+#                                          # .warm/summary_<name>.log, <= 10 lines printed (verdict,
+#                                          # counts, seconds, failing file:line, the log's path); the
+#                                          # exit status is the run's own (tools/summarize_log.sh)
 #   tools/warm.sh fmt                      # the formatter in WRITE mode on the changed .jl files, WARM —
 #                                          # run before check/branch-gate
 #   tools/warm.sh inventory                # port_check.jl --write-inventory, WARM: the generated blocks
@@ -1123,6 +1130,30 @@ _workload() {
         echo "precompile workload: $1 (this checkout; restart the lane to recompile)"
 }
 
+# SUMMARY MODE (audit D-0178 item 1, D-0166/D-0155: cut the dispatcher's context): `--summary` after
+# check | file | static | branch-gate runs the SAME command with its whole output in $DIR/summary_<…>.log
+# and prints tools/summarize_log.sh's <= 10 lines instead. The exit status is the command's own: it is
+# captured from the plain run (a redirect, no pipeline) and re-raised after the summary.
+case "${1:-}" in
+    check | file | static | branch-gate)
+        _sm_args=() _sm_on=0
+        for _sm_a in "$@"; do
+            if [ "$_sm_a" = --summary ]; then _sm_on=1; else _sm_args+=("$_sm_a"); fi
+        done
+        if [ "$_sm_on" = 1 ]; then
+            mkdir -p "$DIR"
+            _sm_name="$1"
+            [ "$1" = file ] && _sm_name="file_$(basename "${2:-x}" .jl)"
+            _sm_log="$DIR/summary_${_sm_name}.log"
+            _sm_t0=$(date +%s)
+            "$0" "${_sm_args[@]}" > "$_sm_log" 2>&1
+            _sm_rc=$?
+            "$ROOT/tools/summarize_log.sh" "$1" "$_sm_log" "$_sm_rc" "$(( $(date +%s) - _sm_t0 ))"
+            exit "$_sm_rc"
+        fi
+        ;;
+esac
+
 cmd="${1:-status}"; shift || true
 case "$cmd" in
     status) ;;
@@ -1176,6 +1207,11 @@ case "$cmd" in
         _meta_check
         ;;
     inert-check) _inert_check "${1:-120}" ;;           # the Pkg.test-way run alone: a fresh julia, no daemon
+    static)
+        # the static-analysis gate (JET, Aqua, AllocCheck) on the reference type, WARM — what the notes
+        # called `warm.sh file test/test_static_analysis.jl reference` (like `file`: the daemon must run)
+        _file test/test_static_analysis.jl reference
+        ;;
     check)
         _running || _start > /dev/null || exit 1
         _ck_t0=$(date +%s)
