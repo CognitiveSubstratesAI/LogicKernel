@@ -12,7 +12,8 @@
 #     on PATH — swipl's own live answers equal them too (the transcription checked);
 #   * LIVE rows rows.tsv does not have (trailing of each store operation, `$attv_unify/2`, the error paths, a
 #     bad attribute list): the kernel's answers equal swipl's, read live — no hand-written expectations.
-# No row binds an attributed variable to a value through unification or wakes a hook: that is AV3.
+# No row binds an attributed variable to a value through unification or wakes a hook: that is AV3's
+# (test_attvar_wakeup.jl); only the unify_simple_cells testset's attvar = value case (its D-0083 note).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -179,7 +180,7 @@ end
     LK.PL_clear_exception(ld)
 end
 
-@testset "unify_simple_cells: a variable gets a REFERENCE to an attvar; attvar = value refused until AV3" begin
+@testset "unify_simple_cells: a variable gets a REFERENCE to an attvar; attvar = value is assignAttVar (AV3)" begin
     ld, _ = _as_engine()
     _, _, av = _as_put_new!(ld, "a", 1)
     attv = (LK.DU_ATTVAR, ld.gstack[av], av)
@@ -192,19 +193,27 @@ end
     end
     @test ld.gstack[av] == LK.consPtr(av + 1, LK.TAG_ATTVAR | LK.STG_GLOBAL)   # the attvar itself untouched
     @test LK.unify_simple_cells(ld, attv..., attv...) == LK.BOOLEX_TRUE        # t1 == t2: the same attvar
-    # assignAttVar (pl-prims.c:322-336) is AV3's: refused by name, never a silent failure
-    for (a1, a2) in ((attv, _as_int(5)), (_as_int(5), attv))
-        err = try
-            LK.unify_simple_cells(ld, a1..., a2...)
-            nothing
-        catch e
-            e
-        end
-        @test err isa LK.NotPortedError && occursin("AV3", sprint(showerror, err))
+    # assignAttVar (pl-prims.c:322-336), since AV3: the attvar bound to the value, a wakeup registered.
+    # D-0083: until AV3 this asserted the refusal — `err isa LK.NotPortedError && occursin("AV3",
+    # sprint(showerror, err))` for both orders; upstream binds (rows hk01-hk03, test_attvar_wakeup.jl).
+    for swap in (false, true)
+        ld2, _ = _as_engine()
+        _, _, av2 = _as_put_new!(ld2, "a", 1)
+        attv2 = (LK.DU_ATTVAR, ld2.gstack[av2], av2)
+        a1, a2 = swap ? (_as_int(5), attv2) : (attv2, _as_int(5))
+        @test LK.unify_simple_cells(ld2, a1..., a2...) == LK.BOOLEX_TRUE
+        @test ld2.gstack[av2] == LK.consInt(Int64(5))      # *av = *value
+        @test ld2.gstack[LK._attvar_head_cell(ld2)] != 0   # wakeup(…) on the list
+        @test (ld2.alerted & LK.ALERT_WAKEUP) != 0
     end
-    # \=/2's quick test sends an attributed variable to the full check (pl-prims.c:468-469), which reaches
-    # the refusal above — without it `X \= 2` answered "cannot unify" (swipl: `put_attr(X,user,yes), X \= 2`
-    # fails — the full check unifies them; AV3's test_attvar_wakeup.jl holds that row)
+    # \=/2's quick test sends an attributed variable to the full check (pl-prims.c:468-469) — without it
+    # `X \= 2` answered "cannot unify". Since AV3 the full check's unification is assignAttVar: X bound, a
+    # wakeup registered, which can_unify's `foreignWakeup` (AV4) would run — REFUSED until AV4.
+    # D-0083: until AV3 this asserted the AV3 refusal — `err isa LK.NotPortedError && occursin("AV3",
+    # sprint(showerror, err))` (assignAttVar's). swipl 10.1.19 runs the hook: `put_attr(X,a,1), X \= 2`
+    # raises error(existence_error(procedure,a:attr_unify_hook/2),context('$attvar':uhook/3,_)) — and
+    # `put_attr(X,user,yes), X \= 2` raises the same for attr_unify_hook/2 (no hook defined); rows with
+    # hooks: AV3's test_attvar_wakeup.jl (hk10, hk13).
     a = LK.PL_new_term_refs(ld, 2)
     LK.put_new_attvar(ld, LK.unRef(ld.slots[a + 1]), _as_atom(ld, "a"), _as_int(1))
     LK.PL_put_integer(ld, a + 1, 2)
@@ -216,7 +225,7 @@ end
     catch e
         e
     end
-    @test err isa LK.NotPortedError && occursin("AV3", sprint(showerror, err))
+    @test err isa LK.NotPortedError && err.step == "AV4"
 end
 
 # ── the differential harness: test_attvar_words.jl's (AV1), unchanged ─────────────────────────────────────

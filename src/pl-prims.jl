@@ -726,7 +726,10 @@ end
 # shared by binding, two compared by the term type's `gnd_equal` (`equalIndirect`: SWI's identity in
 # the reference type, `1 = 1.0` fails). An attributed variable (AV2): a plain variable is bound to a
 # reference to it, as upstream's `makeRefG`; an attributed variable against anything else is
-# `assignAttVar`, NOT PORTED until AV3 — refused by name (`_bind_attvar_const_error`), never an answer.
+# `assignAttVar` (AV3), bound with a wakeup. Its space test, upstream's `hasGlobalSpace(0)` →
+# `overflowCode(0)`, is `ensureGlobalSpace(ld, 0)`, which RAISES the overflow (the stack grows on demand,
+# so only the limit can refuse), and the unification fails: `do_unify_cells` has no overflow codes to
+# break on (a `GLOBAL_OVERFLOW` here would read as `DO_COMPOUND`).
 "Unify two dereferenced locations when neither is a compound; `DO_COMPOUND` when both are (pl-prims.c)."
 function unify_simple_cells(
     ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int
@@ -756,8 +759,16 @@ function unify_simple_cells(
         return BOOLEX_TRUE
     end
     (k1 == DU_ATTVAR && k2 == DU_ATTVAR && p1 == p2) && return BOOLEX_TRUE   # t1 == t2: the same attvar
-    k1 == DU_ATTVAR && throw(_bind_attvar_const_error(p1, w1))   # assignAttVar(t1, t2): AV3
-    k2 == DU_ATTVAR && throw(_bind_attvar_const_error(p2, w2))   # assignAttVar(t2, t1): AV3
+    if k1 == DU_ATTVAR                              # if ( isAttVar(w1) )
+        ensureGlobalSpace(ld, 0) || return BOOLEX_FALSE     # if ( !hasGlobalSpace(0) ) return overflowCode(0)
+        assignAttVar(ld, p1, (k2, w2, p2))          # assignAttVar(t1, t2)
+        return BOOLEX_TRUE
+    end
+    if k2 == DU_ATTVAR                              # if ( isAttVar(w2) )
+        ensureGlobalSpace(ld, 0) || return BOOLEX_FALSE     # if ( !hasGlobalSpace(0) ) return overflowCode(0)
+        assignAttVar(ld, p2, (k1, w1, p1))          # assignAttVar(t2, t1)
+        return BOOLEX_TRUE
+    end
     w1 == w2 && return BOOLEX_TRUE
     k1 == k2 || return BOOLEX_FALSE                 # tagex(w1) != tagex(w2)
     if k1 == DU_VALUE
@@ -1295,9 +1306,9 @@ end
 # value or the atom's symbol — no export), compounds by arity, then `$expr/n` before symbol functors
 # (Q2), then name, then the arguments left to right.
 
-"The tag rank of a dereferenced location: unbound cell 0, atomic 1, compound 2 (`_tag_rank`)."
+"The tag rank of a dereferenced location: a variable (attributed too) 0, atomic 1, compound 2 (`_tag_rank`)."
 @inline _loc_rank(k::UInt8, w::word)::Int =
-    k == DU_CELL ? 0 : ((k == DU_WORD && _is_gcompound(w)) ? 2 : 1)
+    (k == DU_CELL || k == DU_ATTVAR) ? 0 : ((k == DU_WORD && _is_gcompound(w)) ? 2 : 1)
 
 "The atomic TERM a dereferenced atomic location holds (an atom's symbol, a stored value): no export."
 @inline function _loc_atomic(ld::PL_local_data{T}, k::UInt8, w::word)::T where {T}
@@ -1309,13 +1320,15 @@ end
 # DIVERGES: (1) two unbound cells are ordered by POSITION, upstream's address order
 # (`SCALAR_TO_CMP(p1, p2)`; F3B f3b-2): allocation is LIFO at `gTop + 1`, so of two live cells the
 # higher one is the younger (pl-alloc.jl `allocGlobalCells!`). (2) On two dereferenced locations; no
-# CMP_MODE_PARTIAL (not ported).
+# CMP_MODE_PARTIAL (not ported). (3) An attributed variable (AV3, D-0122 condition 4: the rows
+# `==`, `\==`, compare/3 on one) is a variable here as upstream's TAG_ATTVAR (pl-prims.c:1859-1866):
+# against an unbound cell or another attributed variable by POSITION, as (1); `==` NOTEQ.
 "One step of the cell walk (pl-prims.c `compare_primitives`): decided, or `CMP_COMPOUND`."
 function compare_primitives_cells(
     ld::PL_local_data{T}, k1::UInt8, w1::word, p1::Int, k2::UInt8, w2::word, p2::Int,
     mode::Int
 )::Int where {T}
-    if k1 == DU_CELL && k2 == DU_CELL
+    if (k1 == DU_CELL || k1 == DU_ATTVAR) && (k2 == DU_CELL || k2 == DU_ATTVAR)   # TAG_VAR, TAG_ATTVAR
         p1 == p2 && return CMP_EQUAL                         # w1 == w2: the same cell
         mode == CMP_MODE_EQUAL && return CMP_NOTEQ
         return p1 < p2 ? CMP_LESS : CMP_GREATER              # SCALAR_TO_CMP(p1, p2)
@@ -1494,7 +1507,7 @@ compareStandard_cells(ld::PL_local_data{T}, l1::Int, l2::Int, eq::Bool) where {T
 "Whether the location `l` holds a term identical to the atomic term `c` (pl-vmi.c B_EQ_VC)."
 function _identical_atomic(ld::PL_local_data{T}, l::Int, c::T)::Bool where {T}
     k, w, _ = _deref_loc(ld, l)
-    k == DU_CELL && return false
+    (k == DU_CELL || k == DU_ATTVAR) && return false   # an attributed variable too (AV3): never `*v1 == c`
     k == DU_WORD && _is_gcompound(w) && return false
     return compare_primitives(_loc_atomic(ld, k, w), c, CMP_MODE_EQUAL) == CMP_EQUAL
 end
@@ -1570,8 +1583,9 @@ end
 # walk reads global positions; the failure's value is its dereferenced word, read before `Undo!`
 # (upstream copies `*p2` to a fresh cell: see `failed_unify_with_occurs_check_cells`), and the error
 # is built on the cells (f3b-4). An attributed variable is `canBind` (since AV2: its occurs test, row
-# av22). NOT PORTED: the trail walk's skip of the wakeup list's two entries (pl-prims.c:720-725) — AV3,
-# which adds them.
+# av22). The trail walk skips an attvar assignment's wakeup entries (since AV3, pl-prims.c:720-725):
+# the tail's assignment, then the head's or the old tail cell's, each two entries when a value entry
+# (`registerWakeup` trails both: `NO_MARK_BAR` is above every cell).
 """
     unify_with_occurs_check_cells(ld, l1, l2, mode) -> boolex_t
 
@@ -1612,7 +1626,11 @@ function unify_with_occurs_check_cells(
             e = ld.trail[tt]                            # Word p = tt->address
             if isTrailVal(e)                            # assignment of an attvar (L1b D: the branch)
                 tt -= 1
-                e = ld.trail[tt]
+                e = ld.trail[tt]                        # p = (--tt)->address
+                tt -= 1                                 # if ( isTrailVal((--tt)->address) ) tt--
+                isTrailVal(ld.trail[tt]) && (tt -= 1)   #   tail of wakeup list
+                tt -= 1                                 # if ( isTrailVal((--tt)->address) ) tt--
+                isTrailVal(ld.trail[tt]) && (tt -= 1)   #   head of wakeup list
             end
             pos = _trail_pos(e)
             _, _, q = _deref_loc(ld, pos)               # deRef2(p, p2)
@@ -1672,14 +1690,16 @@ function pl_unify2_va(
 end
 
 # PORT: pl-prims.c can_unify as can_unify_cells
-# DIVERGES: on LOCATIONS (L1e e4): `unify_ptrs_cells`; no `foreignWakeup` (no attributed variables).
+# DIVERGES: on LOCATIONS (L1e e4): `unify_ptrs_cells`. NOT PORTED: `foreignWakeup` (AV4); a wakeup
+# pending after the unification is refused (`_foreign_wakeup_pending_refused`, since AV3).
 "Whether the terms at locations `l1`, `l2` can be unified, without doing so (pl-prims.c `can_unify`); `ex` gets an exception."
 function can_unify_cells(ld::PL_local_data{T}, l1::Int, l2::Int, ex::term_t)::Bool where {T}
     fid = PL_open_foreign_frame(ld)
     if fid != 0
         handle_exception = ex == 0
         ex == 0 && (ex = PL_new_term_ref(ld))
-        if unify_ptrs_cells(ld, l1, l2)                     # && foreignWakeup(ex)
+        if unify_ptrs_cells(ld, l1, l2)                     # && foreignWakeup(ex): AV4
+            _foreign_wakeup_pending_refused(ld)
             PL_discard_foreign_frame(ld, fid)
             return true
         end
@@ -2069,11 +2089,30 @@ function _unifiable_single!(
     return PL_unify(ld, r, subst)
 end
 
+# ORIGINAL (AV3): one restore of `unifiable`'s attvar branch (pl-prims.c, "restore tail/head of wakeup
+# list"): the trail's top entry is a value entry — the cell below it gets its old value back — or an
+# address entry, whose cell is cleared (`setVar`); the entries are popped (upstream: `tt--`, then
+# `tTop = m.trailtop`).
+"Undo one wakeup-list assignment of an attvar binding at the trail's top (pl-prims.c `unifiable`)."
+function _unifiable_restore_wakeup_cell!(ld::PL_local_data)::Nothing
+    e = pop!(ld.trail)                                        # p = (--tt)->address
+    if isTrailVal(e)                                          # if ( isTrailVal(p) )
+        a = pop!(ld.trail)                                    #   tt--
+        ld.gstack[_trail_pos(a)] = ld.gstack[trailValP(e)]    #   *tt->address = trailVal(p)
+    else
+        ld.gstack[_trail_pos(e)] = word(0)                    # else setVar(*p)
+    end
+    return nothing
+end
+
 # PORT: pl-prims.c unifiable as unifiable_cells
 # DIVERGES: on the cells (L1e e4): the substitution list laid out at gTop from the trail, newest binding first,
 # 6 cells per binding as upstream (`[V = Value|…]`: `gp[4] = makeRefG(p)`, `gp[5] = *p`, `setVar(*p)`); exactly
-# the cells it uses are allocated (upstream allocates `(tt-mt)*6+1` and lowers gTop). No attributed
-# variables (the attvar wakeup restore), no overflow retry.
+# the cells it uses are allocated (upstream allocates `(tt-mt)*6+1` and lowers gTop), so the count
+# skips an attvar assignment's wakeup entries as the list loop does. An attributed variable's binding
+# (AV3: `assignAttVar`'s trailed pattern, pl-attvar.c) is undone as upstream's: the attvar re-inserted,
+# the wakeup list's tail and head (or the old tail cell) restored. `LD->alerted` is NOT touched (as
+# upstream): the next check point clears the bit and finds the list empty. No overflow retry.
 "`unifiable(T1, T2, Subst)` on the cells (pl-prims.c `unifiable`)."
 function unifiable_cells(
     ld::PL_local_data{T}, t1::term_t, t2::term_t, subst::term_t
@@ -2098,7 +2137,13 @@ function unifiable_cells(
     n = 0                                                     # the bindings: a value entry and its
     i = tt                                                    # cell count once
     while i > mt
-        isTrailVal(ld.trail[i]) && (i -= 1)
+        if isTrailVal(ld.trail[i])                            # an attvar's assignment
+            i -= 1                                            # its address entry
+            i -= 1
+            isTrailVal(ld.trail[i]) && (i -= 1)       # the wakeup list's tail
+            i -= 1
+            isTrailVal(ld.trail[i]) && (i -= 1)       # … its head (or the old tail cell)
+        end
         n += 1
         i -= 1
     end
@@ -2119,7 +2164,10 @@ function unifiable_cells(
             p2 = _trail_pos(a)
             ld.gstack[gp + 4] = makeRefG(p2)                  # gp[4] = makeRefG(p2)
             ld.gstack[gp + 5] = ld.gstack[p2]                 # gp[5] = *p2
-            ld.gstack[p2] = ld.gstack[trailValP(e)]           # *tt->address = trailVal(p)
+            @assert isAttVar(ld.gstack[trailValP(e)])         # assert(isAttVar(trailVal(p)))
+            ld.gstack[p2] = ld.gstack[trailValP(e)]           # re-insert the attvar: *tt->address = trailVal(p)
+            _unifiable_restore_wakeup_cell!(ld)               # restore tail of wakeup list
+            _unifiable_restore_wakeup_cell!(ld)               # restore head of wakeup list
         else
             p = _trail_pos(e)
             ld.gstack[gp + 5] = ld.gstack[p]                  # gp[5] = *p

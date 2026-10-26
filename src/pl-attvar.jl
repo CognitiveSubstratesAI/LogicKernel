@@ -8,7 +8,9 @@
 # PORTED FROM pl-attvar.c, exactly these: `saveWakeup`, `restoreWakeup` and the helper
 # `restore_exception` — the SAVE/RESTORE of the pending exception around foreign code that must run
 # with none pending. From pl-attvar.h, `varBindConst` (L1c: the VM's `bindConst` of a global cell) and,
-# since AV1, `bindConst` itself (its attributed-variable branch raises until AV3). Since AV2 the STORE:
+# since AV1, `bindConst` itself. Since AV3 the BINDING: `registerWakeup`, `assignAttVar`,
+# `bind_attvar_const`, `restore_wakeup`, and the wakeup list in `saveWakeup`/`restoreWakeup` (pl-wam.c
+# `updateAlerted`, its wakeup bit: src/pl-wam.jl). Since AV2 the STORE:
 # `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`,
 # `put_attr`, `get_attr`, `del_attr` and the predicates attvar/1, put_attr/3, get_attr/3, del_attr/2,
 # del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`).
@@ -16,30 +18,30 @@
 # exception is pending, so an error that unification raises (the occurs check under
 # `occurs_check = error`) is raised, and becomes the ball.
 #
-# NOT PORTED: the rest of pl-attvar.c, the steps after the store (since AV2) — binding an attributed variable
-# (`assignAttVar`, `bind_attvar_const`, the wakeup list: AV3) and `foreignWakeup` (AV4), `freeze/2`'s
-# support (AV7), `when/2`'s (AV8), call_residue_vars (AV9; so `trail_new_attvar` and `on_attvar_chain`,
-# its CHK_SECURE check, wait for it), `alloc_attvar` (AV6) and `wakeup_state_exception`. The wakeup
-# list `saveWakeup` also saves is therefore always empty here.
+# NOT PORTED: the rest of pl-attvar.c, the steps after the binding (since AV3) — `foreignWakeup` (AV4),
+# `freeze/2`'s support (AV7), `when/2`'s (AV8), call_residue_vars (AV9; so `trail_new_attvar` and
+# `on_attvar_chain`, its CHK_SECURE check, wait for it), `alloc_attvar` (AV6) and
+# `wakeup_state_exception`.
 
 # PORT: pl-attvar.c saveWakeup
 # DIVERGES: returns the state, or `nothing` for upstream's false (no space for the foreign frame). The
 # ball's slot word is copied as upstream copies the cell (f3b-1: `_slot_copy!`, a side value with it;
-# until then the ball was read as a term and stored as a slot's side value).
-# NOT PORTED: the wakeup list (`LD->attvar.head`/`tail`, `WAKEUP_STATE_WAKEUP`): no attributed
-# variables, so the list is always empty.
+# until then the ball was read as a term and stored as a slot's side value). The wakeup list (AV3):
+# `*valTermRef(LD->attvar.head)` is the head's PERMANENT cell (`_attvar_head_cell`), `setVar` clears it
+# (AV1, audit D-0122 Q1 (a)).
 """
     saveWakeup(ld, forceframe) -> wakeup_state, or nothing
 
-Set the pending exception aside in a foreign frame of its own and clear it (pl-attvar.c); with none
-pending, and `forceframe` false, no frame is opened. Nested as `PL_open_foreign_frame` is, and ended
+Set the pending exception and the wakeup list aside in a foreign frame of their own and clear them
+(pl-attvar.c); with neither pending, and `forceframe` false, no frame is opened. Nested as `PL_open_foreign_frame` is, and ended
 by [`restoreWakeup`](@ref).
 """
 function saveWakeup(
     ld::PL_local_data{T}, forceframe::Bool
 )::Union{Nothing, wakeup_state} where {T}
     outofstack = ld.outofstack
-    if ld.exception_term != 0 || forceframe
+    h = _attvar_head_cell(ld)
+    if ld.gstack[h] != 0 || ld.exception_term != 0 || forceframe   # *valTermRef(LD->attvar.head) || …
         fid = PL_open_foreign_frame(ld)
         fid == 0 && return nothing              # no space!
         flags = UInt32(0)
@@ -48,6 +50,14 @@ function saveWakeup(
             s = PL_new_term_ref(ld)
             _slot_copy!(ld, s + 1, ld.exception_term + 1)   # *valTermRef(s) = *valTermRef(exception_term)
             ld.exception_term = 0
+        end
+        if ld.gstack[h] != 0                    # if ( *(h=valTermRef(LD->attvar.head)) )
+            flags |= WAKEUP_STATE_WAKEUP
+            s = PL_new_term_refs(ld, 2)
+            ld.slots[s + 1] = ld.gstack[h]      # *valTermRef(s+0) = *h
+            ld.gstack[h] = word(0)              # setVar(*h)
+            ld.slots[s + 2] = ld.gstack[h + 1]  # h = valTermRef(LD->attvar.tail); *valTermRef(s+1) = *h
+            ld.gstack[h + 1] = word(0)          # setVar(*h)
         end
         return wakeup_state(fid, outofstack, flags)
     end
@@ -63,17 +73,27 @@ function restore_exception(ld::PL_local_data{T}, p::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-attvar.c restore_wakeup
+# DIVERGES: `p` is a position on the local stack (term reference `p`, slot `p + 1`), where upstream's is
+# a pointer; the head and tail are their PERMANENT cells (see `saveWakeup`).
+"Make the wakeup list saved at position `p` the list again (pl-attvar.c)."
+function restore_wakeup(ld::PL_local_data{T}, p::Int)::Nothing where {T}
+    h = _attvar_head_cell(ld)
+    ld.gstack[h] = ld.slots[p + 1]              # *valTermRef(LD->attvar.head) = p[0]
+    ld.gstack[h + 1] = ld.slots[p + 2]          # *valTermRef(LD->attvar.tail) = p[1]
+    return nothing
+end
+
 # PORT: pl-attvar.c restoreWakeup
 # DIVERGES: the saved ball is read at the position above the frame's header (`(Word)(fr+1)`), the
 # frame found by its handle; that position is a term reference, so its class is
-# `classify_exception(ld, p)`, on the words (f3b-5a), as `restore_exception` reads it. NOT PORTED:
-# `restore_wakeup` (see `saveWakeup`) and `updateAlerted` (no `LD->alerted`).
+# `classify_exception(ld, p)`, on the words (f3b-5a), as `restore_exception` reads it.
 """
     restoreWakeup(ld, state)
 
 End a [`saveWakeup`](@ref): the saved exception pending again — unless `state.flags` says to skip
-it, or to keep the more urgent of it and one raised since — and the frame discarded, which undoes
-the bindings made since (pl-attvar.c).
+it, or to keep the more urgent of it and one raised since — the saved wakeup list the list again, and
+the frame discarded, which undoes the bindings made since (pl-attvar.c).
 """
 function restoreWakeup(ld::PL_local_data{T}, state::wakeup_state)::Nothing where {T}
     ld.outofstack = state.outofstack
@@ -94,10 +114,15 @@ function restoreWakeup(ld::PL_local_data{T}, state::wakeup_state)::Nothing where
                 elseif (state.flags & WAKEUP_STATE_SKIP_EXCEPTION) == 0
                     restore_exception(ld, p)
                 end
+                p += 1
+            end
+            if (state.flags & WAKEUP_STATE_WAKEUP) != 0
+                restore_wakeup(ld, p)
             end
         end
 
         PL_discard_foreign_frame(ld, state.fid)
+        updateAlerted(ld)
     end
     return nothing
 end
@@ -121,28 +146,139 @@ end
 # `PL_unify_functor`, `PL_unify_compound`, `unify_int64_ex` (src/pl-fli.jl), `PL_unify_number`'s `canBind`
 # branch (src/pl-gmp.jl) and compare/3's order (src/pl-prims.jl). The other `bindConst` sites still call
 # `_bind_const!` behind an `isVar`-only test until the step that gives them their attributed-variable
-# branch (the census, evidence/av/av1_census.tsv).
-# NOT PORTED: `bind_attvar_const` (AV3, with `assignAttVar` and the wakeup list): until then an
-# attributed variable reaching it is REFUSED — a `NotPortedError` naming AV3 (audit D-0150 item 3), never a
-# wrong answer; AV2 creates attributed variables, AV3 binds them.
+# branch (the census, evidence/av/av1_census.tsv). Since AV3 an attributed variable is bound by
+# `bind_attvar_const` (its false, the global overflow, is raised by `ensureGlobalSpace` and not read
+# here, as the unbound branch's); until AV3 it was refused (a `NotPortedError` naming AV3, D-0150
+# item 3).
 "Bind the cell at global position `p` — unbound, or an attributed variable — to word `c` (pl-attvar.h)."
 @inline function bindConst(ld::PL_local_data, p::Int, c::word)::Nothing
     if isVar(ld.gstack[p])                          # if ( isVar(*p) )
         _bind_const!(ld, p, c)                      #   return varBindConst(p, c);
     else
-        throw(_bind_attvar_const_error(p, ld.gstack[p]))   # else return bind_attvar_const(p, c);
+        bind_attvar_const(ld, p, c)                 # else return bind_attvar_const(p, c);
     end
     return nothing
 end
 
-# ORIGINAL (AV1; audit D-0150 item 3): the refusal `bindConst` raises for an attributed variable until AV3
-# — a `NotPortedError` (src/pl-comp.jl), the kernel's refusal pattern, grep-able by its step.
-"The refusal of binding the attributed variable at global position `p` (word `w`) before AV3."
-@noinline _bind_attvar_const_error(p::Int, w::word)::Exception = NotPortedError{Nothing}(
+# ── the binding (AV3): assignment and the wakeup list ───────────────────────────────────────────
+# The list (AV1; audit D-0122 Q1 (a)): upstream's `LD->attvar.head`/`tail` are local-stack cells; here
+# each term reference points at a PERMANENT global cell — the head's `_attvar_head_cell(ld)`, the tail's
+# the cell after it (asserted, src/pl-setup.jl) — so `*valTermRef(head)` is that cell, "empty" is the
+# cell unbound (0), `setVar` writes 0, and every `TrailAssignment` of them pushes (the cells lie below
+# every `mark_bar`).
+
+# ORIGINAL (AV3): upstream's `valTermRef(LD->attvar.head)` — the head's PERMANENT cell (the tail's +1).
+"The global position of the wakeup list's head cell (pl-attvar.c `valTermRef(LD->attvar.head)`)."
+@inline _attvar_head_cell(ld::PL_local_data)::Int = unRef(ld.slots[ld.attvar_head + 1])
+
+# ORIGINAL (AV3): pl-attvar.c's `FUNCTOR_wakeup3` — the functor word of `wakeup/3` in the engine's table.
+"The functor word of `wakeup/3` (pl-attvar.c `FUNCTOR_wakeup3`)."
+@inline _functor_wakeup3(ld::PL_local_data{T}) where {T} =
+    lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :wakeup)), 3)
+
+# PORT: pl-attvar.c registerWakeup
+# DIVERGES: positions; `name` is the attribute-list cell (`valPAttVar(*av)`), `vw` the WORD the value's
+# cell gets (`needsRef(*value) ? makeRefG(value) : *value`, computed once by `assignAttVar`: a side word
+# becomes ONE value-table entry); the four cells from `allocGlobalCells!` (`gTop += 4`), allocated before
+# they are written; no `gMax`/`tMax` assert (the stacks grow on demand); the tail's `deRef2` is
+# `_deref_loc` (the tail references the last `wakeup/3`'s closing `[]`).
+"Append `wakeup(Attribute, Value, [])` to the wakeup list, a trailed assignment; the first sets `ALERT_WAKEUP` (pl-attvar.c)."
+function registerWakeup(ld::PL_local_data{T}, name::Int, vw::word)::Nothing where {T}
+    h = _attvar_head_cell(ld)
+    tail = h + 1                                            # Word tail = valTermRef(LD->attvar.tail)
+
+    wake = allocGlobalCells!(ld, 4)                         # wake = gTop; gTop += 4
+    ld.gstack[wake] = _functor_wakeup3(ld)                  # wake[0] = FUNCTOR_wakeup3
+    nw = ld.gstack[name]
+    ld.gstack[wake + 1] = needsRef(nw) ? makeRefG(name) : nw    # wake[1] = needsRef(*name) ? … : *name
+    ld.gstack[wake + 2] = vw                                # wake[2] = needsRef(*value) ? … : *value
+    ld.gstack[wake + 3] = ld.atom_nil_w                     # wake[3] = ATOM_nil
+
+    if ld.gstack[tail] != 0                                 # if ( *tail ): non-empty list
+        _, _, t = _deref_loc(ld, tail)                      #   deRef2(tail, t)
+        TrailAssignment!(ld, t)                             #   TrailAssignment(t)
+        ld.gstack[t] = consPtr(wake, TAG_COMPOUND | STG_GLOBAL)  # *t = consPtr(wake, TAG_COMPOUND|…)
+        TrailAssignment!(ld, tail)                          #   TrailAssignment(tail)
+        ld.gstack[tail] = makeRefG(wake + 3)                #   *tail = makeRefG(wake+3)
+    else                                                    # else: empty list
+        @assert isVar(ld.gstack[h]) "registerWakeup: the wakeup list's head is bound, its tail empty"
+        TrailAssignment!(ld, h)                             #   TrailAssignment(head)
+        ld.gstack[h] = consPtr(wake, TAG_COMPOUND | STG_GLOBAL)  # *head = consPtr(wake, …)
+        TrailAssignment!(ld, tail)                          #   TrailAssignment(tail)
+        ld.gstack[tail] = makeRefG(wake + 3)                #   *tail = makeRefG(wake+3)
+        ld.alerted |= ALERT_WAKEUP                          #   LD->alerted |= ALERT_WAKEUP
+    end
+    return nothing
+end
+
+# PORT: pl-attvar.c assignAttVar
+# DIVERGES: positions; `value` the DEREFERENCED location `(k, w, p)` (upstream's `Word`, never a
+# reference) — an attributed variable (`DU_ATTVAR`, at `p`), an atom or compound word, or a value word
+# (a slot's side word: its value's own word, `_link_val_loc!`). The value's cell word is computed ONCE
+# and stored in both `wake[2]` and `*av` (upstream reads `*value` twice; a side word would otherwise
+# become two value-table entries). Two attributed variables: the NEWER (higher) is bound to the older,
+# as upstream's `value > av` swap (the design's risk 4). No `gMax`/`tMax` assert (see `registerWakeup`);
+# no CHK_SECURE `on_attvar_chain` (AV9).
+"Bind the attributed variable at global position `av` to `value` and register its wakeup (pl-attvar.c)."
+function assignAttVar(
+    ld::PL_local_data{T}, av::Int, value::Tuple{UInt8, word, Int}
+)::Nothing where {T}
+    @assert isAttVar(ld.gstack[av]) "assignAttVar: no attributed variable at global cell $av"
+    k, _, vp = value
+    @assert k != DU_CELL "assignAttVar: the value is an unbound cell"
+
+    if k == DU_ATTVAR                                       # if ( isAttVar(*value) )
+        if vp > av                                          #   if ( value > av ): swap
+            av, vp = vp, av
+            value = (DU_ATTVAR, ld.gstack[vp], vp)
+        elseif av == vp                                     #   else if ( av == value )
+            return nothing                                  #     return
+        end
+    end
+
+    vw = _link_val_loc!(ld, value)                          # (*value, or makeRefG(value) for an attvar)
+    a = valPtr(ld.gstack[av])                               # a = valPAttVar(*av)
+    registerWakeup(ld, a, vw)                               # registerWakeup(a, value)
+
+    TrailAssignment!(ld, av)                                # TrailAssignment(av)
+    ld.gstack[av] = vw                                      # *av = makeRefG(value) (two attvars) or *value
+    return nothing
+end
+
+# PORT: pl-attvar.c bind_attvar_const
+# DIVERGES: `p` a global position; `c` a word a global cell stores, never an attributed variable's;
+# `ensureGlobalSpace` raises the overflow itself and nothing moves (no `PushPtr`/`PopPtr`: positions
+# survive a growth), so upstream's `hasGlobalSpace(0)` test before it is folded into it.
+"Bind the attributed variable at global position `p` to word `c`; false when the global stack is full (pl-attvar.c)."
+function bind_attvar_const(ld::PL_local_data, p::Int, c::word)::Bool
+    ensureGlobalSpace(ld, 0) || return false                # if ( !hasGlobalSpace(0) ) … ensureGlobalSpace
+    @assert !isVar(c) && !isRef(c) && !isAttVar(c) "bind_attvar_const: word $(repr(c)) is not a constant"  # assert(!isRef(*value))
+    assignAttVar(ld, p, (isTaggedIntW(c) || _is_vword(c) ? DU_VALUE : DU_WORD, c, 0))  # assignAttVar(p, &c)
+    return true
+end
+
+# ORIGINAL (AV3; NOT PORTED until AV4: pl-wam.c `foreignWakeup`): the stand-in at foreignWakeup's callers
+# that are ported — `can_unify` (\\=/2, src/pl-prims.jl) and `findCatcher` (catch/3's catcher,
+# src/pl-wam.jl); subsumes_term/2 is not ported. A wakeup PENDING after their unification (the bit set and
+# the list not empty) is REFUSED — a `NotPortedError` naming AV4 — never skipped: skipping would run no
+# hook, a wrong answer (rows hk10, hk11, hk13). With none pending upstream's `foreignWakeup` returns true,
+# and so does this (it leaves a stale bit for the next check point, which clears it).
+"Whether a wakeup is pending: the bit set and the list not empty (what `foreignWakeup` tests first)."
+@inline _foreign_wakeup_pending(ld::PL_local_data)::Bool =
+    (ld.alerted & ALERT_WAKEUP) != 0 && ld.gstack[_attvar_head_cell(ld)] != 0
+
+"Refuse a wakeup pending in a foreign predicate's unification until `foreignWakeup` (AV4) is ported."
+@inline function _foreign_wakeup_pending_refused(ld::PL_local_data)::Nothing
+    _foreign_wakeup_pending(ld) && throw(_foreign_wakeup_error())
+    return nothing
+end
+
+"The refusal of a pending wakeup at a `foreignWakeup` caller before AV4."
+@noinline _foreign_wakeup_error()::Exception = NotPortedError{Nothing}(
     nothing,
-    "bind_attvar_const (pl-attvar.c): bindConst on global cell $p, word $(repr(w)) " *
-    "(an attributed variable)",
-    "AV3"
+    "foreignWakeup (pl-wam.c): an attributed variable's wakeup pending in a foreign predicate's " *
+    "unification (\\=/2, catch/3's catcher)",
+    "AV4"
 )
 
 # ── the store (AV2): an attributed variable's attribute list ─────────────────────────────────────
@@ -520,7 +656,8 @@ end
 # DIVERGES: `ensureStackSpace(0, 0)` is `ensureGlobalSpace(ld, 0)` (one limit over the three stacks,
 # src/pl-alloc.jl); `linkValG` is `linkValI` here (`_link_val_loc!`): no unbound variable lives on the
 # local stack (the slot rule), so there is nothing to globalize. `PL_unify` of a plain variable with an
-# attributed one reaches `unify_simple_cells`, whose attributed-variable branches are AV3's.
+# attributed one reaches `unify_simple_cells`, whose attributed-variable branches bind with a wakeup
+# (`assignAttVar`, AV3).
 "`\$attv_unify/2` (pl-attvar.c): bind an attributed variable to a value WITHOUT a wakeup; otherwise plain unification."
 function pl_attv_unify2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}

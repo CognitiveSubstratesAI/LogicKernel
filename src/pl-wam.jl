@@ -199,6 +199,21 @@ end
     return nothing
 end
 
+# PORT: pl-wam.c updateAlerted
+# DIVERGES: the wakeup bit only — `alerted` carries no other (`ALERT_WAKEUP`, src/pl-incl.jl); no
+# compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
+# here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
+# NOT PORTED: the other masks (signals, profiling, exit requests, depth and inference limits, the
+# debugger, string buffers, `UNDO_SCHEDULED`, coverage).
+"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty (pl-wam.c)."
+function updateAlerted(ld::PL_local_data)::Nothing
+    mask = Int32(0)
+    # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
+    (ld.attvar_head != 0 && ld.gstack[_attvar_head_cell(ld)] != 0) && (mask |= ALERT_WAKEUP)
+    ld.alerted = mask
+    return nothing
+end
+
 # ── choice points ────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-wam.c newChoice
 # DIVERGES: returns the choice point's index. Its `value.clause` is RESET (no clause, key 0), where
@@ -382,7 +397,10 @@ end
 # DIVERGES: frames and choice points are records found by index, compared by POSITION (`fr <= ch`:
 # the frame lies below the newest choice point — it is not catch/3's call port); the result is the
 # catching frame's index (0: none) where upstream returns a term reference to it, which GC can move.
-# NOT PORTED: `foreignWakeup` (no attributed variables: nothing to wake, so no `ex2`).
+# NOT PORTED: `foreignWakeup` (AV4), so no `ex2`; a wakeup pending after the catcher's unification is
+# refused (`_foreign_wakeup_error`, since AV3) after `restoreWakeup`, so the query is abandoned with
+# its ball pending, as before the search (with the ball set aside `_release_frozen!` would find the
+# ball's term reference live above the query's mark).
 """
     findCatcher(gd, ld, fid, fr, ch, ex0) -> frame index, or 0
 
@@ -411,6 +429,10 @@ function findCatcher(
             f.base <= chpos                              # not call-port of catch/3
             catcher = argFrameP(f.base, 1)               # consTermRef(argFrameP(fr, 1))
             if PL_unify(ld, catcher, ex)
+                if _foreign_wakeup_pending(ld)           # rc = foreignWakeup(ex2): AV4
+                    restoreWakeup(ld, wstate)            # first: the ball pending again, the frame gone
+                    throw(_foreign_wakeup_error())
+                end
                 restoreWakeup(ld, wstate)
                 PL_put_term(ld, ld.exception_term, ex)
                 f.flags |= FR_CAUGHT
@@ -1720,7 +1742,8 @@ const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 # overflow made unusable (since V5d; `outOfStack!`, src/pl-alloc.jl).
 # NOT PORTED: `globalizeTermRef` (a slot is never an unbound variable, L1c), the profiler, the
 # debugger state `PL_Q_NODEBUG` saves (all but `FR_HIDE_CHILDS`), the context module of a transparent
-# predicate (`ctx`: every clause is `user`'s until R2's `module/2`), `updateAlerted`.
+# predicate (`ctx`: every clause is `user`'s until R2's `module/2`). `updateAlerted` since AV3 (the
+# wakeup bit).
 """
     PL_open_query(gd, ld, ctx, flags, proc, args) -> qid, or 0
 
@@ -1824,6 +1847,7 @@ function PL_open_query(
     ld.environment_frame = fr
     q.parent = ld.query
     ld.query = qf
+    updateAlerted(ld)
 
     return QidFromQuery(ld, qf)
 end
@@ -1845,7 +1869,7 @@ end
 
 # PORT: pl-wam.c restore_after_query
 # DIVERGES: lowering `lTop` drops the query's records and everything above them (decision 3). Not
-# ported: the debugger state `PL_Q_NODEBUG` restores, `updateAlerted`.
+# ported: the debugger state `PL_Q_NODEBUG` restores. `updateAlerted` since AV3 (the wakeup bit).
 "Restore the state the query was opened in (pl-wam.c)."
 function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     q = ld.queries[qf]
@@ -1860,6 +1884,7 @@ function restore_after_query(ld::PL_local_data{T}, qf::Int)::Nothing where {T}
     ld.environment_frame = q.saved_environment
     _reset_argument_stack!(ld, q)
     lowerLTop!(ld, q.saved_ltop)
+    updateAlerted(ld)
     return nothing
 end
 
@@ -2035,6 +2060,7 @@ function PL_next_solution_guarded(
     SLOW_UNIFY::Bool = false                        # unify_var_cont's copy of LD->slow_unify
     dot_f::word = gd.functor_dot2                   # FUNCTOR_dot2 (L1c)
     bt_outofstack::Bool = false                     # b_throw's outofstack
+    wk_h::Int = 0                                   # wakeup's head cell (AV3)
 
     if qid == 0                                     # PL_open_query() failed
         return 0
@@ -2674,7 +2700,7 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c B_UNIFY_EXIT
     # DIVERGES: the new frame of the slow path is the record pushed at `lTop`, as `I_CALL`'s.
-    # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
+    # `CHECK_WAKEUP` (AV3): the bit test inline, the rest at `check_wakeup`.
     @label B_UNIFY_EXIT
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
     if SLOW_UNIFY
@@ -2683,6 +2709,7 @@ function PL_next_solution_guarded(
         setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
         @goto normal_call
     end
+    (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP: only for non-first-var
     @goto next_instruction
 
     # PORT: pl-vmi.c B_UNIFY_FF
@@ -2747,9 +2774,37 @@ function PL_next_solution_guarded(
     @SAVE_REGISTERS(QID)
     buvv_rc = unify_ptrs_cells(ld, -(buvv_1 + 1), -(buvv_2 + 1))   # on the cells (L1c-4)
     @LOAD_REGISTERS(QID)
-    buvv_rc && @goto next_instruction
+    if buvv_rc
+        (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP (AV3)
+        @goto next_instruction
+    end
     ld.exception_term != 0 && @goto b_throw         # THROW_EXCEPTION
     @goto shallow_backtrack                         # BODY_FAILED
+
+    # PORT: pl-vmi.c CHECK_WAKEUP as check_wakeup
+    # DIVERGES: the macro's body after its `LD->alerted & ALERT_WAKEUP` test, as a shared label,
+    # reached from each check point by its inline bit test (B_UNIFY_EXIT, B_UNIFY_VV, B_UNIFY_VC,
+    # `i_enter_alerted`); each continues at the next instruction, as the macro falls through to the
+    # site's `NEXT_INSTRUCTION`. `exit_checking_wakeup` has its own block.
+    @label check_wakeup
+    ld.alerted &= ~ALERT_WAKEUP                     # LD->alerted &= ~ALERT_WAKEUP
+    ld.gstack[_attvar_head_cell(ld)] != 0 && @goto wakeup   # if ( *valTermRef(LD->attvar.head) ) ATTVAR_WAKEUP
+    @goto next_instruction
+
+    # PORT: pl-vmi.c wakeup
+    # DIVERGES: the new frame is the record pushed at `lTop`, as `debug_equals2`'s; its argument is the
+    # head cell's word (the first `wakeup/3` compound), and the head and tail cells are cleared
+    # untrailed (`setVar`: AV1's permanent cells, see `registerWakeup`).
+    @label wakeup
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)  # ARGP = argFrameP(NFR, 0)
+    wk_h = _attvar_head_cell(ld)
+    ld.slots[ARGP.pos + 1] = ld.gstack[wk_h]        # ARGP[0] = *valTermRef(LD->attvar.head)
+    ld.gstack[wk_h] = word(0)                       # setVar(*valTermRef(LD->attvar.head))
+    ld.gstack[wk_h + 1] = word(0)                   # setVar(*valTermRef(LD->attvar.tail))
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+    DEF = gd.procedures_dwakeup1.definition         # DEF = GD->procedures.dwakeup1->definition
+    @goto normal_call
 
     # PORT: pl-vmi.c debug_equals2
     # DIVERGES: a helper label; the new frame is the record pushed at `lTop`, as `I_CALL`'s.
@@ -2782,8 +2837,11 @@ function PL_next_solution_guarded(
     # DIVERGES: the constant operand is a literal; on the WORDS (f3b-5b) — an atom or a tagged
     # integer by its word (`_h_const_word!`), anything else (a blob, a value-table word, a slot's
     # side value) by `_unify_const_loc` — with the three outcomes of `*k == c`, `canBind(*k)` and the
-    # rest, as `h_const`'s (SWI's identity).
-    # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
+    # rest, as `h_const`'s (SWI's identity). `CHECK_WAKEUP` (AV3) on BOTH success paths, where
+    # upstream's runs after `bindConst` only (`*k == c` skips it): `_h_const_word!`'s MATCH is both
+    # outcomes. The extra check on the match path cannot fire — the wakeup bit is set only when
+    # something was bound, and the check point after that binding cleared it (main agent's
+    # decision, AV3 Q1 (a)).
     @label B_UNIFY_VC
     buvc_k = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     buvc_c = PCl[PCc[PC + 1]]
@@ -2798,9 +2856,15 @@ function PL_next_solution_guarded(
     end
     buvc_w = kind(buvc_c) === SYM ? _atom_word!(ld, buvc_c) : _tagged_int_word(T, buvc_c)
     buvc_r = buvc_w == 0 ? H_CONST_TERMS : _h_const_word!(ld, buvc_k + 1, buvc_w)  # deRef(k)
-    buvc_r == H_CONST_MATCH && @goto next_instruction   # *k == c, or bindConst(k, c)
+    if buvc_r == H_CONST_MATCH                      # *k == c, or bindConst(k, c)
+        (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP (AV3)
+        @goto next_instruction
+    end
     buvc_r == H_CONST_FAIL && @goto unify_backtrack     # CLAUSE_FAILED
-    _unify_const_loc(ld, -(buvc_k + 1), buvc_c) && @goto next_instruction
+    if _unify_const_loc(ld, -(buvc_k + 1), buvc_c)
+        (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP (AV3)
+        @goto next_instruction
+    end
     @goto unify_backtrack                           # CLAUSE_FAILED
 
     # PORT: pl-vmi.c B_EQ_VV
@@ -2852,10 +2916,17 @@ function PL_next_solution_guarded(
 
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
-    # DIVERGES: NOT PORTED: the `LD->alerted` test and its helper `i_enter_alerted` (coverage, the
-    # debugger's unify port, waking attributed variables).
+    # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the wakeup bit only.
     @label I_ENTER
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
+    ld.alerted != 0 && @goto i_enter_alerted        # if ( unlikely(LD->alerted) )
+    @goto next_instruction
+
+    # PORT: pl-vmi.c i_enter_alerted
+    # NOT PORTED: coverage (`Coverage(FR, UNIFY_PORT)`) and the debugger's unify port
+    # (`debug_unify_continue`).
+    @label i_enter_alerted
+    (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP
     @goto next_instruction
 
     # PORT: pl-vmi.c I_CALL
@@ -3347,8 +3418,18 @@ function PL_next_solution_guarded(
     @goto exit_checking_wakeup
 
     # PORT: pl-vmi.c exit_checking_wakeup
-    # DIVERGES: NOT PORTED: waking attributed variables' goals and the heartbeat (neither exists).
+    # DIVERGES: `PC = SUPERVISOR(exit)` is the exit supervisor's code (`gd.code_data.exit`) from its
+    # first instruction. NOT PORTED: the heartbeat (`LD->yield.frequency`: no `heartbeat/0`).
     @label exit_checking_wakeup
+    if (ld.alerted & ALERT_WAKEUP) != 0             # if ( LD->alerted & ALERT_WAKEUP )
+        ld.alerted &= ~ALERT_WAKEUP                 #   LD->alerted &= ~ALERT_WAKEUP
+        if ld.gstack[_attvar_head_cell(ld)] != 0    #   if ( *valTermRef(LD->attvar.head) )
+            PCc = gd.code_data.exit                 #     PC = SUPERVISOR(exit)
+            PCl = gd.no_literals
+            PC = 1
+            @goto wakeup                            #     ATTVAR_WAKEUP
+        end
+    end
     @goto I_EXIT
 
     # PORT: pl-vmi.c I_EXITQUERY

@@ -11,9 +11,10 @@
 #   * the index key of an attributed variable is 0 and `is_var` takes it for a variable (pl-index.c);
 #   * `register_attvar` chains the link cells newest first; `Undo!` and the frozen region's release cut the
 #     chain back to the new top (`reclaim_attvars`), a link AT the top kept;
-#   * `bindConst` binds an unbound cell as `varBindConst` and REFUSES an attributed variable until AV3
-#     (`bind_attvar_const`: a `NotPortedError` naming AV3, audit D-0150 item 3), reached from the canBind
-#     sites AV1 converted (`h_const`, `PL_unify_atomic`).
+#   * `bindConst` binds an unbound cell as `varBindConst` and, since AV3, an attributed variable as
+#     `bind_attvar_const` (the cell assigned, a `wakeup/3` registered, `ALERT_WAKEUP` set), reached from the
+#     canBind sites AV1 converted (`h_const`, `PL_unify_atomic`). D-0083: until AV3 these asserted the
+#     refusal (`_aw_not_ported`: `e isa LK.NotPortedError && e.step == "AV3"`, audit D-0150 item 3).
 # The last testset is a LIVE differential: the paths AV1 touched (head unification of lists and compounds,
 # first-argument indexing, `=..`, msort/2, the FLI's atomic unification) answer as swipl at the pin. AV1 adds
 # no Prolog-visible behaviour, so evidence/av/rows.tsv has no AV1 rows: these rows are regression rows whose
@@ -58,14 +59,27 @@ function _aw_raises(f, needle::String)::Bool
     return false
 end
 
-"Whether `f()` raises the `NotPortedError` naming AV3 (`bindConst` on an attributed variable, D-0150 item 3)."
-function _aw_not_ported(f)::Bool
-    try
-        f()
-    catch e
-        return e isa LK.NotPortedError && e.step == "AV3"
-    end
-    return false
+# D-0083: until AV3 the bindConst sites were asserted to REFUSE an attributed variable —
+# `_aw_not_ported(f)`: `f()` raises `e isa LK.NotPortedError && e.step == "AV3"` (D-0150 item 3). Since AV3
+# they bind it as upstream's `bind_attvar_const` (pl-attvar.c:207-219), which `_aw_binds` asserts.
+"""
+Whether `f(t, av)` — `av` a FRESH hand-built attributed variable, `t` a term reference to it — returns true
+and binds it as `bind_attvar_const` does (AV3): the attvar cell assigned a non-attvar word, a `wakeup/3` on the
+list, `ALERT_WAKEUP` set, no error; then everything is undone (`Undo!`, `updateAlerted`).
+"""
+function _aw_binds(ld, f)::Bool
+    m = LK.Mark(ld)
+    t, av = _aw_ref_attvar!(ld)
+    w = ld.gstack[av]
+    h = LK._attvar_head_cell(ld)
+    r = f(t, av)
+    ok =
+        r === true && ld.gstack[av] != w && !LK.isAttVar(ld.gstack[av]) &&
+        ld.gstack[h] != 0 &&
+        (ld.alerted & LK.ALERT_WAKEUP) != 0 && ld.exception_term == 0
+    LK.Undo!(ld, m)
+    LK.updateAlerted(ld)
+    return ok && ld.gstack[h] == 0 && ld.gstack[h + 1] == 0 && ld.alerted == 0
 end
 
 "A new term reference whose cell is turned into an attributed variable: `(t, attvar position)`."
@@ -226,7 +240,7 @@ end
     @test ld.attvar_attvars == 0
 end
 
-@testset "bindConst: an unbound cell as varBindConst; an attributed variable is refused until AV3" begin
+@testset "bindConst: an unbound cell as varBindConst; an attributed variable as bind_attvar_const (AV3)" begin
     ld, _ = _aw_engine()
     x = LK.allocGlobalCells!(ld, 1)
     m = LK.Mark(ld)
@@ -235,14 +249,13 @@ end
     @test ld.gstack[x] == a && LK._trail_pos(ld.trail[end]) == x
     LK.Undo!(ld, m)
     @test ld.gstack[x] == 0
+    @test _aw_binds(ld, (t, av) -> (LK.bindConst(ld, av, a); ld.gstack[av] == a))   # *av = c
+    # the canBind sites AV1 converted reach it: h_const, from a location and from a cell, and PL_unify_atomic
+    @test _aw_binds(ld, (t, av) -> LK._unify_const_loc(ld, -(t + 1), _rs("a")))
+    @test _aw_binds(ld, (t, av) -> LK._h_const_cell!(ld, av, a) == LK.H_CONST_MATCH)
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_atomic(ld, t, _rs("a")))
     t, av = _aw_ref_attvar!(ld)
     w = ld.gstack[av]
-    @test _aw_not_ported(() -> LK.bindConst(ld, av, a))
-    @test ld.gstack[av] == w                                       # not overwritten
-    # the canBind sites AV1 converted reach it: h_const, from a location and from a cell, and PL_unify_atomic
-    @test _aw_not_ported(() -> LK._unify_const_loc(ld, -(t + 1), _rs("a")))
-    @test _aw_not_ported(() -> LK._h_const_cell!(ld, av, a))
-    @test _aw_not_ported(() -> LK.PL_unify_atomic(ld, t, _rs("a")))
     # h_const's catch-all: a word of no known kind raises, no longer H_CONST_TERMS
     b = LK.allocGlobalCells!(ld, 1)
     ld.gstack[b] = _aw_bogus()
@@ -251,8 +264,9 @@ end
 end
 
 # ── AV1b (audit D-0150 item 1): the one-line canBind sites the census marked for AV1 ─────────────────────────
-# Each converted site, on a hand-built attributed variable: a bind reaches `bindConst` and is refused (the
-# NotPortedError naming AV3); a type test answers "variable". Upstream lines at the pin cbf4e189.
+# Each converted site, on a hand-built attributed variable: a bind reaches `bindConst`, which binds it with a
+# wakeup since AV3 (`_aw_binds`; until AV3 refused, the NotPortedError naming AV3 — D-0083 note at
+# `_aw_binds`); a type test answers "variable". Upstream lines at the pin cbf4e189.
 
 "The pending exception's formal term, read on the cells (no export): an atom's name, else `:compound`."
 function _aw_formal(ld)
@@ -272,33 +286,36 @@ end
 
 @testset "AV1b: the FLI's and compare/3's canBind sites bind an attributed variable through bindConst" begin
     ld, _ = _aw_engine()
-    t, av = _aw_ref_attvar!(ld)
-    w = ld.gstack[av]
     h, tl = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
-    @test _aw_not_ported(() -> LK.PL_unify_list(ld, t, h, tl))             # pl-fli.c:3652, :3673
-    @test _aw_not_ported(() -> LK.PL_unify_functor(ld, t, _rs("f"), 2))    # pl-fli.c:3210, :3229
-    @test _aw_not_ported(() -> LK.PL_unify_functor(ld, t, _rs("f"), 0))    # … :3232 (arity 0)
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_list(ld, t, h, tl))             # pl-fli.c:3652, :3673
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_functor(ld, t, _rs("f"), 2))    # pl-fli.c:3210, :3229
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_functor(ld, t, _rs("f"), 0))    # … :3232 (arity 0)
     f2 = LK.lookupFunctorDef(ld.functors, LK._atom_word!(ld, _rs("f")), 2)
-    @test _aw_not_ported(() -> LK.PL_unify_compound(ld, t, f2))            # pl-fli.c:3175, :3195
-    @test _aw_not_ported(() -> LK.PL_unify_integer(ld, t, 5))              # pl-fli.c:3460, :3462
-    @test _aw_not_ported(() -> LK.unify_int64_ex(ld, t, 5, true))          # … not a type error
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_compound(ld, t, f2))            # pl-fli.c:3175, :3195
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_integer(ld, t, 5))              # pl-fli.c:3460, :3462
+    @test _aw_binds(ld, (t, av) -> LK.unify_int64_ex(ld, t, 5, true))          # … not a type error
     n = LK.number()
     n.type = LK.V_INTEGER
     n.i = 7                                     # a small integer skips the isVar fast path (pl-gmp.c:1507)
-    @test _aw_not_ported(() -> LK.PL_unify_number(ld, t, n))               # pl-gmp.c:1512, :1519
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_number(ld, t, n))               # pl-gmp.c:1512, :1519
     n.type = LK.V_FLOAT
     n.f = 2.5
-    @test _aw_not_ported(() -> LK.PL_unify_number(ld, t, n))
-    @test ld.gstack[av] == w && ld.exception_term == 0                    # never overwritten, no error
-    # compare/3 (pl-prims.c:2199 canBind(*d), :2227 PL_unify_atom): the order is to be bound, not given
+    @test _aw_binds(ld, (t, av) -> LK.PL_unify_number(ld, t, n))
+    # compare/3 (pl-prims.c:2199 canBind(*d), :2227 PL_unify_atom): the order is to be bound, not given —
+    # no type_error(atom, _) (`_aw_binds` asserts no pending exception)
     ctx = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
     pvm = LK.PutVarMap()
-    c = LK.PL_new_term_refs(ld, 3)
-    ld.slots[c + 1] = LK.makeRefG(av)
-    LK.putSlotValue!(ld, c + 2, _rs("a"), pvm)
-    LK.putSlotValue!(ld, c + 3, _rs("b"), pvm)
-    @test _aw_not_ported(() -> LK.pl_compare3_va(ld, c, 3, ctx))
-    @test ld.gstack[av] == w && ld.exception_term == 0                    # no type_error(atom, _)
+    @test _aw_binds(
+        ld,
+        (t, av) -> begin
+            c = LK.PL_new_term_refs(ld, 3)
+            ld.slots[c + 1] = LK.makeRefG(av)
+            LK.putSlotValue!(ld, c + 2, _rs("a"), pvm)
+            LK.putSlotValue!(ld, c + 3, _rs("b"), pvm)
+            LK.pl_compare3_va(ld, c, 3, ctx) == LK.FTRUE &&
+                ld.gstack[av] == LK._atom_word!(ld, _rs("<"))
+        end
+    )
     # the unbound cell: the same paths still bind it (bindConst → varBindConst)
     c2 = LK.PL_new_term_refs(ld, 3)
     LK.putSlotValue!(ld, c2 + 1, _rv(9), pvm)

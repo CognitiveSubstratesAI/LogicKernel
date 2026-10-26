@@ -1152,6 +1152,17 @@ function _manifest_index(T)
         (LK.saveWakeup, Tuple{LD, Bool}, false),
         (LK.restore_exception, Tuple{LD, Int}, false),
         (LK.restoreWakeup, Tuple{LD, LK.wakeup_state}, false),
+        # AV3 — the binding and the wakeup list (src/pl-attvar.jl; the wakeup itself is the run loop's)
+        (LK._attvar_head_cell, Tuple{LD}, true),
+        (LK._functor_wakeup3, Tuple{LD}, false),
+        (LK.registerWakeup, Tuple{LD, Int, UInt64}, false),      # a wakeup cell and its trail entries
+        (LK.assignAttVar, Tuple{LD, Int, Tuple{UInt8, UInt64, Int}}, false),
+        (LK.bind_attvar_const, Tuple{LD, Int, UInt64}, false),
+        (LK.restore_wakeup, Tuple{LD, Int}, true),
+        (LK.updateAlerted, Tuple{LD}, true),
+        (LK._foreign_wakeup_pending, Tuple{LD}, true),           # the bit and the list (no allocation)
+        (LK._foreign_wakeup_pending_refused, Tuple{LD}, false),   # throws the AV4 refusal (a pending wakeup)
+        (LK._foreign_wakeup_error, Tuple{}, false),               # builds the NotPortedError
         # AV2 — the attribute store (src/pl-attvar.jl): the C functions, the FLI and the predicates
         (LK._functor_att3, Tuple{LD}, false),
         (LK._link_val_loc!, Tuple{LD, Tuple{UInt8, UInt64, Int}}, false),
@@ -1276,6 +1287,7 @@ function _manifest_index(T)
         (LK._boot_length_error, Tuple{Type{T}, T, T}, false),
         (LK._boot_lists!, Tuple{GD}, false),
         (LK._boot_bags!, Tuple{GD}, false),
+        (LK._boot_attvar!, Tuple{GD}, false),                    # boot/attvar.pl's wakeup clauses (AV3)
         (LK._boot_bagof!, Tuple{GD, LD}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
@@ -1372,6 +1384,7 @@ function _manifest_index(T)
         (LK.unify_all_trail_ptrs_cells, Tuple{LD, Int, Int}, false),
         (LK._unifiable_single!, Tuple{LD, Int, Int, Int}, false),
         (LK.unifiable_cells, Tuple{LD, Int, Int, Int}, false),
+        (LK._unifiable_restore_wakeup_cell!, Tuple{LD}, false),   # an attvar binding undone (AV3)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_unify2_va, LK.pl_not_unify2_va, LK.pl_unify_with_occurs_check2_va,
@@ -2245,7 +2258,6 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # size words) — pure bit operations: none allocates
     (LK._slot_word_error, Tuple{UInt64}, false),  # (builds its error: the slot words' bad case)
     (LK._cell_word_error, Tuple{Int, UInt64}, false),         # (… a cell's word of no known kind: AV1)
-    (LK._bind_attvar_const_error, Tuple{Int, UInt64}, false), # (… bindConst on an attvar before AV3)
     (LK.tag, Tuple{UInt64}, true),
     (LK.storage, Tuple{UInt64}, true),
     (LK.valInt, Tuple{UInt64}, true),

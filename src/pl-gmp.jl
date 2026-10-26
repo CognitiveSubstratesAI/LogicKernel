@@ -137,7 +137,7 @@ end
 # `bindConst`) — trailed on the CELL (`_bind_const!`, the word trail), no variable term read; a tagged
 # integer is compared by `valInt`, a value-table word by its stored number, an atom or a compound
 # fails. An attributed variable (AV1b) skips the `isVar` fast path and takes the `canBind` branch, as
-# upstream: `bindConst`, which refuses it until AV3.
+# upstream: `bindConst`, which binds it with a wakeup (`bind_attvar_const`, since AV3).
 "Unify term reference `t` with the number `n` (pl-gmp.c): bind a variable, else compare by value."
 function PL_unify_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
     k, w, p = _deref_loc(ld, -(t + 1))                      # deRef(p)

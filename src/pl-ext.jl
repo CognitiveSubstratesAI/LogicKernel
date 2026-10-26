@@ -142,6 +142,7 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     _boot_lists!(gd)
     _boot_bags!(gd)
     _boot_syspred!(gd)
+    _boot_attvar!(gd)
     return nothing
 end
 
@@ -505,6 +506,65 @@ function _boot_bags!(gd::PL_global_data{T})::Nothing where {T}
     return nothing
 end
 
+# DIVERGES (no upstream function; as `_boot_bags!`): boot/attvar.pl's wakeup clauses
+# (attvar.pl:56-87), compiled when the database is created:
+#     '$wakeup'([]).
+#     '$wakeup'(wakeup(Attribute, Value, Rest)) :-
+#         call_all_attr_uhooks(Attribute, Value), '$wakeup'(Rest).
+#     call_all_attr_uhooks([], _).
+#     call_all_attr_uhooks(att(Module, AttVal, Rest), Value) :-
+#         uhook(Module, AttVal, Value), call_all_attr_uhooks(Rest, Value).
+#     uhook(Module, AttVal, Value) :- Module:attr_unify_hook(AttVal, Value).
+# The VM calls `'$wakeup'/1` (`PROCEDURE_dwakeup1`, pl-vmi.c `VMH(wakeup)`) with the wakeup list.
+# R2 loads boot/attvar.pl in its module `'$attvar'`, which exports `'$wakeup'/1`; until then all
+# three are `system`'s, `'$wakeup'/1` locked, the module's PRIVATE `call_all_attr_uhooks/2` and
+# `uhook/3` NOT locked (as bags' helpers; main agent's decision Q2 (a), R2 checklist).
+# DIVERGES: uhook's body is `call(Module:attr_unify_hook(AttVal, Value))` — the compiler has no
+# colon body goal (`compileSubClause!`); call/1 reaches `stripModule_cells`, which takes `user`
+# and `system` and refuses any other module (`NotPortedError`, R2): same answers for a hook in
+# `user`.
+# NOT PORTED: `uhook(freeze, Goal, Y)` (attvar.pl:76-84) and unfreeze/1 — AV7; until then an
+# attribute named `freeze` reaches `freeze:attr_unify_hook/2`, which raises (loud).
+"Define `'\$wakeup'/1` and its helpers in the `system` module of `gd` as boot/attvar.pl defines them."
+function _boot_attvar!(gd::PL_global_data{T})::Nothing where {T}
+    ld = PL_local_data{T}(gd)
+    v = _boot_vars(T, 6)
+    Attribute, Value, Rest, Module, AttVal, Ignored = v[1], v[2], v[3], v[4], v[5], v[6]
+    nil = mk_nil(T)
+    dwakeup = Symbol("\$wakeup")
+    _boot_clause!(gd, ld, dwakeup, T[nil], nothing, P_LOCKED)
+    _boot_clause!(
+        gd, ld, dwakeup, T[_boot_term(:wakeup, T[Attribute, Value, Rest])],
+        _boot_conj(
+            T[
+                _boot_term(:call_all_attr_uhooks, T[Attribute, Value]),
+                _boot_term(dwakeup, T[Rest])
+            ]
+        ),
+        P_LOCKED
+    )
+    _boot_clause!(gd, ld, :call_all_attr_uhooks, T[nil, Ignored], nothing, UInt64(0))
+    _boot_clause!(
+        gd, ld, :call_all_attr_uhooks, T[_boot_term(:att, T[Module, AttVal, Rest]), Value],
+        _boot_conj(
+            T[
+                _boot_term(:uhook, T[Module, AttVal, Value]),
+                _boot_term(:call_all_attr_uhooks, T[Rest, Value])
+            ]
+        ),
+        UInt64(0)
+    )
+    _boot_clause!(
+        gd, ld, :uhook, T[Module, AttVal, Value],
+        _boot_term(
+            :call,
+            T[_boot_term(:(:), T[Module, _boot_term(:attr_unify_hook, T[AttVal, Value])])]
+        ),
+        UInt64(0)
+    )
+    return nothing
+end
+
 "Define bagof/3, setof/3 and their helpers (see `_boot_bags!`)."
 function _boot_bagof!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
     v = _boot_vars(T, 12)
@@ -644,7 +704,8 @@ end
 
 # PORT: pl-ext.c setBuiltinPredicateProperties as setBuiltinPredicateProperties!
 # NOT PORTED: every `LOOKUPPROC` but `equals2`, `dcall1` (the goal clauses' predicate, since
-# V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set) and `catch3` (since V9f) — the
+# V9e-2; `HIDE_CHILDS|TRACE_ME` cleared, `P_DYNAMIC|P_LOCKED` set), `catch3` (since V9f) and
+# `dwakeup1` (the VM's wakeup call, since AV3) — the
 # procedures nothing reads yet (`true/0`, `fail/0`, `is/2`, `==/2`, `\==/2`, `arg/3`, …; since
 # 10.1.19 `'$tbl_reset'/6` and `call_continuation/1`: tabling and continuations), each when
 # its first reader is ported;
@@ -660,6 +721,7 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     d.flags &= ~(HIDE_CHILDS | TRACE_ME)
     d.flags |= P_DYNAMIC | P_LOCKED
     gd.procedures_catch3 = lookupProcedure(mk_sym(T, :catch), 3, m)   # LOOKUPPROC(catch3)
+    gd.procedures_dwakeup1 = lookupProcedure(mk_sym(T, Symbol("\$wakeup")), 1, m)  # LOOKUPPROC(dwakeup1)
     return nothing
 end
 

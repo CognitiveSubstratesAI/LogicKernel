@@ -1175,6 +1175,12 @@ const WAKEUP_STATE_SKIP_EXCEPTION = UInt32(0x4)
 "Wakeup-state flag: keep the most urgent exception (pl-incl.h)."
 const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
 
+# PORT: pl-incl.h ALERT_WAKEUP
+# NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output,
+# `ALERT_UNDO`, …) — nothing here sets them; `LD->alerted` carries the wakeup bit only.
+"Alert bit: the wakeup list is not empty (pl-incl.h `ALERT_WAKEUP`)."
+const ALERT_WAKEUP = Int32(0x040)
+
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
 # `outofstack` is a flag (the local stack's, as `LD->outofstack` here).

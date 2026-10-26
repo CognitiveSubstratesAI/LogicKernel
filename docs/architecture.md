@@ -984,6 +984,7 @@ graph LR
     pl_prims --> pl_inline
     pl_prims --> pl_ressymbol
     pl_prims --> pl_comp
+    pl_prims --> pl_variant
     pl_prims --> pl_gc
     pl_prims --> pl_alloc
     pl_prims --> pl_wam
@@ -1398,6 +1399,7 @@ graph LR
     pl_ext --> pl_comp
     pl_ext --> pl_variant
     pl_ext --> pl_copyterm
+    pl_ext --> pl_wam
     pl_ext --> pl_attvar
     pl_ext --> pl_gmp
     pl_ext --> pl_arith

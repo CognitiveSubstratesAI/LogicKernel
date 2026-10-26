@@ -362,6 +362,7 @@ function _export_leaf!(
     ld::PL_local_data{T}, ex::cell_export{T}, (k, w, p)::Tuple{UInt8, word, Int}
 )::Union{Nothing, T} where {T}
     k == DU_CELL && return _export_var!(ex, p)
+    k == DU_ATTVAR && return _export_var!(ex, p)   # an attributed variable: a variable outside (AV3)
     k == DU_VALUE && return _value_term(ld, w)
     isAtomW(w) && return _atom_value(ld, w)
     return get(ex.done, valPtr(w), nothing)                 # a compound: exported already, or nothing

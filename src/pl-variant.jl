@@ -241,8 +241,8 @@ end
     compare_primitives_cells(ld, k1, w1, p1, k2, w2, p2, CMP_MODE_EQUAL) == CMP_EQUAL
 
 # PORT: pl-variant.c isomorphic as isomorphic_cells
-# DIVERGES: on locations; no attributed variables. As upstream it pushes a sentinel onto the CALLER's
-# agenda and runs until it pops it.
+# DIVERGES: on locations. As upstream it pushes a sentinel onto the CALLER's agenda and runs until it
+# pops it. An attributed variable (AV3) is compared by its attribute list (`goto attvar`), as upstream.
 "Whether compound nodes `i` and `j` are `==` (pl-variant.c `isomorphic`): 1 or 0."
 function isomorphic_cells(ld::PL_local_data, a::vt_pairs, i::Int, j::Int)::Int
     i == j && return 1
@@ -256,12 +256,18 @@ function isomorphic_cells(ld::PL_local_data, a::vt_pairs, i::Int, j::Int)::Int
         found, l, r = vt_next_arg!(a)
         found || return 1
         l == 0 && return 1
+        @label attvar
         k1, w1, p1 = _deref_loc(ld, l)
         k2, w2, p2 = _deref_loc(ld, r)
         c1, c2 = k1 == DU_WORD && _is_gcompound(w1), k2 == DU_WORD && _is_gcompound(w2)
         if k1 == DU_CELL || k2 == DU_CELL       # tag(wl) != tag(wr); TAG_VAR
             (k1 == k2 && p1 == p2) || return 0  # identity test on variables
             continue
+        end
+        if k1 == DU_ATTVAR || k2 == DU_ATTVAR   # tag(wl) != tag(wr); TAG_ATTVAR (AV3)
+            k1 == k2 || return 0
+            l, r = valPtr(w1), valPtr(w2)       # l = valPAttVar(wl); r = valPAttVar(wr)
+            @goto attvar
         end
         c1 == c2 || return 0                    # tag(wl) != tag(wr)
         if !c1
@@ -286,16 +292,19 @@ function isomorphic_cells(ld::PL_local_data, a::vt_pairs, i::Int, j::Int)::Int
 end
 
 # PORT: pl-variant.c variant as variant_cells
-# DIVERGES: on locations; no attributed variables; no MEMORY_OVERFLOW.
+# DIVERGES: on locations; no MEMORY_OVERFLOW. An attributed variable (AV3) is a variable whose
+# attribute lists are then compared (`goto attvar`), as upstream.
 "Run the agenda (pl-variant.c `variant`): 1 when every pair matches under one variable correspondence, else 0."
 function variant_cells(ld::PL_local_data, a::vt_pairs)::Int
     while true
         found, l, r = vt_next_arg!(a)
         found || return 1
+        @label attvar
         k1, w1, p1 = _deref_loc(ld, l)
         k2, w2, p2 = _deref_loc(ld, r)
-        if k1 == DU_CELL || k2 == DU_CELL       # needsRef(wl)
+        if k1 == DU_CELL || k2 == DU_CELL || k1 == DU_ATTVAR || k2 == DU_ATTVAR   # needsRef(wl)
             k1 == k2 || return 0                # tag(wl) != tag(wr)
+            av = k1 == DU_ATTVAR                # al = valPAttVar(wl), ar = valPAttVar(wr) (AV3)
             i = vt_node_id(ld, p1, word(0))
             j = vt_node_id(ld, p2, word(0))
             vl = ld.vt_nodes[i]
@@ -305,9 +314,19 @@ function variant_cells(ld::PL_local_data, a::vt_pairs)::Int
                 ld.vt_nodes[i] = vt_node(vl.bp, vl.orig, j, vl.b)
                 vr = ld.vt_nodes[j]             # (i == j: the node just written)
                 ld.vt_nodes[j] = vt_node(vr.bp, vr.orig, vr.a, i)
+                if av                           # if ( al ) { l = al; r = ar; goto attvar; }
+                    l, r = valPtr(w1), valPtr(w2)
+                    @goto attvar
+                end
                 continue
             end
-            m != 0 && n != 0 && m == j && n == i && continue
+            if m != 0 && n != 0 && m == j && n == i
+                if av                           # if ( al ) { l = al; r = ar; goto attvar; }
+                    l, r = valPtr(w1), valPtr(w2)
+                    @goto attvar
+                end
+                continue
+            end
             return 0
         end
         c1, c2 = k1 == DU_WORD && _is_gcompound(w1), k2 == DU_WORD && _is_gcompound(w2)
@@ -334,7 +353,8 @@ function variant_cells(ld::PL_local_data, a::vt_pairs)::Int
 end
 
 # PORT: pl-variant.c is_variant_ptr as is_variant_ptr_cells
-# DIVERGES: on locations; no attributed variables; no ERR_NOMEM.
+# DIVERGES: on locations; no ERR_NOMEM. Two attributed variables (AV3): their attribute lists, as
+# upstream's `goto again` — a list that is not a compound (`[]`) answers false, as its TAG_ATOM case.
 """
     is_variant_ptr_cells(ld, l1, l2) -> Bool
 
@@ -347,6 +367,17 @@ function is_variant_ptr_cells(ld::PL_local_data{T}, l1::Int, l2::Int)::Bool wher
     k1 == DU_CELL && k2 == DU_CELL && return true   # *p1 == *p2; TAG_VAR
     k1 == k2 && w1 == w2 && k1 != DU_CELL && return true    # same term
     (k1 == DU_CELL || k2 == DU_CELL) && return false        # different type
+    (k1 == DU_ATTVAR) == (k2 == DU_ATTVAR) || return false  # different type (AV3)
+    if k1 == DU_ATTVAR                                      # TAG_ATTVAR (AV3)
+        while k1 == DU_ATTVAR && k2 == DU_ATTVAR            # p = valPAttVar(*p); goto again
+            l1, l2 = valPtr(w1), valPtr(w2)
+            k1, w1, p1 = _deref_loc(ld, l1)
+            k2, w2, p2 = _deref_loc(ld, l2)
+        end
+        k1 == DU_CELL && return true                        # TAG_VAR
+        (k1 == DU_WORD && _is_gcompound(w1) && k2 == DU_WORD && _is_gcompound(w2)) ||
+            return false                                    # TAG_ATOM: `[]`
+    end
     c1, c2 = k1 == DU_WORD && _is_gcompound(w1), k2 == DU_WORD && _is_gcompound(w2)
     c1 == c2 || return false
     c1 || return _vt_same_atomic(ld, k1, w1, p1, k2, w2, p2)    # quick tests

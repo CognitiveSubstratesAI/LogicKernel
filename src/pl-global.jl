@@ -51,6 +51,7 @@ mutable struct PL_global_data{T}
     procedures_equals2::Procedure{T}                            # procedures.equals2: =/2
     procedures_dcall1::Procedure{T}                             # procedures.dcall1: '<meta-call>'/1
     procedures_catch3::Procedure{T}                             # procedures.catch3: catch/3
+    procedures_dwakeup1::Procedure{T}                           # procedures.dwakeup1: '$wakeup'/1 (AV3)
     const clauses_top_clause::Clause{T}                         # clauses.top_clause
     const clauses_top_cref::ClauseRef{T}                        # clauses.top_cref
     const atom_nil::T                                           # ATOM_nil, the `[]` term
@@ -83,7 +84,7 @@ end
 # frame's predicate, is created as `setBuiltinPredicateProperties` creates it (no clauses, flags 0,
 # `SUPERVISOR(virgin)`), in the `system` module's table. `initVM` builds the top clause, and then
 # the built-ins are registered — upstream registers them first (setup:158, then 160); neither reads
-# the other. `procedures_equals2`, `procedures_dcall1` (since V9e-2) and `procedures_catch3` (since V9f) are set where upstream sets them, by `setBuiltinPredicateProperties!`
+# the other. `procedures_equals2`, `procedures_dcall1` (since V9e-2), `procedures_catch3` (since V9f) and `procedures_dwakeup1` (since AV3) are set where upstream sets them, by `setBuiltinPredicateProperties!`
 # at the end of `initBuildIns!`, once `=/2` is registered (until then it holds `$c_call_prolog/0`,
 # which nothing reads it as). `atom_nil` and
 # `atom_dot` are the terms the VM writes for `[]` and a list cell's head, built once — upstream's are
@@ -130,6 +131,7 @@ function PL_global_data{T}() where {T}
         dc_proc,                                # procedures_equals2: set by initBuildIns!
         dc_proc,                                # procedures_dcall1: set by initBuildIns!
         dc_proc,                                # procedures_catch3: set by initBuildIns!
+        dc_proc,                                # procedures_dwakeup1: set by initBuildIns!
         top_clause,
         top_cref,
         mk_nil(T),
@@ -377,6 +379,7 @@ mutable struct PL_local_data{T}
     attvar_head::Int                                            # attvar.head: the wakeup list (AV1; Q1, D-0122)
     attvar_tail::Int                                            # attvar.tail: its tail
     attvar_attvars::Int                                         # attvar.attvars: the newest link cell (0: NULL)
+    alerted::Int32                                              # alerted: ALERT_* (only ALERT_WAKEUP is ported, AV3)
     tmp_h::Int                                                  # tmp.h: the first of TMP_PTR_SIZE consecutive references
     tmp_top::Int                                                # tmp.top
     tmp_cells::Int                                              # (tmp.h[0]'s PERMANENT cell; tmp.h[i]'s +i, as exception_cells)
@@ -457,6 +460,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         Vector{argstack_entry{T}}(undef, 64), 0,
         0, 0, 0, 0, 0, 0,
         0, 0, 0,                                # attvar: head, tail (set by emptyStacks!), attvars: none
+        Int32(0),                               # alerted: nothing
         0, 0, 0,                                # tmp: set by emptyStacks!
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,
