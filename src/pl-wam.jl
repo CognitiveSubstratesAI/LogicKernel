@@ -1522,11 +1522,14 @@ end
 # debugger and coverage clear the flag. On the WORDS (f3b-5b): `test` is the FLI test of the same
 # pl-data.h macro on a term reference (`PL_is_integer` … `PL_is_callable`: `deRef(p); test(*p)` on
 # `_deref_loc`) — the operand's slot `i` is term reference `i - 1`, so `varFrameP(FR, n)` itself.
+# DIVERGES (representation): the test is forced inline (`@inline` at the call) — upstream's TYPE_TEST and its
+# tests are macros (pl-vmi.c, pl-data.h); without it AV1's larger `_deref_loc` made six of them out-of-line
+# calls (evidence: lk-channel A-0109 jt-trace.md).
 "The body of a type-test instruction (pl-vmi.c `TYPE_TEST`): `test` the variable at the operand."
 macro TYPE_TEST(test)
     return esc(
         quote
-            tt_v = $test(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])))  # p = varFrameP(FR, n)
+            tt_v = @inline $test(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])))  # p = varFrameP(FR, n)
             PC += 1
             tt_v && @goto next_instruction                  # deRef(p); if ( test(*p) )
             @FASTCOND_FAILED
