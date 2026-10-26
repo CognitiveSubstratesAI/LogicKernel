@@ -940,7 +940,7 @@ function analyseVariables2!(
     if control && !(kind(head) === SYM && sym_key(head) == gd.subclause_names.atom_true)
         ci.head_unify = false
     end
-    if ci.subclausearg && isString(head)                        # (no attributed variables)
+    if ci.subclausearg && isString(head)        # (an attvar: `localGoal`'s compound placeholder, above)
         ci.argvars += 1
     end
     @label resume
@@ -1424,7 +1424,7 @@ end
 # (`varFrameP(lTop, voffset)`) := what `t` stands for. On the cells (`localGoal`): a variable of the
 # goal's export its cell's reference (link_local_var's `*k = makeRefG(vd->address)`,
 # pl-comp.c:2947), a compound or string argument's placeholder its argument's word
-# (compileArgument's `*k = *arg`, pl-comp.c:3181). Anything else is stored as its value
+# (compileArgument's `*k = *arg`, pl-comp.c:3181), an attributed variable's a reference to it (:3179). Anything else is stored as its value
 # (`setSlotValue!`).
 "Store what `t` stands for (its cell, its word or its value) in the goal clause's cell `voffset`."
 function _local_cell!(ci::compileInfo{T}, voffset::Int, t::T)::Nothing where {T}
@@ -1456,8 +1456,9 @@ end
 # DIVERGES: under `islocal` (a goal clause, V9e-2) a compound or string argument is not compiled but
 # stored in the next pseudo variable's cell and loaded by `B_VAR0+n`/`B_VAR` (`argvar`), and a
 # variable is linked into its own cell (`link_local_var`) — the cells of the frame at `ci.local_base`,
-# each written by `_local_cell!` (its word, or the variable's cell reference; f3b-3). No
-# attributed variables, no `CL_HEAD_TERMS`/`argMoveUnify` (the moved head unifications, V9), and no
+# each written by `_local_cell!` (its word, or the variable's cell reference; f3b-3); an attributed
+# variable argument reaches it as `localGoal`'s compound placeholder, whose cell is a reference to the
+# attvar (TAG_ATTVAR's `goto argvar`). No `CL_HEAD_TERMS`/`argMoveUnify` (the moved head unifications, V9), and no
 # stack-overflow returns. SWI-7's `[]` compiles to `H_NIL`/`B_NIL` (Q1), any other symbol to
 # `H_ATOM`/`B_ATOM`; a grounded value to the SMALLINT/MPZ/MPQ/FLOAT/STRING instruction of its kind
 # and storage (`_gnd_code`), anything else to `*_ATOM`; each operand is the index of the constant
@@ -1570,7 +1571,7 @@ function compileArgument!(ci::compileInfo{T}, arg::T, where_::Int)::Bool where {
     if ci.islocal && (where_ & A_NOARGVAR) == 0
         @label argvar
         av_off = VAROFFSET(ci.argvar)
-        _local_cell!(ci, Int(av_off), arg)                     # *k = *arg (no attributed variables)
+        _local_cell!(ci, Int(av_off), arg)                     # *k = *arg, an attvar's makeRefG(arg)
         if ci.argvar < 3
             Output_0!(ci, B_VAR0 + code(ci.argvar))
         else
@@ -2926,7 +2927,10 @@ const CYCLE_CHECK_AT = 10000
 # value the kernel's compiler takes: a control construct (`CONTROL_F` on
 # its functor word) keeps its name and each argument is read again; a sub-goal is read ONE level
 # (`_local_subgoal`). An unbound cell is a variable of the clause's export `ci.cell_export`
-# (`_export_var!`), which `_local_cell!` links back to its cell. No compound is copied. The compiler
+# (`_export_var!`), which `_local_cell!` links back to its cell. An attributed variable is NOT a
+# variable under islocal (pl-comp.c:901): at goal position it stands as the number 0, which
+# compileSubClause refuses as upstream refuses the attvar word (NOT_CALLABLE, c:3557-3558; the
+# culprit is the goal's own word). No compound is copied. The compiler
 # then never meets a cycle: the depth of
 # each compound is counted as analyseVariables2 counts it, and at CYCLE_CHECK_AT the compound is
 # tested (`is_acyclic_cells`), as upstream's analysis tests it (pl-comp.c:966-968).
@@ -2962,6 +2966,8 @@ function localGoal(
             end
         elseif k == DU_CELL
             g = _export_var!(ex, p)         # a variable goal: call/1
+        elseif k == DU_ATTVAR               # an attributed variable: not a variable under islocal
+            g = mk_gnd(T, Int64(0))         # (c:901), not callable (c:3557: NOT_CALLABLE)
         else
             g = k == DU_VALUE ? _value_term(ld, w) : _atom_value(ld, w)
         end
@@ -2989,8 +2995,10 @@ end
 # or a string an ARGVAR: the analysis counts it and never enters it (pl-comp.c:976-985), and its
 # pseudo variable's cell takes its word (`*k = *arg`, :3181), so it is a placeholder of the right
 # kind — the string's value, a compound `name(V1, …, Vn)` of fresh variables that nothing links —
-# recorded with the word in `ci.local_words`. A compound argument at CYCLE_CHECK_AT is tested as the
-# analysis tests it (:966-968).
+# recorded with the word in `ci.local_words`. An attributed variable is an argvar too (:1116-1119);
+# its placeholder is a compound `attvar(V)` of a fresh variable and its cell takes a REFERENCE to it
+# (`*k = makeRefG(arg)`, :3178-3179: binding a copy would lose the attributes). A compound argument
+# at CYCLE_CHECK_AT is tested as the analysis tests it (:966-968).
 "The sub-goal at functor position `q`, one level off the cells; `nothing` for a cycle."
 function _local_subgoal(
     ld::PL_local_data{T}, ci::compileInfo{T}, q::Int, depth::Int
@@ -3008,6 +3016,9 @@ function _local_subgoal(
         elseif k == DU_VALUE
             a = _value_term(ld, w)
             isString(a) && push!(lw, a => w)        # case TAG_STRING: goto argvar (c:3065-3067)
+        elseif k == DU_ATTVAR                       # an attributed variable: an argvar (c:1116)
+            a = mk_expr(T, T[mk_sym(T, :attvar), mk_var(T, fresh_var_keys!(1))])
+            push!(lw, a => makeRefG(p))             # *k = makeRefG(arg) (c:3178-3179)
         elseif isAtomW(w)
             a = _atom_value(ld, w)
         else                                        # a compound: an argvar

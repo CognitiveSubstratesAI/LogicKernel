@@ -961,3 +961,44 @@ end
         _wk_line("t2", _ea("yes"))
     ]
 end
+
+# FIXED (found by AV4's run, evidence/av/av4_run.md Part 2): an attributed variable that is a direct ARGUMENT of a
+# sub-goal of a control construct called by call/1 (a goal clause, `islocal`) is an argvar whose cell is a
+# REFERENCE to it (pl-comp.c:1116-1119, :3178-3179 `*k = makeRefG(arg)`); in GOAL position it is not callable
+# (:901, :3557-3558: type_error(callable, Goal)). `localGoal`/`_local_subgoal` (src/pl-comp.jl) had no DU_ATTVAR
+# case: every row below threw (BoundsError, or "atom word … has no recorded symbol") on 3a4072d. Answers: swipl
+# 10.1.19 under this file's fixture (re-checked by `_wk_check_rows`).
+const _WK_LOCAL = [
+    (
+        "lg01",
+        "put_attr(X,user,throw(inner)), catch((X = 1, true), E, true), R = E",
+        _ea("inner")
+    ),
+    ("lg02", "put_attr(X,user,yes), catch((X = 1, true), E, true), R = X", _ei(1)),
+    ("lg03", "put_attr(X,user,no), catch((X = 1, true), E, true), R = X", nothing),
+    ("lg04", "put_attr(X,a,1), G = (Y = X, true), call(G), get_attr(Y,a,R)", _ei(1)),
+    (
+        "lg05",
+        "put_attr(X,a,1), catch(call((X,true)), E, true), R = E",
+        _ec(
+            "error",
+            _ec("type_error", _ea("callable"), _ec(",", "V0", _ea("true"))),
+            _ctx(_sys(_pi("call", 1)), "V1")
+        )
+    ),
+    (
+        "lg06",
+        "put_attr(X,user,log(h)), call((X = 1, true)), log(R)",
+        _wk_list(_ec("-", _ea("h"), _ei(1)))
+    ),
+    (
+        "lg07",
+        "put_attr(X,a,1), call(((var(X) -> A = v ; A = nv), (nonvar(X) -> B = nv ; B = v), (attvar(X) -> C = av ; C = nav))), R = A/B/C",
+        _ec("/", _ec("/", _ea("v"), _ea("v")), _ea("av"))
+    )
+]
+
+@testset "an attributed variable as a sub-goal argument of a control construct (call/1, catch/3): an argvar — FIXED" begin
+    @test length(_WK_LOCAL) == 7
+    _wk_check_rows(_WK_LOCAL, "LOCAL ROWS")
+end

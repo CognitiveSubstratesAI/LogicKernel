@@ -1015,6 +1015,7 @@ graph LR
     pl_comp --> pl_inline
     pl_comp --> pl_prims
     pl_comp --> pl_ressymbol
+    pl_comp --> pl_variant
     pl_comp --> pl_thread
     pl_comp --> pl_gc
     pl_comp --> pl_alloc
