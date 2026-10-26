@@ -1040,7 +1040,24 @@ const _WK_AV4_ROWS = [
     # swipl 10.1.19 through this driver. A bare toplevel (no user:attr_unify_hook/2) raises existence_error.
     # D-0083 (AV4 run 2): the row was `…, E = error(R, _)` expecting
     # `existence_error(procedure, a:attr_unify_hook/2)` — taken outside the driver (evidence/av/av4_run.md part 2).
-    ("fw_nohook", "put_attr(X,a,1), catch(X \\= 2, E, true), R = E", "V0")
+    ("fw_nohook", "put_attr(X,a,1), catch(X \\= 2, E, true), R = E", "V0"),
+    # fw_tail / fw_tailc: a wakeup REGISTERED WHILE foreignWakeup's query runs. X's attribute is the attributed A,
+    # so the head unification of each attr_unify_hook/2 clause binds A (`no`, then `yes`) inside the query that runs
+    # X's hook; A's own hook must wake at once (the body's I_ENTER, the fact's exit): a-no, then a-yes. That needs
+    # foreignWakeup's `setVar(tail)` (src/pl-wam.jl:425): with the tail left set (mutant AV4-F4) registerWakeup
+    # appends A's wakeup through the stale tail to the list being run, the head stays empty, nothing wakes — A's
+    # hook runs only when '$wakeup' walks that list's rest, once, for `yes`: [a-yes]. fw_tailc: catch/3's catcher
+    # (findCatcher's foreignWakeup), then the VM's own wakeup at the resume's unification (hk11l); the cut keeps
+    # the hook's remaining clauses (throw(_)) out. swipl 10.1.19: [a-no,a-yes] and [a-no,a-yes,a-no,a-yes].
+    ("fw_tail",
+        "put_attr(A,user,log(a)), put_attr(X,user,A), (X \\= 2 -> true ; true), log(R)",
+        _wk_list(_ec("-", _ea("a"), _ea("no")), _ec("-", _ea("a"), _ea("yes")))),
+    ("fw_tailc",
+        "put_attr(A,user,log(a)), put_attr(X,user,A), catch(throw(2), X, true), !, log(R)",
+        _wk_list(
+            _ec("-", _ea("a"), _ea("no")), _ec("-", _ea("a"), _ea("yes")),
+            _ec("-", _ea("a"), _ea("no")), _ec("-", _ea("a"), _ea("yes"))
+        ))
 ]
 
 @testset "AV4: foreignWakeup at \\\\=/2 and catch/3's catcher — rows, re-checked on swipl" begin

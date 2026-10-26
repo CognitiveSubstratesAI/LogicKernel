@@ -27,7 +27,7 @@ MUTANTS = [
     dict(id="AV4-F3 foreignWakeup does not clear the head (the list runs again at the next check point)", file=W, targets=T,
          old="                    ld.gstack[h] = word(0)                  # setVar(*valTermRef(LD->attvar.head))\n",
          new="                    nothing\n"),
-    dict(id="AV4-F4 foreignWakeup does not clear the tail (the next registerWakeup appends to a dead list)", file=W, targets=T,
+    dict(id="AV4-F4 foreignWakeup does not clear the tail (the next registerWakeup appends to a dead list; fw_tail)", file=W, targets=T,
          old="                    ld.gstack[h + 1] = word(0)              # setVar(*valTermRef(LD->attvar.tail))\n",
          new="                    nothing\n"),
     dict(id="AV4-F5 foreignWakeup answers true whatever the hooks do", file=W, targets=T,
