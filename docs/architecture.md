@@ -517,7 +517,11 @@ ported files' headers to either.
 * **Backport list (upstream fixes newer than the pin `cbf4e189`)** (D-0175 item 2: port upstream's fixes,
   not our own; each entry names its upstream commit in the `# PORT:` line of the function it fixes):
   * `c6087acb` (Q6) — pending: LB2.
-  * `1412ce49` (Q8) — pending: Q8 mirror.
+  * `1412ce49` (Q8, `pl-prologflag.c pl_prolog_flag5`) — **ported (Q8 mirror):** an explicit `local` scope without a
+    thread-local flag table fails before the enumerator is made; the kernel has no such table, so `local` always fails
+    (the state is freed). No answer changes (the old walk of the global table could not unify the scope `global` with the
+    named `local` either); upstream has no unit for it, swipl 10.1.19 gives no answer; the row is the `local` query of
+    test/core_lang/test_prolog_flag_swipl.jl, mutants tools/mutants/Q8.py.
   * `d4621369` (Q10, `pl-attvar.c attv_unify`) — **ported (this step):** `pl_attv_unify2_va` returns before
     the link when A2 dereferences to the attributed variable itself, and computes the link word before
     dereferencing A1 again; test/core_lang/test_attvar_store.jl (white-box, the oracle 10.1.19 hangs here),

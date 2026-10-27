@@ -475,9 +475,10 @@ end
 # DIVERGES: the database is an argument; the state of an enumeration is a record of the local data's pool
 # (`ld.prolog_flag_enums`), its index the `REDO_PTR` context, and the walk is over the table's slots in
 # creation order (upstream's `TableEnum`, hash-table order: audit D-0149 item 1); there is no local table
-# (no threads), so `scope` is `global` unless the caller names one. Upstream register Q8; swipl gives no answer; re-check at the sync that brings
-# upstream's change. The foreign
-# frame is closed before a retry (the kernel's non-deterministic built-ins do: upstream leaves it to the exit
+# (no threads), so `scope` is `global` unless the caller names one. At the pin cbf4e189 plus upstream's fix 1412ce49
+# (the marker line is port_check's strict form; D-0175): an explicit `local` scope without a thread-local table fails
+# (`if ( !LD->prolog_flag.table ) { freeHeap(e, sizeof(*e)); fail; }`), here always, since the kernel has no such table.
+# The foreign frame is closed before a retry (the kernel's non-deterministic built-ins do: upstream leaves it to the exit
 # of the predicate). No locking (`PL_LOCK(L_PLFLAG)`).
 """
     pl_prolog_flag5(gd, ld, key, value, scope, access, type, h)
@@ -531,6 +532,11 @@ function pl_prolog_flag5(
                 e.explicit_scope = false
                 e.is_local = false                      # no thread-local table: the global one
             end
+            if e.is_local                               # if ( e->scope == ATOM_local )
+                # upstream 1412ce49: if ( !LD->prolog_flag.table ) { freeHeap(e, sizeof(*e)); fail; } — the kernel has none
+                free_foreign_state!(pool, idx)
+                return FFALSE
+            end
         else
             return PL_error(ld, ERR_TYPE, mk_sym(T, :atom), key) ? FTRUE : FFALSE
         end
@@ -550,7 +556,7 @@ function pl_prolog_flag5(
     end
     tab = gd.prolog_flag
     while true
-        # (the local table is empty: a `local` scope walks nothing)
+        # (`e.is_local` is never set here: an explicit `local` scope has failed above; the switch below is upstream's, kept for a local table)
         while !e.is_local && e.next <= length(tab.entries)
             i = e.next
             e.next += 1

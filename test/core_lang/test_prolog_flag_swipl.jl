@@ -10,8 +10,9 @@
 #     build; swipl's answers are asked live next to them);
 #   * the white-box rows of the table (a flag created during an enumeration, a deleted flag, a mask bit), which no swipl predicate
 #     reaches, and the C interface (`PL_record`/`PL_recorded`, `PL_get_prolog_flag`, `PL_current_prolog_flag`);
-#   * the scope argument: upstream register Q8; swipl gives no answer; re-check at the sync that brings upstream's change.
-#     The kernel's answer — the global table with the scope `global` — is pinned without swipl's.
+#   * the scope argument: an explicit `local` scope fails (upstream's fix 1412ce49, pl-prologflag.c: no thread-local table, no
+#     enumerator) and `global` walks the global table. swipl 10.1.19 (the oracle, without the fix) gives no answer to the first;
+#     the kernel's answers are pinned without swipl's.
 # After EVERY row the pool of current_prolog_flag/2's states is empty again (`live_states`, D-0136 Q8): a missing FRG_CUTTED (a cut, an
 # exception, a query closed with a state live) shows as a count, named by its row.
 using Test, LogicKernel
@@ -725,14 +726,14 @@ end
     @test LK.live_states(ld) == 0
 end
 
-@testset "the scope argument: the global table (upstream register Q8; swipl gives no answer; re-check at the sync that brings upstream's change)" begin
+@testset "the scope argument: `local` fails, `global` is the table (upstream fix 1412ce49; swipl 10.1.19 gives no answer)" begin
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     proc = LK.resolveProcedure(gd, _tls("\$current_prolog_flag"), 5, LK.MODULE_user(gd))
-    # pl-prologflag.c pl_prolog_flag5: upstream register Q8; swipl gives no answer; re-check at the sync that brings upstream's
-    # change. The local table is walked (empty here), then `e->scope = ATOM_global` and the global table follows, each flag's
-    # scope unified with `e->scope` (the loop's end); the kernel follows that flow. With the scope unbound, swipl answers: the
-    # global table, scope `global`. Hand-written: swipl gives no answer to the first.
+    # pl-prologflag.c pl_prolog_flag5, upstream 1412ce49 ("'$current_prolog_flag'/5 ... enumerating `local` scope without local
+    # flags"): with the scope `local` and no thread-local flag table the predicate fails before it makes an enumerator (the
+    # kernel has no such table). The fix has no upstream unit ("a test can only reproduce this from `swipl -f none -g`"). With the
+    # scope unbound, swipl answers: the global table, scope `global`. Hand-written: swipl 10.1.19 gives no answer to the first.
     nkeys = length(kernel_keys(ld))
     sols, ok = run_query(gd, ld, proc, vcat(_vars(2), _tls("local"), _vars(2)))
     @test ok && isempty(sols)
