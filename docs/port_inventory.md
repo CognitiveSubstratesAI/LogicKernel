@@ -154,14 +154,14 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 145 | 0 |
 | swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 165 | 107 |
 | swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 48 | 40 |
-| swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 116 | 46 |
+| swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 118 | 47 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `cbf4e1896275` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `cbf4e1896275` | `test/core_lang/test_exception.jl` | 4 | 0 |
 | swipl-devel `tests/core_lang/test_hash.pl` | code | `cbf4e1896275` | `test/core_lang/test_hash.jl` | 19 | 1 |
 | swipl-devel `tests/core_lang/test_occurs_check.pl` | code | `cbf4e1896275` | `test/core_lang/test_occurs_check.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_resource_error.pl` | code | `cbf4e1896275` | `test/core_lang/test_resource_error.jl` | 1 | 0 |
 | swipl-devel `tests/core_lang/test_sort.pl` | code | `cbf4e1896275` | `test/core_lang/test_sort.jl` | 1 | 0 |
-| swipl-devel `tests/core_lang/test_term.pl` | code | `cbf4e1896275` | `test/core_lang/test_term.jl` | 25 | 0 |
+| swipl-devel `tests/core_lang/test_term.pl` | code | `cbf4e1896275` | `test/core_lang/test_term.jl` | 27 | 0 |
 | swipl-devel `tests/core_lang/test_unify.pl` | code | `cbf4e1896275` | `test/core_lang/test_unify.jl` | 10 | 0 |
 | swipl-devel `tests/core_text/test_io.pl` | code | `cbf4e1896275` | `test/core_text/test_io.jl` | 1 | 0 |
 | swipl-devel `tests/core_text/test_op.pl` | code | `cbf4e1896275` | `test/core_text/test_op.jl` | 4 | 0 |
@@ -264,7 +264,7 @@ checkout is pulled.
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
 | swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 145 | 243 | 72 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 44 | 98 | 38 | src/pl-wam.jl |
-| swipl-devel `src/pl-write.c` | `cbf4e1896275` | 85 | 111 | 43 | src/pl-write.jl |
+| swipl-devel `src/pl-write.c` | `cbf4e1896275` | 87 | 111 | 44 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `cbf4e1896275` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
 | swipl-devel `tests/core_lang/test_exception.pl` | `cbf4e1896275` | 0 | 2 | 0 | test/core_lang/test_exception.jl |
 | swipl-devel `tests/core_lang/test_hash.pl` | `cbf4e1896275` | 1 | 4 | 0 | test/core_lang/test_hash.jl |
@@ -280,7 +280,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1366** | **4480** | **748** | |
+| **total** | | **1368** | **4480** | **749** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

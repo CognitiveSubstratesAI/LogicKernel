@@ -33,8 +33,8 @@
 # `is_acyclic`) is ported there.
 #
 # NOT PORTED, deliberately: CMP_MODE_PARTIAL (`partial_compare/3`), the `incomparable` flag's
-# `error` value (`compare_std`), attributed-variable ordering, attributed variables in unification
-# (`assignAttVar`, wakeup), and the stack-overflow retry loops.
+# `error` value (`compare_std`), and the stack-overflow retry loops. (An attributed variable orders as
+# a variable — `compare_primitives`, AV3, row av18; unification binds it and wakes its hooks — AV3/AV4.)
 
 # ── results and modes (pl-incl.h `cmp_t`/`cmpex_t`, pl-prims.c `cmp_mode`) ───────────────────────
 "Standard-order result: the first term sorts before the second (pl-incl.h `CMP_LESS`)."
@@ -409,9 +409,10 @@ const REPRESENTATION_ERROR = -12
 # mark's `globaltop` (upstream passes the mark; positions, so "at or above the old top" is `> gtop`);
 # `fw` the functor word of `options.functor/1` and `anon`/`var` the atom words of `_` and `var`
 # (upstream: `options->functor`, `ATOM_anonvar`, `ATOM_var`). `numbered_check` reads a tagged integer
-# (a value-table integer is past the tagged range: upstream's "cannot be bigger"). NOT PORTED:
-# attributed variables (no cell holds one: `on_attvar` is never read), NV_EINTR (no signals), the
-# global-stack overflow (`hasGlobalSpace`: the stack grows).
+# (a value-table integer is past the tagged range: upstream's "cannot be bigger"). An attributed
+# variable (AV5, pl-prims.c:3252-3263) follows `on_attvar`: skipped, `CONTAINS_ATTVAR`, or bound with
+# `bindConst` (its hook runs at the next wakeup point, row hk20). NOT PORTED: NV_EINTR (no signals),
+# the global-stack overflow (`hasGlobalSpace`: the stack grows).
 "Number the variables of the term at location `l` from `n` on the cells: the next number, or a code below 0 (pl-prims.c `do_number_vars`)."
 function do_number_vars_cells(
     ld::PL_local_data{T}, l::Int, options::nv_options{T}, n::Int, gtop::Int, fw::word,
@@ -425,7 +426,15 @@ function do_number_vars_cells(
         q = nextCellAgendaNoDeRef!(a)
         q == 0 && break
         k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
-        if k == DU_CELL                                     # canBind(*p)
+        if k == DU_CELL || k == DU_ATTVAR                   # canBind(*p)
+            if k == DU_ATTVAR                               # if ( isAttVar(*p) ) (AV5)
+                if options.on_attvar == AV_SKIP             #   case AV_SKIP: continue
+                    continue
+                elseif options.on_attvar == AV_ERROR        #   case AV_ERROR:
+                    n = CONTAINS_ATTVAR                     #     n = CONTAINS_ATTVAR; goto out
+                    break
+                end                                         #   case AV_BIND: break
+            end
             if options.singletons != 0
                 arg = anon                                  # a[1] = ATOM_anonvar
             else
@@ -439,7 +448,7 @@ function do_number_vars_cells(
             end
             c = _alloc_compound!(ld, fw, 1)                 # a = gTop; a[0] = functor; gTop += 2
             ld.gstack[c + 1] = arg
-            _bind_const!(ld, p, consPtr(c, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, v)
+            bindConst(ld, p, consPtr(c, TAG_COMPOUND | STG_GLOBAL))   # bindConst(p, v): an attvar wakes (AV5)
         elseif k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
             c = valPtr(w)
             if ld.gstack[c] == fw                           # f->definition == options->functor
@@ -489,8 +498,8 @@ end
 
 # PORT: pl-prims.c numberVars
 # DIVERGES: on the CELLS (L1d step 7a, `do_number_vars_cells`); the functor word of `options.functor/1`
-# looked up here (upstream's caller passes `PL_new_functor(name, 1)`). The error for
-# `CONTAINS_ATTVAR` is kept for the shape (no attributed variables); no signals (`NV_EINTR`), no
+# looked up here (upstream's caller passes `PL_new_functor(name, 1)`). `CONTAINS_ATTVAR` raises
+# `type_error(free_of_attvar, T)` (AV5: `on_attvar` = error, rows nv01, nv02); no signals (`NV_EINTR`), no
 # stack growth (`makeMoreStackSpace`: the stack grows on demand).
 "Number the variables of term reference `t` from `n`: the next number, or `NV_ERROR` with the error raised (pl-prims.c)."
 function numberVars(
@@ -2977,7 +2986,7 @@ end
 "Whether the functor or variable cell at global position `p` was visited; marks it if not (pl-prims.c)."
 @inline function visitedWord_cells(ld::PL_local_data, p::Int)::Bool
     w = ld.gstack[p]
-    if isVar(w)
+    if isVar(w) || isAttVar(w)                              # an attvar cell too (AV5): canBind
         s = ld.tv_seen
         p > length(s) && _grow_tv_seen!(ld, p)
         s[p] && return true                                 # is_marked(p)
@@ -3008,7 +3017,7 @@ function unvisit_cells(ld::PL_local_data)::Nothing
     while !isempty(v)
         p = pop!(v)                                         # popSegStack(&LD->cycle.vstack, &p)
         w = ld.gstack[p]
-        if isVar(w)
+        if isVar(w) || isAttVar(w)
             ld.tv_seen[p] = false
         else
             ld.gstack[p] = w & ~(MARK_MASK | FIRST_MASK)    # clear_both(p)
@@ -3043,7 +3052,7 @@ function term_variables_loop_cells(
         q = nextCellAgendaNoDeRef!(a)
         q == 0 && break
         k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
-        if k == DU_CELL                                     # canBind(w)
+        if k == DU_CELL || k == DU_ATTVAR                   # canBind(w): a variable or an attvar (AV5)
             visitedWord_cells(ld, p) && continue
             count += 1
             count > maxcount && return count

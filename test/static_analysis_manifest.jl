@@ -940,6 +940,9 @@ function _manifest_index(T)
         (LK.varName, Tuple{LD, Int64}, false),
         (LK.writePrimitive, Tuple{Int64, LK.write_options{T}}, false),
         (LK.writeNumberVar, Tuple{Int64, LK.write_options{T}}, false),
+        (LK.writeAttributes, Tuple{Int64, Int, LK.write_options{T}, Int}, false),   # AV5
+        (LK._wr_is_att3, Tuple{LD, Int64, UInt64}, false),
+        (LK.writeAttVar, Tuple{Int64, LK.write_options{T}}, false),
         (LK.callPortray, Tuple{Int64, Int64, LK.write_options{T}}, false),
         (LK.enterPortray, Tuple{LD}, false),             # group F (D-0123): callPortray's nesting
         (LK.leavePortray, Tuple{LD}, false),

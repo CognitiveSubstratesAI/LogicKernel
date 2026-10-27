@@ -290,6 +290,84 @@ b3 :- X = '{}'({x}, a, b), write_term(X, [brace_terms(false)]), nl,
     end
 end
 
+# ── attributed variables (AV5: pl-write.c writeAttVar / writeAttributes; rows.tsv wr01-wr04, wr06, wr07) ──────
+# A program of its own: one goal per row. swipl 10.1.19's text (the expected text is swipl's, as above: the
+# variable names are renamed by first occurrence). `attributes(portray)` (wr05) is NOT a row: it needs format/2
+# (AV10) — the kernel refuses it (NotPortedError). NEVER write an attributed variable whose attribute contains
+# the variable itself with `attributes(write)`: swipl 10.1.19's writer recurses until the C stack is gone (this
+# file has no such row).
+const _WC_ATT_PROGRAM = raw"""
+at01 :- put_attr(X,a,1), write_term(X, [attributes(write)]), nl.
+at02 :- put_attr(X,a,1), write_term(X, [attributes(dots)]), nl.
+at03 :- put_attr(X,a,1), write_term(X, [attributes(ignore)]), nl.
+at04 :- put_attr(X,a,1), write_canonical(f(X,X)), nl.
+at05 :- put_attr(X,a,1), print(X), nl, write(X), nl, writeq(X), nl.
+at06 :- current_prolog_flag(write_attributes, F), write(F), nl.
+at07 :- put_attr(X,a,1), put_attr(X,b,g(Y,'A b')), write_term(f(X,Y), [attributes(write)]), nl,
+    write_term(f(X,Y), [attributes(write), quoted(true)]), nl.
+at08 :- put_attr(X,a,1), write_term([X|X], [attributes(dots)]), nl, write(X+X), nl,
+    write_term(X+X, [attributes(write)]), nl.
+at09 :- put_attr(X,a,1), write_term('$VAR'(X), [numbervars(true)]), nl,
+    write_term('$VAR'(X), [numbervars(true), attributes(write)]), nl, print('$VAR'(X)), nl,
+    writeq('$VAR'(X)), nl.
+at10 :- put_attr(X,a,(p:-q,r)), write_term(X, [attributes(write)]), nl,
+    put_attr(Y,a,-(1)), write_term(Y, [attributes(write), quoted(true)]), nl.
+at11 :- put_attr(X,a,1), set_prolog_flag(write_attributes, write), write(X), nl, print(X), nl,
+    writeq(f(X)), nl, write_term(X, [attributes(ignore)]), nl, write_canonical(X), nl,
+    set_prolog_flag(write_attributes, dots), write(X), nl, set_prolog_flag(write_attributes, ignore).
+at12 :- put_attr(X,a,1), put_attr(X,b,2), write_term(X, [attributes(write)]), nl,
+    write_term(X, [attributes(dots)]), nl.
+at11w :- put_attr(X,a,1), write(X), nl, print(X), nl, writeq(f(X)), nl,
+    write_term(X, [attributes(ignore)]), nl, write_canonical(X), nl.
+at11d :- put_attr(X,a,1), write(X), nl.
+"""
+const _WC_ATT_GOALS = ["at$(lpad(i, 2, '0'))" for i in 1:12]
+
+@testset "an attributed variable written, as swipl writes it (write_term attributes, write_canonical, the flag)" begin
+    db = _wc_load(_WC_ATT_PROGRAM)
+    ours = [_wc_norm(_wc_run(db, g)) for g in _WC_ATT_GOALS]
+    @test !any(o -> occursin("NOTPORTED", o), ours)
+    @test !any(o -> occursin("existence_error(procedure", o), ours[[1:10; 12]])   # at11: below
+    # the kernel's side alone: wr01-wr04, wr06, wr07 (rows.tsv; the variable's name renamed `_V1`)
+    @test ours[1] == "_V1{a:1}\n\n---\n"                                    # wr01
+    @test ours[2] == "_V1{…}\n\n---\n"                                      # wr02
+    @test ours[3] == "_V1\n\n---\n"                                         # wr03
+    @test ours[4] == "f(_V1,_V1)\n\n---\n"                                  # wr04
+    @test ours[5] == "_V1\n_V1\n_V1\n\n---\n"                               # wr07 (print), write, writeq
+    @test ours[6] == "ignore\n\n---\n"                                      # wr06
+    @test ours[7] == "f(_V1{a:1,b:g(_V2,A b)},_V2)\nf(_V1{a:1,b:g(_V2,'A b')},_V2)\n\n---\n"
+    @test ours[9] == "\$VAR(_V1)\n\$VAR(_V1{a:1})\n'\$VAR'(_V1)\n'\$VAR'(_V1)\n\n---\n"
+    @test ours[10] == "_V1{a:(p:-q,r)}\n_V2{a: - 1}\n\n---\n"
+    # KNOWN DIFFERENCE (at11): set_prolog_flag/2 is not a kernel predicate yet (R2 F1b ports it). The
+    # kernel's exact answer is pinned; swipl 10.1.19 writes
+    # "_V1{a:1}\n_V1{a:1}\nf(_V1{a:1})\n_V1\n_V1\n_V1{…}\n\n---\n" (compared live below, through at11w/at11d
+    # with the flag set on the local data). Un-pin when set_prolog_flag/2 lands.
+    @test ours[11] == "EX existence_error(procedure,/(set_prolog_flag,2))\n---\n"
+    ld = db.ld
+    flag0 = ld.prolog_flag_write_attributes
+    ours11 = try
+        ld.prolog_flag_write_attributes = LK.PL_WRT_ATTVAR_WRITE
+        w = _wc_norm(_wc_run(db, "at11w"))
+        ld.prolog_flag_write_attributes = LK.PL_WRT_ATTVAR_DOTS
+        d = _wc_norm(_wc_run(db, "at11d"))
+        chopsuffix(w, "\n---\n") * d
+    finally
+        ld.prolog_flag_write_attributes = flag0
+    end
+    @test ours11 == "_V1{a:1}\n_V1{a:1}\nf(_V1{a:1})\n_V1\n_V1\n_V1{…}\n\n---\n"
+    if _R_SWIPL
+        theirs = [_wc_norm(t) for t in _wc_swipl(_WC_ATT_PROGRAM, _WC_ATT_GOALS)]
+        @test length(theirs) == length(_WC_ATT_GOALS)
+        for (i, g) in enumerate(_WC_ATT_GOALS)
+            o, s = (i == 11 ? ours11 : ours[i]), get(theirs, i, "—")
+            @test o == s
+            o == s || @info "the attributed variable: $g differs" ours = o swipl = s
+        end
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
 # ── a kernel-only term: `$expr/n` (no symbol head; swipl has no such compound) ──────────────────
 "An engine with the values of `vs` put into term references; `(ld, t)` (reference `t + i - 1` is slot `t + i`)."
 function _wc_engine(vs::Vector{_R})

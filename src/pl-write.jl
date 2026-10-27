@@ -456,7 +456,8 @@ wframe{T}(z::T) where {T} =
 # (upstream's `ATOM_*`) are their keys, made once per write (`k_*`), and `FUNCTOR_isovar1`'s
 # functor word (`isovar_fw`, L1d step 7b: `writeNumberVar` compares the functor cell with it);
 # `writeTerm`'s stack (upstream's segstack, a local of each call) is a field, so a write
-# allocates it once. `portray_goal`, `write_options` and `prec_opt` are term references, 0 for
+# allocates it once; a nested call (writeAttributes) stacks its levels above the caller's
+# (`fbase`). `portray_goal`, `write_options` and `prec_opt` are term references, 0 for
 # none (since group F, D-0123: write_term/2,3's `portray_goal` option, called by `callPortray`).
 "The options of a write (pl-write.c)."
 mutable struct write_options{T}
@@ -477,6 +478,7 @@ mutable struct write_options{T}
     ld::PL_local_data{T}
     frames::Vector{wframe{T}}       # (writeTerm's stack)
     sub::wsub                       # (writeTerm's subterm)
+    fbase::Int                      # frames[1:fbase] are the levels of the enclosing writeTerm calls
     k_curl::UInt64                  # ATOM_curl, '{}'
     k_dot::UInt64                   # ATOM_dot, '[|]'
     k_comma::UInt64                 # ATOM_comma
@@ -496,7 +498,7 @@ function write_options(
 )::write_options{T} where {T}
     return write_options{T}(
         0, 0, 0, -1, false, "~d", "~h", :standard, MODULE_user(gd), out, 0, 0, 0, gd, ld,
-        wframe{T}[], wsub(0, 0, 0),
+        wframe{T}[], wsub(0, 0, 0), 0,
         sym_key(mk_sym(T, Symbol("{}"))), sym_key(mk_sym(T, Symbol("[|]"))),
         sym_key(mk_sym(T, Symbol(","))), sym_key(mk_sym(T, Symbol("|"))),
         sym_key(mk_sym(T, Symbol("-"))), sym_key(mk_sym(T, Symbol("."))),
@@ -1006,15 +1008,80 @@ end
 function varName(ld::PL_local_data{T}, t::term_t)::String where {T}
     k, _, p = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
     k == DU_CELL && return "_" * string((p - 1) * 2)        # iref = ((Word)p - (Word)gBase)*2
+    k == DU_ATTVAR && return "_" * string((p - 1) * 2)      # an attvar cell: deRef stops on it (AV5)
     error("varName: not an unbound variable")
 end
 
+# PORT: pl-write.c writeAttributes
+"Write the attribute list `t` holds as `Name:Value, ...` (pl-write.c `writeAttributes`, :974-997)."
+function writeAttributes(
+    t::term_t, prec::Int, options::write_options{T}, flags::Int
+)::Bool where {T}
+    ld = options.ld
+    name = PL_new_term_ref(ld)
+    value = PL_new_term_ref(ld)
+    att = PL_new_term_ref(ld)
+    att3 = _functor_att3(ld)
+    first = true
+    while _wr_is_att3(ld, t, att3)                          # PL_is_functor(t, FUNCTOR_att3)
+        _PL_get_arg(ld, 1, t, name)
+        _PL_get_arg(ld, 2, t, value)
+        _PL_get_arg(ld, 3, t, t)
+        (!first && !PutComma(options)) && return false
+        PL_cons_functor(ld, att, _err_functor(ld, :(:), 2), name, value) || return false
+        writeTerm(att, 999, options, W_COMPOUND_ARG) || return false
+        first = false
+    end
+    (!PL_get_nil(ld, t) && !writeTerm(t, 999, options, W_COMPOUND_ARG)) && return false
+    PL_reset_term_refs(ld, name)
+    return true
+end
+
+# ORIGINAL (AV5): `PL_is_functor(t, FUNCTOR_att3)` on the functor word (`_functor_att3`).
+"Whether term reference `t` holds an `att/3` compound."
+function _wr_is_att3(ld::PL_local_data{T}, t::term_t, att3::word)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))
+    return k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == att3
+end
+
+# PORT: pl-write.c writeAttVar
+# DIVERGES: `attributes(portray)` (`'$attvar':portray_attvar/1`, pl-write.c:1022-1047) needs
+# format/2 (AV10, row wr05): refused (`NotPortedError`) instead of called.
+"Write the attributed variable term reference `av` holds: its name, then `{...}` per the `attributes` option (pl-write.c)."
+function writeAttVar(av::term_t, options::write_options{T})::Bool where {T}
+    ld = options.ld
+    PutVarName(varName(ld, av), options) || return false   # TRY(PutVarName(varName(av, buf), options))
+    if _ison(options, PL_WRT_ATTVAR_DOTS)
+        return Putc(Int('{'), options.out) && PutElipsis(false, options) &&
+               Putc(Int('}'), options.out)
+    elseif _ison(options, PL_WRT_ATTVAR_WRITE)
+        fid = PL_open_foreign_frame(ld)
+        Sputcode(Int('{'), options.out)                     # Sputcode('{', options->out)
+        a = PL_new_term_ref(ld)
+        PL_get_attr(ld, av, a)
+        writeAttributes(a, 1200, options, W_TOP) || return false
+        Sputcode(Int('}'), options.out)                     # Sputcode('}', options->out)
+        PL_close_foreign_frame(ld, fid)
+        return true
+    elseif _ison(options, PL_WRT_ATTVAR_PORTRAY)
+        throw(
+            NotPortedError{T}(
+                mk_gnd(T, Int64(av)),                       # the term reference (a culprit is a term)
+                "write_term/2 attributes(portray): '\$attvar':portray_attvar/1",
+                "AV10"
+            )
+        )
+    end
+    return true                                             # succeed
+end
+
 # PORT: pl-write.c writePrimitive
-# DIVERGES: no attributed variables (`writeAttVar`). A grounded value SWI has no type for
+# DIVERGES: A grounded value SWI has no type for
 # (`NUM_OTHER`, kernel-only) has no text: refused (`NotPortedError`).
 "Write the variable, atom, number or string term reference `t` holds (pl-write.c)."
 function writePrimitive(t::term_t, options::write_options{T})::Bool where {T}
     ld = options.ld
+    PL_is_attvar(ld, t) && return writeAttVar(t, options)  # if ( PL_is_attvar(t) ) (AV5)
     PL_is_variable(ld, t) && return PutVarName(varName(ld, t), options)
 
     a = PL_get_atom(ld, t)
@@ -1058,6 +1125,7 @@ function writeNumberVar(t::term_t, options::write_options{T})::Int where {T}
 
     k, w, _ = _deref_loc(ld, f + 1)                 # p = &f->arguments[0]; deRef(p)
     k == DU_CELL && return 0
+    k == DU_ATTVAR && return 0                      # '$VAR'(Attvar): not an integer or atom (AV5)
     (k == DU_WORD && _is_gcompound(w)) && return 0
     p = k == DU_VALUE ? _value_term(ld, w) : _atom_value(ld, w)   # an atom's symbol, a value's term
 
@@ -1671,7 +1739,9 @@ end
 
 # PORT: pl-write.c writeTerm
 # DIVERGES: the stack is the options' frame pool, a level's frame reused once it is popped (upstream
-# pushes a copy of a local frame onto a segstack, which cannot fail here: no `PL_no_memory`); no
+# pushes a copy of a local frame onto a segstack, which cannot fail here: no `PL_no_memory`); a
+# call nested in a level (writeAttributes) uses the pool above that level (`options.fbase`), as
+# upstream's segstack is a local of each call; no
 # `discard_wframe` (it frees a dict's order: no dicts); no signals (`PL_handle_signals`).
 "Write the term term reference `t` holds at priority `prec`, depth by depth on an explicit stack — no recursion (pl-write.c)."
 function writeTerm(
@@ -1680,13 +1750,14 @@ function writeTerm(
     ld = options.ld
     frames = options.frames
     sub = options.sub
-    sp = 0                                          # the levels pushed: frames[1:sp]
+    base = options.fbase                            # the enclosing calls' levels: frames[1:base]
+    sp = 0                                          # the levels pushed: frames[base+1:base+sp]
 
     @label new_level
-    if sp + 1 > length(frames)
+    if base + sp + 1 > length(frames)
         push!(frames, wframe{T}(mk_nil(T)))
     end
-    frame = frames[sp + 1]
+    frame = frames[base + sp + 1]
     frame.kind = WF_LEAF
     frame.depth = options.depth
     frame.fid = PL_open_foreign_frame(ld)
@@ -1701,7 +1772,9 @@ function writeTerm(
         PutOpenToken(Int('.'), options.out, options.flags)
         rc = PutElipsis(true, options) ? 1 : 0
     else
+        options.fbase = base + sp + 1               # a nested writeTerm stacks above this level
         rc = writeTerm2(t, prec, options, flags, frame, sub)
+        options.fbase = base
     end
     if rc == WF_SUB
         sp += 1                                     # pushSegStack(&stack, frame, wframe)
@@ -1719,8 +1792,10 @@ function writeTerm(
     while true                                      # resume the enclosing levels
         sp == 0 && return true
 
-        fp = frames[sp]
+        fp = frames[base + sp]
+        options.fbase = base + sp
         rc = writeTermResume(options, fp, sub)
+        options.fbase = base
         if rc == WF_SUB
             t = sub.t
             prec = sub.prec
@@ -1737,8 +1812,8 @@ function writeTerm(
 
     @label unwind
     while sp > 0
-        options.depth = frames[sp].depth
-        PL_close_foreign_frame(ld, frames[sp].fid)
+        options.depth = frames[base + sp].depth
+        PL_close_foreign_frame(ld, frames[base + sp].fid)
         sp -= 1
     end
 

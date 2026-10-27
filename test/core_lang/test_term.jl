@@ -13,7 +13,8 @@
 # "variant: rational trees").
 #
 # NOT PORTED from this unit, and why:
-#   attvar ×2           attributed variables do not exist in the kernel.
+#   (nothing of the variant unit: its two attvar cases are ported since AV5, on the cells — testset
+#   "variant: attributed variables".)
 # NOT PORTED from this file: numbervars, compound, zero_arity_compound, term_singletons — builtins
 # not ported yet.
 using Test, LogicKernel
@@ -220,4 +221,46 @@ _tlist(xs::_TT...) = foldr(_tl, xs; init=_tnil())
         end
     end
     @test isempty(_TLD.trail) && lk_no_bindings(_TLD)     # every case undone
+end
+
+# ORIGINAL (AV5): helpers for test_term.pl attvar below.
+# AV5; UNRUN when written (no daemon: the run agent checks it). The two attvar units, on the cells: an
+# attributed variable cannot live in the interface term, so each is made in a term reference (`put_new_attvar`,
+# as test_attvar_wakeup.jl's `_wk_attvar!`) with the attribute `m = x`, and `v(…)` is built by `PL_cons_functor`.
+# Upstream's answers: `v(C) =@= v(F)` true (equal attributes), `v(C,C) =@= v(C,F)` fails (the sharing differs).
+"A new term reference holding an attributed variable with the attribute `m = x`."
+function _tattvar()::Int
+    t = LogicKernel.PL_new_term_ref(_TLD)
+    x = LogicKernel.unRef(_TLD.slots[t + 1])
+    LogicKernel.put_new_attvar(
+        _TLD, x, LogicKernel._atom_word!(_TLD, _ta(:m)),
+        (LogicKernel.DU_VALUE, LogicKernel.consInt(Int64(0)), 0)
+    )
+    return t
+end
+"`v(args…)` of the term references `args` in a new term reference."
+function _tvterm(args::Int...)::Int
+    t = LogicKernel.PL_new_term_ref(_TLD)
+    LogicKernel.PL_cons_functor(
+        _TLD, t, LogicKernel._err_functor(_TLD, :v, length(args)), args...
+    )
+    return t
+end
+@testset "variant: attributed variables" begin
+    # PORT: test_term.pl attvar
+    @testset "attvar" begin                     # put_attr(C,m,x), put_attr(F,m,x), v(C) =@= v(F).
+        @test _tcase() do
+            c, f = _tattvar(), _tattvar()
+            LogicKernel.is_variant_ptr_cells(_TLD, -(_tvterm(c) + 1), -(_tvterm(f) + 1))
+        end
+    end
+    # PORT: test_term.pl attvar
+    @testset "attvar" begin                     # fail: v(C,C) =@= v(C,F).
+        @test _tcase() do
+            c, f = _tattvar(), _tattvar()
+            !LogicKernel.is_variant_ptr_cells(
+                _TLD, -(_tvterm(c, c) + 1), -(_tvterm(c, f) + 1)
+            )
+        end
+    end
 end

@@ -1098,3 +1098,150 @@ end
     @test LK.foreignWakeup(ld, ex) === true && (ld.alerted & LK.ALERT_WAKEUP) == 0
     @test LK.PL_is_variable(ld, ex)
 end
+
+# AV5 (evidence/av/av5_report.md): compare/3, var/ground/term_variables and =@= on an attributed variable
+# (av18-av21: compare_primitives, variant — ported in AV3, closed here by row), numbervars/4's `attvar`
+# option (nv01-nv03; pl-prims.c do_number_vars), hk20 (`attvar(bind)` wakes the hook at numbervars/4's exit
+# with `'$VAR'(0)`) and put_sort_list (msort/2, sort/2: an attributed variable sorts as a variable, before
+# atoms; a duplicate removed). Answers: swipl 10.1.19 under this file's fixture (re-checked by `_wk_check_rows`).
+# nv04 (`attvar(bind)` with module `a` and no hook: swipl raises existence_error in '$attvar':uhook/3) needs
+# R2's '$attvar' module: not a row here.
+const _WK_AV5 = [
+    ("av18", "T = f(X,Y), put_attr(X,a,1), compare(R, X, Y), T = T", _ea(">")),
+    (
+        "av19",
+        "put_attr(X,a,1), (var(X) -> R1 = var ; R1 = nonvar), (ground(X) -> R2 = ground ; R2 = nonground), term_variables(f(X,X), Vs), length(Vs, N), R = R1/R2/N",
+        _ec("/", _ec("/", _ea("var"), _ea("nonground")), _ei(1))
+    ),
+    (
+        "av20",
+        "put_attr(X,a,1), put_attr(Y,a,1), (X =@= Y -> R1 = variant ; R1 = not_variant), (X =@= _ -> R2 = variant ; R2 = not_variant), R = R1/R2",
+        _ec("/", _ea("variant"), _ea("not_variant"))
+    ),
+    (
+        "av21",
+        "put_attr(X,a,1), put_attr(Y,a,2), (X =@= Y -> R = variant ; R = not_variant)",
+        _ea("not_variant")
+    ),
+    (
+        "nv01",
+        "put_attr(X,a,1), catch(numbervars(f(X), 0, _), error(Er, _), true), R = Er",
+        _ec("type_error", _ea("free_of_attvar"), _ec("f", "V0"))
+    ),
+    (
+        "nv02",
+        "put_attr(X,a,1), catch(numbervars(f(X), 0, E, [attvar(error)]), Er, true), R = E/Er",
+        _ec(
+            "/", "V0",
+            _ec(
+                "error", _ec("type_error", _ea("free_of_attvar"), _ec("f", "V1")),
+                _ctx(_sys(_pi("numbervars", 4)), "V2")
+            )
+        )
+    ),
+    (
+        "nv03",
+        "put_attr(X,a,1), numbervars(f(X), 0, E, [attvar(skip)]), (attvar(X) -> A = attvar ; A = bound), R = E/A",
+        _ec("/", _ei(0), _ea("attvar"))
+    ),
+    (
+        "nv05",
+        "put_attr(X,a,1), T = f(Y,X,Z), numbervars(T, 0, E, [attvar(skip)]), (attvar(X) -> A = attvar ; A = bound), R = E/A/T",
+        _ec(
+            "/", _ec("/", _ei(2), _ea("attvar")),
+            _ec("f", _ec("\$VAR", _ei(0)), "V0", _ec("\$VAR", _ei(1)))
+        )
+    ),
+    (
+        "hk20",
+        "put_attr(X,user,log(n)), numbervars(f(X), 0, E, [attvar(bind)]), log(L), R = E/L",
+        _ec("/", _ei(1), _wk_list(_ec("-", _ea("n"), _ec("\$VAR", _ei(0)))))
+    ),
+    (
+        "so01",
+        "put_attr(X,a,1), msort([b,X,a],L), L = [V|T], (attvar(V) -> A = attvar ; A = other), R = A/T",
+        _ec("/", _ea("attvar"), _wk_list(_ea("a"), _ea("b")))
+    ),
+    ("so02", "put_attr(X,a,1), sort([b,X,a,X],L), length(L,R)", _ei(3)),
+    (
+        "so03",
+        "put_attr(X,a,1), msort([X,1,f(a)],L), L = [V|T], (attvar(V) -> A = attvar ; A = other), R = A/T",
+        _ec("/", _ea("attvar"), _wk_list(_ei(1), _ec("f", _ea("a"))))
+    ),
+    # the sorted list holds the SAME attributed variable (put_sort_list: `needsRef(*item) ? makeRefG(item) : *item`,
+    # a reference, not a copy of the attvar's word): an attribute put through the list's element shows on X
+    (
+        "so04",
+        "put_attr(X,a,1), msort([a,X],[V,_]), (V == X -> R1 = same ; R1 = different), put_attr(V,b,2), get_attr(X,b,R2), R = R1/R2",
+        _ec("/", _ea("same"), _ei(2))
+    ),
+    # so05/so06: the item cell IS the attributed variable (a list built around a fresh variable: the head cell is
+    # its home), so put_sort_list must hand back a REFERENCE to it (`needsRef(*item) ? makeRefG(item)`), not copy
+    # its word (kills AV5-S1; so04's [a,X] holds a reference already; a ONE-item list never reaches put_sort_list: SORT_NOSORT).
+    (
+        "so05",
+        "L = [a,X], put_attr(X,a,1), msort(L,[V,_]), (V == X -> R1 = same ; R1 = different), put_attr(V,b,2), get_attr(X,b,R2), R = R1/R2",
+        _ec("/", _ea("same"), _ei(2))
+    ),
+    (
+        "so06",
+        "length(L,2), L = [a,X], put_attr(X,a,1), sort(L,[V,_]), (V == X -> R1 = same ; R1 = different), put_attr(V,b,2), get_attr(X,b,R2), R = R1/R2",
+        _ec("/", _ea("same"), _ei(2))
+    ),
+    # av22: term_variables twice over the same attributed variable (kills AV5-V3: unvisit_cells clears its visit mark)
+    (
+        "av22",
+        "put_attr(X,a,1), term_variables(f(X,X),V1), term_variables(f(X,X),V2), length(V1,N1), length(V2,N2), R = N1/N2",
+        _ec("/", _ei(1), _ei(1))
+    )
+]
+
+@testset "AV5: compare, variant, numbervars' attvar option (hk20 wakes), msort/sort on an attributed variable" begin
+    @test length(_WK_AV5) == 16
+    _wk_check_rows(_WK_AV5, "AV5 ROWS")
+end
+
+# nv04 (rows.tsv, fixture none): numbervars/4's `attvar(bind)` on an attributed variable whose module `a` has no
+# hook. KNOWN DIFFERENCE (pending R2): swipl 10.1.19 raises existence_error(procedure, a:attr_unify_hook/2) with
+# context('$attvar':uhook/3, _) — the wakeup runs `'$attvar':uhook/3`, which needs R2's '$attvar' module (under
+# this file's hooks fixture the row would answer "no solution", user's attr_unify_hook/2 having no clause: a
+# program of its own, without the fixture). `_NV04_SWIPL` is swipl's answer, re-run live below; `_NV04_KERNEL` is
+# the kernel's answer, pinned on the kernel's behaviour.
+const _NV04_GOAL = "put_attr(X,a,1), catch(numbervars(f(X), 0, _, [attvar(bind)]), error(Er, Ctx), true), R = Er/Ctx"
+const _NV04_SWIPL = _ec(
+    "/",
+    _ec(
+        "existence_error", _ea("procedure"),
+        _ec(":", _ea("a"), _pi("attr_unify_hook", 2))
+    ),
+    _ec("context", _ec(":", _ea("\$attvar"), _pi("uhook", 3)), "V0")
+)
+# The kernel's answer (first run, 2026-10-27): the same existence_error, but the context's module is `system`:
+# context(system:uhook/3, _) — the kernel's wakeup runs a system-module `uhook/3`, not R2's `'$attvar'`.
+const _NV04_KERNEL = _ec(
+    "/",
+    _ec(
+        "existence_error", _ea("procedure"),
+        _ec(":", _ea("a"), _pi("attr_unify_hook", 2))
+    ),
+    _ec("context", _ec(":", _ea("system"), _pi("uhook", 3)), "V0")
+)
+
+@testset "nv04: numbervars/4 attvar(bind), module without a hook — a known difference pending R2's '\$attvar'" begin
+    f = joinpath(mktempdir(), "nv04.pl")
+    write(f, "t0(R) :- $(_NV04_GOAL).\n")                # no hooks fixture: module `a` has no attr_unify_hook/2
+    got = try
+        kernel_lines(f, ["t0"])
+    catch e
+        ["THROW", "t0 " * sprint(showerror, e)]
+    end
+    @test length(got) == 2 && got[1] == "ok"
+    @test get(got, 2, "missing") == _wk_line("t0", _NV04_KERNEL)
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "AV5 nv04: swipl's answer not re-checked — `swipl` is not on PATH here."
+        @test true
+    else
+        @test swipl_lines(f, ["t0"]) == ["ok", _wk_line("t0", _NV04_SWIPL)]
+    end
+end

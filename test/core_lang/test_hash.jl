@@ -17,7 +17,9 @@
 # NOT PORTED, and why:
 #   variant_sha1: cycle ×2, cycle_variant, cycle_distinct, cycle_no_collision, cycle_attvar,
 #                 cycle_attvar_hash — rational trees; interface terms are finite.
-#   variant_sha1: attvar ×2 — attributed variables do not exist in the kernel.
+#   variant_sha1: attvar ×2 — variant_sha1/2 is no Prolog predicate in the kernel (only the Julia function on
+#                 interface terms, where an attributed variable is a plain variable); registering term_hash/2,4,
+#                 variant_sha1/2 and variant_hash/2 on the cells is its own step, with R2.
 #   term_hash2:   simple_3 is ported over a `Term{Union{Int64, BigInt}}`: the default term type has
 #                 no big integers.
 using Test, LogicKernel
