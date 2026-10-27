@@ -5,7 +5,12 @@
 #
 # swipl-devel's test_read.pl — the `read_op`, `read_numbers` and `read_deep` units, and the units
 # of `read_term` that came with upstream's fixes of 2026-10-11 — against the
-# parser (src/pl-read.jl, since R1d), through `term_string/2` and the query API. `read_op`'s
+# parser (src/pl-read.jl, since R1d), through `term_string/2` and the query API. Since LB1 the term
+# positions: `valid_position_*` and `pos_block` through read_term_from_atom/3 with
+# `subterm_positions(P)` (upstream's `term_position_check` calls term_string/3, a library predicate
+# over the same reader and options), the term and the position compared as upstream asserts them;
+# `valid_term_position/2` (library(prolog_source)) is not run — the positions of every text of the
+# reader's corpora are compared with swipl's in test_read_positions_swipl.jl. `read_op`'s
 # operators (`:- op(600, fy, !)`, `:- op(600, fy, [])` — a BLOCK operator) are made with op/3 in
 # `user`, where `term_string/2` reads (upstream passes `module(M)`, an option of term_string/3).
 # `read_deep` reads terms nested 20,000 deep: the parser's state machine must not use Julia stack
@@ -14,8 +19,11 @@
 # NOT PORTED, and why:
 #   singletons, warn_singletons                  read_term/2,3's singletons(…) option, and the
 #                                                warning (no message system): PL_scan_options
-#   position, valid_position_*, pos_block,       term positions: refused until needed (R1's
-#   positions                                    decision)
+#   position                                     the comments(…) read option (R2: the comments
+#                                                collector)
+#   positions                                    valid_term_position/2 is library(prolog_source);
+#                                                its text's positions are compared with swipl's
+#                                                in test_read_positions_swipl.jl
 #   valid_position_dict*, dict                   dicts: refused (R1's decision)
 #   float_overflow (the second)                  the float_overflow flag (no Prolog flags yet)
 #   quote_eos (the second)                       number_codes/2 is not a built-in of the kernel yet
@@ -105,8 +113,177 @@ function _rt_read_opts(db, text::String, opts::_RT)
     return (rc, rc === :true ? ans[2] : nothing)
 end
 
+"""
+`read_term_from_atom(Text, T, [subterm_positions(P)|Options])`: `(rc, T, P)` — upstream's
+`term_position_check` reads with term_string/3, a library predicate over the same reader.
+"""
+function _rt_read_pos(db, text::String, opts::_RT...)
+    p = mk_var(_RT, LK.fresh_var_keys!(1))
+    rc, ans = _rt_call(
+        db, "read_term_from_atom",
+        _RT[_rts(text), mk_var(_RT, LK.fresh_var_keys!(1)),
+            _rtl(_rtf("subterm_positions", p), opts...)]
+    )
+    rc === :true || return (rc, nothing, nothing)
+    return (rc, ans[2], child(child(ans[3], 2), 2))  # [subterm_positions(P)|_]: P
+end
+
+"""
+Upstream's `term_position_check(TermString, ExpectedTerm, ExpectedTermPos, Options)`: the
+position ground, the term a variant of the expected one, the position identical to the expected
+one (its `valid_term_position/2` is library(prolog_source): not run, see the header).
+"""
+function _rt_term_position_check(db, text::String, expected, expected_pos, opts::_RT...)
+    rc, t, pos = _rt_read_pos(db, text, opts...)
+    @test rc === :true
+    rc === :true || return nothing
+    @test is_ground(pos)
+    @test is_ground(expected_pos)
+    @test LK.is_variant_ptr(t, expected)
+    @test lk_eq(pos, expected_pos)
+    return nothing
+end
+
+_rti(n) = lk_gnd(_RT, n)
+_rtp(a, b) = _rtf("-", _rti(a), _rti(b))            # From-To
+
 @testset "read_term" begin
     db = _rt_db([])
+    _rtv() = mk_var(_RT, LK.fresh_var_keys!(1))
+    # PORT: test_read.pl valid_position_var
+    @testset "valid_position_var" begin
+        _rt_term_position_check(db, "Var", _rtv(), _rtp(0, 3))
+    end
+    # PORT: test_read.pl valid_position_atom
+    @testset "valid_position_atom" begin
+        _rt_term_position_check(db, "'Atom'", _rts("Atom"), _rtp(0, 6))
+    end
+    # PORT: test_read.pl valid_position_number1
+    @testset "valid_position_number1" begin
+        _rt_term_position_check(db, " 123 ", _rti(123), _rtp(1, 4))
+    end
+    # PORT: test_read.pl valid_position_number2
+    @testset "valid_position_number2" begin
+        _rt_term_position_check(db, " -123.45     ", _rti(-123.45), _rtp(1, 8))
+    end
+    # (upstream sets the double_quotes FLAG around each of the four; the kernel has no Prolog
+    # flags yet: `string` is its default, the other three are read with the double_quotes(…) READ
+    # option, which sets the same syntax bits for the read)
+    spos = _rtf("string_position", _rti(0), _rti(5))
+    # PORT: test_read.pl valid_position_string_string
+    @testset "valid_position_string_string" begin
+        _rt_term_position_check(db, "\"abc\"", lk_gnd(_RT, "abc"), spos)
+    end
+    # PORT: test_read.pl valid_position_string_codes
+    @testset "valid_position_string_codes" begin
+        _rt_term_position_check(
+            db, "\"abc\"", _rtl(_rti(97), _rti(98), _rti(99)), spos,
+            _rtf("double_quotes", _rts("codes"))
+        )
+    end
+    # PORT: test_read.pl valid_position_string_chars
+    @testset "valid_position_string_chars" begin
+        _rt_term_position_check(
+            db, "\"abc\"", _rtl(_rts("a"), _rts("b"), _rts("c")), spos,
+            _rtf("double_quotes", _rts("chars"))
+        )
+    end
+    # PORT: test_read.pl valid_position_string_atom
+    @testset "valid_position_string_atom" begin
+        _rt_term_position_check(
+            db, "\"abc\"", _rts("abc"), spos, _rtf("double_quotes", _rts("atom"))
+        )
+    end
+    # PORT: test_read.pl valid_position_nil
+    @testset "valid_position_nil" begin
+        _rt_term_position_check(db, " [   ] ", mk_nil(_RT), _rtp(1, 6))
+    end
+    # PORT: test_read.pl valid_position_braces
+    @testset "valid_position_braces" begin
+        _rt_term_position_check(
+            db, " { foo, bar } ", _rtf("{}", _rtf(",", _rts("foo"), _rts("bar"))),
+            _rtf(
+                "brace_term_position", _rti(1), _rti(13),
+                _rtf(
+                    "term_position", _rti(3), _rti(11), _rti(6), _rti(7),
+                    _rtl(_rtp(3, 6), _rtp(8, 11))
+                )
+            )
+        )
+    end
+    # PORT: test_read.pl valid_position_braces1
+    @testset "valid_position_braces1" begin
+        _rt_term_position_check(
+            db, " [ foo, [bar] ] ", _rtl(_rts("foo"), _rtl(_rts("bar"))),
+            _rtf(
+                "list_position", _rti(1), _rti(15),
+                _rtl(
+                    _rtp(3, 6),
+                    _rtf(
+                        "list_position", _rti(8), _rti(13), _rtl(_rtp(9, 12)), _rts("none")
+                    )
+                ),
+                _rts("none")
+            )
+        )
+    end
+    # PORT: test_read.pl valid_position_braces2
+    @testset "valid_position_braces2" begin
+        _rt_term_position_check(
+            db, " [ foo,123 | bar] ",
+            _rtf("[|]", _rts("foo"), _rtf("[|]", _rti(123), _rts("bar"))),
+            _rtf(
+                "list_position", _rti(1), _rti(17), _rtl(_rtp(3, 6), _rtp(7, 10)),
+                _rtp(13, 16)
+            )
+        )
+    end
+    # PORT: test_read.pl valid_position_braces3
+    @testset "valid_position_braces3" begin
+        _rt_term_position_check(
+            db, "[X|Xs]", _rtf("[|]", _rtv(), _rtv()),
+            _rtf("list_position", _rti(0), _rti(6), _rtl(_rtp(1, 2)), _rtp(3, 5))
+        )
+    end
+    # PORT: test_read.pl valid_position_term1
+    @testset "valid_position_term1" begin
+        _rt_term_position_check(
+            db, "a()", mk_expr(_RT, _RT[_rts("a")]),
+            _rtf("term_position", _rti(0), _rti(3), _rti(0), _rti(1), mk_nil(_RT))
+        )
+    end
+    # PORT: test_read.pl valid_position_term2
+    @testset "valid_position_term2" begin
+        _rt_term_position_check(
+            db, "a(X,y)", _rtf("a", _rtv(), _rts("y")),
+            _rtf(
+                "term_position", _rti(0), _rti(6), _rti(0), _rti(1),
+                _rtl(_rtp(2, 3), _rtp(4, 5))
+            )
+        )
+    end
+    # PORT: test_read.pl valid_position_term2
+    @testset "valid_position_term2" begin
+        _rt_term_position_check(
+            db, "call(X):[adder]", _rtf(":", _rtf("call", _rtv()), _rtl(_rts("adder"))),
+            _rtf(
+                "term_position", _rti(0), _rti(15), _rti(7), _rti(8),
+                _rtl(
+                    _rtf(
+                        "term_position",
+                        _rti(0),
+                        _rti(7),
+                        _rti(0),
+                        _rti(4),
+                        _rtl(_rtp(5, 6))
+                    ),
+                    _rtf(
+                        "list_position", _rti(8), _rti(15), _rtl(_rtp(9, 14)), _rts("none")
+                    )
+                )
+            )
+        )
+    end
     # Issue #1541: non-ASCII characters in syntax error arguments
     # PORT: test_read.pl eof_in_quoted
     @testset "eof_in_quoted" begin                  # E == end_of_file_in_quoted(Q), Q = «
@@ -189,6 +366,18 @@ end
     @testset "modify_block" begin                   # Term = !([x])
         rc, t = _rt_read(db, "![x]")
         @test rc === :true && lk_eq(t, _rtf("!", _rtl(_rts("x"))))
+    end
+    # PORT: test_read.pl pos_block
+    @testset "pos_block" begin                      # the block operator's position (since LB1)
+        _rt_term_position_check(
+            db, "![x]", _rtf("!", _rtl(_rts("x"))),
+            _rtf(
+                "term_position", _rti(0), _rti(4), _rti(0), _rti(1),
+                _rtl(
+                    _rtf("list_position", _rti(1), _rti(4), _rtl(_rtp(2, 3)), _rts("none"))
+                )
+            )
+        )
     end
 end
 

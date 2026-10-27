@@ -60,7 +60,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-codelist.c` | code | `cbf4e1896275` | `src/os/pl-codelist.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.c` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 1 | 1 |
 | swipl-devel `src/os/pl-ctype.h` | code | `cbf4e1896275` | `src/os/pl-ctype.jl` | 29 | 0 |
-| swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 26 | 11 |
+| swipl-devel `src/os/pl-file.c` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 28 | 12 |
 | swipl-devel `src/os/pl-file.h` | code | `cbf4e1896275` | `src/os/pl-file.jl` | 9 | 0 |
 | swipl-devel `src/os/pl-option.c` | code | `cbf4e1896275` | `src/os/pl-option.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-option.h` | code | `cbf4e1896275` | `src/os/pl-option.jl` | 0 | 0 |
@@ -137,7 +137,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-proc.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-proc.c` | code | `cbf4e1896275` | `src/pl-proc.jl` | 54 | 40 |
 | swipl-devel `src/pl-proc.h` | code | `cbf4e1896275` | `src/pl-proc.jl` | 1 | 0 |
-| swipl-devel `src/pl-read.c` | code | `cbf4e1896275` | `src/pl-read.jl` | 185 | 77 |
+| swipl-devel `src/pl-read.c` | code | `cbf4e1896275` | `src/pl-read.jl` | 192 | 77 |
 | swipl-devel `src/pl-rec.c` | code | `cbf4e1896275` | `src/pl-rec.jl` | 16 | 10 |
 | swipl-devel `src/pl-ressymbol.c` | code | `cbf4e1896275` | `src/pl-ressymbol.jl` | 6 | 4 |
 | swipl-devel `src/pl-setup.c` | code | `cbf4e1896275` | `src/pl-setup.jl` | 7 | 5 |
@@ -165,7 +165,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `tests/core_lang/test_unify.pl` | code | `cbf4e1896275` | `test/core_lang/test_unify.jl` | 10 | 0 |
 | swipl-devel `tests/core_text/test_io.pl` | code | `cbf4e1896275` | `test/core_text/test_io.jl` | 1 | 0 |
 | swipl-devel `tests/core_text/test_op.pl` | code | `cbf4e1896275` | `test/core_text/test_op.jl` | 4 | 0 |
-| swipl-devel `tests/core_text/test_read.pl` | code | `cbf4e1896275` | `test/core_text/test_read.jl` | 23 | 0 |
+| swipl-devel `tests/core_text/test_read.pl` | code | `cbf4e1896275` | `test/core_text/test_read.jl` | 40 | 0 |
 | swipl-devel `tests/core_text/test_syntax.pl` | code | `cbf4e1896275` | `test/core_text/test_syntax.jl` | 46 | 0 |
 | swipl-devel `tests/db/test_db.pl` | code | `cbf4e1896275` | `test/db/test_db.jl` | 13 | 0 |
 | swipl-devel `tests/db/test_jit.pl` | code | `cbf4e1896275` | `test/db/test_jit.jl` | 34 | 0 |
@@ -198,7 +198,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-codelist.c` | `cbf4e1896275` | 1 | 1 | 1 | src/os/pl-codelist.jl |
 | swipl-devel `src/os/pl-ctype.c` | `cbf4e1896275` | 0 | 43 | 0 | src/os/pl-ctype.jl |
 | swipl-devel `src/os/pl-ctype.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-ctype.jl |
-| swipl-devel `src/os/pl-file.c` | `cbf4e1896275` | 17 | 219 | 10 | src/os/pl-file.jl |
+| swipl-devel `src/os/pl-file.c` | `cbf4e1896275` | 19 | 219 | 11 | src/os/pl-file.jl |
 | swipl-devel `src/os/pl-file.h` | `cbf4e1896275` | 0 | 0 | 0 | src/os/pl-file.jl |
 | swipl-devel `src/os/pl-option.c` | `cbf4e1896275` | 2 | 6 | 2 | src/os/pl-option.jl |
 | swipl-devel `src/os/pl-option.h` | `cbf4e1896275` | 0 | 1 | 0 | src/os/pl-option.jl |
@@ -249,7 +249,7 @@ checkout is pulled.
 | swipl-devel `src/pl-pro.c` | `cbf4e1896275` | 3 | 33 | 3 | src/pl-pro.jl |
 | swipl-devel `src/pl-proc.c` | `cbf4e1896275` | 48 | 126 | 35 | src/pl-incl.jl, src/pl-proc.jl |
 | swipl-devel `src/pl-proc.h` | `cbf4e1896275` | 1 | 2 | 0 | src/pl-proc.jl |
-| swipl-devel `src/pl-read.c` | `cbf4e1896275` | 134 | 209 | 64 | src/pl-read.jl |
+| swipl-devel `src/pl-read.c` | `cbf4e1896275` | 140 | 209 | 64 | src/pl-read.jl |
 | swipl-devel `src/pl-rec.c` | `cbf4e1896275` | 13 | 76 | 7 | src/pl-rec.jl |
 | swipl-devel `src/pl-ressymbol.c` | `cbf4e1896275` | 3 | 7 | 2 | src/pl-ressymbol.jl |
 | swipl-devel `src/pl-setup.c` | `cbf4e1896275` | 5 | 62 | 5 | src/pl-setup.jl |
@@ -280,7 +280,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1368** | **4480** | **749** | |
+| **total** | | **1376** | **4480** | **750** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

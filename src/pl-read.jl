@@ -207,8 +207,8 @@ const TS_UNBOUND = -2
 # DIVERGES: the operator's name and its block are two fields, where upstream overlays them (`op`,
 # a union `isterm` selects); the block is the WORD of the term (0: none), where upstream holds a
 # term reference, because the term stack holds words; copied (`copy_op_entry`) where upstream
-# copies the struct; no term position (`tpos`: positions are refused, R1's decision);
-# `token_start` is an index into the read buffer.
+# copies the struct; `token_start` is an index into the read buffer. The term position (`tpos`)
+# since LB1, as upstream: a term reference, 0 when positions are not asked for.
 "An operator the parser met: its name or block, kind, type and priorities (pl-read.c)."
 mutable struct op_entry{T}
     atom::Union{Nothing, T}         # op.atom: Normal operator
@@ -220,21 +220,24 @@ mutable struct op_entry{T}
     left_pri::Int                   # priority at left-hand
     right_pri::Int                  # priority at right hand
     op_pri::Int                     # priority of operator
+    tpos::term_t                    # term-position
     token_start::Int                # start of the token for message
 end
-op_entry{T}() where {T} = op_entry{T}(nothing, word(0), false, false, 0, 0x00, 0, 0, 0, 0)
+op_entry{T}() where {T} =
+    op_entry{T}(nothing, word(0), false, false, 0, 0x00, 0, 0, 0, 0, 0)
 
 # A copy of `e`: upstream copies the struct by value (`queue_side_op`, a frame's `in_op`).
 copy_op_entry(e::op_entry{T}) where {T} = op_entry{T}(
     e.atom, e.block, e.isblock, e.isterm, e.kind, e.type, e.left_pri, e.right_pri,
     e.op_pri,
+    e.tpos,
     e.token_start
 )
 
 # PORT: pl-read.c out_entry
-# DIVERGES: no term position (`tpos`: positions are refused, R1's decision).
-"An operand on the out queue (pl-read.c): its priority; the term itself is on the term stack."
+"An operand on the out queue (pl-read.c): its position and priority; the term is on the term stack."
 struct out_entry
+    tpos::term_t                    # its term-position (0: none, since LB1)
     pri::Int                        # priority of the term
 end
 
@@ -2414,10 +2417,9 @@ end
 side_p0(rd::read_data)::Int = length(rd.op.side_queue) - 1
 
 # PORT: pl-read.c queue_out_op
-# DIVERGES: no term position (`tpos`: positions are refused, R1's decision).
-"Push an operand of priority `pri` on the out queue (pl-read.c)."
-function queue_out_op(pri::Int, rd::read_data)::Nothing
-    push!(rd.op.out_queue, out_entry(pri))
+"Push an operand of priority `pri` and term position `tpos` (0: none) on the out queue (pl-read.c)."
+function queue_out_op(pri::Int, tpos::term_t, rd::read_data)::Nothing
+    push!(rd.op.out_queue, out_entry(tpos, pri))   # e.tpos = tpos; e.pri = pri
     return nothing
 end
 
@@ -2432,6 +2434,110 @@ out_op(i::Int, rd::read_data)::Int = length(rd.op.out_queue) + i + 1
 function pop_out_op(rd::read_data)::Nothing
     pop!(rd.op.out_queue)
     return nothing
+end
+
+# ── term positions (pl-read.c), since LB1 ───────────────────────────────────────────────────────
+# The position terms are built as upstream builds them: term references in the read's foreign frame
+# (read_term's), bound as each token and construct is read, the end of a construct written into its
+# term when the construct ends (`set_range_position`).
+
+# ORIGINAL: `PL_unify_term`'s `PL_VARIABLE` among a position term's integers (`_unify_position!`).
+const _POS_VARIABLE = typemin(Int64)
+
+# ORIGINAL: `PL_unify_term(t, PL_FUNCTOR, F, …)` for the reader's position terms (`PL_unify_term`
+# is not ported: pl-error.jl, f3b-4). Their arguments are integers (`PL_INT64`, `PL_INT`, `PL_SWORD`;
+# `_POS_VARIABLE` for `PL_VARIABLE`) followed by terms (`PL_TERM`): the compound is laid out on the
+# cells as `PL_cons_functor` lays one — an integer's word as `_gnd_word!` makes it, a variable an
+# unbound cell, a term linked from its reference (`_cell_link!`) — and unified with `t`.
+"Unify term reference `t` with the position term `name(ints…, refs…)` (upstream's `PL_unify_term`)."
+function _unify_position!(
+    ld::PL_local_data{T}, t::term_t, name::Symbol, ints::NTuple{N, Int64},
+    refs::NTuple{M, term_t}
+)::Bool where {T, N, M}
+    p = _alloc_compound!(ld, _err_functor(ld, name, N + M), N + M)   # its cells unbound
+    for i in 1:N
+        v = ints[i]
+        v == _POS_VARIABLE && continue              # PL_VARIABLE
+        ld.gstack[p + i] = _gnd_word!(ld, mk_gnd(T, v))     # PL_INT64, v
+    end
+    for j in 1:M
+        _cell_link!(ld, p + N + j, refs[j] + 1)    # PL_TERM, refs[j]
+    end
+    r = new_term_ref(ld)
+    ld.slots[r + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+    return PL_unify(ld, t, r)
+end
+
+# ORIGINAL: `PL_unify_term`'s argument `PL_LIST, N, PL_TERM, a1, …` — a new term reference holding
+# the list of the terms `refs` reference.
+"A new term reference holding the list of the terms the references `refs` hold."
+function _position_list(ld::PL_local_data{T}, refs::NTuple{N, term_t})::term_t where {T, N}
+    l = new_term_ref(ld)
+    PL_put_nil(ld, l)
+    for i in N:-1:1
+        PL_cons_list(ld, l, refs[i], l)
+    end
+    return l
+end
+
+# PORT: pl-read.c get_int_arg
+# DIVERGES: the argument dereferenced and read as the term type's integer (`_value_term`: a tagged
+# integer, or a value-table word), where upstream reads `valInt` of the cell.
+"Argument `n` (from 1) of the position term reference `t` holds, an integer (pl-read.c)."
+function get_int_arg(ld::PL_local_data{T}, t::term_t, n::Int)::Int where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))              # Word p = valTermRef(t); deRef(p)
+    @assert k == DU_WORD && _is_gcompound(w) "get_int_arg: no position term"
+    _, a, _ = _deref_loc(ld, valPtr(w) + n)         # argTerm(*p, n-1)
+    return Int(int64_value(_value_term(ld, a)))     # valInt()
+end
+
+# PORT: pl-read.c opPos
+# DIVERGES: `args` is the index of the operator's first operand on the out queue, where upstream
+# passes a pointer to it; the local data is the read data's.
+"""
+The term position of the operator term `op` makes of its operands from index `args` of the out
+queue (pl-read.c): `term_position(From, To, FFrom, FTo, ArgsPos)` in a new term reference; 0 when
+`op` has none (positions are not asked for).
+"""
+function opPos(op::op_entry{T}, args::Int, rd::read_data{T})::term_t where {T}
+    op.tpos == 0 && return 0
+    ld = rd.ld
+    q = rd.op.out_queue
+    fs = get_int_arg(ld, op.tpos, 1)
+    fe = get_int_arg(ld, op.tpos, 2)
+    r = PL_new_term_ref(ld)
+    r == 0 && return 0
+
+    if op.kind == OP_INFIX
+        s = get_int_arg(ld, q[args].tpos, 1)
+        e = get_int_arg(ld, q[args + 1].tpos, 2)
+
+        if !op.isblock
+            l = _position_list(ld, (q[args].tpos, q[args + 1].tpos))
+            _unify_position!(ld, r, :term_position, (s, e, fs, fe), (l,)) || return 0
+        else
+            l = _position_list(ld, (op.tpos, q[args].tpos, q[args + 1].tpos))
+            _unify_position!(ld, r, :term_position, (s, e, 0, 0), (l,)) || return 0
+        end
+    else
+        if op.kind == OP_PREFIX
+            s = fs
+            e = get_int_arg(ld, q[args].tpos, 2)
+        else
+            s = get_int_arg(ld, q[args].tpos, 1)
+            e = fe
+        end
+
+        if !op.isblock
+            l = _position_list(ld, (q[args].tpos,))
+            _unify_position!(ld, r, :term_position, (s, e, fs, fe), (l,)) || return 0
+        else
+            l = _position_list(ld, (op.tpos, q[args].tpos))
+            _unify_position!(ld, r, :term_position, (s, e, 0, 0), (l,)) || return 0
+        end
+    end
+
+    return r
 end
 
 # PORT: pl-read.c op_name
@@ -2462,7 +2568,7 @@ function op_name(e::op_entry{T}, rd::read_data{T})::T where {T}
 end
 
 # PORT: pl-read.c build_op_term
-# DIVERGES: no term positions; upstream's unused `tmp` term reference is not made.
+# DIVERGES: upstream's unused `tmp` term reference is not made.
 "Build the term of operator `op` from its operands on the term stack (pl-read.c)."
 function build_op_term(op::op_entry{T}, rd::read_data{T})::Bool where {T}
     arity = op.kind == OP_INFIX ? 2 : 1
@@ -2484,7 +2590,12 @@ function build_op_term(op::op_entry{T}, rd::read_data{T})::Bool where {T}
         build_term(op_name(op, rd), arity + 1, rd) || return false
     end
     q = rd.op.out_queue
-    q[e] = out_entry(op.op_pri)                     # e->pri = op->op_pri
+    tpos = q[e].tpos                                # (an entry is immutable: e->tpos kept…)
+    if op.tpos != 0                                 # …unless op->tpos: e->tpos = opPos(op, e)
+        tpos = opPos(op, e, rd)
+        tpos == 0 && return false
+    end
+    q[e] = out_entry(tpos, op.op_pri)               # e->pri = op->op_pri
     resize!(q, e)                                   # out_queue.top = e+1
     return true
 end
@@ -2536,23 +2647,25 @@ end
 end
 
 # PORT: pl-read.c ct_request
-# DIVERGES: no positions (refused, R1's decision); `stop` is the String of stop characters,
-# `nothing` for the full stop.
+# DIVERGES: `stop` is the String of stop characters, `nothing` for the full stop.
 "A request from a construct's `_start`/`_resume` function to read a subterm (pl-read.c)."
 mutable struct ct_request
     stop::Union{Nothing, String}    # stop at one of these characters
     maxpri::Int                     # max priority of the subterm
+    positions::term_t               # subterm_positions of the subterm
 end
 
 # PORT: pl-read.c pframe
-# DIVERGES: no positions (`positions`, `pin`, the members' `pv`: refused, R1's decision); the
-# union's members are fields. A LIST is extended cell by cell as upstream (L1e e6), its tail kept as
+# DIVERGES: the union's members are fields (since LB1 the positions' too: `compound_pv`,
+# `list_pv`). A LIST is extended cell by cell as upstream (L1e e6), its tail kept as
 # `list_term` (the term-stack entry, until the first element) and then `list_tail` (the global cell of
 # the tail) — upstream's `tail` references the entry first, which no global cell may do here. Blobs, dicts
 # and quasi-quotations are refused (R1's decision): their members are absent.
 "A suspended level of `complex_term` (pl-read.c): its arguments, queue state and construct."
 mutable struct pframe{T}
     stop::Union{Nothing, String}    # complex_term() arguments
+    positions::term_t
+    pin::term_t
     cstate::cterm_state{T}          # out/side queue state
     in_op::op_entry{T}              # if after != AF_OPERAND
     maxpri::Int
@@ -2560,8 +2673,10 @@ mutable struct pframe{T}
     kind::pf_kind                   # pf_kind
     after::pf_after                 # pf_after
     red_side::reduce_side           # AF_POSTFIX_OP: reduce_side
+    compound_pv::term_t                     # u.compound.pv: positions: P_HEAD and P_ARG
     compound_functor::Union{Nothing, T}     # u.compound.functor
     compound_arity::Int                     # u.compound.arity
+    list_pv::term_t                         # u.list.pv: P_ELEM, P_LIST and P_TAIL
     list_term::Int                          # u.list.tail: the list's term-stack entry…
     list_tail::Int                          # …until the first element: then the global cell of the tail
     bracket_functor::Union{Nothing, T}      # u.bracket.functor: ATOM_curl or 0
@@ -2639,7 +2754,7 @@ function modify_op(cstate::cterm_state{T}, cpri::Int)::Bool where {T}
             else
                 _setHandle!(tmp, op_name(op, rd), rd)   # PL_put_atom(tmp, op->op.atom)
             end
-            queue_out_op(0, rd)
+            queue_out_op(0, op.tpos, rd)
             cstate.out_n += 1
             PopOp!(cstate)
         elseif op.kind == OP_INFIX && cstate.out_n > 0 && isOp(op, OP_POSTFIX, rd)
@@ -2814,18 +2929,37 @@ function name_token(
     return _token_atom(token)
 end
 
+# PORT: pl-read.c unify_atomic_position
+"Unify `positions` (0: none) with `From-To`, the character range of `token` (pl-read.c)."
+function unify_atomic_position(
+    ld::PL_local_data{T}, positions::term_t, token::token{T}
+)::Bool where {T}
+    positions == 0 && return true
+    return _unify_position!(ld, positions, :-, (token.start, token.end_), ())  # FUNCTOR_minus2
+end
+
+# PORT: pl-read.c unify_string_position
+"Unify `positions` (0: none) with `string_position(From, To)`, the range of `token` (pl-read.c)."
+function unify_string_position(
+    ld::PL_local_data{T}, positions::term_t, token::token{T}
+)::Bool where {T}
+    positions == 0 && return true
+    return _unify_position!(ld, positions, :string_position, (token.start, token.end_), ())
+end
+
 # PORT: pl-read.c prepare_op
-# DIVERGES: returns the result and the construct to read (`*kind`); no positions; no atom locks
-# (`Unlock`: no atom GC).
+# DIVERGES: returns the result and the construct to read (`*kind`); no atom locks (`Unlock`: no
+# atom GC).
 """
 Take `token` as the name of the operator `in_op` (pl-read.c); a block operator (`[...]`, `{...}`)
-starts reading its block: the construct to read is returned with the result.
+starts reading its block: the construct to read is returned with the result. `pin` (0: none) gets
+the operator's position.
 """
 function prepare_op(
-    in_op::op_entry{T}, token::token{T}, rd::read_data{T}
+    in_op::op_entry{T}, token::token{T}, pin::term_t, rd::read_data{T}
 )::Tuple{Int, pf_kind} where {T}
-    in_op.isblock && return simple_term(token, rd)
-    return (1, PF_NONE)
+    in_op.isblock && return simple_term(token, pin, rd)
+    return (unify_atomic_position(rd.ld, pin, token) ? 1 : 0, PF_NONE)    # *kind = PF_NONE
 end
 
 # PORT: pl-read.c finish_block_op
@@ -2856,21 +2990,23 @@ function stop_matches_codepoint(stop::String, code::Int)::Bool
 end
 
 # PORT: pl-read.c complex_term
-# DIVERGES: no positions (refused, R1's decision); the segstack is a vector of frames; returns
-# upstream's codes as an Int — 1 (true) or 0 (false): no stack-overflow codes (no global stack);
+# DIVERGES: the segstack is a vector of frames; returns upstream's codes as an Int — 1 (true) or
+# 0 (false): no stack-overflow codes (no global stack);
 # no atom locks to release (`discard_pframe`). A blob, a dict or a quasi-quotation raises
 # `NotPortedError` (`start_pframe`): refused, R1's decision.
 """
 Read a term up to a character of `stop` (`nothing`: up to the full stop) with priority at most
-`maxpri`, resolving its operators, and leave it on the term stack (pl-read.c). A state machine:
-a construct (a compound, a list, a bracketed term) suspends the level in a frame, so nesting
-costs no Julia stack. 1 on success, 0 with the syntax error in `rd`.
+`maxpri`, resolving its operators, and leave it on the term stack (pl-read.c); `positions` (0:
+none) is unified with its subterm positions. A state machine: a construct (a compound, a list, a
+bracketed term) suspends the level in a frame, so nesting costs no Julia stack. 1 on success, 0
+with the syntax error in `rd` (or where `positions` does not unify).
 """
 function complex_term(
-    stop::Union{Nothing, String}, maxpri::Int, rd::read_data{T}
+    stop::Union{Nothing, String}, maxpri::Int, positions::term_t, rd::read_data{T}
 )::Int where {T}
     stack = pframe{T}[]
-    req = ct_request(nothing, 0)
+    req = ct_request(nothing, 0, 0)
+    pin = 0
     in_op = op_entry{T}()
     end_op = op_entry{T}()
     cstate = cterm_state{T}(rd, 0, 0, 0, 0)
@@ -2895,6 +3031,8 @@ function complex_term(
     in_op.right_pri = 0
 
     @label next_token
+    pin = positions != 0 ? PL_new_term_ref(rd.ld) : 0
+
     tk = get_token(cstate.rmo == 1, rd)
     tk === nothing && @goto failed
     token = tk
@@ -2915,10 +3053,11 @@ function complex_term(
         in_op.isblock = false
         in_op.isterm = false
         in_op.atom = name_token(token, in_op, rd)
+        in_op.tpos = pin
         in_op.token_start = rd.token_start
 
         if cstate.rmo == 0 && isOp(in_op, OP_PREFIX, rd)
-            rc, kind = prepare_op(in_op, token, rd)
+            rc, kind = prepare_op(in_op, token, pin, rd)
             rc != 1 && @goto failed_rc
             if kind != PF_NONE
                 after = AF_PREFIX_OP
@@ -2935,7 +3074,7 @@ function complex_term(
             if cstate.rmo == 1
                 reduce_op(cstate, in_op) || @goto failed
                 cstate.rmo -= 1
-                rc, kind = prepare_op(in_op, token, rd)
+                rc, kind = prepare_op(in_op, token, pin, rd)
                 rc != 1 && @goto failed_rc
                 if kind != PF_NONE
                     after = AF_INFIX_OP
@@ -2964,7 +3103,7 @@ function complex_term(
                     end
                 end
 
-                rc, kind = prepare_op(in_op, token, rd)
+                rc, kind = prepare_op(in_op, token, pin, rd)
                 rc != 1 && @goto failed_rc
                 if kind != PF_NONE
                     after = AF_POSTFIX_OP
@@ -2992,7 +3131,7 @@ function complex_term(
     end
 
     # Read `simple' term
-    rc, kind = simple_term(token, rd)
+    rc, kind = simple_term(token, pin, rd)
     rc != 1 && @goto failed_rc
     if kind != PF_NONE                              # a compound construct
         after = AF_OPERAND
@@ -3005,7 +3144,7 @@ function complex_term(
         @goto failed
     end
     cstate.rmo += 1
-    queue_out_op(0, rd)
+    queue_out_op(0, pin, rd)
     cstate.out_n += 1
     @goto next_token
 
@@ -3013,9 +3152,8 @@ function complex_term(
     push!(
         stack,
         pframe{T}(
-            stop, copy_cterm_state(cstate), copy_op_entry(in_op), maxpri, red_op, kind,
-            after,
-            red_side, nothing, 0, 0, 0, nothing, 0, 0, ""
+            stop, positions, pin, copy_cterm_state(cstate), copy_op_entry(in_op), maxpri,
+            red_op, kind, after, red_side, 0, nothing, 0, 0, 0, 0, nothing, 0, 0, ""
         )
     )
     rc = start_pframe(stack[end], token, req, rd)
@@ -3026,6 +3164,7 @@ function complex_term(
     @label sub_term                                 # read the subterm in `req'
     stop = req.stop
     maxpri = req.maxpri
+    positions = req.positions
     @goto new_level
 
     @label frame_done                               # construct is on the term stack
@@ -3036,6 +3175,8 @@ function complex_term(
     frame = pop!(stack)
     stop = frame.stop
     maxpri = frame.maxpri
+    positions = frame.positions
+    pin = frame.pin
     cstate = frame.cstate
     end_op.left_pri = maxpri
 
@@ -3055,6 +3196,11 @@ function complex_term(
     reduce_op(cstate, end_op) || @goto failed
 
     if cstate.out_n == 1 && cstate.side_n == 0      # simple term
+        e = out_op(-1, rd)
+        if positions != 0
+            rc = PL_unify(rd.ld, positions, rd.op.out_queue[e].tpos) ? 1 : 0
+            rc != 1 && @goto failed_rc
+        end
         pop_out_op(rd)                              # PopOut()
         cstate.out_n -= 1
     elseif cstate.out_n == 0 && cstate.side_n == 1  # single operator
@@ -3067,6 +3213,12 @@ function complex_term(
             b == 0 && error("read/1: a block operator without its block")
             _setHandle_w!(term, b, rd)              # PL_put_term(term, op->op.block)
         end
+
+        if positions != 0
+            rc = PL_unify(rd.ld, positions, op.tpos) ? 1 : 0
+            rc != 1 && @goto failed_rc
+        end
+
         PopOp!(cstate)
     elseif cstate.side_n == 1 && !side_op(0, rd).isblock &&
         (
@@ -3102,33 +3254,77 @@ function complex_term(
     return rc
 end
 
+# PORT: pl-read.c set_range_position
+# DIVERGES: an integer's word as `_gnd_word!` lays it (a tagged integer, or a value-table word),
+# where upstream writes `consInt`; the local data is an argument (upstream: `DECL_LD`).
+"""
+Write `start` and `end_` (each unless negative) into the first two arguments of the position term
+`positions` holds (pl-read.c): a construct's end, known when it ends. In place, as upstream: the
+arguments are the construct's own cells, unbound until then.
+"""
+function set_range_position(
+    ld::PL_local_data{T}, positions::term_t, start::Int64, end_::Int64
+)::Nothing where {T}
+    k, w, _ = _deref_loc(ld, -(positions + 1))      # Word p = valTermRef(positions); deRef(p)
+    @assert k == DU_WORD && _is_gcompound(w) "set_range_position: no position term"
+    p = valPtr(w)                                   # p = argTermP(*p, 0): p + 1 is argument 1
+    start >= 0 && (ld.gstack[p + 1] = _gnd_word!(ld, mk_gnd(T, start)))    # p[0] = consInt(start)
+    end_ >= 0 && (ld.gstack[p + 2] = _gnd_word!(ld, mk_gnd(T, end_)))      # p[1] = consInt(end)
+    return nothing
+end
+
+# NOT PORTED: pl-read.c end_range, its one caller reads a dict's key-value pair (dicts are
+# refused, R1's decision).
+
 # ── the constructs: lists, brackets, compounds (pl-read.c) ──────────────────────────────────────
 
 # PORT: pl-read.c read_list_elem
-"Request a list element (pl-read.c)."
+"Request a list element (pl-read.c); with positions, its position is the next of `P_LIST`."
 function read_list_elem(f::pframe{T}, req::ct_request, rd::read_data{T})::Int where {T}
+    pv = f.list_pv
+
+    if pv != 0 && !PL_unify_list(rd.ld, pv + 1, pv, pv + 1)    # P_LIST, P_ELEM, P_LIST
+        return 0
+    end
+
     f.kind = PF_LIST_ELEM
     req.stop = ",|]"
     req.maxpri = 999
+    req.positions = pv                              # P_ELEM
     return CTR_SUB
 end
 
 # PORT: pl-read.c read_list_start
 # DIVERGES: the list's term-stack entry is kept (`list_term`), where upstream keeps a reference to
-# where the tail goes (`tail`); no positions.
-"Start reading a list, at its `[` (pl-read.c)."
+# where the tail goes (`tail`), so no term reference is made for it.
+"Start reading a list at its `[` (pl-read.c); with positions, `list_position(From, _, Elems, Tail)`."
 function read_list_start(
     f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
 )::Int where {T}
+    ld = rd.ld
+    if f.pin != 0
+        pv = PL_new_term_refs(ld, 3)
+        (
+            pv != 0 &&
+            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_list_position4,
+                ld, f.pin, :list_position,          #   PL_INT64, token->start, PL_VARIABLE,
+                (token.start, _POS_VARIABLE), (pv + 1, pv + 2)  #   PL_TERM, P_LIST, PL_TERM, P_TAIL
+            )
+        ) || return 0
+    else
+        pv = 0
+    end
+
     term = alloc_term(rd)
     f.list_term = term                              # PL_put_term(tail, term)
     f.list_tail = 0                                 # (the tail is the entry itself)
+    f.list_pv = pv
     return read_list_elem(f, req, rd)
 end
 
 # PORT: pl-read.c read_list_resume_elem
-# DIVERGES: the element is made a value (`readValHandle`) and kept, where upstream writes it into
-# a new cell at the tail; at `]` the list is made (`PL_unify_nil(tail)`). No positions.
+# DIVERGES: the tail is a global cell's position (`list_tail`), or the list's term-stack entry
+# before the first element (`list_term`), where upstream keeps a term reference to it.
 "Take the element just read; then `]` ends the list, `|` requests its tail, `,` another element (pl-read.c)."
 function read_list_resume_elem(
     f::pframe{T}, req::ct_request, rd::read_data{T}
@@ -3145,22 +3341,30 @@ function read_list_resume_elem(
     tk = get_token(false, rd)
     tk === nothing && return 0
 
+    pv = f.list_pv
     c = tk.character
     if c == Int(']')
+        if pv != 0
+            set_range_position(ld, f.pin, -1, tk.end_)
+            (
+                PL_unify_nil(ld, pv + 1) &&                         # P_LIST
+                PL_unify_atom(ld, pv + 2, mk_sym(T, :none))         # P_TAIL, ATOM_none
+            ) || return 0
+        end
         ld.gstack[f.list_tail] = ld.atom_nil_w          # PL_unify_nil(tail): its fresh cell
         return 1
     elseif c == Int('|')
         f.kind = PF_LIST_TAIL
         req.stop = ",|]"
         req.maxpri = 999
+        req.positions = pv != 0 ? pv + 2 : 0            # P_TAIL
         return CTR_SUB
     end
     return read_list_elem(f, req, rd)               # `,'
 end
 
 # PORT: pl-read.c read_list_resume_tail
-# DIVERGES: the list is made with the tail just read, where upstream writes the tail into its last
-# cell. No positions.
+# DIVERGES: the tail is the global cell `list_tail`, where upstream keeps a term reference to it.
 "Take the tail just read and end the list at its `]` (pl-read.c): `,` or `|` there is `list_rest`."
 function read_list_resume_tail(f::pframe{T}, rd::read_data{T})::Int where {T}
     tmp = term_av(-1, rd)
@@ -3171,21 +3375,30 @@ function read_list_resume_tail(f::pframe{T}, rd::read_data{T})::Int where {T}
     if tk.character == Int(',') || tk.character == Int('|')
         return Int(syntaxError("list_rest", rd))
     end
+    pv = f.list_pv
+    if pv != 0
+        set_range_position(rd.ld, f.pin, -1, tk.end_)
+        PL_unify_nil(rd.ld, pv + 1) || return 0     # P_LIST
+    end
     return 1
 end
 
 # PORT: pl-read.c read_bracket_start
-# DIVERGES: no positions.
-"Start reading `(Term)`, `{Term}` or a Unicode bracket pair's `«Term»` (pl-read.c)."
+"""
+Start reading `(Term)`, `{Term}` or a Unicode bracket pair's `«Term»` (pl-read.c): with positions,
+`parentheses_term_position(From, _, ArgPos)` or `brace_term_position(From, _, ArgPos)`.
+"""
 function read_bracket_start(
     f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
 )::Int where {T}
     c = token.character
+    fpos = :brace_term_position                     # FUNCTOR_brace_term_position3
     f.bracket_functor = nothing
     f.bracket_open = 0
     f.bracket_close = 0
 
     if c == Int('(')
+        fpos = :parentheses_term_position           # FUNCTOR_parentheses_term_position3
         req.stop = ")"
     elseif c == Int('{')
         f.bracket_functor = mk_sym(T, Symbol("{}"))     # ATOM_curl
@@ -3199,16 +3412,28 @@ function read_bracket_start(
         req.stop = f.bracket_stop
     end
 
+    if f.pin != 0
+        ld = rd.ld
+        pa = PL_new_term_ref(ld)
+        (
+            pa != 0 &&                              # PL_FUNCTOR, fpos, PL_INT64, token->start,
+            _unify_position!(ld, f.pin, fpos, (token.start, _POS_VARIABLE), (pa,))
+        ) || return 0                               #   PL_VARIABLE, PL_TERM, pa
+    else
+        pa = 0
+    end
+
     req.maxpri = OP_MAXPRIORITY + 1
+    req.positions = pa
     return CTR_SUB
 end
 
 # PORT: pl-read.c read_bracket_resume
-# DIVERGES: no positions.
 "End a bracketed term at its close: `{Term}` is `'{}'(Term)`, `«Term»` is `'«»'(Term)` (pl-read.c)."
 function read_bracket_resume(f::pframe{T}, rd::read_data{T})::Int where {T}
     tk = get_token(false, rd)                       # skip ')', '}' or the close
     tk === nothing && return 0
+    f.pin != 0 && set_range_position(rd.ld, f.pin, -1, tk.end_)
 
     fn = f.bracket_functor
     fn !== nothing && return build_term(fn, 1, rd) ? 1 : 0     # {Term}
@@ -3221,9 +3446,15 @@ function read_bracket_resume(f::pframe{T}, rd::read_data{T})::Int where {T}
 end
 
 # PORT: pl-read.c read_compound_end
-# DIVERGES: no positions; no atom locks (`unlock`).
-"Build the compound read (pl-read.c)."
+# DIVERGES: no atom locks (`unlock`).
+"Build the compound read (pl-read.c); with positions, its end is `token`'s, its argument list closed."
 function read_compound_end(f::pframe{T}, token::token{T}, rd::read_data{T})::Int where {T}
+    pv = f.compound_pv
+    if pv != 0
+        set_range_position(rd.ld, f.pin, -1, token.end_)
+        PL_unify_nil(rd.ld, pv + 1) || return 0     # P_ARG
+    end
+
     functor = f.compound_functor
     functor === nothing && error("read/1: a compound without its name")
     if rd.dotlists && sym_key(functor) == sym_key(mk_sym(T, Symbol(".")))
@@ -3233,20 +3464,45 @@ function read_compound_end(f::pframe{T}, token::token{T}, rd::read_data{T})::Int
 end
 
 # PORT: pl-read.c read_compound_arg
-# DIVERGES: no positions.
-"Request a compound's argument (pl-read.c)."
+"Request a compound's argument (pl-read.c); with positions, its position is the next of `P_ARG`."
 function read_compound_arg(f::pframe{T}, req::ct_request, rd::read_data{T})::Int where {T}
+    pv = f.compound_pv
+
+    if pv != 0 && !PL_unify_list(rd.ld, pv + 1, pv, pv + 1)    # P_ARG, P_HEAD, P_ARG
+        return 0
+    end
+
     req.stop = ",)"
     req.maxpri = 999
+    req.positions = pv                              # P_HEAD
     return CTR_SUB
 end
 
 # PORT: pl-read.c read_compound_start
-# DIVERGES: no positions; no atom locks (`unlock`, `rd->locked`).
-"Start reading `f(…)` at its name: `f()` ends at once (pl-read.c)."
+# DIVERGES: no atom locks (`unlock`, `rd->locked`).
+"""
+Start reading `f(…)` at its name: `f()` ends at once (pl-read.c). With positions,
+`term_position(From, _, FFrom, FTo, ArgsPos)`.
+"""
 function read_compound_start(
     f::pframe{T}, token::token{T}, req::ct_request, rd::read_data{T}
 )::Int where {T}
+    if f.pin != 0
+        ld = rd.ld
+        pv = PL_new_term_refs(ld, 2)
+        (
+            pv != 0 &&
+            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_term_position5,
+                ld, f.pin, :term_position,          #   PL_INT64, token->start, PL_VARIABLE,
+                (token.start, _POS_VARIABLE, token.start, token.end_),  # PL_INT64 ×2,
+                (pv + 1,)                           #   PL_TERM, P_ARG
+            )
+        ) || return 0
+    else
+        pv = 0
+    end
+
+    f.compound_pv = pv
     f.compound_functor = _token_atom(token)
     f.compound_arity = 0
 
@@ -3275,38 +3531,42 @@ function read_compound_resume(
 end
 
 # PORT: pl-read.c simple_term
-# DIVERGES: returns the result and the construct to read (`*kind`); no positions; no atom locks.
+# DIVERGES: returns the result and the construct to read (`*kind`); no atom locks.
 """
 Read the term `token` starts, other than an operator expression (pl-read.c): an atomic term or a
-variable is left on the term stack (construct `PF_NONE`); a compound construct is returned for
-`complex_term` to read. `(0, …)` with the syntax error in `rd`.
+variable is left on the term stack (construct `PF_NONE`), its position unified with `positions`
+(0: none); a compound construct is returned for `complex_term` to read. `(0, …)` with the syntax
+error in `rd`.
 """
-function simple_term(token::token{T}, rd::read_data{T})::Tuple{Int, pf_kind} where {T}
+function simple_term(
+    token::token{T}, positions::term_t, rd::read_data{T}
+)::Tuple{Int, pf_kind} where {T}
+    ld = rd.ld
     t = token.type
     if t == TK_FULLSTOP
         return (Int(syntaxError("end_of_clause", rd)), PF_NONE)
     elseif t == TK_VOID
         alloc_term(rd)                              # nothing to do; term is already a variable
-        return (1, PF_NONE)
+        return (unify_atomic_position(ld, positions, token) ? 1 : 0, PF_NONE)
     elseif t == TK_VARIABLE
         term = alloc_term(rd)
         rd.term_stack.vars[term] = token.variable   # setHandle(term, var->signature)
-        return (1, PF_NONE)
+        return (unify_atomic_position(ld, positions, token) ? 1 : 0, PF_NONE)
     elseif t == TK_NAME || t == TK_QNAME
         term = alloc_term(rd)
         _setHandle!(term, _token_atom(token), rd)   # PL_put_atom(term, token->value.atom)
-        return (1, PF_NONE)
+        return (unify_atomic_position(ld, positions, token) ? 1 : 0, PF_NONE)
     elseif t == TK_NUMBER
         term = alloc_term(rd)
         _setHandle!(term, put_number(T, token.number), rd)  # _PL_put_number()
         clearNumber(token.number)
-        return (1, PF_NONE)
+        return (unify_atomic_position(ld, positions, token) ? 1 : 0, PF_NONE)
     elseif t == TK_STRING
         term = alloc_term(rd)
         v = token.term_value
         v === nothing && error("read/1: a string token without its term")
         _setHandle!(term, v, rd)                    # PL_put_term(term, token->value.term)
-        return (1, PF_NONE)
+        return (unify_string_position(ld, positions, token) ? 1 : 0, PF_NONE)
     elseif t == TK_FUNCTOR
         return (1, PF_COMPOUND)
     elseif t == TK_BLOB
@@ -3326,7 +3586,7 @@ function simple_term(token::token{T}, rd::read_data{T})::Tuple{Int, pf_kind} whe
         close != 0 && is_open && return (1, PF_BRACKET)
         term = alloc_term(rd)
         _setHandle!(term, mk_sym(T, Symbol(Char(c))), rd)  # PL_put_atom(term, codeToAtom(c))
-        return (1, PF_NONE)
+        return (unify_atomic_position(ld, positions, token) ? 1 : 0, PF_NONE)
     elseif t == TK_QQ_OPEN
         return (1, PF_QQ)
     elseif t == TK_QQ_BAR
@@ -3499,7 +3759,7 @@ function read_term(term::term_t, rd::read_data{T})::Bool where {T}
     rd.here = rd.base
     rd.strictness = truePrologFlag(ld, PLFLAG_ISO) ? 1 : 0     # rd->strictness = truePrologFlag(PLFLAG_ISO)
 
-    rc2 = complex_term(nothing, OP_MAXPRIORITY + 1, rd)
+    rc2 = complex_term(nothing, OP_MAXPRIORITY + 1, rd.subtpos, rd)
     rc2 != 1 && @goto out                           # rc = raiseStackOverflow(rc2)
 
     @assert rd.term_stack.top == 1
@@ -3749,6 +4009,24 @@ function set_module_read_data(rd::read_data{T}, m::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-read.c unify_read_term_position
+# DIVERGES: the local data is an argument (upstream: `DECL_LD`); `source_*_no` are the position
+# of `ld.read_source`, as upstream's macros read `LD->read_source` (pl-global.h).
+"""
+Unify `tpos` (0: none) with `'\$stream_position'(CharNo, LineNo, LinePos, ByteNo)`, where the term
+read last starts (pl-read.c); true, unifying nothing, when the stream keeps no line number.
+"""
+function unify_read_term_position(ld::PL_local_data{T}, tpos::term_t)::Bool where {T}
+    p = ld.read_source.position
+    if tpos != 0 && p.lineno > 0                    # source_line_no > 0
+        return _unify_position!(                    # PL_FUNCTOR, FUNCTOR_dstream_position4,
+            ld, tpos, Symbol("\$stream_position"), #   PL_INT64, source_char_no,
+            (Int64(p.charno), Int64(p.lineno), Int64(p.linepos), Int64(p.byteno)), ()
+        )                                           #   PL_INT ×2, PL_INT64, source_byte_no
+    end
+    return true
+end
+
 # PORT: pl-read.c read_clause_options
 "read_clause/3's options, in upstream's order (pl-read.c)."
 const read_clause_options = (
@@ -3765,11 +4043,11 @@ const read_clause_options = (
 
 # PORT: pl-read.c read_clause
 # DIVERGES: of the read options (`PL_scan_options`), `variable_names` and `syntax_errors` are
-# honoured (since R1g); the others the kernel cannot honour are REFUSED (`NotPortedError`), as
-# `read_term_from_stream`'s: `term_position`, `subterm_positions`, `comments`,
-# `process_comment(true)` (term positions and the comment hook: R2 — `prolog:comment_hook/4` is not
-# defined, so `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the
-# NFC hook), `blob` (no blobs); a stream whose unquoted atoms must be NFC is refused
+# honoured (since R1g), `term_position` and `subterm_positions` since LB1; the others the kernel
+# cannot honour are REFUSED (`NotPortedError`), as `read_term_from_stream`'s: `comments`,
+# `process_comment(true)` (the comment hook: R2 — `prolog:comment_hook/4` is not defined, so
+# `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook),
+# `blob` (no blobs); a stream whose unquoted atoms must be NFC is refused
 # (`ensure_unicode_normalize_hook`: no normalizer). The foreign frame is closed before returning,
 # where upstream leaves it to its caller's.
 """
@@ -3785,6 +4063,7 @@ function read_clause(
     while true                                      # retry:
         rd = init_read_data(gd, ld, s)
         syntax_errors = :dec10                      # ATOM_dec10
+        tpos = 0
 
         if options != 0
             vals = PL_scan_options(ld, options, 0, "read_option", read_clause_options)
@@ -3802,16 +4081,14 @@ function read_clause(
             opt_blobs = vals[8]
             varprefix = something(vals[9], 0)::Int
 
-            for (v, what) in (
-                (tpos, "term_position"), (rd.subtpos, "subterm_positions"),
-                (opt_comments, "comments"), (varprefix, "var_prefix")
-            )
+            for (v, what) in ((opt_comments, "comments"), (varprefix, "var_prefix"))
                 if v != 0                           # (the culprit leaves the engine: exported once)
                     c = export_cells(ld, cell_export{T}(), -(v + 1))
                     PL_close_foreign_frame(ld, fid)
                     throw(
                         NotPortedError{T}(
-                            c, "read_clause's $what option", "R2 (term positions)"
+                            c, "read_clause's $what option",
+                            "R2 (the comments collector, the var_prefix module flag)"
                         )
                     )
                 end
@@ -3841,6 +4118,7 @@ function read_clause(
         rd.on_error = syntax_errors
         rd.singles = (rd.styleCheck & SINGLETON_CHECK) != 0 ? _SINGLES_REPORT : 0
         rval = read_term(term, rd)
+        rval && tpos != 0 && (rval = unify_read_term_position(ld, tpos))
         if !rval && rd.has_exception && reportReadError(rd)
             ld.exception_processing = false
             PL_rewind_foreign_frame(ld, fid)
@@ -3849,6 +4127,26 @@ function read_clause(
         PL_close_foreign_frame(ld, fid)
         return rval
     end
+end
+
+# PORT: pl-read.c read_clause as pl_read_clause3_va
+# (PRED_IMPL("read_clause", 3, read_clause, 0))
+# DIVERGES: no stream locks (`PL_release_stream`): the stream's error state decides, as upstream's
+# `Sferror` test; the stream is a standard stream's alias (`getTextInputStream`: the stream table,
+# R2).
+"`read_clause(+Stream, -Clause, +Options)` (pl-read.c): read a clause as consulting a file does."
+function pl_read_clause3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    gd = _query_gd(ld)
+
+    s = getTextInputStream(ld, A1)
+    s === nothing && return FFALSE
+    rc = read_clause(gd, ld, s, A2, A3)
+    Sferror(s) != 0 && return streamStatus(ld, s) ? FTRUE : FFALSE
+
+    return rc ? FTRUE : FFALSE                      # PL_release_stream(s)
 end
 
 # ── term <-> atom (pl-read.c) ───────────────────────────────────────────────────────────────────
@@ -3963,11 +4261,11 @@ const read_term_options = (
 
 # PORT: pl-read.c read_term_from_stream
 # DIVERGES: the options the kernel cannot honour are REFUSED (`NotPortedError`) where upstream
-# honours them: `term_position`, `subterm_positions`, `comments` (term positions: R2),
-# `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook), `blob` (no blobs),
-# `quasi_quotations` (none are read). The module is the kernel's table's; a syntax error is
-# reported through `printMessage` (`reportReadError`); the retry on a `dec10` error re-reads from
-# the same stream, as upstream. No `free_read_data` (Julia's GC).
+# honours them: `comments` (the comments collector, R2), `var_prefix` (the module flag, R2),
+# `unicode_atoms` (the NFC hook), `blob` (no blobs), `quasi_quotations` (none are read);
+# `term_position` and `subterm_positions` are honoured since LB1. The module is the kernel's
+# table's; a syntax error is reported through `printMessage` (`reportReadError`); the retry on a
+# `dec10` error re-reads from the same stream, as upstream. No `free_read_data` (Julia's GC).
 "Read a term from `s` into term reference `term` with the read options list `options` holds (pl-read.c)."
 function read_term_from_stream(
     gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, term::term_t, options::term_t
@@ -3998,15 +4296,14 @@ function read_term_from_stream(
     opt_unicode_atoms = vals[16]
     opt_blobs = vals[17]
 
-    for (v, what) in (
-        (tpos, "term_position"), (rd.subtpos, "subterm_positions"), (tcomments, "comments"),
-        (varprefix, "var_prefix"), (qq, "quasi_quotations")
-    )
+    for (v, what) in
+        ((tcomments, "comments"), (varprefix, "var_prefix"), (qq, "quasi_quotations"))
         v != 0 && throw(                            # (the culprit leaves the engine: exported once)
             NotPortedError{T}(
                 export_cells(ld, cell_export{T}(), -(v + 1)),
                 "read_term's $what option",
-                "R2 (term positions)"
+                "R2 (the comments collector, the var_prefix module flag); " *
+                "no quasi-quotations"
             )
         )
     end
@@ -4050,10 +4347,14 @@ function read_term_from_stream(
         end
     end
 
+    rd.subtpos != 0 && (s.position = s.posbuf)     # s->position = &s->posbuf
+
     rval = read_term(term, rd)
     Sferror(s) != 0 && return false
 
-    if !rval
+    if rval
+        tpos != 0 && (rval = unify_read_term_position(ld, tpos))
+    else
         if rd.has_exception && reportReadError(rd)
             PL_rewind_foreign_frame(ld, fid)
             @goto retry
@@ -4093,11 +4394,14 @@ end
 
 # PORT: pl-read.c BeginPredDefs as PL_predicates_from_read
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (read:7431-7444). NOT PORTED: read_term/2,3 and read_clause/3 (a stream argument: the stream
-# table, R2), `$code_class/2`, `$is_named_var/1`,
-# `$qq_open/2` (no quasi-quotations).
+# (read:7443-7456 at cbf4e189); read_clause/3 since LB1.
+# NOT PORTED: read_term/2,3, R2's stream table (their stream argument); `$code_class/2` and
+# `$is_named_var/1`, no boot file calls them (grep at cbf4e189: library/prolog_colour.pl calls
+# the second);
+# `$qq_open/2`, no quasi-quotations.
 "pl-read.c's registration table (`BeginPredDefs(read)`): the ported entries."
 const PL_predicates_from_read = (
+    PL_extension("read_clause", 3, pl_read_clause3_va, PL_FA_VARARGS),
     PL_extension("read_term_from_atom", 3, pl_read_term_from_atom3_va, PL_FA_VARARGS),
     PL_extension("atom_to_term", 3, pl_atom_to_term3_va, PL_FA_VARARGS),
     PL_extension("term_to_atom", 2, pl_term_to_atom2_va, PL_FA_VARARGS),

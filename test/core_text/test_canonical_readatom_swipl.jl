@@ -22,8 +22,9 @@
 #     its writer cannot write that string).
 #   * CYCLIC TERMS WRITTEN (group F, D-0123: `PL_factorize_term`; until then write_canonical of a
 #     cyclic term was refused, decision 4a): 27 goals — three shapes and more, every writer.
-#   * THE REFUSALS, explicit: term_position, subterm_positions, comments, var_prefix,
-#     quasi_quotations (term positions: R2), unicode_atoms, blob — each `NotPortedError`.
+#   * THE REFUSALS, explicit: comments, var_prefix, quasi_quotations (R2), unicode_atoms, blob —
+#     each `NotPortedError`. term_position and subterm_positions are honoured since LB1 (compared
+#     with swipl in test_read_positions_swipl.jl).
 using Test, LogicKernel, Random
 const LK = LogicKernel
 
@@ -586,8 +587,8 @@ end
 
 @testset "the refusals: read options the kernel cannot honour" begin
     for o in
-        ("term_position(_)", "subterm_positions(_)", "comments(_)", "var_prefix(true)",
-        "quasi_quotations(_)", "unicode_atoms(nfc)", "blob(x)")
+        ("comments(_)", "var_prefix(true)", "quasi_quotations(_)", "unicode_atoms(nfc)",
+        "blob(x)")
         r, _ = _cr_run(
             "read_term_from_atom",
             _CR[_crs("f(X)"), _cr_var(), _cr_read("[" * o * "]")::_CR]

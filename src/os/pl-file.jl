@@ -371,6 +371,65 @@ end
 getTextOutputStream(ld::PL_local_data{T}, t::term_t) where {T} =
     getOutputStream(ld, t, S_TEXT)
 
+# PORT: pl-file.c getInputStream
+# DIVERGES: returns the stream or `nothing`; no locks (`getStream`, `releaseStream`). The standard
+# streams are opened the first time one is asked for (`initIO`). An alias is a standard stream's
+# name (`get_stream_handle`: no stream blobs, no user aliases — R2's stream table), as
+# `getOutputStream`'s.
+"""
+The input stream term reference `t` names — 0: the current input; `user`: `user_input`; else an
+alias — of the type `text` asks for, or `nothing` with upstream's error raised (pl-file.c).
+"""
+function getInputStream(
+    ld::PL_local_data{T}, t::term_t, text::Int
+)::Union{Nothing, IOSTREAM} where {T}
+    _initIO(ld)
+    if t == 0
+        s = Scurin(ld)
+        if s === nothing
+            no_stream(ld, t, :current_input)
+            return nothing
+        end
+    else
+        a = PL_get_atom(ld, t)
+        if a === nothing
+            not_a_stream(ld, t, SH_ALIAS)
+            return nothing
+        end
+
+        if isTextAtom(a) && sym_key(a) == sym_key(mk_sym(T, :user))
+            s = Suser_input(ld)
+            if s === nothing
+                no_stream(ld, t, :user)
+                return nothing
+            end
+        else
+            s = get_stream_handle(ld, a, SH_ERRORS | SH_ALIAS | SH_INPUT)
+            s === nothing && return nothing
+        end
+    end
+
+    tp = if (s.flags & SIO_INPUT) == 0                  # ok:
+        :stream
+    else
+        checkStreamType(ld, text, s)
+    end
+    tp === nothing && return s
+
+    if t == 0
+        t = PL_new_term_ref(ld)
+        setSlotValue!(ld, t + 1, mk_sym(T, :current_input))     # PL_put_atom(t, ATOM_current_input)
+    end
+    PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :input), mk_sym(T, tp), t)
+
+    return nothing
+end
+
+# PORT: pl-file.c getTextInputStream
+"The text input stream term reference `t` names (0: the current input), or `nothing` (pl-file.c)."
+getTextInputStream(ld::PL_local_data{T}, t::term_t) where {T} =
+    getInputStream(ld, t, S_TEXT)
+
 # PORT: pl-file.c PL_unify_stream_or_alias
 # DIVERGES: a standard stream's alias only — every stream the kernel opens is one (stream blobs
 # and user aliases: R2).

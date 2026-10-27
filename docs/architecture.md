@@ -1412,6 +1412,7 @@ graph LR
     pl_read --> pl_global
     pl_read --> pl_modul
     pl_read --> pl_inline
+    pl_read --> pl_prims
     pl_read --> pl_comp
     pl_read --> pl_alloc
     pl_read --> pl_wam
@@ -2258,9 +2259,9 @@ src/pl-comp.jl, src/pl-read.jl, boot/init.jl, pl-global.jl, pl-incl.jl).
   analysed — its warnings are computed — and then refused by the body compiler (V9: control
   constructs). So `branch_singleton`, `negation_singleton` and `unbalanced_var` are gated at the
   ANALYSIS (below), and reach a user when V9 compiles those bodies; nothing else is needed then.
-* **NOT PORTED:** read_clause's other options (`term_position`, `subterm_positions`, `comments`,
-  `process_comment(true)`, `var_prefix`, `unicode_atoms`, `blob`: refused, as read_term's);
-  `read_clause/3` as a predicate and `style_check/1` (R2: the stream table, boot's flags).
+* **NOT PORTED:** read_clause's other options (`comments`, `process_comment(true)`, `var_prefix`,
+  `unicode_atoms`, `blob`: refused, as read_term's) and `style_check/1` (R2: boot's flags).
+  `term_position`, `subterm_positions` and `read_clause/3` as a predicate came with LB1 (below).
 * **Gates:** test/compile/test_compiler_warnings_swipl.jl (new): 33 pinned clauses + 1,500
   random clauses nesting `,`, `;`, `->`, `*->`, `\+` (the analysis) + 1,500 random conjunctions
   of `==`, `\==`, `=`, `var`, `nonvar`, nine type tests and user goals (the whole compiler), each
@@ -2293,8 +2294,8 @@ src/pl-write.jl, src/pl-read.jl, src/os/pl-prologflag.jl, pl-ext.jl, pl-global.j
   7a on the cells as upstream (the mark's global top; the functor-cell marks), the two fields deleted
   2026-10-23 (audit D-0115); no attributed
   variables, no signals, no stack growth. `read_term_from_stream` REFUSES (`NotPortedError`) the
-  options it cannot honour: `term_position`, `subterm_positions`, `comments`, `var_prefix`,
-  `quasi_quotations` (term positions: R2), `unicode_atoms` (the NFC hook), `blob` (no blobs);
+  options it cannot honour: `comments`, `var_prefix`,
+  `quasi_quotations` (`term_position`, `subterm_positions` were refused until LB1), `unicode_atoms` (the NFC hook), `blob` (no blobs);
   `cycles(true)` was accepted and did nothing (no `@(T, B)` was read into a cycle: decision 4a)
   until group F (D-0123), which ports `instantiate_template`: the template unified with the term,
   then each `Var = Value` of the list (`type_error(list|equal, …)`, "invalid template", as upstream).
@@ -4856,6 +4857,28 @@ pl-modul.c at the pin, the module record and table of pl-incl.h. Decisions (D-01
 * The `module` PRED_DEF table is registered between `list` and `prims` (pl-ext.c order); 8 entries.
 * Not in MOD1: `import_module/2`, `'$current_module'/2` (MOD6), `strip_module/3` and the context module (MOD2),
   export/import (MOD5a), `$declare_module`/`$destroy_module` (MOD5b).
+
+## LB1 — the reader's term positions, `read_clause/3` (R2, loader_boot.md LD10)
+
+* **Ported (C)**, pl-read.c @ cbf4e189: `get_int_arg`, `opPos`, `unify_atomic_position`,
+  `unify_string_position`, `set_range_position`, `unify_read_term_position` (`'$stream_position'/4`),
+  the `positions`/`pin`/`pv` threading of `complex_term`, `simple_term`, `queue_out_op`,
+  `build_op_term`, `prepare_op` and the list, bracket and compound readers (`term_position/5`,
+  `list_position/4`, `brace_term_position/3`, `parentheses_term_position/3`, `string_position/2`,
+  `From-To`); `read_clause` with `term_position` and `subterm_positions` honoured, registered as
+  `read_clause/3` (PRED_IMPL); pl-file.c `getInputStream`, `getTextInputStream`.
+* **DIVERGES:** a position term is laid out on the cells by the ORIGINAL `_unify_position!` (no
+  `PL_unify_term`, as pl-error.jl since f3b-4); `out_entry` is immutable, so `build_op_term`
+  rebuilds the entry with `opPos`'s term; `get_int_arg` reads the term type's integer; the stream
+  argument of `read_clause/3` is a standard stream's alias (`get_stream_handle`: S1's stream table
+  widens it).
+* **NOT PORTED:** `end_range` (its one caller is the dict reader); a syntax error on a standard
+  stream keeps `unify_location`'s refusal (`stream(S, L, LP, C)`, with S1).
+* **Gates:** test/core_text/test_read_positions_swipl.jl (new, three term types; `subterm_positions`
+  and `term_position` compared as terms with swipl 10.1.19 over a hand corpus, kind-aimed texts,
+  user operators incl. block operators, generated `writeq` texts, and read_clause/3 on streams);
+  test_read.jl's upstream `valid_position_*` and `pos_block` units. Mutants: tools/mutants/LB1.py.
+  No bench: the reader, not the run loop (D-0185).
 
 ## Still to come
 

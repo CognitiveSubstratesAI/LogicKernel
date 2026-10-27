@@ -841,11 +841,41 @@ function _manifest_index(T)
         (LK.side_op, Tuple{Int64, LK.read_data{T}}, false),
         (LK.pop_side_op, Tuple{LK.read_data{T}}, false),
         (LK.side_p0, Tuple{LK.read_data{T}}, true),
-        (LK.queue_out_op, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.queue_out_op, Tuple{Int64, Int64, LK.read_data{T}}, false),
         (LK.out_op, Tuple{Int64, LK.read_data{T}}, true),
         (LK.pop_out_op, Tuple{LK.read_data{T}}, false),
         (LK.op_name, Tuple{LK.op_entry{T}, LK.read_data{T}}, false),
         (LK.build_op_term, Tuple{LK.op_entry{T}, LK.read_data{T}}, false),
+        # LB1 — term positions (pl-read.c) and read_clause/3 (pl-read.c; pl-file.c getInputStream)
+        (LK._unify_position!, Tuple{LD, Int64, Symbol, NTuple{2, Int64}, Tuple{}}, false),
+        (
+            LK._unify_position!,
+            Tuple{LD, Int64, Symbol, NTuple{2, Int64}, NTuple{1, Int64}},
+            false
+        ),
+        (
+            LK._unify_position!,
+            Tuple{LD, Int64, Symbol, NTuple{2, Int64}, NTuple{2, Int64}},
+            false
+        ),
+        (LK._unify_position!, Tuple{LD, Int64, Symbol, NTuple{4, Int64}, Tuple{}}, false),
+        (
+            LK._unify_position!,
+            Tuple{LD, Int64, Symbol, NTuple{4, Int64}, NTuple{1, Int64}},
+            false
+        ),
+        (LK._position_list, Tuple{LD, NTuple{1, Int64}}, false),
+        (LK._position_list, Tuple{LD, NTuple{2, Int64}}, false),
+        (LK._position_list, Tuple{LD, NTuple{3, Int64}}, false),
+        (LK.get_int_arg, Tuple{LD, Int64, Int64}, false),
+        (LK.opPos, Tuple{LK.op_entry{T}, Int64, LK.read_data{T}}, false),
+        (LK.unify_atomic_position, Tuple{LD, Int64, LK.token{T}}, false),
+        (LK.unify_string_position, Tuple{LD, Int64, LK.token{T}}, false),
+        (LK.set_range_position, Tuple{LD, Int64, Int64, Int64}, false),
+        (LK.unify_read_term_position, Tuple{LD, Int64}, false),
+        (LK.pl_read_clause3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.getInputStream, Tuple{LD, Int64, Int64}, false),
+        (LK.getTextInputStream, Tuple{LD, Int64}, false),
         (LK.copy_cterm_state, Tuple{LK.cterm_state{T}}, false),
         (LK.isOp, Tuple{LK.op_entry{T}, Int64, LK.read_data{T}}, false),
         (LK.PopOp!, Tuple{LK.cterm_state{T}}, false),
@@ -859,10 +889,10 @@ function _manifest_index(T)
         (LK.is_name_token, Tuple{LK.token{T}, Bool, LK.read_data{T}}, false),
         (LK.name_token, Tuple{LK.token{T}, LK.op_entry{T}, LK.read_data{T}}, false),
         (LK.name_token, Tuple{LK.token{T}, Nothing, LK.read_data{T}}, false),
-        (LK.prepare_op, Tuple{LK.op_entry{T}, LK.token{T}, LK.read_data{T}}, false),
+        (LK.prepare_op, Tuple{LK.op_entry{T}, LK.token{T}, Int64, LK.read_data{T}}, false),
         (LK.finish_block_op, Tuple{LK.op_entry{T}, LK.read_data{T}}, false),
-        (LK.complex_term, Tuple{Nothing, Int64, LK.read_data{T}}, false),
-        (LK.complex_term, Tuple{String, Int64, LK.read_data{T}}, false),
+        (LK.complex_term, Tuple{Nothing, Int64, Int64, LK.read_data{T}}, false),
+        (LK.complex_term, Tuple{String, Int64, Int64, LK.read_data{T}}, false),
         (LK.read_list_elem, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
         (
             LK.read_list_start,
@@ -893,7 +923,7 @@ function _manifest_index(T)
             Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}},
             false
         ),
-        (LK.simple_term, Tuple{LK.token{T}, LK.read_data{T}}, false),
+        (LK.simple_term, Tuple{LK.token{T}, Int64, LK.read_data{T}}, false),
         (
             LK.start_pframe,
             Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}},
