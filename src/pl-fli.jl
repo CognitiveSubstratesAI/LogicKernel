@@ -649,6 +649,17 @@ function charCode(w)::Int
     return -1
 end
 
+# PORT: pl-fli.c codeToAtom
+# DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` (so a
+# code 0 is refused as in every atom: `NotPortedError`); no `GD->atoms.for_code` cache of the atoms of the
+# codes below 2^15 — a symbol is its text. `EOF` (-1) is `end_of_file`.
+"The one-character atom of the code `chrcode`; `end_of_file` for -1 (pl-fli.c)."
+function codeToAtom(::Type{T}, chrcode::Int)::T where {T}
+    chrcode == -1 && return mk_sym(T, :end_of_file)         # EOF: ATOM_end_of_file
+    @assert chrcode >= 0
+    return _atom_from_text(T, string(Char(chrcode)))
+end
+
 # PORT: pl-fli.c PL_strip_module_ex
 # DIVERGES: the module is an INDEX into `gd`'s table (0 for upstream's NULL), passed in and returned
 # with the result; with none given, an unqualified term gets the context module, `user` (see

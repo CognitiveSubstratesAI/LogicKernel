@@ -2194,6 +2194,312 @@ function pl_unifiable3_va(
     return unifiable_cells(ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
+# ── text and atoms (pl-prims.c, "ATOMS"), T1 (R2) ────────────────────────────────────────────────
+
+# PORT: pl-prims.c text_length
+# DIVERGES: `BUF_ALLOW_STACK` is not ported (no buffer rings, see `PL_get_text`); the result of
+# `PL_get_text` is a text or `nothing`; no `PL_free_text` (Julia's GC owns the bytes).
+"`len` unified with the length of the text `s` holds, as `flags` (`CVT_*`) allow it (pl-prims.c)."
+function text_length(
+    ld::PL_local_data{T}, s::term_t, len::term_t, flags::UInt32
+)::Bool where {T}
+    flags |= CVT_EXCEPTION
+    txt = PL_get_text(ld, s, flags)
+    if txt !== nothing
+        return unify_int64_ex(ld, len, PL_text_length(txt), true)      # PL_unify_int64_ex
+    end
+    return false
+end
+
+# PORT: pl-prims.c atom_length as pl_atom_length2_va
+# (PRED_IMPL("atom_length", 2, atom_length, PL_FA_ISO))
+"`atom_length/2` (pl-prims.c): the length of an atom, string, number or (not under `iso`) code or character list."
+function pl_atom_length2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    flags = truePrologFlag(ld, PLFLAG_ISO) ? CVT_ATOM | CVT_STRING : CVT_ALL
+    return text_length(ld, A1, A2, flags) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c X_AUTO
+# DIVERGES: the `X_*` modes are `Int`s written in decimal (upstream: 0x00 … 0x80).
+"`x_chars` mode: `name/2`, the text is an atom or a number (pl-prims.c)."
+const X_AUTO = 0
+# PORT: pl-prims.c X_ATOM
+"`x_chars` mode: the first argument is an atom (pl-prims.c)."
+const X_ATOM = 1
+# PORT: pl-prims.c X_NUMBER
+"`x_chars` mode: the first argument is a number (pl-prims.c)."
+const X_NUMBER = 2
+# PORT: pl-prims.c X_MASK
+"`x_chars` mode: the bits of the first argument's kind (pl-prims.c)."
+const X_MASK = 15
+# PORT: pl-prims.c X_CHARS
+"`x_chars` mode: the second argument is a character list (pl-prims.c)."
+const X_CHARS = 16
+# PORT: pl-prims.c X_STRING
+"`x_chars` mode: the second argument is a string (pl-prims.c)."
+const X_STRING = 32
+# PORT: pl-prims.c X_NO_SYNTAX_ERROR
+"`x_chars` mode: a text that is not a number fails, it raises no syntax error (pl-prims.c)."
+const X_NO_SYNTAX_ERROR = 64
+# PORT: pl-prims.c X_NO_LEADING_WHITE
+"`x_chars` mode: the number's text may not start with layout (pl-prims.c)."
+const X_NO_LEADING_WHITE = 128
+
+# PORT: pl-prims.c x_chars
+# DIVERGES: the texts are `PL_get_text`'s: an atom's or a string's is UTF-8 and NOT canonical, so the number
+# case canonicalises `stext` first (upstream's are canonical already) and `PL_mb_text(REP_UTF8)` recodes an
+# `ENC_WCHAR` text as upstream; `f_is_decimal(c)` (pl-read.c:253) is `PlDecimalW(c)`; the number is read from
+# the text's bytes with the EOS appended (`str_number` takes a vector); `get_text_t` is `get_text_status`.
+"""
+The shared body of `name/2`, `atom_codes/2`, `atom_chars/2`, `number_codes/2`, `number_chars/2` and
+`number_string/2` (pl-prims.c), `how` an `X_*` mode: `atom` is converted to the text `str` holds, or the other
+way round. Raises the errors ISO asks for, `pred`/2 as the context.
+"""
+function x_chars(
+    ld::PL_local_data{T}, pred::String, atom::term_t, str::term_t, how::Int
+)::Bool where {T}
+    flags2 = CVT_STRING | CVT_LIST | CVT_EXCEPTION
+    atext = PL_get_text(ld, atom, (how & X_NUMBER) != 0 ? CVT_NUMBER : CVT_ATOMIC)
+
+    if atext !== nothing                                # +,?
+        out_type = if (how & X_CHARS) != 0
+            PL_CHAR_LIST
+        elseif (how & X_STRING) != 0
+            PL_STRING
+        else
+            PL_CODE_LIST
+        end
+        fid = PL_open_foreign_frame(ld)
+        ok = PL_unify_text(ld, str, 0, atext, out_type)
+
+        if ok
+            PL_close_foreign_frame(ld, fid)
+            return ok
+        end
+        flags2 |= CVT_VARNOFAIL
+        PL_discard_foreign_frame(ld, fid)
+    elseif !PL_is_variable(ld, atom)
+        mode = how & X_MASK
+        type = if mode == X_ATOM
+            :atom
+        elseif mode == X_NUMBER
+            :number
+        else
+            :atomic
+        end
+        return PL_error(ld, pred, 2, "", ERR_TYPE, mk_sym(T, type), atom)
+    end
+
+    # A complicated way to get the proper error message :(
+    stext = PL_init_text()
+    if (how & X_STRING) != 0
+        noerr_flags = flags2 & ~CVT_EXCEPTION
+        r = PL_get_text(ld, str, noerr_flags)
+        gt = get_text_status(r)
+        if gt == GT_TRUE
+            stext = r::PL_chars_t
+        elseif gt == GT_FALSE
+            return PL_get_text(ld, str, CVT_STRING | CVT_EXCEPTION) !== nothing
+        else                                            # GT_ISVAR
+            return false
+        end
+    else
+        r = PL_get_text(ld, str, flags2)
+        get_text_status(r) == GT_TRUE || return false
+        stext = r::PL_chars_t
+    end
+
+    mode = how & X_MASK
+    if mode == X_ATOM
+        @goto case_atom
+    elseif mode == X_NUMBER || mode == X_AUTO
+        nrc = NUM_ERROR
+        PL_canonicalise_text_ex(ld, stext) || return false
+        b = UInt8[]
+        doparse = false
+        if stext.encoding === ENC_ISO_LATIN_1
+            b = UInt8[stext.text; 0x00]                 # s = stext.text.t, EOS-terminated
+            doparse = true
+        elseif stext.encoding === ENC_WCHAR
+            ws = 0
+            we = stext.length
+
+            if mode == X_NUMBER && (how & X_NO_LEADING_WHITE) == 0
+                while ws < we
+                    if isBlankW(text_get_char(stext, ws))
+                        ws += 1
+                    else
+                        break
+                    end
+                end
+            end
+
+            if ws < we
+                c = text_get_char(stext, ws)
+                if c == Int('-') || c == Int('+')
+                    ws += 1
+                end
+            end
+
+            if ws < we
+                c = text_get_char(stext, ws)
+
+                if PlDecimalW(c)                        # f_is_decimal(c)
+                    PL_mb_text(stext, REP_UTF8) || return false
+                    b = UInt8[stext.text; 0x00]         # goto utf8
+                    doparse = true
+                end
+            end
+        end
+
+        if doparse
+            s = 1
+            # ISO: number_codes(X, "  42")
+            if mode == X_NUMBER && (how & X_NO_LEADING_WHITE) == 0
+                s = utf8_skip_blanks(b, s)
+            end
+
+            n = number()
+            nrc, q = str_number(ld, b, s, n, UInt32(0))
+            if nrc == NUM_OK
+                if q == length(b)                       # q == stext.text.t + stext.length
+                    ok = PL_unify_number(ld, atom, n)
+                    clearNumber(n)
+                    return ok
+                end
+                clearNumber(n)
+                nrc = NUM_ERROR
+            end
+        end
+
+        if mode == X_AUTO
+            @goto case_atom
+        else
+            if (how & X_NO_SYNTAX_ERROR) == 0
+                return PL_error(ld, pred, 2, "", ERR_SYNTAX, str_number_error(nrc))
+            else
+                return false
+            end
+        end
+    else
+        error("x_chars: unknown mode")                  # assert(0)
+    end
+
+    @label case_atom
+    return PL_unify_text(ld, atom, 0, stext, PL_ATOM)
+end
+
+# PORT: pl-prims.c name as pl_name2_va
+# (PRED_IMPL("name", 2, name, 0))
+"`name/2` (pl-prims.c): an atom or number and its code list; a code list that reads as a number is a number."
+function pl_name2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return x_chars(ld, "name", PL__t0, PL__t0 + 1, X_AUTO) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c atom_chars as pl_atom_chars2_va
+# (PRED_IMPL("atom_chars", 2, atom_chars, PL_FA_ISO))
+"`atom_chars/2` (pl-prims.c): an atomic and the list of its characters."
+function pl_atom_chars2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return x_chars(ld, "atom_chars", PL__t0, PL__t0 + 1, X_ATOM | X_CHARS) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c atom_codes as pl_atom_codes2_va
+# (PRED_IMPL("atom_codes", 2, atom_codes, PL_FA_ISO))
+"`atom_codes/2` (pl-prims.c): an atomic and the list of its character codes."
+function pl_atom_codes2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return x_chars(ld, "atom_codes", PL__t0, PL__t0 + 1, X_ATOM) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c number_chars as pl_number_chars2_va
+# (PRED_IMPL("number_chars", 2, number_chars, PL_FA_ISO))
+"`number_chars/2` (pl-prims.c): a number and the list of the characters that write it."
+function pl_number_chars2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return if x_chars(ld, "number_chars", PL__t0, PL__t0 + 1, X_NUMBER | X_CHARS)
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# PORT: pl-prims.c number_codes as pl_number_codes2_va
+# (PRED_IMPL("number_codes", 2, number_codes, PL_FA_ISO))
+"`number_codes/2` (pl-prims.c): a number and the list of the character codes that write it."
+function pl_number_codes2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return x_chars(ld, "number_codes", PL__t0, PL__t0 + 1, X_NUMBER) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c number_string as pl_number_string2_va
+# (PRED_IMPL("number_string", 2, number_string, 0))
+"`number_string/2` (pl-prims.c): a number and the string that writes it; a string that is no number fails."
+function pl_number_string2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return if x_chars(
+        ld, "number_string", PL__t0, PL__t0 + 1,
+        X_NUMBER | X_STRING | X_NO_SYNTAX_ERROR | X_NO_LEADING_WHITE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# PORT: pl-prims.c char_code as pl_char_code2_va
+# (PRED_IMPL("char_code", 2, char_code, PL_FA_ISO))
+"`char_code/2` (pl-prims.c): a one-character atom and its code."
+function pl_char_code2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    atom = PL__t0
+    chr = PL__t0 + 1
+    vatom = PL_is_variable(ld, atom)
+    vchr = PL_is_variable(ld, chr)
+    achr = -1
+    cchr = -1
+
+    if vatom && vchr
+        return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+    end
+
+    if !vatom
+        a = PL_get_atom(ld, atom)
+        if a === nothing || (achr = charCode(a)) == -1
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :character), atom) ? FTRUE : FFALSE
+        end
+    end
+
+    if !vchr
+        n = PL_get_integer_ex(ld, chr)
+        n === nothing && return FFALSE
+
+        if !VALID_CODE_POINT(n)
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :character_code), chr) ? FTRUE : FFALSE
+        end
+
+        cchr = n
+    end
+
+    achr == cchr && return FTRUE
+    if vatom
+        return PL_unify_atom(ld, atom, codeToAtom(T, cchr)) ? FTRUE : FFALSE
+    else
+        return PL_unify_integer(ld, chr, achr) ? FTRUE : FFALSE
+    end
+end
+
 # PORT: pl-prims.c atom_number as pl_atom_number2_va
 # (PRED_IMPL("atom_number", 2, atom_number, 0))
 # DIVERGES: `PL_get_nchars` is `PL_get_text` (no `PL_mb_text`/`PL_save_text`: an atom's or a
@@ -2233,6 +2539,121 @@ function pl_atom_number2_va(
         return PL_error(ld, ERR_TYPE, mk_sym(T, :atom), A1) ? FTRUE : FFALSE
     end
     return FFALSE
+end
+
+# PORT: pl-prims.c concat
+# DIVERGES: the texts are `PL_get_text`'s (UTF-8, not canonical for an atom or a string), so each is canonicalised
+# after it is got (upstream's are canonical already); the three lengths are field reads (`PL_text_length`), taken when
+# first needed in upstream only to spare the length of a text of which nothing is asked; a text that `PL_get_text`
+# left unset is one with `encoding === ENC_UNKNOWN` (upstream: `text.t == NULL`); `ForeignRedoInt(at_n+1)` is
+# `return PL_retry(at_n + 1)` and `ForeignContextInt(ctx)` is `PL_foreign_context(ctx)`.
+"""
+The body of `atom_concat/3` and `atomic_concat/3` (pl-prims.c): `a3` is the text of `a1` followed by that of `a2`.
+`bidirectional`: with an unbound `a1` or `a2` the splits of `a3` are the solutions, `REDO_INT` carrying the position
+of the next one; `accept` is the `CVT_*` set of the texts and `otype` the type of what is made (`PL_ATOM`, `PL_STRING`).
+"""
+function concat(
+    ld::PL_local_data{T}, a1::term_t, a2::term_t, a3::term_t, bidirectional::Bool,
+    ctx::control_t{T}, accept::UInt32, otype::Int
+)::foreign_t where {T}
+    inmode = bidirectional ? CVT_VARNOFAIL : UInt32(0)
+
+    PL_foreign_control(ctx) == FRG_CUTTED && return FTRUE
+
+    t1 = PL_get_text(ld, a1, accept | inmode | CVT_EXCEPTION)
+    t1 === nothing && return FFALSE
+    t2 = PL_get_text(ld, a2, accept | inmode | CVT_EXCEPTION)
+    t2 === nothing && return FFALSE
+    t3 = PL_get_text(ld, a3, accept | CVT_EXCEPTION | CVT_VARNOFAIL)
+    t3 === nothing && return FFALSE
+    has1 = t1.encoding !== ENC_UNKNOWN                  # t1.text.t
+    has2 = t2.encoding !== ENC_UNKNOWN
+    has3 = t3.encoding !== ENC_UNKNOWN
+    has1 && !PL_canonicalise_text_ex(ld, t1) && return FFALSE
+    has2 && !PL_canonicalise_text_ex(ld, t2) && return FFALSE
+    has3 && !PL_canonicalise_text_ex(ld, t3) && return FFALSE
+    l1 = PL_text_length(t1)
+    l2 = PL_text_length(t2)
+    l3 = PL_text_length(t3)
+
+    if has1 && has2
+        if has3
+            rc =
+                l1 + l2 == l3 &&
+                PL_cmp_text(t1, 0, t3, 0, l1) == 0 &&
+                PL_cmp_text(t2, 0, t3, l1, l2) == 0
+            return rc ? FTRUE : FFALSE
+        else
+            c = PL_concat_text(PL_chars_t[t1, t2])
+            return PL_unify_text(ld, a3, 0, c, otype) ? FTRUE : FFALSE
+        end
+    end
+
+    if !has3
+        return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+    end
+
+    if has1                                             # +, -, +
+        if l1 <= l3 && PL_cmp_text(t1, 0, t3, 0, l1) == 0
+            return PL_unify_text_range(ld, a2, t3, l1, l3 - l1, otype) ? FTRUE : FFALSE
+        end
+        return FFALSE
+    elseif has2                                         # -, +, +
+        if l2 <= l3 && PL_cmp_text(t2, 0, t3, l3 - l2, l2) == 0
+            return PL_unify_text_range(ld, a1, t3, 0, l3 - l2, otype) ? FTRUE : FFALSE
+        end
+        return FFALSE
+    else                                                # -, -, +
+        ctl = PL_foreign_control(ctx)
+        at_n = 0
+        if ctl == FRG_FIRST_CALL
+            if PL_same_term(ld, a1, a2)                 # sharing variables
+                if l3 % 2 != 0
+                    return FFALSE
+                else
+                    at_n = l3 ÷ 2
+                    if PL_cmp_text(t3, 0, t3, at_n, at_n) == 0
+                        PL_unify_text_range(ld, a1, t3, 0, at_n, otype)
+                        return FTRUE
+                    else
+                        return FFALSE
+                    end
+                end
+            end
+            at_n = 0
+        elseif ctl == FRG_REDO
+            at_n = PL_foreign_context(ctx)
+        else
+            return FTRUE
+        end
+
+        PL_unify_text_range(ld, a2, t3, at_n, l3 - at_n, otype)
+        PL_unify_text_range(ld, a1, t3, 0, at_n, otype)
+        if at_n < l3
+            return PL_retry(at_n + 1)                   # ForeignRedoInt(at_n+1)
+        end
+
+        return FTRUE
+    end
+end
+
+# PORT: pl-prims.c atom_concat as pl_atom_concat3_va
+# (PRED_IMPL("atom_concat", 3, atom_concat, PL_FA_NONDETERMINISTIC|PL_FA_ISO)) — a VARARGS built-in, as
+# upstream's PRED_IMPL is: served by NF1's `I_FCALLNDETVA`, its position the `REDO_INT` context.
+"`atom_concat/3` (pl-prims.c): `A3` is the atom of the text of `A1` and `A2`; with `A3` alone, every split of it."
+function pl_atom_concat3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return concat(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, true, PL__ctx, CVT_ATOMIC, PL_ATOM)
+end
+
+# PORT: pl-prims.c atomic_concat as pl_atomic_concat3_va
+# (PRED_IMPL("atomic_concat", 3, atomic_concat, PL_FA_ISO)); the table's flag is 0.
+"`atomic_concat/3` (pl-prims.c): `A3` is the atom of the text of `A1` and `A2`, both given."
+function pl_atomic_concat3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return concat(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, false, PL__ctx, CVT_ATOMIC, PL_ATOM)
 end
 
 # PORT: pl-prims.c throw as pl_throw1_va
@@ -2822,6 +3243,19 @@ const PL_predicates_from_prims = (
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
     PL_extension("\$free_variable_set", 3, pl_free_variable_set3_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
+    PL_extension("atom_length", 2, pl_atom_length2_va, PL_FA_ISO | PL_FA_VARARGS),       # (T1)
+    PL_extension("name", 2, pl_name2_va, PL_FA_VARARGS),
+    PL_extension("atom_chars", 2, pl_atom_chars2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("atom_codes", 2, pl_atom_codes2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension(
+        "atom_concat", 3, pl_atom_concat3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension("atomic_concat", 3, pl_atomic_concat3_va, PL_FA_VARARGS),
+    PL_extension("number_chars", 2, pl_number_chars2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("number_codes", 2, pl_number_codes2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("number_string", 2, pl_number_string2_va, PL_FA_VARARGS),
+    PL_extension("char_code", 2, pl_char_code2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS)

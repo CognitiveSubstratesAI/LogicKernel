@@ -58,6 +58,7 @@
     ERR_EVALUATION                  # atom_t what
     ERR_RESOURCE                    # atom_t what
     ERR_UNINSTANTIATION             # int argn, term_t term (AV2: put_attr/3, put_attrs/2)
+    ERR_SYNTAX                      # const char *what
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -502,6 +503,27 @@ function PL_error(
         :resource_error
     end
     PL_cons_functor(ld, formal, _err_functor(ld, name, 1), _err_atom(ld, what))
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+"""
+    PL_error(ld, pred, arity, msg, ERR_SYNTAX, what) -> false
+
+Raise `error(syntax_error(What), context(pred/arity, …))`, `What` the atom of the text `what` (pl-error.c; since
+T1, `x_chars`: `number_codes(X, "3x")`).
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
+    what::String
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_SYNTAX
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :syntax_error, 1),
+        _err_atom(ld, mk_sym(T, Symbol(what)))
+    )
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
 end
 

@@ -92,6 +92,15 @@ const PL_NOT_A_LIST = 43
 # PORT: SWI-Prolog.h PL_STRING
 "Text type: a string (SWI-Prolog.h)."
 const PL_STRING = 6
+# PORT: SWI-Prolog.h PL_CODE_LIST
+"Text type: a list of character codes (SWI-Prolog.h)."
+const PL_CODE_LIST = 15
+# PORT: SWI-Prolog.h PL_CHAR_LIST
+"Text type: a list of one-character atoms (SWI-Prolog.h)."
+const PL_CHAR_LIST = 16
+# PORT: SWI-Prolog.h REP_UTF8
+"Text conversion: the text is UTF-8 (SWI-Prolog.h)."
+const REP_UTF8 = 0x00100000
 # PORT: SWI-Prolog.h CVT_ATOM
 "Text conversion: an atom (SWI-Prolog.h)."
 const CVT_ATOM = 0x00000001
