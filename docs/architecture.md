@@ -4959,12 +4959,35 @@ What AV7 ports:
   where upstream copies the attvar word. No `meta_predicate` before R2 (design Q4 (a)): freeze/2's first clause qualifies the goal
   itself with the context module, which is `user` until contextModule is ported.
 - **Not ported / waits**: frozen/2 (R2: it needs `attribute_goals//1`/phrase; six known-difference rows `_FZ_KD` pin the
-  existence_error with swipl's answer in a comment), `'$suspend'/3` and when/2 (AV8), the O_CALL_RESIDUE entries (AV9).
+  existence_error with swipl's answer in a comment), the O_CALL_RESIDUE entries (AV9); `'$suspend'/3` and when/2: AV8.
 
 Tests: `_WK_AV7` (21 rows) and `_FZ_KD` (6) in test/core_lang/test_attvar_wakeup.jl; mutants: tools/mutants/AV7.py. Row fz18
 holds uhook's cut (mutant AV7-U2): the rows share a fixture whose `user:attr_unify_hook/2` module `freeze` sees by default
 import, so without the cut fz04/fz15 still answer `no`/`failed` (swipl 10.1.19 with the cut removed, too); fz18 asserts a
 succeeding `freeze:attr_unify_hook/2`, which only the general clause reaches.
+
+## AV8 — when/2's C half: `'$eval_when_condition'/2`, `'$suspend'/3` (att. vars, step 8)
+
+What AV8 ports:
+
+- **pl-attvar.c `when_condition`, `is_or`, `add_or`, `make_disj_list`** and `eval_when_condition` as
+  `pl_deval_when_condition2_va` (src/pl-attvar.jl, `'$eval_when_condition'/2` in `system`): satisfied `nonvar/1`, `ground/1`
+  conditions become `true`, a `,` keeps what is left, a `;` with a true side is `true`, nested disjunctions join into
+  `or(List)`; an unbound condition is the instantiation error, any other non-condition `domain_error(when_condition, A1)`,
+  a cyclic one (checked at depth 100) `type_error(acyclic_term, A1)`. An attributed variable as the condition is not `isVar`
+  (pl-data.h:229): E_DOMAIN_ERROR, which pl-error.c:266 (`PL_is_variable`, canBind) turns into instantiation_error (row we13).
+- **pl-attvar.c `suspend`** as `pl_dsuspend3_va` (`'$suspend'/3`, `PL_FA_TRANSPARENT`): the goal qualified with the context
+  module unless `_:_`; a plain variable gets attribute `call(Goal)`, an attvar whose attribute is `call(G0)` gets `call((G0,Goal))`
+  (trailed), any other value fails, a missing attribute is appended; a bound first argument is `uninstantiation_error`.
+- **library/when.pl** as the boot stand-in `_boot_when!` (src/pl-ext.jl, after `_boot_freeze!`, `system`, when/2 `P_LOCKED`):
+  when/2 and the `true` / general clauses of trigger_first/2 (when.pl:84-86, 98-100, 104-105); trigger/2 and the `nonvar` clause
+  wait for R2 (module `when`'s attr_unify_hook/2): a pending condition raises trigger/2's existence error.
+- **DIVERGES** (representation only, behaviour identical on every row): `when_status` as Int constants, E_NOSPACE never returned
+  (`allocGlobalCells!` grows the stack; no `retry:`); results returned as `(rc, word)`; `'$suspend'` dereferences its goal and
+  builds `call(Goal)` in 2 cells (upstream 3); the context module is `user` until contextModule is ported (design Q4 (a)).
+
+Tests: `_WK_AV8` (33 rows: we01-we21, su01-su08 from lk-channel evidence/AV8/swipl_probe_rows.pl, wh05-wh07, wh10) in
+test/core_lang/test_attvar_wakeup.jl, re-checked on swipl 10.1.19; mutants: tools/mutants/AV8.py.
 
 ## Still to come
 

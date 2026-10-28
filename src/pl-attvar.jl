@@ -728,9 +728,231 @@ function pl_dfreeze2_va(
     return FFALSE                                           # fail
 end
 
+# ── when (AV8): `'$eval_when_condition'/2`, `'$suspend'/3` ───────────────────────────────────────
+# DIVERGES: when_status as Int constants (no @enum, no `_enum_hash` entry); E_NOSPACE kept for the
+# switch but never returned (`allocGlobalCells!` grows the stack, upstream's allocGlobalNoShift fails).
+const E_NOSPACE = -4
+const E_CYCLIC = -3
+const E_DOMAIN_ERROR = -2
+const E_INSTANTIATION_ERROR = -1
+const E_OK = 0
+
+# PORT: pl-attvar.c when_state
+"when_condition's state: the saved global top and the recursion depth (pl-attvar.c)."
+mutable struct when_state
+    gSave::Int
+    depth::Int
+end
+
+# PORT: pl-attvar.c is_or
+"Whether word `c` is a compound `or/1` (pl-attvar.c)."
+function is_or(ld::PL_local_data{T}, c::word)::Bool where {T}
+    return _is_gcompound(c) &&
+           ld.gstack[valPtr(c)] ==
+           lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :or)), 1)
+end
+
+# PORT: pl-attvar.c add_or
+# DIVERGES: positions; the list cells from `allocGlobalCells!`. `*tail = *l` copies the cell word.
+"Append condition `c2` (or an `or/1`'s whole list) to the list of the `or/1` word `or` (pl-attvar.c)."
+function add_or(ld::PL_local_data{T}, or::word, c2::word)::Int where {T}
+    _, tw, tail = _deref_loc(ld, valPtr(or) + 1)            # tail = argTermP(or, 0); deRef(tail)
+    while _is_gcompound(tw) && ld.gstack[valPtr(tw)] == ld.functor_dot2   # while ( isList(*tail) )
+        _, tw, tail = _deref_loc(ld, valPtr(tw) + 2)        #   tail = TailList(tail); deRef(tail)
+    end
+    @assert tw == ld.atom_nil_w "add_or: the or-list does not end in []"
+
+    if is_or(ld, c2)                                        # if ( is_or(c2) )
+        ld.gstack[tail] = ld.gstack[valPtr(c2) + 1]         #   *tail = *argTermP(c2, 0)
+    else
+        n = allocGlobalCells!(ld, 3)                        #   n = allocGlobalNoShift(3)
+        ld.gstack[n] = ld.functor_dot2                      #   n[0] = FUNCTOR_dot2
+        ld.gstack[n + 1] = c2                               #   n[1] = c2
+        ld.gstack[n + 2] = ld.atom_nil_w                    #   n[2] = ATOM_nil
+        ld.gstack[tail] = consPtr(n, TAG_COMPOUND | STG_GLOBAL)
+    end
+    return E_OK
+end
+
+# PORT: pl-attvar.c make_disj_list
+# DIVERGES: returns `(rc, result)` where upstream writes `*result`.
+"Join two simplified conditions into `or(List)`, extending an `or/1` either one is (pl-attvar.c)."
+function make_disj_list(
+    ld::PL_local_data{T}, c1::word, c2::word
+)::Tuple{Int, word} where {T}
+    if is_or(ld, c1)
+        return (add_or(ld, c1, c2), c1)                     # add_or(c1, c2); *result = c1
+    elseif is_or(ld, c2)
+        return (add_or(ld, c2, c1), c2)                     # add_or(c2, c1); *result = c2
+    end
+    t = allocGlobalCells!(ld, 8)                            # t = allocGlobalNoShift(8)
+    ld.gstack[t] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :or)), 1)  # FUNCTOR_or1
+    ld.gstack[t + 1] = consPtr(t + 2, TAG_COMPOUND | STG_GLOBAL)
+    ld.gstack[t + 2] = ld.functor_dot2
+    ld.gstack[t + 3] = c1
+    ld.gstack[t + 4] = consPtr(t + 5, TAG_COMPOUND | STG_GLOBAL)
+    ld.gstack[t + 5] = ld.functor_dot2
+    ld.gstack[t + 6] = c2
+    ld.gstack[t + 7] = ld.atom_nil_w
+    return (E_OK, consPtr(t, TAG_COMPOUND | STG_GLOBAL))
+end
+
+"The functor word `name/arity` (when_condition's FUNCTOR_* constants)."
+_when_functor(ld::PL_local_data{T}, name::Symbol, arity::Int) where {T} =
+    lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, name)), arity)
+
+# PORT: pl-attvar.c when_condition
+# DIVERGES: `cond` a location; returns `(rc, result)` where upstream writes `*result` (the compound word
+# of a kept condition, or ATOM_true). An attributed variable is not `isVar` (pl-data.h:229), so it is
+# E_DOMAIN_ERROR here, as upstream; pl-error.c:266's `PL_is_variable(arg)` (canBind) then turns the
+# domain error on A1 into instantiation_error (row we13, swipl 10.1.19).
+"Simplify the when/2 condition at location `cond` (pl-attvar.c)."
+function when_condition(
+    ld::PL_local_data{T}, cond::Int, state::when_state
+)::Tuple{Int, word} where {T}
+    k, w, _ = _deref_loc(ld, cond)                          # deRef(cond)
+    true_w = _atom_word!(ld, mk_sym(T, Symbol("true")))
+
+    if state.depth == 100                                   # if ( state->depth++ == 100 )
+        state.depth += 1
+        is_acyclic_cells(ld, cond) || return (E_CYCLIC, word(0))
+    else
+        state.depth += 1
+    end
+
+    if k == DU_WORD && _is_gcompound(w)                     # if ( isTerm(*cond) )
+        f = ld.gstack[valPtr(w)]
+        a = valPtr(w) + 1
+        if f == _when_functor(ld, Symbol("?="), 2)                   # ?=/2
+            return (E_OK, w)
+        elseif f == _when_functor(ld, :nonvar, 1)
+            k1, _, _ = _deref_loc(ld, a)
+            return (E_OK, (k1 == DU_CELL || k1 == DU_ATTVAR) ? w : true_w)   # canBind(*a1)
+        elseif f == _when_functor(ld, :ground, 1)
+            return (E_OK, ground_cells(ld, a) == 0 ? true_w : w)
+        elseif f == _when_functor(ld, Symbol(","), 2)
+            rc, c1 = when_condition(ld, a, state)
+            rc < 0 && return (rc, word(0))
+            rc, c2 = when_condition(ld, a + 1, state)
+            rc < 0 && return (rc, word(0))
+            c1 == true_w && return (E_OK, c2)
+            c2 == true_w && return (E_OK, c1)
+            t = allocGlobalCells!(ld, 3)
+            ld.gstack[t] = f                                # t[0] = FUNCTOR_comma2
+            ld.gstack[t + 1] = c1
+            ld.gstack[t + 2] = c2
+            return (E_OK, consPtr(t, TAG_COMPOUND | STG_GLOBAL))
+        elseif f == _when_functor(ld, Symbol(";"), 2)
+            rc, c1 = when_condition(ld, a, state)
+            rc < 0 && return (rc, word(0))
+            c1 == true_w && return (E_OK, c1)
+            rc, c2 = when_condition(ld, a + 1, state)
+            rc < 0 && return (rc, word(0))
+            c2 == true_w && return (E_OK, c2)
+            return make_disj_list(ld, c1, c2)
+        end
+        return (E_DOMAIN_ERROR, word(0))
+    end
+
+    k == DU_CELL && return (E_INSTANTIATION_ERROR, word(0)) # if ( isVar(*cond) )
+    return (E_DOMAIN_ERROR, word(0))
+end
+
+# PORT: pl-attvar.c eval_when_condition as pl_deval_when_condition2_va
+# DIVERGES: no `retry:` (E_NOSPACE never arises, see the constants); `gTop = state.gSave` resets `ld.gTop`.
+"`\$eval_when_condition/2` (pl-attvar.c): simplify a when/2 condition; `true` when nothing is left to wait for."
+function pl_deval_when_condition2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    cond = PL_new_term_ref(ld)                              # cond = PL_new_term_ref()
+    state = when_state(ld.gTop, 0)                          # state.gSave = gTop; state.depth = 0
+
+    rc, result = when_condition(ld, -(A1 + 1), state)
+    if rc < 0
+        ld.gTop = state.gSave                               # gTop = state.gSave
+        PL_put_variable(ld, cond)
+        if rc == E_INSTANTIATION_ERROR
+            return PL_error(ld, ERR_INSTANTIATION) ? FTRUE : FFALSE
+        elseif rc == E_DOMAIN_ERROR
+            return PL_error(ld, ERR_DOMAIN, mk_sym(T, :when_condition), A1) ? FTRUE : FFALSE
+        else                                                # E_CYCLIC
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :acyclic_term), A1) ? FTRUE : FFALSE
+        end
+    end
+    ld.slots[cond + 1] = result                             # *valTermRef(cond) = result
+    return PL_unify(ld, A2, cond) ? FTRUE : FFALSE          # return PL_unify(A2, cond)
+end
+
+"The cells of `call(Goal)` for the location `g`: its compound word (`'\$suspend'`'s `t`)."
+function _suspend_call_word!(
+    ld::PL_local_data{T}, g::Tuple{UInt8, word, Int}
+)::word where {T}
+    t = allocGlobalCells!(ld, 2)
+    ld.gstack[t] = _when_functor(ld, :call, 1)              # t[1] = FUNCTOR_call1
+    ld.gstack[t + 1] = _link_val_loc!(ld, g)                # t[2] = linkValI(g)
+    return consPtr(t, TAG_COMPOUND | STG_GLOBAL)
+end
+
+# PORT: pl-attvar.c suspend as pl_dsuspend3_va
+# DIVERGES: `g` dereferenced (upstream tests the term reference's word); the context module is `user`
+# until contextModule is ported (design Q4 (a), as freeze/2's stand-in); `call(Goal)` takes 2 cells
+# (upstream 3: its first holds the compound's word, here the word itself is passed); `assert(0)` (bad
+# attributes) returns false.
+"`\$suspend/3` (pl-attvar.c): add `Goal` to attribute `Attr`'s `call/1` value (conjoined), qualified with the context module."
+function pl_dsuspend3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ensureGlobalSpace(ld, 6) || return FFALSE
+    a = PL_get_atom_ex(ld, A2)
+    a === nothing && return FFALSE
+    name = _atom_word!(ld, a)
+
+    g = _deref_loc(ld, -(A3 + 1))                           # g = valTermRef(A3)
+    if !(
+        g[1] == DU_WORD && _is_gcompound(g[2]) &&
+        ld.gstack[valPtr(g[2])] == _when_functor(ld, :(:), 2)
+    )
+        t = allocGlobalCells!(ld, 3)
+        ld.gstack[t] = _when_functor(ld, :(:), 2)           # t[0] = FUNCTOR_colon2
+        ld.gstack[t + 1] = _atom_word!(ld, mk_sym(T, :user))   # contextModule(...)->name
+        ld.gstack[t + 2] = _link_val_loc!(ld, g)            # t[2] = linkValNoG(g)
+        g = (DU_WORD, consPtr(t, TAG_COMPOUND | STG_GLOBAL), 0)
+    end
+
+    k, _, v = _deref_loc(ld, -(A1 + 1))                     # v = valTermRef(A1); deRef(v)
+    if k == DU_CELL                                         # if ( isVar(*v) )
+        put_new_attvar(ld, v, name, (DU_WORD, _suspend_call_word!(ld, g), 0))
+        return FTRUE
+    elseif k == DU_ATTVAR
+        found, vp = find_attr(ld, v, name)
+        if found
+            k0, w0, _ = _deref_loc(ld, vp)                  # deRef2(vp, g0)
+            if k0 == DU_WORD && _is_gcompound(w0) &&
+                ld.gstack[valPtr(w0)] == _when_functor(ld, :call, 1)
+                ap = valPtr(w0) + 1                         # ap = argTermP(*g0, 0)
+                t = allocGlobalCells!(ld, 3)
+                ld.gstack[t] = _when_functor(ld, Symbol(","), 2)   # t[0] = FUNCTOR_comma2
+                ld.gstack[t + 1] = _link_val_loc!(ld, _deref_loc(ld, ap))   # t[1] = linkValI(ap)
+                ld.gstack[t + 2] = _link_val_loc!(ld, g)    # t[2] = linkValI(g)
+                TrailAssignment!(ld, ap)                    # TrailAssignment(ap): $suspend
+                ld.gstack[ap] = consPtr(t, TAG_COMPOUND | STG_GLOBAL)
+                return FTRUE
+            end
+            return FFALSE
+        elseif vp != 0
+            put_att_value(ld, vp, name, (DU_WORD, _suspend_call_word!(ld, g), 0))
+            return FTRUE
+        end
+        return FFALSE                                       # assert(0)
+    end
+    return PL_error(ld, "\$suspend", 3, "", ERR_UNINSTANTIATION, 1, A1) ? FTRUE : FFALSE
+end
+
 # PORT: pl-attvar.c BeginPredDefs as PL_predicates_from_attvar
 # DIVERGES: the entries ported since AV2, in upstream's order; `PRED_DEF` ors in `PL_FA_VARARGS`. NOT PORTED:
-# `$eval_when_condition` and `$suspend` (AV8), and the O_CALL_RESIDUE entries (AV9).
+# the O_CALL_RESIDUE entries (AV9).
 "pl-attvar.c's registration table (`BeginPredDefs(attvar)`): the ported entries."
 const PL_predicates_from_attvar = (
     PL_extension("attvar", 1, pl_attvar1_va, PL_FA_VARARGS),
@@ -741,5 +963,7 @@ const PL_predicates_from_attvar = (
     PL_extension("get_attrs", 2, pl_get_attrs2_va, PL_FA_VARARGS),
     PL_extension("put_attrs", 2, pl_put_attrs2_va, PL_FA_VARARGS),
     PL_extension("\$freeze", 2, pl_dfreeze2_va, PL_FA_VARARGS),
+    PL_extension("\$eval_when_condition", 2, pl_deval_when_condition2_va, PL_FA_VARARGS),
+    PL_extension("\$suspend", 3, pl_dsuspend3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("\$attv_unify", 2, pl_attv_unify2_va, PL_FA_VARARGS)
 )

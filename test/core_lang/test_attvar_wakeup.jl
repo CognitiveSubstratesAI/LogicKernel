@@ -1319,6 +1319,175 @@ const _WK_AV7 = [
     _wk_check_rows(_WK_AV7, "AV7 rows")
 end
 
+# AV8 — when/2's C half (pl-attvar.c `'$eval_when_condition'/2`, `'$suspend'/3`; when/2 the boot stand-in
+# `_boot_when!`). Rows wh05, wh06, wh07, wh10 of evidence/av/rows.tsv (goals verbatim) and the probe rows
+# we01-we20, su01-su08 of lk-channel evidence/AV8/swipl_probe_rows.pl (swipl 10.1.19; we21 probed separately); answers re-checked live by
+# `_wk_check_rows`. The other wh rows suspend a goal (trigger/2, library/when.pl) and wait for R2.
+_wk_ugoal(g::String) = _ec(":", _ea("user"), _ea(g))
+const _WK_AV8 = [
+    ("we01", "'\$eval_when_condition'(nonvar(a), R)", _ea("true")),
+    (
+        "we02",
+        "'\$eval_when_condition'(nonvar(X), R0), R0 = nonvar(Y), (X == Y -> R = R0 ; R = other)",
+        _ec("nonvar", "V0")
+    ),
+    ("we03", "'\$eval_when_condition'(ground(f(a)), R)", _ea("true")),
+    (
+        "we04",
+        "'\$eval_when_condition'((nonvar(X);nonvar(Y)), R)",
+        _ec("or", _wk_list(_ec("nonvar", "V0"), _ec("nonvar", "V1")))
+    ),
+    (
+        "we05",
+        "'\$eval_when_condition'(((nonvar(X);nonvar(Y));nonvar(Z)), R0), (R0 = or([A,B,C]), A == nonvar(X), B == nonvar(Y), C == nonvar(Z) -> R = xyz ; R = R0)",
+        _ea("xyz")
+    ),
+    (
+        "we06",
+        "'\$eval_when_condition'((nonvar(X);(nonvar(Y);nonvar(Z))), R0), (R0 = or([A,B,C]), A == nonvar(Y), B == nonvar(Z), C == nonvar(X) -> R = yzx ; R = R0)",
+        _ea("yzx")
+    ),
+    ("we07", "'\$eval_when_condition'((nonvar(a);nonvar(_)), R)", _ea("true")),
+    ("we08", "'\$eval_when_condition'((nonvar(_);nonvar(a)), R)", _ea("true")),
+    (
+        "we09",
+        "'\$eval_when_condition'((nonvar(X),nonvar(a)), R0), (R0 == nonvar(X) -> R = c1 ; R = R0)",
+        _ea("c1")
+    ),
+    (
+        "we10",
+        "'\$eval_when_condition'(?=(X,Y), R0), (R0 == ?=(X,Y) -> R = same ; R = R0)",
+        _ea("same")
+    ),
+    (
+        "we11",
+        "catch('\$eval_when_condition'(foo, _), error(R, _), true)",
+        _ec("domain_error", _ea("when_condition"), _ea("foo"))
+    ),
+    (
+        "we12",
+        "catch('\$eval_when_condition'(1, _), error(R, _), true)",
+        _ec("domain_error", _ea("when_condition"), _ei(1))
+    ),
+    # we13: an attributed variable is not isVar: E_DOMAIN_ERROR, which PL_error turns into instantiation_error
+    (
+        "we13",
+        "put_attr(X,a,1), catch('\$eval_when_condition'(X, _), error(E, _), true), E =.. [R|_]",
+        _ea("instantiation_error")
+    ),
+    # we21: nested, the attributed variable is not isVar either: the domain error stays on the whole condition (swipl 10.1.19)
+    (
+        "we21",
+        "put_attr(X,a,1), catch('\$eval_when_condition'((nonvar(a), X), _), error(E, _), true), E =.. [R|_]",
+        _ea("domain_error")
+    ),
+    (
+        "we14",
+        "X = (X, nonvar(_)), catch('\$eval_when_condition'(X, _), error(type_error(R, _), _), true)",
+        _ea("acyclic_term")
+    ),
+    (
+        "we15",
+        "catch('\$eval_when_condition'((nonvar(a), foo), _), error(R, _), true)",
+        _ec(
+            "domain_error",
+            _ea("when_condition"),
+            _ec(",", _ec("nonvar", _ea("a")), _ea("foo"))
+        )
+    ),
+    (
+        "we16",
+        "catch('\$eval_when_condition'((nonvar(a), _), _), error(R, _), true)",
+        _ea("instantiation_error")
+    ),
+    (
+        "we17",
+        "'\$eval_when_condition'((ground(f(X)), nonvar(Y)), R0), (R0 = (ground(A), nonvar(B)), A == f(X), B == Y -> R = both ; R = R0)",
+        _ea("both")
+    ),
+    (
+        "we18",
+        "'\$eval_when_condition'((nonvar(X);nonvar(Y);nonvar(Z)), R0), (R0 = or(L), length(L, N) -> R = N ; R = R0)",
+        _ei(3)
+    ),
+    (
+        "we19",
+        "catch('\$eval_when_condition'((nonvar(_);foo), _), error(E, _), true), E =.. [R|_]",
+        _ea("domain_error")
+    ),
+    ("we20", "catch('\$eval_when_condition'((nonvar(a);foo), R), _, R = err)", _ea("true")),
+    ("su01", "'\$suspend'(X, when, g), get_attr(X, when, R)", _ec("call", _wk_ugoal("g"))),
+    (
+        "su02",
+        "'\$suspend'(X, when, g), '\$suspend'(X, when, h), get_attr(X, when, R)",
+        _ec("call", _ec(",", _wk_ugoal("g"), _wk_ugoal("h")))
+    ),
+    (
+        "su03",
+        "put_attr(X, a, 1), '\$suspend'(X, when, m:g), get_attr(X, when, R)",
+        _ec("call", _ec(":", _ea("m"), _ea("g")))
+    ),
+    (
+        "su04",
+        "put_attr(X, when, foo), ('\$suspend'(X, when, g) -> R = yes ; R = no)",
+        _ea("no")
+    ),
+    (
+        "su05",
+        "catch('\$suspend'(a, when, g), error(R, _), true)",
+        _ec("uninstantiation_error", _ea("a"))
+    ),
+    (
+        "su06",
+        "catch('\$suspend'(_, 1, g), error(R, _), true)",
+        _ec("type_error", _ea("atom"), _ei(1))
+    ),
+    (
+        "su07",
+        "put_attr(X, when, call(g)), ( '\$suspend'(X, when, h), fail ; get_attr(X, when, R) )",
+        _ec("call", _ea("g"))
+    ),
+    (
+        "su08",
+        "put_attr(X, a, 1), '\$suspend'(X, when, g), get_attrs(X, R)",
+        _ec(
+            "att",
+            _ea("a"),
+            _ei(1),
+            _ec("att", _ea("when"), _ec("call", _wk_ugoal("g")), "nil")
+        )
+    ),
+    (
+        "wh05",
+        "catch(when(foo(_), true), R, true)",
+        _ec(
+            "error",
+            _ec("domain_error", _ea("when_condition"), _ec("foo", "V0")),
+            _ctx(_sys(_pi("\$eval_when_condition", 2)), "V1")
+        )
+    ),
+    (
+        "wh06",
+        "catch(when(_, true), R, true)",
+        _ec(
+            "error",
+            _ea("instantiation_error"),
+            _ctx(_sys(_pi("\$eval_when_condition", 2)), "V0")
+        )
+    ),
+    ("wh07", "when(nonvar(a), R = ok)", _ea("ok")),
+    (
+        "wh10",
+        "'\$eval_when_condition'((nonvar(a), ground(X)), R0), R0 = ground(Y), (X == Y -> R = R0 ; R = other)",
+        _ec("ground", "V0")
+    )
+]
+
+@testset "AV8: when/2's C half — '\$eval_when_condition'/2, '\$suspend'/3, rows we*, su*, wh05-wh07, wh10, re-checked on swipl" begin
+    @test length(_WK_AV8) == 33
+    _wk_check_rows(_WK_AV8, "AV8 rows")
+end
+
 # hk11b = upstream's `failing_catchers` (swipl-devel 7b9d8ba, tests/core_lang/test_exception.pl:81-84, `R == outer(2)`;
 # its module's hook `attr_unify_hook(no, _) :- fail` is this fixture's `user` one): two attributed catchers whose
 # hooks fail. findCatcher ports upstream's fix 7b9d8ba (each catcher in a foreign frame of its own). Kernel only:

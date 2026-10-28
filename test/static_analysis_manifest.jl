@@ -1299,9 +1299,17 @@ function _manifest_index(T)
                 LK.pl_attvar1_va, LK.pl_get_attrs2_va, LK.pl_get_attr3_va,
                 LK.pl_put_attr3_va,
                 LK.pl_put_attrs2_va, LK.pl_del_attr2_va, LK.pl_del_attrs1_va,
-                LK.pl_attv_unify2_va, LK.pl_dfreeze2_va
+                LK.pl_attv_unify2_va, LK.pl_dfreeze2_va,
+                LK.pl_deval_when_condition2_va, LK.pl_dsuspend3_va
             )
         ]...,
+        # AV8 — when/2's C half (src/pl-attvar.jl)
+        (LK._when_functor, Tuple{LD, Symbol, Int}, false),
+        (LK.is_or, Tuple{LD, UInt64}, false),
+        (LK.add_or, Tuple{LD, UInt64, UInt64}, false),
+        (LK.make_disj_list, Tuple{LD, UInt64, UInt64}, false),
+        (LK.when_condition, Tuple{LD, Int, LK.when_state}, false),
+        (LK._suspend_call_word!, Tuple{LD, Tuple{UInt8, UInt64, Int}}, false),
         (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, Int, Int}, false),   # ERR_UNINSTANTIATION
         # V9f — `$/1`, `$/0`: the determinism errors (src/pl-wam.jl, pl-comp.jl, pl-error.jl) and
         # the frame's variables made fresh before its goal is decompiled (src/pl-gc.jl)
@@ -1409,6 +1417,7 @@ function _manifest_index(T)
         (LK._boot_attvar!, Tuple{GD}, false),                    # boot/attvar.pl's wakeup clauses (AV3)
         (LK._boot_freeze_uhook!, Tuple{GD, LD}, false),          # boot/attvar.pl's uhook(freeze, …), unfreeze/1 (AV7)
         (LK._boot_freeze!, Tuple{GD, LD}, false),                # boot/attvar.pl's freeze/2 (AV7)
+        (LK._boot_when!, Tuple{GD, LD}, false),                  # library/when.pl's when/2, trigger_first/2 (AV8)
         (LK._boot_bagof!, Tuple{GD, LD}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),

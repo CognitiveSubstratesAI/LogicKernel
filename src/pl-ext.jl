@@ -565,6 +565,43 @@ function _boot_attvar!(gd::PL_global_data{T})::Nothing where {T}
         UInt64(0)
     )
     _boot_freeze!(gd, ld)
+    _boot_when!(gd, ld)
+    return nothing
+end
+
+# DIVERGES (no upstream function; AV8, as `_boot_freeze!`): library/when.pl's when/2 and the two
+# trigger_first/2 clauses that need no attribute hook (when.pl:84-86, 98-100, 104-105), `system`'s and
+# locked until R2 loads library(when) (design Q2 (a)):
+#     when(Condition, Goal) :- '$eval_when_condition'(Condition, Optimised), trigger_first(Optimised, Goal).
+#     trigger_first(true, Goal) :- !, call(Goal).
+#     trigger_first(Cond, Goal) :- trigger(Cond, Goal).
+# when.pl:101-103's `trigger_first(nonvar(X), Goal)` and trigger/2 wait for R2 (their wakeup is module
+# `when`'s attr_unify_hook/2): a condition still pending after `'$eval_when_condition'/2` raises the
+# existence error of trigger/2, never a silent failure. No `meta_predicate when(+, 0)` before R2: the
+# goal is called unqualified (call/1 takes the context module, `user`, design Q4 (a)).
+"Define when/2 in the `system` module of `gd` as library/when.pl defines it, up to the conditions that are already true."
+function _boot_when!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    v = _boot_vars(T, 3)
+    Condition, Goal, Optimised = v[1], v[2], v[3]
+    _boot_clause!(
+        gd, ld, :when, T[Condition, Goal],
+        _boot_conj(
+            T[
+                _boot_term(Symbol("\$eval_when_condition"), T[Condition, Optimised]),
+                _boot_term(:trigger_first, T[Optimised, Goal])
+            ]
+        ),
+        P_LOCKED
+    )
+    _boot_clause!(
+        gd, ld, :trigger_first, T[mk_sym(T, Symbol("true")), Goal],
+        _boot_conj(T[mk_sym(T, :!), _boot_term(:call, T[Goal])]), UInt64(0)
+    )
+    _boot_clause!(
+        gd, ld, :trigger_first, T[Condition, Goal],
+        _boot_term(:trigger, T[Condition, Goal]),
+        UInt64(0)
+    )
     return nothing
 end
 
