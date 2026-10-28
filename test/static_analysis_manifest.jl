@@ -1300,9 +1300,18 @@ function _manifest_index(T)
                 LK.pl_put_attr3_va,
                 LK.pl_put_attrs2_va, LK.pl_del_attr2_va, LK.pl_del_attrs1_va,
                 LK.pl_attv_unify2_va, LK.pl_dfreeze2_va,
-                LK.pl_deval_when_condition2_va, LK.pl_dsuspend3_va
+                LK.pl_deval_when_condition2_va, LK.pl_dsuspend3_va,
+                LK.pl_dattvars_after_choicepoint2_va, LK.pl_dcall_residue_vars_start0_va,
+                LK.pl_dcall_residue_vars_end0_va
             )
         ]...,
+        # AV9 — call_residue_vars/2's C half (src/pl-attvar.jl, src/pl-wam.jl)
+        (LK.trail_new_attvar, Tuple{LD, Int}, false),
+        (LK.get_value, Tuple{LD, Int}, false),
+        (LK.deRefM, Tuple{LD, Int}, false),
+        (LK.has_attributes_after, Tuple{LD, Int, Int}, false),
+        (LK.scan_trail, Tuple{LD, Int, Bool}, false),
+        (LK.existingChoice, Tuple{LD, Int}, false),
         # AV8 — when/2's C half (src/pl-attvar.jl)
         (LK._when_functor, Tuple{LD, Symbol, Int}, false),
         (LK.is_or, Tuple{LD, UInt64}, false),
@@ -1403,6 +1412,7 @@ function _manifest_index(T)
                 LK.pl_numbervars4_va, LK.pl_term_variables2_va,
                 LK.pl_term_variables3_va, LK.pl_term_attvar_variables2_va,
                 LK.pl_term_attvars2_va,
+                LK.pl_deterministic1_va,
                 LK.pl_free_variable_set3_va, LK.pl_skip_list3_va, LK.pl_univ2_va
             )
         ]...,
@@ -1418,6 +1428,7 @@ function _manifest_index(T)
         (LK._boot_freeze_uhook!, Tuple{GD, LD}, false),          # boot/attvar.pl's uhook(freeze, …), unfreeze/1 (AV7)
         (LK._boot_freeze!, Tuple{GD, LD}, false),                # boot/attvar.pl's freeze/2 (AV7)
         (LK._boot_when!, Tuple{GD, LD}, false),                  # library/when.pl's when/2, trigger_first/2 (AV8)
+        (LK._boot_call_residue_vars!, Tuple{GD, LD}, false),     # boot/attvar.pl's call_residue_vars/2, run_crv/4 (AV9)
         (LK._boot_bagof!, Tuple{GD, LD}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),

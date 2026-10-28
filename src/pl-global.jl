@@ -308,8 +308,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # Since AV1: three of upstream's `attvar` fields — `head` and `tail`, the wakeup list's term references
 # (`emptyStacks!` makes them, with PERMANENT cells as the exception's: audit D-0122 Q1 (a)), and
 # `attvars`, the chain of attributed variables (`register_attvar`, `reclaim_attvars`) as a global
-# position, 0 for NULL. NOT PORTED: `gc_attvars` (the collector's, G1) and `call_residue_vars_count`
-# (call_residue_vars/2, AV9).
+# position, 0 for NULL. Since AV9 `call_residue_vars_count` (call_residue_vars/2's nesting:
+# `trail_new_attvar`, src/pl-attvar.jl). NOT PORTED: `gc_attvars` (the collector's, G1).
 # Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
 # the pool of current_prolog_flag/2's states.
 """
@@ -405,6 +405,7 @@ mutable struct PL_local_data{T}
     attvar_head::Int                                            # attvar.head: the wakeup list (AV1; Q1, D-0122)
     attvar_tail::Int                                            # attvar.tail: its tail
     attvar_attvars::Int                                         # attvar.attvars: the newest link cell (0: NULL)
+    attvar_call_residue_vars_count::Int                         # attvar.call_residue_vars_count (AV9)
     alerted::Int32                                              # alerted: ALERT_* (only ALERT_WAKEUP is ported, AV3)
     tmp_h::Int                                                  # tmp.h: the first of TMP_PTR_SIZE consecutive references
     tmp_top::Int                                                # tmp.top
@@ -489,6 +490,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         Vector{argstack_entry{T}}(undef, 64), 0,
         0, 0, 0, 0, 0, 0,
         0, 0, 0,                                # attvar: head, tail (set by emptyStacks!), attvars: none
+        0,                                      # attvar.call_residue_vars_count (AV9)
         Int32(0),                               # alerted: nothing
         0, 0, 0,                                # tmp: set by emptyStacks!
         false, false, false, 0,

@@ -2931,6 +2931,38 @@ function pl_term_attvars2_va(
     return term_variables(ld, A1, A2, 0, TV_ATTVAR | TV_ATTS) ? FTRUE : FFALSE
 end
 
+# PORT: pl-prims.c deterministic as pl_deterministic1_va
+# (PRED_IMPL("deterministic", 1, deterministic, 0)) (AV9; boot/attvar.pl's run_crv/4 calls it)
+# DIVERGES: positions — `(void *)BFR > (void *)FR` compares the records' `base` (the local-stack
+# position, as `ld.choices[ld.BFR].base <= ec_f.base` in src/pl-wam.jl); upstream's NULL parent frame
+# (a top frame) is position 0, below every choice point. `environment_frame` is this call's own frame
+# (I_FCALLDETVA opens it, src/pl-wam.jl), so `->parent` is the calling clause's frame, as upstream's.
+# The CHP_CLAUSE case falls through into CHP_JUMP's, as upstream's `switch` does.
+"`deterministic(-Bool)` (pl-prims.c): `true` if no choice point has been created in the current clause."
+function pl_deterministic1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    FR = ld.frames[ld.environment_frame].parent             # LocalFrame FR = environment_frame->parent
+    fr_base = FR == 0 ? 0 : ld.frames[FR].base
+    BFR = ld.BFR                                            # Choice BFR = LD->choicepoints
+    while BFR != 0                                          # for( ; BFR; BFR = BFR->parent)
+        ch = ld.choices[BFR]
+        if ch.type == CHP_CLAUSE || ch.type == CHP_JUMP     # case CHP_CLAUSE: … case CHP_JUMP:
+            if ch.type == CHP_CLAUSE && ch.frame == FR      #   if ( BFR->frame == FR )
+                return PL_unify_atom(ld, A1, mk_sym(T, Symbol("true"))) ? FTRUE : FFALSE
+            end
+            if ch.base > fr_base                            #   if ( (void *)BFR > (void *)FR )
+                return PL_unify_atom(ld, A1, mk_sym(T, Symbol("false"))) ? FTRUE : FFALSE
+            else
+                return PL_unify_atom(ld, A1, mk_sym(T, Symbol("true"))) ? FTRUE : FFALSE
+            end
+        end
+        BFR = ch.parent                                     # default: continue
+    end
+    return PL_unify_atom(ld, A1, mk_sym(T, Symbol("true"))) ? FTRUE : FFALSE
+end
+
 
 # ── the walks on CELLS (L1d step 5; the workspace's L1_plan/stageL1d_design.md §3d) ──────────────
 # Locations as `_deref_loc`'s. A compound is marked on its FUNCTOR cell (MARK_MASK, as upstream); a
@@ -3582,6 +3614,7 @@ const PL_predicates_from_prims = (
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
     PL_extension("\$term_attvar_variables", 2, pl_term_attvar_variables2_va, PL_FA_VARARGS),   # (AV6)
     PL_extension("term_attvars", 2, pl_term_attvars2_va, PL_FA_VARARGS),
+    PL_extension("deterministic", 1, pl_deterministic1_va, PL_FA_VARARGS),   # (AV9)
     PL_extension("\$free_variable_set", 3, pl_free_variable_set3_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
     PL_extension("atom_length", 2, pl_atom_length2_va, PL_FA_ISO | PL_FA_VARARGS),       # (T1)

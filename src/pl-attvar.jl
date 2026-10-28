@@ -21,11 +21,12 @@
 # Since AV4 pl-wam.c `foreignWakeup` runs the hooks `registerWakeup` queued; it is in src/pl-wam.jl
 # (its upstream file's .jl), as `updateAlerted`.
 #
-# Since AV7 `$freeze/2` (`pl_dfreeze2_va`; freeze/2 itself is a boot stand-in, src/pl-ext.jl).
-# NOT PORTED: the rest of pl-attvar.c, the steps after the binding (since AV3) —
-# `when/2`'s (AV8), call_residue_vars (AV9; so `trail_new_attvar` and
-# `on_attvar_chain`, its CHK_SECURE check, wait for it) and
-# `wakeup_state_exception`.
+# Since AV7 `$freeze/2` (`pl_dfreeze2_va`; freeze/2 itself is a boot stand-in, src/pl-ext.jl); since
+# AV8 when/2's C half (`$eval_when_condition/2`, `$suspend/3`). Since AV9 call_residue_vars/2's C half:
+# `trail_new_attvar`, `get_value`, `deRefM`, `has_attributes_after`, `scan_trail`,
+# `$attvars_after_choicepoint/2`, `$call_residue_vars_start/0`, `$call_residue_vars_end/0`
+# (call_residue_vars/2 itself is a boot stand-in, src/pl-ext.jl). NOT PORTED: `on_attvar_chain` (a
+# CHK_SECURE check only) and `wakeup_state_exception`.
 
 # PORT: pl-attvar.c saveWakeup
 # DIVERGES: returns the state, or `nothing` for upstream's false (no space for the foreign frame). The
@@ -321,18 +322,31 @@ function alloc_attvar(ld::PL_local_data)::Int
     return gp + 1                                           # return &gp[1]
 end
 
+# PORT: pl-attvar.c trail_new_attvar
+# DIVERGES: `p` a global position; the bare ADDRESS entry is `_trail_addr(p, TRAIL_GLOBAL)` (upstream's
+# `tTop->address = p`), pushed whatever `mark_bar` says, as upstream's; `Undo!` resets the cell
+# (`_untrail!`: `setVar(*p)`), so an attributed variable made after a choice point and kept on a
+# frozen global stack is no longer one after backtracking.
+"While call_residue_vars/2 runs, trail the creation of the attributed variable at global position `p` (pl-attvar.c)."
+@inline function trail_new_attvar(ld::PL_local_data, p::Int)::Nothing
+    if ld.attvar_call_residue_vars_count != 0              # if ( LD->attvar.call_residue_vars_count )
+        push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))       #   tTop->address = p; tTop++
+    end
+    return nothing
+end
+
 # PORT: pl-attvar.c make_new_attvar
 # DIVERGES: positions; the two cells from `allocGlobalCells!` (`gTop += 2`, contiguous with the link
 # cell), allocated BEFORE they are written (the allocator clears them); no `gMax`/`tMax` assert (the
 # stacks grow on demand); `Trail(p, makeRefG(gp))` is `_bind_const!` (`p` an unbound global cell: the
-# slot rule). NOT PORTED: `trail_new_attvar` — its test, `call_residue_vars_count`, is 0 until AV9
-# (call_residue_vars/2), so it pushes nothing.
+# slot rule). Since AV9 `trail_new_attvar` before it, as upstream's.
 "Turn the unbound global cell `p` into a reference to a new attributed variable with no attributes (pl-attvar.c)."
 function make_new_attvar(ld::PL_local_data, p::Int)::Nothing
     gp = link_attvar(ld)                                    # gp = link_attvar()
     allocGlobalCells!(ld, 2)                                # gTop += 2
     ld.gstack[gp + 1] = ld.atom_nil_w                       # gp[1] = ATOM_nil
     ld.gstack[gp] = consPtr(gp + 1, TAG_ATTVAR | STG_GLOBAL)    # gp[0] = consPtr(&gp[1], TAG_ATTVAR|…)
+    trail_new_attvar(ld, gp)                                # trail_new_attvar(gp)
     _bind_const!(ld, p, makeRefG(gp))                       # Trail(p, makeRefG(gp)): make_new_attvar
     return nothing
 end
@@ -341,7 +355,7 @@ end
 # DIVERGES: positions; `name` an atom word; `value` the DEREFERENCED location `(k, w, q)` (upstream's
 # `Word`, dereferenced by put_attr/3), so `linkValI(value)` is `_link_val_loc!`; the six cells from
 # `allocGlobalCells!` (`gTop += 6`), allocated before they are written; no `gMax`/`tMax` assert;
-# `Trail(p, …)` is `_bind_const!`. NOT PORTED: `trail_new_attvar` (AV9, see `make_new_attvar`).
+# `Trail(p, …)` is `_bind_const!`; `trail_new_attvar` before it (AV9), as upstream's.
 "Turn the unbound global cell `p` into a reference to a new attributed variable whose one attribute is `name` = `value` (pl-attvar.c)."
 function put_new_attvar(
     ld::PL_local_data{T}, p::Int, name::word, value::Tuple{UInt8, word, Int}
@@ -357,6 +371,7 @@ function put_new_attvar(
     ld.gstack[at + 4] = ld.atom_nil_w                       # at[4] = ATOM_nil
     ld.gstack[at] = consPtr(at + 1, TAG_COMPOUND | STG_GLOBAL)  # at[0] = consPtr(&at[1], TAG_COMPOUND|…)
 
+    trail_new_attvar(ld, gp)                                # trail_new_attvar(gp)
     _bind_const!(ld, p, makeRefG(gp))                       # Trail(p, makeRefG(gp)): put_new_attvar
     return nothing
 end
@@ -950,9 +965,173 @@ function pl_dsuspend3_va(
     return PL_error(ld, "\$suspend", 3, "", ERR_UNINSTANTIATION, 1, A1) ? FTRUE : FFALSE
 end
 
+# ── call_residue_vars/2's C half (AV9, pl-attvar.c O_CALL_RESIDUE) ──────────────────────────────
+# Positions as everywhere here: `gTop` is the last cell in use and a mark's `globaltop` the `gTop` it
+# saw, so upstream's `p >= ch->mark.globaltop` (at or above the first free cell then) is
+# `p > ch.mark.globaltop`; a mark's `trailtop` is the trail's length then, so the entries above it
+# are `trailtop+1:length(ld.trail)`. THE MARK (representation question, answered AS IS): upstream's
+# MARK_MASK, bit 5 of the assigned cell's word — free in every word here (src/pl-prims.jl, "THE
+# BITS"; `isRef`/`isAttVar`/`isTermW` read the tag bits 0-2, `unRef`/`valPtr` the payload from bit 7),
+# and `TrailAssignment!` asserts it clear, which `scan_trail(ld, ch, false)` restores before the
+# predicate returns, as upstream's. No side set.
+
+# PORT: pl-attvar.c get_value
+# DIVERGES: `p` a global position.
+"The word at global position `p` without its MARK_MASK bit (pl-attvar.c)."
+@inline get_value(ld::PL_local_data, p::Int)::word = ld.gstack[p] & ~MARK_MASK
+
+# PORT: pl-attvar.c deRefM
+# DIVERGES: returns `(p, w)` where upstream returns `p` and writes `*pv = w`; positions.
+"Dereference global position `p` ignoring MARK_MASK: the final position and its unmarked word (pl-attvar.c)."
+function deRefM(ld::PL_local_data, p::Int)::Tuple{Int, word}
+    while true                                              # for(;;)
+        w = get_value(ld, p)                                #   word w = get_value(p)
+        if isRef(w)
+            p = unRef(w)                                    #   p = unRef(w)
+        else
+            return (p, w)                                   #   *pv = w; return p
+        end
+    end
+end
+
+# PORT: pl-attvar.c has_attributes_after
+# DIVERGES: `av` a global position, `ch` a choice index; `>=` the first free cell is `>` the mark's
+# `gTop` (see the section header); `isNil` is `w == ld.atom_nil_w`; `f->arguments[1]` is `f + 2`.
+"Whether the attributed variable at global position `av` got attributes created or changed after choice point `ch` (pl-attvar.c)."
+function has_attributes_after(ld::PL_local_data{T}, av::Int, ch::Int)::Bool where {T}
+    gtop = ld.choices[ch].mark.globaltop                    # ch->mark.globaltop
+    av, w = deRefM(ld, av)                                  # av = deRefM(av, &w)
+    @assert isAttVar(w) "has_attributes_after: no attributed variable at global cell $av"
+    l = valPtr(w)                                           # l = valPAttVar(w)
+
+    while true                                              # for(;;)
+        l, w = deRefM(ld, l)                                #   l = deRefM(l, &w)
+        if w == ld.atom_nil_w                               #   if ( isNil(w) )
+            return false                                    #     fail
+        elseif isTermW(w)                                   #   else if ( isTerm(w) )
+            f = valPtr(w)                                   #     Functor f = valueTerm(w)
+            f > gtop && return true                         #     created after choice
+            if ld.gstack[f] == _functor_att3(ld)            #     if ( f->definition == FUNCTOR_att3 )
+                pv = f + 2                                  #       pointer to value
+                (ld.gstack[pv] & MARK_MASK) != 0 && return true     # is_marked(pv): modified after choice point
+                _, w = deRefM(ld, pv)                       #       (void)deRefM(pv, &w)
+                isTermW(w) && valPtr(w) > gtop && return true   # argument term after choice point
+                l = pv + 1                                  #       l = pv+1
+            else
+                return false                                #     Illegal attvar
+            end
+        else
+            return false                                    #   Illegal attvar
+        end
+    end
+end
+
+# PORT: pl-attvar.c scan_trail
+# DIVERGES: `ch` a choice index; trail indices (see the section header); every assignment here is of a
+# global cell (`TrailAssignment!`), so `*te->address` is `ld.gstack[_trail_pos(…)]`.
+"Set (`set`) or clear MARK_MASK on every cell a trailed assignment since choice point `ch` changed (pl-attvar.c)."
+function scan_trail(ld::PL_local_data, ch::Int, set::Bool)::Nothing
+    base = ld.choices[ch].mark.trailtop                     # base = ch->mark.trailtop
+    te = length(ld.trail)                                   # te = tTop-1
+    while te > base                                         # te >= base
+        if isTrailVal(ld.trail[te])                         # if ( isTrailVal(te->address) )
+            te -= 1                                         #   te--
+            p = _trail_pos(ld.trail[te])
+            if set
+                ld.gstack[p] |= MARK_MASK                   #   *te->address |= MARK_MASK
+            else
+                ld.gstack[p] &= ~MARK_MASK                  #   *te->address &= ~MARK_MASK
+            end
+        end
+        te -= 1                                             # te--
+    end
+    return nothing
+end
+
+# PORT: pl-attvar.c attvars_after_choicepoint as pl_dattvars_after_choicepoint2_va
+# (PRED_IMPL("$attvars_after_choicepoint", 2, attvars_after_choicepoint, 0))
+# DIVERGES: `Chp` is the choice point's local-stack POSITION (`PL_unify_choice`, src/pl-trace.jl), so
+# `ch = (Choice)((Word)lBase+off)` is `existingChoice(ld, off)` (src/pl-wam.jl), which returns the
+# record's index (0: none); the list cells from `allocGlobalCells!`, which grows the stack, so no
+# `grow:`/`retry:` (`allocGlobalNoShift` never fails here); `pushWordAsTermRef(list)` is a new term
+# reference holding the list's word, freed with the foreign frame (no `popTermRef`), as unifiable/3's.
+"`'\$attvars_after_choicepoint'(+Chp, -Vars)` (pl-attvar.c): the attributed variables that got new attributes after choice point Chp."
+function pl_dattvars_after_choicepoint2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    off = PL_get_intptr_ex(ld, A1)                          # if ( !PL_get_intptr_ex(A1, &off) )
+    off === nothing && return FFALSE                        #   return false
+
+    ch = existingChoice(ld, off)                            # ch = (Choice)((Word)lBase+off)
+    if ch == 0                                              # if ( !existingChoice(ch) )
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :choice), A1) ? FTRUE : FFALSE
+    end
+
+    ld.attvar_attvars == 0 &&                               # if ( !LD->attvar.attvars )
+        return PL_unify_atom(ld, A2, mk_nil(T)) ? FTRUE : FFALSE    # return PL_unify_nil(A2)
+
+    list = tailp = allocGlobalCells!(ld, 1)                 # list = tailp = allocGlobalNoShift(1)
+    ld.gstack[list] = word(0)                               # setVar(*list)
+
+    scan_trail(ld, ch, true)                                # scan_trail(ch, true)
+
+    gend = ld.gTop                                          # gend = gTop
+    p = ld.attvar_attvars
+    while p != 0                                            # for(p=LD->attvar.attvars; p; p=next)
+        pav = p + 1                                         #   Word pav = p+1
+        lw = ld.gstack[p]
+        next = isRef(lw) ? unRef(lw) : 0                    #   next = isRef(*p) ? unRef(*p) : NULL
+
+        if isAttVar(ld.gstack[pav]) && has_attributes_after(ld, pav, ch)
+            q = allocGlobalCells!(ld, 3)                    #   Word p = allocGlobalNoShift(3)
+            ld.gstack[q] = ld.functor_dot2                  #   p[0] = FUNCTOR_dot2
+            ld.gstack[q + 1] = makeRefG(pav)                #   p[1] = makeRefG(pav)
+            ld.gstack[q + 2] = word(0)                      #   setVar(p[2])
+            ld.gstack[tailp] = consPtr(q, TAG_COMPOUND | STG_GLOBAL)   # *tailp = consPtr(p, …)
+            tailp = q + 2                                   #   tailp = &p[2]
+        end
+        p = next
+    end
+
+    scan_trail(ld, ch, false)                               # scan_trail(ch, false)
+
+    if list == tailp
+        ld.gTop = gend                                      # gTop = gend
+        return PL_unify_atom(ld, A2, mk_nil(T)) ? FTRUE : FFALSE    # return PL_unify_nil(A2)
+    else
+        ld.gstack[tailp] = ld.atom_nil_w                    # *tailp = ATOM_nil
+        r = PL_new_term_ref(ld)                             # pushWordAsTermRef(list)
+        ld.slots[r + 1] = ld.gstack[list]
+        return PL_unify(ld, A2, r) ? FTRUE : FFALSE         # rc = PL_unify(A2, …)
+    end
+end
+
+# PORT: pl-attvar.c call_residue_vars_start as pl_dcall_residue_vars_start0_va
+# (PRED_IMPL("$call_residue_vars_start", 0, call_residue_vars_start, 0))
+"`'\$call_residue_vars_start'/0` (pl-attvar.c): from now on, trail the creation of attributed variables."
+function pl_dcall_residue_vars_start0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ld.attvar_call_residue_vars_count += 1                  # LD->attvar.call_residue_vars_count++
+    return FTRUE
+end
+
+# PORT: pl-attvar.c call_residue_vars_end as pl_dcall_residue_vars_end0_va
+# (PRED_IMPL("$call_residue_vars_end", 0, call_residue_vars_end, 0))
+"`'\$call_residue_vars_end'/0` (pl-attvar.c): end one `'\$call_residue_vars_start'/0`."
+function pl_dcall_residue_vars_end0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    @assert ld.attvar_call_residue_vars_count > 0 "\$call_residue_vars_end: no \$call_residue_vars_start"
+    ld.attvar_call_residue_vars_count -= 1                  # LD->attvar.call_residue_vars_count--
+    return FTRUE
+end
+
 # PORT: pl-attvar.c BeginPredDefs as PL_predicates_from_attvar
-# DIVERGES: the entries ported since AV2, in upstream's order; `PRED_DEF` ors in `PL_FA_VARARGS`. NOT PORTED:
-# the O_CALL_RESIDUE entries (AV9).
+# DIVERGES: the entries ported since AV2, in upstream's order; `PRED_DEF` ors in `PL_FA_VARARGS`. The
+# O_CALL_RESIDUE entries since AV9.
 "pl-attvar.c's registration table (`BeginPredDefs(attvar)`): the ported entries."
 const PL_predicates_from_attvar = (
     PL_extension("attvar", 1, pl_attvar1_va, PL_FA_VARARGS),
@@ -965,5 +1144,14 @@ const PL_predicates_from_attvar = (
     PL_extension("\$freeze", 2, pl_dfreeze2_va, PL_FA_VARARGS),
     PL_extension("\$eval_when_condition", 2, pl_deval_when_condition2_va, PL_FA_VARARGS),
     PL_extension("\$suspend", 3, pl_dsuspend3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
-    PL_extension("\$attv_unify", 2, pl_attv_unify2_va, PL_FA_VARARGS)
+    PL_extension("\$attv_unify", 2, pl_attv_unify2_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$attvars_after_choicepoint", 2, pl_dattvars_after_choicepoint2_va, PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$call_residue_vars_start", 0, pl_dcall_residue_vars_start0_va, PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$call_residue_vars_end", 0, pl_dcall_residue_vars_end0_va, PL_FA_VARARGS
+    )
 )

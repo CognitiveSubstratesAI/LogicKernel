@@ -4989,6 +4989,51 @@ What AV8 ports:
 Tests: `_WK_AV8` (33 rows: we01-we21, su01-su08 from lk-channel evidence/AV8/swipl_probe_rows.pl, wh05-wh07, wh10) in
 test/core_lang/test_attvar_wakeup.jl, re-checked on swipl 10.1.19; mutants: tools/mutants/AV8.py.
 
+## AV9 — deterministic/1 and call_residue_vars/2 (att. vars, step 9)
+
+What AV9 ports:
+
+- **pl-prims.c `deterministic`** as `pl_deterministic1_va` (src/pl-prims.jl): walks the choice points from `BFR`, skipping every
+  type but CHP_CLAUSE and CHP_JUMP (catch/3's CHP_CATCH, the query's CHP_TOP); the calling clause's own CHP_CLAUSE (`frame == FR`)
+  answers `true`, a CHP_CLAUSE/CHP_JUMP above the clause's frame `false`, one below it `true` (the CHP_CLAUSE case falls through
+  into CHP_JUMP's, as upstream's `switch`). `FR` is `environment_frame->parent`: the foreign call's own frame is the environment.
+- **pl-attvar.c O_CALL_RESIDUE**: `trail_new_attvar` (a BARE address entry for the new attvar cell while
+  `call_residue_vars_count` is not 0, called by `make_new_attvar` and `put_new_attvar` just before the `Trail(p, …)`, as upstream),
+  `get_value`, `deRefM`, `has_attributes_after` (an att/3 made after the choice point, a value cell assigned after it, or a value
+  compound made after it), `scan_trail`, `'$attvars_after_choicepoint'/2`, `'$call_residue_vars_start'/0`, `'$call_residue_vars_end'/0`;
+  the LD field `attvar_call_residue_vars_count` (src/pl-global.jl). **pl-wam.c `existingChoice`** (src/pl-wam.jl).
+- **boot/attvar.pl** call_residue_vars/2 (two clauses: `setup_call_cleanup` over run_crv/4, then `(Det == true -> ! ; true)`; the
+  second clause fails) and run_crv/4, as the boot stand-in `_boot_call_residue_vars!` (src/pl-ext.jl, after `_boot_when!`,
+  `system`, `P_LOCKED`; design Q2 (a)). No `meta_predicate call_residue_vars(0, -)` before R2 (design Q4 (a)).
+- **THE MARK (representation, AS IS — no side set, no DIVERGES):** `scan_trail` sets and clears upstream's `MARK_MASK`, bit 5 of the
+  assigned cell's word. The bit is free in every word here (src/pl-prims.jl "THE BITS": tag bits 0-2, storage 3-4, MARK 5, FIRST 6,
+  payload from 7; `isRef`/`isAttVar`/`isTermW` read the tag bits, `unRef`/`valPtr` the payload). Every trailed assignment is of a
+  global cell (`TrailAssignment!`, which asserts MARK clear), and `scan_trail(ld, ch, false)` clears every mark before the predicate
+  returns, as upstream. A bare `trail_new_attvar` entry is skipped by `scan_trail` (only value entries step down) and undone by
+  `Undo!`'s `_untrail!` (`setVar(*p)`), as upstream's. It matters where backtracking keeps the global stack: a compound ball
+  (`freezeGlobal!`) — row cr35.
+- **DIVERGES** (representation only): positions for addresses — a mark's `globaltop` is the LAST cell in use, so upstream's
+  `>= mark.globaltop` is `> globaltop`; the trail entries above a mark are `trailtop+1:length(trail)`; `Chp` is the choice point's
+  local-stack position (`PL_unify_choice`), which `existingChoice` takes and turns into the record's index (0: none); the type-range
+  test of `existingChoice` holds for every `choice_type`, so it is not repeated; `deRefM` returns `(p, w)`; the list cells come
+  from `allocGlobalCells!`, which grows the stack (no `grow:`/`retry:`); `pushWordAsTermRef(list)` is a new term reference freed
+  with the foreign frame (as unifiable/3's). deterministic/1 compares the records' `base` for `(void*)BFR > (void*)FR` (a top
+  frame's NULL parent is position 0).
+- **Not ported**: `on_attvar_chain` (a CHK_SECURE check only), `wakeup_state_exception`.
+
+Known-difference checklist item (AV9, pending R2): **cr11** `call_residue_vars(_, _)` raises
+`error(instantiation_error, context(system:run_crv/4, _))` in the kernel, where swipl 10.1.19 names `'$attvar':run_crv/4` —
+run_crv/4 is boot/attvar.pl's, in module `'$attvar'`, and the stand-in is `system`'s until R2 loads boot/attvar.pl in its module.
+Pinned in test/core_lang/test_attvar_wakeup.jl (`_CR11_KERNEL`, `_CR11_SWIPL`, re-run live); it closes when R2 moves the stand-in.
+
+Tests: `_WK_AV9` (51 rows: dt01-dt10, cr01-cr07, cr09, cr10, cr12-cr15 from lk-channel evidence/AV9/swipl_probe_rows.pl; dt11-dt16,
+cr07b, cr16-cr27, cr29-cr35, cr38, cr39 added for the mutants; cr08 dropped: its module has no hook) and the cr11 block in
+test/core_lang/test_attvar_wakeup.jl, re-checked on swipl 10.1.19 (the probe's t1..t10 as `av9_t1..`, the fixture
+`_WK_AV9_FIXTURE`, passed to `_wk_check_rows` as `extra`); a white-box test of `trail_new_attvar`'s bare entry and the count's
+up and down (no Prolog-level row sees it); mutants: tools/mutants/AV9.py. The fixture defines its own `av9_once/1` and
+`av9_member/2` (swipl's lists.pl definition): `once/1`, `member/2` and the other library predicates are not in the kernel before
+R2 (an existence error), and both engines run the same fixture code.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout

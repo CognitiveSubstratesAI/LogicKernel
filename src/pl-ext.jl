@@ -566,6 +566,72 @@ function _boot_attvar!(gd::PL_global_data{T})::Nothing where {T}
     )
     _boot_freeze!(gd, ld)
     _boot_when!(gd, ld)
+    _boot_call_residue_vars!(gd, ld)
+    return nothing
+end
+
+# DIVERGES (no upstream function; AV9, as `_boot_when!`): boot/attvar.pl's call_residue_vars/2 and
+# run_crv/4 (attvar.pl:250-271), `system`'s and locked until R2 loads boot/attvar.pl in module
+# `'$attvar'` (design Q2 (a)), so an error's context names `system:run_crv/4` where upstream's names
+# `'$attvar':run_crv/4` (row cr11 pins both):
+#     call_residue_vars(Goal, Vars) :-
+#         prolog_current_choice(Chp),
+#         setup_call_cleanup('$call_residue_vars_start', run_crv(Goal, Chp, Vars, Det),
+#                            '$call_residue_vars_end'),
+#         (   Det == true -> ! ; true ).
+#     call_residue_vars(_, _) :- fail.
+#     run_crv(Goal, Chp, Vars, Det) :- call(Goal), deterministic(Det),
+#         '$attvars_after_choicepoint'(Chp, Vars).
+# No `meta_predicate call_residue_vars(0, -)` before R2: the goal is called unqualified (call/1 takes the
+# context module, `user`, design Q4 (a)).
+"Define call_residue_vars/2 and run_crv/4 in the `system` module of `gd` as boot/attvar.pl defines them."
+function _boot_call_residue_vars!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Nothing where {T}
+    v = _boot_vars(T, 6)
+    Goal, Vars, Chp, Det, A1, A2 = v[1], v[2], v[3], v[4], v[5], v[6]
+    _boot_clause!(
+        gd, ld, :call_residue_vars, T[Goal, Vars],
+        _boot_conj(
+            T[
+                _boot_term(:prolog_current_choice, T[Chp]),
+                _boot_term(
+                    :setup_call_cleanup,
+                    T[
+                        mk_sym(T, Symbol("\$call_residue_vars_start")),
+                        _boot_term(:run_crv, T[Goal, Chp, Vars, Det]),
+                        mk_sym(T, Symbol("\$call_residue_vars_end"))
+                    ]
+                ),
+                _boot_term(
+                    Symbol(";"),
+                    T[
+                        _boot_term(
+                            Symbol("->"),
+                            T[
+                                _boot_term(Symbol("=="), T[Det, mk_sym(T, Symbol("true"))]),
+                                mk_sym(T, :!)
+                            ]
+                        ),
+                        mk_sym(T, Symbol("true"))
+                    ]
+                )
+            ]
+        ),
+        P_LOCKED
+    )
+    _boot_clause!(gd, ld, :call_residue_vars, T[A1, A2], mk_sym(T, :fail), P_LOCKED)
+    _boot_clause!(
+        gd, ld, :run_crv, T[Goal, Chp, Vars, Det],
+        _boot_conj(
+            T[
+                _boot_term(:call, T[Goal]),
+                _boot_term(:deterministic, T[Det]),
+                _boot_term(Symbol("\$attvars_after_choicepoint"), T[Chp, Vars])
+            ]
+        ),
+        P_LOCKED
+    )
     return nothing
 end
 

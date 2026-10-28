@@ -250,6 +250,25 @@ function setJumpChoice!(ld::PL_local_data{T}, ch::Int, p::Int)::Nothing where {T
     return nothing
 end
 
+# PORT: pl-wam.c existingChoice
+# DIVERGES: takes the choice point's local-stack POSITION `off` (upstream's `(Choice)((Word)lBase+off)`,
+# as `PL_unify_choice` gives it, src/pl-trace.jl) and returns the index of the record at that position
+# on the chain from `BFR`, 0 for upstream's false; `(Choice)` comparisons are the records' `base`. The
+# type test `0 <= type <= CHP_DEBUG` holds for every record (`choice_type`), so it is not repeated. (AV9:
+# `$attvars_after_choicepoint/2`.)
+"The choice point at local-stack position `off` if it is live (on the chain from `BFR`), else 0 (pl-wam.c)."
+function existingChoice(ld::PL_local_data{T}, off::Int)::Int where {T}
+    0 <= off < ld.lTop || return 0                  # onStack(local, ch)
+    ch2 = ld.BFR                                    # for(ch2 = BFR; ch2 > ch; ch2 = ch2->parent)
+    while ch2 != 0 && ld.choices[ch2].base > off
+        ch2 = ld.choices[ch2].parent
+    end
+    ch2 != 0 && ld.choices[ch2].base == off || return 0     # if ( ch2 == ch )
+    fr = ld.choices[ch2].frame                      # onStack(local, ch->frame)
+    fr != 0 && 0 <= ld.frames[fr].base < ld.lTop || return 0
+    return ch2
+end
+
 # ── the overwrite points: never below the newest choice point ───────────────────────────────────
 # ORIGINAL (L1e e1's assertion; audit D-0029, narrowed in D-0031): a slot has ONE side entry and
 # nothing restores a slot word, so no VM writer may OVERWRITE a slot still live below a choice point

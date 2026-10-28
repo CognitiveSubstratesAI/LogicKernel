@@ -19,7 +19,8 @@
 #     assignment's wakeup entries); hooks that fail, throw, are undone on backtracking;
 #   * B_UNIFY_VC's second path (AV3-W4): a small integer without a word, on a payload without `Int64`;
 #   * hk14 (a hook module inheriting from `user`, made by MOD1's `lookupModule`) and two rows beside it, live;
-#     hk14s / hk14t (two attributed variables, both modules `user`) answer for its hooks' order.
+#     hk14s / hk14t (two attributed variables, both modules `user`) answer for its hooks' order;
+#   * AV9's rows (deterministic/1, call_residue_vars/2: dt*, cr*, after AV8's; cr11 a known difference).
 # NOT AV3 ROWS: hk05, hk05b (a module that inherits from `user`: R2); hk22, hk23 (freeze/2: the AV7 rows, with
 # fz01-fz15, after the AV6 rows; frozen/2's rows a known difference at the end); hk10, hk11, hk13
 # (`\=`, catch/3's catcher: foreignWakeup, AV4 — their rows here, more in test_attvar_wakeup.jl (the AV4 rows at its end)); hk20 (numbervars/4's
@@ -383,13 +384,13 @@ q5(a) :- hooklog(h5, a).
 log(L) :- findall(T-K, hooklog(T, K), L), retractall(hooklog(_, _)).
 """
 
-"The program: the fixture and `tN(R) :- retractall(hooklog(_, _)), (Goal).` for each goal; its path and the names."
-function _wk_program(goals::Vector{String})
+"The program: the fixture (and `extra`'s clauses) and `tN(R) :- retractall(hooklog(_, _)), (Goal).` for each goal; its path and the names."
+function _wk_program(goals::Vector{String}; extra::String="")
     names = ["t$(i - 1)" for i in eachindex(goals)]
     f = joinpath(mktempdir(), "p.pl")
     write(
         f,
-        _WK_FIXTURE *
+        _WK_FIXTURE * extra *
         join([
             "t$(i - 1)(R) :- retractall(hooklog(_, _)), ($g).\n" for
             (i, g) in enumerate(goals)
@@ -772,8 +773,8 @@ const _WK_VM = [
     )
 ]
 
-function _wk_check_rows(rows, label::String)
-    f, names = _wk_program([g for (_, g, _) in rows])
+function _wk_check_rows(rows, label::String; extra::String="")
+    f, names = _wk_program([g for (_, g, _) in rows]; extra=extra)
     expected = vcat(["ok"], [_wk_line(n, r) for (n, (_, _, r)) in zip(names, rows)])
     kl = kernel_lines(f, names)
     @test length(kl) == length(expected) && kl[1] == "ok"
@@ -1486,6 +1487,264 @@ const _WK_AV8 = [
 @testset "AV8: when/2's C half — '\$eval_when_condition'/2, '\$suspend'/3, rows we*, su*, wh05-wh07, wh10, re-checked on swipl" begin
     @test length(_WK_AV8) == 33
     _wk_check_rows(_WK_AV8, "AV8 rows")
+end
+
+# AV9 — deterministic/1 (pl-prims.c) and call_residue_vars/2 (pl-attvar.c O_CALL_RESIDUE's C half; the
+# predicate itself the boot stand-in `_boot_call_residue_vars!`). Rows dt01-dt10, cr01-cr07, cr09-cr15 of
+# lk-channel evidence/AV9/swipl_probe_rows.pl (swipl 10.1.19; cr08 dropped: module `a` has no hook; cr11 a known
+# difference, below), the probe's t1..t10/nd as `av9_t1..av9_t10`/`av9_nd`; dt11-dt14, cr07b, cr16-cr27,
+# cr29-cr35, cr38, cr39 added for AV9's mutants (each line's branch), re-probed on swipl 10.1.19 under this harness
+# (2026-10-28). Answers re-checked live by `_wk_check_rows`. A goal handed to call_residue_vars/2 is built
+# BEFORE its choice point (cr29 makes its compound inside with functor/3; a literal f(1) would not count).
+const _WK_AV9_FIXTURE = raw"""
+av9_t1(D) :- true, deterministic(D).
+av9_t2(D) :- av9_member(_, [a,b]), deterministic(D).
+av9_t3(D) :- av9_member(_, [a,b]), !, deterministic(D).
+av9_t4(D) :- catch(av9_member(_, [a,b]), _, true), deterministic(D).
+av9_t5(D) :- (true ; true), deterministic(D).
+av9_t6(D) :- av9_nd, deterministic(D).
+av9_t7(D) :- deterministic(D), av9_member(_, [a,b]).
+av9_t8(D) :- deterministic(D).
+av9_t8(x).
+av9_t9(D) :- catch(true, _, true), deterministic(D).
+av9_t10(D) :- av9_once(av9_member(_, [a,b])), deterministic(D).
+av9_t11(D) :- call_residue_vars(true, _), deterministic(D).
+av9_t12(D) :- call_residue_vars(av9_member(_, [a,b]), _), deterministic(D).
+av9_t13(D) :- catch(deterministic(D), _, true).
+av9_t14(D) :- catch(catch(deterministic(D), _, true), _, true).
+av9_nd.
+av9_nd.
+av9_once(G) :- call(G), !.
+av9_member(X, [Y|Ys]) :- av9_member_(Ys, X, Y).
+av9_member_(_, X, X).
+av9_member_([Y|Ys], X, _) :- av9_member_(Ys, X, Y).
+"""
+const _WK_AV9 = [
+    ("dt01", "av9_once(av9_t1(R))", _ea("true")),
+    ("dt02", "av9_once(av9_t2(R))", _ea("false")),
+    ("dt03", "av9_once(av9_t3(R))", _ea("true")),
+    ("dt04", "av9_once(av9_t4(R))", _ea("false")),
+    ("dt05", "av9_once(av9_t5(R))", _ea("false")),
+    ("dt06", "av9_once(av9_t6(R))", _ea("false")),
+    ("dt07", "av9_once(av9_t7(R))", _ea("true")),
+    ("dt08", "av9_once(av9_t8(R))", _ea("true")),          # its own CHP_CLAUSE (the second clause)
+    ("dt09", "av9_once(av9_t9(R))", _ea("true")),          # catch/3's CHP_CATCH is skipped
+    ("dt10", "av9_once(av9_t10(R))", _ea("true")),
+    # deterministic/1 inside catch/3: the CHP_CATCH above the clause's frame is skipped (swipl 10.1.19: true), also nested
+    ("dt15", "av9_once(av9_t13(R))", _ea("true")),
+    ("dt16", "av9_once(av9_t14(R))", _ea("true")),
+    ("dt11", "findall(D, av9_t8(D), R)", _wk_list(_ea("true"), _ea("x"))),
+    ("dt12", "findall(D, av9_t2(D), R)", _wk_list(_ea("false"), _ea("false"))),
+    # call_residue_vars/2's `(Det == true -> ! ; true)`: a deterministic goal leaves no choice point (its second
+    # clause cut), a nondeterministic one does
+    ("dt13", "av9_once(av9_t11(R))", _ea("true")),
+    ("dt14", "av9_once(av9_t12(R))", _ea("false")),
+    (
+        "cr01",
+        "call_residue_vars(put_attr(X,a,1),Vs), (Vs = [V], V == X -> R = y ; R = n)",
+        _ea("y")
+    ),
+    ("cr02", "call_residue_vars((put_attr(X,a,1),del_attr(X,a)),R)", "nil"),
+    ("cr03", "call_residue_vars(true,R)", "nil"),
+    ("cr04", "put_attr(Y,a,0), call_residue_vars(true,R)", "nil"),
+    (
+        "cr05",
+        "put_attr(Y,a,0), call_residue_vars(put_attr(Y,a,1),Vs), (Vs = [V], V == Y -> R = y ; R = n)",
+        _ea("y")
+    ),
+    (
+        "cr06",
+        "findall(Vs-L, call_residue_vars(av9_member(L,[1,2]),Vs), R)",
+        _wk_list(_ec("-", "nil", _ei(1)), _ec("-", "nil", _ei(2)))
+    ),
+    (
+        "cr07",
+        "findall(L, (call_residue_vars((av9_member(L,[1,2]),put_attr(_,a,L)),Vs), length(Vs,N), _ = N), R)",
+        _wk_list(_ei(1), _ei(2))
+    ),
+    (
+        "cr07b",
+        "findall(L-N, (call_residue_vars((av9_member(L,[1,2]),put_attr(_,a,L)),Vs), length(Vs,N)), R)",
+        _wk_list(_ec("-", _ei(1), _ei(1)), _ec("-", _ei(2), _ei(1)))
+    ),
+    ("cr09", "call_residue_vars(freeze(X,true),Vs), length(Vs,R)", _ei(1)),
+    ("cr10", "(call_residue_vars(fail,Vs) -> R = yes(Vs) ; R = no)", _ea("no")),
+    (
+        "cr12",
+        "catch('\$attvars_after_choicepoint'(foo,_),R,true)",
+        _ec(
+            "error",
+            _ec("type_error", _ea("integer"), _ea("foo")),
+            _ctx(_sys(_pi("\$attvars_after_choicepoint", 2)), "V0")
+        )
+    ),
+    ("cr13", "prolog_current_choice(C), '\$attvars_after_choicepoint'(C,R)", "nil"),
+    (
+        "cr14",
+        "av9_once((call_residue_vars((av9_member(L,[1,2]),put_attr(_,a,L)),Vs), length(Vs,N))), R = L-N",
+        _ec("-", _ei(1), _ei(1))
+    ),
+    ("cr15", "catch(call_residue_vars(throw(x),_),R,true)", _ea("x")),
+    # a second call after a scan (scan_trail's clear: the mark of cr05's cell must be gone)
+    (
+        "cr16",
+        "put_attr(Y,a,0), call_residue_vars(put_attr(Y,a,1),V1), length(V1,N1), call_residue_vars(true,V2), R = N1-V2",
+        _ec("-", _ei(1), "nil")
+    ),
+    # existingChoice: a position inside the stack that is no choice point, and one below the stack
+    (
+        "cr17",
+        "prolog_current_choice(C), C1 is C+1, catch('\$attvars_after_choicepoint'(C1,_),error(E,_),true), (nonvar(E), E = existence_error(choice,_) -> R = exist ; R = E)",
+        _ea("exist")
+    ),
+    (
+        "cr18",
+        "catch('\$attvars_after_choicepoint'(-1,_),error(E,_),true), (nonvar(E), E = existence_error(choice,_) -> R = exist ; R = E)",
+        _ea("exist")
+    ),
+    (
+        "cr19",
+        "call_residue_vars(call_residue_vars(put_attr(X,a,1),V1),V2), length(V1,N1), length(V2,N2), R = N1-N2",
+        _ec("-", _ei(1), _ei(1))
+    ),
+    # has_attributes_after's branches: a marked value cell (cr20, cr24), a new att/3 (cr21, cr22, cr23), a value
+    # compound made after the choice point in a cell not assigned (cr29), neither (cr30, cr31)
+    (
+        "cr20",
+        "put_attr(Y,a,0), call_residue_vars(put_attr(Y,a,f(1)),Vs), length(Vs,R)",
+        _ei(1)
+    ),
+    (
+        "cr21",
+        "put_attr(Y,a,0), call_residue_vars((put_attr(Z,b,1), put_attr(Y,a,1)),Vs), length(Vs,R)",
+        _ei(2)
+    ),
+    (
+        "cr22",
+        "call_residue_vars((put_attr(X,a,1),put_attr(X,b,2)),Vs), length(Vs,R)",
+        _ei(1)
+    ),
+    (
+        "cr23",
+        "put_attr(Y,a,0), call_residue_vars(put_attr(Y,b,1),Vs), length(Vs,R)",
+        _ei(1)
+    ),
+    (
+        "cr24",
+        "put_attr(Y,a,0), put_attr(Y,b,0), call_residue_vars(put_attr(Y,b,1),Vs), length(Vs,R)",
+        _ei(1)
+    ),
+    (
+        "cr25",
+        "findall(N, (call_residue_vars((av9_member(L,[1,2]),put_attr(_,a,L)),Vs), length(Vs,N)), R)",
+        _wk_list(_ei(1), _ei(1))
+    ),
+    ("cr26", "call_residue_vars(av9_member(X,[1,2]),_), !, R = X", _ei(1)),
+    (
+        "cr27",
+        "findall(X-Vs, call_residue_vars((av9_member(X,[1,2]),put_attr(Y,a,X)),Vs), L), length(L,R)",
+        _ei(2)
+    ),
+    ("cr29", "put_attr(Y,a,V), call_residue_vars(functor(V,f,1),Vs), length(Vs,R)", _ei(1)),
+    ("cr30", "put_attr(Y,a,V), call_residue_vars(V = 1,Vs), length(Vs,R)", _ei(0)),
+    ("cr31", "put_attr(Y,a,V), call_residue_vars(functor(_,f,1),Vs), length(Vs,R)", _ei(0)),
+    # an attributed variable bound (its cell assigned, no longer an attvar) is skipped on the chain: before the
+    # call, inside it after being made, inside it having been made before
+    ("cr32", "put_attr(Y,user,yes), Y = 1, call_residue_vars(true,R)", "nil"),
+    ("cr33", "call_residue_vars((put_attr(Y,user,yes), Y = 1),R)", "nil"),
+    ("cr34", "put_attr(Y,user,yes), call_residue_vars(Y = 1,R)", "nil"),
+    # trail_new_attvar: a compound ball freezes the global stack (freezeGlobal!), so backtracking keeps the first
+    # answer's attributed variable on the chain — only its trailed creation undoes it (cr35); an attributed
+    # variable in a ball copied while call_residue_vars/2 runs, and outside it (cr38, cr39)
+    (
+        "cr35",
+        "findall(N, (call_residue_vars((av9_member(L,[1,2]), put_attr(_,a,L), catch(throw(e(L)),_,true)),Vs), length(Vs,N)), R)",
+        _wk_list(_ei(1), _ei(1))
+    ),
+    (
+        "cr38",
+        "catch((put_attr(X,a,1), throw(b(X))), b(Y), true), (get_attr(Y,a,V) -> R = V ; R = none)",
+        _ei(1)
+    ),
+    (
+        "cr39",
+        "call_residue_vars(catch((put_attr(X,a,1), throw(b(X))), b(Y), true), Vs), length(Vs,N), (get_attr(Y,a,V) -> R = N-V ; R = N-none)",
+        _ec("-", _ei(1), _ei(1))
+    )
+]
+
+@testset "AV9: deterministic/1 and call_residue_vars/2 — rows dt*, cr*, re-checked on swipl" begin
+    @test length(_WK_AV9) == 51
+    _wk_check_rows(_WK_AV9, "AV9 rows"; extra=_WK_AV9_FIXTURE)
+end
+
+# WHITE-BOX: `trail_new_attvar` pushes ONE bare address entry per new attributed variable while
+# `'$call_residue_vars_start'/0` has counted (before `Trail(p, …)`, make_new_attvar and put_new_attvar), none
+# otherwise; `'$call_residue_vars_end'/0` counts back down. (No Prolog-level row sees it: the entry only decides what
+# backtracking leaves of a cell on a kept global stack.)
+@testset "AV9: trail_new_attvar — a bare entry only while call_residue_vars/2 counts; \$call_residue_vars_end counts down" begin
+    ld, _ = _wk_engine()
+    ctx = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    t0 = LK.PL_new_term_ref(ld)
+    mkput() = (
+        t=LK.PL_new_term_ref(ld);
+        n0=length(ld.trail);
+        LK.put_new_attvar(ld, LK.unRef(ld.slots[t + 1]), _wk_atom(ld, "a"), _wk_int(1));
+        ld.trail[(n0 + 1):end]
+    )
+    mkmake() = (
+        t=LK.PL_new_term_ref(ld);
+        n0=length(ld.trail);
+        LK.make_new_attvar(ld, LK.unRef(ld.slots[t + 1]));
+        ld.trail[(n0 + 1):end]
+    )
+    m = LK.Mark(ld)
+    @test ld.attvar_call_residue_vars_count == 0
+    p0, k0 = mkput(), mkmake()                              # outside call_residue_vars/2
+    @test LK.pl_dcall_residue_vars_start0_va(ld, t0, 0, ctx) == LK.FTRUE
+    @test ld.attvar_call_residue_vars_count == 1
+    p1, k1 = mkput(), mkmake()                              # inside: one entry more each
+    @test length(p1) == length(p0) + 1 && length(k1) == length(k0) + 1
+    @test !LK.isTrailVal(p1[1]) && !LK.isTrailVal(k1[1])    # a BARE address entry, first (before Trail(p, …))
+    @test LK.pl_dcall_residue_vars_start0_va(ld, t0, 0, ctx) == LK.FTRUE
+    @test ld.attvar_call_residue_vars_count == 2
+    @test LK.pl_dcall_residue_vars_end0_va(ld, t0, 0, ctx) == LK.FTRUE
+    @test ld.attvar_call_residue_vars_count == 1            # counted down, not to 0 (nested)
+    @test length(mkput()) == length(p1)
+    @test LK.pl_dcall_residue_vars_end0_va(ld, t0, 0, ctx) == LK.FTRUE
+    @test ld.attvar_call_residue_vars_count == 0
+    @test length(mkput()) == length(p0) && length(mkmake()) == length(k0)   # outside again
+    LK.Undo!(ld, m)
+end
+
+# cr11 (evidence/AV9/swipl_probe_rows.pl): call_residue_vars(_, _). KNOWN DIFFERENCE (pending R2): swipl 10.1.19
+# raises error(instantiation_error, context('$attvar':run_crv/4, _)) — run_crv/4 is boot/attvar.pl's, in module
+# '$attvar'; the kernel's stand-in (`_boot_call_residue_vars!`, src/pl-ext.jl) defines it in `system`, so the
+# context names system:run_crv/4 (docs/architecture.md §AV9, checklist). `_CR11_SWIPL` is swipl's answer, re-run
+# live below; `_CR11_KERNEL` the kernel's. NOT YET RUN on the kernel (AV9 part 3, 2026-10-28: no warm lane was
+# available): `_CR11_KERNEL` is the expected answer from the stand-in's module; the first run confirms or replaces it.
+const _CR11_GOAL = "catch(call_residue_vars(_,_),R,true)"
+const _CR11_SWIPL = _ec(
+    "error", _ea("instantiation_error"),
+    _ctx(_ec(":", _ea("\$attvar"), _pi("run_crv", 4)), "V0")
+)
+const _CR11_KERNEL = _ec(
+    "error", _ea("instantiation_error"),
+    _ctx(_sys(_pi("run_crv", 4)), "V0")
+)
+
+@testset "cr11: call_residue_vars(_, _) — a known difference pending R2's '\$attvar' module" begin
+    f, names = _wk_program([_CR11_GOAL])
+    got = kernel_lines(f, names)
+    @test length(got) == 2 && got[1] == "ok"
+    @test get(got, 2, "missing") == _wk_line(names[1], _CR11_KERNEL)
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "AV9 cr11: swipl's answer not re-checked — `swipl` is not on PATH here."
+        @test true
+    else
+        @test swipl_lines(f, names) == ["ok", _wk_line(names[1], _CR11_SWIPL)]
+    end
 end
 
 # hk11b = upstream's `failing_catchers` (swipl-devel 7b9d8ba, tests/core_lang/test_exception.pl:81-84, `R == outer(2)`;
