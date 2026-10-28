@@ -26,6 +26,9 @@ _manifest_per_type(T) = (
     # …and its Prolog layer (Q1)
     (mk_sym, Tuple{Type{T}, Symbol}, false),
     (mk_reserved_symbol, Tuple{Type{T}, Symbol}, false),
+    (mk_blob, Tuple{Type{T}, UInt64, Symbol, Int}, false),            # BLOB (D-0153)
+    (is_blob, Tuple{T}, true), (blob_type, Tuple{T}, true),
+    (blob_handle, Tuple{T}, true), (blob_rank, Tuple{T}, true),
     (mk_nil, Tuple{Type{T}}, false),
     (is_reserved_symbol, Tuple{T}, true), (is_nil, Tuple{T}, true),
     (sym_text, Tuple{T}, false), (LK.charCode, Tuple{T}, false),     # R1a: an atom's text
@@ -141,6 +144,7 @@ _manifest_per_type(T) = (
     # the atoms' symbols, the DATABASE's (L1b stage C6b): the read allocates nothing; a record may
     # allocate its block; the compiler's word for a literal looks its text up
     (LK._atom_word!, Tuple{LK.atoms_t, LK.atom_symbols{T}, T}, false),
+    (LK._blob_term!, Tuple{LK.atoms_t, LK.atom_symbols{T}, Type{T}, UInt64}, false),
     (LK.atom_symbols{T}, Tuple{}, false),
     (LK.atomSymbol, Tuple{LK.atom_symbols{T}, Int}, true),
     (LK.setAtomSymbol!, Tuple{LK.atom_symbols{T}, Int, T}, false),
@@ -1557,15 +1561,19 @@ function _manifest_index(T)
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
                 LK.pl_rational1_va, LK.pl_string1_va, LK.pl_number1_va, LK.pl_atom1_va,
-                LK.pl_atomic1_va, LK.pl_compound1_va, LK.pl_callable1_va, LK.pl_nonequal2_va
+                LK.pl_atomic1_va, LK.pl_compound1_va, LK.pl_callable1_va,
+                LK.pl_nonequal2_va,
+                LK.pl_blob2_va
             )
         ]...,
         # (L1c: they may reach the cold export on a compound — words at L1e, the FLI over cells)
+        # (PL_is_blob is new with BLOB and allocates its String result: marked allocating, but NOT in
+        # L1C_ALLOC_EXEMPT — that ratchet lists only what was allocation-free before L1c)
         [
             (f, Tuple{LD, Int}, false) for f in (
                 LK.PL_is_integer, LK.PL_is_float, LK.PL_is_rational, LK.PL_is_compound,
                 LK.PL_is_callable, LK.PL_is_string, LK.PL_is_atom, LK.PL_is_atomic,
-                LK.PL_is_number
+                LK.PL_is_number, LK.PL_is_blob
             )
         ]...,
         # V5b — the exception path's entries (src/pl-error.jl, pl-fli.jl, pl-modul.jl), over
@@ -2076,6 +2084,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.compareAtoms, Tuple{Symbol, Bool, Symbol, Bool}, true),
     (LK.compareReservedSymbol, Tuple{Symbol, Symbol}, true),
     (LK._reserved_sym_key, Tuple{Symbol}, true),
+    (LK._blob_key, Tuple{UInt64, Int}, true),
+    (LK.compareAtomsBlob, Tuple{Int, UInt64, Int, UInt64}, true),
     (LK.compareStrings, Tuple{String, String}, false),
     (LK._nan_value, Tuple{Float64}, true), (LK._nan_value, Tuple{BigFloat}, false),
     (LK.compare_neq_floats, Tuple{Float64, Float64}, true),
@@ -2407,6 +2417,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.foreigns)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_module)}, false),      # MOD1
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_prims)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_atom)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_variant)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_trace)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_proc)}, false),   # R1f

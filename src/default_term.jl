@@ -22,6 +22,7 @@ struct Term{G}
     ground::Bool                     # no variable anywhere below — cached at construction
     keyed::Bool                      # GND: `key` holds a grounded key (else WILDCARD)
     reserved::Bool                   # SYM: a RESERVED symbol (SWI-7's `[]`, pl-ressymbol.c)
+    blob::Bool                       # SYM: a BLOB atom (a non-text atom: stream, clause reference …)
     key::UInt64                      # VAR: var key · SYM: sym key · GND: grounded key · EXPR: 0
     name::Symbol                     # SYM: the symbol · otherwise Symbol("")
     gval::Union{Nothing, G}          # GND: the value · otherwise nothing
@@ -102,7 +103,9 @@ method is compiled.
 The symbol `name`.
 """
 sym_term(::Type{Term{G}}, name::Symbol) where {G} =
-    Term{G}(SYM, true, false, false, _sym_key(name), name, nothing, _no_children(Term{G}))
+    Term{G}(
+        SYM, true, false, false, false, _sym_key(name), name, nothing, _no_children(Term{G})
+    )
 
 """
     gnd_term(::Type{Term{G}}, v::G) -> Term{G}
@@ -114,13 +117,16 @@ function gnd_term(::Type{Term{G}}, v::G) where {G}
     v = _canonical_gnd(G, v)
     k = gnd_value_key(v)
     return Term{G}(
-        GND, true, k !== nothing, false, k === nothing ? UInt64(0) : k, Symbol(""), v,
+        GND, true, k !== nothing, false, false, k === nothing ? UInt64(0) : k, Symbol(""),
+        v,
         _no_children(Term{G})
     )
 end
 
 mk_var(::Type{Term{G}}, key::UInt64) where {G} =
-    Term{G}(VAR, false, false, false, key, Symbol(""), nothing, _no_children(Term{G}))
+    Term{G}(
+        VAR, false, false, false, false, key, Symbol(""), nothing, _no_children(Term{G})
+    )
 
 """
     var_term(::Type{Term{G}}, key::UInt64) -> Term{G}
@@ -142,7 +148,9 @@ function mk_expr(::Type{Term{G}}, children::Vector{Term{G}}) where {G}
     for c in children
         c.ground || (ground=false; break)
     end
-    return Term{G}(EXPR, ground, false, false, UInt64(0), Symbol(""), nothing, children)
+    return Term{G}(
+        EXPR, ground, false, false, false, UInt64(0), Symbol(""), nothing, children
+    )
 end
 
 # ── the Prolog layer (src/term_interface.jl, Q1) ─────────────────────────────────────────────────
@@ -154,12 +162,46 @@ mk_gnd(::Type{Term{G}}, v::G) where {G} = gnd_term(Term{G}, v)
 _holds_payload(::Type{Term{G}}, ::Type{X}) where {G, X} = X <: G
 mk_reserved_symbol(::Type{Term{G}}, name::Symbol) where {G} =
     Term{G}(
-        SYM, true, false, true, _reserved_sym_key(name), name, nothing,
+        SYM, true, false, true, false, _reserved_sym_key(name), name, nothing,
         _no_children(Term{G})
     )
 is_reserved_symbol(t::Term)::Bool = t.kind === SYM && t.reserved
+
+# A BLOB (a non-text atom: stream, clause reference …) is identified by its KEY alone:
+#   key = (handle << 19) | (UInt64(-rank) << 3) | 2
+# low 3 bits = tag 2 (a text atom's key is an 8-aligned address, a reserved symbol's is that | 1);
+# bits 3-18 = -rank (16 bits); bits 19-63 = the handle (45 bits). The RANK is in the key because a
+# `Term` has no link to the atom table, and pl-prims.c `compareAtoms` orders two atoms of DIFFERENT
+# types by `type->rank` (the registration order: non-text types -1, -2, …; reserved symbol 0; text
+# >= 1). `name` holds the blob TYPE's name (blob/2, the written form); it is not part of the identity.
+const _BLOB_HANDLE_SHIFT = 19
+const _BLOB_MAX_HANDLE = UInt64(1) << 45
+_blob_key(handle::UInt64, rank::Int)::UInt64 =
+    (handle << _BLOB_HANDLE_SHIFT) | (UInt64(-rank) << 3) | UInt64(2)
+function mk_blob(
+    ::Type{Term{G}}, handle::UInt64, type_name::Symbol, rank::Int
+) where {G}
+    handle < _BLOB_MAX_HANDLE ||
+        throw(ArgumentError("mk_blob: handle $(repr(handle)) does not fit in 45 bits"))
+    (-65535 <= rank <= -1) ||
+        throw(
+            ArgumentError("mk_blob: rank $rank is not in -65535..-1 (a non-text blob type)")
+        )
+    return Term{G}(
+        SYM, true, false, false, true, _blob_key(handle, rank), type_name, nothing,
+        _no_children(Term{G})
+    )
+end
+is_blob(t::Term)::Bool = t.kind === SYM && t.blob
+blob_type(t::Term)::Symbol =
+    t.blob ? t.name : throw(ArgumentError("blob_type: not a blob"))
+blob_handle(t::Term)::UInt64 =
+    t.blob ? t.key >> _BLOB_HANDLE_SHIFT : throw(ArgumentError("blob_handle: not a blob"))
+blob_rank(t::Term)::Int =
+    t.blob ? -Int((t.key >> 3) & 0xffff) : throw(ArgumentError("blob_rank: not a blob"))
 function sym_text(t::Term)::String
     t.kind === SYM || throw(ArgumentError("sym_text: not a symbol"))
+    t.blob && throw(ArgumentError("sym_text: a blob has no text"))
     return String(t.name)
 end
 # An interned `Symbol` is never freed and its name is NUL-terminated after the header
@@ -167,14 +209,15 @@ end
 # Allocation-free: the manifest's AllocCheck entry proves it.
 function sym_first_byte(t::Term)::UInt8
     t.kind === SYM || throw(ArgumentError("sym_first_byte: not a symbol"))
+    t.blob && throw(ArgumentError("sym_first_byte: a blob has no text"))
     s = t.name
     return GC.@preserve s unsafe_load(Base.unsafe_convert(Ptr{UInt8}, s))
 end
-is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME
+is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME   # reserved ⇒ not a blob
 function is_pair(t::Term)::Bool
     (t.kind === EXPR && length(t.children) == 3) || return false
     h = t.children[1]
-    return h.kind === SYM && !h.reserved && h.name === LIST_CONS_NAME
+    return h.kind === SYM && !h.reserved && !h.blob && h.name === LIST_CONS_NAME
 end
 
 # A grounded value's kind follows its host type: `Integer` (not `Bool`), `Rational`, an IEEE float,
@@ -237,7 +280,10 @@ but a CLIENT of the default type does: printing, and recognising a functor witho
 Found by the standalone consumer (test/test_standalone_consumer.jl), which could not otherwise read a
 symbol through the public API.
 """
-sym_name(t::Term)::Symbol = t.name
+function sym_name(t::Term)::Symbol
+    t.blob && throw(ArgumentError("sym_name: a blob has no name (see blob_type)"))
+    return t.name
+end
 
 """
     gnd_value(t::Term{G}) -> G
@@ -255,7 +301,7 @@ child(t::Term{G}, i::Int) where {G} = t.children[i]
 sym_key(t::Term)::UInt64 = t.key
 # An interned Symbol's `objectid` is computed from its NAME (measured equal across processes, while
 # its address differs) — so it is stable for a given Julia version, and allocates nothing.
-sym_hash(t::Term)::UInt64 = UInt64(objectid(t.name))
+sym_hash(t::Term)::UInt64 = t.blob ? hash(t.key) : UInt64(objectid(t.name))   # a blob: from its key
 var_key(t::Term)::UInt64 = t.key
 gnd_key(t::Term)::Union{UInt64, Nothing} = t.keyed ? t.key : nothing
 is_ground(t::Term)::Bool = t.ground
@@ -341,7 +387,24 @@ then atoms, by character codes.
 function atomic_compare(a::Term{G}, b::Term{G})::Int where {G}
     ra, rb = _atomic_rank(a), _atomic_rank(b)
     ra != rb && return ra < rb ? CMP_LESS : CMP_GREATER
-    ra == _RANK_ATOM && return compareAtoms(a.name, a.reserved, b.name, b.reserved)
+    if ra == _RANK_ATOM
+        # DIVERGES (D-0200, D-0149; representation): two blobs of ONE type compare by HANDLE (creation
+        # order); upstream uses the type's `compare` or memcmp of the payload, which a Term cannot
+        # reach (and where the payload is a C pointer, the creation index is the ordering).
+        (a.blob | b.blob) && return compareAtomsBlob(
+            if a.blob
+                blob_rank(a)
+            else
+                (a.reserved ? RESERVED_SYMBOL_RANK : TEXT_ATOM_RANK)
+            end, a.key,
+            if b.blob
+                blob_rank(b)
+            else
+                (b.reserved ? RESERVED_SYMBOL_RANK : TEXT_ATOM_RANK)
+            end, b.key
+        )
+        return compareAtoms(a.name, a.reserved, b.name, b.reserved)
+    end
     x, y = a.gval, b.gval
     if ra == _RANK_NUMBER && x isa Real && y isa Real
         return _compare_numbers(x, y)
@@ -373,7 +436,11 @@ function Base.show(io::IO, t::Term)
         print(io, "_G", t.key)
     elseif t.kind === SYM
         # the reserved `[]` bare; a TEXT atom named `[]` quoted, so the two print apart
-        !t.reserved && t.name === NIL_NAME ? print(io, "'[]'") : print(io, t.name)
+        if t.blob
+            print(io, "<", t.name, ">(0x", string(blob_handle(t); base=16), ")")
+        else
+            !t.reserved && t.name === NIL_NAME ? print(io, "'[]'") : print(io, t.name)
+        end
     elseif t.kind === GND
         show(io, t.gval)
     else

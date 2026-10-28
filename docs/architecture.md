@@ -892,6 +892,7 @@ graph LR
     term_interface --> default_term
     default_term --> term_interface
     default_term --> pl_prims
+    default_term --> pl_ressymbol
     default_term --> pl_gmp
     pl_hash --> default_term
     os_pl_utf8 --> default_term
@@ -1470,6 +1471,7 @@ graph LR
     pl_ext --> pl_variant
     pl_ext --> pl_copyterm
     pl_ext --> pl_wam
+    pl_ext --> pl_fli
     pl_ext --> pl_attvar
     pl_ext --> pl_gmp
     pl_ext --> pl_arith
@@ -5073,6 +5075,33 @@ control constructs are system procedures.
 
 Tests: test/compile/test_ssu_compile_swipl.jl (the v-, c- and a-rows of evidence/r2/design/ssu_rows.out, swipl 10.1.19;
 test/db/test_assert_swipl.jl's SSU refusal flipped to the assert's answer and the call's refusal); mutants: tools/mutants/SSU1.py.
+
+## BLOB — non-text atoms (`blob/2`) in the term interface (R2, D-0153, D-0200)
+
+What BLOB adds (pl-atom.c blob types, seen through the term interface; `is_blob` / `blob_type` / `blob_handle` / `blob_rank`):
+
+- **A blob is an atom term that is not text**: `atom/1` is false, `atomic/1` true, `callable/1` and `compound/1` false;
+  `atom_length/2`, `atom_codes/2`, `atom_string/2`, `atom_chars/2` raise a `type_error`. `isTextAtom` (pl-incl.h), `charCode`,
+  `PL_is_callable` (pl-fli.c) and the compiler's callable test (pl-comp.c, five sites) exclude it. The compiler's atom word for a
+  blob is its handle (`_blob_term!`, `_atom_word!` in pl-inline.jl): no text, no lookup.
+- **`blob/2`** (pl-atom.c `PRED_IMPL("blob", 2, ...)`, as `pl_blob2_va` in pl-fli.jl, which `PL_is_blob` it calls): `stream`, `clause`,
+  `mutex`, `text`, `reserved_symbol` (`[]`); it fails on a number and a string.
+- **Standard order** (pl-prims.c `compareAtoms`): by `type->rank`: numbers, strings, then the blob types in registration order
+  (stream, clause, mutex: ranks -3, -2, -1), then `[]` (0), then text atoms (>= 1). Verified against swipl 10.1.19 (78 live rows).
+- **Term hash** (pl-termhash.c): a blob hashes the TYPE name, as `[]` (`reserved_symbol`) and `'[]'` (`text`) hash apart.
+- **Written form**: `<stream>(0x<hex>)`, `<clause>(0x..)`, `<mutex>(0x..)` for write/print/writeq/write_canonical (also `show` of
+  the reference type). swipl prints the C address, which a `Term` cannot reproduce: the test pins the SHAPE, not the digits
+  (upstream's default `writeBlob` would print `<#hex>` of the payload; the stream/clause/mutex types print the shape above).
+- **Not covered**: dead blobs (`deadBlobType`), blob types with their own `compare`/`write`/`release` hooks.
+
+Known-difference checklist item (D-0200, D-0149): two blobs of ONE type compare by CREATION INDEX (the handle) in the kernel
+(`compareAtomsBlob`, src/pl-prims.jl; `compare/3` in default_term.jl), where swipl orders streams and clause references by ADDRESS
+(`S` before `S2` can give `compare(>, S, S2)`; `msort([S,S2,O])` gave `O,S2,S`, 10.1.19). A representation DIVERGES: the payload
+is a C pointer a `Term` does not have. Pinned in test/core_lang/test_blob.jl (known-difference block) with swipl's answer in a
+comment.
+
+Tests: test/core_lang/test_blob.jl (182 tests per term type: 78 live swipl rows + 39 pinned `_BL_TABLE` rows + the interface block);
+mutants: tools/mutants/BLOB.py.
 
 ## Still to come
 

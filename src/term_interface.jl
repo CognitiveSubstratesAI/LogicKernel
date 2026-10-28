@@ -191,7 +191,9 @@ function mk_expr end
 # their SEMANTIC kind. A reserved symbol is a [`SYM`](@ref) with a flag, not a kind of its own (user):
 # upstream gives `[]` the atom tag and makes the blob type a property of the atom, so every site that
 # asks `kind(t) === SYM` (indexing, functor heads, unification) stays right for `[]`; a site that
-# needs TEXT asks [`is_reserved_symbol`](@ref).
+# needs TEXT asks [`is_reserved_symbol`](@ref). A BLOB atom (stream, clause reference, …: BLOB, D-0153)
+# is the second flagged SYM; it has NO text at all, so `sym_text`, `sym_first_byte` and the default
+# type's `sym_name` raise on it — a site that reads them asks [`is_blob`](@ref) first.
 
 """
     mk_sym(T::Type, name::Symbol) -> T
@@ -225,6 +227,59 @@ atom of the same name it has
   "between normal blob and text", pl-ressymbol.c:97), two reserved symbols by `strcmp` of their names.
 """
 function mk_reserved_symbol end
+
+"""
+    mk_blob(T::Type, handle::UInt64, type_name::Symbol, rank::Int) -> T
+
+The BLOB atom of the non-text blob type `type_name` (pl-atom.c `lookupBlob`, pl-fli.h): a [`SYM`](@ref)
+with no text, identified by `handle` (the kernel's atom word) and the type's `rank`
+(`PL_register_blob_type`: non-text types -1, -2, … in registration order; `reserved_symbol` is 0, text
+atoms >= 1). `handle` must fit in 45 bits and `rank` lie in -65535..-1, else `ArgumentError`. Atomic
+but NOT an atom (`atom/1` is `isTextAtom`); `blob/2` answers the type name.
+* [`sym_key`](@ref) is a function of handle AND rank, distinct from every text atom's and reserved
+  symbol's, so a blob is only ever `==` to the blob of the same handle (and type); [`sym_hash`](@ref)
+  is a hash of that key (upstream hashes a blob by its atom's `hash_value`, not by a text).
+* In the standard order (pl-prims.c `compareAtoms`): atoms of two types by `type->rank` — a blob
+  sorts after numbers and strings, BEFORE `[]` and every text atom, and two blob types by their ranks.
+  **DIVERGES (D-0200, D-0149; representation): two blobs of ONE type compare by HANDLE (creation
+  order).** Upstream uses the type's `compare` hook, else `memcmp` of the payload bytes then length; where
+  upstream's payload is a C pointer (streams, clause references) the creation index stands in, and a
+  `Term` has no link to the atom table to reach the payload of the others. Different types: by the ranks
+  given to `mk_blob` (upstream's `type->rank` values); a released blob (`!name`) is identity only.
+* [`sym_text`](@ref), [`sym_first_byte`](@ref) and the default type's `sym_name` throw on a blob.
+"""
+function mk_blob end
+
+"""
+    is_blob(t) -> Bool
+
+Whether `t` is a blob atom ([`mk_blob`](@ref)); `false` for every term that is not a [`SYM`](@ref),
+for text atoms and for reserved symbols.
+"""
+function is_blob end
+
+"""
+    blob_type(t) -> Symbol
+
+The blob type's name, as given to [`mk_blob`](@ref). `ArgumentError` on a term that is not a blob.
+"""
+function blob_type end
+
+"""
+    blob_handle(t) -> UInt64
+
+The blob's handle (the atom word), as given to [`mk_blob`](@ref). `ArgumentError` on a term that is
+not a blob.
+"""
+function blob_handle end
+
+"""
+    blob_rank(t) -> Int
+
+The blob type's rank, as given to [`mk_blob`](@ref) (-1, -2, … in registration order).
+`ArgumentError` on a term that is not a blob.
+"""
+function blob_rank end
 
 """
     sym_text(t) -> String

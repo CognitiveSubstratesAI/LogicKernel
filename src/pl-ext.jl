@@ -56,15 +56,17 @@ const foreigns = (
 # bisim, between op and attvar upstream, are not ported); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
 const _PRED_TABLES = (
-    PL_predicates_from_arith, PL_predicates_from_bag, PL_predicates_from_comp,
-    PL_predicates_from_list, PL_predicates_from_module, PL_predicates_from_prims,
-    PL_predicates_from_variant, PL_predicates_from_copyterm, PL_predicates_from_prologflag,
+    PL_predicates_from_atom, PL_predicates_from_arith, PL_predicates_from_bag,
+    PL_predicates_from_comp, PL_predicates_from_list, PL_predicates_from_module,
+    PL_predicates_from_prims, PL_predicates_from_variant, PL_predicates_from_copyterm,
+    PL_predicates_from_prologflag,
     PL_predicates_from_trace, PL_predicates_from_pro, PL_predicates_from_read,
     PL_predicates_from_files, PL_predicates_from_proc, PL_predicates_from_write,
     PL_predicates_from_system, PL_predicates_from_op, PL_predicates_from_attvar
 )
 const _FOREIGN_VA = (
-    PL_predicates_from_arith..., PL_predicates_from_bag..., PL_predicates_from_comp...,
+    PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
+    PL_predicates_from_comp...,
     PL_predicates_from_list..., PL_predicates_from_module..., PL_predicates_from_prims...,
     PL_predicates_from_variant..., PL_predicates_from_copyterm...,
     PL_predicates_from_prologflag..., PL_predicates_from_trace...,

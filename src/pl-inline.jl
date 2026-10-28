@@ -216,6 +216,12 @@ end
 # word back. The compiler's entry (an atom operand's word, C6b); an engine goes through its cache.
 "The atom word of the symbol `v` in the atom table `atoms`, its symbol recorded in `syms`."
 function _atom_word!(atoms::atoms_t, syms::atom_symbols{T}, v::T)::word where {T}
+    if is_blob(v)       # a blob's handle IS its atom word (`_blob_term!`); no text, no lookup
+        w = blob_handle(v)
+        i = indexAtom(w)
+        atomSymbol(syms, i) === nothing && setAtomSymbol!(syms, i, v)
+        return w
+    end
     s = sym_text(v)
     bytes = Vector{UInt8}(codeunits(s))
     w = if is_reserved_symbol(v)
@@ -226,6 +232,21 @@ function _atom_word!(atoms::atoms_t, syms::atom_symbols{T}, v::T)::word where {T
     i = indexAtom(w)
     atomSymbol(syms, i) === nothing && setAtomSymbol!(syms, i, v)
     return w
+end
+
+# ORIGINAL: the blob TERM of an atom word `w` of a non-text blob type (the inverse of the blob branch of
+# `_atom_word!`; what a blob producer — streams, clause references — calls): the handle is the word, the
+# rank is the type's registration rank, the term is recorded in `syms`.
+"The blob term of the atom `w` (a non-text blob), recorded in `syms`."
+function _blob_term!(atoms::atoms_t, syms::atom_symbols{T}, ::Type{T}, w::word)::T where {T}
+    type = atomValue(atoms, w).type
+    reg = _blob_registration(atoms, type)
+    reg === nothing &&
+        throw(ArgumentError("_blob_term!: the blob type of atom $w is not registered"))
+    v = mk_blob(T, w, Symbol(type.name), reg.rank)
+    i = indexAtom(w)
+    atomSymbol(syms, i) === nothing && setAtomSymbol!(syms, i, v)
+    return v
 end
 
 # ORIGINAL: per-engine cache of GD's lookupAtom (`atom_words`, sym_key → atom word) — a CACHE, not a

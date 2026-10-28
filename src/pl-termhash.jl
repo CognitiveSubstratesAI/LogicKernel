@@ -543,7 +543,16 @@ function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothi
             _HASH_word!(state, sym_hash(p))
             # HASH(av->type->name, strlen(…)): the blob type's name, so `[]` (reserved_symbol)
             # and `'[]'` (text) — one text hash — still hash apart, as in swipl
-            _HASH_str!(state, is_reserved_symbol(p) ? "reserved_symbol" : "text")
+            _HASH_str!(
+                state,
+                if is_blob(p)
+                    string(blob_type(p))
+                elseif is_reserved_symbol(p)
+                    "reserved_symbol"
+                else
+                    "text"
+                end
+            )
         elseif k === GND
             g = gnd_key(p)
             if g === nothing

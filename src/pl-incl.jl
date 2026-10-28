@@ -1498,8 +1498,8 @@ isTaggedInt(t)::Bool =
     PLMINTAGGEDINT <= int64_value(t) <= PLMAXTAGGEDINT
 
 # PORT: pl-data.h isTextAtom
-"Whether `t` is a text atom (pl-data.h `isTextAtom`): a symbol, not a reserved one such as `[]`."
-isTextAtom(t)::Bool = kind(t) === SYM && !is_reserved_symbol(t)
+"Whether `t` is a text atom (pl-data.h `isTextAtom`): a symbol, not a reserved one such as `[]`, not a blob."
+isTextAtom(t)::Bool = kind(t) === SYM && !is_reserved_symbol(t) && !is_blob(t)
 
 # PORT: pl-data.h isCallableAtom
 "Whether `t` is an atom a goal can be named by (pl-data.h `isCallableAtom`): a text atom, or `[]`."

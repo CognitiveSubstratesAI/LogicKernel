@@ -15,6 +15,9 @@
 #   | a reserved symbol: a flag on the struct   | a reserved symbol: a LEAF TYPE of its own          |
 #   |                                           |   (`AltRSym`), so no kernel site may assume every  |
 #   |                                           |   symbol has one leaf type                         |
+#   | a blob atom: `blob` flag + a packed `key` | a blob atom: a LEAF TYPE (`AltBlob`) with three    |
+#   |   `handle<<19 | -rank<<3 | 2`; `name` is  |   fields (handle, rank, type) and a DIFFERENT key |
+#   |   the type name                           |   `1<<63 | handle<<16 | -rank`; no `name` at all   |
 #   | children in a `Vector{Term{G}}`           | children in an `NTuple{N}`, in a `mutable struct`  |
 #   |                                           |   (`===` on compounds must be constant-time; on a  |
 #   |                                           |   plain tuple VALUE it walks the children)         |
@@ -62,6 +65,7 @@ using LogicKernel
 import LogicKernel:
     kind, term_type, nchildren, child, sym_key, sym_hash, var_key, gnd_key, gnd_equal,
     atomic_compare, mk_var, mk_expr, mk_sym, mk_gnd, mk_reserved_symbol, is_reserved_symbol,
+    mk_blob, is_blob, blob_type, blob_handle, blob_rank, compareAtomsBlob,
     is_nil, is_pair, sym_text, sym_first_byte, number_kind, integer_is_int64, int64_value,
     bigint_value, rational_value,
     float_value, string_value
@@ -85,6 +89,17 @@ end
 "A reserved symbol (SWI-7's `[]`, pl-ressymbol.c): a SYM, as `AltSym` is, of another leaf type."
 struct AltRSym{H} <: AltTerm{H}
     id::UInt32                       # an index into _NAMES — shared with the text atoms
+end
+
+"""
+A BLOB atom (stream, clause reference …; D-0153): a SYM of a third leaf type. No name, no text: its
+type name, handle and the type's rank are fields. Same-type blobs compare by handle (DIVERGES,
+D-0200, D-0149, as the reference type: upstream uses the type's compare / memcmp of the payload).
+"""
+struct AltBlob{H} <: AltTerm{H}
+    handle::UInt64
+    rank::Int
+    type::Symbol
 end
 
 struct AltGnd{H} <: AltTerm{H}
@@ -149,6 +164,7 @@ end
 kind(::AltVar) = VAR
 kind(::AltSym) = SYM
 kind(::AltRSym) = SYM
+kind(::AltBlob) = SYM
 kind(::AltGnd) = GND
 kind(::AltExpr) = EXPR
 term_type(::AltTerm{H}) where {H} = AltTerm{H}  # the abstract type, never the leaf
@@ -160,6 +176,8 @@ child(t::AltExpr, i::Int) = t.kids[i]
 sym_key(t::AltSym) = UInt64(t.id)
 sym_key(t::AltRSym) = UInt64(t.id) | (UInt64(1) << 40)  # another symbol than the text atom
 sym_hash(t::Union{AltSym, AltRSym}) = _fnv1a(String(alt_name(t)))   # the TEXT hash, both
+sym_key(t::AltBlob) = (UInt64(1) << 63) | (t.handle << 16) | UInt64(-t.rank)
+sym_hash(t::AltBlob) = _fnv1a_bytes(reinterpret(UInt8, [sym_key(t)]))      # from the key's bytes
 var_key(t::AltVar) = t.key
 gnd_key(t::AltGnd) = _gnd_key(t.val)
 gnd_equal(a::AltGnd, b::AltGnd) = atomic_compare(a, b) == 0
@@ -170,9 +188,24 @@ mk_gnd(::Type{AltTerm{H}}, v) where {H} = alt_gnd(AltTerm{H}, v)
 mk_reserved_symbol(::Type{AltTerm{H}}, name::Symbol) where {H} = alt_rsym(AltTerm{H}, name)
 is_reserved_symbol(::AltTerm) = false
 is_reserved_symbol(::AltRSym) = true
+function mk_blob(::Type{AltTerm{H}}, handle::UInt64, type_name::Symbol, rank::Int) where {H}
+    handle < (UInt64(1) << 45) || throw(ArgumentError("mk_blob: handle too large"))
+    (-65535 <= rank <= -1) || throw(ArgumentError("mk_blob: rank not in -65535..-1"))
+    return AltBlob{H}(handle, rank, type_name)
+end
+is_blob(::AltTerm) = false
+is_blob(::AltBlob) = true
+blob_type(t::AltBlob) = t.type
+blob_handle(t::AltBlob) = t.handle
+blob_rank(t::AltBlob) = t.rank
+blob_type(::AltTerm) = throw(ArgumentError("blob_type: not a blob"))
+blob_handle(::AltTerm) = throw(ArgumentError("blob_handle: not a blob"))
+blob_rank(::AltTerm) = throw(ArgumentError("blob_rank: not a blob"))
 is_nil(::AltTerm) = false
 is_nil(t::AltRSym) = alt_name(t) === Symbol("[]")
 sym_text(t::Union{AltSym, AltRSym}) = String(alt_name(t))
+sym_text(::AltBlob) = throw(ArgumentError("sym_text: a blob has no text"))
+sym_first_byte(::AltBlob) = throw(ArgumentError("sym_first_byte: a blob has no text"))
 # Through the decoded text, not in place (the reference type's way): it allocates, and must agree.
 function sym_first_byte(t::Union{AltSym, AltRSym})::UInt8
     s = String(alt_name(t))
@@ -251,6 +284,7 @@ _shareable(c::AltTerm{true}) =
     end
 
 _share_key(c::Union{AltSym, AltRSym}) = (0x1, sym_key(c))
+_share_key(c::AltBlob) = (0x1, sym_key(c))
 _share_key(c::AltGnd) = (0x2, something(_gnd_key(c.val), UInt64(0)))   # a WILDCARD buckets at 0
 _share_key(c::AltExpr) = (0x3, UInt64(objectid(c)))                     # children are shared too
 _share_hash(children) =
@@ -280,6 +314,13 @@ function _fnv1a(s::String)::UInt64
     end
     return h
 end
+function _fnv1a_bytes(bs)::UInt64
+    h = 0xcbf29ce484222325
+    for b in bs
+        h = (h ⊻ b) * 0x00000100000001b3
+    end
+    return h
+end
 
 """
 A grounded key that follows SWI's identity: identical values never key apart. Integers by their
@@ -303,7 +344,11 @@ end
 # (`OTHER_BLOB_RANK`: after strings, before `[]` and every text atom — DIVERGES, as the reference)
 const _NUMBER, _STRING, _OTHER, _ATOM = 1, 2, 3, 4
 
-_rank(::Union{AltSym, AltRSym}) = _ATOM
+_rank(::Union{AltSym, AltRSym, AltBlob}) = _ATOM
+# an atom's blob-type rank (PL_register_blob_type): a blob type's own (negative), `[]`'s 0, text's 1
+alt_atom_rank(t::AltBlob) = t.rank
+alt_atom_rank(::AltRSym) = 0
+alt_atom_rank(::AltSym) = 1
 function _rank(t::AltGnd)::Int                 # from the ONE kind query, as the reference type
     k = number_kind(t)
     (k === NUM_INTEGER || k === NUM_RATIONAL || k === NUM_FLOAT) && return _NUMBER
@@ -317,8 +362,13 @@ _by_type(x, y)::Int = _sgn(cmp(string(typeof(x)), string(typeof(y))))
 function atomic_compare(a::AltTerm, b::AltTerm)::Int
     ra, rb = _rank(a), _rank(b)
     ra != rb && return ra < rb ? -1 : 1
-    ra == _ATOM &&
+    if ra == _ATOM
+        (a isa AltBlob || b isa AltBlob) &&
+            return compareAtomsBlob(
+                alt_atom_rank(a), sym_key(a), alt_atom_rank(b), sym_key(b)
+            )
         return compareAtoms(alt_name(a), a isa AltRSym, alt_name(b), b isa AltRSym)
+    end
     x, y = (a::AltGnd).val, (b::AltGnd).val
     ra == _NUMBER && return _compare_numbers(x, y)
     if ra == _STRING
@@ -360,6 +410,8 @@ Base.show(io::IO, t::AltVar) = print(io, "_A", t.key)
 Base.show(io::IO, t::AltSym) =
     alt_name(t) === Symbol("[]") ? print(io, "'[]'") : print(io, alt_name(t))
 Base.show(io::IO, t::AltRSym) = print(io, alt_name(t))
+Base.show(io::IO, t::AltBlob) =
+    print(io, "<", t.type, ">(0x", string(t.handle; base=16), ")")
 Base.show(io::IO, t::AltGnd) = show(io, t.val)
 function Base.show(io::IO, t::AltExpr)
     print(io, "(")

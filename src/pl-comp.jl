@@ -1276,10 +1276,10 @@ function _body_functor(::Type{T}, goal::T)::Tuple{T, Int} where {T}
         h = child(goal, 1)
         kind(h) === SYM || return (goal, -1)                    # `$expr/n`: the meta-call (V9)
         # !isTextAtom(fdef->name) && fdef->name != ATOM_nil
-        is_reserved_symbol(h) && !is_nil(h) && return (goal, -1)
+        (is_reserved_symbol(h) && !is_nil(h) || is_blob(h)) && return (goal, -1)
         return (h, nchildren(goal) - 1)
     elseif kind(goal) === SYM
-        is_reserved_symbol(goal) && return (goal, -1)           # isTextAtom(*arg): not `[]`
+        (is_reserved_symbol(goal) || is_blob(goal)) && return (goal, -1)  # isTextAtom(*arg): not `[]`, no blob
         return (goal, 0)
     end
     return (goal, -1)                                          # a number, a string, a variable
@@ -2271,7 +2271,7 @@ function compileSubClause!(
         off == 2 || return NOT_CALLABLE                        # `$expr/n`: no text name
         h = child(arg, 1)
         # !isTextAtom(fdef->name) && fdef->name != ATOM_nil
-        is_reserved_symbol(h) && !is_nil(h) && return NOT_CALLABLE
+        (is_reserved_symbol(h) && !is_nil(h) || is_blob(h)) && return NOT_CALLABLE
         name = sym_key(h)
         is_call = name == names.atom_call
         # ison(fdef, ARITH_F) && !ci->islocal (c:3474-3482)
@@ -2311,7 +2311,7 @@ function compileSubClause!(
             rc = compileBodyArg3(ci, arg)
         end
         rc == BOOLEX_FALSE || return rc
-    elseif k === SYM && !is_reserved_symbol(arg)               # isTextAtom(*arg)
+    elseif k === SYM && !is_reserved_symbol(arg) && !is_blob(arg)  # isTextAtom(*arg)
         if sym_key(arg) == names.atom_cut                      # ATOM_cut
             if ci.cut.var != 0                                 # local cut for \+
                 Output_1!(ci, ci.cut.instruction, code(ci.cut.var))
@@ -2783,7 +2783,7 @@ end
 _is_rule_body(gd::PL_global_data{T}, body::Union{Nothing, T}) where {T} =
     body !== nothing &&
     !(
-        kind(body) === SYM && !is_reserved_symbol(body) &&
+        kind(body) === SYM && !is_reserved_symbol(body) && !is_blob(body) &&
         sym_key(body) == gd.subclause_names.atom_true
     )
 

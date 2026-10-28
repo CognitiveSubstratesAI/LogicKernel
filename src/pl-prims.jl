@@ -104,6 +104,21 @@ function compareAtoms(a::Symbol, ra::Bool, b::Symbol, rb::Bool)::Int
     return _sign(r1 - r2)
 end
 
+"""
+    compareAtomsBlob(rank_a::Int, key_a::UInt64, rank_b::Int, key_b::UInt64) -> Int
+
+Two atoms of which at least one is a BLOB, in the standard order (pl-prims.c `compareAtoms`): of two
+types, by `type->rank` (non-text blob types -1, -2, …, reserved symbol 0, text >= 1 — the rank of a
+non-blob is `RESERVED_SYMBOL_RANK` / `TEXT_ATOM_RANK`); of one type (equal rank), by the key.
+DIVERGES (D-0200, D-0149; representation): upstream orders two atoms of one blob type by the type's
+`compare` or by memcmp of the payload (a C pointer for streams and clause references), which a `Term`
+(no atom-table link) cannot do — the key's handle, i.e. creation order, stands in.
+"""
+function compareAtomsBlob(ra::Int, ka::UInt64, rb::Int, kb::UInt64)::Int
+    ra != rb && return _sign(ra - rb)
+    return ka == kb ? CMP_EQUAL : (ka < kb ? CMP_LESS : CMP_GREATER)
+end
+
 # PORT: pl-prims.c compareStrings
 """
     compareStrings(a::AbstractString, b::AbstractString) -> Int

@@ -316,7 +316,7 @@ unquoted_atomW(name::String, fd::Union{Nothing, IOSTREAM}, flags::Int)::Bool =
 # (`[]`) is not a text atom (`PL_BLOB_TEXT`).
 "May the text atom `a` be written without quotes (pl-write.c)?"
 function unquoted_atom(a::T)::Bool where {T}
-    is_reserved_symbol(a) && return false
+    (is_reserved_symbol(a) || is_blob(a)) && return false
     name = sym_text(a)
     _is_ucs_text(name) && return unquoted_atomW(name, nothing, 0)
     return atomType(name) != AT_QUOTE
@@ -862,7 +862,8 @@ end
 # (`NotPortedError`) where it would call portray/1.
 "Write the atom `a`: 0, 1, or `TRUE_WITH_SPACE` (pl-write.c)."
 function writeAtom(a::T, options::write_options{T})::Int where {T}
-    if _ison(options, PL_WRT_BLOB_PORTRAY) && is_reserved_symbol(a) && !is_nil(a)
+    if _ison(options, PL_WRT_BLOB_PORTRAY) && (is_reserved_symbol(a) || is_blob(a)) &&
+        !is_nil(a)
         throw(
             NotPortedError{T}(
                 a, "writing a blob with portray/1 (blobs(portray))", "R1e (write_term/2,3)"
@@ -870,6 +871,21 @@ function writeAtom(a::T, options::write_options{T})::Int where {T}
         )
     end
 
+    if is_blob(a)                                   # atom->type->write (a blob type's)
+        # DIVERGES: no payload and no per-type `write` hook: `<type>(0x<handle>)`, the shape of a
+        # stream's `write` (pl-file.c `write_stream_ref`); upstream's default (`writeBlob`) prints the
+        # payload as `<#hex>`.
+        return if PutToken(
+            "<" * string(blob_type(a)) * ">(0x" * string(blob_handle(a); base=16) * ")",
+            options.out,
+            0
+        ) != 0 &&
+            Sferror(options.out) == 0
+            1
+        else
+            0
+        end
+    end
     if is_reserved_symbol(a)                        # atom->type->write
         return if (
             writeReservedSymbol(options.out, a, options.flags) && Sferror(options.out) == 0

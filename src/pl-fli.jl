@@ -642,7 +642,7 @@ end
 "The character code of the one-character text atom `w`, else -1 (pl-fli.c): `[]` is not text."
 function charCode(w)::Int
     if kind(w) === SYM                                      # isAtom(w)
-        is_reserved_symbol(w) && return -1                  # not PL_BLOB_TEXT
+        (is_reserved_symbol(w) || is_blob(w)) && return -1  # not PL_BLOB_TEXT
         s = sym_text(w)
         length(s) == 1 && return Int(s[1])
     end
@@ -878,7 +878,7 @@ end
 function isCallable(t)::Bool
     if isTerm(t)
         h = child(t, 1)
-        return kind(h) === SYM && (!is_reserved_symbol(h) || is_nil(h))  # PL_BLOB_TEXT || ATOM_nil
+        return kind(h) === SYM && ((!is_reserved_symbol(h) && !is_blob(h)) || is_nil(h))  # PL_BLOB_TEXT || ATOM_nil
     end
     return isTextAtom(t)
 end
@@ -894,7 +894,7 @@ function PL_is_callable(ld::PL_local_data{T}, t::term_t)::Bool where {T}
         name = nameFunctor(ld.functors, ld.gstack[valPtr(w)])   # a compound: its functor's name
         name == ld.atom_dexpr && return false
         h = _atom_value(ld, name)
-        return !is_reserved_symbol(h) || is_nil(h)          # PL_BLOB_TEXT || ATOM_nil
+        return (!is_reserved_symbol(h) && !is_blob(h)) || is_nil(h)  # PL_BLOB_TEXT || ATOM_nil
     end
     return false
 end
@@ -920,6 +920,39 @@ function PL_is_atom(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     k == DU_WORD && return isAtomW(w) && isTextAtom(_atom_value(ld, w))   # isTextAtom(w)
     return false
 end
+
+# PORT: pl-fli.c PL_is_blob
+# DIVERGES: returns the NAME of the blob type (`nothing` when `t` holds no atom) where upstream returns a
+# bool and sets `*type`; the type is read off the symbol: a blob's own type, `reserved_symbol`, else `text`
+# (`ucs_text` for a text with a character above 0xFF, as `textToAtom` stores it).
+"The blob type name of the atom term reference `t` holds, else `nothing` (pl-fli.c `PL_is_blob`)."
+function PL_is_blob(ld::PL_local_data{T}, t::term_t)::Union{Nothing, String} where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    (k == DU_WORD && isAtomW(w)) || return nothing
+    a = _atom_value(ld, w)
+    is_blob(a) && return string(blob_type(a))
+    is_reserved_symbol(a) && return "reserved_symbol"
+    return _is_ucs_text(sym_text(a)) ? "ucs_text" : "text"
+end
+
+# ORIGINAL: pl-atom.c blob/2 as pl_blob2_va
+# (PRED_IMPL("blob", 2, blob, 0))
+# DIVERGES: placed after the FLI it calls (pl-atom.jl is loaded before `PL_local_data`); NOT PORTED: a
+# dead blob's type (`deadBlobType`: no released blobs).
+"`blob(@Term, ?Type)` (pl-atom.c): `Term` is an atom of blob type `Type`."
+function pl_blob2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    name = PL_is_blob(ld, A1)
+    name === nothing && return FFALSE
+    return PL_unify_atom(ld, A2, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
+end
+
+# ORIGINAL: pl-atom.c BeginPredDefs(atom) as PL_predicates_from_atom
+# DIVERGES: the entries ported (`blob/2`).
+"pl-atom.c's registration table (`BeginPredDefs(atom)`): the ported entries."
+const PL_predicates_from_atom = (PL_extension("blob", 2, pl_blob2_va, PL_FA_VARARGS),)
 
 # PORT: pl-fli.h PL_is_atomic
 # DIVERGES: on the WORDS (L1e e2): an atom word or a value word (`isAtomic(w)`: neither a variable nor a
