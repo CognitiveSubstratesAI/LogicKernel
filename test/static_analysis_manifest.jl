@@ -1702,7 +1702,6 @@ function _manifest_index(T)
         (LK.get_float, Tuple{LD, Int, Bool}, false),
         (LK.PL_get_float, Tuple{LD, Int}, false),
         (LK.PL_get_float_ex, Tuple{LD, Int}, false),
-        (LK.PL_unify_float, Tuple{LD, Int, Float64}, false),
         (LK.pl_statistics_ld, Tuple{LD, Int, Int}, false),
         (LK.qp_statistics, Tuple{LD, Symbol, Vector{Int64}}, false),
         (LK.swi_statistics, Tuple{LD, Symbol, LK.number}, false),
