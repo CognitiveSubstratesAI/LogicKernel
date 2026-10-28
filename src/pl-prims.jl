@@ -2853,11 +2853,11 @@ end
 
 
 # PORT: pl-prims.c term_variables
-# DIVERGES: `tail` 0 is "no tail", as upstream's. NOT PORTED: `flags` (see `term_variables_loop_cells`),
-# and the retries after `TV_NOSPACE`, `TV_EINTR`, `TV_NOMEM`.
+# DIVERGES: `tail` 0 is "no tail", as upstream's. `flags`: TV_ATTVAR, TV_ATTS only (AV6; TV_SINGLETON,
+# TV_SHARED: NOT PORTED). NOT PORTED: the retries after `TV_NOSPACE`, `TV_EINTR`, `TV_NOMEM`.
 "Unify `vars` with the list of the unbound variables of `t`, ending in `tail` (0: in `[]`) (pl-prims.c)."
 function term_variables(
-    ld::PL_local_data{T}, t::term_t, vars::term_t, tail::term_t
+    ld::PL_local_data{T}, t::term_t, vars::term_t, tail::term_t, flags::Int
 )::Bool where {T}
     list = PL_copy_term_ref(ld, vars)
     head = PL_new_term_ref(ld)
@@ -2868,7 +2868,7 @@ function term_variables(
         type == PL_LIST && (maxcount = len)
     end
 
-    count, v0 = term_variables_to_termv_cells(ld, t, maxcount)  # on the cells (L1d step 5)
+    count, v0 = term_variables_to_termv_cells(ld, t, maxcount, flags)  # on the cells (L1d step 5)
     if count > maxcount
         return false
     end
@@ -2895,7 +2895,7 @@ function pl_term_variables2_va(
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
 
-    return term_variables(ld, A1, A2, 0) ? FTRUE : FFALSE
+    return term_variables(ld, A1, A2, 0, 0) ? FTRUE : FFALSE
 end
 
 # PORT: pl-prims.c term_variables3 as pl_term_variables3_va
@@ -2906,7 +2906,29 @@ function pl_term_variables3_va(
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
 
-    return term_variables(ld, A1, A2, A3) ? FTRUE : FFALSE
+    return term_variables(ld, A1, A2, A3, 0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c term_attvar_variables as pl_term_attvar_variables2_va
+# (PRED_IMPL("$term_attvar_variables", 2, term_attvar_variables, 0)) (AV6)
+"`'\$term_attvar_variables'(+Term, -Vars)`: as term_variables/2, also walking into the attributes of attributed variables (pl-prims.c)."
+function pl_term_attvar_variables2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    return term_variables(ld, A1, A2, 0, TV_ATTS) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c term_attvars as pl_term_attvars2_va
+# (PRED_IMPL("term_attvars", 2, term_attvars, 0)) (AV6)
+"`term_attvars(+Term, -AttVars)`: the attributed variables of `Term`, the attributes' own included (pl-prims.c)."
+function pl_term_attvars2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    return term_variables(ld, A1, A2, 0, TV_ATTVAR | TV_ATTS) ? FTRUE : FFALSE
 end
 
 
@@ -3040,27 +3062,40 @@ function _new_term_ref_word!(ld::PL_local_data, w::word)::Int
 end
 
 
+"term_variables_loop's flags (pl-prims.c, upstream's values): attributed variables only; recurse into attributes (AV6)."
+const TV_ATTVAR = 1                                        # 0x1
+const TV_ATTS = 8                                          # 0x8
+
 # PORT: pl-prims.c term_variables_loop as term_variables_loop_cells
 # DIVERGES: on locations; each variable's term reference holds `makeRefG(p)` as upstream's (no
-# export). NOT PORTED: `flags`, signals, `TV_NOSPACE`.
+# export); `goto again` is the inner loop. NOT PORTED: the flags TV_SINGLETON / TV_SHARED (FIRST_MASK),
+# signals, `TV_NOSPACE`.
 "The unbound variables the agenda `a` walks, each once, depth-first, as new term references; their count, `maxcount + 1` as soon as there are more (pl-prims.c)."
 function term_variables_loop_cells(
-    ld::PL_local_data{T}, a::cell_agenda, maxcount::Int
+    ld::PL_local_data{T}, a::cell_agenda, maxcount::Int, flags::Int
 )::Int where {T}
     count = 0
     while true
         q = nextCellAgendaNoDeRef!(a)
         q == 0 && break
         k, w, p = _deref_loc(ld, q)                         # nextTermAgenda: deRef(p)
-        if k == DU_CELL || k == DU_ATTVAR                   # canBind(w): a variable or an attvar (AV5)
-            visitedWord_cells(ld, p) && continue
-            count += 1
-            count > maxcount && return count
-            _new_term_ref_word!(ld, makeRefG(p))            # *valTermRef(v) = makeRefG(p)
-        elseif k == DU_WORD && _is_gcompound(w)             # isTerm(w)
-            c = valPtr(w)
-            visitedWord_cells(ld, c) && continue            # visited(f)
-            pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+        while true                                          # again:
+            if k == DU_CELL || k == DU_ATTVAR               # canBind(w): a variable or an attvar (AV5)
+                visitedWord_cells(ld, p) && break
+                ((flags & TV_ATTVAR) != 0 && k != DU_ATTVAR) && break   # attributed vars only
+                count += 1
+                count > maxcount && return count
+                _new_term_ref_word!(ld, makeRefG(p))        # *valTermRef(v) = makeRefG(p)
+                if (flags & TV_ATTS) != 0 && k == DU_ATTVAR
+                    k, w, p = _deref_loc(ld, valPtr(w))     # p2 = valPAttVar(w); deRef2(p2, p)
+                    continue                                # goto again
+                end
+            elseif k == DU_WORD && _is_gcompound(w)         # isTerm(w)
+                c = valPtr(w)
+                visitedWord_cells(ld, c) && break           # visited(f)
+                pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+            end
+            break
         end
     end
     return count
@@ -3070,12 +3105,12 @@ end
 # DIVERGES: returns `(count, v0)` where upstream writes `*vp`.
 "The unbound variables of the term `t` references, depth-first, as term references from `v0`: `(count, v0)`, `count` = `maxcount + 1` if there are more (pl-prims.c)."
 function term_variables_to_termv_cells(
-    ld::PL_local_data{T}, t::term_t, maxcount::Int
+    ld::PL_local_data{T}, t::term_t, maxcount::Int, flags::Int
 )::Tuple{Int, Int} where {T}
     v0 = PL_new_term_refs(ld, 0)
     a = ld.walk_agenda
     initCellAgenda!(a, 1, -(t + 1))                         # initTermAgenda(&agenda, 1, valTermRef(t))
-    count = term_variables_loop_cells(ld, a, maxcount)
+    count = term_variables_loop_cells(ld, a, maxcount, flags)
     clearCellAgenda!(a)
     unvisit_cells(ld)                                       # unvisit_and_unfirst()
     return (count, v0)
@@ -3109,7 +3144,7 @@ function free_variables_loop_cells(
         end
         k, w, p = _deref_loc(ld, t)                         # nextTermAgenda: deRef(t)
         @label again
-        if k == DU_CELL                                     # canBind(*t)
+        if k == DU_CELL || k == DU_ATTVAR                   # canBind(*t): a variable or an attvar (AV6)
             if !visitedWord_cells(ld, p) && !existential
                 _new_term_ref_word!(ld, makeRefG(p))        # *valTermRef(v) = makeRefG(t)
                 n += 1
@@ -3250,6 +3285,8 @@ const PL_predicates_from_prims = (
     PL_extension("numbervars", 4, pl_numbervars4_va, PL_FA_VARARGS),     # (L1d step 7a, D-0016)
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
+    PL_extension("\$term_attvar_variables", 2, pl_term_attvar_variables2_va, PL_FA_VARARGS),   # (AV6)
+    PL_extension("term_attvars", 2, pl_term_attvars2_va, PL_FA_VARARGS),
     PL_extension("\$free_variable_set", 3, pl_free_variable_set3_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
     PL_extension("atom_length", 2, pl_atom_length2_va, PL_FA_ISO | PL_FA_VARARGS),       # (T1)

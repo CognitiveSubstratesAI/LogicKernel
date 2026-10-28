@@ -736,7 +736,7 @@ end
 function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool where {T}
     fid = PL_open_foreign_frame(ld)
     dest = allocGlobalCells!(ld, 1)             # (L1e e5) duplicate_term() onto the cells, `bin` its reference
-    rc = do_copy_term_cells(ld, -(ex + 1), dest, cp_options(false))
+    rc = do_copy_term_cells(ld, -(ex + 1), dest, cp_options(COPY_ATTRS))
     if rc == 1
         ld.slots[bin + 1] = makeRefG(dest)
         PL_close_foreign_frame(ld, fid)
@@ -748,7 +748,7 @@ function copy_exception!(ld::PL_local_data{T}, ex::term_t, bin::term_t)::Bool wh
     if PL_is_functor(ld, ex, mk_sym(T, :error), 2)
         arg = PL_new_term_ref(ld)
         f = PL_new_term_ref(ld)
-        if _PL_get_arg(ld, 1, ex, arg) && copy_term_refs(ld, arg, f, cp_options(false))
+        if _PL_get_arg(ld, 1, ex, arg) && copy_term_refs(ld, arg, f, cp_options(COPY_ATTRS))
             p = allocGlobalCells!(ld, 3)        # PL_cons_functor_v(bin, FUNCTOR_error2, av)
             ld.gstack[p] = lookupFunctorDef(
                 ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2

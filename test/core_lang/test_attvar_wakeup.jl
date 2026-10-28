@@ -1064,6 +1064,160 @@ const _WK_AV4_ROWS = [
     _wk_check_rows(_WK_AV4_ROWS, "AV4 rows")
 end
 
+# ── AV6: copy and the walkers — copy_term/2 (COPY_ATTRS), records (findall, the ball), assert, term_attvars/2,
+# `$term_attvar_variables/2`, free_variables' canBind (bagof) ─────────────────────────────────────────────────
+# Rows from evidence/av/rows.tsv (ct05, ct06, ta01-ta03, bg01, bg03b, bg03u, bg04, bg05, bg06u, ex02, ex03) and
+# the AV6 rows beside them, probed on swipl 10.1.19 (2026-10-27) through THIS file's driver and fixture;
+# `_wk_check_rows` re-checks each live. Under this fixture `a` inherits user's attr_unify_hook/2, which has no
+# clause for `1`: bg03b/cb01 (bagof's witness unification) and bg05 (findall's inner X = 1) FAIL the wakeup
+# where rows.tsv's bare fixture raises existence_error. bg02 (freeze/2: AV7) is bg02a's shape on put_attr.
+# ct01-ct04 (copy_term/3, attribute_goals//1) wait for R2 (design.md Q3 (a)). bg03b/bg03u/cb01/cb02 generate
+# with `X = A` where rows.tsv has `member(X, [A])`: the kernel has no member/2 before R2 (swipl autoloads
+# library(lists)); the witness is the same free attributed variable, swipl's answers are the same.
+const _WK_AV6_ROWS = [
+    ("ct05", "put_attr(X,a,1), copy_term(X, C), get_attr(C, a, R)", _ei(1)),
+    ("ct05s",
+        "put_attr(X,a,1), copy_term(f(X,X), f(A,B)), (A == B, attvar(A) -> R = shared ; R = no)",
+        _ea("shared")),
+    (
+        "ct06",
+        "put_attr(X,a,1), copy_term_nat(X, C), (attvar(C) -> R = attvar ; R = plain)",
+        _ea("plain")
+    ),
+    # AV6 mutant-killing rows (swipl 10.1.19, probed 2026-10-27 as the goals read): ct05f can_share, ct05o exit restore,
+    # ct05u unshare_attvar, ct05v attribute marking, ct06s/ct06v/ct06o copy_term_nat's shared attvar (VAR_MARK) and its restore
+    (
+        "ct05f",
+        "put_attr(X,a,1), copy_term(f(X), f(C)), (C == X -> R = same ; R = copy)",
+        _ea("copy")
+    ),
+    (
+        "ct05o",
+        "put_attr(X,a,1), copy_term(f(X,X), _), (get_attr(X,a,V) -> R = V ; R = no)",
+        _ei(1)
+    ),
+    (
+        "ct05u",
+        "put_attr(X,a,1), copy_term(X,C), put_attr(C,a,2), (get_attr(X,a,V) -> R = V ; R = no)",
+        _ei(1)
+    ),
+    ("ct05v",
+        "put_attr(X,a,Y), copy_term(f(X,Y), f(C,D)), get_attr(C,a,A), (A == D -> R = same ; R = other)",
+        _ea("same")),
+    ("ct06s",
+        "put_attr(X,a,1), copy_term_nat(f(X,X), f(A,B)), (A == B, var(A), \\+ attvar(A), get_attr(X,a,1) -> R = ok ; R = no)",
+        _ea("ok")),
+    ("ct06v",
+        "put_attr(X,a,1), copy_term_nat(f(X,X), f(A,_)), copy_term(g(A,A), g(C,_)), (C \\== A -> R = fresh ; R = stale)",
+        _ea("fresh")),
+    (
+        "ct06o",
+        "put_attr(X,a,1), copy_term_nat(X, _), (get_attr(X,a,1) -> R = ok ; R = no)",
+        _ea("ok")
+    ),
+    # ct06d: cp_unmark clears the copy marks in X's word — del_attrs/1 trails X's cell, and TrailAssignment
+    # asserts it carries no MARK/FIRST (src/pl-wam.jl:172, upstream's assert); ct06x: the copy's variable A
+    # keeps no VAR_MARK after copy_term_nat (exitCyclicCopy), so a later copy through a reference to A's
+    # cell gives a fresh variable (term_variables/2 leaves A in the copy's cell, unlike ct06v's head unification; arg/3 with unbound args is not ported yet: B_ARG_CF)
+    (
+        "ct06d",
+        "put_attr(X,a,1), copy_term_nat(X, _), del_attrs(X), (attvar(X) -> R = attvar ; R = plain)",
+        _ea("plain")
+    ),
+    ("ct06x",
+        "put_attr(X,a,1), copy_term_nat(f(X,X), C), term_variables(C, [A]), copy_term(g(A), g(D)), (D \\== A -> R = fresh ; R = stale)",
+        _ea("fresh")),
+    ("dt02",
+        "put_attr(X,a,Y), duplicate_term(f(X,Y), f(C,D)), get_attr(C,a,A), (A == D -> R = same ; R = other)",
+        _ea("same")),
+    (
+        "bg01o",
+        "put_attr(X,a,1), findall(X, true, _), (get_attr(X,a,V) -> R = V ; R = no_attr)",
+        _ei(1)
+    ),
+    ("ta01",
+        "put_attr(X,a,1), term_attvars(f(X,Y,X), L), length(L, N), (L = [Z], Z == X -> R = N/x ; R = N/other), Y = Y",
+        _ec("/", _ei(1), _ea("x"))),
+    ("ta02", "term_attvars(f(_,_), R)", "nil"),
+    # TV_ATTS: the walk goes into X's attribute and finds the attributed Y
+    ("ta03", "put_attr(X,a,Y), put_attr(Y,b,1), term_attvars(X, L), length(L, R)", _ei(2)),
+    # TV_ATTVAR: a plain variable inside an attribute is not listed
+    ("ta04", "put_attr(X,a,g(Y)), term_attvars(X, L), length(L, R)", _ei(1)),
+    # `$term_attvar_variables/2` (TV_ATTS only): X, then its attribute's Y, then Z
+    ("tv01",
+        "put_attr(X,a,f(Y)), '\$term_attvar_variables'(g(X,Z), L), length(L, N), (L = [P,Q,S], P == X, Q == Y, S == Z -> R = N/order ; R = N/other)",
+        _ec("/", _ei(3), _ea("order"))),
+    (
+        "bg01",
+        "put_attr(X,a,1), findall(X, true, [Y]), (get_attr(Y,a,V) -> R = V ; R = no_attr)",
+        _ei(1)
+    ),
+    # bg01c: a root attvar's cell is PL_REC_ALLOCVAR's, so X inside its own attribute is the same variable
+    ("bg01c",
+        "put_attr(X,a,f(X)), findall(X, true, [Y]), get_attr(Y,a,f(Z)), (Z == Y -> R = same ; R = other)",
+        _ea("same")),
+    ("bg02a",
+        "put_attr(X,a,1), findall(f(X,X), true, [f(A,B)]), (A == B, get_attr(A,a,1) -> R = shared ; R = no)",
+        _ea("shared")),
+    (
+        "bg03b",
+        "put_attr(A,a,1), catch(bagof(X, X = A, L), E, true), R = L/E",
+        nothing
+    ),
+    ("bg03u", "put_attr(A,user,log(w)), bagof(X, X = A, [_]), log(R)",
+        _wk_list(_ec("-", _ea("w"), _ea("attvar")))),
+    # canBind in free_variables_loop: the attributed X is a free variable of bagof's goal, so it is a witness
+    # whose unification with its copy wakes the hook (fails here); as a non-variable, bagof is findall: yes(1)
+    # (swipl 10.1.19: `findall(Y, Y = X, L)` under the same put_attr gives yes(1))
+    (
+        "cb01",
+        "put_attr(X,a,1), (bagof(Y, Y = X, L) -> length(L, N), R = yes(N) ; R = no)",
+        _ea("no")
+    ),
+    ("cb02",
+        "put_attr(X,user,yes), bagof(Y, Y = X, [Z]), (Z == X -> R = same ; R = other)",
+        _ea("same")),
+    ("bg04",
+        "put_attr(X,a,1), assertz(q_av(X)), q_av(Y), (attvar(Y) -> R = attvar ; R = plain), retractall(q_av(_))",
+        _ea("plain")),
+    (
+        "bg05",
+        "put_attr(X,a,1), catch(findall(Y, (Y = X, X = 1), L), E, L = E), R = L",
+        "nil"
+    ),
+    (
+        "bg06u",
+        "put_attr(A,user,log(c)), copy_term(A, C), C = 1, log(R)",
+        _wk_list(_ec("-", _ea("c"), _ei(1)))
+    ),
+    ("ex02",
+        "put_attr(X,a,1), catch(throw(f(X)), f(Y), true), (get_attr(Y,a,V) -> R = attr(V) ; R = no_attr)",
+        _ec("attr", _ei(1))),
+    (
+        "ex03",
+        "put_attr(X,a,1), catch(throw(f(X)), f(Y), true), (Y == X -> R = same ; R = copy)",
+        _ea("copy")
+    ),
+    # fb7: throw/1 refuses an attributed ball as a variable (PL_is_variable), so the ball is never the attvar.
+    # fb7c/fb7a: the scc exits with a choice point; throw(a) unwinds its frame, dbg_discardChoicesAfter discards
+    # the choice, the cleanup's inner throw(b) rewrites the exception bin and its catch clears it — only the
+    # restore after the discard (`*valTermRef(exception_bin) = w`, pl-wam.jl) puts the outer ball back (FB7).
+    ("fb7",
+        "put_attr(X,a,1), catch(throw(X),B,true), (var(B) -> R = var ; B = error(F,_), R = nonvar(F))",
+        _ec("nonvar", _ea("instantiation_error"))),
+    ("fb7c",
+        "catch((setup_call_cleanup(true, (true;true), catch(throw(b),_,true)), throw(a)), E, true), R = E",
+        _ea("a")),
+    ("fb7a",
+        "put_attr(X,a,1), catch((setup_call_cleanup(true, (true;true), catch(throw(b),_,true)), throw(f(X))), E, true), E = f(Y), (get_attr(Y,a,V) -> R = V ; R = no)",
+        _ei(1))
+]
+
+@testset "AV6: copy_term/2, findall, the ball, assert, term_attvars/2 and bagof's free variables — rows, re-checked on swipl" begin
+    @test length(_WK_AV6_ROWS) == 34
+    _wk_check_rows(_WK_AV6_ROWS, "AV6 rows")
+end
+
 # hk11b = upstream's `failing_catchers` (swipl-devel 7b9d8ba, tests/core_lang/test_exception.pl:81-84, `R == outer(2)`;
 # its module's hook `attr_unify_hook(no, _) :- fail` is this fixture's `user` one): two attributed catchers whose
 # hooks fail. findCatcher ports upstream's fix 7b9d8ba (each catcher in a foreign frame of its own). Kernel only:

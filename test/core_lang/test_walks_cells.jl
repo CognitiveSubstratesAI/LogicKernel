@@ -176,7 +176,7 @@ _wc_clean(ld) =
         @test LK.ground_cells(ld, -(t + 2)) == 0
         @test _wc_clean(ld)
         v0 = LK.PL_new_term_refs(ld, 0)
-        n, r = LK.term_variables_to_termv_cells(ld, t, typemax(Int))
+        n, r = LK.term_variables_to_termv_cells(ld, t, typemax(Int), 0)
         @test n == 3 && r == v0
         @test _wc_clean(ld)
         # three distinct unbound cells (the order is the differential's: depth-first, left to right)
@@ -222,7 +222,7 @@ end
     c0 = _wc_counts(ld)
     @test LK.ground_cells(ld, -(t + 1)) > 0
     v0 = LK.PL_new_term_refs(ld, 0)
-    n, _ = LK.term_variables_to_termv_cells(ld, t, typemax(Int))
+    n, _ = LK.term_variables_to_termv_cells(ld, t, typemax(Int), 0)
     @test n == 2
     @test _wc_counts(ld) == c0
     LK.PL_reset_term_refs(ld, v0)

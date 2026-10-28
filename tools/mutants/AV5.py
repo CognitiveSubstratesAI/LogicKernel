@@ -56,8 +56,8 @@ MUTANTS = [
          new="        ld.gstack[b + 1] = c                                # needsRef(*item) ? makeRefG(item) : *item (AV1)\n"),
     # ── term_variables/2,3 (pl-prims.c term_variables_loop `canBind`; row av19) ──
     dict(id="AV5-V1 term_variables_loop does not admit an attributed variable (f(X,X) with X an attvar gives 0 variables; av19)", file=P, targets=TN,
-         old="        if k == DU_CELL || k == DU_ATTVAR                   # canBind(w): a variable or an attvar (AV5)\n",
-         new="        if k == DU_CELL                                     # canBind(w): a variable or an attvar (AV5)\n"),
+         old="            if k == DU_CELL || k == DU_ATTVAR               # canBind(w): a variable or an attvar (AV5)\n",
+         new="            if k == DU_CELL                                 # canBind(w): a variable or an attvar (AV5)\n"),
     dict(id="AV5-V2 visitedWord_cells does not mark an attributed variable (it is counted once per occurrence; av19)", file=P, targets=TN,
          old="    if isVar(w) || isAttVar(w)                              # an attvar cell too (AV5): canBind\n",
          new="    if isVar(w)                                             # an attvar cell too (AV5): canBind\n"),

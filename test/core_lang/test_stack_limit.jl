@@ -294,7 +294,9 @@ end
         c = LK.PL_new_term_ref(ld)
         g0 = ld.gTop
         ld.stacks_limit = LK._stacks_in_use(ld, 0) + 1 + 30 - room_less   # dest + 10 cells × 3
-        ok = LK.copy_term_refs(ld, t, c, LK.cp_options(share))
+        ok = LK.copy_term_refs(
+            ld, t, c, LK.cp_options(share ? LK.COPY_SHARE | LK.COPY_ATTRS : LK.COPY_ATTRS)
+        )
         if room_less == 0
             @test ok && !ld.exception_processing && ld.gTop - g0 == 31
         else

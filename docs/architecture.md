@@ -1069,6 +1069,7 @@ graph LR
     pl_copyterm --> pl_alloc
     pl_copyterm --> pl_wam
     pl_copyterm --> pl_fli
+    pl_copyterm --> pl_attvar
     pl_rec --> default_term
     pl_rec --> pl_incl
     pl_rec --> SWI_Prolog
@@ -4879,6 +4880,33 @@ pl-modul.c at the pin, the module record and table of pl-incl.h. Decisions (D-01
   user operators incl. block operators, generated `writeq` texts, and read_clause/3 on streams);
   test_read.jl's upstream `valid_position_*` and `pos_block` units. Mutants: tools/mutants/LB1.py.
   No bench: the reader, not the run loop (D-0185).
+
+## AV6 — copying attributed variables and the walkers that see them (att. vars, step 6)
+
+What AV6 ports (all on the cells; the C half only, design.md Q3 (a)):
+
+- **pl-copyterm.c**: `COPY_SHARE` / `COPY_ATTRS` flags in `cp_options`; `COPY_ATTRS` copies an attvar's attribute list into a new
+  attvar (`alloc_attvar`, pl-attvar.c, in src/pl-attvar.jl) — `copy_term/2`, `duplicate_term/2` and the exception ball
+  (`copy_exception!`) pass it, `copy_term_nat/2` does not (an attvar becomes a plain variable). Also `unshare_attvar`,
+  `must_copy_attvar`, the attvar branches of `can_share`, `mark_for_copy`, `mark_for_duplicate`, `cp_unmark`,
+  `exitCyclicCopy` (two stack entries per attvar, told apart by `isRef`) and `copy_term`. An attvar's copy marks live in its word
+  (the tag survives them); without `COPY_ATTRS` a shared attvar's `VAR_MARK` is the side-vector bit, as for a variable.
+  `unshare_attvar` is ported as is: a non-`att/3` compound in an attribute list (`put_attrs(X, foo(1))`) loops forever, in swipl
+  10.1.19 too (upstream register candidate, not a kernel change).
+- **pl-rec.c**: `PL_TYPE_ATTVAR` (0x0f) and `PL_REC_ALLOCVAR` (0x10) in `compile_term_to_heap` / `copy_record` / `restoreVars`, so
+  findall/3 and bagof/3 keep the attributes of a stored variable (assert should drop them: pl-comp.jl:365 exports an attvar
+  as a variable since AV3 — verified: swipl 10.1.19 `put_attr(X,a,1), assertz(f(X)), f(Y)` gives a plain Y; the compiler was not touched). DIVERGES: an attvar's `vars` entry is two Ints, its saved word under the NEGATED position (upstream: the low
+  bit of the pointer, `mkAttVarP`).
+- **pl-prims.c**: `term_attvars/2` and `'$term_attvar_variables'/2` (upstream pl-prims.c:3733/3763, not pl-attvar.c) on
+  `term_variables_loop_cells` with `TV_ATTVAR` (1) and `TV_ATTS` (8); `free_variables_loop_cells` admits an attvar (`canBind`),
+  so bagof/3 and `^` see it as a free variable.
+- **Not ported / waits**: `copy_term/3` and `attribute_goals//1` (R2: phrase/DCG), `copy_term/4` (`COPY_MARKED`), `frozen/2`.
+- **FB7**: `put_attr(X,a,1), catch(throw(X),B,true)` — `throw/1` refuses an attributed ball as a variable (`PL_is_variable`), so B is
+  the instantiation_error (swipl 10.1.19, probed 2026-10-27; row fb7). Rows fb7c/fb7a: a cleanup run by
+  `dbg_discardChoicesAfter` can raise and catch its own ball and clear the bin, so only the restore after the discard puts the outer
+  ball back — which makes mutant FB7 non-equivalent (tools/mutants/F3b1.py); the `@assert k != DU_CELL` at src/pl-wam.jl fires on those rows.
+
+Tests: `_WK_AV6_ROWS` (test/core_lang/test_attvar_wakeup.jl); mutants: tools/mutants/AV6.py.
 
 ## Still to come
 

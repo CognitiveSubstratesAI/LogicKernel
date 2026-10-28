@@ -1197,9 +1197,9 @@ function dbg_discardChoicesAfter(
         if _is_side_word(w)                                  # (f3-1) a grounded side value, read as a
             _slot_copy!(ld, ld.exception_bin + 1, valPtr(w)) # value: with its value, as before f3-1
         else
-            # (f3b-1, audit D-0090) the identity today: every writer of the bin stores a DIRECT word (pl-alloc.jl
-            # `outOfStack!`, pl-fli.jl `PL_raise_exception` via `copy_exception!`, pl-attvar.jl `restore_exception`),
-            # so `w` is the word the bin already holds. RE-CHECK when attributed variables enter the port.
+            # (f3b-1, audit D-0090; AV6, D-0163) NOT the identity: a cleanup handler run by the discard may raise
+            # and catch its own ball, which clears the bin (`resumeAfterException`); only this puts the pending ball
+            # back (rows fb7c/fb7a in test_attvar_wakeup.jl; without it the @assert above fires: mutant FB7).
             ld.slots[ld.exception_bin + 1] = w               # *valTermRef(exception_bin) = w
         end
         ld.exception_term = ld.exception_bin

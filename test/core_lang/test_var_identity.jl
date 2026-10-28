@@ -61,7 +61,7 @@ end
     LK.Undo!(ld, m)
     # copy_term: ONE fresh variable, twice
     c, c1, c2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
-    @test LK.copy_term_refs(ld, tf, c, LK.cp_options(false))
+    @test LK.copy_term_refs(ld, tf, c, LK.cp_options(LK.COPY_ATTRS))
     @test LK._PL_get_arg(ld, 1, c, c1) && LK._PL_get_arg(ld, 2, c, c2)
     @test LK.PL_is_variable(ld, c1) && LK.PL_compare(ld, c1, c2) == LK.CMP_EQUAL
     @test LK.PL_compare(ld, c1, a1) != LK.CMP_EQUAL
@@ -84,7 +84,7 @@ end
 @testset "numbervars and the variable collectors see one variable" begin
     ld, tf, a1, _, _ = _vi_shared()
     # term_variables/2's collector: one variable, X's cell
-    n, v0 = LK.term_variables_to_termv_cells(ld, tf, typemax(Int))
+    n, v0 = LK.term_variables_to_termv_cells(ld, tf, typemax(Int), 0)
     @test n == 1 && LK.PL_compare(ld, v0, a1) == LK.CMP_EQUAL
     # bagof/setof's free-variable collector
     goal = LK.PL_new_term_ref(ld)

@@ -140,7 +140,9 @@ end
     ld, t = _kc_engine(_R[_rf("f", g, X, _rf("h", X))])
     gw = _kc_arg_word(ld, t, 1)
     for share in (true, false)
-        c = _kc_copy(ld, t, LK.cp_options(share))
+        c = _kc_copy(
+            ld, t, LK.cp_options(share ? LK.COPY_SHARE | LK.COPY_ATTRS : LK.COPY_ATTRS)
+        )
         @test _kc_clean(ld)
         cw = _kc_arg_word(ld, c, 1)
         @test (cw == gw) == share                           # COPY_SHARE: the very compound
@@ -159,7 +161,7 @@ end
         _R[_rf("f", X, _rlist((_ki(i) for i in 1:50)...), _rf("g", Y, X), _rs("a"))]
     )
     c0 = _kc_counts(ld)
-    _kc_copy(ld, t, LK.cp_options(true))
-    _kc_copy(ld, t, LK.cp_options(false))
+    _kc_copy(ld, t, LK.cp_options(LK.COPY_SHARE | LK.COPY_ATTRS))
+    _kc_copy(ld, t, LK.cp_options(LK.COPY_ATTRS))
     @test _kc_counts(ld) == c0
 end

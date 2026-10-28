@@ -244,7 +244,7 @@ end
     @test ld.slots[o + 1] == LK.SLOT_VALUE && LK.PL_compare(ld, o, f) == LK.CMP_EQUAL
     # the copy and the record
     c = LK.PL_new_term_ref(ld)
-    @test LK.copy_term_refs(ld, f, c, LK.cp_options(true))
+    @test LK.copy_term_refs(ld, f, c, LK.cp_options(LK.COPY_SHARE | LK.COPY_ATTRS))
     @test LK.PL_is_float(ld, c) && LK.PL_compare(ld, c, f) == LK.CMP_EQUAL
     r = LK.compileTermToHeap(ld, s)
     rr = LK.PL_new_term_ref(ld)

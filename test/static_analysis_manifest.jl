@@ -227,8 +227,12 @@ _manifest_per_type(T) = (
     (LK._grow_tv_seen!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.unvisit_cells, Tuple{LK.PL_local_data{T}}, true),
     (LK._new_term_ref_word!, Tuple{LK.PL_local_data{T}, UInt64}, false),
-    (LK.term_variables_loop_cells, Tuple{LK.PL_local_data{T}, LK.cell_agenda, Int}, false),
-    (LK.term_variables_to_termv_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (
+        LK.term_variables_loop_cells,
+        Tuple{LK.PL_local_data{T}, LK.cell_agenda, Int, Int},
+        false
+    ),   # AV6: flags
+    (LK.term_variables_to_termv_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.free_variables_loop_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     # copy_term on cells (L1d step 6): the side vector, the stacks and the copy's cells grow
     (LK._cp_vm, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -236,11 +240,12 @@ _manifest_per_type(T) = (
     (LK._cp_word, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.can_share_cells, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.update_ground_cells, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.mark_for_copy_cells, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.mark_for_duplicate_cells, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.cp_unmark_cells, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.exitCyclicCopy_cells, Tuple{LK.PL_local_data{T}}, false),
-    (LK.copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.mark_for_copy_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.unshare_attvar_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.mark_for_duplicate_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.cp_unmark_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.exitCyclicCopy_cells, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.do_copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
     # =@= on cells (L1d step 8a): the side vector, the node buffer and the agenda grow
     (LK._vt_id, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -1282,6 +1287,7 @@ function _manifest_index(T)
         (LK.PL_is_attvar, Tuple{LD, Int}, false),
         (LK.link_attvar, Tuple{LD}, false),
         (LK.make_new_attvar, Tuple{LD, Int}, false),
+        (LK.alloc_attvar, Tuple{LD}, false),
         (LK.put_new_attvar, Tuple{LD, Int, UInt64, Tuple{UInt8, UInt64, Int}}, false),
         (LK.find_attr, Tuple{LD, Int, UInt64}, false),
         (LK.put_att_value, Tuple{LD, Int, UInt64, Tuple{UInt8, UInt64, Int}}, false),
@@ -1365,7 +1371,7 @@ function _manifest_index(T)
         ),
         (LK.prolog_list_to_sort_list_cells, Tuple{LD, Int, Bool, Bool}, false),
         (LK.put_sort_list_cells, Tuple{LD, Int, LK.List_Record_cells, Int}, false),
-        (LK.term_variables, Tuple{LD, Int, Int, Int}, false),
+        (LK.term_variables, Tuple{LD, Int, Int, Int, Int}, false),
         (LK.PL_cons_list, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_unify_list, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_unify_nil, Tuple{LD, Int}, false),
@@ -1387,7 +1393,8 @@ function _manifest_index(T)
                 LK.pl_set_typein_module1_va,
                 LK.pl_acyclic_term1_va, LK.pl_cyclic_term1_va, LK.pl_functor3_va,
                 LK.pl_numbervars4_va, LK.pl_term_variables2_va,
-                LK.pl_term_variables3_va,
+                LK.pl_term_variables3_va, LK.pl_term_attvar_variables2_va,
+                LK.pl_term_attvars2_va,
                 LK.pl_free_variable_set3_va, LK.pl_skip_list3_va, LK.pl_univ2_va
             )
         ]...,
@@ -1948,6 +1955,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.atom_literal, Tuple{UInt64}, true), (LK.atom_operand_word, Tuple{UInt64}, true),
     (LK.VAROFFSET, Tuple{Int}, true), (LK.VARNUM, Tuple{UInt64}, true),
     (LK.sizeofClause, Tuple{Int}, true),
+    (LK.must_copy_attvar, Tuple{Int}, true),   # AV6: no T in its signature — once, not per term type
     (LK.argFrameP, Tuple{Int, Int}, true), (LK.varFrameP, Tuple{Int, Int}, true),
     (LK.refFliP, Tuple{Int, Int}, true), (LK.f_hasSpace, Tuple{Int, Int, Int, Int}, true),
     (LK.NoMark, Tuple{}, true), (LK.isRealMark, Tuple{LK.mark}, true),

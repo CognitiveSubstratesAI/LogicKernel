@@ -23,7 +23,7 @@
 #
 # NOT PORTED: the rest of pl-attvar.c, the steps after the binding (since AV3) —
 # `freeze/2`'s support (AV7), `when/2`'s (AV8), call_residue_vars (AV9; so `trail_new_attvar` and
-# `on_attvar_chain`, its CHK_SECURE check, wait for it), `alloc_attvar` (AV6) and
+# `on_attvar_chain`, its CHK_SECURE check, wait for it) and
 # `wakeup_state_exception`.
 
 # PORT: pl-attvar.c saveWakeup
@@ -305,6 +305,19 @@ function link_attvar(ld::PL_local_data)::Int
     gp = allocGlobalCells!(ld, 1)                           # Word gp = gTop++
     register_attvar(ld, gp)                                 # register_attvar(gp)
     return gp + 1                                           # return gp+1
+end
+
+# PORT: pl-attvar.c alloc_attvar
+# DIVERGES: positions; returns the attvar cell's position, 0 for upstream's NULL (no space:
+# `allocGlobalNoShift`, as upstream's).
+"A new attributed variable with no attributes, its link cell on the chain: its attvar cell's position, or 0 when the stack is full (pl-attvar.c)."
+function alloc_attvar(ld::PL_local_data)::Int
+    gp = allocGlobalNoShift(ld, 3)                          # Word gp = allocGlobalNoShift(3)
+    gp == 0 && return 0
+    register_attvar(ld, gp)                                 # register_attvar(&gp[0])
+    ld.gstack[gp + 1] = consPtr(gp + 2, TAG_ATTVAR | STG_GLOBAL)    # gp[1] = consPtr(&gp[2], …)
+    ld.gstack[gp + 2] = ld.atom_nil_w                       # gp[2] = ATOM_nil
+    return gp + 1                                           # return &gp[1]
 end
 
 # PORT: pl-attvar.c make_new_attvar

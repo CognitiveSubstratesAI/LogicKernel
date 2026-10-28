@@ -35,9 +35,13 @@
 # NOT PORTED: the rest of pl-rec.c — the recorded database (`recorda/3`, `recorded/3`, `erase/1`,
 # `instance/2`, the keys and their lists), external records (`PL_record_external`, the
 # `PL_TYPE_EXT_*` opcodes), `variantRecords`, `term_complexity`,
-# atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`),
-# attributed variables (`PL_TYPE_ATTVAR`, `PL_REC_ALLOCVAR`), and `freeRecord` (a record is freed
-# by Julia's GC).
+# atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
+# `freeRecord` (a record is freed by Julia's GC).
+#
+# ATTRIBUTED VARIABLES (AV6, as upstream's `O_ATTVAR` cases): `PL_TYPE_ATTVAR` records an attributed
+# variable as a numbered variable followed by its attribute list, so findall/3 and bagof/3 give back
+# the attributes; `PL_REC_ALLOCVAR` first when the record is that variable alone. While the term is
+# compiled the attvar cell holds the var-link word, and `restoreVars` puts its saved word back.
 
 # PORT: pl-rec.c PL_TYPE_VARIABLE
 # DIVERGES: the opcodes of what the kernel's cells hold; an indirect is `PL_REC_VALUE` (ORIGINAL),
@@ -56,18 +60,24 @@ const PL_TYPE_CONS = 0x08
 const PL_TYPE_NIL = 0x09
 "Record opcode: a compound met before, the offset of its copy following (pl-rec.c)."
 const PL_REC_CYCLE = 0x11
+"Record opcode: an attributed variable, its number following, then its attribute list (pl-rec.c)."
+const PL_TYPE_ATTVAR = 0x0f
+"Record opcode: a global cell for a root attributed variable, the `PL_TYPE_ATTVAR` following (pl-rec.c)."
+const PL_REC_ALLOCVAR = 0x10
 # ORIGINAL: see the file header.
 "Record opcode: an indirect, its index in the record's `values` following."
 const PL_REC_VALUE = 0x40
 
 # PORT: pl-rec.c compile_info
-# DIVERGES: `vars` holds the variable cells' positions; `values` the indirects (see the file
+# DIVERGES: `vars` holds the variable cells' positions; an attributed variable's is two entries, its
+# saved word (`reinterpret`ed) under its NEGATED position (upstream: the word under `mkAttVarP(p)`, the
+# pointer's low bit set); `values` the indirects (see the file
 # header); `marks` is upstream's `LD->cycle.lstack` of `cycle_mark` (the functor cell's position and
 # its word). NOT KEPT: `external`, `lock`, `error`, `econtext` (no external records, no atom GC).
 "The state of one `compile_term_to_heap` (pl-rec.c `compile_info`)."
 mutable struct compile_info{T}
     const code::Vector{UInt8}               # code buffer
-    const vars::Vector{Int}                 # variable cells (positions)
+    const vars::Vector{Int}                 # variable cells (positions; an attvar's: word, -position)
     const values::Vector{T}                 # (the indirects, see the file header)
     const marks::Vector{Tuple{Int, word}}   # (LD->cycle.lstack: functor cell, its word)
     size::Int                               # size on global stack
@@ -131,8 +141,8 @@ end
 
 # PORT: pl-rec.c compile_term_to_heap
 # DIVERGES: on locations (`ld.walk_agenda`, dereferenced here); the cases of the kernel's words (see
-# the file header); always true (upstream fails only for an external record's blob: not ported). No
-# attributed variable.
+# the file header); always true (upstream fails only for an external record's blob: not ported). An
+# attributed variable's `goto again` on its attribute list is the inner loop.
 "Compile the term of agenda `a` into `info` (pl-rec.c `compile_term_to_heap`)."
 function compile_term_to_heap(
     ld::PL_local_data{T}, a::cell_agenda, info::compile_info{T}
@@ -149,6 +159,27 @@ function compile_term_to_heap(
         while isRef(w)                                      # deRef(p)
             p = unRef(w)
             w = ld.gstack[p]
+        end
+        while isAttVar(w)                                   # TAG_ATTVAR (a global cell: p > 0)
+            n = info.nvars
+            info.nvars += 1
+            ap = valPtr(w)                                  # Word ap = valPAttVar(w)
+            if isempty(info.code)                           # isEmptyBuffer(&info->code)
+                addOpCode(info, PL_REC_ALLOCVAR)            # only an attributed var
+                info.size += 1
+            end
+            push!(info.vars, reinterpret(Int, w))           # addBuffer(&info->vars, *p, word): save value
+            ld.gstack[p] = consPtr(n, TAG_ATOM | STG_GLOBAL)   # *p = (n<<7)|TAG_ATOM|STG_GLOBAL
+            push!(info.vars, -p)                            # addBuffer(&info->vars, mkAttVarP(p), Word)
+            addOpCode(info, PL_TYPE_ATTVAR)
+            addSizeInt(info, n)
+            info.size += 3
+            p = ap                                          # p = ap; deRef(p); goto again
+            w = ld.gstack[p]
+            while isRef(w)
+                p = unRef(w)
+                w = ld.gstack[p]
+            end
         end
         if isVar(w)                                         # TAG_VAR
             n = info.nvars
@@ -213,11 +244,18 @@ function unvisit(ld::PL_local_data, info::compile_info)::Nothing
 end
 
 # PORT: pl-rec.c restoreVars
-"Make every variable cell `compile_term_to_heap` numbered unbound again (pl-rec.c)."
+# DIVERGES: an attributed variable's entry is its negated position over its saved word (see
+# `compile_info`).
+"Make every variable cell `compile_term_to_heap` numbered unbound again, every attributed variable's cell its word (pl-rec.c)."
 function restoreVars(ld::PL_local_data, info::compile_info)::Nothing
     v = info.vars
     while !isempty(v)
-        ld.gstack[pop!(v)] = word(0)                        # setVar(**p)
+        p = pop!(v)
+        if p < 0                                            # if ( isAttVarP(*p) )
+            ld.gstack[-p] = reinterpret(word, pop!(v))      # *addr = *(Word)p
+        else
+            ld.gstack[p] = word(0)                          # setVar(**p)
+        end
     end
     return nothing
 end
@@ -248,7 +286,7 @@ end
 # PORT: pl-rec.c copy_info
 # DIVERGES: `data` an index into the record's code; `vars` the variable cells' positions, 0 for not
 # met yet. NOT KEPT: `base`, `version_map`, `dicts`, `avars`, `vars_buf` (no external records, no
-# attributed variables; the vector is the buffer).
+# `avars`: no attributed variable's value is stored apart; the vector is the buffer).
 "The state of one `copy_record` (pl-rec.c `copy_info`)."
 mutable struct copy_info
     data::Int                           # the next byte of the code
@@ -318,8 +356,9 @@ end
 # PORT: pl-rec.c copy_record
 # DIVERGES: location 0 is the root, slot `slot` (upstream's `valTermRef(copy)`): a root variable is a
 # cell of the block, an indirect stored as `_slot_link_loc!` stores one; the agenda is
-# `ld.walk_agenda`; the cells were laid out unbound by `allocGlobalCells!` (setVar). No attributed
-# variable, no external opcode; nothing allocates fallibly (no `MEMORY_OVERFLOW`).
+# `ld.walk_agenda`; the cells were laid out unbound by `allocGlobalCells!` (setVar). `goto
+# right_recursion` (`PL_REC_ALLOCVAR`, `PL_TYPE_ATTVAR`) is `continue` with the new `p`. No external
+# opcode; nothing allocates fallibly (no `MEMORY_OVERFLOW`).
 "Lay record `r`'s code out from `b.gstore`, its root in slot `slot` (pl-rec.c `copy_record`)."
 function copy_record(
     ld::PL_local_data{T}, slot::Int, r::record{T}, b::copy_info
@@ -351,6 +390,23 @@ function copy_record(
                 ld.gstack[p] = word(0)                      # setVar(*p)
                 b.vars[n] = p
             end
+        elseif tag == PL_REC_ALLOCVAR                       # (a root attributed variable)
+            c = b.gstore
+            ld.gstack[c] = word(0)                          # setVar(*b->gstore)
+            _rec_put!(ld, slot, p, makeRefG(c))             # *p = makeRefG(b->gstore)
+            p = c                                           # p = b->gstore++
+            b.gstore += 1
+            continue                                        # goto right_recursion
+        elseif tag == PL_TYPE_ATTVAR
+            n = fetchSizeInt(code, b) + 1
+            g = b.gstore
+            register_attvar(ld, g)                          # register_attvar(b->gstore)
+            ld.gstack[g + 1] = consPtr(g + 2, TAG_ATTVAR | STG_GLOBAL)   # b->gstore[1] = consPtr(&b->gstore[2], …)
+            _rec_put!(ld, slot, p, makeRefG(g + 1))         # *p = makeRefG(&b->gstore[1])
+            b.vars[n] = p                                   # b->vars[n] = p
+            p = g + 2                                       # p = &b->gstore[2]
+            b.gstore += 3
+            continue                                        # goto right_recursion
         elseif tag == PL_TYPE_NIL
             _rec_put!(ld, slot, p, ld.atom_nil_w)
         elseif tag == PL_TYPE_ATOM

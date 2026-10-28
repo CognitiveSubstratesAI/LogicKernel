@@ -21,6 +21,7 @@ TARGETS = [                      # the union of the mutants' targets: the baseli
     "test/db/test_clause_variables.jl",
     "test/core_text/test_write_family_swipl.jl",
     "test/core_lang/test_occurs_check.jl",
+    "test/core_lang/test_attvar_wakeup.jl",
 ]
 INL = "src/pl-inline.jl"
 ALLOC = "src/pl-alloc.jl"
@@ -55,8 +56,11 @@ MUTANTS = [
     dict(id="FB6 an abandoned query leaves the ball in the exception bin (the changed test_catch_swipl row)", file=WAM, targets=TCS,
          old='''PL_clear_exception(ld)                          # (f3b-1) with its `setVar`: the ball is cells now''',
          new='''ld.exception_term = 0'''),
-    dict(id="FB7 dbg_discardChoicesAfter does not restore the ball", file=WAM, targets=TCS,
-         equivalent="src/pl-alloc.jl:115, src/pl-fli.jl:896, src/pl-attvar.jl:57 — every bin writer stores a direct word, so the restore is the identity (re-check when attributed variables enter the port; D-0090 item 3)",
+    # FB7 (AV6, D-0163): NOT equivalent — a cleanup handler run by the discard can raise and catch its own ball,
+    # which clears the bin; only the restore puts the pending ball back (swipl: rows fb7c E = a, fb7a V = 1).
+    # Killed by the `@assert k != DU_CELL` (pl-wam.jl dbg_discardChoicesAfter) firing on rows fb7c/fb7a.
+    dict(id="FB7 dbg_discardChoicesAfter does not restore the ball (rows fb7c, fb7a)", file=WAM,
+         targets=TCS + ["test/core_lang/test_attvar_wakeup.jl"],
          old='''ld.slots[ld.exception_bin + 1] = w               # *valTermRef(exception_bin) = w''',
          new='''nothing'''),
     # ── the import of a stale variable ──
