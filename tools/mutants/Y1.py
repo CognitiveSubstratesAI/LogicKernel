@@ -159,6 +159,6 @@ MUTANTS = [
          old='''    ex && PL_type_error(ld, "float", t)''',
          new='''    nothing'''),
     dict(id="Y1-40 PL_unify_float binds 0.0", file=L, targets=T,
-         old='''_gnd_word!(ld, mk_gnd(T, f))''',
-         new='''_gnd_word!(ld, mk_gnd(T, 0.0))'''),
+         old='''PL_unify_atomic(ld, t, mk_gnd(T, f))''',
+         new='''PL_unify_atomic(ld, t, mk_gnd(T, 0.0))'''),
 ]

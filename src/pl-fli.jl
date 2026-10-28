@@ -1040,25 +1040,6 @@ end
 PL_unify_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
     unify_int64_ex(ld, t, i, false)
 
-# PORT: pl-fli.c PL_unify_float
-# DIVERGES: on the WORDS (L1d): an unbound cell is bound to the float as a value-table word
-# (`put_double`: a NaN as the canonical one, `put_number`'s); a value-table word holding a float is compared
-# by `==` (`valFloat(*p) == f`: `0.0` equals `-0.0` here, as upstream's).
-"Unify the term `t` references with the float `f` (pl-fli.c `PL_unify_float`)."
-function PL_unify_float(ld::PL_local_data{T}, t::term_t, f::Float64)::Bool where {T}
-    k, w, p = _deref_loc(ld, -(t + 1))
-    if k == DU_CELL                                         # canBind(*p)
-        isnan(f) && (f = PL_nan())                          # put_double: the canonical NaN
-        _bind_const!(ld, p, _gnd_word!(ld, mk_gnd(T, f)))   # put_double(&w, f); bindConst(p, w)
-        return true
-    elseif k == DU_VALUE
-        isTaggedIntW(w) && return false
-        v = _indirect_value(ld, w)
-        return isFloat(v) && float_value(v) == f            # isFloat(*p) && valFloat(*p) == f
-    end
-    return false
-end
-
 # PORT: pl-fli.c get_float
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `f` and returns a Bool; the
 # number is read into a `number` (`PL_get_number`), not from the word.
