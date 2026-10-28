@@ -21,8 +21,9 @@
 # Since AV4 pl-wam.c `foreignWakeup` runs the hooks `registerWakeup` queued; it is in src/pl-wam.jl
 # (its upstream file's .jl), as `updateAlerted`.
 #
+# Since AV7 `$freeze/2` (`pl_dfreeze2_va`; freeze/2 itself is a boot stand-in, src/pl-ext.jl).
 # NOT PORTED: the rest of pl-attvar.c, the steps after the binding (since AV3) —
-# `freeze/2`'s support (AV7), `when/2`'s (AV8), call_residue_vars (AV9; so `trail_new_attvar` and
+# `when/2`'s (AV8), call_residue_vars (AV9; so `trail_new_attvar` and
 # `on_attvar_chain`, its CHK_SECURE check, wait for it) and
 # `wakeup_state_exception`.
 
@@ -675,9 +676,61 @@ function pl_attv_unify2_va(
     return PL_unify(ld, A1, A2) ? FTRUE : FFALSE            # return PL_unify(A1, A2)
 end
 
+# ── freeze (AV7) ─────────────────────────────────────────────────────────────────────────────────
+# PORT: pl-attvar.c freeze as pl_dfreeze2_va
+# DIVERGES: positions; the cells from `allocGlobalCells!` (upstream's `gTop += 3` / `+= 4`), allocated
+# before they are written. Upstream's `*goal` (the goal's dereferenced word) is `_link_val_loc!(goal)`:
+# the same word for every goal freeze/2 passes (a `:`-qualified compound, `_boot_attvar!`), a slot's
+# side word its value's own word; an unbound goal (a direct call of the private `'$freeze'/2`) stores
+# a fresh variable (word 0) as upstream's `*goal`; an attributed-variable goal its REFERENCE, where
+# upstream copies the attvar word (a second attvar cell over one list, design §2.3). `gc[1] =
+# linkValI(vp)` on the dereferenced value cell. `assert(0)` (bad attributes) returns false.
+"`\$freeze/2` (pl-attvar.c): attach `Goal` to the variable as attribute `freeze` (conjoined as `'\$and'/2`); fails for a non-variable."
+function pl_dfreeze2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    ensureGlobalSpace(ld, 0) || return FFALSE
+
+    k, _, v = _deref_loc(ld, -(A1 + 1))                     # v = valTermRef(A1); deRef(v)
+    if k == DU_CELL || k == DU_ATTVAR                       # if ( isVar(*v) || isAttVar(*v) )
+        goal = _deref_loc(ld, -(A2 + 1))                    #   goal = valTermRef(A2); deRef(goal)
+        gw = goal[1] == DU_CELL ? word(0) : _link_val_loc!(ld, goal)   # *goal
+        fz = _atom_word!(ld, mk_sym(T, :freeze))
+        if k == DU_CELL                                     #   if ( isVar(*v) )
+            put_new_attvar(ld, v, fz, goal)                 #     put_new_attvar(v, ATOM_freeze, goal)
+        else
+            found, vp = find_attr(ld, v, fz)
+            if found                                        #     if ( find_attr(v, ATOM_freeze, &vp) )
+                gc = allocGlobalCells!(ld, 3)               #       Word gc = gTop; gTop += 3
+                ld.gstack[gc] = lookupFunctorDef(           #       gc[0] = FUNCTOR_dand2
+                    ld.functors, _atom_word!(ld, mk_sym(T, Symbol("\$and"))), 2
+                )
+                ld.gstack[gc + 1] = _link_val_loc!(ld, _deref_loc(ld, vp))   # gc[1] = linkValI(vp)
+                ld.gstack[gc + 2] = gw                      #       gc[2] = *goal
+                TrailAssignment!(ld, vp)                    #       TrailAssignment(vp): $freeze
+                ld.gstack[vp] = consPtr(gc, TAG_COMPOUND | STG_GLOBAL)
+            elseif vp != 0                                  #     else if ( vp ): vp points to []
+                at = allocGlobalCells!(ld, 4)               #       Word at = gTop; gTop += 4
+                ld.gstack[at] = _functor_att3(ld)           #       at[0] = FUNCTOR_att3
+                ld.gstack[at + 1] = fz                      #       at[1] = ATOM_freeze
+                ld.gstack[at + 2] = gw                      #       at[2] = *goal
+                ld.gstack[at + 3] = ld.atom_nil_w           #       at[3] = ATOM_nil
+                @assert ld.gstack[vp] == ld.atom_nil_w "\$freeze: the closing cell is not []"
+                TrailAssignment!(ld, vp)                    #       TrailAssignment(vp): $freeze, appended
+                ld.gstack[vp] = consPtr(at, TAG_COMPOUND | STG_GLOBAL)
+            else
+                return FFALSE                               #     else assert(0): bad attributes
+            end
+        end
+        return FTRUE                                        #   succeed
+    end
+    return FFALSE                                           # fail
+end
+
 # PORT: pl-attvar.c BeginPredDefs as PL_predicates_from_attvar
-# DIVERGES: the entries ported since AV2, in upstream's order; `PRED_DEF` ors in `PL_FA_VARARGS`. NOT PORTED: `$freeze`
-# (AV7), `$eval_when_condition` and `$suspend` (AV8), and the O_CALL_RESIDUE entries (AV9).
+# DIVERGES: the entries ported since AV2, in upstream's order; `PRED_DEF` ors in `PL_FA_VARARGS`. NOT PORTED:
+# `$eval_when_condition` and `$suspend` (AV8), and the O_CALL_RESIDUE entries (AV9).
 "pl-attvar.c's registration table (`BeginPredDefs(attvar)`): the ported entries."
 const PL_predicates_from_attvar = (
     PL_extension("attvar", 1, pl_attvar1_va, PL_FA_VARARGS),
@@ -687,5 +740,6 @@ const PL_predicates_from_attvar = (
     PL_extension("del_attrs", 1, pl_del_attrs1_va, PL_FA_VARARGS),
     PL_extension("get_attrs", 2, pl_get_attrs2_va, PL_FA_VARARGS),
     PL_extension("put_attrs", 2, pl_put_attrs2_va, PL_FA_VARARGS),
+    PL_extension("\$freeze", 2, pl_dfreeze2_va, PL_FA_VARARGS),
     PL_extension("\$attv_unify", 2, pl_attv_unify2_va, PL_FA_VARARGS)
 )

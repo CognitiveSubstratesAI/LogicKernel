@@ -20,7 +20,8 @@
 #   * B_UNIFY_VC's second path (AV3-W4): a small integer without a word, on a payload without `Int64`;
 #   * hk14 (a hook module inheriting from `user`, made by MOD1's `lookupModule`) and two rows beside it, live;
 #     hk14s / hk14t (two attributed variables, both modules `user`) answer for its hooks' order.
-# NOT AV3 ROWS: hk05, hk05b, hk22, hk23 (a module that inherits from `user`: R2; freeze/2: AV7); hk10, hk11, hk13
+# NOT AV3 ROWS: hk05, hk05b (a module that inherits from `user`: R2); hk22, hk23 (freeze/2: the AV7 rows, with
+# fz01-fz15, after the AV6 rows; frozen/2's rows a known difference at the end); hk10, hk11, hk13
 # (`\=`, catch/3's catcher: foreignWakeup, AV4 — their rows here, more in test_attvar_wakeup.jl (the AV4 rows at its end)); hk20 (numbervars/4's
 # `attvar(bind)`: pl-prims.jl numberVars reads no attributed variable — AV5).
 # Every expected answer is swipl's: the tables were produced by running the programs under swipl 10.1.19 (the
@@ -1218,6 +1219,106 @@ const _WK_AV6_ROWS = [
     _wk_check_rows(_WK_AV6_ROWS, "AV6 rows")
 end
 
+# AV7 — freeze/2 (pl-attvar.c `$freeze`/2, boot/attvar.pl freeze/2 and the `freeze` clause of uhook/3). The rows
+# fz01-fz15, hk22, hk23 of evidence/av/rows.tsv (swipl 10.1.18; goals verbatim), answers re-checked live by
+# `_wk_check_rows` (swipl 10.1.19). The fz rows' fixture there is `none`; the hooks fixture only adds `user`'s
+# attr_unify_hook/2 and log/1, which a `freeze` attribute never reaches. The frozen/2 rows (fz02, fz06, fz10,
+# fz11, fz13, fz14) wait for R2 (frozen/2 is library Prolog): each has a COMPANION here (`<id>g`) that reads the
+# same state through get_attr/3, attvar/1 or term_attvars/2, and is pinned as a known difference below.
+const _WK_AV7 = [
+    ("fz01", "freeze(X, R = done), X = 1", _ea("done")),
+    ("fz03", "freeze(1, R = done)", _ea("done")),
+    ("fz04", "freeze(X, fail), (X = 1 -> R = yes ; R = no)", _ea("no")),
+    (
+        "fz05",
+        "freeze(X, assertz(hooklog(a, 1))), freeze(X, assertz(hooklog(b, 2))), X = 1, log(R)",
+        _wk_list(_ec("-", _ea("a"), _ei(1)), _ec("-", _ea("b"), _ei(2)))
+    ),
+    (
+        "fz07",
+        "freeze(X, assertz(hooklog(x,1))), freeze(Y, assertz(hooklog(y,1))), X = Y, log(L1), X = 1, log(L2), R = L1/L2",
+        _ec("/", "nil", _wk_list(_ec("-", _ea("x"), _ei(1)), _ec("-", _ea("y"), _ei(1))))
+    ),
+    ("fz08", "freeze(X, throw(e)), catch(X = 1, R, true)", _ea("e")),
+    ("fz09", "catch(freeze(_, _), R, true)", "V0"),
+    (
+        "fz12",
+        "freeze(X, true), get_attrs(X, R)",
+        _ec("att", _ea("freeze"), _ec(":", _ea("user"), _ea("true")), "nil")
+    ),
+    (
+        "fz15",
+        "freeze(X, R = 1), freeze(Y, R = 2), (X = Y, X = 1 -> true ; R = failed)",
+        _ea("failed")
+    ),
+    (
+        "hk22",
+        "put_attr(X,user,log(u)), freeze(X, assertz(hooklog(fz, 1))), X = 1, log(R)",
+        _wk_list(_ec("-", _ea("u"), _ei(1)), _ec("-", _ea("fz"), _ei(1)))
+    ),
+    (
+        "hk23",
+        "freeze(X, assertz(hooklog(fz, 1))), put_attr(X,user,log(u)), X = 1, log(R)",
+        _wk_list(_ec("-", _ea("fz"), _ei(1)), _ec("-", _ea("u"), _ei(1)))
+    ),
+    # the companions of the frozen/2 rows, and fz05g: two goals on one variable are joined by '$and'/2
+    ("fz02g", "freeze(X,true), get_attr(X,freeze,R)", _ec(":", _ea("user"), _ea("true"))),
+    (
+        "fz06g",
+        "freeze(X,true), X = Y, get_attr(Y,freeze,R)",
+        _ec(":", _ea("user"), _ea("true"))
+    ),
+    (
+        "fz10g",
+        "freeze(X,true), copy_term(X,Y), get_attr(Y,freeze,R)",
+        _ec(":", _ea("user"), _ea("true"))
+    ),
+    (
+        "fz11g",
+        "freeze(X,true), copy_term_nat(X,Y), (attvar(Y) -> R = attvar ; R = plain)",
+        _ea("plain")
+    ),
+    (
+        "fz13g",
+        "freeze(X,(a,!,b)), get_attr(X,freeze,R)",
+        _ec(":", _ea("user"), _ec(",", _ea("a"), _ec(",", _ea("!"), _ea("b"))))
+    ),
+    ("fz14g", "term_attvars(f(_), R)", "nil"),
+    (
+        "fz05g",
+        "freeze(X,true), freeze(X,fail), get_attr(X,freeze,R)",
+        _ec(
+            "\$and", _ec(":", _ea("user"), _ea("true")), _ec(":", _ea("user"), _ea("fail"))
+        )
+    ),
+    # fz16/fz17: `'$freeze'/2` called directly with an unbound goal on an attributed variable stores upstream's `*goal`
+    # (word 0): a FRESH variable, not the caller's (the `$and` branch and the append branch; mutant AV7-F6)
+    (
+        "fz16",
+        "'\$freeze'(X,true), '\$freeze'(X,G), get_attr(X,freeze,'\$and'(_,A)), (A == G -> R = same ; R = fresh)",
+        _ea("fresh")
+    ),
+    (
+        "fz17",
+        "put_attr(X,user,u), '\$freeze'(X,G), get_attr(X,freeze,A), (A == G -> R = same ; R = fresh)",
+        _ea("fresh")
+    ),
+    # fz18: a failing frozen goal does NOT fall through to uhook/3's general clause (the freeze clause's cut, mutant
+    # AV7-U2). fz04/fz15 cannot show it: the fixture's user:attr_unify_hook/2 is visible from module `freeze` (default
+    # import `user`), so the general clause fails as the freeze clause did; a `freeze:attr_unify_hook/2` that succeeds
+    # would answer `yes` (swipl 10.1.19 with the cut removed: `yes`; as it is: `no`)
+    (
+        "fz18",
+        "assertz(freeze:attr_unify_hook(_, _)), freeze(X, fail), (X = 1 -> R = yes ; R = no), retractall(freeze:attr_unify_hook(_, _))",
+        _ea("no")
+    )
+]
+
+@testset "AV7: freeze/2 — rows fz*, hk22/hk23, re-checked on swipl" begin
+    @test length(_WK_AV7) == 21
+    _wk_check_rows(_WK_AV7, "AV7 rows")
+end
+
 # hk11b = upstream's `failing_catchers` (swipl-devel 7b9d8ba, tests/core_lang/test_exception.pl:81-84, `R == outer(2)`;
 # its module's hook `attr_unify_hook(no, _) :- fail` is this fixture's `user` one): two attributed catchers whose
 # hooks fail. findCatcher ports upstream's fix 7b9d8ba (each catcher in a foreign frame of its own). Kernel only:
@@ -1397,5 +1498,63 @@ const _NV04_KERNEL = _ec(
         @test true
     else
         @test swipl_lines(f, ["t0"]) == ["ok", _wk_line("t0", _NV04_SWIPL)]
+    end
+end
+
+# fz02, fz06, fz10, fz11, fz13, fz14 (rows.tsv, fixture none): frozen/2. KNOWN DIFFERENCE (pending R2; AV7 design
+# Q3 (a)): frozen/2 is library Prolog (boot/attvar.pl frozen/2 over '$attvar':portray_attvar/'$attvar' goals), not
+# ported before R2; the kernel raises existence_error(procedure, frozen/2). One program, each goal wrapped in
+# `catch(…, error(Er, _), R = Er)`; `_FZ_KD_KERNEL` is the kernel's answer (first run, 2026-10-28), pinned; the
+# third column is swipl's (rows.tsv, re-run live below). Their companions fz02g … fz14g are AV7 rows above.
+const _FZ_KD_KERNEL = _ec("existence_error", _ea("procedure"), _pi("frozen", 2))
+const _FZ_KD = [
+    # swipl: R = freeze(X, user:true)
+    (
+        "fz02",
+        "freeze(X, true), frozen(X, R)",
+        _ec("freeze", "V0", _ec(":", _ea("user"), _ea("true")))
+    ),
+    # swipl: R = freeze(Y, user:true)
+    (
+        "fz06",
+        "freeze(X, true), X = Y, frozen(Y, R)",
+        _ec("freeze", "V0", _ec(":", _ea("user"), _ea("true")))
+    ),
+    # swipl: R = freeze(Y, user:true) — copy_term/2 copies the attribute
+    (
+        "fz10",
+        "freeze(X, true), copy_term(X, Y), frozen(Y, R)",
+        _ec("freeze", "V0", _ec(":", _ea("user"), _ea("true")))
+    ),
+    # swipl: R = true — copy_term_nat/2 drops it
+    ("fz11", "freeze(X, true), copy_term_nat(X, Y), frozen(Y, R)", _ea("true")),
+    # swipl: R = freeze(X, user:(a,!,b))
+    (
+        "fz13",
+        "freeze(X, (a, !, b)), frozen(X, R)",
+        _ec(
+            "freeze", "V0",
+            _ec(":", _ea("user"), _ec(",", _ea("a"), _ec(",", _ea("!"), _ea("b"))))
+        )
+    ),
+    # swipl: R = true — no attributed variable in the term
+    ("fz14", "frozen(f(_), R)", _ea("true"))
+]
+
+@testset "fz02/06/10/11/13/14: frozen/2 — a known difference pending R2 (library frozen/2)" begin
+    @test length(_FZ_KD) == 6
+    f, names = _wk_program(["catch(($g), error(Er, _), R = Er)" for (_, g, _) in _FZ_KD])
+    got = kernel_lines(f, names)
+    @test length(got) == 7 && got[1] == "ok"
+    for (i, (id, _, _)) in enumerate(_FZ_KD)
+        @test (id, get(got, i + 1, "missing")) == (id, _wk_line(names[i], _FZ_KD_KERNEL))
+    end
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "AV7 frozen/2 rows: swipl's answers not re-checked — `swipl` is not on PATH here."
+        @test true
+    else
+        @test swipl_lines(f, names) ==
+            vcat(["ok"], [_wk_line(n, r) for (n, (_, _, r)) in zip(names, _FZ_KD)])
     end
 end

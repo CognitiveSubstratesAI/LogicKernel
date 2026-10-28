@@ -524,8 +524,8 @@ end
 # colon body goal (`compileSubClause!`); call/1 reaches `stripModule_cells`, which takes `user`
 # and `system` and refuses any other module (`NotPortedError`, R2): same answers for a hook in
 # `user`.
-# NOT PORTED: `uhook(freeze, Goal, Y)` (attvar.pl:76-84) and unfreeze/1 — AV7; until then an
-# attribute named `freeze` reaches `freeze:attr_unify_hook/2`, which raises (loud).
+# Since AV7 `uhook(freeze, Goal, Y)` (attvar.pl:76-84), unfreeze/1 and freeze/2: `_boot_freeze_uhook!`,
+# `_boot_freeze!`.
 "Define `'\$wakeup'/1` and its helpers in the `system` module of `gd` as boot/attvar.pl defines them."
 function _boot_attvar!(gd::PL_global_data{T})::Nothing where {T}
     ld = PL_local_data{T}(gd)
@@ -555,6 +555,7 @@ function _boot_attvar!(gd::PL_global_data{T})::Nothing where {T}
         ),
         UInt64(0)
     )
+    _boot_freeze_uhook!(gd, ld)
     _boot_clause!(
         gd, ld, :uhook, T[Module, AttVal, Value],
         _boot_term(
@@ -563,6 +564,85 @@ function _boot_attvar!(gd::PL_global_data{T})::Nothing where {T}
         ),
         UInt64(0)
     )
+    _boot_freeze!(gd, ld)
+    return nothing
+end
+
+# DIVERGES (no upstream function; AV7, as `_boot_attvar!`): boot/attvar.pl's freeze clauses
+# (attvar.pl:76-84, 98-102), `system`'s until R2 (design Q2 (a)); `uhook(freeze, …)` is defined before
+# the general `uhook/3` clause, as in the file:
+#     uhook(freeze, Goal, Y) :- !,
+#         ( attvar(Y) -> ( get_attr(Y, freeze, G2) -> put_attr(Y, freeze, '$and'(G2, Goal))
+#                        ; put_attr(Y, freeze, Goal) )
+#         ; unfreeze(Goal) ).
+#     unfreeze('$and'(A,B)) :- !, unfreeze(A), unfreeze(B).
+#     unfreeze(Goal) :- Goal.
+"Define `uhook(freeze, …)` and unfreeze/1 in the `system` module of `gd` as boot/attvar.pl defines them."
+function _boot_freeze_uhook!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    v = _boot_vars(T, 5)
+    Goal, Y, G2, A, B = v[1], v[2], v[3], v[4], v[5]
+    fz = mk_sym(T, :freeze)
+    cut = mk_sym(T, :!)
+    dand = Symbol("\$and")
+    append = _boot_ite(
+        T, _boot_term(:get_attr, T[Y, fz, G2]),
+        _boot_term(:put_attr, T[Y, fz, _boot_term(dand, T[G2, Goal])]),
+        _boot_term(:put_attr, T[Y, fz, Goal])
+    )
+    _boot_clause!(
+        gd, ld, :uhook, T[fz, Goal, Y],
+        _boot_conj(
+            T[
+                cut,
+                _boot_ite(
+                    T, _boot_term(:attvar, T[Y]), append, _boot_term(:unfreeze, T[Goal])
+                )
+            ]
+        ),
+        UInt64(0)
+    )
+    _boot_clause!(
+        gd, ld, :unfreeze, T[_boot_term(dand, T[A, B])],
+        _boot_conj(T[cut, _boot_term(:unfreeze, T[A]), _boot_term(:unfreeze, T[B])]),
+        UInt64(0)
+    )
+    _boot_clause!(gd, ld, :unfreeze, T[Goal], _boot_term(:call, T[Goal]), UInt64(0))
+    return nothing
+end
+
+# DIVERGES (no upstream function; AV7): boot/attvar.pl's freeze/2 (attvar.pl:109-116), `system`'s and
+# locked until R2 (design Q2 (a)):
+#     :- meta_predicate freeze(?, 0).
+#     freeze(Var, Goal) :- '$freeze'(Var, Goal), !.
+#     freeze(_, Goal) :- Goal.
+# The meta-argument qualification (no `meta_predicate` before R2, design Q4 (a)) is written into the
+# first clause as `$suspend` qualifies its goal (pl-attvar.c:1133-1143): a goal that is not `_:_` gets
+# the context module, which is `user` until contextModule is ported (`stripModule_cells`):
+#     freeze(Var, Goal0) :- ( nonvar(Goal0), Goal0 = _:_ -> Goal = Goal0 ; Goal = user:Goal0 ),
+#                           '$freeze'(Var, Goal), !.
+# The second clause calls the goal unqualified (call/1 takes the same context module, `user`).
+"Define freeze/2 in the `system` module of `gd` as boot/attvar.pl defines it, its goal qualified (Q4 (a))."
+function _boot_freeze!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
+    v = _boot_vars(T, 6)
+    Var, Goal0, Goal, M, G, Ignored = v[1], v[2], v[3], v[4], v[5], v[6]
+    qualified = _boot_conj(
+        T[
+            _boot_term(:nonvar, T[Goal0]),
+            _boot_term(:(=), T[Goal0, _boot_term(:(:), T[M, G])])
+        ]
+    )
+    qualify = _boot_ite(
+        T, qualified, _boot_term(:(=), T[Goal, Goal0]),
+        _boot_term(:(=), T[Goal, _boot_term(:(:), T[mk_sym(T, :user), Goal0])])
+    )
+    _boot_clause!(
+        gd, ld, :freeze, T[Var, Goal0],
+        _boot_conj(
+            T[qualify, _boot_term(Symbol("\$freeze"), T[Var, Goal]), mk_sym(T, :!)]
+        ),
+        P_LOCKED
+    )
+    _boot_clause!(gd, ld, :freeze, T[Ignored, Goal0], _boot_term(:call, T[Goal0]), P_LOCKED)
     return nothing
 end
 

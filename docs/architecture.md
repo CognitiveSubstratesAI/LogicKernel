@@ -4942,6 +4942,30 @@ What AV6 ports (all on the cells; the C half only, design.md Q3 (a)):
 
 Tests: `_WK_AV6_ROWS` (test/core_lang/test_attvar_wakeup.jl); mutants: tools/mutants/AV6.py.
 
+## AV7 — freeze/2: `'$freeze'/2` and boot/attvar.pl's freeze clauses (att. vars, step 7)
+
+What AV7 ports:
+
+- **pl-attvar.c `freeze`** as `pl_dfreeze2_va` (src/pl-attvar.jl, registered as `'$freeze'/2` in `system`): a plain variable gets a
+  `freeze` attribute holding the goal; an attvar with a `freeze` attribute gets `'$and'(Old, New)` (the old goal first); an attvar
+  without one gets `att(freeze, Goal, [])` appended where its list ends (`vp`); a bound first argument fails, so freeze/2 calls the goal.
+- **boot/attvar.pl** as boot stand-ins in `system` (src/pl-ext.jl, after `_boot_attvar!`; design Q2 (a), until R2 loads boot/):
+  `_boot_freeze_uhook!` defines `uhook(freeze, Goal, Y)` before the general `uhook/3` clause, as in the file (attvar.pl:76-84: an
+  attvar Y with a freeze goal G2 gets `'$and'(G2, Goal)`, an attvar without one gets Goal, otherwise `unfreeze(Goal)` runs it) and
+  unfreeze/1 (attvar.pl:98-102, `'$and'` split); `_boot_freeze!` defines freeze/2 (attvar.pl:109-116), both clauses `P_LOCKED`.
+- **DIVERGES** (representation only, behaviour identical on every row): the cells come from `allocGlobalCells!` (upstream
+  `gTop += 3` / `+= 4`); upstream's `*goal` is `_link_val_loc!(goal)` — an unbound goal (only by a direct call of the private
+  `'$freeze'/2`) stores a FRESH variable (word 0; swipl 10.1.19 prints `fresh` too, rows fz16/fz17), an attvar goal its reference
+  where upstream copies the attvar word. No `meta_predicate` before R2 (design Q4 (a)): freeze/2's first clause qualifies the goal
+  itself with the context module, which is `user` until contextModule is ported.
+- **Not ported / waits**: frozen/2 (R2: it needs `attribute_goals//1`/phrase; six known-difference rows `_FZ_KD` pin the
+  existence_error with swipl's answer in a comment), `'$suspend'/3` and when/2 (AV8), the O_CALL_RESIDUE entries (AV9).
+
+Tests: `_WK_AV7` (21 rows) and `_FZ_KD` (6) in test/core_lang/test_attvar_wakeup.jl; mutants: tools/mutants/AV7.py. Row fz18
+holds uhook's cut (mutant AV7-U2): the rows share a fixture whose `user:attr_unify_hook/2` module `freeze` sees by default
+import, so without the cut fz04/fz15 still answer `no`/`failed` (swipl 10.1.19 with the cut removed, too); fz18 asserts a
+succeeding `freeze:attr_unify_hook/2`, which only the general clause reaches.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
