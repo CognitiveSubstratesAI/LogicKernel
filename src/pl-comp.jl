@@ -1409,8 +1409,7 @@ end
 # number, a string, `[]`, a compound named by a reserved symbol other than `[]`; probed in swipl
 # 10.1.16: `assertz((p :- 1))`, `(p :- "s")`, `(p :- [])` raise it, `(p :- '[]')` does not) (user,
 # 2026-10-04). The branch that prefers an ISO system predicate is ported since V5a2, when built-ins
-# came to be registered in the `system` module; there is no boot session (`GD->bootsession` is
-# always false).
+# came to be registered in the `system` module; `GD->bootsession` is `gd.bootsession` (R2 LB2).
 """
     lookupBodyProcedure(gd, goal, tm) -> Procedure{T}
 
@@ -1441,7 +1440,7 @@ function lookupBodyProcedure(
     end
     if tm !== MODULE_system(gd)
         sp = isCurrentProcedure(sym_key(name), arity, MODULE_system(gd))
-        if sp !== nothing && (sp.definition.flags & P_ISO) != 0      # && !GD->bootsession
+        if sp !== nothing && (sp.definition.flags & P_ISO) != 0 && !gd.bootsession   # pl-comp.c:3396
             return sp
         end
     end
@@ -3903,9 +3902,12 @@ function assert_term!(
             if _impl_any_defined(def)
                 redefineProcedure(gd, ld, proc, of, 0) || return nothing
             end
-            # locks predicates as system predicates in system mode: no system mode here
+            # This `if` locks predicates as system predicates if we are in system mode, the predicate is
+            # still undefined and is not dynamic or multifile (pl-comp.c:5015-5025; R2 LB2)
             if !isDefinedProcedure(gd, proc)
-                if truePrologFlag(ld, PLFLAG_DEBUGINFO)         # (not in system mode)
+                if SYSTEM_MODE(ld)
+                    (def.flags & P_LOCKED) == 0 && (def.flags |= HIDE_CHILDS | P_LOCKED)
+                elseif truePrologFlag(ld, PLFLAG_DEBUGINFO)
                     def.flags &= ~HIDE_CHILDS
                 else
                     def.flags |= HIDE_CHILDS
