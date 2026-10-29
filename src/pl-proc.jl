@@ -1382,6 +1382,50 @@ function pl_mode1_va(
     return meta_predicate(_query_gd(ld), ld, PL__t0, false) ? FTRUE : FFALSE
 end
 
+# PORT: pl-proc.c PL_meta_predicate
+# (pl-proc.c:2173-2231 at the pin, since MOD4)
+# DIVERGES: `fatalError` is a Julia `error` (a boot-time table mistake, never a Prolog error); the spec is
+# a `String` read by byte, as upstream's `const unsigned char *`.
+"Declare the meta-argument masks of `proc` from the C spec string `spec_s` (`\"+0\"`, `\":?\"`, …) (pl-proc.c)."
+function PL_meta_predicate(proc::Procedure{T}, spec_s::String)::Bool where {T}
+    def = proc.definition
+    arity = def.arity
+    transparent = false
+    s = codeunits(spec_s)
+    j = 1                                           # const unsigned char *s = spec_s
+    for i in 0:(arity - 1)
+        spec_c = j <= length(s) ? s[j] : 0x00       # int spec_c = *s
+        spec = if spec_c == UInt8('+')
+            MA_NONVAR
+        elseif spec_c == UInt8('-')
+            MA_VAR
+        elseif spec_c == UInt8('?')
+            MA_ANY
+        elseif spec_c == UInt8(':')
+            MA_META
+        elseif spec_c == UInt8('^')
+            MA_HAT
+        elseif spec_c == UInt8('/') && j + 1 <= length(s) && s[j + 1] == UInt8('/')
+            j += 1                                  # s++
+            MA_DCG
+        elseif UInt8('0') <= spec_c <= UInt8('9')
+            UInt8(spec_c - UInt8('0'))
+        else                                        # invalid:
+            error("Invalid meta-argument for $(def.name)/$(arity): $(spec_s)")   # fatalError(…)
+        end
+        (def.impl_clauses.args::Vector{arg_info})[i + 1].meta = spec & 0x0f   # def->impl.any.args[i].meta
+        MA_NEEDS_TRANSPARENT(spec) && (transparent = true)
+        j += 1                                      # i++, s++
+    end
+    if transparent
+        def.flags |= P_TRANSPARENT                  # set(def, P_TRANSPARENT)
+    else
+        def.flags &= ~P_TRANSPARENT                 # clear(def, P_TRANSPARENT)
+    end
+    def.flags |= P_META                             # set(def, P_META)
+    return true
+end
+
 # PORT: pl-proc.c get_procedure as get_procedure_create
 # (the `GP_CREATE` case, as retractall/1 asks it; the `GP_DEFINE` case above is the other port)
 # DIVERGES: `GP_CREATE` only, as a function of its own (`get_procedure` above refuses it); the term stripped of its

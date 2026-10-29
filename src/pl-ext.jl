@@ -150,7 +150,7 @@ function initBuildIns!(gd::PL_global_data{T})::Nothing where {T}
     _boot_bags!(gd)
     _boot_syspred!(gd)
     _boot_attvar!(gd)
-    _boot_transparent!(gd)                          # INTERIM: S_MQUAL (MOD4)
+    _boot_meta!(gd)                                 # the stand-ins' meta_predicate declarations (MOD4)
     return nothing
 end
 
@@ -159,7 +159,7 @@ end
 # created — `'\$catch'` compiles to `I_CATCH I_EXITCATCH` (pl-comp.c), so the clause is upstream's
 # `I_ENTER I_CATCH I_EXITCATCH I_EXIT`. R2 loads boot/init.pl, which defines it the same way. `'\$iso'`
 # (init.pl:388) sets `P_ISO`; boot code is system code (`P_LOCKED`). NOT PORTED: `noprofile/1`, the
-# meta-predicate declaration `catch(0, ?, 0)` (its `P_TRANSPARENT` since MOD2, `_boot_transparent!`; `S_MQUAL`: MOD4).
+# meta-predicate declaration `catch(0, ?, 0)` is `_boot_meta!`'s (MOD4).
 "Define `catch/3` in the `system` module of `gd` as boot/init.pl defines it."
 function _boot_catch3!(gd::PL_global_data{T})::Nothing where {T}
     proc = gd.procedures_catch3
@@ -190,8 +190,8 @@ end
 # called through (`callPortray`, pl-write.c; since group F, D-0123, with `call/2..8` beside it, as
 # init.pl defines them — each body compiles to `I_CALLN`). R2 loads boot/init.pl, which defines
 # them all the same way. boot code is system code (`P_LOCKED`); `call/1..8` are ISO (init.pl:388
-# and 493-499, `'$iso'`). NOT PORTED: the meta-predicate declarations (init.pl:360-386; their
-# `P_TRANSPARENT` since MOD2, `_boot_transparent!`; `S_MQUAL`: MOD4), `noprofile/1`.
+# and 493-499, `'$iso'`). The meta-predicate declarations (init.pl:360-386) are `_boot_meta!`'s (MOD4).
+# NOT PORTED: `noprofile/1`.
 "Define the cleanup family and `call/1..8` in the `system` module of `gd` as boot/init.pl defines them."
 function _boot_cleanup!(gd::PL_global_data{T})::Nothing where {T}
     ld = PL_local_data{T}(gd)
@@ -247,55 +247,33 @@ function _boot_ite(::Type{T}, c::T, a::T, b::T)::T where {T}
     return _boot_term(Symbol(";"), T[_boot_term(Symbol("->"), T[c, a]), b])
 end
 
-# DIVERGES (no upstream function; MOD2): a stand-in's meta-argument qualified in its clause, as the
-# `S_MQUAL` of its upstream meta-predicate declaration does at the call (pl-wam.c `m_qualify_argument`:
-# an unqualified argument becomes `Context:Arg`, the context module of the predicate's frame), until MOD4
-# ports `S_MQUAL`. The goal `( nonvar(G0), G0 = _:_ -> G = G0 ; context_module(M), G = M:G0 )`, the rule
-# freeze/2's stand-in has used since AV7 (as `'$suspend'/3` qualifies, pl-attvar.c:1131-1141), with the
-# context module where it had `user`. `context_module/1` sees the stand-in's context because the stand-in
-# is transparent (`_boot_transparent!`). `v` holds three fresh variables (the `_:_` pair and `M`).
-"`( nonvar(g0), g0 = _:_ -> g = g0 ; context_module(M), g = M:g0 )` of a stand-in's clause (MOD2)."
-function _boot_mqual(::Type{T}, g0::T, g::T, v::Vector{T})::T where {T}   # INTERIM: S_MQUAL (MOD4)
-    colon = :(:)
-    qualified = _boot_conj(
-        T[
-            _boot_term(:nonvar, T[g0]),
-            _boot_term(:(=), T[g0, _boot_term(colon, T[v[1], v[2]])])
-        ]
-    )
-    context = _boot_conj(
-        T[
-            _boot_term(:context_module, T[v[3]]),
-            _boot_term(:(=), T[g, _boot_term(colon, T[v[3], g0])])
-        ]
-    )
-    return _boot_ite(T, qualified, _boot_term(:(=), T[g, g0]), context)
-end
-
-# DIVERGES (no upstream function; as `_boot_catch3!`; MOD2): upstream's meta-predicate declarations of the predicates the stand-ins define make
-# them transparent (`isTransparentMetamask`: an argument `0..9`, `:`, `^` or `//`, pl-proc.c:1991-2022;
-# `setMetapredicateMask` sets `P_TRANSPARENT`). The declarations themselves (`P_META`, the argument masks,
-# `S_MQUAL`) are MOD4's; until then each stand-in whose goal reaches a non-transparent helper qualifies it in
-# its clause (`_boot_mqual`). The declarations, at the pin:
+# DIVERGES (no upstream function; as `_boot_catch3!`; MOD4): the meta-predicate declarations of the
+# predicates the stand-ins define, which upstream's boot files make with `:- meta_predicate` (each a
+# `meta_declaration`, pl-proc.c:2026-2091, then `setMetapredicateMask`: `P_META`, the argument masks,
+# `P_TRANSPARENT` by `isTransparentMetamask`). Here they are `PL_meta_predicate`'s C spec strings
+# (pl-proc.c:2173-2231), which give the same masks (`+` `-` `?` `:` `^` `//` `0..9`). Set after the
+# clauses are added (`createSupervisor` chains `S_MQUAL`/`S_LMQUAL` on the first call). R2 loads the boot
+# files, which declare them the same way. The declarations, at the pin:
 #   boot/init.pl:360-386   call(0), call(1,?) … call(7,?,?,?,?,?,?,?), catch(0,?,0),
 #                          setup_call_cleanup(0,0,0), setup_call_catcher_cleanup(0,0,?,0), call_cleanup(0,0)
 #   boot/bags.pl:57-64     findall(?,0,-), findall(?,0,-,?), bagof(?,^,-), setof(?,^,-), cleanup_bag(0,0)
 #   boot/attvar.pl:109-110 freeze(?,0);  boot/attvar.pl:250-251 call_residue_vars(0,-)
 #   library/when.pl:40-41  when(+,0)
-"Set `P_TRANSPARENT` on the stand-ins whose upstream meta-predicate declarations make them transparent (MOD2)."
-function _boot_transparent!(gd::PL_global_data{T})::Nothing where {T}     # INTERIM: S_MQUAL (MOD4)
+"Declare the meta-predicate masks of the stand-ins as their upstream boot files do (MOD4)."
+function _boot_meta!(gd::PL_global_data{T})::Nothing where {T}
     m = MODULE_system(gd)
-    for (name, arity) in (
-        ("call", 1), ("call", 2), ("call", 3), ("call", 4), ("call", 5), ("call", 6),   # INTERIM: S_MQUAL (MOD4)
-        ("call", 7), ("call", 8), ("catch", 3), ("setup_call_cleanup", 3),   # INTERIM: S_MQUAL (MOD4)
-        ("setup_call_catcher_cleanup", 4), ("call_cleanup", 2), ("findall", 3),
-        ("findall", 4),   # INTERIM: S_MQUAL (MOD4)
-        ("bagof", 3), ("setof", 3), ("cleanup_bag", 2), ("freeze", 2),   # INTERIM: S_MQUAL (MOD4)
-        ("call_residue_vars", 2), ("when", 2)   # INTERIM: S_MQUAL (MOD4)
+    for (name, arity, spec) in (
+        ("call", 1, "0"), ("call", 2, "1?"), ("call", 3, "2??"), ("call", 4, "3???"),
+        ("call", 5, "4????"), ("call", 6, "5?????"), ("call", 7, "6??????"),
+        ("call", 8, "7???????"), ("catch", 3, "0?0"), ("setup_call_cleanup", 3, "000"),
+        ("setup_call_catcher_cleanup", 4, "00?0"), ("call_cleanup", 2, "00"),
+        ("findall", 3, "?0-"), ("findall", 4, "?0-?"), ("bagof", 3, "?^-"), ("setof", 3, "?^-"),
+        ("cleanup_bag", 2, "00"), ("freeze", 2, "?0"), ("call_residue_vars", 2, "0-"),
+        ("when", 2, "+0")
     )
         proc = isCurrentProcedure(sym_key(mk_sym(T, Symbol(name))), arity, m)
-        proc === nothing && error("_boot_transparent!: no stand-in $name/$arity")
-        proc.definition.flags |= P_TRANSPARENT          # set(def, P_TRANSPARENT)
+        proc === nothing && error("_boot_meta!: no stand-in $name/$arity")
+        PL_meta_predicate(proc, spec)               # :- meta_predicate Name(Spec…)
     end
     return nothing
 end
@@ -516,13 +494,9 @@ end
 # findall/4 hands to `cleanup_bag/2` are written `system:Goal` here: upstream's meta-predicate
 # declaration `cleanup_bag(0, 0)` qualifies them with the module of the clause (`'$bags'`), and
 # unqualified they would be called in `user` — a `findall_loop/4` of the user's would be run.
-# Since MOD2 the predicates are transparent (`_boot_transparent!`) and findall/4's clause qualifies its goal
-# with the context module before `cleanup_bag/2` (`_boot_mqual`: `findall_loop/4` is not transparent and
-# is called `system:`, so the goal must arrive qualified, as `S_MQUAL` delivers it upstream):
-#     findall(Templ, Goal0, List, Tail) :-
-#         ( nonvar(Goal0), Goal0 = _:_ -> Goal = Goal0 ; context_module(M), Goal = M:Goal0 ),
-#         cleanup_bag(system:findall_loop(Templ, Goal, List, Tail), system:'$destroy_findall_bag').
-# NOT PORTED: the meta-predicate declarations themselves (bags.pl:57-64; `S_MQUAL`, MOD4), `noprofile/1`,
+# The meta-predicate declarations (bags.pl:57-64) are `_boot_meta!`'s since MOD4: `S_MQUAL` qualifies
+# findall/4's goal on entry, so `findall_loop/4` (not transparent, called `system:`) receives it
+# qualified, as upstream's. NOT PORTED: `noprofile/1`,
 # findnsols/4,5 (`'$suspend_findall_bag'`, src/pl-bag.jl).
 "Define findall/3,4, bagof/3 and setof/3 in the `system` module of `gd` as boot/bags.pl defines them."
 function _boot_bags!(gd::PL_global_data{T})::Nothing where {T}
@@ -536,24 +510,15 @@ function _boot_bags!(gd::PL_global_data{T})::Nothing where {T}
         gd, ld, :findall, T[Templ, Goal, List],
         _boot_term(:findall, T[Templ, Goal, List, mk_nil(T)]), P_ISO | P_LOCKED
     )
-    q = _boot_vars(T, 4)                            # INTERIM: S_MQUAL (MOD4) (Goal0, `_boot_mqual`'s three)
     _boot_clause!(
-        gd, ld, :findall, T[Templ, q[4], List, Tail],
-        _boot_conj(
+        gd, ld, :findall, T[Templ, Goal, List, Tail],
+        _boot_term(
+            :cleanup_bag,
             T[
-                _boot_mqual(T, q[4], Goal, q[1:3]),     # INTERIM: S_MQUAL (MOD4)
                 _boot_term(
-                    :cleanup_bag,
-                    T[
-                        _boot_term(
-                            :(:),
-                            T[sys, _boot_term(:findall_loop, T[Templ, Goal, List, Tail])]
-                        ),
-                        _boot_term(
-                            :(:), T[sys, mk_sym(T, Symbol("\$destroy_findall_bag"))]
-                        )
-                    ]
-                )
+                    :(:), T[sys, _boot_term(:findall_loop, T[Templ, Goal, List, Tail])]
+                ),
+                _boot_term(:(:), T[sys, mk_sym(T, Symbol("\$destroy_findall_bag"))])
             ]
         ),
         P_LOCKED
@@ -653,21 +618,18 @@ end
 #     call_residue_vars(_, _) :- fail.
 #     run_crv(Goal, Chp, Vars, Det) :- call(Goal), deterministic(Det),
 #         '$attvars_after_choicepoint'(Chp, Vars).
-# Since MOD2 call_residue_vars/2 is transparent (`_boot_transparent!`) and its clause qualifies the goal with
-# the context module first (`_boot_mqual`, as `S_MQUAL` of `meta_predicate call_residue_vars(0, -)` until
-# MOD4): run_crv/4 is not transparent, so an unqualified goal would be called in `system`.
+# `meta_predicate call_residue_vars(0, -)` (attvar.pl:250-251) is `_boot_meta!`'s since MOD4: `S_MQUAL`
+# qualifies the goal before the clause runs (run_crv/4 is not transparent).
 "Define call_residue_vars/2 and run_crv/4 in the `system` module of `gd` as boot/attvar.pl defines them."
 function _boot_call_residue_vars!(
     gd::PL_global_data{T}, ld::PL_local_data{T}
 )::Nothing where {T}
     v = _boot_vars(T, 6)
     Goal, Vars, Chp, Det, A1, A2 = v[1], v[2], v[3], v[4], v[5], v[6]
-    q = _boot_vars(T, 4)                            # INTERIM: S_MQUAL (MOD4) (Goal0, `_boot_mqual`'s three)
     _boot_clause!(
-        gd, ld, :call_residue_vars, T[q[4], Vars],
+        gd, ld, :call_residue_vars, T[Goal, Vars],
         _boot_conj(
             T[
-                _boot_mqual(T, q[4], Goal, q[1:3]),     # INTERIM: S_MQUAL (MOD4)
                 _boot_term(:prolog_current_choice, T[Chp]),
                 _boot_term(
                     :setup_call_cleanup,
@@ -717,19 +679,16 @@ end
 #     trigger_first(Cond, Goal) :- trigger(Cond, Goal).
 # when.pl:101-103's `trigger_first(nonvar(X), Goal)` and trigger/2 wait for R2 (their wakeup is module
 # `when`'s attr_unify_hook/2): a condition still pending after `'$eval_when_condition'/2` raises the
-# existence error of trigger/2, never a silent failure. Since MOD2 when/2 is transparent (`_boot_transparent!`)
-# and its clause qualifies the goal with the context module first (`_boot_mqual`, as `S_MQUAL` of
-# `meta_predicate when(+, 0)` until MOD4): trigger_first/2 is not transparent.
+# existence error of trigger/2, never a silent failure. `meta_predicate when(+, 0)` (when.pl:40-41) is
+# `_boot_meta!`'s since MOD4: `S_MQUAL` qualifies the goal before the clause runs.
 "Define when/2 in the `system` module of `gd` as library/when.pl defines it, up to the conditions that are already true."
 function _boot_when!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
     v = _boot_vars(T, 3)
     Condition, Goal, Optimised = v[1], v[2], v[3]
-    q = _boot_vars(T, 4)                            # INTERIM: S_MQUAL (MOD4) (Goal0, `_boot_mqual`'s three)
     _boot_clause!(
-        gd, ld, :when, T[Condition, q[4]],
+        gd, ld, :when, T[Condition, Goal],
         _boot_conj(
             T[
-                _boot_mqual(T, q[4], Goal, q[1:3]),     # INTERIM: S_MQUAL (MOD4)
                 _boot_term(Symbol("\$eval_when_condition"), T[Condition, Optimised]),
                 _boot_term(:trigger_first, T[Optimised, Goal])
             ]
@@ -795,27 +754,19 @@ end
 #     :- meta_predicate freeze(?, 0).
 #     freeze(Var, Goal) :- '$freeze'(Var, Goal), !.
 #     freeze(_, Goal) :- Goal.
-# The meta-argument qualification (no `meta_predicate` before MOD4, design Q4 (a)) is written into the
-# first clause as `$suspend` qualifies its goal (pl-attvar.c:1133-1143): a goal that is not `_:_` gets
-# the context module (since MOD2 `context_module/1`, `_boot_mqual`; `user` before):
-#     freeze(Var, Goal0) :- ( nonvar(Goal0), Goal0 = _:_ -> Goal = Goal0
-#                           ; context_module(M), Goal = M:Goal0 ),
-#                           '$freeze'(Var, Goal), !.
-# The second clause calls the goal unqualified: freeze/2 is transparent (`_boot_transparent!`), so call/1
-# takes the same context module.
-"Define freeze/2 in the `system` module of `gd` as boot/attvar.pl defines it, its goal qualified (Q4 (a))."
+# Since MOD4 the declaration is `_boot_meta!`'s: `S_MQUAL` qualifies the goal on entry (pl-wam.c
+# `m_qualify_argument`), so both clauses are upstream's (the second's body `Goal` is written
+# `call(Goal)`, the same `I_USERCALL0` call).
+"Define freeze/2 in the `system` module of `gd` as boot/attvar.pl defines it."
 function _boot_freeze!(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing where {T}
-    v = _boot_vars(T, 6)
-    Var, Goal0, Goal, M, G, Ignored = v[1], v[2], v[3], v[4], v[5], v[6]
-    qualify = _boot_mqual(T, Goal0, Goal, T[M, G, _boot_vars(T, 1)[1]])  # INTERIM: S_MQUAL (MOD4)
+    v = _boot_vars(T, 3)
+    Var, Goal, Ignored = v[1], v[2], v[3]
     _boot_clause!(
-        gd, ld, :freeze, T[Var, Goal0],
-        _boot_conj(
-            T[qualify, _boot_term(Symbol("\$freeze"), T[Var, Goal]), mk_sym(T, :!)]
-        ),
+        gd, ld, :freeze, T[Var, Goal],
+        _boot_conj(T[_boot_term(Symbol("\$freeze"), T[Var, Goal]), mk_sym(T, :!)]),
         P_LOCKED
     )
-    _boot_clause!(gd, ld, :freeze, T[Ignored, Goal0], _boot_term(:call, T[Goal0]), P_LOCKED)
+    _boot_clause!(gd, ld, :freeze, T[Ignored, Goal], _boot_term(:call, T[Goal]), P_LOCKED)
     return nothing
 end
 
@@ -976,17 +927,25 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     d.flags |= P_DYNAMIC | P_LOCKED
     gd.procedures_catch3 = lookupProcedure(mk_sym(T, :catch), 3, m)   # LOOKUPPROC(catch3)
     gd.procedures_dwakeup1 = lookupProcedure(mk_sym(T, Symbol("\$wakeup")), 1, m)  # LOOKUPPROC(dwakeup1)
-    # (MOD2) the `P_TRANSPARENT` half of `PL_meta_predicate(PL_predicate(…, "system"), Spec)`
-    # (pl-ext.c:390-421; every Spec there has a `:` or `0` argument, `isTransparentMetamask`), for the
-    # ported predicates: retractall/1's PRED_DEF (pl-proc.c:4366) has no `PL_FA_TRANSPARENT`, so its
-    # unqualified argument would otherwise get the module of its own (system) frame. NOT PORTED: `P_META`
-    # and the masks (MOD4, with `S_MQUAL`).
-    for (name, arity) in (
-        ("assert", 1), ("asserta", 1), ("assertz", 1), ("retract", 1), ("retractall", 1),
-        ("clause", 2), ("op", 3), ("current_op", 3), ("sig_atomic", 1)
+    # PL_meta_predicate(PL_predicate(Name, Arity, "system"), Spec) (pl-ext.c:391-421 at the pin; the
+    # `P_TRANSPARENT` half since MOD2, `P_META` and the masks since MOD4), in upstream's order. DIVERGES:
+    # only the predicates the kernel defines — `PL_predicate` would create the others (an entry whose
+    # predicate is not ported is skipped; it applies when that predicate is). The foreign ones get no
+    # `S_MQUAL` (`createForeignSupervisor` is not chained, as upstream's): the masks are for
+    # predicate_property/2, `P_TRANSPARENT` for their context module.
+    for (name, arity, spec) in (
+        ("assert", 1, ":"), ("asserta", 1, ":"), ("assertz", 1, ":"), ("assert", 2, ":-"),
+        ("asserta", 2, ":-"), ("assertz", 2, ":-"), ("retract", 1, ":"), ("retractall", 1, ":"),
+        ("clause", 2, ":?"), ("format", 2, "+:"), ("format", 3, "++:"),
+        ("format_predicate", 2, "+0"), ("notrace", 1, "0"), ("with_mutex", 2, "+0"),
+        ("with_output_to", 2, "+0"), ("thread_idle", 2, "0+"),
+        ("prolog_frame_attribute", 3, "++:"), ("compile_predicates", 1, ":"), ("op", 3, "++:"),
+        ("current_op", 3, "++:"), ("unwrap_predicate", 2, ":?"), ("prolog_listen", 2, "+:"),
+        ("prolog_listen", 3, "+:+"), ("prolog_unlisten", 2, "+:"), ("with_tty_raw", 1, "0"),
+        ("sig_atomic", 1, "0")
     )
         proc = isCurrentProcedure(sym_key(mk_sym(T, Symbol(name))), arity, m)
-        proc === nothing || (proc.definition.flags |= P_TRANSPARENT)   # setMetapredicateMask
+        proc === nothing || PL_meta_predicate(proc, spec)
     end
     return nothing
 end
