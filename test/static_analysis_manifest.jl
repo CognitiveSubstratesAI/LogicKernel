@@ -1198,6 +1198,8 @@ function _manifest_index(T)
         (LK.pl_open3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_close1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_close2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_source_location2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),   # R2 LB2
+        (LK.pl_set_source_location2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.closeStream, Tuple{LD, LK.IOSTREAM}, false),
         (LK.do_close, Tuple{LD, Union{Nothing, LK.IOSTREAM}, Bool}, false),
         (LK.do_close, Tuple{LD, LK.IOSTREAM, Bool}, false),
