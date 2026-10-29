@@ -1230,6 +1230,7 @@ function _manifest_index(T)
         ),
         (LK.isCurrentProcedure, Tuple{UInt64, Int, MOD}, false),
         (LK.hasClausesDefinition, Tuple{GD, D}, true),
+        (LK._hasLocalClausesDefinition, Tuple{GD, D}, true),   # LB2
         (LK.isDefinedProcedure, Tuple{GD, PR}, true),
         (LK.isDefinedOrAutoloadProcedure, Tuple{GD, PR}, true),
         (LK.visibleProcedure, Tuple{GD, T, Int, MOD}, false),

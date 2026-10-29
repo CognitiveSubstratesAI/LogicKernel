@@ -167,7 +167,8 @@ end
 # DIVERGES: no `acquire_def`/`release_def` around the walk — with no threads, clause GC cannot run
 # during it — and no reload generation (`LD->reload.generation` is always `GEN_INVALID`: reloading
 # is not ported). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign since V5a2, so
-# it has no clauses here, as upstream; no predicate is thread-local.
+# it has no clauses here, as upstream; a thread-local definition (since LB2) answers `nothing` (its clauses are the
+# local definition's: `_hasLocalClausesDefinition`).
 """
 The first clause reference of `def` whose clause is visible in the current generation of the
 database `gd` — the first clause at all for a static predicate not registered as dirty — or
@@ -192,6 +193,19 @@ function hasClausesDefinition(
         end
     end
     return nothing
+end
+
+# The clauses of a thread-local definition as the thread's LOCAL definition has them (upstream's local definition has P_THREAD_LOCAL cleared,
+# pl-proc.c:8102, so `hasClausesDefinition` walks its list): the first clause visible in the current generation. A thread-local
+# definition is always P_DYNAMIC, so the walk is upstream's `else` branch.
+function _hasLocalClausesDefinition(gd::PL_global_data{T}, def::Definition{T})::Union{Nothing, ClauseRef{T}} where {T}
+    generation = global_generation(gd)
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        visibleClauseCNT(c.clause::Clause{T}, generation) && break
+        c = c.next
+    end
+    return c
 end
 
 # PORT: pl-proc.c isDefinedProcedure
@@ -1032,7 +1046,7 @@ end
 # DIVERGES: the database `gd` is an argument; the warnings go to `printMessage`. No reload context
 # (a first load). NOT PORTED, refused (`NotPortedError`): abolishing a definition another file — or
 # C — made (`abolishProcedure`: a second file defining a predicate, a foreign predicate redefined),
-# after its warning; a thread-local predicate (no threads).
+# after its warning (for a thread-local predicate: the `thread_local_procedure` permission error of abolishProcedure, since LB2).
 """
 `proc` is about to get a clause from the source file `sf`, which owns the definition: warn of a
 discontiguous predicate or a redefinition, as the style checks ask (pl-proc.c). True to go on.
@@ -1058,7 +1072,9 @@ function redefineProcedure(
             )
         )
     elseif (def.flags & P_MULTIFILE) == 0
-        first = hasClausesDefinition(gd, def)       # def = getLocalProcDefinition(def)
+        # def = getLocalProcDefinition(def): one thread, so the thread-local definition IS the local one (its own clause list), which
+        # upstream's local definition holds WITHOUT P_THREAD_LOCAL (pl-proc.c:8102); hasClausesDefinition() answers nothing for the flag
+        first = (def.flags & P_THREAD_LOCAL) != 0 ? _hasLocalClausesDefinition(gd, def) : hasClausesDefinition(gd, def)
         first === nothing && return true            # (*) see above
 
         cl = first.clause::Clause{T}
@@ -1076,9 +1092,6 @@ function redefineProcedure(
                 ) || return false
             end
         elseif !hasProcedureSourceFile(sf, proc)
-            if (def.flags & P_THREAD_LOCAL) != 0
-                throw(NotPortedError{T}(def.name, "a thread-local predicate", "no threads"))
-            end
             printMessage(                           # PL_FUNCTOR_CHARS, "redefined_procedure", 2,
                 ld, :warning,                       #   PL_CHARS, "static", _PL_PREDICATE_INDICATOR
                 _message_term(
@@ -1087,6 +1100,12 @@ function redefineProcedure(
                 )
             ) || return false
             # again, _after_ the printMessage()
+            # abolishProcedure(): pl-proc.c:1537. pl-proc.c:4014 (`ison(def, P_THREAD_LOCAL)` -> ERR_MODIFY_THREAD_LOCAL_PROC) is dead
+            # upstream too: `def` is the local definition there, which has P_THREAD_LOCAL cleared (pl-proc.c:8102); measured on swipl
+            # 10.1.19: the warning `Redefined static procedure`, then the permission_error below.
+            (def.flags & P_THREAD_LOCAL) != 0 && return PL_error(
+                ld, ERR_PERMISSION_PROC, mk_sym(T, :modify), mk_sym(T, :thread_local_procedure), proc
+            )
             throw(
                 NotPortedError{T}(
                     def.name,
