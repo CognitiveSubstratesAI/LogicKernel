@@ -34,6 +34,50 @@ function PL_unify_choice(ld::PL_local_data{T}, t::term_t, ch::Int)::Bool where {
     return PL_unify_atom(ld, t, mk_sym(T, :none))
 end
 
+# PORT: pl-trace.c put_frame_goal
+# DIVERGES: on the cells. A frame's arguments all lie on the GLOBAL stack (a caller's fresh variable
+# is a global cell: `B_VOID`, `B_ARGFIRSTVAR`), below the compound laid here, so upstream's
+# `a > argp` branch (a LOCAL variable, newer than the goal, bound to the goal's argument) cannot
+# arise; its other branch, `Trail(&argp[i], makeRefG(a))`, binds a cell of the new compound — above
+# `mark_bar`, which `Trail` does not record — so it is the store `_cell_link!` makes (`linkValI`: an
+# unbound or attributed cell its reference, any other term its word). No `ensureTrailSpace` (the
+# trail is a vector) and no `SYSTEM_MODE` (no system mode: `isStaticSystemProcedure`, src/pl-proc.jl).
+# Its tracer callers (pl-trace.c:1165, :1282, :1334, :2583) are not ported; SSU's error is the first.
+"""
+    put_frame_goal(ld, goal, fr) -> Bool
+
+Unify the fresh term reference `goal` with the goal of frame `fr` (pl-trace.c): its predicate's
+name applied to the frame's arguments as they are now, qualified `Module:Goal` when the predicate's
+module is not `user` and is not a system module.
+"""
+function put_frame_goal(ld::PL_local_data{T}, goal::term_t, fr::Int)::Bool where {T}
+    gd = _query_gd(ld)
+    f = ld.frames[fr]
+    def = f.predicate::Definition{T}
+    argc = def.arity
+
+    PL_unify_functor(ld, goal, def.name, argc) || return false
+    if argc > 0
+        argv = argFrameP(f.base, 0)                     # Word argv = argFrameP(frame, 0)
+        _, gw, _ = _deref_loc(ld, -(goal + 1))          # argp = valTermRef(goal); deRef(argp)
+        argp = valPtr(gw)                               # argp = argTermP(*argp, 0), less one
+        for i in 1:argc
+            _cell_link!(ld, argp + i, argv + i)         # deRef2(argv+i, a); argp[i] = linked a
+        end
+    end
+
+    m = gd.modules[def.module_]
+    if m.index != MODULE_user(gd).index && (m.flags & M_SYSTEM) == 0   # (|| SYSTEM_MODE: never)
+        a = PL_new_term_ref(ld)
+        a == 0 && return false
+        PL_put_atom(ld, a, m.atom)                      # PL_put_atom(a, def->module->name)
+        colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+        return PL_cons_functor(ld, goal, colon2, a, goal)   # FUNCTOR_colon2
+    end
+
+    return true
+end
+
 # PORT: pl-trace.c pl_prolog_current_frame
 # DIVERGES: "that's me" compares the frame's predicate with this built-in by name, arity and
 # `P_FOREIGN` — upstream compares `impl.foreign.function` with the C function's address, which a

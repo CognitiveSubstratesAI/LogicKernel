@@ -1147,6 +1147,7 @@ graph LR
     pl_wam --> pl_setup
     pl_wam --> pl_proc
     pl_wam --> pl_supervisor
+    pl_wam --> pl_trace
     pl_wam --> pl_write
     pl_wam --> pl_ext
     pl_fli --> term_interface
@@ -1349,7 +1350,12 @@ graph LR
     pl_trace --> default_term
     pl_trace --> pl_incl
     pl_trace --> SWI_Prolog
+    pl_trace --> pl_atom
+    pl_trace --> pl_funct
     pl_trace --> pl_global
+    pl_trace --> pl_inline
+    pl_trace --> pl_prims
+    pl_trace --> pl_comp
     pl_trace --> pl_wam
     pl_trace --> pl_fli
     pl_pro --> term_interface
@@ -3059,8 +3065,9 @@ pin `8609e216`, upstream names.
   conditional's); the block's choice point that `C_DETTRUE` takes out of the chain while its stack
   region stays in use is marked `unlinked`, as `C_SOFTCUT`'s (the pools hold live records only).
 * **NOT PORTED:** the `det/1` declaration (`P_DET`'s setter, `FR_DET`: R2 — the `property` branch
-  is ported and unreachable); the SSU branch of `ssu_or_det_failed` (SSU; asserted); the debugger's
-  `CHP_DEBUG`; `frameFinished` on a failed `FR_WATCHED` frame (V9g).
+  is ported and unreachable); the debugger's
+  `CHP_DEBUG`; `frameFinished` on a failed `FR_WATCHED` frame (V9g). (The SSU branch of `ssu_or_det_failed`,
+  not ported here and asserted, runs since SSU2.)
 * **R2 checklist:** `$/1` and `$/0` as PREDICATES (boot/init.pl: `$(Goal) :- $(Goal).`, `$ :- $.`
   — what `call($)` reaches); `det/1` and `'$set_predicate_attribute'(…, det, …)`;
   `set_prolog_flag(determinism_error, …)`; the mirror of upstream's
@@ -4108,7 +4115,9 @@ extra choice points: clause 9's cut is what removes clause 10, so `d(x, x, D)` w
   * **the early return removed.** When no choice point is newer than the frame, `discardChoicesAfter` returns at once, and `lTop` and `ARGP` already sit where the cut puts them. MEASURED by a temporary probe over the gate: 17 early returns, all 17 with `lTop` and `ARGP` in place; 82 discarding cuts.
   * **`discardFrame` skipped.** It only clears the frame record's `clause`. The lowering right after drops the record, and clause GC's frame scan reads live records only.
   * **a pending exception ignored.** `exception_term` is set only by `PL_raise_exception`, and every raising path leaves for `b_throw` or clears it.
-  * **`FR_SSU_DET` not cleared.** Nothing sets it: SSU is not ported.
+  * **`FR_SSU_DET` not cleared.** Nothing set it until SSU2. RETIRED by SSU2: `S_SSU_DET` sets it, and the mutant
+    is killed by the guard form's `(G, !, B)` rows (test/core_lang/test_ssu_swipl.jl s50, d04; tools/mutants/SSU2.py
+    SSU2-K1).
 * **Not here:** the type tests and the inline-vs-call decision (V6b); arithmetic and the `derive`
   milestone (V6c); `I_CUTCHP` and the local cuts of the control constructs (V9).
 
@@ -5061,8 +5070,8 @@ What SSU1 ports (pl-comp.c, pl-proc.c, pl-supervisor.c, pl-error.c, boot/init.pl
   the neck test, so it never removes an SSU clause, as swipl (pl-proc.c:3138-3141 rebuilds `:-` from any neck; design Q5).
 - **The consult stand-in** (D7, boot/init.jl `store_clause!`, deleted with the file at LB4): `(H, G) => B` becomes
   `?=>(H, (G, !, B))`, or `H => B` when `'$is_true'(G)` and the `optimise` flag (init.pl:4114-4121, 4131-4133).
-- **Calling an SSU predicate** raises `NotPortedError` naming `S_SSU_DET`: the run loop's refusal of a declared
-  instruction outside `VMI_RUN`. SSU2 runs `I_CHP`, `I_SSU_*`, `S_SSU_DET` and the matching-rule error.
+- **Calling an SSU predicate** raised `NotPortedError` naming `S_SSU_DET` until SSU2 (the run loop's refusal of a
+  declared instruction outside `VMI_RUN`); SSU2 runs `I_CHP`, `I_SSU_*`, `S_SSU_DET` and the matching-rule error.
 - **Not here:** `'$rule'/3`, clause/3's `CLAUSE_TYPE_MASK` test and `fixup_ssu` (clause references: D1); rule/2,3 and
   expand.pl's guard expansion (LB4); listing (LB5); `fix_ssu`/`check_ssu` (reconsult: LB6); QLF flags (no QLF).
 
@@ -5102,6 +5111,38 @@ comment.
 
 Tests: test/core_lang/test_blob.jl (182 tests per term type: 78 live swipl rows + 39 pinned `_BL_TABLE` rows + the interface block);
 mutants: tools/mutants/BLOB.py.
+
+## SSU2 — single sided unification: the run loop (R2, evidence/r2/design/ssu.md §7)
+
+What SSU2 ports (pl-vmi.c, pl-wam.c, pl-trace.c at the pin; design D1, D2, D6, D8):
+
+- **`I_CHP`, `I_SSU_CHOICE`, `I_SSU_COMMIT`, `S_SSU_DET`** join `VMI_RUN` as labels of the run loop. `I_CHP` pushes a
+  `CHP_DEBUG` choice point unless the newest one is the frame's own (`S_STATIC`'s `CHP_CLAUSE`, or the one
+  `shallow_backtrack` moved), so the mark is taken before the head runs. `I_SSU_*` fail the clause (`CLAUSE_FAILED`)
+  when the trail grew past that mark — the head bound a cell of the goal, which is older than the mark and so always
+  trailed (`mark_bar`; design H1, white-box tested per head instruction). `I_SSU_COMMIT` clears `FR_SSU_DET` and pops
+  the choice point: `lowerLTop!` to its record (dropped, decision 3; no record above it, asserted: H3), `BFR` to its
+  parent, no `DiscardMark` (D2, as upstream). `S_SSU_DET`, the supervisor prefix since SSU1, sets `FR_SSU_DET`.
+- **The matching-rule error:** `ssu_or_det_failed`'s `FR_SSU_DET` branch (its assertion removed) raises
+  `existence_error(matching_rule, Goal)`, the goal built by `put_frame_goal` (pl-trace.c, NEW in src/pl-trace.jl: the
+  frame's arguments as they are, `Module:Goal` outside `user` and the system modules). The three ways there were
+  already ported for `$/0` (V9f): `S_STATIC`'s `CHP_DEBUG` on an index miss, the `CHP_DEBUG` branch of
+  `deep_backtrack`, and `frameFailed` (an `S_LIST` miss: no choice point of the frame).
+- **`?=>` as upstream (D8):** a `?=>` clause that exits without a cut leaves `I_CHP`'s choice point with `FR_SSU_DET`
+  set, so backtracking into it raises the error (s48, s49, d03). catch/3's `I_EXITCATCH` and call_cleanup/2's
+  `I_EXITCLEANUP` step over `CHP_DEBUG` choice points (pl-vmi.c), so inside them it never comes (s26, d05, as swipl).
+  **DIVERGES, representation:** the `CHP_DEBUG` records those two step over leave the chain while their stack region
+  stays in use, so they are marked `unlinked`, as the `CHP_CATCH` record they step to (the pool invariant of V9d).
+- **Static:** the four labels join the call path whose spans must not allocate (static_analysis_body.jl); an SSU call
+  allocates at most one pooled choice record. `put_frame_goal` has its manifest entry.
+- **Not here:** the debugger's branches (`BFR->type = CHP_DEBUG` in `I_SSU_COMMIT` and `I_EXITCATCH`); `put_frame_goal`'s
+  tracer callers (pl-trace.c:1165, :1282, :1334, :2583); library(lists)' SSU predicates (s54/s55: LB5; their
+  qualification is tested on a module of the test's own, s58/s59).
+
+Tests: test/core_lang/test_ssu_swipl.jl (the s-, d- and a01/a04/a09 rows of evidence/r2/design/ssu_rows.pl, re-run on swipl
+10.1.19 and extended: s58-s67, d05; the H1 white-box; determinism at the query API); test/db/test_assert_swipl.jl's SSU
+call flipped from the refusal to `ok`; test/compile/test_ssu_compile_swipl.jl's refusal testset removed. Mutants:
+tools/mutants/SSU2.py.
 
 ## Still to come
 

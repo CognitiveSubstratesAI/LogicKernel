@@ -13,7 +13,7 @@
 #   * White-box (no swipl predicate reads them here: `predicate_property/2` and `'$get_predicate_attribute'/3` are R2's), each with
 #     swipl's answer from ssu_rows.out: the `ssu` attribute (a06-a08, c19), `number_of_rules` of an SSU "fact" (c21), the clause
 #     counts after a refused assert (a14, a15), and the clause flags.
-#   * Calling an SSU predicate is refused by name (`NotPortedError` naming `S_SSU_DET`) until SSU2 runs it.
+#   * Calling an SSU predicate is SSU2's (test/core_lang/test_ssu_swipl.jl); until SSU2 it was refused by name here.
 #   * A KNOWN DIFFERENCE, pinned (the last testset): ssu_rows.out a05 (`assertz((d5(X), X > 0 => true))`, swipl
 #     `permission_error(modify, static_procedure, (',')/2)`) — the kernel defines no `','/2` procedure in `system`, so its assert
 #     path creates `user:','/2` and succeeds; a gap of the control constructs, not of SSU (`assertz((a, b))`, k01, differs the
@@ -538,30 +538,6 @@ _su_vm_name(l::String)::String =
     # not vacuous: the rows hold both necks, the merged voids (v04, v07: no h_void before i_ssu_*) and a move (v05)
     @test count(l -> endswith(l, "i_ssu_commit"), reduce(vcat, [x[3] for x in _SU_VM])) >= 8
     @test count(l -> endswith(l, "i_ssu_choice"), reduce(vcat, [x[3] for x in _SU_VM])) >= 6
-end
-
-@testset "calling an SSU predicate is refused by name (S_SSU_DET) until SSU2" begin
-    for (name, arity) in (("m", 2), ("zero", 0))         # S_STATIC and S_TRUSTME behind the prefix
-        f, _ = _su_file()
-        _, gd, ld = _su_kernel(f, String[])
-        proc = LK.isCurrentProcedure(
-            sym_key(_sus(name)), arity, LK.MODULE_user(gd)
-        )::LK.Procedure{_SU}
-        fid = LK.PL_open_foreign_frame(ld)
-        a = arity == 0 ? 0 : LK.PL_new_term_refs(ld, arity)
-        for i in 1:arity
-            LK.putSlotValue!(ld, a + i, mk_var(_SU, LK.fresh_var_keys!(1)), LK.PutVarMap())
-        end
-        qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_NORMAL, proc, a)
-        err = try
-            LK.PL_next_solution(gd, ld, qid)
-            nothing
-        catch e
-            e
-        end
-        @test err isa LK.NotPortedError{_SU} && occursin("S_SSU_DET", err.what)
-        @test ld.query == 0 && ld.nqueries == 0           # the query was abandoned, closed
-    end
 end
 
 # ---- KNOWN DIFFERENCE (checklist item: docs/architecture.md § "SSU1", pending the control-construct procedures): asserting a

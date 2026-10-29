@@ -1542,6 +1542,7 @@ function _manifest_index(T)
         (LK.MODULE_system, Tuple{GD}, true),
         (LK.PL_unify_frame, Tuple{LD, Int, Int}, false),
         (LK.PL_unify_choice, Tuple{LD, Int, Int}, false),
+        (LK.put_frame_goal, Tuple{LD, Int, Int}, false),     # SSU2: the matching-rule error's goal
         (LK.pl_prolog_current_frame, Tuple{LD, Int}, false),
         (LK.can_unify_cells, Tuple{LD, Int, Int, Int}, false),   # L1e e4 (\\=)
         (LK.unifiable_occurs_check_cells, Tuple{LD, Int, Int}, false),   # L1e e4 (unifiable/3)

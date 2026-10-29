@@ -673,12 +673,30 @@ function determinism_error(
 end
 
 # PORT: pl-wam.c ssu_or_det_failed
-# DIVERGES: NOT PORTED: the `FR_SSU_DET` branch (`existence_error(matching_rule, Goal)`: SSU is not
-# ported, nothing sets the flag — asserted).
-"Frame `fr`, which must not fail, failed: the determinism error (pl-wam.c)."
+# (since SSU2 its `FR_SSU_DET` branch: the goal built by `put_frame_goal`, src/pl-trace.jl)
+"""
+    ssu_or_det_failed(ld, fr) -> Bool
+
+Frame `fr`, which must not fail, failed (pl-wam.c): an SSU frame (`FR_SSU_DET`: no clause matched,
+or a `?=>` clause left it set) raises `existence_error(matching_rule, Goal)` with the frame's goal;
+any other the determinism error (`determinism_error`). False when an error was raised.
+"""
 function ssu_or_det_failed(ld::PL_local_data{T}, fr::Int)::Bool where {T}
-    @assert (ld.frames[fr].flags & FR_SSU_DET) == 0
-    return determinism_error(ld, fr, 0, :fail)
+    if (ld.frames[fr].flags & FR_SSU_DET) == 0      # isoff(fr, FR_SSU_DET)
+        return determinism_error(ld, fr, 0, :fail)
+    end
+
+    rc = false
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        goal = PL_new_term_ref(ld)
+        rc =
+            goal != 0 && put_frame_goal(ld, goal, fr) &&
+            PL_error(ld, ERR_EXISTENCE, mk_sym(T, :matching_rule), goal)
+        PL_close_foreign_frame(ld, fid)
+    end
+
+    return rc
 end
 
 # PORT: pl-wam.c is_exception_finish
@@ -1717,7 +1735,8 @@ const VMI_RUN = (
     :I_CALLCLEANUP, :I_EXITCLEANUP, :I_FOPENNDET, :I_FCALLNDETVA, :I_FEXITNDET, :I_FREDO,
     :I_FCALLNDET0, :I_FCALLNDET1, :I_FCALLNDET2, :I_FCALLNDET3, :I_FCALLNDET4,
     :I_FCALLNDET5,
-    :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10
+    :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
+    :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -3001,6 +3020,46 @@ function PL_next_solution_guarded(
     end
     @FASTCOND_FAILED
 
+    # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────
+    # An SSU clause (`Head => Body`, `Head ?=> Body`) starts with `I_CHP`, so a choice point of its
+    # frame is marked before the head runs; the head unifies as any head does, and `I_SSU_*` after it
+    # fail the clause when the trail grew — a cell of the goal, older than the mark, was bound (design
+    # D1: upstream's mechanism, no one-sided matcher).
+    # PORT: pl-vmi.c I_CHP
+    # DIVERGES: the choice point's frame is an index (`BFR` is never 0 here: the query's `CHP_TOP`).
+    @label I_CHP
+    if ld.choices[ld.BFR].frame != FR               # if ( BFR->frame != FR )
+        newChoice(ld, CHP_DEBUG, FR)
+    end
+    @goto next_instruction
+
+    # PORT: pl-vmi.c I_SSU_CHOICE
+    # DIVERGES: `tTop > BFR->mark.trailtop` on the trail's LENGTH (a mark's `trailtop` is the length
+    # then: `Mark`, src/pl-inline.jl).
+    @label I_SSU_CHOICE
+    if length(ld.trail) > ld.choices[ld.BFR].mark.trailtop     # tTop > BFR->mark.trailtop
+        @goto unify_backtrack                       # CLAUSE_FAILED
+    end
+    @goto I_ENTER                                   # VMI_GOTO(I_ENTER)
+
+    # PORT: pl-vmi.c I_SSU_COMMIT
+    # DIVERGES: the trail test as `I_SSU_CHOICE`'s. The pop of the frame's choice point (`lTop =
+    # (LocalFrame)BFR; BFR = BFR->parent`) lowers `lTop` with `lowerLTop!`, which drops its record
+    # (decision 3); no record lies above it — head unification makes no frame and no choice point
+    # (asserted, design H3). No `DiscardMark`, as upstream (design D2). NOT PORTED: the debugger's
+    # branch (`BFR->type = CHP_DEBUG`; `debugstatus.debugging` is never set).
+    @label I_SSU_COMMIT
+    if length(ld.trail) > ld.choices[ld.BFR].mark.trailtop     # tTop > BFR->mark.trailtop
+        @goto unify_backtrack                       # CLAUSE_FAILED
+    end
+    ld.frames[FR].flags &= ~FR_SSU_DET              # clearLocal(FR, FR_SSU_DET)
+    ssc_ch = ld.BFR
+    ssc_base = ld.choices[ssc_ch].base
+    @assert _no_record_above(ld, ssc_base) "I_SSU_COMMIT: a record above the frame's choice point"
+    ld.BFR = ld.choices[ssc_ch].parent              # BFR = BFR->parent
+    lowerLTop!(ld, ssc_base)                        # lTop = (LocalFrame)BFR
+    @goto I_ENTER                                   # VMI_GOTO(I_ENTER)
+
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
     # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the wakeup bit only.
@@ -3334,8 +3393,10 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_EXITCATCH
     # DIVERGES: the CHP_CATCH record taken out of the chain is marked `unlinked` (the soft-cut's
-    # record, since V9d): its region is reclaimed when `lTop` drops below it. NOT PORTED: the
-    # debugger's `CHP_DEBUG` (none here; `debugstatus.debugging` is never set).
+    # record, since V9d): its region is reclaimed when `lTop` drops below it. So is each `CHP_DEBUG`
+    # record stepped over (since SSU2: the one `I_CHP` pushed for a `?=>` clause that exited without
+    # a cut — upstream's `BFR = bfr->parent` takes it out of the chain too). NOT PORTED: the
+    # debugger's branch (`bfr->type = CHP_DEBUG`; `debugstatus.debugging` is never set).
     @label I_EXITCATCH
     iec_b = ld.BFR
     while iec_b != 0 && ld.choices[iec_b].type == CHP_DEBUG
@@ -3344,6 +3405,11 @@ function PL_next_solution_guarded(
     if iec_b != 0 && ld.choices[iec_b].frame == FR &&
         ld.choices[iec_b].base == argFrameP(ld.frames[FR].base, 3)
         @assert ld.choices[iec_b].type == CHP_CATCH
+        iec_d = ld.BFR
+        while iec_d != iec_b                        # (the CHP_DEBUG records stepped over)
+            ld.choices[iec_d].unlinked = true
+            iec_d = ld.choices[iec_d].parent
+        end
         ld.BFR = ld.choices[iec_b].parent
         ld.choices[iec_b].unlinked = true
         ld.frames[FR].flags |= FR_CAUGHT
@@ -3388,13 +3454,19 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_EXITCLEANUP
     # DIVERGES: positions for addresses. The frame's `CHP_CATCH` record, and any other the walk
     # steps over, taken out of the chain while its stack region stays in use, is marked `unlinked`
-    # (as `I_EXITCATCH`'s). NOT PORTED: the debugger's `CHP_DEBUG` (none can be the newest here).
+    # (as `I_EXITCATCH`'s), and so is each `CHP_DEBUG` record the first walk steps over (since SSU2:
+    # `I_CHP`'s, left by a `?=>` clause that exited without a cut).
     @label I_EXITCLEANUP
     iecl_b = ld.BFR
     while iecl_b != 0 && ld.choices[iecl_b].type == CHP_DEBUG
         iecl_b = ld.choices[iecl_b].parent
     end
     if iecl_b != 0 && ld.choices[iecl_b].frame == FR && ld.choices[iecl_b].type == CHP_CATCH
+        iecl_d = ld.BFR
+        while iecl_d != iecl_b                      # (the CHP_DEBUG records stepped over)
+            ld.choices[iecl_d].unlinked = true
+            iecl_d = ld.choices[iecl_d].parent
+        end
         ld.choices[iecl_b].unlinked = true
         ld.BFR = ld.choices[iecl_b].parent
         while ld.BFR != 0 && ld.choices[ld.BFR].base > ld.frames[FR].base  # BFR > (Choice)FR
@@ -4233,6 +4305,14 @@ function PL_next_solution_guarded(
         @goto deep_backtrack                        # FRAME_FAILED
     end
     @goto deep_backtrack                            # (a value with no word form) FRAME_FAILED
+
+    # PORT: pl-vmi.c S_SSU_DET
+    # The prefix `chainPredicateSupervisor` puts before an SSU predicate's supervisor (since SSU1): the
+    # frame must not fail — `ssu_or_det_failed` raises the matching-rule error — until `I_SSU_COMMIT`
+    # or a cut clears the flag.
+    @label S_SSU_DET
+    ld.frames[FR].flags |= FR_SSU_DET               # setLocal(FR, FR_SSU_DET)
+    @goto next_instruction
 
     # ── deterministic foreign calls (pl-vmi.c; V5a2, decision 5) ─────────────────────────────────
     # PORT: pl-vmi.c I_FCALLDETVA
