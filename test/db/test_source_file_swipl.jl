@@ -443,3 +443,39 @@ end
     st, ans = kcall(gd, ld, "\$time_source_file", _TL[_v(), _v(), _v()])
     @test st === :true && sym_key(ans[1]) == sym_key(f)                       # the enumeration (source_file/1's base) lists it; swipl: not
 end
+
+# ---- white-box: the reference count stays balanced, and a file nothing has started (count 0) is not listed
+@testset "the source-file predicates release the reference they take; a count-0 file is skipped" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    f = _tls("/no/such/r01")
+    refs() = LK.lookupSourceFile_unlocked(gd, f, false).references
+    st, _ = kcall(gd, ld, "\$start_consult", _TL[f, lk_gnd(_TL, 0)])
+    @test st === :true && refs() == 1                                         # startConsult's reference only
+    for (name, args) in (
+        ("\$source_file_property", _TL[f, _tls("load_count"), _v()]),
+        ("\$source_file_property", _TL[f, _tls("loaded"), _v()]),
+        ("\$set_source_file", _TL[f, _tls("resource"), _tls("true")]),
+        ("\$source_file_predicates", _TL[f, _v()]),
+        ("\$fixup_reconsult", _TL[f])
+    )
+        st, _ = kcall(gd, ld, name, args)
+        @test st === :true && refs() == 1
+    end
+    st, _ = kcall(gd, ld, "\$set_source_file", _TL[f, _tls("nope"), _tls("true")])
+    @test st === :exception && refs() == 1
+    st, _ = kcall(gd, ld, "\$end_consult", _TL[f])
+    @test st === :true && refs() == 0
+    # a file that exists but has count 0 (looked up with create, never started) is neither listed nor asked for its predicates
+    gd2 = LK.PL_global_data{_TL}()
+    ld2 = LK.PL_local_data{_TL}(gd2)
+    sf0 = LK.lookupSourceFile(gd2, _tls("/no/such/r02"), true)
+    @test sf0.count == 0
+    st, _ = kcall(gd2, ld2, "\$time_source_file", _TL[_v(), _v(), _v()])
+    @test st === :false
+    st, _ = kcall(gd2, ld2, "\$source_file_predicates", _TL[_tls("/no/such/r02"), _v()])
+    @test st === :false
+    st, _ = kcall(gd2, ld2, "\$source_file_property", _TL[_tls("/no/such/r02"), _tls("loaded"), _v()])
+    @test st === :false                                                       # pl-srcfile.c:726: ltime == 0.0 is false
+    LK.releaseSourceFile(sf0)
+end

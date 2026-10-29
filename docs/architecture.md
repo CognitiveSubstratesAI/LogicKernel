@@ -5409,6 +5409,37 @@ What MOD4 ports (pl-proc.c, pl-supervisor.c, pl-vmi.c, pl-wam.c at the pin):
 
 Tests and mutants: see evidence/MOD4/handoff.md (rows vs swipl 10.1.19; tools/mutants/MOD4.py).
 
+## LB2 — the source-file predicates, system mode, `source_location/2` (R2 loader_boot, audit D-0244)
+
+What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edit-only, nothing compiled when this was written):
+
+- **The eight pl-srcfile.c predicates**, registered in upstream's order (`PL_predicates_from_srcfile`, between proc and write):
+  `'$source_file'/2`, `'$source_file_predicates'/2`, `'$time_source_file'/3` (non-deterministic: the index is the redo context),
+  `'$source_file_property'/3`, `'$set_source_file'/3`, `'$start_consult'/2`, `'$end_consult'/1`, `'$fixup_reconsult'/1`. Helpers:
+  `highSourceFileIndex`, `addModuleSourceFile` (appends, once), `unify_src_file_time` (the time of a real file as a float, else the integer 0).
+- **DIVERGES, kept:** `'$source_file'/2` is declared transparent in `PRED_IMPL` but the TABLE's flags (0) win, measured: an unqualified head is
+  looked up in `system`, an unknown module qualifier means `user` and creates no module (`get_procedure_findhere`, src/pl-proc.jl);
+  `sf.procedures` is a vector with the newest LAST, so `'$source_file_predicates'/2` walks it in reverse to answer upstream's newest-first
+  list; a partly bound list with a bound element (`unify_definition`'s bound-head branch) and a RE-consult (`startConsult` with
+  `count > 1`, `startReconsultFile`) refuse by name, step LB6; `reloading` is always false.
+  `'$source_file_property'(+Unknown, loaded, -V)` **fails** (upstream reads through a NULL pointer; H10).
+- **KNOWN DIFFERENCE, TEMPORARY (owner LB6, audit D-0248): `releaseSourceFile` only counts.** Upstream (pl-srcfile.c:376-395) destroys a
+  source file whose last reference goes when it has no procedures, no modules, is not a system file and has no current procedure. So an EMPTY file
+  consulted once (`'$start_consult'(F, 0), '$end_consult'(F)`) keeps a record in the kernel: `load_count` 1 and `'$time_source_file'/3` (hence
+  `source_file/1`) lists it; swipl 10.1.19 answers load_count 0 and lists nothing. Pinned by the white-box testset "KNOWN DIFFERENCE" in
+  test/db/test_source_file_swipl.jl with swipl's answers in comments; `# DIVERGES` at `releaseSourceFile`. **LB6: port `destroySourceFile`
+  (`gd.files_array` then needs holes: `Union{Nothing, SourceFile}`), flip these rows.**
+- **System mode (H5):** `GD.bootsession` (a boot-session database makes a new source file system / from_state / resource), `LD.prolog_flag_access_level`
+  (`ACCESS_LEVEL_USER` / `SYSTEM`, `setAccessLevel!`), `SYSTEM_MODE(ld)`, the `access_level` flag getter, and the sites that read it: `associateSource` and
+  `assert_term` (a predicate defined in system mode gets `P_LOCKED | HIDE_CHILDS`), `isStaticSystemProcedure`, `defOperator!`, `put_frame_goal`,
+  `lookupBodyProcedure`. Not flipped (not in the kernel): pl-trace.c:500/528/1209, 1381, 2671. There is no `set_prolog_flag(access_level, _)` yet (F1b).
+- **`source_location/2`, `'$set_source_location'/2`** (pl-file.c:5805-5822): `ReadingSource` now tests `lineno >= 0` as pl-incl.h:2734, so line 0 counts.
+- **Still to come in LB2:** `'$start_aux'/2`, `'$end_aux'/2`, `compile_predicates/1`, `nth_clause/3`, `'$get_clause_attribute'/3`, thread_local;
+  modules L3 (`exportProcedureSource`, pl-srcfile.c:1427) and L4 (`setMetapredicateSource`, :1334) wait for MOD4 (`exportProcedure` and
+  `setMetapredicateMask` do not exist on this base); with them MOD4's `meta_declaration` ReadingSource refusal is replaced by upstream's branch (D-0246).
+
+Tests: test/db/test_source_file_swipl.jl (80 program rows against swipl 10.1.19, the white-box testsets); mutants: tools/mutants/LB2.py.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
