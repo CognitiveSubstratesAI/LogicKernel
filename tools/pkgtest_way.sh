@@ -3,6 +3,8 @@
 #
 #   tools/pkgtest_way.sh test/files/test_x.jl     # exit 0 only if the file passed AND its pass line was shown
 #   LOGICKERNEL_PKGTEST_WAY_OUT=DIR               # where <file>.out and <file>.err go (default .warm/pkgtest_way)
+#   LOGICKERNEL_INERT_MEM_MAX=3G                  # the run's own memory ceiling (audit D-0242 item 2)
+#   LOGICKERNEL_INERT_SLICE=lk-warm.slice         # the lane's slice the run's scope is nested in (warm.sh sets it)
 #
 # WHY. A warm run is not Pkg.test: the daemon has swipl and a terminal-less but daemon-shaped stdio, and CI's
 # Pkg.test has no swipl and its stdout/stderr are not what the daemon's are. Three CI-only reds in two days
@@ -11,6 +13,15 @@
 # FRESH process the way CI runs it: LOGICKERNEL_NO_SWIPL=1 (no LOGICKERNEL_REQUIRE_*), stdin from /dev/null,
 # stdout and stderr to FILES, and the inert-testset guard over the result (tools/pkgtest_way.jl). In a scope with a
 # memory ceiling. FAIL CLOSED: a zero exit without the pass line is a failure (exit 4).
+#
+# ONE AT A TIME, IN ITS OWN SCOPE (audit D-0242 item 2, 2026-10-29): BP2's second daemon was OOM-killed by its 6G slice
+# while a Pkg.test-way process shared it. So (a) the runs hold one lock (.warm/pkgtest_way.lock): a second waits, they
+# never overlap (warm.sh runs them from its own serial steps, never beside the daemon's file run); (b) each run is its
+# OWN `systemd-run --user --scope` with MemoryMax=3G and no swap, NESTED in the lane's slice (--slice=), with
+# OOMPolicy=continue so only the test process is killed — the daemon, a sibling in the slice, survives, and this script
+# survives to report it; (c) the scope's PEAK memory (cgroup memory.peak, read from inside the scope before it ends, no
+# root) is printed (`pkgtest_way: <file> peak N MiB (cap C, oom_kill K)`) and appended to peaks.tsv in the output
+# directory, so the branch-gate log carries it and the slice's right size can be read off.
 # LOGICKERNEL_PKGTEST_WAY_JULIA replaces the julia binary: a TEST SEAM (test/test_gate_split.jl records the stdio).
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,15 +33,55 @@ out="${LOGICKERNEL_PKGTEST_WAY_OUT:-$ROOT/.warm/pkgtest_way}"
 mkdir -p "$out"
 base="$out/$(basename "$f" .jl)"
 J="${LOGICKERNEL_PKGTEST_WAY_JULIA:-julia}"
+mem="${LOGICKERNEL_INERT_MEM_MAX:-3G}"
+# ONE AT A TIME: a second run waits for the first (fd 9 is closed for the test process below)
+lock="${LOGICKERNEL_PKGTEST_WAY_LOCK:-$ROOT/.warm/pkgtest_way.lock}"
+mkdir -p "$(dirname "$lock")"
+exec 9> "$lock"
+if ! flock -n 9; then
+    echo "pkgtest_way: another Pkg.test-way run holds $lock — waiting (they run one at a time, D-0242)" >&2
+    flock 9
+fi
 unset LOGICKERNEL_REQUIRE_SWIPL LOGICKERNEL_REQUIRE_TOOLS LOGICKERNEL_TERM
 export LOGICKERNEL_NO_SWIPL=1
 cmd=("$J" --project="$ROOT" --startup-file=no "$ROOT/tools/pkgtest_way.jl" "$f")
 scope=()
+peakf="$base.peak"
+rm -f "$peakf"
 if command -v systemd-run > /dev/null 2>&1 && systemd-run --user --scope true > /dev/null 2>&1; then
-    scope=(systemd-run --user --scope --quiet -p MemoryMax="${LOGICKERNEL_TEST_MEM_MAX:-6G}" -p MemorySwapMax=0 -p TasksMax=512)
+    slice=()
+    [ -n "${LOGICKERNEL_INERT_SLICE:-}" ] && slice=(--slice="$LOGICKERNEL_INERT_SLICE")
+    scope=(systemd-run --user --scope --quiet "${slice[@]}" -p MemoryMax="$mem" -p MemorySwapMax=0 -p TasksMax=512
+        -p OOMPolicy=continue)
 fi
-"${scope[@]}" "${cmd[@]}" < /dev/null > "$base.out" 2> "$base.err"
+# Inside the scope: run the command, then read the scope's own peak before the scope ends. OOMPolicy=continue keeps this
+# shell alive when the kernel kills the test process (exit 137), so the peak of a KILLED run is read too.
+# shellcheck disable=SC2016                       # the snippet is for the inner shell
+inner='cg=$(sed -n "s/^0:://p" /proc/self/cgroup); p=$1; shift; "$@"; rc=$?
+{ echo "peak_bytes=$(cat "/sys/fs/cgroup$cg/memory.peak" 2> /dev/null)"
+  echo "oom_kill=$(sed -n "s/^oom_kill //p" "/sys/fs/cgroup$cg/memory.events" 2> /dev/null)"; } > "$p"
+exit $rc'
+runner=()
+[ "${#scope[@]}" -gt 0 ] && runner=(bash -c "$inner" _ "$peakf")
+"${scope[@]}" "${runner[@]}" "${cmd[@]}" < /dev/null > "$base.out" 2> "$base.err" 9>&-
 rc=$?
+peak_mib="" oom=0
+if [ -s "$peakf" ]; then
+    pb=$(sed -n 's/^peak_bytes=//p' "$peakf")
+    oom=$(sed -n 's/^oom_kill=//p' "$peakf")
+    oom="${oom:-0}"
+    if [ -n "$pb" ]; then peak_mib=$((pb / 1048576)); fi
+fi
+peak_txt="${peak_mib:+${peak_mib} MiB}"
+peak_txt="${peak_txt:-not measured (no user systemd scope)}"
+echo "pkgtest_way: $(basename "$f") peak ${peak_txt} (cap $mem, oom_kill $oom)"
+printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$(basename "$f")" "${peak_mib:--}" "$mem" "$oom" "$rc" >> "$out/peaks.tsv"
+if [ "$rc" -ne 0 ] && { [ "$rc" -eq 137 ] || [ "$oom" != 0 ]; }; then
+    # the kernel killed the test process in ITS scope; the lane's daemon is not in it
+    echo "pkgtest_way: KILLED — $(basename "$f") hit its memory cap ($mem): peak ${peak_txt}, oom_kill $oom, exit $rc — the test process was killed in its own scope, not the daemon" >&2
+elif [ "$oom" != 0 ]; then
+    echo "pkgtest_way: WARNING — a process in $(basename "$f")'s scope was OOM-killed (oom_kill $oom) though the run exited 0" >&2
+fi
 if [ "$rc" -ne 0 ]; then
     echo "pkgtest_way: FAILED (exit $rc) — $base.out $base.err" >&2
     # the failing test's OWN report (its `Test Failed` / `Error During` lines, with the testset's name) is on STDOUT,

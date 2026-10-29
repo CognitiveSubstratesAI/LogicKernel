@@ -445,6 +445,7 @@ esac
                 "LOGICKERNEL_PKGTEST_WAY_JULIA" => stub, "STUB_MODE" => mode,
                 "STUB_RECORD" => rec,
                 "LOGICKERNEL_PKGTEST_WAY_OUT" => outd,
+                "LOGICKERNEL_PKGTEST_WAY_LOCK" => joinpath(stubdir, "lock"),
                 # what a daemon-shaped parent has set: the run must not inherit it
                 "LOGICKERNEL_REQUIRE_SWIPL" => "1", "LOGICKERNEL_REQUIRE_TOOLS" => "1",
                 "LOGICKERNEL_TERM" => "alt"
@@ -490,7 +491,8 @@ esac
         stubenv(mode) = [
             "LOGICKERNEL_PKGTEST_WAY_JULIA" => stub, "STUB_MODE" => mode,
             "STUB_RECORD" => joinpath(stubdir, "record2"),
-            "LOGICKERNEL_PKGTEST_WAY_OUT" => joinpath(stubdir, "out")
+            "LOGICKERNEL_PKGTEST_WAY_OUT" => joinpath(stubdir, "out"),
+            "LOGICKERNEL_PKGTEST_WAY_LOCK" => joinpath(stubdir, "lock")
         ]
         inert(args...; files="test/test_package.jl", times="", mode="pass") = run_step(
             "inert-check", args...;
@@ -559,6 +561,211 @@ esac
         @test occursin(
             "-- tools .github test/test_port_check.jl test/test_gate_split.jl", tj
         )
+    end
+
+    # D-0242 item 2 (A-0148: BP2's second daemon was OOM-killed by its 6G slice with a Pkg.test-way process in it).
+    # The Pkg.test-way runs go ONE AT A TIME, each in its OWN scope with a memory ceiling NESTED in the lane's
+    # slice, so a runaway test process is killed — named, with its peak — and the daemon, a sibling in that slice,
+    # survives; every run's PEAK memory is printed (the branch-gate log carries it) and appended to peaks.tsv. A STUB
+    # test process allocates; the "daemon" is a `sleep` unit in the same slice. The scope and cap cases need user
+    # systemd (CI's tooling job requires one); the sequence case does not.
+    @testset "tools/pkgtest_way.sh: one at a time, each run in its own capped scope inside the lane's slice" begin
+        sh = joinpath(_GS_ROOT, "tools", "pkgtest_way.sh")
+        have_systemd = success(
+            pipeline(`systemd-run --user --scope --quiet true`; stdout=devnull, stderr=devnull)
+        )
+        have_systemd ||
+            @warn "no user systemd here: the scope, cap and kill cases of tools/pkgtest_way.sh did not run"
+        dir = mktempdir()
+        outd = mktempdir()
+        stub = joinpath(dir, "julia")
+        write(
+            stub,
+            """#!/usr/bin/env bash
+case "\$STUB_MODE" in
+    hog)
+        python3 -I -c 'import sys
+b = bytearray(int(sys.argv[1]) << 20)
+for i in range(0, len(b), 4096):
+    b[i] = 1' "\$STUB_MB" || exit \$? ;;
+    where)
+        cg=\$(sed -n 's/^0:://p' /proc/self/cgroup)
+        { echo "cgroup=\$cg"; echo "max=\$(cat /sys/fs/cgroup\$cg/memory.max)"
+          echo "swap=\$(cat /sys/fs/cgroup\$cg/memory.swap.max)"; } > "\$STUB_RECORD" ;;
+    times)
+        s=\$(date +%s%N); sleep "\${STUB_SLEEP:-1}"; e=\$(date +%s%N)
+        echo "\$s \$e" >> "\$STUB_TIMES" ;;
+esac
+echo "pkgtest-way: PASS stub"
+"""
+        )
+        chmod(stub, 0o755)
+        function wayenv(
+                mode;
+                mb="1", lock=joinpath(dir, "lock"), times=joinpath(dir, "times"),
+                extra=Pair{String, String}[]
+            )
+            return Pair{String, String}[
+                "LOGICKERNEL_PKGTEST_WAY_JULIA" => stub,
+                "LOGICKERNEL_PKGTEST_WAY_OUT" => outd, "LOGICKERNEL_PKGTEST_WAY_LOCK" => lock,
+                "STUB_MODE" => mode, "STUB_MB" => mb,
+                "STUB_RECORD" => joinpath(dir, "record"), "STUB_TIMES" => times, extra...
+            ]
+        end
+        # `env -u`: whatever cap or slice the caller exported does not reach the run, so the defaults are judged
+        way_cmd(file, env) = addenv(
+            `env -u LOGICKERNEL_INERT_MEM_MAX -u LOGICKERNEL_INERT_SLICE bash $sh $file`, env...
+        )
+        way(file, env) = _gs_run_merged(way_cmd(file, env))
+        peaks() = [split(l, '\t') for l in eachline(joinpath(outd, "peaks.tsv"))]
+        unit_active(u) = success(`systemctl --user is-active --quiet $u`)
+        pid = getpid()
+        slice = "lkgs-memcap-$pid.slice"
+        sib = "lkgs-memcap-sib-$pid"
+        if have_systemd
+            try
+                # the stand-in daemon: a process in the lane's slice, beside the test process's scope
+                run(
+                    `systemd-run --user --unit=$sib --collect --quiet --slice=$slice sleep 600`
+                )
+                @test unit_active(sib)
+                # the scope: its own ceiling (3G by default), no swap, NESTED in the slice it was given
+                rm(joinpath(dir, "record"); force=true)
+                r = way(
+                    "test/test_package.jl",
+                    wayenv("where"; extra=["LOGICKERNEL_INERT_SLICE" => slice])
+                )
+                rec = read(joinpath(dir, "record"), String)
+                @test r.code == 0
+                @test occursin("max=3221225472\n", rec)
+                @test occursin("swap=0\n", rec)
+                @test occursin("/$slice/run-", rec) && occursin(".scope\n", rec)
+                r = way(
+                    "test/test_package.jl",
+                    wayenv(
+                        "where"; extra=["LOGICKERNEL_INERT_MEM_MAX" => "1G", "LOGICKERNEL_INERT_SLICE" => slice]
+                    )
+                )
+                @test occursin("max=1073741824\n", read(joinpath(dir, "record"), String))
+                # a run without a slice is still its own scope, outside this one
+                r = way("test/test_package.jl", wayenv("where"))
+                @test r.code == 0 && !occursin("/$slice/", read(joinpath(dir, "record"), String))
+                # the peak of a run is printed, and kept in peaks.tsv
+                rm(joinpath(outd, "peaks.tsv"); force=true)
+                r = way("test/test_package.jl", wayenv("hog"; mb="64"))
+                m = match(r"peak (\d+) MiB \(cap 3G, oom_kill 0\)", r.out)
+                @test r.code == 0 && m !== nothing
+                peak = m === nothing ? 0 : parse(Int, m[1])
+                @test 64 <= peak <= 200                              # the 64 MiB it touched, and not 3 GiB
+                pk = peaks()
+                @test length(pk) == 1 &&
+                    pk[1][2:end] == ["test_package.jl", string(peak), "3G", "0", "0"]
+                # THE KILL: 256 MiB under a 64 MiB cap. The process is killed, named, with its peak; the exit code
+                # is the kill's; the sibling in the slice (the daemon) is alive before and after.
+                r = way("test/test_package.jl", wayenv("hog"; mb="256"))      # control: the same hog, default cap
+                @test r.code == 0 && !occursin("KILLED", r.out)
+                r = way(
+                    "test/test_package.jl",
+                    wayenv(
+                        "hog"; mb="256",
+                        extra=["LOGICKERNEL_INERT_MEM_MAX" => "64M", "LOGICKERNEL_INERT_SLICE" => slice]
+                    )
+                )
+                @test r.code == 137
+                @test occursin(
+                    "KILLED — test_package.jl hit its memory cap (64M): peak ", r.out
+                )
+                m = match(r"peak (\d+) MiB \(cap 64M, oom_kill 1\)", r.out)
+                @test m !== nothing && 32 <= parse(Int, m[1]) <= 64
+                @test occursin("FAILED (exit 137)", r.out)
+                @test occursin("not the daemon", r.out)
+                @test unit_active(sib)                                       # the daemon survives
+                @test peaks()[end][2:end] ==
+                    ["test_package.jl", m === nothing ? "" : m[1], "64M", "1", "137"]
+            finally
+                run(ignorestatus(`systemctl --user stop $sib`))
+                run(ignorestatus(`systemctl --user stop $slice`))
+            end
+        end
+        # NEVER CONCURRENTLY: two runs started together run one after the other (a lock, .warm/pkgtest_way.lock).
+        # The control: with a lock apiece the same two runs DO overlap, so the assertion can fail.
+        function overlapped(l1, l2)
+            tf = joinpath(dir, "times_$(basename(l1))_$(basename(l2))")
+            rm(tf; force=true)
+            jobs = []
+            for (file, lock) in (("test/test_package.jl", l1), ("test/test_commit_msg_hook.jl", l2))
+                o = joinpath(dir, "seq_$(basename(file))_$(basename(lock)).log")
+                io = open(o, "w")
+                p = run(
+                    pipeline(
+                        ignorestatus(
+                            way_cmd(
+                                file, wayenv("times"; lock=lock, times=tf, extra=["STUB_SLEEP" => "1"])
+                            )
+                        );
+                        stdin=devnull, stdout=io, stderr=io
+                    ); wait=false
+                )
+                push!(jobs, (p, io, o))
+            end
+            foreach(j -> wait(j[1]), jobs)
+            foreach(j -> close(j[2]), jobs)
+            iv = sort([parse.(Int, split(l)) for l in eachline(tf)]; by=first)
+            logs = join([read(j[3], String) for j in jobs])
+            return (iv=iv, logs=logs, codes=[j[1].exitcode for j in jobs])
+        end
+        seq = overlapped(joinpath(dir, "lock_a"), joinpath(dir, "lock_a"))
+        @test seq.codes == [0, 0] && length(seq.iv) == 2
+        @test seq.iv[1][2] <= seq.iv[2][1]                       # the first ended before the second began
+        @test occursin("another Pkg.test-way run holds", seq.logs)
+        par = overlapped(joinpath(dir, "lock_b"), joinpath(dir, "lock_c"))
+        @test par.codes == [0, 0] && length(par.iv) == 2
+        @test par.iv[1][2] > par.iv[2][1]                        # the control overlaps
+        @test !occursin("another Pkg.test-way run holds", par.logs)
+        # warm.sh's step runs the files one after the other in its own process, hands the lane's slice on, prints the
+        # peak, and finishes before the branch-gate's first file: nothing of it runs beside the daemon's own file run
+        warm = read(joinpath(_GS_ROOT, "tools", "warm.sh"), String)
+        ie = match(r"(?s)\n_inert_check\(\) \{\n(.*?)\n\}\n", warm)[1]
+        @test occursin(
+            "        LOGICKERNEL_INERT_SLICE=\"\$(_lane_slice)\" \"\$ROOT/tools/pkgtest_way.sh\" \"\$f\" > \"\$log\" 2>&1\n        prc=\$?",
+            ie
+        )
+        @test occursin("grep -h '^pkgtest_way: .* peak ' \"\$log\"", ie)
+        @test !occursin(r"(?m)&\s*$", ie) && !occursin(r"(?m)^\s*wait\b", ie)
+        ls = match(r"(?s)\n_lane_slice\(\) \{\n(.*?)\n\}\n", warm)[1]
+        @test occursin("elif [ -f \"\$DIR/second\" ]; then echo lk-warm2.slice", ls)
+        @test occursin("else echo lk-warm.slice; fi", ls)
+        bg = match(r"(?s)\n_branch_gate\(\) \{\n(.*?)\n\}\n", warm)[1]
+        @test findfirst("_checks_fresh ||", bg).start < findfirst("_file \"\$f\" > \"\$log\"", bg).start
+        cf = match(r"(?s)\n_checks_fresh\(\) \{\n(.*?)\n\}\n", warm)[1]
+        @test !occursin(r"(?m)&\s*$", cf)
+        if have_systemd
+            # …and through the real step: the slice a second-daemon lane names carries the run's scope
+            try
+                rm(joinpath(dir, "record"); force=true)
+                tf = tempname()
+                write(tf, "")
+                inert_env(slice_, budget) = Pair{String, String}[
+                    "LOGICKERNEL_WARM_SEND_PROBE" => "1", "LOGICKERNEL_FILE_TIMES" => tf,
+                    "LOGICKERNEL_INERT_FILES" => "test/test_package.jl",
+                    "LOGICKERNEL_SHARED_BUDGET" => budget, "LOGICKERNEL_SLICE" => slice_,
+                    wayenv("where")...
+                ]
+                step(env) = _gs_run_merged(
+                    addenv(`bash $(joinpath(_GS_ROOT, "tools", "warm.sh")) inert-check`, env...)
+                )
+                r = step(inert_env(slice, "1"))
+                @test r.code == 0 && occursin("Pkg.test-way run clean (1 changed test files", r.out)
+                @test occursin(r"pkgtest_way: test_package\.jl peak \d+ MiB \(cap 3G, oom_kill 0\)", r.out)
+                @test occursin("/$slice/", read(joinpath(dir, "record"), String))
+                rm(joinpath(dir, "record"); force=true)
+                r = step(inert_env(slice, "0"))                      # no shared budget (CI): no slice named
+                @test r.code == 0 && !occursin("/$slice/", read(joinpath(dir, "record"), String))
+                rm(tf; force=true)
+            finally
+                run(ignorestatus(`systemctl --user stop $slice`))
+            end
+        end
     end
 
     @testset "tools/ci_status.sh and _ci_gate judge the previous push" begin

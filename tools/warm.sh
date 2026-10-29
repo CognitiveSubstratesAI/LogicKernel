@@ -583,9 +583,22 @@ _meta_check() {
 # over the budget the files are named and left to the branch-gate, which raises the budget (LOGICKERNEL_INERT_BUDGET_S).
 # One file at a time, so at most one extra julia beside the daemons. LOGICKERNEL_INERT_FILES replaces the
 # changed-file list: a TEST SEAM.
+# MEMORY (audit D-0242 item 2, A-0148): each run is its OWN scope, MemoryMax 3G (LOGICKERNEL_INERT_MEM_MAX), NESTED in
+# this checkout's lane slice (`_lane_slice`), run after the previous one and never beside the daemon's own file run
+# (these steps are sequential in one warm.sh process, which holds or respects the lane); a runaway test process is
+# killed and named, not the daemon. Each run's PEAK memory goes to the log (stdout, so into the branch-gate's).
 WARM_INERT_SKIP="test/test_static_analysis.jl test/test_gate_split.jl test/test_port_check.jl"
+# _lane_slice — the slice this checkout's daemon runs in (the second daemon's is lk-warm2.slice, `_start`); nothing
+# where the shared budget is off (CI) or user systemd is missing
+_lane_slice() {
+    _lk_budget_on || return 0
+    systemctl --user show-environment > /dev/null 2>&1 || return 0
+    if [ -n "${LOGICKERNEL_SLICE:-}" ]; then echo "$LOGICKERNEL_SLICE"
+    elif [ -f "$DIR/second" ]; then echo lk-warm2.slice
+    else echo lk-warm.slice; fi
+}
 _inert_check() {
-    local budget="${1:-120}" files f est=0 rc=0 n=0 log factor="${LOGICKERNEL_INERT_FACTOR:-3}"
+    local budget="${1:-120}" files f est=0 rc=0 prc n=0 log factor="${LOGICKERNEL_INERT_FACTOR:-3}"
     if [ -n "${LOGICKERNEL_INERT_FILES+x}" ]; then
         files="$LOGICKERNEL_INERT_FILES"
     else
@@ -610,11 +623,15 @@ _inert_check() {
     fi
     for f in $files; do
         log="$DIR/check_inert_$(basename "$f" .jl).log"
-        "$ROOT/tools/pkgtest_way.sh" "$f" > "$log" 2>&1 || {
+        LOGICKERNEL_INERT_SLICE="$(_lane_slice)" "$ROOT/tools/pkgtest_way.sh" "$f" > "$log" 2>&1
+        prc=$?                                   # one run at a time: the next starts when this one has ended
+        grep -h '^pkgtest_way: .* peak ' "$log"  # each process's PEAK memory, pass or fail: the branch-gate log carries it
+        if [ "$prc" -ne 0 ]; then
             rc=1
             echo "preflight: Pkg.test-way run FAILED — $f ($log)"
-            head -n 60 "$log"                    # the file's own failure lines first (pkgtest_way.sh), then the exception
-        }
+            # the file's own failure lines first (pkgtest_way.sh), then the exception; a KILLED run names its cap
+            grep -v '^pkgtest_way: .* peak ' "$log" | head -n 60
+        fi
         n=$(( n + 1 ))
     done
     [ "$rc" -ne 0 ] || echo "preflight: Pkg.test-way run clean ($n changed test files: no swipl, stdio to files, inert guard)"
