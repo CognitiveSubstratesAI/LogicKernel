@@ -187,6 +187,79 @@ const _TD_UNCHECKED_ALLOWED = Dict(
     end
 end
 
+# THE CONDITION SLOT ON A TERM TYPE WITH NO `Int64` PAYLOAD (D-0231; V9d decision 3): C_IFTHENELSE,
+# C_IFTHEN, C_FASTCOND, C_SOFTIF and C_SOFTCUT keep a choice point's position in a frame slot. It
+# was written as `mk_gnd(T, ::Int64)`, a `MethodError` on such a type (AV3-W4 found it through
+# findall/3 under MOD2), so every if-then-else failed there. The rows run each writer on the fixture
+# type `Term{Union{BigInt, Float64, String}}` (an integer is a `BigInt`, AV3-W4's), built as terms
+# and compiled: the type reads no integer from text. Expected: swipl 10.1.19, probed 2026-10-29
+# (the same goals from text; the fixture type itself cannot be given to swipl): 1, 2, 1, 1, 1, 1, 1.
+"Clause `td_t(X) :- body(X)` compiled on term type `T`; run it; return `X`'s term and the opcodes."
+function _td_cond_row(::Type{T}, body::Function) where {T}
+    LK = LogicKernel
+    gd = LK.PL_global_data{T}()
+    ld = LK.PL_local_data{T}(gd)
+    user = LK.MODULE_user(gd)
+    k = LK.fresh_var_keys!(4)
+    X, Y = mk_var(T, k), mk_var(T, k + UInt64(1))
+    h = mk_expr(T, T[mk_sym(T, :td_t), X])
+    pr = LK.lookupProcedure(mk_sym(T, :td_t), 1, user)
+    cl = LK.compileClause(gd, ld, h, body(X, Y), pr, user)
+    LK.assertDefinition!(gd, pr.definition, cl, LK.CL_END)
+    ops = Symbol[]
+    pc = LK.Code(cl, 1)
+    while pc.pc <= length(cl.codes)
+        push!(ops, LK.codeTable(LK.decode(pc)).name)
+        pc = LK.stepPC(pc)
+    end
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(T, k + UInt64(2)), LK.PutVarMap())
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, pr, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    ans = LK.export_cells(ld, LK.cell_export{T}(), -(a + 1))
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return rc, ans, ops
+end
+
+@testset "the condition slot holds a position on a term type with no Int64 payload (D-0231)" begin
+    TB = LogicKernel.Term{Union{BigInt, Float64, String}}
+    @test !LogicKernel._holds_payload(TB, Int64)
+    s(x) = mk_sym(TB, Symbol(x))
+    c(f, xs...) = mk_expr(TB, TB[s(f), xs...])
+    i(n) = mk_gnd(TB, big(n))
+    rows = [
+        ("( true -> X = 1 ; X = 2 )", :C_IFTHENELSE, 1,
+            (X, Y) -> c(";", c("->", s("true"), c("=", X, i(1))), c("=", X, i(2)))),
+        ("( fail -> X = 1 ; X = 2 )", :C_IFTHENELSE, 2,
+            (X, Y) -> c(";", c("->", s("fail"), c("=", X, i(1))), c("=", X, i(2)))),
+        ("( true -> X = 1 )", :C_IFTHEN, 1, (X, Y) -> c("->", s("true"), c("=", X, i(1)))),
+        ("Y = a, ( atom(Y) -> X = 1 ; X = 2 )", :C_FASTCOND, 1,
+            (X, Y) -> c(",", c("=", Y, s("a")),
+                c(";", c("->", c("atom", Y), c("=", X, i(1))), c("=", X, i(2))))),
+        ("( true *-> X = 1 ; X = 2 )", :C_SOFTIF, 1,
+            (X, Y) -> c(";", c("*->", s("true"), c("=", X, i(1))), c("=", X, i(2)))),
+        (
+            "\\+ fail, X = 1",
+            :C_NOT,
+            1,
+            (X, Y) -> c(",", c("\\+", s("fail")), c("=", X, i(1)))
+        ),
+        ("freeze(V, X = 1), V = a", :I_CALL, 1,
+            (X, Y) -> c(",", c("freeze", Y, c("=", X, i(1))), c("=", Y, s("a"))))
+    ]
+    for (goal, op, want, body) in rows
+        rc, ans, ops = _td_cond_row(TB, body)
+        ok = rc in (LogicKernel.PL_S_TRUE, LogicKernel.PL_S_LAST)
+        @test (goal, op in ops, ok) == (goal, true, true)
+        @test (goal, kind(ans) === GND && LogicKernel.gnd_value(ans) == want) ==
+            (goal, true)
+    end
+end
+
 # THE MANIFEST'S LIVE-METHOD FILTER (test/static_analysis_gates.jl `_current_method`; measured
 # 2026-10-14): a method Revise DELETED — the old signature of a re-signed function — is not live; a
 # live one is, and so is each method of an ambiguous pair (the gate must still check those).

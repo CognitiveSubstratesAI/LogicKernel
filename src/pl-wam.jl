@@ -3760,17 +3760,17 @@ function PL_next_solution_guarded(
     # ── the conditionals (pl-vmi.c), V9d ──────────────────────────────────────────────────────────
     # A condition keeps the choice point that was current when it started in a frame slot of its own
     # (upstream: `consTermRef(BFR)`, an offset on the local stack). Here the slot holds the choice
-    # point's POSITION (`base`) as an integer term, and `c_cut` compares positions, as
+    # point's POSITION (`base`) as a tagged integer WORD (`consInt`), stored as upstream
+    # stores its raw word (`varFrame(FR, *PC++) = …`, pl-vmi.c:2661/2728/2742/2991) and
+    # read with `valInt` (C_CUT, C_LCUT, C_SOFTCUT, C_LSCUT, C_DETTRUE): never a term, so
+    # it works on every term type, one with no `Int64` payload included (D-0231: the
+    # `mk_gnd(T, ::Int64)` it held before failed there). `c_cut` compares positions, as
     # `discardChoicesAfter` does (decision 3).
     # PORT: pl-vmi.c C_IFTHENELSE
     # DIVERGES: the slot's value (above).
     @label C_IFTHENELSE
-    setSlotValue!(
-        ld,
-        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
-        mk_gnd(
-            T, ld.choices[ld.BFR].base
-        )
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = consInt(
+        ld.choices[ld.BFR].base
     )                                               # == C_IFTHEN
     PC += 1
     @goto C_OR
@@ -3778,12 +3778,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c C_IFTHEN
     # DIVERGES: the slot's value (above).
     @label C_IFTHEN
-    setSlotValue!(
-        ld,
-        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
-        mk_gnd(
-            T, ld.choices[ld.BFR].base
-        )
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = consInt(
+        ld.choices[ld.BFR].base
     )
     PC += 1
     @goto next_instruction
@@ -3792,12 +3788,8 @@ function PL_next_solution_guarded(
     # DIVERGES: the slot's value (above); `LD->fast_condition` is an index (see `FASTCOND_FAILED`).
     # NOT PORTED: the `vmi_builtin=false` branch (only the debugger clears the flag).
     @label C_FASTCOND
-    setSlotValue!(
-        ld,
-        varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1,
-        mk_gnd(
-            T, ld.choices[ld.BFR].base
-        )
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = consInt(
+        ld.choices[ld.BFR].base
     )                                               # == C_IFTHEN
     cfc_skip = Int(PCc[PC + 1])
     PC += 2
@@ -3906,7 +3898,7 @@ function PL_next_solution_guarded(
     # DIVERGES: the slot holds a POSITION (see `C_IFTHENELSE`) — here `lTop`, where `C_OR` is about
     # to make the condition's choice point.
     @label C_SOFTIF
-    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, mk_gnd(T, ld.lTop))  # see C_SOFTCUT
+    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = consInt(ld.lTop) # C_SOFTCUT
     PC += 1
     @goto C_OR
 
@@ -3924,18 +3916,14 @@ function PL_next_solution_guarded(
         if ld.choices[sc_bfr].base == sc_ref        # bfr == ch
             ld.choices[sc_bfr].unlinked = true
             ld.BFR = ld.choices[sc_bfr].parent
-            setSlotValue!(ld, sc_slot, mk_gnd(T, -ld.choices[ld.BFR].base))
+            ld.slots[sc_slot] = consInt(-ld.choices[ld.BFR].base)   # -consTermRef(BFR)
         else
             while sc_bfr != 0 && ld.choices[sc_bfr].base >= sc_ref      # for(; bfr >= ch; …)
                 sc_par = ld.choices[sc_bfr].parent
                 if sc_par != 0 && ld.choices[sc_par].base == sc_ref     # bfr->parent == ch
                     ld.choices[sc_par].unlinked = true
                     ld.choices[sc_bfr].parent = ld.choices[sc_par].parent
-                    setSlotValue!(
-                        ld, sc_slot, mk_gnd(
-                            T, -ld.choices[ld.choices[sc_par].parent].base
-                        )
-                    )
+                    ld.slots[sc_slot] = consInt(-ld.choices[ld.choices[sc_par].parent].base)
                     break
                 end
                 sc_bfr = sc_par
