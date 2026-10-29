@@ -474,6 +474,7 @@ mutable struct write_options{T}
     portray_goal::term_t            # call/2 activated portray hook
     write_options::term_t           # original write options
     prec_opt::term_t                # term in write options with prec
+    attvars::term_t                 # attvars whose attributes we write (upstream fix ace539d7, BP2)
     gd::PL_global_data{T}
     ld::PL_local_data{T}
     frames::Vector{wframe{T}}       # (writeTerm's stack)
@@ -497,7 +498,7 @@ function write_options(
     gd::PL_global_data{T}, ld::PL_local_data{T}, out::IOSTREAM
 )::write_options{T} where {T}
     return write_options{T}(
-        0, 0, 0, -1, false, "~d", "~h", :standard, MODULE_user(gd), out, 0, 0, 0, gd, ld,
+        0, 0, 0, -1, false, "~d", "~h", :standard, MODULE_user(gd), out, 0, 0, 0, 0, gd, ld,
         wframe{T}[], wsub(0, 0, 0), 0,
         sym_key(mk_sym(T, Symbol("{}"))), sym_key(mk_sym(T, Symbol("[|]"))),
         sym_key(mk_sym(T, Symbol(","))), sym_key(mk_sym(T, Symbol("|"))),
@@ -1060,7 +1061,24 @@ function _wr_is_att3(ld::PL_local_data{T}, t::term_t, att3::word)::Bool where {T
     return k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == att3
 end
 
+# ORIGINAL (BP2): pl-write.c `writing_attvar`, a function upstream fix ace539d7 added to the pin cbf4e189 (a named
+# backport): whether `av` is in the list `attvars` of the attributed variables whose attributes are being written.
+"True if we are writing the attributes of `av`, i.e., `av` is in the list `attvars` (0: none)."
+function writing_attvar(ld::PL_local_data, av::term_t, attvars::term_t)::Bool
+    attvars == 0 && return false
+    l = PL_copy_term_ref(ld, attvars)
+    l == 0 && return false
+    h = PL_new_term_ref(ld)
+    h == 0 && return false
+    while PL_get_list(ld, l, h, l)
+        PL_compare(ld, h, av) == 0 && return true
+    end
+    return false
+end
+
 # PORT: pl-write.c writeAttVar
+# The pin cbf4e189 plus upstream fix ace539d7 (BP2, a named backport): an attributed variable met while its own
+# attributes are written is written as its name; the foreign frame is closed if writing the attributes fails.
 # DIVERGES: `attributes(portray)` (`'$attvar':portray_attvar/1`, pl-write.c:1022-1047) needs
 # format/2 (AV10, row wr05): refused (`NotPortedError`) instead of called.
 "Write the attributed variable term reference `av` holds: its name, then `{...}` per the `attributes` option (pl-write.c)."
@@ -1072,13 +1090,27 @@ function writeAttVar(av::term_t, options::write_options{T})::Bool where {T}
                Putc(Int('}'), options.out)
     elseif _ison(options, PL_WRT_ATTVAR_WRITE)
         fid = PL_open_foreign_frame(ld)
-        Sputcode(Int('{'), options.out)                     # Sputcode('{', options->out)
+        fid == 0 && return false
+        outer = options.attvars
+        rc = writing_attvar(ld, av, outer)
+        if rc
+            PL_close_foreign_frame(ld, fid)                 # cycle: name only
+            return true
+        end
+
         a = PL_new_term_ref(ld)
-        PL_get_attr(ld, av, a)
-        writeAttributes(a, 1200, options, W_TOP) || return false
-        Sputcode(Int('}'), options.out)                     # Sputcode('}', options->out)
+        attvars = PL_new_term_ref(ld)
+        if a != 0 && attvars != 0 && PL_get_attr(ld, av, a) &&
+            (outer != 0 ? PL_put_term(ld, attvars, outer) : PL_put_nil(ld, attvars)) &&
+            PL_cons_list(ld, attvars, av, attvars)
+            options.attvars = attvars
+            rc =
+                Putc(Int('{'), options.out) && writeAttributes(a, 1200, options, W_TOP) &&
+                Putc(Int('}'), options.out)
+            options.attvars = outer
+        end
         PL_close_foreign_frame(ld, fid)
-        return true
+        return rc
     elseif _ison(options, PL_WRT_ATTVAR_PORTRAY)
         throw(
             NotPortedError{T}(
