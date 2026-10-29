@@ -37,7 +37,13 @@ TB = ["test/db/test_assert_swipl.jl"]
 TL = ["test/db/test_clause_swipl.jl"]
 TR = ["test/db/test_retractall_swipl.jl"]
 RUN = TS + TC + TK + TF                              # run-loop context paths: every transparent stand-in reaches them
-TARGETS = TS + TD + TC + TK + TF + TA + TQ + TW + TP + TB + TL + TR   # the baseline's (mutate_ci.py plan reads TARGETS)
+# the standard streams (c36's fix, D-0245): the step's own file first, then every file that reaches initIO or
+# restoreStandardStream through a standard stream alias (D-0238)
+TSTD = ["test/files/test_open_close_swipl.jl", "test/core_lang/test_blob.jl", "test/core_text/test_write_family_swipl.jl",
+        "test/foreign/test_exceptions_swipl.jl", "test/core_lang/test_context_module_swipl.jl",
+        "test/core_text/test_read_positions_swipl.jl", "test/core_text/test_canonical_readatom_swipl.jl",
+        "test/core_lang/test_write_cells.jl", "test/core_lang/test_numbervars_cells.jl"]
+TARGETS = TS + TD + TC + TK + TF + TA + TQ + TW + TP + TB + TL + TR + [t for t in TSTD if t not in TS]   # the baseline's (mutate_ci.py plan reads TARGETS)
 W = "src/pl-wam.jl"
 I = "src/pl-incl.jl"
 M = "src/pl-modul.jl"
@@ -45,6 +51,7 @@ F = "src/pl-fli.jl"
 E = "src/pl-ext.jl"
 P = "src/pl-proc.jl"
 A = "src/pl-attvar.jl"
+O = "src/os/pl-file.jl"
 MUTANTS = [
     # ── pl-wam.c contextModule, setContextModule ──
     dict(id="MOD2-C1 contextModule ignores FR_CONTEXT: a transparent frame's context is never read (KILL c02, c03, c05, c08, wb)", file=W, targets=RUN,
@@ -144,4 +151,17 @@ MUTANTS = [
     dict(id="MOD2-FX1 D-0231: C_IFTHENELSE writes its slot as mk_gnd(T, ::Int64) again (KILL test_type_discipline: the D-0231 rows on Term{Union{BigInt, Float64, String}} — MethodError; EQUIVALENT on the reference type, the same word)", file=W, targets=TD + TA,
          old="    @label C_IFTHENELSE\n    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = consInt(\n        ld.choices[ld.BFR].base\n    )                                               # == C_IFTHEN\n",
          new="    @label C_IFTHENELSE\n    setSlotValue!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1, mk_gnd(T, ld.choices[ld.BFR].base))\n"),
+    # ── the standard streams (c36's fix, D-0245): pl-stream.c S__iob0's file descriptor whatever Base.stdX is ──
+    dict(id="MOD2-ST1 _std_io always takes the file descriptor: a holdable Base.stdX is not the stream's own IO (KILL test_open_close_swipl.jl: s.handle.io === io)", file=O, targets=TSTD,
+         old="    io isa Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint} && return io\n    return fdio(fd, false)\n",
+         new="    return fdio(fd, false)\n"),
+    dict(id="MOD2-ST2 _std_io's fallback gives no IO: an unholdable Base.stdX leaves no standard stream (KILL test_open_close_swipl.jl: the IOContext stderr rows)", file=O, targets=TSTD,
+         old="    return fdio(fd, false)\n",
+         new="    return nothing\n"),
+    dict(id="MOD2-ST3 initIO's user_error over file descriptor 1 (KILL test_open_close_swipl.jl: user_error is <fd 2>)", file=O, targets=TSTD,
+         old="    serr = _std_stream(_std_io(Base.stderr, 2), ",
+         new="    serr = _std_stream(_std_io(Base.stderr, 1), "),
+    dict(id="MOD2-ST4 restoreStandardStream wraps Base.stderr itself again (KILL test_open_close_swipl.jl: restoreStandardStream under an IOContext stderr)", file=O, targets=TSTD,
+         old="        _std_stream(_std_io(Base.stderr, 2), SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)\n    else",
+         new="        _std_stream(Base.stderr, SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)\n    else"),
 ]

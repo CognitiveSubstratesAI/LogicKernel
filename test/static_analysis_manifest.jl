@@ -2213,6 +2213,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # R1e — the write/1 family: the standard streams over the process's IO, option tables
     (LK._std_stream, Tuple{IOBuffer, UInt32}, false),
     (LK._std_stream, Tuple{IOStream, UInt32}, false),
+    # MOD2 (c36, D-0245): the process's IO, or the file descriptor when the stream layer cannot hold it (pl-stream.c S__iob0)
+    (LK._std_io, Tuple{IOStream, Int64}, false),
+    (LK._std_io, Tuple{IOContext{IOStream}, Int64}, false),
     (LK.HAS_OPT_MODE, Tuple{Int64, Int64}, true),
     (LK.PL_option_t, Tuple{Symbol, Int64}, false),
     (LK.Sopen_string, Tuple{Vector{UInt8}, Int64, String}, false),

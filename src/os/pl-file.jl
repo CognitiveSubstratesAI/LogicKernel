@@ -148,32 +148,41 @@ function standardStreamIndexFromStream(ld::PL_local_data, s::IOSTREAM)::Int
     return -1
 end
 
-# A standard stream over the process's `io` with `flags` (pl-stream.c `S__iob0`), or `nothing` when
-# the IO is none the stream layer can hold (`Sjulia_io`): `SIO_ISATTY` only on a terminal
+# A standard stream over `io` with `flags` (pl-stream.c `S__iob0`): `SIO_ISATTY` only on a terminal
 # (pl-stream.c `SinitStreams`).
-function _std_stream(io::IO, flags::UInt32)::Union{Nothing, IOSTREAM}
-    io isa Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint} || return nothing
+function _std_stream(
+    io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}, flags::UInt32
+)::IOSTREAM
     io isa Base.TTY || (flags &= ~SIO_ISATTY)
     return Snew(Sjulia_io(io, false), flags, Siofunctions)
+end
+
+# PORT: pl-stream.c S__iob0 as _std_io
+# DIVERGES: the process's Julia IO `io` (Base.stdin, stdout or stderr) when it is one the stream layer
+# holds (`Sjulia_io`); any other (a runner's wrapper) gives way to the OS file descriptor `fd` itself
+# (`fdio`, not owned): upstream's standard stream `n` is file descriptor `n` whatever it is
+# (cbf4e189 pl-stream.c:4479-4492, `STDIO(n, f)`: `.handle = (void *)(n)`).
+"The IO standard stream `fd` (0, 1 or 2) reads or writes: `io`, or the file descriptor `fd` (pl-stream.c)."
+function _std_io(io::IO, fd::Int)::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}
+    io isa Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint} && return io
+    return fdio(fd, false)
 end
 
 # PORT: pl-file.c initIO
 # DIVERGES: per local data, the FIRST TIME a standard stream is asked for (a new local data opens no
 # stream; the host may replace them, `set_standard_stream!`), where upstream opens them at start-up:
 # `Sinput`, `Soutput` and `Serror` (pl-stream.c `S__iob0`'s flags: line-buffered input and output,
-# an unbuffered error stream) over Julia's stdin, stdout and stderr; the three share `Sinput`'s
+# an unbuffered error stream) over Julia's stdin, stdout and stderr (`_std_io`); the three share `Sinput`'s
 # position record, as upstream. No tty modes, no protocol stream (`Sprotocol` stays NULL), no stream
 # contexts or alias table (the aliases are `standardStreams`).
 "Open the standard streams of `ld` over the process's stdin, stdout and stderr (pl-file.c)."
 function initIO(ld::PL_local_data)::Nothing
-    sin = _std_stream(Base.stdin, SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)
-    sout = _std_stream(Base.stdout, SIO_STDIO | SIO_LBUF | SIO_OUTPUT | SIO_REPPLU)
-    serr = _std_stream(Base.stderr, SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)
-    if sin !== nothing
-        sin.position = sin.posbuf                   # position logging
-        sout === nothing || (sout.position = sin.posbuf)
-        serr === nothing || (serr.position = sin.posbuf)
-    end
+    sin = _std_stream(_std_io(Base.stdin, 0), SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)
+    sout = _std_stream(_std_io(Base.stdout, 1), SIO_STDIO | SIO_LBUF | SIO_OUTPUT | SIO_REPPLU)
+    serr = _std_stream(_std_io(Base.stderr, 2), SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)
+    sin.position = sin.posbuf                       # position logging
+    sout.position = sin.posbuf
+    serr.position = sin.posbuf
 
     ld.IO_streams[SNO_USER_INPUT + 1] = sin         # Suser_input  = Sinput
     ld.IO_streams[SNO_USER_OUTPUT + 1] = sout       # Suser_output = Soutput
@@ -665,11 +674,11 @@ end
 "Put a standard stream back as standard stream number `i` after its stream was closed (pl-file.c)."
 function restoreStandardStream(ld::PL_local_data, i::Int)::Union{Nothing, IOSTREAM}
     s = if i == SNO_USER_INPUT || i == SNO_CURRENT_INPUT
-        _std_stream(Base.stdin, SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)
+        _std_stream(_std_io(Base.stdin, 0), SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)
     elseif i == SNO_USER_OUTPUT || i == SNO_CURRENT_OUTPUT
-        _std_stream(Base.stdout, SIO_STDIO | SIO_LBUF | SIO_OUTPUT | SIO_REPPLU)
+        _std_stream(_std_io(Base.stdout, 1), SIO_STDIO | SIO_LBUF | SIO_OUTPUT | SIO_REPPLU)
     elseif i == SNO_USER_ERROR
-        _std_stream(Base.stderr, SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)
+        _std_stream(_std_io(Base.stderr, 2), SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)
     else
         nothing
     end

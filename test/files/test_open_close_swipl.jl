@@ -986,10 +986,7 @@ end
         @test (fl & LK.SIO_INPUT) != 0 && (fl & LK.SIO_TEXT) != 0
 
         # the standard streams are flushed, never closed, by close/1 and close(S, [force(true)])
-        # the standard streams over buffers of the test's own: what Julia's stdout is (a file, a pipe, a terminal, or
-        # a wrapper the runner puts there) decides whether initIO can wrap it, and CI's runner differs from the warm lane's
-        LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, IOBuffer())
-        LK.set_standard_stream!(ld, LK.SNO_USER_ERROR, IOBuffer())
+        LK._initIO(ld)
         uo, ue = LK.Suser_output(ld), LK.Suser_error(ld)
         @test uo isa LK.IOSTREAM && ue isa LK.IOSTREAM
         for which in (:user_output, :user_error)
@@ -1016,5 +1013,50 @@ end
         @test st === :true && LK.Scurout(ld) === LK.Suser_output(ld)
     finally
         rm(dir; recursive=true, force=true)
+    end
+end
+
+# The standard streams over whatever Julia's stdin, stdout and stderr are (MOD2's CI red, D-0245: under CI's Pkg.test
+# user_error did not exist, `existence_error(stream, user_error)`): upstream's standard stream n is file descriptor n
+# whatever it is (pl-stream.c S__iob0). stream_property/2 is not ported: the alias is reached through nl/1, which
+# resolves it as every stream argument does (get_stream_handle), and white-box through get_stream_handle itself.
+@testset "the standard streams exist whatever Base.stdin/stdout/stderr are; nl(user_error) finds its stream" begin
+    @info "the process's stdio" typeof(Base.stdin) typeof(Base.stdout) typeof(Base.stderr)
+    nl_on(gd, ld, a::Symbol) = first(kcall(gd, ld, "nl", _TL[_tls(a)]))
+    # the process's own stdio, as the runner left it
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    @test nl_on(gd, ld, :user_error) === :true
+    @test nl_on(gd, ld, :user_output) === :true
+    for (which, io) in enumerate((Base.stdin, Base.stdout, Base.stderr))
+        s = ld.IO_streams[which]
+        @test s isa LK.IOSTREAM
+        @test LK.get_stream_handle(ld, _tls(LK.standardStreams[which]), LK.SH_ALIAS) === s
+        # an IO the stream layer holds is the stream's own IO; any other gives way to the file descriptor
+        if io isa Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}
+            @test s.handle.io === io
+        else
+            @test s.handle.io isa IOStream && s.handle.io.name == "<fd $(which - 1)>"
+        end
+    end
+    # a Base.stderr of a type the stream layer cannot hold (a wrapper, as a runner may put there): user_error is the
+    # OS file descriptor 2 itself, never an existence error
+    old = Base.stderr
+    setglobal!(Base, :stderr, IOContext(old, :lk_test => true))
+    try
+        @test !(Base.stderr isa Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint})
+        gd2 = LK.PL_global_data{_TL}()
+        ld2 = LK.PL_local_data{_TL}(gd2)
+        @test nl_on(gd2, ld2, :user_error) === :true
+        s = LK.Suser_error(ld2)
+        @test s isa LK.IOSTREAM && LK.get_stream_handle(ld2, _tls(:user_error), LK.SH_ALIAS) === s
+        @test s.handle isa LK.Sjulia_io && s.handle.io isa IOStream && s.handle.io.name == "<fd 2>"
+        @test (s.flags & LK.SIO_ISATTY) == 0 && (s.flags & LK.SIO_NBUF) != 0
+        # a standard stream put back after its stream was closed (restoreStandardStream) is file descriptor 2 too
+        r = LK.restoreStandardStream(ld2, LK.SNO_USER_ERROR)
+        @test r isa LK.IOSTREAM && r === LK.Suser_error(ld2) && r !== s
+        @test r.handle.io isa IOStream && r.handle.io.name == "<fd 2>"
+    finally
+        setglobal!(Base, :stderr, old)
     end
 end
