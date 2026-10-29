@@ -222,7 +222,9 @@ function chainPredicateSupervisor(
         if (def.flags & P_SSU_DET) != 0
             push!(codes, S_SSU_DET)                 # addBuffer(&buf, encode(S_SSU_DET), code)
         end
-        if meta                                     # ison(def, P_META) && ison(def, P_TRANSPARENT)
+        if meta && def.arity > 0                    # ison(def, P_META) && ison(def, P_TRANSPARENT)
+            # (`def.arity > 0`: an arity-0 predicate has no masks, `impl_clauses.args === nothing`;
+            # upstream's loop runs zero times there)
             loffset = -1
             args = def.impl_clauses.args::Vector{arg_info}
             for i in 0:(def.arity - 1)

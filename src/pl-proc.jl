@@ -1285,7 +1285,7 @@ end
 
 # PORT: pl-proc.c meta_declaration
 # DIVERGES: `ReadingSource` (a declaration while a file loads) needs `setMetapredicateSource`, the
-# loader's (pl-srcfile.c; LB): refused by name until then (dispatcher decision, MOD4). The masks are a
+# loader's (pl-srcfile.c; LB2): refused by name until then (A-0149 decision 2, accepted D-0246). The masks are a
 # vector, where upstream's are on the C stack.
 "Declare the meta-argument (`ismeta`) or mode masks of the predicate `spec` names (pl-proc.c)."
 function meta_declaration(
@@ -1338,7 +1338,7 @@ function meta_declaration(
     if ReadingSource(ld)
         throw(
             NotPortedError{T}(
-                name, "meta_predicate/1 while loading a file (setMetapredicateSource)", "LB"
+                name, "meta_predicate/1 while loading a file (setMetapredicateSource)", "LB2"
             )
         )
     end
@@ -1670,12 +1670,12 @@ const PL_predicates_from_proc = (
         "\$set_predicate_attribute", 3, pl_set_predicate_attribute3_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
+    PL_extension(                                   # (pl-proc.c:4372, since MOD4)
+        "meta_predicate", 1, pl_meta_predicate1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension("mode", 1, pl_mode1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),  # (pl-proc.c:4373)
     PL_extension(
         "retract", 1, pl_retract1_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
-    ),
-    PL_extension(
-        "meta_predicate", 1, pl_meta_predicate1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
-    ),                                              # (MOD4)
-    PL_extension("mode", 1, pl_mode1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)  # (MOD4)
+    )
 )

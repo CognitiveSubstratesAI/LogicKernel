@@ -400,6 +400,40 @@ function PL_get_integer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} wh
     return nothing
 end
 
+# PORT: pl-fli.c PL_get_uint
+# (pl-fli.c:2027-2039 at the pin, since MOD4)
+# DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS, as
+# `PL_get_integer` above.
+"The C `unsigned int` term reference `t` holds — a tagged integer in `0..UINT_MAX` — or `nothing` (pl-fli.c)."
+function PL_get_uint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_VALUE && isTaggedIntW(w)                     # isTaggedInt(w)
+        val = valInt(w)
+        (val < 0 || val > typemax(UInt32)) && return nothing   # val < 0 || val > UINT_MAX
+        return Int(val)
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_cvt_i_uint
+# (pl-fli.c:1252-1263 at the pin, since MOD4)
+# DIVERGES: returns the value, or `nothing` after the error, where upstream writes it through `c`;
+# `PL_representation_error("uint")` is its `PL_error(..., ERR_REPRESENTATION, ATOM uint)` (pl-error.c:866-872).
+"""
+The C `unsigned int` term reference `t` holds, or `nothing` after raising `representation_error(uint)`
+(an integer out of range) or `type_error(integer, T)` (pl-fli.c).
+"""
+function PL_cvt_i_uint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    c = PL_get_uint(ld, t)
+    c === nothing || return c                               # if ( PL_get_uint(t, c) ) return true
+    if PL_is_integer(ld, t)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :uint))  # PL_representation_error("uint")
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return nothing
+end
+
 # PORT: pl-fli.c PL_get_long
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; on the WORDS
 # (`valHandle(t)`, `_deref_loc`, L1d step 7a): a tagged integer its value (a `long` is 64 bits: in
