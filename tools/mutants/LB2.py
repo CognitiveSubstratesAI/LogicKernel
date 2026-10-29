@@ -200,4 +200,80 @@ MUTANTS = [
          new='''        if arity < -1
             PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
             return (mk_nil(T), -1)'''),
+    dict(id="LB2-49 nth_clause by reference counts from 0", file="src/pl-comp.jl", targets=N,
+         old='''            i = 1
+            cref = def.impl_clauses.first_clause
+            while cref !== nothing
+                if cref.clause === clause''',
+         new='''            i = 0
+            cref = def.impl_clauses.first_clause
+            while cref !== nothing
+                if cref.clause === clause'''),
+    dict(id="LB2-50 nth_clause by reference counts erased clauses too", file="src/pl-comp.jl", targets=N,
+         old='''visibleClauseCNT(cref.clause::Clause{T}, generation) && (i += 1)''',
+         new='''(i += 1)'''),
+    dict(id="LB2-51 nth_clause accepts an erased reference", file="src/pl-comp.jl", targets=N,
+         old='''if rc == 1                                          # PL_get_clref(ref, &clause) == true''',
+         new='''if rc != 0'''),
+    dict(id="LB2-52 nth_clause does not skip invisible first clauses", file="src/pl-comp.jl", targets=N,
+         old='''        while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+            cref = cref.next
+        end
+        if cref === nothing
+            popPredicateAccess!(ld, def)
+            return FFALSE''',
+         new='''        if cref === nothing
+            popPredicateAccess!(ld, def)
+            return FFALSE'''),
+    dict(id="LB2-53 nth_clause with an index is not 0-based", file="src/pl-comp.jl", targets=N,
+         old='''i -= 1                                          # 0-based''',
+         new='''i -= 0'''),
+    dict(id="LB2-54 nth_clause with an index stops one clause early", file="src/pl-comp.jl", targets=N,
+         old='''while i > 0 && cref !== nothing''',
+         new='''while i > 1 && cref !== nothing'''),
+    dict(id="LB2-55 nth_clause with an index answers a clause past the end or before the start", file="src/pl-comp.jl", targets=N,
+         old='''if i == 0 && cref !== nothing''',
+         new='''if cref !== nothing'''),
+    dict(id="LB2-56 nth_clause enumeration starts at index 0", file="src/pl-comp.jl", targets=N,
+         old='''pool.states[k].key = word(1)                        # cr->index = 1''',
+         new='''pool.states[k].key = word(0)'''),
+    dict(id="LB2-57 nth_clause enumeration counts by two", file="src/pl-comp.jl", targets=N,
+         old='''cr.key = word(Int(cr.key) + 1)                      # cr->index++''',
+         new='''cr.key = word(Int(cr.key) + 2)'''),
+    dict(id="LB2-58 nth_clause enumeration answers the index minus one", file="src/pl-comp.jl", targets=N,
+         old='''PL_unify_integer(ld, n, Int(cr.key))''',
+         new='''PL_unify_integer(ld, n, Int(cr.key) - 1)'''),
+    dict(id="LB2-59 nth_clause does not free its state after the last answer", file="src/pl-comp.jl", targets=N,
+         old='''free_foreign_state!(pool, k)                            # freeForeignState(cr, sizeof(*cr))''',
+         new='''nothing'''),
+    dict(id="LB2-60 nth_clause does not pop the predicate access after the last answer", file="src/pl-comp.jl", targets=N,
+         old='''    free_foreign_state!(pool, k)                            # freeForeignState(cr, sizeof(*cr))
+    popPredicateAccess!(ld, def)
+    return FTRUE''',
+         new='''    free_foreign_state!(pool, k)                            # freeForeignState(cr, sizeof(*cr))
+    return FTRUE'''),
+    dict(id="LB2-61 nth_clause cut does not pop the predicate access", file="src/pl-comp.jl", targets=N,
+         old='''            popPredicateAccess!(ld, def)
+            free_foreign_state!(pool, k)
+        end
+        return FTRUE''',
+         new='''            free_foreign_state!(pool, k)
+        end
+        return FTRUE'''),
+    dict(id="LB2-62 nth_clause redo enumerates in the current generation", file="src/pl-comp.jl", targets=N,
+         old='''        def = ((pool.states[k].cref::ClauseRef{T}).clause::Clause{T}).predicate
+        generation = generationFrame(ld.frames[fr])''',
+         new='''        def = ((pool.states[k].cref::ClauseRef{T}).clause::Clause{T}).predicate
+        generation = global_generation(gd)'''),
+    dict(id="LB2-63 nth_clause does not record the generation in the frame", file="src/pl-comp.jl", targets=N,
+         old='''ld.frames[fr].generation = generation               # setGenerationFrameVal(environment_frame, generation)''',
+         new='''nothing'''),
+    dict(id="LB2-64 nth_clause by reference, a module that is no super module is accepted", file="src/pl-comp.jl", targets=N,
+         old='''(cm === nothing || !isSuperModule(gd.modules, m, cm)) && return false''',
+         new='''cm === nothing && return false'''),
+    dict(id="LB2-65 nth_clause by reference, a bound head of another predicate is accepted", file="src/pl-comp.jl", targets=N,
+         old='''        unify_functor(ld, h, def, how) || return false
+        thehead != 0 && PL_put_term(ld, thehead, h)''',
+         new='''        unify_functor(ld, h, def, how)
+        thehead != 0 && PL_put_term(ld, thehead, h)'''),
 ]

@@ -3744,6 +3744,119 @@ function pl_ruleva_va(
     return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_RULE)
 end
 
+# PORT: pl-comp.c nth_clause as pl_nth_clause3_va
+# (PRED_IMPL("nth_clause", 3, nth_clause, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); the table's PRED_DEF flags META|NDET, pl-comp.c:9276, win)
+# DIVERGES: the state `Cref` (`clause`, `index`) is a record of `ld.clause_contexts` (clause/2's pool, a `clause_choice`): its
+# `cref` is `Cref.clause`, its `key` word holds `Cref.index`, and its pool index is the `REDO_PTR` context (design D3).
+# `contextModule(LD->environment)` (unify_definition's context) is `user` (until MOD2, as clause/2's). `acquire_def`/`release_def`
+# are no-ops here (no clause GC thread). The return values of the two final unifications are IGNORED, as upstream's (so
+# `nth_clause(p(_), a, R)` still enumerates and binds `R`).
+"`nth_clause(?Pred, ?Index, ?Ref)` (pl-comp.c): `Ref` is the `Index`th visible clause of `Pred`, in either direction, one per answer."
+function pl_nth_clause3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pool = ld.clause_contexts
+    fr = ld.environment_frame
+    p, n, ref = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ctl = PL_foreign_control(PL__ctx)
+
+    if ctl == FRG_CUTTED                                    # if ( CTX_CNTRL == PL_PRUNED )
+        k = PL_foreign_context_address(PL__ctx)             # cr = CTX_PTR
+        if k != 0
+            def = ((pool.states[k].cref::ClauseRef{T}).clause::Clause{T}).predicate
+            popPredicateAccess!(ld, def)
+            free_foreign_state!(pool, k)
+        end
+        return FTRUE
+    end
+
+    if !PL_is_variable(ld, ref)
+        rc, clause = PL_get_clref(gd, ld, ref)
+        if rc == 1                                          # PL_get_clref(ref, &clause) == true
+            clause = clause::Clause{T}
+            (clause.flags & GOAL_CLAUSE) != 0 && return FFALSE   # I do not belong to a predicate
+            def = clause.predicate
+            dref = pushPredicateAccessObj!(ld, gd, def)
+            generation = dref.generation
+            i = 1
+            cref = def.impl_clauses.first_clause
+            while cref !== nothing
+                if cref.clause === clause
+                    ok = PL_unify_integer(ld, n, i) &&
+                        unify_definition(gd, ld, MODULE_user(gd), p, def, 0, 0)
+                    popPredicateAccess!(ld, def)
+                    return ok ? FTRUE : FFALSE
+                end
+                visibleClauseCNT(cref.clause::Clause{T}, generation) && (i += 1)
+                cref = cref.next
+            end
+            popPredicateAccess!(ld, def)
+        end
+        return FFALSE
+    end
+
+    if ctl == FRG_FIRST_CALL
+        proc = get_procedure_find(gd, ld, p)                # get_procedure(p, &proc, 0, GP_FIND)
+        (proc === nothing || (proc.definition.flags & P_FOREIGN) != 0) && return FFALSE
+        def = proc.definition                               # getProcDefinition(proc)
+        dref = pushPredicateAccessObj!(ld, gd, def)
+        generation = dref.generation
+        cref = def.impl_clauses.first_clause
+        while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+            cref = cref.next
+        end
+        if cref === nothing
+            popPredicateAccess!(ld, def)
+            return FFALSE
+        end
+
+        i = PL_get_integer(ld, n)
+        if i !== nothing                                    # proc and n specified
+            i -= 1                                          # 0-based
+            while i > 0 && cref !== nothing
+                cref = cref.next
+                while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+                    cref = cref.next
+                end
+                i -= 1
+            end
+            popPredicateAccess!(ld, def)
+            if i == 0 && cref !== nothing
+                return PL_unify_clref(gd, ld, ref, cref.clause::Clause{T}) ? FTRUE : FFALSE
+            end
+            return FFALSE
+        end
+
+        k = alloc_foreign_state!(pool)                      # cr = allocForeignState(sizeof(*cr))
+        pool.states[k].cref = cref
+        pool.states[k].key = word(1)                        # cr->index = 1
+        ld.frames[fr].generation = generation               # setGenerationFrameVal(environment_frame, generation)
+    else
+        k = PL_foreign_context_address(PL__ctx)             # cr = CTX_PTR
+        def = ((pool.states[k].cref::ClauseRef{T}).clause::Clause{T}).predicate
+        generation = generationFrame(ld.frames[fr])
+    end
+
+    cr = pool.states[k]
+    PL_unify_integer(ld, n, Int(cr.key))
+    PL_unify_clref(gd, ld, ref, (cr.cref::ClauseRef{T}).clause::Clause{T})
+
+    cref = (cr.cref::ClauseRef{T}).next
+    while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+        cref = cref.next
+    end
+    if cref !== nothing
+        cr.cref = cref
+        cr.key = word(Int(cr.key) + 1)                      # cr->index++
+        return PL_retry_address(k)                          # ForeignRedoPtr(cr)
+    end
+
+    free_foreign_state!(pool, k)                            # freeForeignState(cr, sizeof(*cr))
+    popPredicateAccess!(ld, def)
+    return FTRUE
+end
+
 # ── assert/1, assertz/1, asserta/1 (pl-comp.c) ───────────────────────────────────────────────
 # PORT: pl-comp.c is_neck
 # DIVERGES: returns `(neck, flags)` where upstream returns the Boolean and writes `*flags` through a
@@ -4197,7 +4310,10 @@ const PL_predicates_from_comp = (
     ),
     PL_extension(                                   # PRED_SHARE("$rule", 3, rule, META|NDET|PL_FA_CREF) (D1)
         "\$rule", 3, pl_ruleva_va,
-        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS,
+    PL_extension(                                   # PRED_DEF("nth_clause", 3, nth_clause, META|NDET)
+        "nth_clause", 3, pl_nth_clause3_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     )
 )
 

@@ -5444,11 +5444,16 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   `type_error(predicate_indicator, _)`) and `get_procedure_namearity(gd, ld, descr, context, how)` (`GP_FIND`/`GP_FINDHERE`, `GP_EXISTENCE_ERROR`), which `$end_aux/2` also uses
   through `get_procedure_find_namearity`; a qualifier naming no module CREATES it (PL_strip_module, as swipl: measured). DIVERGES: the unqualified context is `user`
   (transparent `contextModule` not ported). `$end_aux`'s row a16 pins the resolution via the default import.
-- **Still to come in LB2:** `nth_clause/3`, `'$get_clause_attribute'/3`, thread_local;
+- **`nth_clause/3`** (pl-comp.c:7527; `pl_nth_clause3_va`, rows n01-n39): three ways in: a bound reference (`PL_get_clref` must answer `true`, so an ERASED reference fails; the index
+  counts the visible clauses before it in the generation of the call; `unify_definition` with the head, whose BOUND-head branch is now ported: a `M:` qualifier must be the
+  definition's module or one it is a super module of, the functor must match), a bound index (the nth visible clause), or the enumeration (state = a record of clause/2's pool,
+  `cref` and the index in the `key` word; the generation is kept in the frame; DIVERGES: `contextModule` is `user`). The results of the two final unifications are IGNORED as upstream's,
+  so `nth_clause(p(_), a, R)` enumerates and binds `R` (row n06). The foreign-predicate check is kept though the kernel's foreign definition has no clause list.
+- **Still to come in LB2:** `'$get_clause_attribute'/3`, thread_local;
   modules L3 (`exportProcedureSource`, pl-srcfile.c:1427) and L4 (`setMetapredicateSource`, :1334) wait for MOD4 (`exportProcedure` and
   `setMetapredicateMask` do not exist on this base); with them MOD4's `meta_declaration` ReadingSource refusal is replaced by upstream's branch (D-0246).
 
-Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28); mutants: tools/mutants/LB2.py.
+Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28, nth_clause/3 rows n01-n39); mutants: tools/mutants/LB2.py.
 
 ## Still to come
 
