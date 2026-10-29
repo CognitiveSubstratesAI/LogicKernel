@@ -40,9 +40,9 @@ function enc(t::_TL, seen::Vector{UInt64}=UInt64[])::String
 end
 
 
-# q1..q20/1: dynamic, three facts each (a, b, c); a row that changes one has its own (the rows share one database)
-const _QP = ":- dynamic " * join(["q$i/1" for i in 1:20], ", ") * ".\n" *
-            join(["q$i(a).\nq$i(b).\nq$i(c).\n" for i in 1:20])
+# q1..q24/1: dynamic, three facts each (a, b, c); a row that changes one has its own (the rows share one database)
+const _QP = ":- dynamic " * join(["q$i/1" for i in 1:24], ", ") * ".\n" *
+            join(["q$i(a).\nq$i(b).\nq$i(c).\n" for i in 1:24])
 
 # ---- the program: swipl's rows (`t_<id>(R)`). dN/1 are dynamic with one fact each, e1/1 dynamic and empty, s1/1 static.
 const _PROGRAM = """
@@ -64,6 +64,7 @@ s1(1).
 ex(G, R) :- catch(( G, R = true ), error(E, C), R = err(E, C)).
 s2(a).
 s2(b).
+ru1(X) :- d1(X), true.
 """ * _QP
 
 # (id, goal). `ex/2` returns `true` or `err(Formal, Context)`.
@@ -137,6 +138,39 @@ const _CASES = [
     ("n37", "findall(N, nth_clause(q17(_), N, _), L), L = [_|_], nth_clause(q17(_), 3, Ref), erase(Ref), findall(N2, nth_clause(q17(_), N2, _), R)"),
     ("n38", "nth_clause(q18(_), 1, Ref), erase(Ref), nth_clause(q18(_), 1, Ref2), erase(Ref2), findall(X, q18(X), R)"),
     ("n39", "nth_clause(q19(_), 2, Ref), retract(q19(b)), ( nth_clause(q19(_), N, Ref) -> R = yes(N) ; R = no )"),
+    # ---- '$get_clause_attribute'/3 (pl-proc.c:3910): the attributes of a clause reference. `file`, `owner` and `size` are asked as
+    # shapes (the path is the temp file's; the size is the representation's: the white-box testset pins the kernel's formula)
+    ("g01", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, line_count, R)"),
+    ("g02", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, file, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
+    ("g03", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, owner, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
+    ("g04", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, size, S), ( integer(S), S > 0 -> R = ok ; R = S )"),
+    ("g05", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, fact, R)"),
+    ("g06", "nth_clause(ru1(_), 1, Ref), '$get_clause_attribute'(Ref, fact, R)"),
+    ("g07", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, erased, R)"),
+    ("g08", "nth_clause(q21(_), 2, Ref), erase(Ref), '$get_clause_attribute'(Ref, erased, R)"),
+    ("g09", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, predicate_indicator, R)"),
+    ("g10", "assertz(am:h(1), Ref), '$get_clause_attribute'(Ref, predicate_indicator, R)"),
+    ("g11", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, module, R)"),
+    ("g12", "assertz(am2:h(1), Ref), '$get_clause_attribute'(Ref, module, R)"),
+    ("g13", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, foo, _) -> R = yes ; R = no )"),
+    ("g14", "assertz(am3:h(1), Ref), ( '$get_clause_attribute'(Ref, line_count, _) -> R = yes ; R = no )"),
+    ("g15", "assertz(am3:h(2), Ref), ( '$get_clause_attribute'(Ref, file, _) -> R = yes ; R = no )"),
+    ("g16", "assertz(am3:h(3), Ref), ( '$get_clause_attribute'(Ref, owner, _) -> R = yes ; R = no )"),
+    ("g17", "ex('$get_clause_attribute'(foo, size, _), R)"),
+    ("g18", "nth_clause(d1(_), 1, Ref), ex('$get_clause_attribute'(Ref, _, _), R)"),
+    ("g19", "nth_clause(d1(_), 1, Ref), ex('$get_clause_attribute'(Ref, 1, _), R)"),
+    ("g20", "ex('$get_clause_attribute'(_, size, _), R)"),
+    ("g21", "nth_clause(q22(_), 1, Ref), erase(Ref), '$get_clause_attribute'(Ref, fact, F), '$get_clause_attribute'(Ref, size, S), ( integer(S), S > 0 -> R = F-ok ; R = F-S )"),
+    ("g22", "assertz((am4:r(1) :- true), Ref), '$get_clause_attribute'(Ref, fact, R)"),
+    ("g23", "nth_clause(ru1(_), 1, Ref), '$get_clause_attribute'(Ref, line_count, R)"),
+    ("g24", "nth_clause(q23(_), 3, Ref), erase(Ref), '$get_clause_attribute'(Ref, predicate_indicator, R)"),
+    ("g25", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, user:d1/1) -> R0 = yes ; R0 = no ), ( '$get_clause_attribute'(Ref, predicate_indicator, d1/1) -> R1 = yes ; R1 = no ), R = R0-R1"),
+    ("g26", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, module, foo) -> R = yes ; R = no )"),
+    ("g27", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, erased, true) -> R = yes ; R = no )"),
+    ("g28", "assertz(am5:z(1), Ref), retract(am5:z(1)), '$get_clause_attribute'(Ref, erased, R)"),
+    ("g29", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, nomod:d1/1) -> R = yes ; R = no )"),
+    ("g30", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, system:d1/1) -> R = yes ; R = no )"),
+    ("g31", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, user:d1/2) -> R = yes ; R = no )"),
     # LAST: nothing follows
     ("z01", "R = last")
 ]
@@ -289,12 +323,12 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         # not a vacuous agreement: swipl's own lines hold each kind of answer (a guard that fails on an empty side)
         # measured on swipl 10.1.19 (2026-10-29): domain c09; existence c06 c07 c20 c22 c27 c28; instantiation c11 c12 c15;
         # type c08 c10 c13 c14 c24 c25 c26 n10 n24; permission c01 c02 c04 c05 c15 c16 c17 c19 c22 (the assertz after a compile);
-        # instantiation also n08
+        # instantiation also n08 g18 g20; type also g17 g19 ('$get_clause_attribute'/3)
 
         @test count(l -> occursin(_codes("domain_error"), l), sw) == 1
         @test count(l -> occursin(_codes("existence_error"), l), sw) == 6
-        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 4
-        @test count(l -> occursin(_codes("type_error"), l), sw) == 9
+        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 6
+        @test count(l -> occursin(_codes("type_error"), l), sw) == 11
         @test count(l -> occursin(_codes("permission_error"), l), sw) == 9
         @test any(l -> startswith(l, "t_c03 ") && occursin(_codes("ok"), l), sw)
         @test any(l -> startswith(l, "t_c18 ") && occursin("i1", l) && occursin("i2", l), sw)       # the clauses survive
@@ -306,6 +340,16 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(l -> startswith(l, "t_n11 ") && occursin("i2", l) && occursin(_codes("q4"), l), sw)
         @test any(l -> startswith(l, "t_n35 ") && occursin(_codes("mq"), l) && occursin(_codes(":"), l), sw)
         @test count(l -> occursin(_codes("no"), l), sw) >= 10
+        # '$get_clause_attribute'/3: a line number, the booleans, the qualified indicator, the module of an asserted fact; an erased
+        # reference still answers; an unknown attribute and the absent file of an asserted clause fail (measured 2026-10-29)
+        @test any(l -> startswith(l, "t_g01 ") && occursin("i2", l), sw)
+        @test any(l -> startswith(l, "t_g05 ") && occursin(_codes("true"), l) && !occursin(_codes("false"), l), sw)
+        @test any(l -> startswith(l, "t_g06 ") && occursin(_codes("false"), l), sw)
+        @test any(l -> startswith(l, "t_g08 ") && occursin(_codes("true"), l), sw)
+        @test any(l -> startswith(l, "t_g09 ") && occursin(_codes("user"), l) && occursin(_codes("d1"), l), sw)
+        @test any(l -> startswith(l, "t_g12 ") && occursin(_codes("am2"), l), sw)
+        @test any(l -> startswith(l, "t_g21 ") && occursin(_codes("true"), l) && occursin(_codes("ok"), l), sw)
+        @test count(l -> startswith(l, "t_g") && occursin(_codes("no"), l), sw) == 8     # g13 g14 g15 g16 g26 g27 g30 g31
         @test startswith(last(sw), "t_z01 ")
     end
 end
@@ -394,4 +438,57 @@ end
     @test st === :false && isempty(ld.predicate_references)
     st, ans3 = nth(_f(":", _tls("user"), dh), _v(), ref)
     @test st === :true && lk_value(ans3[2]) == 3
+end
+
+@testset "'\$get_clause_attribute'/3: size is the kernel's code words (swipl: 64 + 8 per word), file and owner are their own fields, module is the predicate's, an erased reference answers" begin
+    gd, ld, f = _loaded(":- dynamic d/1.\nd(1).\nd(2).\nr(X) :- d(X), true.\n")
+    attr(ref, a, v=_v()) = kcall(gd, ld, "\$get_clause_attribute", _TL[ref, _tls(a), v])
+    nth(h, i) = kcall(gd, ld, "nth_clause", _TL[h, lk_gnd(_TL, i), _v()])[2][3]
+    ref = nth(_f("d", _v()), 2)
+    cl = LK.clause_clref(gd, ref)
+    # size: DIVERGES from swipl's number (a different code count), but the FORMULA is upstream's `offsetof(struct clause, codes[n])`
+    st, a = attr(ref, "size")
+    @test st === :true && lk_value(a[3]) == 8 * LK.sizeofClause(length(cl.codes)) && lk_value(a[3]) == 64 + 8 * length(cl.codes)
+    # line_count: only when non-zero
+    st, a = attr(ref, "line_count")
+    @test st === :true && lk_value(a[3]) == 3
+    cl.line_no = 0
+    @test attr(ref, "line_count")[1] === :false
+    cl.line_no = 3
+    # file and owner are two fields: clearing one leaves the other
+    st, a = attr(ref, "file")
+    @test st === :true && endswith(sym_text(a[3]), "w.pl")
+    st, a = attr(ref, "owner")
+    @test st === :true && endswith(sym_text(a[3]), "w.pl")
+    so, oo = cl.source_no, cl.owner_no
+    @test so != 0 && oo != 0
+    cl.owner_no = 0
+    @test attr(ref, "owner")[1] === :false && attr(ref, "file")[1] === :true
+    cl.owner_no = oo
+    cl.source_no = 0
+    @test attr(ref, "file")[1] === :false && attr(ref, "owner")[1] === :true
+    cl.source_no = so
+    # fact: a unit clause is true, a rule false
+    @test sym_text(attr(ref, "fact")[2][3]) == "true"
+    @test sym_text(attr(nth(_f("r", _v()), 1), "fact")[2][3]) == "false"
+    # module: the predicate's module (KNOWN DIFFERENCE: swipl's clauseBodyContext of a rule asserted from `user` into another module
+    # is `user`, 10.1.19 — the kernel has no CL_BODY_CONTEXT, so this answers `am3`)
+    st, ans = kcall(gd, ld, "assertz", _TL[_f(":-", _f(":", _tls("am3"), _f("i", lk_gnd(_TL, 1))), _f(":", _tls("am4"), _tls("foo"))), _v()])
+    @test st === :true
+    st, a = attr(ans[2], "module")
+    @test st === :true && sym_text(a[3]) == "am3"
+    pi_ = attr(ans[2], "predicate_indicator")[2][3]                      # am3:i/1
+    @test kind(pi_) === EXPR && sym_text(child(pi_, 2)) == "am3"
+    # a bound value that is not the answer fails; an unknown attribute fails; a non-reference is the type error
+    @test attr(ref, "module", _tls("nomodule"))[1] === :false
+    @test attr(ref, "no_such_attribute")[1] === :false
+    @test attr(_tls("foo"), "size")[1] === :exception
+    @test attr(ref, "size", lk_gnd(_TL, 1))[1] === :false
+    # erased: the reference is NOT refused; it says so, and the rest still answers
+    @test sym_text(attr(ref, "erased")[2][3]) == "false"
+    st, _ = kcall(gd, ld, "erase", _TL[ref])
+    @test st === :true
+    @test sym_text(attr(ref, "erased")[2][3]) == "true"
+    @test attr(ref, "size")[1] === :true && sym_text(attr(ref, "fact")[2][3]) == "true"
+    @test ld.clause_contexts.live == 0 && isempty(ld.predicate_references)
 end
