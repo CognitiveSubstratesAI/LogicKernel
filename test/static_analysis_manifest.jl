@@ -1904,6 +1904,7 @@ function _manifest_index(T)
         (LK.pl_record_clause4_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_start_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_end_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_compile_predicates1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.mustBeVar, Tuple{LD, Int}, false),
         # R2 D1 — clause blobs (pl-dbref.c), assert/2 (pl-comp.c) and erase/1 (pl-rec.c)
         (LK.acquire_clause_blob, Tuple{GD, T}, false),
@@ -1938,6 +1939,8 @@ function _manifest_index(T)
         (LK.unify_src_file_time, Tuple{LD, Int, LK.SourceFile{T}}, false),
         (LK.get_procedure_findhere, Tuple{GD, LD, Int, MOD}, false),
         (LK.get_procedure_find_namearity, Tuple{GD, LD, Int, MOD}, false),
+        (LK.get_procedure_namearity, Tuple{GD, LD, Int, MOD, Int}, false),
+        (LK.get_functor_procedure, Tuple{LD, Int}, false),
         (LK.pl_source_file2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_source_file_predicates2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_time_source_file3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),

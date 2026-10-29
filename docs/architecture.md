@@ -5435,14 +5435,20 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   `lookupBodyProcedure`. Not flipped (not in the kernel): pl-trace.c:500/528/1209, 1381, 2671. There is no `set_prolog_flag(access_level, _)` yet (F1b).
 - **`source_location/2`, `'$set_source_location'/2`** (pl-file.c:5805-5822): `ReadingSource` now tests `lineno >= 0` as pl-incl.h:2734, so line 0 counts.
 - **`'$start_aux'/2`, `'$end_aux'/2`** (pl-comp.c:5197-5240; `pl_start_aux2_va`, `pl_end_aux2_va`, rows a01-a16): `$start_aux(File, CP)` takes a reference on the file and
-  answers the file's `current_procedure` as `M:Name/Arity` if it is defined, else `[]`; `$end_aux(File, CP)` sets `current_procedure` (`[]` clears it; a PI is looked up by the
-  new `get_procedure_find_namearity`, unqualified = context `system` since the predicate is not transparent: swipl fails `$end_aux(F, foo/1)` for user's foo/1) and drops
+  answers the file's `current_procedure` as `M:Name/Arity` if it is defined, else `[]`; `$end_aux(File, CP)` sets `current_procedure` (`[]` clears it; a PI is looked up by
+  `get_procedure_find_namearity`, unqualified = context `system` since the predicate is not transparent: swipl fails `$end_aux(F, foo/1)` for user's foo/1) and drops
   both references. A PI naming no procedure fails; `$end_aux` without a prior `$start_aux` makes `releaseSourceFile` raise its internal error (upstream repairs the count; the loader always pairs them).
-- **Still to come in LB2:** `compile_predicates/1`, `nth_clause/3`, `'$get_clause_attribute'/3`, thread_local;
+- **`compile_predicates/1`** (pl-comp.c:5289-5316; `pl_compile_predicates1_va`, rows c01-c28 of test/db/test_nth_clause_swipl.jl): for each `Name/Arity` (or head, or
+  `Name//Arity`) of the list, found in its module ONLY (`GP_FINDHERE`) or `existence_error(procedure, M:Item)`, `setDynamicDefinition!(def, false)`; the earlier items stay
+  compiled when a later one raises. Behind it the get_procedure family: `get_functor_procedure` (pl-proc.c get_functor: `/`, `//` +2, the arity limit, a head, else
+  `type_error(predicate_indicator, _)`) and `get_procedure_namearity(gd, ld, descr, context, how)` (`GP_FIND`/`GP_FINDHERE`, `GP_EXISTENCE_ERROR`), which `$end_aux/2` also uses
+  through `get_procedure_find_namearity`; a qualifier naming no module CREATES it (PL_strip_module, as swipl: measured). DIVERGES: the unqualified context is `user`
+  (transparent `contextModule` not ported). `$end_aux`'s row a16 pins the resolution via the default import.
+- **Still to come in LB2:** `nth_clause/3`, `'$get_clause_attribute'/3`, thread_local;
   modules L3 (`exportProcedureSource`, pl-srcfile.c:1427) and L4 (`setMetapredicateSource`, :1334) wait for MOD4 (`exportProcedure` and
   `setMetapredicateMask` do not exist on this base); with them MOD4's `meta_declaration` ReadingSource refusal is replaced by upstream's branch (D-0246).
 
-Tests: test/db/test_source_file_swipl.jl (80 program rows against swipl 10.1.19, the white-box testsets); mutants: tools/mutants/LB2.py.
+Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28); mutants: tools/mutants/LB2.py.
 
 ## Still to come
 

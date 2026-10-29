@@ -81,6 +81,12 @@ const CL_END = 2
 # PORT: pl-incl.h GP_FIND
 "`get_procedure`: find the procedure anywhere — the module, then its super modules (pl-incl.h)."
 const GP_FIND = Int(0)
+# PORT: pl-incl.h GP_FINDHERE
+"`get_procedure`: find the procedure in this module only (pl-incl.h)."
+const GP_FINDHERE = Int(1)
+# PORT: pl-incl.h GP_EXISTENCE_ERROR
+"`get_procedure`: raise `existence_error(procedure, Descr)` when it is not found (pl-incl.h)."
+const GP_EXISTENCE_ERROR = Int(0x800)
 # PORT: pl-incl.h GP_DEFINE
 "`get_procedure`: define a procedure (pl-incl.h)."
 const GP_DEFINE = Int(4)

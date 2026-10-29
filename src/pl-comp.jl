@@ -4130,6 +4130,35 @@ function pl_end_aux2_va(
     return rc ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c compile_predicates as pl_compile_predicates1_va
+# (PRED_IMPL("compile_predicates", 1, compile_predicates, PL_FA_TRANSPARENT)) — pl-comp.c:5289-5316
+# DIVERGES: the unqualified context module (`PL_strip_module_ex(A1, &m, tail)` with `m` NULL: `contextModule`) is `user`, the
+# transparent context not being ported; the existence error's culprit is the `M:Head` it built, as upstream's.
+"`compile_predicates(:ListOfPredicateIndicators)` (pl-comp.c): make each listed predicate static again."
+function pl_compile_predicates1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1 = PL__t0
+    tail = PL_new_term_ref(ld)
+    head = PL_new_term_ref(ld)
+    desc = PL_new_term_ref(ld)
+    modm = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module_ex(gd, ld, A1, 0, tail)
+    ok || return FFALSE
+    PL_put_atom(ld, modm, gd.modules[mi].atom)                 # PL_put_atom(modm, m->name)
+    colon2 = _err_functor(ld, :(:), 2)                         # FUNCTOR_colon2
+    while PL_get_list(ld, tail, head, tail)
+        PL_cons_functor(ld, desc, colon2, modm, head)
+        proc = get_procedure_namearity(
+            gd, ld, desc, MODULE_user(gd), GP_NAMEARITY | GP_FINDHERE | GP_EXISTENCE_ERROR
+        )
+        proc === nothing && return FFALSE
+        setDynamicDefinition!(proc.definition, false) || return FFALSE
+    end
+    return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE
+end
+
 # PORT: pl-comp.c BeginPredDefs as PL_predicates_from_comp
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (c:9202-9232); `META` is `PL_FA_TRANSPARENT` (c:9199) and `PRED_DEF` ors in `PL_FA_VARARGS`.
@@ -4149,6 +4178,7 @@ const PL_predicates_from_comp = (
     PL_extension("assert", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("assertz", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("asserta", 2, pl_asserta2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("compile_predicates", 1, pl_compile_predicates1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension(                                   # PRED_SHARE("clause", 2, clause, META|NDET|PL_FA_CREF|PL_FA_ISO)
         "clause", 2, pl_clauseva_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_ISO | PL_FA_VARARGS
