@@ -9,6 +9,18 @@ include(joinpath(@__DIR__, "term_scope.jl"))
 
 const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
 
+# Run CMD with stdout AND stderr into ONE open file (a shared offset): two `=path` redirects are two open
+# file descriptions at offset 0 and the later writer overwrites the earlier one's text.
+function _gs_run_merged(cmd::Cmd)
+    out = tempname()
+    code = open(out, "w") do io
+        run(pipeline(ignorestatus(cmd); stdin=devnull, stdout=io, stderr=io)).exitcode
+    end
+    txt = read(out, String)
+    rm(out; force=true)
+    return (code=code, out=txt)
+end
+
 @testset "the gate split: declarations, term types, the CI condition" begin
     @testset "every term-generic file declares its term types per chunk" begin
         scopes = lk_term_scopes(joinpath(_GS_ROOT, "test"))      # throws on a missing or bad one
@@ -148,6 +160,378 @@ const _GS_ROOT = abspath(joinpath(@__DIR__, ".."))
                 `$(Base.julia_cmd()) --startup-file=no $(joinpath(_GS_ROOT, "tools", "term_scope.jl"))`;
                 stdin=devnull), String)
         @test occursin(r"^(all|chunk)\t\S", out)
+    end
+
+    # audit D-0206 item 4 (2026-10-29): BLOB's test_blob.jl declared `ALL` and named no src/ file; the
+    # branch-gate and `warm.sh check` passed it and CI's Pkg.test stopped on it (A-0140). The check now
+    # lives in tools/term_scopes_check.jl, one extractor with this file's `lk_term_scopes`, and runs
+    # first in `warm.sh check` (so in the preflight and the branch-gate). Each guard is judged by its
+    # VERDICT, on a planted tree, and both of its sides must be non-empty: a check that passes on
+    # nothing, or on another tree than the runner reads, would be a guard that cannot fail.
+    @testset "tools/term_scopes_check.jl: a bad declaration fails the fast check, locally" begin
+        inc = "include(joinpath(@__DIR__, \"..\", \"term_under_test.jl\"))\n"
+        all_ok = "# TERM TYPES PER CHUNK: ALL — the term layer: src/real.jl\n" * inc
+        ref_ok = "# TERM TYPES PER CHUNK: REFERENCE — built on the term layer\n" * inc
+        script = joinpath(_GS_ROOT, "tools", "term_scopes_check.jl")
+        # a planted package root: src/real.jl, and test/core_lang/<name> for each (name => text)
+        function planted(f, files::Pair{String, String}...)
+            mktempdir() do d
+                mkpath(joinpath(d, "src"))
+                write(joinpath(d, "src", "real.jl"), "# a source file\n")
+                mkpath(joinpath(d, "test", "core_lang"))
+                for (name, text) in files
+                    write(joinpath(d, "test", "core_lang", name), text)
+                end
+                f(d)
+            end
+        end
+        function run_check(d)
+            out, err = tempname(), tempname()
+            cmd = `$(Base.julia_cmd()) --startup-file=no $script $d`
+            p = run(pipeline(ignorestatus(cmd); stdin=devnull, stdout=out, stderr=err))
+            r = (code=p.exitcode, out=read(out, String), err=read(err, String))
+            rm(out; force=true)
+            rm(err; force=true)
+            return r
+        end
+        # the control: a valid tree passes, and the pass line counts what it read
+        planted("test_a.jl" => all_ok, "test_b.jl" => ref_ok) do d
+            r = run_check(d)
+            @test r.code == 0
+            @test occursin("2 term-generic files: 1 ALL, 1 REFERENCE", r.out)
+        end
+        # the real tree passes, and its count is the in-process extractor's own (ONE extractor)
+        r = run_check(_GS_ROOT)
+        @test r.code == 0
+        nscopes = length(lk_term_scopes(joinpath(_GS_ROOT, "test")))
+        @test nscopes >= 20 && occursin("($nscopes term-generic files:", r.out)
+        # the planted defects, each alone in a tree that is otherwise valid: exit 1, and the message
+        # names the file and the rule (not merely "something failed")
+        for (what, text, rule) in (
+            (
+                "an ALL declaration that names no src/ file",
+                "# TERM TYPES PER CHUNK: ALL — the term layer, no file named\n" * inc,
+                "names the source files"
+            ),
+            (
+                "an ALL declaration naming a src/ file that does not exist",
+                "# TERM TYPES PER CHUNK: ALL — src/nope.jl\n" * inc,
+                "src/nope.jl, which does not exist"
+            ),
+            ("no declaration at all", inc, "found 0"),
+            ("two declarations", all_ok * ref_ok, "found 2"),
+            (
+                "an unknown kind",
+                "# TERM TYPES PER CHUNK: SOME — x\n" * inc,
+                "unknown term types per chunk"
+            ),
+            (
+                "an include that would run on the reference type only",
+                "# TERM TYPES PER CHUNK: ALL — src/real.jl\n" *
+                "include(joinpath(@__DIR__, \"term_under_test.jl\"))\n",
+                "reference type ONLY"
+            )
+        )
+            planted("test_good.jl" => all_ok, "test_bad.jl" => text) do d
+                r = run_check(d)
+                @test r.code == 1
+                @test occursin("TERM SCOPES INVALID", r.err) && occursin(rule, r.err)
+                @test occursin("test_bad.jl", r.err)                     # …and the file, never the good one
+                @test !occursin("test_good.jl", r.err)
+                @test !occursin("term scopes valid", r.out)
+            end
+        end
+        # …a check that looked at nothing is a failure, not a pass (the non-empty sides)
+        mktempdir() do d
+            r = run_check(d)                                              # no test/ directory
+            @test r.code == 1 && occursin("is not a directory", r.err)
+            mkpath(joinpath(d, "test"))
+            r = run_check(d)
+            @test r.code == 1 && occursin("nothing was checked", r.err)   # no test_*.jl file
+        end
+        planted("test_plain.jl" => "@test true\n") do d                   # no term-generic file
+            r = run_check(d)
+            @test r.code == 1 && occursin("matched nothing", r.err)
+        end
+        planted("test_ref.jl" => ref_ok) do d                             # no ALL file: no source checked
+            r = run_check(d)
+            @test r.code == 1 && occursin("no ALL declaration", r.err)
+        end
+        # the declaration is read from `test_*.jl` files only, under test/ only: a bad one elsewhere is
+        # not the runner's, so it is not this check's (the same tree, the same files)
+        planted(
+            "test_a.jl" => all_ok, "helper.jl" => "# TERM TYPES PER CHUNK: ALL —\n" * inc
+        ) do d
+            @test run_check(d).code == 0
+        end
+    end
+
+    @testset "tools/warm.sh term-scopes: the verdict is the exit code, and fails closed" begin
+        warm = joinpath(_GS_ROOT, "tools", "warm.sh")
+        inc = "include(joinpath(@__DIR__, \"..\", \"term_under_test.jl\"))\n"
+        function run_warm(root, args...; fault="")
+            env = Dict(
+                "LOGICKERNEL_TERM_SCOPES_COLD" => "1",        # a plain julia process, no daemon
+                "LOGICKERNEL_TERM_SCOPES_ROOT" => root,
+                "LOGICKERNEL_PREFLIGHT_FAULT" => fault
+            )
+            return _gs_run_merged(addenv(`bash $warm term-scopes $args`, env))
+        end
+        for (what, text, want) in (
+            ("a valid tree", "# TERM TYPES PER CHUNK: ALL — src/real.jl\n" * inc, 0),
+            (
+                "an ALL declaration naming no src/ file",
+                "# TERM TYPES PER CHUNK: ALL — nothing\n" * inc,
+                1
+            )
+        )
+            mktempdir() do d
+                mkpath(joinpath(d, "src"))
+                write(joinpath(d, "src", "real.jl"), "# s\n")
+                mkpath(joinpath(d, "test", "core_lang"))
+                write(joinpath(d, "test", "core_lang", "test_probe.jl"), text)
+                r = run_warm(d)
+                @test r.code == want
+                @test occursin(
+                    want == 0 ? "preflight: term scopes valid" : "TERM SCOPES INVALID",
+                    r.out
+                )
+                if want == 0                                  # fail closed: a pass must SHOW its line
+                    for fault in ("scopes-empty", "scopes-cut")
+                        rf = run_warm(d; fault=fault)
+                        @test rf.code == 4 && occursin("NO VERDICT", rf.out)
+                    end
+                end
+            end
+        end
+        # the real tree: valid, so the check is one a clean branch passes
+        @test run_warm(_GS_ROOT).code == 0
+        # `check` runs it: the call is in `_checks_fresh`, BEFORE the formatter (so one run names every
+        # failure), its status is returned when the others pass, and `check`, the branch-gate and the
+        # preflight all go through `_checks_fresh`. (The behaviour — `check` FAILS on a planted bad
+        # declaration — is tools/test_warm.sh's `fast` mode, which runs a real daemon.)
+        script = read(warm, String)
+        body = match(r"(?s)\n_checks_fresh\(\) \{\n(.*?)\n\}\n", script)[1]
+        @test occursin(
+            r"(?m)^    _term_scopes_check +#[^\n]*\n    ts=\$\?\n    _meta_check\n", body
+        )
+        @test occursin(
+            r"(?m)^    _meta_check\n    mt=\$\?\n    _inert_check \"[^\n]*\"\n    ic=\$\?\n    _format_port_check\n",
+            body
+        )
+        # every step's status is returned: the format status first, then scopes, meta, inert
+        @test occursin(
+            r"(?m)^    \[ \"\$rc\" -eq 0 \] \|\| return \"\$rc\"\n    \[ \"\$ts\" -eq 0 \] \|\| return \"\$ts\"\n    \[ \"\$mt\" -eq 0 \] \|\| return \"\$mt\"\n    return \"\$ic\"$",
+            body
+        )
+        @test occursin(r"(?m)^        _checks_fresh\n        _ck_rc=\$\?", script)                 # `check`
+        @test occursin(r"_checks_fresh \|\| \{ echo \"branch-gate: FAIL", script)                 # branch-gate
+        @test occursin(r"(?m)^    _checks_fresh\n    rc=\$\?\n", script)                          # preflight
+    end
+
+    # audit D-0206 item 4b: a `file` run of the static-analysis file takes 32 min (SSU1) against the
+    # 1800 s client default; 3600 s for that file ALONE. Judged on what `warm.sh file` would send under:
+    # the send seam prints the timeout and sends nothing (a daemon is neither needed nor touched).
+    @testset "tools/warm.sh file: the static-analysis file's timeout is 3600 s, the others' 1800 s" begin
+        warm = joinpath(_GS_ROOT, "tools", "warm.sh")
+        function file_timeout(file; env=String[])
+            e = Dict("LOGICKERNEL_WARM_SEND_PROBE" => "1", "WARM_TIMEOUT_S" => "")
+            for kv in env
+                e[first(kv)] = last(kv)
+            end
+            # TWO arguments (an implementation named): a one-argument run records the file's time
+            txt = _gs_run_merged(addenv(`bash $warm file $file reference`, e)).out
+            m = match(r"(?m)^send: timeout (\d+)s$", txt)
+            return m === nothing ? nothing : parse(Int, m[1])
+        end
+        @test file_timeout("test/test_static_analysis.jl") == 3600
+        @test file_timeout(joinpath(_GS_ROOT, "test", "test_static_analysis.jl")) == 3600
+        @test file_timeout("test/test_gate_split.jl") == 1800
+        @test file_timeout("test/static_analysis_fast.jl") == 1800        # the fast pre-check: seconds
+        # an explicit WARM_TIMEOUT_S wins (tools/mutate_drive.py sets one per mutant), for either file
+        @test file_timeout(
+            "test/test_static_analysis.jl"; env=["WARM_TIMEOUT_S" => "90"]
+        ) == 90
+        @test file_timeout("test/test_gate_split.jl"; env=["WARM_TIMEOUT_S" => "90"]) == 90
+        # …and a plain `send` of any snippet keeps the default: the 3600 s is the static FILE's
+        script = read(warm, String)
+        @test occursin(r"(?m)^WARM_DEFAULT_TIMEOUT_S=1800$", script)
+        @test occursin(r"(?m)^WARM_STATIC_TIMEOUT_S=3600$", script)
+        @test count("\${WARM_TIMEOUT_S:-1800}", script) == 0      # no second place for the number
+        # the two seams that send nothing to the daemon (the send probe, the cold term-scopes snippet) skip the
+        # lane check — these tests run INSIDE the branch-gate, which holds the lane — and nothing else does
+        @test occursin(
+            r"(?m)^        if \[ \"\$\{LOGICKERNEL_WARM_SEND_PROBE:-\}\" != 1 \] && \[ \"\$\{LOGICKERNEL_TERM_SCOPES_COLD:-\}\" != 1 \]; then\n            _lane_check \|\| exit 5\n        fi$",
+            script
+        )
+        @test count("_lane_check || exit 5", script) == 1
+        # the wait loop's deadline and its TIMEOUT message both read the timeout the send was given
+        @test occursin(
+            "deadline=\$(( \$(date +%s) + \${WARM_TIMEOUT_S:-\$WARM_DEFAULT_TIMEOUT_S} ))",
+            script
+        )
+        @test occursin(
+            "TIMEOUT after \${WARM_TIMEOUT_S:-\$WARM_DEFAULT_TIMEOUT_S}s on seq", script
+        )
+    end
+
+    # audit D-0214 finding 1 (2026-10-29): the CI-only checks that are cheap moved into `warm.sh check`. The
+    # steps run here with the send seam (nothing is sent: each file "has no verdict", which is how a ran
+    # file shows) and a planted times table; what passes in a real daemon is tools/test_warm.sh's `fast`.
+    @testset "tools/warm.sh check: the meta files, the inert guard, the formatter pin, the unit assertion" begin
+        warm = joinpath(_GS_ROOT, "tools", "warm.sh")
+        function run_step(args...; env=Pair{String, String}[], times="")
+            tf = tempname()
+            write(tf, times)
+            e = Pair{String, String}[
+                "LOGICKERNEL_WARM_SEND_PROBE" => "1", "LOGICKERNEL_FILE_TIMES" => tf
+            ]
+            m = _gs_run_merged(addenv(`bash $warm $args`, e..., env...))
+            r = (code=m.code, out=m.out, times=read(tf, String))
+            rm(tf; force=true)
+            return r
+        end
+        script = read(warm, String)
+        # the meta files: every listed file runs (each one is the probe's "no verdict"), its time is recorded,
+        # a listed file that is gone and an empty list FAIL (a check that ran nothing is no pass)
+        r = run_step("meta-check")
+        metas = split(match(r"(?m)^WARM_META_FILES=\"([^\"]*)\"$", script)[1])
+        @test length(metas) >= 3 && "test/test_package.jl" in metas
+        @test r.code == 1
+        for f in metas
+            @test occursin("meta test file FAILED — $f", r.out)
+            @test occursin("$f\t", r.times)
+            @test isfile(joinpath(_GS_ROOT, f))
+        end
+        r = run_step("meta-check"; env=["LOGICKERNEL_META_FILES" => "test/nope.jl"])
+        @test r.code == 1 &&
+            occursin("test/nope.jl is listed in tools/warm.sh and does not exist", r.out)
+        r = run_step("meta-check"; env=["LOGICKERNEL_META_FILES" => ""])
+        @test r.code == 1 && occursin("nothing was checked", r.out)
+        # The Pkg.test-way run of a changed test file (tools/pkgtest_way.sh): a STUB julia records how it was
+        # started — environment, stdin, stdout, stderr — and answers as told (pass, fail, or exit 0 silent)
+        stubdir = mktempdir()
+        stub = joinpath(stubdir, "julia")
+        write(
+            stub,
+            """#!/usr/bin/env bash
+o1=\$([ -f /proc/\$\$/fd/1 ] && echo yes || echo no); o2=\$([ -f /proc/\$\$/fd/2 ] && echo yes || echo no)
+{ echo "NO_SWIPL=\${LOGICKERNEL_NO_SWIPL-unset}"; echo "REQ_SWIPL=\${LOGICKERNEL_REQUIRE_SWIPL-unset}"
+  echo "REQ_TOOLS=\${LOGICKERNEL_REQUIRE_TOOLS-unset}"; echo "TERM_=\${LOGICKERNEL_TERM-unset}"
+  echo "stdin=\$(readlink /proc/self/fd/0)"; echo "stdout_file=\$o1"
+  echo "stderr_file=\$o2"; echo "args=\$*"; } > "\$STUB_RECORD"
+case "\$STUB_MODE" in
+    pass) echo "pkgtest-way: PASS stub" ;;
+    fail) echo "boom" >&2; exit 1 ;;
+    silent) : ;;
+esac
+"""
+        )
+        chmod(stub, 0o755)
+        function way(args...; mode="pass", extra=Pair{String, String}[])
+            rec, outd = joinpath(stubdir, "record"), mktempdir()
+            rm(rec; force=true)
+            env = Pair{String, String}[
+                "LOGICKERNEL_PKGTEST_WAY_JULIA" => stub, "STUB_MODE" => mode,
+                "STUB_RECORD" => rec,
+                "LOGICKERNEL_PKGTEST_WAY_OUT" => outd,
+                # what a daemon-shaped parent has set: the run must not inherit it
+                "LOGICKERNEL_REQUIRE_SWIPL" => "1", "LOGICKERNEL_REQUIRE_TOOLS" => "1",
+                "LOGICKERNEL_TERM" => "alt"
+            ]
+            o = tempname()
+            p = run(
+                pipeline(
+                    ignorestatus(
+                        addenv(
+                            `bash $(joinpath(_GS_ROOT, "tools", "pkgtest_way.sh")) $args`,
+                            env...,
+                            extra...
+                        )
+                    );
+                    stdin=IOBuffer(""), stdout=o, stderr=o         # a pipe, so /dev/null is the script's own doing
+                )
+            )
+            txt = read(o, String)
+            rm(o; force=true)
+            return (code=p.exitcode, out=txt, rec=isfile(rec) ? read(rec, String) : "")
+        end
+        r = way("test/test_package.jl")
+        @test r.code == 0 && occursin("passed the way Pkg.test runs it", r.out)
+        @test occursin("NO_SWIPL=1\n", r.rec)                               # no swipl
+        @test occursin("REQ_SWIPL=unset\n", r.rec) && occursin("REQ_TOOLS=unset\n", r.rec)
+        @test occursin("TERM_=unset\n", r.rec)
+        @test occursin("stdin=/dev/null\n", r.rec)                          # stdin from /dev/null
+        @test occursin("stdout_file=yes\n", r.rec) && occursin("stderr_file=yes\n", r.rec)   # to files
+        @test occursin("--startup-file=no", r.rec) &&
+            occursin("tools/pkgtest_way.jl", r.rec)
+        @test occursin("test/test_package.jl", r.rec)
+        r = way("test/test_package.jl"; mode="fail")
+        @test r.code == 1 && occursin("FAILED (exit 1)", r.out) && occursin("boom", r.out)
+        r = way("test/test_package.jl"; mode="silent")                      # exit 0 without the pass line
+        @test r.code == 4 && occursin("NO VERDICT", r.out)
+        r = way("test/nope.jl")
+        @test r.code == 2 && occursin("no such file", r.out)
+        # the inert-check step runs it for each changed test file, within its budget (estimate = 3 x the warm time)
+        stubenv(mode) = [
+            "LOGICKERNEL_PKGTEST_WAY_JULIA" => stub, "STUB_MODE" => mode,
+            "STUB_RECORD" => joinpath(stubdir, "record2"),
+            "LOGICKERNEL_PKGTEST_WAY_OUT" => joinpath(stubdir, "out")
+        ]
+        inert(args...; files="test/test_package.jl", times="", mode="pass") = run_step(
+            "inert-check", args...;
+            env=["LOGICKERNEL_INERT_FILES" => files, stubenv(mode)...], times=times
+        )
+        r = inert()
+        @test r.code == 0 && occursin("Pkg.test-way run clean (1 changed test files", r.out)
+        r = inert(; mode="fail")
+        @test r.code == 1 &&
+            occursin("Pkg.test-way run FAILED — test/test_package.jl", r.out)
+        r = inert(; mode="silent")
+        @test r.code == 1 && occursin("NO VERDICT", r.out)
+        r = inert(; files="")
+        @test r.code == 0 && occursin("no changed test file", r.out)
+        r = inert(; files="test/nope.jl")                                  # a deleted file is not run
+        @test r.code == 0 && occursin("no changed test file", r.out)
+        # the budget: a file whose estimate is over it is named and left to the branch-gate, one within runs
+        r = inert("100"; times="test/test_package.jl\t500\n", mode="fail")
+        @test r.code == 0 && occursin("over budget (estimate 1500s > 100s)", r.out)
+        @test occursin("  test/test_package.jl", r.out) && !occursin("FAILED", r.out)
+        r = inert("1500"; times="test/test_package.jl\t500\n", mode="fail")
+        @test r.code == 1 && occursin("FAILED", r.out) && !occursin("over budget", r.out)
+        r = inert("5")                                                      # no recorded time: 3 x the 20 s default
+        @test occursin("over budget (estimate 60s > 5s)", r.out)
+        # the formatter pin is CI.yml's own, one value
+        ci = read(joinpath(_GS_ROOT, ".github", "workflows", "CI.yml"), String)
+        pin = match(r"name=\"JuliaFormatter\", version=\"([0-9]+\.[0-9]+\.[0-9]+)\"", ci)[1]
+        r = run_step("fmt-pin")
+        @test r.code == 0 && strip(r.out) == pin
+        @test occursin(
+            r"(?m)^let pin = raw\"\$fmt_pin\", have = string\(pkgversion\(JuliaFormatter\)\)$",
+            script
+        )
+        @test occursin("have == pin || error(", script) &&
+            occursin("isempty(pin) && error(", script)
+        # every unit closes as test/runtests.jl closes it: the shared empty child vector is still empty
+        @test occursin(
+            r"withenv\(\(\) -> Base\.include\(m, f\), env\.\.\.\)\n(\s+#[^\n]*\n){2}\s+@test isempty\(LogicKernel\._no_children\(LogicKernel\.DefaultTerm\)\)\n\s+end",
+            script
+        )
+        # the branch-gate gives the inert guard a larger budget than `check`'s, for the same files
+        @test occursin(
+            "LOGICKERNEL_INERT_BUDGET_S=\"\${LOGICKERNEL_INERT_BUDGET_S:-600}\" _checks_fresh || {",
+            script
+        )
+        # the tooling job's trigger files: a change under tools/ or .github/ brings in the two tooling tests
+        bgf = match(r"(?s)\n_branch_gate_files\(\) \{\n(.*?)\n\}\n", script)[1]
+        @test occursin(
+            r"grep -qE '\^\(tools/\|\\\.github/\)'; then\n\s+printf '%s\\n' test/test_gate_split\.jl test/test_port_check\.jl\n\s+fi",
+            bgf
+        )
+        tj = ci[findfirst("git diff --name-only \"\$base\" HEAD --", ci).start:end]
+        @test occursin(
+            "-- tools .github test/test_port_check.jl test/test_gate_split.jl", tj
+        )
     end
 
     @testset "tools/ci_status.sh and _ci_gate judge the previous push" begin

@@ -140,11 +140,29 @@ file) — so evidence is a process that started clean. The daemon follows Revise
 * a checkout COPY (parallel mutation proofs) runs its own daemon with `LOGICKERNEL_WARM_DEPOT`: a
   depot of its own and a normal load, since `stale_load` would take the original's cache and watch
   ITS `src/` (the "not watching" guard refused exactly that, measured);
+* **The warm client's timeout** (audit D-0206 item 4b): a send waits 1800 s; a `file` run of
+  test/test_static_analysis.jl alone waits 3600 s (`_file_timeout` in tools/warm.sh; the file takes
+  32 min since SSU1), and an explicit `WARM_TIMEOUT_S` wins. test/test_gate_split.jl fails when the
+  static file's timeout drops back.
 * **`tools/warm.sh preflight`, before every full run (user, 2026-10-04: "do not waste time on cold
   starts"):**
   * the fast checks fail fast: Blue formatting, as CI checks it, and `port_check` — also on their
     own, `tools/warm.sh check` (seconds; user, 2026-10-13: after an edit to a header, a marker or
-    the inventory, before a preflight is started at all);
+    the inventory, before a preflight is started at all) — and the term-scope declarations
+    (`tools/term_scopes_check.jl`, audit D-0206 item 4a, 2026-10-29): every term-generic test file's
+    `# TERM TYPES PER CHUNK:` line is read by test/term_scope.jl's own extractor, so a file whose
+    ALL declaration names no src/ file (BLOB's test_blob.jl, A-0140: green in the branch-gate, red in
+    CI's Pkg.test) fails locally. `tools/warm.sh term-scopes` runs that step alone. The branch-gate
+    and the preflight run the same fast check; and the other CI-only checks that cost seconds (audit
+    D-0214 finding 1): the package-level test files Pkg.test runs (`test_package.jl`: every package a
+    test file loads is declared for Pkg.test; the commit-message hook; the JUnit writer), the
+    Pkg.test-way run of the changed test files (`tools/pkgtest_way.sh`, audit D-0222: a fresh julia, no
+    swipl, stdin from /dev/null, stdout and stderr to files, the inert-testset guard over the result;
+    within a time budget, the cold estimate being 3x the last warm time), the daemon's
+    JuliaFormatter version against CI's pin, and every unit's closing assertion that the shared empty
+    child vector is still empty (`_file`). The branch-gate also runs `test_gate_split.jl` and
+    `test_port_check.jl` when `tools/` or `.github/` changed (the tooling job's own trigger). What stays in
+    CI, and why: `evidence/TOOL-TS/handoff.md`;
   * then, while the evidence workers pre-warm for the tree (`pool`): the static-analysis gate (26 s
     warm, against ~200 s in a cold worker) and every test file changed since HEAD, on every
     implementation.
@@ -262,7 +280,9 @@ the alternative ones between milestones (test/term_scope.jl), and CI keeps the f
     and sort, hashing, variants, the occurs check, `$expr`), each naming the sources behind it;
   * `# TERM TYPES PER CHUNK: REFERENCE — …` marks the other 23, which run on the reference
     implementation alone in a chunk.
-  One extractor (test/term_scope.jl) serves the runner and the coordinator's decision.
+  One extractor (test/term_scope.jl) serves the runner, the coordinator's decision and the
+  declarations check of `tools/warm.sh check` (`tools/term_scopes_check.jl`: it adds no rule, only
+  the guards that it never passes on nothing and reads the runner's own tree and files).
 * **The term types of a run** (`tools/term_scope.jl`, from every path that differs from
   `origin/main`, untracked files included):
   * `chunk` by default;

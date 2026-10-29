@@ -6,7 +6,7 @@
 #   tools/test_warm.sh          # exit 0 only if every case passes
 #   tools/test_warm.sh rss      # the daemon's-memory cases alone
 #   tools/test_warm.sh structs  # the struct gate's cases alone
-#   tools/test_warm.sh fast     # the fast static pre-check's planted-defect cases alone
+#   tools/test_warm.sh fast     # the fast static pre-check's planted-defect cases alone (and the declarations check's)
 #   tools/test_warm.sh cap      # the task-ceiling cases alone (no daemon)
 #   tools/test_warm.sh guard    # the daemon guard alone: one daemon at a time, the idle exit, the budget
 #   tools/test_warm.sh bgfiles  # the branch-gate's file selection alone (no daemon)
@@ -32,8 +32,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 W="$ROOT/tools/warm.sh"
 # (user, 2026-10-16) every preflight here STUBS the full static-analysis file (warm.sh's test seam):
 # these cases check the preflight's logic, and the file is 25–28 min on a cold daemon, ~2 min warm —
-# the suite must finish in minutes either way. The fast pre-check stays real; the full file is the
-# pre-push step (`warm.sh file test/test_static_analysis.jl reference`).
+# the suite must finish in minutes either way. The fast pre-check stays real; the full file is NOT a local
+# pre-push step any more (audit D-0220, 2026-10-29): Evidence's static_analysis shards run all of it on every gate
+# SHA. Locally it is a debugging tool for a red shard (`warm.sh file test/test_static_analysis.jl reference`, alone).
 export LOGICKERNEL_PREFLIGHT_STUB_STATIC=1
 # (2026-10-17) the selection cases below were written for a gate base of HEAD (the working tree's own
 # changes); the gate's default is the merge base with origin/main (`_gate_base`), which on a branch of
@@ -69,7 +70,7 @@ MAIN_ONLY=0; [ "${1:-}" = main ] && MAIN_ONLY=1       # `main`: the cases that a
 _unless_main() { [ "$MAIN_ONLY" = 1 ] || "$@"; }
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
+trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; [ -f "$T/coverage_zero_known.bak" ] && cp "$T/coverage_zero_known.bak" "$ROOT/tools/coverage_zero_known.txt"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -261,6 +262,37 @@ fast_case "fast pre-check, Aqua" "$rc" "FAIL (fast static pre-check)"
 has "…the failure is Aqua's ambiguity test" "$ROOT/.warm/preflight_static_fast.log" "ambig" 1
 cmp -s "$T/term_interface.jl.bak" "$ti"; check "src/term_interface.jl is restored after the pre-check cases" 0 $?
 cmp -s "$T/manifest.bak" "$man"; check "…and the manifest" 0 $?
+    # THE DECLARATIONS CHECK (audit D-0206 item 4a, 2026-10-29): `check` — and with it the preflight and the
+    # branch-gate — runs tools/term_scopes_check.jl, as Pkg.test reads every term-generic test file's
+    # `# TERM TYPES PER CHUNK:` line. BLOB's test_blob.jl declared ALL and named no src/ file: it passed the
+    # branch-gate and failed CI (A-0140). A planted file of that kind FAILS `check`, naming the file and the
+    # rule; without it the declarations check passes. (The tools' own cases, with no daemon: test/test_gate_split.jl.)
+    ts_probe="$ROOT/test/core_lang/test_preflight_probe_scope_$$.jl"
+    printf '# ORIGINAL: planted by tools/test_warm.sh — a declaration naming no src/ file\n# TERM TYPES PER CHUNK: ALL — names no source file\ninclude(joinpath(@__DIR__, "..", "term_under_test.jl"))\n' > "$ts_probe"
+    "$W" check > "$T/ts_check" 2>&1; rc=$?
+    rm -f "$ts_probe"
+    check "check: a test file whose ALL declaration names no src/ file FAILS" 1 "$rc"
+    has "…naming the file and the rule" "$T/ts_check" "test_preflight_probe_scope_$$.jl: an ALL declaration names the source files" 1
+    "$W" term-scopes > "$T/ts_check2" 2>&1; check "…and without it the declarations check passes" 0 $?
+    # THE INERT GUARD WITHOUT SWIPL (audit D-0214 1; SSU2 ca51c2a failed it in CI): a changed test file whose
+    # testset asserts only when swipl is there is green in a warm run and INERT in Pkg.test. A planted one FAILS
+    # `check`, naming the guard; the meta test files pass on the clean tree.
+    ip_probe="$ROOT/test/core_lang/test_preflight_probe_inert_$$.jl"
+    printf '# ORIGINAL: planted by tools/test_warm.sh — a testset that asserts only with swipl\nusing Test\n@testset "inert without swipl" begin\n    if get(ENV, "LOGICKERNEL_NO_SWIPL", "") != "1"\n        @test true\n    end\nend\n' > "$ip_probe"
+    "$W" check > "$T/ip_check" 2>&1; rc=$?
+    rm -f "$ip_probe"
+    check "check: a changed test file that asserts nothing without swipl FAILS" 1 "$rc"
+    has "…the inert-testset guard named, in the Pkg.test-way run" "$T/ip_check" "INERT TESTSETS" 1
+    # …and a test that assumes a TERMINAL (S1's test_open_close_swipl.jl: `Suser_output(ld)` was no IOSTREAM under
+    # Pkg.test's stdio) fails the same step: the file runs in a fresh julia with stdin /dev/null and stdout and
+    # stderr in files (tools/pkgtest_way.sh, audit D-0222), where no stream is a terminal
+    tty_probe="$ROOT/test/core_lang/test_preflight_probe_tty_$$.jl"
+    printf '# ORIGINAL: planted by tools/test_warm.sh — a test that assumes a terminal\nusing Test\n@testset "needs a tty" begin\n    @test Base.stdout isa Base.TTY\nend\n' > "$tty_probe"
+    "$W" check > "$T/tty_check" 2>&1; rc=$?
+    rm -f "$tty_probe"
+    check "check: a changed test file that assumes a terminal FAILS" 1 "$rc"
+    has "…in the Pkg.test-way run, naming the file" "$T/tty_check" "Pkg.test-way run FAILED — test/core_lang/test_preflight_probe_tty_$$.jl" 1
+    "$W" meta-check > "$T/mt_check" 2>&1; check "the meta test files pass on the clean tree" 0 $?
     # the steady state: a clean tree, the daemon warm (the first run after an edit pays a Revise and a
     # JET recompile — minutes; measured 137 s, then 9 s)
     "$W" file test/static_analysis_fast.jl > /dev/null 2>&1; check "the pre-check passes on the restored tree" 0 $?
@@ -304,6 +336,22 @@ _bgfiles_cases() {
     has "bgfiles: TRANSITIVE — manifest → static_analysis_body.jl → test_static_analysis.jl" \
         "$T/bg2" '^test/test_static_analysis.jl$' 1
     has "…which the gate leaves to CI (JET, Aqua, AllocCheck)" "$T/bg3" '^test/test_static_analysis.jl$' 0
+    # THE TOOLING JOB'S TRIGGER (audit D-0214 1): CI runs its tooling suites when tools/, .github/ or
+    # test_port_check.jl / test_gate_split.jl changed; a change under tools/ brings in the two tests of the
+    # tooling, which no src/ map selects (a tools/ edit that broke them was CI-only)
+    local tk="$ROOT/tools/coverage_zero_known.txt"
+    if git -C "$ROOT" diff --quiet HEAD -- tools .github; then
+        has "bgfiles: baseline — with tools/ and .github/ unchanged the tooling tests are NOT listed" "$T/bg0" \
+            '^test/test_gate_split.jl$' 0
+    else
+        check "bgfiles: tools/ and .github/ must be unchanged in this tree" 0 1
+    fi
+    cp "$tk" "$T/coverage_zero_known.bak"
+    echo "# bgfiles probe" >> "$tk"
+    "$W" branch-gate-files > "$T/bg4" 2>&1
+    cp "$T/coverage_zero_known.bak" "$tk"
+    has "bgfiles: a change under tools/ lists test_gate_split.jl" "$T/bg4" '^test/test_gate_split.jl$' 1
+    has "…and test_port_check.jl" "$T/bg4" '^test/test_port_check.jl$' 1
 }
 
 # THE BRANCH-GATE'S TIME BUDGET (user, 2026-10-14 night): the selection is estimated from each

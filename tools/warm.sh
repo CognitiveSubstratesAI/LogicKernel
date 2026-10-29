@@ -16,8 +16,13 @@
 #                                                            # exit 4 = NO VERDICT (fail closed)
 #   tools/warm.sh send snippet.jl          # any snippet (or stdin); exit 0 ok · 1 threw · 2 timeout · 3 no daemon
 #   tools/warm.sh bench [bench.jl args]    # tools/bench.jl in the daemon: no JIT in the timings
-#   tools/warm.sh check                    # the formatter and port_check alone (seconds): after an
-#                                          # edit to a header, a marker or the inventory
+#   tools/warm.sh check                    # the formatter, port_check, the manifest and the term-scopes
+#                                          # declarations (seconds): after an edit to a header, a marker,
+#                                          # the inventory or a test file's TERM TYPES PER CHUNK line
+#   tools/warm.sh meta-check | inert-check [BUDGET_S]   # two more of `check`'s CI-parity steps, alone
+#   tools/warm.sh fmt-pin                  # the JuliaFormatter version CI's Format job pins (`check` compares it)
+#   tools/warm.sh term-scopes              # the declarations alone (tools/term_scopes_check.jl, CI's
+#                                          # Pkg.test check, audit D-0206 4a)
 #   tools/warm.sh fmt                      # the formatter in WRITE mode on the changed .jl files, WARM —
 #                                          # run before check/branch-gate
 #   tools/warm.sh inventory                # port_check.jl --write-inventory, WARM: the generated blocks
@@ -327,8 +332,30 @@ _lane_check() {
     return 5
 }
 
+# THE CLIENT'S TIMEOUT per send (audit D-0206 item 4b, 2026-10-29): 1800 s for any snippet, and 3600 s for a
+# `file` run of test/test_static_analysis.jl ALONE — SSU1 measured that file at 32 min (JET + Aqua + AllocCheck),
+# past the 1800 s default, so a green run was reported as a TIMEOUT. An explicit WARM_TIMEOUT_S still wins
+# (tools/mutate_drive.py sets one per mutant). `_file_timeout` is the one place the two numbers live;
+# test/test_gate_split.jl fails when the static file's drops back.
+WARM_DEFAULT_TIMEOUT_S=1800
+WARM_STATIC_TIMEOUT_S=3600
+# _file_timeout ABSPATH — the seconds a send of this test file may take
+_file_timeout() {
+    if [ -n "${WARM_TIMEOUT_S:-}" ]; then echo "$WARM_TIMEOUT_S"; return; fi
+    case "$1" in
+        "$ROOT"/test/test_static_analysis.jl) echo "$WARM_STATIC_TIMEOUT_S" ;;
+        *) echo "$WARM_DEFAULT_TIMEOUT_S" ;;
+    esac
+}
+
 # _send FILE — run the snippet in the daemon; print its output; exit with its verdict.
 _send() {
+    # TEST SEAM (test/test_gate_split.jl): print the timeout this send would run under, send nothing — the
+    # timeout of a `file` run is judged WITHOUT a daemon (and without running the file)
+    if [ "${LOGICKERNEL_WARM_SEND_PROBE:-}" = 1 ]; then
+        echo "send: timeout ${WARM_TIMEOUT_S:-$WARM_DEFAULT_TIMEOUT_S}s"
+        return 0
+    fi
     _running || { echo "warm lane: not running — tools/warm.sh start" >&2; return 3; }
     _struct_gate || return 3
     # ONE SNIPPET AT A TIME. Two senders race on in.jl, seq and out.txt, and one of them can read
@@ -343,13 +370,13 @@ _send() {
         cat "${1:-/dev/stdin}" > "$DIR/in.jl"
         rm -f "$DIR/status"                       # never inherit the previous run's verdict
         echo "$seq" > "$DIR/seq"
-        deadline=$(( $(date +%s) + ${WARM_TIMEOUT_S:-1800} ))
+        deadline=$(( $(date +%s) + ${WARM_TIMEOUT_S:-$WARM_DEFAULT_TIMEOUT_S} ))
         while [ "$(cat "$DIR/done" 2>/dev/null)" != "$seq" ]; do
             if ! systemctl --user is-active --quiet "$UNIT"; then
                 echo "warm lane: the daemon DIED during seq=$seq — $DIR/session.log" >&2; exit 2
             fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
-                echo "warm lane: TIMEOUT after ${WARM_TIMEOUT_S:-1800}s on seq=$seq — it may still be running;" >&2
+                echo "warm lane: TIMEOUT after ${WARM_TIMEOUT_S:-$WARM_DEFAULT_TIMEOUT_S}s on seq=$seq — it may still be running;" >&2
                 echo "           output NOT printed (it would be the previous run's)" >&2
                 exit 2
             fi
@@ -399,6 +426,9 @@ let f = raw"$f", ts = Test.DefaultTestSet("warm: " * basename(f); verbose=true)
                 env = Pair{String, Any}[$swenv]
                 isempty(impl) || push!(env, "LOGICKERNEL_TERM" => impl)
                 withenv(() -> Base.include(m, f), env...)
+                # as test/runtests.jl closes every unit: the leaves' ONE shared empty child vector is still
+                # empty (a test that pushed to it fails the unit in Pkg.test, and passed a warm run)
+                @test isempty(LogicKernel._no_children(LogicKernel.DefaultTerm))
             end
         end
     end
@@ -406,7 +436,7 @@ let f = raw"$f", ts = Test.DefaultTestSet("warm: " * basename(f); verbose=true)
     Test.finish(ts)                          # throws on any failure or error: the verdict
 end
 JL
-    _send "$snippet" > "$out" 2>&1
+    WARM_TIMEOUT_S="$(_file_timeout "$f")" _send "$snippet" > "$out" 2>&1
     rc=$?
     case "${LOGICKERNEL_WARM_FAULT:-}" in                          # TEST SEAMS (tools/test_warm.sh)
         empty) : > "$out" ;;                                        # a lost run: nothing at all
@@ -482,7 +512,13 @@ _pool() {
 # still catches is a method Revise genuinely failed to delete (the documented suspect: a precompile
 # in another process rewriting the cache it diffs against, tools/warm_session.jl). Logged.
 _checks_fresh() {
-    local rc
+    local rc ts mt ic
+    _term_scopes_check                     # first, and the others run anyway: one run names every failure
+    ts=$?
+    _meta_check
+    mt=$?
+    _inert_check "${LOGICKERNEL_INERT_BUDGET_S:-120}"
+    ic=$?
     _format_port_check
     rc=$?
     if [ "$rc" -ne 0 ] && grep -q 'A DAEMON LEFTOVER' "$DIR/preflight_format_port_check.log" 2> /dev/null; then
@@ -493,6 +529,133 @@ _checks_fresh() {
         rc=$?
         [ "$rc" -eq 0 ] || echo "check: still FAILS after a daemon restart — a REAL failure (the method needs its manifest entry)"
     fi
+    [ "$rc" -eq 0 ] || return "$rc"
+    [ "$ts" -eq 0 ] || return "$ts"
+    [ "$mt" -eq 0 ] || return "$mt"
+    return "$ic"
+}
+
+# THE CI-ONLY CHECKS THAT ARE CHEAP (audit D-0214 finding 1, 2026-10-29): two classes of CI red in two days were
+# checks a warm run never made. The list of every check CI runs and `check`/`branch-gate` did not, with what moved
+# here and why each other stays in CI: evidence/TOOL-TS/handoff.md (the A-entry). Moved: the term-scope
+# declarations (_term_scopes_check, above), the tree-wide meta test files (_meta_check), the inert-testset guard
+# without swipl on the changed test files (_inert_check), the closing assertion of every unit (_file), CI's
+# formatter pin (_format_port_check) and the tooling job's trigger files (_branch_gate_files).
+#
+# _meta_check — the package-level test files Pkg.test runs and the branch-gate's tree-wide list did not:
+# test/test_package.jl (every package a test file loads is declared for Pkg.test: "an undeclared stdlib resolves
+# here and fails only in CI", measured twice), the commit-message hook's contract, the JUnit writer. Seconds each;
+# every run records its time (`_record_file_time`) so a file that grows past a minute is seen and moved out of
+# WARM_META_FILES (LOGICKERNEL_META_FILES: a TEST SEAM, test/test_gate_split.jl). 0 only if at least one ran.
+WARM_META_FILES="test/test_package.jl test/test_commit_msg_hook.jl test/test_junit_report.jl"
+_meta_check() {
+    local f log t0 rc=0 n=0 files="${LOGICKERNEL_META_FILES-$WARM_META_FILES}"
+    for f in $files; do
+        if [ ! -f "$ROOT/$f" ]; then
+            echo "preflight: meta test file $f is listed in tools/warm.sh and does not exist"
+            rc=1
+            continue
+        fi
+        log="$DIR/check_meta_$(basename "$f" .jl).log"
+        t0=$(date +%s)
+        _file "$f" reference > "$log" 2>&1 || {
+            rc=1
+            echo "preflight: meta test file FAILED — $f ($log)"
+            grep -E "Test Failed|Error During|NO VERDICT" "$log"
+        }
+        _record_file_time "$f" "$(( $(date +%s) - t0 ))"
+        n=$(( n + 1 ))
+    done
+    if [ "$n" -eq 0 ]; then
+        echo "preflight: no meta test file ran — nothing was checked"
+        return 1
+    fi
+    [ "$rc" -ne 0 ] || echo "preflight: meta test files pass ($n files)"
+    return "$rc"
+}
+
+# _inert_check [BUDGET_S] — each changed test file run THE WAY Pkg.test RUNS IT (audit D-0214 1, D-0222): a fresh
+# julia (tools/pkgtest_way.sh) with LOGICKERNEL_NO_SWIPL=1, stdin from /dev/null, stdout and stderr to files, and
+# test/inert_testset_guard.jl over the result. A warm run has swipl and the daemon's stdio, so three reds were CI-only:
+# a testset asserting nothing without swipl (SSU2 ca51c2a), a table empty without swipl and `Suser_output(ld)` no
+# IOSTREAM under redirected stdio (S1's test_open_close_swipl.jl). A cold process compiles, so the estimate is the file's
+# last recorded warm time (20 s for a file with none, LOGICKERNEL_INERT_DEFAULT_S) times LOGICKERNEL_INERT_FACTOR (3):
+# over the budget the files are named and left to the branch-gate, which raises the budget (LOGICKERNEL_INERT_BUDGET_S).
+# One file at a time, so at most one extra julia beside the daemons. LOGICKERNEL_INERT_FILES replaces the
+# changed-file list: a TEST SEAM.
+WARM_INERT_SKIP="test/test_static_analysis.jl test/test_gate_split.jl test/test_port_check.jl"
+_inert_check() {
+    local budget="${1:-120}" files f est=0 rc=0 n=0 log factor="${LOGICKERNEL_INERT_FACTOR:-3}"
+    if [ -n "${LOGICKERNEL_INERT_FILES+x}" ]; then
+        files="$LOGICKERNEL_INERT_FILES"
+    else
+        files=$(_changed_files | grep -E '^test/(.*/)?test_[^/]*\.jl$')
+    fi
+    # never here: the static-analysis file (Evidence's shards run it, D-0220) and the tooling test files, whose
+    # fixtures start worktrees and shells for minutes and depend on neither swipl nor the process's stdio
+    # (test_gate_split.jl, test_port_check.jl: the branch-gate runs them warm, CI's tooling job as a whole)
+    files=$(for f in $files; do
+        case " $WARM_INERT_SKIP " in *" $f "*) continue ;; esac
+        [ -f "$ROOT/$f" ] && echo "$f"
+    done)
+    if [ -z "$files" ]; then
+        echo "preflight: Pkg.test-way run: no changed test file"
+        return 0
+    fi
+    for f in $files; do est=$(( est + factor * $(LOGICKERNEL_BRANCH_GATE_DEFAULT_S="${LOGICKERNEL_INERT_DEFAULT_S:-20}" _file_time "$f") )); done
+    if [ "$est" -gt "$budget" ]; then
+        echo "preflight: Pkg.test-way run: over budget (estimate ${est}s > ${budget}s) — left to the branch-gate:"
+        printf '  %s\n' $files
+        return 0
+    fi
+    for f in $files; do
+        log="$DIR/check_inert_$(basename "$f" .jl).log"
+        "$ROOT/tools/pkgtest_way.sh" "$f" > "$log" 2>&1 || {
+            rc=1
+            echo "preflight: Pkg.test-way run FAILED — $f ($log)"
+            tail -n 15 "$log"
+        }
+        n=$(( n + 1 ))
+    done
+    [ "$rc" -ne 0 ] || echo "preflight: Pkg.test-way run clean ($n changed test files: no swipl, stdio to files, inert guard)"
+    return "$rc"
+}
+
+# _term_scopes_check — test/term_scope.jl's `# TERM TYPES PER CHUNK:` declarations of every term-generic test
+# file, judged HERE as Pkg.test judges them in CI (audit D-0206 item 4a; BLOB's test_blob.jl named no src/
+# file, passed the branch-gate, failed CI — A-0140). tools/term_scopes_check.jl calls the runner's own
+# extractor; 0 only when its pass line was SHOWN (fail closed, as _format_port_check). LOGICKERNEL_TERM_SCOPES_ROOT
+# (a planted tree) and LOGICKERNEL_TERM_SCOPES_COLD=1 (a plain julia process in place of the daemon: the
+# snippet needs Base only) are TEST SEAMS (test/test_gate_split.jl).
+_term_scopes_check() {
+    local rc root="${LOGICKERNEL_TERM_SCOPES_ROOT:-$ROOT}" snippet="$DIR/term_scopes_snippet.jl" log="$DIR/preflight_term_scopes.log"
+    mkdir -p "$DIR"
+    cat > "$snippet" <<JL
+let m = Module(:PreflightTermScopes)
+    Base.include(m, raw"$ROOT/tools/term_scopes_check.jl")
+    try
+        println(Base.invokelatest(() -> m.term_scopes_check(raw"$root")))
+    catch e
+        println("preflight: TERM SCOPES INVALID — ", e isa ErrorException ? e.msg : sprint(showerror, e))
+        rethrow()
+    end
+end
+JL
+    if [ "${LOGICKERNEL_TERM_SCOPES_COLD:-}" = 1 ]; then
+        julia --startup-file=no "$snippet" > "$log" 2>&1 < /dev/null
+    else
+        _send "$snippet" > "$log" 2>&1
+    fi
+    rc=$?
+    case "${LOGICKERNEL_PREFLIGHT_FAULT:-}" in                     # TEST SEAMS (test/test_gate_split.jl)
+        scopes-empty) : > "$log" ;;
+        scopes-cut) grep -v '^preflight: term scopes valid' "$log" > "$log.cut"; mv "$log.cut" "$log" ;;
+    esac
+    cat "$log"
+    if [ "$rc" -eq 0 ] && ! _verdict_in "$log" '^preflight: term scopes valid'; then
+        echo "preflight: NO VERDICT — the term-scopes output is empty or lacks its pass line"
+        rc=4
+    fi
     return "$rc"
 }
 
@@ -500,11 +663,25 @@ _checks_fresh() {
 # daemon: the preflight's first step, and `tools/warm.sh check` on its own (user, 2026-10-13: a
 # documentation slip is then found seconds after the edit, without starting a preflight). Prints
 # both pass lines; 0 only when both were SHOWN (fail closed).
+# _fmt_pin — the JuliaFormatter version CI.yml's Format job installs (one value, or nothing)
+_fmt_pin() {
+    local p
+    p=$(grep -hoE 'name="JuliaFormatter", version="[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT"/.github/workflows/CI.yml 2> /dev/null |
+        grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u)
+    [ "$(printf '%s\n' "$p" | grep -c .)" -eq 1 ] && printf '%s\n' "$p"
+}
 _format_port_check() {   # _format_port_check [1 = the check after a leftover restart]
     local rc snippet="$DIR/preflight_snippet.jl" fmtlog="$DIR/preflight_format_port_check.log"
-    local after_restart="${1:-0}"
+    local after_restart="${1:-0}" fmt_pin
+    fmt_pin="$(_fmt_pin)"
     cat > "$snippet" <<JL
 using JuliaFormatter
+# CI's Format job installs ONE pinned JuliaFormatter (tools/run_tests.sh refuses another too): a daemon
+# with another version formats differently, and a file its check passes fails CI's (audit D-0214 1)
+let pin = raw"$fmt_pin", have = string(pkgversion(JuliaFormatter))
+    isempty(pin) && error("preflight: no single JuliaFormatter version is pinned in .github/workflows/CI.yml")
+    have == pin || error("preflight: JuliaFormatter ", have, " in the daemon, CI pins ", pin)
+end
 if !format("."; overwrite=false)
     bad = String[]
     for (dir, dirs, files) in walkdir(".")
@@ -631,7 +808,7 @@ _preflight_once() {
     rc=$?
     [ "$rc" -eq 0 ] || {
         PF_OTHER_FAIL=1
-        echo "preflight: FAIL (format/port_check) in $(( $(date +%s) - t0 ))s"
+        echo "preflight: FAIL (format/port_check/manifest/term scopes/meta/inert) in $(( $(date +%s) - t0 ))s"
         return 1
     }
     # THE FAST STATIC PRE-CHECK (user, 2026-10-12): Aqua and JET's report_package alone, in the warm
@@ -808,6 +985,11 @@ _branch_gate_files() {
     {
         printf '%s\n' test/test_type_discipline.jl test/test_lint_globals.jl
         printf '%s\n' "$changed" | grep -E '^test/(.*/)?test_[^/]*\.jl$'
+        # CI's tooling job runs when tools/, .github/ or either of these two files changed; the gate's two tests of
+        # the tooling must run on the same condition (a CI.yml or tools/ edit that breaks them was CI-only)
+        if printf '%s\n' "$changed" | grep -qE '^(tools/|\.github/)'; then
+            printf '%s\n' test/test_gate_split.jl test/test_port_check.jl
+        fi
         _src_named_tests                                # the source-to-test map (above)
         for h in $helpers; do
             re=$(basename "$h" | sed 's/\./\\./g')
@@ -870,7 +1052,7 @@ _branch_gate_plan() {
 }
 
 # _branch_gate — THE BRANCH-GATE (user, approved 2026-10-14): commits are made off `main`, and a
-# branch commit's evidence is the fast check (`check`: format, port_check, manifest) plus the
+# branch commit's evidence is the fast check (`check`: format, port_check, manifest, term scopes) plus the
 # tree-wide gates and every test file changed since HEAD, each on EVERY term type (`_file` with no
 # implementation). `main` moves only to a commit whose full CI run is green (the commit hook refuses
 # a commit on `main` in this repo; tools/githooks/pre-push refuses `main` without that run). Not the
@@ -880,7 +1062,7 @@ _branch_gate() {
     local t0 rc=0 f files log
     t0=$(date +%s)
     _ci_gate "$ROOT" 0 || { echo "branch-gate: FAIL — the previous push's CI (tools/ci_status.sh)"; return 1; }
-    _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest) in $(( $(date +%s) - t0 ))s"; return 1; }
+    LOGICKERNEL_INERT_BUDGET_S="${LOGICKERNEL_INERT_BUDGET_S:-600}" _checks_fresh || { echo "branch-gate: FAIL (format/port_check/manifest/term scopes/meta/inert) in $(( $(date +%s) - t0 ))s"; return 1; }
     # STEP 0, GATE PARITY (2026-10-18; tooling 2): the fast static pre-check — Aqua, JET's report_package — IN
     # THE WARM DAEMON, as the preflight runs it, before any test file: a JET error or an ambiguity stops the
     # gate in seconds. MEASURED 2026-10-18: 142 s the first run of a daemon (JET compiles once), 8 s after; a
@@ -940,7 +1122,14 @@ case "$cmd" in
         _run_lock || exit 5
         echo "$cmd" > "$DIR/run.kind"                   # tools/lib_evidence.sh `_evidence_running`
         ;;
-    *) _lane_check || exit 5 ;;
+    *)
+        # TEST SEAMS send nothing to the daemon (the send probe, the cold term-scopes snippet), so the lane's
+        # reason to refuse — a probe changing the daemon under a run — does not apply: test/test_gate_split.jl
+        # runs these inside the branch-gate, which holds the lane
+        if [ "${LOGICKERNEL_WARM_SEND_PROBE:-}" != 1 ] && [ "${LOGICKERNEL_TERM_SCOPES_COLD:-}" != 1 ]; then
+            _lane_check || exit 5
+        fi
+        ;;
 esac
 case "$cmd" in
     start) _start ;;
@@ -960,13 +1149,23 @@ case "$cmd" in
         (exit "$_fl_rc")
         ;;
     bench) _bench "$@" ;;
+    fmt-pin) _fmt_pin ;;                               # the JuliaFormatter version CI.yml pins
+    term-scopes)                                       # the declarations check alone (seconds; no formatter)
+        [ "${LOGICKERNEL_TERM_SCOPES_COLD:-}" = 1 ] || _running || _start > /dev/null || exit 1
+        _term_scopes_check
+        ;;
+    meta-check)                                        # one of `check`'s CI-parity steps alone
+        [ "${LOGICKERNEL_WARM_SEND_PROBE:-}" = 1 ] || _running || _start > /dev/null || exit 1
+        _meta_check
+        ;;
+    inert-check) _inert_check "${1:-120}" ;;           # the Pkg.test-way run alone: a fresh julia, no daemon
     check)
         _running || _start > /dev/null || exit 1
         _ck_t0=$(date +%s)
         _check_julia_ci "$ROOT" check                   # a WARN only (tools/lib_evidence.sh, audit D-0026)
         _checks_fresh
         _ck_rc=$?
-        echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest) in $(( $(date +%s) - _ck_t0 ))s"
+        echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest, term scopes, meta files, inert guard) in $(( $(date +%s) - _ck_t0 ))s"
         (exit "$_ck_rc")
         ;;
     fmt)
