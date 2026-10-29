@@ -41,7 +41,7 @@ end
 # arise; its other branch, `Trail(&argp[i], makeRefG(a))`, binds a cell of the new compound — above
 # `mark_bar`, which `Trail` does not record — so it is the store `_cell_link!` makes (`linkValI`: an
 # unbound or attributed cell its reference, any other term its word). No `ensureTrailSpace` (the
-# trail is a vector) and no `SYSTEM_MODE` (no system mode: `isStaticSystemProcedure`, src/pl-proc.jl).
+# trail is a vector).
 # Its tracer callers (pl-trace.c:1165, :1282, :1334, :2583) are not ported; SSU's error is the first.
 """
     put_frame_goal(ld, goal, fr) -> Bool
@@ -67,7 +67,7 @@ function put_frame_goal(ld::PL_local_data{T}, goal::term_t, fr::Int)::Bool where
     end
 
     m = gd.modules[def.module_]
-    if m.index != MODULE_user(gd).index && (m.flags & M_SYSTEM) == 0   # (|| SYSTEM_MODE: never)
+    if m.index != MODULE_user(gd).index && ((m.flags & M_SYSTEM) == 0 || SYSTEM_MODE(ld))   # pl-trace.c:1009
         a = PL_new_term_ref(ld)
         a == 0 && return false
         PL_put_atom(ld, a, m.atom)                      # PL_put_atom(a, def->module->name)

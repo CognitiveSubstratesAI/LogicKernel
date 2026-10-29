@@ -29,8 +29,8 @@ const _operator{T} = Tuple{T, NTuple{3, UInt8}, NTuple{3, Int16}}
 # ── defining operators (pl-op.c) ────────────────────────────────────────────────────────────────
 # PORT: pl-op.c defOperator as defOperator!
 # DIVERGES: the database `gd` and the local data `ld` are arguments (the error is raised in `ld`;
-# `nothing` when `force`, which raises nothing: `initOperators!` runs before any local data exists);
-# no `SYSTEM_MODE` test (no system mode: it is always off) and no lock (no threads); the record is
+# `nothing` when `force`, which raises nothing: `initOperators!` runs before any local data exists, so
+# `SYSTEM_MODE` is read only when not `force`) and no lock (no threads); the record is
 # replaced in the table, a tuple, where upstream updates it in place.
 """
     defOperator!(gd, ld, m, name, type, priority, force) -> Bool
@@ -45,7 +45,7 @@ function defOperator!(
 )::Bool where {T}
     t = Int(type & OP_MASK)                                 # OP_PREFIX, ...
     @assert OP_PREFIX <= t <= OP_POSTFIX
-    if !force                                               # && !SYSTEM_MODE
+    if !force && !SYSTEM_MODE(ld::PL_local_data{T})         # pl-op.c:147
         comma = sym_key(name) == sym_key(mk_sym(T, Symbol(",")))
         if comma || (
             sym_key(name) == sym_key(mk_sym(T, Symbol("|"))) &&

@@ -966,8 +966,9 @@ const SF_MAGIC = 0x14a3c90f
 
 # PORT: pl-incl.h sourceFile
 # DIVERGES: the file's procedures are a vector, the most recent LAST, where upstream's `ListCell`
-# chain holds it FIRST; no `modules` (no module files), no `reload` (reconsult is not ported: a
-# second consult of a file is refused), no mutex (no threads); `name` is the file's atom.
+# chain holds it FIRST; `modules` (R2 LB2) is a vector in upstream's order (it appends at the end);
+# no `reload` (reconsult is not ported: a second consult of a file is refused), no mutex (no threads);
+# `name` is the file's atom.
 "A source file (pl-incl.h `struct sourceFile`): its name, its procedures, the one being loaded."
 mutable struct sourceFile{T}
     name::T                                             # name of source file
@@ -984,6 +985,7 @@ mutable struct sourceFile{T}
     system::Bool                                        # system sourcefile: do not reload
     from_state::Bool                                    # Loaded from resource DB state
     resource::Bool                                      # Loaded from resource DB file
+    modules::Vector{module_t{T}}                        # modules defined in this file (R2 LB2)
 end
 
 # PORT: pl-incl.h SourceFile

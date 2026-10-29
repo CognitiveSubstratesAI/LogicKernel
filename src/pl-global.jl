@@ -73,6 +73,7 @@ mutable struct PL_global_data{T}
     const prolog_flag::prolog_flag_table{T}                     # prolog_flag: the Prolog flags (R2 F1a)
     const clause_refs::Vector{Clause{T}}                        # (pl-dbref.c: the clause a clause blob names, by its number in the payload; R2 D1)
     const clause_serials::IdDict{Clause{T}, Int}                # (a clause's number in `clause_refs`; R2 D1)
+    bootsession::Bool                                           # bootsession: compiling the boot file (R2 LB2)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -105,7 +106,8 @@ end
 # (`streamAliases`: the user aliases) and `stream_alias_names` (each stream's `alias_head`).
 # Since R2's D1: `clause_refs` and `clause_serials`, the clauses a clause blob names (pl-dbref.c: upstream's blob
 # holds the `Clause` pointer, here its number in `clause_refs`, `clause_serials` its inverse); the clause blob type is
-# registered where pl-setup.c:146 calls `initDBRef`.
+# registered where pl-setup.c:146 calls `initDBRef`. Since R2's LB2: `bootsession`, `GD->bootsession` (pl-global.h), false
+# unless a boot compilation sets it (`lookupSourceFile` marks a file `system`, `from_state` and `resource` while it is on).
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
     modules = module_table{T}()                 # initModules: system, then user
@@ -165,12 +167,31 @@ function PL_global_data{T}() where {T}
         nilw,
         prolog_flag_table{T}(),                 # prolog_flag: none yet (initPrologFlags! defines them)
         Clause{T}[],                            # clause_refs: no clause has a reference yet
-        IdDict{Clause{T}, Int}()                # clause_serials
+        IdDict{Clause{T}, Int}(),               # clause_serials
+        false                                   # bootsession: no boot compilation until LB3's `-b` path sets it
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     return gd
+end
+
+# PORT: pl-incl.h ACCESS_LEVEL_USER, ACCESS_LEVEL_SYSTEM (swipl-devel cbf4e189 pl-incl.h:2969-2970)
+"The `access_level` values (pl-incl.h): the default user view, and low-level access."
+const ACCESS_LEVEL_USER = 0
+const ACCESS_LEVEL_SYSTEM = 1
+
+# PORT: pl-incl.h SYSTEM_MODE (pl-incl.h:2973)
+# DIVERGES: a function of the local data.
+"Whether the engine is in system mode: `LD->prolog_flag.access_level == ACCESS_LEVEL_SYSTEM` (pl-incl.h)."
+SYSTEM_MODE(ld::PL_local_data{T}) where {T} = ld.prolog_flag_access_level == ACCESS_LEVEL_SYSTEM
+
+# PORT: pl-init.c setAccessLevel (pl-init.c:1614, :1666 call it); pl-prologflag.c setAccessLevelFromAtom (:707)
+# DIVERGES: the kernel has no `set_prolog_flag(access_level, _)` yet (R2 F1b), so this is the only way to set the level.
+"Set the engine's access level (`setAccessLevel(level)`)."
+function setAccessLevel!(ld::PL_local_data{T}, level::Int) where {T}
+    ld.prolog_flag_access_level = level
+    return nothing
 end
 
 # PORT: pl-incl.h MODULE_user
@@ -457,6 +478,7 @@ mutable struct PL_local_data{T}
     prolog_flag_mask::UInt64                                    # prolog_flag.mask: the bits truePrologFlag reads (R2 F1a)
     prolog_flag_enums::foreign_state_pool{prolog_flag_enum}     # (current_prolog_flag/2's REDO_PTR states, R2 F1a)
     statistics::ld_statistics                                   # statistics: inferences, clocks (Y1)
+    prolog_flag_access_level::Int                               # prolog_flag.access_level: ACCESS_LEVEL_USER or _SYSTEM (R2 LB2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -535,7 +557,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{op_enum{T}}(),       # current_op/3's states: none
         gd.prolog_flag.mask,                    # prolog_flag.mask: the database's (pl-thread.c copies the creating thread's)
         foreign_state_pool{prolog_flag_enum}(),  # current_prolog_flag/2's states: none
-        ld_statistics()                         # statistics: no inference yet, started now (Y1)
+        ld_statistics(),                        # statistics: no inference yet, started now (Y1)
+        ACCESS_LEVEL_USER                       # access_level: `user` (pl-init.c:1666 sets it after the boot; swipl starts `system`, LB3's path)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

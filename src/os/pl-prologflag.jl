@@ -52,7 +52,7 @@
 # default, `dict`), until the modules area gives the record those bits.
 # The flags whose value upstream reads from the debugger (`debug`, `debugger_show_context`), the toplevel
 # (`break_level`) or the local data (`access_level`) read what the kernel has: no debugger and no toplevel,
-# `access_level` `user`.
+# `access_level` the local data's (since R2 LB2: `user` unless `setAccessLevel!` set `system`).
 # Five Boolean flags are, until R2 F1b deletes the stand-ins, still the local data's fields
 # (`prolog_flag_last_call`, `_portable_vmi`, `_optimise`, `_optimise_unify`, `_character_escapes_unicode`,
 # src/pl-global.jl), which the compiler and the VM read: `_prolog_flag_bit` reads them where upstream reads
@@ -347,7 +347,7 @@ end
 # text, where upstream compares atom handles. The per-module flags are the module record's (see the file
 # header for `var_tag`, which reads the table); `debug` and `debugger_show_context` answer
 # `false` (no debugger), `break_level` fails (no toplevel: `currentBreakLevel() < 0`), `access_level` is
-# `user`; `stack_limit` is the local stack's limit in bytes (the kernel counts words). The shared-flag
+# the local data's (`user` by default); `stack_limit` is the local stack's limit in bytes (the kernel counts words). The shared-flag
 # copy (`unify_shared_prolog_flag`) is not needed without threads.
 "Unify `val` with the value of the flag `f`, named `key`, as module `m` sees it (pl-prologflag.c)."
 function unify_prolog_flag_value(
@@ -400,7 +400,8 @@ function unify_prolog_flag_value(
     elseif name == "break_level"
         return false
     elseif name == "access_level"
-        return PL_unify_atom(ld, val, mk_sym(T, :user))
+        # PL_unify_atom(val, accessLevel()): `system` in system mode, else `user` (pl-prologflag.c:2011; R2 LB2)
+        return PL_unify_atom(ld, val, mk_sym(T, SYSTEM_MODE(ld) ? :system : :user))
     elseif name == "stack_limit"
         return PL_unify_int64(ld, val, ld.stacks_limit * 8)
     elseif _tbl_restraint_unlimited(key)

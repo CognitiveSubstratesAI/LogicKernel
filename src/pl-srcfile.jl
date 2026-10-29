@@ -36,16 +36,17 @@ end
 
 # PORT: pl-srcfile.c lookupSourceFile_unlocked
 # DIVERGES: the table is keyed by the name's `sym_key` and made with the database (src/pl-global.jl);
-# no boot session (`system`, `from_state` and `resource` false), no mutex.
+# no mutex. Since R2 LB2 the boot session is `gd.bootsession` (pl-srcfile.c:296-311).
 "The source file named `name`, created if `create`; else `nothing` (pl-srcfile.c)."
 function lookupSourceFile_unlocked(
     gd::PL_global_data{T}, name::T, create::Bool
 )::Union{Nothing, SourceFile{T}} where {T}
     file = get(gd.files_table, sym_key(name), nothing)
     if file === nothing && create
+        boot = gd.bootsession                       # GD->bootsession&1: system, from_state, resource
         file = SourceFile{T}(
             name, 0.0, 0.0, Procedure{T}[], nothing, SF_MAGIC, 0, UInt32(0), 0, UInt32(0),
-            false, false, false, false
+            false, boot, boot, boot, module_t{T}[]
         )
         registerSourceFile!(gd, file)
         gd.files_table[sym_key(name)] = file
@@ -126,25 +127,31 @@ function assertProcedureSource(
 end
 
 # PORT: pl-srcfile.c associateSource
-# DIVERGES: no system mode; the `debuginfo` flag is upstream's default, on, so `HIDE_CHILDS` is
-# cleared.
-"Associate `proc` with `sf` if no file holds it yet (pl-srcfile.c)."
-function associateSource(sf::SourceFile{T}, proc::Procedure{T})::Nothing where {T}
+# DIVERGES: `ld` is an argument (`SYSTEM_MODE` reads it); the `debuginfo` flag is upstream's default, on, so
+# `HIDE_CHILDS` is cleared (the `set(def, HIDE_CHILDS)` branch needs the flag to be settable: F1b).
+"Associate `proc` with `sf` if no file holds it yet (pl-srcfile.c); in system mode the predicate is locked."
+function associateSource(
+    ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}
+)::Nothing where {T}
     def = proc.definition
     if (def.flags & FILE_ASSIGNED) == 0
         addProcedureSourceFile(sf, proc)
-        def.flags &= ~HIDE_CHILDS                   # truePrologFlag(PLFLAG_DEBUGINFO)
+        if SYSTEM_MODE(ld)
+            def.flags |= P_LOCKED | HIDE_CHILDS
+        else
+            def.flags &= ~HIDE_CHILDS               # truePrologFlag(PLFLAG_DEBUGINFO)
+        end
     end
     return nothing
 end
 
 # PORT: pl-srcfile.c setAttrProcedureSource
-# DIVERGES: no reload context.
+# DIVERGES: no reload context; `ld` is an argument (see `associateSource`).
 "Set (or clear) attribute `attr` of `proc` while loading the source file `sf` (pl-srcfile.c)."
 function setAttrProcedureSource(
-    sf::SourceFile{T}, proc::Procedure{T}, attr::UInt64, val::Bool
+    ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}, attr::UInt64, val::Bool
 )::Bool where {T}
-    val && (attr & PROC_DEFINED) != 0 && associateSource(sf, proc)
+    val && (attr & PROC_DEFINED) != 0 && associateSource(ld, sf, proc)
     return setAttrDefinition(proc.definition, attr, val)
 end
 

@@ -74,16 +74,16 @@ function isCurrentProcedure(
 end
 
 # PORT: pl-proc.c isStaticSystemProcedure
-# DIVERGES: the functor is its name's `sym_key` and its arity, and the `system` module is `gd`'s.
-# No `SYSTEM_MODE` test: the kernel has no system mode (no boot compilation), so it is always off;
-# the `system` module always exists (`MODULE_system`).
+# DIVERGES: the functor is its name's `sym_key` and its arity, the `system` module is `gd`'s and `ld` an argument
+# (`SYSTEM_MODE`, R2 LB2); the `system` module always exists (`MODULE_system`).
 """
 The `system` module's procedure `name/arity` in the database `gd` if it is static and locked — a
 built-in — or `nothing` (pl-proc.c).
 """
 function isStaticSystemProcedure(
-    gd::PL_global_data{T}, name::UInt64, arity::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::UInt64, arity::Int
 )::Union{Nothing, Procedure{T}} where {T}
+    SYSTEM_MODE(ld) && return nothing                   # !SYSTEM_MODE && …
     proc = isCurrentProcedure(name, arity, MODULE_system(gd))
     if proc !== nothing && (proc.definition.flags & P_LOCKED) != 0 &&
         (proc.definition.flags & P_DYNAMIC) == 0
@@ -104,7 +104,7 @@ an ISO built-in of the database `gd`; true otherwise (pl-proc.c).
 function checkModifySystemProc(
     gd::PL_global_data{T}, ld::PL_local_data{T}, name::UInt64, arity::Int
 )::Bool where {T}
-    proc = isStaticSystemProcedure(gd, name, arity)
+    proc = isStaticSystemProcedure(gd, ld, name, arity)
     if proc !== nothing && (proc.definition.flags & P_ISO) != 0
         return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
     end
@@ -294,7 +294,7 @@ end
 # PORT: pl-proc.c trapUndefined
 # DIVERGES: the database `gd` is an argument; the module is the definition's index into its table.
 # NOT PORTED: the autoloader — the `autoload` flag, `autoLoader` and its retry — as decided since Q-A
-# (no autoload), and `GD->bootsession`'s `sysError` (no boot session).
+# (no autoload), and `GD->bootsession`'s `sysError` (not ported: R2 LB3's boot session).
 """
     trapUndefined(gd, def) -> Definition
 
@@ -1219,7 +1219,7 @@ function pl_set_predicate_attribute3_va(
     mparse = MODULE_parse(ld)
     if reading && mparse == def.module_
         sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
-        rc = setAttrProcedureSource(sf, proc, att, val == 1)
+        rc = setAttrProcedureSource(ld, sf, proc, att, val == 1)
         releaseSourceFile(sf)
         return rc ? FTRUE : FFALSE
     else
