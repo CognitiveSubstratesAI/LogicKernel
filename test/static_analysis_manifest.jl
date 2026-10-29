@@ -1968,7 +1968,8 @@ function _manifest_index(T)
             false
         ),
         (LK.pl_get_clause_attribute3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # LB2
-        (LK.setAttrDefinition, Tuple{D, UInt64, Bool}, false),
+        (LK.setAttrDefinition, Tuple{LD, D, UInt64, Bool}, false),
+        (LK.setThreadLocalDefinition!, Tuple{LD, D, Bool}, false),   # LB2
         (LK.var_name_body, Tuple{VIEW}, true),
         (LK._cbyte, Tuple{VIEW, Int}, true),
         (LK.warn_singleton, Tuple{VIEW}, false),
