@@ -19,8 +19,12 @@
 # the three function sets, and `handle` their record, where upstream holds function pointers and a
 # `void *`. NOT PORTED: locks and threads, timeouts, `tee`, filter streams (`upstream`,
 # `downstream`), locales, ENC_ANSI, ENC_UTF16* and ENC_WCHAR (refused where a stream would use
-# them), the pending exception (`Sset_exception`), close hooks, `Sfprintf` and the other formatted
-# output.
+# them), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
+# hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
+# and the other formatted output. Since R2's S1: the stream's `context` (an index into the
+# database's table of the streams Prolog knows, 0: none) and `erased` (closed while a reference is
+# held), reference counting (`Sacquire`, `Srelease`), `Sopen_file`, the BOM (`ScheckBOM`,
+# `SwriteBOM`) and `Ssize`.
 
 # PORT: SWI-Stream.h EOF
 "End of file, as the character functions return it (SWI-Stream.h)."
@@ -90,6 +94,15 @@ const SIO_NOFEOF = UInt32(1) << 14
 # PORT: SWI-Stream.h SIO_TEXT
 "Text-mode operation (SWI-Stream.h)."
 const SIO_TEXT = UInt32(1) << 15
+# PORT: SWI-Stream.h SIO_APPEND
+"Opened in append mode (SWI-Stream.h)."
+const SIO_APPEND = UInt32(1) << 19
+# PORT: SWI-Stream.h SIO_UPDATE
+"Opened in update mode (SWI-Stream.h)."
+const SIO_UPDATE = UInt32(1) << 20
+# PORT: SWI-Stream.h SIO_BOM
+"A BOM was detected or written (SWI-Stream.h)."
+const SIO_BOM = UInt32(1) << 30
 # PORT: pl-stream.c SIO_STDIO
 "The flags every standard stream has (pl-stream.c)."
 const SIO_STDIO = SIO_FILE | SIO_STATIC | SIO_NOCLOSE | SIO_ISATTY | SIO_TEXT
@@ -212,7 +225,9 @@ end
 
 # PORT: SWI-Stream.h io_stream as IOSTREAM
 # DIVERGES: see the file's header — the buffer pointers are indices into `mem`, `functions` names a
-# function set; the fields of the parts not ported are absent.
+# function set; the fields of the parts not ported are absent. `context` is upstream's `void
+# *context` (pl-file.c's `stream_context`): an index into the database's stream table
+# (`PL_global_data.stream_table`) instead of a pointer to a record, 0 for NULL.
 "A stream (SWI-Stream.h `IOSTREAM`)."
 mutable struct IOSTREAM
     mem::Vector{UInt8}                  # the memory `buffer`, `unbuffer`, `bufp`, `limitp` index
@@ -234,10 +249,12 @@ mutable struct IOSTREAM
     io_errno::Int                       # Save errno value
     message::Union{Nothing, String}     # error/warning message
     unicode_atoms::Sunicode_atoms_t     # per-stream atom-content policy
+    context::Int                        # the stream's entry in the database's stream table (0: none)
+    erased::Bool                        # closed while a reference is held
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
-        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT
+        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false
     )
 end
 
@@ -986,7 +1003,9 @@ function Snew(
 end
 
 # PORT: pl-stream.c S__close
-# DIVERGES: no locks, no filter streams, no close hooks; the stream is marked closed and dropped.
+# DIVERGES: no locks, no filter streams, no close hooks (the closers call pl-file.c's `freeStream`,
+# src/os/pl-file.jl), no `reportStreamError` on a failed close (the closers do); the stream is
+# marked closed, and `erased` when a reference is held.
 "Close `s`: 0, or -1 on error (pl-stream.c)."
 function S__close(s::IOSTREAM)::Int
     rval = 0
@@ -1000,12 +1019,99 @@ function S__close(s::IOSTREAM)::Int
     end
     s.magic = SIO_CMAGIC
     s.message = nothing
+    s.references == 0 || (s.erased = true)      # else unallocStream(): Julia's GC frees it
     return rval
 end
 
 # PORT: pl-stream.c Sclose
 "Close `s`: 0, or -1 on error (pl-stream.c)."
 Sclose(s::IOSTREAM)::Int = S__close(s)
+
+# ORIGINAL: pl-stream.c's `Sreference` macro (pl-stream.h): no atomic increment (no threads).
+"Count one more reference to `s` (SWI-Stream.h)."
+Sreference(s::IOSTREAM)::Int = (s.references += 1)
+
+# ORIGINAL: pl-stream.c's `Sunreference` macro (pl-stream.h): no atomic decrement (no threads).
+"Count one reference to `s` less: the references left (SWI-Stream.h)."
+Sunreference(s::IOSTREAM)::Int = (s.references -= 1)
+
+# PORT: pl-stream.c Sacquire
+"Take a reference to `s`, which keeps a closed stream from being freed (pl-stream.c)."
+function Sacquire(s::IOSTREAM)::IOSTREAM
+    Sreference(s)
+    return s
+end
+
+# PORT: pl-stream.c Srelease
+# DIVERGES: `unallocStream` frees nothing (Julia's GC owns the stream): the result says whether it
+# would have.
+"Release a reference to `s`; true if `s` was erased and this was the last (pl-stream.c)."
+function Srelease(s::IOSTREAM)::Bool
+    return Sunreference(s) == 0 && s.erased
+end
+
+# PORT: pl-stream.c Ssize
+# DIVERGES: the size of a file stream's Julia IO only (upstream asks the function set's `control`
+# `SIO_GETSIZE`, else seeks to the end); -1 for any other stream.
+"The size of the data object `s` reads or writes, or -1 (pl-stream.c)."
+function Ssize(s::IOSTREAM)::Int64
+    h = s.handle
+    if s.functions == Siofunctions && h isa Sjulia_io
+        io = h.io
+        io isa IOStream && return Int64(filesize(io))
+    end
+    return Int64(-1)
+end
+
+# PORT: pl-stream.c bomdefs
+"The byte order marks `ScheckBOM` recognises: the encoding they announce and their bytes (pl-stream.c)."
+const bomdefs = (
+    (ENC_UTF8, (0xef, 0xbb, 0xbf)),
+    (ENC_UTF16BE, (0xfe, 0xff)),
+    (ENC_UTF16LE, (0xff, 0xfe))
+)
+
+# PORT: pl-stream.c ScheckBOM
+# DIVERGES: a mark whose encoding the stream layer refuses (UTF-16, `put_code`'s and `Sgetcode`'s
+# NotPortedError) is recognised and skipped all the same, as upstream; the error is raised at the
+# first read. -1 where upstream sets `errno = EINVAL` (a non-buffered stream).
+"Detect a byte order mark at the start of the input stream `s`, switch to its encoding and skip it: 0, or -1 (pl-stream.c)."
+function ScheckBOM(s::IOSTREAM)::Int
+    (s.flags & SIO_NBUF) != 0 && return -1                  # errno = EINVAL
+    while true
+        avail = s.limitp - s.bufp
+        for (enc, bom) in bomdefs
+            n = length(bom)
+            if avail >= n && all(i -> s.mem[s.bufp + i - 1] == bom[i], 1:n)
+                s.encoding = enc
+                s.bufp += n
+                s.flags |= SIO_BOM
+                s.position !== nothing && (s.position.byteno += n)
+                return 0
+            end
+        end
+        avail >= 4 && return 0                              # longest BOM
+        if S__fillbuf(s) == -1
+            s.flags &= ~SIO_FEOF
+            return 0                                        # empty stream
+        end
+        s.bufp -= 1
+    end
+end
+
+# PORT: pl-stream.c SwriteBOM
+"Write a byte order mark if `s`'s encoding has one: 0, or -1 on error (pl-stream.c)."
+function SwriteBOM(s::IOSTREAM)::Int
+    enc = s.encoding
+    if enc == ENC_UTF8 || enc == ENC_UTF16LE || enc == ENC_UTF16BE
+        if Sputcode(Int(0xfeff), s) != -1
+            s.flags |= SIO_BOM
+            return 0
+        end
+        return -1
+    end
+    return 0
+end
 
 # ── memory files ────────────────────────────────────────────────────────────────────────────────
 
@@ -1259,4 +1365,106 @@ function Sopen_julia_io(
     s = Snew(Sjulia_io(io, close_io), flags, Siofunctions)
     s.newline = SIO_NL_POSIX
     return s
+end
+
+# ── files (pl-stream.c Sopen_file), since R2's S1 ───────────────────────────────────────────────
+
+# DIVERGES: Linux's values, as src/pl-error.jl's (EPERM, EAGAIN, EACCES, ENFILE, EMFILE, EROFS, EPIPE,
+# ENAMETOOLONG, ENOTEMPTY, ELOOP: Y1); upstream uses the C library's names. The two this file adds.
+# (a comment, not a docstring, for each constant)
+const ENOENT = 2
+const EINVAL = 22
+
+"The process's file creation mask (`umask(2)`, read by setting it and putting it back)."
+function _current_umask()::Int
+    old = ccall(:umask, Cuint, (Cuint,), 0o022)
+    ccall(:umask, Cuint, (Cuint,), old)
+    return Int(old)
+end
+
+# ORIGINAL: `open(2)` through Julia's `open`: the file as an `IOStream`, or the errno.
+function _open_julia_file(
+    path::String, op::Char, mode::Int
+)::Union{IOStream, Int}
+    existed = op != 'r' && (
+        try
+            ispath(path)
+        catch
+            false
+        end
+    )    # `ispath` throws on ENAMETOOLONG, ELOOP
+    io = try
+        if op == 'w'
+            open(path; write=true, create=true, truncate=true)
+        elseif op == 'a'
+            open(path; write=true, create=true, append=true)
+        elseif op == 'u'
+            open(path; write=true, create=true, truncate=false)     # update: no truncation
+        else
+            open(path; read=true)
+        end
+    catch e
+        e isa SystemError || rethrow()
+        return Int(e.errnum)
+    end
+    if op != 'r' && !existed && mode != 0o666           # the mode of a file this call created
+        try
+            chmod(path, mode & ~_current_umask())
+        catch e
+            e isa Union{SystemError, Base.IOError} || rethrow()
+        end
+    end
+    return io
+end
+
+# PORT: pl-stream.c Sopen_file
+# DIVERGES: returns `(stream, errno)` — the stream, or `nothing` and the errno that upstream leaves
+# in `errno`; the file is Julia's (`open`, an `IOStream`), so a failure's errno is what Julia's
+# `SystemError` carries; a new file gets `mode` less the umask by a `chmod` after the open, and
+# upstream's advisory locks (`l`, `L`: `fcntl`) are refused as upstream's own no-locking branch
+# does (EINVAL). `how`: `r`, `w`, `a` or `u`, then `b` (binary), `r` (no position), `m` and three
+# octal digits (the mode of a new file).
+"Open the file `path` as `how` says: the stream and 0, or `nothing` and the errno (pl-stream.c)."
+function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, Int}
+    isempty(how) && return (nothing, EINVAL)
+    op = how[1]
+    flags = SIO_FILE | SIO_TEXT | SIO_RECORDPOS | SIO_FBUF
+    enc = ENC_UNKNOWN
+    mode = Int(0o666)
+    i = 2
+    while i <= lastindex(how)
+        c = how[i]
+        if c == 'b'                                         # binary
+            flags &= ~SIO_TEXT
+            enc = ENC_OCTET
+        elseif c == 'r'                                     # no record
+            flags &= ~SIO_RECORDPOS
+        elseif c == 'm'
+            (i + 3 <= lastindex(how) && all(d -> '0' <= d <= '7', how[(i + 1):(i + 3)])) ||
+                return (nothing, EINVAL)
+            mode = parse(Int, how[(i + 1):(i + 3)]; base=8)
+            i += 3
+        else                                                # 'l', 'L' (locks: none) and the rest
+            return (nothing, EINVAL)
+        end
+        i += 1
+    end
+
+    if op == 'w'
+        flags |= SIO_OUTPUT
+    elseif op == 'a'
+        flags |= SIO_OUTPUT | SIO_APPEND
+    elseif op == 'u'
+        flags |= SIO_OUTPUT | SIO_UPDATE
+    elseif op == 'r'
+        flags |= SIO_INPUT
+    else
+        return (nothing, EINVAL)
+    end
+
+    io = _open_julia_file(path, op, mode)
+    io isa Int && return (nothing, io)
+    s = Snew(Sjulia_io(io, true), flags, Siofunctions)
+    enc != ENC_UNKNOWN && (s.encoding = enc)
+    return (s, 0)
 end

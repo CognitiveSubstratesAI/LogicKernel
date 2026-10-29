@@ -13,9 +13,20 @@
 # `user_output` and `user_error`): THE STANDARD STREAMS — `user_input`, `user_output`, `user_error`
 # over the process's stdin, stdout and stderr (`initIO`), `current_input`/`current_output` naming
 # them (no see/tell), the host's `set_standard_stream!` — and looking up an output stream by alias
-# (`getOutputStream`), with upstream's errors, and a stream's error state (`streamStatus`). NOT
-# PORTED: the rest of the stream table — user aliases, stream blobs, open/close/4, the stream
-# properties, input streams for read/1 (R2); no locks (no threads).
+# (`getOutputStream`), with upstream's errors, and a stream's error state (`streamStatus`).
+#
+# Since R2's S1: STREAM BLOBS, USER ALIASES, `open/3,4` and `close/1,2`. A stream Prolog knows has an
+# entry in the database's stream table (`getStreamContext`); an alias is an entry of the alias table
+# (`aliasStream`); `open/3,4` (`openStream`) unifies its third argument with the stream's first
+# alias or, without one, with a STREAM BLOB (`unify_stream_ref`): an atom of the non-text blob type
+# `stream` (`stream_blob`, the BLOB commit's interface: `lookupBlob` + `_blob_term!`), whose payload is
+# a `stream_ref` (the stream's number in the table), written `<stream>(0x…)`; `close/1,2`
+# (`pl_close`) closes a stream by blob or alias; closing frees the stream's table entry and aliases
+# (`freeStream`, which upstream runs as the close hook). NOT PORTED: the rest of the stream table —
+# the stream properties, input streams for read/1, `set_stream/2`, `stream_pair/3` (a pair blob), the
+# current-stream predicates, `open_null_stream/1`, `see/tell`, `with_output_to/2` and the output
+# redirection (O1); no locks (no threads), no atom/stream garbage collection (a blob is never
+# freed: a closed stream's blob stays a blob, its stream gone from the table).
 
 # PORT: pl-file.c fileNameStream
 # DIVERGES: the name lives in the database's `stream_filenames` (src/pl-global.jl), where upstream
@@ -276,20 +287,51 @@ function check_stream_mode(
 end
 
 # PORT: pl-file.c get_stream_handle
-# DIVERGES: the alias table is the standard streams' (no stream blobs, no user aliases: R2), so an
-# atom is a standard stream's name or no stream; returns the stream or `nothing`; no locks. A
-# standard name whose stream is NULL is `existence_error(stream, Name)`: upstream's `goto noent`
-# since its fix cd76c1a (docs/upstream_reports.md #13), and what the kernel did before it.
-"The stream the atom `a` names, as `flags` (`SH_*`) ask, or `nothing` with the error raised (pl-file.c)."
+# DIVERGES: a stream blob's payload names the stream by its number in the database's stream table (see
+# the file's header); a blob of a stream closed meanwhile is no stream (`existence_error`), its entry
+# being gone from the table (upstream: `s->erased`). A pair (both `read` and `write`) is NOT PORTED
+# (`stream_pair/3`). The alias table is the standard streams' names and the user aliases; returns the
+# stream or `nothing`; no locks, so `SH_UNLOCKED` and `SH_TRYLOCK` are all one. NOT PORTED: the
+# standard stream restored when its stream was closed (`restoreStandardStream` — the closers keep
+# the standard streams open, see `closeStream`). A standard name whose stream is NULL is
+# `existence_error(stream, Name)`: upstream's `goto noent` since its fix cd76c1a
+# (docs/upstream_reports.md #13), and what the kernel did before it.
+"The stream the blob or atom `a` names, as `flags` (`SH_*`) ask, or `nothing` with the error raised (pl-file.c)."
 function get_stream_handle(
     ld::PL_local_data{T}, a::T, flags::Int
 )::Union{Nothing, IOSTREAM} where {T}
-    n = standardStreamIndexFromName(ld, a)          # lookupHTableWP(streamAliases, a)
-    if n >= 0
-        stream = ld.IO_streams[n + 1]               # LD->IO.streams[n]
-        if stream !== nothing
-            check_stream_mode(ld, a, stream, flags) || return nothing
-            return stream
+    gd = _query_gd(ld)
+    ref = _stream_ref_of(ld, a)
+    if ref !== nothing                              # type == &stream_blob
+        (ref.read != 0 && ref.write != 0) && throw(
+            NotPortedError{T}(a, "a stream pair", "stream_pair/3 (not ported)")
+        )
+        s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
+        if s === nothing || s.erased                # if ( s->erased ) goto noent
+            (flags & SH_ERRORS) != 0 && symbol_no_stream(ld, a)
+            return nothing
+        end
+
+        check_stream_mode(ld, a, s, flags) || return nothing
+        s.magic == SIO_MAGIC && return s            # getStream(s)
+        symbol_no_stream(ld, a)
+        return nothing
+    end
+
+    if kind(a) === SYM
+        n = standardStreamIndexFromName(ld, a)      # lookupHTableWP(streamAliases, a)
+        if n >= 0
+            stream = ld.IO_streams[n + 1]           # LD->IO.streams[n]
+            if stream !== nothing
+                check_stream_mode(ld, a, stream, flags) || return nothing
+                return stream
+            end
+        else
+            stream = get(gd.stream_aliases, sym_key(a), nothing)
+            if stream !== nothing && stream.magic == SIO_MAGIC
+                check_stream_mode(ld, a, stream, flags) || return nothing
+                return stream
+            end
         end
     end
 
@@ -431,15 +473,27 @@ getTextInputStream(ld::PL_local_data{T}, t::term_t) where {T} =
     getInputStream(ld, t, S_TEXT)
 
 # PORT: pl-file.c PL_unify_stream_or_alias
-# DIVERGES: a standard stream's alias only — every stream the kernel opens is one (stream blobs
-# and user aliases: R2).
-"Unify term reference `t` with the alias of the standard stream `s` (pl-file.c)."
+# DIVERGES: no lock around the alias list; `unify_stream_ref` makes the blob (see the file's header).
+"Unify term reference `t` with the alias of the stream `s`, else with its blob (pl-file.c)."
 function PL_unify_stream_or_alias(
     ld::PL_local_data{T}, t::term_t, s::IOSTREAM
 )::Bool where {T}
     i = standardStreamIndexFromStream(ld, s)
-    @assert 0 <= i < 3 "PL_unify_stream_or_alias: not a standard stream (stream blobs: R2)"
-    return PL_unify_atom(ld, t, mk_sym(T, standardStreams[i + 1]))
+    (i >= 0 && i < 3) && return PL_unify_atom(ld, t, mk_sym(T, standardStreams[i + 1]))
+
+    gd = _query_gd(ld)
+    names = s.context != 0 ? get(gd.stream_alias_names, s.context, nothing) : nothing
+    if names !== nothing && !isempty(names)         # (ctx=getExistingStreamContext(s)) && ctx->alias_head
+        return PL_unify_atom(ld, t, names[1])
+    end
+    return unify_stream_ref(ld, t, s)
+end
+
+# PORT: pl-file.c PL_unify_stream
+"Unify term reference `t` with the blob of the stream `s`, which Prolog then knows (pl-file.c)."
+function PL_unify_stream(ld::PL_local_data, t::term_t, s::IOSTREAM)::Bool
+    getStreamContext(_query_gd(ld), s)              # get stream known to Prolog
+    return unify_stream_ref(ld, t, s)
 end
 
 # PORT: pl-file.c reportStreamError
@@ -497,3 +551,680 @@ function streamStatus(ld::PL_local_data, s::IOSTREAM)::Bool
     (s.flags & (SIO_FERR | SIO_WARN)) != 0 && return reportStreamError(ld, s)
     return true
 end
+
+# ── stream blobs (pl-file.c), since R2's S1 ─────────────────────────────────────────────────────
+
+# PORT: pl-file.c stream_ref
+# DIVERGES: `read` and `write` are the NUMBERS of the streams in the database's stream table
+# (`getStreamContext`; 0 for NULL), where upstream holds the `IOSTREAM *`s: a Julia stream is no
+# pointer. A pair (both set) is NOT PORTED.
+"The data of a stream blob (pl-file.c `stream_ref`): the streams it reads and writes, by table number (0: none)."
+struct stream_ref
+    read::Int
+    write::Int
+end
+
+# PORT: pl-file.c stream_blob
+# DIVERGES: no `release`, `compare` or `write` hooks (no atom GC; the blob's order and written form are
+# the term interface's, D-0200: `<stream>(0x…)`).
+"The blob type of a stream (pl-file.c `stream_blob`): unique by payload, non-text, named `stream`."
+const stream_blob = PL_blob_t(PL_BLOB_UNIQUE, "stream")
+
+# ORIGINAL: the payload bytes of a `stream_ref` (upstream stores the struct's memory).
+"The 16 bytes of `ref`: `read` then `write`, little-endian."
+_stream_ref_bytes(ref::stream_ref)::Vector{UInt8} =
+    collect(reinterpret(UInt8, Int64[ref.read, ref.write]))
+
+# ORIGINAL: the stream blob of `ref` as a term of type `T`: `PL_unify_blob`'s `lookupBlob` (unique by
+# payload: one atom per `ref`) and the blob term of its atom word (`_blob_term!`).
+"The blob term of type `T` that is the stream blob of `ref`."
+function _stream_blob_term(ld::PL_local_data{T}, ref::stream_ref)::T where {T}
+    bytes = _stream_ref_bytes(ref)
+    w, _ = lookupBlob(ld.atoms, bytes, length(bytes), stream_blob)
+    return _blob_term!(ld.atoms, ld.atom_symbols, T, w)
+end
+
+# ORIGINAL: `PL_blob_data(a, NULL, &type)` and `type == &stream_blob`: the `stream_ref` the atom `a` holds,
+# or `nothing` when `a` is no stream blob.
+"The `stream_ref` of the stream blob `a`, or `nothing` (pl-file.c: `type == &stream_blob`)."
+function _stream_ref_of(ld::PL_local_data{T}, a::T)::Union{Nothing, stream_ref} where {T}
+    is_blob(a) || return nothing
+    at = atomValue(ld.atoms, blob_handle(a))
+    at.type === stream_blob || return nothing
+    v = reinterpret(Int64, at.name[1:16])
+    return stream_ref(Int(v[1]), Int(v[2]))
+end
+
+# ORIGINAL: the stream numbered `serial` in the table, or `nothing` (closed, or no such stream).
+"The stream the table's entry `serial` holds, or `nothing`."
+function _stream_of(gd::PL_global_data, serial::Int)::Union{Nothing, IOSTREAM}
+    return 1 <= serial <= length(gd.stream_table) ? gd.stream_table[serial] : nothing
+end
+
+# PORT: pl-file.c getStreamContext
+# DIVERGES: the context is the stream's entry in the database's table (`PL_global_data.stream_table`;
+# `IOSTREAM.context` its index), where upstream allocates a `stream_context` (aliases, file name,
+# flags) and keeps the table `streamContext`; the aliases are `stream_alias_names`, the file name
+# `stream_filenames` (src/os/pl-file.jl `fileNameStream`).
+"Make the stream `s` known to Prolog: its number in the table (pl-file.c)."
+function getStreamContext(gd::PL_global_data, s::IOSTREAM)::Int
+    if s.context == 0
+        push!(gd.stream_table, s)
+        s.context = length(gd.stream_table)         # addNewHTablePP(streamContext, s, ctx)
+    end
+    return s.context
+end
+
+# PORT: pl-file.c aliasStream
+# DIVERGES: the alias table is keyed by the atom's `sym_key`, its names by the stream's context;
+# no lock.
+"Make `name` an alias of `s`, taking it from the stream that has it (pl-file.c)."
+function aliasStream(gd::PL_global_data{T}, s::IOSTREAM, name::T)::Nothing where {T}
+    sp = get(gd.stream_aliases, sym_key(name), nothing)
+    sp === nothing || unaliasStream(gd, sp, name)   # ensure name is free (error?)
+
+    ctx = getStreamContext(gd, s)
+    gd.stream_aliases[sym_key(name)] = s            # addNewHTableWP(streamAliases, name, s)
+    Sacquire(s)
+    push!(get!(Vector{T}, gd.stream_alias_names, ctx), name)
+    return nothing
+end
+
+# PORT: pl-file.c unaliasStream
+# DIVERGES: as `aliasStream`; `nothing` for upstream's NULL_ATOM (all the aliases of `s`).
+"Remove the alias `name` of `s`, else all its aliases (pl-file.c)."
+function unaliasStream(
+    gd::PL_global_data{T}, s::IOSTREAM, name::Union{Nothing, T}
+)::Nothing where {T}
+    names = s.context != 0 ? get(gd.stream_alias_names, s.context, nothing) : nothing
+    if name !== nothing
+        key = sym_key(name)
+        if haskey(gd.stream_aliases, key)
+            delete!(gd.stream_aliases, key)
+            if names !== nothing
+                i = findfirst(a -> sym_key(a) == key, names)
+                i === nothing || deleteat!(names, i)
+            end
+            Srelease(s)
+        end
+    elseif names !== nothing                        # delete them all
+        for a in names
+            if haskey(gd.stream_aliases, sym_key(a))
+                delete!(gd.stream_aliases, sym_key(a))
+                Srelease(s)
+            end
+        end
+        empty!(names)
+    end
+    return nothing
+end
+
+# PORT: pl-file.c restoreStandardStream
+# DIVERGES: upstream puts back the process's own `Sinput`, `Soutput` or `Serror`; the kernel has no
+# such permanent stream, so a fresh standard stream over stdin, stdout or stderr is made.
+"Put a standard stream back as standard stream number `i` after its stream was closed (pl-file.c)."
+function restoreStandardStream(ld::PL_local_data, i::Int)::Union{Nothing, IOSTREAM}
+    s = if i == SNO_USER_INPUT || i == SNO_CURRENT_INPUT
+        _std_stream(Base.stdin, SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)
+    elseif i == SNO_USER_OUTPUT || i == SNO_CURRENT_OUTPUT
+        _std_stream(Base.stdout, SIO_STDIO | SIO_LBUF | SIO_OUTPUT | SIO_REPPLU)
+    elseif i == SNO_USER_ERROR
+        _std_stream(Base.stderr, SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)
+    else
+        nothing
+    end
+    s !== nothing && (s.position = s.posbuf)
+    ld.IO_streams[i + 1] = s
+    return s
+end
+
+# PORT: pl-file.c freeStream
+# DIVERGES: upstream registers it as the stream layer's close hook (`Sclosehook`), run by every
+# `Sclose()`; the kernel's closers call it right after (`closeStream`, `do_close`, `openStream`'s
+# failures) — the only closers of a stream that has a context. The source-file name (`source_file_name`)
+# and the lock are NOT PORTED.
+"Forget the stream `s`: its aliases, its entry in the table and its file name; a standard stream that was `s` is put back (pl-file.c)."
+function freeStream(ld::PL_local_data, s::IOSTREAM)::Nothing
+    gd = _query_gd(ld)
+    unaliasStream(gd, s, nothing)
+
+    if s.context != 0
+        gd.stream_table[s.context] = nothing        # deleteHTablePP(streamContext, s)
+        delete!(gd.stream_alias_names, s.context)
+    end
+    delete!(gd.stream_filenames, s)                 # ctx->filename
+
+    for i in 0:SNO_PROTOCOL                         # if we are a standard stream
+        if ld.IO_streams[i + 1] === s               # reassociate with standard I/O
+            if i == SNO_CURRENT_INPUT
+                ld.IO_streams[i + 1] = Suser_input(ld)
+            elseif i == SNO_CURRENT_OUTPUT
+                ld.IO_streams[i + 1] = Suser_output(ld)
+            elseif i == SNO_PROTOCOL
+                ld.IO_streams[i + 1] = nothing
+            else
+                restoreStandardStream(ld, i)
+            end
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-file.c getStream
+# DIVERGES: no lock.
+"The stream `s` if it is open, else `nothing` (pl-file.c)."
+getStream(s::IOSTREAM)::Union{Nothing, IOSTREAM} = s.magic == SIO_MAGIC ? s : nothing
+
+# PORT: pl-file.c unify_stream_ref
+"Unify term reference `t` with the blob of the stream `s` (pl-file.c)."
+function unify_stream_ref(ld::PL_local_data{T}, t::term_t, s::IOSTREAM)::Bool where {T}
+    ctx = getStreamContext(_query_gd(ld), s)
+    ref = (s.flags & SIO_INPUT) != 0 ? stream_ref(ctx, 0) : stream_ref(0, ctx)
+    rval = PL_unify_atom(ld, t, _stream_blob_term(ld, ref))      # PL_unify_blob(t, &ref, …)
+
+    if !rval && !PL_is_variable(ld, t)
+        return PL_error(ld, "", 0, "stream-argument", ERR_UNINSTANTIATION, 0, t)
+    end
+    return rval
+end
+
+# ── open/3,4 (pl-file.c) ────────────────────────────────────────────────────────────────────────
+
+# ORIGINAL: whether the atom `a` is the text atom `name` (by its text: no term is built, so no term type
+# is taken from the argument).
+_sym_is(a, name::Symbol)::Bool =
+    kind(a) === SYM && !is_reserved_symbol(a) && !is_blob(a) && Symbol(sym_text(a)) === name
+
+# PORT: pl-file.c encoding_names
+# DIVERGES: the names as symbols, in upstream's order, the aliases last; `PL_atom_to_encoding` reads
+# the table (`PL_encoding_to_atom` is NOT PORTED: no caller).
+const encoding_names = (
+    (:octet, ENC_OCTET), (:ascii, ENC_ASCII), (:iso_latin_1, ENC_ISO_LATIN_1),
+    (:text, ENC_ANSI), (:utf8, ENC_UTF8), (:utf16be, ENC_UTF16BE),
+    (:utf16le, ENC_UTF16LE), (:wchar_t, ENC_WCHAR),
+    (Symbol("ISO-8859-1"), ENC_ISO_LATIN_1), (Symbol("UTF-8"), ENC_UTF8),
+    (:unicode_be, ENC_UTF16BE), (:unicode_le, ENC_UTF16LE),
+    (Symbol("UTF-16BE"), ENC_UTF16BE), (Symbol("UTF-16LE"), ENC_UTF16LE)
+)
+
+# PORT: pl-file.c PL_atom_to_encoding
+"The encoding the atom `a` names, or `ENC_UNKNOWN` (pl-file.c)."
+function PL_atom_to_encoding(a::T)::IOENC where {T}
+    (kind(a) === SYM && !is_reserved_symbol(a) && !is_blob(a)) || return ENC_UNKNOWN
+    name = Symbol(sym_text(a))
+    for (n, enc) in encoding_names
+        n === name && return enc
+    end
+    return ENC_UNKNOWN
+end
+
+# PORT: pl-file.c bad_encoding
+"Raise `domain_error(encoding, Name)` with the message `msg` (empty: none); false (pl-file.c)."
+function bad_encoding(ld::PL_local_data{T}, msg::String, name::T)::Bool where {T}
+    t = PL_new_term_ref(ld)
+    PL_put_atom(ld, t, name)
+    return PL_error(ld, "", 0, msg, ERR_DOMAIN, mk_sym(T, :encoding), t)
+end
+
+# PORT: pl-file.c stream_encoding_options
+# DIVERGES: returns `(encoding, bom)` or `nothing` with the error raised, where upstream writes them
+# through `enc` and `bom`; `bom` is -1 (not given), 0 or 1; the `encoding` flag (`LD->encoding`) is
+# UTF-8 (the flag table is F1's).
+"The encoding and the BOM policy an `open/4` with these `type` and `encoding` options gives (pl-file.c)."
+function stream_encoding_options(
+    ld::PL_local_data{T}, type::T, encoding::Union{Nothing, T}, bom::Int
+)::Union{Nothing, Tuple{IOENC, Int}} where {T}
+    if encoding !== nothing
+        enc = PL_atom_to_encoding(encoding)
+        if enc == ENC_UNKNOWN
+            bad_encoding(ld, "", encoding)
+            return nothing
+        end
+        if _sym_is(type, :binary) && enc != ENC_OCTET
+            bad_encoding(ld, "type(binary) implies encoding(octet)", encoding)
+            return nothing
+        end
+        if enc == ENC_OCTET || enc == ENC_ASCII || enc == ENC_ISO_LATIN_1 ||
+            enc == ENC_WCHAR
+            bom = 0         # explicitly specified: do not switch to Unicode
+        end
+        return (enc, bom)
+    elseif _sym_is(type, :binary)
+        return (ENC_OCTET, 0)
+    elseif _sym_is(type, :text)
+        return (ENC_UTF8, bom)                      # LD->encoding
+    end
+    ex = PL_new_term_ref(ld)
+    PL_cons_functor(ld, ex, _err_functor(ld, :type, 1), _err_atom(ld, type))
+    PL_domain_error(ld, "stream_option", ex)
+    return nothing
+end
+
+# PORT: pl-file.c set_eof_action
+"Set the end-of-file action of `s` from the atom `action`, else raise `domain_error(eof_action, A)` (pl-file.c)."
+function set_eof_action(ld::PL_local_data{T}, s::IOSTREAM, action::T)::Bool where {T}
+    if _sym_is(action, :eof_code)
+        s.flags &= ~(SIO_NOFEOF | SIO_FEOF2ERR)
+    elseif _sym_is(action, :reset)
+        s.flags &= ~SIO_FEOF2ERR
+        s.flags |= SIO_NOFEOF
+    elseif _sym_is(action, :error)
+        s.flags &= ~SIO_NOFEOF
+        s.flags |= SIO_FEOF2ERR
+    else
+        t = PL_new_term_ref(ld)
+        PL_put_atom(ld, t, action)
+        return PL_domain_error(ld, "eof_action", t)
+    end
+    return true
+end
+
+# PORT: pl-file.c set_buffering
+"Set the buffering of `s` from the atom `b`, else raise `domain_error(buffer, B)` (pl-file.c)."
+function set_buffering(ld::PL_local_data{T}, s::IOSTREAM, b::T)::Bool where {T}
+    abuf = SIO_FBUF | SIO_LBUF | SIO_NBUF                   # SIO_ABUF
+    if _sym_is(b, :full)
+        s.flags &= ~abuf
+        s.flags |= SIO_FBUF
+    elseif _sym_is(b, :line)
+        s.flags &= ~abuf
+        s.flags |= SIO_LBUF
+    elseif _sym_is(b, Symbol("false"))       # (`:false` is the Bool)
+        Sflush(s)
+        s.flags &= ~abuf
+        s.flags |= SIO_NBUF
+    else
+        t = PL_new_term_ref(ld)
+        PL_put_atom(ld, t, b)
+        return PL_domain_error(ld, "buffer", t)
+    end
+    return true
+end
+
+# PORT: pl-file.c open4_options
+# DIVERGES: `locale` (`O_LOCALE`) is listed so that a locale is REFUSED (`NotPortedError`), not ignored.
+const open4_options = (
+    PL_option_t(:type, OPT_ATOM),
+    PL_option_t(:reposition, OPT_BOOL),
+    PL_option_t(:alias, OPT_ATOM),
+    PL_option_t(:eof_action, OPT_ATOM),
+    PL_option_t(:close_on_abort, OPT_BOOL),
+    PL_option_t(:buffer, OPT_ATOM),
+    PL_option_t(:lock, OPT_ATOM),
+    PL_option_t(:wait, OPT_BOOL),
+    PL_option_t(:encoding, OPT_ATOM),
+    PL_option_t(:newline, OPT_ATOM),
+    PL_option_t(:bom, OPT_BOOL),
+    PL_option_t(:create, OPT_TERM),
+    PL_option_t(:locale, OPT_TERM),
+    PL_option_t(:unicode_atoms, OPT_ATOM)
+)
+
+# ORIGINAL: an option value that is an atom, else `nothing`.
+function _opt_atom(::Type{T}, v)::Union{Nothing, T} where {T}
+    return v isa T ? v : nothing
+end
+
+# PORT: pl-file.c openStream
+# DIVERGES: returns the stream, or `nothing` with the error raised; the file is opened by Julia
+# (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`). NOT PORTED, each raising
+# `NotPortedError` BEFORE a file is opened: `pipe(Command)` files (`Sopen_pipe`), IRIs (`iri_hook`),
+# the `lock` option (no `flock`), the `locale` option (`PL_locale`), the `unicode_atoms` option
+# (`atom_to_unicode_atoms_ex`, F1's), the encodings the stream layer refuses (ANSI, UTF-16, wchar_t),
+# and a `newline` option other than `posix`, `dos`, `detect` for input: swipl's answer there is not a
+# stable value, so it is refused by name (internal record Q12).
+# `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
+"Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
+function openStream(
+    ld::PL_local_data{T}, file::term_t, mode::term_t, options::term_t
+)::Union{Nothing, IOSTREAM} where {T}
+    gd = _query_gd(ld)
+    _initIO(ld)
+    type = mk_sym(T, :text)
+    reposition = true
+    alias = nothing
+    eof_action = mk_sym(T, :eof_code)
+    buffer = mk_sym(T, :full)
+    lock = mk_sym(T, :none)
+    newline = nothing
+    encoding = nothing
+    close_on_abort = true
+    bom = -1
+    create = 0
+
+    if options != 0
+        vals = PL_scan_options(ld, options, 0, "stream_option", open4_options)
+        vals === nothing && return nothing
+        v = _opt_atom(T, vals[1])
+        v === nothing || (type = v)
+        b2 = vals[2]
+        b2 isa Bool && (reposition = b2)
+        alias = _opt_atom(T, vals[3])
+        v = _opt_atom(T, vals[4])
+        v === nothing || (eof_action = v)
+        b5 = vals[5]
+        b5 isa Bool && (close_on_abort = b5)
+        v = _opt_atom(T, vals[6])
+        v === nothing || (buffer = v)
+        v = _opt_atom(T, vals[7])
+        v === nothing || (lock = v)
+        encoding = _opt_atom(T, vals[9])
+        newline = _opt_atom(T, vals[10])
+        b11 = vals[11]
+        b11 isa Bool && (bom = b11 ? 1 : 0)
+        i12 = vals[12]
+        i12 isa Int && (create = i12)
+        if vals[13] !== nothing
+            throw(NotPortedError{T}(type, "open/4's locale(Locale) option", "PL_locale"))
+        end
+        if vals[14] !== nothing
+            throw(
+                NotPortedError{T}(
+                    type, "open/4's unicode_atoms(Mode) option", "F1 (the flags)"
+                )
+            )
+        end
+    end
+
+    mname = PL_get_atom_ex(ld, mode)                            # MODE
+    mname === nothing && return nothing
+    how = Char[]
+    if _sym_is(mname, :write)
+        push!(how, 'w')
+    elseif _sym_is(mname, :append)
+        push!(how, 'a')
+    elseif _sym_is(mname, :update)
+        push!(how, 'u')
+    elseif _sym_is(mname, :read)
+        push!(how, 'r')
+    else
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :io_mode), mode)
+        return nothing
+    end
+    if create != 0
+        tail = PL_copy_term_ref(ld, create)
+        head = PL_new_term_ref(ld)
+        cmode = 0
+        n = 0
+        while PL_get_list(ld, tail, head, tail)
+            a = PL_get_atom_ex(ld, head)
+            a === nothing && return nothing
+            if _sym_is(a, :read)
+                cmode |= 0o444
+            elseif _sym_is(a, :write)
+                cmode |= 0o666
+            elseif _sym_is(a, :execute)
+                cmode |= 0o111
+            elseif _sym_is(a, :default)
+                cmode |= 0o666
+            elseif _sym_is(a, :all)
+                cmode |= 0o777
+            end
+
+            n += 1
+            if n == 10 && PL_skip_list(ld, tail)[1] != PL_LIST
+                PL_error(ld, ERR_TYPE, mk_sym(T, :list), create)
+                return nothing
+            end
+        end
+        PL_get_nil_ex(ld, tail) || return nothing
+        push!(how, 'm')
+        push!(how, Char('0' + ((cmode >> 6) & 7)))
+        push!(how, Char('0' + ((cmode >> 3) & 7)))
+        push!(how, Char('0' + (cmode & 7)))
+    end
+
+    ebom = stream_encoding_options(ld, type, encoding, bom)
+    ebom === nothing && return nothing
+    enc, bom = ebom
+    if enc == ENC_ANSI || enc == ENC_UTF16BE || enc == ENC_UTF16LE || enc == ENC_WCHAR
+        throw(
+            NotPortedError{T}(
+                type, string("open/4 with the stream encoding ", enc),
+                "UTF-8 only (R1, user 2026-10-07)"
+            )
+        )
+    end
+    fnewline = -1
+    if newline !== nothing && !_sym_is(type, :binary)
+        if _sym_is(newline, :posix)
+            fnewline = SIO_NL_POSIX
+        elseif _sym_is(newline, :dos)
+            fnewline = SIO_NL_DOS
+        elseif _sym_is(newline, :detect) && how[1] == 'r'
+            fnewline = SIO_NL_DETECT
+        else
+            throw(
+                NotPortedError{T}(
+                    newline,
+                    "open/4's newline option other than posix, dos, detect (input)",
+                    "internal record Q12"
+                )
+            )
+        end
+    end
+
+    bom == -1 && (bom = _sym_is(mname, :read) ? 1 : 0)
+    _sym_is(type, :binary) && push!(how, 'b')
+
+    if !_sym_is(lock, :none)                                    # File locking
+        if !(
+            _sym_is(lock, :read) || _sym_is(lock, :shared) || _sym_is(lock, :write) ||
+            _sym_is(lock, :exclusive)
+        )
+            l = PL_new_term_ref(ld)
+            PL_put_atom(ld, l, lock)
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :lock), l)
+            return nothing
+        end
+        throw(
+            NotPortedError{T}(
+                lock, "open/4's lock(Lock) option (advisory file locks)", "no flock"
+            )
+        )
+    end
+
+    if alias !== nothing &&
+        (
+        standardStreamIndexFromName(ld, alias) >= 0 ||
+        haskey(gd.stream_aliases, sym_key(alias))
+    )
+        aliast = PL_new_term_ref(ld)
+        PL_cons_functor(ld, aliast, _err_functor(ld, :alias, 1), _err_atom(ld, alias))
+        PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :open), mk_sym(T, :source_sink), aliast
+        )
+        return nothing
+    end
+
+    if PL_is_functor(ld, file, mk_sym(T, :pipe), 1)             # FILE
+        throw(NotPortedError{T}(mk_sym(T, :pipe), "open(pipe(Command), …)", "Sopen_pipe"))
+    end
+    path = PL_get_file_name(ld, file, 0)
+    path === nothing && return nothing
+    s, errno = Sopen_file(path, String(how))
+    if s === nothing
+        PL_error(                                               # error:
+            ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
+            mk_sym(T, :source_sink), file, errno
+        )
+        return nothing
+    end
+    setFileNameStream(gd, s, mk_sym(T, Symbol(path)))
+
+    s.encoding = enc
+    fnewline == -1 || (s.newline = fnewline & 0x3)
+    close_on_abort || (s.flags |= SIO_NOCLOSE)
+
+    if how[1] == 'r'
+        if !set_eof_action(ld, s, eof_action)
+            Sclose(s)
+            freeStream(ld, s)
+            return nothing
+        end
+    elseif !_sym_is(buffer, :full) && !set_buffering(ld, s, buffer)
+        Sclose(s)
+        freeStream(ld, s)
+        return nothing
+    end
+
+    alias === nothing || aliasStream(gd, s, alias)
+    reposition || (s.position = nothing)
+
+    if bom != 0
+        bom_ok = true
+        if _sym_is(mname, :read)
+            bom_ok = ScheckBOM(s) >= 0
+        elseif _sym_is(mname, :write) ||
+            ((_sym_is(mname, :append) || _sym_is(mname, :update)) && Ssize(s) == 0)
+            bom_ok = SwriteBOM(s) >= 0
+        end
+        if !bom_ok                                              # bom_error:
+            streamStatus(ld, s)
+            Sclose(s)
+            freeStream(ld, s)
+            return nothing
+        end
+    end
+
+    return s
+end
+
+# PORT: pl-file.c open4 as pl_open4_va
+# (PRED_IMPL("open", 4, open4, PL_FA_ISO))
+function pl_open4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    s = openStream(ld, A1, A2, A4)
+    s === nothing && return FFALSE
+    return PL_unify_stream_or_alias(ld, A3, s) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c open3 as pl_open3_va
+# (PRED_IMPL("open", 3, open3, PL_FA_ISO))
+function pl_open3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    s = openStream(ld, A1, A2, 0)
+    s === nothing && return FFALSE
+    return PL_unify_stream_or_alias(ld, A3, s) ? FTRUE : FFALSE
+end
+
+# ── close/1,2 (pl-file.c) ───────────────────────────────────────────────────────────────────────
+
+# PORT: pl-file.c closeStream
+# DIVERGES: `Sclose` leaves the error to its caller, which reports it (upstream: inside `S__close`);
+# the standard streams are those of `ld` (upstream's process-wide `Sinput`, `Soutput`, `Serror`);
+# `freeStream` runs after `Sclose` (upstream: the close hook); no lock to release.
+"Close the stream `s` at the Prolog level: never a standard stream, which is only flushed (pl-file.c)."
+function closeStream(ld::PL_local_data, s::IOSTREAM)::Bool
+    if s === Suser_input(ld)
+        Sclearerr(s)
+        return true
+    elseif s === Suser_output(ld) || s === Suser_error(ld)
+        Sflush(s) < 0 && return streamStatus(ld, s)
+        return true
+    end
+
+    if Sferror(s) == 0 && Sflush(s) < 0
+        rc = reportStreamError(ld, s)
+        Sclose(s)
+        freeStream(ld, s)
+        return rc
+    end
+    rc = Sclose(s)
+    rc < 0 && reportStreamError(ld, s)              # S__close: reportStreamError(s)
+    freeStream(ld, s)
+    return rc == 0
+end
+
+# PORT: pl-file.c do_close
+# DIVERGES: `s` is `nothing` for upstream's NULL (a stream that is closed or no stream).
+"Close `s`; with `force`, ignoring errors, and succeeding on no stream (pl-file.c)."
+function do_close(
+    ld::PL_local_data, s::Union{Nothing, IOSTREAM}, force::Bool
+)::Bool
+    if force
+        s === nothing && return true
+        if s === Suser_input(ld)
+            Sclearerr(s)
+        elseif s === Suser_output(ld) || s === Suser_error(ld)
+            Sflush(s)
+            Sclearerr(s)
+        else
+            Sflush(s)
+            Sclose(s)
+            freeStream(ld, s)
+        end
+        return true
+    elseif s !== nothing
+        return closeStream(ld, s)
+    end
+    return false
+end
+
+# PORT: pl-file.c pl_close
+# DIVERGES: a pair is NOT PORTED.
+"Close the stream (blob or alias) term reference `stream` holds (pl-file.c)."
+function pl_close(ld::PL_local_data{T}, stream::term_t, force::Bool)::Bool where {T}
+    _initIO(ld)
+    a = PL_get_atom(ld, stream)
+    a === nothing && return not_a_stream(ld, stream, SH_ALIAS)
+
+    gd = _query_gd(ld)
+    ref = _stream_ref_of(ld, a)
+    if ref !== nothing                                          # close(Stream[pair], ...)
+        (ref.read != 0 && ref.write != 0) && throw(
+            NotPortedError{T}(a, "closing a stream pair", "stream_pair/3 (not ported)")
+        )
+        s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
+        rc = do_close(ld, s === nothing ? nothing : getStream(s), force)
+
+        if !rc && ld.exception_term == 0
+            rc = PL_error(
+                ld, "", 0, "already closed", ERR_EXISTENCE, mk_sym(T, :stream), stream
+            )
+        end
+        return rc
+    end
+
+    s = get_stream_handle(ld, a, SH_ERRORS | SH_ALIAS)          # close(Alias, ...)
+    s === nothing && return false
+    return do_close(ld, s, force)
+end
+
+# PORT: pl-file.c close as pl_close1_va
+# (PRED_IMPL("close", 1, close, PL_FA_ISO))
+function pl_close1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_close(ld, PL__t0, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c close2_options
+const close2_options = (PL_option_t(:force, OPT_BOOL),)
+
+# PORT: pl-file.c close2 as pl_close2_va
+# (PRED_IMPL("close", 2, close2, PL_FA_ISO))
+function pl_close2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    vals = PL_scan_options(ld, A2, 0, "close_option", close2_options)
+    vals === nothing && return FFALSE
+    force = vals[1] === true
+    return pl_close(ld, A1, force) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
+# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2), in
+# upstream's order (file:6311-6314); `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
+const PL_predicates_from_file = (
+    PL_extension("open", 4, pl_open4_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS)
+)

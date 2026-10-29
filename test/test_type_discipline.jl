@@ -101,6 +101,12 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "_strtod (R1c): the C library's strtod, as upstream's ascii_to_double calls it, for its " *
         "rounding and its errno (ERANGE drives the float_overflow/underflow rules); the text is " *
         "copied into a 0-terminated vector held by GC.@preserve, so strtod reads only that copy"
+    ),
+    "os/pl-stream.jl ccall" => (
+        2,
+        "_current_umask (R2 S1): the C library's umask(2), read by setting it and putting it back, " *
+        "so that a file open/4's create(Modes) option makes gets its mode less the umask, as " *
+        "upstream's open(2) gives it; it passes and returns an unsigned integer only"
     )
 )
 

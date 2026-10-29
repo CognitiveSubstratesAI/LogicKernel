@@ -1295,10 +1295,16 @@ graph LR
     os_pl_file --> os_pl_stream
     os_pl_file --> pl_incl
     os_pl_file --> SWI_Prolog
+    os_pl_file --> pl_atom
     os_pl_file --> pl_global
     os_pl_file --> pl_inline
+    os_pl_file --> pl_comp
     os_pl_file --> pl_fli
     os_pl_file --> pl_error
+    os_pl_file --> pl_arith
+    os_pl_file --> os_pl_option
+    os_pl_file --> os_pl_text
+    os_pl_file --> os_pl_files
     pl_setup --> default_term
     pl_setup --> pl_incl
     pl_setup --> pl_global
@@ -1484,6 +1490,7 @@ graph LR
     pl_ext --> os_pl_prologflag
     pl_ext --> os_pl_text
     pl_ext --> os_pl_files
+    pl_ext --> os_pl_file
     pl_ext --> pl_proc
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
@@ -2388,7 +2395,7 @@ with `numberVars`, read_term_from_atom/3) is the next commit.
 * **DIVERGES:** the standard streams are opened the first time one is asked for, per local data
   (upstream: at start-up), over Julia's stdin, stdout and stderr when each is a file, a buffer, a
   terminal or a pipe; the host replaces one with `set_standard_stream!` (ORIGINAL — decision 2a's
-  interface), current input/output following; no locks, no stream blobs, no user aliases;
+  interface), current input/output following; no locks (stream blobs and user aliases: since S1, below);
   `Sjulia_io` holds four concrete IO types (no dynamic dispatch) and a throwing IO is a write error
   (`io_error(write, Alias)`, message "I/O error": a Julia IO has no `errno`); `PL_scan_options`
   returns the values (`nothing` where the list gives none); option dicts not ported (no dicts);
@@ -5144,6 +5151,28 @@ Tests: test/core_lang/test_ssu_swipl.jl (the s-, d- and a01/a04/a09 rows of evid
 10.1.19 and extended: s58-s68, d05; the H1 white-box; determinism at the query API); test/db/test_assert_swipl.jl's SSU
 call flipped from the refusal to `ok`; test/compile/test_ssu_compile_swipl.jl's refusal testset removed. Mutants:
 tools/mutants/SSU2.py.
+
+## S1 — stream blobs, user aliases, open/3,4 and close/1,2 (R2, D-0149, flags_rest.md §4 D10)
+
+What S1 adds (pl-file.c, pl-files.c `PL_get_file_name`, pl-stream.c `Sopen_file`/BOM/references, pl-error.c `ERR_FILE_OPERATION`):
+
+- **A stream Prolog knows has a table entry** (`getStreamContext`: `gd.stream_table`, `IOSTREAM.context` its index; upstream's
+  `streamContext` hash table and `stream_context`). **User aliases** are `gd.stream_aliases` (key: the atom's `sym_key`) and
+  `gd.stream_alias_names` (each stream's alias list); the standard names stay `standardStreams`.
+- **A stream blob is an atom of the non-text blob type `stream`** (`stream_blob`: `PL_BLOB_UNIQUE`, the BLOB commit's interface, D-0153):
+  its payload is the 16 bytes of a `stream_ref{read, write}` — the stream's number in the table (upstream: two `IOSTREAM *`), so one
+  stream is one atom (`lookupBlob`) and `_blob_term!` makes the term of any term type. `open/3,4` unifies with the first alias, else
+  the blob (`PL_unify_stream_or_alias`); `close/1,2` and every stream argument read it back (`get_stream_handle`, `_stream_ref_of`).
+  Closing frees the entry, the aliases and the file name (`freeStream`, run by the closers as upstream runs it as the close hook);
+  the blob of a closed stream stays a blob (no atom GC) and names no stream: `existence_error(stream, S)` / "already closed".
+- **Files** are opened by Julia (`Sopen_file`, one `ccall(:umask)` for `create(Modes)`); a failure's error comes from its errno
+  (`ERR_FILE_OPERATION`, Linux values). BOM check and write (`ScheckBOM`, `SwriteBOM`) are ported.
+- **Refused BY NAME** (`NotPortedError`) before a file is opened: `pipe(Cmd)`, `lock(read|shared|write|exclusive)`, `locale(_)`,
+  `unicode_atoms(_)`, the encodings `text`/`utf16*`/`wchar_t`, `newline(X)` other than posix/dos/detect-on-input, a stream pair.
+  **`newline(foo)` / `newline(detect)` on output**: swipl's answer is not a stable value, so the kernel refuses by name
+  (`# DIVERGES … (internal record Q12)`; checklist item, D-0208).
+- Tests: test/files/test_open_close_swipl.jl (97 program rows against swipl 10.1.19 incl. the files left and the streams still open,
+  14 reading rows, white-box rows); mutants: tools/mutants/S1.py.
 
 ## Still to come
 

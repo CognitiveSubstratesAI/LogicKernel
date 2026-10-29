@@ -61,6 +61,9 @@ mutable struct PL_global_data{T}
     const files_array::Vector{SourceFile{T}}                    # files.array: index → source file
     files_no_hole_before::Int                                   # files.no_hole_before
     const stream_filenames::IdDict{IOSTREAM, T}                 # (pl-file.c's stream context)
+    const stream_aliases::Dict{UInt64, IOSTREAM}                # streamAliases: user alias (sym_key) → stream
+    const stream_alias_names::Dict{Int, Vector{T}}              # stream_context.alias_head: a stream's aliases, by IOSTREAM.context
+    const stream_table::Vector{Union{Nothing, IOSTREAM}}        # streamContext: the streams Prolog knows; IOSTREAM.context indexes it, a closed stream's entry is `nothing`
     const atoms::atoms_t                                        # atoms: the atom table (L1b A)
     const atom_symbols::atom_symbols{T}                         # (each atom's symbol, L1b C6b)
     const functors::functors_t                                  # functors: the table (L1b B)
@@ -94,8 +97,10 @@ end
 # files (`files.table`, keyed by the name's `sym_key`; `files.array`, a vector — no hole is ever
 # made, as no source file is destroyed: no unload), created with the database where upstream makes
 # the table at the first lookup; and `stream_filenames`, the file name of an open stream, which
-# upstream keeps in the stream's context (pl-file.c `streamContext`, the stream table: R2) — the
-# loader registers the stream it opens.
+# upstream keeps in the stream's context (pl-file.c `streamContext`, the stream table) — the
+# loader registers the stream it opens. Since R2's S1 the stream table has landed: `stream_table`
+# (`streamContext`: the streams Prolog knows, `IOSTREAM.context` their index), `stream_aliases`
+# (`streamAliases`: the user aliases) and `stream_alias_names` (each stream's `alias_head`).
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
     modules = module_table{T}()                 # initModules: system, then user
@@ -143,6 +148,9 @@ function PL_global_data{T}() where {T}
         SourceFile{T}[],
         1,                                      # files.no_hole_before = 1
         IdDict{IOSTREAM, T}(),
+        Dict{UInt64, IOSTREAM}(),
+        Dict{Int, Vector{T}}(),
+        Union{Nothing, IOSTREAM}[],
         atoms,
         syms,
         functors,
