@@ -555,6 +555,33 @@ function PL_error(
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
+# PORT: pl-error.c PL_error (ERR_MODIFY_STATIC_PREDICATE)
+# DIVERGES: a method of its own: the definition and the context message (`PL_error(NULL, 0, msg, ERR_MODIFY_STATIC_PREDICATE, def)`),
+# the culprit built as `ERR_MODIFY_STATIC_PROC` does (the same `modify_static` branch); since LB2 (thread_local).
+"""
+    PL_error(ld, ERR_MODIFY_STATIC_PROC, def, msg) -> false
+
+Raise `error(permission_error(modify, static_procedure, Name/Arity), context(Caller, Msg))` for the definition `def`;
+`msg` empty: a fresh variable (pl-error.c `ERR_MODIFY_STATIC_PREDICATE`).
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, def::Definition{T}, msg::String
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_MODIFY_STATIC_PROC
+    pred = new_term_ref(ld)
+    gd = _query_gd(ld)
+    unify_definition(gd, ld, MODULE_user(gd), pred, def, 0, GP_NAMEARITY | GP_HIDESYSTEM)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :permission_error, 3),
+        _err_atom(ld, mk_sym(T, :modify)),
+        _err_atom(ld, mk_sym(T, :static_procedure)), pred
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, "", 0, msg)
+end
+
 """
     PL_error(ld, ERR_PERMISSION_PROC, op, type, proc) -> false
 

@@ -153,7 +153,7 @@ function setAttrProcedureSource(
     ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}, attr::UInt64, val::Bool
 )::Bool where {T}
     val && (attr & PROC_DEFINED) != 0 && associateSource(ld, sf, proc)
-    return setAttrDefinition(proc.definition, attr, val)
+    return setAttrDefinition(ld, proc.definition, attr, val)
 end
 
 # PORT: pl-srcfile.c startConsult

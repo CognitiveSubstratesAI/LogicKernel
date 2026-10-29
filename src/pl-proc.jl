@@ -1250,7 +1250,7 @@ function pl_set_predicate_attribute3_va(
         releaseSourceFile(sf)
         return rc ? FTRUE : FFALSE
     else
-        return setAttrDefinition(def, att, val == 1) ? FTRUE : FFALSE
+        return setAttrDefinition(ld, def, att, val == 1) ? FTRUE : FFALSE
     end
 end
 
@@ -1303,12 +1303,33 @@ function pl_get_clause_attribute3_va(
     return FFALSE
 end
 
+# PORT: pl-proc.c setThreadLocalDefinition
+# DIVERGES: the `O_ENGINES` branch (the one the oracle's build takes) without its storage: the kernel has one thread, so there is no
+# per-thread clause vector (`new_ldef_vector()`) and no `SUPERVISOR(thread_local)` (`S_THREAD_LOCAL` is not ported): the clauses live in
+# the predicate's own list and the reset supervisor (`freeCodesDefinition!`) is made dynamic by `P_DYNAMIC`. `ld` is an argument
+# (upstream's `PL_error(NULL, ...)` reads `LD`); no `LOCKDEF`. Whether an ERASED clause still in the list refuses (as upstream's
+# `first_clause`) depends on `cleanDefinition!` having run, as upstream's depends on its clause GC.
+"Make `def` thread-local (`val`: static to local; refused if it has clauses) or static (always refused, `predicate is thread-local`) (pl-proc.c)."
+function setThreadLocalDefinition!(ld::PL_local_data{T}, def::Definition{T}, val::Bool)::Bool where {T}
+    if (val && (def.flags & P_THREAD_LOCAL) != 0) || (!val && (def.flags & P_THREAD_LOCAL) == 0)
+        return true
+    end
+    if val                                                  # static --> local
+        def.impl_clauses.first_clause !== nothing && return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")
+        def.flags |= P_DYNAMIC | P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL
+        freeCodesDefinition!(def, true)                     # def->codes = SUPERVISOR(thread_local)
+        return true
+    end
+    return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "predicate is thread-local")   # local --> static
+end
+
 # PORT: pl-proc.c setAttrDefinition
-# DIVERGES: `P_THREAD_LOCAL`, `P_CLAUSABLE` and `P_DET` (their own setters) are refused.
+# DIVERGES: `P_CLAUSABLE` and `P_DET` (their own setters) are refused; `ld` is an argument (the thread-local setter raises).
 "Set (or clear) attribute `attr` of `def` (pl-proc.c)."
-function setAttrDefinition(def::Definition{T}, attr::UInt64, val::Bool)::Bool where {T}
+function setAttrDefinition(ld::PL_local_data{T}, def::Definition{T}, attr::UInt64, val::Bool)::Bool where {T}
     attr == P_DYNAMIC && return setDynamicDefinition!(def, val)
-    (attr == P_THREAD_LOCAL || attr == P_CLAUSABLE || attr == P_DET) && throw(
+    attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
+    (attr == P_CLAUSABLE || attr == P_DET) && throw(
         NotPortedError{T}(def.name, "setAttrDefinition: attribute $attr", "not ported")
     )
     if val

@@ -1970,7 +1970,7 @@ function _manifest_index(T)
             false
         ),
         (LK.pl_get_clause_attribute3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # LB2
-        (LK.setAttrDefinition, Tuple{D, UInt64, Bool}, false),
+        (LK.setAttrDefinition, Tuple{LD, D, UInt64, Bool}, false),
         (LK.isTransparentMetamask, Tuple{D, Vector{LK.arg_info}}, false),  # MOD4
         (LK.setMetapredicateMask, Tuple{D, Vector{LK.arg_info}}, false),   # MOD4
         (LK.meta_declaration, Tuple{GD, LD, Int, Bool}, false),            # MOD4
@@ -1978,6 +1978,7 @@ function _manifest_index(T)
         (LK.pl_meta_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),  # MOD4
         (LK.pl_mode1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),            # MOD4
         (LK.PL_meta_predicate, Tuple{LK.Procedure{T}, String}, false),     # MOD4
+        (LK.setThreadLocalDefinition!, Tuple{LD, D, Bool}, false),   # LB2
         (LK.var_name_body, Tuple{VIEW}, true),
         (LK._cbyte, Tuple{VIEW, Int}, true),
         (LK.warn_singleton, Tuple{VIEW}, false),
