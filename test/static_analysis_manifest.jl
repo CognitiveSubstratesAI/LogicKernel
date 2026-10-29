@@ -1846,6 +1846,7 @@ function _manifest_index(T)
         ),   # D1: ref, bindings
         (LK.decompile_bindings!, Tuple{LD, C, Int, Int}, false),
         (LK.pl_ruleva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_nth_clause3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # LB2
         (LK.clause_functor, Tuple{LD, UInt32}, false),
         (LK._rule_term, Tuple{LD, C, Int, Int}, false),
         (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{CH}}, false),

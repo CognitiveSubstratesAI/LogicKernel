@@ -40,6 +40,10 @@ function enc(t::_TL, seen::Vector{UInt64}=UInt64[])::String
 end
 
 
+# q1..q20/1: dynamic, three facts each (a, b, c); a row that changes one has its own (the rows share one database)
+const _QP = ":- dynamic " * join(["q$i/1" for i in 1:20], ", ") * ".\n" *
+            join(["q$i(a).\nq$i(b).\nq$i(c).\n" for i in 1:20])
+
 # ---- the program: swipl's rows (`t_<id>(R)`). dN/1 are dynamic with one fact each, e1/1 dynamic and empty, s1/1 static.
 const _PROGRAM = """
 :- dynamic d1/1, d2/1, d3/1, d4/1, d5/1, d6/1, d8/1, d9/1, d10/1, d11/1, d12/1, e1/1, d7/3.
@@ -58,7 +62,9 @@ d12(1).
 d7(1, 2, 3).
 s1(1).
 ex(G, R) :- catch(( G, R = true ), error(E, C), R = err(E, C)).
-"""
+s2(a).
+s2(b).
+""" * _QP
 
 # (id, goal). `ex/2` returns `true` or `err(Formal, Context)`.
 const _CASES = [
@@ -91,6 +97,46 @@ const _CASES = [
     ("c26", "ex(compile_predicates([d12/1|foo]), R)"),
     ("c27", "ex(compile_predicates(nomod:[nope/1]), R)"),
     ("c28", "ex(compile_predicates([d8//1]), R)"),
+    # ---- nth_clause/3 (pl-comp.c:7527): enumeration, the nth clause, the reference to the nth clause and back
+    ("n01", "findall(N, nth_clause(q1(_), N, _), R)"),
+    ("n02", "nth_clause(q2(_), 2, Ref), erase(Ref), findall(X, q2(X), R)"),
+    ("n03", "( nth_clause(q3(_), 0, _) -> R = yes ; R = no )"),
+    ("n04", "( nth_clause(q3(_), 4, _) -> R = yes ; R = no )"),
+    ("n05", "( nth_clause(q3(_), -1, _) -> R = yes ; R = no )"),
+    ("n06", "findall(Ref, nth_clause(q3(_), a, Ref), L), length(L, R)"),
+    ("n07", "ex(nth_clause(q3(_), 1.0, _), R)"),
+    ("n08", "ex(nth_clause(_, 1, _), R)"),
+    ("n09", "( nth_clause(nope(_), 1, _) -> R = yes ; R = no )"),
+    ("n10", "ex(nth_clause(q3(_), 1, foo), R)"),
+    ("n11", "nth_clause(q4(_), 2, Ref), nth_clause(P, N, Ref), R = P-N"),
+    ("n12", "nth_clause(q4(_), 2, R1), nth_clause(q4(_), 2, R2), ( R1 == R2 -> R = same ; R = diff )"),
+    ("n13", "nth_clause(q5(_), 2, Ref), erase(Ref), ( nth_clause(P, N, Ref) -> R = yes(P, N) ; R = no )"),
+    ("n14", "retract(q6(b)), findall(N, nth_clause(q6(_), N, _), R)"),
+    ("n15", "findall(N, nth_clause(s2(_), N, _), R)"),
+    ("n16", "( nth_clause(atom_length(_, _), 1, _) -> R = yes ; R = no )"),
+    ("n17", "( nth_clause(e1(_), 1, _) -> R = yes ; R = no )"),
+    ("n18", "nth_clause(q7(_), 3, Ref), erase(Ref), findall(X, q7(X), R)"),
+    ("n19", "findall(N, nth_clause(q8(a), N, _), R)"),
+    ("n20", "nth_clause(user:q8(_), 2, Ref), nth_clause(P, N, Ref), R = P-N"),
+    ("n21", "findall(N, ( nth_clause(q9(_), N, _), assertz(q9(z)) ), R)"),
+    ("n22", "findall(N, ( nth_clause(q10(_), N, Ref), erase(Ref) ), R)"),
+    ("n23", "retract(q11(a)), nth_clause(q11(_), 1, Ref), nth_clause(_, N, Ref), R = N"),
+    ("n24", "ex(nth_clause(q3(_), 1, 1), R)"),
+    ("n25", "nth_clause(q12(_), 3, Ref), ( nth_clause(q12(_), 2, Ref) -> R = yes ; R = no )"),
+    ("n26", "nth_clause(q13(_), 2, Ref), ( nth_clause(q14(_), N, Ref) -> R = yes(N) ; R = no )"),
+    ("n27", "nth_clause(q13(_), 2, Ref), nth_clause(q13(a), N, Ref), R = N"),
+    ("n28", "nth_clause(q13(_), 2, Ref), nth_clause(user:q13(_), N, Ref), R = N"),
+    ("n29", "nth_clause(q13(_), 2, Ref), ( nth_clause(nomod:q13(_), N, Ref) -> R = yes(N) ; R = no )"),
+    ("n30", "nth_clause(q13(_), 2, Ref), ( nth_clause(system:q13(_), N, Ref) -> R = yes(N) ; R = no )"),
+    ("n31", "nth_clause(q13(_), 2, Ref), nth_clause(M:q13(_), N, Ref), R = M-N"),
+    ("n32", "( nth_clause(q13/1, 1, _) -> R = yes ; R = no )"),
+    ("n33", "findall(Ref, nth_clause(q15(_), _, Ref), L), sort(L, S), length(S, R)"),
+    ("n34", "( nth_clause(q16(_), N, _), ! ), assertz(q16(z)), findall(X, q16(X), L), R = N-L"),
+    ("n35", "assertz(mq:r(1)), nth_clause(mq:r(_), 1, Ref), nth_clause(P, N, Ref), R = P-N"),
+    ("n36", "( nth_clause(mq2:r(_), 1, _) -> R = yes ; R = no )"),
+    ("n37", "findall(N, nth_clause(q17(_), N, _), L), L = [_|_], nth_clause(q17(_), 3, Ref), erase(Ref), findall(N2, nth_clause(q17(_), N2, _), R)"),
+    ("n38", "nth_clause(q18(_), 1, Ref), erase(Ref), nth_clause(q18(_), 1, Ref2), erase(Ref2), findall(X, q18(X), R)"),
+    ("n39", "nth_clause(q19(_), 2, Ref), retract(q19(b)), ( nth_clause(q19(_), N, Ref) -> R = yes(N) ; R = no )"),
     # LAST: nothing follows
     ("z01", "R = last")
 ]
@@ -222,7 +268,7 @@ end
 _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
 
 
-@testset "compile_predicates/1 == live swipl, through a program" begin
+@testset "compile_predicates/1 and nth_clause/3 == live swipl, through a program" begin
     if _swipl() === nothing
         @info "NTH_CLAUSE DIFFERENTIAL NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
         @test length(_CASES) >= 20 && allunique(first.(_CASES)) && _CASES[end][1] == "z01"     # the table is whole
@@ -242,15 +288,24 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         end
         # not a vacuous agreement: swipl's own lines hold each kind of answer (a guard that fails on an empty side)
         # measured on swipl 10.1.19 (2026-10-29): domain c09; existence c06 c07 c20 c22 c27 c28; instantiation c11 c12 c15;
-        # type c08 c10 c13 c14 c24 c25 c26; permission c01 c02 c04 c05 c15 c16 c17 c19 c22 (the assertz after a compile)
+        # type c08 c10 c13 c14 c24 c25 c26 n10 n24; permission c01 c02 c04 c05 c15 c16 c17 c19 c22 (the assertz after a compile);
+        # instantiation also n08
+
         @test count(l -> occursin(_codes("domain_error"), l), sw) == 1
         @test count(l -> occursin(_codes("existence_error"), l), sw) == 6
-        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 3
-        @test count(l -> occursin(_codes("type_error"), l), sw) == 7
+        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 4
+        @test count(l -> occursin(_codes("type_error"), l), sw) == 9
         @test count(l -> occursin(_codes("permission_error"), l), sw) == 9
         @test any(l -> startswith(l, "t_c03 ") && occursin(_codes("ok"), l), sw)
         @test any(l -> startswith(l, "t_c18 ") && occursin("i1", l) && occursin("i2", l), sw)       # the clauses survive
         @test any(l -> startswith(l, "t_c23 ") && occursin(_codes("true"), l), sw)                  # an EMPTY dynamic predicate: assertz still works
+        # nth_clause/3: the enumeration answers 1,2,3; the erased reference finds nothing; a non-integer index still enumerates (the
+        # unify results are ignored upstream); the reference gives back the index and the (unqualified) head
+        @test any(l -> startswith(l, "t_n01 ") && occursin("i1", l) && occursin("i2", l) && occursin("i3", l), sw)
+        @test any(l -> startswith(l, "t_n06 ") && occursin("i3", l), sw)
+        @test any(l -> startswith(l, "t_n11 ") && occursin("i2", l) && occursin(_codes("q4"), l), sw)
+        @test any(l -> startswith(l, "t_n35 ") && occursin(_codes("mq"), l) && occursin(_codes(":"), l), sw)
+        @test count(l -> occursin(_codes("no"), l), sw) >= 10
         @test startswith(last(sw), "t_z01 ")
     end
 end
@@ -311,4 +366,32 @@ end
     LK.PL_clear_exception(ld)
     n, a = fp(_f("/", _tls("p"), lk_gnd(_TL, LK.MAXARITY + 1)))
     @test a == -1 && LK.PL_exception(ld, 0) != 0                              # representation_error(max_procedure_arity)
+end
+
+@testset "nth_clause/3: no state or predicate reference is left behind (a cut, the last answer, a bound index, a bound reference)" begin
+    gd, ld, f = _loaded(":- dynamic d/1.\nd(1).\nd(2).\nd(3).\none(1).\n")
+    dh = _f("d", _v())
+    nth(args...) = kcall(gd, ld, "nth_clause", _TL[args...])
+    st, ans = nth(dh, _v(), _v())                                # first answer, then the query is closed: the FRG_CUTTED call
+    @test st === :true && lk_value(ans[2]) == 1
+    @test ld.clause_contexts.live == 0 && isempty(ld.predicate_references)
+    st, ans1 = nth(_f("one", _v()), _v(), _v())                  # the last answer: the state is freed before the query is closed
+    @test st === :true && lk_value(ans1[2]) == 1
+    @test ld.clause_contexts.live == 0 && isempty(ld.predicate_references)
+    st, ans = nth(dh, lk_gnd(_TL, 3), _v())                      # a bound index: no state at all
+    @test st === :true
+    @test ld.clause_contexts.live == 0 && isempty(ld.predicate_references)
+    st, _ = nth(dh, lk_gnd(_TL, 4), _v())
+    @test st === :false && ld.clause_contexts.live == 0 && isempty(ld.predicate_references)
+    ref = ans[3]                                                 # the reference to the third clause gives back its index and head
+    st, ans2 = nth(_v(), _v(), ref)
+    @test st === :true && lk_value(ans2[2]) == 3 && kind(ans2[1]) === EXPR &&
+          ld.clause_contexts.live == 0 && isempty(ld.predicate_references)
+    # the bound head of the by-reference branch: a head of another predicate, a module that is no super module
+    st, _ = nth(_f("e", _v()), _v(), ref)
+    @test st === :false && isempty(ld.predicate_references)
+    st, _ = nth(_f(":", _tls("nomod"), dh), _v(), ref)
+    @test st === :false && isempty(ld.predicate_references)
+    st, ans3 = nth(_f(":", _tls("user"), dh), _v(), ref)
+    @test st === :true && lk_value(ans3[2]) == 3
 end
