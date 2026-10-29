@@ -25,6 +25,7 @@ S = T + [
 N = ["test/db/test_nth_clause_swipl.jl"]
 NS = N + S                                                  # the get_procedure family / setDynamicDefinition! are used by the loader too
 SF = "src/pl-srcfile.jl"
+PR = "src/pl-proc.jl"
 MUTANTS = [
     # ---- '$source_file'/2 and '$source_file_predicates'/2
     dict(id="LB2-1 $source_file_predicates walks the oldest predicate first", file=SF, targets=S,
@@ -276,4 +277,51 @@ MUTANTS = [
         thehead != 0 && PL_put_term(ld, thehead, h)''',
          new='''        unify_functor(ld, h, def, how)
         thehead != 0 && PL_put_term(ld, thehead, h)'''),
+    # ---- '$get_clause_attribute'/3 (src/pl-proc.jl; the predicate is exercised by the one file only)
+    dict(id="LB2-66 get_clause_attribute line_count answers 0 for an asserted clause", file=PR, targets=N,
+         old='''clause.line_no != 0 && return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE''',
+         new='''return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE'''),
+    dict(id="LB2-67 get_clause_attribute file reads the owner's index", file=PR, targets=N,
+         old='''sf = indexToSourceFile(gd, clause.source_no)''',
+         new='''sf = indexToSourceFile(gd, clause.owner_no)'''),
+    dict(id="LB2-68 get_clause_attribute owner reads the source's index", file=PR, targets=N,
+         old='''sf = indexToSourceFile(gd, clause.owner_no)''',
+         new='''sf = indexToSourceFile(gd, clause.source_no)'''),
+    dict(id="LB2-69 get_clause_attribute size is in words, not bytes", file=PR, targets=N,
+         old='''8 * sizeofClause(length(clause.codes))''',
+         new='''sizeofClause(length(clause.codes))'''),
+    dict(id="LB2-70 get_clause_attribute fact is inverted", file=PR, targets=N,
+         old='''v = (clause.flags & UNIT_CLAUSE) != 0 ? :true : :false''',
+         new='''v = (clause.flags & UNIT_CLAUSE) == 0 ? :true : :false'''),
+    dict(id="LB2-71 get_clause_attribute erased is inverted", file=PR, targets=N,
+         old='''v = visibleClause(clause, gen) ? :false : :true''',
+         new='''v = visibleClause(clause, gen) ? :true : :false'''),
+    dict(id="LB2-72 get_clause_attribute predicate_indicator is not qualified", file=PR, targets=N,
+         old='''GP_QUALIFY | GP_NAMEARITY
+        ) && return FTRUE''',
+         new='''GP_NAMEARITY
+        ) && return FTRUE'''),
+    dict(id="LB2-73 get_clause_attribute predicate_indicator is a head, not Name/Arity", file=PR, targets=N,
+         old='''GP_QUALIFY | GP_NAMEARITY
+        ) && return FTRUE''',
+         new='''GP_QUALIFY
+        ) && return FTRUE'''),
+    dict(id="LB2-74 get_clause_attribute predicate_indicator succeeds when the unification fails", file=PR, targets=N,
+         old='''GP_QUALIFY | GP_NAMEARITY
+        ) && return FTRUE''',
+         new='''GP_QUALIFY | GP_NAMEARITY
+        ); return FTRUE'''),
+    dict(id="LB2-75 get_clause_attribute module is always user", file=PR, targets=N,
+         old='''gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE''',
+         new='''MODULE_user(gd).atom) ? FTRUE : FFALSE'''),
+    dict(id="LB2-76 get_clause_attribute refuses an erased reference", file=PR, targets=N,
+         old='''rc == 0 && return FFALSE                                # !PL_get_clref(ref, &clause): the error is raised''',
+         new='''rc != 1 && return FFALSE'''),
+    dict(id="LB2-77 get_clause_attribute succeeds for an unknown attribute", file=PR, targets=N,
+         old='''        return PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE
+    end
+    return FFALSE''',
+         new='''        return PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE
+    end
+    return FTRUE'''),
 ]

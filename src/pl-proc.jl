@@ -1252,6 +1252,55 @@ function pl_set_predicate_attribute3_va(
     end
 end
 
+# PORT: pl-proc.c get_clause_attribute as pl_get_clause_attribute3_va
+# (PRED_IMPL("$get_clause_attribute", 3, get_clause_attribute, 0))
+# DIVERGES: `size` is `8 * sizeofClause(length(codes))` bytes — upstream's `offsetof(struct clause, codes[n])` formula over the
+# KERNEL's code words (pl-incl.jl: 64 bytes of fields + 8 per word), so the number differs from swipl's whenever the kernel
+# compiles a clause to a different number of words; `module` is the predicate's module: the kernel has no `CL_BODY_CONTEXT` /
+# `I_CONTEXT`, so a rule asserted from `user` into another module (`assertz((m2:i(1) :- m3:foo))`) answers `m2`, swipl's
+# `clauseBodyContext` answers `user` (measured, 10.1.19). An erased reference is NOT refused (`PL_get_clref` rc -1), only a
+# non-reference is (`type_error(db_reference, T)`); `erased` asks the visibility in the environment frame's generation.
+"`'\$get_clause_attribute'(+Ref, +Attribute, -Value)` (pl-proc.c): `line_count`, `file`, `owner`, `size`, `fact`, `erased`, `predicate_indicator` or `module` of a clause."
+function pl_get_clause_attribute3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    ref, att, value = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    rc, clause = PL_get_clref(gd, ld, ref)
+    rc == 0 && return FFALSE                                # !PL_get_clref(ref, &clause): the error is raised
+    clause = clause::Clause{T}
+    a = PL_get_atom_ex(ld, att)
+    a === nothing && return FFALSE
+    k = sym_key(a)
+
+    if k == sym_key(mk_sym(T, :line_count))
+        clause.line_no != 0 && return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :file))
+        sf = indexToSourceFile(gd, clause.source_no)
+        sf !== nothing && return PL_unify_atom(ld, value, sf.name) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :owner))
+        sf = indexToSourceFile(gd, clause.owner_no)
+        sf !== nothing && return PL_unify_atom(ld, value, sf.name) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :size))
+        return PL_unify_integer(ld, value, 8 * sizeofClause(length(clause.codes))) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :fact))
+        v = (clause.flags & UNIT_CLAUSE) != 0 ? :true : :false
+        return PL_unify_atom(ld, value, mk_sym(T, v)) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :erased))
+        gen = generationFrame(ld.frames[ld.environment_frame])
+        v = visibleClause(clause, gen) ? :false : :true
+        return PL_unify_atom(ld, value, mk_sym(T, v)) ? FTRUE : FFALSE
+    elseif k == sym_key(mk_sym(T, :predicate_indicator))
+        unify_definition(
+            gd, ld, MODULE_user(gd), value, clause.predicate, 0, GP_QUALIFY | GP_NAMEARITY
+        ) && return FTRUE
+    elseif k == sym_key(mk_sym(T, :module))
+        return PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
 # PORT: pl-proc.c setAttrDefinition
 # DIVERGES: `P_THREAD_LOCAL`, `P_CLAUSABLE` and `P_DET` (their own setters) are refused.
 "Set (or clear) attribute `attr` of `def` (pl-proc.c)."
@@ -1624,6 +1673,7 @@ const PL_predicates_from_proc = (
         "\$set_predicate_attribute", 3, pl_set_predicate_attribute3_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
+    PL_extension("\$get_clause_attribute", 3, pl_get_clause_attribute3_va, PL_FA_VARARGS),
     PL_extension(
         "retract", 1, pl_retract1_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS

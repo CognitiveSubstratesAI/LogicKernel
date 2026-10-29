@@ -5437,11 +5437,17 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   definition's module or one it is a super module of, the functor must match), a bound index (the nth visible clause), or the enumeration (state = a record of clause/2's pool,
   `cref` and the index in the `key` word; the generation is kept in the frame; DIVERGES: `contextModule` is `user`). The results of the two final unifications are IGNORED as upstream's,
   so `nth_clause(p(_), a, R)` enumerates and binds `R` (row n06). The foreign-predicate check is kept though the kernel's foreign definition has no clause list.
-- **Still to come in LB2:** `'$get_clause_attribute'/3`, thread_local;
+- **`'$get_clause_attribute'/3`** (pl-proc.c:3910; `pl_get_clause_attribute3_va`, rows g01-g31): `line_count` (only when non-zero), `file`, `owner` (the clause's `source_no` and `owner_no`
+  through `indexToSourceFile`: an asserted clause has 0, so both fail), `size`, `fact`, `erased` (visibility in the environment frame's generation), `predicate_indicator` (`unify_definition`
+  with `GP_QUALIFY|GP_NAMEARITY`: `user:d/1` for an unbound value; a BOUND value goes through the bound-head branch, so `d/1` matches too), `module`; any other attribute fails. An ERASED
+  reference is not refused (`PL_get_clref` rc -1), a non-reference is `type_error(db_reference, _)`. DIVERGES: `size` is `8 * sizeofClause(length(codes))` bytes, upstream's formula over the
+  kernel's code words (rows pin `integer(S), S > 0`; a white-box testset pins the formula); `module` is the predicate's module — the kernel has no `CL_BODY_CONTEXT`/`I_CONTEXT`, so a rule asserted
+  from `user` into another module (`assertz((m2:i(1) :- m3:foo))`) answers `m2` where swipl 10.1.19 answers `user` (measured; a fact answers its predicate's module in both).
+- **Still to come in LB2:** thread_local (pl-proc.c:3755);
   modules L3 (`exportProcedureSource`, pl-srcfile.c:1427) and L4 (`setMetapredicateSource`, :1334) wait for MOD4 (`exportProcedure` and
   `setMetapredicateMask` do not exist on this base); with them MOD4's `meta_declaration` ReadingSource refusal is replaced by upstream's branch (D-0246).
 
-Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28, nth_clause/3 rows n01-n39); mutants: tools/mutants/LB2.py.
+Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28, nth_clause/3 rows n01-n39, '$get_clause_attribute'/3 rows g01-g31); mutants: tools/mutants/LB2.py.
 
 ## Still to come
 
