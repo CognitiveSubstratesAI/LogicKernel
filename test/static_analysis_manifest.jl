@@ -743,6 +743,8 @@ function _manifest_index(T)
         (LK.pl_op3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.PL_get_atom, Tuple{LD, Int}, false),
         (LK.PL_get_integer, Tuple{LD, Int}, false),
+        (LK.PL_get_uint, Tuple{LD, Int}, false),           # MOD4
+        (LK.PL_cvt_i_uint, Tuple{LD, Int}, false),         # MOD4
         (LK.PL_get_list, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_get_nil, Tuple{LD, Int}, false),
         (LK.PL_is_list, Tuple{LD, Int}, false),
@@ -1405,7 +1407,7 @@ function _manifest_index(T)
         (LK.unify_finished, Tuple{LD, Int, LK.finished}, false),
         (LK.call1, Tuple{GD, LD, Int, Int}, false),        # MOD2: the module `mdef`
         (LK.call_term, Tuple{GD, LD, Int, Int}, false),
-        (LK._interim_mqual_cleanup, Tuple{GD, LD, Int, Int}, false),   # MOD2 INTERIM: S_MQUAL (MOD4)
+        (LK.m_qualify_argument, Tuple{GD, LD, Int, Int}, false),       # MOD4
         (LK.call_internal_det_foreign, Tuple{GD, LD, LK.Procedure{T}, Int}, false),
         (LK.callCleanupHandler, Tuple{LD, Int, LK.finished}, false),
         (LK.frameFinished, Tuple{LD, Int, LK.finished}, false),
@@ -1488,8 +1490,7 @@ function _manifest_index(T)
         (LK._boot_term, Tuple{Symbol, Vector{T}}, false),
         (LK._boot_conj, Tuple{Vector{T}}, false),
         (LK._boot_ite, Tuple{Type{T}, T, T, T}, false),
-        (LK._boot_mqual, Tuple{Type{T}, T, T, Vector{T}}, false),   # MOD2
-        (LK._boot_transparent!, Tuple{GD}, false),                  # MOD2
+        (LK._boot_meta!, Tuple{GD}, false),                         # MOD4
         (LK._boot_cons, Tuple{Type{T}, T, T}, false),
         (LK._boot_vars, Tuple{Type{T}, Int}, false),
         (LK._boot_length_error, Tuple{Type{T}, T, T}, false),
@@ -1938,6 +1939,7 @@ function _manifest_index(T)
         (LK.attribute_mask, Tuple{LD, T}, false),
         (LK.get_bool_or_int_ex, Tuple{LD, Int}, false),
         (LK.get_procedure, Tuple{GD, LD, Int, Int}, false),
+        (LK.get_procedure, Tuple{GD, LD, Int, Int, Int}, false),           # MOD4: `h`
         (LK.get_procedure_create, Tuple{GD, LD, Int, Int}, false),
         (LK.pl_retractall1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (
@@ -1946,6 +1948,13 @@ function _manifest_index(T)
             false
         ),
         (LK.setAttrDefinition, Tuple{D, UInt64, Bool}, false),
+        (LK.isTransparentMetamask, Tuple{D, Vector{LK.arg_info}}, false),  # MOD4
+        (LK.setMetapredicateMask, Tuple{D, Vector{LK.arg_info}}, false),   # MOD4
+        (LK.meta_declaration, Tuple{GD, LD, Int, Bool}, false),            # MOD4
+        (LK.meta_predicate, Tuple{GD, LD, Int, Bool}, false),              # MOD4
+        (LK.pl_meta_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),  # MOD4
+        (LK.pl_mode1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),            # MOD4
+        (LK.PL_meta_predicate, Tuple{LK.Procedure{T}, String}, false),     # MOD4
         (LK.var_name_body, Tuple{VIEW}, true),
         (LK._cbyte, Tuple{VIEW, Int}, true),
         (LK.warn_singleton, Tuple{VIEW}, false),
