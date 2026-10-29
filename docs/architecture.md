@@ -5131,8 +5131,9 @@ What SSU2 ports (pl-vmi.c, pl-wam.c, pl-trace.c at the pin; design D1, D2, D6, D
 - **`?=>` as upstream (D8):** a `?=>` clause that exits without a cut leaves `I_CHP`'s choice point with `FR_SSU_DET`
   set, so backtracking into it raises the error (s48, s49, d03). catch/3's `I_EXITCATCH` and call_cleanup/2's
   `I_EXITCLEANUP` step over `CHP_DEBUG` choice points (pl-vmi.c), so inside them it never comes (s26, d05, as swipl).
-  **DIVERGES, representation:** the `CHP_DEBUG` records those two step over leave the chain while their stack region
-  stays in use, so they are marked `unlinked`, as the `CHP_CATCH` record they step to (the pool invariant of V9d).
+  The stepped-over `CHP_DEBUG` records are released by `exit_continue`'s `lowerLTop!` (src/pl-wam.jl), the kernel's form
+  of upstream's stack-pointer move (pl-vmi.c:4908-4911 I_EXITCATCH, :4843-4844 I_EXITCLEANUP: only `BFR` moves); no
+  marking (D-0219). The F1 white-box testset checks the pools at every answer under catch/3 and setup_call_cleanup/3.
 - **Static:** the four labels join the call path whose spans must not allocate (static_analysis_body.jl); an SSU call
   allocates at most one pooled choice record. `put_frame_goal` has its manifest entry.
 - **Not here:** the debugger's branches (`BFR->type = CHP_DEBUG` in `I_SSU_COMMIT` and `I_EXITCATCH`); `put_frame_goal`'s
@@ -5140,7 +5141,7 @@ What SSU2 ports (pl-vmi.c, pl-wam.c, pl-trace.c at the pin; design D1, D2, D6, D
   qualification is tested on a module of the test's own, s58/s59).
 
 Tests: test/core_lang/test_ssu_swipl.jl (the s-, d- and a01/a04/a09 rows of evidence/r2/design/ssu_rows.pl, re-run on swipl
-10.1.19 and extended: s58-s67, d05; the H1 white-box; determinism at the query API); test/db/test_assert_swipl.jl's SSU
+10.1.19 and extended: s58-s68, d05; the H1 white-box; determinism at the query API); test/db/test_assert_swipl.jl's SSU
 call flipped from the refusal to `ok`; test/compile/test_ssu_compile_swipl.jl's refusal testset removed. Mutants:
 tools/mutants/SSU2.py.
 

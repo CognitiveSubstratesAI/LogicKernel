@@ -3393,10 +3393,10 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_EXITCATCH
     # DIVERGES: the CHP_CATCH record taken out of the chain is marked `unlinked` (the soft-cut's
-    # record, since V9d): its region is reclaimed when `lTop` drops below it. So is each `CHP_DEBUG`
-    # record stepped over (since SSU2: the one `I_CHP` pushed for a `?=>` clause that exited without
-    # a cut — upstream's `BFR = bfr->parent` takes it out of the chain too). NOT PORTED: the
-    # debugger's branch (`bfr->type = CHP_DEBUG`; `debugstatus.debugging` is never set).
+    # record, since V9d): its region is reclaimed when `lTop` drops below it. The `CHP_DEBUG` records
+    # stepped over (since SSU2: `I_CHP`'s, left by a `?=>` clause that exited without a cut) are only
+    # stepped over, as upstream: `exit_continue`'s `lowerLTop!` releases them (D-0219). NOT PORTED:
+    # the debugger's branch (`bfr->type = CHP_DEBUG`; `debugstatus.debugging` is never set).
     @label I_EXITCATCH
     iec_b = ld.BFR
     while iec_b != 0 && ld.choices[iec_b].type == CHP_DEBUG
@@ -3405,11 +3405,6 @@ function PL_next_solution_guarded(
     if iec_b != 0 && ld.choices[iec_b].frame == FR &&
         ld.choices[iec_b].base == argFrameP(ld.frames[FR].base, 3)
         @assert ld.choices[iec_b].type == CHP_CATCH
-        iec_d = ld.BFR
-        while iec_d != iec_b                        # (the CHP_DEBUG records stepped over)
-            ld.choices[iec_d].unlinked = true
-            iec_d = ld.choices[iec_d].parent
-        end
         ld.BFR = ld.choices[iec_b].parent
         ld.choices[iec_b].unlinked = true
         ld.frames[FR].flags |= FR_CAUGHT
@@ -3454,19 +3449,15 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_EXITCLEANUP
     # DIVERGES: positions for addresses. The frame's `CHP_CATCH` record, and any other the walk
     # steps over, taken out of the chain while its stack region stays in use, is marked `unlinked`
-    # (as `I_EXITCATCH`'s), and so is each `CHP_DEBUG` record the first walk steps over (since SSU2:
-    # `I_CHP`'s, left by a `?=>` clause that exited without a cut).
+    # (as `I_EXITCATCH`'s). The `CHP_DEBUG` records the first walk steps over (since SSU2: `I_CHP`'s,
+    # left by a `?=>` clause that exited without a cut) are released by `exit_continue`'s `lowerLTop!`
+    # after the handler (D-0219), as upstream's stack-pointer move.
     @label I_EXITCLEANUP
     iecl_b = ld.BFR
     while iecl_b != 0 && ld.choices[iecl_b].type == CHP_DEBUG
         iecl_b = ld.choices[iecl_b].parent
     end
     if iecl_b != 0 && ld.choices[iecl_b].frame == FR && ld.choices[iecl_b].type == CHP_CATCH
-        iecl_d = ld.BFR
-        while iecl_d != iecl_b                      # (the CHP_DEBUG records stepped over)
-            ld.choices[iecl_d].unlinked = true
-            iecl_d = ld.choices[iecl_d].parent
-        end
         ld.choices[iecl_b].unlinked = true
         ld.BFR = ld.choices[iecl_b].parent
         while ld.BFR != 0 && ld.choices[ld.BFR].base > ld.frames[FR].base  # BFR > (Choice)FR

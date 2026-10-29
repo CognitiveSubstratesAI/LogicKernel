@@ -10,14 +10,10 @@
 # The `old` strings are written in the repo's formatted style; RE-FIT any that `tools/warm.sh fmt` rewraps (mutate_drive.py
 # refuses a string that does not occur exactly once). The two trail tests are the same line: each `old` starts at its label.
 # Re-run from SSU1 (design §6: compile mutants that show only at execution): SSU1-C1 (`I_CHP` not emitted) as SSU2-R1.
+# F1 (D-0213, D-0219): I_EXITCATCH / I_EXITCLEANUP step over CHP_DEBUG records as upstream (pl-vmi.c:4908-4911,
+# :4843-4844), no marking: exit_continue's lowerLTop! releases them; the F1 white-box testset (test_ssu_swipl.jl) checks
+# the pools at every answer as a regression guard. No code of its own to mutate.
 # NOT LISTED:
-#   * I_EXITCATCH / I_EXITCLEANUP marking the stepped-over CHP_DEBUG records `unlinked` (SSU2's representation line): EQUIVALENT
-#     in effect, read not run — after I_EXITCATCH the catch frame exits deterministically (BFR is the CHP_CATCH's parent,
-#     older than the frame), so `exit_continue`'s `lowerLTop!` drops every record above the frame before anything reads the
-#     flag; after I_EXITCLEANUP either the same holds or a setup choice point of a callee frame stays, and the next failure
-#     reaches it by `deep_backtrack` (its frame is not the failing one), whose `dropRecords!` drops them; the one reader,
-#     `dropUnlinkedChoices!`'s assertion (shallow_backtrack, the LCO guard), needs the failing frame to own BFR. The marks keep
-#     the pool invariant (V9d) true as stated. PENDING AUDIT.
 #   * The `_no_record_above` assertion in I_SSU_COMMIT (design H3): a guard; removing it changes no verdict.
 #   * The debugger branches (not ported).
 TS = ["test/core_lang/test_ssu_swipl.jl"]

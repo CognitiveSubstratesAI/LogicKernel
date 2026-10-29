@@ -131,6 +131,7 @@ voidh(_, _, R) => R = void.
 '?=>'(ht(X), (X = f(Y), ht2(X, Y))).
 ht2(_, _).
 lco(X) => m(X, _).
+'?=>'(pd(X), X = 1).
 gf(X), X > 0 => fail.
 gf(_) => true.
 gb(X, Y), X > 0 => su_member(Y, [a, b]), Y == c.
@@ -276,6 +277,8 @@ const _SS_CASES = [
     ("s66", raw"(gb(1, _) -> R = yes ; R = no)"),
     # s67: the guard fails before the cut, the next clause matches
     ("s67", raw"(gf(0) -> R = yes ; R = no)"),
+    # s68: a ?=> body that binds a goal variable, under call_cleanup/2: the matching-rule error on the FIRST call (swipl 10.1.19)
+    ("s68", raw"(call_cleanup(pd(_), true), R = done)"),
     # d01: determinism: => pops its choice point (I_CHP's CHP_DEBUG)
     (
         "d01",
@@ -372,6 +375,7 @@ const _SS_PINNED = [
     "t_s65 c[116,95,115,54,53]/1(a[110,111])",
     "t_s66 c[116,95,115,54,54]/1(a[110,111])",
     "t_s67 c[116,95,115,54,55]/1(a[121,101,115])",
+    "t_s68 c[116,95,115,54,56]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[109,97,116,99,104,105,110,103,95,114,117,108,101],c[112,100]/1(V0))))",
     "t_d01 c[116,95,100,48,49]/1(a[100,101,116])",
     "t_d02 c[116,95,100,48,50]/1(a[100,101,116])",
     "t_d03 c[116,95,100,48,51]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[109,97,116,99,104,105,110,103,95,114,117,108,101],c[110,100]/1(V0))))",
@@ -437,7 +441,7 @@ function _ss_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "SSU clauses run as swipl's (s01-s67, d01-d05, a01/a04/a09)" begin
+@testset "SSU clauses run as swipl's (s01-s68, d01-d05, a01/a04/a09)" begin
     f, names = _ss_file()
     kl, _, _ = _ss_kernel(f, names)
     @test length(kl) == length(_SS_PINNED)
@@ -454,7 +458,10 @@ end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
-    if swipl !== nothing
+    if swipl === nothing
+        @info "SSU2 LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+        @test length(_SS_PINNED) == length(_SS_CASES) + 1   # the pins still cover every case ("ok" + one line each)
+    else
         f, names = _ss_file()
         @test _ss_swipl_lines(f, names) == _SS_PINNED
     end
@@ -563,4 +570,80 @@ end
     @test _ss_enc(child(ball, 3)) == _SS_REDO_CONTEXT
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
+end
+
+# ---- white-box (D-0213, D-0219, flag F1): `I_EXITCATCH` and `I_EXITCLEANUP` step over the `CHP_DEBUG` record `I_CHP` pushed
+# for a `?=>` clause that exited without a cut (`pe/1`: one clause, so no `CHP_CLAUSE`; `I_SSU_CHOICE` leaves the record; its body
+# binds no goal variable — one that does raises the matching-rule error under call_cleanup/2 in swipl, row s68). Upstream
+# (pl-vmi.c:4908-4911, :4843-4844) only moves `BFR` past it, and so does the kernel: the record, in the pool, is released by
+# `exit_continue`'s `lowerLTop!` (src/pl-wam.jl) before any reader of the pools' invariant (V9d) runs. A REGRESSION GUARD:
+# the check of test/core_lang/rules_common.jl `_rpools_live` at EVERY answer, while the region is still in use (`su_member/2`
+# after the catch/cleanup leaves a choice point) and bare. Answers as swipl's: f1c/f1u a-1, a-2; f1c0/f1u0 a (trivially).
+const _SS_F1_PROGRAM = raw"""
+'?=>'(pe(a), true).
+f1c0(X) :- catch(pe(a), _, true), X = a.
+f1u0(X) :- setup_call_cleanup(true, pe(a), true), X = a.
+f1c(X, Y) :- catch(pe(a), _, true), X = a, su_member(Y, [1, 2]).
+f1u(X, Y) :- setup_call_cleanup(true, pe(a), true), X = a, su_member(Y, [1, 2]).
+su_member(X, [X|_]).
+su_member(X, [_|T]) :- su_member(X, T).
+"""
+
+"`_rpools_live` (test/core_lang/rules_common.jl) for this file's term type: the pools hold exactly the live records."
+function _ss_pools_live(ld::LK.PL_local_data{_SS})::Bool
+    nch = 0
+    c = ld.BFR
+    fr = Set{Int}()
+    chain = Set{Int}()
+    while c != 0
+        push!(chain, c)
+        ld.choices[c].unlinked && return false              # on the chain: not unlinked
+        c = ld.choices[c].parent
+    end
+    for i in 1:(ld.nchoices)                                # off the chain: unlinked, region in use
+        i in chain && continue
+        (ld.choices[i].unlinked && ld.choices[i].base < ld.lTop) || return false
+        nch += 1
+    end
+    all(i -> i <= ld.nchoices, chain) || return false
+    c = ld.BFR
+    while c != 0
+        nch += 1
+        f = ld.choices[c].frame
+        while f != 0 && !(f in fr)
+            push!(fr, f)
+            f = ld.frames[f].parent
+        end
+        c = ld.choices[c].parent
+    end
+    f = ld.environment_frame
+    while f != 0 && !(f in fr)
+        push!(fr, f)
+        f = ld.frames[f].parent
+    end
+    return nch == ld.nchoices && length(fr) == ld.nframes &&
+           (isempty(fr) || maximum(fr) == ld.nframes)
+end
+
+@testset "F1 white-box: the CHP_DEBUG records I_EXITCATCH / I_EXITCLEANUP step over leave the pools exact" begin
+    f = joinpath(mktempdir(), "ssu2_f1.pl")
+    write(f, _SS_F1_PROGRAM)
+    out, gd, ld = _ss_kernel(f, String[])
+    @test out == ["ok"]
+    for (name, arity, nanswers) in
+        (("f1c0", 1, 1), ("f1u0", 1, 1), ("f1c", 2, 2), ("f1u", 2, 2))
+        fid = LK.PL_open_foreign_frame(ld)
+        qid = _ss_open(gd, ld, name, Any[nothing for _ in 1:arity])
+        live = Bool[]
+        while true
+            rc = LK.PL_next_solution(gd, ld, qid)
+            (rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST) || break
+            push!(live, _ss_pools_live(ld))
+            rc == LK.PL_S_LAST && break
+        end
+        @test (name, length(live)) == (name, nanswers)
+        @test (name, live) == (name, fill(true, nanswers))
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+    end
 end
