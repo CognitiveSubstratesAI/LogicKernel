@@ -1092,7 +1092,8 @@ end
 # PORT: pl-wam.c mustBeCallable
 # (pl-wam.c:920-947 at the pin.) Only `Module:Goal`, as upstream's: since MOD4 the cleanup family's goals
 # reach it qualified by their meta-predicate declarations (boot/init.pl:381-383, `_boot_meta!`; `S_MQUAL`),
-# so MOD2's acceptance of an unqualified goal is gone (test_cleanup_swipl.jl's `type_error(callable, user:1)`).
+# so MOD2's acceptance of an unqualified goal is gone (test_meta_predicate_swipl.jl a25: a user clause running
+# `'$call_cleanup'` with an unqualified cleanup goal).
 # On the WORDS (f3b-5b): `deRef(p)` and the tests on `*p`, `*ap` are `_deref_loc` and word tests.
 "Whether the term reference `call` holds a callable `Module:Goal`, raising the error when not (pl-wam.c)."
 function mustBeCallable(ld::PL_local_data{T}, call::term_t)::Bool where {T}
