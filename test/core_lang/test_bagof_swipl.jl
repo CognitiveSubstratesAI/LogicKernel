@@ -108,6 +108,19 @@ function _rbg_cases()
             pair(Y, L),
             set(X, _rf(":", _rs("user"), _rf(":", _rs("user"), _rf("q", X, Y))), L)
         ),
+        # the goal after `Module:` is a variable bound at run time (upstream 8b24de911, BP2: dereferenced
+        # before it is looked at): its free variable Y is seen (m6), and a `Y^` in it binds Y (m7)
+        (
+            "m6", K,
+            _rconj(
+                eq(G, _rf("q", X, Y)),
+                _rf("findall", pair(Y, L), bag(X, _rf(":", _rs("user"), G), L), K)
+            )
+        ),
+        (
+            "m7", L,
+            _rconj(eq(G, hat(Y, _rf("q", X, Y))), bag(X, _rf(":", _rs("user"), G), L))
+        ),
         # ── the list is bound already ──
         ("l1", pair(A, B), bag(X, _rf("p", X), _rcons(A, B))),
         ("l2", X, bag(X, _rf("p", X), _rints(1:2))),                        # fails
@@ -255,6 +268,8 @@ _rbg_goals() = _R[_rf(name, _rv(50 + i)) for (i, (name, _, _)) in enumerate(_rbg
     @test "s1([1,2,3]) det" in ours
     @test "s4(-(11,[ann,mike])) det" in ours
     @test "v1(-(foo(_,_,A),v(A))) det" in ours
+    @test "m6([-(a,[1,3]),-(b,[2]),-(c,[1])]) det" in ours       # Y is free: three bags, not one
+    @test "m7([1,2,1,3]) det" in ours                             # Y^ inside the bound goal: one bag
     @test !any(startswith("b2("), ours) && !any(startswith("s5("), ours)    # no empty bag
     if _R_SWIPL
         theirs = _rswipl(clauses, goals)

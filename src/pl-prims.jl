@@ -3170,8 +3170,8 @@ const FV_MARK = typemin(Int)
 # DIVERGES: on locations; returns `(n, mname)` — `mname` the module's atom WORD, 0 for none — and
 # stores the goal's word in term reference `goal` (upstream: `*valTermRef(goal) = *t`; a slot's side
 # word, which is never stored, as its value, `_slot_store!`); each free variable a new term reference
-# holding `makeRefG(p)`. `&mark` is `FV_MARK`. The goal after `Module:` is dereferenced, as the term
-# version's did (upstream defect, register Q4).
+# holding `makeRefG(p)`. `&mark` is `FV_MARK`. (cbf4e189 + upstream fix 8b24de911: the goal after `Module:` is
+# dereferenced before it is looked at, `deRef(t)` after `t = &f->arguments[1]`.)
 "The free variables of the `Template^Goal` at location `l` (ISO 7.1.1.4; pl-prims.c), as new term references: `(n, module word)`, the goal in `goal`."
 function free_variables_loop_cells(
     ld::PL_local_data{T}, l::Int, goal::term_t
