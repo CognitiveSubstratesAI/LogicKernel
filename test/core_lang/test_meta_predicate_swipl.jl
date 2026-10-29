@@ -4,7 +4,7 @@
 # (pl-proc.c `meta_predicate`, `meta_declaration`, `setMetapredicateMask`, `isTransparentMetamask`, `PL_meta_predicate`) and
 # the stand-ins' declarations (`_boot_meta!`: call/1..8, bagof/setof's `^`):
 #   * A PROGRAM consulted by the kernel's loader: user's predicates `k*` (one per mask kind), `up/3`, upstream's `m/2`, `m/3`,
-#     `m2/3` (here `mm2/3`), `mq/1`; module `m2`'s callers through directives (assertz/1). Row d00 DECLARES the masks with
+#     `m2/3` (here `mm2/3`), `mq/1`, `kt/2` (two `0` arguments), `pcc/2` (a clause running `'$call_cleanup'`); module `m2`'s callers through directives (assertz/1). Row d00 DECLARES the masks with
 #     meta_predicate/1 at query time, before the first call of any of them (a built supervisor is not reset by a later
 #     declaration: upstream's setMetapredicateMask does not either), then the cases `t_<id>(R)` run IN ORDER in one database,
 #     each wrapped in `catch(Goal, error(SsuE, _), R = raised(SsuE))`.
@@ -102,6 +102,8 @@ mm2(X, _, X).
 mq(T) :- assertz(mqseen(T)), fail.
 tb(V) :- mq(V).
 tb(V) :- var(V).
+kt(_, _).
+pcc(_G, _C) :- '$call_cleanup'.
 :- assertz(m2:(q0(A, X) :- k0(A, X))).
 :- assertz(m2:(q1(X) :- k1(foo, X))).
 :- assertz(m2:(q9(X) :- k9(foo, X))).
@@ -129,7 +131,7 @@ const _MP_CASES = [
     # LB2): meta_predicate/1's `,` loop (pl-proc.c meta_predicate), each spec in user (the transparent built-in's context)
     (
         "d00",
-        raw"meta_predicate((k0(0,?), k1(1,?), k9(9,?), kh(^,?), kd(//,?), kc(:,?), kq(?,?), kp(+,?), km(-,?), up(0,?,?), m(:,-), m(:,+,-), mm2(+,:,-), mq(:))), R = ok"
+        raw"meta_predicate((k0(0,?), k1(1,?), k9(9,?), kh(^,?), kd(//,?), kc(:,?), kq(?,?), kp(+,?), km(-,?), up(0,?,?), m(:,-), m(:,+,-), mm2(+,:,-), mq(:), kt(0,0))), R = ok"
     ),
     # a01-a09: one row per mask kind, called from a clause of m2: `0..9`, `^`, `//`, `:` qualify with the caller's context
     # (S_MQUAL / S_LMQUAL, MA_NEEDS_TRANSPARENT); `?`, `+`, `-` do not (P_META without P_TRANSPARENT: no S_MQUAL)
@@ -166,6 +168,11 @@ const _MP_CASES = [
     ("a22", raw"m(x, R)"),
     # a23: upstream's backtrack row: mq(:) saw `user:V`, and V is unbound again in the next clause
     ("a23", raw"tb(V), findall(S, mqseen(S), R)"),
+    # a24: S_MQUAL's own throw: a cyclic chain in the FIRST of two meta arguments, kt(0,0) (a19's is S_LMQUAL's)
+    ("a24", raw"T = a:T, catch(kt(T, true), error(type_error(E, _), _), true), R = E"),
+    # a25: mustBeCallable's `_:_` test (pl-wam.c:920-947): a user clause running '$call_cleanup' (I_CALLCLEANUP) has no
+    # meta declaration, so its cleanup argument arrives unqualified
+    ("a25", raw"catch(pcc(true, true), error(type_error(E, C), _), true), R = E-C"),
     # b01, b02: call/1 and call/2 called AS PREDICATES (I_USERCALL0 of `call(...)`): the stand-in's S_LMQUAL qualifies
     # the goal with m2 and runs the clause in system
     ("b01", raw"call(m2:cn1(R))"),
@@ -217,6 +224,8 @@ const _MP_PINNED = [
     "t_a21 c[116,95,97,50,49]/1(c[45]/2(V0,V0))",
     "t_a22 c[116,95,97,50,50]/1(c[58]/2(a[117,115,101,114],a[120]))",
     "t_a23 c[116,95,97,50,51]/1(c[91,124,93]/2(c[58]/2(a[117,115,101,114],V0),nil))",
+    "t_a24 c[116,95,97,50,52]/1(a[97,99,121,99,108,105,99,95,116,101,114,109])",
+    "t_a25 c[116,95,97,50,53]/1(c[45]/2(a[99,97,108,108,97,98,108,101],a[116,114,117,101]))",
     "t_b01 c[116,95,98,48,49]/1(a[109,50])",
     "t_b02 c[116,95,98,48,50]/1(a[109,50])",
     "t_b03 c[116,95,98,48,51]/1(c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil)))",
@@ -291,7 +300,7 @@ function _mp_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "meta-argument qualification as swipl's (d00, a01-a23, b01-b05, e01-e12)" begin
+@testset "meta-argument qualification as swipl's (d00, a01-a25, b01-b05, e01-e12)" begin
     f, names = _mp_file()
     kl, gd, _ = _mp_kernel(f, names)
     @test length(kl) == length(_MP_PINNED)

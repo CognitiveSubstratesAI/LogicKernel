@@ -94,10 +94,11 @@ E = "src/pl-ext.jl"
 # (src/pl-wam.jl:3609); that argument is declared `0` in every member of the cleanup family (src/pl-ext.jl:266-269), so
 # S_MQUAL/S_LMQUAL (src/pl-supervisor.jl:232-239) have made it `Context:Goal` (src/pl-wam.jl:1046-1051) or kept an
 # existing `M:G` (src/pl-wam.jl:1052-1072) before the clause body runs. A user clause that runs `'$call_cleanup'`
-# itself (no meta declaration) is the one other way in; swipl gives no answer to compare there (channel
-# evidence/MOD4/handoff.md), so no row runs it (test_body_code_swipl.jl only compiles it).
-_CLEANUP_QUALIFIED = ("the cleanup goal reaching I_CALLCLEANUP is always `Module:Goal` (src/pl-wam.jl:3609, "
-                      "src/pl-ext.jl:266-269, src/pl-supervisor.jl:232-239, src/pl-wam.jl:1046-1051)")
+# itself (no meta declaration) is the one other way in: there mustBeCallable rejects the unqualified cleanup goal
+# before any cleanup frame exists (row a25, swipl's answer type_error(callable, true)), so the handler still only
+# ever sees `Module:Goal` — C1 stays equivalent, C2 is killed by a25.
+_CLEANUP_QUALIFIED = ("every cleanup frame passed mustBeCallable first (src/pl-wam.jl:3609, :3617), so the cleanup "
+                      "goal the handler calls is always `Module:Goal` with an atom Module (src/pl-wam.jl:1098-1114)")
 MUTANTS = [
     # ── pl-wam.c m_qualify_argument ──
     dict(id="MOD4-Q1 m_qualify_argument builds Context:Arg but does not store it: an unqualified argument stays bare (KILL a01-a06, a11, a17, a22)", file=W, targets=TS_ALL,
@@ -164,8 +165,7 @@ MUTANTS = [
          new="                rval = call_term(gd, ld, MODULE_user(gd).index, clean)\n",
          equivalent=_CLEANUP_QUALIFIED + "; call_term's module is the default of an unqualified goal only, a `Module:Goal` "
                     "runs in Module"),
-    dict(id="MOD4-C2 mustBeCallable accepts a goal that is not `_:_` (MOD2's interim acceptance back)", file=W, targets=TS_ALL,
+    dict(id="MOD4-C2 mustBeCallable accepts a goal that is not `_:_` (MOD2's interim acceptance back) (KILL a25)", file=W, targets=TS_ALL,
          old='    _is_colon2_word(ld, k, w) || return PL_type_error(ld, "callable", call)   # !hasFunctor(*p, FUNCTOR_colon2)\n',
-         new="    _is_colon2_word(ld, k, w) || return true\n",
-         equivalent=_CLEANUP_QUALIFIED + "; mustBeCallable's only caller is I_CALLCLEANUP (src/pl-wam.jl:3609)"),
+         new="    _is_colon2_word(ld, k, w) || return true\n"),
 ]
