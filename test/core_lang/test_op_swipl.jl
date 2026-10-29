@@ -69,7 +69,7 @@ end
 "The operators visible from `user`, as `Name-Type-Priority` texts (swipl's `writeq` of them), sorted."
 function _opvisible(gd)::Vector{String}
     b = Tuple{_OP, UInt8, Int16}[]
-    LK.scanVisibleOperators!(gd, LK.MODULE_user(gd), nothing, 0, 0x00, b, true)
+    LK.scanVisibleOperators!(gd, LK.MODULE_user(gd), nothing, 0x00, b, true)
     out = String[]
     for (n, ty, pr) in b
         pr == 0 && continue                                 # a cancelled operator
@@ -223,7 +223,7 @@ end
     @test LK.currentOperator(gd, user, _ops("+"), LK.OP_PREFIX) == (true, LK.OP_FY, 200)
     # current_op(_, yfx, +) finds only the cancelled entry: it fails, as upstream's
     b = Tuple{_OP, UInt8, Int16}[]
-    LK.scanVisibleOperators!(gd, user, _ops("+"), 0, LK.OP_YFX, b, true)
+    LK.scanVisibleOperators!(gd, user, _ops("+"), LK.OP_YFX, b, true)
     @test all(e -> e[3] == 0, b)
     @test _oprun(gd, ld, _opg(500), _ops(:yfx), _ops("+")) == "ok"
     @test LK.currentOperator(gd, user, _ops("+"), LK.OP_INFIX) == (true, LK.OP_YFX, 500)

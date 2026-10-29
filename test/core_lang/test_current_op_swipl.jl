@@ -191,10 +191,15 @@ const _OP_CASES = [
     raw"op(0, yfx, rem), findall(P-T, current_op(P, T, rem), R), op(400, yfx, rem)",         # s01
     raw"op(250, yfx, rem), findall(P-T, current_op(P, T, rem), R0), msort(R0, R), op(400, yfx, rem)",  # s02
     raw"findall(P-T, '$local_op'(P, T, rem), R0), msort(R0, R)",                    # s03
-    # swipl's own: the priority filter drops `user`'s 250 before `system`'s 400 is hidden by it, so the redefined operator
-    # still answers 400 (pl-op.c addOpsFromTable); and an answer rewound after its name was bound (the name is the type)
+    # the priority is matched when current_op/3 enumerates, so `user`'s 250 hides `system`'s 400: no answer for 400
+    # (upstream 1772f4062, BP2; until then pl-op.c addOpsFromTable filtered by priority first and answered 400); and an
+    # answer rewound after its name was bound (the name is the type)
     raw"op(250, yfx, rem), findall(T, current_op(400, T, rem), R0), msort(R0, R), op(400, yfx, rem)",    # s04
-    raw"op(200, xfy, [zq1,zq2,zq3,zq4,zq5,zq6,zq7,zq8,zq9,zq10,zq11,zq12,zq13,zq14,zq15,zq16,zq17,zq18,zq19,zq20]), op(200, xfx, xfx), op(200, xfy, xfy), op(200, yfx, yfx), op(200, fy, fy), findall(T, current_op(_, T, T), R0), msort(R0, R), op(0, xfx, xfx), op(0, xfy, xfy), op(0, yfx, yfx), op(0, fy, fy), op(0, xfy, [zq1,zq2,zq3,zq4,zq5,zq6,zq7,zq8,zq9,zq10,zq11,zq12,zq13,zq14,zq15,zq16,zq17,zq18,zq19,zq20])"    # s05
+    raw"op(200, xfy, [zq1,zq2,zq3,zq4,zq5,zq6,zq7,zq8,zq9,zq10,zq11,zq12,zq13,zq14,zq15,zq16,zq17,zq18,zq19,zq20]), op(200, xfx, xfx), op(200, xfy, xfy), op(200, yfx, yfx), op(200, fy, fy), findall(T, current_op(_, T, T), R0), msort(R0, R), op(0, xfx, xfx), op(0, xfy, xfy), op(0, yfx, yfx), op(0, fy, fy), op(0, xfy, [zq1,zq2,zq3,zq4,zq5,zq6,zq7,zq8,zq9,zq10,zq11,zq12,zq13,zq14,zq15,zq16,zq17,zq18,zq19,zq20])",    # s05
+    # upstream's own unit (tests/core_text/test_op.pl hide_priority, 1772f4062): each priority, one answer
+    raw"op(250, yfx, rem), findall(P-T, ( ( P = 250 ; P = 400 ), current_op(P, T, rem) ), R), op(400, yfx, rem)",   # s06
+    # the same with the type given and with a prefix kind of the same name hidden or not (a kind by itself)
+    raw"op(250, yfx, rem), op(300, fy, rem), findall(P-T, ( ( P = 250 ; P = 300 ; P = 400 ), current_op(P, T, rem) ), R0), msort(R0, R), op(400, yfx, rem), op(0, fy, rem)"   # s07
 ]
 
 @testset "current_op/3 and '\$local_op'/3 == live swipl, through a program; no state leaked" begin
@@ -227,7 +232,16 @@ const _OP_CASES = [
         @test "t14 c[116,49,52]/1(c[91,124,93]/2(a[121,102,120],nil))" in sw        # p03: [yfx]
         @test "t15 c[116,49,53]/1(nil)" in sw                                       # p04: []
         @test any(l -> startswith(l, "t26 ") && occursin("a[99,117,116]", l), sw)   # p15: cut
-        @test any(l -> startswith(l, "t42 ") && occursin("a[121,102,120]", l), sw)  # s04: the filter's quirk, [yfx]
+        @test "t42 c[116,52,50]/1(nil)" in sw                                       # s04: 400 is hidden by user's 250: []
+        @test any(
+            l -> startswith(l, "t44 ") && occursin("i250", l) && !occursin("i400", l), sw
+        )   # s06: 250 only
+        @test any(
+            l ->
+                startswith(l, "t45 ") && occursin("i250", l) && occursin("i300", l) &&
+                !occursin("i400", l),
+            sw
+        )   # s07
         # s05: four operators named as their own type — a mutant that does not rewind a failed attempt
         # (NF3-16) keeps only those enumerated before the first of the 20 others: ~1 in 10 600 orders survive
         @test any(

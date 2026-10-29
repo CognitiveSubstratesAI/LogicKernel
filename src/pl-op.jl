@@ -258,11 +258,13 @@ function addOpToBuffer!(
 end
 
 # PORT: pl-op.c addOpsFromTable as addOpsFromTable!
+# The pin cbf4e189 plus upstream fix 1772f4062 (BP2, a named backport): no priority parameter — the priority is
+# matched when `current_op/3` enumerates, so an operator hidden by a local definition stays hidden.
 # DIVERGES: the name `nothing` is upstream's NULL_ATOM (any name); the table's order is the Dict's,
 # not upstream's hash table's, so an enumeration's ORDER differs (compare them as sets).
-"Add the operators of `table` matching `name`, `priority` (0: any) and `type` (0: any) to `b` (pl-op.c)."
+"Add the operators of `table` matching `name` and `type` (0: any) to `b` (pl-op.c)."
 function addOpsFromTable!(
-    table::Dict{UInt64, _operator{T}}, name::Union{Nothing, T}, priority::Int, type::UInt8,
+    table::Dict{UInt64, _operator{T}}, name::Union{Nothing, T}, type::UInt8,
     b::Vector{Tuple{T, UInt8, Int16}}
 )::Nothing where {T}
     for (k, op) in table
@@ -273,15 +275,11 @@ function addOpsFromTable!(
                 @assert OP_PREFIX <= kd <= OP_POSTFIX
                 (op[3][kd + 1] < 0 || (op[2][kd + 1] & OP_MASK) != (type & OP_MASK)) &&
                     continue
-                if priority == 0 || op[3][kd + 1] == priority || op[3][kd + 1] == 0
-                    addOpToBuffer!(b, nm, op[2][kd + 1], op[3][kd + 1])
-                end
+                addOpToBuffer!(b, nm, op[2][kd + 1], op[3][kd + 1])
             else
                 for kd in OP_PREFIX:OP_POSTFIX
                     op[3][kd + 1] < 0 && continue
-                    if priority == 0 || op[3][kd + 1] == priority || op[3][kd + 1] == 0
-                        addOpToBuffer!(b, nm, op[2][kd + 1], op[3][kd + 1])
-                    end
+                    addOpToBuffer!(b, nm, op[2][kd + 1], op[3][kd + 1])
                 end
             end
         end
@@ -290,16 +288,17 @@ function addOpsFromTable!(
 end
 
 # PORT: pl-op.c scanVisibleOperators as scanVisibleOperators!
+# The pin cbf4e189 plus upstream fix 1772f4062 (BP2, a named backport): no priority parameter.
 # DIVERGES: the super modules are indices into `gd`'s module table.
 "Add the operators visible from module `m` (with `inherit`, through its supers) matching the pattern to `b` (pl-op.c)."
 function scanVisibleOperators!(
-    gd::PL_global_data{T}, m::module_t{T}, name::Union{Nothing, T}, priority::Int,
-    type::UInt8, b::Vector{Tuple{T, UInt8, Int16}}, inherit::Bool
+    gd::PL_global_data{T}, m::module_t{T}, name::Union{Nothing, T}, type::UInt8,
+    b::Vector{Tuple{T, UInt8, Int16}}, inherit::Bool
 )::Nothing where {T}
-    addOpsFromTable!(m.operators, name, priority, type, b)
+    addOpsFromTable!(m.operators, name, type, b)
     if inherit
         for s in m.supers
-            scanVisibleOperators!(gd, gd.modules[s], name, priority, type, b, inherit)
+            scanVisibleOperators!(gd, gd.modules[s], name, type, b, inherit)
         end
     end
     return nothing
@@ -340,7 +339,7 @@ function current_op_ndet(
 
     ctl = PL_foreign_control(h)
     if ctl == FRG_FIRST_CALL
-        # atom_t a, nm: NULL_ATOM is any name; int p: 0 is any priority; int t: 0 is any type
+        # atom_t a, nm: NULL_ATOM is any name; int t: 0 is any type
         if PL_is_variable(ld, name)
             nm = nothing
         else
@@ -348,13 +347,10 @@ function current_op_ndet(
             nm === nothing && return FFALSE
         end
 
-        if PL_is_variable(ld, prec)
-            p = 0
-        else
+        if !PL_is_variable(ld, prec)                        # matched when enumerating
             pv = PL_get_integer_ex(ld, prec)
             pv === nothing && return FFALSE
-            p = pv
-            if !(p > 0 && p <= 1200)
+            if !(pv > 0 && pv <= 1200)
                 PL_domain_error(ld, "operator_priority", prec)
                 return FFALSE
             end
@@ -375,7 +371,7 @@ function current_op_ndet(
         e = pool.states[k]
         empty!(e.buffer)                                    # initBuffer(b)
         e.index = 0
-        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)
+        scanVisibleOperators!(gd, m, nm, t, e.buffer, inherit)
     elseif ctl == FRG_REDO
         k = PL_foreign_context_address(h)                   # e = ForeignContextPtr(h)
         e = pool.states[k]
