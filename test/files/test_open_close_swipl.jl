@@ -122,6 +122,21 @@ const _CASES = [
         "e35",
         "open('{D}/f1', write, S), close(S), ex(open('{D}/f1', write, _, [encoding(S)]), R)"
     ),   # a blob as the encoding
+    # BP2 (upstream cd67bb35e): an invalid newline mode is domain_error(newline, Mode); detect is for input only
+    ("e36", "ex(open('{D}/f1', write, _, [newline(foo)]), R)"),
+    ("e37", "ex(open('{D}/f1', write, _, [newline(detect)]), R)"),
+    ("e38", "mkf('{D}/r1'), ex(open('{D}/r1', read, _, [newline(foo)]), R)"),
+    ("e39", "open('{D}/f1', write, S, [type(binary), newline(foo)]), close(S), R = ok"),   # binary: the option is not looked at
+    # BP2 (upstream 7f8024cc7): a file stream's syntax error for an unterminated quote or block comment points at it
+    # (file(Path, Line, LinePos, CharNo)); it pointed at the start of the term
+    (
+        "e40",
+        "atom_codes(A, [97,44,10,32,32,39,120]), open('{D}/q1', write, W), write(W, A), close(W), open('{D}/q1', read, S), catch(read(S, _), error(_, C), true), close(S), R = C"
+    ),
+    (
+        "e41",
+        "atom_codes(A, [97,44,10,32,32,47,42,32,120]), open('{D}/q1', write, W), write(W, A), close(W), open('{D}/q1', read, S), catch(read(S, _), error(_, C), true), close(S), R = C"
+    ),
     # ---- the blob: its type, identity and order
     ("s01", "open('{D}/f1', write, S), btype(S, B), close(S), R = B"),
     ("s02", "open('{D}/f1', write, S), term_to_atom(S, A), close(S), R = A"),
@@ -656,7 +671,7 @@ end
 end
 
 # ---- WHITE-BOX: what has no swipl row, each with its reason
-@testset "refusals by name: pipes, locks, locales, unicode_atoms, encodings and newline modes the kernel lacks" begin
+@testset "refusals by name: pipes, locks, locales, unicode_atoms and encodings the kernel lacks" begin
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     dir = mktempdir()
@@ -668,15 +683,13 @@ end
             @assert st === :true
             return a[1]
         end
-        # swipl opens these (a pipe, a lock, a locale, utf16le, `text`) or answers unstably (newline(foo): no value to
-        # compare, internal record Q12); the kernel
+        # swipl opens these (a pipe, a lock, a locale, utf16le, `text`); the kernel
         # refuses them BY NAME, before it opens a file (nothing is created)
         for (mode, o) in (
             (:write, "[lock(write)]"), (:write, "[lock(shared)]"),
             (:write, "[locale(foo)]"),
             (:write, "[unicode_atoms(nfc)]"), (:write, "[encoding(utf16le)]"),
-            (:write, "[encoding(text)]"), (:write, "[encoding(wchar_t)]"),
-            (:write, "[newline(foo)]"), (:write, "[newline(detect)]")
+            (:write, "[encoding(text)]"), (:write, "[encoding(wchar_t)]")
         )
             ldx = LK.PL_local_data{_TL}(gd)             # a refusal leaves its query open: a local data each
             st, _ = kcall(gd, ldx, "open", _TL[f, _tls(mode), v(), opts(o)])

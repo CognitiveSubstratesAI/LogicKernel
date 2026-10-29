@@ -865,14 +865,44 @@ function _opt_atom(::Type{T}, v)::Union{Nothing, T} where {T}
     return v isa T ? v : nothing
 end
 
+# ORIGINAL (BP2): pl-file.c `newline_domain_error`, a function upstream fix cd67bb35e added to the pin cbf4e189 (a
+# named backport): the culprit of the domain error is a term reference holding the atom.
+"Raise `domain_error(newline, Val)` with the message `msg` (empty: none) — the culprit a term reference holding the atom; false (pl-file.c)."
+function newline_domain_error(ld::PL_local_data{T}, val::T, msg::String)::Bool where {T}
+    t = PL_new_term_ref(ld)
+    PL_put_atom(ld, t, val)
+    return PL_error(ld, "", 0, msg, ERR_DOMAIN, mk_sym(T, :newline), t)
+end
+
+# PORT: pl-file.c atom_to_newline_mode
+# The pin cbf4e189 plus upstream fix cd67bb35e (BP2, a named backport): the culprit is a term reference.
+# DIVERGES: returns the mode (`SIO_NL_POSIX`, `SIO_NL_DOS`, `SIO_NL_DETECT`) or `nothing` with the error
+# raised, where upstream writes `*mode` and returns a bool.
+"The newline mode the atom `val` names for a stream with the flags `flags` (`SIO_INPUT` or `SIO_OUTPUT`), or `nothing` after raising the error (pl-file.c)."
+function atom_to_newline_mode(
+    ld::PL_local_data{T}, val::T, flags::UInt32
+)::Union{Nothing, Int} where {T}
+    if _sym_is(val, :posix)
+        return SIO_NL_POSIX
+    elseif _sym_is(val, :dos)
+        return SIO_NL_DOS
+    elseif _sym_is(val, :detect)
+        if (flags & SIO_INPUT) == 0
+            newline_domain_error(ld, val, "detect only allowed for input streams")
+            return nothing
+        end
+        return SIO_NL_DETECT
+    end
+    newline_domain_error(ld, val, "")
+    return nothing
+end
+
 # PORT: pl-file.c openStream
 # DIVERGES: returns the stream, or `nothing` with the error raised; the file is opened by Julia
 # (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`). NOT PORTED, each raising
 # `NotPortedError` BEFORE a file is opened: `pipe(Command)` files (`Sopen_pipe`), IRIs (`iri_hook`),
 # the `lock` option (no `flock`), the `locale` option (`PL_locale`), the `unicode_atoms` option
-# (`atom_to_unicode_atoms_ex`, F1's), the encodings the stream layer refuses (ANSI, UTF-16, wchar_t),
-# and a `newline` option other than `posix`, `dos`, `detect` for input: swipl's answer there is not a
-# stable value, so it is refused by name (internal record Q12).
+# (`atom_to_unicode_atoms_ex`, F1's) and the encodings the stream layer refuses (ANSI, UTF-16, wchar_t).
 # `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
@@ -987,21 +1017,9 @@ function openStream(
     end
     fnewline = -1
     if newline !== nothing && !_sym_is(type, :binary)
-        if _sym_is(newline, :posix)
-            fnewline = SIO_NL_POSIX
-        elseif _sym_is(newline, :dos)
-            fnewline = SIO_NL_DOS
-        elseif _sym_is(newline, :detect) && how[1] == 'r'
-            fnewline = SIO_NL_DETECT
-        else
-            throw(
-                NotPortedError{T}(
-                    newline,
-                    "open/4's newline option other than posix, dos, detect (input)",
-                    "internal record Q12"
-                )
-            )
-        end
+        nm = atom_to_newline_mode(ld, newline, how[1] == 'r' ? SIO_INPUT : SIO_OUTPUT)
+        nm === nothing && return nothing
+        fnewline = nm
     end
 
     bom == -1 && (bom = _sym_is(mname, :read) ? 1 : 0)
