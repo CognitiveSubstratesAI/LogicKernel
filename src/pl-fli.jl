@@ -612,7 +612,8 @@ end
 
 # PORT: pl-fli.c PL_strip_module_flags as PL_strip_module
 # DIVERGES: as `PL_strip_module_ex` — the module an index into `gd`'s table, passed in and returned
-# (0 for upstream's NULL), an unqualified term getting `user` when none is given; no `flags`
+# (0 for upstream's NULL), an unqualified term getting the context module when none is given (since MOD2;
+# `user` outside a frame); no `flags`
 # (`SM_NOCREATE`: its callers are not ported).
 """
     PL_strip_module(gd, ld, raw, m, plain) -> (ok, m)
@@ -630,7 +631,14 @@ function PL_strip_module(
         _slot_link_loc!(ld, plain + 1, rc)                  # setHandle(plain, linkValI(p))
         return (true, m2)
     end
-    m == 0 && (m = MODULE_user(gd).index)       # (environment_frame ? contextModule(…) : user)
+    if m == 0                                   # if ( *m == NULL )
+        # *m = environment_frame ? contextModule(environment_frame) : MODULE_user   (since MOD2)
+        m = if ld.environment_frame != 0
+            contextModule(gd, ld, ld.environment_frame)
+        else
+            MODULE_user(gd).index
+        end
+    end
     raw != plain && _slot_link_loc!(ld, plain + 1, (k, w, q))   # needsRef(*p) ? makeRefG(p) : *p
     return (true, m)
 end
@@ -662,13 +670,13 @@ end
 
 # PORT: pl-fli.c PL_strip_module_ex
 # DIVERGES: the module is an INDEX into `gd`'s table (0 for upstream's NULL), passed in and returned
-# with the result; with none given, an unqualified term gets the context module, `user` (see
-# `stripModule`). No `globalizeTermRef` (a slot's variable is a global cell already).
+# with the result; with none given, an unqualified term gets the context module (since MOD2; see
+# `stripModule_cells`). No `globalizeTermRef` (a slot's variable is a global cell already).
 """
     PL_strip_module_ex(gd, ld, raw, m, plain) -> (ok, m)
 
 Put the term in `raw`, stripped of its `Module:` qualifiers, into `plain`, and return the module
-they name — `m` if there are none and `m` is given, else `user` (pl-fli.c). A qualifier that is not
+they name — `m` if there are none and `m` is given, else the context module (pl-fli.c). A qualifier that is not
 an atom raises `type_error(module, M)`, or `instantiation_error` when it is a variable.
 """
 function PL_strip_module_ex(
@@ -686,7 +694,14 @@ function PL_strip_module_ex(
         _slot_link_loc!(ld, plain + 1, rc)                  # setHandle(plain, linkValI(p))
         return (true, m2)
     end
-    m == 0 && (m = MODULE_user(gd).index)       # (environment_frame ? contextModule(…) : user)
+    if m == 0                                   # if ( *m == NULL )
+        # *m = environment_frame ? contextModule(environment_frame) : MODULE_user   (since MOD2)
+        m = if ld.environment_frame != 0
+            contextModule(gd, ld, ld.environment_frame)
+        else
+            MODULE_user(gd).index
+        end
+    end
     _slot_link_loc!(ld, plain + 1, (k, w, q))               # setHandle(plain, linkValG(p))
     return (true, m)
 end

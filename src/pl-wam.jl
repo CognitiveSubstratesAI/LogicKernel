@@ -795,13 +795,15 @@ function call_internal_det_foreign(
 end
 
 # PORT: pl-wam.c call1
-# DIVERGES: the module is `user` (see `call_term`); `call/1` is looked up in `system` at each call,
-# where upstream caches the procedure (`GD->procedures.call1`).
-"Call the goal in term reference `goal` once through `call/1`, in a query of its own (pl-wam.c)."
-function call1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t)::Bool where {T}
+# DIVERGES: the module `mdef` is an index into `gd`'s table (since MOD2; `user` before); `call/1` is
+# looked up in `system` at each call, where upstream caches the procedure (`GD->procedures.call1`).
+"Call the goal in term reference `goal` once through `call/1` in module `mdef`, in a query of its own (pl-wam.c)."
+function call1(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, mdef::Int, goal::term_t
+)::Bool where {T}
     pred = lookupProcedure(mk_sym(T, :call), 1, MODULE_system(gd))
 
-    qid = PL_open_query(gd, ld, MODULE_user(gd), PL_Q_PASS_EXCEPTION, pred, goal)
+    qid = PL_open_query(gd, ld, gd.modules[mdef], PL_Q_PASS_EXCEPTION, pred, goal)
     rc = PL_next_solution(gd, ld, qid) != 0
     PL_cut_query(ld, qid)
 
@@ -809,9 +811,11 @@ function call1(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t)::Bool 
 end
 
 # PORT: pl-wam.c call_term
-# DIVERGES: the database `gd` is an argument. No `mdef`: the context module of an unqualified goal
-# is `user` until R2 (`stripModule_cells`; `contextModule(fr)` reads frames' context modules, not
-# ported). On the WORDS (f3b-5b): the goal's location stripped (`stripModule_cells`), its atom or
+# (pl-wam.c:797-802 at the pin: `Module module = mdef; deRef(p); if ( (p=stripModule(p, &module, 0)) )`
+# — stripModule OVERWRITES the module of an unqualified goal with the environment frame's context,
+# pl-modul.c:833-834, so `mdef` reaches only `call1`.)
+# DIVERGES: the database `gd` is an argument; `mdef` is a module index (since MOD2).
+# On the WORDS (f3b-5b): the goal's location stripped (`stripModule_cells`), its atom or
 # compound word tested as upstream's (`CONTROL_F` from the functor table), the arguments linked
 # into the new term references from their cells (`_slot_from_cell!`, `linkValG`).
 """
@@ -821,21 +825,22 @@ query of its own; a control construct, a goal that is no text atom or `call/N` b
 exception stays pending).
 """
 function call_term(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t
+    gd::PL_global_data{T}, ld::PL_local_data{T}, mdef::Int, goal::term_t
 )::Bool where {T}
-    ok, (k, w, _), mi = stripModule_cells(gd, ld, -(goal + 1))     # p = valTermRef(goal); deRef(p)
+    # p = valTermRef(goal); Module module = mdef; deRef(p); stripModule(p, &module, 0)
+    ok, (k, w, _), mi = stripModule_cells(gd, ld, -(goal + 1))
     ok || return false                                  # exception in env
     m = gd.modules[mi]
     av = 0
     if k == DU_WORD && isAtomW(w)                       # isAtom(*p)
         name = _atom_value(ld, w)
-        isTextAtom(name) || return call1(gd, ld, goal)  # functor = lookupFunctorDef(…, 0)
+        isTextAtom(name) || return call1(gd, ld, mdef, goal)    # functor = lookupFunctorDef(…, 0)
         arity = 0
     elseif k == DU_WORD                                 # isTerm(*p)
         f = ld.gstack[valPtr(w)]                        # fd = valueFunctor(f->definition)
         fn = nameFunctor(ld.functors, f)
         arity = arityFunctor(ld.functors, f)
-        fn == ld.atom_dexpr && return call1(gd, ld, goal)   # (`$expr/n`: no text atom names it)
+        fn == ld.atom_dexpr && return call1(gd, ld, mdef, goal)     # (`$expr/n`: no text atom names it)
         name = _atom_value(ld, fn)
         if isTextAtom(name) && (valueFunctor(ld.functors, f).flags & CONTROL_F) == 0 &&
             !(sym_key(name) == gd.subclause_names.atom_call && arity > 8)
@@ -844,10 +849,10 @@ function call_term(
                 _slot_from_cell!(ld, av + i, valPtr(w) + i)  # *ap = linkValG(&args[i])
             end
         else
-            return call1(gd, ld, goal)
+            return call1(gd, ld, mdef, goal)
         end
     elseif k == DU_VALUE && isAtom(_value_term(ld, w))  # a non-text blob: isAtom(*p), no text
-        return call1(gd, ld, goal)
+        return call1(gd, ld, mdef, goal)
     else
         return PL_type_error(ld, "callable", goal)
     end
@@ -1005,7 +1010,11 @@ function callCleanupHandler(
             clean = argFrameP(f.base, arg_cleanup - 1)
             wstate = saveWakeup(ld, false)
             if wstate !== nothing
-                rval = call_term(_query_gd(ld), ld, clean)
+                gd = _query_gd(ld)
+                ccm = contextModule(gd, ld, fr)
+                # INTERIM: S_MQUAL (MOD4) — S_MQUAL's wrap (pl-vmi.c:3706 → m_qualify_argument, pl-wam.c:1787-1818)
+                _interim_mqual_cleanup(gd, ld, clean, ccm)           # INTERIM: S_MQUAL (MOD4)
+                rval = call_term(gd, ld, ccm, clean)                 # call_term(contextModule(fr), clean)
                 if !rval && ld.exception_term != 0
                     wstate = wakeup_state(
                         wstate.fid, wstate.outofstack,
@@ -1018,6 +1027,36 @@ function callCleanupHandler(
 
         PL_close_foreign_frame(ld, cid)
     end
+    return nothing
+end
+
+# ORIGINAL (no upstream function; audit D-0209 item 1) — INTERIM: S_MQUAL (MOD4). Upstream's cleanup goal reaches the
+# handler qualified: `S_MQUAL` of the cleanup family's meta-predicate declarations (boot/init.pl:381-383) wrote
+# `contextModule(fr):Goal` into the frame's argument slot at the call (S_MQUAL, pl-vmi.c:3706 →
+# `m_qualify_argument`, pl-wam.c:1787-1818; audit D-0212 accepted this form),
+# so call_term's stripModule never takes the environment frame's context for it. Here no stand-in clause can
+# qualify it: `'$call_cleanup'` and this handler read the cleanup frame's argument slots BY POSITION, and a clause
+# body cannot replace its head's argument slot. So the handler qualifies an unqualified goal IN THE FRAME'S
+# ARGUMENT SLOT `t`, as `m_qualify_argument`'s not-qualified branch does (`m`: `contextModule(fr)`, the same frame,
+# unchanged since its entry): `m:Goal` laid on the global stack and the slot overwritten, untrailed — no term
+# reference, so `lTop` and the handler's query frame stay where upstream's are (test_cleanup_swipl.jl's position
+# rows). A qualified one is left to call_term's stripModule, which strips the chain to its innermost atom as
+# `m_qualify_argument` does. MOD4 removes it, and the handler's line, restoring upstream's
+# `rval = call_term(contextModule(fr), clean)`.
+# DIVERGES (from `m_qualify_argument`'s branch): no `ensureGlobalSpace` (the global stack grows here), and
+# `_cell_link!` gives the argument's word or reference (a slot is never an unbound variable, so upstream's
+# `isVar(*p) && p > lBase` case, which trails the slot, cannot arise).
+"Qualify the cleanup goal in frame argument slot `t` as `m:Goal` when it is not `_:_` (INTERIM: S_MQUAL (MOD4))."
+function _interim_mqual_cleanup(                                    # INTERIM: S_MQUAL (MOD4)
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, m::Int
+)::Nothing where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                              # deRef2(k, p)
+    _is_colon2_word(ld, k, w) && return nothing                     # is_qualified(p): as it is
+    colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+    p2 = _alloc_compound!(ld, colon2, 2)                            # p2 = gTop; gTop += 3; p2[0] = FUNCTOR_colon2
+    ld.gstack[p2 + 1] = _atom_word!(ld, gd.modules[m].atom)         # p2[1] = contextModule(fr)->name
+    _cell_link!(ld, p2 + 2, t + 1)                                  # p2[2] = (needsRef(*p) ? makeRefG(p) : *p)
+    ld.slots[t + 1] = consPtr(p2, TAG_COMPOUND | STG_GLOBAL)        # *k = consPtr(p2, STG_GLOBAL|TAG_COMPOUND)
     return nothing
 end
 
@@ -1759,6 +1798,42 @@ function getProcDefinedDefinition(
     return def
 end
 
+# PORT: pl-wam.c contextModule
+# (pl-wam.c:1746-1756 at the pin:
+#     contextModule(LocalFrame fr)
+#     { for(; fr; fr = fr->parent)
+#       { if ( ison(fr, FR_CONTEXT) )
+#           return fr->context;
+#         if ( isoff(fr->predicate, P_TRANSPARENT) )
+#           return fr->predicate->module;
+#       }
+#       return MODULE_user;
+#     }                                                                          MOD2, design M4)
+# DIVERGES: the frame is an index (0 = NULL) and the module an INDEX into `gd`'s table, as
+# `definition.module_`; the database `gd` is an argument (`MODULE_user`).
+"The context module of frame `fr` — an index into `gd`'s module table (pl-wam.c)."
+function contextModule(gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int)::Int where {T}
+    while fr != 0                                   # for(; fr; fr = fr->parent)
+        f = ld.frames[fr]
+        (f.flags & FR_CONTEXT) != 0 && return f.context     # ison(fr, FR_CONTEXT)
+        def = f.predicate::Definition{T}
+        (def.flags & P_TRANSPARENT) == 0 && return def.module_  # isoff(fr->predicate, P_TRANSPARENT)
+        fr = f.parent
+    end
+    return MODULE_user(gd).index
+end
+
+# PORT: pl-wam.c setContextModule as setContextModule!
+# (pl-wam.c:1759-1770: `setContextModule__` — `fr->context = context; setLocal(fr, FR_CONTEXT);` —
+# and the function `setContextModule` the macro of the same name shadows; MOD2)
+# DIVERGES: the module is an index into the database's table.
+"Frame `fr` runs in context module `context` (an index): `fr.context`, and `FR_CONTEXT` set (pl-wam.c)."
+function setContextModule!(fr::localFrame, context::Int)::Nothing
+    fr.context = context                            # fr->context = context
+    fr.flags |= FR_CONTEXT                          # setLocal(fr, FR_CONTEXT)
+    return nothing
+end
+
 # ORIGINAL: upstream's `setVar(*valTermRef(t))` for the exception term references (pl-wam.c
 # resumeAfterException, restore_after_query): the reference's PERMANENT cell (src/pl-setup.jl
 # `emptyStacks!`) unbound again, and the slot pointing at it — it held the ball as a value. A
@@ -1847,9 +1922,9 @@ const DET_EXIT = PL_Q_DETERMINISTIC | PL_Q_EXT_STATUS
 # upstream reads its global `GD` (src/pl-global.jl), and refuses a local data that a second stack
 # overflow made unusable (since V5d; `outOfStack!`, src/pl-alloc.jl).
 # NOT PORTED: `globalizeTermRef` (a slot is never an unbound variable, L1c), the profiler, the
-# debugger state `PL_Q_NODEBUG` saves (all but `FR_HIDE_CHILDS`), the context module of a transparent
-# predicate (`ctx`: every clause is `user`'s until R2's `module/2`). `updateAlerted` since AV3 (the
-# wakeup bit).
+# debugger state `PL_Q_NODEBUG` saves (all but `FR_HIDE_CHILDS`). `updateAlerted` since AV3 (the
+# wakeup bit); the context module of a transparent predicate since MOD2 (`ctx`, a module record, or
+# `nothing` for upstream's NULL).
 """
     PL_open_query(gd, ld, ctx, flags, proc, args) -> qid, or 0
 
@@ -1948,6 +2023,20 @@ function PL_open_query(
     c.frame = top
     c.mark = Mark(ld)
     setGenerationFrame(gd, ld, fr)
+    # context module (MOD2; pl-wam.c:3092-3099 at the pin):
+    #   if ( ison(def, P_TRANSPARENT) )
+    #   { if ( ctx ) setContextModule(fr, ctx);
+    #     else if ( qf->saved_environment ) setContextModule(fr, contextModule(qf->saved_environment));
+    #     else setContextModule(fr, MODULE_user); }
+    if (def.flags & P_TRANSPARENT) != 0
+        if ctx !== nothing
+            setContextModule!(f, ctx.index)
+        elseif q.saved_environment != 0
+            setContextModule!(f, contextModule(gd, ld, q.saved_environment))
+        else
+            setContextModule!(f, MODULE_user(gd).index)
+        end
+    end
     # publish environment
     ld.BFR = ch
     ld.environment_frame = fr
@@ -3150,10 +3239,17 @@ function PL_next_solution_guarded(
     # NOT PORTED: `frameFinished` on an `FR_WATCHED` frame — a cleanup frame's clause ends in
     # `I_CALLCLEANUP I_EXITCLEANUP I_EXIT` and makes no last call, so only the debugger's
     # `FR_NOTIFY` could be set here (asserted absent; so too at `I_LCALL` and `I_TCALL`);
-    # `P_TRANSPARENT` (every clause
-    # is `user`'s until R2's `module/2`),
     # `HIDE_CHILDS` (only the debugger reads it; port_inventory § "Not ported: nothing here can set or
-    # observe it").
+    # observe it"). Since MOD2 the transparent branch (pl-vmi.c:2088-2096 at the pin):
+    #     DEF = proc->definition;
+    #     if ( ison(DEF, P_TRANSPARENT) )
+    #     { FR->context = contextModule(FR); /* must be  before setting FR_CONTEXT */
+    #       FR->level++;
+    #       FR->flags = ((FR->flags & ~(FR_LCO_CLEAR|FR_CLEAR_ALWAYS)) | FR_CONTEXT);
+    #     } else
+    #     { lcoSetNextFrameFlags(FR);
+    #     }
+    # — the context is read while the frame still runs the departing clause's predicate (design H4).
     @label I_DEPART
     id_proc = _call_procedure(ld, FR, PCc[PC])
     PC += 1
@@ -3169,7 +3265,13 @@ function PL_next_solution_guarded(
         id_f.clause = nothing                       # for save atom-gc
         # leaveDefinition(DEF): (void)0 upstream
         DEF = id_def
-        lcoSetNextFrameFlags(id_f)
+        if (DEF.flags & P_TRANSPARENT) != 0         # ison(DEF, P_TRANSPARENT)
+            id_f.context = contextModule(gd, ld, FR)    # FR->context = contextModule(FR)
+            id_f.level += UInt32(1)                 # FR->level++
+            id_f.flags = (id_f.flags & ~(FR_LCO_CLEAR | FR_CLEAR_ALWAYS)) | FR_CONTEXT
+        else
+            lcoSetNextFrameFlags(id_f)
+        end
         setFramePredicate(id_f, DEF)
         copyFrameArguments(ld, ld.lTop, id_f.base, DEF.arity)
         @goto depart_or_retry_continue
@@ -3302,6 +3404,10 @@ function PL_next_solution_guarded(
     mc_f2 = ld.frames[NFR]
     setFramePredicate(mc_f2, DEF)                   # (compileClause: fr->predicate)
     setNextFrameFlags(mc_f2, ld.frames[FR])         # setNextFrameFlags(NFR, FR)
+    # compileClause's goal-clause frame (MOD2; pl-comp.c:2263-2266 at the pin: `fr->clause = cref;
+    # fr->predicate = getProcDefinition(proc); setNextFrameFlags(fr, environment_frame);
+    # setContextModule(fr, module);`): the goal clause runs in the module it was stripped to
+    setContextModule!(mc_f2, mc_mi)                 # setContextModule(fr, module)
     mc_f2.parent = FR
     mc_f2.programPointer = Code{T}(PCc, PCl, PC)
     setGenerationFrame(gd, ld, NFR)                 # cl->generation set by compileGoalClause
@@ -3343,9 +3449,16 @@ function PL_next_solution_guarded(
     @goto mcall_cont
 
     # PORT: pl-vmi.c mcall_cont
-    # DIVERGES: only the part reached here: no `P_TRANSPARENT` (every clause is `user`'s until R2's `module/2`).
+    # DIVERGES: its `module` argument is the local `mc_mi` (an index), set by `i_metacall_common`, its one
+    # caller here. NOT PORTED: the `trapUndefined` of an undefined definition (the supervisor `S_VIRGIN`
+    # traps it, as for `I_CALL`; see `i_metacall_common`). Since MOD2 (pl-vmi.c:5725-5726 at the pin):
+    #     if ( ison(DEF, P_TRANSPARENT) )
+    #       setContextModule(NFR, module);
     @label mcall_cont
     setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+    if (DEF.flags & P_TRANSPARENT) != 0             # ison(DEF, P_TRANSPARENT)
+        setContextModule!(ld.frames[NFR], mc_mi)    # setContextModule(NFR, module)
+    end
     @goto normal_call
 
     # PORT: pl-vmi.c call_type_error
@@ -3674,11 +3787,22 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_LCALL
     # DIVERGES: the operand as `I_CALL`'s. QUIRK kept: `setFramePredicate` twice (vmi:2571, 2599).
-    # NOT PORTED: the context module and `P_TRANSPARENT` (every clause is `user`'s until R2's
-    # `module/2`), `FR_WATCHED` (asserted absent: see `I_DEPART`), `HIDE_CHILDS`.
+    # NOT PORTED: `FR_WATCHED` (asserted absent: see `I_DEPART`), `HIDE_CHILDS`. Since MOD2 the
+    # context module (pl-vmi.c:2565-2566, 2588-2595 at the pin):
+    #     Module ctx0 = contextModule(FR);                 (before the predicate is replaced: H4)
+    #     ...
+    #     if ( ison(DEF, P_TRANSPARENT) )
+    #     { FR->context = ctx0;
+    #       FR->level++;
+    #       clearLocal(FR, FR_CLEAR_NEXT);
+    #       setLocal(FR, FR_CONTEXT);
+    #     } else
+    #     { lcoSetNextFrameFlags(FR);
+    #     }
     @label I_LCALL
     il_proc = _call_procedure(ld, FR, PCc[PC])
     PC += 1
+    il_ctx0 = contextModule(gd, ld, FR)             # Module ctx0 = contextModule(FR)
     il_f = ld.frames[FR]
     # leaveDefinition(DEF): (void)0 upstream
     il_f.clause = nothing
@@ -3691,7 +3815,14 @@ function PL_next_solution_guarded(
         DEF = getProcDefinedDefinition(gd, DEF)
         @LOAD_REGISTERS(QID)
     end
-    lcoSetNextFrameFlags(il_f)
+    if (DEF.flags & P_TRANSPARENT) != 0             # ison(DEF, P_TRANSPARENT)
+        il_f.context = il_ctx0                      # FR->context = ctx0
+        il_f.level += UInt32(1)                     # FR->level++
+        il_f.flags &= ~FR_CLEAR_NEXT                # clearLocal(FR, FR_CLEAR_NEXT)
+        il_f.flags |= FR_CONTEXT                    # setLocal(FR, FR_CONTEXT)
+    else
+        lcoSetNextFrameFlags(il_f)
+    end
     setFramePredicate(il_f, DEF)
     @goto depart_or_retry_continue
 

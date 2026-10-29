@@ -1020,6 +1020,7 @@ graph LR
     pl_modul --> pl_inline
     pl_modul --> pl_prims
     pl_modul --> pl_comp
+    pl_modul --> pl_wam
     pl_modul --> pl_fli
     pl_modul --> pl_error
     pl_modul --> pl_arith
@@ -1214,10 +1215,12 @@ graph LR
     pl_attvar --> default_term
     pl_attvar --> pl_incl
     pl_attvar --> SWI_Prolog
+    pl_attvar --> pl_atom
     pl_attvar --> pl_funct
     pl_attvar --> pl_global
     pl_attvar --> pl_inline
     pl_attvar --> pl_prims
+    pl_attvar --> pl_comp
     pl_attvar --> pl_alloc
     pl_attvar --> pl_wam
     pl_attvar --> pl_fli
@@ -5218,6 +5221,57 @@ What S1 adds (pl-file.c, pl-files.c `PL_get_file_name`, pl-stream.c `Sopen_file`
   "do not overrule older exception"; src/pl-error.jl:70). The create(Modes) row compares kernel and swipl at umask 0, 022 and 077.
 - Tests: test/files/test_open_close_swipl.jl (97 program rows against swipl 10.1.19 incl. the files left and the streams still open,
   14 reading rows, white-box rows); mutants: tools/mutants/S1.py.
+
+## MOD2 — the context module (R2, evidence/r2/design/modules.md §7, M4)
+
+What MOD2 ports (pl-wam.c, pl-vmi.c, pl-modul.c, pl-fli.c, pl-proc.c, pl-comp.c at the pin):
+
+- **`localFrame.context`** (an INDEX into the module table, as `definition.module_`; valid only under `FR_CONTEXT`, which
+  `FR_CLEAR_ALWAYS` clears on every new frame and `tcallSetNextFrameFlags` keeps), **`contextModule(gd, ld, fr)`** and
+  **`setContextModule!(fr, m)`** line for line (pl-wam.c:1746-1770): the first frame up the chain that has `FR_CONTEXT`
+  answers its `context`, the first whose predicate is not transparent its predicate's module, else `user`.
+- **Where a context is set:** `I_DEPART`'s last-call reuse and `I_LCALL` into a transparent predicate (the context read
+  BEFORE the frame's predicate is replaced, design H4: pl-vmi.c:2090, :2566), `mcall_cont` (a metacalled transparent
+  predicate gets the module the goal was stripped to, pl-vmi.c:5725), `PL_open_query` (`ctx`, else the saved environment's
+  context — reached by callPortray's `user:portray/1`, row c36 — else `user`, pl-wam.c:3092-3099) and the goal clause of a control construct under call/1 (pl-comp.c:2266).
+- **Where it is read:** `stripModule_cells` (an unqualified term: the environment frame's context, pl-modul.c:834),
+  `PL_strip_module`, `PL_strip_module_ex` (pl-fli.c), `get_procedure`'s `GP_FIND` default (clause/2, pl-proc.c:727),
+  `'$suspend'/3` (pl-attvar.c:1139), the cleanup handler (`call_term(contextModule(fr), …)`, pl-wam.c:928), and the two
+  new predicates `context_module/1` (pl-ext.c's FRG table, `META`) and `strip_module/3` (pl-modul.c, transparent).
+- **`P_TRANSPARENT` now means what it means upstream** (design H6). The built-ins upstream makes transparent through
+  `PL_meta_predicate` (pl-ext.c:390-421) are, for the ported ones: retractall/1 gains the flag (its PRED_DEF has none). The
+  boot stand-ins get the transparency of their upstream meta-predicate declarations (`_boot_transparent!`: call/1..8,
+  catch/3, the cleanup family, findall/3,4, bagof/3, setof/3, `cleanup_bag/2`, freeze/2, call_residue_vars/2, when/2).
+  **INTERIM until MOD4 (`S_MQUAL`; audit D-0209), every line marked `# INTERIM: S_MQUAL (MOD4)`:** the transparency list
+  itself; a stand-in whose goal reaches a NON-transparent helper (findall/4 → `system:findall_loop/4`, call_residue_vars/2
+  → run_crv/4, when/2 → trigger_first/2, and freeze/2) qualifies the goal in its clause with the context module first
+  (`_boot_mqual`: freeze/2's rule since AV7, `context_module/1` where it had `user`); and the cleanup handler wraps an
+  unqualified cleanup goal as `contextModule(fr):Goal` IN the frame's argument slot, no term reference
+  (`_interim_mqual_cleanup`; a term reference would raise the handler's frame) — no stand-in clause can, because
+  `'$call_cleanup'` and the handler read the cleanup frame's argument slots by position (audit D-0212: the same module
+  S_MQUAL, pl-vmi.c:3706 → `m_qualify_argument` pl-wam.c:1787-1818, writes at the frame's entry; a qualified cleanup, c38,
+  is left alone; one unbound at the call is refused there, c37). The wrap is NOT dead code (D-0233/D-0234 decided by the
+  rows, D-0237): in c08, c35 and c39-c42 the handler's environment frame already carries the cleanup frame's context
+  (white-box probe), but where the query's goal IS the cleanup frame (test/core_lang/test_cleanup_swipl.jl:295) the
+  environment is the query's system frame, and without the wrap `log/1` is looked up in system. `call_term` and
+  `stripModule` are upstream's verbatim (an unqualified goal: the environment frame's context; `mdef` reaches only `call1`).
+- **The MOD4 checklist (from MOD2, audit D-0209):**
+  * remove every `INTERIM: S_MQUAL (MOD4)` line (src/pl-ext.jl `_boot_transparent!` and `_boot_mqual` with their
+    uses, src/pl-wam.jl `_interim_mqual_cleanup` and its call) — the declarations' `P_META`/`S_MQUAL` replace them; the
+    handler's line becomes upstream's `rval = call_term(contextModule(fr), clean)` again;
+  * re-run the cleanup rows (c08, c35, c38, c39-c42 and test_cleanup_swipl.jl:295): once S_MQUAL qualifies the argument,
+    call_term's verbatim stripModule must still answer m2 (user at :295) (audit D-0234 item 3); the :295 shape (the
+    query's goal is the cleanup frame) is the row that must stay green when the wrap goes (audit D-0238 item 3);
+  * rows c18-c30, c08, c35, c37, c38 and c39-c42 of test/core_lang/test_context_module_swipl.jl stay green;
+  * MOD4's report gives `grep -c "INTERIM: S_MQUAL (MOD4)"` over src/: it must be 0.
+- **Unchanged for a program in `user`** (every test before MOD2): each context resolves to `user` as the hard-wired
+  default did.
+- **Not here:** `I_CONTEXT`, `I_CALLM`, `I_DEPARTM`, `M:Goal` in a body (MOD3a); `Goal@Module` (MOD3b); `P_META`,
+  `meta_predicate/1`, `S_MQUAL`/`S_LMQUAL`, `m_qualify_argument` (MOD4).
+
+Tests: test/core_lang/test_context_module_swipl.jl (rows c01-c42: a program of module `m2` asserted by directives, run
+through call/1 vs swipl 10.1.19 pins; the query API's context; `PL_open_query`'s branches white-box). Mutants:
+tools/mutants/MOD2r.py.
 
 ## Still to come
 

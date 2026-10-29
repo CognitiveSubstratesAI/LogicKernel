@@ -13,8 +13,9 @@
 # typein module (`'$set_source_module'/1`, …); `'$module_property'/2`; and what a call of an undefined
 # predicate reads — the module's `unknown` flag, inherited from its super modules (since V5b, V5c). The
 # module records are src/pl-incl.jl's `module_t`; the table is the database's (`PL_global_data.modules`).
-# NOT PORTED (the module system's later steps, D-0149): the context module and `strip_module/3` (MOD2),
-# `export/1`, `import/1`, `'$import'/2`, `'$undefined_export'/2`, `'$def_modules'/2` (MOD5a),
+# Since MOD2 the context module of an unqualified term (`stripModule_cells`; the frames' context modules are
+# src/pl-wam.jl `contextModule`), `strip_module/3` and `context_module/1`.
+# NOT PORTED (the module system's later steps, D-0149): `export/1`, `import/1`, `'$import'/2`, `'$undefined_export'/2`, `'$def_modules'/2` (MOD5a),
 # `'$declare_module'/6`, `'$destroy_module'/1` and `acquireModule`/`releaseModule` (MOD5b), and the
 # non-deterministic `import_module/2` and `'$current_module'/2` (MOD6, after NF1).
 
@@ -297,18 +298,22 @@ end
 
 # PORT: pl-modul.c stripModule as stripModule_cells
 # DIVERGES: on a location, as `stripModuleName_cells`; returns `(ok, plain, module)`, the module as its
-# index into `gd`'s table. A term with no qualifier gets the context module, which is `user`: every
-# clause is `user`'s until MOD2 (`contextModule` reads frames' context modules, not ported). A
-# qualifier names its module, which `lookupModule` creates (since MOD1). NOT PORTED: `SM_NOCREATE`
-# (`flags`): its callers are not ported.
+# index into `gd`'s table. A term with no qualifier gets the context module of the environment frame,
+# or `user` outside one (since MOD2; pl-modul.c:834-835: `*module = (environment_frame ?
+# contextModule(environment_frame) : MODULE_user);`). A qualifier names its module, which `lookupModule`
+# creates (since MOD1). NOT PORTED: `SM_NOCREATE` (`flags`): its callers are not ported.
 "The plain term under the qualifiers at location `l` (`(kind, word, position)`) and the module it names (pl-modul.c)."
 function stripModule_cells(
     gd::PL_global_data{T}, ld::PL_local_data{T}, l::Int
 )::Tuple{Bool, Tuple{UInt8, word, Int}, Int} where {T}
     ok, rc, nm = stripModuleName_cells(ld, l)
-    m = MODULE_user(gd).index                       # (environment_frame ? contextModule(…) : user)
-    if ok && nm != 0
-        m = lookupModule(gd, _atom_value(ld, nm)).index
+    m = MODULE_user(gd).index
+    if ok
+        if nm != 0                                  # if ( mname )
+            m = lookupModule(gd, _atom_value(ld, nm)).index     # *module = lookupModule(mname)
+        elseif ld.environment_frame != 0            # environment_frame ? contextModule(…) : MODULE_user
+            m = contextModule(gd, ld, ld.environment_frame)
+        end
     end
     return (ok, rc, m)
 end
@@ -414,8 +419,7 @@ end
 
 # PORT: pl-modul.c set_module as pl_set_module1_va
 # (PRED_IMPL("set_module", 1, set_module, PL_FA_TRANSPARENT))
-# DIVERGES: an unqualified `set_module/1` works on `MODULE_parse`, the typein module outside a load: the
-# context module (MOD2) is not ported.
+# (an unqualified `set_module/1` works on `MODULE_parse`, as upstream's: pl-modul.c:739)
 "`set_module(:Property)`: set a property of a module (pl-modul.c)."
 function pl_set_module1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -620,10 +624,46 @@ function pl_module_property2_va(
     end
 end
 
+# PORT: pl-modul.c strip_module as pl_strip_module3_va
+# (PRED_IMPL("strip_module", 3, strip_module, PL_FA_TRANSPARENT), pl-modul.c:1077-1089 at the pin:
+#     if ( (plain = PL_new_term_ref()) &&
+#          PL_strip_module(A1, &m, plain) &&
+#          PL_unify_atom(A2, m->name) &&
+#          PL_unify(A3, plain) )
+#       succeed;
+#     fail;                                                                      MOD2)
+# DIVERGES: the module is an index into `gd`'s table (0 for upstream's NULL `m`).
+"`strip_module(+Term, -Module, -Plain)`: `Term`'s atom qualifiers off, the module they or the context name (pl-modul.c)."
+function pl_strip_module3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    plain = PL_new_term_ref(ld)
+    ok, m = PL_strip_module(gd, ld, A1, 0, plain)  # Module m = NULL; PL_strip_module(A1, &m, plain)
+    ok || return FFALSE
+    return if PL_unify_atom(ld, A2, gd.modules[m].atom) && PL_unify(ld, A3, plain)
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# PORT: pl-modul.c pl_context_module
+# (FRG("context_module", 1, pl_context_module, META), pl-ext.c:161; pl-modul.c:1613-1617 at the pin:
+#     return PL_unify_atom(module, contextModule(environment_frame)->name);       MOD2)
+# DIVERGES: the database is the query's (`_query_gd`); the module an index into its table.
+"`context_module(-Module)`: the context module of the calling frame (pl-modul.c); `context_module/1` is transparent."
+function pl_context_module(ld::PL_local_data{T}, module_::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    m = contextModule(gd, ld, ld.environment_frame)
+    return PL_unify_atom(ld, module_, gd.modules[m].atom) ? FTRUE : FFALSE
+end
+
 # PORT: pl-modul.c BeginPredDefs as PL_predicates_from_module
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (MOD1: the table, the
 # supers, the source and typein modules, `'$module_property'/2`); `PRED_DEF` ors in `PL_FA_VARARGS`.
-# NOT PORTED: `import_module/2`, `'$current_module'/2` (non-deterministic: MOD6), `strip_module/3` (MOD2),
+# Since MOD2 `strip_module/3`. NOT PORTED: `import_module/2`, `'$current_module'/2` (non-deterministic: MOD6),
 # `'$def_modules'/2`, `import/1`, `'$import'/2`, `export/1`, `'$undefined_export'/2` (MOD5a),
 # `'$declare_module'/6`, `'$destroy_module'/1` (MOD5b).
 "pl-modul.c's registration table (`BeginPredDefs(module)`): the ported entries."
@@ -632,6 +672,7 @@ const PL_predicates_from_module = (
     PL_extension("delete_import_module", 2, pl_delete_import_module2_va, PL_FA_VARARGS),
     PL_extension("set_module", 1, pl_set_module1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("\$module_property", 2, pl_module_property2_va, PL_FA_VARARGS),
+    PL_extension("strip_module", 3, pl_strip_module3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension(
         "\$current_source_module", 1, pl_current_source_module1_va, PL_FA_VARARGS
     ),

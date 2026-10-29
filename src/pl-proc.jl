@@ -1267,7 +1267,7 @@ end
 # DIVERGES: `GP_FIND` without `GP_NAMEARITY`, no `h` and no `GP_EXISTENCE_ERROR`, as a function of its own
 # (`get_procedure` above refuses it). The term is stripped of its qualifiers (`stripModuleName_cells`) and
 # `get_module`'s `GP_FIND` case is inlined: the module a qualifier names if it is current (`isCurrentModule`:
-# none is created), else `user`; no qualifier, the context module, `user` (no `contextModule`). Not found:
+# none is created), else `user`; no qualifier, the context module (since MOD2; pl-proc.c:727-728). Not found:
 # `nothing` with no error, as upstream's `notfound` without `GP_EXISTENCE_ERROR`.
 "The defined procedure the head term `descr` (`M:Head`) names, as seen from its module, or `nothing` (pl-proc.c)."
 function get_procedure_find(
@@ -1283,6 +1283,8 @@ function get_procedure_find(
         if cm !== nothing                               # isCurrentModule(mname), else MODULE_user
             m = cm
         end
+    elseif ld.environment_frame != 0                    # environment_frame ? contextModule(…) : user
+        m = gd.modules[contextModule(gd, ld, ld.environment_frame)]
     end
     name, arity = get_head_functor(ld, head, GP_FIND)
     arity < 0 && return nothing

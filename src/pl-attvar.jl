@@ -910,8 +910,9 @@ function _suspend_call_word!(
 end
 
 # PORT: pl-attvar.c suspend as pl_dsuspend3_va
-# DIVERGES: `g` dereferenced (upstream tests the term reference's word); the context module is `user`
-# until contextModule is ported (design Q4 (a), as freeze/2's stand-in); `call(Goal)` takes 2 cells
+# DIVERGES: `g` dereferenced (upstream tests the term reference's word); the context module (since MOD2;
+# `user` before) is the environment frame's, the module an index into the query's database;
+# `call(Goal)` takes 2 cells
 # (upstream 3: its first holds the compound's word, here the word itself is passed); `assert(0)` (bad
 # attributes) returns false.
 "`\$suspend/3` (pl-attvar.c): add `Goal` to attribute `Attr`'s `call/1` value (conjoined), qualified with the context module."
@@ -931,7 +932,10 @@ function pl_dsuspend3_va(
     )
         t = allocGlobalCells!(ld, 3)
         ld.gstack[t] = _when_functor(ld, :(:), 2)           # t[0] = FUNCTOR_colon2
-        ld.gstack[t + 1] = _atom_word!(ld, mk_sym(T, :user))   # contextModule(...)->name
+        gd = _query_gd(ld)                                  # contextModule(engine->environment)->name
+        ld.gstack[t + 1] = _atom_word!(
+            ld, gd.modules[contextModule(gd, ld, ld.environment_frame)].atom
+        )
         ld.gstack[t + 2] = _link_val_loc!(ld, g)            # t[2] = linkValNoG(g)
         g = (DU_WORD, consPtr(t, TAG_COMPOUND | STG_GLOBAL), 0)
     end

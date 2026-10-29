@@ -1109,10 +1109,11 @@ const FR_CLEAR_FLAGS = FR_CLEAR_NEXT | FR_CLEAR_ALWAYS
 
 # PORT: pl-incl.h localFrame
 # DIVERGES: a pool record (see above). `parent` is a frame index; `programPointer` is a `Code` —
-# the clause's code and an index into it, as everywhere here. Not kept: `context`, the context
-# module, read only for transparent predicates (`contextModule`; every clause is `user`'s until
-# R2's `module/2`)
-# and `prof_node` (no profiler); both still count in `SIZEOF_LOCALFRAME`. `fctx` (NF1) is what
+# the clause's code and an index into it, as everywhere here. `context` (since MOD2) is the context
+# module as an INDEX into the database's module table, as `definition.module_`; it is valid only
+# while `FR_CONTEXT` is set (src/pl-wam.jl `contextModule`, `setContextModule!`), so a reused pool
+# record's stale value is never read. Not kept: `prof_node` (no profiler); it still counts in
+# `SIZEOF_LOCALFRAME`. `fctx` (NF1) is what
 # upstream keeps in a foreign frame's `clause` word: a non-deterministic foreign call's redo context,
 # encoded as upstream's (`REDO_INT`, `REDO_PTR`; 0 = `FR->clause == NULL`) — a field of its own,
 # because `clause` holds a clause reference (docs/architecture.md, "Non-deterministic built-ins").
@@ -1124,6 +1125,7 @@ mutable struct localFrame{T}
     parent::Int                             # parent local frame (an index; 0 = NULL)
     clause::Union{Nothing, ClauseRef{T}}    # Current clause of frame
     predicate::Union{Nothing, Definition{T}} # Predicate we are running
+    context::Int                            # context module of frame (an index; MOD2)
     generation::gen_t                       # generation of the database
     level::UInt32                           # recursion level
     flags::UInt32                           # packed long holding:

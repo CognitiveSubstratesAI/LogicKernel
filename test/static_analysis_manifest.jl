@@ -690,6 +690,11 @@ function _manifest_index(T)
         (LK.trapUndefined, Tuple{GD, D}, false),
         (LK.createUndefSupervisor, Tuple{D}, false),
         (LK.getProcDefinedDefinition, Tuple{GD, D}, false),
+        # MOD2 — the context module (src/pl-wam.jl), strip_module/3 and context_module/1 (src/pl-modul.jl)
+        (LK.contextModule, Tuple{GD, LD, Int}, true),
+        (LK.setContextModule!, Tuple{LK.localFrame{T}, Int}, true),
+        (LK.pl_strip_module3_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_context_module, Tuple{LD, Int}, false),
         # f3b-4 — the definition's reference on term references
         (LK.unify_functor, Tuple{LD, Int, D, Int}, false),
         (LK.unify_definition, Tuple{GD, LD, MOD, Int, D, Int, Int}, false),
@@ -1390,8 +1395,9 @@ function _manifest_index(T)
         # V9g — the cleanup family: the handler and its callers (src/pl-wam.jl), calling a goal
         # from foreign code and sig_atomic/1 (src/pl-pro.jl), the boot clauses (src/pl-ext.jl)
         (LK.unify_finished, Tuple{LD, Int, LK.finished}, false),
-        (LK.call1, Tuple{GD, LD, Int}, false),
-        (LK.call_term, Tuple{GD, LD, Int}, false),
+        (LK.call1, Tuple{GD, LD, Int, Int}, false),        # MOD2: the module `mdef`
+        (LK.call_term, Tuple{GD, LD, Int, Int}, false),
+        (LK._interim_mqual_cleanup, Tuple{GD, LD, Int, Int}, false),   # MOD2 INTERIM: S_MQUAL (MOD4)
         (LK.call_internal_det_foreign, Tuple{GD, LD, LK.Procedure{T}, Int}, false),
         (LK.callCleanupHandler, Tuple{LD, Int, LK.finished}, false),
         (LK.frameFinished, Tuple{LD, Int, LK.finished}, false),
@@ -1474,6 +1480,8 @@ function _manifest_index(T)
         (LK._boot_term, Tuple{Symbol, Vector{T}}, false),
         (LK._boot_conj, Tuple{Vector{T}}, false),
         (LK._boot_ite, Tuple{Type{T}, T, T, T}, false),
+        (LK._boot_mqual, Tuple{Type{T}, T, T, Vector{T}}, false),   # MOD2
+        (LK._boot_transparent!, Tuple{GD}, false),                  # MOD2
         (LK._boot_cons, Tuple{Type{T}, T, T}, false),
         (LK._boot_vars, Tuple{Type{T}, Int}, false),
         (LK._boot_length_error, Tuple{Type{T}, T, T}, false),

@@ -142,7 +142,7 @@ function _grow_pool!(
         push!(
             pool,
             localFrame{T}(
-                0, ld.null_code, 0, nothing, nothing, gen_t(0), 0x0, 0x0, UInt(0)
+                0, ld.null_code, 0, nothing, nothing, 0, gen_t(0), 0x0, 0x0, UInt(0)
             )
         )
     end
