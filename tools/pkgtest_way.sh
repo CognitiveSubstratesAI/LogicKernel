@@ -33,6 +33,10 @@ fi
 rc=$?
 if [ "$rc" -ne 0 ]; then
     echo "pkgtest_way: FAILED (exit $rc) — $base.out $base.err" >&2
+    # the failing test's OWN report (its `Test Failed` / `Error During` lines, with the testset's name) is on STDOUT,
+    # not stderr, which holds only the summary exception: both are shown (CI's tooling job lost the planted file's
+    # `planted: Test Failed` line to a tail of stderr alone, 2026-10-29)
+    grep -E -A5 'Test Failed|Error During' "$base.out" | head -n 40 >&2
     tail -n 25 "$base.err" >&2
     exit "$rc"
 fi

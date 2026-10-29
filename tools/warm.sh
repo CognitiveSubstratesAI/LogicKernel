@@ -613,7 +613,7 @@ _inert_check() {
         "$ROOT/tools/pkgtest_way.sh" "$f" > "$log" 2>&1 || {
             rc=1
             echo "preflight: Pkg.test-way run FAILED — $f ($log)"
-            tail -n 15 "$log"
+            head -n 60 "$log"                    # the file's own failure lines first (pkgtest_way.sh), then the exception
         }
         n=$(( n + 1 ))
     done

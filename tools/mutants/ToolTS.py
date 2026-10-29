@@ -205,4 +205,7 @@ MUTANTS = [
     dict(id="TT56 the send probe no longer skips the lane check", file=W, targets=T,
          old=r'''        if [ "${LOGICKERNEL_WARM_SEND_PROBE:-}" != 1 ] && [ "${LOGICKERNEL_TERM_SCOPES_COLD:-}" != 1 ]; then''',
          new=r'''        if [ "${LOGICKERNEL_TERM_SCOPES_COLD:-}" != 1 ]; then'''),
+    dict(id="TT57 a failed Pkg.test-way run hides the file's own failure lines", file=P, targets=T,
+         old=r'''    grep -E -A5 'Test Failed|Error During' "$base.out" | head -n 40 >&2''',
+         new=r'''    :'''),
 ]

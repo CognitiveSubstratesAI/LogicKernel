@@ -292,10 +292,19 @@ end
                 write(joinpath(d, "test", "core_lang", "test_probe.jl"), text)
                 r = run_warm(d)
                 @test r.code == want
-                @test occursin(
+                # a Bool, not `@test occursin(.., r.out)`: a failing @test prints its arguments, and the output of a
+                # mutated check holds "LoadError", which the mutation driver reads as "did not load" (TT6, TT16: NO
+                # VERDICT in CI, 2026-10-29). The output is shown, masked, when the check fails.
+                shown = occursin(
                     want == 0 ? "preflight: term scopes valid" : "TERM SCOPES INVALID",
                     r.out
                 )
+                shown || println(
+                    stderr,
+                    "term-scopes output: ",
+                    replace(r.out, "LoadError" => "Load-Error")
+                )
+                @test shown
                 if want == 0                                  # fail closed: a pass must SHOW its line
                     for fault in ("scopes-empty", "scopes-cut")
                         rf = run_warm(d; fault=fault)
@@ -423,6 +432,7 @@ o1=\$([ -f /proc/\$\$/fd/1 ] && echo yes || echo no); o2=\$([ -f /proc/\$\$/fd/2
 case "\$STUB_MODE" in
     pass) echo "pkgtest-way: PASS stub" ;;
     fail) echo "boom" >&2; exit 1 ;;
+    failout) echo "planted: Test Failed at x.jl:1"; echo "  Expression: 1 + 1 == 3"; echo "boom" >&2; exit 1 ;;
     silent) : ;;
 esac
 """
@@ -468,6 +478,10 @@ esac
         @test occursin("test/test_package.jl", r.rec)
         r = way("test/test_package.jl"; mode="fail")
         @test r.code == 1 && occursin("FAILED (exit 1)", r.out) && occursin("boom", r.out)
+        # the failing test's own report is on the child's STDOUT: it must come out with the failure (CI, 2026-10-29)
+        r = way("test/test_package.jl"; mode="failout")
+        @test r.code == 1 && occursin("planted: Test Failed at x.jl:1", r.out) &&
+            occursin("Expression: 1 + 1 == 3", r.out) && occursin("boom", r.out)
         r = way("test/test_package.jl"; mode="silent")                      # exit 0 without the pass line
         @test r.code == 4 && occursin("NO VERDICT", r.out)
         r = way("test/nope.jl")
@@ -487,8 +501,21 @@ esac
         r = inert(; mode="fail")
         @test r.code == 1 &&
             occursin("Pkg.test-way run FAILED — test/test_package.jl", r.out)
+        r = inert(; mode="failout")                                        # the preflight shows the file's own failure
+        @test r.code == 1 && occursin("planted: Test Failed at x.jl:1", r.out)
         r = inert(; mode="silent")
         @test r.code == 1 && occursin("NO VERDICT", r.out)
+        # the heavy tooling files and the static-analysis file are never run here (WARM_INERT_SKIP): a stub that
+        # would FAIL is not started for them
+        for skipped in (
+            "test/test_static_analysis.jl", "test/test_gate_split.jl",
+            "test/test_port_check.jl"
+        )
+            @test isfile(joinpath(_GS_ROOT, skipped))
+            r = inert(; files=skipped, mode="fail")
+            @test r.code == 0 && occursin("no changed test file", r.out) &&
+                !occursin("FAILED", r.out)
+        end
         r = inert(; files="")
         @test r.code == 0 && occursin("no changed test file", r.out)
         r = inert(; files="test/nope.jl")                                  # a deleted file is not run
