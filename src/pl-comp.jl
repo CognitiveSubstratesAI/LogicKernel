@@ -4725,8 +4725,8 @@ function moved_unification(
 end
 
 # PORT: pl-comp.c moved_unifications
-# DIVERGES: the arity is the bits' length. With nothing to write `body` is left as it is, as
-# upstream (upstream defect, see register Q2).
+# The pin cbf4e189 plus upstream fix 627ecb5d3 (BP2, a named backport): with no bit left set and no body, `body` is `true`.
+# DIVERGES: the arity is the bits' length.
 """
 Unify the term `body` references with the moved unifications of the clause — `Var = Term` for each
 argument whose bit `decompile_head!` left set, in order, conjunct by conjunct — `body` moved to
@@ -4740,11 +4740,14 @@ function moved_unifications!(
     tmp == 0 && return false
     eq = tmp
     a = tmp + 1
-    last = 0
+    last = -1
     for i in 0:(length(bvar_access) - 1)
         if bvar_access[i + 1]
             last = i
         end
+    end
+    if last < 0 && !hasbody                                 # all were turned into head unification
+        return PL_unify_atom(ld, body, mk_sym(T, Symbol("true")))
     end
     for i in 0:last
         if bvar_access[i + 1]

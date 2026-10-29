@@ -1256,7 +1256,11 @@ const _BC_MOVE_CELLS = let X = _bv(1), Y = _bv(2), T = _bv(3), G = _bv(4)
             "past another =",
             _bf("mv67", X),
             _bconj(_bf("=", G, _bs("true")), _bf("=", X, _bs("a")), _bcq(G))
-        )
+        ),
+        # upstream 627ecb5d (BP2): every moved unification became a head unification; the body is `true`
+        ("all moved to the head", _bf("mv31", X, Y), _bf("=", Y, _bf("f", X))),
+        ("all moved, a body follows", _bf("mv32", X, Y),
+            _bconj(_bf("=", Y, _bf("f", X)), _bcq(X)))
     ]
 end
 
@@ -2333,7 +2337,9 @@ const _BC_MOVE_DECOMPILED = Dict{String, String}(
     "a string" => "':-'(mv43(A),','('='(A,\"str\"),q(A)))",
     "a void first" => "':-'(mv58(a),true)",
     "past var = var" => "':-'(mv59(A),','('='(A,a),','('='(A,B),'='(B,b))))",
-    "past another =" => "':-'(mv67(a),','('='(A,true),q(A)))"
+    "past another =" => "':-'(mv67(a),','('='(A,true),q(A)))",
+    "all moved to the head" => "':-'(mv31(A,f(A)),true)",
+    "all moved, a body follows" => "':-'(mv32(A,f(A)),q(A))"
 )
 
 @testset "the decompiler puts moved unifications back (V9d)" begin
