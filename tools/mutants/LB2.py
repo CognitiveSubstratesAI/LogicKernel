@@ -32,8 +32,29 @@ MUTANTS = [
          old='''get_procedure_findhere(gd, ld, descr, MODULE_system(gd))''',
          new='''get_procedure_findhere(gd, ld, descr, MODULE_user(gd))'''),
     dict(id="LB2-3 a qualifier naming no module fails the lookup path (nothing) instead of user", file="src/pl-proc.jl", targets=S,
-         old='''        m === nothing && (m = MODULE_user(gd))''',
-         new='''        m === nothing && return nothing'''),
+         old='''_slot_link_loc!(ld, head + 1, rc)                       # *valTermRef(head) = linkValNoG(p)
+    if nm != 0                                              # get_module(mname, GP_FINDHERE)
+        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
+        m === nothing && (m = MODULE_user(gd))''',
+         new='''_slot_link_loc!(ld, head + 1, rc)                       # *valTermRef(head) = linkValNoG(p)
+    if nm != 0                                              # get_module(mname, GP_FINDHERE)
+        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
+        m === nothing && return nothing'''),
+    dict(id="LB2-39 $end_aux: a qualifier naming no module fails the lookup instead of user (row a16)", file="src/pl-proc.jl", targets=S,
+         old='''    if nm != 0
+        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
+        m === nothing && (m = MODULE_user(gd))
+    else
+        m = context
+    end
+    if PL_is_functor''',
+         new='''    if nm != 0
+        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
+        m === nothing && return nothing
+    else
+        m = context
+    end
+    if PL_is_functor'''),
     dict(id="LB2-4 $source_file_predicates answers for a file nothing has started", file=SF, targets=S,
          old='''        if sf.count > 0
             tail''',
@@ -128,6 +149,31 @@ MUTANTS = [
          old='''if !force && !SYSTEM_MODE(ld::PL_local_data{T})''',
          new='''if !force && SYSTEM_MODE(ld::PL_local_data{T})'''),
     # ---- source_location/2
+    # ---- '$start_aux'/2 and '$end_aux'/2 (rows a01-a15)
+    dict(id="LB2-33 $start_aux reports a procedure that is not defined", file="src/pl-comp.jl", targets=S,
+         old='''proc !== nothing && isDefinedProcedure(gd, proc)''',
+         new='''proc !== nothing'''),
+    dict(id="LB2-34 $start_aux answers Name/Arity without the module", file="src/pl-comp.jl", targets=S,
+         old='''GP_QUALIFY | GP_NAMEARITY) || return FFALSE''',
+         new='''GP_NAMEARITY) || return FFALSE'''),
+    dict(id="LB2-35 $end_aux with [] keeps the current procedure", file="src/pl-comp.jl", targets=S,
+         old='''    if PL_get_nil(ld, A2)
+        sf.current_procedure = nothing''',
+         new='''    if PL_get_nil(ld, A2)
+        sf.current_procedure = sf.current_procedure'''),
+    dict(id="LB2-36 $end_aux looks an unqualified PI up in user", file="src/pl-comp.jl", targets=S,
+         old='''get_procedure_find_namearity(gd, ld, A2, MODULE_system(gd))''',
+         new='''get_procedure_find_namearity(gd, ld, A2, MODULE_user(gd))'''),
+    dict(id="LB2-37 $end_aux succeeds for a PI that names no procedure", file="src/pl-comp.jl", targets=S,
+         old='''        else
+            rc = false''',
+         new='''        else
+            rc = true'''),
+    dict(id="LB2-38 get_procedure_find_namearity does not follow the default import (a15)", file="src/pl-proc.jl", targets=S,
+         old='''    return visibleProcedure(gd, name, arity, m)
+end''',
+         new='''    return isCurrentProcedure(sym_key(name), arity, m)
+end'''),
     dict(id="LB2-31 ReadingSource is false at line 0 again", file="src/pl-modul.jl", targets=S,
          old='''ld.read_source.position.lineno >= 0 && ''',
          new='''ld.read_source.position.lineno > 0 && '''),

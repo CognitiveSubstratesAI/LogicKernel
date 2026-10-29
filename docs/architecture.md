@@ -5422,7 +5422,11 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   `assert_term` (a predicate defined in system mode gets `P_LOCKED | HIDE_CHILDS`), `isStaticSystemProcedure`, `defOperator!`, `put_frame_goal`,
   `lookupBodyProcedure`. Not flipped (not in the kernel): pl-trace.c:500/528/1209, 1381, 2671. There is no `set_prolog_flag(access_level, _)` yet (F1b).
 - **`source_location/2`, `'$set_source_location'/2`** (pl-file.c:5805-5822): `ReadingSource` now tests `lineno >= 0` as pl-incl.h:2734, so line 0 counts.
-- **Still to come in LB2:** `'$start_aux'/2`, `'$end_aux'/2`, `compile_predicates/1`, `nth_clause/3`, `'$get_clause_attribute'/3`, thread_local;
+- **`'$start_aux'/2`, `'$end_aux'/2`** (pl-comp.c:5197-5240; `pl_start_aux2_va`, `pl_end_aux2_va`, rows a01-a16): `$start_aux(File, CP)` takes a reference on the file and
+  answers the file's `current_procedure` as `M:Name/Arity` if it is defined, else `[]`; `$end_aux(File, CP)` sets `current_procedure` (`[]` clears it; a PI is looked up by the
+  new `get_procedure_find_namearity`, unqualified = context `system` since the predicate is not transparent: swipl fails `$end_aux(F, foo/1)` for user's foo/1) and drops
+  both references. A PI naming no procedure fails; `$end_aux` without a prior `$start_aux` makes `releaseSourceFile` raise its internal error (upstream repairs the count; the loader always pairs them).
+- **Still to come in LB2:** `compile_predicates/1`, `nth_clause/3`, `'$get_clause_attribute'/3`, thread_local;
   modules L3 (`exportProcedureSource`, pl-srcfile.c:1427) and L4 (`setMetapredicateSource`, :1334) wait for MOD4 (`exportProcedure` and
   `setMetapredicateMask` do not exist on this base); with them MOD4's `meta_declaration` ReadingSource refusal is replaced by upstream's branch (D-0246).
 
