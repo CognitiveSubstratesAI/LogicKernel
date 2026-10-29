@@ -1500,6 +1500,45 @@ function get_procedure_find(
     return visibleProcedure(gd, name, arity, m)         # GP_FIND: found -> out; else notfound
 end
 
+# PORT: pl-proc.c get_procedure as get_procedure_find_namearity
+# (the `GP_FIND|GP_NAMEARITY` case, as `'$end_aux'/2` asks it: `get_procedure(A2, &proc, 0, GP_NAMEARITY)`, GP_FIND being 0)
+# DIVERGES: `get_functor(…, GF_PROCEDURE)` is the term stripped of its qualifiers (`stripModuleName_cells`) and a `Name/Arity` or a
+# head, as `get_procedure`'s `GP_DEFINE` case reads it; the module is the one a qualifier names if it is current (none is created),
+# else `user`, and for no qualifier `context` (`contextModule` is not ported; `'$end_aux'/2` is not transparent: `system`).
+# `visibleProcedure` looks the functor up there. Not found: `nothing` with no error (no `GP_EXISTENCE_ERROR`).
+"The procedure the `M:Name/Arity` (or head) in `descr` names, as visible from its module, or `nothing` (pl-proc.c)."
+function get_procedure_find_namearity(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}
+)::Union{Nothing, Procedure{T}} where {T}
+    ok, loc, nm = stripModuleName_cells(ld, -(descr + 1))
+    ok || return nothing
+    head = PL_new_term_ref(ld)
+    _slot_link_loc!(ld, head + 1, loc)
+    if nm != 0
+        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
+        m === nothing && (m = MODULE_user(gd))
+    else
+        m = context
+    end
+    if PL_is_functor(ld, head, mk_sym(T, :/), 2)
+        a = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, head, a)
+        name = PL_get_atom_ex(ld, a)
+        name === nothing && return nothing
+        _PL_get_arg(ld, 2, head, a)
+        arity = PL_get_integer_ex(ld, a)
+        arity === nothing && return nothing
+        if arity < 0
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
+            return nothing
+        end
+    else
+        name, arity = get_head_functor(ld, head, 0)
+        arity < 0 && return nothing
+    end
+    return visibleProcedure(gd, name, arity, m)
+end
+
 # ── retract/1, a non-deterministic foreign predicate (pl-proc.c; NF2, docs/architecture.md) ─────────────
 # PORT: pl-proc.c alloc_retract_context as alloc_retract_context!
 # DIVERGES: the heap copy is a record of the local data's pool (`ld.retract_contexts`, design D3) and the

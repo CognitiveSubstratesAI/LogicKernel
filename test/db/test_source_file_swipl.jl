@@ -151,6 +151,21 @@ const _CASES = [
     ("c14", "'\$start_consult'('/no/such/h', 0), '\$source_file_property'('/no/such/h', loaded, V), ( float(V) -> R = flt ; R = V )"),
     ("c15", "'\$start_consult'('/no/such/i', 0), findall(Ty, '\$time_source_file'('/no/such/i', _, Ty), L), R = L"),
     ("c16", "'\$start_consult'('/no/such/j', 0), '\$source_file_property'('/no/such/j', number_of_clauses, V), R = V"),
+    # ---- '$start_aux'/2 and '$end_aux'/2 (pl-comp.c:5197; each row its own file; every $end_aux follows a $start_aux, as the loader does)
+    ("a01", "'\$start_aux'('/no/such/a01', C), '\$end_aux'('/no/such/a01', C), R = C"),
+    ("a02", "'\$start_aux'('/no/such/a02', _), '\$end_aux'('/no/such/a02', user:foo/1), '\$start_aux'('/no/such/a02', C), '\$end_aux'('/no/such/a02', C), R = C"),
+    # a06/a12 (an end_aux whose PI is no PI) are NOT rows: swipl leaves the error pending past the false return (it surfaces in a later
+    # foreign call, "did not clear exception"); the kernel raises it at once.
+    ("a03", "'\$start_aux'('/no/such/a03', _), '\$end_aux'('/no/such/a03', user:nothere/0), '\$start_aux'('/no/such/a03', C), '\$end_aux'('/no/such/a03', C), R = C"),
+    ("a04", "ex('\$start_aux'(_, _), R)"),
+    ("a05", "ex('\$start_aux'(1, _), R)"),
+    ("a07", "'\$start_aux'('/no/such/a07', _), '\$end_aux'('/no/such/a07', user:foo/1), '\$start_aux'('/no/such/a07', C), '\$end_aux'('/no/such/a07', []), '\$start_aux'('/no/such/a07', C2), '\$end_aux'('/no/such/a07', C2), R = C-C2"),
+    ("a08", "'\$start_aux'('/no/such/a08', _), '\$end_aux'('/no/such/a08', foo/1), '\$start_aux'('/no/such/a08', C), '\$end_aux'('/no/such/a08', C), R = C"),
+    ("a09", "'\$start_aux'('/no/such/a09', _), '\$end_aux'('/no/such/a09', []), ( '\$start_aux'('/no/such/a09', user:foo/1) -> R = yes ; R = no ), '\$end_aux'('/no/such/a09', [])"),
+    ("a10", "'\$start_aux'('/no/such/a10', _), ( '\$end_aux'('/no/such/a10', user:zork/7) -> R = yes ; R = no )"),
+    ("a11", "'\$start_aux'('/no/such/a11', _), '\$end_aux'('/no/such/a11', user:foo/1), '\$start_aux'('/no/such/a11', user:foo/1), '\$end_aux'('/no/such/a11', []), R = bound_ok"),
+    ("a13", "'\$start_aux'('/no/such/a13', _), '\$end_aux'('/no/such/a13', user:foo(_)), '\$start_aux'('/no/such/a13', C), '\$end_aux'('/no/such/a13', C), R = C"),
+    ("a14", "'\$start_aux'('/no/such/a14', _), '\$end_aux'('/no/such/a14', system:atom_length/2), '\$start_aux'('/no/such/a14', C), '\$end_aux'('/no/such/a14', C), R = C"),
     # LAST: nothing follows (the program's last row)
     ("z01", "'\$source_file_predicates'('@FILE@', [user:H|_]), functor(H, N, A), R = N/A")
 ]
@@ -306,12 +321,12 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         p01 = first(filter(l -> startswith(l, "t_p01 "), sw))
         @test findfirst(_codes("baz"), p01) !== nothing && findfirst(_codes("baz"), p01) < findfirst(_codes("foo"), p01) &&
               findfirst(_codes("bar"), p01) < findfirst(_codes("foo"), p01)               # [baz, bar, foo, d]: newest first
-        # measured on swipl 10.1.19 (2026-10-29): domain f08 f18 g04; existence g02 g07; instantiation s07 p03 f10 f12 g05 g06 g08 c05 c12;
-        # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13
+        # measured on swipl 10.1.19 (2026-10-29): domain f08 f18 g04; existence g02 g07; instantiation s07 p03 f10 f12 g05 g06 g08 c05 c12 a04;
+        # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13 a05
         @test count(l -> occursin(_codes("domain_error"), l), sw) == 3
         @test count(l -> occursin(_codes("existence_error"), l), sw) == 2
-        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 9
-        @test count(l -> occursin(_codes("type_error"), l), sw) == 10
+        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 10
+        @test count(l -> occursin(_codes("type_error"), l), sw) == 11
         @test any(l -> startswith(l, "t_t01 ") && occursin(_codes("user"), l) && occursin(_codes("flt"), l), sw)
         @test any(l -> startswith(l, "t_c02 ") && occursin("f1.5", l), sw)
         @test any(l -> startswith(l, "t_c03 ") && occursin("i0", l), sw)

@@ -4078,6 +4078,58 @@ function pl_record_clause4_va(
     return record_clause(ld, A1, A2, A3, A4) ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c start_aux as pl_start_aux2_va
+# (PRED_IMPL("$start_aux", 2, start_aux, 0)) — pl-comp.c:5197-5214
+# DIVERGES: `unify_definition(NULL, …)` has no context module, but GP_QUALIFY never consults it, so the kernel passes `user`;
+# `unify_definition` wants an unbound head (its assertion), so a caller's bound `CurrentPred` is unified with a fresh
+# reference's answer (`PL_unify`), as upstream's own `PL_unify` of the head would.
+"`'\$start_aux'(+File, -CurrentPred)` (pl-comp.c): the predicate the loader of `File` is defining now, as `M:Name/Arity`, else `[]`."
+function pl_start_aux2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    filename = PL_get_atom_ex(ld, A1)
+    filename === nothing && return FFALSE
+    sf = lookupSourceFile(gd, filename, true)::SourceFile{T}       # the reference is dropped by `$end_aux`
+    proc = sf.current_procedure
+    if proc !== nothing && isDefinedProcedure(gd, proc)
+        t = PL_new_term_ref(ld)
+        unify_definition(gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY) || return FFALSE
+        return PL_unify(ld, A2, t) ? FTRUE : FFALSE
+    end
+    return PL_unify_nil(ld, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-comp.c end_aux as pl_end_aux2_va
+# (PRED_IMPL("$end_aux", 2, end_aux, 0)) — pl-comp.c:5217-5240
+# DIVERGES: `get_procedure(A2, &proc, 0, GP_NAMEARITY)` is `get_procedure_find_namearity` (src/pl-proc.jl); upstream drops two
+# references (the lookup's and `$start_aux`'s) even when A2 is no procedure: so does this.
+"`'\$end_aux'(+File, +CurrentPred)` (pl-comp.c): restore the predicate the loader of `File` was defining (`[]` for none)."
+function pl_end_aux2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    filename = PL_get_atom_ex(ld, A1)
+    filename === nothing && return FFALSE
+    sf = lookupSourceFile(gd, filename, true)::SourceFile{T}
+    rc = true
+    if PL_get_nil(ld, A2)
+        sf.current_procedure = nothing
+    else
+        proc = get_procedure_find_namearity(gd, ld, A2, MODULE_system(gd))
+        if proc !== nothing
+            sf.current_procedure = proc
+        else
+            rc = false
+        end
+    end
+    releaseSourceFile(sf)
+    releaseSourceFile(sf)                                          # for $start_aux/2
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-comp.c BeginPredDefs as PL_predicates_from_comp
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (c:9202-9232); `META` is `PL_FA_TRANSPARENT` (c:9199) and `PRED_DEF` ors in `PL_FA_VARARGS`.
@@ -4085,6 +4137,8 @@ end
 const PL_predicates_from_comp = (
     PL_extension("\$record_clause", 3, pl_record_clause3_va, PL_FA_VARARGS),
     PL_extension("\$record_clause", 4, pl_record_clause4_va, PL_FA_VARARGS),
+    PL_extension("\$start_aux", 2, pl_start_aux2_va, PL_FA_VARARGS),
+    PL_extension("\$end_aux", 2, pl_end_aux2_va, PL_FA_VARARGS),
     PL_extension("assert", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension(
         "assertz", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
