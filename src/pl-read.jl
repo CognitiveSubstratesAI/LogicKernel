@@ -456,13 +456,29 @@ end
 getchrq(rd::read_data)::Int = Sgetcode(rd._rb.stream)
 
 # PORT: pl-read.c setErrorLocation
-# DIVERGES: no `LD->read_source`; the position is the error's, which `rawSyntaxError` reads.
-"Move the error's location to `pos`, and the buffer back to its start (pl-read.c)."
-function setErrorLocation(pos::Union{Nothing, IOPOS}, rd::read_data)::Nothing
-    if rd._rb.here > 1                              # rb.here > rb.base; nothing read: leave empty
-        rd._rb.here = 2                             # see rawSyntaxError()
+# The pin cbf4e189 plus upstream fix 7f8024cc7 (BP2, a named backport).
+# DIVERGES: the offsets are counts of bytes from the buffer's base (upstream: `size_t`), the buffer's
+# index `rb.base` being 1.
+"""
+Prepare for an error on material that started at `pos` in the stream and at offset `start` in the read
+buffer, i.e., an unterminated quoted item or block comment: the offset to pass to `rawSyntaxErrorAt`.
+For string input the context is the text read with the offset of the item; as blank space is collapsed in
+the buffer, for other streams the stream position is used (pl-read.c).
+"""
+function setErrorLocation(
+    pos::Union{Nothing, IOPOS}, start::Int, rd::read_data{T}
+)::Int where {T}
+    if pos !== nothing
+        copy1 = IOPOS(pos.byteno, pos.charno, pos.lineno, pos.linepos, pos.esc_state)
+        rd.ld.read_source.position = copy1          # LD->read_source.position = *pos
     end
-    return nothing
+    isStringStream(rd._rb.stream) && return start + 1   # ptr_to_location() counts chars that end before the error pointer
+    if pos !== nothing
+        copy2 = IOPOS(pos.byteno, pos.charno, pos.lineno, pos.linepos, pos.esc_state)
+        rd.start_of_term.position = copy2           # _PL_rd->start_of_term.position = *pos
+    end
+    rd._rb.here = 1                                 # rb.here = rb.base
+    return 0
 end
 
 # PORT: pl-read.c rawSyntaxError1
@@ -478,6 +494,18 @@ end
 "A syntax error while reading the raw text (pl-read.c)."
 rawSyntaxError(what::String, rd::read_data)::Bool = rawSyntaxError1(what, nothing, rd)
 
+# ORIGINAL (BP2): pl-read.c `rawSyntaxErrorAt`, a macro upstream fix 7f8024cc7 added to the pin cbf4e189 (a named
+# backport): `rawSyntaxError1` with the error pointer `offset` bytes from the buffer's base.
+"A syntax error while reading the raw text: the buffer closed, the error `offset` bytes from its start (pl-read.c)."
+function rawSyntaxErrorAt(
+    what::String, arg::Union{Nothing, String}, offset::Int, rd::read_data
+)::Bool
+    addToBuffer(0, rd)                              # EOS
+    rd.base = 1
+    rd.token_start = 1 + offset                     # last_token_start = rb.base+(offset)
+    return errorWarningA1(what, arg, nothing, rd)
+end
+
 # PORT: pl-read.c raw_read_quoted
 """
 Read quoted text that opens with `open` (already read) up to `close`, into the buffer as written:
@@ -491,6 +519,7 @@ function raw_read_quoted(open::Int, close::Int, rd::read_data)::Bool
     else
         nothing
     end
+    start = rd._rb.here - 1                         # size_t start = rb.here - rb.base
     addToBuffer(open, rd)
     c = getchrq(rd)
     eofinstr = false
@@ -571,10 +600,10 @@ function raw_read_quoted(open::Int, close::Int, rd::read_data)::Bool
     end
     if c == EOF || eofinstr
         Sferror(s) != 0 && return false
-        setErrorLocation(pos, rd)
+        start = setErrorLocation(pos, start, rd)
         what = UInt8[]
         utf8_put_char(what, open)
-        return rawSyntaxError1("end_of_file_in_quoted", String(what), rd)
+        return rawSyntaxErrorAt("end_of_file_in_quoted", String(what), start, rd)
     end
     addToBuffer(c, rd)
     return true
@@ -729,6 +758,7 @@ function raw_read2(rd::read_data)::Bool
             end
             c = getchr__(rd)
             if c == Int('*')
+                start = rd._rb.here - 1             # size_t start = rb.here - rb.base
                 rd.comments != 0 &&
                     throw(
                         NotPortedError{Nothing}(
@@ -739,9 +769,11 @@ function raw_read2(rd::read_data)::Bool
                     )
                 last = getchr__(rd)
                 if last == EOF
-                    setErrorLocation(pos, rd)
+                    start = setErrorLocation(pos, start, rd)
                     Sferror(s) != 0 && return false
-                    return rawSyntaxError("end_of_file_in_block_comment", rd)
+                    return rawSyntaxErrorAt(
+                        "end_of_file_in_block_comment", nothing, start, rd
+                    )
                 end
                 if something_read
                     addToBuffer(Int(' '), rd)       # positions
@@ -753,9 +785,11 @@ function raw_read2(rd::read_data)::Bool
                     c = getchr__(rd)
                     is_bidi_override(c) && return bidi_override_error(c, rd)
                     if c == EOF
-                        setErrorLocation(pos, rd)
+                        start = setErrorLocation(pos, start, rd)
                         Sferror(s) != 0 && return false
-                        return rawSyntaxError("end_of_file_in_block_comment", rd)
+                        return rawSyntaxErrorAt(
+                            "end_of_file_in_block_comment", nothing, start, rd
+                        )
                     elseif c == Int('*')
                         last == Int('/') && (level += 1)
                     elseif c == Int('/')

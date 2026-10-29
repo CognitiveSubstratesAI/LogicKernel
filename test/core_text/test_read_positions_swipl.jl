@@ -70,11 +70,10 @@ function _rp_enc(t::_RP, seen::Vector{UInt64}=UInt64[])::String
     return hs * "/$(nchildren(t) - 1)(" *
            join([_rp_enc(child(t, i), seen) for i in 2:nchildren(t)], ",") * ")"
 end
-# A string holding a CUT UTF-8 sequence (src/pl-read.jl "end_of_file_in_quoted": upstream names the
-# quote's first BYTE, `string("Â", 0)` for `«x`, which the kernel ports as is) has no code points:
-# its bytes are the codes, which is the Latin-1 character swipl's driver encodes (194 for 0xC2).
-_rp_codes(s::String)::String =
-    "[" * join(isvalid(s) ? [Int(c) for c in s] : Int.(codeunits(s)), ",") * "]"
+# The code points of a text (swipl's driver encodes a string as its code points). Until BP2 a string could hold a
+# CUT UTF-8 sequence (the context of `«x`: the quote's first byte, `string("Â", 0)`); upstream fix 7f8024cc7
+# gives the text read, so every string here is valid.
+_rp_codes(s::String)::String = "[" * join([Int(c) for c in s], ",") * "]"
 
 "A database of its own; `ops` declared by op/3 in `user` (`\"[]\"`: SWI-7's `[]`)."
 function _rp_db(ops=())

@@ -17,9 +17,8 @@
 #     accepted and ignored — a silent misread): `@(Template, Substitutions)` read into the cyclic
 #     term, its shape checked by unification and `==`; the no-cycle templates, the malformed lists'
 #     type errors, a failing substitution, the option's absence and `cycles(false)`.
-#   * EXCLUDED BY NAME AND COUNTED: a syntax error whose culprit text holds a CUT UTF-8 byte
-#     (`«x`: upstream names the quote's first byte, `string("Â", 0)`; the kernel does the same, and
-#     its writer cannot write that string).
+#   * (Until BP2 a syntax error whose context text held a CUT UTF-8 byte — `«x`: `string("Â", 0)` — was
+#     excluded by name and counted; upstream fix 7f8024cc7 gives the text read, and the exclusion is gone.)
 #   * CYCLIC TERMS WRITTEN (group F, D-0123: `PL_factorize_term`; until then write_canonical of a
 #     cyclic term was refused, decision 4a): 27 goals — three shapes and more, every writer.
 #   * THE REFUSALS, explicit: comments, var_prefix, quasi_quotations (R2), unicode_atoms, blob —
@@ -84,18 +83,8 @@ function _cr_read(text::String)::Union{Nothing, _CR}
     return rc === :true ? ans[1] : nothing
 end
 
-# A string holding a CUT UTF-8 sequence cannot be written (`writeString` decodes it): upstream's
-# syntax error for `«x` names the quote's first BYTE, `string("Â", 0)` — a known upstream oddity the
-# kernel ports as is (src/pl-read.jl, "end_of_file_in_quoted"). Such a ball is named here, and the
-# comparison counts it instead of writing it (R1f's named-exclusion rule).
 # A STRING holding the character 0 reads (a string can hold it) but term_to_atom/2 of it cannot
 # make the atom (R1f's named term-interface gap): named here too, as `NUL-TEXT`.
-_cr_cut_utf8(t::_CR)::Bool =
-    (
-        kind(t) === GND && lk_value(t) isa AbstractString &&
-        !isvalid(String, String(lk_value(t)))
-    ) ||
-    (kind(t) === EXPR && any(i -> _cr_cut_utf8(child(t, i)), 1:nchildren(t)))
 _cr_nul(t::_CR)::Bool =
     (
         kind(t) === GND && lk_value(t) isa AbstractString &&
@@ -103,9 +92,8 @@ _cr_nul(t::_CR)::Bool =
     ) ||
     (kind(t) === EXPR && any(i -> _cr_nul(child(t, i)), 1:nchildren(t)))
 
-"The kernel's writeq text of `t` (term_to_atom/2); `CUT-UTF8` / `NUL-TEXT` for the named exclusions."
+"The kernel's writeq text of `t` (term_to_atom/2); `NUL-TEXT` for the named exclusion."
 function _cr_text(t::_CR)::String
-    _cr_cut_utf8(t) && return "CUT-UTF8"
     _cr_nul(t) && return "NUL-TEXT"
     rc, ans, _ = _cr_call("term_to_atom", _CR[t, _cr_var()])
     @assert rc === :true "term_to_atom: $rc on $t"
@@ -248,7 +236,7 @@ function _cr_compare(labels, ours, theirs; norm=true)
         o = norm ? [_cr_norm(x) for x in ours[k]] : copy(ours[k])
         s = norm ? [_cr_norm(x) for x in theirs[k]] : copy(theirs[k])
         s[2] = _cr_strip_printed(s[2])
-        if any(x -> occursin("CUT-UTF8", x) || occursin("NUL-TEXT", x), o)   # named, counted
+        if any(x -> occursin("NUL-TEXT", x), o)   # named, counted
             cut += 1
             continue
         end
@@ -259,7 +247,7 @@ function _cr_compare(labels, ours, theirs; norm=true)
     end
     cut > 0 && println(
         stderr,
-        "  excluded by name (a cut UTF-8 byte in the ball; a string holding the character 0): ",
+        "  excluded by name (a string holding the character 0): ",
         cut
     )
     @test isempty(bad)
