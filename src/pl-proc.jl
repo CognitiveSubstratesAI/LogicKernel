@@ -1323,6 +1323,7 @@ function free_retract_context!(
 end
 
 # PORT: pl-proc.c retract as pl_retract1_va
+# The pin cbf4e189 plus upstream fix ea1b569bd (BP2, a named backport): `cl` takes the SSU neck of the flags.
 # (PRED_IMPL("retract", 1, retract, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC|PL_FA_ISO))
 # DIVERGES: the context is a record of `ld.retract_contexts`, its index the `REDO_PTR` context (design D3);
 # `ctxbuf`, upstream's C-stack buffer, is the local data's scratch record `ld.retract_ctxbuf` (no Prolog
@@ -1332,10 +1333,10 @@ end
 # (`decompile` fails a rule against a term that is no `:-/2`, pl-comp.c:6308), so it is
 # `UNIT_CLAUSE && decompileHead!`, and `Head :- Body` is `decompile!(clause, head, body)` (a fact's body
 # unifies with `true`, pl-comp.c:6293-6302) of a fact or of a clause whose neck is `:-` (upstream's
-# `PL_unify_functor(term, clause_functor(clause))`, pl-comp.c:6308, against the rebuilt `:-/2`; since SSU1);
-# `cl` itself is not built. Upstream's `CLAUSE_SSU_FLAGS` test (pl-proc.c:3210) is written as is (since SSU1):
-# with the neck test, retract/1 never removes an SSU clause, whatever neck it is given (`cl` is rebuilt
-# with `:-` from any neck, pl-proc.c:3138-3141), as swipl 10.1.19 does (evidence/r2/design/ssu.md §2.7). The functor and its
+# `PL_unify_functor(term, clause_functor(clause))`, pl-comp.c:6308, against the neck of the call's flags — the
+# rebuilt `:-/2` until upstream's fix ea1b569bd, which gives `cl` the neck its SSU flags name:
+# `retract((H => B))` removes an SSU clause); `cl` itself is not built. Upstream's `CLAUSE_SSU_FLAGS` test
+# (pl-proc.c) is written as is (since SSU1). The functor and its
 # `type_error(callable, Head)` are `get_head_functor`'s (the kernel's `PL_get_functor` takes any word;
 # the callable test is upstream's `PL_get_functor`'s). `argv` is the head's argument cells
 # (`_head_argv`), read where a search reads it. `protectCRef`/`unprotectCRef` are `(void)0` upstream
@@ -1368,8 +1369,10 @@ function pl_retract1_va(
     ok, m, flags = get_head_and_body_clause(gd, ld, cl, head, body, m)
     ok || return FFALSE
     bk, bw, _ = _deref_loc(ld, -(body + 1))
-    # PL_get_atom(body, &b) && b == ATOM_true: `cl` is the head, else `Head :- Body`
-    cl_is_head = bk == DU_WORD && bw == _atom_word!(ld, mk_sym(T, Symbol("true")))
+    # !(flags&CLAUSE_SSU_FLAGS) && PL_get_atom(body, &b) && b == ATOM_true: `cl` is the head, else `Neck(Head, Body)`
+    cl_is_head =
+        (flags & CLAUSE_SSU_FLAGS) == 0 && bk == DU_WORD &&
+        bw == _atom_word!(ld, mk_sym(T, Symbol("true")))
 
     if PL_foreign_control(PL__ctx) == FRG_FIRST_CALL
         name, arity = get_head_functor(ld, head, 0)     # PL_get_functor(head, &fd), else ERR_TYPE callable
@@ -1437,15 +1440,19 @@ function pl_retract1_va(
         clause = cref.clause::Clause{T}
 
         # (clause->flags&CLAUSE_SSU_FLAGS) == (flags&CLAUSE_SSU_FLAGS) && decompile(clause, cl, 0)
+        # decompile's PL_unify_functor(term, clause_functor(clause)) against the neck of the call's flags; a fact
+        # (UNIT_CLAUSE) matches only `Head :- true`
+        neck_ok =
+            if (clause.flags & UNIT_CLAUSE) != 0
+                (flags & CLAUSE_SSU_FLAGS) == 0
+            else
+                clause_functor(ld, clause.flags) == clause_functor(ld, flags)
+            end
         matched =
             (clause.flags & CLAUSE_SSU_FLAGS) == (flags & CLAUSE_SSU_FLAGS) && if cl_is_head
                 (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
             else
-                (
-                    (clause.flags & UNIT_CLAUSE) != 0 ||          # decompile's PL_unify_functor(term, clause_functor(clause))
-                    clause_functor(ld, clause) == _err_functor(ld, Symbol(":-"), 2)
-                ) &&
-                decompile!(ld, clause, head, body)
+                neck_ok && decompile!(ld, clause, head, body)
             end
         if matched
             if retractClauseDefinition!(gd, def, clause, true) ||

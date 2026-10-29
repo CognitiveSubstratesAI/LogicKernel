@@ -3440,10 +3440,11 @@ const IS_CLAUSE = Int(0x1)
 const IS_RULE = Int(0x2)
 
 # PORT: pl-comp.c clause_functor
+# The pin cbf4e189 plus upstream fix ea1b569bd (BP2, a named backport): it takes the flags, not the clause.
 # DIVERGES: the functor WORD (`_err_functor`, the kernel's `FUNCTOR_…`), read through `ld`'s functor table.
-"The neck of `cl`: the functor word of `:-/2`, `=>/2` or `?=>/2`, by its SSU clause flags (pl-comp.c:6195-6203)."
-function clause_functor(ld::PL_local_data{T}, cl::Clause{T})::word where {T}
-    ssu = cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)
+"The neck for the SSU clause flags `flags`: the functor word of `:-/2`, `=>/2` or `?=>/2` (pl-comp.c)."
+function clause_functor(ld::PL_local_data{T}, flags::UInt32)::word where {T}
+    ssu = flags & CLAUSE_SSU_FLAGS
     ssu == 0 && return _err_functor(ld, Symbol(":-"), 2)                # FUNCTOR_prove2
     ssu == SSU_COMMIT_CLAUSE && return _err_functor(ld, Symbol("=>"), 2) # FUNCTOR_ssu_commit2
     ssu == SSU_CHOICE_CLAUSE && return _err_functor(ld, Symbol("?=>"), 2) # FUNCTOR_ssu_choice2
@@ -3461,7 +3462,7 @@ function _rule_term(
     if (clause.flags & UNIT_CLAUSE) != 0
         PL_put_term(ld, term, h)
     else
-        PL_cons_functor(ld, term, clause_functor(ld, clause), h, b)
+        PL_cons_functor(ld, term, clause_functor(ld, clause.flags), h, b)
     end
     return term
 end

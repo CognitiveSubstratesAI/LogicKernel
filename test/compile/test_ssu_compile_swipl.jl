@@ -143,7 +143,7 @@ const _SU_CASES = [
     ("a03", raw"assertz(d3(1)), catch(assertz((d3(2) => true)), error(E, _), true), R = E"),   # a normal predicate refuses an SSU clause (a03)
     ("a01s", raw"assertz((d1(X) => X = one)), R = ok"),   # a01's assert half
     ("a09s", raw"assertz('?=>'(d1(X), X = two)), R = ok"),   # a09's assert half
-    ("a10", raw"retract((d1(X) => B)), R = X-B"),   # retract/1 never removes an SSU clause (a10-a12)
+    ("a10", raw"retract((d1(X) => B)), R = X-B"),   # retract/1 removes an SSU clause by its own neck (a10, a12; upstream ea1b569bd, BP2)
     (
         "a11",
         raw"catch(retract((d1(X) :- B)), error(E, _), (R = raised(E))), ( var(R) -> R = X-B ; true )"
@@ -157,7 +157,7 @@ const _SU_CASES = [
     ),   # a normal fact still retracts
     ("a17", raw"assertz((d7(X) :- X = 1)), retract((d7(Y) :- B)), R = Y-B"),   # a normal rule still retracts (the neck test passes :-)
     ("a18", raw"assertz((d8(a) => true)), ( retract(d8(a)) -> R = yes ; R = no )"),   # a bare head does not retract an SSU clause H => true
-    ("a19", raw"( retract((d8(a) => true)) -> R = yes ; R = no )"),   # nor does H => true
+    ("a19", raw"( retract((d8(a) => true)) -> R = yes ; R = no )"),   # H => true removes it
     ("a20", raw"( retract((d8(a) :- true)) -> R = yes ; R = no )"),   # nor H :- true
     ("a21", raw"findall(Rule, '$rule'(d8(_), Rule), R)"),
     ("a22", raw"assertz(d9(a)), ( retract((d9(a) => true)) -> R = yes ; R = no )"),   # a fact's flags differ from =>'s: kept
@@ -165,7 +165,7 @@ const _SU_CASES = [
     ("a24", raw"( retract(d9(a)) -> R = yes ; R = no )")                                # the bare head retracts it
 ]
 
-# swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; a bare name is FAIL)
+# swipl 10.1.19-9-ge0323664's (the pin with the BP2 backports; retract/1 of an SSU clause moved, upstream ea1b569bd) answers to the program and cases above (the driver's lines; a bare name is FAIL)
 const _SU_PINNED = [
     "ok",
     "t_c01 c[116,95,99,48,49]/1(c[91,124,93]/2(c[45]/2(c[102]/1(V0),c[61]/2(V1,V0)),c[91,124,93]/2(c[45]/2(a[97],c[61]/2(V2,a[97,116,111,109,95,97])),nil)))",
@@ -193,17 +193,17 @@ const _SU_PINNED = [
     "t_a03 c[116,95,97,48,51]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[97,115,115,101,114,116],a[112,114,111,99,101,100,117,114,101],c[47]/2(a[100,51],i1)))",
     "t_a01s c[116,95,97,48,49,115]/1(a[111,107])",
     "t_a09s c[116,95,97,48,57,115]/1(a[111,107])",
-    "t_a10",
+    "t_a10 c[116,95,97,49,48]/1(c[45]/2(V0,c[61]/2(V0,a[111,110,101])))",
     "t_a11",
-    "t_a12",
-    "t_a13c c[116,95,97,49,51,99]/1(c[91,124,93]/2(c[45]/2(V0,c[61]/2(V0,a[111,110,101])),c[91,124,93]/2(c[45]/2(a[116,119,111],a[116,114,117,101]),nil)))",
-    "t_a13r c[116,95,97,49,51,114]/1(c[91,124,93]/2(c[61,62]/2(c[100,49]/1(V0),c[61]/2(V0,a[111,110,101])),c[91,124,93]/2(c[63,61,62]/2(c[100,49]/1(a[116,119,111]),a[116,114,117,101]),nil)))",
+    "t_a12 c[116,95,97,49,50]/1(c[45]/2(a[116,119,111],a[116,114,117,101]))",
+    "t_a13c c[116,95,97,49,51,99]/1(nil)",
+    "t_a13r c[116,95,97,49,51,114]/1(nil)",
     "t_a16 c[116,95,97,49,54]/1(c[91,124,93]/2(a[98],nil))",
     "t_a17 c[116,95,97,49,55]/1(c[45]/2(V0,c[61]/2(V0,i1)))",
     "t_a18 c[116,95,97,49,56]/1(a[110,111])",
-    "t_a19 c[116,95,97,49,57]/1(a[110,111])",
+    "t_a19 c[116,95,97,49,57]/1(a[121,101,115])",
     "t_a20 c[116,95,97,50,48]/1(a[110,111])",
-    "t_a21 c[116,95,97,50,49]/1(c[91,124,93]/2(c[61,62]/2(c[100,56]/1(a[97]),a[116,114,117,101]),nil))",
+    "t_a21 c[116,95,97,50,49]/1(nil)",
     "t_a22 c[116,95,97,50,50]/1(a[110,111])",
     "t_a23 c[116,95,97,50,51]/1(a[110,111])",
     "t_a24 c[116,95,97,50,52]/1(a[121,101,115])"
@@ -300,7 +300,8 @@ end
     @test count(l -> occursin("c[61,62]/2(", l), _SU_PINNED) >= 8              # `=>` terms ('$rule'/2)
     @test count(l -> occursin("c[63,61,62]/2(", l), _SU_PINNED) >= 5           # `?=>` terms
     @test count(l -> occursin("c[112,101,114,109", l), _SU_PINNED) == 2       # permission_error: a02, a03
-    @test count(l -> l in ("t_a10", "t_a11", "t_a12"), _SU_PINNED) == 3        # retract fails on every neck
+    @test count(l -> l == "t_a11", _SU_PINNED) == 1                          # retract((d1(X) :- B)) fails: the other neck
+    @test count(l -> startswith(l, "t_a10 ") || startswith(l, "t_a12 "), _SU_PINNED) == 2   # =>, ?=> remove their own clause
     # a14/a15 (ssu_rows.out: 1 and 1): a refused assert left nothing behind (H6)
     @test _su_def(gd, "d2", 1).impl_clauses.number_of_clauses == 1
     @test _su_def(gd, "d3", 1).impl_clauses.number_of_clauses == 1
