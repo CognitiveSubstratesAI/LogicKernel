@@ -9,20 +9,11 @@
 using Test
 # START FROM THE LAST CACHE, as the warm daemon does (tools/warm_session.jl): a plain `using` of a checkout whose cache
 # is stale re-precompiles LogicKernel (18 min measured in a fresh worktree); Revise's `stale_load` loads the most recent
-# cache and revises it up to the current source. LOGICKERNEL_PKGTEST_WAY_NO_STALE=1 loads normally.
-if get(ENV, "LOGICKERNEL_PKGTEST_WAY_NO_STALE", "") != "1"
-    try
-        using Revise
-        Revise.stale_load("LogicKernel"; throw=true)
-    catch e
-        println(
-            stderr,
-            "pkgtest-way: stale_load not possible (",
-            sprint(showerror, e),
-            ") — loading normally"
-        )
-    end
-end
+# cache and revises it up to the current source. THAT CACHE MAY BE ANOTHER CHECKOUT'S (MOD2, 2026-10-29: a run in
+# lk-mod2 executed lk-s1's code): tools/pkgtest_way_load.jl refuses it and runs again in a fresh process that builds this
+# checkout's own cache (D-0249). LOGICKERNEL_PKGTEST_WAY_NO_STALE=1 loads normally.
+include(joinpath(@__DIR__, "pkgtest_way_load.jl"))
+pkgtest_way_load("LogicKernel", joinpath(@__DIR__, ".."), :_no_children, @__FILE__, ARGS)
 using LogicKernel
 
 Base.include(Main, joinpath(@__DIR__, "..", "test", "inert_testset_guard.jl"))

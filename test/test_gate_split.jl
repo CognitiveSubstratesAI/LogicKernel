@@ -2387,3 +2387,113 @@ MUTANTS = [
         @test occursin("test/runtests.jl", read(suite, String))
     end
 end
+
+# D-0249 item 1: the Pkg.test-way run's stale load refuses a precompile cache of ANOTHER checkout (MOD2, 2026-10-29: a
+# run in lk-mod2 executed lk-s1's code). A pair of stub packages under a scratch directory, a REAL julia (and Revise) on
+# them, no LogicKernel compile: tools/pkgtest_way_load.jl is the code under test.
+@testset "pkgtest_way: a cache from another checkout is refused, this checkout's own is built (D-0249)" begin
+    work = mktempdir()
+    depot = joinpath(work, "depot")                        # a private first depot: the stub caches stay out of ~/.julia
+    mkpath(depot)
+    coA, coB = joinpath(work, "checkoutA"), joinpath(work, "checkoutB")
+    function mkstub(dir, marker, extra)
+        mkpath(joinpath(dir, "src"))
+        write(
+            joinpath(dir, "Project.toml"),
+            "name = \"PkgDirStub\"\nuuid = \"6b1f2a1e-5d3c-4e8a-9a41-7c0d2f3b9e11\"\nversion = \"0.1.0\"\n"
+        )
+        write(
+            joinpath(dir, "src", "PkgDirStub.jl"),
+            "module PkgDirStub\nmarker() = \"$marker\"\n$extra\nend\n"
+        )
+    end
+    mkstub(coA, "A", "function nomethod end")
+    mkstub(coB, "B", "function nomethod end\nonly_in_b() = true")                 # a function that only checkout B has
+    driver = joinpath(work, "driver.jl")
+    write(
+        driver,
+        """
+include(joinpath(ENV["PKGDIR_TOOLS"], "pkgtest_way_load.jl"))
+root, mode = ARGS[1], ARGS[2]
+kind = if mode == "raw"                                     # the stale load alone, no guard: what the tool did before
+    revise = Base.require(Main, :Revise)
+    Base.invokelatest(revise.stale_load, "PkgDirStub"; throw=true)
+    :raw
+elseif mode in ("guarded", "guardedfail")
+    pkgtest_way_load("PkgDirStub", root, :marker, @__FILE__, ARGS)
+else
+    :plain
+end
+using PkgDirStub
+why = pkgtest_way_foreign(PkgDirStub, root, :marker)
+println("WHYTEXT ", why)
+println("WHY ", why === nothing ? "none" : "foreign")
+println("WHYEMPTY ", pkgtest_way_foreign(PkgDirStub, root, :nomethod) === nothing ? "none" : "foreign")
+println("WHYUNDEF ", pkgtest_way_foreign(PkgDirStub, root, :nothing_here) === nothing ? "none" : "foreign")
+println("RESULT ", kind, " ", PkgDirStub.marker(), " ", isdefined(PkgDirStub, :only_in_b), " ", pkgdir(PkgDirStub))
+mode == "guardedfail" && exit(3)
+"""
+    )
+    sep = Sys.iswindows() ? ";" : ":"
+    function pd(checkout, mode; nostale="")
+        cmd = addenv(
+            `$(Base.julia_cmd()) --project=$checkout --startup-file=no $driver $checkout $mode`,
+            "JULIA_DEPOT_PATH" => depot * sep,              # the trailing separator keeps the default depots (Revise)
+            "LOGICKERNEL_PKGTEST_WAY_NO_STALE" => nostale,
+            "PKGDIR_TOOLS" => joinpath(_GS_ROOT, "tools")
+        )
+        r = _gs_run_merged(cmd)
+        m = match(r"(?m)^RESULT (\S+) (\S+) (\S+) (.*)$", r.out)
+        w = match(r"(?m)^WHY (\S+)$", r.out)
+        return (
+            code=r.code, out=r.out,
+            kind=m === nothing ? "" : String(m[1]),
+            marker=m === nothing ? "" : String(m[2]),
+            onlyb=m === nothing ? "" : String(m[3]), dir=m === nothing ? "" : String(m[4]),
+            why=w === nothing ? "" : String(w[1]),
+            refused=occursin("REFUSED the last cache of ANOTHER checkout", r.out)
+        )
+    end
+    # 1. checkout A builds its cache; judged against its own checkout the loaded package is not foreign
+    r = pd(coA, "plain")
+    @test r.code == 0 && r.marker == "A" && r.onlyb == "false" && r.why == "none"
+    # a probe with no method, and one that is not defined, are not "this checkout's" either: an empty list must not pass
+    @test occursin(r"(?m)^WHYEMPTY foreign$", r.out) &&
+        occursin(r"(?m)^WHYUNDEF foreign$", r.out)
+    r = pd(coA, "raw")                                       # the newest cache is A's own: nothing to refuse
+    @test r.code == 0 && r.kind == "raw" && r.marker == "A" && r.why == "none"
+    # 2. THE BUG, the control that gives the test its power: checkout B, the stale load alone, runs A's code
+    r = pd(coB, "raw")
+    @test r.code == 0 && r.kind == "raw"
+    @test r.marker == "A" && r.onlyb == "false"              # A's code in B's run
+    @test r.why == "foreign"                                 # …which the check names
+    # 3. the guarded run in B must not execute A's code: it falls back to a fresh process and builds B's own cache
+    r = pd(coB, "guarded")
+    @test r.code == 0 && r.refused
+    @test r.kind == "normal" && r.marker == "B" && r.onlyb == "true" && r.why == "none"
+    @test realpath(r.dir) == realpath(coB)
+    # 4. B now has the newest cache: it is used as it is (the start from the last cache stays), not refused
+    r = pd(coB, "guarded")
+    @test r.code == 0 && !r.refused
+    @test r.kind == "stale" && r.marker == "B" && r.onlyb == "true" && r.why == "none"
+    # 5. and the other way round: the newest cache is B's now, so a run in A is refused and keeps A's code
+    r = pd(coA, "guarded")
+    @test r.code == 0 && r.refused
+    @test r.kind == "normal" && r.marker == "A" && r.onlyb == "false" && r.why == "none"
+    # the child's exit code is the run's own: a failing run in the fresh process fails the refused one
+    r = pd(coA, "guardedfail")
+    @test r.code == 3 && r.refused && r.marker == "A"
+    # 6. LOGICKERNEL_PKGTEST_WAY_NO_STALE=1 stays the explicit override: no stale load is even tried (the newest
+    # cache is still B's, so a stale load in A WOULD be refused and say so)
+    r = pd(coA, "guarded"; nostale="1")
+    @test r.code == 0 && !r.refused && !occursin("stale_load not possible", r.out)
+    @test r.kind == "normal" && r.marker == "A" && r.why == "none"
+    # 7. the tool itself starts from the guard (and from nothing else)
+    drv = read(joinpath(_GS_ROOT, "tools", "pkgtest_way.jl"), String)
+    @test occursin("include(joinpath(@__DIR__, \"pkgtest_way_load.jl\"))\n", drv) &&
+        occursin(
+            "\npkgtest_way_load(\"LogicKernel\", joinpath(@__DIR__, \"..\"), :_no_children, @__FILE__, ARGS)\n",
+            drv
+        ) && !occursin("Revise.stale_load", drv)
+    rm(work; recursive=true, force=true)
+end

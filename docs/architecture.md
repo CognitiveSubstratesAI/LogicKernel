@@ -158,7 +158,9 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     test file loads is declared for Pkg.test; the commit-message hook; the JUnit writer), the
     Pkg.test-way run of the changed test files (`tools/pkgtest_way.sh`, audit D-0222: a fresh julia, no
     swipl, stdin from /dev/null, stdout and stderr to files, the inert-testset guard over the result;
-    within a time budget, the cold estimate being 3x the last warm time), the daemon's
+    within a time budget, the cold estimate being 3x the last warm time; it starts from the last precompile
+    cache only if that cache is THIS checkout's, `tools/pkgtest_way_load.jl`, audit D-0249: another
+    checkout's cache is refused and the run repeats in a fresh process that builds its own), the daemon's
     JuliaFormatter version against CI's pin, and every unit's closing assertion that the shared empty
     child vector is still empty (`_file`). The branch-gate also runs `test_gate_split.jl` and
     `test_port_check.jl` when `tools/` or `.github/` changed (the tooling job's own trigger). What stays in
