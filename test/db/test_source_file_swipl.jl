@@ -168,7 +168,7 @@ const _CASES = [
     ("a14", "'\$start_aux'('/no/such/a14', _), '\$end_aux'('/no/such/a14', system:atom_length/2), '\$start_aux'('/no/such/a14', C), '\$end_aux'('/no/such/a14', C), R = C"),
     # a15: visibleProcedure follows the default import (user:atom_length/2 -> system:atom_length/2; swipl 10.1.19)
     ("a15", "'\$start_aux'('/no/such/a15', _), '\$end_aux'('/no/such/a15', user:atom_length/2), '\$start_aux'('/no/such/a15', C), '\$end_aux'('/no/such/a15', C), R = C"),
-    # a16: a qualifier naming no module resolves like user (swipl 10.1.19 also CREATES the module nomod: not pinned, a DIVERGES in pl-proc.jl)
+    # a16: a qualifier naming no module resolves like user (swipl 10.1.19 CREATES the module nomod, and so does the kernel's PL_strip_module)
     ("a16", "'\$start_aux'('/no/such/a16', _), '\$end_aux'('/no/such/a16', nomod:atom_length/2), '\$start_aux'('/no/such/a16', C), '\$end_aux'('/no/such/a16', C), R = C"),
     # LAST: nothing follows (the program's last row)
     ("z01", "'\$source_file_predicates'('@FILE@', [user:H|_]), functor(H, N, A), R = N/A")

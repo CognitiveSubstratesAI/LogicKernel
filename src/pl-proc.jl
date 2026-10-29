@@ -1316,44 +1316,73 @@ function get_procedure_find(
     return visibleProcedure(gd, name, arity, m)         # GP_FIND: found -> out; else notfound
 end
 
-# PORT: pl-proc.c get_procedure as get_procedure_find_namearity
-# (the `GP_FIND|GP_NAMEARITY` case, as `'$end_aux'/2` asks it: `get_procedure(A2, &proc, 0, GP_NAMEARITY)`, GP_FIND being 0)
-# DIVERGES: `get_functor(…, GF_PROCEDURE)` is the term stripped of its qualifiers (`stripModuleName_cells`) and a `Name/Arity` or a
-# head, as `get_procedure`'s `GP_DEFINE` case reads it; the module is the one a qualifier names if it is current (none is created; swipl 10.1.19, measured, creates a module a qualifier names there),
-# else `user`, and for no qualifier `context` (`contextModule` is not ported; `'$end_aux'/2` is not transparent: `system`).
-# `visibleProcedure` looks the functor up there. Not found: `nothing` with no error (no `GP_EXISTENCE_ERROR`).
-"The procedure the `M:Name/Arity` (or head) in `descr` names, as visible from its module, or `nothing` (pl-proc.c)."
-function get_procedure_find_namearity(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}
-)::Union{Nothing, Procedure{T}} where {T}
-    ok, loc, nm = stripModuleName_cells(ld, -(descr + 1))
-    ok || return nothing
-    head = PL_new_term_ref(ld)
-    _slot_link_loc!(ld, head + 1, loc)
-    if nm != 0
-        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
-        m === nothing && (m = MODULE_user(gd))
-    else
-        m = context
-    end
-    if PL_is_functor(ld, head, mk_sym(T, :/), 2)
+# PORT: pl-proc.c get_functor (the `GF_PROCEDURE` case, term already stripped of its module)
+# DIVERGES: returns `(name, arity)`, arity -1 with the error raised where upstream returns false and writes `fdef`; no `h`;
+# `GP_TYPE_QUIET` is not passed by any caller here (the type error is always raised).
+"The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or a head in `head`, else arity -1 with an error raised (pl-proc.c)."
+function get_functor_procedure(ld::PL_local_data{T}, head::term_t)::Tuple{T, Int} where {T}
+    dcgpi = false
+    if PL_is_functor(ld, head, mk_sym(T, :/), 2) ||
+        (dcgpi = PL_is_functor(ld, head, mk_sym(T, :(//)), 2))
         a = PL_new_term_ref(ld)
         _PL_get_arg(ld, 1, head, a)
-        name = PL_get_atom_ex(ld, a)
-        name === nothing && return nothing
+        name = PL_get_atom_ex(ld, a)                    # PL_get_atom_ex(a, &name)
+        name === nothing && return (mk_nil(T), -1)
         _PL_get_arg(ld, 2, head, a)
-        arity = PL_get_integer_ex(ld, a)
-        arity === nothing && return nothing
+        arity = PL_get_integer_ex(ld, a)                # get_arity: PL_get_integer_ex
+        arity === nothing && return (mk_nil(T), -1)
         if arity < 0
             PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
-            return nothing
+            return (mk_nil(T), -1)
         end
-    else
-        name, arity = get_head_functor(ld, head, 0)
-        arity < 0 && return nothing
+        arity += dcgpi ? 2 : 0
+        if arity > MAXARITY
+            PL_error(
+                ld, "", 0, "limit is $MAXARITY, request = $arity", ERR_REPRESENTATION,
+                mk_sym(T, :max_procedure_arity)
+            )
+            return (mk_nil(T), -1)
+        end
+        return (name, arity)
     end
-    return visibleProcedure(gd, name, arity, m)
+    fd = PL_get_functor(ld, head)                       # !(how&GF_NAMEARITY) && PL_get_functor(head, fdef)
+    if fd === nothing
+        PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), head)
+        return (mk_nil(T), -1)
+    end
+    return (fd[1], fd[2])
 end
+
+# PORT: pl-proc.c get_procedure as get_procedure_namearity
+# (the `GP_NAMEARITY` case with `GP_FIND` or `GP_FINDHERE`, optionally `GP_EXISTENCE_ERROR`: `'$end_aux'/2` and compile_predicates/1)
+# DIVERGES: `contextModule` is an argument (`context`, an unqualified term's module; both callers: `system` for the non-transparent
+# `'$end_aux'/2`, `user` for the transparent compile_predicates/1, whose caller's context is not ported); `get_functor`'s
+# `PL_strip_module` is the kernel's (a qualifier names its module, which `lookupModule` creates, as upstream: measured). The procedure
+# is returned, or `nothing` (a failure or an error raised in `ld`). The existence error's culprit is `descr` itself.
+"The procedure the `M:Name/Arity` (or head) in `descr` names, per `how` (`GP_FIND`/`GP_FINDHERE`, `GP_EXISTENCE_ERROR`), or `nothing` (pl-proc.c)."
+function get_procedure_namearity(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}, how::Int
+)::Union{Nothing, Procedure{T}} where {T}
+    head = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module(gd, ld, descr, context.index, head)   # PL_strip_module(descr, m, head)
+    ok || return nothing
+    name, arity = get_functor_procedure(ld, head)
+    arity < 0 && return nothing
+    m = gd.modules[mi]
+    p = (how & GP_HOW_MASK) == GP_FINDHERE ? isCurrentProcedure(sym_key(name), arity, m) :
+        visibleProcedure(gd, name, arity, m)
+    if p === nothing && (how & GP_EXISTENCE_ERROR) != 0
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :procedure), descr)
+    end
+    return p
+end
+
+# PORT: pl-proc.c get_procedure as get_procedure_find_namearity
+# (`get_procedure(A2, &proc, 0, GP_NAMEARITY)`, GP_FIND being 0, as `'$end_aux'/2` asks it)
+"The procedure the `M:Name/Arity` (or head) in `descr` names, as visible from its module, or `nothing` (pl-proc.c)."
+get_procedure_find_namearity(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}
+) where {T} = get_procedure_namearity(gd, ld, descr, context, GP_FIND | GP_NAMEARITY)
 
 # ── retract/1, a non-deterministic foreign predicate (pl-proc.c; NF2, docs/architecture.md) ─────────────
 # PORT: pl-proc.c alloc_retract_context as alloc_retract_context!

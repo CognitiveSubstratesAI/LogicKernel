@@ -22,6 +22,8 @@ S = T + [
     "test/core_lang/test_prolog_flag_swipl.jl",
     "test/compile/test_compiler_warnings_swipl.jl",
 ]
+N = ["test/db/test_nth_clause_swipl.jl"]
+NS = N + S                                                  # the get_procedure family / setDynamicDefinition! are used by the loader too
 SF = "src/pl-srcfile.jl"
 MUTANTS = [
     # ---- '$source_file'/2 and '$source_file_predicates'/2
@@ -32,29 +34,8 @@ MUTANTS = [
          old='''get_procedure_findhere(gd, ld, descr, MODULE_system(gd))''',
          new='''get_procedure_findhere(gd, ld, descr, MODULE_user(gd))'''),
     dict(id="LB2-3 a qualifier naming no module fails the lookup path (nothing) instead of user", file="src/pl-proc.jl", targets=S,
-         old='''_slot_link_loc!(ld, head + 1, rc)                       # *valTermRef(head) = linkValNoG(p)
-    if nm != 0                                              # get_module(mname, GP_FINDHERE)
-        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
-        m === nothing && (m = MODULE_user(gd))''',
-         new='''_slot_link_loc!(ld, head + 1, rc)                       # *valTermRef(head) = linkValNoG(p)
-    if nm != 0                                              # get_module(mname, GP_FINDHERE)
-        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
-        m === nothing && return nothing'''),
-    dict(id="LB2-39 $end_aux: a qualifier naming no module fails the lookup instead of user (row a16)", file="src/pl-proc.jl", targets=S,
-         old='''    if nm != 0
-        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
-        m === nothing && (m = MODULE_user(gd))
-    else
-        m = context
-    end
-    if PL_is_functor''',
-         new='''    if nm != 0
-        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
-        m === nothing && return nothing
-    else
-        m = context
-    end
-    if PL_is_functor'''),
+         old='''        m === nothing && (m = MODULE_user(gd))''',
+         new='''        m === nothing && return nothing'''),
     dict(id="LB2-4 $source_file_predicates answers for a file nothing has started", file=SF, targets=S,
          old='''        if sf.count > 0
             tail''',
@@ -169,15 +150,54 @@ MUTANTS = [
             rc = false''',
          new='''        else
             rc = true'''),
-    dict(id="LB2-38 get_procedure_find_namearity does not follow the default import (a15)", file="src/pl-proc.jl", targets=S,
-         old='''    return visibleProcedure(gd, name, arity, m)
-end''',
-         new='''    return isCurrentProcedure(sym_key(name), arity, m)
-end'''),
+    dict(id="LB2-38 get_procedure_namearity does not follow the default import (a15)", file="src/pl-proc.jl", targets=S,
+         old='''        visibleProcedure(gd, name, arity, m)
+    if p === nothing''',
+         new='''        isCurrentProcedure(sym_key(name), arity, m)
+    if p === nothing'''),
     dict(id="LB2-31 ReadingSource is false at line 0 again", file="src/pl-modul.jl", targets=S,
          old='''ld.read_source.position.lineno >= 0 && ''',
          new='''ld.read_source.position.lineno > 0 && '''),
     dict(id="LB2-32 source_location/2 answers the line plus one", file="src/os/pl-file.jl", targets=S,
          old='''PL_unify_integer(ld, A2, ld.read_source.position.lineno)''',
          new='''PL_unify_integer(ld, A2, ld.read_source.position.lineno + 1)'''),
+    # ---- compile_predicates/1 and the get_procedure family (test/db/test_nth_clause_swipl.jl rows c01-c28; a15/a16 through $end_aux)
+    dict(id="LB2-39 compile_predicates stops after the first element", file="src/pl-comp.jl", targets=NS,
+         old='''    while PL_get_list(ld, tail, head, tail)
+        PL_cons_functor(ld, desc, colon2, modm, head)''',
+         new='''    if PL_get_list(ld, tail, head, tail)
+        PL_cons_functor(ld, desc, colon2, modm, head)'''),
+    dict(id="LB2-40 compile_predicates makes the predicate dynamic instead of static", file="src/pl-comp.jl", targets=NS,
+         old='''setDynamicDefinition!(proc.definition, false)''',
+         new='''setDynamicDefinition!(proc.definition, true)'''),
+    dict(id="LB2-41 compile_predicates looks the predicate up through the imports (GP_FIND)", file="src/pl-comp.jl", targets=NS,
+         old='''GP_NAMEARITY | GP_FINDHERE | GP_EXISTENCE_ERROR''',
+         new='''GP_NAMEARITY | GP_FIND | GP_EXISTENCE_ERROR'''),
+    dict(id="LB2-42 compile_predicates raises no existence error", file="src/pl-comp.jl", targets=NS,
+         old='''GP_NAMEARITY | GP_FINDHERE | GP_EXISTENCE_ERROR''',
+         new='''GP_NAMEARITY | GP_FINDHERE'''),
+    dict(id="LB2-43 compile_predicates qualifies every item with user", file="src/pl-comp.jl", targets=NS,
+         old='''PL_put_atom(ld, modm, gd.modules[mi].atom)''',
+         new='''PL_put_atom(ld, modm, MODULE_user(gd).atom)'''),
+    dict(id="LB2-44 compile_predicates accepts a tail that is no list", file="src/pl-comp.jl", targets=NS,
+         old='''return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE''',
+         new='''return FTRUE'''),
+    dict(id="LB2-45 Name//Arity does not add 2", file="src/pl-proc.jl", targets=NS,
+         old='''arity += dcgpi ? 2 : 0''',
+         new='''arity += 0'''),
+    dict(id="LB2-46 the arity limit is not checked", file="src/pl-proc.jl", targets=NS,
+         old='''arity += dcgpi ? 2 : 0
+        if arity > MAXARITY''',
+         new='''arity += dcgpi ? 2 : 0
+        if false'''),
+    dict(id="LB2-47 a non-PI is a callable type error, not predicate_indicator", file="src/pl-proc.jl", targets=NS,
+         old='''PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), head)''',
+         new='''PL_error(ld, ERR_TYPE, mk_sym(T, :callable), head)'''),
+    dict(id="LB2-48 a negative arity in Name/Arity is accepted", file="src/pl-proc.jl", targets=NS,
+         old='''        if arity < 0
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
+            return (mk_nil(T), -1)''',
+         new='''        if arity < -1
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
+            return (mk_nil(T), -1)'''),
 ]
