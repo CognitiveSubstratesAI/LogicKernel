@@ -5269,34 +5269,18 @@ What MOD2 ports (pl-wam.c, pl-vmi.c, pl-modul.c, pl-fli.c, pl-proc.c, pl-comp.c 
   new predicates `context_module/1` (pl-ext.c's FRG table, `META`) and `strip_module/3` (pl-modul.c, transparent).
 - **`P_TRANSPARENT` now means what it means upstream** (design H6). The built-ins upstream makes transparent through
   `PL_meta_predicate` (pl-ext.c:390-421) are, for the ported ones: retractall/1 gains the flag (its PRED_DEF has none). The
-  boot stand-ins get the transparency of their upstream meta-predicate declarations (`_boot_transparent!`: call/1..8,
-  catch/3, the cleanup family, findall/3,4, bagof/3, setof/3, `cleanup_bag/2`, freeze/2, call_residue_vars/2, when/2).
-  **INTERIM until MOD4 (`S_MQUAL`; audit D-0209), every line marked `# INTERIM: S_MQUAL (MOD4)`:** the transparency list
-  itself; a stand-in whose goal reaches a NON-transparent helper (findall/4 → `system:findall_loop/4`, call_residue_vars/2
-  → run_crv/4, when/2 → trigger_first/2, and freeze/2) qualifies the goal in its clause with the context module first
-  (`_boot_mqual`: freeze/2's rule since AV7, `context_module/1` where it had `user`); and the cleanup handler wraps an
-  unqualified cleanup goal as `contextModule(fr):Goal` IN the frame's argument slot, no term reference
-  (`_interim_mqual_cleanup`; a term reference would raise the handler's frame) — no stand-in clause can, because
-  `'$call_cleanup'` and the handler read the cleanup frame's argument slots by position (audit D-0212: the same module
-  S_MQUAL, pl-vmi.c:3706 → `m_qualify_argument` pl-wam.c:1787-1818, writes at the frame's entry; a qualified cleanup, c38,
-  is left alone; one unbound at the call is refused there, c37). The wrap is NOT dead code (D-0233/D-0234 decided by the
-  rows, D-0237): in c08, c35 and c39-c42 the handler's environment frame already carries the cleanup frame's context
-  (white-box probe), but where the query's goal IS the cleanup frame (test/core_lang/test_cleanup_swipl.jl:295) the
-  environment is the query's system frame, and without the wrap `log/1` is looked up in system. `call_term` and
-  `stripModule` are upstream's verbatim (an unqualified goal: the environment frame's context; `mdef` reaches only `call1`).
-- **The MOD4 checklist (from MOD2, audit D-0209):**
-  * remove every `INTERIM: S_MQUAL (MOD4)` line (src/pl-ext.jl `_boot_transparent!` and `_boot_mqual` with their
-    uses, src/pl-wam.jl `_interim_mqual_cleanup` and its call) — the declarations' `P_META`/`S_MQUAL` replace them; the
-    handler's line becomes upstream's `rval = call_term(contextModule(fr), clean)` again;
-  * re-run the cleanup rows (c08, c35, c38, c39-c42 and test_cleanup_swipl.jl:295): once S_MQUAL qualifies the argument,
-    call_term's verbatim stripModule must still answer m2 (user at :295) (audit D-0234 item 3); the :295 shape (the
-    query's goal is the cleanup frame) is the row that must stay green when the wrap goes (audit D-0238 item 3);
-  * rows c18-c30, c08, c35, c37, c38 and c39-c42 of test/core_lang/test_context_module_swipl.jl stay green;
-  * MOD4's report gives `grep -c "INTERIM: S_MQUAL (MOD4)"` over src/: it must be 0.
+  boot stand-ins get the transparency of their upstream meta-predicate declarations — since MOD4 the declarations
+  themselves (`_boot_meta!`, see MOD4); MOD2's interim in-clause qualification (`_boot_mqual`, `_boot_transparent!`,
+  `_interim_mqual_cleanup`, audit D-0209/D-0212) is gone, and the cleanup handler's line is upstream's
+  `rval = call_term(contextModule(fr), clean)` (pl-wam.c:928). `call_term` and `stripModule` are upstream's verbatim (an
+  unqualified goal: the environment frame's context; `mdef` reaches only `call1`). The wrap was not dead code under
+  MOD2 (D-0233/D-0234/D-0237): where the query's goal IS the cleanup frame (test/core_lang/test_cleanup_swipl.jl:295) the
+  handler's environment is the query's system frame; since MOD4 `S_MQUAL` qualifies the cleanup argument at the frame's
+  entry, so that row, c08, c35 and c37-c42 of test/core_lang/test_context_module_swipl.jl stay green by design.
 - **Unchanged for a program in `user`** (every test before MOD2): each context resolves to `user` as the hard-wired
   default did.
 - **Not here:** `I_CONTEXT`, `I_CALLM`, `I_DEPARTM`, `M:Goal` in a body (MOD3a); `Goal@Module` (MOD3b); `P_META`,
-  `meta_predicate/1`, `S_MQUAL`/`S_LMQUAL`, `m_qualify_argument` (MOD4).
+  `meta_predicate/1`, `S_MQUAL`/`S_LMQUAL`, `m_qualify_argument` (MOD4, below).
 
 Tests: test/core_lang/test_context_module_swipl.jl (rows c01-c42: a program of module `m2` asserted by directives, run
 through call/1 vs swipl 10.1.19 pins; the query API's context; `PL_open_query`'s branches white-box). Mutants:
@@ -5396,6 +5380,34 @@ What D1 adds (pl-dbref.c; pl-comp.c `assertz2`, `asserta2`, `mustBeVar`, `record
 
 Tests: test/db/test_clause_ref_swipl.jl (the program rows against swipl 10.1.19 incl. the assert2 unit of tests/db/test_dbref.pl, rows
 c01-c38 for clause/3, `'$clause'/4`, `'$rule'/3`, rows n01-n20 for instance/2 and fixup_ssu, and the white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1c.py.
+
+## MOD4 — meta-predicate declarations and argument qualification (R2, evidence/r2/design/modules.md §7)
+
+What MOD4 ports (pl-proc.c, pl-supervisor.c, pl-vmi.c, pl-wam.c at the pin):
+
+- **`P_META` and the argument masks** (pl-incl.h): `P_META = FLAG64(21)`, `MA_META`/`MA_VAR`/`MA_ANY`/`MA_NONVAR`/`MA_HAT`/
+  `MA_DCG` and `MA_NEEDS_TRANSPARENT` (an argument `0..9`, `:`, `^` or `//`). The masks are `arg_info.meta` in
+  `def.impl_clauses.args` (upstream's `def->impl.any.args`).
+- **The declarations** (pl-proc.c:1992-2122, 2173-2231): `isTransparentMetamask`, `setMetapredicateMask`,
+  `meta_declaration`, `meta_predicate` and the predicates `meta_predicate/1` and `mode/1` (PRED_DEF order, before
+  `retract/1`); `PL_meta_predicate` (the C spec string); `get_procedure` gains upstream's `h` (the stripped head);
+  `PL_get_uint`/`PL_cvt_i_uint` (pl-fli.c). **REFUSED BY NAME:** a declaration while a file loads (`ReadingSource`) needs
+  the loader's `setMetapredicateSource` (pl-srcfile.c) — `NotPortedError` naming LB2 (A-0149 decision 2, D-0246);
+  LB2's checklist replaces it with upstream's branch.
+- **`S_MQUAL n` / `S_LMQUAL n`** (pl-vmi.c:3698-3734, opcodes appended after MOD3a's): `chainPredicateSupervisor`
+  (pl-supervisor.c:379-418) prepends one per argument whose mask needs transparency to a `P_META`+`P_TRANSPARENT`
+  predicate's supervisor, the last as `S_LMQUAL`, which also sets the frame's context to the predicate's module.
+  `m_qualify_argument` (pl-wam.c:1785-1847) makes an argument that is not `_:_` `Context:Arg`. A foreign predicate's
+  supervisor is not chained (`createForeignSupervisor`, as upstream's): its masks serve predicate_property/2.
+- **The boot declarations** (`_boot_meta!`, src/pl-ext.jl): the stand-ins' masks as init.pl:360-386, bags.pl:57-64,
+  attvar.pl:109-110/250-251 and when.pl:40-41 declare them; findall/4, call_residue_vars/2, when/2 and freeze/2 take
+  their goal as upstream's clauses do (qualified on entry). `setBuiltinPredicateProperties!` makes pl-ext.c:391-421's
+  `PL_meta_predicate` calls for the predicates the kernel defines.
+- **Not here:** `setMetapredicateSource` and the `:- meta_predicate` directive in a consulted file (LB2); `S_DET`
+  (`P_DET` is refused by `setAttrDefinition`); the masks' reader `'$get_predicate_attribute'(P, meta_predicate, Spec)`
+  (pl-proc.c; not in the kernel's PRED_DEF table, checked 2026-10-29); goal expansion of meta-arguments (no expansion).
+
+Tests and mutants: see evidence/MOD4/handoff.md (rows vs swipl 10.1.19; tools/mutants/MOD4.py).
 
 ## Still to come
 
