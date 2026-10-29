@@ -74,7 +74,7 @@ const _CASES = [
     ("s08", "ex('\$source_file'(1, _), R)"),
     ("s09", "ex('\$source_file'(user:\"s\", _), R)"),
     ("s10", "( '\$source_file'(user:foo(_), 3) -> R = yes ; R = no )"),
-    ("s11", "'\$source_file'(system:atom_length(_, _), F) -> R = F ; R = fails"),
+    ("s11", "( '\$source_file'(system:atom_length(_, _), F) -> R = F ; R = fails )"),
     ("s12", "'\$source_file'(user:foo(_), F), '\$source_file'(user:bar(_), F2), ( F == F2 -> R = same ; R = diff )"),
     ("s13", "( '\$source_file'(user:foo(_), '@FILE@') -> R = yes ; R = no )"),
     ("s14", "ex('\$source_file'(user:(foo/1), _), R)"),
@@ -306,10 +306,12 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         p01 = first(filter(l -> startswith(l, "t_p01 "), sw))
         @test findfirst(_codes("baz"), p01) !== nothing && findfirst(_codes("baz"), p01) < findfirst(_codes("foo"), p01) &&
               findfirst(_codes("bar"), p01) < findfirst(_codes("foo"), p01)               # [baz, bar, foo, d]: newest first
-        @test count(l -> occursin(_codes("domain_error"), l), sw) >= 4                    # f08, f09, f18, g04, g07
-        @test count(l -> occursin(_codes("existence_error"), l), sw) >= 1                 # g02
-        @test count(l -> occursin(_codes("instantiation_error"), l), sw) >= 6
-        @test count(l -> occursin(_codes("type_error"), l), sw) >= 6
+        # measured on swipl 10.1.19 (2026-10-29): domain f08 f18 g04; existence g02 g07; instantiation s07 p03 f10 f12 g05 g06 g08 c05 c12;
+        # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13
+        @test count(l -> occursin(_codes("domain_error"), l), sw) == 3
+        @test count(l -> occursin(_codes("existence_error"), l), sw) == 2
+        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 9
+        @test count(l -> occursin(_codes("type_error"), l), sw) == 10
         @test any(l -> startswith(l, "t_t01 ") && occursin(_codes("user"), l) && occursin(_codes("flt"), l), sw)
         @test any(l -> startswith(l, "t_c02 ") && occursin("f1.5", l), sw)
         @test any(l -> startswith(l, "t_c03 ") && occursin("i0", l), sw)
@@ -418,4 +420,26 @@ end
     @test !LK.SYSTEM_MODE(ld)
     st, ans = kcall(gd, ld, "current_prolog_flag", _TL[_tls("access_level"), _v()])
     @test st === :true && sym_key(ans[2]) == sym_key(_tls("user"))
+end
+
+# ---- KNOWN DIFFERENCE, TEMPORARY (owner step LB6, audit D-0248): releaseSourceFile does not destroy an unreferenced, empty file.
+# swipl 10.1.19 (live, 2026-10-29):  '$start_consult'('/no/such/d01', 0), '$end_consult'('/no/such/d01')  then
+#   '$source_file_property'('/no/such/d01', load_count, V)  gives V = 0, and
+#   findall(F, '$time_source_file'(F, _, _), L)  has no '/no/such/d01' (so `source_file/1` does not list it either);
+# the kernel keeps the record: load_count 1 and the file is enumerated. These rows PIN THE KERNEL'S CURRENT ANSWER.
+# LB6: port destroySourceFile (files_array with holes), flip these rows to swipl's answers.
+@testset "KNOWN DIFFERENCE (until LB6: destroySourceFile): an empty file consulted once keeps its record" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    f = _tls("/no/such/d01")
+    st, _ = kcall(gd, ld, "\$start_consult", _TL[f, lk_gnd(_TL, 0)])
+    @test st === :true
+    st, _ = kcall(gd, ld, "\$end_consult", _TL[f])
+    @test st === :true
+    st, ans = kcall(gd, ld, "\$source_file_property", _TL[f, _tls("load_count"), _v()])
+    @test st === :true && lk_value(ans[3]) == 1                               # swipl: 0
+    st, ans = kcall(gd, ld, "\$time_source_file", _TL[f, _v(), _v()])
+    @test st === :true                                                        # swipl: fails (the file is gone)
+    st, ans = kcall(gd, ld, "\$time_source_file", _TL[_v(), _v(), _v()])
+    @test st === :true && sym_key(ans[1]) == sym_key(f)                       # the enumeration (source_file/1's base) lists it; swipl: not
 end

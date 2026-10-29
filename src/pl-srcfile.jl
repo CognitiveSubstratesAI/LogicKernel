@@ -73,8 +73,9 @@ function acquireSourceFile(sf::SourceFile)::Nothing
 end
 
 # PORT: pl-srcfile.c releaseSourceFile
-# DIVERGES: an unreferenced, empty file is NOT destroyed (no unloading: `destroySourceFile` and
-# `clearSourceAdmin` are not ported), so this only counts; a release with no reference — upstream
+# DIVERGES (TEMPORARY, until LB6: destroySourceFile; audit D-0248): an unreferenced, empty file is NOT destroyed
+# (`destroySourceFile` and `clearSourceAdmin` are not ported), so this only counts: an empty file consulted once
+# keeps load_count 1 and is listed by `$time_source_file` (swipl: no record; pinned in test_source_file_swipl.jl); a release with no reference — upstream
 # prints "Oops" and repairs the count — is raised as the internal error it is.
 "Drop a reference to `sf` (pl-srcfile.c)."
 function releaseSourceFile(sf::SourceFile)::Bool
