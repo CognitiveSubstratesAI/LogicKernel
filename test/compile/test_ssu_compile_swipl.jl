@@ -162,7 +162,20 @@ const _SU_CASES = [
     ("a21", raw"findall(Rule, '$rule'(d8(_), Rule), R)"),
     ("a22", raw"assertz(d9(a)), ( retract((d9(a) => true)) -> R = yes ; R = no )"),   # a fact's flags differ from =>'s: kept
     ("a23", raw"( retract('?=>'(d9(a), true)) -> R = yes ; R = no )"),                 # and from ?=>'s
-    ("a24", raw"( retract(d9(a)) -> R = yes ; R = no )")                                # the bare head retracts it
+    ("a24", raw"( retract(d9(a)) -> R = yes ; R = no )"),                               # the bare head retracts it
+    # BP2 (upstream ea1b569bd; D-0239): the kill rows of retract/1's two changes. a25: an SSU clause with the body `true`
+    # is a rule (not a UNIT_CLAUSE) and `(H => true)` removes it; a26: a `=>` rule with a non-trivial body is removed by
+    # `(H => _)`, a variable body
+    (
+        "a25",
+        raw"assertz((d10(X) => true)), ( retract((d10(_) => true)) -> R = yes ; R = no )"
+    ),
+    (
+        "a26",
+        raw"assertz((d11(X) => X = 1)), ( retract((d11(_) => _)) -> R = yes ; R = no )"
+    ),
+    # a27: a fact is removed by `Head :- Body` with an unbound body (the body unifies with `true`)
+    ("a27", raw"assertz(d12(a)), retract((d12(X) :- B)), R = X-B")
 ]
 
 # swipl 10.1.19-9-ge0323664's (the pin with the BP2 backports; retract/1 of an SSU clause moved, upstream ea1b569bd) answers to the program and cases above (the driver's lines; a bare name is FAIL)
@@ -206,7 +219,10 @@ const _SU_PINNED = [
     "t_a21 c[116,95,97,50,49]/1(nil)",
     "t_a22 c[116,95,97,50,50]/1(a[110,111])",
     "t_a23 c[116,95,97,50,51]/1(a[110,111])",
-    "t_a24 c[116,95,97,50,52]/1(a[121,101,115])"
+    "t_a24 c[116,95,97,50,52]/1(a[121,101,115])",
+    "t_a25 c[116,95,97,50,53]/1(a[121,101,115])",
+    "t_a26 c[116,95,97,50,54]/1(a[121,101,115])",
+    "t_a27 c[116,95,97,50,55]/1(c[45]/2(a[97],a[116,114,117,101]))"
 ]
 
 "The program and cases as one file; the case predicates' names."

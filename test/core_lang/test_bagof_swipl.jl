@@ -121,6 +121,18 @@ function _rbg_cases()
             "m7", L,
             _rconj(eq(G, hat(Y, _rf("q", X, Y))), bag(X, _rf(":", _rs("user"), G), L))
         ),
+        # the same goal term is CALLED as a term (D-0239, 8b24de911): `G` is bound by the call, after `user:G` was built,
+        # so the argument cell of `:/2` is a reference that has to be dereferenced
+        (
+            "m8", pair(Y, L),
+            _rf(
+                "call",
+                _rconj(
+                    eq(G, _rf("mem", pair(X, Y), _rlist(pair(_rg(1), a), pair(_rg(2), b)))),
+                    bag(X, _rf(":", _rs("user"), G), L)
+                )
+            )
+        ),
         # ── the list is bound already ──
         ("l1", pair(A, B), bag(X, _rf("p", X), _rcons(A, B))),
         ("l2", X, bag(X, _rf("p", X), _rints(1:2))),                        # fails

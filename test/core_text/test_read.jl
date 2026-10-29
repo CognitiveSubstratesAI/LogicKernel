@@ -319,20 +319,20 @@ _rtp(a, b) = _rtf("-", _rti(a), _rti(b))            # From-To
             lk_eq(child(ball, 3), _rtf("string", lk_gnd(_RT, ""), lk_gnd(_RT, 0)))
     end
     # context of unterminated quoted text or comment held only one byte (upstream 7f8024cc7, BP2)
-    # PORT: test_read.pl eof_in_quoted_ctx
+    # test_read.pl eof_in_quoted_ctx (a unit of the backport 7f8024cc7, not at the pin)
     @testset "eof_in_quoted_ctx" begin              # Ctx == string("foo('x", 4)
         rc, ball = _rt_atom_ball(db, "foo('x")
         @test rc === :exception &&
             lk_eq(child(ball, 3), _rtf("string", lk_gnd(_RT, "foo('x"), lk_gnd(_RT, 4)))
     end
-    # PORT: test_read.pl eof_in_quoted_ctx (second unit: a quote of two bytes, « at the start)
+    # test_read.pl eof_in_quoted_ctx (its second unit: a quote of two bytes, « at the start)
     @testset "eof_in_quoted_ctx multibyte" begin    # Ctx == string(S, 0)
         txt = String(Char[Char(0xAB), 'x', ' ', '\'', 'y'])      # the unit's code list
         rc, ball = _rt_atom_ball(db, txt)
         @test rc === :exception &&
             lk_eq(child(ball, 3), _rtf("string", lk_gnd(_RT, txt), lk_gnd(_RT, 0)))
     end
-    # PORT: test_read.pl eof_in_comment_ctx
+    # test_read.pl eof_in_comment_ctx (backport 7f8024cc7, not at the pin)
     @testset "eof_in_comment_ctx" begin             # Offset == 2
         rc, ball = _rt_atom_ball(db, "a /* x")
         @test rc === :exception && kind(child(ball, 3)) === EXPR &&

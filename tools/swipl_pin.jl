@@ -26,6 +26,14 @@ function swipl_pin_refusal(root::AbstractString)::Union{Nothing, String}
     ver, commit = swipl_pin(root, "version"), swipl_pin(root, "commit")
     (isempty(ver) || !occursin(r"^[0-9a-f]{40}$", commit)) &&
         return "tools/SWIPL_VERSION names no pinned version and commit — no oracle"
+    # BACKPORTS (BP2, audit D-0221): with `backports:` the oracle is `commit` plus them, and its
+    # version_git names `oracle:` (tools/lib_evidence.sh `_check_swipl_pin` is the same rule)
+    bps, orc = swipl_pin(root, "backports"), swipl_pin(root, "oracle")
+    if !isempty(bps) || !isempty(orc)
+        (isempty(bps) || !occursin(r"^[0-9a-f]{40}$", orc)) &&
+            return "tools/SWIPL_VERSION must name backports AND the oracle: <40 hex> they make, or neither"
+        commit = orc
+    end
     have = something(Sys.which("swipl"), "")
     out(args) =
         try

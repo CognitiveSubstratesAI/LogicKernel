@@ -56,7 +56,9 @@ MUTANTS = [
          old='''    sp === nothing || unaliasStream(gd, sp, name)   # ensure name is free (error?)''',
          new='''    nothing                                         # ensure name is free (error?)''',
          equivalent="openStream refuses an alias that is in a table (permission_error(open, source_sink, alias(A))) before it "
-                    "opens the file, so aliasStream never meets a holder (src/os/pl-file.jl:1023 openStream)"),
+                    "opens the file, so aliasStream never meets a holder (src/os/pl-file.jl:1023 openStream; pl-file.c:4358 at cbf4e189). "
+                    "EQUIVALENT ONLY WHILE set_stream/2 has no alias branch: re-open when set_stream/2's alias branch is ported "
+                    "(pl-file.c:2230, which does not refuse a taken alias); that step adds the row (D-0223 item 2)"),
     # ---- the closers
     dict(id="S1-9 closeStream does not free the stream", file=F, targets=T,
          old='''    freeStream(ld, s)
@@ -92,7 +94,7 @@ MUTANTS = [
     dict(id="S1-15 pl_close raises 'already closed' over a pending exception", file=F, targets=T,
          old='''        if !rc && ld.exception_term == 0''',
          new='''        if !rc''',
-         equivalent="PL_error returns false without raising while an exception is pending (pl-error.c: 'do not overrule older "
+         equivalent="PL_error returns false without raising while an exception is pending (pl-error.c:119 at cbf4e189: 'do not overrule older "
                     "exception'), so the answer and the ball are the same (src/pl-error.jl:70 _PL_error_open)"),
     dict(id="S1-16 close of a non-stream is not a domain error", file=F, targets=T,
          old='''    a === nothing && return not_a_stream(ld, stream, SH_ALIAS)''',

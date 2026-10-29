@@ -713,7 +713,6 @@ function _manifest_index(T)
                 Tuple{
                     Dict{UInt64, LK._operator{T}},
                     N,
-                    Int,
                     UInt8,
                     Vector{Tuple{T, UInt8, Int16}}
                 },
@@ -723,7 +722,7 @@ function _manifest_index(T)
         [
             (
                 LK.scanVisibleOperators!,
-                Tuple{GD, MOD, N, Int, UInt8, Vector{Tuple{T, UInt8, Int16}}, Bool},
+                Tuple{GD, MOD, N, UInt8, Vector{Tuple{T, UInt8, Int16}}, Bool},
                 false
             ) for N in (Nothing, T)
         ]...,
@@ -829,8 +828,10 @@ function _manifest_index(T)
         (LK.read_unicode_quote_token, Tuple{Int64, Int64, LK.read_data{T}}, false),
         (LK.rehashVariables, Tuple{LK.read_data{T}}, false),
         (LK.setCurrentSourceLocation, Tuple{LK.read_data{T}}, false),
-        (LK.setErrorLocation, Tuple{Nothing, LK.read_data{T}}, false),
-        (LK.setErrorLocation, Tuple{LK.IOPOS, LK.read_data{T}}, false),
+        (LK.setErrorLocation, Tuple{Nothing, Int, LK.read_data{T}}, false),
+        (LK.setErrorLocation, Tuple{LK.IOPOS, Int, LK.read_data{T}}, false),
+        (LK.rawSyntaxErrorAt, Tuple{String, Nothing, Int, LK.read_data{T}}, false),
+        (LK.rawSyntaxErrorAt, Tuple{String, String, Int, LK.read_data{T}}, false),
         (LK.set_start_line, Tuple{LK.read_data{T}, Bool}, false),
         (
             LK.str_number,
@@ -994,6 +995,7 @@ function _manifest_index(T)
         (LK.writeAttributes, Tuple{Int64, Int, LK.write_options{T}, Int}, false),   # AV5
         (LK._wr_is_att3, Tuple{LD, Int64, UInt64}, false),
         (LK.writeAttVar, Tuple{Int64, LK.write_options{T}}, false),
+        (LK.writing_attvar, Tuple{LD, Int64, Int64}, false),                     # BP2 (upstream ace539d7)
         (LK.callPortray, Tuple{Int64, Int64, LK.write_options{T}}, false),
         (LK.enterPortray, Tuple{LD}, false),             # group F (D-0123): callPortray's nesting
         (LK.leavePortray, Tuple{LD}, false),
@@ -1170,6 +1172,8 @@ function _manifest_index(T)
         (LK.PL_unify_stream, Tuple{LD, Int64, LK.IOSTREAM}, false),
         (LK.PL_atom_to_encoding, Tuple{T}, false),
         (LK.bad_encoding, Tuple{LD, String, T}, false),
+        (LK.newline_domain_error, Tuple{LD, T, String}, false),                # BP2 (upstream cd67bb35e)
+        (LK.atom_to_newline_mode, Tuple{LD, T, UInt32}, false),
         (LK.stream_encoding_options, Tuple{LD, T, Union{Nothing, T}, Int64}, false),
         (LK.set_eof_action, Tuple{LD, LK.IOSTREAM, T}, false),
         (LK.set_buffering, Tuple{LD, LK.IOSTREAM, T}, false),
@@ -1820,7 +1824,7 @@ function _manifest_index(T)
         (LK.clause_ndet, Tuple{LD, Int, Int, Int, LK.foreign_context{T}}, false),
         (LK.clause_ndet, Tuple{LD, Int, Int, Int, LK.foreign_context{T}, Int}, false),   # SSU1: IS_RULE
         (LK.pl_ruleva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.clause_functor, Tuple{LD, C}, false),
+        (LK.clause_functor, Tuple{LD, UInt32}, false),
         (LK._rule_term, Tuple{LD, C, Int, Int}, false),
         (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{CH}}, false),
         (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{CH}, Int}, false),

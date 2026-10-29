@@ -107,9 +107,8 @@ MUTANTS = [
     dict(id="SSU1-T1 retract/1 without the CLAUSE_SSU_FLAGS test: `retract((F => true))` removes the fact F (KILL a22, a23, a24)", file=P, targets=TA,
          old="            (clause.flags & CLAUSE_SSU_FLAGS) == (flags & CLAUSE_SSU_FLAGS) && if cl_is_head\n",
          new="            true && if cl_is_head\n"),
-    dict(id="SSU1-T2 retract/1 without the neck test: `retract((H => B))` removes an SSU clause (KILL a10, a13c, H5)", file=P, targets=TA,
-         old="                    (clause.flags & UNIT_CLAUSE) != 0 ||          # decompile's PL_unify_functor(term, clause_functor(clause))\n",
-         new="                    true ||          # decompile's PL_unify_functor(term, clause_functor(clause))\n"),
+    # SSU1-T2 (retract/1 without the neck test) is retired with BP2 (upstream ea1b569bd): `cl` takes the neck of the call's
+    # flags, so the neck test is implied by the flags equality above it (tools/mutants/BP2r.py, BP2-Q9c/Q9d).
     # ── pl-supervisor.c chainPredicateSupervisor ──
     dict(id="SSU1-S1 `S_SSU_DET` not prepended (KILL the v-rows' supervisors, the call's refusal)", file=S, targets=TA + TB,
          old="    if (def.flags & P_SSU_DET) != 0                 # ison(def, P_SSU_DET|P_DET) (P_DET: see above)\n",

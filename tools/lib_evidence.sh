@@ -115,6 +115,19 @@ _check_swipl_pin() {
         echo "$2: tools/SWIPL_VERSION names no pinned version and commit — no oracle to judge against" >&2
         return 1
     fi
+    # BACKPORTS (BP2, audit D-0221): a pin with `backports:` is judged against the oracle WITH them
+    # cherry-picked on `commit` (tools/build_oracle.sh); that build's version_git names `oracle:`. Backports
+    # without it, or an oracle without backports, is a pin that names no build to hold the binary to.
+    local bps orc
+    bps="$(sed -n 's/^backports:[[:space:]]*//p' "$1/tools/SWIPL_VERSION" 2>/dev/null)"
+    orc="$(_swipl_pin "$1" oracle)"
+    if [ -n "$bps" ] || [ -n "$orc" ]; then
+        if [ -z "$bps" ] || ! printf '%s' "$orc" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "$2: tools/SWIPL_VERSION must name backports AND the oracle: <40 hex> they make, or neither" >&2
+            return 1
+        fi
+        commit="$orc"
+    fi
     have=$(swipl --version 2>/dev/null)
     case "$have" in
         *"version $ver "*) ;;

@@ -131,11 +131,11 @@ const _CASES = [
     # (file(Path, Line, LinePos, CharNo)); it pointed at the start of the term
     (
         "e40",
-        "atom_codes(A, [97,44,10,32,32,39,120]), open('{D}/q1', write, W), write(W, A), close(W), open('{D}/q1', read, S), catch(read(S, _), error(_, C), true), close(S), R = C"
+        "atom_codes(A, [97,44,10,32,32,39,120]), open('{D}/q1', write, W), write(W, A), close(W), open('{D}/q1', read, S), catch(read_clause(S, _, [syntax_errors(error)]), error(_, C), true), close(S), R = C"
     ),
     (
         "e41",
-        "atom_codes(A, [97,44,10,32,32,47,42,32,120]), open('{D}/q1', write, W), write(W, A), close(W), open('{D}/q1', read, S), catch(read(S, _), error(_, C), true), close(S), R = C"
+        "atom_codes(A, [97,44,10,32,32,47,42,32,120]), open('{D}/q1', write, W), write(W, A), close(W), open('{D}/q1', read, S), catch(read_clause(S, _, [syntax_errors(error)]), error(_, C), true), close(S), R = C"
     ),
     # ---- the blob: its type, identity and order
     ("s01", "open('{D}/f1', write, S), btype(S, B), close(S), R = B"),
@@ -870,31 +870,53 @@ end
     end
 end
 
-@testset "create(Modes): the file gets exactly the bits upstream ors together, whatever the umask" begin
-    # the program rows compare with swipl under the CALLER's umask (CI's 022 hides 777 vs 755); here the umask is 0
+@testset "create(Modes): the file gets the bits upstream ors together, less the umask — kernel and swipl, three umasks" begin
+    # the program rows run under the CALLER's umask (CI's 022 hides 777 vs 755): here the umask is set, to 0, 022 and 077
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     dir = mktempdir()
     old = ccall(:umask, Cuint, (Cuint,), 0x00000000)
     try
         v() = mk_var(_TL, LK.fresh_var_keys!(1))
-        function create_mode(modes::String, i::Int)
+        n = 0
+        function kernel_mode(modes::String)
+            n += 1
             st, oa = kcall(
                 gd, ld, "term_to_atom", _TL[v(), lk_gnd(_TL, "[create($modes)]")]
             )
             @assert st === :true
-            p = joinpath(dir, "c$i")
+            p = joinpath(dir, "k$n")
             st, a = kcall(gd, ld, "open", _TL[_tls(p), _tls(:write), v(), oa[1]])
             @assert st === :true
             kcall(gd, ld, "close", _TL[a[3]])
             return filemode(p) & 0o777
         end
-        for (i, (modes, bits)) in enumerate((
-            ("[all]", 0o777), ("[read]", 0o444), ("[write]", 0o666), ("[execute]", 0o111),
-            ("[read,execute]", 0o555), ("[default]", 0o666), ("[]", 0o000)
-        ))
-            @test create_mode(modes, i) == bits
+        function swipl_mode(modes::String)
+            n += 1
+            p = joinpath(dir, "s$n")
+            goal = "open('$p', write, S, [create($modes)]), close(S)"
+            run(
+                pipeline(
+                    `$(_swipl()) -q -g $goal -t halt`; stdin=devnull, stdout=devnull,
+                    stderr=devnull
+                )
+            )
+            return filemode(p) & 0o777
         end
+        cases = (
+            ("[all]", 0o777), ("[read,write]", 0o666), ("[read]", 0o444),
+            ("[write]", 0o666), ("[execute]", 0o111), ("[read,execute]", 0o555),
+            ("[default]", 0o666), ("[]", 0o000)
+        )
+        checked = 0
+        for um in (0o000, 0o022, 0o077), (modes, bits) in cases
+            ccall(:umask, Cuint, (Cuint,), Cuint(um))
+            km = kernel_mode(modes)
+            @test km == Int(bits) & ~Int(um)           # (octal literals are sized by their digits: UInt8, UInt16)
+            _swipl() === nothing || @test swipl_mode(modes) == km      # swipl's own answer, same umask
+            checked += 1
+        end
+        @test checked == 24
     finally
         ccall(:umask, Cuint, (Cuint,), old)
         rm(dir; recursive=true, force=true)

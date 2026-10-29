@@ -8,9 +8,9 @@
 # NOT equivalent (refuted by 9b187b5's battery, run 40196979036: NF3-7 was caught): the scan's name and type filters. The
 #   unification filters the ANSWERS again, but not the DETERMINISM: an entry the filter would drop stays in the buffer, so the
 #   answer before it is not the last (swipl: `current_op(P, fy, -)` and `current_op(P, yfx, -)` are both deterministic).
-#   Killed by the testset "a name and a type leave one entry" and by '$local_op'/3's `system:mod` row. (The PRIORITY filter
-#   decides answers as well: it runs before the dedup, so a `user` redefinition it drops no longer hides `system`'s — swipl's
-#   quirk, case s04 — see NF3-9.)
+#   Killed by the testset "a name and a type leave one entry" and by '$local_op'/3's `system:mod` row. (Since BP2 the scan has
+#   no priority filter, upstream 1772f4062: the priority is matched only by the redo loop's unification, so a `user`
+#   redefinition hides `system`'s whatever the priority asked for — case s04; tools/mutants/BP2r.py.)
 # EQUIVALENT, with the reason:
 #   NF3-E3 the buffer is emptied at the first call (`initBuffer`) AND at every end of the state (`discardBuffer`): either alone
 #          leaves it empty; they are killed only together, which one substitution cannot do. NF3-E4 is the end-of-state one.
@@ -28,27 +28,26 @@ MUTANTS = [
     dict(id="NF3-1 a name given is ignored", file=O, targets=T,
          old='''        if PL_is_variable(ld, name)''',
          new='''        if true'''),
-    dict(id="NF3-2 a priority given is ignored", file=O, targets=T,
-         old='''        if PL_is_variable(ld, prec)''',
-         new='''        if true'''),
+    dict(id="NF3-2 a priority given is not checked", file=O, targets=T,
+         old='''        if !PL_is_variable(ld, prec)''',
+         new='''        if false'''),
     dict(id="NF3-3 priority 0 is a priority", file=O, targets=T,
-         old='''            if !(p > 0 && p <= 1200)''',
-         new='''            if !(p >= 0 && p <= 1200)'''),
+         old='''            if !(pv > 0 && pv <= 1200)''',
+         new='''            if !(pv >= 0 && pv <= 1200)'''),
     dict(id="NF3-4 priority 1201 is a priority", file=O, targets=T,
-         old='''            if !(p > 0 && p <= 1200)''',
-         new='''            if !(p > 0 && p <= 1201)'''),
+         old='''            if !(pv > 0 && pv <= 1200)''',
+         new='''            if !(pv > 0 && pv <= 1201)'''),
     dict(id="NF3-5 an unknown type is no error", file=O, targets=T,
          old='''            if t == 0x00''',
          new='''            if false'''),
     dict(id="NF3-7 the scan has no name filter", file=O, targets=T,
-         old='''        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)''',
-         new='''        scanVisibleOperators!(gd, m, nothing, p, t, e.buffer, inherit)'''),
+         old='''        scanVisibleOperators!(gd, m, nm, t, e.buffer, inherit)''',
+         new='''        scanVisibleOperators!(gd, m, nothing, t, e.buffer, inherit)'''),
     dict(id="NF3-8 the scan has no type filter", file=O, targets=T,
-         old='''        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)''',
-         new='''        scanVisibleOperators!(gd, m, nm, p, 0x00, e.buffer, inherit)'''),
-    dict(id="NF3-9 the scan has no priority filter", file=O, targets=T,
-         old='''        scanVisibleOperators!(gd, m, nm, p, t, e.buffer, inherit)''',
-         new='''        scanVisibleOperators!(gd, m, nm, 0, t, e.buffer, inherit)'''),
+         old='''        scanVisibleOperators!(gd, m, nm, t, e.buffer, inherit)''',
+         new='''        scanVisibleOperators!(gd, m, nm, 0x00, e.buffer, inherit)'''),
+    # NF3-9 (the scan has no priority filter) is retired with BP2: the scan takes no priority (upstream 1772f4062);
+    # the priority is matched in the redo loop (tools/mutants/BP2r.py, BP2-Q7a)
     dict(id="NF3-10 a reused state keeps its index", file=O, targets=T,
          old='''        e.index = 0''',
          new='''        nothing'''),

@@ -9,6 +9,13 @@
 #   tools/build_oracle.sh PREFIX     # build and install into PREFIX (PREFIX/bin/swipl)
 #   tools/build_oracle.sh --key      # the cache key: the commit and a hash of the build flags
 #
+# BACKPORTS (BP2, audit D-0175/D-0221): when the pin names `backports:` (upstream commits made after
+# `commit`, in upstream's order) the build is `commit` WITH THEM cherry-picked, and the pin's `oracle:` line
+# names the result. The committer is fixed (name, e-mail, the backport's own author date) so the
+# cherry-picked commits are THE SAME COMMITS on every machine: the build's `version_git` then names
+# `oracle:`, which the pin checks (tools/lib_evidence.sh `_check_swipl_pin`) compare it to, and a clone
+# that lacks a backport fetches it from `origin`.
+#
 # ORACLE_REPO: what to clone (default: SWI-Prolog's repository; a local clone that has the commit
 # is faster). ORACLE_WORK: where to clone and build (default: PREFIX.work; left in place).
 # The build is the core system and THREE PACKAGES, Release, with GMP — the FLAGS below are part of the
@@ -48,8 +55,23 @@ if ! printf '%s' "$COMMIT" | grep -qE '^[0-9a-f]{40}$'; then
     echo "build_oracle: tools/SWIPL_VERSION names no pinned commit (a \`commit: <40 hex>\` line)" >&2
     exit 1
 fi
+read -r -a BACKPORTS <<< "$(sed -n 's/^backports:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION")"
+ORACLE="$(sed -n 's/^oracle:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION" | tr -d '[:space:]')"
+WANT="$COMMIT"                                    # the commit the build's version_git must name
+if [ "${#BACKPORTS[@]}" -gt 0 ]; then
+    for b in "${BACKPORTS[@]}"; do
+        printf '%s' "$b" | grep -qE '^[0-9a-f]{40}$' ||
+            { echo "build_oracle: tools/SWIPL_VERSION: backport '$b' is not a 40-digit commit" >&2; exit 1; }
+    done
+    printf '%s' "$ORACLE" | grep -qE '^[0-9a-f]{40}$' ||
+        { echo "build_oracle: tools/SWIPL_VERSION names backports but no \`oracle: <40 hex>\` (the commit they make)" >&2; exit 1; }
+    WANT="$ORACLE"
+elif [ -n "$ORACLE" ]; then
+    echo "build_oracle: tools/SWIPL_VERSION names an oracle but no backports" >&2
+    exit 1
+fi
 if [ "${1:-}" = "--key" ]; then
-    echo "swipl-${COMMIT:0:12}-$(printf '%s\n' "${FLAGS[@]}" | sha256sum | cut -c1-12)"
+    echo "swipl-${WANT:0:12}-$(printf '%s\n' "${FLAGS[@]}" | sha256sum | cut -c1-12)"
     exit 0
 fi
 PREFIX="${1:?usage: tools/build_oracle.sh PREFIX | --key}"
@@ -85,6 +107,18 @@ done
 PLUNIT="$(sed -n 's/^plunit:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION" | tr -d '[:space:]')"
 [ "$(git -C "$WORK/src/packages/plunit" rev-parse HEAD)" = "$PLUNIT" ] ||
     { echo "build_oracle: packages/plunit at $COMMIT is not the pin's plunit (${PLUNIT:-none})" >&2; exit 1; }
+# the backports, in order, as the same commits everywhere (the header)
+for b in "${BACKPORTS[@]}"; do
+    git -C "$WORK/src" cat-file -e "$b^{commit}" 2> /dev/null ||
+        git -C "$WORK/src" fetch -q origin "$b" 2> /dev/null ||
+        { echo "build_oracle: the backport $b is in neither the clone nor its origin" >&2; exit 1; }
+    GIT_COMMITTER_NAME="LogicKernel oracle" GIT_COMMITTER_EMAIL="oracle@logickernel.invalid" \
+        GIT_COMMITTER_DATE="$(git -C "$WORK/src" show -s --format=%aI "$b")" \
+        git -C "$WORK/src" -c commit.gpgsign=false cherry-pick "$b" > "$WORK/cherry-pick.log" 2>&1 ||
+        { cat "$WORK/cherry-pick.log" >&2; echo "build_oracle: the backport $b does not apply on $COMMIT" >&2; exit 1; }
+done
+[ "$(git -C "$WORK/src" rev-parse HEAD)" = "$WANT" ] ||
+    { echo "build_oracle: the checkout with its backports is $(git -C "$WORK/src" rev-parse HEAD), the pin's oracle: is $WANT" >&2; exit 1; }
 GEN=()
 command -v ninja > /dev/null 2>&1 && GEN=(-G Ninja)
 cmake -S "$WORK/src" -B "$WORK/build" "${GEN[@]}" "${FLAGS[@]}" -DCMAKE_INSTALL_PREFIX="$PREFIX" > "$WORK/cmake.log" 2>&1 ||
@@ -96,8 +130,8 @@ cmake --install "$WORK/build" > "$WORK/install.log" 2>&1 ||
 got="$("$PREFIX/bin/swipl" -g "current_prolog_flag(version_git, G), writeln(G)" -t halt)"
 echo "build_oracle: $("$PREFIX/bin/swipl" --version) — version_git $got — in $PREFIX"
 case "$got" in
-    *-g*) [ "${COMMIT#"${got##*-g}"}" != "$COMMIT" ] ||
-        { echo "build_oracle: the build's version_git ($got) does not name $COMMIT" >&2; exit 1; } ;;
+    *-g*) [ "${WANT#"${got##*-g}"}" != "$WANT" ] ||
+        { echo "build_oracle: the build's version_git ($got) does not name $WANT" >&2; exit 1; } ;;
     *) echo "build_oracle: the build has no version_git naming a commit ($got)" >&2; exit 1 ;;
 esac
 echo "build_oracle: the clone and the build are in $WORK (not needed once installed)"

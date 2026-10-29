@@ -815,6 +815,25 @@ esac
             @test both() == (1, 1)                              # too short to name one
             fake("9.9.8", "9.9.8-46-g" * commit[1:9])
             @test both() == (1, 1)                              # another version of that commit
+            # (BP2, audit D-0221) a pin with `backports:` is judged against the build WITH them, which `oracle:`
+            # names: that build's version_git, not the pin's `commit:`; backports without an `oracle:`, or an
+            # `oracle:` without backports, names no build at all
+            orc = "89abcdef0123456789abcdef0123456789abcdef"
+            pin(
+                "version: 9.9.9\ncommit: $commit\nbackports: $other $commit\noracle: $orc\n"
+            )
+            fake("9.9.9", "9.9.9-3-g" * orc[1:9])
+            @test both() == (0, 0)                              # the oracle with its backports
+            fake("9.9.9", "9.9.9-1-g" * commit[1:9])
+            @test both() == (1, 1)                              # the pin's commit alone: backports missing
+            fake("9.9.9", "9.9.9-3-g" * other[1:9])
+            @test both() == (1, 1)                              # a build of another commit
+            pin("version: 9.9.9\ncommit: $commit\nbackports: $other\n")
+            fake("9.9.9", "9.9.9-2-g" * commit[1:9])
+            @test both() == (1, 1)                              # backports, no oracle:
+            pin("version: 9.9.9\ncommit: $commit\noracle: $orc\n")
+            fake("9.9.9", "9.9.9-1-g" * orc[1:9])
+            @test both() == (1, 1)                              # an oracle:, no backports
             fake("9.9.9", "9.9.9-46-g" * commit[1:9])
             pin("version: 9.9.9\n")
             @test both() == (1, 1)                              # a pin that names no commit

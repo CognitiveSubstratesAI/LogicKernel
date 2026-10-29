@@ -43,6 +43,15 @@
 # holds every file to upstream's blob), and built into the oracle (tools/build_oracle.sh). The pin
 # checks above then also assert that the oracle's library(plunit) IS packages/plunit/plunit.pl, byte
 # for byte (the oracle cache's shim always asks the real swipl where it is).
+# The 2026-10-29 BACKPORTS (BP2, audit D-0175, D-0221): eight upstream fixes made after `commit`, ported as
+# NAMED backports, one commit each, each naming its upstream commit in the `# PORT:` line of the function it
+# fixes (docs/architecture.md, the backport list). `backports:` are those eight commits in upstream's order;
+# the oracle is `commit` WITH THEM cherry-picked on top (tools/build_oracle.sh, committer fixed so the result
+# is the same commit everywhere), and `oracle:` is that result — the commit the binary's `version_git` names
+# (the pin checks read `oracle:` where it is present, `commit:` otherwise). The next full sync absorbs them:
+# the three lines move to the new `commit:` and `backports:`/`oracle:` go.
 version: 10.1.19
 commit: cbf4e1896275a07794332fd98ad0dcb11bf51919
+backports: cd67bb35eeb3573244165b10c77f71f12b4435fc 1582e8b3795630382868169100022a98f304b9fe 8b24de911b312219f7755832b9d93f69e84879c5 627ecb5d392978fbbda5e068b53f0bff9fb82b48 1772f40622c035aa09fee13d4bce4ad32446d15e ea1b569bdeaeeed877c939b3b1fcdf4391af27d8 7f8024cc7e38e457c8f5add9ac5b7534f1532362 ace539d79e004ef58a3b9429bc544429d44ad832
+oracle: e032366462b32490f139ce89c8def64f396bb6fd
 plunit: bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895

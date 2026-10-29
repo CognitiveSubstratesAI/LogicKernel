@@ -59,7 +59,12 @@ have_global_tools() {
         exit(all(w -> haskey(deps, w), want) ? 0 : 1)' > /dev/null 2>&1
 }
 have_project() { have_julia && (cd "$ROOT" && julia --project=. -e 'using Pkg; Pkg.instantiate(); using LogicKernel' > /dev/null 2>&1); }
-pin() { sed -n 's/^commit:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION" | tr -d '[:space:]'; }
+pin() { # the commit the oracle's version_git names: `oracle:` (the pin with its backports) when there is one
+    local o
+    o="$(sed -n 's/^oracle:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION" | tr -d '[:space:]')"
+    [ -n "$o" ] && { printf '%s' "$o"; return; }
+    sed -n 's/^commit:[[:space:]]*//p' "$ROOT/tools/SWIPL_VERSION" | tr -d '[:space:]'
+}
 have_oracle() {
     command -v swipl > /dev/null 2>&1 || return 1
     # the binary's version_git names the pinned commit's abbreviation (tools/lib_evidence.sh `_check_swipl_pin`)

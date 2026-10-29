@@ -537,6 +537,24 @@ ported files' headers to either.
 * **Backport list (upstream fixes newer than the pin `cbf4e189`)** (D-0175 item 2: port upstream's fixes,
   not our own; each entry names its upstream commit in the `# PORT:` line of the function it fixes):
   * `c6087acb` (Q6) — pending: LB2.
+  * **The eight of 2026-10-29 (BP2, audit D-0221), each its own commit, one gate:** the pin file lists them as `backports:`; the
+    oracle is the pin with them cherry-picked (`tools/build_oracle.sh`, committer fixed; `oracle:` names the result, version_git
+    `10.1.19-9-ge0323664`, and both pin checks read it). The next full sync absorbs them.
+    * `cd67bb35` (Q12, `pl-file.c newline_domain_error`, `atom_to_newline_mode`) — **ported:** open/4's invalid `newline(Mode)` is
+      `domain_error(newline, Mode)` (the culprit a term reference); the refusal by name is gone. Rows e36-e39 (test_open_close_swipl.jl).
+    * `1582e8b3` (Q5, `pl-arith.c ar_powm`) — **ported:** the three type checks return their error (the kernel already did; the
+      DIVERGES is gone and the three float rows moved into the pinned arith-c table).
+    * `8b24de91` (Q4, `pl-prims.c free_variables_loop`) — **ported:** the goal after `Module:` is dereferenced (rows m6, m7 of
+      test_bagof_swipl.jl).
+    * `627ecb5d` (Q2, `pl-comp.c moved_unifications`) — **ported:** `last = -1`; no bit set and no body gives `true`.
+    * `1772f406` (Q7, `pl-op.c addOpsFromTable`, `scanVisibleOperators`, `current_op`) — **ported:** no priority parameter; the
+      priority is matched by the enumeration's unification (rows s04, s06, s07 of test_current_op_swipl.jl; s04 moved).
+    * `ea1b569b` (Q9, `pl-comp.c clause_functor`, `pl-proc.c retract`) — **ported:** `clause_functor` takes the flags; `cl` has the
+      neck of the call's SSU flags (rows of test_ssu_compile_swipl.jl moved).
+    * `7f8024cc` (Q1, `pl-read.c setErrorLocation`, `rawSyntaxErrorAt`) — **ported:** an unterminated quote or block comment is
+      located at its opening; the string context holds the text read and the offset. The cut-UTF-8 exclusions are gone.
+    * `ace539d7` (Q13, `pl-write.c writeAttVar`, `writing_attvar`) — **ported:** an attributed variable met while its own
+      attributes are written is written as its name.
   * `1412ce49` (Q8, `pl-prologflag.c pl_prolog_flag5`) — **ported (Q8 mirror):** an explicit `local` scope without a
     thread-local flag table fails before the enumerator is made; the kernel has no such table, so `local` always fails
     (the state is freed). No answer changes (the old walk of the global table could not unify the scope `global` with the
@@ -3172,7 +3190,7 @@ and the four of boot/init.pl they call are compiled at database creation until R
   written `system:Goal`: upstream's meta-predicate declaration qualifies them, and unqualified
   they would be called in `user`.
 * **DIVERGES:** a record is a term, not a byte code (representation only; every answer equal). `free_variables_loop`
-  carries one neutral marker (upstream defect, register Q4). A call from `user` to one of
+  has the dereference of upstream fix 8b24de911 (BP2, the backport list). A call from `user` to one of
   the private names that `user` does not define reaches `system`'s predicate, where swipl raises
   an existence error; the context of an error raised inside findall/3 names `system:findall_loop/4`
   where swipl's names `'$bags':findall_loop/4` (pinned in the test) — both go with R2's modules.
@@ -5093,8 +5111,8 @@ What SSU1 ports (pl-comp.c, pl-proc.c, pl-supervisor.c, pl-error.c, boot/init.pl
   supervisor starts at its first word, and `codes_crefs` is indexed by operand).
 - **Decompiling** (design D5): `_body_start` and the head walkers (`skipArgs`, `argKey`, `arg1Key`, `decompile_head!`)
   treat `I_SSU_*` as `I_ENTER`; clause/2 splits any neck; `'$rule'/2` (`IS_RULE`, `pl_ruleva_va`) builds
-  `clause_functor(clause)(H, B)`, or the bare head of a fact. retract/1 writes upstream's `CLAUSE_SSU_FLAGS` test and
-  the neck test, so it never removes an SSU clause, as swipl (pl-proc.c:3138-3141 rebuilds `:-` from any neck; design Q5).
+  `clause_functor(flags)(H, B)`, or the bare head of a fact. retract/1 writes upstream's `CLAUSE_SSU_FLAGS` test; since BP2
+  (upstream ea1b569bd) `cl` takes the neck of the call's flags, so `retract((H => B))` removes an SSU clause (the backport list).
 - **The consult stand-in** (D7, boot/init.jl `store_clause!`, deleted with the file at LB4): `(H, G) => B` becomes
   `?=>(H, (G, !, B))`, or `H => B` when `'$is_true'(G)` and the `optimise` flag (init.pl:4114-4121, 4131-4133).
 - **Calling an SSU predicate** raised `NotPortedError` naming `S_SSU_DET` until SSU2 (the run loop's refusal of a
@@ -5189,8 +5207,15 @@ What S1 adds (pl-file.c, pl-files.c `PL_get_file_name`, pl-stream.c `Sopen_file`
   (`ERR_FILE_OPERATION`, Linux values). BOM check and write (`ScheckBOM`, `SwriteBOM`) are ported.
 - **Refused BY NAME** (`NotPortedError`) before a file is opened: `pipe(Cmd)`, `lock(read|shared|write|exclusive)`, `locale(_)`,
   `unicode_atoms(_)`, the encodings `text`/`utf16*`/`wchar_t`, `newline(X)` other than posix/dos/detect-on-input, a stream pair.
-  **`newline(foo)` / `newline(detect)` on output**: swipl's answer is not a stable value, so the kernel refuses by name
-  (`# DIVERGES … (internal record Q12)`; checklist item, D-0208).
+  **`newline(foo)` / `newline(detect)` on output** are upstream's `domain_error(newline, Mode)` since BP2 (cd67bb35e, the
+  backport list): `atom_to_newline_mode` and `newline_domain_error` are ported, rows e36-e39 of the program table.
+- **Mutants S1-8 and S1-15 are equivalent, with their conditions** (D-0223 items 2-3, D-0226): S1-8 (`aliasStream` keeps the alias of
+  its previous holder) is equivalent ONLY WHILE set_stream/2 has no alias branch — `openStream` refuses a taken alias first
+  (pl-file.c:4358 at cbf4e189) and is `aliasStream`'s only caller here; re-open it when set_stream/2's alias branch (pl-file.c:2230,
+  which does not refuse) is ported: that step adds the row `open(F1,write,S1,[alias(a)]), open(F2,write,S2),
+  set_stream(S2,alias(a))`, then `stream_property(S1, alias(_))` against swipl (the alias moves). S1-15 (`pl_close` raises over a
+  pending exception) is equivalent: PL_error returns without raising while an exception is pending (pl-error.c:119 at cbf4e189,
+  "do not overrule older exception"; src/pl-error.jl:70). The create(Modes) row compares kernel and swipl at umask 0, 022 and 077.
 - Tests: test/files/test_open_close_swipl.jl (97 program rows against swipl 10.1.19 incl. the files left and the streams still open,
   14 reading rows, white-box rows); mutants: tools/mutants/S1.py.
 
