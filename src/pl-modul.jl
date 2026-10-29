@@ -33,11 +33,12 @@ const UNKNOWN_ERROR = 0x00004000
 const UNKNOWN_MASK = UNKNOWN_ERROR | UNKNOWN_WARNING | UNKNOWN_FAIL
 
 # PORT: pl-incl.h ReadingSource
-# DIVERGES: a function of the local data. The test is the one the kernel's source-file reads have always
-# made (`read_source`'s line above 0 and its file set); upstream's is `source_line_no >= 0`.
+# DIVERGES: a function of the local data. LB2: the test is upstream's, `source_line_no >= 0` (pl-incl.h:2734)
+# — it was `> 0`, which differs only at line 0, the line `'$set_source_location'(File, 0)` (init.pl:1933) sets
+# and source_location/2 must then answer; every read sets a line of at least 1, or -1 on a stream without positions.
 "Whether a file is being loaded: `LD->read_source` has a file and a line (pl-incl.h)."
 ReadingSource(ld::PL_local_data{T}) where {T} =
-    ld.read_source.position.lineno > 0 && ld.read_source.file !== nothing
+    ld.read_source.position.lineno >= 0 && ld.read_source.file !== nothing
 
 # PORT: pl-incl.h MODULE_parse
 # DIVERGES: the module as an INDEX into the database's table.

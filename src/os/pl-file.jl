@@ -1250,13 +1250,48 @@ function pl_close2_va(
     return pl_close(ld, A1, force) ? FTRUE : FFALSE
 end
 
+# PORT: pl-file.c source_location as pl_source_location2_va
+# (PRED_IMPL("source_location", 2, source_location, 0)) — swipl-devel cbf4e189, src/os/pl-file.c:5805-5814
+# DIVERGES: `source_file_name` is `ld.read_source.file` (the atom, `nothing` for NULL_ATOM), `source_line_no`
+# its `position.lineno` (pl-global.h:927-928).
+"`source_location(-File, -Line)` (pl-file.c): where the term read last starts, while a file is being read."
+function pl_source_location2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    if ReadingSource(ld) &&
+       PL_unify_atom(ld, A1, ld.read_source.file::T) &&
+       PL_unify_integer(ld, A2, ld.read_source.position.lineno)
+        return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-file.c set_source_location as pl_set_source_location2_va
+# (PRED_IMPL("$set_source_location", 2, set_source_location, 0)) — pl-file.c:5817-5822
+"`'\$set_source_location'(+File, +Line)` (pl-file.c): set the file and line `source_location/2` answers."
+function pl_set_source_location2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    a = PL_get_atom_ex(ld, A1)
+    a === nothing && return FFALSE
+    n = PL_get_integer_ex(ld, A2)
+    n === nothing && return FFALSE
+    ld.read_source.file = a                         # source_file_name = a
+    ld.read_source.position.lineno = n              # source_line_no = n
+    return FTRUE
+end
+
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
-# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2), in
-# upstream's order (file:6311-6314); `PRED_DEF` ors in `PL_FA_VARARGS`.
+# DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; LB2:
+# source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
     PL_extension("open", 4, pl_open4_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS)
+    PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("source_location", 2, pl_source_location2_va, PL_FA_VARARGS),
+    PL_extension("\$set_source_location", 2, pl_set_source_location2_va, PL_FA_VARARGS)
 )
