@@ -65,6 +65,11 @@ ex(G, R) :- catch(( G, R = true ), error(E, C), R = err(E, C)).
 s2(a).
 s2(b).
 ru1(X) :- d1(X), true.
+:- dynamic tdd/1, tde/1.
+tdd(1).
+tss(1).
+:- '\$set_predicate_attribute'(tlf(_), thread_local, true), assertz(tlf(1)).
+tlf(2).
 """ * _QP
 
 # (id, goal). `ex/2` returns `true` or `err(Formal, Context)`.
@@ -140,37 +145,58 @@ const _CASES = [
     ("n39", "nth_clause(q19(_), 2, Ref), retract(q19(b)), ( nth_clause(q19(_), N, Ref) -> R = yes(N) ; R = no )"),
     # ---- '$get_clause_attribute'/3 (pl-proc.c:3910): the attributes of a clause reference. `file`, `owner` and `size` are asked as
     # shapes (the path is the temp file's; the size is the representation's: the white-box testset pins the kernel's formula)
-    ("g01", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, line_count, R)"),
-    ("g02", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, file, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
-    ("g03", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, owner, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
-    ("g04", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, size, S), ( integer(S), S > 0 -> R = ok ; R = S )"),
-    ("g05", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, fact, R)"),
-    ("g06", "nth_clause(ru1(_), 1, Ref), '$get_clause_attribute'(Ref, fact, R)"),
-    ("g07", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, erased, R)"),
-    ("g08", "nth_clause(q21(_), 2, Ref), erase(Ref), '$get_clause_attribute'(Ref, erased, R)"),
-    ("g09", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, predicate_indicator, R)"),
-    ("g10", "assertz(am:h(1), Ref), '$get_clause_attribute'(Ref, predicate_indicator, R)"),
-    ("g11", "nth_clause(d1(_), 1, Ref), '$get_clause_attribute'(Ref, module, R)"),
-    ("g12", "assertz(am2:h(1), Ref), '$get_clause_attribute'(Ref, module, R)"),
-    ("g13", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, foo, _) -> R = yes ; R = no )"),
-    ("g14", "assertz(am3:h(1), Ref), ( '$get_clause_attribute'(Ref, line_count, _) -> R = yes ; R = no )"),
-    ("g15", "assertz(am3:h(2), Ref), ( '$get_clause_attribute'(Ref, file, _) -> R = yes ; R = no )"),
-    ("g16", "assertz(am3:h(3), Ref), ( '$get_clause_attribute'(Ref, owner, _) -> R = yes ; R = no )"),
-    ("g17", "ex('$get_clause_attribute'(foo, size, _), R)"),
-    ("g18", "nth_clause(d1(_), 1, Ref), ex('$get_clause_attribute'(Ref, _, _), R)"),
-    ("g19", "nth_clause(d1(_), 1, Ref), ex('$get_clause_attribute'(Ref, 1, _), R)"),
-    ("g20", "ex('$get_clause_attribute'(_, size, _), R)"),
-    ("g21", "nth_clause(q22(_), 1, Ref), erase(Ref), '$get_clause_attribute'(Ref, fact, F), '$get_clause_attribute'(Ref, size, S), ( integer(S), S > 0 -> R = F-ok ; R = F-S )"),
-    ("g22", "assertz((am4:r(1) :- true), Ref), '$get_clause_attribute'(Ref, fact, R)"),
-    ("g23", "nth_clause(ru1(_), 1, Ref), '$get_clause_attribute'(Ref, line_count, R)"),
-    ("g24", "nth_clause(q23(_), 3, Ref), erase(Ref), '$get_clause_attribute'(Ref, predicate_indicator, R)"),
-    ("g25", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, user:d1/1) -> R0 = yes ; R0 = no ), ( '$get_clause_attribute'(Ref, predicate_indicator, d1/1) -> R1 = yes ; R1 = no ), R = R0-R1"),
-    ("g26", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, module, foo) -> R = yes ; R = no )"),
-    ("g27", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, erased, true) -> R = yes ; R = no )"),
-    ("g28", "assertz(am5:z(1), Ref), retract(am5:z(1)), '$get_clause_attribute'(Ref, erased, R)"),
-    ("g29", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, nomod:d1/1) -> R = yes ; R = no )"),
-    ("g30", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, system:d1/1) -> R = yes ; R = no )"),
-    ("g31", "nth_clause(d1(_), 1, Ref), ( '$get_clause_attribute'(Ref, predicate_indicator, user:d1/2) -> R = yes ; R = no )"),
+    ("g01", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, line_count, R)"),
+    ("g02", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, file, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
+    ("g03", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, owner, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
+    ("g04", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, size, S), ( integer(S), S > 0 -> R = ok ; R = S )"),
+    ("g05", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, fact, R)"),
+    ("g06", "nth_clause(ru1(_), 1, Ref), '\$get_clause_attribute'(Ref, fact, R)"),
+    ("g07", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, erased, R)"),
+    ("g08", "nth_clause(q21(_), 2, Ref), erase(Ref), '\$get_clause_attribute'(Ref, erased, R)"),
+    ("g09", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, predicate_indicator, R)"),
+    ("g10", "assertz(am:h(1), Ref), '\$get_clause_attribute'(Ref, predicate_indicator, R)"),
+    ("g11", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, module, R)"),
+    ("g12", "assertz(am2:h(1), Ref), '\$get_clause_attribute'(Ref, module, R)"),
+    ("g13", "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, foo, _) -> R = yes ; R = no )"),
+    ("g14", "assertz(am3:h(1), Ref), ( '\$get_clause_attribute'(Ref, line_count, _) -> R = yes ; R = no )"),
+    ("g15", "assertz(am3:h(2), Ref), ( '\$get_clause_attribute'(Ref, file, _) -> R = yes ; R = no )"),
+    ("g16", "assertz(am3:h(3), Ref), ( '\$get_clause_attribute'(Ref, owner, _) -> R = yes ; R = no )"),
+    ("g17", "ex('\$get_clause_attribute'(foo, size, _), R)"),
+    ("g18", "nth_clause(d1(_), 1, Ref), ex('\$get_clause_attribute'(Ref, _, _), R)"),
+    ("g19", "nth_clause(d1(_), 1, Ref), ex('\$get_clause_attribute'(Ref, 1, _), R)"),
+    ("g20", "ex('\$get_clause_attribute'(_, size, _), R)"),
+    ("g21", "nth_clause(q22(_), 1, Ref), erase(Ref), '\$get_clause_attribute'(Ref, fact, F), '\$get_clause_attribute'(Ref, size, S), ( integer(S), S > 0 -> R = F-ok ; R = F-S )"),
+    ("g22", "assertz((am4:r(1) :- true), Ref), '\$get_clause_attribute'(Ref, fact, R)"),
+    ("g23", "nth_clause(ru1(_), 1, Ref), '\$get_clause_attribute'(Ref, line_count, R)"),
+    ("g24", "nth_clause(q23(_), 3, Ref), erase(Ref), '\$get_clause_attribute'(Ref, predicate_indicator, R)"),
+    ("g25", "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, predicate_indicator, user:d1/1) -> R0 = yes ; R0 = no ), ( '\$get_clause_attribute'(Ref, predicate_indicator, d1/1) -> R1 = yes ; R1 = no ), R = R0-R1"),
+    ("g26", "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, module, foo) -> R = yes ; R = no )"),
+    ("g27", "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, erased, true) -> R = yes ; R = no )"),
+    ("g28", "assertz(am5:z(1), Ref), retract(am5:z(1)), '\$get_clause_attribute'(Ref, erased, R)"),
+    ("g29", "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, predicate_indicator, nomod:d1/1) -> R = yes ; R = no )"),
+    ("g30", "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, predicate_indicator, system:d1/1) -> R = yes ; R = no )"),
+    ("g31", "nth_clause(d1(_), 1, Ref), ( '\$get_clause_attribute'(Ref, predicate_indicator, user:d1/2) -> R = yes ; R = no )"),
+    # ---- thread_local (pl-proc.c:3755 setThreadLocalDefinition): `'$set_predicate_attribute'(Head, thread_local, Val)`; each row has its own predicate
+    ("t01", "'\$set_predicate_attribute'(tl1(_), thread_local, true), assertz(tl1(1)), assertz(tl1(2)), findall(X, tl1(X), R)"),
+    ("t02", "ex('\$set_predicate_attribute'(tdd(_), thread_local, true), R)"),
+    ("t03", "ex('\$set_predicate_attribute'(tss(_), thread_local, true), R)"),
+    ("t04", "'\$set_predicate_attribute'(tde(_), thread_local, true), assertz(tde(1)), findall(X, tde(X), R)"),
+    ("t05", "'\$set_predicate_attribute'(tl5(_), thread_local, true), '\$set_predicate_attribute'(tl5(_), thread_local, true), assertz(tl5(1)), findall(X, tl5(X), R)"),
+    ("t06", "'\$set_predicate_attribute'(tl6(_), thread_local, true), ex('\$set_predicate_attribute'(tl6(_), thread_local, false), R)"),
+    ("t07", "'\$set_predicate_attribute'(tl7(_), thread_local, false), R = ok"),
+    ("t08", "'\$set_predicate_attribute'(tl8(_), thread_local, 1), assertz(tl8(1)), findall(X, tl8(X), R)"),
+    # swipl: REFUSES (permission_error(modify, static_procedure, tl9/1)): the retracted clause still sits in the list until the clause GC runs
+    ("t09", "assertz(tl9(1)), retract(tl9(1)), ex('\$set_predicate_attribute'(tl9(_), thread_local, true), R)"),
+    ("t10", "'\$set_predicate_attribute'(tl10(_), thread_local, true), ( '\$set_predicate_attribute'(tl10(_), dynamic, false) -> A = yes ; A = no ), retractall(tl10(_)), '\$set_predicate_attribute'(tl10(_), dynamic, true), assertz(tl10(1)), findall(X, tl10(X), L), R = A-L"),
+    ("t11", "'\$set_predicate_attribute'(tl11, thread_local, true), assertz(tl11), ( tl11 -> R = yes ; R = no )"),
+    ("t12", "'\$set_predicate_attribute'(tm:tl12(_), thread_local, true), assertz(tm:tl12(1)), findall(X, tm:tl12(X), R)"),
+    ("t13", "'\$set_predicate_attribute'(tl13(_), thread_local, true), assertz(tl13(1), Ref), erase(Ref), '\$set_predicate_attribute'(tl13(_), thread_local, true), findall(X, tl13(X), R)"),
+    ("t14", "'\$set_predicate_attribute'(tl14(_), thread_local, true), assertz(tl14(1)), '\$set_predicate_attribute'(tl14(_), thread_local, true), findall(X, tl14(X), R)"),
+    ("t15", "'\$set_predicate_attribute'(tl15(_), thread_local, true), assertz(tl15(7)), clause(tl15(X), true), R = X"),
+    # a file clause for a thread-local predicate that already has clauses: swipl warns `Redefined static procedure`, abolishProcedure raises
+    # permission_error(modify, thread_local_procedure, tlf/1) at load (stderr); the load goes on and the clause is NOT added: [1]
+    ("t16", "findall(X, tlf(X), R)"),
+    ("t17", "'\$set_predicate_attribute'(tl17(_), thread_local, true), assertz(tl17(1)), ex('\$set_predicate_attribute'(tl17(_), thread_local, false), R)"),
     # LAST: nothing follows
     ("z01", "R = last")
 ]
@@ -324,12 +350,13 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         # measured on swipl 10.1.19 (2026-10-29): domain c09; existence c06 c07 c20 c22 c27 c28; instantiation c11 c12 c15;
         # type c08 c10 c13 c14 c24 c25 c26 n10 n24; permission c01 c02 c04 c05 c15 c16 c17 c19 c22 (the assertz after a compile);
         # instantiation also n08 g18 g20; type also g17 g19 ('$get_clause_attribute'/3)
+        # permission also t02 t03 t06 t09 t17 ('$set_predicate_attribute'(_, thread_local, _))
 
         @test count(l -> occursin(_codes("domain_error"), l), sw) == 1
         @test count(l -> occursin(_codes("existence_error"), l), sw) == 6
         @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 6
         @test count(l -> occursin(_codes("type_error"), l), sw) == 11
-        @test count(l -> occursin(_codes("permission_error"), l), sw) == 9
+        @test count(l -> occursin(_codes("permission_error"), l), sw) == 14
         @test any(l -> startswith(l, "t_c03 ") && occursin(_codes("ok"), l), sw)
         @test any(l -> startswith(l, "t_c18 ") && occursin("i1", l) && occursin("i2", l), sw)       # the clauses survive
         @test any(l -> startswith(l, "t_c23 ") && occursin(_codes("true"), l), sw)                  # an EMPTY dynamic predicate: assertz still works
@@ -350,6 +377,13 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(l -> startswith(l, "t_g12 ") && occursin(_codes("am2"), l), sw)
         @test any(l -> startswith(l, "t_g21 ") && occursin(_codes("true"), l) && occursin(_codes("ok"), l), sw)
         @test count(l -> startswith(l, "t_g") && occursin(_codes("no"), l), sw) == 8     # g13 g14 g15 g16 g26 g27 g30 g31
+        # thread_local: a fresh predicate takes clauses; a predicate with clauses refuses (t02 t03 t09: t09 after a retract, the erased clause
+        # still sits in the list); false on a thread-local predicate refuses with the message; a file clause is refused (t16)
+        @test any(l -> startswith(l, "t_t01 ") && occursin("i1", l) && occursin("i2", l), sw)
+        @test any(l -> startswith(l, "t_t06 ") && occursin(_codes("predicate is thread-local"), l), sw)
+        @test any(l -> startswith(l, "t_t09 ") && occursin(_codes("static_procedure"), l) && occursin(_codes("tl9"), l), sw)
+        @test any(l -> startswith(l, "t_t13 ") && occursin("nil", l), sw)
+        @test any(l -> startswith(l, "t_t16 ") && occursin("i1", l) && !occursin("i2", l), sw)
         @test startswith(last(sw), "t_z01 ")
     end
 end
