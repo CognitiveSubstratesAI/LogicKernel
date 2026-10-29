@@ -1503,7 +1503,7 @@ end
 # PORT: pl-proc.c get_procedure as get_procedure_find_namearity
 # (the `GP_FIND|GP_NAMEARITY` case, as `'$end_aux'/2` asks it: `get_procedure(A2, &proc, 0, GP_NAMEARITY)`, GP_FIND being 0)
 # DIVERGES: `get_functor(…, GF_PROCEDURE)` is the term stripped of its qualifiers (`stripModuleName_cells`) and a `Name/Arity` or a
-# head, as `get_procedure`'s `GP_DEFINE` case reads it; the module is the one a qualifier names if it is current (none is created),
+# head, as `get_procedure`'s `GP_DEFINE` case reads it; the module is the one a qualifier names if it is current (none is created; swipl 10.1.19, measured, creates a module a qualifier names there),
 # else `user`, and for no qualifier `context` (`contextModule` is not ported; `'$end_aux'/2` is not transparent: `system`).
 # `visibleProcedure` looks the functor up there. Not found: `nothing` with no error (no `GP_EXISTENCE_ERROR`).
 "The procedure the `M:Name/Arity` (or head) in `descr` names, as visible from its module, or `nothing` (pl-proc.c)."
