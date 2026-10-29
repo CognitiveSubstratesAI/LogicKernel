@@ -178,8 +178,12 @@ end
 "Open the standard streams of `ld` over the process's stdin, stdout and stderr (pl-file.c)."
 function initIO(ld::PL_local_data)::Nothing
     sin = _std_stream(_std_io(Base.stdin, 0), SIO_STDIO | SIO_LBUF | SIO_INPUT | SIO_NOFEOF)
-    sout = _std_stream(_std_io(Base.stdout, 1), SIO_STDIO | SIO_LBUF | SIO_OUTPUT | SIO_REPPLU)
-    serr = _std_stream(_std_io(Base.stderr, 2), SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU)
+    sout = _std_stream(
+        _std_io(Base.stdout, 1), SIO_STDIO | SIO_LBUF | SIO_OUTPUT | SIO_REPPLU
+    )
+    serr = _std_stream(
+        _std_io(Base.stderr, 2), SIO_STDIO | SIO_NBUF | SIO_OUTPUT | SIO_REPPLU
+    )
     sin.position = sin.posbuf                       # position logging
     sout.position = sin.posbuf
     serr.position = sin.posbuf

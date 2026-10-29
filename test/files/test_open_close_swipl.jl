@@ -1049,8 +1049,10 @@ end
         ld2 = LK.PL_local_data{_TL}(gd2)
         @test nl_on(gd2, ld2, :user_error) === :true
         s = LK.Suser_error(ld2)
-        @test s isa LK.IOSTREAM && LK.get_stream_handle(ld2, _tls(:user_error), LK.SH_ALIAS) === s
-        @test s.handle isa LK.Sjulia_io && s.handle.io isa IOStream && s.handle.io.name == "<fd 2>"
+        @test s isa LK.IOSTREAM &&
+            LK.get_stream_handle(ld2, _tls(:user_error), LK.SH_ALIAS) === s
+        @test s.handle isa LK.Sjulia_io && s.handle.io isa IOStream &&
+            s.handle.io.name == "<fd 2>"
         @test (s.flags & LK.SIO_ISATTY) == 0 && (s.flags & LK.SIO_NBUF) != 0
         # a standard stream put back after its stream was closed (restoreStandardStream) is file descriptor 2 too
         r = LK.restoreStandardStream(ld2, LK.SNO_USER_ERROR)
