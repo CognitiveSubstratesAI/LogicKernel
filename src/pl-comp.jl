@@ -45,9 +45,13 @@
 # answers for rule bodies (`pl_clause!` with a body). A clause with a unification moved into its
 # head (`CL_HEAD_TERMS`) gets it back as a goal (`mark_bvar_access`, `moved_unifications!`).
 #
+# SSU (since SSU1): `Head => Body` and `?=>(Head, Body)` compile (`I_CHP`, `I_SSU_COMMIT`,
+# `I_SSU_CHOICE`, upstream's `head_unify`: `?=>` always moves, `=>` never), decompile (the walkers
+# treat `I_SSU_*` as `I_ENTER`; `clause_functor` gives the neck) and are read back by `'$rule'/2`
+# (`pl_ruleva_va`, `IS_RULE`); the run loop executes them in SSU2.
+#
 # NOT PORTED: `islocal` compilation (goal clauses for the meta-call: `subclausearg`, `argvars`,
-# `link_local_var`; V9), SSU (`=>`) clauses,
-# SSU clauses' moves (`?=>` always moves, `=>` never: no SSU).
+# `link_local_var`; V9).
 #
 # The body compiler is ported since V2, and the instructions run in the VM since V4a
 # (src/pl-wam.jl). THE COMPILER'S WARNINGS are ported since R1g: the variable analysis' `VD_*`
@@ -93,18 +97,20 @@ end
 
 # PORT: pl-comp.c initVMIMerge
 # DIVERGES: a constant table read through a function instead of `merge_def[]` filled at start-up
-# (no module-level mutable state); the SSU entries are absent with the SSU instructions.
+# (no module-level mutable state); each instruction's entries in upstream's order (pl-comp.c:1876-1888).
 """
 The merges of instruction `c1` with the instruction that follows it (pl-comp.c `initVMIMerge`):
 `H_VOID H_VOID` → `H_VOID_N 2`, `H_VOID_N H_VOID` → count + 1, and a void before `I_ENTER`,
-`I_EXITFACT` or `H_POP` disappears.
+`I_EXITFACT`, `I_SSU_COMMIT`, `I_SSU_CHOICE` or `H_POP` disappears.
 """
-function initVMIMerge(c1::code)::Union{Nothing, NTuple{4, vmi_merge}}
+function initVMIMerge(c1::code)::Union{Nothing, NTuple{6, vmi_merge}}
     if c1 == H_VOID_N
         return (
             vmi_merge(H_VOID, VMI_STEP_ARGUMENT, code(0), 0, code(0)),  # mergeStep(H_VOID_N, H_VOID)
             vmi_merge(I_ENTER, VMI_REPLACE, I_ENTER, 0, code(0)),
             vmi_merge(I_EXITFACT, VMI_REPLACE, I_EXITFACT, 0, code(0)),
+            vmi_merge(I_SSU_COMMIT, VMI_REPLACE, I_SSU_COMMIT, 0, code(0)),  # (SSU1, pl-comp.c:1884)
+            vmi_merge(I_SSU_CHOICE, VMI_REPLACE, I_SSU_CHOICE, 0, code(0)),  # (SSU1, pl-comp.c:1886)
             vmi_merge(H_POP, VMI_REPLACE, H_POP, 0, code(0))
         )
     elseif c1 == H_VOID
@@ -112,6 +118,8 @@ function initVMIMerge(c1::code)::Union{Nothing, NTuple{4, vmi_merge}}
             vmi_merge(H_VOID, VMI_REPLACE, H_VOID_N, 1, code(2)),     # mergeSeq(H_VOID, H_VOID, H_VOID_N, 1, 2)
             vmi_merge(I_ENTER, VMI_REPLACE, I_ENTER, 0, code(0)),
             vmi_merge(I_EXITFACT, VMI_REPLACE, I_EXITFACT, 0, code(0)),
+            vmi_merge(I_SSU_COMMIT, VMI_REPLACE, I_SSU_COMMIT, 0, code(0)),  # (SSU1, pl-comp.c:1883)
+            vmi_merge(I_SSU_CHOICE, VMI_REPLACE, I_SSU_CHOICE, 0, code(0)),  # (SSU1, pl-comp.c:1885)
             vmi_merge(H_POP, VMI_REPLACE, H_POP, 0, code(0))
         )
     end
@@ -265,7 +273,7 @@ mutable struct compileInfo{T}
     codes::Vector{code}                                     # scratch code table
     vardefs::Dict{UInt64, VarDef}                           # variables with a slot
     used_var::BitVector                                     # boolean array of used variables
-    mstate_candidates::Union{Nothing, NTuple{4, vmi_merge}} # Merge candidates
+    mstate_candidates::Union{Nothing, NTuple{6, vmi_merge}} # Merge candidates
     mstate_merge_pos::Int                                   # The merge candidate location
     literals::Vector{T}                                     # the literal table being built
     procedures::Vector{Procedure{T}}                        # the procedure table being built
@@ -568,7 +576,7 @@ end
 
 # PORT: pl-comp.c mergeInstructions
 "Merge `c` with the candidate instruction if a merge says how; true when merged (pl-comp.c)."
-function mergeInstructions!(ci::compileInfo, m::NTuple{4, vmi_merge}, c::code)::Bool
+function mergeInstructions!(ci::compileInfo, m::NTuple{6, vmi_merge}, c::code)::Bool
     for mm in m
         if mm.code == c
             if mm.how == VMI_REPLACE
@@ -2779,38 +2787,57 @@ _is_rule_body(gd::PL_global_data{T}, body::Union{Nothing, T}) where {T} =
         sym_key(body) == gd.subclause_names.atom_true
     )
 
-# From pl-comp.c compileClause (c:2049-2116): what runs before the body is compiled — the variable
-# analysis of head AND body, the head arguments left to right, and for a rule `I_ENTER` (a void
-# before it merges away, as before `I_EXITFACT`). No SSU (`I_CHP`, `I_SSU_*`) or module context
-# (`I_CONTEXT`). A body that is `nothing` or the atom `true` makes a fact.
+# From pl-comp.c compileClause (c:2049-2131): what runs before the body is compiled — the variable
+# analysis of head AND body, for an SSU clause `I_CHP` (c:2088-2089), the head arguments left to
+# right, and for a rule `I_ENTER`, or an SSU rule's `I_SSU_COMMIT`/`I_SSU_CHOICE` (c:2119-2131; a void
+# before each merges away, as before `I_EXITFACT`). No module context (`I_CONTEXT`). A body that is
+# `nothing` or the atom `true` makes a fact; an SSU clause's `I_SSU_*` then comes in `compileClause`,
+# with its `I_EXIT` (c:2173-2175). `flags` is upstream's (`SSU_COMMIT_CLAUSE`, `SSU_CHOICE_CLAUSE`).
 """
     _compile_clause_head!(gd, ci, head, body) -> nv
+    _compile_clause_head!(gd, ci, head, body, flags) -> nv
 
 Analyse the variables of `head` and `body` (`nothing` for a fact) and emit the head code of the
 clause into `ci`, ending with `I_ENTER` for a rule (pl-comp.c `compileClause`), for the database
-whose global data is `gd`. Returns the frame size: the clause's `prolog_vars` and `variables`.
+whose global data is `gd`. With an SSU neck in `flags` (since SSU1) the code starts with `I_CHP` and
+a rule's head ends with `I_SSU_COMMIT` (`=>`) or `I_SSU_CHOICE` (`?=>`). Returns the frame size: the
+clause's `prolog_vars` and `variables`.
 """
 function _compile_clause_head!(
-    gd::PL_global_data{T}, ci::compileInfo{T}, head::T, body::Union{Nothing, T}
+    gd::PL_global_data{T}, ci::compileInfo{T}, head::T, body::Union{Nothing, T},
+    flags::UInt32=UInt32(0)
 )::Int where {T}
     nv = analyse_variables!(gd, ci, head, body)               # prolog_vars = variables = nv
     ci.variables = nv
     initMerge!(ci)
+    if (flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) != 0
+        Output_0!(ci, I_CHP)
+    end
     if ci.arity > 0
         for n in 0:(ci.arity - 1)
             compileArgument!(ci, child(head, n + 2), A_HEAD)
         end
     end
     if _is_rule_body(gd, body)
-        Output_0!(ci, I_ENTER)
+        ssu = flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)    # switch(flags & (…))
+        if ssu == 0
+            Output_0!(ci, I_ENTER)
+        elseif ssu == SSU_COMMIT_CLAUSE
+            Output_0!(ci, I_SSU_COMMIT)
+        elseif ssu == SSU_CHOICE_CLAUSE
+            Output_0!(ci, I_SSU_CHOICE)
+        else
+            @assert false "compileClause: both SSU necks"       # default: assert(0)
+        end
     end
     return nv
 end
 
 # PORT: pl-comp.c compileClause
 # DIVERGES: the body is `nothing` for a fact (upstream's NULL body; a body `true` makes one too, as
-# upstream); the body's goals are plain goals and conjunctions (see `compileBody!`); no SSU,
-# flags or resource limits; `warnings` (since R1g) is upstream's term reference, 0 for a caller
+# upstream); the body's goals are plain goals and conjunctions (see `compileBody!`); no resource
+# limits; `flags` (since SSU1) is upstream's, its SSU necks only (`UNIT_CLAUSE`, which
+# `get_head_and_body_clause` passes for a fact, is not read: upstream masks it off); `warnings` (since R1g) is upstream's term reference, 0 for a caller
 # that wants none (the six-argument method), and the style checks and `$variable_names` are read
 # from `ld` here (see `compileInfo`); a RULE of a multifile predicate is refused (its body would
 # need `I_CONTEXT`: modules are not ported), and `P_MFCONTEXT` is never set; the clause is returned
@@ -2828,6 +2855,7 @@ end
 """
     compileClause(gd, ld, head, body, proc, m) -> Clause, or nothing
     compileClause(gd, ld, head, body, proc, m, warnings) -> Clause, or nothing
+    compileClause(gd, ld, head, body, proc, m, warnings, flags) -> Clause, or nothing
 
 Compile the clause `head :- body` (`body` `nothing` or `true` for a fact) of procedure `proc` into
 module `m`, in the database whose global data is `gd`, under the flags of local data `ld`
@@ -2838,11 +2866,14 @@ table its call operands index (V1). A body goal that is not callable raises
 `type_error(callable, Body)` — the WHOLE body, as swipl reports it (probed in 10.1.16) — and a
 goal past `MAXARITY` `representation_error(max_procedure_arity)`, with `PL_error` in `ld`: the
 result is then `nothing`. With a term reference `warnings`, it is set to the list of the
-compiler's warnings for the clause (`[]`: none).
+compiler's warnings for the clause (`[]`: none). `flags` `SSU_COMMIT_CLAUSE` or `SSU_CHOICE_CLAUSE`
+(since SSU1) compiles `head => body` or `head ?=> body`: `I_CHP` first, the head, `I_SSU_COMMIT` or
+`I_SSU_CHOICE` where a rule has `I_ENTER`; such a clause with the body `true` is no fact (no
+`UNIT_CLAUSE`): its head is followed by `I_SSU_*` and `I_EXIT`.
 """
 function compileClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
-    proc::Procedure{T}, m::module_t{T}, warnings::term_t;
+    proc::Procedure{T}, m::module_t{T}, warnings::term_t, flags::UInt32=UInt32(0);
     ex::Union{Nothing, cell_export{T}}=nothing
 )::Union{Nothing, Clause{T}} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
@@ -2857,8 +2888,14 @@ function compileClause(
             -(ld.variable_names + 1)
         )
     end
-    # ci->head_unify, without SSU (`?=>` always moves, `=>` never): static code, `optimise_unify`
-    ci.head_unify = (def.flags & P_DYNAMIC) == 0 && ld.prolog_flag_optimise_unify
+    # ci->head_unify (pl-comp.c:2022-2027): `?=>` always moves, `=>` never; else static code under
+    # `optimise_unify`
+    ci.head_unify =
+        (flags & SSU_CHOICE_CLAUSE) != 0 || (
+            (flags & SSU_COMMIT_CLAUSE) == 0 && (def.flags & P_DYNAMIC) == 0 &&
+            ld.prolog_flag_optimise_unify
+        )
+    ssu = flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)    # clause.flags = flags & (…) (c:2028)
     rule = _is_rule_body(gd, body)
     rule && (def.flags & P_MULTIFILE) != 0 &&
         throw(
@@ -2866,8 +2903,8 @@ function compileClause(
                 head, "a rule of a multifile predicate (I_CONTEXT)", "modules"
             )
         )
-    nv = _compile_clause_head!(gd, ci, head, body)
-    flags = UInt32(0)
+    nv = _compile_clause_head!(gd, ci, head, body, ssu)
+    flags = ssu
     if rule
         bi = PC(ci)
         rc = compileBody!(gd, ld, ci, body::T, I_DEPART)
@@ -2889,8 +2926,11 @@ function compileClause(
         if ci.codes[bi + 1] == I_CUT                           # OpCode(ci, bi) == encode(I_CUT)
             flags |= COMMIT_CLAUSE
         end
+    elseif ssu != 0                                            # an SSU clause with body `true` (c:2173-2175)
+        Output_0!(ci, (ssu & SSU_COMMIT_CLAUSE) != 0 ? I_SSU_COMMIT : I_SSU_CHOICE)
+        Output_0!(ci, I_EXIT)
     else
-        flags = UNIT_CLAUSE
+        flags |= UNIT_CLAUSE
         Output_0!(ci, I_EXITFACT)                              # fact (for decompiler)
     end
     if ci.warning_list != 0 && !push_compiler_warnings(ld, ci)
@@ -3259,12 +3299,16 @@ end
 # kernel's `PL_put_variable` makes a global cell, which the rewind would free under them — so it is not done.
 # `h` and `b` are made after the control switch, where upstream makes `term`, `h` and `b` before it: the
 # FRG_CUTTED call (`discardForeignFrame`, its arguments `h0 == 0`) uses none, and makes no global cells here.
-# NOT PORTED: clause/3 and `'$clause'/4` (the clause reference `ref`, `PL_get_clref`/`PL_unify_clref`, and
-# `bindings`): the kernel has no clause references as terms, so only clause/2 is registered and `CTX_ARITY < 3`
-# is asserted; rule/2,3 (`IS_RULE`): not registered, so `flags` is `IS_CLAUSE`.
-"clause/2's enumeration (pl-comp.c `clause()`): unify `head` and `body` with each clause in turn, one per answer."
+# NOT PORTED: clause/3, `'$clause'/4` and `'$rule'/3` (the clause reference `ref`, `PL_get_clref`/`PL_unify_clref`,
+# and `bindings`): the kernel has no clause references as terms, so only clause/2 and (since SSU1) `'$rule'/2` are
+# registered and `CTX_ARITY < 3` is asserted. `IS_RULE` (`'$rule'/2`, since SSU1) builds upstream's `term` from the
+# two sides: `Neck(h, b)`, its functor `clause_functor(clause)`, or `h` alone for a fact (`decompile` of a
+# `UNIT_CLAUSE` gives the bare head), and unifies it with `body`; `head` only selects the predicate and the
+# clauses (`argv`), as upstream's.
+"clause/2's (`flags` `IS_CLAUSE`) or `'\$rule'/2`'s (`IS_RULE`) enumeration (pl-comp.c `clause()`): unify `head` and `body` with each clause in turn, one per answer."
 function clause_ndet(
-    ld::PL_local_data{T}, head::term_t, body::term_t, PL__ac::Int, PL__ctx::control_t{T}
+    ld::PL_local_data{T}, head::term_t, body::term_t, PL__ac::Int, PL__ctx::control_t{T},
+    flags::Int=IS_CLAUSE
 )::foreign_t where {T}
     gd = _query_gd(ld)
     pool = ld.clause_contexts
@@ -3344,8 +3388,12 @@ function clause_ndet(
             clause = cref.clause::Clause{T}
 
             if decompile!(ld, clause, h, b)                 # decompile(clause, term, bindings)
-                # (flags&IS_CLAUSE): get_head_and_body_clause(term, h, b, NULL, &hflags), by decompile!
-                rc2 = unify_head(gd, ld, head, h) && PL_unify(ld, b, body)
+                rc2 = if (flags & IS_CLAUSE) != 0
+                    # get_head_and_body_clause(term, h, b, NULL, &hflags), by decompile!
+                    unify_head(gd, ld, head, h) && PL_unify(ld, b, body)
+                else
+                    PL_unify(ld, _rule_term(ld, clause, h, b), body)   # PL_unify(term, body)
+                end
                 # if ( rc2 && ref ) rc2 = PL_unify_clref(ref, clause): clause/3, not ported
 
                 if rc2
@@ -3384,6 +3432,40 @@ function clause_ndet(
     return rc ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c IS_CLAUSE
+"`clause()`'s flag: clause/2 — the clause split into its head and body (pl-comp.c)."
+const IS_CLAUSE = Int(0x1)
+# PORT: pl-comp.c IS_RULE
+"`clause()`'s flag: `'\$rule'/2` — the whole clause term, its neck included (pl-comp.c)."
+const IS_RULE = Int(0x2)
+
+# PORT: pl-comp.c clause_functor
+# DIVERGES: the functor WORD (`_err_functor`, the kernel's `FUNCTOR_…`), read through `ld`'s functor table.
+"The neck of `cl`: the functor word of `:-/2`, `=>/2` or `?=>/2`, by its SSU clause flags (pl-comp.c:6195-6203)."
+function clause_functor(ld::PL_local_data{T}, cl::Clause{T})::word where {T}
+    ssu = cl.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)
+    ssu == 0 && return _err_functor(ld, Symbol(":-"), 2)                # FUNCTOR_prove2
+    ssu == SSU_COMMIT_CLAUSE && return _err_functor(ld, Symbol("=>"), 2) # FUNCTOR_ssu_commit2
+    ssu == SSU_CHOICE_CLAUSE && return _err_functor(ld, Symbol("?=>"), 2) # FUNCTOR_ssu_choice2
+    @assert false "clause_functor: both SSU necks"                     # default: assert(0)
+    return word(0)
+end
+
+# ORIGINAL (SSU1): upstream's `term` of `decompile(clause, term)` for `IS_RULE`, from the two sides
+# `decompile!` filled — `Neck(h, b)` (pl-comp.c:6305-6311), or for a fact the bare head (:6287-6291).
+"A new term reference holding the clause term `decompile` gives: `clause_functor(clause)(h, b)`, or `h` for a fact."
+function _rule_term(
+    ld::PL_local_data{T}, clause::Clause{T}, h::term_t, b::term_t
+)::term_t where {T}
+    term = PL_new_term_ref(ld)
+    if (clause.flags & UNIT_CLAUSE) != 0
+        PL_put_term(ld, term, h)
+    else
+        PL_cons_functor(ld, term, clause_functor(ld, clause), h, b)
+    end
+    return term
+end
+
 # PORT: pl-comp.c clause as pl_clauseva_va
 # (PRED_IMPL("clause", va, clause, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); registered for clause/2 by
 # PRED_SHARE, pl-comp.c:9267)
@@ -3393,54 +3475,72 @@ function pl_clauseva_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx)
+    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx, IS_CLAUSE)
+end
+
+# PORT: pl-comp.c rule as pl_ruleva_va
+# (PRED_IMPL("rule", va, rule, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); registered for `'$rule'/2` by
+# PRED_SHARE, pl-comp.c:9270)
+# DIVERGES: passes the head and the clause term only (`A3`, `'$rule'/3`'s reference: not ported); since SSU1.
+"`'\$rule'(:Head, -Rule)` (pl-comp.c): `Rule` is a whole clause of a predicate — `H :- B`, `H => B`, `?=>(H, B)` or a fact's head — one per answer."
+function pl_ruleva_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx, IS_RULE)
 end
 
 # ── assert/1, assertz/1, asserta/1 (pl-comp.c) ───────────────────────────────────────────────
 # PORT: pl-comp.c is_neck
-# DIVERGES: the SSU necks `=>/2` and `?=>/2` are refused (`NotPortedError`, its culprit the neck's
-# name): SSU is not ported, and taken for facts they would assert other clauses; so no `flags` is
-# set. On the WORDS (f3b-5a): the compound's functor word compared with the necks' functors.
-"Whether term reference `t` holds a rule, `Head :- Body` (pl-comp.c)."
-function is_neck(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+# DIVERGES: returns `(neck, flags)` where upstream returns the Boolean and writes `*flags` through a
+# pointer (since SSU1; before it, the SSU necks were refused): `flags` is `SSU_COMMIT_CLAUSE` for
+# `=>/2`, `SSU_CHOICE_CLAUSE` for `?=>/2`, else 0 — upstream leaves `*flags` as the caller set it,
+# and every caller sets it to 0. On the WORDS (f3b-5a): the compound's functor word compared with
+# the necks' functors.
+"Whether term reference `t` holds a rule — `Head :- Body`, `Head => Body` or `Head ?=> Body` — and its SSU clause flags (pl-comp.c)."
+function is_neck(ld::PL_local_data{T}, t::term_t)::Tuple{Bool, UInt32} where {T}
     k, w, _ = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
-    (k == DU_WORD && _is_gcompound(w)) || return false      # isTerm(*p)
+    (k == DU_WORD && _is_gcompound(w)) || return (false, UInt32(0))   # isTerm(*p)
     prove, commit = mk_sym(T, Symbol(":-")), mk_sym(T, Symbol("=>"))
     choice = mk_sym(T, Symbol("?=>"))
     f = ld.gstack[valPtr(w)]                                # functor_t f = functorTerm(*p)
     fs = ld.functors
-    f == lookupFunctorDef(fs, _atom_word!(ld, prove), 2) && return true   # FUNCTOR_prove2
-    f == lookupFunctorDef(fs, _atom_word!(ld, commit), 2) &&              # FUNCTOR_ssu_commit2
-        throw(NotPortedError{T}(commit, "an SSU clause (=>, ?=>)", "SSU"))
-    f == lookupFunctorDef(fs, _atom_word!(ld, choice), 2) &&              # FUNCTOR_ssu_choice2
-        throw(NotPortedError{T}(choice, "an SSU clause (=>, ?=>)", "SSU"))
-    return false
+    f == lookupFunctorDef(fs, _atom_word!(ld, prove), 2) && return (true, UInt32(0))   # FUNCTOR_prove2
+    f == lookupFunctorDef(fs, _atom_word!(ld, commit), 2) &&                           # FUNCTOR_ssu_commit2
+        return (true, SSU_COMMIT_CLAUSE)
+    f == lookupFunctorDef(fs, _atom_word!(ld, choice), 2) &&                           # FUNCTOR_ssu_choice2
+        return (true, SSU_CHOICE_CLAUSE)
+    return (false, UInt32(0))
 end
 
 # PORT: pl-comp.c get_head_and_body_clause
 # DIVERGES: the module is an index into `gd`'s table, passed in and returned with the result (0 for
-# upstream's NULL `m`); no `flags` — it carries SSU's necks or `UNIT_CLAUSE`, which `compileClause`
-# sets itself from the body `true`; the database `gd` is an argument.
+# upstream's NULL `m`); `flags` is returned (since SSU1) where upstream writes `*flags`: the SSU neck
+# (`is_neck`), or `UNIT_CLAUSE` for a fact; the database `gd` is an argument.
 """
-    get_head_and_body_clause(gd, ld, clause, head, body, m) -> (ok, m)
+    get_head_and_body_clause(gd, ld, clause, head, body, m) -> (ok, m, flags)
 
 Put the head and the body of the clause in term reference `clause` into `head` and `body` — a fact's
-body is `true` — and return the head's module: `m`, or the one its qualifier names (pl-comp.c).
+body is `true` — and return the head's module: `m`, or the one its qualifier names, and the clause's
+flags: `SSU_COMMIT_CLAUSE` for `=>`, `SSU_CHOICE_CLAUSE` for `?=>`, `UNIT_CLAUSE` for a fact, else 0
+(pl-comp.c).
 """
 function get_head_and_body_clause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, clause::term_t, head::term_t, body::term_t,
     m::Int
-)::Tuple{Bool, Int} where {T}
-    if is_neck(ld, clause)
+)::Tuple{Bool, Int, UInt32} where {T}
+    neck, flags = is_neck(ld, clause)
+    if neck
         _PL_get_arg(ld, 1, clause, head)                    # _PL_get_arg(1, clause, head)
         _PL_get_arg(ld, 2, clause, body)                    # _PL_get_arg(2, clause, body)
         ok, m = PL_strip_module_ex(gd, ld, head, m, head)
-        ok || return (false, m)
+        ok || return (false, m, flags)
     else
         PL_put_term(ld, head, clause)                       # PL_put_term(head, clause): facts
         PL_put_atom(ld, body, mk_sym(T, Symbol("true")))    # PL_put_atom(body, ATOM_true)
+        flags = UNIT_CLAUSE                                 # *flags = UNIT_CLAUSE
     end
-    return (true, m)
+    return (true, m, flags)
 end
 
 # PORT: pl-incl.h sourceloc
@@ -3498,7 +3598,7 @@ function assert_term!(
 
     ok, module_ = PL_strip_module_ex(gd, ld, term, module_, tmp)
     ok || return nothing
-    ok, mh = get_head_and_body_clause(gd, ld, tmp, head, body, module_)
+    ok, mh, hflags = get_head_and_body_clause(gd, ld, tmp, head, body, module_)
     ok || return nothing
     mhead = gd.modules[mh]
     name, arity = get_head_functor(ld, head, 0)
@@ -3524,7 +3624,7 @@ function assert_term!(
     ex = cell_export{T}()                                       # (L1f f3a: off the cells, one map)
     h = export_cells(ld, ex, -(head + 1))
     b = export_cells(ld, ex, -(body + 1))
-    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings; ex=ex)
+    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, hflags; ex=ex)
     clause === nothing && return nothing
     def = proc.definition                                       # getProcDefinition(proc)
 
@@ -3561,7 +3661,8 @@ function assert_term!(
             of.current_procedure = proc
         end
 
-        cref = assertProcedureSource(gd, of, proc, clause)
+        cref = assertProcedureSource(gd, ld, of, proc, clause)
+        cref === nothing && return nothing                      # else clause = NULL (SSU1)
         clause = cref.clause
 
         if warnings != 0 && !PL_get_nil(ld, warnings)
@@ -3584,7 +3685,8 @@ function assert_term!(
         end
         setDynamicDefinition!(def, true) || return nothing
     end
-    assertProcedure!(gd, proc, clause, where_)
+    cref = assertProcedure!(gd, ld, proc, clause, where_)
+    cref === nothing && return nothing                          # (SSU1: add_ssu_clause refused it)
     return clause                                               # cref->value.clause
 end
 
@@ -3686,6 +3788,10 @@ const PL_predicates_from_comp = (
     PL_extension(                                   # PRED_SHARE("clause", 2, clause, META|NDET|PL_FA_CREF|PL_FA_ISO)
         "clause", 2, pl_clauseva_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(                                   # PRED_SHARE("$rule", 2, rule, META|NDET|PL_FA_CREF) (SSU1)
+        "\$rule", 2, pl_ruleva_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
     )
 )
 
@@ -3865,7 +3971,8 @@ function decompile_head!(
         c = decode(PC)
         if pushed == 0 && bvar_access !== nothing && !write_bvar && argn < arity &&
             bvar_access[argn + 1] && c != I_NOP && c != I_CHP
-            if c != H_VOID && c != H_VOID_N && c != I_ENTER
+            if c != H_VOID && c != H_VOID_N && c != I_ENTER && c != I_SSU_COMMIT &&
+                c != I_SSU_CHOICE
                 # Found moved var for arg: move the output to di->bvar_args
                 unifyVarGC(ld, -(argp + 1), variables, VAROFFSET(argn)) || return false
                 t2 = set_bvar_argp!(ld, bvar_args + argn)
@@ -3935,7 +4042,8 @@ function decompile_head!(
             p == 0 && return false                              # p = argTermP(*p, 0)
             unifyVarGC(ld, p + 1, variables, PC.codes[PC.pc + 1]) || return false
             unifyVarGC(ld, p + 2, variables, PC.codes[PC.pc + 2]) || return false
-        elseif c == I_EXITCATCH || c == I_EXITFACT || c == I_EXIT || c == I_ENTER   # fact; H_VOID, H_VOID, I_ENTER
+        elseif c == I_EXITCATCH || c == I_EXITFACT || c == I_EXIT || c == I_ENTER ||   # fact; H_VOID, H_VOID, I_ENTER
+            c == I_SSU_COMMIT || c == I_SSU_CHOICE                                   # (SSU1, pl-comp.c:6157-6158)
             @assert argn <= arity
             @assert pushed == 0
             while argn < arity
@@ -4428,8 +4536,11 @@ end
 # DIVERGES: the clause term is its two sides, term references `head` and `body` — upstream takes
 # `Head :- Body` or a bare head, and for a fact with a body unifies that with `true` first, as here;
 # every term reference it makes is freed on return (see `decompileHead!`). The body's code starts
-# after `I_ENTER`, found by stepping over the head's instructions, where upstream's head decompiler
-# leaves `di->pc` there. No `bindings`; no `I_CONTEXT` (modules); no SSU clauses. A clause with
+# after `I_ENTER` (an SSU clause's `I_SSU_COMMIT`/`I_SSU_CHOICE`, since SSU1), found by stepping over
+# the head's instructions, where upstream's head decompiler leaves `di->pc` there. The NECK is not
+# built: `Head => Body` and `Head ?=> Body` decompile into their two sides as `Head :- Body` does —
+# clause/2's split (upstream's `get_head_and_body_clause` of the term); a caller that needs the neck
+# reads `clause_functor` (`'$rule'/2`, retract/1). No `bindings`; no `I_CONTEXT` (modules). A clause with
 # `CL_HEAD_TERMS` gets its moved unifications back (`mark_bvar_access`, the head decompiler,
 # `moved_unifications!`).
 """
@@ -4584,11 +4695,15 @@ function det_goal_error(
     return false
 end
 
-"Where a rule's body code starts: after its `I_ENTER` (upstream's `di->pc` after `decompile_head`)."
+# ORIGINAL: upstream's `di->pc` where `decompile_head` leaves it, after the head's last instruction:
+# `I_ENTER`, or since SSU1 an SSU clause's `I_SSU_COMMIT`/`I_SSU_CHOICE` (pl-comp.c:6157-6158).
+"Where a rule's body code starts: after its `I_ENTER`, `I_SSU_COMMIT` or `I_SSU_CHOICE` (upstream's `di->pc` after `decompile_head`)."
 function _body_start(clause::Clause{T})::Int where {T}
     PC = Code(clause, 1)
-    while decode(PC) != I_ENTER
+    c = decode(PC)
+    while c != I_ENTER && c != I_SSU_COMMIT && c != I_SSU_CHOICE
         PC = stepPC(PC)
+        c = decode(PC)
     end
     return PC.pc + 1
 end
@@ -4724,7 +4839,7 @@ function skipArgs(PC::Code{T}, skip::Int, in_hvoid::Int)::Tuple{Code{T}, Int} wh
                     return (nextPC, in_hvoid)
                 end
             end
-        elseif c == I_EXITFACT || c == I_ENTER                  # I_EXIT, T_TRIE_GEN*, I_SSU_*
+        elseif c == I_EXITFACT || c == I_ENTER || c == I_SSU_CHOICE || c == I_SSU_COMMIT   # I_EXIT, T_TRIE_GEN*
             return (PC, in_hvoid)
         elseif c == I_NOP || c == I_CHP
             # continue
@@ -4790,7 +4905,8 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
         elseif c == H_LIST_FF || c == H_LIST || c == H_RLIST
             return FUNCTOR_dot2                                 # *key = FUNCTOR_dot2
         elseif c == H_FIRSTVAR || c == H_VAR || c == H_VOID || c == H_VOID_N ||
-            c == H_POP || c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH
+            c == H_POP || c == I_EXITFACT || c == I_ENTER || c == I_EXITCATCH ||
+            c == I_SSU_COMMIT || c == I_SSU_CHOICE                  # (SSU1, pl-comp.c:5526-5527)
             return word(0)
         elseif c == I_NOP || c == I_CHP
             # continue
@@ -4831,7 +4947,7 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
         elseif c == H_FLOAT || c == H_STRING || c == H_MPZ || c == H_MPQ ||
             c == H_FIRSTVAR ||
             c == H_VAR || c == H_VOID || c == H_VOID_N || c == I_EXITFACT || c == I_EXIT ||
-            c == I_ENTER || c == I_EXITCATCH
+            c == I_ENTER || c == I_EXITCATCH || c == I_SSU_CHOICE || c == I_SSU_COMMIT   # (SSU1, pl-comp.c:5604-5605)
             return (false, word(0))
         elseif c == I_NOP || c == I_CHP
             # continue

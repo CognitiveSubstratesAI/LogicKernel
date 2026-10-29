@@ -182,8 +182,11 @@ end
 # DIVERGES: `'$compile_term'`'s `catch(…, error(_,_), print_message(error, E))` is here; the clause
 # goes to `'$record_clause'/3` through the query API, its term reference shared (`PL_put_term`) —
 # so an error's context is `'$record_clause'/3`'s, as swipl's — with the source location `-` (the
-# term's own: `LD->read_source`); `'$valid_clause'` holds (no `sandboxed_load`); SSU clauses (`=>`)
-# refused; compilation mode `database` (no QLF).
+# term's own: `LD->read_source`); `'$valid_clause'` holds (no `sandboxed_load`); compilation mode
+# `database` (no QLF). The SSU guard form (since SSU1, ssu.md D7; init.pl:4114-4121) is rewritten as
+# upstream's second clause does — `(Head, Cond) => Body` becomes `?=>(Head, (Cond, !, Body))`, or
+# `Head => Body` when `'$is_true'(Cond)` and the `optimise` flag is on — and stored again; the guard
+# is not goal-expanded (expand.pl, R2). LB4 deletes this stand-in with the rest of the file.
 "Store the clause in `t` for the file `file`; an error becomes an error message (boot/init.pl)."
 function store_clause!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, file::T
@@ -192,12 +195,28 @@ function store_clause!(
         printMessage(ld, :error, _err_atom(ld, mk_sym(T, :cannot_redefine_comma)))
         return (:ok, nothing)                           # fail
     end
-    _init_is(ld, t, Symbol("=>"), 2) &&
-        throw(
-            NotPortedError{T}(
-                _init_export(ld, t), "an SSU clause (=>)", "SSU is not ported"
-            )
-        )
+    if _init_is(ld, t, Symbol("=>"), 2)                 # '$store_clause'((Pre => Body), …)
+        pre = PL_new_term_refs(ld, 5)
+        _PL_get_arg(ld, 1, t, pre)
+        if _init_is(ld, pre, Symbol(","), 2)            # nonvar(Pre), Pre = (Head,Cond), !
+            head, cond, body, t2 = pre + 1, pre + 2, pre + 3, pre + 4
+            _PL_get_arg(ld, 1, pre, head)
+            _PL_get_arg(ld, 2, pre, cond)
+            _PL_get_arg(ld, 2, t, body)
+            if _init_is_true(ld, cond) && ld.prolog_flag_optimise   # current_prolog_flag(optimise, true)
+                PL_cons_functor(ld, t2, _err_functor(ld, Symbol("=>"), 2), head, body)
+            else                                        # ?=>(Head, (Cond, !, Body))
+                g = PL_new_term_refs(ld, 2)
+                PL_cons_functor(
+                    ld, g, _err_functor(ld, Symbol(","), 2), _err_atom(ld, mk_sym(T, :!)),
+                    body
+                )
+                PL_cons_functor(ld, g + 1, _err_functor(ld, Symbol(","), 2), cond, g)
+                PL_cons_functor(ld, t2, _err_functor(ld, Symbol("?=>"), 2), head, g + 1)
+            end
+            return store_clause!(gd, ld, t2, file)
+        end
+    end
     a = PL_new_term_refs(ld, 3)
     PL_put_term(ld, a, t)
     PL_put_atom(ld, a + 1, file)
@@ -208,6 +227,22 @@ function store_clause!(
     ball = _init_call(gd, ld, proc, a, nothing)         # '$print_message'(error, E)
     ball === nothing || return (:exception, ball)
     return (:ok, nothing)
+end
+
+# PORT: init.pl $is_true as _init_is_true
+# DIVERGES: a Julia function over the term reference (the SSU clauses `'$is_true'(true) => true.`,
+# `'$is_true'((A,B)) => '$is_true'(A), '$is_true'(B).`, `'$is_true'(_) => fail.`, init.pl:4131-4133):
+# a variable matches neither of the first two heads, so it is not true (since SSU1, for the guard rewrite).
+"Whether term reference `t` holds `true`, or a conjunction of `true`s (boot/init.pl `'\$is_true'/1`)."
+function _init_is_true(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    _init_is(ld, t, Symbol("true"), 0) && return true
+    if _init_is(ld, t, Symbol(","), 2)
+        a = PL_new_term_refs(ld, 2)
+        _PL_get_arg(ld, 1, t, a)
+        _PL_get_arg(ld, 2, t, a + 1)
+        return _init_is_true(ld, a) && _init_is_true(ld, a + 1)
+    end
+    return false
 end
 
 # Does term reference `t` hold an `error(_, _)` term — what boot/init.pl's `catch(…, error(_,_), …)`

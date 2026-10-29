@@ -15,7 +15,8 @@
 #     `user` procedure linked to `system`'s definition (since V5c);
 #   * a module other than `user` and `system` is made by the clause that names it (MOD1; was refused with
 #     `NotPortedError`, "R2");
-#   * what the kernel refuses (`NotPortedError`): an SSU clause, a variable goal (V9).
+#   * an SSU clause asserts (SSU1; it was refused with `NotPortedError` before); calling it is refused by
+#     name (`S_SSU_DET`) until SSU2 runs it.
 using Test, LogicKernel
 # TERM TYPES PER CHUNK: REFERENCE — built on the term layer; every type in CI and at milestones
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -390,19 +391,24 @@ end
         "err error(type_error(callable,1(a)),context(:(system,/(assertz,1)),_))"
 end
 
-@testset "what the kernel refuses (NotPortedError)" begin
-    # each in a database of its own: a refusal abandons the query (`_abandon_query`)
-    for (goal, step) in (
-        (_af("assertz", _af("=>", _as("foo"), _as("true"))), "SSU"),   # an SSU clause
-    )
-        db = _aload([(_as("r"), goal)])
-        err = try
-            _arun(db, _as("r"))
-            nothing
-        catch e
-            e
-        end
-        @test err isa LK.NotPortedError{_A} && err.step == step
-        @test db.ld.query == 0                              # the query was abandoned, closed
+@testset "an SSU clause asserts (SSU1); calling it is refused by name until SSU2" begin
+    # swipl 10.1.19 (lk-channel evidence/r2/design/ssu_rows.out a01): `assertz((d1(X) => X = one))`
+    # succeeds and `d1(R)` answers `one` — the call half runs in SSU2 (test/core_lang/test_ssu_swipl.jl).
+    # Until then the call stops at the supervisor's `S_SSU_DET`, a declared instruction the run loop
+    # does not run (`VMI_RUN`): `NotPortedError` naming it, the query abandoned and closed.
+    db = _aload([
+        (_as("r"), _af("assertz", _af("=>", _as("foo"), _as("true")))),
+        (_as("c"), _as("foo"))
+    ])
+    @test _arun(db, _as("r")) == "ok"
+    def = LK.isCurrentProcedure(sym_key(_as("foo")), 0, db.user).definition
+    @test (def.flags & LK.P_SSU_DET) != 0 && def.impl_clauses.number_of_clauses == 1
+    err = try
+        _arun(db, _as("c"))
+        nothing
+    catch e
+        e
     end
+    @test err isa LK.NotPortedError{_A} && occursin("S_SSU_DET", err.what)
+    @test db.ld.query == 0                                  # the query was abandoned, closed
 end

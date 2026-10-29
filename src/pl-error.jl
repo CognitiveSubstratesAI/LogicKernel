@@ -61,6 +61,7 @@
     ERR_SYNTAX                      # const char *what
     ERR_FILE_OPERATION              # atom_t action, atom_t type, term_t file (errno: Y1)
     ERR_SYSCALL                     # const char *op (errno: Y1)
+    ERR_PERMISSION_SSU_DEF          # Definition def (SSU1: add_ssu_clause)
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -575,6 +576,30 @@ function PL_error(
     PL_cons_functor(
         ld, formal, _err_functor(ld, :permission_error, 3), _err_atom(ld, op),
         _err_atom(ld, type), pi
+    )
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+"""
+    PL_error(ld, ERR_PERMISSION_SSU_DEF, def) -> false
+
+Raise `error(permission_error(assert, procedure, Name/Arity), context(Caller, _))` for the
+predicate `def`, when a clause would mix SSU (`=>`, `?=>`) and normal clauses in it
+(pl-error.c:370-381; raised by `add_ssu_clause`, since SSU1).
+"""
+function PL_error(
+    ld::PL_local_data{T}, id::PL_error_code, def::Definition{T}
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_PERMISSION_SSU_DEF
+    pi = new_term_ref(ld)
+    gd = _query_gd(ld)
+    unify_definition(gd, ld, MODULE_user(gd), pi, def, 0, GP_NAMEARITY | GP_HIDESYSTEM)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :permission_error, 3),
+        _err_atom(ld, mk_sym(T, :assert)), _err_atom(ld, mk_sym(T, :procedure)), pi
     )
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end

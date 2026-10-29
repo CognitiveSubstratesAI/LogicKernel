@@ -164,7 +164,8 @@ function _boot_catch3!(gd::PL_global_data{T})::Nothing where {T}
     )
     cl = compileClause(gd, ld, head, mk_sym(T, Symbol("\$catch")), proc, MODULE_system(gd))
     cl === nothing && error("_boot_catch3!: catch/3's boot clause does not compile")
-    assertDefinition!(gd, def, cl, CL_END)
+    assertDefinition!(gd, ld, def, cl, CL_END) !== nothing ||   # no SSU clause: never refused
+        error("_boot_catch3!: catch/3's boot clause is refused")
     def.flags |= P_ISO | P_LOCKED
     return nothing
 end
@@ -214,7 +215,8 @@ function _boot_clause!(
         gd, ld, mk_expr(T, pushfirst!(copy(args), mk_sym(T, name))), body, proc, m
     )
     cl === nothing && error("_boot_clause!: the boot clause of $name does not compile")
-    assertDefinition!(gd, proc.definition, cl, CL_END)
+    assertDefinition!(gd, ld, proc.definition, cl, CL_END) !== nothing ||   # no SSU clause: never refused
+        error("_boot_clause!: the boot clause of $name is refused")
     proc.definition.flags |= flags
     return nothing
 end

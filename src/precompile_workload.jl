@@ -56,9 +56,9 @@ function _precompile_workload()::Nothing
     setDynamicDefinition!(def, true)
     for i in 1:20
         h = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, i), i % 2 == 0 ? a : nil])
-        assertDefinition!(
-            gd, def, compileClause(gd, ld, h, nothing, proc, user)::Clause{T}, CL_END
-        )
+        assertDefinition!(                      # a fact into a fresh predicate: never refused
+            gd, ld, def, compileClause(gd, ld, h, nothing, proc, user)::Clause{T}, CL_END
+        )::ClauseRef{T}
     end
     lookupBodyProcedure(gd, mk_expr(T, T[mk_sym(T, :p), x, a]), user)
     # a rule (V2): q(X, Y) :- p(X, a), p(Y, X) — a call, and a last call with its LCO block

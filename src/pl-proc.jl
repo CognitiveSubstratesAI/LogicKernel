@@ -356,19 +356,83 @@ function setLastModifiedPredicate!(
     return nothing
 end
 
-# PORT: pl-proc.c assertDefinition
-# DIVERGES: no events, transactions or SSU clauses. A caller that selects clauses outside the VM
-# (clause/2, retract/1, the index tests) runs `reconsiderIndexes!` and `update_primary_index!` itself
-# before the next call of a static predicate, as the VM's `S_VIRGIN` does through
-# `setDefaultSupervisor`.
+# PORT: pl-proc.c add_ssu_clause
+# DIVERGES: `ld` is an argument, where upstream's `PL_error` reaches LD (since SSU1).
 """
-    assertDefinition!(gd, def, clause, where_) -> ClauseRef
+    add_ssu_clause(ld, def, clause) -> Bool
+
+The first clause of `def` decides whether it is an SSU predicate (`P_SSU_DET`): `clause`, an SSU
+clause (`=>`, `?=>`) or not, may be added only to a predicate of its kind, or to one without
+clauses, whose kind it then sets; otherwise `permission_error(assert, procedure, PI)` is raised
+and false returned (pl-proc.c:1351-1369).
+"""
+function add_ssu_clause(
+    ld::PL_local_data{T}, def::Definition{T}, clause::Clause{T}
+)::Bool where {T}
+    if (clause.flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) != 0
+        if (def.flags & P_SSU_DET) == 0
+            if def.impl_clauses.number_of_clauses == 0
+                def.flags |= P_SSU_DET
+            else
+                return PL_error(ld, ERR_PERMISSION_SSU_DEF, def)
+            end
+        end
+    else
+        if (def.flags & P_SSU_DET) != 0
+            if def.impl_clauses.number_of_clauses == 0
+                def.flags &= ~P_SSU_DET
+            else
+                return PL_error(ld, ERR_PERMISSION_SSU_DEF, def)
+            end
+        end
+    end
+    return true
+end
+
+# PORT: pl-proc.c assertDefinition
+# DIVERGES: no events or transactions; `nothing` is upstream's NULL (since SSU1: `add_ssu_clause`
+# refused the clause, its error raised; the clause is left to Julia's garbage collector, upstream's
+# `freeClause`), and `ld` is an argument, where upstream's `PL_error` reaches LD. A caller that
+# selects clauses outside the VM (clause/2, retract/1, the index tests) runs `reconsiderIndexes!` and
+# `update_primary_index!` itself before the next call of a static predicate, as the VM's `S_VIRGIN`
+# does through `setDefaultSupervisor`.
+"""
+    assertDefinition!(gd, ld, def, clause, where_) -> ClauseRef, or nothing
 
 Add `clause` to predicate `def` — at its start (`CL_START`), its end (`CL_END`) or before the
 clause reference `where_` — keyed on the primary index, add it to the predicate's indexes, and
-make it visible from a new generation of the database on (pl-proc.c).
+make it visible from a new generation of the database on (pl-proc.c). `nothing`, with
+`permission_error(assert, procedure, PI)` raised in `ld` and nothing changed, when the clause would
+mix SSU and normal clauses in `def` (`add_ssu_clause`).
 """
 function assertDefinition!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, clause::Clause{T},
+    where_::Union{Int, ClauseRef{T}}
+)::Union{Nothing, ClauseRef{T}} where {T}
+    add_ssu_clause(ld, def, clause) || return nothing         # freeClause(clause); return NULL
+    return _assertDefinition!(gd, def, clause, where_)
+end
+
+# DIVERGES (no upstream function): a caller without local data — the tests' database builders —
+# adds a clause that is not SSU to a predicate that is not SSU (asserted), where `add_ssu_clause`
+# cannot raise; the rest is `assertDefinition`'s.
+"""
+    assertDefinition!(gd, def, clause, where_) -> ClauseRef
+
+`assertDefinition!` for a normal clause of a predicate that holds no SSU clauses (asserted), with
+no local data to raise an error in.
+"""
+function assertDefinition!(
+    gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T},
+    where_::Union{Int, ClauseRef{T}}
+)::ClauseRef{T} where {T}
+    @assert (clause.flags & CLAUSE_SSU_FLAGS) == 0 && (def.flags & P_SSU_DET) == 0
+    return _assertDefinition!(gd, def, clause, where_)
+end
+
+# From pl-proc.c assertDefinition (pl-proc.c:1409-1489): everything after `add_ssu_clause`.
+"`assertDefinition`'s body after `add_ssu_clause`: link `clause` into `def` at `where_` (pl-proc.c)."
+function _assertDefinition!(
     gd::PL_global_data{T}, def::Definition{T}, clause::Clause{T},
     where_::Union{Int, ClauseRef{T}}
 )::ClauseRef{T} where {T}
@@ -414,13 +478,14 @@ function assertDefinition!(
 end
 
 # PORT: pl-proc.c assertProcedure as assertProcedure!
-# DIVERGES: the database `gd` is an argument (upstream: GD); `getProcDefinition(proc)` is
-# `proc.definition` (no thread-local predicates).
-"Add `clause` to procedure `proc` at `where_` (pl-proc.c): see [`assertDefinition!`](@ref)."
+# DIVERGES: the database `gd` is an argument (upstream: GD), and the local data `ld` (since SSU1:
+# `assertDefinition!` may raise); `getProcDefinition(proc)` is `proc.definition` (no thread-local
+# predicates).
+"Add `clause` to procedure `proc` at `where_` (pl-proc.c): see [`assertDefinition!`](@ref); `nothing` when refused."
 assertProcedure!(
-    gd::PL_global_data{T}, proc::Procedure{T}, clause::Clause{T},
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, clause::Clause{T},
     where_::Union{Int, ClauseRef{T}}
-) where {T} = assertDefinition!(gd, proc.definition, clause, where_)
+) where {T} = assertDefinition!(gd, ld, proc.definition, clause, where_)
 
 # PORT: pl-proc.c retract_clause
 # DIVERGES: no transactions, statistics, breakpoints or incremental-tabling notification.
@@ -755,7 +820,8 @@ end
 
 # PORT: pl-proc.c retract as pl_retract
 # DIVERGES: the predicate is given (no module lookup); `retract(Head)` only — its body is `true`, so
-# only facts answer (a rule's body is V9's `decompile`) — and no SSU clauses, so the clause is
+# only facts answer (a rule's body is V9's `decompile`); an SSU clause is no fact, so it never answers
+# (upstream's `CLAUSE_SSU_FLAGS` test, a bare head's flags being `UNIT_CLAUSE`; since SSU1) — so the clause is
 # unified by its head (`decompileHead!`; upstream `decompile`, whose body side is `true` here). Each
 # answer — the retracted clause — is a call of `sink(clause)::Bool` (false to cut) with the bindings
 # in place in `ld`, undone when it returns: SWI's foreign frame is rewound after a failed attempt and
@@ -1265,8 +1331,11 @@ end
 # body is `true`, else `Head :- Body` — and `decompile(clause, cl)`; a bare head matches a FACT only
 # (`decompile` fails a rule against a term that is no `:-/2`, pl-comp.c:6308), so it is
 # `UNIT_CLAUSE && decompileHead!`, and `Head :- Body` is `decompile!(clause, head, body)` (a fact's body
-# unifies with `true`, pl-comp.c:6293-6302); `cl` itself is not built. No SSU clauses (`is_neck` refuses
-# them), so upstream's `CLAUSE_SSU_FLAGS` test compares two zeros and is not written. The functor and its
+# unifies with `true`, pl-comp.c:6293-6302) of a fact or of a clause whose neck is `:-` (upstream's
+# `PL_unify_functor(term, clause_functor(clause))`, pl-comp.c:6308, against the rebuilt `:-/2`; since SSU1);
+# `cl` itself is not built. Upstream's `CLAUSE_SSU_FLAGS` test (pl-proc.c:3210) is written as is (since SSU1):
+# with the neck test, retract/1 never removes an SSU clause, whatever neck it is given (`cl` is rebuilt
+# with `:-` from any neck, pl-proc.c:3138-3141), as swipl 10.1.19 does (evidence/r2/design/ssu.md §2.7). The functor and its
 # `type_error(callable, Head)` are `get_head_functor`'s (the kernel's `PL_get_functor` takes any word;
 # the callable test is upstream's `PL_get_functor`'s). `argv` is the head's argument cells
 # (`_head_argv`), read where a search reads it. `protectCRef`/`unprotectCRef` are `(void)0` upstream
@@ -1296,7 +1365,7 @@ function pl_retract1_va(
 
     ok, m = PL_strip_module_ex(gd, ld, term, m, cl)
     ok || return FFALSE
-    ok, m = get_head_and_body_clause(gd, ld, cl, head, body, m)
+    ok, m, flags = get_head_and_body_clause(gd, ld, cl, head, body, m)
     ok || return FFALSE
     bk, bw, _ = _deref_loc(ld, -(body + 1))
     # PL_get_atom(body, &b) && b == ATOM_true: `cl` is the head, else `Head :- Body`
@@ -1367,11 +1436,17 @@ function pl_retract1_va(
     while cref !== nothing
         clause = cref.clause::Clause{T}
 
-        matched = if cl_is_head                         # decompile(clause, cl, 0)
-            (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
-        else
-            decompile!(ld, clause, head, body)
-        end
+        # (clause->flags&CLAUSE_SSU_FLAGS) == (flags&CLAUSE_SSU_FLAGS) && decompile(clause, cl, 0)
+        matched =
+            (clause.flags & CLAUSE_SSU_FLAGS) == (flags & CLAUSE_SSU_FLAGS) && if cl_is_head
+                (clause.flags & UNIT_CLAUSE) != 0 && decompileHead!(ld, clause, head)
+            else
+                (
+                    (clause.flags & UNIT_CLAUSE) != 0 ||          # decompile's PL_unify_functor(term, clause_functor(clause))
+                    clause_functor(ld, clause) == _err_functor(ld, Symbol(":-"), 2)
+                ) &&
+                decompile!(ld, clause, head, body)
+            end
         if matched
             if retractClauseDefinition!(gd, def, clause, true) ||
                 PL_foreign_control(PL__ctx) != FRG_FIRST_CALL

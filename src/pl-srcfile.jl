@@ -114,14 +114,15 @@ end
 
 # PORT: pl-srcfile.c assertProcedureSource
 # DIVERGES: no reload context — the path of a first load: the file counts the clause, which goes at
-# the end of the predicate.
-"Add `clause` to `proc` on behalf of the source file `sf` (pl-srcfile.c)."
+# the end of the predicate; `nothing` is upstream's NULL (since SSU1: `assertProcedure!` refused a
+# clause that mixes SSU and normal clauses, its error raised in `ld`, which is an argument for it).
+"Add `clause` to `proc` on behalf of the source file `sf` (pl-srcfile.c); `nothing` when refused."
 function assertProcedureSource(
-    gd::PL_global_data{T}, sf::Union{Nothing, SourceFile{T}}, proc::Procedure{T},
-    clause::Clause{T}
-)::ClauseRef{T} where {T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::Union{Nothing, SourceFile{T}},
+    proc::Procedure{T}, clause::Clause{T}
+)::Union{Nothing, ClauseRef{T}} where {T}
     sf === nothing || (sf.number_of_clauses += UInt32(1))
-    return assertProcedure!(gd, proc, clause, CL_END)
+    return assertProcedure!(gd, ld, proc, clause, CL_END)
 end
 
 # PORT: pl-srcfile.c associateSource

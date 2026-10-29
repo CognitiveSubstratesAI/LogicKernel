@@ -22,11 +22,13 @@
 # (`I_CALL1`, `I_CALLN`), V9f's `I_CATCH`, `I_EXITCATCH`, `I_DET`, `C_DET`, `C_DETTRUE`,
 # `C_DETFALSE` and V9g's `I_CALLCLEANUP`, `I_EXITCLEANUP`, then NF1's non-deterministic foreign calls
 # (`I_FOPENNDET`, `I_FCALLNDETVA`, `I_FCALLNDET0` … `I_FCALLNDET10` — the eleven consecutive, as the
-# deterministic ones — `I_FEXITNDET`, `I_FREDO`; the `a1, a2, …` ones run since NF4).
+# deterministic ones — `I_FEXITNDET`, `I_FREDO`; the `a1, a2, …` ones run since NF4), then SSU1's
+# single sided unification (`I_SSU_CHOICE`, `I_SSU_COMMIT`, `S_SSU_DET`, in pl-vmi.c's order; with
+# the `I_CHP` declared before them, compiled since SSU1 and executed since SSU2).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
-# probed in 10.1.16); the SSU instructions; `B_ARG_*`, `I_USERCALL0` (its work is `I_CALL1`'s
+# probed in 10.1.16); `B_ARG_*`, `I_USERCALL0` (its work is `I_CALL1`'s
 # here), the module calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`), `I_RESET`, `I_CUTCHP`,
 # `I_YIELD` (after V9). `I_CUT` is declared and compiled (a clause-level `!`, user
 # 2026-10-05) and, since V6a, executed.
@@ -542,6 +544,15 @@ const I_FEXITNDET = code(143)
 # PORT: pl-vmi.c I_FREDO
 "Where a non-deterministic foreign call's choice point resumes: the redo context, then the call again (pl-vmi.c)."
 const I_FREDO = code(144)
+# PORT: pl-vmi.c I_SSU_CHOICE
+"End of the head of a `Head ?=> Body` clause: fail it if the head bound the goal, else enter the body (pl-vmi.c; executed in SSU2)."
+const I_SSU_CHOICE = code(145)
+# PORT: pl-vmi.c I_SSU_COMMIT
+"End of the head of a `Head => Body` clause: fail it if the head bound the goal, else commit to it and enter the body (pl-vmi.c; executed in SSU2)."
+const I_SSU_COMMIT = code(146)
+# PORT: pl-vmi.c S_SSU_DET
+"Supervisor prefix of an SSU predicate (`P_SSU_DET`): mark the frame `FR_SSU_DET` (pl-vmi.c; executed in SSU2)."
+const S_SSU_DET = code(147)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -703,7 +714,10 @@ const _CODE_TABLE = (
     code_info(:I_FCALLNDET9, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
     code_info(:I_FCALLNDET10, 0x00, 1, (CA1_FOREIGN, 0x00, 0x00, 0x00)),
     code_info(:I_FEXITNDET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:I_FREDO, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:I_FREDO, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_SSU_CHOICE, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_SSU_COMMIT, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:S_SSU_DET, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

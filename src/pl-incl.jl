@@ -125,9 +125,21 @@ sizeofClause(n::Int)::Int = 8 + n
 # build (pl-incl.h:1567-1579).
 "The size of a clause reference holding one clause, in positions (pl-incl.h)."
 const SIZEOF_CREF_CLAUSE = 3
+# PORT: pl-incl.h SSU_COMMIT_CLAUSE
+"Clause flag: an SSU clause `Head => Body` (pl-incl.h)."
+const SSU_COMMIT_CLAUSE = UInt32(0x0100)
+# PORT: pl-incl.h SSU_CHOICE_CLAUSE
+"Clause flag: an SSU clause `Head ?=> Body` (pl-incl.h)."
+const SSU_CHOICE_CLAUSE = UInt32(0x0200)
 # PORT: pl-incl.h CL_HEAD_TERMS
 "Clause flag: the head contains terms used in the body — a unification moved into it (pl-incl.h)."
 const CL_HEAD_TERMS = UInt32(0x0400)
+# PORT: pl-incl.h CLAUSE_TYPE_MASK
+"The clause flags that say which neck a clause has: a fact, `=>` or `?=>` (pl-incl.h)."
+const CLAUSE_TYPE_MASK = UNIT_CLAUSE | SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE
+# PORT: pl-incl.h CLAUSE_SSU_FLAGS
+"The clause flags of an SSU clause, `=>` or `?=>` (pl-incl.h)."
+const CLAUSE_SSU_FLAGS = SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE
 # PORT: pl-incl.h FLAG64
 "Predicate flag bit `i`, 1-based (pl-incl.h `FLAG64`)."
 FLAG64(i::Int)::UInt64 = UInt64(1) << (i - 1)

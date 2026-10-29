@@ -353,7 +353,7 @@ function _manifest_index(T)
     return (
         # src/pl-comp.jl — the head compiler, its literal table and the code readers
         (LK.PC, Tuple{CInfo}, true), (LK.initMerge!, Tuple{CInfo}, true),
-        (LK.mergeInstructions!, Tuple{CInfo, NTuple{4, LK.vmi_merge}, UInt64}, false),
+        (LK.mergeInstructions!, Tuple{CInfo, NTuple{6, LK.vmi_merge}, UInt64}, false),
         (LK.Output_0!, Tuple{CInfo, UInt64}, false),
         (LK.Output_a!, Tuple{CInfo, UInt64}, false),
         (LK.Output_1!, Tuple{CInfo, UInt64, UInt64}, false),
@@ -388,6 +388,8 @@ function _manifest_index(T)
         (LK.analyse_variables!, Tuple{GD, CInfo, Nothing, T}, false),    # a goal clause (V9e-2)
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing}, false),
         (LK._compile_clause_head!, Tuple{GD, CInfo, T, T}, false),
+        (LK._compile_clause_head!, Tuple{GD, CInfo, T, Nothing, UInt32}, false),   # SSU1: the necks
+        (LK._compile_clause_head!, Tuple{GD, CInfo, T, T, UInt32}, false),
         (LK.compileArgument!, Tuple{CInfo, T, Int}, false),
         (LK.link_local_var!, Tuple{CInfo, T, Int}, false),
         (LK._local_cell!, Tuple{CInfo, Int, T}, false),
@@ -466,12 +468,22 @@ function _manifest_index(T)
         (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD}, false),
         (LK.compileClause, Tuple{GD, LD, T, Nothing, PR, MOD, Int}, false),
         (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD, Int}, false),
+        (LK.compileClause, Tuple{GD, LD, T, Nothing, PR, MOD, Int, UInt32}, false),   # SSU1: flags
+        (LK.compileClause, Tuple{GD, LD, T, T, PR, MOD, Int, UInt32}, false),
         # L1f f3a — the clause off its cells (assert_term!'s path: the `ex=` keyword method)
         (
             Core.kwcall,
             Tuple{
                 NamedTuple{(:ex,), Tuple{LK.cell_export{T}}}, typeof(LK.compileClause),
                 GD, LD, T, T, PR, MOD, Int
+            },
+            false
+        ),
+        (                                                    # SSU1: assert_term!'s, with flags
+            Core.kwcall,
+            Tuple{
+                NamedTuple{(:ex,), Tuple{LK.cell_export{T}}}, typeof(LK.compileClause),
+                GD, LD, T, T, PR, MOD, Int, UInt32
             },
             false
         ),
@@ -1175,6 +1187,12 @@ function _manifest_index(T)
         (LK.newClauseRef, Tuple{C, UInt64}, false),
         (LK.assertDefinition!, Tuple{GD, D, C, Int}, false),
         (LK.assertDefinition!, Tuple{GD, D, C, CR}, false),
+        (LK.assertDefinition!, Tuple{GD, LD, D, C, Int}, false),     # SSU1: add_ssu_clause may refuse
+        (LK.assertDefinition!, Tuple{GD, LD, D, C, CR}, false),
+        (LK._assertDefinition!, Tuple{GD, D, C, Int}, false),
+        (LK._assertDefinition!, Tuple{GD, D, C, CR}, false),
+        (LK.add_ssu_clause, Tuple{LD, D, C}, false),
+        (LK.PL_error, Tuple{LD, LK.PL_error_code, D}, false),        # ERR_PERMISSION_SSU_DEF
         (LK.retract_clause!, Tuple{GD, C, UInt64}, false),
         (LK.retractClauseDefinition!, Tuple{GD, D, C, Bool}, false),
         (LK.find_prev, Tuple{D, CR, CR}, true), (LK.find_prev, Tuple{D, Nothing, CR}, true),
@@ -1213,7 +1231,8 @@ function _manifest_index(T)
         (LK.singleClauseSupervisor, Tuple{GD, D}, false),
         (LK.listSupervisor, Tuple{GD, D}, false), (LK.dynamicSupervisor, Tuple{D}, false),
         (LK.multifileSupervisor, Tuple{D}, false), (LK.staticSupervisor, Tuple{D}, false),
-        (LK.chainPredicateSupervisor, Tuple{D, Tuple{Vector{LK.code}, Vector{CR}}}, true),
+        # SSU1: allocates the chained code of an SSU predicate (upstream: allocCodes, pl-supervisor.c:415)
+        (LK.chainPredicateSupervisor, Tuple{D, Tuple{Vector{LK.code}, Vector{CR}}}, false),
         (LK.createSupervisor, Tuple{GD, D}, false),
         (LK.setDefaultSupervisor, Tuple{GD, D}, false),
         # V4a — the run loop and the query API (src/pl-wam.jl, pl-inline.jl, pl-alloc.jl, pl-fli.jl,
@@ -1762,6 +1781,10 @@ function _manifest_index(T)
         ),
         (LK.pl_clauseva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.clause_ndet, Tuple{LD, Int, Int, Int, LK.foreign_context{T}}, false),
+        (LK.clause_ndet, Tuple{LD, Int, Int, Int, LK.foreign_context{T}, Int}, false),   # SSU1: IS_RULE
+        (LK.pl_ruleva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.clause_functor, Tuple{LD, C}, false),
+        (LK._rule_term, Tuple{LD, C, Int, Int}, false),
         (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{CH}}, false),
         (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{CH}, Int}, false),
         (LK.get_procedure_find, Tuple{GD, LD, Int}, false),
@@ -1822,8 +1845,8 @@ function _manifest_index(T)
         (LK.releaseSourceFile, Tuple{LK.SourceFile{T}}, false),
         (LK.hasProcedureSourceFile, Tuple{LK.SourceFile{T}, PR}, true),
         (LK.addProcedureSourceFile, Tuple{LK.SourceFile{T}, PR}, false),
-        (LK.assertProcedureSource, Tuple{GD, LK.SourceFile{T}, PR, C}, false),
-        (LK.assertProcedureSource, Tuple{GD, Nothing, PR, C}, false),
+        (LK.assertProcedureSource, Tuple{GD, LD, LK.SourceFile{T}, PR, C}, false),
+        (LK.assertProcedureSource, Tuple{GD, LD, Nothing, PR, C}, false),
         (LK.associateSource, Tuple{LK.SourceFile{T}, PR}, false),
         (LK.setAttrProcedureSource, Tuple{LK.SourceFile{T}, PR, UInt64, Bool}, false),
         (LK.startConsult, Tuple{LK.SourceFile{T}}, false),
@@ -1860,6 +1883,7 @@ function _manifest_index(T)
         (LK.read_clause, Tuple{GD, LD, LK.IOSTREAM, Int, Int}, false),
         (LK.load_file!, Tuple{GD, LD, String}, false),
         (LK._init_is, Tuple{LD, Int, Symbol, Int}, false),
+        (LK._init_is_true, Tuple{LD, Int}, false),                   # SSU1: the guard rewrite
         (LK.valid_term, Tuple{LD, Int}, false),
         (LK.compile_term!, Tuple{GD, LD, Int, T}, false),
         (LK._init_error, Tuple{LD, Int}, false),
@@ -1889,7 +1913,7 @@ function _manifest_index(T)
         (LK.get_head_functor, Tuple{LD, Int, Int}, false),
         (LK.checkModifySystemProc, Tuple{GD, LD, UInt64, Int}, false),
         (LK.isStaticSystemProcedure, Tuple{GD, UInt64, Int}, false),
-        (LK.assertProcedure!, Tuple{GD, PR, C, Int}, false),
+        (LK.assertProcedure!, Tuple{GD, LD, PR, C, Int}, false),
         (LK.rewrite_callable, Tuple{LD, T, Int}, false),
         (LK.PL_error, Tuple{LD, LK.PL_error_code, T}, false),
         (LK.PL_error, Tuple{LD, String, Int, String, LK.PL_error_code, T}, false),

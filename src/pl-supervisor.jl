@@ -207,14 +207,21 @@ function staticSupervisor(
 end
 
 # PORT: pl-supervisor.c chainPredicateSupervisor
-# DIVERGES: returns `post`. Upstream prepends `S_SSU_DET`, `S_DET` or the meta-argument module
-# qualification (`S_MQUAL`/`S_LMQUAL`) for a predicate flagged `P_SSU_DET`, `P_DET` or
-# `P_META`+`P_TRANSPARENT`; the kernel has none of those flags (SSU rules, det declarations and
-# meta-predicates are not ported), so its condition cannot hold.
-"Prepend `post` with the checks the predicate's declarations need (pl-supervisor.c)."
+# DIVERGES: `S_SSU_DET` only (since SSU1, pl-supervisor.c:389-390). Upstream also prepends `S_DET` for
+# `P_DET` and the meta-argument module qualification (`S_MQUAL`/`S_LMQUAL`) for `P_META`+`P_TRANSPARENT`:
+# `P_DET` cannot be set here (`setAttrDefinition` refuses it) and there is no `P_META` (meta-predicates are
+# not ported), so those branches cannot run. The chained supervisor is a new code vector (the shared block
+# `post` is not changed, nor freed: `freeCodesMem` is Julia's); the side table is `post`'s, as the
+# `CA1_CLAUSEREF` operands index it by entry, not by position.
+"Prepend `post` with the checks the predicate's declarations need — `S_SSU_DET` for an SSU predicate (pl-supervisor.c)."
 function chainPredicateSupervisor(
     def::Definition{T}, post::Tuple{Vector{code}, Vector{ClauseRef{T}}}
 )::Tuple{Vector{code}, Vector{ClauseRef{T}}} where {T}
+    if (def.flags & P_SSU_DET) != 0                 # ison(def, P_SSU_DET|P_DET) (P_DET: see above)
+        codes = code[S_SSU_DET]                     # addBuffer(&buf, encode(S_SSU_DET), code)
+        append!(codes, post[1])                     # copySuperVisorCode(&buf, post)
+        return (codes, post[2])
+    end
     return post
 end
 

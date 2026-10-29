@@ -3607,7 +3607,7 @@ Prolog clauses through the VM; what is left out marked for R1). Research and pla
   without bindings): `representation_error(cyclic_term)` is raised there, after the procedure is
   looked up, as upstream's analysis raises it.
 * **NOT PORTED:** `PL_strip_module_ex` — a module-qualified clause or head is REFUSED
-  (`NotPortedError`) until V5c; the SSU necks (refused); `PL_CREATE_*` (assert/2's flags: no
+  (`NotPortedError`) until V5c; the SSU necks (refused until SSU1); `PL_CREATE_*` (assert/2's flags: no
   tabling, no threads); the module's assert hook (`O_PROLOG_HOOK`); the `CHECK_INTERRUPT` retry; the
   consult path `loc` (source file and line, owner, reconsult, redefinition, system-mode locking,
   compiler warnings) — R1's loader; transactions (`assertDefinition!`'s).
@@ -3629,7 +3629,7 @@ Prolog clauses through the VM; what is left out marked for R1). Research and pla
     each changed predicate's dynamic flag and its clauses' code instruction by instruction: the
     first assertz moved, the second and a declared dynamic predicate not, asserta's clause first.
     Pinned for the jobs without swipl. assert/1 through the query API; its interim from a clause.
-    The refusals (`Module:Clause`, SSU, a variable goal).
+    The refusals (`Module:Clause`, SSU until SSU1, a variable goal).
   * test/db/test_db.jl: upstream's `assert` units — right_cyclic_head, cyclic_head, cyclic_body,
     max_procedure_arity ×2 — through the query API; cut_cond waits for `->` (V9).
   * test/compile/test_body_code_swipl.jl: the not-callable and arity pins read the raised error.
@@ -3652,7 +3652,7 @@ by the user, 2026-10-06 (4a, 5a; identity by position). Research and plan: the w
 `docs/research/v9-inline-unification/` (memo § A, `plan_commit3_moved.md`).
 * **Ported:**
   * `optimise_unify` (a local-data flag, default true, pl-prologflag.c:2405); `compileClause` sets
-    `head_unify` on static code under it (pl-comp.c:2017-2022, without SSU).
+    `head_unify` on static code under it (pl-comp.c:2017-2022; its SSU terms since SSU1).
   * The detection in `analyseVariables2`: a leading `=/2` at a control position is annotated
     (`annotate_unification`, `annotate_unify`, `is_argument_var`, pl-comp.c:750-797); `,` and `true`
     keep the run going; any other compound, an atomic goal, `;` and `\+` end it (1007-1011, 1047,
@@ -3672,7 +3672,7 @@ by the user, 2026-10-06 (4a, 5a; identity by position). Research and plan: the w
   its other side: the kernel's terms are values, and a term type may share structure
   (alt_interned). The term moved is kept in `compileInfo.arg_value` by the argument's slot (`VarDef`
   has no term type).
-* **NOT PORTED:** SSU's moves (`?=>` always, `=>` never: no SSU).
+* **NOT PORTED:** SSU's moves (`?=>` always, `=>` never: ported in SSU1).
 * **Gates:**
   * test/compile/test_body_code_swipl.jl, a new testset: 27 move cells from the research memo's
     probes, each identical to swipl's code (swipl compiles them through `assertz` into a fresh
@@ -4480,7 +4480,7 @@ return codes, the positions and the closed handle; the open questions went to th
   * the supervisors (pl-supervisor.c): `initSupervisors`, `createSupervisor` and its selectors,
     `setDefaultSupervisor`, `freeCodesDefinition` (a changed predicate returns to `S_VIRGIN`),
     `equalSupervisors`, `getClauses`; `chainPredicateSupervisor` is the identity (no det, SSU or
-    meta-predicate declarations exist); `arg1Key` (pl-comp.c);
+    meta-predicate declarations exist; `S_SSU_DET` since SSU1); `arg1Key` (pl-comp.c);
   * `PL_error` for `ERR_OCCURS_CHECK` and `PL_raise_exception`; `markPredicatesInEnvironments`'
     frame scan; `setGenerationFrame`'s frame-writing form.
 * **AN UPSTREAM DEFECT, FIXED here:** pl-comp.c `arg1Key` lists `H_MPZ` but not `H_MPQ`, which falls
@@ -5033,6 +5033,46 @@ test/core_lang/test_attvar_wakeup.jl, re-checked on swipl 10.1.19 (the probe's t
 up and down (no Prolog-level row sees it); mutants: tools/mutants/AV9.py. The fixture defines its own `av9_once/1` and
 `av9_member/2` (swipl's lists.pl definition): `once/1`, `member/2` and the other library predicates are not in the kernel before
 R2 (an existence error), and both engines run the same fixture code.
+
+## SSU1 — single sided unification: compile, store, decompile (R2, evidence/r2/design/ssu.md §7)
+
+What SSU1 ports (pl-comp.c, pl-proc.c, pl-supervisor.c, pl-error.c, boot/init.pl at the pin; the run loop is NOT touched):
+
+- **Reading the clause:** `is_neck` returns the SSU flags (`=>/2` `SSU_COMMIT_CLAUSE` 0x0100, `?=>/2` `SSU_CHOICE_CLAUSE`
+  0x0200, pl-incl.h, with `CLAUSE_TYPE_MASK` and `CLAUSE_SSU_FLAGS`); `get_head_and_body_clause` returns them, `UNIT_CLAUSE`
+  for a fact (design D3: DIVERGES only in returning what upstream writes through a pointer).
+- **Compiling** (`compileClause`'s `flags`, `_compile_clause_head!`): `I_CHP` first; after the head `I_SSU_COMMIT` or
+  `I_SSU_CHOICE` where a rule has `I_ENTER`; an SSU clause whose body is `true` gets `I_SSU_*` and `I_EXIT` and is no
+  `UNIT_CLAUSE`; `head_unify` as upstream's (`?=>` always moves leading unifications into the head, `=>` never); the four
+  `initVMIMerge` entries (a void before `I_SSU_*` merges away). The three instructions are declared after `I_FREDO`
+  (codes 145-147) with their `code_info`; `I_CHP` (38) was declared before.
+- **Storing:** `add_ssu_clause` (design D4): the first clause decides `P_SSU_DET`; mixing raises
+  `permission_error(assert, procedure, PI)` (`ERR_PERMISSION_SSU_DEF`). `assertDefinition!` takes `ld` and returns
+  `nothing` when refused, before anything is linked; `assertProcedure!`, `assertProcedureSource` and `assert_term!` pass
+  the `nothing` on. A 4-argument `assertDefinition!` without `ld` stays for the tests' database builders: it asserts the
+  clause and the predicate are not SSU.
+- **The supervisor:** `chainPredicateSupervisor` prepends `S_SSU_DET` for a `P_SSU_DET` predicate (H7: every reader of a
+  supervisor starts at its first word, and `codes_crefs` is indexed by operand).
+- **Decompiling** (design D5): `_body_start` and the head walkers (`skipArgs`, `argKey`, `arg1Key`, `decompile_head!`)
+  treat `I_SSU_*` as `I_ENTER`; clause/2 splits any neck; `'$rule'/2` (`IS_RULE`, `pl_ruleva_va`) builds
+  `clause_functor(clause)(H, B)`, or the bare head of a fact. retract/1 writes upstream's `CLAUSE_SSU_FLAGS` test and
+  the neck test, so it never removes an SSU clause, as swipl (pl-proc.c:3138-3141 rebuilds `:-` from any neck; design Q5).
+- **The consult stand-in** (D7, boot/init.jl `store_clause!`, deleted with the file at LB4): `(H, G) => B` becomes
+  `?=>(H, (G, !, B))`, or `H => B` when `'$is_true'(G)` and the `optimise` flag (init.pl:4114-4121, 4131-4133).
+- **Calling an SSU predicate** raises `NotPortedError` naming `S_SSU_DET`: the run loop's refusal of a declared
+  instruction outside `VMI_RUN`. SSU2 runs `I_CHP`, `I_SSU_*`, `S_SSU_DET` and the matching-rule error.
+- **Not here:** `'$rule'/3`, clause/3's `CLAUSE_TYPE_MASK` test and `fixup_ssu` (clause references: D1); rule/2,3 and
+  expand.pl's guard expansion (LB4); listing (LB5); `fix_ssu`/`check_ssu` (reconsult: LB6); QLF flags (no QLF).
+
+Known-difference checklist item (SSU1, pending the control-construct procedures): **a05** `assertz((d5(X), X > 0 => true))`
+and **k01** `assertz((a, b))` succeed in the kernel, where swipl 10.1.19 raises
+`permission_error(modify, static_procedure, (',')/2)`: the kernel defines no `system:','/2` procedure
+(`isStaticSystemProcedure` finds none), so `assert_term!` creates `user:','/2`. Not an SSU gap (k01 has no SSU neck). Pinned
+in test/compile/test_ssu_compile_swipl.jl (`_SU_KD`: the kernel's line, swipl's beside it, re-run live); it closes when the
+control constructs are system procedures.
+
+Tests: test/compile/test_ssu_compile_swipl.jl (the v-, c- and a-rows of evidence/r2/design/ssu_rows.out, swipl 10.1.19;
+test/db/test_assert_swipl.jl's SSU refusal flipped to the assert's answer and the call's refusal); mutants: tools/mutants/SSU1.py.
 
 ## Still to come
 
