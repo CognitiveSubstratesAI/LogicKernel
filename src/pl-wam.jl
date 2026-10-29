@@ -1090,27 +1090,23 @@ function frameFinished(ld::PL_local_data{T}, fr::Int, reason::finished)::Bool wh
 end
 
 # PORT: pl-wam.c mustBeCallable
-# DIVERGES: upstream accepts ONLY `Module:Goal` — the cleanup family's goals reach it qualified by
-# their meta-predicate declarations (boot/init.pl:381-383). Those are not ported (no module
-# transparency until R2), so an UNQUALIFIED term is checked as the goal itself: unbound is an
-# instantiation error, anything but a compound or a text atom `type_error(callable, Term)`. The
-# culprit of that error is then the plain term where upstream's is `Module:Term` (R2).
+# (pl-wam.c:920-947 at the pin.) Only `Module:Goal`, as upstream's: since MOD4 the cleanup family's goals
+# reach it qualified by their meta-predicate declarations (boot/init.pl:381-383, `_boot_meta!`; `S_MQUAL`),
+# so MOD2's acceptance of an unqualified goal is gone (test_cleanup_swipl.jl's `type_error(callable, user:1)`).
 # On the WORDS (f3b-5b): `deRef(p)` and the tests on `*p`, `*ap` are `_deref_loc` and word tests.
-"Whether the term reference `call` holds a callable goal, raising the error when not (pl-wam.c)."
+"Whether the term reference `call` holds a callable `Module:Goal`, raising the error when not (pl-wam.c)."
 function mustBeCallable(ld::PL_local_data{T}, call::term_t)::Bool where {T}
     k, w, _ = _deref_loc(ld, -(call + 1))                   # Word p = valTermRef(call); deRef(p)
     k == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)  # isVar(*p)
-    ak, aw = k, w
-    if _is_colon2_word(ld, k, w)                            # hasFunctor(*p, FUNCTOR_colon2)
-        mk, mw, _ = _deref_loc(ld, valPtr(w) + 1)           # ap = argTermP(*p, 0); deRef(ap)
-        mk == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
-        (
-            (mk == DU_WORD && isAtomW(mw)) ||               # isAtom(*ap): a blob too
-            (mk == DU_VALUE && isAtom(_value_term(ld, mw)))
-        ) || return PL_type_error(ld, "callable", call)
-        ak, aw, _ = _deref_loc(ld, valPtr(w) + 2)           # ap = argTermP(*p, 1); deRef(ap)
-        ak == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
-    end
+    _is_colon2_word(ld, k, w) || return PL_type_error(ld, "callable", call)   # !hasFunctor(*p, FUNCTOR_colon2)
+    mk, mw, _ = _deref_loc(ld, valPtr(w) + 1)               # ap = argTermP(*p, 0); deRef(ap)
+    mk == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
+    (
+        (mk == DU_WORD && isAtomW(mw)) ||                   # isAtom(*ap): a blob too
+        (mk == DU_VALUE && isAtom(_value_term(ld, mw)))
+    ) || return PL_type_error(ld, "callable", call)
+    ak, aw, _ = _deref_loc(ld, valPtr(w) + 2)               # ap = argTermP(*p, 1); deRef(ap)
+    ak == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
     (ak == DU_WORD && (_is_gcompound(aw) || isTextAtom(_atom_value(ld, aw)))) ||
         return PL_type_error(ld, "callable", call)          # isTerm(*ap) || isTextAtom(*ap)
 

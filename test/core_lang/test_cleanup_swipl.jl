@@ -296,11 +296,12 @@ _rcall_logged(db::_RDB)::Vector{String} =
     @test _rpools_live(ld)
 end
 
-# KNOWN DIFFERENCE, pinned (R2 checklist: "meta-argument qualification of the cleanup family"):
-#   kernel: `type_error(callable, 1)` — the cleanup goal arrives unqualified
-#   swipl 10.1.18: `type_error(callable, user:1)` — setup_call_cleanup/3 is a meta-predicate
-#     (boot/init.pl:381), so its arguments arrive as `Module:Goal` (probed)
-@testset "a cleanup goal that is not callable: type_error(callable, Goal), the goal unqualified (R2)" begin
+# The R2 checklist item "meta-argument qualification of the cleanup family", closed by MOD4: setup_call_cleanup/3 is a
+# meta-predicate (boot/init.pl:381; `_boot_meta!`), so the cleanup arrives as `user:1` (S_MQUAL) and mustBeCallable
+# (pl-wam.c:920-947) raises on it; the culprit is `rewrite_callable`'s (pl-error.c:72-94: the atom qualifiers stripped).
+# swipl 10.1.19-1-gcbf4e189 answers `type_error(callable, 1)` (probed 2026-10-29; the earlier note's 10.1.18 `user:1` is
+# not 10.1.19's answer), the kernel's pinned answer since V9g.
+@testset "a cleanup goal that is not callable: type_error(callable, Goal), the qualifier stripped" begin
     X, E, Z = _rv(1), _rv(2), _rv(3)
     db = _rdb([
         (

@@ -152,7 +152,7 @@ const _CM_CASES = [
     ("c06", raw"call(m2:nd(R))"),
     # c07: a control construct under call/1 in m2: the goal clause's frame gets the module (pl-comp.c:2266)
     ("c07", raw"call(m2:(tp(R), true))"),
-    # c08: the cleanup handler's goal runs in contextModule(fr) (pl-wam.c:928; the INTERIM qualification) and PL_open_query's ctx
+    # c08: the cleanup handler's goal runs in contextModule(fr) (pl-wam.c:928; the goal qualified by S_MQUAL since MOD4) and PL_open_query's ctx
     ("c08", raw"call(m2:sc(R))"),
     # c09: strip_module/3: the innermost atom qualifier
     ("c09", raw"strip_module(a:b:c, M, P), R = M-P"),
@@ -207,7 +207,7 @@ const _CM_CASES = [
     # c34: clause/2 from m2: get_procedure's GP_FIND module is the context module (pl-proc.c:727)
     ("c34", raw"call(m2:cl(R))"),
     # c35: a cleanup run while an exception unwinds (atom_length/2's error inside findall_loop/4: the handler's environment
-    # a system frame) runs in the cleanup frame's context (the INTERIM qualification, S_MQUAL until MOD4); the error stays
+    # a system frame) runs in the cleanup frame's context (the goal qualified by S_MQUAL, MOD4); the error stays
     (
         "c35",
         raw"catch(call(m2:scx), error(E, _), true), findall(C, m2:seen(C), L), R = E-L"
@@ -216,10 +216,11 @@ const _CM_CASES = [
     # NULL while write_term/3 runs from m2: the portray frame takes write_term's context (pl-wam.c:3096)
     ("c36", raw"call(m2:pw), findall(M, m2:pseen(M), R)"),
     # c37 (D-0212): a cleanup unbound at the call, bound during Goal — swipl refuses it at the call (setup_call_cleanup/3's
-    # instantiation error, before Goal runs), so the binding is never reached
+    # instantiation error, before Goal runs), so the binding is never reached; since MOD4 S_MQUAL makes it `m2:_` and
+    # mustBeCallable's second `isVar` raises it (pl-wam.c:941)
     ("c37", raw"call(m2:scu(R))"),
-    # c38 (D-0212): a cleanup already qualified with a third module, run while an exception unwinds — the handler's INTERIM
-    # wrap leaves it alone (`_:_`): it runs and asserts in m3
+    # c38 (D-0212): a cleanup already qualified with a third module, run while an exception unwinds — m_qualify_argument leaves
+    # it alone (`_:_`, pl-wam.c:1785-1847): it runs and asserts in m3
     (
         "c38",
         raw"catch(call(m2:sq), error(E, _), true), findall(C, m3:seen3(C), L), R = E-L"
