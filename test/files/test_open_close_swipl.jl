@@ -137,6 +137,15 @@ const _CASES = [
         "e41",
         "atom_codes(A, [97,44,10,32,32,47,42,32,120]), open('{D}/q1', write, W), write(W, A), close(W), open('{D}/q1', read, S), catch(read_clause(S, _, [syntax_errors(error)]), error(_, C), true), close(S), R = C"
     ),
+    # the same unterminated quote, then the NEXT read on the same stream (what the reader resynchronises to): end_of_file
+    (
+        "e42",
+        "atom_codes(A, [97,40,39,120,46,10,98,40,49,41,46,10]), open('{D}/q2', write, W), write(W, A), close(W), open('{D}/q2', read, S), catch(read_clause(S, _, [syntax_errors(error)]), error(_, C), true), catch(read_clause(S, T2, [syntax_errors(error)]), error(E2, C2), T2 = err(E2, C2)), close(S), R = C-T2"
+    ),
+    (
+        "e43",
+        "atom_codes(A, [97,40,39,120,46,10,98,40,49,41,46,10]), open('{D}/q2', write, W), write(W, A), close(W), open('{D}/q2', read, S), read_clause(S, _, [syntax_errors(dec10)]), read_clause(S, T2, [syntax_errors(dec10)]), close(S), R = T2"
+    ),
     # ---- the blob: its type, identity and order
     ("s01", "open('{D}/f1', write, S), btype(S, B), close(S), R = B"),
     ("s02", "open('{D}/f1', write, S), term_to_atom(S, A), close(S), R = A"),
