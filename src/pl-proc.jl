@@ -1156,19 +1156,21 @@ function get_bool_or_int_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int
 end
 
 # PORT: pl-proc.c get_procedure
-# DIVERGES: the `GP_DEFINE` path only (the one `'$set_predicate_attribute'/3` asks for): the term
-# stripped of its module, its functor from a head or a `Name/Arity` (`get_functor`), and
-# `lookupProcedureToDefine` in that module (which exists: no module is created).
-"The procedure the term `descr` (`M:Head` or `M:Name/Arity`) names, to define (pl-proc.c)."
+# DIVERGES: the `GP_DEFINE` path only (the ones `'$set_predicate_attribute'/3` and `meta_predicate/1`
+# ask for): the term stripped of its module, its functor from a head or a `Name/Arity` (`get_functor`),
+# and `lookupProcedureToDefine` in that module (which exists: no module is created). The procedure is
+# returned (`nothing`: false), where upstream's writes it through `proc`; `h` (upstream's `term_t h`,
+# since MOD4) receives the stripped term — 0: a reference of its own.
+"The procedure the term `descr` (`M:Head` or `M:Name/Arity`) names, to define; the stripped term into `h` (pl-proc.c)."
 function get_procedure(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, how::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, how::Int, h::term_t=0
 )::Union{Nothing, Procedure{T}} where {T}
     (how & GP_HOW_MASK) == GP_DEFINE || throw(
         NotPortedError{T}(
             mk_sym(T, :get_procedure), "get_procedure: other than GP_DEFINE", "V9"
         )
     )
-    head = PL_new_term_ref(ld)
+    head = h == 0 ? PL_new_term_ref(ld) : h
     ok, m = PL_strip_module(gd, ld, descr, 0, head)
     ok || return nothing
     if PL_is_functor(ld, head, mk_sym(T, :/), 2)        # PL_is_functor(head, FUNCTOR_divide2)
@@ -1241,6 +1243,143 @@ function setAttrDefinition(def::Definition{T}, attr::UInt64, val::Bool)::Bool wh
         def.flags &= ~attr
     end
     return true
+end
+
+# ── meta-predicate declarations (pl-proc.c:1992-2122 at the pin), since MOD4 ─────────────────────
+# PORT: pl-proc.c isTransparentMetamask
+"Whether the argument masks `args` make `def` transparent — an argument `0..9`, `:`, `^` or `//` (pl-proc.c)."
+function isTransparentMetamask(def::Definition{T}, args::Vector{arg_info})::Bool where {T}
+    arity = def.arity                               # size_t i, arity = def->functor->arity
+    transparent = false
+    for i in 0:(arity - 1)
+        transparent && break                        # i<arity && !transparent
+        ma = args[i + 1].meta
+        if MA_NEEDS_TRANSPARENT(ma)
+            transparent = true
+            break
+        end
+    end
+    return transparent
+end
+
+# PORT: pl-proc.c setMetapredicateMask
+# DIVERGES: the masks are `def.impl_clauses.args` (upstream's `def->impl.any.args`, the union's common
+# field: `lookupProcedure` allocates it for every predicate with arguments).
+"Give `def` the argument masks `args`: `P_META`, and `P_TRANSPARENT` as `isTransparentMetamask` says (pl-proc.c)."
+function setMetapredicateMask(def::Definition{T}, args::Vector{arg_info})::Nothing where {T}
+    arity = def.arity
+    if arity > 0
+        dargs = def.impl_clauses.args::Vector{arg_info}
+        for i in 0:(arity - 1)
+            dargs[i + 1].meta = args[i + 1].meta    # def->impl.any.args[i].meta = args[i].meta
+        end
+    end
+    if isTransparentMetamask(def, args)
+        def.flags |= P_TRANSPARENT                  # set(def, P_TRANSPARENT)
+    else
+        def.flags &= ~P_TRANSPARENT                 # clear(def, P_TRANSPARENT)
+    end
+    def.flags |= P_META                             # set(def, P_META)
+    return nothing
+end
+
+# PORT: pl-proc.c meta_declaration
+# DIVERGES: `ReadingSource` (a declaration while a file loads) needs `setMetapredicateSource`, the
+# loader's (pl-srcfile.c; LB): refused by name until then (dispatcher decision, MOD4). The masks are a
+# vector, where upstream's are on the C stack.
+"Declare the meta-argument (`ismeta`) or mode masks of the predicate `spec` names (pl-proc.c)."
+function meta_declaration(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, spec::term_t, ismeta::Bool
+)::Bool where {T}
+    head = PL_new_term_ref(ld)
+    arg = PL_new_term_ref(ld)
+    proc = get_procedure(gd, ld, spec, GP_DEFINE, head)
+    proc === nothing && return false
+    na = PL_get_name_arity(ld, head)
+    na === nothing && return false
+    name, arity = na
+    args = [arg_info() for _ in 1:arity]            # arg_info args[arity]
+    for i in 0:(arity - 1)
+        _PL_get_arg(ld, i + 1, head, arg)
+        if ismeta && PL_is_integer(ld, arg)
+            e = PL_cvt_i_uint(ld, arg)
+            e === nothing && return false
+            e > 9 && return PL_domain_error(ld, "meta_argument_specifier", arg)
+            args[i + 1].meta = UInt8(e & 0xf)       # args[i].meta = e&0xf
+        elseif (ma = PL_get_atom(ld, arg)) !== nothing
+            mk = sym_key(ma)
+            m = if mk == sym_key(mk_sym(T, :+))
+                MA_NONVAR
+            elseif mk == sym_key(mk_sym(T, :-))
+                MA_VAR
+            elseif mk == sym_key(mk_sym(T, :?))
+                MA_ANY
+            elseif !ismeta
+                return PL_domain_error(ld, "mode", arg)
+            elseif mk == sym_key(mk_sym(T, :*))
+                MA_ANY                              # `*` mapped to ?
+            elseif mk == sym_key(mk_sym(T, :(:)))
+                MA_META
+            elseif mk == sym_key(mk_sym(T, :^))
+                MA_HAT
+            elseif mk == sym_key(mk_sym(T, Symbol("//")))
+                MA_DCG
+            else
+                return PL_domain_error(ld, "meta_argument_specifier", arg)
+            end
+            args[i + 1].meta = m & 0x0f             # args[i].meta = m&0xf
+        elseif ismeta
+            return PL_type_error(ld, "meta_argument_specifier", arg)
+        else
+            return PL_type_error(ld, "mode", arg)
+        end
+    end
+
+    if ReadingSource(ld)
+        throw(
+            NotPortedError{T}(
+                name, "meta_predicate/1 while loading a file (setMetapredicateSource)", "LB"
+            )
+        )
+    end
+    setMetapredicateMask(proc.definition, args)
+    rc = true
+    PL_reset_term_refs(ld, head)
+    return rc
+end
+
+# PORT: pl-proc.c meta_predicate
+"Declare each `,`-separated specification of `spec` (pl-proc.c)."
+function meta_predicate(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, spec::term_t, ismeta::Bool
+)::Bool where {T}
+    tail = PL_copy_term_ref(ld, spec)
+    head = PL_new_term_ref(ld)
+    while PL_is_functor(ld, tail, mk_sym(T, Symbol(",")), 2)    # PL_is_functor(tail, FUNCTOR_comma2)
+        _PL_get_arg(ld, 1, tail, head)
+        meta_declaration(gd, ld, head, ismeta) || return false
+        _PL_get_arg(ld, 2, tail, tail)
+    end
+    meta_declaration(gd, ld, tail, ismeta) || return false
+    return true
+end
+
+# PORT: pl-proc.c meta_predicate as pl_meta_predicate1_va
+# (PRED_IMPL("meta_predicate", 1, meta_predicate, PL_FA_TRANSPARENT))
+"`meta_predicate(:Spec)` (pl-proc.c): declare meta-predicates."
+function pl_meta_predicate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return meta_predicate(_query_gd(ld), ld, PL__t0, true) ? FTRUE : FFALSE
+end
+
+# PORT: pl-proc.c mode as pl_mode1_va
+# (PRED_IMPL("mode", 1, mode, PL_FA_TRANSPARENT))
+"`mode(:Spec)` (pl-proc.c): declare argument modes (`+`, `-`, `?`)."
+function pl_mode1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return meta_predicate(_query_gd(ld), ld, PL__t0, false) ? FTRUE : FFALSE
 end
 
 # PORT: pl-proc.c get_procedure as get_procedure_create
@@ -1534,5 +1673,9 @@ const PL_predicates_from_proc = (
     PL_extension(
         "retract", 1, pl_retract1_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
-    )
+    ),
+    PL_extension(
+        "meta_predicate", 1, pl_meta_predicate1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),                                              # (MOD4)
+    PL_extension("mode", 1, pl_mode1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)  # (MOD4)
 )

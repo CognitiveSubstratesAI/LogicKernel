@@ -1011,10 +1011,7 @@ function callCleanupHandler(
             wstate = saveWakeup(ld, false)
             if wstate !== nothing
                 gd = _query_gd(ld)
-                ccm = contextModule(gd, ld, fr)
-                # INTERIM: S_MQUAL (MOD4) — S_MQUAL's wrap (pl-vmi.c:3706 → m_qualify_argument, pl-wam.c:1787-1818)
-                _interim_mqual_cleanup(gd, ld, clean, ccm)           # INTERIM: S_MQUAL (MOD4)
-                rval = call_term(gd, ld, ccm, clean)                 # call_term(contextModule(fr), clean)
+                rval = call_term(gd, ld, contextModule(gd, ld, fr), clean)  # call_term(contextModule(fr), clean)
                 if !rval && ld.exception_term != 0
                     wstate = wakeup_state(
                         wstate.fid, wstate.outofstack,
@@ -1030,34 +1027,51 @@ function callCleanupHandler(
     return nothing
 end
 
-# ORIGINAL (no upstream function; audit D-0209 item 1) — INTERIM: S_MQUAL (MOD4). Upstream's cleanup goal reaches the
-# handler qualified: `S_MQUAL` of the cleanup family's meta-predicate declarations (boot/init.pl:381-383) wrote
-# `contextModule(fr):Goal` into the frame's argument slot at the call (S_MQUAL, pl-vmi.c:3706 →
-# `m_qualify_argument`, pl-wam.c:1787-1818; audit D-0212 accepted this form),
-# so call_term's stripModule never takes the environment frame's context for it. Here no stand-in clause can
-# qualify it: `'$call_cleanup'` and this handler read the cleanup frame's argument slots BY POSITION, and a clause
-# body cannot replace its head's argument slot. So the handler qualifies an unqualified goal IN THE FRAME'S
-# ARGUMENT SLOT `t`, as `m_qualify_argument`'s not-qualified branch does (`m`: `contextModule(fr)`, the same frame,
-# unchanged since its entry): `m:Goal` laid on the global stack and the slot overwritten, untrailed — no term
-# reference, so `lTop` and the handler's query frame stay where upstream's are (test_cleanup_swipl.jl's position
-# rows). A qualified one is left to call_term's stripModule, which strips the chain to its innermost atom as
-# `m_qualify_argument` does. MOD4 removes it, and the handler's line, restoring upstream's
-# `rval = call_term(contextModule(fr), clean)`.
-# DIVERGES (from `m_qualify_argument`'s branch): no `ensureGlobalSpace` (the global stack grows here), and
-# `_cell_link!` gives the argument's word or reference (a slot is never an unbound variable, so upstream's
-# `isVar(*p) && p > lBase` case, which trails the slot, cannot arise).
-"Qualify the cleanup goal in frame argument slot `t` as `m:Goal` when it is not `_:_` (INTERIM: S_MQUAL (MOD4))."
-function _interim_mqual_cleanup(                                    # INTERIM: S_MQUAL (MOD4)
-    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, m::Int
-)::Nothing where {T}
-    k, w, _ = _deref_loc(ld, -(t + 1))                              # deRef2(k, p)
-    _is_colon2_word(ld, k, w) && return nothing                     # is_qualified(p): as it is
-    colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
-    p2 = _alloc_compound!(ld, colon2, 2)                            # p2 = gTop; gTop += 3; p2[0] = FUNCTOR_colon2
-    ld.gstack[p2 + 1] = _atom_word!(ld, gd.modules[m].atom)         # p2[1] = contextModule(fr)->name
-    _cell_link!(ld, p2 + 2, t + 1)                                  # p2[2] = (needsRef(*p) ? makeRefG(p) : *p)
-    ld.slots[t + 1] = consPtr(p2, TAG_COMPOUND | STG_GLOBAL)        # *k = consPtr(p2, STG_GLOBAL|TAG_COMPOUND)
-    return nothing
+# PORT: pl-wam.c m_qualify_argument
+# (pl-wam.c:1785-1847 at the pin; MOD4, called by `S_MQUAL`/`S_LMQUAL`.) The frame argument at offset `arg`
+# (`VAROFFSET(i)`, a slot) qualified with the frame's context module when it is not `_:_`; a qualified one
+# stripped to its innermost `Atom:` chain link (`a:b:g` → `b:g`, the depth check every 100 links).
+# DIVERGES: no `hasGlobalSpace(3)`/`ensureGlobalSpace` (the global stack grows here; the stack limit is
+# checked where every call meets, `depart_or_retry_continue`). `_cell_link!` gives the argument's word or a
+# reference to it (`needsRef(*p) ? makeRefG(p) : *p`): a slot is never an unbound variable (`B_VOID`: a
+# global cell), so upstream's `isVar(*p) && p > lBase` branch, which binds a LOCAL variable to the new cell
+# and trails it, cannot arise. The slot is overwritten untrailed, as upstream's `*k`.
+# `is_qualified(p)` (pl-wam.c:1778-1782, `hasFunctor(*p, FUNCTOR_colon2)`) is `_is_colon2_word` (src/pl-fli.jl).
+"Qualify the argument at offset `arg` of frame `fr` as `Context:Arg` unless it is `_:_` (pl-wam.c); false with an exception on a cyclic chain."
+function m_qualify_argument(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, arg::Int
+)::Bool where {T}
+    i = varFrameP(ld.frames[fr].base, arg) + 1      # Word k = varFrameP(fr, arg) (its slot)
+    k, w, _ = _deref_loc(ld, -i)                    # deRef2(k, p)
+    if !_is_colon2_word(ld, k, w)                   # if ( !is_qualified(p) )
+        colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+        p2 = _alloc_compound!(ld, colon2, 2)        # p2 = gTop; gTop += 3; p2[0] = FUNCTOR_colon2
+        ld.gstack[p2 + 1] = _atom_word!(ld, gd.modules[contextModule(gd, ld, fr)].atom)  # p2[1] = contextModule(fr)->name
+        _cell_link!(ld, p2 + 2, i)                  # p2[2] = (needsRef(*p) ? makeRefG(p) : *p)
+        ld.slots[i] = consPtr(p2, TAG_COMPOUND | STG_GLOBAL)    # *k = consPtr(p2, STG_GLOBAL|TAG_COMPOUND)
+    else
+        depth = 100
+        while true
+            f = valPtr(w)                           # (the functor cell of *p)
+            ak, aw, ap = _deref_loc(ld, f + 2)      # p2 = argTermP(*p, 1); deRef2(p2, ap)
+            if _is_colon2_word(ld, ak, aw)          # if ( is_qualified(ap) )
+                mk, mw, _ = _deref_loc(ld, f + 1)   # a1 = argTermP(*p, 0); deRef(a1)
+                (mk == DU_WORD && isAtomW(mw)) || break     # if (! isAtom(*a1)) break
+                w = aw                              # p = ap
+                depth -= 1
+                if depth == 0 && !is_acyclic_cells(ld, ap)  # if ( --depth == 0 && !is_acyclic(p) )
+                    t = pushWordAsTermRef(ld, (ak, aw, ap))  # term_t t = pushWordAsTermRef(p)
+                    PL_error(ld, ERR_TYPE, mk_sym(T, :acyclic_term), t)
+                    popTermRef(ld)
+                    return false
+                end
+            else
+                break
+            end
+        end
+        ld.slots[i] = w                             # *k = *p
+    end
+    return true
 end
 
 # PORT: pl-wam.c frameFinished
@@ -1776,7 +1790,7 @@ const VMI_RUN = (
     :I_FCALLNDET5,
     :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
-    :I_CONTEXT, :I_CALLM, :I_DEPARTM
+    :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -4482,6 +4496,34 @@ function PL_next_solution_guarded(
     # or a cut clears the flag.
     @label S_SSU_DET
     ld.frames[FR].flags |= FR_SSU_DET               # setLocal(FR, FR_SSU_DET)
+    @goto next_instruction
+
+    # PORT: pl-vmi.c S_MQUAL
+    # (pl-vmi.c:3706-3718 at the pin; MOD4.) The prefix `chainPredicateSupervisor` puts before the
+    # supervisor of a transparent meta-predicate, one per meta-argument: qualify it with the frame's
+    # context module — part of the supervisor, before the first choice point.
+    # DIVERGES: the operand is the argument's frame offset (`VAROFFSET(i)`), as upstream's; the slot is
+    # `varFrameP(FR, arg)`'s (`m_qualify_argument`).
+    @label S_MQUAL
+    mq_arg = Int(PCc[PC])                           # int arg = (int)*PC++
+    PC += 1
+    @SAVE_REGISTERS(QID)
+    mq_rc = m_qualify_argument(gd, ld, FR, mq_arg)
+    @LOAD_REGISTERS(QID)
+    mq_rc || @goto b_throw                          # if ( !rc ) THROW_EXCEPTION
+    @goto next_instruction
+
+    # PORT: pl-vmi.c S_LMQUAL
+    # (pl-vmi.c:3721-3734 at the pin; MOD4.) The last `S_MQUAL`; then the frame runs in its predicate's
+    # module, so the clause's unqualified calls refer to the definition module again.
+    @label S_LMQUAL
+    lmq_arg = Int(PCc[PC])                          # int arg = (int)*PC++
+    PC += 1
+    @SAVE_REGISTERS(QID)
+    lmq_rc = m_qualify_argument(gd, ld, FR, lmq_arg)
+    @LOAD_REGISTERS(QID)
+    lmq_rc || @goto b_throw                         # if ( !rc ) THROW_EXCEPTION
+    setContextModule!(ld.frames[FR], (ld.frames[FR].predicate::Definition{T}).module_)  # setContextModule(FR, FR->predicate->module)
     @goto next_instruction
 
     # ── deterministic foreign calls (pl-vmi.c; V5a2, decision 5) ─────────────────────────────────

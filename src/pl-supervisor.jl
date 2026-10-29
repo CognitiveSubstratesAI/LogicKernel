@@ -207,20 +207,40 @@ function staticSupervisor(
 end
 
 # PORT: pl-supervisor.c chainPredicateSupervisor
-# DIVERGES: `S_SSU_DET` only (since SSU1, pl-supervisor.c:389-390). Upstream also prepends `S_DET` for
-# `P_DET` and the meta-argument module qualification (`S_MQUAL`/`S_LMQUAL`) for `P_META`+`P_TRANSPARENT`:
-# `P_DET` cannot be set here (`setAttrDefinition` refuses it) and there is no `P_META` (meta-predicates are
-# not ported), so those branches cannot run. The chained supervisor is a new code vector (the shared block
-# `post` is not changed, nor freed: `freeCodesMem` is Julia's); the side table is `post`'s, as the
-# `CA1_CLAUSEREF` operands index it by entry, not by position.
-"Prepend `post` with the checks the predicate's declarations need — `S_SSU_DET` for an SSU predicate (pl-supervisor.c)."
+# (pl-supervisor.c:379-418 at the pin; the meta-argument branch since MOD4)
+# DIVERGES: no `S_DET`: `P_DET` cannot be set here (`setAttrDefinition` refuses it). The chained supervisor
+# is a new code vector (the shared block `post` is not changed, nor freed: `freeCodesMem` is Julia's); the
+# side table is `post`'s, as the `CA1_CLAUSEREF` operands index it by entry, not by position. The
+# argument masks are `def.impl_clauses.args` (upstream's `def->impl.any.args`, the union's common field).
+"Prepend `post` with the checks the predicate's declarations need — `S_SSU_DET` for an SSU predicate, `S_MQUAL`/`S_LMQUAL` for a transparent meta-predicate (pl-supervisor.c)."
 function chainPredicateSupervisor(
     def::Definition{T}, post::Tuple{Vector{code}, Vector{ClauseRef{T}}}
 )::Tuple{Vector{code}, Vector{ClauseRef{T}}} where {T}
-    if (def.flags & P_SSU_DET) != 0                 # ison(def, P_SSU_DET|P_DET) (P_DET: see above)
-        codes = code[S_SSU_DET]                     # addBuffer(&buf, encode(S_SSU_DET), code)
-        append!(codes, post[1])                     # copySuperVisorCode(&buf, post)
-        return (codes, post[2])
+    meta = (def.flags & P_META) != 0 && (def.flags & P_TRANSPARENT) != 0
+    if meta || (def.flags & P_SSU_DET) != 0         # ison(def, P_SSU_DET|P_DET) (P_DET: see above)
+        codes = code[]                              # initBuffer(&buf)
+        if (def.flags & P_SSU_DET) != 0
+            push!(codes, S_SSU_DET)                 # addBuffer(&buf, encode(S_SSU_DET), code)
+        end
+        if meta                                     # ison(def, P_META) && ison(def, P_TRANSPARENT)
+            loffset = -1
+            args = def.impl_clauses.args::Vector{arg_info}
+            for i in 0:(def.arity - 1)
+                ma = args[i + 1].meta               # def->impl.any.args[i].meta
+                if MA_NEEDS_TRANSPARENT(ma)
+                    loffset = length(codes)         # entriesBuffer(&buf, code)
+                    push!(codes, S_MQUAL)           # addBuffer(&buf, encode(S_MQUAL), code)
+                    push!(codes, VAROFFSET(i))      # addBuffer(&buf, VAROFFSET(i), code)
+                end
+            end
+            if loffset >= 0
+                codes[loffset + 1] = S_LMQUAL       # baseBuffer(&buf, code)[loffset] = encode(S_LMQUAL)
+            end
+        end
+        if !isempty(codes)                          # !isEmptyBuffer(&buf)
+            append!(codes, post[1])                 # copySuperVisorCode(&buf, post)
+            return (codes, post[2])
+        end
     end
     return post
 end

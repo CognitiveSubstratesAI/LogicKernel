@@ -26,7 +26,8 @@
 # single sided unification (`I_SSU_CHOICE`, `I_SSU_COMMIT`, `S_SSU_DET`, in pl-vmi.c's order; with
 # the `I_CHP` declared before them, compiled since SSU1 and executed since SSU2), then MOD3a's module
 # calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`: `M:Goal` in a clause body and `M:Head :- Body`, in
-# pl-vmi.c's order).
+# pl-vmi.c's order), then MOD4's meta-argument supervisors (`S_MQUAL`, `S_LMQUAL`: the module
+# qualification of a `meta_predicate` argument, in pl-vmi.c's order).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
@@ -569,6 +570,12 @@ const I_CALLM = code(149)
 # PORT: pl-vmi.c I_DEPARTM
 "`I_CALLM` as the clause's last call: the frame takes the module as its context and departs, unless a choice point or `last_call` forbids it (pl-vmi.c; MOD3a)."
 const I_DEPARTM = code(150)
+# PORT: pl-vmi.c S_MQUAL
+"Supervisor of a transparent `meta_predicate`: qualify the argument in the operand's slot with the frame's context module (pl-vmi.c; MOD4)."
+const S_MQUAL = code(151)
+# PORT: pl-vmi.c S_LMQUAL
+"The last `S_MQUAL` of a supervisor: qualify the argument, then set the frame's context to its predicate's module (pl-vmi.c; MOD4)."
+const S_LMQUAL = code(152)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -736,7 +743,9 @@ const _CODE_TABLE = (
     code_info(:S_SSU_DET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_CONTEXT, 0x00, 1, (CA1_MODULE, 0x00, 0x00, 0x00)),
     code_info(:I_CALLM, VIF_BREAK, 2, (CA1_MODULE, CA1_PROC, 0x00, 0x00)),
-    code_info(:I_DEPARTM, VIF_BREAK, 2, (CA1_MODULE, CA1_PROC, 0x00, 0x00))
+    code_info(:I_DEPARTM, VIF_BREAK, 2, (CA1_MODULE, CA1_PROC, 0x00, 0x00)),
+    code_info(:S_MQUAL, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:S_LMQUAL, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

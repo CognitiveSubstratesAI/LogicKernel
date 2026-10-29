@@ -186,6 +186,9 @@ const P_LOCKED = FLAG64(18)
 # PORT: pl-incl.h P_TRANSPARENT
 "Predicate flag: inherits the calling module (pl-incl.h)."
 const P_TRANSPARENT = FLAG64(20)
+# PORT: pl-incl.h P_META
+"Predicate flag: has a `meta_predicate` declaration (pl-incl.h; MOD4)."
+const P_META = FLAG64(21)
 # PORT: pl-incl.h P_MFCONTEXT
 "Predicate flag: its clauses' bodies set their context module (`I_CONTEXT`) — a body module other than the predicate's, or a multifile predicate (pl-incl.h \"Used for Goal@Module\"; MOD3a)."
 const P_MFCONTEXT = FLAG64(22)
@@ -277,9 +280,28 @@ const NOEFFECT_CHECK = 0x0080
 # PORT: pl-incl.h VARBRANCH_CHECK
 "Style check: warn on unbalanced variables (pl-incl.h; the compiler's)."
 const VARBRANCH_CHECK = 0x0100
+# (the meta-argument specifiers, pl-incl.h:2220-2229 at the pin; `0..9`: "Extra meta arguments")
+# PORT: pl-incl.h MA_META
+"Meta-argument specifier `:`: a module-sensitive argument (pl-incl.h; MOD4)."
+const MA_META = UInt8(10)
 # PORT: pl-incl.h MA_VAR
 "Meta-argument specifier `-`: the argument is unbound on entry (pl-incl.h)."
 const MA_VAR = UInt8(11)
+# PORT: pl-incl.h MA_ANY
+"Meta-argument specifier `?` (and `meta_predicate`'s `*`): any argument (pl-incl.h; MOD4)."
+const MA_ANY = UInt8(12)
+# PORT: pl-incl.h MA_NONVAR
+"Meta-argument specifier `+`: the argument is bound on entry (pl-incl.h; MOD4)."
+const MA_NONVAR = UInt8(13)
+# PORT: pl-incl.h MA_HAT
+"Meta-argument specifier `^`: a goal under `Var^` (bagof/setof; pl-incl.h; MOD4)."
+const MA_HAT = UInt8(14)
+# PORT: pl-incl.h MA_DCG
+"Meta-argument specifier `//`: a DCG body (pl-incl.h; MOD4)."
+const MA_DCG = UInt8(15)
+# PORT: pl-incl.h MA_NEEDS_TRANSPARENT
+"Whether meta-argument specifier `m` makes its predicate transparent and is qualified (`0..9`, `:`, `^`, `//`; pl-incl.h; MOD4)."
+MA_NEEDS_TRANSPARENT(m::UInt8)::Bool = m < 0x0a || m == MA_META || m == MA_HAT || m == MA_DCG
 
 # ── index limits ────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-incl.h MAX_MULTI_INDEX
