@@ -1192,6 +1192,31 @@ function get_procedure(
     return lookupProcedureToDefine(gd, ld, name, arity, gd.modules[m])
 end
 
+# PORT: pl-proc.c get_procedure (the `GP_FINDHERE` path, without `GP_NAMEARITY`) and get_module
+# DIVERGES: `contextModule(environment_frame)`, the module an unqualified term is looked up in, is an
+# argument (`context`): it is not ported, and the one caller (`'$source_file'/2`) is not transparent, so
+# its context is `system`. A `Module:` qualifier names an existing module, else `user` (get_module's
+# `GP_FINDHERE` case: no module is created). The procedure is returned, or `nothing` (a failure, or
+# an error raised in `ld`); `h` is not returned.
+"The procedure the head `M:Head` in `descr` names, looked up in that module only (pl-proc.c `GP_FINDHERE`)."
+function get_procedure_findhere(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}
+)::Union{Nothing, Procedure{T}} where {T}
+    ok, rc, nm = stripModuleName_cells(ld, -(descr + 1))    # stripModuleName(valTermRef(descr), &mname)
+    ok || return nothing
+    head = PL_new_term_ref(ld)
+    _slot_link_loc!(ld, head + 1, rc)                       # *valTermRef(head) = linkValNoG(p)
+    if nm != 0                                              # get_module(mname, GP_FINDHERE)
+        m = isCurrentModule(gd.modules, _atom_value(ld, nm))
+        m === nothing && (m = MODULE_user(gd))
+    else
+        m = context
+    end
+    name, arity = get_head_functor(ld, head, 0)
+    arity < 0 && return nothing
+    return isCurrentProcedure(sym_key(name), arity, m)      # isCurrentProcedure(fdef, m)
+end
+
 # PORT: pl-proc.c set_predicate_attribute as pl_set_predicate_attribute3_va
 # (PRED_IMPL("$set_predicate_attribute", 3, set_predicate_attribute, PL_FA_TRANSPARENT))
 # DIVERGES: no tabling attributes (`tbl_is_predicate_attribute`: refused, as is `spy`, which needs
