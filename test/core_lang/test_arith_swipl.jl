@@ -1623,8 +1623,8 @@ end
 # `float_overflow`; `nexttoward(inf, inf)` is `float_overflow`; `acosh(0.5)` and `atanh(2)` are
 # `undefined`, `atanh(1)` is `float_overflow`; `tanh(nan)` is `undefined`; `rdiv/2`'s zero divisor
 # is named `(/)/2`, its type error `rdiv/2`.
-# NOT in this table: `random_float/0` (not reproducible: its own testset), `powm/3` with a float
-# argument (a known difference, below), and `roundtoward/2` (NOT PORTED, below).
+# NOT in this table: `random_float/0` (not reproducible: its own testset) and `roundtoward/2` (NOT
+# PORTED, below). `powm/3` with a float argument is in it since BP2 (upstream 1582e8b37): the error.
 const _A_ARITHC_CASES = Any[
     # rational/1
     (:rational, 0), (:rational, 5), (:rational, -3), (:rational, typemin(Int64)),
@@ -1940,6 +1940,8 @@ const _A_ARITHC_CASES = Any[
     (:powm, -1, 0, 1), (:powm, 1, -1, 1), (:powm, 2, 3, -1), (:powm, nothing, 3, 5),
     (:powm, 2, nothing, 5), (:powm, 2, 3, nothing), (:powm, :a, 3, 5), (:powm, 2, :a, 5),
     (:powm, 2, 3, :a), (:powm, nothing, nothing, nothing),
+    # a float argument: type_error(integer, F) at powm/3 (upstream 1582e8b37, BP2: ar_powm returns the error)
+    (:powm, 2.0, 3, 5), (:powm, 2, 3.0, 5), (:powm, 2, 3, 5.0),
     (:powm, (:+, 1, 1), (:*, 5, 2), (:+, 500, 500)), (:+, (:powm, 2, 10, 1000), 1),
     # eval/1
     (:eval, 1), (:eval, 0), (:eval, -1), (:eval, typemin(Int64)), (:eval, big(2)^70),
@@ -2883,6 +2885,9 @@ const _A_ARITHC_EXPECT = String[
     "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(2,a,5)
     "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[101, 118, 97, 108, 117, 97, 98, 108, 101],ca[47]/2(a[97],i0))@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(2,3,a)
     "err:a[105, 110, 115, 116, 97, 110, 116, 105, 97, 116, 105, 111, 110, 95, 101, 114, 114, 111, 114]@ca[58]/2(a[115, 121, 115, 116, 101, 109],ca[47]/2(a[105, 115],i2))@_",  # powm(_,_,_)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4000000000000000)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2.0,3,5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4008000000000000)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,3.0,5)
+    "err:ca[116, 121, 112, 101, 95, 101, 114, 114, 111, 114]/2(a[105, 110, 116, 101, 103, 101, 114],F4014000000000000)@ca[47]/2(a[112, 111, 119, 109],i3)@_",  # powm(2,3,5.0)
     "ok:i24",  # powm(+(1,1),*(5,2),+(500,500))
     "ok:i25",  # +(powm(2,10,1000),1)
     "ok:i1",  # eval(1)
@@ -2987,20 +2992,6 @@ end
     )
 end
 
-# powm/3 with a float argument — a KNOWN DIFFERENCE (internal record Q5), pinned to the kernel's answer;
-# the live testset at the end of this file pins swipl's. Checklist: when the two agree, move these rows to
-# `_A_ARITHC_CASES`.
-@testset "arith-c: powm/3 with a float argument — the kernel raises (known difference)" begin
-    for (c, culprit) in (
-        ((:powm, 2.0, 3, 5), 2.0), ((:powm, 2, 3.0, 5), 3.0), ((:powm, 2, 3, 5.0), 5.0)
-    )
-        @test _aoutcome_of(c) ==
-            "err:" * _aenc(_af(:type_error, _as(:integer), _ag(culprit))) * "@" *
-              _aenc(_af(:/, _as(:powm), _ag(3))) * "@_"
-        @test _ALD.query == 0
-    end
-end
-
 # roundtoward/2 is NOT PORTED: the kernel has no rounding mode but to nearest, so a call is not
 # evaluable (swipl evaluates it, `X is roundtoward(2.5, to_nearest)` is 2.5, and sets the hardware mode
 # for its first argument). The arguments are evaluated first, the last one first: an atom mode is
@@ -3037,8 +3028,8 @@ const _A_OPS = (
     (:sqrt, 1), (:exp, 1), (:log, 1), (:sin, 1), (:cos, 1), (:tan, 1), (:asin, 1),
     (:acos, 1),
     (:atan, 1), (:atan, 2), (:atan2, 2),
-    # arith-c's (`random_float`, `powm` and the constants are not drawn: `powm/3` with a float is a
-    # known difference, the others are not reproducible or have no argument)
+    # arith-c's (`random_float`, `powm` and the constants are not drawn: not reproducible, three
+    # arguments, or none)
     (:rational, 1), (:numerator, 1), (:denominator, 1), (:rationalize, 1), (:rdiv, 2),
     (:cmpr, 2), (:maxr, 2), (:minr, 2), (:lcm, 2), (:nexttoward, 2), (:sinh, 1), (:cosh, 1),
     (:tanh, 1), (:asinh, 1), (:acosh, 1), (:atanh, 1), (:lgamma, 1), (:erf, 1), (:erfc, 1),
@@ -3266,24 +3257,21 @@ if _A_SWIPL !== nothing
         theirs = [_afloat_bits(String(l)) for l in split(strip(text), '\n')]
         @test theirs == _A_ARITHC_EXPECT
     end
-    @testset "arith-c: swipl's side of powm/3 with a float and of roundtoward/2" begin
+    @testset "arith-c: swipl's side of roundtoward/2" begin
         prog = IOBuffer()
         print(prog, _A_DRIVER)
         print(prog, "run :- ")
-        for c in ((:powm, 2.0, 3, 5), (:powm, 2, 3.0, 5), (:powm, 2, 3, 5.0),
-            (:roundtoward, 2.5, :to_nearest), (:roundtoward, 2.5, 3))
+        for c in ((:roundtoward, 2.5, :to_nearest), (:roundtoward, 2.5, 3))
             print(prog, "is_(", _asrc(c), "), ")
         end
         println(prog, "true.\n:- initialization((run, halt)).")
         text = mktempdir() do d
             f = joinpath(d, "a.pl")
             write(f, String(take!(prog)))
-            read(pipeline(`swipl -q $f`; stderr=devnull), String)    # (internal record Q5)
+            read(pipeline(`swipl -q $f`; stderr=devnull), String)
         end
         theirs = [_afloat_bits(String(l)) for l in split(strip(text), '\n')]
-        # (internal record Q5)
-        @test theirs[1:3] == fill("ok:i3", 3)
         # evaluated: the first argument, the mode set for it; a number is not a mode (a type error)
-        @test theirs[4] == "ok:F4004000000000000" && startswith(theirs[5], "err:")
+        @test theirs[1] == "ok:F4004000000000000" && startswith(theirs[2], "err:")
     end
 end

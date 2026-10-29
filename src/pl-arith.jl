@@ -2140,7 +2140,7 @@ function ar_getbit(
 end
 
 # PORT: pl-arith.c ar_powm
-# DIVERGES: the three type checks return their error (internal record Q5).
+# The pin cbf4e189 plus upstream fix 1582e8b37 (BP2, a named backport): the three type checks return their error.
 "`powm/3` (pl-arith.c `ar_powm`): `base ^ exp mod mod` of three integers, `base` and `exp` non-negative."
 function ar_powm(
     ld::PL_local_data{T}, base::number, exp::number, mod::number, r::number
