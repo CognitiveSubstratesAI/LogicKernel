@@ -160,7 +160,12 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     swipl, stdin from /dev/null, stdout and stderr to files, the inert-testset guard over the result;
     within a time budget, the cold estimate being 3x the last warm time; it starts from the last precompile
     cache only if that cache is THIS checkout's, `tools/pkgtest_way_load.jl`, audit D-0249: another
-    checkout's cache is refused and the run repeats in a fresh process that builds its own), the daemon's
+    checkout's cache is refused and the run repeats in a fresh process that builds its own);
+    audit D-0242: the runs go one at a time (a lock, `.warm/pkgtest_way.lock`), each in its own `systemd-run --user --scope` with
+    `MemoryMax=3G` (`LOGICKERNEL_INERT_MEM_MAX`), no swap and `OOMPolicy=continue`, nested in the lane's
+    slice (`_lane_slice`: lk-warm.slice, lk-warm2.slice for the second daemon), so a runaway test process
+    is killed and named `KILLED` while the daemon, a sibling in the slice, survives; the scope's peak
+    memory is printed in the log and appended to `.warm/pkgtest_way/peaks.tsv`), the daemon's
     JuliaFormatter version against CI's pin, and every unit's closing assertion that the shared empty
     child vector is still empty (`_file`). The branch-gate also runs `test_gate_split.jl` and
     `test_port_check.jl` when `tools/` or `.github/` changed (the tooling job's own trigger). What stays in
