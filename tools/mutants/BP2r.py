@@ -6,6 +6,9 @@
 # written AFTER `tools/warm.sh fmt`.
 # NOT listed: `LD->read_source.position = *pos` in setErrorLocation (no row reads it back); the `Sferror` returns of
 # raw_read_quoted (no row reaches them).
+# No mutant (D-0100, D-0240): dropping the neck test (src/pl-proc.jl `neck_ok`'s else branch, ~:1449) or the fact test (`neck_ok`'s
+# if branch, ~:1446) in `pl_retract1_va`'s `matched` — implied by the SSU-flags conjunct (src/pl-proc.jl ~:1452, upstream
+# pl-proc.c:3209): the flags test comes first in the same expression and already makes both hold. Q9c/Q9d mutate what the fix changes.
 # D-0238: a mutant's targets list EVERY test file that exercises the mutated code (found by what each file calls, not by the
 # step's own file), so an early battery with narrow targets cannot "prove" dead code.
 T12 = ["test/files/test_open_close_swipl.jl"]                      # open/4's newline(Mode): only this file passes it
@@ -127,7 +130,8 @@ MUTANTS = [
          new='''    false && return start + 1'''),
     dict(id="BP2-Q1c a file stream's buffer is not reset", file="src/pl-read.jl", targets=T1,
          old='''    rd._rb.here = 1                                 # rb.here = rb.base''',
-         new='''    nothing                                         # rb.here = rb.base'''),
+         new='''    nothing                                         # rb.here = rb.base''',
+         equivalent="src/pl-read.jl:480 — read, not run (survived the whole T1 target list in run 40953074854): the reset is reached only for a stream that is not a string stream (:475 returns first). The error that follows (rawSyntaxErrorAt :500-507, whose addToBuffer(0) writes the EOS at rb.here) is located by makeErrorTerm (:1101, :1112) with token_start = 1 + offset = 1, and ptr_to_location (:1021) walks nothing from rd.base = 1; for a file stream unify_location (:1073) builds file(Path, L, LP, C) from start_of_term alone, and its only reader of the buffer text, _rd_text (:1060, called at :1084), sits in the string-stream branch :1081; any other stream throws NotPortedError there. clearBuffer (:368, called at :715) sets rb.here = 1 at the start of every read, so the position is not carried into the next one."),
     dict(id="BP2-Q1d a file stream's term position is not the item's", file="src/pl-read.jl", targets=T1,
          old='''        rd.start_of_term.position = copy2           # _PL_rd->start_of_term.position = *pos''',
          new='''        nothing                                     # _PL_rd->start_of_term.position = *pos'''),
