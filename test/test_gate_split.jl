@@ -2425,6 +2425,9 @@ else
     :plain
 end
 using PkgDirStub
+if mode == "redef"    # the package from checkout A, its probe method then redefined from a file under the root (B)
+    include_string(PkgDirStub, string("marker() = ", repr("A")), joinpath(root, "src", "PkgDirStub.jl"))
+end
 why = pkgtest_way_foreign(PkgDirStub, root, :marker)
 println("WHYTEXT ", why)
 println("WHY ", why === nothing ? "none" : "foreign")
@@ -2435,22 +2438,28 @@ mode == "guardedfail" && exit(3)
 """
     )
     sep = Sys.iswindows() ? ";" : ":"
-    function pd(checkout, mode; nostale="")
+    # the private first depot hides the default environment (@v#.#) where Revise is installed: name it on the load path
+    defenv = dirname(Base.load_path_expand("@v#.#"))
+    loadpath = "@" * sep * defenv * sep * "@stdlib"
+    function pd(checkout, mode; nostale="", root=checkout)
         cmd = addenv(
-            `$(Base.julia_cmd()) --project=$checkout --startup-file=no $driver $checkout $mode`,
-            "JULIA_DEPOT_PATH" => depot * sep,              # the trailing separator keeps the default depots (Revise)
+            `$(Base.julia_cmd()) --project=$checkout --startup-file=no $driver $root $mode`,
+            "JULIA_DEPOT_PATH" => join([depot; Base.DEPOT_PATH], sep),   # the caller's depots stay behind it (Revise)
+            "JULIA_LOAD_PATH" => loadpath,
             "LOGICKERNEL_PKGTEST_WAY_NO_STALE" => nostale,
             "PKGDIR_TOOLS" => joinpath(_GS_ROOT, "tools")
         )
         r = _gs_run_merged(cmd)
         m = match(r"(?m)^RESULT (\S+) (\S+) (\S+) (.*)$", r.out)
         w = match(r"(?m)^WHY (\S+)$", r.out)
+        wt = match(r"(?m)^WHYTEXT (.*)$", r.out)
         return (
             code=r.code, out=r.out,
             kind=m === nothing ? "" : String(m[1]),
             marker=m === nothing ? "" : String(m[2]),
             onlyb=m === nothing ? "" : String(m[3]), dir=m === nothing ? "" : String(m[4]),
             why=w === nothing ? "" : String(w[1]),
+            whytext=wt === nothing ? "" : String(wt[1]),
             refused=occursin("REFUSED the last cache of ANOTHER checkout", r.out)
         )
     end
@@ -2467,6 +2476,11 @@ mode == "guardedfail" && exit(3)
     @test r.code == 0 && r.kind == "raw"
     @test r.marker == "A" && r.onlyb == "false"              # A's code in B's run
     @test r.why == "foreign"                                 # …which the check names
+    # 2b. the package directory is judged on its own: the package of A, its probe method redefined from a file under B
+    # (the loaded directory is A's, the methods are B's: only the directory comparison can name it)
+    r = pd(coA, "redef"; root=coB)
+    @test r.code == 0 && r.marker == "A" && r.why == "foreign" &&
+        occursin("package directory", r.whytext)
     # 3. the guarded run in B must not execute A's code: it falls back to a fresh process and builds B's own cache
     r = pd(coB, "guarded")
     @test r.code == 0 && r.refused
@@ -2480,14 +2494,17 @@ mode == "guardedfail" && exit(3)
     r = pd(coA, "guarded")
     @test r.code == 0 && r.refused
     @test r.kind == "normal" && r.marker == "A" && r.onlyb == "false" && r.why == "none"
-    # the child's exit code is the run's own: a failing run in the fresh process fails the refused one
-    r = pd(coA, "guardedfail")
-    @test r.code == 3 && r.refused && r.marker == "A"
+    # the child's exit code is the run's own: a failing run in the fresh process fails the refused one (A's cache is
+    # the newest now, so B's run is refused)
+    r = pd(coB, "guardedfail")
+    @test r.code == 3 && r.refused && r.marker == "B"
     # 6. LOGICKERNEL_PKGTEST_WAY_NO_STALE=1 stays the explicit override: no stale load is even tried (the newest
-    # cache is still B's, so a stale load in A WOULD be refused and say so)
-    r = pd(coA, "guarded"; nostale="1")
+    # newest cache is one checkout's: in the OTHER one a stale load WOULD be refused and say so)
+    other, otherm = pd(coA, "raw").why == "foreign" ? (coA, "A") : (coB, "B")
+    @test pd(other, "raw").why == "foreign"                  # the control: this checkout's stale load runs foreign code
+    r = pd(other, "guarded"; nostale="1")
     @test r.code == 0 && !r.refused && !occursin("stale_load not possible", r.out)
-    @test r.kind == "normal" && r.marker == "A" && r.why == "none"
+    @test r.kind == "normal" && r.marker == otherm && r.why == "none"
     # 7. the tool itself starts from the guard (and from nothing else)
     drv = read(joinpath(_GS_ROOT, "tools", "pkgtest_way.jl"), String)
     @test occursin("include(joinpath(@__DIR__, \"pkgtest_way_load.jl\"))\n", drv) &&
