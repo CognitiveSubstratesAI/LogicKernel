@@ -237,7 +237,7 @@ const _CASES = [
     ("c34", "assertz(d(1), Ref), clause(Q:d(1), _, Ref), R = Q"),
     (
         "c35",
-        "assertz(d0, Ref), compound_name_arguments(H, d0, []), ( clause(H, _, Ref) -> R = yes ; R = no )"
+        "assertz(d0, Ref), H = d0(), ( clause(H, _, Ref) -> R = yes ; R = no )"
     ),
     ("c36", "assertz(d(1), Ref), ( '\$clause'(_, _, Ref, [_, _]) -> R = yes ; R = no )"),
     ("c37", "assertz((e(1) => true), Ref), clause(H, B, Ref), R = H-B"),
@@ -540,6 +540,7 @@ end
     # the clause is erased (by erase/1): PL_get_clref says -1 and keeps the clause, PL_get_dbref is NULL (no error)
     st, _ = kcall(gd, ld, "erase", _TL[r1])
     @test st === :true && (c1.flags & LK.CL_ERASED) != 0
+    t = ref(r1)                                               # kcall closed its frame: a new reference to the same blob
     rc, cl = LK.PL_get_clref(gd, ld, t)
     @test rc == -1 && cl === c1
     @test LK.PL_get_dbref(gd, ld, t) === nothing
@@ -604,7 +605,7 @@ end
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     path = joinpath(mktempdir(), "w.pl")
-    write(path, "p(X).\n")                                            # a singleton variable
+    write(path, "p(_X, _X).\n")                                      # a singleton-marked variable twice: the `multiton` warning
     st, ball, msgs = LK.load_file!(gd, ld, path)
     @test st === :ok
     ws = [
@@ -616,5 +617,5 @@ end
     @test is_blob(cref) && blob_type(cref) === :clause
     cl = LK.clause_clref(gd, cref)
     @test cl isa LK.Clause{_TL} && (cl.flags & LK.DBREF_CLAUSE) != 0
-    @test cl.predicate === LK.isCurrentProcedure(sym_key(_tls("p")), 1, LK.MODULE_user(gd)).definition
+    @test cl.predicate === LK.isCurrentProcedure(sym_key(_tls("p")), 2, LK.MODULE_user(gd)).definition
 end
