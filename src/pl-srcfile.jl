@@ -293,7 +293,7 @@ function pl_time_source_file3_va(
     fid = PL_open_foreign_frame(ld)
     while index < mx
         f = indexToSourceFile(gd, index)
-        if !(f === nothing || f.count == 0)
+        if f !== nothing && f.count != 0                    # (not `!(f === nothing || …)`: JET cannot narrow that)
             if PL_unify_atom(ld, file, f.name) && unify_src_file_time(ld, time_, f) &&
                 PL_unify_atom(ld, type, mk_sym(T, f.system ? :system : :user))
                 PL_close_foreign_frame(ld, fid)

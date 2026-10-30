@@ -50,7 +50,7 @@ MUTANTS = [
          new='''        index = 2
 '''),
     dict(id="LB2-6 $time_source_file lists a file nothing has started", file=SF, targets=S,
-         old='''if !(f === nothing || f.count == 0)''',
+         old='''if f !== nothing && f.count != 0''',
          new='''if f !== nothing'''),
     dict(id="LB2-7 the time of a real file is 0", file=SF, targets=S,
          old='''    f.isfile && return PL_unify_float(ld, t, f.mtime)''',
