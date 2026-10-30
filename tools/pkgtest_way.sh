@@ -7,12 +7,12 @@
 #   LOGICKERNEL_INERT_SLICE=lk-warm.slice         # the lane's slice the run's scope is nested in (warm.sh sets it)
 #
 # WHY. A warm run is not Pkg.test: the daemon has swipl and a terminal-less but daemon-shaped stdio, and CI's
-# Pkg.test has no swipl and its stdout/stderr are not what the daemon's are. Three CI-only reds in two days
+# Pkg.test has no swipl and its stdout/stderr are PIPES, not what the daemon's are. Three CI-only reds in two days
 # (BLOB a301561's declaration, SSU2 ca51c2a's inert testset, S1's test_open_close_swipl.jl: `Suser_output(ld)` was no
 # IOSTREAM and a table was empty without swipl) passed every local run. So a changed test file runs once more in a
 # FRESH process the way CI runs it: LOGICKERNEL_NO_SWIPL=1 (no LOGICKERNEL_REQUIRE_*), stdin from /dev/null,
-# stdout and stderr to FILES, and the inert-testset guard over the result (tools/pkgtest_way.jl). In a scope with a
-# memory ceiling. FAIL CLOSED: a zero exit without the pass line is a failure (exit 4).
+# stdout and stderr to PIPES (a logger writes the files), and the inert-testset guard over the result
+# (tools/pkgtest_way.jl). In a scope with a memory ceiling. FAIL CLOSED: a zero exit without the pass line is a failure (exit 4).
 #
 # ONE AT A TIME, IN ITS OWN SCOPE (audit D-0242 item 2, 2026-10-29): BP2's second daemon was OOM-killed by its 6G slice
 # while a Pkg.test-way process shared it. So (a) the runs hold one lock (.warm/pkgtest_way.lock): a second waits, they
@@ -63,8 +63,17 @@ inner='cg=$(sed -n "s/^0:://p" /proc/self/cgroup); p=$1; shift; "$@"; rc=$?
 exit $rc'
 runner=()
 [ "${#scope[@]}" -gt 0 ] && runner=(bash -c "$inner" _ "$peakf")
-"${scope[@]}" "${runner[@]}" "${cmd[@]}" < /dev/null > "$base.out" 2> "$base.err" 9>&-
-rc=$?
+# STDOUT AND STDERR ARE PIPES, like CI's julia-runtest (audit D-0247): each stream goes through a pipe to a logger
+# (`tee FILE`, its own copy to /dev/null: the log stays quiet), the two kept apart (.out, .err), not files the child
+# opens. The child's exit status is the first stage's PIPESTATUS of the inner pipeline, written to $base.rc.
+rcf="$base.rc"
+rm -f "$rcf"
+{
+    "${scope[@]}" "${runner[@]}" "${cmd[@]}" < /dev/null 2>&1 >&3 3>&- 9>&- | tee "$base.err" > /dev/null 9>&-
+    echo "${PIPESTATUS[0]}" > "$rcf"
+} 3>&1 | tee "$base.out" > /dev/null 9>&-
+rc=$(cat "$rcf" 2> /dev/null)
+rc="${rc:-125}"                                  # no status written: the run is lost, never a pass
 peak_mib="" oom=0
 if [ -s "$peakf" ]; then
     pb=$(sed -n 's/^peak_bytes=//p' "$peakf")

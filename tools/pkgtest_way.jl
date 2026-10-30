@@ -5,7 +5,7 @@
 # ONE test file as Pkg.test runs it: a fresh module (test/runtests.jl), the unit's closing assertion that the
 # shared empty child vector is still empty, and test/inert_testset_guard.jl over the result. The process
 # is a fresh one with the standard streams and the environment tools/pkgtest_way.sh gives it (no swipl, stdin
-# from /dev/null, stdout and stderr to files).
+# from /dev/null, stdout and stderr to pipes).
 using Test
 # START FROM THE LAST CACHE, as the warm daemon does (tools/warm_session.jl): a plain `using` of a checkout whose cache
 # is stale re-precompiles LogicKernel (18 min measured in a fresh worktree); Revise's `stale_load` loads the most recent

@@ -575,7 +575,7 @@ _meta_check() {
 }
 
 # _inert_check [BUDGET_S] — each changed test file run THE WAY Pkg.test RUNS IT (audit D-0214 1, D-0222): a fresh
-# julia (tools/pkgtest_way.sh) with LOGICKERNEL_NO_SWIPL=1, stdin from /dev/null, stdout and stderr to files, and
+# julia (tools/pkgtest_way.sh) with LOGICKERNEL_NO_SWIPL=1, stdin from /dev/null, stdout and stderr to pipes, and
 # test/inert_testset_guard.jl over the result. A warm run has swipl and the daemon's stdio, so three reds were CI-only:
 # a testset asserting nothing without swipl (SSU2 ca51c2a), a table empty without swipl and `Suser_output(ld)` no
 # IOSTREAM under redirected stdio (S1's test_open_close_swipl.jl). A cold process compiles, so the estimate is the file's
@@ -634,7 +634,7 @@ _inert_check() {
         fi
         n=$(( n + 1 ))
     done
-    [ "$rc" -ne 0 ] || echo "preflight: Pkg.test-way run clean ($n changed test files: no swipl, stdio to files, inert guard)"
+    [ "$rc" -ne 0 ] || echo "preflight: Pkg.test-way run clean ($n changed test files: no swipl, stdio pipes, inert guard)"
     return "$rc"
 }
 

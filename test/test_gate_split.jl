@@ -424,11 +424,11 @@ end
         write(
             stub,
             """#!/usr/bin/env bash
-o1=\$([ -f /proc/\$\$/fd/1 ] && echo yes || echo no); o2=\$([ -f /proc/\$\$/fd/2 ] && echo yes || echo no)
+o1=\$([ -p /proc/\$\$/fd/1 ] && echo yes || echo no); o2=\$([ -p /proc/\$\$/fd/2 ] && echo yes || echo no)
 { echo "NO_SWIPL=\${LOGICKERNEL_NO_SWIPL-unset}"; echo "REQ_SWIPL=\${LOGICKERNEL_REQUIRE_SWIPL-unset}"
   echo "REQ_TOOLS=\${LOGICKERNEL_REQUIRE_TOOLS-unset}"; echo "TERM_=\${LOGICKERNEL_TERM-unset}"
-  echo "stdin=\$(readlink /proc/self/fd/0)"; echo "stdout_file=\$o1"
-  echo "stderr_file=\$o2"; echo "args=\$*"; } > "\$STUB_RECORD"
+  echo "stdin=\$(readlink /proc/self/fd/0)"; echo "stdout_pipe=\$o1"
+  echo "stderr_pipe=\$o2"; echo "args=\$*"; } > "\$STUB_RECORD"
 case "\$STUB_MODE" in
     pass) echo "pkgtest-way: PASS stub" ;;
     fail) echo "boom" >&2; exit 1 ;;
@@ -465,7 +465,10 @@ esac
             )
             txt = read(o, String)
             rm(o; force=true)
-            return (code=p.exitcode, out=txt, rec=isfile(rec) ? read(rec, String) : "")
+            return (
+                code=p.exitcode, out=txt, rec=isfile(rec) ? read(rec, String) : "",
+                outd=outd
+            )
         end
         r = way("test/test_package.jl")
         @test r.code == 0 && occursin("passed the way Pkg.test runs it", r.out)
@@ -473,12 +476,19 @@ esac
         @test occursin("REQ_SWIPL=unset\n", r.rec) && occursin("REQ_TOOLS=unset\n", r.rec)
         @test occursin("TERM_=unset\n", r.rec)
         @test occursin("stdin=/dev/null\n", r.rec)                          # stdin from /dev/null
-        @test occursin("stdout_file=yes\n", r.rec) && occursin("stderr_file=yes\n", r.rec)   # to files
+        # stdout and stderr are PIPES like CI's julia-runtest (audit D-0247), not files the child opens; a logger
+        # writes them to the two log files, each stream apart
+        @test occursin("stdout_pipe=yes\n", r.rec) && occursin("stderr_pipe=yes\n", r.rec)
+        @test occursin("pkgtest-way: PASS stub", read(joinpath(r.outd, "test_package.out"), String))
+        @test !occursin("pkgtest-way: PASS", read(joinpath(r.outd, "test_package.err"), String))
         @test occursin("--startup-file=no", r.rec) &&
             occursin("tools/pkgtest_way.jl", r.rec)
         @test occursin("test/test_package.jl", r.rec)
         r = way("test/test_package.jl"; mode="fail")
         @test r.code == 1 && occursin("FAILED (exit 1)", r.out) && occursin("boom", r.out)
+        # the child's exit status survives the pipes, and its stderr is in .err, not in .out
+        @test occursin("boom", read(joinpath(r.outd, "test_package.err"), String)) &&
+            !occursin("boom", read(joinpath(r.outd, "test_package.out"), String))
         # the failing test's own report is on the child's STDOUT: it must come out with the failure (CI, 2026-10-29)
         r = way("test/test_package.jl"; mode="failout")
         @test r.code == 1 && occursin("planted: Test Failed at x.jl:1", r.out) &&

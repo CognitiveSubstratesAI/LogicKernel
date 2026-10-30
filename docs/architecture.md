@@ -157,7 +157,7 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     D-0214 finding 1): the package-level test files Pkg.test runs (`test_package.jl`: every package a
     test file loads is declared for Pkg.test; the commit-message hook; the JUnit writer), the
     Pkg.test-way run of the changed test files (`tools/pkgtest_way.sh`, audit D-0222: a fresh julia, no
-    swipl, stdin from /dev/null, stdout and stderr to files, the inert-testset guard over the result;
+    swipl, stdin from /dev/null, stdout and stderr to PIPES (audit D-0247, as CI's julia-runtest), the inert-testset guard over the result;
     within a time budget, the cold estimate being 3x the last warm time; it starts from the last precompile
     cache only if that cache is THIS checkout's, `tools/pkgtest_way_load.jl`, audit D-0249: another
     checkout's cache is refused and the run repeats in a fresh process that builds its own);
