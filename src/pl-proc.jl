@@ -1218,7 +1218,8 @@ function get_procedure(
     return lookupProcedureToDefine(gd, ld, name, arity, gd.modules[m])
 end
 
-# PORT: pl-proc.c get_procedure (the `GP_FINDHERE` path, without `GP_NAMEARITY`) and get_module
+# PORT: pl-proc.c get_procedure as get_procedure_findhere
+# (the `GP_FINDHERE` path, without `GP_NAMEARITY`, and get_module)
 # DIVERGES: `contextModule(environment_frame)`, the module an unqualified term is looked up in, is an
 # argument (`context`): it is not ported, and the one caller (`'$source_file'/2`) is not transparent, so
 # its context is `system`. A `Module:` qualifier names an existing module, else `user` (get_module's
@@ -1609,7 +1610,8 @@ function get_procedure_find(
     return visibleProcedure(gd, name, arity, m)         # GP_FIND: found -> out; else notfound
 end
 
-# PORT: pl-proc.c get_functor (the `GF_PROCEDURE` case, term already stripped of its module)
+# PORT: pl-proc.c get_functor as get_functor_procedure
+# (the `GF_PROCEDURE` case, term already stripped of its module)
 # DIVERGES: returns `(name, arity)`, arity -1 with the error raised where upstream returns false and writes `fdef`; no `h`;
 # `GP_TYPE_QUIET` is not passed by any caller here (the type error is always raised).
 "The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or a head in `head`, else arity -1 with an error raised (pl-proc.c)."

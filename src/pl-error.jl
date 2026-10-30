@@ -555,7 +555,8 @@ function PL_error(
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
-# PORT: pl-error.c PL_error (ERR_MODIFY_STATIC_PREDICATE)
+# PORT: pl-error.c PL_error
+# (the `ERR_MODIFY_STATIC_PREDICATE` case)
 # DIVERGES: a method of its own: the definition and the context message (`PL_error(NULL, 0, msg, ERR_MODIFY_STATIC_PREDICATE, def)`),
 # the culprit built as `ERR_MODIFY_STATIC_PROC` does (the same `modify_static` branch); since LB2 (thread_local).
 """

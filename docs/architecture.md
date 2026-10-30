@@ -1366,6 +1366,7 @@ graph LR
     os_pl_file --> SWI_Prolog
     os_pl_file --> pl_atom
     os_pl_file --> pl_global
+    os_pl_file --> pl_modul
     os_pl_file --> pl_inline
     os_pl_file --> pl_comp
     os_pl_file --> pl_fli
@@ -1386,6 +1387,7 @@ graph LR
     pl_proc --> default_term
     pl_proc --> pl_incl
     pl_proc --> SWI_Prolog
+    pl_proc --> pl_atom
     pl_proc --> pl_index
     pl_proc --> pl_global
     pl_proc --> pl_modul
@@ -1397,6 +1399,7 @@ graph LR
     pl_proc --> pl_wam
     pl_proc --> pl_fli
     pl_proc --> pl_error
+    pl_proc --> pl_dbref
     pl_proc --> pl_arith
     pl_proc --> os_pl_text
     pl_proc --> pl_srcfile
@@ -1404,8 +1407,12 @@ graph LR
     pl_srcfile --> term_interface
     pl_srcfile --> default_term
     pl_srcfile --> pl_incl
+    pl_srcfile --> SWI_Prolog
     pl_srcfile --> pl_global
     pl_srcfile --> pl_comp
+    pl_srcfile --> pl_wam
+    pl_srcfile --> pl_fli
+    pl_srcfile --> pl_error
     pl_srcfile --> pl_arith
     pl_srcfile --> os_pl_text
     pl_srcfile --> pl_proc
@@ -1562,6 +1569,7 @@ graph LR
     pl_ext --> os_pl_files
     pl_ext --> os_pl_file
     pl_ext --> pl_proc
+    pl_ext --> pl_srcfile
     pl_ext --> pl_supervisor
     pl_ext --> pl_trace
     pl_ext --> pl_pro
