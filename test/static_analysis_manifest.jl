@@ -1936,7 +1936,7 @@ function _manifest_index(T)
         (LK.endConsult, Tuple{LK.SourceFile{T}}, false),
         (LK.highSourceFileIndex, Tuple{GD}, false),
         (LK.addModuleSourceFile, Tuple{LK.SourceFile{T}, MOD}, false),
-        (LK._atom_is, Tuple{T, Symbol}, false),
+        (LK._atom_is, Tuple{LD, T, Symbol}, false),
         (LK.unify_src_file_time, Tuple{LD, Int, LK.SourceFile{T}}, false),
         (LK.get_procedure_findhere, Tuple{GD, LD, Int, MOD}, false),
         (LK.get_procedure_find_namearity, Tuple{GD, LD, Int, MOD}, false),

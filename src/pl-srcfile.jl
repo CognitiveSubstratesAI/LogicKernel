@@ -200,7 +200,7 @@ function addModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
 end
 
 # Is the atom `a` the atom named `s`?
-_atom_is(a::T, s::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, s))
+_atom_is(ld::PL_local_data{T}, a, s::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, s))   # (`a`'s own type may be a subtype of `T`: an AltSym)
 
 # PORT: pl-srcfile.c unify_src_file_time
 "Unify `t` with the modification time of `f`, or 0 if it is no real file (pl-srcfile.c)."
@@ -317,17 +317,17 @@ function pl_source_file_property3_va(
     property = PL_get_atom_ex(ld, A2)
     property === nothing && return FFALSE
     sf = lookupSourceFile(gd, filename, false)
-    if _atom_is(property, :load_count)
+    if _atom_is(ld, property, :load_count)
         rc = PL_unify_integer(ld, A3, sf === nothing ? 0 : sf.count)
-    elseif _atom_is(property, :reloading)
+    elseif _atom_is(ld, property, :reloading)
         rc = PL_unify_bool(ld, A3, false)               # sf ? sf->reload != NULL : 0
-    elseif _atom_is(property, :number_of_clauses)
+    elseif _atom_is(ld, property, :number_of_clauses)
         rc = PL_unify_integer(ld, A3, sf === nothing ? 0 : Int(sf.number_of_clauses))
-    elseif _atom_is(property, :resource)
+    elseif _atom_is(ld, property, :resource)
         rc = PL_unify_bool(ld, A3, sf === nothing ? false : sf.resource)
-    elseif _atom_is(property, :from_state)
+    elseif _atom_is(ld, property, :from_state)
         rc = PL_unify_bool(ld, A3, sf === nothing ? false : sf.from_state)
-    elseif _atom_is(property, :loaded)
+    elseif _atom_is(ld, property, :loaded)
         rc = (sf === nothing || sf.ltime == 0.0) ? false : PL_unify_float(ld, A3, sf.ltime)
     else
         rc = PL_domain_error(ld, "source_file_property", A2)
@@ -350,7 +350,7 @@ function pl_set_source_file3_va(
     property === nothing && return FFALSE
     sf = lookupSourceFile(gd, filename, false)
     if sf !== nothing
-        if _atom_is(property, :resource)
+        if _atom_is(ld, property, :resource)
             v = PL_get_bool_ex(ld, A3)
             if v === nothing
                 rc = false
