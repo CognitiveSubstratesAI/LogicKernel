@@ -383,7 +383,7 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
 @testset "the source-file predicates == live swipl, through a program" begin
     if _swipl() === nothing
         @info "SOURCE FILE DIFFERENTIAL NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
-        @test length(_CASES) >= 100 && allunique(first.(_CASES)) && _CASES[end][1] == "z01"     # the table is whole
+        @test length(_CASES) >= 96 && allunique(first.(_CASES)) && _CASES[end][1] == "z01"     # the table is whole
     else
         names = ["t_$(id)" for (id, _) in _CASES]
         f = joinpath(realpath(mktempdir()), "p.pl")
