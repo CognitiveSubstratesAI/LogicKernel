@@ -50,7 +50,7 @@ MUTANTS = [
          new="    nothing\n"),
     dict(id="MOD3a-D2 I_DEPARTM always takes I_CALLM's path: no frame reuse, lTop grows with the depth (KILL b45; audit D-0229)",
          file=W, targets=RUN,
-         old="    if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) || !ld.prolog_flag_last_call\n        @goto I_CALLM",
+         old="    if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) ||\n        !ld.prolog_flag_last_call\n        @goto I_CALLM",
          new="    if true\n        @goto I_CALLM"),
     dict(id="MOD3a-M1 I_CALLM passes user, not its module, to mcall_cont (KILL b02, b05, b08)", file=W, targets=RUN,
          old="    mc_mi = Int(PCc[PC])                            # Module module = code2ptr(Module, *PC++)\n",

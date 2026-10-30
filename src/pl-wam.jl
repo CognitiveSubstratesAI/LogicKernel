@@ -3310,7 +3310,8 @@ function PL_next_solution_guarded(
     # operand is its index. QUIRK kept: when `I_DEPART` then cannot reuse the frame (an undefined
     # procedure), the context stays set on the departing frame, as upstream's.
     @label I_DEPARTM
-    if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) || !ld.prolog_flag_last_call
+    if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) ||
+        !ld.prolog_flag_last_call
         @goto I_CALLM                               # VMI_GOTO(I_CALLM)
     end
     setContextModule!(ld.frames[FR], Int(PCc[PC]))  # setContextModule(FR, code2ptr(Module, *PC++))

@@ -425,7 +425,9 @@ function pushTargetModule!(ci::compileInfo{T}, tm::target_module)::Nothing where
     if tm.type == TM_MODULE
         a = ci.gd.modules[tm.module_].atom
         lit = addLiteral!(ci, a)
-        Output_1!(ci, B_ATOM, atom_operand(lit, _atom_word!(ci.gd.atoms, ci.gd.atom_symbols, a)))
+        Output_1!(
+            ci, B_ATOM, atom_operand(lit, _atom_word!(ci.gd.atoms, ci.gd.atom_symbols, a))
+        )
     else                                                       # TBD: Handle islocal
         Output_1!(ci, B_ARGVAR, VAROFFSET(tm.var_index))       # Writing to a @ or : term
     end
@@ -2478,7 +2480,11 @@ function compileSubClause!(
         return BOOLEX_TRUE
     end
     # tm = (ci->colon_context.type == TM_MODULE ? ci->colon_context.module : ci->module)
-    tm = ci.colon_context.type == TM_MODULE ? gd.modules[ci.colon_context.module_] : ci.module_
+    tm = if ci.colon_context.type == TM_MODULE
+        gd.modules[ci.colon_context.module_]
+    else
+        ci.module_
+    end
     proc = lookupBodyProcedure(gd, arg, tm)
     if tm === ci.module_                                       # if ( tm == ci->module )
         Output_1!(ci, call, addProcedure!(ci, proc))
@@ -2652,7 +2658,8 @@ cb_frame{T}(
     kind::cb_kind, call, body, a0, var, tc_or, tc_jmp, vars, cutsave, hard, isnot
 ) where {T} =
     cb_frame{T}(
-        kind, call, body, a0, var, tc_or, tc_jmp, vars, cutsave, hard, isnot, TARGET_MODULE_NONE
+        kind, call, body, a0, var, tc_or, tc_jmp, vars, cutsave, hard, isnot,
+        TARGET_MODULE_NONE
     )
 
 "`frame` with another `kind` and forward-jump offset: the next step of the same construct."

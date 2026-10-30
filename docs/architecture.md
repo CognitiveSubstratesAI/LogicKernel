@@ -1083,6 +1083,7 @@ graph LR
     pl_comp --> pl_index
     pl_comp --> pl_funct
     pl_comp --> pl_global
+    pl_comp --> pl_modul
     pl_comp --> pl_inline
     pl_comp --> pl_prims
     pl_comp --> pl_ressymbol

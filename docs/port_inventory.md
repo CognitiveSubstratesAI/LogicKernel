@@ -91,7 +91,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-bag.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-builtin.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 10 | 1 |
 | swipl-devel `src/pl-codetable.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 1 | 1 |
-| swipl-devel `src/pl-comp.c` | code | `cbf4e1896275` | `src/pl-comp.jl` | 144 | 79 |
+| swipl-devel `src/pl-comp.c` | code | `cbf4e1896275` | `src/pl-comp.jl` | 149 | 82 |
 | swipl-devel `src/pl-comp.h` | code | `cbf4e1896275` | `src/pl-comp.jl` | 1 | 0 |
 | swipl-devel `src/pl-copyterm.c` | code | `cbf4e1896275` | `src/pl-copyterm.jl` | 19 | 11 |
 | swipl-devel `src/pl-data.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 77 | 8 |
@@ -121,7 +121,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-comp.jl` | 5 | 2 |
 | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-funct.jl` | 7 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 1 |
-| swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 252 | 24 |
+| swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-incl.jl` | 254 | 24 |
 | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 9 | 3 |
 | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-modul.jl` | 6 | 2 |
 | swipl-devel `src/pl-incl.h` | code | `cbf4e1896275` | `src/pl-prims.jl` | 6 | 1 |
@@ -156,8 +156,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-umap.c` | code | `cbf4e1896275` | `src/pl-umap.jl` | 6 | 3 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `cbf4e1896275` | `src/pl-variant.jl` | 16 | 6 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 148 | 0 |
-| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 169 | 110 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-vmi.jl` | 151 | 0 |
+| swipl-devel `src/pl-vmi.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 172 | 113 |
 | swipl-devel `src/pl-wam.c` | code | `cbf4e1896275` | `src/pl-wam.jl` | 51 | 42 |
 | swipl-devel `src/pl-write.c` | code | `cbf4e1896275` | `src/pl-write.jl` | 118 | 47 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `cbf4e1896275` | `test/core_lang/test_bips.jl` | 10 | 1 |
@@ -228,7 +228,7 @@ checkout is pulled.
 | swipl-devel `src/pl-bag.c` | `cbf4e1896275` | 3 | 15 | 3 | src/pl-bag.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-builtin.h` | `cbf4e1896275` | 0 | 3 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-codetable.c` | `cbf4e1896275` | 0 | 0 | 0 | src/pl-vmi.jl |
-| swipl-devel `src/pl-comp.c` | `cbf4e1896275` | 87 | 167 | 64 | src/pl-comp.jl |
+| swipl-devel `src/pl-comp.c` | `cbf4e1896275` | 90 | 167 | 66 | src/pl-comp.jl |
 | swipl-devel `src/pl-comp.h` | `cbf4e1896275` | 1 | 6 | 0 | src/pl-comp.jl |
 | swipl-devel `src/pl-copyterm.c` | `cbf4e1896275` | 14 | 29 | 10 | src/pl-copyterm.jl |
 | swipl-devel `src/pl-data.h` | `cbf4e1896275` | 2 | 2 | 0 | src/pl-incl.jl, src/pl-inline.jl |
@@ -270,7 +270,7 @@ checkout is pulled.
 | swipl-devel `src/pl-trace.c` | `cbf4e1896275` | 6 | 77 | 3 | src/pl-trace.jl |
 | swipl-devel `src/pl-umap.c` | `cbf4e1896275` | 4 | 8 | 3 | src/pl-umap.jl |
 | swipl-devel `src/pl-variant.c` | `cbf4e1896275` | 9 | 17 | 5 | src/pl-global.jl, src/pl-variant.jl |
-| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 148 | 243 | 75 | src/pl-vmi.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-vmi.c` | `cbf4e1896275` | 151 | 243 | 78 | src/pl-vmi.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-wam.c` | `cbf4e1896275` | 47 | 98 | 40 | src/pl-wam.jl |
 | swipl-devel `src/pl-write.c` | `cbf4e1896275` | 87 | 111 | 44 | src/pl-write.jl |
 | swipl-devel `tests/core_lang/test_bips.pl` | `cbf4e1896275` | 0 | 7 | 0 | test/core_lang/test_bips.jl |
@@ -288,7 +288,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `cbf4e1896275` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `cbf4e1896275` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `cbf4e1896275` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **1455** | **4531** | **814** | |
+| **total** | | **1461** | **4531** | **819** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
@@ -440,11 +440,11 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 |---|---|---|---|---|
 | `I_NOP` | 443 | — |  | declared |
 | `I_ENTER` | 1795 | — | NDQP | declared |
-| `I_CONTEXT` | 1835 | CA1_MODULE |  |  |
+| `I_CONTEXT` | 1835 | CA1_MODULE |  | declared |
 | `I_CALL` | 1859 | CA1_LPROC | NDQP | declared |
 | `I_DEPART` | 2067 | CA1_LPROC | NDQP | declared |
 | `I_DEPARTATM` | 2118 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
-| `I_DEPARTM` | 2126 | CA1_MODULE, CA1_PROC |  |  |
+| `I_DEPARTM` | 2126 | CA1_MODULE, CA1_PROC |  | declared |
 | `I_EXIT` | 2177 | — | NDQP | declared |
 | `I_EXITFACT` | 2294 | — | NDQP | declared |
 | `I_EXITQUERY` | 2360 | — |  | declared |
@@ -463,7 +463,7 @@ marker exists in `src/pl-vmi.jl` (declaration only — no instruction executes y
 | `I_CALLATM` | 5337 | CA1_MODULE, CA1_MODULE, CA1_PROC |  |  |
 | `I_DEPARTATMV` | 5343 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
 | `I_CALLATMV` | 5376 | CA1_MODULE, CA1_VAR, CA1_PROC |  |  |
-| `I_CALLM` | 5410 | CA1_MODULE, CA1_PROC |  |  |
+| `I_CALLM` | 5410 | CA1_MODULE, CA1_PROC |  | declared |
 | `I_CALL1` | 5432 | — |  | declared |
 | `I_CALLN` | 5679 | CA1_INTEGER |  | declared |
 
