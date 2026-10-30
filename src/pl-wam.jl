@@ -2441,9 +2441,9 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c H_VAR
     # DIVERGES: in write mode under `occurs_check=false` the variable's value goes into the argument
-    # cell on the WORDS (`_cell_link!`: `makeRefG(k)` for an unbound cell, else `*k`; into a slot
-    # `_slot_link!`, f3b-5b) — the address test `k > ARGP` and the trail space disappear, as no
-    # variable lives in a frame slot (each is a cell). Under `true`/`error`: `setVar(*ARGP)` and
+    # cell on the WORDS (`_cell_link_lower!`: the test `k > ARGP` binds a higher unbound cell to a
+    # reference to ARGP's, else `makeRefG(k)` / `*k` as `_cell_link!`; into a slot `_slot_link!`,
+    # f3b-5b) — the trail space disappears (the trail grows on demand). Under `true`/`error`: `setVar(*ARGP)` and
     # unification decides, as upstream (L1c; the
     # "never write under those flags" of decision 3 is retired with the builder).
     @label H_VAR
@@ -2452,7 +2452,7 @@ function PL_next_solution_guarded(
     if UMODE == uwrite
         if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
             if ARGP.form == ARGP_GLOBAL
-                _cell_link!(ld, ARGP.pos, hv_k + 1)
+                _cell_link_lower!(ld, ARGP.pos, hv_k + 1)
             elseif ARGP.form == ARGP_SLOT               # (f3b-5b) on the words, as into a cell
                 _slot_link!(ld, ARGP.pos + 1, hv_k + 1)     # *ARGP = (deRef(k), linkValI)
             else
@@ -2734,13 +2734,13 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c B_ARGVAR
-    # DIVERGES: on the WORDS into a global cell (L1c: `_cell_link!`); no variable cell lies in a
-    # frame (L1c), so the test that chooses the direction of the link (`ARGP < k`) and the
-    # trail-space check disappear.
+    # DIVERGES: on the WORDS into a global cell (L1c: `_cell_link_lower!`, which keeps the direction
+    # test `ARGP < k`: the higher unbound cell is bound to a reference to the lower); the trail-space
+    # check disappears (the trail grows on demand).
     @label B_ARGVAR
     bav_i = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1
     if ARGP.form == ARGP_GLOBAL
-        _cell_link!(ld, ARGP.pos, bav_i)
+        _cell_link_lower!(ld, ARGP.pos, bav_i)
     elseif ARGP.form == ARGP_SLOT                   # *ARGP = linkValI(k), slot to slot on the WORDS (L1c-6)
         _slot_link!(ld, ARGP.pos + 1, bav_i)
     else

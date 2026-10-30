@@ -133,7 +133,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-index.c` | code | `cbf4e1896275` | `src/pl-index.jl` | 110 | 33 |
 | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-arith.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-gmp.jl` | 1 | 0 |
-| swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 17 | 14 |
+| swipl-devel `src/pl-inline.h` | code | `cbf4e1896275` | `src/pl-inline.jl` | 18 | 15 |
 | swipl-devel `src/pl-list.c` | code | `cbf4e1896275` | `src/pl-list.jl` | 17 | 9 |
 | swipl-devel `src/pl-modul.c` | code | `cbf4e1896275` | `src/pl-modul.jl` | 32 | 23 |
 | swipl-devel `src/pl-op.c` | code | `cbf4e1896275` | `src/pl-incl.jl` | 1 | 1 |

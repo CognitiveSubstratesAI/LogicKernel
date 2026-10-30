@@ -1328,6 +1328,7 @@ function _manifest_index(T)
         (LK.bindConst, Tuple{LD, Int, UInt64}, false),          # … through varBindConst (AV1)
         (LK._argp_deref_word, Tuple{LD, ARGP}, true),
         (LK._cell_link!, Tuple{LD, Int, Int}, false),
+        (LK._cell_link_lower!, Tuple{LD, Int, Int}, false),
         (LK._slot_from_cell!, Tuple{LD, Int, Int}, true),
         (LK._h_const_word!, Tuple{LD, Int, UInt64}, false),     # a binding may grow the trail
         (LK._h_const_cell!, Tuple{LD, Int, UInt64}, false),     # … from a global cell (L1d step 4)
@@ -2813,6 +2814,11 @@ const SPAN_CALLEE_EXEMPT = [
         "the cold import of a term a slot holds (L1C_ALLOC_EXEMPT, L1e)"
     ),
     (LK._cell_link!, :cold, "the cold import of a term a cell holds (as _slot_link!)"),
+    (
+        LK._cell_link_lower!,
+        :cold,
+        "the cold import through _cell_link! (B_ARGVAR, H_VAR write mode)"
+    ),
     (LK.autoImport, :cold, "V5c: the first call of an undefined predicate"),
     (
         LK.discardChoicesAfter,

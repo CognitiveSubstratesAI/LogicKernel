@@ -866,6 +866,40 @@ function _cell_link!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-inline.h linkValI as _cell_link_lower!
+# DIVERGES: with the direction rule of pl-vmi.c B_ARGVAR and H_VAR (write mode), on the WORDS (as `_cell_link!`): the variable is the slot's dereferenced global cell `q`
+# (no variable lives in a frame slot), the tests `ARGP < k` (B_ARGVAR) and `k > ARGP` (H_VAR) are
+# `p < q` on global positions (a position grows with its address). An UNBOUND cell above the argument
+# cell is bound (trailed below `mark_bar`, as `Trail(k, makeRefG(ARGP))`) to a reference to the argument
+# cell, which is set unbound: the variable's identity — its address, standard order (pl-prims.c
+# compareStandard) — is the LOWER cell. Every other case is `_cell_link!`, an attributed variable
+# included (upstream's `isAttVar(*k)` branch gives `makeRefG(k)` whatever the direction); the trail
+# space check disappears (the trail grows on demand).
+"Store in global cell `p` what slot `i` refers to, as B_ARGVAR/H_VAR: a younger unbound cell is bound to `p`."
+function _cell_link_lower!(ld::PL_local_data{T}, p::Int, i::Int)::Nothing where {T}
+    w = ld.slots[i]
+    if isRef(w)
+        q = unRef(w)
+        while true
+            c = ld.gstack[q]
+            if isVar(c)
+                if p < q                                # if ( ARGP < k )
+                    ld.gstack[p] = word(0)              #   setVar(*ARGP)
+                    _bind_const!(ld, q, makeRefG(p))    #   Trail(k, makeRefG(ARGP++))
+                    return nothing
+                end
+                break
+            elseif isRef(c)
+                q = unRef(c)
+            else
+                break
+            end
+        end
+    end
+    _cell_link!(ld, p, i)
+    return nothing
+end
+
 # PORT: pl-inline.h register_attvar
 # DIVERGES: `gp` is a global POSITION and the chain's head `ld.attvar_attvars` one too, 0 for
 # upstream's NULL (no cell lies at position 0). Its callers, `link_attvar` and `alloc_attvar`
