@@ -113,8 +113,8 @@ MUTANTS = [
          new='''boot = false '''),
     # ---- system mode
     dict(id="LB2-24 SYSTEM_MODE is never on", file="src/pl-global.jl", targets=S,
-         old='''= ld.prolog_flag_access_level == ACCESS_LEVEL_SYSTEM''',
-         new='''= false'''),
+         old='''    ld.prolog_flag_access_level == ACCESS_LEVEL_SYSTEM''',
+         new='''    false'''),
     dict(id="LB2-25 assert_term locks without P_LOCKED", file="src/pl-comp.jl", targets=S,
          old='''(def.flags & P_LOCKED) == 0 && (def.flags |= HIDE_CHILDS | P_LOCKED)''',
          new='''(def.flags & P_LOCKED) == 0 && (def.flags |= HIDE_CHILDS)'''),
@@ -136,8 +136,8 @@ MUTANTS = [
          old='''proc !== nothing && isDefinedProcedure(gd, proc)''',
          new='''proc !== nothing'''),
     dict(id="LB2-34 $start_aux answers Name/Arity without the module", file="src/pl-comp.jl", targets=S,
-         old='''GP_QUALIFY | GP_NAMEARITY) || return FFALSE''',
-         new='''GP_NAMEARITY) || return FFALSE'''),
+         old='''gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY''',
+         new='''gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_NAMEARITY'''),
     dict(id="LB2-35 $end_aux with [] keeps the current procedure", file="src/pl-comp.jl", targets=S,
          old='''    if PL_get_nil(ld, A2)
         sf.current_procedure = nothing''',
@@ -152,9 +152,13 @@ MUTANTS = [
          new='''        else
             rc = true'''),
     dict(id="LB2-38 get_procedure_namearity does not follow the default import (a15)", file="src/pl-proc.jl", targets=S,
-         old='''        visibleProcedure(gd, name, arity, m)
+         old='''    else
+        visibleProcedure(gd, name, arity, m)
+    end
     if p === nothing''',
-         new='''        isCurrentProcedure(sym_key(name), arity, m)
+         new='''    else
+        isCurrentProcedure(sym_key(name), arity, m)
+    end
     if p === nothing'''),
     dict(id="LB2-31 ReadingSource is false at line 0 again", file="src/pl-modul.jl", targets=S,
          old='''ld.read_source.position.lineno >= 0 && ''',
@@ -278,90 +282,106 @@ MUTANTS = [
          new='''        unify_functor(ld, h, def, how)
         thehead != 0 && PL_put_term(ld, thehead, h)'''),
     # ---- '$get_clause_attribute'/3 (src/pl-proc.jl; the predicate is exercised by the one file only)
-    dict(id="LB2-66 get_clause_attribute line_count answers 0 for an asserted clause", file=PR, targets=N,
-         old='''clause.line_no != 0 && return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE''',
-         new='''return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE'''),
-    dict(id="LB2-67 get_clause_attribute file reads the owner's index", file=PR, targets=N,
+    dict(id="LB2-66 get_clause_attribute line_count answers 0 for an asserted clause", file=PR, targets=N + T,
+         old='''        clause.line_no != 0 &&
+            return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE''',
+         new='''        return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE'''),
+    dict(id="LB2-67 get_clause_attribute file reads the owner's index", file=PR, targets=N + T,
          old='''sf = indexToSourceFile(gd, clause.source_no)''',
          new='''sf = indexToSourceFile(gd, clause.owner_no)'''),
-    dict(id="LB2-68 get_clause_attribute owner reads the source's index", file=PR, targets=N,
+    dict(id="LB2-68 get_clause_attribute owner reads the source's index", file=PR, targets=N + T,
          old='''sf = indexToSourceFile(gd, clause.owner_no)''',
          new='''sf = indexToSourceFile(gd, clause.source_no)'''),
-    dict(id="LB2-69 get_clause_attribute size is in words, not bytes", file=PR, targets=N,
+    dict(id="LB2-69 get_clause_attribute size is in words, not bytes", file=PR, targets=N + T,
          old='''8 * sizeofClause(length(clause.codes))''',
          new='''sizeofClause(length(clause.codes))'''),
-    dict(id="LB2-70 get_clause_attribute fact is inverted", file=PR, targets=N,
-         old='''v = (clause.flags & UNIT_CLAUSE) != 0 ? :true : :false''',
-         new='''v = (clause.flags & UNIT_CLAUSE) == 0 ? :true : :false'''),
-    dict(id="LB2-71 get_clause_attribute erased is inverted", file=PR, targets=N,
-         old='''v = visibleClause(clause, gen) ? :false : :true''',
-         new='''v = visibleClause(clause, gen) ? :true : :false'''),
-    dict(id="LB2-72 get_clause_attribute predicate_indicator is not qualified", file=PR, targets=N,
+    dict(id="LB2-70 get_clause_attribute fact is inverted", file=PR, targets=N + T,
+         old='''PL_unify_bool(ld, value, (clause.flags & UNIT_CLAUSE) != 0)''',
+         new='''PL_unify_bool(ld, value, (clause.flags & UNIT_CLAUSE) == 0)'''),
+    dict(id="LB2-71 get_clause_attribute erased is inverted", file=PR, targets=N + T,
+         old='''PL_unify_bool(ld, value, !visibleClause(clause, gen))''',
+         new='''PL_unify_bool(ld, value, visibleClause(clause, gen))'''),
+    dict(id="LB2-72 get_clause_attribute predicate_indicator is not qualified", file=PR, targets=N + T,
          old='''GP_QUALIFY | GP_NAMEARITY
         ) && return FTRUE''',
          new='''GP_NAMEARITY
         ) && return FTRUE'''),
-    dict(id="LB2-73 get_clause_attribute predicate_indicator is a head, not Name/Arity", file=PR, targets=N,
+    dict(id="LB2-73 get_clause_attribute predicate_indicator is a head, not Name/Arity", file=PR, targets=N + T,
          old='''GP_QUALIFY | GP_NAMEARITY
         ) && return FTRUE''',
          new='''GP_QUALIFY
         ) && return FTRUE'''),
-    dict(id="LB2-74 get_clause_attribute predicate_indicator succeeds when the unification fails", file=PR, targets=N,
+    dict(id="LB2-74 get_clause_attribute predicate_indicator succeeds when the unification fails", file=PR, targets=N + T,
          old='''GP_QUALIFY | GP_NAMEARITY
         ) && return FTRUE''',
          new='''GP_QUALIFY | GP_NAMEARITY
         ); return FTRUE'''),
-    dict(id="LB2-75 get_clause_attribute module is always user", file=PR, targets=N,
-         old='''gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE''',
-         new='''MODULE_user(gd).atom) ? FTRUE : FFALSE'''),
-    dict(id="LB2-76 get_clause_attribute refuses an erased reference", file=PR, targets=N,
+    dict(id="LB2-75 get_clause_attribute module is always user", file=PR, targets=N + T,
+         old='''PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom)''',
+         new='''PL_unify_atom(ld, value, MODULE_user(gd).atom)'''),
+    dict(id="LB2-76 get_clause_attribute refuses an erased reference", file=PR, targets=N + T,
          old='''rc == 0 && return FFALSE                                # !PL_get_clref(ref, &clause): the error is raised''',
          new='''rc != 1 && return FFALSE'''),
-    dict(id="LB2-77 get_clause_attribute succeeds for an unknown attribute", file=PR, targets=N,
-         old='''        return PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE
+    dict(id="LB2-77 get_clause_attribute succeeds for an unknown attribute", file=PR, targets=N + T,
+         old='''            FFALSE
+        end
     end
-    return FFALSE''',
-         new='''        return PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE
+    return FFALSE
+end
+
+# PORT: pl-proc.c setThreadLocalDefinition''',
+         new='''            FFALSE
+        end
     end
-    return FTRUE'''),
+    return FTRUE
+end
+
+# PORT: pl-proc.c setThreadLocalDefinition'''),
     # ---- thread_local (pl-proc.c:3755 setThreadLocalDefinition; rows t01-t17; the redefine path t16)
-    dict(id="LB2-78 thread_local on a predicate WITH clauses is allowed", file=PR, targets=N,
-         old='''        def.impl_clauses.first_clause !== nothing && return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")''',
+    dict(id="LB2-78 thread_local on a predicate WITH clauses is allowed", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
+         old='''        def.impl_clauses.first_clause !== nothing &&
+            return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")''',
          new='''        nothing'''),
-    dict(id="LB2-79 thread_local does not make the predicate dynamic", file=PR, targets=N,
+    dict(id="LB2-79 thread_local does not make the predicate dynamic", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
          old='''def.flags |= P_DYNAMIC | P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL''',
          new='''def.flags |= P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL'''),
-    dict(id="LB2-80 thread_local false on a thread-local predicate succeeds", file=PR, targets=N,
+    dict(id="LB2-80 thread_local false on a thread-local predicate succeeds", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
          old='''    return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "predicate is thread-local")   # local --> static''',
          new='''    return true   # local --> static'''),
-    dict(id="LB2-81 thread_local: no early return when the attribute already has the value", file=PR, targets=N,
-         old='''    if (val && (def.flags & P_THREAD_LOCAL) != 0) || (!val && (def.flags & P_THREAD_LOCAL) == 0)
+    dict(id="LB2-81 thread_local: no early return when the attribute already has the value", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
+         old='''    if (val && (def.flags & P_THREAD_LOCAL) != 0) ||
+        (!val && (def.flags & P_THREAD_LOCAL) == 0)
         return true
     end
     if val ''',
          new='''    if val '''),
-    dict(id="LB2-82 thread_local false: the context message is missing", file=PR, targets=N,
+    dict(id="LB2-82 thread_local false: the context message is missing", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
          old='''def, "predicate is thread-local")''',
          new='''def, "")'''),
-    dict(id="LB2-83 thread_local false on a predicate that is not thread-local is refused", file=PR, targets=N,
+    dict(id="LB2-83 thread_local false on a predicate that is not thread-local is refused", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
          old='''(!val && (def.flags & P_THREAD_LOCAL) == 0)''',
          new='''false'''),
-    dict(id="LB2-84 setAttrDefinition sets the thread_local bit as any other", file=PR, targets=N,
+    dict(id="LB2-84 setAttrDefinition sets the thread_local bit as any other", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
          old='''    attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
 ''',
          new=''''''),
     dict(id="LB2-85 redefineProcedure: a thread-local predicate has no clauses (the local definition is not looked at)", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''first = (def.flags & P_THREAD_LOCAL) != 0 ? _hasLocalClausesDefinition(gd, def) : hasClausesDefinition(gd, def)''',
-         new='''first = hasClausesDefinition(gd, def)'''),
+         old='''        first = if (def.flags & P_THREAD_LOCAL) != 0
+            _hasLocalClausesDefinition(gd, def)
+        else
+            hasClausesDefinition(gd, def)
+        end''',
+         new='''        first = hasClausesDefinition(gd, def)'''),
     dict(id="LB2-86 redefineProcedure: a thread-local predicate another file defines is not refused", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
          old='''            (def.flags & P_THREAD_LOCAL) != 0 && return PL_error(
-                ld, ERR_PERMISSION_PROC, mk_sym(T, :modify), mk_sym(T, :thread_local_procedure), proc
+                ld, ERR_PERMISSION_PROC, mk_sym(T, :modify),
+                mk_sym(T, :thread_local_procedure), proc
             )
 ''',
          new=''''''),
     # expected survivor, look first: the error term of t16 goes to stderr (a message), the rows read only the answers; a white-box row on ld.messages
     # (test_load_swipl.jl:554 reads them) would kill it
     dict(id="LB2-87 redefineProcedure: the error names static_procedure, not thread_local_procedure", file=PR, targets=N + ["test/files/test_load_swipl.jl"],
-         old='''mk_sym(T, :modify), mk_sym(T, :thread_local_procedure), proc''',
-         new='''mk_sym(T, :modify), mk_sym(T, :static_procedure), proc'''),
+         old='''mk_sym(T, :thread_local_procedure), proc''',
+         new='''mk_sym(T, :static_procedure), proc'''),
 ]

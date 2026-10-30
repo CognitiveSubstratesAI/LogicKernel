@@ -176,9 +176,12 @@ function PL_global_data{T}() where {T}
     return gd
 end
 
-# PORT: pl-incl.h ACCESS_LEVEL_USER, ACCESS_LEVEL_SYSTEM (swipl-devel cbf4e189 pl-incl.h:2969-2970)
-"The `access_level` values (pl-incl.h): the default user view, and low-level access."
+# (swipl-devel cbf4e189 pl-incl.h:2969-2970)
+# PORT: pl-incl.h ACCESS_LEVEL_USER
+"The `access_level` value of the default user view (pl-incl.h)."
 const ACCESS_LEVEL_USER = 0
+# PORT: pl-incl.h ACCESS_LEVEL_SYSTEM
+"The `access_level` value of low-level access (pl-incl.h)."
 const ACCESS_LEVEL_SYSTEM = 1
 
 # PORT: pl-incl.h MODULE_user
@@ -552,14 +555,16 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     return ld
 end
 
-# PORT: pl-incl.h SYSTEM_MODE (pl-incl.h:2973)
+# PORT: pl-incl.h SYSTEM_MODE
+# (pl-incl.h:2973)
 # DIVERGES: a function of the local data.
 "Whether the engine is in system mode: `LD->prolog_flag.access_level == ACCESS_LEVEL_SYSTEM` (pl-incl.h)."
 SYSTEM_MODE(ld::PL_local_data{T}) where {T} =
     ld.prolog_flag_access_level == ACCESS_LEVEL_SYSTEM
 
-# PORT: pl-init.c setAccessLevel (pl-init.c:1614, :1666 call it); pl-prologflag.c setAccessLevelFromAtom (:707)
-# DIVERGES: the kernel has no `set_prolog_flag(access_level, _)` yet (R2 F1b), so this is the only way to set the level.
+# setAccessLevel (swipl-devel pl-init.c; called at pl-init.c:1614, :1666 and by pl-prologflag.c setAccessLevelFromAtom :707) is
+# not a marked port: pl-init.c is not one of this file's UPSTREAM files. The kernel has no `set_prolog_flag(access_level, _)`
+# yet (R2 F1b), so this is the only way to set the level.
 "Set the engine's access level (`setAccessLevel(level)`)."
 function setAccessLevel!(ld::PL_local_data{T}, level::Int) where {T}
     ld.prolog_flag_access_level = level
