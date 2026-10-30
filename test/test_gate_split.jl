@@ -2433,6 +2433,9 @@ println("WHYTEXT ", why)
 println("WHY ", why === nothing ? "none" : "foreign")
 println("WHYEMPTY ", pkgtest_way_foreign(PkgDirStub, root, :nomethod) === nothing ? "none" : "foreign")
 println("WHYUNDEF ", pkgtest_way_foreign(PkgDirStub, root, :nothing_here) === nothing ? "none" : "foreign")
+anon = Module(:PkgDirAnon)                                   # a module that is no package: its directory is unknown
+include_string(anon, string("marker() = ", repr("A")), joinpath(root, "src", "PkgDirStub.jl"))
+println("WHYANON ", pkgtest_way_foreign(anon, root, :marker))
 println("RESULT ", kind, " ", PkgDirStub.marker(), " ", isdefined(PkgDirStub, :only_in_b), " ", pkgdir(PkgDirStub))
 mode == "guardedfail" && exit(3)
 """
@@ -2483,6 +2486,8 @@ mode == "guardedfail" && exit(3)
     # a probe with no method, and one that is not defined, are not "this checkout's" either: an empty list must not pass
     @test occursin(r"(?m)^WHYEMPTY foreign$", r.out) &&
         occursin(r"(?m)^WHYUNDEF foreign$", r.out)
+    # a module that is no package has no directory: it is not this checkout's even with its method under the root
+    @test occursin(r"(?m)^WHYANON .*is unknown$", r.out)
     r = pd(coA, "raw")                                       # the newest cache is A's own: nothing to refuse
     @test r.code == 0 && r.kind == "raw" && r.marker == "A" && r.why == "none"
     # 2. THE BUG, the control that gives the test its power: checkout B, the stale load alone, runs A's code
