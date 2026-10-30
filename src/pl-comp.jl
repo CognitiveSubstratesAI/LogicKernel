@@ -3640,7 +3640,7 @@ function clause_ndet(
         while cref !== nothing
             clause = cref.clause::Clause{T}
 
-            if decompile!(ld, clause, h, b)                 # decompile(clause, term, bindings)
+            if decompile!(ld, clause, h, b, bindings)       # decompile(clause, term, bindings)
                 rc2 = if (flags & IS_CLAUSE) != 0
                     # get_head_and_body_clause(term, h, b, NULL, &hflags), by decompile!
                     unify_head(gd, ld, head, h) && PL_unify(ld, b, body)
