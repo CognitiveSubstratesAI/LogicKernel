@@ -328,6 +328,11 @@ const _CASES = [
         "t17",
         "'\$set_predicate_attribute'(tl17(_), thread_local, true), assertz(tl17(1)), ex('\$set_predicate_attribute'(tl17(_), thread_local, false), R)"
     ),
+    # t18: thread_local makes the predicate dynamic (pl-proc.c:3755 `set(def, P_DYNAMIC|P_TRANSACT|P_VOLATILE|P_THREAD_LOCAL)`): a call with no clause fails
+    (
+        "t18",
+        "'\$set_predicate_attribute'(tl18(_), thread_local, true), catch(( tl18(_) -> R = yes ; R = no ), error(E, _), R = E)"
+    ),
     # LAST: nothing follows
     ("z01", "R = last")
 ]
@@ -555,6 +560,7 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
             sw
         )
         @test any(l -> startswith(l, "t_t13 ") && occursin("nil", l), sw)
+        @test any(l -> startswith(l, "t_t18 ") && occursin(_codes("no"), l), sw)                # dynamic: the call fails
         @test any(
             l -> startswith(l, "t_t16 ") && occursin("i1", l) && !occursin("i2", l), sw
         )
@@ -716,4 +722,23 @@ end
     @test sym_text(attr(ref, "erased")[2][3]) == "true"
     @test attr(ref, "size")[1] === :true && sym_text(attr(ref, "fact")[2][3]) == "true"
     @test ld.clause_contexts.live == 0 && isempty(ld.predicate_references)
+end
+
+# the error the loader raises for a file clause of a thread-local predicate that has clauses (pl-proc.c:4014 via abolishProcedure; swipl 10.1.19
+# prints `Redefined static procedure tlf/1` and raises permission_error(modify, thread_local_procedure, tlf/1), seen with message_hook/3).
+# The kernel's printMessage keeps the messages (no print_message/2 yet), so the load's message list is read.
+@testset "a file clause for a thread-local predicate with clauses: permission_error(modify, thread_local_procedure, tlw/1) is a load message" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    f = joinpath(realpath(mktempdir()), "w.pl")
+    write(
+        f,
+        ":- '\$set_predicate_attribute'(tlw(_), thread_local, true), assertz(tlw(1)).\ntlw(2).\n"
+    )
+    st, ball, msgs = LK.load_file!(gd, ld, f)
+    @test st === :ok
+    errs = [enc(m) for (sev, m) in msgs if sev === :error]
+    @test length(errs) == 1
+    @test occursin(_codes("permission_error"), errs[1]) &&
+        occursin(_codes("thread_local_procedure"), errs[1]) && occursin(_codes("tlw"), errs[1])
 end

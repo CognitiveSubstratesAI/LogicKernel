@@ -459,3 +459,36 @@ end
         @test length(want) == 4 && String.(want) == got
     end
 end
+
+# op/3 in system mode (pl-op.c:147, `!SYSTEM_MODE`; R2 LB2): `,` and `|` may be redefined there, and are refused in user mode.
+# swipl 10.1.19 (2026-10-30), with `set_prolog_flag(access_level, system)`: `op(1100, xfy, ',')` and `op(200, xfy, '|')` succeed;
+# in user mode `op(200, xfy, ',')` raises permission_error(modify, operator, ','). The flag is set through `setAccessLevel!` here (the
+# kernel's set_prolog_flag/2 does not take `access_level`).
+@testset "op/3: system mode lifts the refusal of ',' and '|' (swipl's access_level system)" begin
+    function op3(gd, ld, p, type, name)
+        proc = LK.isCurrentProcedure(sym_key(_tls("op")), 3, LK.MODULE_system(gd))
+        pvm = LK.PutVarMap()
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 3)
+        LK.putSlotValue!(ld, a + 1, mk_gnd(_TL, Int64(p)), pvm)
+        LK.putSlotValue!(ld, a + 2, _tls(type), pvm)
+        LK.putSlotValue!(ld, a + 3, _tls(name), pvm)
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        rc = LK.PL_next_solution(gd, ld, qid)
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+        return rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST ? :true :
+            rc == LK.PL_S_EXCEPTION ? :exception : :false
+    end
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    @test op3(gd, ld, 200, "xfy", ",") === :exception          # user mode: permission_error(modify, operator, ',')
+    @test op3(gd, ld, 200, "xfy", "|") === :exception          # user mode: permission_error(create, operator, '|')
+    LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_SYSTEM)
+    @test op3(gd, ld, 1100, "xfy", ",") === :true
+    @test op3(gd, ld, 200, "xfy", "|") === :true
+    LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_USER)
+    @test op3(gd, ld, 200, "xfy", ",") === :exception
+end

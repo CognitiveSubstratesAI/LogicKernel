@@ -58,6 +58,8 @@ mem(X, [X|_]).
 mem(X, [_|T]) :- mem(X, T).
 ex(G, R) :- catch(( G, R = true ), error(E, C), R = err(E, C)).
 keep(L, L1) :- findall(P, ( mem(P, L), P = user:H, functor(H, N, _), mem(N, [foo,bar,baz,d]) ), L1).
+:- dynamic sloc/2.
+:- source_location(F, L), assertz(sloc(F, L)).
 """
 
 # (id, goal). `ex/2` returns `true` or `err(Formal, Context)`. `@FILE@` is the program's path.
@@ -241,6 +243,13 @@ const _CASES = [
         "a16",
         "'\$start_aux'('/no/such/a16', _), '\$end_aux'('/no/such/a16', nomod:atom_length/2), '\$start_aux'('/no/such/a16', C), '\$end_aux'('/no/such/a16', C), R = C"
     ),
+    # a17: `$start_aux` answers [] for a current predicate that is no longer defined: emptied and made static again (abolish/1 waits for R2; pl-proc.jl:29) (pl-comp.c:5205 isDefinedProcedure; swipl 10.1.19: [])
+    (
+        "a17",
+        "assertz(a17p(1)), '\$start_aux'('/no/such/a17', _), '\$end_aux'('/no/such/a17', user:a17p/1), retract(a17p(1)), '\$set_predicate_attribute'(a17p(_), dynamic, false), '\$start_aux'('/no/such/a17', C), '\$end_aux'('/no/such/a17', C), R = C"
+    ),
+    # l01: source_location/2 inside the directive at the program's end: the file and the 1-based line (pl-file.c:5805)
+    ("l01", "sloc(F, L), ( F == '@FILE@' -> R = L-same ; R = L-F )"),
     # LAST: nothing follows (the program's last row)
     ("z01", "'\$source_file_predicates'('@FILE@', [user:H|_]), functor(H, N, A), R = N/A")
 ]
@@ -409,6 +418,8 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
                 occursin(_codes("flt"), l),
             sw
         )
+        @test any(l -> startswith(l, "t_l01 ") && occursin(_codes("same"), l), sw)           # source_location/2 inside the directive
+        @test any(l -> startswith(l, "t_a17 ") && occursin("nil", l), sw)                   # [] for the abolished current predicate
         @test any(l -> startswith(l, "t_c02 ") && occursin("f1.5", l), sw)
         @test any(l -> startswith(l, "t_c03 ") && occursin("i0", l), sw)
         @test startswith(last(sw), "t_z01 ")
@@ -532,6 +543,9 @@ end
     _load_more!(gd, ld, "lb2_u(1).\n")                      # a LOADED clause (pl-comp.c:4979 is inside `if ( loc )`: assertz does not lock)
     pu = LK.isCurrentProcedure(sym_key(_tls("lb2_u")), 1, LK.MODULE_user(gd))
     @test (pu.definition.flags & LK.P_LOCKED) == 0
+    _load_more!(gd, ld, ":- dynamic lb2_e/1.\n")             # a predicate defined by a declaration alone (setAttrProcedureSource -> associateSource)
+    pe = LK.isCurrentProcedure(sym_key(_tls("lb2_e")), 1, LK.MODULE_user(gd))
+    @test (pe.definition.flags & LK.P_DYNAMIC) != 0 && (pe.definition.flags & LK.P_LOCKED) == 0
     LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_SYSTEM)
     @test LK.SYSTEM_MODE(ld)
     st, ans = kcall(gd, ld, "current_prolog_flag", _TL[_tls("access_level"), _v()])
@@ -541,6 +555,10 @@ end
     ps = LK.isCurrentProcedure(sym_key(_tls("lb2_s")), 1, LK.MODULE_user(gd))
     @test (ps.definition.flags & LK.P_LOCKED) != 0 &&
         (ps.definition.flags & LK.HIDE_CHILDS) != 0
+    _load_more!(gd, ld, ":- dynamic lb2_d/1.\n")             # swipl 10.1.19: '\$get_predicate_attribute'(lb2_d(_), locked, 1) and hide_childs 1 (measured)
+    pd = LK.isCurrentProcedure(sym_key(_tls("lb2_d")), 1, LK.MODULE_user(gd))
+    @test (pd.definition.flags & LK.P_DYNAMIC) != 0 && (pd.definition.flags & LK.P_LOCKED) != 0 &&
+        (pd.definition.flags & LK.HIDE_CHILDS) != 0
     LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_USER)
     @test !LK.SYSTEM_MODE(ld)
     st, ans = kcall(gd, ld, "current_prolog_flag", _TL[_tls("access_level"), _v()])
