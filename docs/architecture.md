@@ -5271,7 +5271,7 @@ What MOD2 ports (pl-wam.c, pl-vmi.c, pl-modul.c, pl-fli.c, pl-proc.c, pl-comp.c 
 
 Tests: test/core_lang/test_context_module_swipl.jl (rows c01-c42: a program of module `m2` asserted by directives, run
 through call/1 vs swipl 10.1.19 pins; the query API's context; `PL_open_query`'s branches white-box). Mutants:
-tools/mutants/MOD2r.py.
+tools/mutants/MOD2u.py.
 
 ## Still to come
 

@@ -1,5 +1,5 @@
 # ORIGINAL: MOD2's mutant list — no swipl-devel counterpart.
-# tools/mutants/MOD2r.py — the mutation battery of MOD2 (the context module: pl-wam.c contextModule, setContextModule,
+# tools/mutants/MOD2u.py — the mutation battery of MOD2 (the context module: pl-wam.c contextModule, setContextModule,
 # PL_open_query's context, callCleanupHandler's module; pl-vmi.c I_DEPART, I_LCALL, mcall_cont; pl-comp.c compileClause's
 # goal-clause context; pl-modul.c stripModule, strip_module/3, pl_context_module; pl-fli.c PL_strip_module(_ex);
 # pl-proc.c get_module's GP_FIND default; pl-attvar.c suspend; pl-ext.c's PL_meta_predicate transparency; the stand-ins'
