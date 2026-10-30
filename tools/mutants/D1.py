@@ -18,6 +18,10 @@
 # by-reference branch and the loop). Declared EQUIVALENT with their code reasons: D1-95 (protected_predicate in the by-reference
 # branch) and D1-96 (the CLAUSE_TYPE_MASK test; row c37 decided). D1-90/D1-91 (the garbage third/fourth argument of clause/2) may
 # survive in a quiet test: a survivor is then reported, not declared equivalent.
+# D-0230 piece (d) adds D1-100...D1-119 (instance/2 and fixup_ssu, pl-rec.c; rows n01-n20). Declared EQUIVALENT with their code reasons:
+# D1-117 (GOAL_CLAUSE: no goal clause has a reference), D1-118 (visibleClause: CL_ERASED is set with generation_erased) and D1-119 (the
+# reference type: PL_get_dbref answers DB_REF_CLAUSE only until D2). Not run yet: a survivor among D1-105...D1-109 (the reference
+# arithmetic) is reported, not declared equivalent.
 # D-0238 item 4: every test file that exercises the mutated code, not only the step's own file. T: the files that make or erase a
 # clause reference or read a blob (assert/retract/retractall rows, the blob ranks, the loader's message encoder); T8: + the
 # clause/3 family's other readers (clause/2 rows, the module-path rows) for the pl-comp.jl clause/3 mutants (D1-70...).
@@ -380,4 +384,90 @@ end
     return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_RULE)''',
          new='''    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 1, PL__t0 + 3
     return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_RULE)'''),
+    # ---- instance/2 (D-0230 piece (d); rows n01-n20; pl-rec.c instance, fixup_ssu); T: only test_clause_ref_swipl.jl calls instance/2
+    dict(id="D1-100 instance/2 is not registered", file=R, targets=T,
+         old='''const PL_predicates_from_rec = (
+    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
+    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS)
+)''',
+         new='''const PL_predicates_from_rec = (
+    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
+)'''),
+    dict(id="D1-101 instance/2 does not turn an erased or no reference away", file=R, targets=T,
+         old='''    r === nothing && return FFALSE                              # if ( !(ptr=PL_get_dbref(ref, &type)) )
+    type, clause = r
+''',
+         new='''    type, clause = r
+'''),
+    dict(id="D1-102 instance/2 does not wrap a fact as Head :- true", file=R, targets=T,
+         old='''    if (clause.flags & UNIT_CLAUSE) != 0
+        decompile!(ld, clause, h, b) || return FFALSE
+        t = PL_new_term_ref(ld)''',
+         new='''    if false
+        decompile!(ld, clause, h, b) || return FFALSE
+        t = PL_new_term_ref(ld)'''),
+    dict(id="D1-103 instance/2 does not fix up an SSU ?=> clause", file=R, targets=T,
+         old='''    elseif (clause.flags & SSU_CHOICE_CLAUSE) != 0''',
+         new='''    elseif false'''),
+    dict(id="D1-104 fixup_ssu leaves out a clause without a cut", file=R, targets=T,
+         old='''    return PL_unify(ld, in, out)
+end''',
+         new='''    return true
+end'''),
+    dict(id="D1-105 fixup_ssu finds the cut by inequality", file=R, targets=T,
+         old='''sym_key(a) == gd.subclause_names.atom_cut''',
+         new='''sym_key(a) != gd.subclause_names.atom_cut'''),
+    dict(id="D1-106 fixup_ssu starts its guard at the cut itself", file=R, targets=T,
+         old='''            g -= 1
+            PL_put_term(ld, guard, g) || return false''',
+         new='''            PL_put_term(ld, guard, g) || return false'''),
+    dict(id="D1-107 fixup_ssu's guard loop runs one goal further", file=R, targets=T,
+         old='''while (g -= 1) > guard ''',
+         new='''while (g -= 1) >= guard '''),
+    dict(id="D1-108 fixup_ssu does not conjoin the guard goals", file=R, targets=T,
+         old='''                PL_cons_functor(ld, guard, comma, g, guard) || return false
+''',
+         new=''''''),
+    dict(id="D1-109 fixup_ssu does not append the guard to the head", file=R, targets=T,
+         old='''                PL_cons_functor(ld, head, comma, head, guard) || return false
+''',
+         new=''''''),
+    dict(id="D1-110 fixup_ssu answers an SSU ?=> neck", file=R, targets=T,
+         old='''clause_functor(ld, SSU_COMMIT_CLAUSE), head, body)''',
+         new='''clause_functor(ld, SSU_CHOICE_CLAUSE), head, body)'''),
+    dict(id="D1-111 fixup_ssu does not unify its answer", file=R, targets=T,
+         old='''            return PL_unify(ld, out, res)''',
+         new='''            return true'''),
+    dict(id="D1-112 a fact's wrapper has another neck", file=R, targets=T,
+         old='''_err_functor(ld, Symbol(":-"), 2), h, t) || return FFALSE''',
+         new='''_err_functor(ld, Symbol("=>"), 2), h, t) || return FFALSE'''),
+    dict(id="D1-113 a fact's body is false", file=R, targets=T,
+         old='''PL_put_atom(ld, t, mk_sym(T, Symbol("true")))''',
+         new='''PL_put_atom(ld, t, mk_sym(T, Symbol("false")))'''),
+    dict(id="D1-114 a rule is answered as its head", file=R, targets=T,
+         old='''        return PL_unify(ld, term, _rule_term(ld, clause, h, b)) ? FTRUE : FFALSE   # decompile(clause, term, 0)''',
+         new='''        return PL_unify(ld, term, h) ? FTRUE : FFALSE   # decompile(clause, term, 0)'''),
+    dict(id="D1-115 instance/2's term is its reference argument", file=R, targets=T,
+         old='''    ref, term = PL__t0, PL__t0 + 1                              # term_t ref = A1, term = A2''',
+         new='''    ref, term = PL__t0, PL__t0                                  # term_t ref = A1, term = A2'''),
+    dict(id="D1-116 a fact's answer is not unified", file=R, targets=T,
+         old='''        return PL_unify(ld, term, res) ? FTRUE : FFALSE         # PL_unify_term(term, PL_FUNCTOR, FUNCTOR_prove2, …)''',
+         new='''        return FTRUE                                            # PL_unify_term(term, PL_FUNCTOR, FUNCTOR_prove2, …)'''),
+    dict(id="D1-117 instance/2 answers a goal clause", file=R, targets=T,
+         old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(clause, generation)''',
+         new='''    if !visibleClause(clause, generation)''',
+         equivalent="no goal clause has a reference: PL_unify_clref/PL_put_clref are called only for the clauses assert/2, asserta/2, assertz/2, "
+                    "'$record_clause'/4 and clause/3 hand out (src/pl-comp.jl:3445, 3719, 3793, 3807, 3845), and a goal clause is a heap Clause "
+                    "that no definition holds (src/pl-comp.jl:3089-3096, compileGoalClause)"),
+    dict(id="D1-118 instance/2 does not test that the clause is visible", file=R, targets=T,
+         old='''    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(clause, generation)''',
+         new='''    if (clause.flags & GOAL_CLAUSE) != 0''',
+         equivalent="PL_get_dbref has turned an erased clause away (src/pl-dbref.jl:161), and retractClauseDefinition! sets CL_ERASED in the "
+                    "same step as generation_erased (src/pl-proc.jl:505-516); every referenced clause was created before the foreign frame "
+                    "(its reference exists), so created <= generation holds: single thread, no transaction"),
+    dict(id="D1-119 instance/2 does not test the reference's type", file=R, targets=T,
+         old='''    if type != DB_REF_CLAUSE                                    # else: the record branch (D2)''',
+         new='''    if false                                                    # else: the record branch (D2)''',
+         equivalent="PL_get_dbref answers DB_REF_CLAUSE only (src/pl-dbref.jl:152-165) until D2 adds the record branch, so the NotPortedError "
+                    "branch is unreachable"),
 ]
