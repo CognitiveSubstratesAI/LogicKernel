@@ -244,7 +244,8 @@ end
                 "I_LCALL", "I_TCALL", "I_CUT", "B_VAR0", "B_VAR1", "B_VAR2", "B_VAR",
                 "bvar_cont", "B_ARGVAR", "I_VAR", "I_NONVAR", "I_INTEGER", "I_RATIONAL",
                 "I_FLOAT", "I_NUMBER", "I_ATOMIC", "I_ATOM", "I_STRING", "I_COMPOUND",
-                "I_CALLABLE", "I_CHP", "I_SSU_CHOICE", "I_SSU_COMMIT", "S_SSU_DET")   # (SSU2)
+                "I_CALLABLE", "I_CHP", "I_SSU_CHOICE", "I_SSU_COMMIT", "S_SSU_DET",   # (SSU2)
+                "I_CONTEXT", "I_CALLM", "I_DEPARTM")                                  # (MOD3a)
             @test all(n -> haskey(spans_of, n), path)
             spans = [spans_of[n] for n in path]
             loop_tt = (LK.PL_global_data{_M2}, LK.PL_local_data{_M2}, Int, Bool)

@@ -89,6 +89,12 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
     elseif k == LK.CA1_LPROC
         d = procs[w].definition
         return "P:" * _hcps(_BNAMES[d.functor_name]) * "/$(d.arity)"
+    elseif k == LK.CA1_MODULE                                            # (MOD3a) the module's name
+        return "M:" * _hcps(String(lk_name(_BGD.modules[Int(w)].atom)))
+    elseif k == LK.CA1_PROC                                              # (MOD3a) Module:Name/Arity
+        d = procs[w].definition
+        return "P:" * _hcps(String(lk_name(_BGD.modules[d.module_].atom))) * ":" *
+               _hcps(_BNAMES[d.functor_name]) * "/$(d.arity)"
     elseif k == LK.CA1_JUMP
         return jump(w)
     end
@@ -160,6 +166,8 @@ bc_op(_, jump, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(h_void_n, integer, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(c_var_n, integer, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(_, lproc, F/A, S) :- !, atom_codes(F, C), format(string(S), "P:~w/~d", [C, A]).
+bc_op(_, module, M, S) :- !, atom_codes(M, C), format(string(S), "M:~w", [C]).
+bc_op(_, proc, M:F/A, S) :- !, atom_codes(M, MC), atom_codes(F, C), format(string(S), "P:~w:~w/~d", [MC, C, A]).
 bc_op(N, _, X, S) :- hc_op(N, X, S).
 bc_case_show(Cl) :- assertz(Cl, Ref), bc_show(Ref).
 % clause/2 of the clause as swipl decompiles it, against the kernel's decompiled clause Ours
@@ -3064,13 +3072,18 @@ end
     ball = clause_error(_be("q", [_bg(1) for _ in 1:(LK.MAXARITY + 1)]))
     @test ball !== nothing &&
         lk_eq(child(ball, 2), _bf("representation_error", _bs("max_procedure_arity")))
-    # a rule of a multifile predicate needs I_CONTEXT (modules): refused; its facts are not
-    gd = LK.PL_global_data{_B}()
-    user = LK.MODULE_user(gd)
+    # a rule of a multifile predicate starts its body with I_CONTEXT of its module (MOD3a; was refused, "modules"):
+    # swipl 10.1.19's `dynamic(mf/0), multifile(mf/0), assertz((mf :- q), Ref)` (lk-channel evidence/MOD3a/bc_probe.out);
+    # its facts are plain
+    user = LK.MODULE_user(_BGD)
     mf = LK.lookupProcedure(_bs("mf"), 0, user)
-    mf.definition.flags |= LK.P_MULTIFILE
-    @test_throws LK.NotPortedError LK.compileClause(gd, _BLD, _bs("mf"), _bs("q"), mf, user)
-    @test LK.compileClause(gd, _BLD, _bs("mf"), nothing, mf, user).flags & LK.UNIT_CLAUSE !=
+    mf.definition.flags |= LK.P_MULTIFILE | LK.P_DYNAMIC
+    @test _bc_kernel(LK.compileClause(_BGD, _BLD, _bs("mf"), _bs("q"), mf, user)) == [
+        "i_enter", "i_context(M:[117,115,101,114])", "l_nolco(L1)", "i_lcall(P:[113]/0)", "L1:",
+        "i_depart(P:[113]/0)", "i_exit"
+    ]
+    @test mf.definition.flags & LK.P_MFCONTEXT != 0
+    @test LK.compileClause(_BGD, _BLD, _bs("mf"), nothing, mf, user).flags & LK.UNIT_CLAUSE !=
         0
 end
 
@@ -3172,5 +3185,109 @@ end
         end
     elseif _BC_SWIPL_REQUIRED
         @test false
+    end
+end
+
+# ── MOD3a: `M:Goal` in a body and `M:Head :- Body` (pl-comp.c:2133-2142, 2618-2634, 3443-3465, 3574-3632) ──────────────
+# Each clause compiled from `user` (the clause's module), its head in the module named (`nothing`: user) — as swipl's
+# `assertz(Clause, Ref)` from user compiles it. swipl 10.1.19's code (`clause_vm/2` + `vmi_labels/2`, probed 2026-10-29;
+# lk-channel evidence/MOD3a/bc_probe.out), the module operand `M:` and `I_CALLM`/`I_DEPARTM`'s procedure `P:Module:Name/Arity`.
+const _BC_MOD3A = [
+    (   # I_DEPARTM: no LCO into another module
+        nothing, _bs("p1"), _bf(":", _bs("m"), _bf("q", _bg(1))),
+        [raw"i_enter", raw"b_smallint(i:1)", raw"i_departm(M:[109],P:[109]:[113]/1)", raw"i_exit"]
+    ),
+    (   # I_CALLM, then the clause's own LCO
+        nothing, _bs("p2"), _bconj(_bf(":", _bs("m"), _bf("q", _bg(1))), _bs("r")),
+        [raw"i_enter", raw"b_smallint(i:1)", raw"i_callm(M:[109],P:[109]:[113]/1)", raw"l_nolco(L1)", raw"i_lcall(P:[114]/0)", raw"L1:", raw"i_depart(P:[114]/0)", raw"i_exit"]
+    ),
+    (   # TM_VAR: the meta-call, the goal B_RFUNCTOR
+        nothing, _bf("p3", _bv(1)), _bf(":", _bv(1), _bf("q", _bg(1))),
+        [raw"i_enter", raw"b_functor(F:[58]/2)", raw"b_argvar(0)", raw"b_rfunctor(F:[113]/1)", raw"b_smallint(i:1)", raw"b_pop", raw"i_call1", raw"i_exit"]
+    ),
+    (   # m:Head :- Body from user: I_CONTEXT user, the body user's (LCO)
+        "m", _bs("p4"), _bf("q", _bg(1)),
+        [raw"i_enter", raw"i_context(M:[117,115,101,114])", raw"l_nolco(L1)", raw"l_smallint(0,i:1)", raw"i_lcall(P:[113]/1)", raw"L1:", raw"b_smallint(i:1)", raw"i_depart(P:[113]/1)", raw"i_exit"]
+    ),
+    (   # I_CONTEXT, I_CALL, I_DEPARTM
+        "m", _bs("p5"), _bconj(_bf("q", _bg(1)), _bf(":", _bs("m"), _bs("r"))),
+        [raw"i_enter", raw"i_context(M:[117,115,101,114])", raw"b_smallint(i:1)", raw"i_call(P:[113]/1)", raw"i_departm(M:[109],P:[109]:[114]/0)", raw"i_exit"]
+    ),
+    (   # CB_COLON around a conjunction
+        nothing, _bs("p6"), _bf(":", _bs("m"), _bconj(_bs("q"), _bs("r"))),
+        [raw"i_enter", raw"i_callm(M:[109],P:[109]:[113]/0)", raw"i_departm(M:[109],P:[109]:[114]/0)", raw"i_exit"]
+    ),
+    (   # m:call/1: no inline I_CALL1; system's call/1
+        nothing, _bs("p7"), _bf(":", _bs("m"), _bf("call", _bs("x"))),
+        [raw"i_enter", raw"b_atom(a:[120])", raw"i_departm(M:[109],P:[115,121,115,116,101,109]:[99,97,108,108]/1)", raw"i_exit"]
+    ),
+    (   # =/2 inline under the context
+        nothing, _bs("p8"), _bf(":", _bs("m"), _bconj(_bf("=", _bv(1), _bs("a")), _bf("q", _bv(1)))),
+        [raw"i_enter", raw"b_unify_fc(0,a:[97])", raw"b_var0", raw"i_departm(M:[109],P:[109]:[113]/1)", raw"i_exit"]
+    ),
+    (   # m:! is the clause's cut
+        nothing, _bs("p9"), _bf(":", _bs("m"), _bs("!")),
+        [raw"i_enter", raw"i_cut", raw"i_exit"]
+    ),
+    (   # user:G in user: the plain call, LCO
+        nothing, _bs("p10"), _bf(":", _bs("user"), _bs("q")),
+        [raw"i_enter", raw"l_nolco(L1)", raw"i_lcall(P:[113]/0)", raw"L1:", raw"i_depart(P:[113]/0)", raw"i_exit"]
+    ),
+    (   # M:G, both variables
+        nothing, _bf("p11", _bv(1), _bv(2)), _bf(":", _bv(1), _bv(2)),
+        [raw"i_enter", raw"b_functor(F:[58]/2)", raw"b_argvar(0)", raw"b_var1", raw"b_pop", raw"i_call1", raw"i_exit"]
+    ),
+    (   # m:G: TM_MODULE, a variable goal
+        nothing, _bf("p12", _bv(1)), _bf(":", _bs("m"), _bv(1)),
+        [raw"i_enter", raw"b_functor(F:[58]/2)", raw"b_atom(a:[109])", raw"b_var0", raw"b_pop", raw"i_call1", raw"i_exit"]
+    ),
+]
+
+"`head :- body` compiled from `user` as a clause of the predicate of module `hm` (`nothing`: user) in `_BGD`."
+function _bclause_mod(hm::Union{Nothing, String}, head::_B, body::_B)::LK.Clause{_B}
+    _bnames!(head)
+    _bnames!(body)
+    user = LK.MODULE_user(_BGD)
+    m = hm === nothing ? user : LK.lookupModule(_BGD, _bs(hm))
+    name, ar = _bfunctor(head)
+    proc = LK.lookupProcedure(name, ar, m)
+    return LK.compileClause(_BGD, _BLD, head, body, proc, user)
+end
+
+@testset "M:Goal in a body compiles as swipl's (MOD3a)" begin
+    for (hm, h, b, want) in _BC_MOD3A
+        got = _bc_kernel(_bclause_mod(hm, h, b))
+        got == want || println(stderr, "  ", _bc_text(h, b), "\n    ours  ", got, "\n    swipl ", want)
+        @test got == want
+    end
+    # I_CONTEXT: the clause is CL_BODY_CONTEXT and the predicate P_MFCONTEXT; a clause of its own module is neither
+    user = LK.MODULE_user(_BGD)
+    p4b = LK.lookupProcedure(_bs("p4b"), 0, LK.lookupModule(_BGD, _bs("m")))
+    c4 = LK.compileClause(_BGD, _BLD, _bs("p4b"), _bf("q", _bg(1)), p4b, user)
+    @test c4.flags & LK.CL_BODY_CONTEXT != 0 && p4b.definition.flags & LK.P_MFCONTEXT != 0
+    p1b = LK.lookupProcedure(_bs("p1b"), 0, user)
+    c1 = LK.compileClause(_BGD, _BLD, _bs("p1b"), _bf("q", _bg(1)), p1b, user)
+    @test c1.flags & LK.CL_BODY_CONTEXT == 0 && p1b.definition.flags & LK.P_MFCONTEXT == 0
+    # getTargetModule's errors (swipl's assertz/1 answers: test_colon_body_swipl.jl b30-b33): a variable met first
+    # here → instantiation_error, a number → type_error(module, 1); compileClause answers nothing, the error pending
+    for (body, want) in (
+        (_bconj(_bf(":", _bv(7), _bs("foo")), _bf("bar", _bv(7))), _bs("instantiation_error")),
+        (_bf(":", _bg(1), _bs("foo")), _bf("type_error", _bs("module"), _bg(1)))
+    )
+        ld = LK.PL_local_data{_B}(_BGD)
+        perr = LK.lookupProcedure(_bs("perr"), 0, user)
+        @test LK.compileClause(_BGD, ld, _bs("perr"), body, perr, user) === nothing
+        @test ld.exception_term != 0 &&
+            lk_eq(child(lk_answer(ld, ld.exception_term), 2), want)
+    end
+    if _BC_SWIPL_BIN !== nothing
+        @testset "the pins are swipl's" begin
+            cases = [
+                "bc_case_show(($(_bc_text(hm === nothing ? h : _bf(":", _bs(hm), h), b))))" for
+                (hm, h, b, _) in _BC_MOD3A
+            ]
+            theirs = _bc_swipl(cases)
+            @test theirs == [w for (_, _, _, w) in _BC_MOD3A]
+        end
     end
 end

@@ -125,6 +125,9 @@ sizeofClause(n::Int)::Int = 8 + n
 # build (pl-incl.h:1567-1579).
 "The size of a clause reference holding one clause, in positions (pl-incl.h)."
 const SIZEOF_CREF_CLAUSE = 3
+# PORT: pl-incl.h CL_BODY_CONTEXT
+"Clause flag: the module context of the body differs from the predicate's — the body starts with `I_CONTEXT` (pl-incl.h; MOD3a)."
+const CL_BODY_CONTEXT = UInt32(0x0080)
 # PORT: pl-incl.h SSU_COMMIT_CLAUSE
 "Clause flag: an SSU clause `Head => Body` (pl-incl.h)."
 const SSU_COMMIT_CLAUSE = UInt32(0x0100)
@@ -179,6 +182,9 @@ const P_LOCKED = FLAG64(18)
 # PORT: pl-incl.h P_TRANSPARENT
 "Predicate flag: inherits the calling module (pl-incl.h)."
 const P_TRANSPARENT = FLAG64(20)
+# PORT: pl-incl.h P_MFCONTEXT
+"Predicate flag: its clauses' bodies set their context module (`I_CONTEXT`) — a body module other than the predicate's, or a multifile predicate (pl-incl.h \"Used for Goal@Module\"; MOD3a)."
+const P_MFCONTEXT = FLAG64(22)
 # PORT: pl-incl.h P_DIRTYREG
 "Predicate flag: registered as dirty (pl-incl.h)."
 const P_DIRTYREG = FLAG64(23)

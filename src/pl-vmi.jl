@@ -24,12 +24,15 @@
 # (`I_FOPENNDET`, `I_FCALLNDETVA`, `I_FCALLNDET0` … `I_FCALLNDET10` — the eleven consecutive, as the
 # deterministic ones — `I_FEXITNDET`, `I_FREDO`; the `a1, a2, …` ones run since NF4), then SSU1's
 # single sided unification (`I_SSU_CHOICE`, `I_SSU_COMMIT`, `S_SSU_DET`, in pl-vmi.c's order; with
-# the `I_CHP` declared before them, compiled since SSU1 and executed since SSU2).
+# the `I_CHP` declared before them, compiled since SSU1 and executed since SSU2), then MOD3a's module
+# calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`: `M:Goal` in a clause body and `M:Head :- Body`, in
+# pl-vmi.c's order).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
 # probed in 10.1.16); `B_ARG_*`, `I_USERCALL0` (its work is `I_CALL1`'s
-# here), the module calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`), `I_RESET`, `I_CUTCHP`,
+# here), the `Goal@Module` calls (`I_CALLATM`, `I_DEPARTATM`, `I_CALLATMV`, `I_DEPARTATMV`: MOD3b),
+# `I_RESET`, `I_CUTCHP`,
 # `I_YIELD` (after V9). `I_CUT` is declared and compiled (a clause-level `!`, user
 # 2026-10-05) and, since V6a, executed.
 #
@@ -39,6 +42,10 @@
 # functor operand is `functor_operand` (L2); a procedure operand (`CA1_LPROC`) the index of the
 # procedure in the clause's procedure table (V1); a clause-reference operand (`CA1_CLAUSEREF`, the
 # supervisors') the index of the clause reference in the definition's `codes_crefs` (V4a); a
+# module operand (`CA1_MODULE`, since MOD3a) the module's INDEX in the database's table, as
+# `definition.module_` (upstream: the `Module` pointer, `ptr2code(module)`); the procedure operand of
+# `I_CALLM`/`I_DEPARTM` keeps upstream's kind `CA1_PROC` and is, as `CA1_LPROC`'s, the index of the
+# procedure in the clause's procedure table; a
 # `*_SMALLINT` operand is the tagged word itself, as upstream's (L1d step 4). The
 # `argtype` column keeps upstream's kinds, so a
 # reader decodes each operand by its kind as upstream does — a literal kind through the table.
@@ -553,6 +560,15 @@ const I_SSU_COMMIT = code(146)
 # PORT: pl-vmi.c S_SSU_DET
 "Supervisor prefix of an SSU predicate (`P_SSU_DET`): mark the frame `FR_SSU_DET` (pl-vmi.c; executed in SSU2)."
 const S_SSU_DET = code(147)
+# PORT: pl-vmi.c I_CONTEXT
+"After `I_ENTER`: a clause whose body module is not its predicate's sets the frame's context to it unless the predicate is transparent; operand: the module (pl-vmi.c; MOD3a)."
+const I_CONTEXT = code(148)
+# PORT: pl-vmi.c I_CALLM
+"Call a procedure of another module than the clause's (`M:Goal` in a body); operands: the module, the procedure (pl-vmi.c; MOD3a)."
+const I_CALLM = code(149)
+# PORT: pl-vmi.c I_DEPARTM
+"`I_CALLM` as the clause's last call: the frame takes the module as its context and departs, unless a choice point or `last_call` forbids it (pl-vmi.c; MOD3a)."
+const I_DEPARTM = code(150)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -717,7 +733,10 @@ const _CODE_TABLE = (
     code_info(:I_FREDO, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_SSU_CHOICE, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
     code_info(:I_SSU_COMMIT, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
-    code_info(:S_SSU_DET, 0x00, 0, (0x00, 0x00, 0x00, 0x00))
+    code_info(:S_SSU_DET, 0x00, 0, (0x00, 0x00, 0x00, 0x00)),
+    code_info(:I_CONTEXT, 0x00, 1, (CA1_MODULE, 0x00, 0x00, 0x00)),
+    code_info(:I_CALLM, VIF_BREAK, 2, (CA1_MODULE, CA1_PROC, 0x00, 0x00)),
+    code_info(:I_DEPARTM, VIF_BREAK, 2, (CA1_MODULE, CA1_PROC, 0x00, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

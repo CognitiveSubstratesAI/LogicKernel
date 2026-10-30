@@ -401,6 +401,13 @@ function _manifest_index(T)
         (LK.lco!, Tuple{CInfo, Int}, false),
         (LK.compileSubClause!, Tuple{GD, LD, CInfo, T, UInt64}, false),
         (LK.compileBody!, Tuple{GD, LD, CInfo, T, UInt64}, false),
+        # MOD3a — M:Goal in a body: the colon context, the call selection, I_CONTEXT's decompilation
+        (LK.getTargetModule!, Tuple{GD, LD, CInfo, T}, false),
+        (LK._target_culprit, Tuple{LD, CInfo, T}, false),
+        (LK.pushTargetModule!, Tuple{CInfo, LK.target_module}, false),
+        (LK.mcall, Tuple{UInt64}, false),
+        (LK._colon_functor_operand, Tuple{CInfo}, false),
+        (LK._decompile_context!, Tuple{LD, C, Int, Int}, false),
         # V9d — disjunctions: the variable tables compileBody! balances, and the decompiler
         (LK.c_var, Tuple{LK.c_var_state, Int, CInfo}, false),
         (LK.balanceVars, Tuple{BitVector, BitVector, CInfo}, false),
@@ -2375,6 +2382,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # the enums R1c adds
     (Base.Enums._enum_hash, Tuple{LK.av_action, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.cb_kind, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.target_module_type, UInt64}, false),   # MOD3a
     (Base.Enums._enum_hash, Tuple{LK.IOENC, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.IOFUNCTIONS, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.Sunicode_atoms_t, UInt64}, false),

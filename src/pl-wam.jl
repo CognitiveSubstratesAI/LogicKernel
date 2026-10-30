@@ -1775,7 +1775,8 @@ const VMI_RUN = (
     :I_FCALLNDET0, :I_FCALLNDET1, :I_FCALLNDET2, :I_FCALLNDET3, :I_FCALLNDET4,
     :I_FCALLNDET5,
     :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
-    :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET
+    :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
+    :I_CONTEXT, :I_CALLM, :I_DEPARTM
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -3164,6 +3165,20 @@ function PL_next_solution_guarded(
     (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP
     @goto next_instruction
 
+    # PORT: pl-vmi.c I_CONTEXT
+    # (pl-vmi.c:1835-1843 at the pin; MOD3a: after `I_ENTER` of a clause compiled with `P_MFCONTEXT`)
+    #     Module m = code2ptr(Module, *PC++);
+    #     if ( isoff(DEF, P_TRANSPARENT) )
+    #       setContextModule(FR, m);
+    # DIVERGES: the operand is the module's index (`CA1_MODULE`, src/pl-vmi.jl).
+    @label I_CONTEXT
+    ict_m = Int(PCc[PC])                            # Module m = code2ptr(Module, *PC++)
+    PC += 1
+    if (DEF.flags & P_TRANSPARENT) == 0             # isoff(DEF, P_TRANSPARENT)
+        setContextModule!(ld.frames[FR], ict_m)     # setContextModule(FR, m)
+    end
+    @goto next_instruction
+
     # PORT: pl-vmi.c I_CALL
     # DIVERGES: the operand indexes the running clause's procedure table, read through `CL`
     # (`_call_procedure`; since V1, user 2026-10-05). The new frame is the record pushed at `lTop`,
@@ -3281,6 +3296,26 @@ function PL_next_solution_guarded(
     lcoSetNextFrameFlags2(ld.frames[NFR], ld.frames[FR])
     DEF = id_def
     @goto normal_call
+
+    # PORT: pl-vmi.c I_DEPARTM
+    # (pl-vmi.c:2126-2137 at the pin; MOD3a)
+    #     if ( (void *)BFR > (void *)FR || !truePrologFlag(PLFLAG_LASTCALL) )
+    #     { VMI_GOTO(I_CALLM);
+    #     } else
+    #     { Module m = code2ptr(Module, *PC++);
+    #       setContextModule(FR, m);
+    #       VMI_GOTO(I_DEPART);
+    #     }
+    # DIVERGES: `BFR > FR` compares positions, as `I_DEPART`'s `BFR <= FR` (decision 3); the module
+    # operand is its index. QUIRK kept: when `I_DEPART` then cannot reuse the frame (an undefined
+    # procedure), the context stays set on the departing frame, as upstream's.
+    @label I_DEPARTM
+    if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) || !ld.prolog_flag_last_call
+        @goto I_CALLM                               # VMI_GOTO(I_CALLM)
+    end
+    setContextModule!(ld.frames[FR], Int(PCc[PC]))  # setContextModule(FR, code2ptr(Module, *PC++))
+    PC += 1
+    @goto I_DEPART                                  # VMI_GOTO(I_DEPART)
 
     # PORT: pl-vmi.c I_CALL1
     # DIVERGES: the new frame is the record pushed at `lTop`, upstream's cast `NFR = lTop`.
@@ -3448,14 +3483,38 @@ function PL_next_solution_guarded(
     DEF = mc_proc.definition
     @goto mcall_cont
 
+    # PORT: pl-vmi.c I_CALLM
+    # (pl-vmi.c:5410-5417 at the pin; MOD3a)
+    #     Module module = code2ptr(Module, *PC++);
+    #     DEF    = code2ptr(Procedure, *PC++)->definition;
+    #     NFR = lTop;
+    #     VMH_GOTO(mcall_cont, module);
+    # DIVERGES: the module operand is its index, the procedure operand indexes the clause's procedure
+    # table (as `I_CALL`'s); the new frame is the record pushed at `lTop`.
+    @label I_CALLM
+    mc_mi = Int(PCc[PC])                            # Module module = code2ptr(Module, *PC++)
+    DEF = _call_procedure(ld, FR, PCc[PC + 1]).definition
+    PC += 2
+    NFR = pushFrame!(ld, ld.lTop)                   # NFR = lTop
+    @goto mcall_cont                                # VMH_GOTO(mcall_cont, module)
+
     # PORT: pl-vmi.c mcall_cont
-    # DIVERGES: its `module` argument is the local `mc_mi` (an index), set by `i_metacall_common`, its one
-    # caller here. NOT PORTED: the `trapUndefined` of an undefined definition (the supervisor `S_VIRGIN`
-    # traps it, as for `I_CALL`; see `i_metacall_common`). Since MOD2 (pl-vmi.c:5725-5726 at the pin):
+    # DIVERGES: its `module` argument is the local `mc_mi` (an index), set by `i_metacall_common` and
+    # (since MOD3a) `I_CALLM`. Since MOD2 (pl-vmi.c:5725-5726 at the pin):
     #     if ( ison(DEF, P_TRANSPARENT) )
     #       setContextModule(NFR, module);
+    # Since MOD3a the undefined definition is resolved first, so the transparency is the resolved
+    # predicate's (pl-vmi.c:5703-5723: `DEF = trapUndefined(DEF)`), through `getProcDefinedDefinition`
+    # as `I_LCALL` resolves it: the kernel's `trapUndefined` runs no Prolog (no autoloader), so upstream's
+    # frame set-up around the call (`NFR->parent`, `environment_frame = FR = NFR`, `lTop`, then back) has
+    # nothing to serve and is not made.
     @label mcall_cont
     setNextFrameFlags(ld.frames[NFR], ld.frames[FR])
+    if !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
+        @SAVE_REGISTERS(QID)
+        DEF = getProcDefinedDefinition(gd, DEF)     # DEF = trapUndefined(DEF)
+        @LOAD_REGISTERS(QID)
+    end
     if (DEF.flags & P_TRANSPARENT) != 0             # ison(DEF, P_TRANSPARENT)
         setContextModule!(ld.frames[NFR], mc_mi)    # setContextModule(NFR, module)
     end

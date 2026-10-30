@@ -5275,6 +5275,48 @@ Tests: test/core_lang/test_context_module_swipl.jl (rows c01-c42: a program of m
 through call/1 vs swipl 10.1.19 pins; the query API's context; `PL_open_query`'s branches white-box). Mutants:
 tools/mutants/MOD2u.py.
 
+## MOD3a — `M:Goal` in a clause body (R2, evidence/r2/design/modules.md §7, M5 and M6's colon half)
+
+What MOD3a ports (pl-comp.c, pl-vmi.c at the pin):
+
+- **Three instructions appended to the table** (src/pl-vmi.jl, after SSU1's): `I_CONTEXT m` (pl-vmi.c:1835: after
+  `I_ENTER`, a non-transparent predicate's frame takes the context `m`), `I_CALLM m proc` (:5410: the new frame goes to
+  `mcall_cont` with `m`) and `I_DEPARTM m proc` (:2126: with no choice point above the frame and `last_call` on, the
+  frame takes the context `m` and departs; else `I_CALLM`). A `CA1_MODULE` operand is the module's INDEX in the table (as
+  `definition.module_`); the procedure operand keeps upstream's kind `CA1_PROC` and indexes the clause's procedure
+  table, as `CA1_LPROC`'s does.
+- **`mcall_cont` resolves an undefined definition first** (pl-vmi.c:5703-5723, `trapUndefined`), so a predicate
+  `qm:p` that `qm` inherits from `user` is tested for `P_TRANSPARENT` as the resolved one (row b08); through
+  `getProcDefinedDefinition`, as `I_LCALL` resolves — the kernel's `trapUndefined` runs no Prolog, so upstream's frame
+  set-up around it is not made.
+- **The compiler's colon context** (pl-comp.c): `target_module` (`TM_NONE`/`TM_MODULE`/`TM_VAR`; a module index),
+  `compileInfo.colon_context`, `getTargetModule!` (:1748-1784: a variable met before — or any under a goal clause, linked
+  into its cell — `TM_VAR`; a variable met first `instantiation_error`; a text atom its module, created; any other term
+  `type_error(module, T)` — an unbound one is reported as `instantiation_error` by PL_error, as swipl's), `pushTargetModule!`,
+  `compileBody!`'s `CB_COLON` frame (`cb_kind` gains a member; `cb_frame.tmsave`, the last field) with the unwind that
+  restores the saved contexts on an error, and `compileSubClause!`'s three uses (:3443-3465, :3574-3632): a variable
+  goal or any goal under `TM_VAR` is meta-called as `Module:Goal` (`B_FUNCTOR :/2`, the module, the goal, `B_POP`,
+  `I_CALL1`); `call/N` compiles to `I_CALL1`/`I_CALLN` only with no context; a goal is looked up in the colon module, and
+  is `I_CALL`/`I_DEPART` (with LCO) when that is the clause's module, else `I_CALLM`/`I_DEPARTM` (`mcall`, no LCO).
+  Goals compiled inline (`=/2`, the type tests, `!`, `true`) ignore the context, as upstream's.
+- **`P_MFCONTEXT` and `I_CONTEXT`** (pl-comp.c:2133-2142): a rule whose body module is not its predicate's (`assertz((qm:p :-
+  B))` from `user`, `qm:p :- B` consulted in `user`), or of a multifile predicate, sets `P_MFCONTEXT` on the definition;
+  every rule of such a predicate then starts its body with `I_CONTEXT <body module>` and carries `CL_BODY_CONTEXT`. The
+  refusal of a multifile predicate's rule (since V2, "modules") is lifted.
+- **The decompiler** (pl-comp.c:6315-6324, 6842-6851): a body starting with `I_CONTEXT m` is `m:Body` (`_decompile_context!`),
+  `I_CALLM`/`I_DEPARTM` decompile to `M:Goal`; the meta-calls decompile to `call(M:G)` as before.
+- **boot/attvar.pl's `uhook/3`** is compiled as written, `Module:attr_unify_hook(AttVal, Value)` (a variable module), no
+  longer through `call/1` (the DIVERGES is gone).
+- **Not here:** `Goal@Module` (`I_CALLATM`, `I_DEPARTATM`, `I_CALLATMV`, `I_DEPARTATMV`, `CB_ATSIGN`, `at_context`: MOD3b);
+  `clauseBodyContext` and `'$get_clause_attribute'(module)` (pl-proc.c:3959; the "rest" sibling); the temporary-module
+  refusal of getTargetModule is ported but unreached until MOD5b makes temporary modules; the breakpoint/tracer readers of
+  `I_CALLM` (pl-wam.c put_vm_call, pl-trace.c is_meta_call: no debugger).
+
+Tests: test/core_lang/test_colon_body_swipl.jl (rows b01-b44: test_qcall.pl's colon cases, test_module.pl's cross/qcontrol,
+`qm:Head :- Body`, getTargetModule's errors, goal clauses, clause/2 — a consulted program vs swipl 10.1.19 pins);
+test/compile/test_body_code_swipl.jl's MOD3a testset (each instruction and operand vs swipl's `clause_vm/2`) and the
+multifile pin (flipped from the refusal). Mutants: tools/mutants/MOD3a.py.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout

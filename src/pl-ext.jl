@@ -595,10 +595,8 @@ end
 # R2 loads boot/attvar.pl in its module `'$attvar'`, which exports `'$wakeup'/1`; until then all
 # three are `system`'s, `'$wakeup'/1` locked, the module's PRIVATE `call_all_attr_uhooks/2` and
 # `uhook/3` NOT locked (as bags' helpers; main agent's decision Q2 (a), R2 checklist).
-# DIVERGES: uhook's body is `call(Module:attr_unify_hook(AttVal, Value))` — the compiler has no
-# colon body goal (`compileSubClause!`); call/1 reaches `stripModule_cells`, which takes `user`
-# and `system` and refuses any other module (`NotPortedError`, R2): same answers for a hook in
-# `user`.
+# uhook's body `Module:attr_unify_hook(AttVal, Value)` as attvar.pl writes it since MOD3a (a variable
+# module: `B_FUNCTOR :/2` … `I_CALL1`, pl-comp.c:3443-3465; `call(Module:…)` before).
 # Since AV7 `uhook(freeze, Goal, Y)` (attvar.pl:76-84), unfreeze/1 and freeze/2: `_boot_freeze_uhook!`,
 # `_boot_freeze!`.
 "Define `'\$wakeup'/1` and its helpers in the `system` module of `gd` as boot/attvar.pl defines them."
@@ -633,10 +631,7 @@ function _boot_attvar!(gd::PL_global_data{T})::Nothing where {T}
     _boot_freeze_uhook!(gd, ld)
     _boot_clause!(
         gd, ld, :uhook, T[Module, AttVal, Value],
-        _boot_term(
-            :call,
-            T[_boot_term(:(:), T[Module, _boot_term(:attr_unify_hook, T[AttVal, Value])])]
-        ),
+        _boot_term(:(:), T[Module, _boot_term(:attr_unify_hook, T[AttVal, Value])]),
         UInt64(0)
     )
     _boot_freeze!(gd, ld)
