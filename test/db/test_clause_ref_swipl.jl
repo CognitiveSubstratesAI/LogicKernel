@@ -11,8 +11,10 @@
 #     `lookup_clref`/`clause_clref` and their inverse, `PL_get_dbref`/`PL_get_clref`/`PL_is_dbref` on a live, an
 #     erased and a foreign term, `erase/1` and the blob form on a term type with a small payload, the Ref of
 #     `'$record_clause'/4` and the clause reference `compiler_warnings/2` carries.
-# NOT HERE (waits for clause/3, nth_clause/3 and `instance/2`): two references to one clause (`clause(H, B, Ref)`
-# twice), the Ref of '$record_clause'/4 read by `clause/2`-family predicates (loader_boot.md H7), `instance/2`.
+# SINCE D1's second piece (D-0230 item 1) the rows c01-c32 cover clause/3, '$clause'/4 (the bindings list) and '$rule'/3,
+# by enumeration and BY REFERENCE (a bound Ref: erased, qualified, static, SSU, a foreign predicate, a stream blob).
+# NOT HERE (waits for nth_clause/3 [LB2] and `instance/2`): the Ref of '$record_clause'/4 read by `nth_clause/3`
+# (loader_boot.md H7).
 using Test, LogicKernel
 
 const LK = LogicKernel
@@ -189,6 +191,48 @@ const _CASES = [
         "i01",
         "open('/dev/null', read, S), asserta(e(S), Ref), e(X), ( X == S -> R0 = same ; R0 = diff ), erase(Ref), ( e(_) -> R1 = left ; R1 = gone ), close(S), R = R0-R1"
     ),
+    # ---- clause/3 and '$clause'/4 (D1, D-0230 item 1): the enumeration, the by-reference search, the bindings list
+    ("c01", "assertz(d(1), R0), clause(d(X), B, Ref), ( Ref == R0 -> S = same ; S = diff ), R = X-B-S"),
+    ("c02", "assertz(d(1), _), assertz(d(2), _), findall(X-B, clause(d(X), B, _), L), R = L"),
+    ("c03", "assertz(d(1), Ref), clause(H, B, Ref), R = H-B"),
+    ("c04", "assertz((e(X) :- X > 1, d(X)), Ref), clause(H, B, Ref), R = H-B"),
+    ("c05", "assertz(d(1), Ref), clause(d(1), B, Ref), R = B"),
+    ("c06", "assertz(d(1), Ref), ( clause(d(2), _, Ref) -> R = yes ; R = no )"),
+    ("c07", "assertz(m1:q(1), Ref), clause(H, B, Ref), R = H-B"),
+    ("c08", "assertz(d(1), Ref), erase(Ref), ( clause(_, _, Ref) -> R = yes ; R = no )"),
+    ("c09", "assertz(d(1), Ref), erase(Ref), '\$clause'(H, B, Ref, Bnd), R = H-B-Bnd"),
+    ("c10", "assertz((e(X) :- d(X), d(Y), d(Y)), Ref), '\$clause'(H, B, Ref, Bnd), R = H-B-Bnd"),
+    (
+        "c11",
+        "assertz(d(f(A, B, A)), _), assertz(d(2), _), findall(X-Bnd, '\$clause'(d(X), _, _, Bnd), L), R = L"
+    ),
+    ("c12", "ex(clause(_, _, foo), R)"),
+    ("c13", "ex(clause(_, _, 1), R)"),
+    ("c14", "ex(clause(_, _, \"s\"), R)"),
+    ("c15", "ex(clause(_, _, _), R)"),
+    ("c16", "assertz(d(1), R1), clause(d(1), true, R2), ( R1 == R2 -> R = same ; R = diff )"),
+    ("c17", "clause(st(X), B, Ref), blob(Ref, T), R = X-B-T"),
+    ("c18", "ex(clause(atom_length(_, _), _, _), R)"),
+    ("c19", "open('/dev/null', read, S), ex(clause(_, _, S), R), close(S)"),
+    ("c20", "assertz((e(X) => X > 1), Ref), clause(H, B, Ref), R = H-B"),
+    ("c21", "assertz((e(X) => X > 1), Ref), '\$rule'(H, Rule, Ref), R = H-Rule"),
+    ("c22", "assertz(d(1), _), assertz(d(2), _), findall(X-Rule, '\$rule'(d(X), Rule, _), L), R = L"),
+    ("c23", "assertz(e(1), Ref), ( clause(d(_), _, Ref) -> R = yes ; R = no )"),
+    (
+        "c24",
+        "assertz(d(1), _), assertz(d(2), R2), findall(X, ( clause(d(X), true, _), erase(R2) ), L), R = L"
+    ),
+    ("c25", "assertz(m1:q(1), Ref), ( clause(user:q(1), _, Ref) -> R = yes ; R = no )"),
+    ("c26", "assertz(d(1), Ref), assertz(m1:q(1), _), ( clause(m1:d(1), B, Ref) -> R = yes-B ; R = no )"),
+    ("c27", "assertz(m1:q(1), Ref), clause(m1:q(X), B, Ref), R = X-B"),
+    ("c28", "assertz((e(X) => d(X)), Ref), '\$rule'(e(Y), Rule, Ref), R = Y-Rule"),
+    ("c29", "assertz((e(X) :- d(X)), Ref), '\$rule'(e(Y), Rule, Ref), R = Y-Rule"),
+    ("c30", "assertz(e(a), Ref), '\$rule'(H, Rule, Ref), R = H-Rule"),
+    (
+        "c31",
+        "assertz(d(1), Ref), clause(d(X), B, Ref), clause(d(Y), B2, Ref), R = X-B-Y-B2"
+    ),
+    ("c32", "assertz(d(1), Ref), ex(clause(d(1), foo, Ref), R)"),
     # LAST: nothing follows (the program's last row)
     ("z01", "assertz(d(1), Ref), blob(Ref, T), R = T")
 ]
@@ -338,7 +382,7 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         # not a vacuous agreement: each kind of answer is in swipl's own lines
         @test count(l -> occursin("aclauseform", _norm(l)), sw) >= 2             # a04, e08: the written form
         @test count(l -> occursin("clref", l), sw) >= 4                          # a reference inside an answer (a11, a23, a24, r02)
-        @test count(l -> occursin(_codes("db_reference"), l), sw) == 5           # e01, e03-e06
+        @test count(l -> occursin(_codes("db_reference"), l), sw) == 9           # e01, e03-e06, c12-c14, c19
         @test count(l -> occursin(_codes("uninstantiation_error"), l), sw) == 5  # a08-a11, b01
         @test count(l -> occursin(_codes("permission_error"), l), sw) >= 3       # a15, a16, r02
         @test count(l -> occursin(_codes("instantiation_error"), l), sw) >= 2    # a12, e02
@@ -346,6 +390,11 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(l -> startswith(l, "t_b02 ") && occursin(_codes("gone"), l), sw)
         @test any(l -> startswith(l, "t_b03 ") && occursin(_codes("no"), l), sw)
         @test count(l -> occursin(_codes("clause"), l), sw) >= 6                 # blob/2 answers: a02, a03, a25, e07, r01, z01
+        @test count(l -> occursin("c[61]/2(i0,", l), sw) >= 3                     # the bindings list of '$clause'/4 (c09-c11)
+        @test any(l -> startswith(l, "t_c02 ") && occursin("i1", l) && occursin("i2", l), sw)   # clause/3's enumeration
+        @test any(l -> startswith(l, "t_c07 ") && occursin(_codes("m1"), l), sw)   # a qualified head back from a reference
+        @test any(l -> startswith(l, "t_c21 ") && occursin(_codes("=>"), l), sw)   # '$rule'/3 by reference: the neck
+        @test any(l -> l == "t_c32", sw)                                         # a row that FAILS has a line with no answer
         @test startswith(last(sw), "t_z01 ")
     end
 end

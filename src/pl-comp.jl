@@ -3394,21 +3394,38 @@ function unify_functor(
 end
 
 # PORT: pl-comp.c unify_definition
-# DIVERGES: the unbound-head branch only, on term references (f3b-4); the database `gd` is an
-# argument (a module is an index into its table). NOT PORTED: the bound-head branch (clause/3 by
-# reference, predicate_property/2: not ported) — a bound `head` is refused by an assertion.
+# DIVERGES: on term references (f3b-4); the database `gd` is an argument (a module is an index into its
+# table). The BOUND-head branch (since D1, for clause/3 by reference) is upstream's; a definition's module
+# is never NULL here, so upstream's `ATOM_garbage_collected` arm (`def->module == NULL`) has no counterpart.
 """
     unify_definition(gd, ld, ctx, head, def, thehead, how) -> Bool
 
-Unify the unbound term reference `head` with the Prolog reference of `def` as seen from module
-`ctx` (pl-comp.c); `thehead` (when not 0) gets the plain head.
+Unify the term reference `head` with the Prolog reference of `def` as seen from module `ctx` (pl-comp.c):
+an unbound `head` is bound to it; a bound one must name `def` (its `Module:` qualifier a module `def`'s
+module is a super module of, or equal to). `thehead` (when not 0) gets the plain head.
 """
 function unify_definition(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ctx::module_t{T}, head::term_t,
     def::Definition{T}, thehead::term_t, how::Int
 )::Bool where {T}
-    @assert PL_is_variable(ld, head)                    # if ( PL_is_variable(head) )
     m = gd.modules[def.module_]
+    if !PL_is_variable(ld, head)                        # else: the bound head
+        h = head
+        if PL_is_functor(ld, head, mk_sym(T, :(:)), 2)  # PL_is_functor(head, FUNCTOR_colon2)
+            h = PL_new_term_ref(ld)
+            _PL_get_arg(ld, 1, head, h)
+            if !PL_unify_atom(ld, h, m.atom)            # def->module->name
+                a = PL_get_atom(ld, h)
+                a === nothing && return false           # !PL_get_atom(h, &a)
+                mm = isCurrentModule(gd.modules, a)
+                (mm === nothing || !isSuperModule(gd.modules, m, mm)) && return false
+            end
+            _PL_get_arg(ld, 2, head, h)
+        end
+        unify_functor(ld, h, def, how) || return false
+        thehead != 0 && PL_put_term(ld, thehead, h)
+        return true
+    end
     if (how & GP_QUALIFY) == 0 &&
         (m.index == ctx.index || ((how & GP_HIDESYSTEM) != 0 && (m.flags & M_SYSTEM) != 0))
         unify_functor(ld, head, def, how) || return false
@@ -3504,17 +3521,21 @@ end
 # kernel's `PL_put_variable` makes a global cell, which the rewind would free under them — so it is not done.
 # `h` and `b` are made after the control switch, where upstream makes `term`, `h` and `b` before it: the
 # FRG_CUTTED call (`discardForeignFrame`, its arguments `h0 == 0`) uses none, and makes no global cells here.
-# NOT PORTED: clause/3, `'$clause'/4` and `'$rule'/3` (the clause reference `ref`, `PL_get_clref`/`PL_unify_clref`,
-# and `bindings`): the clause blobs exist since D1 (src/pl-dbref.jl), but clause/3's by-reference search and the
-# unify are their own step (NF2), so only clause/2 and (since SSU1) `'$rule'/2` are
-# registered and `CTX_ARITY < 3` is asserted. `IS_RULE` (`'$rule'/2`, since SSU1) builds upstream's `term` from the
+# SINCE D1 clause/3, `'$clause'/4` and `'$rule'/3` are served too: `ref` (arity >= 3) is unified with the
+# clause's reference (`PL_unify_clref`, the clause blobs of src/pl-dbref.jl) in the loop below, and a `ref` that is
+# bound answers BY REFERENCE (first-call branch: `PL_get_clref`, `protected_predicate`, `unify_definition`'s
+# bound-head branch, `CLAUSE_TYPE_MASK`, `unify_head`), with no choice point; `bindings` (arity 4) is
+# `decompile!`'s list of the clause variables. The by-reference branch computes `hflags` by
+# `get_head_and_body_clause` on the clause term built from the two sides (`_rule_term`), as upstream does on
+# `decompile`'s term. NOT PORTED there: a `GOAL_CLAUSE`'s decompilation (no goal clause has a reference).
+# `IS_RULE` (`'$rule'/2`, since SSU1) builds upstream's `term` from the
 # two sides: `Neck(h, b)`, its functor `clause_functor(clause)`, or `h` alone for a fact (`decompile` of a
 # `UNIT_CLAUSE` gives the bare head), and unifies it with `body`; `head` only selects the predicate and the
 # clauses (`argv`), as upstream's.
 "clause/2's (`flags` `IS_CLAUSE`) or `'\$rule'/2`'s (`IS_RULE`) enumeration (pl-comp.c `clause()`): unify `head` and `body` with each clause in turn, one per answer."
 function clause_ndet(
-    ld::PL_local_data{T}, head::term_t, body::term_t, PL__ac::Int, PL__ctx::control_t{T},
-    flags::Int=IS_CLAUSE
+    ld::PL_local_data{T}, head::term_t, body::term_t, ref::term_t, bindings::term_t,
+    PL__ac::Int, PL__ctx::control_t{T}, flags::Int
 )::foreign_t where {T}
     gd = _query_gd(ld)
     pool = ld.clause_contexts
@@ -3523,13 +3544,39 @@ function clause_ndet(
     # term_t term, h, b = PL_new_term_ref(): made after the switch below (FRG_CUTTED uses none)
     rc = false
 
-    @assert PL__ac < 3 "clause/3, '\$clause'/4: not ported (the by-reference search, NF2)"
-    # if ( CTX_ARITY < 3 ) ref = 0; if ( CTX_ARITY < 4 ) bindings = 0
+    PL__ac < 3 && (ref = 0)                                 # if ( CTX_ARITY < 3 ) ref = 0
+    PL__ac < 4 && (bindings = 0)                            # if ( CTX_ARITY < 4 ) bindings = 0
 
     ctl = PL_foreign_control(PL__ctx)
     k = 0                                                   # (the state's index: 0 while it is none or chp_buf)
     if ctl == FRG_FIRST_CALL
-        # if ( ref && !PL_is_variable(ref) ): clause/3 by reference — not ported (above)
+        if ref != 0 && !PL_is_variable(ld, ref)             # clause/3 by reference
+            rc1, rcl = PL_get_clref(gd, ld, ref)
+            if rc1 != 0
+                rc1 < 0 && PL__ac < 4 && return FFALSE      # erased clause
+                rcl = rcl::Clause{T}
+                protected_predicate(gd, ld, rcl.predicate) && return FFALSE
+                h = PL_new_term_ref(ld)
+                b = PL_new_term_ref(ld)
+                decompile!(ld, rcl, h, b, bindings) || return FFALSE    # decompile(clause, term, bindings)
+                term = _rule_term(ld, rcl, h, b)
+                def = rcl.predicate
+                if (rcl.flags & GOAL_CLAUSE) != 0
+                    tmp = head
+                else
+                    tmp = PL_new_term_ref(ld)
+                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) || return FFALSE
+                end
+                h2 = PL_new_term_ref(ld)
+                b2 = PL_new_term_ref(ld)
+                ok, _, hflags = get_head_and_body_clause(gd, ld, term, h2, b2, 0)
+                ok || return FFALSE
+                (rcl.flags & CLAUSE_TYPE_MASK) != hflags && return FFALSE
+                unify_head(gd, ld, tmp, h2) || return FFALSE
+                PL_unify(ld, body, (flags & IS_CLAUSE) != 0 ? b2 : term) && return FTRUE
+            end
+            return FFALSE
+        end
         proc = get_procedure_find(gd, ld, head)             # get_procedure(head, &proc, 0, GP_FIND)
         proc === nothing && return FFALSE
         def = proc.definition                               # getProcDefinition(proc)
@@ -3600,7 +3647,7 @@ function clause_ndet(
                 else
                     PL_unify(ld, _rule_term(ld, clause, h, b), body)   # PL_unify(term, body)
                 end
-                # if ( rc2 && ref ) rc2 = PL_unify_clref(ref, clause): clause/3, not ported
+                rc2 = rc2 && (ref == 0 || PL_unify_clref(gd, ld, ref, clause))   # if ( rc2 && ref )
 
                 if rc2
                     if chp.cref === nothing
@@ -3676,25 +3723,25 @@ end
 # PORT: pl-comp.c clause as pl_clauseva_va
 # (PRED_IMPL("clause", va, clause, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); registered for clause/2 by
 # PRED_SHARE, pl-comp.c:9267)
-# DIVERGES: passes the head and the body only (`A3`, `A4` are clause/3's and `'$clause'/4`'s: not ported).
-"`clause(:Head, ?Body)` (pl-comp.c): `Head :- Body` is a clause of a predicate, one per answer."
+# (shared by clause/2, clause/3 and `'$clause'/4`: `A3` and `A4` are read only when `PL__ac` says they are there)
+"`clause(:Head, ?Body)`, `clause(:Head, ?Body, ?Ref)`, `'\$clause'(:Head, ?Body, ?Ref, -Bindings)` (pl-comp.c): `Head :- Body` is a clause of a predicate, one per answer."
 function pl_clauseva_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    A1, A2 = PL__t0, PL__t0 + 1
-    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx, IS_CLAUSE)
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_CLAUSE)
 end
 
 # PORT: pl-comp.c rule as pl_ruleva_va
 # (PRED_IMPL("rule", va, rule, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC); registered for `'$rule'/2` by
 # PRED_SHARE, pl-comp.c:9270)
-# DIVERGES: passes the head and the clause term only (`A3`, `'$rule'/3`'s reference: not ported); since SSU1.
-"`'\$rule'(:Head, -Rule)` (pl-comp.c): `Rule` is a whole clause of a predicate — `H :- B`, `H => B`, `?=>(H, B)` or a fact's head — one per answer."
+# (shared by `'$rule'/2` and `'$rule'/3`, since D1)
+"`'\$rule'(:Head, -Rule)`, `'\$rule'(:Head, -Rule, ?Ref)` (pl-comp.c): `Rule` is a whole clause of a predicate — `H :- B`, `H => B`, `?=>(H, B)` or a fact's head — one per answer."
 function pl_ruleva_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    A1, A2 = PL__t0, PL__t0 + 1
-    return clause_ndet(ld, A1, A2, PL__ac, PL__ctx, IS_RULE)
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    return clause_ndet(ld, A1, A2, A3, A4, PL__ac, PL__ctx, IS_RULE)
 end
 
 # ── assert/1, assertz/1, asserta/1 (pl-comp.c) ───────────────────────────────────────────────
@@ -4049,8 +4096,20 @@ const PL_predicates_from_comp = (
         "clause", 2, pl_clauseva_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_ISO | PL_FA_VARARGS
     ),
+    PL_extension(                                   # PRED_SHARE("clause", 3, clause, META|NDET|PL_FA_CREF) (D1)
+        "clause", 3, pl_clauseva_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
+    ),
+    PL_extension(                                   # PRED_SHARE("$clause", 4, clause, META|NDET|PL_FA_CREF) (D1)
+        "\$clause", 4, pl_clauseva_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
+    ),
     PL_extension(                                   # PRED_SHARE("$rule", 2, rule, META|NDET|PL_FA_CREF) (SSU1)
         "\$rule", 2, pl_ruleva_va,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
+    ),
+    PL_extension(                                   # PRED_SHARE("$rule", 3, rule, META|NDET|PL_FA_CREF) (D1)
+        "\$rule", 3, pl_ruleva_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
     )
 )
@@ -4190,7 +4249,7 @@ unifyVarGC(ld::PL_local_data{T}, var::Int, variables::term_t, i::code) where {T}
     unify_ptrs_cells(ld, var, -(variables + Int(i - VAROFFSET(0)) + 1))
 
 # PORT: pl-comp.c decompile_head
-# DIVERGES: no `bindings` (clause/3's variable names) and no goal clauses; `bvar_access` (since V9d)
+# DIVERGES: the `bindings` list (`'$clause'/4`'s) is `decompile_bindings!`, run once by `decompile!` before it; no goal clauses; `bvar_access` (since V9d)
 # is a BitVector, `nothing` where upstream's is NULL. The head's first `I_NOP`/`I_CHP` are stepped
 # over in the loop (upstream: one `I_CHP` before it), and the moved-argument test skips them and an
 # argument whose term is being written. A literal is the clause table's term, unified as an atomic
@@ -4807,6 +4866,28 @@ function decompileBody!(
     return PL_unify(ld, body, vbody)
 end
 
+# PORT: pl-comp.c decompile_head as decompile_bindings!
+# (the `if ( di->bindings )` block at the top of upstream's `decompile_head`, pl-comp.c:5940-5956; run once
+# from `decompile!`, before the head is decompiled — the variables are unbound until then)
+"Unify the term reference `bindings` with `[0=V0, 1=V1, …]`, `Vn` the clause's variable `n` (term reference `variables + n`) (pl-comp.c)."
+function decompile_bindings!(
+    ld::PL_local_data{T}, clause::Clause{T}, bindings::term_t, variables::term_t
+)::Bool where {T}
+    tail = PL_copy_term_ref(ld, bindings)
+    head = PL_new_term_ref(ld)
+    (tail == 0 || head == 0) && return false
+    a = PL_new_term_ref(ld)
+    for n in 0:(Int(clause.prolog_vars) - 1)
+        PL_unify_list(ld, tail, head, tail) || return false
+        PL_unify_functor(ld, head, mk_sym(T, :(=)), 2) || return false
+        _PL_get_arg(ld, 1, head, a)
+        PL_unify_integer(ld, a, n) || return false
+        _PL_get_arg(ld, 2, head, a)
+        PL_unify(ld, a, variables + n) || return false
+    end
+    return PL_unify_nil(ld, tail)
+end
+
 # PORT: pl-comp.c decompile
 # DIVERGES: the clause term is its two sides, term references `head` and `body` — upstream takes
 # `Head :- Body` or a bare head, and for a fact with a body unifies that with `true` first, as here;
@@ -4815,24 +4896,27 @@ end
 # the head's instructions, where upstream's head decompiler leaves `di->pc` there. The NECK is not
 # built: `Head => Body` and `Head ?=> Body` decompile into their two sides as `Head :- Body` does —
 # clause/2's split (upstream's `get_head_and_body_clause` of the term); a caller that needs the neck
-# reads `clause_functor` (`'$rule'/2`, retract/1). No `bindings`. Since MOD3a a body starting with
+# reads `clause_functor` (`'$rule'/2`, retract/1). `bindings` (since D1) is `decompile_bindings!`. Since MOD3a a body starting with
 # `I_CONTEXT m` is `m:Body` (pl-comp.c:6315-6324, `_decompile_context!`). A clause with
 # `CL_HEAD_TERMS` gets its moved unifications back (`mark_bvar_access`, the head decompiler,
 # `moved_unifications!`).
 """
     decompile!(ld, clause, head, body) -> Bool
+    decompile!(ld, clause, head, body, bindings) -> Bool
 
 Unify the terms `head` and `body` reference with the clause `clause`'s code describes, with fresh
 variables, under the bindings in `ld` (pl-comp.c): a fact's body is `true`. The bindings stay on
-the trail for the caller to undo.
+the trail for the caller to undo. With a `bindings` term reference (not 0; `'\$clause'/4`'s) it is
+unified with the list `[0=V0, 1=V1, …]` of the clause's variables, in clause-variable order.
 """
 function decompile!(
-    ld::PL_local_data{T}, clause::Clause{T}, head::term_t, body::term_t
+    ld::PL_local_data{T}, clause::Clause{T}, head::term_t, body::term_t, bindings::term_t=0
 )::Bool where {T}
     top = ld.lTop
     try
         nv = Int(clause.prolog_vars)
         variables = nv == 0 ? 0 : PL_new_term_refs(ld, nv)
+        bindings != 0 && (decompile_bindings!(ld, clause, bindings, variables) || return false)
         bvar_access =
             (clause.flags & CL_HEAD_TERMS) != 0 ? mark_bvar_access(clause) : nothing
         if bvar_access !== nothing                              # (a rule: a fact moves nothing)

@@ -430,6 +430,7 @@ function _manifest_index(T)
         (LK._type_test_name, Tuple{UInt64}, false),
         (LK.decompileBody!, Tuple{LD, LK.decompileInfo{T}, Int, UInt64, Int}, false),
         (LK.decompile!, Tuple{LD, C, Int, Int}, false),
+        (LK.decompile!, Tuple{LD, C, Int, Int, Int}, false),   # D1: bindings
         (LK.decompile_head!, Tuple{LD, C, Int, Int, Union{Nothing, BitVector}, Int}, false),
         (LK.add_bvar_access!, Tuple{BitVector, Int, Int}, true),
         (LK._body_start, Tuple{C}, false),
@@ -1836,8 +1837,8 @@ function _manifest_index(T)
             false
         ),
         (LK.pl_clauseva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.clause_ndet, Tuple{LD, Int, Int, Int, LK.foreign_context{T}}, false),
-        (LK.clause_ndet, Tuple{LD, Int, Int, Int, LK.foreign_context{T}, Int}, false),   # SSU1: IS_RULE
+        (LK.clause_ndet, Tuple{LD, Int, Int, Int, Int, Int, LK.foreign_context{T}, Int}, false),   # D1: ref, bindings
+        (LK.decompile_bindings!, Tuple{LD, C, Int, Int}, false),
         (LK.pl_ruleva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.clause_functor, Tuple{LD, UInt32}, false),
         (LK._rule_term, Tuple{LD, C, Int, Int}, false),
