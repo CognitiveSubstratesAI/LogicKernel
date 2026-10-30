@@ -26,6 +26,7 @@ N = ["test/db/test_nth_clause_swipl.jl"]
 NS = N + S                                                  # the get_procedure family / setDynamicDefinition! are used by the loader too
 SF = "src/pl-srcfile.jl"
 PR = "src/pl-proc.jl"
+TARGETS = NS                                                # the baseline job's list: the union of every mutant's targets
 MUTANTS = [
     # ---- '$source_file'/2 and '$source_file_predicates'/2
     dict(id="LB2-1 $source_file_predicates walks the oldest predicate first", file=SF, targets=S,
