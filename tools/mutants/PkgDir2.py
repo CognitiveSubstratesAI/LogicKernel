@@ -1,5 +1,5 @@
 # ORIGINAL: PkgDir's mutant list — no swipl-devel counterpart.
-# tools/mutants/PkgDir.py — the mutation battery of the pkgdir guard of the Pkg.test-way run (audit D-0249 item 1,
+# tools/mutants/PkgDir2.py — the mutation battery of the pkgdir guard of the Pkg.test-way run (audit D-0249 item 1,
 # 2026-10-29): tools/pkgtest_way_load.jl refuses a precompile cache of ANOTHER checkout (MOD2: a run in lk-mod2
 # executed lk-s1's code) and runs again in a fresh process that builds this checkout's own cache; the explicit
 # override LOGICKERNEL_PKGTEST_WAY_NO_STALE=1 stays. Run ONCE, in CI (.github/workflows/mutation.yml; locally:
