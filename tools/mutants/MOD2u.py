@@ -6,7 +6,7 @@
 # transparency and qualification), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
 # Format: tools/mutate_drive.py's (as SSU2.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent`
 # and `targets`. Killed by test/core_lang/test_context_module_swipl.jl (rows c01-c42 named in each id's KILL; "wb" is its
-# PL_open_query testset), H2 by test/core_lang/test_cleanup_swipl.jl:295, FX1 by test/test_type_discipline.jl. Hand-run before the commit (D-0104, `tools/mutate.sh run-in-tree`): verdicts in lk-channel
+# PL_open_query testset), FX1 by test/test_type_discipline.jl. Hand-run before the commit (D-0104, `tools/mutate.sh run-in-tree`): verdicts in lk-channel
 # evidence/MOD2/mutants_verdicts.tsv.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no
 # daemon): RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once).
@@ -17,6 +17,9 @@
 #   * PL_open_query's `saved_environment` branch is REACHED since D-0209 item 5: callPortray (pl-write.c, ported)
 #     calls `user:portray/1` through PL_call_predicate with ctx NULL while write_term/3 runs; row c36 (a transparent
 #     portray/1 asserting its context) — mutant Q3 below.
+#   * (MOD4, D-0238/D-0246) B1-B4, H1, H2 and R1 removed: they mutated MOD2's interim stand-in qualification
+#     (`_boot_transparent!`, `_boot_mqual`, `_interim_mqual_cleanup`) and its transparency lists, which MOD4 deletes;
+#     `_boot_meta!`, `m_qualify_argument` and the cleanup handler's line are tools/mutants/MOD4.py's (B1, Q1-Q2, C1).
 #   * I_LCALL's `clearLocal(FR, FR_CLEAR_NEXT)`: FR_CLEAR_NEXT ⊇ FR_LCO_CLEAR; FR_DET/FR_DETGUARD reach a transparent
 #     last call only under `$/1` or det/1 declarations, which no row here combines with a transparent predicate.
 # TARGETS (audit D-0238 item 4): each mutant lists every test file that exercises its mutated code, not only this step's
@@ -26,7 +29,7 @@
 # the query API, callPortray, the strip functions' callers, clause/2, retractall/1.
 TS = ["test/core_lang/test_context_module_swipl.jl"]
 TD = ["test/test_type_discipline.jl"]                 # MOD2-FX1 (D-0231)
-TC = ["test/core_lang/test_cleanup_swipl.jl"]          # MOD2-H1/H2 (D-0237: row :295)
+TC = ["test/core_lang/test_cleanup_swipl.jl"]          # the cleanup handler's context (D-0237: row :295)
 TK = ["test/core_lang/test_catch_swipl.jl"]
 TF = ["test/core_lang/test_findall_swipl.jl"]
 TA = ["test/core_lang/test_attvar_wakeup.jl"]          # freeze/when/call_residue_vars, '$suspend', AV3-W4 (FX1's first row)
@@ -95,23 +98,9 @@ MUTANTS = [
     dict(id="MOD2-Q3 PL_open_query's saved-environment branch gives user (KILL c36: portray/1 under write_term/3 from m2)", file=W, targets=TS + TW,
          old="            setContextModule!(f, contextModule(gd, ld, q.saved_environment))\n",
          new="            setContextModule!(f, MODULE_user(gd).index)\n"),
-    dict(id="MOD2-B4 findall/4's INTERIM qualification dropped: findall_loop/4 calls the goal in system (KILL c18, c19, c30)", file=E, targets=TS + TF,
-         old="                _boot_mqual(T, q[4], Goal, q[1:3]),     # INTERIM: S_MQUAL (MOD4)\n                _boot_term(\n                    :cleanup_bag,",
-         new="                _boot_term(:(=), T[Goal, q[4]]),\n                _boot_term(\n                    :cleanup_bag,"),
     dict(id="MOD2-Q2 PL_open_query's last branch gives system, not user (KILL wb: the frame's context)", file=W, targets=TS + TQ,
          old="            setContextModule!(f, MODULE_user(gd).index)\n",
          new="            setContextModule!(f, MODULE_system(gd).index)\n"),
-    # ── pl-wam.c callCleanupHandler / call_term ──
-    # H1/H2 target test_cleanup_swipl.jl too (D-0237): the early battery (run 40927313858, targets TS only) left H2 alive —
-    # in every cleanup of c01-c42 the handler's environment frame has the cleanup frame's context (h2_probe.txt) — but
-    # with the wrap deleted test_cleanup_swipl.jl:295 fails on all three term types: there the query's goal IS the
-    # cleanup frame, so the handler's environment is the query's system frame while contextModule(fr) is user.
-    dict(id="MOD2-H1 the handler's INTERIM qualification uses user, not contextModule(fr) (KILL c08: existence error of user:tpt; c35)", file=W, targets=TS + TC,
-         old="                ccm = contextModule(gd, ld, fr)\n",
-         new="                ccm = MODULE_user(gd).index\n"),
-    dict(id="MOD2-H2 no INTERIM qualification: call_term's verbatim stripModule takes the environment frame's context (D-0212 item 3; KILL test_cleanup_swipl.jl:295: the query's goal is the cleanup frame, the handler's environment the query's system frame, so log/1 is looked up in system — existence_error vs swipl's logs(q(!)); c35/c39-c42 cannot kill it, D-0233 probe)", file=W, targets=TS + TC,
-         old="    _is_colon2_word(ld, k, w) && return nothing                     # is_qualified(p): as it is\n    colon2 = lookupFunctorDef(",
-         new="    return nothing\n    colon2 = lookupFunctorDef("),
     dict(id="MOD2-S1 stripModule_cells: an unqualified goal gets user, not the environment frame's context (KILL c20, c22, c27)", file=M, targets=RUN + TP,
          old="        elseif ld.environment_frame != 0            # environment_frame ? contextModule(…) : MODULE_user\n",
          new="        elseif false\n"),
@@ -134,19 +123,6 @@ MUTANTS = [
     dict(id="MOD2-P2 context_module/1 not transparent (KILL c01: system)", file=E, targets=TS,
          old='    PL_extension("context_module", 1, pl_context_module, PL_FA_TRANSPARENT),   # META (MOD2)\n',
          new='    PL_extension("context_module", 1, pl_context_module, 0x00),\n'),
-    dict(id="MOD2-R1 retractall/1 not made transparent (pl-ext.c:397) (KILL c17: [1])", file=E, targets=TS + TR,
-         old='        ("assert", 1), ("asserta", 1), ("assertz", 1), ("retract", 1), ("retractall", 1),\n',
-         new='        ("assert", 1), ("asserta", 1), ("assertz", 1), ("retract", 1),\n'),
-    # ── the stand-ins (pl-ext.jl) ──
-    dict(id="MOD2-B1 no stand-in made transparent (KILL c18-c21, c23, c25-c27, c30)", file=E, targets=RUN + TA,
-         old="    _boot_transparent!(gd)                          # INTERIM: S_MQUAL (MOD4)\n",
-         new="    nothing\n"),
-    dict(id="MOD2-B2 catch/3 not transparent: its goal and recovery run in system (KILL c20, c21)", file=E, targets=TS + TK,
-         old='        ("call", 7), ("call", 8), ("catch", 3), ("setup_call_cleanup", 3),',
-         new='        ("call", 7), ("call", 8), ("setup_call_cleanup", 3),'),
-    dict(id="MOD2-B3 the stand-ins qualify with user, not the context module (KILL c18, c23, c24, c25, c26, c30)", file=E, targets=TS + TA,
-         old="            _boot_term(:(=), T[g, _boot_term(colon, T[v[3], g0])])\n",
-         new="            _boot_term(:(=), T[g, _boot_term(colon, T[mk_sym(T, :user), g0])])\n"),
     # ── the stacked fix before MOD2 (D-0231): the V9d condition slot is a tagged word, not a term ──
     dict(id="MOD2-FX1 D-0231: C_IFTHENELSE writes its slot as mk_gnd(T, ::Int64) again (KILL test_type_discipline: the D-0231 rows on Term{Union{BigInt, Float64, String}} — MethodError; EQUIVALENT on the reference type, the same word)", file=W, targets=TD + TA,
          old="    @label C_IFTHENELSE\n    ld.slots[varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1] = consInt(\n        ld.choices[ld.BFR].base\n    )                                               # == C_IFTHEN\n",

@@ -225,13 +225,14 @@ const _CM_CASES = [
         "c38",
         raw"catch(call(m2:sq), error(E, _), true), findall(C, m3:seen3(C), L), R = E-L"
     ),
-    # c39-c42 (D-0233, mutant MOD2-H2): an unqualified m2-local cleanup `tpb` run from m2 when the goal ends or its
+    # c39-c42 (D-0233, MOD2's cleanup wrap; MOD4 removed it): an unqualified m2-local cleanup `tpb` run from m2 when the goal ends or its
     # choice points are cut: under findall/3 (system code), under forall/2's body `\+ (G, \+ true)` (forall/2 and
     # member/2 are library predicates the kernel does not have: m2-local gen/1, gen3/1 instead), under `\+ \+`, and
     # under findall/3 over a goal left nondeterministic (X < 3 fails on the third answer). swipl: tpb runs in m2 (S_MQUAL
     # qualified it at the call). White-box probe (D-0233 item 2, evidence/MOD2/h2_probe.txt): at the handler's entry the
     # environment frame's context equals contextModule(fr) in every cleanup of c01-c42, so these rows pin the module but
-    # cannot kill MOD2-H2; test_cleanup_swipl.jl:295 does (the query's goal is the cleanup frame: D-0237, wrap kept)
+    # could not kill MOD2-H2; test_cleanup_swipl.jl:295 did (the query's goal is the cleanup frame: D-0237). Since MOD4
+    # S_MQUAL qualifies the cleanup argument at the frame's entry, as swipl's.
     (
         "c39",
         raw"retractall(m2:seenb(_)), call(m2:fsc(L)), findall(C, m2:seenb(C), S), R = L-S"
