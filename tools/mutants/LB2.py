@@ -270,8 +270,8 @@ MUTANTS = [
          old='''ld.frames[fr].generation = generation               # setGenerationFrameVal(environment_frame, generation)''',
          new='''nothing'''),
     dict(id="LB2-64 nth_clause by reference, a module that is no super module is accepted", file="src/pl-comp.jl", targets=N,
-         old='''(cm === nothing || !isSuperModule(gd.modules, m, cm)) && return false''',
-         new='''cm === nothing && return false'''),
+         old='''(mm === nothing || !isSuperModule(gd.modules, m, mm)) && return false''',
+         new='''mm === nothing && return false'''),
     dict(id="LB2-65 nth_clause by reference, a bound head of another predicate is accepted", file="src/pl-comp.jl", targets=N,
          old='''        unify_functor(ld, h, def, how) || return false
         thehead != 0 && PL_put_term(ld, thehead, h)''',
