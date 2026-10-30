@@ -116,6 +116,8 @@ qm2:(user:cross(_) :- nono).
 qm2:(nono :- fail).
 qm2:(user:cross(M) :- context_module(M)).
 cross(M) :- context_module(M).
+qm:lco(N, U) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, qm:lco(N1, U) ).
+qm:lcp(N, U) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, between(1, 2, _), qm:lcp(N1, U) ).
 """
 
 # (id, goal), run IN ORDER
@@ -183,10 +185,18 @@ const _CB_CASES = [
     # b42-b44: asserted: `qm:H :- B` from user gets I_CONTEXT user; `qm:(H :- B)` none (one module); clause/2 of the first
     ("b42", raw"assertz((qm:actx(C) :- context_module(C))), qm:actx(R)"),
     ("b43", raw"assertz(qm:(actx2(C) :- context_module(C))), qm:actx2(R)"),
-    ("b44", raw"findall(B, clause(qm:actx(_), B), R)")
+    ("b44", raw"findall(B, clause(qm:actx(_), B), R)"),
+    # b45, b46 (audit D-0229): I_DEPARTM's frame reuse, white-box. `statistics(localused, U)` is `8 * ld.lTop`
+    # (src/pl-prims.jl `_used_stack`), read at the deepest call. `qm:lco/2`'s last goal `qm:lco(N1, U)` is I_DEPARTM
+    # (body module user, `I_CONTEXT user`); with no choice point above the frame it departs (LCO): lTop at depth
+    # 1000 and at depth 2000 is the SAME (b45). `qm:lcp/2`'s last goal is I_DEPARTM too, but between/3 leaves a choice point above the
+    # frame, so I_DEPARTM takes I_CALLM's path (pl-vmi.c:2126-2137): a new frame per level, lTop GROWS with the depth (b46).
+    ("b45", raw"once(qm:lco(1000, U1)), once(qm:lco(2000, U2)), ( U1 == U2 -> R = same ; R = differ(U1, U2) )"),
+    ("b46", raw"once(qm:lcp(1000, U1)), once(qm:lcp(2000, U2)), ( U2 > U1 -> R = grows ; R = flat(U1, U2) )")
 ]
 
-# swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/MOD3a/mod3a_rows.out)
+# swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/MOD3a/mod3a_rows.out;
+# b45/b46 added 2026-10-30, the whole table re-run twice, b01-b44 unchanged: evidence/MOD3a/mod3a_rows_d0229.out)
 const _CB_PINNED = [
     "ok",
     "t_b01 c[116,95,98,48,49]/1(a[113,109])",
@@ -232,7 +242,9 @@ const _CB_PINNED = [
     "t_b41 c[116,95,98,52,49]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[109,111,100,117,108,101],i1)))",
     "t_b42 c[116,95,98,52,50]/1(a[117,115,101,114])",
     "t_b43 c[116,95,98,52,51]/1(a[113,109])",
-    "t_b44 c[116,95,98,52,52]/1(c[91,124,93]/2(c[58]/2(a[117,115,101,114],c[99,111,110,116,101,120,116,95,109,111,100,117,108,101]/1(V0)),nil))"
+    "t_b44 c[116,95,98,52,52]/1(c[91,124,93]/2(c[58]/2(a[117,115,101,114],c[99,111,110,116,101,120,116,95,109,111,100,117,108,101]/1(V0)),nil))",
+    "t_b45 c[116,95,98,52,53]/1(a[115,97,109,101])",
+    "t_b46 c[116,95,98,52,54]/1(a[103,114,111,119,115])"
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -290,7 +302,7 @@ function _cb_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "M:Goal in a body as swipl's (b01-b44)" begin
+@testset "M:Goal in a body as swipl's (b01-b46)" begin
     f, names = _cb_file()
     kl, _, _ = _cb_kernel(f, names)
     @test length(kl) == length(_CB_PINNED)
@@ -305,6 +317,9 @@ end
     @test count(l -> endswith(l, "/1($user)"), _CB_PINNED) >= 2
     @test count(l -> occursin("c[114,97,105,115,101,100]", l), _CB_PINNED) >= 6     # raised(…)
     @test count(l -> occursin("c[58]/2(", l), _CB_PINNED) >= 9                       # :/2
+    # b45/b46 (D-0229): the LCO row answers `same`, the choice-point row `grows`
+    @test _CB_PINNED[end - 1] == "t_b45 c[116,95,98,52,53]/1(a[115,97,109,101])"
+    @test _CB_PINNED[end] == "t_b46 c[116,95,98,52,54]/1(a[103,114,111,119,115])"
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

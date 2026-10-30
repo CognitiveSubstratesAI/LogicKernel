@@ -5312,8 +5312,10 @@ What MOD3a ports (pl-comp.c, pl-vmi.c at the pin):
   refusal of getTargetModule is ported but unreached until MOD5b makes temporary modules; the breakpoint/tracer readers of
   `I_CALLM` (pl-wam.c put_vm_call, pl-trace.c is_meta_call: no debugger).
 
-Tests: test/core_lang/test_colon_body_swipl.jl (rows b01-b44: test_qcall.pl's colon cases, test_module.pl's cross/qcontrol,
-`qm:Head :- Body`, getTargetModule's errors, goal clauses, clause/2 — a consulted program vs swipl 10.1.19 pins);
+Tests: test/core_lang/test_colon_body_swipl.jl (rows b01-b46: test_qcall.pl's colon cases, test_module.pl's cross/qcontrol,
+`qm:Head :- Body`, getTargetModule's errors, goal clauses, clause/2, and b45/b46 (D-0229): I_DEPARTM's frame reuse read through
+`statistics(localused, _)` = `8 * lTop` at depth 1000 and 2000 — the same with LCO, growing when a choice point sends
+I_DEPARTM to I_CALLM's path — a consulted program vs swipl 10.1.19 pins);
 test/compile/test_body_code_swipl.jl's MOD3a testset (each instruction and operand vs swipl's `clause_vm/2`) and the
 multifile pin (flipped from the refusal). Mutants: tools/mutants/MOD3a.py.
 
