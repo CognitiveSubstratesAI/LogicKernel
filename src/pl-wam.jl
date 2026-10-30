@@ -1099,17 +1099,20 @@ end
 function mustBeCallable(ld::PL_local_data{T}, call::term_t)::Bool where {T}
     k, w, _ = _deref_loc(ld, -(call + 1))                   # Word p = valTermRef(call); deRef(p)
     k == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)  # isVar(*p)
-    _is_colon2_word(ld, k, w) || return PL_type_error(ld, "callable", call)   # !hasFunctor(*p, FUNCTOR_colon2)
+    # type_error: PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_callable, call) — ERR_TYPE, so `rewrite_callable`
+    # strips the culprit's atom qualifiers (pl-error.c; test_cleanup_swipl.jl's `nc` row)
+    _is_colon2_word(ld, k, w) ||                            # !hasFunctor(*p, FUNCTOR_colon2)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), call)
     mk, mw, _ = _deref_loc(ld, valPtr(w) + 1)               # ap = argTermP(*p, 0); deRef(ap)
     mk == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
     (
         (mk == DU_WORD && isAtomW(mw)) ||                   # isAtom(*ap): a blob too
         (mk == DU_VALUE && isAtom(_value_term(ld, mw)))
-    ) || return PL_type_error(ld, "callable", call)
+    ) || return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), call)
     ak, aw, _ = _deref_loc(ld, valPtr(w) + 2)               # ap = argTermP(*p, 1); deRef(ap)
     ak == DU_CELL && return PL_error(ld, ERR_INSTANTIATION)
     (ak == DU_WORD && (_is_gcompound(aw) || isTextAtom(_atom_value(ld, aw)))) ||
-        return PL_type_error(ld, "callable", call)          # isTerm(*ap) || isTextAtom(*ap)
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), call)   # isTerm(*ap) || isTextAtom(*ap)
 
     return true
 end

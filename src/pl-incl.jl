@@ -301,7 +301,8 @@ const MA_HAT = UInt8(14)
 const MA_DCG = UInt8(15)
 # PORT: pl-incl.h MA_NEEDS_TRANSPARENT
 "Whether meta-argument specifier `m` makes its predicate transparent and is qualified (`0..9`, `:`, `^`, `//`; pl-incl.h; MOD4)."
-MA_NEEDS_TRANSPARENT(m::UInt8)::Bool = m < 0x0a || m == MA_META || m == MA_HAT || m == MA_DCG
+MA_NEEDS_TRANSPARENT(m::UInt8)::Bool =
+    m < 0x0a || m == MA_META || m == MA_HAT || m == MA_DCG
 
 # ── index limits ────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-incl.h MAX_MULTI_INDEX

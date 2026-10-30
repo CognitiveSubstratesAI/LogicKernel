@@ -158,9 +158,15 @@ const _MP_CASES = [
     # a17: an unbound argument: `Context:V`, the caller's variable shared
     ("a17", raw"call(m2:q0(V, X)), R = X-V"),
     # a18: an attributed variable under a qualifier (upstream's `freeze(Y, fail)` row): kept
-    ("a18", raw"freeze(Y, fail), call(m2:q0(m1:Y, X)), ( X == m1:Y -> R = same ; R = other )"),
+    (
+        "a18",
+        raw"freeze(Y, fail), call(m2:q0(m1:Y, X)), ( X == m1:Y -> R = same ; R = other )"
+    ),
     # a19: a cyclic qualifier chain: the depth check (every 100 links) raises type_error(acyclic_term, _) (test_module.pl mqual)
-    ("a19", raw"T = a:T, catch(call(m2:q0(T, _)), error(type_error(E, _), _), true), R = E"),
+    (
+        "a19",
+        raw"T = a:T, catch(call(m2:q0(T, _)), error(type_error(E, _), _), true), R = E"
+    ),
     # a20, a21: upstream's alias rows: m(:, +, -) and m2(+, :, -) with one shared variable
     ("a20", raw"m(X, X, Out), R = X-Out"),
     ("a21", raw"mm2(X, X, Out), R = X-Out"),
@@ -316,7 +322,8 @@ end
     # white-box: the declarations' flags (setMetapredicateMask, isTransparentMetamask)
     u = LK.MODULE_user(gd)
     for (name, arity, transparent) in (
-        ("k0", 2, true), ("kh", 2, true), ("kd", 2, true), ("kc", 2, true), ("kq", 2, false),
+        ("k0", 2, true), ("kh", 2, true), ("kd", 2, true), ("kc", 2, true),
+        ("kq", 2, false),
         ("kp", 2, false), ("km", 2, false), ("mm2", 3, true)
     )
         p = LK.isCurrentProcedure(sym_key(_mps(name)), arity, u)

@@ -267,7 +267,8 @@ function _boot_meta!(gd::PL_global_data{T})::Nothing where {T}
         ("call", 5, "4????"), ("call", 6, "5?????"), ("call", 7, "6??????"),
         ("call", 8, "7???????"), ("catch", 3, "0?0"), ("setup_call_cleanup", 3, "000"),
         ("setup_call_catcher_cleanup", 4, "00?0"), ("call_cleanup", 2, "00"),
-        ("findall", 3, "?0-"), ("findall", 4, "?0-?"), ("bagof", 3, "?^-"), ("setof", 3, "?^-"),
+        ("findall", 3, "?0-"), ("findall", 4, "?0-?"), ("bagof", 3, "?^-"),
+        ("setof", 3, "?^-"),
         ("cleanup_bag", 2, "00"), ("freeze", 2, "?0"), ("call_residue_vars", 2, "0-"),
         ("when", 2, "+0")
     )
@@ -935,11 +936,13 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     # predicate_property/2, `P_TRANSPARENT` for their context module.
     for (name, arity, spec) in (
         ("assert", 1, ":"), ("asserta", 1, ":"), ("assertz", 1, ":"), ("assert", 2, ":-"),
-        ("asserta", 2, ":-"), ("assertz", 2, ":-"), ("retract", 1, ":"), ("retractall", 1, ":"),
+        ("asserta", 2, ":-"), ("assertz", 2, ":-"), ("retract", 1, ":"),
+        ("retractall", 1, ":"),
         ("clause", 2, ":?"), ("format", 2, "+:"), ("format", 3, "++:"),
         ("format_predicate", 2, "+0"), ("notrace", 1, "0"), ("with_mutex", 2, "+0"),
         ("with_output_to", 2, "+0"), ("thread_idle", 2, "0+"),
-        ("prolog_frame_attribute", 3, "++:"), ("compile_predicates", 1, ":"), ("op", 3, "++:"),
+        ("prolog_frame_attribute", 3, "++:"), ("compile_predicates", 1, ":"),
+        ("op", 3, "++:"),
         ("current_op", 3, "++:"), ("unwrap_predicate", 2, ":?"), ("prolog_listen", 2, "+:"),
         ("prolog_listen", 3, "+:+"), ("prolog_unlisten", 2, "+:"), ("with_tty_raw", 1, "0"),
         ("sig_atomic", 1, "0")

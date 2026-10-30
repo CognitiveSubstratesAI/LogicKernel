@@ -1338,7 +1338,8 @@ function meta_declaration(
     if ReadingSource(ld)
         throw(
             NotPortedError{T}(
-                name, "meta_predicate/1 while loading a file (setMetapredicateSource)", "LB2"
+                name, "meta_predicate/1 while loading a file (setMetapredicateSource)",
+                "LB2"
             )
         )
     end

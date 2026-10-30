@@ -10,7 +10,7 @@
 # setof/3, the cleanup family, freeze/2, when/2, call_residue_vars/2), so the qualification mutants target EVERY test
 # file that calls one (TS_ALL: the test files whose text names one of them; test/test_gate_split.jl left out, its
 # `call(` is Julia's). meta_declaration and isTransparentMetamask are reached only through meta_predicate/1 and
-# mode/1 (src/pl-proc.jl:1345, :1360, :1363): TS_MP. The meta_predicate file is first: a kill decides there.
+# mode/1 (src/pl-proc.jl:1346, :1361, :1364): TS_MP. The meta_predicate file is first: a kill decides there.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no
 # daemon): RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once).
 # NOT LISTED (each with its reason):
@@ -90,15 +90,15 @@ S = "src/pl-supervisor.jl"
 P = "src/pl-proc.jl"
 E = "src/pl-ext.jl"
 # The cleanup goal at I_CALLCLEANUP is always `Module:Goal` with an atom Module and a callable Goal: every cleanup frame
-# is made by I_CALLCLEANUP (src/pl-wam.jl:3617), which first passes the LAST argument through mustBeCallable
-# (src/pl-wam.jl:3609); that argument is declared `0` in every member of the cleanup family (src/pl-ext.jl:266-269), so
+# is made by I_CALLCLEANUP (src/pl-wam.jl:3622), which first passes the LAST argument through mustBeCallable
+# (src/pl-wam.jl:3614); that argument is declared `0` in every member of the cleanup family (src/pl-ext.jl:267-268), so
 # S_MQUAL/S_LMQUAL (src/pl-supervisor.jl:232-239) have made it `Context:Goal` (src/pl-wam.jl:1046-1051) or kept an
 # existing `M:G` (src/pl-wam.jl:1052-1072) before the clause body runs. A user clause that runs `'$call_cleanup'`
 # itself (no meta declaration) is the one other way in: there mustBeCallable rejects the unqualified cleanup goal
 # before any cleanup frame exists (row a25, swipl's answer type_error(callable, true)), so the handler still only
 # ever sees `Module:Goal` — C1 stays equivalent, C2 is killed by a25.
-_CLEANUP_QUALIFIED = ("every cleanup frame passed mustBeCallable first (src/pl-wam.jl:3609, :3617), so the cleanup "
-                      "goal the handler calls is always `Module:Goal` with an atom Module (src/pl-wam.jl:1098-1114)")
+_CLEANUP_QUALIFIED = ("every cleanup frame passed mustBeCallable first (src/pl-wam.jl:3614, :3622), so the cleanup "
+                      "goal the handler calls is always `Module:Goal` with an atom Module (src/pl-wam.jl:1098-1118)")
 MUTANTS = [
     # ── pl-wam.c m_qualify_argument ──
     dict(id="MOD4-Q1 m_qualify_argument builds Context:Arg but does not store it: an unqualified argument stays bare (KILL a01-a06, a11, a17, a22)", file=W, targets=TS_ALL,
@@ -157,7 +157,7 @@ MUTANTS = [
          old='("bagof", 3, "?^-")',
          new='("bagof", 3, "?0-")',
          equivalent="MA_HAT and 0 are read alike: every reader of a mask is MA_NEEDS_TRANSPARENT (src/pl-incl.jl:300, true "
-                    "for both; src/pl-supervisor.jl:232, src/pl-proc.jl:1417) or the MA_VAR test (src/pl-proc.jl:982); "
+                    "for both; src/pl-supervisor.jl:232, src/pl-proc.jl:1418) or the MA_VAR test (src/pl-proc.jl:982); "
                     "m_qualify_argument reads no mask (src/pl-wam.jl:1041-1075)"),
     # ── pl-wam.c callCleanupHandler, mustBeCallable ──
     dict(id="MOD4-C1 callCleanupHandler calls the cleanup goal in user, not the frame's context", file=W, targets=TS_ALL,
@@ -166,6 +166,7 @@ MUTANTS = [
          equivalent=_CLEANUP_QUALIFIED + "; call_term's module is the default of an unqualified goal only, a `Module:Goal` "
                     "runs in Module"),
     dict(id="MOD4-C2 mustBeCallable accepts a goal that is not `_:_` (MOD2's interim acceptance back) (KILL a25)", file=W, targets=TS_ALL,
-         old='    _is_colon2_word(ld, k, w) || return PL_type_error(ld, "callable", call)   # !hasFunctor(*p, FUNCTOR_colon2)\n',
+         old=('    _is_colon2_word(ld, k, w) ||                            # !hasFunctor(*p, FUNCTOR_colon2)\n'
+              '        return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), call)\n'),
          new="    _is_colon2_word(ld, k, w) || return true\n"),
 ]

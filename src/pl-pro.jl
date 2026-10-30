@@ -35,7 +35,7 @@ function callProlog(
     ok || return false
     fd = PL_get_functor(ld, g)
     if fd === nothing                                   # !PL_get_functor(g, &fd)
-        PL_type_error(ld, "callable", goal)
+        PL_error(ld, ERR_TYPE, mk_sym(T, :callable), goal)  # ERR_TYPE: `rewrite_callable` strips `goal`'s qualifiers
 
         PL_reset_term_refs(ld, g)
         return false
