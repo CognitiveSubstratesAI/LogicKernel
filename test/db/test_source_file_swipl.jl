@@ -8,8 +8,7 @@
 #     list of a source file, the refusal of a reconsult (LB6), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
 #     bits of a predicate defined in system mode, `isStaticSystemProcedure`).
 # NOT HERE: `nth_clause/3` and `'$get_clause_attribute'/3` rows (test/db/test_nth_clause_swipl.jl), the module sites
-# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), `'$source_file_predicates'/2` with a
-# partly bound list (the bound-head branch of `unify_definition`), a reconsult (LB6).
+# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), a reconsult (LB6).
 using Test, LogicKernel
 
 const LK = LogicKernel
@@ -349,6 +348,14 @@ function _loaded(src::String)
     return gd, ld, f
 end
 
+function _load_more!(gd, ld, src::String)
+    f = joinpath(realpath(mktempdir()), "x.pl")
+    write(f, src)
+    st, _, _ = LK.load_file!(gd, ld, f)
+    @assert st === :ok
+    return f
+end
+
 _f(name, args...) = mk_expr(_TL, _TL[_tls(name), args...])
 _v() = mk_var(_TL, LK.fresh_var_keys!(1))
 
@@ -374,9 +381,10 @@ end
 
 @testset "'\$source_file_property'(+Unknown, loaded, -V) fails (H10: swipl dies on it); the others answer their empty value" begin
     gd, ld, f = _loaded("foo(1).\n")
-    for (prop, want) in (("load_count", 0), ("number_of_clauses", 0), ("resource", false), ("from_state", false), ("reloading", false))
+    for (prop, want) in (("load_count", 0), ("number_of_clauses", 0), ("resource", "false"), ("from_state", "false"), ("reloading", "false"))
         st, ans = kcall(gd, ld, "\$source_file_property", _TL[_tls("/no/such"), _tls(prop), _v()])
-        @test st === :true && lk_value(ans[3]) == want
+        # a count is an integer, a flag the atom true / false (PL_unify_bool)
+        @test st === :true && (want isa Integer ? lk_value(ans[3]) == want : sym_key(ans[3]) == sym_key(_tls(want)))
     end
     st, _ = kcall(gd, ld, "\$source_file_property", _TL[_tls("/no/such"), _tls("loaded"), _v()])
     @test st === :false
@@ -424,7 +432,7 @@ end
     @test st === :true && sym_key(ans[2]) == sym_key(_tls("user"))
     # user mode: a static system procedure is found, and a new user predicate is not locked
     @test LK.isStaticSystemProcedure(gd, ld, sym_key(_tls("atom_length")), 2) !== nothing
-    kcall(gd, ld, "assertz", _TL[_f("lb2_u", lk_gnd(_TL, 1)), _v()])
+    _load_more!(gd, ld, "lb2_u(1).\n")                      # a LOADED clause (pl-comp.c:4979 is inside `if ( loc )`: assertz does not lock)
     pu = LK.isCurrentProcedure(sym_key(_tls("lb2_u")), 1, LK.MODULE_user(gd))
     @test (pu.definition.flags & LK.P_LOCKED) == 0
     LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_SYSTEM)
@@ -432,7 +440,7 @@ end
     st, ans = kcall(gd, ld, "current_prolog_flag", _TL[_tls("access_level"), _v()])
     @test st === :true && sym_key(ans[2]) == sym_key(_tls("system"))
     @test LK.isStaticSystemProcedure(gd, ld, sym_key(_tls("atom_length")), 2) === nothing
-    kcall(gd, ld, "assertz", _TL[_f("lb2_s", lk_gnd(_TL, 1)), _v()])
+    _load_more!(gd, ld, "lb2_s(1).\n")                      # a LOADED clause (pl-comp.c:4979 is inside `if ( loc )`: assertz does not lock)
     ps = LK.isCurrentProcedure(sym_key(_tls("lb2_s")), 1, LK.MODULE_user(gd))
     @test (ps.definition.flags & LK.P_LOCKED) != 0 && (ps.definition.flags & LK.HIDE_CHILDS) != 0
     LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_USER)

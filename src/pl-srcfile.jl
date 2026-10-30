@@ -237,8 +237,8 @@ end
 # (PRED_IMPL("$source_file_predicates", 2, source_file_predicates, 0)) — pl-srcfile.c:608-641
 # DIVERGES: upstream's `sf->procedures` is a list with the NEWEST procedure first
 # (`addProcedureSourceFile` conses at the head); the kernel's is a vector with the newest LAST, so it
-# is walked in reverse: the answer is in the same order. The unbound-head branch of `unify_definition`
-# only: a head already bound by the caller's partial list is NotPortedError (not reachable from init.pl).
+# is walked in reverse: the answer is in the same order. A head already bound by the caller's partial list goes
+# through `unify_definition`'s bound-head branch (landed with D1), as upstream's.
 "`'\$source_file_predicates'(+File, -Heads)` (pl-srcfile.c): the predicates `File` defines, `user`-qualified."
 function pl_source_file_predicates2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -257,14 +257,7 @@ function pl_source_file_predicates2_va(
             for proc in Iterators.reverse(sf.procedures)
                 rc || break
                 rc = PL_unify_list(ld, tail, head, tail)
-                if rc
-                    PL_is_variable(ld, head) || throw(
-                        NotPortedError{T}(
-                            mk_sym(T, :source_file_predicates), "a bound list element (unify_definition)", "LB6"
-                        )
-                    )
-                    rc = unify_definition(gd, ld, MODULE_user(gd), head, proc.definition, 0, GP_QUALIFY)
-                end
+                rc && (rc = unify_definition(gd, ld, MODULE_user(gd), head, proc.definition, 0, GP_QUALIFY))
             end
             rc = rc && PL_unify_nil(ld, tail)
         end
