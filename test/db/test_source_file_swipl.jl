@@ -74,7 +74,10 @@ const _CASES = [
     ("s09", "ex('\$source_file'(user:\"s\", _), R)"),
     ("s10", "( '\$source_file'(user:foo(_), 3) -> R = yes ; R = no )"),
     ("s11", "( '\$source_file'(system:atom_length(_, _), F) -> R = F ; R = fails )"),
-    ("s12", "'\$source_file'(user:foo(_), F), '\$source_file'(user:bar(_), F2), ( F == F2 -> R = same ; R = diff )"),
+    (
+        "s12",
+        "'\$source_file'(user:foo(_), F), '\$source_file'(user:bar(_), F2), ( F == F2 -> R = same ; R = diff )"
+    ),
     ("s13", "( '\$source_file'(user:foo(_), '@FILE@') -> R = yes ; R = no )"),
     ("s14", "ex('\$source_file'(user:(foo/1), _), R)"),
     # ---- '$source_file_predicates'/2: the newest predicate first
@@ -88,7 +91,10 @@ const _CASES = [
     ("p08", "'\$source_file_predicates'('@FILE@', L), mem(user:foo(X), L), var(X), R = ok"),
     ("p09", "( '\$source_file_predicates'('@FILE@', foo) -> R = yes ; R = no )"),
     # ---- '$time_source_file'/3: non-deterministic
-    ("t01", "findall(Ty-K, ( '\$time_source_file'('@FILE@', T, Ty), ( float(T) -> K = flt ; K = int ) ), L), R = L"),
+    (
+        "t01",
+        "findall(Ty-K, ( '\$time_source_file'('@FILE@', T, Ty), ( float(T) -> K = flt ; K = int ) ), L), R = L"
+    ),
     ("t02", "findall(x, '\$time_source_file'('@FILE@', _, _), L), length(L, N), R = N"),
     ("t03", "findall(F, ( '\$time_source_file'(F, _, user), F == '@FILE@' ), L), R = L"),
     ("t04", "( '\$time_source_file'(_, _, _), ! ; true ), R = ok"),
@@ -103,7 +109,10 @@ const _CASES = [
     ("f03", "'\$source_file_property'('@FILE@', number_of_clauses, V), R = V"),
     ("f04", "'\$source_file_property'('@FILE@', resource, V), R = V"),
     ("f05", "'\$source_file_property'('@FILE@', from_state, V), R = V"),
-    ("f06", "'\$source_file_property'('@FILE@', loaded, V), ( float(V) -> R = flt ; R = V )"),
+    (
+        "f06",
+        "'\$source_file_property'('@FILE@', loaded, V), ( float(V) -> R = flt ; R = V )"
+    ),
     ("f07", "'\$source_file_property'('@FILE@', loaded, V), V > 0, R = positive"),
     ("f08", "ex('\$source_file_property'('@FILE@', nope, _), R)"),
     ("f09", "ex('\$source_file_property'('@FILE@', 1, _), R)"),
@@ -132,43 +141,106 @@ const _CASES = [
     ("g07", "ex('\$set_source_file'('/no/such/file', load_count, 1), R)"),
     ("g08", "ex('\$set_source_file'('@FILE@', resource, _), R)"),
     ("g09", "ex('\$set_source_file'(1, resource, true), R)"),
-    ("g10", "'\$set_source_file'('@FILE@', resource, on), '\$source_file_property'('@FILE@', resource, V), '\$set_source_file'('@FILE@', resource, off), R = V"),
+    (
+        "g10",
+        "'\$set_source_file'('@FILE@', resource, on), '\$source_file_property'('@FILE@', resource, V), '\$set_source_file'('@FILE@', resource, off), R = V"
+    ),
     # ---- '$start_consult'/2, '$end_consult'/1, '$fixup_reconsult'/1 (each row its own file: a reconsult is LB6's)
-    ("c01", "'\$start_consult'('/no/such/a', 0), '\$source_file_property'('/no/such/a', load_count, V), R = V"),
-    ("c02", "'\$start_consult'('/no/such/b', 1.5), findall(T, '\$time_source_file'('/no/such/b', T, _), L), R = L"),
-    ("c03", "'\$start_consult'('/no/such/c', 0), findall(T, '\$time_source_file'('/no/such/c', T, _), L), R = L"),
+    (
+        "c01",
+        "'\$start_consult'('/no/such/a', 0), '\$source_file_property'('/no/such/a', load_count, V), R = V"
+    ),
+    (
+        "c02",
+        "'\$start_consult'('/no/such/b', 1.5), findall(T, '\$time_source_file'('/no/such/b', T, _), L), R = L"
+    ),
+    (
+        "c03",
+        "'\$start_consult'('/no/such/c', 0), findall(T, '\$time_source_file'('/no/such/c', T, _), L), R = L"
+    ),
     ("c04", "ex('\$start_consult'('/no/such/d', a), R)"),
     ("c05", "ex('\$start_consult'(_, 0), R)"),
-    ("c06", "'\$start_consult'('/no/such/e', 5), findall(T, '\$time_source_file'('/no/such/e', T, _), L), R = L"),
+    (
+        "c06",
+        "'\$start_consult'('/no/such/e', 5), findall(T, '\$time_source_file'('/no/such/e', T, _), L), R = L"
+    ),
     ("c07", "( '\$end_consult'('/no/such/never') -> R = yes ; R = no )"),
-    ("c08", "'\$start_consult'('/no/such/f', 0), ( '\$fixup_reconsult'('/no/such/f') -> R = yes ; R = no )"),
+    (
+        "c08",
+        "'\$start_consult'('/no/such/f', 0), ( '\$fixup_reconsult'('/no/such/f') -> R = yes ; R = no )"
+    ),
     ("c09", "( '\$fixup_reconsult'('/no/such/never') -> R = yes ; R = no )"),
-    ("c10", "'\$start_consult'('/no/such/g', 0), ( '\$end_consult'('/no/such/g') -> R = yes ; R = no )"),
+    (
+        "c10",
+        "'\$start_consult'('/no/such/g', 0), ( '\$end_consult'('/no/such/g') -> R = yes ; R = no )"
+    ),
     ("c11", "ex('\$start_consult'(1, 0), R)"),
     ("c12", "ex('\$end_consult'(_), R)"),
     ("c13", "ex('\$fixup_reconsult'(1), R)"),
-    ("c14", "'\$start_consult'('/no/such/h', 0), '\$source_file_property'('/no/such/h', loaded, V), ( float(V) -> R = flt ; R = V )"),
-    ("c15", "'\$start_consult'('/no/such/i', 0), findall(Ty, '\$time_source_file'('/no/such/i', _, Ty), L), R = L"),
-    ("c16", "'\$start_consult'('/no/such/j', 0), '\$source_file_property'('/no/such/j', number_of_clauses, V), R = V"),
+    (
+        "c14",
+        "'\$start_consult'('/no/such/h', 0), '\$source_file_property'('/no/such/h', loaded, V), ( float(V) -> R = flt ; R = V )"
+    ),
+    (
+        "c15",
+        "'\$start_consult'('/no/such/i', 0), findall(Ty, '\$time_source_file'('/no/such/i', _, Ty), L), R = L"
+    ),
+    (
+        "c16",
+        "'\$start_consult'('/no/such/j', 0), '\$source_file_property'('/no/such/j', number_of_clauses, V), R = V"
+    ),
     # ---- '$start_aux'/2 and '$end_aux'/2 (pl-comp.c:5197; each row its own file; every $end_aux follows a $start_aux, as the loader does)
     ("a01", "'\$start_aux'('/no/such/a01', C), '\$end_aux'('/no/such/a01', C), R = C"),
-    ("a02", "'\$start_aux'('/no/such/a02', _), '\$end_aux'('/no/such/a02', user:foo/1), '\$start_aux'('/no/such/a02', C), '\$end_aux'('/no/such/a02', C), R = C"),
+    (
+        "a02",
+        "'\$start_aux'('/no/such/a02', _), '\$end_aux'('/no/such/a02', user:foo/1), '\$start_aux'('/no/such/a02', C), '\$end_aux'('/no/such/a02', C), R = C"
+    ),
     # a06/a12 (an end_aux whose PI is no PI) are NOT rows: swipl leaves the error pending past the false return (it surfaces in a later
     # foreign call, "did not clear exception"); the kernel raises it at once.
-    ("a03", "'\$start_aux'('/no/such/a03', _), '\$end_aux'('/no/such/a03', user:nothere/0), '\$start_aux'('/no/such/a03', C), '\$end_aux'('/no/such/a03', C), R = C"),
+    (
+        "a03",
+        "'\$start_aux'('/no/such/a03', _), '\$end_aux'('/no/such/a03', user:nothere/0), '\$start_aux'('/no/such/a03', C), '\$end_aux'('/no/such/a03', C), R = C"
+    ),
     ("a04", "ex('\$start_aux'(_, _), R)"),
     ("a05", "ex('\$start_aux'(1, _), R)"),
-    ("a07", "'\$start_aux'('/no/such/a07', _), '\$end_aux'('/no/such/a07', user:foo/1), '\$start_aux'('/no/such/a07', C), '\$end_aux'('/no/such/a07', []), '\$start_aux'('/no/such/a07', C2), '\$end_aux'('/no/such/a07', C2), R = C-C2"),
-    ("a08", "'\$start_aux'('/no/such/a08', _), '\$end_aux'('/no/such/a08', foo/1), '\$start_aux'('/no/such/a08', C), '\$end_aux'('/no/such/a08', C), R = C"),
-    ("a09", "'\$start_aux'('/no/such/a09', _), '\$end_aux'('/no/such/a09', []), ( '\$start_aux'('/no/such/a09', user:foo/1) -> R = yes ; R = no ), '\$end_aux'('/no/such/a09', [])"),
-    ("a10", "'\$start_aux'('/no/such/a10', _), ( '\$end_aux'('/no/such/a10', user:zork/7) -> R = yes ; R = no )"),
-    ("a11", "'\$start_aux'('/no/such/a11', _), '\$end_aux'('/no/such/a11', user:foo/1), '\$start_aux'('/no/such/a11', user:foo/1), '\$end_aux'('/no/such/a11', []), R = bound_ok"),
-    ("a13", "'\$start_aux'('/no/such/a13', _), '\$end_aux'('/no/such/a13', user:foo(_)), '\$start_aux'('/no/such/a13', C), '\$end_aux'('/no/such/a13', C), R = C"),
-    ("a14", "'\$start_aux'('/no/such/a14', _), '\$end_aux'('/no/such/a14', system:atom_length/2), '\$start_aux'('/no/such/a14', C), '\$end_aux'('/no/such/a14', C), R = C"),
+    (
+        "a07",
+        "'\$start_aux'('/no/such/a07', _), '\$end_aux'('/no/such/a07', user:foo/1), '\$start_aux'('/no/such/a07', C), '\$end_aux'('/no/such/a07', []), '\$start_aux'('/no/such/a07', C2), '\$end_aux'('/no/such/a07', C2), R = C-C2"
+    ),
+    (
+        "a08",
+        "'\$start_aux'('/no/such/a08', _), '\$end_aux'('/no/such/a08', foo/1), '\$start_aux'('/no/such/a08', C), '\$end_aux'('/no/such/a08', C), R = C"
+    ),
+    (
+        "a09",
+        "'\$start_aux'('/no/such/a09', _), '\$end_aux'('/no/such/a09', []), ( '\$start_aux'('/no/such/a09', user:foo/1) -> R = yes ; R = no ), '\$end_aux'('/no/such/a09', [])"
+    ),
+    (
+        "a10",
+        "'\$start_aux'('/no/such/a10', _), ( '\$end_aux'('/no/such/a10', user:zork/7) -> R = yes ; R = no )"
+    ),
+    (
+        "a11",
+        "'\$start_aux'('/no/such/a11', _), '\$end_aux'('/no/such/a11', user:foo/1), '\$start_aux'('/no/such/a11', user:foo/1), '\$end_aux'('/no/such/a11', []), R = bound_ok"
+    ),
+    (
+        "a13",
+        "'\$start_aux'('/no/such/a13', _), '\$end_aux'('/no/such/a13', user:foo(_)), '\$start_aux'('/no/such/a13', C), '\$end_aux'('/no/such/a13', C), R = C"
+    ),
+    (
+        "a14",
+        "'\$start_aux'('/no/such/a14', _), '\$end_aux'('/no/such/a14', system:atom_length/2), '\$start_aux'('/no/such/a14', C), '\$end_aux'('/no/such/a14', C), R = C"
+    ),
     # a15: visibleProcedure follows the default import (user:atom_length/2 -> system:atom_length/2; swipl 10.1.19)
-    ("a15", "'\$start_aux'('/no/such/a15', _), '\$end_aux'('/no/such/a15', user:atom_length/2), '\$start_aux'('/no/such/a15', C), '\$end_aux'('/no/such/a15', C), R = C"),
+    (
+        "a15",
+        "'\$start_aux'('/no/such/a15', _), '\$end_aux'('/no/such/a15', user:atom_length/2), '\$start_aux'('/no/such/a15', C), '\$end_aux'('/no/such/a15', C), R = C"
+    ),
     # a16: a qualifier naming no module resolves like user (swipl 10.1.19 CREATES the module nomod, and so does the kernel's PL_strip_module)
-    ("a16", "'\$start_aux'('/no/such/a16', _), '\$end_aux'('/no/such/a16', nomod:atom_length/2), '\$start_aux'('/no/such/a16', C), '\$end_aux'('/no/such/a16', C), R = C"),
+    (
+        "a16",
+        "'\$start_aux'('/no/such/a16', _), '\$end_aux'('/no/such/a16', nomod:atom_length/2), '\$start_aux'('/no/such/a16', C), '\$end_aux'('/no/such/a16', C), R = C"
+    ),
     # LAST: nothing follows (the program's last row)
     ("z01", "'\$source_file_predicates'('@FILE@', [user:H|_]), functor(H, N, A), R = N/A")
 ]
@@ -322,15 +394,21 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(l -> startswith(l, "t_s02 ") && occursin(_codes("fails"), l), sw)            # not transparent
         @test any(l -> startswith(l, "t_p01 ") && occursin(_codes("baz"), l), sw)
         p01 = first(filter(l -> startswith(l, "t_p01 "), sw))
-        @test findfirst(_codes("baz"), p01) !== nothing && findfirst(_codes("baz"), p01) < findfirst(_codes("foo"), p01) &&
-              findfirst(_codes("bar"), p01) < findfirst(_codes("foo"), p01)               # [baz, bar, foo, d]: newest first
+        @test findfirst(_codes("baz"), p01) !== nothing &&
+            findfirst(_codes("baz"), p01) < findfirst(_codes("foo"), p01) &&
+            findfirst(_codes("bar"), p01) < findfirst(_codes("foo"), p01)               # [baz, bar, foo, d]: newest first
         # measured on swipl 10.1.19 (2026-10-29): domain f08 f18 g04; existence g02 g07; instantiation s07 p03 f10 f12 g05 g06 g08 c05 c12 a04;
         # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13 a05
         @test count(l -> occursin(_codes("domain_error"), l), sw) == 3
         @test count(l -> occursin(_codes("existence_error"), l), sw) == 2
         @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 10
         @test count(l -> occursin(_codes("type_error"), l), sw) == 11
-        @test any(l -> startswith(l, "t_t01 ") && occursin(_codes("user"), l) && occursin(_codes("flt"), l), sw)
+        @test any(
+            l ->
+                startswith(l, "t_t01 ") && occursin(_codes("user"), l) &&
+                occursin(_codes("flt"), l),
+            sw
+        )
         @test any(l -> startswith(l, "t_c02 ") && occursin("f1.5", l), sw)
         @test any(l -> startswith(l, "t_c03 ") && occursin("i0", l), sw)
         @test startswith(last(sw), "t_z01 ")
@@ -369,7 +447,8 @@ _v() = mk_var(_TL, LK.fresh_var_keys!(1))
     @test isempty(sf.modules)
     m1 = LK.lookupModule(gd, _tls("lb2_m1"))
     m2 = LK.lookupModule(gd, _tls("lb2_m2"))
-    @test LK.addModuleSourceFile(sf, m1) && LK.addModuleSourceFile(sf, m2) && LK.addModuleSourceFile(sf, m1)
+    @test LK.addModuleSourceFile(sf, m1) && LK.addModuleSourceFile(sf, m2) &&
+        LK.addModuleSourceFile(sf, m1)
     @test sf.modules == [m1, m2]                                              # at the END, once (pl-srcfile.c:465)
     LK.releaseSourceFile(sf)
     # a boot-session database makes the files it creates system / from_state / resource files
@@ -381,16 +460,34 @@ end
 
 @testset "'\$source_file_property'(+Unknown, loaded, -V) fails (H10: swipl dies on it); the others answer their empty value" begin
     gd, ld, f = _loaded("foo(1).\n")
-    for (prop, want) in (("load_count", 0), ("number_of_clauses", 0), ("resource", "false"), ("from_state", "false"), ("reloading", "false"))
-        st, ans = kcall(gd, ld, "\$source_file_property", _TL[_tls("/no/such"), _tls(prop), _v()])
+    for (prop, want) in (
+        ("load_count", 0),
+        ("number_of_clauses", 0),
+        ("resource", "false"),
+        ("from_state", "false"),
+        ("reloading", "false")
+    )
+        st, ans = kcall(
+            gd, ld, "\$source_file_property", _TL[_tls("/no/such"), _tls(prop), _v()]
+        )
         # a count is an integer, a flag the atom true / false (PL_unify_bool)
-        @test st === :true && (want isa Integer ? lk_value(ans[3]) == want : sym_key(ans[3]) == sym_key(_tls(want)))
+        @test st === :true && (
+            if want isa Integer
+                lk_value(ans[3]) == want
+            else
+                sym_key(ans[3]) == sym_key(_tls(want))
+            end
+        )
     end
-    st, _ = kcall(gd, ld, "\$source_file_property", _TL[_tls("/no/such"), _tls("loaded"), _v()])
+    st, _ = kcall(
+        gd, ld, "\$source_file_property", _TL[_tls("/no/such"), _tls("loaded"), _v()]
+    )
     @test st === :false
     st, ans = kcall(gd, ld, "\$source_file_property", _TL[_tls(f), _tls("loaded"), _v()])
     @test st === :true && lk_value(ans[3]) isa Float64 && lk_value(ans[3]) > 0
-    st, ans = kcall(gd, ld, "\$source_file_property", _TL[_tls(f), _tls("load_count"), _v()])
+    st, ans = kcall(
+        gd, ld, "\$source_file_property", _TL[_tls(f), _tls("load_count"), _v()]
+    )
     @test st === :true && lk_value(ans[3]) == 1
 end
 
@@ -442,7 +539,8 @@ end
     @test LK.isStaticSystemProcedure(gd, ld, sym_key(_tls("atom_length")), 2) === nothing
     _load_more!(gd, ld, "lb2_s(1).\n")                      # a LOADED clause (pl-comp.c:4979 is inside `if ( loc )`: assertz does not lock)
     ps = LK.isCurrentProcedure(sym_key(_tls("lb2_s")), 1, LK.MODULE_user(gd))
-    @test (ps.definition.flags & LK.P_LOCKED) != 0 && (ps.definition.flags & LK.HIDE_CHILDS) != 0
+    @test (ps.definition.flags & LK.P_LOCKED) != 0 &&
+        (ps.definition.flags & LK.HIDE_CHILDS) != 0
     LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_USER)
     @test !LK.SYSTEM_MODE(ld)
     st, ans = kcall(gd, ld, "current_prolog_flag", _TL[_tls("access_level"), _v()])
@@ -502,7 +600,9 @@ end
     @test st === :false
     st, _ = kcall(gd2, ld2, "\$source_file_predicates", _TL[_tls("/no/such/r02"), _v()])
     @test st === :false
-    st, _ = kcall(gd2, ld2, "\$source_file_property", _TL[_tls("/no/such/r02"), _tls("loaded"), _v()])
+    st, _ = kcall(
+        gd2, ld2, "\$source_file_property", _TL[_tls("/no/such/r02"), _tls("loaded"), _v()]
+    )
     @test st === :false                                                       # pl-srcfile.c:726: ltime == 0.0 is false
     LK.releaseSourceFile(sf0)
 end

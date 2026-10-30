@@ -1197,7 +1197,11 @@ function _manifest_index(T)
         (LK.pl_close1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_close2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_source_location2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),   # R2 LB2
-        (LK.pl_set_source_location2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (
+            LK.pl_set_source_location2_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         (LK.closeStream, Tuple{LD, LK.IOSTREAM}, false),
         (LK.do_close, Tuple{LD, Union{Nothing, LK.IOSTREAM}, Bool}, false),
         (LK.do_close, Tuple{LD, LK.IOSTREAM, Bool}, false),
@@ -1943,9 +1947,17 @@ function _manifest_index(T)
         (LK.get_procedure_namearity, Tuple{GD, LD, Int, MOD, Int}, false),
         (LK.get_functor_procedure, Tuple{LD, Int}, false),
         (LK.pl_source_file2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
-        (LK.pl_source_file_predicates2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (
+            LK.pl_source_file_predicates2_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         (LK.pl_time_source_file3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
-        (LK.pl_source_file_property3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (
+            LK.pl_source_file_property3_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         (LK.pl_set_source_file3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_start_consult2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),

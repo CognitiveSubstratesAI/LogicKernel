@@ -555,7 +555,8 @@ end
 # PORT: pl-incl.h SYSTEM_MODE (pl-incl.h:2973)
 # DIVERGES: a function of the local data.
 "Whether the engine is in system mode: `LD->prolog_flag.access_level == ACCESS_LEVEL_SYSTEM` (pl-incl.h)."
-SYSTEM_MODE(ld::PL_local_data{T}) where {T} = ld.prolog_flag_access_level == ACCESS_LEVEL_SYSTEM
+SYSTEM_MODE(ld::PL_local_data{T}) where {T} =
+    ld.prolog_flag_access_level == ACCESS_LEVEL_SYSTEM
 
 # PORT: pl-init.c setAccessLevel (pl-init.c:1614, :1666 call it); pl-prologflag.c setAccessLevelFromAtom (:707)
 # DIVERGES: the kernel has no `set_prolog_flag(access_level, _)` yet (R2 F1b), so this is the only way to set the level.

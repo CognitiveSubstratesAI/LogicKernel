@@ -3783,7 +3783,8 @@ function pl_nth_clause3_va(
             cref = def.impl_clauses.first_clause
             while cref !== nothing
                 if cref.clause === clause
-                    ok = PL_unify_integer(ld, n, i) &&
+                    ok =
+                        PL_unify_integer(ld, n, i) &&
                         unify_definition(gd, ld, MODULE_user(gd), p, def, 0, 0)
                     popPredicateAccess!(ld, def)
                     return ok ? FTRUE : FFALSE
@@ -3816,7 +3817,8 @@ function pl_nth_clause3_va(
             i -= 1                                          # 0-based
             while i > 0 && cref !== nothing
                 cref = cref.next
-                while cref !== nothing && !visibleClauseCNT(cref.clause::Clause{T}, generation)
+                while cref !== nothing &&
+                      !visibleClauseCNT(cref.clause::Clause{T}, generation)
                     cref = cref.next
                 end
                 i -= 1
@@ -4208,7 +4210,9 @@ function pl_start_aux2_va(
     proc = sf.current_procedure
     if proc !== nothing && isDefinedProcedure(gd, proc)
         t = PL_new_term_ref(ld)
-        unify_definition(gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY) || return FFALSE
+        unify_definition(
+            gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY
+        ) || return FFALSE
         return PL_unify(ld, A2, t) ? FTRUE : FFALSE
     end
     return PL_unify_nil(ld, A2) ? FTRUE : FFALSE
@@ -4291,7 +4295,12 @@ const PL_predicates_from_comp = (
     PL_extension("assert", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("assertz", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("asserta", 2, pl_asserta2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
-    PL_extension("compile_predicates", 1, pl_compile_predicates1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension(
+        "compile_predicates",
+        1,
+        pl_compile_predicates1_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
     PL_extension(                                   # PRED_SHARE("clause", 2, clause, META|NDET|PL_FA_CREF|PL_FA_ISO)
         "clause", 2, pl_clauseva_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_ISO | PL_FA_VARARGS

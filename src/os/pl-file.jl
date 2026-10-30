@@ -1260,8 +1260,8 @@ function pl_source_location2_va(
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
     if ReadingSource(ld) &&
-       PL_unify_atom(ld, A1, ld.read_source.file::T) &&
-       PL_unify_integer(ld, A2, ld.read_source.position.lineno)
+        PL_unify_atom(ld, A1, ld.read_source.file::T) &&
+        PL_unify_integer(ld, A2, ld.read_source.position.lineno)
         return FTRUE
     end
     return FFALSE
