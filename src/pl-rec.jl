@@ -502,7 +502,7 @@ end
 # compiler's `ATOM_cut`. The reference arithmetic (`--g`, `g > guard`: the goals before the cut sit in
 # CONSECUTIVE term references) is upstream's, AS IS: swipl 10.1.19 drops the guard goal of
 # `p ?=> g1, !, b` (one goal before the cut) and repeats goals when three or more precede the cut
-# (rows i05, i06 pin its answers).
+# (rows n04, n06 pin its answers).
 "Rewrite `p ?=> g1, g2, !, body` (`in`) to `p, g1, g2 => body` and unify it with `out`; a term with no cut is unified as it is (pl-rec.c)."
 function fixup_ssu(ld::PL_local_data{T}, in::term_t, out::term_t)::Bool where {T}
     gd = _query_gd(ld)

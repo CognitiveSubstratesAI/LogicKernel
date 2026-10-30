@@ -233,8 +233,13 @@ MUTANTS = [
          new='''    nothing''',
          equivalent="PL_get_dbref answers DB_REF_CLAUSE only until D2 adds the record branch (src/pl-dbref.jl)"),
     dict(id="D1-57 erase/1 is not registered", file=R, targets=T,
-         old='''const PL_predicates_from_rec = (PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),)''',
-         new='''const PL_predicates_from_rec = ()'''),
+         old='''const PL_predicates_from_rec = (
+    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
+    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS)
+)''',
+         new='''const PL_predicates_from_rec = (
+    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS),
+)'''),
     # ---- clause/3, '$clause'/4, '$rule'/3 (D-0230 item 1; rows c01-c38; pl-comp.c unify_definition's bound branch, decompile_bindings!, clause_ndet)
     dict(id="D1-70 the bound head's module is not checked as a super module of the clause's", file=K, targets=T8,
          old='''(mm === nothing || !isSuperModule(gd.modules, m, mm)) && return false''',
