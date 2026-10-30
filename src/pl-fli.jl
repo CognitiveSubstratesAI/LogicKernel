@@ -618,11 +618,12 @@ function PL_is_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
 end
 
 # ORIGINAL (L1e e2): pl-data.h `hasFunctor(w, FUNCTOR_colon2)` on a dereferenced location's word.
+# The functor is the constant `FUNCTOR_colon2` (src/pl-prims.jl; pl-data.h:274 at the pin cbf4e189 compares
+# against the generated constant), not a per-call lookup: a lookup boxed a `:` symbol on every test (MOD4).
 "Whether `(k, w)` from `_deref_loc` is a `:/2` compound word."
 @inline function _is_colon2_word(ld::PL_local_data{T}, k::UInt8, w::word)::Bool where {T}
     k == DU_WORD && _is_gcompound(w) || return false
-    return ld.gstack[valPtr(w)] ==
-           lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+    return ld.gstack[valPtr(w)] == FUNCTOR_colon2           # valueTerm(w)->definition == FUNCTOR_colon2
 end
 
 # ORIGINAL (L1e e2): upstream's `setHandle(h, linkValI(p))` for slot `i` from a dereferenced location

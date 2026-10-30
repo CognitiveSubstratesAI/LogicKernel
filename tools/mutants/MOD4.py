@@ -84,7 +84,14 @@ TS_ALL = TS_MP + [
     "test/foreign/test_query.jl",
     "test/foreign/test_typetests_swipl.jl",
 ]
-TARGETS = TS_ALL                                     # the baseline's targets (mutate_ci.py plan reads TARGETS)
+# The FUNCTOR_colon2 mutants (K1, K2): every file of TS_ALL plus the ones that name PL_strip_module (the other
+# callers of `_is_colon2_word`, src/pl-fli.jl), the allocation pin's file first.
+TS_ZX = ["test/core_lang/test_zero_exports.jl"] + [f for f in TS_ALL if f != "test/core_lang/test_zero_exports.jl"] + [
+    "test/core_lang/test_module_path.jl",
+    "test/core_lang/test_slot_indirects.jl",
+    "test/foreign/test_query_answers.jl",
+]
+TARGETS = TS_ZX                                      # the baseline's targets (mutate_ci.py plan reads TARGETS): every list's files
 W = "src/pl-wam.jl"
 S = "src/pl-supervisor.jl"
 P = "src/pl-proc.jl"
@@ -92,7 +99,7 @@ E = "src/pl-ext.jl"
 # The cleanup goal at I_CALLCLEANUP is always `Module:Goal` with an atom Module and a callable Goal: every cleanup frame
 # is made by I_CALLCLEANUP (src/pl-wam.jl:3622), which first passes the LAST argument through mustBeCallable
 # (src/pl-wam.jl:3614); that argument is declared `0` in every member of the cleanup family (src/pl-ext.jl:267-268), so
-# S_MQUAL/S_LMQUAL (src/pl-supervisor.jl:232-239) have made it `Context:Goal` (src/pl-wam.jl:1046-1051) or kept an
+# S_MQUAL/S_LMQUAL (src/pl-supervisor.jl:232-239) have made it `Context:Goal` (src/pl-wam.jl:1047-1051) or kept an
 # existing `M:G` (src/pl-wam.jl:1052-1072) before the clause body runs. A user clause that runs `'$call_cleanup'`
 # itself (no meta declaration) is the one other way in: there mustBeCallable rejects the unqualified cleanup goal
 # before any cleanup frame exists (row a25, swipl's answer type_error(callable, true)), so the handler still only
@@ -169,4 +176,14 @@ MUTANTS = [
          old=('    _is_colon2_word(ld, k, w) ||                            # !hasFunctor(*p, FUNCTOR_colon2)\n'
               '        return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), call)\n'),
          new="    _is_colon2_word(ld, k, w) || return true\n"),
+    # ── FUNCTOR_colon2, the constant (pl-data.h hasFunctor; pl-wam.c:1809 p2[0] = FUNCTOR_colon2) ──
+    # Behaviour-neutral (the looked-up word IS the constant: builtin functors are registered in index order,
+    # src/pl-funct.jl registerBuiltinFunctors); killed by the allocation pin of test_zero_exports.jl (a Term box per
+    # call on the reference type), which therefore runs first.
+    dict(id="MOD4-K1 _is_colon2_word looks the `:/2` functor up per call (a boxed `:` symbol) (KILL zero_exports pin)", file="src/pl-fli.jl", targets=TS_ZX,
+         old="    return ld.gstack[valPtr(w)] == FUNCTOR_colon2           # valueTerm(w)->definition == FUNCTOR_colon2\n",
+         new="    return ld.gstack[valPtr(w)] == lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)\n"),
+    dict(id="MOD4-K2 m_qualify_argument looks the `:/2` functor up per call (a boxed `:` symbol) (KILL zero_exports pin)", file=W, targets=TS_ZX,
+         old="        p2 = _alloc_compound!(ld, FUNCTOR_colon2, 2)    # p2 = gTop; gTop += 3; p2[0] = FUNCTOR_colon2\n",
+         new="        p2 = _alloc_compound!(ld, lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2), 2)\n"),
 ]

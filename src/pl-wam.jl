@@ -1037,6 +1037,7 @@ end
 # global cell), so upstream's `isVar(*p) && p > lBase` branch, which binds a LOCAL variable to the new cell
 # and trails it, cannot arise. The slot is overwritten untrailed, as upstream's `*k`.
 # `is_qualified(p)` (pl-wam.c:1778-1782, `hasFunctor(*p, FUNCTOR_colon2)`) is `_is_colon2_word` (src/pl-fli.jl).
+# `FUNCTOR_colon2` (pl-wam.c:1809) is the constant word of src/pl-prims.jl, as upstream's generated constant.
 "Qualify the argument at offset `arg` of frame `fr` as `Context:Arg` unless it is `_:_` (pl-wam.c); false with an exception on a cyclic chain."
 function m_qualify_argument(
     gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, arg::Int
@@ -1044,8 +1045,7 @@ function m_qualify_argument(
     i = varFrameP(ld.frames[fr].base, arg) + 1      # Word k = varFrameP(fr, arg) (its slot)
     k, w, _ = _deref_loc(ld, -i)                    # deRef2(k, p)
     if !_is_colon2_word(ld, k, w)                   # if ( !is_qualified(p) )
-        colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
-        p2 = _alloc_compound!(ld, colon2, 2)        # p2 = gTop; gTop += 3; p2[0] = FUNCTOR_colon2
+        p2 = _alloc_compound!(ld, FUNCTOR_colon2, 2)    # p2 = gTop; gTop += 3; p2[0] = FUNCTOR_colon2
         ld.gstack[p2 + 1] = _atom_word!(ld, gd.modules[contextModule(gd, ld, fr)].atom)  # p2[1] = contextModule(fr)->name
         _cell_link!(ld, p2 + 2, i)                  # p2[2] = (needsRef(*p) ? makeRefG(p) : *p)
         ld.slots[i] = consPtr(p2, TAG_COMPOUND | STG_GLOBAL)    # *k = consPtr(p2, STG_GLOBAL|TAG_COMPOUND)

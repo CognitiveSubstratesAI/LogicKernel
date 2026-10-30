@@ -404,13 +404,14 @@ function _zt_allocations(gd, ld, proc)::Int
     return @allocations _zt_call(gd, ld, proc)
 end
 
-# Re-pinned with MOD2 (D-0243; Profile.Allocs by the innermost src frame, main 7684e4d against MOD2,
-# lk-channel evidence/MOD2/alloc_prof*.txt): findall 8888 → 8889 and bagof 11035 → 11037 - 3 = 11033.
-# +1 each: the cleanup goal's INTERIM qualification (`_interim_mqual_cleanup`) asks `_is_colon2_word`, whose
-# `mk_sym(T, :(:))` boxes a Term. -3 (bagof): the V9d condition slot is a tagged word (1598cf8, D-0231), so
-# C_FASTCOND's three writes per bagof call no longer box an Int64 (`mk_gnd`).
+# Re-pinned with MOD4 (Profile.Allocs by the innermost src frame, lk-channel evidence/MOD4/alloc_prof*.txt):
+# findall 8887, bagof 11031 against main's 8888 and 11035 - 3. -3 (bagof): the V9d condition slot is a tagged
+# word (1598cf8, D-0231), so C_FASTCOND's three writes per bagof call no longer box an Int64 (`mk_gnd`). -1
+# each: `_is_colon2_word` (src/pl-fli.jl) compares with the constant `FUNCTOR_colon2` where it looked the
+# functor up through a `mk_sym(T, :(:))` Term box, once per mustBeCallable call on main; MOD4's `S_MQUAL`
+# (m_qualify_argument, src/pl-wam.jl), which runs on every findall/bagof call, adds no box for the same reason.
 "The allocations of a warm call of each bag program, pinned on the reference type (above)."
-const _ZT_BAG_PIN = Dict(:fatop => 8889, :botop => 11033)
+const _ZT_BAG_PIN = Dict(:fatop => 8887, :botop => 11031)
 
 @testset "a warm call of findall/3 and bagof/3 allocates exactly its pin (@allocations)" begin
     gd = LK.PL_global_data{_ZT}()
