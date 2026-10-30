@@ -4,9 +4,9 @@
 #     print compared as TERMS — swipl's captured with `user:message_hook/3` — with the load's
 #     status (an exception that ended it, as consult/1 raises it) and, after it, every solution
 #     of the case's predicates and whether each is dynamic. The compiler's warnings are among
-#     them since R1g (`compiler_warnings(Clause, Warnings)`: its `Clause`, swipl's clause
-#     reference, is an unbound variable on both sides — the kernel has no clause references as
-#     terms). One NAMED normalisation, counted: an
+#     them since R1g (`compiler_warnings(Clause, Warnings)`: its `Clause`, the clause reference, is a clause
+#     blob since D1; the driver prints it as a fresh variable on swipl's side, and `_tl_enc` encodes
+#     the kernel's blob as one too — an address is no value anyone compares). One NAMED normalisation, counted: an
 #     error a directive's goal raises has the context `system:'$c_call_prolog'/0` (the query's top
 #     frame) where swipl's is `system:catch/3` (boot's wrapper; boot/init.jl `execute_directive!`);
 #   * THE BENCH PROGRAMS loaded from their .pl files, their answers compared with swipl's;
@@ -39,6 +39,10 @@ function _tl_enc(t::_TL, seen::Vector{UInt64}=UInt64[])::String
         return "V$(i - 1)"
     elseif k === SYM
         is_nil(t) && return "nil"
+        if is_blob(t)           # a clause reference (D1): a fresh variable, as the swipl driver prints it
+            push!(seen, typemax(UInt64) - UInt64(length(seen)))
+            return "V$(length(seen) - 1)"
+        end
         return "a" * _tl_codes(sym_text(t))
     elseif k === GND
         v = lk_value(t)

@@ -3505,7 +3505,8 @@ end
 # `h` and `b` are made after the control switch, where upstream makes `term`, `h` and `b` before it: the
 # FRG_CUTTED call (`discardForeignFrame`, its arguments `h0 == 0`) uses none, and makes no global cells here.
 # NOT PORTED: clause/3, `'$clause'/4` and `'$rule'/3` (the clause reference `ref`, `PL_get_clref`/`PL_unify_clref`,
-# and `bindings`): the kernel has no clause references as terms, so only clause/2 and (since SSU1) `'$rule'/2` are
+# and `bindings`): the clause blobs exist since D1 (src/pl-dbref.jl), but clause/3's by-reference search and the
+# unify are their own step (NF2), so only clause/2 and (since SSU1) `'$rule'/2` are
 # registered and `CTX_ARITY < 3` is asserted. `IS_RULE` (`'$rule'/2`, since SSU1) builds upstream's `term` from the
 # two sides: `Neck(h, b)`, its functor `clause_functor(clause)`, or `h` alone for a fact (`decompile` of a
 # `UNIT_CLAUSE` gives the bare head), and unifies it with `body`; `head` only selects the predicate and the
@@ -3522,7 +3523,7 @@ function clause_ndet(
     # term_t term, h, b = PL_new_term_ref(): made after the switch below (FRG_CUTTED uses none)
     rc = false
 
-    @assert PL__ac < 3 "clause/3, '\$clause'/4: not ported (no clause references as terms)"
+    @assert PL__ac < 3 "clause/3, '\$clause'/4: not ported (the by-reference search, NF2)"
     # if ( CTX_ARITY < 3 ) ref = 0; if ( CTX_ARITY < 4 ) bindings = 0
 
     ctl = PL_foreign_control(PL__ctx)
@@ -3773,9 +3774,8 @@ end
 # hook (`O_PROLOG_HOOK`: `module_t` has no `hook`); the `CHECK_INTERRUPT` retry (no signal
 # handling); system mode (no boot compilation); transactions (`assertDefinition!`'s, not ported
 # there). THE COMPILER'S WARNINGS (since R1g): asked for when loading (`owner`), and printed after
-# the clause is added — `compiler_warnings(Clause, Warnings)`, whose `Clause` is an UNBOUND
-# VARIABLE here, where upstream passes the clause reference: the kernel has no clause references as
-# terms (`'$record_clause'/4`), and boot/messages.pl ignores the argument.
+# the clause is added — `compiler_warnings(Clause, Warnings)`, whose `Clause` is the clause
+# reference, as upstream's (since D1: `PL_put_clref`; it was an unbound variable before clause blobs).
 """
     assert_term!(gd, ld, term, module_, where_, owner, loc, flags) -> Clause, or nothing
     assert_term!(gd, ld, term, where_) -> Clause, or nothing
@@ -3873,7 +3873,8 @@ function assert_term!(
 
         if warnings != 0 && !PL_get_nil(ld, warnings)
             fid = PL_open_foreign_frame(ld)
-            cl = PL_new_term_ref(ld)                            # PL_put_clref(cl, clause): unbound
+            cl = PL_new_term_ref(ld)
+            PL_put_clref(gd, ld, cl, clause)
             rc = printMessage(                      # PL_FUNCTOR_CHARS, "compiler_warnings", 2,
                 ld, :warning, _message_term(ld, :compiler_warnings, cl, warnings)
             )                                       #   PL_TERM, cl, PL_TERM, warnings
@@ -3927,9 +3928,45 @@ function pl_asserta1_va(
     return assert_term!(_query_gd(ld), ld, A1, CL_START) !== nothing ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c mustBeVar
+"The argument `t` (the second of assert/2) must be unbound, else `uninstantiation_error` (pl-comp.c)."
+function mustBeVar(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    if !PL_is_variable(ld, t)
+        return PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 2, t)
+    end
+    return true
+end
+
+# PORT: pl-comp.c assertz2 as pl_assertz2_va
+# (PRED_IMPL("assertz", 2, assertz2, PL_FA_TRANSPARENT); registered as assert/2 and assertz/2)
+"`assertz(+Clause, -Ref)` and `assert/2` (pl-comp.c): add the clause at the end, unify `Ref` with its reference."
+function pl_assertz2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    mustBeVar(ld, A2) || return FFALSE
+    gd = _query_gd(ld)
+    clause = assert_term!(gd, ld, A1, CL_END)
+    clause === nothing && return FFALSE
+    return PL_unify_clref(gd, ld, A2, clause) ? FTRUE : FFALSE
+end
+
+# PORT: pl-comp.c asserta2 as pl_asserta2_va
+# (PRED_IMPL("asserta", 2, asserta2, PL_FA_TRANSPARENT))
+"`asserta(+Clause, -Ref)` (pl-comp.c): add the clause at the start, unify `Ref` with its reference."
+function pl_asserta2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    mustBeVar(ld, A2) || return FFALSE
+    gd = _query_gd(ld)
+    clause = assert_term!(gd, ld, A1, CL_START)
+    clause === nothing && return FFALSE
+    return PL_unify_clref(gd, ld, A2, clause) ? FTRUE : FFALSE
+end
+
 # PORT: pl-comp.c record_clause
-# DIVERGES: the database is the running query's (`_query_gd`); `ref` 0 is upstream's NULL
-# (`'$record_clause'/4`, the clause reference, is not ported: no clause references as terms). The
+# DIVERGES: the database is the running query's (`_query_gd`); `ref` 0 is upstream's NULL. The
 # source `-` is the start of the term read last (`LD->read_source`: `source_file_name`,
 # `source_line_no`).
 "Compile the clause `term` from loading the file `owner`, at the source location `source` (pl-comp.c)."
@@ -3961,9 +3998,12 @@ function record_clause(
 
     clause = assert_term!(gd, ld, term, 0, CL_END, a_owner, loc, 0)
     if clause !== nothing
-        ref == 0 ||
-            throw(NotPortedError{T}(a_owner, "'\$record_clause'/4", "no clause references"))
-        return true
+        if ref != 0
+            @assert (clause.flags & CL_ERASED) == 0
+            return PL_unify_clref(gd, ld, ref, clause)
+        else
+            return true
+        end
     end
     return false
 end
@@ -3978,12 +4018,23 @@ function pl_record_clause3_va(
     return record_clause(ld, A1, A2, A3, 0) ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c record_clause as pl_record_clause4_va
+# (PRED_IMPL("$record_clause", 4, record_clause, 0))
+"`'\$record_clause'(+Term, +Owner, +Source, -Ref)` (pl-comp.c): as the `/3`, and unify `Ref` with the clause's reference."
+function pl_record_clause4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    return record_clause(ld, A1, A2, A3, A4) ? FTRUE : FFALSE
+end
+
 # PORT: pl-comp.c BeginPredDefs as PL_predicates_from_comp
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (c:9202-9232); `META` is `PL_FA_TRANSPARENT` (c:9199) and `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-comp.c's registration table (`BeginPredDefs(comp)`): the ported entries."
 const PL_predicates_from_comp = (
     PL_extension("\$record_clause", 3, pl_record_clause3_va, PL_FA_VARARGS),
+    PL_extension("\$record_clause", 4, pl_record_clause4_va, PL_FA_VARARGS),
     PL_extension("assert", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension(
         "assertz", 1, pl_assertz1_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
@@ -3991,6 +4042,9 @@ const PL_predicates_from_comp = (
     PL_extension(
         "asserta", 1, pl_asserta1_va, PL_FA_TRANSPARENT | PL_FA_ISO | PL_FA_VARARGS
     ),
+    PL_extension("assert", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("assertz", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("asserta", 2, pl_asserta2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension(                                   # PRED_SHARE("clause", 2, clause, META|NDET|PL_FA_CREF|PL_FA_ISO)
         "clause", 2, pl_clauseva_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_ISO | PL_FA_VARARGS

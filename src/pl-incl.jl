@@ -105,6 +105,10 @@ const TMP_PTR_SIZE = 4
 # PORT: pl-incl.h CL_ERASED
 "Clause flag: the clause was erased (pl-incl.h)."
 const CL_ERASED = UInt32(0x0001)
+# PORT: pl-incl.h DBREF_CLAUSE
+# (DBREF_ERASED_CLAUSE, 0x0040, is NOT PORTED: only `freeClause` sets it and a clause is freed by Julia's GC.)
+"Clause flag: the clause has a database reference, a clause blob (pl-incl.h)."
+const DBREF_CLAUSE = UInt32(0x0020)
 # PORT: pl-incl.h UNIT_CLAUSE
 "Clause flag: the clause has no body (pl-incl.h)."
 const UNIT_CLAUSE = UInt32(0x0002)

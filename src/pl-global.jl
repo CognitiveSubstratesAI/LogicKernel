@@ -71,6 +71,8 @@ mutable struct PL_global_data{T}
     const functor_dot2::UInt64                                  # FUNCTOR_dot2: '[|]'/2's word
     const atom_nil_w::UInt64                                    # ATOM_nil's WORD (L1c-6)
     const prolog_flag::prolog_flag_table{T}                     # prolog_flag: the Prolog flags (R2 F1a)
+    const clause_refs::Vector{Clause{T}}                        # (pl-dbref.c: the clause a clause blob names, by its number in the payload; R2 D1)
+    const clause_serials::IdDict{Clause{T}, Int}                # (a clause's number in `clause_refs`; R2 D1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -101,6 +103,9 @@ end
 # loader registers the stream it opens. Since R2's S1 the stream table has landed: `stream_table`
 # (`streamContext`: the streams Prolog knows, `IOSTREAM.context` their index), `stream_aliases`
 # (`streamAliases`: the user aliases) and `stream_alias_names` (each stream's `alias_head`).
+# Since R2's D1: `clause_refs` and `clause_serials`, the clauses a clause blob names (pl-dbref.c: upstream's blob
+# holds the `Clause` pointer, here its number in `clause_refs`, `clause_serials` its inverse); the clause blob type is
+# registered where pl-setup.c:146 calls `initDBRef`.
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
     modules = module_table{T}()                 # initModules: system, then user
@@ -117,6 +122,7 @@ function PL_global_data{T}() where {T}
     atoms = do_init_atoms!(atoms_t())          # initAtoms (setup: before everything here)
     syms = atom_symbols{T}()                   # (the atoms' symbols: filled as words are made)
     functors = initFunctors!(functors_t())     # initFunctors (after the atoms, as upstream's)
+    initDBRef!(atoms)                          # initDBRef (setup:146): the clause blob type (D1)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
     nilw = _atom_word!(atoms, syms, mk_nil(T))  # ATOM_nil's word, once (L1c-6)
@@ -157,7 +163,9 @@ function PL_global_data{T}() where {T}
         dexpr,
         dot2,
         nilw,
-        prolog_flag_table{T}()                  # prolog_flag: none yet (initPrologFlags! defines them)
+        prolog_flag_table{T}(),                 # prolog_flag: none yet (initPrologFlags! defines them)
+        Clause{T}[],                            # clause_refs: no clause has a reference yet
+        IdDict{Clause{T}, Int}()                # clause_serials
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)

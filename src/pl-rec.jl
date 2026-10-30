@@ -32,8 +32,9 @@
 # when it is met, and a variable lives in the lowest of the cells that hold it (`copy_record`'s
 # "right direction"), so the standard order of two fresh variables is the order of those cells.
 #
-# NOT PORTED: the rest of pl-rec.c — the recorded database (`recorda/3`, `recorded/3`, `erase/1`,
-# `instance/2`, the keys and their lists), external records (`PL_record_external`, the
+# Since R2's D1, `erase/1` for a CLAUSE reference (`pl_erase1_va`, below the copying: the clause blobs of
+# src/pl-dbref.jl). NOT PORTED: the rest of pl-rec.c — the recorded database (`recorda/3`, `recorded/3`,
+# `erase/1` of a record, `instance/2`, the keys and their lists), external records (`PL_record_external`, the
 # `PL_TYPE_EXT_*` opcodes), `variantRecords`, `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
 # `freeRecord` (a record is freed by Julia's GC).
@@ -468,3 +469,35 @@ function copyRecordToGlobal(
     @assert b.gstore == ld.gTop + 1                         # assert(b.gstore == gTop)
     return true
 end
+
+# PORT: pl-rec.c erase as pl_erase1_va
+# (PRED_IMPL("erase", 1, erase, 0))
+# DIVERGES: the CLAUSE branch only (since D1): the record branch — `callEventHook(PLEV_ERASED_RECORD, …)`,
+# `remove_record` — is D2's, with the recorded database, and `PL_get_dbref` answers no record yet. The
+# database is the running query's (`_query_gd`). A static predicate's clause is `permission_error(clause,
+# erase, Ref)` with `erase/1` as the context's predicate (`PL_error("erase", 1, NULL, …)`: not
+# `system:erase/1`, which the other errors of this predicate show); the answer for an erased clause is
+# false, no error (`PL_get_dbref` returns NULL).
+"`erase(+Ref)` (pl-rec.c): retract the clause `Ref` names; the predicate must be dynamic."
+function pl_erase1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ref = PL__t0                                                # term_t ref = A1
+    gd = _query_gd(ld)
+    r = PL_get_dbref(gd, ld, ref)
+    r === nothing && return FFALSE
+    type, clause = r
+    @assert type == DB_REF_CLAUSE                               # else: the record branch (D2)
+    def = clause.predicate
+    if (def.flags & P_DYNAMIC) == 0
+        PL_error(ld, "erase", 1, "", ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref)
+        return FFALSE
+    end
+    return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE
+end
+
+# PORT: pl-rec.c BeginPredDefs as PL_predicates_from_rec
+# DIVERGES: the entries of the predicates the kernel has ported (erase/1; the rest is D2's and
+# the fast-term family's); `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-rec.c's registration table (`BeginPredDefs(rec)`): the ported entries."
+const PL_predicates_from_rec = (PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),)

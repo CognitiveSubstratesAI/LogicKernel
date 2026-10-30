@@ -28,6 +28,13 @@ function _bl_db()::_RDB
     for t in (_BL_MUTEX, _BL_CLAUSE, _BL_STREAM)
         LK.PL_register_blob_type(db.ld.atoms, t)
     end
+    # D1: the database registers the `clause` type at its creation (`initDBRef!`, as pl-setup.c:146), so the
+    # lines above only added `mutex` and `stream` AFTER it. swipl registers `mutex` earlier still (pl-thread.c),
+    # `stream` later (pl-file.c): stream < clause < mutex in the standard order, as the rows below expect.
+    # A fresh database has no blob term yet, so the three ranks are set to swipl's order here.
+    for (t, rank) in ((_BL_MUTEX, -1), (_BL_CLAUSE, -2), (_BL_STREAM, -3))
+        LK._blob_registration(db.ld.atoms, t).rank = rank
+    end
     return db
 end
 

@@ -1893,6 +1893,19 @@ function _manifest_index(T)
         (LK.assert_term!, Tuple{GD, LD, Int, Int, Int, T, LK.sourceloc{T}, Int}, false),
         (LK.record_clause, Tuple{LD, Int, Int, Int, Int}, false),
         (LK.pl_record_clause3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_record_clause4_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.mustBeVar, Tuple{LD, Int}, false),
+        # R2 D1 — clause blobs (pl-dbref.c), assert/2 (pl-comp.c) and erase/1 (pl-rec.c)
+        (LK.acquire_clause_blob, Tuple{GD, T}, false),
+        (LK.release_clause_blob, Tuple{GD, T}, false),
+        (LK.lookup_clref, Tuple{GD, C}, false),
+        (LK.clause_clref, Tuple{GD, T}, false),
+        (LK.PL_unify_clref, Tuple{GD, LD, Int, C}, false),
+        (LK.PL_put_clref, Tuple{GD, LD, Int, C}, false),
+        (LK.PL_is_dbref, Tuple{GD, LD, Int}, false),
+        (LK.PL_get_dbref, Tuple{GD, LD, Int}, false),
+        (LK.PL_get_clref, Tuple{GD, LD, Int}, false),
+        (LK.pl_erase1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.registerSourceFile!, Tuple{GD, LK.SourceFile{T}}, false),
         (LK.indexToSourceFile, Tuple{GD, Int}, false),
         (LK.lookupSourceFile_unlocked, Tuple{GD, T, Bool}, false),
@@ -1976,7 +1989,9 @@ function _manifest_index(T)
         (LK.PL_error, Tuple{LD, LK.PL_error_code, PR}, false),
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for
-            f in (LK.pl_assertz1_va, LK.pl_asserta1_va)
+            f in (
+                LK.pl_assertz1_va, LK.pl_asserta1_va, LK.pl_assertz2_va, LK.pl_asserta2_va
+            )
         ]...
     )
 end
@@ -2500,6 +2515,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._blob_registration, Tuple{LK.atoms_t, LK.PL_blob_t}, false),
     (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t}, false),
     (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t, UInt64}, false),
+    (LK.initDBRef!, Tuple{LK.atoms_t}, false),                          # R2 D1 (pl-dbref.c)
+    (LK._clref_bytes, Tuple{Int}, false),
     (LK.allocateAtomBlock, Tuple{LK.atoms_t, Int}, false),
     (LK.reserveAtom, Tuple{LK.atoms_t}, false),
     (LK.same_name, Tuple{LK.atom, Vector{UInt8}, Int, LK.PL_blob_t}, false),

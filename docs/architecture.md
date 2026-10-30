@@ -758,7 +758,8 @@ fixed it or a public issue exists.
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
-| `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; the recorded database (`recorda/3`, `recorded/3`, `erase/1`) is not ported | `src/pl-rec.c` |
+| `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` of a record) is not ported | `src/pl-rec.c` |
+| `src/pl-dbref.jl` | since R2 D1, database references: the clause blob type (`clause_blob`, registered by the database, `initDBRef!`), `lookup_clref`, `clause_clref`, `PL_unify_clref`, `PL_put_clref`, `PL_is_dbref`, `PL_get_dbref`, `PL_get_clref`, `acquire_clause_blob`/`release_clause_blob` (the `DBREF_CLAUSE` mark); the payload is the clause's number in `gd.clause_refs` (upstream: the pointer); the record blob is D2's | `src/pl-dbref.c`, `src/pl-dbref.h` |
 | `src/pl-bag.jl` | the bags of findall/3 (since V9g-b): `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`, `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the innermost bag of the thread is implicit, the answers are records, and the last answer is put back first; `'$suspend_findall_bag'/0` (findnsols/4,5: a nondeterministic foreign predicate) is not ported | `src/pl-bag.c` |
 | `src/pl-list.jl` | lists (since V9g-b): `is_list/1`, `'$length'/2`, and `sort/2`, `msort/2`, `keysort/2` over `nat_sort` — Richard O'Keefe's bottom-up natural merge sort, ported line for line over records that are indices into three vectors; `sort/4` and `'$memberchk'/3` are not ported | `src/pl-list.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
@@ -820,6 +821,7 @@ fixed it or a public issue exists.
 | `test/core_lang/test_read_swipl.jl` | R1c's reader gate: `atom_number/2` on every number syntax and generated texts, `raw_read` against `'$raw_read'/2`, raw syntax errors and their `string(Text, CharNo)` against `term_to_atom/2`, escapes, and the tokens (`[]` vs `'[]'`, `{}`, strings, `0'c`, `1r3`); `const_nan` is `str_number`'s `1.5NaN`; an atom holding character 0 refused | — |
 | `test/files/test_stream_swipl.jl` | R1c's stream gate: memory and string streams round trip, peek and push-back, a Julia IO; the position record (character, line, line position, byte) against swipl's `stream_position_data/3` on `open_string/2` | — |
 | `test/files/test_load_swipl.jl` | R1f's loader gate: 13 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`; the compiler's warnings among them since R1g), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
+| `test/db/test_clause_ref_swipl.jl` | R2 D1's gate: `assert/2`, `asserta/2`, `assertz/2`, `erase/1` and the Ref of `'$record_clause'/4` as program rows against swipl 10.1.19 (the assert2 unit of `test_dbref.pl` included), and white-box testsets of the clause blobs | `tests/db/test_dbref.pl` (assert2) |
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
 | `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; since group F (D-0123) 20 print/1 goals with a user portray/1, each on a database of its own; a standard alias with no stream pinned (internal record #13); portray_goal refused until group F (D-0123), then 20 goals and 6 error goals compared with swipl; the host's streams, a write error, the variable_names bindings undone | — |
@@ -1968,7 +1970,7 @@ unbound argument (vmi:3685-3688): `concatenate(A,B,[1])` is non-deterministic, a
   * First user: `between/3` (pl-arith.c). Since NF2 `retract/1` (pl-proc.c) and `clause/2` (pl-comp.c,
     `PRED_SHARE`): the search generation is the foreign frame's (`setGenerationFrameVal`), the predicate
     access reference stays pushed between answers and is popped at the last answer or by `FRG_CUTTED`.
-    NOT PORTED: clause/3 and `'$clause'/4` (no clause references as terms). The sinks `pl_retract!` and
+    NOT PORTED: clause/3 and `'$clause'/4` (the by-reference search; the clause blobs exist since D1). The sinks `pl_retract!` and
     `pl_clause!` stay until their Julia callers are re-pointed (audit D-0136 Q3).
   * Since NF3 `current_op/3` and `'$local_op'/3` (pl-op.c, `PRED_IMPL` with `PL_FA_NONDETERMINISTIC`): one
     enumeration, `current_op_ndet`, with `inherit` true or false; its state (`op_enum`: the matching
@@ -2346,9 +2348,8 @@ src/pl-comp.jl, src/pl-read.jl, boot/init.jl, pl-global.jl, pl-incl.jl).
   * `$variable_names` is a GLOBAL VARIABLE upstream (`b_setval`, pl-gvar.c). The kernel has no
     global variables, so it is a term reference of the local data (`variable_names`, 0: none)
     that the loader sets per clause; `compileClause` resolves its value into the compilation.
-  * `compiler_warnings(Clause, Warnings)`: `Clause` is an UNBOUND VARIABLE, where upstream passes
-    the clause reference. The kernel has no clause references as terms (`'$record_clause'/4`);
-    boot/messages.pl ignores the argument. To revisit with clause references (R2).
+  * `compiler_warnings(Clause, Warnings)`: `Clause` was an UNBOUND VARIABLE until R2's D1 (below), where upstream passes
+    the clause reference; since D1 it is the clause blob (`PL_put_clref`).
   * the style checks are a field of the compilation (`styleCheck`), copied from the local data
     when it starts, where upstream reads the global `debugstatus.styleCheck` at each test;
   * a warning's arguments are terms, kept in the order raised (upstream: addresses, in a
@@ -5324,6 +5325,34 @@ Tests: test/core_lang/test_colon_body_swipl.jl (rows b01-b46: test_qcall.pl's co
 I_DEPARTM to I_CALLM's path — a consulted program vs swipl 10.1.19 pins);
 test/compile/test_body_code_swipl.jl's MOD3a testset (each instruction and operand vs swipl's `clause_vm/2`) and the
 multifile pin (flipped from the refusal). Mutants: tools/mutants/MOD3a.py.
+
+## D1 — clause references as blobs: `assert/2`, `erase/1`, the `Ref` of `'$record_clause'/4` (R2, D-0227 item 6, flags_rest.md §4 D11)
+
+What D1 adds (pl-dbref.c; pl-comp.c `assertz2`, `asserta2`, `mustBeVar`, `record_clause`'s `ref`; pl-rec.c `erase`'s clause branch):
+
+- **A clause reference is an atom of the non-text blob type `clause`** (`clause_blob`: `PL_BLOB_UNIQUE`, src/pl-dbref.jl): `lookup_clref`
+  (one atom per clause), `clause_clref` (the clause a blob names, `nothing` for any other term), `PL_unify_clref`, `PL_put_clref`,
+  `PL_is_dbref`, `PL_get_dbref` (`type_error(db_reference, T)` for a non-reference, **false without an error for an erased clause**) and
+  `PL_get_clref` (`1` live, `-1` erased, `0` after the error). `initDBRef!` registers the type where the database is made
+  (pl-setup.c:146), so its rank in the standard order is upstream's: stream < clause < record < mutex (measured on swipl 10.1.19);
+  registered lazily it would rank by first use.
+- **Payload (DIVERGES, representation):** upstream's blob holds the `Clause` pointer; the kernel's holds the clause's NUMBER in
+  `gd.clause_refs` (`gd.clause_serials` is the inverse), 8 bytes, given at the clause's first reference. The table keeps the clause for as
+  long as its atom lives (for ever: no atom GC, as the stream blobs). `DBREF_CLAUSE` (pl-incl.h) is set by `acquire_clause_blob` for a NEW
+  atom and cleared by `release_clause_blob` (no caller without atom GC; white-box tested). `DBREF_ERASED_CLAUSE`, `db_erased_refs` and
+  `unallocClause` are NOT PORTED (Julia's GC frees a clause nothing names).
+- **Written form and order:** `<clause>(0x…)` and the standard order are BLOB's (the type has no `compare` hook, so the backport
+  2db0c03ac of the audit D-0208 item 2 does not touch it); two clause references compare by creation of the BLOB, swipl's by address
+  (BLOB's known difference, D-0200).
+- **`assertz/2`, `assert/2`, `asserta/2`** (`mustBeVar`: `uninstantiation_error(Ref)`, context `'2-nd argument'`), the **Ref of
+  `'$record_clause'/4`** (a bound Ref that does not unify fails AFTER the clause was added, as upstream), and **`erase/1`** for a clause:
+  `permission_error(clause, erase, Ref)` with `erase/1` (not `system:erase/1`) as the context for a static predicate's clause. The record
+  branch of `erase/1` and `PL_get_dbref` is D2's (the recorded database); `compiler_warnings(Clause, Warnings)` now carries the reference.
+- **Not here:** `clause/3`, `'$clause'/4`, `nth_clause/3`, `instance/2`, `'$get_clause_attribute'/3` and the other `PL_get_clref` /
+  `PL_unify_clref` callers of pl-comp.c, pl-proc.c, pl-trace.c, pl-cont.c (their steps); the QLF hooks `save_clause_ref`/`load_clause_ref` (LB3).
+
+Tests: test/db/test_clause_ref_swipl.jl (54 program rows against swipl 10.1.19 incl. the assert2 unit of tests/db/test_dbref.pl, and the
+white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1.py.
 
 ## Still to come
 
