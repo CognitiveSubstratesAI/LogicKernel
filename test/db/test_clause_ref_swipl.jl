@@ -242,6 +242,26 @@ const _CASES = [
     ("c36", "assertz(d(1), Ref), ( '\$clause'(_, _, Ref, [_, _]) -> R = yes ; R = no )"),
     ("c37", "assertz((e(1) => true), Ref), clause(H, B, Ref), R = H-B"),
     ("c38", "assertz((e(1) => true), Ref), '\$rule'(H, Rule, Ref), R = H-Rule"),
+    ("n01", "assertz(d(1), Ref), instance(Ref, T), R = T"),
+    ("n02", "assertz((e(X) :- d(X), d(Y)), Ref), instance(Ref, T), R = T"),
+    ("n03", "assertz((e(X) => d(X)), Ref), instance(Ref, T), R = T"),
+    ("n04", "assertz('?=>'(e(X), (X>0, !, true)), Ref), instance(Ref, T), R = T"),
+    ("n05", "assertz('?=>'(e(X), (X>0, X<5, !, true)), Ref), instance(Ref, T), R = T"),
+    ("n06", "assertz('?=>'(e(X), (X>0, X<5, X\\==3, !, true)), Ref), instance(Ref, T), R = T"),
+    ("n07", "assertz('?=>'(e(X), true), Ref), instance(Ref, T), R = T"),
+    ("n08", "assertz('?=>'(e(X), (X>0, true)), Ref), instance(Ref, T), R = T"),
+    ("n09", "assertz('?=>'(e(X), (!, true)), Ref), instance(Ref, T), R = T"),
+    ("n10", "assertz('?=>'(e(X), !), Ref), instance(Ref, T), R = T"),
+    ("n11", "assertz('?=>'(e(X), (X>0, !, true, !, c)), Ref), instance(Ref, T), R = T"),
+    ("n12", "assertz(d(1), Ref), erase(Ref), ( instance(Ref, T) -> R = T ; R = no )"),
+    ("n13", "ex(instance(foo, _), R)"),
+    ("n14", "ex(instance(_, _), R)"),
+    ("n15", "ex(instance(1, _), R)"),
+    ("n16", "assertz(d(1), Ref), ( instance(Ref, (d(1) :- true)) -> R = yes ; R = no )"),
+    ("n17", "assertz(d(1), Ref), ( instance(Ref, d(1)) -> R = yes ; R = no )"),
+    ("n18", "clause(st(X), B, Ref), instance(Ref, T), R = X-B-T"),
+    ("n19", "assertz(d(f(A, B, A)), Ref), instance(Ref, T), R = T"),
+    ("n20", "assertz((e(X) => d(X)), Ref), '\$rule'(H, Rule, Ref), instance(Ref, T), R = H-Rule-T"),
     # LAST: nothing follows (the program's last row)
     ("z01", "assertz(d(1), Ref), blob(Ref, T), R = T")
 ]
@@ -391,7 +411,7 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         # not a vacuous agreement: each kind of answer is in swipl's own lines
         @test count(l -> occursin("aclauseform", _norm(l)), sw) >= 2             # a04, e08: the written form
         @test count(l -> occursin("clref", l), sw) >= 4                          # a reference inside an answer (a11, a23, a24, r02)
-        @test count(l -> occursin(_codes("db_reference"), l), sw) == 9           # e01, e03-e06, c12-c14, c19
+        @test count(l -> occursin(_codes("db_reference"), l), sw) == 11          # e01, e03-e06, c12-c14, c19, n13, n15
         @test count(l -> occursin(_codes("uninstantiation_error"), l), sw) == 5  # a08-a11, b01
         @test count(l -> occursin(_codes("permission_error"), l), sw) >= 3       # a15, a16, r02
         @test count(l -> occursin(_codes("instantiation_error"), l), sw) >= 2    # a12, e02
@@ -408,6 +428,11 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(l -> startswith(l, "t_c34 ") && occursin(_codes("user"), l), sw)     # Q:d(1) unbound: the definition's module
         @test any(l -> startswith(l, "t_c37 ") && occursin("i1", l) && occursin(_codes("true"), l), sw)   # an SSU clause with body true
         @test any(l -> startswith(l, "t_c38 ") && occursin(_codes("=>"), l), sw)   # '$rule'/3 of it: the neck
+        # instance/2 (rows n01-n20): the clause term, fixup_ssu's answers AS IS (upstream drops a lone guard goal, repeats the goals of three)
+        @test any(l -> startswith(l, "t_n01 ") && occursin(_codes(":-"), l) && occursin(_codes("true"), l), sw)
+        @test any(l -> startswith(l, "t_n04 ") && occursin(_codes("=>"), l) && !occursin(_codes(">"), l), sw)   # `X>0` is gone
+        @test count(l -> startswith(l, "t_n06 ") && count("c[92,61,61]/2", l) == 2, sw) == 1                   # `X\\==3` twice
+        @test any(l -> startswith(l, "t_n12 ") && occursin(_codes("no"), l), sw)                              # an erased clause
         @test startswith(last(sw), "t_z01 ")
     end
 end

@@ -32,9 +32,9 @@
 # when it is met, and a variable lives in the lowest of the cells that hold it (`copy_record`'s
 # "right direction"), so the standard order of two fresh variables is the order of those cells.
 #
-# Since R2's D1, `erase/1` for a CLAUSE reference (`pl_erase1_va`, below the copying: the clause blobs of
-# src/pl-dbref.jl). NOT PORTED: the rest of pl-rec.c — the recorded database (`recorda/3`, `recorded/3`,
-# `erase/1` of a record, `instance/2`, the keys and their lists), external records (`PL_record_external`, the
+# Since R2's D1, `erase/1` and `instance/2` for a CLAUSE reference (`pl_erase1_va`, `pl_instance2_va` with
+# `fixup_ssu`, below the copying: the clause blobs of src/pl-dbref.jl). NOT PORTED: the rest of pl-rec.c — the
+# recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record, the keys and their lists), external records (`PL_record_external`, the
 # `PL_TYPE_EXT_*` opcodes), `variantRecords`, `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
 # `freeRecord` (a record is freed by Julia's GC).
@@ -496,8 +496,99 @@ function pl_erase1_va(
     return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE
 end
 
+# PORT: pl-rec.c fixup_ssu
+# DIVERGES: `PL_unify_term(out, PL_FUNCTOR, FUNCTOR_ssu_commit2, PL_TERM, head, PL_TERM, body)` is
+# `PL_cons_functor` into a new reference and `PL_unify`; the atom `!` is compared by `sym_key` with the
+# compiler's `ATOM_cut`. The reference arithmetic (`--g`, `g > guard`: the goals before the cut sit in
+# CONSECUTIVE term references) is upstream's, AS IS: swipl 10.1.19 drops the guard goal of
+# `p ?=> g1, !, b` (one goal before the cut) and repeats goals when three or more precede the cut
+# (rows i05, i06 pin its answers).
+"Rewrite `p ?=> g1, g2, !, body` (`in`) to `p, g1, g2 => body` and unify it with `out`; a term with no cut is unified as it is (pl-rec.c)."
+function fixup_ssu(ld::PL_local_data{T}, in::term_t, out::term_t)::Bool where {T}
+    gd = _query_gd(ld)
+    head = PL_new_term_ref(ld)
+    body = PL_new_term_ref(ld)
+    guard = PL_new_term_ref(ld)
+    comma = _err_functor(ld, Symbol(","), 2)                    # FUNCTOR_comma2
+
+    _PL_get_arg(ld, 1, in, head)
+    _PL_get_arg(ld, 2, in, body)
+
+    while PL_is_functor(ld, body, mk_sym(T, Symbol(",")), 2)    # PL_is_functor(body, FUNCTOR_comma2)
+        g = PL_new_term_ref(ld)
+        g == 0 && return false
+
+        _PL_get_arg(ld, 1, body, g)
+        _PL_get_arg(ld, 2, body, body)
+
+        a = PL_get_atom(ld, g)
+        if a !== nothing && sym_key(a) == gd.subclause_names.atom_cut   # a == ATOM_cut
+            g -= 1
+            PL_put_term(ld, guard, g) || return false           # PL_put_term(guard, --g)
+            while (g -= 1) > guard                              # while(--g > guard)
+                PL_cons_functor(ld, guard, comma, g, guard) || return false
+                PL_cons_functor(ld, head, comma, head, guard) || return false
+            end
+
+            res = PL_new_term_ref(ld)
+            PL_cons_functor(ld, res, clause_functor(ld, SSU_COMMIT_CLAUSE), head, body) || return false
+            return PL_unify(ld, out, res)
+        end
+    end
+
+    return PL_unify(ld, in, out)
+end
+
+# PORT: pl-rec.c instance as pl_instance2_va
+# (PRED_IMPL("instance", 2, instance, 0))
+# DIVERGES: ONE predicate with its two branches, as upstream. The CLAUSE branch is upstream's, on the two
+# sides `decompile!` gives (`_rule_term` builds the clause term upstream's `decompile` returns: `Neck(h, b)`,
+# or for a fact the bare head, which this branch wraps as `(h :- true)`). The RECORD branch (the recorded
+# database) is D2's: `PL_get_dbref` answers no record reference yet, so it is refused by name where upstream
+# copies the record (`copyRecordToGlobal`) — a `NotPortedError` naming D2, unreachable until D2 adds the branch
+# to `PL_get_dbref`. A goal clause (`GOAL_CLAUSE`) and a clause not visible in the frame's generation fail.
+"`instance(+Ref, -Term)` (pl-rec.c): `Term` is the clause (`Head :- Body`, `Head => Body`, a fact as `Head :- true`) a reference names."
+function pl_instance2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ref, term = PL__t0, PL__t0 + 1                              # term_t ref = A1, term = A2
+    gd = _query_gd(ld)
+    r = PL_get_dbref(gd, ld, ref)
+    r === nothing && return FFALSE                              # if ( !(ptr=PL_get_dbref(ref, &type)) )
+    type, clause = r
+    if type != DB_REF_CLAUSE                                    # else: the record branch (D2)
+        throw(NotPortedError{T}(mk_sym(T, :instance), "instance/2 of a record reference", "D2"))
+    end
+    generation = generationFrame(ld.frames[ld.environment_frame])
+
+    if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(clause, generation)
+        return FFALSE
+    end
+
+    h = PL_new_term_ref(ld)
+    b = PL_new_term_ref(ld)
+    if (clause.flags & UNIT_CLAUSE) != 0
+        decompile!(ld, clause, h, b) || return FFALSE
+        t = PL_new_term_ref(ld)
+        PL_put_atom(ld, t, mk_sym(T, Symbol("true")))           # PL_ATOM, ATOM_true
+        res = PL_new_term_ref(ld)
+        PL_cons_functor(ld, res, _err_functor(ld, Symbol(":-"), 2), h, t) || return FFALSE
+        return PL_unify(ld, term, res) ? FTRUE : FFALSE         # PL_unify_term(term, PL_FUNCTOR, FUNCTOR_prove2, …)
+    elseif (clause.flags & SSU_CHOICE_CLAUSE) != 0
+        decompile!(ld, clause, h, b) || return FFALSE
+        tmp = _rule_term(ld, clause, h, b)                      # decompile(clause, tmp, 0)
+        return fixup_ssu(ld, tmp, term) ? FTRUE : FFALSE
+    else
+        decompile!(ld, clause, h, b) || return FFALSE
+        return PL_unify(ld, term, _rule_term(ld, clause, h, b)) ? FTRUE : FFALSE   # decompile(clause, term, 0)
+    end
+end
+
 # PORT: pl-rec.c BeginPredDefs as PL_predicates_from_rec
-# DIVERGES: the entries of the predicates the kernel has ported (erase/1; the rest is D2's and
+# DIVERGES: the entries of the predicates the kernel has ported (erase/1, instance/2; the rest is D2's and
 # the fast-term family's); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-rec.c's registration table (`BeginPredDefs(rec)`): the ported entries."
-const PL_predicates_from_rec = (PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),)
+const PL_predicates_from_rec = (
+    PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
+    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS)
+)

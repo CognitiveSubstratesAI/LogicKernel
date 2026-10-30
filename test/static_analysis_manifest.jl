@@ -1907,6 +1907,8 @@ function _manifest_index(T)
         (LK.PL_get_dbref, Tuple{GD, LD, Int}, false),
         (LK.PL_get_clref, Tuple{GD, LD, Int}, false),
         (LK.pl_erase1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_instance2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.fixup_ssu, Tuple{LD, Int, Int}, false),
         (LK.registerSourceFile!, Tuple{GD, LK.SourceFile{T}}, false),
         (LK.indexToSourceFile, Tuple{GD, Int}, false),
         (LK.lookupSourceFile_unlocked, Tuple{GD, T, Bool}, false),
