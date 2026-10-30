@@ -281,9 +281,29 @@ function _init_call(
         PL_close_foreign_frame(ld, fid)
         return nothing
     end
-    ball = rc == PL_S_EXCEPTION ? _init_catch(ld, PL_exception(ld, qid), attr) : nothing
-    PL_close_query(ld, qid)
+    ball = nothing
+    rec = nothing
+    if rc == PL_S_EXCEPTION
+        ex = PL_exception(ld, qid)
+        # an `error(_, _)` ball is recorded where its query raised it and handled once the query is closed (as `_init_solve`): the
+        # handler's printing clears the pending exception, and `_release_frozen!` at the close then finds the slots of the failed
+        # query (a warning's terms, the ball) above its reset target
+        if _is_error_term(ld, ex)
+            rec = compileTermToHeap(ld, ex)
+        else
+            ball = _init_export(ld, ex)
+        end
+    end
+    # cut, not close: the frame's discard below undoes the bindings; `_release_frozen!` at a CLOSE of a failed query finds the
+    # query's own argument slots (taken after its mark) above the reset target once the handled error has cleared the pending ball
+    PL_cut_query(ld, qid)
     PL_discard_foreign_frame(ld, fid)
+    if rec !== nothing
+        mfid = PL_open_foreign_frame(ld)
+        b = PL_new_term_ref(ld)
+        copyRecordToGlobal(ld, b, rec::record{T}) && (ball = _init_catch(ld, b, attr))
+        PL_discard_foreign_frame(ld, mfid)
+    end
     return ball
 end
 
@@ -421,7 +441,9 @@ function _init_solve(
     for k in 1:arity
         _PL_get_arg(ld, k, goal, a + k - 1)
     end
-    qid = PL_open_query(gd, ld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
+    # the context module is the directive's `m`: a later conjunct is called inside the earlier one's query, whose frame's module
+    # (`system`, for atom/1 or '$set_predicate_attribute'/3) the default `nothing` would take, so `assertz(p(1))` asserted into system
+    qid = PL_open_query(gd, ld, m, PL_Q_CATCH_EXCEPTION | PL_Q_EXT_STATUS, proc, a)
     while true
         rc = PL_next_solution(gd, ld, qid)
         if rc == PL_S_EXCEPTION
