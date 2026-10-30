@@ -758,7 +758,7 @@ fixed it or a public issue exists.
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
-| `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` of a record) is not ported | `src/pl-rec.c` |
+| `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record) is not ported | `src/pl-rec.c` |
 | `src/pl-dbref.jl` | since R2 D1, database references: the clause blob type (`clause_blob`, registered by the database, `initDBRef!`), `lookup_clref`, `clause_clref`, `PL_unify_clref`, `PL_put_clref`, `PL_is_dbref`, `PL_get_dbref`, `PL_get_clref`, `acquire_clause_blob`/`release_clause_blob` (the `DBREF_CLAUSE` mark); the payload is the clause's number in `gd.clause_refs` (upstream: the pointer); the record blob is D2's | `src/pl-dbref.c`, `src/pl-dbref.h` |
 | `src/pl-bag.jl` | the bags of findall/3 (since V9g-b): `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`, `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the innermost bag of the thread is implicit, the answers are records, and the last answer is put back first; `'$suspend_findall_bag'/0` (findnsols/4,5: a nondeterministic foreign predicate) is not ported | `src/pl-bag.c` |
 | `src/pl-list.jl` | lists (since V9g-b): `is_list/1`, `'$length'/2`, and `sort/2`, `msort/2`, `keysort/2` over `nat_sort` — Richard O'Keefe's bottom-up natural merge sort, ported line for line over records that are indices into three vectors; `sort/4` and `'$memberchk'/3` are not ported | `src/pl-list.c` |
@@ -5130,7 +5130,7 @@ What SSU1 ports (pl-comp.c, pl-proc.c, pl-supervisor.c, pl-error.c, boot/init.pl
   `?=>(H, (G, !, B))`, or `H => B` when `'$is_true'(G)` and the `optimise` flag (init.pl:4114-4121, 4131-4133).
 - **Calling an SSU predicate** raised `NotPortedError` naming `S_SSU_DET` until SSU2 (the run loop's refusal of a
   declared instruction outside `VMI_RUN`); SSU2 runs `I_CHP`, `I_SSU_*`, `S_SSU_DET` and the matching-rule error.
-- **Not here:** `fixup_ssu` (instance/2's clause branch: D1); `'$rule'/3` and clause/3's `CLAUSE_TYPE_MASK` test came with D1; rule/2,3 and
+- **Not here:** `'$rule'/3`, clause/3's `CLAUSE_TYPE_MASK` test and `fixup_ssu` (instance/2's clause branch) came with D1; rule/2,3 and
   expand.pl's guard expansion (LB4); listing (LB5); `fix_ssu`/`check_ssu` (reconsult: LB6); QLF flags (no QLF).
 
 Known-difference checklist item (SSU1, pending the control-construct procedures): **a05** `assertz((d5(X), X > 0 => true))`
@@ -5361,11 +5361,22 @@ What D1 adds (pl-dbref.c; pl-comp.c `assertz2`, `asserta2`, `mustBeVar`, `record
   built from the clause's own flags; mutant D1-96 declared equivalent with its reason, row c37). **DIVERGES (representation):** the
   by-reference branch builds the clause term from the two sides (`_rule_term`) because `decompile!` returns two sides.
   `'$clause_term_position'/3` is LB5's (listing), `nth_clause/3` and `'$get_clause_attribute'/3` are LB2's.
-- **Not here:** `instance/2`, and the other `PL_get_clref` / `PL_unify_clref` callers of pl-proc.c, pl-trace.c, pl-cont.c (their steps);
+- **`instance/2`** (pl-rec.c `instance`, `pl_instance2_va`; ONE predicate with a clause branch and a record branch): `Ref` is read by `PL_get_dbref`
+  (`instance(foo, _)`: `type_error(db_reference, foo)` with context `system:instance/2`; an unbound `Ref`: `instantiation_error`; an
+  ERASED clause: fails). The clause branch: a fact (`UNIT_CLAUSE`) is answered as `Head :- true` (so `instance(Ref, d(1))` for a fact FAILS,
+  the term is `d(1):-true`); a `?=>` clause (`SSU_CHOICE_CLAUSE`) goes through `fixup_ssu`; anything else is the rule term (`:-`, `=>`).
+  `GOAL_CLAUSE` and a clause not visible in the frame's generation fail. The record branch (`copyRecordToGlobal` of a record) is refused by name:
+  a `NotPortedError` naming D2, unreachable until D2 adds the record branch to `PL_get_dbref`.
+- **`fixup_ssu`** (pl-rec.c), AS IS, with the term-reference arithmetic (`--g`, `g > guard`) of upstream: `p ?=> g1, ..., !, body` becomes
+  `p, g1, ... => body`. swipl 10.1.19 answers, pinned by rows n04 and n06: a LONE guard goal before the cut is dropped (`p ?=> X>0, !, true`
+  becomes `p => true`), and with three or more goals before the cut the goals after the first are repeated (`((p,G2,G3),G1,G2,G3)`); a term
+  without a cut is unified as it is (row n07). The one divergence is the construction (`PL_cons_functor` into a new reference and `PL_unify`
+  for `PL_unify_term`, the cut compared by `sym_key`).
+- **Not here:** the record branch of `instance/2` (D2), and the other `PL_get_clref` / `PL_unify_clref` callers of pl-proc.c, pl-trace.c, pl-cont.c (their steps);
   the QLF hooks `save_clause_ref`/`load_clause_ref` (LB3).
 
-Tests: test/db/test_clause_ref_swipl.jl (92 program rows against swipl 10.1.19 incl. the assert2 unit of tests/db/test_dbref.pl and rows
-c01-c38 for clause/3, `'$clause'/4`, `'$rule'/3`, and the white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1.py.
+Tests: test/db/test_clause_ref_swipl.jl (the program rows against swipl 10.1.19 incl. the assert2 unit of tests/db/test_dbref.pl, rows
+c01-c38 for clause/3, `'$clause'/4`, `'$rule'/3`, rows n01-n20 for instance/2 and fixup_ssu, and the white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1.py.
 
 ## Still to come
 
