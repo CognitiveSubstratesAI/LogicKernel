@@ -5395,7 +5395,7 @@ What D1 adds (pl-dbref.c; pl-comp.c `assertz2`, `asserta2`, `mustBeVar`, `record
   the QLF hooks `save_clause_ref`/`load_clause_ref` (LB3).
 
 Tests: test/db/test_clause_ref_swipl.jl (the program rows against swipl 10.1.19 incl. the assert2 unit of tests/db/test_dbref.pl, rows
-c01-c38 for clause/3, `'$clause'/4`, `'$rule'/3`, rows n01-n20 for instance/2 and fixup_ssu, and the white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1.py.
+c01-c38 for clause/3, `'$clause'/4`, `'$rule'/3`, rows n01-n20 for instance/2 and fixup_ssu, and the white-box testsets); test/core_lang/test_blob.jl pins its three ranks (the database now registers `clause`); mutants: tools/mutants/D1b.py.
 
 ## Still to come
 
