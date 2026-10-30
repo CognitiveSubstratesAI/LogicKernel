@@ -611,5 +611,5 @@ end
     ld.read_source = LK.source_location{_TL}(nothing, LK.IOPOS(0, 0, 3, 0, 0))         # a line, no file
     @test !LK.ReadingSource(ld)
     ld.read_source = LK.source_location{_TL}(_tls(:a_file), LK.IOPOS(0, 0, 0, 0, 0))   # a file, line 0
-    @test !LK.ReadingSource(ld)
+    @test LK.ReadingSource(ld)       # since LB2: pl-incl.h:2734 is `source_line_no >= 0` ('$set_source_location'(File, 0) sets line 0)
 end

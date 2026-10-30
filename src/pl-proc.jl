@@ -1304,12 +1304,10 @@ function pl_get_clause_attribute3_va(
     elseif k == sym_key(mk_sym(T, :size))
         return PL_unify_integer(ld, value, 8 * sizeofClause(length(clause.codes))) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :fact))
-        v = (clause.flags & UNIT_CLAUSE) != 0 ? :true : :false
-        return PL_unify_atom(ld, value, mk_sym(T, v)) ? FTRUE : FFALSE
+        return PL_unify_bool(ld, value, (clause.flags & UNIT_CLAUSE) != 0) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :erased))
         gen = generationFrame(ld.frames[ld.environment_frame])
-        v = visibleClause(clause, gen) ? :false : :true
-        return PL_unify_atom(ld, value, mk_sym(T, v)) ? FTRUE : FFALSE
+        return PL_unify_bool(ld, value, !visibleClause(clause, gen)) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :predicate_indicator))
         unify_definition(
             gd, ld, MODULE_user(gd), value, clause.predicate, 0, GP_QUALIFY | GP_NAMEARITY
