@@ -136,7 +136,10 @@ const _CASES = [
     ("n19", "findall(N, nth_clause(q8(a), N, _), R)"),
     ("n20", "nth_clause(user:q8(_), 2, Ref), nth_clause(P, N, Ref), R = P-N"),
     # n21: the clause added during the enumeration is not seen (the generation of the call); the cut at N > 12 only bounds a mutant that does see it (LB2-62 looped for ever)
-    ("n21", "findall(N, ( nth_clause(q9(_), N, _), ( N > 12 -> !, fail ; assertz(q9(z)) ) ), R)"),
+    (
+        "n21",
+        "findall(N, ( nth_clause(q9(_), N, _), ( N > 12 -> !, fail ; assertz(q9(z)) ) ), R)"
+    ),
     ("n22", "findall(N, ( nth_clause(q10(_), N, Ref), erase(Ref) ), R)"),
     ("n23", "retract(q11(a)), nth_clause(q11(_), 1, Ref), nth_clause(_, N, Ref), R = N"),
     ("n24", "ex(nth_clause(q3(_), 1, 1), R)"),
