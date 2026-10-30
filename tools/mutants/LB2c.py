@@ -1,5 +1,5 @@
 # ORIGINAL: LB2's mutant list — no swipl-devel counterpart.
-# tools/mutants/LB2.py — the mutation battery of LB2 (R2 loader_boot: the pl-srcfile.c predicates '$source_file'/2,
+# tools/mutants/LB2c.py — the mutation battery of LB2 (R2 loader_boot: the pl-srcfile.c predicates '$source_file'/2,
 # '$source_file_predicates'/2, '$time_source_file'/3, '$source_file_property'/3, '$set_source_file'/3, '$start_consult'/2,
 # '$end_consult'/1, '$fixup_reconsult'/1; source_location/2; system mode and the P_LOCKED sites; audit D-0244), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run). The format is tools/mutate_drive.py's: `id`, `file`, `old` (must

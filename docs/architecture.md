@@ -5474,7 +5474,7 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   modules L3 (`exportProcedureSource`, pl-srcfile.c:1427) and L4 (`setMetapredicateSource`, :1334) wait for MOD4 (`exportProcedure` and
   `setMetapredicateMask` do not exist on this base); with them MOD4's `meta_declaration` ReadingSource refusal is replaced by upstream's branch (D-0246).
 
-Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28, nth_clause/3 rows n01-n39, '$get_clause_attribute'/3 rows g01-g31); mutants: tools/mutants/LB2.py.
+Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28, nth_clause/3 rows n01-n39, '$get_clause_attribute'/3 rows g01-g31); mutants: tools/mutants/LB2c.py.
 
 ## Still to come
 
