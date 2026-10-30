@@ -629,9 +629,12 @@ echo "pkgtest-way: PASS stub"
                 "STUB_RECORD" => joinpath(dir, "record"), "STUB_TIMES" => times, extra...
             ]
         end
-        # `env -u`: whatever cap or slice the caller exported does not reach the run, so the defaults are judged
+        # whatever cap or slice the caller exported does not reach the run (unset BEFORE the case's own env is
+        # added: an `env -u` in the command would also remove the case's values), so the defaults are judged
         way_cmd(file, env) = addenv(
-            `env -u LOGICKERNEL_INERT_MEM_MAX -u LOGICKERNEL_INERT_SLICE bash $sh $file`,
+            `bash $sh $file`,
+            "LOGICKERNEL_INERT_MEM_MAX" => nothing,
+            "LOGICKERNEL_INERT_SLICE" => nothing,
             env...
         )
         way(file, env) = _gs_run_merged(way_cmd(file, env))
