@@ -233,6 +233,15 @@ const _CASES = [
         "assertz(d(1), Ref), clause(d(X), B, Ref), clause(d(Y), B2, Ref), R = X-B-Y-B2"
     ),
     ("c32", "assertz(d(1), Ref), ex(clause(d(1), foo, Ref), R)"),
+    ("c33", "assertz(d(1), Ref), ( clause(1:d(1), _, Ref) -> R = yes ; R = no )"),
+    ("c34", "assertz(d(1), Ref), clause(Q:d(1), _, Ref), R = Q"),
+    (
+        "c35",
+        "assertz(d0, Ref), compound_name_arguments(H, d0, []), ( clause(H, _, Ref) -> R = yes ; R = no )"
+    ),
+    ("c36", "assertz(d(1), Ref), ( '\$clause'(_, _, Ref, [_, _]) -> R = yes ; R = no )"),
+    ("c37", "assertz((e(1) => true), Ref), clause(H, B, Ref), R = H-B"),
+    ("c38", "assertz((e(1) => true), Ref), '\$rule'(H, Rule, Ref), R = H-Rule"),
     # LAST: nothing follows (the program's last row)
     ("z01", "assertz(d(1), Ref), blob(Ref, T), R = T")
 ]
@@ -395,6 +404,10 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(l -> startswith(l, "t_c07 ") && occursin(_codes("m1"), l), sw)   # a qualified head back from a reference
         @test any(l -> startswith(l, "t_c21 ") && occursin(_codes("=>"), l), sw)   # '$rule'/3 by reference: the neck
         @test any(l -> l == "t_c32", sw)                                         # a row that FAILS has a line with no answer
+        @test count(l -> any(startswith(l, "t_c$n ") && occursin(_codes("no"), l) for n in (33, 35, 36)), sw) == 3   # a head that does not name the clause
+        @test any(l -> startswith(l, "t_c34 ") && occursin(_codes("user"), l), sw)     # Q:d(1) unbound: the definition's module
+        @test any(l -> startswith(l, "t_c37 ") && occursin("i1", l) && occursin(_codes("true"), l), sw)   # an SSU clause with body true
+        @test any(l -> startswith(l, "t_c38 ") && occursin(_codes("=>"), l), sw)   # '$rule'/3 of it: the neck
         @test startswith(last(sw), "t_z01 ")
     end
 end
