@@ -7,8 +7,8 @@
 #     throw/catch loop through backtracking;
 #   * white-box (D-0029 condition 3): after a throw `frozen_bar` covers the ball; an `Undo!` to an older mark keeps
 #     the ball intact; after the OUTERMOST query closes the frozen bar is 0 and `gTop` is back at its base — through
-#     backtracking and through recursion; A-0029's baseline pinned (recursion: 34 cells per iteration until the
-#     close; backtracking: 0);
+#     backtracking and through recursion; A-0029's baseline pinned (recursion: 40 cells per iteration until the
+#     close — 34 before MOD4 qualified catch/3's meta-arguments; backtracking: 0);
 #   * condition 2: the release refuses when a live term reference points above its target.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -127,11 +127,14 @@ end
     st, _, _ = LK.load_file!(gd, ld, f)
     @test st === :ok
     for (goal, n, want_during) in
-        ((:bl_rec, 100, 3400), (:bl_rec, 1000, 34000), (:bl_bt, 100, nothing),
+        ((:bl_rec, 100, 4000), (:bl_rec, 1000, 40000), (:bl_bt, 100, nothing),
         (:bl_bt, 1000, nothing))
         rc, during, after, fb = _bl_run(gd, ld, goal, n)
         @test rc == LK.PL_S_TRUE
-        want_during === nothing || @test during == want_during     # recursion: A-0029's 34 cells/iteration
+        # recursion: 40 cells/iteration. A-0029's 34 + 6 since MOD4: catch(0, ?, 0) is a declared meta-predicate
+        # (init.pl / pl-wam.c S_MQUAL), so its Goal and Recovery arguments are qualified `user:Arg` per call —
+        # two colon compounds of 3 cells each. Representation only: `after` and `fb` below are unchanged.
+        want_during === nothing || @test during == want_during
         @test after <= 0                                            # back at the base after the close
         @test fb == 0                                               # the frozen bar released
     end
