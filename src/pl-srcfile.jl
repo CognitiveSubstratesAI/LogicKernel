@@ -204,7 +204,9 @@ _atom_is(ld::PL_local_data{T}, a, s::Symbol) where {T} = sym_key(a) == sym_key(m
 
 # PORT: pl-srcfile.c unify_src_file_time
 "Unify `t` with the modification time of `f`, or 0 if it is no real file (pl-srcfile.c)."
-function unify_src_file_time(ld::PL_local_data{T}, t::term_t, f::SourceFile{T})::Bool where {T}
+function unify_src_file_time(
+    ld::PL_local_data{T}, t::term_t, f::SourceFile{T}
+)::Bool where {T}
     f.isfile && return PL_unify_float(ld, t, f.mtime)
     return PL_unify_integer(ld, t, 0)
 end
@@ -257,7 +259,11 @@ function pl_source_file_predicates2_va(
             for proc in Iterators.reverse(sf.procedures)
                 rc || break
                 rc = PL_unify_list(ld, tail, head, tail)
-                rc && (rc = unify_definition(gd, ld, MODULE_user(gd), head, proc.definition, 0, GP_QUALIFY))
+                rc && (
+                    rc = unify_definition(
+                        gd, ld, MODULE_user(gd), head, proc.definition, 0, GP_QUALIFY
+                    )
+                )
             end
             rc = rc && PL_unify_nil(ld, tail)
         end
@@ -289,7 +295,7 @@ function pl_time_source_file3_va(
         f = indexToSourceFile(gd, index)
         if !(f === nothing || f.count == 0)
             if PL_unify_atom(ld, file, f.name) && unify_src_file_time(ld, time_, f) &&
-               PL_unify_atom(ld, type, mk_sym(T, f.system ? :system : :user))
+                PL_unify_atom(ld, type, mk_sym(T, f.system ? :system : :user))
                 PL_close_foreign_frame(ld, fid)
                 return PL_retry(index + 1)
             end
@@ -444,9 +450,12 @@ end
 "pl-srcfile.c's registration table (`BeginPredDefs(srcfile)`): the ported entries."
 const PL_predicates_from_srcfile = (
     PL_extension("\$source_file", 2, pl_source_file2_va, PL_FA_VARARGS),
-    PL_extension("\$source_file_predicates", 2, pl_source_file_predicates2_va, PL_FA_VARARGS),
     PL_extension(
-        "\$time_source_file", 3, pl_time_source_file3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+        "\$source_file_predicates", 2, pl_source_file_predicates2_va, PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$time_source_file", 3, pl_time_source_file3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
     PL_extension("\$source_file_property", 3, pl_source_file_property3_va, PL_FA_VARARGS),
     PL_extension("\$set_source_file", 3, pl_set_source_file3_va, PL_FA_VARARGS),

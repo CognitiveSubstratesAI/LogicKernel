@@ -198,7 +198,9 @@ end
 # The clauses of a thread-local definition as the thread's LOCAL definition has them (upstream's local definition has P_THREAD_LOCAL cleared,
 # pl-proc.c:8102, so `hasClausesDefinition` walks its list): the first clause visible in the current generation. A thread-local
 # definition is always P_DYNAMIC, so the walk is upstream's `else` branch.
-function _hasLocalClausesDefinition(gd::PL_global_data{T}, def::Definition{T})::Union{Nothing, ClauseRef{T}} where {T}
+function _hasLocalClausesDefinition(
+    gd::PL_global_data{T}, def::Definition{T}
+)::Union{Nothing, ClauseRef{T}} where {T}
     generation = global_generation(gd)
     c = def.impl_clauses.first_clause
     while c !== nothing
@@ -1074,7 +1076,11 @@ function redefineProcedure(
     elseif (def.flags & P_MULTIFILE) == 0
         # def = getLocalProcDefinition(def): one thread, so the thread-local definition IS the local one (its own clause list), which
         # upstream's local definition holds WITHOUT P_THREAD_LOCAL (pl-proc.c:8102); hasClausesDefinition() answers nothing for the flag
-        first = (def.flags & P_THREAD_LOCAL) != 0 ? _hasLocalClausesDefinition(gd, def) : hasClausesDefinition(gd, def)
+        first = if (def.flags & P_THREAD_LOCAL) != 0
+            _hasLocalClausesDefinition(gd, def)
+        else
+            hasClausesDefinition(gd, def)
+        end
         first === nothing && return true            # (*) see above
 
         cl = first.clause::Clause{T}
@@ -1104,7 +1110,8 @@ function redefineProcedure(
             # upstream too: `def` is the local definition there, which has P_THREAD_LOCAL cleared (pl-proc.c:8102); measured on swipl
             # 10.1.19: the warning `Redefined static procedure`, then the permission_error below.
             (def.flags & P_THREAD_LOCAL) != 0 && return PL_error(
-                ld, ERR_PERMISSION_PROC, mk_sym(T, :modify), mk_sym(T, :thread_local_procedure), proc
+                ld, ERR_PERMISSION_PROC, mk_sym(T, :modify),
+                mk_sym(T, :thread_local_procedure), proc
             )
             throw(
                 NotPortedError{T}(
@@ -1296,7 +1303,8 @@ function pl_get_clause_attribute3_va(
     k = sym_key(a)
 
     if k == sym_key(mk_sym(T, :line_count))
-        clause.line_no != 0 && return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE
+        clause.line_no != 0 &&
+            return PL_unify_integer(ld, value, Int(clause.line_no)) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :file))
         sf = indexToSourceFile(gd, clause.source_no)
         sf !== nothing && return PL_unify_atom(ld, value, sf.name) ? FTRUE : FFALSE
@@ -1304,7 +1312,11 @@ function pl_get_clause_attribute3_va(
         sf = indexToSourceFile(gd, clause.owner_no)
         sf !== nothing && return PL_unify_atom(ld, value, sf.name) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :size))
-        return PL_unify_integer(ld, value, 8 * sizeofClause(length(clause.codes))) ? FTRUE : FFALSE
+        return if PL_unify_integer(ld, value, 8 * sizeofClause(length(clause.codes)))
+            FTRUE
+        else
+            FFALSE
+        end
     elseif k == sym_key(mk_sym(T, :fact))
         return PL_unify_bool(ld, value, (clause.flags & UNIT_CLAUSE) != 0) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :erased))
@@ -1315,7 +1327,11 @@ function pl_get_clause_attribute3_va(
             gd, ld, MODULE_user(gd), value, clause.predicate, 0, GP_QUALIFY | GP_NAMEARITY
         ) && return FTRUE
     elseif k == sym_key(mk_sym(T, :module))
-        return PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom) ? FTRUE : FFALSE
+        return if PL_unify_atom(ld, value, gd.modules[clause.predicate.module_].atom)
+            FTRUE
+        else
+            FFALSE
+        end
     end
     return FFALSE
 end
@@ -1327,12 +1343,16 @@ end
 # (upstream's `PL_error(NULL, ...)` reads `LD`); no `LOCKDEF`. Whether an ERASED clause still in the list refuses (as upstream's
 # `first_clause`) depends on `cleanDefinition!` having run, as upstream's depends on its clause GC.
 "Make `def` thread-local (`val`: static to local; refused if it has clauses) or static (always refused, `predicate is thread-local`) (pl-proc.c)."
-function setThreadLocalDefinition!(ld::PL_local_data{T}, def::Definition{T}, val::Bool)::Bool where {T}
-    if (val && (def.flags & P_THREAD_LOCAL) != 0) || (!val && (def.flags & P_THREAD_LOCAL) == 0)
+function setThreadLocalDefinition!(
+    ld::PL_local_data{T}, def::Definition{T}, val::Bool
+)::Bool where {T}
+    if (val && (def.flags & P_THREAD_LOCAL) != 0) ||
+        (!val && (def.flags & P_THREAD_LOCAL) == 0)
         return true
     end
     if val                                                  # static --> local
-        def.impl_clauses.first_clause !== nothing && return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")
+        def.impl_clauses.first_clause !== nothing &&
+            return PL_error(ld, ERR_MODIFY_STATIC_PROC, def, "")
         def.flags |= P_DYNAMIC | P_TRANSACT | P_VOLATILE | P_THREAD_LOCAL
         freeCodesDefinition!(def, true)                     # def->codes = SUPERVISOR(thread_local)
         return true
@@ -1343,7 +1363,9 @@ end
 # PORT: pl-proc.c setAttrDefinition
 # DIVERGES: `P_CLAUSABLE` and `P_DET` (their own setters) are refused; `ld` is an argument (the thread-local setter raises).
 "Set (or clear) attribute `attr` of `def` (pl-proc.c)."
-function setAttrDefinition(ld::PL_local_data{T}, def::Definition{T}, attr::UInt64, val::Bool)::Bool where {T}
+function setAttrDefinition(
+    ld::PL_local_data{T}, def::Definition{T}, attr::UInt64, val::Bool
+)::Bool where {T}
     attr == P_DYNAMIC && return setDynamicDefinition!(def, val)
     attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
     (attr == P_CLAUSABLE || attr == P_DET) && throw(
@@ -1632,7 +1654,8 @@ end
 # is returned, or `nothing` (a failure or an error raised in `ld`). The existence error's culprit is `descr` itself.
 "The procedure the `M:Name/Arity` (or head) in `descr` names, per `how` (`GP_FIND`/`GP_FINDHERE`, `GP_EXISTENCE_ERROR`), or `nothing` (pl-proc.c)."
 function get_procedure_namearity(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}, how::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T},
+    how::Int
 )::Union{Nothing, Procedure{T}} where {T}
     head = PL_new_term_ref(ld)
     ok, mi = PL_strip_module(gd, ld, descr, context.index, head)   # PL_strip_module(descr, m, head)
@@ -1640,8 +1663,11 @@ function get_procedure_namearity(
     name, arity = get_functor_procedure(ld, head)
     arity < 0 && return nothing
     m = gd.modules[mi]
-    p = (how & GP_HOW_MASK) == GP_FINDHERE ? isCurrentProcedure(sym_key(name), arity, m) :
+    p = if (how & GP_HOW_MASK) == GP_FINDHERE
+        isCurrentProcedure(sym_key(name), arity, m)
+    else
         visibleProcedure(gd, name, arity, m)
+    end
     if p === nothing && (how & GP_EXISTENCE_ERROR) != 0
         PL_error(ld, ERR_EXISTENCE, mk_sym(T, :procedure), descr)
     end
