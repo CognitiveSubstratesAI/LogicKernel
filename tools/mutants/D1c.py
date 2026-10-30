@@ -1,5 +1,5 @@
 # ORIGINAL: D1's mutant list — no swipl-devel counterpart.
-# tools/mutants/D1b.py — the mutation battery of D1 (R2: clause references as blobs, pl-dbref.c; assert/2, asserta/2, assertz/2 and
+# tools/mutants/D1c.py — the mutation battery of D1 (R2: clause references as blobs, pl-dbref.c; assert/2, asserta/2, assertz/2 and
 # the Ref of '$record_clause'/4 in pl-comp.c; erase/1's clause branch in pl-rec.c; D-0227 item 6, design evidence/r2/design/flags_rest.md
 # §4 D11), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). The format is tools/mutate_drive.py's: `id`,
 # `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. One mutant per decision of the step: the blob type
