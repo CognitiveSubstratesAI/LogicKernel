@@ -146,8 +146,8 @@ const _CASES = [
     # ---- '$get_clause_attribute'/3 (pl-proc.c:3910): the attributes of a clause reference. `file`, `owner` and `size` are asked as
     # shapes (the path is the temp file's; the size is the representation's: the white-box testset pins the kernel's formula)
     ("g01", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, line_count, R)"),
-    ("g02", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, file, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
-    ("g03", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, owner, F), ( atom(F), sub_atom(F, _, _, 0, 'p.pl') -> R = ok ; R = F )"),
+    ("g02", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, file, F), ( atom(F), atom_concat(_, 'p.pl', F) -> R = ok ; R = F )"),
+    ("g03", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, owner, F), ( atom(F), atom_concat(_, 'p.pl', F) -> R = ok ; R = F )"),
     ("g04", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, size, S), ( integer(S), S > 0 -> R = ok ; R = S )"),
     ("g05", "nth_clause(d1(_), 1, Ref), '\$get_clause_attribute'(Ref, fact, R)"),
     ("g06", "nth_clause(ru1(_), 1, Ref), '\$get_clause_attribute'(Ref, fact, R)"),
