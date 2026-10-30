@@ -479,8 +479,12 @@ esac
         # stdout and stderr are PIPES like CI's julia-runtest (audit D-0247), not files the child opens; a logger
         # writes them to the two log files, each stream apart
         @test occursin("stdout_pipe=yes\n", r.rec) && occursin("stderr_pipe=yes\n", r.rec)
-        @test occursin("pkgtest-way: PASS stub", read(joinpath(r.outd, "test_package.out"), String))
-        @test !occursin("pkgtest-way: PASS", read(joinpath(r.outd, "test_package.err"), String))
+        @test occursin(
+            "pkgtest-way: PASS stub", read(joinpath(r.outd, "test_package.out"), String)
+        )
+        @test !occursin(
+            "pkgtest-way: PASS", read(joinpath(r.outd, "test_package.err"), String)
+        )
         @test occursin("--startup-file=no", r.rec) &&
             occursin("tools/pkgtest_way.jl", r.rec)
         @test occursin("test/test_package.jl", r.rec)
@@ -613,10 +617,10 @@ echo "pkgtest-way: PASS stub"
         )
         chmod(stub, 0o755)
         function wayenv(
-                mode;
-                mb="1", lock=joinpath(dir, "lock"), times=joinpath(dir, "times"),
-                extra=Pair{String, String}[]
-            )
+            mode;
+            mb="1", lock=joinpath(dir, "lock"), times=joinpath(dir, "times"),
+            extra=Pair{String, String}[]
+        )
             return Pair{String, String}[
                 "LOGICKERNEL_PKGTEST_WAY_JULIA" => stub,
                 "LOGICKERNEL_PKGTEST_WAY_OUT" => outd,
@@ -778,14 +782,17 @@ echo "pkgtest-way: PASS stub"
                 tf = tempname()
                 write(tf, "")
                 inert_env(slice_, budget) = Pair{String, String}[
-                    "LOGICKERNEL_WARM_SEND_PROBE" => "1", "LOGICKERNEL_FILE_TIMES" => tf,
+                    "LOGICKERNEL_WARM_SEND_PROBE" => "1",
+                    "LOGICKERNEL_FILE_TIMES" => tf,
                     "LOGICKERNEL_INERT_FILES" => "test/test_package.jl",
-                    "LOGICKERNEL_SHARED_BUDGET" => budget, "LOGICKERNEL_SLICE" => slice_,
+                    "LOGICKERNEL_SHARED_BUDGET" => budget,
+                    "LOGICKERNEL_SLICE" => slice_,
                     wayenv("where")...
                 ]
                 step(env) = _gs_run_merged(
                     addenv(
-                        `bash $(joinpath(_GS_ROOT, "tools", "warm.sh")) inert-check`, env...
+                        `bash $(joinpath(_GS_ROOT, "tools", "warm.sh")) inert-check`,
+                        env...
                     )
                 )
                 r = step(inert_env(slice, "1"))
