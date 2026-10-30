@@ -72,7 +72,9 @@ MUTANTS = [
     # ── the explicit override and the start from the last cache ──
     dict(id="PD15 the NO_STALE override is ignored", file=L, targets=T,
          old='''    get(ENV, "LOGICKERNEL_PKGTEST_WAY_NO_STALE", "") == "1" && return :normal''',
-         new='''    false && return :normal'''),
+         # bounded: the first process ignores the override, the child it spawns (override set, _PD15 already set) honours it
+         # (a plain `false && ...` makes the child refuse and re-spawn forever: it shut a CI runner down)
+         new='''    get(ENV, "LOGICKERNEL_PKGTEST_WAY_NO_STALE", "") == "1" && (ENV["_PD15"] = get(ENV, "_PD15", "") * "x"; length(ENV["_PD15"]) > 1) && return :normal'''),
     dict(id="PD16 the override is on for any value", file=L, targets=T,
          old='''    get(ENV, "LOGICKERNEL_PKGTEST_WAY_NO_STALE", "") == "1" && return :normal''',
          new='''    haskey(ENV, "LOGICKERNEL_PKGTEST_WAY_NO_STALE") && return :normal'''),
