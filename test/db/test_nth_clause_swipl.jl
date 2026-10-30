@@ -740,5 +740,6 @@ end
     errs = [enc(m) for (sev, m) in msgs if sev === :error]
     @test length(errs) == 1
     @test occursin(_codes("permission_error"), errs[1]) &&
-        occursin(_codes("thread_local_procedure"), errs[1]) && occursin(_codes("tlw"), errs[1])
+        occursin(_codes("thread_local_procedure"), errs[1]) &&
+        occursin(_codes("tlw"), errs[1])
 end

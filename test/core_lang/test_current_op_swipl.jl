@@ -479,8 +479,13 @@ end
         rc = LK.PL_next_solution(gd, ld, qid)
         LK.PL_close_query(ld, qid)
         LK.PL_close_foreign_frame(ld, fid)
-        return rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST ? :true :
-            rc == LK.PL_S_EXCEPTION ? :exception : :false
+        return if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+            :true
+        elseif rc == LK.PL_S_EXCEPTION
+            :exception
+        else
+            :false
+        end
     end
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)

@@ -545,7 +545,8 @@ end
     @test (pu.definition.flags & LK.P_LOCKED) == 0
     _load_more!(gd, ld, ":- dynamic lb2_e/1.\n")             # a predicate defined by a declaration alone (setAttrProcedureSource -> associateSource)
     pe = LK.isCurrentProcedure(sym_key(_tls("lb2_e")), 1, LK.MODULE_user(gd))
-    @test (pe.definition.flags & LK.P_DYNAMIC) != 0 && (pe.definition.flags & LK.P_LOCKED) == 0
+    @test (pe.definition.flags & LK.P_DYNAMIC) != 0 &&
+        (pe.definition.flags & LK.P_LOCKED) == 0
     LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_SYSTEM)
     @test LK.SYSTEM_MODE(ld)
     st, ans = kcall(gd, ld, "current_prolog_flag", _TL[_tls("access_level"), _v()])
@@ -557,7 +558,8 @@ end
         (ps.definition.flags & LK.HIDE_CHILDS) != 0
     _load_more!(gd, ld, ":- dynamic lb2_d/1.\n")             # swipl 10.1.19: '\$get_predicate_attribute'(lb2_d(_), locked, 1) and hide_childs 1 (measured)
     pd = LK.isCurrentProcedure(sym_key(_tls("lb2_d")), 1, LK.MODULE_user(gd))
-    @test (pd.definition.flags & LK.P_DYNAMIC) != 0 && (pd.definition.flags & LK.P_LOCKED) != 0 &&
+    @test (pd.definition.flags & LK.P_DYNAMIC) != 0 &&
+        (pd.definition.flags & LK.P_LOCKED) != 0 &&
         (pd.definition.flags & LK.HIDE_CHILDS) != 0
     LK.setAccessLevel!(ld, LK.ACCESS_LEVEL_USER)
     @test !LK.SYSTEM_MODE(ld)
