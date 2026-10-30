@@ -3017,8 +3017,9 @@ end
 
 @testset "what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
+    # since MOD3a `m:g` compiles (I_CALLM/I_DEPARTM): its code is pinned in the "M:Goal in a body" testset
     for body in (
-        _bf(":", _bs("m"), _bs("g")), _bf("@", _bs("g"), _bs("m")),
+        _bf("@", _bs("g"), _bs("m")),
         _bconj(_bs("q"), _bs("\$reset"))                       # a reserved goal atom (V9)
     )
         @test_throws LK.NotPortedError _bclause(p, body)

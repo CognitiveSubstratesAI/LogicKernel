@@ -191,8 +191,9 @@ const _CB_CASES = [
     # (body module user, `I_CONTEXT user`); with no choice point above the frame it departs (LCO): lTop at depth
     # 1000 and at depth 2000 is the SAME (b45). `qm:lcp/2`'s last goal is I_DEPARTM too, but between/3 leaves a choice point above the
     # frame, so I_DEPARTM takes I_CALLM's path (pl-vmi.c:2126-2137): a new frame per level, lTop GROWS with the depth (b46).
-    ("b45", raw"once(qm:lco(1000, U1)), once(qm:lco(2000, U2)), ( U1 == U2 -> R = same ; R = differ(U1, U2) )"),
-    ("b46", raw"once(qm:lcp(1000, U1)), once(qm:lcp(2000, U2)), ( U2 > U1 -> R = grows ; R = flat(U1, U2) )")
+    # Each call is `( G -> true )`, not once/1: the kernel has no once/1 (swipl's is boot/init.pl's); same answers in swipl.
+    ("b45", raw"( qm:lco(1000, U1) -> true ), ( qm:lco(2000, U2) -> true ), ( U1 == U2 -> R = same ; R = differ(U1, U2) )"),
+    ("b46", raw"( qm:lcp(1000, U1) -> true ), ( qm:lcp(2000, U2) -> true ), ( U2 > U1 -> R = grows ; R = flat(U1, U2) )")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/MOD3a/mod3a_rows.out;
