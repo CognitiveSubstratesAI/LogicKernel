@@ -4310,7 +4310,8 @@ const PL_predicates_from_comp = (
     ),
     PL_extension(                                   # PRED_SHARE("$rule", 3, rule, META|NDET|PL_FA_CREF) (D1)
         "\$rule", 3, pl_ruleva_va,
-        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS,
+        PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_CREF | PL_FA_VARARGS
+    ),
     PL_extension(                                   # PRED_DEF("nth_clause", 3, nth_clause, META|NDET)
         "nth_clause", 3, pl_nth_clause3_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
