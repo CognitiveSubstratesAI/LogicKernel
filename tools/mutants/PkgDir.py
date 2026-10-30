@@ -37,8 +37,10 @@ MUTANTS = [
          old='''    r = realpath(root)''',
          new='''    r = realpath(pwd())'''),
     dict(id="PD6 the methods' files are not judged", file=L, targets=T,
-         old='''        startswith(f, src) || return''',
-         new='''        true || return'''),
+         old='''        startswith(f, src) ||
+            return''',
+         new='''        true ||
+            return'''),
     dict(id="PD7 the methods' files are compared with another directory", file=L, targets=T,
          old='''    src = joinpath(r, "src") * "/"''',
          new='''    src = joinpath(r, "test") * "/"'''),

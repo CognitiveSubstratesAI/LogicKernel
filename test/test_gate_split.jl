@@ -2440,11 +2440,25 @@ mode == "guardedfail" && exit(3)
     sep = Sys.iswindows() ? ";" : ":"
     # the private first depot hides the default environment (@v#.#) where Revise is installed: name it on the load path
     defenv = dirname(Base.load_path_expand("@v#.#"))
+    depots = join([depot; Base.DEPOT_PATH], sep)               # the caller's depots stay behind it (Revise)
+    defproj = joinpath(defenv, "Project.toml")
+    if !(isfile(defproj) && occursin(r"(?m)^Revise\s*=", read(defproj, String)))
+        # CI jobs that run the whole suite (Pkg.test, the mutation battery) have no Revise in the default environment: this
+        # test provides its own, in the scratch directory (the private depot takes the download and the cache)
+        defenv = joinpath(work, "reviseenv")
+        mkpath(defenv)
+        pk = addenv(
+            `$(Base.julia_cmd()) --project=$defenv --startup-file=no -e "using Pkg; Pkg.add(\"Revise\")"`,
+            "JULIA_DEPOT_PATH" => depots, "JULIA_LOAD_PATH" => "@" * sep * "@stdlib"
+        )
+        r = _gs_run_merged(pk)
+        @test r.code == 0 || (println(r.out); false)
+    end
     loadpath = "@" * sep * defenv * sep * "@stdlib"
     function pd(checkout, mode; nostale="", root=checkout)
         cmd = addenv(
             `$(Base.julia_cmd()) --project=$checkout --startup-file=no $driver $root $mode`,
-            "JULIA_DEPOT_PATH" => join([depot; Base.DEPOT_PATH], sep),   # the caller's depots stay behind it (Revise)
+            "JULIA_DEPOT_PATH" => depots,
             "JULIA_LOAD_PATH" => loadpath,
             "LOGICKERNEL_PKGTEST_WAY_NO_STALE" => nostale,
             "PKGDIR_TOOLS" => joinpath(_GS_ROOT, "tools")
