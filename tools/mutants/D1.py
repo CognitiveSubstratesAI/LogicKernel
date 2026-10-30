@@ -218,11 +218,11 @@ MUTANTS = [
          old='''    if (def.flags & P_DYNAMIC) == 0''',
          new='''    if false'''),
     dict(id="D1-52 the permission error has its arguments swapped", file=R, targets=T,
-         old='''ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref)''',
-         new='''ERR_PERMISSION, mk_sym(T, :erase), mk_sym(T, :clause), ref)'''),
+         old='''ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref''',
+         new='''ERR_PERMISSION, mk_sym(T, :erase), mk_sym(T, :clause), ref'''),
     dict(id="D1-53 the permission error has the caller as context", file=R, targets=T,
-         old='''PL_error(ld, "erase", 1, "", ERR_PERMISSION,''',
-         new='''PL_error(ld, "", 0, "", ERR_PERMISSION,'''),
+         old='''ld, "erase", 1, "", ERR_PERMISSION,''',
+         new='''ld, "", 0, "", ERR_PERMISSION,'''),
     dict(id="D1-54 erase/1 ignores the result of the retract", file=R, targets=T,
          old='''    return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE''',
          new='''    retractClauseDefinition!(gd, def, clause, true)
@@ -290,8 +290,10 @@ end
          old='''    for n in 0:(Int(clause.prolog_vars) - 1)''',
          new='''    for n in 0:(Int(clause.prolog_vars) - 2)'''),
     dict(id="D1-79 decompile! never builds the bindings", file=K, targets=T8,
-         old='''        bindings != 0 && (decompile_bindings!''',
-         new='''        false && (decompile_bindings!'''),
+         old='''        bindings != 0 &&
+            (decompile_bindings!''',
+         new='''        false &&
+            (decompile_bindings!'''),
     dict(id="D1-80 an erased clause is answered by clause/3", file=K, targets=T8,
          old='''                rc1 < 0 && PL__ac < 4 && return FFALSE      # erased clause
 ''',
@@ -311,7 +313,8 @@ end
          new='''                if true
                     tmp = head'''),
     dict(id="D1-85 the by-reference unify of the definition is unchecked", file=K, targets=T8,
-         old='''                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) || return FFALSE''',
+         old='''                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) ||
+                        return FFALSE''',
          new='''                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0)'''),
     dict(id="D1-86 the by-reference head unify is unchecked", file=K, targets=T8,
          old='''                unify_head(gd, ld, tmp, h2) || return FFALSE
