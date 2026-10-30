@@ -3917,7 +3917,7 @@ function assert_term!(
 
         cref = assertProcedureSource(gd, ld, of, proc, clause)
         cref === nothing && return nothing                      # else clause = NULL (SSU1)
-        clause = cref.clause
+        clause = cref.clause::Clause{T}
 
         if warnings != 0 && !PL_get_nil(ld, warnings)
             fid = PL_open_foreign_frame(ld)
