@@ -528,7 +528,14 @@ end
     @test notported(":- call(atom, a).\n")
     @test notported("term_expansion(a, b).\nx.\n")              # expand_term (R2)
     @test notported(":- dynamic(p/1 as incremental).\n")
-    @test notported(":- thread_local p/1.\n")
+    @test !notported(":- thread_local p/1.\n")                # ported in LB2: init.pl's $set_pattr reaches $set_predicate_attribute(thread_local)
+    mktempdir() do d
+        path = joinpath(d, "tl.pl")
+        write(path, ":- thread_local p/1.\n")
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
+        @test LK.load_file!(gd, ld, path)[1] === :ok
+    end
     @test notported(":- encoding(utf8).\n")
     # a reconsult: the same file twice
     mktempdir() do d
