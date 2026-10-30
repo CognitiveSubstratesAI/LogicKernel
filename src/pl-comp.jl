@@ -3565,7 +3565,8 @@ function clause_ndet(
                     tmp = head
                 else
                     tmp = PL_new_term_ref(ld)
-                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) || return FFALSE
+                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) ||
+                        return FFALSE
                 end
                 h2 = PL_new_term_ref(ld)
                 b2 = PL_new_term_ref(ld)
@@ -4916,7 +4917,8 @@ function decompile!(
     try
         nv = Int(clause.prolog_vars)
         variables = nv == 0 ? 0 : PL_new_term_refs(ld, nv)
-        bindings != 0 && (decompile_bindings!(ld, clause, bindings, variables) || return false)
+        bindings != 0 &&
+            (decompile_bindings!(ld, clause, bindings, variables) || return false)
         bvar_access =
             (clause.flags & CL_HEAD_TERMS) != 0 ? mark_bvar_access(clause) : nothing
         if bvar_access !== nothing                              # (a rule: a fact moves nothing)

@@ -1837,7 +1837,11 @@ function _manifest_index(T)
             false
         ),
         (LK.pl_clauseva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.clause_ndet, Tuple{LD, Int, Int, Int, Int, Int, LK.foreign_context{T}, Int}, false),   # D1: ref, bindings
+        (
+            LK.clause_ndet,
+            Tuple{LD, Int, Int, Int, Int, Int, LK.foreign_context{T}, Int},
+            false
+        ),   # D1: ref, bindings
         (LK.decompile_bindings!, Tuple{LD, C, Int, Int}, false),
         (LK.pl_ruleva_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.clause_functor, Tuple{LD, UInt32}, false),

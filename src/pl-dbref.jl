@@ -32,7 +32,7 @@
 # nothing reads) and the type's hooks as slots (`PL_blob_t` has none: `acquire_clause_blob` is called by
 # `lookup_clref` for a new atom, `release_clause_blob` has no caller without atom GC).
 
-# PORT: pl-dbref.h db_ref_type
+# PORT: pl-dbref.h db_ref_type as DB_REF_CLAUSE
 # DIVERGES: Int constants (the repo's precedent, `when_status`: an `@enum` would need a `_enum_hash`
 # entry in the static-analysis manifest for two values).
 "`PL_get_dbref`'s answer: the reference names a clause (pl-dbref.h `DB_REF_CLAUSE`)."

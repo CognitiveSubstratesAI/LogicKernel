@@ -490,7 +490,9 @@ function pl_erase1_va(
     @assert type == DB_REF_CLAUSE                               # else: the record branch (D2)
     def = clause.predicate
     if (def.flags & P_DYNAMIC) == 0
-        PL_error(ld, "erase", 1, "", ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref)
+        PL_error(
+            ld, "erase", 1, "", ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref
+        )
         return FFALSE
     end
     return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE
@@ -531,7 +533,8 @@ function fixup_ssu(ld::PL_local_data{T}, in::term_t, out::term_t)::Bool where {T
             end
 
             res = PL_new_term_ref(ld)
-            PL_cons_functor(ld, res, clause_functor(ld, SSU_COMMIT_CLAUSE), head, body) || return false
+            PL_cons_functor(ld, res, clause_functor(ld, SSU_COMMIT_CLAUSE), head, body) ||
+                return false
             return PL_unify(ld, out, res)
         end
     end
@@ -557,7 +560,11 @@ function pl_instance2_va(
     r === nothing && return FFALSE                              # if ( !(ptr=PL_get_dbref(ref, &type)) )
     type, clause = r
     if type != DB_REF_CLAUSE                                    # else: the record branch (D2)
-        throw(NotPortedError{T}(mk_sym(T, :instance), "instance/2 of a record reference", "D2"))
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :instance), "instance/2 of a record reference", "D2"
+            )
+        )
     end
     generation = generationFrame(ld.frames[ld.environment_frame])
 

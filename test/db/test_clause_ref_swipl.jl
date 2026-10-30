@@ -106,7 +106,10 @@ const _CASES = [
     ("a14", "ex(asserta((foo :- 1), _), R)"),
     ("a15", "ex(assertz(st(2), _), R)"),
     ("a16", "ex(assert(st(2), _), R)"),
-    ("a17", "asserta(e(1), _), asserta(e(2), _), assertz(e(3), _), findall(X, e(X), L), R = L"),
+    (
+        "a17",
+        "asserta(e(1), _), asserta(e(2), _), assertz(e(3), _), findall(X, e(X), L), R = L"
+    ),
     (
         "a18",
         "assertz((e(X) :- X > 1), _), ( e(2) -> R0 = yes ; R0 = no ), ( e(1) -> R1 = yes ; R1 = no ), R = R0-R1"
@@ -192,8 +195,14 @@ const _CASES = [
         "open('/dev/null', read, S), asserta(e(S), Ref), e(X), ( X == S -> R0 = same ; R0 = diff ), erase(Ref), ( e(_) -> R1 = left ; R1 = gone ), close(S), R = R0-R1"
     ),
     # ---- clause/3 and '$clause'/4 (D1, D-0230 item 1): the enumeration, the by-reference search, the bindings list
-    ("c01", "assertz(d(1), R0), clause(d(X), B, Ref), ( Ref == R0 -> S = same ; S = diff ), R = X-B-S"),
-    ("c02", "assertz(d(1), _), assertz(d(2), _), findall(X-B, clause(d(X), B, _), L), R = L"),
+    (
+        "c01",
+        "assertz(d(1), R0), clause(d(X), B, Ref), ( Ref == R0 -> S = same ; S = diff ), R = X-B-S"
+    ),
+    (
+        "c02",
+        "assertz(d(1), _), assertz(d(2), _), findall(X-B, clause(d(X), B, _), L), R = L"
+    ),
     ("c03", "assertz(d(1), Ref), clause(H, B, Ref), R = H-B"),
     ("c04", "assertz((e(X) :- X > 1, d(X)), Ref), clause(H, B, Ref), R = H-B"),
     ("c05", "assertz(d(1), Ref), clause(d(1), B, Ref), R = B"),
@@ -201,7 +210,10 @@ const _CASES = [
     ("c07", "assertz(m1:q(1), Ref), clause(H, B, Ref), R = H-B"),
     ("c08", "assertz(d(1), Ref), erase(Ref), ( clause(_, _, Ref) -> R = yes ; R = no )"),
     ("c09", "assertz(d(1), Ref), erase(Ref), '\$clause'(H, B, Ref, Bnd), R = H-B-Bnd"),
-    ("c10", "assertz((e(X) :- d(X), d(Y), d(Y)), Ref), '\$clause'(H, B, Ref, Bnd), R = H-B-Bnd"),
+    (
+        "c10",
+        "assertz((e(X) :- d(X), d(Y), d(Y)), Ref), '\$clause'(H, B, Ref, Bnd), R = H-B-Bnd"
+    ),
     (
         "c11",
         "assertz(d(f(A, B, A)), _), assertz(d(2), _), findall(X-Bnd, '\$clause'(d(X), _, _, Bnd), L), R = L"
@@ -210,20 +222,29 @@ const _CASES = [
     ("c13", "ex(clause(_, _, 1), R)"),
     ("c14", "ex(clause(_, _, \"s\"), R)"),
     ("c15", "ex(clause(_, _, _), R)"),
-    ("c16", "assertz(d(1), R1), clause(d(1), true, R2), ( R1 == R2 -> R = same ; R = diff )"),
+    (
+        "c16",
+        "assertz(d(1), R1), clause(d(1), true, R2), ( R1 == R2 -> R = same ; R = diff )"
+    ),
     ("c17", "clause(st(X), B, Ref), blob(Ref, T), R = X-B-T"),
     ("c18", "ex(clause(atom_length(_, _), _, _), R)"),
     ("c19", "open('/dev/null', read, S), ex(clause(_, _, S), R), close(S)"),
     ("c20", "assertz((e(X) => X > 1), Ref), clause(H, B, Ref), R = H-B"),
     ("c21", "assertz((e(X) => X > 1), Ref), '\$rule'(H, Rule, Ref), R = H-Rule"),
-    ("c22", "assertz(d(1), _), assertz(d(2), _), findall(X-Rule, '\$rule'(d(X), Rule, _), L), R = L"),
+    (
+        "c22",
+        "assertz(d(1), _), assertz(d(2), _), findall(X-Rule, '\$rule'(d(X), Rule, _), L), R = L"
+    ),
     ("c23", "assertz(e(1), Ref), ( clause(d(_), _, Ref) -> R = yes ; R = no )"),
     (
         "c24",
         "assertz(d(1), _), assertz(d(2), R2), findall(X, ( clause(d(X), true, _), erase(R2) ), L), R = L"
     ),
     ("c25", "assertz(m1:q(1), Ref), ( clause(user:q(1), _, Ref) -> R = yes ; R = no )"),
-    ("c26", "assertz(d(1), Ref), assertz(m1:q(1), _), ( clause(m1:d(1), B, Ref) -> R = yes-B ; R = no )"),
+    (
+        "c26",
+        "assertz(d(1), Ref), assertz(m1:q(1), _), ( clause(m1:d(1), B, Ref) -> R = yes-B ; R = no )"
+    ),
     ("c27", "assertz(m1:q(1), Ref), clause(m1:q(X), B, Ref), R = X-B"),
     ("c28", "assertz((e(X) => d(X)), Ref), '\$rule'(e(Y), Rule, Ref), R = Y-Rule"),
     ("c29", "assertz((e(X) :- d(X)), Ref), '\$rule'(e(Y), Rule, Ref), R = Y-Rule"),
@@ -247,7 +268,10 @@ const _CASES = [
     ("n03", "assertz((e(X) => d(X)), Ref), instance(Ref, T), R = T"),
     ("n04", "assertz('?=>'(e(X), (X>0, !, true)), Ref), instance(Ref, T), R = T"),
     ("n05", "assertz('?=>'(e(X), (X>0, X<5, !, true)), Ref), instance(Ref, T), R = T"),
-    ("n06", "assertz('?=>'(e(X), (X>0, X<5, X\\==3, !, true)), Ref), instance(Ref, T), R = T"),
+    (
+        "n06",
+        "assertz('?=>'(e(X), (X>0, X<5, X\\==3, !, true)), Ref), instance(Ref, T), R = T"
+    ),
     ("n07", "assertz('?=>'(e(X), true), Ref), instance(Ref, T), R = T"),
     ("n08", "assertz('?=>'(e(X), (X>0, true)), Ref), instance(Ref, T), R = T"),
     ("n09", "assertz('?=>'(e(X), (!, true)), Ref), instance(Ref, T), R = T"),
@@ -261,7 +285,10 @@ const _CASES = [
     ("n17", "assertz(d(1), Ref), ( instance(Ref, d(1)) -> R = yes ; R = no )"),
     ("n18", "clause(st(X), B, Ref), instance(Ref, T), R = X-B-T"),
     ("n19", "assertz(d(f(A, B, A)), Ref), instance(Ref, T), R = T"),
-    ("n20", "assertz((e(X) => d(X)), Ref), '\$rule'(H, Rule, Ref), instance(Ref, T), R = H-Rule-T"),
+    (
+        "n20",
+        "assertz((e(X) => d(X)), Ref), '\$rule'(H, Rule, Ref), instance(Ref, T), R = H-Rule-T"
+    ),
     # LAST: nothing follows (the program's last row)
     ("z01", "assertz(d(1), Ref), blob(Ref, T), R = T")
 ]
@@ -420,17 +447,38 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test any(l -> startswith(l, "t_b03 ") && occursin(_codes("no"), l), sw)
         @test count(l -> occursin(_codes("clause"), l), sw) >= 6                 # blob/2 answers: a02, a03, a25, e07, r01, z01
         @test count(l -> occursin("c[61]/2(i0,", l), sw) >= 3                     # the bindings list of '$clause'/4 (c09-c11)
-        @test any(l -> startswith(l, "t_c02 ") && occursin("i1", l) && occursin("i2", l), sw)   # clause/3's enumeration
+        @test any(
+            l -> startswith(l, "t_c02 ") && occursin("i1", l) && occursin("i2", l), sw
+        )   # clause/3's enumeration
         @test any(l -> startswith(l, "t_c07 ") && occursin(_codes("m1"), l), sw)   # a qualified head back from a reference
         @test any(l -> startswith(l, "t_c21 ") && occursin(_codes("=>"), l), sw)   # '$rule'/3 by reference: the neck
         @test any(l -> l == "t_c32", sw)                                         # a row that FAILS has a line with no answer
-        @test count(l -> any(startswith(l, "t_c$n ") && occursin(_codes("no"), l) for n in (33, 35, 36)), sw) == 3   # a head that does not name the clause
+        @test count(
+            l -> any(
+                startswith(l, "t_c$n ") && occursin(_codes("no"), l) for n in (33, 35, 36)
+            ),
+            sw
+        ) == 3   # a head that does not name the clause
         @test any(l -> startswith(l, "t_c34 ") && occursin(_codes("user"), l), sw)     # Q:d(1) unbound: the definition's module
-        @test any(l -> startswith(l, "t_c37 ") && occursin("i1", l) && occursin(_codes("true"), l), sw)   # an SSU clause with body true
+        @test any(
+            l ->
+                startswith(l, "t_c37 ") && occursin("i1", l) && occursin(_codes("true"), l),
+            sw
+        )   # an SSU clause with body true
         @test any(l -> startswith(l, "t_c38 ") && occursin(_codes("=>"), l), sw)   # '$rule'/3 of it: the neck
         # instance/2 (rows n01-n20): the clause term, fixup_ssu's answers AS IS (upstream drops a lone guard goal, repeats the goals of three)
-        @test any(l -> startswith(l, "t_n01 ") && occursin(_codes(":-"), l) && occursin(_codes("true"), l), sw)
-        @test any(l -> startswith(l, "t_n04 ") && occursin(_codes("=>"), l) && !occursin(_codes(">"), l), sw)   # `X>0` is gone
+        @test any(
+            l ->
+                startswith(l, "t_n01 ") && occursin(_codes(":-"), l) &&
+                occursin(_codes("true"), l),
+            sw
+        )
+        @test any(
+            l ->
+                startswith(l, "t_n04 ") && occursin(_codes("=>"), l) &&
+                !occursin(_codes(">"), l),
+            sw
+        )   # `X>0` is gone
         @test count(l -> startswith(l, "t_n06 ") && count("c[92,61,61]/2", l) == 2, sw) == 1                   # `X\\==3` twice
         @test any(l -> startswith(l, "t_n12 ") && occursin(_codes("no"), l), sw)                              # an erased clause
         @test startswith(last(sw), "t_z01 ")
@@ -444,7 +492,9 @@ end
     @test reg !== nothing && reg.rank < 0 && reg.padding == 0
     @test reg.atom_name == LK.builtin_atom("clause")                  # ATOM_clause: no new atom
     # a stream blob type is registered at the first stream (S1), after the database: lower rank, sorts first
-    LK.lookupBlob(gd.atoms, UInt8[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 16, LK.stream_blob)
+    LK.lookupBlob(
+        gd.atoms, UInt8[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 16, LK.stream_blob
+    )
     sreg = LK._blob_registration(gd.atoms, LK.stream_blob)
     @test sreg.rank < reg.rank
     # the type is the one the registration table holds once (a second registration is a no-op)
@@ -463,7 +513,8 @@ end
     st2, a2 = kcall(gd, ld, "asserta", _TL[d(2), v()])
     @test st === :true && st2 === :true
     r1, r2 = a1[2], a2[2]
-    @test is_blob(r1) && is_blob(r2) && blob_type(r1) === :clause && blob_type(r2) === :clause
+    @test is_blob(r1) && is_blob(r2) && blob_type(r1) === :clause &&
+        blob_type(r2) === :clause
     @test blob_handle(r1) != blob_handle(r2) && blob_rank(r1) == blob_rank(r2) < 0
     # the table: two clauses, numbered in the order of their first reference; the payload is the number
     @test length(gd.clause_refs) == 2 && length(gd.clause_serials) == 2
@@ -472,7 +523,8 @@ end
     @test gd.clause_refs[1] === c1 && gd.clause_refs[2] === c2
     @test gd.clause_serials[c1] == 1 && gd.clause_serials[c2] == 2
     at1 = LK.atomValue(gd.atoms, blob_handle(r1))
-    @test at1.type === LK.clause_blob && at1.name == LK._clref_bytes(1) && length(at1.name) == 8
+    @test at1.type === LK.clause_blob && at1.name == LK._clref_bytes(1) &&
+        length(at1.name) == 8
     # one atom per clause: looking it up again gives the same blob, no new table entry
     @test blob_handle(LK.lookup_clref(gd, c1)) == blob_handle(r1)
     @test sym_key(LK.lookup_clref(gd, c2)) == sym_key(r2)
@@ -495,10 +547,12 @@ end
     @test LK.clause_clref(gd, lk_gnd(_TL, 1)) === nothing
     otype = LK.PL_blob_t(LK.PL_BLOB_UNIQUE, "d1_other")
     ow, _ = LK.lookupBlob(gd.atoms, UInt8[1, 0, 0, 0, 0, 0, 0, 0], 8, otype)
-    @test LK.clause_clref(gd, LK._blob_term!(gd.atoms, gd.atom_symbols, _TL, ow)) === nothing
+    @test LK.clause_clref(gd, LK._blob_term!(gd.atoms, gd.atom_symbols, _TL, ow)) ===
+        nothing
     # the stream blob type is another type with the same payload shape: not a clause
     sw, _ = LK.lookupBlob(gd.atoms, UInt8[1, 0, 0, 0, 0, 0, 0, 0], 8, LK.stream_blob)
-    @test LK.clause_clref(gd, LK._blob_term!(gd.atoms, gd.atom_symbols, _TL, sw)) === nothing
+    @test LK.clause_clref(gd, LK._blob_term!(gd.atoms, gd.atom_symbols, _TL, sw)) ===
+        nothing
 end
 
 @testset "PL_get_dbref, PL_get_clref and PL_is_dbref: a live clause, an erased one, and what is no reference" begin
@@ -510,7 +564,8 @@ end
     @test st === :true
     r1 = a1[2]
     c1 = LK.clause_clref(gd, r1)
-    ref(x) = (t = LK.PL_new_term_refs(ld, 1); LK.putSlotValue!(ld, t + 1, x, LK.PutVarMap()); t)
+    ref(x) =
+        (t=LK.PL_new_term_refs(ld, 1); LK.putSlotValue!(ld, t + 1, x, LK.PutVarMap()); t)
     t = ref(r1)
     @test LK.PL_is_dbref(gd, ld, t)
     got = LK.PL_get_dbref(gd, ld, t)
@@ -522,16 +577,22 @@ end
         tb = ref(bad)
         @test LK.PL_get_dbref(gd, ld, tb) === nothing
         ball = lk_answer(ld, LK.PL_exception(ld, 0))
-        @test occursin("c" * _codes("type_error") * "/2(a" * _codes("db_reference") * ",", enc(ball))
+        @test occursin(
+            "c" * _codes("type_error") * "/2(a" * _codes("db_reference") * ",", enc(ball)
+        )
         LK.PL_clear_exception(ld)
         @test LK.PL_get_clref(gd, ld, tb) == (0, nothing)
         ball = lk_answer(ld, LK.PL_exception(ld, 0))
-        @test occursin("c" * _codes("type_error") * "/2(a" * _codes("db_reference") * ",", enc(ball))
+        @test occursin(
+            "c" * _codes("type_error") * "/2(a" * _codes("db_reference") * ",", enc(ball)
+        )
         LK.PL_clear_exception(ld)
     end
     tv = ref(v())                                             # an unbound variable: instantiation_error
     @test LK.PL_get_dbref(gd, ld, tv) === nothing
-    @test occursin(_codes("instantiation_error"), enc(lk_answer(ld, LK.PL_exception(ld, 0))))
+    @test occursin(
+        _codes("instantiation_error"), enc(lk_answer(ld, LK.PL_exception(ld, 0)))
+    )
     LK.PL_clear_exception(ld)
     # …and PL_is_dbref is false, quietly
     @test !LK.PL_is_dbref(gd, ld, ref(_tls(:clause)))
@@ -569,13 +630,19 @@ end
     st, ball = kcall(gd, ld, "erase", _TL[a[4]])
     @test st === :exception
     e = enc(ball[1])
-    @test occursin("c" * _codes("permission_error") * "/3(a" * _codes("clause") * ",a" * _codes("erase") * ",clref)", e)
+    @test occursin(
+        "c" * _codes("permission_error") * "/3(a" * _codes("clause") * ",a" *
+        _codes("erase") * ",clref)",
+        e
+    )
     @test occursin("c" * _codes("/") * "/2(a" * _codes("erase") * ",i1)", e)       # context(erase/1, _): not system:erase/1
     @test (cl.flags & LK.CL_ERASED) == 0                                          # nothing was erased
     # the Ref is not unified when it is bound to something else: the clause is added, the call fails (pl-comp.c record_clause)
     st, _ = kcall(
         gd, ld, "\$record_clause",
-        _TL[mk_expr(_TL, _TL[_tls("rs"), lk_gnd(_TL, 2)]), _tls(:o), src("f", 3), _tls(:foo)]
+        _TL[
+            mk_expr(_TL, _TL[_tls("rs"), lk_gnd(_TL, 2)]), _tls(:o), src("f", 3), _tls(:foo)
+        ]
     )
     @test st === :false
     nclauses = length(gd.clause_refs)
@@ -593,7 +660,9 @@ end
     gd = LK.PL_global_data{T0}()
     ld = LK.PL_local_data{T0}(gd)
     v() = mk_var(T0, LK.fresh_var_keys!(1))
-    st, a = kcall(gd, ld, "assertz", T0[mk_expr(T0, T0[lk_sym(T0, :d), lk_gnd(T0, 1)]), v()])
+    st, a = kcall(
+        gd, ld, "assertz", T0[mk_expr(T0, T0[lk_sym(T0, :d), lk_gnd(T0, 1)]), v()]
+    )
     @test st === :true && is_blob(a[2]) && blob_type(a[2]) === :clause
     st, _ = kcall(gd, ld, "erase", T0[a[2]])
     @test st === :true
@@ -610,12 +679,13 @@ end
     @test st === :ok
     ws = [
         m for (k, m) in msgs if kind(m) === EXPR && kind(child(m, 1)) === SYM &&
-        !is_blob(child(m, 1)) && sym_text(child(m, 1)) == "compiler_warnings"
+            !is_blob(child(m, 1)) && sym_text(child(m, 1)) == "compiler_warnings"
     ]
     @test length(ws) == 1
     cref = child(ws[1], 2)
     @test is_blob(cref) && blob_type(cref) === :clause
     cl = LK.clause_clref(gd, cref)
     @test cl isa LK.Clause{_TL} && (cl.flags & LK.DBREF_CLAUSE) != 0
-    @test cl.predicate === LK.isCurrentProcedure(sym_key(_tls("p")), 2, LK.MODULE_user(gd)).definition
+    @test cl.predicate ===
+        LK.isCurrentProcedure(sym_key(_tls("p")), 2, LK.MODULE_user(gd)).definition
 end

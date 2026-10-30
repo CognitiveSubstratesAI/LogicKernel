@@ -821,7 +821,7 @@ fixed it or a public issue exists.
 | `test/core_lang/test_read_swipl.jl` | R1c's reader gate: `atom_number/2` on every number syntax and generated texts, `raw_read` against `'$raw_read'/2`, raw syntax errors and their `string(Text, CharNo)` against `term_to_atom/2`, escapes, and the tokens (`[]` vs `'[]'`, `{}`, strings, `0'c`, `1r3`); `const_nan` is `str_number`'s `1.5NaN`; an atom holding character 0 refused | — |
 | `test/files/test_stream_swipl.jl` | R1c's stream gate: memory and string streams round trip, peek and push-back, a Julia IO; the position record (character, line, line position, byte) against swipl's `stream_position_data/3` on `open_string/2` | — |
 | `test/files/test_load_swipl.jl` | R1f's loader gate: 13 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`; the compiler's warnings among them since R1g), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
-| `test/db/test_clause_ref_swipl.jl` | R2 D1's gate: `assert/2`, `asserta/2`, `assertz/2`, `erase/1` and the Ref of `'$record_clause'/4` as program rows against swipl 10.1.19 (the assert2 unit of `test_dbref.pl` included), and white-box testsets of the clause blobs | `tests/db/test_dbref.pl` (assert2) |
+| `test/db/test_clause_ref_swipl.jl` | R2 D1's gate: `assert/2`, `asserta/2`, `assertz/2`, `erase/1` and the Ref of `'$record_clause'/4` as program rows against swipl 10.1.19 (the assert2 unit of `test_dbref.pl` included), and white-box testsets of the clause blobs | — |
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
 | `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; since group F (D-0123) 20 print/1 goals with a user portray/1, each on a database of its own; a standard alias with no stream pinned (internal record #13); portray_goal refused until group F (D-0123), then 20 goals and 6 error goals compared with swipl; the host's streams, a write error, the variable_names bindings undone | — |
@@ -912,6 +912,7 @@ graph LR
     pl_fli["pl-fli.jl"]
     pl_attvar["pl-attvar.jl"]
     pl_error["pl-error.jl"]
+    pl_dbref["pl-dbref.jl"]
     pl_gmp["pl-gmp.jl"]
     pl_arith["pl-arith.jl"]
     os_pl_codelist["os/pl-codelist.jl"]
@@ -1011,6 +1012,7 @@ graph LR
     pl_global --> pl_ressymbol
     pl_global --> pl_comp
     pl_global --> pl_wam
+    pl_global --> pl_dbref
     pl_global --> pl_arith
     pl_global --> os_pl_prologflag
     pl_global --> os_pl_text
@@ -1102,6 +1104,7 @@ graph LR
     pl_comp --> pl_fli
     pl_comp --> pl_attvar
     pl_comp --> pl_error
+    pl_comp --> pl_dbref
     pl_comp --> pl_gmp
     pl_comp --> pl_arith
     pl_comp --> os_pl_prologflag
@@ -1129,6 +1132,7 @@ graph LR
     pl_copyterm --> pl_wam
     pl_copyterm --> pl_fli
     pl_copyterm --> pl_attvar
+    pl_rec --> term_interface
     pl_rec --> default_term
     pl_rec --> pl_incl
     pl_rec --> SWI_Prolog
@@ -1136,10 +1140,15 @@ graph LR
     pl_rec --> pl_global
     pl_rec --> pl_inline
     pl_rec --> pl_prims
+    pl_rec --> pl_comp
     pl_rec --> pl_alloc
     pl_rec --> pl_fli
+    pl_rec --> pl_error
+    pl_rec --> pl_dbref
     pl_rec --> pl_arith
     pl_rec --> os_pl_text
+    pl_rec --> pl_proc
+    pl_rec --> pl_read
     pl_termhash --> term_interface
     pl_termhash --> default_term
     pl_termhash --> pl_hash
@@ -1250,6 +1259,15 @@ graph LR
     pl_error --> pl_arith
     pl_error --> os_pl_text
     pl_error --> pl_read
+    pl_dbref --> term_interface
+    pl_dbref --> default_term
+    pl_dbref --> pl_incl
+    pl_dbref --> SWI_Prolog
+    pl_dbref --> pl_atom
+    pl_dbref --> pl_global
+    pl_dbref --> pl_inline
+    pl_dbref --> pl_fli
+    pl_dbref --> pl_error
     pl_gmp --> term_interface
     pl_gmp --> default_term
     pl_gmp --> pl_incl
@@ -1533,6 +1551,7 @@ graph LR
     pl_ext --> pl_comp
     pl_ext --> pl_variant
     pl_ext --> pl_copyterm
+    pl_ext --> pl_rec
     pl_ext --> pl_wam
     pl_ext --> pl_fli
     pl_ext --> pl_attvar
