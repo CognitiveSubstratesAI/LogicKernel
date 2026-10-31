@@ -762,6 +762,8 @@ fixed it or a public issue exists.
 | `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `select_dict/3`, `get_dict/3` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `PL_get_dict_ex`, `put_dict`, `select_dict` and their helpers; the reader and writer have no dict syntax, and the other dict predicates are not ported | `src/pl-dict.c`, `src/pl-dict.h` |
 | `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record) is not ported | `src/pl-rec.c` |
 | `src/pl-dbref.jl` | since R2 D1, database references: the clause blob type (`clause_blob`, registered by the database, `initDBRef!`), `lookup_clref`, `clause_clref`, `PL_unify_clref`, `PL_put_clref`, `PL_is_dbref`, `PL_get_dbref`, `PL_get_clref`, `acquire_clause_blob`/`release_clause_blob` (the `DBREF_CLAUSE` mark); the payload is the clause's number in `gd.clause_refs` (upstream: the pointer); the record blob is D2's | `src/pl-dbref.c`, `src/pl-dbref.h` |
+| `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); since D2 the recorded database (`recorda/2,3`, `recordz/2,3`, `recorded/2,3`, `current_key/1`, the record branches of `erase/1` and `instance/2`: lists, keys, the `recorded` state, section D2 below) | `src/pl-rec.c` |
+| `src/pl-dbref.jl` | since R2 D1, database references: the clause blob type (`clause_blob`, registered by the database, `initDBRef!`), `lookup_clref`, `clause_clref`, `PL_unify_clref`, `PL_put_clref`, `PL_is_dbref`, `PL_get_dbref`, `PL_get_clref`, `acquire_clause_blob`/`release_clause_blob` (the `DBREF_CLAUSE` mark); the payload is the clause's number in `gd.clause_refs` (upstream: the pointer); since D2 the record blob (`record_blob`, registered FIRST in `initDBRef!`, `recref_record`, `acquire_record`, `release_record`, `PL_unify_recref`, `PL_get_recref`, and the record branch of `PL_is_dbref`/`PL_get_dbref`) | `src/pl-dbref.c`, `src/pl-dbref.h` |
 | `src/pl-bag.jl` | the bags of findall/3 (since V9g-b): `'$new_findall_bag'/0`, `'$add_findall_bag'/1,2`, `'$collect_findall_bag'/2`, `'$destroy_findall_bag'/0` — the innermost bag of the thread is implicit, the answers are records, and the last answer is put back first; `'$suspend_findall_bag'/0` (findnsols/4,5: a nondeterministic foreign predicate) is not ported | `src/pl-bag.c` |
 | `src/pl-list.jl` | lists (since V9g-b): `is_list/1`, `'$length'/2`, and `sort/2`, `msort/2`, `keysort/2` over `nat_sort` — Richard O'Keefe's bottom-up natural merge sort, ported line for line over records that are indices into three vectors; `sort/4` and `'$memberchk'/3` are not ported | `src/pl-list.c` |
 | `src/pl-trace.jl` | `prolog_current_frame/1` and `prolog_current_choice/1` (`PL_unify_frame`, `PL_unify_choice`) — the positions V3's oracle compares | `src/pl-trace.c` |
@@ -824,6 +826,7 @@ fixed it or a public issue exists.
 | `test/files/test_stream_swipl.jl` | R1c's stream gate: memory and string streams round trip, peek and push-back, a Julia IO; the position record (character, line, line position, byte) against swipl's `stream_position_data/3` on `open_string/2` | — |
 | `test/files/test_load_swipl.jl` | R1f's loader gate: 13 case files consulted by the kernel and by swipl — the message TERMS (`message_hook/3`; the compiler's warnings among them since R1g), the load's status, every solution of the case's predicates and their dynamic flag; the bench programs' answers; a loaded predicate's source record; the refusals | — |
 | `test/db/test_clause_ref_swipl.jl` | R2 D1's gate: `assert/2`, `asserta/2`, `assertz/2`, `erase/1` and the Ref of `'$record_clause'/4` as program rows against swipl 10.1.19 (the assert2 unit of `test_dbref.pl` included), and white-box testsets of the clause blobs | — |
+| `test/db/test_record_swipl.jl` | R2 D2's gate: `recorda/2,3`, `recordz/2,3`, `recorded/2,3`, `current_key/1` and the record branches of `erase/1` and `instance/2` as program rows r01-r101 against swipl 10.1.19 (two byte-identical pins), and white-box testsets of the record blob, the lists, the key words and the references of a list | — |
 | `test/core_text/test_roundtrip_swipl.jl` | R1f's round trip, both directions (kernel writes → swipl reads, swipl writes → kernel reads) over R1d's and R1e's hand corpora, the four bench programs' clauses and 2,000 random terms; upstream #11, #12 and texts holding the character 0 excluded by name and counted (an excluded defect must still fail); floats round-trip since R1e's floats (the exclusion lifted), and 22 floats in operator contexts | — |
 | `test/core_text/test_float_write_swipl.jl` | R1e's float gate: `format_float` against swipl's write/1 on 500,943 floats (400,000 random bit patterns, 100,000 random short decimals, the edge cases); ±Inf and NaN read and written (a NaN term is canonical); the kernel reads its own text back bit for bit; the callers | — |
 | `test/core_text/test_write_family_swipl.jl` | R1e's write/1 family gate: 250 corpus terms and 1,000 random terms, each written by 40 calls (write/1,2, writeq/1,2, print/1,2, writeln/1,2, write_term/2 with 30 option lists, write_term/3), and 91 hand goals (every stream error, every option error, `variable_names`, max_depth/max_text/truncated, fullstop, nl/0,1) — each compared with swipl on user_output, user_error and the verdict; since group F (D-0123) 20 print/1 goals with a user portray/1, each on a database of its own; a standard alias with no stream pinned (internal record #13); portray_goal refused until group F (D-0123), then 20 goals and 6 error goals compared with swipl; the host's streams, a write error, the variable_names bindings undone | — |
@@ -5745,6 +5748,44 @@ What G1 ports (pl-gvar.c at the pin cbf4e189; edit-only so far, nothing compiled
 
 Tests: test/core_lang/test_gvar_swipl.jl (rows g01-g57 and the h9 database, pins from swipl 10.1.19; generator
 evidence/G1/gen_rows.py). Mutants: tools/mutants/G1.py.
+
+## D2 — the recorded database: `recorda/2,3`, `recordz/2,3`, `recorded/2,3`, `current_key/1`, the record branches of `erase/1` and `instance/2` (R2, D-0230 item 2, D-0252, flags_rest.md §4 D11)
+
+What D2 adds (pl-rec.c `recorda`, `recordz`, `recorded`, `current_key`, `erase`'s and `instance`'s record branches, the list helpers; pl-dbref.c
+`record_blob` and its readers; pl-incl.h `recordList`, `recordRef`, `RL_DIRTY`, `R_ERASED`, `R_DBREF`; pl-rec.h `record_az`). Since D2 this section supersedes the
+D1 section where it says the record branch of `erase/1`, `instance/2` and `PL_get_dbref` is D2's, or refused by name.
+
+- **The lists.** The records of a key are a `RecordList` (src/pl-incl.jl: `firstRecord`, `lastRecord`, `key`, `references`, `flags`); a record is a
+  `RecordRef` (`record`, `list`, `next`, `prev`, `flags`, `serial`). The database holds `gd.record_lists` (key word -> list, upstream's hash table
+  `GD->recorded_db.record_lists`), `gd.record_lists_order` (the lists in the order of their creation) and `gd.record_refs` (the references that have a blob).
+  `recorda` links at the front, `recordz` at the end (`PL_record_az`, `RECORDA`/`RECORDZ` are Int constants, no `@enum`); `lookupRecordList` makes the list
+  at the first record; a list that is emptied STAYS (upstream keeps it), `isCurrentRecordList(gd, key, true)` and `current_key/1` skip it.
+- **The keys** (`getKeyEx`, `unifyKey`): an atom, a small integer (the tagged-int range: rows r16-r19 pin swipl's edge) or a compound, whose key is its FUNCTOR
+  (`f(a,b)` and `f(c,d)` share a list; `recorded(f(_,_), X)` finds both); a float or a string is `type_error(key, K)`, an unbound key
+  `instantiation_error`. An unbound key in `recorded/2,3` and `current_key/1` enumerates the lists (DIVERGES: in `gd.record_lists_order`, upstream's order is the hash
+  table's, so rows compare the sorted answers of an unbound key; F4 of the handoff).
+- **The record blob** (`record_blob`, `PL_BLOB_UNIQUE`, src/pl-dbref.jl): registered FIRST in `initDBRef!`, so the standard order is stream < clause < record < mutex
+  (test_blob.jl pins the ranks). `recorda/3` and `recordz/3` hand back the blob (`PL_unify_recref`; `uninstantiation_error` for a bound `Ref`); the payload is the
+  reference's number in `gd.record_refs`, as the clause blob's (DIVERGES, representation); `R_DBREF` marks a record that has a blob (`acquire_record`; `release_record`
+  has no caller without atom GC). `PL_get_dbref` now answers `(DB_REF_RECORD, ref)`; `PL_get_recref` is the reader `recorded/3` uses.
+- **`recorded/2,3`** (ONE function, `pl_recordedva_va`, NONDETERMINISTIC): with a bound `Ref` the first call answers by reference (`PL_get_recref`: a clause
+  reference is `type_error(db_reference, Ref)`; an erased record fails); otherwise the state (`recorded_state`, a pool in the local data, `ld.recorded_states`)
+  holds the next record and the list's `references` count. A running `recorded/3` keeps its list alive: `erase/1` then only sets `R_ERASED` on the record and
+  `RL_DIRTY` on the list, and `cleanRecordList` unlinks the marked records when the last `recorded` leaves the list (`advance_state`, `free_state` on a cut).
+  The next record is taken when an answer is returned, as upstream: a record erased after that is still answered (row r88; F7).
+- **`erase/1`** of a record: `remove_record` when no `recorded` runs over the list (the reference then answers erased: `PL_get_dbref` is `nothing`, erase fails
+  without an error), else the mark above. `callEventHook(PLEV_ERASED_RECORD)` is upstream's no-hook answer, true (F2). **`instance/2`** of a record: `copyRecordToGlobal`
+  of the record, unified with the term (a record's variables are fresh each time: row r80).
+- **`current_key/1`** (pl-rec.c:1997; added by this plan, in the same table): NONDETERMINISTIC over `gd.record_lists_order`, the state an integer index (a cut has nothing to free).
+- **Registration** (`PL_predicates_from_rec`) in upstream's order: `recorded/2,3` (NDET), `recordz/2,3`, `recorda/2,3`, `erase/1`, `instance/2`, `current_key/1` (NDET);
+  recorda, recordz and recorded share ONE function over both arities (`PRED_SHARE`; `PL__ac` is the arity).
+- **State:** `gd.record_lists`, `gd.record_lists_order`, `gd.record_refs` (src/pl-global.jl, the end of the struct) and `ld.recorded_states` (the end of the local data;
+  `src/pl-fli.jl`'s `live_states` counts it). **Not here:** the prolog event hooks (pl-event.c), `PL_cleanup`'s `cleanupRecords`, atom references of a record (no atom GC), the
+  QLF save of records.
+
+Tests: test/db/test_record_swipl.jl (rows r01-r101 against swipl 10.1.19 with two byte-identical pins, evidence/D2/{gen_rows.py,d2_rows.pl,d2_driver.pl,d2_rows.out}; the
+record-reference rows of `erase/1` and `instance/2` of D-0252: r65, r67 and r73, r75; white-box testsets of the blob, the lists, the key words and the references of a list);
+test/core_lang/test_blob.jl pins the ranks; mutants: tools/mutants/D2.py (45) and tools/mutants/D1c.py (D1-56 and D1-119 re-anchored, no longer equivalent).
 
 ## Still to come
 
