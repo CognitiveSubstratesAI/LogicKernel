@@ -364,7 +364,8 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # Since R2 G1: `gvar_nb_vars` and `gvar_grefs`, upstream's `LD->gvar.nb_vars` (the
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
 # `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
-# (`recorded_state`, pl-incl.jl).
+# (`recorded_state`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
+# of `with_output_to/2` and `format/3`'s redirect, src/os/pl-redirect.jl).
 """
     PL_local_data{T}(gd)
 
@@ -502,6 +503,7 @@ mutable struct PL_local_data{T}
     recorded_states::foreign_state_pool{recorded_state{T}}      # (recorded/2,3's REDO_PTR states, R2 D2)
     input_context_stack::Vector{input_context{T}}               # input_context_stack: see/seen's (R2 LB3)
     qlf_write_state::Nothing                                    # qlf.write_state: always NULL, no state file (R2 LB3, LD2)
+    IO_output_stack::Vector{IOSTREAM}                           # IO.output_stack: the streams current_output was before each redirect (R2 O1B)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -588,7 +590,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         foreign_state_pool{gvar_enum}(),        # nb_current/2's states: none
         foreign_state_pool{recorded_state{T}}(), # recorded/2,3's states: none
         input_context{T}[],                     # input_context_stack: empty (NULL)
-        nothing                                 # qlf.write_state: NULL (LD2: the state is never written)
+        nothing,                                # qlf.write_state: NULL (LD2: the state is never written)
+        IOSTREAM[]                              # output_stack: no redirect (R2 O1B)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
