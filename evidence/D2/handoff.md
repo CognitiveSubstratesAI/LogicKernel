@@ -42,6 +42,33 @@ branch; with the usual 1-2 fix commits after CI, 10-12. Under D-0272 item 7's ~1
 - F5. The blob payload is the record's number in `gd.record_refs` (as the clause blob's, D1). Written form
   `<record>(0x…)` is the term interface's.
 
-## State
+## State (2026-10-31, first agent; forced hand-back by the 150k cap hook)
 
-- [ ] groups 1-10 (written, UNRUN)
+- [x] handoff 5dec9fd; group 1 02e0023 (pl-incl.jl types); group 2 5988f78 (pl-dbref.jl record blob,
+  initDBRef! record FIRST). Written, UNRUN.
+- [~] groups 3-5 WRITTEN and STAGED, NOT COMMITTED (the cap hook blocked the commit): src/pl-rec.jl (record
+  lists, keys, `current_key/1`, `record_term` = upstream `record`, `PL_record_az`, `pl_recordava_va`,
+  `pl_recordzva_va`, `save_state`/`free_state`/`advance_state`, `pl_recordedva_va`) and src/pl-incl.jl
+  (`recordRef{T,L}(rec)` inner constructor, `recorded_state{T}`). NEXT AGENT: `git diff --cached --stat`,
+  review, then commit with subject `UPSTREAM: pl-rec.c lookupRecordList/remove_record/getKeyEx/current_key/
+  record/PL_record_az/recorda/recordz/recorded (swipl-devel cbf4e1896275)`.
+- [ ] group 6: in src/pl-rec.jl `pl_erase1_va` replace `@assert type == DB_REF_CLAUSE` by `if type ==
+  DB_REF_CLAUSE … else` the record branch (pl-rec.c:2464-2480: rc = true (F2); `l.references != 0` → set
+  `R_ERASED` on the ref's `flags` and `RL_DIRTY` on the list, else `remove_record`); `clause = ptr::Clause{T}`
+  in the clause branch. `pl_instance2_va`: replace the NotPortedError by the record branch (pl-rec.c:2431-2436:
+  `t = PL_new_term_ref`, `copyRecordToGlobal(ld, t, rref.record::record{T})`, `PL_unify(term, t)`, else false).
+  Give the two `if type == DB_REF_CLAUSE` lines DIFFERENT trailing comments (mutant anchors). Update the file
+  header (lines 35-41: the recorded database is ported now) and the erase/instance DIVERGES comments.
+- [ ] group 7: `PL_predicates_from_rec` in upstream's order (pl-rec.c:2489-2498): recorded/2,3
+  `pl_recordedva_va` NDET, recordz/2,3, recorda/2,3, erase/1, instance/2, current_key/1 NDET; all
+  `| PL_FA_VARARGS` (PRED_DEF/PRED_SHARE, pl-builtin.h:634-637). Check how pl-ext.jl wires NDET (pl-op.jl:541).
+- [ ] group 10 (shared, LAST, separate commits): src/pl-global.jl GD fields `record_lists::Dict{word,
+  RecordList{T}}`, `record_lists_order::Vector{RecordList{T}}`, `record_refs::Vector{RecordRef{T}}` (the
+  constructor near line 169, comments as `clause_refs`); LD `recorded_states::foreign_state_pool{recorded_state{T}}`
+  (near line 469/549) and the live count in src/pl-fli.jl:1242 (`+ ld.recorded_states.live`).
+- [ ] groups 8-9 rows and mutants as in the table; D1c.py D1-56 (old line now `if type == DB_REF_CLAUSE` in
+  erase, new `if true`) and D1-119 (instance's line, new `if true`): drop `equivalent=`, add
+  test/db/test_record_swipl.jl to their targets; update D1c.py's header lines 13-14 and 21-23.
+- Check for the gate: test/core_lang/test_blob.jl pins blob ranks (a new type registered: `record` between
+  clause and mutex, as swipl); the local name `record` in firstRecordRecordList/isCurrentRecordList/current_key
+  hides the type there (no type use inside; rename to `rec` if JET or a reader objects).
