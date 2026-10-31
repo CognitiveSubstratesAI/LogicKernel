@@ -319,7 +319,6 @@ function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{Strin
     while true
         s = pos
         head = pos
-        meta = false
         while true
             c = at(s)
             s += 1
@@ -347,7 +346,6 @@ function expand(ld::PL_local_data, pattern::String)::Union{Nothing, Vector{Strin
                 end
                 return files[(start + 1):fend]
             elseif c == UInt8('[') || c == UInt8('{') || c == UInt8('?') || c == UInt8('*')
-                meta = true
                 break                                           # meta characters: expand
             elseif c == UInt8('\\') && _glob_isspecial(at(s))
                 s += 1
