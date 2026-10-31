@@ -199,6 +199,22 @@ function addModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
     return true
 end
 
+# PORT: pl-srcfile.c unlinkSourceFileModule
+# DIVERGES: the test of upstream's loop, `lookupHTableWP(m->procedures, def->functor->functor) || PROCEDURE_dinit_goal->definition == def`,
+# is its first half: the `$init_goal/3` clauses belong to the loader (L6), which adds the second; no lock.
+"Remove from the procedures of `sf` those whose functor module `m` has a procedure of (pl-srcfile.c)."
+function unlinkSourceFileModule(sf::SourceFile{T}, m::module_t{T})::Nothing where {T}
+    filter!(sf.procedures) do proc
+        def = proc.definition
+        if haskey(m.procedures, (def.functor_name, def.arity))
+            sf.current_procedure === proc && (sf.current_procedure = nothing)
+            return false
+        end
+        return true
+    end
+    return nothing
+end
+
 # PORT: pl-srcfile.c exportProcedureSource
 # DIVERGES: a source file has no `reload` (reconsult is not ported), so the recording of the exports of a module being
 # reloaded - the part of upstream that tests `sf->reload` - does not run; what is left is `exportProcedure`.

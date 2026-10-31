@@ -17,8 +17,9 @@
 # src/pl-wam.jl `contextModule`), `strip_module/3` and `context_module/1`.
 # Since MOD5a the public table and the imports: `export/1`, `import/1`, `'$import'/2`, `'$undefined_export'/2`
 # and `'$def_modules'/2`.
-# LATER STEPS (the module system, D-0149): `'$declare_module'/6`, `'$destroy_module'/1` and
-# `acquireModule`/`releaseModule` (MOD5b), and the non-deterministic `import_module/2` and
+# Since MOD5b declaring a module (`declareModule`, `'$declare_module'/6`) and destroying a temporary one
+# (`'$destroy_module'/1`, `acquireModule`/`releaseModule`).
+# LATER STEPS (the module system, D-0149): the non-deterministic `import_module/2` and
 # `'$current_module'/2` (MOD6, after NF1).
 
 # PORT: pl-incl.h UNKNOWN_FAIL
@@ -908,6 +909,278 @@ function pl_def_modules2_va(
     return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
 end
 
+# PORT: pl-modul.c acquireModule
+# DIVERGES: the database `gd` is an argument; no lock (no threads).
+"The module named `name`, or `nothing`; a temporary module gets a reference (pl-modul.c)."
+function acquireModule(gd::PL_global_data{T}, name::T)::Union{Nothing, module_t{T}} where {T}
+    m = isCurrentModule(gd.modules, name)
+    if m !== nothing && sym_key(m.class) == sym_key(mk_sym(T, :temporary))
+        m.references += 1
+    end
+    return m
+end
+
+# PORT: pl-modul.c acquireModulePtr
+"Count a reference to `m` when it is a temporary module (pl-modul.c)."
+function acquireModulePtr(m::module_t{T})::Nothing where {T}
+    if sym_key(m.class) == sym_key(mk_sym(T, :temporary))
+        m.references += 1
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c unallocModule
+# DIVERGES: the memory (the tables, the super list, the lingering definitions) is Julia's garbage collector's: a destroyed module
+# keeps its record, its procedures and its index, as definitions hold the index (D-0149 M2, H3); what is done is the one
+# visible effect, the source and typein modules go back to `user`.
+"Free a destroyed module: the source and typein modules that are `m` become `user` (pl-modul.c)."
+function unallocModule(gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T})::Nothing where {T}
+    user = MODULE_user(gd)
+    ld.modules_source == m.index && (ld.modules_source = user.index)
+    ld.modules_typein == m.index && (ld.modules_typein = user.index)
+    return nothing
+end
+
+# PORT: pl-modul.c markSourceFilesProcedure
+# DIVERGES: the bit vector is a `BitVector` indexed from 0 (element `i + 1`).
+"Mark the source files `proc` was defined in: its one file, or all when it has several (pl-modul.c)."
+function markSourceFilesProcedure(proc::Procedure{T}, v::BitVector)::Nothing where {T}
+    if (proc.flags & PROC_MULTISOURCE) == 0
+        v[Int(proc.source_no) + 1] = true
+    else
+        fill!(v, true)
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c unlinkSourceFilesModule
+"Remove the source-file administration's links to `m`, and release the file `m` was declared in (pl-modul.c)."
+function unlinkSourceFilesModule(gd::PL_global_data{T}, m::module_t{T})::Nothing where {T}
+    high = highSourceFileIndex(gd)
+    vec = falses(high + 1)
+    for proc in values(m.procedures)
+        markSourceFilesProcedure(proc, vec)
+    end
+    for i in 1:high
+        if vec[i + 1]
+            sf = indexToSourceFile(gd, i)
+            sf === nothing || unlinkSourceFileModule(sf, m)
+        end
+    end
+    if m.file != 0
+        sf = gd.files_array[m.file]
+        m.file = 0
+        releaseSourceFile(sf)
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c releaseModule_unlocked
+# DIVERGES: `GD->statistics.modules` and `PL_unregister_atom(name)` (no statistics, no atom GC) and the wait area (no threads) are not kept;
+# the local data is an argument (`unallocModule` resets its source and typein modules).
+"Drop a reference to the temporary module `m`; the last one of a destroyed module frees it (pl-modul.c)."
+function releaseModule_unlocked(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
+)::Nothing where {T}
+    m.references -= 1
+    if m.references == 0 && (m.flags & M_DESTROYED) != 0
+        unlinkSourceFilesModule(gd, m)
+        unallocModule(gd, ld, m)
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c releaseModule
+"Drop a reference to `m` when it is a temporary module (pl-modul.c)."
+function releaseModule(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
+)::Nothing where {T}
+    if sym_key(m.class) == sym_key(mk_sym(T, :temporary))
+        releaseModule_unlocked(gd, ld, m)
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c destroyModule
+# DIVERGES: the invariant check that prints "Module %s: class %s; refs %d" (a debugging line on stderr, when a temporary module is
+# destroyed with no reference) and the bump of `GD->modules.generation` (the per-thread lookup cache is not ported, MOD1 Q2) are not
+# kept.
+"Take the name of `m` out of the module table and mark it destroyed; free it at its last reference (pl-modul.c)."
+function destroyModule(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
+)::Bool where {T}
+    if get(gd.modules.names, m.name, 0) == m.index       # deleteHTableWP(GD->tables.modules, m->name) == m
+        delete!(gd.modules.names, m.name)
+        m.flags |= M_DESTROYED
+    end
+    releaseModule(gd, ld, m)
+    return true
+end
+
+# PORT: pl-modul.c destroy_module as pl_destroy_module1_va
+# (PRED_IMPL("\$destroy_module", 1, destroy_module, 0))
+"`'\$destroy_module'(+Module)`: destroy a temporary module; no module of that name succeeds (pl-modul.c)."
+function pl_destroy_module1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    name = PL_get_atom_ex(ld, PL__t0)
+    name === nothing && return FFALSE
+
+    m = acquireModule(gd, name)
+    if m !== nothing
+        if sym_key(m.class) == sym_key(mk_sym(T, :temporary))
+            return destroyModule(gd, ld, m) ? FTRUE : FFALSE
+        else
+            releaseModule(gd, ld, m)
+            return PL_error(
+                ld, "", 0, "module is not temporary", ERR_PERMISSION, mk_sym(T, :destroy),
+                mk_sym(T, :module), PL__t0
+            ) ? FTRUE : FFALSE
+        end
+    end
+
+    return FTRUE                                        # non-existing
+end
+
+# PORT: pl-util.c text_summary and atom_summary
+# DIVERGES: a Julia string (pl-util.c returns a buffer of UTF-8); the text is `s`'s characters.
+"`s` itself when it is ASCII and shorter than `maxlen`; else its first characters, `...` and its last three (pl-util.c)."
+function _text_summary(s::AbstractString, maxlen::Int)::String
+    chars = collect(s)
+    n = length(chars)
+    if n < maxlen && all(c -> UInt32(c) < 0x80, chars)
+        return String(chars)
+    end
+    io = IOBuffer()
+    i = 0
+    while i < n
+        print(io, chars[i + 1])
+        if i == maxlen - 6
+            print(io, "...")
+            i = n - 4
+            maxlen = typemax(Int)                       # make sure not to trap again
+        end
+        i += 1
+    end
+    return String(take!(io))
+end
+
+# ORIGINAL (MOD5b; Q7, F5; audit): the part of pl-proc.c `abolishProcedure` the kernel has.
+# DIVERGES: `abolishProcedure` (pl-proc.c:1510: resetProcedure, removeClausesPredicate, a fresh definition for an
+# import) is not in the kernel. A procedure it would leave as it is (its own definition, no clauses, no flags) needs no work; any other
+# is refused by name (`NotPortedError`).
+"Abolish `proc` of module `m` (pl-proc.c): a procedure with nothing to abolish is left; else a `NotPortedError`."
+function _abolishProcedure_pristine(
+    gd::PL_global_data{T}, m::module_t{T}, proc::Procedure{T}
+)::Bool where {T}
+    def = proc.definition
+    if def.module_ == m.index && hasClausesDefinition(gd, def) === nothing && def.flags == 0
+        return true
+    end
+    throw(NotPortedError{T}(def.name, "redeclaring a module that has predicates (abolishProcedure)", "R2"))
+end
+
+# PORT: pl-modul.c declareModule
+# DIVERGES: `class` and `super` are atoms (the one caller, `'$declare_module'/6`, gets them with `PL_get_atom_ex`); the source file has no
+# `reload` (reconsult is not ported: `registerReloadModule` is not reached); the module's file is the source file's INDEX (0: none); the
+# procedures are walked in the order of the module's table (Julia's), where upstream's follows its hash table (D-0149 item 1); the
+# abolish of a procedure with something to abolish is refused (Q7, `_abolishProcedure_pristine`), so the warning
+# `declare_module(M, abolish(PIs))` below is written for the day `abolishProcedure` is ported.
+"""
+    declareModule(gd, ld, name, class, super, sf, line, allow_newfile) -> Bool
+
+Declare `name` a module of class `class`, defined in the source file `sf` at `line` (pl-modul.c): the module becomes the source module; one
+already loaded from another file is a `permission_error(redefine, module, name)` unless `allow_newfile`; the public table is cleared
+and the procedures it has are abolished; `super` becomes its one super module.
+"""
+function declareModule(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::T, class::T, super::T,
+    sf::SourceFile{T}, line::Int, allow_newfile::Bool
+)::Bool where {T}
+    module_ = lookupModule(gd, name)
+    tmp = rdef = rtail = 0
+    rc = true
+
+    module_.class = class
+
+    if !allow_newfile && module_.file != 0 && module_.file != sf.index
+        obj = PL_new_term_ref(ld)
+        PL_put_atom(ld, obj, name)
+        msg = "Already loaded from " * _text_summary(sym_text(gd.files_array[module_.file].name), 100)
+        return PL_error(
+            ld, "module", 2, msg, ERR_PERMISSION, mk_sym(T, :redefine), mk_sym(T, :module), obj
+        )
+    end
+
+    if module_.file != sf.index
+        module_.file = sf.index
+        addModuleSourceFile(sf, module_)
+    end
+    module_.line_no = line
+    ld.modules_source = module_.index
+
+    for proc in values(module_.procedures)
+        def = proc.definition
+
+        if (def.flags & (P_DYNAMIC | P_MULTIFILE | P_FOREIGN)) == 0
+            if def.module_ == module_.index && hasClausesDefinition(gd, def) !== nothing
+                if rdef == 0
+                    rdef = PL_new_term_ref(ld)
+                    rtail = PL_copy_term_ref(ld, rdef)
+                    tmp = PL_new_term_ref(ld)
+                end
+
+                PL_unify_list(ld, rtail, tmp, rtail)
+                unify_definition(gd, ld, MODULE_user(gd), tmp, def, 0, GP_NAMEARITY)
+            end
+            _abolishProcedure_pristine(gd, module_, proc)
+        end
+    end
+    empty!(module_.public_)                             # clearHTableWP(module->public)
+    empty!(module_.public_order)
+    rc = setSuperModule(gd.modules, ld, module_, lookupModule(gd, super))
+
+    if rdef != 0
+        PL_unify_nil(ld, rtail) || return false
+
+        if rc
+            rc = printMessage(
+                ld, :warning,
+                _message_term(ld, :declare_module, _err_atom(ld, name), _message_term(ld, :abolish, rdef))
+            )
+        end
+    end
+
+    return rc
+end
+
+# PORT: pl-modul.c declare_module as pl_declare_module6_va
+# (PRED_IMPL("\$declare_module", 6, declare_module, 0))
+"`'\$declare_module'(+Module, +Class, +Super, +File, +Line, +Redefine)`: start a new (source-)module (pl-modul.c)."
+function pl_declare_module6_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3, A4, A5, A6 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5
+
+    mname = PL_get_atom_ex(ld, A1)
+    mname === nothing && return FFALSE
+    cname = PL_get_atom_ex(ld, A2)
+    cname === nothing && return FFALSE
+    sname = PL_get_atom_ex(ld, A3)
+    sname === nothing && return FFALSE
+    fname = PL_get_atom_ex(ld, A4)
+    fname === nothing && return FFALSE
+    line_no = PL_get_integer_ex(ld, A5)
+    line_no === nothing && return FFALSE
+    rdef = PL_get_stdbool_ex(ld, A6)
+    rdef === nothing && return FFALSE
+
+    sf = lookupSourceFile(gd, fname, true)::SourceFile{T}
+    return declareModule(gd, ld, mname, cname, sname, sf, line_no, rdef) ? FTRUE : FFALSE
+end
+
 # ORIGINAL (MOD1; D-0149 MQ3): the kernel's own count of the bytes a module's clauses take, for
 # `'$module_property'(M, program_size(S))` — upstream's `m->code_size`, which the kernel does not keep
 # (assert and retract are the hot path, bench H1). A clause is its code words and its header (`sizeofClause`)
@@ -1031,13 +1304,14 @@ end
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (MOD1: the table, the
 # supers, the source and typein modules, `'$module_property'/2`); `PRED_DEF` ors in `PL_FA_VARARGS`.
 # Since MOD2 `strip_module/3`, since MOD5a `'$def_modules'/2`, `import/1`, `'$import'/2`, `export/1` and
-# `'$undefined_export'/2`. LATER STEPS: `import_module/2`, `'$current_module'/2` (non-deterministic: MOD6),
-# `'$declare_module'/6`, `'$destroy_module'/1` (MOD5b).
+# `'$undefined_export'/2`, since MOD5b `'$declare_module'/6` and `'$destroy_module'/1`. LATER STEPS: `import_module/2`,
+# `'$current_module'/2` (non-deterministic: MOD6).
 "pl-modul.c's registration table (`BeginPredDefs(module)`): the ported entries."
 const PL_predicates_from_module = (
     PL_extension(
         "\$def_modules", 2, pl_def_modules2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
+    PL_extension("\$declare_module", 6, pl_declare_module6_va, PL_FA_VARARGS),
     PL_extension("add_import_module", 3, pl_add_import_module3_va, PL_FA_VARARGS),
     PL_extension("delete_import_module", 2, pl_delete_import_module2_va, PL_FA_VARARGS),
     PL_extension("set_module", 1, pl_set_module1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
@@ -1047,6 +1321,7 @@ const PL_predicates_from_module = (
     PL_extension("\$import", 2, pl_import2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("export", 1, pl_export1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("\$undefined_export", 2, pl_undefined_export2_va, PL_FA_VARARGS),
+    PL_extension("\$destroy_module", 1, pl_destroy_module1_va, PL_FA_VARARGS),
     PL_extension(
         "\$current_source_module", 1, pl_current_source_module1_va, PL_FA_VARARGS
     ),
