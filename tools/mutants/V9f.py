@@ -150,13 +150,13 @@ MUTANTS = [
          old='''                decl = :guard_in_caller''',
          new='''                decl = :guard'''),
     dict(id="MD12 determinism_error ignores `silent`", file=W,
-         old='''    a = ld.prolog_flag_determinism_error
+         old='''    a = determinism_error_flag(ld)                  # PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)
     a === :silent && return true
 
     fid = PL_open_foreign_frame(ld)
     if fid != 0
         f = ld.frames[fr]''',
-         new='''    a = ld.prolog_flag_determinism_error
+         new='''    a = determinism_error_flag(ld)                  # PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)
 
     fid = PL_open_foreign_frame(ld)
     if fid != 0
@@ -168,10 +168,10 @@ MUTANTS = [
             gd = _query_gd(ld)'''),
     dict(id="MD14 det_goal_error ignores `silent`", file=C,
          old='''    pc_det = start_of_cdet(cl, pc_error)
-    a = ld.prolog_flag_determinism_error
+    a = determinism_error_flag(ld)                  # PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)
     a === :silent && return true''',
          new='''    pc_det = start_of_cdet(cl, pc_error)
-    a = ld.prolog_flag_determinism_error'''),
+    a = determinism_error_flag(ld)                  # PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)'''),
     dict(id="MD15 det_goal_error decompiles a failed goal over stale frame cells", file=C,
          old='''        clearUninitialisedVarsFrame(ld, fr, cl.codes, pc_det)''',
          new='''        nothing'''),                  # kill: d38 (`q3(A,g2,g3)`)

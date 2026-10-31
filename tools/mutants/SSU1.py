@@ -118,7 +118,7 @@ MUTANTS = [
          old="        if _init_is(ld, pre, Symbol(\",\"), 2)            # nonvar(Pre), Pre = (Head,Cond), !\n",
          new="        if false\n"),
     dict(id="SSU1-D2 a `true` guard is optimised away with the flag off (KILL c24)", file=B, targets=TA,
-         old="            if _init_is_true(ld, cond) && ld.prolog_flag_optimise   # current_prolog_flag(optimise, true)\n",
+         old="            if _init_is_true(ld, cond) && truePrologFlag(ld, PLFLAG_OPTIMISE)   # current_prolog_flag(optimise, true)\n",
          new="            if _init_is_true(ld, cond)\n"),
     dict(id="SSU1-D3 the rewrite drops the cut: `?=>(H, (G, B))` (KILL c02, c15, v04)", file=B, targets=TA,
          old="                    ld, g, _err_functor(ld, Symbol(\",\"), 2), _err_atom(ld, mk_sym(T, :!)),\n",
