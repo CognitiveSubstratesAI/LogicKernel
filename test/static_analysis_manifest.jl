@@ -739,6 +739,25 @@ function _manifest_index(T)
                 LK.pl_import2_va, LK.pl_def_modules2_va
             )
         ]...,
+        # MOD5b — declaring and destroying modules (pl-modul.c), unlinkSourceFileModule (pl-srcfile.c)
+        (LK.acquireModule, Tuple{GD, T}, false),
+        (LK.acquireModulePtr, Tuple{MOD}, false),
+        (LK.unallocModule, Tuple{GD, LD, MOD}, false),
+        (LK.markSourceFilesProcedure, Tuple{PR, BitVector}, false),
+        (LK.unlinkSourceFilesModule, Tuple{GD, MOD}, false),
+        (LK.unlinkSourceFileModule, Tuple{LK.SourceFile{T}, MOD}, false),
+        (LK.releaseModule_unlocked, Tuple{GD, LD, MOD}, false),
+        (LK.releaseModule, Tuple{GD, LD, MOD}, false),
+        (LK.destroyModule, Tuple{GD, LD, MOD}, false),
+        (LK._text_summary, Tuple{String, Int}, false),
+        (LK._abolishProcedure_pristine, Tuple{GD, MOD, PR}, false),
+        (LK.declareModule, Tuple{GD, LD, T, T, T, LK.SourceFile{T}, Int, Bool}, false),
+        (LK._message_term, Tuple{LD, Symbol, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_declare_module6_va, LK.pl_destroy_module1_va
+            )
+        ]...,
         # f3b-4 — the definition's reference on term references
         (LK.unify_functor, Tuple{LD, Int, D, Int}, false),
         (LK.unify_definition, Tuple{GD, LD, MOD, Int, D, Int, Int}, false),
