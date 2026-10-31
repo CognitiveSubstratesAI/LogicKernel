@@ -235,6 +235,17 @@ struct vt_node
     b::Int                          # link to an isomorphic node (`node_isom`)
 end
 
+# PORT: pl-incl.h input_context
+# DIVERGES: a struct on a vector (`PL_local_data.input_context_stack`, the last pushed at the end), where
+# upstream links each to its `previous`; the file is its atom, `nothing` for NULL_ATOM (R2 LB3).
+"A saved input context (pl-incl.h `struct input_context`): the input stream and the source location before a `see`."
+struct input_context{T}
+    stream::Union{Nothing, IOSTREAM}        # pushed input stream
+    type::T                                 # Type of input
+    term_file::Union{Nothing, T}            # old term_file
+    term_line::Int                          # old term_line
+end
+
 # PORT: pl-variant.c argPairs as vt_pairs
 # DIVERGES: on LOCATIONS: `left`/`right` the next argument pair's, 0 for the sentinel `isomorphic`
 # pushes (upstream's NULL); the work pushed aside on `stack` as `(left, right, arg, arity)`. Reused by
@@ -488,6 +499,8 @@ mutable struct PL_local_data{T}
     gvar_grefs::Int                                             # gvar.grefs: the values on the global stack
     gvar_enums::foreign_state_pool{gvar_enum}                   # (nb_current/2's REDO_PTR states, R2 G1)
     recorded_states::foreign_state_pool{recorded_state{T}}      # (recorded/2,3's REDO_PTR states, R2 D2)
+    input_context_stack::Vector{input_context{T}}               # input_context_stack: see/seen's (R2 LB3)
+    qlf_write_state::Nothing                                    # qlf.write_state: always NULL, no state file (R2 LB3, LD2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -572,7 +585,9 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         Dict{UInt64, UInt64}(),                 # gvar.nb_vars: no global variable (pl-gvar.c: NULL)
         0,                                      # gvar.grefs: none
         foreign_state_pool{gvar_enum}(),        # nb_current/2's states: none
-        foreign_state_pool{recorded_state{T}}()  # recorded/2,3's states: none
+        foreign_state_pool{recorded_state{T}}(), # recorded/2,3's states: none
+        input_context{T}[],                     # input_context_stack: empty (NULL)
+        nothing                                 # qlf.write_state: NULL (LD2: the state is never written)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

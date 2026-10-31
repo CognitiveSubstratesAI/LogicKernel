@@ -1283,6 +1283,91 @@ function pl_set_source_location2_va(
     return FTRUE
 end
 
+# ── TEMPORARY I/O: the input context, see and seen (R2 LB3: the boot loop's `pl_see`/`pl_seen`) ─────
+
+# PORT: pl-file.c push_input_context
+# (swipl-devel cbf4e189, src/os/pl-file.c:1583-1598)
+# DIVERGES: the context is pushed on `ld.input_context_stack` (a vector; upstream: a heap cell linked to
+# `previous`); no atom reference counts (no atom garbage collection).
+"Save the current input stream and source location as a context of `type` (pl-file.c)."
+function push_input_context(ld::PL_local_data{T}, type::T)::Bool where {T}
+    c = input_context{T}(
+        Scurin(ld),                                 # c->stream    = Scurin
+        type,                                       # c->type      = type
+        ld.read_source.file,                        # c->term_file = source_file_name
+        ld.read_source.position.lineno              # c->term_line = source_line_no
+    )
+    push!(ld.input_context_stack, c)                # c->previous = input_context_stack; input_context_stack = c
+    return true
+end
+
+# PORT: pl-file.c pop_input_context
+# (swipl-devel cbf4e189, src/os/pl-file.c:1601-1619)
+# DIVERGES: as `push_input_context`; upstream's `Sinput` is `Suser_input(ld)` (`initIO`, above).
+"Restore the input stream and source location the last `push_input_context` saved; false when none is saved (pl-file.c)."
+function pop_input_context(ld::PL_local_data{T})::Bool where {T}
+    if !isempty(ld.input_context_stack)
+        c = pop!(ld.input_context_stack)
+        ld.IO_streams[SNO_CURRENT_INPUT + 1] = c.stream    # Scurin           = c->stream
+        ld.read_source.file = c.term_file                   # source_file_name = c->term_file
+        ld.read_source.position.lineno = c.term_line        # source_line_no   = c->term_line
+        return true
+    else
+        ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)   # Scurin = Sinput
+        return false
+    end
+end
+
+# PORT: pl-file.c pl_see
+# (swipl-devel cbf4e189, src/os/pl-file.c:4446-4485)
+# DIVERGES: `findStreamFromFile(a, IO_SEE)` finds no stream: the kernel registers no see/1 (see/tell are
+# S1/O1's), so the only `pl_see` caller is `compileFile` (src/pl-qlf.jl), whose `pl_seen` closes the stream
+# it opened before the next file; for the same reason `set(getStreamContext(s), IO_SEE)` records no flag
+# (`getStreamContext` makes the stream known, its only effect read here). No lock (no threads).
+"Make the stream alias, `user` or the file the atom `f` names the current input, opening the file for reading (pl-file.c)."
+function pl_see(ld::PL_local_data{T}, f::term_t)::Bool where {T}
+    gd = _query_gd(ld)
+    a = PL_get_atom_ex(ld, f)
+    a === nothing && return false
+
+    s = get_stream_handle(ld, a, SH_ALIAS | SH_UNLOCKED)
+    if s !== nothing
+        ld.IO_streams[SNO_CURRENT_INPUT + 1] = s    # Scurin = s
+        return true
+    end
+    if sym_key(a) == sym_key(mk_sym(T, :user))      # a == ATOM_user
+        ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)   # Scurin = Suser_input
+        return true
+    end
+    # findStreamFromFile(a, IO_SEE): no stream (see above)
+
+    mode = PL_new_term_ref(ld)
+    PL_put_atom(ld, mode, mk_sym(T, :read))         # PL_put_atom(mode, ATOM_read)
+    s = openStream(ld, f, mode, 0)
+    s === nothing && return false
+
+    getStreamContext(gd, s)                         # set(getStreamContext(s), IO_SEE)
+    push_input_context(ld, mk_sym(T, :see))         # push_input_context(ATOM_see)
+    ld.IO_streams[SNO_CURRENT_INPUT + 1] = s        # Scurin = s
+    return true
+end
+
+# PORT: pl-file.c pl_seen
+# (swipl-devel cbf4e189, src/os/pl-file.c:4487-4501)
+"Close the current input stream, unless it is one that ignores end of file, and restore the input context before it (pl-file.c)."
+function pl_seen(ld::PL_local_data{T})::Bool where {T}
+    cur = Scurin(ld)
+    s = cur === nothing ? nothing : getStream(cur)  # getStream(Scurin)
+
+    pop_input_context(ld)
+
+    s !== nothing && (s.flags & SIO_NOFEOF) != 0 && return true
+
+    s !== nothing && return closeStream(ld, s)
+
+    return symbol_no_stream(ld, mk_sym(T, :current_input))
+end
+
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (S1: open/3,4 and close/1,2; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
