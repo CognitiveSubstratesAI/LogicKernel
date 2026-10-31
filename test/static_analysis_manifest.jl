@@ -1948,6 +1948,11 @@ function _manifest_index(T)
         (LK.get_procedure_find_namearity, Tuple{GD, LD, Int, MOD}, false),
         (LK.get_procedure_namearity, Tuple{GD, LD, Int, MOD, Int}, false),
         (LK.get_functor_procedure, Tuple{LD, Int}, false),
+        # MOD5a — get_functor, share/unshareDefinition (pl-proc.c)
+        (LK.get_functor_procedure, Tuple{LD, Int, Int}, false),
+        (LK.get_functor, Tuple{GD, LD, Int, Int, Int, Int}, false),
+        (LK.shareDefinition, Tuple{D}, false),   # the assert allocates its message on failure
+        (LK.unshareDefinition, Tuple{D}, true),
         (LK.pl_source_file2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (
             LK.pl_source_file_predicates2_va,

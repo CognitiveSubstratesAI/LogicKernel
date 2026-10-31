@@ -1632,11 +1632,13 @@ function get_procedure_find(
 end
 
 # PORT: pl-proc.c get_functor as get_functor_procedure
-# (the `GF_PROCEDURE` case, term already stripped of its module)
+# (the body of `get_functor` after the module is stripped; `how` as upstream's: `GF_PROCEDURE`, `GF_NAMEARITY`)
 # DIVERGES: returns `(name, arity)`, arity -1 with the error raised where upstream returns false and writes `fdef`; no `h`;
 # `GP_TYPE_QUIET` is not passed by any caller here (the type error is always raised).
-"The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or a head in `head`, else arity -1 with an error raised (pl-proc.c)."
-function get_functor_procedure(ld::PL_local_data{T}, head::term_t)::Tuple{T, Int} where {T}
+"The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or, without `GF_NAMEARITY`, a head in `head`, else arity -1 with an error raised (pl-proc.c)."
+function get_functor_procedure(
+    ld::PL_local_data{T}, head::term_t, how::Int = GF_PROCEDURE
+)::Tuple{T, Int} where {T}
     dcgpi = false
     if PL_is_functor(ld, head, mk_sym(T, :/), 2) ||
         (dcgpi = PL_is_functor(ld, head, mk_sym(T, :(//)), 2))
@@ -1652,7 +1654,7 @@ function get_functor_procedure(ld::PL_local_data{T}, head::term_t)::Tuple{T, Int
             return (mk_nil(T), -1)
         end
         arity += dcgpi ? 2 : 0
-        if arity > MAXARITY
+        if (how & GF_PROCEDURE) != 0 && arity > MAXARITY    # maxarity: (how&GF_PROCEDURE) ? MAXARITY : -1
             PL_error(
                 ld, "", 0, "limit is $MAXARITY, request = $arity", ERR_REPRESENTATION,
                 mk_sym(T, :max_procedure_arity)
@@ -1661,12 +1663,32 @@ function get_functor_procedure(ld::PL_local_data{T}, head::term_t)::Tuple{T, Int
         end
         return (name, arity)
     end
-    fd = PL_get_functor(ld, head)                       # !(how&GF_NAMEARITY) && PL_get_functor(head, fdef)
+    fd = (how & GF_NAMEARITY) == 0 ? PL_get_functor(ld, head) : nothing   # !(how&GF_NAMEARITY) && PL_get_functor(head, fdef)
     if fd === nothing
         PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), head)
         return (mk_nil(T), -1)
     end
     return (fd[1], fd[2])
+end
+
+# PORT: pl-proc.c get_functor
+# DIVERGES: returns `(name, arity, m)` - arity -1 with the error raised for upstream's false; the module is an
+# index into `gd`'s table, passed in (0 for upstream's NULL: the context module, `PL_strip_module`'s rule) and
+# returned; `h` (0: none) receives the plain term as upstream's. `GP_TYPE_QUIET` is not passed by any caller here.
+"The `(name, arity, m)` of the `M:Name/Arity` (or head) in `descr`; `GP_NOT_QUALIFIED` leaves `m` and the term as given (pl-proc.c)."
+function get_functor(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, m::Int, h::term_t, how::Int
+)::Tuple{T, Int, Int} where {T}
+    head = descr
+    if (how & GP_NOT_QUALIFIED) == 0
+        head = PL_new_term_ref(ld)
+        ok, m = PL_strip_module(gd, ld, descr, m, head)     # PL_strip_module(descr, m, head)
+        ok || return (mk_nil(T), -1, m)
+    end
+    name, arity = get_functor_procedure(ld, head, how)
+    arity < 0 && return (name, -1, m)
+    h != 0 && PL_put_term(ld, h, head)                  # if ( h ) PL_put_term(h, head)
+    return (name, arity, m)
 end
 
 # PORT: pl-proc.c get_procedure as get_procedure_namearity
