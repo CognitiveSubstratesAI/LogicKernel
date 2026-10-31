@@ -119,6 +119,8 @@ lcm(N, U, M) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, @(lcm(N1, U, 
 lca(N, U) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, @(lca(N1, U), qm2) ).
 lcpm(N, U, M) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, between(1, 2, _), @(lcpm(N1, U, M), M) ).
 lcpa(N, U) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, between(1, 2, _), @(lcpa(N1, U), qm2) ).
+atcpx(C0, C) :- m2(QC), between(1, 2, _), utp(C0), @(qm:qm(C), QC).
+atcpa(C0, C) :- between(1, 2, _), utp(C0), @(utp(C), qm2).
 """
 
 # (id, goal), run IN ORDER
@@ -239,7 +241,11 @@ const _AB_CASES = [
     (
         "a73",
         raw"( lcpa(1000, U1) -> true ), ( lcpa(2000, U2) -> true ), ( U2 > U1 -> R = grows ; R = flat(U1, U2) )"
-    )
+    ),
+    # a74, a75: a choice point above the frame forbids the departure: the frame's own context is NOT set by the at call (it is
+    # retried: its transparent `utp(C0)` still answers user the second time), with a variable module (a74) and an atom (a75)
+    ("a74", raw"findall(C0-C, atcpx(C0, C), R)"),
+    ("a75", raw"findall(C0-C, atcpa(C0, C), R)")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/MOD3b/mod3b_rows.out)
@@ -317,7 +323,9 @@ const _AB_PINNED = [
     "t_a70 c[116,95,97,55,48]/1(a[115,97,109,101])",
     "t_a71 c[116,95,97,55,49]/1(a[115,97,109,101])",
     "t_a72 c[116,95,97,55,50]/1(a[103,114,111,119,115])",
-    "t_a73 c[116,95,97,55,51]/1(a[103,114,111,119,115])"
+    "t_a73 c[116,95,97,55,51]/1(a[103,114,111,119,115])",
+    "t_a74 c[116,95,97,55,52]/1(c[91,124,93]/2(c[45]/2(a[117,115,101,114],a[113,109,50]),c[91,124,93]/2(c[45]/2(a[117,115,101,114],a[113,109,50]),nil)))",
+    "t_a75 c[116,95,97,55,53]/1(c[91,124,93]/2(c[45]/2(a[117,115,101,114],a[113,109,50]),c[91,124,93]/2(c[45]/2(a[117,115,101,114],a[113,109,50]),nil)))"
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -375,7 +383,7 @@ function _ab_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "Goal@Module in a body and call/1 of it as swipl's (a01-a73)" begin
+@testset "Goal@Module in a body and call/1 of it as swipl's (a01-a75)" begin
     f, names = _ab_file()
     kl, _, _ = _ab_kernel(f, names)
     @test length(kl) == length(_AB_PINNED)
@@ -392,10 +400,12 @@ end
     @test count(l -> occursin("c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil)))", l), _AB_PINNED) == 2    # [1,2,3]
     @test any(l -> startswith(l, "t_a39 ") && endswith(l, "(a[110,111])"), _AB_PINNED)    # the cyclic goal fails in swipl
     # a70-a73: the LCO rows answer `same`, the choice-point rows `grows`
-    @test _AB_PINNED[end - 3] == "t_a70 c[116,95,97,55,48]/1(a[115,97,109,101])"
-    @test _AB_PINNED[end - 2] == "t_a71 c[116,95,97,55,49]/1(a[115,97,109,101])"
-    @test _AB_PINNED[end - 1] == "t_a72 c[116,95,97,55,50]/1(a[103,114,111,119,115])"
-    @test _AB_PINNED[end] == "t_a73 c[116,95,97,55,51]/1(a[103,114,111,119,115])"
+    @test _AB_PINNED[end - 5] == "t_a70 c[116,95,97,55,48]/1(a[115,97,109,101])"
+    @test _AB_PINNED[end - 4] == "t_a71 c[116,95,97,55,49]/1(a[115,97,109,101])"
+    @test _AB_PINNED[end - 3] == "t_a72 c[116,95,97,55,50]/1(a[103,114,111,119,115])"
+    @test _AB_PINNED[end - 2] == "t_a73 c[116,95,97,55,51]/1(a[103,114,111,119,115])"
+    # a74, a75: both retried answers have the clause's own context (user) for C0
+    @test count(l -> occursin("c[45]/2(a[117,115,101,114],a[113,109,50])", l), _AB_PINNED) == 2
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
