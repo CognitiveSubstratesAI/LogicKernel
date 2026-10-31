@@ -22,4 +22,4 @@ fz_run(File, Ns) :-
     catch(( consult(File), S = ok ), E, S = exc(E)),
     ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
     forall(member(N, Ns), fz_pred(N)).
-:- initialization((fz_run('/home/shivaji1012/code/lk-mod5b/evidence/MOD5b/mb_q7_rows.pl', [t_q7a, t_q7b]), halt)).
+:- initialization((fz_run('/home/shivaji1012/code/lk-bench2/evidence/MOD5b/mb_q7_rows.pl', [t_q7a, t_q7b]), halt)).

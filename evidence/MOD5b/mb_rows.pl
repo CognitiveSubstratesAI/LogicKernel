@@ -23,6 +23,7 @@ t_a18(R) :- catch(('$declare_module'(mbe1, user, user, '/mb/f.pl', 1.5, false), 
 t_a19(R) :- catch(('$declare_module'(mnc, user, user, '/mb/g.pl', 1, false), export(mnc:pe/1), '$module_property'(mnc, exports(L1)), '$declare_module'(mnc, user, user, '/mb/g.pl', 2, false), '$module_property'(mnc, exports(L2)), R = L1-L2), error(F, _), R = raised(F)), mb_done.
 t_a20(R) :- catch((export(mpr:ex/0), '$declare_module'(mpr, user, user, '/mb/j.pl', 1, false), '$module_property'(mpr, exports(L)), R = L), error(F, _), R = raised(F)), mb_done.
 t_a21(R) :- catch(('$declare_module'(mdy, user, user, '/mb/i.pl', 1, false), mdy:dp(X), R = X), error(F, _), R = raised(F)), mb_done.
+t_a22(R) :- catch(('$declare_module'(mnd, user, user, '/mb/k.pl', 1, false), export(mnd:pf/1), '$declare_module'(mnd, user, user, '/mb/k.pl', 2, false), '$module_property'(mnd, exports(L1)), export(mnd:pf/1), '$module_property'(mnd, exports(L2)), R = L1-L2), error(F, _), R = raised(F)), mb_done.
 t_b01(R) :- catch(('$declare_module'(mns1, user, user, '/mb/h.pl', 1, false), mns1:sup_p(X), R = X), error(F, _), R = raised(F)), mb_done.
 t_b02(R) :- catch(('$declare_module'(mns2, user, system, '/mb/h.pl', 1, false), catch(mns2:sup_p(_), error(E, _), true), R = E), error(F, _), R = raised(F)), mb_done.
 t_b03(R) :- catch(('$declare_module'(mns3, user, mns3, '/mb/h.pl', 1, false), R = ok), error(F, _), R = raised(F)), mb_done.

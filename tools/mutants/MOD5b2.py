@@ -131,7 +131,7 @@ MUTANTS = [
     dict(id="MOD5b-C10 declareModule abolishes the dynamic predicates too (KILL a21, b04, b05)", file=M, targets=TS,
          old="        if (def.flags & (P_DYNAMIC | P_MULTIFILE | P_FOREIGN)) == 0\n",
          new="        if (def.flags & (P_MULTIFILE | P_FOREIGN)) == 0\n"),
-    dict(id="MOD5b-C11 declareModule does not clear the public table (KILL a19, a20)", file=M, targets=TS,
+    dict(id="MOD5b-C11 declareModule does not clear the public table (KILL a22)", file=M, targets=TS,
          old="empty!(module_.public_)",
          new="nothing"),
     dict(id="MOD5b-C12 declareModule does not clear the export order (KILL a19, e03)", file=M, targets=TS,

@@ -157,6 +157,12 @@ const _MB_CASES = [
         "a21",
         raw"'$declare_module'(mdy, user, user, '/mb/i.pl', 1, false), mdy:dp(X), R = X"
     ),
+    # a22: after a re-declaration the SAME name exported again is listed again (the public table was emptied with its order; a table
+    # that kept the old entry would treat the second export as an update in place and the export list would stay empty)
+    (
+        "a22",
+        raw"'$declare_module'(mnd, user, user, '/mb/k.pl', 1, false), export(mnd:pf/1), '$declare_module'(mnd, user, user, '/mb/k.pl', 2, false), '$module_property'(mnd, exports(L1)), export(mnd:pf/1), '$module_property'(mnd, exports(L2)), R = L1-L2"
+    ),
     # b01-b06: the super module: the default (user) sees user's predicates; `system` does not (existence_error); the module itself is
     # a cycle; a super that does not exist is made; a later declaration replaces it. b05: the link a call made to a DYNAMIC predicate
     # of the old super SURVIVES the re-declaration (declareModule's loop skips a definition with P_DYNAMIC, and the definition tested is
@@ -285,6 +291,7 @@ const _MB_PINNED = [
     "t_a19 c[116,95,97,49,57]/1(c[45]/2(c[91,124,93]/2(c[47]/2(a[112,101],i1),nil),nil))",
     "t_a20 c[116,95,97,50,48]/1(nil)",
     "t_a21 c[116,95,97,50,49]/1(i1)",
+    "t_a22 c[116,95,97,50,50]/1(c[45]/2(nil,c[91,124,93]/2(c[47]/2(a[112,102],i1),nil)))",
     "t_b01 c[116,95,98,48,49]/1(i7)",
     "t_b02 c[116,95,98,48,50]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[109,110,115,50],c[47]/2(a[115,117,112,95,112],i1))))",
     "t_b03 c[116,95,98,48,51]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[97,100,100,95,105,109,112,111,114,116],a[109,111,100,117,108,101],a[109,110,115,51])))",
