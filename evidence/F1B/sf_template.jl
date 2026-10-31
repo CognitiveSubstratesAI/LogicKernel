@@ -198,11 +198,14 @@ end
 
 # the flags refused BY NAME (design D4): the flag is DEFINED at upstream's default and setting it raises `NotPortedError` naming the
 # side effect that lives in a file not yet ported; a value the flag accepts is given, so the refusal is the answer, not a type error
+# Values swipl 10.1.19 accepts for the flag (probed); the kernel checks oneof and read-only BEFORE it refuses, so a
+# value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
+# kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
     ("debug", "true"), ("debugger_show_context", "true"), ("threads", "true"),
-    ("tty_control", "false"), ("debug_on_interrupt", "true"), ("var_tag", "atom"),
-    ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "true"),
-    ("file_name_case_handling", "sensitive"), ("autoload", "false"), ("table_monotonic", "eager"),
+    ("tty_control", "false"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
+    ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
+    ("autoload", "false"), ("table_monotonic", "lazy"),
     ("theme", "dark"), ("agc_margin", "100"), ("table_space", "1000000"),
     ("table_compile_threshold", "5"), ("table_drop_intermediate", "5"), ("stack_limit", "1000000000"),
     ("string_stack_tripwire", "100"), ("heartbeat", "0"),
