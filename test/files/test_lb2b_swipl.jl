@@ -204,7 +204,7 @@ end
     kl = _in_fixture_dir() do d
         lines = kernel_lines(_LB2B_PL, names)
         # the file system after the run, as the mutating rows leave it
-        @test isdir("lk_lb2b_n1") == false && isdir("lk_lb2b_n3") && isdir("lk_lb2b_rd2")
+        @test isdir("lk_lb2b_n1") == false && isdir("lk_lb2b_n3") && isdir("lk_lb2b_n4") && isdir("lk_lb2b_rd2")
         @test isfile("lk_lb2b_r1b") && isfile("lk_lb2b_r3") && !isfile("lk_lb2b_r2")
         @test isfile("lk_lb2b_r4b") && !isfile("lk_lb2b_r4")
         @test (filemode("lk_lb2b_m1") & 0o111) != 0
