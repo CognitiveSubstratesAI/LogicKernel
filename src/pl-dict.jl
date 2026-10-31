@@ -567,3 +567,232 @@ function pl_put_dict3_va(
 
     return FFALSE
 end
+
+# ── select_dict/3, get_dict/3 (part 5d) ───────────────────────────────────────────────────────────
+
+# ORIGINAL: pl-atom.ih `ATOM_dyndict` (generated from src/ATOMS): the tag of a dict made from others (select_dict/3's rest).
+"The atom word of `dyndict` (pl-atom.ih `ATOM_dyndict`): the same in every database."
+const ATOM_dyndict = builtin_atom("dyndict")
+
+# ORIGINAL: pl-dict.c `Word` pointer arguments as LOCATIONS: `_dict_unify_key` is `PL_unify_atomic(t, w)` for a key WORD
+# `w` (an atom or a small integer: `PL_unify_atomic` here takes an atomic term, not a word). A variable is bound to it;
+# anything else is equal to it only as the same word (an atom's word is unique, a small integer is tagged in place).
+"Unify the term reference `t` with the dict key word `w` (pl-fli.c `PL_unify_atomic` on a word)."
+function _dict_unify_key(ld::PL_local_data, t::term_t, w::word)::Bool
+    k, c, q = _deref_loc(ld, -(t + 1))
+    if k == DU_CELL || k == DU_ATTVAR
+        bindConst(ld, q, w)
+        return true
+    end
+
+    return c == w
+end
+
+# PORT: pl-dict.c unify_tags
+# DIVERGES: `t1` and `t2` are locations; no `flags` (`unify_ptrs_cells` takes none).
+"Unify two dict tags; true if either is `dyndict` (pl-dict.c)."
+function unify_tags(ld::PL_local_data, t1::Int, t2::Int)::Bool
+    _, w1, _ = _deref_loc(ld, t1)
+    _, w2, _ = _deref_loc(ld, t2)
+
+    if w1 == ATOM_dyndict || w2 == ATOM_dyndict
+        return true
+    end
+
+    return unify_ptrs_cells(ld, t1, t2)
+end
+
+# PORT: pl-dict.c select_dict
+# DIVERGES: the result is the new dict's compound word, `word(0)` for upstream's false (also when the global overflow was
+# raised: `ensureGlobalSpace`, where upstream returns `GLOBAL_OVERFLOW` for its caller to retry); `keep` is a `Vector{Bool}`,
+# not a `bit_vector` on a 256-int buffer; the cells are laid out after the count is known (`allocGlobalCells!`).
+"The rest of the dict `from` after the dict `del` was unified with the keys it shares: a `dyndict` dict, or `word(0)` (pl-dict.c)."
+function select_dict(ld::PL_local_data{T}, del::word, from::word)::word where {T}
+    dd = valPtr(del)
+    fd = valPtr(from)
+    din = dd + 1                                    # dd->arguments
+    fin = fd + 1
+    dend = din + arityFunctor(ld.functors, ld.gstack[dd])
+    fend = fin + arityFunctor(ld.functors, ld.gstack[fd])
+    keep = nothing
+
+    # unify the tags
+    unify_tags(ld, din, fin) || return word(0)
+
+    # advance to first v+k entry
+    din += 1
+    fin += 1
+
+    i = 0
+    while din < dend && fin < fend
+        _, d, _ = _deref_loc(ld, din + 1)
+        _, f, _ = _deref_loc(ld, fin + 1)
+
+        if d == f                                   # same keys
+            unify_ptrs_cells(ld, din, fin) || return word(0)
+            din += 2
+        elseif d < f
+            return word(0)
+        else
+            if keep === nothing
+                keep = fill(false, arityFunctor(ld.functors, ld.gstack[fd]) ÷ 2)
+            end
+            keep[i + 1] = true
+        end
+        i += 1
+        fin += 2
+    end
+
+    if din == dend                                  # unification succeeded
+        nsize = (keep === nothing ? 0 : count(keep)) + (fend - fin) ÷ 2
+
+        ensureGlobalSpace(ld, nsize * 2 + 2) || return word(0)
+        out = allocGlobalCells!(ld, nsize * 2 + 2)
+        new_dict = consPtr(out, TAG_COMPOUND | STG_GLOBAL)
+        ld.gstack[out] = dict_functor(ld, nsize)
+        ld.gstack[out + 1] = ATOM_dyndict
+        out += 2
+
+        fe = fin
+        fin = fd + 2                                # fd->arguments+1
+        i = 0
+        while fin < fend
+            if fin >= fe || (keep !== nothing && keep[i + 1])
+                _, f, _ = _deref_loc(ld, fin + 1)
+                _dict_link!(ld, out, fin)           # *out++ = linkValI(fin)
+                ld.gstack[out + 1] = f              # *out++ = *f
+                out += 2
+            end
+            i += 1
+            fin += 2
+        end
+
+        return new_dict
+    end
+
+    return word(0)
+end
+
+# PORT: pl-dict.c select_dict as pl_select_dict3_va
+# (PRED_IMPL("select_dict", 3, select_dict, 0))
+# DIVERGES: no `Mark(fli_context->mark)` and no retry after a global overflow (raised by `ensureGlobalSpace`).
+"`select_dict(+Select, +From, -Rest)`: `Select` unifies with the pairs of `From` it names; `Rest` is the others (pl-dict.c)."
+function pl_select_dict3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    dt = PL_new_term_refs(ld, 2)
+
+    if get_create_dict_ex(ld, A1, dt + 0) && get_create_dict_ex(ld, A2, dt + 1)
+        _, d0, _ = _deref_loc(ld, -(dt + 0 + 1))
+        _, d1, _ = _deref_loc(ld, -(dt + 1 + 1))
+        r = select_dict(ld, d0, d1)
+
+        if r != word(0)
+            t = PL_new_term_ref(ld)
+            ld.slots[t + 1] = r
+            return PL_unify(ld, A3, t) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-dict.c pl_get_dict
+# DIVERGES: `i` is the 0-based index into the ARGUMENTS as upstream's (`f->arguments[i]` is position `f + 1 + i`);
+# `exception_term` is `PL_exception(ld, 0) != 0`. `ex` as upstream's: `get_dict/3` is `ex = false`, which raises
+# `type_error(dict, …)` for a non-dict (`get_dict_ex(A2, &dict, !ex)`); `$get_dict_ex/3` (`ex = true`) is outside the
+# six and is not registered. With a key bound the lookup is one binary search (`dict_lookup_ptr`); with it unbound the
+# pairs are enumerated in the dict's (kernel-word) order, `ForeignRedoInt(i)` carrying the index.
+"The body of `get_dict/3` (and `$get_dict_ex/3`): `Value` is the value of `Key` in the dict, or on backtracking every pair (pl-dict.c)."
+function pl_get_dict(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, ex::Bool, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ctl = PL_foreign_control(PL__ctx)
+    dict = word(0)
+    i = 0
+
+    if ctl == FRG_FIRST_CALL
+        d = get_dict_ex(ld, A2, !ex)
+        d === nothing && return FFALSE
+        dict = d
+
+        k, np, _ = _deref_loc(ld, -(A1 + 1))
+        if is_dict_key(np)
+            r = dict_lookup_ptr(ld, dict, np)
+            if r !== nothing
+                return unify_ptrs_cells(ld, r[1], -(A3 + 1)) ? FTRUE : FFALSE
+            end
+
+            if ex
+                PL_existence_error3(ld, mk_sym(T, :key), A1, A2)
+            end
+            return FFALSE
+        end
+        if k == DU_CELL || k == DU_ATTVAR           # canBind(*np)
+            i = 1
+        else
+            if !ex
+                PL_type_error(ld, "dict-key", A1)
+            end
+            return FFALSE
+        end
+    elseif ctl == FRG_REDO
+        i = PL_foreign_context(PL__ctx) + 2
+        _, dict, _ = _deref_loc(ld, -(A2 + 1))
+    else
+        return FTRUE
+    end
+
+    # search:
+    f = valPtr(dict)
+    arity = arityFunctor(ld.functors, ld.gstack[f])
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        while i < arity
+            _, np, _ = _deref_loc(ld, f + 1 + i + 1)        # deRef2(&f->arguments[i+1], np)    TBD: check type
+            if unify_ptrs_cells(ld, f + 1 + i, -(A3 + 1)) && _dict_unify_key(ld, A1, np)
+                PL_close_foreign_frame(ld, fid)
+
+                if i + 2 < arity
+                    return PL_retry(i)                      # ForeignRedoInt(i)
+                else
+                    return FTRUE
+                end
+            elseif PL_exception(ld, 0) != 0
+                PL_close_foreign_frame(ld, fid)
+                return FFALSE
+            end
+            PL_rewind_foreign_frame(ld, fid)
+            i += 2
+        end
+        PL_close_foreign_frame(ld, fid)
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-dict.c get_dict as pl_get_dict3_va
+# (PRED_IMPL("get_dict", 3, get_dict, PL_FA_NONDETERMINISTIC))
+"`get_dict(?Key, +Dict, ?Value)`: `Key` is associated with `Value` in `Dict`; with `Key` unbound, every pair (pl-dict.c)."
+function pl_get_dict3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_get_dict(ld, PL__t0, PL__ac, false, PL__ctx)
+end
+
+# PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
+# DIVERGES: the ported entries, in upstream's order (upstream's table also has `dict_pairs/3`, `dict_same_keys/2`,
+# `put_dict/4`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3`, `$get_dict_ex/3`, `del_dict/4`, `get_dict/5`, `:</2`,
+# `>:</2` and `$get_dict_kv/4,6,8`).
+"pl-dict.c's registration table (`BeginPredDefs(dict)`): the ported entries."
+const PL_predicates_from_dict = (
+    PL_extension("is_dict", 1, pl_is_dict1_va, PL_FA_VARARGS),
+    PL_extension("is_dict", 2, pl_is_dict2_va, PL_FA_VARARGS),
+    PL_extension("dict_create", 3, pl_dict_create3_va, PL_FA_VARARGS),
+    PL_extension("put_dict", 3, pl_put_dict3_va, PL_FA_VARARGS),
+    PL_extension("get_dict", 3, pl_get_dict3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("select_dict", 3, pl_select_dict3_va, PL_FA_VARARGS)
+)
