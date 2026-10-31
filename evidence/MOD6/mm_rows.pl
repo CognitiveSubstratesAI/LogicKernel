@@ -25,6 +25,7 @@ t_i17(R) :- catch((import_module(mmx_c2, S), !, R = S), error(F, _), R = raised(
 t_i18(R) :- catch((( forall(import_module(mmx_c2, S), atom(S)) -> R = yes ; R = no )), error(F, _), R = raised(F)), mme_done.
 t_i19(R) :- catch((add_import_module(mmx_c4, mmx_u, start), findall(S, (import_module(mmx_c4, S), ( S == mmx_u -> add_import_module(mmx_c4, mmx_f, end) ; true )), L), R = L), error(F, _), R = raised(F)), mme_done.
 t_i20(R) :- catch((( import_module(user, S), import_module(S, S2) -> R = S-S2 ; R = none )), error(F, _), R = raised(F)), mme_done.
+t_i21(R) :- catch((mme_det(import_module(mmx_c2, mmx_u), D), R = D), error(F, _), R = raised(F)), mme_done.
 t_c01(R) :- catch(('$current_module'(user, Fa), '$current_module'(system, Fb), R = Fa-Fb), error(F, _), R = raised(F)), mme_done.
 t_c02(R) :- catch(('$current_module'(mmx_f, Fa), R = Fa), error(F, _), R = raised(F)), mme_done.
 t_c03(R) :- catch((( '$current_module'(mmx_none, Fa) -> R = yes(Fa) ; R = no )), error(F, _), R = raised(F)), mme_done.
@@ -44,6 +45,7 @@ t_c16(R) :- catch((mme_det('$current_module'(user, _), D1), mme_det('$current_mo
 t_c17(R) :- catch(('$current_module'(M, _), !, ( atom(M) -> R = ok ; R = no )), error(F, _), R = raised(F)), mme_done.
 t_c18(R) :- catch((\+ \+ '$current_module'(_, _), \+ \+ '$current_module'(_, _), once('$current_module'(_, _)), once('$current_module'(_, _)), R = ok), error(F, _), R = raised(F)), mme_done.
 t_c19(R) :- catch((findall(M, ('$current_module'(M, _), ( M == mmx_u ; M == mmx_f ; M == mmx_c2 )), L0), msort(L0, L), R = L), error(F, _), R = raised(F)), mme_done.
+t_c20(R) :- catch((( '$current_module'([], '/mmx/g.pl') -> A = yes ; A = no ), R = A), error(F, _), R = raised(F)), mme_done.
 t_d01(R) :- catch(('$destroy_module'(mmx_t), ( '$current_module'(mmx_t, Fa) -> R = yes(Fa) ; R = no )), error(F, _), R = raised(F)), mme_done.
 t_d03(R) :- catch((findall(M, ('$current_module'(M, _), M == mmx_t), L), R = L), error(F, _), R = raised(F)), mme_done.
 t_d04(R) :- catch((assertz(mmx_t:q(1)), findall(M, ('$current_module'(M, _), M == mmx_t), L), '$module_property'(mmx_t, class(C)), R = L-C), error(F, _), R = raised(F)), mme_done.
