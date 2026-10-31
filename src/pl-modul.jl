@@ -1051,8 +1051,8 @@ function pl_destroy_module1_va(
     return FTRUE                                        # non-existing
 end
 
-# PORT: pl-util.c text_summary and atom_summary
-# DIVERGES: a Julia string (pl-util.c returns a buffer of UTF-8); the text is `s`'s characters.
+# Ported from pl-util.c text_summary and atom_summary (a file this module does not mirror, so no PORT marker).
+# Differs: a Julia string (pl-util.c returns a buffer of UTF-8); the text is `s`'s characters.
 "`s` itself when it is ASCII and shorter than `maxlen`; else its first characters, `...` and its last three (pl-util.c)."
 function _text_summary(s::AbstractString, maxlen::Int)::String
     chars = collect(s)
@@ -1074,8 +1074,8 @@ function _text_summary(s::AbstractString, maxlen::Int)::String
     return String(take!(io))
 end
 
-# PORT: pl-proc.c abolishProcedure
-# DIVERGES (MOD5b; Q7, F5; audit): only the imported-link branch (pl-proc.c:1517-1530) is the kernel's; the rest (pl-proc.c:1531-1550:
+# Ported from pl-proc.c abolishProcedure (a file this module does not mirror, so no PORT marker).
+# Differs (MOD5b; Q7, F5; audit): only the imported-link branch (pl-proc.c:1517-1530) is the kernel's; the rest (pl-proc.c:1531-1550:
 # `resetProcedure`, a foreign predicate made normal, `removeClausesPredicate`, `setDynamicDefinition_unlocked`) is not in the kernel. A procedure of the module's own whose abolish would
 # change nothing (no clauses, no flags) needs no work; any other own procedure is refused by name (`NotPortedError`). An IMPORTED link is
 # removed as upstream does: a fresh definition for the module (upstream's `memset` leaves `shared` 0), the old one unshared; no statistics
