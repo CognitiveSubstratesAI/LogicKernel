@@ -9,13 +9,17 @@
 # daemon): RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old`
 # was checked to occur exactly once in its file at the commit that adds this list (a text count, no Julia).
 # TARGETS (audit D-0238): test_bootpred_swipl.jl is the only test file that names these predicates (no other test file
-# calls thread_self, with_mutex or '$garbage_collect'), so it is the whole list.
+# calls thread_self, with_mutex or '$garbage_collect'), so it is the whole list. The dict mutants (pl-dict.c, rows bp27-bp119)
+# are killed by the same file; the two registration mutants also list test/foreign/test_builtins_swipl.jl, the one other test
+# file that walks the dispatch tables (_FOREIGN_VA). The pl-dict.jl `old` strings were checked to occur once (text count).
 TB = ["test/core_lang/test_bootpred_swipl.jl"]
 TARGETS = TB
 GC = "src/pl-gc.jl"
 TH = "src/pl-thread.jl"
 MX = "src/pl-mutex.jl"
 EXT = "src/pl-ext.jl"
+DI = "src/pl-dict.jl"
+TX = TB + ["test/foreign/test_builtins_swipl.jl"]
 MUTANTS = [
     # ── pl-gc.c pl_garbage_collect ──
     dict(id="BOOTPRED-G1 '$garbage_collect'/1 fails (KILL bp20-bp26)", file=GC, targets=TB,
@@ -49,4 +53,83 @@ MUTANTS = [
          file=EXT, targets=TB,
          old='    PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_TRANSPARENT | PL_FA_ISO)',
          new='    PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_ISO)'),
+    # ── pl-dict.c (src/pl-dict.jl) ──
+    dict(id="BOOTPRED-D1 dict_lookup_ptr's binary search goes the wrong way: a key past the middle is not found (KILL bp62, bp72, bp78, bp97, bp98)",
+         file=DI, targets=TB,
+         old="        if p < name\n            l = m + 1\n",
+         new="        if p > name\n            l = m + 1\n"),
+    dict(id="BOOTPRED-D2 dict_ordered reports a descending key pair as ordered: dict_create/3 keeps [b,a] unsorted (KILL bp46)",
+         file=DI, targets=TB,
+         old="            elseif n1 > n2\n                ordered = PL_DICT_FALSE\n",
+         new="            elseif n1 < n2\n                ordered = PL_DICT_FALSE\n"),
+    dict(id="BOOTPRED-D3 dict_ordered finds a duplicate key where the keys differ (KILL bp27, bp35, bp36, bp89)",
+         file=DI, targets=TB,
+         old="            if n1 == n2\n                if want_dupl\n",
+         new="            if n1 != n2\n                if want_dupl\n"),
+    dict(id="BOOTPRED-D4 put_dict merges the two runs in the wrong order: the old key and the new key swap places (KILL bp80, bp82, bp95, bp96)",
+         file=DI, targets=TB,
+         old="        elseif i_name < n_name\n            push!(plan, (false, ip, i_name))\n",
+         new="        elseif i_name > n_name\n            push!(plan, (false, ip, i_name))\n"),
+    dict(id="BOOTPRED-D5 put_dict does not notice a changed value of an equal key: the old dict is returned (KILL bp81, bp94, bp98)",
+         file=DI, targets=TB,
+         old="compareStandard_cells(ld, nv, ip, true) != 0",
+         new="compareStandard_cells(ld, nv, ip, true) == 0"),
+    dict(id="BOOTPRED-D6 put_dict returns the old dict when it WAS modified (KILL bp81, bp94)",
+         file=DI, targets=TB,
+         old="        if !modified\n            return dict\n        end\n        while ip < ip_end\n",
+         new="        if modified\n            return dict\n        end\n        while ip < ip_end\n"),
+    dict(id="BOOTPRED-D7 select_dict gives up at a key of From before the next key of Select (KILL bp101, bp111)",
+         file=DI, targets=TB,
+         old="        elseif d < f\n            return word(0)\n",
+         new="        elseif d > f\n            return word(0)\n"),
+    dict(id="BOOTPRED-D8 select_dict's rest forgets the skipped keys of From that sort before the last selected key (KILL bp111)",
+         file=DI, targets=TB,
+         old="            if fin >= fe || (keep !== nothing && keep[i + 1])\n",
+         new="            if fin >= fe\n"),
+    dict(id="BOOTPRED-D9 select_dict's rest has the tag dict, not dyndict (KILL bp107, bp112)",
+         file=DI, targets=TB,
+         old="        ld.gstack[out + 1] = ATOM_dyndict\n",
+         new="        ld.gstack[out + 1] = ATOM_dict\n"),
+    dict(id="BOOTPRED-D10 unify_tags accepts a dyndict tag only if both are: a rest cannot be the From of a later select (KILL bp117)",
+         file=DI, targets=TB,
+         old="    if w1 == ATOM_dyndict || w2 == ATOM_dyndict\n",
+         new="    if w1 == ATOM_dyndict && w2 == ATOM_dyndict\n"),
+    dict(id="BOOTPRED-D11 is_dict/2 does not unify the tag (KILL bp58, bp60, bp119)", file=DI, targets=TB,
+         old="return unify_ptrs_cells(ld, f + 1, -(A2 + 1)) ? FTRUE : FFALSE",
+         new="return FTRUE"),
+    dict(id="BOOTPRED-D12 get_dict/3 with an unbound key starts at the second pair (KILL bp64, bp65, bp75, bp79)",
+         file=DI, targets=TB,
+         old="        if k == DU_CELL || k == DU_ATTVAR           # canBind(*np)\n            i = 1\n",
+         new="        if k == DU_CELL || k == DU_ATTVAR           # canBind(*np)\n            i = 3\n"),
+    dict(id="BOOTPRED-D13 get_dict/3 on backtracking skips a pair (KILL bp64, bp65, bp75)",
+         file=DI, targets=TB,
+         old="        i = PL_foreign_context(PL__ctx) + 2\n",
+         new="        i = PL_foreign_context(PL__ctx) + 4\n"),
+    dict(id="BOOTPRED-D14 get_dict/3 leaves a choice point after the last pair (KILL bp118)",
+         file=DI, targets=TB,
+         old="                if i + 2 < arity\n",
+         new="                if i + 2 <= arity\n"),
+    dict(id="BOOTPRED-D15 get_dict/3 raises no type error for a key that is neither an atom nor an integer (KILL bp70, bp71)",
+         file=DI, targets=TB,
+         old='            if !ex\n                PL_type_error(ld, "dict-key", A1)\n',
+         new='            if ex\n                PL_type_error(ld, "dict-key", A1)\n'),
+    dict(id="BOOTPRED-D16 dict_create/3 does not bind the caller's tag variable to the dict's tag cell (KILL bp119)",
+         file=DI, targets=TB,
+         old="_bind_const!(ld, cp, makeRefG(ap))  # Trail(cp, makeRefG(ap))",
+         new="nothing  # Trail(cp, makeRefG(ap))"),
+    dict(id="BOOTPRED-D17 select_dict/3 is registered under another name (KILL bp101-bp117)", file=DI, targets=TX,
+         old='    PL_extension("select_dict", 3, pl_select_dict3_va, PL_FA_VARARGS)',
+         new='    PL_extension("select_dictx", 3, pl_select_dict3_va, PL_FA_VARARGS)'),
+    dict(id="BOOTPRED-D18 put_dict/3 is registered with is_dict/2's function (KILL bp80-bp100)", file=DI, targets=TX,
+         old='    PL_extension("put_dict", 3, pl_put_dict3_va, PL_FA_VARARGS),',
+         new='    PL_extension("put_dict", 3, pl_select_dict3_va, PL_FA_VARARGS),'),
+    # EQUIVALENT: assign_in_dict binds the other way round when the value variable is older than the new cell. Either
+    # direction makes the cell and the variable ONE variable (upstream's direction rule keeps the younger cell pointing to
+    # the older one for the stack shifter; the kernel's stacks have no shifter reading it, src/pl-dict.jl:446), and a
+    # backtrack past the put_dict/3 undoes the trailed binding either way: no row can tell them apart.
+    dict(id="BOOTPRED-D19 assign_in_dict links the older variable to the new cell (EQUIVALENT: one variable either way)",
+         file=DI, targets=TB,
+         equivalent="both branches make the dict cell and the value variable one variable; the age order is read only by upstream's stack shifter (pl-dict.jl:446, pl-dict.c assign_in_dict)",
+         old="        if dp < q\n",
+         new="        if dp > q\n"),
 ]
