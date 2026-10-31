@@ -340,3 +340,243 @@ function boot_from_source!(
     setAccessLevel!(ld, ACCESS_LEVEL_USER)
     return true
 end
+
+# ── the predicates of pl-qlf.c (BeginPredDefs(wic), pl-qlf.c:4953-4976) ───────────────────────────────
+
+# The eight write-side predicates take upstream's NULL-state branch (`LD->qlf.write_state` is NULL: LD2). Each is
+# `PRED_IMPL(name, arity, f, flags)` with `PRED_DEF` or-ing in `PL_FA_VARARGS`: the argument terms are
+# `PL__t0 + i`, none is checked on the NULL branch.
+
+# PORT: pl-qlf.c qlf_start_module as pl_qlf_start_module1_va
+# (PRED_IMPL("$qlf_start_module", 1, qlf_start_module, 0)) — pl-qlf.c:4094-4110
+"`'\$qlf_start_module'(+Module)` (pl-qlf.c): start a module in the state file; with no state, true."
+function pl_qlf_start_module1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-qlf.c qlf_start_sub_module as pl_qlf_start_sub_module1_va
+# (PRED_IMPL("$qlf_start_sub_module", 1, qlf_start_sub_module, 0)) — pl-qlf.c:4112-4128
+"`'\$qlf_start_sub_module'(+Module)` (pl-qlf.c): as `'\$qlf_start_module'/1`; with no state, true."
+function pl_qlf_start_sub_module1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-qlf.c qlf_start_file as pl_qlf_start_file1_va
+# (PRED_IMPL("$qlf_start_file", 1, qlf_start_file, 0)) — pl-qlf.c:4130-4160
+"`'\$qlf_start_file'(+File)` (pl-qlf.c): start a source file's part in the state file; with no state, true."
+function pl_qlf_start_file1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-qlf.c qlf_include as pl_qlf_include5_va
+# (PRED_IMPL("$qlf_include", 5, qlf_include, 0)) — pl-qlf.c:4174-4197
+# DIVERGES: the NULL state is the only one: the five arguments are checked in upstream's order (the atoms
+# `Owner`, `PN`, the integer `Line`, the atom `File`, the float `Time`), then the predicate FAILS (upstream's
+# `(state=LD->qlf.write_state)` is the last conjunct, and false the fall-through). FLAG Q2 (LB4): upstream's boot
+# has a state open, so init.pl's `'\$record_included'` succeeds there; here it fails on an `include/1` read by the boot.
+"`'\$qlf_include'(+Owner, +PN, +Line, +File, +Time)` (pl-qlf.c): record an include in the state file; with no state, false."
+function pl_qlf_include5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4, A5 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4
+    PL_get_atom_ex(ld, A1) === nothing && return FFALSE         # owner
+    PL_get_atom_ex(ld, A2) === nothing && return FFALSE         # pn
+    PL_get_integer_ex(ld, A3) === nothing && return FFALSE      # line
+    PL_get_atom_ex(ld, A4) === nothing && return FFALSE         # fn
+    PL_get_float(ld, A5) === nothing && return FFALSE           # time
+    return FFALSE                                               # (state=LD->qlf.write_state): NULL
+end
+
+# PORT: pl-qlf.c qlf_end_part as pl_qlf_end_part0_va
+# (PRED_IMPL("$qlf_end_part", 0, qlf_end_part, 0)) — pl-qlf.c:4219-4230
+"`'\$qlf_end_part'` (pl-qlf.c): end the current part of the state file; with no state, true."
+function pl_qlf_end_part0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-qlf.c add_directive_wic as pl_add_directive_wic1_va
+# (PRED_IMPL("$add_directive_wic", 1, add_directive_wic, PL_FA_TRANSPARENT)) — pl-qlf.c:4479-4505
+"`'\$add_directive_wic'(:Goal)` (pl-qlf.c): record a directive in the state file; with no state, true."
+function pl_add_directive_wic1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-qlf.c import_wic as pl_import_wic3_va
+# (PRED_IMPL("$import_wic", 3, import_wic, 0)) — pl-qlf.c:4512-4530
+# DIVERGES: the NULL state's branch only (it succeeds). The brief listed this predicate among the 15 refused by name;
+# it is an EIGHTH shell because boot/init.pl calls it in wic mode through `'\$ifcompiling'` (init.pl:3794,
+# `'\$import_all2'`) (FLAG Q1, audit).
+"`'\$import_wic'(+Module, +PredicateIndicator, +Strength)` (pl-qlf.c): record an import in the state file; with no state, true."
+function pl_import_wic3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-qlf.c qlf_assert_clause as pl_qlf_assert_clause2_va
+# (PRED_IMPL("$qlf_assert_clause", 2, qlf_assert_clause, 0)) — pl-qlf.c:4537-4561
+"`'\$qlf_assert_clause'(+ClauseRef, +Class)` (pl-qlf.c): save a clause in the state file; with no state, true."
+function pl_qlf_assert_clause2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# The 14 predicates that read or write a QLF file are refused by name: calling one raises `NotPortedError` with
+# its indicator (LD2; the QLF reader and writer are not ported — the boot compiles from source).
+"Raise `NotPortedError` for the predicate `name/arity` of pl-qlf.c's table (refused by name, LD2)."
+function _qlf_refused(::Type{T}, name::String, arity::Int)::Union{} where {T}
+    throw(NotPortedError{T}(mk_sym(T, Symbol(name)), "the QLF file predicate $name/$arity", "LB3: refused by name"))
+end
+
+# PORT: pl-qlf.c qlf_versions as pl_qlf_versions6_va
+# (PRED_IMPL("$qlf_versions", 6, qlf_versions, 0)) — refused by name
+function pl_qlf_versions6_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_versions", 6)
+end
+
+# PORT: pl-qlf.c qlf_is_compatible as pl_qlf_is_compatible1_va
+# (PRED_IMPL("$qlf_is_compatible", 1, qlf_is_compatible, 0)) — refused by name
+function pl_qlf_is_compatible1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_is_compatible", 1)
+end
+
+# PORT: pl-qlf.c qlf_sources as pl_qlf_sources2_va
+# (PRED_IMPL("$qlf_sources", 2, qlf_sources, 0)) — refused by name
+function pl_qlf_sources2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_sources", 2)
+end
+
+# PORT: pl-qlf.c file_hash as pl_file_hash2_va
+# (PRED_IMPL("$file_hash", 2, file_hash, 0)) — refused by name
+function pl_file_hash2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$file_hash", 2)
+end
+
+# PORT: pl-qlf.c qlf_module as pl_qlf_module2_va
+# (PRED_IMPL("$qlf_module", 2, qlf_module, 0)) — refused by name
+function pl_qlf_module2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_module", 2)
+end
+
+# PORT: pl-qlf.c qlf_load as pl_qlf_load2_va
+# (PRED_IMPL("$qlf_load", 2, qlf_load, PL_FA_TRANSPARENT)) — refused by name
+function pl_qlf_load2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_load", 2)
+end
+
+# PORT: pl-qlf.c qlf_current_source as pl_qlf_current_source1_va
+# (PRED_IMPL("$qlf_current_source", 1, qlf_current_source, 0)) — refused by name
+function pl_qlf_current_source1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_current_source", 1)
+end
+
+# PORT: pl-qlf.c $qlf_dependency as pl_qlf_dependency1_va
+# (PRED_IMPL("$qlf_dependency", 1, $qlf_dependency, 0)) — refused by name
+function pl_qlf_dependency1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_dependency", 1)
+end
+
+# PORT: pl-qlf.c qlf_open as pl_qlf_open1_va
+# (PRED_IMPL("$qlf_open", 1, qlf_open, 0)) — refused by name
+function pl_qlf_open1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_open", 1)
+end
+
+# PORT: pl-qlf.c qlf_close as pl_qlf_close0_va
+# (PRED_IMPL("$qlf_close", 0, qlf_close, 0)) — refused by name
+function pl_qlf_close0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$qlf_close", 0)
+end
+
+# PORT: pl-qlf.c open_wic as pl_open_wic2_va
+# (PRED_IMPL("$open_wic", 2, open_wic, 0)) — refused by name
+function pl_open_wic2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$open_wic", 2)
+end
+
+# PORT: pl-qlf.c close_wic as pl_close_wic0_va
+# (PRED_IMPL("$close_wic", 0, close_wic, 0)) — refused by name
+function pl_close_wic0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$close_wic", 0)
+end
+
+# PORT: pl-qlf.c map_id as pl_map_id2_va
+# (PRED_IMPL("$map_id", 2, map_id, 0)) — refused by name
+function pl_map_id2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$map_id", 2)
+end
+
+# PORT: pl-qlf.c unmap_id as pl_unmap_id1_va
+# (PRED_IMPL("$unmap_id", 1, unmap_id, 0)) — refused by name
+function pl_unmap_id1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _qlf_refused(T, "\$unmap_id", 1)
+end
+
+# PORT: pl-qlf.c BeginPredDefs as PL_predicates_from_wic
+# DIVERGES: all 22 entries of the table, in upstream's order (pl-qlf.c:4953-4976): eight take the NULL-state branch
+# (`'\$add_directive_wic'/1` `PL_FA_TRANSPARENT`, as the table's flags), 14 are refused by name. `PRED_DEF` ors in
+# `PL_FA_VARARGS`.
+"pl-qlf.c's registration table (`BeginPredDefs(wic)`): the shells and the refused predicates."
+const PL_predicates_from_wic = (
+    PL_extension("\$qlf_versions", 6, pl_qlf_versions6_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_is_compatible", 1, pl_qlf_is_compatible1_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_sources", 2, pl_qlf_sources2_va, PL_FA_VARARGS),
+    PL_extension("\$file_hash", 2, pl_file_hash2_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_module", 2, pl_qlf_module2_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_load", 2, pl_qlf_load2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("\$add_directive_wic", 1, pl_add_directive_wic1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("\$qlf_start_module", 1, pl_qlf_start_module1_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_start_sub_module", 1, pl_qlf_start_sub_module1_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_start_file", 1, pl_qlf_start_file1_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_current_source", 1, pl_qlf_current_source1_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_include", 5, pl_qlf_include5_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_dependency", 1, pl_qlf_dependency1_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_end_part", 0, pl_qlf_end_part0_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_open", 1, pl_qlf_open1_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_close", 0, pl_qlf_close0_va, PL_FA_VARARGS),
+    PL_extension("\$qlf_assert_clause", 2, pl_qlf_assert_clause2_va, PL_FA_VARARGS),
+    PL_extension("\$open_wic", 2, pl_open_wic2_va, PL_FA_VARARGS),
+    PL_extension("\$close_wic", 0, pl_close_wic0_va, PL_FA_VARARGS),
+    PL_extension("\$map_id", 2, pl_map_id2_va, PL_FA_VARARGS),
+    PL_extension("\$unmap_id", 1, pl_unmap_id1_va, PL_FA_VARARGS),
+    PL_extension("\$import_wic", 3, pl_import_wic3_va, PL_FA_VARARGS)
+)
