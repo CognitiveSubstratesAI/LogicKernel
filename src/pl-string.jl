@@ -609,6 +609,110 @@ function pl_get_string_code3_va(
     return PL_unify_integer(ld, A3, c) ? FTRUE : FFALSE
 end
 
+# ── split_string/4 (pl-string.c 386-472) ────────────────────────────────────────────────────────────
+
+# PORT: pl-text.h text_chr
+# DIVERGES: the offset is 0-based, -1 for (size_t)-1. The C string semantics of upstream's `strchr`/`wcschr` are
+# kept: the search ends at the first NUL, and a NUL (`chr == 0`) is found there, or at the end of the text. So a NUL
+# in the text `split_string/4` splits is a separator and a padding character, as swipl's.
+"The offset of the first `chr` in the canonical text `t`, or -1 (pl-text.h; C string semantics)."
+function text_chr(t::PL_chars_t, chr::Int)::Int
+    @assert t.canonical "text_chr: a text that is not canonical"
+    for i in 0:(t.length - 1)
+        c = text_get_char(t, i)
+        c == chr && return i
+        c == 0 && return -1
+    end
+    return chr == 0 ? t.length : -1
+end
+
+# PORT: pl-string.c split_string as pl_split_string4_va
+# (PRED_IMPL("split_string", 4, split_string, 0))
+# DIVERGES: the three texts are canonicalised after `PL_get_text`; the offsets are 0-based code point indices
+# (`text_next_code` is `text_get_char`, `text_prev_code` the code before the offset); `goto no_skip_padding` is
+# the flag `skip`; `PL_unify_text_units` is T1's `unify_text_between`; `PL_unify_chars(head, PL_STRING, 0, "")`
+# is the empty string made with `PL_unify_text`.
+"""
+`split_string/4` (pl-string.c): `A4` is the list of the strings `A1` splits into at the characters of `A2`, each
+with the characters of `A3` stripped from both ends; an empty `A2` only strips.
+"""
+function pl_split_string4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    flags = CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION
+
+    input = PL_get_text(ld, A1, flags)
+    input === nothing && return FFALSE
+    sep = PL_get_text(ld, A2, flags)
+    sep === nothing && return FFALSE
+    pad = PL_get_text(ld, A3, flags)
+    pad === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, input) || return FFALSE
+    PL_canonicalise_text_ex(ld, sep) || return FFALSE
+    PL_canonicalise_text_ex(ld, pad) || return FFALSE
+
+    tail = PL_copy_term_ref(ld, A4)
+    head = PL_new_term_ref(ld)
+    sep_at = -1
+
+    en = input.length                                       # back skip padding at end
+    while en > 0
+        text_chr(pad, text_get_char(input, en - 1)) == -1 && break
+        en -= 1
+    end
+
+    i = 0
+    skip = true
+    while true
+        if skip                                             # skip padding
+            while i < en
+                text_chr(pad, text_get_char(input, i)) == -1 && break
+                i += 1
+            end
+
+            if i == en
+                empty = PL_chars_t(UInt8[], 0, ENC_ISO_LATIN_1, true)
+                if !PL_unify_list_ex(ld, tail, head, tail) ||
+                   !PL_unify_text(ld, head, 0, empty, PL_STRING)
+                    return FFALSE
+                end
+                break
+            end
+        end
+        skip = true                                         # no_skip_padding:
+
+        last = i                                            # find sep
+        while i < en
+            text_chr(sep, text_get_char(input, i)) != -1 && break
+            i += 1
+        end
+        sep_at = i                                          # back skip padding
+        while i > last
+            text_chr(pad, text_get_char(input, i - 1)) == -1 && break
+            i -= 1
+        end
+
+        if !PL_unify_list_ex(ld, tail, head, tail) ||
+           !unify_text_between(ld, head, input, last, i, PL_STRING)
+            return FFALSE
+        end
+
+        sep_at == en && break                               # no separator found
+
+        i = sep_at
+        sep_chr = text_get_char(input, i)
+        i += 1
+        next_chr = i < input.length ? text_get_char(input, i) : 0
+
+        if text_chr(pad, sep_chr) == -1 && text_chr(sep, next_chr) != -1
+            skip = false                                    # goto no_skip_padding
+        end
+    end
+
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
 # ── the registration table (pl-string.c BeginPredDefs(strings)) ─────────────────────────────────────
 # DIVERGES: upstream registers `strings` after `prims`, before `variant` (pl-ext.c:512); T2's table is
 # appended after `attvar` in `_PRED_TABLES` (src/pl-ext.jl), as the dispatch indices of the earlier
@@ -628,5 +732,6 @@ const PL_predicates_from_strings = (
     PL_extension(
         "string_code", 3, pl_string_code3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
-    PL_extension("get_string_code", 3, pl_get_string_code3_va, PL_FA_VARARGS)
+    PL_extension("get_string_code", 3, pl_get_string_code3_va, PL_FA_VARARGS),
+    PL_extension("split_string", 4, pl_split_string4_va, PL_FA_VARARGS)
 )
