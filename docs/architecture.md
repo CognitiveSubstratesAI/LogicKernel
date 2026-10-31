@@ -757,6 +757,7 @@ fixed it or a public issue exists.
 | `src/pl-ext.jl` | registering the built-ins in the `system` module (`initBuildIns!`, `registerBuiltins!`, `builtin_pred_flags`; pl-ext.c's FRG table `foreigns`) and their DISPATCH: sorted branch trees over the tables by call shape (`_fcall_va`, `_fcall_det`; decision 5, measured against a typed function pointer); the tables in `initBuildIns`' order (arith, comp, prims, variant, trace, read — since R1d — proc — since R1f — write — since R1e's write/1 family — op); pl-ext.c's own FRG table, since R1e's write/1 family with write/1,2, writeq/1,2, writeln/1,2, print/1,2 | `src/pl-ext.c` |
 | `boot/init.jl` | the MINIMAL LOADER (R1f): `load_file!` — boot/init.pl's consult path in Julia over the C ports: `read_clause`, `'$compile_term'`, `'$store_clause'` (through `'$record_clause'/3`), `'$execute_directive_3'` (a goal or a conjunction, through the query API, backtracking), `'$pattr_directive'`/`'$set_pattr'` (through `'$set_predicate_attribute'/3`), `'$valid_term'`; the messages swipl prints, returned | `boot/init.pl` |
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
+| `src/pl-string.jl` | the string predicates (since T2, R2): atom_string/2, string_codes/2, string_chars/2, text_to_string/2, string_length/2, string_concat/3, sub_string/5 (`sub_text`, shared with sub_atom/5), string_code/3, get_string_code/3, split_string/4, string_bytes/3, read_string/3,5, open_string/2 (`PL_predicates_from_strings`, src/pl-ext.jl); the UTF-16 decode and `PL_text_recode` of string_bytes/3 are local to this file | `src/pl-string.c`, `src/pl-prims.c`, `src/pl-privitf.c`, `src/pl-error.c`, `src/os/pl-text.c`, `src/os/pl-text.h`, `src/os/pl-utf8.h`, `src/os/pl-file.c` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
 | `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it); the mutex table and the `mutex_*` predicates are not ported | `src/pl-mutex.c` |
 | `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `select_dict/3`, `get_dict/3` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `PL_get_dict_ex`, `put_dict`, `select_dict` and their helpers; the reader and writer have no dict syntax, and the other dict predicates are not ported | `src/pl-dict.c`, `src/pl-dict.h` |
@@ -938,6 +939,7 @@ graph LR
     pl_write["pl-write.jl"]
     pl_sys["pl-sys.jl"]
     pl_read["pl-read.jl"]
+    pl_string["pl-string.jl"]
     pl_ext["pl-ext.jl"]
     ___boot_init["../boot/init.jl"]
     precompile_workload["precompile_workload.jl"]
@@ -1580,6 +1582,23 @@ graph LR
     pl_read --> os_pl_file
     pl_read --> pl_op
     pl_read --> pl_write
+    pl_string --> term_interface
+    pl_string --> default_term
+    pl_string --> os_pl_utf8
+    pl_string --> os_pl_stream
+    pl_string --> pl_incl
+    pl_string --> SWI_Prolog
+    pl_string --> pl_atom
+    pl_string --> pl_global
+    pl_string --> pl_prims
+    pl_string --> pl_comp
+    pl_string --> pl_wam
+    pl_string --> pl_fli
+    pl_string --> pl_error
+    pl_string --> pl_arith
+    pl_string --> os_pl_text
+    pl_string --> os_pl_file
+    pl_string --> pl_read
     pl_ext --> term_interface
     pl_ext --> default_term
     pl_ext --> pl_incl
@@ -1615,6 +1634,7 @@ graph LR
     pl_ext --> pl_write
     pl_ext --> pl_sys
     pl_ext --> pl_read
+    pl_ext --> pl_string
     ___boot_init --> term_interface
     ___boot_init --> default_term
     ___boot_init --> os_pl_stream

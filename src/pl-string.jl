@@ -1,7 +1,15 @@
 # UPSTREAM: swipl-devel src/pl-string.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-prims.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-privitf.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/pl-error.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-text.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-text.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-utf8.h @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
 # CLASS: code
-# COPYRIGHT: Copyright (c)  2012-2025, University of Amsterdam
+# COPYRIGHT: Copyright (c)  2013-2022, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
+# COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
 # STRING PREDICATES (pl-string.c), since T2 (R2): the strings as text — atom_string/2, string_codes/2,
@@ -144,7 +152,7 @@ function pl_string_concat3_va(
     return concat(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, true, PL__ctx, CVT_ATOMIC, PL_STRING)
 end
 
-# PORT: pl-prims.c enum sub_type
+# PORT: pl-prims.c sub_type as SUB_SEARCH
 # DIVERGES: `Int` constants (upstream: an enum).
 "`sub_text` state: sub given, but no position (pl-prims.c `SUB_SEARCH`)."
 const SUB_SEARCH = 0
@@ -439,7 +447,7 @@ end
 
 # ── string_code/3, get_string_code/3 (pl-string.c 255-388) ───────────────────────────────────────────
 
-# PORT: pl-error.c ERR_RANGE (PL_error)
+# PORT: pl-error.c ERR_RANGE as PL_error_range
 # DIVERGES: the code `ERR_RANGE` is not in the kernel's `PL_error_code` enum (src/pl-error.jl); the error is built
 # here from the open and close halves of `PL_error`: `error(domain_error(range(Low, High), Arg), context(Pred, _))`.
 # A new enum member (and its `_enum_hash` manifest entry) is left to the audit.
@@ -729,29 +737,34 @@ end
 "The size in bytes of one unit of text in `enc`, the `length` of a text counting units (pl-string.c)."
 unit_length(enc::IOENC)::Int = enc === ENC_WCHAR ? 4 : 1
 
-# PORT: pl-text.h ERR_TEXT_ILLEGAL_UTF16, ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE
+# PORT: pl-text.h ERR_TEXT_ILLEGAL_UTF16
 # DIVERGES: `PL_canonicalise_text` of src/os/pl-text.jl gives only `ERR_TEXT_INVALID_CODE_POINT`; these two come
 # from the UTF-16 decode below (`utf16_to_text`).
 "`utf16_to_text`'s error: a lead surrogate without its trail (pl-text.h)."
 const ERR_TEXT_ILLEGAL_UTF16 = -2
+# PORT: pl-text.h ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE
 "`utf16_to_text`'s error: an odd number of bytes in a UTF-16 text (pl-text.h)."
 const ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE = -4
 
-# PORT: pl-utf8.h IS_UTF16_LEAD, IS_UTF16_TRAIL, utf16_decode, utf16_encode
+# PORT: pl-utf8.h IS_UTF16_LEAD
 "True for a UTF-16 lead surrogate (pl-utf8.h)."
 IS_UTF16_LEAD(c::Integer)::Bool = c >= 0xD800 && c <= 0xDBFF
+# PORT: pl-utf8.h IS_UTF16_TRAIL
 "True for a UTF-16 trail surrogate (pl-utf8.h)."
 IS_UTF16_TRAIL(c::Integer)::Bool = c >= 0xDC00 && c <= 0xDFFF
+# PORT: pl-utf8.h utf16_decode
 "The code point of a UTF-16 surrogate pair (pl-utf8.h)."
 utf16_decode(lead::Integer, trail::Integer)::Int =
     ((Int(lead) - 0xD800) << 10) + (Int(trail) - 0xDC00) + 0x10000
+# PORT: pl-utf8.h utf16_encode
 "The lead and the trail surrogate of the code point `c` above 0xffff (pl-utf8.h)."
 function utf16_encode(c::Integer)::Tuple{Int, Int}
     c = Int(c) - 0x10000
     return ((c >> 10) + 0xD800, (c & 0x3FF) + 0xDC00)
 end
 
-# PORT: pl-text.c PL_canonicalise_text (the ENC_UTF16LE and ENC_UTF16BE case)
+# PORT: pl-text.c PL_canonicalise_text as utf16_to_text
+# (the ENC_UTF16LE and ENC_UTF16BE case)
 # DIVERGES: src/os/pl-text.jl's `PL_canonicalise_text` refuses the two encodings by name, so the decode is here
 # and returns the text, or the error code; the byte order is read explicitly where upstream flips the bytes
 # (`flip_shorts`) to the native order. The wide branch is upstream's as it stands (pl-text.c, `if ( wide )`): a
@@ -806,7 +819,8 @@ function utf16_to_text(text::PL_chars_t)::Union{PL_chars_t, Int}
     end
 end
 
-# PORT: pl-error.c PL_syntax_error (the form without a stream)
+# PORT: pl-error.c PL_syntax_error
+# (the form without a stream)
 # DIVERGES: only `in == NULL`: the location is left unbound (no stream table).
 "Raise `error(syntax_error(Msg), _)` (pl-error.c `PL_syntax_error(msg, NULL)`); false."
 function PL_syntax_error(ld::PL_local_data{T}, msg::String, ::Nothing)::Bool where {T}
@@ -821,7 +835,8 @@ function PL_syntax_error(ld::PL_local_data{T}, msg::String, ::Nothing)::Bool whe
     return PL_raise_exception(ld, ex)
 end
 
-# PORT: pl-text.c text_error (the two UTF-16 codes)
+# PORT: pl-text.c text_error as string_bytes_text_error
+# (the two UTF-16 codes)
 "Raise the error for the code `rc` of `utf16_to_text` or of `PL_canonicalise_text`; false (pl-text.c)."
 function string_bytes_text_error(ld::PL_local_data{T}, rc::Int)::Bool where {T}
     rc == ERR_TEXT_ILLEGAL_UTF16 &&
