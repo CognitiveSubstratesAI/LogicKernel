@@ -5,15 +5,15 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 #
-# FILES (pl-files.c), since Y1: the file name a term holds (`PL_get_file_name`) and delete_file/1.
+# FILES (pl-files.c), since Y1: the file name a term holds (`PL_get_file_name`) and delete_file/1; since LB2b
+# the file helpers (LastModifiedFile, SizeFile, AccessFile, ExistsFile, ExistsDirectory, ReadLink, DeRefLink,
+# SameFile, RenameFile, MarkExecutable) and, as the groups land, the predicates of upstream's table.
 #
-# NOT PORTED: the rest of the file predicates (`exists_file/1`, `tmp_file/2`, `delete_directory/1`,
-# `size_file/2`, …) with their `PRED_DEF`s; the `PL_get_file_name` flags that need a file system
-# search or a path — `PL_FILE_ABSOLUTE`, `PL_FILE_OSPATH`, `PL_FILE_SEARCH`, `PL_FILE_EXIST`,
-# `PL_FILE_READ`, `PL_FILE_WRITE`, `PL_FILE_EXECUTE` (refused by name, with their first caller);
-# `expandVars` under the `file_name_variables` flag (the flag table, F1: the flag is false by default);
-# `DeleteTemporaryFile` (delete_file/1 first tries the registry of `tmp_file/2`'s names, which is empty
-# until tmp_file/2 is ported, so the call fails, as upstream's does with no registry).
+# LB2b (in progress): the `PL_get_file_name` flags that need a file system search or a path —
+# `PL_FILE_ABSOLUTE`, `PL_FILE_OSPATH`, `PL_FILE_SEARCH`, `PL_FILE_EXIST`, `PL_FILE_READ`,
+# `PL_FILE_WRITE`, `PL_FILE_EXECUTE` — are refused by name until group G5; `DeleteTemporaryFile`
+# (delete_file/1 first tries the registry of `tmp_file/2`'s names, which is empty until tmp_file/2 lands,
+# so the call fails, as upstream's does with no registry).
 
 # ORIGINAL (Y1): `PATH_MAX` (<limits.h>) on Linux.
 "The longest file name `get_file_name` accepts, in bytes, the terminating NUL included (Linux)."
@@ -41,6 +41,178 @@ function file_name_is_iri(path::AbstractString)::Int
     end
     return 0
 end
+
+# PORT: pl-files.h ACCESS_EXIST
+"`AccessFile` mode: the file exists (pl-files.h, 0x0000)."
+const ACCESS_EXIST = 0
+# PORT: pl-files.h ACCESS_EXECUTE
+"`AccessFile` mode bit: execute access (pl-files.h, 0x0001)."
+const ACCESS_EXECUTE = 1
+# PORT: pl-files.h ACCESS_READ
+"`AccessFile` mode bit: read access (pl-files.h, 0x0002)."
+const ACCESS_READ = 2
+# PORT: pl-files.h ACCESS_WRITE
+"`AccessFile` mode bit: write access (pl-files.h, 0x0004)."
+const ACCESS_WRITE = 4
+# PORT: pl-files.h ACCESS_FILE
+"`AccessFile` mode bit, the IRI extension: a regular file (pl-files.h, 0x0008)."
+const ACCESS_FILE = 8
+# PORT: pl-files.h ACCESS_DIRECTORY
+"`AccessFile` mode bit, the IRI extension: a directory (pl-files.h, 0x0010)."
+const ACCESS_DIRECTORY = 16
+
+# ORIGINAL (LB2b): `access(2)` modes of <unistd.h> on Linux.
+const F_OK = 0
+const X_OK = 1
+const W_OK = 2
+const R_OK = 4
+
+# ORIGINAL (LB2b): `stat(2)` through libuv. `Base.stat` returns the status of a missing file (`ENOENT`,
+# `ENOTDIR`, `EINVAL`) as a field and throws `Base.IOError` for the other errors; both come back here as the
+# negative libuv status, which is the negated `errno`.
+"""
+    statfunc(path) -> StatStruct or Int
+
+`stat(2)` of `path`: the status, or the negated `errno` of the failure (pl-files.c `statfunc`).
+"""
+function statfunc(path::String)::Union{Base.Filesystem.StatStruct, Int}
+    st = try
+        stat(path)
+    catch e
+        e isa Base.IOError || rethrow()
+        return Int(e.code)
+    end
+    return st.ioerrno == 0 ? st : Int(st.ioerrno)
+end
+
+# PORT: pl-files.c LastModifiedFile
+# DIVERGES: returns `(time, errno)`, `errno` 0 for success (upstream: a Bool and `*tp`); the time is Julia's
+# `sec + nsec*1.0e-9` where upstream computes `sec + nsec/1.0e9` (representation only: a last-bit difference).
+"The last modification time of `name` as a POSIX timestamp and an `errno` (0 = ok) (pl-files.c)."
+function LastModifiedFile(name::String)::Tuple{Float64, Int}
+    st = statfunc(OsPath(name))
+    st isa Int && return (0.0, -st)
+    return (st.mtime, 0)
+end
+
+# PORT: pl-files.c SizeFile
+# DIVERGES: returns `(size, errno)`, `errno` 0 for success (upstream: the size, or -1).
+"The size of the file `path` in bytes and an `errno` (0 = ok) (pl-files.c)."
+function SizeFile(path::String)::Tuple{Int64, Int}
+    st = statfunc(OsPath(path))
+    st isa Int && return (Int64(-1), -st)
+    return (st.size, 0)
+end
+
+# PORT: pl-files.c access_mode
+"The `access(2)` mode of the `ACCESS_*` mode `mode` (pl-files.c)."
+function access_mode(mode::Int)::Int
+    mode == ACCESS_EXIST && return F_OK
+    m = 0
+    (mode & ACCESS_READ) != 0 && (m |= R_OK)
+    (mode & ACCESS_WRITE) != 0 && (m |= W_OK)
+    (mode & ACCESS_EXECUTE) != 0 && (m |= X_OK)
+    return m
+end
+
+# PORT: pl-files.c AccessFile
+"Can `path` be accessed in the `ACCESS_*` mode `mode` (pl-files.c)."
+function AccessFile(path::String, mode::Int)::Bool
+    return ccall((:access, LIBC), Cint, (Cstring, Cint), OsPath(path), access_mode(mode)) == 0
+end
+
+# PORT: pl-files.c AccessDirectory
+"Can the directory `path` be accessed in the `ACCESS_*` mode `mode`: `AccessFile` off Windows (pl-files.c)."
+AccessDirectory(path::String, mode::Int)::Bool = AccessFile(path, mode)
+
+# PORT: pl-files.c ExistsFile
+"Is `path` a regular file (pl-files.c)."
+function ExistsFile(path::String)::Bool
+    st = statfunc(OsPath(path))
+    return !(st isa Int) && isfile(st)
+end
+
+# PORT: pl-files.c ExistsDirectory
+"Is `path` a directory (pl-files.c)."
+function ExistsDirectory(path::String)::Bool
+    st = statfunc(OsPath(path))
+    return !(st isa Int) && isdir(st)
+end
+
+# PORT: pl-files.c ReadLink
+# DIVERGES: returns the link text or `nothing` (upstream: `buf` or NULL). A link of `PATH_MAX-1` bytes or
+# more is cut as upstream's buffer cuts it.
+"The text of the symbolic link `f`, or `nothing` if `f` is not one (pl-files.c)."
+function ReadLink(f::String)::Union{Nothing, String}
+    buf = Vector{UInt8}(undef, PATH_MAX)
+    n = ccall(
+        (:readlink, LIBC), Int, (Cstring, Ptr{UInt8}, Csize_t), f, buf, Csize_t(PATH_MAX - 1)
+    )
+    n > 0 || return nothing
+    return String(buf[1:n])
+end
+
+# PORT: pl-files.c DeRefLink1
+# DIVERGES: returns the new name or `nothing` (upstream: `lbuf` or NULL); no buffer, so no overflow.
+"One step of dereferencing the symbolic link `f`: its target, canonical, or `nothing` if `f` is no link (pl-files.c)."
+function DeRefLink1(f::String)::Union{Nothing, String}
+    l = ReadLink(f)
+    l === nothing && return nothing
+    startswith(l, '/') && return l                              # absolute path
+    q = findlast('/', f)
+    dir = q === nothing ? "" : f[1:q]
+    return canonicaliseFileName(dir * l)
+end
+
+# PORT: pl-files.c DeRefLink
+# DIVERGES: `ld` is an argument and the result a `String` or `nothing`; the exception of a too long name
+# cannot arise (`canonicaliseFileName` takes no buffer).
+"""
+    DeRefLink(ld, link) -> String or nothing
+
+The final destination of the symbolic link `link`, canonical; `nothing` after `permission_error(dereference,
+symlink, Link)` when more than 20 links were followed (pl-files.c).
+"""
+function DeRefLink(ld::PL_local_data{T}, link::String)::Union{Nothing, String} where {T}
+    n = 20                                                      # avoid loop!
+    while true
+        f = DeRefLink1(link)
+        f === nothing && break
+        old = n                                                 # `&& n-- > 0`
+        n -= 1
+        old > 0 || break
+        link = f
+    end
+    if n > 0
+        return link
+    end
+    t = PL_new_term_ref(ld)
+    PL_put_atom(ld, t, mk_sym(T, Symbol(link)))
+    PL_error(
+        ld, "", 0, "too many (>20) levels of symbolic links", ERR_PERMISSION,
+        mk_sym(T, :dereference), mk_sym(T, :symlink), t
+    )
+    return nothing
+end
+
+# PORT: pl-files.c SameFile
+# DIVERGES: `strcasecmp` is a comparison of ASCII letters (the C locale).
+"Do `f1` and `f2` name the same file: equal names (case-folded unless `file_name_case_sensitive`), or one inode (pl-files.c)."
+function SameFile(ld::PL_local_data, f1::String, f2::String)::Bool
+    if truePrologFlag(ld, PLFLAG_FILE_CASE)
+        f1 == f2 && return true
+    else
+        _ascii_lower(f1) == _ascii_lower(f2) && return true
+    end
+    st1 = statfunc(OsPath(f1))
+    st2 = statfunc(OsPath(f2))
+    (st1 isa Int || st2 isa Int) && return false
+    return st1.inode == st2.inode && st1.device == st2.device
+end
+
+# ORIGINAL (LB2b): the case folding of `strcasecmp(3)` in the C locale: ASCII letters only.
+_ascii_lower(s::String)::Vector{UInt8} =
+    [(UInt8('A') <= c <= UInt8('Z')) ? c + 0x20 : c for c in codeunits(s)]
 
 # PORT: pl-files.c get_file_name
 # DIVERGES: the name is a `String` (UTF-8, which is `REP_FN` in a UTF-8 locale) or `nothing` where upstream
@@ -100,6 +272,53 @@ PL_get_file_name(ld::PL_local_data{T}, n::term_t, flags::Int) where {T} =
 function RemoveFile(path::String)::Int
     rc = ccall((:remove, LIBC), Cint, (Cstring,), path)
     return rc == 0 ? 0 : Int(Base.Libc.errno())
+end
+
+# PORT: pl-files.c RenameFile
+# DIVERGES: returns 0 on success and else the `errno` of the failure (upstream: a Bool); `rename(2)` is `ccall`ed,
+# as upstream's HAVE_RENAME branch.
+"Rename the file `old` to `new`: 0, or the `errno` of the failure (pl-files.c)."
+function RenameFile(old::String, new::String)::Int
+    rc = ccall((:rename, LIBC), Cint, (Cstring, Cstring), OsPath(old), OsPath(new))
+    return rc == 0 ? 0 : Int(Base.Libc.errno())
+end
+
+# ORIGINAL (LB2b): `umask(2)`, which sets the mask and returns the old one.
+_umask(mask::Integer)::Cuint = ccall((:umask, LIBC), Cuint, (Cuint,), mask % Cuint)
+
+# PORT: pl-files.c MarkExecutable
+# DIVERGES: `ld` is an argument; the `errno` of the failed call is read here and handed to `PL_error`.
+"""
+    MarkExecutable(ld, name) -> Bool
+
+Set the execute bits of the file `name` that the process mask allows; `false` after raising the error of a
+failed `stat(2)` or `chmod(2)` (pl-files.c).
+"""
+function MarkExecutable(ld::PL_local_data{T}, name::String)::Bool where {T}
+    um = _umask(0o777)
+    _umask(um)
+    st = statfunc(name)
+    if st isa Int
+        file = PL_new_term_ref(ld)
+        PL_put_atom(ld, file, mk_sym(T, Symbol(name)))
+        return PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :stat), mk_sym(T, :file), file,
+            -st
+        )
+    end
+    mode = st.mode
+    (mode & 0o111) == (~um & 0o111) && return true
+    mode |= 0o111 & ~um
+    if ccall((:chmod, LIBC), Cint, (Cstring, Cuint), name, mode % Cuint) == -1
+        errno = Int(Base.Libc.errno())
+        file = PL_new_term_ref(ld)
+        PL_put_atom(ld, file, mk_sym(T, Symbol(name)))
+        return PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :chmod), mk_sym(T, :file), file,
+            errno
+        )
+    end
+    return true
 end
 
 # PORT: pl-files.c delete_file as pl_delete_file1_va
