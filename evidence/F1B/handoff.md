@@ -85,6 +85,39 @@ F2 (pl-prologflag.c 1862-1960) afterwards as its own group: evidence/F2/.
 - For the audit (not decided): uniform D4 refusal of incomparable; arithmetic/ci_*/tabling flags refused by name (set_arith_flag follow-up suggested: float_overflow etc. are common); PL_get_int64/PL_get_int64_ex appended in pl-fli.jl/pl-error.jl (merge conflict risk); the swipl 10.1.19 case in the private register as Q15 (no public mention).
 - UNVERIFIED (nothing compiled): `ld.GD` Union field access in the new helper (type-stable small union); PL_current_prolog_flag(gd, ld, name, opts) in pl_print2 with a fresh term_t; the test edits.
 
+## State at hand-back (coder 3, second part: group 6 written, UNCOMMITTED until the commit below; forced by the 150k cap)
+- Group 6 files: test/core_lang/test_set_flag_swipl.jl (GENERATED: rows sf01-sf89, 78 cases; pins filled), evidence/F1B/{sf_cases.json (the case table),
+  sf_template.jl (the test's fixed text), build_sf_test.py (cases + template -> test file), gen_sf_rows.py (builds the program file as the test does, runs swipl 10.1.19
+  twice under `timeout 20`, requires byte-identical, writes sf_rows.out and the pins into the test file)}. To change a row: edit sf_cases.json, then
+  `python3 -I evidence/F1B/build_sf_test.py evidence/F1B/sf_cases.json test/core_lang/test_set_flag_swipl.jl && python3 -I evidence/F1B/gen_sf_rows.py`.
+  The user_flags=error + new key case is in NO swipl row (swipl 10.1.19 does not answer it); the test pins the kernel's existence_error in its own testset.
+- TO DO FIRST (found by the last probe, not yet applied): the `_SF_REFUSED` list in sf_template.jl has values that swipl may reject before the refusal is reached
+  (the kernel checks oneof BEFORE refusing): `file_name_case_handling` must be `case_sensitive` (not `sensitive`), check `var_tag`, `incomparable`, `table_monotonic`,
+  `encoding` values with swipl 10.1.19 (`timeout 20 swipl -q ref.pl`, ref.pl as: `t(F,V)` facts, `catch((current_prolog_flag(F,Old), set_prolog_flag(F,V)), error(E,_), ...)`);
+  then rebuild with the two commands above. Also check each swipl answer in sf_rows.out that is a success with an unbound R (none left except by design).
+- Rows swipl showed: `set_prolog_flag(max_integer,1)` SUCCEEDS in swipl (row sf02 now uses `pid`, read-only: permission_error(modify,flag,pid) is expected: the
+  pin was regenerated); `set_prolog_flag(user_flags, foo)` succeeds (sf76 pins the read-back); `create_prolog_flag` of a term flag requires a GROUND value
+  (sf78 pins instantiation_error); the per-module row (set_prolog_flag(zz_mod:double_quotes, codes)) was dropped: swipl answered string for both reads (not informative);
+  a per-module row needs a consulted module file: left to the next agent or the audit.
+- D1-95 kill rows: sf80 (clause/3 by reference of a static clause under iso: permission_error(access,private_procedure,sp/1)), sf81 (clause/2 head path), sf82 (dynamic
+  not protected under iso), sf84 (control: iso toggled back, reference answers), sf85-sf89 (protect_static_code: sf86 permission_error, sf87 dynamic fine, sf88 set false ->
+  permission_error(set,prolog_flag,protect_static_code)). D1-96: sf83 (by-reference SSU clause: ssd(1)-true) pins the unchanged answer; the equivalence argument of D1c.py
+  (clause type from the clause's own flags, src/pl-comp.jl:3506-3516) does not depend on iso/protect_static_code: PLFLAG_ISO is read in pl-comp.jl only by protected_predicate
+  (:3571), so D1-96 STAYS equivalent (record this in F1B.py's header).
+- STILL TO DO: (a) the comment of protected_predicate (src/pl-comp.jl:3560-3563) says "nothing sets them yet (R2 F1b)": reword positively (F1b makes them settable); own commit.
+  (b) group 7: tools/mutants/F1B.py (>= 14; TARGETS: test_set_flag_swipl.jl, test_prolog_flag_swipl.jl, test_det_swipl.jl, test_body_code_swipl.jl, test_portable_smallint_swipl.jl,
+  test_rules_swipl.jl, test_firstvar_swipl.jl, test_head_unify_swipl.jl, test_exceptions_swipl.jl, test_write_swipl.jl; ideas: set_flag_value mask write dropped for bool; the
+  protect_static_code false-after-true permission test; check_flag_write_access read-only test; keep_flag; check_create_flag's error branch; determinism_error_flag silent/warning
+  branches (rows in test_det_swipl.jl); truePrologFlag reads at pl-comp.jl 658/680/1900/2166/2223/2409/3168, pl-wam.jl 3311/3352/3546/3908, pl-write.jl 2223/2292; oneof domain
+  error; int64 conversion), validated by a throwaway python3 -I script; tools/mutants/MOD3a.py, SSU1.py, V9f.py anchor on the deleted field names (re-fit at their next run);
+  bench rows H3; docs/architecture.md block; manifest entries for the new functions (determinism_error_flag etc.), each its own LAST commit.
+- FINDINGS for the audit: (1) new engines start from the DATABASE's mask (`gd.prolog_flag.mask`), while set_flag_value writes the engine's mask only; upstream copies the creating
+  thread's mask: a second engine created after `set_prolog_flag(last_call_optimisation, false)` sees the default (design H5): decide whether set_flag_value also writes gd's mask.
+  (2) `print/2` reads the table's print_write_options where present, else the default. (3) the refused-by-name list (D4) now also holds float_overflow, tabling restraints, ci_*.
+  (4) uniform D4 refusal of incomparable; PL_get_int64/PL_get_int64_ex appended in pl-fli.jl/pl-error.jl (merge-conflict risk); swipl crash case: private register Q15 only.
+- UNVERIFIED (nothing compiled or run): the whole test file (generated Julia; `_sf_query` runs a query and lets NotPortedError propagate), the migrated tests, `ld.GD` in
+  determinism_error_flag.
+
 ## Estimate: 10-13 commits. Nothing compiled, nothing run.
 ## Gate order (end of handoff): fmt via warm.sh send of the committed files, inventory, check, rows x3 term types, test_type_discipline.jl,
 pkgtest_way per changed test file one at a time, push mutants/F1B at the WIP SHA, branch-gate, term grep, alloc pins x3 (pl-global.jl is Tier 1),
