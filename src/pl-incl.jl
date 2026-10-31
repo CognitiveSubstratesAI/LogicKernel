@@ -868,6 +868,23 @@ Base.size(t::module_table) = size(t.modules)
 Base.IndexStyle(::Type{<:module_table}) = IndexLinear()
 Base.getindex(t::module_table, i::Int) = t.modules[i]
 
+# PORT: pl-incl.h MENUM_TEMP
+"`module_enum.flags`: also enumerate the temporary modules (pl-incl.h)."
+const MENUM_TEMP = 0x1
+
+# PORT: pl-incl.h module_enum
+# DIVERGES: a record of the local data's pool (`ld.module_enums`, a `foreign_state_pool`), its index the `REDO_PTR`
+# context (`PL_retry_address`). `tenum` (a table enumeration) is `next`, the place in the module table where the walk
+# resumes (src/pl-modul.jl `advanceModuleEnum`); `current` is the INDEX of the temporary module the enumeration holds a
+# reference to, 0 for NULL.
+"The state of `'\$current_module'/2` between answers (pl-incl.h `struct module_enum`)."
+mutable struct module_enum
+    next::Int                                                   # tenum: the next place to look at
+    current::Int                                                # current: the temporary module held (0: none)
+    flags::Int                                                  # MENUM_TEMP, or 0
+end
+module_enum() = module_enum(1, 0, 0)
+
 # PORT: pl-incl.h OP_MAXPRIORITY
 "The highest operator priority (pl-incl.h)."
 const OP_MAXPRIORITY = 1200
