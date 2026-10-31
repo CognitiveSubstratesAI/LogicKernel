@@ -62,6 +62,7 @@
     ERR_FILE_OPERATION              # atom_t action, atom_t type, term_t file (errno: Y1)
     ERR_SYSCALL                     # const char *op (errno: Y1)
     ERR_PERMISSION_SSU_DEF          # Definition def (SSU1: add_ssu_clause)
+    ERR_IMPORT_PROC                 # Procedure proc, atom_t dest, atom_t old (MOD5a: import/1)
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -95,9 +96,17 @@ function _PL_error_close!(
     ld::PL_local_data{T}, caller::Union{Nothing, Definition{T}}, fid::Int, except::Int,
     formal::Int, swi::Int, pred::String, arity::Int, msg::String
 )::Bool where {T}
-    if !isempty(pred) || !isempty(msg) || caller !== nothing        # build SWI-Prolog context term
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg, 0)
+end
+
+# `msgterm0` is the message term a code made itself (upstream's `msgterm`, ERR_IMPORT_PROC's `already_from(Old)`; 0: none).
+function _PL_error_close!(
+    ld::PL_local_data{T}, caller::Union{Nothing, Definition{T}}, fid::Int, except::Int,
+    formal::Int, swi::Int, pred::String, arity::Int, msg::String, msgterm0::Int
+)::Bool where {T}
+    if !isempty(pred) || !isempty(msg) || msgterm0 != 0 || caller !== nothing   # build SWI-Prolog context term
         predterm = new_term_ref(ld)
-        msgterm = new_term_ref(ld)                                  # if ( !msgterm ) …
+        msgterm = msgterm0 != 0 ? msgterm0 : new_term_ref(ld)       # if ( !msgterm ) …
         if !isempty(pred)
             PL_cons_functor(                                        # PL_unify_term(predterm, …divide2,
                 ld, predterm, _err_functor(ld, :/, 2),              #   PL_CHARS, pred, PL_INT, arity)
@@ -973,6 +982,34 @@ function PL_error(
         PL_put_atom(ld, formal, mk_sym(T, :system_error))
     end
     return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg)
+end
+
+# PORT: pl-error.c PL_error as PL_error_import_proc
+# (the `ERR_IMPORT_PROC` branch, pl-error.c:447-470; raised by import/1, MOD5a)
+"""
+    PL_error(ld, pred, arity, msg, ERR_IMPORT_PROC, proc, dest, old) -> false
+
+Raise `error(permission_error(import_into(Dest), procedure, Name/Arity), context(Pred/Arity, Msg))` for `proc`;
+with `old` (a module name; `nothing`: none) the message is `already_from(Old)`, else the atom `msg` (pl-error.c).
+"""
+function PL_error(
+    ld::PL_local_data{T}, pred::String, arity::Int, msg::String, id::PL_error_code,
+    proc::Procedure{T}, dest::T, old::Union{Nothing, T}
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    @assert id == ERR_IMPORT_PROC
+    pi = new_term_ref(ld)
+    gd = _query_gd(ld)
+    unify_definition(gd, ld, MODULE_user(gd), pi, proc.definition, 0, GP_NAMEARITY)   # PL_unify_predicate(pi, pred, GP_NAMEARITY)
+    into = _message_term(ld, :import_into, _err_atom(ld, dest))
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :permission_error, 3), into,
+        _err_atom(ld, mk_sym(T, :procedure)), pi
+    )
+    msgterm = old === nothing ? 0 : _message_term(ld, :already_from, _err_atom(ld, old))
+    return _PL_error_close!(ld, caller, fid, except, formal, swi, pred, arity, msg, msgterm)
 end
 
 # ── printing messages (pl-error.c), since R1f ───────────────────────────────────────────────────

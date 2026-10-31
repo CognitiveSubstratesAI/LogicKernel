@@ -542,6 +542,263 @@ function unify_export_list(
     return PL_unify_nil(ld, list)
 end
 
+# ── export and import (pl-modul.c; MOD5a) ──────────────────────────────────────────────────────
+
+# PORT: pl-modul.c isPublicModule
+# DIVERGES: the database is not an argument (`module_t` holds its table); the key is the functor's parts.
+"Whether `proc`'s predicate is in the public table of module `m` (pl-modul.c)."
+isPublicModule(m::module_t, proc::Procedure)::Bool =
+    haskey(m.public_, (proc.definition.functor_name, proc.definition.arity))
+
+# PORT: pl-modul.c exportProcedure
+# DIVERGES: `public_order` (no upstream field) gets the key when it is new; an existing key keeps its place, as
+# `updateHTableWP` updates in place.
+"Put `proc` in the public table of module `m` (pl-modul.c)."
+function exportProcedure(m::module_t{T}, proc::Procedure{T})::Bool where {T}
+    key = (proc.definition.functor_name, proc.definition.arity)
+    haskey(m.public_, key) || push!(m.public_order, key)
+    m.public_[key] = proc
+    return true
+end
+
+# PORT: pl-modul.c export_pi1
+# DIVERGES: the module is an index (0: the context module); the database `gd` is an argument. `ReadingSource` and
+# the source file are the local data's (`ld.read_source`).
+"Export the `Name/Arity` (or `M:Name/Arity`) in `pi` from module `m` (pl-modul.c)."
+function export_pi1(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, pi::term_t, m::Int
+)::Bool where {T}
+    name, arity, mi = get_functor(gd, ld, pi, m, 0, GF_PROCEDURE | GF_NAMEARITY)
+    arity < 0 && return false
+    sp = isStaticSystemProcedure(gd, ld, sym_key(name), arity)
+    if sp !== nothing && (sp.definition.flags & P_ISO) != 0     # an ISO system predicate is skipped
+        return true
+    end
+    mod = gd.modules[mi]
+    proc = lookupProcedure(name, arity, mod)
+    if ReadingSource(ld)
+        sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
+        rc = exportProcedureSource(sf, mod, proc)
+        releaseSourceFile(sf)
+        return rc
+    else
+        return exportProcedure(mod, proc)
+    end
+end
+
+# PORT: pl-modul.c export_pi
+"Export the comma list of predicate indicators in `pi` from module `m` (pl-modul.c)."
+function export_pi(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, pi::term_t, m::Int, depth::Int
+)::Bool where {T}
+    ok, m = PL_strip_module(gd, ld, pi, m, pi)
+    ok || return false
+    while PL_is_functor(ld, pi, mk_sym(T, Symbol(",")), 2)
+        a1 = PL_new_term_ref(ld)
+        depth += 1
+        if depth == 100 && !is_acyclic_cells(ld, -(pi + 1))
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :acyclic_term), pi)
+        end
+        _PL_get_arg(ld, 1, pi, a1)
+        export_pi(gd, ld, a1, m, depth) || return false
+        PL_reset_term_refs(ld, a1)
+        _PL_get_arg(ld, 2, pi, pi)
+    end
+    return export_pi1(gd, ld, pi, m)
+end
+
+# PORT: pl-modul.c export as pl_export1_va
+# (PRED_IMPL("export", 1, export, PL_FA_TRANSPARENT))
+"`export(+PIs)`: export the predicate indicators from the context module (pl-modul.c)."
+function pl_export1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    return export_pi(gd, ld, PL__t0, 0, 0) ? FTRUE : FFALSE     # Module module = NULL
+end
+
+# PORT: pl-modul.c undefined_export as pl_undefined_export2_va
+# (PRED_IMPL("$undefined_export", 2, undefined_export, 0))
+# DIVERGES: the public table is walked in the order its keys were added (`public_order`), where upstream's follows
+# its hash table (D-0149 item 1).
+"`'\$undefined_export'(+Module, -UndefExport)`: the exported predicates of `Module` that nothing defines (pl-modul.c)."
+function pl_undefined_export2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    mname = PL_get_atom_ex(ld, A1)
+    mname === nothing && return FFALSE
+    module_ = isCurrentModule(gd.modules, mname)
+    if module_ === nothing
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :module), A1) ? FTRUE : FFALSE
+    end
+    tail = PL_copy_term_ref(ld, A2)
+    head = PL_new_term_ref(ld)
+    for key in module_.public_order
+        proc = module_.public_[key]
+        def = proc.definition
+        if !isDefinedProcedure(gd, proc) &&             # not defined
+            def.module_ == module_.index &&             # not imported
+            autoImport(gd, def.name, def.arity, module_) === nothing
+            if !(
+                PL_unify_list(ld, tail, head, tail) &&
+                unify_definition(
+                    gd, ld, MODULE_user(gd), head, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY
+                )
+            )
+                return FFALSE
+            end
+        end
+    end
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
+# PORT: pl-modul.c fixExportModule
+# DIVERGES: no lock (no threads); a definition nothing shares any more is left to the garbage collector
+# (`lingerDefinition`).
+"Make every procedure of module `m` that has the definition `old` share `new` (pl-modul.c)."
+function fixExportModule(m::module_t{T}, old::Definition{T}, new::Definition{T})::Nothing where {T}
+    for proc in values(m.procedures)
+        if proc.definition === old
+            shareDefinition(new)
+            proc.definition = new
+            unshareDefinition(old)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c fixExport
+# DIVERGES: the database `gd` is an argument; a destroyed module (`M_DESTROYED`: its name left the table) is not
+# in upstream's table, so it is skipped.
+"Patch the definition `old` to `new` in every module (pl-modul.c)."
+function fixExport(gd::PL_global_data{T}, old::Definition{T}, new::Definition{T})::Nothing where {T}
+    for m in gd.modules
+        (m.flags & M_DESTROYED) != 0 && continue
+        fixExportModule(m, old, new)
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c atomToImportStrength
+"The procedure flag of the import strength `a`: `weak` is `PROC_WEAK`, `strong` 0, else -1 (pl-modul.c)."
+function atomToImportStrength(a::T)::Int where {T}
+    sym_key(a) == sym_key(mk_sym(T, :weak)) && return Int(PROC_WEAK)
+    sym_key(a) == sym_key(mk_sym(T, :strong)) && return 0
+    return -1
+end
+
+# PORT: pl-modul.c import
+# DIVERGES: the database `gd` is an argument; modules are indices (`strength` 0: upstream's NULL). The definition
+# nothing shares any more is left to the garbage collector (`lingerDefinition`). `sysError` ("Unknown problem
+# importing") is an `error`. `retry` is a loop, as `goto retry` (a lost race for the table entry cannot happen
+# without threads, so the loop runs once).
+"Import the predicate `pred` names into the context module with strength `strength` (0: strong) (pl-modul.c)."
+function import_(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, pred::term_t, strength::term_t
+)::Bool where {T}
+    desti = contextModule(gd, ld, ld.environment_frame)     # Module destination = contextModule(environment_frame)
+    destination = gd.modules[desti]
+    name, arity, srci = get_functor(gd, ld, pred, 0, 0, GF_PROCEDURE)
+    arity < 0 && return false
+    source = gd.modules[srci]
+    pflags = UInt32(0)
+    if strength != 0
+        a = PL_get_atom_ex(ld, strength)
+        a === nothing && return false
+        pf = atomToImportStrength(a)
+        pf < 0 && return PL_error(ld, ERR_DOMAIN, mk_sym(T, :import_type), strength)
+        pflags = UInt32(pf)
+    end
+
+    proc = lookupProcedure(name, arity, source)
+
+    if !isDefinedProcedure(gd, proc)
+        autoImport(gd, name, arity, gd.modules[proc.definition.module_])
+    end
+
+    old = isCurrentProcedure(proc.definition.functor_name, proc.definition.arity, destination)
+    if old !== nothing
+        old.definition === proc.definition && return true       # already done this!
+
+        if !isDefinedProcedure(gd, old)
+            odef = old.definition
+            fixup = false
+            old.definition = proc.definition
+            shareDefinition(proc.definition)
+            if unshareDefinition(odef) > 0
+                fixup = true                                    # delay to avoid a deadlock
+            end                                                 # else lingerDefinition(odef)
+            old.flags |= pflags | PROC_IMPORTED                 # set(old, pflags|PROC_IMPORTED)
+            fixup && fixExport(gd, odef, proc.definition)
+            return true
+        end
+
+        if old.definition.module_ == desti
+            if (pflags & PROC_WEAK) != 0
+                if truePrologFlag(ld, PLFLAG_WARN_OVERRIDE_IMPLICIT_IMPORT)
+                    pi = PL_new_term_ref(ld)
+                    unify_definition(
+                        gd, ld, MODULE_user(gd), pi, proc.definition, 0, GP_NAMEARITY
+                    ) || return false                           # PL_unify_predicate(pi, proc, GP_NAMEARITY)
+                    printMessage(
+                        ld, :warning,
+                        _message_term(ld, :ignored_weak_import, _err_atom(ld, destination.atom), pi)
+                    ) || return false
+                end
+                return true
+            else
+                return PL_error(
+                    ld, "import", 1, "name clash", ERR_IMPORT_PROC, proc, destination.atom, nothing
+                )
+            end
+        end
+
+        if old.definition.module_ != srci                       # already imported
+            return PL_error(
+                ld, "import", 1, "", ERR_IMPORT_PROC, proc, destination.atom,
+                gd.modules[old.definition.module_].atom
+            )
+        end
+
+        error("Unknown problem importing $(name)/$(arity) into module $(destination.atom)")    # sysError
+    end
+
+    if !isPublicModule(source, proc)
+        pi = PL_new_term_ref(ld)
+        unify_definition(
+            gd, ld, MODULE_user(gd), pi, proc.definition, 0, GP_NAMEARITY
+        ) || return false
+        printMessage(
+            ld, :warning, _message_term(ld, :import_private, _err_atom(ld, destination.atom), pi)
+        ) || return false
+    end
+
+    nproc = Procedure{T}(proc.definition, pflags, UInt32(0))    # nproc->flags = pflags; source_no = 0
+    shareDefinition(proc.definition)
+    destination.procedures[(proc.definition.functor_name, proc.definition.arity)] = nproc
+    return true
+end
+
+# PORT: pl-modul.c import as pl_import1_va
+# (PRED_IMPL("import", 1, import, PL_FA_TRANSPARENT))
+"`import(+PI)`: import the predicate into the context module (pl-modul.c)."
+function pl_import1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return import_(_query_gd(ld), ld, PL__t0, 0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-modul.c import as pl_import2_va
+# (PRED_IMPL("\$import", 2, import, PL_FA_TRANSPARENT))
+"`'\$import'(+PI, +Strength)`: import with strength `weak` or `strong` (pl-modul.c)."
+function pl_import2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return import_(_query_gd(ld), ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
 # ORIGINAL (MOD1; D-0149 MQ3): the kernel's own count of the bytes a module's clauses take, for
 # `'$module_property'(M, program_size(S))` — upstream's `m->code_size`, which the kernel does not keep
 # (assert and retract are the hot path, bench H1). A clause is its code words and its header (`sizeofClause`)
