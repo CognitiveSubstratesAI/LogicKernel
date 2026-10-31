@@ -115,6 +115,10 @@ atcut :- @(!, qm2).
 atcalln(C) :- @(call(utp, C), qm2).
 rt(M, R) :- @(utp(R), M).
 rtn(M, R) :- @(utp(R), M), true.
+lcm(N, U, M) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, @(lcm(N1, U, M), M) ).
+lca(N, U) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, @(lca(N1, U), qm2) ).
+lcpm(N, U, M) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, between(1, 2, _), @(lcpm(N1, U, M), M) ).
+lcpa(N, U) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, between(1, 2, _), @(lcpa(N1, U), qm2) ).
 """
 
 # (id, goal), run IN ORDER
@@ -213,7 +217,29 @@ const _AB_CASES = [
     ("a66", raw"call((true, @(utp(_), 1))), R = ok"),
     ("a67", raw"call((true, @(utp(C), qm2))), R = C"),
     ("a68", raw"call((@(utp(C1), qm2), utp(C2))), R = C1-C2"),
-    ("a69", raw"call((m(M), m2(Q), @(M:qm(C), Q))), R = C")
+    ("a69", raw"call((m(M), m2(Q), @(M:qm(C), Q))), R = C"),
+    # a70-a73 (the shape of test_colon_body_swipl.jl's b45/b46): the frame reuse of I_DEPARTATM / I_DEPARTATMV, white-box.
+    # `statistics(localused, U)` is `8 * ld.lTop` (src/pl-prims.jl `_used_stack`), read at the deepest call. The last goal
+    # `@(lcm(N1, U, M), M)` is I_DEPARTATMV (a70) and `@(lca(N1, U), qm2)` I_DEPARTATM (a71); with no choice point above the
+    # frame they depart (LCO): lTop at depth 1000 and at depth 2000 is the SAME. `lcpm`/`lcpa` (a72, a73) leave between/3's
+    # choice point above the frame, so the call takes I_CALLATMV's / I_CALLATM's path: lTop GROWS with the depth.
+    # Each call is `( G -> true )`, not once/1 (the kernel has no once/1); same answers in swipl.
+    (
+        "a70",
+        raw"( lcm(1000, U1, qm2) -> true ), ( lcm(2000, U2, qm2) -> true ), ( U1 == U2 -> R = same ; R = differ(U1, U2) )"
+    ),
+    (
+        "a71",
+        raw"( lca(1000, U1) -> true ), ( lca(2000, U2) -> true ), ( U1 == U2 -> R = same ; R = differ(U1, U2) )"
+    ),
+    (
+        "a72",
+        raw"( lcpm(1000, U1, qm2) -> true ), ( lcpm(2000, U2, qm2) -> true ), ( U2 > U1 -> R = grows ; R = flat(U1, U2) )"
+    ),
+    (
+        "a73",
+        raw"( lcpa(1000, U1) -> true ), ( lcpa(2000, U2) -> true ), ( U2 > U1 -> R = grows ; R = flat(U1, U2) )"
+    )
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/MOD3b/mod3b_rows.out)
@@ -287,7 +313,11 @@ const _AB_PINNED = [
     "t_a66 c[116,95,97,54,54]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[109,111,100,117,108,101],i1)))",
     "t_a67 c[116,95,97,54,55]/1(a[113,109,50])",
     "t_a68 c[116,95,97,54,56]/1(c[45]/2(a[113,109,50],a[117,115,101,114]))",
-    "t_a69 c[116,95,97,54,57]/1(a[113,109,50])"
+    "t_a69 c[116,95,97,54,57]/1(a[113,109,50])",
+    "t_a70 c[116,95,97,55,48]/1(a[115,97,109,101])",
+    "t_a71 c[116,95,97,55,49]/1(a[115,97,109,101])",
+    "t_a72 c[116,95,97,55,50]/1(a[103,114,111,119,115])",
+    "t_a73 c[116,95,97,55,51]/1(a[103,114,111,119,115])"
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -345,7 +375,7 @@ function _ab_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "Goal@Module in a body and call/1 of it as swipl's (a01-a69)" begin
+@testset "Goal@Module in a body and call/1 of it as swipl's (a01-a73)" begin
     f, names = _ab_file()
     kl, _, _ = _ab_kernel(f, names)
     @test length(kl) == length(_AB_PINNED)
@@ -361,6 +391,11 @@ end
     @test count(l -> occursin("c[64]/2(", l), _AB_PINNED) >= 15                        # @/2
     @test count(l -> occursin("c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil)))", l), _AB_PINNED) == 2    # [1,2,3]
     @test any(l -> startswith(l, "t_a39 ") && endswith(l, "(a[110,111])"), _AB_PINNED)    # the cyclic goal fails in swipl
+    # a70-a73: the LCO rows answer `same`, the choice-point rows `grows`
+    @test _AB_PINNED[end - 3] == "t_a70 c[116,95,97,55,48]/1(a[115,97,109,101])"
+    @test _AB_PINNED[end - 2] == "t_a71 c[116,95,97,55,49]/1(a[115,97,109,101])"
+    @test _AB_PINNED[end - 1] == "t_a72 c[116,95,97,55,50]/1(a[103,114,111,119,115])"
+    @test _AB_PINNED[end] == "t_a73 c[116,95,97,55,51]/1(a[103,114,111,119,115])"
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

@@ -7,7 +7,7 @@ import re, sys, pathlib
 tf = pathlib.Path(sys.argv[1])
 src = tf.read_text()
 prog = re.search(r'const _AB_PROGRAM = raw"""\n(.*?)"""', src, re.S).group(1)
-cases = re.findall(r'\("(a\d\d)",\s*raw"(.*?)"\)', src, re.S)
+cases = re.findall(r'\(\s*"(a\d\d)",\s*raw"(.*?)"\s*\)', src, re.S)
 drv = re.search(r'const _AB_DRIVER = raw"""\n(.*?)"""', src, re.S).group(1)
 if "--fill" in sys.argv:
     lines = pathlib.Path("mod3b_rows.out").read_text().split("\n")
