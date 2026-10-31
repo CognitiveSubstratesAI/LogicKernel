@@ -4850,8 +4850,9 @@ end
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
 # upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`, and `Goal@Module` (MOD3b). Since MOD3a `I_CALLM`/`I_DEPARTM`
-# decompile to `M:Goal` (pl-comp.c:6842-6851), and `I_CONTEXT` here "should never happen" (c:6792-6794;
+# arithmetic instructions but `A_ADD_FC`. Since MOD3a `I_CALLM`/`I_DEPARTM` decompile to `M:Goal`
+# (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
+# `Goal@M` or `PM:Goal@M` (pl-comp.c:6801-6840), and `I_CONTEXT` here "should never happen" (c:6792-6794;
 # `decompile!` takes it).
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
@@ -5016,6 +5017,26 @@ function decompileBodyNoShift!(
             push!(di.argp, _atom_word!(ld, m.atom))             # ARGP[-2] = m->name
             push!(di.argp, g)                                   # (swap arguments)
             build_term!(di, mk_sym(T, :(:)), 2)                 # BUILD_TERM(FUNCTOR_colon2)
+            pushed += 1
+        elseif op == I_DEPARTATMV || op == I_CALLATMV ||        # (MOD3b, c:6801-6840)
+            op == I_DEPARTATM || op == I_CALLATM
+            pm = Int(codes[di.pc])                              # Module pm = code2ptr(Module, *PC++)
+            cm = codes[di.pc + 1]                               # cm: a module, or (ATMV) a variable offset
+            def = di.clause.procedures[codes[di.pc + 2]].definition    # proc = code2ptr(Procedure, *PC++)
+            di.pc += 3
+            build_term!(di, def.name, def.arity)                # BUILD_TERM(proc->definition->functor)
+            if pm != 0                                          # if ( pm )
+                g = pop!(di.argp)                               # ARGP++; ARGP[-1] = ARGP[-2]
+                push!(di.argp, _atom_word!(ld, (ld.GD::PL_global_data{T}).modules[pm].atom))  # ARGP[-2] = pm->name
+                push!(di.argp, g)
+                build_term!(di, mk_sym(T, :(:)), 2)             # BUILD_TERM(FUNCTOR_colon2)
+            end
+            if op == I_DEPARTATMV || op == I_CALLATMV
+                _dvar!(di, nested, cm)                          # nested ? unifyVar(ARGP++, …, cm) : makeVarRef(cm)
+            else
+                push!(di.argp, _atom_word!(ld, (ld.GD::PL_global_data{T}).modules[Int(cm)].atom))  # *ARGP++ = cm->name
+            end
+            build_term!(di, mk_sym(T, Symbol("@")), 2)          # BUILD_TERM(FUNCTOR_at_sign2)
             pushed += 1
         elseif op == I_CONTEXT                                  # (MOD3a, c:6792-6794)
             di.pc += 1
