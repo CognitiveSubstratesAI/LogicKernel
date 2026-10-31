@@ -1,5 +1,5 @@
 # ORIGINAL: MOD6's mutant list — no swipl-devel counterpart.
-# tools/mutants/MOD6.py — the mutation battery of MOD6 (the module enumerations: pl-modul.c import_module (876-918),
+# tools/mutants/MOD6b.py — the mutation battery of MOD6 (the module enumerations: pl-modul.c import_module (876-918),
 # current_module = '$current_module'/2 (983-1075), get_existing_source_file (952), newModuleEnum (242), advanceModuleEnum (260),
 # freeModuleEnum (289); the registration of both predicates; `live_states`' module_enums term), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
