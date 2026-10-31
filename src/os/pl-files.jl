@@ -345,6 +345,201 @@ function MarkExecutable(ld::PL_local_data{T}, name::String)::Bool where {T}
     return true
 end
 
+# ORIGINAL (LB2b): the IRI hook of pl-file.c `iri_hook` calls the Prolog `$iri`:iri_hook/4 of init.pl; it is
+# refused by name, left to LB4. `what` is the operation (`IRI_TIME`, `IRI_SIZE`, `IRI_ACCESS`).
+function _iri_hook_refused(ld::PL_local_data{T}, fn::String, what::String) where {T}
+    throw(NotPortedError{T}(mk_sym(T, Symbol(fn)), "iri_hook $what (`\$iri`:iri_hook/4 of init.pl)", "LB4"))
+end
+
+# ORIGINAL (LB2b): `sym_key` equality of an atom with the atom named `name`, for `PL_get_atom`'s result.
+_is_atom_named(a, ::Type{T}, name::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, name))
+
+# ORIGINAL (LB2b): unify the term `t` with the atom whose text is `s` (`PL_unify_chars(t, PL_ATOM|REP_FN, -1, s)`).
+_unify_atom_chars(ld::PL_local_data{T}, t::term_t, s::String) where {T} =
+    PL_unify_atom(ld, t, mk_sym(T, Symbol(s)))
+
+# PORT: pl-files.c time_file as pl_time_file2_va
+# (PRED_IMPL("time_file", 2, time_file, 0))
+# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
+"`time_file(+File, -Time)`: the modification time of the file as a float; `existence_error` etc. by `errno` (pl-files.c)."
+function pl_time_file2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    fn = PL_get_file_name(ld, A1, 0)
+    fn === nothing && return FFALSE
+    file_name_is_iri(fn) != 0 && _iri_hook_refused(ld, fn, "IRI_TIME")
+    time, errno = LastModifiedFile(fn)
+    errno == 0 && return PL_unify_float(ld, A2, time) ? FTRUE : FFALSE
+    rc = PL_error(ld, "", 0, "", ERR_FILE_OPERATION, mk_sym(T, :time), mk_sym(T, :file), A1, errno)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c size_file as pl_size_file2_va
+# (PRED_IMPL("size_file", 2, size_file, 0))
+# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
+"`size_file(+File, -Size)`: the size of the file in bytes (pl-files.c)."
+function pl_size_file2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    n = PL_get_file_name(ld, A1, 0)
+    n === nothing && return FFALSE
+    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_SIZE")
+    size, errno = SizeFile(n)
+    if size < 0
+        rc = PL_error(
+            ld, "size_file", 2, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :size), mk_sym(T, :file), A1,
+            errno
+        )
+        return rc ? FTRUE : FFALSE
+    end
+    return PL_unify_int64(ld, A2, Int(size)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c access_file as pl_access_file2_va
+# (PRED_IMPL("access_file", 2, access_file, 0))
+# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
+"`access_file(+File, +Mode)`: the file can be accessed in `Mode` (pl-files.c)."
+function pl_access_file2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    name, mode = PL__t0, PL__t0 + 1
+    m = PL_get_atom(ld, mode)
+    if m === nothing
+        PL_error(ld, "access_file", 2, "", ERR_TYPE, mk_sym(T, :atom), mode)
+        return FFALSE
+    end
+    n = PL_get_file_name(ld, name, 0)
+    n === nothing && return FFALSE
+    _is_atom_named(m, T, :none) && return FTRUE
+    md = if _is_atom_named(m, T, :write) || _is_atom_named(m, T, :append)
+        ACCESS_WRITE
+    elseif _is_atom_named(m, T, :read)
+        ACCESS_READ
+    elseif _is_atom_named(m, T, :execute) || _is_atom_named(m, T, :search)
+        ACCESS_EXECUTE
+    elseif _is_atom_named(m, T, :exist)
+        ACCESS_EXIST
+    else
+        PL_error(ld, "access_file", 2, "", ERR_DOMAIN, mk_sym(T, :io_mode), mode)
+        return FFALSE
+    end
+    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_ACCESS")
+    AccessFile(n, md) && return FTRUE
+    if md == ACCESS_WRITE && !AccessFile(n, ACCESS_EXIST)
+        dir = DirName(n)
+        if dir === nothing
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+            return FFALSE
+        end
+        if !isempty(dir)
+            ExistsDirectory(dir) || return FFALSE
+        end
+        AccessDirectory(isempty(dir) ? "." : dir, md) && return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-files.c read_link as pl_read_link3_va
+# (PRED_IMPL("read_link", 3, read_link, 0))
+"`read_link(+File, -Link, -Target)`: the text of the symbolic link and its final destination (pl-files.c)."
+function pl_read_link3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    file, link, to = PL__t0, PL__t0 + 1, PL__t0 + 2
+    n = PL_get_file_name(ld, file, 0)
+    n === nothing && return FFALSE
+    l = ReadLink(n)
+    l === nothing && return FFALSE
+    _unify_atom_chars(ld, link, l) || return FFALSE
+    t = DeRefLink(ld, n)
+    t === nothing && return FFALSE
+    return _unify_atom_chars(ld, to, t) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c exists_file as pl_exists_file1_va
+# (PRED_IMPL("exists_file", 1, exists_file, 0))
+# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
+"`exists_file(+File)`: the file exists and is a regular file (pl-files.c)."
+function pl_exists_file1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    n = PL_get_file_name(ld, PL__t0, 0)
+    n === nothing && return FFALSE
+    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_ACCESS ACCESS_FILE")
+    return ExistsFile(n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c exists_directory as pl_exists_directory1_va
+# (PRED_IMPL("exists_directory", 1, exists_directory, 0))
+# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
+"`exists_directory(+Dir)`: the directory exists (pl-files.c)."
+function pl_exists_directory1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    n = PL_get_file_name(ld, PL__t0, 0)
+    n === nothing && return FFALSE
+    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_ACCESS ACCESS_DIRECTORY")
+    return ExistsDirectory(n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c is_absolute_file_name as pl_is_absolute_file_name1_va
+# (PRED_IMPL("is_absolute_file_name", 1, is_absolute_file_name, 0))
+"`is_absolute_file_name(+File)`: the name is absolute or an IRI (pl-files.c)."
+function pl_is_absolute_file_name1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    n = PL_get_file_name(ld, PL__t0, 0)
+    n === nothing && return FFALSE
+    return (IsAbsolutePath(n) || file_name_is_iri(n) != 0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c same_file as pl_same_file2_va
+# (PRED_IMPL("same_file", 2, same_file, 0))
+"`same_file(+File1, +File2)`: the two names denote the same file (pl-files.c)."
+function pl_same_file2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    n1 = PL_get_file_name(ld, PL__t0, 0)
+    n1 === nothing && return FFALSE
+    n2 = PL_get_file_name(ld, PL__t0 + 1, 0)
+    n2 === nothing && return FFALSE
+    return SameFile(ld, n1, n2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c file_base_name as pl_file_base_name2_va
+# (PRED_IMPL("file_base_name", 2, file_base_name, 0))
+"`file_base_name(+Path, -Base)`: the last component of the path (pl-files.c)."
+function pl_file_base_name2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    txt = PL_get_text(ld, PL__t0, CVT_ALL | CVT_EXCEPTION)
+    txt === nothing && return FFALSE
+    b = BaseName(text_string(txt))
+    if b === nothing
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+        return FFALSE
+    end
+    return _unify_atom_chars(ld, PL__t0 + 1, b) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c file_directory_name as pl_file_directory_name2_va
+# (PRED_IMPL("file_directory_name", 2, file_directory_name, 0))
+"`file_directory_name(+Path, -Dir)`: the directory part of the path (pl-files.c)."
+function pl_file_directory_name2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    txt = PL_get_text(ld, PL__t0, CVT_ALL | CVT_EXCEPTION)
+    txt === nothing && return FFALSE
+    d = DirName(text_string(txt))
+    if d === nothing
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+        return FFALSE
+    end
+    return _unify_atom_chars(ld, PL__t0 + 1, d) ? FTRUE : FFALSE
+end
+
 # PORT: pl-files.c delete_file as pl_delete_file1_va
 # (PRED_IMPL("delete_file", 1, delete_file, 0))
 # DIVERGES: NOT PORTED: `DeleteTemporaryFile` (see the file's header).
@@ -368,8 +563,18 @@ function pl_delete_file1_va(
 end
 
 # PORT: pl-files.c BeginPredDefs as PL_predicates_from_files
-# DIVERGES: the ported entries (upstream's table has twenty-three).
+# DIVERGES: the entries ported so far (upstream's table has twenty-three; the others follow in groups G7 and G8).
 "pl-files.c's registration table (`BeginPredDefs(files)`): the ported entries."
 const PL_predicates_from_files = (
+    PL_extension("access_file", 2, pl_access_file2_va, PL_FA_VARARGS),
+    PL_extension("time_file", 2, pl_time_file2_va, PL_FA_VARARGS),
+    PL_extension("size_file", 2, pl_size_file2_va, PL_FA_VARARGS),
+    PL_extension("read_link", 3, pl_read_link3_va, PL_FA_VARARGS),
+    PL_extension("exists_file", 1, pl_exists_file1_va, PL_FA_VARARGS),
+    PL_extension("exists_directory", 1, pl_exists_directory1_va, PL_FA_VARARGS),
     PL_extension("delete_file", 1, pl_delete_file1_va, PL_FA_VARARGS),
+    PL_extension("same_file", 2, pl_same_file2_va, PL_FA_VARARGS),
+    PL_extension("is_absolute_file_name", 1, pl_is_absolute_file_name1_va, PL_FA_VARARGS),
+    PL_extension("file_base_name", 2, pl_file_base_name2_va, PL_FA_VARARGS),
+    PL_extension("file_directory_name", 2, pl_file_directory_name2_va, PL_FA_VARARGS),
 )
