@@ -428,6 +428,187 @@ function pl_sub_string5_va(
     )
 end
 
+# ── string_code/3, get_string_code/3 (pl-string.c 255-388) ───────────────────────────────────────────
+
+# PORT: pl-error.c ERR_RANGE (PL_error)
+# DIVERGES: the code `ERR_RANGE` is not in the kernel's `PL_error_code` enum (src/pl-error.jl); the error is built
+# here from the open and close halves of `PL_error`: `error(domain_error(range(Low, High), Arg), context(Pred, _))`.
+# A new enum member (and its `_enum_hash` manifest entry) is left to the audit.
+"Raise `error(domain_error(range(low, high), arg), …)` (pl-error.c `ERR_RANGE`); false."
+function PL_error_range(
+    ld::PL_local_data{T}, low::term_t, high::term_t, arg::term_t
+)::Bool where {T}
+    h = _PL_error_open(ld)
+    h === nothing && return false
+    caller, fid, except, formal, swi = h
+    r = new_term_ref(ld)
+    PL_cons_functor(ld, r, _err_functor(ld, :range, 2), low, high)
+    PL_cons_functor(ld, formal, _err_functor(ld, :domain_error, 2), r, arg)
+    return _PL_error_close!(ld, caller, fid, except, formal, swi)
+end
+
+# PORT: pl-privitf.c PL_get_char
+# DIVERGES: returns the code, or `nothing` where upstream returns false; upstream raises `type_error(character,
+# C)` at its end, so this is also `PL_get_char_ex` (pl-error.c: the same error). NOT PORTED, as no caller passes
+# it: `eof` (the integer -1 and the atom `end_of_file`).
+"The character code term reference `c` holds — a code, a one-character atom, string or list; `nothing` after the error (pl-privitf.c)."
+function PL_get_char(ld::PL_local_data{T}, c::term_t)::Union{Nothing, Int} where {T}
+    chr = PL_get_integer(ld, c)
+    if chr !== nothing
+        VALID_CODE_POINT(chr) && return chr
+        PL_type_error(ld, "character_code", c)
+        return nothing
+    end
+    name = PL_get_atom(ld, c)
+    if name !== nothing
+        ch = charCode(name)
+        ch != -1 && return ch
+    else
+        text = PL_get_text(ld, c, CVT_ATOM | CVT_STRING | CVT_LIST)
+        if text !== nothing && PL_canonicalise_text(text) == 1 && PL_text_length(text) == 1
+            return text_get_char(text, 0)
+        end
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :character), c)
+    return nothing
+end
+
+# PORT: pl-error.c PL_get_int64_ex
+# DIVERGES: returns the value, or `nothing` with the error raised; `representation_error(int64_t)` as swipl 10.1.19
+# raises it (the kernel's `PL_get_long_ex` names `long`).
+"The 64-bit integer term reference `t` holds, or `nothing` after raising `representation_error(int64_t)` or `type_error(integer, T)` (pl-error.c)."
+function PL_get_int64_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    i = PL_get_long(ld, t)
+    i === nothing || return i
+    if PL_is_integer(ld, t)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int64_t))
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+    return nothing
+end
+
+# PORT: pl-string.c text_code_at
+# DIVERGES: the code, or `nothing` where upstream returns false; `PL_text_unit_offset` is `PL_seek_text` (a unit is a
+# code point) and `text_next_code` is `text_get_char`; `t` is canonical.
+"The code of the character `index` (0-based) of the canonical text `t`, or `nothing` when `index` is beyond it (pl-string.c)."
+function text_code_at(t::PL_chars_t, index::Int)::Union{Nothing, Int}
+    u = PL_seek_text(t, index)
+    (u == -1 || u >= t.length) && return nothing
+    return text_get_char(t, u)
+end
+
+# PORT: pl-string.c string_code as pl_string_code3_va
+# (PRED_IMPL("string_code", 3, string_code, PL_FA_NONDETERMINISTIC)) — `ForeignRedoInt(idx)` is `PL_retry(idx)`.
+"`string_code/3` (pl-string.c): the character `A1` (counted from 1) of the text `A2` has code `A3`; enumerates the indices."
+function pl_string_code3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ctl = PL_foreign_control(PL__ctx)
+    idx = 0
+    tchar = -1
+
+    if ctl == FRG_FIRST_CALL
+        t = PL_get_text(ld, A2, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION)
+        t === nothing && return FFALSE
+        PL_canonicalise_text_ex(ld, t) || return FFALSE
+        if !PL_is_variable(ld, A1)
+            i = PL_get_size_ex(ld, A1)
+            i === nothing && return FFALSE
+            c = i == 0 ? nothing : text_code_at(t, i - 1)
+            c === nothing && return FFALSE
+            return PL_unify_integer(ld, A3, c) ? FTRUE : FFALSE
+        else
+            if !PL_is_variable(ld, A3)
+                tc = PL_get_char(ld, A3)             # PL_get_char_ex
+                tc === nothing && return FFALSE
+                tchar = tc
+            elseif t.length > 0
+                tchar = -1
+            else
+                return FFALSE
+            end
+            idx = 0
+        end
+    elseif ctl == FRG_REDO
+        idx = PL_foreign_context(PL__ctx)
+        t = PL_get_text(ld, A2, CVT_ALL)
+        t === nothing && return FFALSE
+        PL_canonicalise_text_ex(ld, t) || return FFALSE
+        if PL_is_variable(ld, A3)
+            tchar = -1
+        else
+            tc = PL_get_char(ld, A3)
+            tc === nothing && return FFALSE
+            tchar = tc
+        end
+    else
+        return FTRUE
+    end
+
+    # gen:
+    u = PL_seek_text(t, idx)
+    u == -1 && return FFALSE
+    if tchar == -1
+        if u < t.length &&
+           PL_unify_integer(ld, A1, idx + 1) &&
+           PL_unify_integer(ld, A3, text_get_char(t, u))
+            u += 1
+            return u < t.length ? PL_retry(idx + 1) : FTRUE
+        end
+        return FFALSE
+    end
+
+    while u < t.length
+        c = text_get_char(t, u)
+        u += 1
+        if c == tchar
+            if PL_unify_integer(ld, A1, idx + 1)
+                idx += 1
+                while u < t.length
+                    c = text_get_char(t, u)
+                    u += 1
+                    c == tchar && return PL_retry(idx)
+                    idx += 1
+                end
+                return FTRUE
+            end
+            return FFALSE
+        end
+        idx += 1
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-string.c get_string_code as pl_get_string_code3_va
+# (PRED_IMPL("get_string_code", 3, get_string_code, 0))
+"`get_string_code/3` (pl-string.c): the character `A1` (counted from 1) of the text `A2` has code `A3`; out of range is `domain_error(range(1, Length), A1)`."
+function pl_get_string_code3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    t = PL_get_text(ld, A2, CVT_ALL | CVT_EXCEPTION)
+    t === nothing && return FFALSE
+    i = PL_get_int64_ex(ld, A1)
+    i === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, t) || return FFALSE
+
+    c = i < 1 ? nothing : text_code_at(t, i - 1)
+    if c === nothing
+        av = PL_new_term_refs(ld, 2)
+        if av != 0
+            PL_put_int64(ld, av, 1)
+            PL_put_int64(ld, av + 1, PL_text_length(t))
+            return PL_error_range(ld, av, av + 1, A1) ? FTRUE : FFALSE
+        end
+        return FFALSE
+    end
+    return PL_unify_integer(ld, A3, c) ? FTRUE : FFALSE
+end
+
 # ── the registration table (pl-string.c BeginPredDefs(strings)) ─────────────────────────────────────
 # DIVERGES: upstream registers `strings` after `prims`, before `variant` (pl-ext.c:512); T2's table is
 # appended after `attvar` in `_PRED_TABLES` (src/pl-ext.jl), as the dispatch indices of the earlier
@@ -443,5 +624,9 @@ const PL_predicates_from_strings = (
     ),
     PL_extension(
         "sub_string", 5, pl_sub_string5_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
-    )
+    ),
+    PL_extension(
+        "string_code", 3, pl_string_code3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("get_string_code", 3, pl_get_string_code3_va, PL_FA_VARARGS)
 )
