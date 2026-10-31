@@ -646,6 +646,226 @@ function PL_current_prolog_flag(
     return PL_recorded(ld, f.t::record{T}, t)
 end
 
+# ── setting a flag: the value setters (pl-prologflag.c), R2 F1b ──────────────────────────────────
+# ORIGINAL (design D4): a flag whose upstream side effect the kernel has not is DEFINED at upstream's default
+# (`initPrologFlags!`) and SETTING it raises `NotPortedError` naming the side effect: loud and grep-able, and
+# no answer swipl gives is changed. The flags: `debug` (debugmode), `tty_control`, `debug_on_interrupt`,
+# `stack_limit` (set_stack_limit), `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
+# `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
+# `autoload` (propagateAutoload), `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
+# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), `on_error`/`on_warning` (the
+# `halt`/`status` actions belong to the toplevel), the ci_* and tabling restraint flags (pseudo-flags
+# of pl-index.c and pl-tabling.c, whose state is constants here) and `file_name_case_handling`.
+"Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
+function _flag_not_ported(key::T, effect::String) where {T}
+    throw(NotPortedError{T}(key, effect, "R2 F1b"))
+end
+
+# The term reference holding the atom `a` (`PL_put_atom` into a fresh reference), for an error's culprit.
+function _flag_atom_ref(ld::PL_local_data{T}, a::T)::term_t where {T}
+    t = PL_new_term_ref(ld)
+    PL_put_atom(ld, t, a)
+    return t
+end
+
+# PORT: pl-prologflag.c setRationalSyntax
+# DIVERGES: as `setBackQuotes`.
+"`flags` with the rational syntax the atom `a` names (`natural`, `compatibility`), or `nothing` after `domain_error(rational_syntax, A)` (pl-prologflag.c)."
+function setRationalSyntax(
+    ld::PL_local_data{T}, a::T, flags::UInt32
+)::Union{Nothing, UInt32} where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :natural))
+        f = RAT_NATURAL
+    elseif k == sym_key(mk_sym(T, :compatibility))
+        f = RAT_COMPAT
+    else
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :rational_syntax), _flag_atom_ref(ld, a))
+        return nothing
+    end
+
+    flags &= ~RAT_MASK
+    flags |= f
+
+    return flags
+end
+
+# PORT: pl-read.c var_prefix_code
+"The code of the character `var_prefix` names — `false` 0, `true` `_`, a one-character atom that is `_` or an ASCII symbol character other than `.` and `` ` `` — or -1 (pl-read.c)."
+function var_prefix_code(a::T)::Int where {T}
+    k = sym_key(a)
+    k == sym_key(mk_sym(T, Symbol("false"))) && return 0
+    k == sym_key(mk_sym(T, Symbol("true"))) && return Int('_')
+    txt = sym_text(a)
+    if length(txt) == 1
+        c = Int(first(txt))
+        if c == Int('_') || (c < 0x80 && PlSymbolW(c) && c != Int('.') && c != Int('`'))
+            return c
+        end
+    end
+    return -1
+end
+
+# PORT: pl-read.c get_var_prefix_ex
+# DIVERGES: the code is returned, `nothing` after the error is raised.
+"The `var_prefix` code the term `t` holds, or `nothing` after `type_error`/`domain_error(var_prefix, T)` (pl-read.c)."
+function get_var_prefix_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    a = PL_get_atom_ex(ld, t)
+    a === nothing && return nothing
+    c = var_prefix_code(a)
+    if c < 0
+        PL_domain_error(ld, "var_prefix", t)
+        return nothing
+    end
+    return c
+end
+
+# PORT: pl-prologflag.c setVarPrefix
+# DIVERGES: returns the normalised atom (`true` is `_`), or `nothing` after the error is raised, where upstream
+# writes it through `a`.
+"Set the `var_prefix` of the module `m` from the term `value` (an atom, `true` an alias for `_`); the atom the flag then holds, or `nothing` (pl-prologflag.c)."
+function setVarPrefix(
+    ld::PL_local_data{T}, value::term_t, m::module_t{T}
+)::Union{Nothing, T} where {T}
+    c = get_var_prefix_ex(ld, value)
+    c === nothing && return nothing
+    m.var_prefix = c
+    return c != 0 ? mk_sym(T, Symbol(Char(c))) : mk_sym(T, Symbol("false"))
+end
+
+# PORT: pl-prologflag.c setUnknown
+# DIVERGES: the database is an argument; `printMessage` appends the warning to `ld.messages`.
+"Set the `unknown` flag of the module `m` from the atom `a` (`error`, `warning`, `fail`); in `user` and `system` a value other than `error` warns, and in `system` it is refused outside system mode (pl-prologflag.c)."
+function setUnknown(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, value::term_t, a::T, m::module_t{T}
+)::Bool where {T}
+    flags = m.flags & ~UNKNOWN_MASK
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :error))
+        flags |= UNKNOWN_ERROR
+    elseif k == sym_key(mk_sym(T, :warning))
+        flags |= UNKNOWN_WARNING
+    elseif k == sym_key(mk_sym(T, :fail))
+        flags |= UNKNOWN_FAIL
+    else
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :unknown), value)
+    end
+
+    if (flags & UNKNOWN_ERROR) == 0 &&
+       (m.index == MODULE_user(gd).index || m.index == MODULE_system(gd).index)
+        if m.index == MODULE_system(gd).index && !SYSTEM_MODE(ld)
+            key = _flag_atom_ref(ld, mk_sym(T, :unknown))
+            return PL_error(
+                ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :modify), mk_sym(T, :flag), key
+            )
+        end
+
+        if !SYSTEM_MODE(ld)
+            msg = _flag_atom_ref(ld, mk_sym(T, :unknown_in_module_user))
+            printMessage(ld, :warning, msg) || return false
+        end
+    end
+
+    m.flags = flags
+
+    return true
+end
+
+# PORT: pl-prologflag.c setUnknownOption
+"Set the `unknown_option` flag from the atom `a` (`ignore`, `warning`, `error`) (pl-prologflag.c)."
+function setUnknownOption(ld::PL_local_data{T}, value::term_t, a::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :ignore))
+        ld.prolog_flag_unknown_option = OPT_UNKNOWN_IGNORE
+    elseif k == sym_key(mk_sym(T, :warning))
+        ld.prolog_flag_unknown_option = OPT_UNKNOWN_WARNING
+    elseif k == sym_key(mk_sym(T, :error))
+        ld.prolog_flag_unknown_option = OPT_UNKNOWN_ERROR
+    else
+        return PL_domain_error(ld, "unknown_option", value)
+    end
+    return true
+end
+
+# PORT: pl-prologflag.c checkOnError
+"Whether the atom `a` is a valid action of the flag `key` (`on_error`, `on_warning`): `print`, `halt` or `status`; else `domain_error(Key, Value)` (pl-prologflag.c)."
+function checkOnError(ld::PL_local_data{T}, value::term_t, a::T, key::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :print)) ||
+       k == sym_key(mk_sym(T, :halt)) ||
+       k == sym_key(mk_sym(T, :status))
+        return true
+    end
+    return PL_error(ld, ERR_DOMAIN, key, value)
+end
+
+# PORT: pl-prologflag.c setWriteAttributes
+"Set the `write_attributes` flag from the atom `a` (`ignore`, `dots`, `write`, `portray`) (pl-prologflag.c)."
+function setWriteAttributes(ld::PL_local_data{T}, a::T)::Bool where {T}
+    mask = writeAttributeMask(ld, a)
+    if mask != 0
+        ld.prolog_flag_write_attributes = mask
+        return true
+    end
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :write_attributes), _flag_atom_ref(ld, a))
+end
+
+# PORT: pl-prologflag.c setAccessLevelFromAtom
+# DIVERGES: pl-init.c's `getAccessLevelMask` is inlined: `user` and `system`.
+"Set the engine's access level from the atom `a` (`user`, `system`) (pl-prologflag.c)."
+function setAccessLevelFromAtom(ld::PL_local_data{T}, a::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :user))
+        setAccessLevel!(ld, ACCESS_LEVEL_USER)
+    elseif k == sym_key(mk_sym(T, :system))
+        setAccessLevel!(ld, ACCESS_LEVEL_SYSTEM)
+    else
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :access_level), _flag_atom_ref(ld, a))
+    end
+    return true
+end
+
+# PORT: pl-prologflag.c getOccursCheckMask
+"The `occurs_check_t` the atom `a` names (`false`, `true`, `error`), or `nothing` (pl-prologflag.c)."
+function getOccursCheckMask(a::T)::Union{Nothing, occurs_check_t} where {T}
+    k = sym_key(a)
+    k == sym_key(mk_sym(T, Symbol("false"))) && return OCCURS_CHECK_FALSE
+    k == sym_key(mk_sym(T, Symbol("true"))) && return OCCURS_CHECK_TRUE
+    k == sym_key(mk_sym(T, :error)) && return OCCURS_CHECK_ERROR
+    return nothing
+end
+
+# PORT: pl-prologflag.c setOccursCheck
+# DIVERGES: no `updateAlerted`: the kernel's unify reads the field directly.
+"Set the `occurs_check` flag from the atom `a` (pl-prologflag.c)."
+function setOccursCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
+    v = getOccursCheckMask(a)
+    if v !== nothing
+        ld.prolog_flag_occurs_check = v
+        return true
+    end
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :occurs_check), _flag_atom_ref(ld, a))
+end
+
+# PORT: pl-prologflag.c setStreamTypeCheck
+"Set the `stream_type_check` flag from the atom `a` (`false`, `loose`, `true`) (pl-prologflag.c)."
+function setStreamTypeCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, Symbol("false")))
+        check = ST_FALSE
+    elseif k == sym_key(mk_sym(T, :loose))
+        check = ST_LOOSE
+    elseif k == sym_key(mk_sym(T, Symbol("true")))
+        check = ST_TRUE
+    else
+        return PL_error(
+            ld, ERR_DOMAIN, mk_sym(T, :stream_type_check), _flag_atom_ref(ld, a)
+        )
+    end
+    ld.IO_stream_type_check = check
+    return true
+end
+
 # ── the predicates (pl-prologflag.c) ─────────────────────────────────────────────────────────────
 # PORT: pl-prologflag.c dcurrent_prolog_flag as pl_dcurrent_prolog_flag5_va
 # (PRED_IMPL("$current_prolog_flag", 5, dcurrent_prolog_flag, PL_FA_NONDETERMINISTIC))

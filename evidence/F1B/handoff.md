@@ -21,8 +21,11 @@ Upstream: swipl-devel cbf4e1896275 src/os/pl-prologflag.c (extract in the writer
 - `setUnknown` (pl-prologflag.c:576) is not in the kernel (only `getUnknownModule`, pl-modul.jl:342).
 
 ## Groups (upstream pl-prologflag.c line -> Julia site, all in src/os/pl-prologflag.jl unless named)
-1. [ ] Setters :494-960 — setRationalSyntax, setVarPrefix, setVarTagFlag (refused), setUnknown, setUnknownOption, checkOnError, setWriteAttributes,
-       setAccessLevelFromAtom, getOccursCheckMask/setOccursCheck, setIncomparable, setEncoding/UnicodeAtoms/Autoload/Theme (D4: refused by name).
+1. [x] Setters :494-960 WRITTEN (section 'setting a flag: the value setters' of os/pl-prologflag.jl, before 'the predicates'): `_flag_not_ported(key, effect)`
+       (throws NotPortedError{T}(key, effect, "R2 F1b")), `_flag_atom_ref`, setRationalSyntax, var_prefix_code, get_var_prefix_ex, setVarPrefix,
+       setUnknown(gd, ld, value, a, m), setUnknownOption, checkOnError, setWriteAttributes, setAccessLevelFromAtom, getOccursCheckMask, setOccursCheck,
+       setStreamTypeCheck. NOT written (group 2 calls `_flag_not_ported` for them, D4): setVarTagFlag, setIncomparable (no `incomparable_error` field),
+       setEncoding, setUnicodeAtoms, setAutoload, setTheme, file_name_case_handling. The header comment lists the D4 set.
 2. [ ] keep_flag, check_oneof_flag, new_prolog_flag, set_flag_value :1126-1523 (D4 refusals: NotPortedError naming the side effect).
 3. [ ] check_flag_write_access, check_create_flag, set_prolog_flag_unlocked, set_prolog_flag_ptr, set_prolog_flag/2, create_prolog_flag/3 :1542-1810; registration.
 4. [ ] STRUCT COMMIT (ONE separate commit, src/pl-global.jl struct + constructor + every site that builds it): delete the 5 Bool fields and
@@ -33,6 +36,15 @@ Upstream: swipl-devel cbf4e1896275 src/os/pl-prologflag.c (extract in the writer
 6. [ ] Rows test/core_lang/test_set_flag_swipl.jl (`_SF`/`_sf_`), evidence/F1B/ generator + .out via swipl 10.1.19.
 7. [ ] tools/mutants/F1B.py (>= 14), bench rows (H3), docs/architecture.md block, static manifest entries (LAST, own commits).
 F2 (pl-prologflag.c 1862-1960) afterwards as its own group: evidence/F2/.
+
+## State at hand-back (writer 1, ran out of context after group 1)
+- Committed: plan 450b654, group 1 (next commit). Upstream is extracted by `git -C ~/dev-zone/swipl-devel show cbf4e1896275:src/os/pl-prologflag.c` into your scratchpad;
+  read :1126-1523 (keep_flag, new_prolog_flag, set_flag_value) next, then :1542-1810. Group 2 must ALSO port `check_oneof_flag`, `set_oneof`, `clean_prolog_flag`
+  (find them with awk for the function starts: they are above :1126 and not yet read).
+- APIs verified: errors `PL_error(ld, ERR_DOMAIN|ERR_TYPE|ERR_EXISTENCE, atom::T, term_t)`, `PL_error(ld, "", 0, "", ERR_PERMISSION, action::T, type::T, obj::term_t)`,
+  `PL_error(ld, ERR_INSTANTIATION)`, `PL_domain_error(ld, "name", t)`, `PL_type_error`; `printMessage(ld, :warning, msg_term_ref)`; `PL_get_atom_ex(ld, t)`.
+- D6 answer: `module_t` is mutable (pl-incl.jl:831), `m.flags` and `m.var_prefix` are writable in place.
+- Unverified (never compiled): everything.
 
 ## Estimate: 10-13 commits. Nothing compiled, nothing run.
 ## Gate order (end of handoff): fmt via warm.sh send of the committed files, inventory, check, rows x3 term types, test_type_discipline.jl,
