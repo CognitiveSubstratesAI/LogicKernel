@@ -959,12 +959,14 @@ end
 # exception pending, nothing the engine runs can reach the region: the bar is lowered to 0 and, after a
 # CLOSE, `gTop` to the query's own mark `target` — but first every live term reference (the slots below
 # `lTop`) and every open foreign frame's mark is checked to point at or below `target` (raises
-# otherwise). GOES with G1 (the collector). REVISIT when nb_setval/b_setval are ported: upstream freezes
-# for global variables too, and this reset would free a global variable's value.
+# otherwise). GOES with the collector. Global variables (pl-gvar.c, G1; design D7) keep the region: while
+# `ld.gvar_grefs > 0` (upstream's `LD->gvar.grefs`: a value of nb_setval/b_setval lives on the global
+# stack) the function returns at once, as upstream's `frozen_bar` stays for the thread's life.
 "Release the frozen region after the outermost query ended, its mark `m` (`close`: lower `gTop` to `m.globaltop`)."
 function _release_frozen!(ld::PL_local_data, m::mark, close::Bool)::Nothing
     target = m.globaltop
-    (ld.frozen_bar == 0 || ld.query != 0 || ld.exception_term != 0) && return nothing
+    (ld.frozen_bar == 0 || ld.query != 0 || ld.exception_term != 0 || ld.gvar_grefs > 0) &&
+        return nothing
     if close && ld.gTop > target
         for i in 1:(ld.lTop)                        # live term references: none above `target`
             w = ld.slots[i]
