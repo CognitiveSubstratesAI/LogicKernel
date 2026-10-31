@@ -66,3 +66,4 @@ t_g53(R) :- catch((nb_setval(gv_m1, x), nb_setval(gv_m2, x), findall(K, ( nb_cur
 t_g54(R) :- catch((b_setval(gv_mix, 1), nb_setval(gv_mix, 2), nb_getval(gv_mix, R)), error(SsuE, _), R = raised(SsuE)).
 t_g55(R) :- catch((nb_setval(gv_mix2, a), ( b_setval(gv_mix2, b), fail ; nb_getval(gv_mix2, R) )), error(SsuE, _), R = raised(SsuE)).
 t_g56(R) :- catch((nb_setval(gv_k1, f(_)), nb_getval(gv_k1, A), nb_getval(gv_k1, B), ( A == B -> R = same ; R = diff )), error(SsuE, _), R = raised(SsuE)).
+t_g57(R) :- catch((nb_setval(gv_nv, 1), nb_delete(gv_nv), findall(K, ( nb_current(K, _), K == gv_nv ), R)), error(SsuE, _), R = raised(SsuE)).

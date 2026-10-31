@@ -209,7 +209,9 @@ const _GV_CASES = [
     # b_setval over an nb_setval value, undone
     ("g55", raw"nb_setval(gv_mix2, a), ( b_setval(gv_mix2, b), fail ; nb_getval(gv_mix2, R) )"),
     # nb_getval returns the stored term itself
-    ("g56", raw"nb_setval(gv_k1, f(_)), nb_getval(gv_k1, A), nb_getval(gv_k1, B), ( A == B -> R = same ; R = diff )")
+    ("g56", raw"nb_setval(gv_k1, f(_)), nb_getval(gv_k1, A), nb_getval(gv_k1, B), ( A == B -> R = same ; R = diff )"),
+    # nb_delete leaves a key with no value: nb_current does not enumerate it (an unfiltered enumeration)
+    ("g57", raw"nb_setval(gv_nv, 1), nb_delete(gv_nv), findall(K, ( nb_current(K, _), K == gv_nv ), R)")
 ]
 
 # the pins: swipl's output for the driver over `_GV_PROGRAM` and `_GV_CASES` (evidence/G1/gvar_rows.out)
@@ -270,7 +272,8 @@ const _GV_PINNED = [
     "t_g53 c[116,95,103,53,51]/1(c[45]/2(c[91,124,93]/2(a[103,118,95,109,49],c[91,124,93]/2(a[103,118,95,109,50],nil)),i1))",
     "t_g54 c[116,95,103,53,52]/1(i2)",
     "t_g55 c[116,95,103,53,53]/1(a[97])",
-    "t_g56 c[116,95,103,53,54]/1(a[115,97,109,101])"
+    "t_g56 c[116,95,103,53,54]/1(a[115,97,109,101])",
+    "t_g57 c[116,95,103,53,55]/1(nil)"
 ]
 
 "The kernel's lines for `names` after consulting `path`, as the driver writes swipl's; the database, for the white-box tests."
@@ -329,7 +332,7 @@ function _gv_file()::Tuple{String, Vector{String}}
     return f, names
 end
 
-@testset "global variables as swipl's (g01-g56)" begin
+@testset "global variables as swipl's (g01-g57)" begin
     f, names = _gv_file()
     kl, gd, ld = _gv_kernel(f, names)
     @test length(kl) == length(_GV_PINNED)
