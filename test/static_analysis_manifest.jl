@@ -1300,6 +1300,16 @@ function _manifest_index(T)
         (LK.pl_set_prolog_flag2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.pl_create_prolog_flag3_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.PL_get_int64, Tuple{LD, Int64}, false),
+        # R2 F2 — push_prolog_flag/2, pop_prolog_flag/1 (pl-prologflag.c copy_prolog_flag, put_saved_flag_value, push, pop)
+        (LK.copy_prolog_flag, Tuple{LK.prolog_flag{T}}, false),
+        (LK.put_saved_flag_value, Tuple{LD, Int, LK.prolog_flag{T}}, false),
+        (LK.ensure_local_flag, Tuple{T, LK.prolog_flag{T}}, false),
+        (LK._prolog_flag_table_get, Tuple{GD, UInt64}, false),
+        (LK.push_prolog_flag, Tuple{GD, LD, Int, Int}, false),
+        (LK.pop_prolog_flag, Tuple{GD, LD, Int}, false),
+        (LK.pl_push_prolog_flag2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_pop_prolog_flag1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.PL_put_float, Tuple{LD, Int, Float64}, false),
         # R2 S1 — stream blobs, aliases, open/3,4, close/1,2 (pl-file.c)
         (LK._sym_is, Tuple{T, Symbol}, false),
         (LK._stream_blob_term, Tuple{LD, LK.stream_ref}, false),
