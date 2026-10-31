@@ -203,7 +203,7 @@ function store_clause!(
             _PL_get_arg(ld, 1, pre, head)
             _PL_get_arg(ld, 2, pre, cond)
             _PL_get_arg(ld, 2, t, body)
-            if _init_is_true(ld, cond) && ld.prolog_flag_optimise   # current_prolog_flag(optimise, true)
+            if _init_is_true(ld, cond) && truePrologFlag(ld, PLFLAG_OPTIMISE)   # current_prolog_flag(optimise, true)
                 PL_cons_functor(ld, t2, _err_functor(ld, Symbol("=>"), 2), head, body)
             else                                        # ?=>(Head, (Cond, !, Body))
                 g = PL_new_term_refs(ld, 2)
