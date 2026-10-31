@@ -114,3 +114,42 @@ STILL TO DO (next agent): (1) check whether test files are listed anywhere (grep
 test_format_swipl.jl there if so; (2) tools/mutants/O1A.py (>= 25 mutants over src/pl-fmt.jl, format of tools/mutants/MOD3b.py; TARGETS = test/core_lang/test_format_swipl.jl
 plus every test calling format/with_output_to; each `old` exactly once; validate with a python3 -I script; each with a kill row id from the cases above or a file:line
 equivalent); (3) docs/architecture.md block and test/static_analysis_manifest.jl entries (appended blocks, own commits, LAST); (4) gate order of WRITER_RULES.md.
+
+### State after coder 3 (hand-back at the context cap; NOTHING compiled or run)
+DONE (wip/o1a): b3171b3 pl-ext.jl registers PL_predicates_from_format in `_PRED_TABLES` (after `PL_predicates_from_files`) and
+`_FOREIGN_VA` (after `PL_predicates_from_files...`); O1-B appends its redirect table to the same tuples: the stack owner resolves the textual
+clash. TEST FILE LISTS: `git grep -l test_at_body_swipl` over tools/*.sh, test/*.jl, .github/workflows/*.yml names only itself, its
+generator-derived siblings and tools/mutants/MOD3b.py: test files are discovered by the runner, nothing to add for test_format_swipl.jl.
+07d58ab, f19bfb3, 54ae833 rows added to gen_rows.py and regenerated (swipl 10.1.19, two byte-identical runs): now 123 cases
+(f01-f99, e01-e24; e21 = `~-d`, e22 = format text of the wrong type, e23 `~W` with one argument, e24 `~@` with none; f75-f99 are new, f83 now has
+hex letters). A 10-digit numeric argument (`~3000000000d`) was tried and LEFT OUT: upstream's `int arg2 = arg*10+dw` wraps (undefined in C) and
+swipl 10.1.19 does not raise (prints 1); the Julia source raises `argument overflow`, as the C text says. AUDIT FLAG (k): behaviour-changing
+difference to the compiled swipl, not decided here.
+218a83e tools/mutants/O1A.py: 130 mutants over src/pl-fmt.jl, 1 declared equivalent (C6 `here < flen`), `old` once each / new != old / ids unique /
+targets exist (validated by a throwaway runpy script, `python3 -I`). TARGETS: TF = test_format_swipl.jl; TA = TF + 53 other test files (every file
+whose Prolog code calls format/2,3 or with_output_to, found by named git grep; code_testlib.jl omitted as a library). test/core_lang/
+test_with_output_to_swipl.jl exists only on wip/o1b: NOT listed; the stack owner adds it to `TO` once it has landed. The header lists what is NOT
+mutated and why (argument overflow, bignum fraction padding, Latin-1 under rubber, groupDigits/countGroups for lack of a stream locale).
+Anchors need a re-fit at the first battery run if `warm.sh fmt` rewraps lines of src/pl-fmt.jl. The KILL ids in each mutant id are hypotheses.
+
+STILL TO DO (next agent, in order; each its own commit, docs and manifest LAST):
+3. docs/architecture.md: append an `## O1A — format/2,3 (pl-fmt.c)` block BEFORE `## Still to come` (as O1B's block d99b4b4 on wip/o1b does after LB2's; the
+   stack owner orders them): what is ported (do_format and all directives, rubber, formatInteger, formatFloat with the bignum/rational/mpf-emulation and
+   Ryu double paths, `~@` through O1B's callProlog `ex` and tellString/toldString), the DIVERGES (D9 no stream locale, format_predicate refused by name,
+   the `format_predicates` table empty, mpf emulation, Ryu for libc printf, LibBF and WINDOWS exponent fix-up left out, mpz_sizeinbase10), UNVERIFIED
+   (nothing compiled), tests (test_format_swipl.jl, 123 rows, generator evidence/O1A/gen_rows.py) and tools/mutants/O1A.py.
+4. test/static_analysis_manifest.jl: read its header; add an entry per NEW method of src/pl-fmt.jl (grep `^function \|^@inline function \|^[a-z_A-Z0-9!]*(.*)::.* =` over
+   src/pl-fmt.jl) as an appended block, or name a DISPATCH_EXEMPT in the handoff if one applies.
+5. GATE ORDER (below, to be copied into this file once more when the manifest commit is made).
+
+## GATE ORDER (written by coder 3 for the stack owner)
+Merge order: O1-B's callProlog 3cb3a13 first (`~@` calls the 6-argument callProlog with `ex::Ref{Int}`); include order in src/LogicKernel.jl:
+os/pl-file.jl, os/pl-redirect.jl, pl-write.jl, pl-fmt.jl, pl-ext.jl (pl-fmt.jl is already included between pl-read.jl and pl-ext.jl; re-place it).
+Then: (1) `warm.sh send` fmt of the committed files (`warm.sh fmt` only sees the HEAD diff); (2) inventory; (3) `warm.sh check`; (4) test_format_swipl.jl
+on all three term types; (5) test/test_type_discipline.jl; (6) `tools/pkgtest_way.sh test/core_lang/test_format_swipl.jl`, one at a time; (7) push
+`mutants/O1A` at the WIP SHA; (8) branch-gate; (9) the term grep over diff and message; (10) `gate/o1a` and `mutants/O1A` at the SAME SHA.
+FIRST-RUN EXPECTATIONS: nothing in src/pl-fmt.jl or test_format_swipl.jl was ever parsed, so a FIX COMMIT is expected (syntax, names: `redir_context`,
+`setupOutputRedirect`, `tellString`, `toldString`, `PL_is_pair`, `PL_put_integer`, `pl_write_term3`); the `_FM` harness was renamed from
+test_at_body_swipl.jl's `_AB`; `mpz_sizeinbase10` (floor(bits*log10 2)+1) and the mpf precision (`keep = (max(53,bits)+127)/64+1`) were written FROM MEMORY:
+verify against the GMP source in the pinned swipl checkout or the oracle; `Base.Ryu.writefixed(f, digits)` / `writeexp(f, digits, plus, space, hash, expchar)`
+argument positions are unverified. Shared scratchpad warning: another agent overwrote a file named val.py there: use a private subdirectory.
