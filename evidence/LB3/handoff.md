@@ -94,3 +94,28 @@ all three term types (test/files/test_qlf_swipl.jl), test/test_type_discipline.j
 - **Q5:** AbsoluteFile/LastModifiedFile are Julia's abspath/stat (re-point when LB2b ports pl-os.c);
   `findStreamFromFile` and the `IO_SEE` context flag are not kept (see/1 unregistered: no stream can carry it).
 - **Q6:** the LD struct changed (pl-global.jl): alloc pins x3 at the gate.
+
+## UPDATE 3 (coder 3, Sonnet; nothing compiled or run)
+
+COMMITTED: G7 `168607e` (LB3.py, 54 mutants, validated by a throwaway checker), G8 `ed517f5` (docs/architecture.md LB3 section),
+G9 (the commit with this handoff: `_enum_hash` entry for `iftrue` in test/static_analysis_manifest.jl). All nine groups are
+written; the stack is G1..G9 plus this handoff. NOTHING compiled, no daemon used. LEFT: the gate (order above).
+- **Q10 (for the gate, not decided):** the manifest asks for an entry for EVERY new method (test/static_analysis_manifest.jl header);
+  the brief named only the `iftrue` enum. The new methods of src/pl-qlf.jl (directiveClause, update_conditional_compilation,
+  compileFile, compileFileList, boot_from_source!, addClauseWic, the 22 `pl_*_va` and `_qlf_refused`) and of src/os/pl-file.jl
+  (push_input_context, pop_input_context, pl_see, pl_seen) are NOT YET listed: `test_static_analysis.jl` will name them; a gate fix adds
+  entries (or DISPATCH_EXEMPT with a reason for the `Union{}` `_qlf_refused`).
+- Likeliest rows to need a gate fix (unchanged): message text uses `ld.read_source.file` (empty if read_clause does not set it);
+  the syntax-error and `elif` rows (an exception may be left pending); `_ql_call` on the refused predicates (a Julia
+  NotPortedError through the VM); the `Union{}` return type of `_qlf_refused`.
+- Audit flags Q1-Q9 above stand, undecided: Q1 (8th shell applied), Q2 (qlf_include as upstream; LB4 checks whether a boot file
+  reaches include/1), Q3-Q6, Q7 (boot_from_source! drops PL_halt, $boot_message, the resource DB), Q8 (PL_Q_DEBUG as upstream).
+- Mutant anchors: `warm.sh fmt` may re-flow a line; re-fit at the first battery run (mutate_drive.py refuses a string that does not
+  occur exactly once). No allow-* escape used.
+
+## LB4 CHECKLIST (gate 2, dispatcher decision D-0291 option c)
+- **KNOWN DIFFERENCE until LB4: conjunction directives.** `compileFile` runs a directive through `callProlog`, which (as upstream
+  pl-pro.c:476-540) calls `resolveProcedure(fd, module)` WITHOUT `call/1`; `','/2` exists upstream only because boot/init.pl defines
+  it. In the kernel `:- true, true.` / `:- atom(a), atom(b).` print "directive failed". Row test/files/test_qlf_swipl.jl (boot row,
+  `t_q02`) pins the kernel answer `["additional"]`; swipl's is `["autoload_off", "additional"]`. LB4 (init.pl loaded) must flip the
+  row to swipl's answer and delete the KNOWN DIFFERENCE comment.

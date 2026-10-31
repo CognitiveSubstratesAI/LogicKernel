@@ -2272,6 +2272,60 @@ _index_entry_points(T) = (
             LK.pl_read_string3_va, LK.pl_open_string2_va
         )
     ]...,
+    # LB3: the boot loop (src/pl-qlf.jl) and the input context (src/os/pl-file.jl)
+    (
+        LK.directiveClause,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Int, Int, Symbol},
+        false
+    ),
+    (
+        LK.update_conditional_compilation,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Int, LK.condc},
+        false
+    ),
+    (LK._qlf_Sdprintf!, Tuple{LK.PL_local_data{T}, String}, false),
+    (LK._qlf_source_file_text, Tuple{LK.PL_local_data{T}}, false),
+    (LK.qlfStartFile, Tuple{Nothing, LK.SourceFile{T}}, false),
+    (
+        LK.addClauseWic,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Nothing, Int, T},
+        false
+    ),
+    (
+        LK.compileFile,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Nothing, String},
+        false
+    ),
+    (
+        LK.compileFileList,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Nothing, Vector{String}},
+        false
+    ),
+    (
+        LK.boot_from_source!,
+        Tuple{LK.PL_global_data{T}, LK.PL_local_data{T}, Vector{String}},
+        false
+    ),
+    (LK._qlf_refused, Tuple{Type{T}, String, Int}, false),
+    [
+        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false) for
+        f in (
+            LK.pl_qlf_start_module1_va, LK.pl_qlf_start_sub_module1_va,
+            LK.pl_qlf_start_file1_va, LK.pl_qlf_include5_va, LK.pl_qlf_end_part0_va,
+            LK.pl_add_directive_wic1_va, LK.pl_import_wic3_va,
+            LK.pl_qlf_assert_clause2_va,
+            LK.pl_qlf_versions6_va, LK.pl_qlf_is_compatible1_va, LK.pl_qlf_sources2_va,
+            LK.pl_file_hash2_va, LK.pl_qlf_module2_va, LK.pl_qlf_load2_va,
+            LK.pl_qlf_current_source1_va, LK.pl_qlf_dependency1_va, LK.pl_qlf_open1_va,
+            LK.pl_qlf_close0_va, LK.pl_open_wic2_va, LK.pl_close_wic0_va,
+            LK.pl_map_id2_va,
+            LK.pl_unmap_id1_va
+        )
+    ]...,
+    (LK.push_input_context, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK.pop_input_context, Tuple{LK.PL_local_data{T}}, false),
+    (LK.pl_see, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.pl_seen, Tuple{LK.PL_local_data{T}}, false),
     (LK.unify_text, Tuple{LK.PL_local_data{T}, Int, LK.PL_chars_t, Int}, false),
     (LK.string_x, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.get_positive_integer_or_unbound, Tuple{LK.PL_local_data{T}, Int}, false),
@@ -2297,6 +2351,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_index(_M2)...,
     _index_entry_points(_M1)...,
     _index_entry_points(_M3)...,
+    # LB3: the entries of its block (_index_entry_points) that name no term type; there they would be listed once per type
+    (LK.cond_true, Tuple{LK.condc}, false),
+    (LK.condc, Tuple{}, false),
+    (LK.qlfEndPart, Tuple{Nothing}, false),
+    (LK.addDirectiveWic, Tuple{Nothing, Int}, false),
     # term-type-independent parts of the index and its head compiler
     (LK._le_byte, Tuple{NTuple{4, UInt64}, Int}, true),
     (LK._le_byte, Tuple{Vector{UInt8}, Int}, true),
@@ -2670,6 +2729,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # V9g-b — the sorts' enums (src/pl-list.jl)
     (Base.Enums._enum_hash, Tuple{LK.sort_order, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.list_sort, UInt64}, false),
+    # LB3 — the boot loop's conditional-compilation levels (src/pl-qlf.jl)
+    (Base.Enums._enum_hash, Tuple{LK.iftrue, UInt64}, false),
     (LK._signed_char, Tuple{Int64}, true),
     (LK.text_has_combining, Tuple{String}, false),
     (LK.atom_has_combining, Tuple{String}, false),

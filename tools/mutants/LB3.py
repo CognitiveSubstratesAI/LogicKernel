@@ -23,6 +23,7 @@
 # flags lists it too.
 TQ = ["test/files/test_qlf_swipl.jl"]
 TT = TQ + ["test/foreign/test_builtins_swipl.jl"]
+TARGETS = TT          # also the baseline's (mutation.yml reads it from here): every file that exercises the mutated code
 Q = "src/pl-qlf.jl"
 F = "src/os/pl-file.jl"
 X = "src/pl-ext.jl"
@@ -38,9 +39,9 @@ MUTANTS = [
          file=Q, targets=TQ,
          old="if PL_is_functor(ld, d0, mk_sym(T, :(:)), 2)",
          new="if false",
-         equivalent="src/pl-qlf.jl:directiveClause with src/pl-pro.jl:callProlog — read, not run: `user:(M:G)` and `M:G` run the same goal, `PL_strip_module` strips every qualifier before the call, and no row reads the directive term itself (addDirectiveWic has no state)"),
+         equivalent="src/pl-qlf.jl:41 (directiveClause) with src/pl-pro.jl:34 (callProlog) — read, not run: `user:(M:G)` and `M:G` run the same goal, `PL_strip_module` strips every qualifier before the call, and no row reads the directive term itself (addDirectiveWic has no state)"),
     dict(id="LB3-D5 '$:-' is not told from a clause: it is asserted (KILL dollar)", file=Q, targets=TQ,
-         old='directiveClause(gd, ld, directive, t, Symbol("\\$:-"))', new="directiveClause(gd, ld, directive, t, :(:-))"),
+         old='directiveClause(gd, ld, directive, t, Symbol("\\$:-"))', new="directiveClause(gd, ld, directive, t, Symbol(\":-\"))"),
     dict(id="LB3-D6 a '$:-' term is recognised but its goal never runs (KILL dollar)", file=Q, targets=TQ,
          old='Symbol("\\$:-"))\n                callProlog(gd, ld, MODULE_user(gd).index, directive, PL_Q_NODEBUG)\n',
          new='Symbol("\\$:-"))\n                nothing\n'),
@@ -88,7 +89,8 @@ MUTANTS = [
          old=': directive failed\\n"', new=': directive passed\\n"'),
     dict(id="LB3-F5 a syntax error ends the file (KILL elif)", file=Q, targets=TQ,
          old="            continue\n        end\n        eof = PL_get_atom(ld, t)\n",
-         new="            break\n        end\n        eof = PL_get_atom(ld, t)\n"),
+         new="            break\n        end\n        eof = PL_get_atom(ld, t)\n",
+         equivalent="src/pl-read.jl:4099 (read_clause fixes syntax_errors to dec10) with :4030 (reportReadError returns true for dec10, the loop at :4098 reads again): a syntax error never makes read_clause return false, so src/pl-qlf.jl's failing branch is reached by a stream error only, which no row can produce"),
     dict(id="LB3-F6 pl_seen is not called: the input stays on the file (KILL loadable)", file=Q, targets=TQ,
          old="    qlfEndPart(state)\n    pl_seen(ld)\n", new="    qlfEndPart(state)\n    nothing\n"),
     dict(id="LB3-F7 the modification time is not recorded (KILL loadable)", file=Q, targets=TQ,
@@ -115,7 +117,7 @@ MUTANTS = [
     dict(id="LB3-L6 $load_additional_boot_files is not called (KILL boot)", file=Q, targets=TQ,
          old="PL_call_predicate(gd, ld, MODULE_user(gd), PL_Q_DEBUG, pred, 0)", new="true"),
     dict(id="LB3-L7 $load_additional_boot_files is looked up in system (KILL boot)", file=Q, targets=TQ,
-         old='Symbol("\\$load_additional_boot_files")), 0, MODULE_user(gd))', new='Symbol("\\$load_additional_boot_files")), 0, MODULE_system(gd))'),
+         old='Symbol("\\$load_additional_boot_files")), 0, MODULE_user(gd)', new='Symbol("\\$load_additional_boot_files")), 0, MODULE_system(gd)'),
     dict(id="LB3-L8 the boot flag is not reset after the list (KILL boot)", file=Q, targets=TQ,
          old="    gd.bootsession = false\n    rc || return false", new="    rc || return false"),
     dict(id="LB3-L9 the boot flag is never set: the files are not system files (KILL boot)", file=Q, targets=TQ,
@@ -135,15 +137,15 @@ MUTANTS = [
     dict(id="LB3-P3 $qlf_include/5 does not check its float argument",
          file=Q, targets=TQ,
          old="    PL_get_float(ld, A5) === nothing && return FFALSE           # time\n", new="",
-         equivalent="src/pl-qlf.jl:pl_qlf_include5_va — read, not run: the check returns false and the function ends with `return FFALSE` too; PL_get_float is the non-raising form, so dropping it changes nothing observable"),
+         equivalent="src/pl-qlf.jl:396-397 (pl_qlf_include5_va) — read, not run: the check returns false and the function ends with `return FFALSE` too; PL_get_float is the non-raising form, so dropping it changes nothing observable"),
     dict(id="LB3-P4 $import_wic/3 fails with no state (the brief's refusal read as failure) (KILL tbl)", file=Q, targets=TQ,
          old="function pl_import_wic3_va(\n    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}\n)::foreign_t where {T}\n    return FTRUE\n",
          new="function pl_import_wic3_va(\n    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}\n)::foreign_t where {T}\n    return FFALSE\n"),
     dict(id="LB3-P5 $qlf_load/2 succeeds instead of being refused by name (KILL tbl)", file=Q, targets=TQ,
          old='_qlf_refused(T, "\\$qlf_load", 2)', new="FTRUE"),
     dict(id="LB3-P6 $add_directive_wic/1 is not transparent (KILL tbl)", file=Q, targets=TT,
-         old='PL_extension("\\$add_directive_wic", 1, pl_add_directive_wic1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)',
-         new='PL_extension("\\$add_directive_wic", 1, pl_add_directive_wic1_va, PL_FA_VARARGS)'),
+         old='pl_add_directive_wic1_va,\n        PL_FA_TRANSPARENT | PL_FA_VARARGS',
+         new='pl_add_directive_wic1_va,\n        PL_FA_VARARGS'),
     # ── src/os/pl-file.jl push_input_context, pop_input_context, pl_see, pl_seen ──
     dict(id="LB3-S1 pl_see saves no input context (KILL loadable: the source location is not restored)", file=F, targets=TQ,
          old="    push_input_context(ld, mk_sym(T, :see))         # push_input_context(ATOM_see)\n", new="    nothing\n"),

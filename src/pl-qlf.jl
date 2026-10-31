@@ -28,12 +28,14 @@ If the term `clause` is `functor(D)` (`":-"` or `"\$:-"`), put the directive `D`
 the source module unless it is `M:G` already, and return true (pl-qlf.c).
 """
 function directiveClause(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, directive::term_t, clause::term_t, functor::Symbol
+    gd::PL_global_data{T}, ld::PL_local_data{T}, directive::term_t, clause::term_t,
+    functor::Symbol
 )::Bool where {T}
     d0 = PL_new_term_ref(ld)
 
     na = PL_get_name_arity(ld, clause)
-    (na === nothing || na[2] != 1 || sym_key(na[1]) != sym_key(mk_sym(T, functor))) && return false
+    (na === nothing || na[2] != 1 || sym_key(na[1]) != sym_key(mk_sym(T, functor))) &&
+        return false
 
     _PL_get_arg(ld, 1, clause, d0)
     if PL_is_functor(ld, d0, mk_sym(T, :(:)), 2)    # PL_get_functor(d0, &f) && f == FUNCTOR_colon2
@@ -196,7 +198,7 @@ end
 # ── the boot loop (pl-qlf.c:4691-4820) ─────────────────────────────────────────────────────────────
 
 # ORIGINAL (LB3): `source_file_name` (an atom, NULL_ATOM while no file is read) as the text `%s` prints.
-_qlf_source_file_text(ld::PL_local_data) =
+_qlf_source_file_text(ld::PL_local_data{T}) where {T} =
     ld.read_source.file === nothing ? "" : String(sym_text(ld.read_source.file))
 
 # PORT: pl-qlf.c compileFile
@@ -252,7 +254,7 @@ function compileFile(
         eof = PL_get_atom(ld, t)
         (eof !== nothing && sym_key(eof) == sym_key(mk_sym(T, :end_of_file))) && break
 
-        if directiveClause(gd, ld, directive, t, :(:-))
+        if directiveClause(gd, ld, directive, t, Symbol(":-"))
             if !update_conditional_compilation(gd, ld, directive, cond)
                 if cond_true(cond)
                     addDirectiveWic(state, directive)
@@ -309,7 +311,9 @@ function compileFileList(
     setPrologFlag(gd, "autoload", FT_ATOM, "true")
     setAccessLevel!(ld, alevel)
 
-    pred = lookupProcedure(mk_sym(T, Symbol("\$load_additional_boot_files")), 0, MODULE_user(gd))
+    pred = lookupProcedure(
+        mk_sym(T, Symbol("\$load_additional_boot_files")), 0, MODULE_user(gd)
+    )
     rc = PL_call_predicate(gd, ld, MODULE_user(gd), PL_Q_DEBUG, pred, 0)   # PL_call_predicate(MODULE_user, true, pred, 0)
 
     ld.qlf_write_state = nothing
@@ -436,7 +440,13 @@ end
 # its indicator (LD2; the QLF reader and writer are not ported — the boot compiles from source).
 "Raise `NotPortedError` for the predicate `name/arity` of pl-qlf.c's table (refused by name, LD2)."
 function _qlf_refused(::Type{T}, name::String, arity::Int)::Union{} where {T}
-    throw(NotPortedError{T}(mk_sym(T, Symbol(name)), "the QLF file predicate $name/$arity", "LB3: refused by name"))
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, Symbol(name)),
+            "the QLF file predicate $name/$arity",
+            "LB3: refused by name"
+        )
+    )
 end
 
 # PORT: pl-qlf.c qlf_versions as pl_qlf_versions6_va
@@ -563,7 +573,12 @@ const PL_predicates_from_wic = (
     PL_extension("\$file_hash", 2, pl_file_hash2_va, PL_FA_VARARGS),
     PL_extension("\$qlf_module", 2, pl_qlf_module2_va, PL_FA_VARARGS),
     PL_extension("\$qlf_load", 2, pl_qlf_load2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
-    PL_extension("\$add_directive_wic", 1, pl_add_directive_wic1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension(
+        "\$add_directive_wic",
+        1,
+        pl_add_directive_wic1_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
     PL_extension("\$qlf_start_module", 1, pl_qlf_start_module1_va, PL_FA_VARARGS),
     PL_extension("\$qlf_start_sub_module", 1, pl_qlf_start_sub_module1_va, PL_FA_VARARGS),
     PL_extension("\$qlf_start_file", 1, pl_qlf_start_file1_va, PL_FA_VARARGS),

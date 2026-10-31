@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-incl.h @ cbf4e1896275
 # UPSTREAM: swipl-devel src/pl-variant.c @ cbf4e1896275
+# UPSTREAM: swipl-devel src/os/pl-file.c @ cbf4e1896275
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -235,10 +236,10 @@ struct vt_node
     b::Int                          # link to an isomorphic node (`node_isom`)
 end
 
-# PORT: pl-incl.h input_context
+# PORT: pl-file.c input_context
 # DIVERGES: a struct on a vector (`PL_local_data.input_context_stack`, the last pushed at the end), where
 # upstream links each to its `previous`; the file is its atom, `nothing` for NULL_ATOM (R2 LB3).
-"A saved input context (pl-incl.h `struct input_context`): the input stream and the source location before a `see`."
+"A saved input context (pl-file.c `struct input_context`): the input stream and the source location before a `see`."
 struct input_context{T}
     stream::Union{Nothing, IOSTREAM}        # pushed input stream
     type::T                                 # Type of input

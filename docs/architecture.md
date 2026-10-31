@@ -745,7 +745,7 @@ fixed it or a public issue exists.
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1`; since R1f `overruleImportedProcedure`, `redefineProcedure` (the `discontiguous` and `redefined_procedure` warnings), `lookupProcedureToDefine`, `get_procedure` (`GP_DEFINE`), `'$set_predicate_attribute'/3` with `attribute_mask` and `setAttrDefinition`, registered as `PL_predicates_from_proc` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-srcfile.jl` | source files (R1f): the record of each consulted file (`lookupSourceFile`, numbered as upstream), the procedures it defines (`addProcedureSourceFile`), a clause added on its behalf (`assertProcedureSource`), `startConsult`/`endConsult`, `setAttrProcedureSource` — a FIRST load (a reconsult refused) | `src/pl-srcfile.c` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-variant.c` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-variant.c`, `src/os/pl-file.c` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!` (kept at or above the frozen ball's cells: `freezeGlobal!`, L1e e5a); `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h`, `src/pl-gvar.c` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h` |
 | `src/pl-alloc.jl` | raising a local-stack overflow — since V5d as upstream's `error(resource_error(stack), Ctx)` (`raiseStackOverflow`, `outOfStack!`; Ctx the atom `stack_overflow` for both stacks since D-0040, swipl's dict tag), the spare enabled (`enableSpareStack!`), a second overflow before recovery marking the local data unusable; growing the argument stack; the global stack's limit (`ensureGlobalSpace` — L1f f2) | `src/pl-alloc.c`, `src/pl-gc.h` |
@@ -760,6 +760,7 @@ fixed it or a public issue exists.
 | `src/pl-string.jl` | the string predicates (since T2, R2): atom_string/2, string_codes/2, string_chars/2, text_to_string/2, string_length/2, string_concat/3, sub_string/5 (`sub_text`, shared with sub_atom/5), string_code/3, get_string_code/3, split_string/4, string_bytes/3, read_string/3,5, open_string/2 (`PL_predicates_from_strings`, src/pl-ext.jl); the UTF-16 decode and `PL_text_recode` of string_bytes/3 are local to this file | `src/pl-string.c`, `src/pl-prims.c`, `src/pl-privitf.c`, `src/pl-error.c`, `src/os/pl-text.c`, `src/os/pl-text.h`, `src/os/pl-utf8.h`, `src/os/pl-file.c` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); the toplevel, `abort/0` and the metacut are not ported | `src/pl-pro.c` |
 | `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it); the mutex table and the `mutex_*` predicates are not ported | `src/pl-mutex.c` |
+| `src/pl-qlf.jl` | since LB3 (R2), the boot loop of pl-qlf.c with no state file (LD2): `compileFile` (see the file, read terms, `:- if`/`else`/`endif`, directives, clauses), `compileFileList`, `boot_from_source!` (pl-init.c's `bootsession` branch), `directiveClause`, `update_conditional_compilation`, the 8 write-side shells and the 14 predicates refused by name (`PL_predicates_from_wic`, src/pl-ext.jl) | `src/pl-qlf.c` |
 | `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `select_dict/3`, `get_dict/3` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `PL_get_dict_ex`, `put_dict`, `select_dict` and their helpers; the reader and writer have no dict syntax, and the other dict predicates are not ported | `src/pl-dict.c`, `src/pl-dict.h` |
 | `src/pl-rec.jl` | recorded terms (since V9g-b): `compileTermToHeap` — a term taken off the stacks, as a copy whose cyclic references are kept beside it instead of in the binding store — and `copyRecordToGlobal`, which puts it back with fresh variables whose standard order is the order of upstream's cells; `erase/1` and `instance/2` (with `fixup_ssu`) of a clause reference (since D1); the recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record) is not ported | `src/pl-rec.c` |
 | `src/pl-dbref.jl` | since R2 D1, database references: the clause blob type (`clause_blob`, registered by the database, `initDBRef!`), `lookup_clref`, `clause_clref`, `PL_unify_clref`, `PL_put_clref`, `PL_is_dbref`, `PL_get_dbref`, `PL_get_clref`, `acquire_clause_blob`/`release_clause_blob` (the `DBREF_CLAUSE` mark); the payload is the clause's number in `gd.clause_refs` (upstream: the pointer); the record blob is D2's | `src/pl-dbref.c`, `src/pl-dbref.h` |
@@ -944,6 +945,7 @@ graph LR
     pl_write["pl-write.jl"]
     pl_sys["pl-sys.jl"]
     pl_read["pl-read.jl"]
+    pl_qlf["pl-qlf.jl"]
     pl_string["pl-string.jl"]
     pl_ext["pl-ext.jl"]
     ___boot_init["../boot/init.jl"]
@@ -1603,6 +1605,26 @@ graph LR
     pl_read --> os_pl_file
     pl_read --> pl_op
     pl_read --> pl_write
+    pl_qlf --> term_interface
+    pl_qlf --> default_term
+    pl_qlf --> os_pl_stream
+    pl_qlf --> pl_incl
+    pl_qlf --> SWI_Prolog
+    pl_qlf --> pl_atom
+    pl_qlf --> pl_global
+    pl_qlf --> pl_prims
+    pl_qlf --> pl_comp
+    pl_qlf --> pl_wam
+    pl_qlf --> pl_fli
+    pl_qlf --> pl_error
+    pl_qlf --> pl_arith
+    pl_qlf --> os_pl_prologflag
+    pl_qlf --> os_pl_text
+    pl_qlf --> os_pl_file
+    pl_qlf --> pl_proc
+    pl_qlf --> pl_srcfile
+    pl_qlf --> pl_pro
+    pl_qlf --> pl_read
     pl_string --> term_interface
     pl_string --> default_term
     pl_string --> os_pl_utf8
@@ -1656,6 +1678,7 @@ graph LR
     pl_ext --> pl_write
     pl_ext --> pl_sys
     pl_ext --> pl_read
+    pl_ext --> pl_qlf
     pl_ext --> pl_string
     ___boot_init --> term_interface
     ___boot_init --> default_term
