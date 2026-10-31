@@ -67,6 +67,7 @@ include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: 
 include("pl-supervisor.jl")    # swipl-devel src/pl-supervisor.c — the code a call enters first
 include("pl-trace.jl")         # swipl-devel src/pl-trace.c — prolog_current_frame/1, prolog_current_choice/1
 include("pl-pro.jl")           # swipl-devel src/pl-pro.c — callProlog, sig_atomic/1
+include("pl-mutex.jl")         # swipl-devel src/pl-mutex.c — with_mutex/2 (the single-thread form)
 include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findall/3
 include("pl-list.jl")          # swipl-devel src/pl-list.c — is_list/1, '$length'/2, sort/2, msort/2, keysort/2
 include("pl-op.jl")            # swipl-devel src/pl-op.c — the operator tables, op/3
