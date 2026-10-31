@@ -35,7 +35,7 @@ const FMT_DEFAULT = Int(typemin(Int32))
 # PORT: pl-fmt.c struct rubber
 "A fill point in the pending output: where, how big, and the pad character (pl-fmt.c `struct rubber`)."
 mutable struct rubber
-    where::Int      # where is rubber in output
+    place::Int      # where is rubber in output
     size::Int       # how big should it be
     pad::Int        # padding character (code point)
 end
@@ -667,7 +667,7 @@ function do_format(
             elseif c == Int('t')                # insert tab
                 state.pending_rubber >= MAXRUBBER && return PL_format_error(ld, "Too many tab stops")
                 r = _rub!(state, state.pending_rubber)
-                r.where = state.buffered
+                r.place = state.buffered
                 r.pad = (arg == FMT_DEFAULT ? Int(' ') : arg)
                 r.size = 0
                 state.pending_rubber += 1
@@ -686,7 +686,7 @@ function do_format(
                 end
                 if state.pending_rubber == 0    # nothing to distribute
                     r = _rub!(state, 0)
-                    r.where = state.buffered
+                    r.place = state.buffered
                     r.pad = Int(' ')
                     state.pending_rubber += 1
                 end
@@ -696,7 +696,7 @@ function do_format(
                     Sputcode(Int('\n'), state.out) < 0 && return false
                     update_column(state, Int('\n'))
                     r = _rub!(state, 0)
-                    r.where = state.buffered
+                    r.place = state.buffered
                     r.pad = nl_and_reindent
                     state.pending_rubber += 1
                     distribute_rubber(state.rub, state.pending_rubber, stop - COLUMN(state))
@@ -760,7 +760,7 @@ function emit_rubber(state::format_state)::Bool
     rn = state.pending_rubber
     j = 0
     while s <= e
-        while rn != 0 && state.rub[ri].where == j
+        while rn != 0 && state.rub[ri].place == j
             r = state.rub[ri]
             for _ in 1:r.size
                 Sputcode(r.pad, state.out) < 0 && return false
