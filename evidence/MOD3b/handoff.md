@@ -12,6 +12,17 @@
 - cb_kind's `_enum_hash` manifest entry is per type: no change was needed.
 - First-compile risks: `isAtomW`/`isTextAtom`/`_is_colon2_word` used in pl-wam.jl new code (all exist); `atv_*` locals in the
   run loop (types UInt8/word/Int, both labels assign the same types); `Output_3!` signature (ci, c, a0, a1, a2).
+- TESTS WRITTEN (f2a2420, not run): test_body_code_swipl.jl `_BC_MOD3B` (11 rows pa1-pa11, pins from swipl 10.1.19 through
+  the file's own driver: evidence/MOD3b/bcprobe.pl/.out) + its testset after MOD3a's (incl. the two getTargetModule at-context
+  errors, probed: instantiation_error, type_error(module,1)); `_bc_op` renders CA1_MODULE 0 as `M:0` and the swipl side's
+  bc_op/4 got `bc_op(_, module, M, S) :- var(M), !, S = "M:0".` (clause_vm/2 gives NULL as an unbound); `@` left the refusal
+  list. test_metacall_control.jl: the refusal testset became "call/1 of Goal@Module, as swipl (MOD3b)" (swipl: p(1),p(2)
+  nondet, p(3) det; the cyclic `G = p(G), c(@(G,user))` FAILS in swipl — pinned as just "end"; watch the kernel here, the
+  goal-clause compile of a cyclic goal may raise representation_error instead: if so, trace it before changing the pin).
+- REMAINING for coder 3: (a) the crash-term grep over `git diff 805446b..HEAD` + messages (the cap hook blocked it; no such
+  word was written knowingly); (b) NEW test/core_lang/test_at_body_swipl.jl in test_colon_body_swipl.jl's shape (rows listed
+  above under "tests"); (c) tools/mutants/MOD3b.py (list above; every `old` exactly once — grep; TARGETS per D-0238 above);
+  (d) docs/architecture.md MOD3b section; then the gate order below. Also re-check the crash-term grep before any push.
 
 
 Worktree ~/code/lk-mod3b, branch wip/mod3b off origin/main 9952080. Nothing compiled, no Julia, no daemon, no swipl run yet.
