@@ -387,7 +387,12 @@ end
     @test length(_MB_PINNED) == length(_MB_CASES) + 1
     @test _MB_PINNED[1] == "ok"
     @test count(l -> occursin("c[114,97,105,115,101,100]", l), _MB_PINNED) >= 20      # raised(…)
-    @test count(l -> occursin("c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]", l), _MB_PINNED) >= 5   # permission_error
+    @test count(
+        l -> occursin(
+            "c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]", l
+        ),
+        _MB_PINNED
+    ) >= 5   # permission_error
     @test count(l -> occursin("c[45]/2(", l), _MB_PINNED) >= 8                         # X-Y answers
     @test count(l -> !occursin(" ", l), _MB_PINNED) == 1                                # only "ok" has no answer; no row fails
 end

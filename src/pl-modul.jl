@@ -912,7 +912,9 @@ end
 # PORT: pl-modul.c acquireModule
 # DIVERGES: the database `gd` is an argument; no lock (no threads).
 "The module named `name`, or `nothing`; a temporary module gets a reference (pl-modul.c)."
-function acquireModule(gd::PL_global_data{T}, name::T)::Union{Nothing, module_t{T}} where {T}
+function acquireModule(
+    gd::PL_global_data{T}, name::T
+)::Union{Nothing, module_t{T}} where {T}
     m = isCurrentModule(gd.modules, name)
     if m !== nothing && sym_key(m.class) == sym_key(mk_sym(T, :temporary))
         m.references += 1
@@ -934,7 +936,9 @@ end
 # keeps its record, its procedures and its index, as definitions hold the index (D-0149 M2, H3); what is done is the one
 # visible effect, the source and typein modules go back to `user`.
 "Free a destroyed module: the source and typein modules that are `m` become `user` (pl-modul.c)."
-function unallocModule(gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T})::Nothing where {T}
+function unallocModule(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
+)::Nothing where {T}
     user = MODULE_user(gd)
     ld.modules_source == m.index && (ld.modules_source = user.index)
     ld.modules_typein == m.index && (ld.modules_typein = user.index)
@@ -1033,10 +1037,14 @@ function pl_destroy_module1_va(
             return destroyModule(gd, ld, m) ? FTRUE : FFALSE
         else
             releaseModule(gd, ld, m)
-            return PL_error(
+            return if PL_error(
                 ld, "", 0, "module is not temporary", ERR_PERMISSION, mk_sym(T, :destroy),
                 mk_sym(T, :module), PL__t0
-            ) ? FTRUE : FFALSE
+            )
+                FTRUE
+            else
+                FFALSE
+            end
         end
     end
 
@@ -1087,7 +1095,8 @@ function _abolishProcedure_pristine(
         end
         cd = m.code_data
         ndef = Definition{T}(
-            def.functor_name, def.arity, clauses, UInt64(0), def.name, cd.virgin, ClauseRef{T}[], cd, 0, m.index, 0   # memset: shared 0
+            def.functor_name, def.arity, clauses, UInt64(0), def.name, cd.virgin,
+            ClauseRef{T}[], cd, 0, m.index, 0   # memset: shared 0
         )
         proc.definition = ndef
         unshareDefinition(def)
@@ -1096,7 +1105,11 @@ function _abolishProcedure_pristine(
     if hasClausesDefinition(gd, def) === nothing && def.flags == 0
         return true
     end
-    throw(NotPortedError{T}(def.name, "redeclaring a module that has predicates (abolishProcedure)", "R2"))
+    throw(
+        NotPortedError{T}(
+            def.name, "redeclaring a module that has predicates (abolishProcedure)", "R2"
+        )
+    )
 end
 
 # PORT: pl-modul.c declareModule
@@ -1125,9 +1138,12 @@ function declareModule(
     if !allow_newfile && module_.file != 0 && module_.file != sf.index
         obj = PL_new_term_ref(ld)
         PL_put_atom(ld, obj, name)
-        msg = "Already loaded from " * _text_summary(sym_text(gd.files_array[module_.file].name), 100)
+        msg =
+            "Already loaded from " *
+            _text_summary(sym_text(gd.files_array[module_.file].name), 100)
         return PL_error(
-            ld, "module", 2, msg, ERR_PERMISSION, mk_sym(T, :redefine), mk_sym(T, :module), obj
+            ld, "module", 2, msg, ERR_PERMISSION, mk_sym(T, :redefine), mk_sym(T, :module),
+            obj
         )
     end
 
@@ -1165,7 +1181,12 @@ function declareModule(
         if rc
             rc = printMessage(
                 ld, :warning,
-                _message_term(ld, :declare_module, _err_atom(ld, name), _message_term(ld, :abolish, rdef))
+                _message_term(
+                    ld,
+                    :declare_module,
+                    _err_atom(ld, name),
+                    _message_term(ld, :abolish, rdef)
+                )
             )
         end
     end
@@ -1180,7 +1201,9 @@ function pl_declare_module6_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     gd = _query_gd(ld)
-    A1, A2, A3, A4, A5, A6 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5
+    A1, A2, A3, A4, A5, A6 = PL__t0,
+    PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4,
+    PL__t0 + 5
 
     mname = PL_get_atom_ex(ld, A1)
     mname === nothing && return FFALSE
