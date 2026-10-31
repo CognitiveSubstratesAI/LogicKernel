@@ -57,3 +57,26 @@ Rebase onto the landed MOD5b under a NEW branch name (never force); `warm.sh fmt
 `tools/pkgtest_way.sh test/core_lang/test_module_enum_swipl.jl`; push `mutants/MOD6` at the WIP SHA once MOD6.py exists; branch-gate; the term grep over diff and
 message; the NDET instructions are untouched, but the `PL_local_data` struct changed: run test_zero_exports and test_ball_cells x3 (alloc pins); then
 `gate/mod6` and `mutants/MOD6` at the SAME SHA. If a row fails on the kernel, swipl's pin is truth: fix the source (D-0084).
+
+## Coder 2 (edit-only, nothing compiled or run): groups 5 and 6 WRITTEN
+- b81873f tools/mutants/MOD6.py: 34 mutants (I1-I9 import_module, C1-C15 current_module, G1, N1, A1-A4, F1-F3, L1, R1, R2). Validated by a throwaway
+  python3 -I + runpy script: every `old` occurs exactly once in its file, new != old, ids unique, every target exists (34 mutants, 0 problems).
+  Equivalents (4, reasons in the entries): I9 (FRG_CUTTED value discarded), C4 (dropped `ok ||`), C9 (`break` -> `continue`), F3 (`en.current = 0`).
+  EXPECTED SURVIVORS (2, named in the header; the gate agent adds the rows): I5 (determinism with a BOUND second argument:
+  `mme_det(import_module(mmx_c2, mmx_u), D)`) and C6 (a `[]` module argument with a multi-module file: `'$current_module'([], '/mmx/g.pl')`).
+  TARGETS: the rows file; test_module_swipl.jl for import_module/2; every live_states reader for L1 (test_declare_destroy_swipl.jl does not call
+  the code, so it is left out by D-0238's rule, contrary to the idea list above).
+  Anchors need a re-fit at the first battery run if fmt re-flows a line (comment alignment, the registration lines).
+- 452925b docs/architecture.md `## MOD6` (before `## D1`, after the MOD5b section).
+- No daemon started by this coder; lanes.conf untouched.
+
+## GATE ORDER (restated for the next agent)
+1. Rebase onto the landed MOD5b under a NEW branch name (never force); the STRUCT CHANGE needs a hand-merge at the end of `PL_local_data`'s
+   field list and constructor call if MOD3b/MOD5 landed fields there.
+2. `warm.sh fmt` (format committed files through `warm.sh send`); then `warm.sh inventory` (docs/port_inventory.md) and hand `declared` edits as
+   earlier steps needed.
+3. `warm.sh check`; the rows on all three term types (`warm.sh file test/core_lang/test_module_enum_swipl.jl`); `test/test_type_discipline.jl`;
+   `tools/pkgtest_way.sh test/core_lang/test_module_enum_swipl.jl` (one at a time).
+4. Re-check the MOD6.py anchors (each `old` once in its file); add rows for I5 and C6 or record them; push `mutants/MOD6` at the WIP SHA.
+5. branch-gate; the term grep over diff and message; test_zero_exports and test_ball_cells x3 (struct change); then `gate/mod6` (local branch at the
+   SHA; wip refs are refused) and `mutants/MOD6` at the SAME SHA. A row failing on the kernel: swipl's pin is truth, fix the source (D-0084).
