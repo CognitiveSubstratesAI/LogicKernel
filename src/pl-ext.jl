@@ -59,7 +59,7 @@ const foreigns = (
 )
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, list, module, prims, variant,
-# copyterm, prologflag, trace, pro, read, file (S1), files, proc, srcfile (LB2), write, system, op, rec (D1: erase/1), attvar — AV2, Y1; term,
+# copyterm, prologflag, trace, pro, read, file (S1), files, proc, srcfile (LB2), write, system, op, rec (D1: erase/1), attvar — AV2, Y1; dict — BOOTPRED (pl-ext.c:536-574: gvar, locale and debug, between attvar and dict, are left out); term,
 # termhash and bisim, between op and attvar upstream, are not ported); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
 const _PRED_TABLES = (
@@ -71,7 +71,7 @@ const _PRED_TABLES = (
     PL_predicates_from_file, PL_predicates_from_files, PL_predicates_from_proc,
     PL_predicates_from_srcfile, PL_predicates_from_write,
     PL_predicates_from_system, PL_predicates_from_op, PL_predicates_from_rec,
-    PL_predicates_from_attvar
+    PL_predicates_from_attvar, PL_predicates_from_dict
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -83,7 +83,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_read..., PL_predicates_from_file..., PL_predicates_from_files...,
     PL_predicates_from_proc..., PL_predicates_from_srcfile..., PL_predicates_from_write...,
     PL_predicates_from_system...,
-    PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...
+    PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...,
+    PL_predicates_from_dict...
 )
 const _FOREIGN_DET = foreigns
 
