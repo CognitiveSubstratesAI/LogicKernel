@@ -448,6 +448,11 @@ function PL_get_long(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where
     return nothing
 end
 
+# PORT: pl-fli.c PL_get_int64
+# DIVERGES: `Int` is 64 bits and a C `long` is 64 bits on the kernel's platform (LP64), so it is `PL_get_long`.
+"The `int64_t` term reference `t` holds — an integer in `Int64`'s range — or `nothing` (pl-fli.c)."
+PL_get_int64(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long(ld, t)
+
 # PORT: pl-fli.c atom_to_bool
 # DIVERGES: `nothing` for neither, where upstream returns -1.
 "The Boolean atom `a` names — `true`/`on` or `false`/`off` — or `nothing` (pl-fli.c)."

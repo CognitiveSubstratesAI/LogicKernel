@@ -122,6 +122,22 @@ end
 truePrologFlag(ld::PL_local_data, flag::Integer)::Bool =
     (ld.prolog_flag_mask & prologFlagMask(flag)) != 0
 
+# PORT: pl-incl.h setPrologFlagMask
+# DIVERGES: the local data is an argument (upstream's `LD`).
+"Set the bit `flag` (a `PLFLAG_*`) of the local data's mask (pl-incl.h)."
+function setPrologFlagMask!(ld::PL_local_data, flag::Integer)::Nothing
+    ld.prolog_flag_mask |= prologFlagMask(flag)
+    return nothing
+end
+
+# PORT: pl-incl.h clearPrologFlagMask
+# DIVERGES: as `setPrologFlagMask!`.
+"Clear the bit `flag` (a `PLFLAG_*`) of the local data's mask (pl-incl.h)."
+function clearPrologFlagMask!(ld::PL_local_data, flag::Integer)::Nothing
+    ld.prolog_flag_mask &= ~prologFlagMask(flag)
+    return nothing
+end
+
 # ORIGINAL (until R2 F1b): a Boolean flag's bit as the compiler and the VM read it. Five bits are still
 # fields of the local data (src/pl-global.jl), set by tests and read by src/pl-comp.jl and src/pl-wam.jl;
 # the mask holds their defaults, never read. F1b deletes the fields, and this function with them.
@@ -653,9 +669,10 @@ end
 # `stack_limit` (set_stack_limit), `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
 # `autoload` (propagateAutoload), `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
-# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), `on_error`/`on_warning` (the
-# `halt`/`status` actions belong to the toplevel), the ci_* and tabling restraint flags (pseudo-flags
-# of pl-index.c and pl-tabling.c, whose state is constants here) and `file_name_case_handling`.
+# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), `debugger_show_context`, `threads`
+# (set true), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
+# constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
+# `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
 "Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
 function _flag_not_ported(key::T, effect::String) where {T}
     throw(NotPortedError{T}(key, effect, "R2 F1b"))
@@ -863,6 +880,408 @@ function setStreamTypeCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
         )
     end
     ld.IO_stream_type_check = check
+    return true
+end
+
+# ── changing a flag: oneof, keep_flag, new_prolog_flag, set_flag_value (pl-prologflag.c), R2 F1b ─────
+# ORIGINAL (pl-prologflag.c `PSEUDO_FLAG`): the value `set_prolog_flag_unlocked` answers for a flag that lives
+# outside the table (the arithmetic, clause-indexing and tabling-restraint flags).
+"The marker `set_prolog_flag_unlocked` returns for a pseudo flag (pl-prologflag.c `PSEUDO_FLAG`)."
+struct PseudoFlag end
+const PSEUDO_FLAG = PseudoFlag()
+
+# PORT: pl-prologflag.c FF_COPY_FLAGS
+"The attributes a flag created from another's definition copies (pl-prologflag.c `FF_COPY_FLAGS`)."
+const FF_COPY_FLAGS = FF_READONLY | FF_WARN_NOT_ACCESSED | FF_SHARED
+
+# PORT: pl-prologflag.c create_oneof
+# DIVERGES: no `PL_register_atom`; a list that is no proper list of atoms answers `nothing`, as upstream's NULL
+# (the `type_error(atom, X)` of an element is raised, a tail that is no `[]` raises nothing).
+"The `oneof_t` of the list of atoms `atoms` (one reference), or `nothing` (pl-prologflag.c)."
+function create_oneof(ld::PL_local_data{T}, atoms::term_t)::Union{Nothing, oneof_t{T}} where {T}
+    tail = PL_copy_term_ref(ld, atoms)
+    head = PL_new_term_ref(ld)
+    values = T[]
+    while PL_get_list(ld, tail, head, tail)
+        a = PL_get_atom_ex(ld, head)
+        a === nothing && return nothing
+        push!(values, a)
+    end
+    PL_get_nil(ld, tail) || return nothing
+
+    return oneof_t{T}(values, 1)
+end
+
+# PORT: pl-prologflag.c set_oneof
+# DIVERGES: `free_oneof` is the garbage collector's.
+"Make `of` the `oneof` of the flag `f` on creation (`FF_ISCREATE`), dropping the reference to its old one (pl-prologflag.c)."
+function set_oneof(
+    f::Union{Nothing, prolog_flag{T}, PseudoFlag}, of::Union{Nothing, oneof_t{T}},
+    flags::UInt32
+)::Nothing where {T}
+    if f isa prolog_flag{T} && of !== nothing && (flags & FF_ISCREATE) != 0 && f.oneof !== of
+        old = f.oneof
+        if old !== nothing
+            old.references -= 1
+        end
+        f.oneof = of
+        of.references += 1
+    end
+    return nothing
+end
+
+# PORT: pl-prologflag.c check_oneof_flag
+# DIVERGES: the exception is built on the term references (`PL_unify_term`'s `PL_FUNCTOR`, `PL_TERM`, `PL_ATOM`,
+# `PL_VARIABLE` arguments); `error` is a Boolean.
+"Whether the atom `a` is one of the values of `of` (always, without one); with `error`, raise `error(domain_error(oneof(List), A), _)` if not (pl-prologflag.c)."
+function check_oneof_flag(
+    ld::PL_local_data{T}, of::Union{Nothing, oneof_t{T}}, a::T, error::Bool
+)::Bool where {T}
+    if of !== nothing
+        for v in of.values
+            sym_key(v) == sym_key(a) && return true
+        end
+
+        if error
+            dom = PL_new_term_ref(ld)
+            ex = PL_new_term_ref(ld)
+            put_oneof(ld, dom, of)
+            formal = _message_term(ld, :domain_error, dom, _err_atom(ld, a))
+            var = PL_new_term_ref(ld)
+            PL_put_variable(ld, var)
+            PL_cons_functor(ld, ex, _err_functor(ld, :error, 2), formal, var)
+            return PL_raise_exception(ld, ex)
+        else
+            return false
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-prologflag.c set_flag_type
+"Give the flag `f` the type of `flags` (pl-prologflag.c)."
+function set_flag_type(f::prolog_flag, flags::UInt32)::Bool
+    f.flags = (f.flags & ~FT_MASK) | (flags & FT_MASK)
+    return true
+end
+
+# PORT: pl-prologflag.c set_flag_atom
+# DIVERGES: no `PL_register_atom`.
+"Make the atom `a` the value of the flag `f` (pl-prologflag.c)."
+function set_flag_atom(f::prolog_flag{T}, a::T)::Bool where {T}
+    f.a = a
+    return true
+end
+
+# PORT: pl-prologflag.c clean_prolog_flag
+# DIVERGES: the value is the garbage collector's (no `PL_erase`, `PL_unregister_atom`, `free_oneof`, `freeHeap`);
+# `memset(&f->value, 0, …)` is the zero of each member's field. The `oneof` stays with its flag while another flag
+# holds a reference, as upstream's.
+"Empty the flag `f`: it becomes an integer flag without value, its pushed values dropped (pl-prologflag.c)."
+function clean_prolog_flag(f::prolog_flag{T})::Nothing where {T}
+    set_flag_type(f, FT_INTEGER)
+    f.a = mk_sym(T, Symbol("false"))
+    f.i = 0
+    f.f = 0.0
+    f.t = nothing
+
+    of = f.oneof
+    if of !== nothing
+        of.references -= 1
+        if of.references == 0
+            f.oneof = nothing
+        end
+    end
+
+    while f.pushed !== nothing
+        p = f.pushed
+        f.pushed = p.pushed
+        p.pushed = nothing
+        clean_prolog_flag(p)
+    end
+    return nothing
+end
+
+# PORT: pl-prologflag.c keep_flag
+# DIVERGES: the database and the local data are arguments; the answer is an `Int`, upstream's: 1 the flag stays
+# as it is, 0 it is changed and the caller sets the value, -1 an error is raised. No `lock_shared_value`.
+# `f2 = *f` is a shallow copy (`prolog_flag`'s fields).
+"With `FF_KEEP`: 1 if the flag `f` keeps its definition, else (after the converted or the warning) 0; -1 after an error. Without it, 0 (pl-prologflag.c)."
+function keep_flag(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, k::T, f::prolog_flag{T}, flags::UInt32,
+    of::Union{Nothing, oneof_t{T}}, value::term_t
+)::Int where {T}
+    (flags & FF_KEEP) == 0 && return 0
+
+    if of !== nothing
+        check_oneof_flag(ld, of, f.a, false) && return 1
+    elseif (flags & FT_MASK) == (f.flags & FT_MASK)
+        return 1
+    else
+        ftype = f.flags & FT_MASK
+        rc = -2                                         # not converted
+
+        target = flags & FT_MASK
+        if target == FT_FROM_VALUE
+            rc = 1
+        elseif target == FT_ATOM
+            if ftype == FT_BOOL
+                rc = set_flag_type(f, flags) ? 1 : 0
+            end
+        elseif target == FT_BOOL
+            if ftype == FT_ATOM
+                bv = atom_to_bool(ld, f.a)
+                if bv !== nothing
+                    set_flag_type(f, flags)
+                    rc = set_flag_atom(f, mk_sym(T, bv ? Symbol("true") : Symbol("false"))) ?
+                         1 : 0
+                end
+            end
+        elseif target == FT_FLOAT
+            if ftype == FT_INTEGER
+                f.f = Float64(f.i)
+                rc = set_flag_type(f, flags) ? 1 : 0
+            end
+        elseif target == FT_TERM
+            v = PL_new_term_ref(ld)
+            if unify_prolog_flag_value(gd, ld, MODULE_user(gd).index, k, f, v)
+                f.t = PL_record(ld, v)
+                rc = set_flag_type(f, flags) ? 1 : 0
+            else
+                rc = -1
+            end
+        end
+        rc != -2 && return rc
+    end
+
+    f2 = prolog_flag{T}(flags, f.index, f.a, f.i, f.f, f.t, of, f.pushed)   # f2 = *f; f2.oneof, f2.flags
+    type = PL_new_term_ref(ld)
+    preset = PL_new_term_ref(ld)
+    unify_prolog_flag_type(ld, f2, type) || return -1
+    unify_prolog_flag_value(gd, ld, MODULE_user(gd).index, k, f, preset) || return -1
+    msg = _message_term(ld, :prolog_flag_invalid_preset, _err_atom(ld, k), preset, type, value)
+    printMessage(ld, :warning, msg) || return -1
+
+    clean_prolog_flag(f)
+    set_flag_type(f, flags)
+    set_oneof(f, of, flags)
+
+    return 0
+end
+
+# PORT: pl-prologflag.c new_prolog_flag
+# DIVERGES: the local data is an argument; `nothing` after the error is raised (upstream's NULL); an `int64_t` is
+# `PL_get_long` (LP64); no `allocHeapOrHalt`, `PL_register_atom`.
+"A new flag of the type `flags` says, with the value of the term `value` (the type taken from it for `FT_FROM_VALUE`), or `nothing` (pl-prologflag.c)."
+function new_prolog_flag(
+    ld::PL_local_data{T}, value::term_t, flags::UInt32
+)::Union{Nothing, prolog_flag{T}} where {T}
+    f = prolog_flag{T}(UInt32(0), mk_sym(T, Symbol("false")))
+    type = flags & FT_MASK
+
+    if type == FT_FROM_VALUE
+        a = PL_get_atom(ld, value)
+        if a !== nothing
+            bv = atom_to_bool(ld, a)
+            if bv !== nothing
+                f.a = mk_sym(T, bv ? Symbol("true") : Symbol("false"))
+                f.flags = FT_BOOL
+            else
+                f.a = a
+                f.flags = FT_ATOM
+            end
+        elseif (i = PL_get_int64(ld, value)) !== nothing
+            f.flags = FT_INTEGER
+            f.i = i
+        elseif (d = PL_get_float(ld, value)) !== nothing
+            f.flags = FT_FLOAT
+            f.f = d
+        else
+            f.flags = FT_TERM
+            if ground_cells(ld, -(value + 1)) != 0              # !PL_is_ground(value)
+                PL_error(ld, ERR_INSTANTIATION)
+                return nothing
+            end
+            f.t = PL_record(ld, value)
+        end
+    elseif type == FT_ATOM
+        a = PL_get_atom_ex(ld, value)
+        a === nothing && return nothing
+        f.a = a
+        f.flags = FT_ATOM
+    elseif type == FT_BOOL
+        b = PL_get_stdbool_ex(ld, value)
+        b === nothing && return nothing
+        f.flags = FT_BOOL
+        f.a = mk_sym(T, b ? Symbol("true") : Symbol("false"))
+    elseif type == FT_INTEGER
+        i = PL_get_int64_ex(ld, value)
+        i === nothing && return nothing
+        f.i = i
+        f.flags = FT_INTEGER
+    elseif type == FT_FLOAT
+        d = PL_get_float_ex(ld, value)
+        d === nothing && return nothing
+        f.f = d
+        f.flags = FT_FLOAT
+    elseif type == FT_TERM
+        if ground_cells(ld, -(value + 1)) != 0                  # !PL_is_ground(value)
+            PL_error(ld, ERR_INSTANTIATION)
+            return nothing
+        end
+        f.t = PL_record(ld, value)
+        f.flags = FT_TERM
+    end
+    f.flags |= (flags & FF_COPY_FLAGS)
+
+    return f
+end
+
+# PORT: pl-prologflag.c set_flag_value
+# DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
+# effects the kernel has not are refused by name (`_flag_not_ported`, design D4): `debug`, `debugger_show_context`,
+# `threads` (set true), `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
+# `unicode_atoms`, `file_name_case_handling`, `autoload`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
+# `table_compile_threshold`, `table_drop_intermediate`, `stack_limit`, `string_stack_tripwire` and `heartbeat`.
+# `setVarPrefix` answers the atom the flag then holds (`true` is `_`) in place of writing it through `a`. The mask
+# bit is the LOCAL data's (`setPrologFlagMask`). `on_error` and `on_warning` are checked and stored (their action
+# belongs to the toplevel). `win_file_access_check` is `O_XOS`'s.
+"Set the flag `f`, named `k`, as module `m` sees it, to the value of the term `value`, with the side effects of upstream's flags (pl-prologflag.c)."
+function set_flag_value(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, f::prolog_flag{T}, m::module_t{T}, k::T,
+    value::term_t
+)::Bool where {T}
+    name = sym_text(k)
+    type = f.flags & FT_MASK
+
+    if type == FT_BOOL
+        val = PL_get_stdbool_ex(ld, value)
+        val === nothing && return false
+
+        # deal with side-effects
+        if name == "character_escapes"
+            if val
+                m.flags |= M_CHARESCAPE
+            else
+                m.flags &= ~M_CHARESCAPE
+            end
+        elseif name == "debug"
+            _flag_not_ported(k, "debugmode and tracemode (the debugger)")
+        elseif name == "debugger_show_context"
+            _flag_not_ported(k, "debugstatus.showContext (the debugger)")
+        elseif name == "threads"
+            val && _flag_not_ported(k, "enableThreads (threads)")
+        elseif name == "tty_control"
+            val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true")))) &&
+                _flag_not_ported(k, "PushTty and PopTty (the terminal)")
+        elseif name == "debug_on_interrupt"
+            _flag_not_ported(k, "enable_debug_on_interrupt (signals)")
+        elseif name == "protect_static_code"
+            if val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true")))) && val == false
+                ex = PL_new_term_ref(ld)
+                PL_put_atom(ld, ex, mk_sym(T, :protect_static_code))
+                return PL_error(
+                    ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :set), mk_sym(T, :prolog_flag),
+                    ex
+                )
+            end
+        end
+        # set the flag value
+        if f.index != 0
+            if val
+                setPrologFlagMask!(ld, f.index)
+            else
+                clearPrologFlagMask!(ld, f.index)
+            end
+        end
+        f.a = mk_sym(T, val ? Symbol("true") : Symbol("false"))
+    elseif type == FT_ATOM
+        a = PL_get_atom_ex(ld, value)
+        a === nothing && return false
+
+        check_oneof_flag(ld, f.oneof, a, true) || return false
+
+        if name == "double_quotes"
+            nf = setDoubleQuotes(ld, a, m.flags)
+            nf === nothing && return false
+            m.flags = nf
+        elseif name == "back_quotes"
+            nf = setBackQuotes(ld, a, m.flags)
+            nf === nothing && return false
+            m.flags = nf
+        elseif name == "rational_syntax"
+            nf = setRationalSyntax(ld, a, m.flags)
+            nf === nothing && return false
+            m.flags = nf
+        elseif name == "var_tag"
+            _flag_not_ported(k, "setVarTagFlag (the VARTAG_* bits of the module's flags)")
+        elseif name == "var_prefix"
+            na = setVarPrefix(ld, value, m)
+            na === nothing && return false
+            a = na
+        elseif name == "unknown"
+            setUnknown(gd, ld, value, a, m) || return false
+        elseif name == "unknown_option"
+            setUnknownOption(ld, value, a) || return false
+        elseif name == "on_error" || name == "on_warning"
+            checkOnError(ld, value, a, k) || return false
+        elseif name == "write_attributes"
+            setWriteAttributes(ld, a) || return false
+        elseif name == "occurs_check"
+            setOccursCheck(ld, a) || return false
+        elseif name == "incomparable"
+            _flag_not_ported(k, "setIncomparable (LD->prolog_flag.incomparable_error)")
+        elseif name == "access_level"
+            setAccessLevelFromAtom(ld, a) || return false
+        elseif name == "encoding"
+            _flag_not_ported(k, "setEncoding (the default encoding)")
+        elseif name == "unicode_atoms"
+            _flag_not_ported(k, "setUnicodeAtoms")
+        elseif name == "stream_type_check"
+            setStreamTypeCheck(ld, a) || return false
+        elseif name == "file_name_case_handling"
+            _flag_not_ported(k, "setFileNameCaseHandling")
+        elseif name == "autoload"
+            _flag_not_ported(k, "setAutoload (propagateAutoload)")
+        elseif name == "table_monotonic"
+            _flag_not_ported(k, "setMonotonicMode (tabling)")
+        elseif name == "theme"
+            _flag_not_ported(k, "setTheme (the theme of the messages)")
+        end
+
+        f.a = a
+    elseif type == FT_INTEGER
+        i = PL_get_int64_ex(ld, value)
+        i === nothing && return false
+
+        if name == "agc_margin"
+            _flag_not_ported(k, "GD->atoms.margin (atom garbage collection)")
+        elseif name == "table_space"
+            _flag_not_ported(k, "LD->tabling.node_pool (tabling)")
+        elseif name == "table_compile_threshold"
+            _flag_not_ported(k, "LD->table_flags.compile_threshold (tabling)")
+        elseif name == "table_drop_intermediate"
+            _flag_not_ported(k, "LD->table_flags.drop_intermediate (tabling)")
+        elseif name == "stack_limit"
+            _flag_not_ported(k, "set_stack_limit")
+        elseif name == "string_stack_tripwire"
+            _flag_not_ported(k, "LD->fli.string_buffers.tripwire")
+        elseif name == "heartbeat"
+            _flag_not_ported(k, "LD->yield.frequency")
+        end
+
+        f.i = i
+    elseif type == FT_FLOAT
+        d = PL_get_float_ex(ld, value)
+        d === nothing && return false
+        f.f = d
+    elseif type == FT_TERM
+        f.t = PL_record(ld, value)
+    else
+        error("set_flag_value: the flag $name has the type $type")
+    end
+
     return true
 end
 

@@ -26,7 +26,14 @@ Upstream: swipl-devel cbf4e1896275 src/os/pl-prologflag.c (extract in the writer
        setUnknown(gd, ld, value, a, m), setUnknownOption, checkOnError, setWriteAttributes, setAccessLevelFromAtom, getOccursCheckMask, setOccursCheck,
        setStreamTypeCheck. NOT written (group 2 calls `_flag_not_ported` for them, D4): setVarTagFlag, setIncomparable (no `incomparable_error` field),
        setEncoding, setUnicodeAtoms, setAutoload, setTheme, file_name_case_handling. The header comment lists the D4 set.
-2. [ ] keep_flag, check_oneof_flag, new_prolog_flag, set_flag_value :1126-1523 (D4 refusals: NotPortedError naming the side effect).
+2. [x] WRITTEN (coder 2; section 'changing a flag' of os/pl-prologflag.jl, before 'the predicates'): `PseudoFlag`/`PSEUDO_FLAG`, `FF_COPY_FLAGS`,
+       create_oneof, set_oneof, check_oneof_flag (builds error(domain_error(oneof(L),A),_)), set_flag_type, set_flag_atom, clean_prolog_flag, keep_flag
+       (answers Int 1/0/-1 as upstream), new_prolog_flag, set_flag_value(gd, ld, f, m::module_t, k, value); `setPrologFlagMask!`/`clearPrologFlagMask!` (next to
+       truePrologFlag); `PL_get_int64` (pl-fli.jl, = PL_get_long) and `PL_get_int64_ex` (pl-error.jl, representation_error(int64_t), probed on swipl 10.1.19).
+       D4 refusals in set_flag_value: debug, debugger_show_context, threads(true), tty_control(changed), debug_on_interrupt, var_tag, incomparable, encoding,
+       unicode_atoms, file_name_case_handling, autoload, table_monotonic, theme, agc_margin, table_space, table_compile_threshold, table_drop_intermediate,
+       stack_limit, string_stack_tripwire, heartbeat. on_error/on_warning are checked and STORED (no side effect upstream either). The header list of D4 flags
+       was corrected. Not guarded by the refusals but NOT ported: arithmetic (`set_arith_flag`), ci_*, tabling restraint: group 3 refuses them by name.
 3. [ ] check_flag_write_access, check_create_flag, set_prolog_flag_unlocked, set_prolog_flag_ptr, set_prolog_flag/2, create_prolog_flag/3 :1542-1810; registration.
 4. [ ] STRUCT COMMIT (ONE separate commit, src/pl-global.jl struct + constructor + every site that builds it): delete the 5 Bool fields and
        `prolog_flag_determinism_error` (no field is appended: F1b needs none). Stack owner hand-merges with G1/O1B at the top.
