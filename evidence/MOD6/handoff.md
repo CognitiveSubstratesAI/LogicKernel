@@ -27,7 +27,7 @@ Commits on wip/mod6 after 5b221de: 3a20d7e plan; ffa4003 group 1 (module_enum, M
 STRUCT CHANGE, `live_states`); 3f201ac group 2+3 source (newModuleEnum/advanceModuleEnum/freeModuleEnum, get_existing_source_file,
 pl_import_module2_va, pl_current_module2_va, registration with PL_FA_NONDETERMINISTIC in upstream's order, header comments);
 3a8fab4 manifest block; then ONE commit with the rows (this handoff, evidence/MOD6/gen_rows.py + mm_rows.pl/.out/.err/mm_driver.pl,
-test/core_lang/test_module_enum_swipl.jl: 44 cases s01, i01-i20, c01-c19, d01, d03-d05; pins FILLED from swipl 10.1.19, byte-stable on a re-run).
+test/core_lang/test_module_enum_swipl.jl: 46 cases s01, i01-i21, c01-c20, d01, d03-d05; pins FILLED from swipl 10.1.19, byte-stable on a re-run).
 NOT DONE: (5) tools/mutants/MOD6.py (20-30 mutants + validator); (6) docs/architecture.md `## MOD6` after the MOD5b section;
 docs/port_inventory.md (`warm.sh inventory`); a test-file registry entry if the runner lists files (glob assumed).
 
