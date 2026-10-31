@@ -457,7 +457,46 @@ _guard_cases() {
     "$W" restart > "$T/g5" 2>&1; check "second: an explicit restart without the opt-in is not refused (exit 0)" 0 $?
     [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
     check "second: …and the daemon is still in lk-warm2.slice" 0 $?
+    # THE STRUCT GATE'S RESTART KEEPS IT TOO (audit D-0157 item 5, reopened on another lane after the fix of
+    # A-0079): a struct changed under the running second daemon, the NEXT send restarts it by itself, with no
+    # LOGICKERNEL_WARM_SECOND in the caller's environment — a new pid, the reason printed, still in
+    # lk-warm2.slice, the marker kept, the other daemon untouched. (A probe file under src/ as _struct_cases.)
+    sprobe="$ROOT/src/_struct_probe_second_$$.jl"
+    spid() { cat "$ROOT/.warm/ready"; }
+    ssend() { env -u LOGICKERNEL_WARM_SECOND "$W" send "$T/ok.jl" > "$T/sso" 2> "$T/sse"; }
+    sp0=$(spid)
+    printf 'struct WarmStructProbeSecond\n    a::Int\nend\n' > "$sprobe"
+    ssend; check "second: a NEW struct beside the other daemon — the send passes" 0 $?
+    [ "$(spid)" = "$sp0" ]; check "second: …and the second daemon is KEPT" 0 $?
+    printf 'struct WarmStructProbeSecond\n    a::Int\n    b::Int\nend\n' > "$sprobe"
+    ssend; check "second: a struct changed — the send passes (the struct gate's restart, exit 0)" 0 $?
+    [ -f "$ROOT/.warm/ready" ] && [ "$(spid)" != "$sp0" ]
+    check "second: …on a RESTARTED daemon, a new pid, beside the other daemon" 0 $?
+    has "second: …with its reason" "$T/sse" "restarting the daemon — struct changed: WarmStructProbeSecond$" 1
+    has "second: …and not refused" "$T/sse" "REFUSED" 0
+    has "second: …the snippet's own output intact" "$T/sso" "^ok$" 1
+    [ -f "$ROOT/.warm/second" ]; check "second: …the marker survived the struct gate's restart" 0 $?
+    [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
+    check "second: …and the daemon is still in lk-warm2.slice" 0 $?
+    systemctl --user is-active --quiet "$decoy"; check "second: …the other daemon is NOT stopped" 0 $?
+    # THE MANIFEST CHECK'S LEFTOVER RESTART (`_checks_fresh`) goes through `_restart` as well: a daemon-only
+    # method planted (as _stale_cases), a preflight on the second daemon restarts it once. (The preflight's own
+    # stale-daemon restart sits behind the full static file, which the tooling tests stub: not run here.)
+    sleft="_preflight_probe_second_$$"
+    printf 'Core.eval(LogicKernel, :(%s(x::Int) = x))\nisdefined(LogicKernel, :%s) || error("not planted")\n' \
+        "$sleft" "$sleft" > "$T/sleft.jl"
+    "$W" send "$T/sleft.jl" > "$T/sleftout" 2>&1; check "second: a daemon-only method is planted" 0 $?
+    sp1=$(spid)
+    env -u LOGICKERNEL_WARM_SECOND LOGICKERNEL_PREFLIGHT_POOL=0 "$W" preflight > "$T/pf3" 2>&1
+    has "second: the manifest check's leftover restart runs" "$T/pf3" "DAEMON LEFTOVERS .*restarting the warm lane once" 1
+    [ -f "$ROOT/.warm/ready" ] && [ "$(spid)" != "$sp1" ]
+    check "second: …on a RESTARTED daemon, a new pid" 0 $?
+    has "second: …and not refused" "$T/pf3" "REFUSED" 0
+    [ -f "$ROOT/.warm/second" ]; check "second: …the marker survived the leftover restart" 0 $?
+    [ "$(systemctl --user show "$unit" -p Slice --value)" = lk-warm2.slice ]
+    check "second: …and the daemon is still in lk-warm2.slice" 0 $?
     "$W" stop > /dev/null 2>&1
+    rm -f "$sprobe"
     [ ! -e "$ROOT/.warm/second" ]; check "second: a deliberate stop forgets it" 0 $?
     : > "$ROOT/.warm/second"                              # a STALE marker (a crashed second daemon's)…
     "$W" start > "$T/g6" 2>&1; check "second: …does not excuse a plain start beside another daemon (exit 6)" 6 $?

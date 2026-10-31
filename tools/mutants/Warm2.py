@@ -10,7 +10,8 @@
 # file), and (2) `guard` needs a user systemd manager, which the mutation jobs lack (the tooling job enables lingering for
 # it): with none the guard cases print "skipped" and exit 0, so every mutant would SURVIVE. Run it locally:
 #   MUTATE_LIMIT_S=1200 tools/mutate.sh run tools/mutants/Warm2.py "sh:tools/test_warm.sh guard"
-# 2026-10-24: 5 of 5 caught, baseline green (A-0084).
+# 2026-10-24: 5 of 5 caught, baseline green (A-0084). WM6 and WM7 (WARM2T): the struct gate's and the manifest check's
+# restarts in second mode, judged by the new `second:` cases of `guard`.
 TARGETS = ["sh:tools/test_warm.sh guard"]       # also the baseline's (tools/mutate_ci.py reads it from here)
 T = TARGETS
 W = "tools/warm.sh"
@@ -30,4 +31,14 @@ MUTANTS = [
     dict(id="WM5 a restart starts without the opt-in", file=W, targets=T,
          old='''    LOGICKERNEL_WARM_SECOND="$second" _start''',
          new='''    _start'''),
+    dict(id="WM6 the struct gate restarts without the opt-in (stop and start, not _restart)", file=W, targets=T,
+         old='''    _restart > /dev/null || {
+        echo "warm lane: the daemon did not restart after a struct change''',
+         new='''    { _stop; _start; } > /dev/null || {
+        echo "warm lane: the daemon did not restart after a struct change'''),
+    dict(id="WM7 the manifest check's leftover restart starts without the opt-in", file=W, targets=T,
+         old='''        _restart > /dev/null || return 1
+        _format_port_check 1''',
+         new='''        { _stop; _start; } > /dev/null || return 1
+        _format_port_check 1'''),
 ]
