@@ -758,6 +758,16 @@ function _manifest_index(T)
                 LK.pl_declare_module6_va, LK.pl_destroy_module1_va
             )
         ]...,
+        # MOD6 — the module enumerations (pl-modul.c): the module_enum functions, import_module/2, $current_module/2
+        (LK.newModuleEnum, Tuple{LD, Int}, false),
+        (LK.advanceModuleEnum, Tuple{GD, LD, LK.module_enum}, false),
+        (LK.freeModuleEnum, Tuple{GD, LD, Int}, false),
+        (LK.get_existing_source_file, Tuple{GD, LD, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_import_module2_va, LK.pl_current_module2_va
+            )
+        ]...,
         # f3b-4 — the definition's reference on term references
         (LK.unify_functor, Tuple{LD, Int, D, Int}, false),
         (LK.unify_definition, Tuple{GD, LD, MOD, Int, D, Int, Int}, false),
