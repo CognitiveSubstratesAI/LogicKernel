@@ -421,3 +421,5 @@ t388(R) :- ( access_file(lk_lb2b_m1, execute) -> R0 = before_yes ; R0 = before_n
 t389(R) :- res('$mark_executable'(lk_lb2b_nowhere), R).
 t390(R) :- res('$mark_executable'(_), R).
 t391(R) :- res('$mark_executable'(f(x)), R).
+% --- wildcard_match/3 (non-mutating, appended last so the row numbers above stay)
+t392(R) :- res(wildcard_match('[a-c]x', 'Bx', [case_sensitive(false)]), R).

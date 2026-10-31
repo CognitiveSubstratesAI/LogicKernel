@@ -432,6 +432,8 @@ res(rename_file(f(x), lk_lb2b_x2), R)
 res('$mark_executable'(lk_lb2b_nowhere), R)
 res('$mark_executable'(_), R)
 res('$mark_executable'(f(x)), R)
+% --- wildcard_match/3 (non-mutating, appended last so the row numbers above stay)
+res(wildcard_match('[a-c]x', 'Bx', [case_sensitive(false)]), R)
 """
 
 def main(out):
