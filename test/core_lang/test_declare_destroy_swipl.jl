@@ -87,11 +87,12 @@ function _mb_swipl_lines(path::String, names::Vector{String})::Vector{String}
 end
 
 
-# the program: mdy: a DYNAMIC dp/1 (left alone by a re-declaration); user: sup_p/1 (seen through a super module `user`, not `system`);
+# the program: mdy: a DYNAMIC dp/1 (left alone by a re-declaration); user: sup_p/1 (dynamic) and sup_s/1 (static), seen through a super module `user`, not `system`;
 # mb_done restores the source and typein modules after a row.
 const _MB_PROGRAM = raw"""
 :- assertz(mdy:dp(1)).
 :- assertz(user:sup_p(7)).
+sup_s(8).
 mb_done :- '$set_source_module'(user), '$set_typein_module'(user).
 """
 
@@ -156,8 +157,10 @@ const _MB_CASES = [
         "a21",
         raw"'$declare_module'(mdy, user, user, '/mb/i.pl', 1, false), mdy:dp(X), R = X"
     ),
-    # b01-b05: the super module: the default (user) sees user's predicates; `system` does not (existence_error); the module itself is
-    # a cycle; a super that does not exist is made; a later declaration replaces it
+    # b01-b06: the super module: the default (user) sees user's predicates; `system` does not (existence_error); the module itself is
+    # a cycle; a super that does not exist is made; a later declaration replaces it. b05: the link a call made to a DYNAMIC predicate
+    # of the old super SURVIVES the re-declaration (declareModule's loop skips a definition with P_DYNAMIC, and the definition tested is
+    # the imported one); b06: the link to a STATIC predicate is removed (abolishProcedure's imported branch), the predicate is gone.
     (
         "b01",
         raw"'$declare_module'(mns1, user, user, '/mb/h.pl', 1, false), mns1:sup_p(X), R = X"
@@ -174,6 +177,10 @@ const _MB_CASES = [
     (
         "b05",
         raw"'$declare_module'(mns4, user, system, '/mb/h.pl', 1, false), catch(mns4:zz4(_), error(E, _), true), R = E"
+    ),
+    (
+        "b06",
+        raw"'$declare_module'(mns5, user, user, '/mb/h.pl', 1, false), mns5:sup_s(X0), '$declare_module'(mns5, user, system, '/mb/h.pl', 1, false), catch(mns5:sup_s(_), error(E, _), true), R = X0-E"
     ),
     # c01-c03: the class of a declared module that is not destroyable, and a class changed by a later declaration
     (

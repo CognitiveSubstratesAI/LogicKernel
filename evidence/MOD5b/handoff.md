@@ -27,25 +27,13 @@ The loop runs AFTER class/file/source-module are set (as upstream), so a refused
 The warning `declare_module(M, abolish(PIs))` branch (rdef, unify_definition, printMessage) is written but cannot be reached until F5.
 swipl's answer for the Q7 program is pinned (evidence/MOD5b/mb_q7.out; stderr "Loading module mq abolished: mq:qs/1 [undefined]").
 
-### OPEN POINT 1 (found writing row b05, NOT fixed): an auto-imported link blocks a re-declaration
-Row b04 calls `mns4:zz4(X)`, which auto-imports mnsup4's zz4/1 into mns4's procedure table (an import link: `def.module_ != mns4.index`).
-Row b05 then re-declares mns4: swipl's abolishProcedure REMOVES that link (pl-proc.c:1517-1530: a fresh Definition for the module,
-`proc->definition = ndef`, `unshareDefinition(odef)`), the kernel's `_abolishProcedure_pristine` THROWS NotPortedError there. The next
-agent should port that branch (cheap; the Definition constructor is lookupProcedure's positional form, last field `shared`; upstream's
-memset leaves `shared` 0 for the new definition; `unshareDefinition(odef)` exists in src/pl-proc.jl:290; `lingerDefinition` is GC):
-```
-if def.module_ != m.index   # imported: remove the link
-    ndef = Definition{T}(key, arity, <ClauseList with args as lookupProcedure>, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index, 0)
-    proc.definition = ndef; unshareDefinition(def)
-```
-Then b05 passes in the kernel. ALSO FIX THE ROW b05: swipl's pinned answer is `t_b05 t_b05/1(V0)` — E stayed unbound, i.e. `mns4:zz4(_)`
-STILL SUCCEEDED after the super was changed to `system`, because the link made by b04's call survived?? NO: swipl's abolish removes the
-link, so the likely reason is different (the call found zz4 through the new super chain or the module's procedure was not abolished
-because the loop condition tests the IMPORTED def's flags). Do not trust b05 as written: investigate in swipl (`'$declare_module'(mns4,
-user, system, ...)` then `mns4:zz4(X)`), then replace b05 by a row on a predicate not called before (assert zz5 in mnsup4, re-declare
-mns4 with super `system`, expect existence_error(procedure, mns4:zz5/1)), and re-run the generator with --fill. Until then b05 pins what
-swipl does (the row is swipl's truth, only its comment "replaces the super" is unproven).
-
+### OPEN POINT 1 (b05 RESOLVED by coder 2; the source item is still to do, see below)
+b05 is well posed: the link made by b04's call is to a DYNAMIC predicate (b04 asserts zz4/1), and declareModule's loop skips a definition
+with `P_DYNAMIC|P_MULTIFILE|P_FOREIGN` (tested on the IMPORTED definition), so the link survives the re-declaration: swipl's answer
+(E unbound = `mns4:zz4(_)` succeeded) is right, and the kernel's loop already skips it (flags != 0). Checked in swipl: `imported(mnsup4)`
+before and after the second `'$declare_module'`. New row b06 covers the other half: a STATIC predicate (`sup_s(8).` in the program,
+reached through super `user`) imported by a call, then the module re-declared with super `system`: the link IS removed
+(abolishProcedure's imported branch), the call raises `existence_error(procedure, mns5:sup_s/1)`. Only that branch needed the port.
 ## Rows (group 5 part 1) — WRITTEN, swipl-pinned, NOT run on the kernel
 test/core_lang/test_declare_destroy_swipl.jl (prefix `_MB`/`_mb`, ONE extractor `_mb_enc`, `lk_term_type`): 49 cases a01-a21, b01-b05,
 c01-c02, d01-d12, e01-e04, f01-f05 + `mb_done` wrapper (source and typein back to `user`) + testsets: rows vs pins; non-vacuity;

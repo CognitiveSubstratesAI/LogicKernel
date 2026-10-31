@@ -1,5 +1,6 @@
 :- assertz(mdy:dp(1)).
 :- assertz(user:sup_p(7)).
+sup_s(8).
 mb_done :- '$set_source_module'(user), '$set_typein_module'(user).
 t_a01(R) :- catch(('$declare_module'(mna, user, user, '/mb/f1.pl', 3, false), '$current_source_module'(S), '$module_property'(mna, class(C)), '$module_property'(mna, file(F)), '$module_property'(mna, line_count(L)), R = [S, C, F, L]), error(F, _), R = raised(F)), mb_done.
 t_a02(R) :- catch(('$declare_module'(mna, user, user, '/mb/f1.pl', 9, false), '$module_property'(mna, line_count(L)), '$module_property'(mna, file(F)), R = L-F), error(F, _), R = raised(F)), mb_done.
@@ -27,6 +28,7 @@ t_b02(R) :- catch(('$declare_module'(mns2, user, system, '/mb/h.pl', 1, false), 
 t_b03(R) :- catch(('$declare_module'(mns3, user, mns3, '/mb/h.pl', 1, false), R = ok), error(F, _), R = raised(F)), mb_done.
 t_b04(R) :- catch(('$declare_module'(mns4, user, mnsup4, '/mb/h.pl', 1, false), '$module_property'(mnsup4, class(C)), mnsup4:assertz(zz4(1)), mns4:zz4(X), R = C-X), error(F, _), R = raised(F)), mb_done.
 t_b05(R) :- catch(('$declare_module'(mns4, user, system, '/mb/h.pl', 1, false), catch(mns4:zz4(_), error(E, _), true), R = E), error(F, _), R = raised(F)), mb_done.
+t_b06(R) :- catch(('$declare_module'(mns5, user, user, '/mb/h.pl', 1, false), mns5:sup_s(X0), '$declare_module'(mns5, user, system, '/mb/h.pl', 1, false), catch(mns5:sup_s(_), error(E, _), true), R = X0-E), error(F, _), R = raised(F)), mb_done.
 t_c01(R) :- catch(('$declare_module'(mbsys, system, user, '/mb/t.pl', 1, false), '$module_property'(mbsys, class(C)), R = C), error(F, _), R = raised(F)), mb_done.
 t_c02(R) :- catch(('$declare_module'(mtd10, temporary, user, '/mb/t.pl', 1, false), '$declare_module'(mtd10, user, user, '/mb/t.pl', 1, false), '$module_property'(mtd10, class(C)), R = C), error(F, _), R = raised(F)), mb_done.
 t_d01(R) :- catch(('$declare_module'(mtd1, temporary, user, '/mb/t.pl', 1, false), '$destroy_module'(mtd1), ( '$module_property'(mtd1, class(C)) -> R = still(C) ; R = gone )), error(F, _), R = raised(F)), mb_done.
