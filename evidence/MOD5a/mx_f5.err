@@ -1,0 +1,4 @@
+Warning: /home/shivaji1012/code/lk-mod5a/evidence/MOD5a/mx_f5_rows.pl:2:
+Warning:    import/1: mwfs:wq/1 is not exported (still imported into mwf)
+Warning: /home/shivaji1012/code/lk-mod5a/evidence/MOD5a/mx_f5_rows.pl:3:
+Warning:    Local definition of mwf:wq/1 overrides weak import from mwfs

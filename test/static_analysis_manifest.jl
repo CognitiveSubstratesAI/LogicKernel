@@ -708,6 +708,37 @@ function _manifest_index(T)
         (LK.setContextModule!, Tuple{LK.localFrame{T}, Int}, true),
         (LK.pl_strip_module3_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.pl_context_module, Tuple{LD, Int}, false),
+        # MOD5a — export and import (pl-modul.c), exportProcedureSource (pl-srcfile.c), '$def_modules'/2
+        (LK.isPublicModule, Tuple{MOD, PR}, false),
+        (LK.exportProcedure, Tuple{MOD, PR}, false),
+        (LK.exportProcedureSource, Tuple{LK.SourceFile{T}, MOD, PR}, false),
+        (LK.export_pi1, Tuple{GD, LD, Int, Int}, false),
+        (LK.export_pi, Tuple{GD, LD, Int, Int, Int}, false),
+        (LK.fixExportModule, Tuple{MOD, D, D}, false),
+        (LK.fixExport, Tuple{GD, D, D}, false),
+        (LK.atomToImportStrength, Tuple{Type{T}, T}, false),
+        (LK.import_, Tuple{GD, LD, Int, Int}, false),
+        (
+            LK.find_modules_with_defs,
+            Tuple{GD, LD, MOD, Vector{Tuple{UInt64, Int, Int}}, Int, Int, Int},
+            false
+        ),
+        (
+            LK.PL_error,
+            Tuple{LD, String, Int, String, LK.PL_error_code, PR, T, Union{Nothing, T}},
+            false
+        ),
+        (
+            LK._PL_error_close!,
+            Tuple{LD, Union{Nothing, D}, Int, Int, Int, Int, String, Int, String, Int},
+            false
+        ),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_export1_va, LK.pl_undefined_export2_va, LK.pl_import1_va,
+                LK.pl_import2_va, LK.pl_def_modules2_va
+            )
+        ]...,
         # f3b-4 — the definition's reference on term references
         (LK.unify_functor, Tuple{LD, Int, D, Int}, false),
         (LK.unify_definition, Tuple{GD, LD, MOD, Int, D, Int, Int}, false),
@@ -1954,6 +1985,11 @@ function _manifest_index(T)
         (LK.get_procedure_find_namearity, Tuple{GD, LD, Int, MOD}, false),
         (LK.get_procedure_namearity, Tuple{GD, LD, Int, MOD, Int}, false),
         (LK.get_functor_procedure, Tuple{LD, Int}, false),
+        # MOD5a — get_functor, share/unshareDefinition (pl-proc.c)
+        (LK.get_functor_procedure, Tuple{LD, Int, Int}, false),
+        (LK.get_functor, Tuple{GD, LD, Int, Int, Int, Int}, false),
+        (LK.shareDefinition, Tuple{D}, false),   # the assert allocates its message on failure
+        (LK.unshareDefinition, Tuple{D}, true),
         (LK.pl_source_file2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (
             LK.pl_source_file_predicates2_va,

@@ -57,7 +57,7 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
     end
     cd = m.code_data
     def = Definition{T}(
-        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index
+        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index, 1   # def->shared = 1
     )
     proc = Procedure{T}(def, UInt32(0), UInt32(0))
     m.procedures[(key, arity)] = proc
@@ -274,10 +274,28 @@ function resolveProcedure(
     return lookupProcedure(name, arity, m)
 end
 
+# PORT: pl-proc.c shareDefinition
+# DIVERGES: no atomic increment (no threads); the assert is upstream's.
+"One more procedure shares the definition `def` (pl-proc.c)."
+function shareDefinition(def::Definition)::Nothing
+    def.shared += 1
+    @assert def.shared > 0
+    return nothing
+end
+
+# PORT: pl-proc.c unshareDefinition
+# DIVERGES: no atomic decrement (no threads). The caller's `lingerDefinition`/`destroyDefinition` of a definition
+# nothing shares any more is Julia's garbage collector.
+"One procedure less shares the definition `def`; the number still sharing it (pl-proc.c)."
+function unshareDefinition(def::Definition)::Int
+    def.shared -= 1
+    return def.shared
+end
+
 # PORT: pl-proc.c autoImport
 # DIVERGES: the functor is its parts; the database `gd` is an argument and the super modules are
-# indices into its module table. The definition replaced in `m`'s procedure is left to Julia's
-# garbage collector, where upstream unshares it and frees or lingers it; no lock (no threads).
+# indices into its module table. The definition replaced in `m`'s procedure is unshared (MOD5a), and left to
+# Julia's garbage collector where upstream frees or lingers it; no lock (no threads).
 """
     autoImport(gd, name, arity, m) -> Definition, or nothing
 
@@ -302,7 +320,10 @@ function autoImport(
         proc = lookupProcedure(name, arity, m)
     end
     if proc.definition !== def                          # Nope, we must link the def
-        proc.definition = def                           # shareDefinition(def)
+        odef = proc.definition
+        shareDefinition(def)
+        proc.definition = def
+        unshareDefinition(odef)                         # == 0: unallocDefinition/lingerDefinition: the GC's
     end
     return def
 end
@@ -1001,8 +1022,8 @@ mode_arg_is_unbound(def::definition, arg0::Int)::Bool =
 
 # PORT: pl-proc.c overruleImportedProcedure
 # DIVERGES: the database `gd` is an argument; a module is an index into its table. NOT PORTED:
-# a weak (implicit) import is abolished (`abolishProcedure`) — refused (`NotPortedError`): the
-# kernel makes no weak imports (`autoImport` links strongly), so it is not reached.
+# a weak (implicit) import is abolished (`abolishProcedure`) — refused (`NotPortedError`) until
+# `abolishProcedure` is ported; `'$import'(PI, weak)` (MOD5a, pl-modul.jl `import_`) makes a weak import and reaches it.
 """
 May `target` define `proc` — its own, or an import it may overrule (pl-proc.c)? Raises
 `permission_error(redefine, built_in_procedure | imported_procedure, PI)` when not.
@@ -1611,11 +1632,13 @@ function get_procedure_find(
 end
 
 # PORT: pl-proc.c get_functor as get_functor_procedure
-# (the `GF_PROCEDURE` case, term already stripped of its module)
+# (the body of `get_functor` after the module is stripped; `how` as upstream's: `GF_PROCEDURE`, `GF_NAMEARITY`)
 # DIVERGES: returns `(name, arity)`, arity -1 with the error raised where upstream returns false and writes `fdef`; no `h`;
 # `GP_TYPE_QUIET` is not passed by any caller here (the type error is always raised).
-"The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or a head in `head`, else arity -1 with an error raised (pl-proc.c)."
-function get_functor_procedure(ld::PL_local_data{T}, head::term_t)::Tuple{T, Int} where {T}
+"The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or, without `GF_NAMEARITY`, a head in `head`, else arity -1 with an error raised (pl-proc.c)."
+function get_functor_procedure(
+    ld::PL_local_data{T}, head::term_t, how::Int=GF_PROCEDURE
+)::Tuple{T, Int} where {T}
     dcgpi = false
     if PL_is_functor(ld, head, mk_sym(T, :/), 2) ||
         (dcgpi = PL_is_functor(ld, head, mk_sym(T, :(//)), 2))
@@ -1631,7 +1654,7 @@ function get_functor_procedure(ld::PL_local_data{T}, head::term_t)::Tuple{T, Int
             return (mk_nil(T), -1)
         end
         arity += dcgpi ? 2 : 0
-        if arity > MAXARITY
+        if (how & GF_PROCEDURE) != 0 && arity > MAXARITY    # maxarity: (how&GF_PROCEDURE) ? MAXARITY : -1
             PL_error(
                 ld, "", 0, "limit is $MAXARITY, request = $arity", ERR_REPRESENTATION,
                 mk_sym(T, :max_procedure_arity)
@@ -1640,12 +1663,32 @@ function get_functor_procedure(ld::PL_local_data{T}, head::term_t)::Tuple{T, Int
         end
         return (name, arity)
     end
-    fd = PL_get_functor(ld, head)                       # !(how&GF_NAMEARITY) && PL_get_functor(head, fdef)
+    fd = (how & GF_NAMEARITY) == 0 ? PL_get_functor(ld, head) : nothing   # !(how&GF_NAMEARITY) && PL_get_functor(head, fdef)
     if fd === nothing
         PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), head)
         return (mk_nil(T), -1)
     end
     return (fd[1], fd[2])
+end
+
+# PORT: pl-proc.c get_functor
+# DIVERGES: returns `(name, arity, m)` - arity -1 with the error raised for upstream's false; the module is an
+# index into `gd`'s table, passed in (0 for upstream's NULL: the context module, `PL_strip_module`'s rule) and
+# returned; `h` (0: none) receives the plain term as upstream's. `GP_TYPE_QUIET` is not passed by any caller here.
+"The `(name, arity, m)` of the `M:Name/Arity` (or head) in `descr`; `GP_NOT_QUALIFIED` leaves `m` and the term as given (pl-proc.c)."
+function get_functor(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, m::Int, h::term_t, how::Int
+)::Tuple{T, Int, Int} where {T}
+    head = descr
+    if (how & GP_NOT_QUALIFIED) == 0
+        head = PL_new_term_ref(ld)
+        ok, m = PL_strip_module(gd, ld, descr, m, head)     # PL_strip_module(descr, m, head)
+        ok || return (mk_nil(T), -1, m)
+    end
+    name, arity = get_functor_procedure(ld, head, how)
+    arity < 0 && return (name, -1, m)
+    h != 0 && PL_put_term(ld, h, head)                  # if ( h ) PL_put_term(h, head)
+    return (name, arity, m)
 end
 
 # PORT: pl-proc.c get_procedure as get_procedure_namearity

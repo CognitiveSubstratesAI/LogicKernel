@@ -1,0 +1,137 @@
+# MOD5a — export and import (modules.md section 7). Edit-only coding, coder 1. NOTHING COMPILED OR RUN.
+
+Branch wip/mod5a off main 07a8e01 (LOCAL, never pushed). Reference: swipl-devel cbf4e1896275.
+
+## Plan (upstream file:line -> Julia site)
+Group 1 (data): `PROC_IMPORTED = 0x0004` (pl-incl.h:1807) after `PROC_MULTISOURCE` in src/pl-incl.jl;
+  `definition.shared::Int` (pl-incl.h:1769), LAST field, so the three positional constructors gain a trailing
+  count (STRUCT CHANGE: the warm daemon restarts): src/pl-proc.jl lookupProcedure (1: pl-proc.c:122
+  `def->shared = 1`), src/pl-global.jl:117 (dc_def, 1) and :502 (idle index_context definition, 0);
+  `shareDefinition`/`unshareDefinition` (pl-proc.c:569-579) in src/pl-proc.jl before `autoImport`;
+  `autoImport` shares/unshares (pl-proc.c:2897-2907).
+Group 2 (get_functor): `get_functor` (pl-proc.c:614-672) in src/pl-proc.jl after `get_functor_procedure` (which is
+  its `GF_PROCEDURE` core, kept): strip module unless `GP_NOT_QUALIFIED` (new constant 0x2000, pl-incl.h:1020),
+  `GF_NAMEARITY` (0x4) / `GF_PROCEDURE` (0x2) (pl-incl.h:1024-1025).
+Group 3 (export/import): src/pl-modul.jl: `isPublicModule` (pl-modul.c:844), `exportProcedure` (1504),
+  `export_pi1`, `export_pi` (1514-1554), `fixExportModule`, `fixExport` (1635-1660), `atomToImportStrength`
+  (1663), `import_` (1676-1802); `exportProcedureSource` (pl-srcfile.c:1427) into src/pl-srcfile.jl (the kernel
+  has no `reload`: it is `exportProcedure`). `ERR_IMPORT_PROC` (pl-error.c:447-470) as a PL_error method in
+  src/pl-error.jl (enum member appended).
+Group 4 (predicates): `pl_export1_va`, `pl_import1_va`, `pl_import2_va` (`'$import'/2`), `pl_undefined_export2_va`,
+  `pl_def_modules2_va` + `find_modules_with_defs` (pl-modul.c:1218-1277) in src/pl-modul.jl; entries in
+  `PL_predicates_from_module`; manifest entries in test/static_analysis_manifest.jl.
+Group 5: rows (evidence/MOD5a gen_rows.py + driver + .out; test/modules/ file), tools/mutants/MOD5a.py,
+  docs/architecture.md MOD5a section, this handoff.
+
+## F5 check (weak-import refusal, src/pl-proc.jl:1028)
+`abolishProcedure` does NOT exist in src (read: pl-proc.jl:1004-1005, 1050, 1073, 1119 still name it as owed). The
+refusal in `overruleImportedProcedure` is KEPT. NEW: `import/1`'s weak strength (`'$import'(PI, weak)`) is the only
+producer of a PROC_WEAK procedure, so the refusal becomes reachable (it was unreachable); the NotPortedError text
+says "overruling a weak import (abolishProcedure)", "R2" - unchanged.
+
+## STATE at the 150k cap (coder 1) — UNRUN: nothing compiled, no Julia started
+Commits on wip/mod5a: 4e0af26 plan; 720594f group 1; ddc3076 group 2 (get_functor). Group 3 is in the working tree and
+committed as the commit after this handoff (see git log).
+WRITTEN (group 3, uncompiled): src/pl-error.jl: ERR_IMPORT_PROC (enum member appended) + `PL_error(ld, pred, arity, msg,
+ERR_IMPORT_PROC, proc, dest, old)`; `_PL_error_close!` gained a 10-arg method taking a ready `msgterm0` (the 9-arg one forwards).
+src/pl-srcfile.jl: exportProcedureSource (no reload in the kernel -> exportProcedure). src/pl-modul.jl (before the MQ3
+`module_code_size` block): isPublicModule, exportProcedure, export_pi1, export_pi, pl_export1_va, pl_undefined_export2_va,
+fixExportModule, fixExport, atomToImportStrength, import_, pl_import1_va, pl_import2_va.
+NOT YET WRITTEN (next agent, in this order):
+ (a) `'$def_modules'/2` + find_modules_with_defs (pl-modul.c:1157-1277): source module = `gd.modules[ld.modules_source]`;
+     `stripModuleName_cells(ld, -(A1+1))` -> `(ok, loc, mnameword)`, `_slot_link_loc!(ld, ttail+1, loc)`; qualifier module:
+     isCurrentModule(gd.modules, _atom_value(ld, mnameword)) else system if the text starts with `$` else user;
+     targets via `get_functor(gd, ld, thead, 0, 0, GF_PROCEDURE | GP_NOT_QUALIFIED)` (max 10: `PL_error(ld, ERR_RESOURCE,
+     mk_sym(T,:target_predicates))`); `PL_get_list_ex` loop then `PL_get_nil_ex`; defined test `_impl_any_defined(proc.definition)`;
+     `mhead/plist/phead = PL_new_term_refs(ld, 3)`; the pair `M-List` built with `_message_term(ld, :-, _err_atom(ld, m.atom),
+     plist)` then PL_unify(mhead, ...); recursion over `m.supers` with l-1, l < 0 -> `error("loop in default modules")`.
+     (b) register in `PL_predicates_from_module` (src/pl-modul.jl, end): export/1 (PL_FA_TRANSPARENT|PL_FA_VARARGS),
+     import/1 and `$import`/2 (transparent), `$undefined_export`/2 (VARARGS), `$def_modules`/2 (transparent);
+     update the two NOT PORTED comments in src/pl-modul.jl (lines 18 and ~668: remove MOD5a names; header comment).
+     (c) manifest entries in test/static_analysis_manifest.jl (near line 685/704): `(LK.exportProcedure, Tuple{MOD, PR}, false)`,
+     isPublicModule, export_pi1/export_pi (Tuple{GD, LD, Int, Int[, Int]}), fixExport, fixExportModule, atomToImportStrength,
+     import_ (Tuple{GD, LD, Int, Int}), exportProcedureSource, the five `_va` predicates in the `Tuple{LD, Int, Int,
+     control_t{T}}` list near line 1486, `PL_error` with `Tuple{LD, String, Int, String, PL_error_code, PR, T, Union{Nothing,T}}`.
+     (d) group 5: rows via the oracle swipl (MOD3a pattern), tools/mutants/MOD5a.py, docs/architecture.md MOD5a, rows file in
+     test/ with ONE extractor; `docs/port_inventory.md` via `warm.sh inventory`; the `_enum_hash` of PL_error_code: I did not
+     find a manifest entry for the enum (SSU1 appended ERR_PERMISSION_SSU_DEF with none) - the gate agent checks `check`.
+FLAGS: (1) STRUCT CHANGE: definition.shared (daemon restart, ~30 min cold). (2) F5: abolishProcedure does not exist in src;
+the weak-import NotPortedError at pl-proc.jl:1028 is KEPT and now becomes reachable through `'$import'(PI, weak)`.
+(3) DIVERGES logged in comments: public table walked in insertion order; no reload in exportProcedureSource; GC for lingerDefinition.
+(4) UNSURE: `PL_cons_functor` with an unbound `plist` (def_modules) globalises the variable as upstream's PL_unify_term - verify in rows;
+`old.flags |= pflags | PROC_IMPORTED` (UInt32); `import_` calls `contextModule(gd, ld, ld.environment_frame)` without the 0 guard.
+(5) The 9-arg `_PL_error_close!` now forwards: PL_error allocation behaviour unchanged for other callers.
+GATE ORDER for the gate agent: fmt, check, rows x3 term types, test_type_discipline, branch-gate, alloc pins only if the run loop
+changed (it did not), mutants/MOD5a to CI, D-0164 grep (no hits expected in my text).
+Daemon: coder 1 started none. Hooks: edit-and-commit-in-one-call blocks twice (split), the cap hook at 151k.
+
+## coder 2 (EDIT-ONLY, nothing compiled, no Julia started) — SOURCE COMPLETE
+Commits on wip/mod5a after coder 1's ddc3076: fd63662 group 3 (export/import, ERR_IMPORT_PROC, exportProcedureSource);
+ce500b1 `'$def_modules'/2` (MAX_TARGETS, find_modules_with_defs, pl_def_modules2_va; src/pl-modul.jl, before the
+module_code_size block); 9de843f registration in PL_predicates_from_module (upstream's order and flags: `$def_modules`
+first; `import`, `$import`, `export` (transparent) and `$undefined_export` after strip_module/3) + the two header
+comments reworded (now say what MOD5a ports; the remaining items under "LATER STEPS"); 6f0b418 manifest entries
+(test/static_analysis_manifest.jl, MOD5a block after `pl_context_module`: isPublicModule, exportProcedure,
+exportProcedureSource, export_pi1, export_pi, fixExportModule, fixExport, atomToImportStrength, import_,
+find_modules_with_defs, PL_error ERR_IMPORT_PROC method, 10-arg _PL_error_close!, the five `_va` predicates; all `false`).
+OPEN POINT CLOSED (plist): `PL_put_variable` makes a global cell (a slot holds no unbound word), so `PL_cons_functor`
+with plist as an argument lays in a reference to that cell via `_cell_link!` = upstream's PL_unify_term PL_TERM (linkValG).
+No extra globalisation written. Verify in the rows: the pair `M-[PI|_]` is shared with the list tail that `PL_unify_list`
+binds, and `[]` closes it (`PL_unify_nil(plist)`).
+`PL_error_code` / `_enum_hash`: the manifest keys `_enum_hash` by enum TYPE (lines ~2461-2470, the R1c list); PL_error_code
+has no entry and SSU1 appended a member without one; a new member adds no type, so NO manifest entry is needed - the
+gate agent's `check` confirms. Nothing invented.
+NOT WRITTEN (a later coder): rows (test/modules/ file + evidence/MOD5a gen_rows.py + driver + .out, oracle swipl; ONE
+extractor; both sides non-empty), tools/mutants/MOD5a.py (TARGETS: every test file exercising export/import/def_modules,
+D-0238: the module rows, MOD1..MOD4 rows, the load/consult files that call export/import via the module/2 path),
+docs/architecture.md MOD5a section, `warm.sh inventory` for docs/port_inventory.md.
+FLAGS (new): (6) the formatter may reflow a few long lines in the new code and the manifest block: `warm.sh fmt` first.
+(7) find_modules_with_defs raises `error("OOPS loop in default modules???")` for upstream's sysError (a kernel error).
+(8) pl_def_modules2_va: `PL_resource_error` then FFALSE for >10 targets, as upstream. (9) The manifest signatures are
+from the definitions' annotations (`find_modules_with_defs`: `Vector{Tuple{UInt64,Int,Int}}`, term_t = Int): `check` verifies.
+Daemon: coder 2 started none and did not touch lanes.conf.
+
+## coder 3 (EDIT-ONLY, no Julia, swipl 10.1.19 run freely) — ROWS + MUTANTS written; DOCS + inventory NOT written
+Commits on wip/mod5a after c1a4c89: ebc013b rows (first set), 5f88c15 UNVERIFIED header, 8fb2b57 rows e25/u06/d18-d20 + shared testset,
+then the commit of tools/mutants/MOD5a.py (41 mutants) + this handoff.
+ROWS: test/core_lang/test_export_import_swipl.jl, 77 cases + the F5 pair; generator evidence/MOD5a/gen_rows.py (usage in its header; the
+.out files are two byte-identical swipl runs; mx_rows.err = swipl's stderr warnings, kept as evidence). Prefix `_MX`/`_mx_`, ONE extractor
+(`_mx_enc`), term type `lk_term_type(...)` like test_at_body_swipl.jl. Testsets: rows vs pins; `definition.shared` counts (hand-derived from
+pl-proc.c, mwq:qq/1 == 3, mwq:rr/1 == 2, user:zz/1 == 3, ma:pa/1 == 4: UNVERIFIED on the kernel); non-vacuity; F5 (swipl: `mwf:wq(9).` over a
+weak import answers [9]; the kernel must refuse: NotPortedError or a load status not ok; UNVERIFIED); live swipl comparison.
+UNVERIFIED rows (listed in the test file above _MX_CASES): e09 (`//`), e21-e24, d05, d11/d12, i09/i12, i13, i15, d13. NOT rows (reason in the
+header): the warnings (stderr in swipl, `ld.messages` in the kernel: a white-box on ld.messages is LATER), module/2 (MOD5b).
+swipl facts worth knowing: `import(foo)` answers ok; `'$def_modules'([foo], R)` and `([ma:pa/1], R)` answer [] (no error); export of
+`atom_length/2` is skipped (ISO); `ma:pu/1` becomes defined through `'$undefined_export'`'s autoImport (d18 shows ma-[pu/1]).
+MUTANTS: tools/mutants/MOD5a.py, 41 entries, 4 declared equivalent (F2, D9, R4, G2) with reasons; the anchors were checked by counting in
+a python loop BEFORE the cap hit: I had NOT yet run the final validator (the cap blocked it) — the next agent runs
+`python3 -I -c` on the file (every `old` exactly once in its file, new != old, targets exist). Earlier per-anchor counts all gave 1
+(chk.py list), with `for c in m.supers` extended to the 2-line form and the pl-error anchor to `_err_functor(ld, :permission_error, 3), into,`.
+LEFT: (3) docs/architecture.md MOD5a section after the MOD3b section (what ports what with file:line, PROC_IMPORTED, definition.shared STRUCT
+CHANGE daemon restart ~30 min, public table order D-0149, F5, GC for lingerDefinition, error("OOPS loop") for sysError, open points);
+`warm.sh inventory` for docs/port_inventory.md (+ the `declared` column by hand as MOD3b needed). Gate order for the gate agent: fmt [reflows
+find_modules_with_defs, pl_def_modules2_va, the manifest block, the registration lines: RE-FIT mutant anchors], inventory, check, rows x3 term
+types, test_type_discipline, tools/pkgtest_way.sh on the new file (one at a time), mutants anchors re-check, mutants/MOD5a to CI, branch-gate,
+D-0164 grep, gate branch push. Alloc pins not needed. No daemon was started by coder 3; lanes.conf untouched. No hook blocks except: the
+cap hook at 150k, the edit+commit-in-one-call hook, and the untracked-files hook (the .err files had to be added).
+Stale source comment for the gate agent: src/pl-proc.jl:1025-1027 still says "the kernel makes no weak imports ... so it is not reached";
+'$import'(PI, weak) now makes one (F5), so reword it.
+
+## coder 4 (EDIT-ONLY, no Julia, no daemon) — mutants validated, DOCS written, comment reworded
+Commits on wip/mod5a after aa55f2f: ff8d65d docs/architecture.md MOD5a section (before `## D1`; MOD3b's section is on another branch);
+421d21b pl-proc.jl comment (lines ~1025-1027) now names `'$import'(PI, weak)`; then this handoff.
+MUTANTS VALIDATED (throwaway checker, `python3 -I` + `runpy.run_path`): the file has 46 entries (coder 3 wrote "41"), 4 declared
+equivalent (F2, D9, R4, G2); every `old` occurs EXACTLY once in its file, `new != old`, ids unique, every target file exists. Re-run
+after the pl-proc.jl comment edit: still 46/0 bad. No anchor needed fixing, so no mutants commit.
+REMAINING for the gate agent (in this order):
+ 1. `tools/warm.sh fmt` (long lines flagged in find_modules_with_defs, pl_def_modules2_va, the manifest block).
+ 2. `tools/warm.sh inventory` for docs/port_inventory.md, plus a hand edit of its `declared` column if needed (as MOD3b did).
+ 3. `warm.sh check` (includes the Pkg.test-way run; confirms no `_enum_hash` entry is needed for PL_error_code and the manifest signatures).
+ 4. test/core_lang/test_export_import_swipl.jl on all three term types; test/test_type_discipline.jl; `tools/pkgtest_way.sh
+    test/core_lang/test_export_import_swipl.jl` (ONE at a time, ~3 GB). Read the UNVERIFIED rows (header of the file) and the
+    `definition.shared` counts and F5 testsets first: they had no kernel run.
+ 5. RE-CHECK the mutant anchors after fmt (rerun the validator above; refit any reflowed `old`), push `mutants/MOD5a` at the WIP SHA
+    once the list and TARGETS exist, then branch-gate, the D-0164 grep (diff + ALL commit messages), then the local
+    `gate/mod5a` at the SAME SHA as `mutants/MOD5a` (wip refs are refused by the pre-push hook).
+ 6. Alloc pins NOT needed (the run loop is untouched). STRUCT CHANGE (`definition.shared`): the first daemon compile is cold (~30 min).
+Daemon: coder 4 started none; lanes.conf untouched. Hook blocks: none.

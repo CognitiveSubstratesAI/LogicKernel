@@ -199,6 +199,13 @@ function addModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
     return true
 end
 
+# PORT: pl-srcfile.c exportProcedureSource
+# DIVERGES: a source file has no `reload` (reconsult is not ported), so the recording of the exports of a module being
+# reloaded - the part of upstream that tests `sf->reload` - does not run; what is left is `exportProcedure`.
+"Export `proc` from module `m` while loading the source file `sf` (pl-srcfile.c)."
+exportProcedureSource(sf::SourceFile{T}, m::module_t{T}, proc::Procedure{T}) where {T} =
+    exportProcedure(m, proc)
+
 # Is the atom `a` the atom named `s`?
 _atom_is(ld::PL_local_data{T}, a, s::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, s))   # (`a`'s own type may be a subtype of `T`: an AltSym)
 
