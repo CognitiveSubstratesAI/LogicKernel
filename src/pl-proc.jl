@@ -1637,7 +1637,7 @@ end
 # `GP_TYPE_QUIET` is not passed by any caller here (the type error is always raised).
 "The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or, without `GF_NAMEARITY`, a head in `head`, else arity -1 with an error raised (pl-proc.c)."
 function get_functor_procedure(
-    ld::PL_local_data{T}, head::term_t, how::Int = GF_PROCEDURE
+    ld::PL_local_data{T}, head::term_t, how::Int=GF_PROCEDURE
 )::Tuple{T, Int} where {T}
     dcgpi = false
     if PL_is_functor(ld, head, mk_sym(T, :/), 2) ||

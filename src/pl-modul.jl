@@ -646,7 +646,8 @@ function pl_undefined_export2_va(
             if !(
                 PL_unify_list(ld, tail, head, tail) &&
                 unify_definition(
-                    gd, ld, MODULE_user(gd), head, proc.definition, 0, GP_QUALIFY | GP_NAMEARITY
+                    gd, ld, MODULE_user(gd), head, proc.definition, 0,
+                    GP_QUALIFY | GP_NAMEARITY
                 )
             )
                 return FFALSE
@@ -660,7 +661,9 @@ end
 # DIVERGES: no lock (no threads); a definition nothing shares any more is left to the garbage collector
 # (`lingerDefinition`).
 "Make every procedure of module `m` that has the definition `old` share `new` (pl-modul.c)."
-function fixExportModule(m::module_t{T}, old::Definition{T}, new::Definition{T})::Nothing where {T}
+function fixExportModule(
+    m::module_t{T}, old::Definition{T}, new::Definition{T}
+)::Nothing where {T}
     for proc in values(m.procedures)
         if proc.definition === old
             shareDefinition(new)
@@ -675,7 +678,9 @@ end
 # DIVERGES: the database `gd` is an argument; a destroyed module (`M_DESTROYED`: its name left the table) is not
 # in upstream's table, so it is skipped.
 "Patch the definition `old` to `new` in every module (pl-modul.c)."
-function fixExport(gd::PL_global_data{T}, old::Definition{T}, new::Definition{T})::Nothing where {T}
+function fixExport(
+    gd::PL_global_data{T}, old::Definition{T}, new::Definition{T}
+)::Nothing where {T}
     for m in gd.modules
         (m.flags & M_DESTROYED) != 0 && continue
         fixExportModule(m, old, new)
@@ -720,7 +725,9 @@ function import_(
         autoImport(gd, name, arity, gd.modules[proc.definition.module_])
     end
 
-    old = isCurrentProcedure(proc.definition.functor_name, proc.definition.arity, destination)
+    old = isCurrentProcedure(
+        proc.definition.functor_name, proc.definition.arity, destination
+    )
     if old !== nothing
         old.definition === proc.definition && return true       # already done this!
 
@@ -746,13 +753,16 @@ function import_(
                     ) || return false                           # PL_unify_predicate(pi, proc, GP_NAMEARITY)
                     printMessage(
                         ld, :warning,
-                        _message_term(ld, :ignored_weak_import, _err_atom(ld, destination.atom), pi)
+                        _message_term(
+                            ld, :ignored_weak_import, _err_atom(ld, destination.atom), pi
+                        )
                     ) || return false
                 end
                 return true
             else
                 return PL_error(
-                    ld, "import", 1, "name clash", ERR_IMPORT_PROC, proc, destination.atom, nothing
+                    ld, "import", 1, "name clash", ERR_IMPORT_PROC, proc, destination.atom,
+                    nothing
                 )
             end
         end
@@ -773,7 +783,8 @@ function import_(
             gd, ld, MODULE_user(gd), pi, proc.definition, 0, GP_NAMEARITY
         ) || return false
         printMessage(
-            ld, :warning, _message_term(ld, :import_private, _err_atom(ld, destination.atom), pi)
+            ld, :warning,
+            _message_term(ld, :import_private, _err_atom(ld, destination.atom), pi)
         ) || return false
     end
 

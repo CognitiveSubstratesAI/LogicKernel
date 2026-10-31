@@ -124,7 +124,10 @@ const _MX_CASES = [
     ("e07", raw"assertz(ma:brandnew), '$undefined_export'(ma, R)"),
     ("e08", raw"export(ma:undefp/3), export(ma:undefp/3), '$undefined_export'(ma, R)"),
     ("e09", raw"export(ma:dcgp//2), '$module_property'(ma, exports(L)), msort(L, R)"),
-    ("e10", raw"assertz(user:pu(1)), export(ma:pu/1), '$undefined_export'(ma, R0), msort(R0, R)"),
+    (
+        "e10",
+        raw"assertz(user:pu(1)), export(ma:pu/1), '$undefined_export'(ma, R0), msort(R0, R)"
+    ),
     # e11-e20: the errors of export/1 (get_functor with GF_NAMEARITY): instantiation, not a PI, a non-integer arity, an unbound
     # arity, an unbound name, a number name, a negative arity, an unbound goal under a module, an unbound element, a bad second element
     ("e11", raw"export(_), R = ok"),
@@ -141,9 +144,15 @@ const _MX_CASES = [
     ("e21", raw"export(nomx:p/1), '$module_property'(nomx, exports(R))"),
     ("e22", raw"export(ma:atom_length/2), '$module_property'(ma, exports(L)), msort(L, R)"),
     ("e23", raw"export(user:exuser/0), '$module_property'(user, exports(L)), msort(L, R)"),
-    ("e24", raw"X = (ma:pa/1, X), catch(export(X), error(type_error(T, _), _), true), R = T"),
+    (
+        "e24",
+        raw"X = (ma:pa/1, X), catch(export(X), error(type_error(T, _), _), true), R = T"
+    ),
     # e25: a comma list of three (the right operand is itself a comma list)
-    ("e25", raw"export(ma:(n1/0, n2/0, n3/0)), '$module_property'(ma, exports(L)), msort(L, R)"),
+    (
+        "e25",
+        raw"export(ma:(n1/0, n2/0, n3/0)), '$module_property'(ma, exports(L)), msort(L, R)"
+    ),
     # u01-u05: '$undefined_export'/2 — its errors (instantiation, type, no such module) and a failing unification
     ("u01", raw"'$undefined_export'(_, R)"),
     ("u02", raw"'$undefined_export'(1, R)"),
@@ -159,7 +168,10 @@ const _MX_CASES = [
     ("d05", raw"'$def_modules'('$nosuch':[assertz/1], R)"),
     ("d06", raw"'$def_modules'([], R)"),
     ("d07", raw"'$def_modules'([nothing_at_all/9], R)"),
-    ("d08", raw"'$def_modules'([a/1, b/1, c/1, d/1, e/1, f/1, g/1, h/1, i/1, j/1, k/1], R)"),
+    (
+        "d08",
+        raw"'$def_modules'([a/1, b/1, c/1, d/1, e/1, f/1, g/1, h/1, i/1, j/1, k/1], R)"
+    ),
     ("d09", raw"'$def_modules'([pu/1|_], R)"),
     ("d10", raw"'$def_modules'(foo, R)"),
     ("d11", raw"'$def_modules'([foo], R)"),
@@ -168,7 +180,10 @@ const _MX_CASES = [
     # default module list does not hold user's pu/1
     ("d18", raw"'$def_modules'(ma:[undefp/3, pu/1], R)"),
     ("d19", raw"'$def_modules'('$nosuch':[pu/1], R)"),
-    ("d13", raw"'$current_source_module'(Old), '$set_source_module'(ma), '$def_modules'([pa/1, pu/1], R0), '$set_source_module'(Old), msort(R0, R)"),
+    (
+        "d13",
+        raw"'$current_source_module'(Old), '$set_source_module'(ma), '$def_modules'([pa/1, pu/1], R0), '$set_source_module'(Old), msort(R0, R)"
+    ),
     # i01-i07: import/1 — into another module (context-qualified), again (already done), a predicate that is not exported, a local
     # definition in the destination (the clash), a predicate already imported from another module, into user, a doubly qualified PI
     ("i01", raw"mi:import(ma:pa/1), findall(X, mi:pa(X), R)"),
@@ -189,20 +204,35 @@ const _MX_CASES = [
     ("i13", raw"mi:import(ma:undefq/2), mi:undefq(1, 2), R = ok"),
     # u06: an exported predicate that is imported (and undefined) is not an undefined export
     ("u06", raw"export(mi:undefq/2), '$undefined_export'(mi, R)"),
-    ("i14", raw"export(mx:late/1), mj:import(mx:late/1), assertz(mx:late(7)), findall(X, mj:late(X), R)"),
-    ("i15", raw"catch(mfx:qq(_), error(_, _), true), mfz:import(mfx:qq/1), mfx:import(mwq:qq/1), mfz:qq(A), mfx:qq(B), R = A-B"),
-    ("i16", raw"catch(mgx:rr(_), error(_, _), true), mgx:import(mwq:rr/1), mgx:import(mwq:rr/1), mgx:rr(R)"),
+    (
+        "i14",
+        raw"export(mx:late/1), mj:import(mx:late/1), assertz(mx:late(7)), findall(X, mj:late(X), R)"
+    ),
+    (
+        "i15",
+        raw"catch(mfx:qq(_), error(_, _), true), mfz:import(mfx:qq/1), mfx:import(mwq:qq/1), mfz:qq(A), mfx:qq(B), R = A-B"
+    ),
+    (
+        "i16",
+        raw"catch(mgx:rr(_), error(_, _), true), mgx:import(mwq:rr/1), mgx:import(mwq:rr/1), mgx:rr(R)"
+    ),
     # i17: a name that the default module (user) defines, imported through a module that does not
     ("i17", raw"assertz(user:zz(11)), mhx:import(mauto:zz/1), findall(X, mhx:zz(X), R)"),
     # w01-w09: '$import'/2 — weak, over a local definition (kept), strong over it (the clash), the strength errors (domain,
     # instantiation, type), weak then strong of the same definition, strong, weak then a different strong import
     ("w01", raw"mw:'$import'(ma:pb/2, weak), findall(X-Y, mw:pb(X, Y), R)"),
-    ("w02", raw"assertz(md:pa(local_md)), md:'$import'(ma:pa/1, weak), findall(X, md:pa(X), R)"),
+    (
+        "w02",
+        raw"assertz(md:pa(local_md)), md:'$import'(ma:pa/1, weak), findall(X, md:pa(X), R)"
+    ),
     ("w03", raw"md:'$import'(ma:pa/1, strong), R = ok"),
     ("w04", raw"'$import'(ma:pa/1, bogus), R = ok"),
     ("w05", raw"'$import'(ma:pa/1, _), R = ok"),
     ("w06", raw"'$import'(ma:pa/1, 1), R = ok"),
-    ("w07", raw"mw:'$import'(ma:pb/2, weak), mw:'$import'(ma:pb/2, strong), findall(X-Y, mw:pb(X, Y), R)"),
+    (
+        "w07",
+        raw"mw:'$import'(ma:pb/2, weak), mw:'$import'(ma:pb/2, strong), findall(X-Y, mw:pb(X, Y), R)"
+    ),
     ("w08", raw"mw2:'$import'(ma:pb/2, strong), findall(X-Y, mw2:pb(X, Y), R)"),
     ("w09", raw"mw3:'$import'(ma:pa/1, weak), mw3:import(mc:pa/1), R = ok"),
     # d14-d16: '$def_modules'/2 after the imports: the importing module holds the procedure (its definition is the exporter's)
