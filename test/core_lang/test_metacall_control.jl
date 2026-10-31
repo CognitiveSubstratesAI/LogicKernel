@@ -357,31 +357,34 @@ end
     end
 end
 
-@testset "call/1 of control constructs: what stays refused, by name" begin
-    X = _rv(71)
-    # (`$/1` was refused here until V9f-b: test_det_swipl.jl calls one through call/1)
-    for g in (_rf("c", _rf("@", _rf("p", X), _rs("user"))),)            # Goal@Module (R2)
-        db = _rdb(_rmcc_clauses())                                      # a refusal abandons the query
-        @test_throws LK.NotPortedError _rcall(db, g)
-    end
-    # a CYCLIC goal (L1f f3): refused the same way, its culprit still naming the goal's functor and the
-    # module — read argument by argument, the cyclic one as its functor over fresh variables
-    G = _rv(72)
+# (`$/1` was refused here until V9f-b: test_det_swipl.jl calls one through call/1.) `Goal@Module` was
+# refused by name until MOD3b; since then call/1 compiles it in a goal clause, after
+# checkCallAtContextInstantiation (pl-wam.c), as upstream does. A CYCLIC goal (L1f f3): swipl 10.1.19
+# fails it (p/1 has no cyclic answer), probed 2026-10-31:
+#     ?- c(@(p(X),user)).          c(@(p(1),user)) nondet ; c(@(p(2),user)) nondet ; c(@(p(3),user)) det
+#     ?- G = p(G), c(@(G,user)).   false
+@testset "call/1 of Goal@Module, as swipl (MOD3b)" begin
+    X, G = _rv(71), _rv(72)
+    goals = _R[
+        _rf("c", _rf("@", _rf("p", X), _rs("user"))),
+        _rf("c", _rf(",", _rf("=", G, _rf("p", G)), _rf("c", _rf("@", G, _rs("user"))))),
+    ]
     db = _rdb(_rmcc_clauses())
-    e = try
-        _rcall(
-            db,
-            _rf(
-                "c",
-                _rf(",", _rf("=", G, _rf("p", G)), _rf("c", _rf("@", G, _rs("user"))))
-            )
-        )
-        nothing
-    catch err
-        err
+    ours = String[]
+    for g in goals
+        for (a, det) in _rcall(db, g)
+            push!(ours, a * (det ? " det" : " nondet"))
+        end
+        push!(ours, "end")
     end
-    @test e isa LK.NotPortedError && e.what == "call/1 of Goal@Module"
-    if e isa LK.NotPortedError
-        @test occursin(r"^@\(p\(V\d+\),user\)$", _rsrc(e.culprit))
+    @test ours[1:4] == [
+        "c(@(p(1),user)) nondet", "c(@(p(2),user)) nondet", "c(@(p(3),user)) det", "end"
+    ]
+    @test ours[5:end] == ["end"]
+    if _R_SWIPL
+        theirs = _rswipl(_rmcc_clauses(), goals[1:1])
+        @test !isempty(theirs) && ours[1:4] == theirs
+    elseif _R_SWIPL_REQUIRED
+        @test false
     end
 end
