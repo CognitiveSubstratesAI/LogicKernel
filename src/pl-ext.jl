@@ -32,7 +32,9 @@
 # since R1e's write/1 family, write/1,2, writeq/1,2, writeln/1,2, print/1,2 and write_canonical/1,2;
 # since V9f fail/0, true/0 and `$fail/0` (pl-prims.c; `!/0`, pl-pro.c's `pl_metacut`, is not yet); since NF4
 # repeat/0 (pl-prims.c), the first NDET entry, before fail/0 as upstream's (pl-ext.c:135); since MOD2
-# context_module/1 (pl-modul.c; `META` is `PL_FA_TRANSPARENT`, pl-ext.c:90), after prolog_current_frame/1.
+# context_module/1 (pl-modul.c; `META` is `PL_FA_TRANSPARENT`, pl-ext.c:90), after prolog_current_frame/1; since BOOTPRED
+# `$garbage_collect/1` (pl-gc.c, after context_module/1 as pl-ext.c:168), thread_self/1 (pl-thread.c) and with_mutex/2
+# (pl-mutex.c), the last two at the end of the table (pl-ext.c:186-187).
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
     PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
@@ -46,11 +48,14 @@ const foreigns = (
     PL_extension("\$fail", 0, pl_fail, PL_FA_NOTRACE),
     PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
     PL_extension("context_module", 1, pl_context_module, PL_FA_TRANSPARENT),   # META (MOD2)
+    PL_extension("\$garbage_collect", 1, pl_garbage_collect, 0x00),            # BOOTPRED (pl-ext.c:168)
     PL_extension("write", 2, pl_write2, PL_FA_ISO),
     PL_extension("writeln", 2, pl_writeln2, 0x00),
     PL_extension("writeq", 2, pl_writeq2, PL_FA_ISO),
     PL_extension("print", 2, pl_print2, 0x00),
-    PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO)
+    PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO),
+    PL_extension("thread_self", 1, pl_thread_self, PL_FA_ISO),      # BOOTPRED (pl-ext.c:186)
+    PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_TRANSPARENT | PL_FA_ISO)   # META|ISO (pl-ext.c:187)
 )
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, list, module, prims, variant,
