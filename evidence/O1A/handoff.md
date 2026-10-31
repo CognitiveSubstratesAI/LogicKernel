@@ -93,7 +93,7 @@ falls), `~2g` 199r2 '1e+02', `~g` 1r100000 '1e-05', `~g` 1r10000 '0.0001', `~e` 
 '-1.000000e-01', `~0e` 19r2 '1e+01', `~2f` -1r300 '-0.00', `~2f` -5r3 '-1.67', `~0f` 1r2 '1', `~0f` -1r2 '-1', `~0f` 3r2 '2',
 `~3f` -1r2000 '-0.001', `~1f` 199r2000 '0.1'. `~-1f` of 1 -> error(domain_error(not_less_than_zero,-1),context(system:format/3,_));
 `~-1h` of 1.0 -> '1.0e+00'; `~:f` of 10**10 -> '10,000,000,000.000000' in swipl (the kernel prints no grouping: D9, a documented DIVERGES row).
-AUDIT FLAGS (decide nothing): (a) `~@` uses PL_Q_PASS_EXCEPTION; (b) `format("a~")` existence_error(format_character,'\0')
+AUDIT FLAGS (decide nothing): (a) RESOLVED by the dispatcher's note: `~@` is upstream's `callProlog(m, argv, PL_Q_CATCH_EXCEPTION, &ex)` then PL_raise_exception(ex) (pl-fmt.c:877-886), written with O1B's 6-argument callProlog (wip/o1b 3cb3a13, `ex::Ref{Int}`); it needs that commit merged before it compiles. Merge include order (dispatcher): os/pl-file.jl, os/pl-redirect.jl, pl-write.jl, pl-fmt.jl, pl-ext.jl. ROWS MUST observe tellString/toldString output (O1B mutants D1/D2 are killed only by `~@` and column rows) in test/core_lang/test_format_swipl.jl; (b) `format("a~")` existence_error(format_character,'\0')
 blocked by codeToAtom(T,0); (c) no stream locale (D9): `~:d` / `~:f` print the C locale; (d) formatInteger of a bignum with more fraction
 digits than digits pads '0' (upstream reads before the buffer); (e) raw Latin-1 byte in pending rubber decoded as UTF-8 as upstream does;
 (f) NEW: the 'g' of a bignum or rational emulates GMP's mpf (prec limbs, truncation, half-up on the next digit) with exact rationals; the

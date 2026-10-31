@@ -406,9 +406,8 @@ end
 
 # PORT: pl-fmt.c do_format
 # DIVERGES: the format text is a vector of code points (`_text_code_points`); the user-defined directive lookup
-# of `format_predicates` is left out (empty table, D9); `~@` calls `callProlog` with `PL_Q_PASS_EXCEPTION`, so
-# the exception stays pending where upstream (`PL_Q_CATCH_EXCEPTION`) returns it in `ex` and raises it again
-# after `end_sub_format`; `~:d` and `~:f` take the C locale (no stream locale); no `AR_BEGIN`/`AR_END`.
+# of `format_predicates` is left out (empty table, D9); `~@` needs `callProlog`'s `ex` argument (O1B,
+# src/pl-pro.jl: `ex::Ref{Int}` for upstream's `term_t *ex`); `~:d` and `~:f` take the C locale (no stream locale); no `AR_BEGIN`/`AR_END`.
 """
     do_format(ld, fd, fmt, argc, argv, m) -> Bool
 
@@ -640,12 +639,16 @@ function do_format(
                 here += 1
             elseif c == Int('@')
                 argc < 1 && return PL_format_error(ld, "not enough arguments")
+                ex = Ref(0)
                 sstate = prepare_sub_format(ld, state, fd)
                 fid = PL_open_foreign_frame(ld)
-                rc = callProlog(gd, ld, m, argv, PL_Q_PASS_EXCEPTION)
+                rc = callProlog(gd, ld, m, argv, PL_Q_CATCH_EXCEPTION, ex)
                 rc && PL_rewind_foreign_frame(ld, fid)
                 rc = end_sub_format(ld, sstate, rc)
-                rc || return false
+                if !rc
+                    ex[] != 0 && PL_exception(ld, 0) == 0 && (rc = PL_raise_exception(ld, ex[]))
+                    return rc
+                end
                 argc -= 1
                 argv += 1
                 here += 1
