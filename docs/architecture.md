@@ -5715,6 +5715,36 @@ Tests: test/core_lang/test_bootpred_swipl.jl (rows bp01-bp128: thread_self, with
 two byte-identical runs, a non-vacuity testset, the live check when `swipl` is on PATH); tools/mutants/BOOTPRED3.py (9 mutants for gc/thread/mutex, 19 for pl-dict.jl, none declared equivalent; M4 mutates the meta spec of with_mutex/2, since the registration flag alone is overridden by it).
 Rows over a dict in an answer do not exist on purpose: nothing prints a dict in swipl's order.
 
+## T2 — the string predicates (R2, pl-string.c and the string family of pl-prims.c)
+
+What T2 adds (new file src/pl-string.jl, included before pl-ext.jl; written edit-only, nothing compiled when this was written):
+
+- **The predicates**, table `PL_predicates_from_strings` (pl-string.c's `BeginPredDefs(strings)`, plus three from pl-prims.c):
+  `atom_string/2`, `string_codes/2`, `string_chars/2`, `string_bytes/3`, `text_to_string/2`, `string_length/2`, `string_concat/3`
+  (non-deterministic; T1's `concat` with `PL_STRING`), `sub_string/5` (non-deterministic; `sub_text`, the body `sub_atom/5` will share),
+  `string_code/3` (non-deterministic: the index is the redo context), `get_string_code/3`, `split_string/4`, `read_string/5`,
+  `read_string/3`, `open_string/2`. `number_string/2` is T1's. `sub_atom/5` is pl-ext.c's table and is registered by whoever ports it (`sub_text` is ready).
+- **Registration:** the table is the last of `_PRED_TABLES` and `_FOREIGN_VA` (src/pl-ext.jl), where upstream puts it after prims and
+  before variant, so the dispatch indices of the earlier tables do not move.
+- **Helpers:** `unify_text` (the text comparison upstream's `PL_unify_text` fallback makes), `string_x`, `get_positive_integer_or_unbound`,
+  `text_code_at`, `PL_get_char`, `PL_get_int64_ex`, `PL_error_range`, `text_chr` (pl-text.h), `backSkipPadding`, `PL_text_recode`,
+  `utf16_to_text`, `unit_length`, `PL_syntax_error` (the form without a stream), `PL_release_stream`.
+- **DIVERGES, kept:** the `sub_text` enumeration state (type 3 bits, `n1` and `n2` 29 bits each) is packed into the `REDO_INT`
+  context instead of upstream's heap record behind `ForeignRedoPtr` (`SUB_STATE_LIMIT`: a text of 2^29 characters or more raises
+  `representation_error(size_t)`); `PL_error_range` builds `domain_error(range(L, H), Arg)` from the open and close halves of
+  `PL_error` as `ERR_RANGE` is a member left to the audit (src/pl-error.jl:35); `text_chr` keeps the C string semantics of `strchr`
+  (a NUL is found at the first NUL or the end), measured on swipl 10.1.19 (`split_string("a\0b", "", "", L)`); the encoding
+  `text` (`ENC_ANSI`, the locale) is refused by name in `string_bytes/3`; `ERR_TEXT_ILLEGAL_UTF16` and
+  `ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE` and the UTF-16 decode live in src/pl-string.jl, not in src/os/pl-text.jl.
+- **Pinned quirks** (swipl 10.1.19): `sub_string("abab", X, 2, X, "ab")` answers X = 2 (the same variable for Before and After: the
+  last candidate of the search is returned without its unifications checked); `string_code(-1, "abc", _)` and
+  `sub_string("abc", -1, _, _, _)` raise `domain_error(not_less_than_zero, -1)`; a syntax error from `string_bytes/3` has an unbound context.
+- **Flags for the audit** (evidence/T2/handoff.md): the packed state; the `ERR_RANGE` member; `PL_get_char`'s `eof` argument.
+
+Tests: test/core_lang/test_string_swipl.jl (214 + 91 program rows against swipl 10.1.19, two byte-identical runs; a live check when
+`swipl` is on PATH), mutants tools/mutants/T2.py (24, two equivalent with reasons). The `su` rows (`string_bytes/3` UTF-16 and the
+streams of `open_string/2`, `read_string/3,5`) are marked for the gate to decide on the kernel.
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
