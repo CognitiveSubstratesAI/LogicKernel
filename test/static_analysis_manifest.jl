@@ -2091,6 +2091,39 @@ function _manifest_index(T)
             f in (
                 LK.pl_assertz1_va, LK.pl_asserta1_va, LK.pl_assertz2_va, LK.pl_asserta2_va
             )
+        ]...,
+        # BOOTPRED — '$garbage_collect'/1 (src/pl-gc.jl), thread_self/1 (src/pl-thread.jl), with_mutex/2 (src/pl-mutex.jl)
+        (LK.pl_garbage_collect, Tuple{LD, Int}, false),
+        (LK.pl_thread_self, Tuple{LD, Int}, false),
+        (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
+        # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
+        (LK.dict_functor, Tuple{LD, Int}, false),
+        (LK.is_dict_functor, Tuple{LD, UInt64}, false),
+        (LK.is_dict_term, Tuple{LD, UInt8, UInt64}, false),
+        (LK.is_dict_key, Tuple{UInt64}, false),
+        (LK.get_dict_ex, Tuple{LD, Int, Bool}, false),
+        (LK.dict_lookup_ptr, Tuple{LD, UInt64, UInt64}, false),
+        (LK.PL_duplicate_key_error, Tuple{LD, Int}, false),
+        (LK._dict_link!, Tuple{LD, Int, Int}, false),
+        (LK.dict_ordered, Tuple{LD, Int, Int, Bool}, false),
+        (LK.dict_order, Tuple{LD, Int}, false),
+        (LK.get_name_ex, Tuple{LD, Int}, false),
+        (LK.get_name_value, Tuple{LD, Int, Int, LK.mark}, false),
+        (LK.PL_is_dict, Tuple{LD, Int}, false),
+        (LK.PL_get_dict_ex, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.get_create_dict_ex, Tuple{LD, Int, Int}, false),
+        # BOOTPRED — pl-dict.c: put_dict/3, select_dict/3, get_dict/3
+        (LK.assign_in_dict, Tuple{LD, Int, Int}, false),
+        (LK.put_dict, Tuple{LD, UInt64, Int, Int}, false),
+        (LK._dict_unify_key, Tuple{LD, Int, UInt64}, false),
+        (LK.unify_tags, Tuple{LD, Int, Int}, false),
+        (LK.select_dict, Tuple{LD, UInt64, UInt64}, false),
+        (LK.pl_get_dict, Tuple{LD, Int, Int, Bool, LK.foreign_context{T}}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_is_dict1_va, LK.pl_is_dict2_va, LK.pl_dict_create3_va,
+                LK.pl_put_dict3_va, LK.pl_select_dict3_va, LK.pl_get_dict3_va
+            )
         ]...
     )
 end
@@ -2718,7 +2751,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.AtomNotRepresentableError, Tuple{Vector{UInt32}}, false),
     (LK.tagTrailPtr, Tuple{Int}, true), (LK.isTrailVal, Tuple{UInt64}, true),
     (LK.trailValP, Tuple{UInt64}, true), (LK._trail_addr, Tuple{Int, Int}, true),
-    (LK._trail_stack, Tuple{UInt64}, true), (LK._trail_pos, Tuple{UInt64}, true)
+    (LK._trail_stack, Tuple{UInt64}, true), (LK._trail_pos, Tuple{UInt64}, true),
+    # BOOTPRED — the enum of src/pl-dict.jl (pl-dict.h _PL_dict_status_t)
+    (Base.Enums._enum_hash, Tuple{LK._PL_dict_status_t, UInt64}, false)
 )
 
 """
