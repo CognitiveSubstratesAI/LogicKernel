@@ -2878,6 +2878,72 @@ _index_entry_points(T) = (
     (LK.symbol_stream_pair_not_allowed, Tuple{LK.PL_local_data{T}, T}, false)
 )
 
+# LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
+# (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
+# checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
+_manifest_lb2b(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_time_file2_va, LK.pl_size_file2_va, LK.pl_access_file2_va,
+                LK.pl_read_link3_va, LK.pl_exists_file1_va, LK.pl_exists_directory1_va,
+                LK.pl_is_absolute_file_name1_va, LK.pl_same_file2_va,
+                LK.pl_file_base_name2_va, LK.pl_file_directory_name2_va, LK.pl_tmp_file2_va,
+                LK.pl_tmp_file_stream4_va, LK.pl_delete_directory1_va,
+                LK.pl_make_directory1_va, LK.pl_rename_file2_va,
+                LK.pl_absolute_file_name2_va, LK.pl_cwd1_va, LK.pl_chdir1_va,
+                LK.pl_file_name_extension3_va, LK.pl_prolog_to_os_filename2_va,
+                LK.pl_mark_executable1_va, LK.pl_my_file1_va, LK.pl_wildcard_match2_va,
+                LK.pl_wildcard_match3_va, LK.pl_expand_file_name2_va, LK.pl_directory_files2_va
+            )
+        ]...,
+        (LK.DeRefLink, Tuple{LD, String}, false), (LK.SameFile, Tuple{LD, String, String}, false),
+        (LK.MarkExecutable, Tuple{LD, String}, false),
+        (LK._iri_hook_refused, Tuple{LD, String, String}, false),
+        (LK._tmp_file_refused, Tuple{LD, String}, false),
+        (LK.has_extension, Tuple{LD, String, String}, false),
+        (LK._unify_atom_chars, Tuple{LD, Int, String}, false),
+        (LK._is_atom_named, Tuple{T, Type{T}, Symbol}, false),
+        (LK.canonicalisePath, Tuple{LD, String}, false),
+        (LK.takeWord, Tuple{LD, Vector{UInt8}, Int}, false),
+        (LK.expandVars, Tuple{LD, String}, false), (LK.AbsoluteFile, Tuple{LD, String}, false),
+        (LK.PL_changed_cwd, Tuple{LD}, false), (LK.PL_cwd, Tuple{LD}, false),
+        (LK.is_cwd, Tuple{LD, String}, false), (LK.ChDir, Tuple{LD, String}, false),
+        (LK.compile_pattern, Tuple{LD, Vector{Int}, Vector{Int}, Int, Int, Int}, false),
+        (LK.compilePattern, Tuple{LD, Vector{Int}, Int}, false),
+        (LK.wildcard_match, Tuple{LD, Int, Int, Nothing}, false),
+        (LK.wildcard_match, Tuple{LD, Int, Int, Int}, false),
+        (LK.expand, Tuple{LD, String}, false), (LK.sort_expand, Tuple{LD, Vector{String}}, false)
+    )
+end
+
+# the same, on plain values: one entry each
+const _MANIFEST_LB2B_FREE = (
+    (LK.file_name_is_iri, Tuple{String}, false), (LK.statfunc, Tuple{String}, false),
+    (LK.LastModifiedFile, Tuple{String}, false), (LK.SizeFile, Tuple{String}, false),
+    (LK.access_mode, Tuple{Int}, false), (LK.AccessFile, Tuple{String, Int}, false),
+    (LK.AccessDirectory, Tuple{String, Int}, false), (LK.ExistsFile, Tuple{String}, false),
+    (LK.ExistsDirectory, Tuple{String}, false), (LK.ReadLink, Tuple{String}, false),
+    (LK.DeRefLink1, Tuple{String}, false), (LK._ascii_lower, Tuple{Vector{UInt8}}, false),
+    (LK._ascii_lower, Tuple{String}, false), (LK.RenameFile, Tuple{String, String}, false),
+    (LK._umask, Tuple{Int}, false), (LK._rmdir, Tuple{String}, false),
+    (LK._mkdir, Tuple{String, Int}, false), (LK.PrologPath, Tuple{String}, false),
+    (LK.OsPath, Tuple{String}, false), (LK.IsAbsolutePath, Tuple{String}, false),
+    (LK._cfn_at, Tuple{Vector{UInt8}, Int}, false),
+    (LK.canonicaliseFileName, Tuple{String}, false), (LK.utf8_path_lwr, Tuple{String}, false),
+    (LK.BaseName, Tuple{String}, false), (LK.DirName, Tuple{String}, false),
+    (LK._glob_codes, Tuple{String}, false), (LK._glob_at, Tuple{Vector{Int}, Int}, false),
+    (LK._glob_lower, Tuple{Int}, false),
+    (LK.match_pattern, Tuple{Vector{Int}, Int, Vector{Int}, Int, Int}, false),
+    (LK.matchPattern, Tuple{Vector{Int}, Vector{Int}, Int}, false),
+    (LK._glob_isspecial, Tuple{UInt8}, false),
+    (LK.un_escape, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.utf8_exists_file, Tuple{String}, false),
+    (LK.utf8casecmp, Tuple{String, String}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_glob)}, false)
+)
+
 const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_per_type(_M1)...,
     _manifest_per_type(_M2)...,
@@ -2896,6 +2962,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Ssetenc, Tuple{LK.IOSTREAM, LK.IOENC}, false),
     # P1: the limb count of a big integer (type-independent)
     (LK._limbs64, Tuple{BigInt}, false),
+    _manifest_lb2b(_M1)...,
+    _manifest_lb2b(_M2)...,
+    _manifest_lb2b(_M3)...,
+    _MANIFEST_LB2B_FREE...,
     # term-type-independent parts of the index and its head compiler
     (LK._le_byte, Tuple{NTuple{4, UInt64}, Int}, true),
     (LK._le_byte, Tuple{Vector{UInt8}, Int}, true),
