@@ -45,8 +45,8 @@ Upstream: swipl-devel cbf4e1896275 src/os/pl-prologflag.c (extract in the writer
        Gate: ~30 min cold compile, alloc pins x3.
 5. [x] DONE (coder 3, dcd07b0, BEFORE group 4): pl-comp.jl 9 sites, pl-wam.jl 4, pl-write.jl 2 now `truePrologFlag(ld, PLFLAG_*)`; `determinism_error_flag(ld)` (pl-prologflag.jl, returns :error/:warning/:silent, :error without ld.GD) in det_goal_error/determinism_error; print/2 reads the table's print_write_options (PL_current_prolog_flag :term) and takes `_print_write_options` where the table has none; `_prolog_flag_bit` and its manifest line deleted; 8 test files migrated (test_det_swipl sets the table entry `.a`). Migration of the ~25 sites above to `truePrologFlag(ld, PLFLAG_*)`, `_prolog_flag_bit` deleted, determinism_error and print_write_options read the
        table; tests that set the fields call `setPrologFlagMask!`/`clearPrologFlagMask!` (helpers, new).
-6. [ ] Rows test/core_lang/test_set_flag_swipl.jl (`_SF`/`_sf_`), evidence/F1B/ generator + .out via swipl 10.1.19.
-7. [ ] tools/mutants/F1B.py (>= 14), bench rows (H3), docs/architecture.md block, static manifest entries (LAST, own commits).
+6. [x] DONE (coder 3, a12adc9; refused list c5f0c73). Rows test/core_lang/test_set_flag_swipl.jl (`_SF`/`_sf_`), evidence/F1B/ generator + .out via swipl 10.1.19.
+7. [x] DONE (coder 4: F1B.py 4a1822b, anchors 6d205c4, bench 1cb839f, docs 20b1e01, manifest = the LAST commit). tools/mutants/F1B.py (>= 14), bench rows (H3), docs/architecture.md block, static manifest entries (LAST, own commits).
 F2 (pl-prologflag.c 1862-1960) afterwards as its own group: evidence/F2/.
 
 ## State at hand-back (writer 1, ran out of context after group 1)
@@ -117,6 +117,38 @@ F2 (pl-prologflag.c 1862-1960) afterwards as its own group: evidence/F2/.
   (4) uniform D4 refusal of incomparable; PL_get_int64/PL_get_int64_ex appended in pl-fli.jl/pl-error.jl (merge-conflict risk); swipl crash case: private register Q15 only.
 - UNVERIFIED (nothing compiled or run): the whole test file (generated Julia; `_sf_query` runs a query and lets NotPortedError propagate), the migrated tests, `ld.GD` in
   determinism_error_flag.
+
+## State at hand-back (coder 4: groups 6 fix, 7, bench, docs, manifest; everything written, NOTHING compiled or run)
+- Commits: c5f0c73 `_SF_REFUSED` (swipl 10.1.19 probed: `file_name_case_handling` is READ-ONLY, permission_error(modify,flag,...) in swipl and in the
+  kernel (FF_READONLY at pl-prologflag.jl:1646) so it has no refusal row; var_tag dict, unicode_atoms error, table_monotonic lazy are values swipl accepts; the kernel
+  defines no built-in oneof, so no value is rejected before the refusal; 22 flags left; sf_rows.out unchanged), 38d2a4d protected_predicate comment,
+  4a1822b tools/mutants/F1B.py (23 mutants, every `old` once, validated by a throwaway runpy checker), 1290268 boot/init.jl:206 (see finding 9), 6d205c4 anchors
+  of MOD3a-D2, SSU1-D2, V9f MD12/MD14, 1cb839f bench row "divide x1000, body" (tools/bench.jl, DV_PROLOG), 20b1e01 docs/architecture.md, then the manifest commit.
+- Finding 9 (FIX applied, 1290268): boot/init.jl:206 still read the deleted field `ld.prolog_flag_optimise` (group 5 migrated src/ only). Now `truePrologFlag(ld, PLFLAG_OPTIMISE)`.
+  A scoped grep of src/*.jl, src/*/*.jl, boot/*.jl, test/*.jl, test/*/*.jl, tools/*.jl for the six deleted field names is clean afterwards.
+- Finding 10: anchors that do not occur in the current source for reasons OTHER than the deleted fields (older drift; not touched, the audit decides): MOD3a-S1, MOD3a-S2,
+  SSU1-R4, SSU1-S1, V9f MK4, MK16, MK22, MD7, MD21. D1.py is not in tools/mutants at this base (only D1c.py).
+- F1B.py header lists what is left out: pl-write.jl:2223/2292 (no test row clears the character_escapes_unicode bit), pl-comp.jl:2409 (compileArith refusal under optimise),
+  `if f.index != 0`, setStreamTypeCheck/setWriteAttributes field writes (rows read the table, not the field). Equivalents: none; D1-96 stays equivalent (header text).
+- UNVERIFIED: the Julia text of the bench row (`_nrf(:is, ...)`, `Symbol("/")`), every manifest entry's argument types (control_t{T} for the pl_*_va entries, `LK.oneof_t{T}`
+  for the Union{Nothing, oneof_t{T}} arguments; `Int` for term_t), whether `PseudoFlag` and the implicit constructors need entries, every mutant's `new` compiles.
+- Finding 7 (audit): D-0280 item 5 closed in writing (header of F1B.py): D1-96 equivalent, D1-95 killed by sf80-sf86. Findings 1-8 above stand for the audit.
+
+## GATE ORDER (F1b)
+1. Merge order: rebase wip/f1b onto the stack; src/pl-global.jl is a HAND MERGE (F1b DELETES six fields from `PL_local_data` and its constructor; G1, D2, O1B append
+   at the end); docs/architecture.md and test/static_analysis_manifest.jl take appended blocks from each writer (manifest: F1b's block sits before "R2 S1", the others at the end).
+2. fmt: `tools/warm.sh send` of the committed files (fmt only sees the HEAD diff): src/os/pl-prologflag.jl, src/pl-global.jl, src/pl-comp.jl, src/pl-wam.jl, src/pl-write.jl,
+   src/pl-fli.jl, src/pl-error.jl, boot/init.jl, tools/bench.jl, the migrated tests, test/core_lang/test_set_flag_swipl.jl, test/static_analysis_manifest.jl.
+   After fmt re-fit the F1B.py anchors that were re-flowed (the checker: old once, new != old).
+3. inventory, then `tools/warm.sh check`.
+4. Rows on all three term types: test_set_flag_swipl.jl and the 8 migrated files (test_body_code_swipl, test_portable_smallint_swipl, test_det_swipl, test_firstvar_swipl,
+   test_head_unify_swipl, test_rules_swipl, test_exceptions_swipl, test_prolog_flag_swipl; test_write_cells.jl if it writes a removed field).
+5. test/test_type_discipline.jl.
+6. `tools/pkgtest_way.sh <file>` ONE at a time (~3 GB peak) for test_set_flag_swipl.jl and each of the 8 migrated files.
+7. Alloc pins x3 (Tier 1: pl-global.jl and the run loop changed).
+8. Push `mutants/F1B` at the WIP SHA once the list exists (it does); the older lists' batteries on the migrated sites: MOD3a, SSU1, V9f, D1c, D1 (the batteries run at the gate).
+9. branch-gate; the term grep (D-0164, over diff and message); H3 bench with the DISPATCHER'S GO only (interleaved, allocations decide; row "divide x1000, body" plus
+   nreverse/qsort/derive for the LCO/optimise reads); then `gate/<fresh name>` and `mutants/F1B` at the SAME SHA.
 
 ## Estimate: 10-13 commits. Nothing compiled, nothing run.
 ## Gate order (end of handoff): fmt via warm.sh send of the committed files, inventory, check, rows x3 term types, test_type_discipline.jl,
