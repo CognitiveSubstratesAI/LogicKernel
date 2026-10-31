@@ -690,7 +690,7 @@ end
 
 # PORT: pl-modul.c atomToImportStrength
 "The procedure flag of the import strength `a`: `weak` is `PROC_WEAK`, `strong` 0, else -1 (pl-modul.c)."
-function atomToImportStrength(a::T)::Int where {T}
+function atomToImportStrength(::Type{T}, a)::Int where {T}
     sym_key(a) == sym_key(mk_sym(T, :weak)) && return Int(PROC_WEAK)
     sym_key(a) == sym_key(mk_sym(T, :strong)) && return 0
     return -1
@@ -714,7 +714,7 @@ function import_(
     if strength != 0
         a = PL_get_atom_ex(ld, strength)
         a === nothing && return false
-        pf = atomToImportStrength(a)
+        pf = atomToImportStrength(T, a)
         pf < 0 && return PL_error(ld, ERR_DOMAIN, mk_sym(T, :import_type), strength)
         pflags = UInt32(pf)
     end

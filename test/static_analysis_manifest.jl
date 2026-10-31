@@ -711,7 +711,7 @@ function _manifest_index(T)
         (LK.export_pi, Tuple{GD, LD, Int, Int, Int}, false),
         (LK.fixExportModule, Tuple{MOD, D, D}, false),
         (LK.fixExport, Tuple{GD, D, D}, false),
-        (LK.atomToImportStrength, Tuple{T}, false),
+        (LK.atomToImportStrength, Tuple{Type{T}, T}, false),
         (LK.import_, Tuple{GD, LD, Int, Int}, false),
         (
             LK.find_modules_with_defs,
