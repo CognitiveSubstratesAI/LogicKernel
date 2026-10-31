@@ -211,8 +211,9 @@ function SameFile(ld::PL_local_data, f1::String, f2::String)::Bool
 end
 
 # ORIGINAL (LB2b): the case folding of `strcasecmp(3)` in the C locale: ASCII letters only.
-_ascii_lower(s::String)::Vector{UInt8} =
-    [(UInt8('A') <= c <= UInt8('Z')) ? c + 0x20 : c for c in codeunits(s)]
+_ascii_lower(s::AbstractVector{UInt8})::Vector{UInt8} =
+    [(UInt8('A') <= c <= UInt8('Z')) ? c + 0x20 : c for c in s]
+_ascii_lower(s::String)::Vector{UInt8} = _ascii_lower(codeunits(s))
 
 # PORT: pl-files.c get_file_name
 # DIVERGES: the name is a `String` (UTF-8, which is `REP_FN` in a UTF-8 locale) or `nothing` where upstream
@@ -562,10 +563,256 @@ function pl_delete_file1_va(
     return rc ? FTRUE : FFALSE
 end
 
+# ORIGINAL (LB2b): `rmdir(2)`.
+_rmdir(path::String)::Int =
+    ccall((:rmdir, LIBC), Cint, (Cstring,), path) == 0 ? 0 : Int(Base.Libc.errno())
+
+# ORIGINAL (LB2b): `mkdir(2)`.
+_mkdir(path::String, mode::Integer)::Int =
+    ccall((:mkdir, LIBC), Cint, (Cstring, Cuint), path, mode % Cuint) == 0 ? 0 :
+    Int(Base.Libc.errno())
+
+# PORT: pl-files.c delete_directory as pl_delete_directory1_va
+# (PRED_IMPL("delete_directory", 1, delete_directory, 0))
+"`delete_directory(+Dir)`: remove an empty directory (pl-files.c)."
+function pl_delete_directory1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    n = PL_get_file_name(ld, A1, 0)
+    n === nothing && return FFALSE
+    errno = _rmdir(n)
+    errno == 0 && return FTRUE
+    rc = PL_error(
+        ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :delete), mk_sym(T, :directory), A1,
+        errno
+    )
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c make_directory as pl_make_directory1_va
+# (PRED_IMPL("make_directory", 1, make_directory, 0))
+"The directory-creating predicate of `mkdir(2)`, mode 0777 (pl-files.c)."
+function pl_make_directory1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    n = PL_get_file_name(ld, A1, 0)
+    n === nothing && return FFALSE
+    errno = _mkdir(n, 0o777)
+    errno == 0 && return FTRUE
+    rc = PL_error(
+        ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :create), mk_sym(T, :directory), A1,
+        errno
+    )
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c rename_file as pl_rename_file2_va
+# (PRED_IMPL("rename_file", 2, rename_file, 0))
+"`rename_file(+Old, +New)`: rename a file; with `file_errors` `fail` a failure just fails (pl-files.c)."
+function pl_rename_file2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    old, new = PL__t0, PL__t0 + 1
+    o = PL_get_file_name(ld, old, 0)
+    o === nothing && return FFALSE
+    n = PL_get_file_name(ld, new, 0)
+    n === nothing && return FFALSE
+    if SameFile(ld, o, n)
+        if truePrologFlag(ld, PLFLAG_FILEERRORS)
+            PL_error(
+                ld, "rename_file", 2, "same file", ERR_PERMISSION, mk_sym(T, :rename),
+                mk_sym(T, :file), old
+            )
+        end
+        return FFALSE
+    end
+    errno = RenameFile(o, n)
+    errno == 0 && return FTRUE
+    if truePrologFlag(ld, PLFLAG_FILEERRORS)
+        rc = PL_error(
+            ld, "rename_file", 2, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :rename),
+            mk_sym(T, :file), old, errno
+        )
+        return rc ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
+# PORT: pl-files.c absolute_file_name as pl_absolute_file_name2_va
+# (PRED_IMPL("$absolute_file_name", 2, absolute_file_name, 0))
+"`'\$absolute_file_name'(+Name, -Abs)`: the canonical absolute name (pl-files.c)."
+function pl_absolute_file_name2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    n = PL_get_file_name(ld, PL__t0, 0)
+    n === nothing && return FFALSE
+    n = AbsoluteFile(ld, n)
+    n === nothing && return FFALSE
+    return _unify_atom_chars(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c cwd as pl_cwd1_va
+# (PRED_IMPL("$cwd", 1, cwd, 0))
+"`'\$cwd'(-Dir)`: the working directory, ending in `/` (pl-files.c)."
+function pl_cwd1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    wd = PL_cwd(ld)
+    wd === nothing && return FFALSE
+    return _unify_atom_chars(ld, PL__t0, wd) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c chdir as pl_chdir1_va
+# (PRED_IMPL("$chdir", 1, chdir, 0))
+# DIVERGES: when `ChDir` could not make the name absolute (-1) its error is the one raised and the predicate
+# fails; upstream raises `ERR_FILE_OPERATION` over the stale `errno`.
+"`'\$chdir'(+Dir)`: change the working directory (pl-files.c)."
+function pl_chdir1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    n = PL_get_file_name(ld, A1, 0)
+    n === nothing && return FFALSE
+    errno = ChDir(ld, n)
+    errno == 0 && return FTRUE
+    if errno > 0 && truePrologFlag(ld, PLFLAG_FILEERRORS)
+        rc = PL_error(
+            ld, "", 0, "", ERR_FILE_OPERATION, mk_sym(T, :chdir), mk_sym(T, :directory), A1, errno
+        )
+        return rc ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
+# PORT: pl-files.c has_extension
+"Does the file name `name` end in the extension `ext` (a leading `.` of `ext` already removed) (pl-files.c)."
+function has_extension(ld::PL_local_data, name::String, ext::String)::Bool
+    isempty(ext) && return true
+    b = codeunits(name)
+    n = length(b)
+    at(i) = i < n ? b[i + 1] : 0x00                    # C reads the NUL at `name + strlen(name)`
+    s = n
+    while at(s) != UInt8('.') && at(s) != UInt8('/') && s > 0
+        s -= 1
+    end
+    if at(s) == UInt8('.') && s > 0 && at(s - 1) != UInt8('/')
+        e = codeunits(ext)
+        e = (!isempty(e) && e[1] == UInt8('.')) ? e[2:end] : e
+        rest = b[(s + 2):n]
+        truePrologFlag(ld, PLFLAG_FILE_CASE) && return rest == e
+        return _ascii_lower(rest) == _ascii_lower(e)
+    end
+    return false
+end
+
+# PORT: pl-files.c file_name_extension as pl_file_name_extension3_va
+# (PRED_IMPL("file_name_extension", 3, file_name_extension, 0), name_too_long)
+# DIVERGES: the C `char *` scans are 0-based byte offsets into the name's UTF-8 bytes.
+"`file_name_extension(?Base, ?Ext, ?Full)`: split or join a file name and its extension (pl-files.c)."
+function pl_file_name_extension3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    base, ext, full = PL__t0, PL__t0 + 1, PL__t0 + 2
+    if !PL_is_variable(ld, full)
+        ftxt = PL_get_text(ld, full, CVT_ALL | CVT_EXCEPTION)
+        if ftxt !== nothing
+            f = codeunits(text_string(ftxt))
+            n = length(f)
+            at(i) = i < n ? f[i + 1] : 0x00
+            s = n                                       # ?base, ?ext, +full
+            while at(s) != UInt8('.') && at(s) != UInt8('/') && s > 0
+                s -= 1
+            end
+            if at(s) == UInt8('.')
+                after = f[(s + 2):n]
+                etxt = PL_get_text(ld, ext, CVT_ALL)
+                if etxt !== nothing
+                    e = codeunits(text_string(etxt))
+                    (!isempty(e) && e[1] == UInt8('.')) && (e = e[2:end])
+                    same =
+                        truePrologFlag(ld, PLFLAG_FILE_CASE) ? after == e :
+                        _ascii_lower(after) == _ascii_lower(e)
+                    same || return FFALSE
+                else
+                    _unify_atom_chars(ld, ext, String(copy(after))) || return FFALSE
+                end
+                return _unify_atom_chars(ld, base, String(f[1:s])) ? FTRUE : FFALSE
+            end
+            if _unify_atom_chars(ld, ext, "") && PL_unify(ld, full, base)
+                return FTRUE
+            end
+        end
+        return FFALSE
+    end
+    btxt = PL_get_text(ld, base, CVT_ALL | CVT_EXCEPTION)
+    btxt === nothing && return FFALSE
+    etxt = PL_get_text(ld, ext, CVT_ALL | CVT_EXCEPTION)
+    etxt === nothing && return FFALSE
+    b = text_string(btxt)
+    e = text_string(etxt)
+    startswith(e, '.') && (e = e[2:end])                # +Base, +Extension, -Full
+    (has_extension(ld, b, e) || isempty(e)) && return PL_unify(ld, base, full) ? FTRUE : FFALSE
+    if ncodeunits(b) + 1 + ncodeunits(e) + 1 > PATH_MAX
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))      # name_too_long()
+        return FFALSE
+    end
+    return _unify_atom_chars(ld, full, b * "." * e) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c prolog_to_os_filename as pl_prolog_to_os_filename2_va
+# (PRED_IMPL("prolog_to_os_filename", 2, prolog_to_os_filename, 0))
+# DIVERGES: the non-`O_XOS` branch, the only one on Unix: the two names are one.
+"`prolog_to_os_filename(?Prolog, ?OS)`: the identity on Unix (pl-files.c)."
+function pl_prolog_to_os_filename2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return PL_unify(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c mark_executable as pl_mark_executable1_va
+# (PRED_IMPL("$mark_executable", 1, mark_executable, 0))
+"`'\$mark_executable'(+File)`: set the execute bits the process mask allows (pl-files.c)."
+function pl_mark_executable1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    name = PL_get_file_name(ld, PL__t0, 0)
+    if name === nothing
+        PL_error(ld, "", 0, "", ERR_DOMAIN, mk_sym(T, :source_sink), PL__t0)
+        return FFALSE
+    end
+    return MarkExecutable(ld, name) ? FTRUE : FFALSE
+end
+
+# PORT: pl-files.c my_file as pl_my_file1_va
+# (PRED_IMPL("$my_file", 1, my_file, 0))
+# DIVERGES: `perror(3)` of a failed `stat(2)` writes `Name: strerror` to the standard error stream.
+"""
+    '\$my_file'(+Path)
+
+True if Path exists and is owned by the user of the process (pl-files.c).
+"""
+function pl_my_file1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    n = PL_get_file_name(ld, PL__t0, 0)
+    (n === nothing || file_name_is_iri(n) != 0) && return FFALSE
+    st = statfunc(OsPath(n))
+    if st isa Int
+        println(stderr, OsPath(n), ": ", Base.Libc.strerror(-st))      # perror(tmp)
+        return FFALSE
+    end
+    st.uid != ccall((:getuid, LIBC), Cuint, ()) && return FFALSE
+    return FTRUE
+end
+
 # PORT: pl-files.c BeginPredDefs as PL_predicates_from_files
-# DIVERGES: the entries ported so far (upstream's table has twenty-three; the others follow in groups G7 and G8).
+# DIVERGES: the entries ported so far (upstream's table has twenty-three; the two tmp_file entries follow in group G8).
 "pl-files.c's registration table (`BeginPredDefs(files)`): the ported entries."
 const PL_predicates_from_files = (
+    PL_extension("\$cwd", 1, pl_cwd1_va, PL_FA_VARARGS),
+    PL_extension("\$chdir", 1, pl_chdir1_va, PL_FA_VARARGS),
     PL_extension("access_file", 2, pl_access_file2_va, PL_FA_VARARGS),
     PL_extension("time_file", 2, pl_time_file2_va, PL_FA_VARARGS),
     PL_extension("size_file", 2, pl_size_file2_va, PL_FA_VARARGS),
@@ -573,8 +820,16 @@ const PL_predicates_from_files = (
     PL_extension("exists_file", 1, pl_exists_file1_va, PL_FA_VARARGS),
     PL_extension("exists_directory", 1, pl_exists_directory1_va, PL_FA_VARARGS),
     PL_extension("delete_file", 1, pl_delete_file1_va, PL_FA_VARARGS),
+    PL_extension("delete_directory", 1, pl_delete_directory1_va, PL_FA_VARARGS),
+    PL_extension("make_directory", 1, pl_make_directory1_va, PL_FA_VARARGS),
     PL_extension("same_file", 2, pl_same_file2_va, PL_FA_VARARGS),
+    PL_extension("rename_file", 2, pl_rename_file2_va, PL_FA_VARARGS),
     PL_extension("is_absolute_file_name", 1, pl_is_absolute_file_name1_va, PL_FA_VARARGS),
     PL_extension("file_base_name", 2, pl_file_base_name2_va, PL_FA_VARARGS),
     PL_extension("file_directory_name", 2, pl_file_directory_name2_va, PL_FA_VARARGS),
+    PL_extension("file_name_extension", 3, pl_file_name_extension3_va, PL_FA_VARARGS),
+    PL_extension("prolog_to_os_filename", 2, pl_prolog_to_os_filename2_va, PL_FA_VARARGS),
+    PL_extension("\$mark_executable", 1, pl_mark_executable1_va, PL_FA_VARARGS),
+    PL_extension("\$absolute_file_name", 2, pl_absolute_file_name2_va, PL_FA_VARARGS),
+    PL_extension("\$my_file", 1, pl_my_file1_va, PL_FA_VARARGS),
 )
