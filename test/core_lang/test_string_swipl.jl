@@ -83,7 +83,9 @@ function _st_kernel_lines(path::String, names::Vector{String})::Vector{String}
                 push!(
                     sols,
                     try
-                        _st_enc(mk_expr(_ST, _ST[_st_sym(name), lk_answers(ld, (a:a)...)...]))
+                        _st_enc(
+                            mk_expr(_ST, _ST[_st_sym(name), lk_answers(ld, (a:a)...)...])
+                        )
                     catch e
                         "export-error " * first(sprint(showerror, e), 80)
                     end
@@ -782,7 +784,8 @@ const _ST_PINNED2 = [
     "su091 c[115,117,48,57,49]/1(c[45]/2(i44,s[97]))"
 ]
 
-_st_names(prog::String) = String[m.captures[1] for m in eachmatch(r"^((?:st|su)\d+)\(R\) :-"m, prog)]
+_st_names(prog::String) =
+    String[m.captures[1] for m in eachmatch(r"^((?:st|su)\d+)\(R\) :-"m, prog)]
 function _st_file(prog::String)::String
     f = joinpath(mktempdir(), "p.pl")
     write(f, prog)
@@ -810,10 +813,14 @@ end
     @test startswith(P[138], "st137 ") && count("c[45]/2(c[45]/2(c[45]/2(", P[138]) == 10
     # the upstream quirk: Before and After the same variable, the last candidate of the search is returned without its unification
     # being checked; swipl answers X = 2 for a 4-character text and a 2-character sub text, where no X fits (2 + 2 + 2 != 4)
-    @test occursin("st155(R) :- findall(X, sub_string(\"abab\", X, 2, X, \"ab\"), R).", _ST_PROGRAM)
+    @test occursin(
+        "st155(R) :- findall(X, sub_string(\"abab\", X, 2, X, \"ab\"), R).", _ST_PROGRAM
+    )
     @test P[156] == _st_line("st155", "c[91,124,93]/2(i2,nil)")
     # the same variable twice where it does fit: sub_string("abc", X, 1, X, S) is X = 1, S = "b"
-    @test occursin("st159(R) :- findall(X-S, sub_string(\"abc\", X, 1, X, S), R).", _ST_PROGRAM)
+    @test occursin(
+        "st159(R) :- findall(X-S, sub_string(\"abc\", X, 1, X, S), R).", _ST_PROGRAM
+    )
     @test occursin("(i1,s[98])", P[160])
 end
 
@@ -832,13 +839,20 @@ end
     @test count(l -> occursin(_st_c("syntax_error", 1), l), P) >= 2
     @test count(l -> occursin(_st_c("existence_error", 2), l), P) >= 2
     # the bytes of "a\u00E9\u20AC" in UTF-16 little endian (su010), and "\u20AC" decoded from its UTF-8 (su029)
-    @test occursin("su010(R) :- string_bytes(\"a\\u00E9\\u20AC\", R, utf16le).", _ST_PROGRAM2)
+    @test occursin(
+        "su010(R) :- string_bytes(\"a\\u00E9\\u20AC\", R, utf16le).", _ST_PROGRAM2
+    )
     @test P[11] == _st_line("su010", _st_list([97, 0, 233, 0, 172, 32]))
     @test occursin("su029(R) :- string_bytes(R, [0xe2, 0x82, 0xac], utf8).", _ST_PROGRAM2)
     @test P[30] == _st_line("su029", "s[8364]")
     # a UTF-16 surrogate pair: swipl 10.1.19 raises representation_error(code_point) (pl-text.c steps one unit in the wide branch)
-    @test occursin("su041(R) :- catch(string_bytes(_, [0xd8, 0, 0xdc, 0], utf16be)", _ST_PROGRAM2)
-    @test occursin("c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[99,111,100,101,95,112,111,105,110,116])", P[42])
+    @test occursin(
+        "su041(R) :- catch(string_bytes(_, [0xd8, 0, 0xdc, 0], utf16be)", _ST_PROGRAM2
+    )
+    @test occursin(
+        "c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[99,111,100,101,95,112,111,105,110,116])",
+        P[42]
+    )
     # read_string/5 on "a,b,c": three delimiters 44 44 -1 and the strings a b c
     @test occursin("su074(R) :- open_string(\"a,b,c\", S)", _ST_PROGRAM2)
     @test occursin("i44,s[97]", P[75]) && occursin("i-1,s[99]", P[75])

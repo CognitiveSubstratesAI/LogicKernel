@@ -249,7 +249,9 @@ function sub_text(
             end
             if b != SIZE_NOT_SET                            # before given: test
                 if PL_cmp_text(ta, b, ts, 0, ls) == CMP_EQUAL
-                    rc = PL_unify_integer(ld, len, ls) && PL_unify_integer(ld, after, la - ls - b)
+                    rc =
+                        PL_unify_integer(ld, len, ls) &&
+                        PL_unify_integer(ld, after, la - ls - b)
                     return rc ? FTRUE : FFALSE
                 end
                 return FFALSE
@@ -258,7 +260,9 @@ function sub_text(
                 if la >= a + ls
                     off = la - a - ls
                     if PL_cmp_text(ta, off, ts, 0, ls) == CMP_EQUAL
-                        rc = PL_unify_integer(ld, len, ls) && PL_unify_integer(ld, before, off)
+                        rc =
+                            PL_unify_integer(ld, len, ls) &&
+                            PL_unify_integer(ld, before, off)
                         return rc ? FTRUE : FFALSE
                     end
                 end
@@ -272,7 +276,7 @@ function sub_text(
             if l != SIZE_NOT_SET                            # length given
                 if b + l <= la                              # deterministic fit
                     if PL_unify_text_range(ld, sub, ta, b, l, type) &&
-                       PL_unify_integer(ld, after, la - b - l)
+                        PL_unify_integer(ld, after, la - b - l)
                         return FTRUE
                     end
                 end
@@ -282,7 +286,7 @@ function sub_text(
                 if la >= a + b
                     l2 = la - a - b
                     if PL_unify_text_range(ld, sub, ta, b, l2, type) &&
-                       PL_unify_integer(ld, len, l2)
+                        PL_unify_integer(ld, len, l2)
                         return FTRUE
                     end
                 end
@@ -297,7 +301,7 @@ function sub_text(
                 if la >= a + l
                     b2 = la - a - l
                     if PL_unify_text_range(ld, sub, ta, b2, l, type) &&
-                       PL_unify_integer(ld, before, b2)
+                        PL_unify_integer(ld, before, b2)
                         return FTRUE
                     end
                 end
@@ -347,9 +351,10 @@ function sub_text(
             outcome = 2
             while n1 + ls <= la
                 if PL_cmp_text(ta, n1, ts, 0, ls) == 0
-                    match = PL_unify_integer(ld, before, n1) &&
-                            PL_unify_integer(ld, len, ls) &&
-                            PL_unify_integer(ld, after, la - ls - n1)
+                    match =
+                        PL_unify_integer(ld, before, n1) &&
+                        PL_unify_integer(ld, len, ls) &&
+                        PL_unify_integer(ld, after, la - ls - n1)
                     n1 += 1
                     outcome = n1 + ls > la ? 1 : 0
                     break
@@ -359,34 +364,38 @@ function sub_text(
         elseif typ == SUB_SPLIT_TAIL                        # before given, rest unbound
             l = n1
             n1 += 1
-            match = PL_unify_text_range(ld, sub, ta, b, l, type) &&
-                    PL_unify_integer(ld, len, l) &&
-                    PL_unify_integer(ld, after, la - b - l)
+            match =
+                PL_unify_text_range(ld, sub, ta, b, l, type) &&
+                PL_unify_integer(ld, len, l) &&
+                PL_unify_integer(ld, after, la - b - l)
             outcome = b + l < la ? 0 : (match ? 1 : 2)      # out:
         elseif typ == SUB_SPLIT_LEN
             b = n1
             n1 += 1
-            match = PL_unify_text_range(ld, sub, ta, b, l, type) &&
-                    PL_unify_integer(ld, before, b) &&
-                    PL_unify_integer(ld, after, la - b - l)
+            match =
+                PL_unify_text_range(ld, sub, ta, b, l, type) &&
+                PL_unify_integer(ld, before, b) &&
+                PL_unify_integer(ld, after, la - b - l)
             outcome = b + l < la ? 0 : (match ? 1 : 2)      # out:
         elseif typ == SUB_SPLIT_HEAD
             b = n1
             n1 += 1
             l = la - a - b
-            match = PL_unify_text_range(ld, sub, ta, b, l, type) &&
-                    PL_unify_integer(ld, before, b) &&
-                    PL_unify_integer(ld, len, l)
+            match =
+                PL_unify_text_range(ld, sub, ta, b, l, type) &&
+                PL_unify_integer(ld, before, b) &&
+                PL_unify_integer(ld, len, l)
             outcome = l > 0 ? 0 : (match ? 1 : 2)
         else                                                # SUB_ENUM
             b = n1
             l = n2
             n2 += 1
             a = la - b - l
-            match = PL_unify_text_range(ld, sub, ta, b, l, type) &&
-                    PL_unify_integer(ld, before, b) &&
-                    PL_unify_integer(ld, len, l) &&
-                    PL_unify_integer(ld, after, a)
+            match =
+                PL_unify_text_range(ld, sub, ta, b, l, type) &&
+                PL_unify_integer(ld, before, b) &&
+                PL_unify_integer(ld, len, l) &&
+                PL_unify_integer(ld, after, a)
             outcome = 0
             if a == 0
                 if b == la
@@ -552,8 +561,8 @@ function pl_string_code3_va(
     u == -1 && return FFALSE
     if tchar == -1
         if u < t.length &&
-           PL_unify_integer(ld, A1, idx + 1) &&
-           PL_unify_integer(ld, A3, text_get_char(t, u))
+            PL_unify_integer(ld, A1, idx + 1) &&
+            PL_unify_integer(ld, A3, text_get_char(t, u))
             u += 1
             return u < t.length ? PL_retry(idx + 1) : FTRUE
         end
@@ -674,7 +683,7 @@ function pl_split_string4_va(
             if i == en
                 empty = PL_chars_t(UInt8[], 0, ENC_ISO_LATIN_1, true)
                 if !PL_unify_list_ex(ld, tail, head, tail) ||
-                   !PL_unify_text(ld, head, 0, empty, PL_STRING)
+                    !PL_unify_text(ld, head, 0, empty, PL_STRING)
                     return FFALSE
                 end
                 break
@@ -694,7 +703,7 @@ function pl_split_string4_va(
         end
 
         if !PL_unify_list_ex(ld, tail, head, tail) ||
-           !unify_text_between(ld, head, input, last, i, PL_STRING)
+            !unify_text_between(ld, head, input, last, i, PL_STRING)
             return FFALSE
         end
 
@@ -805,7 +814,8 @@ function PL_syntax_error(ld::PL_local_data{T}, msg::String, ::Nothing)::Bool whe
     formal = PL_new_term_ref(ld)
     loc = PL_new_term_ref(ld)
     PL_cons_functor(
-        ld, formal, _err_functor(ld, :syntax_error, 1), _err_atom(ld, mk_sym(T, Symbol(msg)))
+        ld, formal, _err_functor(ld, :syntax_error, 1),
+        _err_atom(ld, mk_sym(T, Symbol(msg)))
     )
     PL_cons_functor(ld, ex, _err_functor(ld, :error, 2), formal, loc)
     return PL_raise_exception(ld, ex)
@@ -814,7 +824,8 @@ end
 # PORT: pl-text.c text_error (the two UTF-16 codes)
 "Raise the error for the code `rc` of `utf16_to_text` or of `PL_canonicalise_text`; false (pl-text.c)."
 function string_bytes_text_error(ld::PL_local_data{T}, rc::Int)::Bool where {T}
-    rc == ERR_TEXT_ILLEGAL_UTF16 && return PL_syntax_error(ld, "illegal_utf16_sequence", nothing)
+    rc == ERR_TEXT_ILLEGAL_UTF16 &&
+        return PL_syntax_error(ld, "illegal_utf16_sequence", nothing)
     rc == ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE &&
         return PL_syntax_error(ld, "incomplete_multibyte_sequence", nothing)
     return text_error(ld, rc)
@@ -844,7 +855,9 @@ end
 # (a Julia vector: no buffers), the `length` is in bytes for UTF-8 and UTF-16, in characters for the others.
 # NOT PORTED: the `ENC_ANSI` source and target (the locale; `string_bytes/3` refuses it by name first).
 "Recode the canonical `text` to `encoding` in place; false after the error (pl-text.c)."
-function PL_text_recode(ld::PL_local_data{T}, text::PL_chars_t, encoding::IOENC)::Bool where {T}
+function PL_text_recode(
+    ld::PL_local_data{T}, text::PL_chars_t, encoding::IOENC
+)::Bool where {T}
     text.encoding === encoding && return true
     if encoding === ENC_UTF8
         if text.encoding === ENC_ISO_LATIN_1
@@ -895,7 +908,8 @@ function PL_text_recode(ld::PL_local_data{T}, text::PL_chars_t, encoding::IOENC)
     end
     throw(
         NotPortedError{Nothing}(
-            nothing, "PL_text_recode to $encoding", "the locale (ENC_ANSI) is refused by name"
+            nothing, "PL_text_recode to $encoding",
+            "the locale (ENC_ANSI) is refused by name"
         )
     )
 end
@@ -951,8 +965,11 @@ function pl_string_bytes3_va(
         return text_representation_error(ld, ENC_ISO_LATIN_1) ? FTRUE : FFALSE
     len = bytes.length
     if len % unit_length(enc) != 0
-        return PL_syntax_error(ld, "incomplete_multibyte_sequence", nothing) ? FTRUE :
-               FFALSE
+        return if PL_syntax_error(ld, "incomplete_multibyte_sequence", nothing)
+            FTRUE
+        else
+            FFALSE
+        end
     end
 
     txt = PL_chars_t(bytes.text[1:len], len ÷ unit_length(enc), enc, false)
@@ -1008,7 +1025,7 @@ function pl_read_string5_va(
     sep = PL_get_text(ld, A2, flags)
     pad = sep === nothing ? nothing : PL_get_text(ld, A3, flags)
     if sep !== nothing && pad !== nothing &&
-       PL_canonicalise_text_ex(ld, sep) && PL_canonicalise_text_ex(ld, pad)
+        PL_canonicalise_text_ex(ld, sep) && PL_canonicalise_text_ex(ld, pad)
         tmpbuf = UInt8[]
         chr = Sgetcode(s)
         while chr != EOF && text_chr(pad, chr) != -1
@@ -1075,8 +1092,9 @@ function pl_read_string3_va(
 
         if !failed
             str = PL_chars_t(tmpbuf, length(String(copy(tmpbuf))), ENC_UTF8, false)
-            rc = PL_unify_text(ld, A3, 0, str, PL_STRING) &&
-                 (!vlen || PL_unify_int64(ld, A2, count))
+            rc =
+                PL_unify_text(ld, A3, 0, str, PL_STRING) &&
+                (!vlen || PL_unify_int64(ld, A2, count))
         end
     end
 
