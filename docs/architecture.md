@@ -6113,6 +6113,30 @@ Tests: test/core_lang/test_style_check_swipl.jl (20 rows against swipl 10.1.19, 
 PATH), mutants tools/mutants/Q10.py (8). Left to others: the dict predicates outside the six that boot/dicts.pl calls (`dict_pairs/3`,
 `get_dict/5`, `put_dict/4`, `del_dict/4`, `:<`/2, `>:<`/2, `'$get_dict_ex'/3`, `dict_same_keys/2`), SSU compilation, os/pl-files.c (LB2b).
 
+## F2 — `push_prolog_flag/2`, `pop_prolog_flag/1` (R2, pl-prologflag.c at the pin, written, not yet gated)
+
+What F2 ports (src/os/pl-prologflag.jl, section "push and pop"; stacked on F1b, which supplies `set_flag_value`,
+`new_prolog_flag`, `clean_prolog_flag`, `check_flag_write_access`, `deletePrologFlag!` and the `pushed` field):
+
+- **`copy_prolog_flag`, `put_saved_flag_value`, `ensure_local_flag`** (pl-prologflag.c:387, 1822, 1849). The copy has no
+  `pushed` chain, shares the `oneof` (its count raised) and duplicates the record of a term flag. `put_saved_flag_value`
+  puts the saved value back as an atom, integer, float or recorded term; `PL_put_float` (src/pl-fli.jl) is new for it.
+- **`push_prolog_flag/2`** (:1862): a flag that exists is checked for write access, refused if `FF_SHARED`
+  (`permission_error(push, prolog_flag, Flag)`), copied, then written through `set_flag_value`; on success the copy is
+  linked below the flag's `pushed`, on failure it is cleaned and the flag keeps its frames. A flag that does not exist
+  is created from the value (`FT_FROM_VALUE`) carrying one frame marked `FF_PUSH_ABSENT`.
+- **`pop_prolog_flag/1`** (:1929): `existence_error(pushed_flag, Flag)` without a frame; an absent-marked frame deletes the
+  flag (`deletePrologFlag!`: the table slot is emptied, not reused); any other frame is put back through
+  `put_saved_flag_value` and `set_flag_value`, then cleaned. The two predicates are the last entries of
+  `PL_predicates_from_prologflag`, as upstream's table.
+- **DIVERGES (design D1, the single-threaded build):** one table, so a push is process-wide where upstream's is per
+  thread (`ensure_local_flag` is `return f`, as upstream without `O_PLMT`); no `register_local_flag`. The refusals of F1b
+  stay: a push/pop of a flag whose side effect `set_flag_value` refuses by name ends in `NotPortedError`.
+- **Left out:** the thread-local table (`LD->prolog_flag.table`) and the `FF_LOCAL` copies, with the threads.
+
+Tests and mutants: evidence/F2/handoff.md (rows pf01-pf44 against swipl 10.1.19 in
+test/core_lang/test_push_flag_swipl.jl; tools/mutants/F2.py).
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
