@@ -80,3 +80,12 @@ message; the NDET instructions are untouched, but the `PL_local_data` struct cha
 4. Re-check the MOD6.py anchors (each `old` once in its file); add rows for I5 and C6 or record them; push `mutants/MOD6` at the WIP SHA.
 5. branch-gate; the term grep over diff and message; test_zero_exports and test_ball_cells x3 (struct change); then `gate/mod6` (local branch at the
    SHA; wip refs are refused) and `mutants/MOD6` at the SAME SHA. A row failing on the kernel: swipl's pin is truth, fix the source (D-0084).
+
+## Gate agent (Sonnet, wip/mod6-q on MOD5b head 3fc3fda, lane worktree lk-mod5a)
+DONE at d64aa17 (+ the fix below): fmt, inventory, `warm.sh check` PASS (437 s), rows x3 types, test_type_discipline 33/33, neighbours (module_swipl,
+module_path, between, current_op, prolog_flag, repeat, clause, retract), test_zero_exports 239 and test_ball_cells 87 x3 (alloc pins hold), I5/C6 rows (i21, c20),
+term grep over diff and messages clean. `check` left the changed rows file's Pkg.test-way run "over budget": run by hand (`tools/pkgtest_way.sh`).
+FOUND by it: the live-pin testset ("the pins are swipl's") asserted nothing without swipl on PATH (inert-testset guard). Fix: an unconditional
+`@test length(_MM_PINNED) == length(_MM_CASES) + 1` as in MOD5b. After it: rows 318/318, pkgtest_way passed.
+OWED: branch-gate, then `gate/mod6` + `mutants/MOD6` at the SAME SHA. mutants/MOD6 on the remote is still d64aa17 (ff to the new SHA).
+Note: MOD5b (3fc3fda) is not yet in origin/main at the time of writing.
