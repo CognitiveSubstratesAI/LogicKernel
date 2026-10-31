@@ -799,6 +799,100 @@ function pl_import2_va(
     return import_(_query_gd(ld), ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
 end
 
+# PORT: pl-modul.c MAX_TARGETS
+"The most predicate indicators `'\$def_modules'/2` takes (pl-modul.c)."
+const MAX_TARGETS = 10
+
+# PORT: pl-modul.c find_modules_with_defs
+# DIVERGES: the targets are `(name key, arity, PI term)` tuples (upstream's `defm_target`: `functor`, `pi`); `tmp` is the first
+# of the three term references; `mhead` and `plist` hold the list cell and the fresh variable `plist`, which lives in a
+# global cell here (`PL_put_variable`), so `PL_cons_functor` with it as an argument is upstream's `PL_unify_term(PL_TERM, plist)`
+# (a reference to the variable's cell, linkValG). A loop of default modules is a kernel error, as `sysError`.
+"Add to `mlist` the pair `Module-PIs` of each module among `m` and its default modules that defines one of `targets` (pl-modul.c)."
+function find_modules_with_defs(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T},
+    targets::Vector{Tuple{UInt64, Int, term_t}}, tmp::term_t, mlist::term_t, l::Int
+)::Bool where {T}
+    found = false
+    mhead = tmp + 0
+    plist = tmp + 1
+    phead = tmp + 2
+
+    l < 0 && error("OOPS loop in default modules???")
+
+    for (key, arity, pi) in targets
+        proc = isCurrentProcedure(key, arity, m)
+        if proc !== nothing && _impl_any_defined(proc.definition)
+            if !found
+                found = true
+                PL_put_variable(ld, plist)
+                (PL_unify_list(ld, mlist, mhead, mlist) &&
+                 PL_unify(ld, mhead, _message_term(ld, :-, _err_atom(ld, m.atom), plist))) ||
+                    return false                                # PL_unify_term(mhead, PL_FUNCTOR, FUNCTOR_minus2, …)
+            end
+
+            (PL_unify_list(ld, plist, phead, plist) && PL_unify(ld, phead, pi)) || return false
+        end
+    end
+    found && !PL_unify_nil(ld, plist) && return false
+
+    for c in m.supers
+        find_modules_with_defs(gd, ld, gd.modules[c], targets, tmp, mlist, l - 1) || return false
+    end
+
+    return true
+end
+
+# PORT: pl-modul.c def_modules as pl_def_modules2_va
+# (PRED_IMPL("\$def_modules", 2, def_modules, PL_FA_TRANSPARENT))
+# DIVERGES: the starting module is `gd.modules[ld.modules_source]` (`LD->modules.source`); the qualifier's atom is resolved with
+# `isCurrentModule` (a name of no module: `system` if it starts with `$`, else `user`, as upstream); the targets are a vector of
+# at most `MAX_TARGETS`, the term `pi` of each is the list element's own reference (`PL_copy_term_ref`).
+"`'\$def_modules'(:List, -Pairs)`: the `Module-PIs` pairs of the modules defining some predicate of `List` (pl-modul.c)."
+function pl_def_modules2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    m = gd.modules[ld.modules_source]
+    targets = Tuple{UInt64, Int, term_t}[]
+    ttail = PL_new_term_ref(ld)
+    tmp = PL_new_term_refs(ld, 3)
+    tail = PL_copy_term_ref(ld, A2)
+    thead = tmp + 0
+
+    ok, loc, mname = stripModuleName_cells(ld, -(A1 + 1))   # stripModuleName(valTermRef(A1), &mname)
+    ok || return FFALSE
+    _slot_link_loc!(ld, ttail + 1, loc)                     # *valTermRef(ttail) = linkValNoG(mp)
+
+    if mname != 0
+        nm = _atom_value(ld, mname)
+        m2 = isCurrentModule(gd.modules, nm)
+        if m2 !== nothing
+            m = m2
+        elseif sym_first_byte(nm) == 0x24                   # stringAtom(mname)[0] == '$'
+            m = MODULE_system(gd)
+        else
+            m = MODULE_user(gd)
+        end
+    end
+
+    while PL_get_list_ex(ld, ttail, thead, ttail)
+        if length(targets) >= MAX_TARGETS
+            PL_resource_error(ld, "target_predicates")
+            return FFALSE
+        end
+        name, arity, _ = get_functor(gd, ld, thead, 0, 0, GF_PROCEDURE | GP_NOT_QUALIFIED)
+        arity < 0 && return FFALSE
+        push!(targets, (sym_key(name), arity, PL_copy_term_ref(ld, thead)))
+    end
+    PL_get_nil_ex(ld, ttail) || return FFALSE
+
+    find_modules_with_defs(gd, ld, m, targets, tmp, tail, 100) || return FFALSE
+
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
 # ORIGINAL (MOD1; D-0149 MQ3): the kernel's own count of the bytes a module's clauses take, for
 # `'$module_property'(M, program_size(S))` — upstream's `m->code_size`, which the kernel does not keep
 # (assert and retract are the hot path, bench H1). A clause is its code words and its header (`sizeofClause`)
