@@ -364,3 +364,22 @@ end
         @test _gv_swipl_lines(f, names) == _GV_PINNED
     end
 end
+
+# H9 / D8: the hook before any program defines user:exception/3 — a database with ONLY the case predicate. user:exception/3 is
+# dynamic from the start (setBuiltinPredicateProperties!), so the call finds no clause and the answer is the existence error;
+# the pin is swipl's (evidence/G1/h9_rows.pl, h9_driver.pl, h9_rows.out).
+const _GV_H9_PINNED = [
+    "ok",
+    "t_h9 c[116,95,104,57]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[118,97,114,105,97,98,108,101],a[103,118,95,110,111,107,101,121,51])))"
+]
+
+@testset "the hook before a program: a plain existence_error (H9, D8)" begin
+    f = joinpath(mktempdir(), "h9.pl")
+    write(f, "t_h9(R) :- catch(nb_getval(gv_nokey3, _), error(SsuE, _), R = raised(SsuE)).\n")
+    kl, _, _ = _gv_kernel(f, ["t_h9"])
+    @test kl == _GV_H9_PINNED
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    swipl === nothing || @test _gv_swipl_lines(f, ["t_h9"]) == _GV_H9_PINNED
+    # not vacuous: the pin holds the existence_error with the variable's name
+    @test occursin("c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2", _GV_H9_PINNED[2])
+end
