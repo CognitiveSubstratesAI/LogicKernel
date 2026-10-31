@@ -105,3 +105,6 @@ t_r95(R) :- rset, catch((recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k
 t_r96(R) :- rset, catch((( between(1, 300, N), recordz(k, N), fail ; true ), findall(X, recorded(k, X), L), length(L, R)), error(RcE, _), R = raised(RcE)).
 t_r97(R) :- rset, catch((( between(1, 300, N), recorda(k, N), fail ; true ), once(recorded(k, R))), error(RcE, _), R = raised(RcE)).
 t_r98(R) :- rset, catch((recordz(k, 1), recordz(k, 2), ( recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y ; R = none )), error(RcE, _), R = raised(RcE)).
+t_r99(R) :- rset, catch((recordz(k, f(1)), recordz(k, g(2)), recordz(k, g(3)), recorded(k, f(_)), recorded(k, g(2), Rg), erase(Rg), findall(X, recorded(k, g(X)), R)), error(RcE, _), R = raised(RcE)).
+t_r100(R) :- rset, catch((recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K, current_key(K), R)), error(RcE, _), R = raised(RcE)).
+t_r101(R) :- rset, catch((recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K-T, recorded(K, T), R)), error(RcE, _), R = raised(RcE)).

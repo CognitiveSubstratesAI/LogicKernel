@@ -216,7 +216,11 @@ const _RC_CASES = [
     ("r95", raw"recordz(k, 1), recordz(k, 2), recordz(k, 3), recorded(k, X), X >= 2, !, R = X"),
     ("r96", raw"( between(1, 300, N), recordz(k, N), fail ; true ), findall(X, recorded(k, X), L), length(L, R)"),
     ("r97", raw"( between(1, 300, N), recorda(k, N), fail ; true ), once(recorded(k, R))"),
-    ("r98", raw"recordz(k, 1), recordz(k, 2), ( recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y ; R = none )")
+    ("r98", raw"recordz(k, 1), recordz(k, 2), ( recorded(k, X, Ref), erase(Ref), recorded(k, Y), R = X-Y ; R = none )"),
+    # r99-r101: advance_state skips a record erased while recorded/3 runs; an emptied key is no key (unbound-key enumeration)
+    ("r99", raw"recordz(k, f(1)), recordz(k, g(2)), recordz(k, g(3)), recorded(k, f(_)), recorded(k, g(2), Rg), erase(Rg), findall(X, recorded(k, g(X)), R)"),
+    ("r100", raw"recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K, current_key(K), R)"),
+    ("r101", raw"recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K-T, recorded(K, T), R)")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/D2/d2_rows.out)
@@ -319,7 +323,10 @@ const _RC_PINNED = [
     "t_r95 c[116,95,114,57,53]/1(i2)",
     "t_r96 c[116,95,114,57,54]/1(i300)",
     "t_r97 c[116,95,114,57,55]/1(i300)",
-    "t_r98 c[116,95,114,57,56]/1(c[45]/2(i1,i2)) c[116,95,114,57,56]/1(a[110,111,110,101])"
+    "t_r98 c[116,95,114,57,56]/1(c[45]/2(i1,i2)) c[116,95,114,57,56]/1(a[110,111,110,101])",
+    "t_r99 c[116,95,114,57,57]/1(c[91,124,93]/2(i3,nil))",
+    "t_r100 c[116,95,114,49,48,48]/1(c[91,124,93]/2(a[107,98],nil))",
+    "t_r101 c[116,95,114,49,48,49]/1(c[91,124,93]/2(c[45]/2(a[107,98],i2),nil))"
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -377,7 +384,7 @@ function _rc_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "the recorded database == swipl's pinned answers (r01-r98)" begin
+@testset "the recorded database == swipl's pinned answers (r01-r101)" begin
     f, names = _rc_file()
     kl, _, ld = _rc_kernel(f, names)
     @test length(kl) == length(_RC_PINNED)
@@ -549,4 +556,41 @@ end
         @test occursin(formal, _rc_enc(ans[1]))
     end
     @test length(gd.record_lists) == 5
+end
+
+@testset "the references of a list: recorded/2,3 gives its reference back when cut or finished (recorded, free_state, advance_state, PL_get_recref)" begin
+    # UNVERIFIED on the kernel: gate decides (a query closed after its first answer is FRG_CUTTED: free_state)
+    gd = LK.PL_global_data{_RC}()
+    ld = LK.PL_local_data{_RC}(gd)
+    v() = mk_var(_RC, LK.fresh_var_keys!(1))
+    k, j = _rcs("k"), _rcs("j")
+    for n in 1:3
+        @test _rc_kcall(gd, ld, "recordz", _RC[k, lk_gnd(_RC, n)])[1] === :true
+    end
+    @test _rc_kcall(gd, ld, "recordz", _RC[j, lk_gnd(_RC, 1)])[1] === :true
+    @test length(gd.record_lists_order) == 2
+    rlk, rlj = gd.record_lists_order
+    # the first answer of recorded(k, X) leaves a choicepoint; closing the query cuts it
+    @test _rc_kcall(gd, ld, "recorded", _RC[k, v()])[1] === :true
+    @test rlk.references == 0 && ld.recorded_states.live == 0
+    # recorded(j, X): the only record is answered, the list left at once
+    @test _rc_kcall(gd, ld, "recorded", _RC[j, v()])[1] === :true
+    @test rlj.references == 0 && ld.recorded_states.live == 0
+    # recorded(K, X): the enumeration of the keys holds one list at a time
+    @test _rc_kcall(gd, ld, "recorded", _RC[v(), v()])[1] === :true
+    @test rlk.references == 0 && rlj.references == 0 && ld.recorded_states.live == 0
+    # the references are 0: erase/1 unlinks at once (no mark)
+    st, a = _rc_kcall(gd, ld, "recordz", _RC[k, lk_gnd(_RC, 4), v()])
+    @test st === :true
+    rr = LK.recref_record(gd, a[3])
+    @test _rc_kcall(gd, ld, "erase", _RC[a[3]])[1] === :true
+    @test rr.record === nothing && (rlk.flags & LK.RL_DIRTY) == 0
+    # a reference erased while a recorded/3 runs (marked, not unlinked) is no reference: recorded(_, _, Ref) is false
+    st, b = _rc_kcall(gd, ld, "recordz", _RC[k, lk_gnd(_RC, 5), v()])
+    rb = LK.recref_record(gd, b[3])
+    rlk.references = 1
+    @test _rc_kcall(gd, ld, "erase", _RC[b[3]])[1] === :true
+    @test (rb.flags & LK.R_ERASED) != 0 && rb.record !== nothing
+    @test _rc_kcall(gd, ld, "recorded", _RC[v(), v(), b[3]])[1] === :false
+    rlk.references = 0
 end
