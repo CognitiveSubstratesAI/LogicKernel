@@ -102,14 +102,17 @@ function setupOutputRedirect(
     ctx.term = to
     ctx.redirected = redir
 
+    a = to == 0 ? nothing : PL_get_atom(ld, to)         # the alias or stream handle `to` holds
     if to == 0
-        s = getStream(Scurout(ld)::IOSTREAM)
+        cur = Scurout(ld)
+        s = cur === nothing ? nothing : getStream(cur)
         s === nothing && return no_stream(ld, to, :current_output)
         ctx.stream = s
         ctx.is_stream = true
-    elseif (a = PL_get_atom(ld, to)) !== nothing
+    elseif a !== nothing
         if isTextAtom(a) && sym_key(a) == sym_key(mk_sym(T, :user))
-            s = getStream(Suser_output(ld)::IOSTREAM)
+            uo = Suser_output(ld)
+            s = uo === nothing ? nothing : getStream(uo)
             s === nothing && return no_stream(ld, to, :user)
             ctx.stream = s
             ctx.is_stream = true
@@ -290,7 +293,8 @@ end
 "End the redirect `tellString` began: restore the current output and close the memory stream (pl-file.c)."
 function toldString(ld::PL_local_data)::Bool
     _initIO(ld)
-    s = getStream(Scurout(ld)::IOSTREAM)
+    cur = Scurout(ld)
+    s = cur === nothing ? nothing : getStream(cur)
     s === nothing && return true
 
     if s.functions == Smemfunctions

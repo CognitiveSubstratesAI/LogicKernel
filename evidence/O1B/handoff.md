@@ -75,3 +75,13 @@ MISMATCH 2 (include order, for the stack owner): B includes `os/pl-redirect.jl` 
   pl-ext.jl: B appends `PL_predicates_from_redirect` to `_PRED_TABLES`/`_FOREIGN_VA` after `PL_predicates_from_file`; A's table
   (`PL_predicates_from_format`) is appended by the dispatcher: both lines touch the same two tuples (hand-merge, no semantic clash).
 - The test file of A is named test/core_lang/test_format_swipl.jl in A's handoff (not on disk yet); it is a TARGET of the O1B mutants.
+
+## COMPILE RISKS (coder 2, read by hand, still NOT compiled)
+- `elseif (a = PL_get_atom(...)) !== nothing` replaced: `a = to == 0 ? nothing : PL_get_atom(ld, to)` before the `if`, `elseif a !== nothing`.
+- `Scurout(ld)::IOSTREAM` / `Suser_output(ld)::IOSTREAM` asserted a stream where `ld.IO_streams` holds `Union{Nothing, IOSTREAM}` (pl-file.jl:116,125):
+  setupOutputRedirect (current output, `user`) and toldString now test for `nothing` before `getStream` (pushOutputContext keeps its assertion:
+  the stack is a `Vector{IOSTREAM}`).
+- `PL_chars_t(bytes, length(String(copy(bytes))), ENC_UTF8, false)`: fields are (text::Vector{UInt8}, length::Int, encoding::IOENC, canonical::Bool)
+  (pl-text.jl:25); the call is the same shape as pl-text.jl:121 builds. OK by reading. `PL_unify_text(ld, term, tail, text, type::Int)` (pl-text.jl:549) OK.
+- PL_error forms used (permission: pl-file.jl:420 form; type: pl-file.jl:1010 form), `get_stream_handle(ld, a::T, flags::Int)`,
+  `Sopenmem(bufp, sizep, mode)` (pl-stream.jl:1202), `callProlog` module 0 = the context module (pl-fli.jl:670) as pl-pro.jl:128: checked by reading.
