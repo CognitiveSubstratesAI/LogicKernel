@@ -85,8 +85,9 @@ end
 
 "The start gate's readings: the wrapper's quiet sample, the other julia processes (none, or it refused)."
 const START_GATE =
-    let timing = !any(a -> occursin(r"^--(descend|code|flame)(=|$)", a), ARGS) &&
-                 !("--alloc-only" in ARGS)      # allocation counts do not depend on the load (D-0187 item 1)
+    let timing =
+            !any(a -> occursin(r"^--(descend|code|flame)(=|$)", a), ARGS) &&
+            !("--alloc-only" in ARGS)      # allocation counts do not depend on the load (D-0187 item 1)
         ungated = "--ungated" in ARGS
         sample = get(ENV, "BENCH_GATE_SAMPLE", "")
         julias = _other_julias()
@@ -1525,7 +1526,8 @@ full report shows as `allocs`): one row `ALLOC case median min max calls_per_sam
 depend on the machine's load, so this runs beside other work. One process = one INSTANCE's counts.
 """
 function alloc_only_report(cases, runs::Int)
-    println("# bench.jl --alloc-only: allocations per call only; julia $(VERSION); pid $(getpid()); ",
+    println(
+        "# bench.jl --alloc-only: allocations per call only; julia $(VERSION); pid $(getpid()); ",
         "warm-up $WARMUP, $runs samples in batches of $BATCH, a sample ≥ $(SAMPLE_S) s")
     println("# ALLOC\tcase\tallocs_median\tallocs_min\tallocs_max\tcalls_per_sample\truns")
     for (name, f, _) in cases
