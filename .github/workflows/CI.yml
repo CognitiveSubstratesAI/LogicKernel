@@ -428,6 +428,9 @@ jobs:
       - name: tools/test_coverage_zero.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_coverage_zero.sh
+      - name: tools/test_check_coverage_zero.sh
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
+        run: tools/test_check_coverage_zero.sh
       - name: tools/test_oracle_cache.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_oracle_cache.sh

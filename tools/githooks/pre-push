@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tools/githooks/pre-push — five refusals.
+# tools/githooks/pre-push — six refusals.
 #
 # 1. A MUTANT WORKTREE never pushes (user, 2026-10-11). tools/mutate.sh builds a second worktree of
 #    this repository in which mutants are applied — deliberately broken code, on a detached HEAD —
@@ -46,6 +46,15 @@
 #    The file must also define `TARGETS` (2026-10-25): the Plan job hands the list's TARGETS to the
 #    Baseline job of a push-started run, and two lists without it (FindallAlloc, NF2) gave a baseline
 #    with no target — red in 0 s, so no mutant's verdict counted.
+#
+# 6. A gate/<name> PUSH RUNS THE COVERAGE-ZERO PRE-CHECK (audit D-0178 item 2, 2026-10-26). CI's ratchet
+#    (tools/coverage_zero.py on the groups' lcov) failed gate/f1a with every test green: a step had
+#    first covered src/os/pl-prologflag.jl and left it on tools/coverage_zero_known.txt. Real coverage
+#    needs the whole suite, so tools/check_coverage_zero.sh runs a STATIC PROXY on the src/ files the push
+#    changes (against refs/remotes/<remote>/main) — its header says what it checks and what it cannot;
+#    with LOGICKERNEL_COVZERO_LCOV=<lcov> it gives CI's exact verdict for those files instead. A
+#    listed file the push changes is refused unless LOGICKERNEL_COVZERO_ACK="src/x.jl ..." names it
+#    (still 0% on purpose). No verdict (an unreadable ref/list) is a refusal. Tests: tools/test_check_coverage_zero.sh.
 #
 # LOGICKERNEL_CI_FIXTURE (tools/ci_status.sh) lets test/test_gate_split.jl plant each answer.
 NOREPLY_EMAIL="11524260+sivaji1012@users.noreply.github.com"
@@ -151,6 +160,24 @@ while read -r _local_ref local_sha remote_ref _remote_sha; do
     esac
     case "$local_sha" in
         *[!0]*) _identity_check "$local_sha" || { rc=1; continue; } ;;
+    esac
+    case "$remote_ref" in
+        refs/heads/gate/*)                                      # 6. the coverage-zero pre-check
+            case "$local_sha" in
+                *[!0]*)
+                    [ -x "$top/tools/check_coverage_zero.sh" ] || {
+                        echo "pre-push: REFUSED — $remote_ref ← ${local_sha:0:7}: tools/check_coverage_zero.sh is missing or not executable here, so the coverage-zero pre-check cannot run" >&2
+                        rc=1
+                        continue
+                    }
+                    (cd "$top" && ./tools/check_coverage_zero.sh ${LOGICKERNEL_COVZERO_LCOV:+--lcov "$LOGICKERNEL_COVZERO_LCOV"} "refs/remotes/$remote_name/main" "$local_sha") >&2 || {
+                        echo "pre-push: REFUSED — $remote_ref ← ${local_sha:0:7}: the coverage-zero pre-check (6.) found what CI's ratchet would, or could not judge" >&2
+                        rc=1
+                        continue
+                    }
+                    ;;
+            esac
+            ;;
     esac
     [ "$remote_ref" = "refs/heads/main" ] || continue
     case "$local_sha" in

@@ -1550,6 +1550,18 @@ echo "pkgtest-way: PASS stub"
             end
             return readchomp(`git -C $repo rev-parse HEAD`)
         end
+        # refusal 6. (the coverage-zero pre-check) judges a gate/ push against refs/remotes/origin/main
+        # with the pushed commit's tools/coverage_zero_known.txt: a base commit carrying the list,
+        # marked as the remote's main
+        write(
+            joinpath(repo, "tools", "coverage_zero_known.txt"), "# fixture\nsrc/zero.jl\n"
+        )
+        mkpath(joinpath(repo, "src"))
+        write(joinpath(repo, "src", "zero.jl"), "f() = 0\n")      # a listed file must exist
+        write(joinpath(repo, "src", "Fixture.jl"), "include(\"zero.jl\")\n")   # and be loaded
+        run(`git -C $repo add tools/coverage_zero_known.txt src/zero.jl src/Fixture.jl`)
+        base = gs_commit(noreply, noreply)
+        run(`git -C $repo update-ref refs/remotes/origin/main $base`)
         sha = gs_commit(noreply, noreply)
         ev = "Evidence (three term types)"
         @test occursin(
@@ -1590,7 +1602,8 @@ echo "pkgtest-way: PASS stub"
                 "[" * run_(ev, "completed", "success"; s="f" ^ 40) * "]", 3, false)
         ]
         mktempdir() do d
-            for f in ("ci_status.sh", joinpath("githooks", "pre-push"))
+            for f in
+                ("ci_status.sh", "check_coverage_zero.sh", joinpath("githooks", "pre-push"))
                 cp(joinpath(_GS_ROOT, "tools", f), joinpath(repo, "tools", f))
             end
             tool = joinpath(repo, "tools", "ci_status.sh")
@@ -1721,6 +1734,28 @@ echo "pkgtest-way: PASS stub"
                 @test push_(with_list, "refs/heads/mutants/MutY") == 1     # another name: refused
                 @test push_(with_list, "refs/heads/gate/MutY") == 0        # not a mutants/ ref
                 @test push_("0" ^ 40, "refs/heads/mutants/MutY") == 0      # a delete is allowed
+            end
+            # 6. A gate/<name> PUSH RUNS tools/check_coverage_zero.sh (audit D-0178 item 2): a src/ file
+            # already listed in tools/coverage_zero_known.txt at the remote's main that the push changes
+            # is refused (F1a's red); the same push with the line removed, a non-gate ref and a commit
+            # without src/ files are not; a missing script refuses (its own cases: tools/test_check_coverage_zero.sh)
+            @testset "a gate/ push runs the coverage-zero pre-check" begin
+                @test push_(sha, "refs/heads/gate/x") == 0                  # no src/ file changed
+                write(joinpath(repo, "src", "zero.jl"), "f() = 1\n")
+                run(`git -C $repo add src/zero.jl`)
+                listed = gs_commit(noreply, noreply)
+                @test push_(listed, "refs/heads/gate/x") == 1               # listed at main, changed
+                @test push_(listed, "refs/heads/other/x") == 0              # not a gate/ ref
+                @test push_("0" ^ 40, "refs/heads/gate/x") == 0             # a delete is not judged
+                write(joinpath(repo, "tools", "coverage_zero_known.txt"), "# fixture\n")
+                run(`git -C $repo add tools/coverage_zero_known.txt`)
+                unlisted = gs_commit(noreply, noreply)
+                @test push_(unlisted, "refs/heads/gate/x") == 0             # same file, line removed
+                script = joinpath(repo, "tools", "check_coverage_zero.sh")
+                mv(script, script * ".off")
+                @test push_(unlisted, "refs/heads/gate/x") == 1             # no script, no pre-check: refused
+                mv(script * ".off", script)
+                @test push_(unlisted, "refs/heads/gate/x") == 0
             end
         end
         rm(gs_dir; recursive=true)
