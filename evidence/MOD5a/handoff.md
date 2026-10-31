@@ -116,3 +116,22 @@ crash-term grep, gate branch push. Alloc pins not needed. No daemon was started 
 cap hook at 150k, the edit+commit-in-one-call hook, and the untracked-files hook (the .err files had to be added).
 Stale source comment for the gate agent: src/pl-proc.jl:1025-1027 still says "the kernel makes no weak imports ... so it is not reached";
 '$import'(PI, weak) now makes one (F5), so reword it.
+
+## coder 4 (EDIT-ONLY, no Julia, no daemon) — mutants validated, DOCS written, comment reworded
+Commits on wip/mod5a after aa55f2f: ff8d65d docs/architecture.md MOD5a section (before `## D1`; MOD3b's section is on another branch);
+421d21b pl-proc.jl comment (lines ~1025-1027) now names `'$import'(PI, weak)`; then this handoff.
+MUTANTS VALIDATED (throwaway checker, `python3 -I` + `runpy.run_path`): the file has 46 entries (coder 3 wrote "41"), 4 declared
+equivalent (F2, D9, R4, G2); every `old` occurs EXACTLY once in its file, `new != old`, ids unique, every target file exists. Re-run
+after the pl-proc.jl comment edit: still 46/0 bad. No anchor needed fixing, so no mutants commit.
+REMAINING for the gate agent (in this order):
+ 1. `tools/warm.sh fmt` (long lines flagged in find_modules_with_defs, pl_def_modules2_va, the manifest block).
+ 2. `tools/warm.sh inventory` for docs/port_inventory.md, plus a hand edit of its `declared` column if needed (as MOD3b did).
+ 3. `warm.sh check` (includes the Pkg.test-way run; confirms no `_enum_hash` entry is needed for PL_error_code and the manifest signatures).
+ 4. test/core_lang/test_export_import_swipl.jl on all three term types; test/test_type_discipline.jl; `tools/pkgtest_way.sh
+    test/core_lang/test_export_import_swipl.jl` (ONE at a time, ~3 GB). Read the UNVERIFIED rows (header of the file) and the
+    `definition.shared` counts and F5 testsets first: they had no kernel run.
+ 5. RE-CHECK the mutant anchors after fmt (rerun the validator above; refit any reflowed `old`), push `mutants/MOD5a` at the WIP SHA
+    once the list and TARGETS exist, then branch-gate, the crash-term grep (diff + ALL commit messages), then the local
+    `gate/mod5a` at the SAME SHA as `mutants/MOD5a` (wip refs are refused by the pre-push hook).
+ 6. Alloc pins NOT needed (the run loop is untouched). STRUCT CHANGE (`definition.shared`): the first daemon compile is cold (~30 min).
+Daemon: coder 4 started none; lanes.conf untouched. Hook blocks: none.
