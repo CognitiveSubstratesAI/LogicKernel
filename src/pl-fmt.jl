@@ -1014,3 +1014,156 @@ function groupDigits(locale::PL_locale, b::Vector{UInt8})::Bool
     end
     return true
 end
+
+# PORT: gmp mpz_sizeinbase(z, 10)
+# GMP answers `floor(bits * log10(2)) + 1` for the number of bits `z` has: exact or one too big (8 gives 2);
+# the exponent guesses of formatFloat below correct for it, as upstream's do.
+"The size of the magnitude of `z` in decimal digits as GMP's `mpz_sizeinbase(z, 10)` counts it (an upper bound by one)."
+function mpz_sizeinbase10(z::BigInt)::Int
+    z == 0 && return 1
+    return floor(Int, ndigits(z; base = 2) * 0.30102999566398119521373889472449) + 1
+end
+
+"`10^e` for `e >= 0` (`mpz_ui_pow_ui(r, 10, e)`)."
+_fmt_pow10(e::Int)::BigInt = BigInt(10)^e
+
+# PORT: pl-fmt.c formatFloat, label print_mpz_f (V_MPZ and V_MPQ `~Nf`)
+# DIVERGES: the string is built whole; upstream grows the buffer and moves the digits with memmove/memset.
+"""
+    _fmt_print_mpz_f!(out, t1, neg, arg)
+
+Write `t1` (the magnitude of the number scaled by `10^arg`) as a fixed point number with `arg` fraction digits,
+zero padded on the left to at least `arg+1` digits (pl-fmt.c `print_mpz_f`). `neg` puts the `-` in front, also
+for a magnitude that rounded to 0.
+"""
+function _fmt_print_mpz_f!(out::Vector{UInt8}, t1::BigInt, neg::Bool, arg::Int)::Nothing
+    digits = t1 == 0 ? "" : string(t1)
+    nd = ncodeunits(digits)
+    padding = nd <= arg ? arg - nd + 1 : 0
+    s = "0"^padding * digits
+    if arg > 0
+        n = ncodeunits(s)
+        s = s[1:(n - arg)] * "." * s[(n - arg + 1):n]       # localizeDecimalPoint() follows
+    end
+    neg && (s = "-" * s)
+    append!(out, codeunits(s))
+    return nothing
+end
+
+# PORT: pl-fmt.c formatFloat, label print_mpz_e (V_MPZ and V_MPQ `~Ne`)
+# DIVERGES: as `_fmt_print_mpz_f!`. Upstream returns from here: no localizeDecimalPoint, no groupDigits; the
+# decimal point is the first BYTE of the locale's (`decimal_point[0]`).
+"""
+    _fmt_print_mpz_e!(out, locale, t1, how, ex, arg, neg)
+
+Write `t1` (all the significant digits, `arg+1` of them) as `d.ddde+XX` with the exponent `ex` (pl-fmt.c).
+"""
+function _fmt_print_mpz_e!(
+    out::Vector{UInt8}, locale::Union{Nothing, PL_locale}, t1::BigInt, how::Int, ex::Int,
+    arg::Int, neg::Bool
+)::Nothing
+    digits = string(t1)                                     # "%Zd"
+    t1 == 0 && (digits = "0"^arg * digits)
+    dpb = UInt8('.')
+    if locale !== nothing && locale.decimal_point !== nothing && !isempty(locale.decimal_point)
+        dpb = codeunit(locale.decimal_point, 1)
+    end
+    neg && push!(out, UInt8('-'))
+    d = codeunits(digits)
+    push!(out, d[1])
+    if arg > 0
+        push!(out, dpb)
+    end
+    append!(out, @view d[2:end])
+    push!(out, UInt8(how))
+    push!(out, ex < 0 ? UInt8('-') : UInt8('+'))            # "%+03d"
+    append!(out, codeunits(lpad(string(abs(ex)), 2, '0')))
+    return nothing
+end
+
+# PORT: pl-fmt.c formatFloat, case V_MPZ, `e` and `E`
+"The `~Ne` of a big integer (pl-fmt.c): round to `arg+1` significant digits, then `_fmt_print_mpz_e!`."
+function _fmt_mpz_e!(
+    out::Vector{UInt8}, locale::Union{Nothing, PL_locale}, how::Int, arg::Int, z::BigInt
+)::Nothing
+    neg = z < 0
+    t1 = abs(z)
+    ex = 0
+    if t1 != 0
+        ex = mpz_sizeinbase10(t1) - 1                       # guess exponent
+        _fmt_pow10(ex) > t1 && (ex -= 1)                    # correct exponent
+        if ex > arg
+            t2 = _fmt_pow10(ex - arg - 1)
+            t1 = div(t1, t2)                                # mpz_tdiv_q
+            t1 += 5
+            t1 = div(t1, 10)
+        else
+            t1 *= _fmt_pow10(arg - ex)
+        end
+    end
+    _fmt_print_mpz_e!(out, locale, t1, how, ex, arg, neg)
+    return nothing
+end
+
+# PORT: pl-fmt.c formatFloat, case V_MPQ, `e` and `E`
+"The `~Ne` of a rational (pl-fmt.c): the exponent guess with its corrections, round, then `_fmt_print_mpz_e!`."
+function _fmt_mpq_e!(
+    out::Vector{UInt8}, locale::Union{Nothing, PL_locale}, how::Int, arg::Int, q::Rational{BigInt}
+)::Nothing
+    n = numerator(q)
+    d = denominator(q)
+    ge1 = abs(n) >= d
+    local ex::Int
+    if ge1
+        t1 = div(n, d)
+        ex = mpz_sizeinbase10(t1) - 1                       # guess exponent
+        _fmt_pow10(ex) > abs(t1) && (ex -= 1)               # correct exponent
+    else
+        t1 = div(d, abs(n))
+        ex = -mpz_sizeinbase10(t1)                          # guess exponent
+        t2 = _fmt_pow10(abs(ex) - 1)
+        t2 == abs(t1) && Rational{BigInt}(t1) == inv(q) && (ex += 1)
+        t2 > abs(t1) && (ex += 1)                           # correct exponent
+    end
+    t1 = _fmt_pow10(abs(arg - ex))
+    if ge1 && ex > arg
+        t1 = div(n, t1)
+    else
+        t1 = n * t1
+    end
+    t2 = div(d, 2)
+    neg = q < 0
+    t1 = neg ? t1 - t2 : t1 + t2
+    t1 = abs(div(t1, d))
+    if _fmt_pow10(arg + 1) == t1
+        t1 = div(t1, 10)
+        ex += 1
+    end
+    _fmt_print_mpz_e!(out, locale, t1, how, ex, arg, neg)
+    return nothing
+end
+
+# PORT: pl-fmt.c formatFloat, cases V_MPZ and V_MPQ, `f` and `F`
+"""
+    _fmt_mpq_f!(out, q, arg)
+    _fmt_mpz_f!(out, z, arg)
+
+The `~Nf` of a rational or a big integer (pl-fmt.c, "courtesy of Jan Burse"): `(n*10^arg + d//2) // d`
+with the point `arg` digits from the end; a negative number rounds away from zero and keeps its `-`.
+"""
+function _fmt_mpq_f!(out::Vector{UInt8}, q::Rational{BigInt}, arg::Int)::Nothing
+    d = denominator(q)
+    t1 = numerator(q) * _fmt_pow10(arg)
+    t2 = div(d, 2)
+    neg = q < 0
+    t1 = neg ? t1 - t2 : t1 + t2
+    t1 = abs(div(t1, d))
+    _fmt_print_mpz_f!(out, t1, neg, arg)
+    return nothing
+end
+
+function _fmt_mpz_f!(out::Vector{UInt8}, z::BigInt, arg::Int)::Nothing
+    t1 = z * _fmt_pow10(arg)
+    _fmt_print_mpz_f!(out, abs(t1), t1 < 0, arg)
+    return nothing
+end
