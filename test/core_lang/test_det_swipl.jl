@@ -118,7 +118,7 @@ end
 "The kernel's lines for `goals` under the flag value `flag`, the pools checked at every answer."
 function _rdt_ours(clauses, goals, flag::Symbol)
     db = _rdb(clauses)
-    db.ld.prolog_flag_determinism_error = flag
+    LK.current_prolog_flag(db.gd, "determinism_error").a = LK.mk_sym(_R, flag)   # the flag's table entry
     ours = String[]
     for g in goals
         for (a, det) in _rcall(db, g; at=(qid, k) -> (@test _rpools_live(db.ld)))
@@ -277,7 +277,7 @@ end
         )
     )
     @test isempty(flags)                                        # under `error` there is no answer
-    db2.ld.prolog_flag_determinism_error = :silent
+    LK.current_prolog_flag(db2.gd, "determinism_error").a = LK.mk_sym(_R, :silent)
     _rcall(
         db2,
         _rf("d23", _rv(81));

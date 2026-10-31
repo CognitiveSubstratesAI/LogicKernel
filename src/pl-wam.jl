@@ -584,7 +584,7 @@ end
 
 # PORT: pl-wam.c determinism_error
 # DIVERGES: `bfr` is a choice point's index (0: none) and the age test compares positions; the flag
-# is the local data's `prolog_flag_determinism_error`; `found` and the declaration are symbols.
+# is read through `determinism_error_flag`, as a symbol; `found` and the declaration are symbols.
 """
     determinism_error(ld, fr, bfr, found) -> Bool
 
@@ -607,7 +607,7 @@ function determinism_error(
         end
     end
 
-    a = ld.prolog_flag_determinism_error
+    a = determinism_error_flag(ld)                  # PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)
     a === :silent && return true
 
     fid = PL_open_foreign_frame(ld)
@@ -3308,7 +3308,7 @@ function PL_next_solution_guarded(
     PC += 1
     id_def = id_proc.definition
     if (ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) &&
-        ld.prolog_flag_last_call &&
+        truePrologFlag(ld, PLFLAG_LASTCALL) &&
         (id_def.impl_clauses.first_clause !== nothing || (id_def.flags & PROC_DEFINED) != 0)
         id_f = ld.frames[FR]
         @assert (id_f.flags & FR_WATCHED) == 0
@@ -3349,7 +3349,7 @@ function PL_next_solution_guarded(
     # procedure), the context stays set on the departing frame, as upstream's.
     @label I_DEPARTM
     if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) ||
-        !ld.prolog_flag_last_call
+        !truePrologFlag(ld, PLFLAG_LASTCALL)
         @goto I_CALLM                               # VMI_GOTO(I_CALLM)
     end
     setContextModule!(ld.frames[FR], Int(PCc[PC]))  # setContextModule(FR, code2ptr(Module, *PC++))
@@ -3543,7 +3543,7 @@ function PL_next_solution_guarded(
     # `callatmv_type_error`, shared with `I_CALLATMV`. (H11: `lookupModule` can create a module.)
     @label I_DEPARTATMV
     if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) ||
-        !ld.prolog_flag_last_call
+        !truePrologFlag(ld, PLFLAG_LASTCALL)
         @goto I_CALLATMV                            # VMI_GOTO(I_CALLATMV)
     end
     PC += 1                                         # PC++
@@ -3905,7 +3905,7 @@ function PL_next_solution_guarded(
     ln_jmp = Int(PCc[PC])
     PC += 1
     if (ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) &&
-        ld.prolog_flag_last_call
+        truePrologFlag(ld, PLFLAG_LASTCALL)
         _assert_frame_above_choice(ld, ld.frames[FR].base, :L_NOLCO)   # (L1e e1 assertion) L_* write its arguments
         dropUnlinkedChoices!(ld, ld.frames[FR].base)    # (the region above the frame is reused)
         @assert _is_newest_live_frame(ld, FR) "L_NOLCO: last-call reuse of a frame that is not the newest live record"

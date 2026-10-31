@@ -871,7 +871,7 @@ end
     # occurrence's followed by its C_VAR (c:4691-4697; since V9a): every cell, compared whole with
     # swipl's code under the flag
     ld = LK.PL_local_data{_B}(_BGD)
-    ld.prolog_flag_optimise = true
+    LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
     ours_o = [_bc_kernel(_bclause(h, b; ld=ld)) for (_, _, h, b) in cells]
     @test any(c -> any(startswith("i_true"), c), ours_o)
     @test any(c -> any(startswith("i_fail"), c), ours_o)
@@ -955,7 +955,7 @@ const _BC_ARITH_CELLS = [
     end
     # under `optimise` upstream compiles arithmetic inline (compileArith, memo Q-AR3): refused
     ld = LK.PL_local_data{_B}(_BGD)
-    ld.prolog_flag_optimise = true
+    LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
     @test_throws LK.NotPortedError _bclause(
         _bf("po_ar", _bv(1)), _bf("<", _bv(1), _bg(3)); ld=ld
     )
@@ -1162,7 +1162,7 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
     # under `optimise` ==/\== on a void, or on a first occurrence, compile to I_TRUE/I_FAIL after
     # the skipped variables' C_VAR (since V9a), compared whole with swipl's under the flag
     ld = LK.PL_local_data{_B}(_BGD)
-    ld.prolog_flag_optimise = true
+    LK.setPrologFlagMask!(ld, LK.PLFLAG_OPTIMISE)
     opt = [
         (_bs("po_eq1"), _bf("==", _bv(1), _bs("a"))),
         (_bs("po_neq1"), _bf("\\==", _bv(1), _bs("a"))),
@@ -1174,7 +1174,7 @@ const _BC_IS_REFUSED = ("b_arg_cf", "b_arg_vf", "i_callcont", "i_shift", "i_shif
     @test any(startswith("i_fail"), ours_o[1]) && any(startswith("i_true"), ours_o[2])
     # without `portable_vmi` every tagged integer is a portable constant
     ld2 = LK.PL_local_data{_B}(_BGD)
-    ld2.prolog_flag_portable_vmi = false
+    LK.clearPrologFlagMask!(ld2, LK.PLFLAG_PORTABLE_VMI)
     @test any(
         startswith("b_eq_vc"),
         _bc_kernel(_bclause(_bf("pv1", _bv(1)), _bf("==", _bv(1), _bg(16777216)); ld=ld2))
@@ -1283,7 +1283,7 @@ end
         any(startswith("i_true"), ours[named("var = var: no move")])
     # optimise_unify false: what swipl compiles under the flag false (V9a's code)
     ldf = LK.PL_local_data{_B}(_BGD)
-    ldf.prolog_flag_optimise_unify = false
+    LK.clearPrologFlagMask!(ldf, LK.PLFLAG_OPTIMISE_UNIFY)
     oursf = [_bc_kernel(_bclause(h, b; ld=ldf)) for (_, h, b) in _BC_MOVE_CELLS]
     @test any(startswith("b_unify"), oursf[named("compound")])
     # a dynamic predicate never moves (pl-comp.c:2019): its clause compiles as under the flag false
@@ -1672,7 +1672,7 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
     # the decompiler (`decompile!`, `decompileBodyNoShift!`): compiled with `optimise_unify` false,
     # so no unification is moved into a head (those clauses are refused until V9d's last step)
     ldf = LK.PL_local_data{_B}(_BGD)
-    ldf.prolog_flag_optimise_unify = false
+    LK.clearPrologFlagMask!(ldf, LK.PLFLAG_OPTIMISE_UNIFY)
     v2g = _BcGen(Xoshiro(20261005), UInt64(90_000))
     plain = [_bcclause(v2g, 2000 + k) for k in 1:200]           # V2's bodies: plain goals and `!`
     dcases = [
@@ -2047,7 +2047,7 @@ const _BC_ITE_DECOMPILED = Dict{String, String}(
         @test count(c -> count(startswith("c_if"), c) >= 3, rours) > 50      # nested
     end
     ldf = LK.PL_local_data{_B}(_BGD)
-    ldf.prolog_flag_optimise_unify = false
+    LK.clearPrologFlagMask!(ldf, LK.PLFLAG_OPTIMISE_UNIFY)
     dcases = [[(h, b) for (_, h, b) in _BC_ITE_CELLS]; random]
     dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
     decomp = [
@@ -2238,7 +2238,7 @@ const _BC_NOT_DECOMPILED = Dict{String, String}(
                 1:(length(c) - 1)), rours)
     end
     ldf = LK.PL_local_data{_B}(_BGD)
-    ldf.prolog_flag_optimise_unify = false
+    LK.clearPrologFlagMask!(ldf, LK.PLFLAG_OPTIMISE_UNIFY)
     dcases = [[(h, b) for (_, h, b) in _BC_NOT_CELLS]; random]
     dclauses = [_bclause(h, b; ld=ldf) for (h, b) in dcases]
     decomp = [

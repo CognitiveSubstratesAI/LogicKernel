@@ -504,7 +504,9 @@ const _HB_FAMILY = (
 "The kernel's outcomes of `_HB_CASES` in every mode, compiled under `optimise_unify` `ou`, and the instructions compiled."
 function _hb_ours(ou::Bool)
     db = IxDB{_HT}()
-    db.ld.prolog_flag_optimise_unify = ou
+    (ou ? LogicKernel.setPrologFlagMask! : LogicKernel.clearPrologFlagMask!)(
+        db.ld, LogicKernel.PLFLAG_OPTIMISE_UNIFY
+    )
     preds = IxPred{_HT}[]
     ran = Set{UInt64}()
     for (clauses, goal) in _HB_CASES

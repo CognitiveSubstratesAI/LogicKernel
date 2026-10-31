@@ -130,7 +130,7 @@ const _RFV_GOALS = _R[
 "A database holding `clauses`, compiled with the `optimise` flag as given."
 function _rfv_db(clauses, optimise::Bool)::_RDB
     db = _RDB()
-    db.ld.prolog_flag_optimise = optimise
+    (optimise ? LK.setPrologFlagMask! : LK.clearPrologFlagMask!)(db.ld, LK.PLFLAG_OPTIMISE)
     for (h, b) in clauses
         _radd!(db, h, b)
     end

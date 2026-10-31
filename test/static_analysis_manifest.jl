@@ -1168,7 +1168,6 @@ function _manifest_index(T)
         # R2 F1a — the Prolog flags (src/os/pl-prologflag.jl, the table's types in src/pl-incl.jl)
         (LK.truePrologFlag, Tuple{LD, Int}, true),     # in ar_divide/ar_pow and the reader's token loop
         (LK.prologFlagMask, Tuple{Int}, true),
-        (LK._prolog_flag_bit, Tuple{LD, Int}, false),
         (LK.accessed_prolog_flag, Tuple{LK.prolog_flag{T}}, false),
         (LK.lookupFlag, Tuple{GD, UInt64}, false),
         (LK.current_prolog_flag, Tuple{GD, String}, false),

@@ -4,11 +4,12 @@
 # operand (H_SMALLINT, A_ADD_FC) is upstream's own `is_portable_smallint`, separately.
 using Test, LogicKernel
 using LogicKernel:
-    is_portable_smallint, PLMINTAGGEDINT, PLMAXTAGGEDINT, PL_local_data, PL_global_data
+    is_portable_smallint, PLMINTAGGEDINT, PLMAXTAGGEDINT, PL_local_data, PL_global_data,
+    truePrologFlag, clearPrologFlagMask!, PLFLAG_PORTABLE_VMI
 
 @testset "is_portable_smallint (pl-comp.c)" begin
     ld = PL_local_data{DefaultTerm}(PL_global_data{DefaultTerm}())
-    @test ld.prolog_flag_portable_vmi                  # swipl's default, checked live below
+    @test truePrologFlag(ld, PLFLAG_PORTABLE_VMI)      # swipl's default, checked live below
     i32lo, i32hi = Int64(typemin(Int32)), Int64(typemax(Int32))
     # portable_vmi = true: tagged AND within int32, so the code runs on 32-bit VMs too
     for (i, want) in
@@ -17,7 +18,7 @@ using LogicKernel:
         @test is_portable_smallint(ld, i) == want
     end
     # portable_vmi = false: any tagged integer
-    ld.prolog_flag_portable_vmi = false
+    clearPrologFlagMask!(ld, PLFLAG_PORTABLE_VMI)
     @test is_portable_smallint(ld, PLMAXTAGGEDINT) &&
         is_portable_smallint(ld, PLMINTAGGEDINT)
     @test is_portable_smallint(ld, i32hi + 1)
@@ -40,7 +41,9 @@ if _PSWIPL !== nothing
         @test parse(Int64, lo) == PLMINTAGGEDINT
         @test parse(Int64, hi) == PLMAXTAGGEDINT
         @test pv == "true" &&
-            PL_local_data{DefaultTerm}(PL_global_data{DefaultTerm}()).prolog_flag_portable_vmi
+            truePrologFlag(
+                PL_local_data{DefaultTerm}(PL_global_data{DefaultTerm}()), PLFLAG_PORTABLE_VMI
+            )
     end
 elseif _PSWIPL_REQUIRED
     error(

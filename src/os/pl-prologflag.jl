@@ -54,10 +54,9 @@
 # The flags whose value upstream reads from the debugger (`debug`, `debugger_show_context`), the toplevel
 # (`break_level`) or the local data (`access_level`) read what the kernel has: no debugger and no toplevel,
 # `access_level` the local data's (since R2 LB2: `user` unless `setAccessLevel!` set `system`).
-# Five Boolean flags are, until R2 F1b deletes the stand-ins, still the local data's fields
-# (`prolog_flag_last_call`, `_portable_vmi`, `_optimise`, `_optimise_unify`, `_character_escapes_unicode`,
-# src/pl-global.jl), which the compiler and the VM read: `_prolog_flag_bit` reads them where upstream reads
-# the mask.
+# Since R2 F1b the compiler, the VM and write read the Boolean flags from the mask (`truePrologFlag`), as upstream:
+# the five stand-in fields of the local data and `_prolog_flag_bit` are deleted; the flag `determinism_error` is read
+# from the table (`determinism_error_flag`).
 
 # PORT: pl-prologflag.c setDoubleQuotes
 # DIVERGES: as `setBackQuotes`.
@@ -137,19 +136,6 @@ end
 function clearPrologFlagMask!(ld::PL_local_data, flag::Integer)::Nothing
     ld.prolog_flag_mask &= ~prologFlagMask(flag)
     return nothing
-end
-
-# ORIGINAL (until R2 F1b): a Boolean flag's bit as the compiler and the VM read it. Five bits are still
-# fields of the local data (src/pl-global.jl), set by tests and read by src/pl-comp.jl and src/pl-wam.jl;
-# the mask holds their defaults, never read. F1b deletes the fields, and this function with them.
-"The value of the mask bit `index` of `ld` — the field that stands in for it, for the five that still have one."
-function _prolog_flag_bit(ld::PL_local_data, index::Integer)::Bool
-    index == PLFLAG_LASTCALL && return ld.prolog_flag_last_call
-    index == PLFLAG_PORTABLE_VMI && return ld.prolog_flag_portable_vmi
-    index == PLFLAG_OPTIMISE && return ld.prolog_flag_optimise
-    index == PLFLAG_OPTIMISE_UNIFY && return ld.prolog_flag_optimise_unify
-    index == PLFLAG_CHARESCAPE_UNICODE && return ld.prolog_flag_character_escapes_unicode
-    return truePrologFlag(ld, index)
 end
 
 # ── the table (pl-prologflag.c) ──────────────────────────────────────────────────────────────────
@@ -432,7 +418,7 @@ function unify_prolog_flag_value(
     type = f.flags & FT_MASK
     if type == FT_BOOL
         if f.index != 0
-            return PL_unify_bool_ex(ld, val, _prolog_flag_bit(ld, f.index))
+            return PL_unify_bool_ex(ld, val, truePrologFlag(ld, f.index))
         end
         return PL_unify_atom(ld, val, f.a)
     elseif type == FT_ATOM
@@ -651,6 +637,20 @@ function PL_current_prolog_flag(
         t == FT_FLOAT && return f.f
     end
     return nothing
+end
+
+# ORIGINAL: the callers of upstream (`det_goal_error`, `determinism_error`) start from `atom_t a = ATOM_error`
+# and call `PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)`; the kernel's callers compare symbols.
+"The flag `determinism_error` as `:error`, `:warning` or `:silent`; `:error` if the flag has no atom value (pl-comp.c, pl-wam.c)."
+function determinism_error_flag(ld::PL_local_data{T})::Symbol where {T}
+    gd = ld.GD
+    gd === nothing && return :error                    # (no database: upstream's `a = ATOM_error`)
+    a = PL_current_prolog_flag(gd, mk_sym(T, :determinism_error), :atom)
+    a === nothing && return :error
+    k = sym_key(a)
+    k == sym_key(mk_sym(T, :silent)) && return :silent
+    k == sym_key(mk_sym(T, :warning)) && return :warning
+    return :error
 end
 
 "Make the term reference `t` hold the term of the term flag `name`; false if there is no such flag, or another type (pl-prologflag.c `PL_current_prolog_flag`, `PL_TERM`)."

@@ -1877,9 +1877,9 @@ end
     end
     # …and the check can fail: without the last-call optimisation the mark grows with the list
     # (lists short enough for the region below the spare, which the tripwire keeps fixed: V5d)
-    db.ld.prolog_flag_last_call = false
+    LK.clearPrologFlagMask!(db.ld, LK.PLFLAG_LASTCALL)
     off = [_rhighwater(db, catg(n))[1] for n in (25, 50, 100)]
-    db.ld.prolog_flag_last_call = true
+    LK.setPrologFlagMask!(db.ld, LK.PLFLAG_LASTCALL)
     @test off[1] < off[2] < off[3] && off[1] > marks[10 ^ 3][1]
     # and the same answer either way
     @test _rlines(db, [catg(3)]) == ["concatenate([1,2,3],[x],[1,2,3,x]) det", "end"]
@@ -1893,9 +1893,9 @@ end
     part(n) = _rf("partition", _rints(1:n), _rg(n ÷ 2), _rv(1), _rv(2))
     marks = Dict(n => _rhighwater(db, part(n))[1] for n in (10^3, 10^4, 10^5))
     @test marks[10 ^ 3] == marks[10 ^ 4] == marks[10 ^ 5]
-    db.ld.prolog_flag_last_call = false
+    LK.clearPrologFlagMask!(db.ld, LK.PLFLAG_LASTCALL)
     off = [_rhighwater(db, part(n))[1] for n in (20, 40, 80)]      # larger frames: fewer elements
-    db.ld.prolog_flag_last_call = true
+    LK.setPrologFlagMask!(db.ld, LK.PLFLAG_LASTCALL)
     @test off[1] < off[2] < off[3] && off[1] > marks[10 ^ 3]
 end
 

@@ -2220,7 +2220,7 @@ function pl_write_term3(
         flags |= PL_WRT_CHARESCAPES
     end
     if charescape_unicode == 1 ||
-        (charescape_unicode == -1 && ld.prolog_flag_character_escapes_unicode)
+        (charescape_unicode == -1 && truePrologFlag(ld, PLFLAG_CHARESCAPE_UNICODE))
         flags |= PL_WRT_CHARESCAPES_UNICODE
     end
     (m.flags & RAT_NATURAL) != 0 && (flags |= PL_WRT_RAT_NATURAL)
@@ -2289,7 +2289,7 @@ function pl_write_term3(
 
         partial || PutOpenToken(EOF, s, options.flags) # reset this
         if (options.flags & PL_WRT_QUOTED) != 0 && (s.flags & (SIO_REPPL | SIO_REPPLU)) == 0
-            flag = ld.prolog_flag_character_escapes_unicode ? SIO_REPPLU : SIO_REPPL
+            flag = truePrologFlag(ld, PLFLAG_CHARESCAPE_UNICODE) ? SIO_REPPLU : SIO_REPPL
             s.flags |= flag
             rc = writeTopTerm(term, priority, options)
             s.flags &= ~flag
@@ -2381,9 +2381,9 @@ pl_writeln2(ld::PL_local_data{T}, stream::term_t, term::term_t) where {T} =
 pl_writeq2(ld::PL_local_data{T}, stream::term_t, term::term_t) where {T} =
     do_write2(ld, stream, term, PL_WRT_QUOTED | PL_WRT_NUMBERVARS, false)
 
-# The `print_write_options` flag's value: its default, `[portray(true), quoted(true),
-# numbervars(true)]` (boot/toplevel.pl `init_debug_flags`) — the kernel has no flag table, so no
-# `set_prolog_flag/2` can change it.
+# The `print_write_options` flag's default value: `[portray(true), quoted(true), numbervars(true)]`
+# (boot/toplevel.pl `init_debug_flags`). The kernel has no boot/toplevel.pl: print/2 reads the flag table
+# (a `create_prolog_flag/3` or `set_prolog_flag/2` of the flag is seen) and takes this value where the table has none.
 function _print_write_options(::Type{T})::T where {T}
     l = mk_nil(T)
     for name in (:numbervars, :quoted, :portray)             # from the end
@@ -2394,14 +2394,17 @@ function _print_write_options(::Type{T})::T where {T}
 end
 
 # PORT: pl-write.c pl_print2
-# DIVERGES: the `print_write_options` flag always exists, with its default (`_print_write_options`),
+# DIVERGES: the `print_write_options` flag has its default (`_print_write_options`) where the table has none,
 # so print/2 is write_term/3 with it (upstream falls back to `do_write2` without the flag).
 "print/2: write the term `term` references as the `print_write_options` flag says (pl-write.c)."
 function pl_print2(ld::PL_local_data{T}, stream::term_t, term::term_t)::foreign_t where {T}
     fid = PL_open_foreign_frame(ld)
     opts = PL_new_term_ref(ld)
 
-    setSlotValue!(ld, opts + 1, _print_write_options(T))    # PL_current_prolog_flag(ATOM_print_write_options, …)
+    gd = ld.GD
+    if gd === nothing || !PL_current_prolog_flag(gd, ld, mk_sym(T, :print_write_options), opts)
+        setSlotValue!(ld, opts + 1, _print_write_options(T))    # (the flag's default)
+    end
     rc = pl_write_term3(ld, stream, term, opts)
 
     PL_discard_foreign_frame(ld, fid)

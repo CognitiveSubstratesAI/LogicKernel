@@ -544,12 +544,7 @@ end
     @test sort(bits) == collect(1:36)                            # pl-incl.h enum plflag: the bit number plus one
     @test LK.prologFlagMask(1) == UInt64(1) && LK.prologFlagMask(36) == UInt64(1) << 35
 
-    # the mask holds the value of every Boolean flag that owns a bit (the five stand-ins still in the local data aside)
-    standins = (
-        LK.PLFLAG_LASTCALL, LK.PLFLAG_PORTABLE_VMI, LK.PLFLAG_OPTIMISE,
-        LK.PLFLAG_OPTIMISE_UNIFY,
-        LK.PLFLAG_CHARESCAPE_UNICODE
-    )
+    # the mask holds the value of every Boolean flag that owns a bit (the compiler and the VM read these bits since R2 F1b)
     owned = Int[]
     for f in gd.prolog_flag.entries
         (f === nothing || (f.flags & LK.FT_MASK) != LK.FT_BOOL || f.index == 0) && continue
@@ -564,13 +559,12 @@ end
             bits, [LK.PLFLAG_FILE_CASE, LK.PLFLAG_FILE_CASE_PRESERVING, LK.PLFLAG_AUTOLOAD]
         )
     )
-    # the five stand-ins read the fields, which hold the same defaults as the mask
-    @test ld.prolog_flag_last_call && ld.prolog_flag_portable_vmi &&
-        !ld.prolog_flag_optimise
-    @test ld.prolog_flag_optimise_unify && ld.prolog_flag_character_escapes_unicode
-    for b in standins
-        @test LK._prolog_flag_bit(ld, b) == LK.truePrologFlag(ld, b)
-    end
+    # the five bits the compiler, the VM and write read: upstream's defaults
+    @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL) &&
+        LK.truePrologFlag(ld, LK.PLFLAG_PORTABLE_VMI) &&
+        !LK.truePrologFlag(ld, LK.PLFLAG_OPTIMISE)
+    @test LK.truePrologFlag(ld, LK.PLFLAG_OPTIMISE_UNIFY) &&
+        LK.truePrologFlag(ld, LK.PLFLAG_CHARESCAPE_UNICODE)
     # `autoload` is an atom flag whose bit is set by hand (pl-prologflag.c)
     @test LK.truePrologFlag(ld, LK.PLFLAG_AUTOLOAD)
     # defaults the compiler and the reader depend on

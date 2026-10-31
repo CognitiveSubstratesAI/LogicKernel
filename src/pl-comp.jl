@@ -655,7 +655,7 @@ flag: swipl 10.1.16's `vm_list` is identical under `portable_vmi` true and false
 """
 function is_portable_smallint(ld::PL_local_data, i::Int64)::Bool
     if PLMINTAGGEDINT <= i <= PLMAXTAGGEDINT                # isTaggedInt(w)
-        if ld.prolog_flag_portable_vmi
+        if truePrologFlag(ld, PLFLAG_PORTABLE_VMI)
             return typemin(Int32) <= i <= typemax(Int32)    # INT32_MIN <= i <= INT32_MAX
         end
         return true
@@ -677,7 +677,7 @@ Whether `w` stays the same as an inline code operand, and in 32-bit code under `
 function is_portable_constant(ld::PL_local_data, w)::Bool
     isAtom(w) && return true
     if isTaggedInt(w)
-        if ld.prolog_flag_portable_vmi
+        if truePrologFlag(ld, PLFLAG_PORTABLE_VMI)
             return PLMINTAGGEDINT32 <= int64_value(w) <= PLMAXTAGGEDINT32
         end
         return true
@@ -1897,7 +1897,7 @@ function always(
             T[mk_sym(T, Symbol(val ? "true" : "false")), mk_sym(T, Symbol(pred)), arg]
         )
     end
-    if ld.prolog_flag_optimise                                 # truePrologFlag(PLFLAG_OPTIMISE)
+    if truePrologFlag(ld, PLFLAG_OPTIMISE)
         Output_0!(ci, val ? I_TRUE : I_FAIL)
         return BOOLEX_TRUE
     end
@@ -2163,7 +2163,7 @@ function compileBodyEQ(
         if (ci.styleCheck & NOEFFECT_CHECK) != 0
             compiler_warning(ci, :eq_singleton, T[a1, a2])
         end
-        if ld.prolog_flag_optimise
+        if truePrologFlag(ld, PLFLAG_OPTIMISE)
             skippedVar!(ci, a1)
             skippedVar!(ci, a2)
             Output_0!(ci, I_FAIL)
@@ -2178,7 +2178,7 @@ function compileBodyEQ(
             if (ci.styleCheck & NOEFFECT_CHECK) != 0
                 compiler_warning(ci, :eq_vv, T[a1, a2])
             end
-            if ld.prolog_flag_optimise
+            if truePrologFlag(ld, PLFLAG_OPTIMISE)
                 skippedVar!(ci, a1)
                 skippedVar!(ci, a2)
                 Output_0!(ci, i1 == i2 ? I_TRUE : I_FAIL)
@@ -2220,7 +2220,7 @@ function compileBodyNEQ(
         if (ci.styleCheck & NOEFFECT_CHECK) != 0
             compiler_warning(ci, :neq_singleton, T[a1, a2])
         end
-        if ld.prolog_flag_optimise
+        if truePrologFlag(ld, PLFLAG_OPTIMISE)
             skippedVar!(ci, a1)
             skippedVar!(ci, a2)
             Output_0!(ci, I_TRUE)
@@ -2235,7 +2235,7 @@ function compileBodyNEQ(
             if (ci.styleCheck & NOEFFECT_CHECK) != 0
                 compiler_warning(ci, :neq_vv, T[a1, a2])
             end
-            if ld.prolog_flag_optimise
+            if truePrologFlag(ld, PLFLAG_OPTIMISE)
                 skippedVar!(ci, a1)
                 skippedVar!(ci, a2)
                 Output_0!(ci, i1 == i2 ? I_FAIL : I_TRUE)
@@ -2406,7 +2406,7 @@ function compileSubClause!(
                 return BOOLEX_TRUE
             end
             # O_COMPILE_ARITH: under `optimise` upstream compiles it inline (`compileArith`): refused
-            ld.prolog_flag_optimise &&
+            truePrologFlag(ld, PLFLAG_OPTIMISE) &&
                 throw(NotPortedError{T}(arg, "compileArith (optimise)", "the user's Q-AR3"))
         end
         # O_COMPILE_IS (c:3484-3519), `!ci->islocal`: upstream's chain, in its order; a `false` falls
@@ -3165,7 +3165,7 @@ function compileClause(
     ci.head_unify =
         (flags & SSU_CHOICE_CLAUSE) != 0 || (
             (flags & SSU_COMMIT_CLAUSE) == 0 && (def.flags & P_DYNAMIC) == 0 &&
-            ld.prolog_flag_optimise_unify
+            truePrologFlag(ld, PLFLAG_OPTIMISE_UNIFY)
         )
     ssu = flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)    # clause.flags = flags & (…) (c:2028)
     rule = _is_rule_body(gd, body)
@@ -5343,7 +5343,7 @@ function start_of_cdet(cl::Clause{T}, pc_error::Int)::Int where {T}
 end
 
 # PORT: pl-comp.c det_goal_error
-# DIVERGES: the flag is the local data's `prolog_flag_determinism_error`; `found` is a symbol;
+# DIVERGES: the flag is read through `determinism_error_flag`, as a symbol; `found` is a symbol;
 # `pc_error` an index into the frame's clause's code. NOT PORTED: the `DEBUG(MSG_DETERMINISM)` line.
 """
     det_goal_error(ld, fr, pc_error, found) -> Bool
@@ -5358,7 +5358,7 @@ function det_goal_error(
 )::Bool where {T}
     cl = (ld.frames[fr].clause::ClauseRef{T}).clause::Clause{T}
     pc_det = start_of_cdet(cl, pc_error)
-    a = ld.prolog_flag_determinism_error
+    a = determinism_error_flag(ld)                  # PL_current_prolog_flag(ATOM_determinism_error, PL_ATOM, &a)
     a === :silent && return true
 
     if found === :fail

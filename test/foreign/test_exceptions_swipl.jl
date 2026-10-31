@@ -117,10 +117,10 @@ const _ECE = LKE.PL_Q_CATCH_EXCEPTION | LKE.PL_Q_EXT_STATUS
     @test r.rc == LKE.PL_S_EXCEPTION && r.before && r.after
     # with last_call_optimisation=false the last call keeps its parent: the caller is p/1 (swipl
     # live, `lcooff.pl`: context(p/1, _))
-    db.ld.prolog_flag_last_call = false
+    LKE.clearPrologFlagMask!(db.ld, LKE.PLFLAG_LASTCALL)
     r = _erun(db, :p, _eg(1), _ECE)
     @test _eeq(_eparts(r.ball)[2], _epi(:p, 1))
-    db.ld.prolog_flag_last_call = true
+    LKE.setPrologFlagMask!(db.ld, LKE.PLFLAG_LASTCALL)
     # the stacks are as they were, over 10^3 raising queries
     ld = db.ld
     base = (ld.lTop, ld.nframes, ld.nchoices, ld.nfliframes, ld.nqueries, length(ld.trail))
