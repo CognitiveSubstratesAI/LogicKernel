@@ -1022,8 +1022,8 @@ mode_arg_is_unbound(def::definition, arg0::Int)::Bool =
 
 # PORT: pl-proc.c overruleImportedProcedure
 # DIVERGES: the database `gd` is an argument; a module is an index into its table. NOT PORTED:
-# a weak (implicit) import is abolished (`abolishProcedure`) — refused (`NotPortedError`): the
-# kernel makes no weak imports (`autoImport` links strongly), so it is not reached.
+# a weak (implicit) import is abolished (`abolishProcedure`) — refused (`NotPortedError`) until
+# `abolishProcedure` is ported; `'$import'(PI, weak)` (MOD5a, pl-modul.jl `import_`) makes a weak import and reaches it.
 """
 May `target` define `proc` — its own, or an import it may overrule (pl-proc.c)? Raises
 `permission_error(redefine, built_in_procedure | imported_procedure, PI)` when not.
