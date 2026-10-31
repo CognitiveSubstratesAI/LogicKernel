@@ -721,6 +721,37 @@ const BU_PROLOG =
     "bu([]).\nbu([X|T]) :- Y = f(X), Y = f(Z), Z == X, W = Z, W \\== a, bu(T).\n" *
     "butop :- bu([" * join(1:1000, ",") * "]).\n"
 
+# the flag reads of arithmetic (R2 F1b, design H3): a 1000-element list walk whose clause divides per element —
+# `ar_divide` reads `truePrologFlag(ld, PLFLAG_ISO)` and the rational flag on every call, now a mask read (a constant
+# before F1b); allocations decide, swipl runs the same clauses (`DV_PROLOG`)
+let (X, T) = (_v(), _v())
+    _nr_add!(_nrf(:dv, _nrnil()), nothing)
+    _nr_add!(
+        _nrf(:dv, _nrcons(X, T)),
+        _nrf(
+            Symbol(","), _nrf(:is, _v(), _nrf(Symbol("/"), X, gnd_term(BT, 2))), _nrf(:dv, T)
+        )
+    )
+    _nr_add!(
+        _a(:dvtop),
+        _nrf(:dv, foldr(_nrcons, [gnd_term(BT, i) for i in 1:1000]; init=_nrnil()))
+    )
+end
+const DV_PROC = lookupProcedure(_a(:dvtop), 0, NR_USER)
+function _vm_dv()::Int
+    fid = LogicKernel.PL_open_foreign_frame(NR_LD)
+    qid = LogicKernel.PL_open_query(
+        NR_GD, NR_LD, nothing, LogicKernel.PL_Q_NORMAL, DV_PROC, 0
+    )
+    rc = LogicKernel.PL_next_solution(NR_GD, NR_LD, qid)
+    LogicKernel.PL_close_query(NR_LD, qid)
+    LogicKernel.PL_close_foreign_frame(NR_LD, fid)
+    return rc
+end
+@assert _vm_dv() == LogicKernel.PL_S_TRUE
+const DV_PROLOG =
+    "dv([]).\ndv([X|T]) :- _ is X/2, dv(T).\ndvtop :- dv([" * join(1:1000, ",") * "]).\n"
+
 # the bags (V9g-b): findall/3 over 1000 facts; the same list then sorted (the facts are in
 # descending order, so the merge sort's every run is a swapped pair); bagof/3 over 1000 facts with
 # one free variable of three values — the keyed findall/3, keysort/2 and the bags, taken to the
@@ -829,7 +860,7 @@ fixtures(G1, G2, V1, V2) :-
     forall(between(1, 1000, I), assertz(cp(I, a))).
 :- dynamic cp/2.
 """ * read(joinpath(@__DIR__, "..", "bench", "programs", "nreverse.pl"), String) *
-    BW_PROLOG * BU_PROLOG * BAG_PROLOG *
+    BW_PROLOG * BU_PROLOG * DV_PROLOG * BAG_PROLOG *
     DERIVE_PROLOG * QSORT_PROLOG * POLY_PROLOG * WR_PROLOG
 
 # ── cases: (name, Julia thunk, the swipl goal over G1 G2 V1 V2) ─────────────────────────────────
@@ -883,6 +914,8 @@ const CASES = [
     ("findall/3 + sort/2 ×1000", _vm_fsort, "fstop"),
     ("bagof/3 ×1000, 3 bags", _vm_bagof, "botop"),
     # derive (V6c2): the first program with cuts, type tests and is/2 from a body
+    # the flag reads of arithmetic (R2 F1b, H3): 1000 divisions from a body
+    ("divide ×1000, body", _vm_dv, "dvtop"),
     ("derive", _vm_derive, "ops8, log10, divide10"),
     # qsort (V7): 50 numbers, `=</2` and a cut per partition step
     ("qsort", _vm_qsort, "qsort"),
