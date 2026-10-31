@@ -443,6 +443,9 @@ jobs:
       - name: tools/test_summary.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_summary.sh
+      - name: tools/test_bench_alloc_only.sh stub
+        if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
+        run: tools/test_bench_alloc_only.sh stub
       - name: tools/test_setup_machine.sh
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: tools/test_setup_machine.sh
