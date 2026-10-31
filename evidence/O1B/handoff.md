@@ -96,3 +96,8 @@ At the first battery run: prune a target that fails on the unmutated tree (the d
 format/2 or another predicate not yet landed); re-fit any `old` that `warm.sh fmt` rewraps (multi-line anchors).
 D1/D2 (tellString/toldString) are killed only by O1-A's rows (column stops, ~@): if O1-A's file does not hit them the battery reports a survivor, to be
 killed by a row in test_format_swipl.jl, not here. NOT COVERED by any row (header of the list): popOutputContext's closed-stream branch.
+
+## MANIFEST (coder 2): one block after `(LK.callProlog, Tuple{GD, LD, Int, Int, UInt32}, false)` in `_manifest_index(T)` (test/static_analysis_manifest.jl):
+callProlog 6-argument (`Base.RefValue{Int}`), `redir_context()` (the zero-argument outer constructor; the default 9-field constructor is not listed, as
+`memfile`'s is not), setStandardStream (IOSTREAM and Nothing), pushOutputContext, popOutputContext, setupOutputRedirect, closeOutputRedirect,
+discardOutputRedirect, pl_with_output_to2_va, tellString, toldString. No new `@enum`. The tellString line exceeds the formatter's width: `warm.sh send` rewraps it.

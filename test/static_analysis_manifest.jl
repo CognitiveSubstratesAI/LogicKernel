@@ -1553,6 +1553,23 @@ function _manifest_index(T)
         (LK.frameFinished, Tuple{LD, Int, LK.finished}, false),
         (LK.mustBeCallable, Tuple{LD, Int}, false),
         (LK.callProlog, Tuple{GD, LD, Int, Int, UInt32}, false),
+        # O1B — the output redirect and with_output_to/2 (pl-file.c; src/os/pl-redirect.jl), callProlog's `ex` (pl-pro.c)
+        (LK.callProlog, Tuple{GD, LD, Int, Int, UInt32, Base.RefValue{Int}}, false),
+        (LK.redir_context, Tuple{}, false),
+        (LK.setStandardStream, Tuple{LD, Int, LK.IOSTREAM}, false),
+        (LK.setStandardStream, Tuple{LD, Int, Nothing}, false),
+        (LK.pushOutputContext, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.popOutputContext, Tuple{LD}, false),
+        (LK.setupOutputRedirect, Tuple{LD, Int, LK.redir_context, Bool}, false),
+        (LK.closeOutputRedirect, Tuple{LD, LK.redir_context}, false),
+        (LK.discardOutputRedirect, Tuple{LD, LK.redir_context}, false),
+        (LK.pl_with_output_to2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (
+            LK.tellString,
+            Tuple{LD, Base.RefValue{Union{Nothing, Vector{UInt8}}}, Base.RefValue{Int}, LK.IOENC},
+            false
+        ),
+        (LK.toldString, Tuple{LD}, false),
         # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
