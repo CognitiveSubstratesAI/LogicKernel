@@ -93,8 +93,8 @@ MUTANTS = [
          new="    return FFALSE                                       # non-existing\n"),
     dict(id="MOD5b-P4 destroy_module does not release after refusing a module that is not temporary (EQUIVALENT)", file=M,
          targets=TS,
-         old="            releaseModule(gd, ld, m)\n            return PL_error(",
-         new="            return PL_error(",
+         old="            releaseModule(gd, ld, m)\n            return if PL_error(",
+         new="            return if PL_error(",
          equivalent="that branch is reached only for a module whose class is NOT temporary, and acquireModule counted no "
                     "reference for it; releaseModule tests the same class and does nothing (src/pl-modul.jl releaseModule)"),
     dict(id="MOD5b-P5 '$destroy_module' is registered with arity 2 (KILL every d row, e01, e02, f04)", file=M, targets=TS,
