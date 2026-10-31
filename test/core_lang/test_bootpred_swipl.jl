@@ -141,7 +141,10 @@ const _BP_CASES = [
     ("bp43", raw"dict_create(D, t, [a-1|_]), R = D"),
     ("bp44", raw"dict_create(D, t, [a-1|foo]), R = D"),
     ("bp45", raw"dict_create(foo, t, [a-1]), R = yes"),
-    ("bp46", raw"dict_create(D1, t, [a-1, b-2]), dict_create(D2, t, [b=2, a=1]), D1 == D2, R = same"),
+    (
+        "bp46",
+        raw"dict_create(D1, t, [a-1, b-2]), dict_create(D2, t, [b=2, a=1]), D1 == D2, R = same"
+    ),
     ("bp47", raw"dict_create(D1, t, [a-1]), dict_create(D2, u, [a-1]), D1 = D2, R = yes"),
     ("bp48", raw"dict_create(D1, t, [a-X]), dict_create(D2, t, [a-1]), D1 = D2, R = X"),
     ("bp49", raw"dict_create(D, T, [a-1]), T = foo, is_dict(D, foo), R = yes"),
@@ -152,7 +155,10 @@ const _BP_CASES = [
     ("bp53", raw"findall(x, is_dict(_), R)"),
     ("bp54", raw"dict_create(D, t, []), is_dict(D), R = yes"),
     ("bp55", raw"findall(x, is_dict(f(a), _), R)"),
-    ("bp56", raw"findall(x, (member(X, [1, 2.5, abc, [], [a], f(a), g(a, b, c)]), is_dict(X)), R)"),
+    (
+        "bp56",
+        raw"findall(x, (member(X, [1, 2.5, abc, [], [a], f(a), g(a, b, c)]), is_dict(X)), R)"
+    ),
     ("bp57", raw"dict_create(D, t, [a-1]), is_dict(D, t), R = yes"),
     ("bp58", raw"dict_create(D, t, [a-1]), is_dict(D, u), R = yes"),
     ("bp59", raw"findall(x, is_dict(_, _), R)"),
@@ -161,7 +167,10 @@ const _BP_CASES = [
     ("bp61", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, V), R = V"),
     ("bp62", raw"dict_create(D, t, [a-1, b-2]), get_dict(b, D, V), R = V"),
     ("bp63", raw"dict_create(D, t, [a-1, b-2]), get_dict(c, D, V), R = V"),
-    ("bp64", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K-V, get_dict(K, D, V), L), length(L, R)"),
+    (
+        "bp64",
+        raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K-V, get_dict(K, D, V), L), length(L, R)"
+    ),
     ("bp65", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K, get_dict(K, D, 2), R)"),
     ("bp66", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, 2), R = yes"),
     ("bp67", raw"dict_create(D, t, [a-1, b-2]), get_dict(a, D, 1), R = yes"),
@@ -172,7 +181,10 @@ const _BP_CASES = [
     ("bp72", raw"dict_create(D, t, [1-one, 2-two]), get_dict(2, D, V), R = V"),
     ("bp73", raw"dict_create(D, t, [a-1, b-2]), findall(V, get_dict(a, D, V), R)"),
     ("bp74", raw"dict_create(D, t, []), findall(K-V, get_dict(K, D, V), R)"),
-    ("bp75", raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K, (get_dict(K, D, V), V > 1), L), msort(L, R)"),
+    (
+        "bp75",
+        raw"dict_create(D, t, [a-1, b-2, c-3]), findall(K, (get_dict(K, D, V), V > 1), L), msort(L, R)"
+    ),
     ("bp76", raw"dict_create(D, t, [a-X, b-Y]), get_dict(a, D, 5), R = X-Y"),
     ("bp77", raw"dict_create(D, t, [a-f(Z)]), get_dict(a, D, f(7)), R = Z"),
     ("bp78", raw"dict_create(D, t, [a-1, b-2, c-3, d-4, e-5]), get_dict(e, D, V), R = V"),
@@ -180,8 +192,14 @@ const _BP_CASES = [
     # put_dict/3
     ("bp80", raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), dpairs(N, R)"),
     ("bp81", raw"dict_create(D, t, [a-1, b-2]), put_dict([a-9], D, N), dpairs(N, R)"),
-    ("bp82", raw"dict_create(D, t, [a-1]), dict_create(E, u, [b-2, c-3]), put_dict(E, D, N), dpairs(N, R)"),
-    ("bp83", raw"dict_create(D, t, [a-1]), dict_create(E, u, [b-2]), put_dict(E, D, N), is_dict(N, T), R = T"),
+    (
+        "bp82",
+        raw"dict_create(D, t, [a-1]), dict_create(E, u, [b-2, c-3]), put_dict(E, D, N), dpairs(N, R)"
+    ),
+    (
+        "bp83",
+        raw"dict_create(D, t, [a-1]), dict_create(E, u, [b-2]), put_dict(E, D, N), is_dict(N, T), R = T"
+    ),
     ("bp84", raw"dict_create(D, t, [a-1]), put_dict([], D, N), dpairs(N, R)"),
     ("bp85", raw"dict_create(D, t, [a-1]), put_dict([b=2, c:3, d(4)], D, N), dpairs(N, R)"),
     ("bp86", raw"dict_create(D, t, [a-1]), put_dict([a-9], D, _), dpairs(D, R)"),
@@ -190,36 +208,102 @@ const _BP_CASES = [
     ("bp89", raw"dict_create(D, t, [a-1]), put_dict([b-1, b-2], D, N), R = N"),
     ("bp90", raw"dict_create(D, t, [a-1]), put_dict([b-1|_], D, N), R = N"),
     ("bp91", raw"put_dict([x-1], _, N), R = N"),
-    ("bp92", raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), dict_create(E, t, [a-1, b-2]), N == E, R = same"),
+    (
+        "bp92",
+        raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), dict_create(E, t, [a-1, b-2]), N == E, R = same"
+    ),
     ("bp93", raw"dict_create(D, t, []), put_dict([x-1, y-2], D, N), dpairs(N, R)"),
-    ("bp94", raw"dict_create(D0, t, [a-0]), put_dict([a-1], D0, D1), put_dict([b-2], D1, D2), put_dict([a-3, c-4], D2, D3), dpairs(D3, R)"),
+    (
+        "bp94",
+        raw"dict_create(D0, t, [a-0]), put_dict([a-1], D0, D1), put_dict([b-2], D1, D2), put_dict([a-3, c-4], D2, D3), dpairs(D3, R)"
+    ),
     ("bp95", raw"dict_create(D, t, [1-a, 3-c]), put_dict([2-b, 4-d], D, N), dpairs(N, R)"),
-    ("bp96", raw"dict_create(D, t, [k1-1, k3-3, k5-5, k7-7, k9-9, k11-11]), put_dict([k2-2, k4-4, k6-6, k8-8, k10-10, k3-33], D, N), dpairs(N, R)"),
-    ("bp97", raw"dict_create(D, t, [a-X]), put_dict([b-1], D, N), get_dict(a, N, V), V == X, R = shared"),
-    ("bp98", raw"dict_create(D, t, [a-1, b-2]), put_dict([b-X], D, N), get_dict(b, N, V), V == X, R = replaced"),
-    ("bp99", raw"dict_create(D, t, [a-1]), dict_create(E, t, [a-2]), put_dict(E, D, N), dpairs(N, R)"),
-    ("bp100", raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), put_dict([b-2], N, M), N == M, R = unchanged"),
+    (
+        "bp96",
+        raw"dict_create(D, t, [k1-1, k3-3, k5-5, k7-7, k9-9, k11-11]), put_dict([k2-2, k4-4, k6-6, k8-8, k10-10, k3-33], D, N), dpairs(N, R)"
+    ),
+    (
+        "bp97",
+        raw"dict_create(D, t, [a-X]), put_dict([b-1], D, N), get_dict(a, N, V), V == X, R = shared"
+    ),
+    (
+        "bp98",
+        raw"dict_create(D, t, [a-1, b-2]), put_dict([b-X], D, N), get_dict(b, N, V), V == X, R = replaced"
+    ),
+    (
+        "bp99",
+        raw"dict_create(D, t, [a-1]), dict_create(E, t, [a-2]), put_dict(E, D, N), dpairs(N, R)"
+    ),
+    (
+        "bp100",
+        raw"dict_create(D, t, [a-1]), put_dict([b-2], D, N), put_dict([b-2], N, M), N == M, R = unchanged"
+    ),
     # select_dict/3
-    ("bp101", raw"dict_create(S, t, [a-X]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, P), R = X-P"),
-    ("bp102", raw"dict_create(S, t, [a-1, b-2]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, P), R = P"),
-    ("bp103", raw"dict_create(S, t, [c-1]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, _), R = yes"),
-    ("bp104", raw"dict_create(S, t, [a-9]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, _), R = yes"),
-    ("bp105", raw"dict_create(S, u, [a-1]), dict_create(F, t, [a-1]), select_dict(S, F, _), R = yes"),
-    ("bp106", raw"dict_create(S, T, [a-1]), dict_create(F, foo, [a-1, b-2]), select_dict(S, F, _), R = T"),
-    ("bp107", raw"dict_create(S, t, [a-1]), dict_create(F, T, [a-1, b-2]), select_dict(S, F, Rest), is_dict(Rest, T2), R = T2"),      # the rest has the tag dyndict, written #
+    (
+        "bp101",
+        raw"dict_create(S, t, [a-X]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, P), R = X-P"
+    ),
+    (
+        "bp102",
+        raw"dict_create(S, t, [a-1, b-2]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, P), R = P"
+    ),
+    (
+        "bp103",
+        raw"dict_create(S, t, [c-1]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, _), R = yes"
+    ),
+    (
+        "bp104",
+        raw"dict_create(S, t, [a-9]), dict_create(F, t, [a-1, b-2]), select_dict(S, F, _), R = yes"
+    ),
+    (
+        "bp105",
+        raw"dict_create(S, u, [a-1]), dict_create(F, t, [a-1]), select_dict(S, F, _), R = yes"
+    ),
+    (
+        "bp106",
+        raw"dict_create(S, T, [a-1]), dict_create(F, foo, [a-1, b-2]), select_dict(S, F, _), R = T"
+    ),
+    (
+        "bp107",
+        raw"dict_create(S, t, [a-1]), dict_create(F, T, [a-1, b-2]), select_dict(S, F, Rest), is_dict(Rest, T2), R = T2"
+    ),      # the rest has the tag dyndict, written #
     ("bp108", raw"select_dict(foo, F, R), R = F"),
     ("bp109", raw"dict_create(S, t, [a-1]), select_dict(S, foo, R)"),
-    ("bp110", raw"dict_create(S, t, []), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, R)"),
-    ("bp111", raw"dict_create(S, t, [b-X, d-Y]), dict_create(F, t, [a-1, b-2, c-3, d-4, e-5]), select_dict(S, F, Rest), dpairs(Rest, P), R = X-Y-P"),
-    ("bp112", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, '#', [b-2]), select_dict(S, F, E), R = yes"),
-    ("bp113", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, '#', [b-3]), select_dict(S, F, E), R = yes"),
+    (
+        "bp110",
+        raw"dict_create(S, t, []), dict_create(F, t, [a-1, b-2]), select_dict(S, F, Rest), dpairs(Rest, R)"
+    ),
+    (
+        "bp111",
+        raw"dict_create(S, t, [b-X, d-Y]), dict_create(F, t, [a-1, b-2, c-3, d-4, e-5]), select_dict(S, F, Rest), dpairs(Rest, P), R = X-Y-P"
+    ),
+    (
+        "bp112",
+        raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, '#', [b-2]), select_dict(S, F, E), R = yes"
+    ),
+    (
+        "bp113",
+        raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, '#', [b-3]), select_dict(S, F, E), R = yes"
+    ),
     ("bp114", raw"select_dict(_, _, R), R = x"),
-    ("bp115", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), findall(P, (select_dict(S, F, Rest), dpairs(Rest, P)), R)"),
-    ("bp116", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, t, [b-2]), select_dict(S, F, E), R = yes"),   # fails: the rest is tagged #, E is t
+    (
+        "bp115",
+        raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), findall(P, (select_dict(S, F, Rest), dpairs(Rest, P)), R)"
+    ),
+    (
+        "bp116",
+        raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2]), dict_create(E, t, [b-2]), select_dict(S, F, E), R = yes"
+    ),   # fails: the rest is tagged #, E is t
     # rows added for the mutant list: the dyndict tag of a rest as the next select's From, a deterministic exit, a tag shared with its variable
-    ("bp117", raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2, c-3]), select_dict(S, F, R1), dict_create(S2, t, [b-2]), select_dict(S2, R1, R2), dpairs(R2, R)"),   # [c-3]: unify_tags accepts the dyndict tag
-    ("bp118", raw"dict_create(D, t, [a-1]), call_cleanup(get_dict(K, D, V), Det = true), R = Det-K-V"),   # the last pair leaves no choice point
-    ("bp119", raw"dict_create(D, T, [a-1]), is_dict(D, foo), R = T"),                                    # foo: the tag is the caller's variable
+    (
+        "bp117",
+        raw"dict_create(S, t, [a-1]), dict_create(F, t, [a-1, b-2, c-3]), select_dict(S, F, R1), dict_create(S2, t, [b-2]), select_dict(S2, R1, R2), dpairs(R2, R)"
+    ),   # [c-3]: unify_tags accepts the dyndict tag
+    (
+        "bp118",
+        raw"dict_create(D, t, [a-1]), call_cleanup(get_dict(K, D, V), Det = true), R = Det-K-V"
+    ),   # the last pair leaves no choice point
+    ("bp119", raw"dict_create(D, T, [a-1]), is_dict(D, foo), R = T")                                    # foo: the tag is the caller's variable
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; lk-channel evidence/BOOTPRED/bootpred_rows.out)
@@ -411,8 +495,13 @@ end
     # not vacuous: `main` answers, the failing rows have no answer, the raised row holds the existence error, the throw row `caught(oops)`
     @test count(l -> occursin("a[109,97,105,110]", l), _BP_PINNED) >= 4            # main
     @test any(l -> l == "t_bp03", _BP_PINNED)                                      # no answer: the row failed
-    @test any(l -> startswith(l, "t_bp18 ") && occursin("c[114,97,105,115,101,100]", l), _BP_PINNED)   # raised(…)
-    @test any(l -> startswith(l, "t_bp12 ") && occursin("c[99,97,117,103,104,116]", l), _BP_PINNED)    # caught(…)
+    @test any(
+        l -> startswith(l, "t_bp18 ") && occursin("c[114,97,105,115,101,100]", l),
+        _BP_PINNED
+    )   # raised(…)
+    @test any(
+        l -> startswith(l, "t_bp12 ") && occursin("c[99,97,117,103,104,116]", l), _BP_PINNED
+    )    # caught(…)
     # once/1: bp10 holds [1] alone
     @test any(
         l -> startswith(l, "t_bp10 ") && endswith(l, "c[91,124,93]/2(i1,nil))"), _BP_PINNED
