@@ -4,8 +4,8 @@
 # `suNNN(R)` rows (string_bytes/3, open_string/2, read_string/3, read_string/5). The kernel consults each program and enumerates every
 # solution of every row, encoded as the driver's `enc/1` does; the lines are compared with swipl's own, PINNED below
 # (swipl 10.1.19, the programs and the driver in this file, run twice with byte-identical output: lk-channel evidence/T2/t2_rows*.out of the
-# T2 branch, generator evidence/T2/gen_rows.py); with `swipl` on PATH the live answers are compared with the pins too. The programs are ASCII
-# (non-ASCII texts are `\uXXXX` escapes), so swipl reads them whatever its locale. An error row reports its formal term (`E`) or the term and
+# T2 branch, generator evidence/T2/gen_rows.py); with `swipl` on PATH the live answers are compared with the pins too. The programs hold
+# their non-ASCII texts as UTF-8 literals (swipl 10.1.19 reads a source file as UTF-8). An error row reports its formal term (`E`) or the term and
 # the context (`E-C`) where the context is part of the contract. The upstream quirk of sub_atom/sub_string with the SAME variable as Before
 # and After (`sub_string("abab", X, 2, X, "ab")`: the last candidate of the search is returned without its unification being checked) is
 # pinned in the sub_string rows: the port is 1:1, so the kernel answers as swipl does.
@@ -840,7 +840,7 @@ end
     @test count(l -> occursin(_st_c("existence_error", 2), l), P) >= 2
     # the bytes of "a\u00E9\u20AC" in UTF-16 little endian (su010), and "\u20AC" decoded from its UTF-8 (su029)
     @test occursin(
-        "su010(R) :- string_bytes(\"a\\u00E9\\u20AC\", R, utf16le).", _ST_PROGRAM2
+        "su010(R) :- string_bytes(\"a\u00E9\u20AC\", R, utf16le).", _ST_PROGRAM2
     )
     @test P[11] == _st_line("su010", _st_list([97, 0, 233, 0, 172, 32]))
     @test occursin("su029(R) :- string_bytes(R, [0xe2, 0x82, 0xac], utf8).", _ST_PROGRAM2)

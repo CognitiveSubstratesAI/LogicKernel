@@ -1133,7 +1133,8 @@ function pl_open_string2_va(
     text.encoding === ENC_ISO_LATIN_1 || PL_mb_text(text, REP_UTF8)
 
     bufp = Ref{Union{Nothing, Vector{UInt8}}}(copy(text.text))
-    s = Sopenmem(bufp, Ref(text.length), "rF")
+    # `length` of an ENC_UTF8 text counts characters (src/os/pl-text.jl): the stream's size is the bytes
+    s = Sopenmem(bufp, Ref(length(bufp[]::Vector{UInt8})), "rF")
     s === nothing && return FFALSE
     s.encoding = text.encoding
     PL_unify_stream(ld, A2, s) && return FTRUE

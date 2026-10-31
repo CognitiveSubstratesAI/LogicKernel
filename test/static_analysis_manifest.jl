@@ -2215,7 +2215,7 @@ _index_entry_points(T) = (
     (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
     # T2: the string predicates (src/pl-string.jl; pl-string.c and the string family of pl-prims.c)
     [
-        (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+        (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for f in (
             LK.pl_atom_string2_va, LK.pl_string_codes2_va, LK.pl_string_chars2_va,
             LK.pl_text_to_string2_va, LK.pl_string_length2_va, LK.pl_string_concat3_va,
             LK.pl_sub_string5_va, LK.pl_string_code3_va, LK.pl_get_string_code3_va,
@@ -2223,18 +2223,18 @@ _index_entry_points(T) = (
             LK.pl_read_string3_va, LK.pl_open_string2_va
         )
     ]...,
-    (LK.unify_text, Tuple{LD, Int, LK.PL_chars_t, Int}, false),
-    (LK.string_x, Tuple{LD, Int, Int, Int}, false),
-    (LK.get_positive_integer_or_unbound, Tuple{LD, Int}, false),
-    (LK.sub_text, Tuple{LD, Int, Int, Int, Int, Int, LK.control_t{T}, Int}, false),
-    (LK.PL_error_range, Tuple{LD, Int, Int, Int}, false),
-    (LK.PL_get_char, Tuple{LD, Int}, false),
-    (LK.PL_get_int64_ex, Tuple{LD, Int}, false),
-    (LK.PL_syntax_error, Tuple{LD, String, Nothing}, false),
-    (LK.string_bytes_text_error, Tuple{LD, Int}, false),
-    (LK.text_representation_error, Tuple{LD, LK.IOENC}, false),
-    (LK.PL_text_recode, Tuple{LD, LK.PL_chars_t, LK.IOENC}, false),
-    (LK.PL_release_stream, Tuple{LD, LK.IOSTREAM}, false)
+    (LK.unify_text, Tuple{LK.PL_local_data{T}, Int, LK.PL_chars_t, Int}, false),
+    (LK.string_x, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.get_positive_integer_or_unbound, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.sub_text, Tuple{LK.PL_local_data{T}, Int, Int, Int, Int, Int, LK.control_t{T}, Int}, false),
+    (LK.PL_error_range, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.PL_get_char, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_get_int64_ex, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_syntax_error, Tuple{LK.PL_local_data{T}, String, Nothing}, false),
+    (LK.string_bytes_text_error, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.text_representation_error, Tuple{LK.PL_local_data{T}, LK.IOENC}, false),
+    (LK.PL_text_recode, Tuple{LK.PL_local_data{T}, LK.PL_chars_t, LK.IOENC}, false),
+    (LK.PL_release_stream, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false)
 )
 
 const _DISPATCH_MANIFEST_TUPLE = (
