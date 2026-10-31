@@ -94,3 +94,15 @@ function ThreadCPUTime(which::Int)::Float64
     t = _clock_gettime(CLOCK_THREAD_CPUTIME_ID)
     return t === nothing ? 0.0 : t
 end
+
+# PORT: pl-thread.c unify_thread_id, pl_thread_self
+# (FRG("thread_self", 1, pl_thread_self, ISO), pl-ext.c:186; pl-thread.c:2662-2672 `unify_thread_id`,
+# 2759-2763 `pl_thread_self` at the pin: `return unify_thread_id(self, LD->thread.info);`)
+# DIVERGES: the kernel runs one thread, the main thread, and has no thread table: `unify_thread_id`
+# would unify `th->alias`, which is `main` for the main thread (swipl 10.1.19: `thread_self(X)` gives
+# `X = main`), so the single-thread form unifies `main`. NOT PORTED: the thread handle blob
+# (`create_thread_handle`) of a thread without an alias, and `PL_unify_integer(id, info->pl_tid)`.
+"`thread_self(-Thread)`: the identifier of the calling thread; here always `main` (pl-thread.c)."
+function pl_thread_self(ld::PL_local_data{T}, self::term_t)::foreign_t where {T}
+    return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE
+end
