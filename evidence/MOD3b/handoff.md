@@ -225,3 +225,17 @@ bae881a, so ALWAYS read at the pin: line numbers below are the pin's).
 ## Gate order for the agent after the coder: fmt, check (incl. Pkg.test-way), the new/changed test files x3 term types via the daemon,
 test/test_type_discipline.jl, mutants/MOD3b early at the WIP SHA, branch-gate, JET (the static-analysis file alone), alloc pins x3
 (the run loop gains 4 labels), crash-term grep over diff + messages, gate/mod3b + mutants/MOD3b at the same SHA.
+
+## Gate agent 1 (Sonnet, 2026-10-31): HANDED BACK at the first kernel failure
+- Branch wip/mod3b-r2 (rebased over origin/main 07a8e01; wip/mod3b-r is the first rebase). Daemon of lk-mod3b is UP (needed a copy of
+  ../lk-lb2/Manifest.toml, a gitignored file: this worktree had none). The package compiles and loads.
+- DONE: fmt of the branch's changed files (warm.sh fmt looks at HEAD only; I sent a snippet through `warm.sh send`), `check` PASS
+  after `warm.sh inventory` + hand edit of docs/port_inventory.md's `declared` column (I_DEPARTATM, I_CALLATM, I_DEPARTATMV,
+  I_CALLATMV); committed. check's Pkg.test-way step said "over budget (estimate 180s > 120s)" for the 3 changed test files: NOT run yet.
+- FAILED: `warm.sh file test/core_lang/test_at_body_swipl.jl`: on reference, alt, alt_interned the same, the one big testset (line 393,
+  `_ab_kernel`, whose PL_next_solution call is at test line 372) dies with
+  `AssertionError: I_DEPART: last-call reuse of a frame that is not the newest live record` (src/pl-wam.jl:3317, in
+  PL_next_solution_guarded). It is an exception outside a @test, so ALL rows a01-a77 are unjudged on the kernel (9 pass = pin testsets,
+  3 errored). Which row triggers it is not known (the driver runs rows in sequence; likely the frame-reuse rows a70-a77 or a callatm
+  depart path). The remaining files (test_body_code_swipl, test_metacall_control, type discipline) were NOT run.
+- Log excerpt: evidence/MOD3b/gate1_at_body.log.
