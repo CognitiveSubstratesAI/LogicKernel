@@ -4,7 +4,7 @@
 # freeModuleEnum (289); the registration of both predicates; `live_states`' module_enums term), run ONCE, in CI
 # (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
 # Format: tools/mutate_drive.py's (as MOD5b.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent`
-# and `targets`. Killed by test/core_lang/test_module_enum_swipl.jl (rows s01, i01-i20, c01-c19, d01, d03-d05 and the testsets
+# and `targets`. Killed by test/core_lang/test_module_enum_swipl.jl (rows s01, i01-i21, c01-c20, d01, d03-d05 and the testsets
 # "non-vacuity", "FRG_CUTTED", "H3" named in each id's KILL). Verdicts: written by the battery, not yet run.
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the coding agent had no daemon):
 # the anchors need a RE-FIT at the first battery run for any that fmt re-flows (a long registration line and a trailing comment
@@ -178,8 +178,8 @@ MUTANTS = [
          new="ld.prolog_flag_enums.live"),
     dict(id="MOD6-R1 import_module/2 registered deterministic (KILL i09, i19)",
          file=M, targets=TS,
-         old='PL_extension("import_module", 2, pl_import_module2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS)',
-         new='PL_extension("import_module", 2, pl_import_module2_va, PL_FA_VARARGS)'),
+         old='"import_module", 2, pl_import_module2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS',
+         new='"import_module", 2, pl_import_module2_va, PL_FA_VARARGS'),
     dict(id="MOD6-R2 '$current_module'/2 registered deterministic (KILL c11, c12)",
          file=M, targets=TS_C,
          old='"\\$current_module", 2, pl_current_module2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS',
