@@ -5714,6 +5714,37 @@ What BOOTPRED adds (written edit-only; nothing was compiled or run when this was
 Tests: test/core_lang/test_bootpred_swipl.jl (rows bp01-bp128: thread_self, with_mutex, `'$garbage_collect'`, then the dict predicates with a sorted `dpairs/2` helper; swipl 10.1.19 pins from
 two byte-identical runs, a non-vacuity testset, the live check when `swipl` is on PATH); tools/mutants/BOOTPRED3.py (9 mutants for gc/thread/mutex, 19 for pl-dict.jl, none declared equivalent; M4 mutates the meta spec of with_mutex/2, since the registration flag alone is overridden by it).
 Rows over a dict in an answer do not exist on purpose: nothing prints a dict in swipl's order.
+## G1 — global variables, pl-gvar.c whole (R2, evidence/r2/design/flags_rest.md §4 D7/D8, §5 H6-H9)
+
+What G1 ports (pl-gvar.c at the pin cbf4e189; edit-only so far, nothing compiled or run):
+
+- **The predicates** (src/pl-gvar.jl, table `PL_predicates_from_gvar` after attvar's in `_PRED_TABLES`/`_FOREIGN_VA`):
+  `b_setval/2`, `b_getval/2`, `nb_setval/2`, `nb_linkval/2`, `nb_getval/2` (pl-gvar.c:398-430), `nb_delete/1` (:436-460),
+  `nb_current/2` (:464-520, nondeterministic: a `REDO_PTR` state in the pool `ld.gvar_enums`, the keys snapshotted at the first
+  call). Helpers as upstream's: `new_gvar!`, `lookup_gvar` (:98-125), `PL_getval` (:133-141), `word_is_attvar`,
+  `setval_duplicate` (:153-189), `gvar_setval` (`setval`, :194-262; `SETVAL_BACKTRACKABLE` moves the value into a fresh global
+  cell, `freezeGlobal!`, `TrailAssignment!`), `auto_define_gvar`, `gvar_value` (:272-343), `is_gval`, `gvar_getval` (:346-395).
+  `destroyGlobalVars` (:56-63) has no thread end to run at.
+- **STRUCT CHANGE** (pl-global.jl, pl-incl.jl, pl-fli.jl; the warm daemon restarts by itself, a ~30 min cold compile):
+  `PL_local_data` gains `gvar_nb_vars::Dict{UInt64,UInt64}` (an EMPTY table stands for upstream's NULL), `gvar_grefs::Int` and
+  `gvar_enums`; `live_states` counts the new pool. `duplicate_term(ld, in, copy)` (pl-copyterm.jl) is the C function, called by
+  `duplicate_term/2` and by `setval_duplicate`.
+- **D7:** `_release_frozen!` (src/pl-inline.jl) returns while `ld.gvar_grefs > 0`: a global variable's value lives on the global
+  stack and the end-of-query reset must not free it (upstream keeps `frozen_bar` for the thread's life).
+- **D8:** `setBuiltinPredicateProperties!` makes `user:exception/3` dynamic (boot/init.pl:945 before init.pl is loaded), so
+  `auto_define_gvar`'s `PL_call_predicate` finds a predicate without clauses; the later declaration is harmless.
+- **Divergences:** (a) `duplicate_term` copies the whole term: upstream's `nshare`/`share` are a later port; (b) a float, string
+  or big number counts as "on the global stack" for freeze and `gvar_grefs` (`_gvar_on_global`); (c) `nb_current/2` enumerates
+  in the table's insertion order, upstream in hash order, so the rows compare sorted; (d) `auto_define_gvar` keeps upstream's
+  `rc = PL_get_atom_ex()` quirk: an answer other than `retry`/`fail` runs the hook a second time, then raises the existence
+  error; (e) `nb_delete/1` on an empty table does nothing (upstream: NULL table); (f) `b_setval` over an `nb_setval`'ed unbound
+  variable binds that variable (upstream's quirk, swipl: `nb_setval(k, X), b_setval(k, 1)` gives `X = 1`). `ld.variable_names`
+  stays until LB4: `compileClause` does not read `'$variable_names'` as a global variable yet.
+- **Unverified on the kernel:** rows g15 (a cyclic value), g25 (the full ball with its context term), g35 (`string_codes/2`),
+  g42 (an attributed variable value) and every other row until the first run.
+
+Tests: test/core_lang/test_gvar_swipl.jl (rows g01-g57 and the h9 database, pins from swipl 10.1.19; generator
+evidence/G1/gen_rows.py). Mutants: tools/mutants/G1.py.
 
 ## Still to come
 
