@@ -1066,16 +1066,34 @@ function _text_summary(s::AbstractString, maxlen::Int)::String
     return String(take!(io))
 end
 
-# ORIGINAL (MOD5b; Q7, F5; audit): the part of pl-proc.c `abolishProcedure` the kernel has.
-# DIVERGES: `abolishProcedure` (pl-proc.c:1510: resetProcedure, removeClausesPredicate, a fresh definition for an
-# import) is not in the kernel. A procedure it would leave as it is (its own definition, no clauses, no flags) needs no work; any other
-# is refused by name (`NotPortedError`).
-"Abolish `proc` of module `m` (pl-proc.c): a procedure with nothing to abolish is left; else a `NotPortedError`."
+# PORT: pl-proc.c abolishProcedure
+# DIVERGES (MOD5b; Q7, F5; audit): only the imported-link branch (pl-proc.c:1517-1530) is the kernel's; the rest (pl-proc.c:1531-1550:
+# `resetProcedure`, a foreign predicate made normal, `removeClausesPredicate`, `setDynamicDefinition_unlocked`) is not in the kernel. A procedure of the module's own whose abolish would
+# change nothing (no clauses, no flags) needs no work; any other own procedure is refused by name (`NotPortedError`). An IMPORTED link is
+# removed as upstream does: a fresh definition for the module (upstream's `memset` leaves `shared` 0), the old one unshared; no statistics
+# or code-size accounting, no `lingerDefinition` (Julia's garbage collector), and `resetProcedure` of the fresh definition only sets the
+# debugger's `TRACE_ME` (not ported, as in `lookupProcedure`).
+"Abolish `proc` of module `m` (pl-proc.c): an imported link is removed; an own procedure with nothing to abolish is left; else a `NotPortedError`."
 function _abolishProcedure_pristine(
     gd::PL_global_data{T}, m::module_t{T}, proc::Procedure{T}
 )::Bool where {T}
     def = proc.definition
-    if def.module_ == m.index && hasClausesDefinition(gd, def) === nothing && def.flags == 0
+    if def.module_ != m.index                           # imported predicate; remove link
+        clauses = ClauseList{T}()
+        if def.arity > 0
+            clauses.args = [arg_info() for _ in 1:(def.arity)]
+        else
+            clauses.args = nothing
+        end
+        cd = m.code_data
+        ndef = Definition{T}(
+            def.functor_name, def.arity, clauses, UInt64(0), def.name, cd.virgin, ClauseRef{T}[], cd, 0, m.index, 0   # memset: shared 0
+        )
+        proc.definition = ndef
+        unshareDefinition(def)
+        return true
+    end
+    if hasClausesDefinition(gd, def) === nothing && def.flags == 0
         return true
     end
     throw(NotPortedError{T}(def.name, "redeclaring a module that has predicates (abolishProcedure)", "R2"))
