@@ -101,3 +101,14 @@ killed by a row in test_format_swipl.jl, not here. NOT COVERED by any row (heade
 callProlog 6-argument (`Base.RefValue{Int}`), `redir_context()` (the zero-argument outer constructor; the default 9-field constructor is not listed, as
 `memfile`'s is not), setStandardStream (IOSTREAM and Nothing), pushOutputContext, popOutputContext, setupOutputRedirect, closeOutputRedirect,
 discardOutputRedirect, pl_with_output_to2_va, tellString, toldString. No new `@enum`. The tellString line exceeds the formatter's width: `warm.sh send` rewraps it.
+
+## STATE AFTER CODER 2 (all editing done; nothing compiled or run)
+Commits (oldest first): c78805e plan, 8d904f9 IO_output_stack, 3cb3a13 callProlog 6-arg, 6d45cfa pl-redirect.jl + wiring + rows, f9f3b26 reconcile with O1-A,
+e1c1509 compile-risk fixes, 4a2582a tools/mutants/O1B.py (23), 5c1b78f manifest block, then the architecture.md block (last).
+LEFT FOR THE GATE AGENT: unformatted by the formatter (no daemon): the pl-ext.jl lines of the table wiring, all of src/os/pl-redirect.jl, the manifest tellString
+line, tools/mutants/O1B.py anchors may need a re-fit. Run order: fmt through `warm.sh send`, inventory, check (includes the Pkg.test-way run), the rows on three term
+types, type discipline, `tools/pkgtest_way.sh test/core_lang/test_with_output_to_swipl.jl`, push `mutants/O1B`, branch-gate, term grep, alloc pins x3
+(pl-global.jl changed), gate push on a FRESH name. Merge with O1-A: src/LogicKernel.jl include lines and the pl-ext.jl tables (see RECONCILE).
+FLAGS FOR THE AUDIT (not decided here): (1) the memory stream is UTF-8, upstream ENC_WCHAR (representation, R1's UTF-8 rule); (2) no Sdprintf message when the
+waiting output stream was closed (popOutputContext); (3) rows w43 w44 w64 w68 w69 w70 are UNVERIFIED on the kernel (swipl's pin is truth); (4) popOutputContext's
+closed-stream branch has no row; (5) O1-A's `~@` can drop its callProlog DIVERGES by using the 6-argument form.

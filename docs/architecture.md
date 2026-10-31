@@ -5911,6 +5911,30 @@ What chunk (a) adds (swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
   declared equivalent. Its TARGETS name `test_vendored_*`, so `mutation.yml` checks the pin out for them.
 - **Left for LB4 (b)**: the template, the readers and the copy rows read this tree; where the tree lives for a Pkg-INSTALLED (read-only) package is audit question 3 of the handoff.
   `docs/port_inventory.md` is regenerated at the gate, not here.
+## O1B — the output redirect and `with_output_to/2` (R2 O1, pl-file.c at the pin)
+
+What O1B ports (src/os/pl-redirect.jl NEW, included after os/pl-file.jl; src/pl-global.jl, src/pl-pro.jl; edit-only, nothing compiled or run):
+
+- **The output context stack** (pl-file.c `pushOutputContext`, `popOutputContext`, `setStandardStream`): the current output waits on
+  `LD->IO.output_stack` (the one appended LD field `IO_output_stack`, a struct change: alloc pins x3 at the gate) while a redirect is in force.
+  DIVERGES (representation): a `Vector` of the streams, upstream a linked list of `struct output_context`; no `Sdprintf` message when the
+  stream waiting on the stack was closed meanwhile (`user_output` is restored).
+- **`redir_context`** (pl-incl.h) and **`setupOutputRedirect`, `closeOutputRedirect`, `discardOutputRedirect`**: the three functions `format/3`
+  (O1A, pl-fmt.jl) and `with_output_to/2` share. The sink is the current output (`to == 0`), a stream, an alias or `user`, or one of `atom(A)`,
+  `string(S)`, `codes(C)`, `codes(C, T)`, `chars(C)`, `chars(C, T)`; an input stream is `permission_error(output, stream, S)`, any other
+  term `type_error(output, S)`. DIVERGES (representation): the memory stream is UTF-8 (upstream `ENC_WCHAR`, which the stream layer here
+  refuses, R1's UTF-8 rule) and the sink is unified through `PL_unify_text` on the bytes; no 1024-byte `buffer` in the context.
+- **`with_output_to/2`** (`pl_with_output_to2_va`, PL_FA_TRANSPARENT; its own table `PL_predicates_from_redirect`, since `callProlog` loads
+  after pl-file.jl): the goal runs once under `PL_Q_CATCH_EXCEPTION`; success closes the redirect (the sink unified with the text), failure or
+  an exception discards it (the exception is raised again).
+- **`callProlog`** (pl-pro.jl) takes upstream's `ex` out-argument (pl-pro.c:476-575); the 5-argument form stays as a forwarder.
+- **`tellString`/`toldString`**: the redirect of the current output to a memory stream that `format/2`'s column handling and `~@` use (O1A).
+- **Unverified on the kernel:** rows w43 w44 w64 w68 w69 w70 (a kernel error term may differ from swipl's pin: trace, do not re-pin), and every
+  other row until the first run.
+
+Tests: test/core_lang/test_with_output_to_swipl.jl (rows w01-w72, pins from swipl 10.1.19: the sink kinds, difference lists, wide
+characters, bound sinks, failure and exceptions, nesting, explicit streams, stream sinks, sink and goal errors; generator
+evidence/O1B/gen_rows.py). Mutants: tools/mutants/O1B.py.
 
 ## SETARG — `setarg/3`, `nb_setarg/3`, `nb_linkarg/3`, `duplicate_term`'s `nshare` (R2, pl-prims.c setarg, pl-copyterm.c; boot/bags.pl needs `nb_setarg/3`)
 
