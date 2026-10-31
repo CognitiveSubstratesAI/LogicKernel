@@ -341,11 +341,10 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # reference here, 0 while there is no such variable. `IO_streams` — upstream's `IO.streams`, the standard streams indexed by `SNO_*` (+1), opened over
 # the process's stdin, stdout and stderr when first asked for (`initIO`, src/os/pl-file.jl), or set
 # by the host (`set_standard_stream!`; decision 2a), `IO_initialised` once they are; `IO_stream_type_check` (the `stream_type_check`
-# flag), `IO_portray_nesting` (since group F, D-0123: the depth of nested `callPortray` calls, src/pl-write.jl), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and three
-# flags as swipl 10.1.16 has them: `unknown_option` (`ignore`), `write_attributes` (`ignore`),
-# `character_escapes_unicode` (`true`).
-# Since V9f: `prolog_flag_determinism_error`, the `determinism_error` flag — `:error` (the default),
-# `:warning` or `:silent` — which upstream reads from the flag table (`PL_current_prolog_flag`).
+# flag), `IO_portray_nesting` (since group F, D-0123: the depth of nested `callPortray` calls, src/pl-write.jl), `var_names_numbervars_frame` (the foreign frame `BEGIN_NUMBERVARS` opens, 0: none) and two
+# flags as swipl 10.1.16 has them: `unknown_option` (`ignore`), `write_attributes` (`ignore`).
+# Since R2 F1b the Boolean flags the compiler, the VM and write read are bits of `prolog_flag_mask` (`truePrologFlag`),
+# and the `determinism_error` flag is read from the flag table (`determinism_error_flag`), as upstream.
 # Since V9g-b: `bags`, upstream's `bags` (a `findall_state`: the stack of findall/3's bags, the
 # innermost last — src/pl-bag.jl).
 # Since NF1: `between_states`, the pool of between/3's states (`foreign_state_pool`, pl-incl.jl):
@@ -395,10 +394,6 @@ mutable struct PL_local_data{T}
     cold_imports::Int                                           # (terms copied onto the stack)
     mark_bar::Int                                               # mark_bar
     prolog_flag_occurs_check::occurs_check_t                    # prolog_flag.occurs_check
-    prolog_flag_portable_vmi::Bool                              # truePrologFlag(PLFLAG_PORTABLE_VMI)
-    prolog_flag_last_call::Bool                                 # truePrologFlag(PLFLAG_LASTCALL)
-    prolog_flag_optimise::Bool                                  # truePrologFlag(PLFLAG_OPTIMISE)
-    prolog_flag_optimise_unify::Bool                            # truePrologFlag(PLFLAG_OPTIMISE_UNIFY)
     arith_f_flags::UInt32                                       # arith.f.flags (V6c)
     arith_numbers::Vector{number}                               # (the numbers' C stack, pooled)
     arith_top::Int                                              # (how many of them are in use)
@@ -483,9 +478,7 @@ mutable struct PL_local_data{T}
     var_names_numbervars_frame::Int                             # var_names.numbervars_frame
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
-    prolog_flag_character_escapes_unicode::Bool                 # PLFLAG_CHARESCAPE_UNICODE
     variable_names::Int                                         # (gvar `$variable_names`: a term_t)
-    prolog_flag_determinism_error::Symbol                       # the `determinism_error` flag
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
@@ -515,10 +508,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         _int_word_keys(T),                      # int_word_keys (L1d step 4)
         0,                                      # cold_imports: no import yet
         0,                                      # mark_bar: gTop, set by emptyStacks!
-        OCCURS_CHECK_FALSE, true,
-        true,                                   # last_call_optimisation: on (pl-prologflag.c:2410)
-        false,                                  # optimise: off without -O (pl-prologflag.c:2404)
-        true,                                   # optimise_unify: on (pl-prologflag.c:2405)
+        OCCURS_CHECK_FALSE,
         UInt32(0x0081),                         # FLT_ROUND_NEAREST|FLT_UNDERFLOW (initArith)
         number[], 0, Int[],
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),               # do_unify_cells (L1c-4)
@@ -571,9 +561,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         0,                                      # no numbervars frame
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
-        true,                                   # character_escapes_unicode: true
         0,                                      # $variable_names: no such global variable
-        :error,                                 # determinism_error: error (os/pl-prologflag.c:2708)
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
