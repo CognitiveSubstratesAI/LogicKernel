@@ -75,7 +75,7 @@ Daemon: coder 2 started none; lanes.conf untouched.
 3. The rows on all three term types (`warm.sh file test/core_lang/test_declare_destroy_swipl.jl`, no impl), test/test_type_discipline.jl,
    `tools/pkgtest_way.sh test/core_lang/test_declare_destroy_swipl.jl` (one at a time, ~3 GB).
 4. Re-check the mutant anchors after fmt (`python3 -I` runpy validator: old exactly once; the long ones: C2, M4, P1), push `mutants/MOD5b`
-   at the WIP SHA, branch-gate, crash-term grep over diff and message, then `gate/mod5b` and `mutants/MOD5b` at the SAME SHA. No alloc
+   at the WIP SHA, branch-gate, the D-0164 term grep over diff and message, then `gate/mod5b` and `mutants/MOD5b` at the SAME SHA. No alloc
    pins (the run loop is untouched).
 5. Expected survivors NOT listed (no row loads a procedure from the source file of a temporary module): markSourceFilesProcedure's
    MULTISOURCE test, unlinkSourceFilesModule's file loop, unlinkSourceFileModule's filter. LATER: a white-box with a consulted file
