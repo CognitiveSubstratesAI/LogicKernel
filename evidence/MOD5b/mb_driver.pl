@@ -22,4 +22,4 @@ fz_run(File, Ns) :-
     catch(( consult(File), S = ok ), E, S = exc(E)),
     ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
     forall(member(N, Ns), fz_pred(N)).
-:- initialization((fz_run('/home/shivaji1012/code/lk-mod5b/evidence/MOD5b/mb_rows.pl', [t_a01,t_a02,t_a03,t_a04,t_a05,t_a06,t_a07,t_a08,t_a09,t_a10,t_a11,t_a12,t_a13,t_a14,t_a15,t_a16,t_a17,t_a18,t_a19,t_a20,t_a21,t_b01,t_b02,t_b03,t_b04,t_b05,t_c01,t_c02,t_d01,t_d02,t_d03,t_d04,t_d05,t_d06,t_d07,t_d08,t_d09,t_d10,t_d11,t_d12,t_e01,t_e02,t_e03,t_e04,t_f01,t_f02,t_f03,t_f04,t_f05]), halt)).
+:- initialization((fz_run('/home/shivaji1012/code/lk-mod5b/evidence/MOD5b/mb_rows.pl', [t_a01,t_a02,t_a03,t_a04,t_a05,t_a06,t_a07,t_a08,t_a09,t_a10,t_a11,t_a12,t_a13,t_a14,t_a15,t_a16,t_a17,t_a18,t_a19,t_a20,t_a21,t_b01,t_b02,t_b03,t_b04,t_b05,t_b06,t_c01,t_c02,t_d01,t_d02,t_d03,t_d04,t_d05,t_d06,t_d07,t_d08,t_d09,t_d10,t_d11,t_d12,t_e01,t_e02,t_e03,t_e04,t_f01,t_f02,t_f03,t_f04,t_f05]), halt)).
