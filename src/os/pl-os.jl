@@ -14,7 +14,8 @@
 # the nanosecond clocks Julia does not give, and for the exact `errno` upstream reports. Each is on
 # the unchecked-access allowlist (test/test_type_discipline.jl, "os/pl-os.jl ccall").
 #
-# NOT PORTED: the rest of pl-os.c (the file-name functions, `System`, the signals, the tmp-file
+# Since R2 LB2b: the file-name functions at the end of the file (`canonicaliseFileName`, `AbsoluteFile`, `PL_cwd`, `ChDir`, …).
+# NOT PORTED: the rest of pl-os.c (`System`, the signals, the tmp-file
 # registry `DeleteTemporaryFile` needs: no tmp_file/2 yet), the Windows and HAVE_TIMES branches, the
 # `mitigate_spectre` flag's `clock_jitter` (the flag table, F1).
 
@@ -337,4 +338,205 @@ function DirName(f::String)::Union{Nothing, String}
     e == 0 && return b[1] == UInt8('/') ? "/" : "."
     e + 1 <= PATH_MAX || return nothing
     return String(b[1:e])
+end
+
+# PORT: pl-os.c takeWord
+# DIVERGES: reads the bytes `b` from index `i` and returns the word and the index after it, or `nothing`
+# after raising `representation_error(max_variable_length)`; `maxlen` is `PATH_MAX`, as `sizeof(wordbuf)`.
+function takeWord(
+    ld::PL_local_data{T}, b::AbstractVector{UInt8}, i::Int
+)::Union{Nothing, Tuple{String, Int}} where {T}
+    start = i
+    left = PATH_MAX - 1
+    while i <= length(b) && (isAlpha(Int(b[i])) || b[i] == UInt8('_'))
+        left -= 1
+        if left < 0
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_variable_length))
+            return nothing
+        end
+        i += 1
+    end
+    return (String(b[start:(i - 1)]), i)
+end
+
+# PORT: pl-os.c expandVars
+# DIVERGES: `ld` is an argument and the result a `String`, or `nothing` after raising the error; the `~` of the
+# user's own home reads `HOME` each time (upstream caches it in `GD->os.myhome`, and `~user`'s directory in
+# `GD->os.fred`/`fredshome`); `~user` is refused by name (NotPortedError: getpwnam(3), the passwd database).
+"""
+    expandVars(ld, pattern) -> String or nothing
+
+Expand `~` (the home directory) at the start of `pattern` and every `\$name` in it (pl-os.c): an unset variable
+raises `existence_error(variable, Name)` when the `fileerrors` flag is set; an expansion of `PATH_MAX` bytes or more
+raises `representation_error(max_path_length)`.
+"""
+function expandVars(ld::PL_local_data{T}, pattern::String)::Union{Nothing, String} where {T}
+    maxlen = PATH_MAX
+    size = 0
+    out = IOBuffer()
+    b = codeunits(pattern)
+    n = length(b)
+    i = 1
+    if n >= 1 && b[1] == UInt8('~')
+        i = 2
+        w = takeWord(ld, b, i)
+        w === nothing && return nothing
+        user, i = w
+        if isempty(user)                                        # ~/bla
+            home = getenv3("HOME")
+            value = (home !== nothing && PrologPath(home) !== nothing) ? home : "/"
+        else                                                    # ~fred
+            throw(NotPortedError{T}(mk_sym(T, :user), "expandVars: ~user (getpwnam)", "R2"))
+        end
+        size += ncodeunits(value)
+        if size + 1 >= maxlen
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+            return nothing
+        end
+        write(out, value)
+        # ~/ should not become //
+        !isempty(value) && value[end] == '/' && i <= n && b[i] == UInt8('/') && (i += 1)
+    end
+    while i <= n
+        c = b[i]
+        i += 1
+        if c == UInt8('$')
+            w = takeWord(ld, b, i)
+            w === nothing && return nothing
+            var, i2 = w
+            if !isempty(var)
+                i = i2
+                value = getenv3(var)
+                if value === nothing
+                    if truePrologFlag(ld, PLFLAG_FILEERRORS)
+                        name = PL_new_term_ref(ld)
+                        PL_put_atom(ld, name, mk_sym(T, Symbol(var)))
+                        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :variable), name)
+                    end
+                    return nothing
+                end
+                size += ncodeunits(value)
+                if size + 1 >= maxlen
+                    PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+                    return nothing
+                end
+                write(out, value)
+                continue
+            end
+        end
+        size += 1                                               # def:
+        if size + 1 >= maxlen
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+            return nothing
+        end
+        write(out, c)
+    end
+    size += 1
+    if size >= maxlen
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+        return nothing
+    end
+    return String(take!(out))
+end
+
+# PORT: pl-os.c AbsoluteFile
+# DIVERGES: `ld` is an argument and the result a `String`, or `nothing`; NOT PORTED: the drive-relative branch.
+"""
+    AbsoluteFile(ld, spec) -> String or nothing
+
+The canonical absolute name of the file `spec`: variables expanded under the `file_name_variables` flag, a
+relative name taken from the working directory (pl-os.c).
+"""
+function AbsoluteFile(ld::PL_local_data{T}, spec::String)::Union{Nothing, String} where {T}
+    file = PrologPath(spec)
+    file === nothing && return nothing
+    if truePrologFlag(ld, PLFLAG_FILEVARS)
+        file = expandVars(ld, file)
+        file === nothing && return nothing
+    end
+    IsAbsolutePath(file) && return canonicalisePath(ld, file)
+    cwd = PL_cwd(ld)
+    cwd === nothing && return nothing
+    if ncodeunits(cwd) + ncodeunits(file) + 1 >= PATH_MAX
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+        return nothing
+    end
+    return canonicalisePath(ld, cwd * file)
+end
+
+# PORT: pl-os.c PL_changed_cwd
+"Forget the cached working directory (pl-os.c); the next `PL_cwd` asks the OS."
+function PL_changed_cwd(ld::PL_local_data)::Nothing
+    gd = ld.GD
+    gd === nothing || (gd.paths_CWDdir = "")
+    return nothing
+end
+
+# PORT: pl-os.c cwd_unlocked, PL_cwd
+# DIVERGES: returns the directory (with its closing `/`), or `nothing` after raising the error; with no database
+# (`ld.GD`, set by `PL_open_query`) there is no cache and the OS is asked every time. `pwd()` is `getcwd(3)`
+# through libuv, whose failure carries the `errno`.
+"""
+    PL_cwd(ld) -> String or nothing
+
+The current working directory, canonical and ending in `/`, cached in `GD->paths.CWDdir` (pl-os.c).
+"""
+function PL_cwd(ld::PL_local_data{T})::Union{Nothing, String} where {T}
+    gd = ld.GD
+    cwd = gd === nothing ? "" : gd.paths_CWDdir
+    if isempty(cwd)
+        buf = try
+            pwd()
+        catch e
+            e isa Base.IOError || rethrow()
+            tmp = PL_new_term_ref(ld)
+            PL_put_atom(ld, tmp, mk_sym(T, Symbol(".")))
+            PL_error(
+                ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :getcwd),
+                mk_sym(T, :directory), tmp, -Int(e.code)
+            )
+            return nothing
+        end
+        buf = canonicalisePath(ld, buf)
+        if buf === nothing
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+            return nothing
+        end
+        cwd = buf * "/"
+        gd === nothing || (gd.paths_CWDdir = cwd)
+    end
+    if ncodeunits(cwd) < PATH_MAX
+        return cwd
+    end
+    PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+    return nothing
+end
+
+# PORT: pl-os.c is_cwd
+"Is `dir` the cached working directory (pl-os.c)?"
+function is_cwd(ld::PL_local_data, dir::String)::Bool
+    gd = ld.GD
+    return gd !== nothing && !isempty(gd.paths_CWDdir) && dir == gd.paths_CWDdir
+end
+
+# PORT: pl-os.c ChDir
+# DIVERGES: returns 0 on success and else the `errno` of the failed `chdir(2)` (upstream: a Bool, `errno` read by
+# the caller), or -1 when `AbsoluteFile` failed (its error is raised); `cd` is libuv's `uv_chdir`.
+"Change the working directory to `path`: 0, or the `errno` of the failure (pl-os.c)."
+function ChDir(ld::PL_local_data, path::String)::Int
+    ospath = OsPath(path)
+    (isempty(path) || path == "." || is_cwd(ld, path)) && return 0
+    tmp = AbsoluteFile(ld, path)
+    tmp === nothing && return -1
+    is_cwd(ld, tmp) && return 0
+    try
+        cd(ospath)
+    catch e
+        e isa Base.IOError || rethrow()
+        return -Int(e.code)
+    end
+    endswith(tmp, '/') || (tmp *= "/")
+    gd = ld.GD
+    gd === nothing || (gd.paths_CWDdir = tmp)
+    return 0
 end
