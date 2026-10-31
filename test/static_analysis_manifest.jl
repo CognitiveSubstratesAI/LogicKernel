@@ -1448,6 +1448,28 @@ function _manifest_index(T)
                 LK.pl_dcall_residue_vars_end0_va
             )
         ]...,
+        # G1 — global variables (src/pl-gvar.jl, pl-gvar.c): the table, the set/get functions and the seven predicates
+        (LK._gvar_no_value, Tuple{LD}, false),
+        (LK._gvar_on_global, Tuple{UInt64}, false),
+        (LK.new_gvar!, Tuple{LD, UInt64, UInt64}, false),
+        (LK.lookup_gvar, Tuple{LD, UInt64}, false),
+        (LK.PL_getval, Tuple{LD, UInt64, Int}, false),
+        (LK.PL_getval, Tuple{LD, UInt64, Int, UInt32}, false),
+        (LK.word_is_attvar, Tuple{LD, UInt64}, false),
+        (LK.setval_duplicate, Tuple{LD, UInt64, UInt64}, false),
+        (LK.gvar_setval, Tuple{LD, Int, Int, UInt32}, false),
+        (LK.auto_define_gvar, Tuple{LD, UInt64}, false),
+        (LK.gvar_value, Tuple{LD, UInt64}, false),
+        (LK.is_gval, Tuple{LD, UInt64}, false),
+        (LK.gvar_getval, Tuple{LD, Int, Int, Bool}, false),
+        (LK.duplicate_term, Tuple{LD, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_nb_setval2_va, LK.pl_nb_linkval2_va, LK.pl_nb_getval2_va,
+                LK.pl_b_setval2_va, LK.pl_b_getval2_va, LK.pl_nb_delete1_va,
+                LK.pl_nb_current2_va
+            )
+        ]...,
         # AV9 — call_residue_vars/2's C half (src/pl-attvar.jl, src/pl-wam.jl)
         (LK.trail_new_attvar, Tuple{LD, Int}, false),
         (LK.get_value, Tuple{LD, Int}, false),
@@ -2663,6 +2685,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_trace)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_proc)}, false),   # R1f
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_attvar)}, false),   # AV2
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_gvar)}, false),   # G1
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_files)}, false),  # Y1
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_system)}, false),  # Y1
     # the built-ins' dispatch trees, built when src/pl-ext.jl loads
