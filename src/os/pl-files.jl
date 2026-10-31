@@ -563,6 +563,38 @@ function pl_delete_file1_va(
     return rc ? FTRUE : FFALSE
 end
 
+# ORIGINAL (LB2b): tmp_file/2 and `$tmp_file_stream`/4 are refused by name. `TemporaryFile` (pl-os.c) records
+# every name in the table `GD->os.tmp_files`, which `delete_file/1` (DeleteTemporaryFile) and the halt
+# (RemoveTemporaryFiles) read: PL_global_data has no field for it (a struct change, left to the audit,
+# proposal: `os_tmp_files::Set{...}`), and a module-level table would be shared by every database.
+# `$tmp_file_stream`/4 needs `Sfdopen` on the descriptor `open(2)` returns, which the stream layer
+# (pl-stream.jl) does not have.
+function _tmp_file_refused(ld::PL_local_data{T}, what::String) where {T}
+    throw(NotPortedError{T}(mk_sym(T, :tmp_file), what, "LB2b audit"))
+end
+
+# PORT: pl-files.c tmp_file as pl_tmp_file2_va
+# (PRED_IMPL("tmp_file", 2, tmp_file, 0))
+# DIVERGES: refused by name (see `_tmp_file_refused`).
+"`tmp_file(+Base, -Name)`: refused by name, the registry `GD->os.tmp_files` is not kept (pl-files.c)."
+function pl_tmp_file2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    txt = PL_get_text(ld, PL__t0, CVT_ALL | CVT_EXCEPTION)          # PL_get_chars(base, …)
+    txt === nothing && return FFALSE
+    _tmp_file_refused(ld, "tmp_file/2: TemporaryFile with the table GD->os.tmp_files")
+end
+
+# PORT: pl-files.c tmp_file_stream as pl_tmp_file_stream4_va
+# (PRED_IMPL("$tmp_file_stream", 4, tmp_file_stream, 0))
+# DIVERGES: refused by name (see `_tmp_file_refused`).
+"`'\$tmp_file_stream'(+Ext, +Encoding, -File, -Stream)`: refused by name, no `Sfdopen` (pl-files.c)."
+function pl_tmp_file_stream4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    _tmp_file_refused(ld, "\$tmp_file_stream/4: Sfdopen and the table GD->os.tmp_files")
+end
+
 # ORIGINAL (LB2b): `rmdir(2)`.
 _rmdir(path::String)::Int =
     ccall((:rmdir, LIBC), Cint, (Cstring,), path) == 0 ? 0 : Int(Base.Libc.errno())
@@ -808,7 +840,7 @@ function pl_my_file1_va(
 end
 
 # PORT: pl-files.c BeginPredDefs as PL_predicates_from_files
-# DIVERGES: the entries ported so far (upstream's table has twenty-three; the two tmp_file entries follow in group G8).
+# DIVERGES: all twenty-three entries of upstream's table; the two tmp_file entries raise `NotPortedError` (G8).
 "pl-files.c's registration table (`BeginPredDefs(files)`): the ported entries."
 const PL_predicates_from_files = (
     PL_extension("\$cwd", 1, pl_cwd1_va, PL_FA_VARARGS),
@@ -819,6 +851,8 @@ const PL_predicates_from_files = (
     PL_extension("read_link", 3, pl_read_link3_va, PL_FA_VARARGS),
     PL_extension("exists_file", 1, pl_exists_file1_va, PL_FA_VARARGS),
     PL_extension("exists_directory", 1, pl_exists_directory1_va, PL_FA_VARARGS),
+    PL_extension("tmp_file", 2, pl_tmp_file2_va, PL_FA_VARARGS),
+    PL_extension("\$tmp_file_stream", 4, pl_tmp_file_stream4_va, PL_FA_VARARGS),
     PL_extension("delete_file", 1, pl_delete_file1_va, PL_FA_VARARGS),
     PL_extension("delete_directory", 1, pl_delete_directory1_va, PL_FA_VARARGS),
     PL_extension("make_directory", 1, pl_make_directory1_va, PL_FA_VARARGS),
