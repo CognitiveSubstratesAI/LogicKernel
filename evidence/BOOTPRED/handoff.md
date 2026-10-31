@@ -20,31 +20,36 @@ Recorded DIVERGES (single-thread forms; the upstream line is cited in each comme
 - `'$garbage_collect'/1`: no GC here (the kernel has no stack GC, src/pl-gc.jl header): true; upstream's `d` is read only under `#if O_DEBUG` (pl-gc.c:4573-4579), which swipl 10.1.19 release builds do not define, so the argument is not examined.
 
 ## Groups (commit order)
-1. [ ] handoff (this file)
-2. [ ] `'$garbage_collect'/1`: pl-gc.jl block + `foreigns` entry in pl-ext.jl (small shared-file commit, after the function)
-3. [ ] thread_self/1: pl-thread.jl block + `foreigns` entry
-4. [ ] with_mutex/2: NEW src/pl-mutex.jl + include + `foreigns` entry
-5. [ ] pl-dict.c: dict representation + six predicates, NEW src/pl-dict.jl (see DICT DESIGN below); PL_predicates_from_dict in `_PRED_TABLES` after attvar? (order: pl-ext.c REG_PLIST order, dict sits where upstream lists `dict`: check pl-ext.c:501-574 at the pin)
-6. [ ] rows: evidence/BOOTPRED/gen_rows.py + driver + .out, test/core_lang/test_bootpred_swipl.jl
-7. [ ] tools/mutants/BOOTPRED.py (>= 15), validated by a throwaway `python3 -I`
-8. [ ] manifest entries (last-but-one), 9. [ ] docs/architecture.md block (last)
+1. [x] handoff (this file) -- 38faa5d
+2. [x] `'$garbage_collect'/1`: src/pl-gc.jl `pl_garbage_collect` -- b02d6a4
+3. [x] thread_self/1: src/pl-thread.jl `pl_thread_self` -- e30b5ef
+4. [x] with_mutex/2: NEW src/pl-mutex.jl `pl_with_mutex`, include after pl-pro.jl in src/LogicKernel.jl -- 04000d3
+4b. [x] the three `foreigns` entries in src/pl-ext.jl (upstream order: `$garbage_collect` after context_module, thread_self and with_mutex last) -- 86a5ebf
+4c. [x] rows bp01-bp26: test/core_lang/test_bootpred_swipl.jl (pinned, swipl 10.1.19, two runs byte-identical), evidence/BOOTPRED/{gen_rows.py,bootpred_driver.pl,bootpred_rows.pl,bootpred_rows.out} -- 8443f09
+4d. [x] tools/mutants/BOOTPRED.py, 9 mutants for groups 2-4 (validated: old once, new != old, ids unique, targets exist) -- see git log
+5. [ ] pl-dict.c, NEW src/pl-dict.jl, in four sub-groups (below). NOT STARTED: no Julia line of it is written.
+6. [ ] dict registration `PL_predicates_from_dict` (src/pl-dict.jl) + `_PRED_TABLES` entry in src/pl-ext.jl + the `include("pl-dict.jl")` line in src/LogicKernel.jl (after pl-list.jl, which holds the cell helpers). Position: pl-ext.c:501-574 REG_PLIST order; `dict` is not in the first 37 lines read (alloc, atom, arith, bag, comp, flag, index, init, list, module, prims, strings, variant, copyterm, prologflag, trace, pro, read, thread, profile, wic, file, files, glob, btree, ctype, tai, setup, gc, proc, srcfile, write, format, dlopen, system, op, ...): read pl-ext.c:536-574 at the pin (`git show cbf4e1896275:src/pl-ext.c`) for where `dict` sits, then place it in the kernel's `_PRED_TABLES` in that relative order.
+7. [ ] dict rows bp27+ (append cases to test_bootpred_swipl.jl; regenerate with gen_rows.py; the dicts are built with dict_create/3 and put_dict/3 only, no syntax; order-dependent answers compared SORTED), dict mutants appended to tools/mutants/BOOTPRED.py (aim: total >= 15, i.e. >= 6 from the dict code).
+8. [ ] manifest entries test/static_analysis_manifest.jl (APPENDED block: the new entry points pl_garbage_collect, pl_thread_self, pl_with_mutex and the dict ones, over term type T -- follow the MOD5a block at the file's end), 9. [ ] docs/architecture.md block (APPENDED, LAST).
 
-## DICT DESIGN (not started; to read before writing)
-The kernel has NO dict support: the reader refuses `Tag{...}` (pl-read.jl:3633-3657, "R1's decision"), pl-list.jl extract_key has no dict arm, and
-pl-ressymbol.jl reserves the atom `dict` as `FUNCTOR_dict`'s name. A dict is the compound `dict(Tag, V1, K1, V2, K2, ...)`, arity 2n+1, keys sorted by
-their WORD value (upstream pl-dict.c: `dict_ordered`, `compareDictKeys`, `dict_lookup_ptr`, `PL_for_dict`). Open points for the writer of group 5:
-- The sort order is by the key's cell word. The kernel's atom ids and the tagged-integer encoding are not swipl's, so any ORDER-dependent answer
-  (get_dict/3 enumeration, dict_pairs) is compared SORTED in the rows (WRITER_RULES: unordered answers compare sorted).
-- pl-dict.c is 2074 lines (`git -C ~/dev-zone/swipl-devel show cbf4e1896275:src/pl-dict.c`); the six pull in: `get_dict_ex`-free paths only
-  `PRED_IMPL` bodies get_dict3, put_dict3, select_dict3, dict_create3, is_dict1/2 and their helpers (`get_name_ex`, `get_dict_ex`... `dict_order`,
-  `PL_get_dict_ex`, `put_dict`, `dict_put`, `PL_put_dict`, `dict_lookup_ptr`, `termIsDict`). Cell-level access idiom: src/pl-list.jl
-  `extract_key_cells` / `skip_list_cells` (ld.gstack, `_deref_loc`, `valPtr`, `_is_gcompound`, `lookupFunctorDef`).
-- No dict syntax: the rows build dicts with dict_create/3 / put_dict/3 only, and print them with dict_pairs-free means (is_dict + get_dict).
-- get_dict/3 with an unbound key is NON-DETERMINISTIC upstream (`CTX_CNTRL`): needs the NDET registration convention of the PL_predicates tables.
+### Dict sub-groups (upstream src/pl-dict.c at the pin, 2074 lines; `git -C ~/dev-zone/swipl-devel show cbf4e1896275:src/pl-dict.c > $SCRATCH/pl-dict.c.log`)
+The six predicates and the helpers each pulls in (line numbers at the pin):
+- 5a representation and is_dict: `dict_functor` :80, `is_dict_functor` :93, `is_dict_term` :104, `PL_is_dict` :837, `get_dict_ex` :120, `get_create_dict_ex` :148, `dict_lookup_ptr` :175 (binary search over the key/value pairs); PRED_IMPL `is_dict` 1 :1367, 2 :1377. FUNCTOR_dict is the reserved atom `dict` (pl-ressymbol.jl:108, `builtin_atom("dict")`): `lookupFunctorDef(ld.functors, builtin word of dict, 2n+1)`; check the neighbouring `lookupFunctorDef` call sites (pl-trace.jl:74) for the word of an atom.
+- 5b ordering and creation: `dict_ordered` :219, `compare_dict_entry` :255, `dict_order` :267, `get_name_ex` :762, `get_name_value` :780, `PL_get_dict_ex` :866 (pairs from a list: Key-Value, Key=Value, Key:Value and Key(Value)), `dict_create` PRED_IMPL :1542. The key sort is by the key WORD (atom handle / tagged int); the kernel's words are not swipl's, so every order-dependent answer is compared sorted in the rows.
+- 5c put_dict/3: `assign_in_dict` :343, `put_dict` :369 (merge two sorted runs), `copy_keys_dict` is NOT needed (put_dict/4 and dict_same_keys are outside the six); PRED_IMPL `put_dict` 3 :1673.
+- 5d select_dict/3 and get_dict/3: `select_dict` :677 (+ `partial_unify_dict`/`unify_tags` :566-:633 as it calls them), PRED_IMPL select_dict :1853; get_dict/3 :1480 is NON-DETERMINISTIC (key unbound: enumerates the pairs; key bound: one lookup via `dict_lookup_ptr`) -- read :1400-:1495 and use the NDET convention of an existing non-deterministic PRED_DEF in the kernel (pl-list.jl or pl-proc.jl `retract/1`, NF2) -- `$get_dict_ex`/3 :1486 is outside the six but shares the code: port it only if the shared helper needs it.
+Julia idiom for cells: src/pl-list.jl `extract_key_cells` (:262-295) and `skip_list_cells`: `ld.gstack`, `_deref_loc(ld, pos) -> (kind, word, pos)`, `valPtr(w)`, `_is_gcompound(w)`, `arityFunctor(ld.functors, ld.gstack[valPtr(w)])`, `makeRefG`, `ensureGlobalSpace(ld, n)`, `lookupFunctorDef`, `PL_unify`, `PL_error(ld, ERR_TYPE, …)`/`PL_type_error`. UNREAD by this writer: the word encoding of atoms and small integers per term type (`_atom_word!` pl-inline.jl:257, `isTaggedInt`) -- needed for the key comparison and for `type_error(dict-key, …)`.
+Known upstream facts the rows rely on (swipl 10.1.19, to be re-queried): `is_dict(foo)` fails; `dict_create(D, Tag, [a-1, b=2, c:3, d(4)])`; a duplicate key raises `duplicate_key(Key)`; `put_dict(New, Dict, Out)` accepts a dict or a pair list as New; `select_dict(Sel, From, Rest)`.
+
+## Findings for the audit
+1. The brief's file for with_mutex/2 (pl-thread.c) and its name for the GC predicate (garbage_collect/0) differ from upstream: pl_with_mutex is in pl-mutex.c:758, the C predicate is `'$garbage_collect'/1` (pl-gc.c:4570, pl-ext.c:168); garbage_collect/0 is boot/syspred.pl:1423 (loaded with the boot tree, LB4). Commit subjects cite the real files.
+2. with_mutex/2's kernel form is upstream's own non-O_PLMT branch (pl-mutex.c:769-772), but swipl 10.1.19 examines the mutex (`with_mutex(_, true)`: instantiation_error; `with_mutex(1.5, true)`: type_error(mutex, 1.5)); a behaviour difference, pinned in the test as a KNOWN DIFFERENCE (audit call).
+3. The reader refuses dicts (pl-read.jl:3633, R1's decision) and the writer has no dict arm: dicts exist only through dict_create/3 and put_dict/3 until a later step; `print`/`write` of a dict shows the compound `dict(Tag, V, K, …)` (pl-write.jl not touched).
 
 ## Gate order at the end (for the dispatcher)
 fmt (`warm.sh send` for committed files), inventory, check, rows on three term types, type discipline, pkgtest_way <file> one at a time, mutants branch
 push, branch-gate, term grep, alloc pins x3 (pl-ext.jl changes), fresh-name gate push. Nothing has been run.
 
 ## Commits (hash, subject) -- updated after every group
-(none yet)
+38faa5d plan; b02d6a4 pl-gc.c pl_garbage_collect; e30b5ef pl-thread.c pl_thread_self; 04000d3 pl-mutex.c pl_with_mutex; 86a5ebf pl-ext.jl foreigns; 8443f09 rows bp01-bp26; BOOTPRED.py (9 mutants); then this handoff update.
+Nothing is compiled or run. Branch wip/bootpred, never pushed.
