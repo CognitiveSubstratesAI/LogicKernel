@@ -57,7 +57,7 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
     end
     cd = m.code_data
     def = Definition{T}(
-        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index
+        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index, 1   # def->shared = 1
     )
     proc = Procedure{T}(def, UInt32(0), UInt32(0))
     m.procedures[(key, arity)] = proc
@@ -274,10 +274,28 @@ function resolveProcedure(
     return lookupProcedure(name, arity, m)
 end
 
+# PORT: pl-proc.c shareDefinition
+# DIVERGES: no atomic increment (no threads); the assert is upstream's.
+"One more procedure shares the definition `def` (pl-proc.c)."
+function shareDefinition(def::Definition)::Nothing
+    def.shared += 1
+    @assert def.shared > 0
+    return nothing
+end
+
+# PORT: pl-proc.c unshareDefinition
+# DIVERGES: no atomic decrement (no threads). The caller's `lingerDefinition`/`destroyDefinition` of a definition
+# nothing shares any more is Julia's garbage collector.
+"One procedure less shares the definition `def`; the number still sharing it (pl-proc.c)."
+function unshareDefinition(def::Definition)::Int
+    def.shared -= 1
+    return def.shared
+end
+
 # PORT: pl-proc.c autoImport
 # DIVERGES: the functor is its parts; the database `gd` is an argument and the super modules are
-# indices into its module table. The definition replaced in `m`'s procedure is left to Julia's
-# garbage collector, where upstream unshares it and frees or lingers it; no lock (no threads).
+# indices into its module table. The definition replaced in `m`'s procedure is unshared (MOD5a), and left to
+# Julia's garbage collector where upstream frees or lingers it; no lock (no threads).
 """
     autoImport(gd, name, arity, m) -> Definition, or nothing
 
@@ -302,7 +320,10 @@ function autoImport(
         proc = lookupProcedure(name, arity, m)
     end
     if proc.definition !== def                          # Nope, we must link the def
-        proc.definition = def                           # shareDefinition(def)
+        odef = proc.definition
+        shareDefinition(def)
+        proc.definition = def
+        unshareDefinition(odef)                         # == 0: unallocDefinition/lingerDefinition: the GC's
     end
     return def
 end

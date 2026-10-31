@@ -116,7 +116,7 @@ function PL_global_data{T}() where {T}
     dc = mk_sym(T, Symbol("\$c_call_prolog"))
     dc_def = Definition{T}(
         sym_key(dc), 0, ClauseList{T}(), UInt64(0), dc, cd.virgin, ClauseRef{T}[], cd, 0,
-        system.index
+        system.index, 1
     )
     dc_proc = Procedure{T}(dc_def, UInt32(0), UInt32(0))
     top_clause, top_cref = initVM(dc_proc)
@@ -501,7 +501,7 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
             gen_t(0),
             Definition{T}(
                 UInt64(0), 0, ClauseList{T}(), UInt64(0), e, code[], ClauseRef{T}[],
-                PL_code_data(code[], code[], code[], code[], code[], code[]), 0, 0
+                PL_code_data(code[], code[], code[], code[], code[], code[]), 0, 0, 0
             ),
             nothing,
             0,

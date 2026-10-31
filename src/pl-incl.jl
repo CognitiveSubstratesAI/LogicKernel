@@ -105,6 +105,15 @@ const GP_QUALIFY = Int(0x1000)
 # PORT: pl-incl.h GP_TYPE_QUIET
 "`get_head_functor` flag: fail without raising on a culprit of the wrong type (pl-incl.h)."
 const GP_TYPE_QUIET = Int(0x400)
+# PORT: pl-incl.h GP_NOT_QUALIFIED
+"`get_functor` mode: demand an unqualified name/arity: the term is not stripped of a module (pl-incl.h)."
+const GP_NOT_QUALIFIED = Int(0x2000)
+# PORT: pl-incl.h GF_PROCEDURE
+"`get_functor` mode: check the arity against the maximum procedure arity (pl-incl.h)."
+const GF_PROCEDURE = Int(0x2)
+# PORT: pl-incl.h GF_NAMEARITY
+"`get_functor` mode: accept only `Name/Arity` (pl-incl.h)."
+const GF_NAMEARITY = Int(0x4)
 # PORT: pl-incl.h TMP_PTR_SIZE
 "The number of temporary handles `pushWordAsTermRef` hands out (pl-incl.h)."
 const TMP_PTR_SIZE = 4
@@ -268,6 +277,9 @@ const PROC_WEAK = UInt32(0x0001)
 # PORT: pl-incl.h PROC_MULTISOURCE
 "Procedure flag: assigned to more than one source file (pl-incl.h)."
 const PROC_MULTISOURCE = UInt32(0x0002)
+# PORT: pl-incl.h PROC_IMPORTED
+"Procedure flag: the procedure is imported (pl-incl.h); set by `import/1` on a procedure that was undefined."
+const PROC_IMPORTED = UInt32(0x0004)
 # PORT: pl-incl.h SINGLETON_CHECK
 "Style check: singleton variables, as read/1 reports them (pl-incl.h)."
 const SINGLETON_CHECK = 0x0002
@@ -789,6 +801,7 @@ mutable struct definition{T}
     const code_data::PL_code_data                           # PL_code_data (the database's)
     impl_foreign_function::Int                              # impl.foreign.function (0: none)
     module_::Int                                            # module (an index: see below)
+    shared::Int                                             # #procedures sharing this def
 end
 
 # PORT: pl-incl.h module as module_t
