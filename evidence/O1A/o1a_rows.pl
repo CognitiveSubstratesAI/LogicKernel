@@ -5,6 +5,8 @@ col_out :- write(abc), format("~t~w~8|", [x]).
 nl_out :- write(a), nl, write(b).
 thrower :- throw(boom).
 failer :- fail.
+tabs(0, S, S) :- !.
+tabs(N, S0, S) :- string_concat(S0, "~t", S1), N1 is N-1, tabs(N1, S1, S).
 t_f01(R) :- catch((format(atom(R), "hello", [])), error(SsuE, _), R = raised(SsuE)).
 t_f02(R) :- catch((format(atom(R), "~a|~w|~q", ['a b', 'c d', 'e f'])), error(SsuE, _), R = raised(SsuE)).
 t_f03(R) :- catch((format(atom(R), "~p", ['a b'])), error(SsuE, _), R = raised(SsuE)).
@@ -98,3 +100,16 @@ t_e16(R) :- catch((format(atom(R), "~I", [a])), error(SsuE, _), R = raised(SsuE)
 t_e17(R) :- catch((format(atom(R), "~37r", [10])), error(SsuE, _), R = raised(SsuE)).
 t_e18(R) :- catch((format(atom(R), "~`", [])), error(SsuE, _), R = raised(SsuE)).
 t_e19(R) :- catch((format(atom(R), "~12", [])), error(SsuE, _), R = raised(SsuE)).
+t_f75(R) :- catch((format(atom(R), "~t~@~12|x", [hello_out])), error(SsuE, _), R = raised(SsuE)).
+t_f76(R) :- catch((format(atom(R), "a~t~6|~nb~t~4+c", [])), error(SsuE, _), R = raised(SsuE)).
+t_f77(R) :- catch((format(atom(R), "abcdef~3:|x", [])), error(SsuE, _), R = raised(SsuE)).
+t_f78(R) :- catch((format(atom(R), "abcdef~`-t~3:|x", [])), error(SsuE, _), R = raised(SsuE)).
+t_f79(R) :- catch((format(atom(R), "~2s|~5s|~s", ["hello", "hi", [104,105]])), error(SsuE, _), R = raised(SsuE)).
+t_f80(R) :- catch((format(atom(R), "~2s|~4s", [[0'x, 256, 0'y], [0'x, 256]])), error(SsuE, _), R = raised(SsuE)).
+t_f81(R) :- catch((format(atom(R), "~W|~W", [f(1,'a b'), [quoted(true)], 'c d', [quoted(true)]])), error(SsuE, _), R = raised(SsuE)).
+t_f82(R) :- catch((format(atom(R), "~-1h", [1.0])), error(SsuE, _), R = raised(SsuE)).
+t_f83(R) :- catch((X is 2**70, format(atom(R), "~16r|~16R|~8r|~2d", [X, X, X, X])), error(SsuE, _), R = raised(SsuE)).
+t_f84(R) :- catch((X is -(2**70), format(atom(R), "~d|~D|~2D", [X, X, X])), error(SsuE, _), R = raised(SsuE)).
+t_f85(R) :- catch((format(atom(R), "a~t~+b~t~+c", [])), error(SsuE, _), R = raised(SsuE)).
+t_e20(R) :- catch((tabs(101, "", F), format(atom(R), F, [])), error(SsuE, _), R = raised(SsuE)).
+t_e21(R) :- catch((format(atom(R), "~-d", [1])), error(SsuE, _), R = raised(SsuE)).

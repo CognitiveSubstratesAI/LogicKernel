@@ -14,6 +14,8 @@ col_out :- write(abc), format("~t~w~8|", [x]).
 nl_out :- write(a), nl, write(b).
 thrower :- throw(boom).
 failer :- fail.
+tabs(0, S, S) :- !.
+tabs(N, S0, S) :- string_concat(S0, "~t", S1), N1 is N-1, tabs(N1, S1, S).
 """
 
 # (id, goal, comment); the goal binds R. A goal that fails has no answer line; an error E is R = raised(E).
@@ -117,6 +119,20 @@ CASES = [
  ("e17", r'''format(atom(R), "~37r", [10])''', "radix 37"),
  ("e18", r'''format(atom(R), "~`", [])''', "fill character without text"),
  ("e19", r'''format(atom(R), "~12", [])''', "column argument without a directive"),
+ # added for the mutant list (tools/mutants/O1A.py): rubber before a call-back, tab stop after a newline, ~N:|, ~Ns, ~W, bignum radix
+ ("f75", r'''format(atom(R), "~t~@~12|x", [hello_out])''', "rubber pending before a call-back"),
+ ("f76", r'''format(atom(R), "a~t~6|~nb~t~4+c", [])''', "relative column after a newline starts at 0"),
+ ("f77", r'''format(atom(R), "abcdef~3:|x", [])''', "colon column stop left of the column: newline and re-indent"),
+ ("f78", r'''format(atom(R), "abcdef~`-t~3:|x", [])''', "colon column stop with a fill character: re-indent with it"),
+ ("f79", r'''format(atom(R), "~2s|~5s|~s", ["hello", "hi", [104,105]])''', "s with a count: cut and padded"),
+ ("f80", r'''format(atom(R), "~2s|~4s", [[0'x, 256, 0'y], [0'x, 256]])''', "s of wide text with a count"),
+ ("f81", r'''format(atom(R), "~W|~W", [f(1,'a b'), [quoted(true)], 'c d', [quoted(true)]])''', "W: write_term options"),
+ ("f82", r'''format(atom(R), "~-1h", [1.0])''', "minus sign before the digits of h"),
+ ("f83", r'''X is 2**70, format(atom(R), "~16r|~16R|~8r|~2d", [X, X, X, X])''', "bignum radix and fraction digits"),
+ ("f84", r'''X is -(2**70), format(atom(R), "~d|~D|~2D", [X, X, X])''', "negative bignum d and D"),
+ ("f85", r'''format(atom(R), "a~t~+b~t~+c", [])''', "relative column default 8"),
+ ("e20", r'''tabs(101, "", F), format(atom(R), F, [])''', "more fill points than MAXRUBBER"),
+ ("e21", r'''format(atom(R), "~-d", [1])''', "minus sign without digits"),
 ]
 
 DRIVER = r'''
