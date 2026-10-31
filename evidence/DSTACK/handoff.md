@@ -73,6 +73,36 @@ top SHA, not at a boundary. fmt will re-flow some anchors: re-fit with the same 
    column "segment"), tools/mutants/F1B.py (a comment "a crash, not a verdict"). Re-word these before the push if the term grep is applied to the diff.
 10. Gate push `gate/dstack<fresh suffix>` and every `mutants/*` at the SAME SHA, bare `git push`, never force.
 
+## GATE AGENT 1 STATE (Sonnet, 2026-10-31/11-01; stopped by the 150k cap hook)
+Daemon: SECOND daemon started in ~/code/lk-dstack (unit logickernel-warm-b4dc834e) and RUNNING; lk-mod5a daemon is the other. NOTE the worktree had NO
+Manifest.toml (gitignored): copied from ~/code/lk-t2/Manifest.toml (same Project.toml) before the first start. The whole stack LOADED at the first start
+(top-level code compiled: no checkpoint-by-checkpoint compile was needed; only `warm.sh check` errors were attributed by file). The daemon revises
+in place (no restart) for source edits; it restarted once by itself after formatting changed a `const`.
+Commits on top of b76f1be: 2f498cd CLEANUP (JuliaFormatter over 16 files; fmt of committed files done by hand via warm.sh send) and d739191 FIXED
+(first port_check + manifest pass): src/pl-fmt.jl -> src/os/pl-fmt.jl (upstream path rule), copyright lines = pl-fmt.c's, PORT markers one name each
+(`as <julia-name>`), src/os/pl-redirect.jl APPENDED to src/os/pl-file.jl (port_check PATH-MISMATCH: pl-file.c code must live in pl-file.jl; include line removed,
+refs in docs/tests/mutants/manifest renamed), UPSTREAM headers added (pl-incl.jl: pl-rec.h, pl-rec.c, pl-gvar.c; pl-prologflag.jl: pl-read.c, pl-tabling.c;
+pl-file.jl: pl-incl.h), docs/architecture.md rows for pl-gvar.jl and os/pl-fmt.jl, inventory regenerated, D2's 23 manifest entries (test/static_analysis_manifest.jl,
+"D2" block before "AV9") which D2 had never written, mutant anchors re-fitted (G1-T2, D1-52, O1A-D20, O1A-F8, O1B-B5; checker at the scratchpad: every
+`old` once in its file; G1 20, D2 45, D1c 100, O1A 130, O1B 23, F1B 23 all 0 problems).
+`warm.sh check` = PASS at d739191 (format, port_check clean 233 files, manifest 2960 entries, term scopes, meta files); its Pkg.test-way run was over budget
+(780 s estimate) and is LEFT to me: run `tools/pkgtest_way.sh <file>` one at a time for the 13 files check listed (test_body_code, test_portable_smallint,
+test_det, test_firstvar, test_format, test_gvar, test_head_unify, test_prolog_flag, test_rules, test_set_flag, test_with_output_to, test_record,
+test_exceptions).
+ROWS x3 (`warm.sh file <path>` = all three types, ~10 min for gvar): test_gvar_swipl.jl 225 pass / 3 fail (ONE row, g35, on each type; the 3 + 3 "pins are
+swipl's" and hook testsets pass). g35 = `string_codes(S, [115,116,114]), nb_setval(gv_s,S), nb_getval(gv_s,R)`: ours raises existence_error(procedure,
+string_codes/2) (string_codes/2 is T2's, not in this tree; swipl's answer s"str"). PLANNED FIX (NOT yet applied: the cap hook blocked the edit): change only the
+PROGRAM of g35 in test/core_lang/test_gvar_swipl.jl line ~188 (and evidence/G1/gvar_rows.pl line 47) to `S = "str", nb_setval(gv_s, S), nb_getval(gv_s, R)`; the pin
+t_g35 c[...]/1(s[115,116,114]) stays (swipl's answer is the same; confirm with gen_rows.py + `swipl -q gvar_driver.pl` per evidence/G1/gen_rows.py); if the
+kernel's reader gives codes for "str" in that file's mode, keep the row and record it as a known difference with a comment naming swipl's answer + a checklist item
+(gate/dstack must pass CI without T2). This is a stale program, not an expected-value change.
+NOT RUN YET: rows for test_record_swipl.jl (+ test_blob.jl, test_clause_ref_swipl.jl), test_with_output_to_swipl.jl, test_format_swipl.jl, test_set_flag_swipl.jl and the 8
+F1b-migrated files; test_type_discipline.jl; pkgtest_way per file; alloc pins x3 (test_zero_exports, test_ball_cells); mutants branches; branch-gate; term grep (reword
+the hits listed in step 9 above, plus check src/os/pl-fmt.jl docstring "segment"); gate/dstack. Nothing pushed. No D-entry newer than D-0281 at 2026-11-01 (channel pulled).
+Tips: `tools/warm.sh file` and `check` are backgrounded by the tool after 180 s: block on the pid with `tail --pid=<pid> -f /dev/null` (no sleep loop) and read the log
+afterwards; a grep for a name over the tree can trip the CODEMAP hook (use `git grep`). evidence/F1B/sf_template.jl is a template (not parseable Julia): check prints a
+JuliaFormatter warning for it each time, harmless; rename it to .tmpl if the warning should go.
+
 ## OPEN ITEMS carried (each step's own handoff has the detail; none is decided here)
 - UNVERIFIED and audit flags: G1 flags a-f and rows g15 g25 g35 g42 g52; D2 flags F1-F10 and rows r16-r19 r21 r27 r28 r40 r41 r43 r88 r91 plus the white-box
   testsets; O1 flags a-k, O1-B five, rows w43 w44 w64 w68 w69 w70, the `_boot_meta!` order; F1b findings 1-10, the swipl signal case (private register Q15).
