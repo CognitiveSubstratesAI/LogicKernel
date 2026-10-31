@@ -280,3 +280,63 @@ function compileFile(
 
     return true
 end
+
+# PORT: pl-qlf.c compileFileList
+# (swipl-devel cbf4e189, src/pl-qlf.c:4783-4820)
+# DIVERGES: `writeWicHeader` and `writeWicTrailer` write the state file's header and trailer: there is no state
+# (LD2), so `fd` is no argument and both are left out; `argv` is a vector of file names. `PL_set_prolog_flag("autoload",
+# PL_BOOL, …)` is `setPrologFlag` of the atom flag (the kernel has no `set_prolog_flag` yet, R2 F1b; the flag is
+# `FT_ATOM`, src/os/pl-prologflag.jl). `setAccessLevel` returns nothing, so the level to restore is read first.
+# As upstream: a false `compileFile` returns false with the access level and `autoload` not restored.
+"""
+Compile the boot files `argv` in system mode with `autoload` off, up to an argument `"-c"`, then call
+`user:'\$load_additional_boot_files'/0` (pl-qlf.c). False when a file fails to compile, or that predicate fails or
+raises.
+"""
+function compileFileList(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, state::Nothing, argv::Vector{String}
+)::Bool where {T}
+    alevel = ld.prolog_flag_access_level                       # alevel = setAccessLevel(ACCESS_LEVEL_SYSTEM)
+    setAccessLevel!(ld, ACCESS_LEVEL_SYSTEM)
+    setPrologFlag(gd, "autoload", FT_ATOM, "false")
+
+    ld.qlf_write_state = state                                 # make Prolog compilation go into state
+    for file in argv
+        file == "-c" && break
+        compileFile(gd, ld, state, file) || return false
+    end
+
+    setPrologFlag(gd, "autoload", FT_ATOM, "true")
+    setAccessLevel!(ld, alevel)
+
+    pred = lookupProcedure(mk_sym(T, Symbol("\$load_additional_boot_files")), 0, MODULE_user(gd))
+    rc = PL_call_predicate(gd, ld, MODULE_user(gd), PL_Q_DEBUG, pred, 0)   # PL_call_predicate(MODULE_user, true, pred, 0)
+
+    ld.qlf_write_state = nothing
+    return rc
+end
+
+# ORIGINAL (LB3): pl-init.c has no function of its own for this: it is the `GD->bootsession` branch of
+# `PL_initialise` (pl-init.c:1614-1647, :1654-1666) — system mode, the boot flag on, `compileFileList` over the
+# command line's files, the flag off, the style checks every later load runs under, user mode — as one call.
+# DIVERGES: the resource database (`SopenZIP`, `Sclose`, `zip_close_archive`) and `PL_halt` are left out (no state
+# file, LD2): a false `compileFileList` returns false where upstream halts with 1; the closing `$boot_message`
+# is not called. Nothing here is registered as a predicate.
+"""
+Run the boot compilation over the files `argv` (see `compileFileList`) the way `PL_initialise` does in a boot session:
+returns whether it succeeded; leaves `gd.bootsession` false, the style checks set and the access level `USER`.
+"""
+function boot_from_source!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, argv::Vector{String}
+)::Bool where {T}
+    setAccessLevel!(ld, ACCESS_LEVEL_SYSTEM)
+    gd.bootsession = true
+    rc = compileFileList(gd, ld, nothing, argv)
+    gd.bootsession = false
+    rc || return false
+
+    ld.debugstatus_styleCheck =
+        SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK
+    setAccessLevel!(ld, ACCESS_LEVEL_USER)
+    return true
+end
