@@ -1,4 +1,18 @@
-# MOD3b handoff (Opus coding agent 1, 2026-10-31 UTC): EDIT-ONLY; NO CODE WRITTEN YET (forced hand-back at the context cap)
+# MOD3b handoff (coder 1 read; coder 2 wrote the source, 2026-10-31 UTC): EDIT-ONLY, nothing compiled or run
+
+## Coder 2 progress (read this first)
+- WRITTEN + committed on wip/mod3b, NOT compiled: d19720d (1: opcodes 153-156 + code_info + the four run-loop labels,
+  shared `callatmv_type_error` label using pushWordAsTermRef/popTermRef as m_qualify_argument does), eb330e8 (2-3:
+  checkCallAtContextInstantiation in pl-wam.jl after setContextModule!, and the i_metacall_clause `@` check, wrapped in
+  SAVE/LOAD_REGISTERS + a foreign frame as I_CATCH's PL_error; the NotPortedError/culprit block is gone), 95379b5 (4: compile
+  side; getTargetModule! got `at::Bool=false`), 9996559 (5: decompiler), a02c3dd (6: manifest + label list).
+- DECISION: upstream's `assert(0)` after compileBody's `@` branch is `@assert false "compileBody: …"`, as mcall's default.
+- FLAG H11: lookupModule (can create a module) in I_DEPARTATMV and I_CALLATMV (pl-wam.jl, the two `lookupModule(gd, …)`
+  lines); those two labels are NOT in static_analysis_body.jl's allocation path list (I_DEPARTATM, I_CALLATM are).
+- cb_kind's `_enum_hash` manifest entry is per type: no change was needed.
+- First-compile risks: `isAtomW`/`isTextAtom`/`_is_colon2_word` used in pl-wam.jl new code (all exist); `atv_*` locals in the
+  run loop (types UInt8/word/Int, both labels assign the same types); `Output_3!` signature (ci, c, a0, a1, a2).
+
 
 Worktree ~/code/lk-mod3b, branch wip/mod3b off origin/main 9952080. Nothing compiled, no Julia, no daemon, no swipl run yet.
 The cap hook (cap-subagent-context.sh, "~153k") blocked further work while I was still reading; this file is the whole
