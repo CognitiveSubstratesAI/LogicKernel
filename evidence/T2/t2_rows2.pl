@@ -92,3 +92,4 @@ su087(R) :- catch(read_string(no_such_stream, "", "", _, _), error(E, _), R = E)
 su088(R) :- open_string("abc", S), catch(read_string(S, f(x), "", _, _), error(E, C), R = E-C).
 su089(R) :- open_string("abc", S), catch(read_string(S, "", f(x), _, _), error(E, C), R = E-C).
 su090(R) :- open_string("ab\ncd\n", S), read_string(S, "\n", "\r", D1, R1), read_string(S, "\n", "\r", D2, R2), read_string(S, "\n", "\r", D3, R3), R = [D1-R1, D2-R2, D3-R3].
+su091(R) :- open_string("aéé,b", S), read_string(S, ",", "é", D, R0), R = D-R0.

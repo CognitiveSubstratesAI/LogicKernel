@@ -214,3 +214,10 @@ st205(R) :- get_string_code(2, abc, R).
 st206(R) :- ( get_string_code(1, "abc", 0'b) -> R = yes ; R = no ).
 st207(R) :- get_string_code(1, "日本", R).
 st208(R) :- catch(get_string_code(1, "", _), error(E, _), R = E).
+% appended after the first battery: the rows its mutants (tools/mutants/T2.py) need
+st209(R) :- ( atom_string(12, "12") -> R = yes ; R = no ).
+st210(R) :- ( atom_string("abc", abc) -> R = yes ; R = no ).
+st211(R) :- findall(B-A-S, sub_string("abc", B, 3, A, S), R).
+st212(R) :- findall(B-L-S, sub_string("abc", B, L, 1, S), R).
+st213(R) :- split_string("a.,b", ".,", ",", R).
+st214(R) :- split_string("a  ,b", ",", " ", R).
