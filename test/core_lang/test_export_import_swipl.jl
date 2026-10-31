@@ -102,7 +102,8 @@ const _MX_PROGRAM = raw"""
 :- assertz(mwq:qq(42)).
 :- assertz(mwq:rr(5)).
 :- assertz(mauto:dummy).
-:- ma:export(pdir/0).
+mx_setup :- ma:export(pdir/0).
+:- mx_setup.
 """
 
 # UNVERIFIED on the kernel: gate decides — nothing here was run on the kernel. The rows that lean on more than MOD5a's own code:

@@ -9,7 +9,8 @@
 :- assertz(mwq:qq(42)).
 :- assertz(mwq:rr(5)).
 :- assertz(mauto:dummy).
-:- ma:export(pdir/0).
+mx_setup :- ma:export(pdir/0).
+:- mx_setup.
 t_e01(R) :- catch((export(ma:pa/1), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
 t_e02(R) :- catch((ma:export(pb/2), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
 t_e03(R) :- catch((export(ma:(pa/1, pc/0)), '$module_property'(ma, exports(L)), msort(L, R)), error(F, _), R = raised(F)).
