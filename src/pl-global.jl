@@ -339,6 +339,7 @@ ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 # `trail_new_attvar`, src/pl-attvar.jl). NOT PORTED: `gc_attvars` (the collector's, G1).
 # Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
 # the pool of current_prolog_flag/2's states.
+# Since MOD6: `module_enums`, the pool of `'$current_module'/2`'s states.
 """
     PL_local_data{T}(gd)
 
@@ -469,6 +470,7 @@ mutable struct PL_local_data{T}
     prolog_flag_enums::foreign_state_pool{prolog_flag_enum}     # (current_prolog_flag/2's REDO_PTR states, R2 F1a)
     statistics::ld_statistics                                   # statistics: inferences, clocks (Y1)
     prolog_flag_access_level::Int                               # prolog_flag.access_level: ACCESS_LEVEL_USER or _SYSTEM (R2 LB2)
+    module_enums::foreign_state_pool{module_enum}               # ('\$current_module'/2's REDO_PTR states, MOD6)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     e = mk_expr(T, T[])                         # any term: the idle placeholders' (index context, …)
@@ -548,7 +550,8 @@ function PL_local_data{T}(gd::PL_global_data{T}) where {T}
         gd.prolog_flag.mask,                    # prolog_flag.mask: the database's (pl-thread.c copies the creating thread's)
         foreign_state_pool{prolog_flag_enum}(),  # current_prolog_flag/2's states: none
         ld_statistics(),                        # statistics: no inference yet, started now (Y1)
-        ACCESS_LEVEL_USER                       # access_level: `user` (pl-init.c:1666 sets it after the boot; swipl starts `system`, LB3's path)
+        ACCESS_LEVEL_USER,                      # access_level: `user` (pl-init.c:1666 sets it after the boot; swipl starts `system`, LB3's path)
+        foreign_state_pool{module_enum}()       # '$current_module'/2's states: none
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
