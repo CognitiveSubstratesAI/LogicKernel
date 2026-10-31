@@ -1167,3 +1167,108 @@ function _fmt_mpz_f!(out::Vector{UInt8}, z::BigInt, arg::Int)::Nothing
     _fmt_print_mpz_f!(out, abs(t1), t1 < 0, arg)
     return nothing
 end
+
+# PORT: gmp mpf_init2 + mpf_set_z / mpf_set_q, for formatFloat's `g` paths
+# DIVERGES: the mpf is a truncated exact rational. GMP keeps `prec+1` limbs of 64 bits, `prec` being
+# `(max(53, bits)+127) div 64`: an integer loses its low limbs, a rational is divided to that many limbs. The
+# rational's cut is placed by bit lengths, not by limb boundaries; it differs from GMP's only for a value within
+# 2^-(64*prec) of a decimal rounding boundary. (A dyadic tie stays exact, a tie like 0.995 falls just below.)
+"The value of `mpf_init2(bits)` followed by `mpf_set_z(z)`, `z > 0`, as an exact rational."
+function _fmt_mpf_set_z(bits::Int, z::BigInt)::Rational{BigInt}
+    keep = (max(53, bits) + 127) ÷ 64 + 1
+    nl = cld(ndigits(z; base = 2), 64)
+    if nl > keep
+        sh = 64 * (nl - keep)
+        z = (z >> sh) << sh
+    end
+    return Rational{BigInt}(z)
+end
+
+"The value of `mpf_init2(bits)` followed by `mpf_set_q(q)`, `q > 0`, as an exact rational."
+function _fmt_mpf_set_q(bits::Int, q::Rational{BigInt})::Rational{BigInt}
+    keep = (max(53, bits) + 127) ÷ 64 + 1
+    n = numerator(q)
+    d = denominator(q)
+    s = 64 * keep - (ndigits(n; base = 2) - ndigits(d; base = 2))
+    m = s >= 0 ? div(n << s, d) : div(n, d << (-s))
+    return s >= 0 ? m // (BigInt(1) << s) : (m << (-s)) // BigInt(1)
+end
+
+"`10^e` as an exact rational, any sign of `e`."
+_fmt_pow10q(e::Int)::Rational{BigInt} =
+    e >= 0 ? Rational{BigInt}(_fmt_pow10(e)) : Rational{BigInt}(BigInt(1), _fmt_pow10(-e))
+
+"""
+    _fmt_round_sig(v, P) -> (digits, X)
+
+The `P` significant digits of `v > 0` rounded half up (GMP's `mpf_get_str` looks at the next digit only) and the
+decimal exponent `X` of the first of them: `v` is about `d.ddd * 10^X`.
+"""
+function _fmt_round_sig(v::Rational{BigInt}, P::Int)::Tuple{String, Int}
+    X = v >= 1 ? ndigits(div(numerator(v), denominator(v))) - 1 : -ndigits(div(denominator(v), numerator(v)))
+    while _fmt_pow10q(X) > v
+        X -= 1
+    end
+    while _fmt_pow10q(X + 1) <= v
+        X += 1
+    end
+    w = v * _fmt_pow10q(P - 1 - X) + 1 // 2
+    r = fld(numerator(w), denominator(w))
+    if ndigits(r) > P
+        r = div(r, 10)
+        X += 1
+    end
+    return (string(r), X)
+end
+
+# PORT: gmp gmp_snprintf "%.<P>F{g,G}" of an mpf (doprnt.c: the C `%g` rules)
+"""
+    _fmt_print_mpf_g!(out, v, neg, how, arg)
+
+Write `v >= 0` as `%.<arg>g` does, `arg` 0 meaning 1: `P` significant digits, the exponent form when the
+exponent is below -4 or at least `P`, trailing zeros and a bare point removed.
+"""
+function _fmt_print_mpf_g!(out::Vector{UInt8}, v::Rational{BigInt}, neg::Bool, how::Int, arg::Int)::Nothing
+    P = max(arg, 1)
+    neg && push!(out, UInt8('-'))
+    if v == 0
+        push!(out, UInt8('0'))
+        return nothing
+    end
+    digits, X = _fmt_round_sig(v, P)
+    if X < -4 || X >= P
+        frac = rstrip(SubString(digits, 2), '0')
+        isempty(frac) ? push!(out, UInt8(digits[1])) :
+            append!(out, codeunits(string(digits[1], '.', frac)))
+        push!(out, UInt8(how == Int('G') ? 'E' : 'e'))
+        push!(out, X < 0 ? UInt8('-') : UInt8('+'))
+        append!(out, codeunits(lpad(string(abs(X)), 2, '0')))
+    else
+        local ip::String, fp::String
+        if X >= 0
+            ip = digits[1:(X + 1)]
+            fp = String(rstrip(SubString(digits, X + 2), '0'))
+        else
+            ip = "0"
+            fp = String(rstrip("0"^(-X - 1) * digits, '0'))
+        end
+        append!(out, codeunits(isempty(fp) ? ip : string(ip, '.', fp)))
+    end
+    return nothing
+end
+
+# PORT: pl-fmt.c formatFloat, case V_MPZ `g`/`G` (mpf_init2(arg*4), mpf_set_z) and case V_MPQ `g`/`G`
+# (mpf_init2(bits of the integer part + 4*arg), mpf_set_q)
+"The `~Ng` of a big integer (pl-fmt.c): `%.<arg>g` of an mpf holding it."
+function _fmt_mpz_g!(out::Vector{UInt8}, how::Int, arg::Int, z::BigInt)::Nothing
+    _fmt_print_mpf_g!(out, _fmt_mpf_set_z(arg * 4, abs(z)), z < 0, how, arg)
+    return nothing
+end
+
+"The `~Ng` of a rational (pl-fmt.c)."
+function _fmt_mpq_g!(out::Vector{UInt8}, how::Int, arg::Int, q::Rational{BigInt})::Nothing
+    iv = div(numerator(q), denominator(q))                  # mpz_set_q: truncates
+    fbits = ndigits(abs(iv); base = 2) + 4 * arg            # mpz_sizeinbase(iv, 2)
+    _fmt_print_mpf_g!(out, _fmt_mpf_set_q(fbits, abs(q)), q < 0, how, arg)
+    return nothing
+end
