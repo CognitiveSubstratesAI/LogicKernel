@@ -748,18 +748,18 @@ const ERR_TEXT_INCOMPLETE_MULTIBYTE_SEQUENCE = -4
 
 # PORT: pl-utf8.h IS_UTF16_LEAD
 "True for a UTF-16 lead surrogate (pl-utf8.h)."
-IS_UTF16_LEAD(c::Integer)::Bool = c >= 0xD800 && c <= 0xDBFF
+IS_UTF16_LEAD(c::Int)::Bool = c >= 0xD800 && c <= 0xDBFF
 # PORT: pl-utf8.h IS_UTF16_TRAIL
 "True for a UTF-16 trail surrogate (pl-utf8.h)."
-IS_UTF16_TRAIL(c::Integer)::Bool = c >= 0xDC00 && c <= 0xDFFF
+IS_UTF16_TRAIL(c::Int)::Bool = c >= 0xDC00 && c <= 0xDFFF
 # PORT: pl-utf8.h utf16_decode
 "The code point of a UTF-16 surrogate pair (pl-utf8.h)."
-utf16_decode(lead::Integer, trail::Integer)::Int =
-    ((Int(lead) - 0xD800) << 10) + (Int(trail) - 0xDC00) + 0x10000
+utf16_decode(lead::Int, trail::Int)::Int =
+    ((lead - 0xD800) << 10) + (trail - 0xDC00) + 0x10000
 # PORT: pl-utf8.h utf16_encode
 "The lead and the trail surrogate of the code point `c` above 0xffff (pl-utf8.h)."
-function utf16_encode(c::Integer)::Tuple{Int, Int}
-    c = Int(c) - 0x10000
+function utf16_encode(c::Int)::Tuple{Int, Int}
+    c -= 0x10000
     return ((c >> 10) + 0xD800, (c & 0x3FF) + 0xDC00)
 end
 
