@@ -33,8 +33,9 @@
 # "right direction"), so the standard order of two fresh variables is the order of those cells.
 #
 # Since R2's D1, `erase/1` and `instance/2` for a CLAUSE reference (`pl_erase1_va`, `pl_instance2_va` with
-# `fixup_ssu`, below the copying: the clause blobs of src/pl-dbref.jl). NOT PORTED: the rest of pl-rec.c — the
-# recorded database (`recorda/3`, `recorded/3`, `erase/1` and `instance/2` of a record, the keys and their lists), external records (`PL_record_external`, the
+# `fixup_ssu`, below the copying: the clause blobs of src/pl-dbref.jl); since D2 the recorded database
+# (`recorda/3`, `recordz/3`, `recorded/3`, `current_key/1`, `erase/1` and `instance/2` of a record, the keys
+# and their lists). NOT PORTED: the rest of pl-rec.c — external records (`PL_record_external`, the
 # `PL_TYPE_EXT_*` opcodes), `variantRecords`, `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
 # `freeRecord` (a record is freed by Julia's GC).
@@ -883,9 +884,10 @@ end
 
 # PORT: pl-rec.c erase as pl_erase1_va
 # (PRED_IMPL("erase", 1, erase, 0))
-# DIVERGES: the CLAUSE branch only (since D1): the record branch — `callEventHook(PLEV_ERASED_RECORD, …)`,
-# `remove_record` — is D2's, with the recorded database, and `PL_get_dbref` answers no record yet. The
-# database is the running query's (`_query_gd`). A static predicate's clause is `permission_error(clause,
+# DIVERGES: the database is the running query's (`_query_gd`). The RECORD branch (since D2): the flags
+# `R_ERASED` and `RL_DIRTY` of a list a `recorded/3` still runs over, else `remove_record`; the event hook
+# (`callEventHook(PLEV_ERASED_RECORD, r)`) is upstream's no-hook answer, true (the kernel has no prolog event
+# hooks, pl-event.c), and `L_RECORD` is not taken (one thread). A static predicate's clause is `permission_error(clause,
 # erase, Ref)` with `erase/1` as the context's predicate (`PL_error("erase", 1, NULL, …)`: not
 # `system:erase/1`, which the other errors of this predicate show); the answer for an erased clause is
 # false, no error (`PL_get_dbref` returns NULL).
@@ -897,16 +899,29 @@ function pl_erase1_va(
     gd = _query_gd(ld)
     r = PL_get_dbref(gd, ld, ref)
     r === nothing && return FFALSE
-    type, clause = r
-    @assert type == DB_REF_CLAUSE                               # else: the record branch (D2)
-    def = clause.predicate
-    if (def.flags & P_DYNAMIC) == 0
-        PL_error(
-            ld, "erase", 1, "", ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref
-        )
-        return FFALSE
+    type, ptr = r
+    if type == DB_REF_CLAUSE                                    # CLAUSE: the erase branch of a clause
+        clause = ptr::Clause{T}
+        def = clause.predicate
+        if (def.flags & P_DYNAMIC) == 0
+            PL_error(
+                ld, "erase", 1, "", ERR_PERMISSION, mk_sym(T, :clause), mk_sym(T, :erase), ref
+            )
+            return FFALSE
+        end
+        return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE
+    else
+        rref = ptr::RecordRef{T}
+        rc = true                                               # rc = callEventHook(PLEV_ERASED_RECORD, r)
+        l = rref.list                                           # l = r->list
+        if l.references != 0                                    # a recorded has choicepoints
+            rref.flags |= R_ERASED                              # set(r->record, R_ERASED)
+            l.flags |= RL_DIRTY                                 # set(l, RL_DIRTY)
+        else
+            remove_record(rref)
+        end
+        return rc ? FTRUE : FFALSE
     end
-    return retractClauseDefinition!(gd, def, clause, true) ? FTRUE : FFALSE
 end
 
 # PORT: pl-rec.c fixup_ssu
@@ -957,10 +972,8 @@ end
 # (PRED_IMPL("instance", 2, instance, 0))
 # DIVERGES: ONE predicate with its two branches, as upstream. The CLAUSE branch is upstream's, on the two
 # sides `decompile!` gives (`_rule_term` builds the clause term upstream's `decompile` returns: `Neck(h, b)`,
-# or for a fact the bare head, which this branch wraps as `(h :- true)`). The RECORD branch (the recorded
-# database) is D2's: `PL_get_dbref` answers no record reference yet, so it is refused by name where upstream
-# copies the record (`copyRecordToGlobal`) — a `NotPortedError` naming D2, unreachable until D2 adds the branch
-# to `PL_get_dbref`. A goal clause (`GOAL_CLAUSE`) and a clause not visible in the frame's generation fail.
+# or for a fact the bare head, which this branch wraps as `(h :- true)`). The RECORD branch (since D2) copies
+# the record to the global stack (`copyRecordToGlobal`) and unifies it with `Term`. A goal clause (`GOAL_CLAUSE`) and a clause not visible in the frame's generation fail.
 "`instance(+Ref, -Term)` (pl-rec.c): `Term` is the clause (`Head :- Body`, `Head => Body`, a fact as `Head :- true`) a reference names."
 function pl_instance2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -969,14 +982,16 @@ function pl_instance2_va(
     gd = _query_gd(ld)
     r = PL_get_dbref(gd, ld, ref)
     r === nothing && return FFALSE                              # if ( !(ptr=PL_get_dbref(ref, &type)) )
-    type, clause = r
-    if type != DB_REF_CLAUSE                                    # else: the record branch (D2)
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :instance), "instance/2 of a record reference", "D2"
-            )
-        )
+    type, ptr = r
+    if type != DB_REF_CLAUSE                                    # RECORD: the instance branch of a record
+        rref = ptr::RecordRef{T}
+        t = PL_new_term_ref(ld)
+        if copyRecordToGlobal(ld, t, rref.record::record{T})    # copyRecordToGlobal(t, rref->record, ALLOW_GC)
+            return PL_unify(ld, term, t) ? FTRUE : FFALSE
+        end
+        return FFALSE
     end
+    clause = ptr::Clause{T}
     generation = generationFrame(ld.frames[ld.environment_frame])
 
     if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(clause, generation)
@@ -1003,10 +1018,18 @@ function pl_instance2_va(
 end
 
 # PORT: pl-rec.c BeginPredDefs as PL_predicates_from_rec
-# DIVERGES: the entries of the predicates the kernel has ported (erase/1, instance/2; the rest is D2's and
-# the fast-term family's); `PRED_DEF` ors in `PL_FA_VARARGS`.
-"pl-rec.c's registration table (`BeginPredDefs(rec)`): the ported entries."
+# DIVERGES: the entries of the predicates the kernel has ported (the fast-term family, `fast_term_serialized/2`,
+# `fast_write/2`, `fast_read/2`, is left out); `PRED_DEF` and `PRED_SHARE` or in `PL_FA_VARARGS` (the arity is
+# the call's `PL__ac`: recorded/2,3, recordz/2,3 and recorda/2,3 each share ONE function over both arities).
+"pl-rec.c's registration table (`BeginPredDefs(rec)`), in upstream's order: the ported entries."
 const PL_predicates_from_rec = (
+    PL_extension("recorded", 2, pl_recordedva_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("recorded", 3, pl_recordedva_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("recordz", 2, pl_recordzva_va, PL_FA_VARARGS),
+    PL_extension("recordz", 3, pl_recordzva_va, PL_FA_VARARGS),
+    PL_extension("recorda", 2, pl_recordava_va, PL_FA_VARARGS),
+    PL_extension("recorda", 3, pl_recordava_va, PL_FA_VARARGS),
     PL_extension("erase", 1, pl_erase1_va, PL_FA_VARARGS),
-    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS)
+    PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS),
+    PL_extension("current_key", 1, pl_current_key1_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS)
 )
