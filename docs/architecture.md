@@ -6375,6 +6375,29 @@ What PR1 adds (written edit-only; nothing was compiled or run when this was writ
 Tests: test/core_lang/test_pr1_swipl.jl (rows pr01-pr127 and the two-file rows t_rd1-t_rd7: abolish, the two enumerations, the attribute reader, the re-pointed refusals; swipl 10.1.19 pins from two byte-identical runs of
 evidence/PR1/gen_rows.py, a non-vacuity testset, a white-box testset on `erased_clauses` and the dead index slots, `live_states(ld) == 0`, the live check when `swipl` is on PATH); tools/mutants/PR1c.py (60 mutants; PR1-A2 declared equivalent with its code reason, D-0373).
 
+## LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c (R2 loader_boot, rows 208 and 415)
+
+What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled when this was written):
+
+- **pl-files.c** (`src/os/pl-files.jl`, extended): the helpers `LastModifiedFile`, `SizeFile` (each `(value, errno)`), `access_mode`, `AccessFile`, `AccessDirectory`,
+  `ExistsFile`, `ExistsDirectory`, `ReadLink`, `DeRefLink1`, `DeRefLink` (20 links, then `permission_error(dereference, symlink, _)`), `SameFile`, `RenameFile`,
+  `MarkExecutable`, `file_name_is_iri`; `get_file_name` honours `PL_FILE_ABSOLUTE`, `OSPATH`, `EXIST/READ/WRITE/EXECUTE` and the `file_name_variables` flag
+  (`expandVars`). The predicates, registered in upstream's order (`PL_predicates_from_files`, 23 entries): `time_file/2`, `size_file/2`, `access_file/2`, `read_link/3`,
+  `exists_file/1`, `exists_directory/1`, `is_absolute_file_name/1`, `same_file/2`, `file_base_name/2`, `file_directory_name/2`, `delete_file/1`, `delete_directory/1`,
+  `make_directory/1`, `rename_file/2`, `file_name_extension/3`, `prolog_to_os_filename/2`, `$absolute_file_name/2`, `$cwd/1`, `$chdir/1`, `$mark_executable/1`, `$my_file/1`.
+- **pl-os.c file names** (`src/os/pl-os.jl`, an appended block): `PrologPath`, `OsPath` (identity on Unix), `IsAbsolutePath`, `canonicaliseFileName` (in place on a
+  byte buffer), `utf8_path_lwr`, `canonicalisePath`, `BaseName`, `DirName`, `takeWord`, `expandVars`, `AbsoluteFile`, `PL_cwd`, `PL_changed_cwd`, `is_cwd`, `ChDir`.
+  `GD->paths.CWDdir` is the new field `paths_CWDdir` of `PL_global_data` (the logical working directory with its closing slash; a symlinked directory stays logical).
+- **pl-glob.c** (`src/os/pl-glob.jl`, NEW, registered as `PL_predicates_from_glob` after `_files`): `compilePattern` (`?`, `*`, `[...]` with ranges, `{a,b}`, backslash escapes),
+  `matchPattern`, `wildcard_match/2,3` (option `case_sensitive`), `expand`, `sort_expand`, `expand_file_name/2`, `directory_files/2`.
+- **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` is refused by name (`getpwnam`) and HOME is read each time (upstream
+  caches it in `GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
+- **Refused by name:** `tmp_file/2` and `$tmp_file_stream/4` (NotPortedError, step "LB2b audit": `GD->os.tmp_files` has no field and the stream layer has no `Sfdopen`);
+  an IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory (the `$iri` hook is Prolog: LB4); `PL_FILE_SEARCH` (LB4).
+- **Rows:** 393 oracle rows against swipl 10.1.19 (`evidence/LB2B/gen_lb2b_rows.py`, driver `run_lb2b_rows.sh`, fixtures `fixtures.sh`); several rows need a non-root user.
+
+Tests: test/files/test_lb2b_swipl.jl (the .pl and .out beside it), the mutant list tools/mutants/LB2B.py (47, two declared equivalent).
+
 ## Still to come
 
 * 🔜 **THE ORDER FROM HERE (user, 2026-10-14):** V9 is done; next **L1** — SWI's term layout
