@@ -1272,3 +1272,97 @@ function _fmt_mpq_g!(out::Vector{UInt8}, how::Int, arg::Int, q::Rational{BigInt}
     _fmt_print_mpf_g!(out, _fmt_mpf_set_q(fbits, abs(q)), q < 0, how, arg)
     return nothing
 end
+
+# PORT: C snprintf("%.<arg>{e,E,f,F,g,G}", f), the V_FLOAT tail of pl-fmt.c formatFloat
+# DIVERGES: Julia's `Base.Ryu` (exact, ties to even: what glibc prints) in place of the C library; the
+# infinities and NaN are spelled as C does (`inf`, `-nan`, `INF` for the capitals).
+"The text `snprintf(\"%.<arg>{how}\", f)` gives, `how` one of `eEfFgG`."
+function _fmt_c_printf_float(f::Float64, how::Int, arg::Int)::String
+    upper = how == Int('E') || how == Int('F') || how == Int('G')
+    if !isfinite(f)
+        s = isnan(f) ? "nan" : "inf"
+        s = signbit(f) ? "-" * s : s
+        return upper ? uppercase(s) : s
+    end
+    expch = UInt8(upper ? 'E' : 'e')
+    if how == Int('f') || how == Int('F')
+        return Base.Ryu.writefixed(f, arg)
+    elseif how == Int('e') || how == Int('E')
+        return Base.Ryu.writeexp(f, arg, false, false, false, expch)
+    end
+    P = max(arg, 1)                                         # %g: precision 0 is 1
+    es = Base.Ryu.writeexp(f, P - 1, false, false, false, expch)
+    ei = findlast(c -> c == Char(expch), es)::Int
+    X = parse(Int, SubString(es, ei + 1))                   # the exponent after rounding
+    if X < -4 || X >= P
+        mant = String(SubString(es, 1, ei - 1))
+        occursin('.', mant) && (mant = String(rstrip(rstrip(mant, '0'), '.')))
+        return string(mant, SubString(es, ei))
+    end
+    s = Base.Ryu.writefixed(f, P - 1 - X)
+    occursin('.', s) && (s = String(rstrip(rstrip(s, '0'), '.')))
+    return s
+end
+
+# PORT: pl-fmt.c formatFloat
+# DIVERGES: appends to `out` (the caller's empty vector) with no terminating NUL; the result is `false` with
+# an exception raised where upstream returns NULL. O_GMP only (the LibBF branch is left to a later step); the
+# `__WINDOWS__` exponent fix-up is left out too.
+"""
+    formatFloat(ld, locale, how, arg, f, out) -> Bool
+
+Format the number `f` for `~e ~f ~g ~h` (and the capitals) into `out`: `how` is the directive character, `arg`
+the number of digits (`FMT_DEFAULT`: 6, for `h` 3). Big integers and rationals are printed exactly, `h` and the
+rest through the C `%e %f %g` (pl-fmt.c). The locale's decimal point and grouping are applied last.
+"""
+function formatFloat(
+    ld::PL_local_data{T}, locale::Union{Nothing, PL_locale}, how::Int, arg::Int, f::number,
+    out::Vector{UInt8}
+)::Bool where {T}
+    use_h = how == Int('h') || how == Int('H')
+    if arg == FMT_DEFAULT
+        arg = use_h ? 3 : 6
+    elseif arg < 0 && !use_h
+        a = PL_new_term_ref(ld)
+        PL_put_integer(ld, a, arg)
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
+    end
+
+    use_h && !promoteToFloatNumber(ld, f) && return false
+
+    t = f.type
+    if t === V_MPZ
+        if how == Int('f') || how == Int('F')
+            _fmt_mpz_f!(out, f.mpz, arg)
+        elseif how == Int('e') || how == Int('E')
+            _fmt_mpz_e!(out, locale, how, arg, f.mpz)
+            return true
+        else                                                # g, G
+            _fmt_mpz_g!(out, how, arg, f.mpz)
+        end
+    elseif t === V_MPQ
+        if how == Int('f') || how == Int('F')
+            _fmt_mpq_f!(out, f.mpq, arg)
+        elseif how == Int('e') || how == Int('E')
+            _fmt_mpq_e!(out, locale, how, arg, f.mpq)
+            return true
+        else                                                # g, G
+            _fmt_mpq_g!(out, how, arg, f.mpq)
+        end
+    else
+        if t === V_INTEGER
+            promoteToFloatNumber(ld, f) || return false
+        end
+        if use_h
+            append!(out, codeunits(format_float(f.f, arg, how == Int('H') ? 'E' : 'e')))
+        else
+            append!(out, codeunits(_fmt_c_printf_float(f.f, how, arg)))
+        end
+    end
+
+    if locale !== nothing
+        localizeDecimalPoint(locale, out) || return false
+        groupDigits(locale, out) || return false
+    end
+    return true
+end
