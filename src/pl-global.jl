@@ -105,6 +105,7 @@ mutable struct PL_global_data{T}
 
     const event_hook::event_hooks{T}                            # event.hook: the event lists (R2 EV1)
     const closure_refs::Vector{closure{T}}                      # (pl-wrap.c: the closure a closure blob names, by its number in the payload; TAB1-min)
+    paths_CWDdir::String                                        # paths.CWDdir: the cached working directory, '/'-terminated ("" = none; paths.CWDlen is its byte length; R2 LB2b)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -144,6 +145,7 @@ end
 # `record_refs` (the records a `record` blob names, as `clause_refs`).
 # Since TAB1-min: `closure_refs` (the closures a `closure` blob names, as `clause_refs`; pl-wrap.c keeps the `struct closure`
 # in the blob's payload, src/pl-wrap.jl).
+# Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
 function PL_global_data{T}() where {T}
     cd = initSupervisors()
     modules = module_table{T}()                 # initModules: system, then user
@@ -217,7 +219,8 @@ function PL_global_data{T}() where {T}
         true,                                   # halt_exit: the process exit
         Int[],                                  # halt_exited
         event_hooks{T}(),                       # event.hook: no listener yet (R2 EV1)
-        closure{T}[]                            # closure_refs: no closure has a reference yet (TAB1-min)
+        closure{T}[],                           # closure_refs: no closure has a reference yet (TAB1-min)
+        ""                                      # paths.CWDdir: none until the first PL_cwd (R2 LB2b)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
