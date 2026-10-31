@@ -446,6 +446,8 @@ end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    # the pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
+    @test length(_MX_PINNED) == length(_MX_CASES) + 1
     if swipl === nothing
         @info "MOD5a LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else

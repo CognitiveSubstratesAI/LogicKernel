@@ -62,7 +62,7 @@ the weak-import NotPortedError at pl-proc.jl:1028 is KEPT and now becomes reacha
 `old.flags |= pflags | PROC_IMPORTED` (UInt32); `import_` calls `contextModule(gd, ld, ld.environment_frame)` without the 0 guard.
 (5) The 9-arg `_PL_error_close!` now forwards: PL_error allocation behaviour unchanged for other callers.
 GATE ORDER for the gate agent: fmt, check, rows x3 term types, test_type_discipline, branch-gate, alloc pins only if the run loop
-changed (it did not), mutants/MOD5a to CI, crash-term grep (no hits expected in my text).
+changed (it did not), mutants/MOD5a to CI, D-0164 grep (no hits expected in my text).
 Daemon: coder 1 started none. Hooks: edit-and-commit-in-one-call blocks twice (split), the cap hook at 151k.
 
 ## coder 2 (EDIT-ONLY, nothing compiled, no Julia started) — SOURCE COMPLETE
@@ -112,7 +112,7 @@ CHANGE daemon restart ~30 min, public table order D-0149, F5, GC for lingerDefin
 `warm.sh inventory` for docs/port_inventory.md (+ the `declared` column by hand as MOD3b needed). Gate order for the gate agent: fmt [reflows
 find_modules_with_defs, pl_def_modules2_va, the manifest block, the registration lines: RE-FIT mutant anchors], inventory, check, rows x3 term
 types, test_type_discipline, tools/pkgtest_way.sh on the new file (one at a time), mutants anchors re-check, mutants/MOD5a to CI, branch-gate,
-crash-term grep, gate branch push. Alloc pins not needed. No daemon was started by coder 3; lanes.conf untouched. No hook blocks except: the
+D-0164 grep, gate branch push. Alloc pins not needed. No daemon was started by coder 3; lanes.conf untouched. No hook blocks except: the
 cap hook at 150k, the edit+commit-in-one-call hook, and the untracked-files hook (the .err files had to be added).
 Stale source comment for the gate agent: src/pl-proc.jl:1025-1027 still says "the kernel makes no weak imports ... so it is not reached";
 '$import'(PI, weak) now makes one (F5), so reword it.
@@ -131,7 +131,7 @@ REMAINING for the gate agent (in this order):
     test/core_lang/test_export_import_swipl.jl` (ONE at a time, ~3 GB). Read the UNVERIFIED rows (header of the file) and the
     `definition.shared` counts and F5 testsets first: they had no kernel run.
  5. RE-CHECK the mutant anchors after fmt (rerun the validator above; refit any reflowed `old`), push `mutants/MOD5a` at the WIP SHA
-    once the list and TARGETS exist, then branch-gate, the crash-term grep (diff + ALL commit messages), then the local
+    once the list and TARGETS exist, then branch-gate, the D-0164 grep (diff + ALL commit messages), then the local
     `gate/mod5a` at the SAME SHA as `mutants/MOD5a` (wip refs are refused by the pre-push hook).
  6. Alloc pins NOT needed (the run loop is untouched). STRUCT CHANGE (`definition.shared`): the first daemon compile is cold (~30 min).
 Daemon: coder 4 started none; lanes.conf untouched. Hook blocks: none.
