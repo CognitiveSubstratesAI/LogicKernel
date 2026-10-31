@@ -271,3 +271,14 @@ function clearUninitialisedVarsFrame(
         pc += 1 + codeTable(c).arguments                        # stepPC(PC)
     end
 end
+
+# PORT: pl-gc.c pl_garbage_collect
+# (FRG("$garbage_collect", 1, pl_garbage_collect, 0), pl-ext.c:168; pl-gc.c:4570-4584 at the pin. The
+# Prolog `garbage_collect/0` is boot/syspred.pl:1423-1424: `garbage_collect :- '$garbage_collect'(0).`)
+# DIVERGES: the body of `garbageCollect(GC_USER)` (pl-gc.c:4581) is not the kernel's — no stack garbage
+# collection, so the call has nothing to do and succeeds. The debug level argument `d` is read only
+# under `#if O_DEBUG` (pl-gc.c:4573-4579), which a release build of swipl does not define, so `d` is not examined.
+"`'\$garbage_collect'(+DebugLevel)`: run the stack garbage collector (pl-gc.c); here there is none, so it succeeds."
+function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}
+    return FTRUE
+end
