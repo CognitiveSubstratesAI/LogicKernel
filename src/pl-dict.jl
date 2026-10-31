@@ -56,7 +56,9 @@ is_dict_key(w::word)::Bool = isAtomW(w) || isTaggedIntW(w)
 # PORT: pl-dict.c get_dict_ex
 # DIVERGES: the dict's word is the result (`*dp`), `nothing` for upstream's false.
 "The dict term reference `t` holds, as a compound word; a type error when `ex` and it is no dict (pl-dict.c)."
-function get_dict_ex(ld::PL_local_data{T}, t::term_t, ex::Bool)::Union{Nothing, word} where {T}
+function get_dict_ex(
+    ld::PL_local_data{T}, t::term_t, ex::Bool
+)::Union{Nothing, word} where {T}
     k, w, _ = _deref_loc(ld, -(t + 1))
     if is_dict_term(ld, k, w)
         return w
@@ -234,7 +236,9 @@ end
 # `sortperm` on the keys read out, the cells written back in the new order (upstream: `sort_r` over the cells in
 # place); `dict` is the position of the functor cell; the result is `(status, dupl)` as `dict_ordered`'s.
 "Sort the pairs of the dict at `dict` by key and check them: `(status, duplicate key word)` (pl-dict.c)."
-function dict_order(ld::PL_local_data{T}, dict::Int)::Tuple{_PL_dict_status_t, word} where {T}
+function dict_order(
+    ld::PL_local_data{T}, dict::Int
+)::Tuple{_PL_dict_status_t, word} where {T}
     arity = arityFunctor(ld.functors, ld.gstack[dict])
     @assert arity % 2 == 1
     n = arity ÷ 2
@@ -283,8 +287,8 @@ function get_name_value(
         colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
 
         if (fdef == minus2 && (flags & DICT_GET_PAIRS) != 0) ||
-           (fdef == equals2 && (flags & DICT_GET_EQUALS) != 0) ||
-           (fdef == colon2 && (flags & DICT_GET_COLON) != 0)
+            (fdef == equals2 && (flags & DICT_GET_EQUALS) != 0) ||
+            (fdef == colon2 && (flags & DICT_GET_COLON) != 0)
             _, np, npos = _deref_loc(ld, f + 1)     # deRef2(&f->arguments[0], np)
             if is_dict_key(np)
                 return (np, f + 2)                  # *name = *np; *value = linkValI(&f->arguments[1])
