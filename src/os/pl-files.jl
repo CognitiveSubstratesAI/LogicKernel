@@ -19,6 +19,29 @@
 "The longest file name `get_file_name` accepts, in bytes, the terminating NUL included (Linux)."
 const PATH_MAX = 4096
 
+# PORT: pl-file.c file_name_is_iri
+# DIVERGES: lives here, where the file-name functions are (pl-file.jl holds the stream layer); the
+# name is a `String`.
+"""
+    file_name_is_iri(path) -> Int
+
+The length of the IRI scheme `path` starts with — two or more lower-case letters followed by `://`, 4 for
+`http://` — and else 0 (pl-file.c).
+"""
+function file_name_is_iri(path::AbstractString)::Int
+    b = codeunits(path)
+    n = length(b)
+    s = 1
+    while s <= n && UInt8('a') <= b[s] <= UInt8('z')
+        s += 1
+    end
+    if s - 1 >= 2 && s + 2 <= n && b[s] == UInt8(':') && b[s + 1] == UInt8('/') &&
+        b[s + 2] == UInt8('/')
+        return s - 1
+    end
+    return 0
+end
+
 # PORT: pl-files.c get_file_name
 # DIVERGES: the name is a `String` (UTF-8, which is `REP_FN` in a UTF-8 locale) or `nothing` where upstream
 # writes `char *` and returns a Bool; the unported flags above raise `NotPortedError`. `OsPath` is the
