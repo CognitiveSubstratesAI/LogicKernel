@@ -22,7 +22,7 @@ t_i14(R) :- catch((catch(import_module(1, _), error(E, _), true), R = E), error(
 t_i15(R) :- catch((catch(import_module(f(x), _), error(E, _), true), R = E), error(F, _), R = raised(F)), mme_done.
 t_i16(R) :- catch((( import_module(mmx_u, 1) -> A = yes ; A = no ), ( import_module(mmx_u, f(x)) -> B = yes ; B = no ), R = A-B), error(F, _), R = raised(F)), mme_done.
 t_i17(R) :- catch((import_module(mmx_c2, S), !, R = S), error(F, _), R = raised(F)), mme_done.
-t_i18(R) :- catch((( forall(import_module(mmx_c2, S), atom(S)) -> R = yes ; R = no )), error(F, _), R = raised(F)), mme_done.
+t_i18(R) :- catch((( \+ ( import_module(mmx_c2, S), \+ atom(S) ) -> R = yes ; R = no )), error(F, _), R = raised(F)), mme_done.
 t_i19(R) :- catch((add_import_module(mmx_c4, mmx_u, start), findall(S, (import_module(mmx_c4, S), ( S == mmx_u -> add_import_module(mmx_c4, mmx_f, end) ; true )), L), R = L), error(F, _), R = raised(F)), mme_done.
 t_i20(R) :- catch((( import_module(user, S), import_module(S, S2) -> R = S-S2 ; R = none )), error(F, _), R = raised(F)), mme_done.
 t_i21(R) :- catch((mme_det(import_module(mmx_c2, mmx_u), D), R = D), error(F, _), R = raised(F)), mme_done.
@@ -43,7 +43,7 @@ t_c14(R) :- catch((findall(M, ('$current_module'(M, _), ( M == mmx_s ; M == mmx_
 t_c15(R) :- catch((findall(D, mme_det('$current_module'(_, _), D), L0), sort(L0, L), R = L), error(F, _), R = raised(F)), mme_done.
 t_c16(R) :- catch((mme_det('$current_module'(user, _), D1), mme_det('$current_module'(_, '/mmx/f.pl'), D2), mme_det('$current_module'(_, '/mmx/g.pl'), D3), R = [D1, D2, D3]), error(F, _), R = raised(F)), mme_done.
 t_c17(R) :- catch(('$current_module'(M, _), !, ( atom(M) -> R = ok ; R = no )), error(F, _), R = raised(F)), mme_done.
-t_c18(R) :- catch((\+ \+ '$current_module'(_, _), \+ \+ '$current_module'(_, _), once('$current_module'(_, _)), once('$current_module'(_, _)), R = ok), error(F, _), R = raised(F)), mme_done.
+t_c18(R) :- catch((\+ \+ '$current_module'(_, _), \+ \+ '$current_module'(_, _), ( '$current_module'(_, _) -> true ), ( '$current_module'(_, _) -> true ), R = ok), error(F, _), R = raised(F)), mme_done.
 t_c19(R) :- catch((findall(M, ('$current_module'(M, _), ( M == mmx_u ; M == mmx_f ; M == mmx_c2 )), L0), msort(L0, L), R = L), error(F, _), R = raised(F)), mme_done.
 t_c20(R) :- catch((( '$current_module'([], '/mmx/g.pl') -> A = yes ; A = no ), R = A), error(F, _), R = raised(F)), mme_done.
 t_d01(R) :- catch(('$destroy_module'(mmx_t), ( '$current_module'(mmx_t, Fa) -> R = yes(Fa) ; R = no )), error(F, _), R = raised(F)), mme_done.
