@@ -239,3 +239,20 @@ test/test_type_discipline.jl, mutants/MOD3b early at the WIP SHA, branch-gate, J
   3 errored). Which row triggers it is not known (the driver runs rows in sequence; likely the frame-reuse rows a70-a77 or a callatm
   depart path). The remaining files (test_body_code_swipl, test_metacall_control, type discipline) were NOT run.
 - Log excerpt: evidence/MOD3b/gate1_at_body.log.
+
+## Engine agent 2 (Opus, 2026-10-31): cause found and fixed by reading; NOT re-run (the daemon is held by a probe)
+- CAUSE (ours, src/pl-wam.jl `i_metacall_clause`, the MOD3b `checkCallAtContextInstantiation` call): it was wrapped in
+  `PL_open_foreign_frame`/`PL_close_foreign_frame` (+ SAVE/LOAD_REGISTERS), absent upstream (pl-vmi.c:5540-5542 at cbf4e1896275 calls
+  it bare). The frame being filled, NFR, sits at base == lTop (`pushFrame!(ld, ld.lTop)`); the foreign frame is pushed at that same
+  base and raises lTop by SIZEOF_FLIFRAME, so its close (`lowerLTop!` -> `dropRecords!(ld, NFR.base)`) drops NFR too
+  (base >= p, base < top). The goal clause then runs in a dropped record (FR = NFR, nframes = NFR-1): its last call
+  (`I_DEPARTATM` -> `I_DEPARTM` -> `I_DEPART`) meets `_is_newest_live_frame` false. First row by this reading: a28
+  `call(@(utp(R), qm2))` (a01-a27 never meta-call `@/2`; the I_DEPARTATM/ATMV labels themselves match pl-vmi.c).
+- FIX: the check is called bare, as `stripModule_cells` just above it is; `PL_error` opens its own foreign frame (`_PL_error_open`),
+  and its error path reaches `b_throw` as the stripModule error does.
+- NOT RUN: my per-row probe (`warm.sh send`, seq=19, 14:39) caught the AssertionError and went on with the next rows on the
+  corrupted stacks; it timed out at 1800 s and the daemon (pid 20730) is still at ~90% CPU with flat RSS, i.e. looping on seq=19.
+  It does not take SIGINT (no `exit_on_sigint(false)` in tools/warm_session.jl). A restart is the dispatcher's call.
+- NEXT (after the daemon is free): `tools/warm.sh file test/core_lang/test_at_body_swipl.jl`, then test_body_code_swipl.jl,
+  test_metacall_control.jl, test/test_type_discipline.jl; per failing row: expectation vs kernel. a39 (cyclic goal) untraced.
+  A per-row probe must use a FRESH database per row and STOP at the first raise (never continue after one).

@@ -3446,13 +3446,11 @@ function PL_next_solution_guarded(
     #     if ( fd->functor == FUNCTOR_at_sign2 &&
     #          !checkCallAtContextInstantiation(a) )
     #       THROW_EXCEPTION;
-    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign    # fd->functor == FUNCTOR_at_sign2
-        @SAVE_REGISTERS(QID)
-        mc_fid = PL_open_foreign_frame(ld)
-        mc_atok = checkCallAtContextInstantiation(ld, mc_gloc)
-        PL_close_foreign_frame(ld, mc_fid)
-        @LOAD_REGISTERS(QID)
-        mc_atok || @goto b_throw                    # THROW_EXCEPTION
+    # Called as `stripModule_cells` above is, with no foreign frame of its own: one opened at `lTop`
+    # has the base of the frame being filled, and closing it drops that frame (`dropRecords!`).
+    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign &&   # fd->functor == FUNCTOR_at_sign2
+        !checkCallAtContextInstantiation(ld, mc_gloc)
+        @goto b_throw                               # THROW_EXCEPTION
     end
     # lTop = NFR (it is); compileClause(&cl, NULL, a, PROCEDURE_dcall1, module, 0, 0)
     mc_cl = try
