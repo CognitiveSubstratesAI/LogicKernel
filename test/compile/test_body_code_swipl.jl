@@ -89,6 +89,8 @@ function _bc_op(op, k::UInt8, w::UInt64, lits, procs, jump)::String
     elseif k == LK.CA1_LPROC
         d = procs[w].definition
         return "P:" * _hcps(_BNAMES[d.functor_name]) * "/$(d.arity)"
+    elseif k == LK.CA1_MODULE && w == 0                                  # (MOD3b) the clause's module: swipl's NULL
+        return "M:0"
     elseif k == LK.CA1_MODULE                                            # (MOD3a) the module's name
         return "M:" * _hcps(String(lk_name(_BGD.modules[Int(w)].atom)))
     elseif k == LK.CA1_PROC                                              # (MOD3a) Module:Name/Arity
@@ -166,6 +168,7 @@ bc_op(_, jump, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(h_void_n, integer, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(c_var_n, integer, X, S) :- !, format(string(S), "~w", [X]).
 bc_op(_, lproc, F/A, S) :- !, atom_codes(F, C), format(string(S), "P:~w/~d", [C, A]).
+bc_op(_, module, M, S) :- var(M), !, S = "M:0".
 bc_op(_, module, M, S) :- !, atom_codes(M, C), format(string(S), "M:~w", [C]).
 bc_op(_, proc, M:F/A, S) :- !, atom_codes(M, MC), atom_codes(F, C), format(string(S), "P:~w:~w/~d", [MC, C, A]).
 bc_op(N, _, X, S) :- hc_op(N, X, S).
@@ -3017,10 +3020,10 @@ end
 
 @testset "what is still refused (V2's interim; V6b, V6b2, V9a: the inline compilers decide), and swipl's type_error(callable, Body)" begin
     p = _bs("pr")
-    # since MOD3a `m:g` compiles (I_CALLM/I_DEPARTM): its code is pinned in the "M:Goal in a body" testset
+    # since MOD3a `m:g` compiles (I_CALLM/I_DEPARTM), since MOD3b `g@m` (I_CALLATM/I_DEPARTATM): their
+    # code is pinned in the "M:Goal in a body" and "Goal@Module in a body" testsets
     for body in (
-        _bf("@", _bs("g"), _bs("m")),
-        _bconj(_bs("q"), _bs("\$reset"))                       # a reserved goal atom (V9)
+        _bconj(_bs("q"), _bs("\$reset")),                      # a reserved goal atom (V9)
     )
         @test_throws LK.NotPortedError _bclause(p, body)
     end
@@ -3376,6 +3379,174 @@ end
             ]
             theirs = _bc_swipl(cases)
             @test theirs == [w for (_, _, _, w) in _BC_MOD3A]
+        end
+    end
+end
+
+# ── MOD3b: `Goal@Module` in a body (pl-comp.c:2635-2653, 3352-3378, 3444-3465, 3594-3628) ─────────────────────────────
+# Each clause compiled from `user`, as `_BC_MOD3A`'s. swipl 10.1.19's code (`clause_vm/2` + `vmi_labels/2`, probed
+# 2026-10-31 through this file's driver; lk-mod3b evidence/MOD3b/bcprobe.pl, bcprobe.out): the procedure-module
+# operand of the clause's own module is upstream's NULL, which clause_vm/2 gives as an unbound variable: `M:0` both
+# sides; the context module of `I_CALLATMV`/`I_DEPARTATMV` is a variable offset.
+const _BC_MOD3B = [
+    (   # I_DEPARTATM: no LCO under an at context
+        nothing, _bs("pa1"), _bf("@", _bf("q", _bg(1)), _bs("m2")),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_departatm(M:0,M:[109,50],P:[117,115,101,114]:[113]/1)",
+            raw"i_exit"
+        ]
+    ),
+    (   # I_CALLATM, then the clause's own LCO (the at context ends with its goal)
+        nothing, _bs("pa2"), _bconj(_bf("@", _bf("q", _bg(1)), _bs("m2")), _bs("r")),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_callatm(M:0,M:[109,50],P:[117,115,101,114]:[113]/1)",
+            raw"l_nolco(L1)",
+            raw"i_lcall(P:[114]/0)",
+            raw"L1:",
+            raw"i_depart(P:[114]/0)",
+            raw"i_exit"
+        ]
+    ),
+    (   # m:q(1)@m2: the procedure-module operand is m
+        nothing, _bs("pa3"), _bf("@", _bf(":", _bs("m"), _bf("q", _bg(1))), _bs("m2")),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_departatm(M:[109],M:[109,50],P:[109]:[113]/1)",
+            raw"i_exit"
+        ]
+    ),
+    (   # I_DEPARTATMV: the module in a variable
+        nothing, _bf("pa4", _bv(1)), _bf("@", _bf("q", _bg(1)), _bv(1)),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_departatmv(M:0,0,P:[117,115,101,114]:[113]/1)",
+            raw"i_exit"
+        ]
+    ),
+    (   # I_CALLATMV, then the clause's own LCO
+        nothing, _bf("pa5", _bv(1)), _bconj(_bf("@", _bf("q", _bg(1)), _bv(1)), _bs("r")),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_callatmv(M:0,0,P:[117,115,101,114]:[113]/1)",
+            raw"l_nolco(L1)",
+            raw"i_lcall(P:[114]/0)",
+            raw"L1:",
+            raw"i_depart(P:[114]/0)",
+            raw"i_exit"
+        ]
+    ),
+    (   # G@m2, a variable goal: the meta-call of `@(G, m2)` (B_FUNCTOR @/2 first, the module after the goal)
+        nothing, _bf("pa6", _bv(1)), _bf("@", _bv(1), _bs("m2")),
+        [
+            raw"i_enter",
+            raw"b_functor(F:[64]/2)",
+            raw"b_var0",
+            raw"b_atom(a:[109,50])",
+            raw"b_pop",
+            raw"i_call1",
+            raw"i_exit"
+        ]
+    ),
+    (   # call/1 under an at context is no inline I_CALL1: I_DEPARTATM of system:call/1
+        nothing, _bs("pa7"), _bf("@", _bf("call", _bf("q", _bg(1))), _bs("m2")),
+        [
+            raw"i_enter",
+            raw"b_functor(F:[113]/1)",
+            raw"b_smallint(i:1)",
+            raw"b_pop",
+            raw"i_departatm(M:0,M:[109,50],P:[115,121,115,116,101,109]:[99,97,108,108]/1)",
+            raw"i_exit"
+        ]
+    ),
+    (   # m:G@M: both contexts on a variable goal, `@(m:G, M)`
+        nothing, _bf("pa8", _bv(1), _bv(2)), _bf("@", _bf(":", _bs("m"), _bv(1)), _bv(2)),
+        [
+            raw"i_enter",
+            raw"b_functor(F:[64]/2)",
+            raw"b_functor(F:[58]/2)",
+            raw"b_atom(a:[109])",
+            raw"b_var0",
+            raw"b_pop",
+            raw"b_argvar(1)",
+            raw"b_pop",
+            raw"i_call1",
+            raw"i_exit"
+        ]
+    ),
+    (   # I_CALLATM with a procedure-module, then the clause's own LCO
+        nothing, _bs("pa9"),
+        _bconj(_bf("@", _bf(":", _bs("m"), _bf("q", _bg(1))), _bs("m2")), _bs("r")),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_callatm(M:[109],M:[109,50],P:[109]:[113]/1)",
+            raw"l_nolco(L1)",
+            raw"i_lcall(P:[114]/0)",
+            raw"L1:",
+            raw"i_depart(P:[114]/0)",
+            raw"i_exit"
+        ]
+    ),
+    (   # (q(1), r)@M: every goal of the conjunction under the at context, the last I_DEPARTATMV
+        nothing, _bf("pa10", _bv(1)), _bf("@", _bconj(_bf("q", _bg(1)), _bs("r")), _bv(1)),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_callatmv(M:0,0,P:[117,115,101,114]:[113]/1)",
+            raw"i_departatmv(M:0,0,P:[117,115,101,114]:[114]/0)",
+            raw"i_exit"
+        ]
+    ),
+    (   # q(1)@user from user: still I_DEPARTATM (no shortcut for the clause's own module)
+        nothing, _bs("pa11"), _bf("@", _bf("q", _bg(1)), _bs("user")),
+        [
+            raw"i_enter",
+            raw"b_smallint(i:1)",
+            raw"i_departatm(M:0,M:[117,115,101,114],P:[117,115,101,114]:[113]/1)",
+            raw"i_exit"
+        ]
+    )
+]
+
+@testset "Goal@Module in a body compiles as swipl's (MOD3b)" begin
+    for (hm, h, b, want) in _BC_MOD3B
+        got = _bc_kernel(_bclause_mod(hm, h, b))
+        got == want ||
+            println(stderr, "  ", _bc_text(h, b), "\n    ours  ", got, "\n    swipl ", want)
+        @test got == want
+    end
+    # getTargetModule's errors with the at context (swipl 10.1.19's assertz/1, probed 2026-10-31): a variable
+    # met first here → instantiation_error, a number → type_error(module, 1)
+    user = LK.MODULE_user(_BGD)
+    for (body, want) in (
+        (
+            _bconj(_bf("@", _bs("foo"), _bv(7)), _bf("bar", _bv(7))),
+            _bs("instantiation_error")
+        ),
+        (_bf("@", _bs("foo"), _bg(1)), _bf("type_error", _bs("module"), _bg(1)))
+    )
+        ld = LK.PL_local_data{_B}(_BGD)
+        perr = LK.lookupProcedure(_bs("perra"), 0, user)
+        @test LK.compileClause(_BGD, ld, _bs("perra"), body, perr, user) === nothing
+        @test ld.exception_term != 0 &&
+            lk_eq(child(lk_answer(ld, ld.exception_term), 2), want)
+    end
+    if _BC_SWIPL_BIN !== nothing
+        @testset "the pins are swipl's" begin
+            cases = [
+                "bc_case_show(($(_bc_text(hm === nothing ? h : _bf(":", _bs(hm), h), b))))"
+                for
+                (hm, h, b, _) in _BC_MOD3B
+            ]
+            theirs = _bc_swipl(cases)
+            @test !isempty(theirs) && theirs == [w for (_, _, _, w) in _BC_MOD3B]
         end
     end
 end

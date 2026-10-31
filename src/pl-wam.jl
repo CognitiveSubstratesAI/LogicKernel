@@ -1790,7 +1790,8 @@ const VMI_RUN = (
     :I_FCALLNDET5,
     :I_FCALLNDET6, :I_FCALLNDET7, :I_FCALLNDET8, :I_FCALLNDET9, :I_FCALLNDET10,
     :I_CHP, :I_SSU_CHOICE, :I_SSU_COMMIT, :S_SSU_DET,
-    :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL
+    :I_CONTEXT, :I_CALLM, :I_DEPARTM, :S_MQUAL, :S_LMQUAL,
+    :I_DEPARTATM, :I_CALLATM, :I_DEPARTATMV, :I_CALLATMV
 )
 
 "Jump to the label named after instruction `x`, one of those `table` names (a balanced tree of compares)."
@@ -1847,6 +1848,29 @@ function setContextModule!(fr::localFrame, context::Int)::Nothing
     fr.context = context                            # fr->context = context
     fr.flags |= FR_CONTEXT                          # setLocal(fr, FR_CONTEXT)
     return nothing
+end
+
+# PORT: pl-wam.c checkCallAtContextInstantiation
+# (pl-wam.c:1851-1888 at the pin; MOD3b) "Verify that p is of the shape @(Goal,Module) that is
+# sufficiently instantiated to avoid teh compiler to generate a meta-call for it. Other errors will
+# find their way to the user in other ways."
+# DIVERGES: on a LOCATION (`_deref_loc`, as `stripModuleName_cells`); `canBind(*m)` is an unbound or
+# an attributed cell (`DU_CELL`, `DU_ATTVAR`); `hasFunctor(*g, FUNCTOR_colon2)` is `_is_colon2_word`.
+"Whether the `@(Goal, Module)` at location `p` is instantiated enough to compile, raising the instantiation error when not (pl-wam.c)."
+function checkCallAtContextInstantiation(ld::PL_local_data{T}, p::Int)::Bool where {T}
+    _, pw, _ = _deref_loc(ld, p)                    # deRef(p)
+    mk, _, _ = _deref_loc(ld, valPtr(pw) + 2)       # m = argTermP(*p, 1); deRef(m)
+    (mk == DU_CELL || mk == DU_ATTVAR) && return PL_error(ld, ERR_INSTANTIATION)   # canBind(*m)
+    ok, gloc, _ = stripModuleName_cells(ld, valPtr(pw) + 1)    # g = argTermP(*p, 0); deRef(g); g = stripModuleName(g, &pm)
+    ok || return false
+    gk, gw, _ = gloc
+    if _is_colon2_word(ld, gk, gw)                  # hasFunctor(*g, FUNCTOR_colon2)
+        mk, _, _ = _deref_loc(ld, valPtr(gw) + 1)   # m = argTermP(*g, 0); deRef(m)
+        (mk == DU_CELL || mk == DU_ATTVAR) && return PL_error(ld, ERR_INSTANTIATION)   # canBind(*m)
+        gk, _, _ = _deref_loc(ld, valPtr(gw) + 2)   # g = argTermP(*g, 1); deRef(g)
+    end
+    (gk == DU_CELL || gk == DU_ATTVAR) && return PL_error(ld, ERR_INSTANTIATION)   # canBind(*g)
+    return true
 end
 
 # ORIGINAL: upstream's `setVar(*valTermRef(t))` for the exception term references (pl-wam.c
@@ -3332,6 +3356,15 @@ function PL_next_solution_guarded(
     PC += 1
     @goto I_DEPART                                  # VMI_GOTO(I_DEPART)
 
+    # PORT: pl-vmi.c I_DEPARTATM
+    # (pl-vmi.c:2113-2123 at the pin; MOD3b)
+    #     PC++;                           /* Ignore :-qualifier */
+    #     VMI_GOTO(I_DEPARTM);
+    # The procedure-module operand serves the decompiler only.
+    @label I_DEPARTATM
+    PC += 1                                         # PC++: ignore the :-qualifier
+    @goto I_DEPARTM                                 # VMI_GOTO(I_DEPARTM)
+
     # PORT: pl-vmi.c I_CALL1
     # DIVERGES: the new frame is the record pushed at `lTop`, upstream's cast `NFR = lTop`.
     # NOT PORTED: the debug output.
@@ -3359,8 +3392,8 @@ function PL_next_solution_guarded(
     # clause that does not compile and `call_type_error` reach `b_throw` as upstream's do, with the
     # frame above `lTop`.
     # Since V9e-2 the control constructs and `call/N` for N > 8 under `call/1` run in a temporary
-    # clause (`compileGoalClause`, src/pl-comp.jl), entered here as upstream enters it; NOT PORTED:
-    # `Goal@Module` (refused by name, R2). NOT PORTED: closures (`_PL_closure_blob`: no closures), `FR_INRESET` (no `reset/3`:
+    # clause (`compileGoalClause`, src/pl-comp.jl), entered here as upstream enters it; since MOD3b
+    # so is `Goal@Module`, after `checkCallAtContextInstantiation`. NOT PORTED: closures (`_PL_closure_blob`: no closures), `FR_INRESET` (no `reset/3`:
     # asserted absent) and the `mcall_cont` trap of an undefined procedure (the supervisor
     # `S_VIRGIN` traps it, as for `I_CALL`).
     @label i_metacall_common
@@ -3409,36 +3442,15 @@ function PL_next_solution_guarded(
     # DIVERGES: see `i_metacall_common`.
     @label i_metacall_clause
     @assert (ld.frames[FR].flags & FR_INRESET) == 0     # (no reset/3: '$meta_call'/1)
-    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign     # Goal@Module (f3b-3)
-        setLTop!(ld, argFrameP(mc_nb, 1))           # (a Julia exception unwinds this frame)
-        # the culprit exported off the cells; a CYCLIC goal, which no value holds (`export_cells`
-        # refuses it), is refused all the same, argument by argument (one export): an acyclic one
-        # as it is, a cyclic one its functor over fresh variables — so the culprit still names
-        # the goal and the module (L1f f3)
-        mc_culprit = if is_acyclic_cells(ld, mc_gloc)
-            export_cells(ld, cell_export{T}(), mc_gloc)
-        else
-            mc_ex = cell_export{T}()
-            mc_args = T[mc_name]
-            for mc_i in 1:2
-                mc_a = valPtr(mc_w) + mc_i
-                if is_acyclic_cells(ld, mc_a)
-                    push!(mc_args, export_cells(ld, mc_ex, mc_a))
-                else                                # a cyclic term: a compound
-                    _, mc_aw, _ = _deref_loc(ld, mc_a)
-                    mc_af = ld.gstack[valPtr(mc_aw)]
-                    mc_an = arityFunctor(ld.functors, mc_af)
-                    mc_ak = fresh_var_keys!(mc_an)
-                    mc_ac = T[_atom_value(ld, nameFunctor(ld.functors, mc_af))]
-                    for mc_j in 0:(mc_an - 1)
-                        push!(mc_ac, mk_var(T, mc_ak + mc_j))
-                    end
-                    push!(mc_args, mk_expr(T, mc_ac))
-                end
-            end
-            mk_expr(T, mc_args)
-        end
-        throw(NotPortedError{T}(mc_culprit, "call/1 of Goal@Module", "R2"))
+    # (pl-vmi.c:5540-5542 at the pin; MOD3b)
+    #     if ( fd->functor == FUNCTOR_at_sign2 &&
+    #          !checkCallAtContextInstantiation(a) )
+    #       THROW_EXCEPTION;
+    # Called as `stripModule_cells` above is, with no foreign frame of its own: one opened at `lTop`
+    # has the base of the frame being filled, and closing it drops that frame (`dropRecords!`).
+    if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign &&   # fd->functor == FUNCTOR_at_sign2
+        !checkCallAtContextInstantiation(ld, mc_gloc)
+        @goto b_throw                               # THROW_EXCEPTION
     end
     # lTop = NFR (it is); compileClause(&cl, NULL, a, PROCEDURE_dcall1, module, 0, 0)
     mc_cl = try
@@ -3497,6 +3509,97 @@ function PL_next_solution_guarded(
     mc_proc = resolveProcedure(gd, mc_name, mc_arity + mc_callargs, gd.modules[mc_mi])
     DEF = mc_proc.definition
     @goto mcall_cont
+
+    # PORT: pl-vmi.c I_CALLATM
+    # (pl-vmi.c:5331-5341 at the pin; MOD3b) "The procedure-module is provided to support the
+    # decompiler."
+    #     PC++;
+    #     VMI_GOTO(I_CALLM);
+    @label I_CALLATM
+    PC += 1                                         # PC++: the procedure-module
+    @goto I_CALLM                                   # VMI_GOTO(I_CALLM)
+
+    # PORT: pl-vmi.c I_DEPARTATMV
+    # (pl-vmi.c:5343-5370 at the pin; MOD3b)
+    #     if ( (void *)BFR > (void *)FR || !truePrologFlag(PLFLAG_LASTCALL) )
+    #     { VMI_GOTO(I_CALLATMV);
+    #     } else
+    #     { PC++;
+    #       int iv = (int)*PC++;
+    #       Word ap = varFrameP(FR, iv);
+    #       deRef(ap);
+    #       if ( isTextAtom(*ap) )
+    #       { Module m = lookupModule(word2atom(*ap));
+    #         setContextModule(FR, m);
+    #         VMI_GOTO(I_DEPART);
+    #       } else
+    #       { PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_module, pushWordAsTermRef(ap));
+    #         popTermRef();
+    #         THROW_EXCEPTION;
+    #       }
+    #     }
+    # DIVERGES: `BFR > FR` compares positions, as `I_DEPARTM`'s; the variable's slot is dereferenced as a
+    # location (`_deref_loc`); the module is its index. The type error is the helper label
+    # `callatmv_type_error`, shared with `I_CALLATMV`. (H11: `lookupModule` can create a module.)
+    @label I_DEPARTATMV
+    if !(ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base) ||
+        !ld.prolog_flag_last_call
+        @goto I_CALLATMV                            # VMI_GOTO(I_CALLATMV)
+    end
+    PC += 1                                         # PC++
+    atv_iv = Int(PCc[PC])                           # int iv = (int)*PC++
+    PC += 1
+    atv_k, atv_w, atv_p = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, atv_iv) + 1))  # ap = varFrameP(FR, iv); deRef(ap)
+    if atv_k == DU_WORD && isAtomW(atv_w) && isTextAtom(_atom_value(ld, atv_w))    # isTextAtom(*ap)
+        setContextModule!(ld.frames[FR], lookupModule(gd, _atom_value(ld, atv_w)).index)  # setContextModule(FR, lookupModule(word2atom(*ap)))
+        @goto I_DEPART                              # VMI_GOTO(I_DEPART)
+    end
+    @goto callatmv_type_error
+
+    # PORT: pl-vmi.c I_CALLATMV
+    # (pl-vmi.c:5376-5400 at the pin; MOD3b)
+    #     PC++;
+    #     int iv = (int)*PC++;
+    #     Procedure proc = code2ptr(Procedure, *PC++);
+    #     Word ap = varFrameP(FR, iv);
+    #     deRef(ap);
+    #     if ( isTextAtom(*ap) )
+    #     { Module module = lookupModule(word2atom(*ap));
+    #       DEF = proc->definition;
+    #       NFR = lTop;
+    #       VMH_GOTO(mcall_cont, module);
+    #     } else
+    #     { PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_module, pushWordAsTermRef(ap));
+    #       popTermRef();
+    #       THROW_EXCEPTION;
+    #     }
+    # DIVERGES: as `I_DEPARTATMV`'s; the procedure operand indexes the clause's procedure table (as
+    # `I_CALLM`'s); the new frame is the record pushed at `lTop`. (H11: `lookupModule` can create a module.)
+    @label I_CALLATMV
+    PC += 1                                         # PC++
+    atv_iv = Int(PCc[PC])                           # int iv = (int)*PC++
+    atv_proc = _call_procedure(ld, FR, PCc[PC + 1]) # Procedure proc = code2ptr(Procedure, *PC++)
+    PC += 2
+    atv_k, atv_w, atv_p = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, atv_iv) + 1))  # ap = varFrameP(FR, iv); deRef(ap)
+    if atv_k == DU_WORD && isAtomW(atv_w) && isTextAtom(_atom_value(ld, atv_w))    # isTextAtom(*ap)
+        mc_mi = lookupModule(gd, _atom_value(ld, atv_w)).index  # Module module = lookupModule(word2atom(*ap))
+        DEF = atv_proc.definition                   # DEF = proc->definition
+        NFR = pushFrame!(ld, ld.lTop)               # NFR = lTop
+        @goto mcall_cont                            # VMH_GOTO(mcall_cont, module)
+    end
+    @goto callatmv_type_error
+
+    # PORT: pl-vmi.c I_CALLATMV as callatmv_type_error
+    # (the `else` branch of `I_CALLATMV` and `I_DEPARTATMV`, a helper label as `call_type_error`) An
+    # unbound variable reaches `PL_error`'s ERR_TYPE rule, which raises the instantiation error, as
+    # upstream's.
+    @label callatmv_type_error
+    @SAVE_REGISTERS(QID)
+    atv_t = pushWordAsTermRef(ld, (atv_k, atv_w, atv_p))   # pushWordAsTermRef(ap)
+    PL_error(ld, ERR_TYPE, mk_sym(T, :module), atv_t)
+    popTermRef(ld)                                  # popTermRef()
+    @LOAD_REGISTERS(QID)
+    @goto b_throw                                   # THROW_EXCEPTION
 
     # PORT: pl-vmi.c I_CALLM
     # (pl-vmi.c:5410-5417 at the pin; MOD3a)

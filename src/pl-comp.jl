@@ -276,8 +276,8 @@ const TARGET_MODULE_NONE = target_module(TM_NONE, 0, 0)
 # list, not an `IdDict`: two arguments of one value are one `===` key (a string compares by content,
 # the interned implementation shares a ground compound), and each keeps its own word. No `clause`
 # (the clause is created after the code), and the fields of subsystems not yet ported:
-# `progress` (interrupts), `at_context` (`Goal@Module`: MOD3b). `colon_context` since MOD3a (last,
-# before `gd`; upstream's comes after `branch_vars`). Since R1g: `singletons`,
+# `progress` (interrupts). `colon_context` since MOD3a and `at_context` since MOD3b (last, before
+# `gd`; upstream's come after `branch_vars`). Since R1g: `singletons`,
 # `warning_list` (0: the caller wants no warnings) and `warnings` (`nothing` until the first one,
 # then in the order raised — see `c_warning`); `styleCheck` is upstream's GLOBAL
 # `debugstatus.styleCheck`, copied from the local data when the compilation starts, and
@@ -320,6 +320,7 @@ mutable struct compileInfo{T}
     local_base::Int                                         # (islocal: the frame, lTop)
     local_words::Union{Nothing, Vector{Pair{T, word}}}      # (islocal on the cells: argvar → *arg)
     colon_context::target_module                            # Context:Goal (MOD3a)
+    at_context::target_module                               # Call@Context (MOD3b)
     const gd::PL_global_data{T}                             # (GD: its atom table, L1b C6b)
 end
 
@@ -337,6 +338,7 @@ compileInfo{T}(
         0, 0, 0, nothing, nothing, nothing,                     # no style checks, no warnings, no export
         false, false, 0, 0, nothing, 0, nothing,                # not a goal clause
         TARGET_MODULE_NONE,                                     # ci->colon_context.type = TM_NONE (c:2047)
+        TARGET_MODULE_NONE,                                     # ci->at_context.type = TM_NONE (c:2049)
         gd
     )
 
@@ -358,22 +360,23 @@ compileInfo{T}(
 #     } else
 #     { resetVars(); PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_module, pushWordAsTermRef(t)); popTermRef(); return false; }
 #     return true;)
-# DIVERGES: the target is written into `ci.colon_context` (the one caller here; `Goal@Module`'s
-# `at_context` is MOD3b's), where upstream writes through a pointer; `t` is the analysed term (no
+# DIVERGES: the target is written into `ci.colon_context`, or `ci.at_context` with `at` (MOD3b:
+# `Goal@Module`'s), where upstream writes through the pointer `tm`; `t` is the analysed term (no
 # `deRef`); a culprit is a new term reference holding the term (`import_cells!` off the clause's
 # export, as `compileClause`'s NOT_CALLABLE culprit), where upstream pushes a temporary one; no
 # `resetVars` (the kernel's analysis keeps no marks in the term). A void `_` is no indexed variable:
 # it is a type error as upstream's (`isIndexedVarTerm` -1).
 """
-    getTargetModule!(gd, ld, ci, t) -> Bool
+    getTargetModule!(gd, ld, ci, t, at=false) -> Bool
 
-Make the `Module` `t` of a `Module:Goal` body the colon context of `ci` (pl-comp.c): a variable
+Make the `Module` `t` of a `Module:Goal` body the colon context of `ci` (with `at`: the `Module` of
+a `Goal@Module` body its at context) (pl-comp.c): a variable
 already met (or any variable of a goal clause) `TM_VAR`, a text atom its module (created) `TM_MODULE`.
 False with the error raised: `instantiation_error` for a variable met first here, `type_error(module, T)`
 for any other term, `permission_error(reference, module, M)` for a temporary module outside a goal clause.
 """
 function getTargetModule!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, t::T
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, t::T, at::Bool=false
 )::Bool where {T}
     iv = kind(t) === VAR ? isIndexedVarTerm(ci, t) : -1
     if iv >= 0
@@ -381,14 +384,16 @@ function getTargetModule!(
             if ci.islocal
                 link_local_var!(ci, t, iv) || return false
             end
-            ci.colon_context = target_module(TM_VAR, iv, 0)
+            tm = target_module(TM_VAR, iv, 0)
+            at ? (ci.at_context = tm) : (ci.colon_context = tm)    # tm->var_index = iv; tm->type = TM_VAR
         else
             PL_error(ld, ERR_INSTANTIATION)
             return false
         end
     elseif kind(t) === SYM && !is_reserved_symbol(t) && !is_blob(t)   # isTextAtom(*t)
         m = lookupModule(gd, t)
-        ci.colon_context = target_module(TM_MODULE, 0, m.index)
+        tm = target_module(TM_MODULE, 0, m.index)
+        at ? (ci.at_context = tm) : (ci.colon_context = tm)    # tm->module = lookupModule(…); tm->type = TM_MODULE
         if !ci.islocal && sym_key(m.class) == sym_key(mk_sym(T, :temporary))
             return PL_error(
                 ld, "", 0, "temporary module", ERR_PERMISSION,
@@ -2364,7 +2369,11 @@ end
 # variable module (`TM_VAR`), is meta-called as `Module:Goal` (`B_FUNCTOR :/2`, the module pushed, the
 # goal, `B_POP`, `I_CALL1`); `call/N` is compiled inline only with no context; a goal of another
 # module than the clause's is `I_CALLM`/`I_DEPARTM` (no LCO), of the clause's own `I_CALL`/`I_DEPART`.
-# No at context (`Goal@Module`: `I_CALLATM*`, MOD3b).
+# Since MOD3b the AT CONTEXT (`Goal@Module`, `O_CALL_AT_MODULE`; the same lines): a meta-called goal is
+# wrapped as `Goal@Module` (`B_FUNCTOR @/2` first, the module pushed after the goal, `B_POP`); `call/N`
+# is compiled inline only with no at context either; under an at context every goal is
+# `I_CALLATM`/`I_DEPARTATM` (a module) or `I_CALLATMV`/`I_DEPARTATMV` (a variable), their first operand
+# the goal's module or 0 for the clause's (no LCO).
 """
 Compile body goal `arg` as a call with `call` — `I_CALL`, or `I_DEPART` for the clause's last goal,
 then last-call-optimised (`lco!`) — after its arguments (pl-comp.c). Returns `BOOLEX_TRUE`, or
@@ -2470,7 +2479,7 @@ function compileSubClause!(
     for i in 0:(ar - 1)                                        # term: there are arguments
         compileArgument!(ci, _comp_arg(arg, off, i), A_BODY)
     end
-    if is_call && ci.colon_context.type == TM_NONE             # (no at context: MOD3b)
+    if is_call && ci.colon_context.type == TM_NONE && ci.at_context.type == TM_NONE
         if ar == 1
             Output_0!(ci, I_CALL1)
         else
@@ -2485,7 +2494,19 @@ function compileSubClause!(
         ci.module_
     end
     proc = lookupBodyProcedure(gd, arg, tm)
-    if tm === ci.module_                                       # if ( tm == ci->module )
+    if ci.at_context.type != TM_NONE                           # (O_CALL_AT_MODULE, MOD3b)
+        ctm = tm === ci.module_ ? code(0) : code(tm.index)     # (tm==ci->module) ? (code)0 : ptr2code(tm)
+        if ci.at_context.type == TM_MODULE                     # Module cm = ci->at_context.module
+            Output_3!(
+                ci, callatm(call), ctm, code(ci.at_context.module_), addProcedure!(ci, proc)
+            )
+        else                                                   # int idx = ci->at_context.var_index
+            Output_3!(
+                ci, callatmv(call), ctm, VAROFFSET(ci.at_context.var_index),
+                addProcedure!(ci, proc)
+            )
+        end
+    elseif tm === ci.module_                                   # if ( tm == ci->module )
         Output_1!(ci, call, addProcedure!(ci, proc))
         if call == I_DEPART && !ci.islocal                     # && ci->procedure (NULL: islocal)
             lco!(ci, pc0)
@@ -2495,8 +2516,11 @@ function compileSubClause!(
     end
     return BOOLEX_TRUE
 
-    # metacall: (c:3443-3465; no at context: MOD3b)
+    # metacall: (c:3443-3465)
     @label metacall
+    if ci.at_context.type != TM_NONE                           # (O_CALL_AT_MODULE, MOD3b)
+        Output_1!(ci, B_FUNCTOR, _at_functor_operand(ci))      # Output_1(ci, B_FUNCTOR, FUNCTOR_at_sign2)
+    end
     if ci.colon_context.type != TM_NONE
         Output_1!(ci, B_FUNCTOR, _colon_functor_operand(ci))   # Output_1(ci, B_FUNCTOR, FUNCTOR_colon2)
         pushTargetModule!(ci, ci.colon_context)
@@ -2504,6 +2528,10 @@ function compileSubClause!(
         Output_0!(ci, B_POP)
     else
         compileArgument!(ci, arg, A_BODY | A_NOARGVAR)
+    end
+    if ci.at_context.type != TM_NONE                           # (O_CALL_AT_MODULE, MOD3b)
+        pushTargetModule!(ci, ci.at_context)
+        Output_0!(ci, B_POP)
     end
     Output_0!(ci, I_CALL1)
     return BOOLEX_TRUE
@@ -2518,11 +2546,38 @@ function mcall(call::code)::code
     return code(0)
 end
 
+# PORT: pl-comp.c callatm
+"The `Goal@Module` form of call instruction `call`: `I_CALLATM` for `I_CALL`, `I_DEPARTATM` for `I_DEPART` (pl-comp.c; MOD3b)."
+function callatm(call::code)::code
+    call == I_CALL && return I_CALLATM
+    call == I_DEPART && return I_DEPARTATM
+    @assert false "callatm: $(codeTable(call).name)"            # default: assert(0)
+    return code(0)
+end
+
+# PORT: pl-comp.c callatmv
+"The `Goal@Var` form of call instruction `call`: `I_CALLATMV` for `I_CALL`, `I_DEPARTATMV` for `I_DEPART` (pl-comp.c; MOD3b)."
+function callatmv(call::code)::code
+    call == I_CALL && return I_CALLATMV
+    call == I_DEPART && return I_DEPARTATMV
+    @assert false "callatmv: $(codeTable(call).name)"           # default: assert(0)
+    return code(0)
+end
+
 # ORIGINAL (MOD3a): the `B_FUNCTOR` operand of `FUNCTOR_colon2` — upstream's operand IS the functor
 # word; here the packed operand of the literal `:` and the functor's index (`functor_operand`, L1c).
 "The packed `B_FUNCTOR` operand of `:/2` for the clause `ci` compiles (MOD3a)."
 function _colon_functor_operand(ci::compileInfo{T})::code where {T}
     c = mk_sym(T, :(:))
+    lit = addLiteral!(ci, c)
+    f = lookupFunctorDef(ci.gd.functors, _atom_word!(ci.gd.atoms, ci.gd.atom_symbols, c), 2)
+    return functor_operand(lit, 2, f)
+end
+
+# ORIGINAL (MOD3b): the `B_FUNCTOR` operand of `FUNCTOR_at_sign2`, as `_colon_functor_operand`'s.
+"The packed `B_FUNCTOR` operand of `@/2` for the clause `ci` compiles (MOD3b)."
+function _at_functor_operand(ci::compileInfo{T})::code where {T}
+    c = mk_sym(T, Symbol("@"))
     lit = addLiteral!(ci, c)
     f = lookupFunctorDef(ci.gd.functors, _atom_word!(ci.gd.atoms, ci.gd.atom_symbols, c), 2)
     return functor_operand(lit, 2, f)
@@ -2629,6 +2684,7 @@ end
     CB_IT_THEN              # (A -> B): resume after B
     CB_NOT_INNER            # (\+ A) / ($ A): resume after A
     CB_COLON                # (M:G): restore colon_context (MOD3a)
+    CB_ATSIGN               # (G@M): restore at_context (MOD3b)
 end
 
 # PORT: pl-comp.c cb_frame
@@ -2649,7 +2705,7 @@ struct cb_frame{T}
     cutsave::cutInfo
     hard::Bool                                  # -> vs *->
     isnot::Bool                                 # CB_NOT_INNER: \+ (true) vs $ (false)
-    tmsave::target_module                       # CB_COLON: the saved colon_context (MOD3a)
+    tmsave::target_module                       # CB_COLON/CB_ATSIGN: the saved colon/at context (MOD3a/MOD3b)
 end
 
 "A frame of a construct other than `:` (no saved colon context)."
@@ -2710,9 +2766,8 @@ function try_fast_condition!(ci::compileInfo, tc_or::Int)::Bool
 end
 
 # PORT: pl-comp.c compileBody
-# DIVERGES: `,`, `;`, `|`, `->`, `*->`, `\+` and `$/1` (since V9f) — the other control constructs
-# (`:/2`, `@/2`: modules) throw `NotPortedError`, before
-# anything is emitted; the pending steps (upstream's `cb_frame`s) are a Vector where upstream uses a
+# DIVERGES: `,`, `;`, `|`, `->`, `*->`, `\+`, `$/1` (since V9f), `:/2` (since MOD3a) and `@/2`
+# (since MOD3b): every control construct, as upstream's; the pending steps (upstream's `cb_frame`s) are a Vector where upstream uses a
 # segstack, so there is no MEMORY_OVERFLOW; no `islocal` (see the file header).
 """
 Compile clause body `body`, its last goal called with `call` (pl-comp.c): a conjunction left to
@@ -2845,13 +2900,25 @@ function compileBody!(
             body = child(body, 3)
             @goto next_body
         end
-        throw(
-            NotPortedError{T}(
-                body,
-                "a control construct other than ,/2, ;/2, ->/2, *->/2, \\+/1, \$/1 and :/2",
-                "MOD3b (Goal@Module)"
+        # Goal@Module (pl-comp.c:2635-2653 at the pin; O_CALL_AT_MODULE, MOD3b) — the MODULE is child 3
+        # and the GOAL child 2 (`argTermP(*body, 1)`, `argTermP(*body, 0)`), the reverse of `:`
+        if _has_functor(body, cf.at_sign, 2)
+            atsave = ci.at_context
+            if !getTargetModule!(gd, ld, ci, child(body, 3), true)  # getTargetModule(&ci->at_context, …)
+                rc = BOOLEX_FALSE
+                @goto resume
+            end
+            push!(                                             # frame.kind = CB_ATSIGN; frame.tmsave = atsave
+                stack,
+                cb_frame{T}(
+                    CB_ATSIGN, call, body, body, 0, 0, 0, nothing, ci.cut, true, true,
+                    atsave
+                )
             )
-        )
+            body = child(body, 2)                              # body = argTermP(*body, 0)
+            @goto next_body
+        end
+        @assert false "compileBody: a control construct not handled"  # assert(0)
     end
     rc = compileSubClause!(gd, ld, ci, body, call)
     @label resume
@@ -2861,6 +2928,7 @@ function compileBody!(
         while !isempty(stack)
             uframe = pop!(stack)
             uframe.kind == CB_COLON && (ci.colon_context = uframe.tmsave)
+            uframe.kind == CB_ATSIGN && (ci.at_context = uframe.tmsave)    # (c:2668-2671)
         end
         return rc                                              # goto exit
     end
@@ -2943,6 +3011,9 @@ function compileBody!(
         @goto resume
     elseif frame.kind == CB_COLON                              # (M:G) after G (c:2833-2835)
         ci.colon_context = frame.tmsave
+        @goto resume
+    elseif frame.kind == CB_ATSIGN                             # (G@M) after G (c:2837-2840)
+        ci.at_context = frame.tmsave
         @goto resume
     else                                                       # CB_NOT_INNER: (\+ A) / ($ A) after A
         vsave = (frame.vars::NTuple{3, BitVector})[1]
@@ -4780,8 +4851,9 @@ end
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
 # upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
-# arithmetic instructions but `A_ADD_FC`, and `Goal@Module` (MOD3b). Since MOD3a `I_CALLM`/`I_DEPARTM`
-# decompile to `M:Goal` (pl-comp.c:6842-6851), and `I_CONTEXT` here "should never happen" (c:6792-6794;
+# arithmetic instructions but `A_ADD_FC`. Since MOD3a `I_CALLM`/`I_DEPARTM` decompile to `M:Goal`
+# (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
+# `Goal@M` or `PM:Goal@M` (pl-comp.c:6801-6840), and `I_CONTEXT` here "should never happen" (c:6792-6794;
 # `decompile!` takes it).
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
@@ -4946,6 +5018,29 @@ function decompileBodyNoShift!(
             push!(di.argp, _atom_word!(ld, m.atom))             # ARGP[-2] = m->name
             push!(di.argp, g)                                   # (swap arguments)
             build_term!(di, mk_sym(T, :(:)), 2)                 # BUILD_TERM(FUNCTOR_colon2)
+            pushed += 1
+        elseif op == I_DEPARTATMV || op == I_CALLATMV ||        # (MOD3b, c:6801-6840)
+            op == I_DEPARTATM || op == I_CALLATM
+            pm = Int(codes[di.pc])                              # Module pm = code2ptr(Module, *PC++)
+            cm = codes[di.pc + 1]                               # cm: a module, or (ATMV) a variable offset
+            def = di.clause.procedures[codes[di.pc + 2]].definition    # proc = code2ptr(Procedure, *PC++)
+            di.pc += 3
+            build_term!(di, def.name, def.arity)                # BUILD_TERM(proc->definition->functor)
+            if pm != 0                                          # if ( pm )
+                g = pop!(di.argp)                               # ARGP++; ARGP[-1] = ARGP[-2]
+                push!(di.argp, _atom_word!(ld, (ld.GD::PL_global_data{T}).modules[pm].atom))  # ARGP[-2] = pm->name
+                push!(di.argp, g)
+                build_term!(di, mk_sym(T, :(:)), 2)             # BUILD_TERM(FUNCTOR_colon2)
+            end
+            if op == I_DEPARTATMV || op == I_CALLATMV
+                _dvar!(di, nested, cm)                          # nested ? unifyVar(ARGP++, …, cm) : makeVarRef(cm)
+            else
+                push!(
+                    di.argp,
+                    _atom_word!(ld, (ld.GD::PL_global_data{T}).modules[Int(cm)].atom)
+                )  # *ARGP++ = cm->name
+            end
+            build_term!(di, mk_sym(T, Symbol("@")), 2)          # BUILD_TERM(FUNCTOR_at_sign2)
             pushed += 1
         elseif op == I_CONTEXT                                  # (MOD3a, c:6792-6794)
             di.pc += 1

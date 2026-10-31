@@ -5340,6 +5340,43 @@ I_DEPARTM to I_CALLM's path — a consulted program vs swipl 10.1.19 pins);
 test/compile/test_body_code_swipl.jl's MOD3a testset (each instruction and operand vs swipl's `clause_vm/2`) and the
 multifile pin (flipped from the refusal). Mutants: tools/mutants/MOD3a.py.
 
+## MOD3b — `Goal@Module` in a clause body (R2, evidence/r2/design/modules.md §7, M6's at half)
+
+What MOD3b ports (pl-comp.c, pl-vmi.c at the pin; edit-only so far, nothing compiled or run):
+
+- **Four instructions appended after MOD3a's** (src/pl-vmi.jl, opcodes 153-156): `I_DEPARTATM`, `I_CALLATM`, `I_DEPARTATMV`,
+  `I_CALLATMV`. Operands: the procedure-module (the module INDEX, or 0 for upstream's NULL, which the decompiler renders
+  `M:0` on both sides in the tests), the context (a module index for `ATM`, a frame-variable offset for `ATMV`), the
+  procedure. `I_CALLATM` skips the procedure-module and runs `I_CALLM`; `I_DEPARTATM` skips it and runs `I_DEPARTM`
+  (frame reuse and context set-up are `I_DEPARTM`'s); the `V` forms dereference the variable's cell, take a text atom's
+  module (`lookupModule`) or raise `type_error(module, V)` (an unbound one is `instantiation_error` through PL_error's
+  ERR_TYPE rule), and continue as `I_CALLM` (`mcall_cont`) or `I_DEPART` after `setContextModule!`.
+- **`Goal@Module` has the module as child 3 and the goal as child 2**, the reverse of `:`. `compileBody!` gets a
+  `CB_ATSIGN` frame (`cb_kind` gains a member; it saves `tmsave` as `CB_COLON` does) and `getTargetModule!` an `at`
+  argument that writes `compileInfo.at_context` instead of `colon_context` (a STRUCT CHANGE: `at_context`, the last field
+  of `compileInfo`; the warm daemon restarts by itself). The `@assert false` after the `@` branch replaces upstream's
+  `assert(0)`.
+- **`compileSubClause!`** (O_CALL_AT_MODULE): a goal under an at context is `callatm`/`callatmv` of `I_CALL`/`I_DEPART`
+  (no `I_CALL1`/`I_CALLN` for `call/N`); the call is looked up in the colon module, and the procedure-module operand is 0
+  when that is the clause's own module; a variable goal is meta-called as `@(Goal, Module)` with the colon wrapper inside.
+- **`checkCallAtContextInstantiation`** (pl-vmi.c:5540-5542 at the pin) and the metacall `@` branch of
+  `i_metacall_common`: a goal `G@M` given to `call/1` is checked for an unbound goal or module before the goal clause is
+  compiled, and the errors are PL_error's `instantiation_error` / `type_error(module, M)`; the check is needed, since
+  without it the meta-call of `@(G, M)` compiles to `call(@(G, M))` again.
+- **The decompiler** (pl-comp.c:6801-6840): the four instructions decompile to `Goal@Module`, with `PM:Goal` as the goal
+  when the procedure-module is not 0; a variable context is the clause variable.
+- **Unverified on the kernel:** row a39 (a cyclic goal under `call(G@user)`: swipl says `no`; the kernel may raise
+  `representation_error(cyclic_term)` from the goal-clause compile: trace it, do not re-pin), and every other row until
+  the first run.
+- **H11 (for the gate):** `lookupModule` in `I_CALLATMV`/`I_DEPARTATMV` can create a module and so may allocate; those two
+  labels are not in the allocation path list of test/static_analysis_body.jl (`I_DEPARTATM`/`I_CALLATM` are): the AllocCheck
+  run decides whether they need the same exemption.
+
+Tests: test/core_lang/test_at_body_swipl.jl (rows a01-a77, pins from swipl 10.1.19: at/atv shapes, restore and nesting,
+run-time errors, `call/1` of `G@M`, clause/2, assert-time errors, goal clauses, frame reuse a70-a73, retried frame a74-a75,
+nested restore a76-a77; generator evidence/MOD3b/gen_rows.py); test/compile/test_body_code_swipl.jl's `_BC_MOD3B` rows
+(instruction and operand vs `clause_vm/2`). Mutants: tools/mutants/MOD3b.py.
+
 ## D1 — clause references as blobs: `assert/2`, `erase/1`, the `Ref` of `'$record_clause'/4` (R2, D-0227 item 6, flags_rest.md §4 D11)
 
 What D1 adds (pl-dbref.c; pl-comp.c `assertz2`, `asserta2`, `mustBeVar`, `record_clause`'s `ref`; pl-rec.c `erase`'s clause branch):

@@ -27,13 +27,13 @@
 # the `I_CHP` declared before them, compiled since SSU1 and executed since SSU2), then MOD3a's module
 # calls (`I_CONTEXT`, `I_CALLM`, `I_DEPARTM`: `M:Goal` in a clause body and `M:Head :- Body`, in
 # pl-vmi.c's order), then MOD4's meta-argument supervisors (`S_MQUAL`, `S_LMQUAL`: the module
-# qualification of a `meta_predicate` argument, in pl-vmi.c's order).
+# qualification of a `meta_predicate` argument, in pl-vmi.c's order), then MOD3b's `Goal@Module`
+# calls (`I_DEPARTATM`, `I_CALLATM`, `I_DEPARTATMV`, `I_CALLATMV`, in pl-vmi.c's order).
 #
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
 # probed in 10.1.16); `B_ARG_*`, `I_USERCALL0` (its work is `I_CALL1`'s
-# here), the `Goal@Module` calls (`I_CALLATM`, `I_DEPARTATM`, `I_CALLATMV`, `I_DEPARTATMV`: MOD3b),
-# `I_RESET`, `I_CUTCHP`,
+# here), `I_RESET`, `I_CUTCHP`,
 # `I_YIELD` (after V9). `I_CUT` is declared and compiled (a clause-level `!`, user
 # 2026-10-05) and, since V6a, executed.
 #
@@ -46,7 +46,9 @@
 # module operand (`CA1_MODULE`, since MOD3a) the module's INDEX in the database's table, as
 # `definition.module_` (upstream: the `Module` pointer, `ptr2code(module)`); the procedure operand of
 # `I_CALLM`/`I_DEPARTM` keeps upstream's kind `CA1_PROC` and is, as `CA1_LPROC`'s, the index of the
-# procedure in the clause's procedure table; a
+# procedure in the clause's procedure table; the procedure-module operand (the first) of
+# `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` (MOD3b) is the module's index or 0 for "the
+# clause's module" (upstream: NULL), their procedure operand keeps `CA1_PROC` as `I_CALLM`'s; a
 # `*_SMALLINT` operand is the tagged word itself, as upstream's (L1d step 4). The
 # `argtype` column keeps upstream's kinds, so a
 # reader decodes each operand by its kind as upstream does — a literal kind through the table.
@@ -576,6 +578,18 @@ const S_MQUAL = code(151)
 # PORT: pl-vmi.c S_LMQUAL
 "The last `S_MQUAL` of a supervisor: qualify the argument, then set the frame's context to its predicate's module (pl-vmi.c; MOD4)."
 const S_LMQUAL = code(152)
+# PORT: pl-vmi.c I_DEPARTATM
+"`I_CALLATM` as the clause's last call: skip the `:`-qualifier operand and continue as `I_DEPARTM` (pl-vmi.c; MOD3b)."
+const I_DEPARTATM = code(153)
+# PORT: pl-vmi.c I_CALLATM
+"Call a procedure with a fixed context module (`Goal@Module` in a body); operands: the procedure-module (for the decompiler, 0 = the clause's), the context module, the procedure (pl-vmi.c; MOD3b)."
+const I_CALLATM = code(154)
+# PORT: pl-vmi.c I_DEPARTATMV
+"`I_CALLATMV` as the clause's last call: the frame takes the module in the variable as its context and departs, unless a choice point or `last_call` forbids it (pl-vmi.c; MOD3b)."
+const I_DEPARTATMV = code(155)
+# PORT: pl-vmi.c I_CALLATMV
+"Call a procedure with the context module in a variable (`Goal@M` in a body); operands: the procedure-module, the variable, the procedure (pl-vmi.c; MOD3b)."
+const I_CALLATMV = code(156)
 
 # PORT: pl-incl.h code_info
 # DIVERGES: `arguments` counts the kernel's operand WORDS — a literal is one (see above), where
@@ -745,7 +759,11 @@ const _CODE_TABLE = (
     code_info(:I_CALLM, VIF_BREAK, 2, (CA1_MODULE, CA1_PROC, 0x00, 0x00)),
     code_info(:I_DEPARTM, VIF_BREAK, 2, (CA1_MODULE, CA1_PROC, 0x00, 0x00)),
     code_info(:S_MQUAL, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
-    code_info(:S_LMQUAL, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00))
+    code_info(:S_LMQUAL, 0x00, 1, (CA1_VAR, 0x00, 0x00, 0x00)),
+    code_info(:I_DEPARTATM, VIF_BREAK, 3, (CA1_MODULE, CA1_MODULE, CA1_PROC, 0x00)),
+    code_info(:I_CALLATM, VIF_BREAK, 3, (CA1_MODULE, CA1_MODULE, CA1_PROC, 0x00)),
+    code_info(:I_DEPARTATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00)),
+    code_info(:I_CALLATMV, VIF_BREAK, 3, (CA1_MODULE, CA1_VAR, CA1_PROC, 0x00))
 )
 
 # PORT: pl-codetable.c codeTable

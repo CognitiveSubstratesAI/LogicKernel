@@ -407,6 +407,11 @@ function _manifest_index(T)
         (LK.pushTargetModule!, Tuple{CInfo, LK.target_module}, false),
         (LK.mcall, Tuple{UInt64}, false),
         (LK._colon_functor_operand, Tuple{CInfo}, false),
+        # MOD3b — Goal@Module in a body: the at context, the callatm/callatmv selection
+        (LK.getTargetModule!, Tuple{GD, LD, CInfo, T, Bool}, false),
+        (LK.callatm, Tuple{UInt64}, false),
+        (LK.callatmv, Tuple{UInt64}, false),
+        (LK._at_functor_operand, Tuple{CInfo}, false),
         (LK._decompile_context!, Tuple{LD, C, Int, Int}, false),
         # V9d — disjunctions: the variable tables compileBody! balances, and the decompiler
         (LK.c_var, Tuple{LK.c_var_state, Int, CInfo}, false),
@@ -1416,6 +1421,7 @@ function _manifest_index(T)
         (LK.call1, Tuple{GD, LD, Int, Int}, false),        # MOD2: the module `mdef`
         (LK.call_term, Tuple{GD, LD, Int, Int}, false),
         (LK.m_qualify_argument, Tuple{GD, LD, Int, Int}, false),       # MOD4
+        (LK.checkCallAtContextInstantiation, Tuple{LD, Int}, false),   # MOD3b
         (LK.call_internal_det_foreign, Tuple{GD, LD, LK.Procedure{T}, Int}, false),
         (LK.callCleanupHandler, Tuple{LD, Int, LK.finished}, false),
         (LK.frameFinished, Tuple{LD, Int, LK.finished}, false),
