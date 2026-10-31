@@ -1,4 +1,4 @@
-# UPSTREAM: pl-gc.c pl_garbage_collect, pl-thread.c pl_thread_self, pl-mutex.c pl_with_mutex (swipl-devel cbf4e189) — BOOTPRED's rows
+# ORIGINAL: a LIVE differential of BOOTPRED against swipl at the pin (pl-gc.c, pl-thread.c, pl-mutex.c, pl-dict.c) — BOOTPRED's rows
 # test/core_lang/test_bootpred_swipl.jl — `'$garbage_collect'/1`, thread_self/1 and with_mutex/2 (bp01-bp26) and the pl-dict.c predicates
 # is_dict/1,2, dict_create/3, get_dict/3, put_dict/3, select_dict/3 (bp27-bp119) against swipl 10.1.19:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in

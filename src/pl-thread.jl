@@ -95,7 +95,7 @@ function ThreadCPUTime(which::Int)::Float64
     return t === nothing ? 0.0 : t
 end
 
-# PORT: pl-thread.c unify_thread_id, pl_thread_self
+# PORT: pl-thread.c pl_thread_self
 # (FRG("thread_self", 1, pl_thread_self, ISO), pl-ext.c:186; pl-thread.c:2662-2672 `unify_thread_id`,
 # 2759-2763 `pl_thread_self` at the pin: `return unify_thread_id(self, LD->thread.info);`)
 # DIVERGES: the kernel runs one thread, the main thread, and has no thread table: `unify_thread_id`
