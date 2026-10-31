@@ -153,3 +153,24 @@ FIRST-RUN EXPECTATIONS: nothing in src/pl-fmt.jl or test_format_swipl.jl was eve
 test_at_body_swipl.jl's `_AB`; `mpz_sizeinbase10` (floor(bits*log10 2)+1) and the mpf precision (`keep = (max(53,bits)+127)/64+1`) were written FROM MEMORY:
 verify against the GMP source in the pinned swipl checkout or the oracle; `Base.Ryu.writefixed(f, digits)` / `writeexp(f, digits, plus, space, hash, expchar)`
 argument positions are unverified. Shared scratchpad warning: another agent overwrote a file named val.py there: use a private subdirectory.
+
+### State after coder 4 (docs and manifest committed; NOTHING compiled or run)
+DONE (wip/o1a): b034159 docs/architecture.md `## O1A` block before `## Still to come`; b5fb111 test/static_analysis_manifest.jl block appended at the end of
+`_manifest_index` (one `FST = LK.format_state` alias added to its header line list). Every function of src/pl-fmt.jl (grep of its unindented definitions, checked
+against the manifest by name) has an entry; the nullable-locale methods (`formatInteger`, `formatFloat`, `_fmt_print_mpz_e!`, `_fmt_mpz_e!`, `_fmt_mpq_e!`) have both
+the `Nothing` and `PL_locale` forms. All `must_not_allocate` are `false` (unmeasured; a later gate may tighten `COLUMN`, `digitName`, `get_chr_from_text`). NO DISPATCH_EXEMPT
+named. Struct constructors (`rubber`, `format_state`, `PL_locale`, `sub_state`) have no entry (default constructors). The manifest text was never reformatted by
+`warm.sh send`: gate step (1) may reflow it.
+OPEN ITEM FOR THE STACK OWNER / AUDIT (decides nothing here), flag (k) wording check: the numeric-argument overflow row and mutant are NOT STARTED. Upstream's
+`int arg2 = arg*10+dw` wraps in C; compiled swipl 10.1.19 prints `1` for `format("~3000000000d", [1])`; the Julia port raises `argument overflow`. Behaviour-changing
+difference to the compiled swipl; flags a-k all remain undecided.
+BATTERY SIZE: tools/mutants/O1A.py has 130 mutants, large for one battery; the stack owner may split it into two branches if CI time demands.
+DOCS: the O1A block lists its DIVERGES without letters; the lettered flags a-k of this file are the audit's reference.
+
+## GATE ORDER (copy after the manifest commit, unchanged in substance)
+Merge order: O1-B's callProlog 3cb3a13 first (`~@` calls the 6-argument callProlog with `ex::Ref{Int}`); include order in src/LogicKernel.jl:
+os/pl-file.jl, os/pl-redirect.jl, pl-write.jl, pl-fmt.jl, pl-ext.jl (pl-fmt.jl is already included between pl-read.jl and pl-ext.jl; re-place it).
+Then: (1) `warm.sh send` fmt of the committed files (`warm.sh fmt` only sees the HEAD diff; includes docs-free Julia files src/pl-fmt.jl, test/core_lang/test_format_swipl.jl,
+test/static_analysis_manifest.jl); (2) inventory; (3) `warm.sh check`; (4) test_format_swipl.jl on all three term types; (5) test/test_type_discipline.jl;
+(6) `tools/pkgtest_way.sh test/core_lang/test_format_swipl.jl`, one at a time; (7) push `mutants/O1A` at the WIP SHA; (8) branch-gate; (9) the term grep over diff and
+message; (10) `gate/o1a` and `mutants/O1A` at the SAME SHA. Static analysis (JET/Aqua) reads the manifest: expect a fix commit for any signature the compiler rejects.
