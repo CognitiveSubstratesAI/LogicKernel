@@ -43,17 +43,46 @@ G12 rows (test/files/test_lb2b_swipl.jl; evidence/LB2B gen + driver + .out), too
 
 Commit estimate (first 3 commits): ~20 (G0-G11 about 14, rows 2-3, mutants 1, manifest 1, docs 1, fixes 1-2).
 
-## Done
-(nothing yet)
+## Done (commits on wip/lb2bw, off main faee65f; nothing compiled)
+- 7cc0c76 plan (this file) = G0.
+- 7f9bcb7 G1: `paths_CWDdir::String` last field of PL_global_data + constructor arg `""` (src/pl-global.jl). FLAGGED: struct change, alloc pins x3.
+- 725a780 G2: src/os/pl-os.jl appended block "file names (pl-os.c)": PrologPath, OsPath, IsAbsolutePath, _cfn_at, canonicaliseFileName
+  (0-based offsets `inp`/`out`/`start`, saveb stack, in-place on a NUL-padded copy), utf8_path_lwr, canonicalisePath(ld, path), BaseName, DirName;
+  `file_name_is_iri` in src/os/pl-files.jl (after PATH_MAX).
+- 0b6896d G3: pl-os.jl: takeWord, expandVars (`~user` refused by name: NotPortedError culprit `user`; HOME read each time), AbsoluteFile(ld, spec),
+  PL_changed_cwd, PL_cwd(ld) (cache in gd.paths_CWDdir; no cache when ld.GD === nothing), is_cwd, ChDir(ld, path)::Int (0 or errno; -1 = AbsoluteFile failed).
+Commit count so far 5 (plan + 4); estimate unchanged: about 20 in all.
 
-## Left / next
-G1.
+## Left / next (G4 onwards, in order; see the plan above for upstream lines)
+- G4 pl-files.jl helpers (pl-files.c:36-420). DECIDED, not yet written: stat is `Base.stat` wrapped as
+  `statfunc(path)::Union{StatStruct,Int}` (Int = -ioerrno on failure, catch `Base.IOError` whose `.code` is the negative errno);
+  `LastModifiedFile`/`SizeFile` return `(value, errno)` tuples (errno 0 = ok; mtime is Julia's `sec + nsec*1e-9`, upstream `sec + nsec/1.0e9`: log as
+  representation DIVERGES); ExistsFile = `isfile(st)`, ExistsDirectory = `isdir(st)`; libc ccalls (`LIBC` const, like RemoveFile) for
+  access, readlink, rename, chmod, mkdir, rmdir, umask, getuid. ACCESS_READ/WRITE/EXECUTE/EXIST/FILE/DIRECTORY are pl-os.h/pl-incl.h
+  constants: find the values with `git -C ~/dev-zone/swipl-devel grep -n "ACCESS_EXIST" cbf4e1896275 -- src/os src/pl-incl.h` (the grep of `define ACCESS_*` over
+  `src` was the call the cap hook stopped; the Julia tree has no ACCESS_* constants yet; PL_FILE_* are in src/SWI-Prolog.jl:367-388).
+  Also AccessDirectory, ReadLink, DeRefLink1/DeRefLink (20-link loop, permission_error dereference/symlink), SameFile (PLFLAG_FILE_CASE via truePrologFlag, st_ino/st_dev), RenameFile, MarkExecutable.
+- G5 get_file_name flags (pl-files.c:423-540): replace the `unported` refusal in src/os/pl-files.jl `get_file_name` for ABSOLUTE, OSPATH, EXIST/READ/WRITE/EXECUTE,
+  keep PL_FILE_SEARCH refused by name (Prolog `system:absolute_file_name/3`, left to LB4); expandVars under PLFLAG_FILEVARS; the `existence_error(file, N)` / `permission_error(Op, file, N)` checks.
+- G6, G7, G8 (tmp_file; decide after reading pl-os.c:700-860, TemporaryFile + registry; `$tmp_file_stream` needs Sfdopen: refuse by name if the stream layer has none), G9-G12 as in the plan.
+- `PL_predicates_from_files` (end of pl-files.jl) must end up in upstream's BeginPredDefs order (pl-files.c:1200-1224); delete_file/1 is the one entry now. `PL_predicates_from_glob`
+  goes after `_files` in `_PRED_TABLES` and `_FOREIGN_VA` (src/pl-ext.jl:57-84); upstream's REG_PLIST order is file, files, glob, btree, ctype ... (pl-ext.c:518-520).
+- test/test_type_discipline.jl `_TD_UNCHECKED_ALLOWED`: "os/pl-files.jl ccall" (now 1) gains one count per ccall added; "os/pl-os.jl ccall" stays 3 (G2/G3 added none: pwd() and cd() are Base); a shared file, change its count in its own late commit.
+- Julia API facts checked (for the next agent): atoms are `mk_sym(T, Symbol(str))`; `PL_unify_atom(ld, t, atom)`; errors `PL_error(ld, ERR_REPRESENTATION, mk_sym(T,:max_path_length))`,
+  `PL_error(ld, ERR_EXISTENCE, atom, term)`, `PL_error(ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, action, type, file_term, errno::Int)` (errno is an ARGUMENT),
+  texts via `PL_get_text(ld, t, CVT_ALL|CVT_EXCEPTION)` then `text_string`; the database in a built-in is `ld.GD` (may be `nothing`); `truePrologFlag(ld, PLFLAG_*)`
+  (FILE_CASE=9, FILEVARS=15, FILEERRORS=23 in src/pl-incl.jl); `NotPortedError{T}(culprit, what, step)`.
 
 ## UNVERIFIED (nothing is compiled)
 Everything.
 
 ## Flags for the audit
-(see below as they arise)
+1. G1 edits src/pl-global.jl (one appended field + constructor arg): needed so `$cwd`/`$chdir` keep upstream's cached logical path (a symlinked cwd stays logical).
+   Option B (undecided): drop the cache and ask the OS each time (behaviour-changing for a symlinked cwd). Recommendation: keep the field.
+2. src/os/pl-os.jl (an existing file, also Y1's) gets an appended block: the plan said new files; pl-os.c's functions belong there.
+3. `expandVars`: `~user` refused by name (getpwnam); HOME not cached (upstream caches in GD->os.myhome): representation-only unless HOME changes after the first expansion.
+4. `utf8_path_lwr` uses `lowercase(::Char)` for `PL_tolower` (pl-umap.c): only on a case-insensitive file_name_case_handling (not the Linux default).
+5. PL_cwd with `ld.GD === nothing` has no cache (outside a query).
 
 ## GATE ORDER (the gate agent)
 Tier 2 first; fmt via `warm.sh send` (committed files); inventory; `check`; test/files/test_lb2b_swipl.jl on all three term
