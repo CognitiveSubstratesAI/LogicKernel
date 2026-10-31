@@ -1,5 +1,5 @@
 # ORIGINAL: MOD5a's mutant list — no swipl-devel counterpart.
-# tools/mutants/MOD5a.py — the mutation battery of MOD5a (export and import: pl-modul.c exportProcedure, export_pi1, export_pi,
+# tools/mutants/MOD5a2.py — the mutation battery of MOD5a (export and import: pl-modul.c exportProcedure, export_pi1, export_pi,
 # fixExport, fixExportModule, atomToImportStrength, import, undefined_export, find_modules_with_defs, def_modules, the registration
 # flags of export/1, import/1, '$import'/2; pl-proc.c get_functor, shareDefinition, unshareDefinition, autoImport's share count;
 # pl-error.c ERR_IMPORT_PROC), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
