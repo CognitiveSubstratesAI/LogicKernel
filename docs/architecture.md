@@ -6045,6 +6045,17 @@ columns and `with_output_to`). Mutants: tools/mutants/O1A.py (130 mutants over s
   resets one scratch context in the local data and is gated allocation-free.
 * **The canonical-encoding property** — the kernel's variant key of a term equals MORK's De Bruijn
   bytes for it. It arrives with variant canonicalisation (`unify`) and a PathMap extension.
+* **Writing a Prolog flag** (`set_prolog_flag/2`, `create_prolog_flag/3`; pl-prologflag.c `set_flag_value`,
+  `set_prolog_flag`, `keep_flag`, `check_oneof_flag`) — R2 F1b, written, not yet gated. The Boolean flags are bits of
+  the mask (`truePrologFlag`, `setPrologFlagMask!`, `clearPrologFlagMask!`); the five stand-in fields of the local data
+  (`last_call_optimisation`, `portable_vmi`, `optimise`, `optimise_unify`, `character_escapes_unicode`) and the field of
+  `determinism_error` are deleted, so the compiler, the VM and `write` read the flags as upstream does, and
+  `determinism_error_flag` reads the table. The side effects of a flag whose subsystem has no kernel counterpart yet
+  (debugger, threads, terminal, signals, tabling, `set_stack_limit`, the arithmetic flags, the clause-indexing flags,
+  `autoload`, `var_tag`, `incomparable`, `encoding`) are refused by name with `NotPortedError` at the write, after the
+  type and `oneof` checks (design D4). A new engine starts from the database's mask while `set_flag_value` writes the
+  calling engine's mask: the audit decides whether the database mask follows (design H5). Rows:
+  `test/core_lang/test_set_flag_swipl.jl` (sf01-sf89 against swipl 10.1.19); mutants: `tools/mutants/F1B.py`.
 
 ## LB3 — `src/pl-qlf.jl`, the C boot loop (R2 loader_boot, audit D-0272/D-0273)
 
