@@ -1,0 +1,16 @@
+M1-modeshift: rc=1 21 passed, 2 failed | 2 FAIL lines
+M2-emptyrows: rc=1 22 passed, 1 failed | 1 FAIL lines
+M3-flagguard: rc=1 22 passed, 1 failed | 1 FAIL lines
+M4-N0: rc=1 22 passed, 1 failed | 1 FAIL lines
+M5-failB: rc=1 21 passed, 2 failed | 2 FAIL lines
+M6-sameset: rc=1 21 passed, 2 failed | 2 FAIL lines
+M7-tree-nodir: rc=1 22 passed, 1 failed | 1 FAIL lines
+M7b-tree-noproject: rc=1 22 passed, 1 failed | 1 FAIL lines
+M8-extra-run: rc=1 9 passed, 14 failed | 14 FAIL lines
+M9-ident: rc=1 22 passed, 1 failed | 1 FAIL lines
+M10-agg-exit: rc=1 22 passed, 1 failed | 1 FAIL lines
+M11-modes-all: rc=1 21 passed, 2 failed | 2 FAIL lines
+M12-sort-desc: rc=1 22 passed, 1 failed | 1 FAIL lines
+M13-failA: rc=1 22 passed, 1 failed | 1 FAIL lines
+M14-warn-N5: rc=1 22 passed, 1 failed | 1 FAIL lines
+M15-warn-text: rc=1 22 passed, 1 failed | 1 FAIL lines

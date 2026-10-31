@@ -10,6 +10,13 @@
 #   tools/bench.sh --no-compile                          # without the run loop's fresh-process report
 #   tools/bench.sh --runs=N                              # samples per side (default 30)
 #   julia --project=. tools/bench.jl --ungated …         # without the gate: the header says UNGATED
+#   julia --project=. tools/bench.jl --alloc-only [--runs=N] [CASE…]   # ALLOCATION COUNTS only (D-0188 item 2):
+#                                                        # no swipl, no start gate, no bench.sh, no timing columns,
+#                                                        # no raw file; ONE fresh process prints one machine-readable
+#                                                        # `ALLOC<TAB>case<TAB>median<TAB>min<TAB>max<TAB>calls<TAB>runs`
+#                                                        # row per case. Counts are per-instance (bimodal 237/239), so a
+#                                                        # comparison is the SET over >= 5 fresh processes per side
+#                                                        # (D-0172): tools/bench_alloc_sets.sh <tree-A> <tree-B> <N>
 #
 # THREE DIAGNOSTIC REPORTS (user, 2026-10-13), each instead of the timing run; their full output goes
 # to .warm/bench/ (ignored by git), a summary to the terminal:
@@ -78,7 +85,8 @@ end
 
 "The start gate's readings: the wrapper's quiet sample, the other julia processes (none, or it refused)."
 const START_GATE =
-    let timing = !any(a -> occursin(r"^--(descend|code|flame)(=|$)", a), ARGS)
+    let timing = !any(a -> occursin(r"^--(descend|code|flame)(=|$)", a), ARGS) &&
+                 !("--alloc-only" in ARGS)      # allocation counts do not depend on the load (D-0187 item 1)
         ungated = "--ungated" in ARGS
         sample = get(ENV, "BENCH_GATE_SAMPLE", "")
         julias = _other_julias()
@@ -1053,6 +1061,8 @@ const CONTAMINATION = 0.05
 const GC_FLAG = 0.10
 "Samples per side, per benchmark, unless `--runs=N` says otherwise."
 const RUNS_DEFAULT = 30
+"Samples per case for `--alloc-only` unless `--runs=N` says otherwise (a count needs few; the process is the unit)."
+const ALLOC_RUNS_DEFAULT = 10
 
 "One LogicKernel sample of `n` calls of `f`: (wall µs, GC µs, allocations), each per call."
 function _lk_sample(f, n::Int)::NTuple{3, Float64}
@@ -1506,6 +1516,40 @@ function flame_report(name::String)::Nothing
     return nothing
 end
 
+"""
+`--alloc-only`: per case, the LogicKernel half of `sampled_times` — N doubled until a sample takes
+SAMPLE_S, WARMUP samples discarded, then `runs` samples in batches of BATCH with a full collection
+before each batch — printing ONLY the allocations per call (the `_lk_sample` count, the number the
+full report shows as `allocs`): one row `ALLOC case median min max calls_per_sample runs`. No swipl
+(it is the timing side), no quiet sample, no raw file, no timing column: allocation counts do not
+depend on the machine's load, so this runs beside other work. One process = one INSTANCE's counts.
+"""
+function alloc_only_report(cases, runs::Int)
+    println("# bench.jl --alloc-only: allocations per call only; julia $(VERSION); pid $(getpid()); ",
+        "warm-up $WARMUP, $runs samples in batches of $BATCH, a sample ≥ $(SAMPLE_S) s")
+    println("# ALLOC\tcase\tallocs_median\tallocs_min\tallocs_max\tcalls_per_sample\truns")
+    for (name, f, _) in cases
+        f()
+        n = 1
+        while first(_lk_sample(f, n)) * n < SAMPLE_S * 1e6
+            n *= 2
+        end
+        for _ in 1:WARMUP
+            _lk_sample(f, n)
+        end
+        al = Float64[]
+        while length(al) < runs
+            k = min(BATCH, runs - length(al))
+            GC.gc()
+            append!(al, [_lk_sample(f, n)[3] for _ in 1:k])
+        end
+        @printf("ALLOC\t%s\t%.3f\t%.3f\t%.3f\t%d\t%d\n",
+            name, _median_iqr(al)[1], minimum(al), maximum(al), n, runs)
+        flush(stdout)
+    end
+    return nothing
+end
+
 function main(args)
     diag = filter(a -> occursin(r"^--(descend|code|flame)(=|$)", a), args)
     if !isempty(diag)
@@ -1530,6 +1574,9 @@ function main(args)
     note = kn === nothing ? "" : String(split(args[kn], '='; limit=2)[2])
     kr = findfirst(a -> startswith(a, "--runs="), args)
     runs = kr === nothing ? RUNS_DEFAULT : parse(Int, split(args[kr], '='; limit=2)[2])
+    if "--alloc-only" in args
+        return alloc_only_report(cases, kr === nothing ? ALLOC_RUNS_DEFAULT : runs)
+    end
     swv = if Sys.which("swipl") === nothing
         "no swipl on PATH"
     else
