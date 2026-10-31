@@ -15,9 +15,11 @@
 # module records are src/pl-incl.jl's `module_t`; the table is the database's (`PL_global_data.modules`).
 # Since MOD2 the context module of an unqualified term (`stripModule_cells`; the frames' context modules are
 # src/pl-wam.jl `contextModule`), `strip_module/3` and `context_module/1`.
-# NOT PORTED (the module system's later steps, D-0149): `export/1`, `import/1`, `'$import'/2`, `'$undefined_export'/2`, `'$def_modules'/2` (MOD5a),
-# `'$declare_module'/6`, `'$destroy_module'/1` and `acquireModule`/`releaseModule` (MOD5b), and the
-# non-deterministic `import_module/2` and `'$current_module'/2` (MOD6, after NF1).
+# Since MOD5a the public table and the imports: `export/1`, `import/1`, `'$import'/2`, `'$undefined_export'/2`
+# and `'$def_modules'/2`.
+# LATER STEPS (the module system, D-0149): `'$declare_module'/6`, `'$destroy_module'/1` and
+# `acquireModule`/`releaseModule` (MOD5b), and the non-deterministic `import_module/2` and
+# `'$current_module'/2` (MOD6, after NF1).
 
 # PORT: pl-incl.h UNKNOWN_FAIL
 "The `unknown` flag's `fail`: an undefined predicate fails silently (pl-incl.h)."
@@ -826,18 +828,20 @@ function find_modules_with_defs(
             if !found
                 found = true
                 PL_put_variable(ld, plist)
-                (PL_unify_list(ld, mlist, mhead, mlist) &&
-                 PL_unify(ld, mhead, _message_term(ld, :-, _err_atom(ld, m.atom), plist))) ||
-                    return false                                # PL_unify_term(mhead, PL_FUNCTOR, FUNCTOR_minus2, …)
+                PL_unify_list(ld, mlist, mhead, mlist) || return false
+                pair = _message_term(ld, :-, _err_atom(ld, m.atom), plist)
+                PL_unify(ld, mhead, pair) || return false   # PL_unify_term(mhead, PL_FUNCTOR, FUNCTOR_minus2, …)
             end
 
-            (PL_unify_list(ld, plist, phead, plist) && PL_unify(ld, phead, pi)) || return false
+            PL_unify_list(ld, plist, phead, plist) || return false
+            PL_unify(ld, phead, pi) || return false
         end
     end
     found && !PL_unify_nil(ld, plist) && return false
 
     for c in m.supers
-        find_modules_with_defs(gd, ld, gd.modules[c], targets, tmp, mlist, l - 1) || return false
+        s = gd.modules[c]
+        find_modules_with_defs(gd, ld, s, targets, tmp, mlist, l - 1) || return false
     end
 
     return true
@@ -1015,16 +1019,23 @@ end
 # PORT: pl-modul.c BeginPredDefs as PL_predicates_from_module
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (MOD1: the table, the
 # supers, the source and typein modules, `'$module_property'/2`); `PRED_DEF` ors in `PL_FA_VARARGS`.
-# Since MOD2 `strip_module/3`. NOT PORTED: `import_module/2`, `'$current_module'/2` (non-deterministic: MOD6),
-# `'$def_modules'/2`, `import/1`, `'$import'/2`, `export/1`, `'$undefined_export'/2` (MOD5a),
+# Since MOD2 `strip_module/3`, since MOD5a `'$def_modules'/2`, `import/1`, `'$import'/2`, `export/1` and
+# `'$undefined_export'/2`. LATER STEPS: `import_module/2`, `'$current_module'/2` (non-deterministic: MOD6),
 # `'$declare_module'/6`, `'$destroy_module'/1` (MOD5b).
 "pl-modul.c's registration table (`BeginPredDefs(module)`): the ported entries."
 const PL_predicates_from_module = (
+    PL_extension(
+        "\$def_modules", 2, pl_def_modules2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
     PL_extension("add_import_module", 3, pl_add_import_module3_va, PL_FA_VARARGS),
     PL_extension("delete_import_module", 2, pl_delete_import_module2_va, PL_FA_VARARGS),
     PL_extension("set_module", 1, pl_set_module1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("\$module_property", 2, pl_module_property2_va, PL_FA_VARARGS),
     PL_extension("strip_module", 3, pl_strip_module3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("import", 1, pl_import1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("\$import", 2, pl_import2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("export", 1, pl_export1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("\$undefined_export", 2, pl_undefined_export2_va, PL_FA_VARARGS),
     PL_extension(
         "\$current_source_module", 1, pl_current_source_module1_va, PL_FA_VARARGS
     ),
