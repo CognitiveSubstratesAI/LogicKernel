@@ -60,6 +60,7 @@ include("os/pl-prologflag.jl") # swipl-devel src/os/pl-prologflag.c — setBackQ
 include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a term holds; a stream on it
 include("os/pl-os.jl")         # swipl-devel src/os/pl-os.c — the clocks, the environment, Pause (Y1)
 include("os/pl-files.jl")      # swipl-devel src/os/pl-files.c — the file name a term holds, delete_file/1 (Y1)
+include("os/pl-glob.jl")       # swipl-devel src/os/pl-glob.c — wildcard_match, expand_file_name, directory_files (LB2b)
 include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader); the output redirect, with_output_to/2 (O1B)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
