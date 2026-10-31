@@ -146,6 +146,7 @@ CASES = [
  ("f96", r'''format(atom(R), "~F|~E|~G|~f|~0g", [1.5NaN, 1.5NaN, 1.5NaN, 1.0Inf, 123.456])''', "capital NaN, infinity, g with 0 digits"),
  ("f97", r'''format(atom(R), "ab~t~@~t~12|x", [hello_out])''', "call-back through a string at column 2"),
  ("f98", r'''format(atom(R), "~d~t~8|~e~t~20|x", [12, 1.5])''', "numbers advance the column when no fill point is pending"),
+ ("f99", r'''format(atom(R), "~tab~tcd~10|", [])''', "literal text between two fill points"),
  ("e22", r'''format(atom(R), f(x), [])''', "format text of the wrong type"),
  ("e23", r'''format(atom(R), "~W", [x])''', "W with one argument"),
  ("e24", r'''format(atom(R), "~@", [])''', "@ without an argument"),

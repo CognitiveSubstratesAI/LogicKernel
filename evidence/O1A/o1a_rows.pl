@@ -126,6 +126,7 @@ t_f95(R) :- catch((format(atom(R), "~e|~e|~2e", [1r9, 1r8, 1r1000])), error(SsuE
 t_f96(R) :- catch((format(atom(R), "~F|~E|~G|~f|~0g", [1.5NaN, 1.5NaN, 1.5NaN, 1.0Inf, 123.456])), error(SsuE, _), R = raised(SsuE)).
 t_f97(R) :- catch((format(atom(R), "ab~t~@~t~12|x", [hello_out])), error(SsuE, _), R = raised(SsuE)).
 t_f98(R) :- catch((format(atom(R), "~d~t~8|~e~t~20|x", [12, 1.5])), error(SsuE, _), R = raised(SsuE)).
+t_f99(R) :- catch((format(atom(R), "~tab~tcd~10|", [])), error(SsuE, _), R = raised(SsuE)).
 t_e22(R) :- catch((format(atom(R), f(x), [])), error(SsuE, _), R = raised(SsuE)).
 t_e23(R) :- catch((format(atom(R), "~W", [x])), error(SsuE, _), R = raised(SsuE)).
 t_e24(R) :- catch((format(atom(R), "~@", [])), error(SsuE, _), R = raised(SsuE)).
