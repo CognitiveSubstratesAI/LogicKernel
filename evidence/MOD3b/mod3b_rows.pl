@@ -36,6 +36,7 @@ lcpm(N, U, M) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, between(1, 2
 lcpa(N, U) :- ( N =:= 0 -> statistics(localused, U) ; N1 is N-1, between(1, 2, _), @(lcpa(N1, U), qm2) ).
 atcpx(C0, C) :- m2(QC), between(1, 2, _), utp(C0), @(qm:qm(C), QC).
 atcpa(C0, C) :- between(1, 2, _), utp(C0), @(utp(C), qm2).
+atnest2(C1, C2) :- @((@(utp(C1), qm2), utp(C2)), qm).
 t_a01(R) :- catch((at(R)), error(SsuE, _), R = raised(SsuE)).
 t_a02(R) :- catch((atnl(R)), error(SsuE, _), R = raised(SsuE)).
 t_a03(R) :- catch((atu(R)), error(SsuE, _), R = raised(SsuE)).
@@ -111,3 +112,5 @@ t_a72(R) :- catch((( lcpm(1000, U1, qm2) -> true ), ( lcpm(2000, U2, qm2) -> tru
 t_a73(R) :- catch((( lcpa(1000, U1) -> true ), ( lcpa(2000, U2) -> true ), ( U2 > U1 -> R = grows ; R = flat(U1, U2) )), error(SsuE, _), R = raised(SsuE)).
 t_a74(R) :- catch((findall(C0-C, atcpx(C0, C), R)), error(SsuE, _), R = raised(SsuE)).
 t_a75(R) :- catch((findall(C0-C, atcpa(C0, C), R)), error(SsuE, _), R = raised(SsuE)).
+t_a76(R) :- catch((atnest2(C1, C2), R = C1-C2), error(SsuE, _), R = raised(SsuE)).
+t_a77(R) :- catch((findall(B, clause(atnest2(_, _), B), R)), error(SsuE, _), R = raised(SsuE)).

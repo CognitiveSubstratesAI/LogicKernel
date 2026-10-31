@@ -1,4 +1,60 @@
-# MOD3b handoff (coder 1 read; coder 2 wrote the source, 2026-10-31 UTC): EDIT-ONLY, nothing compiled or run
+# MOD3b handoff (coder 1 read; coder 2 wrote the source; coder 3 wrote the new test file, 2026-10-31 UTC): EDIT-ONLY, nothing compiled or run
+
+## Coder 3 (Sonnet, hard-stopped by the context cap at ~163k): DONE / NOT DONE (read this first)
+- Text check over `git diff 805446b..HEAD` and the commit messages (file-redirect form, case-insensitive): the only hits were
+  two lines in THIS handoff (coder 2's wording of the to-do); no source or message hit. Redo it before any push.
+- DONE, committed on wip/mod3b: test/core_lang/test_at_body_swipl.jl (rows a01-a77; prefix `_AB`/`_ab_`; MOD3a's shape), its pins
+  from swipl 10.1.19 (the oracle at ~/.local/bin/swipl; stable over two runs), generator evidence/MOD3b/gen_rows.py
+  (`python3 gen_rows.py ../../test/core_lang/test_at_body_swipl.jl` -> mod3b_rows.pl + mod3b_driver.pl; `swipl -q mod3b_driver.pl
+  </dev/null > mod3b_rows.out`; `... --fill` writes the .out into `_AB_PINNED`). Rows are the canonical `@(Goal, Module)` (same term as
+  test_qcall's `:- op(900, xfx, @)` form, no operator dependence): a01-a13 at/vat/atv/atvv/atvvv shapes (DEPARTATM/CALLATM/ATMV,
+  choice point before the last call), a14-a20 restore, nest, control/=/!/call-N under an at, a21-a27 run-time errors, a28-a39 call/1 of
+  `G@M` (+ checkCallAtContextInstantiation's errors, the cyclic a39), a40-a54 clause/2, a55-a63 assert-time errors + clause/2,
+  a64-a69 goal clauses, a70-a73 frame reuse (lTop same/grows, the b45/b46 shape), a74-a75 a retried frame keeps its own context,
+  a76-a77 nested at restores the outer context.
+- UNVERIFIED on the kernel: a39 (`( G = p(G), call(@(G, user)) -> R = yes ; R = no )`: swipl says `no`; the kernel may raise
+  representation_error(cyclic_term) from the goal-clause compile: then TRACE it, do not re-pin) and every other row (nothing compiled).
+  Known swipl facts behind rows: at over a control construct, `=/2` or `!` leaves NO `@` in clause/2 (a50, a18, a19); `M:G@QC`
+  with a variable M is `call(@(M:G, QC))` in clause/2 (a47, a48); call/N under an at is `@(call(utp,_),qm2)` (a51).
+- NOT DONE (next agent, in this order; commit after each): (1) tools/mutants/MOD3b.py; (2) the docs/architecture.md MOD3b section;
+  (3) this handoff's gate-order refresh (the gate order at the end of the file stands; add H11 and the daemon note below).
+- MUTANT PLAN (names real source lines; every `old` must occur EXACTLY ONCE: check with the loader snippet below; fmt may re-flow):
+  TARGETS sets: TS=[test_at_body_swipl]; RUN=TS+[test_metacall_control]; COMP=TS+[test_body_code_swipl, test_metacall_control,
+  test_colon_body_swipl, test_ssu_compile_swipl]; DEC=TS+[test_body_code_swipl, test_colon_body_swipl, test_clause_swipl, test_retract_swipl];
+  TMC wide=RUN+[test_cleanup_swipl, test_catch_swipl, test_findall_swipl]; baseline TARGETS = union + test/foreign/test_query.jl
+  (files that name a Prolog `@` goal: only at_body, body_code, metacall_control; the others reach the compiler without it).
+  src/pl-wam.jl (RUN): A1 I_CALLATM `PC += 1  # PC++: the procedure-module` -> `nothing` (KILL a02,a04); A2 I_DEPARTATM `PC += 1
+  # PC++: ignore the :-qualifier` -> `nothing` (a01,a03); A3 its `@goto I_DEPARTM` -> `@goto I_CALLM` (a71); A5 I_DEPARTATMV's
+  `@goto I_CALLATMV   # VMI_GOTO(I_CALLATMV)` line -> `nothing` (a74); A7 `setContextModule!(ld.frames[FR], lookupModule(gd,
+  _atom_value(ld, atv_w)).index)` -> `nothing` (a06,a08); A8 same with `MODULE_user(gd).index`; A9 `mc_mi = lookupModule(gd,
+  _atom_value(ld, atv_w)).index` -> `mc_mi = MODULE_user(gd).index` (a07,a10); A10 `_call_procedure(ld, FR, PCc[PC + 1])` in
+  I_CALLATMV -> `PCc[PC]`; A12 `mk_sym(T, :module), atv_t` -> `mk_sym(T, :callable), atv_t` (a22,a24,a26); M1 the metacall gate
+  `if mc_arity == 2 && sym_key(mc_name) == gd.functors_control.at_sign ` -> `if mc_arity == 2 && true ` (TMC wide: any 2-ary goal
+  with an unbound argument now raises). src/pl-comp.jl (COMP): C1 drop `&& ci.at_context.type == TM_NONE` from the call/N gate (a20);
+  C3 `ctm = tm === ci.module_ ? code(0) : code(tm.index)` -> `code(tm.index)` (a42, bc) and -> `code(0)` (a40, bc); C4 `code(
+  ci.at_context.module_)` -> `code(tm.index)` (a01); C5a `call == I_DEPART && return I_DEPARTATM` -> `I_CALLATM` (a71); C5b the
+  callatmv twin -> `I_CALLATMV` (a70); C6 `callatmv(call), ctm` -> `callatm(call), ctm`; C7 `_at_functor_operand(ci))` in the
+  metacall -> `_colon_functor_operand(ci))` (a05); C8 `pushTargetModule!(ci, ci.at_context)` -> `ci.colon_context` (a05); C9 drop the
+  B_POP after it; C10a/b getTargetModule!'s `at ? (ci.at_context = tm) : (ci.colon_context = tm)` -> `ci.colon_context = tm` in
+  the module line (`# tm->module`) and the var line (`# tm->var_index`) (a01, a06); C11a `child(body, 3), true)` -> `child(body, 2), true)`;
+  C11b `body = child(body, 2)  # body = argTermP(*body, 0)` -> `child(body, 3)`; C11c `child(body, 3), true)` -> `child(body, 3), false)`;
+  C12 resume `ci.at_context = frame.tmsave\n` -> `nothing\n` (a14, a76); C14 `true, true, atsave` -> `true, true, TARGET_MODULE_NONE` (a76).
+  DEC: D1 the decompiler's `if pm != 0` in the at case (check it is unique vs the I_CALLM case) -> `if false` (a40); D2 `_dvar!(di,
+  nested, cm)` in the at case -> a module atom push; D3 `build_term!(di, mk_sym(T, Symbol("@")), 2)` -> `:(:)`; D4 `modules[Int(cm)]
+  .atom` -> `modules[1].atom` (a40); D5 `di.pc += 3` of the at case -> `+= 2` (check unique). Each KILL line names the rows.
+  NOT LISTED, with reasons to put in the file's header: the unwind `uframe.kind == CB_ATSIGN && …` (EQUIVALENT: on a compile error
+  every caller drops `ci`, as MOD3a's); checkCallAtContextInstantiation's module tests and the call-site `mc_atok || @goto b_throw`:
+  with the check gone a variable goal under `@` loops in the goal-clause compile (the meta-call of `@(G, M)` is `call(@(G, M))`
+  again) = a HANG, not a verdict, and the module tests are answered by PL_error's ERR_TYPE rule (instantiation_error) the same way;
+  `callatm`/`callatmv`'s `@assert false` (unreachable: only I_CALL/I_DEPART are passed).
+  STALE (landed lists, not re-run, `old` no longer unique/present after MOD3b): MOD3a-S1 (`if tm === ci.module_` is now `elseif`) and
+  MOD3a-S2 (the call/N gate line changed). Do not edit them unless the battery re-runs MOD3a.
+  Loader snippet (writes nothing): python3 -c "ns={}; exec(open('tools/mutants/MOD3b.py').read(), ns); [print(m['id'][:40], open(m['file']).read().count(m['old'])) for m in ns['MUTANTS']]"
+- GATE NOTES for the gate agent: `compileInfo.at_context` is a STRUCT CHANGE: the warm daemon restarts by itself, ~30 min cold compile.
+  H11: lookupModule (can create a module) in I_CALLATMV/I_DEPARTATMV: those two labels are NOT in static_analysis_body.jl's allocation
+  path list while I_DEPARTATM/I_CALLATM are; decide whether AllocCheck exempts them (the JET/AllocCheck run is the gate's).
+  The new file's rows a39 and a70-a77 are the likeliest first-compile surprises. Gate order stands (end of this file) plus the
+  alloc pins x3 (the run loop gained four labels).
 
 ## Coder 2 progress (read this first)
 - WRITTEN + committed on wip/mod3b, NOT compiled: d19720d (1: opcodes 153-156 + code_info + the four run-loop labels,
